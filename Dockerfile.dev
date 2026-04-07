@@ -1,0 +1,7 @@
+# Lightweight dev image for docker-compose. Installs Air and runs it.
+# Does NOT embed the frontend — Vite runs separately and Go proxies to it.
+FROM golang:1.26-alpine
+RUN go install github.com/air-verse/air@latest
+WORKDIR /app
+# Module download happens at startup via volume-mounted source + go mod download
+CMD ["air"]

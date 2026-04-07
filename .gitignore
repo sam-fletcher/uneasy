@@ -1,0 +1,27 @@
+# Go
+.air_tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Frontend
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env
+.env
+.env.local
+
+# DB
+*.db

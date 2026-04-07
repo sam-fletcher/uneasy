@@ -1,0 +1,11 @@
+# golangci-lint configuration
+# Using default linter set — expand later as you develop opinions.
+# Run: golangci-lint run ./...
+
+version: "2"
+
+linters:
+  # Start with the defaults. golangci-lint enables a curated set out of the
+  # box (errcheck, govet, ineffassign, staticcheck, unused, etc.).
+  # We don't enable extras yet — keep the feedback loop fast while learning.
+  default: standard

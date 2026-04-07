@@ -1,0 +1,56 @@
+services:
+  # ── Postgres ────────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: uneasy
+      POSTGRES_PASSWORD: uneasy
+      POSTGRES_DB: uneasy
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uneasy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Go API server (with Air hot-reload) ─────────────────────────────────────
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev   # lighter dev image; see below
+    volumes:
+      - .:/app                     # mount source so Air sees changes
+      - go_cache:/root/go          # cache modules between restarts
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://uneasy:uneasy@db:5432/uneasy?sslmode=disable
+      PORT: "8080"
+      DEV_MODE: "true"
+      VITE_URL: "http://frontend:5173"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: air
+
+  # ── Vite dev server (hot module replacement) ─────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      # Vite needs to know its public host for HMR websocket
+      VITE_HMR_HOST: localhost
+
+volumes:
+  postgres_data:
+  go_cache:
+  node_modules:
