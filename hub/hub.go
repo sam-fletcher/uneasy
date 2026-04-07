@@ -14,6 +14,7 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -173,15 +174,17 @@ type Client struct {
 	conn   *websocket.Conn
 	player model.Player
 	send   chan []byte
+	log    *slog.Logger
 }
 
 // NewClient constructs a Client. Call hub.Register(c) before calling c.Run().
-func NewClient(h *Hub, conn *websocket.Conn, player model.Player) *Client {
+func NewClient(h *Hub, conn *websocket.Conn, player model.Player, logger *slog.Logger) *Client {
 	return &Client{
 		hub:    h,
 		conn:   conn,
 		player: player,
 		send:   make(chan []byte, 256),
+		log:    logger.With("player_id", player.ID),
 	}
 }
 
@@ -216,14 +219,18 @@ func (c *Client) writePump(ctx context.Context) {
 		case msg, ok := <-c.send:
 			if !ok {
 				// Hub closed the channel — shut down cleanly.
-				c.conn.Close(websocket.StatusNormalClosure, "")
+				if err := c.conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+					c.log.Error("writePump: close connection", "error", err)
+				}
 				return
 			}
 			if err := c.conn.Write(ctx, websocket.MessageText, msg); err != nil {
 				return
 			}
 		case <-ctx.Done():
-			c.conn.Close(websocket.StatusNormalClosure, "")
+			if err := c.conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+				c.log.Error("writePump: close connection", "error", err)
+			}
 			return
 		}
 	}

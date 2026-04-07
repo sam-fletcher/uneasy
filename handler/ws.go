@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -51,7 +52,7 @@ func WebSocket(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		h := manager.GetOrCreate(gameID)
-		client := hub.NewClient(h, conn, *player)
+		client := hub.NewClient(h, conn, *player, slog.Default())
 		h.Register(client)
 
 		// Run blocks until the connection closes (reads pump + write pump).

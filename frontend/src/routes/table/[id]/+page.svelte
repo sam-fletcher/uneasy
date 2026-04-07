@@ -118,7 +118,11 @@
 		try {
 			const { post } = await createPost(gameID, body);
 			newPostBody = '';
-			posts = [...posts, post];
+			// Dedup: the WS post.created event may have arrived first and already
+			// added this post to the feed. Only add it here if it's not present.
+			if (!posts.find((p) => p.id === post.id)) {
+				posts = [...posts, post];
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not send.';
 		} finally {

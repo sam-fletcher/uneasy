@@ -22,7 +22,7 @@ var migrations embed.FS
 
 // RunMigrations applies any pending "up" migrations against the given
 // Postgres URL and returns nil if the schema is already up to date.
-func RunMigrations(dbURL string) error {
+func RunMigrations(dbURL string) (err error) {
 	src, err := iofs.New(migrations, "migrations")
 	if err != nil {
 		return fmt.Errorf("db: open migration source: %w", err)
@@ -32,9 +32,12 @@ func RunMigrations(dbURL string) error {
 	if err != nil {
 		return fmt.Errorf("db: create migrator: %w", err)
 	}
-	defer m.Close()
+	defer func() {
+		errSource, errDB := m.Close()
+		err = errors.Join(err, errSource, errDB)
+	}()
 
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+	if err = m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("db: run migrations: %w", err)
 	}
 
