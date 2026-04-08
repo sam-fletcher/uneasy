@@ -1,0 +1,156 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"uneasy/db"
+	"uneasy/hub"
+	"uneasy/model"
+	appMiddleware "uneasy/middleware"
+)
+
+// ListToneTopics handles GET /api/tables/{id}/tone.
+func ListToneTopics(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid table id")
+			return
+		}
+
+		player := appMiddleware.PlayerFromContext(r.Context())
+		if player == nil || player.GameID != gameID {
+			respondErr(w, http.StatusForbidden, "not a member of this table")
+			return
+		}
+
+		topics, err := db.ListToneTopics(r.Context(), pool, gameID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load topics")
+			return
+		}
+
+		respond(w, http.StatusOK, map[string]any{"topics": topics})
+	}
+}
+
+// UpdateToneTopic handles PUT /api/tables/{id}/tone/{topicId}.
+func UpdateToneTopic(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid table id")
+			return
+		}
+		topicID, err := strconv.ParseInt(chi.URLParam(r, "topicId"), 10, 64)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid topic id")
+			return
+		}
+
+		player := appMiddleware.PlayerFromContext(r.Context())
+		if player == nil || player.GameID != gameID {
+			respondErr(w, http.StatusForbidden, "not a member of this table")
+			return
+		}
+
+		var body struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		status := model.ToneTopicStatus(body.Status)
+		switch status {
+		case model.ToneDefault, model.ToneInclude, model.ToneAvoidDetail, model.ToneNever:
+			// valid
+		default:
+			respondErr(w, http.StatusBadRequest, "invalid status: must be default, include, avoid_detail, or never")
+			return
+		}
+
+		ctx := r.Context()
+
+		// Verify the topic belongs to this game.
+		topic, err := db.GetToneTopic(ctx, pool, topicID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "topic not found")
+			return
+		}
+		if topic.GameID != gameID {
+			respondErr(w, http.StatusForbidden, "topic does not belong to this game")
+			return
+		}
+
+		if err := db.UpdateToneTopicStatus(ctx, pool, topicID, status); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not update topic")
+			return
+		}
+
+		// Broadcast the update.
+		if h, ok := manager.Get(gameID); ok {
+			h.BroadcastEvent(model.EventToneUpdated, model.ToneUpdatedPayload{
+				TopicID: topicID,
+				Topic:   topic.Topic,
+				Status:  status,
+			})
+		}
+
+		respond(w, http.StatusOK, map[string]any{"topic_id": topicID, "status": status})
+	}
+}
+
+// AddToneTopic handles POST /api/tables/{id}/tone.
+func AddToneTopic(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid table id")
+			return
+		}
+
+		player := appMiddleware.PlayerFromContext(r.Context())
+		if player == nil || player.GameID != gameID {
+			respondErr(w, http.StatusForbidden, "not a member of this table")
+			return
+		}
+
+		var body struct {
+			Topic string `json:"topic"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		body.Topic = strings.TrimSpace(body.Topic)
+		if body.Topic == "" {
+			respondErr(w, http.StatusBadRequest, "topic is required")
+			return
+		}
+
+		topic, err := db.CreateToneTopic(r.Context(), pool, gameID, body.Topic, model.ToneDefault)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not add topic")
+			return
+		}
+
+		// Broadcast the new topic.
+		if h, ok := manager.Get(gameID); ok {
+			h.BroadcastEvent(model.EventToneUpdated, model.ToneUpdatedPayload{
+				TopicID: topic.ID,
+				Topic:   topic.Topic,
+				Status:  topic.Status,
+			})
+		}
+
+		respond(w, http.StatusCreated, map[string]any{"topic": topic})
+	}
+}

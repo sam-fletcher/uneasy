@@ -1,0 +1,58 @@
+-- sqlc query file for dice rolls.
+
+-- ── Dice Rolls ───────────────────────────────────────────────────────
+
+-- name: CreateDiceRoll :one
+INSERT INTO dice_rolls (game_id, plan_id, row_number, actor_id, difficulty)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING *;
+
+-- name: GetDiceRollByID :one
+SELECT * FROM dice_rolls WHERE id = $1;
+
+-- name: SetDiceRollAdjustedDifficulty :exec
+UPDATE dice_rolls SET adjusted_difficulty = $2 WHERE id = $1;
+
+-- name: ResolveDiceRoll :exec
+UPDATE dice_rolls SET result = $2, outcome = $3, resolved_at = now() WHERE id = $1;
+
+-- name: ListDiceRollsByGame :many
+SELECT * FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC;
+
+-- ── Dice Roll Dice ───────────────────────────────────────────────────
+
+-- name: CreateDiceRollDie :one
+INSERT INTO dice_roll_dice (roll_id, player_id, is_interference, leveraged_asset_id)
+VALUES ($1, $2, $3, $4)
+RETURNING *;
+
+-- name: ListDiceByRoll :many
+SELECT * FROM dice_roll_dice WHERE roll_id = $1 ORDER BY id;
+
+-- name: SetDieFace :exec
+UPDATE dice_roll_dice SET face = $2 WHERE id = $1;
+
+-- name: SetDieCancelled :exec
+UPDATE dice_roll_dice SET is_cancelled = TRUE WHERE id = $1;
+
+-- name: SetAllDiceFaces :exec
+-- Batch-set faces on all unrolled dice for a roll. Called when the server rolls.
+-- Each die gets its own UPDATE via the Go loop; this is just a convenience comment.
+-- Actually done in Go with individual SetDieFace calls per die.
+SELECT 1; -- placeholder; actual rolling done in Go loop
+
+-- ── Difficulty Votes ─────────────────────────────────────────────────
+
+-- name: CreateDifficultyVote :exec
+INSERT INTO difficulty_votes (roll_id, player_id, vote)
+VALUES ($1, $2, $3)
+ON CONFLICT (roll_id, player_id) DO UPDATE SET vote = EXCLUDED.vote;
+
+-- name: ListVotesByRoll :many
+SELECT * FROM difficulty_votes WHERE roll_id = $1;
+
+-- name: CountVotesByRoll :one
+SELECT
+  count(*) FILTER (WHERE vote = 'yea') AS yea_count,
+  count(*) FILTER (WHERE vote = 'nay') AS nay_count
+FROM difficulty_votes WHERE roll_id = $1;

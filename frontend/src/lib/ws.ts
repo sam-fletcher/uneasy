@@ -1,4 +1,4 @@
-// ws.ts — WebSocket client with automatic reconnection and catch-up.
+// ws.ts — WebSocket client with automatic reconnection.
 //
 // Usage:
 //   const disconnect = createConnection(gameID, (msg) => { ... });
@@ -13,6 +13,45 @@ export interface WSMessage {
 
 type MessageHandler = (msg: WSMessage) => void;
 
+// All known server→client event types for Phase 2.
+export const EventTypes = {
+	// Presence & typing (Phase 1, carried forward)
+	PresenceSnapshot: 'presence.snapshot',
+	TypingUpdate: 'typing.update',
+
+	// Phase transitions
+	PhaseChanged: 'phase.changed',
+
+	// Tone setting
+	ToneUpdated: 'tone.updated',
+
+	// Rankings & seating
+	RankingsUpdated: 'rankings.updated',
+
+	// Focus player & row advancement
+	FocusChanged: 'focus.changed',
+	RowAdvanced: 'row.advanced',
+
+	// Scene posts (replaces post.created)
+	ScenePostCreated: 'scene_post.created',
+
+	// Assets & marginalia
+	AssetCreated: 'asset.created',
+	AssetUpdated: 'asset.updated',
+	MarginaliaUpdated: 'marginalia.updated',
+
+	// Plans
+	PlanActivated: 'plan.activated',
+	PlanResolved: 'plan.resolved',
+	PlanTokenPlaced: 'plan.token_placed',
+
+	// Dice rolls
+	RollCreated: 'roll.created',
+	RollResolved: 'roll.resolved',
+	RollVoteCalled: 'roll.vote_called',
+	RollVoteResolved: 'roll.vote_resolved',
+} as const;
+
 // createConnection opens a WebSocket to /api/tables/:id/ws and returns a
 // cleanup function. Reconnects automatically with exponential backoff if the
 // connection drops.
@@ -20,7 +59,6 @@ export function createConnection(gameID: string | number, onMessage: MessageHand
 	let ws: WebSocket | null = null;
 	let stopped = false;
 	let retryDelay = 1000; // ms; doubles on each failed attempt, capped at 30s
-	let lastPostID: number | null = null; // for catch-up on reconnect
 
 	// Listen for typing events dispatched by the page component.
 	function onTyping(e: Event) {
@@ -54,12 +92,6 @@ export function createConnection(gameID: string | number, onMessage: MessageHand
 			} catch {
 				return;
 			}
-
-			// Track the latest post ID so we can catch up after a reconnect.
-			if (msg.type === 'post.created' && msg.payload.post?.id) {
-				lastPostID = msg.payload.post.id as number;
-			}
-
 			onMessage(msg);
 		};
 

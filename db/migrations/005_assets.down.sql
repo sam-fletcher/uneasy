@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS secret_visibility;
+DROP TABLE IF EXISTS secrets;
+DROP TABLE IF EXISTS marginalia;
+DROP TABLE IF EXISTS assets;

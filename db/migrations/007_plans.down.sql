@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS plan_tokens;
+DROP TABLE IF EXISTS plans;

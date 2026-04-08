@@ -2,6 +2,13 @@
 // All requests go to the same origin as the page (the Go server proxies
 // everything through one port, so no CORS is needed).
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export type GamePhase = 'lobby' | 'tone_setting' | 'prologue' | 'main_event' | 'shake_up' | 'ended';
+export type ToneTopicStatus = 'default' | 'include' | 'avoid_detail' | 'never';
+export type RankingCategory = 'power' | 'knowledge' | 'esteem';
+export type AssetType = 'peer' | 'holding' | 'artifact' | 'resource';
+
 export interface UserToken {
 	display_name: string;
 	created_at: string;
@@ -12,6 +19,11 @@ export interface Game {
 	join_code: string;
 	created_at: string;
 	facilitator_id: number | null;
+	phase: GamePhase;
+	current_row: number;
+	focus_player_id: number | null;
+	ending_mode: string | null;
+	dummy_token_mode: string;
 }
 
 export interface Player {
@@ -20,11 +32,30 @@ export interface Player {
 	display_name: string;
 	joined_at: string;
 	is_facilitator: boolean;
+	token_color: string | null;
+	seat_order: number | null;
 }
 
-export interface Post {
+export interface ToneTopic {
 	id: number;
 	game_id: number;
+	topic: string;
+	status: ToneTopicStatus;
+}
+
+export interface Ranking {
+	id: number;
+	game_id: number;
+	player_id: number | null;
+	category: RankingCategory;
+	rank: number;
+}
+
+export interface ScenePost {
+	id: number;
+	game_id: number;
+	row_number: number | null;
+	plan_id: number | null;
 	author_id: number;
 	body: string;
 	created_at: string;
@@ -36,7 +67,7 @@ export interface PresenceMember {
 	online: boolean;
 }
 
-// ── API helpers ───────────────────────────────────────────────────────────────
+// ── API helpers ──────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(`/api${path}`, {
@@ -50,7 +81,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 	return body as T;
 }
 
-// ── Identity ──────────────────────────────────────────────────────────────────
+// ── Identity ─────────────────────────────────────────────────────────────────
 
 export function setIdentity(displayName: string): Promise<UserToken> {
 	return apiFetch<UserToken>('/identity', {
@@ -63,7 +94,7 @@ export function getIdentity(): Promise<{ display_name: string; player: Player | 
 	return apiFetch('/identity');
 }
 
-// ── Tables ────────────────────────────────────────────────────────────────────
+// ── Tables ───────────────────────────────────────────────────────────────────
 
 export function createTable(): Promise<{ game: Game; player: Player }> {
 	return apiFetch('/tables', { method: 'POST' });
@@ -80,19 +111,109 @@ export function getTable(id: string | number): Promise<{ game: Game; players: Pl
 	return apiFetch(`/tables/${id}`);
 }
 
-// ── Posts ─────────────────────────────────────────────────────────────────────
-
-export function listPosts(
-	gameID: string | number,
-	afterID?: number
-): Promise<{ posts: Post[] }> {
-	const query = afterID != null ? `?after=${afterID}` : '';
-	return apiFetch(`/tables/${gameID}/posts${query}`);
+// Full game state including phase-specific data.
+export function getGameState(id: string | number): Promise<{
+	game: Game;
+	players: Player[];
+	tone_topics?: ToneTopic[];
+	rankings?: Ranking[];
+}> {
+	return apiFetch(`/tables/${id}/state`);
 }
 
-export function createPost(gameID: string | number, body: string): Promise<{ post: Post }> {
-	return apiFetch(`/tables/${gameID}/posts`, {
+// ── Phase Transitions ────────────────────────────────────────────────────────
+
+export function startToneSetting(gameID: string | number): Promise<{ phase: GamePhase }> {
+	return apiFetch(`/tables/${gameID}/start-tone-setting`, { method: 'POST' });
+}
+
+export function startPrologue(gameID: string | number): Promise<{ phase: GamePhase }> {
+	return apiFetch(`/tables/${gameID}/start-prologue`, { method: 'POST' });
+}
+
+export function startMainEvent(gameID: string | number): Promise<{
+	phase: GamePhase;
+	current_row: number;
+	focus_player_id: number | null;
+}> {
+	return apiFetch(`/tables/${gameID}/start-main-event`, { method: 'POST' });
+}
+
+// ── Tone Setting ─────────────────────────────────────────────────────────────
+
+export function listToneTopics(gameID: string | number): Promise<{ topics: ToneTopic[] }> {
+	return apiFetch(`/tables/${gameID}/tone`);
+}
+
+export function updateToneTopic(
+	gameID: string | number,
+	topicID: number,
+	status: ToneTopicStatus
+): Promise<{ topic_id: number; status: ToneTopicStatus }> {
+	return apiFetch(`/tables/${gameID}/tone/${topicID}`, {
+		method: 'PUT',
+		body: JSON.stringify({ status })
+	});
+}
+
+export function addToneTopic(
+	gameID: string | number,
+	topic: string
+): Promise<{ topic: ToneTopic }> {
+	return apiFetch(`/tables/${gameID}/tone`, {
 		method: 'POST',
-		body: JSON.stringify({ body })
+		body: JSON.stringify({ topic })
+	});
+}
+
+// ── Rankings ─────────────────────────────────────────────────────────────────
+
+export function getRankings(gameID: string | number): Promise<{ rankings: Ranking[] }> {
+	return apiFetch(`/tables/${gameID}/rankings`);
+}
+
+export function setRankings(
+	gameID: string | number,
+	rankings: Array<{ player_id: number | null; category: RankingCategory; rank: number }>
+): Promise<{ rankings: Ranking[] }> {
+	return apiFetch(`/tables/${gameID}/rankings`, {
+		method: 'PUT',
+		body: JSON.stringify({ rankings })
+	});
+}
+
+export function setSeats(
+	gameID: string | number,
+	seats: Array<{ player_id: number; seat_order: number }>
+): Promise<void> {
+	return apiFetch(`/tables/${gameID}/seats`, {
+		method: 'PUT',
+		body: JSON.stringify({ seats })
+	});
+}
+
+// ── Scene Posts ──────────────────────────────────────────────────────────────
+
+export function listScenePosts(
+	gameID: string | number,
+	rowNumber: number,
+	opts?: { planID?: number; afterID?: number }
+): Promise<{ posts: ScenePost[] }> {
+	const params = new URLSearchParams();
+	if (opts?.planID != null) params.set('plan_id', String(opts.planID));
+	if (opts?.afterID != null) params.set('after', String(opts.afterID));
+	const query = params.toString() ? `?${params}` : '';
+	return apiFetch(`/tables/${gameID}/rows/${rowNumber}/posts${query}`);
+}
+
+export function createScenePost(
+	gameID: string | number,
+	rowNumber: number,
+	body: string,
+	planID?: number
+): Promise<{ post: ScenePost }> {
+	return apiFetch(`/tables/${gameID}/rows/${rowNumber}/posts`, {
+		method: 'POST',
+		body: JSON.stringify({ body, plan_id: planID ?? null })
 	});
 }

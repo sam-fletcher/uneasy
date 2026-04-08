@@ -15,19 +15,23 @@ import (
 	appMiddleware "uneasy/middleware"
 )
 
-// ListPosts handles GET /api/tables/{id}/posts.
+// ListScenePosts handles GET /api/tables/{id}/rows/{row}/posts.
 //
-// Returns posts in chronological order. Supports ?after=<post_id> for
-// catch-up on WebSocket reconnect.
-func ListPosts(pool *pgxpool.Pool) http.HandlerFunc {
+// Returns posts for a scene thread. Supports ?plan_id=X to filter by plan,
+// and ?after=Y for catch-up on WebSocket reconnect.
+func ListScenePosts(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid table id")
 			return
 		}
+		rowNum, err := strconv.ParseInt(chi.URLParam(r, "row"), 10, 16)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid row number")
+			return
+		}
 
-		// Require membership.
 		player := appMiddleware.PlayerFromContext(r.Context())
 		if player == nil || player.GameID != gameID {
 			respondErr(w, http.StatusForbidden, "not a member of this table")
@@ -35,39 +39,58 @@ func ListPosts(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		var posts []model.Post
 
+		// Check for ?after=<id> catch-up mode.
 		if afterStr := r.URL.Query().Get("after"); afterStr != "" {
 			afterID, err := strconv.ParseInt(afterStr, 10, 64)
 			if err != nil {
 				respondErr(w, http.StatusBadRequest, "invalid after id")
 				return
 			}
-			posts, err = db.ListPostsAfter(ctx, pool, gameID, afterID)
+			posts, err := db.ListScenePostsAfter(ctx, pool, gameID, afterID)
 			if err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not load posts")
 				return
 			}
-		} else {
-			posts, err = db.ListPosts(ctx, pool, gameID)
+			respond(w, http.StatusOK, map[string]any{"posts": posts})
+			return
+		}
+
+		// Filter by plan_id if provided, otherwise open scene (plan_id IS NULL).
+		var planID *int64
+		if pidStr := r.URL.Query().Get("plan_id"); pidStr != "" {
+			pid, err := strconv.ParseInt(pidStr, 10, 64)
 			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not load posts")
+				respondErr(w, http.StatusBadRequest, "invalid plan_id")
 				return
 			}
+			planID = &pid
+		}
+
+		row := int16(rowNum)
+		posts, err := db.ListScenePostsByRow(ctx, pool, gameID, row, planID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load posts")
+			return
 		}
 
 		respond(w, http.StatusOK, map[string]any{"posts": posts})
 	}
 }
 
-// CreatePost handles POST /api/tables/{id}/posts.
+// CreateScenePost handles POST /api/tables/{id}/rows/{row}/posts.
 //
-// Inserts a post and broadcasts a post.created event to all connected clients.
-func CreatePost(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+// Inserts a scene post and broadcasts it to all connected clients.
+func CreateScenePost(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid table id")
+			return
+		}
+		rowNum, err := strconv.ParseInt(chi.URLParam(r, "row"), 10, 16)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid row number")
 			return
 		}
 
@@ -78,7 +101,8 @@ func CreatePost(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var body struct {
-			Body string `json:"body"`
+			Body   string `json:"body"`
+			PlanID *int64 `json:"plan_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -91,8 +115,9 @@ func CreatePost(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+		row := int16(rowNum)
 
-		post, err := db.CreatePost(ctx, pool, gameID, player.ID, body.Body)
+		post, err := db.CreateScenePost(ctx, pool, gameID, &row, body.PlanID, player.ID, body.Body)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not save post")
 			return
@@ -100,7 +125,7 @@ func CreatePost(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 
 		// Broadcast to all connected WebSocket clients for this table.
 		if h, ok := manager.Get(gameID); ok {
-			h.BroadcastEvent(model.EventPostCreated, model.PostCreatedPayload{Post: post})
+			h.BroadcastEvent(model.EventScenePostCreated, model.ScenePostCreatedPayload{Post: post})
 		}
 
 		respond(w, http.StatusCreated, map[string]any{"post": post})

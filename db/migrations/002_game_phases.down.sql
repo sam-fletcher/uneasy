@@ -1,0 +1,7 @@
+ALTER TABLE players DROP COLUMN IF EXISTS seat_order;
+ALTER TABLE players DROP COLUMN IF EXISTS token_color;
+ALTER TABLE games DROP COLUMN IF EXISTS dummy_token_mode;
+ALTER TABLE games DROP COLUMN IF EXISTS ending_mode;
+ALTER TABLE games DROP COLUMN IF EXISTS focus_player_id;
+ALTER TABLE games DROP COLUMN IF EXISTS current_row;
+ALTER TABLE games DROP COLUMN IF EXISTS phase;

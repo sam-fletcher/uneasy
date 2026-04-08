@@ -87,14 +87,30 @@ func main() {
 		r.Post("/identity", handler.SetIdentity(pool))
 		r.Get("/identity", handler.GetIdentity(pool))
 
-		// Tables
+		// Tables (creation, join, info)
 		r.Post("/tables", handler.CreateTable(pool, manager))
 		r.Post("/tables/join", handler.JoinTable(pool, manager))
 		r.Get("/tables/{id}", handler.GetTable(pool))
+		r.Get("/tables/{id}/state", handler.GetGameState(pool))
 
-		// Posts
-		r.Get("/tables/{id}/posts", handler.ListPosts(pool))
-		r.Post("/tables/{id}/posts", handler.CreatePost(pool, manager))
+		// Phase transitions (facilitator actions)
+		r.Post("/tables/{id}/start-tone-setting", handler.StartToneSetting(pool, manager))
+		r.Post("/tables/{id}/start-prologue", handler.StartPrologue(pool, manager))
+		r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(pool, manager))
+
+		// Tone-setting
+		r.Get("/tables/{id}/tone", handler.ListToneTopics(pool))
+		r.Put("/tables/{id}/tone/{topicId}", handler.UpdateToneTopic(pool, manager))
+		r.Post("/tables/{id}/tone", handler.AddToneTopic(pool, manager))
+
+		// Rankings
+		r.Get("/tables/{id}/rankings", handler.GetRankings(pool))
+		r.Put("/tables/{id}/rankings", handler.SetRankings(pool, manager))
+		r.Put("/tables/{id}/seats", handler.SetSeats(pool))
+
+		// Scene posts (replaces Phase 1 flat posts)
+		r.Get("/tables/{id}/rows/{row}/posts", handler.ListScenePosts(pool))
+		r.Post("/tables/{id}/rows/{row}/posts", handler.CreateScenePost(pool, manager))
 
 		// WebSocket (note: no Timeout middleware for WS connections)
 		r.Get("/tables/{id}/ws", handler.WebSocket(pool, manager))

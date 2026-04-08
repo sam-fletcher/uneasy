@@ -1,6 +1,4 @@
 -- sqlc query file for players and user_tokens.
--- Run `sqlc generate` to produce typed Go from these.
--- For Phase 1, the store.go file implements these by hand with raw pgx.
 
 -- name: UpsertUserToken :one
 INSERT INTO user_tokens (token, display_name)
@@ -21,3 +19,31 @@ SELECT * FROM players WHERE cookie_token = $1;
 
 -- name: GetPlayersByGame :many
 SELECT * FROM players WHERE game_id = $1 ORDER BY joined_at;
+
+-- name: SetPlayerTokenColor :exec
+UPDATE players SET token_color = $2 WHERE id = $1;
+
+-- name: SetPlayerSeatOrder :exec
+UPDATE players SET seat_order = $2 WHERE id = $1;
+
+-- name: GetPlayerByID :one
+SELECT * FROM players WHERE id = $1;
+
+-- name: GetNextFocusPlayer :one
+-- Returns the player with the next seat_order after the current focus player.
+-- Wraps around to the lowest seat_order when the end is reached.
+SELECT * FROM players
+WHERE game_id = $1 AND seat_order IS NOT NULL
+  AND seat_order > COALESCE(
+    (SELECT seat_order FROM players WHERE id = $2),
+    -1
+  )
+ORDER BY seat_order ASC
+LIMIT 1;
+
+-- name: GetFirstFocusPlayer :one
+-- Returns the player with the lowest seat_order (for wrapping).
+SELECT * FROM players
+WHERE game_id = $1 AND seat_order IS NOT NULL
+ORDER BY seat_order ASC
+LIMIT 1;

@@ -4,15 +4,48 @@ package model
 // ── Event types (server → client) ────────────────────────────────────────────
 
 const (
-	// EventPostCreated is broadcast whenever a new post is created.
-	EventPostCreated = "post.created"
-
-	// EventPresenceSnapshot is sent to all clients when anyone connects or
-	// disconnects, giving a full view of who is currently online.
+	// Phase 1 events (kept)
 	EventPresenceSnapshot = "presence.snapshot"
+	EventTypingUpdate     = "typing.update"
 
-	// EventTypingUpdate is broadcast when a client starts or stops typing.
-	EventTypingUpdate = "typing.update"
+	// Phase 2: Game state
+	EventPhaseChanged = "phase.changed"
+	EventFocusChanged = "focus.changed"
+	EventRowAdvanced  = "row.advanced"
+
+	// Phase 2: Tone-setting
+	EventToneUpdated = "tone.updated"
+
+	// Phase 2: Scene posts (replaces Phase 1 post.created)
+	EventScenePostCreated  = "scene_post.created"
+	EventSceneEntryCreated = "scene_entry.created"
+
+	// Phase 2: Assets
+	EventAssetCreated    = "asset.created"
+	EventAssetUpdated    = "asset.updated"
+	EventAssetTaken      = "asset.taken"
+	EventAssetLeveraged  = "asset.leveraged"
+	EventAssetRefreshed  = "asset.refreshed"
+	EventAssetDestroyed  = "asset.destroyed"
+	EventMarginaliaAdded   = "marginalia.added"
+	EventMarginaliaUpdated = "marginalia.updated"
+	EventMarginaliaTorn    = "marginalia.torn"
+
+	// Phase 2: Rankings
+	EventRankingsUpdated = "rankings.updated"
+
+	// Phase 2: Plans
+	EventPlanPrepared  = "plan.prepared"
+	EventPlanResolving = "plan.resolving"
+	EventPlanResolved  = "plan.resolved"
+
+	// Phase 2: Dice rolls
+	EventRollCreated      = "roll.created"
+	EventRollLeverageAdded = "roll.leverage_added"
+	EventRollVoteCalled   = "roll.vote_called"
+	EventRollVoteCast     = "roll.vote_cast"
+	EventRollVoteResolved = "roll.vote_resolved"
+	EventRollResolved     = "roll.resolved"
 )
 
 // ── Command types (client → server) ──────────────────────────────────────────
@@ -31,12 +64,7 @@ type WSMessage struct {
 	Payload any    `json:"payload"`
 }
 
-// ── Payload types ─────────────────────────────────────────────────────────────
-
-// PostCreatedPayload is the payload for EventPostCreated.
-type PostCreatedPayload struct {
-	Post Post `json:"post"`
-}
+// ── Payload types ────────────────────────────────────────────────────────────
 
 // PresenceMember is one entry in a presence snapshot.
 type PresenceMember struct {
@@ -55,4 +83,123 @@ type TypingUpdatePayload struct {
 	PlayerID    int64  `json:"player_id"`
 	DisplayName string `json:"display_name"`
 	Typing      bool   `json:"typing"`
+}
+
+// PhaseChangedPayload is the payload for EventPhaseChanged.
+type PhaseChangedPayload struct {
+	Phase GamePhase `json:"phase"`
+}
+
+// FocusChangedPayload is the payload for EventFocusChanged.
+type FocusChangedPayload struct {
+	PlayerID    int64  `json:"player_id"`
+	DisplayName string `json:"display_name"`
+}
+
+// RowAdvancedPayload is the payload for EventRowAdvanced.
+type RowAdvancedPayload struct {
+	RowNumber        int16 `json:"row_number"`
+	CrossedEngrailed bool  `json:"crossed_engrailed"`
+}
+
+// ToneUpdatedPayload is the payload for EventToneUpdated.
+type ToneUpdatedPayload struct {
+	TopicID int64           `json:"topic_id"`
+	Topic   string          `json:"topic"`
+	Status  ToneTopicStatus `json:"status"`
+}
+
+// ScenePostCreatedPayload is the payload for EventScenePostCreated.
+type ScenePostCreatedPayload struct {
+	Post ScenePost `json:"post"`
+}
+
+// SceneEntryCreatedPayload is the payload for EventSceneEntryCreated.
+type SceneEntryCreatedPayload struct {
+	Entry SceneEntry `json:"entry"`
+}
+
+// AssetPayload wraps an asset for various asset events.
+type AssetPayload struct {
+	Asset Asset `json:"asset"`
+}
+
+// AssetTakenPayload includes old and new owner for context.
+type AssetTakenPayload struct {
+	Asset      Asset `json:"asset"`
+	OldOwnerID int64 `json:"old_owner_id"`
+	NewOwnerID int64 `json:"new_owner_id"`
+}
+
+// AssetIDPayload is used for simple asset-by-ID events (leveraged, refreshed, destroyed).
+type AssetIDPayload struct {
+	AssetID  int64 `json:"asset_id"`
+	PlayerID int64 `json:"player_id,omitempty"`
+}
+
+// MarginaliaPayload wraps a marginalia for add/update events.
+type MarginaliaPayload struct {
+	AssetID    int64      `json:"asset_id"`
+	Marginalia Marginalia `json:"marginalia"`
+}
+
+// MarginaliaTornPayload is for the torn event.
+type MarginaliaTornPayload struct {
+	AssetID  int64 `json:"asset_id"`
+	Position int16 `json:"position"`
+	TornByID int64 `json:"torn_by_id"`
+}
+
+// RankingsUpdatedPayload carries the full ranking state.
+type RankingsUpdatedPayload struct {
+	Rankings []Ranking `json:"rankings"`
+}
+
+// PlanPayload wraps a plan for plan events.
+type PlanPayload struct {
+	Plan Plan `json:"plan"`
+}
+
+// PlanResolvedPayload includes the plan ID and result.
+type PlanResolvedPayload struct {
+	PlanID int64  `json:"plan_id"`
+	Result string `json:"result"`
+}
+
+// RollCreatedPayload wraps a dice roll for the created event.
+type RollCreatedPayload struct {
+	Roll DiceRoll `json:"roll"`
+}
+
+// RollLeverageAddedPayload is for leverage commitment events.
+type RollLeverageAddedPayload struct {
+	RollID         int64 `json:"roll_id"`
+	PlayerID       int64 `json:"player_id"`
+	AssetID        int64 `json:"asset_id"`
+	IsInterference bool  `json:"is_interference"`
+}
+
+// RollVoteCalledPayload is for the vote initiation event.
+type RollVoteCalledPayload struct {
+	RollID int64 `json:"roll_id"`
+}
+
+// RollVoteCastPayload is for individual vote events.
+type RollVoteCastPayload struct {
+	RollID   int64  `json:"roll_id"`
+	PlayerID int64  `json:"player_id"`
+	Vote     string `json:"vote"`
+}
+
+// RollVoteResolvedPayload is for when all votes are in.
+type RollVoteResolvedPayload struct {
+	RollID             int64 `json:"roll_id"`
+	AdjustedDifficulty int16 `json:"adjusted_difficulty"`
+}
+
+// RollResolvedPayload carries the completed roll with all dice.
+type RollResolvedPayload struct {
+	Roll          DiceRoll      `json:"roll"`
+	Dice          []DiceRollDie `json:"dice"`
+	CancelledDice []DiceRollDie `json:"cancelled_dice"`
 }

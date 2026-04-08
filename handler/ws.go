@@ -21,7 +21,7 @@ import (
 //
 // Once connected, the client receives:
 //   - An immediate presence.snapshot showing all online members
-//   - post.created events as others post
+//   - scene_post.created events as others post
 //   - typing.update events as others type
 //
 // The client can send:
