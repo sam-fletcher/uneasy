@@ -19,6 +19,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	dbgen "uneasy/db/gen"
 	"uneasy/model"
 )
 
@@ -172,13 +173,13 @@ func (h *Hub) pushPresence() {
 type Client struct {
 	hub    *Hub
 	conn   *websocket.Conn
-	player model.Player
+	player dbgen.Player
 	send   chan []byte
 	log    *slog.Logger
 }
 
 // NewClient constructs a Client. Call hub.Register(c) before calling c.Run().
-func NewClient(h *Hub, conn *websocket.Conn, player model.Player, logger *slog.Logger) *Client {
+func NewClient(h *Hub, conn *websocket.Conn, player dbgen.Player, logger *slog.Logger) *Client {
 	return &Client{
 		hub:    h,
 		conn:   conn,

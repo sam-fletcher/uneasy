@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uneasy/db"
+	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 )
@@ -18,7 +18,7 @@ import (
 //
 // Creates a new game table and seats the calling player as facilitator.
 // Requires the player to have a cookie identity (POST /api/identity first).
-func CreateTable(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+func CreateTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ut := appMiddleware.UserTokenFromContext(r.Context())
 		if ut == nil {
@@ -40,22 +40,37 @@ func CreateTable(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
+		// Generate a unique join code.
+		code, err := db.GenerateJoinCode()
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not generate join code")
+			return
+		}
+
 		// Create the game row.
-		game, err := db.CreateGame(ctx, pool)
+		game, err := q.CreateGame(ctx, code)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not create table")
 			return
 		}
 
 		// Seat the creator as facilitator.
-		player, err := db.CreatePlayer(ctx, pool, game.ID, ut.DisplayName, token, true)
+		player, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+			GameID:        game.ID,
+			DisplayName:   ut.DisplayName,
+			CookieToken:   token,
+			IsFacilitator: true,
+		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not create player")
 			return
 		}
 
 		// Link facilitator on the game row.
-		if err := db.SetFacilitator(ctx, pool, game.ID, player.ID); err != nil {
+		if err := q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
+			FacilitatorID: &player.ID,
+			ID:            game.ID,
+		}); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not set facilitator")
 			return
 		}
@@ -74,7 +89,7 @@ func CreateTable(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 // JoinTable handles POST /api/tables/join.
 //
 // Adds the calling player to an existing table via join code.
-func JoinTable(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+func JoinTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ut := appMiddleware.UserTokenFromContext(r.Context())
 		if ut == nil {
@@ -104,30 +119,21 @@ func JoinTable(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 		token := appMiddleware.RawTokenFromRequest(r)
 
-		game, err := db.GetGameByJoinCode(ctx, pool, body.JoinCode)
+		game, err := q.GetGameByJoinCode(ctx, body.JoinCode)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "join code not found")
 			return
 		}
 
-		player, err := db.CreatePlayer(ctx, pool, game.ID, ut.DisplayName, token, false)
+		player, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+			GameID:        game.ID,
+			DisplayName:   ut.DisplayName,
+			CookieToken:   token,
+			IsFacilitator: false,
+		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not join table")
 			return
-		}
-
-		// Notify anyone already connected via WebSocket.
-		if h, ok := manager.Get(game.ID); ok {
-			players, _ := db.GetPlayersByGame(ctx, pool, game.ID)
-			members := make([]any, len(players))
-			for i, p := range players {
-				members[i] = map[string]any{
-					"id":           p.ID,
-					"display_name": p.DisplayName,
-					"online":       false, // presence is from the hub; HTTP join is offline
-				}
-			}
-			_ = h // presence update is handled automatically when the WS connects
 		}
 
 		respond(w, http.StatusCreated, map[string]any{
@@ -140,7 +146,7 @@ func JoinTable(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 // GetTable handles GET /api/tables/{id}.
 //
 // Returns table details and the current member list.
-func GetTable(pool *pgxpool.Pool) http.HandlerFunc {
+func GetTable(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -157,13 +163,13 @@ func GetTable(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		game, err := db.GetGameByID(ctx, pool, gameID)
+		game, err := q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
 		}
 
-		players, err := db.GetPlayersByGame(ctx, pool, gameID)
+		players, err := q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load members")
 			return

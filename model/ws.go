@@ -1,4 +1,9 @@
 // WebSocket message types shared between the hub and the handler.
+//
+// Payload structs that carry database records use `any` for the embedded
+// fields. This avoids a circular import (model → dbgen → model) while still
+// giving us typed envelopes for JSON serialization. The actual concrete
+// types (dbgen.Game, dbgen.ScenePost, etc.) are passed in by the handler.
 package model
 
 // ── Event types (server → client) ────────────────────────────────────────────
@@ -21,12 +26,12 @@ const (
 	EventSceneEntryCreated = "scene_entry.created"
 
 	// Phase 2: Assets
-	EventAssetCreated    = "asset.created"
-	EventAssetUpdated    = "asset.updated"
-	EventAssetTaken      = "asset.taken"
-	EventAssetLeveraged  = "asset.leveraged"
-	EventAssetRefreshed  = "asset.refreshed"
-	EventAssetDestroyed  = "asset.destroyed"
+	EventAssetCreated      = "asset.created"
+	EventAssetUpdated      = "asset.updated"
+	EventAssetTaken        = "asset.taken"
+	EventAssetLeveraged    = "asset.leveraged"
+	EventAssetRefreshed    = "asset.refreshed"
+	EventAssetDestroyed    = "asset.destroyed"
 	EventMarginaliaAdded   = "marginalia.added"
 	EventMarginaliaUpdated = "marginalia.updated"
 	EventMarginaliaTorn    = "marginalia.torn"
@@ -40,12 +45,12 @@ const (
 	EventPlanResolved  = "plan.resolved"
 
 	// Phase 2: Dice rolls
-	EventRollCreated      = "roll.created"
+	EventRollCreated       = "roll.created"
 	EventRollLeverageAdded = "roll.leverage_added"
-	EventRollVoteCalled   = "roll.vote_called"
-	EventRollVoteCast     = "roll.vote_cast"
-	EventRollVoteResolved = "roll.vote_resolved"
-	EventRollResolved     = "roll.resolved"
+	EventRollVoteCalled    = "roll.vote_called"
+	EventRollVoteCast      = "roll.vote_cast"
+	EventRollVoteResolved  = "roll.vote_resolved"
+	EventRollResolved      = "roll.resolved"
 )
 
 // ── Command types (client → server) ──────────────────────────────────────────
@@ -111,22 +116,22 @@ type ToneUpdatedPayload struct {
 
 // ScenePostCreatedPayload is the payload for EventScenePostCreated.
 type ScenePostCreatedPayload struct {
-	Post ScenePost `json:"post"`
+	Post any `json:"post"` // dbgen.ScenePost
 }
 
 // SceneEntryCreatedPayload is the payload for EventSceneEntryCreated.
 type SceneEntryCreatedPayload struct {
-	Entry SceneEntry `json:"entry"`
+	Entry any `json:"entry"` // dbgen.SceneEntry
 }
 
 // AssetPayload wraps an asset for various asset events.
 type AssetPayload struct {
-	Asset Asset `json:"asset"`
+	Asset any `json:"asset"` // dbgen.Asset
 }
 
 // AssetTakenPayload includes old and new owner for context.
 type AssetTakenPayload struct {
-	Asset      Asset `json:"asset"`
+	Asset      any   `json:"asset"` // dbgen.Asset
 	OldOwnerID int64 `json:"old_owner_id"`
 	NewOwnerID int64 `json:"new_owner_id"`
 }
@@ -139,8 +144,8 @@ type AssetIDPayload struct {
 
 // MarginaliaPayload wraps a marginalia for add/update events.
 type MarginaliaPayload struct {
-	AssetID    int64      `json:"asset_id"`
-	Marginalia Marginalia `json:"marginalia"`
+	AssetID    int64 `json:"asset_id"`
+	Marginalia any   `json:"marginalia"` // dbgen.Marginalium
 }
 
 // MarginaliaTornPayload is for the torn event.
@@ -152,12 +157,12 @@ type MarginaliaTornPayload struct {
 
 // RankingsUpdatedPayload carries the full ranking state.
 type RankingsUpdatedPayload struct {
-	Rankings []Ranking `json:"rankings"`
+	Rankings any `json:"rankings"` // []dbgen.Ranking
 }
 
 // PlanPayload wraps a plan for plan events.
 type PlanPayload struct {
-	Plan Plan `json:"plan"`
+	Plan any `json:"plan"` // dbgen.Plan
 }
 
 // PlanResolvedPayload includes the plan ID and result.
@@ -168,7 +173,7 @@ type PlanResolvedPayload struct {
 
 // RollCreatedPayload wraps a dice roll for the created event.
 type RollCreatedPayload struct {
-	Roll DiceRoll `json:"roll"`
+	Roll any `json:"roll"` // dbgen.DiceRoll
 }
 
 // RollLeverageAddedPayload is for leverage commitment events.
@@ -199,7 +204,7 @@ type RollVoteResolvedPayload struct {
 
 // RollResolvedPayload carries the completed roll with all dice.
 type RollResolvedPayload struct {
-	Roll          DiceRoll      `json:"roll"`
-	Dice          []DiceRollDie `json:"dice"`
-	CancelledDice []DiceRollDie `json:"cancelled_dice"`
+	Roll          any `json:"roll"`           // dbgen.DiceRoll
+	Dice          any `json:"dice"`           // []dbgen.DiceRollDice
+	CancelledDice any `json:"cancelled_dice"` // []dbgen.DiceRollDice
 }

@@ -7,16 +7,15 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"uneasy/db"
+	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
 	appMiddleware "uneasy/middleware"
 )
 
 // ListToneTopics handles GET /api/tables/{id}/tone.
-func ListToneTopics(pool *pgxpool.Pool) http.HandlerFunc {
+func ListToneTopics(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -30,7 +29,7 @@ func ListToneTopics(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		topics, err := db.ListToneTopics(r.Context(), pool, gameID)
+		topics, err := q.ListToneTopics(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load topics")
 			return
@@ -41,7 +40,7 @@ func ListToneTopics(pool *pgxpool.Pool) http.HandlerFunc {
 }
 
 // UpdateToneTopic handles PUT /api/tables/{id}/tone/{topicId}.
-func UpdateToneTopic(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -80,7 +79,7 @@ func UpdateToneTopic(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc 
 		ctx := r.Context()
 
 		// Verify the topic belongs to this game.
-		topic, err := db.GetToneTopic(ctx, pool, topicID)
+		topic, err := q.GetToneTopic(ctx, topicID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "topic not found")
 			return
@@ -90,7 +89,10 @@ func UpdateToneTopic(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
-		if err := db.UpdateToneTopicStatus(ctx, pool, topicID, status); err != nil {
+		if err := q.UpdateToneTopicStatus(ctx, dbgen.UpdateToneTopicStatusParams{
+			ID:     topicID,
+			Status: status,
+		}); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not update topic")
 			return
 		}
@@ -109,7 +111,7 @@ func UpdateToneTopic(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc 
 }
 
 // AddToneTopic handles POST /api/tables/{id}/tone.
-func AddToneTopic(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+func AddToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -136,7 +138,11 @@ func AddToneTopic(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		topic, err := db.CreateToneTopic(r.Context(), pool, gameID, body.Topic, model.ToneDefault)
+		topic, err := q.CreateToneTopic(r.Context(), dbgen.CreateToneTopicParams{
+			GameID: gameID,
+			Topic:  body.Topic,
+			Status: model.ToneDefault,
+		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not add topic")
 			return

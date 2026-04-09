@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uneasy/db"
+	dbgen "uneasy/db/gen"
 	"uneasy/handler"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
@@ -63,6 +64,10 @@ func main() {
 	}
 	slog.Info("migrations applied")
 
+	// ── sqlc queries ──────────────────────────────────────────────────────────
+
+	q := dbgen.New(pool)
+
 	// ── Hub manager ───────────────────────────────────────────────────────────
 
 	manager := hub.NewManager()
@@ -81,39 +86,39 @@ func main() {
 
 	// API routes — all behind the cookie-auth middleware.
 	r.Route("/api", func(r chi.Router) {
-		r.Use(appMiddleware.EnsureToken(pool))
+		r.Use(appMiddleware.EnsureToken(q))
 
 		// Identity
-		r.Post("/identity", handler.SetIdentity(pool))
-		r.Get("/identity", handler.GetIdentity(pool))
+		r.Post("/identity", handler.SetIdentity(q))
+		r.Get("/identity", handler.GetIdentity(q))
 
 		// Tables (creation, join, info)
-		r.Post("/tables", handler.CreateTable(pool, manager))
-		r.Post("/tables/join", handler.JoinTable(pool, manager))
-		r.Get("/tables/{id}", handler.GetTable(pool))
-		r.Get("/tables/{id}/state", handler.GetGameState(pool))
+		r.Post("/tables", handler.CreateTable(q, manager))
+		r.Post("/tables/join", handler.JoinTable(q, manager))
+		r.Get("/tables/{id}", handler.GetTable(q))
+		r.Get("/tables/{id}/state", handler.GetGameState(q))
 
 		// Phase transitions (facilitator actions)
-		r.Post("/tables/{id}/start-tone-setting", handler.StartToneSetting(pool, manager))
-		r.Post("/tables/{id}/start-prologue", handler.StartPrologue(pool, manager))
-		r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(pool, manager))
+		r.Post("/tables/{id}/start-tone-setting", handler.StartToneSetting(q, manager))
+		r.Post("/tables/{id}/start-prologue", handler.StartPrologue(q, manager))
+		r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(q, manager))
 
 		// Tone-setting
-		r.Get("/tables/{id}/tone", handler.ListToneTopics(pool))
-		r.Put("/tables/{id}/tone/{topicId}", handler.UpdateToneTopic(pool, manager))
-		r.Post("/tables/{id}/tone", handler.AddToneTopic(pool, manager))
+		r.Get("/tables/{id}/tone", handler.ListToneTopics(q))
+		r.Put("/tables/{id}/tone/{topicId}", handler.UpdateToneTopic(q, manager))
+		r.Post("/tables/{id}/tone", handler.AddToneTopic(q, manager))
 
 		// Rankings
-		r.Get("/tables/{id}/rankings", handler.GetRankings(pool))
-		r.Put("/tables/{id}/rankings", handler.SetRankings(pool, manager))
-		r.Put("/tables/{id}/seats", handler.SetSeats(pool))
+		r.Get("/tables/{id}/rankings", handler.GetRankings(q))
+		r.Put("/tables/{id}/rankings", handler.SetRankings(q, manager))
+		r.Put("/tables/{id}/seats", handler.SetSeats(q))
 
 		// Scene posts (replaces Phase 1 flat posts)
-		r.Get("/tables/{id}/rows/{row}/posts", handler.ListScenePosts(pool))
-		r.Post("/tables/{id}/rows/{row}/posts", handler.CreateScenePost(pool, manager))
+		r.Get("/tables/{id}/rows/{row}/posts", handler.ListScenePosts(q))
+		r.Post("/tables/{id}/rows/{row}/posts", handler.CreateScenePost(q, manager))
 
 		// WebSocket (note: no Timeout middleware for WS connections)
-		r.Get("/tables/{id}/ws", handler.WebSocket(pool, manager))
+		r.Get("/tables/{id}/ws", handler.WebSocket(manager))
 	})
 
 	// Frontend — proxy to Vite in dev, serve embedded static files in prod.

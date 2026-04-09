@@ -7,9 +7,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"uneasy/db"
+	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
 	appMiddleware "uneasy/middleware"
@@ -19,7 +18,7 @@ import (
 //
 // Returns posts for a scene thread. Supports ?plan_id=X to filter by plan,
 // and ?after=Y for catch-up on WebSocket reconnect.
-func ListScenePosts(pool *pgxpool.Pool) http.HandlerFunc {
+func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -47,7 +46,10 @@ func ListScenePosts(pool *pgxpool.Pool) http.HandlerFunc {
 				respondErr(w, http.StatusBadRequest, "invalid after id")
 				return
 			}
-			posts, err := db.ListScenePostsAfter(ctx, pool, gameID, afterID)
+			posts, err := q.ListScenePostsAfter(ctx, dbgen.ListScenePostsAfterParams{
+				GameID: gameID,
+				ID:     afterID,
+			})
 			if err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not load posts")
 				return
@@ -56,19 +58,33 @@ func ListScenePosts(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		row := int16(rowNum)
+
 		// Filter by plan_id if provided, otherwise open scene (plan_id IS NULL).
-		var planID *int64
 		if pidStr := r.URL.Query().Get("plan_id"); pidStr != "" {
 			pid, err := strconv.ParseInt(pidStr, 10, 64)
 			if err != nil {
 				respondErr(w, http.StatusBadRequest, "invalid plan_id")
 				return
 			}
-			planID = &pid
+			posts, err := q.ListScenePostsByRowAndPlan(ctx, dbgen.ListScenePostsByRowAndPlanParams{
+				GameID:    gameID,
+				RowNumber: &row,
+				PlanID:    &pid,
+			})
+			if err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not load posts")
+				return
+			}
+			respond(w, http.StatusOK, map[string]any{"posts": posts})
+			return
 		}
 
-		row := int16(rowNum)
-		posts, err := db.ListScenePostsByRow(ctx, pool, gameID, row, planID)
+		// Open scene (no plan filter).
+		posts, err := q.ListScenePostsByRowOpenScene(ctx, dbgen.ListScenePostsByRowOpenSceneParams{
+			GameID:    gameID,
+			RowNumber: &row,
+		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load posts")
 			return
@@ -81,7 +97,7 @@ func ListScenePosts(pool *pgxpool.Pool) http.HandlerFunc {
 // CreateScenePost handles POST /api/tables/{id}/rows/{row}/posts.
 //
 // Inserts a scene post and broadcasts it to all connected clients.
-func CreateScenePost(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+func CreateScenePost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -117,7 +133,13 @@ func CreateScenePost(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc 
 		ctx := r.Context()
 		row := int16(rowNum)
 
-		post, err := db.CreateScenePost(ctx, pool, gameID, &row, body.PlanID, player.ID, body.Body)
+		post, err := q.CreateScenePost(ctx, dbgen.CreateScenePostParams{
+			GameID:    gameID,
+			RowNumber: &row,
+			PlanID:    body.PlanID,
+			AuthorID:  player.ID,
+			Body:      body.Body,
+		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not save post")
 			return

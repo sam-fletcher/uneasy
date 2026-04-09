@@ -5,10 +5,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"uneasy/db"
-	"uneasy/model"
+	dbgen "uneasy/db/gen"
 )
 
 // Context keys — unexported type prevents collisions with other packages.
@@ -26,7 +23,7 @@ const (
 // This middleware never rejects requests — endpoints that require a token or
 // game membership must check explicitly using UserTokenFromContext /
 // PlayerFromContext.
-func EnsureToken(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+func EnsureToken(q *dbgen.Queries) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie("player_token")
@@ -39,13 +36,13 @@ func EnsureToken(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			ctx := r.Context()
 
 			// Look up the pre-game identity.
-			ut, err := db.GetUserToken(ctx, pool, cookie.Value)
+			ut, err := q.GetUserToken(ctx, cookie.Value)
 			if err == nil {
 				ctx = context.WithValue(ctx, userTokenKey, &ut)
 			}
 
 			// Look up the game seat if they've joined one.
-			p, err := db.GetPlayerByToken(ctx, pool, cookie.Value)
+			p, err := q.GetPlayerByToken(ctx, cookie.Value)
 			if err == nil {
 				ctx = context.WithValue(ctx, playerKey, &p)
 			}
@@ -56,19 +53,19 @@ func EnsureToken(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 }
 
 // UserTokenFromContext returns the UserToken stored by EnsureToken, or nil.
-func UserTokenFromContext(ctx context.Context) *model.UserToken {
-	v, _ := ctx.Value(userTokenKey).(*model.UserToken)
+func UserTokenFromContext(ctx context.Context) *dbgen.UserToken {
+	v, _ := ctx.Value(userTokenKey).(*dbgen.UserToken)
 	return v
 }
 
 // PlayerFromContext returns the Player stored by EnsureToken, or nil if the
 // person hasn't joined a game.
-func PlayerFromContext(ctx context.Context) *model.Player {
-	v, _ := ctx.Value(playerKey).(*model.Player)
+func PlayerFromContext(ctx context.Context) *dbgen.Player {
+	v, _ := ctx.Value(playerKey).(*dbgen.Player)
 	return v
 }
 
-// RawTokenFromContext extracts the raw cookie value from the request context.
+// RawTokenFromRequest extracts the raw cookie value from the request.
 // Used by handlers that need the token string itself (e.g. to create a player).
 func RawTokenFromRequest(r *http.Request) string {
 	cookie, err := r.Cookie("player_token")

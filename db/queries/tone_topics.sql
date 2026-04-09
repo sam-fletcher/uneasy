@@ -13,3 +13,9 @@ UPDATE tone_topics SET status = $2 WHERE id = $1;
 
 -- name: GetToneTopic :one
 SELECT * FROM tone_topics WHERE id = $1;
+
+-- name: SeedToneTopic :exec
+-- Used for bulk-seeding default topics; silently skips duplicates.
+INSERT INTO tone_topics (game_id, topic, status)
+VALUES ($1, $2, $3)
+ON CONFLICT (game_id, topic) DO NOTHING;

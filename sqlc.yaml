@@ -14,3 +14,38 @@ sql:
         emit_interface: false
         emit_exact_table_names: false
         emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          # Map enum-like text columns to our typed aliases in model/.
+          - column: "games.phase"
+            go_type:
+              import: "uneasy/model"
+              type: "GamePhase"
+          - column: "tone_topics.status"
+            go_type:
+              import: "uneasy/model"
+              type: "ToneTopicStatus"
+          - column: "rankings.category"
+            go_type:
+              import: "uneasy/model"
+              type: "RankingCategory"
+          - column: "assets.asset_type"
+            go_type:
+              import: "uneasy/model"
+              type: "AssetType"
+          - column: "plans.plan_type"
+            go_type:
+              import: "uneasy/model"
+              type: "PlanType"
+          - column: "plans.category"
+            go_type:
+              import: "uneasy/model"
+              type: "RankingCategory"
+          - column: "plans.status"
+            go_type:
+              import: "uneasy/model"
+              type: "PlanStatus"
+          - column: "plan_tokens.plan_type"
+            go_type:
+              import: "uneasy/model"
+              type: "PlanType"

@@ -7,7 +7,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
@@ -27,7 +26,7 @@ import (
 // The client can send:
 //   - {"type": "typing.start"} — throttle to once per 2–3 seconds
 //   - {"type": "typing.stop"}
-func WebSocket(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+func WebSocket(manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {

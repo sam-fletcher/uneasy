@@ -35,12 +35,6 @@ UPDATE dice_roll_dice SET face = $2 WHERE id = $1;
 -- name: SetDieCancelled :exec
 UPDATE dice_roll_dice SET is_cancelled = TRUE WHERE id = $1;
 
--- name: SetAllDiceFaces :exec
--- Batch-set faces on all unrolled dice for a roll. Called when the server rolls.
--- Each die gets its own UPDATE via the Go loop; this is just a convenience comment.
--- Actually done in Go with individual SetDieFace calls per die.
-SELECT 1; -- placeholder; actual rolling done in Go loop
-
 -- ── Difficulty Votes ─────────────────────────────────────────────────
 
 -- name: CreateDifficultyVote :exec

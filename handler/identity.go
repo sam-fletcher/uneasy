@@ -5,9 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"uneasy/db"
+	dbgen "uneasy/db/gen"
 	appMiddleware "uneasy/middleware"
 )
 
@@ -16,7 +15,7 @@ import (
 // If the request has no player_token cookie, a new one is generated and set.
 // The display_name in the request body is upserted against the token.
 // Returns the user token object (without the raw token value).
-func SetIdentity(pool *pgxpool.Pool) http.HandlerFunc {
+func SetIdentity(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			DisplayName string `json:"display_name"`
@@ -50,7 +49,10 @@ func SetIdentity(pool *pgxpool.Pool) http.HandlerFunc {
 			})
 		}
 
-		ut, err := db.UpsertUserToken(r.Context(), pool, token, body.DisplayName)
+		ut, err := q.UpsertUserToken(r.Context(), dbgen.UpsertUserTokenParams{
+			Token:       token,
+			DisplayName: body.DisplayName,
+		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not save identity")
 			return
@@ -67,7 +69,7 @@ func SetIdentity(pool *pgxpool.Pool) http.HandlerFunc {
 //
 // Returns the current player's identity from the cookie. 401 if no cookie or
 // unrecognised token.
-func GetIdentity(pool *pgxpool.Pool) http.HandlerFunc {
+func GetIdentity(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ut := appMiddleware.UserTokenFromContext(r.Context())
 		if ut == nil {

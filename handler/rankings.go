@@ -6,16 +6,15 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"uneasy/db"
+	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
 	appMiddleware "uneasy/middleware"
 )
 
 // GetRankings handles GET /api/tables/{id}/rankings.
-func GetRankings(pool *pgxpool.Pool) http.HandlerFunc {
+func GetRankings(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -29,7 +28,7 @@ func GetRankings(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		rankings, err := db.ListRankingsByGame(r.Context(), pool, gameID)
+		rankings, err := q.ListRankingsByGame(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load rankings")
 			return
@@ -44,9 +43,9 @@ func GetRankings(pool *pgxpool.Pool) http.HandlerFunc {
 // Facilitator batch-sets all rankings. Expects a JSON array of
 // {player_id (nullable for dummy), category, rank} objects.
 // All 15 positions (3 tracks × 5 ranks) must be provided.
-func SetRankings(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
+func SetRankings(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFacilitator(w, r, pool)
+		game, _, ok := requireFacilitator(w, r, q)
 		if !ok {
 			return
 		}
@@ -89,20 +88,25 @@ func SetRankings(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Clear existing rankings and re-set.
-		if err := db.DeleteRankingsByGame(ctx, pool, game.ID); err != nil {
+		if err := q.DeleteRankingsByGame(ctx, game.ID); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not clear rankings")
 			return
 		}
 
 		for _, entry := range body.Rankings {
-			if err := db.UpsertRanking(ctx, pool, game.ID, entry.PlayerID, model.RankingCategory(entry.Category), entry.Rank); err != nil {
+			if err := q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+				GameID:   game.ID,
+				PlayerID: entry.PlayerID,
+				Category: model.RankingCategory(entry.Category),
+				Rank:     entry.Rank,
+			}); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not set ranking")
 				return
 			}
 		}
 
 		// Fetch and broadcast the new rankings.
-		rankings, err := db.ListRankingsByGame(ctx, pool, game.ID)
+		rankings, err := q.ListRankingsByGame(ctx, game.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load rankings")
 			return
@@ -119,9 +123,9 @@ func SetRankings(pool *pgxpool.Pool, manager *hub.Manager) http.HandlerFunc {
 // SetSeats handles PUT /api/tables/{id}/seats.
 //
 // Facilitator assigns seat order to all players.
-func SetSeats(pool *pgxpool.Pool) http.HandlerFunc {
+func SetSeats(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFacilitator(w, r, pool)
+		game, _, ok := requireFacilitator(w, r, q)
 		if !ok {
 			return
 		}
@@ -145,7 +149,10 @@ func SetSeats(pool *pgxpool.Pool) http.HandlerFunc {
 		ctx := r.Context()
 
 		for _, seat := range body.Seats {
-			if err := db.SetPlayerSeatOrder(ctx, pool, seat.PlayerID, seat.SeatOrder); err != nil {
+			if err := q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
+				ID:        seat.PlayerID,
+				SeatOrder: &seat.SeatOrder,
+			}); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not set seat order")
 				return
 			}
