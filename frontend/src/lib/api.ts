@@ -51,6 +51,42 @@ export interface Ranking {
 	rank: number;
 }
 
+export interface Marginalium {
+	id: number;
+	asset_id: number;
+	position: number;
+	text: string;
+	is_torn: boolean;
+	torn_at: string | null;
+	torn_by_id: number | null;
+}
+
+export interface Asset {
+	id: number;
+	game_id: number;
+	owner_id: number;
+	creator_id: number;
+	asset_type: AssetType;
+	name: string;
+	is_main_character: boolean;
+	is_leveraged: boolean;
+	is_destroyed: boolean;
+	created_at: string;
+	destroyed_at: string | null;
+	// Enriched by the API — always present in list/create/update responses.
+	marginalia: Marginalium[];
+}
+
+export interface Secret {
+	id: number;
+	asset_id: number;
+	author_id: number;
+	text: string;
+	is_revealed: boolean;
+	revealed_at: string | null;
+	created_at: string;
+}
+
 export interface ScenePost {
 	id: number;
 	game_id: number;
@@ -216,4 +252,94 @@ export function createScenePost(
 		method: 'POST',
 		body: JSON.stringify({ body, plan_id: planID ?? null })
 	});
+}
+
+// ── Assets ───────────────────────────────────────────────────────────────────
+
+export function listAssets(gameID: string | number): Promise<{ assets: Asset[] }> {
+	return apiFetch(`/tables/${gameID}/assets`);
+}
+
+export function createAsset(
+	gameID: string | number,
+	params: {
+		asset_type: AssetType;
+		name: string;
+		is_main_character?: boolean;
+		marginalia?: string[];
+	}
+): Promise<{ asset: Asset }> {
+	return apiFetch(`/tables/${gameID}/assets`, {
+		method: 'POST',
+		body: JSON.stringify(params)
+	});
+}
+
+export function updateAsset(
+	assetID: number,
+	params: { name?: string; is_main_character?: boolean }
+): Promise<{ asset: Asset }> {
+	return apiFetch(`/assets/${assetID}`, {
+		method: 'PUT',
+		body: JSON.stringify(params)
+	});
+}
+
+// ── Marginalia ────────────────────────────────────────────────────────────────
+
+export function addMarginalia(
+	assetID: number,
+	text: string
+): Promise<{ marginalia: Marginalium }> {
+	return apiFetch(`/assets/${assetID}/marginalia`, {
+		method: 'POST',
+		body: JSON.stringify({ text })
+	});
+}
+
+export function updateMarginalia(
+	assetID: number,
+	position: number,
+	text: string
+): Promise<{ marginalia: Marginalium }> {
+	return apiFetch(`/assets/${assetID}/marginalia/${position}`, {
+		method: 'PUT',
+		body: JSON.stringify({ text })
+	});
+}
+
+export function tearMarginalia(
+	assetID: number,
+	position: number
+): Promise<{ torn: boolean; destroyed: boolean }> {
+	return apiFetch(`/assets/${assetID}/marginalia/${position}`, {
+		method: 'DELETE'
+	});
+}
+
+// ── Leverage / Refresh / Take ─────────────────────────────────────────────────
+
+export function leverageAsset(assetID: number): Promise<{ leveraged: boolean }> {
+	return apiFetch(`/assets/${assetID}/leverage`, { method: 'POST' });
+}
+
+export function refreshAsset(assetID: number): Promise<{ leveraged: boolean }> {
+	return apiFetch(`/assets/${assetID}/refresh`, { method: 'POST' });
+}
+
+export function takeAsset(assetID: number): Promise<{ asset: Asset }> {
+	return apiFetch(`/assets/${assetID}/take`, { method: 'POST' });
+}
+
+// ── Secrets ───────────────────────────────────────────────────────────────────
+
+export function writeSecret(assetID: number, text: string): Promise<{ secret: Secret }> {
+	return apiFetch(`/assets/${assetID}/secrets`, {
+		method: 'POST',
+		body: JSON.stringify({ text })
+	});
+}
+
+export function getSecrets(assetID: number): Promise<{ secrets: Secret[] }> {
+	return apiFetch(`/assets/${assetID}/secrets`);
 }

@@ -38,12 +38,18 @@ export const EventTypes = {
 	// Assets & marginalia
 	AssetCreated: 'asset.created',
 	AssetUpdated: 'asset.updated',
+	AssetTaken: 'asset.taken',
+	AssetLeveraged: 'asset.leveraged',
+	AssetRefreshed: 'asset.refreshed',
+	AssetDestroyed: 'asset.destroyed',
+	MarginaliaAdded: 'marginalia.added',
 	MarginaliaUpdated: 'marginalia.updated',
+	MarginaliaTorn: 'marginalia.torn',
 
 	// Plans
-	PlanActivated: 'plan.activated',
+	PlanPrepared: 'plan.prepared',
+	PlanResolving: 'plan.resolving',
 	PlanResolved: 'plan.resolved',
-	PlanTokenPlaced: 'plan.token_placed',
 
 	// Dice rolls
 	RollCreated: 'roll.created',

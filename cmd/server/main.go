@@ -113,6 +113,22 @@ func main() {
 		r.Put("/tables/{id}/rankings", handler.SetRankings(q, manager))
 		r.Put("/tables/{id}/seats", handler.SetSeats(q))
 
+		// Assets (list + create on the table; per-asset actions by asset ID)
+		r.Get("/tables/{id}/assets", handler.ListAssets(q))
+		r.Post("/tables/{id}/assets", handler.CreateAsset(q, manager))
+
+		r.Route("/assets/{assetId}", func(r chi.Router) {
+			r.Put("/", handler.UpdateAsset(q, manager))
+			r.Post("/marginalia", handler.AddMarginalia(q, manager))
+			r.Put("/marginalia/{pos}", handler.UpdateMarginalia(q, manager))
+			r.Delete("/marginalia/{pos}", handler.TearMarginalia(q, manager))
+			r.Post("/leverage", handler.LeverageAsset(q, manager))
+			r.Post("/refresh", handler.RefreshAsset(q, manager))
+			r.Post("/take", handler.TakeAsset(q, manager))
+			r.Post("/secrets", handler.WriteSecret(q))
+			r.Get("/secrets", handler.GetSecrets(q))
+		})
+
 		// Scene posts (replaces Phase 1 flat posts)
 		r.Get("/tables/{id}/rows/{row}/posts", handler.ListScenePosts(q))
 		r.Post("/tables/{id}/rows/{row}/posts", handler.CreateScenePost(q, manager))
