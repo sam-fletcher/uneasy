@@ -32,8 +32,9 @@ export const EventTypes = {
 	FocusChanged: 'focus.changed',
 	RowAdvanced: 'row.advanced',
 
-	// Scene posts (replaces post.created)
+	// Scene posts & entries (replaces post.created)
 	ScenePostCreated: 'scene_post.created',
+	SceneEntryCreated: 'scene_entry.created',
 
 	// Assets & marginalia
 	AssetCreated: 'asset.created',

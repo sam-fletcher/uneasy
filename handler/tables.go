@@ -3,10 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
-
-	"github.com/go-chi/chi/v5"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -148,20 +145,12 @@ func JoinTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Returns table details and the current member list.
 func GetTable(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid table id")
+		gameID, _, ok := parseGamePlayer(w, r)
+		if !ok {
 			return
 		}
 
 		ctx := r.Context()
-
-		// Require membership.
-		player := appMiddleware.PlayerFromContext(r.Context())
-		if player == nil || player.GameID != gameID {
-			respondErr(w, http.StatusForbidden, "not a member of this table")
-			return
-		}
 
 		game, err := q.GetGameByID(ctx, gameID)
 		if err != nil {

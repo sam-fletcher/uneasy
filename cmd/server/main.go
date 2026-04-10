@@ -129,9 +129,11 @@ func main() {
 			r.Get("/secrets", handler.GetSecrets(q))
 		})
 
-		// Scene posts (replaces Phase 1 flat posts)
+		// Public record + scene threading
+		r.Get("/tables/{id}/record", handler.GetFullRecord(q))
 		r.Get("/tables/{id}/rows/{row}/posts", handler.ListScenePosts(q))
 		r.Post("/tables/{id}/rows/{row}/posts", handler.CreateScenePost(q, manager))
+		r.Post("/tables/{id}/rows/{row}/summary", handler.CreateSceneEntry(q, manager))
 
 		// WebSocket (note: no Timeout middleware for WS connections)
 		r.Get("/tables/{id}/ws", handler.WebSocket(manager))

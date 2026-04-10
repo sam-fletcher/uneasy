@@ -97,6 +97,39 @@ export interface ScenePost {
 	created_at: string;
 }
 
+export interface SceneEntry {
+	id: number;
+	game_id: number;
+	row_number: number;
+	author_id: number;
+	body: string;
+	created_at: string;
+}
+
+/** Minimal plan shape for public record display. Full type added in Phase 2f. */
+export interface Plan {
+	id: number;
+	game_id: number;
+	plan_type: string;
+	category: RankingCategory;
+	preparer_id: number;
+	target_player_id: number | null;
+	target_asset_id: number | null;
+	row_number: number;
+	row_order: number;
+	prepared_at_row: number;
+	status: 'pending' | 'resolving' | 'resolved' | 'cancelled';
+	result: 'make' | 'mar' | null;
+	preparation_notes: string | null;
+}
+
+/** One row of the public record as returned by GET /api/tables/:id/record. */
+export interface RecordRow {
+	row_number: number;
+	entries: SceneEntry[];
+	plans: Plan[];
+}
+
 export interface PresenceMember {
 	id: number;
 	display_name: string;
@@ -225,6 +258,23 @@ export function setSeats(
 	return apiFetch(`/tables/${gameID}/seats`, {
 		method: 'PUT',
 		body: JSON.stringify({ seats })
+	});
+}
+
+// ── Public Record ─────────────────────────────────────────────────────────────
+
+export function getFullRecord(gameID: string | number): Promise<{ rows: RecordRow[] }> {
+	return apiFetch(`/tables/${gameID}/record`);
+}
+
+export function createSceneEntry(
+	gameID: string | number,
+	rowNumber: number,
+	body: string
+): Promise<{ entry: SceneEntry }> {
+	return apiFetch(`/tables/${gameID}/rows/${rowNumber}/summary`, {
+		method: 'POST',
+		body: JSON.stringify({ body })
 	});
 }
 

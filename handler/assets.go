@@ -88,15 +88,8 @@ func marginaliaByPosition(list []dbgen.Marginalium, pos int16) *dbgen.Marginaliu
 // Returns all non-destroyed assets in the game, each with their marginalia.
 func ListAssets(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid table id")
-			return
-		}
-
-		player := appMiddleware.PlayerFromContext(r.Context())
-		if player == nil || player.GameID != gameID {
-			respondErr(w, http.StatusForbidden, "not a member of this table")
+		gameID, _, ok := parseGamePlayer(w, r)
+		if !ok {
 			return
 		}
 
@@ -125,15 +118,8 @@ func ListAssets(q *dbgen.Queries) http.HandlerFunc {
 // Body: { asset_type, name, is_main_character?, marginalia?: ["text",...] }
 func CreateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid table id")
-			return
-		}
-
-		player := appMiddleware.PlayerFromContext(r.Context())
-		if player == nil || player.GameID != gameID {
-			respondErr(w, http.StatusForbidden, "not a member of this table")
+		gameID, player, ok := parseGamePlayer(w, r)
+		if !ok {
 			return
 		}
 

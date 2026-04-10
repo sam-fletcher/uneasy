@@ -2,29 +2,18 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
-
-	"github.com/go-chi/chi/v5"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
-	appMiddleware "uneasy/middleware"
 )
 
 // requireFacilitator is a helper that checks the caller is the facilitator
 // of the given game. Returns the game and player, or writes an error response.
 func requireFacilitator(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.Game, *dbgen.Player, bool) {
-	gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, "invalid table id")
-		return nil, nil, false
-	}
-
-	player := appMiddleware.PlayerFromContext(r.Context())
-	if player == nil || player.GameID != gameID {
-		respondErr(w, http.StatusForbidden, "not a member of this table")
+	gameID, player, ok := parseGamePlayer(w, r)
+	if !ok {
 		return nil, nil, false
 	}
 	if !player.IsFacilitator {
@@ -243,15 +232,8 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Returns the full game state: game object, players, rankings, and phase-specific data.
 func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid table id")
-			return
-		}
-
-		player := appMiddleware.PlayerFromContext(r.Context())
-		if player == nil || player.GameID != gameID {
-			respondErr(w, http.StatusForbidden, "not a member of this table")
+		gameID, _, ok := parseGamePlayer(w, r)
+		if !ok {
 			return
 		}
 

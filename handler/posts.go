@@ -11,7 +11,6 @@ import (
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
-	appMiddleware "uneasy/middleware"
 )
 
 // ListScenePosts handles GET /api/tables/{id}/rows/{row}/posts.
@@ -20,20 +19,13 @@ import (
 // and ?after=Y for catch-up on WebSocket reconnect.
 func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid table id")
+		gameID, _, ok := parseGamePlayer(w, r)
+		if !ok {
 			return
 		}
 		rowNum, err := strconv.ParseInt(chi.URLParam(r, "row"), 10, 16)
 		if err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid row number")
-			return
-		}
-
-		player := appMiddleware.PlayerFromContext(r.Context())
-		if player == nil || player.GameID != gameID {
-			respondErr(w, http.StatusForbidden, "not a member of this table")
 			return
 		}
 
@@ -99,20 +91,13 @@ func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
 // Inserts a scene post and broadcasts it to all connected clients.
 func CreateScenePost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid table id")
+		gameID, player, ok := parseGamePlayer(w, r)
+		if !ok {
 			return
 		}
 		rowNum, err := strconv.ParseInt(chi.URLParam(r, "row"), 10, 16)
 		if err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid row number")
-			return
-		}
-
-		player := appMiddleware.PlayerFromContext(r.Context())
-		if player == nil || player.GameID != gameID {
-			respondErr(w, http.StatusForbidden, "not a member of this table")
 			return
 		}
 
