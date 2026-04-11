@@ -29,6 +29,13 @@ import (
 	appMiddleware "uneasy/middleware"
 )
 
+const (
+	timeOutRead   = 15 * time.Second
+	timeOutReqest = 30 * time.Second
+	timeOutWrite  = 0 // 0 = no write timeout (needed for WebSocket and SSE)
+	timeOutIdle   = 60 * time.Second
+)
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -85,9 +92,9 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0, // 0 = no write timeout (needed for WebSocket and SSE)
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  timeOutRead,
+		WriteTimeout: timeOutWrite,
+		IdleTimeout:  timeOutIdle,
 	}
 
 	if err := srv.ListenAndServe(); err != nil {
@@ -106,7 +113,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(chimiddleware.Timeout(30 * time.Second))
+	r.Use(chimiddleware.Timeout(timeOutReqest))
 
 	// API routes — all behind the cookie-auth middleware.
 	r.Route("/api", func(r chi.Router) {

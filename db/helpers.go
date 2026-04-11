@@ -15,10 +15,15 @@ import (
 	"uneasy/model"
 )
 
+const (
+	joinCodeLength   = 6
+	cookieTokenBytes = 32 // 256-bit token for cryptographic security
+)
+
 // NewCookieToken generates a cryptographically random URL-safe token for use
 // as a player's browser cookie.
 func NewCookieToken() (string, error) {
-	b := make([]byte, 32)
+	b := make([]byte, cookieTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("db: generate cookie token: %w", err)
 	}
@@ -31,7 +36,7 @@ const joinCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 // GenerateJoinCode returns a random 6-character join code.
 func GenerateJoinCode() (string, error) {
-	b := make([]byte, 6)
+	b := make([]byte, joinCodeLength)
 	for i := range b {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(joinCodeAlphabet))))
 		if err != nil {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"uneasy/db"
@@ -100,9 +101,10 @@ func validateStartMainEvent(
 		respondErr(w, http.StatusInternalServerError, "could not load rankings")
 		return nil, nil, false
 	}
-	if len(rankings) < 15 {
+	if len(rankings) < totalRankings {
 		respondErr(w, http.StatusBadRequest,
-			"rankings must be fully set before starting (all 3 tracks × 5 positions)",
+			fmt.Sprintf("rankings must be fully set before starting (all %d tracks × %d positions)",
+				planTypes, rankingsPerType),
 		)
 		return nil, nil, false
 	}

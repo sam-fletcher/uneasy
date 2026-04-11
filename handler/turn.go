@@ -29,6 +29,8 @@ import (
 	"uneasy/model"
 )
 
+const publicRecordRowCount = 13
+
 // requireFocusPlayer validates that the caller is the current focus player.
 // Returns the game and player, or writes an error response.
 func requireFocusPlayer(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.Game, *dbgen.Player, bool) {
@@ -99,7 +101,7 @@ func advanceRowInner(
 	}
 
 	// Past row 13 — transition to ended.
-	if newRow > 13 {
+	if newRow > publicRecordRowCount {
 		if err = q.SetGamePhase(r.Context(), dbgen.SetGamePhaseParams{
 			ID:    game.ID,
 			Phase: model.PhaseEnded,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,6 +18,8 @@ import (
 )
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
+
+const maxMarginalia = 4
 
 // assetWithMarginalia is the enriched response type for asset API calls.
 // It embeds the base asset and adds the marginalia slice inline.
@@ -151,8 +154,9 @@ func CreateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if len(body.Marginalia) > 4 {
-			respondErr(w, http.StatusBadRequest, "at most 4 marginalia")
+		if len(body.Marginalia) > maxMarginalia {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("at most %d marginalia", maxMarginalia))
 			return
 		}
 
@@ -339,8 +343,9 @@ func AddMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not check marginalia")
 			return
 		}
-		if int64(len(existing)) >= 4 {
-			respondErr(w, http.StatusBadRequest, "asset already has 4 marginalia")
+		if int64(len(existing)) >= maxMarginalia {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("asset already has %d marginalia", maxMarginalia))
 			return
 		}
 
@@ -350,7 +355,7 @@ func AddMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			occupied[m.Position] = true
 		}
 		var nextPos int16
-		for p := int16(1); p <= 4; p++ {
+		for p := int16(1); p <= maxMarginalia; p++ {
 			if !occupied[p] {
 				nextPos = p
 				break

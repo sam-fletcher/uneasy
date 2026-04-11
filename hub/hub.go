@@ -23,6 +23,8 @@ import (
 	"uneasy/model"
 )
 
+const messageBufferSize = 256 // Channel buffer depth for broadcast and client sends
+
 // ── Manager ───────────────────────────────────────────────────────────────────
 
 // Manager creates and tracks one Hub per active game table.
@@ -76,7 +78,7 @@ func newHub(tableID int64) *Hub {
 		clients:    make(map[*Client]struct{}),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		broadcast:  make(chan []byte, 256),
+		broadcast:  make(chan []byte, messageBufferSize),
 	}
 }
 
@@ -184,7 +186,7 @@ func NewClient(h *Hub, conn *websocket.Conn, player dbgen.Player, logger *slog.L
 		hub:    h,
 		conn:   conn,
 		player: player,
-		send:   make(chan []byte, 256),
+		send:   make(chan []byte, messageBufferSize),
 		log:    logger.With("player_id", player.ID),
 	}
 }

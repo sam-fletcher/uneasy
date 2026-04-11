@@ -32,6 +32,8 @@ import (
 	"uneasy/model"
 )
 
+const diceSides = 6
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 // requireRollAccess parses rollId from the URL, fetches the roll, and verifies
@@ -431,7 +433,7 @@ func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// All votes in — compute and store adjusted_difficulty (clamped to 1–6).
 		adj := int16(min( //nolint:gosec // clamped to 1–6
 			max(int64(roll.Difficulty)+counts.NayCount-counts.YeaCount, 1),
-			6))
+			diceSides))
 		if err = q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
 			ID:                 roll.ID,
 			AdjustedDifficulty: new(adj),
@@ -566,7 +568,7 @@ func rollAndCancelDice(
 
 	// Assign random faces; bucket die IDs by actor vs. interference.
 	for _, d := range dice {
-		f := int16(rand.IntN(6) + 1) //nolint:gosec // game randomness, not security
+		f := int16(rand.IntN(diceSides) + 1) //nolint:gosec // game randomness, not security
 		if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not set die face")
 			return nil, nil, err

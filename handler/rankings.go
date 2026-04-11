@@ -2,11 +2,18 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
+)
+
+const (
+	planTypes       = 3
+	rankingsPerType = 5
+	totalRankings   = planTypes * rankingsPerType
 )
 
 // GetRankings handles GET /api/tables/{id}/rankings.
@@ -56,8 +63,10 @@ func SetRankings(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if len(body.Rankings) != 15 {
-			respondErr(w, http.StatusBadRequest, "must provide exactly 15 rankings (3 tracks × 5 positions)")
+		if len(body.Rankings) != totalRankings {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("must provide exactly %d rankings (%d tracks × %d positions)",
+					totalRankings, planTypes, rankingsPerType))
 			return
 		}
 
