@@ -1,3 +1,5 @@
+package handler
+
 // handler/turn.go — Focus player turn structure actions (Phase 2d).
 //
 // Per-row loop (rules §"Steps For Each Row"):
@@ -16,7 +18,6 @@
 // AdvanceRow is kept as a facilitator escape hatch (manual row advance without
 // touching focus). PassFocus is the normal end-of-turn action and handles the
 // step-7/8 logic automatically.
-package handler
 
 import (
 	"encoding/json"

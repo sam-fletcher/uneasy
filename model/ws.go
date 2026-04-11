@@ -1,10 +1,11 @@
+package model
+
 // WebSocket message types shared between the hub and the handler.
 //
 // Payload structs that carry database records use `any` for the embedded
 // fields. This avoids a circular import (model → dbgen → model) while still
 // giving us typed envelopes for JSON serialization. The actual concrete
 // types (dbgen.Game, dbgen.ScenePost, etc.) are passed in by the handler.
-package model
 
 // ── Event types (server → client) ────────────────────────────────────────────
 

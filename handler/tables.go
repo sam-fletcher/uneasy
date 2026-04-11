@@ -86,7 +86,7 @@ func CreateTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // JoinTable handles POST /api/tables/join.
 //
 // Adds the calling player to an existing table via join code.
-func JoinTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func JoinTable(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ut := appMiddleware.UserTokenFromContext(r.Context())
 		if ut == nil {

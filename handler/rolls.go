@@ -1,3 +1,5 @@
+package handler
+
 // handler/rolls.go — Dice roll endpoints (Phase 2e).
 //
 // Roll lifecycle:
@@ -14,7 +16,6 @@
 //  5. Actor (or facilitator) calls POST /api/rolls/:rollId/close-leverage to
 //     roll all dice and resolve the roll.
 //  6. GET /api/rolls/:rollId returns the current roll state.
-package handler
 
 import (
 	"context"

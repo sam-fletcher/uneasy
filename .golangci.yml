@@ -104,7 +104,7 @@ linters:
     - protogetter # reports direct reads from proto message fields when getters should be used
     - reassign # checks that package variables are not reassigned
     - recvcheck # checks for receiver type consistency
-    # - revive # fast, configurable, extensible, flexible, and beautiful linter for Go, drop-in replacement of golint
+    - revive # fast, configurable, extensible, flexible, and beautiful linter for Go, drop-in replacement of golint
     - rowserrcheck # checks whether Err of rows is checked successfully
     - sloglint # ensure consistent code style when using log/slog
     - spancheck # checks for mistakes with OpenTelemetry/Census spans
@@ -394,6 +394,16 @@ linters:
       patterns:
         - ".*"
 
+    revive:
+      # Disable specific rules that are too noisy.
+      # Default: []
+      disable-all-rules: false
+      rules:
+        - name: exported
+          disabled: true  # Disable exported comment requirements
+        - name: package-comments
+          disabled: true  # Disable package comment requirements
+
     rowserrcheck:
       # database/sql is always checked.
       # Default: []
@@ -452,20 +462,6 @@ linters:
     rules:
       - source: 'TODO'
         linters: [ godot ]
-      - text: 'should have a package comment'
-        linters: [ revive ]
-      - text: 'exported: comment on exported const \S+ should be of the form "\S+ ..."'
-        linters: [ revive ]
-      - text: 'exported: exported type \S+ should have comment or be unexported'
-        linters: [ revive ]
-      - text: 'exported: exported const \S+ should have comment (or a comment on this block) or be unexported'
-        linters: [ revive ]
-      - text: 'package-comments: package comment should be of the form ".+"'
-        source: '// ?(nolint|TODO)'
-        linters: [ revive ]
-      - text: 'comment on exported \S+ \S+ should be of the form ".+"'
-        source: '// ?(nolint|TODO)'
-        linters: [ revive, staticcheck ]
       - path: '_test\.go'
         linters:
           - bodyclose

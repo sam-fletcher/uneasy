@@ -114,11 +114,11 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 
 		// Identity
 		r.Post("/identity", handler.SetIdentity(q))
-		r.Get("/identity", handler.GetIdentity(q))
+		r.Get("/identity", handler.GetIdentity())
 
 		// Tables (creation, join, info)
 		r.Post("/tables", handler.CreateTable(q, manager))
-		r.Post("/tables/join", handler.JoinTable(q, manager))
+		r.Post("/tables/join", handler.JoinTable(q))
 		r.Get("/tables/{id}", handler.GetTable(q))
 		r.Get("/tables/{id}/state", handler.GetGameState(q))
 
@@ -194,7 +194,7 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 	} else {
 		// TODO Phase 1 final: embed the built frontend with //go:embed.
 		// For now, serve a minimal placeholder.
-		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "run in DEV_MODE or build the frontend first", http.StatusNotFound)
 		}))
 	}

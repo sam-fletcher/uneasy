@@ -69,7 +69,7 @@ func SetIdentity(q *dbgen.Queries) http.HandlerFunc {
 //
 // Returns the current player's identity from the cookie. 401 if no cookie or
 // unrecognised token.
-func GetIdentity(q *dbgen.Queries) http.HandlerFunc {
+func GetIdentity() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ut := appMiddleware.UserTokenFromContext(r.Context())
 		if ut == nil {

@@ -1,5 +1,6 @@
-// respond.go — shared JSON response helpers used by all handlers.
 package handler
+
+// respond.go — shared JSON response helpers used by all handlers.
 
 import (
 	"encoding/json"

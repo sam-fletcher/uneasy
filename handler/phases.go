@@ -89,8 +89,8 @@ func setAndBroadcastFocusPlayer(
 }
 
 func validateStartMainEvent(
-	w http.ResponseWriter,
 	ctx context.Context,
+	w http.ResponseWriter,
 	q *dbgen.Queries,
 	gameID int64,
 ) ([]dbgen.Ranking, []dbgen.Player, bool) {
@@ -221,7 +221,7 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Validate preconditions for starting main event.
-		_, players, ok := validateStartMainEvent(w, ctx, q, game.ID)
+		_, players, ok := validateStartMainEvent(ctx, w, q, game.ID)
 		if !ok {
 			return
 		}
