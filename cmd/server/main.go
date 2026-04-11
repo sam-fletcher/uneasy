@@ -35,34 +35,41 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	dbURL := mustEnv("DATABASE_URL")
+	dbURL := mustEnv("DATABASE_URL", logger)
 	port := env("PORT", "8080")
 	devMode := env("DEV_MODE", "false") == "true"
 	viteURL := env("VITE_URL", "http://localhost:5173")
 
+	// ── Server ────────────────────────────────────────────────────────────────
+
+	if err := runServer(logger, dbURL, port, devMode, viteURL); err != nil {
+		logger.Error("server failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+// runServer starts the server and handles all initialization.
+func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL string) error {
 	// ── Database ──────────────────────────────────────────────────────────────
 
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
-		slog.Error("connect to database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect to database: %w", err)
 	}
 	defer pool.Close()
 
 	// Verify the connection is live.
 	if err := pool.Ping(context.Background()); err != nil {
-		slog.Error("ping database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("ping database: %w", err)
 	}
-	slog.Info("connected to database")
+	logger.Info("connected to database")
 
 	// ── Migrations ────────────────────────────────────────────────────────────
 
 	if err := db.RunMigrations(dbURL); err != nil {
-		slog.Error("run migrations", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("run migrations: %w", err)
 	}
-	slog.Info("migrations applied")
+	logger.Info("migrations applied")
 
 	// ── sqlc queries ──────────────────────────────────────────────────────────
 
@@ -160,12 +167,11 @@ func main() {
 	if devMode {
 		target, err := url.Parse(viteURL)
 		if err != nil {
-			slog.Error("parse vite url", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("parse vite url: %w", err)
 		}
 		proxy := httputil.NewSingleHostReverseProxy(target)
 		r.Handle("/*", proxy)
-		slog.Info("dev mode: proxying frontend to Vite", "url", viteURL)
+		logger.Info("dev mode: proxying frontend to Vite", "url", viteURL)
 	} else {
 		// TODO Phase 1 final: embed the built frontend with //go:embed.
 		// For now, serve a minimal placeholder.
@@ -177,7 +183,7 @@ func main() {
 	// ── Start server ──────────────────────────────────────────────────────────
 
 	addr := fmt.Sprintf(":%s", port)
-	slog.Info("server starting", "addr", addr, "dev_mode", devMode)
+	logger.Info("server starting", "addr", addr, "dev_mode", devMode)
 
 	srv := &http.Server{
 		Addr:         addr,
@@ -188,9 +194,9 @@ func main() {
 	}
 
 	if err := srv.ListenAndServe(); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("server error: %w", err)
 	}
+	return nil
 }
 
 // env returns the value of key, or fallback if unset/empty.
@@ -202,10 +208,10 @@ func env(key, fallback string) string {
 }
 
 // mustEnv returns the value of key, or exits if it's unset/empty.
-func mustEnv(key string) string {
+func mustEnv(key string, logger *slog.Logger) string {
 	v := os.Getenv(key)
 	if v == "" {
-		slog.Error("required environment variable not set", "key", key)
+		logger.Error("required environment variable not set", "key", key)
 		os.Exit(1)
 	}
 	return v

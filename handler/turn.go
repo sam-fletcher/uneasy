@@ -89,10 +89,10 @@ func advanceRowInner(
 	q *dbgen.Queries,
 	h *hub.Hub,
 	game *dbgen.Game,
-) (newRow int16, ended bool, err error) {
+) (int16, bool, error) {
 	oldRow := game.CurrentRow
 
-	newRow, err = q.AdvanceRow(r.Context(), game.ID)
+	newRow, err := q.AdvanceRow(r.Context(), game.ID)
 	if err != nil {
 		return 0, false, err
 	}
@@ -301,7 +301,7 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+		if err = q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
 			ID:            game.ID,
 			FocusPlayerID: new(next.ID),
 		}); err != nil {

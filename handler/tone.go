@@ -47,7 +47,7 @@ func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		var body struct {
 			Status string `json:"status"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}

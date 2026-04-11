@@ -104,7 +104,7 @@ func CreateSceneEntry(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		var body struct {
 			Body string `json:"body"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}

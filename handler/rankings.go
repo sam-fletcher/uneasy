@@ -34,7 +34,7 @@ func GetRankings(q *dbgen.Queries) http.HandlerFunc {
 // All 15 positions (3 tracks × 5 ranks) must be provided.
 func SetRankings(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, q)
 		if !ok {
 			return
 		}
@@ -114,7 +114,7 @@ func SetRankings(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Facilitator assigns seat order to all players.
 func SetSeats(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, q)
 		if !ok {
 			return
 		}

@@ -33,16 +33,16 @@ func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
 
 		// Check for ?after=<id> catch-up mode.
 		if afterStr := r.URL.Query().Get("after"); afterStr != "" {
-			afterID, err := strconv.ParseInt(afterStr, 10, 64)
-			if err != nil {
+			afterID, parseErr := strconv.ParseInt(afterStr, 10, 64)
+			if parseErr != nil {
 				respondErr(w, http.StatusBadRequest, "invalid after id")
 				return
 			}
-			posts, err := q.ListScenePostsAfter(ctx, dbgen.ListScenePostsAfterParams{
+			posts, postsErr := q.ListScenePostsAfter(ctx, dbgen.ListScenePostsAfterParams{
 				GameID: gameID,
 				ID:     afterID,
 			})
-			if err != nil {
+			if postsErr != nil {
 				respondErr(w, http.StatusInternalServerError, "could not load posts")
 				return
 			}
@@ -54,17 +54,17 @@ func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
 
 		// Filter by plan_id if provided, otherwise open scene (plan_id IS NULL).
 		if pidStr := r.URL.Query().Get("plan_id"); pidStr != "" {
-			pid, err := strconv.ParseInt(pidStr, 10, 64)
-			if err != nil {
+			pid, parseErr := strconv.ParseInt(pidStr, 10, 64)
+			if parseErr != nil {
 				respondErr(w, http.StatusBadRequest, "invalid plan_id")
 				return
 			}
-			posts, err := q.ListScenePostsByRowAndPlan(ctx, dbgen.ListScenePostsByRowAndPlanParams{
+			posts, postsErr := q.ListScenePostsByRowAndPlan(ctx, dbgen.ListScenePostsByRowAndPlanParams{
 				GameID:    gameID,
 				RowNumber: &row,
 				PlanID:    &pid,
 			})
-			if err != nil {
+			if postsErr != nil {
 				respondErr(w, http.StatusInternalServerError, "could not load posts")
 				return
 			}
@@ -105,7 +105,7 @@ func CreateScenePost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			Body   string `json:"body"`
 			PlanID *int64 `json:"plan_id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}

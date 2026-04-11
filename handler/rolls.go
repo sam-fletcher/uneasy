@@ -34,7 +34,11 @@ import (
 
 // requireRollAccess parses rollId from the URL, fetches the roll, and verifies
 // the caller is a member of the roll's game. Returns roll and player.
-func requireRollAccess(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.DiceRoll, *dbgen.Player, bool) {
+func requireRollAccess(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+) (*dbgen.DiceRoll, *dbgen.Player, bool) {
 	rollID, err := strconv.ParseInt(chi.URLParam(r, "rollId"), 10, 64)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, "invalid roll id")
@@ -146,7 +150,7 @@ func CreateRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		var body struct {
 			Difficulty int16 `json:"difficulty"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
@@ -281,7 +285,7 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Mark the asset as leveraged.
-		if err := q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+		if err = q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
 			ID:          body.AssetID,
 			IsLeveraged: true,
 		}); err != nil {
@@ -423,8 +427,10 @@ func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// All votes in — compute and store adjusted_difficulty (clamped to 1–6).
-		adj := min(max(roll.Difficulty+int16(counts.NayCount)-int16(counts.YeaCount), 1), 6)
-		if err := q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
+		adj := int16(min( //nolint:gosec // clamped to 1–6
+			max(int64(roll.Difficulty)+counts.NayCount-counts.YeaCount, 1),
+			6))
+		if err = q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
 			ID:                 roll.ID,
 			AdjustedDifficulty: new(adj),
 		}); err != nil {
@@ -502,7 +508,7 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		for _, d := range dice {
 			f := int16(rand.IntN(6) + 1) //nolint:gosec // game randomness, not security
-			if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
+			if err = q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not set die face")
 				return
 			}
@@ -531,7 +537,7 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		for face, intGroup := range intByFace {
 			actorGroup := actorByFace[face]
 			for i := range min(len(intGroup), len(actorGroup)) {
-				if err := q.SetDieCancelled(ctx, actorGroup[i].id); err != nil {
+				if err = q.SetDieCancelled(ctx, actorGroup[i].id); err != nil {
 					respondErr(w, http.StatusInternalServerError, "could not cancel die")
 					return
 				}
@@ -547,7 +553,7 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				distinctFaces[e.face] = true
 			}
 		}
-		result := int16(len(distinctFaces))
+		result := int16(len(distinctFaces)) //nolint:gosec // map size clamped to int16
 
 		effectiveDifficulty := roll.Difficulty
 		if roll.AdjustedDifficulty != nil {
@@ -558,7 +564,7 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			outcome = "make"
 		}
 
-		if err := q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		if err = q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
 			ID:      roll.ID,
 			Result:  new(result),
 			Outcome: new(outcome),

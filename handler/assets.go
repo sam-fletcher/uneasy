@@ -10,8 +10,8 @@ import (
 
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
-	"uneasy/model"
 	appMiddleware "uneasy/middleware"
+	"uneasy/model"
 )
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -20,6 +20,7 @@ import (
 // It embeds the base asset and adds the marginalia slice inline.
 type assetWithMarginalia struct {
 	dbgen.Asset
+
 	Marginalia []dbgen.Marginalium `json:"marginalia"`
 }
 

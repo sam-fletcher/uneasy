@@ -3,7 +3,6 @@ package handler
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 )
 
@@ -12,7 +11,7 @@ func respond(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("handler: encode response", "error", err)
+		panic("failed to write JSON response: " + err.Error()) // should never happen
 	}
 }
 

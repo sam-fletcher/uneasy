@@ -10,24 +10,24 @@ import (
 )
 
 // requireFacilitator is a helper that checks the caller is the facilitator
-// of the given game. Returns the game and player, or writes an error response.
-func requireFacilitator(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.Game, *dbgen.Player, bool) {
+// of the given game. Returns the game, or writes an error response.
+func requireFacilitator(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.Game, bool) {
 	gameID, player, ok := parseGamePlayer(w, r)
 	if !ok {
-		return nil, nil, false
+		return nil, false
 	}
 	if !player.IsFacilitator {
 		respondErr(w, http.StatusForbidden, "only the facilitator can do this")
-		return nil, nil, false
+		return nil, false
 	}
 
 	game, err := q.GetGameByID(r.Context(), gameID)
 	if err != nil {
 		respondErr(w, http.StatusNotFound, "table not found")
-		return nil, nil, false
+		return nil, false
 	}
 
-	return &game, player, true
+	return &game, true
 }
 
 // broadcastPhaseChange sends a phase.changed event to all connected clients.
@@ -43,7 +43,7 @@ func broadcastPhaseChange(manager *hub.Manager, gameID int64, phase model.GamePh
 // Seeds the default tone topic list.
 func StartToneSetting(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, q)
 		if !ok {
 			return
 		}
@@ -90,7 +90,7 @@ func StartToneSetting(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Transitions the game from tone_setting → prologue.
 func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, q)
 		if !ok {
 			return
 		}
@@ -122,7 +122,7 @@ func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // public record rows 1–13 and sets current_row to 1.
 func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, q)
 		if !ok {
 			return
 		}
@@ -141,7 +141,11 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		if len(rankings) < 15 {
-			respondErr(w, http.StatusBadRequest, "rankings must be fully set before starting (all 3 tracks × 5 positions)")
+			respondErr(
+				w,
+				http.StatusBadRequest,
+				"rankings must be fully set before starting (all 3 tracks × 5 positions)",
+			)
 			return
 		}
 
@@ -258,6 +262,9 @@ func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 
 		// Include phase-specific data.
 		switch game.Phase {
+		case model.PhaseLobby, model.PhaseShakeUp:
+			// No phase-specific data needed
+
 		case model.PhaseToneSetting:
 			topics, err := q.ListToneTopics(ctx, gameID)
 			if err == nil {

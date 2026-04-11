@@ -221,7 +221,7 @@ func (c *Client) writePump(ctx context.Context) {
 			if !ok {
 				// Hub closed the channel — shut down cleanly.
 				if err := c.conn.Close(websocket.StatusNormalClosure, ""); err != nil {
-					c.log.Error("writePump: close connection", "error", err)
+					c.log.ErrorContext(ctx, "writePump: close connection", "error", err)
 				}
 				return
 			}
@@ -230,7 +230,7 @@ func (c *Client) writePump(ctx context.Context) {
 			}
 		case <-ctx.Done():
 			if err := c.conn.Close(websocket.StatusNormalClosure, ""); err != nil {
-				c.log.Error("writePump: close connection", "error", err)
+				c.log.ErrorContext(ctx, "writePump: close connection", "error", err)
 			}
 			return
 		}
