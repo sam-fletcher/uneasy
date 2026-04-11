@@ -123,11 +123,12 @@ func advanceRowInner(
 		})
 	}
 
-	// Phase 2d: ranking algorithm (plan tokens) runs in Phase 2f.
-	// For now, broadcast current rankings unchanged as the client trigger.
-	if crossed && h != nil {
-		if rankings, qErr := q.ListRankingsByGame(r.Context(), game.ID); qErr == nil {
-			h.BroadcastEvent(model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: rankings})
+	// Run the ranking update algorithm when crossing an engrailed line.
+	// runRankingUpdate is defined in handler/plans.go (same package).
+	if crossed {
+		updatedRankings, rankErr := runRankingUpdate(r.Context(), q, game.ID)
+		if rankErr == nil && h != nil {
+			h.BroadcastEvent(model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: updatedRankings})
 		}
 	}
 

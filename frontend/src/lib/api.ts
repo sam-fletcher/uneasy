@@ -138,11 +138,15 @@ export interface DifficultyVote {
 	voted_at: string;
 }
 
-/** Minimal plan shape for public record display. Full type added in Phase 2f. */
+export type PlanType = 'exchange_courtiers' | 'make_introductions' | 'spread_propaganda'
+	| 'make_demands' | 'propose_decree' | 'make_war' | 'seek_answers'
+	| 'chronicle_histories' | 'clandestinely_liaise' | 'spread_rumors'
+	| 'propose_duel' | 'host_festivity';
+
 export interface Plan {
 	id: number;
 	game_id: number;
-	plan_type: string;
+	plan_type: PlanType;
 	category: RankingCategory;
 	preparer_id: number;
 	target_player_id: number | null;
@@ -152,7 +156,38 @@ export interface Plan {
 	prepared_at_row: number;
 	status: 'pending' | 'resolving' | 'resolved' | 'cancelled';
 	result: 'make' | 'mar' | null;
+	resolved_at: string | null;
 	preparation_notes: string | null;
+	resolution_data: string | null;
+}
+
+/** Parsed resolution_data JSON embedded in a Plan. */
+export interface PlanResolutionData {
+	peer_count?: number;
+	fair_trade_asset_id?: number | null;
+	fair_trade_accepted?: boolean | null;
+	choices?: string[];
+}
+
+/** Response shape from GET /api/plans/:id. */
+export interface PlanDetail {
+	plan: Plan;
+	difficulty: number;
+	resolution_data: PlanResolutionData;
+}
+
+/** One eligibility entry from GET /api/tables/:id/plan-eligibility. */
+export interface EligiblePlan {
+	plan_type: PlanType;
+	category: RankingCategory;
+	delay: number;
+	target_row: number;
+}
+
+export interface IneligiblePlan {
+	plan_type: PlanType;
+	category: RankingCategory;
+	reason: string;
 }
 
 /** One row of the public record as returned by GET /api/tables/:id/record. */
@@ -535,4 +570,88 @@ export function closeLeverage(rollID: number): Promise<{
 	cancelled_dice: DiceRollDie[];
 }> {
 	return apiFetch(`/rolls/${rollID}/close-leverage`, { method: 'POST' });
+}
+
+// ── Plans (Phase 2f) ──────────────────────────────────────────────────────────
+
+/** List all plans for a game. */
+export function listPlans(gameID: string | number): Promise<{ plans: Plan[] }> {
+	return apiFetch(`/tables/${gameID}/plans`);
+}
+
+/** Check which Phase 2 plans the current player is eligible to prepare. */
+export function getPlanEligibility(gameID: string | number): Promise<{
+	eligible: EligiblePlan[];
+	ineligible: IneligiblePlan[];
+}> {
+	return apiFetch(`/tables/${gameID}/plan-eligibility`);
+}
+
+/** Prepare a plan (focus player only). */
+export function preparePlan(
+	gameID: string | number,
+	params: {
+		plan_type: PlanType;
+		target_player_id?: number | null;
+		target_asset_id?: number | null;
+		peer_count?: number;
+		preparation_notes?: string | null;
+	}
+): Promise<{ plan: Plan }> {
+	return apiFetch(`/tables/${gameID}/prepare-plan`, {
+		method: 'POST',
+		body: JSON.stringify(params)
+	});
+}
+
+/** Get full plan details including computed difficulty and resolution state. */
+export function getPlan(planID: number): Promise<PlanDetail> {
+	return apiFetch(`/plans/${planID}`);
+}
+
+/** Begin resolution of a pending plan on the current row. */
+export function resolvePlan(planID: number): Promise<{
+	plan_id: number;
+	roll?: DiceRoll;
+}> {
+	return apiFetch(`/plans/${planID}/resolve`, { method: 'POST' });
+}
+
+/**
+ * Exchange Courtiers fair trade step.
+ *
+ * - Target player offers a peer:  { action: 'offer', offered_asset_id: X }
+ * - Preparer accepts the offer:   { action: 'accept' }
+ * - Preparer declines (roll):     { action: 'decline' }
+ */
+export function fairTrade(
+	planID: number,
+	body: { action: 'offer'; offered_asset_id: number }
+		| { action: 'accept' }
+		| { action: 'decline' }
+): Promise<{ plan_id: number; roll?: DiceRoll; result?: string }> {
+	return apiFetch(`/plans/${planID}/fair-trade`, {
+		method: 'POST',
+		body: JSON.stringify(body)
+	});
+}
+
+/** Record make/mar option choices after the dice roll resolves. */
+export function makeChoice(
+	planID: number,
+	result: 'make' | 'mar',
+	choices: string[]
+): Promise<{ plan_id: number; result: string; choices: string[] }> {
+	return apiFetch(`/plans/${planID}/make-choice`, {
+		method: 'POST',
+		body: JSON.stringify({ result, choices })
+	});
+}
+
+/** Mark the plan as resolved (after choices applied). */
+export function completePlan(planID: number): Promise<{
+	plan_id: number;
+	result: 'make' | 'mar';
+}> {
+	return apiFetch(`/plans/${planID}/complete`, { method: 'POST' });
 }

@@ -8,6 +8,7 @@
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord, listScenePosts,
 		getRoll, getActiveRollForGame,
+		listPlans,
 		type RankingCategory,
 	} from '$lib/api';
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
@@ -15,6 +16,7 @@
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
 		ScenePost, SceneEntry, RecordRow, PresenceMember,
 		DiceRoll, DiceRollDie, DifficultyVote,
+		Plan,
 	} from '$lib/api';
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
 	import PrologueView from '$lib/components/phases/PrologueView.svelte';
@@ -65,6 +67,10 @@
 	let activeRollDice = $state<DiceRollDie[]>([]);
 	let activeRollVotes = $state<DifficultyVote[]>([]);
 	let voteOpen = $state(false);
+
+	// ── Plan state ────────────────────────────────────────────────────────────
+	// Loaded on mount for main_event, then kept in sync by plan.* WS events.
+	let plans = $state<Plan[]>([]);
 
 	// Player name map passed to MainEventView for attribution.
 	const playerNameMap = $derived(new Map(players.map(p => [p.id, p.display_name])));
@@ -291,6 +297,28 @@
 				}
 				break;
 			}
+			// Plan events
+			case EventTypes.PlanPrepared: {
+				const prepared = msg.payload.plan as Plan;
+				if (!plans.find(p => p.id === prepared.id)) {
+					plans = [...plans, prepared];
+				}
+				break;
+			}
+			case EventTypes.PlanResolving: {
+				const resolving = msg.payload.plan as Plan;
+				plans = plans.map(p => p.id === resolving.id ? resolving : p);
+				break;
+			}
+			case EventTypes.PlanResolved: {
+				const { plan_id, result } = msg.payload as { plan_id: number; result: string };
+				plans = plans.map(p =>
+					p.id === plan_id
+						? { ...p, status: 'completed' as Plan['status'], result: result as Plan['result'] }
+						: p
+				);
+				break;
+			}
 		}
 	}
 
@@ -314,15 +342,17 @@
 				assets = assetData.assets;
 			}
 
-			// Load public record + scene posts if in main_event.
+			// Load public record, scene posts, plans, and active roll if in main_event.
 			if (data.game.phase === 'main_event' && data.game.current_row > 0) {
-				const [postsData, recordData, rollData] = await Promise.all([
+				const [postsData, recordData, rollData, plansData] = await Promise.all([
 					listScenePosts(gameID, data.game.current_row),
 					getFullRecord(gameID),
 					getActiveRollForGame(gameID),
+					listPlans(gameID),
 				]);
 				scenePosts = postsData.posts;
 				recordRows = recordData.rows;
+				plans = plansData.plans;
 				if (rollData.roll) {
 					activeRoll = rollData.roll;
 					activeRollDice = rollData.dice;
@@ -550,6 +580,7 @@
 			bind:activeRollDice
 			bind:activeRollVotes
 			bind:voteOpen
+			bind:plans
 		/>
 
 	<!-- ── Ended ──────────────────────────────────────────────────────────── -->

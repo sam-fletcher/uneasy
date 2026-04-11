@@ -7,12 +7,13 @@
 	import {
 		createScenePost, createSceneEntry,
 		leverageAsset, refreshAsset, tearMarginalia,
-		endScene, refreshAssets, passFocus, createRoll,
+		endScene, refreshAssets, passFocus, createRoll, listPlans,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Marginalium, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote } from '$lib/api';
+	import type { Game, Player, Asset, Marginalium, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan } from '$lib/api';
 	import AssetCard from '$lib/components/AssetCard.svelte';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
+	import PlanPanel from '$lib/components/PlanPanel.svelte';
 
 	interface Props {
 		game: Game;
@@ -30,6 +31,8 @@
 		activeRollDice: DiceRollDie[];
 		activeRollVotes: DifficultyVote[];
 		voteOpen: boolean;
+		/** All plans for this game, kept in sync by WS events from the parent. */
+		plans: Plan[];
 	}
 
 	let {
@@ -47,6 +50,7 @@
 		activeRollDice = $bindable(),
 		activeRollVotes = $bindable(),
 		voteOpen = $bindable(),
+		plans = $bindable(),
 	}: Props = $props();
 
 	const myAssets = $derived(assets.filter(a => a.owner_id === currentPlayerID));
@@ -251,6 +255,51 @@
 		}
 	}
 
+	// ── Plan state ────────────────────────────────────────────────────────────
+
+	/** True when there is an active resolving plan or a pending plan on the current row. */
+	const hasPlansToResolve = $derived(
+		plans.some(p => p.status === 'resolving') ||
+		plans.some(p => p.status === 'pending' && p.row_number === game.current_row)
+	);
+
+	/** True when an in-flight roll hasn't resolved yet. */
+	const rollActive = $derived(activeRoll != null && activeRoll.outcome == null);
+
+	/**
+	 * The make/mar outcome of a plan-linked roll, once resolved.
+	 * Only set when the active roll is tied to a plan — free-scene rolls
+	 * don't drive the plan resolution flow.
+	 */
+	const rollOutcome = $derived(
+		(activeRoll?.plan_id != null && activeRoll.outcome != null)
+			? (activeRoll.outcome as 'make' | 'mar')
+			: null
+	);
+
+	/** Called by PlanPanel when it creates a plan-linked dice roll. */
+	function onPlanRollCreated(roll: DiceRoll) {
+		activeRoll = roll;
+		activeRollDice = [];
+		activeRollVotes = [];
+		voteOpen = false;
+	}
+
+	/**
+	 * Called by PlanPanel after any plan mutation (prepare, resolve step, complete).
+	 * Re-fetches the plan list. Also marks actionTaken when called during the
+	 * focus player's post-scene action step (plan prep is one of the three choices).
+	 */
+	async function onPlansChanged() {
+		try {
+			const data = await listPlans(String(game.id));
+			plans = data.plans;
+		} catch { /* ignore — WS events will keep us in sync */ }
+		if (sceneEnded && !actionTaken && isFocusPlayer) {
+			actionTaken = true;
+		}
+	}
+
 	// ── Dice roll creation ────────────────────────────────────────────────────
 	let showRollForm = $state(false);
 	let rollDifficulty = $state(3);
@@ -390,6 +439,27 @@
 				{/if}
 			</div>
 
+			<!-- ── Plan panel ───────────────────────────────────────────────── -->
+			<!--
+				Shown in two situations:
+				1. A plan is currently resolving or pending on this row (visible to all).
+				2. The focus player is in their post-scene action step (prep enabled).
+			-->
+			<PlanPanel
+				gameID={game.id}
+				currentRow={game.current_row}
+				{plans}
+				{assets}
+				{players}
+				{currentPlayerID}
+				{isFocusPlayer}
+				prepEnabled={isFocusPlayer && sceneEnded && !actionTaken}
+				{rollActive}
+				{rollOutcome}
+				onRollCreated={onPlanRollCreated}
+				onPlansChanged={onPlansChanged}
+			/>
+
 			<!-- ── Dice roll panel ───────────────────────────────────────────── -->
 			{#if activeRoll}
 				<DiceRollPanel
@@ -446,43 +516,48 @@
 						</div>
 
 					{:else if !actionTaken}
-						<!-- Step 2: choose action (refresh assets or skip) -->
+						<!-- Step 2: post-scene action — prepare a plan (PlanPanel above), refresh, or skip -->
 						<div class="action-step">
-							<span class="action-label">
-								Choose an action — refresh up to {maxRefresh} asset{maxRefresh === 1 ? '' : 's'}, or skip
-							</span>
-							{#if refreshable.length > 0}
-								<div class="refresh-picker">
-									{#each refreshable as asset (asset.id)}
-										<label class="refresh-item" class:selected={selectedRefreshIDs.has(asset.id)}>
-											<input
-												type="checkbox"
-												checked={selectedRefreshIDs.has(asset.id)}
-												disabled={!selectedRefreshIDs.has(asset.id) && selectedRefreshIDs.size >= maxRefresh}
-												onchange={() => toggleRefreshSelection(asset.id)}
-											/>
-											<span class="refresh-asset-name">{asset.name}</span>
-											<span class="refresh-asset-type">{asset.asset_type}</span>
-										</label>
-									{/each}
-								</div>
-								<div class="action-buttons">
-									<button
-										class="action-btn primary"
-										onclick={onRefreshAssets}
-										disabled={actionBusy || selectedRefreshIDs.size === 0}
-									>
-										{actionBusy ? '…' : `Refresh ${selectedRefreshIDs.size > 0 ? selectedRefreshIDs.size : ''} Asset${selectedRefreshIDs.size === 1 ? '' : 's'}`}
-									</button>
+							{#if hasPlansToResolve}
+								<!-- A plan needs to be resolved before the focus player can act. -->
+								<span class="action-label">Resolve the active plan above before acting.</span>
+							{:else}
+								<span class="action-label">
+									Prepare a plan (above) or: refresh up to {maxRefresh} asset{maxRefresh === 1 ? '' : 's'}, or skip
+								</span>
+								{#if refreshable.length > 0}
+									<div class="refresh-picker">
+										{#each refreshable as asset (asset.id)}
+											<label class="refresh-item" class:selected={selectedRefreshIDs.has(asset.id)}>
+												<input
+													type="checkbox"
+													checked={selectedRefreshIDs.has(asset.id)}
+													disabled={!selectedRefreshIDs.has(asset.id) && selectedRefreshIDs.size >= maxRefresh}
+													onchange={() => toggleRefreshSelection(asset.id)}
+												/>
+												<span class="refresh-asset-name">{asset.name}</span>
+												<span class="refresh-asset-type">{asset.asset_type}</span>
+											</label>
+										{/each}
+									</div>
+									<div class="action-buttons">
+										<button
+											class="action-btn primary"
+											onclick={onRefreshAssets}
+											disabled={actionBusy || selectedRefreshIDs.size === 0}
+										>
+											{actionBusy ? '…' : `Refresh ${selectedRefreshIDs.size > 0 ? selectedRefreshIDs.size : ''} Asset${selectedRefreshIDs.size === 1 ? '' : 's'}`}
+										</button>
+										<button class="action-btn secondary" onclick={onSkipRefresh} disabled={actionBusy}>
+											Skip
+										</button>
+									</div>
+								{:else}
+									<p class="action-note">No leveraged assets to refresh.</p>
 									<button class="action-btn secondary" onclick={onSkipRefresh} disabled={actionBusy}>
 										Skip
 									</button>
-								</div>
-							{:else}
-								<p class="action-note">No leveraged assets to refresh.</p>
-								<button class="action-btn secondary" onclick={onSkipRefresh} disabled={actionBusy}>
-									Skip
-								</button>
+								{/if}
 							{/if}
 						</div>
 

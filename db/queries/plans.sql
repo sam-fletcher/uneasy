@@ -41,6 +41,13 @@ UPDATE plans SET result = $2, resolved_at = now(), status = 'resolved' WHERE id 
 -- name: CountPlansOnRow :one
 SELECT count(*) FROM plans WHERE game_id = $1 AND row_number = $2;
 
+-- name: GetResolvingPlanForGame :one
+-- Returns the single plan currently in 'resolving' state for a game.
+SELECT * FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1;
+
+-- name: SetPlanResolutionData :exec
+UPDATE plans SET resolution_data = $2 WHERE id = $1;
+
 -- ── Plan Tokens ──────────────────────────────────────────────────────
 
 -- name: CreatePlanToken :one

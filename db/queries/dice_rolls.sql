@@ -25,6 +25,10 @@ WHERE game_id = $1 AND resolved_at IS NULL
 ORDER BY created_at DESC
 LIMIT 1;
 
+-- name: GetDiceRollByPlanID :one
+-- Returns the most recent dice roll for a given plan (used during resolution).
+SELECT * FROM dice_rolls WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 1;
+
 -- ── Dice Roll Dice ───────────────────────────────────────────────────
 
 -- name: CreateDiceRollDie :one
