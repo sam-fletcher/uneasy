@@ -32,7 +32,11 @@ import (
 	"uneasy/model"
 )
 
-const diceSides = 6
+const (
+	diceSides   = 6
+	makeOutcome = "make"
+	marOutcome  = "mar"
+)
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -620,9 +624,9 @@ func calculateRollResult(actorDice []dieEntry, cancelledIDs map[int64]struct{}, 
 	if roll.AdjustedDifficulty != nil {
 		effectiveDifficulty = *roll.AdjustedDifficulty
 	}
-	outcome := "mar"
+	outcome := marOutcome
 	if result >= effectiveDifficulty {
-		outcome = "make"
+		outcome = makeOutcome
 	}
 	return result, outcome
 }

@@ -231,13 +231,14 @@ func computeDifficulty(
 		if err != nil {
 			return 0, fmt.Errorf("could not determine target player ranking: %w", err)
 		}
-		d := max(int16(6)-targetRank, 1)
+		d := max(int16(diceSides)-targetRank, 1)
 		return d, nil
 
 	case model.PlanMakeIntroductions:
 		// Difficulty = 2 + peer_count (1–4 peers → difficulty 3–6).
+		const baseDifficulty = int16(2)
 		pc := max(resData.PeerCount, 1)
-		return 2 + pc, nil
+		return baseDifficulty + pc, nil
 
 	case model.PlanSpreadPropaganda:
 		// Difficulty = preparer's rank on the esteem track.
@@ -462,8 +463,8 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				return
 			}
 			// Verify the asset belongs to the target player and is a peer.
-			asset, err := q.GetAssetByID(ctx, *body.TargetAssetID)
-			if err != nil {
+			asset, errAsset := q.GetAssetByID(ctx, *body.TargetAssetID)
+			if errAsset != nil {
 				respondErr(w, http.StatusNotFound, "target asset not found")
 				return
 			}
@@ -746,10 +747,9 @@ func FairTrade(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			}
 
 			// Resolve plan.
-			resultStr := "make"
 			if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
 				ID:     plan.ID,
-				Result: &resultStr,
+				Result: new(makeOutcome),
 			}); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not resolve plan")
 				return
@@ -772,7 +772,7 @@ func FairTrade(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				})
 				h.BroadcastEvent(model.EventPlanResolved, model.PlanResolvedPayload{
 					PlanID: plan.ID,
-					Result: resultStr,
+					Result: makeOutcome,
 				})
 			}
 
@@ -855,7 +855,7 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		if body.Result != "make" && body.Result != "mar" {
+		if body.Result != makeOutcome && body.Result != marOutcome {
 			respondErr(w, http.StatusBadRequest, "result must be 'make' or 'mar'")
 			return
 		}
@@ -874,7 +874,7 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		resData.Choices = body.Choices
 
 		// Server-side mechanical effects for Exchange Courtiers make.
-		if plan.PlanType == model.PlanExchangeCourtiers && body.Result == "make" {
+		if plan.PlanType == model.PlanExchangeCourtiers && body.Result == makeOutcome {
 			if plan.TargetAssetID != nil && plan.TargetPlayerID != nil {
 				// Only transfer if not already done via fair trade accept.
 				if resData.FairTradeAccepted == nil || !*resData.FairTradeAccepted {
@@ -1076,7 +1076,7 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 			if myRank <= 1 {
 				continue // already at top
 			}
-			aboveIdx := myRank - 2 // 0-indexed slot one rank above
+			aboveIdx := myRank - 2 //nolint:mnd // 0-indexed slot one rank above
 			myIdx := myRank - 1    // 0-indexed current slot
 
 			above := s[aboveIdx]
@@ -1089,9 +1089,9 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 			s[myIdx] = above
 
 			// Update in-memory rank map so subsequent swaps are aware.
-			playerRank[pid][cat] = int16(aboveIdx + 1)
+			playerRank[pid][cat] = aboveIdx + 1
 			if _, ok := playerRank[above]; ok {
-				playerRank[above][cat] = int16(myIdx + 1)
+				playerRank[above][cat] = myIdx + 1
 			}
 		}
 
