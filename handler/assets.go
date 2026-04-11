@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -209,6 +211,40 @@ func CreateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
+// updateAssetMainCharacter updates the main character flag for an asset.
+func updateAssetMainCharacter(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	asset *dbgen.Asset,
+	player *dbgen.Player,
+	isMainCharacter bool,
+) error {
+	if isMainCharacter {
+		// Only peers can be main characters.
+		if asset.AssetType != model.AssetPeer {
+			respondErr(w, http.StatusBadRequest, "only peer assets can be the main character")
+			return errors.New("not a peer asset")
+		}
+		err := q.ClearMainCharacter(ctx, dbgen.ClearMainCharacterParams{
+			OwnerID: player.ID,
+			GameID:  asset.GameID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not clear main character")
+			return err
+		}
+	}
+	err := q.SetMainCharacter(ctx, dbgen.SetMainCharacterParams{
+		ID:              asset.ID,
+		IsMainCharacter: isMainCharacter,
+	})
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not update main character")
+	}
+	return err
+}
+
 // UpdateAsset handles PUT /api/assets/{assetId}.
 //
 // Owner can update the asset name and/or main-character flag.
@@ -237,10 +273,11 @@ func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				respondErr(w, http.StatusBadRequest, "name cannot be empty")
 				return
 			}
-			if err := q.UpdateAssetName(ctx, dbgen.UpdateAssetNameParams{
+			err := q.UpdateAssetName(ctx, dbgen.UpdateAssetNameParams{
 				ID:   asset.ID,
 				Name: name,
-			}); err != nil {
+			})
+			if err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not update name")
 				return
 			}
@@ -248,25 +285,8 @@ func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		if body.IsMainCharacter != nil {
-			if *body.IsMainCharacter {
-				// Only peers can be main characters.
-				if asset.AssetType != model.AssetPeer {
-					respondErr(w, http.StatusBadRequest, "only peer assets can be the main character")
-					return
-				}
-				if err := q.ClearMainCharacter(ctx, dbgen.ClearMainCharacterParams{
-					OwnerID: player.ID,
-					GameID:  asset.GameID,
-				}); err != nil {
-					respondErr(w, http.StatusInternalServerError, "could not clear main character")
-					return
-				}
-			}
-			if err := q.SetMainCharacter(ctx, dbgen.SetMainCharacterParams{
-				ID:              asset.ID,
-				IsMainCharacter: *body.IsMainCharacter,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not update main character")
+			err := updateAssetMainCharacter(ctx, w, q, asset, player, *body.IsMainCharacter)
+			if err != nil {
 				return
 			}
 			asset.IsMainCharacter = *body.IsMainCharacter

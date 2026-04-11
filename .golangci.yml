@@ -69,7 +69,7 @@ linters:
     - gochecknoglobals # checks that no global variables exist
     - gochecknoinits # checks that no init functions are present in Go code
     - gochecksumtype # checks exhaustiveness on Go "sum types"
-    # - gocognit # computes and checks the cognitive complexity of functions
+    - gocognit # computes and checks the cognitive complexity of functions
     - goconst # finds repeated strings that could be replaced by a constant
     - gocritic # provides diagnostics that check for bugs, performance and style issues
     - gocyclo # computes and checks the cyclomatic complexity of functions
@@ -90,7 +90,7 @@ linters:
     - modernize # suggests simplifications to Go code, using modern language and library features
     - musttag # enforces field tags in (un)marshaled structs
     - nakedret # finds naked returns in functions greater than a specified function length
-    # - nestif # reports deeply nested if statements
+    - nestif # reports deeply nested if statements
     - nilerr # finds the code that returns nil even if it checks that the error is not nil
     - nilnesserr # reports that it checks for err != nil, but it returns a different nil value error (powered by nilness and nilerr)
     - nilnil # checks that there is no simultaneous return of nil error and an invalid value
@@ -298,7 +298,7 @@ linters:
     gocognit:
       # Minimal code complexity to report.
       # Default: 30 (but we recommend 10-20)
-      min-complexity: 20
+      min-complexity: 30
 
     gocritic:
       # Settings passed to gocritic.
@@ -339,7 +339,7 @@ linters:
         # shadow:
         #   # Whether to be strict about shadowing; can be noisy.
         #   # Default: false
-        #   strict: true # TODO: turn on
+        #   strict: true
 
     inamedparam:
       # Skips check for interface methods with only a single parameter.

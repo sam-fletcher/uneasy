@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"uneasy/db"
@@ -35,6 +36,91 @@ func broadcastPhaseChange(manager *hub.Manager, gameID int64, phase model.GamePh
 	if h, ok := manager.Get(gameID); ok {
 		h.BroadcastEvent(model.EventPhaseChanged, model.PhaseChangedPayload{Phase: phase})
 	}
+}
+
+// findLowestSeatOrderPlayer finds the player with the lowest seat order.
+func findLowestSeatOrderPlayer(
+	game *dbgen.Game,
+	players []dbgen.Player,
+) *dbgen.Player {
+	if game.FocusPlayerID != nil {
+		return &dbgen.Player{ID: *game.FocusPlayerID}
+	}
+	var lowestPlayer *dbgen.Player
+	for _, p := range players {
+		if p.SeatOrder != nil {
+			if lowestPlayer == nil || *p.SeatOrder < *lowestPlayer.SeatOrder {
+				lowestPlayer = &p
+			}
+		}
+	}
+	return lowestPlayer
+}
+
+// setAndBroadcastFocusPlayer sets the focus player and broadcasts the change.
+func setAndBroadcastFocusPlayer(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	lowestPlayer *dbgen.Player,
+) bool {
+	if lowestPlayer == nil {
+		return true
+	}
+	err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+		ID:            gameID,
+		FocusPlayerID: &lowestPlayer.ID,
+	})
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not set focus player")
+		return false
+	}
+	if fp, err := q.GetPlayerByID(ctx, lowestPlayer.ID); err == nil {
+		if h, ok := manager.Get(gameID); ok {
+			h.BroadcastEvent(model.EventFocusChanged, model.FocusChangedPayload{
+				PlayerID:    fp.ID,
+				DisplayName: fp.DisplayName,
+			})
+		}
+	}
+	return true
+}
+
+func validateStartMainEvent(
+	w http.ResponseWriter,
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+) ([]dbgen.Ranking, []dbgen.Player, bool) {
+	// Validate: rankings must be set (3 tracks × 5 positions = 15 entries).
+	rankings, err := q.ListRankingsByGame(ctx, gameID)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not load rankings")
+		return nil, nil, false
+	}
+	if len(rankings) < 15 {
+		respondErr(w, http.StatusBadRequest,
+			"rankings must be fully set before starting (all 3 tracks × 5 positions)",
+		)
+		return nil, nil, false
+	}
+
+	// Validate: every player must have a seat order.
+	players, err := q.GetPlayersByGame(ctx, gameID)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not load players")
+		return nil, nil, false
+	}
+	for _, p := range players {
+		if p.SeatOrder == nil {
+			respondErr(w, http.StatusBadRequest, "all players must have a seat order assigned")
+			return nil, nil, false
+		}
+	}
+
+	return rankings, players, true
 }
 
 // StartToneSetting handles POST /api/tables/{id}/start-tone-setting.
@@ -134,32 +220,10 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		// Validate: rankings must be set (3 tracks × 5 positions = 15 entries).
-		rankings, err := q.ListRankingsByGame(ctx, game.ID)
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load rankings")
+		// Validate preconditions for starting main event.
+		_, players, ok := validateStartMainEvent(w, ctx, q, game.ID)
+		if !ok {
 			return
-		}
-		if len(rankings) < 15 {
-			respondErr(
-				w,
-				http.StatusBadRequest,
-				"rankings must be fully set before starting (all 3 tracks × 5 positions)",
-			)
-			return
-		}
-
-		// Validate: every player must have a seat order.
-		players, err := q.GetPlayersByGame(ctx, game.ID)
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load players")
-			return
-		}
-		for _, p := range players {
-			if p.SeatOrder == nil {
-				respondErr(w, http.StatusBadRequest, "all players must have a seat order assigned")
-				return
-			}
 		}
 
 		// Create public record rows 1–13.
@@ -178,26 +242,9 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Pick the first focus player (lowest seat order).
-		var lowestPlayer *dbgen.Player
-		if game.FocusPlayerID != nil {
-			lowestPlayer = &dbgen.Player{ID: *game.FocusPlayerID}
-		} else {
-			for _, p := range players {
-				if p.SeatOrder != nil {
-					if lowestPlayer == nil || *p.SeatOrder < *lowestPlayer.SeatOrder {
-						lowestPlayer = &p
-					}
-				}
-			}
-		}
-		if lowestPlayer != nil {
-			if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
-				ID:            game.ID,
-				FocusPlayerID: &lowestPlayer.ID,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not set focus player")
-				return
-			}
+		lowestPlayer := findLowestSeatOrderPlayer(game, players)
+		if !setAndBroadcastFocusPlayer(ctx, w, q, manager, game.ID, lowestPlayer) {
+			return
 		}
 
 		// Transition phase.
@@ -210,18 +257,6 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		broadcastPhaseChange(manager, game.ID, model.PhaseMainEvent)
-
-		// Also broadcast focus change.
-		if lowestPlayer != nil {
-			if fp, err := q.GetPlayerByID(ctx, lowestPlayer.ID); err == nil {
-				if h, ok := manager.Get(game.ID); ok {
-					h.BroadcastEvent(model.EventFocusChanged, model.FocusChangedPayload{
-						PlayerID:    fp.ID,
-						DisplayName: fp.DisplayName,
-					})
-				}
-			}
-		}
 
 		respond(w, http.StatusOK, map[string]any{
 			"phase":           model.PhaseMainEvent,

@@ -50,37 +50,54 @@ func main() {
 
 // runServer starts the server and handles all initialization.
 func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL string) error {
-	// ── Database ──────────────────────────────────────────────────────────────
-
-	pool, err := pgxpool.New(context.Background(), dbURL)
+	dbPool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
-	defer pool.Close()
+	defer dbPool.Close()
 
 	// Verify the connection is live.
-	if err := pool.Ping(context.Background()); err != nil {
+	if err = dbPool.Ping(context.Background()); err != nil {
 		return fmt.Errorf("ping database: %w", err)
 	}
 	logger.Info("connected to database")
 
-	// ── Migrations ────────────────────────────────────────────────────────────
-
-	if err := db.RunMigrations(dbURL); err != nil {
+	if err = db.RunMigrations(dbURL); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 	logger.Info("migrations applied")
 
-	// ── sqlc queries ──────────────────────────────────────────────────────────
-
-	q := dbgen.New(pool)
-
-	// ── Hub manager ───────────────────────────────────────────────────────────
+	queries := dbgen.New(dbPool)
 
 	manager := hub.NewManager()
 
-	// ── Router ────────────────────────────────────────────────────────────────
+	router := setupRouter(queries, manager)
 
+	if err := setupFrontend(router, devMode, viteURL); err != nil {
+		return err
+	}
+
+	// Start server
+
+	addr := fmt.Sprintf(":%s", port)
+	logger.Info("server starting", "addr", addr, "dev_mode", devMode)
+
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 0, // 0 = no write timeout (needed for WebSocket and SSE)
+		IdleTimeout:  60 * time.Second,
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
+		return fmt.Errorf("server error: %w", err)
+	}
+	return nil
+}
+
+// setupRouter creates and configures the HTTP router with all middleware and routes.
+func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Standard middleware: structured request logging, panic recovery,
@@ -162,8 +179,11 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 		// WebSocket (note: no Timeout middleware for WS connections)
 		r.Get("/tables/{id}/ws", handler.WebSocket(manager))
 	})
+	return r
+}
 
-	// Frontend — proxy to Vite in dev, serve embedded static files in prod.
+// setupFrontend configures frontend routing (Vite proxy in dev, static in prod).
+func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 	if devMode {
 		target, err := url.Parse(viteURL)
 		if err != nil {
@@ -171,30 +191,12 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 		}
 		proxy := httputil.NewSingleHostReverseProxy(target)
 		r.Handle("/*", proxy)
-		logger.Info("dev mode: proxying frontend to Vite", "url", viteURL)
 	} else {
 		// TODO Phase 1 final: embed the built frontend with //go:embed.
 		// For now, serve a minimal placeholder.
 		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "run in DEV_MODE or build the frontend first", http.StatusNotFound)
 		}))
-	}
-
-	// ── Start server ──────────────────────────────────────────────────────────
-
-	addr := fmt.Sprintf(":%s", port)
-	logger.Info("server starting", "addr", addr, "dev_mode", devMode)
-
-	srv := &http.Server{
-		Addr:         addr,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0, // 0 = no write timeout (needed for WebSocket and SSE)
-		IdleTimeout:  60 * time.Second,
-	}
-
-	if err := srv.ListenAndServe(); err != nil {
-		return fmt.Errorf("server error: %w", err)
 	}
 	return nil
 }
