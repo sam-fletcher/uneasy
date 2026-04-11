@@ -104,6 +104,7 @@ type Plan struct {
 	Result           *string               `db:"result" json:"result"`
 	ResolvedAt       pgtype.Timestamptz    `db:"resolved_at" json:"resolved_at"`
 	PreparationNotes *string               `db:"preparation_notes" json:"preparation_notes"`
+	ResolutionData   *string               `db:"resolution_data" json:"resolution_data"`
 }
 
 type PlanToken struct {

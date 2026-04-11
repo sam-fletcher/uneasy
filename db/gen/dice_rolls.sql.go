@@ -150,6 +150,31 @@ func (q *Queries) GetDiceRollByID(ctx context.Context, id int64) (DiceRoll, erro
 	return i, err
 }
 
+const getDiceRollByPlanID = `-- name: GetDiceRollByPlanID :one
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at FROM dice_rolls WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 1
+`
+
+// Returns the most recent dice roll for a given plan (used during resolution).
+func (q *Queries) GetDiceRollByPlanID(ctx context.Context, planID *int64) (DiceRoll, error) {
+	row := q.db.QueryRow(ctx, getDiceRollByPlanID, planID)
+	var i DiceRoll
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlanID,
+		&i.RowNumber,
+		&i.IsShakeUp,
+		&i.ActorID,
+		&i.Difficulty,
+		&i.AdjustedDifficulty,
+		&i.Result,
+		&i.Outcome,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+	)
+	return i, err
+}
+
 const getOpenRollByGame = `-- name: GetOpenRollByGame :one
 SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at FROM dice_rolls
 WHERE game_id = $1 AND resolved_at IS NULL

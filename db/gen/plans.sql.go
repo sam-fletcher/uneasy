@@ -35,7 +35,7 @@ INSERT INTO plans (
   target_player_id, target_asset_id,
   row_number, row_order, prepared_at_row, preparation_notes
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes
+RETURNING id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data
 `
 
 type CreatePlanParams struct {
@@ -82,6 +82,7 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		&i.Result,
 		&i.ResolvedAt,
 		&i.PreparationNotes,
+		&i.ResolutionData,
 	)
 	return i, err
 }
@@ -138,7 +139,7 @@ func (q *Queries) DeletePlanTokensByCategory(ctx context.Context, arg DeletePlan
 }
 
 const getPlanByID = `-- name: GetPlanByID :one
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes FROM plans WHERE id = $1
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data FROM plans WHERE id = $1
 `
 
 func (q *Queries) GetPlanByID(ctx context.Context, id int64) (Plan, error) {
@@ -159,6 +160,7 @@ func (q *Queries) GetPlanByID(ctx context.Context, id int64) (Plan, error) {
 		&i.Result,
 		&i.ResolvedAt,
 		&i.PreparationNotes,
+		&i.ResolutionData,
 	)
 	return i, err
 }
@@ -188,8 +190,36 @@ func (q *Queries) GetPlanTokenByTypeAndPlayer(ctx context.Context, arg GetPlanTo
 	return i, err
 }
 
+const getResolvingPlanForGame = `-- name: GetResolvingPlanForGame :one
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1
+`
+
+// Returns the single plan currently in 'resolving' state for a game.
+func (q *Queries) GetResolvingPlanForGame(ctx context.Context, gameID int64) (Plan, error) {
+	row := q.db.QueryRow(ctx, getResolvingPlanForGame, gameID)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlanType,
+		&i.Category,
+		&i.PreparerID,
+		&i.TargetPlayerID,
+		&i.TargetAssetID,
+		&i.RowNumber,
+		&i.RowOrder,
+		&i.PreparedAtRow,
+		&i.Status,
+		&i.Result,
+		&i.ResolvedAt,
+		&i.PreparationNotes,
+		&i.ResolutionData,
+	)
+	return i, err
+}
+
 const listPendingPlansByRow = `-- name: ListPendingPlansByRow :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data FROM plans
 WHERE game_id = $1 AND row_number = $2 AND status = 'pending'
 ORDER BY row_order ASC
 `
@@ -223,6 +253,7 @@ func (q *Queries) ListPendingPlansByRow(ctx context.Context, arg ListPendingPlan
 			&i.Result,
 			&i.ResolvedAt,
 			&i.PreparationNotes,
+			&i.ResolutionData,
 		); err != nil {
 			return nil, err
 		}
@@ -302,7 +333,7 @@ func (q *Queries) ListPlanTokensByType(ctx context.Context, arg ListPlanTokensBy
 }
 
 const listPlansByGame = `-- name: ListPlansByGame :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes FROM plans WHERE game_id = $1
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data FROM plans WHERE game_id = $1
 ORDER BY row_number ASC, row_order ASC
 `
 
@@ -330,6 +361,7 @@ func (q *Queries) ListPlansByGame(ctx context.Context, gameID int64) ([]Plan, er
 			&i.Result,
 			&i.ResolvedAt,
 			&i.PreparationNotes,
+			&i.ResolutionData,
 		); err != nil {
 			return nil, err
 		}
@@ -342,7 +374,7 @@ func (q *Queries) ListPlansByGame(ctx context.Context, gameID int64) ([]Plan, er
 }
 
 const listPlansByRow = `-- name: ListPlansByRow :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data FROM plans
 WHERE game_id = $1 AND row_number = $2
 ORDER BY row_order ASC
 `
@@ -376,6 +408,7 @@ func (q *Queries) ListPlansByRow(ctx context.Context, arg ListPlansByRowParams) 
 			&i.Result,
 			&i.ResolvedAt,
 			&i.PreparationNotes,
+			&i.ResolutionData,
 		); err != nil {
 			return nil, err
 		}
@@ -388,7 +421,7 @@ func (q *Queries) ListPlansByRow(ctx context.Context, arg ListPlansByRowParams) 
 }
 
 const listUnresolvedPlans = `-- name: ListUnresolvedPlans :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data FROM plans
 WHERE game_id = $1 AND status IN ('pending', 'resolving')
 ORDER BY row_number ASC, row_order ASC
 `
@@ -417,6 +450,7 @@ func (q *Queries) ListUnresolvedPlans(ctx context.Context, gameID int64) ([]Plan
 			&i.Result,
 			&i.ResolvedAt,
 			&i.PreparationNotes,
+			&i.ResolutionData,
 		); err != nil {
 			return nil, err
 		}
@@ -426,6 +460,20 @@ func (q *Queries) ListUnresolvedPlans(ctx context.Context, gameID int64) ([]Plan
 		return nil, err
 	}
 	return items, nil
+}
+
+const setPlanResolutionData = `-- name: SetPlanResolutionData :exec
+UPDATE plans SET resolution_data = $2 WHERE id = $1
+`
+
+type SetPlanResolutionDataParams struct {
+	ID             int64   `db:"id" json:"id"`
+	ResolutionData *string `db:"resolution_data" json:"resolution_data"`
+}
+
+func (q *Queries) SetPlanResolutionData(ctx context.Context, arg SetPlanResolutionDataParams) error {
+	_, err := q.db.Exec(ctx, setPlanResolutionData, arg.ID, arg.ResolutionData)
+	return err
 }
 
 const setPlanResult = `-- name: SetPlanResult :exec
