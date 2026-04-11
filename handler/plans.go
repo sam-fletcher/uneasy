@@ -231,18 +231,12 @@ func computeDifficulty(
 		if err != nil {
 			return 0, fmt.Errorf("could not determine target player ranking: %w", err)
 		}
-		d := int16(6) - targetRank //nolint:gosec // rank clamped to 1–5
-		if d < 1 {
-			d = 1
-		}
+		d := max(int16(6)-targetRank, 1) //nolint:gosec // rank clamped to 1–5
 		return d, nil
 
 	case model.PlanMakeIntroductions:
 		// Difficulty = 2 + peer_count (1–4 peers → difficulty 3–6).
-		pc := resData.PeerCount
-		if pc < 1 {
-			pc = 1
-		}
+		pc := max(resData.PeerCount, 1)
 		return 2 + pc, nil
 
 	case model.PlanSpreadPropaganda:
@@ -270,10 +264,10 @@ func createPlanRoll(
 	actorID int64,
 ) (*dbgen.DiceRoll, error) {
 	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
-		GameID:    game.ID,
-		PlanID:    new(plan.ID),
-		RowNumber: new(game.CurrentRow),
-		ActorID:   actorID,
+		GameID:     game.ID,
+		PlanID:     new(plan.ID),
+		RowNumber:  new(game.CurrentRow),
+		ActorID:    actorID,
 		Difficulty: difficulty,
 	})
 	if err != nil {
@@ -869,7 +863,7 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Verify result matches the linked dice roll's outcome (if one exists).
-		roll, rollErr := q.GetDiceRollByPlanID(ctx, plan.ID)
+		roll, rollErr := q.GetDiceRollByPlanID(ctx, &plan.ID)
 		if rollErr == nil && roll.Outcome != nil && *roll.Outcome != body.Result {
 			respondErr(w, http.StatusConflict,
 				fmt.Sprintf("result '%s' does not match roll outcome '%s'", body.Result, *roll.Outcome))
@@ -939,7 +933,7 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Determine result from roll outcome or existing plan result (fair trade).
 		resultStr := ""
-		roll, rollErr := q.GetDiceRollByPlanID(ctx, plan.ID)
+		roll, rollErr := q.GetDiceRollByPlanID(ctx, &plan.ID)
 		if rollErr == nil && roll.Outcome != nil {
 			resultStr = *roll.Outcome
 		} else if plan.Result != nil {
@@ -985,7 +979,7 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //     a. Gather all player tokens on plans in that category.
 //     b. Process tokens from worst rank to best rank (highest rank# to lowest).
 //     c. For each token player, swap them with whoever occupies the slot
-//        one rank above. In static dummy mode, cannot swap past a dummy.
+//     one rank above. In static dummy mode, cannot swap past a dummy.
 //  2. After processing all tokens for a category: if every plan type in that
 //     category has at least one token, clear all tokens for that category.
 //  3. Upsert all modified ranking slots.
@@ -1083,7 +1077,7 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 				continue // already at top
 			}
 			aboveIdx := myRank - 2 // 0-indexed slot one rank above
-			myIdx := myRank - 1   // 0-indexed current slot
+			myIdx := myRank - 1    // 0-indexed current slot
 
 			above := s[aboveIdx]
 			if above == dummySentinel {
