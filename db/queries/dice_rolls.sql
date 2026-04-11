@@ -19,6 +19,12 @@ UPDATE dice_rolls SET result = $2, outcome = $3, resolved_at = now() WHERE id = 
 -- name: ListDiceRollsByGame :many
 SELECT * FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC;
 
+-- name: GetOpenRollByGame :one
+SELECT * FROM dice_rolls
+WHERE game_id = $1 AND resolved_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- ── Dice Roll Dice ───────────────────────────────────────────────────
 
 -- name: CreateDiceRollDie :one

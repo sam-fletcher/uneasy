@@ -7,12 +7,14 @@
 		startToneSetting, startPrologue,
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord, listScenePosts,
+		getRoll, getActiveRollForGame,
 		type RankingCategory,
 	} from '$lib/api';
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
-		ScenePost, SceneEntry, RecordRow, PresenceMember
+		ScenePost, SceneEntry, RecordRow, PresenceMember,
+		DiceRoll, DiceRollDie, DifficultyVote,
 	} from '$lib/api';
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
 	import PrologueView from '$lib/components/phases/PrologueView.svelte';
@@ -55,6 +57,14 @@
 	// Tracks whether the focus player has ended the scene for the current row.
 	// Resets when focus changes or the row advances.
 	let sceneEnded = $state(false);
+
+	// ── Dice roll state ───────────────────────────────────────────────────────
+	// activeRoll is the current unresolved dice roll for this game (or null).
+	// It's set by roll.created WS events and on page load (via getRoll).
+	let activeRoll = $state<DiceRoll | null>(null);
+	let activeRollDice = $state<DiceRollDie[]>([]);
+	let activeRollVotes = $state<DifficultyVote[]>([]);
+	let voteOpen = $state(false);
 
 	// Player name map passed to MainEventView for attribution.
 	const playerNameMap = $derived(new Map(players.map(p => [p.id, p.display_name])));
@@ -220,6 +230,67 @@
 				});
 				break;
 			}
+			// Dice roll events
+			case EventTypes.RollCreated: {
+				const roll = msg.payload.roll as DiceRoll;
+				// Fetch full details (includes dice) so we're in sync.
+				getRoll(roll.id).then(data => {
+					activeRoll = data.roll;
+					activeRollDice = data.dice;
+					activeRollVotes = data.votes;
+					voteOpen = false;
+				}).catch(() => {
+					activeRoll = roll;
+					activeRollDice = [];
+					activeRollVotes = [];
+					voteOpen = false;
+				});
+				break;
+			}
+			case EventTypes.RollLeverageAdded: {
+				const { roll_id } = msg.payload as { roll_id: number };
+				// Re-fetch dice so we have the actual DB row with its ID.
+				if (activeRoll && activeRoll.id === roll_id) {
+					getRoll(roll_id).then(data => {
+						activeRollDice = data.dice;
+					}).catch(() => {});
+				}
+				break;
+			}
+			case EventTypes.RollVoteCalled: {
+				voteOpen = true;
+				break;
+			}
+			case EventTypes.RollVoteCast: {
+				const { roll_id, player_id, vote } = msg.payload as {
+					roll_id: number; player_id: number; vote: 'yea' | 'nay';
+				};
+				if (activeRoll && activeRoll.id === roll_id) {
+					activeRollVotes = [
+						...activeRollVotes.filter(v => v.player_id !== player_id),
+						{ roll_id, player_id, vote, voted_at: new Date().toISOString() }
+					];
+				}
+				break;
+			}
+			case EventTypes.RollVoteResolved: {
+				const { roll_id, adjusted_difficulty } = msg.payload as {
+					roll_id: number; adjusted_difficulty: number;
+				};
+				if (activeRoll && activeRoll.id === roll_id) {
+					activeRoll = { ...activeRoll, adjusted_difficulty };
+				}
+				break;
+			}
+			case EventTypes.RollResolved: {
+				const resolvedRoll = msg.payload.roll as DiceRoll;
+				const resolvedDice = msg.payload.dice as DiceRollDie[];
+				if (activeRoll && activeRoll.id === resolvedRoll.id) {
+					activeRoll = resolvedRoll;
+					activeRollDice = resolvedDice;
+				}
+				break;
+			}
 		}
 	}
 
@@ -245,12 +316,20 @@
 
 			// Load public record + scene posts if in main_event.
 			if (data.game.phase === 'main_event' && data.game.current_row > 0) {
-				const [postsData, recordData] = await Promise.all([
+				const [postsData, recordData, rollData] = await Promise.all([
 					listScenePosts(gameID, data.game.current_row),
 					getFullRecord(gameID),
+					getActiveRollForGame(gameID),
 				]);
 				scenePosts = postsData.posts;
 				recordRows = recordData.rows;
+				if (rollData.roll) {
+					activeRoll = rollData.roll;
+					activeRollDice = rollData.dice;
+					activeRollVotes = rollData.votes;
+					// We don't know vote-open state from DB alone; check if votes exist.
+					voteOpen = rollData.votes.length > 0;
+				}
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load game state.';
@@ -466,6 +545,11 @@
 			bind:sceneEnded
 			{typingLabel}
 			{playerNameMap}
+			{isFacilitator}
+			bind:activeRoll
+			bind:activeRollDice
+			bind:activeRollVotes
+			bind:voteOpen
 		/>
 
 	<!-- ── Ended ──────────────────────────────────────────────────────────── -->

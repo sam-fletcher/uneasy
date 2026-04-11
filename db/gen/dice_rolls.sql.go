@@ -150,6 +150,33 @@ func (q *Queries) GetDiceRollByID(ctx context.Context, id int64) (DiceRoll, erro
 	return i, err
 }
 
+const getOpenRollByGame = `-- name: GetOpenRollByGame :one
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at FROM dice_rolls
+WHERE game_id = $1 AND resolved_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetOpenRollByGame(ctx context.Context, gameID int64) (DiceRoll, error) {
+	row := q.db.QueryRow(ctx, getOpenRollByGame, gameID)
+	var i DiceRoll
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlanID,
+		&i.RowNumber,
+		&i.IsShakeUp,
+		&i.ActorID,
+		&i.Difficulty,
+		&i.AdjustedDifficulty,
+		&i.Result,
+		&i.Outcome,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+	)
+	return i, err
+}
+
 const listDiceByRoll = `-- name: ListDiceByRoll :many
 SELECT id, roll_id, player_id, is_interference, leveraged_asset_id, face, is_cancelled FROM dice_roll_dice WHERE roll_id = $1 ORDER BY id
 `

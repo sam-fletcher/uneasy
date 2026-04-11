@@ -7,11 +7,12 @@
 	import {
 		createScenePost, createSceneEntry,
 		leverageAsset, refreshAsset, tearMarginalia,
-		endScene, refreshAssets, passFocus,
+		endScene, refreshAssets, passFocus, createRoll,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Marginalium, ScenePost, RecordRow } from '$lib/api';
+	import type { Game, Player, Asset, Marginalium, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote } from '$lib/api';
 	import AssetCard from '$lib/components/AssetCard.svelte';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
+	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 
 	interface Props {
 		game: Game;
@@ -23,6 +24,12 @@
 		sceneEnded: boolean;
 		typingLabel: string;
 		playerNameMap: Map<number, string>;
+		isFacilitator: boolean;
+		/** Active (unresolved) dice roll, or null if none. */
+		activeRoll: DiceRoll | null;
+		activeRollDice: DiceRollDie[];
+		activeRollVotes: DifficultyVote[];
+		voteOpen: boolean;
 	}
 
 	let {
@@ -35,6 +42,11 @@
 		sceneEnded = $bindable(),
 		typingLabel,
 		playerNameMap,
+		isFacilitator,
+		activeRoll = $bindable(),
+		activeRollDice = $bindable(),
+		activeRollVotes = $bindable(),
+		voteOpen = $bindable(),
 	}: Props = $props();
 
 	const myAssets = $derived(assets.filter(a => a.owner_id === currentPlayerID));
@@ -238,6 +250,29 @@
 			actionBusy = false;
 		}
 	}
+
+	// ── Dice roll creation ────────────────────────────────────────────────────
+	let showRollForm = $state(false);
+	let rollDifficulty = $state(3);
+	let rollingBusy = $state(false);
+
+	async function onStartRoll() {
+		if (rollingBusy) return;
+		rollingBusy = true;
+		error = '';
+		try {
+			const { roll } = await createRoll(game.id, rollDifficulty);
+			activeRoll = roll;
+			activeRollDice = [];
+			activeRollVotes = [];
+			voteOpen = false;
+			showRollForm = false;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not start roll.';
+		} finally {
+			rollingBusy = false;
+		}
+	}
 </script>
 
 <div class="main-event-view">
@@ -354,6 +389,49 @@
 					</button>
 				{/if}
 			</div>
+
+			<!-- ── Dice roll panel ───────────────────────────────────────────── -->
+			{#if activeRoll}
+				<DiceRollPanel
+					bind:roll={activeRoll}
+					bind:dice={activeRollDice}
+					bind:votes={activeRollVotes}
+					bind:voteOpen
+					{assets}
+					{currentPlayerID}
+					{players}
+					{playerNameMap}
+					{isFacilitator}
+				/>
+			{:else if game.phase === 'main_event'}
+				<!-- Any player can initiate an in-scene roll -->
+				{#if showRollForm}
+					<div class="roll-start-form">
+						<label class="roll-form-label">
+							Difficulty (1–6):
+							<input
+								type="number"
+								min="1"
+								max="6"
+								bind:value={rollDifficulty}
+								class="diff-input"
+							/>
+						</label>
+						<div class="roll-form-actions">
+							<button class="action-btn primary" onclick={onStartRoll} disabled={rollingBusy}>
+								{rollingBusy ? '…' : 'Start Roll'}
+							</button>
+							<button class="action-btn secondary" onclick={() => { showRollForm = false; }}>
+								Cancel
+							</button>
+						</div>
+					</div>
+				{:else}
+					<button class="roll-init-btn" onclick={() => { showRollForm = true; }}>
+						🎲 Start a dice roll
+					</button>
+				{/if}
+			{/if}
 
 			<!-- ── Focus-player action bar ──────────────────────────────────── -->
 			{#if isFocusPlayer}
@@ -730,6 +808,54 @@
 		font-size: 0.82rem;
 		color: #666;
 		margin: 0;
+	}
+
+	/* Roll init */
+
+	.roll-init-btn {
+		background: none;
+		color: #8a6a3a;
+		font-size: 0.78rem;
+		padding: 0.25rem 0;
+		cursor: pointer;
+		text-decoration: underline dotted;
+		flex-shrink: 0;
+	}
+
+	.roll-init-btn:hover { color: #c8a96e; }
+
+	.roll-start-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding: 0.5rem;
+		border: 1px solid #4a3a20;
+		border-radius: 5px;
+		background: #1e1a10;
+		flex-shrink: 0;
+	}
+
+	.roll-form-label {
+		font-size: 0.82rem;
+		color: #c8a96e;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.diff-input {
+		width: 60px;
+		padding: 0.2rem 0.4rem;
+		background: #2a2a2a;
+		border: 1px solid #555;
+		border-radius: 4px;
+		color: inherit;
+		font-size: 0.9rem;
+	}
+
+	.roll-form-actions {
+		display: flex;
+		gap: 0.5rem;
 	}
 
 	/* Refresh asset picker */

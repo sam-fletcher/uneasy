@@ -106,6 +106,38 @@ export interface SceneEntry {
 	created_at: string;
 }
 
+export interface DiceRoll {
+	id: number;
+	game_id: number;
+	plan_id: number | null;
+	row_number: number | null;
+	is_shake_up: boolean;
+	actor_id: number;
+	difficulty: number;
+	adjusted_difficulty: number | null;
+	result: number | null;
+	outcome: 'make' | 'mar' | null;
+	created_at: string;
+	resolved_at: string | null;
+}
+
+export interface DiceRollDie {
+	id: number;
+	roll_id: number;
+	player_id: number;
+	is_interference: boolean;
+	leveraged_asset_id: number | null;
+	face: number | null;
+	is_cancelled: boolean;
+}
+
+export interface DifficultyVote {
+	roll_id: number;
+	player_id: number;
+	vote: 'yea' | 'nay';
+	voted_at: string;
+}
+
 /** Minimal plan shape for public record display. Full type added in Phase 2f. */
 export interface Plan {
 	id: number;
@@ -433,4 +465,74 @@ export function passFocus(gameID: string | number): Promise<{
 	focus_player_name: string;
 }> {
 	return apiFetch(`/tables/${gameID}/pass-focus`, { method: 'POST' });
+}
+
+// ── Dice Rolls (Phase 2e) ─────────────────────────────────────────────────────
+
+/**
+ * Get the active (unresolved) dice roll for a game, if any.
+ * Returns null in the roll field if there is no active roll.
+ */
+export function getActiveRollForGame(gameID: string | number): Promise<{
+	roll: DiceRoll | null;
+	dice: DiceRollDie[];
+	votes: DifficultyVote[];
+}> {
+	return apiFetch(`/tables/${gameID}/rolls/active`);
+}
+
+/** Create a new dice roll for the current row. The caller becomes the actor. */
+export function createRoll(
+	gameID: string | number,
+	difficulty: number
+): Promise<{ roll: DiceRoll }> {
+	return apiFetch(`/tables/${gameID}/rolls`, {
+		method: 'POST',
+		body: JSON.stringify({ difficulty })
+	});
+}
+
+/** Get full roll state — roll, all dice, and current votes. */
+export function getRoll(rollID: number): Promise<{
+	roll: DiceRoll;
+	dice: DiceRollDie[];
+	votes: DifficultyVote[];
+}> {
+	return apiFetch(`/rolls/${rollID}`);
+}
+
+/** Leverage one of your assets to add a die to an open roll. */
+export function leverageRoll(
+	rollID: number,
+	assetID: number
+): Promise<{ die: DiceRollDie }> {
+	return apiFetch(`/rolls/${rollID}/leverage`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID })
+	});
+}
+
+/** Actor opens a difficulty vote; broadcasts to all players. */
+export function callVote(rollID: number): Promise<{ roll_id: number }> {
+	return apiFetch(`/rolls/${rollID}/call-vote`, { method: 'POST' });
+}
+
+/** Submit a difficulty vote (yea increases difficulty, nay decreases it). */
+export function voteOnRoll(rollID: number, vote: 'yea' | 'nay'): Promise<{
+	vote: string;
+	adjusted_difficulty?: number;
+}> {
+	return apiFetch(`/rolls/${rollID}/vote`, {
+		method: 'POST',
+		body: JSON.stringify({ vote })
+	});
+}
+
+/** Actor or facilitator closes the leverage window and rolls all dice. */
+export function closeLeverage(rollID: number): Promise<{
+	roll: DiceRoll;
+	dice: DiceRollDie[];
+	cancelled_dice: DiceRollDie[];
+}> {
+	return apiFetch(`/rolls/${rollID}/close-leverage`, { method: 'POST' });
 }

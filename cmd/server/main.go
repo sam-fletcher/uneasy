@@ -141,6 +141,17 @@ func main() {
 		r.Post("/tables/{id}/advance-row", handler.AdvanceRow(q, manager))
 		r.Post("/tables/{id}/pass-focus", handler.PassFocus(q, manager))
 
+		// Dice rolls (Phase 2e)
+		r.Get("/tables/{id}/rolls/active", handler.GetActiveRollForGame(q))
+		r.Post("/tables/{id}/rolls", handler.CreateRoll(q, manager))
+		r.Route("/rolls/{rollId}", func(r chi.Router) {
+			r.Get("/", handler.GetRoll(q))
+			r.Post("/leverage", handler.LeverageRoll(q, manager))
+			r.Post("/call-vote", handler.CallVote(q, manager))
+			r.Post("/vote", handler.Vote(q, manager))
+			r.Post("/close-leverage", handler.CloseLeverage(q, manager))
+		})
+
 		// WebSocket (note: no Timeout middleware for WS connections)
 		r.Get("/tables/{id}/ws", handler.WebSocket(manager))
 	})

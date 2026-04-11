@@ -55,9 +55,11 @@ export const EventTypes = {
 
 	// Dice rolls
 	RollCreated: 'roll.created',
-	RollResolved: 'roll.resolved',
+	RollLeverageAdded: 'roll.leverage_added',
 	RollVoteCalled: 'roll.vote_called',
+	RollVoteCast: 'roll.vote_cast',
 	RollVoteResolved: 'roll.vote_resolved',
+	RollResolved: 'roll.resolved',
 } as const;
 
 // createConnection opens a WebSocket to /api/tables/:id/ws and returns a
