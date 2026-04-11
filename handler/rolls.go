@@ -86,8 +86,7 @@ func GetActiveRollForGame(q *dbgen.Queries) http.HandlerFunc {
 		var active *dbgen.DiceRoll
 		for i := len(rolls) - 1; i >= 0; i-- {
 			if rolls[i].Result == nil {
-				r := rolls[i]
-				active = &r
+				active = new(rolls[i])
 				break
 			}
 		}
@@ -157,12 +156,11 @@ func CreateRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		row := game.CurrentRow
 
 		roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
 			GameID:     gameID,
 			PlanID:     nil,
-			RowNumber:  &row,
+			RowNumber:  new(game.CurrentRow),
 			ActorID:    player.ID,
 			Difficulty: body.Difficulty,
 		})
@@ -424,14 +422,11 @@ func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// All votes in — compute and store adjusted_difficulty.
-		adj := max(roll.Difficulty+int16(counts.NayCount)-int16(counts.YeaCount), 1)
-		if adj > 6 {
-			adj = 6
-		}
+		// All votes in — compute and store adjusted_difficulty (clamped to 1–6).
+		adj := min(max(roll.Difficulty+int16(counts.NayCount)-int16(counts.YeaCount), 1), 6)
 		if err := q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
 			ID:                 roll.ID,
-			AdjustedDifficulty: &adj,
+			AdjustedDifficulty: new(adj),
 		}); err != nil {
 			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
 			return
@@ -496,63 +491,60 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// ── Roll all dice ────────────────────────────────────────────────────────
 
-		// Assign random faces and bucket into actor vs. interference slices.
-		type rolledDie struct {
-			die  dbgen.DiceRollDice
+		// Assign random faces; bucket die IDs by actor vs. interference.
+		// We only need (id, face) for the cancellation algorithm — carrying
+		// the full DiceRollDice row would be wasted allocation.
+		type dieEntry struct {
+			id   int64
 			face int16
 		}
-		var actorDice, intDice []rolledDie
+		var actorDice, intDice []dieEntry
 
 		for _, d := range dice {
 			f := int16(rand.IntN(6) + 1) //nolint:gosec // game randomness, not security
-			face := f
-			if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: &face}); err != nil {
+			if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not set die face")
 				return
 			}
-			d.Face = &f
-			rd := rolledDie{die: d, face: f}
+			e := dieEntry{id: d.ID, face: f}
 			if d.IsInterference {
-				intDice = append(intDice, rd)
+				intDice = append(intDice, e)
 			} else {
-				actorDice = append(actorDice, rd)
+				actorDice = append(actorDice, e)
 			}
 		}
 
 		// ── Interference cancellation ────────────────────────────────────────────
 
-		// Group actor dice by face.
-		actorByFace := map[int16][]rolledDie{}
-		for _, rd := range actorDice {
-			actorByFace[rd.face] = append(actorByFace[rd.face], rd)
+		// Group actor and interference dice by face value.
+		actorByFace := map[int16][]dieEntry{}
+		for _, e := range actorDice {
+			actorByFace[e.face] = append(actorByFace[e.face], e)
 		}
-		// Group interference dice by face.
-		intByFace := map[int16][]rolledDie{}
-		for _, rd := range intDice {
-			intByFace[rd.face] = append(intByFace[rd.face], rd)
+		intByFace := map[int16][]dieEntry{}
+		for _, e := range intDice {
+			intByFace[e.face] = append(intByFace[e.face], e)
 		}
 
 		// For each interference face, cancel min(actorCount, intCount) actor dice.
 		cancelledIDs := map[int64]bool{}
 		for face, intGroup := range intByFace {
 			actorGroup := actorByFace[face]
-			cancelCount := min(len(intGroup), len(actorGroup))
-			for i := range cancelCount {
-				id := actorGroup[i].die.ID
-				if err := q.SetDieCancelled(ctx, id); err != nil {
+			for i := range min(len(intGroup), len(actorGroup)) {
+				if err := q.SetDieCancelled(ctx, actorGroup[i].id); err != nil {
 					respondErr(w, http.StatusInternalServerError, "could not cancel die")
 					return
 				}
-				cancelledIDs[id] = true
+				cancelledIDs[actorGroup[i].id] = true
 			}
 		}
 
 		// ── Result calculation ───────────────────────────────────────────────────
 
 		distinctFaces := map[int16]bool{}
-		for _, rd := range actorDice {
-			if !cancelledIDs[rd.die.ID] {
-				distinctFaces[rd.face] = true
+		for _, e := range actorDice {
+			if !cancelledIDs[e.id] {
+				distinctFaces[e.face] = true
 			}
 		}
 		result := int16(len(distinctFaces))
@@ -568,8 +560,8 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		if err := q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
 			ID:      roll.ID,
-			Result:  &result,
-			Outcome: &outcome,
+			Result:  new(result),
+			Outcome: new(outcome),
 		}); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not resolve roll")
 			return

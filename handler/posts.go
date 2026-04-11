@@ -116,11 +116,10 @@ func CreateScenePost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		row := int16(rowNum)
 
 		post, err := q.CreateScenePost(ctx, dbgen.CreateScenePostParams{
 			GameID:    gameID,
-			RowNumber: &row,
+			RowNumber: new(int16(rowNum)),
 			PlanID:    body.PlanID,
 			AuthorID:  player.ID,
 			Body:      body.Body,

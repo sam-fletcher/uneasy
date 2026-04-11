@@ -270,10 +270,10 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // Implements rules steps 6–8 of the per-row loop:
 //
-//   6. Pass the focus marker clockwise → broadcasts focus.changed.
-//   7. Check if pending plans remain on this row.
-//   8. If none remain, advance the row automatically → broadcasts row.advanced
-//      (and rankings.updated at engrailed lines, phase.changed if the game ends).
+//  6. Pass the focus marker clockwise → broadcasts focus.changed.
+//  7. Check if pending plans remain on this row.
+//  8. If none remain, advance the row automatically → broadcasts row.advanced
+//     (and rankings.updated at engrailed lines, phase.changed if the game ends).
 //
 // Focus does NOT change again on the row advance — whoever receives it in
 // step 6 carries it into the next row.
@@ -301,10 +301,9 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		id := next.ID
 		if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
 			ID:            game.ID,
-			FocusPlayerID: &id,
+			FocusPlayerID: new(next.ID),
 		}); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not update focus player")
 			return

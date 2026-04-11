@@ -174,22 +174,22 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Pick the first focus player (lowest seat order).
-		var firstFocus *int64
+		var lowestPlayer *dbgen.Player
 		if game.FocusPlayerID != nil {
-			firstFocus = game.FocusPlayerID
+			lowestPlayer = &dbgen.Player{ID: *game.FocusPlayerID}
 		} else {
 			for _, p := range players {
 				if p.SeatOrder != nil {
-					id := p.ID
-					firstFocus = &id
-					break
+					if lowestPlayer == nil || *p.SeatOrder < *lowestPlayer.SeatOrder {
+						lowestPlayer = &p
+					}
 				}
 			}
 		}
-		if firstFocus != nil {
+		if lowestPlayer != nil {
 			if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
 				ID:            game.ID,
-				FocusPlayerID: firstFocus,
+				FocusPlayerID: &lowestPlayer.ID,
 			}); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not set focus player")
 				return
@@ -208,8 +208,8 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		broadcastPhaseChange(manager, game.ID, model.PhaseMainEvent)
 
 		// Also broadcast focus change.
-		if firstFocus != nil {
-			if fp, err := q.GetPlayerByID(ctx, *firstFocus); err == nil {
+		if lowestPlayer != nil {
+			if fp, err := q.GetPlayerByID(ctx, lowestPlayer.ID); err == nil {
 				if h, ok := manager.Get(game.ID); ok {
 					h.BroadcastEvent(model.EventFocusChanged, model.FocusChangedPayload{
 						PlayerID:    fp.ID,
@@ -222,7 +222,7 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		respond(w, http.StatusOK, map[string]any{
 			"phase":           model.PhaseMainEvent,
 			"current_row":     1,
-			"focus_player_id": firstFocus,
+			"focus_player_id": lowestPlayer.ID,
 		})
 	}
 }
