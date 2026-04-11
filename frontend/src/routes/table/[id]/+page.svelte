@@ -51,6 +51,11 @@
 	let recordRows = $state<RecordRow[]>([]);
 	let scenePosts = $state<ScenePost[]>([]);
 
+	// ── Turn step state ───────────────────────────────────────────────────────
+	// Tracks whether the focus player has ended the scene for the current row.
+	// Resets when focus changes or the row advances.
+	let sceneEnded = $state(false);
+
 	// Player name map passed to MainEventView for attribution.
 	const playerNameMap = $derived(new Map(players.map(p => [p.id, p.display_name])));
 
@@ -115,10 +120,19 @@
 			}
 			case EventTypes.FocusChanged: {
 				if (game) game = { ...game, focus_player_id: msg.payload.player_id as number };
+				sceneEnded = false; // reset turn step when focus changes
 				break;
 			}
 			case EventTypes.RowAdvanced: {
-				if (game) game = { ...game, current_row: msg.payload.row as number };
+				const newRow = msg.payload.row_number as number;
+				if (game) game = { ...game, current_row: newRow };
+				sceneEnded = false; // reset turn step for new row
+				// Reload posts for the new row's scene thread.
+				listScenePosts(gameID, newRow).then(data => { scenePosts = data.posts; }).catch(() => {});
+				break;
+			}
+			case EventTypes.SceneEnded: {
+				sceneEnded = true;
 				break;
 			}
 			case EventTypes.ScenePostCreated: {
@@ -449,6 +463,7 @@
 			{currentPlayerID}
 			bind:recordRows
 			bind:scenePosts
+			bind:sceneEnded
 			{typingLabel}
 			{playerNameMap}
 		/>

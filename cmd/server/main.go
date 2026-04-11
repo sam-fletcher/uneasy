@@ -135,6 +135,12 @@ func main() {
 		r.Post("/tables/{id}/rows/{row}/posts", handler.CreateScenePost(q, manager))
 		r.Post("/tables/{id}/rows/{row}/summary", handler.CreateSceneEntry(q, manager))
 
+		// Turn structure (Phase 2d)
+		r.Post("/tables/{id}/end-scene", handler.EndScene(q, manager))
+		r.Post("/tables/{id}/refresh-assets", handler.RefreshAssets(q, manager))
+		r.Post("/tables/{id}/advance-row", handler.AdvanceRow(q, manager))
+		r.Post("/tables/{id}/pass-focus", handler.PassFocus(q, manager))
+
 		// WebSocket (note: no Timeout middleware for WS connections)
 		r.Get("/tables/{id}/ws", handler.WebSocket(manager))
 	})

@@ -31,6 +31,7 @@ export const EventTypes = {
 	// Focus player & row advancement
 	FocusChanged: 'focus.changed',
 	RowAdvanced: 'row.advanced',
+	SceneEnded: 'scene.ended',
 
 	// Scene posts & entries (replaces post.created)
 	ScenePostCreated: 'scene_post.created',

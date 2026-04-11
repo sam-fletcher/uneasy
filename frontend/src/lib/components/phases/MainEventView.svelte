@@ -7,6 +7,7 @@
 	import {
 		createScenePost, createSceneEntry,
 		leverageAsset, refreshAsset, tearMarginalia,
+		endScene, refreshAssets, passFocus,
 	} from '$lib/api';
 	import type { Game, Player, Asset, Marginalium, ScenePost, RecordRow } from '$lib/api';
 	import AssetCard from '$lib/components/AssetCard.svelte';
@@ -19,6 +20,7 @@
 		currentPlayerID: number | null;
 		recordRows: RecordRow[];
 		scenePosts: ScenePost[];
+		sceneEnded: boolean;
 		typingLabel: string;
 		playerNameMap: Map<number, string>;
 	}
@@ -30,6 +32,7 @@
 		currentPlayerID,
 		recordRows = $bindable(),
 		scenePosts = $bindable(),
+		sceneEnded = $bindable(),
 		typingLabel,
 		playerNameMap,
 	}: Props = $props();
@@ -144,6 +147,95 @@
 			await tearMarginalia(asset.id, m.position);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not tear marginalia.';
+		}
+	}
+
+	// ── Focus-player action bar ───────────────────────────────────────────────
+
+	const isFocusPlayer = $derived(
+		currentPlayerID != null && game.focus_player_id === currentPlayerID
+	);
+
+	// Refresh-assets sub-step: which leveraged assets the player has selected.
+	let refreshable = $derived(assets.filter(a => a.owner_id === currentPlayerID && a.is_leveraged && !a.is_destroyed));
+	let selectedRefreshIDs = $state<Set<number>>(new Set());
+	let maxRefresh = $derived(game.current_row);
+
+	// Reset selections when assets or step changes.
+	$effect(() => {
+		if (!sceneEnded) selectedRefreshIDs = new Set();
+	});
+
+	function toggleRefreshSelection(id: number) {
+		const next = new Set(selectedRefreshIDs);
+		if (next.has(id)) {
+			next.delete(id);
+		} else if (next.size < maxRefresh) {
+			next.add(id);
+		}
+		selectedRefreshIDs = next;
+	}
+
+	let actionBusy = $state(false);
+
+	async function onEndScene() {
+		if (actionBusy) return;
+		actionBusy = true;
+		error = '';
+		try {
+			await endScene(game.id);
+			// The server broadcasts scene.ended; the parent page sets sceneEnded = true.
+			// We set it locally too so the UI is instant for the focus player.
+			sceneEnded = true;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not end scene.';
+		} finally {
+			actionBusy = false;
+		}
+	}
+
+	async function onRefreshAssets() {
+		if (actionBusy) return;
+		actionBusy = true;
+		error = '';
+		try {
+			await refreshAssets(game.id, [...selectedRefreshIDs]);
+			selectedRefreshIDs = new Set();
+			// Assets are updated via the asset.refreshed WS event; no local state needed.
+			// Move to the "done" step by marking actionTaken.
+			actionTaken = true;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not refresh assets.';
+		} finally {
+			actionBusy = false;
+		}
+	}
+
+	// actionTaken: focus player has chosen their action (refresh or skip).
+	// Together with sceneEnded, it drives the action bar step.
+	let actionTaken = $state(false);
+
+	// Reset actionTaken when sceneEnded resets (new row or new focus).
+	$effect(() => {
+		if (!sceneEnded) actionTaken = false;
+	});
+
+	async function onSkipRefresh() {
+		// Player opts not to refresh any assets.
+		actionTaken = true;
+	}
+
+	async function onPassFocus() {
+		if (actionBusy) return;
+		actionBusy = true;
+		error = '';
+		try {
+			await passFocus(game.id);
+			// focus.changed WS event will update the parent; sceneEnded resets.
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not pass focus.';
+		} finally {
+			actionBusy = false;
 		}
 	}
 </script>
@@ -262,6 +354,78 @@
 					</button>
 				{/if}
 			</div>
+
+			<!-- ── Focus-player action bar ──────────────────────────────────── -->
+			{#if isFocusPlayer}
+				<div class="action-bar">
+					{#if !sceneEnded}
+						<!-- Step 1: scene is active — end it when ready -->
+						<div class="action-step">
+							<span class="action-label">Your turn as focus player</span>
+							<button class="action-btn primary" onclick={onEndScene} disabled={actionBusy}>
+								{actionBusy ? '…' : 'End Scene'}
+							</button>
+						</div>
+
+					{:else if !actionTaken}
+						<!-- Step 2: choose action (refresh assets or skip) -->
+						<div class="action-step">
+							<span class="action-label">
+								Choose an action — refresh up to {maxRefresh} asset{maxRefresh === 1 ? '' : 's'}, or skip
+							</span>
+							{#if refreshable.length > 0}
+								<div class="refresh-picker">
+									{#each refreshable as asset (asset.id)}
+										<label class="refresh-item" class:selected={selectedRefreshIDs.has(asset.id)}>
+											<input
+												type="checkbox"
+												checked={selectedRefreshIDs.has(asset.id)}
+												disabled={!selectedRefreshIDs.has(asset.id) && selectedRefreshIDs.size >= maxRefresh}
+												onchange={() => toggleRefreshSelection(asset.id)}
+											/>
+											<span class="refresh-asset-name">{asset.name}</span>
+											<span class="refresh-asset-type">{asset.asset_type}</span>
+										</label>
+									{/each}
+								</div>
+								<div class="action-buttons">
+									<button
+										class="action-btn primary"
+										onclick={onRefreshAssets}
+										disabled={actionBusy || selectedRefreshIDs.size === 0}
+									>
+										{actionBusy ? '…' : `Refresh ${selectedRefreshIDs.size > 0 ? selectedRefreshIDs.size : ''} Asset${selectedRefreshIDs.size === 1 ? '' : 's'}`}
+									</button>
+									<button class="action-btn secondary" onclick={onSkipRefresh} disabled={actionBusy}>
+										Skip
+									</button>
+								</div>
+							{:else}
+								<p class="action-note">No leveraged assets to refresh.</p>
+								<button class="action-btn secondary" onclick={onSkipRefresh} disabled={actionBusy}>
+									Skip
+								</button>
+							{/if}
+						</div>
+
+					{:else}
+						<!-- Step 3: pass focus (server auto-advances row when all plans on this row are resolved) -->
+						<div class="action-step">
+							<span class="action-label">Ready to move on</span>
+							<button class="action-btn primary" onclick={onPassFocus} disabled={actionBusy}>
+								{actionBusy ? '…' : 'Pass Focus'}
+							</button>
+						</div>
+					{/if}
+				</div>
+			{:else if game.focus_player_id != null}
+				<!-- Non-focus players see a quiet indicator -->
+				<div class="action-bar waiting">
+					<span class="action-label">
+						Waiting for {players.find(p => p.id === game.focus_player_id)?.display_name ?? 'the focus player'}…
+					</span>
+				</div>
+			{/if}
 		</div>
 
 	</div>
@@ -501,5 +665,115 @@
 		display: flex;
 		gap: 0.75rem;
 		align-items: center;
+	}
+
+	/* ── Action bar ──────────────────────────────────────────────────────────── */
+
+	.action-bar {
+		flex-shrink: 0;
+		padding: 0.6rem 0 0;
+		border-top: 1px solid #3a3020;
+		margin-top: 0.25rem;
+	}
+
+	.action-bar.waiting {
+		border-color: #222;
+	}
+
+	.action-step {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.action-label {
+		font-size: 0.78rem;
+		color: #c8a96e;
+		font-style: italic;
+	}
+
+	.action-bar.waiting .action-label {
+		color: #666;
+	}
+
+	.action-buttons {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.action-btn {
+		padding: 0.4rem 0.8rem;
+		border-radius: 5px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.action-btn.primary {
+		background: #c8a96e;
+		color: #1a1a1a;
+	}
+
+	.action-btn.secondary {
+		background: #333;
+		color: #c8a96e;
+		border: 1px solid #4a4030;
+	}
+
+	.action-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.action-note {
+		font-size: 0.82rem;
+		color: #666;
+		margin: 0;
+	}
+
+	/* Refresh asset picker */
+
+	.refresh-picker {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		max-height: 120px;
+		overflow-y: auto;
+	}
+
+	.refresh-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.3rem 0.5rem;
+		border-radius: 4px;
+		background: #252525;
+		cursor: pointer;
+		font-size: 0.85rem;
+		border: 1px solid transparent;
+	}
+
+	.refresh-item.selected {
+		border-color: #c8a96e;
+		background: #2e2510;
+	}
+
+	.refresh-item input[type="checkbox"] {
+		accent-color: #c8a96e;
+		width: 14px;
+		height: 14px;
+		cursor: pointer;
+	}
+
+	.refresh-asset-name {
+		flex: 1;
+		color: #e8e4d9;
+	}
+
+	.refresh-asset-type {
+		font-size: 0.72rem;
+		color: #777;
+		text-transform: capitalize;
 	}
 </style>

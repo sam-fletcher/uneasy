@@ -1,0 +1,376 @@
+// handler/turn.go — Focus player turn structure actions (Phase 2d).
+//
+// Per-row loop (rules §"Steps For Each Row"):
+//
+//  1. (War step — skipped in Phase 2)
+//  2. Resolve topmost pending plan on this row (Phase 2f).
+//  3. Focus player sets a scene (EndScene marks it complete).
+//  4. Roleplay; dice if needed; add summary.
+//  5. Focus player prepares a plan or refreshes assets (RefreshAssets).
+//  6. Pass the focus marker clockwise (PassFocus).
+//  7. If pending plans remain on this row, repeat from step 2 (server
+//     auto-checks inside PassFocus).
+//  8. Advance the current-row marker; cross engrailed lines; end if past 13
+//     (PassFocus auto-advances when no plans remain after step 6).
+//
+// AdvanceRow is kept as a facilitator escape hatch (manual row advance without
+// touching focus). PassFocus is the normal end-of-turn action and handles the
+// step-7/8 logic automatically.
+package handler
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	dbgen "uneasy/db/gen"
+	"uneasy/hub"
+	"uneasy/model"
+)
+
+// requireFocusPlayer validates that the caller is the current focus player.
+// Returns the game and player, or writes an error response.
+func requireFocusPlayer(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.Game, *dbgen.Player, bool) {
+	gameID, player, ok := parseGamePlayer(w, r)
+	if !ok {
+		return nil, nil, false
+	}
+	game, err := q.GetGameByID(r.Context(), gameID)
+	if err != nil {
+		respondErr(w, http.StatusNotFound, "table not found")
+		return nil, nil, false
+	}
+	if game.FocusPlayerID == nil || *game.FocusPlayerID != player.ID {
+		respondErr(w, http.StatusForbidden, "only the focus player can do this")
+		return nil, nil, false
+	}
+	return &game, player, true
+}
+
+// nextFocusPlayer returns the player with the next higher seat_order,
+// wrapping around to the lowest seat_order when the end is reached.
+func nextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusID int64) (*dbgen.Player, error) {
+	next, err := q.GetNextFocusPlayer(r.Context(), dbgen.GetNextFocusPlayerParams{
+		GameID: gameID,
+		ID:     currentFocusID,
+	})
+	if err != nil {
+		// No player with a higher seat_order — wrap to the first.
+		first, err2 := q.GetFirstFocusPlayer(r.Context(), gameID)
+		if err2 != nil {
+			return nil, err2
+		}
+		return &first, nil
+	}
+	return &next, nil
+}
+
+// isEngrailedLine reports whether advancing from oldRow to newRow crosses
+// an engrailed line. Engrailed lines fall after rows 4, 8, and 12.
+func isEngrailedLine(oldRow, newRow int16) bool {
+	for _, line := range []int16{4, 8, 12} {
+		if oldRow <= line && newRow > line {
+			return true
+		}
+	}
+	return false
+}
+
+// advanceRowInner performs the shared row-advance logic used by both
+// PassFocus (auto-advance) and AdvanceRow (manual). It increments
+// current_row, broadcasts events, and transitions the game to ended if
+// past row 13. Returns the new row number, or 0 if the game ended.
+//
+// h may be nil when no clients are connected — all h.BroadcastEvent calls
+// are guarded by the nil check.
+// Focus is NOT changed here — whoever holds it going in keeps it.
+func advanceRowInner(
+	r *http.Request,
+	q *dbgen.Queries,
+	h *hub.Hub,
+	game *dbgen.Game,
+) (newRow int16, ended bool, err error) {
+	oldRow := game.CurrentRow
+
+	newRow, err = q.AdvanceRow(r.Context(), game.ID)
+	if err != nil {
+		return 0, false, err
+	}
+
+	// Past row 13 — transition to ended.
+	if newRow > 13 {
+		if err = q.SetGamePhase(r.Context(), dbgen.SetGamePhaseParams{
+			ID:    game.ID,
+			Phase: model.PhaseEnded,
+		}); err != nil {
+			return 0, false, err
+		}
+		if h != nil {
+			h.BroadcastEvent(model.EventPhaseChanged, model.PhaseChangedPayload{Phase: model.PhaseEnded})
+		}
+		return newRow, true, nil
+	}
+
+	crossed := isEngrailedLine(oldRow, newRow)
+
+	if h != nil {
+		h.BroadcastEvent(model.EventRowAdvanced, model.RowAdvancedPayload{
+			RowNumber:        newRow,
+			CrossedEngrailed: crossed,
+		})
+	}
+
+	// Phase 2d: ranking algorithm (plan tokens) runs in Phase 2f.
+	// For now, broadcast current rankings unchanged as the client trigger.
+	if crossed && h != nil {
+		if rankings, qErr := q.ListRankingsByGame(r.Context(), game.ID); qErr == nil {
+			h.BroadcastEvent(model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: rankings})
+		}
+	}
+
+	return newRow, false, nil
+}
+
+// EndScene handles POST /api/tables/{id}/end-scene.
+//
+// Validates the caller is the focus player and broadcasts scene.ended so all
+// clients know the roleplay portion of this turn is complete. No DB write —
+// the event is a coordination signal only.
+func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		game, player, ok := requireFocusPlayer(w, r, q)
+		if !ok {
+			return
+		}
+		if game.Phase != model.PhaseMainEvent {
+			respondErr(w, http.StatusConflict, "game is not in the main event phase")
+			return
+		}
+
+		if h, ok := manager.Get(game.ID); ok {
+			h.BroadcastEvent(model.EventSceneEnded, model.SceneEndedPayload{
+				RowNumber: game.CurrentRow,
+				PlayerID:  player.ID,
+			})
+		}
+
+		respond(w, http.StatusOK, map[string]any{"row_number": game.CurrentRow})
+	}
+}
+
+// RefreshAssets handles POST /api/tables/{id}/refresh-assets.
+//
+// The focus player refreshes up to current_row of their leveraged assets.
+// Request body: {"asset_ids": [id1, id2, ...]}.
+func RefreshAssets(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		game, player, ok := requireFocusPlayer(w, r, q)
+		if !ok {
+			return
+		}
+		if game.Phase != model.PhaseMainEvent {
+			respondErr(w, http.StatusConflict, "game is not in the main event phase")
+			return
+		}
+
+		var body struct {
+			AssetIDs []int64 `json:"asset_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if len(body.AssetIDs) == 0 {
+			respond(w, http.StatusOK, map[string]any{"refreshed": []int64{}})
+			return
+		}
+
+		maxRefresh := int(game.CurrentRow)
+		if len(body.AssetIDs) > maxRefresh {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("can only refresh up to %d assets on row %d", maxRefresh, game.CurrentRow))
+			return
+		}
+
+		ctx := r.Context()
+
+		// Validate: all assets must be owned by the caller and currently leveraged.
+		for _, id := range body.AssetIDs {
+			asset, err := q.GetAssetByID(ctx, id)
+			if err != nil {
+				respondErr(w, http.StatusBadRequest, "asset not found")
+				return
+			}
+			if asset.OwnerID != player.ID {
+				respondErr(w, http.StatusForbidden, "you can only refresh your own assets")
+				return
+			}
+			if !asset.IsLeveraged {
+				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is not leveraged", id))
+				return
+			}
+		}
+
+		h, hasHub := manager.Get(game.ID)
+
+		for _, id := range body.AssetIDs {
+			if err := q.RefreshPlayerAssets(ctx, id); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not refresh asset")
+				return
+			}
+			if hasHub {
+				h.BroadcastEvent(model.EventAssetRefreshed, model.AssetIDPayload{AssetID: id})
+			}
+		}
+
+		respond(w, http.StatusOK, map[string]any{"refreshed": body.AssetIDs})
+	}
+}
+
+// AdvanceRow handles POST /api/tables/{id}/advance-row.
+//
+// Facilitator escape hatch: manually advances the current row without touching
+// the focus player. In normal play, PassFocus handles the row advance
+// automatically after the last plan on a row is resolved. Use this endpoint
+// only when the automatic path cannot be taken (e.g. stuck state recovery).
+//
+// Event order: row.advanced → rankings.updated (engrailed only) → phase.changed (ended only).
+// Focus does NOT change.
+func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		game, _, ok := requireFocusPlayer(w, r, q)
+		if !ok {
+			return
+		}
+		if game.Phase != model.PhaseMainEvent {
+			respondErr(w, http.StatusConflict, "game is not in the main event phase")
+			return
+		}
+
+		h, _ := manager.Get(game.ID) // nil if no clients connected — advanceRowInner handles nil
+
+		newRow, ended, err := advanceRowInner(r, q, h, game)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not advance row")
+			return
+		}
+
+		if ended {
+			respond(w, http.StatusOK, map[string]any{"phase": model.PhaseEnded})
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"row_number":        newRow,
+			"crossed_engrailed": isEngrailedLine(game.CurrentRow, newRow),
+		})
+	}
+}
+
+// PassFocus handles POST /api/tables/{id}/pass-focus.
+//
+// Implements rules steps 6–8 of the per-row loop:
+//
+//   6. Pass the focus marker clockwise → broadcasts focus.changed.
+//   7. Check if pending plans remain on this row.
+//   8. If none remain, advance the row automatically → broadcasts row.advanced
+//      (and rankings.updated at engrailed lines, phase.changed if the game ends).
+//
+// Focus does NOT change again on the row advance — whoever receives it in
+// step 6 carries it into the next row.
+func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		game, _, ok := requireFocusPlayer(w, r, q)
+		if !ok {
+			return
+		}
+		if game.Phase != model.PhaseMainEvent {
+			respondErr(w, http.StatusConflict, "game is not in the main event phase")
+			return
+		}
+		if game.FocusPlayerID == nil {
+			respondErr(w, http.StatusConflict, "no focus player set")
+			return
+		}
+
+		ctx := r.Context()
+
+		// Step 6: pass focus to the next player clockwise.
+		next, err := nextFocusPlayer(r, q, game.ID, *game.FocusPlayerID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not determine next focus player")
+			return
+		}
+
+		id := next.ID
+		if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+			ID:            game.ID,
+			FocusPlayerID: &id,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not update focus player")
+			return
+		}
+
+		h, hasHub := manager.Get(game.ID)
+		if hasHub {
+			h.BroadcastEvent(model.EventFocusChanged, model.FocusChangedPayload{
+				PlayerID:    next.ID,
+				DisplayName: next.DisplayName,
+			})
+		}
+
+		// Step 7: are there pending plans still on this row?
+		pending, err := q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
+			GameID:    game.ID,
+			RowNumber: game.CurrentRow,
+		})
+		if err != nil {
+			// Non-fatal: pass focus succeeded; leave row advance to the
+			// facilitator's manual AdvanceRow if needed.
+			respond(w, http.StatusOK, map[string]any{
+				"focus_player_id":   next.ID,
+				"focus_player_name": next.DisplayName,
+			})
+			return
+		}
+
+		if len(pending) > 0 {
+			// Plans remain — new focus player will resolve the next one.
+			// No row advance yet.
+			respond(w, http.StatusOK, map[string]any{
+				"focus_player_id":   next.ID,
+				"focus_player_name": next.DisplayName,
+			})
+			return
+		}
+
+		// Step 8: no plans remain — advance the row automatically.
+		// Focus stays with `next` (they carry it into the new row).
+		newRow, ended, err := advanceRowInner(r, q, h, game)
+		if err != nil {
+			// Row advance failed after focus already moved — not ideal, but
+			// focus.changed was already broadcast so respond with what we have.
+			respond(w, http.StatusOK, map[string]any{
+				"focus_player_id":   next.ID,
+				"focus_player_name": next.DisplayName,
+				"advance_error":     "could not advance row; use /advance-row to retry",
+			})
+			return
+		}
+
+		if ended {
+			respond(w, http.StatusOK, map[string]any{
+				"focus_player_id":   next.ID,
+				"focus_player_name": next.DisplayName,
+				"phase":             model.PhaseEnded,
+			})
+			return
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"focus_player_id":   next.ID,
+			"focus_player_name": next.DisplayName,
+			"row_number":        newRow,
+			"crossed_engrailed": isEngrailedLine(game.CurrentRow, newRow),
+		})
+	}
+}

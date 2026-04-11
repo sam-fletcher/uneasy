@@ -17,6 +17,7 @@ const (
 	EventPhaseChanged = "phase.changed"
 	EventFocusChanged = "focus.changed"
 	EventRowAdvanced  = "row.advanced"
+	EventSceneEnded   = "scene.ended"
 
 	// Phase 2: Tone-setting
 	EventToneUpdated = "tone.updated"
@@ -105,6 +106,12 @@ type FocusChangedPayload struct {
 type RowAdvancedPayload struct {
 	RowNumber        int16 `json:"row_number"`
 	CrossedEngrailed bool  `json:"crossed_engrailed"`
+}
+
+// SceneEndedPayload is the payload for EventSceneEnded.
+type SceneEndedPayload struct {
+	RowNumber int16 `json:"row_number"`
+	PlayerID  int64 `json:"player_id"`
 }
 
 // ToneUpdatedPayload is the payload for EventToneUpdated.
