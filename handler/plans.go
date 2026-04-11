@@ -225,13 +225,13 @@ func computeDifficulty(
 	case model.PlanExchangeCourtiers:
 		// Difficulty = 6 − target player's rank on the power track.
 		if plan.TargetPlayerID == nil {
-			return 0, fmt.Errorf("exchange courtiers plan has no target player")
+			return 0, errors.New("exchange courtiers plan has no target player")
 		}
 		targetRank, err := playerRankInCategory(ctx, q, plan.GameID, *plan.TargetPlayerID, model.CategoryPower)
 		if err != nil {
 			return 0, fmt.Errorf("could not determine target player ranking: %w", err)
 		}
-		d := max(int16(6)-targetRank, 1) //nolint:gosec // rank clamped to 1–5
+		d := max(int16(6)-targetRank, 1)
 		return d, nil
 
 	case model.PlanMakeIntroductions:
@@ -502,7 +502,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			TargetPlayerID:   body.TargetPlayerID,
 			TargetAssetID:    body.TargetAssetID,
 			RowNumber:        targetRow,
-			RowOrder:         int16(count), //nolint:gosec // plan count won't overflow int16
+			RowOrder:         int16(count),
 			PreparedAtRow:    game.CurrentRow,
 			PreparationNotes: body.PreparationNotes,
 		})
@@ -1089,9 +1089,9 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 			s[myIdx] = above
 
 			// Update in-memory rank map so subsequent swaps are aware.
-			playerRank[pid][cat] = int16(aboveIdx + 1) //nolint:gosec
+			playerRank[pid][cat] = int16(aboveIdx + 1)
 			if _, ok := playerRank[above]; ok {
-				playerRank[above][cat] = int16(myIdx + 1) //nolint:gosec
+				playerRank[above][cat] = int16(myIdx + 1)
 			}
 		}
 
@@ -1123,7 +1123,7 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 	// Write all modified slots back. UpsertRanking handles the ON CONFLICT update.
 	for cat, s := range slots {
 		for i, pid := range s {
-			rank := int16(i + 1) //nolint:gosec
+			rank := int16(i + 1)
 			var playerIDPtr *int64
 			if pid != dummySentinel {
 				p := pid
