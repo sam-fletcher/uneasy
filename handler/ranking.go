@@ -10,7 +10,7 @@ package handler
 //  1. For each category (power, knowledge, esteem), gather all player tokens.
 //  2. Process tokens from worst rank to best rank (bottom of plan stack upward).
 //     For each token: swap that player with whoever is one rank above them on the
-//     ranking track. If already at rank 1, or the slot above is a dummy (static
+//     ranking track. If already at rank 1, or the slot above is nil (dummy/static
 //     mode), skip.
 //  3. After processing all tokens in a category: if every plan type in that
 //     category has at least one token, clear all tokens for that category
@@ -41,36 +41,31 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 		return nil, err
 	}
 
-	// Represent each category as a mutable [5]int64 array (0-indexed = rank−1).
-	// dummySentinel marks a slot occupied by a dummy token (player_id IS NULL).
-	const dummySentinel = int64(-1)
-	type catSlots [5]int64
+	// Represent each category as a mutable [5]*int64 array (0-indexed = rank−1).
+	// A nil element means the slot is held by a static dummy (PlayerID IS NULL).
+	// The nil zero-value means no explicit initialization is needed.
+	type categorySlots [5]*int64
 
-	slots := map[model.RankingCategory]*catSlots{
-		model.CategoryPower:     new(catSlots),
-		model.CategoryKnowledge: new(catSlots),
-		model.CategoryEsteem:    new(catSlots),
+	slots := map[model.RankingCategory]*categorySlots{
+		model.CategoryPower:     new(categorySlots),
+		model.CategoryKnowledge: new(categorySlots),
+		model.CategoryEsteem:    new(categorySlots),
 	}
-	for _, s := range slots {
-		for i := range s {
-			s[i] = dummySentinel
-		}
-	}
+
 	for _, rk := range rankings {
 		if rk.Rank < 1 || rk.Rank > 5 {
 			continue
 		}
-		s := slots[rk.Category]
-		if rk.PlayerID == nil {
-			s[rk.Rank-1] = dummySentinel
-		} else {
-			s[rk.Rank-1] = *rk.PlayerID
+		if rk.PlayerID != nil {
+			pid := *rk.PlayerID
+			slots[rk.Category][rk.Rank-1] = &pid
 		}
+		// nil PlayerID → slot stays nil (dummy) — zero value already correct.
 	}
 
 	// Reverse map: player ID → current rank per category.
-	// This is kept live — updated after each swap so subsequent swaps use
-	// current positions, not the initial snapshot.
+	// Kept live — updated after each swap so subsequent swaps use current positions,
+	// not the initial snapshot.
 	playerRank := make(map[int64]map[model.RankingCategory]int16)
 	for _, rk := range rankings {
 		if rk.PlayerID == nil {
@@ -128,17 +123,19 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 			aboveIdx := myRank - 2 //nolint:mnd // 0-indexed slot one rank above
 			myIdx := myRank - 1    // 0-indexed current slot
 
-			above := s[aboveIdx]
-			if above == dummySentinel {
+			above := s[aboveIdx] // *int64, nil if dummy
+			if above == nil {
 				continue // static dummy above — cannot advance past it
 			}
 
 			// Swap pid and above in both the slot array and the live rank map.
-			s[aboveIdx] = pid
+			// Use a local copy so the pointer outlives this iteration.
+			pidCopy := pid
+			s[aboveIdx] = &pidCopy
 			s[myIdx] = above
 			playerRank[pid][cat] = aboveIdx + 1
-			if _, ok := playerRank[above]; ok {
-				playerRank[above][cat] = myIdx + 1
+			if _, ok := playerRank[*above]; ok {
+				playerRank[*above][cat] = myIdx + 1
 			}
 		}
 
@@ -169,19 +166,14 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 	}
 
 	// Write all modified slots back to the DB.
+	// Each s[i] is *int64: nil → PlayerID IS NULL (dummy), non-nil → real player.
 	for cat, s := range slots {
 		for i, pid := range s {
-			rank := int16(i + 1)
-			var playerIDPtr *int64
-			if pid != dummySentinel {
-				p := pid
-				playerIDPtr = &p
-			}
 			if err := q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
 				GameID:   gameID,
-				PlayerID: playerIDPtr,
+				PlayerID: pid, // *int64 maps directly to the nullable column
 				Category: cat,
-				Rank:     rank,
+				Rank:     int16(i + 1),
 			}); err != nil {
 				return nil, err
 			}

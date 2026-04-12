@@ -52,6 +52,7 @@ type planMetadata struct {
 	delay    int16
 }
 
+//nolint:exhaustive,gochecknoglobals // Only Phase 2 plans are supported (future phases will extend); must be global for metadata lookup.
 var phase2PlanMeta = map[model.PlanType]planMetadata{
 	model.PlanExchangeCourtiers: {model.CategoryPower, 5},
 	model.PlanMakeIntroductions: {model.CategoryKnowledge, 3},
@@ -239,6 +240,7 @@ func computeDifficulty(
 	plan *dbgen.Plan,
 	resData planResData,
 ) (int16, error) {
+	//nolint:exhaustive // Only Phase 2 plans are supported; future phases will extend this.
 	switch plan.PlanType {
 	case model.PlanExchangeCourtiers:
 		// Difficulty = 6 − target player's rank on the power track.
@@ -434,6 +436,146 @@ func PlanEligibility(q *dbgen.Queries) http.HandlerFunc {
 	}
 }
 
+// validateExchangeCourtiersPlan checks that the target player and asset are valid
+// for an Exchange Courtiers plan. Returns a non-nil error message if validation fails.
+func validateExchangeCourtiersPlan(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+	targetPlayerID *int64,
+	targetAssetID *int64,
+) string {
+	if targetPlayerID == nil || targetAssetID == nil {
+		return "exchange_courtiers requires target_player_id and target_asset_id"
+	}
+
+	// Verify the asset belongs to the target player and is a peer.
+	asset, err := q.GetAssetByID(ctx, *targetAssetID)
+	if err != nil {
+		return "target asset not found"
+	}
+	if asset.OwnerID != *targetPlayerID {
+		return "target asset does not belong to target player"
+	}
+	if asset.AssetType != model.AssetPeer {
+		return "exchange_courtiers target must be a peer asset"
+	}
+
+	// Target player must also have at least one peer (main characters count as peers).
+	targetHasPeers, err := playerHasPeers(ctx, q, gameID, *targetPlayerID)
+	if err != nil {
+		return "could not check target peer assets"
+	}
+	if !targetHasPeers {
+		return "target player has no peers"
+	}
+
+	return ""
+}
+
+// preparePlanValidation holds results from validating a plan preparation request.
+type preparePlanValidation struct {
+	Status      int
+	ErrMsg      string
+	TargetRow   int16
+	Meta        planMetadata
+	PlanTypeKey model.PlanType
+}
+
+// validatePlanPreparation performs all checks for plan preparation, returning early
+// if any validation fails.
+func validatePlanPreparation(
+	ctx context.Context,
+	q *dbgen.Queries,
+	game *dbgen.Game,
+	player *dbgen.Player,
+	planType model.PlanType,
+	targetPlayerID *int64,
+	targetAssetID *int64,
+	peerCount int16,
+) preparePlanValidation {
+	// Check game phase.
+	if game.Phase != model.PhaseMainEvent {
+		return preparePlanValidation{
+			Status: http.StatusConflict,
+			ErrMsg: "game is not in the main event phase",
+		}
+	}
+
+	// Check plan type is supported.
+	meta, supported := phase2PlanMeta[planType]
+	if !supported {
+		return preparePlanValidation{
+			Status: http.StatusBadRequest,
+			ErrMsg: "unsupported plan type for Phase 2",
+		}
+	}
+
+	// Check eligibility.
+	eligible, reason, err := checkPlanEligible(ctx, q, game.ID, player.ID, planType, meta.category)
+	if err != nil {
+		return preparePlanValidation{
+			Status: http.StatusInternalServerError,
+			ErrMsg: "could not check eligibility",
+		}
+	}
+	if !eligible {
+		return preparePlanValidation{
+			Status: http.StatusForbidden,
+			ErrMsg: reason,
+		}
+	}
+
+	// Check target row bounds.
+	targetRow := game.CurrentRow + meta.delay
+	if targetRow > publicRecordRowCount {
+		return preparePlanValidation{
+			Status: http.StatusConflict,
+			ErrMsg: "plan would be placed past row 13",
+		}
+	}
+
+	// Check preparer has peers.
+	hasPeers, err := playerHasPeers(ctx, q, game.ID, player.ID)
+	if err != nil {
+		return preparePlanValidation{
+			Status: http.StatusInternalServerError,
+			ErrMsg: "could not check peer assets",
+		}
+	}
+	if !hasPeers {
+		return preparePlanValidation{
+			Status: http.StatusForbidden,
+			ErrMsg: "you have no peers — a player without peers cannot prepare plans",
+		}
+	}
+
+	// Plan type specific validations.
+	if planType == model.PlanExchangeCourtiers {
+		if errMsg := validateExchangeCourtiersPlan(ctx, q, game.ID, targetPlayerID, targetAssetID); errMsg != "" {
+			return preparePlanValidation{
+				Status: http.StatusBadRequest,
+				ErrMsg: errMsg,
+			}
+		}
+	}
+
+	if planType == model.PlanMakeIntroductions {
+		if peerCount < 1 || peerCount > 4 {
+			return preparePlanValidation{
+				Status: http.StatusBadRequest,
+				ErrMsg: "make_introductions requires peer_count between 1 and 4",
+			}
+		}
+	}
+
+	return preparePlanValidation{
+		Status:    http.StatusOK,
+		TargetRow: targetRow,
+		Meta:      meta,
+	}
+}
+
 // ── PreparePlan ───────────────────────────────────────────────────────────────
 
 // PreparePlan handles POST /api/tables/:id/prepare-plan.
@@ -470,83 +612,23 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		meta, supported := phase2PlanMeta[body.PlanType]
-		if !supported {
-			respondErr(w, http.StatusBadRequest, "unsupported plan type for Phase 2")
-			return
-		}
-
 		ctx := r.Context()
 
-		// Eligibility check.
-		eligible, reason, err := checkPlanEligible(ctx, q, game.ID, player.ID, body.PlanType, meta.category)
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check eligibility")
-			return
-		}
-		if !eligible {
-			respondErr(w, http.StatusForbidden, reason)
-			return
-		}
-
-		// Target row bounds check.
-		targetRow := game.CurrentRow + meta.delay
-		if targetRow > publicRecordRowCount {
-			respondErr(w, http.StatusConflict, "plan would be placed past row 13")
+		// Perform comprehensive validation of the plan preparation request.
+		validation := validatePlanPreparation(
+			ctx, q, game, player,
+			body.PlanType,
+			body.TargetPlayerID,
+			body.TargetAssetID,
+			body.PeerCount,
+		)
+		if validation.Status != http.StatusOK {
+			respondErr(w, validation.Status, validation.ErrMsg)
 			return
 		}
 
-		// Preparer must have at least one peer to prepare any plan.
-		hasPeers, err := playerHasPeers(ctx, q, game.ID, player.ID)
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check peer assets")
-			return
-		}
-		if !hasPeers {
-			respondErr(w, http.StatusForbidden, "you have no peers — a player without peers cannot prepare plans")
-			return
-		}
-
-		// Exchange Courtiers: target player and asset required.
-		if body.PlanType == model.PlanExchangeCourtiers {
-			if body.TargetPlayerID == nil || body.TargetAssetID == nil {
-				respondErr(w, http.StatusBadRequest, "exchange_courtiers requires target_player_id and target_asset_id")
-				return
-			}
-			// Verify the asset belongs to the target player and is a peer.
-			asset, errAsset := q.GetAssetByID(ctx, *body.TargetAssetID)
-			if errAsset != nil {
-				respondErr(w, http.StatusNotFound, "target asset not found")
-				return
-			}
-			if asset.OwnerID != *body.TargetPlayerID {
-				respondErr(w, http.StatusBadRequest, "target asset does not belong to target player")
-				return
-			}
-			if asset.AssetType != model.AssetPeer {
-				respondErr(w, http.StatusBadRequest, "exchange_courtiers target must be a peer asset")
-				return
-			}
-			// Target player must also have at least one peer (main characters count as peers).
-			// Both sides of an exchange need a character to represent.
-			targetHasPeers, errPeers := playerHasPeers(ctx, q, game.ID, *body.TargetPlayerID)
-			if errPeers != nil {
-				respondErr(w, http.StatusInternalServerError, "could not check target peer assets")
-				return
-			}
-			if !targetHasPeers {
-				respondErr(w, http.StatusForbidden, "target player has no peers")
-				return
-			}
-		}
-
-		// Make Introductions: peer count required (1–4).
-		if body.PlanType == model.PlanMakeIntroductions {
-			if body.PeerCount < 1 || body.PeerCount > 4 {
-				respondErr(w, http.StatusBadRequest, "make_introductions requires peer_count between 1 and 4")
-				return
-			}
-		}
+		meta := validation.Meta
+		targetRow := validation.TargetRow
 
 		// Count existing plans on the target row to assign row_order.
 		count, err := q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
@@ -898,6 +980,48 @@ func FairTrade(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // by the caller using existing asset endpoints.
 // For MI and SP: choices are recorded narratively; players use existing
 // endpoints (create asset, add marginalia, etc.) for mechanical effects.
+
+// applyExchangeCourtiersMechanic handles the asset transfer and messy flag
+// for a successful Exchange Courtiers make result.
+func applyExchangeCourtiersMechanic(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	game *dbgen.Game,
+	plan *dbgen.Plan,
+	choices []string,
+	resData *planResData,
+) error {
+	if plan.TargetAssetID == nil || plan.TargetPlayerID == nil {
+		return nil // nothing to do
+	}
+
+	// Only transfer if not already done via fair trade accept.
+	if resData.FairTradeAccepted == nil || !*resData.FairTradeAccepted {
+		if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
+			ID:      *plan.TargetAssetID,
+			OwnerID: plan.PreparerID,
+		}); err != nil {
+			return err
+		}
+		ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
+		if h, ok := manager.Get(game.ID); ok {
+			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
+				Asset:      ta,
+				OldOwnerID: *plan.TargetPlayerID,
+				NewOwnerID: plan.PreparerID,
+			})
+		}
+	}
+
+	// "Messy" requires the target to break a marginalia on any of their assets.
+	if slices.Contains(choices, "messy") {
+		resData.MessyBreakRequired = true
+	}
+
+	return nil
+}
+
 func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, plan, player, ok := requirePlanFocus(w, r, q)
@@ -937,30 +1061,9 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Server-side mechanical effects for Exchange Courtiers make.
 		if plan.PlanType == model.PlanExchangeCourtiers && body.Result == makeOutcome {
-			if plan.TargetAssetID != nil && plan.TargetPlayerID != nil {
-				// Only transfer if not already done via fair trade accept.
-				if resData.FairTradeAccepted == nil || !*resData.FairTradeAccepted {
-					if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
-						ID:      *plan.TargetAssetID,
-						OwnerID: plan.PreparerID,
-					}); err != nil {
-						respondErr(w, http.StatusInternalServerError, "could not transfer asset")
-						return
-					}
-					ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
-					if h, ok := manager.Get(game.ID); ok {
-						h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-							Asset:      ta,
-							OldOwnerID: *plan.TargetPlayerID,
-							NewOwnerID: plan.PreparerID,
-						})
-					}
-				}
-			}
-			// "Messy" requires the target to break a marginalia on any of their assets.
-			// Set the flag so CompletePlan can enforce it.
-			if slices.Contains(body.Choices, "messy") {
-				resData.MessyBreakRequired = true
+			if err := applyExchangeCourtiersMechanic(ctx, q, manager, game, plan, body.Choices, &resData); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not apply exchange courtiers mechanic")
+				return
 			}
 		}
 

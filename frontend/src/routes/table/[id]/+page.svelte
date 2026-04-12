@@ -384,6 +384,15 @@
 		typingTimeouts.forEach(clearTimeout);
 	});
 
+	// ── Plan helpers ─────────────────────────────────────────────────────────
+	/** Re-fetches the plan list. Passed to MainEventView as onPlansChanged. */
+	async function refreshPlans() {
+		try {
+			const data = await listPlans(gameID);
+			plans = data.plans;
+		} catch { /* ignore — WS events will keep us in sync */ }
+	}
+
 	// ── Phase advancement (lobby + tone_setting only) ─────────────────────────
 	let advancing = $state(false);
 
@@ -580,7 +589,8 @@
 			bind:activeRollDice
 			bind:activeRollVotes
 			bind:voteOpen
-			bind:plans
+			{plans}
+			onPlansChanged={refreshPlans}
 		/>
 
 	<!-- ── Ended ──────────────────────────────────────────────────────────── -->

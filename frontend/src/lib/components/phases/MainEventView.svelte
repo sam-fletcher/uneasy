@@ -7,7 +7,7 @@
 	import {
 		createScenePost, createSceneEntry,
 		leverageAsset, refreshAsset, tearMarginalia,
-		endScene, refreshAssets, passFocus, createRoll, listPlans,
+		endScene, refreshAssets, passFocus, createRoll,
 	} from '$lib/api';
 	import type { Game, Player, Asset, Marginalium, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan } from '$lib/api';
 	import AssetCard from '$lib/components/AssetCard.svelte';
@@ -31,8 +31,13 @@
 		activeRollDice: DiceRollDie[];
 		activeRollVotes: DifficultyVote[];
 		voteOpen: boolean;
-		/** All plans for this game, kept in sync by WS events from the parent. */
+		/** All plans for this game — owned and fetched by the parent; read-only here. */
 		plans: Plan[];
+		/**
+		 * Called after any plan mutation so the parent can re-fetch and push updated
+		 * plans back down. The parent owns plan state; this component never writes it.
+		 */
+		onPlansChanged: () => void;
 	}
 
 	let {
@@ -50,7 +55,8 @@
 		activeRollDice = $bindable(),
 		activeRollVotes = $bindable(),
 		voteOpen = $bindable(),
-		plans = $bindable(),
+		plans,
+		onPlansChanged,
 	}: Props = $props();
 
 	const myAssets = $derived(assets.filter(a => a.owner_id === currentPlayerID));
@@ -286,18 +292,13 @@
 	}
 
 	/**
-	 * Called by PlanPanel after any plan mutation (prepare, resolve step, complete).
-	 * Re-fetches the plan list. Also marks actionTaken when called during the
-	 * focus player's post-scene action step (plan prep is one of the three choices).
+	 * Called by PlanPanel specifically when the focus player prepares a plan —
+	 * their chosen step-2 action. Triggers a parent re-fetch and advances the
+	 * local action bar state.
 	 */
-	async function onPlansChanged() {
-		try {
-			const data = await listPlans(String(game.id));
-			plans = data.plans;
-		} catch { /* ignore — WS events will keep us in sync */ }
-		if (sceneEnded && !actionTaken && isFocusPlayer) {
-			actionTaken = true;
-		}
+	function onPlanPrepared() {
+		onPlansChanged();
+		actionTaken = true;
 	}
 
 	// ── Dice roll creation ────────────────────────────────────────────────────
@@ -457,7 +458,8 @@
 				{rollActive}
 				{rollOutcome}
 				onRollCreated={onPlanRollCreated}
-				onPlansChanged={onPlansChanged}
+				{onPlansChanged}
+				{onPlanPrepared}
 			/>
 
 			<!-- ── Dice roll panel ───────────────────────────────────────────── -->

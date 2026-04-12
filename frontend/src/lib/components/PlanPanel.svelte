@@ -43,8 +43,10 @@
 		rollOutcome: 'make' | 'mar' | null;
 		/** Called when this component triggers a plan-linked dice roll. */
 		onRollCreated: (roll: DiceRoll) => void;
-		/** Called when the plan list should be refreshed. */
+		/** Called when any plan state changes (resolve, fair trade, choice, messy break, complete). */
 		onPlansChanged: () => void;
+		/** Called specifically when the focus player prepares a plan (their step-2 action). */
+		onPlanPrepared: () => void;
 	}
 
 	let {
@@ -60,6 +62,7 @@
 		rollOutcome,
 		onRollCreated,
 		onPlansChanged,
+		onPlanPrepared,
 	}: Props = $props();
 
 	// ── Derived state ─────────────────────────────────────────────────────────
@@ -146,7 +149,7 @@
 			// Reset form; parent will update plans via WS.
 			selectedPlanType = null;
 			prepNotes = '';
-			onPlansChanged();
+			onPlanPrepared();
 		} catch (e) {
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
 		} finally {
