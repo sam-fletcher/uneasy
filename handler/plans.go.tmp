@@ -33,7 +33,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -70,11 +69,6 @@ type planResData struct {
 	FairTradeAccepted *bool `json:"fair_trade_accepted,omitempty"`
 	// Option keys chosen by the focus player from the make/mar list.
 	Choices []string `json:"choices,omitempty"`
-	// Exchange Courtiers, make + "messy": the target must break a marginalia.
-	// MessyBreakRequired is set to true by MakeChoice when "messy" is chosen.
-	MessyBreakRequired bool `json:"messy_break_required,omitempty"`
-	// MessyBreakDone is set to true by the MessyBreak endpoint once complete.
-	MessyBreakDone bool `json:"messy_break_done,omitempty"`
 }
 
 func loadResData(raw *string) planResData {
@@ -167,18 +161,6 @@ func playerRankInCategory(
 		return 0, err
 	}
 	return r.Rank, nil
-}
-
-// ── Peer helpers ─────────────────────────────────────────────────────────────
-
-// playerHasPeers reports whether a player has at least one non-destroyed peer
-// asset in the game. Players with no peers cannot be focus player or prepare plans.
-func playerHasPeers(ctx context.Context, q *dbgen.Queries, gameID, playerID int64) (bool, error) {
-	count, err := q.CountPeerAssets(ctx, dbgen.CountPeerAssetsParams{
-		GameID:  gameID,
-		OwnerID: playerID,
-	})
-	return count > 0, err
 }
 
 // ── Eligibility ───────────────────────────────────────────────────────────────
@@ -370,28 +352,6 @@ func PlanEligibility(q *dbgen.Queries) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		// A player with no peers cannot prepare any plans (they have no characters
-		// to act through and cannot be the focus player in future rows).
-		hasPeers, err := playerHasPeers(ctx, q, gameID, player.ID)
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check peer assets")
-			return
-		}
-		if !hasPeers {
-			for planType, meta := range phase2PlanMeta {
-				ineligible = append(ineligible, ineligibleEntry{
-					PlanType: planType,
-					Category: meta.category,
-					Reason:   "you have no peers — a player without peers cannot prepare plans",
-				})
-			}
-			respond(w, http.StatusOK, map[string]any{
-				"eligible":   eligible,
-				"ineligible": ineligible,
-			})
-			return
-		}
-
 		for planType, meta := range phase2PlanMeta {
 			targetRow := game.CurrentRow + meta.delay
 			if targetRow > publicRecordRowCount {
@@ -496,17 +456,6 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Preparer must have at least one peer to prepare any plan.
-		hasPeers, err := playerHasPeers(ctx, q, game.ID, player.ID)
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check peer assets")
-			return
-		}
-		if !hasPeers {
-			respondErr(w, http.StatusForbidden, "you have no peers — a player without peers cannot prepare plans")
-			return
-		}
-
 		// Exchange Courtiers: target player and asset required.
 		if body.PlanType == model.PlanExchangeCourtiers {
 			if body.TargetPlayerID == nil || body.TargetAssetID == nil {
@@ -525,17 +474,6 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			}
 			if asset.AssetType != model.AssetPeer {
 				respondErr(w, http.StatusBadRequest, "exchange_courtiers target must be a peer asset")
-				return
-			}
-			// Target player must also have at least one peer (main characters count as peers).
-			// Both sides of an exchange need a character to represent.
-			targetHasPeers, errPeers := playerHasPeers(ctx, q, game.ID, *body.TargetPlayerID)
-			if errPeers != nil {
-				respondErr(w, http.StatusInternalServerError, "could not check target peer assets")
-				return
-			}
-			if !targetHasPeers {
-				respondErr(w, http.StatusForbidden, "target player has no peers")
 				return
 			}
 		}
@@ -957,11 +895,6 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 					}
 				}
 			}
-			// "Messy" requires the target to break a marginalia on any of their assets.
-			// Set the flag so CompletePlan can enforce it.
-			if slices.Contains(body.Choices, "messy") {
-				resData.MessyBreakRequired = true
-			}
 		}
 
 		if err := saveResData(ctx, q, plan.ID, resData); err != nil {
@@ -970,10 +903,9 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		respond(w, http.StatusOK, map[string]any{
-			"plan_id":              plan.ID,
-			"choices":              body.Choices,
-			"result":               body.Result,
-			"messy_break_required": resData.MessyBreakRequired,
+			"plan_id": plan.ID,
+			"choices": body.Choices,
+			"result":  body.Result,
 		})
 		_ = player // used via requirePlanFocus validation
 	}
@@ -998,14 +930,6 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-
-		// Block completion if the target still needs to break a marginalia (EC messy).
-		resData := loadResData(plan.ResolutionData)
-		if resData.MessyBreakRequired && !resData.MessyBreakDone {
-			respondErr(w, http.StatusConflict,
-				"cannot complete plan: target player must first break a marginalia (POST /plans/{planId}/messy-break)")
-			return
-		}
 
 		// Determine result from roll outcome or existing plan result (fair trade).
 		resultStr := ""
@@ -1043,105 +967,3 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
-// ── MessyBreak ────────────────────────────────────────────────────────────────
-
-// MessyBreak handles POST /api/plans/:planId/messy-break.
-//
-// Exchange Courtiers only. After a make result with the "messy" option, the
-// target player must tear one marginalia from any asset in the game. This
-// endpoint enforces that requirement before CompletePlan is allowed.
-//
-// Request body:
-//
-//	{"marginalia_id": 123}
-//
-// Only the target player of the plan may call this. The marginalia is torn
-// and MessyBreakDone is recorded in resolution_data.
-func MessyBreak(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, q)
-		if !ok {
-			return
-		}
-		if plan.PlanType != model.PlanExchangeCourtiers {
-			respondErr(w, http.StatusBadRequest, "messy break is only for Exchange Courtiers")
-			return
-		}
-		if plan.Status != model.PlanResolving {
-			respondErr(w, http.StatusConflict, "plan is not in resolving status")
-			return
-		}
-		if plan.TargetPlayerID == nil || player.ID != *plan.TargetPlayerID {
-			respondErr(w, http.StatusForbidden, "only the target player can perform the messy break")
-			return
-		}
-
-		resData := loadResData(plan.ResolutionData)
-		if !resData.MessyBreakRequired {
-			respondErr(w, http.StatusConflict, "no messy break is required for this plan")
-			return
-		}
-		if resData.MessyBreakDone {
-			respondErr(w, http.StatusConflict, "messy break has already been completed")
-			return
-		}
-
-		var body struct {
-			MarginaliaID int64 `json:"marginalia_id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MarginaliaID == 0 {
-			respondErr(w, http.StatusBadRequest, "marginalia_id is required")
-			return
-		}
-
-		ctx := r.Context()
-
-		// Load the marginalia by ID (requires the new GetMarginaliaByID query).
-		m, err := q.GetMarginaliaByID(ctx, body.MarginaliaID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "marginalia not found")
-			return
-		}
-		if m.IsTorn {
-			respondErr(w, http.StatusConflict, "marginalia is already torn")
-			return
-		}
-
-		// Verify the marginalia's parent asset is in the same game.
-		asset, err := q.GetAssetByID(ctx, m.AssetID)
-		if err != nil || asset.GameID != plan.GameID {
-			respondErr(w, http.StatusBadRequest, "marginalia does not belong to this game")
-			return
-		}
-
-		// Tear the marginalia.
-		if err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID:       m.ID,
-			TornByID: &player.ID,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
-			return
-		}
-
-		// Mark the messy break complete in resolution_data.
-		resData.MessyBreakDone = true
-		if err := saveResData(ctx, q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not record messy break")
-			return
-		}
-
-		if h, ok := manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-				AssetID:  asset.ID,
-				Position: m.Position,
-				TornByID: player.ID,
-			})
-		}
-
-		respond(w, http.StatusOK, map[string]any{
-			"plan_id":       plan.ID,
-			"marginalia_id": m.ID,
-			"asset_id":      asset.ID,
-		})
-	}
-}

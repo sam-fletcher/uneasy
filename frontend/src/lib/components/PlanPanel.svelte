@@ -16,7 +16,7 @@
 <script lang="ts">
 	import {
 		getPlanEligibility, preparePlan, resolvePlan,
-		fairTrade, makeChoice, completePlan,
+		fairTrade, makeChoice, completePlan, messyBreak,
 		type Plan, type PlanType, type Asset, type Player,
 		type EligiblePlan, type DiceRoll,
 	} from '$lib/api';
@@ -168,6 +168,12 @@
 	let selectedChoices = $state<string[]>([]);
 	let choicesBusy = $state(false);
 
+	// Messy break (EC make + "messy"): target selects a marginalia to tear.
+	let messyAssetID = $state<number | null>(null);
+	let messyMarginaliaID = $state<number | null>(null);
+	let messyBusy = $state(false);
+	let messyError = $state('');
+
 	async function onResolve(plan: Plan) {
 		if (resBusy) return;
 		resBusy = true;
@@ -254,6 +260,22 @@
 		}
 	}
 
+	async function onMessyBreak(plan: Plan) {
+		if (!messyMarginaliaID || messyBusy) return;
+		messyBusy = true;
+		messyError = '';
+		try {
+			await messyBreak(plan.id, messyMarginaliaID);
+			messyMarginaliaID = null;
+			messyAssetID = null;
+			onPlansChanged();
+		} catch (e) {
+			messyError = e instanceof Error ? e.message : 'Could not complete messy break.';
+		} finally {
+			messyBusy = false;
+		}
+	}
+
 	// ── Helpers ───────────────────────────────────────────────────────────────
 
 	const PLAN_LABELS: Record<string, string> = {
@@ -334,6 +356,31 @@
 			const d = JSON.parse(plan.resolution_data);
 			return d.choices ?? [];
 		} catch { return []; }
+	}
+
+	function parseMessyBreakRequired(plan: Plan): boolean {
+		if (!plan.resolution_data) return false;
+		try {
+			return JSON.parse(plan.resolution_data).messy_break_required ?? false;
+		} catch { return false; }
+	}
+
+	function parseMessyBreakDone(plan: Plan): boolean {
+		if (!plan.resolution_data) return false;
+		try {
+			return JSON.parse(plan.resolution_data).messy_break_done ?? false;
+		} catch { return false; }
+	}
+
+	/** All intact marginalia across all assets the target player is involved in. */
+	function intactMarginalia(ownerID: number | null) {
+		if (ownerID == null) return [];
+		return assets
+			.filter(a => a.owner_id === ownerID && !a.is_destroyed)
+			.flatMap(a => (a.marginalia ?? [])
+				.filter(m => !m.is_torn)
+				.map(m => ({ ...m, assetName: a.name, assetID: a.id }))
+			);
 	}
 
 	function playerName(id: number | null): string {
@@ -470,22 +517,66 @@
 				</button>
 			</div>
 
-		<!-- ── Choices applied — ready to complete ───────────────────────── -->
-		{:else if (choicesDone || (rollOutcome == null && ftAccepted === true)) && isFocusPlayer}
-			<div class="complete-section">
-				{#if existingChoices.length > 0}
-					<p class="choices-applied">
-						Choices applied: {existingChoices.join(', ')}
-					</p>
-				{/if}
-				<p class="complete-note">Write any follow-scene narration in the scene thread, then complete the plan.</p>
-				<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
-					{resBusy ? '…' : 'Complete plan'}
-				</button>
-			</div>
+		<!-- ── Choices applied — messy break check, then complete ──────────── -->
+		{:else if choicesDone || (rollOutcome == null && ftAccepted === true)}
+			{@const messyRequired = parseMessyBreakRequired(plan)}
+			{@const messyDone = parseMessyBreakDone(plan)}
 
-		<!-- ── Non-focus player view ──────────────────────────────────────── -->
-		{:else if !isFocusPlayer}
+			{#if messyRequired && !messyDone}
+				<!-- Messy break: target must tear a marginalia before the plan completes. -->
+				{#if isTarget}
+					<div class="messy-break-section">
+						<p class="ft-prompt">
+							The exchange was messy. You must break one of your own marginalia before this plan completes.
+						</p>
+						{#if messyError}<p class="res-error">{messyError}</p>{/if}
+						<label class="form-label">
+							Choose an asset:
+							<select bind:value={messyAssetID} class="form-select">
+								<option value={null}>— select asset —</option>
+								{#each assets.filter(a => a.owner_id === currentPlayerID && !a.is_destroyed && (a.marginalia ?? []).some(m => !m.is_torn)) as a}
+									<option value={a.id}>{a.name}</option>
+								{/each}
+							</select>
+						</label>
+						{#if messyAssetID != null}
+							{@const mList = intactMarginalia(currentPlayerID).filter(m => m.assetID === messyAssetID)}
+							<label class="form-label">
+								Choose marginalia to break:
+								<select bind:value={messyMarginaliaID} class="form-select">
+									<option value={null}>— select marginalia —</option>
+									{#each mList as m}
+										<option value={m.id}>{m.text}</option>
+									{/each}
+								</select>
+							</label>
+						{/if}
+						<button class="action-btn primary" onclick={() => onMessyBreak(plan)}
+							disabled={!messyMarginaliaID || messyBusy}>
+							{messyBusy ? '…' : 'Break marginalia'}
+						</button>
+					</div>
+				{:else}
+					<p class="ft-prompt muted">Waiting for {playerName(plan.target_player_id)} to break a marginalia…</p>
+				{/if}
+
+			{:else if isFocusPlayer}
+				<!-- No messy break pending (or already done) — focus player may complete. -->
+				<div class="complete-section">
+					{#if existingChoices.length > 0}
+						<p class="choices-applied">
+							Choices applied: {existingChoices.join(', ')}
+						</p>
+					{/if}
+					<p class="complete-note">Write any follow-scene narration in the scene thread, then complete the plan.</p>
+					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
+						{resBusy ? '…' : 'Complete plan'}
+					</button>
+				</div>
+			{/if}
+
+		<!-- ── Non-focus / non-target player view ────────────────────────── -->
+		{:else if !isFocusPlayer && !isTarget}
 			<p class="ft-prompt muted">
 				{playerName(plan.preparer_id)} is resolving {PLAN_SHORT[plan.plan_type] ?? plan.plan_type}…
 			</p>
@@ -739,6 +830,18 @@
 		font-size: 0.82rem;
 		color: #aaa;
 		margin: 0;
+	}
+
+	/* ── Messy break ─────────────────────────────────────────────────────────── */
+
+	.messy-break-section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding: 0.5rem;
+		background: #1e1010;
+		border: 1px solid #6a3030;
+		border-radius: 5px;
 	}
 
 	.resolve-note {

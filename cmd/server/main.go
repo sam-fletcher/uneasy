@@ -192,6 +192,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 			r.Post("/resolve", handler.ResolvePlan(q, manager))
 			r.Post("/fair-trade", handler.FairTrade(q, manager))
 			r.Post("/make-choice", handler.MakeChoice(q, manager))
+			r.Post("/messy-break", handler.MessyBreak(q, manager))
 			r.Post("/complete", handler.CompletePlan(q, manager))
 		})
 

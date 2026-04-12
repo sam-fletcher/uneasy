@@ -47,7 +47,16 @@ UPDATE assets SET is_destroyed = TRUE, destroyed_at = now() WHERE id = $1;
 SELECT count(*) FROM assets
 WHERE owner_id = $1 AND is_leveraged = FALSE AND is_destroyed = FALSE;
 
+-- name: CountPeerAssets :one
+-- Returns the number of non-destroyed peer assets owned by a player in a game.
+-- Used to determine whether a player is eligible to be focus player or prepare plans.
+SELECT count(*) FROM assets
+WHERE game_id = $1 AND owner_id = $2 AND asset_type = 'peer' AND is_destroyed = FALSE;
+
 -- ── Marginalia ───────────────────────────────────────────────────────
+
+-- name: GetMarginaliaByID :one
+SELECT * FROM marginalia WHERE id = $1;
 
 -- name: CreateMarginalia :one
 INSERT INTO marginalia (asset_id, position, text)

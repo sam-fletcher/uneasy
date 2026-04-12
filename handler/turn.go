@@ -29,7 +29,10 @@ import (
 	"uneasy/model"
 )
 
-const publicRecordRowCount = 13
+const (
+	maxPlayerCount       = 6
+	publicRecordRowCount = 13
+)
 
 // requireFocusPlayer validates that the caller is the current focus player.
 // Returns the game and player, or writes an error response.
@@ -50,9 +53,9 @@ func requireFocusPlayer(w http.ResponseWriter, r *http.Request, q *dbgen.Queries
 	return &game, player, true
 }
 
-// nextFocusPlayer returns the player with the next higher seat_order,
-// wrapping around to the lowest seat_order when the end is reached.
-func nextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusID int64) (*dbgen.Player, error) {
+// rawNextFocusPlayer returns the raw next player by seat_order, wrapping around.
+// It does not check whether the player is eligible to hold focus (has peers).
+func rawNextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusID int64) (*dbgen.Player, error) {
 	next, err := q.GetNextFocusPlayer(r.Context(), dbgen.GetNextFocusPlayerParams{
 		GameID: gameID,
 		ID:     currentFocusID,
@@ -66,6 +69,43 @@ func nextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusID i
 		return &first, nil
 	}
 	return &next, nil
+}
+
+// nextFocusPlayer returns the next player in seat-order who has at least one
+// non-destroyed peer asset. A player with no peers cannot be the focus player
+// (they have no characters to act through).
+//
+// If the full rotation has no eligible players (everyone has lost all peers),
+// it falls back to the raw next player so the game can still proceed.
+func nextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusID int64) (*dbgen.Player, error) {
+	candidateID := currentFocusID
+	var fallback *dbgen.Player // raw next, used if nobody has peers
+
+	// Iterate at most once through all players (max 6 in a game).
+	for range maxPlayerCount {
+		next, err := rawNextFocusPlayer(r, q, gameID, candidateID)
+		if err != nil {
+			return nil, err
+		}
+		if fallback == nil {
+			fallback = next
+		}
+		// If we've looped back to the original focus player, no one has peers.
+		if next.ID == currentFocusID {
+			break
+		}
+
+		hasPeers, err := playerHasPeers(r.Context(), q, gameID, next.ID)
+		if err != nil || hasPeers {
+			return next, err
+		}
+
+		candidateID = next.ID
+	}
+
+	// No eligible player found — return the raw next as a fallback so the
+	// game can still proceed (facilitator must handle end state manually).
+	return fallback, nil
 }
 
 // isEngrailedLine reports whether advancing from oldRow to newRow crosses

@@ -167,6 +167,10 @@ export interface PlanResolutionData {
 	fair_trade_asset_id?: number | null;
 	fair_trade_accepted?: boolean | null;
 	choices?: string[];
+	/** EC make + "messy": true once MakeChoice records the messy option. */
+	messy_break_required?: boolean;
+	/** EC make + "messy": true once the target has completed the messy break. */
+	messy_break_done?: boolean;
 }
 
 /** Response shape from GET /api/plans/:id. */
@@ -654,4 +658,22 @@ export function completePlan(planID: number): Promise<{
 	result: 'make' | 'mar';
 }> {
 	return apiFetch(`/plans/${planID}/complete`, { method: 'POST' });
+}
+
+/**
+ * Exchange Courtiers — messy break.
+ * Called by the TARGET player after a make + "messy" outcome to tear a
+ * marginalia on any asset. Must be called before CompletePlan is allowed.
+ *
+ * @param marginaliaID  The DB id of the marginalia to tear.
+ */
+export function messyBreak(planID: number, marginaliaID: number): Promise<{
+	plan_id: number;
+	marginalia_id: number;
+	asset_id: number;
+}> {
+	return apiFetch(`/plans/${planID}/messy-break`, {
+		method: 'POST',
+		body: JSON.stringify({ marginalia_id: marginaliaID }),
+	});
 }

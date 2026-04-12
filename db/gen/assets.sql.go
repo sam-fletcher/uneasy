@@ -77,6 +77,25 @@ func (q *Queries) CountMarginalia(ctx context.Context, assetID int64) (int64, er
 	return count, err
 }
 
+const countPeerAssets = `-- name: CountPeerAssets :one
+SELECT count(*) FROM assets
+WHERE game_id = $1 AND owner_id = $2 AND asset_type = 'peer' AND is_destroyed = FALSE
+`
+
+type CountPeerAssetsParams struct {
+	GameID  int64 `db:"game_id" json:"game_id"`
+	OwnerID int64 `db:"owner_id" json:"owner_id"`
+}
+
+// Returns the number of non-destroyed peer assets owned by a player in a game.
+// Used to determine whether a player is eligible to be focus player or prepare plans.
+func (q *Queries) CountPeerAssets(ctx context.Context, arg CountPeerAssetsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPeerAssets, arg.GameID, arg.OwnerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countTornMarginalia = `-- name: CountTornMarginalia :one
 SELECT count(*) FROM marginalia WHERE asset_id = $1 AND is_torn = TRUE
 `
@@ -134,7 +153,6 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset
 }
 
 const createMarginalia = `-- name: CreateMarginalia :one
-
 INSERT INTO marginalia (asset_id, position, text)
 VALUES ($1, $2, $3)
 RETURNING id, asset_id, position, text, is_torn, torn_at, torn_by_id
@@ -146,7 +164,6 @@ type CreateMarginaliaParams struct {
 	Text     string `db:"text" json:"text"`
 }
 
-// ── Marginalia ───────────────────────────────────────────────────────
 func (q *Queries) CreateMarginalia(ctx context.Context, arg CreateMarginaliaParams) (Marginalium, error) {
 	row := q.db.QueryRow(ctx, createMarginalia, arg.AssetID, arg.Position, arg.Text)
 	var i Marginalium
@@ -219,6 +236,27 @@ func (q *Queries) GetAssetByID(ctx context.Context, id int64) (Asset, error) {
 		&i.IsDestroyed,
 		&i.CreatedAt,
 		&i.DestroyedAt,
+	)
+	return i, err
+}
+
+const getMarginaliaByID = `-- name: GetMarginaliaByID :one
+
+SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id FROM marginalia WHERE id = $1
+`
+
+// ── Marginalia ───────────────────────────────────────────────────────
+func (q *Queries) GetMarginaliaByID(ctx context.Context, id int64) (Marginalium, error) {
+	row := q.db.QueryRow(ctx, getMarginaliaByID, id)
+	var i Marginalium
+	err := row.Scan(
+		&i.ID,
+		&i.AssetID,
+		&i.Position,
+		&i.Text,
+		&i.IsTorn,
+		&i.TornAt,
+		&i.TornByID,
 	)
 	return i, err
 }
