@@ -148,8 +148,9 @@ func StartToneSetting(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not count players")
 			return
 		}
-		if count < 2 || count > 5 {
-			respondErr(w, http.StatusBadRequest, "need 2–5 players to start")
+		if count < minPlayerCount || count > maxPlayerCount {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("need %d–%d players to start", minPlayerCount, maxPlayerCount))
 			return
 		}
 

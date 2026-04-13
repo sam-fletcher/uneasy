@@ -30,7 +30,8 @@ import (
 )
 
 const (
-	maxPlayerCount       = 6
+	minPlayerCount       = 2
+	maxPlayerCount       = 5
 	publicRecordRowCount = 13
 )
 

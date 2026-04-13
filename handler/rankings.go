@@ -12,7 +12,7 @@ import (
 
 const (
 	planTypes       = 3
-	rankingsPerType = 5
+	rankingsPerType = 5 // also status. Impacts dice rolls.
 	totalRankings   = planTypes * rankingsPerType
 )
 

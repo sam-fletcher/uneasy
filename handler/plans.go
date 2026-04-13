@@ -233,6 +233,34 @@ func checkPlanEligible(
 
 // ── Difficulty computation ────────────────────────────────────────────────────
 
+// computeDifficultyPure returns the base difficulty for a plan given the relevant rank.
+// For Exchange Courtiers: relevantRank is the target player's rank on the power track.
+// For Make Introductions: relevantRank is ignored; difficulty depends on peer_count.
+// For Spread Propaganda: relevantRank is the preparer's rank on the esteem track.
+func computeDifficultyPure(planType model.PlanType, resData planResData, relevantRank int16) (int16, error) {
+	//nolint:exhaustive // Only Phase 2 plans are supported; future phases will extend this.
+	switch planType {
+	case model.PlanExchangeCourtiers:
+		// Difficulty = target player's status on the power track.
+		// Status is the inverse of rank: status = 6 - rank.
+		targetStatus := max(int16(diceSides)-relevantRank, 1)
+		return targetStatus, nil
+
+	case model.PlanMakeIntroductions:
+		// Difficulty = 2 + peer_count (1–4 peers → difficulty 3–6).
+		const baseDifficulty = int16(2)
+		pc := max(resData.PeerCount, 1)
+		return baseDifficulty + pc, nil
+
+	case model.PlanSpreadPropaganda:
+		// Difficulty = preparer's rank on the esteem track.
+		return relevantRank, nil
+
+	default:
+		return 0, fmt.Errorf("unsupported plan type: %s", planType)
+	}
+}
+
 // computeDifficulty returns the base difficulty for a plan.
 func computeDifficulty(
 	ctx context.Context,
@@ -243,7 +271,8 @@ func computeDifficulty(
 	//nolint:exhaustive // Only Phase 2 plans are supported; future phases will extend this.
 	switch plan.PlanType {
 	case model.PlanExchangeCourtiers:
-		// Difficulty = 6 − target player's rank on the power track.
+		// Difficulty = target player's status on the power track.
+		// Status is the inverse of rank: status = 6 - rank.
 		if plan.TargetPlayerID == nil {
 			return 0, errors.New("exchange courtiers plan has no target player")
 		}
@@ -251,14 +280,11 @@ func computeDifficulty(
 		if err != nil {
 			return 0, fmt.Errorf("could not determine target player ranking: %w", err)
 		}
-		d := max(int16(diceSides)-targetRank, 1)
-		return d, nil
+		return computeDifficultyPure(plan.PlanType, resData, targetRank)
 
 	case model.PlanMakeIntroductions:
 		// Difficulty = 2 + peer_count (1–4 peers → difficulty 3–6).
-		const baseDifficulty = int16(2)
-		pc := max(resData.PeerCount, 1)
-		return baseDifficulty + pc, nil
+		return computeDifficultyPure(plan.PlanType, resData, 0)
 
 	case model.PlanSpreadPropaganda:
 		// Difficulty = preparer's rank on the esteem track.
@@ -266,7 +292,7 @@ func computeDifficulty(
 		if err != nil {
 			return 0, fmt.Errorf("could not determine preparer ranking: %w", err)
 		}
-		return preparerRank, nil
+		return computeDifficultyPure(plan.PlanType, resData, preparerRank)
 
 	default:
 		return 0, fmt.Errorf("unsupported plan type: %s", plan.PlanType)

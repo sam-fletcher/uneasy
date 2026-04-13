@@ -30,59 +30,23 @@ import (
 	"uneasy/model"
 )
 
-// runRankingUpdate executes the ranking update and returns the updated rankings.
-func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]dbgen.Ranking, error) {
-	rankings, err := q.ListRankingsByGame(ctx, gameID)
-	if err != nil {
-		return nil, err
-	}
-	tokens, err := q.ListPlanTokensByGame(ctx, gameID)
-	if err != nil {
-		return nil, err
-	}
+// categorySlots represents a single ranking category's slot array (rank 1-5).
+// Index i holds the player ID at rank i+1, or nil if the slot is unoccupied (dummy).
+type categorySlots [5]*int64
 
-	// Represent each category as a mutable [5]*int64 array (0-indexed = rank−1).
-	// A nil element means the slot is held by a static dummy (PlayerID IS NULL).
-	// The nil zero-value means no explicit initialization is needed.
-	type categorySlots [5]*int64
-
-	slots := map[model.RankingCategory]*categorySlots{
-		model.CategoryPower:     new(categorySlots),
-		model.CategoryKnowledge: new(categorySlots),
-		model.CategoryEsteem:    new(categorySlots),
-	}
-
-	for _, rk := range rankings {
-		if rk.Rank < 1 || rk.Rank > 5 {
-			continue
-		}
-		if rk.PlayerID != nil {
-			pid := *rk.PlayerID
-			slots[rk.Category][rk.Rank-1] = &pid
-		}
-		// nil PlayerID → slot stays nil (dummy) — zero value already correct.
-	}
-
-	// Reverse map: player ID → current rank per category.
-	// Kept live — updated after each swap so subsequent swaps use current positions,
-	// not the initial snapshot.
-	playerRank := make(map[int64]map[model.RankingCategory]int16)
-	for _, rk := range rankings {
-		if rk.PlayerID == nil {
-			continue
-		}
-		if _, ok := playerRank[*rk.PlayerID]; !ok {
-			playerRank[*rk.PlayerID] = make(map[model.RankingCategory]int16)
-		}
-		playerRank[*rk.PlayerID][rk.Category] = rk.Rank
-	}
-
-	// Phase 2: one plan type per category (extended in future phases).
-	categoryPlanTypes := map[model.RankingCategory][]model.PlanType{
-		model.CategoryPower:     {model.PlanExchangeCourtiers},
-		model.CategoryKnowledge: {model.PlanMakeIntroductions},
-		model.CategoryEsteem:    {model.PlanSpreadPropaganda},
-	}
+// applyRankingSwaps applies the worst-to-best token-holder swap algorithm and
+// determines whether tokens should be cleared for each category.
+//
+// Modifies slots and playerRank in place. Returns a map indicating, for each
+// category, whether all plan types in that category had at least one token holder
+// (and thus tokens should be cleared after this call).
+func applyRankingSwaps(
+	slots map[model.RankingCategory]*categorySlots,
+	playerRank map[int64]map[model.RankingCategory]int16,
+	tokens []dbgen.PlanToken,
+	categoryPlanTypes map[model.RankingCategory][]model.PlanType,
+) map[model.RankingCategory]bool {
+	shouldClearTokens := make(map[model.RankingCategory]bool)
 
 	for cat, planTypes := range categoryPlanTypes {
 		s := slots[cat]
@@ -101,6 +65,7 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 			}
 		}
 		if len(tokenPlayers) == 0 {
+			shouldClearTokens[cat] = false
 			continue
 		}
 
@@ -140,7 +105,7 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 		}
 
 		// After all tokens in this category are resolved: if every plan type
-		// on this sheet has at least one token, clear all tokens for the category.
+		// on this sheet has at least one token, mark for clearing.
 		allHaveTokens := true
 		for _, pt := range planTypes {
 			found := false
@@ -155,7 +120,68 @@ func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]db
 				break
 			}
 		}
-		if allHaveTokens {
+		shouldClearTokens[cat] = allHaveTokens
+	}
+
+	return shouldClearTokens
+}
+
+// runRankingUpdate executes the ranking update and returns the updated rankings.
+func runRankingUpdate(ctx context.Context, q *dbgen.Queries, gameID int64) ([]dbgen.Ranking, error) {
+	rankings, err := q.ListRankingsByGame(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	tokens, err := q.ListPlanTokensByGame(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Represent each category as a mutable [5]*int64 array (0-indexed = rank−1).
+	// A nil element means the slot is held by a static dummy (PlayerID IS NULL).
+	// The nil zero-value means no explicit initialization is needed.
+	slots := map[model.RankingCategory]*categorySlots{
+		model.CategoryPower:     new(categorySlots),
+		model.CategoryKnowledge: new(categorySlots),
+		model.CategoryEsteem:    new(categorySlots),
+	}
+
+	for _, rk := range rankings {
+		if rk.Rank < 1 || rk.Rank > 5 {
+			continue
+		}
+		if rk.PlayerID != nil {
+			pid := *rk.PlayerID
+			slots[rk.Category][rk.Rank-1] = &pid
+		}
+		// nil PlayerID → slot stays nil (dummy) — zero value already correct.
+	}
+
+	// Reverse map: player ID → current rank per category.
+	// Kept live — updated after each swap so subsequent swaps use current positions,
+	// not the initial snapshot.
+	playerRank := make(map[int64]map[model.RankingCategory]int16)
+	for _, rk := range rankings {
+		if rk.PlayerID == nil {
+			continue
+		}
+		if _, ok := playerRank[*rk.PlayerID]; !ok {
+			playerRank[*rk.PlayerID] = make(map[model.RankingCategory]int16)
+		}
+		playerRank[*rk.PlayerID][rk.Category] = rk.Rank
+	}
+
+	// Phase 2: one plan type per category (extended in future phases).
+	categoryPlanTypes := map[model.RankingCategory][]model.PlanType{
+		model.CategoryPower:     {model.PlanExchangeCourtiers},
+		model.CategoryKnowledge: {model.PlanMakeIntroductions},
+		model.CategoryEsteem:    {model.PlanSpreadPropaganda},
+	}
+
+	shouldClearTokens := applyRankingSwaps(slots, playerRank, tokens, categoryPlanTypes)
+
+	for cat, shouldClear := range shouldClearTokens {
+		if shouldClear {
 			if err := q.DeletePlanTokensByCategory(ctx, dbgen.DeletePlanTokensByCategoryParams{
 				GameID:   gameID,
 				Category: cat,

@@ -561,6 +561,31 @@ type dieEntry struct {
 	face int16
 }
 
+// cancelInterference groups dice by face and returns the set of cancelled
+// actor die IDs. Each interference die on a given face cancels one matching
+// actor die on that face (up to the count of actor dice on that face).
+func cancelInterference(actorDice, interfereDice []dieEntry) map[int64]struct{} {
+	// Group actor and interference dice by face value.
+	actorByFace := make(map[int16][]dieEntry)
+	for _, e := range actorDice {
+		actorByFace[e.face] = append(actorByFace[e.face], e)
+	}
+	intByFace := make(map[int16][]dieEntry)
+	for _, e := range interfereDice {
+		intByFace[e.face] = append(intByFace[e.face], e)
+	}
+
+	// For each interference face, cancel min(actorCount, intCount) actor dice.
+	cancelledIDs := make(map[int64]struct{})
+	for face, intGroup := range intByFace {
+		actorGroup := actorByFace[face]
+		for i := range min(len(intGroup), len(actorGroup)) {
+			cancelledIDs[actorGroup[i].id] = struct{}{}
+		}
+	}
+	return cancelledIDs
+}
+
 // rollAndCancelDice rolls all dice and applies interference cancellation.
 func rollAndCancelDice(
 	ctx context.Context,
@@ -585,26 +610,14 @@ func rollAndCancelDice(
 		}
 	}
 
-	// Group actor and interference dice by face value and apply cancellation.
-	actorByFace := make(map[int16][]dieEntry)
-	for _, e := range actorDice {
-		actorByFace[e.face] = append(actorByFace[e.face], e)
-	}
-	intByFace := make(map[int16][]dieEntry)
-	for _, e := range interfereDice {
-		intByFace[e.face] = append(intByFace[e.face], e)
-	}
+	// Apply cancellation using the pure algorithm.
+	cancelledIDs := cancelInterference(actorDice, interfereDice)
 
-	// For each interference face, cancel min(actorCount, intCount) actor dice.
-	cancelledIDs := make(map[int64]struct{})
-	for face, intGroup := range intByFace {
-		actorGroup := actorByFace[face]
-		for i := range min(len(intGroup), len(actorGroup)) {
-			if err := q.SetDieCancelled(ctx, actorGroup[i].id); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not cancel die")
-				return nil, nil, err
-			}
-			cancelledIDs[actorGroup[i].id] = struct{}{}
+	// Mark cancelled dice in the database.
+	for cancelledID := range cancelledIDs {
+		if err := q.SetDieCancelled(ctx, cancelledID); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not cancel die")
+			return nil, nil, err
 		}
 	}
 	return actorDice, cancelledIDs, nil
