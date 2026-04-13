@@ -843,147 +843,168 @@ func FairTrade(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		switch body.Action {
 		case "offer":
-			// Target player names a peer as fair trade.
-			if plan.TargetPlayerID == nil || player.ID != *plan.TargetPlayerID {
-				respondErr(w, http.StatusForbidden, "only the target player can offer a fair trade")
-				return
-			}
-			if body.OfferedAssetID == nil {
-				respondErr(w, http.StatusBadRequest, "offered_asset_id is required")
-				return
-			}
-			// Validate: must be a peer owned by the target player.
-			asset, err := q.GetAssetByID(ctx, *body.OfferedAssetID)
-			if err != nil {
-				respondErr(w, http.StatusNotFound, "offered asset not found")
-				return
-			}
-			if asset.OwnerID != player.ID {
-				respondErr(w, http.StatusForbidden, "you can only offer your own assets")
-				return
-			}
-			if asset.AssetType != model.AssetPeer {
-				respondErr(w, http.StatusBadRequest, "fair trade offer must be a peer asset")
-				return
-			}
-			resData.FairTradeAssetID = body.OfferedAssetID
-			if err := saveResData(ctx, q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save offer")
-				return
-			}
-			respond(w, http.StatusOK, map[string]any{
-				"plan_id":          plan.ID,
-				"offered_asset_id": body.OfferedAssetID,
-			})
-
+			offerFairTrade(ctx, w, q, &resData, plan, player, body.OfferedAssetID)
 		case "accept":
-			// Preparer accepts: exchange assets, resolve plan.
-			if player.ID != plan.PreparerID {
-				respondErr(w, http.StatusForbidden, "only the preparer can accept or decline")
-				return
-			}
-			if resData.FairTradeAssetID == nil {
-				respondErr(w, http.StatusConflict, "no fair trade offer has been made yet")
-				return
-			}
-			if plan.TargetAssetID == nil || plan.TargetPlayerID == nil {
-				respondErr(w, http.StatusConflict, "plan is missing target asset or player")
-				return
-			}
-
-			// Transfer targeted asset to preparer.
-			if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
-				ID:      *plan.TargetAssetID,
-				OwnerID: plan.PreparerID,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not transfer targeted asset")
-				return
-			}
-			// Transfer offered asset to target player.
-			if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
-				ID:      *resData.FairTradeAssetID,
-				OwnerID: *plan.TargetPlayerID,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not transfer offered asset")
-				return
-			}
-
-			accepted := true
-			resData.FairTradeAccepted = &accepted
-			resData.Choices = []string{"fair_trade_accepted"}
-			if err := saveResData(ctx, q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save decision")
-				return
-			}
-
-			// Resolve plan.
-			if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
-				ID:     plan.ID,
-				Result: new(makeOutcome),
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not resolve plan")
-				return
-			}
-
-			h, hasHub := manager.Get(game.ID)
-			if hasHub {
-				// Broadcast asset transfers.
-				ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
-				h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-					Asset:      ta,
-					OldOwnerID: *plan.TargetPlayerID,
-					NewOwnerID: plan.PreparerID,
-				})
-				oa, _ := q.GetAssetByID(ctx, *resData.FairTradeAssetID)
-				h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-					Asset:      oa,
-					OldOwnerID: plan.PreparerID,
-					NewOwnerID: *plan.TargetPlayerID,
-				})
-				h.BroadcastEvent(model.EventPlanResolved, model.PlanResolvedPayload{
-					PlanID: plan.ID,
-					Result: makeOutcome,
-				})
-			}
-
-			respond(w, http.StatusOK, map[string]any{
-				"plan_id": plan.ID,
-				"result":  "make",
-				"note":    "fair trade accepted; assets exchanged",
-			})
-
+			acceptFairTrade(ctx, w, q, &resData, plan, player, manager, game)
 		case "decline":
-			// Preparer declines: create dice roll.
-			if player.ID != plan.PreparerID {
-				respondErr(w, http.StatusForbidden, "only the preparer can accept or decline")
-				return
-			}
-			declined := false
-			resData.FairTradeAccepted = &declined
-			if err := saveResData(ctx, q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save decision")
-				return
-			}
-
-			difficulty, err := computeDifficulty(ctx, q, plan, resData)
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not compute difficulty")
-				return
-			}
-			roll, err := createPlanRoll(ctx, q, manager, &game, plan, difficulty, player.ID)
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not create dice roll")
-				return
-			}
-			respond(w, http.StatusOK, map[string]any{
-				"plan_id": plan.ID,
-				"roll":    roll,
-			})
-
+			declineFairTrade(ctx, w, q, &resData, plan, player, manager, game)
 		default:
 			respondErr(w, http.StatusBadRequest, "action must be 'offer', 'accept', or 'decline'")
 		}
 	}
+}
+
+func offerFairTrade(
+	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
+	resData *planResData, plan *dbgen.Plan, player *dbgen.Player,
+	offeredAssetID *int64,
+) {
+	// Target player names a peer as fair trade.
+	if plan.TargetPlayerID == nil || player.ID != *plan.TargetPlayerID {
+		respondErr(w, http.StatusForbidden, "only the target player can offer a fair trade")
+		return
+	}
+	if offeredAssetID == nil {
+		respondErr(w, http.StatusBadRequest, "offered_asset_id is required")
+		return
+	}
+	// Validate: must be a peer owned by the target player.
+	asset, err := q.GetAssetByID(ctx, *offeredAssetID)
+	if err != nil {
+		respondErr(w, http.StatusNotFound, "offered asset not found")
+		return
+	}
+	if asset.OwnerID != player.ID {
+		respondErr(w, http.StatusForbidden, "you can only offer your own assets")
+		return
+	}
+	if asset.AssetType != model.AssetPeer {
+		respondErr(w, http.StatusBadRequest, "fair trade offer must be a peer asset")
+		return
+	}
+	resData.FairTradeAssetID = offeredAssetID
+	if err := saveResData(ctx, q, plan.ID, *resData); err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not save offer")
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"plan_id":          plan.ID,
+		"offered_asset_id": offeredAssetID,
+	})
+}
+
+func acceptFairTrade(
+	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
+	resData *planResData, plan *dbgen.Plan, player *dbgen.Player,
+	manager *hub.Manager, game dbgen.Game,
+) {
+	// Preparer accepts: exchange assets, resolve plan.
+	if player.ID != plan.PreparerID {
+		respondErr(w, http.StatusForbidden, "only the preparer can accept or decline")
+		return
+	}
+	if resData.FairTradeAssetID == nil {
+		respondErr(w, http.StatusConflict, "no fair trade offer has been made yet")
+		return
+	}
+	if plan.TargetAssetID == nil || plan.TargetPlayerID == nil {
+		respondErr(w, http.StatusConflict, "plan is missing target asset or player")
+		return
+	}
+
+	// Transfer targeted asset to preparer.
+	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		ID:      *plan.TargetAssetID,
+		OwnerID: plan.PreparerID,
+	}); err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not transfer targeted asset")
+		return
+	}
+	// Transfer offered asset to target player.
+	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		ID:      *resData.FairTradeAssetID,
+		OwnerID: *plan.TargetPlayerID,
+	}); err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not transfer offered asset")
+		return
+	}
+
+	accepted := true
+	resData.FairTradeAccepted = &accepted
+	resData.Choices = []string{"fair_trade_accepted"}
+	if err := saveResData(ctx, q, plan.ID, *resData); err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not save decision")
+		return
+	}
+
+	// Resolve plan.
+	if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
+		ID:     plan.ID,
+		Result: new(makeOutcome),
+	}); err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not resolve plan")
+		return
+	}
+
+	h, hasHub := manager.Get(game.ID)
+	if hasHub {
+		// Broadcast asset transfers.
+		ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
+		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
+			Asset:      ta,
+			OldOwnerID: *plan.TargetPlayerID,
+			NewOwnerID: plan.PreparerID,
+		})
+		oa, _ := q.GetAssetByID(ctx, *resData.FairTradeAssetID)
+		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
+			Asset:      oa,
+			OldOwnerID: plan.PreparerID,
+			NewOwnerID: *plan.TargetPlayerID,
+		})
+		h.BroadcastEvent(model.EventPlanResolved, model.PlanResolvedPayload{
+			PlanID: plan.ID,
+			Result: makeOutcome,
+		})
+	}
+
+	respond(w, http.StatusOK, map[string]any{
+		"plan_id": plan.ID,
+		"result":  "make",
+		"note":    "fair trade accepted; assets exchanged",
+	})
+}
+
+func declineFairTrade(
+	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
+	resData *planResData, plan *dbgen.Plan, player *dbgen.Player,
+	manager *hub.Manager, game dbgen.Game,
+) {
+	// Preparer declines: create dice roll.
+	if player.ID != plan.PreparerID {
+		respondErr(w, http.StatusForbidden, "only the preparer can accept or decline")
+		return
+	}
+	declined := false
+	resData.FairTradeAccepted = &declined
+	if err := saveResData(ctx, q, plan.ID, *resData); err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not save decision")
+		return
+	}
+
+	difficulty, err := computeDifficulty(ctx, q, plan, *resData)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not compute difficulty")
+		return
+	}
+	roll, err := createPlanRoll(ctx, q, manager, &game, plan, difficulty, player.ID)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not create dice roll")
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"plan_id": plan.ID,
+		"roll":    roll,
+	})
 }
 
 // ── MakeChoice ────────────────────────────────────────────────────────────────

@@ -77,31 +77,7 @@ func applyRankingSwaps(
 		})
 
 		for _, pid := range tokenPlayers {
-			rankMap, ok := playerRank[pid]
-			if !ok {
-				continue
-			}
-			myRank := rankMap[cat] // 1-indexed, live value
-			if myRank <= 1 {
-				continue // already at top, do nothing
-			}
-			aboveIdx := myRank - 2 //nolint:mnd // 0-indexed slot one rank above
-			myIdx := myRank - 1    // 0-indexed current slot
-
-			above := s[aboveIdx] // *int64, nil if dummy
-			if above == nil {
-				continue // static dummy above — cannot advance past it
-			}
-
-			// Swap pid and above in both the slot array and the live rank map.
-			// Use a local copy so the pointer outlives this iteration.
-			pidCopy := pid
-			s[aboveIdx] = &pidCopy
-			s[myIdx] = above
-			playerRank[pid][cat] = aboveIdx + 1
-			if _, ok := playerRank[*above]; ok {
-				playerRank[*above][cat] = myIdx + 1
-			}
+			swapTokenPlayerWithAbove(pid, cat, s, playerRank)
 		}
 
 		// After all tokens in this category are resolved: if every plan type
@@ -124,6 +100,52 @@ func applyRankingSwaps(
 	}
 
 	return shouldClearTokens
+}
+
+// swapTokenPlayerWithAbove advances a token holder upward by swapping them with
+// the first real player in a higher rank, skipping past any dummy (nil) slots.
+// Modifies slots and playerRank in place.
+func swapTokenPlayerWithAbove(
+	pid int64,
+	cat model.RankingCategory,
+	s *categorySlots,
+	playerRank map[int64]map[model.RankingCategory]int16,
+) {
+	rankMap, ok := playerRank[pid]
+	if !ok {
+		return
+	}
+	myRank := rankMap[cat] // 1-indexed, live value
+	if myRank <= 1 {
+		return // already at top, do nothing
+	}
+	myIdx := myRank - 1 // 0-indexed current slot
+
+	// Search upward from myIdx-1 to find the first non-nil player to swap with.
+	var aboveIdx int16
+	var above *int64
+	for i := myIdx - 1; i >= 0; i-- {
+		if s[i] != nil {
+			aboveIdx = i
+			above = s[i]
+			break
+		}
+	}
+
+	// No real player found above (all dummies up to rank 1) — cannot advance.
+	if above == nil {
+		return
+	}
+
+	// Swap pid and above in both the slot array and the live rank map.
+	// Use a local copy so the pointer outlives this iteration.
+	pidCopy := pid
+	s[aboveIdx] = &pidCopy
+	s[myIdx] = above
+	playerRank[pid][cat] = aboveIdx + 1
+	if _, ok := playerRank[*above]; ok {
+		playerRank[*above][cat] = myIdx + 1
+	}
 }
 
 // runRankingUpdate executes the ranking update and returns the updated rankings.

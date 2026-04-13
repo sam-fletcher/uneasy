@@ -117,9 +117,9 @@ func TestApplyRankingSwaps(t *testing.T) {
 		assertTokenClear(result, model.CategoryPower, true)
 	})
 
-	t.Run("token holder with nil slot above, cannot advance past unoccupied position", func(t *testing.T) {
+	t.Run("token holder skips past nil to reach next real player", func(t *testing.T) {
 		// Player 1 at rank 3, rank 2 is unoccupied (nil).
-		// Give player 1 a token; should NOT advance (can't pass dummy).
+		// Give player 1 a token; should skip past rank 2 and swap with player 2 at rank 1.
 		slots := mkSlots(model.CategoryPower,
 			map[int16]*int64{
 				3: intPtr(1),
@@ -137,9 +137,9 @@ func TestApplyRankingSwaps(t *testing.T) {
 
 		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
 
-		// Player 1 should still be at rank 3.
-		assertRank(pr, 1, model.CategoryPower, 3)
-		assertRank(pr, 2, model.CategoryPower, 1)
+		// Player 1 should now be at rank 1 (skipped rank 2), player 2 at rank 3.
+		assertRank(pr, 1, model.CategoryPower, 1)
+		assertRank(pr, 2, model.CategoryPower, 3)
 		// Having one token in Phase 2 means all plan types have tokens → should clear.
 		assertTokenClear(result, model.CategoryPower, true)
 	})
@@ -252,34 +252,6 @@ func TestApplyRankingSwaps(t *testing.T) {
 		assertTokenClear(result, model.CategoryEsteem, false)
 	})
 
-	t.Run("three-player game with unoccupied ranks", func(t *testing.T) {
-		// Three players: ranks 1, 3, 5 occupied; ranks 2, 4 unoccupied (dummy tokens).
-		// Player 1 rank 3 with token: should NOT move because rank 2 above is nil (dummy).
-		slots := mkSlots(model.CategoryPower,
-			map[int16]*int64{
-				1: intPtr(1),
-				// 2: nil (dummy)
-				3: intPtr(2),
-				// 4: nil (dummy)
-				5: intPtr(3),
-			})
-		pr := buildPlayerRank(slots)
-
-		tokens := []dbgen.PlanToken{
-			{PlayerID: 2, PlanType: model.PlanExchangeCourtiers},
-		}
-		catPlanTypes := map[model.RankingCategory][]model.PlanType{
-			model.CategoryPower: {model.PlanExchangeCourtiers},
-		}
-
-		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
-
-		// Player 2 at rank 3 cannot move past the nil (dummy) at rank 2.
-		assertRank(pr, 2, model.CategoryPower, 3)
-		// Having one token in Phase 2 means all plan types have tokens → should clear.
-		assertTokenClear(result, model.CategoryPower, true)
-	})
-
 	t.Run("stacked tokens on same plan type deduplicated", func(t *testing.T) {
 		// Player 3 has two tokens on the same plan type (stacked).
 		// Should only process player 3 once.
@@ -305,4 +277,137 @@ func TestApplyRankingSwaps(t *testing.T) {
 		assertRank(pr, 3, model.CategoryPower, 2)
 		assertTokenClear(result, model.CategoryPower, true)
 	})
+}
+
+func Test_swapTokenPlayerWithAbove(t *testing.T) {
+	intPtr := func(v int64) *int64 { return &v }
+
+	tests := []struct {
+		name              string
+		pid               int64
+		cat               model.RankingCategory
+		s                 *categorySlots
+		playerRank        map[int64]map[model.RankingCategory]int16
+		expectedPIDRank   int16 // expected rank of pid after swap
+		expectedAboveRank int16 // expected rank of player who was above
+	}{
+		{
+			name: "basic swap advances player one rank",
+			pid:  1,
+			cat:  model.CategoryPower,
+			s: &categorySlots{
+				intPtr(3), // rank 1: player 3
+				intPtr(2), // rank 2: player 2
+				intPtr(1), // rank 3: player 1
+				nil,       // rank 4: nil
+				nil,       // rank 5: nil
+			},
+			playerRank: map[int64]map[model.RankingCategory]int16{
+				1: {model.CategoryPower: 3},
+				2: {model.CategoryPower: 2},
+				3: {model.CategoryPower: 1},
+			},
+			expectedPIDRank:   2, // player 1 moves to rank 2
+			expectedAboveRank: 3, // player 2 moves to rank 3
+		},
+		{
+			name: "player at rank 1 does not move",
+			pid:  1,
+			cat:  model.CategoryPower,
+			s: &categorySlots{
+				intPtr(1), // rank 1: player 1
+				intPtr(2), // rank 2: player 2
+				nil,       // rank 3
+				nil,       // rank 4
+				nil,       // rank 5
+			},
+			playerRank: map[int64]map[model.RankingCategory]int16{
+				1: {model.CategoryPower: 1},
+				2: {model.CategoryPower: 2},
+			},
+			expectedPIDRank:   1, // player 1 stays at rank 1
+			expectedAboveRank: 0, // no change to player above
+		},
+		{
+			name: "skips past nil slots to find next real player",
+			pid:  1,
+			cat:  model.CategoryPower,
+			s: &categorySlots{
+				intPtr(2), // rank 1: player 2 (real player)
+				nil,       // rank 2: nil (dummy)
+				nil,       // rank 3: nil (dummy)
+				intPtr(1), // rank 4: player 1
+				nil,       // rank 5: nil
+			},
+			playerRank: map[int64]map[model.RankingCategory]int16{
+				1: {model.CategoryPower: 4},
+				2: {model.CategoryPower: 1},
+			},
+			expectedPIDRank:   1, // player 1 swaps with player 2, moves to rank 1
+			expectedAboveRank: 4, // player 2 moves to rank 4
+		},
+		{
+			name: "cannot advance when all ranks above are nil",
+			pid:  1,
+			cat:  model.CategoryPower,
+			s: &categorySlots{
+				nil,       // rank 1: nil (no one above)
+				nil,       // rank 2: nil
+				intPtr(1), // rank 3: player 1
+				nil,       // rank 4
+				nil,       // rank 5
+			},
+			playerRank: map[int64]map[model.RankingCategory]int16{
+				1: {model.CategoryPower: 3},
+			},
+			expectedPIDRank:   3, // player 1 stays at rank 3 (no real player above)
+			expectedAboveRank: 0, // no change
+		},
+		{
+			name: "swap with live rank updates",
+			pid:  2,
+			cat:  model.CategoryKnowledge,
+			s: &categorySlots{
+				intPtr(4), // rank 1: player 4
+				intPtr(2), // rank 2: player 2
+				intPtr(3), // rank 3: player 3
+				nil,
+				nil,
+			},
+			playerRank: map[int64]map[model.RankingCategory]int16{
+				2: {model.CategoryKnowledge: 2},
+				3: {model.CategoryKnowledge: 3},
+				4: {model.CategoryKnowledge: 1},
+			},
+			expectedPIDRank:   1, // player 2 moves to rank 1
+			expectedAboveRank: 2, // player 4 moves to rank 2
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Find which player currently occupies the higher rank we're swapping into.
+			var playerAbove int64
+			for i := range 5 {
+				if tt.s[i] != nil && int16(i+1) == tt.expectedPIDRank {
+					playerAbove = *tt.s[i]
+					break
+				}
+			}
+
+			swapTokenPlayerWithAbove(tt.pid, tt.cat, tt.s, tt.playerRank)
+
+			// Verify player's rank after swap
+			if tt.expectedPIDRank > 0 {
+				assert.Equal(t, tt.expectedPIDRank, tt.playerRank[tt.pid][tt.cat],
+					"player %d should be at rank %d", tt.pid, tt.expectedPIDRank)
+			}
+
+			// Verify player above's rank after swap (if applicable)
+			if tt.expectedAboveRank > 0 && playerAbove > 0 {
+				assert.Equal(t, tt.expectedAboveRank, tt.playerRank[playerAbove][tt.cat],
+					"player %d should be at rank %d", playerAbove, tt.expectedAboveRank)
+			}
+		})
+	}
 }
