@@ -30,7 +30,7 @@ type PlanHandler interface {
 	ValidatePreparation(ctx context.Context, v *ValidationContext) (targetRow int16, errMsg string)
 
 	// ComputeDifficulty returns the base difficulty for this plan.
-	ComputeDifficulty(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, resData *ResData) (int16, error)
+	ComputeDifficulty(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, resData *ResolutionData) (int16, error)
 
 	// OnResolve is called when the plan transitions to 'resolving'.
 	// Most plans create a dice roll here and return it.
@@ -45,14 +45,14 @@ type PlanHandler interface {
 		ctx context.Context,
 		deps *PlanDeps,
 		plan *dbgen.Plan,
-		resData *ResData,
+		resData *ResolutionData,
 		choices []string,
 		result string,
 	) error
 
 	// CanComplete checks whether the plan is ready to be marked resolved.
 	// Return nil if ready, or an error describing what's still needed.
-	CanComplete(plan *dbgen.Plan, resData *ResData) error
+	CanComplete(plan *dbgen.Plan, resData *ResolutionData) error
 
 	// ExtraRoutes returns plan-specific sub-routes mounted at
 	// /api/plans/:planId/<key>. Return nil if the plan has no extra routes.
@@ -83,10 +83,10 @@ type ValidationContext struct {
 	Notes          string
 }
 
-// ResData holds plan-specific state stored as JSON in plans.resolution_data.
+// ResolutionData holds plan-specific state stored as JSON in plans.resolution_data.
 // It is a superset of the old planResData type, extended with fields for all
 // 12 plan types. Only the fields relevant to a given plan type will be set.
-type ResData struct {
+type ResolutionData struct {
 	// ── Exchange Courtiers ──
 	FairTradeAssetID   *int64 `json:"fair_trade_asset_id,omitempty"`
 	FairTradeAccepted  *bool  `json:"fair_trade_accepted,omitempty"`

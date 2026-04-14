@@ -46,7 +46,12 @@ func (ecHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	return 0, errMsg // fixed delay; target row computed from Metadata().Delay
 }
 
-func (ecHandler) ComputeDifficulty(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, _ *ResData) (int16, error) {
+func (ecHandler) ComputeDifficulty(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	_ *ResolutionData,
+) (int16, error) {
 	if plan.TargetPlayerID == nil {
 		return 0, errors.New("exchange courtiers plan has no target player")
 	}
@@ -68,7 +73,7 @@ func (ecHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	resData *ResData,
+	resData *ResolutionData,
 	choices []string,
 	result string,
 ) error {
@@ -78,7 +83,7 @@ func (ecHandler) ApplyChoice(
 	return applyExchangeCourtiersMechanic(ctx, deps.Q, deps.Manager, plan, choices, resData)
 }
 
-func (ecHandler) CanComplete(_ *dbgen.Plan, resData *ResData) error {
+func (ecHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	if resData.MessyBreakRequired && !resData.MessyBreakDone {
 		return errors.New("target player must first break a marginalia (POST /plans/{planId}/messy-break)")
 	}
@@ -102,7 +107,7 @@ func applyExchangeCourtiersMechanic(
 	manager *hub.Manager,
 	plan *dbgen.Plan,
 	choices []string,
-	resData *ResData,
+	resData *ResolutionData,
 ) error {
 	if plan.TargetAssetID == nil || plan.TargetPlayerID == nil {
 		return nil // nothing to do
@@ -174,7 +179,7 @@ func fairTradeHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		resData := loadResData(plan.ResolutionData)
+		resData := loadResolutionData(plan.ResolutionData)
 
 		switch body.Action {
 		case "offer":
@@ -191,7 +196,7 @@ func fairTradeHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 func offerFairTrade(
 	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
-	resData *ResData, plan *dbgen.Plan, player *dbgen.Player,
+	resData *ResolutionData, plan *dbgen.Plan, player *dbgen.Player,
 	offeredAssetID *int64,
 ) {
 	if plan.TargetPlayerID == nil || player.ID != *plan.TargetPlayerID {
@@ -216,7 +221,7 @@ func offerFairTrade(
 		return
 	}
 	resData.FairTradeAssetID = offeredAssetID
-	if err := saveResData(ctx, q, plan.ID, *resData); err != nil {
+	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondErr(w, http.StatusInternalServerError, "could not save offer")
 		return
 	}
@@ -228,7 +233,7 @@ func offerFairTrade(
 
 func acceptFairTrade(
 	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
-	resData *ResData, plan *dbgen.Plan, player *dbgen.Player,
+	resData *ResolutionData, plan *dbgen.Plan, player *dbgen.Player,
 	manager *hub.Manager, game dbgen.Game,
 ) {
 	if player.ID != plan.PreparerID {
@@ -264,7 +269,7 @@ func acceptFairTrade(
 	accepted := true
 	resData.FairTradeAccepted = &accepted
 	resData.Choices = []string{"fair_trade_accepted"}
-	if err := saveResData(ctx, q, plan.ID, *resData); err != nil {
+	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondErr(w, http.StatusInternalServerError, "could not save decision")
 		return
 	}
@@ -306,7 +311,7 @@ func acceptFairTrade(
 
 func declineFairTrade(
 	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
-	resData *ResData, plan *dbgen.Plan, player *dbgen.Player,
+	resData *ResolutionData, plan *dbgen.Plan, player *dbgen.Player,
 	manager *hub.Manager, game dbgen.Game,
 ) {
 	if player.ID != plan.PreparerID {
@@ -315,7 +320,7 @@ func declineFairTrade(
 	}
 	declined := false
 	resData.FairTradeAccepted = &declined
-	if err := saveResData(ctx, q, plan.ID, *resData); err != nil {
+	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondErr(w, http.StatusInternalServerError, "could not save decision")
 		return
 	}
@@ -364,7 +369,7 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
-		resData := loadResData(plan.ResolutionData)
+		resData := loadResolutionData(plan.ResolutionData)
 		if !resData.MessyBreakRequired {
 			respondErr(w, http.StatusConflict, "no messy break is required for this plan")
 			return
@@ -409,7 +414,7 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 		}
 
 		resData.MessyBreakDone = true
-		if err := saveResData(ctx, q, plan.ID, resData); err != nil {
+		if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not record messy break")
 			return
 		}

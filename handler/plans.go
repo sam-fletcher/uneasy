@@ -44,16 +44,16 @@ import (
 
 // ── Resolution data helpers ───────────────────────────────────────────────────
 
-func loadResData(raw *string) ResData {
+func loadResolutionData(raw *string) ResolutionData {
 	if raw == nil || *raw == "" {
-		return ResData{}
+		return ResolutionData{}
 	}
-	var d ResData
+	var d ResolutionData
 	_ = json.Unmarshal([]byte(*raw), &d)
 	return d
 }
 
-func saveResData(ctx context.Context, q *dbgen.Queries, planID int64, d ResData) error {
+func saveResolutionData(ctx context.Context, q *dbgen.Queries, planID int64, d ResolutionData) error {
 	b, err := json.Marshal(d)
 	if err != nil {
 		return err
@@ -202,7 +202,7 @@ func checkPlanEligible(
 // For Spread Propaganda:  relevantRank is the preparer's esteem rank.
 //
 // Returns an error for plan types not yet registered (Phase 3b+).
-func computeDifficultyPure(planType model.PlanType, resData ResData, relevantRank int16) (int16, error) {
+func computeDifficultyPure(planType model.PlanType, resData ResolutionData, relevantRank int16) (int16, error) {
 	switch planType {
 	case model.PlanExchangeCourtiers:
 		return exchangeCourtiersDifficultyPure(relevantRank), nil
@@ -661,7 +661,7 @@ func GetPlan(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		resData := loadResData(plan.ResolutionData)
+		resData := loadResolutionData(plan.ResolutionData)
 
 		var difficulty int16
 		if h, supported := GetHandler(plan.PlanType); supported {
@@ -786,7 +786,7 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		resData := loadResData(plan.ResolutionData)
+		resData := loadResolutionData(plan.ResolutionData)
 		resData.Choices = body.Choices
 
 		deps := &PlanDeps{Q: q, Manager: manager}
@@ -795,7 +795,7 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := saveResData(ctx, q, plan.ID, resData); err != nil {
+		if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not save choices")
 			return
 		}
@@ -836,7 +836,7 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		resData := loadResData(plan.ResolutionData)
+		resData := loadResolutionData(plan.ResolutionData)
 		if err := h.CanComplete(plan, &resData); err != nil {
 			respondErr(w, http.StatusConflict, "cannot complete plan: "+err.Error())
 			return

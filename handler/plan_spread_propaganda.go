@@ -45,7 +45,12 @@ func (spHandler) ValidatePreparation(_ context.Context, _ *ValidationContext) (i
 	return 0, "" // no plan-specific prerequisites; fixed delay
 }
 
-func (spHandler) ComputeDifficulty(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, _ *ResData) (int16, error) {
+func (spHandler) ComputeDifficulty(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	_ *ResolutionData,
+) (int16, error) {
 	preparerRank, err := playerRankInCategory(ctx, q, plan.GameID, plan.PreparerID, model.CategoryEsteem)
 	if err != nil {
 		return 0, fmt.Errorf("could not determine preparer ranking: %w", err)
@@ -59,7 +64,7 @@ func (spHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	if err != nil {
 		return nil, err
 	}
-	resData := loadResData(plan.ResolutionData)
+	resData := loadResolutionData(plan.ResolutionData)
 	difficulty, err := spHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
 	if err != nil {
 		return nil, err
@@ -67,11 +72,18 @@ func (spHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 
-func (spHandler) ApplyChoice(_ context.Context, _ *PlanDeps, _ *dbgen.Plan, _ *ResData, _ []string, _ string) error {
+func (spHandler) ApplyChoice(
+	_ context.Context,
+	_ *PlanDeps,
+	_ *dbgen.Plan,
+	_ *ResolutionData,
+	_ []string,
+	_ string,
+) error {
 	return nil // all make/mar effects are narrative
 }
 
-func (spHandler) CanComplete(_ *dbgen.Plan, _ *ResData) error {
+func (spHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
 	return nil // no extra prerequisites
 }
 

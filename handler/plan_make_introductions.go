@@ -33,7 +33,7 @@ func (miHandler) Metadata() PlanMetadata {
 
 // makeIntroductionsDifficultyPure returns the difficulty given the ResData.
 // Difficulty = 2 + peer_count (peer_count 0 treated as 1; range 1–4 → 3–6).
-func makeIntroductionsDifficultyPure(resData ResData) int16 {
+func makeIntroductionsDifficultyPure(resData ResolutionData) int16 {
 	const baseDifficulty = int16(2)
 	pc := max(resData.PeerCount, 1)
 	return baseDifficulty + pc
@@ -50,7 +50,7 @@ func (miHandler) ComputeDifficulty(
 	_ context.Context,
 	_ *dbgen.Queries,
 	_ *dbgen.Plan,
-	resData *ResData,
+	resData *ResolutionData,
 ) (int16, error) {
 	return makeIntroductionsDifficultyPure(*resData), nil
 }
@@ -61,16 +61,23 @@ func (miHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	if err != nil {
 		return nil, err
 	}
-	resData := loadResData(plan.ResolutionData)
+	resData := loadResolutionData(plan.ResolutionData)
 	difficulty := makeIntroductionsDifficultyPure(resData)
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 
-func (miHandler) ApplyChoice(_ context.Context, _ *PlanDeps, _ *dbgen.Plan, _ *ResData, _ []string, _ string) error {
+func (miHandler) ApplyChoice(
+	_ context.Context,
+	_ *PlanDeps,
+	_ *dbgen.Plan,
+	_ *ResolutionData,
+	_ []string,
+	_ string,
+) error {
 	return nil // all make/mar effects are narrative
 }
 
-func (miHandler) CanComplete(_ *dbgen.Plan, _ *ResData) error {
+func (miHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
 	return nil // no extra prerequisites
 }
 
@@ -80,6 +87,6 @@ func (miHandler) ExtraRoutes(_ *PlanDeps) map[string]http.HandlerFunc {
 
 // store peer_count in resolution_data during plan preparation.
 func miStoreResData(ctx context.Context, q *dbgen.Queries, planID int64, peerCount int16) error {
-	d := ResData{PeerCount: peerCount}
-	return saveResData(ctx, q, planID, d)
+	d := ResolutionData{PeerCount: peerCount}
+	return saveResolutionData(ctx, q, planID, d)
 }
