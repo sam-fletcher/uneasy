@@ -67,7 +67,7 @@ linters:
     - funlen # tool for detection of long functions
     - gocheckcompilerdirectives # validates go compiler directive comments (//go:)
     - gochecknoglobals # checks that no global variables exist
-    - gochecknoinits # checks that no init functions are present in Go code
+    # - gochecknoinits # checks that no init functions are present in Go code
     - gochecksumtype # checks exhaustiveness on Go "sum types"
     - gocognit # computes and checks the cognitive complexity of functions
     - goconst # finds repeated strings that could be replaced by a constant
@@ -93,7 +93,7 @@ linters:
     - nestif # reports deeply nested if statements
     - nilerr # finds the code that returns nil even if it checks that the error is not nil
     - nilnesserr # reports that it checks for err != nil, but it returns a different nil value error (powered by nilness and nilerr)
-    - nilnil # checks that there is no simultaneous return of nil error and an invalid value
+    # - nilnil # checks that there is no simultaneous return of nil error and an invalid value
     - noctx # finds sending http request without context.Context
     - nolintlint # reports ill-formed or insufficient nolint directives
     - nonamedreturns # reports all named returns

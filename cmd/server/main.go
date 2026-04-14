@@ -183,17 +183,23 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 			r.Post("/close-leverage", handler.CloseLeverage(q, manager))
 		})
 
-		// Plans (Phase 2f)
+		// Plans (Phase 3a+)
 		r.Get("/tables/{id}/plans", handler.ListPlans(q))
 		r.Get("/tables/{id}/plan-eligibility", handler.PlanEligibility(q))
 		r.Post("/tables/{id}/prepare-plan", handler.PreparePlan(q, manager))
 		r.Route("/plans/{planId}", func(r chi.Router) {
 			r.Get("/", handler.GetPlan(q))
 			r.Post("/resolve", handler.ResolvePlan(q, manager))
-			r.Post("/fair-trade", handler.FairTrade(q, manager))
 			r.Post("/make-choice", handler.MakeChoice(q, manager))
-			r.Post("/messy-break", handler.MessyBreak(q, manager))
 			r.Post("/complete", handler.CompletePlan(q, manager))
+			// Mount plan-type-specific routes from the registry (e.g. fair-trade,
+			// messy-break for Exchange Courtiers; future plans add their own).
+			deps := &handler.PlanDeps{Q: q, Manager: manager}
+			for _, h := range handler.AllHandlers() {
+				for route, fn := range h.ExtraRoutes(deps) {
+					r.Post("/"+route, fn)
+				}
+			}
 		})
 
 		// WebSocket (note: no Timeout middleware for WS connections)
