@@ -175,17 +175,18 @@ func applyCoOpt(
 	}
 
 	// Mark it as resolving immediately (skips the pending phase).
-	if err := deps.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+	err = deps.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
 		ID:     recursivePlan.ID,
 		Status: model.PlanResolving,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("could not mark recursive plan as resolving: %w", err)
 	}
 
 	// Tag it in ResData so its own co-opt option is blocked.
 	parentID := plan.ID
 	recursiveResData := ResolutionData{OriginalPlanID: &parentID}
-	if err := saveResolutionData(ctx, deps.Q, recursivePlan.ID, recursiveResData); err != nil {
+	if err = saveResolutionData(ctx, deps.Q, recursivePlan.ID, recursiveResData); err != nil {
 		return fmt.Errorf("could not save recursive plan data: %w", err)
 	}
 
@@ -196,7 +197,7 @@ func applyCoOpt(
 	}
 
 	// Create the dice roll. The normal leverage window then opens.
-	if _, err := createPlanRoll(ctx, deps.Q, deps.Manager, &game, &recursivePlan, difficulty, topPlayerID); err != nil {
+	if _, err = createPlanRoll(ctx, deps.Q, deps.Manager, &game, &recursivePlan, difficulty, topPlayerID); err != nil {
 		return fmt.Errorf("could not create recursive dice roll: %w", err)
 	}
 

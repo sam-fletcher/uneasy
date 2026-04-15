@@ -174,7 +174,6 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		//nolint:gosec // game randomness, not security
 		delay := int16(rand.IntN(diceSides) + 1) // 1–6
 		targetRow := game.CurrentRow + delay
 
@@ -182,7 +181,7 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// If target row exceeds the public record, the peer is lost.
 		if targetRow > publicRecordRowCount {
-			if err := deps.Q.DestroyAsset(ctx, body.PeerAssetID); err != nil {
+			if err = deps.Q.DestroyAsset(ctx, body.PeerAssetID); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not destroy peer asset")
 				return
 			}

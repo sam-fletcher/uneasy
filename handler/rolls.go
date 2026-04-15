@@ -435,7 +435,7 @@ func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// All votes in — compute and store adjusted_difficulty (clamped to 1–6).
-		adj := int16(min( //nolint:gosec // clamped to 1–6
+		adj := int16(min(
 			max(int64(roll.Difficulty)+counts.NayCount-counts.YeaCount, 1),
 			diceSides))
 		if err = q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
@@ -597,7 +597,7 @@ func rollAndCancelDice(
 
 	// Assign random faces; bucket die IDs by actor vs. interference.
 	for _, d := range dice {
-		f := int16(rand.IntN(diceSides) + 1) //nolint:gosec // game randomness, not security
+		f := int16(rand.IntN(diceSides) + 1)
 		if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not set die face")
 			return nil, nil, err
@@ -631,7 +631,7 @@ func calculateRollResult(actorDice []dieEntry, cancelledIDs map[int64]struct{}, 
 			distinctFaces[e.face] = struct{}{}
 		}
 	}
-	result := int16(len(distinctFaces)) //nolint:gosec // map size clamped to int16
+	result := int16(len(distinctFaces))
 
 	effectiveDifficulty := roll.Difficulty
 	if roll.AdjustedDifficulty != nil {

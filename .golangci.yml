@@ -325,6 +325,16 @@ linters:
         # https://github.com/godoc-lint/godoc-lint?tab=readme-ov-file#require-stdlib-doclink
         - require-stdlib-doclink
 
+    gosec:
+      # Filter by issue severity. Valid values: low, medium, high.
+      severity: "medium"
+      # Filter by confidence of the finding. Valid values: low, medium, high.
+      confidence: "high"
+      # excludes:
+      #   - G104
+      #   - G115
+      # exclude-generated: true
+
     govet:
       # Enable all analyzers.
       # Default: false

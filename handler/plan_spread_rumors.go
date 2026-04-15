@@ -86,9 +86,9 @@ func (srHandler) ComputeDifficulty(
 		if asset.OwnerID == 0 {
 			return 0, errors.New("main character asset has no owner")
 		}
-		targetRank, err := playerRankInCategory(ctx, q, plan.GameID, asset.OwnerID, model.CategoryEsteem)
-		if err != nil {
-			return 0, fmt.Errorf("could not determine target esteem rank: %w", err)
+		targetRank, errRank := playerRankInCategory(ctx, q, plan.GameID, asset.OwnerID, model.CategoryEsteem)
+		if errRank != nil {
+			return 0, fmt.Errorf("could not determine target esteem rank: %w", errRank)
 		}
 		return spreadRumorsDifficultyPure(targetRank, true), nil
 	}
