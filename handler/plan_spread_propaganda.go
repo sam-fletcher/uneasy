@@ -1,22 +1,27 @@
 package handler
 
-// handler/plan_spread_propaganda.go — Spread Propaganda plan handler.
+// handler/plan_spread_propaganda.go — Spread Propaganda plan handler (Phase 3b).
 //
-// Spread Propaganda (esteem, delay 3): The preparer spreads a message across
-// the game world. Difficulty = preparer's rank on the esteem track.
+// Spread Propaganda (esteem, delay 3): The preparer spreads a message.
+// Difficulty = preparer's rank on the esteem track.
 //
-// Make options: "wide" (rumor reaches everyone), "targeted" (affects one player
-// or asset), "incite" (causes a reaction from a named NPC/faction).
-// Mar options: "backfire" (rumor reflects back at preparer),
-// "dismissed" (no one believes it), "censured" (esteem lockout — preparer's
-// next plan cannot be an esteem plan), "co-opt" (top interferer spreads their
-// own propaganda immediately — Phase 2 simplification; recursive resolve is
-// Phase 3b).
+// Make options: "wide", "targeted", "incite" (narrative).
+// Mar options:
+//   (a) "backfire"  — rumor reflects back at preparer (narrative)
+//   (b) "censured"  — esteem lockout: preparer's next plan cannot be an esteem plan
+//   (c) "dismissed" — no one believes it (narrative)
+//   (d) "co-opt"    — top interferer spreads their own propaganda immediately
 //
-// This handler has no extra routes.
+// Esteem lockout (b): sets ResData.EsteemLockout = true. Checked in
+// validatePlanPreparation for all esteem-category plan types.
+//
+// Recursive resolve (d): finds the top interferer by dice count (ties broken
+// by best esteem rank), creates a new SP plan at current_row with status
+// 'resolving', and creates a dice roll. Depth capped at 1.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -34,9 +39,8 @@ func (spHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 3}
 }
 
-// spreadPropagandaDifficultyPure returns the difficulty given the preparer's
-// rank on the esteem track.
-// Difficulty = preparer rank (rank 1–5 → difficulty 1–5).
+// spreadPropagandaDifficultyPure returns the difficulty for a given preparer
+// rank on the esteem track. Difficulty = rank (1–5).
 func spreadPropagandaDifficultyPure(preparerRank int16) int16 {
 	return preparerRank
 }
@@ -72,21 +76,214 @@ func (spHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 
+// ApplyChoice handles SP mar options (b) "censured" and (d) "co-opt".
 func (spHandler) ApplyChoice(
-	_ context.Context,
-	_ *PlanDeps,
-	_ *dbgen.Plan,
-	_ *ResolutionData,
-	_ []string,
-	_ string,
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	choices []string,
+	result string,
 ) error {
-	return nil // all make/mar effects are narrative
+	if result != marOutcome {
+		return nil // make options are purely narrative
+	}
+
+	for _, choice := range choices {
+		switch choice {
+		case "censured":
+			resData.EsteemLockout = true
+
+		case "co-opt":
+			if err := applyCoOpt(ctx, deps, plan, resData); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (spHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
-	return nil // no extra prerequisites
+	return nil
 }
 
 func (spHandler) ExtraRoutes(_ *PlanDeps) map[string]http.HandlerFunc {
 	return nil
+}
+
+// ── Co-opt (recursive propaganda) ────────────────────────────────────────────
+
+// applyCoOpt implements SP mar option (d): the top interferer spreads their
+// own propaganda at the current row, resolving immediately.
+func applyCoOpt(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+) error {
+	// Depth cap: recursive plans cannot co-opt again.
+	if resData.OriginalPlanID != nil {
+		return errors.New("co-opt is not available on a recursive propaganda plan")
+	}
+
+	// Find the resolved roll for this plan.
+	roll, err := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil {
+		return fmt.Errorf("could not find dice roll for plan: %w", err)
+	}
+
+	// Find top interferer(s).
+	interferers, err := deps.Q.ListInterferenceDiceByRoll(ctx, roll.ID)
+	if err != nil || len(interferers) == 0 {
+		return errors.New("co-opt is not available: no interference dice were committed to this roll")
+	}
+
+	topCount := interferers[0].DiceCount
+	topPlayerID, err := pickBestEsteemRanked(ctx, deps.Q, plan.GameID, interferers, topCount)
+	if err != nil {
+		return fmt.Errorf("could not determine top interferer: %w", err)
+	}
+
+	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+	if err != nil {
+		return fmt.Errorf("could not load game: %w", err)
+	}
+
+	count, err := deps.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
+		GameID:    game.ID,
+		RowNumber: game.CurrentRow,
+	})
+	if err != nil {
+		count = 0
+	}
+
+	// Create the recursive SP plan.
+	recursivePlan, err := deps.Q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID:           game.ID,
+		PlanType:         model.PlanSpreadPropaganda,
+		Category:         model.CategoryEsteem,
+		PreparerID:       topPlayerID,
+		TargetPlayerID:   nil,
+		TargetAssetID:    nil,
+		RowNumber:        game.CurrentRow,
+		RowOrder:         int16(count),
+		PreparedAtRow:    game.CurrentRow,
+		PreparationNotes: nil,
+	})
+	if err != nil {
+		return fmt.Errorf("could not create recursive propaganda plan: %w", err)
+	}
+
+	// Mark it as resolving immediately (skips the pending phase).
+	if err := deps.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID:     recursivePlan.ID,
+		Status: model.PlanResolving,
+	}); err != nil {
+		return fmt.Errorf("could not mark recursive plan as resolving: %w", err)
+	}
+
+	// Tag it in ResData so its own co-opt option is blocked.
+	parentID := plan.ID
+	recursiveResData := ResolutionData{OriginalPlanID: &parentID}
+	if err := saveResolutionData(ctx, deps.Q, recursivePlan.ID, recursiveResData); err != nil {
+		return fmt.Errorf("could not save recursive plan data: %w", err)
+	}
+
+	// Compute difficulty for the recursive plan (top interferer's esteem rank).
+	difficulty, err := spHandler{}.ComputeDifficulty(ctx, deps.Q, &recursivePlan, &recursiveResData)
+	if err != nil {
+		return fmt.Errorf("could not compute recursive plan difficulty: %w", err)
+	}
+
+	// Create the dice roll. The normal leverage window then opens.
+	if _, err := createPlanRoll(ctx, deps.Q, deps.Manager, &game, &recursivePlan, difficulty, topPlayerID); err != nil {
+		return fmt.Errorf("could not create recursive dice roll: %w", err)
+	}
+
+	// Record the recursive plan ID in the parent's ResData.
+	resData.RecursivePlanID = &recursivePlan.ID
+
+	if h, ok := deps.Manager.Get(game.ID); ok {
+		h.BroadcastEvent(model.EventSPRecursivePlan, model.SPRecursivePlanPayload{
+			ParentPlanID:    plan.ID,
+			RecursivePlanID: recursivePlan.ID,
+			PreparerID:      topPlayerID,
+		})
+	}
+
+	return nil
+}
+
+// pickBestEsteemRanked selects the player with the lowest esteem rank
+// (= highest status) among those tied at topCount interference dice.
+func pickBestEsteemRanked(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+	interferers []dbgen.ListInterferenceDiceByRollRow,
+	topCount int64,
+) (int64, error) {
+	bestRank := int16(999)
+	bestPlayerID := int64(0)
+
+	for _, row := range interferers {
+		if row.DiceCount < topCount {
+			break // rows are ordered by dice_count DESC
+		}
+		rank, err := playerRankInCategory(ctx, q, gameID, row.PlayerID, model.CategoryEsteem)
+		if err != nil {
+			continue
+		}
+		if rank < bestRank {
+			bestRank = rank
+			bestPlayerID = row.PlayerID
+		}
+	}
+
+	if bestPlayerID == 0 {
+		if len(interferers) > 0 {
+			return interferers[0].PlayerID, nil // fallback
+		}
+		return 0, errors.New("no interferers found")
+	}
+	return bestPlayerID, nil
+}
+
+// ── Esteem lockout check ──────────────────────────────────────────────────────
+
+// hasEsteemLockout reports whether a player has an active esteem lockout from
+// a Spread Propaganda mar option (b) "censured". The lockout is active when
+// the player's most recently prepared plan in chronological order is an esteem
+// plan whose ResData.EsteemLockout is true. It clears the moment any non-esteem
+// plan is prepared (that plan becomes the most recent).
+//
+// Algorithm: iterate recent plans newest-first. The first non-esteem plan
+// proves the lockout has cleared. The first SP plan with EsteemLockout = true
+// (with no non-esteem plan seen yet) proves it's still active.
+func hasEsteemLockout(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+) (bool, error) {
+	plans, err := q.ListRecentPlansByPreparer(ctx, dbgen.ListRecentPlansByPreparerParams{
+		GameID:     gameID,
+		PreparerID: playerID,
+	})
+	if err != nil || len(plans) == 0 {
+		return false, err
+	}
+
+	for _, p := range plans {
+		if p.Category != model.CategoryEsteem {
+			// Non-esteem plan found after (newer than) any SP lockout → cleared.
+			return false, nil
+		}
+		if p.PlanType == model.PlanSpreadPropaganda {
+			rd := loadResolutionData(p.ResolutionData)
+			if rd.EsteemLockout {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }

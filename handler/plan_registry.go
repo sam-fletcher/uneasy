@@ -96,6 +96,10 @@ type ResolutionData struct {
 	// ── Make Introductions ──
 	PeerCount          int16   `json:"peer_count,omitempty"`
 	DelayedPeerPlanIDs []int64 `json:"delayed_peer_plan_ids,omitempty"`
+	// Fields for synthetic delayed-arrival plans only:
+	DelayedArrival     bool   `json:"delayed_arrival,omitempty"`
+	DelayedPeerAssetID *int64 `json:"delayed_peer_asset_id,omitempty"`
+	OriginalPlanID     *int64 `json:"original_plan_id,omitempty"`
 
 	// ── Spread Propaganda ──
 	RecursivePlanID *int64 `json:"recursive_plan_id,omitempty"`

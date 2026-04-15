@@ -46,6 +46,12 @@ const (
 	EventPlanResolving = "plan.resolving"
 	EventPlanResolved  = "plan.resolved"
 
+	// Phase 3b: Plan mechanics
+	EventPlanDelayedArrival    = "plan.delayed_arrival"    // MI: peer scheduled for future row
+	EventRumorCreated          = "rumor.created"           // SR: rumor written to record
+	EventSPRecursivePlan       = "plan.sp_recursive"       // SP: recursive propaganda created
+	EventSecretVisibilityGrant = "secret.visibility_grant" // SA/CL: visibility granted
+
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
 	EventRollLeverageAdded = "roll.leverage_added"
@@ -215,4 +221,31 @@ type RollResolvedPayload struct {
 	Roll          any `json:"roll"`           // dbgen.DiceRoll
 	Dice          any `json:"dice"`           // []dbgen.DiceRollDice
 	CancelledDice any `json:"cancelled_dice"` // []dbgen.DiceRollDice
+}
+
+// ── Phase 3b payload types ────────────────────────────────────────────────────
+
+// PlanDelayedArrivalPayload is for EventPlanDelayedArrival (MI).
+type PlanDelayedArrivalPayload struct {
+	PlanID      int64 `json:"plan_id"`
+	PeerAssetID int64 `json:"peer_asset_id"`
+	ArrivalRow  int16 `json:"arrival_row"`
+}
+
+// RumorCreatedPayload is for EventRumorCreated (Spread Rumors).
+type RumorCreatedPayload struct {
+	Rumor any `json:"rumor"` // dbgen.Rumor
+}
+
+// SPRecursivePlanPayload is for EventSPRecursivePlan.
+type SPRecursivePlanPayload struct {
+	ParentPlanID    int64 `json:"parent_plan_id"`
+	RecursivePlanID int64 `json:"recursive_plan_id"`
+	PreparerID      int64 `json:"preparer_id"`
+}
+
+// SecretVisibilityGrantPayload is for EventSecretVisibilityGrant.
+type SecretVisibilityGrantPayload struct {
+	AssetID  int64 `json:"asset_id"`
+	PlayerID int64 `json:"player_id"`
 }

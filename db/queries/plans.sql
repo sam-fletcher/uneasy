@@ -48,6 +48,14 @@ SELECT * FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1;
 -- name: SetPlanResolutionData :exec
 UPDATE plans SET resolution_data = $2 WHERE id = $1;
 
+-- name: ListRecentPlansByPreparer :many
+-- Returns the most recently prepared plans for a player in a game, ordered
+-- newest-first. Used for esteem lockout checks (SP mar option b).
+SELECT * FROM plans
+WHERE game_id = $1 AND preparer_id = $2
+ORDER BY prepared_at_row DESC, id DESC
+LIMIT 20;
+
 -- ── Plan Tokens ──────────────────────────────────────────────────────
 
 -- name: CreatePlanToken :one

@@ -7,11 +7,17 @@ package handler
 // complete). Plan-type-specific logic now lives in individual plan_*.go files
 // and is dispatched through the registry defined in plan_registry.go.
 //
-// Three plans are registered in Phase 3a:
+// Phase 3a plans:
 //
 //	Exchange Courtiers  (power,     delay 5) — plan_exchange_courtiers.go
 //	Make Introductions  (knowledge, delay 3) — plan_make_introductions.go
 //	Spread Propaganda   (esteem,    delay 3) — plan_spread_propaganda.go
+//
+// Phase 3b plans:
+//
+//	Seek Answers        (knowledge, delay 4) — plan_seek_answers.go
+//	Spread Rumors       (esteem,    delay 4) — plan_spread_rumors.go
+//	Chronicle Histories (knowledge, delay 5) — plan_chronicle_histories.go
 //
 // Resolution lifecycle:
 //
@@ -194,15 +200,22 @@ func checkPlanEligible(
 
 // ── Difficulty (pure, for tests) ──────────────────────────────────────────────
 
-// computeDifficultyPure returns the base difficulty given the relevant rank,
-// without hitting the database. Used directly by unit tests.
+// computeDifficultyPure returns the base difficulty without hitting the database.
+// Used directly by unit tests. relevantRank meaning per plan type:
 //
-// For Exchange Courtiers: relevantRank is the target player's power rank.
-// For Make Introductions: relevantRank is ignored; difficulty depends on PeerCount.
-// For Spread Propaganda:  relevantRank is the preparer's esteem rank.
-//
-// Returns an error for plan types not yet registered (Phase 3b+).
-func computeDifficultyPure(planType model.PlanType, resData ResolutionData, relevantRank int16) (int16, error) {
+//   - Exchange Courtiers:   target player's power rank
+//   - Make Introductions:   ignored (PeerCount in resData drives difficulty)
+//   - Spread Propaganda:    preparer's esteem rank
+//   - Seek Answers:         preparer's knowledge rank
+//   - Spread Rumors:        if target is main char → target's esteem rank;
+//     otherwise → preparer's esteem rank. Pass targetIsMainChar=true for former.
+//   - Chronicle Histories:  preparer's knowledge rank (artifact count in resData)
+func computeDifficultyPure(
+	planType model.PlanType,
+	resData ResolutionData,
+	relevantRank int16,
+	targetIsMainChar ...bool,
+) (int16, error) {
 	switch planType {
 	case model.PlanExchangeCourtiers:
 		return exchangeCourtiersDifficultyPure(relevantRank), nil
@@ -210,6 +223,13 @@ func computeDifficultyPure(planType model.PlanType, resData ResolutionData, rele
 		return makeIntroductionsDifficultyPure(resData), nil
 	case model.PlanSpreadPropaganda:
 		return spreadPropagandaDifficultyPure(relevantRank), nil
+	case model.PlanSeekAnswers:
+		return seekAnswersDifficultyPure(relevantRank), nil
+	case model.PlanSpreadRumors:
+		isMain := len(targetIsMainChar) > 0 && targetIsMainChar[0]
+		return spreadRumorsDifficultyPure(relevantRank, isMain), nil
+	case model.PlanChronicleHistories:
+		return chronicleHistoriesDifficultyPure(relevantRank, resData), nil
 	default:
 		return 0, fmt.Errorf("unsupported plan type: %s", planType)
 	}
@@ -329,6 +349,18 @@ func validatePlanPreparation(
 		}
 	}
 	meta := h.Metadata()
+
+	// Check esteem lockout (SP mar option b "censured") before eligibility.
+	// Any esteem-category plan is blocked while a lockout is active.
+	if meta.Category == model.CategoryEsteem {
+		locked, lockErr := hasEsteemLockout(ctx, q, game.ID, player.ID)
+		if lockErr == nil && locked {
+			return preparePlanValidation{
+				Status: http.StatusForbidden,
+				ErrMsg: "esteem lockout: your next plan must be a non-esteem plan (Spread Propaganda mar censured)",
+			}
+		}
+	}
 
 	// Check eligibility.
 	eligible, reason, err := checkPlanEligible(ctx, q, game.ID, player.ID, planType, meta.Category)

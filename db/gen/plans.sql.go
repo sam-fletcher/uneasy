@@ -420,6 +420,56 @@ func (q *Queries) ListPlansByRow(ctx context.Context, arg ListPlansByRowParams) 
 	return items, nil
 }
 
+const listRecentPlansByPreparer = `-- name: ListRecentPlansByPreparer :many
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data FROM plans
+WHERE game_id = $1 AND preparer_id = $2
+ORDER BY prepared_at_row DESC, id DESC
+LIMIT 20
+`
+
+type ListRecentPlansByPreparerParams struct {
+	GameID     int64 `db:"game_id" json:"game_id"`
+	PreparerID int64 `db:"preparer_id" json:"preparer_id"`
+}
+
+// Returns the most recently prepared plans for a player in a game, ordered
+// newest-first. Used for esteem lockout checks (SP mar option b).
+func (q *Queries) ListRecentPlansByPreparer(ctx context.Context, arg ListRecentPlansByPreparerParams) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, listRecentPlansByPreparer, arg.GameID, arg.PreparerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Plan{}
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.PlanType,
+			&i.Category,
+			&i.PreparerID,
+			&i.TargetPlayerID,
+			&i.TargetAssetID,
+			&i.RowNumber,
+			&i.RowOrder,
+			&i.PreparedAtRow,
+			&i.Status,
+			&i.Result,
+			&i.ResolvedAt,
+			&i.PreparationNotes,
+			&i.ResolutionData,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnresolvedPlans = `-- name: ListUnresolvedPlans :many
 SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data FROM plans
 WHERE game_id = $1 AND status IN ('pending', 'resolving')

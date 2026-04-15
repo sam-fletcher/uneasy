@@ -271,6 +271,42 @@ func (q *Queries) ListDiceRollsByGame(ctx context.Context, gameID int64) ([]Dice
 	return items, nil
 }
 
+const listInterferenceDiceByRoll = `-- name: ListInterferenceDiceByRoll :many
+SELECT player_id, count(*)::bigint AS dice_count
+FROM dice_roll_dice
+WHERE roll_id = $1 AND is_interference = true
+GROUP BY player_id
+ORDER BY dice_count DESC, player_id ASC
+`
+
+type ListInterferenceDiceByRollRow struct {
+	PlayerID  int64 `db:"player_id" json:"player_id"`
+	DiceCount int64 `db:"dice_count" json:"dice_count"`
+}
+
+// Returns each player who contributed interference dice to a roll, along
+// with their die count, ordered by count desc then player_id asc.
+// Used to find the top interferer for Spread Propaganda mar option (d).
+func (q *Queries) ListInterferenceDiceByRoll(ctx context.Context, rollID int64) ([]ListInterferenceDiceByRollRow, error) {
+	rows, err := q.db.Query(ctx, listInterferenceDiceByRoll, rollID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInterferenceDiceByRollRow{}
+	for rows.Next() {
+		var i ListInterferenceDiceByRollRow
+		if err := rows.Scan(&i.PlayerID, &i.DiceCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVotesByRoll = `-- name: ListVotesByRoll :many
 SELECT roll_id, player_id, vote, voted_at FROM difficulty_votes WHERE roll_id = $1
 `

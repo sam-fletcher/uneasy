@@ -60,3 +60,13 @@ SELECT
   count(*) FILTER (WHERE vote = 'yea') AS yea_count,
   count(*) FILTER (WHERE vote = 'nay') AS nay_count
 FROM difficulty_votes WHERE roll_id = $1;
+
+-- name: ListInterferenceDiceByRoll :many
+-- Returns each player who contributed interference dice to a roll, along
+-- with their die count, ordered by count desc then player_id asc.
+-- Used to find the top interferer for Spread Propaganda mar option (d).
+SELECT player_id, count(*)::bigint AS dice_count
+FROM dice_roll_dice
+WHERE roll_id = $1 AND is_interference = true
+GROUP BY player_id
+ORDER BY dice_count DESC, player_id ASC;

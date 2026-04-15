@@ -27,3 +27,10 @@ ORDER BY display_order ASC, created_at ASC;
 
 -- name: DeactivateRumor :exec
 UPDATE rumors SET is_active = FALSE WHERE id = $1;
+
+-- name: SetRumorSourceHidden :exec
+-- Remove the source attribution from a rumor (Spread Rumors hide-source option).
+UPDATE rumors SET source_player_id = NULL WHERE id = $1;
+
+-- name: GetRumorByID :one
+SELECT * FROM rumors WHERE id = $1;

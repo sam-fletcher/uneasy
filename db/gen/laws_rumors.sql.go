@@ -111,6 +111,27 @@ func (q *Queries) DeactivateRumor(ctx context.Context, id int64) error {
 	return err
 }
 
+const getRumorByID = `-- name: GetRumorByID :one
+SELECT id, game_id, text, target_asset_id, origin_plan_id, source_player_id, is_active, created_at, display_order FROM rumors WHERE id = $1
+`
+
+func (q *Queries) GetRumorByID(ctx context.Context, id int64) (Rumor, error) {
+	row := q.db.QueryRow(ctx, getRumorByID, id)
+	var i Rumor
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.Text,
+		&i.TargetAssetID,
+		&i.OriginPlanID,
+		&i.SourcePlayerID,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.DisplayOrder,
+	)
+	return i, err
+}
+
 const listLaws = `-- name: ListLaws :many
 SELECT id, game_id, text, addendum, origin_plan_id, signatory_id, created_at, is_active, display_order FROM laws WHERE game_id = $1 AND is_active = TRUE
 ORDER BY display_order ASC, created_at ASC
@@ -179,4 +200,14 @@ func (q *Queries) ListRumors(ctx context.Context, gameID int64) ([]Rumor, error)
 		return nil, err
 	}
 	return items, nil
+}
+
+const setRumorSourceHidden = `-- name: SetRumorSourceHidden :exec
+UPDATE rumors SET source_player_id = NULL WHERE id = $1
+`
+
+// Remove the source attribution from a rumor (Spread Rumors hide-source option).
+func (q *Queries) SetRumorSourceHidden(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, setRumorSourceHidden, id)
+	return err
 }
