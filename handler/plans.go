@@ -48,6 +48,19 @@ import (
 	"uneasy/model"
 )
 
+// ── OnPreparer optional interface ─────────────────────────────────────────────
+
+// OnPreparer is an optional interface for plan handlers that need to run setup
+// immediately after the plan row is created in PreparePlan. For example,
+// Clandestinely Liaise uses it to create the simultaneous reveal and register
+// both participants before the plan is broadcast.
+//
+// Handlers that do not need post-creation setup omit this interface; the
+// PreparePlan handler checks for it via a type assertion.
+type OnPreparer interface {
+	OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error
+}
+
 // ── Resolution data helpers ───────────────────────────────────────────────────
 
 func loadResolutionData(raw *string) ResolutionData {
@@ -210,6 +223,8 @@ func checkPlanEligible(
 //   - Spread Rumors:        if target is main char → target's esteem rank;
 //     otherwise → preparer's esteem rank. Pass targetIsMainChar=true for former.
 //   - Chronicle Histories:  preparer's knowledge rank (artifact count in resData)
+//   - Propose Decree:       preparer's power rank
+//   - Clandestinely Liaise: not applicable (no dice roll)
 func computeDifficultyPure(
 	planType model.PlanType,
 	resData ResolutionData,
@@ -230,6 +245,8 @@ func computeDifficultyPure(
 		return spreadRumorsDifficultyPure(relevantRank, isMain), nil
 	case model.PlanChronicleHistories:
 		return chronicleHistoriesDifficultyPure(relevantRank, resData), nil
+	case model.PlanProposeDecree:
+		return proposeDecreeDifficultyPure(relevantRank), nil
 	default:
 		return 0, fmt.Errorf("unsupported plan type: %s", planType)
 	}
@@ -661,6 +678,16 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		if body.PlanType == model.PlanMakeIntroductions {
 			if err := miStoreResData(ctx, q, plan.ID, body.PeerCount); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not save plan data")
+				return
+			}
+		}
+
+		// Run optional post-creation setup (e.g. CL creates its simultaneous reveal).
+		h, _ := GetHandler(body.PlanType)
+		if preparer, ok := h.(OnPreparer); ok {
+			deps := &PlanDeps{Q: q, Manager: manager}
+			if err := preparer.OnPrepare(ctx, deps, &plan); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not initialise plan: "+err.Error())
 				return
 			}
 		}

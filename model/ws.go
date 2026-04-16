@@ -52,6 +52,18 @@ const (
 	EventSPRecursivePlan       = "plan.sp_recursive"       // SP: recursive propaganda created
 	EventSecretVisibilityGrant = "secret.visibility_grant" // SA/CL: visibility granted
 
+	// Phase 3c: Propose Decree
+	EventLawEnacted          = "law.enacted"           // PD: law created
+	EventDecreeCouncilJoined = "decree.council_joined" // PD: player joined council
+
+	// Phase 3c: Clandestinely Liaise
+	EventLiaisePhaseChanged    = "liaise.phase_changed"    // CL: phase advanced
+	EventLiaiseChoicesRevealed = "liaise.choices_revealed" // CL: both players submitted Things We Share
+
+	// Phase 3c: Simultaneous Reveals (shared by CL and MW)
+	EventRevealSubmitted = "reveal.submitted" // player submitted a reveal entry (face hidden)
+	EventRevealComplete  = "reveal.complete"  // all participants submitted; faces revealed
+
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
 	EventRollLeverageAdded = "roll.leverage_added"
@@ -248,4 +260,52 @@ type SPRecursivePlanPayload struct {
 type SecretVisibilityGrantPayload struct {
 	AssetID  int64 `json:"asset_id"`
 	PlayerID int64 `json:"player_id"`
+}
+
+// ── Phase 3c payload types ────────────────────────────────────────────────────
+
+// LawEnactedPayload is for EventLawEnacted (Propose Decree).
+type LawEnactedPayload struct {
+	PlanID int64 `json:"plan_id"`
+	Law    any   `json:"law"` // dbgen.Law
+}
+
+// DecreeCouncilJoinedPayload is for EventDecreeCouncilJoined.
+type DecreeCouncilJoinedPayload struct {
+	PlanID      int64 `json:"plan_id"`
+	PlayerID    int64 `json:"player_id"`
+	SignatoryID int64 `json:"signatory_id"`
+}
+
+// LiaisePhaseChangedPayload is for EventLiaisePhaseChanged.
+type LiaisePhaseChangedPayload struct {
+	PlanID int64  `json:"plan_id"`
+	Phase  string `json:"phase"`
+}
+
+// LiaiseChoicesRevealedPayload is for EventLiaiseChoicesRevealed.
+type LiaiseChoicesRevealedPayload struct {
+	PlanID  int64 `json:"plan_id"`
+	Choices any   `json:"choices"` // []dbgen.LiaiseChoice
+}
+
+// RevealSubmittedPayload is for EventRevealSubmitted.
+// The face is NOT included until all participants have submitted.
+type RevealSubmittedPayload struct {
+	RevealID int64 `json:"reveal_id"`
+	PlayerID int64 `json:"player_id"`
+}
+
+// RevealCompletePayload is for EventRevealComplete.
+// Faces are revealed once the reveal is complete.
+type RevealCompletePayload struct {
+	RevealID    int64               `json:"reveal_id"`
+	Entries     []RevealEntryResult `json:"entries"`
+	ResultDelay int16               `json:"result_delay"`
+}
+
+// RevealEntryResult holds one participant's revealed face.
+type RevealEntryResult struct {
+	PlayerID int64 `json:"player_id"`
+	Face     int16 `json:"face"`
 }

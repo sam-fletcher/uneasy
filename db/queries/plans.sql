@@ -48,6 +48,11 @@ SELECT * FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1;
 -- name: SetPlanResolutionData :exec
 UPDATE plans SET resolution_data = $2 WHERE id = $1;
 
+-- name: SetPlanRowNumber :exec
+-- Updates a plan's row_number. Used by variable-delay plans (CL, MW) after
+-- the simultaneous reveal determines the actual delay.
+UPDATE plans SET row_number = $2 WHERE id = $1;
+
 -- name: ListRecentPlansByPreparer :many
 -- Returns the most recently prepared plans for a player in a game, ordered
 -- newest-first. Used for esteem lockout checks (SP mar option b).

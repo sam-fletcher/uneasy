@@ -23,6 +23,17 @@ type Asset struct {
 	DestroyedAt     pgtype.Timestamptz `db:"destroyed_at" json:"destroyed_at"`
 }
 
+type BankedDice struct {
+	ID         int64              `db:"id" json:"id"`
+	GameID     int64              `db:"game_id" json:"game_id"`
+	PlayerID   int64              `db:"player_id" json:"player_id"`
+	Face       int16              `db:"face" json:"face"`
+	Source     string             `db:"source" json:"source"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UsedAt     pgtype.Timestamptz `db:"used_at" json:"used_at"`
+	UsedRollID *int64             `db:"used_roll_id" json:"used_roll_id"`
+}
+
 type DiceRoll struct {
 	ID                 int64              `db:"id" json:"id"`
 	GameID             int64              `db:"game_id" json:"game_id"`
@@ -77,6 +88,16 @@ type Law struct {
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	IsActive     bool               `db:"is_active" json:"is_active"`
 	DisplayOrder int16              `db:"display_order" json:"display_order"`
+}
+
+type LiaiseChoice struct {
+	ID            int64              `db:"id" json:"id"`
+	PlanID        int64              `db:"plan_id" json:"plan_id"`
+	PlayerID      int64              `db:"player_id" json:"player_id"`
+	Choice        string             `db:"choice" json:"choice"`
+	TargetAssetID *int64             `db:"target_asset_id" json:"target_asset_id"`
+	BankedDieFace *int16             `db:"banked_die_face" json:"banked_die_face"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 type Marginalium struct {
@@ -185,6 +206,23 @@ type SecretVisibility struct {
 	SecretID int64              `db:"secret_id" json:"secret_id"`
 	PlayerID int64              `db:"player_id" json:"player_id"`
 	SeenAt   pgtype.Timestamptz `db:"seen_at" json:"seen_at"`
+}
+
+type SimultaneousReveal struct {
+	ID          int64              `db:"id" json:"id"`
+	GameID      int64              `db:"game_id" json:"game_id"`
+	PlanID      *int64             `db:"plan_id" json:"plan_id"`
+	RevealType  string             `db:"reveal_type" json:"reveal_type"`
+	IsComplete  bool               `db:"is_complete" json:"is_complete"`
+	ResultDelay *int16             `db:"result_delay" json:"result_delay"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+type SimultaneousRevealEntry struct {
+	RevealID   int64              `db:"reveal_id" json:"reveal_id"`
+	PlayerID   int64              `db:"player_id" json:"player_id"`
+	Face       *int16             `db:"face" json:"face"`
+	RevealedAt pgtype.Timestamptz `db:"revealed_at" json:"revealed_at"`
 }
 
 type ToneTopic struct {

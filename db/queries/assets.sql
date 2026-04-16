@@ -72,6 +72,9 @@ UPDATE marginalia SET text = $2 WHERE id = $1;
 -- name: TearMarginalia :exec
 UPDATE marginalia SET is_torn = TRUE, torn_at = now(), torn_by_id = $2 WHERE id = $1;
 
+-- name: ListIntactMarginalia :many
+SELECT * FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE ORDER BY position;
+
 -- name: CountIntactMarginalia :one
 SELECT count(*) FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE;
 

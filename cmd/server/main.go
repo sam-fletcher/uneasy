@@ -181,6 +181,13 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 			r.Post("/call-vote", handler.CallVote(q, manager))
 			r.Post("/vote", handler.Vote(q, manager))
 			r.Post("/close-leverage", handler.CloseLeverage(q, manager))
+			r.Post("/use-banked-die", handler.UseBankedDie(q, manager))
+		})
+
+		// Simultaneous reveals (Phase 3c)
+		r.Route("/reveals/{revealId}", func(r chi.Router) {
+			r.Get("/", handler.GetReveal(q))
+			r.Post("/submit", handler.SubmitReveal(q, manager))
 		})
 
 		// Plans (Phase 3a+)

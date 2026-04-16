@@ -352,6 +352,38 @@ func (q *Queries) ListAssetsByOwner(ctx context.Context, ownerID int64) ([]Asset
 	return items, nil
 }
 
+const listIntactMarginalia = `-- name: ListIntactMarginalia :many
+SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE ORDER BY position
+`
+
+func (q *Queries) ListIntactMarginalia(ctx context.Context, assetID int64) ([]Marginalium, error) {
+	rows, err := q.db.Query(ctx, listIntactMarginalia, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Marginalium{}
+	for rows.Next() {
+		var i Marginalium
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetID,
+			&i.Position,
+			&i.Text,
+			&i.IsTorn,
+			&i.TornAt,
+			&i.TornByID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMarginaliaByAsset = `-- name: ListMarginaliaByAsset :many
 SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id FROM marginalia WHERE asset_id = $1 ORDER BY position
 `

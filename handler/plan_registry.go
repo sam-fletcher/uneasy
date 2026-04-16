@@ -122,9 +122,10 @@ type ResolutionData struct {
 	LawID              *int64  `json:"law_id,omitempty"`
 
 	// ── Clandestinely Liaise ──
-	PartnerID       *int64 `json:"partner_id,omitempty"`
-	LiaisePhase     string `json:"liaise_phase,omitempty"`
-	RedelayRevealID *int64 `json:"redelay_reveal_id,omitempty"`
+	PartnerID           *int64 `json:"partner_id,omitempty"`
+	LiaisePhase         string `json:"liaise_phase,omitempty"`
+	LiaiseDelayRevealID *int64 `json:"liaise_delay_reveal_id,omitempty"`
+	RedelayRevealID     *int64 `json:"redelay_reveal_id,omitempty"`
 
 	// ── Propose Duel ──
 	DuelType           string `json:"duel_type,omitempty"`

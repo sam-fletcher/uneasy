@@ -540,6 +540,22 @@ func (q *Queries) SetPlanResult(ctx context.Context, arg SetPlanResultParams) er
 	return err
 }
 
+const setPlanRowNumber = `-- name: SetPlanRowNumber :exec
+UPDATE plans SET row_number = $2 WHERE id = $1
+`
+
+type SetPlanRowNumberParams struct {
+	ID        int64 `db:"id" json:"id"`
+	RowNumber int16 `db:"row_number" json:"row_number"`
+}
+
+// Updates a plan's row_number. Used by variable-delay plans (CL, MW) after
+// the simultaneous reveal determines the actual delay.
+func (q *Queries) SetPlanRowNumber(ctx context.Context, arg SetPlanRowNumberParams) error {
+	_, err := q.db.Exec(ctx, setPlanRowNumber, arg.ID, arg.RowNumber)
+	return err
+}
+
 const setPlanStatus = `-- name: SetPlanStatus :exec
 UPDATE plans SET status = $2 WHERE id = $1
 `

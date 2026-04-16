@@ -623,6 +623,108 @@ func rollAndCancelDice(
 	return actorDice, cancelledIDs, nil
 }
 
+// ── UseBankedDie ──────────────────────────────────────────────────────────────
+
+// UseBankedDie handles POST /api/rolls/:rollId/use-banked-die.
+//
+// Spends one of the actor's banked dice (from Clandestinely Liaise
+// leverage_partner) on this roll. The banked die contributes to the actor's
+// pool with its pre-set face value; it cannot be used as interference.
+//
+// Request body: {"banked_die_id": N}
+func UseBankedDie(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roll, player, ok := requireRollAccess(w, r, q)
+		if !ok {
+			return
+		}
+		if !rollIsOpen(roll) {
+			respondErr(w, http.StatusConflict, "roll is already resolved")
+			return
+		}
+		// Only the actor can spend banked dice (they always go on the actor's side).
+		if player.ID != roll.ActorID {
+			respondErr(w, http.StatusForbidden, "only the actor can spend banked dice")
+			return
+		}
+
+		var body struct {
+			BankedDieID int64 `json:"banked_die_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.BankedDieID == 0 {
+			respondErr(w, http.StatusBadRequest, "banked_die_id is required")
+			return
+		}
+
+		ctx := r.Context()
+
+		banked, err := q.GetBankedDie(ctx, body.BankedDieID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "banked die not found")
+			return
+		}
+		if banked.PlayerID != player.ID {
+			respondErr(w, http.StatusForbidden, "this banked die does not belong to you")
+			return
+		}
+		if banked.GameID != roll.GameID {
+			respondErr(w, http.StatusBadRequest, "banked die does not belong to this game")
+			return
+		}
+		if banked.UsedAt.Valid {
+			respondErr(w, http.StatusConflict, "this banked die has already been spent")
+			return
+		}
+
+		// Create a die entry with the pre-set face.
+		die, err := q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+			RollID:           roll.ID,
+			PlayerID:         player.ID,
+			IsInterference:   false,
+			LeveragedAssetID: nil,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not add banked die to roll")
+			return
+		}
+
+		// Set the face immediately (banked dice have a pre-determined face).
+		if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{
+			ID:   die.ID,
+			Face: &banked.Face,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not set banked die face")
+			return
+		}
+
+		// Mark the banked die as used.
+		if err := q.MarkBankedDieUsed(ctx, dbgen.MarkBankedDieUsedParams{
+			ID:         body.BankedDieID,
+			UsedRollID: &roll.ID,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not mark banked die as used")
+			return
+		}
+
+		if h, ok := manager.Get(roll.GameID); ok {
+			h.BroadcastEvent(model.EventRollLeverageAdded, model.RollLeverageAddedPayload{
+				RollID:         roll.ID,
+				PlayerID:       player.ID,
+				AssetID:        0, // no asset — banked die
+				IsInterference: false,
+			})
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"die":           die,
+			"banked_die_id": body.BankedDieID,
+			"face":          banked.Face,
+		})
+	}
+}
+
+// ── calculateRollResult ───────────────────────────────────────────────────────
+
 // calculateRollResult computes the result and outcome of a resolved roll.
 func calculateRollResult(actorDice []dieEntry, cancelledIDs map[int64]struct{}, roll *dbgen.DiceRoll) (int16, string) {
 	distinctFaces := make(map[int16]struct{})
