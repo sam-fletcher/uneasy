@@ -36,6 +36,7 @@ import (
 	"slices"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -47,14 +48,6 @@ type chHandler struct{}
 
 func (chHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 5}
-}
-
-// chronicleHistoriesDifficultyPure returns the difficulty:
-//
-//	max(preparerKnowledgeRank, len(InvokedArtifactIDs))
-func chronicleHistoriesDifficultyPure(preparerKnowledgeRank int16, resData ResolutionData) int16 {
-	artifactCount := int16(len(resData.InvokedArtifactIDs))
-	return max(preparerKnowledgeRank, artifactCount)
 }
 
 func (chHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
@@ -74,7 +67,7 @@ func (chHandler) ComputeDifficulty(
 	if err != nil {
 		return 0, fmt.Errorf("could not determine preparer knowledge rank: %w", err)
 	}
-	return chronicleHistoriesDifficultyPure(rank, *resData), nil
+	return gamepkg.ChronicleHistoriesDifficulty(rank, *resData), nil
 }
 
 // OnResolve creates the dice roll using the current difficulty (which accounts

@@ -34,6 +34,7 @@ import (
 	"net/http"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -45,16 +46,6 @@ type srHandler struct{}
 
 func (srHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 4}
-}
-
-// spreadRumorsDifficultyPure returns the difficulty:
-//   - targetIsMainChar == true:  6 - relevantRank (target's esteem status)
-//   - targetIsMainChar == false: relevantRank (preparer's esteem rank)
-func spreadRumorsDifficultyPure(relevantRank int16, targetIsMainChar bool) int16 {
-	if targetIsMainChar {
-		return max(int16(diceSides)-relevantRank, 1)
-	}
-	return relevantRank
 }
 
 func (srHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
@@ -90,7 +81,7 @@ func (srHandler) ComputeDifficulty(
 		if errRank != nil {
 			return 0, fmt.Errorf("could not determine target esteem rank: %w", errRank)
 		}
-		return spreadRumorsDifficultyPure(targetRank, true), nil
+		return gamepkg.SpreadRumorsDifficulty(targetRank, true), nil
 	}
 
 	// Difficulty = preparer's esteem rank.
@@ -98,7 +89,7 @@ func (srHandler) ComputeDifficulty(
 	if err != nil {
 		return 0, fmt.Errorf("could not determine preparer esteem rank: %w", err)
 	}
-	return spreadRumorsDifficultyPure(preparerRank, false), nil
+	return gamepkg.SpreadRumorsDifficulty(preparerRank, false), nil
 }
 
 // OnResolve creates the dice roll.

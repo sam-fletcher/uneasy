@@ -30,6 +30,7 @@ import (
 	"net/http"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -41,14 +42,6 @@ type miHandler struct{}
 
 func (miHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 3}
-}
-
-// makeIntroductionsDifficultyPure returns the difficulty given the ResData.
-// Difficulty = 2 + peer_count (peer_count 0 treated as 1; range 1–4 → 3–6).
-func makeIntroductionsDifficultyPure(resData ResolutionData) int16 {
-	const baseDifficulty = int16(2)
-	pc := max(resData.PeerCount, 1)
-	return baseDifficulty + pc
 }
 
 func (miHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
@@ -64,7 +57,7 @@ func (miHandler) ComputeDifficulty(
 	_ *dbgen.Plan,
 	resData *ResolutionData,
 ) (int16, error) {
-	return makeIntroductionsDifficultyPure(*resData), nil
+	return gamepkg.MakeIntroductionsDifficulty(*resData), nil
 }
 
 // OnResolve creates the dice roll for normal MI plans. Synthetic delayed-arrival
@@ -78,7 +71,7 @@ func (miHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	if err != nil {
 		return nil, err
 	}
-	difficulty := makeIntroductionsDifficultyPure(resData)
+	difficulty := gamepkg.MakeIntroductionsDifficulty(resData)
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 

@@ -20,6 +20,7 @@ import (
 	"slices"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/hub"
 	"uneasy/model"
 )
@@ -32,13 +33,6 @@ type ecHandler struct{}
 
 func (ecHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: 5}
-}
-
-// exchangeCourtiersDifficultyPure returns the difficulty given the target
-// player's rank on the power track.
-// Difficulty = target's status = 6 - rank (minimum 1).
-func exchangeCourtiersDifficultyPure(targetRank int16) int16 {
-	return max(int16(diceSides)-targetRank, 1)
 }
 
 func (ecHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (int16, string) {
@@ -59,7 +53,7 @@ func (ecHandler) ComputeDifficulty(
 	if err != nil {
 		return 0, fmt.Errorf("could not determine target player ranking: %w", err)
 	}
-	return exchangeCourtiersDifficultyPure(targetRank), nil
+	return gamepkg.ExchangeCourtiersDifficulty(targetRank), nil
 }
 
 // OnResolve returns nil: Exchange Courtiers starts with the fair-trade step,

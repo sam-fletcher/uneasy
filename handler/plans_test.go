@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -32,7 +33,7 @@ func TestComputeDifficultyPure(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				diff, err := computeDifficultyPure(plan.PlanType, ResolutionData{}, tc.targetRank)
+				diff, err := game.ComputeDifficultyPure(plan.PlanType, ResolutionData{}, tc.targetRank)
 				require.NoError(t, err, "should not error")
 				assert.Equal(t, tc.expectedDifficulty, diff, "difficulty should be 6 - rank, with safety min of 1")
 			})
@@ -55,7 +56,7 @@ func TestComputeDifficultyPure(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				resData := ResolutionData{PeerCount: tc.peerCount}
-				diff, err := computeDifficultyPure(model.PlanMakeIntroductions, resData, 0)
+				diff, err := game.ComputeDifficultyPure(model.PlanMakeIntroductions, resData, 0)
 				require.NoError(t, err, "should not error (rank param ignored for this plan type)")
 				assert.Equal(t, tc.expectedDifficulty, diff, "difficulty should be 2 + peer_count, treating 0 as 1")
 			})
@@ -77,7 +78,7 @@ func TestComputeDifficultyPure(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				diff, err := computeDifficultyPure(model.PlanSpreadPropaganda, ResolutionData{}, tc.preparerRank)
+				diff, err := game.ComputeDifficultyPure(model.PlanSpreadPropaganda, ResolutionData{}, tc.preparerRank)
 				require.NoError(t, err, "should not error")
 				assert.Equal(t, tc.expectedDifficulty, diff, "difficulty should equal preparer rank")
 			})
@@ -99,7 +100,7 @@ func TestComputeDifficultyPure(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				diff, err := computeDifficultyPure(model.PlanProposeDecree, ResolutionData{}, tc.preparerRank)
+				diff, err := game.ComputeDifficultyPure(model.PlanProposeDecree, ResolutionData{}, tc.preparerRank)
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedDifficulty, diff,
 					"propose decree difficulty should equal preparer power rank")
@@ -108,7 +109,7 @@ func TestComputeDifficultyPure(t *testing.T) {
 	})
 
 	t.Run("unsupported plan type returns error", func(t *testing.T) {
-		diff, err := computeDifficultyPure(model.PlanMakeDemands, ResolutionData{}, 1)
+		diff, err := game.ComputeDifficultyPure(model.PlanMakeDemands, ResolutionData{}, 1)
 		require.Error(t, err, "unsupported plan type should error")
 		assert.Equal(t, int16(0), diff, "unsupported plan should return 0 difficulty")
 	})
@@ -117,7 +118,7 @@ func TestComputeDifficultyPure(t *testing.T) {
 		// Verify that peer_count: 0 is treated as 1 (using max(pc, 1)),
 		// resulting in difficulty 2 + 1 = 3.
 		resData := ResolutionData{PeerCount: 0}
-		diff, err := computeDifficultyPure(model.PlanMakeIntroductions, resData, 0)
+		diff, err := game.ComputeDifficultyPure(model.PlanMakeIntroductions, resData, 0)
 		require.NoError(t, err)
 		assert.Equal(t, int16(3), diff)
 	})
@@ -126,7 +127,7 @@ func TestComputeDifficultyPure(t *testing.T) {
 		// The implementation uses max(6 - rank, 1) to ensure difficulty >= 1.
 		// This test verifies that even with rank == 0 (shouldn't happen but test robustness),
 		// we get a minimum of 1. Actually, rank should be 1-5, so this is defensive.
-		diff, err := computeDifficultyPure(model.PlanExchangeCourtiers, ResolutionData{}, 6)
+		diff, err := game.ComputeDifficultyPure(model.PlanExchangeCourtiers, ResolutionData{}, 6)
 		require.NoError(t, err, "should handle edge case gracefully")
 		// 6 - 6 = 0, but max(0, 1) = 1
 		assert.Equal(t, int16(1), diff, "should have minimum safety check")

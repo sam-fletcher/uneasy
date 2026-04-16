@@ -24,6 +24,7 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/handler"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
@@ -201,8 +202,8 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 			r.Post("/complete", handler.CompletePlan(q, manager))
 			// Mount plan-type-specific routes from the registry (e.g. fair-trade,
 			// messy-break for Exchange Courtiers; future plans add their own).
-			deps := &handler.PlanDeps{Q: q, Manager: manager}
-			for _, h := range handler.AllHandlers() {
+			deps := &game.PlanDeps{Q: q, Manager: manager}
+			for _, h := range game.AllHandlers() {
 				for route, fn := range h.ExtraRoutes(deps) {
 					r.Post("/"+route, fn)
 				}

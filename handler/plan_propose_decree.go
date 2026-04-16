@@ -35,6 +35,7 @@ import (
 	"slices"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -46,11 +47,6 @@ type pdHandler struct{}
 
 func (pdHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: 4}
-}
-
-// proposeDecreeDifficultyPure returns the difficulty: preparer's power rank.
-func proposeDecreeDifficultyPure(preparerPowerRank int16) int16 {
-	return preparerPowerRank
 }
 
 func (pdHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
@@ -70,7 +66,7 @@ func (pdHandler) ComputeDifficulty(
 	if err != nil {
 		return 0, fmt.Errorf("could not determine preparer power rank: %w", err)
 	}
-	return proposeDecreeDifficultyPure(rank), nil
+	return gamepkg.ProposeDecreeDifficulty(rank), nil
 }
 
 // OnResolve initialises the council: sets the default signatory to the

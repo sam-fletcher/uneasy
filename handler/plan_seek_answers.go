@@ -28,6 +28,7 @@ import (
 	"net/http"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -39,11 +40,6 @@ type saHandler struct{}
 
 func (saHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 4}
-}
-
-// seekAnswersDifficultyPure returns the difficulty: preparer's knowledge rank.
-func seekAnswersDifficultyPure(preparerKnowledgeRank int16) int16 {
-	return preparerKnowledgeRank
 }
 
 func (saHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
@@ -63,7 +59,7 @@ func (saHandler) ComputeDifficulty(
 	if err != nil {
 		return 0, fmt.Errorf("could not determine preparer knowledge rank: %w", err)
 	}
-	return seekAnswersDifficultyPure(rank), nil
+	return gamepkg.SeekAnswersDifficulty(rank), nil
 }
 
 // OnResolve creates the dice roll immediately (no pre-roll step).

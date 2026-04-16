@@ -26,6 +26,7 @@ import (
 	"net/http"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -37,12 +38,6 @@ type spHandler struct{}
 
 func (spHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 3}
-}
-
-// spreadPropagandaDifficultyPure returns the difficulty for a given preparer
-// rank on the esteem track. Difficulty = rank (1–5).
-func spreadPropagandaDifficultyPure(preparerRank int16) int16 {
-	return preparerRank
 }
 
 func (spHandler) ValidatePreparation(_ context.Context, _ *ValidationContext) (int16, string) {
@@ -59,7 +54,7 @@ func (spHandler) ComputeDifficulty(
 	if err != nil {
 		return 0, fmt.Errorf("could not determine preparer ranking: %w", err)
 	}
-	return spreadPropagandaDifficultyPure(preparerRank), nil
+	return gamepkg.SpreadPropagandaDifficulty(preparerRank), nil
 }
 
 // OnResolve creates the dice roll immediately (no pre-roll step).
@@ -250,41 +245,5 @@ func pickBestEsteemRanked(
 	return bestPlayerID, nil
 }
 
-// ── Esteem lockout check ──────────────────────────────────────────────────────
-
-// hasEsteemLockout reports whether a player has an active esteem lockout from
-// a Spread Propaganda mar option (b) "censured". The lockout is active when
-// the player's most recently prepared plan in chronological order is an esteem
-// plan whose ResData.EsteemLockout is true. It clears the moment any non-esteem
-// plan is prepared (that plan becomes the most recent).
-//
-// Algorithm: iterate recent plans newest-first. The first non-esteem plan
-// proves the lockout has cleared. The first SP plan with EsteemLockout = true
-// (with no non-esteem plan seen yet) proves it's still active.
-func hasEsteemLockout(
-	ctx context.Context,
-	q *dbgen.Queries,
-	gameID, playerID int64,
-) (bool, error) {
-	plans, err := q.ListRecentPlansByPreparer(ctx, dbgen.ListRecentPlansByPreparerParams{
-		GameID:     gameID,
-		PreparerID: playerID,
-	})
-	if err != nil || len(plans) == 0 {
-		return false, err
-	}
-
-	for _, p := range plans {
-		if p.Category != model.CategoryEsteem {
-			// Non-esteem plan found after (newer than) any SP lockout → cleared.
-			return false, nil
-		}
-		if p.PlanType == model.PlanSpreadPropaganda {
-			rd := loadResolutionData(p.ResolutionData)
-			if rd.EsteemLockout {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
-}
+// hasEsteemLockout is defined in the game package and aliased in
+// plan_registry.go as `hasEsteemLockout`.

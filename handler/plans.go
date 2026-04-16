@@ -34,13 +34,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
@@ -48,38 +46,8 @@ import (
 	"uneasy/model"
 )
 
-// ── OnPreparer optional interface ─────────────────────────────────────────────
-
-// OnPreparer is an optional interface for plan handlers that need to run setup
-// immediately after the plan row is created in PreparePlan. For example,
-// Clandestinely Liaise uses it to create the simultaneous reveal and register
-// both participants before the plan is broadcast.
-//
-// Handlers that do not need post-creation setup omit this interface; the
-// PreparePlan handler checks for it via a type assertion.
-type OnPreparer interface {
-	OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error
-}
-
-// ── Resolution data helpers ───────────────────────────────────────────────────
-
-func loadResolutionData(raw *string) ResolutionData {
-	if raw == nil || *raw == "" {
-		return ResolutionData{}
-	}
-	var d ResolutionData
-	_ = json.Unmarshal([]byte(*raw), &d)
-	return d
-}
-
-func saveResolutionData(ctx context.Context, q *dbgen.Queries, planID int64, d ResolutionData) error {
-	b, err := json.Marshal(d)
-	if err != nil {
-		return err
-	}
-	s := string(b)
-	return q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{ID: planID, ResolutionData: &s})
-}
+// OnPreparer, loadResolutionData, saveResolutionData, and all domain types
+// are now defined in the game package and re-exported via plan_registry.go.
 
 // ── Access helpers ────────────────────────────────────────────────────────────
 
@@ -134,123 +102,9 @@ func requirePlanFocus(
 	return &game, plan, player, true
 }
 
-// ── Ranking helpers ───────────────────────────────────────────────────────────
-
-// playerRankInCategory returns the player's rank (1–5) in the given category.
-func playerRankInCategory(
-	ctx context.Context,
-	q *dbgen.Queries,
-	gameID, playerID int64,
-	category model.RankingCategory,
-) (int16, error) {
-	r, err := q.GetRanking(ctx, dbgen.GetRankingParams{
-		GameID:   gameID,
-		PlayerID: &playerID,
-		Category: category,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return r.Rank, nil
-}
-
-// ── Peer helpers ──────────────────────────────────────────────────────────────
-
-// playerHasPeers reports whether a player has at least one non-destroyed peer.
-func playerHasPeers(ctx context.Context, q *dbgen.Queries, gameID, playerID int64) (bool, error) {
-	count, err := q.CountPeerAssets(ctx, dbgen.CountPeerAssetsParams{
-		GameID:  gameID,
-		OwnerID: playerID,
-	})
-	return count > 0, err
-}
-
-// ── Eligibility ───────────────────────────────────────────────────────────────
-
-// checkPlanEligible reports whether playerID may prepare planType.
-func checkPlanEligible(
-	ctx context.Context,
-	q *dbgen.Queries,
-	gameID, playerID int64,
-	planType model.PlanType,
-	category model.RankingCategory,
-) (bool, string, error) {
-	_, err := q.GetPlanTokenByTypeAndPlayer(ctx, dbgen.GetPlanTokenByTypeAndPlayerParams{
-		GameID:   gameID,
-		PlanType: planType,
-		PlayerID: playerID,
-	})
-	if err == nil {
-		return false, "you already have a token on this plan type", nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return false, "", err
-	}
-
-	myRank, err := playerRankInCategory(ctx, q, gameID, playerID, category)
-	if err != nil {
-		return false, "could not determine your ranking", err
-	}
-
-	tokens, err := q.ListPlanTokensByType(ctx, dbgen.ListPlanTokensByTypeParams{
-		GameID:   gameID,
-		PlanType: planType,
-	})
-	if err != nil {
-		return false, "", err
-	}
-	for _, tok := range tokens {
-		theirRank, err := playerRankInCategory(ctx, q, gameID, tok.PlayerID, category)
-		if err != nil {
-			continue
-		}
-		if theirRank < myRank {
-			return false, "a higher-ranked player already has a token on this plan's shield", nil
-		}
-	}
-	return true, "", nil
-}
-
-// ── Difficulty (pure, for tests) ──────────────────────────────────────────────
-
-// computeDifficultyPure returns the base difficulty without hitting the database.
-// Used directly by unit tests. relevantRank meaning per plan type:
-//
-//   - Exchange Courtiers:   target player's power rank
-//   - Make Introductions:   ignored (PeerCount in resData drives difficulty)
-//   - Spread Propaganda:    preparer's esteem rank
-//   - Seek Answers:         preparer's knowledge rank
-//   - Spread Rumors:        if target is main char → target's esteem rank;
-//     otherwise → preparer's esteem rank. Pass targetIsMainChar=true for former.
-//   - Chronicle Histories:  preparer's knowledge rank (artifact count in resData)
-//   - Propose Decree:       preparer's power rank
-//   - Clandestinely Liaise: not applicable (no dice roll)
-func computeDifficultyPure(
-	planType model.PlanType,
-	resData ResolutionData,
-	relevantRank int16,
-	targetIsMainChar ...bool,
-) (int16, error) {
-	switch planType {
-	case model.PlanExchangeCourtiers:
-		return exchangeCourtiersDifficultyPure(relevantRank), nil
-	case model.PlanMakeIntroductions:
-		return makeIntroductionsDifficultyPure(resData), nil
-	case model.PlanSpreadPropaganda:
-		return spreadPropagandaDifficultyPure(relevantRank), nil
-	case model.PlanSeekAnswers:
-		return seekAnswersDifficultyPure(relevantRank), nil
-	case model.PlanSpreadRumors:
-		isMain := len(targetIsMainChar) > 0 && targetIsMainChar[0]
-		return spreadRumorsDifficultyPure(relevantRank, isMain), nil
-	case model.PlanChronicleHistories:
-		return chronicleHistoriesDifficultyPure(relevantRank, resData), nil
-	case model.PlanProposeDecree:
-		return proposeDecreeDifficultyPure(relevantRank), nil
-	default:
-		return 0, fmt.Errorf("unsupported plan type: %s", planType)
-	}
-}
+// Pure game-rule helpers (playerRankInCategory, playerHasPeers,
+// checkPlanEligible, hasEsteemLockout) are defined in the game package and
+// re-exported as handler-package aliases in plan_registry.go.
 
 // ── createPlanRoll ────────────────────────────────────────────────────────────
 
