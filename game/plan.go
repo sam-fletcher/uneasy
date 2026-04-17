@@ -147,9 +147,19 @@ type ResolutionData struct {
 	InitiativePlayerID *int64 `json:"initiative_player_id,omitempty"`
 
 	// ── Host Festivity ──
-	GuestPlayerIDs   []int64           `json:"guest_player_ids,omitempty"`
-	GuestOutcomes    map[string]string `json:"guest_outcomes,omitempty"`
-	HostGuestChoices map[string]string `json:"host_guest_choices,omitempty"`
+	FestivityPhase       string            `json:"festivity_phase,omitempty"`
+	GuestPlayerIDs       []int64           `json:"guest_player_ids,omitempty"`
+	GuestOutcomes        map[string]string `json:"guest_outcomes,omitempty"`
+	GuestMakeChoices     map[string]string `json:"guest_make_choices,omitempty"`
+	GuestMarChoices      map[string]string `json:"guest_mar_choices,omitempty"`
+	HostGuestChoices     map[string]string `json:"host_guest_choices,omitempty"`
+	GuestRollIDs         map[string]int64  `json:"guest_roll_ids,omitempty"`
+	GuestIOUs            []int64           `json:"guest_ious,omitempty"`
+	HostMarInsists       []string          `json:"host_mar_insists,omitempty"`
+	AcceptDuelsPlayerIDs []int64           `json:"accept_duels_player_ids,omitempty"`
+	PendingDuelPlanID    *int64            `json:"pending_duel_plan_id,omitempty"`
+	PendingChallenge     *PendingChallenge `json:"pending_challenge,omitempty"`
+	CenteredAssetIDs     []int64           `json:"centered_asset_ids,omitempty"`
 
 	// ── Make War ──
 	WarID         *int64 `json:"war_id,omitempty"`

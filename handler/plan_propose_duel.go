@@ -491,20 +491,20 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Validate each asset: owned, non-destroyed, not already leveraged.
 		for _, aid := range body.AssetIDs {
-			a, err := deps.Q.GetAssetByID(ctx, aid)
-			if err != nil {
+			asset, errAsset := deps.Q.GetAssetByID(ctx, aid)
+			if errAsset != nil {
 				respondErr(w, http.StatusNotFound, fmt.Sprintf("asset %d not found", aid))
 				return
 			}
-			if a.GameID != plan.GameID || a.OwnerID != player.ID {
+			if asset.GameID != plan.GameID || asset.OwnerID != player.ID {
 				respondErr(w, http.StatusForbidden, fmt.Sprintf("you do not own asset %d", aid))
 				return
 			}
-			if a.IsDestroyed {
+			if asset.IsDestroyed {
 				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is destroyed", aid))
 				return
 			}
-			if a.IsLeveraged {
+			if asset.IsLeveraged {
 				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is already leveraged", aid))
 				return
 			}
@@ -513,12 +513,13 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 		// Create stakes with a hidden d6 per asset.
 		for _, aid := range body.AssetIDs {
 			face := int16(rand.IntN(gamepkg.DiceSides) + 1)
-			if _, err := deps.Q.CreateDuelStake(ctx, dbgen.CreateDuelStakeParams{
+			_, err = deps.Q.CreateDuelStake(ctx, dbgen.CreateDuelStakeParams{
 				PlanID:    plan.ID,
 				PlayerID:  player.ID,
 				AssetID:   aid,
 				HiddenDie: face,
-			}); err != nil {
+			})
+			if err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not create stake")
 				return
 			}
@@ -689,7 +690,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 		var body struct {
 			StakeID int64 `json:"stake_id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
@@ -730,13 +731,14 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			winnerPtr = &wid
 		}
 
-		if err := deps.Q.ResolveDuelBout(ctx, dbgen.ResolveDuelBoutParams{
+		err = deps.Q.ResolveDuelBout(ctx, dbgen.ResolveDuelBoutParams{
 			ID:               latest.ID,
 			ResponderStakeID: &respStake.ID,
 			ResponderDie:     &respStake.HiddenDie,
 			WinnerID:         winnerPtr,
 			IsMatch:          outcome.Match,
-		}); err != nil {
+		})
+		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not resolve bout")
 			return
 		}

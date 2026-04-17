@@ -70,6 +70,17 @@ const (
 	EventDuelBoutResolved    = "duel.bout_resolved"    // bout comparison complete
 	EventDuelBoutsComplete   = "duel.bouts_complete"   // all bouts done; dice tallied
 
+	// Phase 3d: Host Festivity
+	EventFestivityGuestJoined       = "festivity.guest_joined"
+	EventFestivityGuestRolled       = "festivity.guest_rolled"
+	EventFestivityGuestChose        = "festivity.guest_chose"
+	EventFestivityHostChose         = "festivity.host_chose"
+	EventFestivityInsistHostMar     = "festivity.insist_host_mar"
+	EventFestivityDuelTriggered     = "festivity.duel_triggered"
+	EventFestivityPhaseChanged      = "festivity.phase_changed"
+	EventFestivityChallengeIssued   = "festivity.challenge_issued"
+	EventFestivityChallengeDeclined = "festivity.challenge_declined"
+
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
 	EventRollLeverageAdded = "roll.leverage_added"
@@ -350,4 +361,72 @@ type DuelBoutsCompletePayload struct {
 	PreparerDice []int16 `json:"preparer_dice"`
 	OpponentDice []int16 `json:"opponent_dice"`
 	RollID       int64   `json:"roll_id"`
+}
+
+// ── Phase 3d payload types — Host Festivity ──────────────────────────────────
+
+// FestivityGuestJoinedPayload is for EventFestivityGuestJoined.
+type FestivityGuestJoinedPayload struct {
+	PlanID   int64 `json:"plan_id"`
+	PlayerID int64 `json:"player_id"`
+}
+
+// FestivityGuestRolledPayload is for EventFestivityGuestRolled.
+// Action is "roll" or "opt_out". RollID is 0 when opting out.
+type FestivityGuestRolledPayload struct {
+	PlanID   int64  `json:"plan_id"`
+	PlayerID int64  `json:"player_id"`
+	Action   string `json:"action"`
+	RollID   int64  `json:"roll_id,omitempty"`
+}
+
+// FestivityGuestChosePayload is for EventFestivityGuestChose.
+type FestivityGuestChosePayload struct {
+	PlanID   int64  `json:"plan_id"`
+	PlayerID int64  `json:"player_id"`
+	Outcome  string `json:"outcome"`
+	Choice   string `json:"choice"`
+}
+
+// FestivityHostChosePayload is for EventFestivityHostChose.
+type FestivityHostChosePayload struct {
+	PlanID        int64  `json:"plan_id"`
+	GuestPlayerID int64  `json:"guest_player_id"`
+	Choice        string `json:"choice"`
+}
+
+// FestivityInsistHostMarPayload is for EventFestivityInsistHostMar.
+type FestivityInsistHostMarPayload struct {
+	PlanID     int64  `json:"plan_id"`
+	InsisterID int64  `json:"insister_id"`
+	MarOption  string `json:"mar_option"`
+}
+
+// FestivityDuelTriggeredPayload is for EventFestivityDuelTriggered.
+type FestivityDuelTriggeredPayload struct {
+	PlanID     int64 `json:"plan_id"`
+	DuelPlanID int64 `json:"duel_plan_id"`
+}
+
+// FestivityPhaseChangedPayload is for EventFestivityPhaseChanged.
+type FestivityPhaseChangedPayload struct {
+	PlanID int64  `json:"plan_id"`
+	Phase  string `json:"phase"`
+}
+
+// FestivityChallengeIssuedPayload is for EventFestivityChallengeIssued.
+type FestivityChallengeIssuedPayload struct {
+	PlanID       int64 `json:"plan_id"`
+	ChallengerID int64 `json:"challenger_id"`
+	TargetID     int64 `json:"target_id"`
+	// MustAccept is true if the target has the accept_duels mar, meaning the
+	// decline option should be disabled in the UI.
+	MustAccept bool `json:"must_accept"`
+}
+
+// FestivityChallengeDeclinedPayload is for EventFestivityChallengeDeclined.
+type FestivityChallengeDeclinedPayload struct {
+	PlanID       int64 `json:"plan_id"`
+	ChallengerID int64 `json:"challenger_id"`
+	TargetID     int64 `json:"target_id"`
 }
