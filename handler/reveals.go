@@ -216,6 +216,9 @@ func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		if reveal.RevealType == "liaise_delay" && reveal.PlanID != nil {
 			applyLiaiseDelayResult(ctx, q, manager, *reveal.PlanID, resultDelay)
 		}
+		if reveal.RevealType == "make_war_delay" && reveal.PlanID != nil {
+			applyMakeWarDelayResult(ctx, q, manager, *reveal.PlanID, resultDelay)
+		}
 
 		respond(w, http.StatusOK, map[string]any{
 			"reveal_id":    reveal.ID,

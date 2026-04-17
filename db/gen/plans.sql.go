@@ -540,6 +540,23 @@ func (q *Queries) SetPlanResult(ctx context.Context, arg SetPlanResultParams) er
 	return err
 }
 
+const setPlanResultPreserveStatus = `-- name: SetPlanResultPreserveStatus :exec
+UPDATE plans SET result = $2 WHERE id = $1
+`
+
+type SetPlanResultPreserveStatusParams struct {
+	ID     int64   `db:"id" json:"id"`
+	Result *string `db:"result" json:"result"`
+}
+
+// Sets result without transitioning status. Used by plans without a dice roll
+// (Make War) to pre-record a narrative result so CompletePlan has something
+// to store when the focus player finalises the plan.
+func (q *Queries) SetPlanResultPreserveStatus(ctx context.Context, arg SetPlanResultPreserveStatusParams) error {
+	_, err := q.db.Exec(ctx, setPlanResultPreserveStatus, arg.ID, arg.Result)
+	return err
+}
+
 const setPlanRowNumber = `-- name: SetPlanRowNumber :exec
 UPDATE plans SET row_number = $2 WHERE id = $1
 `

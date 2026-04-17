@@ -70,6 +70,16 @@ const (
 	EventDuelBoutResolved    = "duel.bout_resolved"    // bout comparison complete
 	EventDuelBoutsComplete   = "duel.bouts_complete"   // all bouts done; dice tallied
 
+	// Phase 3d: Make War
+	EventWarDeclared        = "war.declared"
+	EventWarPlayerJoined    = "war.player_joined"
+	EventWarBattleCostDue   = "war.battle_cost_due"
+	EventWarBattleCostPaid  = "war.battle_cost_paid"
+	EventWarPlayerSurrender = "war.player_surrendered"
+	EventWarPeaceProposed   = "war.peace_proposed"
+	EventWarPeaceVote       = "war.peace_vote"
+	EventWarEnded           = "war.ended"
+
 	// Phase 3d: Host Festivity
 	EventFestivityGuestJoined       = "festivity.guest_joined"
 	EventFestivityGuestRolled       = "festivity.guest_rolled"
@@ -429,4 +439,82 @@ type FestivityChallengeDeclinedPayload struct {
 	PlanID       int64 `json:"plan_id"`
 	ChallengerID int64 `json:"challenger_id"`
 	TargetID     int64 `json:"target_id"`
+}
+
+// ── Phase 3d payload types — Make War ────────────────────────────────────────
+
+// WarParticipantInfo is one (player, side) pair for war events.
+type WarParticipantInfo struct {
+	PlayerID int64 `json:"player_id"`
+	Side     int16 `json:"side"`
+}
+
+// WarDeclaredPayload is broadcast when the delay reveal completes and the
+// war's plan row is placed on the public record.
+type WarDeclaredPayload struct {
+	PlanID       int64                `json:"plan_id"`
+	WarID        int64                `json:"war_id"`
+	Participants []WarParticipantInfo `json:"participants"`
+	TargetRow    int16                `json:"target_row"`
+}
+
+// WarPlayerJoinedPayload is for EventWarPlayerJoined.
+type WarPlayerJoinedPayload struct {
+	WarID    int64 `json:"war_id"`
+	PlayerID int64 `json:"player_id"`
+	Side     int16 `json:"side"`
+}
+
+// WarBattleCostDuePayload is for EventWarBattleCostDue (broadcast when a new
+// row begins while a war is active, listing who still owes cost payments).
+type WarBattleCostDuePayload struct {
+	WarID     int64              `json:"war_id"`
+	RowNumber int16              `json:"row_number"`
+	Payers    []CostOwedByPlayer `json:"payers"`
+}
+
+// CostOwedByPlayer lists one player's outstanding costs for the current row.
+type CostOwedByPlayer struct {
+	PlayerID    int64   `json:"player_id"`
+	OpponentIDs []int64 `json:"opponent_ids"`
+}
+
+// WarBattleCostPaidPayload is for EventWarBattleCostPaid.
+type WarBattleCostPaidPayload struct {
+	WarID       int64  `json:"war_id"`
+	RowNumber   int16  `json:"row_number"`
+	PayerID     int64  `json:"payer_id"`
+	OpponentID  int64  `json:"opponent_id"`
+	Choice      string `json:"choice"`
+	Surrendered bool   `json:"surrendered"`
+}
+
+// WarPlayerSurrenderPayload is for EventWarPlayerSurrender.
+type WarPlayerSurrenderPayload struct {
+	WarID     int64 `json:"war_id"`
+	PlayerID  int64 `json:"player_id"`
+	RowNumber int16 `json:"row_number"`
+}
+
+// WarPeaceProposedPayload is for EventWarPeaceProposed.
+type WarPeaceProposedPayload struct {
+	WarID      int64  `json:"war_id"`
+	ProposalID int64  `json:"proposal_id"`
+	ProposerID int64  `json:"proposer_id"`
+	Terms      string `json:"terms"`
+}
+
+// WarPeaceVotePayload is for EventWarPeaceVote.
+type WarPeaceVotePayload struct {
+	WarID      int64 `json:"war_id"`
+	ProposalID int64 `json:"proposal_id"`
+	PlayerID   int64 `json:"player_id"`
+	Accepted   bool  `json:"accepted"`
+}
+
+// WarEndedPayload is for EventWarEnded.
+type WarEndedPayload struct {
+	WarID     int64  `json:"war_id"`
+	Reason    string `json:"reason"`
+	RowNumber int16  `json:"row_number"`
 }

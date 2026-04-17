@@ -201,6 +201,7 @@ func validatePlanPreparation(
 	targetPlayerID *int64,
 	targetAssetID *int64,
 	peerCount int16,
+	enemyPlayerIDs []int64,
 	notes string,
 ) preparePlanValidation {
 	// Check game phase.
@@ -258,6 +259,7 @@ func validatePlanPreparation(
 		TargetPlayerID: targetPlayerID,
 		TargetAssetID:  targetAssetID,
 		PeerCount:      peerCount,
+		EnemyPlayerIDs: enemyPlayerIDs,
 		Notes:          notes,
 	}
 	handlerTargetRow, errMsg := h.ValidatePreparation(ctx, vc)
@@ -473,6 +475,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			TargetPlayerID   *int64         `json:"target_player_id"`
 			TargetAssetID    *int64         `json:"target_asset_id"`
 			PeerCount        int16          `json:"peer_count"`
+			EnemyPlayerIDs   []int64        `json:"enemy_player_ids"`
 			PreparationNotes *string        `json:"preparation_notes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -493,6 +496,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			body.TargetPlayerID,
 			body.TargetAssetID,
 			body.PeerCount,
+			body.EnemyPlayerIDs,
 			notes,
 		)
 		if validation.Status != http.StatusOK {
@@ -533,6 +537,21 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			if err := miStoreResData(ctx, q, plan.ID, body.PeerCount); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not save plan data")
 				return
+			}
+		}
+
+		// Persist enemy list for Make War so OnPrepare can enrol participants.
+		if body.PlanType == model.PlanMakeWar {
+			resData := loadResolutionData(plan.ResolutionData)
+			resData.WarEnemyPlayerIDs = body.EnemyPlayerIDs
+			if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not save war enemies")
+				return
+			}
+			// Reload so OnPrepare sees the persisted enemy list.
+			refreshed, err := q.GetPlanByID(ctx, plan.ID)
+			if err == nil {
+				plan = refreshed
 			}
 		}
 

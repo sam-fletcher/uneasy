@@ -265,3 +265,52 @@ type UserToken struct {
 	DisplayName string             `db:"display_name" json:"display_name"`
 	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
+
+type War struct {
+	ID           int64              `db:"id" json:"id"`
+	GameID       int64              `db:"game_id" json:"game_id"`
+	OriginPlanID int64              `db:"origin_plan_id" json:"origin_plan_id"`
+	Status       string             `db:"status" json:"status"`
+	StartedAtRow int16              `db:"started_at_row" json:"started_at_row"`
+	EndedAtRow   *int16             `db:"ended_at_row" json:"ended_at_row"`
+	EndReason    *string            `db:"end_reason" json:"end_reason"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+type WarBattleCost struct {
+	ID          int64              `db:"id" json:"id"`
+	WarID       int64              `db:"war_id" json:"war_id"`
+	RowNumber   int16              `db:"row_number" json:"row_number"`
+	PayerID     int64              `db:"payer_id" json:"payer_id"`
+	OpponentID  int64              `db:"opponent_id" json:"opponent_id"`
+	Choice      string             `db:"choice" json:"choice"`
+	AssetID1    *int64             `db:"asset_id_1" json:"asset_id_1"`
+	AssetID2    *int64             `db:"asset_id_2" json:"asset_id_2"`
+	Surrendered bool               `db:"surrendered" json:"surrendered"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+type WarParticipant struct {
+	WarID            int64  `db:"war_id" json:"war_id"`
+	PlayerID         int64  `db:"player_id" json:"player_id"`
+	Side             int16  `db:"side" json:"side"`
+	JoinedAtRow      int16  `db:"joined_at_row" json:"joined_at_row"`
+	SurrenderedAtRow *int16 `db:"surrendered_at_row" json:"surrendered_at_row"`
+}
+
+type WarPeaceProposal struct {
+	ID         int64              `db:"id" json:"id"`
+	WarID      int64              `db:"war_id" json:"war_id"`
+	ProposerID int64              `db:"proposer_id" json:"proposer_id"`
+	Terms      string             `db:"terms" json:"terms"`
+	Status     string             `db:"status" json:"status"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ResolvedAt pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
+}
+
+type WarPeaceVote struct {
+	ProposalID int64              `db:"proposal_id" json:"proposal_id"`
+	PlayerID   int64              `db:"player_id" json:"player_id"`
+	Accepted   bool               `db:"accepted" json:"accepted"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}

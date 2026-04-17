@@ -87,8 +87,9 @@ type ValidationContext struct {
 	Player         *dbgen.Player
 	TargetPlayerID *int64
 	TargetAssetID  *int64
-	TargetPlanID   *int64 // Make Demands only
-	PeerCount      int16  // Make Introductions only
+	TargetPlanID   *int64  // Make Demands only
+	PeerCount      int16   // Make Introductions only
+	EnemyPlayerIDs []int64 // Make War only
 	Notes          string
 }
 
@@ -162,8 +163,10 @@ type ResolutionData struct {
 	CenteredAssetIDs     []int64           `json:"centered_asset_ids,omitempty"`
 
 	// ── Make War ──
-	WarID         *int64 `json:"war_id,omitempty"`
-	DelayRevealID *int64 `json:"delay_reveal_id,omitempty"`
+	WarID             *int64  `json:"war_id,omitempty"`
+	DelayRevealID     *int64  `json:"delay_reveal_id,omitempty"`
+	WarEnemyPlayerIDs []int64 `json:"war_enemy_player_ids,omitempty"`
+	WarScenePosted    bool    `json:"war_scene_posted,omitempty"`
 
 	// ── Make Demands ──
 	DraftChoices        []DraftChoice `json:"draft_choices,omitempty"`
