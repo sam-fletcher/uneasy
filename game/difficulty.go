@@ -61,6 +61,12 @@ func ProposeDecreeDifficulty(preparerPowerRank int16) int16 {
 	return preparerPowerRank
 }
 
+// ProposeDuelDifficulty returns the difficulty given the target player's
+// esteem rank. Difficulty = target's esteem status = 6 - rank (minimum 1).
+func ProposeDuelDifficulty(targetEsteemRank int16) int16 {
+	return max(int16(DiceSides)-targetEsteemRank, 1)
+}
+
 // ── Aggregate dispatcher (for tests) ────────────────────────────────────────
 
 // ComputeDifficultyPure returns the base difficulty without hitting the database.

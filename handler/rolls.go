@@ -595,12 +595,18 @@ func rollAndCancelDice(
 ) ([]dieEntry, map[int64]struct{}, error) {
 	var actorDice, interfereDice []dieEntry
 
-	// Assign random faces; bucket die IDs by actor vs. interference.
+	// Assign random faces (honouring pre-set faces, e.g. from duel accumulated
+	// dice and banked dice); bucket die IDs by actor vs. interference.
 	for _, d := range dice {
-		f := int16(rand.IntN(diceSides) + 1)
-		if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not set die face")
-			return nil, nil, err
+		var f int16
+		if d.Face != nil && *d.Face >= 1 && *d.Face <= diceSides {
+			f = *d.Face
+		} else {
+			f = int16(rand.IntN(diceSides) + 1)
+			if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not set die face")
+				return nil, nil, err
+			}
 		}
 		e := dieEntry{id: d.ID, face: f}
 		if d.IsInterference {

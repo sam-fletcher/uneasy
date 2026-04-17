@@ -64,6 +64,12 @@ const (
 	EventRevealSubmitted = "reveal.submitted" // player submitted a reveal entry (face hidden)
 	EventRevealComplete  = "reveal.complete"  // all participants submitted; faces revealed
 
+	// Phase 3d: Propose Duel
+	EventDuelChampionElected = "duel.champion_elected" // peer elected to fight in stead
+	EventDuelStakesRevealed  = "duel.stakes_revealed"  // stake counts revealed (both submitted)
+	EventDuelBoutResolved    = "duel.bout_resolved"    // bout comparison complete
+	EventDuelBoutsComplete   = "duel.bouts_complete"   // all bouts done; dice tallied
+
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
 	EventRollLeverageAdded = "roll.leverage_added"
@@ -308,4 +314,40 @@ type RevealCompletePayload struct {
 type RevealEntryResult struct {
 	PlayerID int64 `json:"player_id"`
 	Face     int16 `json:"face"`
+}
+
+// ── Phase 3d payload types — Propose Duel ────────────────────────────────────
+
+// DuelChampionElectedPayload is for EventDuelChampionElected.
+type DuelChampionElectedPayload struct {
+	PlanID   int64 `json:"plan_id"`
+	PlayerID int64 `json:"player_id"`
+	AssetID  int64 `json:"asset_id"`
+}
+
+// DuelStakesRevealedPayload is for EventDuelStakesRevealed.
+type DuelStakesRevealedPayload struct {
+	PlanID             int64 `json:"plan_id"`
+	PreparerStakeCount int16 `json:"preparer_stake_count"`
+	TargetStakeCount   int16 `json:"target_stake_count"`
+}
+
+// DuelBoutResolvedPayload is for EventDuelBoutResolved.
+type DuelBoutResolvedPayload struct {
+	PlanID       int64 `json:"plan_id"`
+	BoutNumber   int16 `json:"bout_number"`
+	DeclarerID   int64 `json:"declarer_id"`
+	ResponderID  int64 `json:"responder_id"`
+	DeclarerDie  int16 `json:"declarer_die"`
+	ResponderDie int16 `json:"responder_die"`
+	WinnerID     int64 `json:"winner_id,omitempty"` // 0 if match
+	IsMatch      bool  `json:"is_match"`
+}
+
+// DuelBoutsCompletePayload is for EventDuelBoutsComplete.
+type DuelBoutsCompletePayload struct {
+	PlanID       int64   `json:"plan_id"`
+	PreparerDice []int16 `json:"preparer_dice"`
+	OpponentDice []int16 `json:"opponent_dice"`
+	RollID       int64   `json:"roll_id"`
 }

@@ -66,6 +66,34 @@ type DifficultyVote struct {
 	VotedAt  pgtype.Timestamptz `db:"voted_at" json:"voted_at"`
 }
 
+type DuelBout struct {
+	ID               int64              `db:"id" json:"id"`
+	PlanID           int64              `db:"plan_id" json:"plan_id"`
+	BoutNumber       int16              `db:"bout_number" json:"bout_number"`
+	DeclarerID       int64              `db:"declarer_id" json:"declarer_id"`
+	DeclarerStakeID  int64              `db:"declarer_stake_id" json:"declarer_stake_id"`
+	ResponderID      int64              `db:"responder_id" json:"responder_id"`
+	ResponderStakeID *int64             `db:"responder_stake_id" json:"responder_stake_id"`
+	Declaration      *string            `db:"declaration" json:"declaration"`
+	DeclarerDie      *int16             `db:"declarer_die" json:"declarer_die"`
+	ResponderDie     *int16             `db:"responder_die" json:"responder_die"`
+	WinnerID         *int64             `db:"winner_id" json:"winner_id"`
+	IsMatch          bool               `db:"is_match" json:"is_match"`
+	CreatedAt        pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ResolvedAt       pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
+}
+
+type DuelStakedAsset struct {
+	ID         int64              `db:"id" json:"id"`
+	PlanID     int64              `db:"plan_id" json:"plan_id"`
+	PlayerID   int64              `db:"player_id" json:"player_id"`
+	AssetID    int64              `db:"asset_id" json:"asset_id"`
+	HiddenDie  int16              `db:"hidden_die" json:"hidden_die"`
+	IsResolved bool               `db:"is_resolved" json:"is_resolved"`
+	IsWinner   *bool              `db:"is_winner" json:"is_winner"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type Game struct {
 	ID             int64              `db:"id" json:"id"`
 	JoinCode       string             `db:"join_code" json:"join_code"`

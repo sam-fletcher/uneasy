@@ -1,0 +1,913 @@
+package handler
+
+// handler/plan_propose_duel.go — Propose Duel plan handler (Phase 3d).
+//
+// Propose Duel (esteem, delay 5). The preparer challenges another player to
+// a duel of arms or wits. Both sides stake peer assets with hidden dice;
+// bouts compare dice until one side runs out of stakes; accumulated winning
+// dice feed into the plan's standard dice roll.
+//
+// Phases (stored in ResolutionData.DuelPhase):
+//
+//	"setup"        Champions can be elected; both players submit stake counts.
+//	               Advances to "staking" when both stake counts are in.
+//	"staking"      Each player submits their specific staked asset IDs; server
+//	               rolls and stores a hidden d6 under each. Advances to "bouts"
+//	               once both players have staked their nominated counts.
+//	"bouts"        Declarer/responder bout loop. Ends when one side is out of
+//	               unresolved stakes; server creates the standard dice roll
+//	               with accumulated dice pre-assigned and advances to "roll".
+//	"roll"         Normal dice-roll flow (leverage window, close leverage).
+//	               make-choice applies asset transfers and leverages all stakes.
+//	"done"         Final state after complete.
+//
+// Extra routes:
+//
+//	POST /api/plans/:planId/elect-champion   Elect a peer as champion (narrative).
+//	POST /api/plans/:planId/stake-reveal     Submit stake count (simultaneous).
+//	POST /api/plans/:planId/select-stakes    Submit specific staked assets.
+//	POST /api/plans/:planId/bout-declare     Declarer picks stake + high/low.
+//	POST /api/plans/:planId/bout-respond     Responder picks stake; bout resolves.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math/rand/v2"
+	"net/http"
+	"strings"
+
+	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
+	"uneasy/model"
+)
+
+const (
+	duelPhaseSetup   = "setup"
+	duelPhaseStaking = "staking"
+	duelPhaseBouts   = "bouts"
+	duelPhaseRoll    = "roll"
+	duelPhaseDone    = "done"
+)
+
+func init() {
+	RegisterPlan(model.PlanProposeDuel, pduelHandler{})
+}
+
+type pduelHandler struct{}
+
+func (pduelHandler) Metadata() PlanMetadata {
+	return PlanMetadata{Category: model.CategoryEsteem, Delay: 5}
+}
+
+func (pduelHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+	if v.TargetPlayerID == nil {
+		return 0, "propose_duel requires target_player_id (the challenged player)"
+	}
+	if v.Player != nil && *v.TargetPlayerID == v.Player.ID {
+		return 0, "you cannot duel yourself"
+	}
+	if v.Notes == "" {
+		return 0, "propose_duel requires preparation_notes (location and type of duel)"
+	}
+	return 0, ""
+}
+
+func (pduelHandler) ComputeDifficulty(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	_ *ResolutionData,
+) (int16, error) {
+	if plan.TargetPlayerID == nil {
+		return 0, errors.New("propose_duel plan has no target player")
+	}
+	rank, err := playerRankInCategory(ctx, q, plan.GameID, *plan.TargetPlayerID, model.CategoryEsteem)
+	if err != nil {
+		return 0, fmt.Errorf("could not determine target esteem rank: %w", err)
+	}
+	return gamepkg.ProposeDuelDifficulty(rank), nil
+}
+
+// OnResolve sets the initial phase and gives initiative to the player with
+// the best (lowest rank = highest status) esteem standing.
+func (pduelHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
+	if plan.TargetPlayerID == nil {
+		return nil, errors.New("propose_duel plan has no target player")
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	state := resData.DuelState()
+	state.Phase = duelPhaseSetup
+
+	prepRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, plan.PreparerID, model.CategoryEsteem)
+	if err != nil {
+		return nil, fmt.Errorf("preparer esteem rank: %w", err)
+	}
+	targetRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, *plan.TargetPlayerID, model.CategoryEsteem)
+	if err != nil {
+		return nil, fmt.Errorf("target esteem rank: %w", err)
+	}
+	// Lower rank number = higher esteem status = initiative.
+	initiative := plan.PreparerID
+	if targetRank < prepRank {
+		initiative = *plan.TargetPlayerID
+	}
+	state.InitiativePlayerID = &initiative
+
+	resData.SetDuelState(state)
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		return nil, fmt.Errorf("save duel setup: %w", err)
+	}
+	return nil, nil
+}
+
+// ApplyChoice transfers assets and leverages all staked assets after the
+// standard dice roll resolves. choices is the list of asset IDs the winner
+// chose to take (as stringified int64s).
+func (pduelHandler) ApplyChoice(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	choices []string,
+	result string,
+) error {
+	stakes, err := deps.Q.ListDuelStakesByPlan(ctx, plan.ID)
+	if err != nil {
+		return fmt.Errorf("list stakes: %w", err)
+	}
+	// Leverage every staked asset (both sides, per spec).
+	for _, s := range stakes {
+		_ = deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+			ID:          s.AssetID,
+			IsLeveraged: true,
+		})
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			h.BroadcastEvent(model.EventAssetLeveraged, model.AssetIDPayload{
+				AssetID: s.AssetID, PlayerID: s.PlayerID,
+			})
+		}
+	}
+
+	// Determine winner/loser: make → preparer wins (takes from target);
+	// mar → target wins (takes from preparer).
+	var winnerID, loserID int64
+	if result == makeOutcome {
+		winnerID = plan.PreparerID
+		if plan.TargetPlayerID != nil {
+			loserID = *plan.TargetPlayerID
+		}
+	} else {
+		if plan.TargetPlayerID == nil {
+			return errors.New("propose_duel plan has no target player")
+		}
+		winnerID = *plan.TargetPlayerID
+		loserID = plan.PreparerID
+	}
+
+	// Transfer each requested asset. Each choice is a stake asset ID; must
+	// belong to the loser.
+	for _, c := range choices {
+		var assetID int64
+		if _, err := fmt.Sscanf(c, "%d", &assetID); err != nil || assetID == 0 {
+			continue
+		}
+		asset, err := deps.Q.GetAssetByID(ctx, assetID)
+		if err != nil {
+			return fmt.Errorf("asset %d not found", assetID)
+		}
+		if asset.OwnerID != loserID {
+			return fmt.Errorf("asset %d is not owned by the losing side", assetID)
+		}
+		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+			ID: assetID, OwnerID: winnerID,
+		}); err != nil {
+			return fmt.Errorf("transfer asset %d: %w", assetID, err)
+		}
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
+				Asset: asset, OldOwnerID: loserID, NewOwnerID: winnerID,
+			})
+		}
+	}
+
+	state := resData.DuelState()
+	state.Phase = duelPhaseDone
+	resData.SetDuelState(state)
+	return nil
+}
+
+func (pduelHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
+	if resData.DuelState().Phase != duelPhaseDone {
+		return errors.New("duel has not completed: make-choice must be submitted after the roll resolves")
+	}
+	return nil
+}
+
+func (pduelHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"elect-champion": pduelElectChampionHandler(deps),
+		"stake-reveal":   pduelStakeRevealHandler(deps),
+		"select-stakes":  pduelSelectStakesHandler(deps),
+		"bout-declare":   pduelBoutDeclareHandler(deps),
+		"bout-respond":   pduelBoutRespondHandler(deps),
+	}
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+func pduelCheckDuel(w http.ResponseWriter, plan *dbgen.Plan) bool {
+	if plan.PlanType != model.PlanProposeDuel {
+		respondErr(w, http.StatusBadRequest, "endpoint is only for Propose Duel")
+		return false
+	}
+	if plan.Status != model.PlanResolving {
+		respondErr(w, http.StatusConflict, "plan is not in resolving status")
+		return false
+	}
+	return true
+}
+
+func pduelIsParticipant(plan *dbgen.Plan, playerID int64) bool {
+	if playerID == plan.PreparerID {
+		return true
+	}
+	if plan.TargetPlayerID != nil && *plan.TargetPlayerID == playerID {
+		return true
+	}
+	return false
+}
+
+func pduelOpponentID(plan *dbgen.Plan, playerID int64) int64 {
+	if playerID == plan.PreparerID && plan.TargetPlayerID != nil {
+		return *plan.TargetPlayerID
+	}
+	return plan.PreparerID
+}
+
+func pduelSide(plan *dbgen.Plan, playerID int64) gamepkg.DuelSide {
+	if playerID == plan.PreparerID {
+		return gamepkg.DuelSidePreparer
+	}
+	return gamepkg.DuelSideTarget
+}
+
+// ── Elect Champion ────────────────────────────────────────────────────────────
+
+// pduelElectChampionHandler: POST /api/plans/:planId/elect-champion
+// Body: {"asset_id": N}. The asset must be a peer owned by the caller.
+// Narrative only — champions don't change mechanics.
+func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !pduelCheckDuel(w, plan) {
+			return
+		}
+		if !pduelIsParticipant(plan, player.ID) {
+			respondErr(w, http.StatusForbidden, "only duellists may elect a champion")
+			return
+		}
+
+		var body struct {
+			AssetID int64 `json:"asset_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 {
+			respondErr(w, http.StatusBadRequest, "asset_id is required")
+			return
+		}
+
+		ctx := r.Context()
+		asset, err := deps.Q.GetAssetByID(ctx, body.AssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		if asset.GameID != plan.GameID || asset.OwnerID != player.ID {
+			respondErr(w, http.StatusForbidden, "you do not own this asset")
+			return
+		}
+		if asset.AssetType != model.AssetPeer {
+			respondErr(w, http.StatusBadRequest, "champion must be a peer asset")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		state := resData.DuelState()
+		if player.ID == plan.PreparerID {
+			state.PreparerChampionID = &body.AssetID
+		} else {
+			state.TargetChampionID = &body.AssetID
+		}
+		resData.SetDuelState(state)
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not save champion")
+			return
+		}
+
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			h.BroadcastEvent(model.EventDuelChampionElected, model.DuelChampionElectedPayload{
+				PlanID: plan.ID, PlayerID: player.ID, AssetID: body.AssetID,
+			})
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id": plan.ID, "player_id": player.ID, "asset_id": body.AssetID,
+		})
+	}
+}
+
+// ── Stake Reveal ──────────────────────────────────────────────────────────────
+
+// pduelStakeRevealHandler: POST /api/plans/:planId/stake-reveal
+// Body: {"count": N}. Min 1; max 1+esteem status.
+// Counts are held until both players submit, then revealed.
+func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !pduelCheckDuel(w, plan) {
+			return
+		}
+		if !pduelIsParticipant(plan, player.ID) {
+			respondErr(w, http.StatusForbidden, "only duellists may reveal stakes")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		state := resData.DuelState()
+		if state.Phase != duelPhaseSetup {
+			respondErr(w, http.StatusConflict, "stake reveal is only allowed in 'setup' phase")
+			return
+		}
+
+		var body struct {
+			Count int16 `json:"count"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Count < 1 {
+			respondErr(w, http.StatusBadRequest, "count must be ≥ 1")
+			return
+		}
+
+		ctx := r.Context()
+		rank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, player.ID, model.CategoryEsteem)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load esteem rank")
+			return
+		}
+		if body.Count > gamepkg.MaxStakes(rank) {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("count %d exceeds maximum %d for your esteem status",
+					body.Count, gamepkg.MaxStakes(rank)))
+			return
+		}
+
+		// Record in Choices as "stake_count:<playerID>:<N>" so we can detect
+		// when both players have submitted.
+		prefix := fmt.Sprintf("stake_count:%d:", player.ID)
+		// Remove any previous submission from this player.
+		newChoices := resData.Choices[:0]
+		for _, c := range resData.Choices {
+			if !strings.HasPrefix(c, prefix) {
+				newChoices = append(newChoices, c)
+			}
+		}
+		newChoices = append(newChoices, fmt.Sprintf("%s%d", prefix, body.Count))
+		resData.Choices = newChoices
+
+		// Count distinct participants who have submitted.
+		submitted := map[int64]int16{}
+		for _, c := range resData.Choices {
+			if !strings.HasPrefix(c, "stake_count:") {
+				continue
+			}
+			var pid int64
+			var n int16
+			if _, err := fmt.Sscanf(c, "stake_count:%d:%d", &pid, &n); err == nil {
+				submitted[pid] = n
+			}
+		}
+
+		if len(submitted) >= 2 {
+			// Both submitted — reveal and advance to staking.
+			state.PreparerStakeCount = submitted[plan.PreparerID]
+			if plan.TargetPlayerID != nil {
+				state.TargetStakeCount = submitted[*plan.TargetPlayerID]
+			}
+			state.Phase = duelPhaseStaking
+			resData.SetDuelState(state)
+
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not save stake counts")
+				return
+			}
+
+			if h, ok := deps.Manager.Get(plan.GameID); ok {
+				h.BroadcastEvent(model.EventDuelStakesRevealed, model.DuelStakesRevealedPayload{
+					PlanID:             plan.ID,
+					PreparerStakeCount: state.PreparerStakeCount,
+					TargetStakeCount:   state.TargetStakeCount,
+				})
+			}
+		} else {
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not save stake reveal")
+				return
+			}
+		}
+
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "submitted": len(submitted)})
+	}
+}
+
+// ── Select Stakes ─────────────────────────────────────────────────────────────
+
+// pduelSelectStakesHandler: POST /api/plans/:planId/select-stakes
+// Body: {"asset_ids": [N, ...]}
+// The count must match the player's revealed stake count. Server rolls a
+// hidden d6 for each asset and stores it in duel_staked_assets. The hidden
+// die is visible only to the asset owner; the opponent sees only that a
+// stake has been placed.
+func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !pduelCheckDuel(w, plan) {
+			return
+		}
+		if !pduelIsParticipant(plan, player.ID) {
+			respondErr(w, http.StatusForbidden, "only duellists may stake assets")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		state := resData.DuelState()
+		if state.Phase != duelPhaseStaking {
+			respondErr(w, http.StatusConflict, "select-stakes is only allowed in 'staking' phase")
+			return
+		}
+
+		var expected int16
+		if player.ID == plan.PreparerID {
+			expected = state.PreparerStakeCount
+		} else {
+			expected = state.TargetStakeCount
+		}
+
+		var body struct {
+			AssetIDs []int64 `json:"asset_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if int16(len(body.AssetIDs)) != expected {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("expected %d asset_ids to match your stake count", expected))
+			return
+		}
+
+		ctx := r.Context()
+
+		// Check whether this player has already staked.
+		existing, err := deps.Q.ListDuelStakesByPlanPlayer(ctx, dbgen.ListDuelStakesByPlanPlayerParams{
+			PlanID: plan.ID, PlayerID: player.ID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load existing stakes")
+			return
+		}
+		if len(existing) > 0 {
+			respondErr(w, http.StatusConflict, "you have already selected your stakes")
+			return
+		}
+
+		// Validate each asset: owned, non-destroyed, not already leveraged.
+		for _, aid := range body.AssetIDs {
+			a, err := deps.Q.GetAssetByID(ctx, aid)
+			if err != nil {
+				respondErr(w, http.StatusNotFound, fmt.Sprintf("asset %d not found", aid))
+				return
+			}
+			if a.GameID != plan.GameID || a.OwnerID != player.ID {
+				respondErr(w, http.StatusForbidden, fmt.Sprintf("you do not own asset %d", aid))
+				return
+			}
+			if a.IsDestroyed {
+				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is destroyed", aid))
+				return
+			}
+			if a.IsLeveraged {
+				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is already leveraged", aid))
+				return
+			}
+		}
+
+		// Create stakes with a hidden d6 per asset.
+		for _, aid := range body.AssetIDs {
+			face := int16(rand.IntN(gamepkg.DiceSides) + 1)
+			if _, err := deps.Q.CreateDuelStake(ctx, dbgen.CreateDuelStakeParams{
+				PlanID:    plan.ID,
+				PlayerID:  player.ID,
+				AssetID:   aid,
+				HiddenDie: face,
+			}); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not create stake")
+				return
+			}
+		}
+
+		// If both players have staked, advance to bouts.
+		allStakes, err := deps.Q.ListDuelStakesByPlan(ctx, plan.ID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load stakes")
+			return
+		}
+		total := int16(len(allStakes))
+		if total == state.PreparerStakeCount+state.TargetStakeCount {
+			state.Phase = duelPhaseBouts
+			state.CurrentBout = 0
+			resData.SetDuelState(state)
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not advance phase")
+				return
+			}
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id": plan.ID, "staked": len(body.AssetIDs),
+		})
+	}
+}
+
+// ── Bout Declare ──────────────────────────────────────────────────────────────
+
+// pduelBoutDeclareHandler: POST /api/plans/:planId/bout-declare
+// Body: {"stake_id": N, "declaration": "high"|"low"}
+// Only the player with initiative (the current declarer) may call this.
+// Starts a new bout; the responder then completes it via bout-respond.
+func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !pduelCheckDuel(w, plan) {
+			return
+		}
+		if !pduelIsParticipant(plan, player.ID) {
+			respondErr(w, http.StatusForbidden, "only duellists may declare bouts")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		state := resData.DuelState()
+		if state.Phase != duelPhaseBouts {
+			respondErr(w, http.StatusConflict, "bout-declare is only allowed in 'bouts' phase")
+			return
+		}
+		if state.InitiativePlayerID == nil || *state.InitiativePlayerID != player.ID {
+			respondErr(w, http.StatusForbidden, "only the player with initiative may declare")
+			return
+		}
+
+		// Ensure no unresolved bout exists.
+		latest, latestErr := deps.Q.GetLatestDuelBout(r.Context(), plan.ID)
+		if latestErr == nil && !latest.ResolvedAt.Valid {
+			respondErr(w, http.StatusConflict, "a bout is already in progress — responder must respond first")
+			return
+		}
+
+		var body struct {
+			StakeID     int64  `json:"stake_id"`
+			Declaration string `json:"declaration"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if body.Declaration != string(gamepkg.DeclHigh) && body.Declaration != string(gamepkg.DeclLow) {
+			respondErr(w, http.StatusBadRequest, "declaration must be 'high' or 'low'")
+			return
+		}
+
+		ctx := r.Context()
+		stake, err := deps.Q.GetDuelStake(ctx, body.StakeID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "stake not found")
+			return
+		}
+		if stake.PlanID != plan.ID || stake.PlayerID != player.ID {
+			respondErr(w, http.StatusForbidden, "that stake is not yours")
+			return
+		}
+		if stake.IsResolved {
+			respondErr(w, http.StatusConflict, "that stake has already been resolved")
+			return
+		}
+
+		boutNumber := state.CurrentBout + 1
+		_, err = deps.Q.CreateDuelBout(ctx, dbgen.CreateDuelBoutParams{
+			PlanID:          plan.ID,
+			BoutNumber:      boutNumber,
+			DeclarerID:      player.ID,
+			DeclarerStakeID: body.StakeID,
+			ResponderID:     pduelOpponentID(plan, player.ID),
+			Declaration:     &body.Declaration,
+			DeclarerDie:     &stake.HiddenDie,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not create bout")
+			return
+		}
+
+		state.CurrentBout = boutNumber
+		resData.SetDuelState(state)
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not save bout state")
+			return
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":     plan.ID,
+			"bout_number": boutNumber,
+			"responder":   pduelOpponentID(plan, player.ID),
+		})
+	}
+}
+
+// ── Bout Respond ──────────────────────────────────────────────────────────────
+
+// pduelBoutRespondHandler: POST /api/plans/:planId/bout-respond
+// Body: {"stake_id": N}
+// The responder picks their stake. Server compares dice (via game.ResolveBout),
+// records the outcome, swaps initiative, and — if this was the final bout —
+// creates the standard dice roll with accumulated dice pre-assigned.
+func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !pduelCheckDuel(w, plan) {
+			return
+		}
+		if !pduelIsParticipant(plan, player.ID) {
+			respondErr(w, http.StatusForbidden, "only duellists may respond")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		state := resData.DuelState()
+		if state.Phase != duelPhaseBouts {
+			respondErr(w, http.StatusConflict, "bout-respond is only allowed in 'bouts' phase")
+			return
+		}
+
+		ctx := r.Context()
+		latest, err := deps.Q.GetLatestDuelBout(ctx, plan.ID)
+		if err != nil {
+			respondErr(w, http.StatusConflict, "no bout in progress")
+			return
+		}
+		if latest.ResolvedAt.Valid {
+			respondErr(w, http.StatusConflict, "most recent bout is already resolved")
+			return
+		}
+		if latest.ResponderID != player.ID {
+			respondErr(w, http.StatusForbidden, "you are not the responder for this bout")
+			return
+		}
+
+		var body struct {
+			StakeID int64 `json:"stake_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		respStake, err := deps.Q.GetDuelStake(ctx, body.StakeID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "stake not found")
+			return
+		}
+		if respStake.PlanID != plan.ID || respStake.PlayerID != player.ID {
+			respondErr(w, http.StatusForbidden, "that stake is not yours")
+			return
+		}
+		if respStake.IsResolved {
+			respondErr(w, http.StatusConflict, "that stake has already been resolved")
+			return
+		}
+
+		decSide := pduelSide(plan, latest.DeclarerID)
+		declDie := int16(0)
+		if latest.DeclarerDie != nil {
+			declDie = *latest.DeclarerDie
+		}
+		outcome, err := gamepkg.ResolveBout(
+			decSide, gamepkg.Declaration(*latest.Declaration), declDie, respStake.HiddenDie,
+		)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not resolve bout: "+err.Error())
+			return
+		}
+
+		var winnerPtr *int64
+		if !outcome.Match {
+			wid := latest.DeclarerID
+			if outcome.WinnerSide != decSide {
+				wid = latest.ResponderID
+			}
+			winnerPtr = &wid
+		}
+
+		if err := deps.Q.ResolveDuelBout(ctx, dbgen.ResolveDuelBoutParams{
+			ID:               latest.ID,
+			ResponderStakeID: &respStake.ID,
+			ResponderDie:     &respStake.HiddenDie,
+			WinnerID:         winnerPtr,
+			IsMatch:          outcome.Match,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not resolve bout")
+			return
+		}
+
+		// Mark both stakes resolved. Track is_winner per stake only when a
+		// stake's die ended up in the winner's accumulated pool.
+		declarerIsWinner := winnerPtr != nil && *winnerPtr == latest.DeclarerID
+		responderIsWinner := winnerPtr != nil && *winnerPtr == latest.ResponderID
+		_ = deps.Q.SetDuelStakeResolved(ctx, dbgen.SetDuelStakeResolvedParams{
+			ID: latest.DeclarerStakeID, IsWinner: &declarerIsWinner,
+		})
+		_ = deps.Q.SetDuelStakeResolved(ctx, dbgen.SetDuelStakeResolvedParams{
+			ID: respStake.ID, IsWinner: &responderIsWinner,
+		})
+
+		// Swap initiative to the other side.
+		nextInit := pduelOpponentID(plan, latest.DeclarerID)
+		state.InitiativePlayerID = &nextInit
+
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			winID := int64(0)
+			if winnerPtr != nil {
+				winID = *winnerPtr
+			}
+			h.BroadcastEvent(model.EventDuelBoutResolved, model.DuelBoutResolvedPayload{
+				PlanID:       plan.ID,
+				BoutNumber:   latest.BoutNumber,
+				DeclarerID:   latest.DeclarerID,
+				ResponderID:  latest.ResponderID,
+				DeclarerDie:  declDie,
+				ResponderDie: respStake.HiddenDie,
+				WinnerID:     winID,
+				IsMatch:      outcome.Match,
+			})
+		}
+
+		// Check remaining stakes.
+		prepLeft, err := deps.Q.CountUnresolvedDuelStakes(ctx, dbgen.CountUnresolvedDuelStakesParams{
+			PlanID: plan.ID, PlayerID: plan.PreparerID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not count stakes")
+			return
+		}
+		var targLeft int64
+		if plan.TargetPlayerID != nil {
+			targLeft, err = deps.Q.CountUnresolvedDuelStakes(ctx, dbgen.CountUnresolvedDuelStakesParams{
+				PlanID: plan.ID, PlayerID: *plan.TargetPlayerID,
+			})
+			if err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not count stakes")
+				return
+			}
+		}
+
+		if prepLeft == 0 || targLeft == 0 {
+			// Bouts complete — create the standard roll with accumulated dice.
+			if err := pduelCreateFinalRoll(ctx, deps, plan, &resData, &state); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not create final roll: "+err.Error())
+				return
+			}
+		} else {
+			resData.SetDuelState(state)
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not save state")
+				return
+			}
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":        plan.ID,
+			"bout":           latest.BoutNumber,
+			"winner_id":      winnerPtr,
+			"is_match":       outcome.Match,
+			"bouts_complete": prepLeft == 0 || targLeft == 0,
+		})
+	}
+}
+
+// pduelCreateFinalRoll accumulates winning dice by side and creates the
+// plan's standard dice roll with dice pre-assigned. Preparer's accumulated
+// dice become actor dice; target's accumulated dice become interference.
+func pduelCreateFinalRoll(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	state *gamepkg.DuelState,
+) error {
+	bouts, err := deps.Q.ListDuelBoutsByPlan(ctx, plan.ID)
+	if err != nil {
+		return fmt.Errorf("list bouts: %w", err)
+	}
+	var prepDice, targDice []int16
+	for _, b := range bouts {
+		if b.IsMatch || b.WinnerID == nil || b.DeclarerDie == nil || b.ResponderDie == nil {
+			continue
+		}
+		// Winner accumulates BOTH dice from the bout.
+		if *b.WinnerID == plan.PreparerID {
+			prepDice = append(prepDice, *b.DeclarerDie, *b.ResponderDie)
+		} else {
+			targDice = append(targDice, *b.DeclarerDie, *b.ResponderDie)
+		}
+	}
+
+	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+	if err != nil {
+		return fmt.Errorf("load game: %w", err)
+	}
+	difficulty, err := pduelHandler{}.ComputeDifficulty(ctx, deps.Q, plan, resData)
+	if err != nil {
+		return fmt.Errorf("compute difficulty: %w", err)
+	}
+
+	// Create the roll without the default 2 actor dice (createPlanRoll adds 2).
+	// Here we create the roll row directly and add one die per accumulated face.
+	rollRow, err := deps.Q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID:     game.ID,
+		PlanID:     &plan.ID,
+		RowNumber:  &game.CurrentRow,
+		ActorID:    plan.PreparerID,
+		Difficulty: difficulty,
+	})
+	if err != nil {
+		return fmt.Errorf("create roll: %w", err)
+	}
+
+	for _, face := range prepDice {
+		die, err := deps.Q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+			RollID: rollRow.ID, PlayerID: plan.PreparerID, IsInterference: false,
+		})
+		if err != nil {
+			return err
+		}
+		f := face
+		if err := deps.Q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: die.ID, Face: &f}); err != nil {
+			return err
+		}
+	}
+	for _, face := range targDice {
+		oppID := plan.PreparerID
+		if plan.TargetPlayerID != nil {
+			oppID = *plan.TargetPlayerID
+		}
+		die, err := deps.Q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+			RollID: rollRow.ID, PlayerID: oppID, IsInterference: true,
+		})
+		if err != nil {
+			return err
+		}
+		f := face
+		if err := deps.Q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: die.ID, Face: &f}); err != nil {
+			return err
+		}
+	}
+
+	state.Phase = duelPhaseRoll
+	resData.SetDuelState(*state)
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
+		return err
+	}
+
+	if h, ok := deps.Manager.Get(plan.GameID); ok {
+		h.BroadcastEvent(model.EventRollCreated, model.RollCreatedPayload{Roll: rollRow})
+		h.BroadcastEvent(model.EventDuelBoutsComplete, model.DuelBoutsCompletePayload{
+			PlanID:       plan.ID,
+			PreparerDice: prepDice,
+			OpponentDice: targDice,
+			RollID:       rollRow.ID,
+		})
+	}
+	return nil
+}

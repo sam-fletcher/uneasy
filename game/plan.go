@@ -140,6 +140,9 @@ type ResolutionData struct {
 	DuelType           string `json:"duel_type,omitempty"`
 	PreparerChampionID *int64 `json:"preparer_champion_id,omitempty"`
 	TargetChampionID   *int64 `json:"target_champion_id,omitempty"`
+	DuelPhase          string `json:"duel_phase,omitempty"`
+	PreparerStakeCount int16  `json:"preparer_stake_count,omitempty"`
+	TargetStakeCount   int16  `json:"target_stake_count,omitempty"`
 	CurrentBout        int16  `json:"current_bout,omitempty"`
 	InitiativePlayerID *int64 `json:"initiative_player_id,omitempty"`
 
@@ -184,6 +187,52 @@ func SaveResolutionData(ctx context.Context, q *dbgen.Queries, planID int64, d R
 	}
 	s := string(b)
 	return q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{ID: planID, ResolutionData: &s})
+}
+
+// ── Typed accessors ──────────────────────────────────────────────────────────
+//
+// Plan handlers work with focused views of ResolutionData instead of the full
+// union struct. Per-plan accessors make the intent explicit at call sites.
+
+// DuelState is the Propose Duel subset of ResolutionData.
+type DuelState struct {
+	DuelType           string // "arms" or "wits"
+	PreparerChampionID *int64
+	TargetChampionID   *int64
+	// Phase tracks pre-roll progression. See the propose-duel handler for
+	// the set of valid values ("stake_reveal", "staking", "bouts", "roll",
+	// "done").
+	Phase              string
+	PreparerStakeCount int16
+	TargetStakeCount   int16
+	CurrentBout        int16
+	InitiativePlayerID *int64
+}
+
+// DuelState returns the Propose Duel view of r.
+func (r *ResolutionData) DuelState() DuelState {
+	return DuelState{
+		DuelType:           r.DuelType,
+		PreparerChampionID: r.PreparerChampionID,
+		TargetChampionID:   r.TargetChampionID,
+		Phase:              r.DuelPhase,
+		PreparerStakeCount: r.PreparerStakeCount,
+		TargetStakeCount:   r.TargetStakeCount,
+		CurrentBout:        r.CurrentBout,
+		InitiativePlayerID: r.InitiativePlayerID,
+	}
+}
+
+// SetDuelState writes s back into r.
+func (r *ResolutionData) SetDuelState(s DuelState) {
+	r.DuelType = s.DuelType
+	r.PreparerChampionID = s.PreparerChampionID
+	r.TargetChampionID = s.TargetChampionID
+	r.DuelPhase = s.Phase
+	r.PreparerStakeCount = s.PreparerStakeCount
+	r.TargetStakeCount = s.TargetStakeCount
+	r.CurrentBout = s.CurrentBout
+	r.InitiativePlayerID = s.InitiativePlayerID
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────
