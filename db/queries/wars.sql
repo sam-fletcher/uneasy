@@ -29,6 +29,21 @@ INSERT INTO war_participants (war_id, player_id, side, joined_at_row)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT DO NOTHING;
 
+-- name: AddWarParticipantPending :exec
+-- Late joiners to an already-active war start with entry_payment_complete=FALSE;
+-- they must pay one break/leverage per existing opposing opponent before being
+-- counted as a full participant.
+INSERT INTO war_participants (
+  war_id, player_id, side, joined_at_row, entry_payment_complete
+)
+VALUES ($1, $2, $3, $4, FALSE)
+ON CONFLICT DO NOTHING;
+
+-- name: SetWarParticipantEntryComplete :exec
+UPDATE war_participants
+SET entry_payment_complete = TRUE
+WHERE war_id = $1 AND player_id = $2;
+
 -- name: GetWarParticipant :one
 SELECT * FROM war_participants
 WHERE war_id = $1 AND player_id = $2;
@@ -39,9 +54,11 @@ WHERE war_id = $1
 ORDER BY side, player_id;
 
 -- name: ListActiveWarParticipants :many
--- Active participants: joined and not surrendered.
+-- Active participants: joined, entry-paid, and not surrendered.
 SELECT * FROM war_participants
-WHERE war_id = $1 AND surrendered_at_row IS NULL
+WHERE war_id = $1
+  AND surrendered_at_row IS NULL
+  AND entry_payment_complete = TRUE
 ORDER BY side, player_id;
 
 -- name: SetWarParticipantSurrendered :exec
@@ -64,8 +81,8 @@ ORDER BY w.id;
 -- name: CreateBattleCost :one
 INSERT INTO war_battle_costs (
   war_id, row_number, payer_id, opponent_id, choice,
-  asset_id_1, asset_id_2, surrendered
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  asset_id_1, asset_id_2, surrendered, is_entry
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: ListBattleCostsForRow :many
@@ -108,3 +125,32 @@ SET accepted = EXCLUDED.accepted, created_at = now();
 SELECT * FROM war_peace_votes
 WHERE proposal_id = $1
 ORDER BY player_id;
+
+-- ── Surrender claims ──────────────────────────────────────────────────
+
+-- name: CreateSurrenderClaim :exec
+-- Idempotent: if this (surrendered_id, claimant_id) pair already has an open
+-- claim, do nothing (e.g. a player tried to surrender twice).
+INSERT INTO war_surrender_claims (war_id, surrendered_id, claimant_id)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING;
+
+-- name: GetSurrenderClaim :one
+SELECT * FROM war_surrender_claims
+WHERE war_id = $1 AND surrendered_id = $2 AND claimant_id = $3;
+
+-- name: FulfillSurrenderClaim :exec
+UPDATE war_surrender_claims
+SET asset_id = $2, fulfilled_at = now()
+WHERE id = $1;
+
+-- name: ListOpenSurrenderClaimsByWar :many
+SELECT * FROM war_surrender_claims
+WHERE war_id = $1 AND fulfilled_at IS NULL
+ORDER BY id;
+
+-- name: ListOpenSurrenderClaimsByGame :many
+SELECT c.* FROM war_surrender_claims c
+JOIN wars w ON w.id = c.war_id
+WHERE w.game_id = $1 AND c.fulfilled_at IS NULL
+ORDER BY c.id;

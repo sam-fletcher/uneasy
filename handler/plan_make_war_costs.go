@@ -31,11 +31,17 @@ func mwPowerRanks(ctx context.Context, q *dbgen.Queries, gameID int64) (map[int6
 }
 
 // mwWarSnapshot captures what the cost-of-battle calculation needs for one war.
+//
+// Sides/Surrendered/Active only include fully-joined participants
+// (entry_payment_complete=TRUE). Pending late joiners are tracked separately
+// in PendingSides so the cost-of-battle ordering and peace vote don't see
+// them until they have completed their entry payments.
 type mwWarSnapshot struct {
-	War         dbgen.War
-	Active      []int64         // active participant IDs (non-surrendered)
-	Sides       map[int64]int16 // participant_id → side (all participants, incl. surrendered)
-	Surrendered map[int64]bool
+	War          dbgen.War
+	Active       []int64         // non-surrendered fully-joined participants
+	Sides        map[int64]int16 // fully-joined participants → side (incl. surrendered)
+	Surrendered  map[int64]bool
+	PendingSides map[int64]int16 // late joiners who owe entry payments
 }
 
 func mwSnapshotWar(ctx context.Context, q *dbgen.Queries, war dbgen.War) (mwWarSnapshot, error) {
@@ -44,11 +50,16 @@ func mwSnapshotWar(ctx context.Context, q *dbgen.Queries, war dbgen.War) (mwWarS
 		return mwWarSnapshot{}, err
 	}
 	snap := mwWarSnapshot{
-		War:         war,
-		Sides:       map[int64]int16{},
-		Surrendered: map[int64]bool{},
+		War:          war,
+		Sides:        map[int64]int16{},
+		Surrendered:  map[int64]bool{},
+		PendingSides: map[int64]int16{},
 	}
 	for _, p := range parts {
+		if !p.EntryPaymentComplete {
+			snap.PendingSides[p.PlayerID] = p.Side
+			continue
+		}
 		snap.Sides[p.PlayerID] = p.Side
 		if p.SurrenderedAtRow != nil {
 			snap.Surrendered[p.PlayerID] = true
@@ -116,6 +127,16 @@ func mwOutstandingCostsForGame(
 		}
 	}
 	return out, nil
+}
+
+// mwOutstandingSurrenderClaimsForGame returns surrender claims in the game
+// that have not yet been fulfilled (opponent has not taken an asset).
+func mwOutstandingSurrenderClaimsForGame(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+) ([]dbgen.WarSurrenderClaim, error) {
+	return q.ListOpenSurrenderClaimsByGame(ctx, gameID)
 }
 
 // mwBroadcastBattleCostsDue sends war.battle_cost_due for each active war on

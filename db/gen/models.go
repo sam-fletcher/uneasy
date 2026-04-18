@@ -288,14 +288,16 @@ type WarBattleCost struct {
 	AssetID2    *int64             `db:"asset_id_2" json:"asset_id_2"`
 	Surrendered bool               `db:"surrendered" json:"surrendered"`
 	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	IsEntry     bool               `db:"is_entry" json:"is_entry"`
 }
 
 type WarParticipant struct {
-	WarID            int64  `db:"war_id" json:"war_id"`
-	PlayerID         int64  `db:"player_id" json:"player_id"`
-	Side             int16  `db:"side" json:"side"`
-	JoinedAtRow      int16  `db:"joined_at_row" json:"joined_at_row"`
-	SurrenderedAtRow *int16 `db:"surrendered_at_row" json:"surrendered_at_row"`
+	WarID                int64  `db:"war_id" json:"war_id"`
+	PlayerID             int64  `db:"player_id" json:"player_id"`
+	Side                 int16  `db:"side" json:"side"`
+	JoinedAtRow          int16  `db:"joined_at_row" json:"joined_at_row"`
+	SurrenderedAtRow     *int16 `db:"surrendered_at_row" json:"surrendered_at_row"`
+	EntryPaymentComplete bool   `db:"entry_payment_complete" json:"entry_payment_complete"`
 }
 
 type WarPeaceProposal struct {
@@ -313,4 +315,14 @@ type WarPeaceVote struct {
 	PlayerID   int64              `db:"player_id" json:"player_id"`
 	Accepted   bool               `db:"accepted" json:"accepted"`
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+type WarSurrenderClaim struct {
+	ID            int64              `db:"id" json:"id"`
+	WarID         int64              `db:"war_id" json:"war_id"`
+	SurrenderedID int64              `db:"surrendered_id" json:"surrendered_id"`
+	ClaimantID    int64              `db:"claimant_id" json:"claimant_id"`
+	AssetID       *int64             `db:"asset_id" json:"asset_id"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	FulfilledAt   pgtype.Timestamptz `db:"fulfilled_at" json:"fulfilled_at"`
 }

@@ -76,6 +76,8 @@ const (
 	EventWarBattleCostDue   = "war.battle_cost_due"
 	EventWarBattleCostPaid  = "war.battle_cost_paid"
 	EventWarPlayerSurrender = "war.player_surrendered"
+	EventWarAssetSeized     = "war.asset_seized"
+	EventWarEntryCompleted  = "war.entry_completed"
 	EventWarPeaceProposed   = "war.peace_proposed"
 	EventWarPeaceVote       = "war.peace_vote"
 	EventWarEnded           = "war.ended"
@@ -494,6 +496,21 @@ type WarPlayerSurrenderPayload struct {
 	WarID     int64 `json:"war_id"`
 	PlayerID  int64 `json:"player_id"`
 	RowNumber int16 `json:"row_number"`
+}
+
+// WarAssetSeizedPayload is for EventWarAssetSeized.
+type WarAssetSeizedPayload struct {
+	WarID         int64 `json:"war_id"`
+	SurrenderedID int64 `json:"surrendered_id"`
+	ClaimantID    int64 `json:"claimant_id"`
+	AssetID       int64 `json:"asset_id"`
+}
+
+// WarEntryCompletedPayload is for EventWarEntryCompleted.
+type WarEntryCompletedPayload struct {
+	WarID    int64 `json:"war_id"`
+	PlayerID int64 `json:"player_id"`
+	Side     int16 `json:"side"`
 }
 
 // WarPeaceProposedPayload is for EventWarPeaceProposed.

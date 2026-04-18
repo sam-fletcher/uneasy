@@ -21,7 +21,12 @@ package handler
 //	POST /api/plans/:planId/join-war           — non-preparer joins a side.
 //	POST /api/plans/:planId/post-war-scene     — focus player marks the
 //	                                              one-time declaration scene.
-//	POST /api/plans/:planId/pay-battle-cost    — pay one opponent's cost.
+//	POST /api/plans/:planId/pay-battle-cost    — pay one opponent's cost
+//	                                              (optional surrender modifier).
+//	POST /api/plans/:planId/pay-war-entry      — late joiner pays one
+//	                                              existing opponent's cost.
+//	POST /api/plans/:planId/take-surrender-asset — claim one asset from a
+//	                                              surrendered opposing player.
 //	POST /api/plans/:planId/propose-peace      — open a peace proposal.
 //	POST /api/plans/:planId/vote-peace         — accept/reject open proposal.
 
@@ -30,7 +35,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -185,11 +192,13 @@ func (mwHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 
 func (mwHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"join-war":        mwJoinHandler(deps),
-		"post-war-scene":  mwPostSceneHandler(deps),
-		"pay-battle-cost": mwPayBattleCostHandler(deps),
-		"propose-peace":   mwProposePeaceHandler(deps),
-		"vote-peace":      mwVotePeaceHandler(deps),
+		"join-war":             mwJoinHandler(deps),
+		"post-war-scene":       mwPostSceneHandler(deps),
+		"pay-battle-cost":      mwPayBattleCostHandler(deps),
+		"pay-war-entry":        mwPayWarEntryHandler(deps),
+		"take-surrender-asset": mwTakeSurrenderAssetHandler(deps),
+		"propose-peace":        mwProposePeaceHandler(deps),
+		"vote-peace":           mwVotePeaceHandler(deps),
 	}
 }
 
@@ -265,25 +274,42 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if err := deps.Q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
-			WarID:       war.ID,
-			PlayerID:    player.ID,
-			Side:        body.Side,
-			JoinedAtRow: game.CurrentRow,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not join war")
-			return
-		}
-
-		// If the delay reveal is still open, add them so they reveal too.
+		// If the delay reveal is still open, joiners are free — they reveal with
+		// everyone else and count as full participants. Once the reveal closes
+		// (war becomes active) joiners must pay a full cost of battle against
+		// every existing opposing opponent before becoming active themselves.
 		resData := loadResolutionData(plan.ResolutionData)
+		revealOpen := false
 		if resData.DelayRevealID != nil {
 			reveal, err := deps.Q.GetSimultaneousReveal(ctx, *resData.DelayRevealID)
 			if err == nil && !reveal.IsComplete {
-				_ = deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
-					RevealID: reveal.ID,
-					PlayerID: player.ID,
-				})
+				revealOpen = true
+			}
+		}
+
+		if revealOpen {
+			if err := deps.Q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
+				WarID:       war.ID,
+				PlayerID:    player.ID,
+				Side:        body.Side,
+				JoinedAtRow: game.CurrentRow,
+			}); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not join war")
+				return
+			}
+			_ = deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
+				RevealID: *resData.DelayRevealID,
+				PlayerID: player.ID,
+			})
+		} else {
+			if err := deps.Q.AddWarParticipantPending(ctx, dbgen.AddWarParticipantPendingParams{
+				WarID:       war.ID,
+				PlayerID:    player.ID,
+				Side:        body.Side,
+				JoinedAtRow: game.CurrentRow,
+			}); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not join war")
+				return
 			}
 		}
 
@@ -419,8 +445,9 @@ func stringPtr(s string) *string { return new(s) }
 //	  "asset_id_2":     int64    // leverage_two only
 //	}
 //
-// TODO: surrender (do one of the above then surrender unconditionally; each
-// opponent takes one asset). Asset-taking after surrender is not implemented.
+// Setting `surrender: true` marks the payer surrendered after the chosen
+// payment is applied; each opposing non-surrendered opponent then has one
+// open surrender claim, redeemable via /take-surrender-asset.
 func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -436,6 +463,7 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 			MarginaliaID int64  `json:"marginalia_id"`
 			AssetID1     int64  `json:"asset_id_1"`
 			AssetID2     int64  `json:"asset_id_2"`
+			Surrender    bool   `json:"surrender"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -591,7 +619,8 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 			Choice:      body.Choice,
 			AssetID1:    assetID1,
 			AssetID2:    assetID2,
-			Surrendered: false,
+			Surrendered: body.Surrender,
+			IsEntry:     false,
 		}); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not record battle cost")
 			return
@@ -601,14 +630,420 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 			h.BroadcastEvent(model.EventWarBattleCostPaid, model.WarBattleCostPaidPayload{
 				WarID: war.ID, RowNumber: game.CurrentRow,
 				PayerID: player.ID, OpponentID: body.OpponentID,
-				Choice: body.Choice, Surrendered: false,
+				Choice: body.Choice, Surrendered: body.Surrender,
 			})
 		}
+
+		if body.Surrender {
+			if err := mwApplySurrender(ctx, deps, war, snap, player.ID, game.CurrentRow); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not apply surrender")
+				return
+			}
+			respond(w, http.StatusOK, map[string]any{
+				"war_id":      war.ID,
+				"row_number":  game.CurrentRow,
+				"opponent_id": body.OpponentID,
+				"choice":      body.Choice,
+				"surrendered": true,
+			})
+			return
+		}
+
 		respond(w, http.StatusOK, map[string]any{
 			"war_id":      war.ID,
 			"row_number":  game.CurrentRow,
 			"opponent_id": body.OpponentID,
 			"choice":      body.Choice,
+		})
+	}
+}
+
+// mwApplySurrender marks payer surrendered, opens a surrender claim for each
+// opposing non-surrendered full participant, broadcasts events, and ends the
+// war if a side is now empty.
+func mwApplySurrender(
+	ctx context.Context,
+	deps *PlanDeps,
+	war dbgen.War,
+	snap mwWarSnapshot,
+	payerID int64,
+	row int16,
+) error {
+	if err := deps.Q.SetWarParticipantSurrendered(ctx, dbgen.SetWarParticipantSurrenderedParams{
+		WarID: war.ID, PlayerID: payerID, SurrenderedAtRow: &row,
+	}); err != nil {
+		return err
+	}
+	for _, opp := range gamepkg.ActiveOpponents(payerID, snap.Sides, snap.Surrendered) {
+		if opp == payerID {
+			continue
+		}
+		if err := deps.Q.CreateSurrenderClaim(ctx, dbgen.CreateSurrenderClaimParams{
+			WarID: war.ID, SurrenderedID: payerID, ClaimantID: opp,
+		}); err != nil {
+			return err
+		}
+	}
+
+	h, hasHub := deps.Manager.Get(war.GameID)
+	if hasHub {
+		h.BroadcastEvent(model.EventWarPlayerSurrender, model.WarPlayerSurrenderPayload{
+			WarID: war.ID, PlayerID: payerID, RowNumber: row,
+		})
+	}
+
+	// Check for auto-end: count non-surrendered full participants per side.
+	remaining := map[int16]int{}
+	for id, side := range snap.Sides {
+		if id == payerID || snap.Surrendered[id] {
+			continue
+		}
+		remaining[side]++
+	}
+	side1, side2 := remaining[gamepkg.WarSideDeclarer], remaining[gamepkg.WarSideEnemy]
+	if side1 > 0 && side2 > 0 {
+		return nil
+	}
+	reason := gamepkg.WarEndSurrender
+	if side1 == 0 && side2 == 0 {
+		reason = gamepkg.WarEndAllSurrendered
+	}
+	if err := deps.Q.EndWar(ctx, dbgen.EndWarParams{
+		ID: war.ID, EndReason: new(reason), EndedAtRow: &row,
+	}); err != nil {
+		return err
+	}
+	if hasHub {
+		h.BroadcastEvent(model.EventWarEnded, model.WarEndedPayload{
+			WarID: war.ID, Reason: reason, RowNumber: row,
+		})
+	}
+	return nil
+}
+
+// mwApplyCostChoice validates and applies one break_asset or leverage_two
+// payment against the caller's assets. Shared by /pay-battle-cost and
+// /pay-war-entry. Returns (assetID1, assetID2) for battle_cost record.
+func mwApplyCostChoice(
+	ctx context.Context,
+	deps *PlanDeps,
+	gameID int64,
+	player *dbgen.Player,
+	choice string,
+	marginaliaID, assetID1In, assetID2In int64,
+	w http.ResponseWriter,
+) (a1, a2 *int64, ok bool) {
+	switch choice {
+	case gamepkg.WarCostBreakAsset:
+		m, err := deps.Q.GetMarginaliaByID(ctx, marginaliaID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "marginalia not found")
+			return nil, nil, false
+		}
+		asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
+		if err != nil || asset.OwnerID != player.ID {
+			respondErr(w, http.StatusForbidden, "marginalia must belong to an asset you own")
+			return nil, nil, false
+		}
+		if asset.IsDestroyed {
+			respondErr(w, http.StatusConflict, "asset is already destroyed")
+			return nil, nil, false
+		}
+		if m.IsTorn {
+			respondErr(w, http.StatusConflict, "marginalia is already torn")
+			return nil, nil, false
+		}
+		if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+			ID: m.ID, TornByID: &player.ID,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+			return nil, nil, false
+		}
+		if h, ok := deps.Manager.Get(gameID); ok {
+			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+				AssetID: asset.ID, Position: m.Position, TornByID: player.ID,
+			})
+		}
+		intact, _ := deps.Q.CountIntactMarginalia(ctx, asset.ID)
+		if intact == 0 {
+			total, _ := deps.Q.CountMarginalia(ctx, asset.ID)
+			if total > 0 {
+				_ = deps.Q.DestroyAsset(ctx, asset.ID)
+				if h, ok := deps.Manager.Get(gameID); ok {
+					h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
+				}
+			}
+		}
+		return &asset.ID, nil, true
+
+	case gamepkg.WarCostLeverageTwo:
+		if assetID1In == 0 || assetID2In == 0 || assetID1In == assetID2In {
+			respondErr(w, http.StatusBadRequest, "must specify two distinct assets to leverage")
+			return nil, nil, false
+		}
+		for _, id := range []int64{assetID1In, assetID2In} {
+			a, err := deps.Q.GetAssetByID(ctx, id)
+			if err != nil {
+				respondErr(w, http.StatusNotFound, "asset not found")
+				return nil, nil, false
+			}
+			if a.OwnerID != player.ID {
+				respondErr(w, http.StatusForbidden, "you can only leverage your own assets")
+				return nil, nil, false
+			}
+			if a.IsDestroyed {
+				respondErr(w, http.StatusConflict, "asset is destroyed")
+				return nil, nil, false
+			}
+			if a.IsLeveraged {
+				respondErr(w, http.StatusConflict, "asset is already leveraged")
+				return nil, nil, false
+			}
+		}
+		for _, id := range []int64{assetID1In, assetID2In} {
+			if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+				ID: id, IsLeveraged: true,
+			}); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not leverage asset")
+				return nil, nil, false
+			}
+		}
+		return &assetID1In, &assetID2In, true
+	}
+	respondErr(w, http.StatusBadRequest, "choice must be break_asset or leverage_two")
+	return nil, nil, false
+}
+
+// ── pay-war-entry ────────────────────────────────────────────────────────────
+//
+// Late joiners (entry_payment_complete=FALSE) pay a full cost of battle
+// against each existing opposing opponent before becoming full participants.
+// Body mirrors pay-battle-cost (minus surrender).
+func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !mwCheckPlan(w, plan) {
+			return
+		}
+		var body struct {
+			OpponentID   int64  `json:"opponent_id"`
+			Choice       string `json:"choice"`
+			MarginaliaID int64  `json:"marginalia_id"`
+			AssetID1     int64  `json:"asset_id_1"`
+			AssetID2     int64  `json:"asset_id_2"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if !gamepkg.IsValidBattleCostChoice(body.Choice) {
+			respondErr(w, http.StatusBadRequest, "choice must be break_asset or leverage_two")
+			return
+		}
+
+		ctx := r.Context()
+		war, ok := mwLoadWar(ctx, w, deps.Q, plan)
+		if !ok {
+			return
+		}
+		if war.Status != "active" {
+			respondErr(w, http.StatusConflict, "war is no longer active")
+			return
+		}
+		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load game")
+			return
+		}
+
+		part, err := deps.Q.GetWarParticipant(ctx, dbgen.GetWarParticipantParams{
+			WarID: war.ID, PlayerID: player.ID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusForbidden, "you are not a participant in this war")
+			return
+		}
+		if part.EntryPaymentComplete {
+			respondErr(w, http.StatusConflict, "you have already paid your war entry")
+			return
+		}
+
+		snap, err := mwSnapshotWar(ctx, deps.Q, war)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load war participants")
+			return
+		}
+		// Targets: every active opposing full participant.
+		targets := gamepkg.ActiveOpponents(
+			player.ID,
+			mergeEntrySides(snap.Sides, map[int64]int16{player.ID: part.Side}),
+			snap.Surrendered,
+		)
+		validTarget := slices.Contains(targets, body.OpponentID)
+		if !validTarget {
+			respondErr(w, http.StatusConflict, "that opponent is not an active opposing participant")
+			return
+		}
+		// Already paid against this opponent?
+		existing, err := deps.Q.ListBattleCostsByPayerForRow(ctx, dbgen.ListBattleCostsByPayerForRowParams{
+			WarID: war.ID, RowNumber: game.CurrentRow, PayerID: player.ID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load existing payments")
+			return
+		}
+		for _, bc := range existing {
+			if bc.IsEntry && bc.OpponentID == body.OpponentID {
+				respondErr(w, http.StatusConflict, "you have already paid entry against that opponent")
+				return
+			}
+		}
+
+		a1, a2, ok := mwApplyCostChoice(ctx, deps, plan.GameID, player,
+			body.Choice, body.MarginaliaID, body.AssetID1, body.AssetID2, w)
+		if !ok {
+			return
+		}
+
+		if _, err := deps.Q.CreateBattleCost(ctx, dbgen.CreateBattleCostParams{
+			WarID:       war.ID,
+			RowNumber:   game.CurrentRow,
+			PayerID:     player.ID,
+			OpponentID:  body.OpponentID,
+			Choice:      body.Choice,
+			AssetID1:    a1,
+			AssetID2:    a2,
+			Surrendered: false,
+			IsEntry:     true,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not record entry payment")
+			return
+		}
+
+		// If this was the last required target, mark entry complete.
+		remaining := 0
+		paidSet := map[int64]bool{body.OpponentID: true}
+		for _, bc := range existing {
+			if bc.IsEntry {
+				paidSet[bc.OpponentID] = true
+			}
+		}
+		for _, t := range targets {
+			if !paidSet[t] {
+				remaining++
+			}
+		}
+		complete := remaining == 0
+		if complete {
+			if err := deps.Q.SetWarParticipantEntryComplete(ctx, dbgen.SetWarParticipantEntryCompleteParams{
+				WarID: war.ID, PlayerID: player.ID,
+			}); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not mark entry complete")
+				return
+			}
+			if h, ok := deps.Manager.Get(plan.GameID); ok {
+				h.BroadcastEvent(model.EventWarEntryCompleted, model.WarEntryCompletedPayload{
+					WarID: war.ID, PlayerID: player.ID, Side: part.Side,
+				})
+			}
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"war_id":         war.ID,
+			"opponent_id":    body.OpponentID,
+			"entry_complete": complete,
+			"remaining":      remaining,
+		})
+	}
+}
+
+// mergeEntrySides returns sides with (playerID,side) added so ActiveOpponents
+// can run from the late-joiner's perspective (they aren't in snap.Sides yet).
+func mergeEntrySides(sides, extra map[int64]int16) map[int64]int16 {
+	out := make(map[int64]int16, len(sides)+len(extra))
+	maps.Copy(out, sides)
+	maps.Copy(out, extra)
+	return out
+}
+
+// ── take-surrender-asset ─────────────────────────────────────────────────────
+//
+// After a player surrenders, each opposing non-surrendered full participant
+// holds an unfulfilled claim to take one of the surrendered player's assets.
+// Body: {"surrendered_id": int64, "asset_id": int64}
+func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !mwCheckPlan(w, plan) {
+			return
+		}
+		var body struct {
+			SurrenderedID int64 `json:"surrendered_id"`
+			AssetID       int64 `json:"asset_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		ctx := r.Context()
+		war, ok := mwLoadWar(ctx, w, deps.Q, plan)
+		if !ok {
+			return
+		}
+		claim, err := deps.Q.GetSurrenderClaim(ctx, dbgen.GetSurrenderClaimParams{
+			WarID: war.ID, SurrenderedID: body.SurrenderedID, ClaimantID: player.ID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "no open surrender claim for you against that player")
+			return
+		}
+		if claim.FulfilledAt.Valid {
+			respondErr(w, http.StatusConflict, "claim already fulfilled")
+			return
+		}
+
+		asset, err := deps.Q.GetAssetByID(ctx, body.AssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		if asset.OwnerID != body.SurrenderedID {
+			respondErr(w, http.StatusForbidden, "asset does not belong to the surrendered player")
+			return
+		}
+		if asset.IsDestroyed {
+			respondErr(w, http.StatusConflict, "asset is destroyed")
+			return
+		}
+
+		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+			ID: asset.ID, OwnerID: player.ID,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not transfer asset")
+			return
+		}
+		if err := deps.Q.FulfillSurrenderClaim(ctx, dbgen.FulfillSurrenderClaimParams{
+			ID: claim.ID, AssetID: &asset.ID,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not fulfill claim")
+			return
+		}
+
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			h.BroadcastEvent(model.EventWarAssetSeized, model.WarAssetSeizedPayload{
+				WarID: war.ID, SurrenderedID: body.SurrenderedID,
+				ClaimantID: player.ID, AssetID: asset.ID,
+			})
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"war_id":   war.ID,
+			"asset_id": asset.ID,
 		})
 	}
 }

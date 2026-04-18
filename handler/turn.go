@@ -301,6 +301,17 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "outstanding battle costs must be paid before advancing the row")
 			return
 		}
+		if claims, err := mwOutstandingSurrenderClaimsForGame(r.Context(), q, game.ID); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not check surrender claims")
+			return
+		} else if len(claims) > 0 {
+			respondErr(
+				w,
+				http.StatusConflict,
+				"opposing players must take an asset from each surrendered player before advancing",
+			)
+			return
+		}
 
 		newRow, ended, err := advanceRowInner(r, q, h, game)
 		if err != nil {
@@ -409,6 +420,15 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
 				"advance_blocked":   "outstanding battle costs must be paid before the row can advance",
+			})
+			return
+		}
+		if claims, claimErr := mwOutstandingSurrenderClaimsForGame(ctx, q, game.ID); claimErr == nil &&
+			len(claims) > 0 {
+			respond(w, http.StatusOK, map[string]any{
+				"focus_player_id":   next.ID,
+				"focus_player_name": next.DisplayName,
+				"advance_blocked":   "opposing players must take an asset from each surrendered player before the row can advance",
 			})
 			return
 		}

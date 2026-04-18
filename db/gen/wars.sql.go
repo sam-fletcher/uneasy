@@ -34,13 +34,41 @@ func (q *Queries) AddWarParticipant(ctx context.Context, arg AddWarParticipantPa
 	return err
 }
 
+const addWarParticipantPending = `-- name: AddWarParticipantPending :exec
+INSERT INTO war_participants (
+  war_id, player_id, side, joined_at_row, entry_payment_complete
+)
+VALUES ($1, $2, $3, $4, FALSE)
+ON CONFLICT DO NOTHING
+`
+
+type AddWarParticipantPendingParams struct {
+	WarID       int64 `db:"war_id" json:"war_id"`
+	PlayerID    int64 `db:"player_id" json:"player_id"`
+	Side        int16 `db:"side" json:"side"`
+	JoinedAtRow int16 `db:"joined_at_row" json:"joined_at_row"`
+}
+
+// Late joiners to an already-active war start with entry_payment_complete=FALSE;
+// they must pay one break/leverage per existing opposing opponent before being
+// counted as a full participant.
+func (q *Queries) AddWarParticipantPending(ctx context.Context, arg AddWarParticipantPendingParams) error {
+	_, err := q.db.Exec(ctx, addWarParticipantPending,
+		arg.WarID,
+		arg.PlayerID,
+		arg.Side,
+		arg.JoinedAtRow,
+	)
+	return err
+}
+
 const createBattleCost = `-- name: CreateBattleCost :one
 
 INSERT INTO war_battle_costs (
   war_id, row_number, payer_id, opponent_id, choice,
-  asset_id_1, asset_id_2, surrendered
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, war_id, row_number, payer_id, opponent_id, choice, asset_id_1, asset_id_2, surrendered, created_at
+  asset_id_1, asset_id_2, surrendered, is_entry
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, war_id, row_number, payer_id, opponent_id, choice, asset_id_1, asset_id_2, surrendered, created_at, is_entry
 `
 
 type CreateBattleCostParams struct {
@@ -52,6 +80,7 @@ type CreateBattleCostParams struct {
 	AssetID1    *int64 `db:"asset_id_1" json:"asset_id_1"`
 	AssetID2    *int64 `db:"asset_id_2" json:"asset_id_2"`
 	Surrendered bool   `db:"surrendered" json:"surrendered"`
+	IsEntry     bool   `db:"is_entry" json:"is_entry"`
 }
 
 // ── Battle costs ──────────────────────────────────────────────────────
@@ -65,6 +94,7 @@ func (q *Queries) CreateBattleCost(ctx context.Context, arg CreateBattleCostPara
 		arg.AssetID1,
 		arg.AssetID2,
 		arg.Surrendered,
+		arg.IsEntry,
 	)
 	var i WarBattleCost
 	err := row.Scan(
@@ -78,6 +108,7 @@ func (q *Queries) CreateBattleCost(ctx context.Context, arg CreateBattleCostPara
 		&i.AssetID2,
 		&i.Surrendered,
 		&i.CreatedAt,
+		&i.IsEntry,
 	)
 	return i, err
 }
@@ -109,6 +140,27 @@ func (q *Queries) CreatePeaceProposal(ctx context.Context, arg CreatePeacePropos
 		&i.ResolvedAt,
 	)
 	return i, err
+}
+
+const createSurrenderClaim = `-- name: CreateSurrenderClaim :exec
+
+INSERT INTO war_surrender_claims (war_id, surrendered_id, claimant_id)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
+`
+
+type CreateSurrenderClaimParams struct {
+	WarID         int64 `db:"war_id" json:"war_id"`
+	SurrenderedID int64 `db:"surrendered_id" json:"surrendered_id"`
+	ClaimantID    int64 `db:"claimant_id" json:"claimant_id"`
+}
+
+// ── Surrender claims ──────────────────────────────────────────────────
+// Idempotent: if this (surrendered_id, claimant_id) pair already has an open
+// claim, do nothing (e.g. a player tried to surrender twice).
+func (q *Queries) CreateSurrenderClaim(ctx context.Context, arg CreateSurrenderClaimParams) error {
+	_, err := q.db.Exec(ctx, createSurrenderClaim, arg.WarID, arg.SurrenderedID, arg.ClaimantID)
+	return err
 }
 
 const createWar = `-- name: CreateWar :one
@@ -160,6 +212,22 @@ func (q *Queries) EndWar(ctx context.Context, arg EndWarParams) error {
 	return err
 }
 
+const fulfillSurrenderClaim = `-- name: FulfillSurrenderClaim :exec
+UPDATE war_surrender_claims
+SET asset_id = $2, fulfilled_at = now()
+WHERE id = $1
+`
+
+type FulfillSurrenderClaimParams struct {
+	ID      int64  `db:"id" json:"id"`
+	AssetID *int64 `db:"asset_id" json:"asset_id"`
+}
+
+func (q *Queries) FulfillSurrenderClaim(ctx context.Context, arg FulfillSurrenderClaimParams) error {
+	_, err := q.db.Exec(ctx, fulfillSurrenderClaim, arg.ID, arg.AssetID)
+	return err
+}
+
 const getOpenPeaceProposal = `-- name: GetOpenPeaceProposal :one
 SELECT id, war_id, proposer_id, terms, status, created_at, resolved_at FROM war_peace_proposals
 WHERE war_id = $1 AND status = 'open'
@@ -196,6 +264,32 @@ func (q *Queries) GetPeaceProposal(ctx context.Context, id int64) (WarPeacePropo
 		&i.Status,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+	)
+	return i, err
+}
+
+const getSurrenderClaim = `-- name: GetSurrenderClaim :one
+SELECT id, war_id, surrendered_id, claimant_id, asset_id, created_at, fulfilled_at FROM war_surrender_claims
+WHERE war_id = $1 AND surrendered_id = $2 AND claimant_id = $3
+`
+
+type GetSurrenderClaimParams struct {
+	WarID         int64 `db:"war_id" json:"war_id"`
+	SurrenderedID int64 `db:"surrendered_id" json:"surrendered_id"`
+	ClaimantID    int64 `db:"claimant_id" json:"claimant_id"`
+}
+
+func (q *Queries) GetSurrenderClaim(ctx context.Context, arg GetSurrenderClaimParams) (WarSurrenderClaim, error) {
+	row := q.db.QueryRow(ctx, getSurrenderClaim, arg.WarID, arg.SurrenderedID, arg.ClaimantID)
+	var i WarSurrenderClaim
+	err := row.Scan(
+		&i.ID,
+		&i.WarID,
+		&i.SurrenderedID,
+		&i.ClaimantID,
+		&i.AssetID,
+		&i.CreatedAt,
+		&i.FulfilledAt,
 	)
 	return i, err
 }
@@ -241,7 +335,7 @@ func (q *Queries) GetWarByOriginPlan(ctx context.Context, originPlanID int64) (W
 }
 
 const getWarParticipant = `-- name: GetWarParticipant :one
-SELECT war_id, player_id, side, joined_at_row, surrendered_at_row FROM war_participants
+SELECT war_id, player_id, side, joined_at_row, surrendered_at_row, entry_payment_complete FROM war_participants
 WHERE war_id = $1 AND player_id = $2
 `
 
@@ -259,17 +353,20 @@ func (q *Queries) GetWarParticipant(ctx context.Context, arg GetWarParticipantPa
 		&i.Side,
 		&i.JoinedAtRow,
 		&i.SurrenderedAtRow,
+		&i.EntryPaymentComplete,
 	)
 	return i, err
 }
 
 const listActiveWarParticipants = `-- name: ListActiveWarParticipants :many
-SELECT war_id, player_id, side, joined_at_row, surrendered_at_row FROM war_participants
-WHERE war_id = $1 AND surrendered_at_row IS NULL
+SELECT war_id, player_id, side, joined_at_row, surrendered_at_row, entry_payment_complete FROM war_participants
+WHERE war_id = $1
+  AND surrendered_at_row IS NULL
+  AND entry_payment_complete = TRUE
 ORDER BY side, player_id
 `
 
-// Active participants: joined and not surrendered.
+// Active participants: joined, entry-paid, and not surrendered.
 func (q *Queries) ListActiveWarParticipants(ctx context.Context, warID int64) ([]WarParticipant, error) {
 	rows, err := q.db.Query(ctx, listActiveWarParticipants, warID)
 	if err != nil {
@@ -285,6 +382,7 @@ func (q *Queries) ListActiveWarParticipants(ctx context.Context, warID int64) ([
 			&i.Side,
 			&i.JoinedAtRow,
 			&i.SurrenderedAtRow,
+			&i.EntryPaymentComplete,
 		); err != nil {
 			return nil, err
 		}
@@ -376,7 +474,7 @@ func (q *Queries) ListActiveWarsForPlayer(ctx context.Context, arg ListActiveWar
 }
 
 const listBattleCostsByPayerForRow = `-- name: ListBattleCostsByPayerForRow :many
-SELECT id, war_id, row_number, payer_id, opponent_id, choice, asset_id_1, asset_id_2, surrendered, created_at FROM war_battle_costs
+SELECT id, war_id, row_number, payer_id, opponent_id, choice, asset_id_1, asset_id_2, surrendered, created_at, is_entry FROM war_battle_costs
 WHERE war_id = $1 AND row_number = $2 AND payer_id = $3
 ORDER BY created_at
 `
@@ -407,6 +505,7 @@ func (q *Queries) ListBattleCostsByPayerForRow(ctx context.Context, arg ListBatt
 			&i.AssetID2,
 			&i.Surrendered,
 			&i.CreatedAt,
+			&i.IsEntry,
 		); err != nil {
 			return nil, err
 		}
@@ -419,7 +518,7 @@ func (q *Queries) ListBattleCostsByPayerForRow(ctx context.Context, arg ListBatt
 }
 
 const listBattleCostsForRow = `-- name: ListBattleCostsForRow :many
-SELECT id, war_id, row_number, payer_id, opponent_id, choice, asset_id_1, asset_id_2, surrendered, created_at FROM war_battle_costs
+SELECT id, war_id, row_number, payer_id, opponent_id, choice, asset_id_1, asset_id_2, surrendered, created_at, is_entry FROM war_battle_costs
 WHERE war_id = $1 AND row_number = $2
 ORDER BY created_at
 `
@@ -449,6 +548,76 @@ func (q *Queries) ListBattleCostsForRow(ctx context.Context, arg ListBattleCosts
 			&i.AssetID2,
 			&i.Surrendered,
 			&i.CreatedAt,
+			&i.IsEntry,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOpenSurrenderClaimsByGame = `-- name: ListOpenSurrenderClaimsByGame :many
+SELECT c.id, c.war_id, c.surrendered_id, c.claimant_id, c.asset_id, c.created_at, c.fulfilled_at FROM war_surrender_claims c
+JOIN wars w ON w.id = c.war_id
+WHERE w.game_id = $1 AND c.fulfilled_at IS NULL
+ORDER BY c.id
+`
+
+func (q *Queries) ListOpenSurrenderClaimsByGame(ctx context.Context, gameID int64) ([]WarSurrenderClaim, error) {
+	rows, err := q.db.Query(ctx, listOpenSurrenderClaimsByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WarSurrenderClaim{}
+	for rows.Next() {
+		var i WarSurrenderClaim
+		if err := rows.Scan(
+			&i.ID,
+			&i.WarID,
+			&i.SurrenderedID,
+			&i.ClaimantID,
+			&i.AssetID,
+			&i.CreatedAt,
+			&i.FulfilledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOpenSurrenderClaimsByWar = `-- name: ListOpenSurrenderClaimsByWar :many
+SELECT id, war_id, surrendered_id, claimant_id, asset_id, created_at, fulfilled_at FROM war_surrender_claims
+WHERE war_id = $1 AND fulfilled_at IS NULL
+ORDER BY id
+`
+
+func (q *Queries) ListOpenSurrenderClaimsByWar(ctx context.Context, warID int64) ([]WarSurrenderClaim, error) {
+	rows, err := q.db.Query(ctx, listOpenSurrenderClaimsByWar, warID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WarSurrenderClaim{}
+	for rows.Next() {
+		var i WarSurrenderClaim
+		if err := rows.Scan(
+			&i.ID,
+			&i.WarID,
+			&i.SurrenderedID,
+			&i.ClaimantID,
+			&i.AssetID,
+			&i.CreatedAt,
+			&i.FulfilledAt,
 		); err != nil {
 			return nil, err
 		}
@@ -492,7 +661,7 @@ func (q *Queries) ListPeaceVotes(ctx context.Context, proposalID int64) ([]WarPe
 }
 
 const listWarParticipants = `-- name: ListWarParticipants :many
-SELECT war_id, player_id, side, joined_at_row, surrendered_at_row FROM war_participants
+SELECT war_id, player_id, side, joined_at_row, surrendered_at_row, entry_payment_complete FROM war_participants
 WHERE war_id = $1
 ORDER BY side, player_id
 `
@@ -512,6 +681,7 @@ func (q *Queries) ListWarParticipants(ctx context.Context, warID int64) ([]WarPa
 			&i.Side,
 			&i.JoinedAtRow,
 			&i.SurrenderedAtRow,
+			&i.EntryPaymentComplete,
 		); err != nil {
 			return nil, err
 		}
@@ -536,6 +706,22 @@ type SetPeaceProposalStatusParams struct {
 
 func (q *Queries) SetPeaceProposalStatus(ctx context.Context, arg SetPeaceProposalStatusParams) error {
 	_, err := q.db.Exec(ctx, setPeaceProposalStatus, arg.ID, arg.Status)
+	return err
+}
+
+const setWarParticipantEntryComplete = `-- name: SetWarParticipantEntryComplete :exec
+UPDATE war_participants
+SET entry_payment_complete = TRUE
+WHERE war_id = $1 AND player_id = $2
+`
+
+type SetWarParticipantEntryCompleteParams struct {
+	WarID    int64 `db:"war_id" json:"war_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+}
+
+func (q *Queries) SetWarParticipantEntryComplete(ctx context.Context, arg SetWarParticipantEntryCompleteParams) error {
+	_, err := q.db.Exec(ctx, setWarParticipantEntryComplete, arg.WarID, arg.PlayerID)
 	return err
 }
 
