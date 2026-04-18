@@ -154,7 +154,11 @@ func (pduelHandler) ApplyChoice(
 	// mar → target wins (takes from preparer).
 	var winnerID, loserID int64
 	if result == makeOutcome {
-		winnerID = plan.PreparerID
+		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+		if err != nil {
+			return fmt.Errorf("resolve asset recipient: %w", err)
+		}
+		winnerID = recipient
 		if plan.TargetPlayerID != nil {
 			loserID = *plan.TargetPlayerID
 		}

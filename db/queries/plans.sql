@@ -59,6 +59,29 @@ UPDATE plans SET resolution_data = $2 WHERE id = $1;
 -- the simultaneous reveal determines the actual delay.
 UPDATE plans SET row_number = $2 WHERE id = $1;
 
+-- name: GetPlansTargeting :many
+-- Returns Make Demands plans whose targeted_plan_id points at the given
+-- plan. Used to locate an active demand on a plan (for asset-recipient
+-- redirection, leverage control, etc.) and to cascade cancels.
+SELECT * FROM plans
+WHERE targeted_plan_id = $1
+ORDER BY id;
+
+-- name: ClearTargetedPlan :exec
+-- Clears targeted_plan_id on a demand plan. Used when the target plan is
+-- cancelled and the demand cascade-cancels with it.
+UPDATE plans SET targeted_plan_id = NULL WHERE id = $1;
+
+-- name: SetDemandOptionWinners :exec
+-- Persists the four draft-pick winners on the demand plan row once the
+-- draft completes. Read by the target plan's resolution path.
+UPDATE plans SET demand_option_winners = $2 WHERE id = $1;
+
+-- name: SetPlanTargetedPlan :exec
+-- Sets targeted_plan_id on a Make Demands plan row. Called from OnPrepare
+-- after the plan row has been created.
+UPDATE plans SET targeted_plan_id = $2 WHERE id = $1;
+
 -- name: ListRecentPlansByPreparer :many
 -- Returns the most recently prepared plans for a player in a game, ordered
 -- newest-first. Used for esteem lockout checks (SP mar option b).

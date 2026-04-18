@@ -535,9 +535,17 @@ func hfApplyOption(
 		if name == "" {
 			name = "New peer"
 		}
+		ownerID := actingPlayerID
+		if actingPlayerID == plan.PreparerID {
+			recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+			if err != nil {
+				return fmt.Errorf("resolve asset recipient: %w", err)
+			}
+			ownerID = recipient
+		}
 		asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
 			GameID:    plan.GameID,
-			OwnerID:   actingPlayerID,
+			OwnerID:   ownerID,
 			CreatorID: actingPlayerID,
 			AssetType: model.AssetPeer,
 			Name:      name,
@@ -563,9 +571,17 @@ func hfApplyOption(
 			return errors.New("asset is not in the center of the table")
 		}
 		oldOwner := asset.OwnerID
+		newOwner := actingPlayerID
+		if actingPlayerID == plan.PreparerID {
+			recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+			if err != nil {
+				return fmt.Errorf("resolve asset recipient: %w", err)
+			}
+			newOwner = recipient
+		}
 		if err := deps.Q.TransferAsset(
 			ctx,
-			dbgen.TransferAssetParams{ID: assetID, OwnerID: actingPlayerID},
+			dbgen.TransferAssetParams{ID: assetID, OwnerID: newOwner},
 		); err != nil {
 			return fmt.Errorf("transfer asset: %w", err)
 		}
@@ -580,7 +596,7 @@ func hfApplyOption(
 		if h, ok := deps.Manager.Get(plan.GameID); ok {
 			updated, _ := deps.Q.GetAssetByID(ctx, assetID)
 			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-				Asset: updated, OldOwnerID: oldOwner, NewOwnerID: actingPlayerID,
+				Asset: updated, OldOwnerID: oldOwner, NewOwnerID: newOwner,
 			})
 		}
 

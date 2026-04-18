@@ -391,7 +391,7 @@ func applyMakeWarDelayResult(
 		if resData.WarID != nil {
 			_ = q.EndWar(ctx, dbgen.EndWarParams{
 				ID:         *resData.WarID,
-				EndReason:  stringPtr(gamepkg.WarEndPeace),
+				EndReason:  new(gamepkg.WarEndPeace),
 				EndedAtRow: &game.CurrentRow,
 			})
 		}
@@ -429,9 +429,6 @@ func applyMakeWarDelayResult(
 		}
 	}
 }
-
-//go:fix inline
-func stringPtr(s string) *string { return new(s) }
 
 // mwPayBattleCostHandler handles POST /api/plans/:planId/pay-battle-cost.
 //
@@ -1265,7 +1262,7 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		})
 		_ = deps.Q.EndWar(ctx, dbgen.EndWarParams{
 			ID:         war.ID,
-			EndReason:  stringPtr(gamepkg.WarEndPeace),
+			EndReason:  new(gamepkg.WarEndPeace),
 			EndedAtRow: &game.CurrentRow,
 		})
 		if h, ok := deps.Manager.Get(plan.GameID); ok {

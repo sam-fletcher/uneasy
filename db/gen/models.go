@@ -138,22 +138,35 @@ type Marginalium struct {
 	TornByID *int64             `db:"torn_by_id" json:"torn_by_id"`
 }
 
+type PendingCounterDemand struct {
+	ID                int64              `db:"id" json:"id"`
+	GameID            int64              `db:"game_id" json:"game_id"`
+	DemandingPlayerID int64              `db:"demanding_player_id" json:"demanding_player_id"`
+	TargetPlayerID    int64              `db:"target_player_id" json:"target_player_id"`
+	OriginPlanID      int64              `db:"origin_plan_id" json:"origin_plan_id"`
+	CreatedAt         pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ResolvedAt        pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
+	ResolvedPlanID    *int64             `db:"resolved_plan_id" json:"resolved_plan_id"`
+}
+
 type Plan struct {
-	ID               int64                 `db:"id" json:"id"`
-	GameID           int64                 `db:"game_id" json:"game_id"`
-	PlanType         model.PlanType        `db:"plan_type" json:"plan_type"`
-	Category         model.RankingCategory `db:"category" json:"category"`
-	PreparerID       int64                 `db:"preparer_id" json:"preparer_id"`
-	TargetPlayerID   *int64                `db:"target_player_id" json:"target_player_id"`
-	TargetAssetID    *int64                `db:"target_asset_id" json:"target_asset_id"`
-	RowNumber        int16                 `db:"row_number" json:"row_number"`
-	RowOrder         int16                 `db:"row_order" json:"row_order"`
-	PreparedAtRow    int16                 `db:"prepared_at_row" json:"prepared_at_row"`
-	Status           model.PlanStatus      `db:"status" json:"status"`
-	Result           *string               `db:"result" json:"result"`
-	ResolvedAt       pgtype.Timestamptz    `db:"resolved_at" json:"resolved_at"`
-	PreparationNotes *string               `db:"preparation_notes" json:"preparation_notes"`
-	ResolutionData   *string               `db:"resolution_data" json:"resolution_data"`
+	ID                  int64                 `db:"id" json:"id"`
+	GameID              int64                 `db:"game_id" json:"game_id"`
+	PlanType            model.PlanType        `db:"plan_type" json:"plan_type"`
+	Category            model.RankingCategory `db:"category" json:"category"`
+	PreparerID          int64                 `db:"preparer_id" json:"preparer_id"`
+	TargetPlayerID      *int64                `db:"target_player_id" json:"target_player_id"`
+	TargetAssetID       *int64                `db:"target_asset_id" json:"target_asset_id"`
+	RowNumber           int16                 `db:"row_number" json:"row_number"`
+	RowOrder            int16                 `db:"row_order" json:"row_order"`
+	PreparedAtRow       int16                 `db:"prepared_at_row" json:"prepared_at_row"`
+	Status              model.PlanStatus      `db:"status" json:"status"`
+	Result              *string               `db:"result" json:"result"`
+	ResolvedAt          pgtype.Timestamptz    `db:"resolved_at" json:"resolved_at"`
+	PreparationNotes    *string               `db:"preparation_notes" json:"preparation_notes"`
+	ResolutionData      *string               `db:"resolution_data" json:"resolution_data"`
+	TargetedPlanID      *int64                `db:"targeted_plan_id" json:"targeted_plan_id"`
+	DemandOptionWinners []byte                `db:"demand_option_winners" json:"demand_option_winners"`
 }
 
 type PlanToken struct {

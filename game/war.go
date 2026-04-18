@@ -118,7 +118,7 @@ func ReversePowerOrder(players []int64, ranks map[int64]int16) []int64 {
 	return out
 }
 
-// AllCostsPaid returns the set of (payer, opponent) pairs still owed for the
+// MissingBattleCosts returns a slice of (payer, opponent) pairs still owed for the
 // given row. `activeParticipants` is the list of non-surrendered participants,
 // `sides` is the side map, and `paid` is the set of (payer, opponent) pairs
 // already satisfied.

@@ -109,9 +109,16 @@ func applyExchangeCourtiersMechanic(
 
 	// Only transfer if not already done via fair trade accept.
 	if resData.FairTradeAccepted == nil || !*resData.FairTradeAccepted {
+		// Incoming side may be redirected by a resolved Make Demands
+		// (keep_assets). Preparer's outgoing asset (handled via messy/
+		// fair trade paths) is not redirected.
+		recipient, err := gamepkg.AssetRecipientForPlan(ctx, q, plan)
+		if err != nil {
+			return err
+		}
 		if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
 			ID:      *plan.TargetAssetID,
-			OwnerID: plan.PreparerID,
+			OwnerID: recipient,
 		}); err != nil {
 			return err
 		}
@@ -120,7 +127,7 @@ func applyExchangeCourtiersMechanic(
 			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
 				Asset:      ta,
 				OldOwnerID: *plan.TargetPlayerID,
-				NewOwnerID: plan.PreparerID,
+				NewOwnerID: recipient,
 			})
 		}
 	}
@@ -243,10 +250,15 @@ func acceptFairTrade(
 		return
 	}
 
-	// Transfer targeted asset to preparer.
+	// Transfer targeted asset to preparer (or demand keep_assets winner).
+	recipient, err := gamepkg.AssetRecipientForPlan(ctx, q, plan)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not resolve asset recipient")
+		return
+	}
 	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
 		ID:      *plan.TargetAssetID,
-		OwnerID: plan.PreparerID,
+		OwnerID: recipient,
 	}); err != nil {
 		respondErr(w, http.StatusInternalServerError, "could not transfer targeted asset")
 		return
@@ -282,7 +294,7 @@ func acceptFairTrade(
 		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
 			Asset:      ta,
 			OldOwnerID: *plan.TargetPlayerID,
-			NewOwnerID: plan.PreparerID,
+			NewOwnerID: recipient,
 		})
 		oa, _ := q.GetAssetByID(ctx, *resData.FairTradeAssetID)
 		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{

@@ -143,9 +143,17 @@ func (pdHandler) ApplyChoice(
 		}
 
 		// The asset is owned by the signatory (or preparer if none).
-		ownerID := plan.PreparerID
+		// When no signatory, a resolved Make Demands with a keep_assets
+		// winner may redirect the preparer's share.
+		var ownerID int64
 		if resData.SignatoryID != nil {
 			ownerID = *resData.SignatoryID
+		} else {
+			recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+			if err != nil {
+				return fmt.Errorf("resolve asset recipient: %w", err)
+			}
+			ownerID = recipient
 		}
 
 		asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
