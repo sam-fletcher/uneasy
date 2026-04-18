@@ -200,6 +200,7 @@ func validatePlanPreparation(
 	planType model.PlanType,
 	targetPlayerID *int64,
 	targetAssetID *int64,
+	targetPlanID *int64,
 	peerCount int16,
 	enemyPlayerIDs []int64,
 	notes string,
@@ -258,6 +259,7 @@ func validatePlanPreparation(
 		Player:         player,
 		TargetPlayerID: targetPlayerID,
 		TargetAssetID:  targetAssetID,
+		TargetPlanID:   targetPlanID,
 		PeerCount:      peerCount,
 		EnemyPlayerIDs: enemyPlayerIDs,
 		Notes:          notes,
@@ -474,6 +476,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			PlanType         model.PlanType `json:"plan_type"`
 			TargetPlayerID   *int64         `json:"target_player_id"`
 			TargetAssetID    *int64         `json:"target_asset_id"`
+			TargetPlanID     *int64         `json:"target_plan_id"`
 			PeerCount        int16          `json:"peer_count"`
 			EnemyPlayerIDs   []int64        `json:"enemy_player_ids"`
 			PreparationNotes *string        `json:"preparation_notes"`
@@ -495,6 +498,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			body.PlanType,
 			body.TargetPlayerID,
 			body.TargetAssetID,
+			body.TargetPlanID,
 			body.PeerCount,
 			body.EnemyPlayerIDs,
 			notes,
@@ -549,6 +553,22 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				return
 			}
 			// Reload so OnPrepare sees the persisted enemy list.
+			refreshed, err := q.GetPlanByID(ctx, plan.ID)
+			if err == nil {
+				plan = refreshed
+			}
+		}
+
+		// Persist targeted_plan_id for Make Demands so OnPrepare / ComputeDifficulty
+		// can resolve the target without re-reading resolution_data.
+		if body.PlanType == model.PlanMakeDemands && body.TargetPlanID != nil {
+			if err := q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+				ID:             plan.ID,
+				TargetedPlanID: body.TargetPlanID,
+			}); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not persist demand target")
+				return
+			}
 			refreshed, err := q.GetPlanByID(ctx, plan.ID)
 			if err == nil {
 				plan = refreshed

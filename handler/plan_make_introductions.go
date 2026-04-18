@@ -7,6 +7,14 @@ package handler
 //
 // Make options (per peer): "retinue" (peer joins preparer), "independent"
 // (peer is unaffiliated), "gift" (peer goes to another player).
+//
+// TODO(make-demands keep_assets): MI peer assets are created via the generic
+// POST /api/tables/{id}/assets endpoint (see handler/assets.go CreateAsset),
+// which has no plan context and therefore cannot consult
+// gamepkg.AssetRecipientForPlan. If a Make Demands keep_assets winner must
+// also claim "retinue" peers gained here, the generic endpoint needs to
+// accept an optional plan_id and route ownership through that helper — or
+// MI needs to own its own peer-creation sub-route.
 // Mar options: "delayed" (peer arrives in d6 rows), "center" (peer goes to
 // center of table = owner_id NULL, handled via asset endpoint).
 //

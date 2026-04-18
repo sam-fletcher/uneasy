@@ -23,6 +23,11 @@ package handler
 // Mar: ALL players (not just preparer) each choose one option from the make list.
 // Non-preparer choices go through the mar-choice extra route.
 //
+// TODO(make-demands keep_assets): CH currently does not award any new asset
+// to the preparer — artifacts are invoked, not gained, and marginalia are
+// torn in place. If future rules add a preparer-gained asset to this plan,
+// route its owner through gamepkg.AssetRecipientForPlan(ctx, q, plan).
+//
 // Extra routes:
 //   POST /api/plans/:planId/invoke-artifact   {"asset_id": N}
 //   POST /api/plans/:planId/break-artifact    {"asset_id": N, "marginalia_id": M}
