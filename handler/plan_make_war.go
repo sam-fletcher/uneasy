@@ -89,12 +89,13 @@ func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	}
 
 	// Side 1: preparer.
-	if err := deps.Q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
+	err = deps.Q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
 		WarID:       war.ID,
 		PlayerID:    plan.PreparerID,
 		Side:        gamepkg.WarSideDeclarer,
 		JoinedAtRow: plan.PreparedAtRow,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("enrol preparer: %w", err)
 	}
 	// Side 2: declared enemies.
@@ -110,13 +111,13 @@ func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	}
 
 	// Open the simultaneous reveal (all participants submit a die face).
-	reveal, err := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
+	reveal, errReveal := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
 		GameID:     plan.GameID,
 		PlanID:     &plan.ID,
 		RevealType: "make_war_delay",
 	})
-	if err != nil {
-		return fmt.Errorf("create delay reveal: %w", err)
+	if errReveal != nil {
+		return fmt.Errorf("create delay reveal: %w", errReveal)
 	}
 	all := append([]int64{plan.PreparerID}, resData.WarEnemyPlayerIDs...)
 	for _, pid := range all {
@@ -326,9 +327,11 @@ func mwPostSceneHandler(deps *PlanDeps) http.HandlerFunc {
 
 // ── pay-battle-cost / propose-peace / vote-peace ─────────────────────────────
 //
-// Stubs — full cost-of-battle and peace-negotiation logic lands alongside the
-// turn.go row-advance gating in a follow-up commit. These endpoints exist now
-// so ExtraRoutes compiles and the routes resolve to a predictable 501.
+// Cost of battle is paid in reverse power order, one (payer, opponent) pair
+// at a time. The caller's turn is determined by asking MissingBattleCosts
+// for the first outstanding pair — if its PayerID matches the caller, they
+// are up next. Surrender and asset-taking after surrender are not yet wired;
+// see the TODO at the top of mwPayBattleCostHandler.
 
 // applyMakeWarDelayResult is invoked by reveals.go when the make_war_delay
 // simultaneous reveal completes. It sets the plan's row_number to
@@ -404,20 +407,441 @@ func applyMakeWarDelayResult(
 //go:fix inline
 func stringPtr(s string) *string { return new(s) }
 
-func mwPayBattleCostHandler(_ *PlanDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		respondErr(w, http.StatusNotImplemented, "pay-battle-cost not yet implemented")
+// mwPayBattleCostHandler handles POST /api/plans/:planId/pay-battle-cost.
+//
+// Body:
+//
+//	{
+//	  "opponent_id":    int64,
+//	  "choice":         "break_asset" | "leverage_two",
+//	  "marginalia_id":  int64,   // break_asset only — tear one marginalia
+//	  "asset_id_1":     int64,   // leverage_two only
+//	  "asset_id_2":     int64    // leverage_two only
+//	}
+//
+// TODO: surrender (do one of the above then surrender unconditionally; each
+// opponent takes one asset). Asset-taking after surrender is not implemented.
+func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !mwCheckPlan(w, plan) {
+			return
+		}
+		var body struct {
+			OpponentID   int64  `json:"opponent_id"`
+			Choice       string `json:"choice"`
+			MarginaliaID int64  `json:"marginalia_id"`
+			AssetID1     int64  `json:"asset_id_1"`
+			AssetID2     int64  `json:"asset_id_2"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if !gamepkg.IsValidBattleCostChoice(body.Choice) {
+			respondErr(w, http.StatusBadRequest, "choice must be break_asset or leverage_two")
+			return
+		}
+
+		ctx := r.Context()
+		war, ok := mwLoadWar(ctx, w, deps.Q, plan)
+		if !ok {
+			return
+		}
+		if war.Status != "active" {
+			respondErr(w, http.StatusConflict, "war is no longer active")
+			return
+		}
+		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load game")
+			return
+		}
+
+		snap, err := mwSnapshotWar(ctx, deps.Q, war)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load war participants")
+			return
+		}
+		ranks, err := mwPowerRanks(ctx, deps.Q, plan.GameID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load rankings")
+			return
+		}
+		missing, err := mwOutstandingCostsForWar(ctx, deps.Q, snap, ranks, game.CurrentRow)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not compute outstanding costs")
+			return
+		}
+		if len(missing) == 0 {
+			respondErr(w, http.StatusConflict, "no battle costs are outstanding this row")
+			return
+		}
+		// Strict reverse-power order: the first outstanding payer must be the caller.
+		if missing[0].PayerID != player.ID {
+			respondErr(w, http.StatusConflict,
+				"another participant must pay their battle cost first (reverse power order)")
+			return
+		}
+		// The requested opponent must be among the caller's outstanding opponents.
+		owesOpponent := false
+		for _, k := range missing {
+			if k.PayerID == player.ID && k.OpponentID == body.OpponentID {
+				owesOpponent = true
+				break
+			}
+		}
+		if !owesOpponent {
+			respondErr(w, http.StatusConflict, "you do not owe a cost to that opponent this row")
+			return
+		}
+
+		// Apply the chosen cost.
+		var assetID1, assetID2 *int64
+		switch body.Choice {
+		case gamepkg.WarCostBreakAsset:
+			m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
+			if err != nil {
+				respondErr(w, http.StatusNotFound, "marginalia not found")
+				return
+			}
+			asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
+			if err != nil || asset.OwnerID != player.ID {
+				respondErr(w, http.StatusForbidden, "marginalia must belong to an asset you own")
+				return
+			}
+			if asset.IsDestroyed {
+				respondErr(w, http.StatusConflict, "asset is already destroyed")
+				return
+			}
+			if m.IsTorn {
+				respondErr(w, http.StatusConflict, "marginalia is already torn")
+				return
+			}
+			if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+				ID:       m.ID,
+				TornByID: &player.ID,
+			}); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+				return
+			}
+			if h, ok := deps.Manager.Get(plan.GameID); ok {
+				h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+					AssetID: asset.ID, Position: m.Position, TornByID: player.ID,
+				})
+			}
+			// If every marginalia is now torn, destroy the asset.
+			intact, _ := deps.Q.CountIntactMarginalia(ctx, asset.ID)
+			if intact == 0 {
+				total, _ := deps.Q.CountMarginalia(ctx, asset.ID)
+				if total > 0 {
+					_ = deps.Q.DestroyAsset(ctx, asset.ID)
+					if h, ok := deps.Manager.Get(plan.GameID); ok {
+						h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
+					}
+				}
+			}
+			assetID1 = &asset.ID
+
+		case gamepkg.WarCostLeverageTwo:
+			if body.AssetID1 == 0 || body.AssetID2 == 0 || body.AssetID1 == body.AssetID2 {
+				respondErr(w, http.StatusBadRequest, "must specify two distinct assets to leverage")
+				return
+			}
+			for _, id := range []int64{body.AssetID1, body.AssetID2} {
+				a, err := deps.Q.GetAssetByID(ctx, id)
+				if err != nil {
+					respondErr(w, http.StatusNotFound, "asset not found")
+					return
+				}
+				if a.OwnerID != player.ID {
+					respondErr(w, http.StatusForbidden, "you can only leverage your own assets")
+					return
+				}
+				if a.IsDestroyed {
+					respondErr(w, http.StatusConflict, "asset is destroyed")
+					return
+				}
+				if a.IsLeveraged {
+					respondErr(w, http.StatusConflict, "asset is already leveraged")
+					return
+				}
+			}
+			for _, id := range []int64{body.AssetID1, body.AssetID2} {
+				if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+					ID: id, IsLeveraged: true,
+				}); err != nil {
+					respondErr(w, http.StatusInternalServerError, "could not leverage asset")
+					return
+				}
+			}
+			assetID1 = &body.AssetID1
+			assetID2 = &body.AssetID2
+		}
+
+		// Record the payment.
+		if _, err := deps.Q.CreateBattleCost(ctx, dbgen.CreateBattleCostParams{
+			WarID:       war.ID,
+			RowNumber:   game.CurrentRow,
+			PayerID:     player.ID,
+			OpponentID:  body.OpponentID,
+			Choice:      body.Choice,
+			AssetID1:    assetID1,
+			AssetID2:    assetID2,
+			Surrendered: false,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not record battle cost")
+			return
+		}
+
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			h.BroadcastEvent(model.EventWarBattleCostPaid, model.WarBattleCostPaidPayload{
+				WarID: war.ID, RowNumber: game.CurrentRow,
+				PayerID: player.ID, OpponentID: body.OpponentID,
+				Choice: body.Choice, Surrendered: false,
+			})
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"war_id":      war.ID,
+			"row_number":  game.CurrentRow,
+			"opponent_id": body.OpponentID,
+			"choice":      body.Choice,
+		})
 	}
 }
 
-func mwProposePeaceHandler(_ *PlanDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		respondErr(w, http.StatusNotImplemented, "propose-peace not yet implemented")
+// mwProposePeaceHandler handles POST /api/plans/:planId/propose-peace.
+//
+// Only the active participant whose turn it is to pay cost of battle (first
+// in reverse power order among outstanding payers) may propose peace, because
+// the proposal is itself the caller's cost-of-battle choice for that pair of
+// (payer, opponent). The proposer does not record a battle_cost row until the
+// vote concludes: if accepted the war ends (clearing all costs); if rejected
+// the proposer must still pay using break_asset or leverage_two.
+//
+// Body: {"terms": "..."}
+func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !mwCheckPlan(w, plan) {
+			return
+		}
+		var body struct {
+			Terms string `json:"terms"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if body.Terms == "" {
+			respondErr(w, http.StatusBadRequest, "terms required")
+			return
+		}
+		ctx := r.Context()
+		war, ok := mwLoadWar(ctx, w, deps.Q, plan)
+		if !ok {
+			return
+		}
+		if war.Status != "active" {
+			respondErr(w, http.StatusConflict, "war is no longer active")
+			return
+		}
+		if _, err := deps.Q.GetOpenPeaceProposal(ctx, war.ID); err == nil {
+			respondErr(w, http.StatusConflict, "an open peace proposal already exists for this war")
+			return
+		}
+
+		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load game")
+			return
+		}
+		snap, err := mwSnapshotWar(ctx, deps.Q, war)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load war participants")
+			return
+		}
+		ranks, err := mwPowerRanks(ctx, deps.Q, plan.GameID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load rankings")
+			return
+		}
+		missing, err := mwOutstandingCostsForWar(ctx, deps.Q, snap, ranks, game.CurrentRow)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not compute outstanding costs")
+			return
+		}
+		if len(missing) == 0 || missing[0].PayerID != player.ID {
+			respondErr(w, http.StatusConflict,
+				"only the active participant whose turn it is to pay cost of battle may propose peace")
+			return
+		}
+
+		prop, err := deps.Q.CreatePeaceProposal(ctx, dbgen.CreatePeaceProposalParams{
+			WarID:      war.ID,
+			ProposerID: player.ID,
+			Terms:      body.Terms,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not create peace proposal")
+			return
+		}
+
+		// Proposer's vote is implicitly accept.
+		_ = deps.Q.UpsertPeaceVote(ctx, dbgen.UpsertPeaceVoteParams{
+			ProposalID: prop.ID,
+			PlayerID:   player.ID,
+			Accepted:   true,
+		})
+
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			h.BroadcastEvent(model.EventWarPeaceProposed, model.WarPeaceProposedPayload{
+				WarID: war.ID, ProposalID: prop.ID,
+				ProposerID: player.ID, Terms: body.Terms,
+			})
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"proposal_id": prop.ID,
+			"war_id":      war.ID,
+		})
 	}
 }
 
-func mwVotePeaceHandler(_ *PlanDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		respondErr(w, http.StatusNotImplemented, "vote-peace not yet implemented")
+// mwVotePeaceHandler handles POST /api/plans/:planId/vote-peace.
+//
+// Body: {"proposal_id": int64, "accepted": bool}
+//
+// Any active participant may vote. A single "reject" closes the proposal; the
+// proposer must then pay their cost with break_asset or leverage_two. Once
+// every active participant has voted accept, the war ends with reason=peace.
+func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if !mwCheckPlan(w, plan) {
+			return
+		}
+		var body struct {
+			ProposalID int64 `json:"proposal_id"`
+			Accepted   bool  `json:"accepted"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		ctx := r.Context()
+		war, ok := mwLoadWar(ctx, w, deps.Q, plan)
+		if !ok {
+			return
+		}
+		prop, err := deps.Q.GetPeaceProposal(ctx, body.ProposalID)
+		if err != nil || prop.WarID != war.ID {
+			respondErr(w, http.StatusNotFound, "peace proposal not found")
+			return
+		}
+		if prop.Status != gamepkg.PeaceOpen {
+			respondErr(w, http.StatusConflict, "proposal is already resolved")
+			return
+		}
+
+		// Caller must be an active participant.
+		part, err := deps.Q.GetWarParticipant(ctx, dbgen.GetWarParticipantParams{
+			WarID: war.ID, PlayerID: player.ID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusForbidden, "you are not a participant in this war")
+			return
+		}
+		if part.SurrenderedAtRow != nil {
+			respondErr(w, http.StatusForbidden, "surrendered players cannot vote on peace")
+			return
+		}
+
+		err = deps.Q.UpsertPeaceVote(ctx, dbgen.UpsertPeaceVoteParams{
+			ProposalID: prop.ID,
+			PlayerID:   player.ID,
+			Accepted:   body.Accepted,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not record vote")
+			return
+		}
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			h.BroadcastEvent(model.EventWarPeaceVote, model.WarPeaceVotePayload{
+				WarID: war.ID, ProposalID: prop.ID,
+				PlayerID: player.ID, Accepted: body.Accepted,
+			})
+		}
+
+		// If this was a rejection, close the proposal immediately.
+		if !body.Accepted {
+			_ = deps.Q.SetPeaceProposalStatus(ctx, dbgen.SetPeaceProposalStatusParams{
+				ID:     prop.ID,
+				Status: gamepkg.PeaceRejected,
+			})
+			respond(w, http.StatusOK, map[string]any{
+				"proposal_id": prop.ID,
+				"status":      gamepkg.PeaceRejected,
+			})
+			return
+		}
+
+		// Check unanimity among active participants.
+		active, err := deps.Q.ListActiveWarParticipants(ctx, war.ID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load active participants")
+			return
+		}
+		votes, err := deps.Q.ListPeaceVotes(ctx, prop.ID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load votes")
+			return
+		}
+		accepted := map[int64]bool{}
+		for _, v := range votes {
+			if v.Accepted {
+				accepted[v.PlayerID] = true
+			}
+		}
+		for _, a := range active {
+			if !accepted[a.PlayerID] {
+				respond(w, http.StatusOK, map[string]any{
+					"proposal_id": prop.ID,
+					"status":      gamepkg.PeaceOpen,
+					"awaiting":    a.PlayerID,
+				})
+				return
+			}
+		}
+
+		// Unanimous — accept the proposal and end the war.
+		game, _ := deps.Q.GetGameByID(ctx, plan.GameID)
+		_ = deps.Q.SetPeaceProposalStatus(ctx, dbgen.SetPeaceProposalStatusParams{
+			ID:     prop.ID,
+			Status: gamepkg.PeaceAccepted,
+		})
+		_ = deps.Q.EndWar(ctx, dbgen.EndWarParams{
+			ID:         war.ID,
+			EndReason:  stringPtr(gamepkg.WarEndPeace),
+			EndedAtRow: &game.CurrentRow,
+		})
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			h.BroadcastEvent(model.EventWarEnded, model.WarEndedPayload{
+				WarID: war.ID, Reason: gamepkg.WarEndPeace, RowNumber: game.CurrentRow,
+			})
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"proposal_id": prop.ID,
+			"status":      gamepkg.PeaceAccepted,
+			"war_ended":   true,
+		})
 	}
 }

@@ -294,6 +294,14 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		h, _ := manager.Get(game.ID) // nil if no clients connected — advanceRowInner handles nil
 
+		if outstanding, err := mwOutstandingCostsForGame(r.Context(), q, game.ID, game.CurrentRow); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not check battle costs")
+			return
+		} else if len(outstanding) > 0 {
+			respondErr(w, http.StatusConflict, "outstanding battle costs must be paid before advancing the row")
+			return
+		}
+
 		newRow, ended, err := advanceRowInner(r, q, h, game)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not advance row")
@@ -304,6 +312,7 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respond(w, http.StatusOK, map[string]any{"phase": model.PhaseEnded})
 			return
 		}
+		mwBroadcastBattleCostsDue(r.Context(), q, manager, game.ID, newRow)
 		respond(w, http.StatusOK, map[string]any{
 			"row_number":        newRow,
 			"crossed_engrailed": isEngrailedLine(game.CurrentRow, newRow),
@@ -387,7 +396,23 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Step 8: no plans remain — advance the row automatically.
+		// Step 8: no plans remain — advance the row automatically, unless
+		// any active war still has unpaid battle costs for the current row.
+		if outstanding, costErr := mwOutstandingCostsForGame(
+			ctx,
+			q,
+			game.ID,
+			game.CurrentRow,
+		); costErr == nil &&
+			len(outstanding) > 0 {
+			respond(w, http.StatusOK, map[string]any{
+				"focus_player_id":   next.ID,
+				"focus_player_name": next.DisplayName,
+				"advance_blocked":   "outstanding battle costs must be paid before the row can advance",
+			})
+			return
+		}
+
 		// Focus stays with `next` (they carry it into the new row).
 		newRow, ended, err := advanceRowInner(r, q, h, game)
 		if err != nil {
@@ -410,6 +435,7 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		mwBroadcastBattleCostsDue(ctx, q, manager, game.ID, newRow)
 		respond(w, http.StatusOK, map[string]any{
 			"focus_player_id":   next.ID,
 			"focus_player_name": next.DisplayName,
