@@ -24,6 +24,7 @@
 	import ExchangeCourtiersPanel from './plans/ExchangeCourtiersPanel.svelte';
 	import MakeIntroductionsPanel from './plans/MakeIntroductionsPanel.svelte';
 	import SpreadPropagandaPanel from './plans/SpreadPropagandaPanel.svelte';
+	import SeekAnswersPanel from './plans/SeekAnswersPanel.svelte';
 
 	interface Props {
 		gameID: number;
@@ -141,6 +142,11 @@
 			{gameID} {assets} {players} {currentPlayerID}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
+	{:else if plan.plan_type === 'seek_answers'}
+		<SeekAnswersPanel mode="resolve"
+			{gameID} {assets} {players} {currentPlayerID}
+			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
+			{onRollCreated} {onPlansChanged} />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
@@ -217,6 +223,10 @@
 				{onPlanPrepared} />
 		{:else if selectedPlanType === 'spread_propaganda'}
 			<SpreadPropagandaPanel mode="prep"
+				{gameID} {assets} {players} {currentPlayerID}
+				{onPlanPrepared} />
+		{:else if selectedPlanType === 'seek_answers'}
+			<SeekAnswersPanel mode="prep"
 				{gameID} {assets} {players} {currentPlayerID}
 				{onPlanPrepared} />
 		{:else if selectedPlanType}
