@@ -677,3 +677,327 @@ export function messyBreak(planID: number, marginaliaID: number): Promise<{
 		body: JSON.stringify({ marginalia_id: marginaliaID }),
 	});
 }
+
+// ── Plans (Phase 3 — Tier 1) ─────────────────────────────────────────────────
+//
+// Thin wrappers, one per endpoint in PHASE3_SPEC.md §New Endpoints — Tier 1.
+// Response shapes are loose (plan_id + occasional extras) because backends
+// mostly echo the plan and rely on WS for detailed state.
+
+type PlanEcho = { plan_id: number } & Record<string, unknown>;
+
+/** Seek Answers — break a marginalia on a target resource asset. */
+export function breakResource(planID: number, assetID: number, marginaliaPosition: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/break-resource`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID, marginalia_position: marginaliaPosition }),
+	});
+}
+
+/** Seek Answers — grant the preparer visibility into a secret-bearing asset. */
+export function revealSecret(planID: number, assetID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/reveal-secret`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID }),
+	});
+}
+
+/** Spread Rumors — break a marginalia on the rumor's target asset. */
+export function breakTarget(planID: number, marginaliaPosition: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/break-target`, {
+		method: 'POST',
+		body: JSON.stringify({ marginalia_position: marginaliaPosition }),
+	});
+}
+
+/**
+ * Spread Rumors — consent-based asset transfer from target to preparer.
+ * (Named `takeRumorAsset` to avoid collision with the asset-level `takeAsset`.)
+ */
+export function takeRumorAsset(planID: number, assetID: number, consent: boolean): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/take-asset`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID, consent }),
+	});
+}
+
+/** Spread Rumors — hide the rumor source behind a secret-bearing asset. */
+export function hideSource(planID: number, secretAssetID: number, secretText: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/hide-source`, {
+		method: 'POST',
+		body: JSON.stringify({ secret_asset_id: secretAssetID, secret_text: secretText }),
+	});
+}
+
+/** Chronicle Histories — add an artifact to the invoked list (pre-roll or via make option). */
+export function invokeArtifact(planID: number, assetID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/invoke-artifact`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID }),
+	});
+}
+
+/** Chronicle Histories — break a marginalia on an invoked artifact. */
+export function breakArtifact(planID: number, assetID: number, marginaliaPosition: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/break-artifact`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID, marginalia_position: marginaliaPosition }),
+	});
+}
+
+/** Chronicle Histories — non-preparer submits their mar choice. */
+export function marChoice(planID: number, playerID: number, choice: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/mar-choice`, {
+		method: 'POST',
+		body: JSON.stringify({ player_id: playerID, choice }),
+	});
+}
+
+// ── Plans (Phase 3 — Tier 2) ─────────────────────────────────────────────────
+
+/** Propose Decree — join the council by leveraging one or more assets. */
+export function joinCouncil(planID: number, assetIDs: number[]): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/join-council`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_ids: assetIDs }),
+	});
+}
+
+/** Propose Decree — the current signatory closes the council and triggers the roll. */
+export function callRoll(planID: number): Promise<{ plan_id: number; roll?: DiceRoll }> {
+	return apiFetch(`/plans/${planID}/call-roll`, { method: 'POST' });
+}
+
+/** Propose Decree — signatory sets the addendum text after a make. */
+export function setAddendum(planID: number, addendum: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/set-addendum`, {
+		method: 'POST',
+		body: JSON.stringify({ addendum }),
+	});
+}
+
+/** Clandestinely Liaise (phase 2) — commit a secret-bearing asset. */
+export function keepSecret(planID: number, assetID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/keep-secret`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID }),
+	});
+}
+
+/** Clandestinely Liaise (phase 3) — submit a "Things We Share" choice. */
+export function shareChoice(
+	planID: number,
+	body: { choice: string; target_asset_id?: number | null; die_face?: number | null }
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/share-choice`, {
+		method: 'POST',
+		body: JSON.stringify(body),
+	});
+}
+
+/** Clandestinely Liaise (phase 4) — submit re-delay die face (0 = cancel). */
+export function redelayReveal(planID: number, face: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/redelay-reveal`, {
+		method: 'POST',
+		body: JSON.stringify({ face }),
+	});
+}
+
+/** Spend a banked die on this roll. */
+export function useBankedDie(rollID: number, bankedDieID: number): Promise<{ roll_id: number }> {
+	return apiFetch(`/rolls/${rollID}/use-banked-die`, {
+		method: 'POST',
+		body: JSON.stringify({ banked_die_id: bankedDieID }),
+	});
+}
+
+// ── Simultaneous reveals (shared) ────────────────────────────────────────────
+
+export type RevealType = 'make_war_delay' | 'liaise_delay' | 'liaise_redelay';
+
+export interface SimultaneousRevealEntry {
+	player_id: number;
+	/** Null until the reveal completes; then populated for every participant. */
+	face: number | null;
+	revealed_at: string | null;
+}
+
+export interface SimultaneousReveal {
+	id: number;
+	game_id: number;
+	plan_id: number | null;
+	reveal_type: RevealType;
+	is_complete: boolean;
+	result_delay: number | null;
+	entries: SimultaneousRevealEntry[];
+}
+
+/** Submit a die face for a simultaneous reveal. */
+export function submitReveal(revealID: number, face: number): Promise<{ reveal_id: number; is_complete: boolean }> {
+	return apiFetch(`/reveals/${revealID}/submit`, {
+		method: 'POST',
+		body: JSON.stringify({ face }),
+	});
+}
+
+/** Fetch reveal state. Faces stay hidden until every participant has submitted. */
+export function getReveal(revealID: number): Promise<SimultaneousReveal> {
+	return apiFetch(`/reveals/${revealID}`);
+}
+
+// ── Plans (Phase 3 — Tier 3) ─────────────────────────────────────────────────
+
+// Propose Duel.
+
+/** Propose Duel — elect a peer as champion (omit asset_id to fight yourself). */
+export function electChampion(planID: number, assetID: number | null): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/elect-champion`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID }),
+	});
+}
+
+/** Propose Duel — simultaneously reveal stake count (1..1+status). */
+export function stakeReveal(planID: number, count: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/stake-reveal`, {
+		method: 'POST',
+		body: JSON.stringify({ count }),
+	});
+}
+
+/** Propose Duel — select the specific assets to stake. */
+export function selectStakes(planID: number, assetIDs: number[]): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/select-stakes`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_ids: assetIDs }),
+	});
+}
+
+/** Propose Duel — declarer picks a stake and declares high or low. */
+export function boutDeclare(planID: number, stakeID: number, declaration: 'high' | 'low'): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/bout-declare`, {
+		method: 'POST',
+		body: JSON.stringify({ stake_id: stakeID, declaration }),
+	});
+}
+
+/** Propose Duel — responder picks their stake; server resolves the bout. */
+export function boutRespond(planID: number, stakeID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/bout-respond`, {
+		method: 'POST',
+		body: JSON.stringify({ stake_id: stakeID }),
+	});
+}
+
+// Host Festivity.
+
+/** Host Festivity — join as a guest. */
+export function joinFestivity(planID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/join-festivity`, { method: 'POST' });
+}
+
+/** Host Festivity — guest commits to rolling or opts out. */
+export function guestRoll(planID: number, action: 'roll' | 'opt_out'): Promise<{ plan_id: number; roll?: DiceRoll }> {
+	return apiFetch(`/plans/${planID}/guest-roll`, {
+		method: 'POST',
+		body: JSON.stringify({ action }),
+	});
+}
+
+/** Host Festivity — guest submits their make/mar choice after rolling. */
+export function guestChoice(
+	planID: number,
+	body: { choice: string } & Record<string, unknown>
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/guest-choice`, {
+		method: 'POST',
+		body: JSON.stringify(body),
+	});
+}
+
+/** Host Festivity — host submits a make choice on behalf of a mar/opt-out guest. */
+export function hostChoice(
+	planID: number,
+	body: { target_player_id: number; choice: string } & Record<string, unknown>
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/host-choice`, {
+		method: 'POST',
+		body: JSON.stringify(body),
+	});
+}
+
+/** Host Festivity — challenge a guest to a duel; spawns a Propose Duel plan. */
+export function challengeDuel(planID: number, targetPlayerID: number): Promise<{ plan_id: number; duel_plan_id: number }> {
+	return apiFetch(`/plans/${planID}/challenge-duel`, {
+		method: 'POST',
+		body: JSON.stringify({ target_player_id: targetPlayerID }),
+	});
+}
+
+// Make War.
+
+/** Make War — uninvited player joins a side before the delay reveal completes. */
+export function joinWar(planID: number, side: 1 | 2): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/join-war`, {
+		method: 'POST',
+		body: JSON.stringify({ side }),
+	});
+}
+
+/** Make War — submit die face for the delay reveal. */
+export function warReveal(planID: number, face: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/war-reveal`, {
+		method: 'POST',
+		body: JSON.stringify({ face }),
+	});
+}
+
+/** Make War — pay the cost of battle (break asset, leverage two, surrender, negotiate). */
+export function payBattleCost(
+	planID: number,
+	body: { choice: string; asset_id?: number | null } & Record<string, unknown>
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/pay-battle-cost`, {
+		method: 'POST',
+		body: JSON.stringify(body),
+	});
+}
+
+/** Make War — propose peace terms. */
+export function proposePeace(planID: number, terms: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/propose-peace`, {
+		method: 'POST',
+		body: JSON.stringify({ terms }),
+	});
+}
+
+/** Make War — accept proposed peace terms. */
+export function acceptPeace(planID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/accept-peace`, { method: 'POST' });
+}
+
+/** Make War — reject proposed peace terms. */
+export function rejectPeace(planID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/reject-peace`, { method: 'POST' });
+}
+
+// Make Demands.
+
+/** Make Demands — pick a draft option on your turn in the alternating draft. */
+export function draftChoice(planID: number, option: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/draft-choice`, {
+		method: 'POST',
+		body: JSON.stringify({ option }),
+	});
+}
+
+/**
+ * Make Demands — target places a counter Make Demands.
+ * Pass `targetPlanID = null` to attach the counter to the target's next prepared plan.
+ */
+export function counterDemand(planID: number, targetPlanID: number | null): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/counter-demand`, {
+		method: 'POST',
+		body: JSON.stringify({ target_plan_id: targetPlanID }),
+	});
+}
