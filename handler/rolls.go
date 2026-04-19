@@ -27,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 	"uneasy/model"
@@ -289,6 +290,24 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			if d.LeveragedAssetID != nil && *d.LeveragedAssetID == body.AssetID {
 				respondErr(w, http.StatusConflict, "asset is already committed to this roll")
 				return
+			}
+		}
+
+		// If this roll is tied to a plan that has an active control_leverage
+		// winner on a resolved demand, the target preparer may not leverage
+		// their own assets on this roll — that right belongs to the demand
+		// winner via /demand-leverage. Other participants leverage normally.
+		if roll.PlanID != nil {
+			plan, perr := q.GetPlanByID(ctx, *roll.PlanID)
+			if perr == nil && player.ID == plan.PreparerID && asset.OwnerID == plan.PreparerID {
+				_, winners, werr := gamepkg.DemandWinnersForTargetPlan(ctx, q, &plan)
+				if werr == nil {
+					if winnerID, hasWinner := winners[gamepkg.DemandOptionControlLeverage]; hasWinner && winnerID != 0 && winnerID != plan.PreparerID {
+						respondErr(w, http.StatusForbidden,
+							"a demand's control_leverage winner has taken over leverage of your assets on this roll")
+						return
+					}
+				}
 			}
 		}
 

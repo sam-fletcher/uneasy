@@ -77,6 +77,14 @@ UPDATE plans SET targeted_plan_id = NULL WHERE id = $1;
 -- draft completes. Read by the target plan's resolution path.
 UPDATE plans SET demand_option_winners = $2 WHERE id = $1;
 
+-- name: SetPlanTargets :exec
+-- Updates target_player_id and target_asset_id on a plan. Used by the
+-- Make Demands keep_or_change_target winner to retarget a plan via the
+-- demand-retarget endpoint.
+UPDATE plans
+SET target_player_id = $2, target_asset_id = $3
+WHERE id = $1;
+
 -- name: SetPlanTargetedPlan :exec
 -- Sets targeted_plan_id on a Make Demands plan row. Called from OnPrepare
 -- after the plan row has been created.

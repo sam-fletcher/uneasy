@@ -65,3 +65,37 @@ func AssetRecipientForPlan(
 	}
 	return plan.PreparerID, nil
 }
+
+// DemandWinnersForTargetPlan returns the resolved made demand (if any) that
+// targets the given plan, along with its decoded option-winners map. Returns
+// (nil, nil, nil) if no such demand exists. Used by target-plan integration
+// paths (leverage, retarget, perform-steps) to check who — if anyone — has
+// won a given demand option against this plan.
+func DemandWinnersForTargetPlan(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+) (*dbgen.Plan, DemandOptionWinners, error) {
+	demands, err := q.GetPlansTargeting(ctx, &plan.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("look up demands targeting plan %d: %w", plan.ID, err)
+	}
+	for i := range demands {
+		d := demands[i]
+		if d.Status != model.PlanResolved {
+			continue
+		}
+		if d.Result == nil || *d.Result != "make" {
+			continue
+		}
+		if len(d.DemandOptionWinners) == 0 {
+			continue
+		}
+		var winners DemandOptionWinners
+		if err := json.Unmarshal(d.DemandOptionWinners, &winners); err != nil {
+			return nil, nil, fmt.Errorf("decode demand_option_winners for plan %d: %w", d.ID, err)
+		}
+		return &d, winners, nil
+	}
+	return nil, nil, nil
+}

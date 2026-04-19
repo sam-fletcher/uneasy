@@ -692,3 +692,23 @@ func (q *Queries) SetPlanTargetedPlan(ctx context.Context, arg SetPlanTargetedPl
 	_, err := q.db.Exec(ctx, setPlanTargetedPlan, arg.ID, arg.TargetedPlanID)
 	return err
 }
+
+const setPlanTargets = `-- name: SetPlanTargets :exec
+UPDATE plans
+SET target_player_id = $2, target_asset_id = $3
+WHERE id = $1
+`
+
+type SetPlanTargetsParams struct {
+	ID             int64  `db:"id" json:"id"`
+	TargetPlayerID *int64 `db:"target_player_id" json:"target_player_id"`
+	TargetAssetID  *int64 `db:"target_asset_id" json:"target_asset_id"`
+}
+
+// Updates target_player_id and target_asset_id on a plan. Used by the
+// Make Demands keep_or_change_target winner to retarget a plan via the
+// demand-retarget endpoint.
+func (q *Queries) SetPlanTargets(ctx context.Context, arg SetPlanTargetsParams) error {
+	_, err := q.db.Exec(ctx, setPlanTargets, arg.ID, arg.TargetPlayerID, arg.TargetAssetID)
+	return err
+}

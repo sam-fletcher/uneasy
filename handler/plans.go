@@ -41,6 +41,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 	"uneasy/model"
@@ -700,9 +701,35 @@ func ResolvePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //	}
 func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, _, ok := requirePlanFocus(w, r, q)
+		plan, player, ok := requirePlanAccess(w, r, q)
 		if !ok {
 			return
+		}
+		game, err := q.GetGameByID(r.Context(), plan.GameID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "table not found")
+			return
+		}
+		if game.Phase != model.PhaseMainEvent {
+			respondErr(w, http.StatusConflict, "game is not in the main event phase")
+			return
+		}
+		// Normally only the focus player may make plan choices. A Make Demands
+		// perform_steps winner can submit preparer-equivalent choices on the
+		// target plan even if they're not the focus player.
+		isFocus := game.FocusPlayerID != nil && *game.FocusPlayerID == player.ID
+		if !isFocus {
+			_, winners, werr := gamepkg.DemandWinnersForTargetPlan(r.Context(), q, plan)
+			allowed := false
+			if werr == nil {
+				if winnerID, ok := winners[gamepkg.DemandOptionPerformSteps]; ok && winnerID != 0 && winnerID == player.ID && winnerID != plan.PreparerID {
+					allowed = true
+				}
+			}
+			if !allowed {
+				respondErr(w, http.StatusForbidden, "only the focus player can do this")
+				return
+			}
 		}
 		if plan.Status != model.PlanResolving {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
