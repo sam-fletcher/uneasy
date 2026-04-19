@@ -152,3 +152,48 @@ type BattleCostKey struct {
 	PayerID    int64
 	OpponentID int64
 }
+
+// SurrenderOutcome returns whether the war should end after payerID surrenders
+// and, if so, the reason. `sides` maps player_id → side for all full
+// participants (including the payer and anyone previously surrendered).
+// `surrendered` is the set of player_ids who had already surrendered before
+// this call — the payer is treated as surrendered regardless of the map.
+//
+// The war ends when at least one side has no remaining active participants;
+// reason is WarEndAllSurrendered if both sides are empty, WarEndSurrender
+// otherwise.
+func SurrenderOutcome(
+	sides map[int64]int16,
+	surrendered map[int64]bool,
+	payerID int64,
+) (ended bool, reason string) {
+	remaining := map[int16]int{}
+	for id, side := range sides {
+		if id == payerID || surrendered[id] {
+			continue
+		}
+		remaining[side]++
+	}
+	side1, side2 := remaining[WarSideDeclarer], remaining[WarSideEnemy]
+	if side1 > 0 && side2 > 0 {
+		return false, ""
+	}
+	if side1 == 0 && side2 == 0 {
+		return true, WarEndAllSurrendered
+	}
+	return true, WarEndSurrender
+}
+
+// PeaceTally reports whether every active participant has voted accept.
+// If not, it names the first (by iteration order of `active`) awaited voter.
+// `active` is the list of active (non-surrendered) participants; `votes`
+// holds accept votes keyed by player_id (missing entries and explicit false
+// both count as "not yet accepted").
+func PeaceTally(active []int64, votes map[int64]bool) (unanimous bool, awaiting int64) {
+	for _, p := range active {
+		if !votes[p] {
+			return false, p
+		}
+	}
+	return true, 0
+}

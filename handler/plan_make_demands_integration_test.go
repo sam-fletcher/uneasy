@@ -1,7 +1,6 @@
 //go:build integration
 
-// Run with:
-// TEST_DATABASE_URL='postgres://uneasy:uneasy@localhost:5432/uneasy_test?sslmode=disable' go test -tags=integration ./...
+// TEST_DATABASE_URL stored in .env
 
 package handler
 

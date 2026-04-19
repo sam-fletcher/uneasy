@@ -1,11 +1,5 @@
 package game
 
-import (
-	"fmt"
-
-	"uneasy/model"
-)
-
 // DiceSides is the number of sides on a standard die used in the game.
 const DiceSides = 6
 
@@ -65,45 +59,4 @@ func ProposeDecreeDifficulty(preparerPowerRank int16) int16 {
 // esteem rank. Difficulty = target's esteem status = 6 - rank (minimum 1).
 func ProposeDuelDifficulty(targetEsteemRank int16) int16 {
 	return max(int16(DiceSides)-targetEsteemRank, 1)
-}
-
-// ── Aggregate dispatcher (for tests) ────────────────────────────────────────
-
-// ComputeDifficultyPure returns the base difficulty without hitting the database.
-// Used directly by unit tests. relevantRank meaning per plan type:
-//
-//   - Exchange Courtiers:   target player's power rank
-//   - Make Introductions:   ignored (PeerCount in resData drives difficulty)
-//   - Spread Propaganda:    preparer's esteem rank
-//   - Seek Answers:         preparer's knowledge rank
-//   - Spread Rumors:        if target is main char → target's esteem rank;
-//     otherwise → preparer's esteem rank. Pass targetIsMainChar=true for former.
-//   - Chronicle Histories:  preparer's knowledge rank (artifact count in resData)
-//   - Propose Decree:       preparer's power rank
-//   - Clandestinely Liaise: not applicable (no dice roll)
-func ComputeDifficultyPure(
-	planType model.PlanType,
-	resData ResolutionData,
-	relevantRank int16,
-	targetIsMainChar ...bool,
-) (int16, error) {
-	switch planType {
-	case model.PlanExchangeCourtiers:
-		return ExchangeCourtiersDifficulty(relevantRank), nil
-	case model.PlanMakeIntroductions:
-		return MakeIntroductionsDifficulty(resData), nil
-	case model.PlanSpreadPropaganda:
-		return SpreadPropagandaDifficulty(relevantRank), nil
-	case model.PlanSeekAnswers:
-		return SeekAnswersDifficulty(relevantRank), nil
-	case model.PlanSpreadRumors:
-		isMain := len(targetIsMainChar) > 0 && targetIsMainChar[0]
-		return SpreadRumorsDifficulty(relevantRank, isMain), nil
-	case model.PlanChronicleHistories:
-		return ChronicleHistoriesDifficulty(relevantRank, resData), nil
-	case model.PlanProposeDecree:
-		return ProposeDecreeDifficulty(relevantRank), nil
-	default:
-		return 0, fmt.Errorf("unsupported plan type: %s", planType)
-	}
 }

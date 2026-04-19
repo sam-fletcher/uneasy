@@ -133,3 +133,102 @@ func TestIsValidBattleCostChoice(t *testing.T) {
 		t.Error("unknown choices should be invalid")
 	}
 }
+
+func TestSurrenderOutcome(t *testing.T) {
+	cases := []struct {
+		name        string
+		sides       map[int64]int16
+		surrendered map[int64]bool
+		payer       int64
+		wantEnded   bool
+		wantReason  string
+	}{
+		{
+			name:        "opponent remains on each side — war continues",
+			sides:       map[int64]int16{1: WarSideDeclarer, 2: WarSideDeclarer, 3: WarSideEnemy, 4: WarSideEnemy},
+			surrendered: map[int64]bool{},
+			payer:       1,
+			wantEnded:   false,
+		},
+		{
+			name:        "payer was last on their side — war ends, surrender",
+			sides:       map[int64]int16{1: WarSideDeclarer, 2: WarSideEnemy, 3: WarSideEnemy},
+			surrendered: map[int64]bool{},
+			payer:       1,
+			wantEnded:   true,
+			wantReason:  WarEndSurrender,
+		},
+		{
+			name:        "both sides empty after this surrender — all-surrendered",
+			sides:       map[int64]int16{1: WarSideDeclarer, 2: WarSideEnemy},
+			surrendered: map[int64]bool{2: true},
+			payer:       1,
+			wantEnded:   true,
+			wantReason:  WarEndAllSurrendered,
+		},
+		{
+			name:        "prior surrenders ignored on payer's own side",
+			sides:       map[int64]int16{1: WarSideDeclarer, 2: WarSideDeclarer, 3: WarSideEnemy},
+			surrendered: map[int64]bool{2: true},
+			payer:       1,
+			wantEnded:   true,
+			wantReason:  WarEndSurrender,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ended, reason := SurrenderOutcome(tc.sides, tc.surrendered, tc.payer)
+			if ended != tc.wantEnded {
+				t.Errorf("ended = %v, want %v", ended, tc.wantEnded)
+			}
+			if ended && reason != tc.wantReason {
+				t.Errorf("reason = %q, want %q", reason, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestPeaceTally(t *testing.T) {
+	t.Run("unanimous accept", func(t *testing.T) {
+		unanimous, awaiting := PeaceTally(
+			[]int64{1, 2, 3},
+			map[int64]bool{1: true, 2: true, 3: true},
+		)
+		if !unanimous || awaiting != 0 {
+			t.Errorf("got (%v, %d), want (true, 0)", unanimous, awaiting)
+		}
+	})
+	t.Run("one missing vote is awaited", func(t *testing.T) {
+		unanimous, awaiting := PeaceTally(
+			[]int64{1, 2, 3},
+			map[int64]bool{1: true, 3: true},
+		)
+		if unanimous || awaiting != 2 {
+			t.Errorf("got (%v, %d), want (false, 2)", unanimous, awaiting)
+		}
+	})
+	t.Run("explicit false counts as missing", func(t *testing.T) {
+		unanimous, awaiting := PeaceTally(
+			[]int64{1, 2},
+			map[int64]bool{1: true, 2: false},
+		)
+		if unanimous || awaiting != 2 {
+			t.Errorf("got (%v, %d), want (false, 2)", unanimous, awaiting)
+		}
+	})
+	t.Run("first missing in active-order is returned", func(t *testing.T) {
+		unanimous, awaiting := PeaceTally(
+			[]int64{5, 3, 7},
+			map[int64]bool{5: true},
+		)
+		if unanimous || awaiting != 3 {
+			t.Errorf("got (%v, %d), want (false, 3)", unanimous, awaiting)
+		}
+	})
+	t.Run("empty active list is vacuously unanimous", func(t *testing.T) {
+		unanimous, awaiting := PeaceTally(nil, map[int64]bool{})
+		if !unanimous || awaiting != 0 {
+			t.Errorf("got (%v, %d), want (true, 0)", unanimous, awaiting)
+		}
+	})
+}

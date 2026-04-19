@@ -524,87 +524,12 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Apply the chosen cost.
-		var assetID1, assetID2 *int64
-		switch body.Choice {
-		case gamepkg.WarCostBreakAsset:
-			m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
-			if err != nil {
-				respondErr(w, http.StatusNotFound, "marginalia not found")
-				return
-			}
-			asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
-			if err != nil || asset.OwnerID != player.ID {
-				respondErr(w, http.StatusForbidden, "marginalia must belong to an asset you own")
-				return
-			}
-			if asset.IsDestroyed {
-				respondErr(w, http.StatusConflict, "asset is already destroyed")
-				return
-			}
-			if m.IsTorn {
-				respondErr(w, http.StatusConflict, "marginalia is already torn")
-				return
-			}
-			if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-				ID:       m.ID,
-				TornByID: &player.ID,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
-				return
-			}
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-					AssetID: asset.ID, Position: m.Position, TornByID: player.ID,
-				})
-			}
-			// If every marginalia is now torn, destroy the asset.
-			intact, _ := deps.Q.CountIntactMarginalia(ctx, asset.ID)
-			if intact == 0 {
-				total, _ := deps.Q.CountMarginalia(ctx, asset.ID)
-				if total > 0 {
-					_ = deps.Q.DestroyAsset(ctx, asset.ID)
-					if h, ok := deps.Manager.Get(plan.GameID); ok {
-						h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
-					}
-				}
-			}
-			assetID1 = &asset.ID
-
-		case gamepkg.WarCostLeverageTwo:
-			if body.AssetID1 == 0 || body.AssetID2 == 0 || body.AssetID1 == body.AssetID2 {
-				respondErr(w, http.StatusBadRequest, "must specify two distinct assets to leverage")
-				return
-			}
-			for _, id := range []int64{body.AssetID1, body.AssetID2} {
-				a, err := deps.Q.GetAssetByID(ctx, id)
-				if err != nil {
-					respondErr(w, http.StatusNotFound, "asset not found")
-					return
-				}
-				if a.OwnerID != player.ID {
-					respondErr(w, http.StatusForbidden, "you can only leverage your own assets")
-					return
-				}
-				if a.IsDestroyed {
-					respondErr(w, http.StatusConflict, "asset is destroyed")
-					return
-				}
-				if a.IsLeveraged {
-					respondErr(w, http.StatusConflict, "asset is already leveraged")
-					return
-				}
-			}
-			for _, id := range []int64{body.AssetID1, body.AssetID2} {
-				if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
-					ID: id, IsLeveraged: true,
-				}); err != nil {
-					respondErr(w, http.StatusInternalServerError, "could not leverage asset")
-					return
-				}
-			}
-			assetID1 = &body.AssetID1
-			assetID2 = &body.AssetID2
+		assetID1, assetID2, ok := mwApplyCostChoice(
+			ctx, deps, plan.GameID, player,
+			body.Choice, body.MarginaliaID, body.AssetID1, body.AssetID2, w,
+		)
+		if !ok {
+			return
 		}
 
 		// Record the payment.
@@ -689,21 +614,9 @@ func mwApplySurrender(
 		})
 	}
 
-	// Check for auto-end: count non-surrendered full participants per side.
-	remaining := map[int16]int{}
-	for id, side := range snap.Sides {
-		if id == payerID || snap.Surrendered[id] {
-			continue
-		}
-		remaining[side]++
-	}
-	side1, side2 := remaining[gamepkg.WarSideDeclarer], remaining[gamepkg.WarSideEnemy]
-	if side1 > 0 && side2 > 0 {
+	ended, reason := gamepkg.SurrenderOutcome(snap.Sides, snap.Surrendered, payerID)
+	if !ended {
 		return nil
-	}
-	reason := gamepkg.WarEndSurrender
-	if side1 == 0 && side2 == 0 {
-		reason = gamepkg.WarEndAllSurrendered
 	}
 	if err := deps.Q.EndWar(ctx, dbgen.EndWarParams{
 		ID: war.ID, EndReason: new(reason), EndedAtRow: &row,
@@ -1243,15 +1156,17 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 				accepted[v.PlayerID] = true
 			}
 		}
-		for _, a := range active {
-			if !accepted[a.PlayerID] {
-				respond(w, http.StatusOK, map[string]any{
-					"proposal_id": prop.ID,
-					"status":      gamepkg.PeaceOpen,
-					"awaiting":    a.PlayerID,
-				})
-				return
-			}
+		activeIDs := make([]int64, len(active))
+		for i, a := range active {
+			activeIDs[i] = a.PlayerID
+		}
+		if unanimous, awaiting := gamepkg.PeaceTally(activeIDs, accepted); !unanimous {
+			respond(w, http.StatusOK, map[string]any{
+				"proposal_id": prop.ID,
+				"status":      gamepkg.PeaceOpen,
+				"awaiting":    awaiting,
+			})
+			return
 		}
 
 		// Unanimous — accept the proposal and end the war.
