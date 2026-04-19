@@ -600,7 +600,16 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			h.BroadcastEvent(model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 		}
 
-		respond(w, http.StatusCreated, map[string]any{"plan": plan})
+		// Consume any pending counter-demand waiting on this player: the
+		// target of a previously marred demand deferred their free counter
+		// to "the next plan you prepare" — synthesize it now.
+		counterPlanID := consumePendingCounterDemandFor(ctx, q, manager, game, &plan)
+
+		resp := map[string]any{"plan": plan}
+		if counterPlanID != nil {
+			resp["counter_demand_plan_id"] = *counterPlanID
+		}
+		respond(w, http.StatusCreated, resp)
 	}
 }
 
@@ -722,7 +731,9 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			_, winners, werr := gamepkg.DemandWinnersForTargetPlan(r.Context(), q, plan)
 			allowed := false
 			if werr == nil {
-				if winnerID, ok := winners[gamepkg.DemandOptionPerformSteps]; ok && winnerID != 0 && winnerID == player.ID && winnerID != plan.PreparerID {
+				if winnerID, ok := winners[gamepkg.DemandOptionPerformSteps]; ok && winnerID != 0 &&
+					winnerID == player.ID &&
+					winnerID != plan.PreparerID {
 					allowed = true
 				}
 			}

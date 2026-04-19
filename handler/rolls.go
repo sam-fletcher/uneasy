@@ -302,7 +302,9 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			if perr == nil && player.ID == plan.PreparerID && asset.OwnerID == plan.PreparerID {
 				_, winners, werr := gamepkg.DemandWinnersForTargetPlan(ctx, q, &plan)
 				if werr == nil {
-					if winnerID, hasWinner := winners[gamepkg.DemandOptionControlLeverage]; hasWinner && winnerID != 0 && winnerID != plan.PreparerID {
+					if winnerID, hasWinner := winners[gamepkg.DemandOptionControlLeverage]; hasWinner &&
+						winnerID != 0 &&
+						winnerID != plan.PreparerID {
 						respondErr(w, http.StatusForbidden,
 							"a demand's control_leverage winner has taken over leverage of your assets on this roll")
 						return
