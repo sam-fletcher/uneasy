@@ -1,0 +1,258 @@
+/* Shared styles for PlanPanel and all per-plan components. */
+
+.plan-panel {
+	border-radius: 6px;
+	padding: 0.6rem 0.75rem;
+	margin-bottom: 0.4rem;
+	flex-shrink: 0;
+}
+
+.plan-panel.resolving {
+	background: #1e1a10;
+	border: 1px solid #8a6a3a;
+}
+
+.plan-panel.pending {
+	background: #1a1e1a;
+	border: 1px solid #4a6a4a;
+}
+
+.plan-header {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+	margin-bottom: 0.4rem;
+}
+
+.plan-badge {
+	font-size: 0.65rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	padding: 0.1rem 0.4rem;
+	border-radius: 4px;
+}
+
+.resolving-badge { background: #3a2800; color: #e0a040; border: 1px solid #8a6030; }
+.pending-badge   { background: #1a2a1a; color: #6dbf6d; border: 1px solid #3a6a3a; }
+
+.plan-title {
+	font-size: 0.9rem;
+	color: #e8e4d9;
+}
+
+.plan-preparer {
+	font-size: 0.78rem;
+	color: #888;
+}
+
+.plan-notes {
+	font-size: 0.82rem;
+	color: #aaa;
+	font-style: italic;
+	margin: 0 0 0.4rem;
+}
+
+.res-error {
+	color: #e07070;
+	font-size: 0.82rem;
+	margin: 0.25rem 0;
+}
+
+.muted { color: #666; font-size: 0.82rem; font-style: italic; }
+
+.ft-section, .choices-section, .complete-section {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+
+.ft-prompt {
+	font-size: 0.85rem;
+	line-height: 1.45;
+	margin: 0;
+}
+
+.ft-label, .form-label {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	font-size: 0.82rem;
+	color: #c8a96e;
+}
+
+.ft-select, .form-select {
+	background: #2a2a2a;
+	border: 1px solid #555;
+	border-radius: 4px;
+	color: inherit;
+	font-size: 0.85rem;
+	padding: 0.25rem 0.4rem;
+}
+
+.ft-actions {
+	display: flex;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.choices-header {
+	font-size: 0.88rem;
+	margin: 0;
+}
+
+.outcome-make { color: #6dbf7a; }
+.outcome-mar  { color: #e07070; }
+
+.choices-note {
+	font-size: 0.82rem;
+	color: #aaa;
+	margin: 0;
+}
+
+.choice-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.4rem;
+	font-size: 0.82rem;
+	color: #ccc;
+	cursor: pointer;
+	line-height: 1.4;
+}
+
+.choice-item input { accent-color: #c8a96e; margin-top: 0.15em; flex-shrink: 0; }
+
+.choices-applied {
+	font-size: 0.8rem;
+	color: #888;
+	margin: 0;
+}
+
+.complete-note {
+	font-size: 0.82rem;
+	color: #aaa;
+	margin: 0;
+}
+
+.messy-break-section {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+	padding: 0.5rem;
+	background: #1e1010;
+	border: 1px solid #6a3030;
+	border-radius: 5px;
+}
+
+.resolve-note {
+	font-size: 0.82rem;
+	color: #aaa;
+	margin: 0 0 0.25rem;
+}
+
+.prep-section {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+
+.plan-picker {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+	align-items: center;
+}
+
+.picker-label {
+	font-size: 0.8rem;
+	color: #c8a96e;
+	font-style: italic;
+}
+
+.plan-option-btn {
+	font-size: 0.8rem;
+	padding: 0.25rem 0.55rem;
+	border-radius: 4px;
+	background: #2a2a2a;
+	border: 1px solid #555;
+	color: #ccc;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	transition: border-color 0.12s, background 0.12s;
+}
+
+.plan-option-btn:hover { border-color: #c8a96e; }
+
+.plan-option-btn.selected {
+	background: #2e2510;
+	border-color: #c8a96e;
+	color: #e8e4d9;
+}
+
+.plan-row-hint {
+	font-size: 0.7rem;
+	color: #888;
+}
+
+.plan-form {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+	padding: 0.5rem;
+	background: #1e1a10;
+	border: 1px solid #4a3a20;
+	border-radius: 5px;
+}
+
+.form-hint {
+	font-size: 0.78rem;
+	color: #888;
+	margin: 0;
+}
+
+.form-num {
+	width: 60px;
+	padding: 0.2rem 0.4rem;
+	background: #2a2a2a;
+	border: 1px solid #555;
+	border-radius: 4px;
+	color: inherit;
+	font-size: 0.85rem;
+}
+
+.form-textarea {
+	background: #2a2a2a;
+	border: 1px solid #555;
+	border-radius: 4px;
+	color: inherit;
+	font-family: inherit;
+	font-size: 0.85rem;
+	padding: 0.3rem 0.5rem;
+	resize: none;
+}
+
+.action-btn {
+	padding: 0.35rem 0.7rem;
+	border-radius: 5px;
+	font-size: 0.83rem;
+	font-weight: 600;
+	cursor: pointer;
+	align-self: flex-start;
+	border: none;
+}
+
+.action-btn.primary {
+	background: #c8a96e;
+	color: #1a1a1a;
+}
+
+.action-btn.secondary {
+	background: #333;
+	color: #c8a96e;
+	border: 1px solid #4a4030;
+}
+
+.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
