@@ -191,14 +191,6 @@ func (mdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func mdCheckPlan(w http.ResponseWriter, plan *dbgen.Plan) bool {
-	if plan.PlanType != model.PlanMakeDemands {
-		respondErr(w, http.StatusBadRequest, "route is only for Make Demands plans")
-		return false
-	}
-	return true
-}
-
 func validDemandOption(s string) bool {
 	switch s {
 	case gamepkg.DemandOptionControlLeverage,
@@ -242,7 +234,7 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !mdCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanMakeDemands) {
 			return
 		}
 		if plan.Status != model.PlanResolving {
@@ -376,7 +368,7 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !mdCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanMakeDemands) {
 			return
 		}
 		if plan.Status != model.PlanResolving {

@@ -221,18 +221,6 @@ func (pduelHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func pduelCheckDuel(w http.ResponseWriter, plan *dbgen.Plan) bool {
-	if plan.PlanType != model.PlanProposeDuel {
-		respondErr(w, http.StatusBadRequest, "endpoint is only for Propose Duel")
-		return false
-	}
-	if plan.Status != model.PlanResolving {
-		respondErr(w, http.StatusConflict, "plan is not in resolving status")
-		return false
-	}
-	return true
-}
-
 func pduelIsParticipant(plan *dbgen.Plan, playerID int64) bool {
 	if playerID == plan.PreparerID {
 		return true
@@ -268,7 +256,7 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !pduelCheckDuel(w, plan) {
+		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -335,7 +323,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !pduelCheckDuel(w, plan) {
+		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -443,7 +431,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !pduelCheckDuel(w, plan) {
+		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -564,7 +552,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !pduelCheckDuel(w, plan) {
+		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -661,7 +649,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !pduelCheckDuel(w, plan) {
+		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {

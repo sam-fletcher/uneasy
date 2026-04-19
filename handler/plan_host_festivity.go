@@ -124,18 +124,6 @@ func (hfHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func hfCheckPlan(w http.ResponseWriter, plan *dbgen.Plan) bool {
-	if plan.PlanType != model.PlanHostFestivity {
-		respondErr(w, http.StatusBadRequest, "route is only for Host Festivity plans")
-		return false
-	}
-	if plan.Status != model.PlanResolving {
-		respondErr(w, http.StatusConflict, "plan is not in resolving status")
-		return false
-	}
-	return true
-}
-
 // hfBlockOnPendingChallenge writes a 409 and returns true if a challenge is
 // awaiting response; all festivity game actions (but not chat) pause until the
 // target accepts or declines.
@@ -192,7 +180,7 @@ func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !hfCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		ctx := r.Context()
@@ -232,7 +220,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !hfCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {
@@ -369,7 +357,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !hfCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {
@@ -672,7 +660,7 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !hfCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {
@@ -734,7 +722,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !hfCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if player.ID != plan.PreparerID {
@@ -827,7 +815,7 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !hfCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {
@@ -915,7 +903,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !hfCheckPlan(w, plan) {
+		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {

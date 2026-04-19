@@ -103,6 +103,28 @@ func requirePlanFocus(
 	return &game, plan, player, true
 }
 
+// requirePlanType writes a 400 and returns false if the plan isn't of the
+// expected type. Used by plan-specific extra-route handlers to guard against
+// a route being called with the wrong plan ID.
+func requirePlanType(w http.ResponseWriter, plan *dbgen.Plan, want model.PlanType) bool {
+	if plan.PlanType != want {
+		respondErr(w, http.StatusBadRequest, "route is only for "+string(want)+" plans")
+		return false
+	}
+	return true
+}
+
+// requirePlanResolving writes a 409 and returns false if the plan isn't in
+// the resolving status. Several plans' extra routes fire only during the
+// resolving phase.
+func requirePlanResolving(w http.ResponseWriter, plan *dbgen.Plan) bool {
+	if plan.Status != model.PlanResolving {
+		respondErr(w, http.StatusConflict, "plan is not in resolving status")
+		return false
+	}
+	return true
+}
+
 // Pure game-rule helpers (playerRankInCategory, playerHasPeers,
 // checkPlanEligible, hasEsteemLockout) are defined in the game package and
 // re-exported as handler-package aliases in plan_registry.go.

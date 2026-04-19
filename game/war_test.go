@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestMakeWarDelay(t *testing.T) {
+func TestCeilAverage(t *testing.T) {
 	cases := []struct {
 		name  string
 		faces []int16
@@ -21,8 +21,8 @@ func TestMakeWarDelay(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := MakeWarDelay(tc.faces); got != tc.want {
-				t.Errorf("MakeWarDelay(%v) = %d, want %d", tc.faces, got, tc.want)
+			if got := CeilAverage(tc.faces); got != tc.want {
+				t.Errorf("CeilAverage(%v) = %d, want %d", tc.faces, got, tc.want)
 			}
 		})
 	}

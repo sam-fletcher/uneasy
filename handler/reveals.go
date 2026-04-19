@@ -20,13 +20,13 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 	"uneasy/model"
@@ -310,15 +310,11 @@ func requireRevealAccess(
 // revealCeilAverage returns ceil(average of submitted faces).
 // Entries with nil face (not yet submitted) are excluded.
 func revealCeilAverage(entries []dbgen.SimultaneousRevealEntry) int16 {
-	sum, count := 0, 0
+	faces := make([]int16, 0, len(entries))
 	for _, e := range entries {
 		if e.Face != nil {
-			sum += int(*e.Face)
-			count++
+			faces = append(faces, *e.Face)
 		}
 	}
-	if count == 0 {
-		return 0
-	}
-	return int16(math.Ceil(float64(sum) / float64(count)))
+	return gamepkg.CeilAverage(faces)
 }

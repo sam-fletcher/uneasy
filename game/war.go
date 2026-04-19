@@ -12,6 +12,7 @@ package game
 // handler package.
 
 import (
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -49,10 +50,11 @@ const (
 	PeaceRejected = "rejected"
 )
 
-// MakeWarDelay returns ceil(average) of the revealed faces. Faces are
-// expected to be 1–6; callers must filter out un-submitted entries.
-// Returns 0 for an empty input (caller should treat as an error).
-func MakeWarDelay(faces []int16) int16 {
+// CeilAverage returns ceil(average) of the given faces. Faces are expected
+// to be 1–6; callers must filter out un-submitted entries. Returns 0 for an
+// empty input (caller should treat as an error). Used for Make War delay
+// and Clandestinely Liaise re-delay computations.
+func CeilAverage(faces []int16) int16 {
 	if len(faces) == 0 {
 		return 0
 	}
@@ -69,6 +71,17 @@ func OpposingSide(side int16) int16 {
 		return WarSideEnemy
 	}
 	return WarSideDeclarer
+}
+
+// MergeSides returns a new side-map containing every (player, side) pair
+// from `sides` overlaid with `extra`. Used by cost-of-battle computations
+// when running ActiveOpponents from the perspective of a late joiner who
+// isn't yet in the canonical side-map.
+func MergeSides(sides, extra map[int64]int16) map[int64]int16 {
+	out := make(map[int64]int16, len(sides)+len(extra))
+	maps.Copy(out, sides)
+	maps.Copy(out, extra)
+	return out
 }
 
 // ActiveOpponents returns the player IDs of participants on the opposite

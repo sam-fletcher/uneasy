@@ -37,7 +37,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -748,7 +747,7 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 
 			if !cancelled {
-				resultDelay = clCeilAverage(entries)
+				resultDelay = revealCeilAverage(entries)
 			}
 
 			if err := deps.Q.SetRevealComplete(ctx, dbgen.SetRevealCompleteParams{
@@ -817,25 +816,6 @@ func clIsParticipant(plan *dbgen.Plan, playerID int64, resData ResolutionData) b
 		return true
 	}
 	return false
-}
-
-// clCeilAverage returns ceil(average of all faces) from reveal entries.
-func clCeilAverage(entries []dbgen.SimultaneousRevealEntry) int16 {
-	if len(entries) == 0 {
-		return 0
-	}
-	sum := 0
-	count := 0
-	for _, e := range entries {
-		if e.Face != nil {
-			sum += int(*e.Face)
-			count++
-		}
-	}
-	if count == 0 {
-		return 0
-	}
-	return int16(math.Ceil(float64(sum) / float64(count)))
 }
 
 // clScheduleNewMeeting creates a new Clandestinely Liaise plan for the re-delay meeting.
