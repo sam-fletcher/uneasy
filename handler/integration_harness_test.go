@@ -1,0 +1,269 @@
+//go:build integration
+
+// Package handler — integration test harness.
+//
+// Tests in this file (and other *_integration_test.go files) talk to a real
+// Postgres database. They are gated by the `integration` build tag so the
+// default `go test ./...` run stays fast and hermetic.
+//
+// # Running
+//
+//	TEST_DATABASE_URL=postgres://uneasy:uneasy@localhost:5432/uneasy_test?sslmode=disable \
+//	  go test -tags=integration ./handler/...
+//
+// If TEST_DATABASE_URL is unset, tests that use the harness are skipped.
+// The database it points at is truncated between test cases; do not aim
+// the harness at a production or dev database.
+package handler
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"sync"
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"uneasy/db"
+	dbgen "uneasy/db/gen"
+	"uneasy/model"
+)
+
+// testDBURLEnv is the env var tests read to find the test Postgres. If
+// unset, the harness skips.
+const testDBURLEnv = "TEST_DATABASE_URL"
+
+var (
+	harnessOnce sync.Once
+	harnessPool *pgxpool.Pool
+	harnessErr  error
+)
+
+// openTestDB returns a pool pointing at the test database, applying
+// migrations exactly once per `go test` invocation. Skips the calling
+// test if TEST_DATABASE_URL is unset or the DB is unreachable.
+func openTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	url := os.Getenv(testDBURLEnv)
+	if url == "" {
+		t.Skipf("set %s to run integration tests", testDBURLEnv)
+	}
+	harnessOnce.Do(func() {
+		pool, err := pgxpool.New(context.Background(), url)
+		if err != nil {
+			harnessErr = fmt.Errorf("connect: %w", err)
+			return
+		}
+		if err := pool.Ping(context.Background()); err != nil {
+			harnessErr = fmt.Errorf("ping: %w", err)
+			return
+		}
+		if err := db.RunMigrations(url); err != nil {
+			harnessErr = fmt.Errorf("migrate: %w", err)
+			return
+		}
+		harnessPool = pool
+	})
+	if harnessErr != nil {
+		t.Skipf("test DB unavailable: %v", harnessErr)
+	}
+	truncateAll(t, harnessPool)
+	return harnessPool
+}
+
+// truncateAll wipes every user table in the public schema between tests.
+// Enumerating information_schema avoids drift when migrations add, rename,
+// or drop tables — TRUNCATE ... CASCADE handles FK ordering automatically
+// and RESTART IDENTITY keeps generated IDs predictable for debug output.
+// schema_migrations is preserved so we don't re-run migrations each test.
+func truncateAll(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	ctx := context.Background()
+	rows, err := pool.Query(ctx, `
+		SELECT table_name
+		FROM information_schema.tables
+		WHERE table_schema = 'public'
+		  AND table_type = 'BASE TABLE'
+		  AND table_name <> 'schema_migrations'
+	`)
+	if err != nil {
+		t.Fatalf("list tables: %v", err)
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scan table name: %v", err)
+		}
+		tables = append(tables, `"`+name+`"`)
+	}
+	if len(tables) == 0 {
+		return
+	}
+
+	stmt := "TRUNCATE " + joinComma(tables) + " RESTART IDENTITY CASCADE"
+	if _, err := pool.Exec(ctx, stmt); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+}
+
+func joinComma(ss []string) string {
+	out := ""
+	for i, s := range ss {
+		if i > 0 {
+			out += ", "
+		}
+		out += s
+	}
+	return out
+}
+
+// testGame is the return shape of newTestGame. All IDs are fresh — callers
+// may index players[i] freely; they are stored in seat_order 1..N with
+// power ranks also 1..N (player[0] = highest-ranked).
+type testGame struct {
+	Game    dbgen.Game
+	Players []dbgen.Player
+}
+
+// newTestGame spins up a minimal game ready for plan preparation: phase
+// main_event, row 1, N players with distinct cookies, power rankings
+// 1..N assigned in order, public_record_rows seeded. The first player
+// is the facilitator and focus player.
+//
+// TODO: upgrade this to drive the real HTTP handlers (option (ii) in the
+// harness design) so the setup path is exercised by the integration
+// suite itself. Current implementation inserts rows directly via sqlc,
+// which is fast but will rot if the game-startup pipeline gains new
+// invariants that aren't reflected here.
+func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
+	t.Helper()
+	if n < 2 || n > 5 {
+		t.Fatalf("newTestGame: n=%d out of [2,5]", n)
+	}
+	ctx := context.Background()
+
+	game, err := q.CreateGame(ctx, "TEST"+randSuffix())
+	if err != nil {
+		t.Fatalf("create game: %v", err)
+	}
+
+	players := make([]dbgen.Player, n)
+	for i := 0; i < n; i++ {
+		tok := fmt.Sprintf("tok-%d-%s", i, randSuffix())
+		if _, err := q.UpsertUserToken(ctx, dbgen.UpsertUserTokenParams{
+			Token:       tok,
+			DisplayName: fmt.Sprintf("P%d", i+1),
+		}); err != nil {
+			t.Fatalf("upsert user token: %v", err)
+		}
+		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+			GameID:        game.ID,
+			DisplayName:   fmt.Sprintf("P%d", i+1),
+			CookieToken:   tok,
+			IsFacilitator: i == 0,
+		})
+		if err != nil {
+			t.Fatalf("create player: %v", err)
+		}
+		seat := int16(i + 1)
+		if err := q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
+			ID: p.ID, SeatOrder: &seat,
+		}); err != nil {
+			t.Fatalf("set seat: %v", err)
+		}
+		players[i] = p
+	}
+	if err := q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
+		FacilitatorID: &players[0].ID, ID: game.ID,
+	}); err != nil {
+		t.Fatalf("set facilitator: %v", err)
+	}
+
+	// Power rankings: player[i] gets rank i+1 (1 = highest).
+	// Also seed knowledge and esteem so anything that reads any track works.
+	for _, cat := range []model.RankingCategory{
+		model.CategoryPower, model.CategoryKnowledge, model.CategoryEsteem,
+	} {
+		for i := 0; i < n; i++ {
+			if err := q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+				GameID:   game.ID,
+				PlayerID: &players[i].ID,
+				Category: cat,
+				Rank:     int16(i + 1),
+			}); err != nil {
+				t.Fatalf("upsert ranking: %v", err)
+			}
+		}
+	}
+
+	if err := q.CreatePublicRecordRows(ctx, game.ID); err != nil {
+		t.Fatalf("seed public record rows: %v", err)
+	}
+
+	if err := q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		ID: game.ID, Phase: model.PhaseMainEvent,
+	}); err != nil {
+		t.Fatalf("set phase: %v", err)
+	}
+	if err := q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
+		ID: game.ID, CurrentRow: 1,
+	}); err != nil {
+		t.Fatalf("set current row: %v", err)
+	}
+	if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+		ID: game.ID, FocusPlayerID: &players[0].ID,
+	}); err != nil {
+		t.Fatalf("set focus: %v", err)
+	}
+
+	refreshed, err := q.GetGameByID(ctx, game.ID)
+	if err != nil {
+		t.Fatalf("reload game: %v", err)
+	}
+	return testGame{Game: refreshed, Players: players}
+}
+
+// randSuffix returns a short random string for distinct join codes /
+// cookie tokens across subtests within the same process lifetime.
+func randSuffix() string {
+	s, err := db.NewCookieToken()
+	if err != nil {
+		return "xxxxx"
+	}
+	if len(s) > 8 {
+		return s[:8]
+	}
+	return s
+}
+
+// createPlanOnRow inserts a plan row directly with sensible defaults. Used
+// by tests that need a target plan to demand against without driving the
+// full preparation flow for an unrelated plan type.
+func createPlanOnRow(
+	t *testing.T,
+	q *dbgen.Queries,
+	game *dbgen.Game,
+	preparer *dbgen.Player,
+	planType model.PlanType,
+	category model.RankingCategory,
+	row int16,
+) dbgen.Plan {
+	t.Helper()
+	p, err := q.CreatePlan(context.Background(), dbgen.CreatePlanParams{
+		GameID:        game.ID,
+		PlanType:      planType,
+		Category:      category,
+		PreparerID:    preparer.ID,
+		RowNumber:     row,
+		RowOrder:      0,
+		PreparedAtRow: game.CurrentRow,
+	})
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	return p
+}

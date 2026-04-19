@@ -28,6 +28,38 @@ const (
 // Persisted as JSONB on plans.demand_option_winners for the demand plan row.
 type DemandOptionWinners map[string]int64
 
+// MakeDemandsDifficulty returns a demand plan's final roll difficulty.
+// targetDiff is the target plan's own (already computed) difficulty.
+// When the target plan's preparer outranks the demander (targetRank lower
+// than demanderRank in power), the gap is added; otherwise no bonus.
+func MakeDemandsDifficulty(targetDiff, demanderRank, targetRank int16) int16 {
+	if targetRank < demanderRank {
+		return targetDiff + (demanderRank - targetRank)
+	}
+	return targetDiff
+}
+
+// DemandRowPlacement returns the row a demand should land on: one row before
+// the target plan's row, but never earlier than the game's current row
+// (demands on the current row resolve immediately).
+func DemandRowPlacement(targetRow, currentRow int16) int16 {
+	return max(targetRow-1, currentRow)
+}
+
+// DemandDraftPickers returns (firstPicker, secondPicker) for the post-make
+// draft between the demander and target plan's preparer. The higher-ranked
+// player (lower rank number) picks first; ranks are unique per (game,
+// category) so no tiebreaker is needed.
+func DemandDraftPickers(
+	demanderID, targetPreparerID int64,
+	demanderRank, targetRank int16,
+) (int64, int64) {
+	if demanderRank < targetRank {
+		return demanderID, targetPreparerID
+	}
+	return targetPreparerID, demanderID
+}
+
 // AssetRecipientForPlan returns the player who should receive an asset that
 // would otherwise be awarded to plan.PreparerID during this plan's
 // resolution. If a resolved, made Make Demands plan targets this plan and

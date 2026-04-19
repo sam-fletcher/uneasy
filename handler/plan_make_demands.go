@@ -80,8 +80,7 @@ func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 			return 0, "another demand already targets that plan"
 		}
 	}
-	row := max(target.RowNumber-1, v.Game.CurrentRow)
-	return row, ""
+	return gamepkg.DemandRowPlacement(target.RowNumber, v.Game.CurrentRow), ""
 }
 
 func (mdHandler) ComputeDifficulty(
@@ -114,10 +113,7 @@ func (mdHandler) ComputeDifficulty(
 	if err != nil {
 		return 0, fmt.Errorf("load target power rank: %w", err)
 	}
-	if targetRank < demanderRank {
-		return targetDiff + (demanderRank - targetRank), nil
-	}
-	return targetDiff, nil
+	return gamepkg.MakeDemandsDifficulty(targetDiff, demanderRank, targetRank), nil
 }
 
 // OnPrepare is a no-op beyond the broadcast: the targeted_plan_id column is
@@ -230,10 +226,8 @@ func mdDraftPickers(
 	if err != nil {
 		return 0, 0, fmt.Errorf("load target power rank: %w", err)
 	}
-	if demanderRank < targetRank {
-		return demanderID, targetPreparerID, nil
-	}
-	return targetPreparerID, demanderID, nil
+	first, second := gamepkg.DemandDraftPickers(demanderID, targetPreparerID, demanderRank, targetRank)
+	return first, second, nil
 }
 
 // ── draft-choice ─────────────────────────────────────────────────────────────
@@ -564,7 +558,7 @@ func synthesizeCounterDemand(
 		}
 	}
 
-	row := max(target.RowNumber-1, game.CurrentRow)
+	row := gamepkg.DemandRowPlacement(target.RowNumber, game.CurrentRow)
 	if row > publicRecordRowCount {
 		return nil, "counter-demand would be placed past row 13", http.StatusConflict
 	}
