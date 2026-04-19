@@ -52,6 +52,38 @@ export const EventTypes = {
 	PlanPrepared: 'plan.prepared',
 	PlanResolving: 'plan.resolving',
 	PlanResolved: 'plan.resolved',
+	PlanDelayedArrival: 'plan.delayed_arrival',
+
+	// Simultaneous reveals
+	RevealSubmitted: 'reveal.submitted',
+	RevealComplete: 'reveal.complete',
+
+	// Clandestinely Liaise
+	LiaisePhaseChanged: 'liaise.phase_changed',
+	LiaiseChoicesRevealed: 'liaise.choices_revealed',
+
+	// Propose Duel
+	DuelChampionElected: 'duel.champion_elected',
+	DuelStakesRevealed: 'duel.stakes_revealed',
+	DuelBoutResolved: 'duel.bout_resolved',
+	DuelBoutsComplete: 'duel.bouts_complete',
+
+	// Host Festivity
+	FestivityGuestJoined: 'festivity.guest_joined',
+	FestivityGuestRolled: 'festivity.guest_rolled',
+	FestivityDuelTriggered: 'festivity.duel_triggered',
+
+	// Make War
+	WarDeclared: 'war.declared',
+	WarPlayerJoined: 'war.player_joined',
+	WarBattleCostDue: 'war.battle_cost_due',
+	WarBattleCostPaid: 'war.battle_cost_paid',
+	WarPeaceProposed: 'war.peace_proposed',
+	WarEnded: 'war.ended',
+
+	// Make Demands
+	DemandDraftPick: 'demand.draft_pick',
+	DemandCounterPlaced: 'demand.counter_placed',
 
 	// Dice rolls
 	RollCreated: 'roll.created',

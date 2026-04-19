@@ -8,7 +8,7 @@
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord, listScenePosts,
 		getRoll, getActiveRollForGame,
-		listPlans,
+		listPlans, getPlan,
 		type RankingCategory,
 	} from '$lib/api';
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
@@ -319,7 +319,56 @@
 				);
 				break;
 			}
+			case EventTypes.PlanDelayedArrival:
+			case EventTypes.LiaisePhaseChanged:
+			case EventTypes.LiaiseChoicesRevealed:
+			case EventTypes.DuelChampionElected:
+			case EventTypes.DuelStakesRevealed:
+			case EventTypes.DuelBoutResolved:
+			case EventTypes.DuelBoutsComplete:
+			case EventTypes.FestivityGuestJoined:
+			case EventTypes.FestivityGuestRolled:
+			case EventTypes.FestivityDuelTriggered:
+			case EventTypes.WarDeclared:
+			case EventTypes.DemandDraftPick:
+			case EventTypes.DemandCounterPlaced: {
+				const { plan_id } = msg.payload as { plan_id: number };
+				refreshPlan(plan_id);
+				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
+				break;
+			}
+			case EventTypes.WarPlayerJoined:
+			case EventTypes.WarBattleCostDue:
+			case EventTypes.WarBattleCostPaid:
+			case EventTypes.WarPeaceProposed:
+			case EventTypes.WarEnded: {
+				// War events expose war_id only; refresh all plans so any
+				// war-bearing plans pick up updated participants / costs / peace state.
+				refreshAllPlans();
+				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
+				break;
+			}
+			case EventTypes.RevealSubmitted:
+			case EventTypes.RevealComplete: {
+				// Reveal widgets subscribe to these directly; no plan ID in payload.
+				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
+				break;
+			}
 		}
+	}
+
+	function refreshPlan(planID: number) {
+		getPlan(planID).then(detail => {
+			const next = detail.plan;
+			const idx = plans.findIndex(p => p.id === planID);
+			plans = idx >= 0
+				? plans.map(p => p.id === planID ? next : p)
+				: [...plans, next];
+		}).catch(() => {});
+	}
+
+	function refreshAllPlans() {
+		listPlans(gameID).then(data => { plans = data.plans; }).catch(() => {});
 	}
 
 	// ── Data loading ──────────────────────────────────────────────────────────
