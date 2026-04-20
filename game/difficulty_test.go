@@ -87,9 +87,9 @@ func TestSpreadPropagandaDifficulty(t *testing.T) {
 // TestSeekAnswersDifficulty tests the formula: difficulty = rank.
 func TestSeekAnswersDifficulty(t *testing.T) {
 	tests := []struct {
-		name              string
-		knowledgeRank     int16
-		expectedDiff      int16
+		name          string
+		knowledgeRank int16
+		expectedDiff  int16
 	}{
 		{"rank 1", 1, 1},
 		{"rank 2", 2, 2},
@@ -116,10 +116,10 @@ func TestSeekAnswersDifficulty(t *testing.T) {
 // - target not main char: rank
 func TestSpreadRumorsDifficulty(t *testing.T) {
 	tests := []struct {
-		name          string
-		relevantRank  int16
+		name             string
+		relevantRank     int16
 		targetIsMainChar bool
-		expectedDiff  int16
+		expectedDiff     int16
 	}{
 		// Main character (target): 6 - rank (min 1)
 		{"MC target, rank 1 (highest status)", 1, true, 5},
@@ -153,10 +153,10 @@ func TestSpreadRumorsDifficulty(t *testing.T) {
 // max(preparerKnowledgeRank, len(InvokedArtifactIDs))
 func TestChronicleHistoriesDifficulty(t *testing.T) {
 	tests := []struct {
-		name              string
-		knowledgeRank     int16
-		artifactCount     int
-		expectedDiff      int16
+		name          string
+		knowledgeRank int16
+		artifactCount int
+		expectedDiff  int16
 	}{
 		{"knowledge rank 1, 0 artifacts", 1, 0, 1},
 		{"knowledge rank 1, 3 artifacts", 1, 3, 3},
