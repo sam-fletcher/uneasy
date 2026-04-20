@@ -687,10 +687,10 @@ export function messyBreak(planID: number, marginaliaID: number): Promise<{
 type PlanEcho = { plan_id: number } & Record<string, unknown>;
 
 /** Seek Answers — break a marginalia on a target resource asset. */
-export function breakResource(planID: number, assetID: number, marginaliaPosition: number): Promise<PlanEcho> {
+export function breakResource(planID: number, assetID: number, marginaliaID: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-resource`, {
 		method: 'POST',
-		body: JSON.stringify({ asset_id: assetID, marginalia_position: marginaliaPosition }),
+		body: JSON.stringify({ asset_id: assetID, marginalia_id: marginaliaID }),
 	});
 }
 
@@ -703,21 +703,22 @@ export function revealSecret(planID: number, assetID: number): Promise<PlanEcho>
 }
 
 /** Spread Rumors — break a marginalia on the rumor's target asset. */
-export function breakTarget(planID: number, marginaliaPosition: number): Promise<PlanEcho> {
+export function breakTarget(planID: number, marginaliaID: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-target`, {
 		method: 'POST',
-		body: JSON.stringify({ marginalia_position: marginaliaPosition }),
+		body: JSON.stringify({ marginalia_id: marginaliaID }),
 	});
 }
 
 /**
- * Spread Rumors — consent-based asset transfer from target to preparer.
+ * Spread Rumors — consent-based transfer of the plan's target asset to the preparer.
+ * The server uses plan.target_asset_id; consent is gated socially.
  * (Named `takeRumorAsset` to avoid collision with the asset-level `takeAsset`.)
  */
-export function takeRumorAsset(planID: number, assetID: number, consent: boolean): Promise<PlanEcho> {
+export function takeRumorAsset(planID: number, consent: boolean): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/take-asset`, {
 		method: 'POST',
-		body: JSON.stringify({ asset_id: assetID, consent }),
+		body: JSON.stringify({ consent }),
 	});
 }
 
@@ -738,18 +739,21 @@ export function invokeArtifact(planID: number, assetID: number): Promise<PlanEch
 }
 
 /** Chronicle Histories — break a marginalia on an invoked artifact. */
-export function breakArtifact(planID: number, assetID: number, marginaliaPosition: number): Promise<PlanEcho> {
+export function breakArtifact(planID: number, assetID: number, marginaliaID: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-artifact`, {
 		method: 'POST',
-		body: JSON.stringify({ asset_id: assetID, marginalia_position: marginaliaPosition }),
+		body: JSON.stringify({ asset_id: assetID, marginalia_id: marginaliaID }),
 	});
 }
 
-/** Chronicle Histories — non-preparer submits their mar choice. */
-export function marChoice(planID: number, playerID: number, choice: string): Promise<PlanEcho> {
+/**
+ * Chronicle Histories — non-preparer (or preparer) submits a mar choice.
+ * `asset_id` is required for break_artifact / invoke_another.
+ */
+export function marChoice(planID: number, choice: string, assetID?: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/mar-choice`, {
 		method: 'POST',
-		body: JSON.stringify({ player_id: playerID, choice }),
+		body: JSON.stringify({ choice, asset_id: assetID ?? null }),
 	});
 }
 

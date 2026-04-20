@@ -122,7 +122,7 @@
 
 	// Sub-form selection state
 	let brAssetID = $state<number | null>(null);
-	let brMargPos = $state<number | null>(null);
+	let brMargID = $state<number | null>(null);
 	let brBusy = $state(false);
 
 	let rsAssetID = $state<number | null>(null);
@@ -141,12 +141,12 @@
 	);
 
 	async function submitBreakResource(p: Plan) {
-		if (brBusy || brAssetID == null || brMargPos == null) return;
+		if (brBusy || brAssetID == null || brMargID == null) return;
 		brBusy = true; resError = '';
 		try {
-			await breakResource(p.id, brAssetID, brMargPos);
+			await breakResource(p.id, brAssetID, brMargID);
 			breakDone += 1;
-			brAssetID = null; brMargPos = null;
+			brAssetID = null; brMargID = null;
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not break resource.';
@@ -266,17 +266,17 @@
 						{#if brAssetID != null}
 							<label class="form-label">
 								Marginalia to tear:
-								<select bind:value={brMargPos} class="form-select">
+								<select bind:value={brMargID} class="form-select">
 									<option value={null}>Select a marginalia…</option>
 									{#each brAssetMarginalia as m}
-										<option value={m.position}>#{m.position}: {m.text}</option>
+										<option value={m.id}>#{m.position}: {m.text}</option>
 									{/each}
 								</select>
 							</label>
 						{/if}
 						<button class="action-btn primary"
 							onclick={() => submitBreakResource(plan)}
-							disabled={brBusy || brAssetID == null || brMargPos == null}>
+							disabled={brBusy || brAssetID == null || brMargID == null}>
 							{brBusy ? '…' : 'Break resource'}
 						</button>
 					</div>

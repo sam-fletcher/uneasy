@@ -25,6 +25,8 @@
 	import MakeIntroductionsPanel from './plans/MakeIntroductionsPanel.svelte';
 	import SpreadPropagandaPanel from './plans/SpreadPropagandaPanel.svelte';
 	import SeekAnswersPanel from './plans/SeekAnswersPanel.svelte';
+	import SpreadRumorsPanel from './plans/SpreadRumorsPanel.svelte';
+	import ChronicleHistoriesPanel from './plans/ChronicleHistoriesPanel.svelte';
 
 	interface Props {
 		gameID: number;
@@ -147,6 +149,16 @@
 			{gameID} {assets} {players} {currentPlayerID}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
+	{:else if plan.plan_type === 'spread_rumors'}
+		<SpreadRumorsPanel mode="resolve"
+			{gameID} {assets} {players} {currentPlayerID}
+			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
+			{onRollCreated} {onPlansChanged} />
+	{:else if plan.plan_type === 'chronicle_histories'}
+		<ChronicleHistoriesPanel mode="resolve"
+			{gameID} {assets} {players} {currentPlayerID}
+			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
+			{onRollCreated} {onPlansChanged} />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
@@ -227,6 +239,14 @@
 				{onPlanPrepared} />
 		{:else if selectedPlanType === 'seek_answers'}
 			<SeekAnswersPanel mode="prep"
+				{gameID} {assets} {players} {currentPlayerID}
+				{onPlanPrepared} />
+		{:else if selectedPlanType === 'spread_rumors'}
+			<SpreadRumorsPanel mode="prep"
+				{gameID} {assets} {players} {currentPlayerID}
+				{onPlanPrepared} />
+		{:else if selectedPlanType === 'chronicle_histories'}
+			<ChronicleHistoriesPanel mode="prep"
 				{gameID} {assets} {players} {currentPlayerID}
 				{onPlanPrepared} />
 		{:else if selectedPlanType}
