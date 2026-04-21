@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/model"
@@ -50,14 +49,14 @@ func TestApplyRankingSwaps(t *testing.T) {
 	// Helper to assert a player's rank in a category.
 	assertRank := func(pr map[int64]map[model.RankingCategory]int16, playerID int64, cat model.RankingCategory, expectedRank int16) {
 		actual, exists := pr[playerID][cat]
-		require.True(t, exists, "player %d not in rank map for category %s", playerID, cat)
+		assert.True(t, exists, "player %d not in rank map for category %s", playerID, cat)
 		assert.Equal(t, expectedRank, actual, "player %d rank in %s", playerID, cat)
 	}
 
 	// Helper to assert token-clearing decision.
 	assertTokenClear := func(result map[model.RankingCategory]bool, cat model.RankingCategory, shouldClear bool) {
 		actual, exists := result[cat]
-		require.True(t, exists, "category %s not in result map", cat)
+		assert.True(t, exists, "category %s not in result map", cat)
 		assert.Equal(t, shouldClear, actual, "token clear decision for %s", cat)
 	}
 

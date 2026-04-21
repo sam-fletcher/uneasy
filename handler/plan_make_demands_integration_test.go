@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
@@ -36,8 +37,8 @@ func TestMakeDemands_RejectMakeWarTarget(t *testing.T) {
 		TargetPlanID: &target.ID,
 	}
 	_, errMsg := mdHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg, "expected rejection")
-	require.Contains(t, errMsg, "Make War")
+	assert.NotEmpty(t, errMsg, "expected rejection")
+	assert.Contains(t, errMsg, "Make War")
 }
 
 func TestMakeDemands_RejectAlreadyDemanded(t *testing.T) {
@@ -66,8 +67,8 @@ func TestMakeDemands_RejectAlreadyDemanded(t *testing.T) {
 		TargetPlanID: &target.ID,
 	}
 	_, errMsg := mdHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
-	require.Contains(t, errMsg, "another demand already targets")
+	assert.NotEmpty(t, errMsg)
+	assert.Contains(t, errMsg, "another demand already targets")
 }
 
 // ── Happy-path: asset recipient transfers on made demand ──────────────────────
@@ -112,7 +113,7 @@ func TestMakeDemands_HappyPath_AssetRecipientTransfers(t *testing.T) {
 	require.NoError(t, err)
 	recipient, err := game.AssetRecipientForPlan(ctx, q, &reloaded)
 	require.NoError(t, err)
-	require.Equal(t, tg.Players[2].ID, recipient,
+	assert.Equal(t, tg.Players[2].ID, recipient,
 		"asset recipient should be the keep_assets winner (demander)")
 }
 
@@ -135,14 +136,14 @@ func TestMakeDemands_ImmediateCounterDemand(t *testing.T) {
 	deps := &PlanDeps{Q: q, Manager: hub.NewManager()}
 	counter, errMsg, _ := synthesizeCounterDemand(ctx, deps, &tg.Game,
 		tg.Players[0].ID, counterTarget.ID)
-	require.Empty(t, errMsg, "synthesize should succeed")
-	require.NotNil(t, counter)
+	assert.Empty(t, errMsg, "synthesize should succeed")
+	assert.NotNil(t, counter)
 
-	require.Equal(t, int16(6), counter.RowNumber, "row = target.row - 1")
-	require.Equal(t, tg.Players[0].ID, counter.PreparerID)
-	require.Equal(t, model.PlanMakeDemands, counter.PlanType)
-	require.NotNil(t, counter.TargetedPlanID)
-	require.Equal(t, counterTarget.ID, *counter.TargetedPlanID)
+	assert.Equal(t, int16(6), counter.RowNumber, "row = target.row - 1")
+	assert.Equal(t, tg.Players[0].ID, counter.PreparerID)
+	assert.Equal(t, model.PlanMakeDemands, counter.PlanType)
+	assert.NotNil(t, counter.TargetedPlanID)
+	assert.Equal(t, counterTarget.ID, *counter.TargetedPlanID)
 }
 
 // ── Pending counter-demand: consumePendingCounterDemandFor ───────────────────
@@ -178,18 +179,18 @@ func TestMakeDemands_PendingCounterDemandConsumed(t *testing.T) {
 
 	manager := hub.NewManager()
 	counterID := consumePendingCounterDemandFor(ctx, q, manager, &tg.Game, &newPlan)
-	require.NotNil(t, counterID, "pending row should have been consumed")
+	assert.NotNil(t, counterID, "pending row should have been consumed")
 
 	counter, err := q.GetPlanByID(ctx, *counterID)
 	require.NoError(t, err)
-	require.Equal(t, tg.Players[1].ID, counter.PreparerID,
+	assert.Equal(t, tg.Players[1].ID, counter.PreparerID,
 		"counter is owned by the deferred counter-demander")
-	require.NotNil(t, counter.TargetedPlanID)
-	require.Equal(t, newPlan.ID, *counter.TargetedPlanID)
-	require.Equal(t, int16(5), counter.RowNumber, "row = newPlan.row - 1")
+	assert.NotNil(t, counter.TargetedPlanID)
+	assert.Equal(t, newPlan.ID, *counter.TargetedPlanID)
+	assert.Equal(t, int16(5), counter.RowNumber, "row = newPlan.row - 1")
 
 	// Pending row is marked resolved.
 	open, err := q.ListOpenPendingCounterDemandsForPlayer(ctx, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.Empty(t, open, "pending row should be marked resolved")
+	assert.Empty(t, open, "pending row should be marked resolved")
 }

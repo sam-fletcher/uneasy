@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"uneasy/db"
@@ -214,8 +215,8 @@ func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
 		model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
-	require.False(t, eligible)
-	require.Contains(t, msg, "already have a token")
+	assert.False(t, eligible)
+	assert.Contains(t, msg, "already have a token")
 }
 
 func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {
@@ -238,8 +239,8 @@ func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {
 		model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
-	require.False(t, eligible)
-	require.Contains(t, msg, "higher-ranked player")
+	assert.False(t, eligible)
+	assert.Contains(t, msg, "higher-ranked player")
 }
 
 func TestCheckPlanEligible_SameRankCanPrepare(t *testing.T) {
@@ -261,14 +262,14 @@ func TestCheckPlanEligible_SameRankCanPrepare(t *testing.T) {
 		model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
-	require.True(t, eligible, "Player 1 should be eligible; msg: %s", msg)
+	assert.True(t, eligible, "Player 1 should be eligible; msg: %s", msg)
 
 	// Player 2 (rank 3) is also eligible
 	eligible, msg, err = CheckPlanEligible(ctx, q, tg.Game.ID, tg.Players[2].ID,
 		model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
-	require.True(t, eligible, "Player 2 should be eligible; msg: %s", msg)
+	assert.True(t, eligible, "Player 2 should be eligible; msg: %s", msg)
 }
 
 func TestCheckPlanEligible_LowerRankedPlayerHasToken(t *testing.T) {
@@ -290,7 +291,7 @@ func TestCheckPlanEligible_LowerRankedPlayerHasToken(t *testing.T) {
 		model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
-	require.True(t, eligible, "Player 0 should be eligible despite Player 2 having token; msg: %s", msg)
+	assert.True(t, eligible, "Player 0 should be eligible despite Player 2 having token; msg: %s", msg)
 }
 
 // ─ PlayerHasPeers Tests ────────────────────────────────────────────────────
@@ -304,7 +305,7 @@ func TestPlayerHasPeers_NoPeers(t *testing.T) {
 	// Player 0 has no peer assets initially
 	has, err := PlayerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.False(t, has)
+	assert.False(t, has)
 }
 
 func TestPlayerHasPeers_WithPeers(t *testing.T) {
@@ -327,7 +328,7 @@ func TestPlayerHasPeers_WithPeers(t *testing.T) {
 	// Now player 0 should have peers
 	has, err := PlayerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.True(t, has)
+	assert.True(t, has)
 }
 
 func TestPlayerHasPeers_DestroyedPeersDoNotCount(t *testing.T) {
@@ -354,7 +355,7 @@ func TestPlayerHasPeers_DestroyedPeersDoNotCount(t *testing.T) {
 	// Destroyed peers should not count
 	has, err := PlayerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.False(t, has)
+	assert.False(t, has)
 }
 
 func TestPlayerHasPeers_MultiplePeers(t *testing.T) {
@@ -378,7 +379,7 @@ func TestPlayerHasPeers_MultiplePeers(t *testing.T) {
 
 	has, err := PlayerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.True(t, has)
+	assert.True(t, has)
 }
 
 // ─ HasEsteemLockout Tests ──────────────────────────────────────────────────
@@ -392,7 +393,7 @@ func TestHasEsteemLockout_NoPrevPlans(t *testing.T) {
 	// Player 0 has no plans prepared yet
 	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.False(t, has)
+	assert.False(t, has)
 }
 
 func TestHasEsteemLockout_NonEsteemPlan(t *testing.T) {
@@ -416,7 +417,7 @@ func TestHasEsteemLockout_NonEsteemPlan(t *testing.T) {
 	// No lockout should be active
 	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.False(t, has)
+	assert.False(t, has)
 }
 
 func TestHasEsteemLockout_EsteemPlanWithoutLockout(t *testing.T) {
@@ -441,7 +442,7 @@ func TestHasEsteemLockout_EsteemPlanWithoutLockout(t *testing.T) {
 	// No lockout
 	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.False(t, has)
+	assert.False(t, has)
 }
 
 func TestHasEsteemLockout_ActiveLockout(t *testing.T) {
@@ -475,7 +476,7 @@ func TestHasEsteemLockout_ActiveLockout(t *testing.T) {
 	// Lockout should be active
 	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.True(t, has)
+	assert.True(t, has)
 }
 
 func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
@@ -508,7 +509,7 @@ func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
 	// Lockout is active
 	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.True(t, has)
+	assert.True(t, has)
 
 	// Player 0 then prepares a non-esteem plan (Power)
 	_, err = q.CreatePlan(ctx, dbgen.CreatePlanParams{
@@ -525,7 +526,7 @@ func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
 	// Now the lockout should be cleared
 	has, err = HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.False(t, has)
+	assert.False(t, has)
 }
 
 func TestHasEsteemLockout_MultipleEsteemPlans(t *testing.T) {
@@ -560,5 +561,5 @@ func TestHasEsteemLockout_MultipleEsteemPlans(t *testing.T) {
 	// Lockout should be active from the most recent plan
 	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
-	require.True(t, has)
+	assert.True(t, has)
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"uneasy/db"
@@ -39,7 +40,7 @@ func TestStartToneSetting_RejectsUnderMinPlayers(t *testing.T) {
 	// Try to start tone setting (should fail with < 2 players)
 	count, err := q.CountPlayersInGame(ctx, game.ID)
 	require.NoError(t, err)
-	require.Less(t, count, int64(2), "should have fewer than 2 players")
+	assert.Less(t, count, int64(2), "should have fewer than 2 players")
 }
 
 func TestStartToneSetting_RejectsOverMaxPlayers(t *testing.T) {
@@ -63,7 +64,7 @@ func TestStartToneSetting_RejectsOverMaxPlayers(t *testing.T) {
 	// Verify we have 6 players
 	count, err := q.CountPlayersInGame(ctx, game.ID)
 	require.NoError(t, err)
-	require.Greater(t, count, int64(5), "should have more than 5 players")
+	assert.Greater(t, count, int64(5), "should have more than 5 players")
 }
 
 func TestStartToneSetting_AcceptsValidPlayerCounts(t *testing.T) {
@@ -90,9 +91,9 @@ func TestStartToneSetting_AcceptsValidPlayerCounts(t *testing.T) {
 			// Verify player count is valid for tone setting
 			count, err := q.CountPlayersInGame(ctx, game.ID)
 			require.NoError(t, err)
-			require.Equal(t, int64(playerCount), count)
-			require.GreaterOrEqual(t, count, int64(2))
-			require.LessOrEqual(t, count, int64(5))
+			assert.Equal(t, int64(playerCount), count)
+			assert.GreaterOrEqual(t, count, int64(2))
+			assert.LessOrEqual(t, count, int64(5))
 		})
 	}
 }
@@ -118,7 +119,7 @@ func TestStartToneSetting_SeedsDefaultToneTopics(t *testing.T) {
 	// Before seeding, no tone topics
 	topicsBefore, err := q.ListToneTopics(ctx, game.ID)
 	require.NoError(t, err)
-	require.Empty(t, topicsBefore)
+	assert.Empty(t, topicsBefore)
 
 	// Seed default topics (mimicking what StartToneSetting does)
 	err = db.SeedDefaultToneTopics(ctx, q, game.ID)
@@ -127,8 +128,8 @@ func TestStartToneSetting_SeedsDefaultToneTopics(t *testing.T) {
 	// Verify default topics were created
 	topicsAfter, err := q.ListToneTopics(ctx, game.ID)
 	require.NoError(t, err)
-	require.NotEmpty(t, topicsAfter, "should seed default tone topics")
-	require.GreaterOrEqual(t, len(topicsAfter), 5, "should have at least 5 default topics")
+	assert.NotEmpty(t, topicsAfter, "should seed default tone topics")
+	assert.GreaterOrEqual(t, len(topicsAfter), 5, "should have at least 5 default topics")
 }
 
 func TestToneSetting_RequiresLobbyPhase(t *testing.T) {
@@ -160,7 +161,7 @@ func TestToneSetting_RequiresLobbyPhase(t *testing.T) {
 	// Verify we're NOT in lobby
 	updated, err := q.GetGameByID(ctx, game.ID)
 	require.NoError(t, err)
-	require.NotEqual(t, model.PhaseLobby, updated.Phase)
+	assert.NotEqual(t, model.PhaseLobby, updated.Phase)
 }
 
 // ── Public Record Seeding Tests ─────────────────────────────────────────────
@@ -178,7 +179,7 @@ func TestMainEvent_CreatesPublicRecordRows(t *testing.T) {
 	initialCount := len(rowsBefore)
 
 	// Verify rows exist (should be >= 13 from newTestGame setup)
-	require.GreaterOrEqual(t, initialCount, 13,
+	assert.GreaterOrEqual(t, initialCount, 13,
 		"newTestGame should create at least 13 public record rows")
 }
 
@@ -194,7 +195,7 @@ func TestMainEvent_AllPlayersHaveRankings(t *testing.T) {
 	// Verify rankings exist
 	rankings, err := q.ListRankingsByGame(ctx, tg.Game.ID)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(rankings), 9, "3 players × 3 categories = 9 minimum")
+	assert.GreaterOrEqual(t, len(rankings), 9, "3 players × 3 categories = 9 minimum")
 
 	// Verify each player has a ranking in each category
 	for _, player := range tg.Players {
@@ -210,7 +211,7 @@ func TestMainEvent_AllPlayersHaveRankings(t *testing.T) {
 					break
 				}
 			}
-			require.True(t, found, "player %d should have %s ranking", player.ID, category)
+			assert.True(t, found, "player %d should have %s ranking", player.ID, category)
 		}
 	}
 }
@@ -224,8 +225,8 @@ func TestMainEvent_AllPlayersHaveSeatOrder(t *testing.T) {
 
 	// Verify all players have seat order set
 	for _, player := range tg.Players {
-		require.NotNil(t, player.SeatOrder, "player %d should have seat_order", player.ID)
-		require.Greater(t, *player.SeatOrder, int16(0), "seat order should be > 0")
+		assert.NotNil(t, player.SeatOrder, "player %d should have seat_order", player.ID)
+		assert.Greater(t, *player.SeatOrder, int16(0), "seat order should be > 0")
 	}
 }
 
@@ -238,7 +239,7 @@ func TestGamePhaseTransition_LobbyToToneSetting(t *testing.T) {
 
 	game, err := q.CreateGame(ctx, "TestGame")
 	require.NoError(t, err)
-	require.Equal(t, model.PhaseLobby, game.Phase)
+	assert.Equal(t, model.PhaseLobby, game.Phase)
 
 	// Transition to tone setting
 	err = q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
@@ -249,7 +250,7 @@ func TestGamePhaseTransition_LobbyToToneSetting(t *testing.T) {
 
 	updated, err := q.GetGameByID(ctx, game.ID)
 	require.NoError(t, err)
-	require.Equal(t, model.PhaseToneSetting, updated.Phase)
+	assert.Equal(t, model.PhaseToneSetting, updated.Phase)
 }
 
 func TestGamePhaseTransition_PrologueToMainEvent(t *testing.T) {
@@ -275,5 +276,5 @@ func TestGamePhaseTransition_PrologueToMainEvent(t *testing.T) {
 
 	updated, err := q.GetGameByID(ctx, tg.Game.ID)
 	require.NoError(t, err)
-	require.Equal(t, model.PhaseMainEvent, updated.Phase)
+	assert.Equal(t, model.PhaseMainEvent, updated.Phase)
 }

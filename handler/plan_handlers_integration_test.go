@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
@@ -32,8 +33,8 @@ func TestMakeWar_RejectsNoEnemies(t *testing.T) {
 		EnemyPlayerIDs: []int64{},
 	}
 	_, errMsg := mwHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
-	require.Contains(t, errMsg, "requires at least one")
+	assert.NotEmpty(t, errMsg)
+	assert.Contains(t, errMsg, "requires at least one")
 }
 
 func TestMakeWar_RejectedDuplicateEnemies(t *testing.T) {
@@ -49,8 +50,8 @@ func TestMakeWar_RejectedDuplicateEnemies(t *testing.T) {
 		EnemyPlayerIDs: []int64{tg.Players[1].ID, tg.Players[1].ID},
 	}
 	_, errMsg := mwHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
-	require.Contains(t, errMsg, "duplicates")
+	assert.NotEmpty(t, errMsg)
+	assert.Contains(t, errMsg, "duplicates")
 }
 
 func TestMakeWar_AcceptsValidEnemies(t *testing.T) {
@@ -66,7 +67,7 @@ func TestMakeWar_AcceptsValidEnemies(t *testing.T) {
 		EnemyPlayerIDs: []int64{tg.Players[1].ID, tg.Players[2].ID},
 	}
 	_, errMsg := mwHandler{}.ValidatePreparation(ctx, vc)
-	require.Empty(t, errMsg)
+	assert.Empty(t, errMsg)
 }
 
 // ── Propose Duel Tests ───────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ func TestProposeDuel_RejectsNoOpponent(t *testing.T) {
 		Player: &tg.Players[0],
 	}
 	_, errMsg := pduelHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
+	assert.NotEmpty(t, errMsg)
 }
 
 func TestProposeDuel_RejectsSelfAsOpponent(t *testing.T) {
@@ -102,8 +103,8 @@ func TestProposeDuel_RejectsSelfAsOpponent(t *testing.T) {
 		Notes:          notes,
 	}
 	_, errMsg := pduelHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
-	require.Contains(t, errMsg, "yourself")
+	assert.NotEmpty(t, errMsg)
+	assert.Contains(t, errMsg, "yourself")
 }
 
 func TestProposeDuel_RejectsNoNotes(t *testing.T) {
@@ -120,7 +121,7 @@ func TestProposeDuel_RejectsNoNotes(t *testing.T) {
 		TargetPlayerID: &opponentID,
 	}
 	_, errMsg := pduelHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
+	assert.NotEmpty(t, errMsg)
 }
 
 func TestProposeDuel_AcceptsValidDuel(t *testing.T) {
@@ -139,7 +140,7 @@ func TestProposeDuel_AcceptsValidDuel(t *testing.T) {
 		Notes:          notes,
 	}
 	_, errMsg := pduelHandler{}.ValidatePreparation(ctx, vc)
-	require.Empty(t, errMsg)
+	assert.Empty(t, errMsg)
 }
 
 // ── Seek Answers Tests ───────────────────────────────────────────────────────
@@ -156,7 +157,7 @@ func TestSeekAnswers_RejectsNoNotes(t *testing.T) {
 		Player: &tg.Players[0],
 	}
 	_, errMsg := saHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
+	assert.NotEmpty(t, errMsg)
 }
 
 func TestSeekAnswers_AcceptsWithNotes(t *testing.T) {
@@ -173,7 +174,7 @@ func TestSeekAnswers_AcceptsWithNotes(t *testing.T) {
 		Notes:  notes,
 	}
 	_, errMsg := saHandler{}.ValidatePreparation(ctx, vc)
-	require.Empty(t, errMsg)
+	assert.Empty(t, errMsg)
 }
 
 // ── Spread Rumors Tests ──────────────────────────────────────────────────────
@@ -190,7 +191,7 @@ func TestSpreadRumors_RejectsNoTarget(t *testing.T) {
 		Player: &tg.Players[0],
 	}
 	_, errMsg := srHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
+	assert.NotEmpty(t, errMsg)
 }
 
 func TestSpreadRumors_RejectsNoNotes(t *testing.T) {
@@ -217,7 +218,7 @@ func TestSpreadRumors_RejectsNoNotes(t *testing.T) {
 		TargetAssetID: &asset.ID,
 	}
 	_, errMsg := srHandler{}.ValidatePreparation(ctx, vc)
-	require.NotEmpty(t, errMsg)
+	assert.NotEmpty(t, errMsg)
 }
 
 func TestSpreadRumors_AcceptsWithTargetAndNotes(t *testing.T) {
@@ -246,5 +247,5 @@ func TestSpreadRumors_AcceptsWithTargetAndNotes(t *testing.T) {
 		Notes:         notes,
 	}
 	_, errMsg := srHandler{}.ValidatePreparation(ctx, vc)
-	require.Empty(t, errMsg)
+	assert.Empty(t, errMsg)
 }
