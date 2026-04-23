@@ -85,6 +85,12 @@ export const EventTypes = {
 	DemandDraftPick: 'demand.draft_pick',
 	DemandCounterPlaced: 'demand.counter_placed',
 
+	// Laws & rumors (long-form narrative records)
+	LawEnacted: 'law.enacted',
+	LawUpdated: 'law.updated',
+	RumorCreated: 'rumor.created',
+	RumorUpdated: 'rumor.updated',
+
 	// Dice rolls
 	RollCreated: 'roll.created',
 	RollLeverageAdded: 'roll.leverage_added',

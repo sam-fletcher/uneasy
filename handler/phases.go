@@ -314,6 +314,14 @@ func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 			if err == nil {
 				result["rankings"] = rankings
 			}
+			if game.Phase != model.PhasePrologue {
+				if laws, err := q.ListLaws(ctx, gameID); err == nil {
+					result["laws"] = laws
+				}
+				if rumors, err := q.ListRumors(ctx, gameID); err == nil {
+					result["rumors"] = rumors
+				}
+			}
 		}
 
 		respond(w, http.StatusOK, result)

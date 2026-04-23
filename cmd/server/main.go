@@ -161,6 +161,12 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 			r.Get("/secrets", handler.GetSecrets(q))
 		})
 
+		// Laws & rumors (long-form narrative records written by players)
+		r.Get("/tables/{id}/laws", handler.ListLaws(q))
+		r.Patch("/laws/{lawId}", handler.UpdateLaw(q, manager))
+		r.Get("/tables/{id}/rumors", handler.ListRumors(q))
+		r.Patch("/rumors/{rumorId}", handler.UpdateRumor(q, manager))
+
 		// Public record + scene threading
 		r.Get("/tables/{id}/record", handler.GetFullRecord(q))
 		r.Get("/tables/{id}/rows/{row}/posts", handler.ListScenePosts(q))

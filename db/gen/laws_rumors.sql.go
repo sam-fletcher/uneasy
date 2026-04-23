@@ -111,6 +111,27 @@ func (q *Queries) DeactivateRumor(ctx context.Context, id int64) error {
 	return err
 }
 
+const getLawByID = `-- name: GetLawByID :one
+SELECT id, game_id, text, addendum, origin_plan_id, signatory_id, created_at, is_active, display_order FROM laws WHERE id = $1
+`
+
+func (q *Queries) GetLawByID(ctx context.Context, id int64) (Law, error) {
+	row := q.db.QueryRow(ctx, getLawByID, id)
+	var i Law
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.Text,
+		&i.Addendum,
+		&i.OriginPlanID,
+		&i.SignatoryID,
+		&i.CreatedAt,
+		&i.IsActive,
+		&i.DisplayOrder,
+	)
+	return i, err
+}
+
 const getRumorByID = `-- name: GetRumorByID :one
 SELECT id, game_id, text, target_asset_id, origin_plan_id, source_player_id, is_active, created_at, display_order FROM rumors WHERE id = $1
 `
@@ -210,4 +231,57 @@ UPDATE rumors SET source_player_id = NULL WHERE id = $1
 func (q *Queries) SetRumorSourceHidden(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, setRumorSourceHidden, id)
 	return err
+}
+
+const updateLawText = `-- name: UpdateLawText :one
+UPDATE laws SET text = $2, addendum = $3 WHERE id = $1 RETURNING id, game_id, text, addendum, origin_plan_id, signatory_id, created_at, is_active, display_order
+`
+
+type UpdateLawTextParams struct {
+	ID       int64   `db:"id" json:"id"`
+	Text     string  `db:"text" json:"text"`
+	Addendum *string `db:"addendum" json:"addendum"`
+}
+
+func (q *Queries) UpdateLawText(ctx context.Context, arg UpdateLawTextParams) (Law, error) {
+	row := q.db.QueryRow(ctx, updateLawText, arg.ID, arg.Text, arg.Addendum)
+	var i Law
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.Text,
+		&i.Addendum,
+		&i.OriginPlanID,
+		&i.SignatoryID,
+		&i.CreatedAt,
+		&i.IsActive,
+		&i.DisplayOrder,
+	)
+	return i, err
+}
+
+const updateRumorText = `-- name: UpdateRumorText :one
+UPDATE rumors SET text = $2 WHERE id = $1 RETURNING id, game_id, text, target_asset_id, origin_plan_id, source_player_id, is_active, created_at, display_order
+`
+
+type UpdateRumorTextParams struct {
+	ID   int64  `db:"id" json:"id"`
+	Text string `db:"text" json:"text"`
+}
+
+func (q *Queries) UpdateRumorText(ctx context.Context, arg UpdateRumorTextParams) (Rumor, error) {
+	row := q.db.QueryRow(ctx, updateRumorText, arg.ID, arg.Text)
+	var i Rumor
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.Text,
+		&i.TargetAssetID,
+		&i.OriginPlanID,
+		&i.SourcePlayerID,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.DisplayOrder,
+	)
+	return i, err
 }

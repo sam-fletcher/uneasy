@@ -49,11 +49,13 @@ const (
 	// Phase 3b: Plan mechanics
 	EventPlanDelayedArrival    = "plan.delayed_arrival"    // MI: peer scheduled for future row
 	EventRumorCreated          = "rumor.created"           // SR: rumor written to record
+	EventRumorUpdated          = "rumor.updated"           // rumor text edited
 	EventSPRecursivePlan       = "plan.sp_recursive"       // SP: recursive propaganda created
 	EventSecretVisibilityGrant = "secret.visibility_grant" // SA/CL: visibility granted
 
 	// Phase 3c: Propose Decree
 	EventLawEnacted          = "law.enacted"           // PD: law created
+	EventLawUpdated          = "law.updated"           // law text/addendum edited
 	EventDecreeCouncilJoined = "decree.council_joined" // PD: player joined council
 
 	// Phase 3c: Clandestinely Liaise
@@ -297,6 +299,16 @@ type SecretVisibilityGrantPayload struct {
 type LawEnactedPayload struct {
 	PlanID int64 `json:"plan_id"`
 	Law    any   `json:"law"` // dbgen.Law
+}
+
+// LawUpdatedPayload is for EventLawUpdated (author edits).
+type LawUpdatedPayload struct {
+	Law any `json:"law"` // dbgen.Law
+}
+
+// RumorUpdatedPayload is for EventRumorUpdated (author edits).
+type RumorUpdatedPayload struct {
+	Rumor any `json:"rumor"` // dbgen.Rumor
 }
 
 // DecreeCouncilJoinedPayload is for EventDecreeCouncilJoined.

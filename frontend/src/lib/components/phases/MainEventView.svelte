@@ -9,15 +9,19 @@
 		leverageAsset, refreshAsset, tearMarginalia,
 		endScene, refreshAssets, passFocus, createRoll,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Marginalium, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan } from '$lib/api';
+	import type { Game, Player, Asset, Marginalium, Ranking, Law, Rumor, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan } from '$lib/api';
 	import AssetCard from '$lib/components/AssetCard.svelte';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
+	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 
 	interface Props {
 		game: Game;
 		players: Player[];
+		rankings: Ranking[];
+		laws: Law[];
+		rumors: Rumor[];
 		assets: Asset[];
 		currentPlayerID: number | null;
 		recordRows: RecordRow[];
@@ -43,6 +47,9 @@
 	let {
 		game,
 		players,
+		rankings,
+		laws,
+		rumors,
 		assets,
 		currentPlayerID,
 		recordRows = $bindable(),
@@ -364,6 +371,13 @@
 				currentRow={game.current_row}
 				playerNames={playerNameMap}
 			/>
+			<LawsRumors
+				{laws}
+				{rumors}
+				{plans}
+				playerNames={playerNameMap}
+				{currentPlayerID}
+			/>
 		</aside>
 
 		<!-- Right: scene thread + input -->
@@ -452,6 +466,7 @@
 				{plans}
 				{assets}
 				{players}
+				{rankings}
 				{currentPlayerID}
 				{isFocusPlayer}
 				prepEnabled={isFocusPlayer && sceneEnded && !actionTaken}

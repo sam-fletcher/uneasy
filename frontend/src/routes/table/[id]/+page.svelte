@@ -14,6 +14,7 @@
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
+		Law, Rumor,
 		ScenePost, SceneEntry, RecordRow, PresenceMember,
 		DiceRoll, DiceRollDie, DifficultyVote,
 		Plan,
@@ -29,6 +30,8 @@
 	let toneTopics = $state<ToneTopic[]>([]);
 	let rankings = $state<Ranking[]>([]);
 	let assets = $state<Asset[]>([]);
+	let laws = $state<Law[]>([]);
+	let rumors = $state<Rumor[]>([]);
 	let members = $state<PresenceMember[]>([]);
 	let currentPlayerID = $state<number | null>(null);
 	let error = $state('');
@@ -348,6 +351,32 @@
 				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
 				break;
 			}
+			case EventTypes.LawEnacted: {
+				const { law } = msg.payload as { law: Law };
+				if (law) {
+					const idx = laws.findIndex(l => l.id === law.id);
+					laws = idx >= 0 ? laws.map(l => l.id === law.id ? law : l) : [...laws, law];
+				}
+				break;
+			}
+			case EventTypes.LawUpdated: {
+				const { law } = msg.payload as { law: Law };
+				if (law) laws = laws.map(l => l.id === law.id ? law : l);
+				break;
+			}
+			case EventTypes.RumorCreated: {
+				const { rumor } = msg.payload as { rumor: Rumor };
+				if (rumor) {
+					const idx = rumors.findIndex(r => r.id === rumor.id);
+					rumors = idx >= 0 ? rumors.map(r => r.id === rumor.id ? rumor : r) : [...rumors, rumor];
+				}
+				break;
+			}
+			case EventTypes.RumorUpdated: {
+				const { rumor } = msg.payload as { rumor: Rumor };
+				if (rumor) rumors = rumors.map(r => r.id === rumor.id ? rumor : r);
+				break;
+			}
 			case EventTypes.RevealSubmitted:
 			case EventTypes.RevealComplete: {
 				// Reveal widgets subscribe to these directly; no plan ID in payload.
@@ -379,6 +408,8 @@
 			players = data.players;
 			if (data.tone_topics) toneTopics = data.tone_topics;
 			if (data.rankings) rankings = data.rankings;
+			if (data.laws) laws = data.laws;
+			if (data.rumors) rumors = data.rumors;
 			members = data.players.map(p => ({
 				id: p.id,
 				display_name: p.display_name,
@@ -626,7 +657,10 @@
 		<MainEventView
 			{game}
 			{players}
+			{rankings}
 			{assets}
+			{laws}
+			{rumors}
 			{currentPlayerID}
 			bind:recordRows
 			bind:scenePosts

@@ -14,6 +14,12 @@ ORDER BY display_order ASC, created_at ASC;
 -- name: DeactivateLaw :exec
 UPDATE laws SET is_active = FALSE WHERE id = $1;
 
+-- name: UpdateLawText :one
+UPDATE laws SET text = $2, addendum = $3 WHERE id = $1 RETURNING *;
+
+-- name: GetLawByID :one
+SELECT * FROM laws WHERE id = $1;
+
 -- ── Rumors ───────────────────────────────────────────────────────────
 
 -- name: CreateRumor :one
@@ -34,3 +40,6 @@ UPDATE rumors SET source_player_id = NULL WHERE id = $1;
 
 -- name: GetRumorByID :one
 SELECT * FROM rumors WHERE id = $1;
+
+-- name: UpdateRumorText :one
+UPDATE rumors SET text = $2 WHERE id = $1 RETURNING *;

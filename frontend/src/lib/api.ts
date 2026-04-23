@@ -77,6 +77,30 @@ export interface Asset {
 	marginalia: Marginalium[];
 }
 
+export interface Law {
+	id: number;
+	game_id: number;
+	text: string;
+	addendum: string | null;
+	origin_plan_id: number | null;
+	signatory_id: number | null;
+	created_at: string;
+	is_active: boolean;
+	display_order: number;
+}
+
+export interface Rumor {
+	id: number;
+	game_id: number;
+	text: string;
+	target_asset_id: number | null;
+	origin_plan_id: number | null;
+	source_player_id: number | null;
+	is_active: boolean;
+	created_at: string;
+	display_order: number;
+}
+
 export interface Secret {
 	id: number;
 	asset_id: number;
@@ -257,6 +281,8 @@ export function getGameState(id: string | number): Promise<{
 	players: Player[];
 	tone_topics?: ToneTopic[];
 	rankings?: Ranking[];
+	laws?: Law[];
+	rumors?: Rumor[];
 }> {
 	return apiFetch(`/tables/${id}/state`);
 }
@@ -1012,5 +1038,32 @@ export function counterDemand(planID: number, targetPlanID: number | null): Prom
 	return apiFetch(`/plans/${planID}/counter-demand`, {
 		method: 'POST',
 		body: JSON.stringify({ target_plan_id: targetPlanID }),
+	});
+}
+
+// ── Laws & rumors ────────────────────────────────────────────────────────────
+
+export function listLaws(gameID: number): Promise<{ laws: Law[] }> {
+	return apiFetch(`/tables/${gameID}/laws`);
+}
+
+export function updateLaw(
+	lawID: number,
+	patch: { text: string; addendum?: string | null }
+): Promise<{ law: Law }> {
+	return apiFetch(`/laws/${lawID}`, {
+		method: 'PATCH',
+		body: JSON.stringify(patch),
+	});
+}
+
+export function listRumors(gameID: number): Promise<{ rumors: Rumor[] }> {
+	return apiFetch(`/tables/${gameID}/rumors`);
+}
+
+export function updateRumor(rumorID: number, text: string): Promise<{ rumor: Rumor }> {
+	return apiFetch(`/rumors/${rumorID}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ text }),
 	});
 }

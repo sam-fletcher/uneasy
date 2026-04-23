@@ -15,7 +15,7 @@
 <script lang="ts">
 	import {
 		getPlanEligibility, resolvePlan,
-		type Plan, type PlanType, type Asset, type Player,
+		type Plan, type PlanType, type Asset, type Player, type Ranking,
 		type EligiblePlan, type DiceRoll,
 	} from '$lib/api';
 
@@ -27,6 +27,7 @@
 	import SeekAnswersPanel from './plans/SeekAnswersPanel.svelte';
 	import SpreadRumorsPanel from './plans/SpreadRumorsPanel.svelte';
 	import ChronicleHistoriesPanel from './plans/ChronicleHistoriesPanel.svelte';
+	import ProposeDecreePanel from './plans/ProposeDecreePanel.svelte';
 
 	interface Props {
 		gameID: number;
@@ -36,6 +37,7 @@
 		/** All assets in the game (used for fair-trade peer picker, etc). */
 		assets: Asset[];
 		players: Player[];
+		rankings: Ranking[];
 		currentPlayerID: number | null;
 		isFocusPlayer: boolean;
 		/**
@@ -56,7 +58,7 @@
 	}
 
 	let {
-		gameID, currentRow, plans, assets, players, currentPlayerID,
+		gameID, currentRow, plans, assets, players, rankings, currentPlayerID,
 		isFocusPlayer, prepEnabled = false,
 		rollActive, rollOutcome,
 		onRollCreated, onPlansChanged, onPlanPrepared,
@@ -159,6 +161,11 @@
 			{gameID} {assets} {players} {currentPlayerID}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
+	{:else if plan.plan_type === 'propose_decree'}
+		<ProposeDecreePanel mode="resolve"
+			{gameID} {assets} {players} {rankings} {currentPlayerID}
+			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
+			{onRollCreated} {onPlansChanged} />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
@@ -248,6 +255,10 @@
 		{:else if selectedPlanType === 'chronicle_histories'}
 			<ChronicleHistoriesPanel mode="prep"
 				{gameID} {assets} {players} {currentPlayerID}
+				{onPlanPrepared} />
+		{:else if selectedPlanType === 'propose_decree'}
+			<ProposeDecreePanel mode="prep"
+				{gameID} {assets} {players} {rankings} {currentPlayerID}
 				{onPlanPrepared} />
 		{:else if selectedPlanType}
 			<div class="plan-form">
