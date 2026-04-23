@@ -124,6 +124,11 @@ type ResolutionData struct {
 
 	// ── Chronicle Histories ──
 	InvokedArtifactIDs []int64 `json:"invoked_artifact_ids,omitempty"`
+	// InvokePhaseClosed flips true the moment OnResolve creates the dice roll.
+	// After that, no further invocations may change difficulty. The mar-choice
+	// "invoke_another" route may still append to InvokedArtifactIDs for
+	// narrative tracking even when this flag is set.
+	InvokePhaseClosed bool `json:"invoke_phase_closed,omitempty"`
 
 	// ── Propose Decree ──
 	SignatoryPlayerIDs []int64 `json:"signatory_player_ids,omitempty"`

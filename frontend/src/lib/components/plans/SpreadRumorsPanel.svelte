@@ -9,11 +9,10 @@
     server transfers plan.target_asset_id), and hide_source (preparer's
     asset picker + secret-text input).
 
-  For simplicity the same picker drives make and mar; the backend
-  interprets mar as "counter-rumor about the preparer" and applies
-  effects against the preparer's own assets. In the physical game the
-  target player would drive mar; we follow the existing SeekAnswers
-  pattern and let the preparer (focus player) click through.
+  On make the preparer (focus player) drives the picker. On mar the
+  target-asset owner drives the picker instead — they describe a
+  counter-rumor about the preparer, and the break_target / take_asset
+  sub-flows pick from the preparer's assets.
 -->
 <script lang="ts">
 	import './planPanel.css';
@@ -41,7 +40,7 @@
 	}
 
 	let {
-		mode, gameID, assets, players,
+		mode, gameID, assets, players, currentPlayerID,
 		plan = null, isFocusPlayer = false,
 		rollActive = false, rollOutcome = null,
 		onRollCreated: _or = () => {},
@@ -113,6 +112,21 @@
 		} finally { choicesBusy = false; }
 	}
 
+	// ── Actor routing ────────────────────────────────────────────────────────
+	// On make the preparer drives the picker and sub-flows. On mar the
+	// target-asset owner does. `isActor` captures whichever applies.
+	const targetAssetOwnerID = $derived(
+		plan?.target_asset_id != null
+			? (assets.find(a => a.id === plan.target_asset_id)?.owner_id ?? null)
+			: null
+	);
+	const isActor = $derived.by(() => {
+		if (!plan || currentPlayerID == null) return false;
+		if (rollOutcome === 'mar') return currentPlayerID === targetAssetOwnerID;
+		// make (or unresolved): preparer drives
+		return isFocusPlayer;
+	});
+
 	// ── Sub-flows (counters reset per plan) ──────────────────────────────────
 	let btDone = $state(0);
 	let taDone = $state(0);
@@ -125,7 +139,10 @@
 		}
 	});
 
-	// break_target sub-form
+	// On mar, break_target / take_asset pick from the preparer's assets; on
+	// make they operate on the plan's target asset. btAssetID is only used on
+	// mar (to select which preparer asset to tear marginalia on).
+	let btAssetID = $state<number | null>(null);
 	let btMargID = $state<number | null>(null);
 	let btBusy = $state(false);
 	const targetAsset = $derived(
@@ -133,42 +150,58 @@
 			? assets.find(a => a.id === plan.target_asset_id) ?? null
 			: null
 	);
-	const targetMarginalia = $derived(
-		(targetAsset?.marginalia ?? []).filter(m => !m.is_torn)
+	const preparerAssets = $derived(
+		plan ? assets.filter(a => a.owner_id === plan.preparer_id && !a.is_destroyed) : []
 	);
+	const btMarginalia = $derived.by(() => {
+		if (rollOutcome === 'mar') {
+			if (btAssetID == null) return [];
+			const a = assets.find(x => x.id === btAssetID);
+			return (a?.marginalia ?? []).filter(m => !m.is_torn);
+		}
+		return (targetAsset?.marginalia ?? []).filter(m => !m.is_torn);
+	});
 	async function submitBreakTarget(p: Plan) {
 		if (btBusy || btMargID == null) return;
+		if (rollOutcome === 'mar' && btAssetID == null) return;
 		btBusy = true; resError = '';
 		try {
-			await breakTarget(p.id, btMargID);
+			await breakTarget(p.id, btMargID, rollOutcome === 'mar' ? btAssetID! : undefined);
 			btDone += 1;
-			btMargID = null;
+			btMargID = null; btAssetID = null;
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not break target.';
 		} finally { btBusy = false; }
 	}
 
-	// take_asset sub-form
+	// take_asset: on make the server transfers plan.target_asset_id; on mar
+	// the actor picks one of the preparer's assets to take.
+	let taAssetID = $state<number | null>(null);
 	let taBusy = $state(false);
 	async function submitTakeAsset(p: Plan) {
 		if (taBusy) return;
+		if (rollOutcome === 'mar' && taAssetID == null) return;
 		taBusy = true; resError = '';
 		try {
-			await takeRumorAsset(p.id, true);
+			await takeRumorAsset(p.id, true, rollOutcome === 'mar' ? taAssetID! : undefined);
 			taDone += 1;
+			taAssetID = null;
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not take asset.';
 		} finally { taBusy = false; }
 	}
 
-	// hide_source sub-form
+	// hide_source: actor hides their own role as source on one of their own
+	// assets. Actor = preparer on make, target-asset owner on mar.
 	let hsAssetID = $state<number | null>(null);
 	let hsSecret = $state('');
 	let hsBusy = $state(false);
-	const preparerAssets = $derived(
-		plan ? assets.filter(a => a.owner_id === plan.preparer_id && !a.is_destroyed) : []
+	const hsAssetOptions = $derived(
+		rollOutcome === 'mar'
+			? assets.filter(a => a.owner_id === targetAssetOwnerID && !a.is_destroyed)
+			: preparerAssets
 	);
 	async function submitHideSource(p: Plan) {
 		if (hsBusy || hsAssetID == null || !hsSecret.trim()) return;
@@ -244,7 +277,7 @@
 		{#if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
-		{:else if rollOutcome != null && !choicesDone && isFocusPlayer}
+		{:else if rollOutcome != null && !choicesDone && isActor}
 			<div class="choices-section">
 				<p class="choices-header">
 					Result: <strong class="outcome-{rollOutcome}">
@@ -252,8 +285,10 @@
 					</strong>
 				</p>
 				<p class="choices-note">
-					Pick options equal to your dice result (repeatable). For mar, effects
-					apply against your own assets (the target spreads a counter-rumor).
+					Pick options equal to your dice result (repeatable).
+					{#if rollOutcome === 'mar'}
+						You're driving the counter-rumor; effects apply to the preparer's assets.
+					{/if}
 				</p>
 				{#each OPTIONS as opt}
 					<div class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
@@ -272,7 +307,7 @@
 				</button>
 			</div>
 
-		{:else if choicesDone && isFocusPlayer}
+		{:else if choicesDone && isActor}
 			<div class="complete-section">
 				<p class="choices-applied">
 					Choices applied:
@@ -286,20 +321,31 @@
 				{#if btRemaining > 0}
 					<div class="plan-form">
 						<p class="choices-header">
-							Break target asset ({btRemaining} remaining)
+							{rollOutcome === 'mar' ? 'Break a preparer asset' : 'Break target asset'} ({btRemaining} remaining)
 						</p>
+						{#if rollOutcome === 'mar'}
+							<label class="form-label">
+								Preparer's asset:
+								<select bind:value={btAssetID} class="form-select">
+									<option value={null}>Select an asset…</option>
+									{#each preparerAssets as a}
+										<option value={a.id}>{a.name}</option>
+									{/each}
+								</select>
+							</label>
+						{/if}
 						<label class="form-label">
 							Marginalia to tear:
 							<select bind:value={btMargID} class="form-select">
 								<option value={null}>Select a marginalia…</option>
-								{#each targetMarginalia as m}
+								{#each btMarginalia as m}
 									<option value={m.id}>#{m.position}: {m.text}</option>
 								{/each}
 							</select>
 						</label>
 						<button class="action-btn primary"
 							onclick={() => submitBreakTarget(plan)}
-							disabled={btBusy || btMargID == null}>
+							disabled={btBusy || btMargID == null || (rollOutcome === 'mar' && btAssetID == null)}>
 							{btBusy ? '…' : 'Tear marginalia'}
 						</button>
 					</div>
@@ -308,15 +354,30 @@
 				{#if taRemaining > 0}
 					<div class="plan-form">
 						<p class="choices-header">
-							Take target asset ({taRemaining} remaining)
+							{rollOutcome === 'mar' ? 'Take a preparer asset' : 'Take target asset'} ({taRemaining} remaining)
 						</p>
-						<p class="choices-note">
-							Confirm the target player has consented to giving up
-							<strong>{assetName(assets, plan.target_asset_id)}</strong>.
-						</p>
+						{#if rollOutcome === 'mar'}
+							<label class="form-label">
+								Preparer's asset:
+								<select bind:value={taAssetID} class="form-select">
+									<option value={null}>Select an asset…</option>
+									{#each preparerAssets as a}
+										<option value={a.id}>{a.name}</option>
+								{/each}
+							</select>
+							</label>
+							<p class="choices-note">
+								Confirm the preparer has consented to giving up this asset.
+							</p>
+						{:else}
+							<p class="choices-note">
+								Confirm the target player has consented to giving up
+								<strong>{assetName(assets, plan.target_asset_id)}</strong>.
+							</p>
+						{/if}
 						<button class="action-btn primary"
 							onclick={() => submitTakeAsset(plan)}
-							disabled={taBusy}>
+							disabled={taBusy || (rollOutcome === 'mar' && taAssetID == null)}>
 							{taBusy ? '…' : 'Transfer asset'}
 						</button>
 					</div>
@@ -331,7 +392,7 @@
 							Hide on one of your assets:
 							<select bind:value={hsAssetID} class="form-select">
 								<option value={null}>Select your asset…</option>
-								{#each preparerAssets as a}
+								{#each hsAssetOptions as a}
 									<option value={a.id}>{a.name}</option>
 								{/each}
 							</select>
@@ -350,19 +411,46 @@
 				{/if}
 
 				{#if subflowsDone}
-					<p class="complete-note">
-						Post any follow-scene narration in the scene thread, then complete.
-					</p>
+					{#if isFocusPlayer}
+						<p class="complete-note">
+							Post any follow-scene narration in the scene thread, then complete.
+						</p>
+						<button class="action-btn primary"
+							onclick={() => onComplete(plan)} disabled={resBusy}>
+							{resBusy ? '…' : 'Complete plan'}
+						</button>
+					{:else}
+						<p class="complete-note muted">
+							Sub-flows done. {playerName(players, plan.preparer_id)} will complete the plan.
+						</p>
+					{/if}
+				{/if}
+			</div>
+
+		{:else if choicesDone && isFocusPlayer}
+			<!-- Mar: preparer watches the counter-rumor unfold, then completes. -->
+			<div class="complete-section">
+				{#if subflowsDone}
 					<button class="action-btn primary"
 						onclick={() => onComplete(plan)} disabled={resBusy}>
 						{resBusy ? '…' : 'Complete plan'}
 					</button>
+				{:else}
+					<p class="ft-prompt muted">
+						{#if targetAssetOwnerID != null}
+							{playerName(players, targetAssetOwnerID)} is applying the counter-rumor…
+						{/if}
+					</p>
 				{/if}
 			</div>
 
-		{:else if !isFocusPlayer}
+		{:else if !isActor}
 			<p class="ft-prompt muted">
-				{playerName(players, plan.preparer_id)} is resolving Spread Rumors…
+				{#if rollOutcome === 'mar' && targetAssetOwnerID != null}
+					{playerName(players, targetAssetOwnerID)} is resolving the counter-rumor…
+				{:else}
+					{playerName(players, plan.preparer_id)} is resolving Spread Rumors…
+				{/if}
 			</p>
 		{/if}
 	</ResolvingCard>

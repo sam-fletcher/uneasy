@@ -16,10 +16,10 @@
       and submits via marChoice. The preparer sees the list of received
       mar choices (encoded as "playerID:choice" in resolution_data.choices).
 
-  Pre-roll artifact-invocation gating isn't enforced by a separate
-  "close invocation" endpoint — the roll is created at /resolve time.
-  The preparer can still invoke artifacts throughout resolving; effect
-  on difficulty is limited to invocations made before /resolve.
+  Pre-roll artifact-invocation is gated by resolution_data.invoke_phase_closed,
+  which the server flips true inside OnResolve (before the roll is created).
+  The pre-roll invoke picker is hidden once that flag is set; post-roll
+  "invoke another" invocations go through the mar-choice route instead.
 -->
 <script lang="ts">
 	import './planPanel.css';
@@ -86,13 +86,18 @@
 	// ── Resolve: invoked-artifact tracking ───────────────────────────────────
 	// The server stores invoked_artifact_ids in resolution_data. We recompute
 	// from the plan on every change.
-	const invokedIDs = $derived.by<number[]>(() => {
-		if (!plan?.resolution_data) return [];
+	const resolutionState = $derived.by<{ ids: number[]; closed: boolean }>(() => {
+		if (!plan?.resolution_data) return { ids: [], closed: false };
 		try {
 			const rd = JSON.parse(plan.resolution_data);
-			return (rd.invoked_artifact_ids as number[] | undefined) ?? [];
-		} catch { return []; }
+			return {
+				ids: (rd.invoked_artifact_ids as number[] | undefined) ?? [],
+				closed: Boolean(rd.invoke_phase_closed),
+			};
+		} catch { return { ids: [], closed: false }; }
 	});
+	const invokedIDs = $derived(resolutionState.ids);
+	const invokePhaseClosed = $derived(resolutionState.closed);
 	const invokedArtifacts = $derived(
 		invokedIDs
 			.map(id => assets.find(a => a.id === id))
@@ -272,10 +277,10 @@
 				</ul>
 			{/if}
 
-			{#if isFocusPlayer}
+			{#if isFocusPlayer && !invokePhaseClosed}
 				<div class="plan-form" style="margin-top:0.5rem;">
 					<label class="form-label">
-						Invoke an artifact:
+						Invoke an artifact (pre-roll):
 						<select bind:value={invokeAssetID} class="form-select">
 							<option value={null}>Select an artifact…</option>
 							{#each uninvokedArtifacts as a}
@@ -288,7 +293,15 @@
 						disabled={invokeBusy || invokeAssetID == null}>
 						{invokeBusy ? '…' : 'Invoke'}
 					</button>
+					<p class="choices-note muted">
+						The invoke phase closes when the dice are rolled. After that,
+						additional invocations happen through the mar "invoke another" option.
+					</p>
 				</div>
+			{:else if isFocusPlayer && invokePhaseClosed}
+				<p class="choices-note muted" style="margin-top:0.5rem;">
+					Invoke phase closed (dice have been rolled).
+				</p>
 			{/if}
 		</div>
 

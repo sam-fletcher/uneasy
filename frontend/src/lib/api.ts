@@ -702,23 +702,32 @@ export function revealSecret(planID: number, assetID: number): Promise<PlanEcho>
 	});
 }
 
-/** Spread Rumors — break a marginalia on the rumor's target asset. */
-export function breakTarget(planID: number, marginaliaID: number): Promise<PlanEcho> {
+/**
+ * Spread Rumors — break a marginalia.
+ *
+ * On make (preparer) the marginalia must belong to the plan's target asset
+ * and `assetID` may be omitted. On mar (target-asset owner) `assetID` is
+ * required and must be one of the preparer's assets.
+ */
+export function breakTarget(planID: number, marginaliaID: number, assetID?: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-target`, {
 		method: 'POST',
-		body: JSON.stringify({ marginalia_id: marginaliaID }),
+		body: JSON.stringify({ marginalia_id: marginaliaID, asset_id: assetID ?? null }),
 	});
 }
 
 /**
- * Spread Rumors — consent-based transfer of the plan's target asset to the preparer.
- * The server uses plan.target_asset_id; consent is gated socially.
+ * Spread Rumors — consent-based asset transfer.
+ *
+ * On make (preparer) the server transfers plan.target_asset_id; omit
+ * `assetID`. On mar (target-asset owner) `assetID` must be one of the
+ * preparer's assets, which is then transferred to the target-asset owner.
  * (Named `takeRumorAsset` to avoid collision with the asset-level `takeAsset`.)
  */
-export function takeRumorAsset(planID: number, consent: boolean): Promise<PlanEcho> {
+export function takeRumorAsset(planID: number, consent: boolean, assetID?: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/take-asset`, {
 		method: 'POST',
-		body: JSON.stringify({ consent }),
+		body: JSON.stringify({ consent, asset_id: assetID ?? null }),
 	});
 }
 

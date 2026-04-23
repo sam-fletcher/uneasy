@@ -759,6 +759,20 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 					allowed = true
 				}
 			}
+			// Spread Rumors mar: the target-asset owner drives make-choice with
+			// the counter-rumor options (applied to preparer's assets).
+			if !allowed && plan.PlanType == model.PlanSpreadRumors && plan.TargetAssetID != nil {
+				if asset, aerr := q.GetAssetByID(
+					r.Context(),
+					*plan.TargetAssetID,
+				); aerr == nil &&
+					asset.OwnerID == player.ID {
+					if roll, rerr := q.GetDiceRollByPlanID(r.Context(), &plan.ID); rerr == nil &&
+						roll.Outcome != nil && *roll.Outcome == marOutcome {
+						allowed = true
+					}
+				}
+			}
 			if !allowed {
 				respondErr(w, http.StatusForbidden, "only the focus player can do this")
 				return

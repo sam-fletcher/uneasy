@@ -87,6 +87,14 @@ func (chHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	if err != nil {
 		return nil, err
 	}
+	// Close the invoke phase before the roll is created so that any late
+	// invoke-artifact calls are rejected and can't affect difficulty.
+	if !resData.InvokePhaseClosed {
+		resData.InvokePhaseClosed = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			return nil, fmt.Errorf("could not close invoke phase: %w", err)
+		}
+	}
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 
@@ -167,6 +175,15 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
+
+		// The invoke-artifact route is only for the pre-roll scene. Once the
+		// roll has been created (OnResolve sets InvokePhaseClosed), further
+		// artifact invocations must come through the mar-choice "invoke_another"
+		// path, which records narrative state without affecting difficulty.
+		if resData.InvokePhaseClosed {
+			respondErr(w, http.StatusConflict, "invoke phase is closed; the dice roll has been cast")
+			return
+		}
 
 		// Idempotent: don't add duplicates.
 		if !slices.Contains(resData.InvokedArtifactIDs, body.AssetID) {
