@@ -815,6 +815,11 @@ export function setAddendum(planID: number, addendum: string): Promise<PlanEcho>
 	});
 }
 
+/** Clandestinely Liaise — focus player advances to the next phase. */
+export function advanceLiaise(planID: number): Promise<{ plan_id: number; phase: string }> {
+	return apiFetch(`/plans/${planID}/advance-liaise`, { method: 'POST' });
+}
+
 /** Clandestinely Liaise (phase 2) — commit a secret-bearing asset. */
 export function keepSecret(planID: number, assetID: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/keep-secret`, {

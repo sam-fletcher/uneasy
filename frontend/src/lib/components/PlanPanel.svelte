@@ -28,6 +28,7 @@
 	import SpreadRumorsPanel from './plans/SpreadRumorsPanel.svelte';
 	import ChronicleHistoriesPanel from './plans/ChronicleHistoriesPanel.svelte';
 	import ProposeDecreePanel from './plans/ProposeDecreePanel.svelte';
+	import ClandestinelyLiaisePanel from './plans/ClandestinelyLiaisePanel.svelte';
 
 	interface Props {
 		gameID: number;
@@ -73,6 +74,19 @@
 	);
 
 	const needsResolution = $derived(resolvingPlan != null || pendingOnRow.length > 0);
+
+	// Pending Clandestinely Liaise plans the current player is a participant in,
+	// where the delay reveal has not yet completed (plan is still at row 0).
+	// These need to surface the reveal UI to both preparer and partner outside
+	// the usual focus/on-row dispatch.
+	const pendingLiaiseReveals = $derived(
+		plans.filter(p => {
+			if (p.plan_type !== 'clandestinely_liaise' || p.status !== 'pending') return false;
+			if (p.row_number > 0) return false;
+			if (currentPlayerID == null) return false;
+			return p.preparer_id === currentPlayerID || p.target_player_id === currentPlayerID;
+		})
+	);
 
 	// ── Eligibility loading (prep mode) ───────────────────────────────────────
 
@@ -128,6 +142,13 @@
 	}
 </script>
 
+<!-- ── Pending Clandestinely Liaise delay reveals ───────────────────────── -->
+{#each pendingLiaiseReveals as rp (rp.id)}
+	<ClandestinelyLiaisePanel mode="delay-reveal"
+		{gameID} {assets} {players} {currentPlayerID}
+		plan={rp} {onPlansChanged} />
+{/each}
+
 <!-- ── Resolution dispatch ───────────────────────────────────────────────── -->
 {#if resolvingPlan}
 	{@const plan = resolvingPlan}
@@ -166,6 +187,10 @@
 			{gameID} {assets} {players} {rankings} {currentPlayerID}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
+	{:else if plan.plan_type === 'clandestinely_liaise'}
+		<ClandestinelyLiaisePanel mode="resolve"
+			{gameID} {assets} {players} {currentPlayerID}
+			{plan} {onPlansChanged} />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
@@ -259,6 +284,10 @@
 		{:else if selectedPlanType === 'propose_decree'}
 			<ProposeDecreePanel mode="prep"
 				{gameID} {assets} {players} {rankings} {currentPlayerID}
+				{onPlanPrepared} />
+		{:else if selectedPlanType === 'clandestinely_liaise'}
+			<ClandestinelyLiaisePanel mode="prep"
+				{gameID} {assets} {players} {currentPlayerID}
 				{onPlanPrepared} />
 		{:else if selectedPlanType}
 			<div class="plan-form">
