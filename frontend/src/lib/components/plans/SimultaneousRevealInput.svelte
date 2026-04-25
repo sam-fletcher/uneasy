@@ -6,8 +6,10 @@
 -->
 <script lang="ts">
 	import './planPanel.css';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { getReveal, submitReveal, type SimultaneousReveal } from '$lib/api';
+	import { useWindowEvents } from '$lib/useWindowEvents';
+	import { REVEAL_EVENTS } from '$lib/ws';
 
 	interface Participant {
 		player_id: number;
@@ -84,16 +86,8 @@
 		if (detail.reveal_id === revealID) refresh();
 	}
 
-	onMount(() => {
-		refresh();
-		window.addEventListener('uneasy:reveal.submitted', onRevealEvent);
-		window.addEventListener('uneasy:reveal.complete', onRevealEvent);
-	});
-
-	onDestroy(() => {
-		window.removeEventListener('uneasy:reveal.submitted', onRevealEvent);
-		window.removeEventListener('uneasy:reveal.complete', onRevealEvent);
-	});
+	useWindowEvents(REVEAL_EVENTS, onRevealEvent);
+	onMount(refresh);
 </script>
 
 <div class="choices-section">

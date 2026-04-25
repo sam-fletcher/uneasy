@@ -110,6 +110,19 @@ export const EventTypes = {
 	RollResolved: 'roll.resolved',
 } as const;
 
+// Grouped event names (without the `uneasy:` prefix) for window-event
+// subscriptions. Pair with `useWindowEvents` from $lib/useWindowEvents.
+export const WAR_EVENTS = [
+	'war.declared', 'war.player_joined', 'war.battle_cost_due',
+	'war.battle_cost_paid', 'war.player_surrendered', 'war.asset_seized',
+	'war.entry_completed', 'war.peace_proposed', 'war.peace_vote',
+	'war.ended',
+] as const;
+
+export const REVEAL_EVENTS = [
+	'reveal.submitted', 'reveal.complete',
+] as const;
+
 // createConnection opens a WebSocket to /api/tables/:id/ws and returns a
 // cleanup function. Reconnects automatically with exponential backoff if the
 // connection drops.

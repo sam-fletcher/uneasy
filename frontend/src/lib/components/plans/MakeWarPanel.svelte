@@ -20,7 +20,9 @@
 -->
 <script lang="ts">
 	import './planPanel.css';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
+	import { useWindowEvents } from '$lib/useWindowEvents';
+	import { WAR_EVENTS } from '$lib/ws';
 	import {
 		preparePlan, completePlan,
 		getWarState, joinWar, postWarScene,
@@ -108,25 +110,8 @@
 
 	function onWarEvent() { refreshWar(); }
 
-	onMount(() => {
-		if (mode === 'war') {
-			refreshWar();
-			for (const t of [
-				'war.declared', 'war.player_joined', 'war.battle_cost_due',
-				'war.battle_cost_paid', 'war.player_surrendered', 'war.asset_seized',
-				'war.entry_completed', 'war.peace_proposed', 'war.peace_vote',
-				'war.ended',
-			]) window.addEventListener(`uneasy:${t}`, onWarEvent);
-		}
-	});
-	onDestroy(() => {
-		for (const t of [
-			'war.declared', 'war.player_joined', 'war.battle_cost_due',
-			'war.battle_cost_paid', 'war.player_surrendered', 'war.asset_seized',
-			'war.entry_completed', 'war.peace_proposed', 'war.peace_vote',
-			'war.ended',
-		]) window.removeEventListener(`uneasy:${t}`, onWarEvent);
-	});
+	useWindowEvents(WAR_EVENTS, onWarEvent);
+	onMount(() => { if (mode === 'war') refreshWar(); });
 
 	// Re-fetch when the plan changes.
 	let lastPlanID = $state<number | null>(null);

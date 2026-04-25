@@ -4,7 +4,9 @@
   recordRows and scenePosts are bindable so the parent WS handler can also update them.
 -->
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
+	import { useWindowEvents } from '$lib/useWindowEvents';
+	import { WAR_EVENTS } from '$lib/ws';
 	import {
 		createScenePost, createSceneEntry,
 		leverageAsset, refreshAsset, tearMarginalia,
@@ -82,23 +84,8 @@
 		} catch { wars = []; }
 	}
 	function onWarEvent() { refreshWars(); }
-	onMount(() => {
-		if (game.phase === 'main_event') refreshWars();
-		for (const t of [
-			'war.declared', 'war.player_joined', 'war.battle_cost_due',
-			'war.battle_cost_paid', 'war.player_surrendered', 'war.asset_seized',
-			'war.entry_completed', 'war.peace_proposed', 'war.peace_vote',
-			'war.ended',
-		]) window.addEventListener(`uneasy:${t}`, onWarEvent);
-	});
-	onDestroy(() => {
-		for (const t of [
-			'war.declared', 'war.player_joined', 'war.battle_cost_due',
-			'war.battle_cost_paid', 'war.player_surrendered', 'war.asset_seized',
-			'war.entry_completed', 'war.peace_proposed', 'war.peace_vote',
-			'war.ended',
-		]) window.removeEventListener(`uneasy:${t}`, onWarEvent);
-	});
+	useWindowEvents(WAR_EVENTS, onWarEvent);
+	onMount(() => { if (game.phase === 'main_event') refreshWars(); });
 	// Refresh when the row changes too — outstanding-cost computation is per-row.
 	$effect(() => {
 		if (game.phase === 'main_event') {
