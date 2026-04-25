@@ -15,7 +15,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
-	import { playerName } from './shared';
+	import { playerName, parseResolutionData } from './shared';
 
 	interface Props {
 		mode: 'prep' | 'resolve' | 'delay-reveal';
@@ -69,21 +69,14 @@
 		choices: string[];
 	};
 	const clState = $derived.by<CLState>(() => {
-		const blank: CLState = {
-			phase: '', partnerID: null, delayRevealID: null,
-			redelayRevealID: null, choices: [],
+		const rd = parseResolutionData(plan);
+		return {
+			phase: rd.liaise_phase ?? '',
+			partnerID: rd.partner_id ?? null,
+			delayRevealID: rd.liaise_delay_reveal_id ?? null,
+			redelayRevealID: rd.redelay_reveal_id ?? null,
+			choices: rd.choices ?? [],
 		};
-		if (!plan?.resolution_data) return blank;
-		try {
-			const rd = JSON.parse(plan.resolution_data);
-			return {
-				phase: (rd.liaise_phase as string | undefined) ?? '',
-				partnerID: (rd.partner_id as number | undefined) ?? null,
-				delayRevealID: (rd.liaise_delay_reveal_id as number | undefined) ?? null,
-				redelayRevealID: (rd.redelay_reveal_id as number | undefined) ?? null,
-				choices: (rd.choices as string[] | undefined) ?? [],
-			};
-		} catch { return blank; }
 	});
 
 	const amPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);

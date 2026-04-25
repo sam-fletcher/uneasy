@@ -10,7 +10,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
-	import { MAKE_OPTIONS, MAR_OPTIONS, parseChoices, playerName } from './shared';
+	import { MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName } from './shared';
 
 	interface Props {
 		mode: 'prep' | 'resolve';
@@ -113,7 +113,7 @@
 	</div>
 
 {:else if plan}
-	{@const existingChoices = parseChoices(plan)}
+	{@const existingChoices = parseResolutionData(plan).choices ?? []}
 	{@const choicesDone = existingChoices.length > 0}
 
 	<ResolvingCard {plan} {players} error={resError}>

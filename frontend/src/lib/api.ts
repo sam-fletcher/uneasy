@@ -185,23 +185,92 @@ export interface Plan {
 	resolution_data: string | null;
 }
 
-/** Parsed resolution_data JSON embedded in a Plan. */
-export interface PlanResolutionData {
-	peer_count?: number;
+/** Mirrors game.ResolutionData (uneasy/game/plan.go). All fields optional —
+ * only the ones relevant to a given plan type are populated. */
+export interface ResolutionData {
+	// ── Exchange Courtiers ──
 	fair_trade_asset_id?: number | null;
 	fair_trade_accepted?: boolean | null;
-	choices?: string[];
-	/** EC make + "messy": true once MakeChoice records the messy option. */
 	messy_break_required?: boolean;
-	/** EC make + "messy": true once the target has completed the messy break. */
 	messy_break_done?: boolean;
+
+	// ── Make Introductions ──
+	peer_count?: number;
+	delayed_peer_plan_ids?: number[];
+	delayed_arrival?: boolean;
+	delayed_peer_asset_id?: number | null;
+	original_plan_id?: number | null;
+
+	// ── Spread Propaganda ──
+	recursive_plan_id?: number | null;
+	esteem_lockout?: boolean;
+
+	// ── Seek Answers / generic choices ──
+	choices?: string[];
+
+	// ── Spread Rumors ──
+	source_hidden?: boolean;
+	rumor_id?: number | null;
+
+	// ── Chronicle Histories ──
+	invoked_artifact_ids?: number[];
+	invoke_phase_closed?: boolean;
+
+	// ── Propose Decree ──
+	signatory_player_ids?: number[];
+	signatory_id?: number | null;
+	addendum?: string;
+	law_id?: number | null;
+
+	// ── Clandestinely Liaise ──
+	partner_id?: number | null;
+	liaise_phase?: string;
+	liaise_delay_reveal_id?: number | null;
+	redelay_reveal_id?: number | null;
+
+	// ── Propose Duel ──
+	duel_type?: string;
+	preparer_champion_id?: number | null;
+	target_champion_id?: number | null;
+	preparer_champion_declared?: boolean;
+	target_champion_declared?: boolean;
+	duel_phase?: string;
+	preparer_stake_count?: number;
+	target_stake_count?: number;
+	current_bout?: number;
+	initiative_player_id?: number | null;
+
+	// ── Host Festivity ──
+	festivity_phase?: string;
+	guest_player_ids?: number[];
+	guest_outcomes?: Record<string, string>;
+	guest_make_choices?: Record<string, string>;
+	guest_mar_choices?: Record<string, string>;
+	host_guest_choices?: Record<string, string>;
+	guest_roll_ids?: Record<string, number>;
+	guest_ious?: number[];
+	host_mar_insists?: string[];
+	accept_duels_player_ids?: number[];
+	pending_duel_plan_id?: number | null;
+	pending_challenge?: { challenger_id: number; target_id: number; notes?: string } | null;
+	centered_asset_ids?: number[];
+
+	// ── Make War ──
+	war_id?: number | null;
+	delay_reveal_id?: number | null;
+	war_enemy_player_ids?: number[];
+	war_scene_posted?: boolean;
+
+	// ── Make Demands ──
+	draft_choices?: { player_id: number; option: string }[];
+	counter_demand_placed?: boolean;
 }
 
 /** Response shape from GET /api/plans/:id. */
 export interface PlanDetail {
 	plan: Plan;
 	difficulty: number;
-	resolution_data: PlanResolutionData;
+	resolution_data: ResolutionData;
 }
 
 /** One eligibility entry from GET /api/tables/:id/plan-eligibility. */

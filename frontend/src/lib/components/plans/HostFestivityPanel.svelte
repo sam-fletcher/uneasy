@@ -22,7 +22,7 @@
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
-	import { playerName, assetName } from './shared';
+	import { playerName, assetName, parseResolutionData } from './shared';
 
 	interface Props {
 		mode: 'prep' | 'resolve';
@@ -86,31 +86,22 @@
 		centeredAssetIDs: number[];
 	};
 	const fest = $derived.by<FestRes>(() => {
-		const blank: FestRes = {
-			phase: '', guests: [], outcomes: {}, guestMakes: {}, guestMars: {},
-			hostChoices: {}, guestRollIDs: {}, guestIOUs: [], hostMarInsists: [],
-			acceptDuels: [], pendingDuelPlanID: null, pendingChallenge: null,
-			centeredAssetIDs: [],
+		const rd = parseResolutionData(plan);
+		return {
+			phase: rd.festivity_phase ?? '',
+			guests: rd.guest_player_ids ?? [],
+			outcomes: rd.guest_outcomes ?? {},
+			guestMakes: rd.guest_make_choices ?? {},
+			guestMars: rd.guest_mar_choices ?? {},
+			hostChoices: rd.host_guest_choices ?? {},
+			guestRollIDs: rd.guest_roll_ids ?? {},
+			guestIOUs: rd.guest_ious ?? [],
+			hostMarInsists: rd.host_mar_insists ?? [],
+			acceptDuels: rd.accept_duels_player_ids ?? [],
+			pendingDuelPlanID: rd.pending_duel_plan_id ?? null,
+			pendingChallenge: rd.pending_challenge ?? null,
+			centeredAssetIDs: rd.centered_asset_ids ?? [],
 		};
-		if (!plan?.resolution_data) return blank;
-		try {
-			const rd = JSON.parse(plan.resolution_data);
-			return {
-				phase: rd.festivity_phase ?? '',
-				guests: rd.guest_player_ids ?? [],
-				outcomes: rd.guest_outcomes ?? {},
-				guestMakes: rd.guest_make_choices ?? {},
-				guestMars: rd.guest_mar_choices ?? {},
-				hostChoices: rd.host_guest_choices ?? {},
-				guestRollIDs: rd.guest_roll_ids ?? {},
-				guestIOUs: rd.guest_ious ?? [],
-				hostMarInsists: rd.host_mar_insists ?? [],
-				acceptDuels: rd.accept_duels_player_ids ?? [],
-				pendingDuelPlanID: rd.pending_duel_plan_id ?? null,
-				pendingChallenge: rd.pending_challenge ?? null,
-				centeredAssetIDs: rd.centered_asset_ids ?? [],
-			};
-		} catch { return blank; }
 	});
 
 	const meKey = $derived(currentPlayerID == null ? '' : String(currentPlayerID));

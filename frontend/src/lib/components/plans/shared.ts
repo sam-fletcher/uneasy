@@ -1,5 +1,5 @@
 // Shared constants, parsers, and helpers for plan components.
-import type { Plan, Player, Asset, PlanType } from '$lib/api';
+import type { Plan, Player, Asset, PlanType, ResolutionData } from '$lib/api';
 
 export const PLAN_SHORT: Record<PlanType, string> = {
 	exchange_courtiers:   'Exchange Courtiers',
@@ -67,28 +67,14 @@ export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	],
 };
 
-// ── Resolution data parsers ───────────────────────────────────────────────
+// ── Resolution data parser ────────────────────────────────────────────────
 
-function parseRD(plan: Plan): Record<string, unknown> {
-	if (!plan.resolution_data) return {};
-	try { return JSON.parse(plan.resolution_data); } catch { return {}; }
-}
-
-export function parseFTAssetID(plan: Plan): number | null {
-	return (parseRD(plan).fair_trade_asset_id as number | null) ?? null;
-}
-export function parseFTAccepted(plan: Plan): boolean | null {
-	const v = parseRD(plan).fair_trade_accepted;
-	return v == null ? null : (v as boolean);
-}
-export function parseChoices(plan: Plan): string[] {
-	return (parseRD(plan).choices as string[] | undefined) ?? [];
-}
-export function parseMessyBreakRequired(plan: Plan): boolean {
-	return (parseRD(plan).messy_break_required as boolean | undefined) ?? false;
-}
-export function parseMessyBreakDone(plan: Plan): boolean {
-	return (parseRD(plan).messy_break_done as boolean | undefined) ?? false;
+/** Parse plan.resolution_data into the typed ResolutionData shape. Returns
+ * an empty object if the field is null or the JSON is malformed. */
+export function parseResolutionData(plan: Plan | null | undefined): ResolutionData {
+	if (!plan?.resolution_data) return {};
+	try { return JSON.parse(plan.resolution_data) as ResolutionData; }
+	catch { return {}; }
 }
 
 // ── Generic helpers ───────────────────────────────────────────────────────

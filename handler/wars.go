@@ -213,10 +213,16 @@ func buildWarState(
 
 	var openProposal *peaceProposalInfo
 	prop, err := q.GetOpenPeaceProposal(ctx, war.ID)
-	if err == nil {
-		votes, err := q.ListPeaceVotes(ctx, prop.ID)
-		if err != nil {
-			return WarStateResponse{}, err
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// No open proposal, which is a common state. Not an error.
+		openProposal = nil
+	case err != nil:
+		return WarStateResponse{}, err
+	default:
+		votes, errVotes := q.ListPeaceVotes(ctx, prop.ID)
+		if errVotes != nil {
+			return WarStateResponse{}, errVotes
 		}
 		voteInfos := make([]peaceVoteInfo, 0, len(votes))
 		acceptedSet := map[int64]bool{}
@@ -245,8 +251,6 @@ func buildWarState(
 			Votes:      voteInfos,
 			Awaiting:   awaiting,
 		}
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return WarStateResponse{}, err
 	}
 
 	openClaims, err := q.ListOpenSurrenderClaimsByWar(ctx, war.ID)
@@ -275,4 +279,3 @@ func buildWarState(
 		OpenClaims:       claimInfos,
 	}, nil
 }
-

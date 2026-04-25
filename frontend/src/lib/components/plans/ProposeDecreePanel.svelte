@@ -25,7 +25,7 @@
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
-	import { playerName } from './shared';
+	import { playerName, parseResolutionData } from './shared';
 
 	interface Props {
 		mode: 'prep' | 'resolve';
@@ -81,17 +81,13 @@
 		lawID: number | null;
 	};
 	const pdState = $derived.by<PDState>(() => {
-		const blank: PDState = { signatoryID: null, council: [], addendum: '', lawID: null };
-		if (!plan?.resolution_data) return blank;
-		try {
-			const rd = JSON.parse(plan.resolution_data);
-			return {
-				signatoryID: (rd.signatory_id as number | undefined) ?? null,
-				council: (rd.signatory_player_ids as number[] | undefined) ?? [],
-				addendum: (rd.addendum as string | undefined) ?? '',
-				lawID: (rd.law_id as number | undefined) ?? null,
-			};
-		} catch { return blank; }
+		const rd = parseResolutionData(plan);
+		return {
+			signatoryID: rd.signatory_id ?? null,
+			council: rd.signatory_player_ids ?? [],
+			addendum: rd.addendum ?? '',
+			lawID: rd.law_id ?? null,
+		};
 	});
 
 	function powerRank(playerID: number | null): number | null {

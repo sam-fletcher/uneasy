@@ -12,9 +12,7 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
 	import {
-		MAKE_OPTIONS, MAR_OPTIONS,
-		parseFTAssetID, parseFTAccepted, parseChoices,
-		parseMessyBreakRequired, parseMessyBreakDone,
+		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData,
 		playerName, assetName, intactMarginalia,
 	} from './shared';
 
@@ -223,9 +221,10 @@
 {:else if plan}
 	{@const isPreparer = currentPlayerID === plan.preparer_id}
 	{@const isTarget = plan.target_player_id != null && currentPlayerID === plan.target_player_id}
-	{@const ftAssetID = parseFTAssetID(plan)}
-	{@const ftAccepted = parseFTAccepted(plan)}
-	{@const existingChoices = parseChoices(plan)}
+	{@const rd = parseResolutionData(plan)}
+	{@const ftAssetID = rd.fair_trade_asset_id ?? null}
+	{@const ftAccepted = rd.fair_trade_accepted ?? null}
+	{@const existingChoices = rd.choices ?? []}
 	{@const choicesDone = existingChoices.length > 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
@@ -308,8 +307,8 @@
 			</MakeMarPicker>
 
 		{:else if choicesDone || (rollOutcome == null && ftAccepted === true)}
-			{@const messyRequired = parseMessyBreakRequired(plan)}
-			{@const messyDone = parseMessyBreakDone(plan)}
+			{@const messyRequired = rd.messy_break_required ?? false}
+			{@const messyDone = rd.messy_break_done ?? false}
 
 			{#if messyRequired && !messyDone}
 				{#if isTarget}

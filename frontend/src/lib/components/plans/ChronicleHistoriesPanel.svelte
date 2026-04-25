@@ -29,7 +29,7 @@
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
-	import { parseChoices, playerName } from './shared';
+	import { parseResolutionData, playerName } from './shared';
 
 	interface Props {
 		mode: 'prep' | 'resolve';
@@ -87,14 +87,11 @@
 	// The server stores invoked_artifact_ids in resolution_data. We recompute
 	// from the plan on every change.
 	const resolutionState = $derived.by<{ ids: number[]; closed: boolean }>(() => {
-		if (!plan?.resolution_data) return { ids: [], closed: false };
-		try {
-			const rd = JSON.parse(plan.resolution_data);
-			return {
-				ids: (rd.invoked_artifact_ids as number[] | undefined) ?? [],
-				closed: Boolean(rd.invoke_phase_closed),
-			};
-		} catch { return { ids: [], closed: false }; }
+		const rd = parseResolutionData(plan);
+		return {
+			ids: rd.invoked_artifact_ids ?? [],
+			closed: rd.invoke_phase_closed ?? false,
+		};
 	});
 	const invokedIDs = $derived(resolutionState.ids);
 	const invokePhaseClosed = $derived(resolutionState.closed);
@@ -174,7 +171,7 @@
 	type MarEntry = { playerID: number; choice: string };
 	const marEntries = $derived.by<MarEntry[]>(() => {
 		if (!plan) return [];
-		return parseChoices(plan)
+		return (parseResolutionData(plan).choices ?? [])
 			.map(c => {
 				const idx = c.indexOf(':');
 				if (idx < 0) return null;
@@ -238,7 +235,7 @@
 	// Make-path choices are stored as plain keys (not "pid:choice"); count
 	// those only.
 	const makeChoices = $derived(
-		plan ? parseChoices(plan).filter(c => !c.includes(':')) : []
+		plan ? (parseResolutionData(plan).choices ?? []).filter(c => !c.includes(':')) : []
 	);
 </script>
 

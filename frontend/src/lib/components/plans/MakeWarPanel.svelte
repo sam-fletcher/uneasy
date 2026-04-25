@@ -30,7 +30,7 @@
 		type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
-	import { playerName } from './shared';
+	import { playerName, parseResolutionData } from './shared';
 
 	interface Props {
 		mode: 'prep' | 'war';
@@ -89,17 +89,9 @@
 	let actionError = $state('');
 
 	// Resolution data on the plan tells us about the delay reveal + scene.
-	const planRD = $derived.by(() => {
-		if (!plan?.resolution_data) return {} as Record<string, unknown>;
-		try { return JSON.parse(plan.resolution_data) as Record<string, unknown>; }
-		catch { return {} as Record<string, unknown>; }
-	});
-	const delayRevealID = $derived(
-		(planRD.delay_reveal_id as number | undefined) ?? null,
-	);
-	const warScenePosted = $derived(
-		(planRD.war_scene_posted as boolean | undefined) ?? false,
-	);
+	const planRD = $derived(parseResolutionData(plan));
+	const delayRevealID = $derived(planRD.delay_reveal_id ?? null);
+	const warScenePosted = $derived(planRD.war_scene_posted ?? false);
 
 	async function refreshWar() {
 		if (!plan) return;

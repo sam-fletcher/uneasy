@@ -24,7 +24,7 @@
 		type DuelStake, type DuelBout, type DuelStateResponse,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
-	import { playerName, assetName } from './shared';
+	import { playerName, assetName, parseResolutionData } from './shared';
 
 	interface Props {
 		mode: 'prep' | 'resolve';
@@ -96,30 +96,20 @@
 		choices: string[];
 	};
 	const duelRes = $derived.by<DuelRes>(() => {
-		const blank: DuelRes = {
-			duelType: '', phase: '', initiativeID: null,
-			prepChampID: null, targChampID: null,
-			prepChampDeclared: false, targChampDeclared: false,
-			prepStakeCount: 0, targStakeCount: 0,
-			currentBout: 0, choices: [],
+		const rd = parseResolutionData(plan);
+		return {
+			duelType: rd.duel_type ?? '',
+			phase: rd.duel_phase ?? '',
+			initiativeID: rd.initiative_player_id ?? null,
+			prepChampID: rd.preparer_champion_id ?? null,
+			targChampID: rd.target_champion_id ?? null,
+			prepChampDeclared: rd.preparer_champion_declared ?? false,
+			targChampDeclared: rd.target_champion_declared ?? false,
+			prepStakeCount: rd.preparer_stake_count ?? 0,
+			targStakeCount: rd.target_stake_count ?? 0,
+			currentBout: rd.current_bout ?? 0,
+			choices: rd.choices ?? [],
 		};
-		if (!plan?.resolution_data) return blank;
-		try {
-			const rd = JSON.parse(plan.resolution_data);
-			return {
-				duelType: (rd.duel_type as string | undefined) ?? '',
-				phase: (rd.duel_phase as string | undefined) ?? '',
-				initiativeID: (rd.initiative_player_id as number | undefined) ?? null,
-				prepChampID: (rd.preparer_champion_id as number | undefined) ?? null,
-				targChampID: (rd.target_champion_id as number | undefined) ?? null,
-				prepChampDeclared: (rd.preparer_champion_declared as boolean | undefined) ?? false,
-				targChampDeclared: (rd.target_champion_declared as boolean | undefined) ?? false,
-				prepStakeCount: (rd.preparer_stake_count as number | undefined) ?? 0,
-				targStakeCount: (rd.target_stake_count as number | undefined) ?? 0,
-				currentBout: (rd.current_bout as number | undefined) ?? 0,
-				choices: (rd.choices as string[] | undefined) ?? [],
-			};
-		} catch { return blank; }
 	});
 
 	// ── Participant identity helpers ─────────────────────────────────────────

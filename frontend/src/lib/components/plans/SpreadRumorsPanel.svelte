@@ -22,7 +22,7 @@
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
-	import { parseChoices, playerName, assetName } from './shared';
+	import { parseResolutionData, playerName, assetName } from './shared';
 
 	interface Props {
 		mode: 'prep' | 'resolve';
@@ -257,7 +257,7 @@
 	</div>
 
 {:else if plan}
-	{@const existingChoices = parseChoices(plan)}
+	{@const existingChoices = parseResolutionData(plan).choices ?? []}
 	{@const choicesDone = existingChoices.length > 0}
 	{@const btNeeded = countIn(existingChoices, 'break_target')}
 	{@const taNeeded = countIn(existingChoices, 'take_asset')}
