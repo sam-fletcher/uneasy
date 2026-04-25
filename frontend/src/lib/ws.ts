@@ -84,7 +84,11 @@ export const EventTypes = {
 	WarPlayerJoined: 'war.player_joined',
 	WarBattleCostDue: 'war.battle_cost_due',
 	WarBattleCostPaid: 'war.battle_cost_paid',
+	WarPlayerSurrendered: 'war.player_surrendered',
+	WarAssetSeized: 'war.asset_seized',
+	WarEntryCompleted: 'war.entry_completed',
 	WarPeaceProposed: 'war.peace_proposed',
+	WarPeaceVote: 'war.peace_vote',
 	WarEnded: 'war.ended',
 
 	// Make Demands

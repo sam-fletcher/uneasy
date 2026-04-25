@@ -31,6 +31,7 @@
 	import ClandestinelyLiaisePanel from './plans/ClandestinelyLiaisePanel.svelte';
 	import ProposeDuelPanel from './plans/ProposeDuelPanel.svelte';
 	import HostFestivityPanel from './plans/HostFestivityPanel.svelte';
+	import MakeWarPanel from './plans/MakeWarPanel.svelte';
 
 	interface Props {
 		gameID: number;
@@ -79,6 +80,14 @@
 	);
 
 	const needsResolution = $derived(resolvingPlan != null || pendingOnRow.length > 0);
+
+	// Make War plans whose war may still be active. Render an always-on panel
+	// for each one so the cost-of-battle picker / peace flow / surrender claims
+	// stay visible across rows even after the originating plan has resolved.
+	// (The MakeWarPanel itself hides when both plan is resolved AND war ended.)
+	const warPlans = $derived(
+		plans.filter(p => p.plan_type === 'make_war' && p.status !== 'cancelled'),
+	);
 
 	// Pending Clandestinely Liaise plans the current player is a participant in,
 	// where the delay reveal has not yet completed (plan is still at row 0).
@@ -147,6 +156,17 @@
 	}
 </script>
 
+<!-- ── Active Make War plans (delay reveal, status, cost picker, peace) ── -->
+{#each warPlans as wp (wp.id)}
+	{#if !(resolvingPlan?.id === wp.id)}
+		<!-- Skip if this Make War is the resolving plan; the resolve dispatch
+			 below renders it instead so we don't double-render. -->
+		<MakeWarPanel mode="war"
+			{gameID} {assets} {players} {currentPlayerID}
+			plan={wp} {onPlansChanged} />
+	{/if}
+{/each}
+
 <!-- ── Pending Clandestinely Liaise delay reveals ───────────────────────── -->
 {#each pendingLiaiseReveals as rp (rp.id)}
 	<ClandestinelyLiaisePanel mode="delay-reveal"
@@ -201,6 +221,10 @@
 			{gameID} {assets} {players} {rankings} {currentPlayerID}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome} {activeRoll}
 			{onPlansChanged} />
+	{:else if plan.plan_type === 'make_war'}
+		<MakeWarPanel mode="war"
+			{gameID} {assets} {players} {currentPlayerID}
+			{plan} {isFocusPlayer} {onPlansChanged} />
 	{:else if plan.plan_type === 'host_festivity'}
 		<HostFestivityPanel mode="resolve"
 			{gameID} {assets} {players} {rankings} {currentPlayerID}
@@ -311,6 +335,10 @@
 		{:else if selectedPlanType === 'host_festivity'}
 			<HostFestivityPanel mode="prep"
 				{gameID} {assets} {players} {rankings} {currentPlayerID}
+				{onPlanPrepared} />
+		{:else if selectedPlanType === 'make_war'}
+			<MakeWarPanel mode="prep"
+				{gameID} {assets} {players} {currentPlayerID}
 				{onPlanPrepared} />
 		{:else if selectedPlanType}
 			<div class="plan-form">

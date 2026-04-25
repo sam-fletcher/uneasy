@@ -1050,7 +1050,78 @@ export function insistHostMar(
 
 // Make War.
 
-/** Make War — uninvited player joins a side before the delay reveal completes. */
+export interface WarParticipantInfo {
+	player_id: number;
+	side: 1 | 2;
+	joined_at_row: number;
+	surrendered_at_row: number | null;
+	entry_payment_complete: boolean;
+}
+
+export interface WarBattleCostInfo {
+	id: number;
+	row_number: number;
+	payer_id: number;
+	opponent_id: number;
+	choice: string;
+	asset_id_1: number | null;
+	asset_id_2: number | null;
+	surrendered: boolean;
+	is_entry: boolean;
+}
+
+export interface WarOutstandingCost {
+	payer_id: number;
+	opponent_id: number;
+}
+
+export interface WarPeaceVote { player_id: number; accepted: boolean }
+
+export interface WarPeaceProposalInfo {
+	id: number;
+	proposer_id: number;
+	terms: string;
+	status: 'open' | 'accepted' | 'rejected';
+	votes: WarPeaceVote[];
+	awaiting: number[];
+}
+
+export interface WarSurrenderClaimInfo {
+	id: number;
+	surrendered_id: number;
+	claimant_id: number;
+}
+
+export interface WarStateResponse {
+	war_id: number;
+	origin_plan_id: number;
+	status: 'active' | 'ended';
+	started_at_row: number;
+	ended_at_row: number | null;
+	end_reason: string | null;
+	current_row: number;
+	participants: WarParticipantInfo[];
+	battle_costs: WarBattleCostInfo[];
+	/** Reverse-power-ordered (payer, opponent) pairs still owed *this* row. */
+	outstanding_costs: WarOutstandingCost[];
+	open_proposal: WarPeaceProposalInfo | null;
+	open_claims: WarSurrenderClaimInfo[];
+}
+
+/** Make War — full war state for the panel (participants, costs, peace, claims). */
+export function getWarState(planID: number): Promise<WarStateResponse> {
+	return apiFetch(`/plans/${planID}/war-state`);
+}
+
+/** List all active wars in a game. Used by the turn indicator to flag rows
+ * blocked on outstanding cost-of-battle payments. */
+export function listWars(gameID: number | string): Promise<{ wars: WarStateResponse[] }> {
+	return apiFetch(`/tables/${gameID}/wars`);
+}
+
+/** Make War — uninvited player joins a side. Free during the delay reveal;
+ * after the war is active, the joiner owes a cost-of-battle entry to every
+ * existing opposing participant before counting as fully joined. */
 export function joinWar(planID: number, side: 1 | 2): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/join-war`, {
 		method: 'POST',
@@ -1058,18 +1129,24 @@ export function joinWar(planID: number, side: 1 | 2): Promise<PlanEcho> {
 	});
 }
 
-/** Make War — submit die face for the delay reveal. */
-export function warReveal(planID: number, face: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/war-reveal`, {
-		method: 'POST',
-		body: JSON.stringify({ face }),
-	});
+/** Make War — focus player marks the one-time declaration scene posted.
+ * Required before completing the plan. */
+export function postWarScene(planID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/post-war-scene`, { method: 'POST' });
 }
 
-/** Make War — pay the cost of battle (break asset, leverage two, surrender, negotiate). */
+/** Make War — pay this row's cost of battle to one opponent.
+ * `surrender:true` after the payment marks the payer surrendered. */
 export function payBattleCost(
 	planID: number,
-	body: { choice: string; asset_id?: number | null } & Record<string, unknown>
+	body: {
+		opponent_id: number;
+		choice: 'break_asset' | 'leverage_two';
+		marginalia_id?: number;
+		asset_id_1?: number;
+		asset_id_2?: number;
+		surrender?: boolean;
+	}
 ): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/pay-battle-cost`, {
 		method: 'POST',
@@ -1077,7 +1154,38 @@ export function payBattleCost(
 	});
 }
 
-/** Make War — propose peace terms. */
+/** Make War — late joiner pays cost of battle entry to one existing opponent. */
+export function payWarEntry(
+	planID: number,
+	body: {
+		opponent_id: number;
+		choice: 'break_asset' | 'leverage_two';
+		marginalia_id?: number;
+		asset_id_1?: number;
+		asset_id_2?: number;
+	}
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/pay-war-entry`, {
+		method: 'POST',
+		body: JSON.stringify(body),
+	});
+}
+
+/** Make War — claim one asset from a surrendered opposing participant. */
+export function takeSurrenderAsset(
+	planID: number,
+	surrenderedID: number,
+	assetID: number,
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/take-surrender-asset`, {
+		method: 'POST',
+		body: JSON.stringify({ surrendered_id: surrenderedID, asset_id: assetID }),
+	});
+}
+
+/** Make War — propose peace terms. Only the active payer (whose turn it is to
+ * pay cost) may propose; the proposer auto-votes accept. If the vote is not
+ * unanimous they must still pay using break_asset/leverage_two. */
 export function proposePeace(planID: number, terms: string): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/propose-peace`, {
 		method: 'POST',
@@ -1085,14 +1193,17 @@ export function proposePeace(planID: number, terms: string): Promise<PlanEcho> {
 	});
 }
 
-/** Make War — accept proposed peace terms. */
-export function acceptPeace(planID: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/accept-peace`, { method: 'POST' });
-}
-
-/** Make War — reject proposed peace terms. */
-export function rejectPeace(planID: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/reject-peace`, { method: 'POST' });
+/** Make War — vote on an open peace proposal. A single 'reject' closes it;
+ * unanimous accepts end the war. */
+export function votePeace(
+	planID: number,
+	proposalID: number,
+	accepted: boolean,
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/vote-peace`, {
+		method: 'POST',
+		body: JSON.stringify({ proposal_id: proposalID, accepted }),
+	});
 }
 
 // Make Demands.

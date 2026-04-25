@@ -197,6 +197,9 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 			r.Post("/submit", handler.SubmitReveal(q, manager))
 		})
 
+		// Make War — read-side war state
+		r.Get("/tables/{id}/wars", handler.ListWars(q))
+
 		// Plans (Phase 3a+)
 		r.Get("/tables/{id}/plans", handler.ListPlans(q))
 		r.Get("/tables/{id}/plan-eligibility", handler.PlanEligibility(q))
@@ -204,6 +207,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Route("/plans/{planId}", func(r chi.Router) {
 			r.Get("/", handler.GetPlan(q))
 			r.Get("/duel-state", handler.GetDuelState(q))
+			r.Get("/war-state", handler.GetWarState(q))
 			r.Post("/resolve", handler.ResolvePlan(q, manager))
 			r.Post("/make-choice", handler.MakeChoice(q, manager))
 			r.Post("/complete", handler.CompletePlan(q, manager))

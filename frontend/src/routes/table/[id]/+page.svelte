@@ -349,7 +349,11 @@
 			case EventTypes.WarPlayerJoined:
 			case EventTypes.WarBattleCostDue:
 			case EventTypes.WarBattleCostPaid:
+			case EventTypes.WarPlayerSurrendered:
+			case EventTypes.WarAssetSeized:
+			case EventTypes.WarEntryCompleted:
 			case EventTypes.WarPeaceProposed:
+			case EventTypes.WarPeaceVote:
 			case EventTypes.WarEnded: {
 				// War events expose war_id only; refresh all plans so any
 				// war-bearing plans pick up updated participants / costs / peace state.

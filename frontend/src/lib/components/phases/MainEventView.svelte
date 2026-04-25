@@ -4,12 +4,14 @@
   recordRows and scenePosts are bindable so the parent WS handler can also update them.
 -->
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		createScenePost, createSceneEntry,
 		leverageAsset, refreshAsset, tearMarginalia,
 		endScene, refreshAssets, passFocus, createRoll,
+		listWars,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Marginalium, Ranking, Law, Rumor, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan } from '$lib/api';
+	import type { Game, Player, Asset, Marginalium, Ranking, Law, Rumor, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, WarStateResponse } from '$lib/api';
 	import AssetCard from '$lib/components/AssetCard.svelte';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
 	import LawsRumors from '$lib/components/LawsRumors.svelte';
@@ -67,6 +69,56 @@
 	}: Props = $props();
 
 	const myAssets = $derived(assets.filter(a => a.owner_id === currentPlayerID));
+
+	// ── War cost-of-battle gate ───────────────────────────────────────────────
+	// Track active wars game-wide so the row header can warn when row advance
+	// is blocked on unpaid battle costs or open surrender claims (the server
+	// returns a 409/`advance_blocked` field; we surface the same up-front).
+	let wars = $state<WarStateResponse[]>([]);
+	async function refreshWars() {
+		try {
+			const data = await listWars(game.id);
+			wars = data.wars;
+		} catch { wars = []; }
+	}
+	function onWarEvent() { refreshWars(); }
+	onMount(() => {
+		if (game.phase === 'main_event') refreshWars();
+		for (const t of [
+			'war.declared', 'war.player_joined', 'war.battle_cost_due',
+			'war.battle_cost_paid', 'war.player_surrendered', 'war.asset_seized',
+			'war.entry_completed', 'war.peace_proposed', 'war.peace_vote',
+			'war.ended',
+		]) window.addEventListener(`uneasy:${t}`, onWarEvent);
+	});
+	onDestroy(() => {
+		for (const t of [
+			'war.declared', 'war.player_joined', 'war.battle_cost_due',
+			'war.battle_cost_paid', 'war.player_surrendered', 'war.asset_seized',
+			'war.entry_completed', 'war.peace_proposed', 'war.peace_vote',
+			'war.ended',
+		]) window.removeEventListener(`uneasy:${t}`, onWarEvent);
+	});
+	// Refresh when the row changes too — outstanding-cost computation is per-row.
+	$effect(() => {
+		if (game.phase === 'main_event') {
+			void game.current_row;
+			refreshWars();
+		}
+	});
+
+	const blockingCostPayers = $derived.by<number[]>(() => {
+		const ids = new Set<number>();
+		for (const w of wars) for (const c of w.outstanding_costs) ids.add(c.payer_id);
+		return [...ids];
+	});
+	const blockingClaimants = $derived.by<number[]>(() => {
+		const ids = new Set<number>();
+		for (const w of wars) for (const c of w.open_claims) ids.add(c.claimant_id);
+		return [...ids];
+	});
+	const playerName = (id: number) =>
+		players.find(p => p.id === id)?.display_name ?? `Player ${id}`;
 
 	const focusPlayerName = $derived(
 		game.focus_player_id
@@ -388,6 +440,20 @@
 					<span class="focus-badge">Focus: {focusPlayerName}</span>
 				{/if}
 			</div>
+
+			{#if blockingCostPayers.length > 0 || blockingClaimants.length > 0}
+				<div class="war-block-banner">
+					<strong>Row advance blocked by war costs.</strong>
+					{#if blockingCostPayers.length > 0}
+						Waiting on cost of battle from:
+						{blockingCostPayers.map(playerName).join(', ')}.
+					{/if}
+					{#if blockingClaimants.length > 0}
+						Waiting on surrender-asset claims from:
+						{blockingClaimants.map(playerName).join(', ')}.
+					{/if}
+				</div>
+			{/if}
 
 			<div class="feed" bind:this={feedEl}>
 				{#if scenePosts.length === 0}
@@ -713,6 +779,16 @@
 		padding: 0.12rem 0.4rem;
 		border-radius: 4px;
 		font-size: 0.75rem;
+	}
+
+	.war-block-banner {
+		background: #3a1f1f;
+		border: 1px solid #6a3030;
+		color: #e7c5c5;
+		padding: 0.4rem 0.6rem;
+		border-radius: 4px;
+		font-size: 0.85rem;
+		margin: 0.3rem 0;
 	}
 
 	.feed {
