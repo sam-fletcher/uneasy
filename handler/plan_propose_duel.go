@@ -219,6 +219,74 @@ func (pduelHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	}
 }
 
+// ── Get Duel State ────────────────────────────────────────────────────────────
+
+// duelStakeView is the wire shape of a duel stake. HiddenDie is only populated
+// when the caller is allowed to see it: either they own the stake, or the
+// stake has been resolved (its die is already public via the bout record).
+type duelStakeView struct {
+	ID         int64  `json:"id"`
+	PlanID     int64  `json:"plan_id"`
+	PlayerID   int64  `json:"player_id"`
+	AssetID    int64  `json:"asset_id"`
+	IsResolved bool   `json:"is_resolved"`
+	IsWinner   *bool  `json:"is_winner"`
+	HiddenDie  *int16 `json:"hidden_die"`
+}
+
+// GetDuelState returns the full duel state a caller is allowed to see:
+// all stakes (with hidden dice masked for the opponent's unresolved stakes)
+// and the full bout history. GET /api/plans/:planId/duel-state.
+func GetDuelState(q *dbgen.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanProposeDuel {
+			respondErr(w, http.StatusBadRequest, "plan is not a propose_duel")
+			return
+		}
+
+		ctx := r.Context()
+		stakes, err := q.ListDuelStakesByPlan(ctx, plan.ID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load stakes")
+			return
+		}
+		bouts, err := q.ListDuelBoutsByPlan(ctx, plan.ID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load bouts")
+			return
+		}
+
+		views := make([]duelStakeView, len(stakes))
+		for i, s := range stakes {
+			v := duelStakeView{
+				ID:         s.ID,
+				PlanID:     s.PlanID,
+				PlayerID:   s.PlayerID,
+				AssetID:    s.AssetID,
+				IsResolved: s.IsResolved,
+				IsWinner:   s.IsWinner,
+			}
+			// Only reveal the hidden die to its owner, or when the stake has
+			// been resolved in a bout (at which point the die is public).
+			if s.PlayerID == player.ID || s.IsResolved {
+				face := s.HiddenDie
+				v.HiddenDie = &face
+			}
+			views[i] = v
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id": plan.ID,
+			"stakes":  views,
+			"bouts":   bouts,
+		})
+	}
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func pduelIsParticipant(plan *dbgen.Plan, playerID int64) bool {
@@ -248,8 +316,10 @@ func pduelSide(plan *dbgen.Plan, playerID int64) gamepkg.DuelSide {
 // ── Elect Champion ────────────────────────────────────────────────────────────
 
 // pduelElectChampionHandler: POST /api/plans/:planId/elect-champion
-// Body: {"asset_id": N}. The asset must be a peer owned by the caller.
-// Narrative only — champions don't change mechanics.
+// Body: {"asset_id": N | null}. If asset_id is null or omitted, the player is
+// signalling "I'll fight myself." If present, the asset must be a peer owned
+// by the caller. The initiative-holder must declare first so the other side's
+// UI knows when to unlock.
 func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -265,34 +335,64 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			AssetID int64 `json:"asset_id"`
+			AssetID *int64 `json:"asset_id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 {
-			respondErr(w, http.StatusBadRequest, "asset_id is required")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
 		ctx := r.Context()
-		asset, err := deps.Q.GetAssetByID(ctx, body.AssetID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "asset not found")
-			return
-		}
-		if asset.GameID != plan.GameID || asset.OwnerID != player.ID {
-			respondErr(w, http.StatusForbidden, "you do not own this asset")
-			return
-		}
-		if asset.AssetType != model.AssetPeer {
-			respondErr(w, http.StatusBadRequest, "champion must be a peer asset")
-			return
-		}
-
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.DuelState()
+
+		if state.Phase != duelPhaseSetup {
+			respondErr(w, http.StatusConflict, "champions can only be elected during setup")
+			return
+		}
+		alreadyDeclared := state.PreparerChampionDeclared
+		if player.ID != plan.PreparerID {
+			alreadyDeclared = state.TargetChampionDeclared
+		}
+		if alreadyDeclared {
+			respondErr(w, http.StatusConflict, "you have already declared your champion choice")
+			return
+		}
+		// Initiative-holder declares first.
+		if state.InitiativePlayerID != nil && *state.InitiativePlayerID != player.ID {
+			initHas := state.PreparerChampionDeclared
+			if *state.InitiativePlayerID != plan.PreparerID {
+				initHas = state.TargetChampionDeclared
+			}
+			if !initHas {
+				respondErr(w, http.StatusConflict,
+					"the player with initiative must declare their champion choice first")
+				return
+			}
+		}
+
+		if body.AssetID != nil {
+			asset, err := deps.Q.GetAssetByID(ctx, *body.AssetID)
+			if err != nil {
+				respondErr(w, http.StatusNotFound, "asset not found")
+				return
+			}
+			if asset.GameID != plan.GameID || asset.OwnerID != player.ID {
+				respondErr(w, http.StatusForbidden, "you do not own this asset")
+				return
+			}
+			if asset.AssetType != model.AssetPeer {
+				respondErr(w, http.StatusBadRequest, "champion must be a peer asset")
+				return
+			}
+		}
+
 		if player.ID == plan.PreparerID {
-			state.PreparerChampionID = &body.AssetID
+			state.PreparerChampionID = body.AssetID
+			state.PreparerChampionDeclared = true
 		} else {
-			state.TargetChampionID = &body.AssetID
+			state.TargetChampionID = body.AssetID
+			state.TargetChampionDeclared = true
 		}
 		resData.SetDuelState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
@@ -301,8 +401,12 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			var aid int64
+			if body.AssetID != nil {
+				aid = *body.AssetID
+			}
 			h.BroadcastEvent(model.EventDuelChampionElected, model.DuelChampionElectedPayload{
-				PlanID: plan.ID, PlayerID: player.ID, AssetID: body.AssetID,
+				PlanID: plan.ID, PlayerID: player.ID, AssetID: aid,
 			})
 		}
 
@@ -502,19 +606,22 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
-		// Create stakes with a hidden d6 per asset.
+		// Create stakes with a hidden d6 per asset. Collect them so the caller
+		// can see their own hidden dice in the response without polling.
+		createdStakes := make([]dbgen.DuelStakedAsset, 0, len(body.AssetIDs))
 		for _, aid := range body.AssetIDs {
 			face := int16(rand.IntN(gamepkg.DiceSides) + 1)
-			_, err = deps.Q.CreateDuelStake(ctx, dbgen.CreateDuelStakeParams{
+			stake, errStake := deps.Q.CreateDuelStake(ctx, dbgen.CreateDuelStakeParams{
 				PlanID:    plan.ID,
 				PlayerID:  player.ID,
 				AssetID:   aid,
 				HiddenDie: face,
 			})
-			if err != nil {
+			if errStake != nil {
 				respondErr(w, http.StatusInternalServerError, "could not create stake")
 				return
 			}
+			createdStakes = append(createdStakes, stake)
 		}
 
 		// If both players have staked, advance to bouts.
@@ -535,7 +642,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		respond(w, http.StatusOK, map[string]any{
-			"plan_id": plan.ID, "staked": len(body.AssetIDs),
+			"plan_id": plan.ID, "staked": len(body.AssetIDs), "stakes": createdStakes,
 		})
 	}
 }
@@ -824,16 +931,31 @@ func pduelCreateFinalRoll(
 	if err != nil {
 		return fmt.Errorf("list bouts: %w", err)
 	}
+	// Walk bouts in order. Tied-bout dice carry over: they join a pending pool
+	// and are awarded to the winner of the next non-tie bout (per the rules:
+	// "the winner of the bout gets both dice from that round as well as any
+	// that were set aside from previous tied bouts"). Tied dice that never
+	// find a subsequent non-tie bout are left with their stakes — the stakes
+	// themselves are still leveraged at the end of the duel.
 	var prepDice, targDice []int16
+	var pending []int16
 	for _, b := range bouts {
-		if b.IsMatch || b.WinnerID == nil || b.DeclarerDie == nil || b.ResponderDie == nil {
+		if b.DeclarerDie == nil || b.ResponderDie == nil {
 			continue
 		}
-		// Winner accumulates BOTH dice from the bout.
+		if b.IsMatch {
+			pending = append(pending, *b.DeclarerDie, *b.ResponderDie)
+			continue
+		}
+		if b.WinnerID == nil {
+			continue
+		}
+		gained := append([]int16{*b.DeclarerDie, *b.ResponderDie}, pending...)
+		pending = nil
 		if *b.WinnerID == plan.PreparerID {
-			prepDice = append(prepDice, *b.DeclarerDie, *b.ResponderDie)
+			prepDice = append(prepDice, gained...)
 		} else {
-			targDice = append(targDice, *b.DeclarerDie, *b.ResponderDie)
+			targDice = append(targDice, gained...)
 		}
 	}
 

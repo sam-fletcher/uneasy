@@ -502,6 +502,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			TargetPlanID     *int64         `json:"target_plan_id"`
 			PeerCount        int16          `json:"peer_count"`
 			EnemyPlayerIDs   []int64        `json:"enemy_player_ids"`
+			DuelType         string         `json:"duel_type"`
 			PreparationNotes *string        `json:"preparation_notes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -576,6 +577,24 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				return
 			}
 			// Reload so OnPrepare sees the persisted enemy list.
+			refreshed, err := q.GetPlanByID(ctx, plan.ID)
+			if err == nil {
+				plan = refreshed
+			}
+		}
+
+		// Persist duel_type for Propose Duel so it survives into resolution.
+		if body.PlanType == model.PlanProposeDuel {
+			if body.DuelType != "arms" && body.DuelType != "wits" {
+				respondErr(w, http.StatusBadRequest, "duel_type must be 'arms' or 'wits'")
+				return
+			}
+			resData := loadResolutionData(plan.ResolutionData)
+			resData.DuelType = body.DuelType
+			if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not save duel type")
+				return
+			}
 			refreshed, err := q.GetPlanByID(ctx, plan.ID)
 			if err == nil {
 				plan = refreshed
@@ -759,6 +778,16 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 					allowed = true
 				}
 			}
+			// Propose Duel mar: the target takes staked assets from the preparer,
+			// so the target picks which stakes to claim.
+			if !allowed && plan.PlanType == model.PlanProposeDuel && plan.TargetPlayerID != nil &&
+				*plan.TargetPlayerID == player.ID {
+				if roll, rerr := q.GetDiceRollByPlanID(r.Context(), &plan.ID); rerr == nil &&
+					roll.Outcome != nil && *roll.Outcome == marOutcome {
+					allowed = true
+				}
+			}
+
 			// Spread Rumors mar: the target-asset owner drives make-choice with
 			// the counter-rumor options (applied to preparer's assets).
 			if !allowed && plan.PlanType == model.PlanSpreadRumors && plan.TargetAssetID != nil {

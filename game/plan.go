@@ -143,14 +143,16 @@ type ResolutionData struct {
 	RedelayRevealID     *int64 `json:"redelay_reveal_id,omitempty"`
 
 	// ── Propose Duel ──
-	DuelType           string `json:"duel_type,omitempty"`
-	PreparerChampionID *int64 `json:"preparer_champion_id,omitempty"`
-	TargetChampionID   *int64 `json:"target_champion_id,omitempty"`
-	DuelPhase          string `json:"duel_phase,omitempty"`
-	PreparerStakeCount int16  `json:"preparer_stake_count,omitempty"`
-	TargetStakeCount   int16  `json:"target_stake_count,omitempty"`
-	CurrentBout        int16  `json:"current_bout,omitempty"`
-	InitiativePlayerID *int64 `json:"initiative_player_id,omitempty"`
+	DuelType                 string `json:"duel_type,omitempty"`
+	PreparerChampionID       *int64 `json:"preparer_champion_id,omitempty"`
+	TargetChampionID         *int64 `json:"target_champion_id,omitempty"`
+	PreparerChampionDeclared bool   `json:"preparer_champion_declared,omitempty"`
+	TargetChampionDeclared   bool   `json:"target_champion_declared,omitempty"`
+	DuelPhase                string `json:"duel_phase,omitempty"`
+	PreparerStakeCount       int16  `json:"preparer_stake_count,omitempty"`
+	TargetStakeCount         int16  `json:"target_stake_count,omitempty"`
+	CurrentBout              int16  `json:"current_bout,omitempty"`
+	InitiativePlayerID       *int64 `json:"initiative_player_id,omitempty"`
 
 	// ── Host Festivity ──
 	FestivityPhase       string            `json:"festivity_phase,omitempty"`
@@ -217,6 +219,11 @@ type DuelState struct {
 	DuelType           string // "arms" or "wits"
 	PreparerChampionID *int64
 	TargetChampionID   *int64
+	// *Declared flags are set once the side has submitted an elect-champion
+	// call (with or without an asset). They're how the UI knows the
+	// initiative-holder has moved so the second player's picker can unlock.
+	PreparerChampionDeclared bool
+	TargetChampionDeclared   bool
 	// Phase tracks pre-roll progression. See the propose-duel handler for
 	// the set of valid values ("stake_reveal", "staking", "bouts", "roll",
 	// "done").
@@ -230,14 +237,16 @@ type DuelState struct {
 // DuelState returns the Propose Duel view of r.
 func (r *ResolutionData) DuelState() DuelState {
 	return DuelState{
-		DuelType:           r.DuelType,
-		PreparerChampionID: r.PreparerChampionID,
-		TargetChampionID:   r.TargetChampionID,
-		Phase:              r.DuelPhase,
-		PreparerStakeCount: r.PreparerStakeCount,
-		TargetStakeCount:   r.TargetStakeCount,
-		CurrentBout:        r.CurrentBout,
-		InitiativePlayerID: r.InitiativePlayerID,
+		DuelType:                 r.DuelType,
+		PreparerChampionID:       r.PreparerChampionID,
+		TargetChampionID:         r.TargetChampionID,
+		PreparerChampionDeclared: r.PreparerChampionDeclared,
+		TargetChampionDeclared:   r.TargetChampionDeclared,
+		Phase:                    r.DuelPhase,
+		PreparerStakeCount:       r.PreparerStakeCount,
+		TargetStakeCount:         r.TargetStakeCount,
+		CurrentBout:              r.CurrentBout,
+		InitiativePlayerID:       r.InitiativePlayerID,
 	}
 }
 
@@ -246,6 +255,8 @@ func (r *ResolutionData) SetDuelState(s DuelState) {
 	r.DuelType = s.DuelType
 	r.PreparerChampionID = s.PreparerChampionID
 	r.TargetChampionID = s.TargetChampionID
+	r.PreparerChampionDeclared = s.PreparerChampionDeclared
+	r.TargetChampionDeclared = s.TargetChampionDeclared
 	r.DuelPhase = s.Phase
 	r.PreparerStakeCount = s.PreparerStakeCount
 	r.TargetStakeCount = s.TargetStakeCount

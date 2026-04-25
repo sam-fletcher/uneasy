@@ -472,6 +472,7 @@
 				prepEnabled={isFocusPlayer && sceneEnded && !actionTaken}
 				{rollActive}
 				{rollOutcome}
+				{activeRoll}
 				onRollCreated={onPlanRollCreated}
 				{onPlansChanged}
 				{onPlanPrepared}

@@ -624,7 +624,10 @@ export function preparePlan(
 		plan_type: PlanType;
 		target_player_id?: number | null;
 		target_asset_id?: number | null;
+		target_plan_id?: number | null;
 		peer_count?: number;
+		enemy_player_ids?: number[];
+		duel_type?: 'arms' | 'wits';
 		preparation_notes?: string | null;
 	}
 ): Promise<{ plan: Plan }> {
@@ -893,7 +896,47 @@ export function getReveal(revealID: number): Promise<SimultaneousReveal> {
 
 // Propose Duel.
 
-/** Propose Duel — elect a peer as champion (omit asset_id to fight yourself). */
+/** A staked asset as seen by a caller. `hidden_die` is null for stakes the
+ * caller doesn't own unless the stake has already been resolved in a bout. */
+export interface DuelStake {
+	id: number;
+	plan_id: number;
+	player_id: number;
+	asset_id: number;
+	is_resolved: boolean;
+	is_winner: boolean | null;
+	hidden_die: number | null;
+}
+
+export interface DuelBout {
+	id: number;
+	plan_id: number;
+	bout_number: number;
+	declarer_id: number;
+	declarer_stake_id: number;
+	responder_id: number;
+	responder_stake_id: number | null;
+	declaration: 'high' | 'low' | null;
+	declarer_die: number | null;
+	responder_die: number | null;
+	winner_id: number | null;
+	is_match: boolean;
+	created_at: string;
+	resolved_at: string | null;
+}
+
+export interface DuelStateResponse {
+	plan_id: number;
+	stakes: DuelStake[];
+	bouts: DuelBout[];
+}
+
+/** Propose Duel — current stakes + bout history visible to the caller. */
+export function getDuelState(planID: number): Promise<DuelStateResponse> {
+	return apiFetch(`/plans/${planID}/duel-state`);
+}
+
+/** Propose Duel — elect a peer as champion. Pass null to fight yourself. */
 export function electChampion(planID: number, assetID: number | null): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/elect-champion`, {
 		method: 'POST',
@@ -909,8 +952,12 @@ export function stakeReveal(planID: number, count: number): Promise<PlanEcho> {
 	});
 }
 
-/** Propose Duel — select the specific assets to stake. */
-export function selectStakes(planID: number, assetIDs: number[]): Promise<PlanEcho> {
+/** Propose Duel — select the specific assets to stake. Response includes the
+ * caller's newly created stakes (with hidden dice). */
+export function selectStakes(
+	planID: number,
+	assetIDs: number[],
+): Promise<{ plan_id: number; staked: number; stakes: DuelStake[] }> {
 	return apiFetch(`/plans/${planID}/select-stakes`, {
 		method: 'POST',
 		body: JSON.stringify({ asset_ids: assetIDs }),

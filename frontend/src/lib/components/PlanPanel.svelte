@@ -29,6 +29,7 @@
 	import ChronicleHistoriesPanel from './plans/ChronicleHistoriesPanel.svelte';
 	import ProposeDecreePanel from './plans/ProposeDecreePanel.svelte';
 	import ClandestinelyLiaisePanel from './plans/ClandestinelyLiaisePanel.svelte';
+	import ProposeDuelPanel from './plans/ProposeDuelPanel.svelte';
 
 	interface Props {
 		gameID: number;
@@ -50,6 +51,9 @@
 		rollActive: boolean;
 		/** Latest roll outcome — set by parent when roll.resolved arrives. */
 		rollOutcome: 'make' | 'mar' | null;
+		/** Full active roll object — used by Propose Duel to size the
+		 *  winner-takes-N picker (result on make, difficulty on mar). */
+		activeRoll?: DiceRoll | null;
 		/** Called when a plan-linked dice roll is created. */
 		onRollCreated: (roll: DiceRoll) => void;
 		/** Called when any plan state changes. */
@@ -61,7 +65,7 @@
 	let {
 		gameID, currentRow, plans, assets, players, rankings, currentPlayerID,
 		isFocusPlayer, prepEnabled = false,
-		rollActive, rollOutcome,
+		rollActive, rollOutcome, activeRoll = null,
 		onRollCreated, onPlansChanged, onPlanPrepared,
 	}: Props = $props();
 
@@ -191,6 +195,11 @@
 		<ClandestinelyLiaisePanel mode="resolve"
 			{gameID} {assets} {players} {currentPlayerID}
 			{plan} {onPlansChanged} />
+	{:else if plan.plan_type === 'propose_duel'}
+		<ProposeDuelPanel mode="resolve"
+			{gameID} {assets} {players} {rankings} {currentPlayerID}
+			{plan} {isFocusPlayer} {rollActive} {rollOutcome} {activeRoll}
+			{onPlansChanged} />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
@@ -288,6 +297,10 @@
 		{:else if selectedPlanType === 'clandestinely_liaise'}
 			<ClandestinelyLiaisePanel mode="prep"
 				{gameID} {assets} {players} {currentPlayerID}
+				{onPlanPrepared} />
+		{:else if selectedPlanType === 'propose_duel'}
+			<ProposeDuelPanel mode="prep"
+				{gameID} {assets} {players} {rankings} {currentPlayerID}
 				{onPlanPrepared} />
 		{:else if selectedPlanType}
 			<div class="plan-form">

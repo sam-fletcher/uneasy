@@ -203,6 +203,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Post("/tables/{id}/prepare-plan", handler.PreparePlan(q, manager))
 		r.Route("/plans/{planId}", func(r chi.Router) {
 			r.Get("/", handler.GetPlan(q))
+			r.Get("/duel-state", handler.GetDuelState(q))
 			r.Post("/resolve", handler.ResolvePlan(q, manager))
 			r.Post("/make-choice", handler.MakeChoice(q, manager))
 			r.Post("/complete", handler.CompletePlan(q, manager))
