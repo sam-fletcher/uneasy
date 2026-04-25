@@ -30,6 +30,7 @@
 	import ProposeDecreePanel from './plans/ProposeDecreePanel.svelte';
 	import ClandestinelyLiaisePanel from './plans/ClandestinelyLiaisePanel.svelte';
 	import ProposeDuelPanel from './plans/ProposeDuelPanel.svelte';
+	import HostFestivityPanel from './plans/HostFestivityPanel.svelte';
 
 	interface Props {
 		gameID: number;
@@ -200,6 +201,11 @@
 			{gameID} {assets} {players} {rankings} {currentPlayerID}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome} {activeRoll}
 			{onPlansChanged} />
+	{:else if plan.plan_type === 'host_festivity'}
+		<HostFestivityPanel mode="resolve"
+			{gameID} {assets} {players} {rankings} {currentPlayerID}
+			{plan} {isFocusPlayer} {rollActive} {rollOutcome} {activeRoll}
+			{onPlansChanged} />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
@@ -300,6 +306,10 @@
 				{onPlanPrepared} />
 		{:else if selectedPlanType === 'propose_duel'}
 			<ProposeDuelPanel mode="prep"
+				{gameID} {assets} {players} {rankings} {currentPlayerID}
+				{onPlanPrepared} />
+		{:else if selectedPlanType === 'host_festivity'}
+			<HostFestivityPanel mode="prep"
 				{gameID} {assets} {players} {rankings} {currentPlayerID}
 				{onPlanPrepared} />
 		{:else if selectedPlanType}

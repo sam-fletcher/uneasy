@@ -1018,10 +1018,33 @@ export function hostChoice(
 }
 
 /** Host Festivity — challenge a guest to a duel; spawns a Propose Duel plan. */
-export function challengeDuel(planID: number, targetPlayerID: number): Promise<{ plan_id: number; duel_plan_id: number }> {
+export function challengeDuel(
+	planID: number,
+	targetPlayerID: number,
+	notes?: string,
+): Promise<{ plan_id: number; duel_plan_id?: number; challenger_id?: number; target_id?: number; must_accept?: boolean }> {
 	return apiFetch(`/plans/${planID}/challenge-duel`, {
 		method: 'POST',
-		body: JSON.stringify({ target_player_id: targetPlayerID }),
+		body: JSON.stringify({ target_player_id: targetPlayerID, preparation_notes: notes ?? '' }),
+	});
+}
+
+/** Host Festivity — challenged guest accepts or declines the duel. */
+export function respondChallenge(planID: number, accept: boolean): Promise<{ plan_id: number; accepted: boolean; duel_plan_id?: number }> {
+	return apiFetch(`/plans/${planID}/respond-challenge`, {
+		method: 'POST',
+		body: JSON.stringify({ accept }),
+	});
+}
+
+/** Host Festivity — guest with an unspent IOU forces the host to take a mar option. */
+export function insistHostMar(
+	planID: number,
+	body: { mar_option: string; asset_id?: number; rumor_text?: string },
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/insist-host-mar`, {
+		method: 'POST',
+		body: JSON.stringify(body),
 	});
 }
 

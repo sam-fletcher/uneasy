@@ -331,6 +331,12 @@
 			case EventTypes.DuelBoutsComplete:
 			case EventTypes.FestivityGuestJoined:
 			case EventTypes.FestivityGuestRolled:
+			case EventTypes.FestivityGuestChose:
+			case EventTypes.FestivityHostChose:
+			case EventTypes.FestivityInsistHostMar:
+			case EventTypes.FestivityPhaseChanged:
+			case EventTypes.FestivityChallengeIssued:
+			case EventTypes.FestivityChallengeDeclined:
 			case EventTypes.FestivityDuelTriggered:
 			case EventTypes.WarDeclared:
 			case EventTypes.DemandDraftPick:
