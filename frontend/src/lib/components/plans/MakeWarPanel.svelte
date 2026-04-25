@@ -32,6 +32,7 @@
 		type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
+	import BattleCostForm, { type BattleSubmission } from './war/BattleCostForm.svelte';
 	import { playerName, parseResolutionData } from './shared';
 
 	interface Props {
@@ -181,17 +182,7 @@
 		return opponents.filter(id => !paid.has(id));
 	});
 
-	// ── Cost picker form state ──────────────────────────────────────────────
-	type CostKind = 'break_asset' | 'leverage_two' | 'propose_peace';
-	let costOpponentID = $state<number | null>(null);
-	let costKind = $state<CostKind>('break_asset');
-	let costMarginaliaID = $state<number | null>(null);
-	let costAsset1 = $state<number | null>(null);
-	let costAsset2 = $state<number | null>(null);
-	let costSurrender = $state(false);
-	let peaceTerms = $state('');
-	let costBusy = $state(false);
-
+	// ── Sub-form inputs (shared by cost + entry pickers) ───────────────────
 	const myMarginalia = $derived(
 		currentPlayerID == null ? [] :
 		assets
@@ -207,88 +198,51 @@
 		),
 	);
 
-	const costSubmittable = $derived.by(() => {
-		if (costKind === 'propose_peace') return peaceTerms.trim().length > 0;
-		if (costOpponentID == null) return false;
-		if (costKind === 'break_asset') return costMarginaliaID != null;
-		// leverage_two
-		return costAsset1 != null && costAsset2 != null && costAsset1 !== costAsset2;
-	});
-
-	function resetCostForm() {
-		costMarginaliaID = null;
-		costAsset1 = null;
-		costAsset2 = null;
-		costSurrender = false;
-		peaceTerms = '';
-	}
-
-	async function submitCost() {
-		if (!plan || !costSubmittable || costBusy) return;
-		costBusy = true; actionError = '';
+	async function handleCostSubmit(s: BattleSubmission) {
+		if (!plan) return;
+		actionError = '';
 		try {
-			if (costKind === 'propose_peace') {
-				await proposePeace(plan.id, peaceTerms.trim());
-			} else if (costKind === 'break_asset') {
+			if (s.kind === 'peace') {
+				await proposePeace(plan.id, s.terms);
+			} else if (s.choice === 'break_asset') {
 				await payBattleCost(plan.id, {
-					opponent_id: costOpponentID!,
-					choice: 'break_asset',
-					marginalia_id: costMarginaliaID!,
-					surrender: costSurrender,
+					opponent_id: s.opponent_id, choice: 'break_asset',
+					marginalia_id: s.marginalia_id, surrender: s.surrender,
 				});
 			} else {
 				await payBattleCost(plan.id, {
-					opponent_id: costOpponentID!,
-					choice: 'leverage_two',
-					asset_id_1: costAsset1!,
-					asset_id_2: costAsset2!,
-					surrender: costSurrender,
+					opponent_id: s.opponent_id, choice: 'leverage_two',
+					asset_id_1: s.asset_id_1, asset_id_2: s.asset_id_2,
+					surrender: s.surrender,
 				});
 			}
-			resetCostForm();
 			await refreshWar();
 		} catch (e) {
 			actionError = e instanceof Error ? e.message : 'Could not pay cost.';
-		} finally { costBusy = false; }
+			throw e;
+		}
 	}
 
-	// ── War-entry (late joiner) form ────────────────────────────────────────
-	let entryOpponentID = $state<number | null>(null);
-	let entryKind = $state<'break_asset' | 'leverage_two'>('break_asset');
-	let entryMarginaliaID = $state<number | null>(null);
-	let entryAsset1 = $state<number | null>(null);
-	let entryAsset2 = $state<number | null>(null);
-	let entryBusy = $state(false);
-
-	const entrySubmittable = $derived.by(() => {
-		if (entryOpponentID == null) return false;
-		if (entryKind === 'break_asset') return entryMarginaliaID != null;
-		return entryAsset1 != null && entryAsset2 != null && entryAsset1 !== entryAsset2;
-	});
-
-	async function submitEntry() {
-		if (!plan || !entrySubmittable || entryBusy) return;
-		entryBusy = true; actionError = '';
+	async function handleEntrySubmit(s: BattleSubmission) {
+		if (!plan || s.kind !== 'battle') return;
+		actionError = '';
 		try {
-			if (entryKind === 'break_asset') {
+			if (s.choice === 'break_asset') {
 				await payWarEntry(plan.id, {
-					opponent_id: entryOpponentID!,
-					choice: 'break_asset',
-					marginalia_id: entryMarginaliaID!,
+					opponent_id: s.opponent_id, choice: 'break_asset',
+					marginalia_id: s.marginalia_id,
 				});
 			} else {
 				await payWarEntry(plan.id, {
-					opponent_id: entryOpponentID!,
-					choice: 'leverage_two',
-					asset_id_1: entryAsset1!,
-					asset_id_2: entryAsset2!,
+					opponent_id: s.opponent_id, choice: 'leverage_two',
+					asset_id_1: s.asset_id_1, asset_id_2: s.asset_id_2,
 				});
 			}
-			entryMarginaliaID = null; entryAsset1 = null; entryAsset2 = null;
 			await refreshWar();
 		} catch (e) {
 			actionError = e instanceof Error ? e.message : 'Could not pay entry.';
-		} finally { entryBusy = false; }
+			throw e;
+		}
 	}
 
 	// ── Surrender-claim form ────────────────────────────────────────────────
@@ -520,91 +474,17 @@
 		{#if itsMyCostTurn && amFullParticipant}
 			<div class="choices-section">
 				<p class="choices-header">Your cost of battle</p>
-				<label class="form-label">
-					Opponent:
-					<select bind:value={costOpponentID} class="form-textarea" style="height:auto;">
-						<option value={null}>— pick the opponent —</option>
-						{#each myOwedOpponents as id}
-							<option value={id}>{playerName(players, id)}</option>
-						{/each}
-					</select>
-				</label>
-
-				<div class="choice-list">
-					<label class="choice-item">
-						<input type="radio" name="cost-{plan.id}" value="break_asset"
-							checked={costKind === 'break_asset'}
-							onchange={() => { costKind = 'break_asset'; resetCostForm(); }} />
-						<strong>Break an asset</strong> — tear one of your marginalia
-					</label>
-					<label class="choice-item">
-						<input type="radio" name="cost-{plan.id}" value="leverage_two"
-							checked={costKind === 'leverage_two'}
-							onchange={() => { costKind = 'leverage_two'; resetCostForm(); }} />
-						<strong>Leverage two</strong> — leverage two of your un-leveraged assets
-					</label>
-					<label class="choice-item">
-						<input type="radio" name="cost-{plan.id}" value="propose_peace"
-							checked={costKind === 'propose_peace'}
-							onchange={() => { costKind = 'propose_peace'; resetCostForm(); }} />
-						<strong>Propose peace</strong> — open a vote on terms; if it doesn't
-						pass unanimously you'll still need to pay using one of the options above
-					</label>
-				</div>
-
-				{#if costKind === 'break_asset'}
-					<label class="form-label">
-						Marginalia to tear:
-						<select bind:value={costMarginaliaID} class="form-textarea" style="height:auto;">
-							<option value={null}>— pick a marginalium —</option>
-							{#each myMarginalia as m}
-								<option value={m.id}>{m.label}</option>
-							{/each}
-						</select>
-					</label>
-				{:else if costKind === 'leverage_two'}
-					<label class="form-label">
-						First asset to leverage:
-						<select bind:value={costAsset1} class="form-textarea" style="height:auto;">
-							<option value={null}>— pick an asset —</option>
-							{#each myUnleveraged as a}
-								<option value={a.id} disabled={a.id === costAsset2}>{a.name}</option>
-							{/each}
-						</select>
-					</label>
-					<label class="form-label">
-						Second asset to leverage:
-						<select bind:value={costAsset2} class="form-textarea" style="height:auto;">
-							<option value={null}>— pick an asset —</option>
-							{#each myUnleveraged as a}
-								<option value={a.id} disabled={a.id === costAsset1}>{a.name}</option>
-							{/each}
-						</select>
-					</label>
-				{:else}
-					<label class="form-label">
-						Peace terms:
-						<textarea rows={3} bind:value={peaceTerms} class="form-textarea"
-							placeholder="Describe the terms you propose…"></textarea>
-					</label>
-				{/if}
-
-				<label class="form-label" style="display:flex;align-items:center;gap:0.5rem;"
-					title={costKind === 'propose_peace'
-						? "Doesn't apply when proposing peace."
-						: 'After this payment is recorded you will be marked surrendered. ' +
-						  'Each opposing non-surrendered opponent will get to claim one of your assets.'}>
-					<input type="checkbox" bind:checked={costSurrender}
-						disabled={costKind === 'propose_peace'} />
-					<span class:muted={costKind === 'propose_peace'}>
-						Surrender after this payment
-					</span>
-				</label>
-
-				<button class="action-btn primary" onclick={submitCost}
-					disabled={costBusy || !costSubmittable}>
-					{costBusy ? '…' : (costKind === 'propose_peace' ? 'Propose peace' : 'Pay cost')}
-				</button>
+				<BattleCostForm
+					mode="cost"
+					formKey={plan.id}
+					opponents={myOwedOpponents}
+					{players}
+					marginalia={myMarginalia}
+					unleveraged={myUnleveraged}
+					allowPeace
+					allowSurrender
+					onSubmit={handleCostSubmit}
+				/>
 			</div>
 		{/if}
 
@@ -622,63 +502,17 @@
 						participant. Outstanding:
 						{entryOpponentsOutstanding.map(id => playerName(players, id)).join(', ')}
 					</p>
-					<label class="form-label">
-						Opponent:
-						<select bind:value={entryOpponentID} class="form-textarea" style="height:auto;">
-							<option value={null}>— pick an opponent —</option>
-							{#each entryOpponentsOutstanding as id}
-								<option value={id}>{playerName(players, id)}</option>
-							{/each}
-						</select>
-					</label>
-					<div class="choice-list">
-						<label class="choice-item">
-							<input type="radio" name="entry-{plan.id}" value="break_asset"
-								checked={entryKind === 'break_asset'}
-								onchange={() => { entryKind = 'break_asset'; entryMarginaliaID = null; entryAsset1 = null; entryAsset2 = null; }} />
-							Break an asset
-						</label>
-						<label class="choice-item">
-							<input type="radio" name="entry-{plan.id}" value="leverage_two"
-								checked={entryKind === 'leverage_two'}
-								onchange={() => { entryKind = 'leverage_two'; entryMarginaliaID = null; entryAsset1 = null; entryAsset2 = null; }} />
-							Leverage two
-						</label>
-					</div>
-					{#if entryKind === 'break_asset'}
-						<label class="form-label">
-							Marginalia to tear:
-							<select bind:value={entryMarginaliaID} class="form-textarea" style="height:auto;">
-								<option value={null}>— pick a marginalium —</option>
-								{#each myMarginalia as m}
-									<option value={m.id}>{m.label}</option>
-								{/each}
-							</select>
-						</label>
-					{:else}
-						<label class="form-label">
-							First asset:
-							<select bind:value={entryAsset1} class="form-textarea" style="height:auto;">
-								<option value={null}>— pick —</option>
-								{#each myUnleveraged as a}
-									<option value={a.id} disabled={a.id === entryAsset2}>{a.name}</option>
-								{/each}
-							</select>
-						</label>
-						<label class="form-label">
-							Second asset:
-							<select bind:value={entryAsset2} class="form-textarea" style="height:auto;">
-								<option value={null}>— pick —</option>
-								{#each myUnleveraged as a}
-									<option value={a.id} disabled={a.id === entryAsset1}>{a.name}</option>
-								{/each}
-							</select>
-						</label>
-					{/if}
-					<button class="action-btn primary" onclick={submitEntry}
-						disabled={entryBusy || !entrySubmittable}>
-						{entryBusy ? '…' : 'Pay entry against this opponent'}
-					</button>
+					<BattleCostForm
+						mode="entry"
+						formKey={plan.id}
+						opponents={entryOpponentsOutstanding}
+						{players}
+						marginalia={myMarginalia}
+						unleveraged={myUnleveraged}
+						allowPeace={false}
+						allowSurrender={false}
+						onSubmit={handleEntrySubmit}
+					/>
 				{/if}
 			</div>
 		{/if}
