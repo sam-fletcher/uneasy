@@ -31,31 +31,20 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { parseResolutionData, playerName } from './shared';
+	import type { PlanPanelProps } from './types';
 
-	interface Props {
-		mode: 'prep' | 'resolve';
-		gameID: number;
-		assets: Asset[];
-		players: Player[];
-		currentPlayerID: number | null;
-		plans?: Plan[];
-		plan?: Plan | null;
-		isFocusPlayer?: boolean;
-		rollActive?: boolean;
-		rollOutcome?: 'make' | 'mar' | null;
-		onRollCreated?: (roll: DiceRoll) => void;
-		onPlansChanged?: () => void;
-		onPlanPrepared?: () => void;
-	}
+	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
-	let {
-		mode, gameID, assets, players, currentPlayerID, plans = [],
-		plan = null, isFocusPlayer = false,
-		rollActive = false, rollOutcome = null,
-		onRollCreated: _or = () => {},
-		onPlansChanged = () => {},
-		onPlanPrepared = () => {},
-	}: Props = $props();
+	const gameID = $derived(ctx.gameID);
+	const assets = $derived(ctx.assets);
+	const players = $derived(ctx.players);
+	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const plans = $derived(ctx.plans);
+	const isFocusPlayer = $derived(ctx.isFocusPlayer);
+	const rollActive = $derived(ctx.rollActive);
+	const rollOutcome = $derived(ctx.rollOutcome);
+	const onPlansChanged = $derived(ctx.onPlansChanged);
+	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	let performStepsWinnerID = $state<number | null>(null);
 	const amChoiceActor = $derived(

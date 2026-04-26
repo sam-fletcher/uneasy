@@ -17,40 +17,21 @@
 		playerName, assetName, intactMarginalia,
 	} from './shared';
 
-	interface Props {
-		mode: 'prep' | 'resolve';
-		gameID: number;
-		assets: Asset[];
-		players: Player[];
-		currentPlayerID: number | null;
-		/** Full plans list — needed for the Stage 4 demand overlay. */
-		plans?: Plan[];
-		// Resolve mode
-		plan?: Plan | null;
-		isFocusPlayer?: boolean;
-		rollActive?: boolean;
-		rollOutcome?: 'make' | 'mar' | null;
-		onRollCreated?: (roll: DiceRoll) => void;
-		onPlansChanged?: () => void;
-		// Prep mode
-		onPlanPrepared?: () => void;
-	}
+	import type { PlanPanelProps } from './types';
 
-	let {
-		mode,
-		gameID,
-		assets,
-		players,
-		currentPlayerID,
-		plans = [],
-		plan = null,
-		isFocusPlayer = false,
-		rollActive = false,
-		rollOutcome = null,
-		onRollCreated = () => {},
-		onPlansChanged = () => {},
-		onPlanPrepared = () => {},
-	}: Props = $props();
+	let { ctx, plan = null, mode }: PlanPanelProps = $props();
+
+	const gameID = $derived(ctx.gameID);
+	const assets = $derived(ctx.assets);
+	const players = $derived(ctx.players);
+	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const plans = $derived(ctx.plans);
+	const isFocusPlayer = $derived(ctx.isFocusPlayer);
+	const rollActive = $derived(ctx.rollActive);
+	const rollOutcome = $derived(ctx.rollOutcome);
+	const onRollCreated = $derived(ctx.onRollCreated);
+	const onPlansChanged = $derived(ctx.onPlansChanged);
+	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	// Demand overlay (Stage 4): if a resolved+made demand targets this plan,
 	// the perform_steps winner submits make/mar in place of the preparer.

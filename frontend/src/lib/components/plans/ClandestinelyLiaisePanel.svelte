@@ -18,24 +18,17 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { playerName, parseResolutionData } from './shared';
 
-	interface Props {
-		mode: 'prep' | 'resolve' | 'delay-reveal';
-		gameID: number;
-		assets: Asset[];
-		players: Player[];
-		currentPlayerID: number | null;
-		plans?: Plan[];
-		plan?: Plan | null;
-		onPlansChanged?: () => void;
-		onPlanPrepared?: () => void;
-	}
+	import type { PlanPanelProps } from './types';
 
-	let {
-		mode, gameID, assets, players, currentPlayerID, plans = [],
-		plan = null,
-		onPlansChanged = () => {},
-		onPlanPrepared = () => {},
-	}: Props = $props();
+	let { ctx, plan = null, mode }: PlanPanelProps = $props();
+
+	const gameID = $derived(ctx.gameID);
+	const assets = $derived(ctx.assets);
+	const players = $derived(ctx.players);
+	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const plans = $derived(ctx.plans);
+	const onPlansChanged = $derived(ctx.onPlansChanged);
+	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 	let clPartnerID = $state<number | null>(null);
@@ -261,7 +254,7 @@
 		</button>
 	</div>
 
-{:else if mode === 'delay-reveal' && plan}
+{:else if mode === 'alwaysOn' && plan}
 	<!-- Delay reveal — the plan is pending at row 0 until both faces are in. -->
 	<div class="plan-panel pending">
 		<div class="plan-header">

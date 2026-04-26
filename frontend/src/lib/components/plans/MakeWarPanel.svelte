@@ -35,24 +35,22 @@
 	import BattleCostForm, { type BattleSubmission } from './war/BattleCostForm.svelte';
 	import { playerName, parseResolutionData } from './shared';
 
-	interface Props {
-		mode: 'prep' | 'war';
-		gameID: number;
-		assets: Asset[];
-		players: Player[];
-		currentPlayerID: number | null;
-		plan?: Plan | null;
-		isFocusPlayer?: boolean;
-		onPlansChanged?: () => void;
-		onPlanPrepared?: () => void;
-	}
+	import type { PlanPanelProps } from './types';
 
-	let {
-		mode, gameID, assets, players, currentPlayerID,
-		plan = null, isFocusPlayer = false,
-		onPlansChanged = () => {},
-		onPlanPrepared = () => {},
-	}: Props = $props();
+	let { ctx, plan = null, mode }: PlanPanelProps = $props();
+
+	const gameID = $derived(ctx.gameID);
+	const assets = $derived(ctx.assets);
+	const players = $derived(ctx.players);
+	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const isFocusPlayer = $derived(ctx.isFocusPlayer);
+	const onPlansChanged = $derived(ctx.onPlansChanged);
+	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+
+	// Make War uses one underlying view for both resolve and alwaysOn
+	// dispatches — both fall through to "the war view". This local alias
+	// keeps the existing isWarView checks below readable.
+	const isWarView = $derived(mode === 'resolve' || mode === 'alwaysOn');
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 	let enemyIDs = $state<Set<number>>(new Set());
@@ -112,12 +110,12 @@
 	function onWarEvent() { refreshWar(); }
 
 	useWindowEvents(WAR_EVENTS, onWarEvent);
-	onMount(() => { if (mode === 'war') refreshWar(); });
+	onMount(() => { if (isWarView) refreshWar(); });
 
 	// Re-fetch when the plan changes.
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
-		if (mode === 'war' && plan && plan.id !== lastPlanID) {
+		if (isWarView && plan && plan.id !== lastPlanID) {
 			lastPlanID = plan.id;
 			refreshWar();
 		}
@@ -327,7 +325,7 @@
 
 	// Don't render anything if the plan is fully resolved AND the war ended.
 	const shouldHide = $derived(
-		mode === 'war'
+		isWarView
 		&& plan != null
 		&& plan.status === 'resolved'
 		&& war != null

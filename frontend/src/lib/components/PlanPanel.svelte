@@ -1,12 +1,14 @@
 <!-- PlanPanel.svelte
-  Dispatcher for plan preparation and resolution.
+  Dispatcher for plan preparation, resolution, and out-of-band ("alwaysOn")
+  views. Plan-type knowledge lives entirely in plans/registry.ts; this file
+  only orchestrates the three dispatch sites and constructs the PlanContext
+  that every panel consumes.
 
-  Two modes:
-  1. PREPARATION — shown inside the focus player's action bar (action step 2).
-     Lets the focus player pick a plan type; delegates the form to the
-     matching per-plan component in lib/components/plans/.
-  2. RESOLUTION — shown when there is an active 'resolving' plan.
-     Delegates the entire resolution flow to the matching per-plan component.
+  Modes:
+    'prep'      — focus player's preparation form (action step 2)
+    'resolve'   — currently resolving plan
+    'alwaysOn'  — out-of-band per-plan view (e.g. Make War status, Liaise
+                  delay reveal); driven by REGISTRY[type].alwaysOn predicates.
 
   The parent is responsible for showing DiceRollPanel when activeRoll != null.
   This component signals "a roll was created" by calling onRollCreated so the
@@ -21,19 +23,8 @@
 
 	import './plans/planPanel.css';
 	import { PLAN_SHORT, playerName } from './plans/shared';
-	import { ALWAYS_ON } from './plans/registry';
-	import ExchangeCourtiersPanel from './plans/ExchangeCourtiersPanel.svelte';
-	import MakeIntroductionsPanel from './plans/MakeIntroductionsPanel.svelte';
-	import SpreadPropagandaPanel from './plans/SpreadPropagandaPanel.svelte';
-	import SeekAnswersPanel from './plans/SeekAnswersPanel.svelte';
-	import SpreadRumorsPanel from './plans/SpreadRumorsPanel.svelte';
-	import ChronicleHistoriesPanel from './plans/ChronicleHistoriesPanel.svelte';
-	import ProposeDecreePanel from './plans/ProposeDecreePanel.svelte';
-	import ClandestinelyLiaisePanel from './plans/ClandestinelyLiaisePanel.svelte';
-	import ProposeDuelPanel from './plans/ProposeDuelPanel.svelte';
-	import HostFestivityPanel from './plans/HostFestivityPanel.svelte';
-	import MakeWarPanel from './plans/MakeWarPanel.svelte';
-	import MakeDemandsPanel from './plans/MakeDemandsPanel.svelte';
+	import { REGISTRY } from './plans/registry';
+	import type { PlanContext } from './plans/types';
 
 	interface Props {
 		gameID: number;
@@ -73,6 +64,15 @@
 		onRollCreated, onPlansChanged, onPlanPrepared,
 	}: Props = $props();
 
+	// ── Shared context handed to every panel ─────────────────────────────────
+
+	const ctx = $derived<PlanContext>({
+		gameID, currentRow, plans, assets, players, rankings,
+		currentPlayerID, isFocusPlayer,
+		rollActive, rollOutcome, activeRoll,
+		onRollCreated, onPlansChanged, onPlanPrepared,
+	});
+
 	// ── Derived plan state ────────────────────────────────────────────────────
 
 	const resolvingPlan = $derived(plans.find(p => p.status === 'resolving') ?? null);
@@ -84,16 +84,16 @@
 	const needsResolution = $derived(resolvingPlan != null || pendingOnRow.length > 0);
 
 	// Plans that should render out-of-band (independent of resolving status).
-	// Driven by the per-plan ALWAYS_ON registry rather than hardcoded
-	// per-plan-type filters. Each entry's panel may still self-hide for
-	// state it can only learn about by fetching (e.g. Make War's war-ended
-	// check). The resolving plan is excluded to avoid double-rendering.
+	// Driven by per-plan alwaysOn predicates in the registry. Each panel may
+	// still self-hide for state it can only learn by fetching (e.g. Make
+	// War's war-ended check). The resolving plan is excluded to avoid
+	// double-rendering.
 	const alwaysOnPlans = $derived(
 		plans.filter(p => {
-			const spec = ALWAYS_ON[p.plan_type];
-			if (!spec) return false;
+			const entry = REGISTRY[p.plan_type];
+			if (!entry?.alwaysOn) return false;
 			if (resolvingPlan?.id === p.id) return false;
-			return spec.shouldRender(p, currentPlayerID);
+			return entry.alwaysOn(p, currentPlayerID);
 		}),
 	);
 
@@ -151,96 +151,28 @@
 	}
 </script>
 
-<!-- ── Always-on plan views (registry-driven) ────────────────────────────
-     Each plan whose type appears in ALWAYS_ON and passes its predicate is
-     rendered here. Dispatch below is the only place that knows the
-     plan-type → component mapping for these views.
-     TODO(refactor B2-B5 follow-up): once panels share a unified
-     {ctx, plan, mode} signature, this dispatch collapses into a single
-     <PlanDispatch> call driven by the registry — see plans/registry.ts. -->
+<!-- ── Always-on plan views (registry-driven) ──────────────────────────── -->
 {#each alwaysOnPlans as p (p.id)}
-	{#if p.plan_type === 'make_war'}
-		<MakeWarPanel mode="war"
-			{gameID} {assets} {players} {currentPlayerID}
-			plan={p} {onPlansChanged} />
-	{:else if p.plan_type === 'clandestinely_liaise'}
-		<ClandestinelyLiaisePanel mode="delay-reveal"
-			{gameID} {assets} {players} {currentPlayerID}
-			plan={p} {onPlansChanged} />
-	{/if}
+	{@const Comp = REGISTRY[p.plan_type].component}
+	<Comp {ctx} plan={p} mode="alwaysOn" />
 {/each}
 
 <!-- ── Resolution dispatch ───────────────────────────────────────────────── -->
 {#if resolvingPlan}
-	{@const plan = resolvingPlan}
-	{#if plan.plan_type === 'exchange_courtiers'}
-		<ExchangeCourtiersPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
-			{onRollCreated} {onPlansChanged} />
-	{:else if plan.plan_type === 'make_introductions'}
-		<MakeIntroductionsPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
-			{onRollCreated} {onPlansChanged} />
-	{:else if plan.plan_type === 'spread_propaganda'}
-		<SpreadPropagandaPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
-			{onRollCreated} {onPlansChanged} />
-	{:else if plan.plan_type === 'seek_answers'}
-		<SeekAnswersPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
-			{onRollCreated} {onPlansChanged} />
-	{:else if plan.plan_type === 'spread_rumors'}
-		<SpreadRumorsPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
-			{onRollCreated} {onPlansChanged} />
-	{:else if plan.plan_type === 'chronicle_histories'}
-		<ChronicleHistoriesPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
-			{onRollCreated} {onPlansChanged} />
-	{:else if plan.plan_type === 'propose_decree'}
-		<ProposeDecreePanel mode="resolve"
-			{gameID} {assets} {players} {rankings} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
-			{onRollCreated} {onPlansChanged} />
-	{:else if plan.plan_type === 'clandestinely_liaise'}
-		<ClandestinelyLiaisePanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID} {plans}
-			{plan} {onPlansChanged} />
-	{:else if plan.plan_type === 'propose_duel'}
-		<ProposeDuelPanel mode="resolve"
-			{gameID} {assets} {players} {rankings} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome} {activeRoll}
-			{onPlansChanged} />
-	{:else if plan.plan_type === 'make_war'}
-		<MakeWarPanel mode="war"
-			{gameID} {assets} {players} {currentPlayerID}
-			{plan} {isFocusPlayer} {onPlansChanged} />
-	{:else if plan.plan_type === 'host_festivity'}
-		<HostFestivityPanel mode="resolve"
-			{gameID} {assets} {players} {rankings} {currentPlayerID} {plans}
-			{plan} {isFocusPlayer} {rollActive} {rollOutcome} {activeRoll}
-			{onPlansChanged} />
-	{:else if plan.plan_type === 'make_demands'}
-		<MakeDemandsPanel mode="resolve"
-			{gameID} {assets} {players} {rankings} {currentPlayerID}
-			{currentRow} {plans} {plan} {isFocusPlayer}
-			{rollActive} {rollOutcome} {onRollCreated} {onPlansChanged} />
+	{@const entry = REGISTRY[resolvingPlan.plan_type]}
+	{#if entry}
+		{@const Comp = entry.component}
+		<Comp {ctx} plan={resolvingPlan} mode="resolve" />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
 			<div class="plan-header">
 				<span class="plan-badge resolving-badge">Resolving</span>
-				<strong class="plan-title">{PLAN_SHORT[plan.plan_type] ?? plan.plan_type}</strong>
-				<span class="plan-preparer">by {playerName(players, plan.preparer_id)}</span>
+				<strong class="plan-title">{PLAN_SHORT[resolvingPlan.plan_type] ?? resolvingPlan.plan_type}</strong>
+				<span class="plan-preparer">by {playerName(players, resolvingPlan.preparer_id)}</span>
 			</div>
-			{#if plan.preparation_notes}
-				<p class="plan-notes">"{plan.preparation_notes}"</p>
+			{#if resolvingPlan.preparation_notes}
+				<p class="plan-notes">"{resolvingPlan.preparation_notes}"</p>
 			{/if}
 			<p class="ft-prompt muted">
 				Resolution UI for this plan is not yet implemented.
@@ -297,61 +229,19 @@
 			</div>
 		{/if}
 
-		{#if selectedPlanType === 'exchange_courtiers'}
-			<ExchangeCourtiersPanel mode="prep"
-				{gameID} {assets} {players} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'make_introductions'}
-			<MakeIntroductionsPanel mode="prep"
-				{gameID} {assets} {players} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'spread_propaganda'}
-			<SpreadPropagandaPanel mode="prep"
-				{gameID} {assets} {players} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'seek_answers'}
-			<SeekAnswersPanel mode="prep"
-				{gameID} {assets} {players} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'spread_rumors'}
-			<SpreadRumorsPanel mode="prep"
-				{gameID} {assets} {players} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'chronicle_histories'}
-			<ChronicleHistoriesPanel mode="prep"
-				{gameID} {assets} {players} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'propose_decree'}
-			<ProposeDecreePanel mode="prep"
-				{gameID} {assets} {players} {rankings} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'clandestinely_liaise'}
-			<ClandestinelyLiaisePanel mode="prep"
-				{gameID} {assets} {players} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'propose_duel'}
-			<ProposeDuelPanel mode="prep"
-				{gameID} {assets} {players} {rankings} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'host_festivity'}
-			<HostFestivityPanel mode="prep"
-				{gameID} {assets} {players} {rankings} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'make_war'}
-			<MakeWarPanel mode="prep"
-				{gameID} {assets} {players} {currentPlayerID}
-				{onPlanPrepared} />
-		{:else if selectedPlanType === 'make_demands'}
-			<MakeDemandsPanel mode="prep"
-				{gameID} {assets} {players} {rankings} {currentPlayerID}
-				{currentRow} {plans} {onPlanPrepared} />
-		{:else if selectedPlanType}
-			<div class="plan-form">
-				<p class="form-hint">
-					Preparation form for {PLAN_SHORT[selectedPlanType] ?? selectedPlanType}
-					is not yet implemented.
-				</p>
-			</div>
+		{#if selectedPlanType}
+			{@const entry = REGISTRY[selectedPlanType]}
+			{#if entry}
+				{@const Comp = entry.component}
+				<Comp {ctx} mode="prep" />
+			{:else}
+				<div class="plan-form">
+					<p class="form-hint">
+						Preparation form for {PLAN_SHORT[selectedPlanType] ?? selectedPlanType}
+						is not yet implemented.
+					</p>
+				</div>
+			{/if}
 		{/if}
 	</div>
 {/if}

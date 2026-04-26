@@ -4,39 +4,27 @@
 -->
 <script lang="ts">
 	import './planPanel.css';
-	import {
-		preparePlan, makeChoice, completePlan,
-		type Plan, type Asset, type Player, type DiceRoll,
-	} from '$lib/api';
+	import { preparePlan, makeChoice, completePlan, type Plan } from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName } from './shared';
+	import type { PlanPanelProps } from './types';
 
-	interface Props {
-		mode: 'prep' | 'resolve';
-		gameID: number;
-		assets: Asset[];
-		players: Player[];
-		currentPlayerID: number | null;
-		plans?: Plan[];
-		plan?: Plan | null;
-		isFocusPlayer?: boolean;
-		rollActive?: boolean;
-		rollOutcome?: 'make' | 'mar' | null;
-		onRollCreated?: (roll: DiceRoll) => void;
-		onPlansChanged?: () => void;
-		onPlanPrepared?: () => void;
-	}
+	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
-	let {
-		mode, gameID, assets, players, currentPlayerID, plans = [],
-		plan = null, isFocusPlayer = false,
-		rollActive = false, rollOutcome = null,
-		onRollCreated: _or = () => {},
-		onPlansChanged = () => {},
-		onPlanPrepared = () => {},
-	}: Props = $props();
+	// Flat-name shim so the existing body keeps reading bare names. Each
+	// $derived accessor stays reactive to ctx field changes.
+	const gameID = $derived(ctx.gameID);
+	const assets = $derived(ctx.assets);
+	const players = $derived(ctx.players);
+	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const plans = $derived(ctx.plans);
+	const isFocusPlayer = $derived(ctx.isFocusPlayer);
+	const rollActive = $derived(ctx.rollActive);
+	const rollOutcome = $derived(ctx.rollOutcome);
+	const onPlansChanged = $derived(ctx.onPlansChanged);
+	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	let performStepsWinnerID = $state<number | null>(null);
 	const amChoiceActor = $derived(

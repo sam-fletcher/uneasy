@@ -1,38 +1,69 @@
-// Plan registry — per-plan metadata that PlanPanel needs at dispatch time
-// without baking plan-type knowledge into PlanPanel itself.
+// Plan registry — the single source of truth for "which Svelte component
+// renders which plan type, and when does it appear out-of-band."
 //
-// TODO(refactor B2-B5 follow-up): expand this into a full PlanComponent
-// contract once Make Demands lands. Each entry should carry the prep,
-// resolve, and alwaysOn Svelte components for that plan type, so PlanPanel's
-// remaining prep/resolve dispatch chains collapse into a registry loop.
-// Tracking this in REFACTORING_PLAN.md (Stream B, "Adjustments" section).
+// PlanPanel reads this map and dispatches via <svelte:component>. Adding a
+// new plan type = writing one panel that conforms to PlanPanelProps + one
+// entry here.
 
+import type { Component } from 'svelte';
 import type { Plan, PlanType } from '$lib/api';
+import type { PlanPanelProps } from './types';
 
-/** Per-plan rule for "render this plan even when it isn't the resolving plan."
- *  shouldRender is a pure predicate over the plan + the current viewer; the
- *  underlying panel may still self-hide for state it knows about (e.g. Make
- *  War's "war ended" check, which requires fetched war state). */
-export interface AlwaysOnSpec {
-	shouldRender: (plan: Plan, viewerID: number | null) => boolean;
+import ExchangeCourtiersPanel from './ExchangeCourtiersPanel.svelte';
+import MakeIntroductionsPanel from './MakeIntroductionsPanel.svelte';
+import SpreadPropagandaPanel from './SpreadPropagandaPanel.svelte';
+import SeekAnswersPanel from './SeekAnswersPanel.svelte';
+import SpreadRumorsPanel from './SpreadRumorsPanel.svelte';
+import ChronicleHistoriesPanel from './ChronicleHistoriesPanel.svelte';
+import ProposeDecreePanel from './ProposeDecreePanel.svelte';
+import ClandestinelyLiaisePanel from './ClandestinelyLiaisePanel.svelte';
+import ProposeDuelPanel from './ProposeDuelPanel.svelte';
+import HostFestivityPanel from './HostFestivityPanel.svelte';
+import MakeWarPanel from './MakeWarPanel.svelte';
+import MakeDemandsPanel from './MakeDemandsPanel.svelte';
+
+/** Predicate over (plan, viewer) deciding whether the plan's panel should
+ *  render out-of-band — i.e. independent of being the currently resolving
+ *  plan. The panel may still self-hide for fetched state it learns later
+ *  (e.g. Make War's "war ended" check). */
+export type AlwaysOnPredicate = (plan: Plan, viewerID: number | null) => boolean;
+
+export interface PlanRegistryEntry {
+	component: Component<PlanPanelProps>;
+	/** When set, the panel renders out-of-band for any plan matching this
+	 *  predicate (in addition to its prep/resolve dispatches). */
+	alwaysOn?: AlwaysOnPredicate;
 }
 
-/** Plans that render out-of-band (independent of resolving status). The
- *  predicate replaces ad-hoc filters in PlanPanel. */
-export const ALWAYS_ON: Partial<Record<PlanType, AlwaysOnSpec>> = {
-	// Make War: render the per-plan war view (delay reveal, status, cost
-	// picker, peace flow, surrender claims) for every non-cancelled war
-	// plan. The panel itself hides further once the underlying war has
-	// ended AND the plan has resolved.
+const C = <T>(c: T) => c as unknown as Component<PlanPanelProps>;
+
+export const REGISTRY: Record<PlanType, PlanRegistryEntry> = {
+	exchange_courtiers: { component: C(ExchangeCourtiersPanel) },
+	make_introductions: { component: C(MakeIntroductionsPanel) },
+	spread_propaganda: { component: C(SpreadPropagandaPanel) },
+	seek_answers: { component: C(SeekAnswersPanel) },
+	spread_rumors: { component: C(SpreadRumorsPanel) },
+	chronicle_histories: { component: C(ChronicleHistoriesPanel) },
+	propose_decree: { component: C(ProposeDecreePanel) },
+	propose_duel: { component: C(ProposeDuelPanel) },
+	host_festivity: { component: C(HostFestivityPanel) },
+	make_demands: { component: C(MakeDemandsPanel) },
+
 	make_war: {
-		shouldRender: (plan) => plan.status !== 'cancelled',
+		component: C(MakeWarPanel),
+		// Render the per-plan war view (delay reveal, status, cost picker,
+		// peace flow, surrender claims) for every non-cancelled war plan.
+		// The panel itself hides further once the underlying war has ended
+		// AND the plan has resolved.
+		alwaysOn: (plan) => plan.status !== 'cancelled',
 	},
 
-	// Clandestinely Liaise: surface the simultaneous delay-reveal UI to
-	// the two participants (preparer + target) while the plan is still
-	// pending at row 0, before normal resolution begins.
 	clandestinely_liaise: {
-		shouldRender: (plan, viewerID) =>
+		component: C(ClandestinelyLiaisePanel),
+		// Surface the simultaneous delay-reveal UI to the two participants
+		// (preparer + target) while the plan is still pending at row 0,
+		// before normal resolution begins.
+		alwaysOn: (plan, viewerID) =>
 			plan.status === 'pending'
 			&& plan.row_number === 0
 			&& viewerID != null

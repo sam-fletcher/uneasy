@@ -25,34 +25,21 @@
 		DEMAND_OPTIONS, DEMAND_OPTION_LABELS, type DemandOption,
 	} from './shared';
 
-	interface Props {
-		mode: 'prep' | 'resolve';
-		gameID: number;
-		assets: Asset[];
-		players: Player[];
-		rankings: Ranking[];
-		currentPlayerID: number | null;
-		currentRow: number;
-		/** All plans in the game — needed to populate the target picker (prep)
-		 *  and the counter-demand picker (mar). */
-		plans: Plan[];
-		plan?: Plan | null;
-		isFocusPlayer?: boolean;
-		rollActive?: boolean;
-		rollOutcome?: 'make' | 'mar' | null;
-		onRollCreated?: (roll: DiceRoll) => void;
-		onPlansChanged?: () => void;
-		onPlanPrepared?: () => void;
-	}
+	import type { PlanPanelProps } from './types';
 
-	let {
-		mode, gameID, players, rankings, currentPlayerID, currentRow, plans,
-		plan = null, isFocusPlayer = false,
-		rollActive = false, rollOutcome = null,
-		onRollCreated: _or = () => {},
-		onPlansChanged = () => {},
-		onPlanPrepared = () => {},
-	}: Props = $props();
+	let { ctx, plan = null, mode }: PlanPanelProps = $props();
+
+	const gameID = $derived(ctx.gameID);
+	const players = $derived(ctx.players);
+	const rankings = $derived(ctx.rankings);
+	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const currentRow = $derived(ctx.currentRow);
+	const plans = $derived(ctx.plans);
+	const isFocusPlayer = $derived(ctx.isFocusPlayer);
+	const rollActive = $derived(ctx.rollActive);
+	const rollOutcome = $derived(ctx.rollOutcome);
+	const onPlansChanged = $derived(ctx.onPlansChanged);
+	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 
