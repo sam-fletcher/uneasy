@@ -16,7 +16,7 @@ import (
 // ListToneTopics handles GET /api/tables/{id}/tone.
 func ListToneTopics(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -34,7 +34,7 @@ func ListToneTopics(q *dbgen.Queries) http.HandlerFunc {
 // UpdateToneTopic handles PUT /api/tables/{id}/tone/{topicId}.
 func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -98,7 +98,7 @@ func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // AddToneTopic handles POST /api/tables/{id}/tone.
 func AddToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}

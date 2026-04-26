@@ -38,7 +38,7 @@ const (
 // requireFocusPlayer validates that the caller is the current focus player.
 // Returns the game and player, or writes an error response.
 func requireFocusPlayer(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.Game, *dbgen.Player, bool) {
-	gameID, player, ok := parseGamePlayer(w, r)
+	gameID, player, ok := parseGamePlayer(w, r, q)
 	if !ok {
 		return nil, nil, false
 	}

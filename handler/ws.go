@@ -8,6 +8,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 
+	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 )
@@ -15,7 +16,7 @@ import (
 // WebSocket handles GET /api/tables/{id}/ws.
 //
 // Upgrades to a WebSocket connection for the given table. The caller must:
-//   - Have a valid player_token cookie
+//   - Have a valid session cookie
 //   - Be a member of the table
 //
 // Once connected, the client receives:
@@ -26,7 +27,7 @@ import (
 // The client can send:
 //   - {"type": "typing.start"} — throttle to once per 2–3 seconds
 //   - {"type": "typing.stop"}
-func WebSocket(manager *hub.Manager) http.HandlerFunc {
+func WebSocket(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -34,19 +35,21 @@ func WebSocket(manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		player := appMiddleware.PlayerFromContext(r.Context())
-		if player == nil || player.GameID != gameID {
+		account := appMiddleware.AccountFromContext(r.Context())
+		if account == nil {
+			http.Error(w, "log in first", http.StatusUnauthorized)
+			return
+		}
+		player := appMiddleware.LoadPlayer(r.Context(), q, account.ID, gameID)
+		if player == nil {
 			http.Error(w, "not a member of this table", http.StatusForbidden)
 			return
 		}
 
-		// Upgrade the HTTP connection to WebSocket.
-		// In dev, OriginPatterns is permissive; lock this down for production.
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			OriginPatterns: []string{"*"},
 		})
 		if err != nil {
-			// Accept writes its own error response.
 			return
 		}
 
@@ -54,7 +57,6 @@ func WebSocket(manager *hub.Manager) http.HandlerFunc {
 		client := hub.NewClient(h, conn, *player, slog.Default())
 		h.Register(client)
 
-		// Run blocks until the connection closes (reads pump + write pump).
 		client.Run(r.Context())
 	}
 }

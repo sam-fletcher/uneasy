@@ -125,17 +125,16 @@ func newGameTestGame(t *testing.T, q *dbgen.Queries, n int) gameTestGame {
 
 	players := make([]dbgen.Player, n)
 	for i := 0; i < n; i++ {
-		tok := fmt.Sprintf("tok-%d-%s", i, gameRandSuffix())
-		_, err := q.UpsertUserToken(ctx, dbgen.UpsertUserTokenParams{
-			Token:       tok,
-			DisplayName: fmt.Sprintf("P%d", i+1),
+		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+			Username: fmt.Sprintf("p%d-%s", i+1, gameRandSuffix()),
+			CodeHash: "x",
 		})
 		require.NoError(t, err)
 
 		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
 			GameID:        game.ID,
 			DisplayName:   fmt.Sprintf("P%d", i+1),
-			CookieToken:   tok,
+			AccountID:     acct.ID,
 			IsFacilitator: i == 0,
 		})
 		require.NoError(t, err)

@@ -29,7 +29,6 @@ import (
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
-	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -58,9 +57,8 @@ func requireRollAccess(
 		respondErr(w, http.StatusNotFound, "roll not found")
 		return nil, nil, false
 	}
-	player := appMiddleware.PlayerFromContext(r.Context())
-	if player == nil || player.GameID != roll.GameID {
-		respondErr(w, http.StatusForbidden, "not a member of this table")
+	player, ok := requirePlayerInGame(w, r, q, roll.GameID)
+	if !ok {
 		return nil, nil, false
 	}
 	return &roll, player, true
@@ -79,7 +77,7 @@ func rollIsOpen(roll *dbgen.DiceRoll) bool {
 // dice and votes. If no roll is active, returns {"roll": null, "dice": [], "votes": []}.
 func GetActiveRollForGame(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -142,7 +140,7 @@ func GetActiveRollForGame(q *dbgen.Queries) http.HandlerFunc {
 // roll.created so all clients can display the panel.
 func CreateRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r)
+		gameID, player, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}

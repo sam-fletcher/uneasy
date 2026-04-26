@@ -19,7 +19,7 @@ import (
 // and ?after=Y for catch-up on WebSocket reconnect.
 func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -91,7 +91,7 @@ func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
 // Inserts a scene post and broadcasts it to all connected clients.
 func CreateScenePost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r)
+		gameID, player, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}

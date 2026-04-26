@@ -1,12 +1,12 @@
 -- sqlc query file for players.
 
 -- name: CreatePlayer :one
-INSERT INTO players (game_id, display_name, cookie_token, is_facilitator)
+INSERT INTO players (game_id, display_name, account_id, is_facilitator)
 VALUES ($1, $2, $3, $4)
 RETURNING *;
 
--- name: GetPlayerByToken :one
-SELECT * FROM players WHERE cookie_token = $1;
+-- name: GetPlayerByAccountAndGame :one
+SELECT * FROM players WHERE account_id = $1 AND game_id = $2;
 
 -- name: GetPlayerByID :one
 SELECT * FROM players WHERE id = $1;
@@ -14,9 +14,16 @@ SELECT * FROM players WHERE id = $1;
 -- name: GetPlayersByGame :many
 SELECT * FROM players WHERE game_id = $1 ORDER BY joined_at;
 
+-- name: ListPlayersByAccount :many
+SELECT p.*, g.join_code
+FROM players p
+JOIN games g ON g.id = p.game_id
+WHERE p.account_id = $1
+ORDER BY p.joined_at DESC;
+
 -- name: IsPlayerInGame :one
 SELECT EXISTS (
-  SELECT 1 FROM players WHERE game_id = $1 AND cookie_token = $2
+  SELECT 1 FROM players WHERE game_id = $1 AND account_id = $2
 ) AS exists;
 
 -- name: SetPlayerTokenColor :exec

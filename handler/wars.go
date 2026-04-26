@@ -121,7 +121,7 @@ func GetWarState(q *dbgen.Queries) http.HandlerFunc {
 // surface a multi-war side panel later if desired).
 func ListWars(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}

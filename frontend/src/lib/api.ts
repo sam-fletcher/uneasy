@@ -9,9 +9,17 @@ export type ToneTopicStatus = 'default' | 'include' | 'avoid_detail' | 'never';
 export type RankingCategory = 'power' | 'knowledge' | 'esteem';
 export type AssetType = 'peer' | 'holding' | 'artifact' | 'resource';
 
-export interface UserToken {
-	display_name: string;
-	created_at: string;
+export interface Account {
+	id: number;
+	username: string;
+	email: string | null;
+}
+
+export interface MyTable {
+	game_id: number;
+	join_code: string;
+	is_facilitator: boolean;
+	joined_at: string;
 }
 
 export interface Game {
@@ -29,6 +37,7 @@ export interface Game {
 export interface Player {
 	id: number;
 	game_id: number;
+	account_id: number;
 	display_name: string;
 	joined_at: string;
 	is_facilitator: boolean;
@@ -316,17 +325,50 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 	return body as T;
 }
 
-// ── Identity ─────────────────────────────────────────────────────────────────
+// ── Accounts & sessions ─────────────────────────────────────────────────────
 
-export function setIdentity(displayName: string): Promise<UserToken> {
-	return apiFetch<UserToken>('/identity', {
+export function createAccount(body: {
+	username: string;
+	code: string;
+	email?: string | null;
+}): Promise<Account> {
+	return apiFetch<Account>('/accounts', {
 		method: 'POST',
-		body: JSON.stringify({ display_name: displayName })
+		body: JSON.stringify(body)
 	});
 }
 
-export function getIdentity(): Promise<{ display_name: string; player: Player | null }> {
-	return apiFetch('/identity');
+export function login(username: string, code: string): Promise<Account> {
+	return apiFetch<Account>('/sessions', {
+		method: 'POST',
+		body: JSON.stringify({ username, code })
+	});
+}
+
+export async function logout(): Promise<void> {
+	await fetch('/api/sessions', { method: 'DELETE' });
+}
+
+export async function getMe(): Promise<Account | null> {
+	const res = await fetch('/api/accounts/me');
+	if (res.status === 401) return null;
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	return (await res.json()) as Account;
+}
+
+export function updateMe(patch: {
+	username?: string;
+	email?: string | null;
+	code?: string;
+}): Promise<Account> {
+	return apiFetch<Account>('/accounts/me', {
+		method: 'PATCH',
+		body: JSON.stringify(patch)
+	});
+}
+
+export function listMyTables(): Promise<{ tables: MyTable[] }> {
+	return apiFetch('/accounts/me/tables');
 }
 
 // ── Tables ───────────────────────────────────────────────────────────────────

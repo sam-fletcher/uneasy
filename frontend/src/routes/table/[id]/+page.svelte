@@ -1,9 +1,10 @@
 <!-- Game shell: loads full game state, routes to phase-specific views. -->
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
 	import {
-		getGameState, getIdentity,
+		getGameState, getMe,
 		startToneSetting, startPrologue,
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord, listScenePosts,
@@ -473,9 +474,18 @@
 
 	onMount(async () => {
 		try {
-			const identity = await getIdentity();
-			if (identity.player) currentPlayerID = identity.player.id;
+			const me = await getMe();
+			if (!me) {
+				goto(`/login?next=/table/${gameID}`);
+				return;
+			}
 			await loadGameState();
+			const seat = players.find((p) => p.account_id === me.id);
+			if (!seat) {
+				goto('/profile');
+				return;
+			}
+			currentPlayerID = seat.id;
 			disconnect = createConnection(gameID, handleWSMessage);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load table.';

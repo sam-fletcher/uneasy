@@ -30,10 +30,14 @@ func TestStartToneSetting_RejectsUnderMinPlayers(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add only 1 player
+	acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+		Username: "solo-" + game.JoinCode, CodeHash: "x",
+	})
+	require.NoError(t, err)
 	_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
 		GameID:      game.ID,
 		DisplayName: "Solo",
-		CookieToken: "test-token-1",
+		AccountID:   acct.ID,
 	})
 	require.NoError(t, err)
 
@@ -53,10 +57,14 @@ func TestStartToneSetting_RejectsOverMaxPlayers(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 6; i++ {
-		_, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), CodeHash: "x",
+		})
+		require.NoError(t, err)
+		_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
 			GameID:      game.ID,
 			DisplayName: fmt.Sprintf("P%d", i+1),
-			CookieToken: fmt.Sprintf("token-%d", i),
+			AccountID:   acct.ID,
 		})
 		require.NoError(t, err)
 	}
@@ -80,10 +88,14 @@ func TestStartToneSetting_AcceptsValidPlayerCounts(t *testing.T) {
 			require.NoError(t, err)
 
 			for i := 0; i < playerCount; i++ {
-				_, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+				acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+					Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), CodeHash: "x",
+				})
+				require.NoError(t, err)
+				_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
 					GameID:      game.ID,
 					DisplayName: fmt.Sprintf("P%d", i+1),
-					CookieToken: fmt.Sprintf("token-%d", i),
+					AccountID:   acct.ID,
 				})
 				require.NoError(t, err)
 			}
@@ -108,10 +120,14 @@ func TestStartToneSetting_SeedsDefaultToneTopics(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 3; i++ {
-		_, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), CodeHash: "x",
+		})
+		require.NoError(t, err)
+		_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
 			GameID:      game.ID,
 			DisplayName: fmt.Sprintf("P%d", i+1),
-			CookieToken: fmt.Sprintf("token-%d", i),
+			AccountID:   acct.ID,
 		})
 		require.NoError(t, err)
 	}
@@ -143,10 +159,14 @@ func TestToneSetting_RequiresLobbyPhase(t *testing.T) {
 
 	// Create some players
 	for i := 0; i < 3; i++ {
-		_, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), CodeHash: "x",
+		})
+		require.NoError(t, err)
+		_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
 			GameID:      game.ID,
 			DisplayName: fmt.Sprintf("P%d", i+1),
-			CookieToken: fmt.Sprintf("token-%d", i),
+			AccountID:   acct.ID,
 		})
 		require.NoError(t, err)
 	}

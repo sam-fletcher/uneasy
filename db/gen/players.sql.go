@@ -7,19 +7,21 @@ package dbgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createPlayer = `-- name: CreatePlayer :one
 
-INSERT INTO players (game_id, display_name, cookie_token, is_facilitator)
+INSERT INTO players (game_id, display_name, account_id, is_facilitator)
 VALUES ($1, $2, $3, $4)
-RETURNING id, game_id, display_name, cookie_token, joined_at, is_facilitator, token_color, seat_order
+RETURNING id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id
 `
 
 type CreatePlayerParams struct {
 	GameID        int64  `db:"game_id" json:"game_id"`
 	DisplayName   string `db:"display_name" json:"display_name"`
-	CookieToken   string `db:"cookie_token" json:"cookie_token"`
+	AccountID     int64  `db:"account_id" json:"account_id"`
 	IsFacilitator bool   `db:"is_facilitator" json:"is_facilitator"`
 }
 
@@ -28,7 +30,7 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Pla
 	row := q.db.QueryRow(ctx, createPlayer,
 		arg.GameID,
 		arg.DisplayName,
-		arg.CookieToken,
+		arg.AccountID,
 		arg.IsFacilitator,
 	)
 	var i Player
@@ -36,17 +38,17 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Pla
 		&i.ID,
 		&i.GameID,
 		&i.DisplayName,
-		&i.CookieToken,
 		&i.JoinedAt,
 		&i.IsFacilitator,
 		&i.TokenColor,
 		&i.SeatOrder,
+		&i.AccountID,
 	)
 	return i, err
 }
 
 const getFirstFocusPlayer = `-- name: GetFirstFocusPlayer :one
-SELECT id, game_id, display_name, cookie_token, joined_at, is_facilitator, token_color, seat_order FROM players
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id FROM players
 WHERE game_id = $1 AND seat_order IS NOT NULL
 ORDER BY seat_order ASC
 LIMIT 1
@@ -60,17 +62,17 @@ func (q *Queries) GetFirstFocusPlayer(ctx context.Context, gameID int64) (Player
 		&i.ID,
 		&i.GameID,
 		&i.DisplayName,
-		&i.CookieToken,
 		&i.JoinedAt,
 		&i.IsFacilitator,
 		&i.TokenColor,
 		&i.SeatOrder,
+		&i.AccountID,
 	)
 	return i, err
 }
 
 const getNextFocusPlayer = `-- name: GetNextFocusPlayer :one
-SELECT p.id, p.game_id, p.display_name, p.cookie_token, p.joined_at, p.is_facilitator, p.token_color, p.seat_order FROM players p
+SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id FROM players p
 WHERE p.game_id = $1 AND p.seat_order IS NOT NULL
   AND p.seat_order > COALESCE(
     (SELECT p2.seat_order FROM players p2 WHERE p2.id = $2),
@@ -94,17 +96,42 @@ func (q *Queries) GetNextFocusPlayer(ctx context.Context, arg GetNextFocusPlayer
 		&i.ID,
 		&i.GameID,
 		&i.DisplayName,
-		&i.CookieToken,
 		&i.JoinedAt,
 		&i.IsFacilitator,
 		&i.TokenColor,
 		&i.SeatOrder,
+		&i.AccountID,
+	)
+	return i, err
+}
+
+const getPlayerByAccountAndGame = `-- name: GetPlayerByAccountAndGame :one
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id FROM players WHERE account_id = $1 AND game_id = $2
+`
+
+type GetPlayerByAccountAndGameParams struct {
+	AccountID int64 `db:"account_id" json:"account_id"`
+	GameID    int64 `db:"game_id" json:"game_id"`
+}
+
+func (q *Queries) GetPlayerByAccountAndGame(ctx context.Context, arg GetPlayerByAccountAndGameParams) (Player, error) {
+	row := q.db.QueryRow(ctx, getPlayerByAccountAndGame, arg.AccountID, arg.GameID)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.DisplayName,
+		&i.JoinedAt,
+		&i.IsFacilitator,
+		&i.TokenColor,
+		&i.SeatOrder,
+		&i.AccountID,
 	)
 	return i, err
 }
 
 const getPlayerByID = `-- name: GetPlayerByID :one
-SELECT id, game_id, display_name, cookie_token, joined_at, is_facilitator, token_color, seat_order FROM players WHERE id = $1
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id FROM players WHERE id = $1
 `
 
 func (q *Queries) GetPlayerByID(ctx context.Context, id int64) (Player, error) {
@@ -114,37 +141,17 @@ func (q *Queries) GetPlayerByID(ctx context.Context, id int64) (Player, error) {
 		&i.ID,
 		&i.GameID,
 		&i.DisplayName,
-		&i.CookieToken,
 		&i.JoinedAt,
 		&i.IsFacilitator,
 		&i.TokenColor,
 		&i.SeatOrder,
-	)
-	return i, err
-}
-
-const getPlayerByToken = `-- name: GetPlayerByToken :one
-SELECT id, game_id, display_name, cookie_token, joined_at, is_facilitator, token_color, seat_order FROM players WHERE cookie_token = $1
-`
-
-func (q *Queries) GetPlayerByToken(ctx context.Context, cookieToken string) (Player, error) {
-	row := q.db.QueryRow(ctx, getPlayerByToken, cookieToken)
-	var i Player
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.DisplayName,
-		&i.CookieToken,
-		&i.JoinedAt,
-		&i.IsFacilitator,
-		&i.TokenColor,
-		&i.SeatOrder,
+		&i.AccountID,
 	)
 	return i, err
 }
 
 const getPlayersByGame = `-- name: GetPlayersByGame :many
-SELECT id, game_id, display_name, cookie_token, joined_at, is_facilitator, token_color, seat_order FROM players WHERE game_id = $1 ORDER BY joined_at
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id FROM players WHERE game_id = $1 ORDER BY joined_at
 `
 
 func (q *Queries) GetPlayersByGame(ctx context.Context, gameID int64) ([]Player, error) {
@@ -160,11 +167,11 @@ func (q *Queries) GetPlayersByGame(ctx context.Context, gameID int64) ([]Player,
 			&i.ID,
 			&i.GameID,
 			&i.DisplayName,
-			&i.CookieToken,
 			&i.JoinedAt,
 			&i.IsFacilitator,
 			&i.TokenColor,
 			&i.SeatOrder,
+			&i.AccountID,
 		); err != nil {
 			return nil, err
 		}
@@ -178,20 +185,70 @@ func (q *Queries) GetPlayersByGame(ctx context.Context, gameID int64) ([]Player,
 
 const isPlayerInGame = `-- name: IsPlayerInGame :one
 SELECT EXISTS (
-  SELECT 1 FROM players WHERE game_id = $1 AND cookie_token = $2
+  SELECT 1 FROM players WHERE game_id = $1 AND account_id = $2
 ) AS exists
 `
 
 type IsPlayerInGameParams struct {
-	GameID      int64  `db:"game_id" json:"game_id"`
-	CookieToken string `db:"cookie_token" json:"cookie_token"`
+	GameID    int64 `db:"game_id" json:"game_id"`
+	AccountID int64 `db:"account_id" json:"account_id"`
 }
 
 func (q *Queries) IsPlayerInGame(ctx context.Context, arg IsPlayerInGameParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isPlayerInGame, arg.GameID, arg.CookieToken)
+	row := q.db.QueryRow(ctx, isPlayerInGame, arg.GameID, arg.AccountID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listPlayersByAccount = `-- name: ListPlayersByAccount :many
+SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, g.join_code
+FROM players p
+JOIN games g ON g.id = p.game_id
+WHERE p.account_id = $1
+ORDER BY p.joined_at DESC
+`
+
+type ListPlayersByAccountRow struct {
+	ID            int64              `db:"id" json:"id"`
+	GameID        int64              `db:"game_id" json:"game_id"`
+	DisplayName   string             `db:"display_name" json:"display_name"`
+	JoinedAt      pgtype.Timestamptz `db:"joined_at" json:"joined_at"`
+	IsFacilitator bool               `db:"is_facilitator" json:"is_facilitator"`
+	TokenColor    *string            `db:"token_color" json:"token_color"`
+	SeatOrder     *int16             `db:"seat_order" json:"seat_order"`
+	AccountID     int64              `db:"account_id" json:"account_id"`
+	JoinCode      string             `db:"join_code" json:"join_code"`
+}
+
+func (q *Queries) ListPlayersByAccount(ctx context.Context, accountID int64) ([]ListPlayersByAccountRow, error) {
+	rows, err := q.db.Query(ctx, listPlayersByAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlayersByAccountRow{}
+	for rows.Next() {
+		var i ListPlayersByAccountRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.DisplayName,
+			&i.JoinedAt,
+			&i.IsFacilitator,
+			&i.TokenColor,
+			&i.SeatOrder,
+			&i.AccountID,
+			&i.JoinCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setPlayerSeatOrder = `-- name: SetPlayerSeatOrder :exec

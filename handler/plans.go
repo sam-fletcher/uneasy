@@ -43,7 +43,6 @@ import (
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
-	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -68,9 +67,8 @@ func requirePlanAccess(
 		respondErr(w, http.StatusNotFound, "plan not found")
 		return nil, nil, false
 	}
-	player := appMiddleware.PlayerFromContext(r.Context())
-	if player == nil || player.GameID != plan.GameID {
-		respondErr(w, http.StatusForbidden, "not a member of this table")
+	player, ok := requirePlayerInGame(w, r, q, plan.GameID)
+	if !ok {
 		return nil, nil, false
 	}
 	return &plan, player, true
@@ -337,7 +335,7 @@ func validatePlanPreparation(
 // ListPlans handles GET /api/tables/:id/plans.
 func ListPlans(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -358,7 +356,7 @@ func ListPlans(q *dbgen.Queries) http.HandlerFunc {
 // target row for each eligible plan. Ineligible plans include a reason.
 func PlanEligibility(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r)
+		gameID, player, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}

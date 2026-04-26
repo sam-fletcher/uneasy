@@ -153,17 +153,17 @@ func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
 
 	players := make([]dbgen.Player, n)
 	for i := 0; i < n; i++ {
-		tok := fmt.Sprintf("tok-%d-%s", i, randSuffix())
-		if _, err := q.UpsertUserToken(ctx, dbgen.UpsertUserTokenParams{
-			Token:       tok,
-			DisplayName: fmt.Sprintf("P%d", i+1),
-		}); err != nil {
-			t.Fatalf("upsert user token: %v", err)
+		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+			Username: fmt.Sprintf("p%d-%s", i+1, randSuffix()),
+			CodeHash: "x", // not used by these tests
+		})
+		if err != nil {
+			t.Fatalf("create account: %v", err)
 		}
 		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
 			GameID:        game.ID,
 			DisplayName:   fmt.Sprintf("P%d", i+1),
-			CookieToken:   tok,
+			AccountID:     acct.ID,
 			IsFacilitator: i == 0,
 		})
 		if err != nil {

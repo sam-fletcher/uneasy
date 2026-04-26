@@ -27,7 +27,7 @@ type RecordRow struct {
 // is stable now so the frontend can render the timeline.
 func GetFullRecord(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -91,7 +91,7 @@ func GetFullRecord(q *dbgen.Queries) http.HandlerFunc {
 // the new entry to all connected clients.
 func CreateSceneEntry(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r)
+		gameID, player, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}

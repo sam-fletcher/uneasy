@@ -9,6 +9,15 @@ import (
 	"uneasy/model"
 )
 
+type Account struct {
+	ID        int64              `db:"id" json:"id"`
+	Username  string             `db:"username" json:"username"`
+	CodeHash  string             `db:"code_hash" json:"code_hash"`
+	Email     *string            `db:"email" json:"email"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
 type Asset struct {
 	ID              int64              `db:"id" json:"id"`
 	GameID          int64              `db:"game_id" json:"game_id"`
@@ -182,11 +191,11 @@ type Player struct {
 	ID            int64              `db:"id" json:"id"`
 	GameID        int64              `db:"game_id" json:"game_id"`
 	DisplayName   string             `db:"display_name" json:"display_name"`
-	CookieToken   string             `db:"cookie_token" json:"cookie_token"`
 	JoinedAt      pgtype.Timestamptz `db:"joined_at" json:"joined_at"`
 	IsFacilitator bool               `db:"is_facilitator" json:"is_facilitator"`
 	TokenColor    *string            `db:"token_color" json:"token_color"`
 	SeatOrder     *int16             `db:"seat_order" json:"seat_order"`
+	AccountID     int64              `db:"account_id" json:"account_id"`
 }
 
 type PublicRecordRow struct {
@@ -249,6 +258,13 @@ type SecretVisibility struct {
 	SeenAt   pgtype.Timestamptz `db:"seen_at" json:"seen_at"`
 }
 
+type Session struct {
+	Token     string             `db:"token" json:"token"`
+	AccountID int64              `db:"account_id" json:"account_id"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	LastSeen  pgtype.Timestamptz `db:"last_seen" json:"last_seen"`
+}
+
 type SimultaneousReveal struct {
 	ID          int64              `db:"id" json:"id"`
 	GameID      int64              `db:"game_id" json:"game_id"`
@@ -271,12 +287,6 @@ type ToneTopic struct {
 	GameID int64                 `db:"game_id" json:"game_id"`
 	Topic  string                `db:"topic" json:"topic"`
 	Status model.ToneTopicStatus `db:"status" json:"status"`
-}
-
-type UserToken struct {
-	Token       string             `db:"token" json:"token"`
-	DisplayName string             `db:"display_name" json:"display_name"`
-	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 type War struct {

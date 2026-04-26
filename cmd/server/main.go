@@ -118,11 +118,15 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 
 	// API routes — all behind the cookie-auth middleware.
 	r.Route("/api", func(r chi.Router) {
-		r.Use(appMiddleware.EnsureToken(q))
+		r.Use(appMiddleware.EnsureSession(q))
 
-		// Identity
-		r.Post("/identity", handler.SetIdentity(q))
-		r.Get("/identity", handler.GetIdentity())
+		// Accounts & sessions
+		r.Post("/accounts", handler.CreateAccount(q))
+		r.Get("/accounts/me", handler.GetMe())
+		r.Patch("/accounts/me", handler.UpdateMe(q))
+		r.Get("/accounts/me/tables", handler.ListMyTables(q))
+		r.Post("/sessions", handler.CreateSession(q))
+		r.Delete("/sessions", handler.DeleteSession(q))
 
 		// Tables (creation, join, info)
 		r.Post("/tables", handler.CreateTable(q, manager))
@@ -222,7 +226,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		})
 
 		// WebSocket (note: no Timeout middleware for WS connections)
-		r.Get("/tables/{id}/ws", handler.WebSocket(manager))
+		r.Get("/tables/{id}/ws", handler.WebSocket(q, manager))
 	})
 	return r
 }

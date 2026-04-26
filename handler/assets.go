@@ -13,7 +13,6 @@ import (
 
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
-	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -55,9 +54,8 @@ func requireAssetAccess(w http.ResponseWriter, r *http.Request, q *dbgen.Queries
 		respondErr(w, http.StatusNotFound, "asset not found")
 		return nil, nil, false
 	}
-	player := appMiddleware.PlayerFromContext(r.Context())
-	if player == nil || player.GameID != asset.GameID {
-		respondErr(w, http.StatusForbidden, "not a member of this table")
+	player, ok := requirePlayerInGame(w, r, q, asset.GameID)
+	if !ok {
 		return nil, nil, false
 	}
 	return &asset, player, true
@@ -94,7 +92,7 @@ func marginaliaByPosition(list []dbgen.Marginalium, pos int16) *dbgen.Marginaliu
 // Returns all non-destroyed assets in the game, each with their marginalia.
 func ListAssets(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -131,7 +129,7 @@ func ListAssets(q *dbgen.Queries) http.HandlerFunc {
 // through gamepkg.AssetRecipientForPlan when the caller is the preparer.
 func CreateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r)
+		gameID, player, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}

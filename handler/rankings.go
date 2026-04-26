@@ -19,7 +19,7 @@ const (
 // GetRankings handles GET /api/tables/{id}/rankings.
 func GetRankings(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}

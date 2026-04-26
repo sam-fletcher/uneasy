@@ -28,7 +28,6 @@ import (
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
-	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -297,9 +296,8 @@ func requireRevealAccess(
 		respondErr(w, http.StatusNotFound, "reveal not found")
 		return nil, nil, false
 	}
-	player := appMiddleware.PlayerFromContext(r.Context())
-	if player == nil || player.GameID != reveal.GameID {
-		respondErr(w, http.StatusForbidden, "not a member of this table")
+	player, ok := requirePlayerInGame(w, r, q, reveal.GameID)
+	if !ok {
 		return nil, nil, false
 	}
 	return &reveal, player, true

@@ -10,20 +10,35 @@ import (
 	appMiddleware "uneasy/middleware"
 )
 
-// parseGamePlayer extracts the game ID from the "{id}" URL param, looks up
-// the authenticated player from context, and verifies they belong to that
-// game. On failure it writes the appropriate error response and returns
-// (0, nil, false). Callers should return immediately when ok is false.
-func parseGamePlayer(w http.ResponseWriter, r *http.Request) (int64, *dbgen.Player, bool) {
+// parseGamePlayer extracts the game ID from the "{id}" URL param and loads
+// the calling account's player row at that game. Writes the appropriate
+// error response and returns ok=false on failure.
+func parseGamePlayer(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (int64, *dbgen.Player, bool) {
 	gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, "invalid table id")
 		return 0, nil, false
 	}
-	player := appMiddleware.PlayerFromContext(r.Context())
-	if player == nil || player.GameID != gameID {
-		respondErr(w, http.StatusForbidden, "not a member of this table")
+	player, ok := requirePlayerInGame(w, r, q, gameID)
+	if !ok {
 		return 0, nil, false
 	}
 	return gameID, player, true
+}
+
+// requirePlayerInGame loads the calling account's player row at gameID,
+// or writes 401/403 and returns ok=false. Use when the gameID has already
+// been resolved from a sub-resource (asset, plan, roll, ...).
+func requirePlayerInGame(w http.ResponseWriter, r *http.Request, q *dbgen.Queries, gameID int64) (*dbgen.Player, bool) {
+	account := appMiddleware.AccountFromContext(r.Context())
+	if account == nil {
+		respondErr(w, http.StatusUnauthorized, "log in first")
+		return nil, false
+	}
+	player := appMiddleware.LoadPlayer(r.Context(), q, account.ID, gameID)
+	if player == nil {
+		respondErr(w, http.StatusForbidden, "not a member of this table")
+		return nil, false
+	}
+	return player, true
 }

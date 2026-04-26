@@ -23,7 +23,6 @@ import (
 
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
-	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -32,7 +31,7 @@ import (
 // ListLaws handles GET /api/tables/{id}/laws.
 func ListLaws(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -61,9 +60,8 @@ func UpdateLaw(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusNotFound, "law not found")
 			return
 		}
-		player := appMiddleware.PlayerFromContext(ctx)
-		if player == nil || player.GameID != law.GameID {
-			respondErr(w, http.StatusForbidden, "not a member of this table")
+		player, ok := requirePlayerInGame(w, r, q, law.GameID)
+		if !ok {
 			return
 		}
 
@@ -129,7 +127,7 @@ func canEditLaw(ctx context.Context, q *dbgen.Queries, law *dbgen.Law, playerID 
 // ListRumors handles GET /api/tables/{id}/rumors.
 func ListRumors(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
@@ -157,9 +155,8 @@ func UpdateRumor(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusNotFound, "rumor not found")
 			return
 		}
-		player := appMiddleware.PlayerFromContext(ctx)
-		if player == nil || player.GameID != rumor.GameID {
-			respondErr(w, http.StatusForbidden, "not a member of this table")
+		player, ok := requirePlayerInGame(w, r, q, rumor.GameID)
+		if !ok {
 			return
 		}
 

@@ -14,7 +14,7 @@ import (
 // requireFacilitator is a helper that checks the caller is the facilitator
 // of the given game. Returns the game, or writes an error response.
 func requireFacilitator(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.Game, bool) {
-	gameID, player, ok := parseGamePlayer(w, r)
+	gameID, player, ok := parseGamePlayer(w, r, q)
 	if !ok {
 		return nil, false
 	}
@@ -274,7 +274,7 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Returns the full game state: game object, players, rankings, and phase-specific data.
 func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r)
+		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
