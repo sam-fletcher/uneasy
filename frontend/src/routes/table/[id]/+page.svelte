@@ -579,7 +579,6 @@
 	<!-- Header ──────────────────────────────────────────────────────────────── -->
 	<header>
 		<div class="game-info">
-			<span class="game-title">Uneasy Lies the Head</span>
 			{#if game}
 				<span class="phase-badge">{phaseLabels[game.phase] ?? game.phase}</span>
 				<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
@@ -760,12 +759,6 @@
 		align-items: center;
 		gap: 0.75rem;
 		flex-wrap: wrap;
-	}
-
-	.game-title {
-		font-weight: 700;
-		font-size: 1.1rem;
-		color: #c8a96e;
 	}
 
 	.phase-badge {

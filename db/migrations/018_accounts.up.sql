@@ -26,13 +26,20 @@ CREATE TABLE sessions (
 CREATE INDEX sessions_account ON sessions(account_id);
 
 -- players.cookie_token → players.account_id.
--- Drop all rows first since the FK target is going away.
-DELETE FROM players;
+-- Wipe all game data (dev-only migration). TRUNCATE ... CASCADE clears
+-- every table that FKs to games/players in one shot.
+ALTER TABLE games DROP CONSTRAINT IF EXISTS fk_games_facilitator;
+TRUNCATE games CASCADE;
 
 ALTER TABLE players
   DROP COLUMN cookie_token,
   ADD COLUMN account_id BIGINT NOT NULL REFERENCES accounts(id);
 
 CREATE UNIQUE INDEX players_account_game ON players(account_id, game_id);
+
+-- Restore the facilitator FK we dropped above.
+ALTER TABLE games
+  ADD CONSTRAINT fk_games_facilitator
+  FOREIGN KEY (facilitator_id) REFERENCES players(id);
 
 DROP TABLE user_tokens;

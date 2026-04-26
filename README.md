@@ -120,3 +120,49 @@ npm ls <package-name>   # e.g. npm ls axios
 | `PORT`         | `8080`                                               | HTTP listen port               |
 | `DEV_MODE`     | `false`                                              | Proxy frontend to `VITE_URL`   |
 | `VITE_URL`     | `http://localhost:5173`                              | Vite dev server address        |
+| `UNEASY_DEV`   | unset                                                | If `1`, mounts `/api/dev/*` shortcuts (see below) |
+
+## Dev testing workflow
+
+Manual UI testing usually means juggling several "players" at once. With
+`UNEASY_DEV=1` (already set in `docker-compose.yml`) the server exposes
+two shortcuts that make this painless:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/dev/login?username=foo` | Find or create the account `foo`, open a session, set the cookie. No code required. |
+| `POST /api/dev/reset` | `TRUNCATE accounts, games CASCADE` — wipes all account, session, and game data. Schema is untouched. |
+
+These routes are only mounted when `UNEASY_DEV=1`, so production binaries
+will 404 on them.
+
+### Running multiple players in parallel
+
+Each browser profile (or Chrome incognito window, or different browser) is
+its own cookie jar, so each can hold a different player's session. The
+fastest way to seed a session is to visit the dev-login URL directly:
+
+```
+http://localhost:8080/api/dev/login?username=alice   # in profile A
+http://localhost:8080/api/dev/login?username=bob     # in profile B
+```
+
+Then navigate to `http://localhost:8080/profile` in each — you'll see
+that account's tables. Create a table in one window, copy the join code,
+join from the other.
+
+### Resetting between test runs
+
+```bash
+curl -X POST http://localhost:8080/api/dev/reset
+```
+
+Faster than restarting the DB container; preserves the schema so you
+don't re-run migrations.
+
+### Logging in normally
+
+The dev shortcut bypasses the code check, but the regular sign-up /
+login flow at `/signup` and `/login` still works in dev. Use it when
+you're testing the auth UI itself; use the dev shortcut when you just
+need a session and don't care which one.

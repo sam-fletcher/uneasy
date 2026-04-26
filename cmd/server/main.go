@@ -128,6 +128,12 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Post("/sessions", handler.CreateSession(q))
 		r.Delete("/sessions", handler.DeleteSession(q))
 
+		// Dev-only routes — gated by UNEASY_DEV=1. Never mount in prod.
+		if os.Getenv("UNEASY_DEV") == "1" {
+			r.Post("/dev/login", handler.DevLogin(q))
+			r.Post("/dev/reset", handler.DevReset(q))
+		}
+
 		// Tables (creation, join, info)
 		r.Post("/tables", handler.CreateTable(q, manager))
 		r.Post("/tables/join", handler.JoinTable(q))

@@ -30,6 +30,7 @@ services:
       DATABASE_URL: postgres://uneasy:uneasy@db:5432/uneasy?sslmode=disable
       PORT: "8080"
       DEV_MODE: "true"
+      UNEASY_DEV: "1"
       VITE_URL: "http://frontend:5173"
     depends_on:
       db:
