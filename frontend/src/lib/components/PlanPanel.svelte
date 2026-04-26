@@ -21,6 +21,7 @@
 
 	import './plans/planPanel.css';
 	import { PLAN_SHORT, playerName } from './plans/shared';
+	import { ALWAYS_ON } from './plans/registry';
 	import ExchangeCourtiersPanel from './plans/ExchangeCourtiersPanel.svelte';
 	import MakeIntroductionsPanel from './plans/MakeIntroductionsPanel.svelte';
 	import SpreadPropagandaPanel from './plans/SpreadPropagandaPanel.svelte';
@@ -32,6 +33,7 @@
 	import ProposeDuelPanel from './plans/ProposeDuelPanel.svelte';
 	import HostFestivityPanel from './plans/HostFestivityPanel.svelte';
 	import MakeWarPanel from './plans/MakeWarPanel.svelte';
+	import MakeDemandsPanel from './plans/MakeDemandsPanel.svelte';
 
 	interface Props {
 		gameID: number;
@@ -81,25 +83,18 @@
 
 	const needsResolution = $derived(resolvingPlan != null || pendingOnRow.length > 0);
 
-	// Make War plans whose war may still be active. Render an always-on panel
-	// for each one so the cost-of-battle picker / peace flow / surrender claims
-	// stay visible across rows even after the originating plan has resolved.
-	// (The MakeWarPanel itself hides when both plan is resolved AND war ended.)
-	const warPlans = $derived(
-		plans.filter(p => p.plan_type === 'make_war' && p.status !== 'cancelled'),
-	);
-
-	// Pending Clandestinely Liaise plans the current player is a participant in,
-	// where the delay reveal has not yet completed (plan is still at row 0).
-	// These need to surface the reveal UI to both preparer and partner outside
-	// the usual focus/on-row dispatch.
-	const pendingLiaiseReveals = $derived(
+	// Plans that should render out-of-band (independent of resolving status).
+	// Driven by the per-plan ALWAYS_ON registry rather than hardcoded
+	// per-plan-type filters. Each entry's panel may still self-hide for
+	// state it can only learn about by fetching (e.g. Make War's war-ended
+	// check). The resolving plan is excluded to avoid double-rendering.
+	const alwaysOnPlans = $derived(
 		plans.filter(p => {
-			if (p.plan_type !== 'clandestinely_liaise' || p.status !== 'pending') return false;
-			if (p.row_number > 0) return false;
-			if (currentPlayerID == null) return false;
-			return p.preparer_id === currentPlayerID || p.target_player_id === currentPlayerID;
-		})
+			const spec = ALWAYS_ON[p.plan_type];
+			if (!spec) return false;
+			if (resolvingPlan?.id === p.id) return false;
+			return spec.shouldRender(p, currentPlayerID);
+		}),
 	);
 
 	// ── Eligibility loading (prep mode) ───────────────────────────────────────
@@ -156,22 +151,23 @@
 	}
 </script>
 
-<!-- ── Active Make War plans (delay reveal, status, cost picker, peace) ── -->
-{#each warPlans as wp (wp.id)}
-	{#if !(resolvingPlan?.id === wp.id)}
-		<!-- Skip if this Make War is the resolving plan; the resolve dispatch
-			 below renders it instead so we don't double-render. -->
+<!-- ── Always-on plan views (registry-driven) ────────────────────────────
+     Each plan whose type appears in ALWAYS_ON and passes its predicate is
+     rendered here. Dispatch below is the only place that knows the
+     plan-type → component mapping for these views.
+     TODO(refactor B2-B5 follow-up): once panels share a unified
+     {ctx, plan, mode} signature, this dispatch collapses into a single
+     <PlanDispatch> call driven by the registry — see plans/registry.ts. -->
+{#each alwaysOnPlans as p (p.id)}
+	{#if p.plan_type === 'make_war'}
 		<MakeWarPanel mode="war"
 			{gameID} {assets} {players} {currentPlayerID}
-			plan={wp} {onPlansChanged} />
+			plan={p} {onPlansChanged} />
+	{:else if p.plan_type === 'clandestinely_liaise'}
+		<ClandestinelyLiaisePanel mode="delay-reveal"
+			{gameID} {assets} {players} {currentPlayerID}
+			plan={p} {onPlansChanged} />
 	{/if}
-{/each}
-
-<!-- ── Pending Clandestinely Liaise delay reveals ───────────────────────── -->
-{#each pendingLiaiseReveals as rp (rp.id)}
-	<ClandestinelyLiaisePanel mode="delay-reveal"
-		{gameID} {assets} {players} {currentPlayerID}
-		plan={rp} {onPlansChanged} />
 {/each}
 
 <!-- ── Resolution dispatch ───────────────────────────────────────────────── -->
@@ -179,46 +175,46 @@
 	{@const plan = resolvingPlan}
 	{#if plan.plan_type === 'exchange_courtiers'}
 		<ExchangeCourtiersPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID}
+			{gameID} {assets} {players} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
 	{:else if plan.plan_type === 'make_introductions'}
 		<MakeIntroductionsPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID}
+			{gameID} {assets} {players} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
 	{:else if plan.plan_type === 'spread_propaganda'}
 		<SpreadPropagandaPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID}
+			{gameID} {assets} {players} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
 	{:else if plan.plan_type === 'seek_answers'}
 		<SeekAnswersPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID}
+			{gameID} {assets} {players} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
 	{:else if plan.plan_type === 'spread_rumors'}
 		<SpreadRumorsPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID}
+			{gameID} {assets} {players} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
 	{:else if plan.plan_type === 'chronicle_histories'}
 		<ChronicleHistoriesPanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID}
+			{gameID} {assets} {players} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
 	{:else if plan.plan_type === 'propose_decree'}
 		<ProposeDecreePanel mode="resolve"
-			{gameID} {assets} {players} {rankings} {currentPlayerID}
+			{gameID} {assets} {players} {rankings} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome}
 			{onRollCreated} {onPlansChanged} />
 	{:else if plan.plan_type === 'clandestinely_liaise'}
 		<ClandestinelyLiaisePanel mode="resolve"
-			{gameID} {assets} {players} {currentPlayerID}
+			{gameID} {assets} {players} {currentPlayerID} {plans}
 			{plan} {onPlansChanged} />
 	{:else if plan.plan_type === 'propose_duel'}
 		<ProposeDuelPanel mode="resolve"
-			{gameID} {assets} {players} {rankings} {currentPlayerID}
+			{gameID} {assets} {players} {rankings} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome} {activeRoll}
 			{onPlansChanged} />
 	{:else if plan.plan_type === 'make_war'}
@@ -227,9 +223,14 @@
 			{plan} {isFocusPlayer} {onPlansChanged} />
 	{:else if plan.plan_type === 'host_festivity'}
 		<HostFestivityPanel mode="resolve"
-			{gameID} {assets} {players} {rankings} {currentPlayerID}
+			{gameID} {assets} {players} {rankings} {currentPlayerID} {plans}
 			{plan} {isFocusPlayer} {rollActive} {rollOutcome} {activeRoll}
 			{onPlansChanged} />
+	{:else if plan.plan_type === 'make_demands'}
+		<MakeDemandsPanel mode="resolve"
+			{gameID} {assets} {players} {rankings} {currentPlayerID}
+			{currentRow} {plans} {plan} {isFocusPlayer}
+			{rollActive} {rollOutcome} {onRollCreated} {onPlansChanged} />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
@@ -340,6 +341,10 @@
 			<MakeWarPanel mode="prep"
 				{gameID} {assets} {players} {currentPlayerID}
 				{onPlanPrepared} />
+		{:else if selectedPlanType === 'make_demands'}
+			<MakeDemandsPanel mode="prep"
+				{gameID} {assets} {players} {rankings} {currentPlayerID}
+				{currentRow} {plans} {onPlanPrepared} />
 		{:else if selectedPlanType}
 			<div class="plan-form">
 				<p class="form-hint">

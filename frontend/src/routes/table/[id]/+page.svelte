@@ -339,9 +339,24 @@
 			case EventTypes.FestivityChallengeDeclined:
 			case EventTypes.FestivityDuelTriggered:
 			case EventTypes.WarDeclared:
+			case EventTypes.DemandPrepared:
+			case EventTypes.DemandResolved:
 			case EventTypes.DemandDraftPick:
-			case EventTypes.DemandCounterPlaced: {
+			case EventTypes.DemandCounterPending:
+			case EventTypes.DemandCounterPlaced:
+			case EventTypes.DemandRetargeted: {
 				const { plan_id } = msg.payload as { plan_id: number };
+				refreshPlan(plan_id);
+				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
+				break;
+			}
+			case EventTypes.DemandLeverageSet: {
+				// Adds dice to the target plan's open roll without going through
+				// RollLeverageAdded; refresh dice if it's the active roll.
+				const { plan_id, roll_id } = msg.payload as { plan_id: number; roll_id: number };
+				if (activeRoll && activeRoll.id === roll_id) {
+					getRoll(roll_id).then(data => { activeRollDice = data.dice; }).catch(() => {});
+				}
 				refreshPlan(plan_id);
 				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
 				break;

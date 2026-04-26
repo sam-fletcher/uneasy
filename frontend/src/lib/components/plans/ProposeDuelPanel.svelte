@@ -24,6 +24,7 @@
 		type DuelStake, type DuelBout, type DuelStateResponse,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
+	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	interface Props {
@@ -33,6 +34,7 @@
 		players: Player[];
 		rankings: Ranking[];
 		currentPlayerID: number | null;
+		plans?: Plan[];
 		plan?: Plan | null;
 		isFocusPlayer?: boolean;
 		rollActive?: boolean;
@@ -44,7 +46,7 @@
 	}
 
 	let {
-		mode, gameID, assets, players, rankings, currentPlayerID,
+		mode, gameID, assets, players, rankings, currentPlayerID, plans = [],
 		plan = null, isFocusPlayer = false,
 		rollActive = false, rollOutcome = null, activeRoll = null,
 		onPlansChanged = () => {},
@@ -509,6 +511,7 @@
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={duelStateError}>
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
 
 		<!-- Context: duel type + initiative -->
 		<p class="choices-note">

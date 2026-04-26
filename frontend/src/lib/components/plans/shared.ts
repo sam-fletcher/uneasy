@@ -77,6 +77,55 @@ export function parseResolutionData(plan: Plan | null | undefined): ResolutionDa
 	catch { return {}; }
 }
 
+// ── Make Demands helpers ──────────────────────────────────────────────────
+
+/** The four draft options drafted by demander + target preparer after a made
+ * demand. Each maps to a piece of cross-cutting authority over the target
+ * plan's resolution. Match game.DemandOption* in uneasy/game/demands.go. */
+export type DemandOption =
+	| 'control_leverage'
+	| 'keep_or_change_target'
+	| 'keep_assets'
+	| 'perform_steps';
+
+export const DEMAND_OPTION_LABELS: Record<DemandOption, string> = {
+	control_leverage:      'Control leverage — leverage the target preparer’s assets onto their roll',
+	keep_or_change_target: 'Keep or change target — re-aim the target plan',
+	keep_assets:           'Keep assets — receive any assets the target plan would have given the preparer',
+	perform_steps:         'Perform steps — submit the target plan’s make/mar choice in their place',
+};
+
+export const DEMAND_OPTIONS: DemandOption[] = [
+	'control_leverage', 'keep_or_change_target', 'keep_assets', 'perform_steps',
+];
+
+export type DemandWinners = Partial<Record<DemandOption, number>>;
+
+/** Decode a demand plan's draft picks into a winners map (option → playerID).
+ * Returns an empty map if the draft is incomplete. */
+export function demandWinnersFromPlan(demand: Plan): DemandWinners {
+	const choices = parseResolutionData(demand).draft_choices ?? [];
+	const winners: DemandWinners = {};
+	for (const c of choices) {
+		if (DEMAND_OPTIONS.includes(c.option as DemandOption)) {
+			winners[c.option as DemandOption] = c.player_id;
+		}
+	}
+	return winners;
+}
+
+/** Find the resolved+made Make Demands plan (if any) targeting the given
+ * plan. There is at most one such demand per target per backend invariant. */
+export function activeDemandAgainst(plan: Plan, allPlans: Plan[]): Plan | null {
+	for (const p of allPlans) {
+		if (p.plan_type !== 'make_demands') continue;
+		if (p.targeted_plan_id !== plan.id) continue;
+		if (p.status !== 'resolved' || p.result !== 'make') continue;
+		return p;
+	}
+	return null;
+}
+
 // ── Generic helpers ───────────────────────────────────────────────────────
 
 export function playerName(players: Player[], id: number | null): string {

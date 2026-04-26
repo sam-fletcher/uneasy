@@ -92,8 +92,13 @@ export const EventTypes = {
 	WarEnded: 'war.ended',
 
 	// Make Demands
+	DemandPrepared: 'demand.prepared',
+	DemandResolved: 'demand.resolved',
 	DemandDraftPick: 'demand.draft_pick',
+	DemandCounterPending: 'demand.counter_pending',
 	DemandCounterPlaced: 'demand.counter_placed',
+	DemandLeverageSet: 'demand.leverage_set',
+	DemandRetargeted: 'demand.retargeted',
 
 	// Laws & rumors (long-form narrative records)
 	LawEnacted: 'law.enacted',
@@ -121,6 +126,12 @@ export const WAR_EVENTS = [
 
 export const REVEAL_EVENTS = [
 	'reveal.submitted', 'reveal.complete',
+] as const;
+
+export const DEMAND_EVENTS = [
+	'demand.prepared', 'demand.resolved', 'demand.draft_pick',
+	'demand.counter_pending', 'demand.counter_placed',
+	'demand.leverage_set', 'demand.retargeted',
 ] as const;
 
 // createConnection opens a WebSocket to /api/tables/:id/ws and returns a

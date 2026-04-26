@@ -11,6 +11,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
+	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData,
 		playerName, assetName, intactMarginalia,
@@ -22,6 +23,8 @@
 		assets: Asset[];
 		players: Player[];
 		currentPlayerID: number | null;
+		/** Full plans list — needed for the Stage 4 demand overlay. */
+		plans?: Plan[];
 		// Resolve mode
 		plan?: Plan | null;
 		isFocusPlayer?: boolean;
@@ -39,6 +42,7 @@
 		assets,
 		players,
 		currentPlayerID,
+		plans = [],
 		plan = null,
 		isFocusPlayer = false,
 		rollActive = false,
@@ -47,6 +51,13 @@
 		onPlansChanged = () => {},
 		onPlanPrepared = () => {},
 	}: Props = $props();
+
+	// Demand overlay (Stage 4): if a resolved+made demand targets this plan,
+	// the perform_steps winner submits make/mar in place of the preparer.
+	let performStepsWinnerID = $state<number | null>(null);
+	const amChoiceActor = $derived(
+		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+	);
 
 	// ── Prep state ────────────────────────────────────────────────────────────
 
@@ -228,6 +239,8 @@
 	{@const choicesDone = existingChoices.length > 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			bind:performStepsWinnerID />
 		{#if ftAccepted == null && !rollActive}
 			{#if ftAssetID == null}
 				<!-- No offer yet -->
@@ -288,7 +301,7 @@
 		{:else if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
-		{:else if rollOutcome != null && !choicesDone && isFocusPlayer}
+		{:else if rollOutcome != null && !choicesDone && amChoiceActor}
 			<MakeMarPicker
 				outcome={rollOutcome}
 				options={(rollOutcome === 'make' ? MAKE_OPTIONS.exchange_courtiers : MAR_OPTIONS.exchange_courtiers) ?? []}

@@ -25,6 +25,7 @@
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
+	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { playerName, parseResolutionData } from './shared';
 
 	interface Props {
@@ -34,6 +35,7 @@
 		players: Player[];
 		rankings: Ranking[];
 		currentPlayerID: number | null;
+		plans?: Plan[];
 		plan?: Plan | null;
 		isFocusPlayer?: boolean;
 		rollActive?: boolean;
@@ -44,13 +46,18 @@
 	}
 
 	let {
-		mode, gameID, assets, players, rankings, currentPlayerID,
+		mode, gameID, assets, players, rankings, currentPlayerID, plans = [],
 		plan = null, isFocusPlayer = false,
 		rollActive = false, rollOutcome = null,
 		onRollCreated = () => {},
 		onPlansChanged = () => {},
 		onPlanPrepared = () => {},
 	}: Props = $props();
+
+	let performStepsWinnerID = $state<number | null>(null);
+	const amChoiceActor = $derived(
+		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+	);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 	let prepNotes = $state('');
@@ -227,6 +234,8 @@
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={resError}>
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			bind:performStepsWinnerID />
 
 		<!-- Council roster (visible to all) ────────────────────────────── -->
 		<div class="choices-section">
@@ -304,7 +313,7 @@
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
 		<!-- Post-roll: enact the law (no option picks) ──────────────── -->
-		{:else if rollOutcome != null && !lawEnacted && isFocusPlayer}
+		{:else if rollOutcome != null && !lawEnacted && amChoiceActor}
 			<div class="choices-section">
 				<p class="choices-header">
 					Result: <strong class="outcome-{rollOutcome}">
@@ -367,7 +376,7 @@
 				{/if}
 			</div>
 
-		{:else if !isFocusPlayer}
+		{:else if !amChoiceActor && !lawEnacted}
 			<p class="ft-prompt muted">
 				{playerName(players, plan.preparer_id)} is resolving Propose Decree…
 			</p>

@@ -20,6 +20,9 @@
 		playerNameMap: Map<number, string>;
 		/** True if the current player is the facilitator. */
 		isFacilitator: boolean;
+		/** When true, the actor cannot leverage their own assets — a Make
+		 *  Demands `control_leverage` winner has authority over this roll. */
+		actorLeverageBlocked?: boolean;
 	}
 
 	let {
@@ -32,6 +35,7 @@
 		players,
 		playerNameMap,
 		isFacilitator,
+		actorLeverageBlocked = false,
 	}: Props = $props();
 
 	const isActor = $derived(currentPlayerID === roll.actor_id);
@@ -45,6 +49,7 @@
 	// Assets the current player could leverage (not destroyed, not already on this roll).
 	const committedAssetIDs = $derived(new Set(dice.map(d => d.leveraged_asset_id).filter(id => id != null)));
 	const leverageableAssets = $derived(
+		actorLeverageBlocked && isActor ? [] :
 		assets.filter(a =>
 			a.owner_id === currentPlayerID &&
 			!a.is_destroyed &&

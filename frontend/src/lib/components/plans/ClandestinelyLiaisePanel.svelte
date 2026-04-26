@@ -15,6 +15,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
+	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { playerName, parseResolutionData } from './shared';
 
 	interface Props {
@@ -23,13 +24,14 @@
 		assets: Asset[];
 		players: Player[];
 		currentPlayerID: number | null;
+		plans?: Plan[];
 		plan?: Plan | null;
 		onPlansChanged?: () => void;
 		onPlanPrepared?: () => void;
 	}
 
 	let {
-		mode, gameID, assets, players, currentPlayerID,
+		mode, gameID, assets, players, currentPlayerID, plans = [],
 		plan = null,
 		onPlansChanged = () => {},
 		onPlanPrepared = () => {},
@@ -287,6 +289,7 @@
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={resError}>
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
 		{#if !amParticipant}
 			<p class="ft-prompt muted">A clandestine liaison is underway.</p>
 

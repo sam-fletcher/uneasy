@@ -183,6 +183,8 @@ export interface Plan {
 	resolved_at: string | null;
 	preparation_notes: string | null;
 	resolution_data: string | null;
+	/** Set on a Make Demands plan to point at the plan being demanded against. */
+	targeted_plan_id: number | null;
 }
 
 /** Mirrors game.ResolutionData (uneasy/game/plan.go). All fields optional —
@@ -1293,6 +1295,41 @@ export function counterDemand(planID: number, targetPlanID: number | null): Prom
 	return apiFetch(`/plans/${planID}/counter-demand`, {
 		method: 'POST',
 		body: JSON.stringify({ target_plan_id: targetPlanID }),
+	});
+}
+
+/**
+ * Make Demands — control_leverage winner sets leverage on the *target plan*.
+ * Mounted on the target plan, NOT the demand plan. Adds dice from the target
+ * preparer's own assets onto the target plan's open roll.
+ */
+export function demandLeverage(targetPlanID: number, assetIDs: number[]): Promise<{
+	plan_id: number;
+	roll_id: number;
+	asset_ids: number[];
+}> {
+	return apiFetch(`/plans/${targetPlanID}/demand-leverage`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_ids: assetIDs }),
+	});
+}
+
+/**
+ * Make Demands — keep_or_change_target winner re-aims the *target plan*.
+ * Mounted on the target plan, NOT the demand plan. Re-validates against the
+ * target plan type's preparation rules before persisting.
+ */
+export function demandRetarget(
+	targetPlanID: number,
+	params: { target_player_id?: number | null; target_asset_id?: number | null },
+): Promise<{
+	plan_id: number;
+	target_player_id: number | null;
+	target_asset_id: number | null;
+}> {
+	return apiFetch(`/plans/${targetPlanID}/demand-retarget`, {
+		method: 'POST',
+		body: JSON.stringify(params),
 	});
 }
 

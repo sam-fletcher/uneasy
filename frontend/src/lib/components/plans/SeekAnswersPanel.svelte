@@ -19,6 +19,7 @@
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
+	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { parseResolutionData, playerName, intactMarginalia } from './shared';
 
 	interface Props {
@@ -27,6 +28,7 @@
 		assets: Asset[];
 		players: Player[];
 		currentPlayerID: number | null;
+		plans?: Plan[];
 		plan?: Plan | null;
 		isFocusPlayer?: boolean;
 		rollActive?: boolean;
@@ -37,13 +39,18 @@
 	}
 
 	let {
-		mode, gameID, assets, players, currentPlayerID,
+		mode, gameID, assets, players, currentPlayerID, plans = [],
 		plan = null, isFocusPlayer = false,
 		rollActive = false, rollOutcome = null,
 		onRollCreated: _or = () => {},
 		onPlansChanged = () => {},
 		onPlanPrepared = () => {},
 	}: Props = $props();
+
+	let performStepsWinnerID = $state<number | null>(null);
+	const amChoiceActor = $derived(
+		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+	);
 
 	const OPTIONS = [
 		{ key: 'break_resource', label: 'Break a resource (describe a flaw)' },
@@ -207,10 +214,12 @@
 	{@const subflowsDone = brRemaining === 0 && rsRemaining === 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			bind:performStepsWinnerID />
 		{#if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
-		{:else if rollOutcome != null && !choicesDone && isFocusPlayer}
+		{:else if rollOutcome != null && !choicesDone && amChoiceActor}
 			<div class="choices-section">
 				<p class="choices-header">
 					Result: <strong class="outcome-{rollOutcome}">
@@ -316,7 +325,7 @@
 				{/if}
 			</div>
 
-		{:else if !isFocusPlayer}
+		{:else if !amChoiceActor && !choicesDone}
 			<p class="ft-prompt muted">
 				{playerName(players, plan.preparer_id)} is resolving Seek Answers…
 			</p>

@@ -22,6 +22,7 @@
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
+	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { parseResolutionData, playerName, assetName } from './shared';
 
 	interface Props {
@@ -30,6 +31,7 @@
 		assets: Asset[];
 		players: Player[];
 		currentPlayerID: number | null;
+		plans?: Plan[];
 		plan?: Plan | null;
 		isFocusPlayer?: boolean;
 		rollActive?: boolean;
@@ -40,13 +42,18 @@
 	}
 
 	let {
-		mode, gameID, assets, players, currentPlayerID,
+		mode, gameID, assets, players, currentPlayerID, plans = [],
 		plan = null, isFocusPlayer = false,
 		rollActive = false, rollOutcome = null,
 		onRollCreated: _or = () => {},
 		onPlansChanged = () => {},
 		onPlanPrepared = () => {},
 	}: Props = $props();
+
+	let performStepsWinnerID = $state<number | null>(null);
+	const amChoiceActor = $derived(
+		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+	);
 
 	const OPTIONS = [
 		{ key: 'break_target',    label: 'Break the target asset (tear a marginalia)' },
@@ -123,8 +130,9 @@
 	const isActor = $derived.by(() => {
 		if (!plan || currentPlayerID == null) return false;
 		if (rollOutcome === 'mar') return currentPlayerID === targetAssetOwnerID;
-		// make (or unresolved): preparer drives
-		return isFocusPlayer;
+		// make (or unresolved): preparer drives — or the perform_steps winner
+		// of a demand against this plan, when one applies.
+		return amChoiceActor;
 	});
 
 	// ── Sub-flows (counters reset per plan) ──────────────────────────────────
@@ -268,6 +276,8 @@
 	{@const subflowsDone = btRemaining === 0 && taRemaining === 0 && hsRemaining === 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			bind:performStepsWinnerID />
 		{#if plan.target_asset_id}
 			<p class="plan-notes">
 				Target: <strong>{assetName(assets, plan.target_asset_id)}</strong>

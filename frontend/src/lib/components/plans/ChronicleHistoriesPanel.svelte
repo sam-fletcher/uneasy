@@ -29,6 +29,7 @@
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
+	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { parseResolutionData, playerName } from './shared';
 
 	interface Props {
@@ -37,6 +38,7 @@
 		assets: Asset[];
 		players: Player[];
 		currentPlayerID: number | null;
+		plans?: Plan[];
 		plan?: Plan | null;
 		isFocusPlayer?: boolean;
 		rollActive?: boolean;
@@ -47,13 +49,18 @@
 	}
 
 	let {
-		mode, gameID, assets, players, currentPlayerID,
+		mode, gameID, assets, players, currentPlayerID, plans = [],
 		plan = null, isFocusPlayer = false,
 		rollActive = false, rollOutcome = null,
 		onRollCreated: _or = () => {},
 		onPlansChanged = () => {},
 		onPlanPrepared = () => {},
 	}: Props = $props();
+
+	let performStepsWinnerID = $state<number | null>(null);
+	const amChoiceActor = $derived(
+		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+	);
 
 	const OPTIONS = [
 		{ key: 'break_artifact',  label: 'Break an invoked artifact (tear a marginalia)' },
@@ -259,6 +266,8 @@
 	{@const subflowsDone = baRemaining === 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			bind:performStepsWinnerID />
 		<!-- Invoked artifacts (visible to all) ──────────────────────────── -->
 		<div class="choices-section">
 			<p class="choices-header">
@@ -305,7 +314,7 @@
 		{#if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
-		{:else if rollOutcome === 'make' && !choicesDone && isFocusPlayer}
+		{:else if rollOutcome === 'make' && !choicesDone && amChoiceActor}
 			<div class="choices-section">
 				<p class="choices-header">
 					Result: <strong class="outcome-make">✓ Make</strong>
@@ -453,7 +462,7 @@
 				{/if}
 			</div>
 
-		{:else if !isFocusPlayer}
+		{:else if !amChoiceActor && !choicesDone}
 			<p class="ft-prompt muted">
 				{playerName(players, plan.preparer_id)} is resolving Chronicle Histories…
 			</p>

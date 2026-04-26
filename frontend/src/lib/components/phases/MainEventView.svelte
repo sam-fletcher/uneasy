@@ -7,6 +7,7 @@
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
+	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
 	import {
 		createScenePost, createSceneEntry,
 		leverageAsset, refreshAsset, tearMarginalia,
@@ -318,6 +319,19 @@
 	/** True when an in-flight roll hasn't resolved yet. */
 	const rollActive = $derived(activeRoll != null && activeRoll.outcome == null);
 
+	// Block the actor's own leverage if a Make Demands `control_leverage`
+	// winner has authority over this roll's plan. Backend would 403 anyway;
+	// hiding the button avoids confusing UI.
+	const actorLeverageBlocked = $derived.by(() => {
+		const planID = activeRoll?.plan_id;
+		if (planID == null) return false;
+		const targetPlan = plans.find(p => p.id === planID);
+		if (!targetPlan) return false;
+		const demand = activeDemandAgainst(targetPlan, plans);
+		if (!demand) return false;
+		return demandWinnersFromPlan(demand).control_leverage != null;
+	});
+
 	/**
 	 * The make/mar outcome of a plan-linked roll, once resolved.
 	 * Only set when the active roll is tied to a plan — free-scene rolls
@@ -543,6 +557,7 @@
 					{players}
 					{playerNameMap}
 					{isFacilitator}
+					{actorLeverageBlocked}
 				/>
 			{:else if game.phase === 'main_event'}
 				<!-- Any player can initiate an in-scene roll -->

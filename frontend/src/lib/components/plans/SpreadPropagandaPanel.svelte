@@ -10,6 +10,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
+	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName } from './shared';
 
 	interface Props {
@@ -18,6 +19,7 @@
 		assets: Asset[];
 		players: Player[];
 		currentPlayerID: number | null;
+		plans?: Plan[];
 		plan?: Plan | null;
 		isFocusPlayer?: boolean;
 		rollActive?: boolean;
@@ -28,13 +30,18 @@
 	}
 
 	let {
-		mode, gameID, assets, players, currentPlayerID,
+		mode, gameID, assets, players, currentPlayerID, plans = [],
 		plan = null, isFocusPlayer = false,
 		rollActive = false, rollOutcome = null,
 		onRollCreated: _or = () => {},
 		onPlansChanged = () => {},
 		onPlanPrepared = () => {},
 	}: Props = $props();
+
+	let performStepsWinnerID = $state<number | null>(null);
+	const amChoiceActor = $derived(
+		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+	);
 
 	// Prep state
 	let prepNotes = $state('');
@@ -109,10 +116,12 @@
 	{@const choicesDone = existingChoices.length > 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			bind:performStepsWinnerID />
 		{#if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
-		{:else if rollOutcome != null && !choicesDone && isFocusPlayer}
+		{:else if rollOutcome != null && !choicesDone && amChoiceActor}
 			<MakeMarPicker
 				outcome={rollOutcome}
 				options={(rollOutcome === 'make' ? MAKE_OPTIONS.spread_propaganda : MAR_OPTIONS.spread_propaganda) ?? []}
@@ -135,7 +144,7 @@
 				</button>
 			</div>
 
-		{:else if !isFocusPlayer}
+		{:else if !amChoiceActor && !choicesDone}
 			<p class="ft-prompt muted">
 				{playerName(players, plan.preparer_id)} is resolving Spread Propaganda…
 			</p>
