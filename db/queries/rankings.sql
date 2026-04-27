@@ -19,3 +19,6 @@ WHERE game_id = $1 AND category = $2 AND rank = $3;
 
 -- name: DeleteRankingsByGame :exec
 DELETE FROM rankings WHERE game_id = $1;
+
+-- name: DeleteRankingsByCategory :exec
+DELETE FROM rankings WHERE game_id = $1 AND category = $2;

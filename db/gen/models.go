@@ -30,6 +30,8 @@ type Asset struct {
 	IsDestroyed     bool               `db:"is_destroyed" json:"is_destroyed"`
 	CreatedAt       pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	DestroyedAt     pgtype.Timestamptz `db:"destroyed_at" json:"destroyed_at"`
+	LinkedCardSuit  *string            `db:"linked_card_suit" json:"linked_card_suit"`
+	LinkedCardValue *string            `db:"linked_card_value" json:"linked_card_value"`
 }
 
 type BankedDice struct {
@@ -104,15 +106,16 @@ type DuelStakedAsset struct {
 }
 
 type Game struct {
-	ID             int64              `db:"id" json:"id"`
-	JoinCode       string             `db:"join_code" json:"join_code"`
-	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	FacilitatorID  *int64             `db:"facilitator_id" json:"facilitator_id"`
-	Phase          model.GamePhase    `db:"phase" json:"phase"`
-	CurrentRow     int16              `db:"current_row" json:"current_row"`
-	FocusPlayerID  *int64             `db:"focus_player_id" json:"focus_player_id"`
-	EndingMode     *string            `db:"ending_mode" json:"ending_mode"`
-	DummyTokenMode string             `db:"dummy_token_mode" json:"dummy_token_mode"`
+	ID                  int64              `db:"id" json:"id"`
+	JoinCode            string             `db:"join_code" json:"join_code"`
+	CreatedAt           pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	FacilitatorID       *int64             `db:"facilitator_id" json:"facilitator_id"`
+	Phase               model.GamePhase    `db:"phase" json:"phase"`
+	CurrentRow          int16              `db:"current_row" json:"current_row"`
+	FocusPlayerID       *int64             `db:"focus_player_id" json:"focus_player_id"`
+	EndingMode          *string            `db:"ending_mode" json:"ending_mode"`
+	DummyTokenMode      string             `db:"dummy_token_mode" json:"dummy_token_mode"`
+	PrologueRankingStep *string            `db:"prologue_ranking_step" json:"prologue_ranking_step"`
 }
 
 type Law struct {
@@ -196,6 +199,33 @@ type Player struct {
 	TokenColor    *string            `db:"token_color" json:"token_color"`
 	SeatOrder     *int16             `db:"seat_order" json:"seat_order"`
 	AccountID     int64              `db:"account_id" json:"account_id"`
+}
+
+type PlayerCard struct {
+	ID        int64  `db:"id" json:"id"`
+	GameID    int64  `db:"game_id" json:"game_id"`
+	PlayerID  int64  `db:"player_id" json:"player_id"`
+	CardSuit  string `db:"card_suit" json:"card_suit"`
+	CardValue string `db:"card_value" json:"card_value"`
+}
+
+type PrologueChoice struct {
+	ID         int64              `db:"id" json:"id"`
+	GameID     int64              `db:"game_id" json:"game_id"`
+	PlayerID   int64              `db:"player_id" json:"player_id"`
+	TurnNumber int16              `db:"turn_number" json:"turn_number"`
+	SheetType  string             `db:"sheet_type" json:"sheet_type"`
+	ChoiceName string             `db:"choice_name" json:"choice_name"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+type PrologueHeartDeclaration struct {
+	ID        int64              `db:"id" json:"id"`
+	GameID    int64              `db:"game_id" json:"game_id"`
+	PlayerID  int64              `db:"player_id" json:"player_id"`
+	Track     string             `db:"track" json:"track"`
+	Count     int16              `db:"count" json:"count"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 type PublicRecordRow struct {

@@ -125,6 +125,8 @@ func miStoreResData(ctx context.Context, q *dbgen.Queries, planID int64, peerCou
 //   - Otherwise: creates a synthetic pending plan on the target row with
 //     ResData.DelayedArrival = true, and records its ID in the parent
 //     plan's ResData.DelayedPeerPlanIDs.
+//
+//nolint:funlen // introductions delayed-arrival with target-asset destroy/create
 func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)

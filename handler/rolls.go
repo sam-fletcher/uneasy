@@ -293,20 +293,10 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// winner on a resolved demand, the target preparer may not leverage
 		// their own assets on this roll — that right belongs to the demand
 		// winner via /demand-leverage. Other participants leverage normally.
-		if roll.PlanID != nil {
-			plan, perr := q.GetPlanByID(ctx, *roll.PlanID)
-			if perr == nil && player.ID == plan.PreparerID && asset.OwnerID == plan.PreparerID {
-				_, winners, werr := gamepkg.DemandWinnersForTargetPlan(ctx, q, &plan)
-				if werr == nil {
-					if winnerID, hasWinner := winners[gamepkg.DemandOptionControlLeverage]; hasWinner &&
-						winnerID != 0 &&
-						winnerID != plan.PreparerID {
-						respondErr(w, http.StatusForbidden,
-							"a demand's control_leverage winner has taken over leverage of your assets on this roll")
-						return
-					}
-				}
-			}
+		if leverageBlockedByDemandWinner(ctx, q, roll, player, asset) {
+			respondErr(w, http.StatusForbidden,
+				"a demand's control_leverage winner has taken over leverage of your assets on this roll")
+			return
 		}
 
 		// Mark the asset as leveraged.
@@ -347,6 +337,34 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		respond(w, http.StatusOK, map[string]any{"die": die})
 	}
+}
+
+// leverageBlockedByDemandWinner returns true if the roll is tied to a plan
+// whose target preparer (== player) is leveraging their own asset, but a
+// resolved Make Demands has handed control_leverage rights to someone else.
+func leverageBlockedByDemandWinner(
+	ctx context.Context,
+	q *dbgen.Queries,
+	roll *dbgen.DiceRoll,
+	player *dbgen.Player,
+	asset dbgen.Asset,
+) bool {
+	if roll.PlanID == nil {
+		return false
+	}
+	plan, err := q.GetPlanByID(ctx, *roll.PlanID)
+	if err != nil {
+		return false
+	}
+	if player.ID != plan.PreparerID || asset.OwnerID != plan.PreparerID {
+		return false
+	}
+	_, winners, err := gamepkg.DemandWinnersForTargetPlan(ctx, q, &plan)
+	if err != nil {
+		return false
+	}
+	winnerID, hasWinner := winners[gamepkg.DemandOptionControlLeverage]
+	return hasWinner && winnerID != 0 && winnerID != plan.PreparerID
 }
 
 // ── CallVote ──────────────────────────────────────────────────────────────────

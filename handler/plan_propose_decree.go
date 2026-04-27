@@ -135,39 +135,10 @@ func (pdHandler) ApplyChoice(
 
 	resData.LawID = &law.ID
 
-	// On make: also create a resource asset representing the law.
 	if result == makeOutcome {
-		assetName := fmt.Sprintf("Law: %s", preparationNotes)
-		if len(assetName) > 120 {
-			assetName = assetName[:120] + "…"
+		if err = pdCreateLawAsset(ctx, deps, plan, resData, preparationNotes); err != nil {
+			return err
 		}
-
-		// The asset is owned by the signatory (or preparer if none).
-		// When no signatory, a resolved Make Demands with a keep_assets
-		// winner may redirect the preparer's share.
-		var ownerID int64
-		if resData.SignatoryID != nil {
-			ownerID = *resData.SignatoryID
-		} else {
-			recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
-			if err != nil {
-				return fmt.Errorf("resolve asset recipient: %w", err)
-			}
-			ownerID = recipient
-		}
-
-		asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
-			GameID:    plan.GameID,
-			OwnerID:   ownerID,
-			CreatorID: plan.PreparerID,
-			AssetType: model.AssetResource,
-			Name:      assetName,
-		})
-		if err != nil {
-			return fmt.Errorf("could not create law resource asset: %w", err)
-		}
-
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
 	}
 
 	broadcastEvent(deps.Manager, plan.GameID, model.EventLawEnacted, model.LawEnactedPayload{
@@ -175,6 +146,47 @@ func (pdHandler) ApplyChoice(
 		Law:    law,
 	})
 
+	return nil
+}
+
+// pdCreateLawAsset creates the resource asset that accompanies a made law.
+// Owner is the signatory if present, otherwise the recipient determined by
+// AssetRecipientForPlan (which honors a keep_assets Make Demands winner).
+func pdCreateLawAsset(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	preparationNotes string,
+) error {
+	assetName := fmt.Sprintf("Law: %s", preparationNotes)
+	if len(assetName) > 120 {
+		assetName = assetName[:120] + "…"
+	}
+
+	var ownerID int64
+	if resData.SignatoryID != nil {
+		ownerID = *resData.SignatoryID
+	} else {
+		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+		if err != nil {
+			return fmt.Errorf("resolve asset recipient: %w", err)
+		}
+		ownerID = recipient
+	}
+
+	asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID:    plan.GameID,
+		OwnerID:   ownerID,
+		CreatorID: plan.PreparerID,
+		AssetType: model.AssetResource,
+		Name:      assetName,
+	})
+	if err != nil {
+		return fmt.Errorf("could not create law resource asset: %w", err)
+	}
+
+	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
 	return nil
 }
 
@@ -206,6 +218,8 @@ func (pdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 // (lowest) power rank among all council members becomes the new signatory.
 //
 // Request body: {"asset_ids": [N, ...]}
+//
+//nolint:funlen,gocognit // signatory selection with eligibility branches
 func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)

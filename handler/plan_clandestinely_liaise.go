@@ -421,6 +421,8 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 //	{"choice": "look_at_secret|update_peer|break_peer|take_gift|leverage_partner",
 //	 "target_asset_id": N,  // required for look_at_secret, take_gift, leverage_partner
 //	 "die_face": N}         // required for leverage_partner (1–6)
+//
+//nolint:funlen,gocognit // liaise share-choice with both-submitted finalize
 func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -760,68 +762,7 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		if submitted >= total {
-			// Both submitted — compute result.
-			entries, err := deps.Q.ListRevealEntries(ctx, *resData.RedelayRevealID)
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not load reveal entries")
-				return
-			}
-
-			// If either player cancelled (face 0), no future meeting.
-			cancelled := false
-			var resultDelay int16
-			for _, e := range entries {
-				if e.Face == nil || *e.Face == 0 {
-					cancelled = true
-					break
-				}
-			}
-
-			if !cancelled {
-				resultDelay = revealCeilAverage(entries)
-			}
-
-			if err := deps.Q.SetRevealComplete(ctx, dbgen.SetRevealCompleteParams{
-				ID:          *resData.RedelayRevealID,
-				ResultDelay: &resultDelay,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not complete redelay reveal")
-				return
-			}
-
-			// Broadcast complete event with all faces revealed.
-			entryResults := make([]model.RevealEntryResult, 0, len(entries))
-			for _, e := range entries {
-				var f int16
-				if e.Face != nil {
-					f = *e.Face
-				}
-				entryResults = append(entryResults, model.RevealEntryResult{
-					PlayerID: e.PlayerID,
-					Face:     f,
-				})
-			}
-			broadcastEvent(deps.Manager, plan.GameID, model.EventRevealComplete, model.RevealCompletePayload{
-				RevealID:    *resData.RedelayRevealID,
-				Entries:     entryResults,
-				ResultDelay: resultDelay,
-			})
-
-			// Schedule a new meeting if not cancelled.
-			if !cancelled && resultDelay > 0 {
-				game, err := deps.Q.GetGameByID(ctx, plan.GameID)
-				if err == nil {
-					newRow := game.CurrentRow + resultDelay
-					if newRow <= publicRecordRowCount && resData.PartnerID != nil {
-						clScheduleNewMeeting(ctx, deps, plan, newRow, *resData.PartnerID)
-					}
-				}
-			}
-
-			// Mark liaise as done.
-			resData.LiaisePhase = LiaiseDone
-			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not complete liaise")
+			if !clFinalizeRedelayReveal(ctx, w, deps, plan, &resData) {
 				return
 			}
 		}
@@ -835,6 +776,78 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// clFinalizeRedelayReveal runs the "both submitted" branch of redelay-reveal:
+// computes the result delay (or detects a cancellation), marks the reveal
+// complete, broadcasts the result, schedules a follow-up meeting if needed,
+// and marks the liaise done. Writes HTTP errors and returns false on failure.
+func clFinalizeRedelayReveal(
+	ctx context.Context,
+	w http.ResponseWriter,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+) bool {
+	entries, err := deps.Q.ListRevealEntries(ctx, *resData.RedelayRevealID)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not load reveal entries")
+		return false
+	}
+
+	cancelled := false
+	var resultDelay int16
+	for _, e := range entries {
+		if e.Face == nil || *e.Face == 0 {
+			cancelled = true
+			break
+		}
+	}
+	if !cancelled {
+		resultDelay = revealCeilAverage(entries)
+	}
+
+	err = deps.Q.SetRevealComplete(ctx, dbgen.SetRevealCompleteParams{
+		ID:          *resData.RedelayRevealID,
+		ResultDelay: &resultDelay,
+	})
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not complete redelay reveal")
+		return false
+	}
+
+	entryResults := make([]model.RevealEntryResult, 0, len(entries))
+	for _, e := range entries {
+		var f int16
+		if e.Face != nil {
+			f = *e.Face
+		}
+		entryResults = append(entryResults, model.RevealEntryResult{
+			PlayerID: e.PlayerID,
+			Face:     f,
+		})
+	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventRevealComplete, model.RevealCompletePayload{
+		RevealID:    *resData.RedelayRevealID,
+		Entries:     entryResults,
+		ResultDelay: resultDelay,
+	})
+
+	if !cancelled && resultDelay > 0 && resData.PartnerID != nil {
+		if game, gerr := deps.Q.GetGameByID(ctx, plan.GameID); gerr == nil {
+			newRow := game.CurrentRow + resultDelay
+			if newRow <= publicRecordRowCount {
+				clScheduleNewMeeting(ctx, deps, plan, newRow, *resData.PartnerID)
+			}
+		}
+	}
+
+	resData.LiaisePhase = LiaiseDone
+	if err = saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not complete liaise")
+		return false
+	}
+	return true
+}
 
 // clIsParticipant returns true if playerID is the preparer or the partner.
 func clIsParticipant(plan *dbgen.Plan, playerID int64, resData ResolutionData) bool {

@@ -154,6 +154,8 @@ func ListWars(q *dbgen.Queries) http.HandlerFunc {
 // order — first entry is whose turn it is to pay), plus any open peace
 // proposal with a tally of accept-votes and the list of participants the
 // proposal is still waiting on.
+//
+//nolint:funlen // war state assembler — many fields
 func buildWarState(
 	ctx context.Context,
 	q *dbgen.Queries,

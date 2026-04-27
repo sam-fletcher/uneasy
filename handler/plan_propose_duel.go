@@ -316,13 +316,12 @@ func pduelSide(plan *dbgen.Plan, playerID int64) gamepkg.DuelSide {
 // signalling "I'll fight myself." If present, the asset must be a peer owned
 // by the caller. The initiative-holder must declare first so the other side's
 // UI knows when to unlock.
+//
+//nolint:gocognit // champion election with eligibility + auto-advance
 func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanProposeDuel)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -419,11 +418,8 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 // Counts are held until both players submit, then revealed.
 func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanProposeDuel)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -523,13 +519,12 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 // hidden d6 for each asset and stores it in duel_staked_assets. The hidden
 // die is visible only to the asset owner; the opponent sees only that a
 // stake has been placed.
+//
+//nolint:gocognit // stake-selection lifecycle including target-claim path
 func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanProposeDuel)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -649,11 +644,8 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 // Starts a new bout; the responder then completes it via bout-respond.
 func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanProposeDuel)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -744,13 +736,12 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 // The responder picks their stake. Server compares dice (via game.ResolveBout),
 // records the outcome, swaps initiative, and — if this was the final bout —
 // creates the standard dice roll with accumulated dice pre-assigned.
+//
+//nolint:funlen,gocognit // bout state machine (response/auto-advance/result)
 func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanProposeDuel)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanProposeDuel) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if !pduelIsParticipant(plan, player.ID) {
@@ -914,6 +905,8 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 // pduelCreateFinalRoll accumulates winning dice by side and creates the
 // plan's standard dice roll with dice pre-assigned. Preparer's accumulated
 // dice become actor dice; target's accumulated dice become interference.
+//
+//nolint:funlen // duel final-roll setup
 func pduelCreateFinalRoll(
 	ctx context.Context,
 	deps *PlanDeps,

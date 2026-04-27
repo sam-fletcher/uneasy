@@ -123,6 +123,75 @@ func requirePlanResolving(w http.ResponseWriter, plan *dbgen.Plan) bool {
 	return true
 }
 
+// makeChoiceAllowedNonFocus returns true if the caller is permitted to drive
+// make-choice on this plan despite not being the current focus player.
+// Three roles qualify:
+//
+//   - Make Demands "perform_steps" winner — submits preparer-equivalent
+//     choices on the target plan.
+//   - Propose Duel target on a mar outcome — picks which staked assets to
+//     claim from the preparer.
+//   - Spread Rumors target-asset owner on a mar outcome — drives the
+//     counter-rumor options applied to the preparer's assets.
+func makeChoiceAllowedNonFocus(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	player *dbgen.Player,
+) bool {
+	if _, winners, err := gamepkg.DemandWinnersForTargetPlan(ctx, q, plan); err == nil {
+		if winnerID, ok := winners[gamepkg.DemandOptionPerformSteps]; ok &&
+			winnerID == player.ID && winnerID != 0 && winnerID != plan.PreparerID {
+			return true
+		}
+	}
+	if plan.PlanType == model.PlanProposeDuel &&
+		plan.TargetPlayerID != nil && *plan.TargetPlayerID == player.ID &&
+		planRollIsMar(ctx, q, plan) {
+		return true
+	}
+	if plan.PlanType == model.PlanSpreadRumors && plan.TargetAssetID != nil {
+		if asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID); err == nil &&
+			asset.OwnerID == player.ID && planRollIsMar(ctx, q, plan) {
+			return true
+		}
+	}
+	return false
+}
+
+// planRollIsMar returns true if plan has a resolved dice roll whose outcome
+// is mar.
+func planRollIsMar(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) bool {
+	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil {
+		return false
+	}
+	return roll.Outcome != nil && *roll.Outcome == marOutcome
+}
+
+// requirePlanForExtraRoute combines requirePlanAccess + requirePlanType +
+// requirePlanResolving — the preamble of most plan extra-route handlers.
+// Returns the plan and caller's player on success; writes the appropriate
+// HTTP error and returns false otherwise.
+func requirePlanForExtraRoute(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	wantType model.PlanType,
+) (*dbgen.Plan, *dbgen.Player, bool) {
+	plan, player, ok := requirePlanAccess(w, r, q)
+	if !ok {
+		return nil, nil, false
+	}
+	if !requirePlanType(w, plan, wantType) {
+		return nil, nil, false
+	}
+	if !requirePlanResolving(w, plan) {
+		return nil, nil, false
+	}
+	return plan, player, true
+}
+
 // broadcastEvent sends an event to all subscribers of gameID, if a hub exists
 // for it. Replaces the repetitive `if h, ok := manager.Get(gameID); ok { ... }`
 // pattern at every broadcast site.
@@ -489,6 +558,8 @@ func PlanEligibility(q *dbgen.Queries) http.HandlerFunc {
 //	  "peer_count":         2,     // Make Introductions: number of peers (1–4)
 //	  "preparation_notes":  "..."  // optional flavor text
 //	}
+//
+//nolint:funlen,gocognit // plan preparation orchestration with handler-driven validation
 func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, player, ok := requireFocusPlayer(w, r, q)
@@ -767,48 +838,13 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "game is not in the main event phase")
 			return
 		}
-		// Normally only the focus player may make plan choices. A Make Demands
-		// perform_steps winner can submit preparer-equivalent choices on the
-		// target plan even if they're not the focus player.
+		// Normally only the focus player may make plan choices. A few specific
+		// roles may also drive make-choice on someone else's plan; see
+		// makeChoiceAllowedNonFocus for the exhaustive list.
 		isFocus := game.FocusPlayerID != nil && *game.FocusPlayerID == player.ID
-		if !isFocus {
-			_, winners, werr := gamepkg.DemandWinnersForTargetPlan(r.Context(), q, plan)
-			allowed := false
-			if werr == nil {
-				if winnerID, ok := winners[gamepkg.DemandOptionPerformSteps]; ok && winnerID != 0 &&
-					winnerID == player.ID &&
-					winnerID != plan.PreparerID {
-					allowed = true
-				}
-			}
-			// Propose Duel mar: the target takes staked assets from the preparer,
-			// so the target picks which stakes to claim.
-			if !allowed && plan.PlanType == model.PlanProposeDuel && plan.TargetPlayerID != nil &&
-				*plan.TargetPlayerID == player.ID {
-				if roll, rerr := q.GetDiceRollByPlanID(r.Context(), &plan.ID); rerr == nil &&
-					roll.Outcome != nil && *roll.Outcome == marOutcome {
-					allowed = true
-				}
-			}
-
-			// Spread Rumors mar: the target-asset owner drives make-choice with
-			// the counter-rumor options (applied to preparer's assets).
-			if !allowed && plan.PlanType == model.PlanSpreadRumors && plan.TargetAssetID != nil {
-				if asset, aerr := q.GetAssetByID(
-					r.Context(),
-					*plan.TargetAssetID,
-				); aerr == nil &&
-					asset.OwnerID == player.ID {
-					if roll, rerr := q.GetDiceRollByPlanID(r.Context(), &plan.ID); rerr == nil &&
-						roll.Outcome != nil && *roll.Outcome == marOutcome {
-						allowed = true
-					}
-				}
-			}
-			if !allowed {
-				respondErr(w, http.StatusForbidden, "only the focus player can do this")
-				return
-			}
+		if !isFocus && !makeChoiceAllowedNonFocus(r.Context(), q, plan, player) {
+			respondErr(w, http.StatusForbidden, "only the focus player can do this")
+			return
 		}
 		if plan.Status != model.PlanResolving {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")

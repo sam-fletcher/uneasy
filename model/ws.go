@@ -95,6 +95,13 @@ const (
 	EventFestivityChallengeIssued   = "festivity.challenge_issued"
 	EventFestivityChallengeDeclined = "festivity.challenge_declined"
 
+	// Phase 4b: Structured prologue
+	EventPrologueChoiceClaimed      = "prologue.choice_claimed"       // a box was claimed
+	EventPrologueRankingStepChanged = "prologue.ranking_step_changed" // entered/advanced ranking sub-flow
+	EventPrologueHeartsDeclared     = "prologue.hearts_declared"      // a player declared N hearts as a track
+	EventPrologueTrackRanked        = "prologue.track_ranked"         // a track's ranks finalized (set-asides surfaced)
+	EventPrologueSetAsidesPlaced    = "prologue.set_asides_placed"    // rank-1 player placed set-aside players
+
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
 	EventRollLeverageAdded = "roll.leverage_added"
@@ -546,4 +553,44 @@ type WarEndedPayload struct {
 	WarID     int64  `json:"war_id"`
 	Reason    string `json:"reason"`
 	RowNumber int16  `json:"row_number"`
+}
+
+// ── Phase 4b payload types — Structured prologue ─────────────────────────────
+
+// PrologueChoiceClaimedPayload is for EventPrologueChoiceClaimed.
+type PrologueChoiceClaimedPayload struct {
+	PlayerID   int64  `json:"player_id"`
+	SheetType  string `json:"sheet_type"`
+	ChoiceName string `json:"choice_name"`
+	TurnNumber int16  `json:"turn_number"`
+}
+
+// PrologueRankingStepChangedPayload is for EventPrologueRankingStepChanged.
+// Step is one of game.PrologueStep* constants, or "" when leaving the
+// ranking sub-flow (i.e. transitioning to main_event).
+type PrologueRankingStepChangedPayload struct {
+	Step string `json:"step"`
+}
+
+// PrologueHeartsDeclaredPayload is for EventPrologueHeartsDeclared.
+type PrologueHeartsDeclaredPayload struct {
+	PlayerID int64  `json:"player_id"`
+	Track    string `json:"track"`
+	Count    int16  `json:"count"`
+}
+
+// PrologueTrackRankedPayload is for EventPrologueTrackRanked. Ranked is the
+// rank-1-first ordered player IDs; SetAside is the players the rank-1
+// player still needs to slot in.
+type PrologueTrackRankedPayload struct {
+	Track    string  `json:"track"`
+	Ranked   []int64 `json:"ranked"`
+	SetAside []int64 `json:"set_aside"`
+}
+
+// PrologueSetAsidesPlacedPayload is for EventPrologueSetAsidesPlaced. The
+// final ranking with set-asides slotted in.
+type PrologueSetAsidesPlacedPayload struct {
+	Track  string  `json:"track"`
+	Ranked []int64 `json:"ranked"`
 }

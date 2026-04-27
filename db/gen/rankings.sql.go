@@ -11,6 +11,20 @@ import (
 	"uneasy/model"
 )
 
+const deleteRankingsByCategory = `-- name: DeleteRankingsByCategory :exec
+DELETE FROM rankings WHERE game_id = $1 AND category = $2
+`
+
+type DeleteRankingsByCategoryParams struct {
+	GameID   int64                 `db:"game_id" json:"game_id"`
+	Category model.RankingCategory `db:"category" json:"category"`
+}
+
+func (q *Queries) DeleteRankingsByCategory(ctx context.Context, arg DeleteRankingsByCategoryParams) error {
+	_, err := q.db.Exec(ctx, deleteRankingsByCategory, arg.GameID, arg.Category)
+	return err
+}
+
 const deleteRankingsByGame = `-- name: DeleteRankingsByGame :exec
 DELETE FROM rankings WHERE game_id = $1
 `

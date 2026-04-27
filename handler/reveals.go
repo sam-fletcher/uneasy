@@ -86,6 +86,8 @@ func GetReveal(q *dbgen.Queries) http.HandlerFunc {
 // faces are broadcast, and any linked plan effects are applied.
 //
 // Request body: {"face": N}
+//
+//nolint:funlen // simultaneous reveal lifecycle
 func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reveal, player, ok := requireRevealAccess(w, r, q)

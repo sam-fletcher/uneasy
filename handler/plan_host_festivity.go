@@ -174,11 +174,8 @@ func hfFinalizeIfDone(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, sta
 
 func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		ctx := r.Context()
@@ -210,13 +207,11 @@ func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 
 // ── guest-roll ───────────────────────────────────────────────────────────────
 
+//nolint:funlen,gocognit // guest roll lifecycle (join + roll + advance + finalize)
 func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {
@@ -350,13 +345,12 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 //	 "asset_id": N}             // take_center_peer, disagreement
 //
 // challenge_duel goes through /challenge-duel, not here.
+//
+//nolint:funlen,gocognit // guest make/mar dispatch with phase-advance side effects
 func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {
@@ -470,6 +464,34 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// festivityOptionContext bundles the parameters threaded through every
+// festivity option applier.
+type festivityOptionContext struct {
+	deps           *PlanDeps
+	plan           *dbgen.Plan
+	state          *gamepkg.FestivityState
+	actingPlayerID int64
+	rumorText      string
+	peerName       string
+	assetID        int64
+	isMake         bool
+}
+
+type festivityOptionApplier func(ctx context.Context, fc *festivityOptionContext) error
+
+// festivityOptionAppliers dispatches a make/mar choice to its mechanical
+// effect. SpreadRumor and RumorAboutYou share an applier (it branches on
+// fc.isMake) because the underlying rumor-creation flow is the same.
+var festivityOptionAppliers = map[string]festivityOptionApplier{
+	gamepkg.FestivityMakeSpreadRumor:    applyFestivityRumor,
+	gamepkg.FestivityMarRumorAboutYou:   applyFestivityRumor,
+	gamepkg.FestivityMakeIntroducePeer:  applyFestivityIntroducePeer,
+	gamepkg.FestivityMakeTakeCenterPeer: applyFestivityTakeCenterPeer,
+	gamepkg.FestivityMarDisagreement:    applyFestivityDisagreement,
+	gamepkg.FestivityMarAcceptDuels:     applyFestivityAcceptDuels,
+	gamepkg.FestivityMarBreakSelf:       applyFestivityBreakSelf,
+}
+
 // hfApplyOption performs the mechanical effect for a chosen make/mar option.
 // It mutates state as needed (e.g. recording centered assets, accept_duels).
 func hfApplyOption(
@@ -482,155 +504,170 @@ func hfApplyOption(
 	assetID int64,
 	isMake bool,
 ) error {
-	switch choice {
-	case gamepkg.FestivityMakeSpreadRumor, gamepkg.FestivityMarRumorAboutYou:
-		txt := rumorText
-		if txt == "" {
-			txt = "(untold rumor)"
-		}
-		// Target for mar "rumor_about_you" is the acting guest's main character.
-		var targetAssetID *int64
-		if !isMake {
-			if mcID, err := hfFindMainCharacter(ctx, deps, plan.GameID, actingPlayerID); err == nil {
-				targetAssetID = &mcID
-			}
-		}
-		existing, _ := deps.Q.ListRumors(ctx, plan.GameID)
-		var src *int64
-		if isMake {
-			src = &actingPlayerID
-		}
-		rumor, err := deps.Q.CreateRumor(ctx, dbgen.CreateRumorParams{
-			GameID:         plan.GameID,
-			Text:           txt,
-			TargetAssetID:  targetAssetID,
-			OriginPlanID:   &plan.ID,
-			SourcePlayerID: src,
-			DisplayOrder:   int16(len(existing)),
-		})
-		if err != nil {
-			return fmt.Errorf("create rumor: %w", err)
-		}
-		broadcastEvent(deps.Manager, plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
+	applier, ok := festivityOptionAppliers[choice]
+	if !ok {
+		return nil
+	}
+	return applier(ctx, &festivityOptionContext{
+		deps:           deps,
+		plan:           plan,
+		state:          state,
+		actingPlayerID: actingPlayerID,
+		rumorText:      rumorText,
+		peerName:       peerName,
+		assetID:        assetID,
+		isMake:         isMake,
+	})
+}
 
-	case gamepkg.FestivityMakeIntroducePeer:
-		name := peerName
-		if name == "" {
-			name = "New peer"
+func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error {
+	txt := fc.rumorText
+	if txt == "" {
+		txt = "(untold rumor)"
+	}
+	var targetAssetID *int64
+	if !fc.isMake {
+		if mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.actingPlayerID); err == nil {
+			targetAssetID = &mcID
 		}
-		ownerID := actingPlayerID
-		if actingPlayerID == plan.PreparerID {
-			recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
-			if err != nil {
-				return fmt.Errorf("resolve asset recipient: %w", err)
-			}
-			ownerID = recipient
-		}
-		asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
-			GameID:    plan.GameID,
-			OwnerID:   ownerID,
-			CreatorID: actingPlayerID,
-			AssetType: model.AssetPeer,
-			Name:      name,
-		})
-		if err != nil {
-			return fmt.Errorf("create peer: %w", err)
-		}
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
+	}
+	existing, _ := fc.deps.Q.ListRumors(ctx, fc.plan.GameID)
+	var src *int64
+	if fc.isMake {
+		src = &fc.actingPlayerID
+	}
+	rumor, err := fc.deps.Q.CreateRumor(ctx, dbgen.CreateRumorParams{
+		GameID:         fc.plan.GameID,
+		Text:           txt,
+		TargetAssetID:  targetAssetID,
+		OriginPlanID:   &fc.plan.ID,
+		SourcePlayerID: src,
+		DisplayOrder:   int16(len(existing)),
+	})
+	if err != nil {
+		return fmt.Errorf("create rumor: %w", err)
+	}
+	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
+	return nil
+}
 
-	case gamepkg.FestivityMakeTakeCenterPeer:
-		if assetID == 0 {
-			return errors.New("asset_id required")
-		}
-		asset, err := deps.Q.GetAssetByID(ctx, assetID)
+func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext) error {
+	name := fc.peerName
+	if name == "" {
+		name = "New peer"
+	}
+	ownerID := fc.actingPlayerID
+	if fc.actingPlayerID == fc.plan.PreparerID {
+		recipient, err := gamepkg.AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
 		if err != nil {
-			return errors.New("asset not found")
+			return fmt.Errorf("resolve asset recipient: %w", err)
 		}
-		// Must be a peer that was placed in center during this festivity.
-		isCenter := slices.Contains(state.CenteredAssetIDs, assetID)
-		if !isCenter {
-			return errors.New("asset is not in the center of the table")
-		}
-		oldOwner := asset.OwnerID
-		newOwner := actingPlayerID
-		if actingPlayerID == plan.PreparerID {
-			recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
-			if err != nil {
-				return fmt.Errorf("resolve asset recipient: %w", err)
-			}
-			newOwner = recipient
-		}
-		if err := deps.Q.TransferAsset(
-			ctx,
-			dbgen.TransferAssetParams{ID: assetID, OwnerID: newOwner},
-		); err != nil {
-			return fmt.Errorf("transfer asset: %w", err)
-		}
-		// Remove from center list.
-		remaining := state.CenteredAssetIDs[:0]
-		for _, id := range state.CenteredAssetIDs {
-			if id != assetID {
-				remaining = append(remaining, id)
-			}
-		}
-		state.CenteredAssetIDs = append([]int64(nil), remaining...)
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			updated, _ := deps.Q.GetAssetByID(ctx, assetID)
-			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-				Asset: updated, OldOwnerID: oldOwner, NewOwnerID: newOwner,
-			})
-		}
+		ownerID = recipient
+	}
+	asset, err := fc.deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID:    fc.plan.GameID,
+		OwnerID:   ownerID,
+		CreatorID: fc.actingPlayerID,
+		AssetType: model.AssetPeer,
+		Name:      name,
+	})
+	if err != nil {
+		return fmt.Errorf("create peer: %w", err)
+	}
+	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
+	return nil
+}
 
-	case gamepkg.FestivityMarDisagreement:
-		if assetID == 0 {
-			return errors.New("asset_id required for disagreement")
+func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContext) error {
+	if fc.assetID == 0 {
+		return errors.New("asset_id required")
+	}
+	asset, err := fc.deps.Q.GetAssetByID(ctx, fc.assetID)
+	if err != nil {
+		return errors.New("asset not found")
+	}
+	if !slices.Contains(fc.state.CenteredAssetIDs, fc.assetID) {
+		return errors.New("asset is not in the center of the table")
+	}
+	oldOwner := asset.OwnerID
+	newOwner := fc.actingPlayerID
+	if fc.actingPlayerID == fc.plan.PreparerID {
+		recipient, rerr := gamepkg.AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
+		if rerr != nil {
+			return fmt.Errorf("resolve asset recipient: %w", rerr)
 		}
-		asset, err := deps.Q.GetAssetByID(ctx, assetID)
-		if err != nil {
-			return errors.New("asset not found")
+		newOwner = recipient
+	}
+	err = fc.deps.Q.TransferAsset(
+		ctx,
+		dbgen.TransferAssetParams{ID: fc.assetID, OwnerID: newOwner},
+	)
+	if err != nil {
+		return fmt.Errorf("transfer asset: %w", err)
+	}
+	remaining := fc.state.CenteredAssetIDs[:0]
+	for _, id := range fc.state.CenteredAssetIDs {
+		if id != fc.assetID {
+			remaining = append(remaining, id)
 		}
-		if asset.AssetType != model.AssetPeer {
-			return errors.New("disagreement target must be a peer")
-		}
-		// Leverage the asset as a proxy for "center of table" (see file header).
-		_ = deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{ID: assetID, IsLeveraged: true})
-		state.CenteredAssetIDs = append(state.CenteredAssetIDs, assetID)
-		broadcastEvent(
-			deps.Manager,
-			plan.GameID,
-			model.EventAssetLeveraged,
-			model.AssetIDPayload{AssetID: assetID, PlayerID: asset.OwnerID},
-		)
+	}
+	fc.state.CenteredAssetIDs = append([]int64(nil), remaining...)
+	updated, _ := fc.deps.Q.GetAssetByID(ctx, fc.assetID)
+	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+		Asset: updated, OldOwnerID: oldOwner, NewOwnerID: newOwner,
+	})
+	return nil
+}
 
-	case gamepkg.FestivityMarAcceptDuels:
-		if !containsInt64(state.AcceptDuels, actingPlayerID) {
-			state.AcceptDuels = append(state.AcceptDuels, actingPlayerID)
-		}
+func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext) error {
+	if fc.assetID == 0 {
+		return errors.New("asset_id required for disagreement")
+	}
+	asset, err := fc.deps.Q.GetAssetByID(ctx, fc.assetID)
+	if err != nil {
+		return errors.New("asset not found")
+	}
+	if asset.AssetType != model.AssetPeer {
+		return errors.New("disagreement target must be a peer")
+	}
+	_ = fc.deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{ID: fc.assetID, IsLeveraged: true})
+	fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, fc.assetID)
+	broadcastEvent(
+		fc.deps.Manager,
+		fc.plan.GameID,
+		model.EventAssetLeveraged,
+		model.AssetIDPayload{AssetID: fc.assetID, PlayerID: asset.OwnerID},
+	)
+	return nil
+}
 
-	case gamepkg.FestivityMarBreakSelf:
-		mcID, err := hfFindMainCharacter(ctx, deps, plan.GameID, actingPlayerID)
-		if err != nil {
-			return fmt.Errorf("find main character: %w", err)
-		}
-		marg, err := deps.Q.ListIntactMarginalia(ctx, mcID)
-		if err != nil || len(marg) == 0 {
-			return errors.New("no intact marginalia to tear")
-		}
-		m := marg[0]
-		if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID: m.ID, TornByID: &actingPlayerID,
-		}); err != nil {
-			return fmt.Errorf("tear marginalia: %w", err)
-		}
-		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-			AssetID: mcID, Position: m.Position, TornByID: actingPlayerID,
-		})
+func applyFestivityAcceptDuels(_ context.Context, fc *festivityOptionContext) error {
+	if !slices.Contains(fc.state.AcceptDuels, fc.actingPlayerID) {
+		fc.state.AcceptDuels = append(fc.state.AcceptDuels, fc.actingPlayerID)
 	}
 	return nil
 }
 
-func containsInt64(xs []int64, x int64) bool {
-	return slices.Contains(xs, x)
+func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) error {
+	mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.actingPlayerID)
+	if err != nil {
+		return fmt.Errorf("find main character: %w", err)
+	}
+	marg, err := fc.deps.Q.ListIntactMarginalia(ctx, mcID)
+	if err != nil || len(marg) == 0 {
+		return errors.New("no intact marginalia to tear")
+	}
+	m := marg[0]
+	err = fc.deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		ID: m.ID, TornByID: &fc.actingPlayerID,
+	})
+	if err != nil {
+		return fmt.Errorf("tear marginalia: %w", err)
+	}
+	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+		AssetID: mcID, Position: m.Position, TornByID: fc.actingPlayerID,
+	})
+	return nil
 }
 
 func hfFindMainCharacter(ctx context.Context, deps *PlanDeps, gameID, playerID int64) (int64, error) {
@@ -650,11 +687,8 @@ func hfFindMainCharacter(ctx context.Context, deps *PlanDeps, gameID, playerID i
 
 func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {
@@ -715,11 +749,8 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 
 func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		if player.ID != plan.PreparerID {
@@ -806,11 +837,8 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 // response. All festivity game actions pause while PendingChallenge is set.
 func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {
@@ -897,11 +925,8 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 // Decline is refused if the target has the accept_duels mar.
 func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanHostFestivity) || !requirePlanResolving(w, plan) {
 			return
 		}
 		var body struct {

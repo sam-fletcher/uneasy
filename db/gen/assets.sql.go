@@ -112,7 +112,7 @@ const createAsset = `-- name: CreateAsset :one
 
 INSERT INTO assets (game_id, owner_id, creator_id, asset_type, name, is_main_character)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at
+RETURNING id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value
 `
 
 type CreateAssetParams struct {
@@ -148,6 +148,8 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset
 		&i.IsDestroyed,
 		&i.CreatedAt,
 		&i.DestroyedAt,
+		&i.LinkedCardSuit,
+		&i.LinkedCardValue,
 	)
 	return i, err
 }
@@ -218,7 +220,7 @@ func (q *Queries) DestroyAsset(ctx context.Context, id int64) error {
 }
 
 const getAssetByID = `-- name: GetAssetByID :one
-SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at FROM assets WHERE id = $1
+SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE id = $1
 `
 
 func (q *Queries) GetAssetByID(ctx context.Context, id int64) (Asset, error) {
@@ -236,6 +238,8 @@ func (q *Queries) GetAssetByID(ctx context.Context, id int64) (Asset, error) {
 		&i.IsDestroyed,
 		&i.CreatedAt,
 		&i.DestroyedAt,
+		&i.LinkedCardSuit,
+		&i.LinkedCardValue,
 	)
 	return i, err
 }
@@ -279,7 +283,7 @@ func (q *Queries) GrantSecretVisibilityForAsset(ctx context.Context, arg GrantSe
 }
 
 const listAssetsByGame = `-- name: ListAssetsByGame :many
-SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at FROM assets WHERE game_id = $1 AND is_destroyed = FALSE
+SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE game_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC
 `
 
@@ -304,6 +308,8 @@ func (q *Queries) ListAssetsByGame(ctx context.Context, gameID int64) ([]Asset, 
 			&i.IsDestroyed,
 			&i.CreatedAt,
 			&i.DestroyedAt,
+			&i.LinkedCardSuit,
+			&i.LinkedCardValue,
 		); err != nil {
 			return nil, err
 		}
@@ -316,7 +322,7 @@ func (q *Queries) ListAssetsByGame(ctx context.Context, gameID int64) ([]Asset, 
 }
 
 const listAssetsByOwner = `-- name: ListAssetsByOwner :many
-SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at FROM assets WHERE owner_id = $1 AND is_destroyed = FALSE
+SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE owner_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC
 `
 
@@ -341,6 +347,8 @@ func (q *Queries) ListAssetsByOwner(ctx context.Context, ownerID int64) ([]Asset
 			&i.IsDestroyed,
 			&i.CreatedAt,
 			&i.DestroyedAt,
+			&i.LinkedCardSuit,
+			&i.LinkedCardValue,
 		); err != nil {
 			return nil, err
 		}

@@ -38,6 +38,8 @@ import (
 // Setting `surrender: true` marks the payer surrendered after the chosen
 // payment is applied; each opposing non-surrendered opponent then has one
 // open surrender claim, redeemable via /take-surrender-asset.
+//
+//nolint:funlen,gocognit // orchestrates many sequential war-cost validation branches
 func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -233,79 +235,101 @@ func mwApplyCostChoice(
 ) (a1, a2 *int64, ok bool) {
 	switch choice {
 	case gamepkg.WarCostBreakAsset:
-		m, err := deps.Q.GetMarginaliaByID(ctx, marginaliaID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "marginalia not found")
-			return nil, nil, false
-		}
-		asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
-		if err != nil || asset.OwnerID != player.ID {
-			respondErr(w, http.StatusForbidden, "marginalia must belong to an asset you own")
-			return nil, nil, false
-		}
-		if asset.IsDestroyed {
-			respondErr(w, http.StatusConflict, "asset is already destroyed")
-			return nil, nil, false
-		}
-		if m.IsTorn {
-			respondErr(w, http.StatusConflict, "marginalia is already torn")
-			return nil, nil, false
-		}
-		if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID: m.ID, TornByID: &player.ID,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
-			return nil, nil, false
-		}
-		broadcastEvent(deps.Manager, gameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-			AssetID: asset.ID, Position: m.Position, TornByID: player.ID,
-		})
-		intact, _ := deps.Q.CountIntactMarginalia(ctx, asset.ID)
-		if intact == 0 {
-			total, _ := deps.Q.CountMarginalia(ctx, asset.ID)
-			if total > 0 {
-				_ = deps.Q.DestroyAsset(ctx, asset.ID)
-				broadcastEvent(deps.Manager, gameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
-			}
-		}
-		return &asset.ID, nil, true
-
+		return mwApplyBreakAsset(ctx, deps, gameID, player, marginaliaID, w)
 	case gamepkg.WarCostLeverageTwo:
-		if assetID1In == 0 || assetID2In == 0 || assetID1In == assetID2In {
-			respondErr(w, http.StatusBadRequest, "must specify two distinct assets to leverage")
-			return nil, nil, false
-		}
-		for _, id := range []int64{assetID1In, assetID2In} {
-			a, err := deps.Q.GetAssetByID(ctx, id)
-			if err != nil {
-				respondErr(w, http.StatusNotFound, "asset not found")
-				return nil, nil, false
-			}
-			if a.OwnerID != player.ID {
-				respondErr(w, http.StatusForbidden, "you can only leverage your own assets")
-				return nil, nil, false
-			}
-			if a.IsDestroyed {
-				respondErr(w, http.StatusConflict, "asset is destroyed")
-				return nil, nil, false
-			}
-			if a.IsLeveraged {
-				respondErr(w, http.StatusConflict, "asset is already leveraged")
-				return nil, nil, false
-			}
-		}
-		for _, id := range []int64{assetID1In, assetID2In} {
-			if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
-				ID: id, IsLeveraged: true,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not leverage asset")
-				return nil, nil, false
-			}
-		}
-		return &assetID1In, &assetID2In, true
+		return mwApplyLeverageTwo(ctx, deps, player, assetID1In, assetID2In, w)
 	}
 	respondErr(w, http.StatusBadRequest, "choice must be break_asset or leverage_two")
 	return nil, nil, false
+}
+
+func mwApplyBreakAsset(
+	ctx context.Context,
+	deps *PlanDeps,
+	gameID int64,
+	player *dbgen.Player,
+	marginaliaID int64,
+	w http.ResponseWriter,
+) (a1, a2 *int64, ok bool) {
+	m, err := deps.Q.GetMarginaliaByID(ctx, marginaliaID)
+	if err != nil {
+		respondErr(w, http.StatusNotFound, "marginalia not found")
+		return nil, nil, false
+	}
+	asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
+	if err != nil || asset.OwnerID != player.ID {
+		respondErr(w, http.StatusForbidden, "marginalia must belong to an asset you own")
+		return nil, nil, false
+	}
+	if asset.IsDestroyed {
+		respondErr(w, http.StatusConflict, "asset is already destroyed")
+		return nil, nil, false
+	}
+	if m.IsTorn {
+		respondErr(w, http.StatusConflict, "marginalia is already torn")
+		return nil, nil, false
+	}
+	err = deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		ID: m.ID, TornByID: &player.ID,
+	})
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+		return nil, nil, false
+	}
+	broadcastEvent(deps.Manager, gameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+		AssetID: asset.ID, Position: m.Position, TornByID: player.ID,
+	})
+	intact, _ := deps.Q.CountIntactMarginalia(ctx, asset.ID)
+	if intact == 0 {
+		total, _ := deps.Q.CountMarginalia(ctx, asset.ID)
+		if total > 0 {
+			_ = deps.Q.DestroyAsset(ctx, asset.ID)
+			broadcastEvent(deps.Manager, gameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
+		}
+	}
+	return &asset.ID, nil, true
+}
+
+func mwApplyLeverageTwo(
+	ctx context.Context,
+	deps *PlanDeps,
+	player *dbgen.Player,
+	assetID1In, assetID2In int64,
+	w http.ResponseWriter,
+) (a1, a2 *int64, ok bool) {
+	if assetID1In == 0 || assetID2In == 0 || assetID1In == assetID2In {
+		respondErr(w, http.StatusBadRequest, "must specify two distinct assets to leverage")
+		return nil, nil, false
+	}
+	for _, id := range []int64{assetID1In, assetID2In} {
+		a, err := deps.Q.GetAssetByID(ctx, id)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "asset not found")
+			return nil, nil, false
+		}
+		if a.OwnerID != player.ID {
+			respondErr(w, http.StatusForbidden, "you can only leverage your own assets")
+			return nil, nil, false
+		}
+		if a.IsDestroyed {
+			respondErr(w, http.StatusConflict, "asset is destroyed")
+			return nil, nil, false
+		}
+		if a.IsLeveraged {
+			respondErr(w, http.StatusConflict, "asset is already leveraged")
+			return nil, nil, false
+		}
+	}
+	for _, id := range []int64{assetID1In, assetID2In} {
+		err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+			ID: id, IsLeveraged: true,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not leverage asset")
+			return nil, nil, false
+		}
+	}
+	return &assetID1In, &assetID2In, true
 }
 
 // ── pay-war-entry ────────────────────────────────────────────────────────────
@@ -313,6 +337,8 @@ func mwApplyCostChoice(
 // Late joiners (entry_payment_complete=FALSE) pay a full cost of battle
 // against each existing opposing opponent before becoming full participants.
 // Body mirrors pay-battle-cost (minus surrender).
+//
+//nolint:funlen,gocognit // orchestrates late-joiner entry payment flow
 func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)

@@ -105,6 +105,8 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 }
 
 // setupRouter creates and configures the HTTP router with all middleware and routes.
+//
+//nolint:funlen // route table; one line per endpoint
 func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -154,6 +156,16 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Get("/tables/{id}/rankings", handler.GetRankings(q))
 		r.Put("/tables/{id}/rankings", handler.SetRankings(q, manager))
 		r.Put("/tables/{id}/seats", handler.SetSeats(q))
+
+		// Structured prologue (Phase 4b)
+		r.Get("/tables/{id}/prologue/sheets", handler.GetPrologueSheets(q))
+		r.Get("/tables/{id}/prologue/cards", handler.GetPrologueCards(q))
+		r.Post("/tables/{id}/prologue/choose", handler.ChoosePrologue(q, manager))
+		r.Post("/tables/{id}/prologue/begin-ranking", handler.BeginPrologueRanking(q, manager))
+		r.Post("/tables/{id}/prologue/declare-hearts", handler.DeclareHearts(q, manager))
+		r.Post("/tables/{id}/prologue/finalize-ranking", handler.FinalizeTrackRanking(q, manager))
+		r.Post("/tables/{id}/prologue/place-set-asides", handler.PlaceSetAsides(q, manager))
+		r.Post("/tables/{id}/prologue/extra-peer", handler.CreateExtraPeer(q, manager))
 
 		// Assets (list + create on the table; per-asset actions by asset ID)
 		r.Get("/tables/{id}/assets", handler.ListAssets(q))

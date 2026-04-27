@@ -117,6 +117,8 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 // Any active participant may vote. A single "reject" closes the proposal; the
 // proposer must then pay their cost with break_asset or leverage_two. Once
 // every active participant has voted accept, the war ends with reason=peace.
+//
+//nolint:funlen // peace-vote tally and surrender bookkeeping
 func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)

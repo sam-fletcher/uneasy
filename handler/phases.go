@@ -176,7 +176,11 @@ func StartToneSetting(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 // StartPrologue handles POST /api/tables/{id}/start-prologue.
 //
-// Transitions the game from tone_setting → prologue.
+// Transitions the game from tone_setting → prologue and auto-creates one
+// empty main-character peer asset per player. The peer's name and
+// marginalia get filled in via the existing asset-edit endpoints; we just
+// need the row to exist before any title-choice tries to "add the title to
+// your main character's peer."
 func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, ok := requireFacilitator(w, r, q)
@@ -191,10 +195,31 @@ func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		if err := q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		players, err := q.GetPlayersByGame(ctx, game.ID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load players")
+			return
+		}
+		for _, p := range players {
+			_, err = q.CreateAsset(ctx, dbgen.CreateAssetParams{
+				GameID:          game.ID,
+				OwnerID:         p.ID,
+				CreatorID:       p.ID,
+				AssetType:       model.AssetPeer,
+				Name:            p.DisplayName,
+				IsMainCharacter: true,
+			})
+			if err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not create main character")
+				return
+			}
+		}
+
+		err = q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 			ID:    game.ID,
 			Phase: model.PhasePrologue,
-		}); err != nil {
+		})
+		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not update phase")
 			return
 		}
@@ -218,6 +243,14 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		if game.Phase != model.PhasePrologue {
 			respondErr(w, http.StatusConflict, "game is not in the prologue phase")
+			return
+		}
+		// The ranking sub-flow is either not started (legacy facilitator
+		// batch-set path) or has reached its terminal step (extra_peers
+		// for ≤3 players, or NULL after the last finalize for 4+).
+		if game.PrologueRankingStep != nil &&
+			*game.PrologueRankingStep != "extra_peers" {
+			respondErr(w, http.StatusConflict, "prologue ranking is still in progress")
 			return
 		}
 

@@ -35,7 +35,7 @@ func (q *Queries) CountPlayersInGame(ctx context.Context, gameID int64) (int64, 
 
 const createGame = `-- name: CreateGame :one
 
-INSERT INTO games (join_code) VALUES ($1) RETURNING id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode
+INSERT INTO games (join_code) VALUES ($1) RETURNING id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step
 `
 
 // sqlc query file for games.
@@ -52,12 +52,13 @@ func (q *Queries) CreateGame(ctx context.Context, joinCode string) (Game, error)
 		&i.FocusPlayerID,
 		&i.EndingMode,
 		&i.DummyTokenMode,
+		&i.PrologueRankingStep,
 	)
 	return i, err
 }
 
 const getGameByID = `-- name: GetGameByID :one
-SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode FROM games WHERE id = $1
+SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step FROM games WHERE id = $1
 `
 
 func (q *Queries) GetGameByID(ctx context.Context, id int64) (Game, error) {
@@ -73,12 +74,13 @@ func (q *Queries) GetGameByID(ctx context.Context, id int64) (Game, error) {
 		&i.FocusPlayerID,
 		&i.EndingMode,
 		&i.DummyTokenMode,
+		&i.PrologueRankingStep,
 	)
 	return i, err
 }
 
 const getGameByJoinCode = `-- name: GetGameByJoinCode :one
-SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode FROM games WHERE join_code = $1
+SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step FROM games WHERE join_code = $1
 `
 
 func (q *Queries) GetGameByJoinCode(ctx context.Context, joinCode string) (Game, error) {
@@ -94,6 +96,7 @@ func (q *Queries) GetGameByJoinCode(ctx context.Context, joinCode string) (Game,
 		&i.FocusPlayerID,
 		&i.EndingMode,
 		&i.DummyTokenMode,
+		&i.PrologueRankingStep,
 	)
 	return i, err
 }
