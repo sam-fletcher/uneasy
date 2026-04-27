@@ -69,7 +69,7 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if war.Status != "active" {
+		if war.Status != warStatusActive {
 			respondErr(w, http.StatusConflict, "war is no longer active")
 			return
 		}
@@ -138,13 +138,11 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventWarBattleCostPaid, model.WarBattleCostPaidPayload{
-				WarID: war.ID, RowNumber: game.CurrentRow,
-				PayerID: player.ID, OpponentID: body.OpponentID,
-				Choice: body.Choice, Surrendered: body.Surrender,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventWarBattleCostPaid, model.WarBattleCostPaidPayload{
+			WarID: war.ID, RowNumber: game.CurrentRow,
+			PayerID: player.ID, OpponentID: body.OpponentID,
+			Choice: body.Choice, Surrendered: body.Surrender,
+		})
 
 		if body.Surrender {
 			if err := mwApplySurrender(ctx, deps, war, snap, player.ID, game.CurrentRow); err != nil {
@@ -259,19 +257,15 @@ func mwApplyCostChoice(
 			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
 			return nil, nil, false
 		}
-		if h, ok := deps.Manager.Get(gameID); ok {
-			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-				AssetID: asset.ID, Position: m.Position, TornByID: player.ID,
-			})
-		}
+		broadcastEvent(deps.Manager, gameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+			AssetID: asset.ID, Position: m.Position, TornByID: player.ID,
+		})
 		intact, _ := deps.Q.CountIntactMarginalia(ctx, asset.ID)
 		if intact == 0 {
 			total, _ := deps.Q.CountMarginalia(ctx, asset.ID)
 			if total > 0 {
 				_ = deps.Q.DestroyAsset(ctx, asset.ID)
-				if h, ok := deps.Manager.Get(gameID); ok {
-					h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
-				}
+				broadcastEvent(deps.Manager, gameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
 			}
 		}
 		return &asset.ID, nil, true
@@ -349,7 +343,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if war.Status != "active" {
+		if war.Status != warStatusActive {
 			respondErr(w, http.StatusConflict, "war is no longer active")
 			return
 		}
@@ -441,11 +435,9 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 				respondErr(w, http.StatusInternalServerError, "could not mark entry complete")
 				return
 			}
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventWarEntryCompleted, model.WarEntryCompletedPayload{
-					WarID: war.ID, PlayerID: player.ID, Side: part.Side,
-				})
-			}
+			broadcastEvent(deps.Manager, plan.GameID, model.EventWarEntryCompleted, model.WarEntryCompletedPayload{
+				WarID: war.ID, PlayerID: player.ID, Side: part.Side,
+			})
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -523,12 +515,10 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventWarAssetSeized, model.WarAssetSeizedPayload{
-				WarID: war.ID, SurrenderedID: body.SurrenderedID,
-				ClaimantID: player.ID, AssetID: asset.ID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventWarAssetSeized, model.WarAssetSeizedPayload{
+			WarID: war.ID, SurrenderedID: body.SurrenderedID,
+			ClaimantID: player.ID, AssetID: asset.ID,
+		})
 		respond(w, http.StatusOK, map[string]any{
 			"war_id":   war.ID,
 			"asset_id": asset.ID,

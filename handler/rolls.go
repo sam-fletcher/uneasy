@@ -193,9 +193,7 @@ func CreateRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			}
 		}
 
-		if h, ok := manager.Get(gameID); ok {
-			h.BroadcastEvent(model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
-		}
+		broadcastEvent(manager, gameID, model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
 
 		respond(w, http.StatusCreated, map[string]any{"roll": roll})
 	}
@@ -373,9 +371,7 @@ func CallVote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := manager.Get(roll.GameID); ok {
-			h.BroadcastEvent(model.EventRollVoteCalled, model.RollVoteCalledPayload{RollID: roll.ID})
-		}
+		broadcastEvent(manager, roll.GameID, model.EventRollVoteCalled, model.RollVoteCalledPayload{RollID: roll.ID})
 
 		respond(w, http.StatusOK, map[string]any{"roll_id": roll.ID})
 	}
@@ -558,13 +554,11 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			}
 		}
 
-		if h, ok := manager.Get(roll.GameID); ok {
-			h.BroadcastEvent(model.EventRollResolved, model.RollResolvedPayload{
-				Roll:          resolvedRoll,
-				Dice:          finalDice,
-				CancelledDice: cancelledDice,
-			})
-		}
+		broadcastEvent(manager, roll.GameID, model.EventRollResolved, model.RollResolvedPayload{
+			Roll:          resolvedRoll,
+			Dice:          finalDice,
+			CancelledDice: cancelledDice,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"roll":           resolvedRoll,
@@ -731,14 +725,12 @@ func UseBankedDie(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := manager.Get(roll.GameID); ok {
-			h.BroadcastEvent(model.EventRollLeverageAdded, model.RollLeverageAddedPayload{
-				RollID:         roll.ID,
-				PlayerID:       player.ID,
-				AssetID:        0, // no asset — banked die
-				IsInterference: false,
-			})
-		}
+		broadcastEvent(manager, roll.GameID, model.EventRollLeverageAdded, model.RollLeverageAddedPayload{
+			RollID:         roll.ID,
+			PlayerID:       player.ID,
+			AssetID:        0, // no asset — banked die
+			IsInterference: false,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"die":           die,

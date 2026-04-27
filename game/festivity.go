@@ -122,7 +122,7 @@ func (r *ResolutionData) SetFestivityState(s FestivityState) {
 }
 
 // AllGuestsResolved returns true when every guest has an outcome recorded.
-func (s FestivityState) AllGuestsResolved() bool {
+func (s *FestivityState) AllGuestsResolved() bool {
 	if len(s.Guests) == 0 {
 		return false
 	}
@@ -136,7 +136,7 @@ func (s FestivityState) AllGuestsResolved() bool {
 
 // PendingHostChoices returns guests who still need a host make choice (those
 // who rolled mar or opted out, minus those already assigned).
-func (s FestivityState) PendingHostChoices() []int64 {
+func (s *FestivityState) PendingHostChoices() []int64 {
 	out := make([]int64, 0)
 	for _, id := range s.Guests {
 		k := int64ToKey(id)
@@ -156,7 +156,7 @@ func (s FestivityState) PendingHostChoices() []int64 {
 }
 
 // HasAcceptDuels returns true when playerID has the accept_duels flag.
-func (s FestivityState) HasAcceptDuels(playerID int64) bool {
+func (s *FestivityState) HasAcceptDuels(playerID int64) bool {
 	return slices.Contains(s.AcceptDuels, playerID)
 }
 
@@ -172,7 +172,7 @@ func (s *FestivityState) ConsumeIOU(playerID int64) bool {
 }
 
 // IsGuest returns true if playerID is on the guest list.
-func (s FestivityState) IsGuest(playerID int64) bool {
+func (s *FestivityState) IsGuest(playerID int64) bool {
 	return slices.Contains(s.Guests, playerID)
 }
 

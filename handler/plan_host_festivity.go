@@ -136,11 +136,9 @@ func hfBlockOnPendingChallenge(w http.ResponseWriter, state gamepkg.FestivitySta
 }
 
 func hfBroadcastPhase(deps *PlanDeps, plan *dbgen.Plan, phase string) {
-	if h, ok := deps.Manager.Get(plan.GameID); ok {
-		h.BroadcastEvent(model.EventFestivityPhaseChanged, model.FestivityPhaseChangedPayload{
-			PlanID: plan.ID, Phase: phase,
-		})
-	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityPhaseChanged, model.FestivityPhaseChangedPayload{
+		PlanID: plan.ID, Phase: phase,
+	})
 }
 
 // hfMaybeAdvanceToHostChoosing checks if all guests have acted and, if so,
@@ -203,11 +201,9 @@ func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not save guest list")
 			return
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventFestivityGuestJoined, model.FestivityGuestJoinedPayload{
-				PlanID: plan.ID, PlayerID: player.ID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityGuestJoined, model.FestivityGuestJoinedPayload{
+			PlanID: plan.ID, PlayerID: player.ID,
+		})
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "player_id": player.ID})
 	}
 }
@@ -280,11 +276,14 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 				respondErr(w, http.StatusInternalServerError, "could not save opt-out")
 				return
 			}
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventFestivityGuestRolled, model.FestivityGuestRolledPayload{
+			broadcastEvent(
+				deps.Manager,
+				plan.GameID,
+				model.EventFestivityGuestRolled,
+				model.FestivityGuestRolledPayload{
 					PlanID: plan.ID, PlayerID: player.ID, Action: "opt_out",
-				})
-			}
+				},
+			)
 			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "action": "opt_out"})
 			return
 		}
@@ -458,12 +457,10 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not save guest choice")
 			return
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventFestivityGuestChose, model.FestivityGuestChosePayload{
-				PlanID: plan.ID, PlayerID: player.ID,
-				Outcome: state.Outcomes[key], Choice: body.Choice,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityGuestChose, model.FestivityGuestChosePayload{
+			PlanID: plan.ID, PlayerID: player.ID,
+			Outcome: state.Outcomes[key], Choice: body.Choice,
+		})
 		if phaseChanged {
 			hfBroadcastPhase(deps, plan, state.Phase)
 		}
@@ -514,9 +511,7 @@ func hfApplyOption(
 		if err != nil {
 			return fmt.Errorf("create rumor: %w", err)
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
 
 	case gamepkg.FestivityMakeIntroducePeer:
 		name := peerName
@@ -541,9 +536,7 @@ func hfApplyOption(
 		if err != nil {
 			return fmt.Errorf("create peer: %w", err)
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventAssetCreated, model.AssetPayload{Asset: asset})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
 
 	case gamepkg.FestivityMakeTakeCenterPeer:
 		if assetID == 0 {
@@ -602,9 +595,12 @@ func hfApplyOption(
 		// Leverage the asset as a proxy for "center of table" (see file header).
 		_ = deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{ID: assetID, IsLeveraged: true})
 		state.CenteredAssetIDs = append(state.CenteredAssetIDs, assetID)
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventAssetLeveraged, model.AssetIDPayload{AssetID: assetID, PlayerID: asset.OwnerID})
-		}
+		broadcastEvent(
+			deps.Manager,
+			plan.GameID,
+			model.EventAssetLeveraged,
+			model.AssetIDPayload{AssetID: assetID, PlayerID: asset.OwnerID},
+		)
 
 	case gamepkg.FestivityMarAcceptDuels:
 		if !containsInt64(state.AcceptDuels, actingPlayerID) {
@@ -626,11 +622,9 @@ func hfApplyOption(
 		}); err != nil {
 			return fmt.Errorf("tear marginalia: %w", err)
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-				AssetID: mcID, Position: m.Position, TornByID: actingPlayerID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+			AssetID: mcID, Position: m.Position, TornByID: actingPlayerID,
+		})
 	}
 	return nil
 }
@@ -705,11 +699,14 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not save insist")
 			return
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventFestivityInsistHostMar, model.FestivityInsistHostMarPayload{
+		broadcastEvent(
+			deps.Manager,
+			plan.GameID,
+			model.EventFestivityInsistHostMar,
+			model.FestivityInsistHostMarPayload{
 				PlanID: plan.ID, InsisterID: player.ID, MarOption: body.MarOption,
-			})
-		}
+			},
+		)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "mar_option": body.MarOption})
 	}
 }
@@ -787,11 +784,9 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not save host choice")
 			return
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventFestivityHostChose, model.FestivityHostChosePayload{
-				PlanID: plan.ID, GuestPlayerID: body.TargetPlayerID, Choice: body.Choice,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityHostChose, model.FestivityHostChosePayload{
+			PlanID: plan.ID, GuestPlayerID: body.TargetPlayerID, Choice: body.Choice,
+		})
 		if state.Phase == gamepkg.FestivityPhaseDone {
 			hfBroadcastPhase(deps, plan, state.Phase)
 		}
@@ -876,14 +871,17 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not save challenge state")
 			return
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventFestivityChallengeIssued, model.FestivityChallengeIssuedPayload{
+		broadcastEvent(
+			deps.Manager,
+			plan.GameID,
+			model.EventFestivityChallengeIssued,
+			model.FestivityChallengeIssuedPayload{
 				PlanID:       plan.ID,
 				ChallengerID: player.ID,
 				TargetID:     body.TargetPlayerID,
 				MustAccept:   state.HasAcceptDuels(body.TargetPlayerID),
-			})
-		}
+			},
+		)
 		respond(w, http.StatusCreated, map[string]any{
 			"plan_id":       plan.ID,
 			"challenger_id": player.ID,
@@ -941,11 +939,14 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 				respondErr(w, http.StatusInternalServerError, "could not save decline")
 				return
 			}
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventFestivityChallengeDeclined, model.FestivityChallengeDeclinedPayload{
+			broadcastEvent(
+				deps.Manager,
+				plan.GameID,
+				model.EventFestivityChallengeDeclined,
+				model.FestivityChallengeDeclinedPayload{
 					PlanID: plan.ID, ChallengerID: challengerID, TargetID: player.ID,
-				})
-			}
+				},
+			)
 			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "accepted": false})
 			return
 		}

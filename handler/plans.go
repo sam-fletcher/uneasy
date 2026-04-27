@@ -74,31 +74,31 @@ func requirePlanAccess(
 	return &plan, player, true
 }
 
-// requirePlanFocus returns the game, plan, and player, verifying the caller is
-// the focus player and the game is in main_event phase.
+// requirePlanFocus returns the game and plan, verifying the caller is the
+// focus player and the game is in main_event phase.
 func requirePlanFocus(
 	w http.ResponseWriter,
 	r *http.Request,
 	q *dbgen.Queries,
-) (*dbgen.Game, *dbgen.Plan, *dbgen.Player, bool) {
+) (*dbgen.Game, *dbgen.Plan, bool) {
 	plan, player, ok := requirePlanAccess(w, r, q)
 	if !ok {
-		return nil, nil, nil, false
+		return nil, nil, false
 	}
 	game, err := q.GetGameByID(r.Context(), plan.GameID)
 	if err != nil {
 		respondErr(w, http.StatusNotFound, "table not found")
-		return nil, nil, nil, false
+		return nil, nil, false
 	}
 	if game.Phase != model.PhaseMainEvent {
 		respondErr(w, http.StatusConflict, "game is not in the main event phase")
-		return nil, nil, nil, false
+		return nil, nil, false
 	}
 	if game.FocusPlayerID == nil || *game.FocusPlayerID != player.ID {
 		respondErr(w, http.StatusForbidden, "only the focus player can do this")
-		return nil, nil, nil, false
+		return nil, nil, false
 	}
-	return &game, plan, player, true
+	return &game, plan, true
 }
 
 // requirePlanType writes a 400 and returns false if the plan isn't of the
@@ -121,6 +121,15 @@ func requirePlanResolving(w http.ResponseWriter, plan *dbgen.Plan) bool {
 		return false
 	}
 	return true
+}
+
+// broadcastEvent sends an event to all subscribers of gameID, if a hub exists
+// for it. Replaces the repetitive `if h, ok := manager.Get(gameID); ok { ... }`
+// pattern at every broadcast site.
+func broadcastEvent(manager *hub.Manager, gameID int64, eventType string, payload any) {
+	if h, ok := manager.Get(gameID); ok {
+		h.BroadcastEvent(eventType, payload)
+	}
 }
 
 // Pure game-rule helpers (playerRankInCategory, playerHasPeers,
@@ -158,9 +167,7 @@ func createPlanRoll(
 			return nil, err
 		}
 	}
-	if h, ok := manager.Get(game.ID); ok {
-		h.BroadcastEvent(model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
-	}
+	broadcastEvent(manager, game.ID, model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
 	return &roll, nil
 }
 
@@ -635,9 +642,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := manager.Get(game.ID); ok {
-			h.BroadcastEvent(model.EventPlanPrepared, model.PlanPayload{Plan: plan})
-		}
+		broadcastEvent(manager, game.ID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 
 		// Consume any pending counter-demand waiting on this player: the
 		// target of a previously marred demand deferred their free counter
@@ -686,7 +691,7 @@ func GetPlan(q *dbgen.Queries) http.HandlerFunc {
 // have a custom pre-roll flow, like Exchange Courtiers).
 func ResolvePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, plan, _, ok := requirePlanFocus(w, r, q)
+		game, plan, ok := requirePlanFocus(w, r, q)
 		if !ok {
 			return
 		}
@@ -872,7 +877,7 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // stored result field (e.g. EC fair trade accept path).
 func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, _, ok := requirePlanFocus(w, r, q)
+		_, plan, ok := requirePlanFocus(w, r, q)
 		if !ok {
 			return
 		}
@@ -916,12 +921,10 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventPlanResolved, model.PlanResolvedPayload{
-				PlanID: plan.ID,
-				Result: resultStr,
-			})
-		}
+		broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
+			PlanID: plan.ID,
+			Result: resultStr,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,

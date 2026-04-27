@@ -311,11 +311,9 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventWarPlayerJoined, model.WarPlayerJoinedPayload{
-				WarID: war.ID, PlayerID: player.ID, Side: body.Side,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventWarPlayerJoined, model.WarPlayerJoinedPayload{
+			WarID: war.ID, PlayerID: player.ID, Side: body.Side,
+		})
 		respond(w, http.StatusOK, map[string]any{
 			"war_id": war.ID, "player_id": player.ID, "side": body.Side,
 		})
@@ -327,7 +325,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 // Focus player marks the one-time narrative beat complete. Gates /complete.
 func mwPostSceneHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, _, ok := requirePlanFocus(w, r, deps.Q)
+		_, plan, ok := requirePlanFocus(w, r, deps.Q)
 		if !ok {
 			return
 		}
@@ -387,12 +385,10 @@ func applyMakeWarDelayResult(
 				EndedAtRow: &game.CurrentRow,
 			})
 		}
-		if h, ok := manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventPlanResolved, model.PlanResolvedPayload{
-				PlanID: planID,
-				Result: "cancelled",
-			})
-		}
+		broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
+			PlanID: planID,
+			Result: "cancelled",
+		})
 		return
 	}
 
@@ -411,13 +407,11 @@ func applyMakeWarDelayResult(
 		for _, p := range parts {
 			infos = append(infos, model.WarParticipantInfo{PlayerID: p.PlayerID, Side: p.Side})
 		}
-		if h, ok := manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventWarDeclared, model.WarDeclaredPayload{
-				PlanID:       planID,
-				WarID:        *resData.WarID,
-				Participants: infos,
-				TargetRow:    targetRow,
-			})
-		}
+		broadcastEvent(manager, plan.GameID, model.EventWarDeclared, model.WarDeclaredPayload{
+			PlanID:       planID,
+			WarID:        *resData.WarID,
+			Participants: infos,
+			TargetRow:    targetRow,
+		})
 	}
 }

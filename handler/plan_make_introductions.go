@@ -186,9 +186,12 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 				respondErr(w, http.StatusInternalServerError, "could not destroy peer asset")
 				return
 			}
-			if h, ok := deps.Manager.Get(game.ID); ok {
-				h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: body.PeerAssetID})
-			}
+			broadcastEvent(
+				deps.Manager,
+				game.ID,
+				model.EventAssetDestroyed,
+				model.AssetIDPayload{AssetID: body.PeerAssetID},
+			)
 			respond(w, http.StatusOK, map[string]any{
 				"peer_asset_id": body.PeerAssetID,
 				"delay":         delay,
@@ -245,13 +248,11 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(game.ID); ok {
-			h.BroadcastEvent(model.EventPlanDelayedArrival, model.PlanDelayedArrivalPayload{
-				PlanID:      syntheticPlan.ID,
-				PeerAssetID: body.PeerAssetID,
-				ArrivalRow:  targetRow,
-			})
-		}
+		broadcastEvent(deps.Manager, game.ID, model.EventPlanDelayedArrival, model.PlanDelayedArrivalPayload{
+			PlanID:      syntheticPlan.ID,
+			PeerAssetID: body.PeerAssetID,
+			ArrivalRow:  targetRow,
+		})
 
 		respond(w, http.StatusCreated, map[string]any{
 			"peer_asset_id":     body.PeerAssetID,

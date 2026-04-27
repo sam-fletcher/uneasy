@@ -482,4 +482,4 @@ linters:
           - gosec
           - noctx
           - wrapcheck
-          # - exhaustive TODO: enable when all plans are implemented
+          - exhaustive

@@ -167,17 +167,13 @@ func (pdHandler) ApplyChoice(
 			return fmt.Errorf("could not create law resource asset: %w", err)
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventAssetCreated, model.AssetPayload{Asset: asset})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
 	}
 
-	if h, ok := deps.Manager.Get(plan.GameID); ok {
-		h.BroadcastEvent(model.EventLawEnacted, model.LawEnactedPayload{
-			PlanID: plan.ID,
-			Law:    law,
-		})
-	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventLawEnacted, model.LawEnactedPayload{
+		PlanID: plan.ID,
+		Law:    law,
+	})
 
 	return nil
 }
@@ -288,12 +284,10 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 				respondErr(w, http.StatusInternalServerError, "could not leverage asset")
 				return
 			}
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventAssetLeveraged, model.AssetIDPayload{
-					AssetID:  assetID,
-					PlayerID: player.ID,
-				})
-			}
+			broadcastEvent(deps.Manager, plan.GameID, model.EventAssetLeveraged, model.AssetIDPayload{
+				AssetID:  assetID,
+				PlayerID: player.ID,
+			})
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
@@ -323,13 +317,11 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventDecreeCouncilJoined, model.DecreeCouncilJoinedPayload{
-				PlanID:      plan.ID,
-				PlayerID:    player.ID,
-				SignatoryID: *resData.SignatoryID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventDecreeCouncilJoined, model.DecreeCouncilJoinedPayload{
+			PlanID:      plan.ID,
+			PlayerID:    player.ID,
+			SignatoryID: *resData.SignatoryID,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":      plan.ID,

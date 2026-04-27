@@ -119,9 +119,7 @@ func (mdHandler) ComputeDifficulty(
 // OnPrepare is a no-op beyond the broadcast: the targeted_plan_id column is
 // populated by PreparePlan after the row is created.
 func (mdHandler) OnPrepare(_ context.Context, deps *PlanDeps, plan *dbgen.Plan) error {
-	if h, ok := deps.Manager.Get(plan.GameID); ok {
-		h.BroadcastEvent(demandEventPrepared, model.PlanPayload{Plan: *plan})
-	}
+	broadcastEvent(deps.Manager, plan.GameID, demandEventPrepared, model.PlanPayload{Plan: *plan})
 	return nil
 }
 
@@ -308,14 +306,12 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(demandEventDraftPick, map[string]any{
-				"plan_id":    plan.ID,
-				"player_id":  player.ID,
-				"option":     body.Option,
-				"pick_index": len(resData.DraftChoices),
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, demandEventDraftPick, map[string]any{
+			"plan_id":    plan.ID,
+			"player_id":  player.ID,
+			"option":     body.Option,
+			"pick_index": len(resData.DraftChoices),
+		})
 
 		// On the final pick, persist the winners map on the demand plan so
 		// the target plan's resolution path can consult it cheaply.
@@ -434,14 +430,12 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 				respondErr(w, http.StatusInternalServerError, "could not record pending counter-demand")
 				return
 			}
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(demandEventCounterPending, map[string]any{
-					"plan_id":          plan.ID,
-					"pending_id":       pending.ID,
-					"demanding_player": plan.PreparerID,
-					"target_player":    player.ID,
-				})
-			}
+			broadcastEvent(deps.Manager, plan.GameID, demandEventCounterPending, map[string]any{
+				"plan_id":          plan.ID,
+				"pending_id":       pending.ID,
+				"demanding_player": plan.PreparerID,
+				"target_player":    player.ID,
+			})
 		}
 
 		resData.CounterDemandPlaced = true
@@ -451,12 +445,10 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		if counterPlanID != nil {
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(demandEventCounterPlaced, map[string]any{
-					"plan_id":         plan.ID,
-					"counter_plan_id": *counterPlanID,
-				})
-			}
+			broadcastEvent(deps.Manager, plan.GameID, demandEventCounterPlaced, map[string]any{
+				"plan_id":         plan.ID,
+				"counter_plan_id": *counterPlanID,
+			})
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -496,13 +488,11 @@ func consumePendingCounterDemandFor(
 	}); err != nil {
 		return nil
 	}
-	if h, ok := manager.Get(game.ID); ok {
-		h.BroadcastEvent(demandEventCounterPlaced, map[string]any{
-			"plan_id":         pending.OriginPlanID,
-			"counter_plan_id": counter.ID,
-			"triggered_by":    newPlan.ID,
-		})
-	}
+	broadcastEvent(manager, game.ID, demandEventCounterPlaced, map[string]any{
+		"plan_id":         pending.OriginPlanID,
+		"counter_plan_id": counter.ID,
+		"triggered_by":    newPlan.ID,
+	})
 
 	// Mark the origin demand's CounterDemandPlaced so it can be completed.
 	if origin, err := q.GetPlanByID(ctx, pending.OriginPlanID); err == nil {
@@ -702,14 +692,12 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 			committed[assetID] = struct{}{}
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(demandEventLeverageSet, map[string]any{
-				"plan_id":   plan.ID,
-				"roll_id":   roll.ID,
-				"asset_ids": body.AssetIDs,
-				"player_id": player.ID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, demandEventLeverageSet, map[string]any{
+			"plan_id":   plan.ID,
+			"roll_id":   roll.ID,
+			"asset_ids": body.AssetIDs,
+			"player_id": player.ID,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
@@ -815,14 +803,12 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(demandEventRetargeted, map[string]any{
-				"plan_id":          plan.ID,
-				"target_player_id": body.TargetPlayerID,
-				"target_asset_id":  body.TargetAssetID,
-				"player_id":        player.ID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, demandEventRetargeted, map[string]any{
+			"plan_id":          plan.ID,
+			"target_player_id": body.TargetPlayerID,
+			"target_asset_id":  body.TargetAssetID,
+			"player_id":        player.ID,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":          plan.ID,

@@ -54,6 +54,15 @@ const (
 	LiaiseDone                 = "done"
 )
 
+// Things We Share choice values.
+const (
+	liaiseChoiceLookAtSecret    = "look_at_secret"
+	liaiseChoiceUpdatePeer      = "update_peer"
+	liaiseChoiceBreakPeer       = "break_peer"
+	liaiseChoiceTakeGift        = "take_gift"
+	liaiseChoiceLeveragePartner = "leverage_partner"
+)
+
 func init() {
 	RegisterPlan(model.PlanClandestinelyLiaise, clHandler{})
 }
@@ -98,12 +107,10 @@ func (clHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 		return nil, fmt.Errorf("could not set liaise phase: %w", err)
 	}
 
-	if h, ok := deps.Manager.Get(plan.GameID); ok {
-		h.BroadcastEvent(model.EventLiaisePhaseChanged, model.LiaisePhaseChangedPayload{
-			PlanID: plan.ID,
-			Phase:  LiaiseTogetherAtLast,
-		})
-	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged, model.LiaisePhaseChangedPayload{
+		PlanID: plan.ID,
+		Phase:  LiaiseTogetherAtLast,
+	})
 
 	return nil, nil
 }
@@ -196,7 +203,7 @@ func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 //	things_we_share  → when_will_i_see_you_again (only after both share-choice submitted)
 func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, _, ok := requirePlanFocus(w, r, deps.Q)
+		_, plan, ok := requirePlanFocus(w, r, deps.Q)
 		if !ok {
 			return
 		}
@@ -271,12 +278,10 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventLiaisePhaseChanged, model.LiaisePhaseChangedPayload{
-				PlanID: plan.ID,
-				Phase:  nextPhase,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged, model.LiaisePhaseChangedPayload{
+			PlanID: plan.ID,
+			Phase:  nextPhase,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,
@@ -454,7 +459,8 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		validChoices := []string{
-			"look_at_secret", "update_peer", "break_peer", "take_gift", "leverage_partner",
+			liaiseChoiceLookAtSecret, liaiseChoiceUpdatePeer, liaiseChoiceBreakPeer,
+			liaiseChoiceTakeGift, liaiseChoiceLeveragePartner,
 		}
 		validChoice := slices.Contains(validChoices, body.Choice)
 		if !validChoice {
@@ -463,12 +469,14 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Validate asset-required choices.
-		needsAsset := body.Choice == "look_at_secret" || body.Choice == "take_gift" || body.Choice == "leverage_partner"
+		needsAsset := body.Choice == liaiseChoiceLookAtSecret ||
+			body.Choice == liaiseChoiceTakeGift ||
+			body.Choice == liaiseChoiceLeveragePartner
 		if needsAsset && body.TargetAssetID == nil {
 			respondErr(w, http.StatusBadRequest, fmt.Sprintf("target_asset_id is required for choice %q", body.Choice))
 			return
 		}
-		if body.Choice == "leverage_partner" {
+		if body.Choice == liaiseChoiceLeveragePartner {
 			if body.DieFace == nil || *body.DieFace < 1 || *body.DieFace > 6 {
 				respondErr(w, http.StatusBadRequest, "die_face (1–6) is required for leverage_partner")
 				return
@@ -479,7 +487,7 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		// (Most effects are deferred until both submit and choices are revealed.)
 		// For now, record the choice in liaise_choices.
 		var dieFace *int16
-		if body.Choice == "leverage_partner" {
+		if body.Choice == liaiseChoiceLeveragePartner {
 			dieFace = body.DieFace
 		}
 
@@ -519,12 +527,15 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 				return
 			}
 
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventLiaiseChoicesRevealed, model.LiaiseChoicesRevealedPayload{
+			broadcastEvent(
+				deps.Manager,
+				plan.GameID,
+				model.EventLiaiseChoicesRevealed,
+				model.LiaiseChoicesRevealedPayload{
 					PlanID:  plan.ID,
 					Choices: choices,
-				})
-			}
+				},
+			)
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -535,113 +546,135 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// liaiseChoiceApplier applies one player's Things We Share choice. Each handler
+// is responsible for its own DB calls and event broadcasts.
+type liaiseChoiceApplier func(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	choice dbgen.LiaiseChoice,
+) error
+
+var liaiseChoiceAppliers = map[string]liaiseChoiceApplier{
+	liaiseChoiceLookAtSecret:    applyLookAtSecret,
+	liaiseChoiceBreakPeer:       applyBreakPeer,
+	liaiseChoiceLeveragePartner: applyLeveragePartner,
+	liaiseChoiceTakeGift:        applyTakeGift,
+	liaiseChoiceUpdatePeer:      func(context.Context, *PlanDeps, *dbgen.Plan, dbgen.LiaiseChoice) error { return nil },
+}
+
 // clApplyShareChoices applies the mechanical effects of both players' choices
 // after both have submitted.
 func clApplyShareChoices(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	resData ResolutionData,
+	_ ResolutionData,
 	choices []dbgen.LiaiseChoice,
 ) error {
 	for _, choice := range choices {
-		switch choice.Choice {
-		case "look_at_secret":
-			if choice.TargetAssetID != nil {
-				// Grant the chooser visibility on all secrets of the target asset.
-				if err := deps.Q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
-					AssetID:  *choice.TargetAssetID,
-					PlayerID: choice.PlayerID,
-				}); err != nil {
-					return fmt.Errorf("could not grant secret visibility: %w", err)
-				}
-				if h, ok := deps.Manager.Get(plan.GameID); ok {
-					h.BroadcastEvent(model.EventSecretVisibilityGrant, model.SecretVisibilityGrantPayload{
-						AssetID:  *choice.TargetAssetID,
-						PlayerID: choice.PlayerID,
-					})
-				}
-			}
-		case "break_peer":
-			// Server tears one marginalia on the player's own peer asset.
-			// Finding the peer: use ListAssetsByOwner and pick first non-destroyed peer.
-			assets, err := deps.Q.ListAssetsByOwner(ctx, choice.PlayerID)
-			if err != nil {
-				return fmt.Errorf("could not list player assets: %w", err)
-			}
-			for _, a := range assets {
-				if a.AssetType != model.AssetPeer || a.IsDestroyed {
-					continue
-				}
-				marginalia, err := deps.Q.ListIntactMarginalia(ctx, a.ID)
-				if err != nil || len(marginalia) == 0 {
-					continue
-				}
-				m := marginalia[0]
-				if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-					ID:       m.ID,
-					TornByID: &choice.PlayerID,
-				}); err != nil {
-					return fmt.Errorf("could not tear marginalia for break_peer: %w", err)
-				}
-				if h, ok := deps.Manager.Get(plan.GameID); ok {
-					h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-						AssetID:  a.ID,
-						Position: m.Position,
-						TornByID: choice.PlayerID,
-					})
-				}
-				break
-			}
-		case "leverage_partner":
-			// Leverage the target asset (belonging to the partner).
-			if choice.TargetAssetID != nil {
-				if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
-					ID:          *choice.TargetAssetID,
-					IsLeveraged: true,
-				}); err != nil {
-					return fmt.Errorf("could not leverage partner asset: %w", err)
-				}
-				if h, ok := deps.Manager.Get(plan.GameID); ok {
-					h.BroadcastEvent(model.EventAssetLeveraged, model.AssetIDPayload{
-						AssetID:  *choice.TargetAssetID,
-						PlayerID: choice.PlayerID,
-					})
-				}
-			}
-			// Bank a die for the chooser.
-			if choice.BankedDieFace != nil {
-				if _, err := deps.Q.CreateBankedDie(ctx, dbgen.CreateBankedDieParams{
-					GameID:   plan.GameID,
-					PlayerID: choice.PlayerID,
-					Face:     *choice.BankedDieFace,
-					Source:   "liaise",
-				}); err != nil {
-					return fmt.Errorf("could not bank die: %w", err)
-				}
-			}
-		case "take_gift":
-			// Transfer the target asset to the chooser. Requires the target asset
-			// to belong to the partner. Consent is social; the server transfers it.
-			if choice.TargetAssetID != nil {
-				if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-					ID:      *choice.TargetAssetID,
-					OwnerID: choice.PlayerID,
-				}); err != nil {
-					return fmt.Errorf("could not transfer gift asset: %w", err)
-				}
-				if h, ok := deps.Manager.Get(plan.GameID); ok {
-					h.BroadcastEvent(model.EventAssetTaken, model.AssetIDPayload{
-						AssetID:  *choice.TargetAssetID,
-						PlayerID: choice.PlayerID,
-					})
-				}
-			}
-		case "update_peer":
-			// Purely narrative — player edits their peer via existing asset endpoints.
+		applier, ok := liaiseChoiceAppliers[choice.Choice]
+		if !ok {
+			continue
+		}
+		if err := applier(ctx, deps, plan, choice); err != nil {
+			return err
 		}
 	}
-	_ = resData // resData may be used by future additions
+	return nil
+}
+
+func applyLookAtSecret(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choice dbgen.LiaiseChoice) error {
+	if choice.TargetAssetID == nil {
+		return nil
+	}
+	if err := deps.Q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
+		AssetID:  *choice.TargetAssetID,
+		PlayerID: choice.PlayerID,
+	}); err != nil {
+		return fmt.Errorf("could not grant secret visibility: %w", err)
+	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventSecretVisibilityGrant, model.SecretVisibilityGrantPayload{
+		AssetID:  *choice.TargetAssetID,
+		PlayerID: choice.PlayerID,
+	})
+	return nil
+}
+
+// applyBreakPeer tears one marginalia on the player's own (first non-destroyed)
+// peer asset.
+func applyBreakPeer(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choice dbgen.LiaiseChoice) error {
+	assets, err := deps.Q.ListAssetsByOwner(ctx, choice.PlayerID)
+	if err != nil {
+		return fmt.Errorf("could not list player assets: %w", err)
+	}
+	for _, a := range assets {
+		if a.AssetType != model.AssetPeer || a.IsDestroyed {
+			continue
+		}
+		marginalia, err := deps.Q.ListIntactMarginalia(ctx, a.ID)
+		if err != nil || len(marginalia) == 0 {
+			continue
+		}
+		m := marginalia[0]
+		if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+			ID:       m.ID,
+			TornByID: &choice.PlayerID,
+		}); err != nil {
+			return fmt.Errorf("could not tear marginalia for break_peer: %w", err)
+		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+			AssetID:  a.ID,
+			Position: m.Position,
+			TornByID: choice.PlayerID,
+		})
+		return nil
+	}
+	return nil
+}
+
+func applyLeveragePartner(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choice dbgen.LiaiseChoice) error {
+	if choice.TargetAssetID != nil {
+		if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+			ID:          *choice.TargetAssetID,
+			IsLeveraged: true,
+		}); err != nil {
+			return fmt.Errorf("could not leverage partner asset: %w", err)
+		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetLeveraged, model.AssetIDPayload{
+			AssetID:  *choice.TargetAssetID,
+			PlayerID: choice.PlayerID,
+		})
+	}
+	if choice.BankedDieFace != nil {
+		if _, err := deps.Q.CreateBankedDie(ctx, dbgen.CreateBankedDieParams{
+			GameID:   plan.GameID,
+			PlayerID: choice.PlayerID,
+			Face:     *choice.BankedDieFace,
+			Source:   "liaise",
+		}); err != nil {
+			return fmt.Errorf("could not bank die: %w", err)
+		}
+	}
+	return nil
+}
+
+// applyTakeGift transfers the target (partner-owned) asset to the chooser.
+// Consent is social; the server simply transfers ownership.
+func applyTakeGift(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choice dbgen.LiaiseChoice) error {
+	if choice.TargetAssetID == nil {
+		return nil
+	}
+	if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		ID:      *choice.TargetAssetID,
+		OwnerID: choice.PlayerID,
+	}); err != nil {
+		return fmt.Errorf("could not transfer gift asset: %w", err)
+	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetIDPayload{
+		AssetID:  *choice.TargetAssetID,
+		PlayerID: choice.PlayerID,
+	})
 	return nil
 }
 
@@ -709,12 +742,10 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventRevealSubmitted, model.RevealSubmittedPayload{
-				RevealID: *resData.RedelayRevealID,
-				PlayerID: player.ID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventRevealSubmitted, model.RevealSubmittedPayload{
+			RevealID: *resData.RedelayRevealID,
+			PlayerID: player.ID,
+		})
 
 		// Check if both players have submitted.
 		submitted, err := deps.Q.CountRevealEntriesSubmitted(ctx, *resData.RedelayRevealID)
@@ -770,13 +801,11 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 					Face:     f,
 				})
 			}
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventRevealComplete, model.RevealCompletePayload{
-					RevealID:    *resData.RedelayRevealID,
-					Entries:     entryResults,
-					ResultDelay: resultDelay,
-				})
-			}
+			broadcastEvent(deps.Manager, plan.GameID, model.EventRevealComplete, model.RevealCompletePayload{
+				RevealID:    *resData.RedelayRevealID,
+				Entries:     entryResults,
+				ResultDelay: resultDelay,
+			})
 
 			// Schedule a new meeting if not cancelled.
 			if !cancelled && resultDelay > 0 {
@@ -855,7 +884,5 @@ func clScheduleNewMeeting(
 	}
 	_ = saveResolutionData(ctx, deps.Q, newPlan.ID, newResData)
 
-	if h, ok := deps.Manager.Get(originalPlan.GameID); ok {
-		h.BroadcastEvent(model.EventPlanPrepared, model.PlanPayload{Plan: newPlan})
-	}
+	broadcastEvent(deps.Manager, originalPlan.GameID, model.EventPlanPrepared, model.PlanPayload{Plan: newPlan})
 }

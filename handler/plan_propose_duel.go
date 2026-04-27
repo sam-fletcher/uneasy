@@ -143,11 +143,9 @@ func (pduelHandler) ApplyChoice(
 			ID:          s.AssetID,
 			IsLeveraged: true,
 		})
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventAssetLeveraged, model.AssetIDPayload{
-				AssetID: s.AssetID, PlayerID: s.PlayerID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetLeveraged, model.AssetIDPayload{
+			AssetID: s.AssetID, PlayerID: s.PlayerID,
+		})
 	}
 
 	// Determine winner/loser: make → preparer wins (takes from target);
@@ -189,11 +187,9 @@ func (pduelHandler) ApplyChoice(
 		}); err != nil {
 			return fmt.Errorf("transfer asset %d: %w", assetID, err)
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-				Asset: asset, OldOwnerID: loserID, NewOwnerID: winnerID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+			Asset: asset, OldOwnerID: loserID, NewOwnerID: winnerID,
+		})
 	}
 
 	state := resData.DuelState()
@@ -503,13 +499,11 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 				return
 			}
 
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventDuelStakesRevealed, model.DuelStakesRevealedPayload{
-					PlanID:             plan.ID,
-					PreparerStakeCount: state.PreparerStakeCount,
-					TargetStakeCount:   state.TargetStakeCount,
-				})
-			}
+			broadcastEvent(deps.Manager, plan.GameID, model.EventDuelStakesRevealed, model.DuelStakesRevealedPayload{
+				PlanID:             plan.ID,
+				PreparerStakeCount: state.PreparerStakeCount,
+				TargetStakeCount:   state.TargetStakeCount,
+			})
 		} else {
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not save stake reveal")

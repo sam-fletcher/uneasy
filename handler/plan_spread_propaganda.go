@@ -199,13 +199,11 @@ func applyCoOpt(
 	// Record the recursive plan ID in the parent's ResData.
 	resData.RecursivePlanID = &recursivePlan.ID
 
-	if h, ok := deps.Manager.Get(game.ID); ok {
-		h.BroadcastEvent(model.EventSPRecursivePlan, model.SPRecursivePlanPayload{
-			ParentPlanID:    plan.ID,
-			RecursivePlanID: recursivePlan.ID,
-			PreparerID:      topPlayerID,
-		})
-	}
+	broadcastEvent(deps.Manager, game.ID, model.EventSPRecursivePlan, model.SPRecursivePlanPayload{
+		ParentPlanID:    plan.ID,
+		RecursivePlanID: recursivePlan.ID,
+		PreparerID:      topPlayerID,
+	})
 
 	return nil
 }

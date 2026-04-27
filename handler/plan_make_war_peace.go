@@ -48,7 +48,7 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if war.Status != "active" {
+		if war.Status != warStatusActive {
 			respondErr(w, http.StatusConflict, "war is no longer active")
 			return
 		}
@@ -99,12 +99,10 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			Accepted:   true,
 		})
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventWarPeaceProposed, model.WarPeaceProposedPayload{
-				WarID: war.ID, ProposalID: prop.ID,
-				ProposerID: player.ID, Terms: body.Terms,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventWarPeaceProposed, model.WarPeaceProposedPayload{
+			WarID: war.ID, ProposalID: prop.ID,
+			ProposerID: player.ID, Terms: body.Terms,
+		})
 		respond(w, http.StatusOK, map[string]any{
 			"proposal_id": prop.ID,
 			"war_id":      war.ID,
@@ -172,12 +170,10 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not record vote")
 			return
 		}
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventWarPeaceVote, model.WarPeaceVotePayload{
-				WarID: war.ID, ProposalID: prop.ID,
-				PlayerID: player.ID, Accepted: body.Accepted,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventWarPeaceVote, model.WarPeaceVotePayload{
+			WarID: war.ID, ProposalID: prop.ID,
+			PlayerID: player.ID, Accepted: body.Accepted,
+		})
 
 		if !body.Accepted {
 			_ = deps.Q.SetPeaceProposalStatus(ctx, dbgen.SetPeaceProposalStatusParams{
@@ -230,11 +226,9 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			EndReason:  new(gamepkg.WarEndPeace),
 			EndedAtRow: &game.CurrentRow,
 		})
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventWarEnded, model.WarEndedPayload{
-				WarID: war.ID, Reason: gamepkg.WarEndPeace, RowNumber: game.CurrentRow,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventWarEnded, model.WarEndedPayload{
+			WarID: war.ID, Reason: gamepkg.WarEndPeace, RowNumber: game.CurrentRow,
+		})
 		respond(w, http.StatusOK, map[string]any{
 			"proposal_id": prop.ID,
 			"status":      gamepkg.PeaceAccepted,

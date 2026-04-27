@@ -163,9 +163,7 @@ func (srHandler) ApplyChoice(
 	}
 	resData.RumorID = &rumor.ID
 
-	if h, ok := deps.Manager.Get(plan.GameID); ok {
-		h.BroadcastEvent(model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
-	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
 
 	// Apply inline choices.
 	for _, choice := range choices {
@@ -184,9 +182,12 @@ func (srHandler) ApplyChoice(
 				}); err != nil {
 					return fmt.Errorf("could not leverage target asset: %w", err)
 				}
-				if h, ok := deps.Manager.Get(plan.GameID); ok {
-					h.BroadcastEvent(model.EventAssetLeveraged, model.AssetIDPayload{AssetID: *plan.TargetAssetID})
-				}
+				broadcastEvent(
+					deps.Manager,
+					plan.GameID,
+					model.EventAssetLeveraged,
+					model.AssetIDPayload{AssetID: *plan.TargetAssetID},
+				)
 			}
 		case "reveal_source":
 			resData.SourceHidden = false
@@ -334,13 +335,11 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-				AssetID:  expectedAssetID,
-				Position: m.Position,
-				TornByID: player.ID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+			AssetID:  expectedAssetID,
+			Position: m.Position,
+			TornByID: player.ID,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,

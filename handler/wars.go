@@ -23,6 +23,11 @@ import (
 	"uneasy/model"
 )
 
+// War status values stored in wars.status.
+const (
+	warStatusActive = "active"
+)
+
 type warParticipantInfo struct {
 	PlayerID             int64  `json:"player_id"`
 	Side                 int16  `json:"side"`

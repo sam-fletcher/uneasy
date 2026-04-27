@@ -266,13 +266,11 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-				AssetID:  body.AssetID,
-				Position: m.Position,
-				TornByID: player.ID,
-			})
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+			AssetID:  body.AssetID,
+			Position: m.Position,
+			TornByID: player.ID,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,

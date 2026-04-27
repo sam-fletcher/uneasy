@@ -123,13 +123,11 @@ func applyExchangeCourtiersMechanic(
 			return err
 		}
 		ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
-		if h, ok := manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-				Asset:      ta,
-				OldOwnerID: *plan.TargetPlayerID,
-				NewOwnerID: recipient,
-			})
-		}
+		broadcastEvent(manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+			Asset:      ta,
+			OldOwnerID: *plan.TargetPlayerID,
+			NewOwnerID: recipient,
+		})
 	}
 
 	// "Messy" requires the target to break a marginalia on any of their assets.
@@ -425,13 +423,11 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
-		if h, ok := manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-				AssetID:  asset.ID,
-				Position: m.Position,
-				TornByID: player.ID,
-			})
-		}
+		broadcastEvent(manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+			AssetID:  asset.ID,
+			Position: m.Position,
+			TornByID: player.ID,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,

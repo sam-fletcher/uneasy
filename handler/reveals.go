@@ -145,12 +145,10 @@ func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Broadcast that this player submitted (face still hidden).
-		if h, ok := manager.Get(reveal.GameID); ok {
-			h.BroadcastEvent(model.EventRevealSubmitted, model.RevealSubmittedPayload{
-				RevealID: reveal.ID,
-				PlayerID: player.ID,
-			})
-		}
+		broadcastEvent(manager, reveal.GameID, model.EventRevealSubmitted, model.RevealSubmittedPayload{
+			RevealID: reveal.ID,
+			PlayerID: player.ID,
+		})
 
 		// Check if all participants have now submitted.
 		submitted, err := q.CountRevealEntriesSubmitted(ctx, reveal.ID)
@@ -203,13 +201,11 @@ func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				Face:     f,
 			})
 		}
-		if h, ok := manager.Get(reveal.GameID); ok {
-			h.BroadcastEvent(model.EventRevealComplete, model.RevealCompletePayload{
-				RevealID:    reveal.ID,
-				Entries:     entryResults,
-				ResultDelay: resultDelay,
-			})
-		}
+		broadcastEvent(manager, reveal.GameID, model.EventRevealComplete, model.RevealCompletePayload{
+			RevealID:    reveal.ID,
+			Entries:     entryResults,
+			ResultDelay: resultDelay,
+		})
 
 		// Apply downstream effects for liaise_delay: set the plan's row_number.
 		if reveal.RevealType == "liaise_delay" && reveal.PlanID != nil {
@@ -257,12 +253,10 @@ func applyLiaiseDelayResult(
 			ID:     planID,
 			Status: model.PlanCancelled,
 		})
-		if h, ok := manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventPlanResolved, model.PlanResolvedPayload{
-				PlanID: planID,
-				Result: "cancelled",
-			})
-		}
+		broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
+			PlanID: planID,
+			Result: "cancelled",
+		})
 		return
 	}
 
@@ -272,9 +266,7 @@ func applyLiaiseDelayResult(
 		RowNumber: targetRow,
 	})
 
-	if h, ok := manager.Get(plan.GameID); ok {
-		h.BroadcastEvent(model.EventPlanPrepared, model.PlanPayload{Plan: plan})
-	}
+	broadcastEvent(manager, plan.GameID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 }
 
 // ── requireRevealAccess ───────────────────────────────────────────────────────
