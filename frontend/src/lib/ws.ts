@@ -106,6 +106,13 @@ export const EventTypes = {
 	RumorCreated: 'rumor.created',
 	RumorUpdated: 'rumor.updated',
 
+	// Structured prologue (Phase 4b)
+	PrologueChoiceClaimed: 'prologue.choice_claimed',
+	PrologueRankingStepChanged: 'prologue.ranking_step_changed',
+	PrologueHeartsDeclared: 'prologue.hearts_declared',
+	PrologueTrackRanked: 'prologue.track_ranked',
+	PrologueSetAsidesPlaced: 'prologue.set_asides_placed',
+
 	// Dice rolls
 	RollCreated: 'roll.created',
 	RollLeverageAdded: 'roll.leverage_added',

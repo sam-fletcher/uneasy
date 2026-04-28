@@ -152,9 +152,8 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Put("/tables/{id}/tone/{topicId}", handler.UpdateToneTopic(q, manager))
 		r.Post("/tables/{id}/tone", handler.AddToneTopic(q, manager))
 
-		// Rankings
+		// Rankings (read-only; ranking flow lives under /prologue/*)
 		r.Get("/tables/{id}/rankings", handler.GetRankings(q))
-		r.Put("/tables/{id}/rankings", handler.SetRankings(q, manager))
 		r.Put("/tables/{id}/seats", handler.SetSeats(q))
 
 		// Structured prologue (Phase 4b)

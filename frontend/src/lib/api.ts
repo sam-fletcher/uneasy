@@ -32,6 +32,51 @@ export interface Game {
 	focus_player_id: number | null;
 	ending_mode: string | null;
 	dummy_token_mode: string;
+	prologue_ranking_step: PrologueRankingStep | null;
+}
+
+export type PrologueRankingStep =
+	| 'declare_power'
+	| 'place_set_asides_power'
+	| 'declare_knowledge'
+	| 'place_set_asides_knowledge'
+	| 'declare_esteem'
+	| 'place_set_asides_esteem'
+	| 'extra_peers';
+
+export type PrologueSheetType = 'titles' | 'hailing_from' | 'laws_rumors';
+
+export interface PrologueCard {
+	suit: 'C' | 'D' | 'S' | 'H';
+	value: string;
+}
+
+export interface PrologueChoice {
+	name: string;
+	description: string;
+	cards: [PrologueCard, PrologueCard];
+}
+
+export interface PrologueSheet {
+	type: PrologueSheetType;
+	display_name: string;
+	choice_asset_type: 'artifact' | 'holding' | 'resource';
+	choices: PrologueChoice[];
+}
+
+export interface PrologueClaim {
+	sheet_type: PrologueSheetType;
+	choice_name: string;
+	player_id: number;
+	turn_number: number;
+}
+
+export interface PlayerCardRow {
+	id: number;
+	game_id: number;
+	player_id: number;
+	card_suit: 'C' | 'D' | 'S' | 'H';
+	card_value: string;
 }
 
 export interface Player {
@@ -451,16 +496,6 @@ export function getRankings(gameID: string | number): Promise<{ rankings: Rankin
 	return apiFetch(`/tables/${gameID}/rankings`);
 }
 
-export function setRankings(
-	gameID: string | number,
-	rankings: Array<{ player_id: number | null; category: RankingCategory; rank: number }>
-): Promise<{ rankings: Ranking[] }> {
-	return apiFetch(`/tables/${gameID}/rankings`, {
-		method: 'PUT',
-		body: JSON.stringify({ rankings })
-	});
-}
-
 export function setSeats(
 	gameID: string | number,
 	seats: Array<{ player_id: number; seat_order: number }>
@@ -468,6 +503,77 @@ export function setSeats(
 	return apiFetch(`/tables/${gameID}/seats`, {
 		method: 'PUT',
 		body: JSON.stringify({ seats })
+	});
+}
+
+// ── Phase 4b: structured prologue ────────────────────────────────────────────
+
+export function getPrologueSheets(
+	gameID: string | number
+): Promise<{ sheets: PrologueSheet[]; claims: PrologueClaim[] }> {
+	return apiFetch(`/tables/${gameID}/prologue/sheets`);
+}
+
+export function getPrologueCards(
+	gameID: string | number
+): Promise<{ cards: PlayerCardRow[] }> {
+	return apiFetch(`/tables/${gameID}/prologue/cards`);
+}
+
+export function choosePrologue(
+	gameID: string | number,
+	body: { sheet_type: PrologueSheetType; choice_name: string }
+): Promise<{ sheet_type: PrologueSheetType; choice_name: string; turn_number: number }> {
+	return apiFetch(`/tables/${gameID}/prologue/choose`, {
+		method: 'POST',
+		body: JSON.stringify(body)
+	});
+}
+
+export function beginPrologueRanking(
+	gameID: string | number
+): Promise<{ step: PrologueRankingStep }> {
+	return apiFetch(`/tables/${gameID}/prologue/begin-ranking`, { method: 'POST' });
+}
+
+export function declareHearts(
+	gameID: string | number,
+	count: number
+): Promise<{ track: string; count: number }> {
+	return apiFetch(`/tables/${gameID}/prologue/declare-hearts`, {
+		method: 'POST',
+		body: JSON.stringify({ count })
+	});
+}
+
+export function finalizeTrackRanking(
+	gameID: string | number
+): Promise<{
+	track: string;
+	ranked: number[];
+	set_aside: number[];
+	next_step: PrologueRankingStep | '';
+}> {
+	return apiFetch(`/tables/${gameID}/prologue/finalize-ranking`, { method: 'POST' });
+}
+
+export function placePrologueSetAsides(
+	gameID: string | number,
+	ordering: number[]
+): Promise<{ track: string; next_step: PrologueRankingStep | '' }> {
+	return apiFetch(`/tables/${gameID}/prologue/place-set-asides`, {
+		method: 'POST',
+		body: JSON.stringify({ ordering })
+	});
+}
+
+export function createExtraPeer(
+	gameID: string | number,
+	titleName: string
+): Promise<{ asset: Asset }> {
+	return apiFetch(`/tables/${gameID}/prologue/extra-peer`, {
+		method: 'POST',
+		body: JSON.stringify({ title_name: titleName })
 	});
 }
 

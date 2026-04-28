@@ -409,6 +409,20 @@
 				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
 				break;
 			}
+			case EventTypes.PrologueChoiceClaimed:
+			case EventTypes.PrologueRankingStepChanged:
+			case EventTypes.PrologueHeartsDeclared:
+			case EventTypes.PrologueTrackRanked:
+			case EventTypes.PrologueSetAsidesPlaced: {
+				// Step changes update the game's ranking_step locally so the
+				// view re-renders the right sub-flow without a full reload.
+				if (msg.type === EventTypes.PrologueRankingStepChanged && game) {
+					const step = (msg.payload as { step: string }).step;
+					game = { ...game, prologue_ranking_step: step ? (step as Game['prologue_ranking_step']) : null };
+				}
+				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
+				break;
+			}
 		}
 	}
 
@@ -679,9 +693,10 @@
 	{:else if game?.phase === 'prologue'}
 		<PrologueView
 			{gameID}
+			{game}
 			bind:players
 			bind:rankings
-			{assets}
+			bind:assets
 			{currentPlayerID}
 			{isFacilitator}
 		/>

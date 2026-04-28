@@ -1,18 +1,46 @@
 <!-- PrologueView.svelte
-  Prologue phase: asset creation, retinue display, rankings editor (facilitator),
-  and seat order assignment. Handles its own state; rankings and players are
-  bindable so the parent stays in sync when the facilitator saves changes.
+  Structured prologue (Phase 4b). Three modes driven by game.prologue_ranking_step:
+
+    null   →  choosing: pick boxes from the three sheets; cards make-or-take
+    declare_X        →  hearts declaration for the current track
+    place_set_asides_X →  rank-1 player slots zero-suit players in
+    extra_peers      →  ≤3-player rule: each picks one unused title
 -->
 <script lang="ts">
-	import { startMainEvent, createAsset, tearMarginalia, setRankings, setSeats } from '$lib/api';
-	import type { Player, Asset, Marginalium, Ranking, RankingCategory } from '$lib/api';
+	import {
+		startMainEvent,
+		setSeats,
+		getPrologueSheets,
+		getPrologueCards,
+		choosePrologue,
+		beginPrologueRanking,
+		declareHearts,
+		finalizeTrackRanking,
+		placePrologueSetAsides,
+		createExtraPeer,
+		listAssets,
+	} from '$lib/api';
+	import type {
+		Game,
+		Player,
+		Asset,
+		Marginalium,
+		Ranking,
+		RankingCategory,
+		PrologueSheet,
+		PrologueClaim,
+		PlayerCardRow,
+		PrologueSheetType,
+	} from '$lib/api';
+	import { tearMarginalia } from '$lib/api';
 	import AssetCard from '$lib/components/AssetCard.svelte';
+	import { onMount, onDestroy } from 'svelte';
 
 	interface Props {
 		gameID: string;
+		game: Game;
 		players: Player[];
 		assets: Asset[];
-		/** Two-way binding — saveRankings writes back to the parent. */
 		rankings: Ranking[];
 		currentPlayerID: number | null;
 		isFacilitator: boolean;
@@ -20,119 +48,233 @@
 
 	let {
 		gameID,
+		game,
 		players = $bindable(),
-		assets,
+		assets = $bindable(),
 		rankings = $bindable(),
 		currentPlayerID,
 		isFacilitator,
 	}: Props = $props();
 
-	const myAssets = $derived(assets.filter(a => a.owner_id === currentPlayerID));
-
-	function rankingLabel(playerID: number | null): string {
-		if (playerID === null) return 'Dummy';
-		return players.find(p => p.id === playerID)?.display_name ?? '?';
-	}
-
-	// ── Asset creation ────────────────────────────────────────────────────────
-	let newAssetType = $state<Asset['asset_type']>('peer');
-	let newAssetName = $state('');
-	let newAssetIsMain = $state(false);
-	let newAssetMarginalia = $state(['', '']);
-	let creatingAsset = $state(false);
+	// ── Loaded reference data ────────────────────────────────────────────────
+	let sheets = $state<PrologueSheet[]>([]);
+	let claims = $state<PrologueClaim[]>([]);
+	let cards = $state<PlayerCardRow[]>([]);
 	let error = $state('');
+	let loading = $state(true);
 
-	async function submitAsset() {
-		const name = newAssetName.trim();
-		if (!name || creatingAsset) return;
-		creatingAsset = true;
-		error = '';
+	async function reload() {
 		try {
-			const marginalia = newAssetMarginalia.map(m => m.trim()).filter(Boolean);
-			await createAsset(gameID, {
-				asset_type: newAssetType,
-				name,
-				is_main_character: newAssetIsMain && newAssetType === 'peer',
-				marginalia,
-			});
-			newAssetName = '';
-			newAssetIsMain = false;
-			newAssetMarginalia = ['', ''];
+			const [s, c] = await Promise.all([getPrologueSheets(gameID), getPrologueCards(gameID)]);
+			sheets = s.sheets;
+			claims = s.claims;
+			cards = c.cards;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not create asset.';
+			error = e instanceof Error ? e.message : 'Could not load prologue data.';
 		} finally {
-			creatingAsset = false;
+			loading = false;
 		}
 	}
 
-	async function onTearMarginalia(asset: Asset, m: Marginalium) {
-		if (!confirm(`Tear "${m.text}"? This cannot be undone.`)) return;
-		try {
-			await tearMarginalia(asset.id, m.position);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not tear marginalia.';
-		}
-	}
+	onMount(reload);
 
-	// ── Rankings (facilitator) ────────────────────────────────────────────────
-	type RankSlot = number | null | 'unset';
-	let draftRankings = $state<Record<RankingCategory, RankSlot[]>>({
-		power:     ['unset','unset','unset','unset','unset'],
-		knowledge: ['unset','unset','unset','unset','unset'],
-		esteem:    ['unset','unset','unset','unset','unset'],
+	// ── WebSocket-driven refresh ─────────────────────────────────────────────
+	function onClaimEvent() { reload(); }
+	function onStepChanged() { reload(); }
+
+	onMount(() => {
+		window.addEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
+		window.addEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
+		window.addEventListener('uneasy:prologue.hearts_declared', onClaimEvent);
+		window.addEventListener('uneasy:prologue.track_ranked', onStepChanged);
+		window.addEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
 	});
-	let savingRankings = $state(false);
-
-	// Re-initialise draft whenever the server's rankings arrive or change.
-	$effect(() => {
-		if (rankings.length > 0) {
-			const draft: Record<RankingCategory, RankSlot[]> = {
-				power:     ['unset','unset','unset','unset','unset'],
-				knowledge: ['unset','unset','unset','unset','unset'],
-				esteem:    ['unset','unset','unset','unset','unset'],
-			};
-			for (const r of rankings) {
-				draft[r.category][r.rank - 1] = r.player_id ?? null;
-			}
-			draftRankings = draft;
-		}
+	onDestroy(() => {
+		window.removeEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
+		window.removeEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
+		window.removeEventListener('uneasy:prologue.hearts_declared', onClaimEvent);
+		window.removeEventListener('uneasy:prologue.track_ranked', onStepChanged);
+		window.removeEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
 	});
 
-	const rankingOptions = $derived([
-		...players.map(p => ({ value: String(p.id), label: p.display_name })),
-		{ value: 'null', label: 'Dummy token' },
-	]);
+	// ── Derived: claim lookup ────────────────────────────────────────────────
+	const claimMap = $derived.by(() => {
+		const m = new Map<string, PrologueClaim>();
+		for (const c of claims) m.set(`${c.sheet_type}::${c.choice_name}`, c);
+		return m;
+	});
 
-	const rankingsComplete = $derived(
-		(['power', 'knowledge', 'esteem'] as RankingCategory[])
-			.every(cat => draftRankings[cat].every(v => v !== 'unset'))
+	const myTurns = $derived(claims.filter(c => c.player_id === currentPlayerID).length);
+	const everyoneFinishedChoosing = $derived(
+		players.length > 0 && players.every(p => claims.filter(c => c.player_id === p.id).length >= 3)
 	);
 
-	async function saveRankings() {
-		const entries: Array<{ player_id: number | null; category: RankingCategory; rank: number }> = [];
-		for (const cat of ['power', 'knowledge', 'esteem'] as RankingCategory[]) {
-			for (let i = 0; i < 5; i++) {
-				const val = draftRankings[cat][i];
-				if (val === 'unset') {
-					error = `Please fill all ranking slots (missing: ${cat} rank ${i + 1})`;
-					return;
-				}
-				entries.push({ player_id: val as number | null, category: cat, rank: i + 1 });
-			}
+	function playerName(id: number | null): string {
+		if (id == null) return 'Dummy';
+		return players.find(p => p.id === id)?.display_name ?? '?';
+	}
+
+	// ── My hand ──────────────────────────────────────────────────────────────
+	const myCards = $derived(cards.filter(c => c.player_id === currentPlayerID));
+
+	function suitGlyph(s: string): string {
+		switch (s) {
+			case 'C': return '♣';
+			case 'D': return '♦';
+			case 'S': return '♠';
+			case 'H': return '♥';
 		}
-		savingRankings = true;
+		return '?';
+	}
+
+	// ── Choose a box ─────────────────────────────────────────────────────────
+	let claimingName = $state('');
+	async function claimChoice(sheetType: PrologueSheetType, choiceName: string) {
+		if (claimingName) return;
+		claimingName = `${sheetType}::${choiceName}`;
 		error = '';
 		try {
-			const result = await setRankings(gameID, entries);
-			rankings = result.rankings;
+			await choosePrologue(gameID, { sheet_type: sheetType, choice_name: choiceName });
+			// Refresh assets so the retinue panel sees new card-assets and
+			// transferred ones.
+			const [, assetData] = await Promise.all([reload(), listAssets(gameID)]);
+			assets = assetData.assets;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not save rankings.';
+			error = e instanceof Error ? e.message : 'Could not claim that box.';
 		} finally {
-			savingRankings = false;
+			claimingName = '';
 		}
 	}
 
-	// ── Seat order (facilitator) ──────────────────────────────────────────────
+	// ── Begin ranking ────────────────────────────────────────────────────────
+	let beginning = $state(false);
+	async function onBeginRanking() {
+		if (beginning) return;
+		beginning = true;
+		error = '';
+		try {
+			await beginPrologueRanking(gameID);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not begin ranking.';
+		} finally {
+			beginning = false;
+		}
+	}
+
+	// ── Hearts declaration ───────────────────────────────────────────────────
+	let heartCount = $state(0);
+	let savingHearts = $state(false);
+	async function submitHearts() {
+		if (savingHearts) return;
+		savingHearts = true;
+		error = '';
+		try {
+			await declareHearts(gameID, heartCount);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not declare hearts.';
+		} finally {
+			savingHearts = false;
+		}
+	}
+
+	let finalizing = $state(false);
+	async function onFinalizeRanking() {
+		if (finalizing) return;
+		finalizing = true;
+		error = '';
+		try {
+			await finalizeTrackRanking(gameID);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not finalize ranking.';
+		} finally {
+			finalizing = false;
+		}
+	}
+
+	// ── Place set-asides ─────────────────────────────────────────────────────
+	const currentTrack = $derived.by(() => {
+		const step = game.prologue_ranking_step;
+		if (!step) return null;
+		if (step.includes('power')) return 'power' as RankingCategory;
+		if (step.includes('knowledge')) return 'knowledge' as RankingCategory;
+		if (step.includes('esteem')) return 'esteem' as RankingCategory;
+		return null;
+	});
+
+	const trackRanksHere = $derived.by(() => {
+		const t = currentTrack;
+		if (!t) return [];
+		return rankings.filter(r => r.category === t).sort((a, b) => a.rank - b.rank);
+	});
+
+	const setAsidePlayers = $derived.by(() => {
+		const t = currentTrack;
+		if (!t) return [];
+		const ranked = new Set(rankings.filter(r => r.category === t && r.player_id != null).map(r => r.player_id));
+		return players.filter(p => !ranked.has(p.id)).map(p => p.id);
+	});
+
+	const isMyTurnForSetAsides = $derived.by(() => {
+		const t = currentTrack;
+		if (!t) return false;
+		const r1 = rankings.find(r => r.category === t && r.rank === 1);
+		return r1?.player_id === currentPlayerID;
+	});
+
+	let setAsideOrdering = $state<number[]>([]);
+	$effect(() => {
+		// Initialize ordering from set-asides whenever they change.
+		setAsideOrdering = [...setAsidePlayers];
+	});
+
+	function moveSetAside(idx: number, dir: -1 | 1) {
+		const tgt = idx + dir;
+		if (tgt < 0 || tgt >= setAsideOrdering.length) return;
+		const next = [...setAsideOrdering];
+		[next[idx], next[tgt]] = [next[tgt], next[idx]];
+		setAsideOrdering = next;
+	}
+
+	let placing = $state(false);
+	async function submitSetAsides() {
+		if (placing) return;
+		placing = true;
+		error = '';
+		try {
+			await placePrologueSetAsides(gameID, setAsideOrdering);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not place set-asides.';
+		} finally {
+			placing = false;
+		}
+	}
+
+	// ── Extra peer (≤3 players) ──────────────────────────────────────────────
+	const titlesSheet = $derived(sheets.find(s => s.type === 'titles'));
+	const unclaimedTitles = $derived.by(() => {
+		const t = titlesSheet;
+		if (!t) return [];
+		return t.choices.filter(c => !claimMap.has(`titles::${c.name}`));
+	});
+
+	let extraPeerName = $state('');
+	let creatingExtra = $state(false);
+	async function submitExtraPeer() {
+		if (!extraPeerName || creatingExtra) return;
+		creatingExtra = true;
+		error = '';
+		try {
+			const result = await createExtraPeer(gameID, extraPeerName);
+			assets = [...assets, result.asset];
+			extraPeerName = '';
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not create extra peer.';
+		} finally {
+			creatingExtra = false;
+		}
+	}
+
+	// ── Seats (unchanged from Phase 2 — still facilitator-driven) ────────────
 	let draftSeats = $state<Record<number, string>>({});
 	let savingSeats = $state(false);
 
@@ -148,7 +290,7 @@
 		players.length > 0 && players.every(p => p.seat_order != null)
 	);
 
-	async function saveSeats() {
+	async function saveSeatsCombined() {
 		const seats: Array<{ player_id: number; seat_order: number }> = [];
 		for (const p of players) {
 			const raw = draftSeats[p.id];
@@ -163,7 +305,6 @@
 		error = '';
 		try {
 			await setSeats(gameID, seats);
-			// Optimistic update (no WS broadcast for seat changes).
 			players = players.map(p => {
 				const s = seats.find(s => s.player_id === p.id);
 				return s ? { ...p, seat_order: s.seat_order } : p;
@@ -175,213 +316,267 @@
 		}
 	}
 
-	// ── Phase advance ─────────────────────────────────────────────────────────
+	// ── Start main event ─────────────────────────────────────────────────────
 	let advancing = $state(false);
-
 	async function advanceToMainEvent() {
 		if (advancing) return;
 		advancing = true;
 		error = '';
 		try {
 			await startMainEvent(gameID);
-			// Phase change propagates via WebSocket → parent re-renders.
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not start main event.';
 		} finally {
 			advancing = false;
 		}
 	}
+
+	const myAssets = $derived(assets.filter(a => a.owner_id === currentPlayerID));
+
+	async function onTearMarginalia(asset: Asset, m: Marginalium) {
+		if (!confirm(`Tear "${m.text}"? This cannot be undone.`)) return;
+		try {
+			await tearMarginalia(asset.id, m.position);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not tear marginalia.';
+		}
+	}
+
+	// ── Phase classification ─────────────────────────────────────────────────
+	type Mode = 'choosing' | 'declare' | 'place' | 'extra';
+	const mode = $derived.by<Mode>(() => {
+		const step = game.prologue_ranking_step;
+		if (!step) return 'choosing';
+		if (step.startsWith('declare_')) return 'declare';
+		if (step.startsWith('place_set_asides_')) return 'place';
+		return 'extra';
+	});
 </script>
 
 <div class="prologue-view">
 	<h2>Prologue</h2>
-	<p class="muted">
-		Each player creates their main character (a peer) plus any additional assets.
-		{#if isFacilitator}
-			As facilitator, you also set the initial rankings and seat order before starting.
-		{/if}
-	</p>
 
 	{#if error}
 		<p class="local-error">{error}</p>
 	{/if}
 
-	<div class="prologue-columns">
-		<!-- Left column: asset creation + retinue -->
-		<section class="prologue-section">
-			<h3>Create an Asset</h3>
-			<div class="asset-form">
-				<div class="form-row">
-					<label>
-						Type
-						<select bind:value={newAssetType}>
-							<option value="peer">Peer</option>
-							<option value="holding">Holding</option>
-							<option value="artifact">Artifact</option>
-							<option value="resource">Resource</option>
-						</select>
-					</label>
-					<label class="name-label">
-						Name
-						<input
-							type="text"
-							bind:value={newAssetName}
-							placeholder="Asset name…"
-							maxlength={80}
-						/>
-					</label>
-				</div>
+	{#if loading}
+		<p class="muted">Loading prologue…</p>
 
-				{#if newAssetType === 'peer'}
-					<label class="checkbox-label">
-						<input type="checkbox" bind:checked={newAssetIsMain} />
-						Main character (sets this peer as your character)
-					</label>
-				{/if}
+	{:else if mode === 'choosing'}
+		<p class="muted">
+			Each player takes three turns claiming boxes from the three sheets. Each box creates an asset
+			and grants two playing cards (which create or transfer card-linked assets).
+		</p>
 
-				<div class="marginalia-inputs">
-					<span class="field-label">Marginalia (optional, up to 4)</span>
-					{#each newAssetMarginalia as _, i}
-						<input
-							type="text"
-							placeholder="Marginalia {i + 1}…"
-							bind:value={newAssetMarginalia[i]}
-							maxlength={200}
-						/>
-					{/each}
-					{#if newAssetMarginalia.length < 4}
-						<button class="text-btn" onclick={() => { newAssetMarginalia = [...newAssetMarginalia, '']; }}>
-							+ Add marginalia
-						</button>
-					{/if}
-				</div>
+		<div class="choosing-grid">
+			{#each sheets as sheet}
+				<section class="sheet-panel">
+					<h3>{sheet.display_name}</h3>
+					<p class="muted small">Creates a {sheet.choice_asset_type}.</p>
+					<div class="choice-list">
+						{#each sheet.choices as choice}
+							{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
+							<button
+								type="button"
+								class="choice-btn"
+								class:claimed={!!existingClaim}
+								disabled={!!existingClaim || myTurns >= 3 || claimingName !== ''}
+								title={choice.description || ''}
+								onclick={() => claimChoice(sheet.type, choice.name)}
+							>
+								<span class="choice-name">{choice.name}</span>
+								<span class="choice-cards">
+									{choice.cards[0].value}{suitGlyph(choice.cards[0].suit)}
+									·
+									{choice.cards[1].value}{suitGlyph(choice.cards[1].suit)}
+								</span>
+								{#if existingClaim}
+									<span class="claim-by">— {playerName(existingClaim.player_id)}</span>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				</section>
+			{/each}
+		</div>
 
-				<button
-					class="primary"
-					onclick={submitAsset}
-					disabled={!newAssetName.trim() || creatingAsset}
-				>
-					{creatingAsset ? '…' : 'Create Asset'}
-				</button>
-			</div>
-
-			{#if myAssets.length > 0}
-				<h3 style="margin-top: 1.5rem;">Your Retinue</h3>
-				<div class="asset-list">
-					{#each myAssets as asset (asset.id)}
-						<AssetCard {asset} onTear={onTearMarginalia} />
+		<section class="hand-panel">
+			<h3>Your Hand ({myCards.length} card{myCards.length === 1 ? '' : 's'})</h3>
+			{#if myCards.length === 0}
+				<p class="muted small">No cards yet — claim a box to start collecting them.</p>
+			{:else}
+				<div class="hand-cards">
+					{#each myCards as c}
+						<span class="card-chip">{c.card_value}{suitGlyph(c.card_suit)}</span>
 					{/each}
 				</div>
 			{/if}
 		</section>
 
-		<!-- Right column: rankings + seats (facilitator only) -->
+		<p class="muted small">
+			Turns taken: {myTurns} / 3.
+		</p>
+
 		{#if isFacilitator}
-			<section class="prologue-section facilitator-panel">
-				<h3>Initial Rankings</h3>
-				<p class="muted small">
-					Assign each rank (1 = highest) to a player or a dummy token.
-					You need to fill all 15 slots before starting.
-				</p>
-
-				<div class="rankings-grid">
-					{#each ['power', 'knowledge', 'esteem'] as cat}
-						<div class="rank-col">
-							<h4>{cat}</h4>
-							{#each [1,2,3,4,5] as rank}
-								<div class="rank-slot">
-									<span class="rank-num">{rank}</span>
-									<select
-										value={
-											draftRankings[cat as RankingCategory][rank - 1] === 'unset'
-												? ''
-												: draftRankings[cat as RankingCategory][rank - 1] === null
-													? 'null'
-													: String(draftRankings[cat as RankingCategory][rank - 1])
-										}
-										onchange={(e) => {
-											const v = (e.target as HTMLSelectElement).value;
-											draftRankings[cat as RankingCategory][rank - 1] =
-												v === '' ? 'unset' : v === 'null' ? null : Number(v);
-										}}
-									>
-										<option value="">— pick —</option>
-										{#each rankingOptions as opt}
-											<option value={opt.value}>{opt.label}</option>
-										{/each}
-									</select>
-								</div>
-							{/each}
-						</div>
-					{/each}
-				</div>
-
-				<button class="secondary" onclick={saveRankings} disabled={savingRankings}>
-					{savingRankings ? '…' : 'Save Rankings'}
-				</button>
-
-				<h3 style="margin-top: 1.5rem;">Seat Order</h3>
-				<p class="muted small">
-					Assign a clockwise seat number to each player (1, 2, 3…).
-				</p>
-
-				<div class="seat-grid">
-					{#each players as p}
-						<div class="seat-row">
-							<span class="seat-name">{p.display_name}</span>
-							<input
-								type="number"
-								min="1"
-								max={players.length}
-								placeholder="#"
-								class="seat-input"
-								value={draftSeats[p.id] ?? ''}
-								oninput={(e) => { draftSeats[p.id] = (e.target as HTMLInputElement).value; }}
-							/>
-						</div>
-					{/each}
-				</div>
-
-				<button class="secondary" onclick={saveSeats} disabled={savingSeats}>
-					{savingSeats ? '…' : 'Save Seat Order'}
-				</button>
-
-				<div class="start-section">
-					<button
-						class="primary"
-						onclick={advanceToMainEvent}
-						disabled={advancing || !rankingsComplete || !seatsComplete}
-						title={
-							!rankingsComplete ? 'Rankings are not fully set' :
-							!seatsComplete    ? 'Seat order is not fully set' : undefined
-						}
-					>
-						{advancing ? '…' : 'Start Main Event'}
-					</button>
-					{#if !rankingsComplete}
-						<p class="hint">Fill all 15 ranking slots first.</p>
-					{:else if !seatsComplete}
-						<p class="hint">Assign a seat to every player first.</p>
-					{/if}
-				</div>
-			</section>
+			<button
+				class="primary"
+				onclick={onBeginRanking}
+				disabled={!everyoneFinishedChoosing || beginning}
+				title={!everyoneFinishedChoosing ? 'Every player must take 3 turns first' : undefined}
+			>
+				{beginning ? '…' : 'Begin Ranking'}
+			</button>
 		{/if}
-	</div>
 
-	<!-- Current rankings for non-facilitators -->
-	{#if !isFacilitator && rankings.length > 0}
-		<div class="rankings-preview">
-			{#each ['power', 'knowledge', 'esteem'] as cat}
-				<div class="rank-col">
-					<h3>{cat}</h3>
-					{#each rankings.filter(r => r.category === cat).sort((a, b) => a.rank - b.rank) as r}
-						<div class="rank-slot-display">
-							{r.rank}. {rankingLabel(r.player_id)}
-						</div>
-					{/each}
+	{:else if mode === 'declare'}
+		<p class="muted">
+			Active track: <strong>{currentTrack}</strong>.
+			Each player declares how many of their hearts to use as <strong>{currentTrack}</strong>'s suit.
+			Each heart can only be used once across all three tracks.
+		</p>
+
+		<div class="declare-form">
+			<label>
+				Hearts to declare as {currentTrack}:
+				<input type="number" min="0" bind:value={heartCount} />
+			</label>
+			<button class="secondary" onclick={submitHearts} disabled={savingHearts}>
+				{savingHearts ? '…' : 'Submit'}
+			</button>
+		</div>
+
+		<p class="muted small">
+			Hearts you hold: {myCards.filter(c => c.card_suit === 'H').length}.
+		</p>
+
+		{#if isFacilitator}
+			<button class="primary" onclick={onFinalizeRanking} disabled={finalizing}>
+				{finalizing ? '…' : `Finalize ${currentTrack} ranking`}
+			</button>
+			<p class="muted small">
+				Once everyone has declared their hearts (or skipped), finalize to compute the rank order.
+			</p>
+		{/if}
+
+	{:else if mode === 'place'}
+		<p class="muted">
+			Active track: <strong>{currentTrack}</strong>. The rank-1 player places set-aside players
+			(those with zero of this suit) into the remaining open ranks.
+		</p>
+
+		<div class="ranks-display">
+			{#each trackRanksHere as r}
+				<div class="rank-row">
+					<span class="rank-num">{r.rank}.</span>
+					<span>{playerName(r.player_id)}</span>
 				</div>
 			{/each}
 		</div>
+
+		{#if isMyTurnForSetAsides && setAsideOrdering.length > 0}
+			<h3>Place set-aside players</h3>
+			<p class="muted small">
+				They will be slotted into the remaining open ranks in this order. Use the arrows to reorder.
+			</p>
+			<ul class="set-aside-list">
+				{#each setAsideOrdering as pid, idx}
+					<li>
+						<button class="text-btn" disabled={idx === 0} onclick={() => moveSetAside(idx, -1)}>↑</button>
+						<button class="text-btn" disabled={idx === setAsideOrdering.length - 1} onclick={() => moveSetAside(idx, 1)}>↓</button>
+						{playerName(pid)}
+					</li>
+				{/each}
+			</ul>
+			<button class="primary" onclick={submitSetAsides} disabled={placing}>
+				{placing ? '…' : 'Submit ordering'}
+			</button>
+		{:else if setAsideOrdering.length === 0}
+			<p class="muted small">Waiting for the rank-1 player to place set-asides…</p>
+		{:else}
+			<p class="muted small">Waiting on {playerName(rankings.find(r => r.category === currentTrack && r.rank === 1)?.player_id ?? null)} to place the set-aside players.</p>
+		{/if}
+
+	{:else if mode === 'extra'}
+		<p class="muted">
+			Extra peers: with three or fewer players, each player picks one unused title to flesh out the cast.
+		</p>
+
+		<div class="extra-form">
+			<label>
+				Title:
+				<select bind:value={extraPeerName}>
+					<option value="">— pick —</option>
+					{#each unclaimedTitles as t}
+						<option value={t.name}>{t.name}</option>
+					{/each}
+				</select>
+			</label>
+			<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || creatingExtra}>
+				{creatingExtra ? '…' : 'Create peer'}
+			</button>
+		</div>
+
+		{#if isFacilitator}
+			<p class="muted small">When everyone has picked, you can start the main event.</p>
+		{/if}
+	{/if}
+
+	<!-- Always-visible side panels: retinue + seats + start -->
+
+	{#if myAssets.length > 0}
+		<section class="retinue">
+			<h3>Your Retinue</h3>
+			<div class="asset-list">
+				{#each myAssets as asset (asset.id)}
+					<AssetCard {asset} onTear={onTearMarginalia} />
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	{#if isFacilitator}
+		<section class="facilitator-panel">
+			<h3>Seat Order</h3>
+			<p class="muted small">Clockwise seat numbers; sets focus-player ordering for the main event.</p>
+			<div class="seat-grid">
+				{#each players as p}
+					<div class="seat-row">
+						<span class="seat-name">{p.display_name}</span>
+						<input
+							type="number"
+							min="1"
+							max={players.length}
+							class="seat-input"
+							value={draftSeats[p.id] ?? ''}
+							oninput={(e) => { draftSeats[p.id] = (e.target as HTMLInputElement).value; }}
+						/>
+					</div>
+				{/each}
+			</div>
+			<button class="secondary" onclick={saveSeatsCombined} disabled={savingSeats}>
+				{savingSeats ? '…' : 'Save seat order'}
+			</button>
+
+			<div class="start-section">
+				<button
+					class="primary"
+					onclick={advanceToMainEvent}
+					disabled={advancing || !seatsComplete || rankings.length < 15}
+					title={
+						!seatsComplete ? 'Seat order is not fully set' :
+						rankings.length < 15 ? 'Rankings sub-flow is not complete' : undefined
+					}
+				>
+					{advancing ? '…' : 'Start Main Event'}
+				</button>
+				{#if !seatsComplete}
+					<p class="hint">Assign a seat to every player first.</p>
+				{:else if rankings.length < 15}
+					<p class="hint">Finish the ranking sub-flow first.</p>
+				{/if}
+			</div>
+		</section>
 	{/if}
 </div>
 
@@ -395,72 +590,94 @@
 		overflow-y: auto;
 		min-height: 0;
 	}
+	.prologue-view h2 { color: #c8a96e; font-size: 1.3rem; margin: 0; }
+	.prologue-view h3 { color: #c8a96e; font-size: 1rem; margin: 0.5rem 0 0.25rem; }
 
-	.prologue-view h2 {
-		color: #c8a96e;
-		font-size: 1.3rem;
-		margin: 0;
-	}
+	.muted { color: #999; font-size: 0.9rem; margin: 0; }
+	.muted.small { font-size: 0.8rem; }
+	.local-error { color: #e07070; font-size: 0.85rem; margin: 0; }
+	.hint { font-size: 0.8rem; color: #e0a060; margin: 0; }
 
-	.prologue-view h3 {
-		color: #c8a96e;
-		font-size: 1rem;
-		margin: 0;
-	}
-
-	.local-error {
-		color: #e07070;
-		font-size: 0.85rem;
-		margin: 0;
-	}
-
-	/* ── Columns ──────────────────────────────────────────────────────────────── */
-
-	.prologue-columns {
+	.choosing-grid {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 2rem;
-		align-items: start;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 1rem;
+	}
+	@media (max-width: 900px) {
+		.choosing-grid { grid-template-columns: 1fr; }
 	}
 
-	@media (max-width: 700px) {
-		.prologue-columns { grid-template-columns: 1fr; }
-	}
-
-	.prologue-section {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	/* ── Asset form ────────────────────────────────────────────────────────────── */
-
-	.asset-form {
-		background: #222;
+	.sheet-panel {
+		background: #1e1e1e;
+		border: 1px solid #333;
 		border-radius: 8px;
-		padding: 1rem;
+		padding: 0.75rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.4rem;
 	}
 
-	.form-row {
+	.choice-list {
 		display: flex;
-		gap: 0.75rem;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	.choice-btn {
+		text-align: left;
+		background: #2a2a2a;
+		color: #e8e4d9;
+		border: 1px solid #444;
+		border-radius: 4px;
+		padding: 0.4rem 0.6rem;
+		font-size: 0.85rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		cursor: default;
+	}
+
+	.choice-btn.claimed { opacity: 0.5; }
+
+	.choice-name { font-weight: 600; color: #c8a96e; }
+	.choice-cards { font-size: 0.75rem; color: #aaa; }
+	.claim-by { font-size: 0.7rem; color: #888; }
+
+	.hand-panel {
+		background: #1e1e1e;
+		border: 1px solid #333;
+		border-radius: 8px;
+		padding: 0.75rem;
+	}
+
+	.hand-cards {
+		display: flex;
 		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin-top: 0.4rem;
 	}
 
-	.form-row label {
+	.card-chip {
+		background: #2a2a2a;
+		border: 1px solid #555;
+		border-radius: 4px;
+		padding: 0.2rem 0.4rem;
+		font-size: 0.85rem;
+	}
+
+	.declare-form, .extra-form {
+		display: flex;
+		gap: 0.6rem;
+		align-items: end;
+		margin: 0.5rem 0;
+	}
+	.declare-form label, .extra-form label {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
-		font-size: 0.8rem;
+		font-size: 0.85rem;
 		color: #aaa;
 	}
-
-	.name-label { flex: 1; }
-
-	.form-row select, .form-row input {
+	.declare-form input, .extra-form select {
 		background: #333;
 		color: #e8e4d9;
 		border: 1px solid #555;
@@ -469,39 +686,45 @@
 		font-size: 0.9rem;
 	}
 
-	.checkbox-label {
+	.ranks-display {
 		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.85rem;
-		color: #ccc;
+		flex-direction: column;
+		gap: 0.2rem;
+		background: #1e1e1e;
+		border: 1px solid #333;
+		border-radius: 8px;
+		padding: 0.6rem;
+		max-width: 24rem;
 	}
+	.rank-row { display: flex; gap: 0.5rem; font-size: 0.9rem; }
+	.rank-num { color: #888; min-width: 1.5rem; }
 
-	.field-label {
-		font-size: 0.8rem;
-		color: #aaa;
-	}
-
-	.marginalia-inputs {
+	.set-aside-list {
+		list-style: none;
+		padding: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 0.3rem;
+		max-width: 18rem;
+	}
+	.set-aside-list li {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.9rem;
 	}
 
-	.marginalia-inputs input {
-		background: #333;
-		color: #e8e4d9;
-		border: 1px solid #555;
-		border-radius: 4px;
-		padding: 0.3rem 0.5rem;
+	.text-btn {
+		background: none;
+		color: #c8a96e;
+		padding: 0.1rem 0.3rem;
 		font-size: 0.85rem;
+		cursor: pointer;
 	}
+	.text-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-	/* ── Asset list ────────────────────────────────────────────────────────────── */
-
+	.retinue { margin-top: 1rem; }
 	.asset-list { display: flex; flex-direction: column; gap: 0.6rem; }
-
-	/* ── Facilitator panel ─────────────────────────────────────────────────────── */
 
 	.facilitator-panel {
 		background: #1e1e1e;
@@ -510,62 +733,14 @@
 		padding: 1rem;
 	}
 
-	.rankings-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.75rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.rank-col h4 {
-		font-size: 0.8rem;
-		color: #c8a96e;
-		text-transform: capitalize;
-		margin: 0 0 0.4rem;
-	}
-
-	.rank-slot {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-		margin-bottom: 0.3rem;
-	}
-
-	.rank-num {
-		font-size: 0.75rem;
-		color: #666;
-		width: 1rem;
-		flex-shrink: 0;
-	}
-
-	.rank-slot select {
-		flex: 1;
-		font-size: 0.8rem;
-		background: #2a2a2a;
-		color: #e8e4d9;
-		border: 1px solid #555;
-		border-radius: 3px;
-		padding: 0.2rem 0.3rem;
-	}
-
 	.seat-grid {
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
 		margin-bottom: 0.75rem;
 	}
-
-	.seat-row {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-	}
-
-	.seat-name {
-		flex: 1;
-		font-size: 0.9rem;
-	}
-
+	.seat-row { display: flex; align-items: center; gap: 0.6rem; }
+	.seat-name { flex: 1; font-size: 0.9rem; }
 	.seat-input {
 		width: 3.5rem;
 		background: #2a2a2a;
@@ -573,82 +748,36 @@
 		border: 1px solid #555;
 		border-radius: 4px;
 		padding: 0.25rem 0.4rem;
-		font-size: 0.9rem;
 		text-align: center;
 	}
 
 	.start-section {
-		margin-top: 1.25rem;
-		padding-top: 1rem;
+		margin-top: 1rem;
+		padding-top: 0.75rem;
 		border-top: 1px solid #333;
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
 	}
 
-	/* ── Rankings preview (non-facilitator) ──────────────────────────────────── */
-
-	.rankings-preview {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 1rem;
-	}
-
-	.rank-col { display: flex; flex-direction: column; gap: 0.2rem; }
-
-	.rank-slot-display {
-		font-size: 0.85rem;
-		color: #ccc;
-		padding: 0.15rem 0;
-	}
-
-	/* ── Utility classes (re-declared here for component isolation) ───────────── */
-	/* These mirror the global utilities in +layout.svelte */
-
-	.muted {
-		color: #999;
-		font-size: 0.9rem;
-		line-height: 1.5;
-		margin: 0;
-	}
-
-	.muted.small { font-size: 0.8rem; }
-
 	.primary {
 		background: #c8a96e;
 		color: #1a1a1a;
 		font-weight: 600;
-		padding: 0.6rem 1.2rem;
+		padding: 0.5rem 1rem;
 		border-radius: 6px;
 		align-self: flex-start;
 	}
-
 	.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	.secondary {
 		background: #333;
 		color: #e8e4d9;
 		font-weight: 600;
-		padding: 0.5rem 1rem;
+		padding: 0.4rem 0.8rem;
 		border-radius: 6px;
 		align-self: flex-start;
 		border: 1px solid #555;
 	}
-
 	.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	.text-btn {
-		background: none;
-		color: #c8a96e;
-		padding: 0;
-		font-size: 0.85rem;
-		text-decoration: underline;
-		cursor: pointer;
-	}
-
-	.hint {
-		font-size: 0.8rem;
-		color: #e0a060;
-		margin: 0;
-	}
 </style>
