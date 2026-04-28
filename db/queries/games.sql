@@ -26,3 +26,6 @@ UPDATE games SET current_row = current_row + 1 WHERE id = $1 RETURNING current_r
 
 -- name: CountPlayersInGame :one
 SELECT count(*) FROM players WHERE game_id = $1;
+
+-- name: SetEndingMode :exec
+UPDATE games SET ending_mode = $2 WHERE id = $1;

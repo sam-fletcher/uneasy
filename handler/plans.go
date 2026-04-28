@@ -281,14 +281,17 @@ func validateExchangeCourtiersPlan(
 // ── preparePlanValidation ─────────────────────────────────────────────────────
 
 type preparePlanValidation struct {
-	Status    int
-	ErrMsg    string
-	TargetRow int16
-	Meta      PlanMetadata
+	Status                int
+	ErrMsg                string
+	TargetRow             int16
+	Meta                  PlanMetadata
+	EndgameChoiceRequired bool // overflow detected with no ending_mode set
 }
 
 // validatePlanPreparation performs all common checks for plan preparation
 // and delegates plan-specific validation to the registered handler.
+//
+//nolint:funlen // sequential validation steps; splitting obscures the order
 func validatePlanPreparation(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -376,11 +379,30 @@ func validatePlanPreparation(
 		targetRow = game.CurrentRow + meta.Delay
 	}
 
-	// Check target row bounds.
+	// Target row bounds. Past row 13 means we're hitting the end of the
+	// public record and the table needs to choose an endgame mode.
 	if targetRow > publicRecordRowCount {
-		return preparePlanValidation{
-			Status: http.StatusConflict,
-			ErrMsg: "plan would be placed past row 13",
+		switch {
+		case game.EndingMode == nil:
+			return preparePlanValidation{
+				Status:                http.StatusConflict,
+				ErrMsg:                "plan would land past row 13 — facilitator must choose an endgame mode",
+				EndgameChoiceRequired: true,
+			}
+		case *game.EndingMode == EndingModeSmoothLanding:
+			return preparePlanValidation{
+				Status: http.StatusConflict,
+				ErrMsg: "you simply cannot prepare a plan that would go beyond the last row of the public record. " +
+					"Choose a different plan, or don't prepare anything",
+			}
+		case *game.EndingMode == EndingModeExplosiveFinale:
+			// Collapse to row 13 — every plan piles onto the final row.
+			targetRow = publicRecordRowCount
+		default:
+			return preparePlanValidation{
+				Status: http.StatusConflict,
+				ErrMsg: "endgame mode " + *game.EndingMode + " does not allow new plans past row 13",
+			}
 		}
 	}
 
@@ -604,6 +626,14 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			notes,
 		)
 		if validation.Status != http.StatusOK {
+			if validation.EndgameChoiceRequired {
+				respond(w, validation.Status, map[string]any{
+					"error":                   validation.ErrMsg,
+					"endgame_choice_required": true,
+					"modes":                   []string{EndingModeSmoothLanding, EndingModeExplosiveFinale},
+				})
+				return
+			}
 			respondErr(w, validation.Status, validation.ErrMsg)
 			return
 		}

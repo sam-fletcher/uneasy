@@ -106,6 +106,9 @@ export const EventTypes = {
 	RumorCreated: 'rumor.created',
 	RumorUpdated: 'rumor.updated',
 
+	// Endgame mode selection (Phase 4d)
+	EndgameModeSet: 'endgame.mode_set',
+
 	// Structured prologue (Phase 4b)
 	PrologueChoiceClaimed: 'prologue.choice_claimed',
 	PrologueRankingStepChanged: 'prologue.ranking_step_changed',

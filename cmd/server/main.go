@@ -146,6 +146,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Post("/tables/{id}/start-tone-setting", handler.StartToneSetting(q, manager))
 		r.Post("/tables/{id}/start-prologue", handler.StartPrologue(q, manager))
 		r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(q, manager))
+		r.Post("/tables/{id}/endgame", handler.SetEndgameMode(q, manager))
 
 		// Tone-setting
 		r.Get("/tables/{id}/tone", handler.ListToneTopics(q))

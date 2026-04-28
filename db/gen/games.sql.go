@@ -115,6 +115,20 @@ func (q *Queries) SetCurrentRow(ctx context.Context, arg SetCurrentRowParams) er
 	return err
 }
 
+const setEndingMode = `-- name: SetEndingMode :exec
+UPDATE games SET ending_mode = $2 WHERE id = $1
+`
+
+type SetEndingModeParams struct {
+	ID         int64   `db:"id" json:"id"`
+	EndingMode *string `db:"ending_mode" json:"ending_mode"`
+}
+
+func (q *Queries) SetEndingMode(ctx context.Context, arg SetEndingModeParams) error {
+	_, err := q.db.Exec(ctx, setEndingMode, arg.ID, arg.EndingMode)
+	return err
+}
+
 const setFacilitator = `-- name: SetFacilitator :exec
 UPDATE games SET facilitator_id = $1 WHERE id = $2
 `

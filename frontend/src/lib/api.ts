@@ -365,6 +365,17 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 	});
 	const body = await res.json();
 	if (!res.ok) {
+		// Plan preparation past row 13 with no endgame mode set returns a
+		// structured 409 instead of a plain error. Dispatch a window event
+		// so the table page can show a mode picker, then throw normally so
+		// the calling component still sees the failure.
+		if (body && body.endgame_choice_required) {
+			window.dispatchEvent(
+				new CustomEvent('uneasy:endgame_choice_required', {
+					detail: { modes: body.modes ?? [] }
+				})
+			);
+		}
 		throw new Error(body.error ?? `HTTP ${res.status}`);
 	}
 	return body as T;
@@ -503,6 +514,20 @@ export function setSeats(
 	return apiFetch(`/tables/${gameID}/seats`, {
 		method: 'PUT',
 		body: JSON.stringify({ seats })
+	});
+}
+
+// ── Phase 4d: endgame mode selection ─────────────────────────────────────────
+
+export type EndgameMode = 'smooth_landing' | 'explosive_finale';
+
+export function setEndgameMode(
+	gameID: string | number,
+	mode: EndgameMode
+): Promise<{ mode: EndgameMode }> {
+	return apiFetch(`/tables/${gameID}/endgame`, {
+		method: 'POST',
+		body: JSON.stringify({ mode })
 	});
 }
 

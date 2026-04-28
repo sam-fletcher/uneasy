@@ -95,6 +95,9 @@ const (
 	EventFestivityChallengeIssued   = "festivity.challenge_issued"
 	EventFestivityChallengeDeclined = "festivity.challenge_declined"
 
+	// Phase 4d: Endgame mode selection
+	EventEndgameModeSet = "endgame.mode_set" // facilitator picked smooth_landing / explosive_finale
+
 	// Phase 4b: Structured prologue
 	EventPrologueChoiceClaimed      = "prologue.choice_claimed"       // a box was claimed
 	EventPrologueRankingStepChanged = "prologue.ranking_step_changed" // entered/advanced ranking sub-flow
@@ -593,4 +596,9 @@ type PrologueTrackRankedPayload struct {
 type PrologueSetAsidesPlacedPayload struct {
 	Track  string  `json:"track"`
 	Ranked []int64 `json:"ranked"`
+}
+
+// EndgameModeSetPayload is for EventEndgameModeSet.
+type EndgameModeSetPayload struct {
+	Mode string `json:"mode"`
 }

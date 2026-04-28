@@ -10,7 +10,9 @@
 		listAssets, getFullRecord, listScenePosts,
 		getRoll, getActiveRollForGame,
 		listPlans, getPlan,
+		setEndgameMode,
 		type RankingCategory,
+		type EndgameMode,
 	} from '$lib/api';
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
 	import type {
@@ -27,6 +29,8 @@
 
 	// ── Core state ────────────────────────────────────────────────────────────
 	let game = $state<Game | null>(null);
+	let endgamePromptModes = $state<EndgameMode[] | null>(null);
+	let endgameSubmitting = $state(false);
 	let players = $state<Player[]>([]);
 	let toneTopics = $state<ToneTopic[]>([]);
 	let rankings = $state<Ranking[]>([]);
@@ -409,6 +413,11 @@
 				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
 				break;
 			}
+			case EventTypes.EndgameModeSet: {
+				const mode = (msg.payload as { mode: string }).mode;
+				if (game) game = { ...game, ending_mode: mode };
+				break;
+			}
 			case EventTypes.PrologueChoiceClaimed:
 			case EventTypes.PrologueRankingStepChanged:
 			case EventTypes.PrologueHeartsDeclared:
@@ -508,10 +517,34 @@
 		}
 	});
 
+	function onEndgameRequired(e: Event) {
+		const detail = (e as CustomEvent<{ modes: EndgameMode[] }>).detail;
+		// Only the facilitator can resolve this; others see the toast via the
+		// thrown error from the original preparePlan call.
+		if (isFacilitator && detail?.modes?.length) {
+			endgamePromptModes = detail.modes;
+		}
+	}
+	onMount(() => window.addEventListener('uneasy:endgame_choice_required', onEndgameRequired));
+
 	onDestroy(() => {
 		disconnect?.();
 		typingTimeouts.forEach(clearTimeout);
+		window.removeEventListener('uneasy:endgame_choice_required', onEndgameRequired);
 	});
+
+	async function chooseEndgameMode(mode: EndgameMode) {
+		if (endgameSubmitting) return;
+		endgameSubmitting = true;
+		try {
+			await setEndgameMode(gameID, mode);
+			endgamePromptModes = null;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not set endgame mode.';
+		} finally {
+			endgameSubmitting = false;
+		}
+	}
 
 	// ── Plan helpers ─────────────────────────────────────────────────────────
 	/** Re-fetches the plan list. Passed to MainEventView as onPlansChanged. */
@@ -747,6 +780,36 @@
 
 	{:else}
 		<div class="center-message">Unknown phase.</div>
+	{/if}
+
+	{#if endgamePromptModes}
+		<div class="endgame-overlay">
+			<div class="endgame-modal">
+				<h3>Choose an endgame mode</h3>
+				<p class="muted small">
+					A plan would land past row 13. Pick how the game should wind down — this can't be undone.
+				</p>
+				{#if endgamePromptModes.includes('smooth_landing')}
+					<button class="primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('smooth_landing')}>
+						Smooth Landing
+					</button>
+					<p class="muted small">
+						Disallow plans past row 13. Let in-flight plans complete on their existing rows, then Shake-Up.
+					</p>
+				{/if}
+				{#if endgamePromptModes.includes('explosive_finale')}
+					<button class="primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('explosive_finale')}>
+						Explosive Finale
+					</button>
+					<p class="muted small">
+						Collapse all remaining plans onto row 13. Resolve them in sequence with no scenes between, then Shake-Up.
+					</p>
+				{/if}
+				<button class="secondary" disabled={endgameSubmitting} onclick={() => endgamePromptModes = null}>
+					Cancel
+				</button>
+			</div>
+		</div>
 	{/if}
 </div>
 
@@ -986,4 +1049,36 @@
 		color: #ccc;
 		padding: 0.15rem 0;
 	}
+
+	.endgame-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0,0,0,0.6);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+	}
+	.endgame-modal {
+		background: #1e1e1e;
+		border: 1px solid #444;
+		border-radius: 8px;
+		padding: 1.25rem;
+		max-width: 28rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	.endgame-modal h3 { color: #c8a96e; margin: 0; font-size: 1.1rem; }
+	.endgame-modal .primary {
+		background: #c8a96e; color: #1a1a1a; font-weight: 600;
+		padding: 0.5rem 1rem; border-radius: 6px;
+	}
+	.endgame-modal .secondary {
+		background: #333; color: #e8e4d9; font-weight: 600;
+		padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid #555;
+		align-self: flex-end;
+	}
+	.endgame-modal .muted { color: #999; font-size: 0.9rem; margin: 0; }
+	.endgame-modal .muted.small { font-size: 0.8rem; }
 </style>
