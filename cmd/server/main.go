@@ -10,12 +10,15 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -256,6 +259,9 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 	return r
 }
 
+//go:embed all:frontend_dist
+var frontendFS embed.FS
+
 // setupFrontend configures frontend routing (Vite proxy in dev, static in prod).
 func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 	if devMode {
@@ -265,13 +271,27 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 		}
 		proxy := httputil.NewSingleHostReverseProxy(target)
 		r.Handle("/*", proxy)
-	} else {
-		// TODO Phase 1 final: embed the built frontend with //go:embed.
-		// For now, serve a minimal placeholder.
-		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "run in DEV_MODE or build the frontend first", http.StatusNotFound)
-		}))
+		return nil
 	}
+
+	sub, err := fs.Sub(frontendFS, "frontend_dist")
+	if err != nil {
+		return fmt.Errorf("sub frontend_dist: %w", err)
+	}
+	fileServer := http.FileServer(http.FS(sub))
+	r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// SPA fallback: if the requested path doesn't exist in the embed,
+		// serve index.html so client-side routing can take over.
+		path := strings.TrimPrefix(req.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+		if _, err := fs.Stat(sub, path); err != nil {
+			req = req.Clone(req.Context())
+			req.URL.Path = "/"
+		}
+		fileServer.ServeHTTP(w, req)
+	}))
 	return nil
 }
 

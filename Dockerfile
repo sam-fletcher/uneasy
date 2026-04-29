@@ -16,7 +16,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 # Embed the built frontend into the binary
-COPY --from=frontend-builder /app/frontend/build ./frontend/build
+COPY --from=frontend-builder /app/frontend/build ./cmd/server/frontend_dist
 RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
 
 # ── Stage 3: Minimal runtime image ───────────────────────────────────────────
