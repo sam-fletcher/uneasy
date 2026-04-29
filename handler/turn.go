@@ -131,6 +131,7 @@ func isEngrailedLine(oldRow, newRow int16) bool {
 func advanceRowInner(
 	r *http.Request,
 	q *dbgen.Queries,
+	manager *hub.Manager,
 	h *hub.Hub,
 	game *dbgen.Game,
 ) (int16, bool, error) {
@@ -141,16 +142,11 @@ func advanceRowInner(
 		return 0, false, err
 	}
 
-	// Past row 13 — transition to ended.
+	// Past row 13 — transition into the Shake-Up. From there, players spend
+	// dice-rolled tokens across three categories before the game ends.
 	if newRow > publicRecordRowCount {
-		if err = q.SetGamePhase(r.Context(), dbgen.SetGamePhaseParams{
-			ID:    game.ID,
-			Phase: model.PhaseEnded,
-		}); err != nil {
+		if err = BeginShakeUp(r.Context(), q, manager, game.ID); err != nil {
 			return 0, false, err
-		}
-		if h != nil {
-			h.BroadcastEvent(model.EventPhaseChanged, model.PhaseChangedPayload{Phase: model.PhaseEnded})
 		}
 		return newRow, true, nil
 	}
@@ -313,7 +309,7 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		newRow, ended, err := advanceRowInner(r, q, h, game)
+		newRow, ended, err := advanceRowInner(r, q, manager, h, game)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not advance row")
 			return
@@ -434,7 +430,7 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Focus stays with `next` (they carry it into the new row).
-		newRow, ended, err := advanceRowInner(r, q, h, game)
+		newRow, ended, err := advanceRowInner(r, q, manager, h, game)
 		if err != nil {
 			// Row advance failed after focus already moved — not ideal, but
 			// focus.changed was already broadcast so respond with what we have.

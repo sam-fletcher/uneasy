@@ -148,6 +148,13 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(q, manager))
 		r.Post("/tables/{id}/endgame", handler.SetEndgameMode(q, manager))
 
+		// Shake-Up (Phase 4c)
+		r.Get("/tables/{id}/shake-up", handler.GetShakeUp(q))
+		r.Post("/tables/{id}/shake-up/roll", handler.ShakeUpRoll(q, manager))
+		r.Post("/tables/{id}/shake-up/spend", handler.ShakeUpAnnounce(q, manager))
+		r.Post("/tables/{id}/shake-up/adjust", handler.ShakeUpAdjust(q, manager))
+		r.Post("/tables/{id}/shake-up/commit", handler.ShakeUpCommit(q, manager))
+
 		// Tone-setting
 		r.Get("/tables/{id}/tone", handler.ListToneTopics(q))
 		r.Put("/tables/{id}/tone/{topicId}", handler.UpdateToneTopic(q, manager))

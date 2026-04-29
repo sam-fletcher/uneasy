@@ -24,6 +24,7 @@
 	} from '$lib/api';
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
 	import PrologueView from '$lib/components/phases/PrologueView.svelte';
+	import ShakeUpView from '$lib/components/phases/ShakeUpView.svelte';
 
 	const gameID = $derived(page.params.id as string);
 
@@ -418,6 +419,19 @@
 				if (game) game = { ...game, ending_mode: mode };
 				break;
 			}
+			case EventTypes.ShakeUpStepChanged:
+			case EventTypes.ShakeUpRolled:
+			case EventTypes.ShakeUpSpendOpened:
+			case EventTypes.ShakeUpAdjusted:
+			case EventTypes.ShakeUpSpendCommitted:
+			case EventTypes.ShakeUpEnded: {
+				if (msg.type === EventTypes.ShakeUpStepChanged && game) {
+					const p = msg.payload as { category: string; step: number };
+					game = { ...game, shake_up_category: p.category, shake_up_step: p.step };
+				}
+				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
+				break;
+			}
 			case EventTypes.PrologueChoiceClaimed:
 			case EventTypes.PrologueRankingStepChanged:
 			case EventTypes.PrologueHeartsDeclared:
@@ -756,6 +770,16 @@
 			bind:voteOpen
 			{plans}
 			onPlansChanged={refreshPlans}
+		/>
+
+	<!-- ── Shake-Up ───────────────────────────────────────────────────────── -->
+	{:else if game?.phase === 'shake_up'}
+		<ShakeUpView
+			{gameID}
+			{game}
+			{players}
+			{assets}
+			{currentPlayerID}
 		/>
 
 	<!-- ── Ended ──────────────────────────────────────────────────────────── -->

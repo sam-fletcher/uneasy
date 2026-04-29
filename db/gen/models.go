@@ -116,6 +116,8 @@ type Game struct {
 	EndingMode          *string            `db:"ending_mode" json:"ending_mode"`
 	DummyTokenMode      string             `db:"dummy_token_mode" json:"dummy_token_mode"`
 	PrologueRankingStep *string            `db:"prologue_ranking_step" json:"prologue_ranking_step"`
+	ShakeUpCategory     *string            `db:"shake_up_category" json:"shake_up_category"`
+	ShakeUpStep         *int16             `db:"shake_up_step" json:"shake_up_step"`
 }
 
 type Law struct {
@@ -199,6 +201,7 @@ type Player struct {
 	TokenColor    *string            `db:"token_color" json:"token_color"`
 	SeatOrder     *int16             `db:"seat_order" json:"seat_order"`
 	AccountID     int64              `db:"account_id" json:"account_id"`
+	ShakeUpTokens int16              `db:"shake_up_tokens" json:"shake_up_tokens"`
 }
 
 type PlayerCard struct {
@@ -293,6 +296,29 @@ type Session struct {
 	AccountID int64              `db:"account_id" json:"account_id"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	LastSeen  pgtype.Timestamptz `db:"last_seen" json:"last_seen"`
+}
+
+type ShakeUpCostAdjustment struct {
+	ID         int64              `db:"id" json:"id"`
+	SpendID    int64              `db:"spend_id" json:"spend_id"`
+	PlayerID   int64              `db:"player_id" json:"player_id"`
+	Adjustment int16              `db:"adjustment" json:"adjustment"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+type ShakeUpSpend struct {
+	ID             int64              `db:"id" json:"id"`
+	GameID         int64              `db:"game_id" json:"game_id"`
+	PlayerID       int64              `db:"player_id" json:"player_id"`
+	Category       string             `db:"category" json:"category"`
+	OptionKey      string             `db:"option_key" json:"option_key"`
+	TargetAssetID  *int64             `db:"target_asset_id" json:"target_asset_id"`
+	TargetPlayerID *int64             `db:"target_player_id" json:"target_player_id"`
+	BaseCost       int16              `db:"base_cost" json:"base_cost"`
+	FinalCost      *int16             `db:"final_cost" json:"final_cost"`
+	CommittedAt    pgtype.Timestamptz `db:"committed_at" json:"committed_at"`
+	Applied        bool               `db:"applied" json:"applied"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 type SimultaneousReveal struct {

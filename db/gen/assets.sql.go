@@ -499,6 +499,16 @@ func (q *Queries) ListVisibleSecrets(ctx context.Context, arg ListVisibleSecrets
 	return items, nil
 }
 
+const refreshAllAssets = `-- name: RefreshAllAssets :exec
+UPDATE assets SET is_leveraged = FALSE WHERE game_id = $1
+`
+
+// Un-leverage every asset in a game. Used at Shake-Up entry per rules.
+func (q *Queries) RefreshAllAssets(ctx context.Context, gameID int64) error {
+	_, err := q.db.Exec(ctx, refreshAllAssets, gameID)
+	return err
+}
+
 const refreshPlayerAssets = `-- name: RefreshPlayerAssets :exec
 UPDATE assets SET is_leveraged = FALSE WHERE id = $1
 `

@@ -116,3 +116,7 @@ UPDATE secrets SET is_revealed = TRUE, revealed_at = now() WHERE id = $1;
 INSERT INTO secret_visibility (secret_id, player_id)
 SELECT id, $2 FROM secrets WHERE asset_id = $1
 ON CONFLICT DO NOTHING;
+
+-- name: RefreshAllAssets :exec
+-- Un-leverage every asset in a game. Used at Shake-Up entry per rules.
+UPDATE assets SET is_leveraged = FALSE WHERE game_id = $1;

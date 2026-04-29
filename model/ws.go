@@ -95,6 +95,14 @@ const (
 	EventFestivityChallengeIssued   = "festivity.challenge_issued"
 	EventFestivityChallengeDeclined = "festivity.challenge_declined"
 
+	// Phase 4c: Shake-Up
+	EventShakeUpStepChanged    = "shake_up.step_changed"
+	EventShakeUpRolled         = "shake_up.rolled"
+	EventShakeUpSpendOpened    = "shake_up.spend_opened"
+	EventShakeUpAdjusted       = "shake_up.adjusted"
+	EventShakeUpSpendCommitted = "shake_up.spend_committed"
+	EventShakeUpEnded          = "shake_up.ended"
+
 	// Phase 4d: Endgame mode selection
 	EventEndgameModeSet = "endgame.mode_set" // facilitator picked smooth_landing / explosive_finale
 
@@ -602,3 +610,40 @@ type PrologueSetAsidesPlacedPayload struct {
 type EndgameModeSetPayload struct {
 	Mode string `json:"mode"`
 }
+
+// ── Phase 4c payload types — Shake-Up ────────────────────────────────────────
+
+// ShakeUpStepChangedPayload is for EventShakeUpStepChanged.
+type ShakeUpStepChangedPayload struct {
+	Category string `json:"category"`
+	Step     int16  `json:"step"`
+}
+
+// ShakeUpRolledPayload is for EventShakeUpRolled.
+type ShakeUpRolledPayload struct {
+	PlayerID int64 `json:"player_id"`
+	Result   int16 `json:"result"`
+	Total    int16 `json:"total"`
+}
+
+// ShakeUpSpendOpenedPayload is for EventShakeUpSpendOpened.
+type ShakeUpSpendOpenedPayload struct {
+	Spend any `json:"spend"` // dbgen.ShakeUpSpend
+}
+
+// ShakeUpAdjustedPayload is for EventShakeUpAdjusted.
+type ShakeUpAdjustedPayload struct {
+	SpendID      int64 `json:"spend_id"`
+	AdjustmentID int64 `json:"adjustment_id"`
+	PlayerID     int64 `json:"player_id"`
+	Adjustment   int16 `json:"adjustment"`
+}
+
+// ShakeUpSpendCommittedPayload is for EventShakeUpSpendCommitted.
+type ShakeUpSpendCommittedPayload struct {
+	SpendID   int64 `json:"spend_id"`
+	FinalCost int16 `json:"final_cost"`
+}
+
+// ShakeUpEndedPayload is for EventShakeUpEnded.
+type ShakeUpEndedPayload struct{}

@@ -106,6 +106,14 @@ export const EventTypes = {
 	RumorCreated: 'rumor.created',
 	RumorUpdated: 'rumor.updated',
 
+	// Shake-Up (Phase 4c)
+	ShakeUpStepChanged: 'shake_up.step_changed',
+	ShakeUpRolled: 'shake_up.rolled',
+	ShakeUpSpendOpened: 'shake_up.spend_opened',
+	ShakeUpAdjusted: 'shake_up.adjusted',
+	ShakeUpSpendCommitted: 'shake_up.spend_committed',
+	ShakeUpEnded: 'shake_up.ended',
+
 	// Endgame mode selection (Phase 4d)
 	EndgameModeSet: 'endgame.mode_set',
 

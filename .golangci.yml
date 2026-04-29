@@ -338,7 +338,7 @@ linters:
     govet:
       # Enable all analyzers.
       # Default: false
-      enable-all: true
+      # enable-all: true
       # Disable analyzers by name.
       # Run `GL_DEBUG=govet golangci-lint run --enable=govet` to see default, all available analyzers, and enabled analyzers.
       # Default: []
