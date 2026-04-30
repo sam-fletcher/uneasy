@@ -117,14 +117,8 @@
 	// ── My hand ──────────────────────────────────────────────────────────────
 	const myCards = $derived(cards.filter(c => c.player_id === currentPlayerID));
 
-	function suitGlyph(s: string): string {
-		switch (s) {
-			case 'C': return '♣';
-			case 'D': return '♦';
-			case 'S': return '♠';
-			case 'H': return '♥';
-		}
-		return '?';
+	function suitColor(s: string): 'red' | 'black' {
+		return s === 'H' || s === 'D' ? 'red' : 'black';
 	}
 
 	// ── Choose a box ─────────────────────────────────────────────────────────
@@ -353,6 +347,30 @@
 	});
 </script>
 
+{#snippet suitSvg(suit: string)}
+	{#if suit === 'H'}
+		<svg class="suit" width="10" height="10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+	{:else if suit === 'D'}
+		<svg class="suit" width="10" height="10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 2 L22 12 L12 22 L2 12 Z"/></svg>
+	{:else if suit === 'S'}
+		<svg class="suit" width="10" height="10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 2 C 6 9, 3 13, 3 16.5 A 3.5 3.5 0 0 0 10 17 L 9 22 L 15 22 L 14 17 A 3.5 3.5 0 0 0 21 16.5 C 21 13, 18 9, 12 2 Z"/></svg>
+	{:else if suit === 'C'}
+		<svg class="suit" width="10" height="10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+			<circle cx="12" cy="8" r="5" fill="currentColor"/>
+			<circle cx="8" cy="14" r="5" fill="currentColor"/>
+			<circle cx="16" cy="14" r="5" fill="currentColor"/>
+			<path fill="currentColor" d="M10 14 L 8.5 22 L 15.5 22 L 14 14 Z"/>
+		</svg>
+	{/if}
+{/snippet}
+
+{#snippet miniCard(value: string, suit: string)}
+	<span class="mini-card" data-color={suitColor(suit)}>
+		<span class="mc-value">{value}</span>
+		{@render suitSvg(suit)}
+	</span>
+{/snippet}
+
 <div class="prologue-view">
 	<h2>Prologue</h2>
 
@@ -387,9 +405,8 @@
 							>
 								<span class="choice-name">{choice.name}</span>
 								<span class="choice-cards">
-									{choice.cards[0].value}{suitGlyph(choice.cards[0].suit)}
-									·
-									{choice.cards[1].value}{suitGlyph(choice.cards[1].suit)}
+									{@render miniCard(choice.cards[0].value, choice.cards[0].suit)}
+									{@render miniCard(choice.cards[1].value, choice.cards[1].suit)}
 								</span>
 								{#if existingClaim}
 									<span class="claim-by">— {playerName(existingClaim.player_id)}</span>
@@ -408,7 +425,7 @@
 			{:else}
 				<div class="hand-cards">
 					{#each myCards as c}
-						<span class="card-chip">{c.card_value}{suitGlyph(c.card_suit)}</span>
+						{@render miniCard(c.card_value, c.card_suit)}
 					{/each}
 				</div>
 			{/if}
@@ -601,26 +618,30 @@
 	.choosing-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		gap: 1rem;
+		gap: 0.4rem;
 	}
-	@media (max-width: 900px) {
-		.choosing-grid { grid-template-columns: 1fr; }
+	@media (min-width: 600px) {
+		.choosing-grid { gap: 0.75rem; }
 	}
 
 	.sheet-panel {
 		background: #1e1e1e;
 		border: 1px solid #333;
 		border-radius: 8px;
-		padding: 0.75rem;
+		padding: 0.4rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.3rem;
+		min-width: 0;
+	}
+	@media (min-width: 600px) {
+		.sheet-panel { padding: 0.75rem; gap: 0.4rem; }
 	}
 
 	.choice-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.25rem;
 	}
 
 	.choice-btn {
@@ -629,19 +650,44 @@
 		color: #e8e4d9;
 		border: 1px solid #444;
 		border-radius: 4px;
-		padding: 0.4rem 0.6rem;
-		font-size: 0.85rem;
+		padding: 0.3rem 0.4rem;
+		font-size: 0.75rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
-		cursor: default;
+		gap: 0.2rem;
+		cursor: pointer;
+		min-width: 0;
+	}
+	@media (min-width: 600px) {
+		.choice-btn { padding: 0.4rem 0.6rem; font-size: 0.85rem; }
 	}
 
-	.choice-btn.claimed { opacity: 0.5; }
+	.choice-btn.claimed { opacity: 0.5; cursor: default; }
 
-	.choice-name { font-weight: 600; color: #c8a96e; }
-	.choice-cards { font-size: 0.75rem; color: #aaa; }
+	.choice-name { font-weight: 600; color: #c8a96e; line-height: 1.15; word-break: break-word; }
+	.choice-cards { display: flex; gap: 0.25rem; flex-wrap: wrap; }
 	.claim-by { font-size: 0.7rem; color: #888; }
+
+	.mini-card {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.15rem;
+		background: #f4ecd8;
+		border: 1px solid #888;
+		border-radius: 3px;
+		padding: 0.1rem 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 700;
+		line-height: 1;
+		min-width: 1.6em;
+		justify-content: center;
+	}
+	.mini-card[data-color='red']   { color: #b03030; }
+	.mini-card[data-color='black'] { color: #1a1a1a; }
+	.mini-card .mc-value { font-variant-numeric: tabular-nums; }
+	.mini-card :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
+	.hand-cards .mini-card { font-size: 0.85rem; padding: 0.15rem 0.3rem; }
+	.hand-cards .mini-card :global(.suit) { width: 1.1em; height: 1.1em; }
 
 	.hand-panel {
 		background: #1e1e1e;
@@ -655,14 +701,6 @@
 		flex-wrap: wrap;
 		gap: 0.4rem;
 		margin-top: 0.4rem;
-	}
-
-	.card-chip {
-		background: #2a2a2a;
-		border: 1px solid #555;
-		border-radius: 4px;
-		padding: 0.2rem 0.4rem;
-		font-size: 0.85rem;
 	}
 
 	.declare-form, .extra-form {

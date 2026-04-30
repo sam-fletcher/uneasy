@@ -605,12 +605,20 @@
 	let newTopicText = $state('');
 	let addingTopic = $state(false);
 
+	const toneCycle: ToneTopic['status'][] = ['default', 'include', 'avoid_detail', 'never'];
+
 	async function onTopicStatusChange(topicID: number, status: string) {
 		try {
 			await updateToneTopic(gameID, topicID, status as ToneTopic['status']);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not update topic.';
 		}
+	}
+
+	async function cycleTopicStatus(topic: ToneTopic) {
+		const idx = toneCycle.indexOf(topic.status);
+		const next = toneCycle[(idx + 1) % toneCycle.length];
+		await onTopicStatusChange(topic.id, next);
 	}
 
 	async function submitNewTopic() {
@@ -703,38 +711,50 @@
 			<h2>Tone Setting</h2>
 			<p class="muted">
 				Discuss what themes and topics your group wants to include or avoid.
-				Anyone can change a topic's status.
+				Tap a tile to cycle its status. Anyone can change any topic.
 			</p>
 
-			<div class="tone-list">
-				{#each toneTopics as topic (topic.id)}
-					<div class="tone-row" data-status={topic.status}>
-						<span class="tone-topic">{topic.topic}</span>
-						<select
-							class="tone-select"
-							value={topic.status}
-							onchange={(e) => onTopicStatusChange(topic.id, (e.target as HTMLSelectElement).value)}
-						>
-							<option value="default">Default</option>
-							<option value="include">Include</option>
-							<option value="avoid_detail">Avoid detail</option>
-							<option value="never">Never</option>
-						</select>
-					</div>
-				{/each}
+			<div class="tone-legend" aria-label="Legend">
+				<span class="tone-legend-item" data-status="default"><span class="swatch"></span>No Opinion</span>
+				<span class="tone-legend-item" data-status="include"><span class="swatch"></span>Include</span>
+				<span class="tone-legend-item" data-status="avoid_detail"><span class="swatch"></span>Avoid detail</span>
+				<span class="tone-legend-item" data-status="never"><span class="swatch"></span>Never</span>
 			</div>
 
-			<div class="add-topic">
+			<div class="tone-grid">
+				{#each toneTopics as topic (topic.id)}
+					<button
+						type="button"
+						class="tone-tile"
+						data-status={topic.status}
+						onclick={() => cycleTopicStatus(topic)}
+						aria-label={`${topic.topic}: ${topic.status === 'default' ? 'No Opinion' : topic.status === 'avoid_detail' ? 'Avoid detail' : topic.status === 'include' ? 'Include' : 'Never'}. Tap to cycle.`}
+					>
+						<span class="tone-tile-topic">{topic.topic}</span>
+					</button>
+				{/each}
+
 				<input
 					type="text"
-					placeholder="Add a custom topic…"
+					class="tone-tile tone-tile-input"
+					placeholder="Custom topic…"
 					bind:value={newTopicText}
 					onkeydown={(e) => { if (e.key === 'Enter') submitNewTopic(); }}
 					maxlength={120}
+					aria-label="Add a custom topic"
 				/>
-				<button onclick={submitNewTopic} disabled={!newTopicText.trim() || addingTopic}>
-					{addingTopic ? '…' : 'Add'}
-				</button>
+
+				{#if newTopicText.trim()}
+					<button
+						type="button"
+						class="tone-tile tone-tile-add"
+						onclick={submitNewTopic}
+						disabled={addingTopic}
+						aria-label="Add topic"
+					>
+						{addingTopic ? '…' : 'Add'}
+					</button>
+				{/if}
 			</div>
 
 			{#if isFacilitator}
@@ -1006,58 +1026,99 @@
 
 	/* ── Tone Setting ─────────────────────────────────────────────────────── */
 
-	.tone-list { display: flex; flex-direction: column; gap: 0.3rem; }
-
-	.tone-row {
+	.tone-legend {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.4rem 0.6rem;
-		border-radius: 4px;
-		background: #2a2a2a;
-		gap: 0.5rem;
-	}
-
-	.tone-row[data-status='include']      { border-left: 3px solid #6dbf7a; }
-	.tone-row[data-status='avoid_detail'] { border-left: 3px solid #e0c070; }
-	.tone-row[data-status='never']        { border-left: 3px solid #e07070; }
-	.tone-row[data-status='default']      { border-left: 3px solid #555; }
-
-	.tone-topic { font-size: 0.9rem; flex: 1; }
-
-	.tone-select {
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
 		font-size: 0.8rem;
-		background: #333;
-		color: #e8e4d9;
-		border: 1px solid #555;
-		border-radius: 4px;
-		padding: 0.2rem 0.4rem;
+		margin: 0.5rem 0 0.75rem;
+		color: #cfcabd;
 	}
 
-	.add-topic {
-		display: flex;
+	.tone-legend-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.tone-legend-item .swatch {
+		width: 0.9rem;
+		height: 0.9rem;
+		border-radius: 3px;
+		border: 1px solid rgba(255,255,255,0.1);
+	}
+
+	.tone-legend-item[data-status='default']      .swatch { background: #555; }
+	.tone-legend-item[data-status='include']      .swatch { background: #4f8a5c; }
+	.tone-legend-item[data-status='avoid_detail'] .swatch { background: #b89446; }
+	.tone-legend-item[data-status='never']        .swatch { background: #b35454; }
+
+	.tone-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
 		gap: 0.5rem;
+		margin-bottom: 0.75rem;
 	}
 
-	.add-topic input {
-		flex: 1;
-		padding: 0.4rem 0.6rem;
-		background: #2a2a2a;
-		border: 1px solid #444;
-		border-radius: 4px;
-		color: inherit;
-		font-size: 0.9rem;
+	@media (min-width: 600px) {
+		.tone-grid { grid-template-columns: repeat(4, 1fr); }
+	}
+	@media (min-width: 900px) {
+		.tone-grid { grid-template-columns: repeat(5, 1fr); }
 	}
 
-	.add-topic button {
-		background: #444;
-		color: #e8e4d9;
-		padding: 0.4rem 0.8rem;
-		border-radius: 4px;
+	.tone-tile {
+		aspect-ratio: 3 / 2;
+		padding: 0.5rem;
+		border-radius: 6px;
+		border: 1px solid rgba(255,255,255,0.08);
+		background: #555;
+		color: #fff;
 		font-size: 0.85rem;
+		font-weight: 500;
+		text-align: center;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		transition: background-color 120ms ease, transform 80ms ease;
+		word-break: break-word;
+		hyphens: auto;
 	}
 
-	.add-topic button:disabled { opacity: 0.4; cursor: not-allowed; }
+	.tone-tile:active { transform: scale(0.97); }
+
+	.tone-tile[data-status='default']      { background: #555; }
+	.tone-tile[data-status='include']      { background: #4f8a5c; }
+	.tone-tile[data-status='avoid_detail'] { background: #b89446; }
+	.tone-tile[data-status='never']        { background: #b35454; }
+
+	.tone-tile-topic { line-height: 1.2; }
+
+	.tone-tile-input {
+		background: transparent;
+		border: 1px dashed rgba(255,255,255,0.35);
+		color: #e8e4d9;
+		font-family: inherit;
+		text-align: center;
+	}
+
+	.tone-tile-input::placeholder {
+		color: rgba(232,228,217,0.5);
+	}
+
+	.tone-tile-input:focus {
+		outline: none;
+		border-style: solid;
+		border-color: rgba(255,255,255,0.6);
+	}
+
+	.tone-tile-add {
+		background: #6a8fb3;
+		font-weight: 600;
+	}
+
+	.tone-tile-add:disabled { opacity: 0.5; cursor: not-allowed; }
 
 	/* ── Ended ──────────────────────────────────────────────────────────────── */
 

@@ -52,14 +52,14 @@ func GenerateJoinCode() (string, error) {
 func SeedDefaultToneTopics(ctx context.Context, q *dbgen.Queries, gameID int64) error {
 	topics := []string{
 		"Romance", "Sex", "Marriage", "Adultery",
-		"Pregnancy and childbirth", "Religion", "Heresy",
+		"Pregnancy & childbirth", "Religion", "Heresy",
 		"Torture", "Graphic violence", "War crimes",
 		"Slavery", "Addiction", "Mental illness",
 		"Child endangerment", "Animal cruelty",
 		"Betrayal", "Assassination", "Conspiracy",
-		"Famine and poverty", "Disease and plague",
+		"Famine & poverty", "Disease & plague",
 		"Supernatural elements", "Magic", "Prophecy",
-		"Racism and discrimination", "Colonialism",
+		"Racism & discrimination", "Colonialism",
 	}
 	for _, t := range topics {
 		if err := q.SeedToneTopic(ctx, dbgen.SeedToneTopicParams{
