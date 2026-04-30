@@ -12,6 +12,7 @@ import (
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
+	"uneasy/model"
 )
 
 const maxPlayersPerGame = 5
@@ -76,7 +77,7 @@ func CreateTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Adds the calling account to an existing table via join code. Idempotent
 // if the account is already seated. Rejects if the table is at the
 // hard-coded 5-player cap.
-func JoinTable(q *dbgen.Queries) http.HandlerFunc {
+func JoinTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
 		if acct == nil {
@@ -139,6 +140,10 @@ func JoinTable(q *dbgen.Queries) http.HandlerFunc {
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not join table")
 			return
+		}
+
+		if h, ok := manager.Get(game.ID); ok {
+			h.BroadcastEvent(model.EventPlayerJoined, model.PlayerJoinedPayload{Player: player})
 		}
 
 		respond(w, http.StatusCreated, map[string]any{

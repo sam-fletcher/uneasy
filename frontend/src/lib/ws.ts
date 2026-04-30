@@ -18,6 +18,7 @@ export const EventTypes = {
 	// Presence & typing (Phase 1, carried forward)
 	PresenceSnapshot: 'presence.snapshot',
 	TypingUpdate: 'typing.update',
+	PlayerJoined: 'player.joined',
 
 	// Phase transitions
 	PhaseChanged: 'phase.changed',

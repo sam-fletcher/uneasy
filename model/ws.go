@@ -14,6 +14,9 @@ const (
 	EventPresenceSnapshot = "presence.snapshot"
 	EventTypingUpdate     = "typing.update"
 
+	// Lobby
+	EventPlayerJoined = "player.joined"
+
 	// Phase 2: Game state
 	EventPhaseChanged = "phase.changed"
 	EventFocusChanged = "focus.changed"
@@ -150,6 +153,11 @@ type PresenceMember struct {
 // PresenceSnapshotPayload is the payload for EventPresenceSnapshot.
 type PresenceSnapshotPayload struct {
 	Members []PresenceMember `json:"members"`
+}
+
+// PlayerJoinedPayload is the payload for EventPlayerJoined.
+type PlayerJoinedPayload struct {
+	Player any `json:"player"` // dbgen.Player
 }
 
 // TypingUpdatePayload is the payload for EventTypingUpdate.

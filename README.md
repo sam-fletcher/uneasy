@@ -136,29 +136,75 @@ two shortcuts that make this painless:
 These routes are only mounted when `UNEASY_DEV=1`, so production binaries
 will 404 on them.
 
+### A quick note on POST vs GET
+
+Both dev endpoints are `POST`, not `GET`. Typing a URL into the browser's
+address bar always sends a `GET`, so visiting
+`http://localhost:8080/api/dev/login?username=alice` directly will return
+`405 Method Not Allowed` (or 404). You need to actually issue a `POST`.
+The two easiest ways are shown below — pick whichever you prefer.
+
 ### Running multiple players in parallel
 
-Each browser profile (or Chrome incognito window, or different browser) is
-its own cookie jar, so each can hold a different player's session. The
-fastest way to seed a session is to visit the dev-login URL directly:
+Each browser profile (Chrome incognito window, Firefox container tab, or
+a different browser entirely) is its own cookie jar, so each can hold a
+different player's session.
 
-```
-http://localhost:8080/api/dev/login?username=alice   # in profile A
-http://localhost:8080/api/dev/login?username=bob     # in profile B
+**Option A — from the browser's DevTools console (recommended).**
+This is the most convenient way, because the cookie the server sets in
+the response is automatically stored by the browser you're already using.
+
+1. Open the browser profile you want to be "alice."
+2. Navigate to `http://localhost:8080` (any page on that origin works —
+   the cookie is scoped to the origin, not the path).
+3. Open DevTools (`Cmd+Option+I` on macOS) and click the **Console** tab.
+4. Paste and run:
+
+   ```js
+   await fetch('/api/dev/login?username=alice', { method: 'POST' });
+   ```
+
+   You should see a `Response` object logged with `status: 200`. The
+   session cookie is now set in this profile.
+5. Navigate to `http://localhost:8080/profile`. You should be logged in
+   as alice.
+
+Repeat in a second profile/incognito window with `username=bob`. Now you
+have two browsers logged in as different players. Create a table in
+alice's window, copy the join code, join it from bob's.
+
+**Option B — from a terminal with curl.**
+Useful for scripting, but slightly more steps because you have to move
+the cookie into the browser yourself:
+
+```bash
+curl -X POST -c cookies.txt http://localhost:8080/api/dev/login?username=alice
 ```
 
-Then navigate to `http://localhost:8080/profile` in each — you'll see
-that account's tables. Create a table in one window, copy the join code,
-join from the other.
+`-X POST` sets the method; `-c cookies.txt` saves the response cookies
+to a file. Open `cookies.txt` and find the `session` (or similar) cookie
+value, then in your browser's DevTools go to **Application → Cookies →
+http://localhost:8080** and add it manually. Option A is almost always
+faster.
 
 ### Resetting between test runs
+
+Same idea — `/api/dev/reset` is also a POST. Either run it from any
+browser console:
+
+```js
+await fetch('/api/dev/reset', { method: 'POST' });
+```
+
+Or from a terminal:
 
 ```bash
 curl -X POST http://localhost:8080/api/dev/reset
 ```
 
 Faster than restarting the DB container; preserves the schema so you
-don't re-run migrations.
+don't re-run migrations. After resetting, you'll need to re-run the
+dev-login step in each browser profile to seed new sessions.
 
 ### Logging in normally
 

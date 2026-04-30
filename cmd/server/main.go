@@ -141,7 +141,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 
 		// Tables (creation, join, info)
 		r.Post("/tables", handler.CreateTable(q, manager))
-		r.Post("/tables/join", handler.JoinTable(q))
+		r.Post("/tables/join", handler.JoinTable(q, manager))
 		r.Get("/tables/{id}", handler.GetTable(q))
 		r.Get("/tables/{id}/state", handler.GetGameState(q))
 

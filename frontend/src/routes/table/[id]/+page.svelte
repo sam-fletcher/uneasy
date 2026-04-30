@@ -95,6 +95,14 @@
 				loadGameState();
 				break;
 			}
+			case EventTypes.PlayerJoined: {
+				const player = msg.payload.player as Player;
+				if (!players.find(p => p.id === player.id)) {
+					players = [...players, player];
+					members = [...members, { id: player.id, display_name: player.display_name, online: false }];
+				}
+				break;
+			}
 			case EventTypes.PresenceSnapshot: {
 				const snap = msg.payload.members as PresenceMember[];
 				members = members.map(m => ({
