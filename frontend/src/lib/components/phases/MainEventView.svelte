@@ -1,6 +1,6 @@
 <!-- MainEventView.svelte
-  Main event phase: collapsible retinue bar, public record sidebar, scene feed.
-  Owns its local UI state (retinue open, post input, summary form, typing).
+  Main event phase: public record sidebar, scene feed.
+  Owns its local UI state (post input, summary form, typing).
   recordRows and scenePosts are bindable so the parent WS handler can also update them.
 -->
 <script lang="ts">
@@ -10,12 +10,10 @@
 	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
 	import {
 		createScenePost, createSceneEntry,
-		leverageAsset, refreshAsset, tearMarginalia,
 		endScene, refreshAssets, passFocus, createRoll,
 		listWars,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Marginalium, Ranking, Law, Rumor, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, WarStateResponse } from '$lib/api';
-	import AssetCard from '$lib/components/AssetCard.svelte';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, WarStateResponse } from '$lib/api';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
 	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
@@ -71,8 +69,6 @@
 		onPlansChanged,
 	}: Props = $props();
 
-	const myAssets = $derived(assets.filter(a => a.owner_id === currentPlayerID));
-
 	// ── War cost-of-battle gate ───────────────────────────────────────────────
 	// Track active wars game-wide so the row header can warn when row advance
 	// is blocked on unpaid battle costs or open surrender claims (the server
@@ -113,9 +109,6 @@
 			? players.find(p => p.id === game.focus_player_id)?.display_name ?? '?'
 			: null
 	);
-
-	// ── Retinue panel ─────────────────────────────────────────────────────────
-	let retinueOpen = $state(false);
 
 	// ── Scene post input ──────────────────────────────────────────────────────
 	let newPostBody = $state('');
@@ -194,28 +187,6 @@
 			error = e instanceof Error ? e.message : 'Could not save summary.';
 		} finally {
 			sendingSummary = false;
-		}
-	}
-
-	// ── Asset actions ─────────────────────────────────────────────────────────
-	async function toggleLeverage(asset: Asset) {
-		try {
-			if (asset.is_leveraged) {
-				await refreshAsset(asset.id);
-			} else {
-				await leverageAsset(asset.id);
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not toggle leverage.';
-		}
-	}
-
-	async function onTearMarginalia(asset: Asset, m: Marginalium) {
-		if (!confirm(`Tear "${m.text}"? This cannot be undone.`)) return;
-		try {
-			await tearMarginalia(asset.id, m.position);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not tear marginalia.';
 		}
 	}
 
@@ -389,30 +360,6 @@
 	{#if error}
 		<p class="local-error">{error}</p>
 	{/if}
-
-	<!-- Retinue panel (collapsible) -->
-	<div class="retinue-bar">
-		<button class="retinue-toggle" onclick={() => { retinueOpen = !retinueOpen; }}>
-			Your Retinue ({myAssets.length})
-			<span class="chevron">{retinueOpen ? '▲' : '▼'}</span>
-		</button>
-		{#if retinueOpen}
-			<div class="retinue-panel">
-				{#if myAssets.length === 0}
-					<p class="muted">You have no assets.</p>
-				{:else}
-					{#each myAssets as asset (asset.id)}
-						<AssetCard
-							{asset}
-							compact
-							onTear={onTearMarginalia}
-							onToggleLeverage={toggleLeverage}
-						/>
-					{/each}
-				{/if}
-			</div>
-		{/if}
-	</div>
 
 	<!-- Two-column play surface -->
 	<div class="play-surface">
@@ -684,36 +631,6 @@
 		font-size: 0.85rem;
 		padding: 0.3rem 0;
 		flex-shrink: 0;
-	}
-
-	/* ── Retinue bar ─────────────────────────────────────────────────────────── */
-
-	.retinue-bar {
-		flex-shrink: 0;
-		border-bottom: 1px solid #333;
-	}
-
-	.retinue-toggle {
-		width: 100%;
-		text-align: left;
-		padding: 0.4rem 0;
-		font-size: 0.85rem;
-		color: #c8a96e;
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		background: none;
-	}
-
-	.chevron { font-size: 0.7rem; }
-
-	.retinue-panel {
-		padding: 0.5rem 0 0.75rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-height: 240px;
-		overflow-y: auto;
 	}
 
 	/* ── Play surface ────────────────────────────────────────────────────────── */

@@ -24,7 +24,6 @@
 		Game,
 		Player,
 		Asset,
-		Marginalium,
 		Ranking,
 		RankingCategory,
 		PrologueSheet,
@@ -32,8 +31,6 @@
 		PlayerCardRow,
 		PrologueSheetType,
 	} from '$lib/api';
-	import { tearMarginalia } from '$lib/api';
-	import AssetCard from '$lib/components/AssetCard.svelte';
 	import { onMount, onDestroy } from 'svelte';
 
 	interface Props {
@@ -325,17 +322,6 @@
 		}
 	}
 
-	const myAssets = $derived(assets.filter(a => a.owner_id === currentPlayerID));
-
-	async function onTearMarginalia(asset: Asset, m: Marginalium) {
-		if (!confirm(`Tear "${m.text}"? This cannot be undone.`)) return;
-		try {
-			await tearMarginalia(asset.id, m.position);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not tear marginalia.';
-		}
-	}
-
 	// ── Phase classification ─────────────────────────────────────────────────
 	type Mode = 'choosing' | 'declare' | 'place' | 'extra';
 	const mode = $derived.by<Mode>(() => {
@@ -539,18 +525,7 @@
 		{/if}
 	{/if}
 
-	<!-- Always-visible side panels: retinue + seats + start -->
-
-	{#if myAssets.length > 0}
-		<section class="retinue">
-			<h3>Your Retinue</h3>
-			<div class="asset-list">
-				{#each myAssets as asset (asset.id)}
-					<AssetCard {asset} onTear={onTearMarginalia} />
-				{/each}
-			</div>
-		</section>
-	{/if}
+	<!-- Always-visible side panels: seats + start -->
 
 	{#if isFacilitator}
 		<section class="facilitator-panel">
@@ -761,8 +736,6 @@
 	}
 	.text-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-	.retinue { margin-top: 1rem; }
-	.asset-list { display: flex; flex-direction: column; gap: 0.6rem; }
 
 	.facilitator-panel {
 		background: #1e1e1e;

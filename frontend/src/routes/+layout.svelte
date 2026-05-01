@@ -1,9 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getMe, logout, type Account } from '$lib/api';
+	import { getMe, type Account } from '$lib/api';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -11,18 +10,16 @@
 	let loaded = $state(false);
 
 	const HIDDEN_PATHS = ['/login', '/signup', '/'];
-	let showHeader = $derived(loaded && me !== null && !HIDDEN_PATHS.includes(page.url.pathname));
+	let showHeader = $derived(
+		loaded && me !== null
+		&& !HIDDEN_PATHS.includes(page.url.pathname)
+		&& !page.url.pathname.startsWith('/table/')
+	);
 
 	onMount(async () => {
 		try { me = await getMe(); } catch { /* ignore */ }
 		loaded = true;
 	});
-
-	async function doLogout() {
-		await logout();
-		me = null;
-		goto('/');
-	}
 </script>
 
 <svelte:head>
@@ -31,11 +28,12 @@
 
 {#if showHeader && me}
 	<header class="site-header">
-		<a class="brand" href="/profile">Uneasy Lies the Head</a>
-		<div class="right">
-			<a class="user" href="/profile">{me.username}</a>
-			<button class="logout" onclick={doLogout}>Log out</button>
-		</div>
+		<a class="home" href="/profile" aria-label="Home">
+			<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M3 11l9-8 9 8" />
+				<path d="M5 10v10h14V10" />
+			</svg>
+		</a>
 	</header>
 {/if}
 
@@ -90,22 +88,19 @@
 		background: #202020;
 		border-bottom: 1px solid #2e2e2e;
 	}
-	.brand {
+	.home {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		margin: -0.35rem 0;
 		color: #c8a96e;
+		border-radius: 6px;
 		text-decoration: none;
-		font-weight: 600;
 	}
-	.brand:hover { color: #d9bb80; }
-	.right { display: flex; align-items: center; gap: 0.75rem; }
-	.user { color: #aaa; text-decoration: none; font-size: 0.9rem; }
-	.user:hover { color: #e8e4d9; }
-	.logout {
-		background: #333;
-		color: #e8e4d9;
-		font-size: 0.85rem;
-		padding: 0.35rem 0.8rem;
-	}
-	.logout:hover { background: #3e3e3e; }
+	.home:hover { color: #d9bb80; background: #2a2a2a; }
+	.home:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
 
 	main {
 		max-width: 900px;

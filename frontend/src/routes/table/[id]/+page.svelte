@@ -25,6 +25,8 @@
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
 	import PrologueView from '$lib/components/phases/PrologueView.svelte';
 	import ShakeUpView from '$lib/components/phases/ShakeUpView.svelte';
+	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
+	import RetinueView from '$lib/components/RetinueView.svelte';
 
 	const gameID = $derived(page.params.id as string);
 
@@ -76,6 +78,9 @@
 	let activeRollDice = $state<DiceRollDie[]>([]);
 	let activeRollVotes = $state<DifficultyVote[]>([]);
 	let voteOpen = $state(false);
+
+	// ── Retinue sheet ─────────────────────────────────────────────────────────
+	let retinueOpenForPlayer = $state<number | null>(null);
 
 	// ── Plan state ────────────────────────────────────────────────────────────
 	// Loaded on mount for main_event, then kept in sync by plan.* WS events.
@@ -655,23 +660,33 @@
 <div class="table-page">
 	<!-- Header ──────────────────────────────────────────────────────────────── -->
 	<header>
-		<div class="game-info">
-			{#if game}
+		<div class="top-strip">
+			<a class="home" href="/profile" aria-label="Home">
+				<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="M3 11l9-8 9 8" />
+					<path d="M5 10v10h14V10" />
+				</svg>
+			</a>
+			<div class="members">
+				{#each members as member}
+					<button type="button" class="member" class:online={member.online} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue`}>
+						<span class="dot"></span>
+						<span class="member-name">{member.display_name}</span>
+					</button>
+				{/each}
+			</div>
+		</div>
+		{#if game}
+			<div class="game-info">
 				<span class="phase-badge">{phaseLabels[game.phase] ?? game.phase}</span>
-				<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
-					{game.join_code}
-					<span class="copy-hint">copy</span>
-				</button>
-			{/if}
-		</div>
-		<div class="members">
-			{#each members as member}
-				<span class="member" class:online={member.online}>
-					<span class="dot"></span>
-					{member.display_name}
-				</span>
-			{/each}
-		</div>
+				{#if game.phase === 'lobby'}
+					<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
+						{game.join_code}
+						<span class="copy-hint">copy</span>
+					</button>
+				{/if}
+			</div>
+		{/if}
 	</header>
 
 	{#if error}
@@ -834,6 +849,18 @@
 		<div class="center-message">Unknown phase.</div>
 	{/if}
 
+	<RetinueSheet open={retinueOpenForPlayer !== null} onClose={() => retinueOpenForPlayer = null}>
+		{#if retinueOpenForPlayer !== null}
+			<RetinueView
+				playerId={retinueOpenForPlayer}
+				{players}
+				{members}
+				{assets}
+				viewerPlayerId={currentPlayerID}
+			/>
+		{/if}
+	</RetinueSheet>
+
 	{#if endgamePromptModes}
 		<div class="endgame-overlay">
 			<div class="endgame-modal">
@@ -919,27 +946,68 @@
 		color: #888;
 	}
 
-	.members {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-	}
-
-	.member {
+	.top-strip {
 		display: flex;
 		align-items: center;
-		gap: 0.3rem;
-		font-size: 0.85rem;
-		color: #888;
+		gap: 0.5rem;
+		min-width: 0;
+		margin: 0 -1rem;
+		padding: 0 1rem;
 	}
 
+	.home {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		flex-shrink: 0;
+		color: #c8a96e;
+		border-radius: 6px;
+		text-decoration: none;
+	}
+	.home:hover { color: #d9bb80; background: #2a2a2a; }
+	.home:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
+
+	.members {
+		display: flex;
+		gap: 0.4rem;
+		flex: 1;
+		min-width: 0;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
+	}
+	.members::-webkit-scrollbar { display: none; }
+
+	.member {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		flex-shrink: 0;
+		min-height: 44px;
+		padding: 0.4rem 0.7rem;
+		font-size: 0.85rem;
+		color: #888;
+		background: #262626;
+		border: 1px solid #333;
+		border-radius: 999px;
+		cursor: pointer;
+	}
+	.member:hover { background: #2e2e2e; }
+	.member:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
 	.member.online { color: #e8e4d9; }
+
+	.member-name {
+		white-space: nowrap;
+	}
 
 	.dot {
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
 		background: #555;
+		flex-shrink: 0;
 	}
 
 	.member.online .dot { background: #6dbf7a; }
