@@ -499,6 +499,48 @@ func (q *Queries) ListVisibleSecrets(ctx context.Context, arg ListVisibleSecrets
 	return items, nil
 }
 
+const listVisibleSecretsByGame = `-- name: ListVisibleSecretsByGame :many
+SELECT s.id, s.asset_id, s.author_id, s.text, s.is_revealed, s.revealed_at, s.created_at FROM secrets s
+JOIN assets a ON s.asset_id = a.id
+LEFT JOIN secret_visibility sv ON s.id = sv.secret_id AND sv.player_id = $2
+WHERE a.game_id = $1 AND (s.author_id = $2 OR sv.player_id IS NOT NULL)
+ORDER BY s.created_at ASC
+`
+
+type ListVisibleSecretsByGameParams struct {
+	GameID   int64 `db:"game_id" json:"game_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+}
+
+// All secrets in this game that the given player can see.
+func (q *Queries) ListVisibleSecretsByGame(ctx context.Context, arg ListVisibleSecretsByGameParams) ([]Secret, error) {
+	rows, err := q.db.Query(ctx, listVisibleSecretsByGame, arg.GameID, arg.PlayerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Secret{}
+	for rows.Next() {
+		var i Secret
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetID,
+			&i.AuthorID,
+			&i.Text,
+			&i.IsRevealed,
+			&i.RevealedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const refreshAllAssets = `-- name: RefreshAllAssets :exec
 UPDATE assets SET is_leveraged = FALSE WHERE game_id = $1
 `

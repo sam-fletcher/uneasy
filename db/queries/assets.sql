@@ -103,6 +103,14 @@ LEFT JOIN secret_visibility sv ON s.id = sv.secret_id AND sv.player_id = $2
 WHERE s.asset_id = $1 AND (s.author_id = $2 OR sv.player_id IS NOT NULL)
 ORDER BY s.created_at ASC;
 
+-- name: ListVisibleSecretsByGame :many
+-- All secrets in this game that the given player can see.
+SELECT s.* FROM secrets s
+JOIN assets a ON s.asset_id = a.id
+LEFT JOIN secret_visibility sv ON s.id = sv.secret_id AND sv.player_id = $2
+WHERE a.game_id = $1 AND (s.author_id = $2 OR sv.player_id IS NOT NULL)
+ORDER BY s.created_at ASC;
+
 -- name: AddSecretVisibility :exec
 INSERT INTO secret_visibility (secret_id, player_id)
 VALUES ($1, $2)

@@ -179,6 +179,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 
 		// Assets (list + create on the table; per-asset actions by asset ID)
 		r.Get("/tables/{id}/assets", handler.ListAssets(q))
+		r.Get("/tables/{id}/secrets/visible", handler.ListVisibleSecretsForGame(q))
 		r.Post("/tables/{id}/assets", handler.CreateAsset(q, manager))
 
 		r.Route("/assets/{assetId}", func(r chi.Router) {
@@ -189,7 +190,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 			r.Post("/leverage", handler.LeverageAsset(q, manager))
 			r.Post("/refresh", handler.RefreshAsset(q, manager))
 			r.Post("/take", handler.TakeAsset(q, manager))
-			r.Post("/secrets", handler.WriteSecret(q))
+			r.Post("/secrets", handler.WriteSecret(q, manager))
 			r.Get("/secrets", handler.GetSecrets(q))
 		})
 

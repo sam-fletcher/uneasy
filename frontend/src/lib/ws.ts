@@ -107,6 +107,10 @@ export const EventTypes = {
 	RumorCreated: 'rumor.created',
 	RumorUpdated: 'rumor.updated',
 
+	// Secrets
+	SecretCreated: 'secret.created',
+	SecretVisibilityGrant: 'secret.visibility_grant',
+
 	// Shake-Up (Phase 4c)
 	ShakeUpStepChanged: 'shake_up.step_changed',
 	ShakeUpRolled: 'shake_up.rolled',

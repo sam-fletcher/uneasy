@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/hub"
 	"uneasy/model"
 )
@@ -220,44 +220,16 @@ func CreateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
-// updateAssetMainCharacter updates the main character flag for an asset.
-func updateAssetMainCharacter(
-	ctx context.Context,
-	w http.ResponseWriter,
-	q *dbgen.Queries,
-	asset *dbgen.Asset,
-	player *dbgen.Player,
-	isMainCharacter bool,
-) error {
-	if isMainCharacter {
-		// Only peers can be main characters.
-		if asset.AssetType != model.AssetPeer {
-			respondErr(w, http.StatusBadRequest, "only peer assets can be the main character")
-			return errors.New("not a peer asset")
-		}
-		err := q.ClearMainCharacter(ctx, dbgen.ClearMainCharacterParams{
-			OwnerID: player.ID,
-			GameID:  asset.GameID,
-		})
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not clear main character")
-			return err
-		}
-	}
-	err := q.SetMainCharacter(ctx, dbgen.SetMainCharacterParams{
-		ID:              asset.ID,
-		IsMainCharacter: isMainCharacter,
-	})
-	if err != nil {
-		respondErr(w, http.StatusInternalServerError, "could not update main character")
-	}
-	return err
-}
-
 // UpdateAsset handles PUT /api/assets/{assetId}.
 //
 // Owner can update the asset name and/or main-character flag.
-// Body: { name?, is_main_character? }
+// Body: { name?, is_main_character?, tear_position? }
+//
+// When promoting a peer to main character and an existing main character
+// already exists for this player, the rules require tearing one of the
+// existing MC's marginalia. Callers must pass `tear_position` (1–4) pointing
+// at an untorn marginalium on the old MC. If the old MC has no untorn
+// marginalia (e.g. all 4 already torn), the swap proceeds without tearing.
 func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		asset, player, ok := requireAssetOwner(w, r, q)
@@ -268,6 +240,7 @@ func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		var body struct {
 			Name            *string `json:"name"`
 			IsMainCharacter *bool   `json:"is_main_character"`
+			TearPosition    *int16  `json:"tear_position"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -294,8 +267,8 @@ func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		if body.IsMainCharacter != nil {
-			err := updateAssetMainCharacter(ctx, w, q, asset, player, *body.IsMainCharacter)
-			if err != nil {
+			if !applyMainCharacterChange(ctx, w, r, q, manager, asset, player,
+				*body.IsMainCharacter, body.TearPosition) {
 				return
 			}
 			asset.IsMainCharacter = *body.IsMainCharacter
@@ -313,6 +286,144 @@ func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		respond(w, http.StatusOK, map[string]any{"asset": enriched})
 	}
+}
+
+// tearAndReplaceOldMainCharacter handles replacing an existing main character
+// with a new one. It performs any necessary tearing, broadcasts events, and
+// clears the old MC's flag. Returns false on error.
+func tearAndReplaceOldMainCharacter(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	oldMC *dbgen.Asset,
+	oldMargs []dbgen.Marginalium,
+	player *dbgen.Player,
+	asset *dbgen.Asset,
+	decision game.MCDecision,
+) bool {
+	if decision.NeedsTear {
+		target := marginaliaByPosition(oldMargs, decision.TearPosition)
+		err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+			ID:       target.ID,
+			TornByID: &player.ID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+			return false
+		}
+		if h, ok := manager.Get(asset.GameID); ok {
+			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+				AssetID:  oldMC.ID,
+				Position: decision.TearPosition,
+				TornByID: player.ID,
+			})
+		}
+		if decision.DestroysOldMC {
+			if err := q.DestroyAsset(ctx, oldMC.ID); err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not destroy old main character")
+				return false
+			}
+			if h, ok := manager.Get(asset.GameID); ok {
+				h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: oldMC.ID})
+			}
+			oldMC.IsDestroyed = true
+		}
+	}
+
+	// Clear the old MC's flag. AssetDestroyed already removes it from
+	// frontend state, so AssetUpdated is only needed when not destroyed.
+	err := q.SetMainCharacter(ctx, dbgen.SetMainCharacterParams{
+		ID:              oldMC.ID,
+		IsMainCharacter: false,
+	})
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not clear old main character")
+		return false
+	}
+	if !oldMC.IsDestroyed {
+		if e, err := loadAssetEnriched(r, q, oldMC.ID); err == nil {
+			if h, ok := manager.Get(asset.GameID); ok {
+				h.BroadcastEvent(model.EventAssetUpdated, model.AssetPayload{Asset: e})
+			}
+		}
+	}
+	return true
+}
+
+// applyMainCharacterChange handles promoting/demoting a peer to/from main
+// character. Rule logic (validation, tear-required-or-not, destroy-on-tear)
+// lives in game.DecideMainCharacterChange; this function loads the inputs,
+// runs the decision, and applies the resulting writes + broadcasts.
+func applyMainCharacterChange(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	asset *dbgen.Asset,
+	player *dbgen.Player,
+	isMainCharacter bool,
+	tearPosition *int16,
+) bool {
+	if !isMainCharacter {
+		// Demote — no rule check, no tear.
+		if err := q.SetMainCharacter(ctx, dbgen.SetMainCharacterParams{
+			ID:              asset.ID,
+			IsMainCharacter: false,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not update main character")
+			return false
+		}
+		return true
+	}
+
+	// Find existing MC (if any, other than the asset being promoted).
+	owned, err := q.ListAssetsByOwner(ctx, player.ID)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not list owner assets")
+		return false
+	}
+	var oldMC *dbgen.Asset
+	for i := range owned {
+		a := &owned[i]
+		if a.GameID == asset.GameID && a.IsMainCharacter && a.ID != asset.ID && !a.IsDestroyed {
+			oldMC = a
+			break
+		}
+	}
+	var oldMargs []dbgen.Marginalium
+	if oldMC != nil {
+		oldMargs, err = q.ListMarginaliaByAsset(ctx, oldMC.ID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load old main character marginalia")
+			return false
+		}
+	}
+
+	decision, derr := game.DecideMainCharacterChange(asset, oldMC, oldMargs, tearPosition)
+	if derr != nil {
+		respondErr(w, derr.Code, derr.Message)
+		return false
+	}
+
+	if oldMC != nil {
+		if !tearAndReplaceOldMainCharacter(ctx, w, r, q, manager,
+			oldMC, oldMargs, player, asset, decision) {
+			return false
+		}
+	}
+
+	err = q.SetMainCharacter(ctx, dbgen.SetMainCharacterParams{
+		ID:              asset.ID,
+		IsMainCharacter: true,
+	})
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "could not update main character")
+		return false
+	}
+	return true
 }
 
 // ── Marginalia handlers ───────────────────────────────────────────────────────
@@ -489,11 +600,22 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// Snapshot model: tearing the asset reveals its current secrets to the
+		// tearing player. The grant is idempotent (no-op if already visible).
+		_ = q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
+			AssetID:  asset.ID,
+			PlayerID: player.ID,
+		})
+
 		if h, ok := manager.Get(asset.GameID); ok {
 			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
 				AssetID:  asset.ID,
 				Position: int16(pos),
 				TornByID: player.ID,
+			})
+			h.BroadcastEvent(model.EventSecretVisibilityGrant, model.SecretVisibilityGrantPayload{
+				AssetID:  asset.ID,
+				PlayerID: player.ID,
 			})
 		}
 
@@ -633,6 +755,10 @@ func TakeAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				OldOwnerID: oldOwnerID,
 				NewOwnerID: player.ID,
 			})
+			h.BroadcastEvent(model.EventSecretVisibilityGrant, model.SecretVisibilityGrantPayload{
+				AssetID:  asset.ID,
+				PlayerID: player.ID,
+			})
 		}
 
 		respond(w, http.StatusOK, map[string]any{"asset": enriched})
@@ -643,11 +769,13 @@ func TakeAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 // WriteSecret handles POST /api/assets/{assetId}/secrets.
 //
-// Any game member can write a secret on an asset's underside.
+// Only the asset owner can write a secret on its underside (per the rules:
+// "choose one of your assets that's helping you keep the secret"). Visibility
+// follows a snapshot model — see SECRETS_RULES.md.
 // Body: { text }
-func WriteSecret(q *dbgen.Queries) http.HandlerFunc {
+func WriteSecret(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, player, ok := requireAssetAccess(w, r, q)
+		asset, player, ok := requireAssetOwner(w, r, q)
 		if !ok {
 			return
 		}
@@ -675,6 +803,13 @@ func WriteSecret(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
+		if h, ok := manager.Get(asset.GameID); ok {
+			h.BroadcastEvent(model.EventSecretCreated, model.SecretCreatedPayload{
+				AssetID:  asset.ID,
+				AuthorID: player.ID,
+			})
+		}
+
 		respond(w, http.StatusCreated, map[string]any{"secret": secret})
 	}
 }
@@ -692,6 +827,33 @@ func GetSecrets(q *dbgen.Queries) http.HandlerFunc {
 
 		secrets, err := q.ListVisibleSecrets(r.Context(), dbgen.ListVisibleSecretsParams{
 			AssetID:  asset.ID,
+			PlayerID: player.ID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load secrets")
+			return
+		}
+		if secrets == nil {
+			secrets = []dbgen.Secret{}
+		}
+
+		respond(w, http.StatusOK, map[string]any{"secrets": secrets})
+	}
+}
+
+// ListVisibleSecretsForGame handles GET /api/tables/{id}/secrets/visible.
+//
+// Returns every secret in the game that the caller can see. Used by the
+// retinue UI to display per-asset secret counts without N requests.
+func ListVisibleSecretsForGame(q *dbgen.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gameID, player, ok := parseGamePlayer(w, r, q)
+		if !ok {
+			return
+		}
+
+		secrets, err := q.ListVisibleSecretsByGame(r.Context(), dbgen.ListVisibleSecretsByGameParams{
+			GameID:   gameID,
 			PlayerID: player.ID,
 		})
 		if err != nil {

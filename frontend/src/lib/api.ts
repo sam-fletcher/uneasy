@@ -762,7 +762,7 @@ export function createAsset(
 
 export function updateAsset(
 	assetID: number,
-	params: { name?: string; is_main_character?: boolean }
+	params: { name?: string; is_main_character?: boolean; tear_position?: number }
 ): Promise<{ asset: Asset }> {
 	return apiFetch(`/assets/${assetID}`, {
 		method: 'PUT',
@@ -827,6 +827,11 @@ export function writeSecret(assetID: number, text: string): Promise<{ secret: Se
 
 export function getSecrets(assetID: number): Promise<{ secrets: Secret[] }> {
 	return apiFetch(`/assets/${assetID}/secrets`);
+}
+
+/** All secrets in this game that the caller can see (one query for the retinue). */
+export function getVisibleSecrets(gameID: string | number): Promise<{ secrets: Secret[] }> {
+	return apiFetch(`/tables/${gameID}/secrets/visible`);
 }
 
 // ── Turn structure (Phase 2d) ─────────────────────────────────────────────────

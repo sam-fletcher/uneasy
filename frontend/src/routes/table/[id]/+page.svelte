@@ -11,6 +11,7 @@
 		getRoll, getActiveRollForGame,
 		listPlans, getPlan,
 		setEndgameMode,
+		getVisibleSecrets,
 		type RankingCategory,
 		type EndgameMode,
 	} from '$lib/api';
@@ -20,7 +21,7 @@
 		Law, Rumor,
 		ScenePost, SceneEntry, RecordRow, PresenceMember,
 		DiceRoll, DiceRollDie, DifficultyVote,
-		Plan,
+		Plan, Secret,
 	} from '$lib/api';
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
 	import PrologueView from '$lib/components/phases/PrologueView.svelte';
@@ -41,6 +42,7 @@
 	let laws = $state<Law[]>([]);
 	let rumors = $state<Rumor[]>([]);
 	let members = $state<PresenceMember[]>([]);
+	let secrets = $state<Secret[]>([]);
 	let currentPlayerID = $state<number | null>(null);
 	let error = $state('');
 	let loading = $state(true);
@@ -421,6 +423,13 @@
 				if (rumor) rumors = rumors.map(r => r.id === rumor.id ? rumor : r);
 				break;
 			}
+			case EventTypes.SecretCreated:
+			case EventTypes.SecretVisibilityGrant: {
+				// SecretCreated payload omits text. SecretVisibilityGrant grows
+				// the viewer's set when relevant. Either way, refetch.
+				getVisibleSecrets(gameID).then(d => { secrets = d.secrets; }).catch(() => {});
+				break;
+			}
 			case EventTypes.RevealSubmitted:
 			case EventTypes.RevealComplete: {
 				// Reveal widgets subscribe to these directly; no plan ID in payload.
@@ -496,6 +505,10 @@
 			if (data.game.phase === 'prologue' || data.game.phase === 'main_event') {
 				const assetData = await listAssets(gameID);
 				assets = assetData.assets;
+				try {
+					const sd = await getVisibleSecrets(gameID);
+					secrets = sd.secrets;
+				} catch { /* tolerate; secrets feature is non-critical */ }
 			}
 
 			// Load public record, scene posts, plans, and active roll if in main_event.
@@ -856,7 +869,10 @@
 				{players}
 				{members}
 				{assets}
+				{secrets}
 				viewerPlayerId={currentPlayerID}
+				leverageActive={activeRoll != null && activeRoll.outcome == null}
+				onSecretsChanged={() => getVisibleSecrets(gameID).then(d => { secrets = d.secrets; }).catch(() => {})}
 			/>
 		{/if}
 	</RetinueSheet>

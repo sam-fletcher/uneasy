@@ -55,6 +55,7 @@ const (
 	EventRumorUpdated          = "rumor.updated"           // rumor text edited
 	EventSPRecursivePlan       = "plan.sp_recursive"       // SP: recursive propaganda created
 	EventSecretVisibilityGrant = "secret.visibility_grant" // SA/CL: visibility granted
+	EventSecretCreated         = "secret.created"          // any player wrote a secret
 
 	// Phase 3c: Propose Decree
 	EventLawEnacted          = "law.enacted"           // PD: law created
@@ -317,6 +318,14 @@ type SPRecursivePlanPayload struct {
 type SecretVisibilityGrantPayload struct {
 	AssetID  int64 `json:"asset_id"`
 	PlayerID int64 `json:"player_id"`
+}
+
+// SecretCreatedPayload is for EventSecretCreated. Intentionally omits the
+// secret text so listeners without visibility don't leak. Clients with
+// visibility can re-fetch.
+type SecretCreatedPayload struct {
+	AssetID  int64 `json:"asset_id"`
+	AuthorID int64 `json:"author_id"`
 }
 
 // ── Phase 3c payload types ────────────────────────────────────────────────────
