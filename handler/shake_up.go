@@ -129,7 +129,7 @@ func BeginShakeUp(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, g
 	if err != nil {
 		return fmt.Errorf("set phase: %w", err)
 	}
-	broadcastEvent(manager, gameID, model.EventPhaseChanged, model.PhaseChangedPayload{Phase: model.PhaseShakeUp})
+	broadcastPhaseChange(ctx, q, manager, gameID, model.PhaseShakeUp)
 	broadcastEvent(manager, gameID, model.EventShakeUpStepChanged, model.ShakeUpStepChangedPayload{
 		Category: cat, Step: step,
 	})
@@ -517,7 +517,7 @@ func maybeAdvanceShakeUpCategory(
 			return fmt.Errorf("end game: %w", err)
 		}
 		broadcastEvent(manager, gameID, model.EventShakeUpEnded, model.ShakeUpEndedPayload{})
-		broadcastEvent(manager, gameID, model.EventPhaseChanged, model.PhaseChangedPayload{Phase: model.PhaseEnded})
+		broadcastPhaseChange(ctx, q, manager, gameID, model.PhaseEnded)
 		return nil
 	}
 	step := gamepkg.ShakeUpStepRolling

@@ -202,8 +202,8 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 
 		// Public record + scene threading
 		r.Get("/tables/{id}/record", handler.GetFullRecord(q))
-		r.Get("/tables/{id}/rows/{row}/posts", handler.ListScenePosts(q))
-		r.Post("/tables/{id}/rows/{row}/posts", handler.CreateScenePost(q, manager))
+		r.Get("/tables/{id}/posts", handler.ListGamePosts(q))
+		r.Post("/tables/{id}/posts", handler.CreatePlayerPost(q, manager))
 		r.Post("/tables/{id}/rows/{row}/summary", handler.CreateSceneEntry(q, manager))
 
 		// Turn structure (Phase 2d)

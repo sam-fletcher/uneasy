@@ -167,15 +167,33 @@ export interface Secret {
 	created_at: string;
 }
 
-export interface ScenePost {
+/**
+ * One entry in the unified chat feed. The same row can be a player message,
+ * a system-emitted boundary marker (phase/row/scene transition), or — once
+ * the action log lands — a player-action log entry.
+ *
+ * - kind='message'  : free-text, author_id is set, system fields are null.
+ * - kind='boundary' : system-authored, system_code is set, severity is
+ *                     'important', author_id is null.
+ * - kind='log'      : action-log entry; author_id may be set to attribute the
+ *                     action, severity reflects how prominently to render it.
+ */
+export interface ChatPost {
 	id: number;
 	game_id: number;
 	row_number: number | null;
 	plan_id: number | null;
-	author_id: number;
+	author_id: number | null;
 	body: string;
 	created_at: string;
+	kind: 'message' | 'log' | 'boundary';
+	severity: 'minor' | 'default' | 'important' | null;
+	system_code: string | null;
+	system_data: unknown;
 }
+
+/** @deprecated use ChatPost — retained briefly for incremental migration. */
+export type ScenePost = ChatPost;
 
 export interface SceneEntry {
 	id: number;
@@ -713,29 +731,23 @@ export function createSceneEntry(
 	});
 }
 
-// ── Scene Posts ──────────────────────────────────────────────────────────────
+// ── Chat (unified game-wide feed) ────────────────────────────────────────────
 
-export function listScenePosts(
+export function listGamePosts(
 	gameID: string | number,
-	rowNumber: number,
-	opts?: { planID?: number; afterID?: number }
-): Promise<{ posts: ScenePost[] }> {
-	const params = new URLSearchParams();
-	if (opts?.planID != null) params.set('plan_id', String(opts.planID));
-	if (opts?.afterID != null) params.set('after', String(opts.afterID));
-	const query = params.toString() ? `?${params}` : '';
-	return apiFetch(`/tables/${gameID}/rows/${rowNumber}/posts${query}`);
+	opts?: { afterID?: number }
+): Promise<{ posts: ChatPost[] }> {
+	const query = opts?.afterID != null ? `?after=${opts.afterID}` : '';
+	return apiFetch(`/tables/${gameID}/posts${query}`);
 }
 
-export function createScenePost(
+export function createPlayerPost(
 	gameID: string | number,
-	rowNumber: number,
-	body: string,
-	planID?: number
-): Promise<{ post: ScenePost }> {
-	return apiFetch(`/tables/${gameID}/rows/${rowNumber}/posts`, {
+	body: string
+): Promise<{ post: ChatPost }> {
+	return apiFetch(`/tables/${gameID}/posts`, {
 		method: 'POST',
-		body: JSON.stringify({ body, plan_id: planID ?? null })
+		body: JSON.stringify({ body })
 	});
 }
 

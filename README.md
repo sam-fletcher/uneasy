@@ -4,7 +4,7 @@ Go + Svelte web adaptation of the TTRPG. See `../PLANNING.md` and `../PHASE1_SPE
 
 ## First-time setup
 
-You need: **Go 1.22+**, **Node 20+**, **Docker Desktop**, and **golangci-lint**.
+You need: **Go 1.26+**, **Node 20+**, **Docker Desktop**, and **golangci-lint**.
 
 ```bash
 # Install golangci-lint (dev linter)

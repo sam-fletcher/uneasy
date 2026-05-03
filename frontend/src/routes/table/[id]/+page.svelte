@@ -7,7 +7,7 @@
 		getGameState, getMe,
 		startToneSetting, startPrologue,
 		updateToneTopic, addToneTopic,
-		listAssets, getFullRecord, listScenePosts,
+		listAssets, getFullRecord, listGamePosts,
 		getRoll, getActiveRollForGame,
 		listPlans, getPlan,
 		setEndgameMode,
@@ -19,7 +19,7 @@
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
 		Law, Rumor,
-		ScenePost, SceneEntry, RecordRow, PresenceMember,
+		ChatPost, SceneEntry, RecordRow, PresenceMember,
 		DiceRoll, DiceRollDie, DifficultyVote,
 		Plan, Secret,
 	} from '$lib/api';
@@ -28,6 +28,7 @@
 	import ShakeUpView from '$lib/components/phases/ShakeUpView.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import RetinueView from '$lib/components/RetinueView.svelte';
+	import ChatPanel from '$lib/components/ChatPanel.svelte';
 
 	const gameID = $derived(page.params.id as string);
 
@@ -64,9 +65,9 @@
 		'Several people are writing…'
 	);
 
-	// ── Public record + scene posts (main_event) ──────────────────────────────
+	// ── Public record + unified chat feed ─────────────────────────────────────
 	let recordRows = $state<RecordRow[]>([]);
-	let scenePosts = $state<ScenePost[]>([]);
+	let chatPosts = $state<ChatPost[]>([]);
 
 	// ── Turn step state ───────────────────────────────────────────────────────
 	// Tracks whether the focus player has ended the scene for the current row.
@@ -167,8 +168,7 @@
 				const newRow = msg.payload.row_number as number;
 				if (game) game = { ...game, current_row: newRow };
 				sceneEnded = false; // reset turn step for new row
-				// Reload posts for the new row's scene thread.
-				listScenePosts(gameID, newRow).then(data => { scenePosts = data.posts; }).catch(() => {});
+				// Chat is now a single continuous game-wide feed; no reset needed.
 				break;
 			}
 			case EventTypes.SceneEnded: {
@@ -176,9 +176,9 @@
 				break;
 			}
 			case EventTypes.ScenePostCreated: {
-				const post = msg.payload.post as ScenePost;
-				if (!scenePosts.find(p => p.id === post.id)) {
-					scenePosts = [...scenePosts, post];
+				const post = msg.payload.post as ChatPost;
+				if (!chatPosts.find(p => p.id === post.id)) {
+					chatPosts = [...chatPosts, post];
 				}
 				break;
 			}
@@ -511,15 +511,19 @@
 				} catch { /* tolerate; secrets feature is non-critical */ }
 			}
 
-			// Load public record, scene posts, plans, and active roll if in main_event.
+			// Chat is available in every phase, so load it unconditionally.
+			try {
+				const postsData = await listGamePosts(gameID);
+				chatPosts = postsData.posts;
+			} catch { /* tolerate empty chat on failure */ }
+
+			// Public record, plans, and active roll only matter in main_event.
 			if (data.game.phase === 'main_event' && data.game.current_row > 0) {
-				const [postsData, recordData, rollData, plansData] = await Promise.all([
-					listScenePosts(gameID, data.game.current_row),
+				const [recordData, rollData, plansData] = await Promise.all([
 					getFullRecord(gameID),
 					getActiveRollForGame(gameID),
 					listPlans(gameID),
 				]);
-				scenePosts = postsData.posts;
 				recordRows = recordData.rows;
 				plans = plansData.plans;
 				if (rollData.roll) {
@@ -706,6 +710,13 @@
 		<p class="error">{error}</p>
 	{/if}
 
+	<!--
+		Body: on desktop ≥1024px this becomes a 2-column grid (game | chat).
+		On mobile/tablet it's a single column with the chat panel positioned
+		absolutely (strip pinned to bottom, expanded sheet covering the body).
+	-->
+	<div class="table-body">
+
 	{#if loading}
 		<div class="center-message">Loading…</div>
 
@@ -815,9 +826,7 @@
 			{rumors}
 			{currentPlayerID}
 			bind:recordRows
-			bind:scenePosts
 			bind:sceneEnded
-			{typingLabel}
 			{playerNameMap}
 			{isFacilitator}
 			bind:activeRoll
@@ -861,6 +870,17 @@
 	{:else}
 		<div class="center-message">Unknown phase.</div>
 	{/if}
+
+		{#if !loading && currentPlayerID != null && game}
+			<ChatPanel
+				{gameID}
+				posts={chatPosts}
+				{players}
+				{currentPlayerID}
+				{typingLabel}
+			/>
+		{/if}
+	</div>
 
 	<RetinueSheet open={retinueOpenForPlayer !== null} onClose={() => retinueOpenForPlayer = null}>
 		{#if retinueOpenForPlayer !== null}
@@ -916,6 +936,38 @@
 		flex-direction: column;
 		height: 100dvh;
 		max-width: 100%;
+	}
+
+	/*
+	 * Body fills the space below the header. ChatPanel is a sibling of the
+	 * phase content. On mobile it positions itself absolutely (strip pinned
+	 * to bottom; expanded sheet covers the body), so the phase content reads
+	 * the body's full size. On desktop ≥1024px the body becomes a 2-col
+	 * grid: phase content on the left, chat as the permanent right column.
+	 */
+	.table-body {
+		flex: 1;
+		min-height: 0;
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		/* Keep phase content from being hidden behind the mobile chat strip,
+		   including the iOS home-indicator safe area. Must stay in sync with
+		   the strip's min-height + padding in ChatPanel.svelte. */
+		padding-bottom: calc(56px + env(safe-area-inset-bottom));
+	}
+
+	@media (min-width: 1024px) {
+		.table-body {
+			display: grid;
+			grid-template-columns: 1fr 360px;
+			padding-bottom: 0;
+		}
+		/* The phase content children are direct children of .table-body; in
+		   grid mode they automatically land in column 1, ChatPanel in
+		   column 2. The min-width: 0 prevents long content from blowing
+		   out the column. */
+		.table-body > :global(*) { min-width: 0; min-height: 0; }
 	}
 
 	header {

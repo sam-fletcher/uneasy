@@ -159,6 +159,9 @@ func advanceRowInner(
 			CrossedEngrailed: crossed,
 		})
 	}
+	EmitBoundary(r.Context(), q, manager, game.ID, "row.advanced",
+		fmt.Sprintf("Row %d begins", newRow), &newRow, nil,
+		map[string]any{"row_number": newRow, "crossed_engrailed": crossed})
 
 	// Run the ranking update algorithm when crossing an engrailed line.
 	// runRankingUpdate is defined in handler/plans.go (same package).
@@ -194,6 +197,11 @@ func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				PlayerID:  player.ID,
 			})
 		}
+		row := game.CurrentRow
+		EmitBoundary(r.Context(), q, manager, game.ID, "scene.ended",
+			fmt.Sprintf("%s ends the scene", player.DisplayName),
+			&row, nil,
+			map[string]any{"row_number": row, "player_id": player.ID})
 
 		respond(w, http.StatusOK, map[string]any{"row_number": game.CurrentRow})
 	}

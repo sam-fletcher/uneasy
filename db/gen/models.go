@@ -266,13 +266,17 @@ type SceneEntry struct {
 }
 
 type ScenePost struct {
-	ID        int64              `db:"id" json:"id"`
-	GameID    int64              `db:"game_id" json:"game_id"`
-	RowNumber *int16             `db:"row_number" json:"row_number"`
-	PlanID    *int64             `db:"plan_id" json:"plan_id"`
-	AuthorID  int64              `db:"author_id" json:"author_id"`
-	Body      string             `db:"body" json:"body"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ID         int64              `db:"id" json:"id"`
+	GameID     int64              `db:"game_id" json:"game_id"`
+	RowNumber  *int16             `db:"row_number" json:"row_number"`
+	PlanID     *int64             `db:"plan_id" json:"plan_id"`
+	AuthorID   *int64             `db:"author_id" json:"author_id"`
+	Body       string             `db:"body" json:"body"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	Kind       string             `db:"kind" json:"kind"`
+	Severity   *string            `db:"severity" json:"severity"`
+	SystemCode *string            `db:"system_code" json:"system_code"`
+	SystemData []byte             `db:"system_data" json:"system_data"`
 }
 
 type Secret struct {

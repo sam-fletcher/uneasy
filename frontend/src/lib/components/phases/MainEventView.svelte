@@ -1,7 +1,7 @@
 <!-- MainEventView.svelte
-  Main event phase: public record sidebar, scene feed.
-  Owns its local UI state (post input, summary form, typing).
-  recordRows and scenePosts are bindable so the parent WS handler can also update them.
+  Main event phase: public record sidebar + focus-player action bar.
+  Owns its local UI state (summary form, refresh-asset selection).
+  Chat now lives in the page-level ChatPanel; this view no longer owns posts.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -9,11 +9,11 @@
 	import { WAR_EVENTS } from '$lib/ws';
 	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
 	import {
-		createScenePost, createSceneEntry,
+		createSceneEntry,
 		endScene, refreshAssets, passFocus, createRoll,
 		listWars,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, ScenePost, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, WarStateResponse } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, WarStateResponse } from '$lib/api';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
 	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
@@ -28,9 +28,7 @@
 		assets: Asset[];
 		currentPlayerID: number | null;
 		recordRows: RecordRow[];
-		scenePosts: ScenePost[];
 		sceneEnded: boolean;
-		typingLabel: string;
 		playerNameMap: Map<number, string>;
 		isFacilitator: boolean;
 		/** Active (unresolved) dice roll, or null if none. */
@@ -56,9 +54,7 @@
 		assets,
 		currentPlayerID,
 		recordRows = $bindable(),
-		scenePosts = $bindable(),
 		sceneEnded = $bindable(),
-		typingLabel,
 		playerNameMap,
 		isFacilitator,
 		activeRoll = $bindable(),
@@ -110,56 +106,9 @@
 			: null
 	);
 
-	// ── Scene post input ──────────────────────────────────────────────────────
-	let newPostBody = $state('');
-	let sending = $state(false);
-	let feedEl = $state<HTMLElement | null>(null);
+	// Local error string for non-chat actions (summary, end-scene, refresh,
+	// pass focus, start-roll). Chat errors live inside ChatPanel now.
 	let error = $state('');
-
-	let lastTypingSent = 0;
-	let typingStopTimeout: ReturnType<typeof setTimeout> | null = null;
-
-	$effect(() => {
-		if (scenePosts.length > 0 && feedEl) {
-			feedEl.scrollTop = feedEl.scrollHeight;
-		}
-	});
-
-	function onInput() {
-		const now = Date.now();
-		if (now - lastTypingSent > 2500) {
-			window.dispatchEvent(new CustomEvent('uneasy:typing', { detail: { typing: true } }));
-			lastTypingSent = now;
-		}
-		if (typingStopTimeout) clearTimeout(typingStopTimeout);
-		typingStopTimeout = setTimeout(() => {
-			window.dispatchEvent(new CustomEvent('uneasy:typing', { detail: { typing: false } }));
-		}, 2000);
-	}
-
-	async function sendPost() {
-		const body = newPostBody.trim();
-		if (!body || sending) return;
-		sending = true;
-		try {
-			const { post } = await createScenePost(game.id, game.current_row, body);
-			newPostBody = '';
-			if (!scenePosts.find(p => p.id === post.id)) {
-				scenePosts = [...scenePosts, post];
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not send.';
-		} finally {
-			sending = false;
-		}
-	}
-
-	function onKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !e.shiftKey) {
-			e.preventDefault();
-			sendPost();
-		}
-	}
 
 	// ── Scene summary ─────────────────────────────────────────────────────────
 	let newSummaryBody = $state('');
@@ -402,38 +351,6 @@
 					{/if}
 				</div>
 			{/if}
-
-			<div class="feed" bind:this={feedEl}>
-				{#if scenePosts.length === 0}
-					<p class="empty">No posts yet. Begin the scene.</p>
-				{:else}
-					{#each scenePosts as post (post.id)}
-						<div class="post">
-							<span class="post-author">
-								{players.find(p => p.id === post.author_id)?.display_name ?? 'Unknown'}
-							</span>
-							<span class="post-body">{post.body}</span>
-							<span class="post-time">{new Date(post.created_at).toLocaleTimeString()}</span>
-						</div>
-					{/each}
-				{/if}
-			</div>
-
-			<div class="typing-indicator" aria-live="polite">{typingLabel}</div>
-
-			<div class="input-row">
-				<textarea
-					placeholder="Write something… (Enter to send, Shift+Enter for newline)"
-					bind:value={newPostBody}
-					oninput={onInput}
-					onkeydown={onKeydown}
-					rows={2}
-					disabled={sending}
-				></textarea>
-				<button class="send" onclick={sendPost} disabled={sending || !newPostBody.trim()}>
-					{sending ? '…' : 'Send'}
-				</button>
-			</div>
 
 			<div class="summary-bar">
 				{#if summaryOpen}
@@ -710,68 +627,6 @@
 		margin: 0.3rem 0;
 	}
 
-	.feed {
-		flex: 1;
-		overflow-y: auto;
-		padding: 0.5rem 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-height: 0;
-	}
-
-	.empty {
-		color: #666;
-		text-align: center;
-		margin-top: 2rem;
-		font-size: 0.85rem;
-	}
-
-	.post {
-		display: grid;
-		grid-template-columns: auto 1fr auto;
-		gap: 0.4rem;
-		align-items: baseline;
-	}
-
-	.post-author {
-		font-weight: 600;
-		color: #c8a96e;
-		font-size: 0.85rem;
-		white-space: nowrap;
-	}
-
-	.post-body {
-		font-size: 0.9rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
-
-	.post-time {
-		font-size: 0.72rem;
-		color: #555;
-		white-space: nowrap;
-	}
-
-	.typing-indicator {
-		font-size: 0.78rem;
-		color: #777;
-		height: 1.2em;
-		flex-shrink: 0;
-	}
-
-	/* ── Post input ──────────────────────────────────────────────────────────── */
-
-	.input-row {
-		display: flex;
-		gap: 0.5rem;
-		padding-top: 0.4rem;
-		border-top: 1px solid #2a2a2a;
-		align-items: flex-end;
-		flex-shrink: 0;
-	}
-
 	textarea {
 		flex: 1;
 		font-size: 0.9rem;
@@ -789,18 +644,6 @@
 		outline: 2px solid #c8a96e;
 		outline-offset: 1px;
 	}
-
-	.send {
-		background: #c8a96e;
-		color: #1a1a1a;
-		font-weight: 600;
-		padding: 0.5rem 0.9rem;
-		min-width: 56px;
-		align-self: flex-end;
-		border-radius: 6px;
-	}
-
-	.send:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	/* ── Summary bar ─────────────────────────────────────────────────────────── */
 

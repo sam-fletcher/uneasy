@@ -32,10 +32,40 @@ func requireFacilitator(w http.ResponseWriter, r *http.Request, q *dbgen.Queries
 	return &game, true
 }
 
-// broadcastPhaseChange sends a phase.changed event to all connected clients.
-func broadcastPhaseChange(manager *hub.Manager, gameID int64, phase model.GamePhase) {
+// broadcastPhaseChange sends a phase.changed event and writes a boundary
+// post into the unified chat feed so the transition is visible inline.
+func broadcastPhaseChange(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	phase model.GamePhase,
+) {
 	if h, ok := manager.Get(gameID); ok {
 		h.BroadcastEvent(model.EventPhaseChanged, model.PhaseChangedPayload{Phase: phase})
+	}
+	EmitBoundary(ctx, q, manager, gameID, "phase.changed", phaseBoundaryLabel(phase), nil, nil,
+		map[string]any{"phase": string(phase)})
+}
+
+// phaseBoundaryLabel produces the human-readable boundary text for a phase
+// transition. Kept compact — clients render a divider, not a paragraph.
+func phaseBoundaryLabel(phase model.GamePhase) string {
+	switch phase {
+	case model.PhaseLobby:
+		return "The lobby is open"
+	case model.PhaseToneSetting:
+		return "Tone-setting begins"
+	case model.PhasePrologue:
+		return "Prologue begins"
+	case model.PhaseMainEvent:
+		return "Main event begins"
+	case model.PhaseShakeUp:
+		return "Shake-up begins"
+	case model.PhaseEnded:
+		return "Game ends"
+	default:
+		return "Phase: " + string(phase)
 	}
 }
 
@@ -169,7 +199,7 @@ func StartToneSetting(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		broadcastPhaseChange(manager, game.ID, model.PhaseToneSetting)
+		broadcastPhaseChange(ctx, q, manager, game.ID, model.PhaseToneSetting)
 		respond(w, http.StatusOK, map[string]any{"phase": model.PhaseToneSetting})
 	}
 }
@@ -224,7 +254,7 @@ func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		broadcastPhaseChange(manager, game.ID, model.PhasePrologue)
+		broadcastPhaseChange(ctx, q, manager, game.ID, model.PhasePrologue)
 		respond(w, http.StatusOK, map[string]any{"phase": model.PhasePrologue})
 	}
 }
@@ -292,7 +322,7 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		broadcastPhaseChange(manager, game.ID, model.PhaseMainEvent)
+		broadcastPhaseChange(ctx, q, manager, game.ID, model.PhaseMainEvent)
 
 		respond(w, http.StatusOK, map[string]any{
 			"phase":           model.PhaseMainEvent,

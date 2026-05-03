@@ -1,48 +1,41 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/go-chi/chi/v5"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
 )
 
-// ListScenePosts handles GET /api/tables/{id}/rows/{row}/posts.
+// ListGamePosts handles GET /api/tables/{id}/posts.
 //
-// Returns posts for a scene thread. Supports ?plan_id=X to filter by plan,
-// and ?after=Y for catch-up on WebSocket reconnect.
-func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
+// Returns the unified game-wide chat feed (player messages, log entries,
+// boundary markers) in chronological order. Supports ?after=<id> for
+// catch-up on WebSocket reconnect.
+func ListGamePosts(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, _, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
-		rowNum, err := strconv.ParseInt(chi.URLParam(r, "row"), 10, 16)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid row number")
-			return
-		}
-
 		ctx := r.Context()
 
-		// Check for ?after=<id> catch-up mode.
 		if afterStr := r.URL.Query().Get("after"); afterStr != "" {
-			afterID, parseErr := strconv.ParseInt(afterStr, 10, 64)
-			if parseErr != nil {
+			afterID, err := strconv.ParseInt(afterStr, 10, 64)
+			if err != nil {
 				respondErr(w, http.StatusBadRequest, "invalid after id")
 				return
 			}
-			posts, postsErr := q.ListScenePostsAfter(ctx, dbgen.ListScenePostsAfterParams{
+			posts, err := q.ListGamePostsAfter(ctx, dbgen.ListGamePostsAfterParams{
 				GameID: gameID,
 				ID:     afterID,
 			})
-			if postsErr != nil {
+			if err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not load posts")
 				return
 			}
@@ -50,62 +43,31 @@ func ListScenePosts(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		row := int16(rowNum)
-
-		// Filter by plan_id if provided, otherwise open scene (plan_id IS NULL).
-		if pidStr := r.URL.Query().Get("plan_id"); pidStr != "" {
-			pid, parseErr := strconv.ParseInt(pidStr, 10, 64)
-			if parseErr != nil {
-				respondErr(w, http.StatusBadRequest, "invalid plan_id")
-				return
-			}
-			posts, postsErr := q.ListScenePostsByRowAndPlan(ctx, dbgen.ListScenePostsByRowAndPlanParams{
-				GameID:    gameID,
-				RowNumber: &row,
-				PlanID:    &pid,
-			})
-			if postsErr != nil {
-				respondErr(w, http.StatusInternalServerError, "could not load posts")
-				return
-			}
-			respond(w, http.StatusOK, map[string]any{"posts": posts})
-			return
-		}
-
-		// Open scene (no plan filter).
-		posts, err := q.ListScenePostsByRowOpenScene(ctx, dbgen.ListScenePostsByRowOpenSceneParams{
-			GameID:    gameID,
-			RowNumber: &row,
-		})
+		posts, err := q.ListGamePosts(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load posts")
 			return
 		}
-
 		respond(w, http.StatusOK, map[string]any{"posts": posts})
 	}
 }
 
-// CreateScenePost handles POST /api/tables/{id}/rows/{row}/posts.
+// CreatePlayerPost handles POST /api/tables/{id}/posts.
 //
-// Inserts a scene post and broadcasts it to all connected clients.
-func CreateScenePost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+// Inserts a free-text player message into the game's chat feed and
+// broadcasts it. Player messages are not pinned to a row or plan; the
+// row_number/plan_id columns exist only for system-emitted entries.
+func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
-		rowNum, err := strconv.ParseInt(chi.URLParam(r, "row"), 10, 16)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid row number")
-			return
-		}
 
 		var body struct {
-			Body   string `json:"body"`
-			PlanID *int64 `json:"plan_id"`
+			Body string `json:"body"`
 		}
-		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
@@ -115,25 +77,68 @@ func CreateScenePost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		ctx := r.Context()
-
-		post, err := q.CreateScenePost(ctx, dbgen.CreateScenePostParams{
+		post, err := q.CreatePlayerMessage(r.Context(), dbgen.CreatePlayerMessageParams{
 			GameID:    gameID,
-			RowNumber: new(int16(rowNum)),
-			PlanID:    body.PlanID,
-			AuthorID:  player.ID,
+			AuthorID:  &player.ID,
 			Body:      body.Body,
+			RowNumber: nil,
+			PlanID:    nil,
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not save post")
 			return
 		}
 
-		// Broadcast to all connected WebSocket clients for this table.
 		if h, ok := manager.Get(gameID); ok {
 			h.BroadcastEvent(model.EventScenePostCreated, model.ScenePostCreatedPayload{Post: post})
 		}
-
 		respond(w, http.StatusCreated, map[string]any{"post": post})
+	}
+}
+
+// EmitBoundary inserts a system-authored boundary marker into the chat feed
+// and broadcasts the resulting post over the table's WebSocket hub. Used by
+// transition handlers (row.advanced, phase.changed, plan lifecycle, scene
+// ended, etc.) to mark phase transitions in the unified chat.
+//
+// rowNumber and planID are optional context that lets the client render and
+// jump-to the boundary; pass nil when not applicable. data is an optional
+// JSON-encodable payload stored as JSONB on the row; pass nil for none.
+//
+// On error, the boundary is silently dropped — boundaries are
+// best-effort metadata, not load-bearing for game state, and we don't want
+// a chat-write failure to roll back the actual transition.
+func EmitBoundary(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	systemCode string,
+	body string,
+	rowNumber *int16,
+	planID *int64,
+	data any,
+) {
+	var raw []byte
+	if data != nil {
+		var err error
+		raw, err = json.Marshal(data)
+		if err != nil {
+			return
+		}
+	}
+	post, err := q.CreateBoundaryPost(ctx, dbgen.CreateBoundaryPostParams{
+		GameID:     gameID,
+		Body:       body,
+		RowNumber:  rowNumber,
+		PlanID:     planID,
+		SystemCode: &systemCode,
+		SystemData: raw,
+	})
+	if err != nil {
+		return
+	}
+	if h, ok := manager.Get(gameID); ok {
+		h.BroadcastEvent(model.EventScenePostCreated, model.ScenePostCreatedPayload{Post: post})
 	}
 }

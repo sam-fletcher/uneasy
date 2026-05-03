@@ -9,6 +9,146 @@ import (
 	"context"
 )
 
+const createBoundaryPost = `-- name: CreateBoundaryPost :one
+INSERT INTO scene_posts (
+  game_id, body, row_number, plan_id, kind, severity, system_code, system_data
+) VALUES ($1, $2, $3, $4, 'boundary', 'important', $5, $6)
+RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data
+`
+
+type CreateBoundaryPostParams struct {
+	GameID     int64   `db:"game_id" json:"game_id"`
+	Body       string  `db:"body" json:"body"`
+	RowNumber  *int16  `db:"row_number" json:"row_number"`
+	PlanID     *int64  `db:"plan_id" json:"plan_id"`
+	SystemCode *string `db:"system_code" json:"system_code"`
+	SystemData []byte  `db:"system_data" json:"system_data"`
+}
+
+func (q *Queries) CreateBoundaryPost(ctx context.Context, arg CreateBoundaryPostParams) (ScenePost, error) {
+	row := q.db.QueryRow(ctx, createBoundaryPost,
+		arg.GameID,
+		arg.Body,
+		arg.RowNumber,
+		arg.PlanID,
+		arg.SystemCode,
+		arg.SystemData,
+	)
+	var i ScenePost
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.RowNumber,
+		&i.PlanID,
+		&i.AuthorID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.Kind,
+		&i.Severity,
+		&i.SystemCode,
+		&i.SystemData,
+	)
+	return i, err
+}
+
+const createLogPost = `-- name: CreateLogPost :one
+INSERT INTO scene_posts (
+  game_id, body, row_number, plan_id, kind, severity, system_code, system_data, author_id
+) VALUES ($1, $2, $3, $4, 'log', $5, $6, $7, $8)
+RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data
+`
+
+type CreateLogPostParams struct {
+	GameID     int64   `db:"game_id" json:"game_id"`
+	Body       string  `db:"body" json:"body"`
+	RowNumber  *int16  `db:"row_number" json:"row_number"`
+	PlanID     *int64  `db:"plan_id" json:"plan_id"`
+	Severity   *string `db:"severity" json:"severity"`
+	SystemCode *string `db:"system_code" json:"system_code"`
+	SystemData []byte  `db:"system_data" json:"system_data"`
+	AuthorID   *int64  `db:"author_id" json:"author_id"`
+}
+
+func (q *Queries) CreateLogPost(ctx context.Context, arg CreateLogPostParams) (ScenePost, error) {
+	row := q.db.QueryRow(ctx, createLogPost,
+		arg.GameID,
+		arg.Body,
+		arg.RowNumber,
+		arg.PlanID,
+		arg.Severity,
+		arg.SystemCode,
+		arg.SystemData,
+		arg.AuthorID,
+	)
+	var i ScenePost
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.RowNumber,
+		&i.PlanID,
+		&i.AuthorID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.Kind,
+		&i.Severity,
+		&i.SystemCode,
+		&i.SystemData,
+	)
+	return i, err
+}
+
+const createPlayerMessage = `-- name: CreatePlayerMessage :one
+
+INSERT INTO scene_posts (
+  game_id, author_id, body, row_number, plan_id, kind
+) VALUES ($1, $2, $3, $4, $5, 'message')
+RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data
+`
+
+type CreatePlayerMessageParams struct {
+	GameID    int64  `db:"game_id" json:"game_id"`
+	AuthorID  *int64 `db:"author_id" json:"author_id"`
+	Body      string `db:"body" json:"body"`
+	RowNumber *int16 `db:"row_number" json:"row_number"`
+	PlanID    *int64 `db:"plan_id" json:"plan_id"`
+}
+
+// sqlc query file for the unified chat feed.
+//
+// scene_posts is one game-wide stream of three kinds of entries:
+//   - 'message'  : free-text written by a player (author_id required)
+//   - 'log'      : system-emitted action-log entry (severity required)
+//   - 'boundary' : system-emitted phase/row/plan/scene transition marker
+//
+// Reads are flat and chronological by id. row_number / plan_id / system_code
+// remain on each row as metadata that the client can use for "jump to" UI.
+//
+// scene_entries (the public-record one-line summaries) are unchanged here.
+func (q *Queries) CreatePlayerMessage(ctx context.Context, arg CreatePlayerMessageParams) (ScenePost, error) {
+	row := q.db.QueryRow(ctx, createPlayerMessage,
+		arg.GameID,
+		arg.AuthorID,
+		arg.Body,
+		arg.RowNumber,
+		arg.PlanID,
+	)
+	var i ScenePost
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.RowNumber,
+		&i.PlanID,
+		&i.AuthorID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.Kind,
+		&i.Severity,
+		&i.SystemCode,
+		&i.SystemData,
+	)
+	return i, err
+}
+
 const createSceneEntry = `-- name: CreateSceneEntry :one
 INSERT INTO scene_entries (game_id, row_number, author_id, body)
 VALUES ($1, $2, $3, $4)
@@ -41,41 +181,123 @@ func (q *Queries) CreateSceneEntry(ctx context.Context, arg CreateSceneEntryPara
 	return i, err
 }
 
-const createScenePost = `-- name: CreateScenePost :one
-
-INSERT INTO scene_posts (game_id, row_number, plan_id, author_id, body)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, game_id, row_number, plan_id, author_id, body, created_at
+const listGameBoundaries = `-- name: ListGameBoundaries :many
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data FROM scene_posts
+WHERE game_id = $1 AND kind = 'boundary'
+ORDER BY id ASC
 `
 
-type CreateScenePostParams struct {
-	GameID    int64  `db:"game_id" json:"game_id"`
-	RowNumber *int16 `db:"row_number" json:"row_number"`
-	PlanID    *int64 `db:"plan_id" json:"plan_id"`
-	AuthorID  int64  `db:"author_id" json:"author_id"`
-	Body      string `db:"body" json:"body"`
+func (q *Queries) ListGameBoundaries(ctx context.Context, gameID int64) ([]ScenePost, error) {
+	rows, err := q.db.Query(ctx, listGameBoundaries, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScenePost{}
+	for rows.Next() {
+		var i ScenePost
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.RowNumber,
+			&i.PlanID,
+			&i.AuthorID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.Kind,
+			&i.Severity,
+			&i.SystemCode,
+			&i.SystemData,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-// sqlc query file for scene posts (replaces Phase 1 flat posts).
-func (q *Queries) CreateScenePost(ctx context.Context, arg CreateScenePostParams) (ScenePost, error) {
-	row := q.db.QueryRow(ctx, createScenePost,
-		arg.GameID,
-		arg.RowNumber,
-		arg.PlanID,
-		arg.AuthorID,
-		arg.Body,
-	)
-	var i ScenePost
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.RowNumber,
-		&i.PlanID,
-		&i.AuthorID,
-		&i.Body,
-		&i.CreatedAt,
-	)
-	return i, err
+const listGamePosts = `-- name: ListGamePosts :many
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data FROM scene_posts
+WHERE game_id = $1
+ORDER BY id ASC
+`
+
+func (q *Queries) ListGamePosts(ctx context.Context, gameID int64) ([]ScenePost, error) {
+	rows, err := q.db.Query(ctx, listGamePosts, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScenePost{}
+	for rows.Next() {
+		var i ScenePost
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.RowNumber,
+			&i.PlanID,
+			&i.AuthorID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.Kind,
+			&i.Severity,
+			&i.SystemCode,
+			&i.SystemData,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGamePostsAfter = `-- name: ListGamePostsAfter :many
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data FROM scene_posts
+WHERE game_id = $1 AND id > $2
+ORDER BY id ASC
+`
+
+type ListGamePostsAfterParams struct {
+	GameID int64 `db:"game_id" json:"game_id"`
+	ID     int64 `db:"id" json:"id"`
+}
+
+func (q *Queries) ListGamePostsAfter(ctx context.Context, arg ListGamePostsAfterParams) ([]ScenePost, error) {
+	rows, err := q.db.Query(ctx, listGamePostsAfter, arg.GameID, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScenePost{}
+	for rows.Next() {
+		var i ScenePost
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.RowNumber,
+			&i.PlanID,
+			&i.AuthorID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.Kind,
+			&i.Severity,
+			&i.SystemCode,
+			&i.SystemData,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listSceneEntries = `-- name: ListSceneEntries :many
@@ -135,163 +357,6 @@ func (q *Queries) ListSceneEntriesByRow(ctx context.Context, arg ListSceneEntrie
 			&i.ID,
 			&i.GameID,
 			&i.RowNumber,
-			&i.AuthorID,
-			&i.Body,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listScenePostsAfter = `-- name: ListScenePostsAfter :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at FROM scene_posts
-WHERE game_id = $1 AND id > $2
-ORDER BY created_at ASC
-`
-
-type ListScenePostsAfterParams struct {
-	GameID int64 `db:"game_id" json:"game_id"`
-	ID     int64 `db:"id" json:"id"`
-}
-
-func (q *Queries) ListScenePostsAfter(ctx context.Context, arg ListScenePostsAfterParams) ([]ScenePost, error) {
-	rows, err := q.db.Query(ctx, listScenePostsAfter, arg.GameID, arg.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ScenePost{}
-	for rows.Next() {
-		var i ScenePost
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.RowNumber,
-			&i.PlanID,
-			&i.AuthorID,
-			&i.Body,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listScenePostsByRow = `-- name: ListScenePostsByRow :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at FROM scene_posts
-WHERE game_id = $1 AND row_number = $2
-ORDER BY created_at ASC
-`
-
-type ListScenePostsByRowParams struct {
-	GameID    int64  `db:"game_id" json:"game_id"`
-	RowNumber *int16 `db:"row_number" json:"row_number"`
-}
-
-func (q *Queries) ListScenePostsByRow(ctx context.Context, arg ListScenePostsByRowParams) ([]ScenePost, error) {
-	rows, err := q.db.Query(ctx, listScenePostsByRow, arg.GameID, arg.RowNumber)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ScenePost{}
-	for rows.Next() {
-		var i ScenePost
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.RowNumber,
-			&i.PlanID,
-			&i.AuthorID,
-			&i.Body,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listScenePostsByRowAndPlan = `-- name: ListScenePostsByRowAndPlan :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at FROM scene_posts
-WHERE game_id = $1 AND row_number = $2 AND plan_id = $3
-ORDER BY created_at ASC
-`
-
-type ListScenePostsByRowAndPlanParams struct {
-	GameID    int64  `db:"game_id" json:"game_id"`
-	RowNumber *int16 `db:"row_number" json:"row_number"`
-	PlanID    *int64 `db:"plan_id" json:"plan_id"`
-}
-
-func (q *Queries) ListScenePostsByRowAndPlan(ctx context.Context, arg ListScenePostsByRowAndPlanParams) ([]ScenePost, error) {
-	rows, err := q.db.Query(ctx, listScenePostsByRowAndPlan, arg.GameID, arg.RowNumber, arg.PlanID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ScenePost{}
-	for rows.Next() {
-		var i ScenePost
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.RowNumber,
-			&i.PlanID,
-			&i.AuthorID,
-			&i.Body,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listScenePostsByRowOpenScene = `-- name: ListScenePostsByRowOpenScene :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at FROM scene_posts
-WHERE game_id = $1 AND row_number = $2 AND plan_id IS NULL
-ORDER BY created_at ASC
-`
-
-type ListScenePostsByRowOpenSceneParams struct {
-	GameID    int64  `db:"game_id" json:"game_id"`
-	RowNumber *int16 `db:"row_number" json:"row_number"`
-}
-
-func (q *Queries) ListScenePostsByRowOpenScene(ctx context.Context, arg ListScenePostsByRowOpenSceneParams) ([]ScenePost, error) {
-	rows, err := q.db.Query(ctx, listScenePostsByRowOpenScene, arg.GameID, arg.RowNumber)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ScenePost{}
-	for rows.Next() {
-		var i ScenePost
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.RowNumber,
-			&i.PlanID,
 			&i.AuthorID,
 			&i.Body,
 			&i.CreatedAt,
