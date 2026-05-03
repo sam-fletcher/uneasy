@@ -1,8 +1,9 @@
 package game
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCeilAverage(t *testing.T) {
@@ -21,20 +22,15 @@ func TestCeilAverage(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := CeilAverage(tc.faces); got != tc.want {
-				t.Errorf("CeilAverage(%v) = %d, want %d", tc.faces, got, tc.want)
-			}
+			got := CeilAverage(tc.faces)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
 
 func TestOpposingSide(t *testing.T) {
-	if OpposingSide(WarSideDeclarer) != WarSideEnemy {
-		t.Errorf("declarer's opposite should be enemy")
-	}
-	if OpposingSide(WarSideEnemy) != WarSideDeclarer {
-		t.Errorf("enemy's opposite should be declarer")
-	}
+	assert.Equal(t, WarSideEnemy, OpposingSide(WarSideDeclarer), "declarer's opposite should be enemy")
+	assert.Equal(t, WarSideDeclarer, OpposingSide(WarSideEnemy), "enemy's opposite should be declarer")
 }
 
 func TestActiveOpponents(t *testing.T) {
@@ -49,19 +45,14 @@ func TestActiveOpponents(t *testing.T) {
 
 	got := ActiveOpponents(1, sides, surrendered)
 	want := []int64{3, 5}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("ActiveOpponents(1) = %v, want %v", got, want)
-	}
+	assert.Equal(t, want, got)
 
 	got = ActiveOpponents(3, sides, surrendered)
 	want = []int64{1, 2}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("ActiveOpponents(3) = %v, want %v", got, want)
-	}
+	assert.Equal(t, want, got)
 
-	if out := ActiveOpponents(99, sides, surrendered); out != nil {
-		t.Errorf("unknown payer should return nil, got %v", out)
-	}
+	out := ActiveOpponents(99, sides, surrendered)
+	assert.Nil(t, out, "unknown payer should return nil")
 }
 
 func TestReversePowerOrder(t *testing.T) {
@@ -74,17 +65,13 @@ func TestReversePowerOrder(t *testing.T) {
 	}
 	got := ReversePowerOrder([]int64{10, 20, 30, 40}, ranks)
 	want := []int64{30, 20, 40, 10} // 5, 3, 2, 1
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("ReversePowerOrder = %v, want %v", got, want)
-	}
+	assert.Equal(t, want, got)
 
 	// Unranked players go last; tie-break by player_id ascending.
 	ranksPartial := map[int64]int16{10: 2, 20: 2}
 	got = ReversePowerOrder([]int64{40, 10, 30, 20}, ranksPartial)
 	want = []int64{10, 20, 30, 40} // ranked tied at 2 first by id, then unranked by id
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("partial ranks = %v, want %v", got, want)
-	}
+	assert.Equal(t, want, got)
 }
 
 func TestMissingBattleCosts(t *testing.T) {
@@ -105,9 +92,7 @@ func TestMissingBattleCosts(t *testing.T) {
 		{PayerID: 1, OpponentID: 2}, // player 1 owes opponents 2 and 3
 		{PayerID: 1, OpponentID: 3},
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("unpaid order = %v, want %v", got, want)
-	}
+	assert.Equal(t, want, got)
 
 	// After player 2 pays opponent 1: that entry is gone, rest preserved.
 	paid := map[BattleCostKey]bool{{PayerID: 2, OpponentID: 1}: true}
@@ -117,21 +102,14 @@ func TestMissingBattleCosts(t *testing.T) {
 		{PayerID: 1, OpponentID: 2},
 		{PayerID: 1, OpponentID: 3},
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("after one payment = %v, want %v", got, want)
-	}
+	assert.Equal(t, want, got)
 }
 
 func TestIsValidBattleCostChoice(t *testing.T) {
-	if !IsValidBattleCostChoice(WarCostBreakAsset) {
-		t.Error("break_asset should be valid")
-	}
-	if !IsValidBattleCostChoice(WarCostLeverageTwo) {
-		t.Error("leverage_two should be valid")
-	}
-	if IsValidBattleCostChoice("") || IsValidBattleCostChoice("surrender") {
-		t.Error("unknown choices should be invalid")
-	}
+	assert.True(t, IsValidBattleCostChoice(WarCostBreakAsset), "break_asset should be valid")
+	assert.True(t, IsValidBattleCostChoice(WarCostLeverageTwo), "leverage_two should be valid")
+	assert.False(t, IsValidBattleCostChoice(""), "empty choice should be invalid")
+	assert.False(t, IsValidBattleCostChoice("surrender"), "surrender should be invalid")
 }
 
 func TestSurrenderOutcome(t *testing.T) {
@@ -178,11 +156,9 @@ func TestSurrenderOutcome(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ended, reason := SurrenderOutcome(tc.sides, tc.surrendered, tc.payer)
-			if ended != tc.wantEnded {
-				t.Errorf("ended = %v, want %v", ended, tc.wantEnded)
-			}
-			if ended && reason != tc.wantReason {
-				t.Errorf("reason = %q, want %q", reason, tc.wantReason)
+			assert.Equal(t, tc.wantEnded, ended)
+			if ended {
+				assert.Equal(t, tc.wantReason, reason)
 			}
 		})
 	}
@@ -194,41 +170,36 @@ func TestPeaceTally(t *testing.T) {
 			[]int64{1, 2, 3},
 			map[int64]bool{1: true, 2: true, 3: true},
 		)
-		if !unanimous || awaiting != 0 {
-			t.Errorf("got (%v, %d), want (true, 0)", unanimous, awaiting)
-		}
+		assert.True(t, unanimous)
+		assert.Equal(t, int64(0), awaiting)
 	})
 	t.Run("one missing vote is awaited", func(t *testing.T) {
 		unanimous, awaiting := PeaceTally(
 			[]int64{1, 2, 3},
 			map[int64]bool{1: true, 3: true},
 		)
-		if unanimous || awaiting != 2 {
-			t.Errorf("got (%v, %d), want (false, 2)", unanimous, awaiting)
-		}
+		assert.False(t, unanimous)
+		assert.Equal(t, int64(2), awaiting)
 	})
 	t.Run("explicit false counts as missing", func(t *testing.T) {
 		unanimous, awaiting := PeaceTally(
 			[]int64{1, 2},
 			map[int64]bool{1: true, 2: false},
 		)
-		if unanimous || awaiting != 2 {
-			t.Errorf("got (%v, %d), want (false, 2)", unanimous, awaiting)
-		}
+		assert.False(t, unanimous)
+		assert.Equal(t, int64(2), awaiting)
 	})
 	t.Run("first missing in active-order is returned", func(t *testing.T) {
 		unanimous, awaiting := PeaceTally(
 			[]int64{5, 3, 7},
 			map[int64]bool{5: true},
 		)
-		if unanimous || awaiting != 3 {
-			t.Errorf("got (%v, %d), want (false, 3)", unanimous, awaiting)
-		}
+		assert.False(t, unanimous)
+		assert.Equal(t, int64(3), awaiting)
 	})
 	t.Run("empty active list is vacuously unanimous", func(t *testing.T) {
 		unanimous, awaiting := PeaceTally(nil, map[int64]bool{})
-		if !unanimous || awaiting != 0 {
-			t.Errorf("got (%v, %d), want (true, 0)", unanimous, awaiting)
-		}
+		assert.True(t, unanimous)
+		assert.Equal(t, int64(0), awaiting)
 	})
 }

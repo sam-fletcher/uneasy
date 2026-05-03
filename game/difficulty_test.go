@@ -1,6 +1,10 @@
 package game
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 // TestExchangeCourtiersDifficulty tests the difficulty formula: 6 - rank (min 1).
 func TestExchangeCourtiersDifficulty(t *testing.T) {
@@ -22,10 +26,7 @@ func TestExchangeCourtiersDifficulty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ExchangeCourtiersDifficulty(tt.targetRank)
-			if got != tt.expectedDiff {
-				t.Errorf("ExchangeCourtiersDifficulty(%d) = %d, want %d",
-					tt.targetRank, got, tt.expectedDiff)
-			}
+			assert.Equal(t, tt.expectedDiff, got)
 		})
 	}
 }
@@ -49,10 +50,7 @@ func TestMakeIntroductionsDifficulty(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resData := ResolutionData{PeerCount: tt.peerCount}
 			got := MakeIntroductionsDifficulty(resData)
-			if got != tt.expectedDiff {
-				t.Errorf("MakeIntroductionsDifficulty(PeerCount=%d) = %d, want %d",
-					tt.peerCount, got, tt.expectedDiff)
-			}
+			assert.Equal(t, tt.expectedDiff, got)
 		})
 	}
 }
@@ -76,10 +74,7 @@ func TestSpreadPropagandaDifficulty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := SpreadPropagandaDifficulty(tt.preparerRank)
-			if got != tt.expectedDiff {
-				t.Errorf("SpreadPropagandaDifficulty(%d) = %d, want %d",
-					tt.preparerRank, got, tt.expectedDiff)
-			}
+			assert.Equal(t, tt.expectedDiff, got)
 		})
 	}
 }
@@ -103,10 +98,7 @@ func TestSeekAnswersDifficulty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := SeekAnswersDifficulty(tt.knowledgeRank)
-			if got != tt.expectedDiff {
-				t.Errorf("SeekAnswersDifficulty(%d) = %d, want %d",
-					tt.knowledgeRank, got, tt.expectedDiff)
-			}
+			assert.Equal(t, tt.expectedDiff, got)
 		})
 	}
 }
@@ -141,10 +133,7 @@ func TestSpreadRumorsDifficulty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := SpreadRumorsDifficulty(tt.relevantRank, tt.targetIsMainChar)
-			if got != tt.expectedDiff {
-				t.Errorf("SpreadRumorsDifficulty(%d, %v) = %d, want %d",
-					tt.relevantRank, tt.targetIsMainChar, got, tt.expectedDiff)
-			}
+			assert.Equal(t, tt.expectedDiff, got)
 		})
 	}
 }
@@ -174,10 +163,7 @@ func TestChronicleHistoriesDifficulty(t *testing.T) {
 				InvokedArtifactIDs: make([]int64, tt.artifactCount),
 			}
 			got := ChronicleHistoriesDifficulty(tt.knowledgeRank, resData)
-			if got != tt.expectedDiff {
-				t.Errorf("ChronicleHistoriesDifficulty(%d, %d artifacts) = %d, want %d",
-					tt.knowledgeRank, tt.artifactCount, got, tt.expectedDiff)
-			}
+			assert.Equal(t, tt.expectedDiff, got)
 		})
 	}
 }
@@ -201,10 +187,7 @@ func TestProposeDecreeDifficulty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ProposeDecreeDifficulty(tt.preparerRank)
-			if got != tt.expectedDiff {
-				t.Errorf("ProposeDecreeDifficulty(%d) = %d, want %d",
-					tt.preparerRank, got, tt.expectedDiff)
-			}
+			assert.Equal(t, tt.expectedDiff, got)
 		})
 	}
 }
@@ -228,10 +211,7 @@ func TestProposeDuelDifficulty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ProposeDuelDifficulty(tt.targetRank)
-			if got != tt.expectedDiff {
-				t.Errorf("ProposeDuelDifficulty(%d) = %d, want %d",
-					tt.targetRank, got, tt.expectedDiff)
-			}
+			assert.Equal(t, tt.expectedDiff, got)
 		})
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -87,17 +88,14 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 		  AND table_type = 'BASE TABLE'
 		  AND table_name <> 'schema_migrations'
 	`)
-	if err != nil {
-		t.Fatalf("list tables: %v", err)
-	}
+	require.NoError(t, err)
 	defer rows.Close()
 
 	var tables []string
 	for rows.Next() {
 		var name string
-		if err := rows.Scan(&name); err != nil {
-			t.Fatalf("scan table name: %v", err)
-		}
+		err := rows.Scan(&name)
+		require.NoError(t, err)
 		tables = append(tables, `"`+name+`"`)
 	}
 	if len(tables) == 0 {
@@ -105,9 +103,8 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	}
 
 	stmt := "TRUNCATE " + joinComma(tables) + " RESTART IDENTITY CASCADE"
-	if _, err := pool.Exec(ctx, stmt); err != nil {
-		t.Fatalf("truncate: %v", err)
-	}
+	_, err = pool.Exec(ctx, stmt)
+	require.NoError(t, err)
 }
 
 func joinComma(ss []string) string {
@@ -141,15 +138,12 @@ type testGame struct {
 // invariants that aren't reflected here.
 func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
 	t.Helper()
-	if n < 2 || n > 5 {
-		t.Fatalf("newTestGame: n=%d out of [2,5]", n)
-	}
+	require.GreaterOrEqual(t, n, 2)
+	require.LessOrEqual(t, n, 5)
 	ctx := context.Background()
 
 	game, err := q.CreateGame(ctx, "TEST"+randSuffix())
-	if err != nil {
-		t.Fatalf("create game: %v", err)
-	}
+	require.NoError(t, err)
 
 	players := make([]dbgen.Player, n)
 	for i := 0; i < n; i++ {
@@ -157,31 +151,25 @@ func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
 			Username: fmt.Sprintf("p%d-%s", i+1, randSuffix()),
 			CodeHash: "x", // not used by these tests
 		})
-		if err != nil {
-			t.Fatalf("create account: %v", err)
-		}
+		require.NoError(t, err)
 		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
 			GameID:        game.ID,
 			DisplayName:   fmt.Sprintf("P%d", i+1),
 			AccountID:     acct.ID,
 			IsFacilitator: i == 0,
 		})
-		if err != nil {
-			t.Fatalf("create player: %v", err)
-		}
+		require.NoError(t, err)
 		seat := int16(i + 1)
-		if err := q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
+		err = q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
 			ID: p.ID, SeatOrder: &seat,
-		}); err != nil {
-			t.Fatalf("set seat: %v", err)
-		}
+		})
+		require.NoError(t, err)
 		players[i] = p
 	}
-	if err := q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
+	err = q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
 		FacilitatorID: &players[0].ID, ID: game.ID,
-	}); err != nil {
-		t.Fatalf("set facilitator: %v", err)
-	}
+	})
+	require.NoError(t, err)
 
 	// Power rankings: player[i] gets rank i+1 (1 = highest).
 	// Also seed knowledge and esteem so anything that reads any track works.
@@ -189,41 +177,34 @@ func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
 		model.CategoryPower, model.CategoryKnowledge, model.CategoryEsteem,
 	} {
 		for i := 0; i < n; i++ {
-			if err := q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+			err := q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
 				GameID:   game.ID,
 				PlayerID: &players[i].ID,
 				Category: cat,
 				Rank:     int16(i + 1),
-			}); err != nil {
-				t.Fatalf("upsert ranking: %v", err)
-			}
+			})
+			require.NoError(t, err)
 		}
 	}
 
-	if err := q.CreatePublicRecordRows(ctx, game.ID); err != nil {
-		t.Fatalf("seed public record rows: %v", err)
-	}
+	err = q.CreatePublicRecordRows(ctx, game.ID)
+	require.NoError(t, err)
 
-	if err := q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+	err = q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 		ID: game.ID, Phase: model.PhaseMainEvent,
-	}); err != nil {
-		t.Fatalf("set phase: %v", err)
-	}
-	if err := q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
+	})
+	require.NoError(t, err)
+	err = q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
 		ID: game.ID, CurrentRow: 1,
-	}); err != nil {
-		t.Fatalf("set current row: %v", err)
-	}
-	if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+	})
+	require.NoError(t, err)
+	err = q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
 		ID: game.ID, FocusPlayerID: &players[0].ID,
-	}); err != nil {
-		t.Fatalf("set focus: %v", err)
-	}
+	})
+	require.NoError(t, err)
 
 	refreshed, err := q.GetGameByID(ctx, game.ID)
-	if err != nil {
-		t.Fatalf("reload game: %v", err)
-	}
+	require.NoError(t, err)
 	return testGame{Game: refreshed, Players: players}
 }
 
@@ -262,8 +243,6 @@ func createPlanOnRow(
 		RowOrder:      0,
 		PreparedAtRow: game.CurrentRow,
 	})
-	if err != nil {
-		t.Fatalf("create plan: %v", err)
-	}
+	require.NoError(t, err)
 	return p
 }

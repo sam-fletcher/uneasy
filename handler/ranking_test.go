@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/model"
@@ -21,9 +22,8 @@ func TestApplyRankingSwaps(t *testing.T) {
 			slots[c] = new(categorySlots)
 		}
 		for rank, pid := range players {
-			if rank < 1 || rank > 5 {
-				t.Fatalf("invalid rank %d", rank)
-			}
+			require.GreaterOrEqual(t, rank, int16(1))
+			require.LessOrEqual(t, rank, int16(5))
 			slots[cat][rank-1] = pid
 		}
 		return slots

@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	dbgen "uneasy/db/gen"
 	"uneasy/model"
 )
@@ -118,33 +121,22 @@ func TestDecideMainCharacterChange(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := DecideMainCharacterChange(tt.target, tt.oldMC, tt.oldMCMargs, tt.tearPos)
 			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got decision %+v", got)
-				}
-				if err.Code != tt.wantErrCode {
-					t.Errorf("error code = %d, want %d (msg=%q)", err.Code, tt.wantErrCode, err.Message)
-				}
+				require.NotNil(t, err)
+				assert.Equal(t, tt.wantErrCode, err.Code)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %+v", err)
+			require.Nil(t, err)
+			assert.Equal(t, tt.wantNeedsTear, got.NeedsTear)
+			if got.NeedsTear {
+				assert.Equal(t, tt.wantTearPos, got.TearPosition)
 			}
-			if got.NeedsTear != tt.wantNeedsTear {
-				t.Errorf("NeedsTear = %v, want %v", got.NeedsTear, tt.wantNeedsTear)
-			}
-			if got.NeedsTear && got.TearPosition != tt.wantTearPos {
-				t.Errorf("TearPosition = %d, want %d", got.TearPosition, tt.wantTearPos)
-			}
-			if got.DestroysOldMC != tt.wantDestroysMC {
-				t.Errorf("DestroysOldMC = %v, want %v", got.DestroysOldMC, tt.wantDestroysMC)
-			}
+			assert.Equal(t, tt.wantDestroysMC, got.DestroysOldMC)
 		})
 	}
 }
 
 func TestDecideMainCharacterChange_NilTarget(t *testing.T) {
 	_, err := DecideMainCharacterChange(nil, nil, nil, nil)
-	if err == nil || err.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 error for nil target, got %+v", err)
-	}
+	require.Error(t, err)
+	assert.Equal(t, http.StatusInternalServerError, err.Code)
 }

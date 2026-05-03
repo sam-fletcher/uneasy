@@ -72,17 +72,14 @@ func truncateGameTestTables(t *testing.T, pool *pgxpool.Pool) {
 		  AND table_type = 'BASE TABLE'
 		  AND table_name <> 'schema_migrations'
 	`)
-	if err != nil {
-		t.Fatalf("list tables: %v", err)
-	}
+	require.NoError(t, err)
 	defer rows.Close()
 
 	var tables []string
 	for rows.Next() {
 		var name string
-		if err := rows.Scan(&name); err != nil {
-			t.Fatalf("scan table name: %v", err)
-		}
+		err := rows.Scan(&name)
+		require.NoError(t, err)
 		tables = append(tables, `"`+name+`"`)
 	}
 	if len(tables) == 0 {
@@ -90,9 +87,8 @@ func truncateGameTestTables(t *testing.T, pool *pgxpool.Pool) {
 	}
 
 	stmt := "TRUNCATE " + joinCommaGame(tables) + " RESTART IDENTITY CASCADE"
-	if _, err := pool.Exec(ctx, stmt); err != nil {
-		t.Fatalf("truncate: %v", err)
-	}
+	_, err = pool.Exec(ctx, stmt)
+	require.NoError(t, err)
 }
 
 func joinCommaGame(ss []string) string {
@@ -115,9 +111,8 @@ type gameTestGame struct {
 // newGameTestGame creates a test game with n players
 func newGameTestGame(t *testing.T, q *dbgen.Queries, n int) gameTestGame {
 	t.Helper()
-	if n < 2 || n > 5 {
-		t.Fatalf("newGameTestGame: n=%d out of [2,5]", n)
-	}
+	require.GreaterOrEqual(t, n, 2)
+	require.LessOrEqual(t, n, 5)
 	ctx := context.Background()
 
 	game, err := q.CreateGame(ctx, "TEST"+gameRandSuffix())

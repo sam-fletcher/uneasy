@@ -2,8 +2,10 @@ package db
 
 import (
 	"encoding/base64"
-	"regexp"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewCookieToken(t *testing.T) {
@@ -18,30 +20,20 @@ func TestNewCookieToken(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			token, err := NewCookieToken()
-			if err != nil {
-				t.Fatalf("NewCookieToken() returned error: %v", err)
-			}
+			require.NoError(t, err)
 
 			// Token should not be empty
-			if token == "" {
-				t.Errorf("NewCookieToken() returned empty string")
-			}
+			assert.NotEmpty(t, token)
 
 			// Token should be valid base64 URL-safe
 			decoded, err := base64.URLEncoding.DecodeString(token)
-			if err != nil {
-				t.Errorf("NewCookieToken() returned invalid base64: %v", err)
-			}
+			require.NoError(t, err, "returned invalid base64")
 
 			// Decoded should be exactly cookieTokenBytes (32 bytes = 256 bits)
-			if len(decoded) != cookieTokenBytes {
-				t.Errorf("NewCookieToken() decoded to %d bytes, want %d", len(decoded), cookieTokenBytes)
-			}
+			assert.Len(t, decoded, cookieTokenBytes, "decoded to wrong number of bytes")
 
 			// Token should be URL-safe (base64 URL encoding with possible padding)
-			if !regexp.MustCompile("^[A-Za-z0-9_-]*=*$").MatchString(token) {
-				t.Errorf("NewCookieToken() returned non-URL-safe characters: %s", token)
-			}
+			assert.Regexp(t, "^[A-Za-z0-9_-]*=*$", token, "returned non-URL-safe characters")
 		})
 	}
 }
@@ -51,14 +43,9 @@ func TestNewCookieToken_Uniqueness(t *testing.T) {
 	tokens := make(map[string]bool)
 	for i := range 100 {
 		token, err := NewCookieToken()
-		if err != nil {
-			t.Fatalf("NewCookieToken() iteration %d returned error: %v", i, err)
-		}
+		require.NoError(t, err)
 
-		if tokens[token] {
-			t.Errorf("NewCookieToken() generated duplicate token after %d iterations", i)
-			return
-		}
+		assert.False(t, tokens[token], "generated duplicate token after %d iterations", i)
 		tokens[token] = true
 	}
 }
@@ -75,29 +62,17 @@ func TestGenerateJoinCode(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			code, err := GenerateJoinCode()
-			if err != nil {
-				t.Fatalf("GenerateJoinCode() returned error: %v", err)
-			}
+			require.NoError(t, err)
 
 			// Code should not be empty
-			if code == "" {
-				t.Errorf("GenerateJoinCode() returned empty string")
-			}
+			assert.NotEmpty(t, code)
 
 			// Code should be exactly joinCodeLength characters
-			if len(code) != joinCodeLength {
-				t.Errorf("GenerateJoinCode() returned %d characters, want %d", len(code), joinCodeLength)
-			}
+			assert.Len(t, code, joinCodeLength)
 
 			// Code should only contain joinCodeAlphabet characters
 			for _, ch := range code {
-				if !containsChar(joinCodeAlphabet, ch) {
-					t.Errorf(
-						"GenerateJoinCode() returned invalid character %q, should be from %s",
-						ch,
-						joinCodeAlphabet,
-					)
-				}
+				assert.True(t, containsChar(joinCodeAlphabet, ch), "returned invalid character %q", ch)
 			}
 
 			// Code should not contain ambiguous characters
@@ -106,9 +81,7 @@ func TestGenerateJoinCode(t *testing.T) {
 				'1': true, 'I': true, 'L': true, // not in alphabet
 			}
 			for _, ch := range code {
-				if ambiguous[ch] {
-					t.Errorf("GenerateJoinCode() returned ambiguous character %q", ch)
-				}
+				assert.False(t, ambiguous[ch], "returned ambiguous character %q", ch)
 			}
 		})
 	}
@@ -119,14 +92,9 @@ func TestGenerateJoinCode_Uniqueness(t *testing.T) {
 	codes := make(map[string]bool)
 	for i := range 1000 {
 		code, err := GenerateJoinCode()
-		if err != nil {
-			t.Fatalf("GenerateJoinCode() iteration %d returned error: %v", i, err)
-		}
+		require.NoError(t, err)
 
-		if codes[code] {
-			t.Errorf("GenerateJoinCode() generated duplicate code after %d iterations", i)
-			return
-		}
+		assert.False(t, codes[code], "generated duplicate code after %d iterations", i)
 		codes[code] = true
 	}
 }
@@ -134,11 +102,9 @@ func TestGenerateJoinCode_Uniqueness(t *testing.T) {
 func TestGenerateJoinCode_Alphabet(t *testing.T) {
 	// Generate many codes to verify we use the full alphabet
 	seenChars := make(map[rune]bool)
-	for i := range 10000 {
+	for range 10000 {
 		code, err := GenerateJoinCode()
-		if err != nil {
-			t.Fatalf("GenerateJoinCode() iteration %d returned error: %v", i, err)
-		}
+		require.NoError(t, err)
 
 		for _, ch := range code {
 			seenChars[ch] = true
@@ -151,13 +117,9 @@ func TestGenerateJoinCode_Alphabet(t *testing.T) {
 	}
 
 	// With 10000 iterations, we should have hit all or nearly all alphabet chars
-	if len(seenChars) < len(joinCodeAlphabet)-2 {
-		t.Errorf(
-			"GenerateJoinCode() only used %d of %d alphabet characters after 10000 iterations",
-			len(seenChars),
-			len(joinCodeAlphabet),
-		)
-	}
+	assert.GreaterOrEqual(t, len(seenChars), len(joinCodeAlphabet)-2,
+		"only used %d of %d alphabet characters after 10000 iterations",
+		len(seenChars), len(joinCodeAlphabet))
 }
 
 // containsChar checks if a rune appears in a string

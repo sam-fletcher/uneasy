@@ -1,76 +1,51 @@
 package game
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestResolveBout_HighDeclarerWinsWhenHigher(t *testing.T) {
 	out, err := ResolveBout(DuelSidePreparer, DeclHigh, 5, 3)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if out.Match {
-		t.Fatalf("expected non-match")
-	}
-	if out.WinnerSide != DuelSidePreparer {
-		t.Errorf("winner = %v, want preparer", out.WinnerSide)
-	}
-	if out.NextDeclarer != DuelSideTarget {
-		t.Errorf("next declarer = %v, want target (initiative swaps)", out.NextDeclarer)
-	}
+	require.NoError(t, err)
+	assert.False(t, out.Match, "expected non-match")
+	assert.Equal(t, DuelSidePreparer, out.WinnerSide)
+	assert.Equal(t, DuelSideTarget, out.NextDeclarer, "initiative swaps")
 }
 
 func TestResolveBout_HighDeclarerLosesWhenLower(t *testing.T) {
 	out, err := ResolveBout(DuelSidePreparer, DeclHigh, 2, 6)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if out.WinnerSide != DuelSideTarget {
-		t.Errorf("winner = %v, want target", out.WinnerSide)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, DuelSideTarget, out.WinnerSide)
 }
 
 func TestResolveBout_LowDeclarerWinsWhenLower(t *testing.T) {
 	out, err := ResolveBout(DuelSideTarget, DeclLow, 1, 4)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if out.WinnerSide != DuelSideTarget {
-		t.Errorf("winner = %v, want target", out.WinnerSide)
-	}
-	if out.NextDeclarer != DuelSidePreparer {
-		t.Errorf("initiative should swap")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, DuelSideTarget, out.WinnerSide)
+	assert.Equal(t, DuelSidePreparer, out.NextDeclarer, "initiative should swap")
 }
 
 func TestResolveBout_LowDeclarerLosesWhenHigher(t *testing.T) {
 	out, err := ResolveBout(DuelSidePreparer, DeclLow, 5, 2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if out.WinnerSide != DuelSideTarget {
-		t.Errorf("winner = %v, want target", out.WinnerSide)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, DuelSideTarget, out.WinnerSide)
 }
 
 func TestResolveBout_MatchSetsAside(t *testing.T) {
 	out, err := ResolveBout(DuelSidePreparer, DeclHigh, 3, 3)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !out.Match {
-		t.Fatalf("expected match")
-	}
-	if out.NextDeclarer != DuelSideTarget {
-		t.Errorf("initiative should swap after match")
-	}
+	require.NoError(t, err)
+	assert.True(t, out.Match, "expected match")
+	assert.Equal(t, DuelSideTarget, out.NextDeclarer, "initiative should swap after match")
 }
 
 func TestResolveBout_InvalidDice(t *testing.T) {
-	if _, err := ResolveBout(DuelSidePreparer, DeclHigh, 0, 3); err == nil {
-		t.Error("expected error for die=0")
-	}
-	if _, err := ResolveBout(DuelSidePreparer, DeclHigh, 3, 7); err == nil {
-		t.Error("expected error for die=7")
-	}
+	_, err := ResolveBout(DuelSidePreparer, DeclHigh, 0, 3)
+	require.Error(t, err, "expected error for die=0")
+	_, err = ResolveBout(DuelSidePreparer, DeclHigh, 3, 7)
+	require.Error(t, err, "expected error for die=7")
 }
 
 func TestResolveBout_InvalidDeclaration(t *testing.T) {
@@ -91,9 +66,8 @@ func TestBoutsComplete(t *testing.T) {
 		{"both out", DuelTallies{}, true},
 	}
 	for _, c := range cases {
-		if got := c.t.BoutsComplete(); got != c.want {
-			t.Errorf("%s: got %v want %v", c.name, got, c.want)
-		}
+		got := c.t.BoutsComplete()
+		assert.Equal(t, c.want, got, c.name)
 	}
 }
 
@@ -110,8 +84,7 @@ func TestMaxStakes(t *testing.T) {
 		{6, 1}, // status 0 → 1+0
 	}
 	for _, c := range cases {
-		if got := MaxStakes(c.rank); got != c.want {
-			t.Errorf("MaxStakes(%d) = %d, want %d", c.rank, got, c.want)
-		}
+		got := MaxStakes(c.rank)
+		assert.Equal(t, c.want, got)
 	}
 }
