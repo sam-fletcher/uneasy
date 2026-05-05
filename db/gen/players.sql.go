@@ -50,12 +50,12 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Pla
 
 const getFirstFocusPlayer = `-- name: GetFirstFocusPlayer :one
 SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens FROM players
-WHERE game_id = $1 AND seat_order IS NOT NULL
-ORDER BY seat_order ASC
+WHERE game_id = $1
+ORDER BY joined_at ASC
 LIMIT 1
 `
 
-// Returns the player with the lowest seat_order (for wrapping).
+// Returns the player who joined first (the facilitator, in practice).
 func (q *Queries) GetFirstFocusPlayer(ctx context.Context, gameID int64) (Player, error) {
 	row := q.db.QueryRow(ctx, getFirstFocusPlayer, gameID)
 	var i Player
@@ -75,12 +75,12 @@ func (q *Queries) GetFirstFocusPlayer(ctx context.Context, gameID int64) (Player
 
 const getNextFocusPlayer = `-- name: GetNextFocusPlayer :one
 SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens FROM players p
-WHERE p.game_id = $1 AND p.seat_order IS NOT NULL
-  AND p.seat_order > COALESCE(
-    (SELECT p2.seat_order FROM players p2 WHERE p2.id = $2),
-    -1
+WHERE p.game_id = $1
+  AND p.joined_at > COALESCE(
+    (SELECT p2.joined_at FROM players p2 WHERE p2.id = $2),
+    'epoch'::timestamptz
   )
-ORDER BY p.seat_order ASC
+ORDER BY p.joined_at ASC
 LIMIT 1
 `
 
@@ -89,8 +89,8 @@ type GetNextFocusPlayerParams struct {
 	ID     int64 `db:"id" json:"id"`
 }
 
-// Returns the player with the next seat_order after the current focus player.
-// Wraps around to the lowest seat_order when the end is reached.
+// Returns the next player in join order after the current focus player.
+// Caller must wrap around (use GetFirstFocusPlayer) when no row is returned.
 func (q *Queries) GetNextFocusPlayer(ctx context.Context, arg GetNextFocusPlayerParams) (Player, error) {
 	row := q.db.QueryRow(ctx, getNextFocusPlayer, arg.GameID, arg.ID)
 	var i Player

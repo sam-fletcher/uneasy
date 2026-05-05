@@ -112,6 +112,7 @@ const (
 
 	// Phase 4b: Structured prologue
 	EventPrologueChoiceClaimed      = "prologue.choice_claimed"       // a box was claimed
+	EventPrologueTurnAdvanced       = "prologue.turn_advanced"        // active player changed
 	EventPrologueRankingStepChanged = "prologue.ranking_step_changed" // entered/advanced ranking sub-flow
 	EventPrologueHeartsDeclared     = "prologue.hearts_declared"      // a player declared N hearts as a track
 	EventPrologueTrackRanked        = "prologue.track_ranked"         // a track's ranks finalized (set-asides surfaced)
@@ -591,6 +592,14 @@ type PrologueChoiceClaimedPayload struct {
 	SheetType  string `json:"sheet_type"`
 	ChoiceName string `json:"choice_name"`
 	TurnNumber int16  `json:"turn_number"`
+}
+
+// PrologueTurnAdvancedPayload is for EventPrologueTurnAdvanced. CurrentPlayerID
+// is null when no players remain with turns to take (the choosing sub-phase
+// is complete and the facilitator can begin ranking).
+type PrologueTurnAdvancedPayload struct {
+	CurrentPlayerID *int64 `json:"current_player_id"`
+	TurnNumber      int    `json:"turn_number"`
 }
 
 // PrologueRankingStepChangedPayload is for EventPrologueRankingStepChanged.

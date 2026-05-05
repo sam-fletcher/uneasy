@@ -5,7 +5,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		getGameState, getMe,
-		startToneSetting, startPrologue,
+		startPrologue,
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord, listGamePosts,
 		getRoll, getActiveRollForGame,
@@ -84,6 +84,18 @@
 
 	// ── Retinue sheet ─────────────────────────────────────────────────────────
 	let retinueOpenForPlayer = $state<number | null>(null);
+	let tonesOpen = $state(false);
+	let prologueActivePlayerID = $state<number | null>(null);
+
+	const blockingPlayerID = $derived.by(() => {
+		if (!game) return null;
+		if (game.phase === 'prologue') return prologueActivePlayerID;
+		if (game.phase === 'main_event') return game.focus_player_id;
+		return null;
+	});
+	const tonesLocked = $derived(
+		game != null && (game.phase === 'main_event' || game.phase === 'shake_up' || game.phase === 'ended')
+	);
 
 	// ── Plan state ────────────────────────────────────────────────────────────
 	// Loaded on mount for main_event, then kept in sync by plan.* WS events.
@@ -162,6 +174,10 @@
 			case EventTypes.FocusChanged: {
 				if (game) game = { ...game, focus_player_id: msg.payload.player_id as number };
 				sceneEnded = false; // reset turn step when focus changes
+				break;
+			}
+			case EventTypes.PrologueTurnAdvanced: {
+				prologueActivePlayerID = (msg.payload.current_player_id as number | null) ?? null;
 				break;
 			}
 			case EventTypes.RowAdvanced: {
@@ -493,6 +509,7 @@
 			players = data.players;
 			if (data.tone_topics) toneTopics = data.tone_topics;
 			if (data.rankings) rankings = data.rankings;
+			if (data.current_prologue_player_id !== undefined) prologueActivePlayerID = data.current_prologue_player_id;
 			if (data.laws) laws = data.laws;
 			if (data.rumors) rumors = data.rumors;
 			members = data.players.map(p => ({
@@ -599,7 +616,7 @@
 		} catch { /* ignore — WS events will keep us in sync */ }
 	}
 
-	// ── Phase advancement (lobby + tone_setting only) ─────────────────────────
+	// ── Phase advancement (lobby only) ────────────────────────────────────────
 	let advancing = $state(false);
 
 	async function advancePhase() {
@@ -607,9 +624,8 @@
 		advancing = true;
 		error = '';
 		try {
-			switch (game.phase) {
-				case 'lobby':        await startToneSetting(gameID); break;
-				case 'tone_setting': await startPrologue(gameID); break;
+			if (game.phase === 'lobby') {
+				await startPrologue(gameID);
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not advance phase.';
@@ -619,8 +635,7 @@
 	}
 
 	const nextPhaseLabel: Record<string, string> = {
-		lobby: 'Start Tone Setting',
-		tone_setting: 'Start Prologue',
+		lobby: 'Start Prologue',
 	};
 
 	// ── Tone-setting ──────────────────────────────────────────────────────────
@@ -686,7 +701,7 @@
 			</a>
 			<div class="members">
 				{#each members as member}
-					<button type="button" class="member" class:online={member.online} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue`}>
+					<button type="button" class="member" class:online={member.online} class:active={member.id === blockingPlayerID} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${member.id === blockingPlayerID ? ' (their turn)' : ''}`}>
 						<span class="dot"></span>
 						<span class="member-name">{member.display_name}</span>
 					</button>
@@ -696,6 +711,9 @@
 		{#if game}
 			<div class="game-info">
 				<span class="phase-badge">{phaseLabels[game.phase] ?? game.phase}</span>
+				<button class="tones-button" onclick={() => tonesOpen = true} aria-label="Open tones">
+					Tones
+				</button>
 				{#if game.phase === 'lobby'}
 					<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
 						{game.join_code}
@@ -741,65 +759,6 @@
 				</button>
 			{:else if isFacilitator}
 				<p class="muted">Need at least 2 players to start.</p>
-			{/if}
-		</div>
-
-	<!-- ── Tone Setting ──────────────────────────────────────────────────── -->
-	{:else if game?.phase === 'tone_setting'}
-		<div class="phase-view tone-setting">
-			<h2>Tone Setting</h2>
-			<p class="muted">
-				Discuss what themes and topics your group wants to include or avoid.
-				Tap a tile to cycle its status. Anyone can change any topic.
-			</p>
-
-			<div class="tone-legend" aria-label="Legend">
-				<span class="tone-legend-item" data-status="default"><span class="swatch"></span>No Opinion</span>
-				<span class="tone-legend-item" data-status="include"><span class="swatch"></span>Include</span>
-				<span class="tone-legend-item" data-status="avoid_detail"><span class="swatch"></span>Avoid detail</span>
-				<span class="tone-legend-item" data-status="never"><span class="swatch"></span>Never</span>
-			</div>
-
-			<div class="tone-grid">
-				{#each toneTopics as topic (topic.id)}
-					<button
-						type="button"
-						class="tone-tile"
-						data-status={topic.status}
-						onclick={() => cycleTopicStatus(topic)}
-						aria-label={`${topic.topic}: ${topic.status === 'default' ? 'No Opinion' : topic.status === 'avoid_detail' ? 'Avoid detail' : topic.status === 'include' ? 'Include' : 'Never'}. Tap to cycle.`}
-					>
-						<span class="tone-tile-topic">{topic.topic}</span>
-					</button>
-				{/each}
-
-				<input
-					type="text"
-					class="tone-tile tone-tile-input"
-					placeholder="Custom topic…"
-					bind:value={newTopicText}
-					onkeydown={(e) => { if (e.key === 'Enter') submitNewTopic(); }}
-					maxlength={120}
-					aria-label="Add a custom topic"
-				/>
-
-				{#if newTopicText.trim()}
-					<button
-						type="button"
-						class="tone-tile tone-tile-add"
-						onclick={submitNewTopic}
-						disabled={addingTopic}
-						aria-label="Add topic"
-					>
-						{addingTopic ? '…' : 'Add'}
-					</button>
-				{/if}
-			</div>
-
-			{#if isFacilitator}
-				<button class="primary" onclick={advancePhase} disabled={advancing}>
-					{advancing ? '…' : nextPhaseLabel['tone_setting']}
-				</button>
 			{/if}
 		</div>
 
@@ -882,6 +841,62 @@
 		{/if}
 	</div>
 
+	<RetinueSheet open={tonesOpen} onClose={() => tonesOpen = false}>
+		<div class="tones-sheet">
+			<h3>Tones</h3>
+			<p class="muted small">
+				Themes and topics your group wants to include or avoid. Tap a tile to cycle its status.
+				{#if tonesLocked}<br /><em>Locked — the main event has begun.</em>{/if}
+			</p>
+
+			<div class="tone-legend" aria-label="Legend">
+				<span class="tone-legend-item" data-status="default"><span class="swatch"></span>No Opinion</span>
+				<span class="tone-legend-item" data-status="include"><span class="swatch"></span>Include</span>
+				<span class="tone-legend-item" data-status="avoid_detail"><span class="swatch"></span>Avoid detail</span>
+				<span class="tone-legend-item" data-status="never"><span class="swatch"></span>Never</span>
+			</div>
+
+			<div class="tone-grid">
+				{#each toneTopics as topic (topic.id)}
+					<button
+						type="button"
+						class="tone-tile"
+						data-status={topic.status}
+						disabled={tonesLocked}
+						onclick={() => cycleTopicStatus(topic)}
+						aria-label={`${topic.topic}: ${topic.status === 'default' ? 'No Opinion' : topic.status === 'avoid_detail' ? 'Avoid detail' : topic.status === 'include' ? 'Include' : 'Never'}.${tonesLocked ? '' : ' Tap to cycle.'}`}
+					>
+						<span class="tone-tile-topic">{topic.topic}</span>
+					</button>
+				{/each}
+
+				{#if !tonesLocked}
+					<input
+						type="text"
+						class="tone-tile tone-tile-input"
+						placeholder="Custom topic…"
+						bind:value={newTopicText}
+						onkeydown={(e) => { if (e.key === 'Enter') submitNewTopic(); }}
+						maxlength={120}
+						aria-label="Add a custom topic"
+					/>
+
+					{#if newTopicText.trim()}
+						<button
+							type="button"
+							class="tone-tile tone-tile-add"
+							onclick={submitNewTopic}
+							disabled={addingTopic}
+							aria-label="Add topic"
+						>
+							{addingTopic ? '…' : 'Add'}
+						</button>
+					{/if}
+				{/if}
+			</div>
+		</div>
+	</RetinueSheet>
+
 	<RetinueSheet open={retinueOpenForPlayer !== null} onClose={() => retinueOpenForPlayer = null}>
 		{#if retinueOpenForPlayer !== null}
 			<RetinueView
@@ -890,6 +905,7 @@
 				{members}
 				{assets}
 				{secrets}
+				{rankings}
 				viewerPlayerId={currentPlayerID}
 				leverageActive={activeRoll != null && activeRoll.outcome == null}
 				onSecretsChanged={() => getVisibleSecrets(gameID).then(d => { secrets = d.secrets; }).catch(() => {})}
@@ -1009,6 +1025,21 @@
 		align-items: center;
 	}
 
+	.tones-button {
+		font-size: 0.8rem;
+		background: #2a2a2a;
+		color: #e8e4d9;
+		padding: 0.3rem 0.7rem;
+		border-radius: 4px;
+		border: 1px solid #3a3a3a;
+		min-height: 32px;
+	}
+	.tones-button:hover { background: #333; }
+	.tones-button:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
+
+	.tones-sheet h3 { margin: 0 0 0.5rem; }
+	.tones-sheet .small { font-size: 0.85rem; }
+
 	.copy-hint {
 		font-size: 0.7rem;
 		color: #888;
@@ -1065,6 +1096,11 @@
 	.member:hover { background: #2e2e2e; }
 	.member:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
 	.member.online { color: #e8e4d9; }
+	.member.active {
+		border-color: #c8a96e;
+		box-shadow: 0 0 0 1px #c8a96e, 0 0 8px rgba(200, 169, 110, 0.45);
+		color: #e8e4d9;
+	}
 
 	.member-name {
 		white-space: nowrap;

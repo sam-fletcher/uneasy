@@ -20,8 +20,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -30,6 +33,48 @@ import (
 )
 
 const prologueTurnsPerPlayer = 3
+
+// prologueTurnState reports who is currently on-turn during the choosing
+// sub-phase. Players take turns in join order (facilitator first, since
+// they're inserted at table-creation). The active player is the one with
+// the fewest completed turns; ties broken by join order. Returns nil
+// currentPlayer once every player has taken `prologueTurnsPerPlayer`.
+//
+// turnNumber is the 1-indexed total of choices already committed across
+// all players, plus 1 (i.e. the number of the *next* turn).
+func prologueTurnState(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+) (currentPlayer *dbgen.Player, turnNumber int, err error) {
+	players, err := q.GetPlayersByGame(ctx, gameID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(players) == 0 {
+		return nil, 1, nil
+	}
+	// Round 0: every player takes one turn before any player takes their second.
+	// active = player with fewest turns; ties → earliest joined_at (which is
+	// the iteration order returned by GetPlayersByGame).
+	var totalTaken int
+	var best *dbgen.Player
+	bestCount := int64(prologueTurnsPerPlayer + 1)
+	for i := range players {
+		n, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
+			GameID: gameID, PlayerID: players[i].ID,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		totalTaken += int(n)
+		if n < int64(prologueTurnsPerPlayer) && n < bestCount {
+			best = &players[i]
+			bestCount = n
+		}
+	}
+	return best, totalTaken + 1, nil
+}
 
 // requirePrologueChoosing writes 409 and returns false unless the game is in
 // the prologue phase and not yet in the ranking sub-flow.
@@ -61,14 +106,27 @@ func GetPrologueSheets(q *dbgen.Queries) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		claims, err := q.ListPrologueChoiceClaimsByGame(r.Context(), gameID)
+		ctx := r.Context()
+		claims, err := q.ListPrologueChoiceClaimsByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load claims")
 			return
 		}
+		active, turnNumber, err := prologueTurnState(ctx, q, gameID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not compute turn order")
+			return
+		}
+		var activeID *int64
+		if active != nil {
+			id := active.ID
+			activeID = &id
+		}
 		respond(w, http.StatusOK, map[string]any{
-			"sheets": gamepkg.PrologueSheets,
-			"claims": claims,
+			"sheets":            gamepkg.PrologueSheets,
+			"claims":            claims,
+			"current_player_id": activeID,
+			"turn_number":       turnNumber,
 		})
 	}
 }
@@ -91,22 +149,300 @@ func GetPrologueCards(q *dbgen.Queries) http.HandlerFunc {
 	}
 }
 
+// ── Card-asset suggestions ───────────────────────────────────────────────────
+
+// GetPrologueCardSuggestions handles GET /api/games/{id}/prologue/card-suggestions?suit=X.
+//
+// Returns three random example names for an asset of the suit's natural type
+// that have not yet been used by any asset name in this game. Used to
+// populate the multiple-choice picker when a player creates a card-derived
+// asset during the Prologue.
+func GetPrologueCardSuggestions(q *dbgen.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gameID, _, ok := parseGamePlayer(w, r, q)
+		if !ok {
+			return
+		}
+		suitParam := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("suit")))
+		if len(suitParam) != 1 {
+			respondErr(w, http.StatusBadRequest, "suit must be one of C, D, S, H")
+			return
+		}
+		assetType := gamepkg.AssetTypeForSuit(rune(suitParam[0]))
+		if assetType == "" {
+			respondErr(w, http.StatusBadRequest, "unknown suit")
+			return
+		}
+		pool := gamepkg.PrologueExamples[assetType]
+		if len(pool) == 0 {
+			respond(w, http.StatusOK, map[string]any{"suggestions": []string{}})
+			return
+		}
+
+		used := map[string]struct{}{}
+		assets, err := q.ListAssetsByGame(r.Context(), gameID)
+		if err == nil {
+			for _, a := range assets {
+				used[strings.ToLower(strings.TrimSpace(a.Name))] = struct{}{}
+			}
+		}
+
+		available := make([]string, 0, len(pool))
+		for _, name := range pool {
+			if _, taken := used[strings.ToLower(strings.TrimSpace(name))]; taken {
+				continue
+			}
+			available = append(available, name)
+		}
+
+		rand.Shuffle(len(available), func(i, j int) { available[i], available[j] = available[j], available[i] })
+		if len(available) > 3 {
+			available = available[:3]
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"suggestions": available,
+			"asset_type":  assetType,
+		})
+	}
+}
+
 // ── Choose ───────────────────────────────────────────────────────────────────
+
+// CardAssetText is the per-card narrative text supplied by the player when
+// they create a new card-derived asset during the Prologue. For takes (the
+// card's asset already exists and merely transfers owners), text is not
+// required and may be empty.
+type CardAssetText struct {
+	Suit  string `json:"suit"`
+	Value string `json:"value"`
+	Text  string `json:"text"`
+}
+
+// chooseRequestBody is the validated request body for ChoosePrologue.
+type chooseRequestBody struct {
+	SheetType       string
+	ChoiceName      string
+	AssetText       string
+	MarginaliumText string
+	LawOrRumorText  string
+	CardAssets      []CardAssetText
+}
+
+// validateChooseRequestBody decodes and validates the request body for ChoosePrologue.
+func validateChooseRequestBody(r *http.Request) (*chooseRequestBody, error) {
+	var raw struct {
+		SheetType       string          `json:"sheet_type"`
+		ChoiceName      string          `json:"choice_name"`
+		AssetText       string          `json:"asset_text"`
+		MarginaliumText string          `json:"marginalium_text"`
+		LawOrRumorText  string          `json:"law_or_rumor_text"`
+		CardAssets      []CardAssetText `json:"card_assets"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	body := &chooseRequestBody{
+		SheetType:       raw.SheetType,
+		ChoiceName:      raw.ChoiceName,
+		AssetText:       strings.TrimSpace(raw.AssetText),
+		MarginaliumText: strings.TrimSpace(raw.MarginaliumText),
+		LawOrRumorText:  strings.TrimSpace(raw.LawOrRumorText),
+		CardAssets:      raw.CardAssets,
+	}
+
+	if body.AssetText == "" {
+		return nil, errors.New("asset_text is required")
+	}
+	if body.SheetType == gamepkg.PrologueSheetTitles && body.MarginaliumText == "" {
+		return nil, errors.New("marginalium_text is required for titles")
+	}
+	if body.SheetType == gamepkg.PrologueSheetLawsRumors && body.LawOrRumorText == "" {
+		return nil, errors.New("law_or_rumor_text is required for laws_rumors")
+	}
+
+	return body, nil
+}
+
+// validatePlayerCanChoose checks turn order, turn cap, and box claim status.
+func validatePlayerCanChoose(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+	sheetType, choiceName string,
+) error {
+	// Turn-order enforcement: only the active player may claim a box.
+	active, _, err := prologueTurnState(ctx, q, gameID)
+	if err != nil {
+		return fmt.Errorf("could not compute turn order: %w", err)
+	}
+	if active == nil || active.ID != playerID {
+		return errors.New("illegal - it is not your turn")
+	}
+
+	// Per-player turn cap (defensive — prologueTurnState already enforces it).
+	taken, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
+		GameID: gameID, PlayerID: playerID,
+	})
+	if err != nil {
+		return fmt.Errorf("could not count player turns: %w", err)
+	}
+	if taken >= prologueTurnsPerPlayer {
+		return errors.New("illegal - you have already taken your three prologue turns")
+	}
+
+	// Box must not be claimed.
+	claimed, err := q.PrologueChoiceClaimed(ctx, dbgen.PrologueChoiceClaimedParams{
+		GameID: gameID, SheetType: sheetType, ChoiceName: choiceName,
+	})
+	if err != nil {
+		return fmt.Errorf("could not check claim status: %w", err)
+	}
+	if claimed {
+		return errors.New("illegal - that box has already been claimed")
+	}
+	return nil
+}
+
+// findMainCharacter retrieves the player's main character asset.
+func findMainCharacter(ctx context.Context, q *dbgen.Queries, playerID int64) (int64, error) {
+	ownerAssets, err := q.ListAssetsByOwner(ctx, playerID)
+	if err != nil {
+		return 0, fmt.Errorf("could not load main character: %w", err)
+	}
+	for _, a := range ownerAssets {
+		if a.IsMainCharacter && !a.IsDestroyed {
+			return a.ID, nil
+		}
+	}
+	return 0, errors.New("main character not found")
+}
+
+// findOpenMarginaliaPosition finds an open marginalia slot (1-4) on an asset.
+// Returns 0 if no open position is available.
+func findOpenMarginaliaPosition(ctx context.Context, q *dbgen.Queries, assetID int64) (int16, error) {
+	existing, err := q.ListMarginaliaByAsset(ctx, assetID)
+	if err != nil {
+		return 0, fmt.Errorf("could not load marginalia: %w", err)
+	}
+	used := map[int16]bool{}
+	for _, m := range existing {
+		used[m.Position] = true
+	}
+	for p := int16(1); p <= 4; p++ {
+		if !used[p] {
+			return p, nil
+		}
+	}
+	return 0, nil
+}
+
+// addTitleMarginalium adds a marginalium to the player's main character.
+func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, playerID int64, text string) error {
+	mainCharID, err := findMainCharacter(ctx, q, playerID)
+	if err != nil {
+		return err
+	}
+
+	pos, err := findOpenMarginaliaPosition(ctx, q, mainCharID)
+	if err != nil {
+		return err
+	}
+	if pos == 0 {
+		return errors.New("main character has no open marginalia slots")
+	}
+
+	_, err = q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID:  mainCharID,
+		Position: pos,
+		Text:     text,
+	})
+	if err != nil {
+		return fmt.Errorf("could not add title marginalium: %w", err)
+	}
+	return nil
+}
+
+// isLawChoice detects whether a choice is a law or rumor based on the choice name.
+func isLawChoice(choiceName string) bool {
+	return strings.Contains(strings.ToLower(choiceName), "law")
+}
+
+// addLawOrRumor records a law or rumor in the public record.
+func addLawOrRumor(ctx context.Context, q *dbgen.Queries, gameID int64, choiceName, text string) error {
+	if isLawChoice(choiceName) {
+		_, err := q.CreateLaw(ctx, dbgen.CreateLawParams{
+			GameID: gameID,
+			Text:   text,
+		})
+		if err != nil {
+			return fmt.Errorf("could not record law: %w", err)
+		}
+	} else {
+		_, err := q.CreateRumor(ctx, dbgen.CreateRumorParams{
+			GameID: gameID,
+			Text:   text,
+		})
+		if err != nil {
+			return fmt.Errorf("could not record rumor: %w", err)
+		}
+	}
+	return nil
+}
+
+// buildCardTextLookup creates a map from card key ("C|K") to player-supplied text.
+func buildCardTextLookup(cardAssets []CardAssetText) map[string]string {
+	lookup := make(map[string]string)
+	for _, ct := range cardAssets {
+		key := strings.ToUpper(ct.Suit) + "|" + strings.ToUpper(ct.Value)
+		lookup[key] = strings.TrimSpace(ct.Text)
+	}
+	return lookup
+}
+
+// broadcastTurnAdvanced broadcasts the turn advancement event.
+func broadcastTurnAdvanced(ctx context.Context, manager *hub.Manager, q *dbgen.Queries, gameID int64) {
+	// Advance the turn marker.
+	nextActive, nextTurn, terr := prologueTurnState(ctx, q, gameID)
+	if terr == nil {
+		payload := model.PrologueTurnAdvancedPayload{TurnNumber: nextTurn}
+		if nextActive != nil {
+			id := nextActive.ID
+			payload.CurrentPlayerID = &id
+		}
+		broadcastEvent(manager, gameID, model.EventPrologueTurnAdvanced, payload)
+	}
+}
 
 // ChoosePrologue handles POST /api/games/{id}/prologue/choose.
 //
-// Body: {"sheet_type": "...", "choice_name": "..."}.
+// Body:
 //
-// Records the prologue_choice row, creates the choice-specific asset (whose
-// type is determined by the sheet), and processes both linked cards
-// (make-or-take semantics).
+//	{
+//	  "sheet_type":         "...",
+//	  "choice_name":        "...",
+//	  "asset_text":         "...",   // name for the sheet-derived asset
+//	  "marginalium_text":   "...",   // titles only — added to main character
+//	  "law_or_rumor_text":  "...",   // laws_rumors only — added to public record
+//	  "card_assets": [
+//	    {"suit":"C","value":"K","text":"..."}, ...    // text required for makes; ignored for takes
+//	  ]
+//	}
+//
+// Records the prologue_choice row, creates the choice-specific asset, adds
+// the title marginalium / law / rumor as appropriate, and processes both
+// linked cards (make-or-take semantics). Players are required to author
+// every text field; silent automation is not permitted.
 func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		gameID, player, ok := parseGamePlayer(w, r, q)
 		if !ok {
 			return
 		}
-		game, err := q.GetGameByID(r.Context(), gameID)
+		game, err := q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -115,23 +451,28 @@ func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		var body struct {
-			SheetType  string `json:"sheet_type"`
-			ChoiceName string `json:"choice_name"`
-		}
-		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid JSON")
+		body, err := validateChooseRequestBody(r)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
+
 		choice := gamepkg.FindPrologueChoice(body.SheetType, body.ChoiceName)
 		if choice == nil {
 			respondErr(w, http.StatusBadRequest, "no such prologue choice")
 			return
 		}
 
-		ctx := r.Context()
+		// Validate that this player can make this choice now.
+		if err = validatePlayerCanChoose(ctx, q, gameID, player.ID, body.SheetType, body.ChoiceName); err != nil {
+			if strings.Contains(err.Error(), "illegal") {
+				respondErr(w, http.StatusConflict, err.Error())
+			} else {
+				respondErr(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
 
-		// Per-player turn cap.
 		taken, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
 			GameID: gameID, PlayerID: player.ID,
 		})
@@ -139,25 +480,9 @@ func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not count player turns")
 			return
 		}
-		if taken >= prologueTurnsPerPlayer {
-			respondErr(w, http.StatusConflict, "you have already taken your three prologue turns")
-			return
-		}
-
-		// Box must not be claimed.
-		claimed, err := q.PrologueChoiceClaimed(ctx, dbgen.PrologueChoiceClaimedParams{
-			GameID: gameID, SheetType: body.SheetType, ChoiceName: body.ChoiceName,
-		})
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check claim status")
-			return
-		}
-		if claimed {
-			respondErr(w, http.StatusConflict, "that box has already been claimed")
-			return
-		}
-
 		turnNumber := int16(taken) + 1
+
+		// Record the choice.
 		_, err = q.CreatePrologueChoice(ctx, dbgen.CreatePrologueChoiceParams{
 			GameID:     gameID,
 			PlayerID:   player.ID,
@@ -170,24 +495,46 @@ func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Choice-specific asset (artifact / holding / resource depending
-		// on sheet type). Name = choice name; players can edit it later.
+		// Create the choice-specific asset (artifact/holding/resource depending on sheet type).
 		assetType := gamepkg.AssetTypeForSheet(body.SheetType)
 		_, err = q.CreateAsset(ctx, dbgen.CreateAssetParams{
 			GameID:    gameID,
 			OwnerID:   player.ID,
 			CreatorID: player.ID,
 			AssetType: model.AssetType(assetType),
-			Name:      body.ChoiceName,
+			Name:      body.AssetText,
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not create choice asset")
 			return
 		}
 
-		// Process both linked cards.
+		// Handle sheet-type-specific asset (marginalium, law, or rumor).
+		switch body.SheetType {
+		case gamepkg.PrologueSheetTitles:
+			if err = addTitleMarginalium(ctx, q, player.ID, body.MarginaliumText); err != nil {
+				if strings.Contains(err.Error(), "no open marginalia slots") {
+					respondErr(w, http.StatusConflict, err.Error())
+				} else {
+					respondErr(w, http.StatusInternalServerError, err.Error())
+				}
+				return
+			}
+		case gamepkg.PrologueSheetLawsRumors:
+			if err = addLawOrRumor(ctx, q, gameID, body.ChoiceName, body.LawOrRumorText); err != nil {
+				respondErr(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+
+		// Process linked cards (make-or-take semantics).
+		cardTextLookup := buildCardTextLookup(body.CardAssets)
 		for _, card := range choice.Cards {
-			if err = processPrologueCardClaim(ctx, q, manager, gameID, player.ID, card); err != nil {
+			key := strings.ToUpper(string(card.Suit)) + "|" + strings.ToUpper(card.Value)
+			err = processPrologueCardClaim(ctx, q, manager,
+				gameID, player.ID, card, cardTextLookup[key],
+			)
+			if err != nil {
 				respondErr(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -200,6 +547,8 @@ func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			TurnNumber: turnNumber,
 		})
 
+		broadcastTurnAdvanced(ctx, manager, q, gameID)
+
 		respond(w, http.StatusOK, map[string]any{
 			"sheet_type":  body.SheetType,
 			"choice_name": body.ChoiceName,
@@ -210,14 +559,16 @@ func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 // processPrologueCardClaim implements make-or-take. If no asset is currently
 // linked to the card, create one of the suit's natural type for the
-// claimer; otherwise transfer the existing asset (and the player_cards row)
-// to the claimer.
+// claimer using makeText as its name; otherwise transfer the existing
+// asset (and the player_cards row) to the claimer (makeText is unused for
+// takes).
 func processPrologueCardClaim(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	gameID, claimerID int64,
 	card gamepkg.Card,
+	makeText string,
 ) error {
 	suit := string(card.Suit)
 	existingOwner, err := q.GetCardOwner(ctx, dbgen.GetCardOwnerParams{
@@ -255,13 +606,17 @@ func processPrologueCardClaim(
 		return nil
 	}
 
-	// First claim — create a new asset linked to this card.
+	// First claim — create a new asset linked to this card. Player-supplied
+	// text is required.
+	if strings.TrimSpace(makeText) == "" {
+		return fmt.Errorf("text required for new card asset %s", cardLabel(card))
+	}
 	asset, err := q.CreateAssetWithLinkedCard(ctx, dbgen.CreateAssetWithLinkedCardParams{
 		GameID:          gameID,
 		OwnerID:         claimerID,
 		CreatorID:       claimerID,
 		AssetType:       model.AssetType(gamepkg.AssetTypeForSuit(card.Suit)),
-		Name:            cardLabel(card),
+		Name:            strings.TrimSpace(makeText),
 		LinkedCardSuit:  &suit,
 		LinkedCardValue: &card.Value,
 	})

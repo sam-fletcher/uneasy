@@ -18,9 +18,9 @@ import (
 // ── PHASE 3: Phase Handler Integration Tests ────────────────────────────────
 // These tests validate game phase transitions and state machine logic.
 
-// ── Start Tone Setting Tests ────────────────────────────────────────────────
+// ── Start Prologue Tests ────────────────────────────────────────────────
 
-func TestStartToneSetting_RejectsUnderMinPlayers(t *testing.T) {
+func TestStartPrologue_RejectsUnderMinPlayers(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	ctx := context.Background()
@@ -41,13 +41,13 @@ func TestStartToneSetting_RejectsUnderMinPlayers(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Try to start tone setting (should fail with < 2 players)
+	// Try to start prologue (should fail with < 2 players)
 	count, err := q.CountPlayersInGame(ctx, game.ID)
 	require.NoError(t, err)
 	assert.Less(t, count, int64(2), "should have fewer than 2 players")
 }
 
-func TestStartToneSetting_RejectsOverMaxPlayers(t *testing.T) {
+func TestStartPrologue_RejectsOverMaxPlayers(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	ctx := context.Background()
@@ -75,7 +75,7 @@ func TestStartToneSetting_RejectsOverMaxPlayers(t *testing.T) {
 	assert.Greater(t, count, int64(5), "should have more than 5 players")
 }
 
-func TestStartToneSetting_AcceptsValidPlayerCounts(t *testing.T) {
+func TestStartPrologue_AcceptsValidPlayerCounts(t *testing.T) {
 	tests := []int{2, 3, 4, 5}
 
 	for _, playerCount := range tests {
@@ -110,7 +110,7 @@ func TestStartToneSetting_AcceptsValidPlayerCounts(t *testing.T) {
 	}
 }
 
-func TestStartToneSetting_SeedsDefaultToneTopics(t *testing.T) {
+func TestStartPrologue_SeedsDefaultToneTopics(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	ctx := context.Background()
@@ -137,7 +137,7 @@ func TestStartToneSetting_SeedsDefaultToneTopics(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, topicsBefore)
 
-	// Seed default topics (mimicking what StartToneSetting does)
+	// Seed default topics (mimicking what StartPrologue does)
 	err = db.SeedDefaultToneTopics(ctx, q, game.ID)
 	require.NoError(t, err)
 
@@ -148,7 +148,7 @@ func TestStartToneSetting_SeedsDefaultToneTopics(t *testing.T) {
 	assert.GreaterOrEqual(t, len(topicsAfter), 5, "should have at least 5 default topics")
 }
 
-func TestToneSetting_RequiresLobbyPhase(t *testing.T) {
+func TestPrologue_RequiresLobbyPhase(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	ctx := context.Background()
@@ -171,10 +171,10 @@ func TestToneSetting_RequiresLobbyPhase(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Move to ToneSetting phase
+	// Move to Prologue phase
 	err = q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 		ID:    game.ID,
-		Phase: model.PhaseToneSetting,
+		Phase: model.PhasePrologue,
 	})
 	require.NoError(t, err)
 
@@ -252,7 +252,7 @@ func TestMainEvent_AllPlayersHaveSeatOrder(t *testing.T) {
 
 // ── Game Phase Transitions ──────────────────────────────────────────────────
 
-func TestGamePhaseTransition_LobbyToToneSetting(t *testing.T) {
+func TestGamePhaseTransition_LobbyToPrologue(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	ctx := context.Background()
@@ -261,16 +261,16 @@ func TestGamePhaseTransition_LobbyToToneSetting(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.PhaseLobby, game.Phase)
 
-	// Transition to tone setting
+	// Transition to prologue
 	err = q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 		ID:    game.ID,
-		Phase: model.PhaseToneSetting,
+		Phase: model.PhasePrologue,
 	})
 	require.NoError(t, err)
 
 	updated, err := q.GetGameByID(ctx, game.ID)
 	require.NoError(t, err)
-	assert.Equal(t, model.PhaseToneSetting, updated.Phase)
+	assert.Equal(t, model.PhasePrologue, updated.Phase)
 }
 
 func TestGamePhaseTransition_PrologueToMainEvent(t *testing.T) {

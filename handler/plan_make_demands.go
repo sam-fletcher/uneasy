@@ -227,7 +227,7 @@ func mdDraftPickers(
 //	{"option": "control_leverage" | "keep_or_change_target" |
 //	           "keep_assets"      | "perform_steps"}
 //
-//nolint:funlen,gocognit // demand draft state machine (alternating-pick + recursive demand)
+//nolint:gocognit // demand draft state machine (alternating-pick + recursive demand)
 func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)

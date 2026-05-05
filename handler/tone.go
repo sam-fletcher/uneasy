@@ -13,6 +13,19 @@ import (
 	"uneasy/model"
 )
 
+// tonesLocked reports whether tone edits are locked. Tones are
+// reference material throughout lobby + prologue and lock once the
+// main event begins.
+func tonesLocked(phase model.GamePhase) bool {
+	switch phase {
+	case model.PhaseLobby, model.PhasePrologue:
+		return false
+	case model.PhaseMainEvent, model.PhaseShakeUp, model.PhaseEnded:
+		return true
+	}
+	return true
+}
+
 // ListToneTopics handles GET /api/tables/{id}/tone.
 func ListToneTopics(q *dbgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +75,16 @@ func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+
+		game, err := q.GetGameByID(ctx, gameID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "table not found")
+			return
+		}
+		if tonesLocked(game.Phase) {
+			respondErr(w, http.StatusConflict, "tones are locked once the main event begins")
+			return
+		}
 
 		// Verify the topic belongs to this game.
 		topic, err := q.GetToneTopic(ctx, topicID)
@@ -116,7 +139,18 @@ func AddToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		topic, err := q.CreateToneTopic(r.Context(), dbgen.CreateToneTopicParams{
+		ctx := r.Context()
+		game, err := q.GetGameByID(ctx, gameID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "table not found")
+			return
+		}
+		if tonesLocked(game.Phase) {
+			respondErr(w, http.StatusConflict, "tones are locked once the main event begins")
+			return
+		}
+
+		topic, err := q.CreateToneTopic(ctx, dbgen.CreateToneTopicParams{
 			GameID: gameID,
 			Topic:  body.Topic,
 			Status: model.ToneDefault,

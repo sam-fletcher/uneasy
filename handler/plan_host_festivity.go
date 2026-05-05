@@ -346,7 +346,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 //
 // challenge_duel goes through /challenge-duel, not here.
 //
-//nolint:funlen,gocognit // guest make/mar dispatch with phase-advance side effects
+//nolint:gocognit // guest make/mar dispatch with phase-advance side effects
 func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)

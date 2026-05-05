@@ -124,6 +124,7 @@ export const EventTypes = {
 
 	// Structured prologue (Phase 4b)
 	PrologueChoiceClaimed: 'prologue.choice_claimed',
+	PrologueTurnAdvanced: 'prologue.turn_advanced',
 	PrologueRankingStepChanged: 'prologue.ranking_step_changed',
 	PrologueHeartsDeclared: 'prologue.hearts_declared',
 	PrologueTrackRanked: 'prologue.track_ranked',

@@ -1,0 +1,54 @@
+{
+  "peer": [
+    "My father, the deposed king",
+    "Helena, bishop to the court",
+    "John, son of Lord John",
+    "Genevieve La Mond, my friend",
+    "Sharpe, the Ear",
+    "Roger Gromhard, Squire",
+    "Khata, Queen of Ice",
+    "Lady Joan, Duchess of Crafton",
+    "Charles of Terrytown",
+    "Thom, High King",
+    "Selene, Titan of the Steppes"
+  ],
+  "holding": [
+    "Longcliff Keep",
+    "The Wychwood Monastery",
+    "The Dragon's Tail",
+    "The Highland Manor",
+    "Briggs' Bludgeonry & Co.",
+    "The City of Dunsbury upon Wye",
+    "Northumberland Forest",
+    "The Pod of the Envoy",
+    "Sothclyfe",
+    "Yuthnia Forest of the Frozen Lands",
+    "Kingshold Castle"
+  ],
+  "artifact": [
+    "Hammer of Dust and Heaven",
+    "The Crown of the True Heir",
+    "The Greatsword of All Kings",
+    "Pelvis of the Mythical Wizard",
+    "The Balwick Signet Ring",
+    "The First Iron Ingot",
+    "The Whirling Cypher",
+    "Statue of John II",
+    "The Damaged Royal Dagger",
+    "The Usurper's Gorget",
+    "The Emblem of Magnificence"
+  ],
+  "resource": [
+    "The Flock",
+    "Cultural Reverence of the People",
+    "Claim for the Seat of Baloria",
+    "The People's Fear",
+    "The Monarch's Illicit Love",
+    "Coldblood Ward",
+    "Blood of Kings",
+    "The Council of Fortune",
+    "Endless Fields of Wheat",
+    "Laws, customs, & decorum",
+    "The Staff of Castle Moon"
+  ]
+}

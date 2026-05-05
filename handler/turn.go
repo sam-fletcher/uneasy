@@ -54,7 +54,7 @@ func requireFocusPlayer(w http.ResponseWriter, r *http.Request, q *dbgen.Queries
 	return &game, player, true
 }
 
-// rawNextFocusPlayer returns the raw next player by seat_order, wrapping around.
+// rawNextFocusPlayer returns the raw next player by join order, wrapping around.
 // It does not check whether the player is eligible to hold focus (has peers).
 func rawNextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusID int64) (*dbgen.Player, error) {
 	next, err := q.GetNextFocusPlayer(r.Context(), dbgen.GetNextFocusPlayerParams{
@@ -62,7 +62,7 @@ func rawNextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusI
 		ID:     currentFocusID,
 	})
 	if err != nil {
-		// No player with a higher seat_order — wrap to the first.
+		// No later-joined player — wrap to the first.
 		first, err2 := q.GetFirstFocusPlayer(r.Context(), gameID)
 		if err2 != nil {
 			return nil, err2

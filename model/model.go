@@ -10,12 +10,11 @@ package model
 type GamePhase string
 
 const (
-	PhaseLobby       GamePhase = "lobby"
-	PhaseToneSetting GamePhase = "tone_setting"
-	PhasePrologue    GamePhase = "prologue"
-	PhaseMainEvent   GamePhase = "main_event"
-	PhaseShakeUp     GamePhase = "shake_up"
-	PhaseEnded       GamePhase = "ended"
+	PhaseLobby     GamePhase = "lobby"
+	PhasePrologue  GamePhase = "prologue"
+	PhaseMainEvent GamePhase = "main_event"
+	PhaseShakeUp   GamePhase = "shake_up"
+	PhaseEnded     GamePhase = "ended"
 )
 
 // ── Tone Topic Status ───────────────────────────────────────────────────────

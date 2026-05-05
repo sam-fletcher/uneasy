@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -493,9 +494,15 @@ func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		var body struct {
 			TitleName string `json:"title_name"`
+			PeerText  string `json:"peer_text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		body.PeerText = strings.TrimSpace(body.PeerText)
+		if body.PeerText == "" {
+			respondErr(w, http.StatusBadRequest, "peer_text is required")
 			return
 		}
 		if gamepkg.FindPrologueChoice(gamepkg.PrologueSheetTitles, body.TitleName) == nil {
@@ -520,7 +527,7 @@ func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			OwnerID:   player.ID,
 			CreatorID: player.ID,
 			AssetType: model.AssetPeer,
-			Name:      body.TitleName,
+			Name:      body.PeerText,
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not create extra peer")

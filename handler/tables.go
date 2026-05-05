@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -16,6 +17,33 @@ import (
 )
 
 const maxPlayersPerGame = 5
+
+// createMainCharacterPeer creates the empty main-character peer asset for a
+// newly seated player. Per the Prologue rules, main characters exist before
+// the Prologue loop; players fill in name and marginalia at any time.
+func createMainCharacterPeer(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	player dbgen.Player,
+) error {
+	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID:          gameID,
+		OwnerID:         player.ID,
+		CreatorID:       player.ID,
+		AssetType:       model.AssetPeer,
+		Name:            player.DisplayName,
+		IsMainCharacter: true,
+	})
+	if err != nil {
+		return err
+	}
+	if h, ok := manager.Get(gameID); ok {
+		h.BroadcastEvent(model.EventAssetCreated, model.AssetPayload{Asset: asset})
+	}
+	return nil
+}
 
 // CreateTable handles POST /api/tables.
 //
@@ -64,6 +92,17 @@ func CreateTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		game.FacilitatorID = &player.ID
 
 		manager.GetOrCreate(game.ID)
+
+		// Seed default tone topics so the Tones page is populated from t=0.
+		if err := db.SeedDefaultToneTopics(ctx, q, game.ID); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not seed tone topics")
+			return
+		}
+
+		if err := createMainCharacterPeer(ctx, q, manager, game.ID, player); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not create main character")
+			return
+		}
 
 		respond(w, http.StatusCreated, map[string]any{
 			"game":   game,
@@ -144,6 +183,11 @@ func JoinTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		if h, ok := manager.Get(game.ID); ok {
 			h.BroadcastEvent(model.EventPlayerJoined, model.PlayerJoinedPayload{Player: player})
+		}
+
+		if err := createMainCharacterPeer(ctx, q, manager, game.ID, player); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not create main character")
+			return
 		}
 
 		respond(w, http.StatusCreated, map[string]any{

@@ -33,20 +33,20 @@ UPDATE players SET token_color = $2 WHERE id = $1;
 UPDATE players SET seat_order = $2 WHERE id = $1;
 
 -- name: GetNextFocusPlayer :one
--- Returns the player with the next seat_order after the current focus player.
--- Wraps around to the lowest seat_order when the end is reached.
+-- Returns the next player in join order after the current focus player.
+-- Caller must wrap around (use GetFirstFocusPlayer) when no row is returned.
 SELECT p.* FROM players p
-WHERE p.game_id = $1 AND p.seat_order IS NOT NULL
-  AND p.seat_order > COALESCE(
-    (SELECT p2.seat_order FROM players p2 WHERE p2.id = $2),
-    -1
+WHERE p.game_id = $1
+  AND p.joined_at > COALESCE(
+    (SELECT p2.joined_at FROM players p2 WHERE p2.id = $2),
+    'epoch'::timestamptz
   )
-ORDER BY p.seat_order ASC
+ORDER BY p.joined_at ASC
 LIMIT 1;
 
 -- name: GetFirstFocusPlayer :one
--- Returns the player with the lowest seat_order (for wrapping).
+-- Returns the player who joined first (the facilitator, in practice).
 SELECT * FROM players
-WHERE game_id = $1 AND seat_order IS NOT NULL
-ORDER BY seat_order ASC
+WHERE game_id = $1
+ORDER BY joined_at ASC
 LIMIT 1;

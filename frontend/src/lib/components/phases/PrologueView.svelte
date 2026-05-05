@@ -9,10 +9,8 @@
 <script lang="ts">
 	import {
 		startMainEvent,
-		setSeats,
 		getPrologueSheets,
 		getPrologueCards,
-		choosePrologue,
 		beginPrologueRanking,
 		declareHearts,
 		finalizeTrackRanking,
@@ -32,6 +30,7 @@
 		PrologueSheetType,
 	} from '$lib/api';
 	import { onMount, onDestroy } from 'svelte';
+	import ClaimChoiceModal from './ClaimChoiceModal.svelte';
 
 	interface Props {
 		gameID: string;
@@ -57,6 +56,7 @@
 	let sheets = $state<PrologueSheet[]>([]);
 	let claims = $state<PrologueClaim[]>([]);
 	let cards = $state<PlayerCardRow[]>([]);
+	let activePlayerID = $state<number | null>(null);
 	let error = $state('');
 	let loading = $state(true);
 
@@ -65,6 +65,7 @@
 			const [s, c] = await Promise.all([getPrologueSheets(gameID), getPrologueCards(gameID)]);
 			sheets = s.sheets;
 			claims = s.claims;
+			activePlayerID = s.current_player_id;
 			cards = c.cards;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load prologue data.';
@@ -81,6 +82,7 @@
 
 	onMount(() => {
 		window.addEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
+		window.addEventListener('uneasy:prologue.turn_advanced', onClaimEvent);
 		window.addEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
 		window.addEventListener('uneasy:prologue.hearts_declared', onClaimEvent);
 		window.addEventListener('uneasy:prologue.track_ranked', onStepChanged);
@@ -88,6 +90,7 @@
 	});
 	onDestroy(() => {
 		window.removeEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
+		window.removeEventListener('uneasy:prologue.turn_advanced', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
 		window.removeEventListener('uneasy:prologue.hearts_declared', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.track_ranked', onStepChanged);
@@ -102,6 +105,7 @@
 	});
 
 	const myTurns = $derived(claims.filter(c => c.player_id === currentPlayerID).length);
+	const isMyTurn = $derived(activePlayerID != null && activePlayerID === currentPlayerID);
 	const everyoneFinishedChoosing = $derived(
 		players.length > 0 && players.every(p => claims.filter(c => c.player_id === p.id).length >= 3)
 	);
@@ -119,21 +123,20 @@
 	}
 
 	// ── Choose a box ─────────────────────────────────────────────────────────
-	let claimingName = $state('');
-	async function claimChoice(sheetType: PrologueSheetType, choiceName: string) {
-		if (claimingName) return;
-		claimingName = `${sheetType}::${choiceName}`;
-		error = '';
+	let activeClaim = $state<{ sheet: PrologueSheet; choice: PrologueSheet['choices'][number] } | null>(null);
+
+	function openClaimModal(sheet: PrologueSheet, choice: PrologueSheet['choices'][number]) {
+		if (activeClaim) return;
+		activeClaim = { sheet, choice };
+	}
+
+	async function onClaimSubmitted() {
+		activeClaim = null;
 		try {
-			await choosePrologue(gameID, { sheet_type: sheetType, choice_name: choiceName });
-			// Refresh assets so the retinue panel sees new card-assets and
-			// transferred ones.
 			const [, assetData] = await Promise.all([reload(), listAssets(gameID)]);
 			assets = assetData.assets;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not claim that box.';
-		} finally {
-			claimingName = '';
+			error = e instanceof Error ? e.message : 'Could not refresh.';
 		}
 	}
 
@@ -249,15 +252,17 @@
 	});
 
 	let extraPeerName = $state('');
+	let extraPeerText = $state('');
 	let creatingExtra = $state(false);
 	async function submitExtraPeer() {
-		if (!extraPeerName || creatingExtra) return;
+		if (!extraPeerName || !extraPeerText.trim() || creatingExtra) return;
 		creatingExtra = true;
 		error = '';
 		try {
-			const result = await createExtraPeer(gameID, extraPeerName);
+			const result = await createExtraPeer(gameID, extraPeerName, extraPeerText.trim());
 			assets = [...assets, result.asset];
 			extraPeerName = '';
+			extraPeerText = '';
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not create extra peer.';
 		} finally {
@@ -265,47 +270,10 @@
 		}
 	}
 
-	// ── Seats (unchanged from Phase 2 — still facilitator-driven) ────────────
-	let draftSeats = $state<Record<number, string>>({});
-	let savingSeats = $state(false);
-
 	$effect(() => {
-		const seats: Record<number, string> = {};
-		for (const p of players) {
-			seats[p.id] = p.seat_order != null ? String(p.seat_order) : '';
-		}
-		draftSeats = seats;
+		// Default the peer text to the bracketed title when a title is selected.
+		if (extraPeerName && !extraPeerText) extraPeerText = `[${extraPeerName}]`;
 	});
-
-	const seatsComplete = $derived(
-		players.length > 0 && players.every(p => p.seat_order != null)
-	);
-
-	async function saveSeatsCombined() {
-		const seats: Array<{ player_id: number; seat_order: number }> = [];
-		for (const p of players) {
-			const raw = draftSeats[p.id];
-			const n = parseInt(raw, 10);
-			if (!raw || isNaN(n) || n < 1) {
-				error = `Enter a valid seat number for ${p.display_name}`;
-				return;
-			}
-			seats.push({ player_id: p.id, seat_order: n });
-		}
-		savingSeats = true;
-		error = '';
-		try {
-			await setSeats(gameID, seats);
-			players = players.map(p => {
-				const s = seats.find(s => s.player_id === p.id);
-				return s ? { ...p, seat_order: s.seat_order } : p;
-			});
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not save seats.';
-		} finally {
-			savingSeats = false;
-		}
-	}
 
 	// ── Start main event ─────────────────────────────────────────────────────
 	let advancing = $state(false);
@@ -373,6 +341,16 @@
 			and grants two playing cards (which create or transfer card-linked assets).
 		</p>
 
+		<div class="turn-banner" class:my-turn={isMyTurn}>
+			{#if isMyTurn}
+				<strong>Your turn.</strong> Claim a box from any sheet.
+			{:else if activePlayerID != null}
+				Waiting on <strong>{playerName(activePlayerID)}</strong>…
+			{:else}
+				Everyone has finished choosing.
+			{/if}
+		</div>
+
 		<div class="choosing-grid">
 			{#each sheets as sheet}
 				<section class="sheet-panel">
@@ -385,9 +363,9 @@
 								type="button"
 								class="choice-btn"
 								class:claimed={!!existingClaim}
-								disabled={!!existingClaim || myTurns >= 3 || claimingName !== ''}
+								disabled={!!existingClaim || !isMyTurn || activeClaim != null}
 								title={choice.description || ''}
-								onclick={() => claimChoice(sheet.type, choice.name)}
+								onclick={() => openClaimModal(sheet, choice)}
 							>
 								<span class="choice-name">{choice.name}</span>
 								<span class="choice-cards">
@@ -515,62 +493,44 @@
 					{/each}
 				</select>
 			</label>
-			<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || creatingExtra}>
+			{#if extraPeerName}
+				<label>
+					Peer name:
+					<input
+						type="text"
+						bind:value={extraPeerText}
+						placeholder={`[${extraPeerName}]`}
+					/>
+				</label>
+			{/if}
+			<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
 				{creatingExtra ? '…' : 'Create peer'}
 			</button>
 		</div>
 
-		{#if isFacilitator}
-			<p class="muted small">When everyone has picked, you can start the main event.</p>
-		{/if}
 	{/if}
 
-	<!-- Always-visible side panels: seats + start -->
-
-	{#if isFacilitator}
-		<section class="facilitator-panel">
-			<h3>Seat Order</h3>
-			<p class="muted small">Clockwise seat numbers; sets focus-player ordering for the main event.</p>
-			<div class="seat-grid">
-				{#each players as p}
-					<div class="seat-row">
-						<span class="seat-name">{p.display_name}</span>
-						<input
-							type="number"
-							min="1"
-							max={players.length}
-							class="seat-input"
-							value={draftSeats[p.id] ?? ''}
-							oninput={(e) => { draftSeats[p.id] = (e.target as HTMLInputElement).value; }}
-						/>
-					</div>
-				{/each}
-			</div>
-			<button class="secondary" onclick={saveSeatsCombined} disabled={savingSeats}>
-				{savingSeats ? '…' : 'Save seat order'}
-			</button>
-
-			<div class="start-section">
-				<button
-					class="primary"
-					onclick={advanceToMainEvent}
-					disabled={advancing || !seatsComplete || rankings.length < 15}
-					title={
-						!seatsComplete ? 'Seat order is not fully set' :
-						rankings.length < 15 ? 'Rankings sub-flow is not complete' : undefined
-					}
-				>
-					{advancing ? '…' : 'Start Main Event'}
-				</button>
-				{#if !seatsComplete}
-					<p class="hint">Assign a seat to every player first.</p>
-				{:else if rankings.length < 15}
-					<p class="hint">Finish the ranking sub-flow first.</p>
-				{/if}
-			</div>
-		</section>
+	{#if isFacilitator && rankings.length >= 15}
+		<button
+			class="primary"
+			onclick={advanceToMainEvent}
+			disabled={advancing}
+		>
+			{advancing ? '…' : 'Start Main Event'}
+		</button>
 	{/if}
 </div>
+
+{#if activeClaim}
+	<ClaimChoiceModal
+		{gameID}
+		sheet={activeClaim.sheet}
+		choice={activeClaim.choice}
+		cards={cards}
+		onClose={() => activeClaim = null}
+		onSubmitted={onClaimSubmitted}
+	/>
+{/if}
 
 <style>
 	.prologue-view {
@@ -588,8 +548,21 @@
 	.muted { color: #999; font-size: 0.9rem; margin: 0; }
 	.muted.small { font-size: 0.8rem; }
 	.local-error { color: #e07070; font-size: 0.85rem; margin: 0; }
-	.hint { font-size: 0.8rem; color: #e0a060; margin: 0; }
 
+	.turn-banner {
+		background: #1e1e1e;
+		border: 1px solid #333;
+		border-left: 3px solid #555;
+		border-radius: 6px;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.9rem;
+		color: #ccc;
+	}
+	.turn-banner.my-turn {
+		border-left-color: #c8a96e;
+		background: #2a2418;
+		color: #e8e4d9;
+	}
 	.choosing-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
@@ -736,40 +709,6 @@
 	}
 	.text-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-
-	.facilitator-panel {
-		background: #1e1e1e;
-		border: 1px solid #333;
-		border-radius: 8px;
-		padding: 1rem;
-	}
-
-	.seat-grid {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		margin-bottom: 0.75rem;
-	}
-	.seat-row { display: flex; align-items: center; gap: 0.6rem; }
-	.seat-name { flex: 1; font-size: 0.9rem; }
-	.seat-input {
-		width: 3.5rem;
-		background: #2a2a2a;
-		color: #e8e4d9;
-		border: 1px solid #555;
-		border-radius: 4px;
-		padding: 0.25rem 0.4rem;
-		text-align: center;
-	}
-
-	.start-section {
-		margin-top: 1rem;
-		padding-top: 0.75rem;
-		border-top: 1px solid #333;
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
 
 	.primary {
 		background: #c8a96e;

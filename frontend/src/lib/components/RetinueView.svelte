@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 	import { addMarginalia, updateMarginalia, updateAsset, leverageAsset, writeSecret } from '$lib/api';
-	import type { Asset, Player, PresenceMember, Marginalium, Secret } from '$lib/api';
+	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
 
 	let {
 		playerId,
@@ -14,6 +14,7 @@
 		members,
 		assets,
 		secrets = [],
+		rankings = [],
 		viewerPlayerId,
 		leverageActive = false,
 		onSecretsChanged,
@@ -23,12 +24,29 @@
 		members: PresenceMember[];
 		assets: Asset[];
 		secrets?: Secret[];
+		rankings?: Ranking[];
 		viewerPlayerId: number | null;
 		/** True when there's an unresolved active dice roll — leverage is actionable. */
 		leverageActive?: boolean;
 		/** Called after the viewer writes a secret so the parent can refetch. */
 		onSecretsChanged?: () => void;
 	} = $props();
+
+	function rankFor(category: 'power' | 'knowledge' | 'esteem'): number | null {
+		const r = rankings.find(r => r.category === category && r.player_id === playerId);
+		return r ? r.rank : null;
+	}
+	const playerRanks = $derived({
+		power: rankFor('power'),
+		knowledge: rankFor('knowledge'),
+		esteem: rankFor('esteem'),
+	});
+	const cumulativeStatus = $derived(
+		(playerRanks.power ?? 0) + (playerRanks.knowledge ?? 0) + (playerRanks.esteem ?? 0)
+	);
+	const hasRanks = $derived(
+		playerRanks.power != null || playerRanks.knowledge != null || playerRanks.esteem != null
+	);
 
 	const player = $derived(players.find(p => p.id === playerId) ?? null);
 	const presence = $derived(members.find(m => m.id === playerId) ?? null);
@@ -274,6 +292,27 @@
 			</div>
 		</header>
 
+		{#if hasRanks}
+			<section class="rank-strip" aria-label="Track rankings">
+				<div class="rank-cell">
+					<span class="rank-label">Power</span>
+					<span class="rank-num">{playerRanks.power ?? '—'}</span>
+				</div>
+				<div class="rank-cell">
+					<span class="rank-label">Knowledge</span>
+					<span class="rank-num">{playerRanks.knowledge ?? '—'}</span>
+				</div>
+				<div class="rank-cell">
+					<span class="rank-label">Esteem</span>
+					<span class="rank-num">{playerRanks.esteem ?? '—'}</span>
+				</div>
+				<div class="rank-cell total">
+					<span class="rank-label">Total</span>
+					<span class="rank-num">{cumulativeStatus}</span>
+				</div>
+			</section>
+		{/if}
+
 		{#if ownedAssets.length === 0}
 			<p class="empty">No assets yet.</p>
 		{:else}
@@ -481,6 +520,35 @@
 		color: #c8a96e;
 		font-size: 1.1rem;
 		margin: 0 0 0.3rem;
+	}
+
+	.rank-strip {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0.4rem;
+		background: #161614;
+		border: 1px solid #2c2c2c;
+		border-radius: 8px;
+		padding: 0.5rem 0.6rem;
+	}
+	.rank-cell {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.15rem;
+	}
+	.rank-cell.total .rank-num { color: #c8a96e; }
+	.rank-label {
+		font-size: 0.7rem;
+		color: #888;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.rank-num {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: #e8e4d9;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.meta {

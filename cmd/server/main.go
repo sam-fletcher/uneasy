@@ -146,7 +146,6 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Get("/tables/{id}/state", handler.GetGameState(q))
 
 		// Phase transitions (facilitator actions)
-		r.Post("/tables/{id}/start-tone-setting", handler.StartToneSetting(q, manager))
 		r.Post("/tables/{id}/start-prologue", handler.StartPrologue(q, manager))
 		r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(q, manager))
 		r.Post("/tables/{id}/endgame", handler.SetEndgameMode(q, manager))
@@ -165,11 +164,11 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 
 		// Rankings (read-only; ranking flow lives under /prologue/*)
 		r.Get("/tables/{id}/rankings", handler.GetRankings(q))
-		r.Put("/tables/{id}/seats", handler.SetSeats(q))
 
 		// Structured prologue (Phase 4b)
 		r.Get("/tables/{id}/prologue/sheets", handler.GetPrologueSheets(q))
 		r.Get("/tables/{id}/prologue/cards", handler.GetPrologueCards(q))
+		r.Get("/tables/{id}/prologue/card-suggestions", handler.GetPrologueCardSuggestions(q))
 		r.Post("/tables/{id}/prologue/choose", handler.ChoosePrologue(q, manager))
 		r.Post("/tables/{id}/prologue/begin-ranking", handler.BeginPrologueRanking(q, manager))
 		r.Post("/tables/{id}/prologue/declare-hearts", handler.DeclareHearts(q, manager))

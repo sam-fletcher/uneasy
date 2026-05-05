@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -54,8 +53,6 @@ func phaseBoundaryLabel(phase model.GamePhase) string {
 	switch phase {
 	case model.PhaseLobby:
 		return "The lobby is open"
-	case model.PhaseToneSetting:
-		return "Tone-setting begins"
 	case model.PhasePrologue:
 		return "Prologue begins"
 	case model.PhaseMainEvent:
@@ -69,23 +66,52 @@ func phaseBoundaryLabel(phase model.GamePhase) string {
 	}
 }
 
-// findLowestSeatOrderPlayer finds the player with the lowest seat order.
-func findLowestSeatOrderPlayer(
+// findFirstFocusPlayer picks the first focus player at main-event start.
+// Per PROLOGUE_RULES.md, this is the player with the lowest cumulative
+// status (sum of ranks across the three tracks), tie broken by lowest
+// power rank. If a focus player is already set, that wins.
+func findFirstFocusPlayer(
 	game *dbgen.Game,
 	players []dbgen.Player,
+	rankings []dbgen.Ranking,
 ) *dbgen.Player {
 	if game.FocusPlayerID != nil {
 		return &dbgen.Player{ID: *game.FocusPlayerID}
 	}
-	var lowestPlayer *dbgen.Player
-	for _, p := range players {
-		if p.SeatOrder != nil {
-			if lowestPlayer == nil || *p.SeatOrder < *lowestPlayer.SeatOrder {
-				lowestPlayer = &p
+	if len(players) == 0 {
+		return nil
+	}
+
+	totals := make(map[int64]int, len(players))
+	powerRank := make(map[int64]int, len(players))
+	for _, r := range rankings {
+		if r.PlayerID == nil {
+			continue
+		}
+		totals[*r.PlayerID] += int(r.Rank)
+		if r.Category == model.CategoryPower {
+			powerRank[*r.PlayerID] = int(r.Rank)
+		}
+	}
+
+	var best *dbgen.Player
+	for i := range players {
+		p := &players[i]
+		if best == nil {
+			best = p
+			continue
+		}
+		bt, pt := totals[best.ID], totals[p.ID]
+		switch {
+		case pt < bt:
+			best = p
+		case pt == bt:
+			if powerRank[p.ID] < powerRank[best.ID] {
+				best = p
 			}
 		}
 	}
-	return lowestPlayer
+	return best
 }
 
 // setAndBroadcastFocusPlayer sets the focus player and broadcasts the change.
@@ -95,20 +121,20 @@ func setAndBroadcastFocusPlayer(
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	gameID int64,
-	lowestPlayer *dbgen.Player,
+	focusPlayer *dbgen.Player,
 ) bool {
-	if lowestPlayer == nil {
+	if focusPlayer == nil {
 		return true
 	}
 	err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
 		ID:            gameID,
-		FocusPlayerID: &lowestPlayer.ID,
+		FocusPlayerID: &focusPlayer.ID,
 	})
 	if err != nil {
 		respondErr(w, http.StatusInternalServerError, "could not set focus player")
 		return false
 	}
-	if fp, err := q.GetPlayerByID(ctx, lowestPlayer.ID); err == nil {
+	if fp, err := q.GetPlayerByID(ctx, focusPlayer.ID); err == nil {
 		if h, ok := manager.Get(gameID); ok {
 			h.BroadcastEvent(model.EventFocusChanged, model.FocusChangedPayload{
 				PlayerID:    fp.ID,
@@ -139,27 +165,22 @@ func validateStartMainEvent(
 		return nil, nil, false
 	}
 
-	// Validate: every player must have a seat order.
 	players, err := q.GetPlayersByGame(ctx, gameID)
 	if err != nil {
 		respondErr(w, http.StatusInternalServerError, "could not load players")
 		return nil, nil, false
 	}
-	for _, p := range players {
-		if p.SeatOrder == nil {
-			respondErr(w, http.StatusBadRequest, "all players must have a seat order assigned")
-			return nil, nil, false
-		}
-	}
 
 	return rankings, players, true
 }
 
-// StartToneSetting handles POST /api/tables/{id}/start-tone-setting.
+// StartPrologue handles POST /api/tables/{id}/start-prologue.
 //
-// Transitions the game from lobby → tone_setting. Requires 2–5 players.
-// Seeds the default tone topic list.
-func StartToneSetting(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+// Transitions the game from lobby → prologue. Requires 2–5 players.
+// Tone topics are already seeded at table creation; the Tones page is
+// available throughout lobby + prologue and locks at main-event start.
+// Main-character peer assets are created at player-join time, not here.
+func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, ok := requireFacilitator(w, r, q)
 		if !ok {
@@ -182,67 +203,6 @@ func StartToneSetting(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest,
 				fmt.Sprintf("need %d–%d players to start", minPlayerCount, maxPlayerCount))
 			return
-		}
-
-		// Seed tone topics.
-		if err := db.SeedDefaultToneTopics(ctx, q, game.ID); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not seed tone topics")
-			return
-		}
-
-		// Transition.
-		if err := q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
-			ID:    game.ID,
-			Phase: model.PhaseToneSetting,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not update phase")
-			return
-		}
-
-		broadcastPhaseChange(ctx, q, manager, game.ID, model.PhaseToneSetting)
-		respond(w, http.StatusOK, map[string]any{"phase": model.PhaseToneSetting})
-	}
-}
-
-// StartPrologue handles POST /api/tables/{id}/start-prologue.
-//
-// Transitions the game from tone_setting → prologue and auto-creates one
-// empty main-character peer asset per player. The peer's name and
-// marginalia get filled in via the existing asset-edit endpoints; we just
-// need the row to exist before any title-choice tries to "add the title to
-// your main character's peer."
-func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, q)
-		if !ok {
-			return
-		}
-
-		if game.Phase != model.PhaseToneSetting {
-			respondErr(w, http.StatusConflict, "game is not in the tone-setting phase")
-			return
-		}
-
-		ctx := r.Context()
-
-		players, err := q.GetPlayersByGame(ctx, game.ID)
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load players")
-			return
-		}
-		for _, p := range players {
-			_, err = q.CreateAsset(ctx, dbgen.CreateAssetParams{
-				GameID:          game.ID,
-				OwnerID:         p.ID,
-				CreatorID:       p.ID,
-				AssetType:       model.AssetPeer,
-				Name:            p.DisplayName,
-				IsMainCharacter: true,
-			})
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not create main character")
-				return
-			}
 		}
 
 		err = q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
@@ -287,7 +247,7 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Validate preconditions for starting main event.
-		_, players, ok := validateStartMainEvent(ctx, w, q, game.ID)
+		rankings, players, ok := validateStartMainEvent(ctx, w, q, game.ID)
 		if !ok {
 			return
 		}
@@ -307,9 +267,9 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Pick the first focus player (lowest seat order).
-		lowestPlayer := findLowestSeatOrderPlayer(game, players)
-		if !setAndBroadcastFocusPlayer(ctx, w, q, manager, game.ID, lowestPlayer) {
+		// Pick the first focus player from cumulative ranking totals.
+		focusPlayer := findFirstFocusPlayer(game, players, rankings)
+		if !setAndBroadcastFocusPlayer(ctx, w, q, manager, game.ID, focusPlayer) {
 			return
 		}
 
@@ -324,10 +284,14 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		broadcastPhaseChange(ctx, q, manager, game.ID, model.PhaseMainEvent)
 
+		var focusID *int64
+		if focusPlayer != nil {
+			focusID = &focusPlayer.ID
+		}
 		respond(w, http.StatusOK, map[string]any{
 			"phase":           model.PhaseMainEvent,
 			"current_row":     1,
-			"focus_player_id": lowestPlayer.ID,
+			"focus_player_id": focusID,
 		})
 	}
 }
@@ -361,21 +325,30 @@ func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 			"players": players,
 		}
 
+		// Tone topics are always available (read-only after main_event begins).
+		if topics, err := q.ListToneTopics(ctx, gameID); err == nil {
+			result["tone_topics"] = topics
+		}
+
 		// Include phase-specific data.
 		switch game.Phase {
 		case model.PhaseLobby, model.PhaseShakeUp:
-			// No phase-specific data needed
-
-		case model.PhaseToneSetting:
-			topics, err := q.ListToneTopics(ctx, gameID)
-			if err == nil {
-				result["tone_topics"] = topics
-			}
+			// No further phase-specific data.
 
 		case model.PhasePrologue, model.PhaseMainEvent, model.PhaseEnded:
 			rankings, err := q.ListRankingsByGame(ctx, gameID)
 			if err == nil {
 				result["rankings"] = rankings
+			}
+			if game.Phase == model.PhasePrologue && game.PrologueRankingStep == nil {
+				active, _, err := prologueTurnState(ctx, q, gameID)
+				if err == nil {
+					var id *int64
+					if active != nil {
+						id = &active.ID
+					}
+					result["current_prologue_player_id"] = id
+				}
 			}
 			if game.Phase != model.PhasePrologue {
 				if laws, err := q.ListLaws(ctx, gameID); err == nil {
