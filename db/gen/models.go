@@ -222,6 +222,15 @@ type PrologueChoice struct {
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type PrologueCommittedHeart struct {
+	ID        int64              `db:"id" json:"id"`
+	GameID    int64              `db:"game_id" json:"game_id"`
+	PlayerID  int64              `db:"player_id" json:"player_id"`
+	Track     string             `db:"track" json:"track"`
+	CardID    int64              `db:"card_id" json:"card_id"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type PrologueHeartDeclaration struct {
 	ID        int64              `db:"id" json:"id"`
 	GameID    int64              `db:"game_id" json:"game_id"`
@@ -229,6 +238,15 @@ type PrologueHeartDeclaration struct {
 	Track     string             `db:"track" json:"track"`
 	Count     int16              `db:"count" json:"count"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+type PrologueTrackDone struct {
+	ID        int64              `db:"id" json:"id"`
+	GameID    int64              `db:"game_id" json:"game_id"`
+	PlayerID  int64              `db:"player_id" json:"player_id"`
+	Track     string             `db:"track" json:"track"`
+	Done      bool               `db:"done" json:"done"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 type PublicRecordRow struct {

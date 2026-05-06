@@ -111,12 +111,14 @@ const (
 	EventEndgameModeSet = "endgame.mode_set" // facilitator picked smooth_landing / explosive_finale
 
 	// Phase 4b: Structured prologue
-	EventPrologueChoiceClaimed      = "prologue.choice_claimed"       // a box was claimed
-	EventPrologueTurnAdvanced       = "prologue.turn_advanced"        // active player changed
-	EventPrologueRankingStepChanged = "prologue.ranking_step_changed" // entered/advanced ranking sub-flow
-	EventPrologueHeartsDeclared     = "prologue.hearts_declared"      // a player declared N hearts as a track
-	EventPrologueTrackRanked        = "prologue.track_ranked"         // a track's ranks finalized (set-asides surfaced)
-	EventPrologueSetAsidesPlaced    = "prologue.set_asides_placed"    // rank-1 player placed set-aside players
+	EventPrologueChoiceClaimed      = "prologue.choice_claimed"           // a box was claimed
+	EventPrologueTurnAdvanced       = "prologue.turn_advanced"            // active player changed
+	EventPrologueRankingStepChanged = "prologue.ranking_step_changed"     // entered/advanced ranking sub-flow
+	EventPrologueHeartsDeclared     = "prologue.hearts_declared"          // legacy: count-based heart declaration
+	EventPrologueTrackRanked        = "prologue.track_ranked"             // a track's ranks finalized (set-asides surfaced)
+	EventPrologueSetAsidesPlaced    = "prologue.set_asides_placed"        // rank-1 player placed set-aside players
+	EventPrologueCommittedHeartsChg = "prologue.committed_hearts_changed" // a player adjusted their committed hearts on a track
+	EventPrologueDoneChanged        = "prologue.done_changed"             // a player toggled their per-track Done flag
 
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
@@ -630,6 +632,22 @@ type PrologueTrackRankedPayload struct {
 type PrologueSetAsidesPlacedPayload struct {
 	Track  string  `json:"track"`
 	Ranked []int64 `json:"ranked"`
+}
+
+// PrologueCommittedHeartsChangedPayload is for EventPrologueCommittedHeartsChg.
+// CardIDs is the player's full committed-card list for the given track after
+// the change (replaces, not deltas).
+type PrologueCommittedHeartsChangedPayload struct {
+	PlayerID int64   `json:"player_id"`
+	Track    string  `json:"track"`
+	CardIDs  []int64 `json:"card_ids"`
+}
+
+// PrologueDoneChangedPayload is for EventPrologueDoneChanged.
+type PrologueDoneChangedPayload struct {
+	PlayerID int64  `json:"player_id"`
+	Track    string `json:"track"`
+	Done     bool   `json:"done"`
 }
 
 // EndgameModeSetPayload is for EventEndgameModeSet.

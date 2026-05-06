@@ -42,6 +42,9 @@ SELECT * FROM player_cards WHERE game_id = $1 ORDER BY player_id, card_suit, car
 -- name: ListPlayerCardsByPlayer :many
 SELECT * FROM player_cards WHERE game_id = $1 AND player_id = $2;
 
+-- name: GetPlayerCardByID :one
+SELECT * FROM player_cards WHERE id = $1;
+
 -- ── linked-card lookups on assets ────────────────────────────────────────────
 
 -- name: GetAssetByLinkedCard :one
@@ -78,3 +81,46 @@ WHERE game_id = $1 AND player_id = $2;
 
 -- name: SetPrologueRankingStep :exec
 UPDATE games SET prologue_ranking_step = $2 WHERE id = $1;
+
+-- ── committed hearts (max-commitment model) ──────────────────────────────────
+
+-- name: CommitHeart :exec
+INSERT INTO prologue_committed_hearts (game_id, player_id, track, card_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (game_id, card_id)
+DO UPDATE SET track = EXCLUDED.track, player_id = EXCLUDED.player_id;
+
+-- name: UncommitHeart :exec
+DELETE FROM prologue_committed_hearts
+WHERE game_id = $1 AND card_id = $2;
+
+-- name: ClearTrackCommittedHearts :exec
+DELETE FROM prologue_committed_hearts
+WHERE game_id = $1 AND track = $2;
+
+-- name: DeleteCommittedHeartsByCardIDs :exec
+DELETE FROM prologue_committed_hearts
+WHERE game_id = $1 AND card_id = ANY(sqlc.arg(card_ids)::BIGINT[]);
+
+-- name: ListCommittedHeartsByGame :many
+SELECT ch.id, ch.game_id, ch.player_id, ch.track, ch.card_id,
+       pc.card_value, pc.card_suit
+FROM prologue_committed_hearts ch
+JOIN player_cards pc ON pc.id = ch.card_id
+WHERE ch.game_id = $1
+ORDER BY ch.player_id, ch.track, ch.card_id;
+
+-- ── track-done signal ────────────────────────────────────────────────────────
+
+-- name: SetTrackDone :exec
+INSERT INTO prologue_track_done (game_id, player_id, track, done, updated_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT (game_id, player_id, track)
+DO UPDATE SET done = EXCLUDED.done, updated_at = now();
+
+-- name: ListTrackDoneByGame :many
+SELECT * FROM prologue_track_done WHERE game_id = $1;
+
+-- name: ResetTrackDone :exec
+DELETE FROM prologue_track_done
+WHERE game_id = $1 AND track = $2;

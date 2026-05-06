@@ -21,6 +21,47 @@ func (q *Queries) ClearAssetLinkedCards(ctx context.Context, gameID int64) error
 	return err
 }
 
+const clearTrackCommittedHearts = `-- name: ClearTrackCommittedHearts :exec
+DELETE FROM prologue_committed_hearts
+WHERE game_id = $1 AND track = $2
+`
+
+type ClearTrackCommittedHeartsParams struct {
+	GameID int64  `db:"game_id" json:"game_id"`
+	Track  string `db:"track" json:"track"`
+}
+
+func (q *Queries) ClearTrackCommittedHearts(ctx context.Context, arg ClearTrackCommittedHeartsParams) error {
+	_, err := q.db.Exec(ctx, clearTrackCommittedHearts, arg.GameID, arg.Track)
+	return err
+}
+
+const commitHeart = `-- name: CommitHeart :exec
+
+INSERT INTO prologue_committed_hearts (game_id, player_id, track, card_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (game_id, card_id)
+DO UPDATE SET track = EXCLUDED.track, player_id = EXCLUDED.player_id
+`
+
+type CommitHeartParams struct {
+	GameID   int64  `db:"game_id" json:"game_id"`
+	PlayerID int64  `db:"player_id" json:"player_id"`
+	Track    string `db:"track" json:"track"`
+	CardID   int64  `db:"card_id" json:"card_id"`
+}
+
+// ── committed hearts (max-commitment model) ──────────────────────────────────
+func (q *Queries) CommitHeart(ctx context.Context, arg CommitHeartParams) error {
+	_, err := q.db.Exec(ctx, commitHeart,
+		arg.GameID,
+		arg.PlayerID,
+		arg.Track,
+		arg.CardID,
+	)
+	return err
+}
+
 const countPrologueChoicesByPlayer = `-- name: CountPrologueChoicesByPlayer :one
 SELECT count(*) FROM prologue_choices WHERE game_id = $1 AND player_id = $2
 `
@@ -119,6 +160,21 @@ func (q *Queries) CreatePrologueChoice(ctx context.Context, arg CreatePrologueCh
 	return i, err
 }
 
+const deleteCommittedHeartsByCardIDs = `-- name: DeleteCommittedHeartsByCardIDs :exec
+DELETE FROM prologue_committed_hearts
+WHERE game_id = $1 AND card_id = ANY($2::BIGINT[])
+`
+
+type DeleteCommittedHeartsByCardIDsParams struct {
+	GameID  int64   `db:"game_id" json:"game_id"`
+	CardIds []int64 `db:"card_ids" json:"card_ids"`
+}
+
+func (q *Queries) DeleteCommittedHeartsByCardIDs(ctx context.Context, arg DeleteCommittedHeartsByCardIDsParams) error {
+	_, err := q.db.Exec(ctx, deleteCommittedHeartsByCardIDs, arg.GameID, arg.CardIds)
+	return err
+}
+
 const getAssetByLinkedCard = `-- name: GetAssetByLinkedCard :one
 
 SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets
@@ -174,6 +230,23 @@ func (q *Queries) GetCardOwner(ctx context.Context, arg GetCardOwnerParams) (int
 	return player_id, err
 }
 
+const getPlayerCardByID = `-- name: GetPlayerCardByID :one
+SELECT id, game_id, player_id, card_suit, card_value FROM player_cards WHERE id = $1
+`
+
+func (q *Queries) GetPlayerCardByID(ctx context.Context, id int64) (PlayerCard, error) {
+	row := q.db.QueryRow(ctx, getPlayerCardByID, id)
+	var i PlayerCard
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlayerID,
+		&i.CardSuit,
+		&i.CardValue,
+	)
+	return i, err
+}
+
 const insertPlayerCard = `-- name: InsertPlayerCard :exec
 INSERT INTO player_cards (game_id, player_id, card_suit, card_value)
 VALUES ($1, $2, $3, $4)
@@ -194,6 +267,53 @@ func (q *Queries) InsertPlayerCard(ctx context.Context, arg InsertPlayerCardPara
 		arg.CardValue,
 	)
 	return err
+}
+
+const listCommittedHeartsByGame = `-- name: ListCommittedHeartsByGame :many
+SELECT ch.id, ch.game_id, ch.player_id, ch.track, ch.card_id,
+       pc.card_value, pc.card_suit
+FROM prologue_committed_hearts ch
+JOIN player_cards pc ON pc.id = ch.card_id
+WHERE ch.game_id = $1
+ORDER BY ch.player_id, ch.track, ch.card_id
+`
+
+type ListCommittedHeartsByGameRow struct {
+	ID        int64  `db:"id" json:"id"`
+	GameID    int64  `db:"game_id" json:"game_id"`
+	PlayerID  int64  `db:"player_id" json:"player_id"`
+	Track     string `db:"track" json:"track"`
+	CardID    int64  `db:"card_id" json:"card_id"`
+	CardValue string `db:"card_value" json:"card_value"`
+	CardSuit  string `db:"card_suit" json:"card_suit"`
+}
+
+func (q *Queries) ListCommittedHeartsByGame(ctx context.Context, gameID int64) ([]ListCommittedHeartsByGameRow, error) {
+	rows, err := q.db.Query(ctx, listCommittedHeartsByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCommittedHeartsByGameRow{}
+	for rows.Next() {
+		var i ListCommittedHeartsByGameRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.PlayerID,
+			&i.Track,
+			&i.CardID,
+			&i.CardValue,
+			&i.CardSuit,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listHeartDeclarationsByGame = `-- name: ListHeartDeclarationsByGame :many
@@ -362,6 +482,37 @@ func (q *Queries) ListPrologueChoicesByGame(ctx context.Context, gameID int64) (
 	return items, nil
 }
 
+const listTrackDoneByGame = `-- name: ListTrackDoneByGame :many
+SELECT id, game_id, player_id, track, done, updated_at FROM prologue_track_done WHERE game_id = $1
+`
+
+func (q *Queries) ListTrackDoneByGame(ctx context.Context, gameID int64) ([]PrologueTrackDone, error) {
+	rows, err := q.db.Query(ctx, listTrackDoneByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PrologueTrackDone{}
+	for rows.Next() {
+		var i PrologueTrackDone
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.PlayerID,
+			&i.Track,
+			&i.Done,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const prologueChoiceClaimed = `-- name: PrologueChoiceClaimed :one
 SELECT EXISTS (
   SELECT 1 FROM prologue_choices
@@ -382,6 +533,21 @@ func (q *Queries) PrologueChoiceClaimed(ctx context.Context, arg PrologueChoiceC
 	return exists, err
 }
 
+const resetTrackDone = `-- name: ResetTrackDone :exec
+DELETE FROM prologue_track_done
+WHERE game_id = $1 AND track = $2
+`
+
+type ResetTrackDoneParams struct {
+	GameID int64  `db:"game_id" json:"game_id"`
+	Track  string `db:"track" json:"track"`
+}
+
+func (q *Queries) ResetTrackDone(ctx context.Context, arg ResetTrackDoneParams) error {
+	_, err := q.db.Exec(ctx, resetTrackDone, arg.GameID, arg.Track)
+	return err
+}
+
 const setPrologueRankingStep = `-- name: SetPrologueRankingStep :exec
 
 UPDATE games SET prologue_ranking_step = $2 WHERE id = $1
@@ -395,6 +561,32 @@ type SetPrologueRankingStepParams struct {
 // ── games.prologue_ranking_step ──────────────────────────────────────────────
 func (q *Queries) SetPrologueRankingStep(ctx context.Context, arg SetPrologueRankingStepParams) error {
 	_, err := q.db.Exec(ctx, setPrologueRankingStep, arg.ID, arg.PrologueRankingStep)
+	return err
+}
+
+const setTrackDone = `-- name: SetTrackDone :exec
+
+INSERT INTO prologue_track_done (game_id, player_id, track, done, updated_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT (game_id, player_id, track)
+DO UPDATE SET done = EXCLUDED.done, updated_at = now()
+`
+
+type SetTrackDoneParams struct {
+	GameID   int64  `db:"game_id" json:"game_id"`
+	PlayerID int64  `db:"player_id" json:"player_id"`
+	Track    string `db:"track" json:"track"`
+	Done     bool   `db:"done" json:"done"`
+}
+
+// ── track-done signal ────────────────────────────────────────────────────────
+func (q *Queries) SetTrackDone(ctx context.Context, arg SetTrackDoneParams) error {
+	_, err := q.db.Exec(ctx, setTrackDone,
+		arg.GameID,
+		arg.PlayerID,
+		arg.Track,
+		arg.Done,
+	)
 	return err
 }
 
@@ -435,6 +627,21 @@ func (q *Queries) TransferPlayerCard(ctx context.Context, arg TransferPlayerCard
 		arg.CardSuit,
 		arg.CardValue,
 	)
+	return err
+}
+
+const uncommitHeart = `-- name: UncommitHeart :exec
+DELETE FROM prologue_committed_hearts
+WHERE game_id = $1 AND card_id = $2
+`
+
+type UncommitHeartParams struct {
+	GameID int64 `db:"game_id" json:"game_id"`
+	CardID int64 `db:"card_id" json:"card_id"`
+}
+
+func (q *Queries) UncommitHeart(ctx context.Context, arg UncommitHeartParams) error {
+	_, err := q.db.Exec(ctx, uncommitHeart, arg.GameID, arg.CardID)
 	return err
 }
 

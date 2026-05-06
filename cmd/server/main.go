@@ -175,6 +175,9 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Post("/tables/{id}/prologue/finalize-ranking", handler.FinalizeTrackRanking(q, manager))
 		r.Post("/tables/{id}/prologue/place-set-asides", handler.PlaceSetAsides(q, manager))
 		r.Post("/tables/{id}/prologue/extra-peer", handler.CreateExtraPeer(q, manager))
+		r.Get("/tables/{id}/prologue/ranking-state", handler.GetPrologueRankingState(q))
+		r.Post("/tables/{id}/prologue/committed-hearts", handler.CommitTrackHearts(q, manager))
+		r.Post("/tables/{id}/prologue/done", handler.SetPrologueDone(q, manager))
 
 		// Assets (list + create on the table; per-asset actions by asset ID)
 		r.Get("/tables/{id}/assets", handler.ListAssets(q))
