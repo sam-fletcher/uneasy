@@ -119,6 +119,7 @@ const (
 	EventPrologueSetAsidesPlaced    = "prologue.set_asides_placed"        // rank-1 player placed set-aside players
 	EventPrologueCommittedHeartsChg = "prologue.committed_hearts_changed" // a player adjusted their committed hearts on a track
 	EventPrologueDoneChanged        = "prologue.done_changed"             // a player toggled their per-track Done flag
+	EventPrologueExtraPeerCreated   = "prologue.extra_peer_created"       // a player claimed their extra peer (≤3-player games)
 
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
@@ -648,6 +649,13 @@ type PrologueDoneChangedPayload struct {
 	PlayerID int64  `json:"player_id"`
 	Track    string `json:"track"`
 	Done     bool   `json:"done"`
+}
+
+// PrologueExtraPeerCreatedPayload is for EventPrologueExtraPeerCreated.
+type PrologueExtraPeerCreatedPayload struct {
+	PlayerID  int64  `json:"player_id"`
+	TitleName string `json:"title_name"`
+	AssetID   int64  `json:"asset_id"`
 }
 
 // EndgameModeSetPayload is for EventEndgameModeSet.

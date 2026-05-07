@@ -175,6 +175,44 @@ func (q *Queries) DeleteCommittedHeartsByCardIDs(ctx context.Context, arg Delete
 	return err
 }
 
+const extraPeerExistsForPlayer = `-- name: ExtraPeerExistsForPlayer :one
+SELECT EXISTS (
+  SELECT 1 FROM prologue_extra_peers
+  WHERE game_id = $1 AND player_id = $2
+)
+`
+
+type ExtraPeerExistsForPlayerParams struct {
+	GameID   int64 `db:"game_id" json:"game_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+}
+
+func (q *Queries) ExtraPeerExistsForPlayer(ctx context.Context, arg ExtraPeerExistsForPlayerParams) (bool, error) {
+	row := q.db.QueryRow(ctx, extraPeerExistsForPlayer, arg.GameID, arg.PlayerID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const extraPeerTitleClaimed = `-- name: ExtraPeerTitleClaimed :one
+SELECT EXISTS (
+  SELECT 1 FROM prologue_extra_peers
+  WHERE game_id = $1 AND title_name = $2
+)
+`
+
+type ExtraPeerTitleClaimedParams struct {
+	GameID    int64  `db:"game_id" json:"game_id"`
+	TitleName string `db:"title_name" json:"title_name"`
+}
+
+func (q *Queries) ExtraPeerTitleClaimed(ctx context.Context, arg ExtraPeerTitleClaimedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, extraPeerTitleClaimed, arg.GameID, arg.TitleName)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getAssetByLinkedCard = `-- name: GetAssetByLinkedCard :one
 
 SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets
@@ -247,6 +285,40 @@ func (q *Queries) GetPlayerCardByID(ctx context.Context, id int64) (PlayerCard, 
 	return i, err
 }
 
+const insertExtraPeer = `-- name: InsertExtraPeer :one
+
+INSERT INTO prologue_extra_peers (game_id, player_id, title_name, asset_id)
+VALUES ($1, $2, $3, $4)
+RETURNING id, game_id, player_id, title_name, asset_id, created_at
+`
+
+type InsertExtraPeerParams struct {
+	GameID    int64  `db:"game_id" json:"game_id"`
+	PlayerID  int64  `db:"player_id" json:"player_id"`
+	TitleName string `db:"title_name" json:"title_name"`
+	AssetID   int64  `db:"asset_id" json:"asset_id"`
+}
+
+// ── extra peers ──────────────────────────────────────────────────────────────
+func (q *Queries) InsertExtraPeer(ctx context.Context, arg InsertExtraPeerParams) (PrologueExtraPeer, error) {
+	row := q.db.QueryRow(ctx, insertExtraPeer,
+		arg.GameID,
+		arg.PlayerID,
+		arg.TitleName,
+		arg.AssetID,
+	)
+	var i PrologueExtraPeer
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlayerID,
+		&i.TitleName,
+		&i.AssetID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertPlayerCard = `-- name: InsertPlayerCard :exec
 INSERT INTO player_cards (game_id, player_id, card_suit, card_value)
 VALUES ($1, $2, $3, $4)
@@ -305,6 +377,37 @@ func (q *Queries) ListCommittedHeartsByGame(ctx context.Context, gameID int64) (
 			&i.CardID,
 			&i.CardValue,
 			&i.CardSuit,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExtraPeersByGame = `-- name: ListExtraPeersByGame :many
+SELECT id, game_id, player_id, title_name, asset_id, created_at FROM prologue_extra_peers WHERE game_id = $1 ORDER BY created_at
+`
+
+func (q *Queries) ListExtraPeersByGame(ctx context.Context, gameID int64) ([]PrologueExtraPeer, error) {
+	rows, err := q.db.Query(ctx, listExtraPeersByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PrologueExtraPeer{}
+	for rows.Next() {
+		var i PrologueExtraPeer
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.PlayerID,
+			&i.TitleName,
+			&i.AssetID,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -39,9 +39,16 @@ type TrackDoneView struct {
 	Done     bool   `json:"done"`
 }
 
+type ExtraPeerView struct {
+	PlayerID  int64  `json:"player_id"`
+	TitleName string `json:"title_name"`
+	AssetID   int64  `json:"asset_id"`
+}
+
 type PrologueRankingState struct {
-	Committed []CommittedHeartView `json:"committed"`
-	Done      []TrackDoneView      `json:"done"`
+	Committed  []CommittedHeartView `json:"committed"`
+	Done       []TrackDoneView      `json:"done"`
+	ExtraPeers []ExtraPeerView      `json:"extra_peers"`
 }
 
 // GetPrologueRankingState handles GET /api/tables/{id}/prologue/ranking-state.
@@ -63,6 +70,11 @@ func GetPrologueRankingState(q *dbgen.Queries) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not load done flags")
 			return
 		}
+		extras, err := q.ListExtraPeersByGame(ctx, gameID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not load extra peers")
+			return
+		}
 		commit := make([]CommittedHeartView, 0, len(committed))
 		for _, c := range committed {
 			commit = append(commit, CommittedHeartView{
@@ -76,7 +88,15 @@ func GetPrologueRankingState(q *dbgen.Queries) http.HandlerFunc {
 				PlayerID: d.PlayerID, Track: d.Track, Done: d.Done,
 			})
 		}
-		respond(w, http.StatusOK, PrologueRankingState{Committed: commit, Done: doneViews})
+		extraViews := make([]ExtraPeerView, 0, len(extras))
+		for _, e := range extras {
+			extraViews = append(extraViews, ExtraPeerView{
+				PlayerID: e.PlayerID, TitleName: e.TitleName, AssetID: e.AssetID,
+			})
+		}
+		respond(w, http.StatusOK, PrologueRankingState{
+			Committed: commit, Done: doneViews, ExtraPeers: extraViews,
+		})
 	}
 }
 

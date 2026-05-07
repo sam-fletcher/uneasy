@@ -231,6 +231,15 @@ type PrologueCommittedHeart struct {
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type PrologueExtraPeer struct {
+	ID        int64              `db:"id" json:"id"`
+	GameID    int64              `db:"game_id" json:"game_id"`
+	PlayerID  int64              `db:"player_id" json:"player_id"`
+	TitleName string             `db:"title_name" json:"title_name"`
+	AssetID   int64              `db:"asset_id" json:"asset_id"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type PrologueHeartDeclaration struct {
 	ID        int64              `db:"id" json:"id"`
 	GameID    int64              `db:"game_id" json:"game_id"`

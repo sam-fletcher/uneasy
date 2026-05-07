@@ -131,6 +131,7 @@ export const EventTypes = {
 	PrologueSetAsidesPlaced: 'prologue.set_asides_placed',
 	PrologueCommittedHeartsChanged: 'prologue.committed_hearts_changed',
 	PrologueDoneChanged: 'prologue.done_changed',
+	PrologueExtraPeerCreated: 'prologue.extra_peer_created',
 
 	// Dice rolls
 	RollCreated: 'roll.created',

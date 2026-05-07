@@ -32,6 +32,7 @@
 		CommittedHeart,
 		TrackDone,
 		PrologueTrack,
+		ExtraPeer,
 	} from '$lib/api';
 	import { onMount, onDestroy } from 'svelte';
 	import ClaimChoiceModal from './ClaimChoiceModal.svelte';
@@ -69,6 +70,7 @@
 	let activePlayerID = $state<number | null>(null);
 	let committed = $state<CommittedHeart[]>([]);
 	let doneFlags = $state<TrackDone[]>([]);
+	let extraPeers = $state<ExtraPeer[]>([]);
 	let error = $state('');
 	let loading = $state(true);
 
@@ -85,6 +87,7 @@
 			cards = c.cards;
 			committed = st.committed;
 			doneFlags = st.done;
+			extraPeers = st.extra_peers;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load prologue data.';
 		} finally {
@@ -106,6 +109,7 @@
 		window.addEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
 		window.addEventListener('uneasy:prologue.committed_hearts_changed', onClaimEvent);
 		window.addEventListener('uneasy:prologue.done_changed', onClaimEvent);
+		window.addEventListener('uneasy:prologue.extra_peer_created', onClaimEvent);
 	});
 	onDestroy(() => {
 		window.removeEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
@@ -115,6 +119,7 @@
 		window.removeEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
 		window.removeEventListener('uneasy:prologue.committed_hearts_changed', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.done_changed', onClaimEvent);
+		window.removeEventListener('uneasy:prologue.extra_peer_created', onClaimEvent);
 	});
 
 	// ── Derived: claim lookup ────────────────────────────────────────────────
@@ -338,11 +343,17 @@
 
 	// ── Extra peer (≤3 players) ──────────────────────────────────────────────
 	const titlesSheet = $derived(sheets.find(s => s.type === 'titles'));
+	const extraTitlesClaimed = $derived(new Set(extraPeers.map(p => p.title_name)));
 	const unclaimedTitles = $derived.by(() => {
 		const t = titlesSheet;
 		if (!t) return [];
-		return t.choices.filter(c => !claimMap.has(`titles::${c.name}`));
+		return t.choices.filter(c =>
+			!claimMap.has(`titles::${c.name}`) && !extraTitlesClaimed.has(c.name)
+		);
 	});
+	const myExtraPeer = $derived(
+		currentPlayerID == null ? null : extraPeers.find(p => p.player_id === currentPlayerID) ?? null
+	);
 
 	let extraPeerName = $state('');
 	let extraPeerText = $state('');
@@ -356,8 +367,11 @@
 			assets = [...assets, result.asset];
 			extraPeerName = '';
 			extraPeerText = '';
+			reload();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not create extra peer.';
+			onResync?.();
+			reload();
 		} finally {
 			creatingExtra = false;
 		}
@@ -581,30 +595,48 @@
 			Extra peers: with three or fewer players, each player picks one unused title to flesh out the cast.
 		</p>
 
-		<div class="extra-form">
-			<label>
-				Title:
-				<select bind:value={extraPeerName}>
-					<option value="">— pick —</option>
-					{#each unclaimedTitles as t}
-						<option value={t.name}>{t.name}</option>
-					{/each}
-				</select>
-			</label>
-			{#if extraPeerName}
+		<ul class="extra-status">
+			{#each players as p}
+				{@const claim = extraPeers.find(e => e.player_id === p.id)}
+				<li class:done={claim != null}>
+					<span class="extra-name">{p.display_name}</span>
+					{#if claim}
+						<span class="extra-claim">✓ {claim.title_name}</span>
+					{:else}
+						<span class="extra-pending">waiting…</span>
+					{/if}
+				</li>
+			{/each}
+		</ul>
+
+		{#if myExtraPeer}
+			<p class="muted small">You created your extra peer: <strong>{myExtraPeer.title_name}</strong>.</p>
+		{:else}
+			<div class="extra-form">
 				<label>
-					Peer name:
-					<input
-						type="text"
-						bind:value={extraPeerText}
-						placeholder={`[${extraPeerName}]`}
-					/>
+					Title:
+					<select bind:value={extraPeerName}>
+						<option value="">— pick —</option>
+						{#each unclaimedTitles as t}
+							<option value={t.name}>{t.name}</option>
+						{/each}
+					</select>
 				</label>
-			{/if}
-			<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
-				{creatingExtra ? '…' : 'Create peer'}
-			</button>
-		</div>
+				{#if extraPeerName}
+					<label>
+						Peer name:
+						<input
+							type="text"
+							bind:value={extraPeerText}
+							placeholder={`[${extraPeerName}]`}
+						/>
+					</label>
+				{/if}
+				<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
+					{creatingExtra ? '…' : 'Create peer'}
+				</button>
+			</div>
+		{/if}
 
 	{/if}
 
@@ -751,6 +783,31 @@
 
 	.done-btn { align-self: flex-start; min-height: 44px; }
 	.done-btn.active { background: #6cbf6c; }
+
+	.extra-status {
+		list-style: none;
+		padding: 0;
+		margin: 0.25rem 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		max-width: 24rem;
+	}
+	.extra-status li {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.35rem 0.5rem;
+		background: #1e1e1e;
+		border: 1px solid #2a2a2a;
+		border-radius: 4px;
+		font-size: 0.85rem;
+	}
+	.extra-status li.done { border-color: #3d4d3d; }
+	.extra-name { color: #e8e4d9; }
+	.extra-claim { color: #6cbf6c; font-size: 0.8rem; }
+	.extra-pending { color: #777; font-size: 0.8rem; font-style: italic; }
 
 	.extra-form {
 		display: flex;

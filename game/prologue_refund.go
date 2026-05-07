@@ -17,6 +17,7 @@ package game
 
 import (
 	"errors"
+	"slices"
 	"sort"
 )
 
@@ -248,9 +249,7 @@ func computeFinalSlots(
 		return nil, err
 	}
 	sortedSetAside := append([]int64(nil), setAside...)
-	sort.Slice(sortedSetAside, func(i, j int) bool {
-		return sortedSetAside[i] < sortedSetAside[j]
-	})
+	slices.Sort(sortedSetAside)
 	seq := append([]int64(nil), ranked...)
 	seq = append(seq, sortedSetAside...)
 	open := openRanksForCount(len(allPlayerIDs))
@@ -279,13 +278,7 @@ func openRanksForCount(n int) []int {
 	}
 	out := make([]int, 0, 5)
 	for r := 1; r <= 5; r++ {
-		skip := false
-		for _, d := range dummies {
-			if r == d {
-				skip = true
-				break
-			}
-		}
+		skip := slices.Contains(dummies, r)
 		if !skip {
 			out = append(out, r)
 		}

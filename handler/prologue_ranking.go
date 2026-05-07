@@ -475,7 +475,9 @@ func PlaceSetAsides(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // CreateExtraPeer handles POST /api/games/{id}/prologue/extra-peer.
 //
 // Body: {"title_name": "..."}. Creates one additional peer asset for the
-// caller, named after an unused title from the titles sheet. Available only
+// caller, named after an unused title from the titles sheet. Each player
+// may create exactly one extra peer; each title may only be claimed once
+// (across both the choosing-phase and extra-peer flows). Available only
 // during the extra_peers step.
 func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -509,16 +511,33 @@ func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "unknown title")
 			return
 		}
-		// Title must be unused.
-		claimed, err := q.PrologueChoiceClaimed(ctx, dbgen.PrologueChoiceClaimedParams{
+		alreadyDone, err := q.ExtraPeerExistsForPlayer(ctx, dbgen.ExtraPeerExistsForPlayerParams{
+			GameID: gameID, PlayerID: player.ID,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not check player status")
+			return
+		}
+		if alreadyDone {
+			respondErr(w, http.StatusConflict, "you have already created your extra peer")
+			return
+		}
+		choosingClaimed, err := q.PrologueChoiceClaimed(ctx, dbgen.PrologueChoiceClaimedParams{
 			GameID: gameID, SheetType: gamepkg.PrologueSheetTitles, ChoiceName: body.TitleName,
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check title status")
 			return
 		}
-		if claimed {
-			respondErr(w, http.StatusBadRequest, "title was claimed during the prologue")
+		extraClaimed, err := q.ExtraPeerTitleClaimed(ctx, dbgen.ExtraPeerTitleClaimedParams{
+			GameID: gameID, TitleName: body.TitleName,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not check title status")
+			return
+		}
+		if choosingClaimed || extraClaimed {
+			respondErr(w, http.StatusConflict, "title is already claimed")
 			return
 		}
 
@@ -533,7 +552,17 @@ func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not create extra peer")
 			return
 		}
+		if _, err = q.InsertExtraPeer(ctx, dbgen.InsertExtraPeerParams{
+			GameID: gameID, PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,
+		}); err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not record extra peer")
+			return
+		}
 		broadcastEvent(manager, gameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
+		broadcastEvent(manager, gameID, model.EventPrologueExtraPeerCreated,
+			model.PrologueExtraPeerCreatedPayload{
+				PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,
+			})
 		respond(w, http.StatusOK, map[string]any{"asset": asset})
 	}
 }

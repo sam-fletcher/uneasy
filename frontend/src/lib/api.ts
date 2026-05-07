@@ -746,9 +746,16 @@ export interface TrackDone {
 	done: boolean;
 }
 
+export interface ExtraPeer {
+	player_id: number;
+	title_name: string;
+	asset_id: number;
+}
+
 export interface PrologueRankingState {
 	committed: CommittedHeart[];
 	done: TrackDone[];
+	extra_peers: ExtraPeer[];
 }
 
 export function getPrologueRankingState(

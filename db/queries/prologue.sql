@@ -124,3 +124,25 @@ SELECT * FROM prologue_track_done WHERE game_id = $1;
 -- name: ResetTrackDone :exec
 DELETE FROM prologue_track_done
 WHERE game_id = $1 AND track = $2;
+
+-- ── extra peers ──────────────────────────────────────────────────────────────
+
+-- name: InsertExtraPeer :one
+INSERT INTO prologue_extra_peers (game_id, player_id, title_name, asset_id)
+VALUES ($1, $2, $3, $4)
+RETURNING *;
+
+-- name: ListExtraPeersByGame :many
+SELECT * FROM prologue_extra_peers WHERE game_id = $1 ORDER BY created_at;
+
+-- name: ExtraPeerExistsForPlayer :one
+SELECT EXISTS (
+  SELECT 1 FROM prologue_extra_peers
+  WHERE game_id = $1 AND player_id = $2
+);
+
+-- name: ExtraPeerTitleClaimed :one
+SELECT EXISTS (
+  SELECT 1 FROM prologue_extra_peers
+  WHERE game_id = $1 AND title_name = $2
+);

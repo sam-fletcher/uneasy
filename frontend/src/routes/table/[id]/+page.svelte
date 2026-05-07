@@ -476,7 +476,8 @@
 			case EventTypes.PrologueTrackRanked:
 			case EventTypes.PrologueSetAsidesPlaced:
 			case EventTypes.PrologueCommittedHeartsChanged:
-			case EventTypes.PrologueDoneChanged: {
+			case EventTypes.PrologueDoneChanged:
+			case EventTypes.PrologueExtraPeerCreated: {
 				// Step changes update the game's ranking_step locally so the
 				// view re-renders the right sub-flow without a full reload.
 				if (msg.type === EventTypes.PrologueRankingStepChanged && game) {
