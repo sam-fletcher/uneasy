@@ -728,6 +728,57 @@ export function createExtraPeer(
 	});
 }
 
+// ── Phase 4b: max-commitment prologue ranking ────────────────────────────────
+
+export type PrologueTrack = 'power' | 'knowledge' | 'esteem';
+
+export interface CommittedHeart {
+	player_id: number;
+	track: PrologueTrack;
+	card_id: number;
+	value: string;
+	suit: 'H';
+}
+
+export interface TrackDone {
+	player_id: number;
+	track: PrologueTrack;
+	done: boolean;
+}
+
+export interface PrologueRankingState {
+	committed: CommittedHeart[];
+	done: TrackDone[];
+}
+
+export function getPrologueRankingState(
+	gameID: string | number
+): Promise<PrologueRankingState> {
+	return apiFetch(`/tables/${gameID}/prologue/ranking-state`);
+}
+
+export function commitTrackHearts(
+	gameID: string | number,
+	track: PrologueTrack,
+	cardIDs: number[]
+): Promise<{ track: PrologueTrack; card_ids: number[] }> {
+	return apiFetch(`/tables/${gameID}/prologue/committed-hearts`, {
+		method: 'POST',
+		body: JSON.stringify({ track, card_ids: cardIDs })
+	});
+}
+
+export function setPrologueDone(
+	gameID: string | number,
+	track: PrologueTrack,
+	done: boolean
+): Promise<{ track: PrologueTrack; done: boolean }> {
+	return apiFetch(`/tables/${gameID}/prologue/done`, {
+		method: 'POST',
+		body: JSON.stringify({ track, done })
+	});
+}
+
 // ── Public Record ─────────────────────────────────────────────────────────────
 
 export function getFullRecord(gameID: string | number): Promise<{ rows: RecordRow[] }> {

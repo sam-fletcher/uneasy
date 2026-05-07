@@ -129,6 +129,8 @@ export const EventTypes = {
 	PrologueHeartsDeclared: 'prologue.hearts_declared',
 	PrologueTrackRanked: 'prologue.track_ranked',
 	PrologueSetAsidesPlaced: 'prologue.set_asides_placed',
+	PrologueCommittedHeartsChanged: 'prologue.committed_hearts_changed',
+	PrologueDoneChanged: 'prologue.done_changed',
 
 	// Dice rolls
 	RollCreated: 'roll.created',

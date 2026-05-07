@@ -187,6 +187,102 @@ func TestComputeBrightHearts_invalidTrack(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestComputeBrightHearts_loneSetAsideHeartIsGrey(t *testing.T) {
+	// 4-player game. P1, P2, P3 each have 2 clubs; P4 has none. P4
+	// commits a heart but only reaches count=1, which can't catch
+	// anyone at count=2. P4's final slot (the only remaining open
+	// rank) is the same with or without the heart, so it's wasted.
+	cards := []PlayerCard{
+		{1, SuitClubs, "K"}, {1, SuitClubs, "Q"},
+		{2, SuitClubs, "J"}, {2, SuitClubs, "10"},
+		{3, SuitClubs, "9"}, {3, SuitClubs, "8"},
+		{4, SuitHearts, "K"},
+	}
+	committed := []CommittedHeart{
+		{PlayerID: 4, Track: PrologueTrackPower, CardID: 400, Value: "K"},
+	}
+	bright, err := ComputeBrightHearts(PrologueTrackPower, []int64{1, 2, 3, 4}, cards, committed)
+	require.NoError(t, err)
+	assert.False(t, bright[4][400], "lone set-aside heart that can't catch anyone is grey")
+}
+
+func TestComputeBrightHearts_loneSetAsideLeapfrogsIsBright(t *testing.T) {
+	// Same shape, but P3 has only 1 club. P4's K♥ ties at count=1,
+	// then wins the tiebreak (K > 8), leapfrogging P3 from slot 4 to
+	// slot 5. P4's heart is bright.
+	cards := []PlayerCard{
+		{1, SuitClubs, "K"}, {1, SuitClubs, "Q"},
+		{2, SuitClubs, "J"}, {2, SuitClubs, "10"},
+		{3, SuitClubs, "8"},
+		{4, SuitHearts, "K"},
+	}
+	committed := []CommittedHeart{
+		{PlayerID: 4, Track: PrologueTrackPower, CardID: 400, Value: "K"},
+	}
+	bright, err := ComputeBrightHearts(PrologueTrackPower, []int64{1, 2, 3, 4}, cards, committed)
+	require.NoError(t, err)
+	assert.True(t, bright[4][400], "heart that leapfrogs a positively-counted player is bright")
+}
+
+func TestComputeBrightHearts_twoZeroPlayersTiebreak(t *testing.T) {
+	// 4-player game. P1, P2 have clubs. P3, P4 have none.
+	// P3 commits A♥ (high), P4 commits 5♥ (low). Tiebreak by high
+	// card → P3 wins → P3 takes the second-to-last open rank, P4 the
+	// last. Refund check:
+	//   - Drop P3's A♥: P4 ranks alone with 5♥ (slot 4); P3 set-aside
+	//     auto-placed at slot 5. P3 changed 4→5 → bright.
+	//   - Drop P4's 5♥: P3 ranks alone with A♥ (slot 4); P4 set-aside
+	//     auto-placed at slot 5. Same as baseline → grey.
+	cards := []PlayerCard{
+		{1, SuitClubs, "K"}, {1, SuitClubs, "Q"},
+		{2, SuitClubs, "10"},
+		{3, SuitHearts, "A"},
+		{4, SuitHearts, "5"},
+	}
+	committed := []CommittedHeart{
+		{PlayerID: 3, Track: PrologueTrackPower, CardID: 30, Value: "A"},
+		{PlayerID: 4, Track: PrologueTrackPower, CardID: 40, Value: "5"},
+	}
+	bright, err := ComputeBrightHearts(PrologueTrackPower, []int64{1, 2, 3, 4}, cards, committed)
+	require.NoError(t, err)
+	assert.True(t, bright[3][30], "winning tiebreak heart is bright")
+	assert.False(t, bright[4][40], "losing tiebreak heart is grey/refunded")
+}
+
+func TestComputeBrightHearts_lowestIDSetAsideCommitsAlone(t *testing.T) {
+	// 5-player game. P1 has all the clubs; P2..P5 are all set-aside.
+	// P2 (lowest-ID set-aside) commits one heart. By default-ordering,
+	// P2 is already first among set-asides → slot 2. Elevating to
+	// ranked still places P2 at slot 2 (last ranked). Slot unchanged
+	// → heart is grey.
+	cards := []PlayerCard{
+		{1, SuitClubs, "K"}, {1, SuitClubs, "Q"}, {1, SuitClubs, "J"}, {1, SuitClubs, "10"},
+		{2, SuitHearts, "K"},
+	}
+	committed := []CommittedHeart{
+		{PlayerID: 2, Track: PrologueTrackPower, CardID: 22, Value: "K"},
+	}
+	bright, err := ComputeBrightHearts(PrologueTrackPower, []int64{1, 2, 3, 4, 5}, cards, committed)
+	require.NoError(t, err)
+	assert.False(t, bright[2][22], "elevation that doesn't shift the slot is grey")
+}
+
+func TestComputeBrightHearts_higherIDSetAsideHeartShiftsSlot(t *testing.T) {
+	// Same 5-player setup, but P3 commits instead. Default-ordering
+	// puts P3 in slot 3; elevating to ranked jumps them ahead of P2
+	// → slot 2. Slot changed → heart is bright.
+	cards := []PlayerCard{
+		{1, SuitClubs, "K"}, {1, SuitClubs, "Q"}, {1, SuitClubs, "J"}, {1, SuitClubs, "10"},
+		{3, SuitHearts, "K"},
+	}
+	committed := []CommittedHeart{
+		{PlayerID: 3, Track: PrologueTrackPower, CardID: 33, Value: "K"},
+	}
+	bright, err := ComputeBrightHearts(PrologueTrackPower, []int64{1, 2, 3, 4, 5}, cards, committed)
+	require.NoError(t, err)
+	assert.True(t, bright[3][33], "heart that bumps player ahead of other set-asides is bright")
+}
+
 func TestComputeBrightHearts_otherTrackCommitmentsIgnored(t *testing.T) {
 	// p1's heart committed to Knowledge shouldn't appear in Power's
 	// bright/grey computation.

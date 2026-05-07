@@ -474,7 +474,9 @@
 			case EventTypes.PrologueRankingStepChanged:
 			case EventTypes.PrologueHeartsDeclared:
 			case EventTypes.PrologueTrackRanked:
-			case EventTypes.PrologueSetAsidesPlaced: {
+			case EventTypes.PrologueSetAsidesPlaced:
+			case EventTypes.PrologueCommittedHeartsChanged:
+			case EventTypes.PrologueDoneChanged: {
 				// Step changes update the game's ranking_step locally so the
 				// view re-renders the right sub-flow without a full reload.
 				if (msg.type === EventTypes.PrologueRankingStepChanged && game) {
@@ -772,6 +774,7 @@
 			bind:assets
 			{currentPlayerID}
 			{isFacilitator}
+			onResync={loadGameState}
 		/>
 
 	<!-- ── Main Event ─────────────────────────────────────────────────────── -->

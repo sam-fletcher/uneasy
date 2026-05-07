@@ -262,6 +262,10 @@ func SetPrologueDone(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // resolveTrack runs the bright/grey computation on the given track,
 // persists the ranking, deletes grey commitments (refund), advances the
 // step, and broadcasts events.
+//
+// Re-reads the game's prologue_ranking_step before doing any work so a
+// concurrent SetPrologueDone request that already resolved this track
+// is a no-op rather than a duplicate broadcast / persistence pass.
 func resolveTrack(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -269,6 +273,14 @@ func resolveTrack(
 	game *dbgen.Game,
 	track string,
 ) error {
+	fresh, err := q.GetGameByID(ctx, game.ID)
+	if err != nil {
+		return err
+	}
+	if fresh.PrologueRankingStep == nil || *fresh.PrologueRankingStep != "declare_"+track {
+		// Another request already resolved this track. Nothing to do.
+		return nil
+	}
 	players, err := q.GetPlayersByGame(ctx, game.ID)
 	if err != nil {
 		return err
@@ -309,7 +321,14 @@ func resolveTrack(
 		return err
 	}
 
-	if err := persistTrackRanks(ctx, q, game.ID, track, len(players), ranked, nil); err != nil {
+	// Single set-aside has no decision to make — auto-place so the
+	// rank-1 player isn't prompted for a trivial choice.
+	autoPlaced := len(setAside) == 1
+	persistedSetAside := []int64(nil)
+	if autoPlaced {
+		persistedSetAside = setAside
+	}
+	if err := persistTrackRanks(ctx, q, game.ID, track, len(players), ranked, persistedSetAside); err != nil {
 		return err
 	}
 	if len(greyCardIDs) > 0 {
@@ -328,12 +347,17 @@ func resolveTrack(
 	broadcastEvent(manager, game.ID, model.EventPrologueTrackRanked, model.PrologueTrackRankedPayload{
 		Track: track, Ranked: ranked, SetAside: setAside,
 	})
+	if updated, lerr := q.ListRankingsByGame(ctx, game.ID); lerr == nil {
+		broadcastEvent(manager, game.ID, model.EventRankingsUpdated,
+			model.RankingsUpdatedPayload{Rankings: updated})
+	}
 
 	var nextStep string
 	switch {
-	case len(setAside) > 0:
+	case len(setAside) > 1:
 		nextStep = placeSetAsidesStepFor(track)
 	default:
+		// Either no set-asides or exactly one (auto-placed above).
 		nextStep = nextDeclareStepAfter(track)
 		if nextStep == "" && len(players) <= 3 {
 			nextStep = gamepkg.PrologueStepExtraPeers

@@ -158,11 +158,18 @@ func rankFromContributions(
 }
 
 // ComputeBrightHearts determines which committed hearts on a track are
-// bright (needed to maintain the player's current rank) vs grey
-// (would be refunded if the track resolved now). The greedy walks each
+// bright (needed to maintain the player's final slot) vs grey (would
+// be refunded if the track resolved now). The greedy walks each
 // player's hearts from highest to lowest value; a heart is greyed if
-// removing it (along with already-greyed hearts) leaves the player's
-// rank unchanged.
+// removing it (along with already-greyed hearts) leaves the player at
+// the same final slot.
+//
+// "Final slot" treats set-aside players as just having zero cards:
+// they're appended at the end of the ranked sequence in a
+// deterministic default order (player_id ascending) and slotted into
+// the remaining open ranks. This means a heart that promotes a
+// zero-card player from set-aside to ranked but doesn't change which
+// open slot they end up occupying is correctly identified as grey.
 //
 // Returns brightSet[playerID][cardID] = true. Hearts committed to this
 // track but absent from brightSet are grey.
@@ -176,11 +183,10 @@ func ComputeBrightHearts(
 		return nil, errors.New("invalid track")
 	}
 
-	baselineRanked, baselineSetAside, err := ComputeTrackRankingFromCommitments(track, allPlayerIDs, cards, committed)
+	baseline, err := computeFinalSlots(track, allPlayerIDs, cards, committed)
 	if err != nil {
 		return nil, err
 	}
-	baseline := rankIndex(baselineRanked, baselineSetAside)
 
 	perPlayer := map[int64][]CommittedHeart{}
 	for _, h := range committed {
@@ -208,11 +214,11 @@ func ComputeBrightHearts(
 				}
 				trial = append(trial, c)
 			}
-			tRanked, tSetAside, err := ComputeTrackRankingFromCommitments(track, allPlayerIDs, cards, trial)
+			trialSlots, err := computeFinalSlots(track, allPlayerIDs, cards, trial)
 			if err != nil {
 				return nil, err
 			}
-			if rankIndex(tRanked, tSetAside)[pid] == baseline[pid] {
+			if trialSlots[pid] == baseline[pid] {
 				greyed[h.CardID] = true
 			}
 		}
@@ -225,16 +231,64 @@ func ComputeBrightHearts(
 	return bright, nil
 }
 
-// rankIndex maps playerID → rank slot. Ranked players get 0-based
-// position; set-aside players share the sentinel -1 (treated as a
-// single equivalence class for refund comparison).
-func rankIndex(ranked, setAside []int64) map[int64]int {
-	m := make(map[int64]int, len(ranked)+len(setAside))
-	for i, pid := range ranked {
-		m[pid] = i
+// computeFinalSlots returns each player's final rank slot (1..5) for
+// the given commitment state. Set-aside players (zero cards on this
+// track) are appended in player_id order — only the deterministic
+// default; the rank-1 player can later override the order when
+// multiple set-asides exist, but bright/grey decisions are made
+// against this default since no other ordering is yet committed.
+func computeFinalSlots(
+	track string,
+	allPlayerIDs []int64,
+	cards []PlayerCard,
+	committed []CommittedHeart,
+) (map[int64]int, error) {
+	ranked, setAside, err := ComputeTrackRankingFromCommitments(track, allPlayerIDs, cards, committed)
+	if err != nil {
+		return nil, err
 	}
-	for _, pid := range setAside {
-		m[pid] = -1
+	sortedSetAside := append([]int64(nil), setAside...)
+	sort.Slice(sortedSetAside, func(i, j int) bool {
+		return sortedSetAside[i] < sortedSetAside[j]
+	})
+	seq := append([]int64(nil), ranked...)
+	seq = append(seq, sortedSetAside...)
+	open := openRanksForCount(len(allPlayerIDs))
+	out := make(map[int64]int, len(seq))
+	for i, pid := range seq {
+		if i >= len(open) {
+			break
+		}
+		out[pid] = open[i]
 	}
-	return m
+	return out, nil
+}
+
+// openRanksForCount returns the rank slots (1..5) that aren't blocked
+// by dummy tokens given the player count, in ascending order.
+// Mirrors the openRanks helper in handler/prologue_ranking.go.
+func openRanksForCount(n int) []int {
+	var dummies []int
+	switch n {
+	case 4:
+		dummies = []int{3}
+	case 3:
+		dummies = []int{1, 5}
+	case 2:
+		dummies = []int{1, 3, 5}
+	}
+	out := make([]int, 0, 5)
+	for r := 1; r <= 5; r++ {
+		skip := false
+		for _, d := range dummies {
+			if r == d {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			out = append(out, r)
+		}
+	}
+	return out
 }

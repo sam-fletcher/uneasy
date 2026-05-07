@@ -12,11 +12,12 @@
 		getPrologueSheets,
 		getPrologueCards,
 		beginPrologueRanking,
-		declareHearts,
-		finalizeTrackRanking,
 		placePrologueSetAsides,
 		createExtraPeer,
 		listAssets,
+		getPrologueRankingState,
+		commitTrackHearts,
+		setPrologueDone,
 	} from '$lib/api';
 	import type {
 		Game,
@@ -28,9 +29,16 @@
 		PrologueClaim,
 		PlayerCardRow,
 		PrologueSheetType,
+		CommittedHeart,
+		TrackDone,
+		PrologueTrack,
 	} from '$lib/api';
 	import { onMount, onDestroy } from 'svelte';
 	import ClaimChoiceModal from './ClaimChoiceModal.svelte';
+	import TrackBoard from './prologue/TrackBoard.svelte';
+	import HandStrip from './prologue/HandStrip.svelte';
+	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
+	import { computeBrightHearts } from '$lib/prologue/refund';
 
 	interface Props {
 		gameID: string;
@@ -40,6 +48,7 @@
 		rankings: Ranking[];
 		currentPlayerID: number | null;
 		isFacilitator: boolean;
+		onResync?: () => void;
 	}
 
 	let {
@@ -50,6 +59,7 @@
 		rankings = $bindable(),
 		currentPlayerID,
 		isFacilitator,
+		onResync,
 	}: Props = $props();
 
 	// ── Loaded reference data ────────────────────────────────────────────────
@@ -57,16 +67,24 @@
 	let claims = $state<PrologueClaim[]>([]);
 	let cards = $state<PlayerCardRow[]>([]);
 	let activePlayerID = $state<number | null>(null);
+	let committed = $state<CommittedHeart[]>([]);
+	let doneFlags = $state<TrackDone[]>([]);
 	let error = $state('');
 	let loading = $state(true);
 
 	async function reload() {
 		try {
-			const [s, c] = await Promise.all([getPrologueSheets(gameID), getPrologueCards(gameID)]);
+			const [s, c, st] = await Promise.all([
+				getPrologueSheets(gameID),
+				getPrologueCards(gameID),
+				getPrologueRankingState(gameID),
+			]);
 			sheets = s.sheets;
 			claims = s.claims;
 			activePlayerID = s.current_player_id;
 			cards = c.cards;
+			committed = st.committed;
+			doneFlags = st.done;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load prologue data.';
 		} finally {
@@ -84,17 +102,19 @@
 		window.addEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
 		window.addEventListener('uneasy:prologue.turn_advanced', onClaimEvent);
 		window.addEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
-		window.addEventListener('uneasy:prologue.hearts_declared', onClaimEvent);
 		window.addEventListener('uneasy:prologue.track_ranked', onStepChanged);
 		window.addEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
+		window.addEventListener('uneasy:prologue.committed_hearts_changed', onClaimEvent);
+		window.addEventListener('uneasy:prologue.done_changed', onClaimEvent);
 	});
 	onDestroy(() => {
 		window.removeEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.turn_advanced', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
-		window.removeEventListener('uneasy:prologue.hearts_declared', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.track_ranked', onStepChanged);
 		window.removeEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
+		window.removeEventListener('uneasy:prologue.committed_hearts_changed', onClaimEvent);
+		window.removeEventListener('uneasy:prologue.done_changed', onClaimEvent);
 	});
 
 	// ── Derived: claim lookup ────────────────────────────────────────────────
@@ -155,33 +175,88 @@
 		}
 	}
 
-	// ── Hearts declaration ───────────────────────────────────────────────────
-	let heartCount = $state(0);
+	// ── Hearts declaration (max-commitment model) ────────────────────────────
 	let savingHearts = $state(false);
-	async function submitHearts() {
-		if (savingHearts) return;
+	let savingDone = $state(false);
+
+	const myCommittedOnTrack = $derived.by(() => {
+		const t = currentTrack;
+		if (!t || currentPlayerID == null) return [] as number[];
+		return committed
+			.filter((h) => h.player_id === currentPlayerID && h.track === t)
+			.map((h) => h.card_id);
+	});
+
+	const allPlayerIDs = $derived(players.map((p) => p.id));
+
+	const brightForViewer = $derived.by(() => {
+		const t = currentTrack;
+		if (!t || currentPlayerID == null) return new Set<number>();
+		const all = computeBrightHearts(t as PrologueTrack, allPlayerIDs, cards, committed);
+		return all.get(currentPlayerID) ?? new Set<number>();
+	});
+
+	// Tracks already finalized — anything before the current declare/place
+	// step is locked. Hearts committed there cannot be retracted.
+	const resolvedTracks = $derived.by(() => {
+		const step = game.prologue_ranking_step ?? '';
+		const seq: PrologueTrack[] = ['power', 'knowledge', 'esteem'];
+		const out = new Set<PrologueTrack>();
+		const idx = seq.findIndex(
+			(t) => step === `declare_${t}` || step === `place_set_asides_${t}`
+		);
+		if (idx === -1 && step !== '') {
+			// extra_peers or beyond — all resolved.
+			seq.forEach((t) => out.add(t));
+			return out;
+		}
+		seq.slice(0, idx).forEach((t) => out.add(t));
+		return out;
+	});
+
+	const myDoneOnTrack = $derived.by(() => {
+		const t = currentTrack;
+		if (!t || currentPlayerID == null) return false;
+		return doneFlags.some(
+			(d) => d.player_id === currentPlayerID && d.track === t && d.done
+		);
+	});
+
+	async function commitOrRetract(cardID: number, retract: boolean) {
+		if (savingHearts || !currentTrack || currentPlayerID == null) return;
 		savingHearts = true;
 		error = '';
 		try {
-			await declareHearts(gameID, heartCount);
+			let next = myCommittedOnTrack.slice();
+			if (retract) {
+				next = next.filter((id) => id !== cardID);
+			} else if (!next.includes(cardID)) {
+				next.push(cardID);
+			}
+			await commitTrackHearts(gameID, currentTrack as PrologueTrack, next);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not declare hearts.';
+			error = e instanceof Error ? e.message : 'Could not update hearts.';
+			// Server rejected — our view of the step may be stale. Pull
+			// fresh state so the UI catches up.
+			onResync?.();
+			reload();
 		} finally {
 			savingHearts = false;
 		}
 	}
 
-	let finalizing = $state(false);
-	async function onFinalizeRanking() {
-		if (finalizing) return;
-		finalizing = true;
+	async function toggleDone() {
+		if (savingDone || !currentTrack) return;
+		savingDone = true;
 		error = '';
 		try {
-			await finalizeTrackRanking(gameID);
+			await setPrologueDone(gameID, currentTrack as PrologueTrack, !myDoneOnTrack);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not finalize ranking.';
+			error = e instanceof Error ? e.message : 'Could not update done.';
+			onResync?.();
+			reload();
 		} finally {
-			finalizing = false;
+			savingDone = false;
 		}
 	}
 
@@ -221,13 +296,31 @@
 		setAsideOrdering = [...setAsidePlayers];
 	});
 
-	function moveSetAside(idx: number, dir: -1 | 1) {
-		const tgt = idx + dir;
-		if (tgt < 0 || tgt >= setAsideOrdering.length) return;
-		const next = [...setAsideOrdering];
-		[next[idx], next[tgt]] = [next[tgt], next[idx]];
-		setAsideOrdering = next;
-	}
+	const rank1PlayerID = $derived.by(() => {
+		const t = currentTrack;
+		if (!t) return null;
+		const r = rankings.find((rr) => rr.category === t && rr.rank === 1);
+		return r?.player_id ?? null;
+	});
+
+	const setAsideOpenRanks = $derived.by(() => {
+		const t = currentTrack;
+		if (!t) return [];
+		const taken = new Set(rankings.filter((r) => r.category === t).map((r) => r.rank));
+		const dummies = (() => {
+			switch (players.length) {
+				case 4: return new Set([3]);
+				case 3: return new Set([1, 5]);
+				case 2: return new Set([1, 3, 5]);
+				default: return new Set<number>();
+			}
+		})();
+		const out: number[] = [];
+		for (let r = 1; r <= 5; r++) {
+			if (!taken.has(r) && !dummies.has(r)) out.push(r);
+		}
+		return out;
+	});
 
 	let placing = $state(false);
 	async function submitSetAsides() {
@@ -341,6 +434,18 @@
 			and grants two playing cards (which create or transfer card-linked assets).
 		</p>
 
+		{#if cards.length > 0}
+			<TrackBoard
+				{players}
+				{cards}
+				{rankings}
+				{committed}
+				{doneFlags}
+				activeTrack={'power'}
+				{currentPlayerID}
+			/>
+		{/if}
+
 		<div class="turn-banner" class:my-turn={isMyTurn}>
 			{#if isMyTurn}
 				<strong>Your turn.</strong> Claim a box from any sheet.
@@ -411,71 +516,64 @@
 		{/if}
 
 	{:else if mode === 'declare'}
-		<p class="muted">
-			Active track: <strong>{currentTrack}</strong>.
-			Each player declares how many of their hearts to use as <strong>{currentTrack}</strong>'s suit.
-			Each heart can only be used once across all three tracks.
-		</p>
+		{#if currentTrack}
+			<TrackBoard
+				{players}
+				{cards}
+				{rankings}
+				{committed}
+				{doneFlags}
+				activeTrack={currentTrack as PrologueTrack}
+				{currentPlayerID}
+			/>
 
-		<div class="declare-form">
-			<label>
-				Hearts to declare as {currentTrack}:
-				<input type="number" min="0" bind:value={heartCount} />
-			</label>
-			<button class="secondary" onclick={submitHearts} disabled={savingHearts}>
-				{savingHearts ? '…' : 'Submit'}
-			</button>
-		</div>
+			<HandStrip
+				myCards={myCards}
+				{committed}
+				activeTrack={currentTrack as PrologueTrack}
+				brightSet={brightForViewer}
+				busy={savingHearts}
+				{resolvedTracks}
+				onCommit={(id) => commitOrRetract(id, false)}
+				onRetract={(id) => commitOrRetract(id, true)}
+			/>
 
-		<p class="muted small">
-			Hearts you hold: {myCards.filter(c => c.card_suit === 'H').length}.
-		</p>
-
-		{#if isFacilitator}
-			<button class="primary" onclick={onFinalizeRanking} disabled={finalizing}>
-				{finalizing ? '…' : `Finalize ${currentTrack} ranking`}
+			<button
+				class="primary done-btn"
+				class:active={myDoneOnTrack}
+				disabled={savingDone}
+				onclick={toggleDone}
+			>
+				{savingDone ? '…' : myDoneOnTrack ? 'Done ✓ (tap to undo)' : "I'm done"}
 			</button>
 			<p class="muted small">
-				Once everyone has declared their hearts (or skipped), finalize to compute the rank order.
+				Once every player marks Done, this track resolves: hearts doing work lock in, the rest return to your hand.
 			</p>
 		{/if}
 
 	{:else if mode === 'place'}
-		<p class="muted">
-			Active track: <strong>{currentTrack}</strong>. The rank-1 player places set-aside players
-			(those with zero of this suit) into the remaining open ranks.
-		</p>
-
-		<div class="ranks-display">
-			{#each trackRanksHere as r}
-				<div class="rank-row">
-					<span class="rank-num">{r.rank}.</span>
-					<span>{playerName(r.player_id)}</span>
-				</div>
-			{/each}
-		</div>
-
-		{#if isMyTurnForSetAsides && setAsideOrdering.length > 0}
-			<h3>Place set-aside players</h3>
-			<p class="muted small">
-				They will be slotted into the remaining open ranks in this order. Use the arrows to reorder.
-			</p>
-			<ul class="set-aside-list">
-				{#each setAsideOrdering as pid, idx}
-					<li>
-						<button class="text-btn" disabled={idx === 0} onclick={() => moveSetAside(idx, -1)}>↑</button>
-						<button class="text-btn" disabled={idx === setAsideOrdering.length - 1} onclick={() => moveSetAside(idx, 1)}>↓</button>
-						{playerName(pid)}
-					</li>
-				{/each}
-			</ul>
-			<button class="primary" onclick={submitSetAsides} disabled={placing}>
-				{placing ? '…' : 'Submit ordering'}
-			</button>
-		{:else if setAsideOrdering.length === 0}
-			<p class="muted small">Waiting for the rank-1 player to place set-asides…</p>
-		{:else}
-			<p class="muted small">Waiting on {playerName(rankings.find(r => r.category === currentTrack && r.rank === 1)?.player_id ?? null)} to place the set-aside players.</p>
+		{#if currentTrack}
+			<TrackBoard
+				{players}
+				{cards}
+				{rankings}
+				{committed}
+				{doneFlags}
+				activeTrack={currentTrack as PrologueTrack}
+				{currentPlayerID}
+			/>
+			{#if rank1PlayerID != null && setAsideOrdering.length > 0}
+				<SetAsidePlacer
+					{players}
+					{setAsideOrdering}
+					openRanks={setAsideOpenRanks}
+					rank1PlayerID={rank1PlayerID}
+					isMyTurn={isMyTurnForSetAsides}
+					busy={placing}
+					onReorder={(next) => (setAsideOrdering = next)}
+					onConfirm={submitSetAsides}
+				/>
+			{/if}
 		{/if}
 
 	{:else if mode === 'extra'}
@@ -651,19 +749,22 @@
 		margin-top: 0.4rem;
 	}
 
-	.declare-form, .extra-form {
+	.done-btn { align-self: flex-start; min-height: 44px; }
+	.done-btn.active { background: #6cbf6c; }
+
+	.extra-form {
 		display: flex;
 		gap: 0.6rem;
 		align-items: end;
 		margin: 0.5rem 0;
 	}
-	.declare-form label, .extra-form label {
+	.extra-form label {
 		display: flex;
 		flex-direction: column;
 		font-size: 0.85rem;
 		color: #aaa;
 	}
-	.declare-form input, .extra-form select {
+	.extra-form select {
 		background: #333;
 		color: #e8e4d9;
 		border: 1px solid #555;
@@ -671,44 +772,6 @@
 		padding: 0.3rem 0.5rem;
 		font-size: 0.9rem;
 	}
-
-	.ranks-display {
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
-		background: #1e1e1e;
-		border: 1px solid #333;
-		border-radius: 8px;
-		padding: 0.6rem;
-		max-width: 24rem;
-	}
-	.rank-row { display: flex; gap: 0.5rem; font-size: 0.9rem; }
-	.rank-num { color: #888; min-width: 1.5rem; }
-
-	.set-aside-list {
-		list-style: none;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-		max-width: 18rem;
-	}
-	.set-aside-list li {
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-		font-size: 0.9rem;
-	}
-
-	.text-btn {
-		background: none;
-		color: #c8a96e;
-		padding: 0.1rem 0.3rem;
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-	.text-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
 
 	.primary {
 		background: #c8a96e;
