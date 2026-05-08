@@ -190,6 +190,8 @@ export interface ChatPost {
 	severity: 'minor' | 'default' | 'important' | null;
 	system_code: string | null;
 	system_data: unknown;
+	/** Asset the author is speaking as for this message; null = OOC / system. */
+	speaking_as_asset_id: number | null;
 }
 
 /** @deprecated use ChatPost — retained briefly for incremental migration. */
@@ -815,11 +817,83 @@ export function listGamePosts(
 
 export function createPlayerPost(
 	gameID: string | number,
-	body: string
+	body: string,
+	opts?: { speakingAsAssetID?: number | null }
 ): Promise<{ post: ChatPost }> {
+	const payload: Record<string, unknown> = { body };
+	if (opts?.speakingAsAssetID) {
+		payload.speaking_as_asset_id = opts.speakingAsAssetID;
+	}
 	return apiFetch(`/tables/${gameID}/posts`, {
 		method: 'POST',
-		body: JSON.stringify({ body })
+		body: JSON.stringify(payload)
+	});
+}
+
+// ── Scenes ───────────────────────────────────────────────────────────────────
+
+export type TimeElapsed =
+	| 'moments'
+	| 'hours'
+	| 'days'
+	| 'weeks'
+	| 'flashback'
+	| 'simultaneous';
+
+export interface Scene {
+	id: number;
+	game_id: number;
+	row_number: number;
+	focus_player_id: number;
+	location_holding_id: number | null;
+	location_custom: string | null;
+	time_elapsed: TimeElapsed;
+	time_note: string | null;
+	prompt: string;
+	resolved_plan_id: number | null;
+	started_at: string;
+	ended_at: string | null;
+}
+
+export interface ScenePeerView {
+	peer_asset_id: number;
+	/** null = unclaimed focus-player peer (a non-focus player can take over). */
+	controller_player_id: number | null;
+}
+
+export interface SceneResponse {
+	scene: Scene | null;
+	peers: ScenePeerView[];
+}
+
+export function getActiveScene(gameID: string | number): Promise<SceneResponse> {
+	return apiFetch(`/tables/${gameID}/scenes/active`);
+}
+
+export function createScene(
+	gameID: string | number,
+	params: {
+		location_holding_id?: number | null;
+		location_custom?: string;
+		time_elapsed: TimeElapsed;
+		time_note?: string;
+		present_peer_ids: number[];
+	}
+): Promise<SceneResponse> {
+	return apiFetch(`/tables/${gameID}/scenes`, {
+		method: 'POST',
+		body: JSON.stringify(params)
+	});
+}
+
+export function claimScenePeer(
+	gameID: string | number,
+	sceneID: number,
+	peerAssetID: number
+): Promise<{ scene_id: number; peer_asset_id: number; controller_id: number }> {
+	return apiFetch(`/tables/${gameID}/scenes/${sceneID}/claim-peer`, {
+		method: 'POST',
+		body: JSON.stringify({ peer_asset_id: peerAssetID })
 	});
 }
 

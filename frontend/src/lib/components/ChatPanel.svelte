@@ -20,7 +20,15 @@
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { createPlayerPost, type ChatPost, type Player } from '$lib/api';
+	import {
+		createPlayerPost,
+		type Asset,
+		type ChatPost,
+		type Player,
+		type Scene,
+		type ScenePeerView,
+	} from '$lib/api';
+	import { playerColorByID, OOC_COLOR } from '$lib/playerColor';
 
 	interface Props {
 		gameID: string | number;
@@ -28,12 +36,95 @@
 		players: Player[];
 		currentPlayerID: number | null;
 		typingLabel: string;
+		/**
+		 * Active scene + present peer rows from the server, or null if no
+		 * scene is in progress. Used to populate the persona picker so the
+		 * caller sees only assets they are allowed to speak as.
+		 */
+		activeScene?: Scene | null;
+		activeScenePeers?: ScenePeerView[];
+		/** Full asset list — used to look up names for the persona picker. */
+		assets?: Asset[];
 	}
 
-	const { gameID, posts, players, currentPlayerID, typingLabel }: Props = $props();
+	const {
+		gameID,
+		posts,
+		players,
+		currentPlayerID,
+		typingLabel,
+		activeScene = null,
+		activeScenePeers = [],
+		assets = [],
+	}: Props = $props();
 
 	const playerName = (id: number | null) =>
 		id == null ? '' : players.find(p => p.id === id)?.display_name ?? 'Unknown';
+	const assetName = (id: number | null) =>
+		id == null ? '' : assets.find(a => a.id === id)?.name ?? '';
+
+	// ── Persona picker ────────────────────────────────────────────────────────
+	// The set of personae the current player may speak as right now:
+	//   - Their own main character (always — even outside a scene; the
+	//     server still rejects non-OOC posts when no scene is active).
+	//   - Any peer in the active scene whose controller_player_id == self.
+	// Plus a fixed "OOC" option that posts with no attribution.
+
+	type Persona =
+		| { kind: 'ooc'; label: string }
+		| { kind: 'asset'; assetID: number; label: string };
+
+	const ownMainCharacter = $derived(
+		currentPlayerID == null
+			? null
+			: assets.find(a => a.is_main_character && a.owner_id === currentPlayerID && !a.is_destroyed) ?? null
+	);
+
+	const myControlledPeers = $derived(
+		activeScene == null || currentPlayerID == null
+			? []
+			: activeScenePeers
+				.filter(p => p.controller_player_id === currentPlayerID)
+				.map(p => assets.find(a => a.id === p.peer_asset_id))
+				.filter((a): a is Asset => a != null)
+	);
+
+	const personae = $derived.by<Persona[]>(() => {
+		const list: Persona[] = [];
+		if (ownMainCharacter) {
+			list.push({ kind: 'asset', assetID: ownMainCharacter.id, label: ownMainCharacter.name });
+		}
+		for (const peer of myControlledPeers) {
+			// Avoid duplicating the main character if it's also in the peer list.
+			if (peer.id === ownMainCharacter?.id) continue;
+			list.push({ kind: 'asset', assetID: peer.id, label: peer.name });
+		}
+		list.push({ kind: 'ooc', label: 'OOC' });
+		return list;
+	});
+
+	// Currently selected persona. Defaults to the main character if available,
+	// else OOC. Clamps back to a valid option whenever personae change.
+	let selectedPersonaID = $state<number | 'ooc'>('ooc');
+	$effect(() => {
+		const valid = personae.some(p =>
+			(p.kind === 'ooc' && selectedPersonaID === 'ooc') ||
+			(p.kind === 'asset' && p.assetID === selectedPersonaID)
+		);
+		if (!valid) {
+			const main = personae.find(p => p.kind === 'asset');
+			selectedPersonaID = main ? (main as { assetID: number }).assetID : 'ooc';
+		}
+	});
+
+	const selectedPersona = $derived(
+		personae.find(p =>
+			(p.kind === 'ooc' && selectedPersonaID === 'ooc') ||
+			(p.kind === 'asset' && p.assetID === selectedPersonaID)
+		) ?? personae[personae.length - 1]
+	);
+
+	let pickerOpen = $state(false);
 
 	// ── Expand/collapse (mobile only; desktop ignores this state) ─────────────
 	let expanded = $state(false);
@@ -137,7 +228,11 @@
 		sending = true;
 		error = '';
 		try {
-			await createPlayerPost(gameID, body);
+			const speakingAsAssetID =
+				selectedPersona && selectedPersona.kind === 'asset'
+					? selectedPersona.assetID
+					: null;
+			await createPlayerPost(gameID, body, { speakingAsAssetID });
 			newBody = '';
 			// The WS broadcast will append the post to the parent's array; no
 			// optimistic insert needed.
@@ -216,8 +311,24 @@
 						<span class="log-time">{fmtTime(post.created_at)}</span>
 					</div>
 				{:else}
-					<div class="message" class:own={post.author_id === currentPlayerID}>
-						<span class="msg-author">{playerName(post.author_id)}</span>
+					{@const isOOC = post.speaking_as_asset_id == null}
+					{@const color = isOOC ? OOC_COLOR : playerColorByID(post.author_id, players)}
+					{@const personaName = isOOC
+						? playerName(post.author_id)
+						: assetName(post.speaking_as_asset_id) || playerName(post.author_id)}
+					{@const playerTag = !isOOC ? playerName(post.author_id) : ''}
+					<div
+						class="message"
+						class:own={post.author_id === currentPlayerID}
+						class:ooc={isOOC}
+						style:--player-color={color}
+					>
+						<span class="msg-author">
+							{personaName}
+							{#if playerTag && playerTag !== personaName}
+								<span class="msg-player-tag">({playerTag})</span>
+							{/if}
+						</span>
 						<span class="msg-body">{post.body}</span>
 						<span class="msg-time">{fmtTime(post.created_at)}</span>
 					</div>
@@ -229,6 +340,57 @@
 	<div class="typing" aria-live="polite">{typingLabel}</div>
 
 	{#if error}<p class="error">{error}</p>{/if}
+
+	{#if currentPlayerID != null && personae.length > 1}
+		{@const isOwnSelected = selectedPersona && selectedPersona.kind === 'asset'}
+		{@const selfColor = playerColorByID(currentPlayerID, players)}
+		{@const personaColor = isOwnSelected ? selfColor : OOC_COLOR}
+		<div class="persona-bar">
+			<button
+				type="button"
+				class="persona-btn"
+				class:open={pickerOpen}
+				style:--player-color={personaColor}
+				onclick={() => { pickerOpen = !pickerOpen; }}
+				aria-haspopup="listbox"
+				aria-expanded={pickerOpen}
+			>
+				<span class="persona-dot" aria-hidden="true"></span>
+				<span class="persona-label">Speaking as</span>
+				<span class="persona-value">{selectedPersona?.label ?? 'OOC'}</span>
+				<span class="persona-caret" aria-hidden="true">{pickerOpen ? '▴' : '▾'}</span>
+			</button>
+			{#if pickerOpen}
+				<ul class="persona-menu" role="listbox">
+					{#each personae as p (p.kind === 'ooc' ? 'ooc' : p.assetID)}
+						{@const isSelected =
+							(p.kind === 'ooc' && selectedPersonaID === 'ooc') ||
+							(p.kind === 'asset' && selectedPersonaID === p.assetID)}
+						<li>
+							<button
+								type="button"
+								class="persona-option"
+								class:selected={isSelected}
+								onclick={() => {
+									selectedPersonaID = p.kind === 'ooc' ? 'ooc' : p.assetID;
+									pickerOpen = false;
+								}}
+								role="option"
+								aria-selected={isSelected}
+							>
+								<span
+									class="persona-option-dot"
+									style:background={p.kind === 'asset' ? selfColor : OOC_COLOR}
+									aria-hidden="true"
+								></span>
+								<span>{p.label}</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{/if}
 
 	<div class="compose">
 		<textarea
@@ -378,16 +540,23 @@
 		grid-template-columns: auto 1fr auto;
 		gap: 0.4rem;
 		align-items: baseline;
+		border-left: 3px solid var(--player-color, #c8a96e);
+		padding-left: 0.5rem;
 	}
 
 	.msg-author {
 		font-weight: 600;
-		color: #c8a96e;
+		color: var(--player-color, #c8a96e);
 		font-size: 0.82rem;
 		white-space: nowrap;
 	}
 
-	.message.own .msg-author { color: #e8d8a0; }
+	/* OOC messages render with a neutral, italicized body to make speech vs.
+	   meta-comment visually distinct, regardless of which player is speaking. */
+	.message.ooc .msg-body {
+		font-style: italic;
+		color: #999;
+	}
 
 	.msg-body {
 		font-size: 0.9rem;
@@ -495,4 +664,104 @@
 	}
 
 	.send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+	/* ── Player tag in messages ──────────────────────────────────────────── */
+	.msg-player-tag {
+		font-weight: 400;
+		color: #777;
+		font-size: 0.72rem;
+		margin-left: 0.25rem;
+	}
+
+	/* ── Persona picker ──────────────────────────────────────────────────── */
+
+	.persona-bar {
+		position: relative;
+		padding: 0.4rem 0.8rem 0;
+		flex-shrink: 0;
+	}
+
+	.persona-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		min-height: 36px;
+		padding: 0.3rem 0.6rem;
+		border: 1px solid #2a2a2a;
+		border-left: 3px solid var(--player-color, #c8a96e);
+		background: #1d1d1d;
+		color: #d8d4c9;
+		border-radius: 5px;
+		cursor: pointer;
+		font-size: 0.85rem;
+		width: 100%;
+	}
+
+	.persona-btn:hover { border-color: var(--player-color, #c8a96e); }
+
+	.persona-btn.open { background: #221d10; }
+
+	.persona-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--player-color, #c8a96e);
+		flex-shrink: 0;
+	}
+
+	.persona-label {
+		font-size: 0.72rem;
+		color: #888;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.persona-value {
+		flex: 1;
+		font-weight: 600;
+		color: var(--player-color, #c8a96e);
+		text-align: left;
+	}
+
+	.persona-caret { color: #888; font-size: 0.78rem; }
+
+	.persona-menu {
+		position: absolute;
+		left: 0.8rem;
+		right: 0.8rem;
+		bottom: calc(100% + 0.2rem);
+		margin: 0;
+		padding: 0.25rem;
+		list-style: none;
+		background: #1a1a1a;
+		border: 1px solid #3a3a3a;
+		border-radius: 5px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+		z-index: 60;
+	}
+
+	.persona-option {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		min-height: 40px;
+		padding: 0.4rem 0.6rem;
+		border: none;
+		background: none;
+		color: #d8d4c9;
+		font-size: 0.88rem;
+		text-align: left;
+		cursor: pointer;
+		border-radius: 4px;
+	}
+	.persona-option:hover { background: #252525; }
+	.persona-option.selected { background: #2e2510; color: #e8d8a0; }
+
+	.persona-option-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
 </style>

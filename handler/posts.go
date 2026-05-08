@@ -65,7 +65,8 @@ func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var body struct {
-			Body string `json:"body"`
+			Body              string `json:"body"`
+			SpeakingAsAssetID int64  `json:"speaking_as_asset_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -77,12 +78,24 @@ func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		if status, msg := validateSpeakingAs(r.Context(), q, gameID, player.ID, body.SpeakingAsAssetID); status != 0 {
+			respondErr(w, status, msg)
+			return
+		}
+
+		var speakingAs *int64
+		if body.SpeakingAsAssetID != 0 {
+			id := body.SpeakingAsAssetID
+			speakingAs = &id
+		}
+
 		post, err := q.CreatePlayerMessage(r.Context(), dbgen.CreatePlayerMessageParams{
-			GameID:    gameID,
-			AuthorID:  &player.ID,
-			Body:      body.Body,
-			RowNumber: nil,
-			PlanID:    nil,
+			GameID:             gameID,
+			AuthorID:           &player.ID,
+			Body:               body.Body,
+			RowNumber:          nil,
+			PlanID:             nil,
+			SpeakingAsAssetID:  speakingAs,
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not save post")

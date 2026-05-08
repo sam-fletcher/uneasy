@@ -12,8 +12,8 @@
 
 -- name: CreatePlayerMessage :one
 INSERT INTO scene_posts (
-  game_id, author_id, body, row_number, plan_id, kind
-) VALUES ($1, $2, $3, $4, $5, 'message')
+  game_id, author_id, body, row_number, plan_id, kind, speaking_as_asset_id
+) VALUES ($1, $2, $3, $4, $5, 'message', $6)
 RETURNING *;
 
 -- name: CreateBoundaryPost :one

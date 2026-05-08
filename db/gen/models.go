@@ -283,6 +283,21 @@ type Rumor struct {
 	DisplayOrder   int16              `db:"display_order" json:"display_order"`
 }
 
+type Scene struct {
+	ID                int64              `db:"id" json:"id"`
+	GameID            int64              `db:"game_id" json:"game_id"`
+	RowNumber         int16              `db:"row_number" json:"row_number"`
+	FocusPlayerID     int64              `db:"focus_player_id" json:"focus_player_id"`
+	LocationHoldingID *int64             `db:"location_holding_id" json:"location_holding_id"`
+	LocationCustom    *string            `db:"location_custom" json:"location_custom"`
+	TimeElapsed       model.TimeElapsed  `db:"time_elapsed" json:"time_elapsed"`
+	TimeNote          *string            `db:"time_note" json:"time_note"`
+	Prompt            string             `db:"prompt" json:"prompt"`
+	ResolvedPlanID    *int64             `db:"resolved_plan_id" json:"resolved_plan_id"`
+	StartedAt         pgtype.Timestamptz `db:"started_at" json:"started_at"`
+	EndedAt           pgtype.Timestamptz `db:"ended_at" json:"ended_at"`
+}
+
 type SceneEntry struct {
 	ID        int64              `db:"id" json:"id"`
 	GameID    int64              `db:"game_id" json:"game_id"`
@@ -292,18 +307,25 @@ type SceneEntry struct {
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type ScenePeer struct {
+	SceneID            int64  `db:"scene_id" json:"scene_id"`
+	PeerAssetID        int64  `db:"peer_asset_id" json:"peer_asset_id"`
+	ControllerPlayerID *int64 `db:"controller_player_id" json:"controller_player_id"`
+}
+
 type ScenePost struct {
-	ID         int64              `db:"id" json:"id"`
-	GameID     int64              `db:"game_id" json:"game_id"`
-	RowNumber  *int16             `db:"row_number" json:"row_number"`
-	PlanID     *int64             `db:"plan_id" json:"plan_id"`
-	AuthorID   *int64             `db:"author_id" json:"author_id"`
-	Body       string             `db:"body" json:"body"`
-	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	Kind       string             `db:"kind" json:"kind"`
-	Severity   *string            `db:"severity" json:"severity"`
-	SystemCode *string            `db:"system_code" json:"system_code"`
-	SystemData []byte             `db:"system_data" json:"system_data"`
+	ID                int64              `db:"id" json:"id"`
+	GameID            int64              `db:"game_id" json:"game_id"`
+	RowNumber         *int16             `db:"row_number" json:"row_number"`
+	PlanID            *int64             `db:"plan_id" json:"plan_id"`
+	AuthorID          *int64             `db:"author_id" json:"author_id"`
+	Body              string             `db:"body" json:"body"`
+	CreatedAt         pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	Kind              string             `db:"kind" json:"kind"`
+	Severity          *string            `db:"severity" json:"severity"`
+	SystemCode        *string            `db:"system_code" json:"system_code"`
+	SystemData        []byte             `db:"system_data" json:"system_data"`
+	SpeakingAsAssetID *int64             `db:"speaking_as_asset_id" json:"speaking_as_asset_id"`
 }
 
 type Secret struct {

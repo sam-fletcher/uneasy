@@ -12,8 +12,11 @@
 		listPlans, getPlan,
 		setEndgameMode,
 		getVisibleSecrets,
+		getActiveScene,
 		type RankingCategory,
 		type EndgameMode,
+		type Scene,
+		type ScenePeerView,
 	} from '$lib/api';
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
 	import type {
@@ -27,6 +30,7 @@
 	import PrologueView from '$lib/components/phases/PrologueView.svelte';
 	import ShakeUpView from '$lib/components/phases/ShakeUpView.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
+	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import RetinueView from '$lib/components/RetinueView.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 
@@ -74,6 +78,28 @@
 	// Resets when focus changes or the row advances.
 	let sceneEnded = $state(false);
 
+	// ── Scene state (SCENES_PLAN.md) ──────────────────────────────────────────
+	// activeScene is the currently-running scene (location/time/peers), or
+	// null between scenes. Loaded on mount and kept in sync via WS events.
+	let activeScene = $state<Scene | null>(null);
+	let activeScenePeers = $state<ScenePeerView[]>([]);
+
+	async function refreshActiveScene() {
+		if (!game || game.phase !== 'main_event') {
+			activeScene = null;
+			activeScenePeers = [];
+			return;
+		}
+		try {
+			const data = await getActiveScene(gameID);
+			activeScene = data.scene;
+			activeScenePeers = data.peers;
+		} catch {
+			activeScene = null;
+			activeScenePeers = [];
+		}
+	}
+
 	// ── Dice roll state ───────────────────────────────────────────────────────
 	// activeRoll is the current unresolved dice roll for this game (or null).
 	// It's set by roll.created WS events and on page load (via getRoll).
@@ -85,6 +111,8 @@
 	// ── Retinue sheet ─────────────────────────────────────────────────────────
 	let retinueOpenForPlayer = $state<number | null>(null);
 	let tonesOpen = $state(false);
+	let lawsOpen = $state(false);
+	let rumorsOpen = $state(false);
 	let prologueActivePlayerID = $state<number | null>(null);
 
 	const blockingPlayerID = $derived.by(() => {
@@ -189,6 +217,29 @@
 			}
 			case EventTypes.SceneEnded: {
 				sceneEnded = true;
+				activeScene = null;
+				activeScenePeers = [];
+				break;
+			}
+			case EventTypes.SceneStarted: {
+				const scene = msg.payload.scene as Scene;
+				const peers = msg.payload.peers as ScenePeerView[];
+				activeScene = scene;
+				activeScenePeers = peers;
+				sceneEnded = false;
+				break;
+			}
+			case EventTypes.ScenePeerClaimed: {
+				const { scene_id, peer_asset_id, controller_id } = msg.payload as {
+					scene_id: number; peer_asset_id: number; controller_id: number;
+				};
+				if (activeScene && activeScene.id === scene_id) {
+					activeScenePeers = activeScenePeers.map(p =>
+						p.peer_asset_id === peer_asset_id
+							? { ...p, controller_player_id: controller_id }
+							: p
+					);
+				}
 				break;
 			}
 			case EventTypes.ScenePostCreated: {
@@ -537,15 +588,19 @@
 				chatPosts = postsData.posts;
 			} catch { /* tolerate empty chat on failure */ }
 
-			// Public record, plans, and active roll only matter in main_event.
+			// Public record, plans, active roll, and active scene only matter
+			// in main_event.
 			if (data.game.phase === 'main_event' && data.game.current_row > 0) {
-				const [recordData, rollData, plansData] = await Promise.all([
+				const [recordData, rollData, plansData, sceneData] = await Promise.all([
 					getFullRecord(gameID),
 					getActiveRollForGame(gameID),
 					listPlans(gameID),
+					getActiveScene(gameID).catch(() => ({ scene: null, peers: [] as ScenePeerView[] })),
 				]);
 				recordRows = recordData.rows;
 				plans = plansData.plans;
+				activeScene = sceneData.scene;
+				activeScenePeers = sceneData.peers;
 				if (rollData.roll) {
 					activeRoll = rollData.roll;
 					activeRollDice = rollData.dice;
@@ -717,6 +772,14 @@
 				<button class="tones-button" onclick={() => tonesOpen = true} aria-label="Open tones">
 					Tones
 				</button>
+				{#if game.phase === 'main_event'}
+					<button class="tones-button" onclick={() => lawsOpen = true} aria-label="Open laws">
+						Laws{laws.length > 0 ? ` (${laws.length})` : ''}
+					</button>
+					<button class="tones-button" onclick={() => rumorsOpen = true} aria-label="Open rumors">
+						Rumors{rumors.length > 0 ? ` (${rumors.length})` : ''}
+					</button>
+				{/if}
 				{#if game.phase === 'lobby'}
 					<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
 						{game.join_code}
@@ -798,6 +861,9 @@
 			bind:voteOpen
 			{plans}
 			onPlansChanged={refreshPlans}
+			{activeScene}
+			{activeScenePeers}
+			onSceneRefresh={refreshActiveScene}
 		/>
 
 	<!-- ── Shake-Up ───────────────────────────────────────────────────────── -->
@@ -841,6 +907,9 @@
 				{players}
 				{currentPlayerID}
 				{typingLabel}
+				{activeScene}
+				{activeScenePeers}
+				{assets}
 			/>
 		{/if}
 	</div>
@@ -898,6 +967,34 @@
 					{/if}
 				{/if}
 			</div>
+		</div>
+	</RetinueSheet>
+
+	<RetinueSheet open={lawsOpen} onClose={() => lawsOpen = false}>
+		<div class="laws-rumors-sheet">
+			<h3>Laws</h3>
+			<LawsRumors
+				kind="laws"
+				{laws}
+				{rumors}
+				{plans}
+				playerNames={playerNameMap}
+				{currentPlayerID}
+			/>
+		</div>
+	</RetinueSheet>
+
+	<RetinueSheet open={rumorsOpen} onClose={() => rumorsOpen = false}>
+		<div class="laws-rumors-sheet">
+			<h3>Rumors</h3>
+			<LawsRumors
+				kind="rumors"
+				{laws}
+				{rumors}
+				{plans}
+				playerNames={playerNameMap}
+				{currentPlayerID}
+			/>
 		</div>
 	</RetinueSheet>
 
@@ -1043,6 +1140,7 @@
 
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
 	.tones-sheet .small { font-size: 0.85rem; }
+	.laws-rumors-sheet h3 { margin: 0 0 0.5rem; }
 
 	.copy-hint {
 		font-size: 0.7rem;

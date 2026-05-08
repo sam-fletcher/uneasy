@@ -68,6 +68,21 @@ const (
 	PlanHostFestivity       PlanType = "host_festivity"
 )
 
+// ── Scene Time Elapsed ──────────────────────────────────────────────────────
+
+// TimeElapsed describes how much in-fiction time has passed between this
+// scene and the previous one (or whether it's a flashback / simultaneous).
+type TimeElapsed string
+
+const (
+	TimeMoments      TimeElapsed = "moments"
+	TimeHours        TimeElapsed = "hours"
+	TimeDays         TimeElapsed = "days"
+	TimeWeeks        TimeElapsed = "weeks"
+	TimeFlashback    TimeElapsed = "flashback"
+	TimeSimultaneous TimeElapsed = "simultaneous"
+)
+
 // ── Plan Status ─────────────────────────────────────────────────────────────
 
 type PlanStatus string

@@ -12,6 +12,7 @@
 	import { updateLaw, updateRumor, type Law, type Rumor, type Plan } from '$lib/api';
 
 	interface Props {
+		kind?: 'laws' | 'rumors' | 'both';
 		laws: Law[];
 		rumors: Rumor[];
 		plans: Plan[];
@@ -19,7 +20,7 @@
 		currentPlayerID: number | null;
 	}
 
-	const { laws, rumors, plans, playerNames, currentPlayerID }: Props = $props();
+	const { kind = 'both', laws, rumors, plans, playerNames, currentPlayerID }: Props = $props();
 
 	function playerName(id: number | null | undefined): string {
 		if (id == null) return '?';
@@ -98,6 +99,7 @@
 <aside class="laws-rumors">
 	{#if errorMsg}<p class="lr-error">{errorMsg}</p>{/if}
 
+	{#if kind !== 'rumors'}
 	<section class="lr-section">
 		<h4 class="lr-heading">Laws ({laws.length})</h4>
 		{#if laws.length === 0}
@@ -132,7 +134,9 @@
 			</ul>
 		{/if}
 	</section>
+	{/if}
 
+	{#if kind !== 'laws'}
 	<section class="lr-section">
 		<h4 class="lr-heading">Rumors ({rumors.length})</h4>
 		{#if rumors.length === 0}
@@ -166,6 +170,7 @@
 			</ul>
 		{/if}
 	</section>
+	{/if}
 </aside>
 
 <style>

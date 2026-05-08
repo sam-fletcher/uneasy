@@ -191,19 +191,33 @@ func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// If a scene is active, end it. We don't require an active scene
+		// here yet so the existing flow keeps working until the frontend
+		// always creates scenes first.
+		var endedSceneID int64
+		if active, err := loadActiveScene(r.Context(), q, game.ID); err == nil && active != nil {
+			if err := q.EndScene(r.Context(), active.ID); err == nil {
+				endedSceneID = active.ID
+			}
+		}
+
 		if h, ok := manager.Get(game.ID); ok {
 			h.BroadcastEvent(model.EventSceneEnded, model.SceneEndedPayload{
 				RowNumber: game.CurrentRow,
 				PlayerID:  player.ID,
+				SceneID:   endedSceneID,
 			})
 		}
 		row := game.CurrentRow
 		EmitBoundary(r.Context(), q, manager, game.ID, "scene.ended",
 			fmt.Sprintf("%s ends the scene", player.DisplayName),
 			&row, nil,
-			map[string]any{"row_number": row, "player_id": player.ID})
+			map[string]any{"row_number": row, "player_id": player.ID, "scene_id": endedSceneID})
 
-		respond(w, http.StatusOK, map[string]any{"row_number": game.CurrentRow})
+		respond(w, http.StatusOK, map[string]any{
+			"row_number": game.CurrentRow,
+			"scene_id":   endedSceneID,
+		})
 	}
 }
 

@@ -13,7 +13,7 @@ const createBoundaryPost = `-- name: CreateBoundaryPost :one
 INSERT INTO scene_posts (
   game_id, body, row_number, plan_id, kind, severity, system_code, system_data
 ) VALUES ($1, $2, $3, $4, 'boundary', 'important', $5, $6)
-RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data
+RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id
 `
 
 type CreateBoundaryPostParams struct {
@@ -47,6 +47,7 @@ func (q *Queries) CreateBoundaryPost(ctx context.Context, arg CreateBoundaryPost
 		&i.Severity,
 		&i.SystemCode,
 		&i.SystemData,
+		&i.SpeakingAsAssetID,
 	)
 	return i, err
 }
@@ -55,7 +56,7 @@ const createLogPost = `-- name: CreateLogPost :one
 INSERT INTO scene_posts (
   game_id, body, row_number, plan_id, kind, severity, system_code, system_data, author_id
 ) VALUES ($1, $2, $3, $4, 'log', $5, $6, $7, $8)
-RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data
+RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id
 `
 
 type CreateLogPostParams struct {
@@ -93,6 +94,7 @@ func (q *Queries) CreateLogPost(ctx context.Context, arg CreateLogPostParams) (S
 		&i.Severity,
 		&i.SystemCode,
 		&i.SystemData,
+		&i.SpeakingAsAssetID,
 	)
 	return i, err
 }
@@ -100,17 +102,18 @@ func (q *Queries) CreateLogPost(ctx context.Context, arg CreateLogPostParams) (S
 const createPlayerMessage = `-- name: CreatePlayerMessage :one
 
 INSERT INTO scene_posts (
-  game_id, author_id, body, row_number, plan_id, kind
-) VALUES ($1, $2, $3, $4, $5, 'message')
-RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data
+  game_id, author_id, body, row_number, plan_id, kind, speaking_as_asset_id
+) VALUES ($1, $2, $3, $4, $5, 'message', $6)
+RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id
 `
 
 type CreatePlayerMessageParams struct {
-	GameID    int64  `db:"game_id" json:"game_id"`
-	AuthorID  *int64 `db:"author_id" json:"author_id"`
-	Body      string `db:"body" json:"body"`
-	RowNumber *int16 `db:"row_number" json:"row_number"`
-	PlanID    *int64 `db:"plan_id" json:"plan_id"`
+	GameID            int64  `db:"game_id" json:"game_id"`
+	AuthorID          *int64 `db:"author_id" json:"author_id"`
+	Body              string `db:"body" json:"body"`
+	RowNumber         *int16 `db:"row_number" json:"row_number"`
+	PlanID            *int64 `db:"plan_id" json:"plan_id"`
+	SpeakingAsAssetID *int64 `db:"speaking_as_asset_id" json:"speaking_as_asset_id"`
 }
 
 // sqlc query file for the unified chat feed.
@@ -131,6 +134,7 @@ func (q *Queries) CreatePlayerMessage(ctx context.Context, arg CreatePlayerMessa
 		arg.Body,
 		arg.RowNumber,
 		arg.PlanID,
+		arg.SpeakingAsAssetID,
 	)
 	var i ScenePost
 	err := row.Scan(
@@ -145,6 +149,7 @@ func (q *Queries) CreatePlayerMessage(ctx context.Context, arg CreatePlayerMessa
 		&i.Severity,
 		&i.SystemCode,
 		&i.SystemData,
+		&i.SpeakingAsAssetID,
 	)
 	return i, err
 }
@@ -182,7 +187,7 @@ func (q *Queries) CreateSceneEntry(ctx context.Context, arg CreateSceneEntryPara
 }
 
 const listGameBoundaries = `-- name: ListGameBoundaries :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data FROM scene_posts
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id FROM scene_posts
 WHERE game_id = $1 AND kind = 'boundary'
 ORDER BY id ASC
 `
@@ -208,6 +213,7 @@ func (q *Queries) ListGameBoundaries(ctx context.Context, gameID int64) ([]Scene
 			&i.Severity,
 			&i.SystemCode,
 			&i.SystemData,
+			&i.SpeakingAsAssetID,
 		); err != nil {
 			return nil, err
 		}
@@ -220,7 +226,7 @@ func (q *Queries) ListGameBoundaries(ctx context.Context, gameID int64) ([]Scene
 }
 
 const listGamePosts = `-- name: ListGamePosts :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data FROM scene_posts
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id FROM scene_posts
 WHERE game_id = $1
 ORDER BY id ASC
 `
@@ -246,6 +252,7 @@ func (q *Queries) ListGamePosts(ctx context.Context, gameID int64) ([]ScenePost,
 			&i.Severity,
 			&i.SystemCode,
 			&i.SystemData,
+			&i.SpeakingAsAssetID,
 		); err != nil {
 			return nil, err
 		}
@@ -258,7 +265,7 @@ func (q *Queries) ListGamePosts(ctx context.Context, gameID int64) ([]ScenePost,
 }
 
 const listGamePostsAfter = `-- name: ListGamePostsAfter :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data FROM scene_posts
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id FROM scene_posts
 WHERE game_id = $1 AND id > $2
 ORDER BY id ASC
 `
@@ -289,6 +296,7 @@ func (q *Queries) ListGamePostsAfter(ctx context.Context, arg ListGamePostsAfter
 			&i.Severity,
 			&i.SystemCode,
 			&i.SystemData,
+			&i.SpeakingAsAssetID,
 		); err != nil {
 			return nil, err
 		}

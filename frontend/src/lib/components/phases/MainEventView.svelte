@@ -10,14 +10,16 @@
 	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
 	import {
 		createSceneEntry,
-		endScene, refreshAssets, passFocus, createRoll,
+		refreshAssets, passFocus, createRoll,
 		listWars,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, WarStateResponse } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse } from '$lib/api';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
-	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
+	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
+	import SceneDetailsPanel from '$lib/components/SceneDetailsPanel.svelte';
+	import { followOnPromptForRow } from '$lib/scenePrompts';
 
 	interface Props {
 		game: Game;
@@ -43,6 +45,14 @@
 		 * plans back down. The parent owns plan state; this component never writes it.
 		 */
 		onPlansChanged: () => void;
+		/**
+		 * Active scene + present peers, owned and refreshed by the parent.
+		 * Null between scenes; null while not in main_event.
+		 */
+		activeScene?: Scene | null;
+		activeScenePeers?: ScenePeerView[];
+		/** Called after a scene mutation so the parent can re-fetch. */
+		onSceneRefresh?: () => void;
 	}
 
 	let {
@@ -63,6 +73,9 @@
 		voteOpen = $bindable(),
 		plans,
 		onPlansChanged,
+		activeScene = null,
+		activeScenePeers = [],
+		onSceneRefresh = () => {},
 	}: Props = $props();
 
 	// ── War cost-of-battle gate ───────────────────────────────────────────────
@@ -166,22 +179,6 @@
 	}
 
 	let actionBusy = $state(false);
-
-	async function onEndScene() {
-		if (actionBusy) return;
-		actionBusy = true;
-		error = '';
-		try {
-			await endScene(game.id);
-			// The server broadcasts scene.ended; the parent page sets sceneEnded = true.
-			// We set it locally too so the UI is instant for the focus player.
-			sceneEnded = true;
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not end scene.';
-		} finally {
-			actionBusy = false;
-		}
-	}
 
 	async function onRefreshAssets() {
 		if (actionBusy) return;
@@ -320,13 +317,6 @@
 				currentRow={game.current_row}
 				playerNames={playerNameMap}
 			/>
-			<LawsRumors
-				{laws}
-				{rumors}
-				{plans}
-				playerNames={playerNameMap}
-				{currentPlayerID}
-			/>
 		</aside>
 
 		<!-- Right: scene thread + input -->
@@ -350,6 +340,40 @@
 						{blockingClaimants.map(playerName).join(', ')}.
 					{/if}
 				</div>
+			{/if}
+
+			<!-- ── Scene structure ────────────────────────────────────────────
+				Three states:
+				  1. Active scene  → SceneDetailsPanel (everyone; controls vary)
+				  2. No scene, focus player, no pending plans → SceneSetupForm
+				  3. No scene, anyone else                    → quiet waiting hint
+				While a plan is resolving / pending, neither panel renders —
+				PlanPanel takes over.
+			-->
+			{#if activeScene}
+				<SceneDetailsPanel
+					gameID={game.id}
+					scene={activeScene}
+					peers={activeScenePeers}
+					{assets}
+					{players}
+					{currentPlayerID}
+					{isFocusPlayer}
+					onSceneEnded={onSceneRefresh}
+				/>
+			{:else if !hasPlansToResolve && isFocusPlayer && !sceneEnded}
+				<SceneSetupForm
+					gameID={game.id}
+					{assets}
+					{players}
+					focusPlayerID={currentPlayerID!}
+					prompt={followOnPromptForRow(plans, game.current_row)}
+					onSceneStarted={onSceneRefresh}
+				/>
+			{:else if !hasPlansToResolve && !sceneEnded}
+				<p class="action-note">
+					Waiting for {focusPlayerName ?? 'the focus player'} to set the scene…
+				</p>
 			{/if}
 
 			<div class="summary-bar">
@@ -454,18 +478,15 @@
 			{/if}
 
 			<!-- ── Focus-player action bar ──────────────────────────────────── -->
-			{#if isFocusPlayer}
+			<!--
+				Step 1 (End Scene) used to live here; it now lives in
+				SceneDetailsPanel above. The action bar only handles
+				post-scene actions (refresh / skip / prepare plan) and
+				passing focus.
+			-->
+			{#if isFocusPlayer && sceneEnded}
 				<div class="action-bar">
-					{#if !sceneEnded}
-						<!-- Step 1: scene is active — end it when ready -->
-						<div class="action-step">
-							<span class="action-label">Your turn as focus player</span>
-							<button class="action-btn primary" onclick={onEndScene} disabled={actionBusy}>
-								{actionBusy ? '…' : 'End Scene'}
-							</button>
-						</div>
-
-					{:else if !actionTaken}
+					{#if !actionTaken}
 						<!-- Step 2: post-scene action — prepare a plan (PlanPanel above), refresh, or skip -->
 						<div class="action-step">
 							{#if hasPlansToResolve}
@@ -521,8 +542,9 @@
 						</div>
 					{/if}
 				</div>
-			{:else if game.focus_player_id != null}
-				<!-- Non-focus players see a quiet indicator -->
+			{:else if !isFocusPlayer && sceneEnded && game.focus_player_id != null}
+				<!-- Non-focus players see a quiet indicator post-scene only.
+					 Pre-scene waiting copy lives near SceneSetupForm above. -->
 				<div class="action-bar waiting">
 					<span class="action-label">
 						Waiting for {players.find(p => p.id === game.focus_player_id)?.display_name ?? 'the focus player'}…

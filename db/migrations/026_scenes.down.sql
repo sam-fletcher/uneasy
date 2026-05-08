@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS scene_peers;
+DROP TABLE IF EXISTS scenes;

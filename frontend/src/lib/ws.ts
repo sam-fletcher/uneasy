@@ -33,6 +33,8 @@ export const EventTypes = {
 	FocusChanged: 'focus.changed',
 	RowAdvanced: 'row.advanced',
 	SceneEnded: 'scene.ended',
+	SceneStarted: 'scene.started',
+	ScenePeerClaimed: 'scene.peer_claimed',
 
 	// Scene posts & entries (replaces post.created)
 	ScenePostCreated: 'scene_post.created',

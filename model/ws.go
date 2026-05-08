@@ -22,6 +22,8 @@ const (
 	EventFocusChanged = "focus.changed"
 	EventRowAdvanced  = "row.advanced"
 	EventSceneEnded   = "scene.ended"
+	EventSceneStarted     = "scene.started"
+	EventScenePeerClaimed = "scene.peer_claimed"
 
 	// Phase 2: Tone-setting
 	EventToneUpdated = "tone.updated"
@@ -193,6 +195,20 @@ type RowAdvancedPayload struct {
 type SceneEndedPayload struct {
 	RowNumber int16 `json:"row_number"`
 	PlayerID  int64 `json:"player_id"`
+	SceneID   int64 `json:"scene_id,omitempty"`
+}
+
+// SceneStartedPayload is the payload for EventSceneStarted.
+type SceneStartedPayload struct {
+	Scene any `json:"scene"` // dbgen.Scene
+	Peers any `json:"peers"` // []scenePeerView from handler
+}
+
+// ScenePeerClaimedPayload is the payload for EventScenePeerClaimed.
+type ScenePeerClaimedPayload struct {
+	SceneID      int64 `json:"scene_id"`
+	PeerAssetID  int64 `json:"peer_asset_id"`
+	ControllerID int64 `json:"controller_id"`
 }
 
 // ToneUpdatedPayload is the payload for EventToneUpdated.

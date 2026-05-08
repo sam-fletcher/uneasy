@@ -208,6 +208,11 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		r.Post("/tables/{id}/posts", handler.CreatePlayerPost(q, manager))
 		r.Post("/tables/{id}/rows/{row}/summary", handler.CreateSceneEntry(q, manager))
 
+		// Scenes (SCENES_PLAN.md)
+		r.Post("/tables/{id}/scenes", handler.CreateScene(q, manager))
+		r.Get("/tables/{id}/scenes/active", handler.GetActiveSceneHandler(q))
+		r.Post("/tables/{id}/scenes/{sid}/claim-peer", handler.ClaimScenePeer(q, manager))
+
 		// Turn structure (Phase 2d)
 		r.Post("/tables/{id}/end-scene", handler.EndScene(q, manager))
 		r.Post("/tables/{id}/refresh-assets", handler.RefreshAssets(q, manager))
