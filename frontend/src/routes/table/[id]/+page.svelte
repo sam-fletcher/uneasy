@@ -27,6 +27,7 @@
 		Plan, Secret,
 	} from '$lib/api';
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
+	import PublicRecord from '$lib/components/PublicRecord.svelte';
 	import PrologueView from '$lib/components/phases/PrologueView.svelte';
 	import ShakeUpView from '$lib/components/phases/ShakeUpView.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
@@ -800,7 +801,17 @@
 		On mobile/tablet it's a single column with the chat panel positioned
 		absolutely (strip pinned to bottom, expanded sheet covering the body).
 	-->
-	<div class="table-body">
+	<div class="table-body" class:has-record={game?.phase === 'main_event'}>
+
+	<!-- Public Record sidebar — only in main event. Page-level so it can sit
+	     in its own grid column on wide desktop layouts (mirrors ChatPanel). -->
+	{#if !loading && game?.phase === 'main_event'}
+		<PublicRecord
+			rows={recordRows}
+			currentRow={game.current_row}
+			playerNames={playerNameMap}
+		/>
+	{/if}
 
 	{#if loading}
 		<div class="center-message">Loading…</div>
@@ -1081,11 +1092,26 @@
 			grid-template-columns: 1fr 360px;
 			padding-bottom: 0;
 		}
+		/* When the public record is present (main_event), it takes the first
+		   column. Below 1280 it's a thin rail with overlay-on-tap; at ≥1280
+		   it becomes a permanent 320px panel. The phase view and chat shift
+		   to columns 2 and 3 by source order. */
+		.table-body.has-record {
+			grid-template-columns: auto 1fr 360px;
+		}
 		/* The phase content children are direct children of .table-body; in
-		   grid mode they automatically land in column 1, ChatPanel in
-		   column 2. The min-width: 0 prevents long content from blowing
-		   out the column. */
+		   grid mode they automatically land in column 1 (or 2 with PR), and
+		   ChatPanel in the last column. The min-width: 0 prevents long
+		   content from blowing out the column. */
 		.table-body > :global(*) { min-width: 0; min-height: 0; }
+	}
+
+	@media (min-width: 1280px) {
+		/* All three columns equal width — each one mirrors a mobile viewport,
+		   so layout/typography that works on phones works in any column. */
+		.table-body.has-record {
+			grid-template-columns: 360px 440px 1fr;
+		}
 	}
 
 	header {

@@ -95,6 +95,7 @@ func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			Body:              body.Body,
 			RowNumber:         nil,
 			PlanID:            nil,
+			SceneID:           nil,
 			SpeakingAsAssetID: speakingAs,
 		})
 		if err != nil {
@@ -109,27 +110,34 @@ func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
-// EmitBoundary inserts a system-authored boundary marker into the chat feed
-// and broadcasts the resulting post over the table's WebSocket hub. Used by
+// EmitSystemPost inserts a system-authored post into the chat feed and
+// broadcasts the resulting post over the table's WebSocket hub. Used by
 // transition handlers (row.advanced, phase.changed, plan lifecycle, scene
-// ended, etc.) to mark phase transitions in the unified chat.
+// ended, etc.) and by future action-log emission points.
 //
-// rowNumber and planID are optional context that lets the client render and
-// jump-to the boundary; pass nil when not applicable. data is an optional
-// JSON-encodable payload stored as JSONB on the row; pass nil for none.
+// severity is the integer scale from model/severity.go — use SeverityBoundary
+// for structural anchors the Public Record sidebar jumps to (row.advanced,
+// scene.started, plan.prepared), and the lower tiers for log-only events.
 //
-// On error, the boundary is silently dropped — boundaries are
-// best-effort metadata, not load-bearing for game state, and we don't want
-// a chat-write failure to roll back the actual transition.
-func EmitBoundary(
+// rowNumber, planID, and sceneID are optional anchors used by the rail's
+// jump-to-anchor gestures; pass nil when not applicable. data is an
+// optional JSON-encodable payload stored as JSONB; its schema is determined
+// by systemCode.
+//
+// On error, the post is silently dropped — the chat log is best-effort
+// metadata, not load-bearing for game state, and we don't want a chat-write
+// failure to roll back the actual transition.
+func EmitSystemPost(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	gameID int64,
 	systemCode string,
+	severity int32,
 	body string,
 	rowNumber *int16,
 	planID *int64,
+	sceneID *int64,
 	data any,
 ) {
 	var raw []byte
@@ -140,11 +148,13 @@ func EmitBoundary(
 			return
 		}
 	}
-	post, err := q.CreateBoundaryPost(ctx, dbgen.CreateBoundaryPostParams{
+	post, err := q.CreateSystemPost(ctx, dbgen.CreateSystemPostParams{
 		GameID:     gameID,
 		Body:       body,
 		RowNumber:  rowNumber,
 		PlanID:     planID,
+		SceneID:    sceneID,
+		Severity:   severity,
 		SystemCode: &systemCode,
 		SystemData: raw,
 	})

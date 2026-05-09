@@ -259,6 +259,7 @@ func applyLiaiseDelayResult(
 			PlanID: planID,
 			Result: "cancelled",
 		})
+		EmitPlanResolved(ctx, q, manager, plan, "cancelled")
 		return
 	}
 
@@ -268,7 +269,12 @@ func applyLiaiseDelayResult(
 		RowNumber: targetRow,
 	})
 
+	// Refresh plan to get the updated row_number for the boundary anchor.
+	if refreshed, err := q.GetPlanByID(ctx, planID); err == nil {
+		plan = refreshed
+	}
 	broadcastEvent(manager, plan.GameID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
+	EmitPlanPrepared(ctx, q, manager, plan)
 }
 
 // ── requireRevealAccess ───────────────────────────────────────────────────────

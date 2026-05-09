@@ -630,6 +630,9 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 					AssetID: asset.ID,
 				})
 			}
+			if game, err := q.GetGameByID(ctx, asset.GameID); err == nil {
+				EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, game.CurrentRow)
+			}
 			respond(w, http.StatusOK, map[string]any{"torn": true, "destroyed": true})
 			return
 		}
@@ -672,6 +675,9 @@ func LeverageAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				PlayerID: player.ID,
 			})
 		}
+		if game, err := q.GetGameByID(r.Context(), asset.GameID); err == nil {
+			EmitAssetLeveraged(r.Context(), q, manager, asset.GameID, *asset, game.CurrentRow)
+		}
 
 		respond(w, http.StatusOK, map[string]any{"leveraged": true})
 	}
@@ -703,6 +709,9 @@ func RefreshAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			h.BroadcastEvent(model.EventAssetRefreshed, model.AssetIDPayload{
 				AssetID: asset.ID,
 			})
+		}
+		if game, err := q.GetGameByID(r.Context(), asset.GameID); err == nil {
+			EmitAssetRefreshed(r.Context(), q, manager, asset.GameID, *asset, game.CurrentRow)
 		}
 
 		respond(w, http.StatusOK, map[string]any{"leveraged": false})

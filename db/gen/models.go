@@ -321,11 +321,11 @@ type ScenePost struct {
 	AuthorID          *int64             `db:"author_id" json:"author_id"`
 	Body              string             `db:"body" json:"body"`
 	CreatedAt         pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	Kind              string             `db:"kind" json:"kind"`
-	Severity          *string            `db:"severity" json:"severity"`
 	SystemCode        *string            `db:"system_code" json:"system_code"`
 	SystemData        []byte             `db:"system_data" json:"system_data"`
 	SpeakingAsAssetID *int64             `db:"speaking_as_asset_id" json:"speaking_as_asset_id"`
+	Severity          int32              `db:"severity" json:"severity"`
+	SceneID           *int64             `db:"scene_id" json:"scene_id"`
 }
 
 type Secret struct {

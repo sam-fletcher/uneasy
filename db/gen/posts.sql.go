@@ -9,102 +9,12 @@ import (
 	"context"
 )
 
-const createBoundaryPost = `-- name: CreateBoundaryPost :one
-INSERT INTO scene_posts (
-  game_id, body, row_number, plan_id, kind, severity, system_code, system_data
-) VALUES ($1, $2, $3, $4, 'boundary', 'important', $5, $6)
-RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id
-`
-
-type CreateBoundaryPostParams struct {
-	GameID     int64   `db:"game_id" json:"game_id"`
-	Body       string  `db:"body" json:"body"`
-	RowNumber  *int16  `db:"row_number" json:"row_number"`
-	PlanID     *int64  `db:"plan_id" json:"plan_id"`
-	SystemCode *string `db:"system_code" json:"system_code"`
-	SystemData []byte  `db:"system_data" json:"system_data"`
-}
-
-func (q *Queries) CreateBoundaryPost(ctx context.Context, arg CreateBoundaryPostParams) (ScenePost, error) {
-	row := q.db.QueryRow(ctx, createBoundaryPost,
-		arg.GameID,
-		arg.Body,
-		arg.RowNumber,
-		arg.PlanID,
-		arg.SystemCode,
-		arg.SystemData,
-	)
-	var i ScenePost
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.RowNumber,
-		&i.PlanID,
-		&i.AuthorID,
-		&i.Body,
-		&i.CreatedAt,
-		&i.Kind,
-		&i.Severity,
-		&i.SystemCode,
-		&i.SystemData,
-		&i.SpeakingAsAssetID,
-	)
-	return i, err
-}
-
-const createLogPost = `-- name: CreateLogPost :one
-INSERT INTO scene_posts (
-  game_id, body, row_number, plan_id, kind, severity, system_code, system_data, author_id
-) VALUES ($1, $2, $3, $4, 'log', $5, $6, $7, $8)
-RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id
-`
-
-type CreateLogPostParams struct {
-	GameID     int64   `db:"game_id" json:"game_id"`
-	Body       string  `db:"body" json:"body"`
-	RowNumber  *int16  `db:"row_number" json:"row_number"`
-	PlanID     *int64  `db:"plan_id" json:"plan_id"`
-	Severity   *string `db:"severity" json:"severity"`
-	SystemCode *string `db:"system_code" json:"system_code"`
-	SystemData []byte  `db:"system_data" json:"system_data"`
-	AuthorID   *int64  `db:"author_id" json:"author_id"`
-}
-
-func (q *Queries) CreateLogPost(ctx context.Context, arg CreateLogPostParams) (ScenePost, error) {
-	row := q.db.QueryRow(ctx, createLogPost,
-		arg.GameID,
-		arg.Body,
-		arg.RowNumber,
-		arg.PlanID,
-		arg.Severity,
-		arg.SystemCode,
-		arg.SystemData,
-		arg.AuthorID,
-	)
-	var i ScenePost
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.RowNumber,
-		&i.PlanID,
-		&i.AuthorID,
-		&i.Body,
-		&i.CreatedAt,
-		&i.Kind,
-		&i.Severity,
-		&i.SystemCode,
-		&i.SystemData,
-		&i.SpeakingAsAssetID,
-	)
-	return i, err
-}
-
 const createPlayerMessage = `-- name: CreatePlayerMessage :one
 
 INSERT INTO scene_posts (
-  game_id, author_id, body, row_number, plan_id, kind, speaking_as_asset_id
-) VALUES ($1, $2, $3, $4, $5, 'message', $6)
-RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id
+  game_id, author_id, body, row_number, plan_id, scene_id, severity, speaking_as_asset_id
+) VALUES ($1, $2, $3, $4, $5, $6, 0, $7)
+RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id
 `
 
 type CreatePlayerMessageParams struct {
@@ -113,18 +23,19 @@ type CreatePlayerMessageParams struct {
 	Body              string `db:"body" json:"body"`
 	RowNumber         *int16 `db:"row_number" json:"row_number"`
 	PlanID            *int64 `db:"plan_id" json:"plan_id"`
+	SceneID           *int64 `db:"scene_id" json:"scene_id"`
 	SpeakingAsAssetID *int64 `db:"speaking_as_asset_id" json:"speaking_as_asset_id"`
 }
 
 // sqlc query file for the unified chat feed.
 //
-// scene_posts is one game-wide stream of three kinds of entries:
-//   - 'message'  : free-text written by a player (author_id required)
-//   - 'log'      : system-emitted action-log entry (severity required)
-//   - 'boundary' : system-emitted phase/row/plan/scene transition marker
+// scene_posts is one game-wide stream. Each row is either:
+//   - a player message (author_id NOT NULL, system_code NULL, severity 0)
+//   - a system post    (author_id NULL,    system_code NOT NULL, severity > 0)
 //
-// Reads are flat and chronological by id. row_number / plan_id / system_code
-// remain on each row as metadata that the client can use for "jump to" UI.
+// Severity is an integer scale (see model/severity.go for named constants).
+// row_number / plan_id / scene_id are optional anchors the client uses for
+// the "jump to" UI in the Public Record sidebar.
 //
 // scene_entries (the public-record one-line summaries) are unchanged here.
 func (q *Queries) CreatePlayerMessage(ctx context.Context, arg CreatePlayerMessageParams) (ScenePost, error) {
@@ -134,6 +45,7 @@ func (q *Queries) CreatePlayerMessage(ctx context.Context, arg CreatePlayerMessa
 		arg.Body,
 		arg.RowNumber,
 		arg.PlanID,
+		arg.SceneID,
 		arg.SpeakingAsAssetID,
 	)
 	var i ScenePost
@@ -145,11 +57,11 @@ func (q *Queries) CreatePlayerMessage(ctx context.Context, arg CreatePlayerMessa
 		&i.AuthorID,
 		&i.Body,
 		&i.CreatedAt,
-		&i.Kind,
-		&i.Severity,
 		&i.SystemCode,
 		&i.SystemData,
 		&i.SpeakingAsAssetID,
+		&i.Severity,
+		&i.SceneID,
 	)
 	return i, err
 }
@@ -186,47 +98,55 @@ func (q *Queries) CreateSceneEntry(ctx context.Context, arg CreateSceneEntryPara
 	return i, err
 }
 
-const listGameBoundaries = `-- name: ListGameBoundaries :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id FROM scene_posts
-WHERE game_id = $1 AND kind = 'boundary'
-ORDER BY id ASC
+const createSystemPost = `-- name: CreateSystemPost :one
+INSERT INTO scene_posts (
+  game_id, body, row_number, plan_id, scene_id, severity, system_code, system_data
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id
 `
 
-func (q *Queries) ListGameBoundaries(ctx context.Context, gameID int64) ([]ScenePost, error) {
-	rows, err := q.db.Query(ctx, listGameBoundaries, gameID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ScenePost{}
-	for rows.Next() {
-		var i ScenePost
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.RowNumber,
-			&i.PlanID,
-			&i.AuthorID,
-			&i.Body,
-			&i.CreatedAt,
-			&i.Kind,
-			&i.Severity,
-			&i.SystemCode,
-			&i.SystemData,
-			&i.SpeakingAsAssetID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type CreateSystemPostParams struct {
+	GameID     int64   `db:"game_id" json:"game_id"`
+	Body       string  `db:"body" json:"body"`
+	RowNumber  *int16  `db:"row_number" json:"row_number"`
+	PlanID     *int64  `db:"plan_id" json:"plan_id"`
+	SceneID    *int64  `db:"scene_id" json:"scene_id"`
+	Severity   int32   `db:"severity" json:"severity"`
+	SystemCode *string `db:"system_code" json:"system_code"`
+	SystemData []byte  `db:"system_data" json:"system_data"`
+}
+
+func (q *Queries) CreateSystemPost(ctx context.Context, arg CreateSystemPostParams) (ScenePost, error) {
+	row := q.db.QueryRow(ctx, createSystemPost,
+		arg.GameID,
+		arg.Body,
+		arg.RowNumber,
+		arg.PlanID,
+		arg.SceneID,
+		arg.Severity,
+		arg.SystemCode,
+		arg.SystemData,
+	)
+	var i ScenePost
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.RowNumber,
+		&i.PlanID,
+		&i.AuthorID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.SystemCode,
+		&i.SystemData,
+		&i.SpeakingAsAssetID,
+		&i.Severity,
+		&i.SceneID,
+	)
+	return i, err
 }
 
 const listGamePosts = `-- name: ListGamePosts :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id FROM scene_posts
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts
 WHERE game_id = $1
 ORDER BY id ASC
 `
@@ -248,11 +168,11 @@ func (q *Queries) ListGamePosts(ctx context.Context, gameID int64) ([]ScenePost,
 			&i.AuthorID,
 			&i.Body,
 			&i.CreatedAt,
-			&i.Kind,
-			&i.Severity,
 			&i.SystemCode,
 			&i.SystemData,
 			&i.SpeakingAsAssetID,
+			&i.Severity,
+			&i.SceneID,
 		); err != nil {
 			return nil, err
 		}
@@ -265,7 +185,7 @@ func (q *Queries) ListGamePosts(ctx context.Context, gameID int64) ([]ScenePost,
 }
 
 const listGamePostsAfter = `-- name: ListGamePostsAfter :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at, kind, severity, system_code, system_data, speaking_as_asset_id FROM scene_posts
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts
 WHERE game_id = $1 AND id > $2
 ORDER BY id ASC
 `
@@ -292,11 +212,11 @@ func (q *Queries) ListGamePostsAfter(ctx context.Context, arg ListGamePostsAfter
 			&i.AuthorID,
 			&i.Body,
 			&i.CreatedAt,
-			&i.Kind,
-			&i.Severity,
 			&i.SystemCode,
 			&i.SystemData,
 			&i.SpeakingAsAssetID,
+			&i.Severity,
+			&i.SceneID,
 		); err != nil {
 			return nil, err
 		}

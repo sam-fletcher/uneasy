@@ -361,9 +361,11 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Boundary post + WS broadcast.
 		row := scene.RowNumber
-		EmitBoundary(ctx, q, manager, gameRow.ID, "scene.started",
+		sceneID := scene.ID
+		EmitSystemPost(ctx, q, manager, gameRow.ID, "scene.started",
+			model.SeverityBoundary,
 			resolveSceneBannerText(ctx, q, &scene, player.DisplayName),
-			&row, nil,
+			&row, nil, &sceneID,
 			map[string]any{"scene_id": scene.ID})
 		if h, ok := manager.Get(gameRow.ID); ok {
 			h.BroadcastEvent(model.EventSceneStarted, model.SceneStartedPayload{

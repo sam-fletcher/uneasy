@@ -898,4 +898,5 @@ func clScheduleNewMeeting(
 	_ = saveResolutionData(ctx, deps.Q, newPlan.ID, newResData)
 
 	broadcastEvent(deps.Manager, originalPlan.GameID, model.EventPlanPrepared, model.PlanPayload{Plan: newPlan})
+	EmitPlanPrepared(ctx, deps.Q, deps.Manager, newPlan)
 }

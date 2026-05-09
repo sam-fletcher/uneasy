@@ -583,6 +583,7 @@ func synthesizeCounterDemand(
 		h.BroadcastEvent(model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 		h.BroadcastEvent(demandEventPrepared, model.PlanPayload{Plan: plan})
 	}
+	EmitPlanPrepared(ctx, deps.Q, deps.Manager, plan)
 	return &plan, "", 0
 }
 

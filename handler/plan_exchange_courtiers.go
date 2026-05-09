@@ -305,6 +305,7 @@ func acceptFairTrade(
 			Result: makeOutcome,
 		})
 	}
+	EmitPlanResolved(ctx, q, manager, *plan, makeOutcome)
 
 	respond(w, http.StatusOK, map[string]any{
 		"plan_id": plan.ID,

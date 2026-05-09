@@ -1,31 +1,25 @@
 -- sqlc query file for the unified chat feed.
 --
--- scene_posts is one game-wide stream of three kinds of entries:
---   - 'message'  : free-text written by a player (author_id required)
---   - 'log'      : system-emitted action-log entry (severity required)
---   - 'boundary' : system-emitted phase/row/plan/scene transition marker
+-- scene_posts is one game-wide stream. Each row is either:
+--   - a player message (author_id NOT NULL, system_code NULL, severity 0)
+--   - a system post    (author_id NULL,    system_code NOT NULL, severity > 0)
 --
--- Reads are flat and chronological by id. row_number / plan_id / system_code
--- remain on each row as metadata that the client can use for "jump to" UI.
+-- Severity is an integer scale (see model/severity.go for named constants).
+-- row_number / plan_id / scene_id are optional anchors the client uses for
+-- the "jump to" UI in the Public Record sidebar.
 --
 -- scene_entries (the public-record one-line summaries) are unchanged here.
 
 -- name: CreatePlayerMessage :one
 INSERT INTO scene_posts (
-  game_id, author_id, body, row_number, plan_id, kind, speaking_as_asset_id
-) VALUES ($1, $2, $3, $4, $5, 'message', $6)
+  game_id, author_id, body, row_number, plan_id, scene_id, severity, speaking_as_asset_id
+) VALUES ($1, $2, $3, $4, $5, $6, 0, $7)
 RETURNING *;
 
--- name: CreateBoundaryPost :one
+-- name: CreateSystemPost :one
 INSERT INTO scene_posts (
-  game_id, body, row_number, plan_id, kind, severity, system_code, system_data
-) VALUES ($1, $2, $3, $4, 'boundary', 'important', $5, $6)
-RETURNING *;
-
--- name: CreateLogPost :one
-INSERT INTO scene_posts (
-  game_id, body, row_number, plan_id, kind, severity, system_code, system_data, author_id
-) VALUES ($1, $2, $3, $4, 'log', $5, $6, $7, $8)
+  game_id, body, row_number, plan_id, scene_id, severity, system_code, system_data
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: ListGamePosts :many
@@ -36,11 +30,6 @@ ORDER BY id ASC;
 -- name: ListGamePostsAfter :many
 SELECT * FROM scene_posts
 WHERE game_id = $1 AND id > $2
-ORDER BY id ASC;
-
--- name: ListGameBoundaries :many
-SELECT * FROM scene_posts
-WHERE game_id = $1 AND kind = 'boundary'
 ORDER BY id ASC;
 
 -- name: CreateSceneEntry :one

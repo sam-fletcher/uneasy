@@ -13,7 +13,6 @@
 		listWars,
 	} from '$lib/api';
 	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse } from '$lib/api';
-	import PublicRecord from '$lib/components/PublicRecord.svelte';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
@@ -254,19 +253,10 @@
 		<p class="local-error">{error}</p>
 	{/if}
 
-	<!-- Two-column play surface -->
+	<!-- Play surface — single column. PublicRecord lives at the page level
+	     now (sibling to ChatPanel) so it can sit in its own grid column on
+	     wide desktop layouts. -->
 	<div class="play-surface">
-
-		<!-- Left: public record timeline -->
-		<aside class="record-panel">
-			<PublicRecord
-				rows={recordRows}
-				currentRow={game.current_row}
-				playerNames={playerNameMap}
-			/>
-		</aside>
-
-		<!-- Right: scene thread + input -->
 		<div class="scene-panel">
 			<div class="row-header">
 				<span>Row <strong>{game.current_row}</strong> of 13</span>
@@ -453,38 +443,14 @@
 	}
 
 	/* ── Play surface ────────────────────────────────────────────────────────── */
+	/* Single column. PublicRecord lives at the page level. */
 
 	.play-surface {
 		flex: 1;
-		display: grid;
-		grid-template-columns: 220px 1fr;
-		min-height: 0;
-		overflow: hidden;
-	}
-
-	@media (max-width: 600px) {
-		.play-surface {
-			grid-template-columns: 1fr;
-			grid-template-rows: 180px 1fr;
-		}
-	}
-
-	/* ── Public record panel ─────────────────────────────────────────────────── */
-
-	.record-panel {
-		border-right: 1px solid #2a2a2a;
-		padding: 0.75rem 0.6rem 0.75rem 0;
-		overflow: hidden;
 		display: flex;
 		flex-direction: column;
-	}
-
-	@media (max-width: 600px) {
-		.record-panel {
-			border-right: none;
-			border-bottom: 1px solid #2a2a2a;
-			padding: 0.5rem 0;
-		}
+		min-height: 0;
+		overflow: hidden;
 	}
 
 	/* ── Scene panel ─────────────────────────────────────────────────────────── */
@@ -492,9 +458,10 @@
 	.scene-panel {
 		display: flex;
 		flex-direction: column;
-		padding: 0.75rem 0 0 0.75rem;
+		padding: 0.75rem 0.5rem 0;
 		overflow: hidden;
 		min-height: 0;
+		flex: 1;
 	}
 
 	@media (max-width: 600px) {

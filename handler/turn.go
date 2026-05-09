@@ -159,8 +159,9 @@ func advanceRowInner(
 			CrossedEngrailed: crossed,
 		})
 	}
-	EmitBoundary(r.Context(), q, manager, game.ID, "row.advanced",
-		fmt.Sprintf("Row %d begins", newRow), &newRow, nil,
+	EmitSystemPost(r.Context(), q, manager, game.ID, "row.advanced",
+		model.SeverityBoundary,
+		fmt.Sprintf("Row %d begins", newRow), &newRow, nil, nil,
 		map[string]any{"row_number": newRow, "crossed_engrailed": crossed})
 
 	// Run the ranking update algorithm when crossing an engrailed line.
@@ -169,6 +170,9 @@ func advanceRowInner(
 		updatedRankings, rankErr := runRankingUpdate(r.Context(), q, game.ID)
 		if rankErr == nil && h != nil {
 			h.BroadcastEvent(model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: updatedRankings})
+		}
+		if rankErr == nil {
+			EmitRankingUpdated(r.Context(), q, manager, game.ID, newRow)
 		}
 	}
 
@@ -222,9 +226,14 @@ func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		row := game.CurrentRow
-		EmitBoundary(ctx, q, manager, game.ID, "scene.ended",
+		var sceneIDPtr *int64
+		if endedSceneID != 0 {
+			sceneIDPtr = &endedSceneID
+		}
+		EmitSystemPost(ctx, q, manager, game.ID, "scene.ended",
+			model.SeverityImportant,
 			fmt.Sprintf("%s ends the scene", player.DisplayName),
-			&row, nil,
+			&row, nil, sceneIDPtr,
 			map[string]any{"row_number": row, "player_id": player.ID, "scene_id": endedSceneID})
 
 		respond(w, http.StatusOK, map[string]any{
@@ -296,6 +305,9 @@ func RefreshAssets(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			}
 			if hasHub {
 				h.BroadcastEvent(model.EventAssetRefreshed, model.AssetIDPayload{AssetID: id})
+			}
+			if asset, err := q.GetAssetByID(ctx, id); err == nil {
+				EmitAssetRefreshed(ctx, q, manager, game.ID, asset, game.CurrentRow)
 			}
 		}
 

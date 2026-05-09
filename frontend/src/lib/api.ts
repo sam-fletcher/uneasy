@@ -168,26 +168,26 @@ export interface Secret {
 }
 
 /**
- * One entry in the unified chat feed. The same row can be a player message,
- * a system-emitted boundary marker (phase/row/scene transition), or — once
- * the action log lands — a player-action log entry.
+ * One entry in the unified chat feed. Two shapes:
  *
- * - kind='message'  : free-text, author_id is set, system fields are null.
- * - kind='boundary' : system-authored, system_code is set, severity is
- *                     'important', author_id is null.
- * - kind='log'      : action-log entry; author_id may be set to attribute the
- *                     action, severity reflects how prominently to render it.
+ * - **Player message**: `author_id != null`, `system_code == null`,
+ *   `severity == 0`. Always shown regardless of severity threshold.
+ * - **System post**: `author_id == null`, `system_code != null`, `severity > 0`.
+ *   Severity is an integer scale (see SEVERITY in lib/severity.ts);
+ *   `system_code` identifies the event class (`row.advanced`,
+ *   `scene.started`, `plan.prepared`, etc.) and indexes the schema of
+ *   `system_data`.
  */
 export interface ChatPost {
 	id: number;
 	game_id: number;
 	row_number: number | null;
 	plan_id: number | null;
+	scene_id: number | null;
 	author_id: number | null;
 	body: string;
 	created_at: string;
-	kind: 'message' | 'log' | 'boundary';
-	severity: 'minor' | 'default' | 'important' | null;
+	severity: number;
 	system_code: string | null;
 	system_data: unknown;
 	/** Asset the author is speaking as for this message; null = OOC / system. */

@@ -103,7 +103,7 @@
 	.home:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
 
 	main {
-		max-width: 900px;
+		max-width: 1500px;
 		margin: 0 auto;
 		padding: 1rem;
 	}

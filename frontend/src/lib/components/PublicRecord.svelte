@@ -1,26 +1,35 @@
 <!-- PublicRecord.svelte
-  Shows the 13-row public record timeline with scene entries (summaries)
-  and plan markers. Engrailed lines appear after rows 4, 8, and 12.
-  The current row is highlighted; past rows are dimmed.
+  Two-state public-record sidebar.
+
+  Collapsed (default): a thin vertical rail showing all 13 row pills, with
+  ★ glyphs between rows 4|5, 8|9, 12|13 marking the algorithmic ranking
+  updates. Past rows are dimmed; the current row is filled in the accent
+  colour; future rows are outlined. Rows that have ≥1 plan get a numeric
+  bubble at the top-right.
+
+  Expanded: shows plan chips and scene-entry summaries per row. Tapping
+  the rail toggles between the two states. (Animation, mobile overlay,
+  and jump-to-anchor wiring all land in later steps.)
+
+  See PUBLIC_RECORD_SIDEBAR_SPEC.md.
 -->
 <script lang="ts">
-	import type { RecordRow, SceneEntry, Plan } from '$lib/api';
+	import { onMount } from 'svelte';
+	import { fly } from 'svelte/transition';
+	import type { RecordRow, Plan } from '$lib/api';
 
 	interface Props {
 		rows: RecordRow[];
 		currentRow: number;
-		/** Map of player_id → display_name for attribution. */
+		/** Map of player_id → display_name for entry attribution. */
 		playerNames: Map<number, string>;
-		/** Called when the user clicks a row to jump the scene view there. */
-		onRowClick?: (rowNumber: number) => void;
 	}
 
-	const { rows, currentRow, playerNames, onRowClick }: Props = $props();
+	const { rows, currentRow, playerNames }: Props = $props();
 
-	// Rows after which engrailed lines appear (ranking update markers).
+	const TOTAL_ROWS = 13;
 	const ENGRAILED_AFTER = new Set([4, 8, 12]);
 
-	// Plan type labels — human-readable, used until the full plan UI arrives.
 	const PLAN_LABELS: Record<string, string> = {
 		exchange_courtiers:  'Exchange Courtiers',
 		make_introductions:  'Make Introductions',
@@ -33,175 +42,317 @@
 		spread_rumors:       'Spread Rumors',
 		propose_duel:        'Propose Duel',
 		host_festivity:      'Host Festivity',
+		clandestinely_liaise:'Clandestinely Liaise',
 	};
 
-	function planLabel(plan: Plan): string {
-		return PLAN_LABELS[plan.plan_type] ?? plan.plan_type;
-	}
+	const planLabel = (p: Plan) => PLAN_LABELS[p.plan_type] ?? p.plan_type;
+	const planStatusClass = (s: Plan['status']) =>
+		s === 'pending' ? 'plan-pending'
+			: s === 'resolving' ? 'plan-resolving'
+			: s === 'resolved' ? 'plan-resolved'
+			: s === 'cancelled' ? 'plan-cancelled' : '';
+	const authorName = (id: number) => playerNames.get(id) ?? '?';
 
-	function planStatusClass(status: Plan['status']): string {
-		switch (status) {
-			case 'pending':   return 'plan-pending';
-			case 'resolving': return 'plan-resolving';
-			case 'resolved':  return 'plan-resolved';
-			case 'cancelled': return 'plan-cancelled';
-			default:          return '';
-		}
-	}
+	// Index incoming rows by row_number so we can render a complete 1–13
+	// rail even before the backend has populated every row.
+	const rowMap = $derived(new Map(rows.map(r => [r.row_number, r])));
+	const rowAt = (n: number): RecordRow | undefined => rowMap.get(n);
+	const planCount = (n: number): number => rowAt(n)?.plans.length ?? 0;
+	const rowState = (n: number): 'past' | 'current' | 'future' =>
+		n < currentRow ? 'past' : n === currentRow ? 'current' : 'future';
 
-	function authorName(authorID: number): string {
-		return playerNames.get(authorID) ?? '?';
-	}
+	// ── Expand / collapse ─────────────────────────────────────────────────────
+	// At ≥1280px the panel is a permanent third column (no rail, no toggle).
+	// Below that, the rail collapses and the panel overlays on tap.
+	let userExpanded = $state(false);
+	// Initialize synchronously (not in onMount) so the first paint already
+	// reflects the right mode — otherwise wide-desktop loads briefly with
+	// neither rail (hidden by CSS at ≥1280) nor panel (would-be-rendered
+	// only after onMount flips isWide).
+	let isWide = $state(
+		typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
+	);
+	onMount(() => {
+		const mq = window.matchMedia('(min-width: 1280px)');
+		const sync = () => { isWide = mq.matches; };
+		mq.addEventListener('change', sync);
+		return () => mq.removeEventListener('change', sync);
+	});
+	const expanded = $derived(isWide || userExpanded);
+	const toggle = () => { userExpanded = !userExpanded; };
 </script>
 
-<div class="public-record">
-	<h3 class="record-heading">Public Record</h3>
+<!--
+  The rail is always rendered (it's the layout anchor for the grid column
+  on desktop and the visible strip on mobile). The expanded panel is added
+  on top when expanded:
+    - mobile: as a fixed overlay covering 75vw, with a tappable scrim
+    - desktop: as an in-flow sibling that hides the rail behind it,
+      sized to 320px so the grid column grows to match.
+-->
+<button
+	class="rail"
+	onclick={toggle}
+	aria-label="Expand public record"
+	aria-expanded={expanded}
+>
+	{#each Array(TOTAL_ROWS) as _, i}
+		{@const n = i + 1}
+		{@const count = planCount(n)}
+		<span class="rail-row" data-state={rowState(n)} aria-label="Row {n}">
+			<span class="rail-num">{n}</span>
+			{#if count > 0}
+				<span class="rail-bubble" aria-label="{count} plan{count === 1 ? '' : 's'}">{count}</span>
+			{/if}
+		</span>
+		{#if ENGRAILED_AFTER.has(n)}
+			<span class="rail-star" aria-hidden="true">★</span>
+		{/if}
+	{/each}
+</button>
 
-	{#if rows.length === 0}
-		<p class="empty-record">The public record has not started yet.</p>
-	{:else}
+{#if expanded}
+	<!-- Scrim: only rendered when overlay is in play (i.e. NOT at ≥1280
+	     where the panel is a permanent column). Tap to collapse. -->
+	{#if !isWide}
+		<div
+			class="scrim"
+			role="button"
+			tabindex="-1"
+			aria-label="Close public record"
+			onclick={toggle}
+			onkeydown={(e) => { if (e.key === 'Escape') toggle(); }}
+		></div>
+	{/if}
+
+	<aside
+		class="expanded"
+		class:permanent={isWide}
+		transition:fly={{ x: -320, duration: isWide ? 0 : 180 }}
+	>
+		<header class="exp-header">
+			<h3>Public Record</h3>
+			{#if !isWide}
+				<button class="collapse-btn" onclick={toggle} aria-label="Collapse public record">‹</button>
+			{/if}
+		</header>
+
 		<ol class="row-list">
-			{#each rows as row (row.row_number)}
-				<!-- Engrailed line: ranking update divider BEFORE each of rows 5, 9, 13 -->
-				{#if ENGRAILED_AFTER.has(row.row_number - 1)}
-					<li class="engrailed" aria-label="Ranking update">
-						<span class="engrailed-label">⁂ ranking update</span>
-					</li>
-				{/if}
-
+			{#each Array(TOTAL_ROWS) as _, i}
+				{@const n = i + 1}
+				{@const row = rowAt(n)}
 				<li
 					class="record-row"
-					class:current={row.row_number === currentRow}
-					class:past={row.row_number < currentRow}
-					class:future={row.row_number > currentRow}
+					data-state={rowState(n)}
 				>
-					<!-- Row number pill -->
-					<button
-						class="row-num"
-						onclick={() => onRowClick?.(row.row_number)}
-						title="Jump to row {row.row_number}"
-						aria-label="Row {row.row_number}"
-					>
-						{row.row_number}
-					</button>
-
+					<span class="row-num-pill">{n}</span>
 					<div class="row-content">
-						<!-- Plans scheduled on this row -->
-						{#each row.plans as plan (plan.id)}
-							<div class="plan-chip {planStatusClass(plan.status)}">
-								<span class="plan-name">{planLabel(plan)}</span>
-								<span class="plan-status">{plan.status}</span>
-							</div>
-						{/each}
-
-						<!-- Scene summaries (entries) -->
-						{#each row.entries as entry (entry.id)}
-							<p class="entry-line">
-								<span class="entry-author">{authorName(entry.author_id)}</span>
-								{entry.body}
-							</p>
-						{/each}
-
-						<!-- Placeholder for rows that have no content yet -->
-						{#if row.plans.length === 0 && row.entries.length === 0}
+						{#if row}
+							{#each row.plans as plan (plan.id)}
+								<div class="plan-chip {planStatusClass(plan.status)}">
+									<span class="plan-name">{planLabel(plan)}</span>
+									<span class="plan-status">{plan.status}</span>
+								</div>
+							{/each}
+							{#each row.entries as entry (entry.id)}
+								<p class="entry-line">
+									<span class="entry-author">{authorName(entry.author_id)}</span>
+									{entry.body}
+								</p>
+							{/each}
+							{#if row.plans.length === 0 && row.entries.length === 0}
+								<span class="row-empty">—</span>
+							{/if}
+						{:else}
 							<span class="row-empty">—</span>
 						{/if}
 					</div>
 				</li>
+
+				{#if ENGRAILED_AFTER.has(n)}
+					<li class="engrailed" aria-label="Ranking update">
+						<span class="engrailed-line"></span>
+						<span class="engrailed-star">★</span>
+						<span class="engrailed-line"></span>
+					</li>
+				{/if}
 			{/each}
 		</ol>
-	{/if}
-</div>
+	</aside>
+{/if}
 
 <style>
-	.public-record {
+	/* ── Rail (collapsed) ──────────────────────────────────────────────────── */
+
+	.rail {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		flex: 1;
-		min-height: 0;
-		overflow: hidden;
+		align-items: center;
+		gap: 2px;
+		width: 44px;
+		height: 100%;
+		padding: 6px 0;
+		background: none;
+		border: none;
+		border-right: 1px solid #2a2a2a;
+		cursor: pointer;
 	}
 
-	.record-heading {
+	@media (min-width: 1024px) {
+		.rail { width: 48px; }
+	}
+
+	/* At ≥1280px the rail goes away entirely — the permanent panel takes its place. */
+	@media (min-width: 1280px) {
+		.rail { display: none; }
+	}
+
+	.rail-row {
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		font-size: 0.78rem;
+		font-weight: 600;
+		flex-shrink: 0;
+	}
+
+	.rail-row[data-state="past"]    { color: #555; background: transparent; }
+	.rail-row[data-state="current"] { color: #1a1a1a; background: #c8a96e; box-shadow: 0 0 0 2px #e0c080; }
+	.rail-row[data-state="future"]  { color: #aaa; background: transparent; border: 1px solid #444; }
+
+	.rail-num { line-height: 1; }
+
+	.rail-bubble {
+		position: absolute;
+		top: -3px;
+		right: -4px;
+		min-width: 14px;
+		height: 14px;
+		padding: 0 3px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.6rem;
+		font-weight: 700;
+		color: #1a1a1a;
+		background: #e07070;
+		border-radius: 7px;
+		line-height: 1;
+	}
+
+	.rail-star {
+		font-size: 0.7rem;
+		color: #c8a96e;
+		opacity: 0.8;
+		line-height: 0.8;
+		margin: 1px 0;
+	}
+
+	/* The rail-hidden class is only used in overlay mode (the rail is in the
+	   DOM but we don't visually need it under the overlay). At ≥1280 the
+	   rail is gone entirely via the rule above. */
+
+	/* ── Scrim (overlay mode only) ──────────────────────────────────────────
+	   Used by both mobile and the 1024–1279 "narrow desktop" range, where
+	   the panel still opens as a fixed overlay. The scrim element is only
+	   *rendered* when !isWide, so we don't need a media query here. */
+
+	.scrim {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.4);
+		z-index: 90;
+		cursor: pointer;
+	}
+
+	/* ── Expanded view ─────────────────────────────────────────────────────── */
+
+	.expanded {
+		display: flex;
+		flex-direction: column;
+		background: #1a1a1a;
+		border-right: 1px solid #2a2a2a;
+		overflow: hidden;
+		/* Default (overlay mode, < 1280px): fixed slide-in from the left. */
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 75vw;
+		height: 100vh;
+		z-index: 100;
+	}
+
+	/* Permanent column mode at ≥1280: in-flow, sits in its own page-grid
+	   column. The .permanent class is applied by the component when isWide. */
+	.expanded.permanent {
+		position: relative;
+		top: auto;
+		left: auto;
+		width: 100%;
+		height: 100%;
+		z-index: auto;
+	}
+
+	.exp-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.5rem 0.6rem;
+		border-bottom: 1px solid #2a2a2a;
+		flex-shrink: 0;
+	}
+
+	.exp-header h3 {
+		margin: 0;
 		font-size: 0.8rem;
 		color: #c8a96e;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		margin: 0 0 0.5rem;
-		flex-shrink: 0;
 	}
 
-	.empty-record {
-		font-size: 0.85rem;
-		color: #555;
-		font-style: italic;
+	.collapse-btn {
+		background: none;
+		border: none;
+		color: #888;
+		font-size: 1.2rem;
+		cursor: pointer;
+		padding: 0.2rem 0.5rem;
+		min-width: 44px;
+		min-height: 44px;
+		line-height: 1;
 	}
 
 	.row-list {
 		list-style: none;
 		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0;
+		padding: 0.4rem 0.5rem;
 		overflow-y: auto;
 		flex: 1;
-		min-height: 0;
-	}
-
-	/* ── Engrailed divider ─────────────────────────────────────────────────── */
-
-	.engrailed {
 		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.3rem 0;
-		color: #c8a96e;
+		flex-direction: column;
+		gap: 0.2rem;
 	}
-
-	.engrailed::before,
-	.engrailed::after {
-		content: '';
-		flex: 1;
-		height: 1px;
-		background: linear-gradient(to right, transparent, #5a4a2a, transparent);
-	}
-
-	.engrailed-label {
-		font-size: 0.7rem;
-		white-space: nowrap;
-		color: #8a6a3a;
-		letter-spacing: 0.05em;
-	}
-
-	/* ── Record rows ───────────────────────────────────────────────────────── */
 
 	.record-row {
 		display: flex;
 		gap: 0.6rem;
 		align-items: flex-start;
-		padding: 0.3rem 0.4rem;
+		padding: 0.35rem 0.4rem;
 		border-radius: 4px;
-		transition: background 0.15s;
 	}
 
-	.record-row.current {
-		background: #2a2010;
-		border-left: 2px solid #c8a96e;
-		padding-left: 0.3rem;
-	}
+	.record-row[data-state="past"]    { opacity: 0.6; }
+	.record-row[data-state="current"] { background: #2a2010; border-left: 2px solid #c8a96e; padding-left: 0.3rem; }
+	.record-row[data-state="future"]  { opacity: 0.5; }
 
-	.record-row.past {
-		opacity: 0.6;
-	}
-
-	.record-row.future {
-		opacity: 0.4;
-	}
-
-	/* Row number pill / button */
-	.row-num {
+	.row-num-pill {
 		flex-shrink: 0;
 		width: 1.5rem;
 		height: 1.5rem;
@@ -213,27 +364,13 @@
 		border-radius: 50%;
 		background: #333;
 		color: #888;
-		cursor: pointer;
-		transition: background 0.15s, color 0.15s;
-		padding: 0;
-		border: none;
 	}
 
-	.record-row.current .row-num {
+	.record-row[data-state="current"] .row-num-pill {
 		background: #c8a96e;
 		color: #1a1a1a;
 	}
 
-	.row-num:hover {
-		background: #444;
-		color: #e8e4d9;
-	}
-
-	.record-row.current .row-num:hover {
-		background: #e0c080;
-	}
-
-	/* Row content area */
 	.row-content {
 		flex: 1;
 		display: flex;
@@ -241,8 +378,6 @@
 		gap: 0.2rem;
 		min-width: 0;
 	}
-
-	/* ── Plan chips ────────────────────────────────────────────────────────── */
 
 	.plan-chip {
 		display: inline-flex;
@@ -257,19 +392,11 @@
 	}
 
 	.plan-name { font-weight: 600; color: #e8e4d9; }
-
-	.plan-status {
-		color: #888;
-		font-size: 0.65rem;
-		text-transform: uppercase;
-	}
-
+	.plan-status { color: #888; font-size: 0.65rem; text-transform: uppercase; }
 	.plan-pending   { border-color: #666; }
 	.plan-resolving { border-color: #e0a040; background: #2a2010; }
 	.plan-resolved  { border-color: #6dbf7a; opacity: 0.7; }
 	.plan-cancelled { border-color: #555; opacity: 0.4; }
-
-	/* ── Scene entries ─────────────────────────────────────────────────────── */
 
 	.entry-line {
 		font-size: 0.82rem;
@@ -285,10 +412,29 @@
 		margin-right: 0.35em;
 	}
 
-	/* ── Empty row ─────────────────────────────────────────────────────────── */
-
 	.row-empty {
 		font-size: 0.75rem;
 		color: #444;
+	}
+
+	/* ── Engrailed divider in expanded view ────────────────────────────────── */
+
+	.engrailed {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.25rem 0;
+	}
+
+	.engrailed-line {
+		flex: 1;
+		height: 1px;
+		background: linear-gradient(to right, transparent, #5a4a2a, transparent);
+	}
+
+	.engrailed-star {
+		font-size: 0.85rem;
+		color: #c8a96e;
+		line-height: 1;
 	}
 </style>

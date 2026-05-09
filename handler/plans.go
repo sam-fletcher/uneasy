@@ -744,6 +744,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		broadcastEvent(manager, game.ID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
+		EmitPlanPrepared(ctx, q, manager, plan)
 
 		// Consume any pending counter-demand waiting on this player: the
 		// target of a previously marred demand deferred their free counter
@@ -991,6 +992,7 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			PlanID: plan.ID,
 			Result: resultStr,
 		})
+		EmitPlanResolved(ctx, q, manager, *plan, resultStr)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,

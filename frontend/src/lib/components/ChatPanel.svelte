@@ -9,11 +9,13 @@
 	  appears when the user taps the input box (matches Discord/Slack/iMessage).
 	- ≥1024px: always-open right column. No collapse toggle.
 
-	Three kinds of entries flow through the same feed:
-	- 'message'  — free-text from a player (author_id set).
-	- 'boundary' — system-emitted phase/row/scene markers; rendered as a divider.
-	- 'log'      — (future) action-log entries; rendered with a system glyph and
-	               severity-tinted background.
+	Two shapes of entry flow through the same feed:
+	- Player message: author_id != null, system_code == null, severity 0.
+	- System post:    author_id == null, system_code != null, severity > 0.
+	  The structural anchors the Public Record sidebar jumps to are
+	  severity = SEVERITY.BOUNDARY (100) with system_code in
+	  {row.advanced, scene.started, plan.prepared}; lower-severity
+	  system posts are action-log entries.
 
 	The parent owns the posts array and pushes new entries via WS; this
 	component is a controlled view + an input that POSTs new player messages.
@@ -29,6 +31,7 @@
 		type ScenePeerView,
 	} from '$lib/api';
 	import { playerColorByID, OOC_COLOR } from '$lib/playerColor';
+	import { SEVERITY } from '$lib/severity';
 
 	interface Props {
 		gameID: string | number;
@@ -178,15 +181,26 @@
 	);
 	const unreadCount = $derived(unreadPosts.length);
 	const hasImportantUnread = $derived(
-		unreadPosts.some(p => p.severity === 'important' || p.kind === 'boundary')
+		unreadPosts.some(p => p.severity >= SEVERITY.IMPORTANT)
+	);
+
+	// ── Severity threshold filter ─────────────────────────────────────────────
+	// Player messages (author_id != null) are always shown; the threshold
+	// only affects system posts. Default to DEFAULT (50) so trace and minor
+	// log noise is hidden until the user opts in.
+	let severityThreshold = $state<number>(SEVERITY.DEFAULT);
+
+	const visiblePosts = $derived(
+		posts.filter(p => p.author_id != null || p.severity >= severityThreshold)
 	);
 
 	// ── Latest message preview (for the collapsed strip) ──────────────────────
 	const latestPost = $derived(posts.length > 0 ? posts[posts.length - 1] : null);
 	const latestPreview = $derived.by(() => {
 		if (!latestPost) return 'No messages yet';
-		if (latestPost.kind === 'boundary') return latestPost.body;
-		if (latestPost.kind === 'log') return latestPost.body;
+		// System posts (no author) just show the body — boundaries and log
+		// entries are already self-contained sentences.
+		if (latestPost.author_id == null) return latestPost.body;
 		const author = playerName(latestPost.author_id);
 		return author ? `${author}: ${latestPost.body}` : latestPost.body;
 	});
@@ -283,6 +297,16 @@
 <aside class="panel" class:expanded aria-label="Chat">
 	<header class="panel-header">
 		<h2>Chat</h2>
+		<label class="severity-filter" title="Hide low-severity system events">
+			<span class="severity-label">Show:</span>
+			<select bind:value={severityThreshold}>
+				<option value={SEVERITY.TRACE}>All events</option>
+				<option value={SEVERITY.MINOR}>Minor and up</option>
+				<option value={SEVERITY.DEFAULT}>Default and up</option>
+				<option value={SEVERITY.IMPORTANT}>Important only</option>
+				<option value={SEVERITY.BOUNDARY}>Boundaries only</option>
+			</select>
+		</label>
 		<button
 			type="button"
 			class="collapse"
@@ -294,18 +318,20 @@
 	</header>
 
 	<div class="feed" bind:this={feedEl}>
-		{#if posts.length === 0}
-			<p class="empty">No messages yet. Say something.</p>
+		{#if visiblePosts.length === 0}
+			<p class="empty">
+				{posts.length === 0 ? 'No messages yet. Say something.' : 'No events match the current filter.'}
+			</p>
 		{:else}
-			{#each posts as post (post.id)}
-				{#if post.kind === 'boundary'}
+			{#each visiblePosts as post (post.id)}
+				{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
 					<div class="boundary" data-code={post.system_code}>
 						<span class="boundary-line"></span>
 						<span class="boundary-label">{post.body}</span>
 						<span class="boundary-line"></span>
 					</div>
-				{:else if post.kind === 'log'}
-					<div class="log" data-severity={post.severity ?? 'default'}>
+				{:else if post.author_id == null}
+					<div class="log" data-code={post.system_code} data-severity={post.severity}>
 						<span class="log-glyph" aria-hidden="true">•</span>
 						<span class="log-body">{post.body}</span>
 						<span class="log-time">{fmtTime(post.created_at)}</span>
@@ -502,6 +528,28 @@
 		min-width: 44px;
 		min-height: 44px;
 	}
+
+	.severity-filter {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.75rem;
+		color: #888;
+		margin-left: auto;
+		margin-right: 0.4rem;
+	}
+
+	.severity-filter select {
+		background: #1a1a1a;
+		color: #e8e4d9;
+		border: 1px solid #333;
+		border-radius: 3px;
+		padding: 0.2rem 0.3rem;
+		font-size: 0.75rem;
+		cursor: pointer;
+	}
+
+	.severity-label { color: #666; }
 
 	/* On desktop, hide the collapse button and the strip; the panel is the
 	   permanent right column. */

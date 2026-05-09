@@ -389,6 +389,7 @@ func applyMakeWarDelayResult(
 			PlanID: planID,
 			Result: "cancelled",
 		})
+		EmitPlanResolved(ctx, q, manager, plan, "cancelled")
 		return
 	}
 

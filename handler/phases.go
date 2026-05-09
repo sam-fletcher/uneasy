@@ -43,7 +43,9 @@ func broadcastPhaseChange(
 	if h, ok := manager.Get(gameID); ok {
 		h.BroadcastEvent(model.EventPhaseChanged, model.PhaseChangedPayload{Phase: phase})
 	}
-	EmitBoundary(ctx, q, manager, gameID, "phase.changed", phaseBoundaryLabel(phase), nil, nil,
+	EmitSystemPost(ctx, q, manager, gameID, "phase.changed",
+		model.SeverityBoundary,
+		phaseBoundaryLabel(phase), nil, nil, nil,
 		map[string]any{"phase": string(phase)})
 }
 
