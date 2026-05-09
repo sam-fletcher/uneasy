@@ -108,6 +108,8 @@ func GetPrologueRankingState(q *dbgen.Queries) http.HandlerFunc {
 // card must be a heart owned by the caller and not already locked into
 // a previously-resolved track. Adjusting commitments un-readies the
 // caller (Done → false).
+//
+//nolint:gocognit // Legitimate validation: track state, ownership, card suit, locking constraints
 func CommitTrackHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, q)
@@ -286,6 +288,8 @@ func SetPrologueDone(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Re-reads the game's prologue_ranking_step before doing any work so a
 // concurrent SetPrologueDone request that already resolved this track
 // is a no-op rather than a duplicate broadcast / persistence pass.
+//
+//nolint:funlen // Cohesive unit: recheck state, compute bright/grey, persist rankings, refund, advance step
 func resolveTrack(
 	ctx context.Context,
 	q *dbgen.Queries,

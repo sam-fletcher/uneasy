@@ -95,6 +95,13 @@ func validateSpeakingAs(
 	return 0, ""
 }
 
+// peerWithController pairs a peer asset ID with its assigned controller
+// during scene creation (nil = unclaimed focus-player non-MC peer).
+type peerWithController struct {
+	AssetID    int64
+	Controller *int64
+}
+
 // scenePeerView is the JSON shape returned alongside a scene response.
 type scenePeerView struct {
 	PeerAssetID        int64  `json:"peer_asset_id"`
@@ -121,6 +128,62 @@ func buildSceneResponse(ctx context.Context, q *dbgen.Queries, scene *dbgen.Scen
 	return sceneResponse{Scene: scene, Peers: views}, nil
 }
 
+// validateAndProcessScenePeers validates present peer IDs and returns their
+// processed form with assigned controllers. Returns a non-zero statusCode on
+// validation failure.
+func validateAndProcessScenePeers(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+	focusPlayerID int64,
+	peerIDs []int64,
+) ([]peerWithController, int, string) {
+	seen := make(map[int64]bool, len(peerIDs))
+	peers := make([]peerWithController, 0, len(peerIDs))
+
+	for _, pid := range peerIDs {
+		if seen[pid] {
+			continue
+		}
+		seen[pid] = true
+
+		asset, err := q.GetAssetByID(ctx, pid)
+		if err != nil {
+			return nil, http.StatusBadRequest, "present peer not found"
+		}
+		if asset.GameID != gameID {
+			return nil, http.StatusBadRequest, "peer is not part of this game"
+		}
+		if asset.AssetType != model.AssetPeer {
+			return nil, http.StatusBadRequest, "present_peer_ids must reference peer assets"
+		}
+		if asset.IsDestroyed {
+			return nil, http.StatusBadRequest, "peer is destroyed"
+		}
+		if asset.IsMainCharacter && asset.OwnerID == focusPlayerID {
+			// The focus player's main character is implicitly present.
+			return nil, http.StatusBadRequest,
+				"your main character is implicitly present; do not list it"
+		}
+
+		var controller *int64
+		switch {
+		case asset.OwnerID != focusPlayerID:
+			owner := asset.OwnerID
+			controller = &owner
+		case asset.IsMainCharacter:
+			// Already filtered above, but keep the rule explicit.
+			controller = &focusPlayerID
+		default:
+			// Focus-player peer that is NOT their main character → unclaimed.
+			controller = nil
+		}
+		peers = append(peers, peerWithController{AssetID: pid, Controller: controller})
+	}
+
+	return peers, 0, ""
+}
+
 // ── HTTP handlers ────────────────────────────────────────────────────────────
 
 // CreateScene handles POST /api/tables/{id}/scenes.
@@ -129,6 +192,8 @@ func buildSceneResponse(ctx context.Context, q *dbgen.Queries, scene *dbgen.Scen
 // in the game and no pending or resolving plans on the current row. The
 // server fills in `prompt` and `resolved_plan_id` based on the most
 // recently resolved plan on this row (if any).
+//
+//nolint:funlen,gocognit // HTTP handler with extensive validation logic
 func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameRow, player, ok := requireFocusPlayer(w, r, q)
@@ -226,56 +291,12 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Validate present peers and pre-compute their controllers.
-		focusPlayerID := player.ID
-		type peerWithController struct {
-			AssetID    int64
-			Controller *int64 // nil = unclaimed (focus-player non-MC peer)
-		}
-		seen := make(map[int64]bool, len(body.PresentPeerIDs))
-		peers := make([]peerWithController, 0, len(body.PresentPeerIDs))
-		for _, pid := range body.PresentPeerIDs {
-			if seen[pid] {
-				continue
-			}
-			seen[pid] = true
-
-			asset, err := q.GetAssetByID(ctx, pid)
-			if err != nil {
-				respondErr(w, http.StatusBadRequest, "present peer not found")
-				return
-			}
-			if asset.GameID != gameRow.ID {
-				respondErr(w, http.StatusBadRequest, "peer is not part of this game")
-				return
-			}
-			if asset.AssetType != model.AssetPeer {
-				respondErr(w, http.StatusBadRequest, "present_peer_ids must reference peer assets")
-				return
-			}
-			if asset.IsDestroyed {
-				respondErr(w, http.StatusBadRequest, "peer is destroyed")
-				return
-			}
-			if asset.IsMainCharacter && asset.OwnerID == focusPlayerID {
-				// The focus player's main character is implicitly present.
-				respondErr(w, http.StatusBadRequest,
-					"your main character is implicitly present; do not list it")
-				return
-			}
-
-			var controller *int64
-			switch {
-			case asset.OwnerID != focusPlayerID:
-				owner := asset.OwnerID
-				controller = &owner
-			case asset.IsMainCharacter:
-				// Already filtered above, but keep the rule explicit.
-				controller = &focusPlayerID
-			default:
-				// Focus-player peer that is NOT their main character → unclaimed.
-				controller = nil
-			}
-			peers = append(peers, peerWithController{AssetID: pid, Controller: controller})
+		peers, statusCode, errMsg := validateAndProcessScenePeers(
+			ctx, q, gameRow.ID, player.ID, body.PresentPeerIDs,
+		)
+		if statusCode != 0 {
+			respondErr(w, statusCode, errMsg)
+			return
 		}
 
 		// Look up the prompt + resolved plan id from the most recent
