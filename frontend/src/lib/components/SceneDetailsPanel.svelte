@@ -13,8 +13,10 @@
 <script lang="ts">
 	import {
 		claimScenePeer,
+		createRoll,
 		endScene,
 		type Asset,
+		type DiceRoll,
 		type Player,
 		type Scene,
 		type ScenePeerView,
@@ -33,6 +35,10 @@
 		isFocusPlayer: boolean;
 		/** Called once End Scene resolves so the parent can refetch state. */
 		onSceneEnded: () => void;
+		/** True when a dice roll is already in flight (hides the start-roll button). */
+		rollActive?: boolean;
+		/** Called when this panel creates a new free dice roll. */
+		onRollCreated?: (roll: DiceRoll) => void;
 	}
 
 	const {
@@ -44,6 +50,8 @@
 		currentPlayerID,
 		isFocusPlayer,
 		onSceneEnded,
+		rollActive = false,
+		onRollCreated = () => {},
 	}: Props = $props();
 
 	const timeLabels: Record<TimeElapsed, string> = {
@@ -99,6 +107,27 @@
 			claimError = e instanceof Error ? e.message : 'Could not take over.';
 		} finally {
 			busyAssetID = null;
+		}
+	}
+
+	// ── Dice roll (non-focus players only) ────────────────────────────────────
+	let showRollForm = $state(false);
+	let rollDifficulty = $state(3);
+	let rollingBusy = $state(false);
+	let rollError = $state('');
+
+	async function onStartRoll() {
+		if (rollingBusy || isFocusPlayer) return;
+		rollingBusy = true;
+		rollError = '';
+		try {
+			const { roll } = await createRoll(gameID, rollDifficulty);
+			onRollCreated(roll);
+			showRollForm = false;
+		} catch (e) {
+			rollError = e instanceof Error ? e.message : 'Could not start roll.';
+		} finally {
+			rollingBusy = false;
 		}
 	}
 
@@ -158,9 +187,6 @@
 			<AssetCardSelectable
 				asset={locationAsset}
 				ownerColor={colorFor(locationAsset.owner_id)}
-				ownerLabel={playerByID(locationAsset.owner_id)?.display_name
-					? `Owned by ${playerByID(locationAsset.owner_id)!.display_name}`
-					: undefined}
 			/>
 		</div>
 	{/if}
@@ -211,6 +237,46 @@
 				{endingScene ? '…' : 'End Scene'}
 			</button>
 			{#if endError}<span class="error inline">{endError}</span>{/if}
+		</div>
+	{:else if currentPlayerID != null && !rollActive}
+		<div class="end-bar">
+			{#if showRollForm}
+				<label class="roll-form-label">
+					Difficulty (1–6):
+					<input
+						type="number"
+						min="1"
+						max="6"
+						bind:value={rollDifficulty}
+						class="diff-input"
+					/>
+				</label>
+				<button
+					type="button"
+					class="end-btn"
+					onclick={onStartRoll}
+					disabled={rollingBusy}
+				>
+					{rollingBusy ? '…' : 'Start Roll'}
+				</button>
+				<button
+					type="button"
+					class="cancel-btn"
+					onclick={() => { showRollForm = false; }}
+					disabled={rollingBusy}
+				>
+					Cancel
+				</button>
+			{:else}
+				<button
+					type="button"
+					class="end-btn"
+					onclick={() => { showRollForm = true; }}
+				>
+					🎲 Start a dice roll
+				</button>
+			{/if}
+			{#if rollError}<span class="error inline">{rollError}</span>{/if}
 		</div>
 	{/if}
 </section>
@@ -327,6 +393,38 @@
 		cursor: pointer;
 	}
 	.end-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+	.cancel-btn {
+		padding: 0.5rem 0.85rem;
+		min-height: 44px;
+		border-radius: 5px;
+		border: 1px solid #4a4030;
+		background: #2a2a2a;
+		color: #c8a96e;
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.cancel-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+	.roll-form-label {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.85rem;
+		color: #c8a96e;
+	}
+
+	.diff-input {
+		width: 60px;
+		padding: 0.3rem 0.4rem;
+		min-height: 36px;
+		background: #2a2a2a;
+		border: 1px solid #555;
+		border-radius: 4px;
+		color: inherit;
+		font-size: 0.9rem;
+	}
 
 	.error { color: #e07070; font-size: 0.82rem; margin: 0; }
 	.error.inline { font-size: 0.78rem; }

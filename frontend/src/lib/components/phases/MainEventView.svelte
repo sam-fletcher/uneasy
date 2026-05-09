@@ -9,8 +9,7 @@
 	import { WAR_EVENTS } from '$lib/ws';
 	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
 	import {
-		createSceneEntry,
-		refreshAssets, passFocus, createRoll,
+		refreshAssets, passFocus,
 		listWars,
 	} from '$lib/api';
 	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse } from '$lib/api';
@@ -119,38 +118,9 @@
 			: null
 	);
 
-	// Local error string for non-chat actions (summary, end-scene, refresh,
-	// pass focus, start-roll). Chat errors live inside ChatPanel now.
+	// Local error string for non-chat actions (refresh, pass focus).
+	// Chat errors live inside ChatPanel now.
 	let error = $state('');
-
-	// ── Scene summary ─────────────────────────────────────────────────────────
-	let newSummaryBody = $state('');
-	let sendingSummary = $state(false);
-	let summaryOpen = $state(false);
-
-	async function submitSummary() {
-		const body = newSummaryBody.trim();
-		if (!body || sendingSummary) return;
-		sendingSummary = true;
-		error = '';
-		try {
-			const { entry } = await createSceneEntry(game.id, game.current_row, body);
-			newSummaryBody = '';
-			summaryOpen = false;
-			// Optimistic update — WS broadcast will also arrive but is deduplicated.
-			recordRows = recordRows.map(row =>
-				row.row_number === entry.row_number
-					? { ...row, entries: row.entries.find(e => e.id === entry.id)
-						? row.entries
-						: [...row.entries, entry] }
-					: row
-			);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not save summary.';
-		} finally {
-			sendingSummary = false;
-		}
-	}
 
 	// ── Focus-player action bar ───────────────────────────────────────────────
 
@@ -161,7 +131,11 @@
 	// Refresh-assets sub-step: which leveraged assets the player has selected.
 	let refreshable = $derived(assets.filter(a => a.owner_id === currentPlayerID && a.is_leveraged && !a.is_destroyed));
 	let selectedRefreshIDs = $state<Set<number>>(new Set());
-	let maxRefresh = $derived(game.current_row);
+	// Refresh cap: smaller of the current row number (per rules) and how many
+	// leveraged assets the focus player actually has.
+	let maxRefresh = $derived(Math.min(game.current_row, refreshable.length));
+	// Button label: how many assets the click would refresh right now.
+	let refreshButtonCount = $derived(selectedRefreshIDs.size > 0 ? selectedRefreshIDs.size : maxRefresh);
 
 	// Reset selections when assets or step changes.
 	$effect(() => {
@@ -205,11 +179,6 @@
 	$effect(() => {
 		if (!sceneEnded) actionTaken = false;
 	});
-
-	async function onSkipRefresh() {
-		// Player opts not to refresh any assets.
-		actionTaken = true;
-	}
 
 	async function onPassFocus() {
 		if (actionBusy) return;
@@ -278,28 +247,6 @@
 		actionTaken = true;
 	}
 
-	// ── Dice roll creation ────────────────────────────────────────────────────
-	let showRollForm = $state(false);
-	let rollDifficulty = $state(3);
-	let rollingBusy = $state(false);
-
-	async function onStartRoll() {
-		if (rollingBusy) return;
-		rollingBusy = true;
-		error = '';
-		try {
-			const { roll } = await createRoll(game.id, rollDifficulty);
-			activeRoll = roll;
-			activeRollDice = [];
-			activeRollVotes = [];
-			voteOpen = false;
-			showRollForm = false;
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not start roll.';
-		} finally {
-			rollingBusy = false;
-		}
-	}
 </script>
 
 <div class="main-event-view">
@@ -360,6 +307,8 @@
 					{currentPlayerID}
 					{isFocusPlayer}
 					onSceneEnded={onSceneRefresh}
+					{rollActive}
+					onRollCreated={onPlanRollCreated}
 				/>
 			{:else if !hasPlansToResolve && isFocusPlayer && !sceneEnded}
 				<SceneSetupForm
@@ -375,39 +324,6 @@
 					Waiting for {focusPlayerName ?? 'the focus player'} to set the scene…
 				</p>
 			{/if}
-
-			<div class="summary-bar">
-				{#if summaryOpen}
-					<div class="summary-form">
-						<textarea
-							placeholder="Write a one-line summary for the public record…"
-							bind:value={newSummaryBody}
-							rows={2}
-							disabled={sendingSummary}
-							onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitSummary(); } }}
-						></textarea>
-						<div class="summary-actions">
-							<button
-								class="primary"
-								onclick={submitSummary}
-								disabled={sendingSummary || !newSummaryBody.trim()}
-							>
-								{sendingSummary ? '…' : 'Add to Record'}
-							</button>
-							<button
-								class="text-btn"
-								onclick={() => { summaryOpen = false; newSummaryBody = ''; }}
-							>
-								Cancel
-							</button>
-						</div>
-					</div>
-				{:else}
-					<button class="summary-toggle" onclick={() => { summaryOpen = true; }}>
-						+ Add to public record
-					</button>
-				{/if}
-			</div>
 
 			<!-- ── Plan panel ───────────────────────────────────────────────── -->
 			<!--
@@ -447,34 +363,6 @@
 					{isFacilitator}
 					{actorLeverageBlocked}
 				/>
-			{:else if game.phase === 'main_event'}
-				<!-- Any player can initiate an in-scene roll -->
-				{#if showRollForm}
-					<div class="roll-start-form">
-						<label class="roll-form-label">
-							Difficulty (1–6):
-							<input
-								type="number"
-								min="1"
-								max="6"
-								bind:value={rollDifficulty}
-								class="diff-input"
-							/>
-						</label>
-						<div class="roll-form-actions">
-							<button class="action-btn primary" onclick={onStartRoll} disabled={rollingBusy}>
-								{rollingBusy ? '…' : 'Start Roll'}
-							</button>
-							<button class="action-btn secondary" onclick={() => { showRollForm = false; }}>
-								Cancel
-							</button>
-						</div>
-					</div>
-				{:else}
-					<button class="roll-init-btn" onclick={() => { showRollForm = true; }}>
-						🎲 Start a dice roll
-					</button>
-				{/if}
 			{/if}
 
 			<!-- ── Focus-player action bar ──────────────────────────────────── -->
@@ -494,7 +382,7 @@
 								<span class="action-label">Resolve the active plan above before acting.</span>
 							{:else}
 								<span class="action-label">
-									Prepare a plan (above) or: refresh up to {maxRefresh} asset{maxRefresh === 1 ? '' : 's'}, or skip
+									Prepare a plan (above) or refresh up to {maxRefresh} asset{maxRefresh === 1 ? '' : 's'}
 								</span>
 								{#if refreshable.length > 0}
 									<div class="refresh-picker">
@@ -511,24 +399,16 @@
 											</label>
 										{/each}
 									</div>
-									<div class="action-buttons">
-										<button
-											class="action-btn primary"
-											onclick={onRefreshAssets}
-											disabled={actionBusy || selectedRefreshIDs.size === 0}
-										>
-											{actionBusy ? '…' : `Refresh ${selectedRefreshIDs.size > 0 ? selectedRefreshIDs.size : ''} Asset${selectedRefreshIDs.size === 1 ? '' : 's'}`}
-										</button>
-										<button class="action-btn secondary" onclick={onSkipRefresh} disabled={actionBusy}>
-											Skip
-										</button>
-									</div>
-								{:else}
-									<p class="action-note">No leveraged assets to refresh.</p>
-									<button class="action-btn secondary" onclick={onSkipRefresh} disabled={actionBusy}>
-										Skip
-									</button>
 								{/if}
+								<div class="action-buttons">
+									<button
+										class="action-btn primary"
+										onclick={onRefreshAssets}
+										disabled={actionBusy || selectedRefreshIDs.size === 0}
+									>
+										{actionBusy ? '…' : `Refresh ${refreshButtonCount} Asset${refreshButtonCount === 1 ? '' : 's'}`}
+									</button>
+								</div>
 							{/if}
 						</div>
 
@@ -649,55 +529,6 @@
 		margin: 0.3rem 0;
 	}
 
-	textarea {
-		flex: 1;
-		font-size: 0.9rem;
-		padding: 0.5rem 0.7rem;
-		border-radius: 6px;
-		border: 1px solid #444;
-		background: #2a2a2a;
-		color: inherit;
-		font-family: inherit;
-		resize: none;
-		line-height: 1.4;
-	}
-
-	textarea:focus {
-		outline: 2px solid #c8a96e;
-		outline-offset: 1px;
-	}
-
-	/* ── Summary bar ─────────────────────────────────────────────────────────── */
-
-	.summary-bar {
-		flex-shrink: 0;
-		padding-top: 0.4rem;
-		border-top: 1px solid #222;
-	}
-
-	.summary-toggle {
-		background: none;
-		color: #8a6a3a;
-		font-size: 0.78rem;
-		padding: 0.25rem 0;
-		cursor: pointer;
-		text-decoration: underline dotted;
-	}
-
-	.summary-toggle:hover { color: #c8a96e; }
-
-	.summary-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-
-	.summary-actions {
-		display: flex;
-		gap: 0.75rem;
-		align-items: center;
-	}
-
 	/* ── Action bar ──────────────────────────────────────────────────────────── */
 
 	.action-bar {
@@ -746,12 +577,6 @@
 		color: #1a1a1a;
 	}
 
-	.action-btn.secondary {
-		background: #333;
-		color: #c8a96e;
-		border: 1px solid #4a4030;
-	}
-
 	.action-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
@@ -761,54 +586,6 @@
 		font-size: 0.82rem;
 		color: #666;
 		margin: 0;
-	}
-
-	/* Roll init */
-
-	.roll-init-btn {
-		background: none;
-		color: #8a6a3a;
-		font-size: 0.78rem;
-		padding: 0.25rem 0;
-		cursor: pointer;
-		text-decoration: underline dotted;
-		flex-shrink: 0;
-	}
-
-	.roll-init-btn:hover { color: #c8a96e; }
-
-	.roll-start-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		padding: 0.5rem;
-		border: 1px solid #4a3a20;
-		border-radius: 5px;
-		background: #1e1a10;
-		flex-shrink: 0;
-	}
-
-	.roll-form-label {
-		font-size: 0.82rem;
-		color: #c8a96e;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.diff-input {
-		width: 60px;
-		padding: 0.2rem 0.4rem;
-		background: #2a2a2a;
-		border: 1px solid #555;
-		border-radius: 4px;
-		color: inherit;
-		font-size: 0.9rem;
-	}
-
-	.roll-form-actions {
-		display: flex;
-		gap: 0.5rem;
 	}
 
 	/* Refresh asset picker */

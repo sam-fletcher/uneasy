@@ -88,12 +88,6 @@
 		selectedPeerIDs = next;
 	}
 
-	function ownerLabel(ownerID: number): string {
-		const p = players.find(pl => pl.id === ownerID);
-		if (!p) return '';
-		return p.id === focusPlayerID ? 'Your peer' : `${p.display_name}'s peer`;
-	}
-
 	function colorFor(ownerID: number): string {
 		return playerColor(players.find(p => p.id === ownerID));
 	}
@@ -148,7 +142,6 @@
 					<AssetCardSelectable
 						asset={h}
 						ownerColor={colorFor(h.owner_id)}
-						ownerLabel={ownerLabel(h.owner_id)}
 						selectable
 						selected={selectedHoldingID === h.id}
 						onToggle={selectHolding}
@@ -159,10 +152,9 @@
 
 		<div class="custom-panel" class:active={customLocation.trim() !== ''}>
 			<label>
-				<span class="custom-label">Custom location</span>
 				<input
 					type="text"
-					placeholder="e.g. an unmarked country road"
+					placeholder="Another location"
 					value={customLocation}
 					oninput={(e) => onCustomInput((e.target as HTMLInputElement).value)}
 					maxlength={80}
@@ -188,7 +180,7 @@
 		<input
 			type="text"
 			class="note"
-			placeholder="Optional note (e.g. ‘the morning after the feast’)"
+			placeholder="Another time"
 			bind:value={timeNote}
 			maxlength={120}
 		/>
@@ -204,7 +196,6 @@
 					<AssetCardSelectable
 						asset={peer}
 						ownerColor={colorFor(peer.owner_id)}
-						ownerLabel={ownerLabel(peer.owner_id)}
 						selectable
 						selected={selectedPeerIDs.has(peer.id)}
 						onToggle={togglePeer}

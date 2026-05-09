@@ -24,6 +24,12 @@ UPDATE assets SET name = $2 WHERE id = $1;
 -- name: SetMainCharacter :exec
 UPDATE assets SET is_main_character = $2 WHERE id = $1;
 
+-- name: GetMainCharacterByOwner :one
+-- Returns the player's main-character asset in this game, if any.
+SELECT * FROM assets
+WHERE game_id = $1 AND owner_id = $2 AND is_main_character = TRUE AND is_destroyed = FALSE
+LIMIT 1;
+
 -- name: ClearMainCharacter :exec
 -- Unset main character for all of a player's assets in a game.
 UPDATE assets SET is_main_character = FALSE

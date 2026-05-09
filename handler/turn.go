@@ -191,13 +191,26 @@ func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// If a scene is active, end it. We don't require an active scene
-		// here yet so the existing flow keeps working until the frontend
-		// always creates scenes first.
+		// If a scene is active, end it and write a public-record summary
+		// using the same "[main character] at [holding], [time later]" text
+		// as the scene-start banner. This replaces the old manual
+		// "+ Add to public record" button.
 		var endedSceneID int64
-		if active, err := loadActiveScene(r.Context(), q, game.ID); err == nil && active != nil {
-			if err := q.EndScene(r.Context(), active.ID); err == nil {
+		ctx := r.Context()
+		if active, err := loadActiveScene(ctx, q, game.ID); err == nil && active != nil {
+			if err := q.EndScene(ctx, active.ID); err == nil {
 				endedSceneID = active.ID
+				summary := resolveSceneBannerText(ctx, q, active, player.DisplayName)
+				if entry, err := q.CreateSceneEntry(ctx, dbgen.CreateSceneEntryParams{
+					GameID:    game.ID,
+					RowNumber: active.RowNumber,
+					AuthorID:  player.ID,
+					Body:      summary,
+				}); err == nil {
+					if h, ok := manager.Get(game.ID); ok {
+						h.BroadcastEvent(model.EventSceneEntryCreated, model.SceneEntryCreatedPayload{Entry: entry})
+					}
+				}
 			}
 		}
 
@@ -209,7 +222,7 @@ func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		row := game.CurrentRow
-		EmitBoundary(r.Context(), q, manager, game.ID, "scene.ended",
+		EmitBoundary(ctx, q, manager, game.ID, "scene.ended",
 			fmt.Sprintf("%s ends the scene", player.DisplayName),
 			&row, nil,
 			map[string]any{"row_number": row, "player_id": player.ID, "scene_id": endedSceneID})

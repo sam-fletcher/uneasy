@@ -267,6 +267,39 @@ func (q *Queries) GetAssetByID(ctx context.Context, id int64) (Asset, error) {
 	return i, err
 }
 
+const getMainCharacterByOwner = `-- name: GetMainCharacterByOwner :one
+SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets
+WHERE game_id = $1 AND owner_id = $2 AND is_main_character = TRUE AND is_destroyed = FALSE
+LIMIT 1
+`
+
+type GetMainCharacterByOwnerParams struct {
+	GameID  int64 `db:"game_id" json:"game_id"`
+	OwnerID int64 `db:"owner_id" json:"owner_id"`
+}
+
+// Returns the player's main-character asset in this game, if any.
+func (q *Queries) GetMainCharacterByOwner(ctx context.Context, arg GetMainCharacterByOwnerParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, getMainCharacterByOwner, arg.GameID, arg.OwnerID)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.OwnerID,
+		&i.CreatorID,
+		&i.AssetType,
+		&i.Name,
+		&i.IsMainCharacter,
+		&i.IsLeveraged,
+		&i.IsDestroyed,
+		&i.CreatedAt,
+		&i.DestroyedAt,
+		&i.LinkedCardSuit,
+		&i.LinkedCardValue,
+	)
+	return i, err
+}
+
 const getMarginaliaByID = `-- name: GetMarginaliaByID :one
 
 SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id FROM marginalia WHERE id = $1

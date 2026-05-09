@@ -33,6 +33,7 @@
 	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import RetinueView from '$lib/components/RetinueView.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
+	import { playerColorByID } from '$lib/playerColor';
 
 	const gameID = $derived(page.params.id as string);
 
@@ -759,7 +760,7 @@
 			</a>
 			<div class="members">
 				{#each members as member}
-					<button type="button" class="member" class:online={member.online} class:active={member.id === blockingPlayerID} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${member.id === blockingPlayerID ? ' (their turn)' : ''}`}>
+					<button type="button" class="member" class:online={member.online} class:active={member.id === blockingPlayerID} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${member.id === blockingPlayerID ? ' (their turn)' : ''}`} style:--member-color={playerColorByID(member.id, players)}>
 						<span class="dot"></span>
 						<span class="member-name">{member.display_name}</span>
 					</button>
@@ -1216,7 +1217,7 @@
 		flex-shrink: 0;
 	}
 
-	.member.online .dot { background: #6dbf7a; }
+	.member.online .dot { background: var(--member-color, #6dbf7a); }
 
 	.error {
 		color: #e07070;
