@@ -269,7 +269,7 @@ func mwApplyBreakAsset(
 		respondErr(w, http.StatusConflict, "marginalia is already torn")
 		return nil, nil, false
 	}
-	err = deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+	_, err = deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 		ID: m.ID, TornByID: &player.ID,
 	})
 	if err != nil {

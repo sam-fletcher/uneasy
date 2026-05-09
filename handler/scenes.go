@@ -141,11 +141,11 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var body struct {
-			LocationHoldingID *int64             `json:"location_holding_id"`
-			LocationCustom    string             `json:"location_custom"`
-			TimeElapsed       model.TimeElapsed  `json:"time_elapsed"`
-			TimeNote          string             `json:"time_note"`
-			PresentPeerIDs    []int64            `json:"present_peer_ids"`
+			LocationHoldingID *int64            `json:"location_holding_id"`
+			LocationCustom    string            `json:"location_custom"`
+			TimeElapsed       model.TimeElapsed `json:"time_elapsed"`
+			TimeNote          string            `json:"time_note"`
+			PresentPeerIDs    []int64           `json:"present_peer_ids"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")

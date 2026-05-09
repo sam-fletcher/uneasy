@@ -167,7 +167,7 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		if _, err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {

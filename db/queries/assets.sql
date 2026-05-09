@@ -43,6 +43,20 @@ UPDATE assets SET owner_id = $2 WHERE id = $1;
 -- name: DestroyAsset :exec
 UPDATE assets SET is_destroyed = TRUE, destroyed_at = now() WHERE id = $1;
 
+-- name: DestroyIfAllMarginaliaTorn :execrows
+-- Marks an asset destroyed iff none of its marginalia remain intact. The
+-- caller (the TearMarginalia handler) invokes this after a tear; a return
+-- of 1 means the tear completed the destruction, 0 means the asset still
+-- has at least one intact marginalium and survives. Composing the rule in
+-- a single statement keeps the "last tear destroys" invariant testable at
+-- the queries layer instead of buried in handler logic.
+UPDATE assets a
+SET is_destroyed = TRUE, destroyed_at = now()
+WHERE a.id = $1
+  AND a.is_destroyed = FALSE
+  AND EXISTS (SELECT 1 FROM marginalia m WHERE m.asset_id = a.id)
+  AND NOT EXISTS (SELECT 1 FROM marginalia m WHERE m.asset_id = a.id AND m.is_torn = FALSE);
+
 -- name: CountLeveragedAssets :one
 SELECT count(*) FROM assets
 WHERE owner_id = $1 AND is_leveraged = FALSE AND is_destroyed = FALSE;
@@ -69,8 +83,16 @@ SELECT * FROM marginalia WHERE asset_id = $1 ORDER BY position;
 -- name: UpdateMarginaliaText :exec
 UPDATE marginalia SET text = $2 WHERE id = $1;
 
--- name: TearMarginalia :exec
-UPDATE marginalia SET is_torn = TRUE, torn_at = now(), torn_by_id = $2 WHERE id = $1;
+-- name: TearMarginalia :execrows
+-- Tearing is one-shot — a torn marginalium cannot be torn again. The
+-- WHERE-clause guard makes the update idempotent at the SQL layer; callers
+-- treat a 0-row return as "already torn / no such marginalia". The
+-- handler also checks before calling for a friendlier error, but this
+-- guards direct query callers (tests, dev tooling) and races between two
+-- concurrent tearers.
+UPDATE marginalia
+SET is_torn = TRUE, torn_at = now(), torn_by_id = $2
+WHERE id = $1 AND is_torn = FALSE;
 
 -- name: ListIntactMarginalia :many
 SELECT * FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE ORDER BY position;

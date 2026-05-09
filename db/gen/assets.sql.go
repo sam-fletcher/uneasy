@@ -219,6 +219,29 @@ func (q *Queries) DestroyAsset(ctx context.Context, id int64) error {
 	return err
 }
 
+const destroyIfAllMarginaliaTorn = `-- name: DestroyIfAllMarginaliaTorn :execrows
+UPDATE assets a
+SET is_destroyed = TRUE, destroyed_at = now()
+WHERE a.id = $1
+  AND a.is_destroyed = FALSE
+  AND EXISTS (SELECT 1 FROM marginalia m WHERE m.asset_id = a.id)
+  AND NOT EXISTS (SELECT 1 FROM marginalia m WHERE m.asset_id = a.id AND m.is_torn = FALSE)
+`
+
+// Marks an asset destroyed iff none of its marginalia remain intact. The
+// caller (the TearMarginalia handler) invokes this after a tear; a return
+// of 1 means the tear completed the destruction, 0 means the asset still
+// has at least one intact marginalium and survives. Composing the rule in
+// a single statement keeps the "last tear destroys" invariant testable at
+// the queries layer instead of buried in handler logic.
+func (q *Queries) DestroyIfAllMarginaliaTorn(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, destroyIfAllMarginaliaTorn, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAssetByID = `-- name: GetAssetByID :one
 SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE id = $1
 `
@@ -599,8 +622,10 @@ func (q *Queries) SetMainCharacter(ctx context.Context, arg SetMainCharacterPara
 	return err
 }
 
-const tearMarginalia = `-- name: TearMarginalia :exec
-UPDATE marginalia SET is_torn = TRUE, torn_at = now(), torn_by_id = $2 WHERE id = $1
+const tearMarginalia = `-- name: TearMarginalia :execrows
+UPDATE marginalia
+SET is_torn = TRUE, torn_at = now(), torn_by_id = $2
+WHERE id = $1 AND is_torn = FALSE
 `
 
 type TearMarginaliaParams struct {
@@ -608,9 +633,18 @@ type TearMarginaliaParams struct {
 	TornByID *int64 `db:"torn_by_id" json:"torn_by_id"`
 }
 
-func (q *Queries) TearMarginalia(ctx context.Context, arg TearMarginaliaParams) error {
-	_, err := q.db.Exec(ctx, tearMarginalia, arg.ID, arg.TornByID)
-	return err
+// Tearing is one-shot — a torn marginalium cannot be torn again. The
+// WHERE-clause guard makes the update idempotent at the SQL layer; callers
+// treat a 0-row return as "already torn / no such marginalia". The
+// handler also checks before calling for a friendlier error, but this
+// guards direct query callers (tests, dev tooling) and races between two
+// concurrent tearers.
+func (q *Queries) TearMarginalia(ctx context.Context, arg TearMarginaliaParams) (int64, error) {
+	result, err := q.db.Exec(ctx, tearMarginalia, arg.ID, arg.TornByID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const transferAsset = `-- name: TransferAsset :exec

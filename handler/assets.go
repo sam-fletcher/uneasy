@@ -305,7 +305,7 @@ func tearAndReplaceOldMainCharacter(
 ) bool {
 	if decision.NeedsTear {
 		target := marginaliaByPosition(oldMargs, decision.TearPosition)
-		err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		_, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 			ID:       target.ID,
 			TornByID: &player.ID,
 		})
@@ -592,7 +592,7 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		if _, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {
@@ -619,20 +619,19 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 
-		// Check if all marginalia are now torn → destroy the asset.
-		intact, _ := q.CountIntactMarginalia(ctx, asset.ID)
-		if intact == 0 {
-			totalCount, _ := q.CountMarginalia(ctx, asset.ID)
-			if totalCount > 0 {
-				_ = q.DestroyAsset(ctx, asset.ID)
-				if h, ok := manager.Get(asset.GameID); ok {
-					h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{
-						AssetID: asset.ID,
-					})
-				}
-				respond(w, http.StatusOK, map[string]any{"torn": true, "destroyed": true})
-				return
+		// Check if that was the last intact marginalium → destroy the asset.
+		// DestroyIfAllMarginaliaTorn composes the "no intact remain" check
+		// and the flip into a single SQL statement; rows=1 means the tear
+		// just completed the destruction.
+		destroyedRows, _ := q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
+		if destroyedRows > 0 {
+			if h, ok := manager.Get(asset.GameID); ok {
+				h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{
+					AssetID: asset.ID,
+				})
 			}
+			respond(w, http.StatusOK, map[string]any{"torn": true, "destroyed": true})
+			return
 		}
 
 		respond(w, http.StatusOK, map[string]any{"torn": true, "destroyed": false})

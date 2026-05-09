@@ -619,7 +619,7 @@ func applyBreakPeer(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choic
 			continue
 		}
 		m := marginalia[0]
-		if err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		if _, err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 			ID:       m.ID,
 			TornByID: &choice.PlayerID,
 		}); err != nil {

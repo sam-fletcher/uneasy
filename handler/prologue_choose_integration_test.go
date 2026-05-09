@@ -4,6 +4,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -134,13 +135,16 @@ func TestValidatePlayerCanChoose(t *testing.T) {
 	})
 
 	t.Run("turn cap (3) enforced", func(t *testing.T) {
-		// Record 3 choices for player1
+		// Record 3 choices for player1. The schema has a unique index on
+		// (game_id, sheet_type, choice_name), so each turn needs a distinct
+		// name; the test only cares that *count* hits the cap, not which
+		// names were used.
 		for i := int16(1); i <= 3; i++ {
 			_, err := q.CreatePrologueChoice(ctx, dbgen.CreatePrologueChoiceParams{
 				GameID:     game.ID,
 				PlayerID:   player1.ID,
 				SheetType:  gamepkg.PrologueSheetTitles,
-				ChoiceName: "TestChoice",
+				ChoiceName: fmt.Sprintf("TestChoice%d", i),
 				TurnNumber: i,
 			})
 			require.NoError(t, err)

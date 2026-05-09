@@ -42,25 +42,65 @@ golangci-lint run ./...
 
 # Build (without Docker)
 go build ./cmd/server
-
-# Test (none yet — coming in later phases)
-go test ./...
 ```
+
+## Running tests
+
+The suite is split into two layers:
+
+- **Unit tests** — no DB, no env. Just `make test` (or `go test ./...`).
+- **Integration tests** — guarded by the `integration` build tag. They talk
+  to a real Postgres and TRUNCATE all user tables between cases, so they
+  must point at a dedicated test database — never a dev or prod one.
+
+Common commands:
+
+```bash
+make test               # fast unit tests
+make test-integration   # needs Postgres; see "Test database" below
+make vet                # go vet, both with and without the integration tag
+make check-frontend     # svelte-check on the frontend
+make check-fast         # vet + unit + frontend (no DB needed)
+make check              # everything, including integration
+```
+
+`make check` is the pre-commit gate. Use `make check-fast` if you don't
+have Postgres up.
+
+### Test database
+
+When the dev stack is running (`docker compose up -d`) the Postgres
+container exposes 5432 on the host. Create a one-time test database
+beside your dev one:
+
+```bash
+docker exec uneasy-db-1 psql -U uneasy -d postgres \
+  -c "CREATE DATABASE uneasy_test;"
+```
+
+The Make targets default `TEST_DATABASE_URL` to that local instance.
+Override it via `make test-integration TEST_DATABASE_URL=...` or by
+exporting the variable.
+
+### Known-failing tests
+
+A handful of pre-existing integration tests fail on a fresh checkout —
+mostly individual test bugs (missing FK fields on `CreatePlanToken`,
+off-by-one secret-count assertions, etc.) rather than real regressions.
+Tracked separately; if `make test-integration` shows red, check whether
+your failing tests overlap with this list before assuming it's your
+change.
 
 ## Generating typed SQL (sqlc)
 
 The `db/queries/*.sql` files define queries that `sqlc` compiles to typed Go.
-For Phase 1, `db/store.go` implements these by hand. When ready to switch:
 
 ```bash
 # Install sqlc
 go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 
-# Generate — outputs to db/gen/
-sqlc generate
+make sqlc      # regenerates db/gen/ from queries + migrations
 ```
-
-Then replace the manual functions in `db/store.go` with calls to `db/gen/`.
 
 ## Project layout
 

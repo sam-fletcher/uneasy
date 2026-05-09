@@ -90,12 +90,12 @@ func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		post, err := q.CreatePlayerMessage(r.Context(), dbgen.CreatePlayerMessageParams{
-			GameID:             gameID,
-			AuthorID:           &player.ID,
-			Body:               body.Body,
-			RowNumber:          nil,
-			PlanID:             nil,
-			SpeakingAsAssetID:  speakingAs,
+			GameID:            gameID,
+			AuthorID:          &player.ID,
+			Body:              body.Body,
+			RowNumber:         nil,
+			PlanID:            nil,
+			SpeakingAsAssetID: speakingAs,
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not save post")

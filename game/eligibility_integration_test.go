@@ -188,6 +188,40 @@ func gameRandSuffix() string {
 	return s
 }
 
+// makePlanWithToken creates a Plan plus a matching plan_token in one go.
+// Together these represent "this player has prepared a plan of this
+// type/category" — the eligibility checks read the tokens on the shield,
+// but plan_tokens.plan_id is NOT NULL so we can't insert a token without
+// a real plan to point at.
+func makePlanWithToken(
+	t *testing.T,
+	q *dbgen.Queries,
+	game *dbgen.Game,
+	preparer *dbgen.Player,
+	planType model.PlanType,
+	category model.RankingCategory,
+) {
+	t.Helper()
+	ctx := context.Background()
+	plan, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID:        game.ID,
+		PlanType:      planType,
+		Category:      category,
+		PreparerID:    preparer.ID,
+		RowNumber:     game.CurrentRow,
+		RowOrder:      0,
+		PreparedAtRow: game.CurrentRow,
+	})
+	require.NoError(t, err)
+	_, err = q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
+		GameID:   game.ID,
+		PlanType: planType,
+		PlayerID: preparer.ID,
+		PlanID:   plan.ID,
+	})
+	require.NoError(t, err)
+}
+
 // ─ CheckPlanEligible Tests ─────────────────────────────────────────────────
 
 func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
@@ -197,12 +231,8 @@ func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
 	ctx := context.Background()
 
 	// Player 0 (rank 1 = highest) prepares Make Demands (Power category)
-	_, err := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
-		GameID:   tg.Game.ID,
-		PlanType: model.PlanMakeDemands,
-		PlayerID: tg.Players[0].ID,
-	})
-	require.NoError(t, err)
+	makePlanWithToken(t, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, model.CategoryPower)
 
 	// Player 0 tries to prepare another Make Demands plan → should be rejected
 	eligible, msg, err := CheckPlanEligible(ctx, q, tg.Game.ID, tg.Players[0].ID,
@@ -220,12 +250,8 @@ func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {
 	ctx := context.Background()
 
 	// Player 0 (rank 1 = highest) has token on Make Demands
-	_, err := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
-		GameID:   tg.Game.ID,
-		PlanType: model.PlanMakeDemands,
-		PlayerID: tg.Players[0].ID,
-	})
-	require.NoError(t, err)
+	makePlanWithToken(t, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, model.CategoryPower)
 
 	// Player 1 (rank 2) tries to prepare Make Demands → should be rejected
 	// because a higher-ranked (lower rank number) player has the token
@@ -237,35 +263,6 @@ func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {
 	assert.Contains(t, msg, "higher-ranked player")
 }
 
-func TestCheckPlanEligible_SameRankCanPrepare(t *testing.T) {
-	pool := openGameTestDB(t)
-	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 3)
-	ctx := context.Background()
-
-	// Player 0 (rank 1) has token on Make Demands
-	_, err := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
-		GameID:   tg.Game.ID,
-		PlanType: model.PlanMakeDemands,
-		PlayerID: tg.Players[0].ID,
-	})
-	require.NoError(t, err)
-
-	// Player 1 (rank 2) is eligible because no one with rank better than 2 has it
-	eligible, msg, err := CheckPlanEligible(ctx, q, tg.Game.ID, tg.Players[1].ID,
-		model.PlanMakeDemands, model.CategoryPower)
-
-	require.NoError(t, err)
-	assert.True(t, eligible, "Player 1 should be eligible; msg: %s", msg)
-
-	// Player 2 (rank 3) is also eligible
-	eligible, msg, err = CheckPlanEligible(ctx, q, tg.Game.ID, tg.Players[2].ID,
-		model.PlanMakeDemands, model.CategoryPower)
-
-	require.NoError(t, err)
-	assert.True(t, eligible, "Player 2 should be eligible; msg: %s", msg)
-}
-
 func TestCheckPlanEligible_LowerRankedPlayerHasToken(t *testing.T) {
 	pool := openGameTestDB(t)
 	q := dbgen.New(pool)
@@ -273,12 +270,8 @@ func TestCheckPlanEligible_LowerRankedPlayerHasToken(t *testing.T) {
 	ctx := context.Background()
 
 	// Player 2 (rank 3 = lowest) has token on Make Demands
-	_, err := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
-		GameID:   tg.Game.ID,
-		PlanType: model.PlanMakeDemands,
-		PlayerID: tg.Players[2].ID,
-	})
-	require.NoError(t, err)
+	makePlanWithToken(t, q, &tg.Game, &tg.Players[2],
+		model.PlanMakeDemands, model.CategoryPower)
 
 	// Player 0 (rank 1 = highest) should be eligible because rank 3 is lower
 	eligible, msg, err := CheckPlanEligible(ctx, q, tg.Game.ID, tg.Players[0].ID,
@@ -458,7 +451,7 @@ func TestHasEsteemLockout_ActiveLockout(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set resolution data with EsteemLockout = true
-	resData := map[string]interface{}{"EsteemLockout": true}
+	resData := map[string]interface{}{"esteem_lockout": true}
 	resDataBytes, _ := json.Marshal(resData)
 	resDataStr := string(resDataBytes)
 	err = q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{
@@ -491,7 +484,7 @@ func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	resData1 := map[string]interface{}{"EsteemLockout": true}
+	resData1 := map[string]interface{}{"esteem_lockout": true}
 	resDataBytes1, _ := json.Marshal(resData1)
 	resDataStr1 := string(resDataBytes1)
 	err = q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{
@@ -542,7 +535,7 @@ func TestHasEsteemLockout_MultipleEsteemPlans(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		resData := map[string]interface{}{"EsteemLockout": true}
+		resData := map[string]interface{}{"esteem_lockout": true}
 		resDataBytes, _ := json.Marshal(resData)
 		resDataStr := string(resDataBytes)
 		err = q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{

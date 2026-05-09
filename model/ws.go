@@ -18,10 +18,10 @@ const (
 	EventPlayerJoined = "player.joined"
 
 	// Phase 2: Game state
-	EventPhaseChanged = "phase.changed"
-	EventFocusChanged = "focus.changed"
-	EventRowAdvanced  = "row.advanced"
-	EventSceneEnded   = "scene.ended"
+	EventPhaseChanged     = "phase.changed"
+	EventFocusChanged     = "focus.changed"
+	EventRowAdvanced      = "row.advanced"
+	EventSceneEnded       = "scene.ended"
 	EventSceneStarted     = "scene.started"
 	EventScenePeerClaimed = "scene.peer_claimed"
 

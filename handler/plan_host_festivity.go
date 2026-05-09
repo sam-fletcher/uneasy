@@ -658,7 +658,7 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 		return errors.New("no intact marginalia to tear")
 	}
 	m := marg[0]
-	err = fc.deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+	_, err = fc.deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 		ID: m.ID, TornByID: &fc.actingPlayerID,
 	})
 	if err != nil {

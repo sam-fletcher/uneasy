@@ -32,10 +32,6 @@
 	const isTitles = $derived(sheet.type === 'titles');
 	const isLawsRumors = $derived(sheet.type === 'laws_rumors');
 
-	let assetText = $state(`[${choice.name}]`);
-	let marginaliumText = $state(`[${choice.name}]`);
-	let lawOrRumorText = $state(`[${choice.name}]`);
-
 	type CardSlot = {
 		suit: string;
 		value: string;
@@ -49,16 +45,34 @@
 		return cards.some(c => c.card_suit === suit && c.card_value === value);
 	}
 
-	let cardSlots = $state<CardSlot[]>(
-		choice.cards.map(c => ({
+	// Editable form state. Initialized empty and seeded by the effect below
+	// so the seed re-runs if the parent ever reuses this modal for a
+	// different choice (Svelte 5 was warning that $state(propValue) only
+	// captures the initial prop value, not a reactive reference).
+	let assetText = $state('');
+	let marginaliumText = $state('');
+	let lawOrRumorText = $state('');
+	let cardSlots = $state<CardSlot[]>([]);
+
+	// Reset the form whenever the choice changes (including on first mount).
+	// Tracking the choice name lets us avoid clobbering user edits on
+	// unrelated re-renders that pass the same choice through.
+	let seededFor = '';
+	$effect(() => {
+		if (seededFor === choice.name) return;
+		assetText = `[${choice.name}]`;
+		marginaliumText = `[${choice.name}]`;
+		lawOrRumorText = `[${choice.name}]`;
+		cardSlots = choice.cards.map(c => ({
 			suit: c.suit,
 			value: c.value,
 			isTake: isCardTaken(c.suit, c.value),
 			suggestions: [],
 			picked: '',
 			custom: '',
-		}))
-	);
+		}));
+		seededFor = choice.name;
+	});
 
 	let loadingSuggestions = $state(true);
 	let submitting = $state(false);

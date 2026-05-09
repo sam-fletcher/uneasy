@@ -284,7 +284,7 @@ func TestTearMarginalia_PartialTear(t *testing.T) {
 
 	// Tear first marginalia
 	tornByID := tg.Players[0].ID
-	err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+	_, err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 		ID:       m1.ID,
 		TornByID: &tornByID,
 	})
@@ -330,18 +330,69 @@ func TestTearMarginalia_DestroyOnLastTorn(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Tear the only marginalia → should destroy asset
+	// Tear the only marginalia, then run the composition the handler runs:
+	// DestroyIfAllMarginaliaTorn flips is_destroyed iff no intact marginalia
+	// remain. With one marginalium torn and none intact, it should fire.
 	tornByID := tg.Players[0].ID
-	err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+	_, err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 		ID:       m1.ID,
 		TornByID: &tornByID,
 	})
 	require.NoError(t, err)
 
-	// Verify asset was destroyed
-	destroyed, err := q.GetAssetByID(ctx, asset.ID)
-	require.Error(t, err, "asset should be destroyed")
-	assert.Nil(t, destroyed)
+	rows, err := q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), rows, "last tear should destroy the asset")
+
+	// is_destroyed is a soft-delete flag — the row still exists. Verify
+	// the flag flipped and destroyed_at is populated.
+	updated, err := q.GetAssetByID(ctx, asset.ID)
+	require.NoError(t, err)
+	assert.True(t, updated.IsDestroyed)
+	assert.True(t, updated.DestroyedAt.Valid)
+}
+
+// Tearing one of several marginalia must NOT destroy the asset — the
+// guard inside DestroyIfAllMarginaliaTorn checks that no intact ones
+// remain. This is the inverse of the test above; together they pin both
+// branches of the composition.
+func TestDestroyIfAllMarginaliaTorn_LeavesAssetWhenSomeRemain(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID:    tg.Game.ID,
+		OwnerID:   tg.Players[0].ID,
+		CreatorID: tg.Players[0].ID,
+		AssetType: model.AssetPeer,
+		Name:      "Ally",
+	})
+	require.NoError(t, err)
+
+	m1, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: asset.ID, Position: 1, Text: "First",
+	})
+	require.NoError(t, err)
+	_, err = q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: asset.ID, Position: 2, Text: "Second",
+	})
+	require.NoError(t, err)
+
+	tornByID := tg.Players[0].ID
+	_, err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		ID: m1.ID, TornByID: &tornByID,
+	})
+	require.NoError(t, err)
+
+	rows, err := q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), rows, "asset must survive while any marginalium is intact")
+
+	updated, err := q.GetAssetByID(ctx, asset.ID)
+	require.NoError(t, err)
+	assert.False(t, updated.IsDestroyed)
 }
 
 func TestTearMarginalia_RejectsTwiceTorn(t *testing.T) {
@@ -367,20 +418,24 @@ func TestTearMarginalia_RejectsTwiceTorn(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Tear once
+	// Tear once — should affect one row.
 	tornByID := tg.Players[0].ID
-	err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+	rows, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 		ID:       m.ID,
 		TornByID: &tornByID,
 	})
 	require.NoError(t, err)
+	assert.Equal(t, int64(1), rows)
 
-	// Try to tear again (should fail)
-	err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+	// A second tear is a guarded no-op: the WHERE clause filters out the
+	// already-torn row, so the query returns no error but updates 0 rows.
+	// Callers (handlers) treat 0 as "already torn".
+	rows, err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 		ID:       m.ID,
 		TornByID: &tornByID,
 	})
-	require.Error(t, err, "cannot tear already-torn marginalia")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), rows, "double-tear should be a no-op")
 }
 
 // ── Leverage / Refresh Tests ────────────────────────────────────────────────
@@ -652,11 +707,11 @@ func TestSecret_WriterTracking(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, tg.Players[1].ID, secret2.AuthorID)
 
-	// Verify both are linked to asset
-	secrets, err := q.ListVisibleSecrets(ctx, dbgen.ListVisibleSecretsParams{
-		AssetID:  asset.ID,
-		PlayerID: tg.Players[0].ID,
-	})
+	// Both secrets are linked to the asset. The point of this test is the
+	// author_id round-trip (already asserted above), not the visibility
+	// model — ListSecretsByAsset returns the raw rows regardless of who
+	// can see them.
+	secrets, err := q.ListSecretsByAsset(ctx, asset.ID)
 	require.NoError(t, err)
 	assert.Len(t, secrets, 2)
 }

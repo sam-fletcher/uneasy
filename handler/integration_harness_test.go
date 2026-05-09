@@ -164,6 +164,10 @@ func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
 			ID: p.ID, SeatOrder: &seat,
 		})
 		require.NoError(t, err)
+		// CreatePlayer returned `p` before SetPlayerSeatOrder ran, so its
+		// SeatOrder field is nil. Mirror the update on the local copy so
+		// callers see the post-update state without an extra DB round-trip.
+		p.SeatOrder = &seat
 		players[i] = p
 	}
 	err = q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{

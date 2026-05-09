@@ -19,6 +19,7 @@
 	doesn't know about leverage / tearing. For those, see AssetCard.svelte.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { Asset } from '$lib/api';
 
 	interface Props {
@@ -48,7 +49,11 @@
 		defaultExpanded = false,
 	}: Props = $props();
 
-	let expanded = $state(defaultExpanded);
+	// `defaultExpanded` is intentionally a one-shot initial-value hint, not a
+	// live binding — once the user toggles the card we want their state to
+	// stick even if the parent passes a new default. `untrack` makes that
+	// intent explicit and silences the state_referenced_locally warning.
+	let expanded = $state(untrack(() => defaultExpanded));
 
 	const typeLabels: Record<Asset['asset_type'], string> = {
 		peer: 'Peer',

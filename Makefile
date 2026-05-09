@@ -1,4 +1,5 @@
-.PHONY: build frontend server placeholder clean
+.PHONY: build frontend server placeholder clean \
+        test test-integration vet check-frontend check sqlc
 
 # Full build: compile the frontend and produce a single Go binary that
 # embeds it. Output: ./server
@@ -25,3 +26,39 @@ clean:
 	rm -f server
 	mkdir -p cmd/server/frontend_dist
 	find cmd/server/frontend_dist -mindepth 1 -not -name .gitignore -exec rm -rf {} +
+
+# ── Tests & checks ───────────────────────────────────────────────────────────
+# `test` runs the unit tests with no DB requirement. `test-integration`
+# expects TEST_DATABASE_URL to point at a Postgres the suite may TRUNCATE
+# between cases — never a dev or production DB. `-p 1` serializes packages
+# so they don't race on the shared schema.
+#
+# `check` is the one-shot pre-commit gate: vet → unit → integration →
+# frontend type-check. Requires Postgres for the integration step; if you
+# don't have it running, use `make check-fast` instead.
+
+TEST_DATABASE_URL ?= postgres://uneasy:uneasy@localhost:5432/uneasy_test?sslmode=disable
+
+test:
+	go test -count=1 ./...
+
+test-integration:
+	TEST_DATABASE_URL=$(TEST_DATABASE_URL) \
+		go test -tags=integration -count=1 -p 1 ./...
+
+vet:
+	go build ./...
+	go fix ./...
+	go vet ./...
+	go vet -tags=integration ./...
+
+check-frontend:
+	cd frontend && npm run check
+
+check: vet test test-integration check-frontend
+
+check-fast: vet test check-frontend
+
+# Regenerate sqlc bindings after touching db/queries/*.sql or migrations.
+sqlc:
+	sqlc generate

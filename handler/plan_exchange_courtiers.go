@@ -409,7 +409,7 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
-		if err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		if _, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {
