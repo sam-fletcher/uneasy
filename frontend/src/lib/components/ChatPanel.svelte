@@ -21,7 +21,7 @@
 	component is a controlled view + an input that POSTs new player messages.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import {
 		createPlayerPost,
 		type Asset,
@@ -48,6 +48,13 @@
 		activeScenePeers?: ScenePeerView[];
 		/** Full asset list — used to look up names for the persona picker. */
 		assets?: Asset[];
+		/**
+		 * Jump request from the Public Record sidebar. When this changes to a
+		 * non-null value, the panel expands (on mobile) and scrolls to the
+		 * post with the given ID. The `key` field disambiguates repeated
+		 * requests for the same post so the effect re-runs.
+		 */
+		jumpRequest?: { postID: number; key: number } | null;
 	}
 
 	const {
@@ -59,6 +66,7 @@
 		activeScene = null,
 		activeScenePeers = [],
 		assets = [],
+		jumpRequest = null,
 	}: Props = $props();
 
 	const playerName = (id: number | null) =>
@@ -217,6 +225,35 @@
 		});
 	});
 
+	// ── Jump-to-anchor (from Public Record sidebar) ───────────────────────────
+	// When a jumpRequest arrives, expand the panel (mobile) and scroll the
+	// requested post into view. The `key` field on the request lets us
+	// re-jump to the same post repeatedly.
+	$effect(() => {
+		if (!jumpRequest) return;
+		const targetID = jumpRequest.postID;
+		// On mobile the panel needs to be expanded to show the scroll target.
+		// On desktop the panel is always visible as a column — flipping
+		// `expanded` there would only trigger the mobile overlay CSS path.
+		// Untracked: we don't want this effect to re-fire when the user
+		// closes the panel via the X button (otherwise it re-opens itself).
+		untrack(() => {
+			if (!expanded && !isDesktop) expanded = true;
+		});
+		void tick().then(() => {
+			if (!feedEl) return;
+			const el = feedEl.querySelector(`[data-post-id="${targetID}"]`) as HTMLElement | null;
+			if (!el) return;
+			el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+			// Brief accent pulse so the user sees where they landed. Class
+			// is removed after the animation so a re-jump triggers it again.
+			el.classList.remove('jump-pulse');
+			void el.offsetWidth; // force reflow so the class re-application animates
+			el.classList.add('jump-pulse');
+			setTimeout(() => el.classList.remove('jump-pulse'), 800);
+		});
+	});
+
 	// ── Compose box ───────────────────────────────────────────────────────────
 	let newBody = $state('');
 	let sending = $state(false);
@@ -325,13 +362,13 @@
 		{:else}
 			{#each visiblePosts as post (post.id)}
 				{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
-					<div class="boundary" data-code={post.system_code}>
+					<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
 						<span class="boundary-line"></span>
 						<span class="boundary-label">{post.body}</span>
 						<span class="boundary-line"></span>
 					</div>
 				{:else if post.author_id == null}
-					<div class="log" data-code={post.system_code} data-severity={post.severity}>
+					<div class="log" data-post-id={post.id} data-code={post.system_code} data-severity={post.severity}>
 						<span class="log-glyph" aria-hidden="true">•</span>
 						<span class="log-body">{post.body}</span>
 						<span class="log-time">{fmtTime(post.created_at)}</span>
@@ -345,6 +382,7 @@
 					{@const playerTag = !isOOC ? playerName(post.author_id) : ''}
 					<div
 						class="message"
+						data-post-id={post.id}
 						class:own={post.author_id === currentPlayerID}
 						class:ooc={isOOC}
 						style:--player-color={color}
@@ -494,12 +532,20 @@
 		color: #d8d4c9;
 	}
 
-	.panel.expanded {
-		display: flex;
-		position: absolute;
-		inset: 0;
-		z-index: 40;
-		border-top: 1px solid #2a2a2a;
+	/* Mobile-only: when expanded, become a full-screen sheet over the page.
+	   Scoped to <1024px so a stray `expanded` on desktop can't burst out of
+	   the chat column. */
+	@media (max-width: 1023px) {
+		.panel.expanded {
+			display: flex;
+			position: absolute;
+			inset: 0;
+			/* Above the Public Record overlay (z-index 100 in PublicRecord.svelte)
+			   so a jump from the rail opens chat *over* the still-expanded PR.
+			   Closing chat with the ✕ returns the user to the PR underneath. */
+			z-index: 110;
+			border-top: 1px solid #2a2a2a;
+		}
 	}
 
 	.panel-header {
@@ -581,6 +627,16 @@
 		text-align: center;
 		margin-top: 2rem;
 		font-size: 0.85rem;
+	}
+
+	/* Brief accent flash after a Public-Record jump lands here. */
+	:global(.feed [data-post-id].jump-pulse) {
+		animation: jump-pulse 0.7s ease-out;
+		border-radius: 4px;
+	}
+	@keyframes jump-pulse {
+		0%   { background: rgba(200, 169, 110, 0.45); }
+		100% { background: transparent; }
 	}
 
 	.message {

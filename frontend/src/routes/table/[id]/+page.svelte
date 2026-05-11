@@ -134,6 +134,37 @@
 	// Player name map passed to MainEventView for attribution.
 	const playerNameMap = $derived(new Map(players.map(p => [p.id, p.display_name])));
 
+	// ── Public Record → Chat jump bridge ──────────────────────────────────────
+	// Tapping a row/plan/scene in the expanded sidebar finds the anchoring
+	// system post in chatPosts and pushes a request to ChatPanel, which
+	// scrolls there (and on mobile, expands itself first).
+	let chatJumpRequest = $state<{ postID: number; key: number } | null>(null);
+	let jumpKey = 0;
+	function jumpTo(postID: number) {
+		chatJumpRequest = { postID, key: ++jumpKey };
+	}
+	function jumpToRow(rowNumber: number) {
+		const anchor = chatPosts.find(p =>
+			p.system_code === 'row.advanced' && p.row_number === rowNumber
+		);
+		if (anchor) { jumpTo(anchor.id); return; }
+		// Row 1 has no row.advanced post — fall back to the first post.
+		if (rowNumber === 1 && chatPosts.length > 0) jumpTo(chatPosts[0].id);
+	}
+	function jumpToPlan(planID: number) {
+		const anchor = chatPosts.find(p =>
+			p.system_code === 'plan.prepared' && p.plan_id === planID
+		);
+		if (anchor) jumpTo(anchor.id);
+	}
+	function jumpToScene(rowNumber: number) {
+		// SceneEntry doesn't carry scene_id — anchor by row's first scene.started.
+		const anchor = chatPosts.find(p =>
+			p.system_code === 'scene.started' && p.row_number === rowNumber
+		);
+		if (anchor) jumpTo(anchor.id);
+	}
+
 	// ── WebSocket ─────────────────────────────────────────────────────────────
 	let disconnect: (() => void) | null = null;
 
@@ -810,6 +841,9 @@
 			rows={recordRows}
 			currentRow={game.current_row}
 			playerNames={playerNameMap}
+			onRowJump={jumpToRow}
+			onPlanJump={jumpToPlan}
+			onSceneJump={jumpToScene}
 		/>
 	{/if}
 
@@ -922,6 +956,7 @@
 				{activeScene}
 				{activeScenePeers}
 				{assets}
+				jumpRequest={chatJumpRequest}
 			/>
 		{/if}
 	</div>

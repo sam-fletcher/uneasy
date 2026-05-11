@@ -14,7 +14,7 @@
   See PUBLIC_RECORD_SIDEBAR_SPEC.md.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import type { RecordRow, Plan } from '$lib/api';
 
@@ -23,9 +23,16 @@
 		currentRow: number;
 		/** Map of player_id → display_name for entry attribution. */
 		playerNames: Map<number, string>;
+		/** Tapping a row pill in the expanded view → jump chat to that row's anchor. */
+		onRowJump?: (rowNumber: number) => void;
+		/** Tapping a plan chip → jump chat to that plan's plan.prepared anchor. */
+		onPlanJump?: (planID: number) => void;
+		/** Tapping a scene entry → jump chat to the row's first scene.started anchor.
+		 *  (SceneEntry doesn't carry scene_id, so we anchor by row.) */
+		onSceneJump?: (rowNumber: number) => void;
 	}
 
-	const { rows, currentRow, playerNames }: Props = $props();
+	const { rows, currentRow, playerNames, onRowJump, onPlanJump, onSceneJump }: Props = $props();
 
 	const TOTAL_ROWS = 13;
 	const ENGRAILED_AFTER = new Set([4, 8, 12]);
@@ -80,6 +87,18 @@
 	});
 	const expanded = $derived(isWide || userExpanded);
 	const toggle = () => { userExpanded = !userExpanded; };
+
+	// ── Scroll the current row into view when the panel opens ─────────────────
+	// Without this the list opens at row 1 and the focus player has to scroll
+	// every time. Re-runs whenever expanded flips true.
+	let rowListEl = $state<HTMLOListElement | null>(null);
+	$effect(() => {
+		if (!expanded) return;
+		void tick().then(() => {
+			const el = rowListEl?.querySelector('[data-state="current"]') as HTMLElement | null;
+			el?.scrollIntoView({ block: 'center' });
+		});
+	});
 </script>
 
 <!--
@@ -137,7 +156,7 @@
 			{/if}
 		</header>
 
-		<ol class="row-list">
+		<ol class="row-list" bind:this={rowListEl}>
 			{#each Array(TOTAL_ROWS) as _, i}
 				{@const n = i + 1}
 				{@const row = rowAt(n)}
@@ -145,20 +164,34 @@
 					class="record-row"
 					data-state={rowState(n)}
 				>
-					<span class="row-num-pill">{n}</span>
+					<button
+						class="row-num-pill"
+						onclick={() => onRowJump?.(n)}
+						aria-label="Jump to row {n}"
+					>
+						{n}
+					</button>
 					<div class="row-content">
 						{#if row}
 							{#each row.plans as plan (plan.id)}
-								<div class="plan-chip {planStatusClass(plan.status)}">
+								<button
+									class="plan-chip {planStatusClass(plan.status)}"
+									onclick={() => onPlanJump?.(plan.id)}
+									aria-label="Jump to {planLabel(plan)}"
+								>
 									<span class="plan-name">{planLabel(plan)}</span>
 									<span class="plan-status">{plan.status}</span>
-								</div>
+								</button>
 							{/each}
 							{#each row.entries as entry (entry.id)}
-								<p class="entry-line">
+								<button
+									class="entry-line"
+									onclick={() => onSceneJump?.(entry.row_number)}
+									aria-label="Jump to scene on row {entry.row_number}"
+								>
 									<span class="entry-author">{authorName(entry.author_id)}</span>
 									{entry.body}
-								</p>
+								</button>
 							{/each}
 							{#if row.plans.length === 0 && row.entries.length === 0}
 								<span class="row-empty">—</span>
@@ -364,7 +397,12 @@
 		border-radius: 50%;
 		background: #333;
 		color: #888;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		transition: background 0.12s;
 	}
+	.row-num-pill:hover { background: #444; color: #e8e4d9; }
 
 	.record-row[data-state="current"] .row-num-pill {
 		background: #c8a96e;
@@ -389,7 +427,12 @@
 		background: #2a2a2a;
 		border: 1px solid #444;
 		align-self: flex-start;
+		color: inherit;
+		cursor: pointer;
+		font-family: inherit;
+		text-align: left;
 	}
+	.plan-chip:hover { background: #333; }
 
 	.plan-name { font-weight: 600; color: #e8e4d9; }
 	.plan-status { color: #888; font-size: 0.65rem; text-transform: uppercase; }
@@ -404,7 +447,16 @@
 		line-height: 1.4;
 		margin: 0;
 		word-break: break-word;
+		background: none;
+		border: none;
+		padding: 0.1rem 0;
+		text-align: left;
+		font-family: inherit;
+		cursor: pointer;
+		display: block;
+		width: 100%;
 	}
+	.entry-line:hover { color: #fff; }
 
 	.entry-author {
 		font-weight: 600;
