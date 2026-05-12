@@ -33,7 +33,7 @@ func createMainCharacterPeer(
 		OwnerID:         player.ID,
 		CreatorID:       player.ID,
 		AssetType:       model.AssetPeer,
-		Name:            player.DisplayName,
+		Name:            "[Main Character]",
 		IsMainCharacter: true,
 	})
 	if err != nil {
@@ -82,10 +82,21 @@ func CreateTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
+		seat := int16(1)
+		err = q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
+			ID: player.ID, SeatOrder: &seat,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not set seat order")
+			return
+		}
+		player.SeatOrder = &seat
+
+		err = q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
 			FacilitatorID: &player.ID,
 			ID:            game.ID,
-		}); err != nil {
+		})
+		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not set facilitator")
 			return
 		}
@@ -180,6 +191,17 @@ func JoinTable(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not join table")
 			return
 		}
+
+		// `count` was the pre-insert player count, so the new seat is count+1.
+		seat := int16(count + 1)
+		err = q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
+			ID: player.ID, SeatOrder: &seat,
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not set seat order")
+			return
+		}
+		player.SeatOrder = &seat
 
 		if h, ok := manager.Get(game.ID); ok {
 			h.BroadcastEvent(model.EventPlayerJoined, model.PlayerJoinedPayload{Player: player})

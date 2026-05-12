@@ -605,10 +605,14 @@
 				online: false
 			}));
 
-			// Load assets during prologue and main_event.
-			if (data.game.phase === 'prologue' || data.game.phase === 'main_event') {
+			// Load assets in lobby (for main-character editing) and during
+			// prologue/main_event (full retinue). Secrets only exist once the
+			// prologue has begun.
+			if (data.game.phase === 'lobby' || data.game.phase === 'prologue' || data.game.phase === 'main_event') {
 				const assetData = await listAssets(gameID);
 				assets = assetData.assets;
+			}
+			if (data.game.phase === 'prologue' || data.game.phase === 'main_event') {
 				try {
 					const sd = await getVisibleSecrets(gameID);
 					secrets = sd.secrets;

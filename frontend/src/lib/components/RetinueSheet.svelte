@@ -109,7 +109,7 @@
 			right: auto;
 			bottom: 50%;
 			transform: translate(-50%, 50%);
-			width: min(560px, 92vw);
+			width: min(680px, 92vw);
 			max-height: 80dvh;
 			border-radius: 14px;
 			border: 1px solid #3a3a3a;

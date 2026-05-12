@@ -20,10 +20,10 @@ import type { Player } from './api';
  * disagree before token_color is set.
  */
 const FALLBACK_PALETTE = [
-	'#c8a96e', // warm gold (the existing brand accent)
 	'#7fb3d5', // cool blue
 	'#b48ead', // muted purple
 	'#a3be8c', // sage green
+	'#f4a261', // pale orange
 	'#d08770', // terracotta
 ];
 
