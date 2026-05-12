@@ -62,7 +62,7 @@ export interface PrologueChoice {
 export interface PrologueSheet {
 	type: PrologueSheetType;
 	display_name: string;
-	choice_asset_type: 'artifact' | 'holding' | 'resource';
+	choice_asset_type: 'Artifact' | 'Holding' | 'Resource';
 	choices: PrologueChoice[];
 }
 

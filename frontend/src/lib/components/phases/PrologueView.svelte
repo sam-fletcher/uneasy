@@ -444,21 +444,15 @@
 
 	{:else if mode === 'choosing'}
 		<p class="muted">
-			Each player takes three turns claiming boxes from the three sheets. Each box creates an asset
-			and grants two playing cards (which create or transfer card-linked assets).
+			Each player takes 3 turns claiming any 3 boxes. Each box creates an asset
+			and grants two playing cards (which create or steal associated assets).
 		</p>
-
-		{#if cards.length > 0}
-			<TrackBoard
-				{players}
-				{cards}
-				{rankings}
-				{committed}
-				{doneFlags}
-				activeTrack={'power'}
-				{currentPlayerID}
-			/>
-		{/if}
+		<p class="muted">	
+			{@render suitSvg('H')} Peer |
+			{@render suitSvg('D')} Resource |
+			{@render suitSvg('S')} Artifact |
+			{@render suitSvg('C')} Holding
+		</p>
 
 		<div class="turn-banner" class:my-turn={isMyTurn}>
 			{#if isMyTurn}
@@ -474,7 +468,13 @@
 			{#each sheets as sheet}
 				<section class="sheet-panel">
 					<h3>{sheet.display_name}</h3>
-					<p class="muted small">Creates a {sheet.choice_asset_type}.</p>
+					{#if sheet.display_name === 'Titles'}
+						<p class="muted small">Gain the title & an {sheet.choice_asset_type}.</p>
+					{:else if sheet.display_name === 'Hailing From'}
+						<p class="muted small">Describe your home & gain a {sheet.choice_asset_type}.</p>
+					{:else if sheet.display_name === 'Laws & Rumors'}
+						<p class="muted small">Create a law or rumour. What {sheet.choice_asset_type} did you gain?</p>
+					{/if}
 					<div class="choice-list">
 						{#each sheet.choices as choice}
 							{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
@@ -513,6 +513,18 @@
 				</div>
 			{/if}
 		</section>
+
+		{#if cards.length > 0}
+			<TrackBoard
+				{players}
+				{cards}
+				{rankings}
+				{committed}
+				{doneFlags}
+				activeTrack={'power'}
+				{currentPlayerID}
+			/>
+		{/if}
 
 		<p class="muted small">
 			Turns taken: {myTurns} / 3.

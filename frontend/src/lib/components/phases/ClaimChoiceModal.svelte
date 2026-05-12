@@ -164,26 +164,26 @@
 
 	<section class="step">
 		<label class="field">
-			<span class="label">Your {sheet.choice_asset_type}</span>
+			<span class="label">Your new {sheet.choice_asset_type} asset</span>
 			<textarea
-				rows="2"
+				rows="1"
 				bind:value={assetText}
-				placeholder={`[${choice.name}]`}
+				// placeholder={`[${choice.name}]`}
 			></textarea>
-			<span class="hint">Replace the bracketed text with the name and feel of the {sheet.choice_asset_type}.</span>
+			<span class="hint">Pick a name. You'll be able to add marginalia later.</span>
 		</label>
 	</section>
 
 	{#if isTitles}
 		<section class="step">
 			<label class="field">
-				<span class="label">Title marginalium on your main character</span>
+				<span class="label">A title held by your main character</span>
 				<textarea
-					rows="2"
+					rows="1"
 					bind:value={marginaliumText}
-					placeholder={`[${choice.name}]`}
+					placeholder={`${choice.name}`}
 				></textarea>
-				<span class="hint">Adds a one-line note about this title to your main character.</span>
+				<span class="hint">Add 1 marginalia to your main character.</span>
 			</label>
 		</section>
 	{/if}
@@ -195,9 +195,9 @@
 				<textarea
 					rows="2"
 					bind:value={lawOrRumorText}
-					placeholder={`[${choice.name}]`}
+					// placeholder={`[${choice.name}]`}
 				></textarea>
-				<span class="hint">The exact text of this {choice.name.toLowerCase().includes('law') ? 'law' : 'rumor'}.</span>
+				<span class="hint">The text of this {choice.name.toLowerCase().includes('law') ? 'law' : 'rumor'}.</span>
 			</label>
 		</section>
 	{/if}
@@ -214,26 +214,34 @@
 			{:else if loadingSuggestions}
 				<p class="muted small">Loading suggestions…</p>
 			{:else}
-				<div class="suggestion-list">
-					{#each slot.suggestions as suggestion}
-						<label class="suggestion">
-							<input type="radio" bind:group={cardSlots[idx].picked} value={suggestion} />
-							<span>{suggestion}</span>
-						</label>
+				<div class="suggestion-grid">
+					{#each slot.suggestions.slice(0, 3) as suggestion}
+						<button
+							type="button"
+							class="suggestion-tile"
+							class:selected={slot.picked === suggestion}
+							onclick={() => cardSlots[idx].picked = suggestion}
+						>
+							{suggestion}
+						</button>
 					{/each}
-					<label class="suggestion">
-						<input type="radio" bind:group={cardSlots[idx].picked} value="__custom__" />
-						<span>Custom…</span>
-					</label>
-					{#if slot.picked === '__custom__'}
-						<input
-							type="text"
-							class="custom-input"
-							bind:value={cardSlots[idx].custom}
-							placeholder={`Name your ${suitTypeLabel(slot.suit)}`}
-						/>
-					{/if}
+					<button
+						type="button"
+						class="suggestion-tile custom"
+						class:selected={slot.picked === '__custom__'}
+						onclick={() => cardSlots[idx].picked = '__custom__'}
+					>
+						Custom…
+					</button>
 				</div>
+				{#if slot.picked === '__custom__'}
+					<input
+						type="text"
+						class="custom-input"
+						bind:value={cardSlots[idx].custom}
+						placeholder={`Name your ${suitTypeLabel(slot.suit)}`}
+					/>
+				{/if}
 			{/if}
 		</section>
 	{/each}
@@ -304,9 +312,35 @@
 	.muted { color: #999; }
 	.muted.small { font-size: 0.8rem; }
 
-	.suggestion-list { display: flex; flex-direction: column; gap: 0.25rem; }
-	.suggestion { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; min-height: 28px; }
-	.custom-input { margin-top: 0.25rem; }
+	.suggestion-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.4rem;
+	}
+	.suggestion-tile {
+		min-height: 44px;
+		padding: 0.4rem 0.6rem;
+		background: #2a2a28;
+		border: 1px solid #3a3a3a;
+		border-radius: 6px;
+		color: #e8e4d9;
+		font-size: 0.9rem;
+		font-family: inherit;
+		text-align: center;
+		cursor: pointer;
+		word-break: break-word;
+		transition: background-color 120ms ease, border-color 120ms ease;
+	}
+	.suggestion-tile:hover { background: #34332f; }
+	.suggestion-tile.selected {
+		background: #4a3f24;
+		border-color: #c8a96e;
+		color: #fff;
+	}
+	.suggestion-tile.custom { font-style: italic; color: #c8a96e; }
+	.suggestion-tile.custom.selected { color: #fff; font-style: normal; }
+
+	.custom-input { margin-top: 0.4rem; }
 
 	footer { display: flex; gap: 0.6rem; justify-content: flex-end; }
 

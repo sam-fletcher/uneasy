@@ -994,30 +994,30 @@
 					</button>
 				{/each}
 
-				{#if !tonesLocked}
+			</div>
+
+			{#if !tonesLocked}
+				<form
+					class="tone-add-row"
+					onsubmit={(e) => { e.preventDefault(); submitNewTopic(); }}
+				>
 					<input
 						type="text"
-						class="tone-tile tone-tile-input"
-						placeholder="Custom topic…"
+						class="tone-add-input"
+						placeholder="Add a custom topic…"
 						bind:value={newTopicText}
-						onkeydown={(e) => { if (e.key === 'Enter') submitNewTopic(); }}
 						maxlength={120}
 						aria-label="Add a custom topic"
 					/>
-
-					{#if newTopicText.trim()}
-						<button
-							type="button"
-							class="tone-tile tone-tile-add"
-							onclick={submitNewTopic}
-							disabled={addingTopic}
-							aria-label="Add topic"
-						>
-							{addingTopic ? '…' : 'Add'}
-						</button>
-					{/if}
-				{/if}
-			</div>
+					<button
+						type="submit"
+						class="tone-add-button"
+						disabled={!newTopicText.trim() || addingTopic}
+					>
+						{addingTopic ? '…' : '+ Add'}
+					</button>
+				</form>
+			{/if}
 		</div>
 	</RetinueSheet>
 
@@ -1435,30 +1435,44 @@
 
 	.tone-tile-topic { line-height: 1.2; }
 
-	.tone-tile-input {
-		background: transparent;
+	.tone-add-row {
+		display: flex;
+		gap: 0.5rem;
+		align-items: stretch;
+	}
+
+	.tone-add-input {
+		flex: 1 1 auto;
+		min-width: 0;
+		padding: 0.6rem 0.75rem;
+		background: #2a2a28;
 		border: 1px dashed rgba(255,255,255,0.35);
+		border-radius: 6px;
 		color: #e8e4d9;
 		font-family: inherit;
-		text-align: center;
+		font-size: 0.9rem;
 	}
-
-	.tone-tile-input::placeholder {
-		color: rgba(232,228,217,0.5);
-	}
-
-	.tone-tile-input:focus {
+	.tone-add-input::placeholder { color: rgba(232,228,217,0.5); }
+	.tone-add-input:focus {
 		outline: none;
 		border-style: solid;
 		border-color: rgba(255,255,255,0.6);
 	}
 
-	.tone-tile-add {
+	.tone-add-button {
+		flex: 0 0 auto;
+		min-width: 5.5rem;
+		min-height: 44px;
+		padding: 0 1rem;
 		background: #6a8fb3;
+		color: #fff;
+		border: 1px solid rgba(255,255,255,0.12);
+		border-radius: 6px;
 		font-weight: 600;
+		font-size: 0.9rem;
+		cursor: pointer;
 	}
-
-	.tone-tile-add:disabled { opacity: 0.5; cursor: not-allowed; }
+	.tone-add-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 	/* ── Ended ──────────────────────────────────────────────────────────────── */
 
