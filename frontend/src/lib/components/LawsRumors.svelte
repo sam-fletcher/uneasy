@@ -101,7 +101,7 @@
 
 	{#if kind !== 'rumors'}
 	<section class="lr-section">
-		<h4 class="lr-heading">Laws ({laws.length})</h4>
+		<!-- <h4 class="lr-heading">Laws ({laws.length})</h4> -->
 		{#if laws.length === 0}
 			<p class="lr-empty">No laws yet.</p>
 		{:else}
@@ -123,7 +123,7 @@
 							<p class="lr-text">{law.text}</p>
 							{#if law.addendum}<p class="lr-addendum"><em>…{law.addendum}</em></p>{/if}
 							<p class="lr-meta">
-								signatory: {playerName(law.signatory_id)}
+								<!-- signatory: {playerName(law.signatory_id)} -->
 								{#if canEditLaw(law)}
 									· <button class="lr-edit" onclick={() => startEditLaw(law)}>edit</button>
 								{/if}
@@ -138,7 +138,7 @@
 
 	{#if kind !== 'laws'}
 	<section class="lr-section">
-		<h4 class="lr-heading">Rumors ({rumors.length})</h4>
+		<!-- <h4 class="lr-heading">Rumors ({rumors.length})</h4> -->
 		{#if rumors.length === 0}
 			<p class="lr-empty">No rumors yet.</p>
 		{:else}
@@ -157,9 +157,9 @@
 						{:else}
 							<p class="lr-text">{rumor.text}</p>
 							<p class="lr-meta">
-								source: {rumor.source_player_id == null
+								<!-- source: {rumor.source_player_id == null
 									? 'hidden'
-									: playerName(rumor.source_player_id)}
+									: playerName(rumor.source_player_id)} -->
 								{#if canEditRumor(rumor)}
 									· <button class="lr-edit" onclick={() => startEditRumor(rumor)}>edit</button>
 								{/if}
@@ -177,7 +177,7 @@
 	.laws-rumors {
 		display: flex; flex-direction: column; gap: 1rem;
 		padding: 0.75rem; border: 1px solid var(--border-color, #d4c5a8);
-		background: var(--panel-bg, #f8f1df);
+		background: var(--panel-bg, #2a2a2a);
 		border-radius: 6px;
 	}
 	.lr-heading { margin: 0 0 0.5rem; font-size: 0.95rem; }
@@ -185,7 +185,7 @@
 	.lr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 	.lr-item {
 		padding: 0.5rem 0.6rem;
-		background: var(--card-bg, #fff8e8);
+		background: var(--card-bg, #2a2a2a);
 		border: 1px solid var(--border-color, #d4c5a8);
 		border-radius: 4px;
 	}

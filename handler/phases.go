@@ -332,6 +332,16 @@ func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 			result["tone_topics"] = topics
 		}
 
+		// Laws & rumors are visible in every phase — their header buttons sit
+		// alongside Tones and stay accessible from t=0 (the lists are empty
+		// until the prologue's Laws & Rumors box is claimed).
+		if laws, err := q.ListLaws(ctx, gameID); err == nil {
+			result["laws"] = laws
+		}
+		if rumors, err := q.ListRumors(ctx, gameID); err == nil {
+			result["rumors"] = rumors
+		}
+
 		// Include phase-specific data.
 		switch game.Phase {
 		case model.PhaseLobby, model.PhaseShakeUp:
@@ -350,14 +360,6 @@ func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 						id = &active.ID
 					}
 					result["current_prologue_player_id"] = id
-				}
-			}
-			if game.Phase != model.PhasePrologue {
-				if laws, err := q.ListLaws(ctx, gameID); err == nil {
-					result["laws"] = laws
-				}
-				if rumors, err := q.ListRumors(ctx, gameID); err == nil {
-					result["rumors"] = rumors
 				}
 			}
 		}

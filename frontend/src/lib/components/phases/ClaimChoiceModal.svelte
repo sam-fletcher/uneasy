@@ -191,13 +191,13 @@
 	{#if isLawsRumors}
 		<section class="step">
 			<label class="field">
-				<span class="label">Public-record entry</span>
+				<span class="label">A new {choice.name.toLowerCase().includes('law') ? 'Law' : 'Rumor'}</span>
 				<textarea
 					rows="2"
 					bind:value={lawOrRumorText}
 					// placeholder={`[${choice.name}]`}
 				></textarea>
-				<span class="hint">The text of this {choice.name.toLowerCase().includes('law') ? 'law' : 'rumor'}.</span>
+				<span class="hint">Describe the {choice.name.toLowerCase().includes('law') ? 'law' : 'rumor'}.</span>
 			</label>
 		</section>
 	{/if}

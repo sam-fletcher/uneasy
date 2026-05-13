@@ -809,14 +809,12 @@
 				<button class="tones-button" onclick={() => tonesOpen = true} aria-label="Open tones">
 					Tones
 				</button>
-				{#if game.phase === 'main_event'}
-					<button class="tones-button" onclick={() => lawsOpen = true} aria-label="Open laws">
-						Laws{laws.length > 0 ? ` (${laws.length})` : ''}
-					</button>
-					<button class="tones-button" onclick={() => rumorsOpen = true} aria-label="Open rumors">
-						Rumors{rumors.length > 0 ? ` (${rumors.length})` : ''}
-					</button>
-				{/if}
+				<button class="tones-button" onclick={() => lawsOpen = true} aria-label="Open laws">
+					Laws{laws.length > 0 ? ` (${laws.length})` : ''}
+				</button>
+				<button class="tones-button" onclick={() => rumorsOpen = true} aria-label="Open rumors">
+					Rumors{rumors.length > 0 ? ` (${rumors.length})` : ''}
+				</button>
 				{#if game.phase === 'lobby'}
 					<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
 						{game.join_code}
@@ -1023,7 +1021,7 @@
 
 	<RetinueSheet open={lawsOpen} onClose={() => lawsOpen = false}>
 		<div class="laws-rumors-sheet">
-			<h3>Laws</h3>
+			<h3>Laws ({laws.length})</h3>
 			<LawsRumors
 				kind="laws"
 				{laws}
@@ -1037,7 +1035,7 @@
 
 	<RetinueSheet open={rumorsOpen} onClose={() => rumorsOpen = false}>
 		<div class="laws-rumors-sheet">
-			<h3>Rumors</h3>
+			<h3>Rumors ({rumors.length})</h3>
 			<LawsRumors
 				kind="rumors"
 				{laws}
