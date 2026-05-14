@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -182,9 +183,9 @@ func validateStartMainEvent(
 // Tone topics are already seeded at table creation; the Tones page is
 // available throughout lobby + prologue and locks at main-event start.
 // Main-character peer assets are created at player-join time, not here.
-func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func StartPrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -196,7 +197,7 @@ func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		count, err := q.CountPlayersInGame(ctx, game.ID)
+		count, err := s.Q.CountPlayersInGame(ctx, game.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not count players")
 			return
@@ -207,7 +208,7 @@ func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		err = q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		err = s.Q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 			ID:    game.ID,
 			Phase: model.PhasePrologue,
 		})
@@ -216,7 +217,7 @@ func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		broadcastPhaseChange(ctx, q, manager, game.ID, model.PhasePrologue)
+		broadcastPhaseChange(ctx, s.Q, manager, game.ID, model.PhasePrologue)
 		respond(w, http.StatusOK, map[string]any{"phase": model.PhasePrologue})
 	}
 }
@@ -226,9 +227,9 @@ func StartPrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Transitions the game from prologue → main_event. Validates that
 // rankings are fully set and all players have seat orders. Creates the
 // public record rows 1–13 and sets current_row to 1.
-func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -249,19 +250,19 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Validate preconditions for starting main event.
-		rankings, players, ok := validateStartMainEvent(ctx, w, q, game.ID)
+		rankings, players, ok := validateStartMainEvent(ctx, w, s.Q, game.ID)
 		if !ok {
 			return
 		}
 
 		// Create public record rows 1–13.
-		if err := q.CreatePublicRecordRows(ctx, game.ID); err != nil {
+		if err := s.Q.CreatePublicRecordRows(ctx, game.ID); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not create public record")
 			return
 		}
 
 		// Set current row to 1.
-		if err := q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
+		if err := s.Q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
 			ID:         game.ID,
 			CurrentRow: 1,
 		}); err != nil {
@@ -271,12 +272,12 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Pick the first focus player from cumulative ranking totals.
 		focusPlayer := findFirstFocusPlayer(game, players, rankings)
-		if !setAndBroadcastFocusPlayer(ctx, w, q, manager, game.ID, focusPlayer) {
+		if !setAndBroadcastFocusPlayer(ctx, w, s.Q, manager, game.ID, focusPlayer) {
 			return
 		}
 
 		// Transition phase.
-		if err := q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		if err := s.Q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 			ID:    game.ID,
 			Phase: model.PhaseMainEvent,
 		}); err != nil {
@@ -284,7 +285,7 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		broadcastPhaseChange(ctx, q, manager, game.ID, model.PhaseMainEvent)
+		broadcastPhaseChange(ctx, s.Q, manager, game.ID, model.PhaseMainEvent)
 
 		var focusID *int64
 		if focusPlayer != nil {
@@ -301,22 +302,22 @@ func StartMainEvent(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // GetGameState handles GET /api/tables/{id}/state.
 //
 // Returns the full game state: game object, players, rankings, and phase-specific data.
-func GetGameState(q *dbgen.Queries) http.HandlerFunc {
+func GetGameState(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 
 		ctx := r.Context()
 
-		game, err := q.GetGameByID(ctx, gameID)
+		game, err := s.Q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
 		}
 
-		players, err := q.GetPlayersByGame(ctx, gameID)
+		players, err := s.Q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load members")
 			return
@@ -328,17 +329,17 @@ func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 		}
 
 		// Tone topics are always available (read-only after main_event begins).
-		if topics, err := q.ListToneTopics(ctx, gameID); err == nil {
+		if topics, err := s.Q.ListToneTopics(ctx, gameID); err == nil {
 			result["tone_topics"] = topics
 		}
 
 		// Laws & rumors are visible in every phase — their header buttons sit
 		// alongside Tones and stay accessible from t=0 (the lists are empty
 		// until the prologue's Laws & Rumors box is claimed).
-		if laws, err := q.ListLaws(ctx, gameID); err == nil {
+		if laws, err := s.Q.ListLaws(ctx, gameID); err == nil {
 			result["laws"] = laws
 		}
-		if rumors, err := q.ListRumors(ctx, gameID); err == nil {
+		if rumors, err := s.Q.ListRumors(ctx, gameID); err == nil {
 			result["rumors"] = rumors
 		}
 
@@ -348,12 +349,12 @@ func GetGameState(q *dbgen.Queries) http.HandlerFunc {
 			// No further phase-specific data.
 
 		case model.PhasePrologue, model.PhaseMainEvent, model.PhaseEnded:
-			rankings, err := q.ListRankingsByGame(ctx, gameID)
+			rankings, err := s.Q.ListRankingsByGame(ctx, gameID)
 			if err == nil {
 				result["rankings"] = rankings
 			}
 			if game.Phase == model.PhasePrologue && game.PrologueRankingStep == nil {
-				active, _, err := prologueTurnState(ctx, q, gameID)
+				active, _, err := prologueTurnState(ctx, s.Q, gameID)
 				if err == nil {
 					var id *int64
 					if active != nil {

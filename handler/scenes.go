@@ -11,6 +11,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/game"
 	"uneasy/hub"
@@ -194,9 +196,9 @@ func validateAndProcessScenePeers(
 // recently resolved plan on this row (if any).
 //
 //nolint:funlen,gocognit // HTTP handler with extensive validation logic
-func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameRow, player, ok := requireFocusPlayer(w, r, q)
+		gameRow, player, ok := requireFocusPlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -243,11 +245,11 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Block if a plan is currently resolving or any plans are pending on this row.
-		if _, err := q.GetResolvingPlanForGame(ctx, gameRow.ID); err == nil {
+		if _, err := s.Q.GetResolvingPlanForGame(ctx, gameRow.ID); err == nil {
 			respondErr(w, http.StatusConflict, "resolve the active plan before setting a scene")
 			return
 		}
-		pending, err := q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
+		pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
 			GameID:    gameRow.ID,
 			RowNumber: gameRow.CurrentRow,
 		})
@@ -261,7 +263,7 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Block if a scene is already active.
-		if existing, err := loadActiveScene(ctx, q, gameRow.ID); err != nil {
+		if existing, err := loadActiveScene(ctx, s.Q, gameRow.ID); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check active scene")
 			return
 		} else if existing != nil {
@@ -271,7 +273,7 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Validate holding (if used).
 		if hasHolding {
-			holding, err := q.GetAssetByID(ctx, *body.LocationHoldingID)
+			holding, err := s.Q.GetAssetByID(ctx, *body.LocationHoldingID)
 			if err != nil {
 				respondErr(w, http.StatusBadRequest, "holding not found")
 				return
@@ -292,7 +294,7 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Validate present peers and pre-compute their controllers.
 		peers, statusCode, errMsg := validateAndProcessScenePeers(
-			ctx, q, gameRow.ID, player.ID, body.PresentPeerIDs,
+			ctx, s.Q, gameRow.ID, player.ID, body.PresentPeerIDs,
 		)
 		if statusCode != 0 {
 			respondErr(w, statusCode, errMsg)
@@ -303,7 +305,7 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// resolved plan on this row, if any.
 		prompt := ""
 		var resolvedPlanID *int64
-		if recent, err := q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
+		if recent, err := s.Q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
 			GameID:    gameRow.ID,
 			RowNumber: gameRow.CurrentRow,
 		}); err == nil {
@@ -318,42 +320,48 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		if hasHolding {
 			holdingID = body.LocationHoldingID
 		} else {
-			s := body.LocationCustom
-			customLoc = &s
+			str := body.LocationCustom
+			customLoc = &str
 		}
 		var timeNote *string
 		if tn := strings.TrimSpace(body.TimeNote); tn != "" {
 			timeNote = &tn
 		}
 
-		scene, err := q.CreateScene(ctx, dbgen.CreateSceneParams{
-			GameID:            gameRow.ID,
-			RowNumber:         gameRow.CurrentRow,
-			FocusPlayerID:     player.ID,
-			LocationHoldingID: holdingID,
-			LocationCustom:    customLoc,
-			TimeElapsed:       body.TimeElapsed,
-			TimeNote:          timeNote,
-			Prompt:            prompt,
-			ResolvedPlanID:    resolvedPlanID,
+		var scene dbgen.Scene
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			sc, cErr := q.CreateScene(ctx, dbgen.CreateSceneParams{
+				GameID:            gameRow.ID,
+				RowNumber:         gameRow.CurrentRow,
+				FocusPlayerID:     player.ID,
+				LocationHoldingID: holdingID,
+				LocationCustom:    customLoc,
+				TimeElapsed:       body.TimeElapsed,
+				TimeNote:          timeNote,
+				Prompt:            prompt,
+				ResolvedPlanID:    resolvedPlanID,
+			})
+			if cErr != nil {
+				return errors.New("could not create scene")
+			}
+			scene = sc
+			for _, pw := range peers {
+				if iErr := q.InsertScenePeer(ctx, dbgen.InsertScenePeerParams{
+					SceneID:            scene.ID,
+					PeerAssetID:        pw.AssetID,
+					ControllerPlayerID: pw.Controller,
+				}); iErr != nil {
+					return errors.New("could not record scene peers")
+				}
+			}
+			return nil
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create scene")
+			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
-		for _, pw := range peers {
-			if err := q.InsertScenePeer(ctx, dbgen.InsertScenePeerParams{
-				SceneID:            scene.ID,
-				PeerAssetID:        pw.AssetID,
-				ControllerPlayerID: pw.Controller,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not record scene peers")
-				return
-			}
-		}
-
-		resp, err := buildSceneResponse(ctx, q, &scene)
+		resp, err := buildSceneResponse(ctx, s.Q, &scene)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not assemble scene response")
 			return
@@ -362,9 +370,9 @@ func CreateScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// Boundary post + WS broadcast.
 		row := scene.RowNumber
 		sceneID := scene.ID
-		EmitSystemPost(ctx, q, manager, gameRow.ID, "scene.started",
+		EmitSystemPost(ctx, s.Q, manager, gameRow.ID, "scene.started",
 			model.SeverityBoundary,
-			resolveSceneBannerText(ctx, q, &scene, player.DisplayName),
+			resolveSceneBannerText(ctx, s.Q, &scene, player.DisplayName),
 			&row, nil, &sceneID,
 			map[string]any{"scene_id": scene.ID})
 		if h, ok := manager.Get(gameRow.ID); ok {
@@ -452,14 +460,14 @@ func resolveSceneBannerText(ctx context.Context, q *dbgen.Queries, scene *dbgen.
 // GetActiveSceneHandler handles GET /api/tables/{id}/scenes/active.
 //
 // Returns the active scene + its peer list, or {scene: null} if none.
-func GetActiveSceneHandler(q *dbgen.Queries) http.HandlerFunc {
+func GetActiveSceneHandler(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		scene, err := loadActiveScene(ctx, q, gameID)
+		scene, err := loadActiveScene(ctx, s.Q, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load scene")
 			return
@@ -468,7 +476,7 @@ func GetActiveSceneHandler(q *dbgen.Queries) http.HandlerFunc {
 			respond(w, http.StatusOK, map[string]any{"scene": nil, "peers": []scenePeerView{}})
 			return
 		}
-		resp, err := buildSceneResponse(ctx, q, scene)
+		resp, err := buildSceneResponse(ctx, s.Q, scene)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load scene peers")
 			return
@@ -481,9 +489,9 @@ func GetActiveSceneHandler(q *dbgen.Queries) http.HandlerFunc {
 //
 // A non-focus player claims an unclaimed focus-player peer for the
 // remainder of the current scene.
-func ClaimScenePeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func ClaimScenePeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -502,7 +510,7 @@ func ClaimScenePeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		scene, err := q.GetSceneByID(ctx, sceneID)
+		scene, err := s.Q.GetSceneByID(ctx, sceneID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "scene not found")
 			return
@@ -521,7 +529,7 @@ func ClaimScenePeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// The peer must belong to the focus player and be in the scene.
-		asset, err := q.GetAssetByID(ctx, body.PeerAssetID)
+		asset, err := s.Q.GetAssetByID(ctx, body.PeerAssetID)
 		if err != nil {
 			respondErr(w, http.StatusBadRequest, "peer not found")
 			return
@@ -531,7 +539,7 @@ func ClaimScenePeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		n, err := q.ClaimScenePeer(ctx, dbgen.ClaimScenePeerParams{
+		n, err := s.Q.ClaimScenePeer(ctx, dbgen.ClaimScenePeerParams{
 			SceneID:            scene.ID,
 			PeerAssetID:        body.PeerAssetID,
 			ControllerPlayerID: &player.ID,

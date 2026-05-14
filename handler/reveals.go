@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
@@ -36,15 +37,15 @@ import (
 // GetReveal handles GET /api/reveals/:revealId.
 //
 // Returns the reveal state. Faces are hidden (null) until is_complete = true.
-func GetReveal(q *dbgen.Queries) http.HandlerFunc {
+func GetReveal(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		reveal, _, ok := requireRevealAccess(w, r, q)
+		reveal, _, ok := requireRevealAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
 
 		ctx := r.Context()
-		entries, err := q.ListRevealEntries(ctx, reveal.ID)
+		entries, err := s.Q.ListRevealEntries(ctx, reveal.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load reveal entries")
 			return
@@ -88,9 +89,9 @@ func GetReveal(q *dbgen.Queries) http.HandlerFunc {
 // Request body: {"face": N}
 //
 //nolint:funlen // simultaneous reveal lifecycle
-func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		reveal, player, ok := requireRevealAccess(w, r, q)
+		reveal, player, ok := requireRevealAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -121,7 +122,7 @@ func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Verify this player is a registered participant.
-		entry, err := q.GetRevealEntry(ctx, dbgen.GetRevealEntryParams{
+		entry, err := s.Q.GetRevealEntry(ctx, dbgen.GetRevealEntryParams{
 			RevealID: reveal.ID,
 			PlayerID: player.ID,
 		})
@@ -136,7 +137,7 @@ func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Record the face.
 		face := body.Face
-		err = q.SetRevealEntryFace(ctx, dbgen.SetRevealEntryFaceParams{
+		err = s.Q.SetRevealEntryFace(ctx, dbgen.SetRevealEntryFaceParams{
 			RevealID: reveal.ID,
 			PlayerID: player.ID,
 			Face:     &face,
@@ -153,12 +154,12 @@ func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		})
 
 		// Check if all participants have now submitted.
-		submitted, err := q.CountRevealEntriesSubmitted(ctx, reveal.ID)
+		submitted, err := s.Q.CountRevealEntriesSubmitted(ctx, reveal.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check reveal status")
 			return
 		}
-		total, err := q.CountRevealEntries(ctx, reveal.ID)
+		total, err := s.Q.CountRevealEntries(ctx, reveal.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not count reveal entries")
 			return
@@ -176,14 +177,14 @@ func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// All submitted — compute result delay and complete the reveal.
-		entries, err := q.ListRevealEntries(ctx, reveal.ID)
+		entries, err := s.Q.ListRevealEntries(ctx, reveal.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load reveal entries")
 			return
 		}
 
 		resultDelay := revealCeilAverage(entries)
-		if err := q.SetRevealComplete(ctx, dbgen.SetRevealCompleteParams{
+		if err := s.Q.SetRevealComplete(ctx, dbgen.SetRevealCompleteParams{
 			ID:          reveal.ID,
 			ResultDelay: &resultDelay,
 		}); err != nil {
@@ -211,10 +212,10 @@ func SubmitReveal(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Apply downstream effects for liaise_delay: set the plan's row_number.
 		if reveal.RevealType == "liaise_delay" && reveal.PlanID != nil {
-			applyLiaiseDelayResult(ctx, q, manager, *reveal.PlanID, resultDelay)
+			applyLiaiseDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
 		}
 		if reveal.RevealType == "make_war_delay" && reveal.PlanID != nil {
-			applyMakeWarDelayResult(ctx, q, manager, *reveal.PlanID, resultDelay)
+			applyMakeWarDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
 		}
 
 		respond(w, http.StatusOK, map[string]any{

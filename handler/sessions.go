@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	dbgen "uneasy/db/gen"
+	"uneasy/db"
 	appMiddleware "uneasy/middleware"
 )
 
@@ -14,7 +14,7 @@ import (
 //
 // Body: {"username": "...", "code": "..."}
 // On success: opens a session, sets the cookie, returns the account.
-func CreateSession(q *dbgen.Queries) http.HandlerFunc {
+func CreateSession(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Username string `json:"username"`
@@ -30,7 +30,7 @@ func CreateSession(q *dbgen.Queries) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		account, err := q.GetAccountByUsername(ctx, body.Username)
+		account, err := s.Q.GetAccountByUsername(ctx, body.Username)
 		if err != nil {
 			respondErr(w, http.StatusUnauthorized, "incorrect username or code")
 			return
@@ -40,7 +40,7 @@ func CreateSession(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		if err := openSession(ctx, w, q, account.ID); err != nil {
+		if err := openSession(ctx, w, s.Q, account.ID); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not open session")
 			return
 		}
@@ -49,11 +49,11 @@ func CreateSession(q *dbgen.Queries) http.HandlerFunc {
 }
 
 // DeleteSession handles DELETE /api/sessions (log out current device).
-func DeleteSession(q *dbgen.Queries) http.HandlerFunc {
+func DeleteSession(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := appMiddleware.RawTokenFromRequest(r)
 		if token != "" {
-			_ = q.DeleteSession(r.Context(), token)
+			_ = s.Q.DeleteSession(r.Context(), token)
 		}
 		http.SetCookie(w, &http.Cookie{
 			Name:     "player_token",

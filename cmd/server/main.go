@@ -26,7 +26,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uneasy/db"
-	dbgen "uneasy/db/gen"
 	"uneasy/game"
 	"uneasy/handler"
 	"uneasy/hub"
@@ -78,11 +77,11 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 	}
 	logger.Info("migrations applied")
 
-	queries := dbgen.New(dbPool)
+	store := db.NewStore(dbPool)
 
 	manager := hub.NewManager()
 
-	router := setupRouter(queries, manager)
+	router := setupRouter(store, manager)
 
 	if err := setupFrontend(router, devMode, viteURL); err != nil {
 		return err
@@ -110,7 +109,7 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 // setupRouter creates and configures the HTTP router with all middleware and routes.
 //
 //nolint:funlen // route table; one line per endpoint
-func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
+func setupRouter(store *db.Store, manager *hub.Manager) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Standard middleware: structured request logging, panic recovery,
@@ -123,137 +122,137 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 
 	// API routes — all behind the cookie-auth middleware.
 	r.Route("/api", func(r chi.Router) {
-		r.Use(appMiddleware.EnsureSession(q))
+		r.Use(appMiddleware.EnsureSession(store.Q))
 
 		// Accounts & sessions
-		r.Post("/accounts", handler.CreateAccount(q))
+		r.Post("/accounts", handler.CreateAccount(store))
 		r.Get("/accounts/me", handler.GetMe())
-		r.Patch("/accounts/me", handler.UpdateMe(q))
-		r.Get("/accounts/me/tables", handler.ListMyTables(q))
-		r.Post("/sessions", handler.CreateSession(q))
-		r.Delete("/sessions", handler.DeleteSession(q))
+		r.Patch("/accounts/me", handler.UpdateMe(store))
+		r.Get("/accounts/me/tables", handler.ListMyTables(store))
+		r.Post("/sessions", handler.CreateSession(store))
+		r.Delete("/sessions", handler.DeleteSession(store))
 
 		// Dev-only routes — gated by UNEASY_DEV=1. Never mount in prod.
 		if os.Getenv("UNEASY_DEV") == "1" {
-			r.Post("/dev/login", handler.DevLogin(q))
-			r.Post("/dev/reset", handler.DevReset(q))
+			r.Post("/dev/login", handler.DevLogin(store))
+			r.Post("/dev/reset", handler.DevReset(store))
 		}
 
 		// Tables (creation, join, info)
-		r.Post("/tables", handler.CreateTable(q, manager))
-		r.Post("/tables/join", handler.JoinTable(q, manager))
-		r.Get("/tables/{id}", handler.GetTable(q))
-		r.Get("/tables/{id}/state", handler.GetGameState(q))
+		r.Post("/tables", handler.CreateTable(store, manager))
+		r.Post("/tables/join", handler.JoinTable(store, manager))
+		r.Get("/tables/{id}", handler.GetTable(store))
+		r.Get("/tables/{id}/state", handler.GetGameState(store))
 
 		// Phase transitions (facilitator actions)
-		r.Post("/tables/{id}/start-prologue", handler.StartPrologue(q, manager))
-		r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(q, manager))
-		r.Post("/tables/{id}/endgame", handler.SetEndgameMode(q, manager))
+		r.Post("/tables/{id}/start-prologue", handler.StartPrologue(store, manager))
+		r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(store, manager))
+		r.Post("/tables/{id}/endgame", handler.SetEndgameMode(store, manager))
 
 		// Shake-Up (Phase 4c)
-		r.Get("/tables/{id}/shake-up", handler.GetShakeUp(q))
-		r.Post("/tables/{id}/shake-up/roll", handler.ShakeUpRoll(q, manager))
-		r.Post("/tables/{id}/shake-up/spend", handler.ShakeUpAnnounce(q, manager))
-		r.Post("/tables/{id}/shake-up/adjust", handler.ShakeUpAdjust(q, manager))
-		r.Post("/tables/{id}/shake-up/commit", handler.ShakeUpCommit(q, manager))
+		r.Get("/tables/{id}/shake-up", handler.GetShakeUp(store))
+		r.Post("/tables/{id}/shake-up/roll", handler.ShakeUpRoll(store, manager))
+		r.Post("/tables/{id}/shake-up/spend", handler.ShakeUpAnnounce(store, manager))
+		r.Post("/tables/{id}/shake-up/adjust", handler.ShakeUpAdjust(store, manager))
+		r.Post("/tables/{id}/shake-up/commit", handler.ShakeUpCommit(store, manager))
 
 		// Tone-setting
-		r.Get("/tables/{id}/tone", handler.ListToneTopics(q))
-		r.Put("/tables/{id}/tone/{topicId}", handler.UpdateToneTopic(q, manager))
-		r.Post("/tables/{id}/tone", handler.AddToneTopic(q, manager))
+		r.Get("/tables/{id}/tone", handler.ListToneTopics(store))
+		r.Put("/tables/{id}/tone/{topicId}", handler.UpdateToneTopic(store, manager))
+		r.Post("/tables/{id}/tone", handler.AddToneTopic(store, manager))
 
 		// Rankings (read-only; ranking flow lives under /prologue/*)
-		r.Get("/tables/{id}/rankings", handler.GetRankings(q))
+		r.Get("/tables/{id}/rankings", handler.GetRankings(store))
 
 		// Structured prologue (Phase 4b)
-		r.Get("/tables/{id}/prologue/sheets", handler.GetPrologueSheets(q))
-		r.Get("/tables/{id}/prologue/cards", handler.GetPrologueCards(q))
-		r.Get("/tables/{id}/prologue/card-suggestions", handler.GetPrologueCardSuggestions(q))
-		r.Post("/tables/{id}/prologue/choose", handler.ChoosePrologue(q, manager))
-		r.Post("/tables/{id}/prologue/begin-ranking", handler.BeginPrologueRanking(q, manager))
-		r.Post("/tables/{id}/prologue/declare-hearts", handler.DeclareHearts(q, manager))
-		r.Post("/tables/{id}/prologue/finalize-ranking", handler.FinalizeTrackRanking(q, manager))
-		r.Post("/tables/{id}/prologue/place-set-asides", handler.PlaceSetAsides(q, manager))
-		r.Post("/tables/{id}/prologue/extra-peer", handler.CreateExtraPeer(q, manager))
-		r.Get("/tables/{id}/prologue/ranking-state", handler.GetPrologueRankingState(q))
-		r.Post("/tables/{id}/prologue/committed-hearts", handler.CommitTrackHearts(q, manager))
-		r.Post("/tables/{id}/prologue/done", handler.SetPrologueDone(q, manager))
+		r.Get("/tables/{id}/prologue/sheets", handler.GetPrologueSheets(store))
+		r.Get("/tables/{id}/prologue/cards", handler.GetPrologueCards(store))
+		r.Get("/tables/{id}/prologue/card-suggestions", handler.GetPrologueCardSuggestions(store))
+		r.Post("/tables/{id}/prologue/choose", handler.ChoosePrologue(store, manager))
+		r.Post("/tables/{id}/prologue/begin-ranking", handler.BeginPrologueRanking(store, manager))
+		r.Post("/tables/{id}/prologue/declare-hearts", handler.DeclareHearts(store, manager))
+		r.Post("/tables/{id}/prologue/finalize-ranking", handler.FinalizeTrackRanking(store, manager))
+		r.Post("/tables/{id}/prologue/place-set-asides", handler.PlaceSetAsides(store, manager))
+		r.Post("/tables/{id}/prologue/extra-peer", handler.CreateExtraPeer(store, manager))
+		r.Get("/tables/{id}/prologue/ranking-state", handler.GetPrologueRankingState(store))
+		r.Post("/tables/{id}/prologue/committed-hearts", handler.CommitTrackHearts(store, manager))
+		r.Post("/tables/{id}/prologue/done", handler.SetPrologueDone(store, manager))
 
 		// Assets (list + create on the table; per-asset actions by asset ID)
-		r.Get("/tables/{id}/assets", handler.ListAssets(q))
-		r.Get("/tables/{id}/secrets/visible", handler.ListVisibleSecretsForGame(q))
-		r.Post("/tables/{id}/assets", handler.CreateAsset(q, manager))
+		r.Get("/tables/{id}/assets", handler.ListAssets(store))
+		r.Get("/tables/{id}/secrets/visible", handler.ListVisibleSecretsForGame(store))
+		r.Post("/tables/{id}/assets", handler.CreateAsset(store, manager))
 
 		r.Route("/assets/{assetId}", func(r chi.Router) {
-			r.Put("/", handler.UpdateAsset(q, manager))
-			r.Post("/marginalia", handler.AddMarginalia(q, manager))
-			r.Put("/marginalia/{pos}", handler.UpdateMarginalia(q, manager))
-			r.Delete("/marginalia/{pos}", handler.TearMarginalia(q, manager))
-			r.Post("/leverage", handler.LeverageAsset(q, manager))
-			r.Post("/refresh", handler.RefreshAsset(q, manager))
-			r.Post("/take", handler.TakeAsset(q, manager))
-			r.Post("/secrets", handler.WriteSecret(q, manager))
-			r.Get("/secrets", handler.GetSecrets(q))
+			r.Put("/", handler.UpdateAsset(store, manager))
+			r.Post("/marginalia", handler.AddMarginalia(store, manager))
+			r.Put("/marginalia/{pos}", handler.UpdateMarginalia(store, manager))
+			r.Delete("/marginalia/{pos}", handler.TearMarginalia(store, manager))
+			r.Post("/leverage", handler.LeverageAsset(store, manager))
+			r.Post("/refresh", handler.RefreshAsset(store, manager))
+			r.Post("/take", handler.TakeAsset(store, manager))
+			r.Post("/secrets", handler.WriteSecret(store, manager))
+			r.Get("/secrets", handler.GetSecrets(store))
 		})
 
 		// Laws & rumors (long-form narrative records written by players)
-		r.Get("/tables/{id}/laws", handler.ListLaws(q))
-		r.Patch("/laws/{lawId}", handler.UpdateLaw(q, manager))
-		r.Get("/tables/{id}/rumors", handler.ListRumors(q))
-		r.Patch("/rumors/{rumorId}", handler.UpdateRumor(q, manager))
+		r.Get("/tables/{id}/laws", handler.ListLaws(store))
+		r.Patch("/laws/{lawId}", handler.UpdateLaw(store, manager))
+		r.Get("/tables/{id}/rumors", handler.ListRumors(store))
+		r.Patch("/rumors/{rumorId}", handler.UpdateRumor(store, manager))
 
 		// Public record + scene threading
-		r.Get("/tables/{id}/record", handler.GetFullRecord(q))
-		r.Get("/tables/{id}/posts", handler.ListGamePosts(q))
-		r.Post("/tables/{id}/posts", handler.CreatePlayerPost(q, manager))
-		r.Post("/tables/{id}/rows/{row}/summary", handler.CreateSceneEntry(q, manager))
+		r.Get("/tables/{id}/record", handler.GetFullRecord(store))
+		r.Get("/tables/{id}/posts", handler.ListGamePosts(store))
+		r.Post("/tables/{id}/posts", handler.CreatePlayerPost(store, manager))
+		r.Post("/tables/{id}/rows/{row}/summary", handler.CreateSceneEntry(store, manager))
 
 		// Scenes (SCENES_PLAN.md)
-		r.Post("/tables/{id}/scenes", handler.CreateScene(q, manager))
-		r.Get("/tables/{id}/scenes/active", handler.GetActiveSceneHandler(q))
-		r.Post("/tables/{id}/scenes/{sid}/claim-peer", handler.ClaimScenePeer(q, manager))
+		r.Post("/tables/{id}/scenes", handler.CreateScene(store, manager))
+		r.Get("/tables/{id}/scenes/active", handler.GetActiveSceneHandler(store))
+		r.Post("/tables/{id}/scenes/{sid}/claim-peer", handler.ClaimScenePeer(store, manager))
 
 		// Turn structure (Phase 2d)
-		r.Post("/tables/{id}/end-scene", handler.EndScene(q, manager))
-		r.Post("/tables/{id}/refresh-assets", handler.RefreshAssets(q, manager))
-		r.Post("/tables/{id}/advance-row", handler.AdvanceRow(q, manager))
-		r.Post("/tables/{id}/pass-focus", handler.PassFocus(q, manager))
+		r.Post("/tables/{id}/end-scene", handler.EndScene(store, manager))
+		r.Post("/tables/{id}/refresh-assets", handler.RefreshAssets(store, manager))
+		r.Post("/tables/{id}/advance-row", handler.AdvanceRow(store, manager))
+		r.Post("/tables/{id}/pass-focus", handler.PassFocus(store, manager))
 
 		// Dice rolls (Phase 2e)
-		r.Get("/tables/{id}/rolls/active", handler.GetActiveRollForGame(q))
-		r.Post("/tables/{id}/rolls", handler.CreateRoll(q, manager))
+		r.Get("/tables/{id}/rolls/active", handler.GetActiveRollForGame(store))
+		r.Post("/tables/{id}/rolls", handler.CreateRoll(store, manager))
 		r.Route("/rolls/{rollId}", func(r chi.Router) {
-			r.Get("/", handler.GetRoll(q))
-			r.Post("/leverage", handler.LeverageRoll(q, manager))
-			r.Post("/call-vote", handler.CallVote(q, manager))
-			r.Post("/vote", handler.Vote(q, manager))
-			r.Post("/close-leverage", handler.CloseLeverage(q, manager))
-			r.Post("/use-banked-die", handler.UseBankedDie(q, manager))
+			r.Get("/", handler.GetRoll(store))
+			r.Post("/leverage", handler.LeverageRoll(store, manager))
+			r.Post("/call-vote", handler.CallVote(store, manager))
+			r.Post("/vote", handler.Vote(store, manager))
+			r.Post("/close-leverage", handler.CloseLeverage(store, manager))
+			r.Post("/use-banked-die", handler.UseBankedDie(store, manager))
 		})
 
 		// Simultaneous reveals (Phase 3c)
 		r.Route("/reveals/{revealId}", func(r chi.Router) {
-			r.Get("/", handler.GetReveal(q))
-			r.Post("/submit", handler.SubmitReveal(q, manager))
+			r.Get("/", handler.GetReveal(store))
+			r.Post("/submit", handler.SubmitReveal(store, manager))
 		})
 
 		// Make War — read-side war state
-		r.Get("/tables/{id}/wars", handler.ListWars(q))
+		r.Get("/tables/{id}/wars", handler.ListWars(store))
 
 		// Plans (Phase 3a+)
-		r.Get("/tables/{id}/plans", handler.ListPlans(q))
-		r.Get("/tables/{id}/plan-eligibility", handler.PlanEligibility(q))
-		r.Post("/tables/{id}/prepare-plan", handler.PreparePlan(q, manager))
+		r.Get("/tables/{id}/plans", handler.ListPlans(store))
+		r.Get("/tables/{id}/plan-eligibility", handler.PlanEligibility(store))
+		r.Post("/tables/{id}/prepare-plan", handler.PreparePlan(store, manager))
 		r.Route("/plans/{planId}", func(r chi.Router) {
-			r.Get("/", handler.GetPlan(q))
-			r.Get("/duel-state", handler.GetDuelState(q))
-			r.Get("/war-state", handler.GetWarState(q))
-			r.Post("/resolve", handler.ResolvePlan(q, manager))
-			r.Post("/make-choice", handler.MakeChoice(q, manager))
-			r.Post("/complete", handler.CompletePlan(q, manager))
+			r.Get("/", handler.GetPlan(store))
+			r.Get("/duel-state", handler.GetDuelState(store))
+			r.Get("/war-state", handler.GetWarState(store))
+			r.Post("/resolve", handler.ResolvePlan(store, manager))
+			r.Post("/make-choice", handler.MakeChoice(store, manager))
+			r.Post("/complete", handler.CompletePlan(store, manager))
 			// Mount plan-type-specific routes from the registry (e.g. fair-trade,
 			// messy-break for Exchange Courtiers; future plans add their own).
-			deps := &game.PlanDeps{Q: q, Manager: manager}
+			deps := &game.PlanDeps{Store: store, Manager: manager}
 			for _, h := range game.AllHandlers() {
 				for route, fn := range h.ExtraRoutes(deps) {
 					r.Post("/"+route, fn)
@@ -262,7 +261,7 @@ func setupRouter(q *dbgen.Queries, manager *hub.Manager) *chi.Mux {
 		})
 
 		// WebSocket (note: no Timeout middleware for WS connections)
-		r.Get("/tables/{id}/ws", handler.WebSocket(q, manager))
+		r.Get("/tables/{id}/ws", handler.WebSocket(store, manager))
 	})
 	return r
 }

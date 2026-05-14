@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/game"
 	"uneasy/hub"
@@ -133,7 +134,7 @@ func TestMakeDemands_ImmediateCounterDemand(t *testing.T) {
 	counterTarget := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
 		model.PlanProposeDecree, model.CategoryPower, 7)
 
-	deps := &PlanDeps{Q: q, Manager: hub.NewManager()}
+	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: hub.NewManager()}
 	counter, errMsg, _ := synthesizeCounterDemand(ctx, deps, &tg.Game,
 		tg.Players[0].ID, counterTarget.ID)
 	assert.Empty(t, errMsg, "synthesize should succeed")

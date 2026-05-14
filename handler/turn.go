@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -184,9 +185,9 @@ func advanceRowInner(
 // Validates the caller is the focus player and broadcasts scene.ended so all
 // clients know the roleplay portion of this turn is complete. No DB write —
 // the event is a coordination signal only.
-func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func EndScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, player, ok := requireFocusPlayer(w, r, q)
+		game, player, ok := requireFocusPlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -201,11 +202,11 @@ func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// "+ Add to public record" button.
 		var endedSceneID int64
 		ctx := r.Context()
-		if active, err := loadActiveScene(ctx, q, game.ID); err == nil && active != nil {
-			if err := q.EndScene(ctx, active.ID); err == nil {
+		if active, err := loadActiveScene(ctx, s.Q, game.ID); err == nil && active != nil {
+			if err := s.Q.EndScene(ctx, active.ID); err == nil {
 				endedSceneID = active.ID
-				summary := resolveSceneBannerText(ctx, q, active, player.DisplayName)
-				if entry, err := q.CreateSceneEntry(ctx, dbgen.CreateSceneEntryParams{
+				summary := resolveSceneBannerText(ctx, s.Q, active, player.DisplayName)
+				if entry, err := s.Q.CreateSceneEntry(ctx, dbgen.CreateSceneEntryParams{
 					GameID:    game.ID,
 					RowNumber: active.RowNumber,
 					AuthorID:  player.ID,
@@ -230,7 +231,7 @@ func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		if endedSceneID != 0 {
 			sceneIDPtr = &endedSceneID
 		}
-		EmitSystemPost(ctx, q, manager, game.ID, "scene.ended",
+		EmitSystemPost(ctx, s.Q, manager, game.ID, "scene.ended",
 			model.SeverityImportant,
 			fmt.Sprintf("%s ends the scene", player.DisplayName),
 			&row, nil, sceneIDPtr,
@@ -247,9 +248,9 @@ func EndScene(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // The focus player refreshes up to current_row of their leveraged assets.
 // Request body: {"asset_ids": [id1, id2, ...]}.
-func RefreshAssets(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, player, ok := requireFocusPlayer(w, r, q)
+		game, player, ok := requireFocusPlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -281,7 +282,7 @@ func RefreshAssets(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Validate: all assets must be owned by the caller and currently leveraged.
 		for _, id := range body.AssetIDs {
-			asset, err := q.GetAssetByID(ctx, id)
+			asset, err := s.Q.GetAssetByID(ctx, id)
 			if err != nil {
 				respondErr(w, http.StatusBadRequest, "asset not found")
 				return
@@ -299,15 +300,15 @@ func RefreshAssets(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		h, hasHub := manager.Get(game.ID)
 
 		for _, id := range body.AssetIDs {
-			if err := q.RefreshPlayerAssets(ctx, id); err != nil {
+			if err := s.Q.RefreshPlayerAssets(ctx, id); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not refresh asset")
 				return
 			}
 			if hasHub {
 				h.BroadcastEvent(model.EventAssetRefreshed, model.AssetIDPayload{AssetID: id})
 			}
-			if asset, err := q.GetAssetByID(ctx, id); err == nil {
-				EmitAssetRefreshed(ctx, q, manager, game.ID, asset, game.CurrentRow)
+			if asset, err := s.Q.GetAssetByID(ctx, id); err == nil {
+				EmitAssetRefreshed(ctx, s.Q, manager, game.ID, asset, game.CurrentRow)
 			}
 		}
 
@@ -324,9 +325,9 @@ func RefreshAssets(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // Event order: row.advanced → rankings.updated (engrailed only) → phase.changed (ended only).
 // Focus does NOT change.
-func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func AdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFocusPlayer(w, r, q)
+		game, _, ok := requireFocusPlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -337,14 +338,14 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		h, _ := manager.Get(game.ID) // nil if no clients connected — advanceRowInner handles nil
 
-		if outstanding, err := mwOutstandingCostsForGame(r.Context(), q, game.ID, game.CurrentRow); err != nil {
+		if outstanding, err := mwOutstandingCostsForGame(r.Context(), s.Q, game.ID, game.CurrentRow); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check battle costs")
 			return
 		} else if len(outstanding) > 0 {
 			respondErr(w, http.StatusConflict, "outstanding battle costs must be paid before advancing the row")
 			return
 		}
-		if claims, err := mwOutstandingSurrenderClaimsForGame(r.Context(), q, game.ID); err != nil {
+		if claims, err := mwOutstandingSurrenderClaimsForGame(r.Context(), s.Q, game.ID); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check surrender claims")
 			return
 		} else if len(claims) > 0 {
@@ -356,7 +357,7 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		newRow, ended, err := advanceRowInner(r, q, manager, h, game)
+		newRow, ended, err := advanceRowInner(r, s.Q, manager, h, game)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not advance row")
 			return
@@ -366,7 +367,7 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respond(w, http.StatusOK, map[string]any{"phase": model.PhaseEnded})
 			return
 		}
-		mwBroadcastBattleCostsDue(r.Context(), q, manager, game.ID, newRow)
+		mwBroadcastBattleCostsDue(r.Context(), s.Q, manager, game.ID, newRow)
 		respond(w, http.StatusOK, map[string]any{
 			"row_number":        newRow,
 			"crossed_engrailed": isEngrailedLine(game.CurrentRow, newRow),
@@ -385,9 +386,9 @@ func AdvanceRow(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // Focus does NOT change again on the row advance — whoever receives it in
 // step 6 carries it into the next row.
-func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFocusPlayer(w, r, q)
+		game, _, ok := requireFocusPlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -403,13 +404,13 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Step 6: pass focus to the next player clockwise.
-		next, err := nextFocusPlayer(r, q, game.ID, *game.FocusPlayerID)
+		next, err := nextFocusPlayer(r, s.Q, game.ID, *game.FocusPlayerID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not determine next focus player")
 			return
 		}
 
-		if err = q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+		if err = s.Q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
 			ID:            game.ID,
 			FocusPlayerID: new(next.ID),
 		}); err != nil {
@@ -426,7 +427,7 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Step 7: are there pending plans still on this row?
-		pending, err := q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
+		pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
 			GameID:    game.ID,
 			RowNumber: game.CurrentRow,
 		})
@@ -454,7 +455,7 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// any active war still has unpaid battle costs for the current row.
 		if outstanding, costErr := mwOutstandingCostsForGame(
 			ctx,
-			q,
+			s.Q,
 			game.ID,
 			game.CurrentRow,
 		); costErr == nil &&
@@ -466,7 +467,7 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			})
 			return
 		}
-		if claims, claimErr := mwOutstandingSurrenderClaimsForGame(ctx, q, game.ID); claimErr == nil &&
+		if claims, claimErr := mwOutstandingSurrenderClaimsForGame(ctx, s.Q, game.ID); claimErr == nil &&
 			len(claims) > 0 {
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
@@ -477,7 +478,7 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Focus stays with `next` (they carry it into the new row).
-		newRow, ended, err := advanceRowInner(r, q, manager, h, game)
+		newRow, ended, err := advanceRowInner(r, s.Q, manager, h, game)
 		if err != nil {
 			// Row advance failed after focus already moved — not ideal, but
 			// focus.changed was already broadcast so respond with what we have.
@@ -498,7 +499,7 @@ func PassFocus(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		mwBroadcastBattleCostsDue(ctx, q, manager, game.ID, newRow)
+		mwBroadcastBattleCostsDue(ctx, s.Q, manager, game.ID, newRow)
 		respond(w, http.StatusOK, map[string]any{
 			"focus_player_id":   next.ID,
 			"focus_player_name": next.DisplayName,

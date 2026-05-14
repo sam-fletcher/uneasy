@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 )
 
@@ -14,7 +15,7 @@ import (
 //
 // Skips code verification: looks up (or creates) the account by username
 // and opens a session. Mounted only when UNEASY_DEV=1.
-func DevLogin(q *dbgen.Queries) http.HandlerFunc {
+func DevLogin(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		username := r.URL.Query().Get("username")
 		if username == "" {
@@ -23,10 +24,10 @@ func DevLogin(q *dbgen.Queries) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		account, err := q.GetAccountByUsername(ctx, username)
+		account, err := s.Q.GetAccountByUsername(ctx, username)
 		if errors.Is(err, pgx.ErrNoRows) {
 			hash, _ := bcrypt.GenerateFromPassword([]byte("dev"), bcrypt.MinCost)
-			account, err = q.CreateAccount(ctx, dbgen.CreateAccountParams{
+			account, err = s.Q.CreateAccount(ctx, dbgen.CreateAccountParams{
 				Username: username,
 				CodeHash: string(hash),
 			})
@@ -36,7 +37,7 @@ func DevLogin(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		if err = openSession(ctx, w, q, account.ID); err != nil {
+		if err = openSession(ctx, w, s.Q, account.ID); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not open session")
 			return
 		}
@@ -46,9 +47,9 @@ func DevLogin(q *dbgen.Queries) http.HandlerFunc {
 
 // DevReset handles POST /api/dev/reset. Wipes all game and account data.
 // Schema (migrations) is left untouched.
-func DevReset(q *dbgen.Queries) http.HandlerFunc {
+func DevReset(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := q.DevWipe(r.Context()); err != nil {
+		if err := s.Q.DevWipe(r.Context()); err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}

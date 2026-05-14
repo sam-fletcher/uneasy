@@ -34,6 +34,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/rand/v2"
 	"net/http"
 
@@ -222,31 +223,35 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 			PeerCount:          parentResData.PeerCount,
 		}
 
-		syntheticPlan, err := deps.Q.CreatePlan(ctx, dbgen.CreatePlanParams{
-			GameID:           game.ID,
-			PlanType:         model.PlanMakeIntroductions,
-			Category:         model.CategoryKnowledge,
-			PreparerID:       plan.PreparerID,
-			TargetPlayerID:   nil,
-			TargetAssetID:    nil,
-			RowNumber:        targetRow,
-			RowOrder:         int16(count),
-			PreparedAtRow:    game.CurrentRow,
-			PreparationNotes: nil,
+		var syntheticPlan dbgen.Plan
+		err = deps.InTx(ctx, func(q *dbgen.Queries) error {
+			sp, cErr := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+				GameID:           game.ID,
+				PlanType:         model.PlanMakeIntroductions,
+				Category:         model.CategoryKnowledge,
+				PreparerID:       plan.PreparerID,
+				TargetPlayerID:   nil,
+				TargetAssetID:    nil,
+				RowNumber:        targetRow,
+				RowOrder:         int16(count),
+				PreparedAtRow:    game.CurrentRow,
+				PreparationNotes: nil,
+			})
+			if cErr != nil {
+				return errors.New("could not create delayed arrival plan")
+			}
+			syntheticPlan = sp
+			if sErr := saveResolutionData(ctx, q, syntheticPlan.ID, syntheticResData); sErr != nil {
+				return errors.New("could not save delayed arrival data")
+			}
+			parentResData.DelayedPeerPlanIDs = append(parentResData.DelayedPeerPlanIDs, syntheticPlan.ID)
+			if sErr := saveResolutionData(ctx, q, plan.ID, parentResData); sErr != nil {
+				return errors.New("could not update parent plan data")
+			}
+			return nil
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create delayed arrival plan")
-			return
-		}
-		if err := saveResolutionData(ctx, deps.Q, syntheticPlan.ID, syntheticResData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save delayed arrival data")
-			return
-		}
-
-		// Record the synthetic plan ID in the parent's ResData.
-		parentResData.DelayedPeerPlanIDs = append(parentResData.DelayedPeerPlanIDs, syntheticPlan.ID)
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, parentResData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not update parent plan data")
+			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 

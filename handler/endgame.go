@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -34,9 +35,9 @@ const (
 // Body: {"mode": "smooth_landing" | "explosive_finale"}.
 // Facilitator-only. Idempotent — overwrites any prior selection. Long
 // Campaign is intentionally rejected (deferred indefinitely).
-func SetEndgameMode(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func SetEndgameMode(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -65,7 +66,7 @@ func SetEndgameMode(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		mode := body.Mode
-		err := q.SetEndingMode(r.Context(), dbgen.SetEndingModeParams{
+		err := s.Q.SetEndingMode(r.Context(), dbgen.SetEndingModeParams{
 			ID: game.ID, EndingMode: &mode,
 		})
 		if err != nil {

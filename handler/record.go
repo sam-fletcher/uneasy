@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -25,28 +26,28 @@ type RecordRow struct {
 // Returns all 13 public-record rows with their scene entries and plans,
 // grouped by row number. Plans will be empty until Phase 2f; the shape
 // is stable now so the frontend can render the timeline.
-func GetFullRecord(q *dbgen.Queries) http.HandlerFunc {
+func GetFullRecord(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 
 		ctx := r.Context()
 
-		rows, err := q.ListPublicRecordRows(ctx, gameID)
+		rows, err := s.Q.ListPublicRecordRows(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load public record")
 			return
 		}
 
-		entries, err := q.ListSceneEntries(ctx, gameID)
+		entries, err := s.Q.ListSceneEntries(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load scene entries")
 			return
 		}
 
-		plans, err := q.ListPlansByGame(ctx, gameID)
+		plans, err := s.Q.ListPlansByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load plans")
 			return
@@ -89,9 +90,9 @@ func GetFullRecord(q *dbgen.Queries) http.HandlerFunc {
 //
 // Adds a summary line to the public record for the given row and broadcasts
 // the new entry to all connected clients.
-func CreateSceneEntry(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CreateSceneEntry(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -117,7 +118,7 @@ func CreateSceneEntry(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 		row := int16(rowNum)
 
-		entry, err := q.CreateSceneEntry(ctx, dbgen.CreateSceneEntryParams{
+		entry, err := s.Q.CreateSceneEntry(ctx, dbgen.CreateSceneEntryParams{
 			GameID:    gameID,
 			RowNumber: row,
 			AuthorID:  player.ID,

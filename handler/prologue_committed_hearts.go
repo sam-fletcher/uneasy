@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"slices"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
@@ -53,24 +54,24 @@ type PrologueRankingState struct {
 
 // GetPrologueRankingState handles GET /api/tables/{id}/prologue/ranking-state.
 // Returns the full per-player commitment + Done state for the game.
-func GetPrologueRankingState(q *dbgen.Queries) http.HandlerFunc {
+func GetPrologueRankingState(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		committed, err := q.ListCommittedHeartsByGame(ctx, gameID)
+		committed, err := s.Q.ListCommittedHeartsByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load committed hearts")
 			return
 		}
-		done, err := q.ListTrackDoneByGame(ctx, gameID)
+		done, err := s.Q.ListTrackDoneByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load done flags")
 			return
 		}
-		extras, err := q.ListExtraPeersByGame(ctx, gameID)
+		extras, err := s.Q.ListExtraPeersByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load extra peers")
 			return
@@ -110,14 +111,14 @@ func GetPrologueRankingState(q *dbgen.Queries) http.HandlerFunc {
 // caller (Done → false).
 //
 //nolint:gocognit // Legitimate validation: track state, ownership, card suit, locking constraints
-func CommitTrackHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CommitTrackHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		game := loadGameForPrologue(w, ctx, q, gameID)
+		game := loadGameForPrologue(w, ctx, s.Q, gameID)
 		if game == nil {
 			return
 		}
@@ -143,7 +144,7 @@ func CommitTrackHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 		}
 		// Validate every card.
 		for _, cid := range body.CardIDs {
-			card, err := q.GetPlayerCardByID(ctx, cid)
+			card, err := s.Q.GetPlayerCardByID(ctx, cid)
 			if err != nil || card.GameID != gameID {
 				respondErr(w, http.StatusBadRequest, "unknown card")
 				return
@@ -159,7 +160,7 @@ func CommitTrackHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 		}
 		// Reject re-committing cards already locked into a previously-
 		// resolved track (these stay in the table after resolution).
-		existing, err := q.ListCommittedHeartsByGame(ctx, gameID)
+		existing, err := s.Q.ListCommittedHeartsByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load existing commitments")
 			return
@@ -179,29 +180,32 @@ func CommitTrackHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 		for _, cid := range body.CardIDs {
 			keep[cid] = true
 		}
-		for _, ch := range existing {
-			if ch.PlayerID == player.ID && ch.Track == body.Track && !keep[ch.CardID] {
-				if err := q.UncommitHeart(ctx, dbgen.UncommitHeartParams{
-					GameID: gameID, CardID: ch.CardID,
-				}); err != nil {
-					respondErr(w, http.StatusInternalServerError, "could not uncommit heart")
-					return
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			for _, ch := range existing {
+				if ch.PlayerID == player.ID && ch.Track == body.Track && !keep[ch.CardID] {
+					if uErr := q.UncommitHeart(ctx, dbgen.UncommitHeartParams{
+						GameID: gameID, CardID: ch.CardID,
+					}); uErr != nil {
+						return errors.New("could not uncommit heart")
+					}
 				}
 			}
-		}
-		for _, cid := range body.CardIDs {
-			if err := q.CommitHeart(ctx, dbgen.CommitHeartParams{
-				GameID: gameID, PlayerID: player.ID, Track: body.Track, CardID: cid,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not commit heart")
-				return
+			for _, cid := range body.CardIDs {
+				if cErr := q.CommitHeart(ctx, dbgen.CommitHeartParams{
+					GameID: gameID, PlayerID: player.ID, Track: body.Track, CardID: cid,
+				}); cErr != nil {
+					return errors.New("could not commit heart")
+				}
 			}
-		}
-		// Adjusting commitments un-readies the player.
-		if err := q.SetTrackDone(ctx, dbgen.SetTrackDoneParams{
-			GameID: gameID, PlayerID: player.ID, Track: body.Track, Done: false,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not reset done")
+			if sErr := q.SetTrackDone(ctx, dbgen.SetTrackDoneParams{
+				GameID: gameID, PlayerID: player.ID, Track: body.Track, Done: false,
+			}); sErr != nil {
+				return errors.New("could not reset done")
+			}
+			return nil
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
@@ -222,14 +226,14 @@ func CommitTrackHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 // Body: {"track": "power", "done": true}. If setting done=true causes
 // every player to be Done for the active track, the server resolves it
 // (computes bright/grey, persists rankings, refunds grey, advances step).
-func SetPrologueDone(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func SetPrologueDone(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		game := loadGameForPrologue(w, ctx, q, gameID)
+		game := loadGameForPrologue(w, ctx, s.Q, gameID)
 		if game == nil {
 			return
 		}
@@ -253,30 +257,35 @@ func SetPrologueDone(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "track is not currently being declared")
 			return
 		}
-		if err := q.SetTrackDone(ctx, dbgen.SetTrackDoneParams{
-			GameID: gameID, PlayerID: player.ID, Track: body.Track, Done: body.Done,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save done")
+
+		err := s.InTx(ctx, func(q *dbgen.Queries) error {
+			if sErr := q.SetTrackDone(ctx, dbgen.SetTrackDoneParams{
+				GameID: gameID, PlayerID: player.ID, Track: body.Track, Done: body.Done,
+			}); sErr != nil {
+				return errors.New("could not save done")
+			}
+			if body.Done {
+				allDone, adErr := allPlayersDoneForTrack(ctx, q, gameID, body.Track)
+				if adErr != nil {
+					return adErr
+				}
+				if allDone {
+					if rErr := resolveTrack(ctx, q, manager, game, body.Track); rErr != nil {
+						return rErr
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+
 		broadcastEvent(manager, gameID, model.EventPrologueDoneChanged,
 			model.PrologueDoneChangedPayload{
 				PlayerID: player.ID, Track: body.Track, Done: body.Done,
 			})
-
-		if body.Done {
-			allDone, err := allPlayersDoneForTrack(ctx, q, gameID, body.Track)
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			if allDone {
-				if err := resolveTrack(ctx, q, manager, game, body.Track); err != nil {
-					respondErr(w, http.StatusInternalServerError, err.Error())
-					return
-				}
-			}
-		}
 		respond(w, http.StatusOK, map[string]any{"track": body.Track, "done": body.Done})
 	}
 }

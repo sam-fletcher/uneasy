@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/model"
 )
@@ -93,9 +94,9 @@ type WarStateResponse struct {
 
 // GetWarState handles GET /api/plans/:planId/war-state. Any player at the
 // table may read it (war state is public to the table, like the plan itself).
-func GetWarState(q *dbgen.Queries) http.HandlerFunc {
+func GetWarState(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, _, ok := requirePlanAccess(w, r, q)
+		plan, _, ok := requirePlanAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -103,7 +104,7 @@ func GetWarState(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		war, err := q.GetWarByOriginPlan(ctx, plan.ID)
+		war, err := s.Q.GetWarByOriginPlan(ctx, plan.ID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				respondErr(w, http.StatusNotFound, "no war exists yet for this plan")
@@ -112,7 +113,7 @@ func GetWarState(q *dbgen.Queries) http.HandlerFunc {
 			}
 			return
 		}
-		resp, err := buildWarState(ctx, q, war)
+		resp, err := buildWarState(ctx, s.Q, war)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not build war state")
 			return
@@ -124,21 +125,21 @@ func GetWarState(q *dbgen.Queries) http.HandlerFunc {
 // ListWars handles GET /api/tables/:id/wars. Returns every active war in the
 // game (so the turn indicator can flag rows blocked on outstanding costs and
 // surface a multi-war side panel later if desired).
-func ListWars(q *dbgen.Queries) http.HandlerFunc {
+func ListWars(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		wars, err := q.ListActiveWarsByGame(ctx, gameID)
+		wars, err := s.Q.ListActiveWarsByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load wars")
 			return
 		}
 		out := make([]WarStateResponse, 0, len(wars))
 		for _, war := range wars {
-			ws, err := buildWarState(ctx, q, war)
+			ws, err := buildWarState(ctx, s.Q, war)
 			if err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not build war state")
 				return

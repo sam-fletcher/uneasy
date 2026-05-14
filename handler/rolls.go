@@ -20,12 +20,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/rand/v2"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
@@ -75,15 +77,15 @@ func rollIsOpen(roll *dbgen.DiceRoll) bool {
 //
 // Returns the most recently created unresolved roll for the game, plus its
 // dice and votes. If no roll is active, returns {"roll": null, "dice": [], "votes": []}.
-func GetActiveRollForGame(q *dbgen.Queries) http.HandlerFunc {
+func GetActiveRollForGame(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 
 		ctx := r.Context()
-		rolls, err := q.ListDiceRollsByGame(ctx, gameID)
+		rolls, err := s.Q.ListDiceRollsByGame(ctx, gameID)
 		if err != nil {
 			respond(w, http.StatusOK, map[string]any{
 				"roll":  nil,
@@ -110,11 +112,11 @@ func GetActiveRollForGame(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		dice, err := q.ListDiceByRoll(ctx, active.ID)
+		dice, err := s.Q.ListDiceByRoll(ctx, active.ID)
 		if err != nil {
 			dice = []dbgen.DiceRollDice{}
 		}
-		votes, err := q.ListVotesByRoll(ctx, active.ID)
+		votes, err := s.Q.ListVotesByRoll(ctx, active.ID)
 		if err != nil {
 			votes = []dbgen.DifficultyVote{}
 		}
@@ -138,13 +140,13 @@ func GetActiveRollForGame(q *dbgen.Queries) http.HandlerFunc {
 // Creates a dice roll for the current row. The caller becomes the actor and
 // receives 2 base dice (no leveraged asset). The roll is broadcast via
 // roll.created so all clients can display the panel.
-func CreateRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
-		game, err := q.GetGameByID(r.Context(), gameID)
+		game, err := s.Q.GetGameByID(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -168,29 +170,35 @@ func CreateRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
-			GameID:     gameID,
-			PlanID:     nil,
-			RowNumber:  new(game.CurrentRow),
-			ActorID:    player.ID,
-			Difficulty: body.Difficulty,
+		var roll dbgen.DiceRoll
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			r2, cErr := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+				GameID:     gameID,
+				PlanID:     nil,
+				RowNumber:  new(game.CurrentRow),
+				ActorID:    player.ID,
+				Difficulty: body.Difficulty,
+			})
+			if cErr != nil {
+				return errors.New("could not create roll")
+			}
+			roll = r2
+
+			for range 2 {
+				if _, dErr := q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+					RollID:           roll.ID,
+					PlayerID:         player.ID,
+					IsInterference:   false,
+					LeveragedAssetID: nil,
+				}); dErr != nil {
+					return errors.New("could not create base dice")
+				}
+			}
+			return nil
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create roll")
+			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
-		}
-
-		// Create 2 base dice for the actor (no leveraged asset).
-		for range 2 {
-			if _, err := q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
-				RollID:           roll.ID,
-				PlayerID:         player.ID,
-				IsInterference:   false,
-				LeveragedAssetID: nil,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not create base dice")
-				return
-			}
 		}
 
 		broadcastEvent(manager, gameID, model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
@@ -204,19 +212,19 @@ func CreateRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // GetRoll handles GET /api/rolls/:rollId.
 //
 // Returns the roll, its dice, and the current vote counts.
-func GetRoll(q *dbgen.Queries) http.HandlerFunc {
+func GetRoll(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		roll, _, ok := requireRollAccess(w, r, q)
+		roll, _, ok := requireRollAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
 
 		ctx := r.Context()
-		dice, err := q.ListDiceByRoll(ctx, roll.ID)
+		dice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
 		if err != nil {
 			dice = []dbgen.DiceRollDice{}
 		}
-		votes, err := q.ListVotesByRoll(ctx, roll.ID)
+		votes, err := s.Q.ListVotesByRoll(ctx, roll.ID)
 		if err != nil {
 			votes = []dbgen.DifficultyVote{}
 		}
@@ -240,9 +248,9 @@ func GetRoll(q *dbgen.Queries) http.HandlerFunc {
 // Commits a player's asset to the roll, adding one die. The caller must own
 // the asset. The die is marked as interference when the caller is not the
 // actor. The asset must not already be committed to this roll.
-func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func LeverageRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, q)
+		roll, player, ok := requireRollAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -262,7 +270,7 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Validate the asset.
-		asset, err := q.GetAssetByID(ctx, body.AssetID)
+		asset, err := s.Q.GetAssetByID(ctx, body.AssetID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "asset not found")
 			return
@@ -277,7 +285,7 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Check the asset hasn't already been committed to this roll.
-		existingDice, err := q.ListDiceByRoll(ctx, roll.ID)
+		existingDice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check dice")
 			return
@@ -293,14 +301,14 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// winner on a resolved demand, the target preparer may not leverage
 		// their own assets on this roll — that right belongs to the demand
 		// winner via /demand-leverage. Other participants leverage normally.
-		if leverageBlockedByDemandWinner(ctx, q, roll, player, asset) {
+		if leverageBlockedByDemandWinner(ctx, s.Q, roll, player, asset) {
 			respondErr(w, http.StatusForbidden,
 				"a demand's control_leverage winner has taken over leverage of your assets on this roll")
 			return
 		}
 
 		// Mark the asset as leveraged.
-		if err = q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+		if err = s.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
 			ID:          body.AssetID,
 			IsLeveraged: true,
 		}); err != nil {
@@ -311,7 +319,7 @@ func LeverageRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// Determine interference: actor's own dice are not interference.
 		isInterference := player.ID != roll.ActorID
 
-		die, err := q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+		die, err := s.Q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
 			RollID:           roll.ID,
 			PlayerID:         player.ID,
 			IsInterference:   isInterference,
@@ -374,9 +382,9 @@ func leverageBlockedByDemandWinner(
 // Actor-only. Broadcasts roll.vote_called to all players to open the
 // difficulty vote UI. No DB change — the vote state is tracked by the
 // presence of rows in difficulty_votes.
-func CallVote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CallVote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, q)
+		roll, player, ok := requireRollAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -406,9 +414,9 @@ func CallVote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Submits a difficulty vote. When all players in the game have voted, the
 // server computes adjusted_difficulty = difficulty + nay_count - yea_count
 // (clamped to 1..6) and broadcasts roll.vote_resolved.
-func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func Vote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, q)
+		roll, player, ok := requireRollAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -431,7 +439,7 @@ func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		if err := q.CreateDifficultyVote(ctx, dbgen.CreateDifficultyVoteParams{
+		if err := s.Q.CreateDifficultyVote(ctx, dbgen.CreateDifficultyVoteParams{
 			RollID:   roll.ID,
 			PlayerID: player.ID,
 			Vote:     body.Vote,
@@ -450,12 +458,12 @@ func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Check if all players have voted.
-		allPlayers, err := q.GetPlayersByGame(ctx, roll.GameID)
+		allPlayers, err := s.Q.GetPlayersByGame(ctx, roll.GameID)
 		if err != nil {
 			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
 			return
 		}
-		counts, err := q.CountVotesByRoll(ctx, roll.ID)
+		counts, err := s.Q.CountVotesByRoll(ctx, roll.ID)
 		if err != nil {
 			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
 			return
@@ -471,7 +479,7 @@ func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		adj := int16(min(
 			max(int64(roll.Difficulty)+counts.NayCount-counts.YeaCount, 1),
 			diceSides))
-		if err = q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
+		if err = s.Q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
 			ID:                 roll.ID,
 			AdjustedDifficulty: new(adj),
 		}); err != nil {
@@ -509,9 +517,9 @@ func Vote(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Result = count of distinct face values in the actor's uncancelled dice.
 // Outcome = "make" if result >= effective_difficulty, else "mar".
 // Effective difficulty = adjusted_difficulty if set, otherwise difficulty.
-func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CloseLeverage(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, q)
+		roll, player, ok := requireRollAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -530,20 +538,20 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		dice, err := q.ListDiceByRoll(ctx, roll.ID)
+		dice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load dice")
 			return
 		}
 
-		actorDice, cancelledIDs, err := rollAndCancelDice(ctx, w, q, dice)
+		actorDice, cancelledIDs, err := rollAndCancelDice(ctx, w, s.Q, dice)
 		if err != nil {
 			return
 		}
 
 		result, outcome := calculateRollResult(actorDice, cancelledIDs, roll)
 
-		err = q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		err = s.Q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
 			ID:      roll.ID,
 			Result:  new(result),
 			Outcome: new(outcome),
@@ -554,12 +562,12 @@ func CloseLeverage(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Re-fetch the resolved roll and all dice (with faces + cancelled flags).
-		resolvedRoll, err := q.GetDiceRollByID(ctx, roll.ID)
+		resolvedRoll, err := s.Q.GetDiceRollByID(ctx, roll.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not reload roll")
 			return
 		}
-		finalDice, err := q.ListDiceByRoll(ctx, roll.ID)
+		finalDice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
 		if err != nil {
 			finalDice = []dbgen.DiceRollDice{}
 		}
@@ -669,9 +677,9 @@ func rollAndCancelDice(
 // pool with its pre-set face value; it cannot be used as interference.
 //
 // Request body: {"banked_die_id": N}
-func UseBankedDie(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func UseBankedDie(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, q)
+		roll, player, ok := requireRollAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -695,7 +703,7 @@ func UseBankedDie(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		banked, err := q.GetBankedDie(ctx, body.BankedDieID)
+		banked, err := s.Q.GetBankedDie(ctx, body.BankedDieID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "banked die not found")
 			return
@@ -714,7 +722,7 @@ func UseBankedDie(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Create a die entry with the pre-set face.
-		die, err := q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+		die, err := s.Q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
 			RollID:           roll.ID,
 			PlayerID:         player.ID,
 			IsInterference:   false,
@@ -726,7 +734,7 @@ func UseBankedDie(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Set the face immediately (banked dice have a pre-determined face).
-		if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{
+		if err := s.Q.SetDieFace(ctx, dbgen.SetDieFaceParams{
 			ID:   die.ID,
 			Face: &banked.Face,
 		}); err != nil {
@@ -735,7 +743,7 @@ func UseBankedDie(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Mark the banked die as used.
-		if err := q.MarkBankedDieUsed(ctx, dbgen.MarkBankedDieUsedParams{
+		if err := s.Q.MarkBankedDieUsed(ctx, dbgen.MarkBankedDieUsedParams{
 			ID:         body.BankedDieID,
 			UsedRollID: &roll.ID,
 		}); err != nil {

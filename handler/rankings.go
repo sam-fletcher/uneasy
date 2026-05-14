@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	dbgen "uneasy/db/gen"
+	"uneasy/db"
 )
 
 const (
@@ -13,14 +13,14 @@ const (
 )
 
 // GetRankings handles GET /api/tables/{id}/rankings.
-func GetRankings(q *dbgen.Queries) http.HandlerFunc {
+func GetRankings(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 
-		rankings, err := q.ListRankingsByGame(r.Context(), gameID)
+		rankings, err := s.Q.ListRankingsByGame(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load rankings")
 			return

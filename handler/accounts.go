@@ -22,7 +22,7 @@ const sessionCookieMaxAge = int(365 * 24 * time.Hour / time.Second)
 //
 // Body: {"username": "...", "code": "...", "email": "..."?}
 // Creates the account, opens a session, and sets the cookie.
-func CreateAccount(q *dbgen.Queries) http.HandlerFunc {
+func CreateAccount(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Username string  `json:"username"`
@@ -45,7 +45,7 @@ func CreateAccount(q *dbgen.Queries) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		if _, err := q.GetAccountByUsername(ctx, body.Username); err == nil {
+		if _, err := s.Q.GetAccountByUsername(ctx, body.Username); err == nil {
 			respondErr(w, http.StatusConflict, "username taken")
 			return
 		} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -59,7 +59,7 @@ func CreateAccount(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		account, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+		account, err := s.Q.CreateAccount(ctx, dbgen.CreateAccountParams{
 			Username: body.Username,
 			CodeHash: string(hash),
 			Email:    body.Email,
@@ -69,7 +69,7 @@ func CreateAccount(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		if err = openSession(ctx, w, q, account.ID); err != nil {
+		if err = openSession(ctx, w, s.Q, account.ID); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not open session")
 			return
 		}
@@ -97,7 +97,7 @@ func GetMe() http.HandlerFunc {
 // UpdateMe handles PATCH /api/accounts/me.
 //
 // Body fields are all optional: {"username": ..., "email": ..., "code": ...}.
-func UpdateMe(q *dbgen.Queries) http.HandlerFunc {
+func UpdateMe(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
 		if acct == nil {
@@ -117,42 +117,29 @@ func UpdateMe(q *dbgen.Queries) http.HandlerFunc {
 
 		ctx := r.Context()
 
+		// Pre-validate inputs outside the transaction so we can return clean
+		// 4xx errors without opening a connection. The actual writes (which
+		// can partially succeed if any one fails) run atomically below.
+		var newUsername *string
 		if body.Username != nil {
 			name := strings.TrimSpace(*body.Username)
 			if name == "" {
 				respondErr(w, http.StatusBadRequest, "username cannot be empty")
 				return
 			}
-			if existing, err := q.GetAccountByUsername(ctx, name); err == nil && existing.ID != acct.ID {
-				respondErr(w, http.StatusConflict, "username taken")
-				return
-			}
-			_, err := q.UpdateAccountUsername(ctx, dbgen.UpdateAccountUsernameParams{
-				ID:       acct.ID,
-				Username: name,
-			})
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not update username")
-				return
-			}
+			newUsername = &name
 		}
-
+		var newEmail *string
 		if body.Email != nil {
 			email := strings.TrimSpace(*body.Email)
-			var emailPtr *string
 			if email != "" {
-				emailPtr = &email
-			}
-			_, err := q.UpdateAccountEmail(ctx, dbgen.UpdateAccountEmailParams{
-				ID:    acct.ID,
-				Email: emailPtr,
-			})
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not update email")
-				return
+				newEmail = &email
+			} else {
+				empty := ""
+				newEmail = &empty
 			}
 		}
-
+		var newCodeHash *string
 		if body.Code != nil {
 			if *body.Code == "" {
 				respondErr(w, http.StatusBadRequest, "code cannot be empty")
@@ -163,17 +150,22 @@ func UpdateMe(q *dbgen.Queries) http.HandlerFunc {
 				respondErr(w, http.StatusInternalServerError, "could not hash code")
 				return
 			}
-			_, err = q.UpdateAccountCode(ctx, dbgen.UpdateAccountCodeParams{
-				ID:       acct.ID,
-				CodeHash: string(hash),
-			})
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not update code")
-				return
-			}
+			h := string(hash)
+			newCodeHash = &h
 		}
 
-		updated, err := q.GetAccountByID(ctx, acct.ID)
+		var status int
+		err := s.InTx(ctx, func(q *dbgen.Queries) error {
+			var txErr error
+			status, txErr = updateAccountFields(ctx, q, acct, newUsername, newEmail, newCodeHash)
+			return txErr
+		})
+		if err != nil {
+			respondErr(w, status, err.Error())
+			return
+		}
+
+		updated, err := s.Q.GetAccountByID(ctx, acct.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not reload account")
 			return
@@ -183,14 +175,14 @@ func UpdateMe(q *dbgen.Queries) http.HandlerFunc {
 }
 
 // ListMyTables handles GET /api/accounts/me/tables.
-func ListMyTables(q *dbgen.Queries) http.HandlerFunc {
+func ListMyTables(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
 		if acct == nil {
 			respondErr(w, http.StatusUnauthorized, "log in first")
 			return
 		}
-		rows, err := q.ListPlayersByAccount(r.Context(), acct.ID)
+		rows, err := s.Q.ListPlayersByAccount(r.Context(), acct.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not list tables")
 			return
@@ -216,7 +208,49 @@ func accountResponse(a *dbgen.Account) map[string]any {
 	}
 }
 
-// openSession creates a sessions row and sets the cookie.
+// updateAccountFields applies the given account field updates within a transaction.
+// It returns the appropriate HTTP status code and any error encountered.
+func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddleware.Account,
+	newUsername, newEmail *string, newCodeHash *string,
+) (int, error) {
+	if newUsername != nil {
+		if existing, err := q.GetAccountByUsername(ctx, *newUsername); err == nil && existing.ID != acct.ID {
+			return http.StatusConflict, errors.New("username taken")
+		}
+		if _, err := q.UpdateAccountUsername(ctx, dbgen.UpdateAccountUsernameParams{
+			ID:       acct.ID,
+			Username: *newUsername,
+		}); err != nil {
+			return http.StatusInternalServerError, errors.New("could not update username")
+		}
+	}
+	if newEmail != nil {
+		var emailPtr *string
+		if *newEmail != "" {
+			emailPtr = newEmail
+		}
+		if _, err := q.UpdateAccountEmail(ctx, dbgen.UpdateAccountEmailParams{
+			ID:    acct.ID,
+			Email: emailPtr,
+		}); err != nil {
+			return http.StatusInternalServerError, errors.New("could not update email")
+		}
+	}
+	if newCodeHash != nil {
+		if _, err := q.UpdateAccountCode(ctx, dbgen.UpdateAccountCodeParams{
+			ID:       acct.ID,
+			CodeHash: *newCodeHash,
+		}); err != nil {
+			return http.StatusInternalServerError, errors.New("could not update code")
+		}
+	}
+	return http.StatusOK, nil
+}
+
+// openSession creates a sessions row and sets the cookie. Internal helper
+// shared by CreateAccount, sessions.go, and dev.go; takes *dbgen.Queries
+// directly so callers inside a transaction can pass their transactional
+// handle if needed.
 func openSession(ctx context.Context, w http.ResponseWriter, q *dbgen.Queries, accountID int64) error {
 	token, err := db.NewCookieToken()
 	if err != nil {

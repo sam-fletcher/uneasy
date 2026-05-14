@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -27,14 +28,14 @@ func tonesLocked(phase model.GamePhase) bool {
 }
 
 // ListToneTopics handles GET /api/tables/{id}/tone.
-func ListToneTopics(q *dbgen.Queries) http.HandlerFunc {
+func ListToneTopics(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 
-		topics, err := q.ListToneTopics(r.Context(), gameID)
+		topics, err := s.Q.ListToneTopics(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load topics")
 			return
@@ -45,9 +46,9 @@ func ListToneTopics(q *dbgen.Queries) http.HandlerFunc {
 }
 
 // UpdateToneTopic handles PUT /api/tables/{id}/tone/{topicId}.
-func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func UpdateToneTopic(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -76,7 +77,7 @@ func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		game, err := q.GetGameByID(ctx, gameID)
+		game, err := s.Q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -87,7 +88,7 @@ func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Verify the topic belongs to this game.
-		topic, err := q.GetToneTopic(ctx, topicID)
+		topic, err := s.Q.GetToneTopic(ctx, topicID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "topic not found")
 			return
@@ -97,7 +98,7 @@ func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := q.UpdateToneTopicStatus(ctx, dbgen.UpdateToneTopicStatusParams{
+		if err := s.Q.UpdateToneTopicStatus(ctx, dbgen.UpdateToneTopicStatusParams{
 			ID:     topicID,
 			Status: status,
 		}); err != nil {
@@ -119,9 +120,9 @@ func UpdateToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 }
 
 // AddToneTopic handles POST /api/tables/{id}/tone.
-func AddToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func AddToneTopic(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -140,7 +141,7 @@ func AddToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		game, err := q.GetGameByID(ctx, gameID)
+		game, err := s.Q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -150,7 +151,7 @@ func AddToneTopic(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		topic, err := q.CreateToneTopic(ctx, dbgen.CreateToneTopicParams{
+		topic, err := s.Q.CreateToneTopic(ctx, dbgen.CreateToneTopicParams{
 			GameID: gameID,
 			Topic:  body.Topic,
 			Status: model.ToneDefault,

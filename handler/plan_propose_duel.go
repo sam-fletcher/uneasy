@@ -38,6 +38,7 @@ import (
 	"net/http"
 	"strings"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/model"
@@ -233,9 +234,9 @@ type duelStakeView struct {
 // GetDuelState returns the full duel state a caller is allowed to see:
 // all stakes (with hidden dice masked for the opponent's unresolved stakes)
 // and the full bout history. GET /api/plans/:planId/duel-state.
-func GetDuelState(q *dbgen.Queries) http.HandlerFunc {
+func GetDuelState(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, q)
+		plan, player, ok := requirePlanAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -245,12 +246,12 @@ func GetDuelState(q *dbgen.Queries) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		stakes, err := q.ListDuelStakesByPlan(ctx, plan.ID)
+		stakes, err := s.Q.ListDuelStakesByPlan(ctx, plan.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load stakes")
 			return
 		}
-		bouts, err := q.ListDuelBoutsByPlan(ctx, plan.ID)
+		bouts, err := s.Q.ListDuelBoutsByPlan(ctx, plan.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load bouts")
 			return

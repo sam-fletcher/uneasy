@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strings"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
@@ -142,14 +143,14 @@ func loadGameForPrologue(w http.ResponseWriter, ctx context.Context, q *dbgen.Qu
 // prologue_ranking_step. Validates that the player has enough remaining
 // hearts (hearts held minus hearts already declared on other tracks). The
 // per-track count overwrites any previous declaration on the same track.
-func DeclareHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func DeclareHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		game := loadGameForPrologue(w, ctx, q, gameID)
+		game := loadGameForPrologue(w, ctx, s.Q, gameID)
 		if game == nil {
 			return
 		}
@@ -173,7 +174,7 @@ func DeclareHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Validate against this player's hearts held minus hearts spent on
 		// other tracks.
-		cards, err := q.ListPlayerCardsByPlayer(ctx, dbgen.ListPlayerCardsByPlayerParams{
+		cards, err := s.Q.ListPlayerCardsByPlayer(ctx, dbgen.ListPlayerCardsByPlayerParams{
 			GameID: gameID, PlayerID: player.ID,
 		})
 		if err != nil {
@@ -186,7 +187,7 @@ func DeclareHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				held++
 			}
 		}
-		alreadyTotal, err := q.SumHeartDeclarationsByPlayer(ctx, dbgen.SumHeartDeclarationsByPlayerParams{
+		alreadyTotal, err := s.Q.SumHeartDeclarationsByPlayer(ctx, dbgen.SumHeartDeclarationsByPlayerParams{
 			GameID: gameID, PlayerID: player.ID,
 		})
 		if err != nil {
@@ -195,7 +196,7 @@ func DeclareHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 		// Re-running for the same track replaces an existing declaration, so
 		// subtract its previous value before checking.
-		decls, err := q.ListHeartDeclarationsByGame(ctx, gameID)
+		decls, err := s.Q.ListHeartDeclarationsByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load declarations")
 			return
@@ -212,7 +213,7 @@ func DeclareHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		err = q.UpsertHeartDeclaration(ctx, dbgen.UpsertHeartDeclarationParams{
+		err = s.Q.UpsertHeartDeclaration(ctx, dbgen.UpsertHeartDeclarationParams{
 			GameID: gameID, PlayerID: player.ID, Track: track, Count: body.Count,
 		})
 		if err != nil {
@@ -234,9 +235,9 @@ func DeclareHearts(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // auto-ranked players to the rankings table, and either advances to the
 // place_set_asides_X step (if any set-asides exist) or directly to the next
 // declare step / extra-peers / main_event when set-asides are empty.
-func FinalizeTrackRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func FinalizeTrackRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -251,7 +252,7 @@ func FinalizeTrackRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFu
 		}
 
 		ctx := r.Context()
-		players, err := q.GetPlayersByGame(ctx, game.ID)
+		players, err := s.Q.GetPlayersByGame(ctx, game.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load players")
 			return
@@ -260,12 +261,12 @@ func FinalizeTrackRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFu
 		for i, p := range players {
 			ids[i] = p.ID
 		}
-		cards, err := loadPrologueCards(ctx, q, game.ID)
+		cards, err := loadPrologueCards(ctx, s.Q, game.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load cards")
 			return
 		}
-		decls, err := loadPrologueDeclarations(ctx, q, game.ID)
+		decls, err := loadPrologueDeclarations(ctx, s.Q, game.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load declarations")
 			return
@@ -279,7 +280,7 @@ func FinalizeTrackRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFu
 		// Persist the auto-ranked portion now. Set-asides will be appended
 		// once the rank-1 player submits an ordering (or immediately if
 		// there are none).
-		err = persistTrackRanks(ctx, q, game.ID, track, len(players), ranked, nil)
+		err = persistTrackRanks(ctx, s.Q, game.ID, track, len(players), ranked, nil)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
@@ -306,7 +307,7 @@ func FinalizeTrackRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFu
 			}
 		}
 
-		if err = setRankingStep(ctx, q, game.ID, nextStep); err != nil {
+		if err = setRankingStep(ctx, s.Q, game.ID, nextStep); err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -333,14 +334,14 @@ func FinalizeTrackRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFu
 // advances to the next declare step (or extra-peers / done).
 //
 //nolint:gocognit,gocyclo,cyclop,funlen // place set-asides validates auth, permutation, and advances the step machine
-func PlaceSetAsides(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		game := loadGameForPrologue(w, ctx, q, gameID)
+		game := loadGameForPrologue(w, ctx, s.Q, gameID)
 		if game == nil {
 			return
 		}
@@ -355,7 +356,7 @@ func PlaceSetAsides(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Caller must be rank-1 on this track.
-		rankings, err := q.ListRankingsByGame(ctx, gameID)
+		rankings, err := s.Q.ListRankingsByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load rankings")
 			return
@@ -374,7 +375,7 @@ func PlaceSetAsides(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Set-asides = players in this game with no ranking on this track.
-		players, err := q.GetPlayersByGame(ctx, gameID)
+		players, err := s.Q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load players")
 			return
@@ -423,7 +424,7 @@ func PlaceSetAsides(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 		for i, pid := range body.Ordering {
 			pidPtr := pid
-			err = q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+			err = s.Q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
 				GameID: gameID, PlayerID: &pidPtr, Category: cat, Rank: open[i],
 			})
 			if err != nil {
@@ -435,13 +436,13 @@ func PlaceSetAsides(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// Insert dummy rows for any rank slot still empty (only happens
 		// if the auto-ranked + set-aside count is still less than open
 		// slots, which shouldn't, but kept here for safety).
-		if err = fillDummyRanks(ctx, q, gameID, cat, len(players)); err != nil {
+		if err = fillDummyRanks(ctx, s.Q, gameID, cat, len(players)); err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
 		// Build the final ordering for broadcast.
-		updated, _ := q.ListRankingsByGame(ctx, gameID)
+		updated, _ := s.Q.ListRankingsByGame(ctx, gameID)
 		final := make([]int64, 0, 5)
 		for r := int16(1); r <= 5; r++ {
 			for _, rk := range updated {
@@ -460,7 +461,7 @@ func PlaceSetAsides(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		if nextStep == "" && len(players) <= 3 {
 			nextStep = gamepkg.PrologueStepExtraPeers
 		}
-		if err = setRankingStep(ctx, q, gameID, nextStep); err != nil {
+		if err = setRankingStep(ctx, s.Q, gameID, nextStep); err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -479,14 +480,14 @@ func PlaceSetAsides(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // may create exactly one extra peer; each title may only be claimed once
 // (across both the choosing-phase and extra-peer flows). Available only
 // during the extra_peers step.
-func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		game := loadGameForPrologue(w, ctx, q, gameID)
+		game := loadGameForPrologue(w, ctx, s.Q, gameID)
 		if game == nil {
 			return
 		}
@@ -511,7 +512,7 @@ func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "unknown title")
 			return
 		}
-		alreadyDone, err := q.ExtraPeerExistsForPlayer(ctx, dbgen.ExtraPeerExistsForPlayerParams{
+		alreadyDone, err := s.Q.ExtraPeerExistsForPlayer(ctx, dbgen.ExtraPeerExistsForPlayerParams{
 			GameID: gameID, PlayerID: player.ID,
 		})
 		if err != nil {
@@ -522,14 +523,14 @@ func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "you have already created your extra peer")
 			return
 		}
-		choosingClaimed, err := q.PrologueChoiceClaimed(ctx, dbgen.PrologueChoiceClaimedParams{
+		choosingClaimed, err := s.Q.PrologueChoiceClaimed(ctx, dbgen.PrologueChoiceClaimedParams{
 			GameID: gameID, SheetType: gamepkg.PrologueSheetTitles, ChoiceName: body.TitleName,
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check title status")
 			return
 		}
-		extraClaimed, err := q.ExtraPeerTitleClaimed(ctx, dbgen.ExtraPeerTitleClaimedParams{
+		extraClaimed, err := s.Q.ExtraPeerTitleClaimed(ctx, dbgen.ExtraPeerTitleClaimedParams{
 			GameID: gameID, TitleName: body.TitleName,
 		})
 		if err != nil {
@@ -541,21 +542,28 @@ func CreateExtraPeer(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
-			GameID:    gameID,
-			OwnerID:   player.ID,
-			CreatorID: player.ID,
-			AssetType: model.AssetPeer,
-			Name:      body.PeerText,
+		var asset dbgen.Asset
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			a, cErr := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+				GameID:    gameID,
+				OwnerID:   player.ID,
+				CreatorID: player.ID,
+				AssetType: model.AssetPeer,
+				Name:      body.PeerText,
+			})
+			if cErr != nil {
+				return errors.New("could not create extra peer")
+			}
+			asset = a
+			if _, iErr := q.InsertExtraPeer(ctx, dbgen.InsertExtraPeerParams{
+				GameID: gameID, PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,
+			}); iErr != nil {
+				return errors.New("could not record extra peer")
+			}
+			return nil
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create extra peer")
-			return
-		}
-		if _, err = q.InsertExtraPeer(ctx, dbgen.InsertExtraPeerParams{
-			GameID: gameID, PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not record extra peer")
+			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		broadcastEvent(manager, gameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})

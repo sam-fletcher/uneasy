@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
@@ -48,19 +49,19 @@ import (
 //
 // Returns the current state machine, each player's token pool, and the open
 // spend (if any) with its accumulated adjustments.
-func GetShakeUp(q *dbgen.Queries) http.HandlerFunc {
+func GetShakeUp(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		game, err := q.GetGameByID(ctx, gameID)
+		game, err := s.Q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
 		}
-		tokens, err := q.ListShakeUpTokensByGame(ctx, gameID)
+		tokens, err := s.Q.ListShakeUpTokensByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load tokens")
 			return
@@ -75,9 +76,9 @@ func GetShakeUp(q *dbgen.Queries) http.HandlerFunc {
 		}
 
 		// Open spend (if any).
-		open, err := q.GetOpenShakeUpSpend(ctx, gameID)
+		open, err := s.Q.GetOpenShakeUpSpend(ctx, gameID)
 		if err == nil {
-			adj, _ := q.ListAdjustmentsForSpend(ctx, open.ID)
+			adj, _ := s.Q.ListAdjustmentsForSpend(ctx, open.ID)
 			out["open_spend"] = map[string]any{
 				"spend":       open,
 				"adjustments": adj,
@@ -144,14 +145,14 @@ func BeginShakeUp(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, g
 // body, mirroring plan rolls). The integer result is added to the caller's
 // shake_up_tokens. After the last player rolls, the server advances to
 // step 2 of the current category.
-func ShakeUpRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func ShakeUpRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		game, err := q.GetGameByID(ctx, gameID)
+		game, err := s.Q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -181,7 +182,7 @@ func ShakeUpRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Persist a dice_rolls row for the audit trail.
-		_, err = q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		_, err = s.Q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
 			GameID:     gameID,
 			ActorID:    player.ID,
 			Difficulty: 0,
@@ -190,7 +191,7 @@ func ShakeUpRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, "could not persist roll")
 			return
 		}
-		newTotal, err := q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{
+		newTotal, err := s.Q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{
 			ID: player.ID, ShakeUpTokens: body.Result,
 		})
 		if err != nil {
@@ -202,14 +203,14 @@ func ShakeUpRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		})
 
 		// Advance to step 2 once everyone has rolled.
-		players, err := q.GetPlayersByGame(ctx, gameID)
+		players, err := s.Q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load players")
 			return
 		}
 		allRolled := true
 		for _, p := range players {
-			fresh, err := q.GetShakeUpTokens(ctx, p.ID)
+			fresh, err := s.Q.GetShakeUpTokens(ctx, p.ID)
 			if err != nil || fresh == 0 {
 				allRolled = false
 				break
@@ -218,7 +219,7 @@ func ShakeUpRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		if allRolled {
 			cat := *game.ShakeUpCategory
 			step := gamepkg.ShakeUpStepSpending
-			err = q.SetShakeUpStep(ctx, dbgen.SetShakeUpStepParams{
+			err = s.Q.SetShakeUpStep(ctx, dbgen.SetShakeUpStepParams{
 				ID: gameID, ShakeUpCategory: &cat, ShakeUpStep: &step,
 			})
 			if err != nil {
@@ -240,14 +241,14 @@ func ShakeUpRoll(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Body: {"option_key", "target_asset_id"?, "target_player_id"?}. Creates an
 // open spend, deducts 1 token from the spender. No effect is applied yet —
 // other players may submit adjustments until the spender commits.
-func ShakeUpAnnounce(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		game, err := q.GetGameByID(ctx, gameID)
+		game, err := s.Q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -280,7 +281,7 @@ func ShakeUpAnnounce(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Refuse a second open spend.
-		if open, err := q.GetOpenShakeUpSpend(ctx, gameID); err == nil {
+		if open, err := s.Q.GetOpenShakeUpSpend(ctx, gameID); err == nil {
 			respondErr(w, http.StatusConflict, fmt.Sprintf("an open spend exists (#%d) — commit it first", open.ID))
 			return
 		}
@@ -290,7 +291,7 @@ func ShakeUpAnnounce(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "you have no tokens to spend")
 			return
 		}
-		_, err = q.SubShakeUpTokens(ctx, dbgen.SubShakeUpTokensParams{
+		_, err = s.Q.SubShakeUpTokens(ctx, dbgen.SubShakeUpTokensParams{
 			ID: player.ID, ShakeUpTokens: 1,
 		})
 		if err != nil {
@@ -298,7 +299,7 @@ func ShakeUpAnnounce(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		spend, err := q.CreateShakeUpSpend(ctx, dbgen.CreateShakeUpSpendParams{
+		spend, err := s.Q.CreateShakeUpSpend(ctx, dbgen.CreateShakeUpSpendParams{
 			GameID:         gameID,
 			PlayerID:       player.ID,
 			Category:       info.Category,
@@ -322,9 +323,9 @@ func ShakeUpAnnounce(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // Body: {"spend_id", "adjustment": ±1}. Anyone with tokens may bid; each
 // adjustment costs the bidder 1 token, deducted at insert.
-func ShakeUpAdjust(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func ShakeUpAdjust(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -341,7 +342,7 @@ func ShakeUpAdjust(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		spend, err := q.GetShakeUpSpend(ctx, body.SpendID)
+		spend, err := s.Q.GetShakeUpSpend(ctx, body.SpendID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "spend not found")
 			return
@@ -358,14 +359,14 @@ func ShakeUpAdjust(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "you have no tokens to adjust with")
 			return
 		}
-		_, err = q.SubShakeUpTokens(ctx, dbgen.SubShakeUpTokensParams{
+		_, err = s.Q.SubShakeUpTokens(ctx, dbgen.SubShakeUpTokensParams{
 			ID: player.ID, ShakeUpTokens: 1,
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not deduct token")
 			return
 		}
-		adj, err := q.CreateShakeUpAdjustment(ctx, dbgen.CreateShakeUpAdjustmentParams{
+		adj, err := s.Q.CreateShakeUpAdjustment(ctx, dbgen.CreateShakeUpAdjustmentParams{
 			SpendID: spend.ID, PlayerID: player.ID, Adjustment: body.Adjustment,
 		})
 		if err != nil {
@@ -384,9 +385,9 @@ func ShakeUpAdjust(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // Body: {"spend_id"}. Caller must be the spender. Locks final_cost,
 // applies the mechanical effect, advances the category if everyone is now
 // at zero tokens.
-func ShakeUpCommit(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -398,7 +399,7 @@ func ShakeUpCommit(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		spend, err := q.GetShakeUpSpend(ctx, body.SpendID)
+		spend, err := s.Q.GetShakeUpSpend(ctx, body.SpendID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "spend not found")
 			return
@@ -412,7 +413,7 @@ func ShakeUpCommit(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		adjTotal, err := q.SumAdjustmentsForSpend(ctx, spend.ID)
+		adjTotal, err := s.Q.SumAdjustmentsForSpend(ctx, spend.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not total adjustments")
 			return
@@ -424,7 +425,7 @@ func ShakeUpCommit(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// spend goes through, but the spender can't go below 0 tokens.
 		extra := min(int(adjTotal), int(player.ShakeUpTokens))
 		if extra > 0 {
-			if _, err = q.SubShakeUpTokens(ctx, dbgen.SubShakeUpTokensParams{
+			if _, err = s.Q.SubShakeUpTokens(ctx, dbgen.SubShakeUpTokensParams{
 				ID: player.ID, ShakeUpTokens: int16(extra),
 			}); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not deduct adjusted cost")
@@ -434,7 +435,7 @@ func ShakeUpCommit(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			// Negative adjustment refunds — never below 0 in practice
 			// because base_cost = 1 and -1 brings it to 0.
 			refund := int16(-extra)
-			if _, err = q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{
+			if _, err = s.Q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{
 				ID: player.ID, ShakeUpTokens: refund,
 			}); err != nil {
 				respondErr(w, http.StatusInternalServerError, "could not refund adjustment")
@@ -442,7 +443,7 @@ func ShakeUpCommit(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			}
 		}
 		finalCost := max(int16(int(spend.BaseCost)+int(adjTotal)), 0)
-		if err = q.CommitShakeUpSpend(ctx, dbgen.CommitShakeUpSpendParams{
+		if err = s.Q.CommitShakeUpSpend(ctx, dbgen.CommitShakeUpSpendParams{
 			ID: spend.ID, FinalCost: &finalCost,
 		}); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not commit spend")
@@ -450,7 +451,7 @@ func ShakeUpCommit(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Apply the mechanical effect.
-		if err = applyShakeUpEffect(ctx, q, manager, gameID, &spend); err != nil {
+		if err = applyShakeUpEffect(ctx, s.Q, manager, gameID, &spend); err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -460,7 +461,7 @@ func ShakeUpCommit(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		})
 
 		// Maybe advance the category.
-		if err = maybeAdvanceShakeUpCategory(ctx, q, manager, gameID); err != nil {
+		if err = maybeAdvanceShakeUpCategory(ctx, s.Q, manager, gameID); err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}

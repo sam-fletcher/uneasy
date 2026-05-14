@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/game"
 	"uneasy/hub"
@@ -90,14 +92,14 @@ func marginaliaByPosition(list []dbgen.Marginalium, pos int16) *dbgen.Marginaliu
 // ListAssets handles GET /api/tables/{id}/assets.
 //
 // Returns all non-destroyed assets in the game, each with their marginalia.
-func ListAssets(q *dbgen.Queries) http.HandlerFunc {
+func ListAssets(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 
-		assets, err := q.ListAssetsByGame(r.Context(), gameID)
+		assets, err := s.Q.ListAssetsByGame(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load assets")
 			return
@@ -105,7 +107,7 @@ func ListAssets(q *dbgen.Queries) http.HandlerFunc {
 
 		result := make([]assetWithMarginalia, 0, len(assets))
 		for _, a := range assets {
-			marginalia, _ := q.ListMarginaliaByAsset(r.Context(), a.ID)
+			marginalia, _ := s.Q.ListMarginaliaByAsset(r.Context(), a.ID)
 			if marginalia == nil {
 				marginalia = []dbgen.Marginalium{}
 			}
@@ -127,9 +129,9 @@ func ListAssets(q *dbgen.Queries) http.HandlerFunc {
 // through this endpoint) therefore bypass the demand keep_assets redirect.
 // To fix: accept an optional plan_id, load that plan, and run OwnerID
 // through gamepkg.AssetRecipientForPlan when the caller is the preparer.
-func CreateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -167,47 +169,52 @@ func CreateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		// If setting as main character, clear existing main character first.
-		if body.IsMainCharacter {
-			if err := q.ClearMainCharacter(ctx, dbgen.ClearMainCharacterParams{
-				OwnerID: player.ID,
-				GameID:  gameID,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not clear main character")
-				return
+		var asset dbgen.Asset
+		var marginalia []dbgen.Marginalium
+		err := s.InTx(ctx, func(q *dbgen.Queries) error {
+			if body.IsMainCharacter {
+				if cErr := q.ClearMainCharacter(ctx, dbgen.ClearMainCharacterParams{
+					OwnerID: player.ID,
+					GameID:  gameID,
+				}); cErr != nil {
+					return errors.New("could not clear main character")
+				}
 			}
-		}
 
-		asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
-			GameID:          gameID,
-			OwnerID:         player.ID,
-			CreatorID:       player.ID,
-			AssetType:       assetType,
-			Name:            body.Name,
-			IsMainCharacter: body.IsMainCharacter,
+			var caErr error
+			asset, caErr = q.CreateAsset(ctx, dbgen.CreateAssetParams{
+				GameID:          gameID,
+				OwnerID:         player.ID,
+				CreatorID:       player.ID,
+				AssetType:       assetType,
+				Name:            body.Name,
+				IsMainCharacter: body.IsMainCharacter,
+			})
+			if caErr != nil {
+				return errors.New("could not create asset")
+			}
+
+			marginalia = make([]dbgen.Marginalium, 0, len(body.Marginalia))
+			for i, text := range body.Marginalia {
+				text = strings.TrimSpace(text)
+				if text == "" {
+					continue
+				}
+				m, mErr := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+					AssetID:  asset.ID,
+					Position: int16(i + 1),
+					Text:     text,
+				})
+				if mErr != nil {
+					return errors.New("could not create marginalia")
+				}
+				marginalia = append(marginalia, m)
+			}
+			return nil
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create asset")
+			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
-		}
-
-		// Create any initial marginalia.
-		marginalia := make([]dbgen.Marginalium, 0, len(body.Marginalia))
-		for i, text := range body.Marginalia {
-			text = strings.TrimSpace(text)
-			if text == "" {
-				continue
-			}
-			m, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
-				AssetID:  asset.ID,
-				Position: int16(i + 1),
-				Text:     text,
-			})
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not create marginalia")
-				return
-			}
-			marginalia = append(marginalia, m)
 		}
 
 		result := assetWithMarginalia{Asset: asset, Marginalia: marginalia}
@@ -230,9 +237,9 @@ func CreateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // existing MC's marginalia. Callers must pass `tear_position` (1–4) pointing
 // at an untorn marginalium on the old MC. If the old MC has no untorn
 // marginalia (e.g. all 4 already torn), the swap proceeds without tearing.
-func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, player, ok := requireAssetOwner(w, r, q)
+		asset, player, ok := requireAssetOwner(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -255,7 +262,7 @@ func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				respondErr(w, http.StatusBadRequest, "name cannot be empty")
 				return
 			}
-			err := q.UpdateAssetName(ctx, dbgen.UpdateAssetNameParams{
+			err := s.Q.UpdateAssetName(ctx, dbgen.UpdateAssetNameParams{
 				ID:   asset.ID,
 				Name: name,
 			})
@@ -267,14 +274,14 @@ func UpdateAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		if body.IsMainCharacter != nil {
-			if !applyMainCharacterChange(ctx, w, r, q, manager, asset, player,
+			if !applyMainCharacterChange(ctx, w, r, s.Q, manager, asset, player,
 				*body.IsMainCharacter, body.TearPosition) {
 				return
 			}
 			asset.IsMainCharacter = *body.IsMainCharacter
 		}
 
-		enriched, err := loadAssetEnriched(r, q, asset.ID)
+		enriched, err := loadAssetEnriched(r, s.Q, asset.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not reload asset")
 			return
@@ -432,9 +439,9 @@ func applyMainCharacterChange(
 //
 // Owner adds a marginalia note to their asset (max 4 total).
 // Body: { text }
-func AddMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, _, ok := requireAssetOwner(w, r, q)
+		asset, _, ok := requireAssetOwner(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -454,7 +461,7 @@ func AddMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		existing, err := q.ListMarginaliaByAsset(ctx, asset.ID)
+		existing, err := s.Q.ListMarginaliaByAsset(ctx, asset.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check marginalia")
 			return
@@ -478,7 +485,7 @@ func AddMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			}
 		}
 
-		m, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		m, err := s.Q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
 			AssetID:  asset.ID,
 			Position: nextPos,
 			Text:     body.Text,
@@ -503,9 +510,9 @@ func AddMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // Owner updates the text of a marginalia at a given position.
 // Body: { text }
-func UpdateMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func UpdateMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, _, ok := requireAssetOwner(w, r, q)
+		asset, _, ok := requireAssetOwner(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -531,7 +538,7 @@ func UpdateMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		existing, _ := q.ListMarginaliaByAsset(ctx, asset.ID)
+		existing, _ := s.Q.ListMarginaliaByAsset(ctx, asset.ID)
 		m := marginaliaByPosition(existing, int16(pos))
 		if m == nil {
 			respondErr(w, http.StatusNotFound, "no marginalia at this position")
@@ -542,7 +549,7 @@ func UpdateMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := q.UpdateMarginaliaText(ctx, dbgen.UpdateMarginaliaTextParams{
+		if err := s.Q.UpdateMarginaliaText(ctx, dbgen.UpdateMarginaliaTextParams{
 			ID:   m.ID,
 			Text: body.Text,
 		}); err != nil {
@@ -566,9 +573,9 @@ func UpdateMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // Any game member can tear (break) a marginalia. If all 4 are torn the asset
 // is destroyed.
-func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func TearMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, player, ok := requireAssetAccess(w, r, q)
+		asset, player, ok := requireAssetAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -581,7 +588,7 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		existing, _ := q.ListMarginaliaByAsset(ctx, asset.ID)
+		existing, _ := s.Q.ListMarginaliaByAsset(ctx, asset.ID)
 		m := marginaliaByPosition(existing, int16(pos))
 		if m == nil {
 			respondErr(w, http.StatusNotFound, "no marginalia at this position")
@@ -592,7 +599,7 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if _, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		if _, err := s.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {
@@ -602,7 +609,7 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Snapshot model: tearing the asset reveals its current secrets to the
 		// tearing player. The grant is idempotent (no-op if already visible).
-		_ = q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
+		_ = s.Q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
 			AssetID:  asset.ID,
 			PlayerID: player.ID,
 		})
@@ -623,15 +630,15 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// DestroyIfAllMarginaliaTorn composes the "no intact remain" check
 		// and the flip into a single SQL statement; rows=1 means the tear
 		// just completed the destruction.
-		destroyedRows, _ := q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
+		destroyedRows, _ := s.Q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
 		if destroyedRows > 0 {
 			if h, ok := manager.Get(asset.GameID); ok {
 				h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{
 					AssetID: asset.ID,
 				})
 			}
-			if game, err := q.GetGameByID(ctx, asset.GameID); err == nil {
-				EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, game.CurrentRow)
+			if game, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
+				EmitAssetDestroyed(ctx, s.Q, manager, asset.GameID, *asset, game.CurrentRow)
 			}
 			respond(w, http.StatusOK, map[string]any{"torn": true, "destroyed": true})
 			return
@@ -646,9 +653,9 @@ func TearMarginalia(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // LeverageAsset handles POST /api/assets/{assetId}/leverage.
 //
 // Owner marks an asset as leveraged (committed to a dice roll).
-func LeverageAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func LeverageAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, player, ok := requireAssetOwner(w, r, q)
+		asset, player, ok := requireAssetOwner(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -661,7 +668,7 @@ func LeverageAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := q.SetAssetLeveraged(r.Context(), dbgen.SetAssetLeveragedParams{
+		if err := s.Q.SetAssetLeveraged(r.Context(), dbgen.SetAssetLeveragedParams{
 			ID:          asset.ID,
 			IsLeveraged: true,
 		}); err != nil {
@@ -675,8 +682,8 @@ func LeverageAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				PlayerID: player.ID,
 			})
 		}
-		if game, err := q.GetGameByID(r.Context(), asset.GameID); err == nil {
-			EmitAssetLeveraged(r.Context(), q, manager, asset.GameID, *asset, game.CurrentRow)
+		if game, err := s.Q.GetGameByID(r.Context(), asset.GameID); err == nil {
+			EmitAssetLeveraged(r.Context(), s.Q, manager, asset.GameID, *asset, game.CurrentRow)
 		}
 
 		respond(w, http.StatusOK, map[string]any{"leveraged": true})
@@ -686,9 +693,9 @@ func LeverageAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // RefreshAsset handles POST /api/assets/{assetId}/refresh.
 //
 // Owner un-leverages an asset.
-func RefreshAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func RefreshAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, _, ok := requireAssetOwner(w, r, q)
+		asset, _, ok := requireAssetOwner(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -697,7 +704,7 @@ func RefreshAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := q.SetAssetLeveraged(r.Context(), dbgen.SetAssetLeveragedParams{
+		if err := s.Q.SetAssetLeveraged(r.Context(), dbgen.SetAssetLeveragedParams{
 			ID:          asset.ID,
 			IsLeveraged: false,
 		}); err != nil {
@@ -710,8 +717,8 @@ func RefreshAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 				AssetID: asset.ID,
 			})
 		}
-		if game, err := q.GetGameByID(r.Context(), asset.GameID); err == nil {
-			EmitAssetRefreshed(r.Context(), q, manager, asset.GameID, *asset, game.CurrentRow)
+		if game, err := s.Q.GetGameByID(r.Context(), asset.GameID); err == nil {
+			EmitAssetRefreshed(r.Context(), s.Q, manager, asset.GameID, *asset, game.CurrentRow)
 		}
 
 		respond(w, http.StatusOK, map[string]any{"leveraged": false})
@@ -722,9 +729,9 @@ func RefreshAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // Any game member can take an asset from another player (used during plan
 // resolution). Grants the caller visibility on all existing secrets.
-func TakeAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func TakeAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, player, ok := requireAssetAccess(w, r, q)
+		asset, player, ok := requireAssetAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -740,7 +747,7 @@ func TakeAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 		oldOwnerID := asset.OwnerID
 
-		if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		if err := s.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
 			ID:      asset.ID,
 			OwnerID: player.ID,
 		}); err != nil {
@@ -749,13 +756,13 @@ func TakeAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Grant the new owner visibility on all existing secrets.
-		_ = q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
+		_ = s.Q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
 			AssetID:  asset.ID,
 			PlayerID: player.ID,
 		})
 
 		asset.OwnerID = player.ID
-		enriched, _ := loadAssetEnriched(r, q, asset.ID)
+		enriched, _ := loadAssetEnriched(r, s.Q, asset.ID)
 
 		if h, ok := manager.Get(asset.GameID); ok {
 			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
@@ -781,9 +788,9 @@ func TakeAsset(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // "choose one of your assets that's helping you keep the secret"). Visibility
 // follows a snapshot model — see SECRETS_RULES.md.
 // Body: { text }
-func WriteSecret(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func WriteSecret(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, player, ok := requireAssetOwner(w, r, q)
+		asset, player, ok := requireAssetOwner(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -801,7 +808,7 @@ func WriteSecret(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		secret, err := q.CreateSecret(r.Context(), dbgen.CreateSecretParams{
+		secret, err := s.Q.CreateSecret(r.Context(), dbgen.CreateSecretParams{
 			AssetID:  asset.ID,
 			AuthorID: player.ID,
 			Text:     body.Text,
@@ -826,14 +833,14 @@ func WriteSecret(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //
 // Returns secrets the caller is allowed to see: those they authored, or those
 // they've been explicitly granted visibility on.
-func GetSecrets(q *dbgen.Queries) http.HandlerFunc {
+func GetSecrets(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, player, ok := requireAssetAccess(w, r, q)
+		asset, player, ok := requireAssetAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
 
-		secrets, err := q.ListVisibleSecrets(r.Context(), dbgen.ListVisibleSecretsParams{
+		secrets, err := s.Q.ListVisibleSecrets(r.Context(), dbgen.ListVisibleSecretsParams{
 			AssetID:  asset.ID,
 			PlayerID: player.ID,
 		})
@@ -853,14 +860,14 @@ func GetSecrets(q *dbgen.Queries) http.HandlerFunc {
 //
 // Returns every secret in the game that the caller can see. Used by the
 // retinue UI to display per-asset secret counts without N requests.
-func ListVisibleSecretsForGame(q *dbgen.Queries) http.HandlerFunc {
+func ListVisibleSecretsForGame(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 
-		secrets, err := q.ListVisibleSecretsByGame(r.Context(), dbgen.ListVisibleSecretsByGameParams{
+		secrets, err := s.Q.ListVisibleSecretsByGame(r.Context(), dbgen.ListVisibleSecretsByGameParams{
 			GameID:   gameID,
 			PlayerID: player.ID,
 		})

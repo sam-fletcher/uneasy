@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -29,13 +30,13 @@ import (
 // ── Laws ──────────────────────────────────────────────────────────────────────
 
 // ListLaws handles GET /api/tables/{id}/laws.
-func ListLaws(q *dbgen.Queries) http.HandlerFunc {
+func ListLaws(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
-		laws, err := q.ListLaws(r.Context(), gameID)
+		laws, err := s.Q.ListLaws(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not list laws")
 			return
@@ -47,7 +48,7 @@ func ListLaws(q *dbgen.Queries) http.HandlerFunc {
 // UpdateLaw handles PATCH /api/laws/{lawId}.
 // Body: {"text": "...", "addendum"?: "..."}. The addendum field is optional;
 // when omitted the existing value is preserved.
-func UpdateLaw(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func UpdateLaw(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		lawID, err := strconv.ParseInt(chi.URLParam(r, "lawId"), 10, 64)
 		if err != nil {
@@ -55,18 +56,18 @@ func UpdateLaw(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		law, err := q.GetLawByID(ctx, lawID)
+		law, err := s.Q.GetLawByID(ctx, lawID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "law not found")
 			return
 		}
-		player, ok := requirePlayerInGame(w, r, q, law.GameID)
+		player, ok := requirePlayerInGame(w, r, s.Q, law.GameID)
 		if !ok {
 			return
 		}
 
 		// Authorization: signatory, else origin plan's preparer.
-		if !canEditLaw(ctx, q, &law, player.ID) {
+		if !canEditLaw(ctx, s.Q, &law, player.ID) {
 			respondErr(w, http.StatusForbidden, "only the signatory or plan preparer may edit this law")
 			return
 		}
@@ -94,7 +95,7 @@ func UpdateLaw(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			}
 		}
 
-		updated, err := q.UpdateLawText(ctx, dbgen.UpdateLawTextParams{
+		updated, err := s.Q.UpdateLawText(ctx, dbgen.UpdateLawTextParams{
 			ID:       lawID,
 			Text:     body.Text,
 			Addendum: addendum,
@@ -125,13 +126,13 @@ func canEditLaw(ctx context.Context, q *dbgen.Queries, law *dbgen.Law, playerID 
 // ── Rumors ────────────────────────────────────────────────────────────────────
 
 // ListRumors handles GET /api/tables/{id}/rumors.
-func ListRumors(q *dbgen.Queries) http.HandlerFunc {
+func ListRumors(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
-		rumors, err := q.ListRumors(r.Context(), gameID)
+		rumors, err := s.Q.ListRumors(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not list rumors")
 			return
@@ -142,7 +143,7 @@ func ListRumors(q *dbgen.Queries) http.HandlerFunc {
 
 // UpdateRumor handles PATCH /api/rumors/{rumorId}.
 // Body: {"text": "..."}.
-func UpdateRumor(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func UpdateRumor(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rumorID, err := strconv.ParseInt(chi.URLParam(r, "rumorId"), 10, 64)
 		if err != nil {
@@ -150,17 +151,17 @@ func UpdateRumor(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		rumor, err := q.GetRumorByID(ctx, rumorID)
+		rumor, err := s.Q.GetRumorByID(ctx, rumorID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "rumor not found")
 			return
 		}
-		player, ok := requirePlayerInGame(w, r, q, rumor.GameID)
+		player, ok := requirePlayerInGame(w, r, s.Q, rumor.GameID)
 		if !ok {
 			return
 		}
 
-		if !canEditRumor(ctx, q, &rumor, player.ID) {
+		if !canEditRumor(ctx, s.Q, &rumor, player.ID) {
 			respondErr(w, http.StatusForbidden, "only the source player or plan preparer may edit this rumor")
 			return
 		}
@@ -173,7 +174,7 @@ func UpdateRumor(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		updated, err := q.UpdateRumorText(ctx, dbgen.UpdateRumorTextParams{
+		updated, err := s.Q.UpdateRumorText(ctx, dbgen.UpdateRumorTextParams{
 			ID:   rumorID,
 			Text: body.Text,
 		})

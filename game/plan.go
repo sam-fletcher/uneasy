@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -74,9 +75,12 @@ type PlanMetadata struct {
 	Delay    int16 // Fixed delay (≥1), or -1 for variable
 }
 
-// PlanDeps bundles shared dependencies passed to handler methods.
+// PlanDeps bundles shared dependencies passed to handler methods. The
+// embedded *db.Store exposes Q and Pool directly (deps.Q, deps.Pool) and
+// provides deps.InTx for atomic multi-write sequences.
 type PlanDeps struct {
-	Q       *dbgen.Queries
+	*db.Store
+
 	Manager *hub.Manager
 }
 

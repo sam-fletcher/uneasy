@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"strings"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
@@ -100,19 +101,19 @@ func requirePrologueChoosing(w http.ResponseWriter, game *dbgen.Game) bool {
 //	  "sheets": [...],                       // gamepkg.PrologueSheets
 //	  "claims": [{"sheet_type", "choice_name", "player_id", "turn_number"}, ...]
 //	}
-func GetPrologueSheets(q *dbgen.Queries) http.HandlerFunc {
+func GetPrologueSheets(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-		claims, err := q.ListPrologueChoiceClaimsByGame(ctx, gameID)
+		claims, err := s.Q.ListPrologueChoiceClaimsByGame(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load claims")
 			return
 		}
-		active, turnNumber, err := prologueTurnState(ctx, q, gameID)
+		active, turnNumber, err := prologueTurnState(ctx, s.Q, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not compute turn order")
 			return
@@ -134,13 +135,13 @@ func GetPrologueSheets(q *dbgen.Queries) http.HandlerFunc {
 // GetPrologueCards handles GET /api/games/{id}/prologue/cards.
 //
 // Returns each player's current card hand.
-func GetPrologueCards(q *dbgen.Queries) http.HandlerFunc {
+func GetPrologueCards(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
-		cards, err := q.ListPlayerCardsByGame(r.Context(), gameID)
+		cards, err := s.Q.ListPlayerCardsByGame(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load cards")
 			return
@@ -157,9 +158,9 @@ func GetPrologueCards(q *dbgen.Queries) http.HandlerFunc {
 // that have not yet been used by any asset name in this game. Used to
 // populate the multiple-choice picker when a player creates a card-derived
 // asset during the Prologue.
-func GetPrologueCardSuggestions(q *dbgen.Queries) http.HandlerFunc {
+func GetPrologueCardSuggestions(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -180,7 +181,7 @@ func GetPrologueCardSuggestions(q *dbgen.Queries) http.HandlerFunc {
 		}
 
 		used := map[string]struct{}{}
-		assets, err := q.ListAssetsByGame(r.Context(), gameID)
+		assets, err := s.Q.ListAssetsByGame(r.Context(), gameID)
 		if err == nil {
 			for _, a := range assets {
 				used[strings.ToLower(strings.TrimSpace(a.Name))] = struct{}{}
@@ -369,24 +370,34 @@ func isLawChoice(choiceName string) bool {
 	return strings.Contains(strings.ToLower(choiceName), "law")
 }
 
-// addLawOrRumor records a law or rumor in the public record.
-func addLawOrRumor(ctx context.Context, q *dbgen.Queries, gameID int64, choiceName, text string) error {
+// addLawOrRumor records a law or rumor in the public record and broadcasts
+// the corresponding WS event so connected clients update their Laws/Rumors
+// panels without a refresh.
+func addLawOrRumor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	choiceName, text string,
+) error {
 	if isLawChoice(choiceName) {
-		_, err := q.CreateLaw(ctx, dbgen.CreateLawParams{
+		law, err := q.CreateLaw(ctx, dbgen.CreateLawParams{
 			GameID: gameID,
 			Text:   text,
 		})
 		if err != nil {
 			return fmt.Errorf("could not record law: %w", err)
 		}
+		broadcastEvent(manager, gameID, model.EventLawEnacted, model.LawEnactedPayload{Law: law})
 	} else {
-		_, err := q.CreateRumor(ctx, dbgen.CreateRumorParams{
+		rumor, err := q.CreateRumor(ctx, dbgen.CreateRumorParams{
 			GameID: gameID,
 			Text:   text,
 		})
 		if err != nil {
 			return fmt.Errorf("could not record rumor: %w", err)
 		}
+		broadcastEvent(manager, gameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
 	}
 	return nil
 }
@@ -434,15 +445,15 @@ func broadcastTurnAdvanced(ctx context.Context, manager *hub.Manager, q *dbgen.Q
 // the title marginalium / law / rumor as appropriate, and processes both
 // linked cards (make-or-take semantics). Players are required to author
 // every text field; silent automation is not permitted.
-func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
-		game, err := q.GetGameByID(ctx, gameID)
+		game, err := s.Q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -463,81 +474,25 @@ func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Validate that this player can make this choice now.
-		if err = validatePlayerCanChoose(ctx, q, gameID, player.ID, body.SheetType, body.ChoiceName); err != nil {
-			if strings.Contains(err.Error(), "illegal") {
-				respondErr(w, http.StatusConflict, err.Error())
-			} else {
-				respondErr(w, http.StatusInternalServerError, err.Error())
-			}
-			return
-		}
-
-		taken, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
-			GameID: gameID, PlayerID: player.ID,
+		// All writes for a single choice — turn record, choice asset, sheet-type
+		// side-effect (marginalium/law/rumor), and per-card make-or-take —
+		// must commit atomically. Without this, a downstream failure (e.g.
+		// "no open marginalia slots") leaves the prologue_choice row
+		// committed, silently consuming the player's turn and shifting the
+		// turn marker to the next player.
+		var turnNumber int16
+		var status int
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			var txErr error
+			turnNumber, status, txErr = recordPrologueChoice(ctx, q, manager, gameID, player.ID, body, choice)
+			return txErr
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not count player turns")
-			return
-		}
-		turnNumber := int16(taken) + 1
-
-		// Record the choice.
-		_, err = q.CreatePrologueChoice(ctx, dbgen.CreatePrologueChoiceParams{
-			GameID:     gameID,
-			PlayerID:   player.ID,
-			TurnNumber: turnNumber,
-			SheetType:  body.SheetType,
-			ChoiceName: body.ChoiceName,
-		})
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not record choice")
-			return
-		}
-
-		// Create the choice-specific asset (artifact/holding/resource depending on sheet type).
-		assetType := gamepkg.AssetTypeForSheet(body.SheetType)
-		_, err = q.CreateAsset(ctx, dbgen.CreateAssetParams{
-			GameID:    gameID,
-			OwnerID:   player.ID,
-			CreatorID: player.ID,
-			AssetType: model.AssetType(assetType),
-			Name:      body.AssetText,
-		})
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create choice asset")
-			return
-		}
-
-		// Handle sheet-type-specific asset (marginalium, law, or rumor).
-		switch body.SheetType {
-		case gamepkg.PrologueSheetTitles:
-			if err = addTitleMarginalium(ctx, q, player.ID, body.MarginaliumText); err != nil {
-				if strings.Contains(err.Error(), "no open marginalia slots") {
-					respondErr(w, http.StatusConflict, err.Error())
-				} else {
-					respondErr(w, http.StatusInternalServerError, err.Error())
-				}
-				return
+			if status == 0 {
+				status = http.StatusInternalServerError
 			}
-		case gamepkg.PrologueSheetLawsRumors:
-			if err = addLawOrRumor(ctx, q, gameID, body.ChoiceName, body.LawOrRumorText); err != nil {
-				respondErr(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-		}
-
-		// Process linked cards (make-or-take semantics).
-		cardTextLookup := buildCardTextLookup(body.CardAssets)
-		for _, card := range choice.Cards {
-			key := strings.ToUpper(string(card.Suit)) + "|" + strings.ToUpper(card.Value)
-			err = processPrologueCardClaim(ctx, q, manager,
-				gameID, player.ID, card, cardTextLookup[key],
-			)
-			if err != nil {
-				respondErr(w, http.StatusInternalServerError, err.Error())
-				return
-			}
+			respondErr(w, status, err.Error())
+			return
 		}
 
 		broadcastEvent(manager, gameID, model.EventPrologueChoiceClaimed, model.PrologueChoiceClaimedPayload{
@@ -547,7 +502,7 @@ func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			TurnNumber: turnNumber,
 		})
 
-		broadcastTurnAdvanced(ctx, manager, q, gameID)
+		broadcastTurnAdvanced(ctx, manager, s.Q, gameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"sheet_type":  body.SheetType,
@@ -555,6 +510,87 @@ func ChoosePrologue(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			"turn_number": turnNumber,
 		})
 	}
+}
+
+func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Manager,
+	gameID, playerID int64, body *chooseRequestBody, choice *gamepkg.PrologueChoice,
+) (int16, int, error) {
+	var turnNumber int16
+	var status int
+	err := validatePlayerCanChoose(ctx, q, gameID, playerID, body.SheetType, body.ChoiceName)
+	if err != nil {
+		if strings.Contains(err.Error(), "illegal") {
+			status = http.StatusConflict
+		} else {
+			status = http.StatusInternalServerError
+		}
+		return turnNumber, status, err
+	}
+
+	taken, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
+		GameID: gameID, PlayerID: playerID,
+	})
+	if err != nil {
+		status = http.StatusInternalServerError
+		return turnNumber, status, errors.New("could not count player turns")
+	}
+	turnNumber = int16(taken) + 1
+
+	_, err = q.CreatePrologueChoice(ctx, dbgen.CreatePrologueChoiceParams{
+		GameID:     gameID,
+		PlayerID:   playerID,
+		TurnNumber: turnNumber,
+		SheetType:  body.SheetType,
+		ChoiceName: body.ChoiceName,
+	})
+	if err != nil {
+		status = http.StatusInternalServerError
+		return turnNumber, status, errors.New("could not record choice")
+	}
+
+	assetType := gamepkg.AssetTypeForSheet(body.SheetType)
+	_, err = q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID:    gameID,
+		OwnerID:   playerID,
+		CreatorID: playerID,
+		AssetType: model.AssetType(assetType),
+		Name:      body.AssetText,
+	})
+	if err != nil {
+		status = http.StatusInternalServerError
+		return turnNumber, status, errors.New("could not create choice asset")
+	}
+
+	switch body.SheetType {
+	case gamepkg.PrologueSheetTitles:
+		err = addTitleMarginalium(ctx, q, playerID, body.MarginaliumText)
+		if err != nil {
+			if strings.Contains(err.Error(), "no open marginalia slots") {
+				status = http.StatusConflict
+			} else {
+				status = http.StatusInternalServerError
+			}
+			return turnNumber, status, err
+		}
+	case gamepkg.PrologueSheetLawsRumors:
+		err = addLawOrRumor(ctx, q, manager, gameID, body.ChoiceName, body.LawOrRumorText)
+		if err != nil {
+			status = http.StatusInternalServerError
+			return turnNumber, status, err
+		}
+	}
+
+	cardTextLookup := buildCardTextLookup(body.CardAssets)
+	for _, card := range choice.Cards {
+		key := strings.ToUpper(string(card.Suit)) + "|" + strings.ToUpper(card.Value)
+		if err = processPrologueCardClaim(ctx, q, manager,
+			gameID, playerID, card, cardTextLookup[key],
+		); err != nil {
+			status = http.StatusInternalServerError
+			return turnNumber, status, err
+		}
+	}
+	return turnNumber, status, nil
 }
 
 // processPrologueCardClaim implements make-or-take. If no asset is currently
@@ -658,9 +694,9 @@ func cardLabel(c gamepkg.Card) string {
 // linked_card_* from all assets in the game (the cards "live with the player"
 // from here onward, not the asset) and enters the ranking sub-flow at
 // declare_power.
-func BeginPrologueRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func BeginPrologueRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, q)
+		game, ok := requireFacilitator(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -671,13 +707,13 @@ func BeginPrologueRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFu
 		ctx := r.Context()
 
 		// Every player must have 3 turns recorded.
-		players, err := q.GetPlayersByGame(ctx, game.ID)
+		players, err := s.Q.GetPlayersByGame(ctx, game.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load players")
 			return
 		}
 		for _, p := range players {
-			n, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
+			n, err := s.Q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
 				GameID: game.ID, PlayerID: p.ID,
 			})
 			if err != nil {
@@ -691,15 +727,23 @@ func BeginPrologueRanking(q *dbgen.Queries, manager *hub.Manager) http.HandlerFu
 			}
 		}
 
-		if err := q.ClearAssetLinkedCards(ctx, game.ID); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not detach card links")
-			return
-		}
 		step := gamepkg.PrologueStepDeclarePower
-		if err := q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
-			ID: game.ID, PrologueRankingStep: &step,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not enter ranking step")
+		var status int
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			if cErr := q.ClearAssetLinkedCards(ctx, game.ID); cErr != nil {
+				status = http.StatusInternalServerError
+				return errors.New("could not detach card links")
+			}
+			if sErr := q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
+				ID: game.ID, PrologueRankingStep: &step,
+			}); sErr != nil {
+				status = http.StatusInternalServerError
+				return errors.New("could not enter ranking step")
+			}
+			return nil
+		})
+		if err != nil {
+			respondErr(w, status, err.Error())
 			return
 		}
 

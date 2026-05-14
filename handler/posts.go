@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
 	"uneasy/model"
@@ -17,9 +18,9 @@ import (
 // Returns the unified game-wide chat feed (player messages, log entries,
 // boundary markers) in chronological order. Supports ?after=<id> for
 // catch-up on WebSocket reconnect.
-func ListGamePosts(q *dbgen.Queries) http.HandlerFunc {
+func ListGamePosts(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -31,7 +32,7 @@ func ListGamePosts(q *dbgen.Queries) http.HandlerFunc {
 				respondErr(w, http.StatusBadRequest, "invalid after id")
 				return
 			}
-			posts, err := q.ListGamePostsAfter(ctx, dbgen.ListGamePostsAfterParams{
+			posts, err := s.Q.ListGamePostsAfter(ctx, dbgen.ListGamePostsAfterParams{
 				GameID: gameID,
 				ID:     afterID,
 			})
@@ -43,7 +44,7 @@ func ListGamePosts(q *dbgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		posts, err := q.ListGamePosts(ctx, gameID)
+		posts, err := s.Q.ListGamePosts(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load posts")
 			return
@@ -57,9 +58,9 @@ func ListGamePosts(q *dbgen.Queries) http.HandlerFunc {
 // Inserts a free-text player message into the game's chat feed and
 // broadcasts it. Player messages are not pinned to a row or plan; the
 // row_number/plan_id columns exist only for system-emitted entries.
-func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CreatePlayerPost(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -78,7 +79,7 @@ func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if status, msg := validateSpeakingAs(r.Context(), q, gameID, player.ID, body.SpeakingAsAssetID); status != 0 {
+		if status, msg := validateSpeakingAs(r.Context(), s.Q, gameID, player.ID, body.SpeakingAsAssetID); status != 0 {
 			respondErr(w, status, msg)
 			return
 		}
@@ -89,7 +90,7 @@ func CreatePlayerPost(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			speakingAs = &id
 		}
 
-		post, err := q.CreatePlayerMessage(r.Context(), dbgen.CreatePlayerMessageParams{
+		post, err := s.Q.CreatePlayerMessage(r.Context(), dbgen.CreatePlayerMessageParams{
 			GameID:            gameID,
 			AuthorID:          &player.ID,
 			Body:              body.Body,

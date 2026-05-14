@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
@@ -479,7 +480,7 @@ func consumePendingCounterDemandFor(
 	if err != nil {
 		return nil
 	}
-	deps := &PlanDeps{Q: q, Manager: manager}
+	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: manager}
 	counter, errMsg, _ := synthesizeCounterDemand(ctx, deps, game, pending.TargetPlayerID, newPlan.ID)
 	if errMsg != "" {
 		return nil

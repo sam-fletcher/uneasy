@@ -34,12 +34,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/hub"
@@ -431,13 +433,13 @@ func validatePlanPreparation(
 // ── ListPlans ─────────────────────────────────────────────────────────────────
 
 // ListPlans handles GET /api/tables/:id/plans.
-func ListPlans(q *dbgen.Queries) http.HandlerFunc {
+func ListPlans(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
-		plans, err := q.ListPlansByGame(r.Context(), gameID)
+		plans, err := s.Q.ListPlansByGame(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not load plans")
 			return
@@ -452,13 +454,13 @@ func ListPlans(q *dbgen.Queries) http.HandlerFunc {
 //
 // Returns which plan types the current player can prepare, and the computed
 // target row for each eligible plan. Ineligible plans include a reason.
-func PlanEligibility(q *dbgen.Queries) http.HandlerFunc {
+func PlanEligibility(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
-		game, err := q.GetGameByID(r.Context(), gameID)
+		game, err := s.Q.GetGameByID(r.Context(), gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -489,7 +491,7 @@ func PlanEligibility(q *dbgen.Queries) http.HandlerFunc {
 		ctx := r.Context()
 
 		// A player with no peers cannot prepare any plans.
-		hasPeers, err := playerHasPeers(ctx, q, gameID, player.ID)
+		hasPeers, err := playerHasPeers(ctx, s.Q, gameID, player.ID)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check peer assets")
 			return
@@ -535,7 +537,7 @@ func PlanEligibility(q *dbgen.Queries) http.HandlerFunc {
 				})
 				continue
 			}
-			ok, reason, err := checkPlanEligible(ctx, q, gameID, player.ID, planType, meta.Category)
+			ok, reason, err := checkPlanEligible(ctx, s.Q, gameID, player.ID, planType, meta.Category)
 			if err != nil {
 				ineligible = append(ineligible, ineligibleEntry{
 					PlanType: planType,
@@ -582,9 +584,9 @@ func PlanEligibility(q *dbgen.Queries) http.HandlerFunc {
 //	}
 //
 //nolint:funlen,gocognit // plan preparation orchestration with handler-driven validation
-func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, player, ok := requireFocusPlayer(w, r, q)
+		game, player, ok := requireFocusPlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -616,7 +618,7 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		validation := validatePlanPreparation(
-			ctx, q, game, player,
+			ctx, s.Q, game, player,
 			body.PlanType,
 			body.TargetPlayerID,
 			body.TargetAssetID,
@@ -638,10 +640,17 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// Reject duel_type early so we don't open a transaction for an
+		// avoidable validation failure.
+		if body.PlanType == model.PlanProposeDuel && body.DuelType != "arms" && body.DuelType != "wits" {
+			respondErr(w, http.StatusBadRequest, "duel_type must be 'arms' or 'wits'")
+			return
+		}
+
 		meta := validation.Meta
 		targetRow := validation.TargetRow
 
-		count, err := q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
+		count, err := s.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
 			GameID:    game.ID,
 			RowNumber: targetRow,
 		})
@@ -649,107 +658,103 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			count = 0
 		}
 
-		plan, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
-			GameID:           game.ID,
-			PlanType:         body.PlanType,
-			Category:         meta.Category,
-			PreparerID:       player.ID,
-			TargetPlayerID:   body.TargetPlayerID,
-			TargetAssetID:    body.TargetAssetID,
-			RowNumber:        targetRow,
-			RowOrder:         int16(count),
-			PreparedAtRow:    game.CurrentRow,
-			PreparationNotes: body.PreparationNotes,
+		var plan dbgen.Plan
+		var status int
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			p, cErr := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+				GameID:           game.ID,
+				PlanType:         body.PlanType,
+				Category:         meta.Category,
+				PreparerID:       player.ID,
+				TargetPlayerID:   body.TargetPlayerID,
+				TargetAssetID:    body.TargetAssetID,
+				RowNumber:        targetRow,
+				RowOrder:         int16(count),
+				PreparedAtRow:    game.CurrentRow,
+				PreparationNotes: body.PreparationNotes,
+			})
+			if cErr != nil {
+				status = http.StatusInternalServerError
+				return errors.New("could not create plan")
+			}
+			plan = p
+
+			if body.PlanType == model.PlanMakeIntroductions {
+				if mErr := miStoreResData(ctx, q, plan.ID, body.PeerCount); mErr != nil {
+					status = http.StatusInternalServerError
+					return errors.New("could not save plan data")
+				}
+			}
+
+			if body.PlanType == model.PlanMakeWar {
+				resData := loadResolutionData(plan.ResolutionData)
+				resData.WarEnemyPlayerIDs = body.EnemyPlayerIDs
+				if sErr := saveResolutionData(ctx, q, plan.ID, resData); sErr != nil {
+					status = http.StatusInternalServerError
+					return errors.New("could not save war enemies")
+				}
+				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
+					plan = refreshed
+				}
+			}
+
+			if body.PlanType == model.PlanProposeDuel {
+				resData := loadResolutionData(plan.ResolutionData)
+				resData.DuelType = body.DuelType
+				if sErr := saveResolutionData(ctx, q, plan.ID, resData); sErr != nil {
+					status = http.StatusInternalServerError
+					return errors.New("could not save duel type")
+				}
+				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
+					plan = refreshed
+				}
+			}
+
+			if body.PlanType == model.PlanMakeDemands && body.TargetPlanID != nil {
+				if sErr := q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+					ID:             plan.ID,
+					TargetedPlanID: body.TargetPlanID,
+				}); sErr != nil {
+					status = http.StatusInternalServerError
+					return errors.New("could not persist demand target")
+				}
+				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
+					plan = refreshed
+				}
+			}
+
+			h, _ := GetHandler(body.PlanType)
+			if preparer, ok := h.(OnPreparer); ok {
+				deps := &PlanDeps{Store: s.WithQ(q), Manager: manager}
+				if pErr := preparer.OnPrepare(ctx, deps, &plan); pErr != nil {
+					status = http.StatusInternalServerError
+					return fmt.Errorf("could not initialise plan: %s", pErr.Error())
+				}
+			}
+
+			if _, ptErr := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
+				GameID:   game.ID,
+				PlanType: body.PlanType,
+				PlayerID: player.ID,
+				PlanID:   plan.ID,
+			}); ptErr != nil {
+				status = http.StatusInternalServerError
+				return errors.New("could not place plan token")
+			}
+			return nil
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create plan")
-			return
-		}
-
-		// Store peer_count for Make Introductions.
-		if body.PlanType == model.PlanMakeIntroductions {
-			if err := miStoreResData(ctx, q, plan.ID, body.PeerCount); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save plan data")
-				return
-			}
-		}
-
-		// Persist enemy list for Make War so OnPrepare can enrol participants.
-		if body.PlanType == model.PlanMakeWar {
-			resData := loadResolutionData(plan.ResolutionData)
-			resData.WarEnemyPlayerIDs = body.EnemyPlayerIDs
-			if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save war enemies")
-				return
-			}
-			// Reload so OnPrepare sees the persisted enemy list.
-			refreshed, err := q.GetPlanByID(ctx, plan.ID)
-			if err == nil {
-				plan = refreshed
-			}
-		}
-
-		// Persist duel_type for Propose Duel so it survives into resolution.
-		if body.PlanType == model.PlanProposeDuel {
-			if body.DuelType != "arms" && body.DuelType != "wits" {
-				respondErr(w, http.StatusBadRequest, "duel_type must be 'arms' or 'wits'")
-				return
-			}
-			resData := loadResolutionData(plan.ResolutionData)
-			resData.DuelType = body.DuelType
-			if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save duel type")
-				return
-			}
-			refreshed, err := q.GetPlanByID(ctx, plan.ID)
-			if err == nil {
-				plan = refreshed
-			}
-		}
-
-		// Persist targeted_plan_id for Make Demands so OnPrepare / ComputeDifficulty
-		// can resolve the target without re-reading resolution_data.
-		if body.PlanType == model.PlanMakeDemands && body.TargetPlanID != nil {
-			if err := q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
-				ID:             plan.ID,
-				TargetedPlanID: body.TargetPlanID,
-			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not persist demand target")
-				return
-			}
-			refreshed, err := q.GetPlanByID(ctx, plan.ID)
-			if err == nil {
-				plan = refreshed
-			}
-		}
-
-		// Run optional post-creation setup (e.g. CL creates its simultaneous reveal).
-		h, _ := GetHandler(body.PlanType)
-		if preparer, ok := h.(OnPreparer); ok {
-			deps := &PlanDeps{Q: q, Manager: manager}
-			if err := preparer.OnPrepare(ctx, deps, &plan); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not initialise plan: "+err.Error())
-				return
-			}
-		}
-
-		if _, err := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
-			GameID:   game.ID,
-			PlanType: body.PlanType,
-			PlayerID: player.ID,
-			PlanID:   plan.ID,
-		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not place plan token")
+			respondErr(w, status, err.Error())
 			return
 		}
 
 		broadcastEvent(manager, game.ID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
-		EmitPlanPrepared(ctx, q, manager, plan)
+		EmitPlanPrepared(ctx, s.Q, manager, plan)
 
 		// Consume any pending counter-demand waiting on this player: the
 		// target of a previously marred demand deferred their free counter
 		// to "the next plan you prepare" — synthesize it now.
-		counterPlanID := consumePendingCounterDemandFor(ctx, q, manager, game, &plan)
+		counterPlanID := consumePendingCounterDemandFor(ctx, s.Q, manager, game, &plan)
 
 		resp := map[string]any{"plan": plan}
 		if counterPlanID != nil {
@@ -762,9 +767,9 @@ func PreparePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // ── GetPlan ───────────────────────────────────────────────────────────────────
 
 // GetPlan handles GET /api/plans/:planId.
-func GetPlan(q *dbgen.Queries) http.HandlerFunc {
+func GetPlan(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, _, ok := requirePlanAccess(w, r, q)
+		plan, _, ok := requirePlanAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -773,7 +778,7 @@ func GetPlan(q *dbgen.Queries) http.HandlerFunc {
 
 		var difficulty int16
 		if h, supported := GetHandler(plan.PlanType); supported {
-			difficulty, _ = h.ComputeDifficulty(r.Context(), q, plan, &resData)
+			difficulty, _ = h.ComputeDifficulty(r.Context(), s.Q, plan, &resData)
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -791,9 +796,9 @@ func GetPlan(q *dbgen.Queries) http.HandlerFunc {
 // Focus player begins resolution. Sets the plan to 'resolving', then calls
 // h.OnResolve() which creates the dice roll (or returns nil for plans that
 // have a custom pre-roll flow, like Exchange Courtiers).
-func ResolvePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, plan, ok := requirePlanFocus(w, r, q)
+		game, plan, ok := requirePlanFocus(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -814,7 +819,7 @@ func ResolvePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		if err := q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		if err := s.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
 			ID:     plan.ID,
 			Status: model.PlanResolving,
 		}); err != nil {
@@ -826,7 +831,7 @@ func ResolvePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			h.BroadcastEvent(model.EventPlanResolving, model.PlanPayload{Plan: *plan})
 		}
 
-		deps := &PlanDeps{Q: q, Manager: manager}
+		deps := &PlanDeps{Store: s, Manager: manager}
 		roll, err := h.OnResolve(ctx, deps, plan)
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not begin resolution: "+err.Error())
@@ -854,13 +859,13 @@ func ResolvePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 //	  "choices": ["legal"],  // option key strings (plan-specific)
 //	  "result": "make"       // "make" or "mar" — must match the roll outcome
 //	}
-func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, q)
+		plan, player, ok := requirePlanAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
-		game, err := q.GetGameByID(r.Context(), plan.GameID)
+		game, err := s.Q.GetGameByID(r.Context(), plan.GameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
@@ -873,7 +878,7 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		// roles may also drive make-choice on someone else's plan; see
 		// makeChoiceAllowedNonFocus for the exhaustive list.
 		isFocus := game.FocusPlayerID != nil && *game.FocusPlayerID == player.ID
-		if !isFocus && !makeChoiceAllowedNonFocus(r.Context(), q, plan, player) {
+		if !isFocus && !makeChoiceAllowedNonFocus(r.Context(), s.Q, plan, player) {
 			respondErr(w, http.StatusForbidden, "only the focus player can do this")
 			return
 		}
@@ -898,7 +903,7 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Verify result matches the linked dice roll's outcome (if one exists).
-		roll, rollErr := q.GetDiceRollByPlanID(ctx, &plan.ID)
+		roll, rollErr := s.Q.GetDiceRollByPlanID(ctx, &plan.ID)
 		if rollErr == nil && roll.Outcome != nil && *roll.Outcome != body.Result {
 			respondErr(w, http.StatusConflict,
 				fmt.Sprintf("result '%s' does not match roll outcome '%s'", body.Result, *roll.Outcome))
@@ -914,13 +919,13 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		resData := loadResolutionData(plan.ResolutionData)
 		resData.Choices = body.Choices
 
-		deps := &PlanDeps{Q: q, Manager: manager}
+		deps := &PlanDeps{Store: s, Manager: manager}
 		if err := h.ApplyChoice(ctx, deps, plan, &resData, body.Choices, body.Result); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not apply plan effects: "+err.Error())
 			return
 		}
 
-		if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
+		if err := saveResolutionData(ctx, s.Q, plan.ID, resData); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not save choices")
 			return
 		}
@@ -942,9 +947,9 @@ func MakeChoice(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 // prerequisites (e.g. EC messy break). The result is taken from the linked
 // dice roll's outcome; if no roll exists the result is read from the plan's
 // stored result field (e.g. EC fair trade accept path).
-func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func CompletePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, ok := requirePlanFocus(w, r, q)
+		_, plan, ok := requirePlanFocus(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -969,7 +974,7 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		// Determine result from roll outcome or existing plan result (fair trade).
 		resultStr := ""
-		roll, rollErr := q.GetDiceRollByPlanID(ctx, &plan.ID)
+		roll, rollErr := s.Q.GetDiceRollByPlanID(ctx, &plan.ID)
 		if rollErr == nil && roll.Outcome != nil {
 			resultStr = *roll.Outcome
 		} else if plan.Result != nil {
@@ -980,7 +985,7 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
+		if err := s.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
 			ID:     plan.ID,
 			Result: &resultStr,
 		}); err != nil {
@@ -992,7 +997,7 @@ func CompletePlan(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			PlanID: plan.ID,
 			Result: resultStr,
 		})
-		EmitPlanResolved(ctx, q, manager, *plan, resultStr)
+		EmitPlanResolved(ctx, s.Q, manager, *plan, resultStr)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,

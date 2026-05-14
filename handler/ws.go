@@ -8,7 +8,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 
-	dbgen "uneasy/db/gen"
+	"uneasy/db"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 )
@@ -27,7 +27,7 @@ import (
 // The client can send:
 //   - {"type": "typing.start"} — throttle to once per 2–3 seconds
 //   - {"type": "typing.stop"}
-func WebSocket(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
+func WebSocket(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -40,7 +40,7 @@ func WebSocket(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 			http.Error(w, "log in first", http.StatusUnauthorized)
 			return
 		}
-		player := appMiddleware.LoadPlayer(r.Context(), q, account.ID, gameID)
+		player := appMiddleware.LoadPlayer(r.Context(), s.Q, account.ID, gameID)
 		if player == nil {
 			http.Error(w, "not a member of this table", http.StatusForbidden)
 			return
