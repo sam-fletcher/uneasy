@@ -154,14 +154,11 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 			newCodeHash = &h
 		}
 
-		var status int
 		err := s.InTx(ctx, func(q *dbgen.Queries) error {
-			var txErr error
-			status, txErr = updateAccountFields(ctx, q, acct, newUsername, newEmail, newCodeHash)
-			return txErr
+			return updateAccountFields(ctx, q, acct, newUsername, newEmail, newCodeHash)
 		})
 		if err != nil {
-			respondErr(w, status, err.Error())
+			respondHTTPErr(w, err)
 			return
 		}
 
@@ -212,16 +209,16 @@ func accountResponse(a *dbgen.Account) map[string]any {
 // It returns the appropriate HTTP status code and any error encountered.
 func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddleware.Account,
 	newUsername, newEmail *string, newCodeHash *string,
-) (int, error) {
+) error {
 	if newUsername != nil {
 		if existing, err := q.GetAccountByUsername(ctx, *newUsername); err == nil && existing.ID != acct.ID {
-			return http.StatusConflict, errors.New("username taken")
+			return httpErr(http.StatusConflict, "username taken")
 		}
 		if _, err := q.UpdateAccountUsername(ctx, dbgen.UpdateAccountUsernameParams{
 			ID:       acct.ID,
 			Username: *newUsername,
 		}); err != nil {
-			return http.StatusInternalServerError, errors.New("could not update username")
+			return httpErr(http.StatusInternalServerError, "could not update username")
 		}
 	}
 	if newEmail != nil {
@@ -233,7 +230,7 @@ func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddlew
 			ID:    acct.ID,
 			Email: emailPtr,
 		}); err != nil {
-			return http.StatusInternalServerError, errors.New("could not update email")
+			return httpErr(http.StatusInternalServerError, "could not update email")
 		}
 	}
 	if newCodeHash != nil {
@@ -241,10 +238,10 @@ func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddlew
 			ID:       acct.ID,
 			CodeHash: *newCodeHash,
 		}); err != nil {
-			return http.StatusInternalServerError, errors.New("could not update code")
+			return httpErr(http.StatusInternalServerError, "could not update code")
 		}
 	}
-	return http.StatusOK, nil
+	return nil
 }
 
 // openSession creates a sessions row and sets the cookie. Internal helper

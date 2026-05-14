@@ -34,7 +34,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -659,7 +658,6 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var plan dbgen.Plan
-		var status int
 		err = s.InTx(ctx, func(q *dbgen.Queries) error {
 			p, cErr := q.CreatePlan(ctx, dbgen.CreatePlanParams{
 				GameID:           game.ID,
@@ -674,15 +672,13 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				PreparationNotes: body.PreparationNotes,
 			})
 			if cErr != nil {
-				status = http.StatusInternalServerError
-				return errors.New("could not create plan")
+				return httpErr(http.StatusInternalServerError, "could not create plan")
 			}
 			plan = p
 
 			if body.PlanType == model.PlanMakeIntroductions {
 				if mErr := miStoreResData(ctx, q, plan.ID, body.PeerCount); mErr != nil {
-					status = http.StatusInternalServerError
-					return errors.New("could not save plan data")
+					return httpErr(http.StatusInternalServerError, "could not save plan data")
 				}
 			}
 
@@ -690,8 +686,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				resData := loadResolutionData(plan.ResolutionData)
 				resData.WarEnemyPlayerIDs = body.EnemyPlayerIDs
 				if sErr := saveResolutionData(ctx, q, plan.ID, resData); sErr != nil {
-					status = http.StatusInternalServerError
-					return errors.New("could not save war enemies")
+					return httpErr(http.StatusInternalServerError, "could not save war enemies")
 				}
 				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
 					plan = refreshed
@@ -702,8 +697,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				resData := loadResolutionData(plan.ResolutionData)
 				resData.DuelType = body.DuelType
 				if sErr := saveResolutionData(ctx, q, plan.ID, resData); sErr != nil {
-					status = http.StatusInternalServerError
-					return errors.New("could not save duel type")
+					return httpErr(http.StatusInternalServerError, "could not save duel type")
 				}
 				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
 					plan = refreshed
@@ -715,8 +709,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 					ID:             plan.ID,
 					TargetedPlanID: body.TargetPlanID,
 				}); sErr != nil {
-					status = http.StatusInternalServerError
-					return errors.New("could not persist demand target")
+					return httpErr(http.StatusInternalServerError, "could not persist demand target")
 				}
 				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
 					plan = refreshed
@@ -727,8 +720,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			if preparer, ok := h.(OnPreparer); ok {
 				deps := &PlanDeps{Store: s.WithQ(q), Manager: manager}
 				if pErr := preparer.OnPrepare(ctx, deps, &plan); pErr != nil {
-					status = http.StatusInternalServerError
-					return fmt.Errorf("could not initialise plan: %s", pErr.Error())
+					return httpErr(http.StatusInternalServerError, "could not initialise plan: "+pErr.Error())
 				}
 			}
 
@@ -738,13 +730,12 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				PlayerID: player.ID,
 				PlanID:   plan.ID,
 			}); ptErr != nil {
-				status = http.StatusInternalServerError
-				return errors.New("could not place plan token")
+				return httpErr(http.StatusInternalServerError, "could not place plan token")
 			}
 			return nil
 		})
 		if err != nil {
-			respondErr(w, status, err.Error())
+			respondHTTPErr(w, err)
 			return
 		}
 
