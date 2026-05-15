@@ -682,7 +682,7 @@
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		padding: 1rem 0;
+		padding: 1rem 0.75rem;
 		gap: 1rem;
 		overflow-y: auto;
 		min-height: 0;

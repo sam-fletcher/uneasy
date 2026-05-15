@@ -67,8 +67,17 @@
 		{ value: 'flashback', label: 'Flashback' },
 		{ value: 'simultaneous', label: 'Simultaneous' },
 	];
-	let timeElapsed = $state<TimeElapsed>('moments');
+	let timeElapsed = $state<TimeElapsed | null>(null);
 	let timeNote = $state('');
+
+	function selectTime(value: TimeElapsed) {
+		timeElapsed = timeElapsed === value ? null : value;
+		if (timeElapsed != null) timeNote = '';
+	}
+	function onTimeNoteInput(value: string) {
+		timeNote = value;
+		if (value.trim() !== '') timeElapsed = null;
+	}
 
 	// ── Who else ──────────────────────────────────────────────────────────────
 	// Every peer except the focus player's own main character (implicitly present).
@@ -96,16 +105,20 @@
 	const hasLocation = $derived(
 		selectedHoldingID != null || customLocation.trim() !== ''
 	);
+	const hasTime = $derived(
+		timeElapsed != null || timeNote.trim() !== ''
+	);
+	const canSubmit = $derived(hasLocation && hasTime);
 	let submitting = $state(false);
 	let error = $state('');
 
 	async function submit() {
-		if (!hasLocation || submitting) return;
+		if (!canSubmit || submitting) return;
 		submitting = true;
 		error = '';
 		try {
 			const params: Parameters<typeof createScene>[1] = {
-				time_elapsed: timeElapsed,
+				time_elapsed: timeElapsed ?? 'moments',
 				present_peer_ids: [...selectedPeerIDs],
 			};
 			if (selectedHoldingID != null) {
@@ -171,7 +184,7 @@
 					type="button"
 					class="chip"
 					class:active={timeElapsed === opt.value}
-					onclick={() => { timeElapsed = opt.value; }}
+					onclick={() => selectTime(opt.value)}
 				>
 					{opt.label}
 				</button>
@@ -181,7 +194,8 @@
 			type="text"
 			class="note"
 			placeholder="Another time"
-			bind:value={timeNote}
+			value={timeNote}
+			oninput={(e) => onTimeNoteInput((e.target as HTMLInputElement).value)}
 			maxlength={120}
 		/>
 	</div>
@@ -212,7 +226,7 @@
 			type="button"
 			class="primary"
 			onclick={submit}
-			disabled={!hasLocation || submitting}
+			disabled={!canSubmit || submitting}
 		>
 			{submitting ? '…' : 'Begin Scene'}
 		</button>
@@ -305,6 +319,7 @@
 	.chips {
 		display: flex;
 		flex-wrap: wrap;
+		justify-content: center;
 		gap: 0.35rem;
 	}
 

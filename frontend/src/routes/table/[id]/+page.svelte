@@ -1129,6 +1129,8 @@
 	   position:absolute on mobile so it stays unaffected. */
 	.table-body.has-record {
 		flex-direction: row;
+		gap: 0.75rem;
+		padding-right: 0.75rem;
 	}
 	.table-body.has-record > :global(.main-event-view),
 	.table-body.has-record > :global(.center-message) {
@@ -1166,7 +1168,7 @@
 	}
 
 	header {
-		padding: 0.75rem 0;
+		padding: 0.75rem 0.75rem;
 		border-bottom: 1px solid #333;
 		display: flex;
 		flex-direction: column;
@@ -1317,7 +1319,7 @@
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		padding: 1rem 0;
+		padding: 1rem 0.75rem;
 		gap: 1rem;
 		overflow-y: auto;
 		min-height: 0;

@@ -15,6 +15,7 @@
 		&& !HIDDEN_PATHS.includes(page.url.pathname)
 		&& !page.url.pathname.startsWith('/table/')
 	);
+	const isTableRoute = $derived(page.url.pathname.startsWith('/table/'));
 
 	onMount(async () => {
 		try { me = await getMe(); } catch { /* ignore */ }
@@ -37,7 +38,7 @@
 	</header>
 {/if}
 
-<main>
+<main class:full-bleed={isTableRoute}>
 	{@render children()}
 </main>
 
@@ -106,5 +107,10 @@
 		max-width: 1500px;
 		margin: 0 auto;
 		padding: 1rem;
+	}
+	/* Table route: immersive game UI fills the viewport edge-to-edge. */
+	main.full-bleed {
+		max-width: 100%;
+		padding: 0 0.2rem;
 	}
 </style>

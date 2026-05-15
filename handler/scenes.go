@@ -371,7 +371,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		row := scene.RowNumber
 		sceneID := scene.ID
 		EmitSystemPost(ctx, s.Q, manager, gameRow.ID, "scene.started",
-			model.SeverityBoundary,
+			model.SeverityImportant,
 			resolveSceneBannerText(ctx, s.Q, &scene, player.DisplayName),
 			&row, nil, &sceneID,
 			map[string]any{"scene_id": scene.ID})
@@ -420,18 +420,15 @@ func sceneBannerText(mainCharName, holdingName string, scene *dbgen.Scene) strin
 	if holdingName == "" {
 		holdingName = "an unknown place"
 	}
-	out := fmt.Sprintf(
-		"%s at %s, %s",
-		mainCharName,
-		holdingName,
-		timeElapsedLabel(scene.TimeElapsed),
-	)
+	timeElapsed := timeElapsedLabel(scene.TimeElapsed)
 	if scene.TimeNote != nil {
 		if note := strings.TrimSpace(*scene.TimeNote); note != "" {
-			out += " — " + note
+			timeElapsed = note
 		}
 	}
-	return out
+	return fmt.Sprintf("%s at %s, %s",
+		mainCharName, holdingName, timeElapsed,
+	)
 }
 
 // resolveSceneBannerText looks up the main-character name and holding name

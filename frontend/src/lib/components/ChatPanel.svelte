@@ -368,10 +368,19 @@
 						<span class="boundary-line"></span>
 					</div>
 				{:else if post.author_id == null}
-					<div class="log" data-post-id={post.id} data-code={post.system_code} data-severity={post.severity}>
-						<span class="log-glyph" aria-hidden="true">•</span>
-						<span class="log-body">{post.body}</span>
-						<span class="log-time">{fmtTime(post.created_at)}</span>
+					<div
+						class="log"
+						class:important={post.severity >= SEVERITY.IMPORTANT}
+						data-post-id={post.id}
+						data-code={post.system_code}
+					>
+						{#if post.severity >= SEVERITY.IMPORTANT}
+							<span class="log-body">{post.body}</span>
+						{:else}
+							<span class="log-glyph" aria-hidden="true">•</span>
+							<span class="log-body">{post.body}</span>
+							<span class="log-time">{fmtTime(post.created_at)}</span>
+						{/if}
 					</div>
 				{:else}
 					{@const isOOC = post.speaking_as_asset_id == null}
@@ -704,7 +713,13 @@
 		font-size: 0.85rem;
 		color: #b0a890;
 	}
-	.log[data-severity='important'] { color: #e8d8a0; }
+	.log.important {
+		display: block;
+		text-align: center;
+		color: #c8a96e;
+		font-size: 0.85rem;
+		margin: 0.35rem 0;
+	}
 	.log-glyph { color: #888; }
 	.log-time { font-size: 0.7rem; color: #555; white-space: nowrap; }
 
