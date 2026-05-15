@@ -17,6 +17,7 @@
 	import { onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import type { RecordRow, Plan } from '$lib/api';
+	import { highlightedRow } from '$lib/highlight';
 
 	interface Props {
 		rows: RecordRow[];
@@ -118,7 +119,12 @@
 	{#each Array(TOTAL_ROWS) as _, i}
 		{@const n = i + 1}
 		{@const count = planCount(n)}
-		<span class="rail-row" data-state={rowState(n)} aria-label="Row {n}">
+		<span
+			class="rail-row"
+			data-state={rowState(n)}
+			class:highlighted={$highlightedRow === n}
+			aria-label="Row {n}"
+		>
 			<span class="rail-num">{n}</span>
 			{#if count > 0}
 				<span class="rail-bubble" aria-label="{count} plan{count === 1 ? '' : 's'}">{count}</span>
@@ -163,9 +169,11 @@
 				<li
 					class="record-row"
 					data-state={rowState(n)}
+					class:highlighted={$highlightedRow === n}
 				>
 					<button
 						class="row-num-pill"
+						class:highlighted={$highlightedRow === n}
 						onclick={() => onRowJump?.(n)}
 						aria-label="Jump to row {n}"
 					>
@@ -256,6 +264,11 @@
 	.rail-row[data-state="past"]    { color: #555; background: transparent; }
 	.rail-row[data-state="current"] { color: #1a1a1a; background: #c8a96e; box-shadow: 0 0 0 2px #e0c080; }
 	.rail-row[data-state="future"]  { color: #aaa; background: transparent; border: 1px solid #444; }
+
+	/* Cross-component highlight: e.g. when a plan card in PlanPanel is
+	 * hovered/selected, draw the eye to that plan's target row here. */
+	.rail-row.highlighted { box-shadow: 0 0 0 2px #6dbfe0; color: #e8e4d9; }
+	.rail-row[data-state="future"].highlighted { border-color: #6dbfe0; }
 
 	.rail-num { line-height: 1; }
 
@@ -408,6 +421,9 @@
 		background: #c8a96e;
 		color: #1a1a1a;
 	}
+
+	.row-num-pill.highlighted { box-shadow: 0 0 0 2px #6dbfe0; }
+	.record-row.highlighted { background: #14222a; }
 
 	.row-content {
 		flex: 1;

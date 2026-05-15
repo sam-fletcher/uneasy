@@ -18,13 +18,23 @@
 	import {
 		getPlanEligibility, resolvePlan,
 		type Plan, type PlanType, type Asset, type Player, type Ranking,
-		type EligiblePlan, type DiceRoll,
+		type EligiblePlan, type IneligiblePlan, type DiceRoll,
+		type RankingCategory,
 	} from '$lib/api';
 
 	import './plans/planPanel.css';
-	import { PLAN_SHORT, playerName } from './plans/shared';
+	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER, playerName } from './plans/shared';
 	import { REGISTRY } from './plans/registry';
+	import RowPill from './plans/RowPill.svelte';
+	import { highlightedRow } from '$lib/highlight';
 	import type { PlanContext } from './plans/types';
+
+	const TRACK_LABEL: Record<RankingCategory, string> = {
+		power:     'Power',
+		esteem:    'Esteem',
+		knowledge: 'Knowledge',
+	};
+	const TRACKS: RankingCategory[] = ['power', 'esteem', 'knowledge'];
 
 	interface Props {
 		gameID: number;
@@ -100,6 +110,7 @@
 	// ── Eligibility loading (prep mode) ───────────────────────────────────────
 
 	let eligiblePlans = $state<EligiblePlan[]>([]);
+	let ineligiblePlans = $state<IneligiblePlan[]>([]);
 	let eligibilityLoaded = $state(false);
 	let eligibilityError = $state('');
 	let selectedPlanType = $state<PlanType | null>(null);
@@ -108,11 +119,55 @@
 		eligibilityError = '';
 		try {
 			const res = await getPlanEligibility(gameID);
-			eligiblePlans = res.eligible;
+			eligiblePlans = res.eligible ?? [];
+			ineligiblePlans = res.ineligible ?? [];
 			eligibilityLoaded = true;
 		} catch (e) {
 			eligibilityError = e instanceof Error ? e.message : 'Could not load eligibility.';
 		}
+	}
+
+	// Build a per-plan-type lookup combining eligible + ineligible entries
+	// so the 3-column grid can render all 12 plans (ineligible ones disabled,
+	// with a hover tooltip explaining why).
+	type PlanCell =
+		| { type: PlanType; eligible: true; targetRow: number }
+		| { type: PlanType; eligible: false; reason: string };
+	const planCells = $derived.by<Map<PlanType, PlanCell>>(() => {
+		const m = new Map<PlanType, PlanCell>();
+		for (const p of eligiblePlans) m.set(p.plan_type, {
+			type: p.plan_type, eligible: true, targetRow: p.target_row,
+		});
+		for (const p of ineligiblePlans) m.set(p.plan_type, {
+			type: p.plan_type, eligible: false, reason: p.reason,
+		});
+		return m;
+	});
+
+	function rowStateFor(targetRow: number): 'past' | 'current' | 'future' {
+		if (targetRow < currentRow) return 'past';
+		if (targetRow === currentRow) return 'current';
+		return 'future';
+	}
+
+	function onPlanClick(cell: PlanCell) {
+		if (!cell.eligible) return;
+		const next = selectedPlanType === cell.type ? null : cell.type;
+		selectedPlanType = next;
+		if (next) highlightedRow.set(cell.targetRow);
+		else highlightedRow.set(null);
+	}
+
+	function onPlanHover(cell: PlanCell) {
+		if (cell.eligible) highlightedRow.set(cell.targetRow);
+	}
+	function onPlanLeave() {
+		// Restore selection's row, if any, else clear.
+		if (selectedPlanType) {
+			const c = planCells.get(selectedPlanType);
+			if (c?.eligible) { highlightedRow.set(c.targetRow); return; }
+		}
+		highlightedRow.set(null);
 	}
 
 	$effect(() => {
@@ -127,6 +182,8 @@
 			selectedPlanType = null;
 			eligibilityLoaded = false;
 			eligiblePlans = [];
+			ineligiblePlans = [];
+			highlightedRow.set(null);
 		}
 	});
 
@@ -209,22 +266,38 @@
 			<p class="muted">Checking eligibility…</p>
 		{:else if eligibilityError}
 			<p class="res-error">{eligibilityError}</p>
-		{:else if eligiblePlans.length === 0}
+		{:else if eligiblePlans.length === 0 && ineligiblePlans.length === 0}
 			<p class="muted">No plans available to prepare this turn.</p>
 		{:else}
-			<div class="plan-picker">
-				<span class="picker-label">Prepare a plan:</span>
-				{#each eligiblePlans as ep}
-					<button
-						class="plan-option-btn"
-						class:selected={selectedPlanType === ep.plan_type}
-						onclick={() => {
-							selectedPlanType = selectedPlanType === ep.plan_type ? null : ep.plan_type;
-						}}
-					>
-						{PLAN_SHORT[ep.plan_type] ?? ep.plan_type}
-						<span class="plan-row-hint">→ row {ep.target_row}</span>
-					</button>
+			<p class="picker-label">Prepare a plan:</p>
+			<div class="plan-grid">
+				{#each TRACKS as track}
+					<section class="plan-track" data-track={track}>
+						<h4 class="track-heading">{TRACK_LABEL[track]}</h4>
+						{#each TRACK_ORDER[track] as pt}
+							{@const cell = planCells.get(pt)}
+							<button
+								type="button"
+								class="plan-card"
+								class:selected={selectedPlanType === pt}
+								disabled={!cell || !cell.eligible}
+								title={cell && !cell.eligible ? cell.reason : undefined}
+								onclick={() => cell && onPlanClick(cell)}
+								onmouseenter={() => cell && onPlanHover(cell)}
+								onmouseleave={onPlanLeave}
+								onfocus={() => cell && onPlanHover(cell)}
+								onblur={onPlanLeave}
+							>
+								<div class="card-head">
+									<span class="card-title">{PLAN_SHORT[pt]}</span>
+									{#if cell?.eligible}
+										<RowPill row={cell.targetRow} state={rowStateFor(cell.targetRow)} />
+									{/if}
+								</div>
+								<p class="card-desc">{PLAN_DESCRIPTION[pt]}</p>
+							</button>
+						{/each}
+					</section>
 				{/each}
 			</div>
 		{/if}

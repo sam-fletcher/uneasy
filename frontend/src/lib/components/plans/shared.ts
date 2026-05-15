@@ -1,5 +1,44 @@
 // Shared constants, parsers, and helpers for plan components.
-import type { Plan, Player, Asset, PlanType, ResolutionData } from '$lib/api';
+import type { Plan, Player, Asset, PlanType, ResolutionData, RankingCategory } from '$lib/api';
+
+export const PLAN_TRACK: Record<PlanType, RankingCategory> = {
+	exchange_courtiers:   'power',
+	propose_decree:       'power',
+	make_war:             'power',
+	make_demands:         'power',
+	spread_propaganda:    'esteem',
+	spread_rumors:        'esteem',
+	propose_duel:         'esteem',
+	host_festivity:       'esteem',
+	make_introductions:   'knowledge',
+	seek_answers:         'knowledge',
+	chronicle_histories:  'knowledge',
+	clandestinely_liaise: 'knowledge',
+};
+
+/** One-line flavour description per plan type. Sourced from "Plan Titles.md"
+ * (the in-rules card copy). Kept short so plan cards stay scannable. */
+export const PLAN_DESCRIPTION: Record<PlanType, string> = {
+	make_demands:         'Demand control of the resolution of another player’s plan.',
+	propose_decree:       'Bring a new law to the royal council to enact sweeping legal change.',
+	exchange_courtiers:   'Take another player’s peer into your retinue.',
+	make_war:             'Declare war. Agree to peace terms, or break assets every round.',
+	spread_propaganda:    'Distribute a pamphlet to spread new thought throughout the realm.',
+	spread_rumors:        'Spread rumors to damage the reputation of assets at the table.',
+	propose_duel:         'Go one-on-one in a battle of arms or wits to prove a point.',
+	host_festivity:       'Convene socially: throw a ball, host a dinner, go on a hunt.',
+	make_introductions:   'Introduce new peers to court. Add them to your retinue.',
+	seek_answers:         'Investigate truths and ask questions of the other players.',
+	chronicle_histories:  'Explore a situation from history. Connect it to the present.',
+	clandestinely_liaise: 'Meet in secret and share a moment with another character.',
+};
+
+/** Display order within each track column (top → bottom). */
+export const TRACK_ORDER: Record<RankingCategory, PlanType[]> = {
+	power:     ['make_demands', 'propose_decree', 'exchange_courtiers', 'make_war'],
+	esteem:    ['spread_propaganda', 'spread_rumors', 'propose_duel', 'host_festivity'],
+	knowledge: ['make_introductions', 'seek_answers', 'chronicle_histories', 'clandestinely_liaise'],
+};
 
 export const PLAN_SHORT: Record<PlanType, string> = {
 	exchange_courtiers:   'Exchange Courtiers',
@@ -25,7 +64,7 @@ export const PLAN_LABELS: Record<PlanType, string> = {
 	chronicle_histories:  'Chronicle Histories (Knowledge, delay 1)',
 	propose_decree:       'Propose Decree (Power, delay 3)',
 	clandestinely_liaise: 'Clandestinely Liaise (Esteem, delay 3)',
-	propose_duel:         'Propose Duel (Power/Esteem, delay 5)',
+	propose_duel:         'Propose Duel (Esteem, delay 5)',
 	host_festivity:       'Host Festivity (Esteem, delay 5)',
 	make_war:             'Make War (Power, delay 5)',
 	make_demands:         'Make Demands (Power, delay 5)',

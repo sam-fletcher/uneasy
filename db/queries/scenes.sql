@@ -21,6 +21,19 @@ SELECT * FROM scenes
 WHERE game_id = $1 AND ended_at IS NULL
 LIMIT 1;
 
+-- name: GetTurnScene :one
+-- Returns the focus player's turn-scene for a given row: the scene they set
+-- up at the start of their turn (resolved_plan_id IS NULL), regardless of
+-- whether it has ended. Used by /game-state so a refreshing client can tell
+-- whether the focus player is mid-scene or in their post-scene action step.
+-- Distinct from plan-resolution scenes, which have a non-null resolved_plan_id.
+SELECT * FROM scenes
+WHERE game_id = $1
+  AND row_number = $2
+  AND focus_player_id = $3
+  AND resolved_plan_id IS NULL
+LIMIT 1;
+
 -- name: GetSceneByID :one
 SELECT * FROM scenes WHERE id = $1;
 

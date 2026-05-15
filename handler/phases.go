@@ -379,6 +379,21 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 					result["current_prologue_player_id"] = id
 				}
 			}
+			// In main_event, surface the focus player's turn-scene status so a
+			// refreshing client can tell whether they are mid-scene or in
+			// the post-scene action step (no client-side inference required).
+			if game.Phase == model.PhaseMainEvent && game.FocusPlayerID != nil && game.CurrentRow > 0 {
+				turnScene, err := s.Q.GetTurnScene(ctx, dbgen.GetTurnSceneParams{
+					GameID:        gameID,
+					RowNumber:     game.CurrentRow,
+					FocusPlayerID: *game.FocusPlayerID,
+				})
+				if err == nil && turnScene.EndedAt.Valid {
+					result["turn_scene_ended_at"] = turnScene.EndedAt.Time
+				} else {
+					result["turn_scene_ended_at"] = nil
+				}
+			}
 		}
 
 		respond(w, http.StatusOK, result)

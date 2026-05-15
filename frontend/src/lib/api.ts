@@ -475,6 +475,10 @@ export function getGameState(id: string | number): Promise<{
 	laws?: Law[];
 	rumors?: Rumor[];
 	current_prologue_player_id?: number | null;
+	/** ISO timestamp at which the focus player's turn-scene on the current
+	 * row was ended, or null if the scene is still active or not yet started.
+	 * Only present in main_event phase. */
+	turn_scene_ended_at?: string | null;
 }> {
 	return apiFetch(`/tables/${id}/state`);
 }

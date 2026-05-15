@@ -638,6 +638,11 @@
 				plans = plansData.plans;
 				activeScene = sceneData.scene;
 				activeScenePeers = sceneData.peers;
+				// Authoritative sceneEnded from the server: set when the
+				// focus player's turn-scene (the one without a resolved_plan_id)
+				// has a non-null ended_at. Survives page refresh; does not
+				// confuse plan-resolution scenes for turn-scenes.
+				sceneEnded = data.turn_scene_ended_at != null;
 				if (rollData.roll) {
 					activeRoll = rollData.roll;
 					activeRollDice = rollData.dice;
