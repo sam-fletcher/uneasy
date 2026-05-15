@@ -141,26 +141,32 @@
 			.sort((a, b) => cardRank(b.value) - cardRank(a.value));
 	}
 
-	// Cumulative status across all three tracks for projected first focus.
+	// Cumulative status (inverse rank) across all three tracks for projected first focus.
 	// Uses each player's final slot (1..5) on each track.
+	// On a tie, the lowest Power player goes first.
 	const cumulativeByPlayer = $derived.by(() => {
-		const totals = new Map<number, number>();
-		for (const p of players) totals.set(p.id, 0);
-		for (const t of TRACKS) {
-			const proj = projectTrack(t.id);
-			for (const [pid, slot] of proj.slots) {
-				totals.set(pid, (totals.get(pid) ?? 0) + slot);
-			}
-		}
+		const totals = new Map<number, [number, number]>();
+		const powers = projectTrack('power').slots;
+		const esteems = projectTrack('esteem').slots;
+		const knowledges = projectTrack('knowledge').slots;
+		for (const p of players) totals.set(p.id, [
+			(powers.get(p.id) ?? 3) + (esteems.get(p.id) ?? 3) + (knowledges.get(p.id) ?? 3),
+			powers.get(p.id) ?? 3
+		]);
 		return totals;
 	});
 
 	const firstFocusPlayer = $derived.by(() => {
-		let best: { pid: number; total: number } | null = null;
+		let lowestRank: { pid: number; total: number; powerTieBreaker: number } | null = null;
 		for (const [pid, t] of cumulativeByPlayer) {
-			if (best == null || t < best.total) best = { pid, total: t };
+			if (lowestRank == null || t[0] > lowestRank.total) {
+				lowestRank = { pid, total: t[0], powerTieBreaker: t[1] };
+			}
+			else if (t[0] === lowestRank.total && t[0] > lowestRank.powerTieBreaker) {
+				lowestRank = { pid, total: t[0], powerTieBreaker: t[1] };
+			}
 		}
-		return best;
+		return lowestRank;
 	});
 </script>
 
@@ -231,16 +237,12 @@
 
 	<div
 		class="status"
-		title="Cumulative status = sum of your ranks across all three tracks. The lowest cumulative becomes the first focus player."
+		title="Lowest sum of ranks. On a tie, the lowest Power player goes first."
 	>
 		{#if firstFocusPlayer != null && players.length > 0}
-			Projected first focus: <strong>{playerName(firstFocusPlayer.pid)}</strong>
+			Projected first player: <strong>{playerName(firstFocusPlayer.pid)}</strong>
 			<span class="status-detail">
-				({TRACKS.map((t) => {
-					const proj = projectTrack(t.id);
-					const slot = proj.slots.get(firstFocusPlayer.pid);
-					return `${t.label[0]}${slot ?? '·'}`;
-				}).join(' ')})
+				(Lowest rank)
 			</span>
 		{/if}
 	</div>

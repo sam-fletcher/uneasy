@@ -1123,6 +1123,20 @@
 		padding-bottom: calc(56px + env(safe-area-inset-bottom));
 	}
 
+	/* In main_event on mobile, the public-record rail sits to the left of the
+	   phase view rather than stacking above it (the rail is full-height, so
+	   stacking pushes the phase content off-screen). The chat panel is
+	   position:absolute on mobile so it stays unaffected. */
+	.table-body.has-record {
+		flex-direction: row;
+	}
+	.table-body.has-record > :global(.main-event-view),
+	.table-body.has-record > :global(.center-message) {
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+	}
+
 	@media (min-width: 1024px) {
 		.table-body {
 			display: grid;

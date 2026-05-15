@@ -16,6 +16,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -107,6 +108,11 @@ func UpdateLaw(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if h, ok := manager.Get(law.GameID); ok {
 			h.BroadcastEvent(model.EventLawUpdated, model.LawUpdatedPayload{Law: updated})
 		}
+		EmitSystemPost(ctx, s.Q, manager, law.GameID, "law.edited",
+			model.SeverityTrace,
+			fmt.Sprintf("%s edited a law.", playerDisplayName(ctx, s.Q, player.ID)),
+			nil, nil, nil,
+			map[string]any{"law_id": updated.ID, "editor_id": player.ID})
 		respond(w, http.StatusOK, map[string]any{"law": updated})
 	}
 }
@@ -185,6 +191,11 @@ func UpdateRumor(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if h, ok := manager.Get(rumor.GameID); ok {
 			h.BroadcastEvent(model.EventRumorUpdated, model.RumorUpdatedPayload{Rumor: updated})
 		}
+		EmitSystemPost(ctx, s.Q, manager, rumor.GameID, "rumor.edited",
+			model.SeverityTrace,
+			fmt.Sprintf("%s edited a rumor.", playerDisplayName(ctx, s.Q, player.ID)),
+			nil, nil, nil,
+			map[string]any{"rumor_id": updated.ID, "editor_id": player.ID})
 		respond(w, http.StatusOK, map[string]any{"rumor": updated})
 	}
 }

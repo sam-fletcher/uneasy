@@ -255,6 +255,22 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// If we're in the extra_peers step (≤3 players), every player must
+		// have created their extra peer before the main event can start.
+		if game.PrologueRankingStep != nil &&
+			*game.PrologueRankingStep == "extra_peers" {
+			extras, err := s.Q.ListExtraPeersByGame(ctx, game.ID)
+			if err != nil {
+				respondErr(w, http.StatusInternalServerError, "could not load extra peers")
+				return
+			}
+			if len(extras) < len(players) {
+				respondErr(w, http.StatusConflict,
+					"all players must create their extra peer before starting the main event")
+				return
+			}
+		}
+
 		// Create public record rows 1–13.
 		if err := s.Q.CreatePublicRecordRows(ctx, game.ID); err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not create public record")

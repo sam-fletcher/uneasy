@@ -383,6 +383,9 @@
 	});
 
 	// ── Start main event ─────────────────────────────────────────────────────
+	const allExtraPeersCreated = $derived(
+		players.length > 0 && players.every(p => extraPeers.some(e => e.player_id === p.id))
+	);
 	let advancing = $state(false);
 	async function advanceToMainEvent() {
 		if (advancing) return;
@@ -433,8 +436,6 @@
 {/snippet}
 
 <div class="prologue-view">
-	<h2>Prologue</h2>
-
 	{#if error}
 		<p class="local-error">{error}</p>
 	{/if}
@@ -653,10 +654,12 @@
 	{/if}
 
 	{#if isFacilitator && rankings.length >= 15}
+		{@const blockedOnExtras = mode === 'extra' && !allExtraPeersCreated}
 		<button
 			class="primary"
 			onclick={advanceToMainEvent}
-			disabled={advancing}
+			disabled={advancing || blockedOnExtras}
+			title={blockedOnExtras ? 'Waiting for all players to create their extra peer' : undefined}
 		>
 			{advancing ? '…' : 'Start Main Event'}
 		</button>
@@ -684,7 +687,6 @@
 		overflow-y: auto;
 		min-height: 0;
 	}
-	.prologue-view h2 { color: #c8a96e; font-size: 1.3rem; margin: 0; }
 	.prologue-view h3 { color: #c8a96e; font-size: 1rem; margin: 0.5rem 0 0.25rem; }
 
 	.muted { color: #999; font-size: 0.9rem; margin: 0; }

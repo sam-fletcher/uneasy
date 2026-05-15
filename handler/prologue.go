@@ -377,13 +377,15 @@ func addLawOrRumor(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
-	gameID int64,
+	gameID, playerID int64,
 	choiceName, text string,
 ) error {
+	pid := playerID
 	if isLawChoice(choiceName) {
 		law, err := q.CreateLaw(ctx, dbgen.CreateLawParams{
-			GameID: gameID,
-			Text:   text,
+			GameID:      gameID,
+			Text:        text,
+			SignatoryID: &pid,
 		})
 		if err != nil {
 			return httpErr(http.StatusInternalServerError, "could not record law")
@@ -391,8 +393,9 @@ func addLawOrRumor(
 		broadcastEvent(manager, gameID, model.EventLawEnacted, model.LawEnactedPayload{Law: law})
 	} else {
 		rumor, err := q.CreateRumor(ctx, dbgen.CreateRumorParams{
-			GameID: gameID,
-			Text:   text,
+			GameID:         gameID,
+			Text:           text,
+			SourcePlayerID: &pid,
 		})
 		if err != nil {
 			return httpErr(http.StatusInternalServerError, "could not record rumor")
@@ -551,7 +554,7 @@ func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 			return turnNumber, err
 		}
 	case gamepkg.PrologueSheetLawsRumors:
-		if err := addLawOrRumor(ctx, q, manager, gameID, body.ChoiceName, body.LawOrRumorText); err != nil {
+		if err := addLawOrRumor(ctx, q, manager, gameID, playerID, body.ChoiceName, body.LawOrRumorText); err != nil {
 			return turnNumber, err
 		}
 	}
