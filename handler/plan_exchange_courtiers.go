@@ -174,7 +174,7 @@ func fairTradeHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 		game, err := q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load game", err)
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 
@@ -182,11 +182,11 @@ func fairTradeHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		switch body.Action {
 		case "offer":
-			offerFairTrade(ctx, w, q, &resData, plan, player, body.OfferedAssetID)
+			offerFairTrade(r, ctx, w, q, &resData, plan, player, body.OfferedAssetID)
 		case "accept":
-			acceptFairTrade(ctx, w, q, &resData, plan, player, manager, game)
+			acceptFairTrade(r, ctx, w, q, &resData, plan, player, manager, game)
 		case "decline":
-			declineFairTrade(ctx, w, q, &resData, plan, player, manager, game)
+			declineFairTrade(r, ctx, w, q, &resData, plan, player, manager, game)
 		default:
 			respondErr(w, http.StatusBadRequest, "action must be 'offer', 'accept', or 'decline'")
 		}
@@ -194,6 +194,7 @@ func fairTradeHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 }
 
 func offerFairTrade(
+	r *http.Request,
 	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
 	resData *ResolutionData, plan *dbgen.Plan, player *dbgen.Player,
 	offeredAssetID *int64,
@@ -221,7 +222,7 @@ func offerFairTrade(
 	}
 	resData.FairTradeAssetID = offeredAssetID
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
-		respondInternalErr(w, "could not save offer", err)
+		respondInternalErr(w, r, "could not save offer", err)
 		return
 	}
 	respond(w, http.StatusOK, map[string]any{
@@ -231,6 +232,7 @@ func offerFairTrade(
 }
 
 func acceptFairTrade(
+	r *http.Request,
 	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
 	resData *ResolutionData, plan *dbgen.Plan, player *dbgen.Player,
 	manager *hub.Manager, game dbgen.Game,
@@ -251,14 +253,14 @@ func acceptFairTrade(
 	// Transfer targeted asset to preparer (or demand keep_assets winner).
 	recipient, err := gamepkg.AssetRecipientForPlan(ctx, q, plan)
 	if err != nil {
-		respondInternalErr(w, "could not resolve asset recipient", err)
+		respondInternalErr(w, r, "could not resolve asset recipient", err)
 		return
 	}
 	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
 		ID:      *plan.TargetAssetID,
 		OwnerID: recipient,
 	}); err != nil {
-		respondInternalErr(w, "could not transfer targeted asset", err)
+		respondInternalErr(w, r, "could not transfer targeted asset", err)
 		return
 	}
 	// Transfer offered asset to target player.
@@ -266,7 +268,7 @@ func acceptFairTrade(
 		ID:      *resData.FairTradeAssetID,
 		OwnerID: *plan.TargetPlayerID,
 	}); err != nil {
-		respondInternalErr(w, "could not transfer offered asset", err)
+		respondInternalErr(w, r, "could not transfer offered asset", err)
 		return
 	}
 
@@ -274,7 +276,7 @@ func acceptFairTrade(
 	resData.FairTradeAccepted = &accepted
 	resData.Choices = []string{"fair_trade_accepted"}
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
-		respondInternalErr(w, "could not save decision", err)
+		respondInternalErr(w, r, "could not save decision", err)
 		return
 	}
 
@@ -282,7 +284,7 @@ func acceptFairTrade(
 		ID:     plan.ID,
 		Result: new(makeOutcome),
 	}); err != nil {
-		respondInternalErr(w, "could not resolve plan", err)
+		respondInternalErr(w, r, "could not resolve plan", err)
 		return
 	}
 
@@ -315,6 +317,7 @@ func acceptFairTrade(
 }
 
 func declineFairTrade(
+	r *http.Request,
 	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
 	resData *ResolutionData, plan *dbgen.Plan, player *dbgen.Player,
 	manager *hub.Manager, game dbgen.Game,
@@ -326,19 +329,19 @@ func declineFairTrade(
 	declined := false
 	resData.FairTradeAccepted = &declined
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
-		respondInternalErr(w, "could not save decision", err)
+		respondInternalErr(w, r, "could not save decision", err)
 		return
 	}
 
 	h := ecHandler{}
 	difficulty, err := h.ComputeDifficulty(ctx, q, plan, resData)
 	if err != nil {
-		respondInternalErr(w, "could not compute difficulty", err)
+		respondInternalErr(w, r, "could not compute difficulty", err)
 		return
 	}
 	roll, err := createPlanRoll(ctx, q, manager, &game, plan, difficulty, player.ID)
 	if err != nil {
-		respondInternalErr(w, "could not create dice roll", err)
+		respondInternalErr(w, r, "could not create dice roll", err)
 		return
 	}
 	respond(w, http.StatusOK, map[string]any{
@@ -414,13 +417,13 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {
-			respondInternalErr(w, "could not tear marginalia", err)
+			respondInternalErr(w, r, "could not tear marginalia", err)
 			return
 		}
 
 		resData.MessyBreakDone = true
 		if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not record messy break", err)
+			respondInternalErr(w, r, "could not record messy break", err)
 			return
 		}
 

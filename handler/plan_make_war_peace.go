@@ -59,22 +59,22 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load game", err)
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 		snap, err := mwSnapshotWar(ctx, deps.Q, war)
 		if err != nil {
-			respondInternalErr(w, "could not load war participants", err)
+			respondInternalErr(w, r, "could not load war participants", err)
 			return
 		}
 		ranks, err := mwPowerRanks(ctx, deps.Q, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load rankings", err)
+			respondInternalErr(w, r, "could not load rankings", err)
 			return
 		}
 		missing, err := mwOutstandingCostsForWar(ctx, deps.Q, snap, ranks, game.CurrentRow)
 		if err != nil {
-			respondInternalErr(w, "could not compute outstanding costs", err)
+			respondInternalErr(w, r, "could not compute outstanding costs", err)
 			return
 		}
 		if len(missing) == 0 || missing[0].PayerID != player.ID {
@@ -89,7 +89,7 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			Terms:      body.Terms,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not create peace proposal", err)
+			respondInternalErr(w, r, "could not create peace proposal", err)
 			return
 		}
 
@@ -169,7 +169,7 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			Accepted:   body.Accepted,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not record vote", err)
+			respondInternalErr(w, r, "could not record vote", err)
 			return
 		}
 		broadcastEvent(deps.Manager, plan.GameID, model.EventWarPeaceVote, model.WarPeaceVotePayload{
@@ -191,12 +191,12 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		active, err := deps.Q.ListActiveWarParticipants(ctx, war.ID)
 		if err != nil {
-			respondInternalErr(w, "could not load active participants", err)
+			respondInternalErr(w, r, "could not load active participants", err)
 			return
 		}
 		votes, err := deps.Q.ListPeaceVotes(ctx, prop.ID)
 		if err != nil {
-			respondInternalErr(w, "could not load votes", err)
+			respondInternalErr(w, r, "could not load votes", err)
 			return
 		}
 		accepted := map[int64]bool{}

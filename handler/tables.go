@@ -61,7 +61,7 @@ func CreateTable(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		code, err := db.GenerateJoinCode()
 		if err != nil {
-			respondInternalErr(w, "could not generate join code", err)
+			respondInternalErr(w, r, "could not generate join code", err)
 			return
 		}
 
@@ -174,7 +174,7 @@ func JoinTable(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Capacity check (not race-free; acceptable for ~10 users).
 		count, err := s.Q.CountPlayersInGame(ctx, game.ID)
 		if err != nil {
-			respondInternalErr(w, "could not check capacity", err)
+			respondInternalErr(w, r, "could not check capacity", err)
 			return
 		}
 		if count >= maxPlayersPerGame {
@@ -242,7 +242,7 @@ func GetTable(s *db.Store) http.HandlerFunc {
 
 		players, err := s.Q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load members", err)
+			respondInternalErr(w, r, "could not load members", err)
 			return
 		}
 

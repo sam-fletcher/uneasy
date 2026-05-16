@@ -81,7 +81,7 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 
 	manager := hub.NewManager()
 
-	router := setupRouter(store, manager)
+	router := setupRouter(logger, store, manager)
 
 	if err := setupFrontend(router, devMode, viteURL); err != nil {
 		return err
@@ -109,7 +109,7 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 // setupRouter creates and configures the HTTP router with all middleware and routes.
 //
 //nolint:funlen // route table; one line per endpoint
-func setupRouter(store *db.Store, manager *hub.Manager) *chi.Mux {
+func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Standard middleware: structured request logging, panic recovery,
@@ -118,6 +118,7 @@ func setupRouter(store *db.Store, manager *hub.Manager) *chi.Mux {
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(handler.LoggerMiddleware(logger))
 	r.Use(chimiddleware.Timeout(timeOutReqest))
 
 	// API routes — all behind the cookie-auth middleware.

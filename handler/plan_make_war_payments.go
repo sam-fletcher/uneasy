@@ -77,23 +77,23 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load game", err)
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 
 		snap, err := mwSnapshotWar(ctx, deps.Q, war)
 		if err != nil {
-			respondInternalErr(w, "could not load war participants", err)
+			respondInternalErr(w, r, "could not load war participants", err)
 			return
 		}
 		ranks, err := mwPowerRanks(ctx, deps.Q, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load rankings", err)
+			respondInternalErr(w, r, "could not load rankings", err)
 			return
 		}
 		missing, err := mwOutstandingCostsForWar(ctx, deps.Q, snap, ranks, game.CurrentRow)
 		if err != nil {
-			respondInternalErr(w, "could not compute outstanding costs", err)
+			respondInternalErr(w, r, "could not compute outstanding costs", err)
 			return
 		}
 		if len(missing) == 0 {
@@ -119,7 +119,7 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 
 		assetID1, assetID2, ok := mwApplyCostChoice(
 			ctx, deps, plan.GameID, player,
-			body.Choice, body.MarginaliaID, body.AssetID1, body.AssetID2, w,
+			body.Choice, body.MarginaliaID, body.AssetID1, body.AssetID2, w, r,
 		)
 		if !ok {
 			return
@@ -136,7 +136,7 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 			Surrendered: body.Surrender,
 			IsEntry:     false,
 		}); err != nil {
-			respondInternalErr(w, "could not record battle cost", err)
+			respondInternalErr(w, r, "could not record battle cost", err)
 			return
 		}
 
@@ -148,7 +148,7 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 
 		if body.Surrender {
 			if err := mwApplySurrender(ctx, deps, war, snap, player.ID, game.CurrentRow); err != nil {
-				respondInternalErr(w, "could not apply surrender", err)
+				respondInternalErr(w, r, "could not apply surrender", err)
 				return
 			}
 			respond(w, http.StatusOK, map[string]any{
@@ -232,12 +232,13 @@ func mwApplyCostChoice(
 	choice string,
 	marginaliaID, assetID1In, assetID2In int64,
 	w http.ResponseWriter,
+	r *http.Request,
 ) (a1, a2 *int64, ok bool) {
 	switch choice {
 	case gamepkg.WarCostBreakAsset:
-		return mwApplyBreakAsset(ctx, deps, gameID, player, marginaliaID, w)
+		return mwApplyBreakAsset(ctx, deps, gameID, player, marginaliaID, w, r)
 	case gamepkg.WarCostLeverageTwo:
-		return mwApplyLeverageTwo(ctx, deps, player, assetID1In, assetID2In, w)
+		return mwApplyLeverageTwo(ctx, deps, player, assetID1In, assetID2In, w, r)
 	}
 	respondErr(w, http.StatusBadRequest, "choice must be break_asset or leverage_two")
 	return nil, nil, false
@@ -250,6 +251,7 @@ func mwApplyBreakAsset(
 	player *dbgen.Player,
 	marginaliaID int64,
 	w http.ResponseWriter,
+	r *http.Request,
 ) (a1, a2 *int64, ok bool) {
 	m, err := deps.Q.GetMarginaliaByID(ctx, marginaliaID)
 	if err != nil {
@@ -273,7 +275,7 @@ func mwApplyBreakAsset(
 		ID: m.ID, TornByID: &player.ID,
 	})
 	if err != nil {
-		respondInternalErr(w, "could not tear marginalia", err)
+		respondInternalErr(w, r, "could not tear marginalia", err)
 		return nil, nil, false
 	}
 	broadcastEvent(deps.Manager, gameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
@@ -296,6 +298,7 @@ func mwApplyLeverageTwo(
 	player *dbgen.Player,
 	assetID1In, assetID2In int64,
 	w http.ResponseWriter,
+	r *http.Request,
 ) (a1, a2 *int64, ok bool) {
 	if assetID1In == 0 || assetID2In == 0 || assetID1In == assetID2In {
 		respondErr(w, http.StatusBadRequest, "must specify two distinct assets to leverage")
@@ -325,7 +328,7 @@ func mwApplyLeverageTwo(
 			ID: id, IsLeveraged: true,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not leverage asset", err)
+			respondInternalErr(w, r, "could not leverage asset", err)
 			return nil, nil, false
 		}
 	}
@@ -375,7 +378,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load game", err)
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 
@@ -393,7 +396,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 
 		snap, err := mwSnapshotWar(ctx, deps.Q, war)
 		if err != nil {
-			respondInternalErr(w, "could not load war participants", err)
+			respondInternalErr(w, r, "could not load war participants", err)
 			return
 		}
 		targets := gamepkg.ActiveOpponents(
@@ -410,7 +413,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			WarID: war.ID, RowNumber: game.CurrentRow, PayerID: player.ID,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not load existing payments", err)
+			respondInternalErr(w, r, "could not load existing payments", err)
 			return
 		}
 		for _, bc := range existing {
@@ -421,7 +424,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		a1, a2, ok := mwApplyCostChoice(ctx, deps, plan.GameID, player,
-			body.Choice, body.MarginaliaID, body.AssetID1, body.AssetID2, w)
+			body.Choice, body.MarginaliaID, body.AssetID1, body.AssetID2, w, r)
 		if !ok {
 			return
 		}
@@ -437,7 +440,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			Surrendered: false,
 			IsEntry:     true,
 		}); err != nil {
-			respondInternalErr(w, "could not record entry payment", err)
+			respondInternalErr(w, r, "could not record entry payment", err)
 			return
 		}
 
@@ -458,7 +461,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			if err := deps.Q.SetWarParticipantEntryComplete(ctx, dbgen.SetWarParticipantEntryCompleteParams{
 				WarID: war.ID, PlayerID: player.ID,
 			}); err != nil {
-				respondInternalErr(w, "could not mark entry complete", err)
+				respondInternalErr(w, r, "could not mark entry complete", err)
 				return
 			}
 			broadcastEvent(deps.Manager, plan.GameID, model.EventWarEntryCompleted, model.WarEntryCompletedPayload{
@@ -531,13 +534,13 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
 			ID: asset.ID, OwnerID: player.ID,
 		}); err != nil {
-			respondInternalErr(w, "could not transfer asset", err)
+			respondInternalErr(w, r, "could not transfer asset", err)
 			return
 		}
 		if err := deps.Q.FulfillSurrenderClaim(ctx, dbgen.FulfillSurrenderClaimParams{
 			ID: claim.ID, AssetID: &asset.ID,
 		}); err != nil {
-			respondInternalErr(w, "could not fulfill claim", err)
+			respondInternalErr(w, r, "could not fulfill claim", err)
 			return
 		}
 

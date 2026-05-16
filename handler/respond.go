@@ -3,11 +3,34 @@ package handler
 // respond.go — shared JSON response helpers used by all handlers.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 )
+
+// loggerKey is a context key for storing the request logger.
+type loggerKey struct{}
+
+// loggerFromContext extracts the logger from the request context.
+// If the logger is not present, returns a default logger.
+func loggerFromContext(ctx context.Context) *slog.Logger {
+	if logger, ok := ctx.Value(loggerKey{}).(*slog.Logger); ok {
+		return logger
+	}
+	return slog.Default()
+}
+
+// LoggerMiddleware returns middleware that injects the logger into the request context.
+func LoggerMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), loggerKey{}, logger)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
 
 // respond writes a JSON response with the given status code.
 func respond(w http.ResponseWriter, status int, v any) {
@@ -46,12 +69,13 @@ func httpErr(status int, msg string) *httpError {
 // respondHTTPErr writes the response from err. If err (or anything in its
 // chain via errors.As) is a *httpError, the status and message come from it;
 // otherwise the response is 500 with err.Error() as the message.
-func respondHTTPErr(w http.ResponseWriter, err error) {
+func respondHTTPErr(w http.ResponseWriter, r *http.Request, err error) {
+	logger := loggerFromContext(r.Context())
 	if he, ok := errors.AsType[*httpError](err); ok {
 		respondErr(w, he.Status, he.Msg)
 		return
 	}
-	slog.Error("internal handler error", "err", err)
+	logger.Error("internal handler error", "err", err)
 	respondErr(w, http.StatusInternalServerError, err.Error())
 }
 
@@ -60,7 +84,7 @@ func respondHTTPErr(w http.ResponseWriter, err error) {
 // Use at sites that previously swallowed the cause:
 //
 //	if _, err := q.CreatePlan(...); err != nil {
-//	    respondInternalErr(w, "could not create plan", err)
+//	    respondInternalErr(w, r, "could not create plan", err)
 //	    return
 //	}
 //
@@ -69,7 +93,8 @@ func respondHTTPErr(w http.ResponseWriter, err error) {
 //
 // For 4xx errors (validation, conflict, etc.) keep using respondErr — the
 // caller-facing message is the whole point and there is no err to log.
-func respondInternalErr(w http.ResponseWriter, msg string, err error) {
-	slog.Error(msg, "err", err)
+func respondInternalErr(w http.ResponseWriter, r *http.Request, msg string, err error) {
+	logger := loggerFromContext(r.Context())
+	logger.Error(msg, "err", err)
 	respondErr(w, http.StatusInternalServerError, msg+": "+err.Error())
 }

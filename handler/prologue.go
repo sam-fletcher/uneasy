@@ -110,12 +110,12 @@ func GetPrologueSheets(s *db.Store) http.HandlerFunc {
 		ctx := r.Context()
 		claims, err := s.Q.ListPrologueChoiceClaimsByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load claims", err)
+			respondInternalErr(w, r, "could not load claims", err)
 			return
 		}
 		active, turnNumber, err := prologueTurnState(ctx, s.Q, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not compute turn order", err)
+			respondInternalErr(w, r, "could not compute turn order", err)
 			return
 		}
 		var activeID *int64
@@ -143,7 +143,7 @@ func GetPrologueCards(s *db.Store) http.HandlerFunc {
 		}
 		cards, err := s.Q.ListPlayerCardsByGame(r.Context(), gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load cards", err)
+			respondInternalErr(w, r, "could not load cards", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"cards": cards})
@@ -490,7 +490,7 @@ func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return txErr
 		})
 		if err != nil {
-			respondHTTPErr(w, err)
+			respondHTTPErr(w, r, err)
 			return
 		}
 
@@ -687,7 +687,7 @@ func BeginPrologueRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Every player must have 3 turns recorded.
 		players, err := s.Q.GetPlayersByGame(ctx, game.ID)
 		if err != nil {
-			respondInternalErr(w, "could not load players", err)
+			respondInternalErr(w, r, "could not load players", err)
 			return
 		}
 		for _, p := range players {
@@ -695,7 +695,7 @@ func BeginPrologueRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				GameID: game.ID, PlayerID: p.ID,
 			})
 			if err != nil {
-				respondInternalErr(w, "could not count turns", err)
+				respondInternalErr(w, r, "could not count turns", err)
 				return
 			}
 			if n < prologueTurnsPerPlayer {
@@ -718,7 +718,7 @@ func BeginPrologueRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return nil
 		})
 		if err != nil {
-			respondHTTPErr(w, err)
+			respondHTTPErr(w, r, err)
 			return
 		}
 

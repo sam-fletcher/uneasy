@@ -248,7 +248,7 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		// Determine preparer's power rank.
 		preparerRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, plan.PreparerID, model.CategoryPower)
 		if err != nil {
-			respondInternalErr(w, "could not determine preparer power rank", err)
+			respondInternalErr(w, r, "could not determine preparer power rank", err)
 			return
 		}
 
@@ -261,7 +261,7 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		// Determine the joiner's power rank.
 		joinerRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, player.ID, model.CategoryPower)
 		if err != nil {
-			respondInternalErr(w, "could not determine your power rank", err)
+			respondInternalErr(w, r, "could not determine your power rank", err)
 			return
 		}
 
@@ -295,7 +295,7 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 				ID:          assetID,
 				IsLeveraged: true,
 			}); err != nil {
-				respondInternalErr(w, "could not leverage asset", err)
+				respondInternalErr(w, r, "could not leverage asset", err)
 				return
 			}
 			broadcastEvent(deps.Manager, plan.GameID, model.EventAssetLeveraged, model.AssetIDPayload{
@@ -327,7 +327,7 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		resData.SignatoryID = &bestPlayerID
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save council data", err)
+			respondInternalErr(w, r, "could not save council data", err)
 			return
 		}
 
@@ -384,20 +384,20 @@ func pdCallRollHandler(deps *PlanDeps) http.HandlerFunc {
 
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load game", err)
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 
 		difficulty, err := pdHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
 		if err != nil {
-			respondInternalErr(w, "could not compute difficulty", err)
+			respondInternalErr(w, r, "could not compute difficulty", err)
 			return
 		}
 
 		// The preparer is the actor; the roll uses preparer's dice.
 		roll, err := createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 		if err != nil {
-			respondInternalErr(w, "could not create dice roll", err)
+			respondInternalErr(w, r, "could not create dice roll", err)
 			return
 		}
 
@@ -450,7 +450,7 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 		resData.Addendum = body.Addendum
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save addendum", err)
+			respondInternalErr(w, r, "could not save addendum", err)
 			return
 		}
 

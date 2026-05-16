@@ -247,21 +247,21 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 					RevealType: "liaise_redelay",
 				})
 				if err != nil {
-					respondInternalErr(w, "could not create redelay reveal", err)
+					respondInternalErr(w, r, "could not create redelay reveal", err)
 					return
 				}
 				if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
 					RevealID: redelayReveal.ID,
 					PlayerID: plan.PreparerID,
 				}); err != nil {
-					respondInternalErr(w, "could not register preparer in redelay reveal", err)
+					respondInternalErr(w, r, "could not register preparer in redelay reveal", err)
 					return
 				}
 				if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
 					RevealID: redelayReveal.ID,
 					PlayerID: *resData.PartnerID,
 				}); err != nil {
-					respondInternalErr(w, "could not register partner in redelay reveal", err)
+					respondInternalErr(w, r, "could not register partner in redelay reveal", err)
 					return
 				}
 				resData.RedelayRevealID = &redelayReveal.ID
@@ -274,7 +274,7 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 		resData.LiaisePhase = nextPhase
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save liaise phase", err)
+			respondInternalErr(w, r, "could not save liaise phase", err)
 			return
 		}
 
@@ -389,7 +389,7 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			AuthorID: player.ID,
 			Text:     secretText,
 		}); err != nil {
-			respondInternalErr(w, "could not write secret on asset", err)
+			respondInternalErr(w, r, "could not write secret on asset", err)
 			return
 		}
 
@@ -398,7 +398,7 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		resData.Choices = append(resData.Choices, entry)
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save keep-secret choice", err)
+			respondInternalErr(w, r, "could not save keep-secret choice", err)
 			return
 		}
 
@@ -500,14 +500,14 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			TargetAssetID: body.TargetAssetID,
 			BankedDieFace: dieFace,
 		}); err != nil {
-			respondInternalErr(w, "could not record share-choice", err)
+			respondInternalErr(w, r, "could not record share-choice", err)
 			return
 		}
 
 		// Check if both players have now submitted.
 		count, err := deps.Q.CountLiaiseChoicesByPlan(ctx, plan.ID)
 		if err != nil {
-			respondInternalErr(w, "could not count choices", err)
+			respondInternalErr(w, r, "could not count choices", err)
 			return
 		}
 
@@ -515,17 +515,17 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			// Both have submitted — reveal choices and apply effects.
 			choices, err := deps.Q.ListLiaiseChoicesByPlan(ctx, plan.ID)
 			if err != nil {
-				respondInternalErr(w, "could not load choices", err)
+				respondInternalErr(w, r, "could not load choices", err)
 				return
 			}
 
 			if err := clApplyShareChoices(ctx, deps, plan, resData, choices); err != nil {
-				respondInternalErr(w, "could not apply share choices", err)
+				respondInternalErr(w, r, "could not apply share choices", err)
 				return
 			}
 
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, "could not save liaise data", err)
+				respondInternalErr(w, r, "could not save liaise data", err)
 				return
 			}
 
@@ -740,7 +740,7 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			PlayerID: player.ID,
 			Face:     &face,
 		}); err != nil {
-			respondInternalErr(w, "could not record redelay reveal", err)
+			respondInternalErr(w, r, "could not record redelay reveal", err)
 			return
 		}
 
@@ -752,17 +752,17 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		// Check if both players have submitted.
 		submitted, err := deps.Q.CountRevealEntriesSubmitted(ctx, *resData.RedelayRevealID)
 		if err != nil {
-			respondInternalErr(w, "could not check reveal status", err)
+			respondInternalErr(w, r, "could not check reveal status", err)
 			return
 		}
 		total, err := deps.Q.CountRevealEntries(ctx, *resData.RedelayRevealID)
 		if err != nil {
-			respondInternalErr(w, "could not count reveal entries", err)
+			respondInternalErr(w, r, "could not count reveal entries", err)
 			return
 		}
 
 		if submitted >= total {
-			if !clFinalizeRedelayReveal(ctx, w, deps, plan, &resData) {
+			if !clFinalizeRedelayReveal(r, ctx, w, deps, plan, &resData) {
 				return
 			}
 		}
@@ -782,6 +782,7 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 // complete, broadcasts the result, schedules a follow-up meeting if needed,
 // and marks the liaise done. Writes HTTP errors and returns false on failure.
 func clFinalizeRedelayReveal(
+	r *http.Request,
 	ctx context.Context,
 	w http.ResponseWriter,
 	deps *PlanDeps,
@@ -790,7 +791,7 @@ func clFinalizeRedelayReveal(
 ) bool {
 	entries, err := deps.Q.ListRevealEntries(ctx, *resData.RedelayRevealID)
 	if err != nil {
-		respondInternalErr(w, "could not load reveal entries", err)
+		respondInternalErr(w, r, "could not load reveal entries", err)
 		return false
 	}
 
@@ -811,7 +812,7 @@ func clFinalizeRedelayReveal(
 		ResultDelay: &resultDelay,
 	})
 	if err != nil {
-		respondInternalErr(w, "could not complete redelay reveal", err)
+		respondInternalErr(w, r, "could not complete redelay reveal", err)
 		return false
 	}
 
@@ -843,7 +844,7 @@ func clFinalizeRedelayReveal(
 
 	resData.LiaisePhase = LiaiseDone
 	if err = saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
-		respondInternalErr(w, "could not complete liaise", err)
+		respondInternalErr(w, r, "could not complete liaise", err)
 		return false
 	}
 	return true

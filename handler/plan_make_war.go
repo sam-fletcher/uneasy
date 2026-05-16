@@ -268,7 +268,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load game", err)
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 
@@ -292,7 +292,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 				Side:        body.Side,
 				JoinedAtRow: game.CurrentRow,
 			}); err != nil {
-				respondInternalErr(w, "could not join war", err)
+				respondInternalErr(w, r, "could not join war", err)
 				return
 			}
 			_ = deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
@@ -306,7 +306,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 				Side:        body.Side,
 				JoinedAtRow: game.CurrentRow,
 			}); err != nil {
-				respondInternalErr(w, "could not join war", err)
+				respondInternalErr(w, r, "could not join war", err)
 				return
 			}
 		}
@@ -340,7 +340,7 @@ func mwPostSceneHandler(deps *PlanDeps) http.HandlerFunc {
 		resData := loadResolutionData(plan.ResolutionData)
 		resData.WarScenePosted = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save scene state", err)
+			respondInternalErr(w, r, "could not save scene state", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "scene_posted": true})

@@ -55,7 +55,7 @@ func CreateAccount(s *db.Store) http.HandlerFunc {
 
 		hash, err := bcrypt.GenerateFromPassword([]byte(body.Code), bcrypt.DefaultCost)
 		if err != nil {
-			respondInternalErr(w, "could not hash code", err)
+			respondInternalErr(w, r, "could not hash code", err)
 			return
 		}
 
@@ -65,12 +65,12 @@ func CreateAccount(s *db.Store) http.HandlerFunc {
 			Email:    body.Email,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not create account", err)
+			respondInternalErr(w, r, "could not create account", err)
 			return
 		}
 
 		if err = openSession(ctx, w, s.Q, account.ID); err != nil {
-			respondInternalErr(w, "could not open session", err)
+			respondInternalErr(w, r, "could not open session", err)
 			return
 		}
 
@@ -147,7 +147,7 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 			}
 			hash, err := bcrypt.GenerateFromPassword([]byte(*body.Code), bcrypt.DefaultCost)
 			if err != nil {
-				respondInternalErr(w, "could not hash code", err)
+				respondInternalErr(w, r, "could not hash code", err)
 				return
 			}
 			h := string(hash)
@@ -158,13 +158,13 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 			return updateAccountFields(ctx, q, acct, newUsername, newEmail, newCodeHash)
 		})
 		if err != nil {
-			respondHTTPErr(w, err)
+			respondHTTPErr(w, r, err)
 			return
 		}
 
 		updated, err := s.Q.GetAccountByID(ctx, acct.ID)
 		if err != nil {
-			respondInternalErr(w, "could not reload account", err)
+			respondInternalErr(w, r, "could not reload account", err)
 			return
 		}
 		respond(w, http.StatusOK, accountResponse(&updated))
@@ -181,7 +181,7 @@ func ListMyTables(s *db.Store) http.HandlerFunc {
 		}
 		rows, err := s.Q.ListPlayersByAccount(r.Context(), acct.ID)
 		if err != nil {
-			respondInternalErr(w, "could not list tables", err)
+			respondInternalErr(w, r, "could not list tables", err)
 			return
 		}
 		out := make([]map[string]any, 0, len(rows))

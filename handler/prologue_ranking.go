@@ -178,7 +178,7 @@ func DeclareHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			GameID: gameID, PlayerID: player.ID,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not load cards", err)
+			respondInternalErr(w, r, "could not load cards", err)
 			return
 		}
 		held := 0
@@ -191,14 +191,14 @@ func DeclareHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			GameID: gameID, PlayerID: player.ID,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not load declarations", err)
+			respondInternalErr(w, r, "could not load declarations", err)
 			return
 		}
 		// Re-running for the same track replaces an existing declaration, so
 		// subtract its previous value before checking.
 		decls, err := s.Q.ListHeartDeclarationsByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load declarations", err)
+			respondInternalErr(w, r, "could not load declarations", err)
 			return
 		}
 		var prevForTrack int16
@@ -217,7 +217,7 @@ func DeclareHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			GameID: gameID, PlayerID: player.ID, Track: track, Count: body.Count,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not save declaration", err)
+			respondInternalErr(w, r, "could not save declaration", err)
 			return
 		}
 		broadcastEvent(manager, gameID, model.EventPrologueHeartsDeclared, model.PrologueHeartsDeclaredPayload{
@@ -254,7 +254,7 @@ func FinalizeTrackRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 		players, err := s.Q.GetPlayersByGame(ctx, game.ID)
 		if err != nil {
-			respondInternalErr(w, "could not load players", err)
+			respondInternalErr(w, r, "could not load players", err)
 			return
 		}
 		ids := make([]int64, len(players))
@@ -263,12 +263,12 @@ func FinalizeTrackRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		cards, err := loadPrologueCards(ctx, s.Q, game.ID)
 		if err != nil {
-			respondInternalErr(w, "could not load cards", err)
+			respondInternalErr(w, r, "could not load cards", err)
 			return
 		}
 		decls, err := loadPrologueDeclarations(ctx, s.Q, game.ID)
 		if err != nil {
-			respondInternalErr(w, "could not load declarations", err)
+			respondInternalErr(w, r, "could not load declarations", err)
 			return
 		}
 		ranked, setAside, err := gamepkg.ComputeTrackRanking(track, ids, cards, decls)
@@ -358,7 +358,7 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Caller must be rank-1 on this track.
 		rankings, err := s.Q.ListRankingsByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load rankings", err)
+			respondInternalErr(w, r, "could not load rankings", err)
 			return
 		}
 		cat := modelCategoryForTrack(track)
@@ -377,7 +377,7 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Set-asides = players in this game with no ranking on this track.
 		players, err := s.Q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load players", err)
+			respondInternalErr(w, r, "could not load players", err)
 			return
 		}
 		ranked := map[int64]bool{}
@@ -428,7 +428,7 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				GameID: gameID, PlayerID: &pidPtr, Category: cat, Rank: open[i],
 			})
 			if err != nil {
-				respondInternalErr(w, "could not set ranking", err)
+				respondInternalErr(w, r, "could not set ranking", err)
 				return
 			}
 		}
@@ -516,7 +516,7 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			GameID: gameID, PlayerID: player.ID,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not check player status", err)
+			respondInternalErr(w, r, "could not check player status", err)
 			return
 		}
 		if alreadyDone {
@@ -527,14 +527,14 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			GameID: gameID, SheetType: gamepkg.PrologueSheetTitles, ChoiceName: body.TitleName,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not check title status", err)
+			respondInternalErr(w, r, "could not check title status", err)
 			return
 		}
 		extraClaimed, err := s.Q.ExtraPeerTitleClaimed(ctx, dbgen.ExtraPeerTitleClaimedParams{
 			GameID: gameID, TitleName: body.TitleName,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not check title status", err)
+			respondInternalErr(w, r, "could not check title status", err)
 			return
 		}
 		if choosingClaimed || extraClaimed {

@@ -63,17 +63,17 @@ func GetPrologueRankingState(s *db.Store) http.HandlerFunc {
 		ctx := r.Context()
 		committed, err := s.Q.ListCommittedHeartsByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load committed hearts", err)
+			respondInternalErr(w, r, "could not load committed hearts", err)
 			return
 		}
 		done, err := s.Q.ListTrackDoneByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load done flags", err)
+			respondInternalErr(w, r, "could not load done flags", err)
 			return
 		}
 		extras, err := s.Q.ListExtraPeersByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load extra peers", err)
+			respondInternalErr(w, r, "could not load extra peers", err)
 			return
 		}
 		commit := make([]CommittedHeartView, 0, len(committed))
@@ -162,7 +162,7 @@ func CommitTrackHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// resolved track (these stay in the table after resolution).
 		existing, err := s.Q.ListCommittedHeartsByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load existing commitments", err)
+			respondInternalErr(w, r, "could not load existing commitments", err)
 			return
 		}
 		for _, ch := range existing {

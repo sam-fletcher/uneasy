@@ -121,6 +121,7 @@ func findFirstFocusPlayer(
 func setAndBroadcastFocusPlayer(
 	ctx context.Context,
 	w http.ResponseWriter,
+	r *http.Request,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	gameID int64,
@@ -134,7 +135,7 @@ func setAndBroadcastFocusPlayer(
 		FocusPlayerID: &focusPlayer.ID,
 	})
 	if err != nil {
-		respondInternalErr(w, "could not set focus player", err)
+		respondInternalErr(w, r, "could not set focus player", err)
 		return false
 	}
 	if fp, err := q.GetPlayerByID(ctx, focusPlayer.ID); err == nil {
@@ -151,13 +152,14 @@ func setAndBroadcastFocusPlayer(
 func validateStartMainEvent(
 	ctx context.Context,
 	w http.ResponseWriter,
+	r *http.Request,
 	q *dbgen.Queries,
 	gameID int64,
 ) ([]dbgen.Ranking, []dbgen.Player, bool) {
 	// Validate: rankings must be set (3 tracks × 5 positions = 15 entries).
 	rankings, err := q.ListRankingsByGame(ctx, gameID)
 	if err != nil {
-		respondInternalErr(w, "could not load rankings", err)
+		respondInternalErr(w, r, "could not load rankings", err)
 		return nil, nil, false
 	}
 	if len(rankings) < totalRankings {
@@ -170,7 +172,7 @@ func validateStartMainEvent(
 
 	players, err := q.GetPlayersByGame(ctx, gameID)
 	if err != nil {
-		respondInternalErr(w, "could not load players", err)
+		respondInternalErr(w, r, "could not load players", err)
 		return nil, nil, false
 	}
 
@@ -199,7 +201,7 @@ func StartPrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		count, err := s.Q.CountPlayersInGame(ctx, game.ID)
 		if err != nil {
-			respondInternalErr(w, "could not count players", err)
+			respondInternalErr(w, r, "could not count players", err)
 			return
 		}
 		if count < minPlayerCount || count > maxPlayerCount {
@@ -213,7 +215,7 @@ func StartPrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Phase: model.PhasePrologue,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not update phase", err)
+			respondInternalErr(w, r, "could not update phase", err)
 			return
 		}
 
@@ -250,7 +252,7 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		// Validate preconditions for starting main event.
-		rankings, players, ok := validateStartMainEvent(ctx, w, s.Q, game.ID)
+		rankings, players, ok := validateStartMainEvent(ctx, w, r, s.Q, game.ID)
 		if !ok {
 			return
 		}
@@ -261,7 +263,7 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			*game.PrologueRankingStep == "extra_peers" {
 			extras, err := s.Q.ListExtraPeersByGame(ctx, game.ID)
 			if err != nil {
-				respondInternalErr(w, "could not load extra peers", err)
+				respondInternalErr(w, r, "could not load extra peers", err)
 				return
 			}
 			if len(extras) < len(players) {
@@ -273,7 +275,7 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		// Create public record rows 1–13.
 		if err := s.Q.CreatePublicRecordRows(ctx, game.ID); err != nil {
-			respondInternalErr(w, "could not create public record", err)
+			respondInternalErr(w, r, "could not create public record", err)
 			return
 		}
 
@@ -282,13 +284,13 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:         game.ID,
 			CurrentRow: 1,
 		}); err != nil {
-			respondInternalErr(w, "could not set starting row", err)
+			respondInternalErr(w, r, "could not set starting row", err)
 			return
 		}
 
 		// Pick the first focus player from cumulative ranking totals.
 		focusPlayer := findFirstFocusPlayer(game, players, rankings)
-		if !setAndBroadcastFocusPlayer(ctx, w, s.Q, manager, game.ID, focusPlayer) {
+		if !setAndBroadcastFocusPlayer(ctx, w, r, s.Q, manager, game.ID, focusPlayer) {
 			return
 		}
 
@@ -297,7 +299,7 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:    game.ID,
 			Phase: model.PhaseMainEvent,
 		}); err != nil {
-			respondInternalErr(w, "could not update phase", err)
+			respondInternalErr(w, r, "could not update phase", err)
 			return
 		}
 
@@ -335,7 +337,7 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 
 		players, err := s.Q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load members", err)
+			respondInternalErr(w, r, "could not load members", err)
 			return
 		}
 

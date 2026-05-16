@@ -37,19 +37,19 @@ func GetFullRecord(s *db.Store) http.HandlerFunc {
 
 		rows, err := s.Q.ListPublicRecordRows(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load public record", err)
+			respondInternalErr(w, r, "could not load public record", err)
 			return
 		}
 
 		entries, err := s.Q.ListSceneEntries(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load scene entries", err)
+			respondInternalErr(w, r, "could not load scene entries", err)
 			return
 		}
 
 		plans, err := s.Q.ListPlansByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load plans", err)
+			respondInternalErr(w, r, "could not load plans", err)
 			return
 		}
 
@@ -130,7 +130,7 @@ func CreateSceneEntry(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Body:      body.Body,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not save entry", err)
+			respondInternalErr(w, r, "could not save entry", err)
 			return
 		}
 

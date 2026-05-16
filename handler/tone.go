@@ -37,7 +37,7 @@ func ListToneTopics(s *db.Store) http.HandlerFunc {
 
 		topics, err := s.Q.ListToneTopics(r.Context(), gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load topics", err)
+			respondInternalErr(w, r, "could not load topics", err)
 			return
 		}
 
@@ -102,7 +102,7 @@ func UpdateToneTopic(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:     topicID,
 			Status: status,
 		}); err != nil {
-			respondInternalErr(w, "could not update topic", err)
+			respondInternalErr(w, r, "could not update topic", err)
 			return
 		}
 
@@ -157,7 +157,7 @@ func AddToneTopic(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Status: model.ToneDefault,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not add topic", err)
+			respondInternalErr(w, r, "could not add topic", err)
 			return
 		}
 

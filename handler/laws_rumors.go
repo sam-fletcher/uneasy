@@ -39,7 +39,7 @@ func ListLaws(s *db.Store) http.HandlerFunc {
 		}
 		laws, err := s.Q.ListLaws(r.Context(), gameID)
 		if err != nil {
-			respondInternalErr(w, "could not list laws", err)
+			respondInternalErr(w, r, "could not list laws", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"laws": laws})
@@ -102,7 +102,7 @@ func UpdateLaw(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Addendum: addendum,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not update law", err)
+			respondInternalErr(w, r, "could not update law", err)
 			return
 		}
 		if h, ok := manager.Get(law.GameID); ok {
@@ -140,7 +140,7 @@ func ListRumors(s *db.Store) http.HandlerFunc {
 		}
 		rumors, err := s.Q.ListRumors(r.Context(), gameID)
 		if err != nil {
-			respondInternalErr(w, "could not list rumors", err)
+			respondInternalErr(w, r, "could not list rumors", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"rumors": rumors})
@@ -185,7 +185,7 @@ func UpdateRumor(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Text: body.Text,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not update rumor", err)
+			respondInternalErr(w, r, "could not update rumor", err)
 			return
 		}
 		if h, ok := manager.Get(rumor.GameID); ok {

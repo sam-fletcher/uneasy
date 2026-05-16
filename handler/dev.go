@@ -33,12 +33,12 @@ func DevLogin(s *db.Store) http.HandlerFunc {
 			})
 		}
 		if err != nil {
-			respondInternalErr(w, "could not get/create account", err)
+			respondInternalErr(w, r, "could not get/create account", err)
 			return
 		}
 
 		if err = openSession(ctx, w, s.Q, account.ID); err != nil {
-			respondInternalErr(w, "could not open session", err)
+			respondInternalErr(w, r, "could not open session", err)
 			return
 		}
 		respond(w, http.StatusOK, accountResponse(&account))

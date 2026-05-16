@@ -47,7 +47,7 @@ func GetReveal(s *db.Store) http.HandlerFunc {
 		ctx := r.Context()
 		entries, err := s.Q.ListRevealEntries(ctx, reveal.ID)
 		if err != nil {
-			respondInternalErr(w, "could not load reveal entries", err)
+			respondInternalErr(w, r, "could not load reveal entries", err)
 			return
 		}
 
@@ -143,7 +143,7 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Face:     &face,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not record your reveal", err)
+			respondInternalErr(w, r, "could not record your reveal", err)
 			return
 		}
 
@@ -156,12 +156,12 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Check if all participants have now submitted.
 		submitted, err := s.Q.CountRevealEntriesSubmitted(ctx, reveal.ID)
 		if err != nil {
-			respondInternalErr(w, "could not check reveal status", err)
+			respondInternalErr(w, r, "could not check reveal status", err)
 			return
 		}
 		total, err := s.Q.CountRevealEntries(ctx, reveal.ID)
 		if err != nil {
-			respondInternalErr(w, "could not count reveal entries", err)
+			respondInternalErr(w, r, "could not count reveal entries", err)
 			return
 		}
 
@@ -179,7 +179,7 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// All submitted — compute result delay and complete the reveal.
 		entries, err := s.Q.ListRevealEntries(ctx, reveal.ID)
 		if err != nil {
-			respondInternalErr(w, "could not load reveal entries", err)
+			respondInternalErr(w, r, "could not load reveal entries", err)
 			return
 		}
 
@@ -188,7 +188,7 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:          reveal.ID,
 			ResultDelay: &resultDelay,
 		}); err != nil {
-			respondInternalErr(w, "could not complete reveal", err)
+			respondInternalErr(w, r, "could not complete reveal", err)
 			return
 		}
 

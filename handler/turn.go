@@ -301,7 +301,7 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		for _, id := range body.AssetIDs {
 			if err := s.Q.RefreshPlayerAssets(ctx, id); err != nil {
-				respondInternalErr(w, "could not refresh asset", err)
+				respondInternalErr(w, r, "could not refresh asset", err)
 				return
 			}
 			if hasHub {
@@ -339,14 +339,14 @@ func AdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		h, _ := manager.Get(game.ID) // nil if no clients connected — advanceRowInner handles nil
 
 		if outstanding, err := mwOutstandingCostsForGame(r.Context(), s.Q, game.ID, game.CurrentRow); err != nil {
-			respondInternalErr(w, "could not check battle costs", err)
+			respondInternalErr(w, r, "could not check battle costs", err)
 			return
 		} else if len(outstanding) > 0 {
 			respondErr(w, http.StatusConflict, "outstanding battle costs must be paid before advancing the row")
 			return
 		}
 		if claims, err := mwOutstandingSurrenderClaimsForGame(r.Context(), s.Q, game.ID); err != nil {
-			respondInternalErr(w, "could not check surrender claims", err)
+			respondInternalErr(w, r, "could not check surrender claims", err)
 			return
 		} else if len(claims) > 0 {
 			respondErr(
@@ -359,7 +359,7 @@ func AdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		newRow, ended, err := advanceRowInner(r, s.Q, manager, h, game)
 		if err != nil {
-			respondInternalErr(w, "could not advance row", err)
+			respondInternalErr(w, r, "could not advance row", err)
 			return
 		}
 
@@ -406,7 +406,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Step 6: pass focus to the next player clockwise.
 		next, err := nextFocusPlayer(r, s.Q, game.ID, *game.FocusPlayerID)
 		if err != nil {
-			respondInternalErr(w, "could not determine next focus player", err)
+			respondInternalErr(w, r, "could not determine next focus player", err)
 			return
 		}
 
@@ -414,7 +414,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:            game.ID,
 			FocusPlayerID: new(next.ID),
 		}); err != nil {
-			respondInternalErr(w, "could not update focus player", err)
+			respondInternalErr(w, r, "could not update focus player", err)
 			return
 		}
 

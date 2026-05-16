@@ -63,7 +63,7 @@ func GetShakeUp(s *db.Store) http.HandlerFunc {
 		}
 		tokens, err := s.Q.ListShakeUpTokensByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load tokens", err)
+			respondInternalErr(w, r, "could not load tokens", err)
 			return
 		}
 
@@ -188,14 +188,14 @@ func ShakeUpRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Difficulty: 0,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not persist roll", err)
+			respondInternalErr(w, r, "could not persist roll", err)
 			return
 		}
 		newTotal, err := s.Q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{
 			ID: player.ID, ShakeUpTokens: body.Result,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not add tokens", err)
+			respondInternalErr(w, r, "could not add tokens", err)
 			return
 		}
 		broadcastEvent(manager, gameID, model.EventShakeUpRolled, model.ShakeUpRolledPayload{
@@ -205,7 +205,7 @@ func ShakeUpRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Advance to step 2 once everyone has rolled.
 		players, err := s.Q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load players", err)
+			respondInternalErr(w, r, "could not load players", err)
 			return
 		}
 		allRolled := true
@@ -223,7 +223,7 @@ func ShakeUpRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				ID: gameID, ShakeUpCategory: &cat, ShakeUpStep: &step,
 			})
 			if err != nil {
-				respondInternalErr(w, "could not advance step", err)
+				respondInternalErr(w, r, "could not advance step", err)
 				return
 			}
 			broadcastEvent(manager, gameID, model.EventShakeUpStepChanged,
@@ -295,7 +295,7 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID: player.ID, ShakeUpTokens: 1,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not deduct token", err)
+			respondInternalErr(w, r, "could not deduct token", err)
 			return
 		}
 
@@ -309,7 +309,7 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			BaseCost:       1,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not create spend", err)
+			respondInternalErr(w, r, "could not create spend", err)
 			return
 		}
 		broadcastEvent(manager, gameID, model.EventShakeUpSpendOpened, model.ShakeUpSpendOpenedPayload{
@@ -363,14 +363,14 @@ func ShakeUpAdjust(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID: player.ID, ShakeUpTokens: 1,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not deduct token", err)
+			respondInternalErr(w, r, "could not deduct token", err)
 			return
 		}
 		adj, err := s.Q.CreateShakeUpAdjustment(ctx, dbgen.CreateShakeUpAdjustmentParams{
 			SpendID: spend.ID, PlayerID: player.ID, Adjustment: body.Adjustment,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not record adjustment", err)
+			respondInternalErr(w, r, "could not record adjustment", err)
 			return
 		}
 		broadcastEvent(manager, gameID, model.EventShakeUpAdjusted, model.ShakeUpAdjustedPayload{
@@ -415,7 +415,7 @@ func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		adjTotal, err := s.Q.SumAdjustmentsForSpend(ctx, spend.ID)
 		if err != nil {
-			respondInternalErr(w, "could not total adjustments", err)
+			respondInternalErr(w, r, "could not total adjustments", err)
 			return
 		}
 		// Final cost = base + adjustments, floored at 0. The spender already
@@ -428,7 +428,7 @@ func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			if _, err = s.Q.SubShakeUpTokens(ctx, dbgen.SubShakeUpTokensParams{
 				ID: player.ID, ShakeUpTokens: int16(extra),
 			}); err != nil {
-				respondInternalErr(w, "could not deduct adjusted cost", err)
+				respondInternalErr(w, r, "could not deduct adjusted cost", err)
 				return
 			}
 		} else if extra < 0 {
@@ -438,7 +438,7 @@ func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			if _, err = s.Q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{
 				ID: player.ID, ShakeUpTokens: refund,
 			}); err != nil {
-				respondInternalErr(w, "could not refund adjustment", err)
+				respondInternalErr(w, r, "could not refund adjustment", err)
 				return
 			}
 		}
@@ -446,7 +446,7 @@ func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if err = s.Q.CommitShakeUpSpend(ctx, dbgen.CommitShakeUpSpendParams{
 			ID: spend.ID, FinalCost: &finalCost,
 		}); err != nil {
-			respondInternalErr(w, "could not commit spend", err)
+			respondInternalErr(w, r, "could not commit spend", err)
 			return
 		}
 

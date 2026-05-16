@@ -195,7 +195,7 @@ func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		state.Guests = append(state.Guests, player.ID)
 		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save guest list", err)
+			respondInternalErr(w, r, "could not save guest list", err)
 			return
 		}
 		broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityGuestJoined, model.FestivityGuestJoinedPayload{
@@ -268,7 +268,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 			resData.SetFestivityState(state)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, "could not save opt-out", err)
+				respondInternalErr(w, r, "could not save opt-out", err)
 				return
 			}
 			broadcastEvent(
@@ -286,12 +286,12 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		// action == "roll": create a dice roll for the guest.
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load game", err)
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 		difficulty, err := hfHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
 		if err != nil {
-			respondInternalErr(w, "could not compute difficulty", err)
+			respondInternalErr(w, r, "could not compute difficulty", err)
 			return
 		}
 		roll, err := deps.Q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
@@ -302,7 +302,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			Difficulty: difficulty,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not create roll", err)
+			respondInternalErr(w, r, "could not create roll", err)
 			return
 		}
 		for range 2 {
@@ -312,7 +312,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 				IsInterference:   false,
 				LeveragedAssetID: nil,
 			}); err != nil {
-				respondInternalErr(w, "could not create base dice", err)
+				respondInternalErr(w, r, "could not create base dice", err)
 				return
 			}
 		}
@@ -322,7 +322,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		state.GuestRollIDs[key] = roll.ID
 		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save guest roll id", err)
+			respondInternalErr(w, r, "could not save guest roll id", err)
 			return
 		}
 		if h, ok := deps.Manager.Get(plan.GameID); ok {
@@ -386,7 +386,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		roll, err := deps.Q.GetDiceRollByID(ctx, rollID)
 		if err != nil {
-			respondInternalErr(w, "could not load roll", err)
+			respondInternalErr(w, r, "could not load roll", err)
 			return
 		}
 		if roll.Outcome == nil {
@@ -448,7 +448,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		phaseChanged := hfMaybeAdvanceToHostChoosing(&state)
 		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save guest choice", err)
+			respondInternalErr(w, r, "could not save guest choice", err)
 			return
 		}
 		broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityGuestChose, model.FestivityGuestChosePayload{
@@ -730,7 +730,7 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 
 		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save insist", err)
+			respondInternalErr(w, r, "could not save insist", err)
 			return
 		}
 		broadcastEvent(
@@ -807,12 +807,12 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		state.HostChoices[tk] = body.Choice
 
 		if err := hfFinalizeIfDone(ctx, deps, plan, &state); err != nil {
-			respondInternalErr(w, "could not finalize", err)
+			respondInternalErr(w, r, "could not finalize", err)
 			return
 		}
 		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save host choice", err)
+			respondInternalErr(w, r, "could not save host choice", err)
 			return
 		}
 		broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityHostChose, model.FestivityHostChosePayload{
@@ -896,7 +896,7 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save challenge state", err)
+			respondInternalErr(w, r, "could not save challenge state", err)
 			return
 		}
 		broadcastEvent(
@@ -961,7 +961,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 			state.PendingChallenge = nil
 			resData.SetFestivityState(state)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, "could not save decline", err)
+				respondInternalErr(w, r, "could not save decline", err)
 				return
 			}
 			broadcastEvent(
@@ -979,7 +979,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 		// Accept: spawn the nested duel plan and advance it to resolving.
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondInternalErr(w, "could not load game", err)
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 		notes := pc.Notes
@@ -999,19 +999,19 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 			PreparationNotes: &notes,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not create nested duel", err)
+			respondInternalErr(w, r, "could not create nested duel", err)
 			return
 		}
 		if err := deps.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
 			ID: duelPlan.ID, Status: model.PlanResolving,
 		}); err != nil {
-			respondInternalErr(w, "could not resolve nested duel", err)
+			respondInternalErr(w, r, "could not resolve nested duel", err)
 			return
 		}
 		if h, ok := GetHandler(model.PlanProposeDuel); ok {
 			refreshed, _ := deps.Q.GetPlanByID(ctx, duelPlan.ID)
 			if _, err := h.OnResolve(ctx, deps, &refreshed); err != nil {
-				respondInternalErr(w, "duel setup failed", err)
+				respondInternalErr(w, r, "duel setup failed", err)
 				return
 			}
 		}
@@ -1020,7 +1020,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 		state.PendingDuelPlanID = &duelPlan.ID
 		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save accept", err)
+			respondInternalErr(w, r, "could not save accept", err)
 			return
 		}
 		if h, ok := deps.Manager.Get(plan.GameID); ok {

@@ -70,7 +70,7 @@ func SetEndgameMode(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID: game.ID, EndingMode: &mode,
 		})
 		if err != nil {
-			respondInternalErr(w, "could not set endgame mode", err)
+			respondInternalErr(w, r, "could not set endgame mode", err)
 			return
 		}
 

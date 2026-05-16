@@ -41,7 +41,7 @@ func CreateSession(s *db.Store) http.HandlerFunc {
 		}
 
 		if err := openSession(ctx, w, s.Q, account.ID); err != nil {
-			respondInternalErr(w, "could not open session", err)
+			respondInternalErr(w, r, "could not open session", err)
 			return
 		}
 		respond(w, http.StatusOK, accountResponse(&account))

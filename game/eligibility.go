@@ -24,7 +24,7 @@ func CheckPlanEligible(
 		PlayerID: playerID,
 	})
 	if err == nil {
-		return false, "you already have a token on this plan type", nil
+		return false, "You already have this plan prepared", nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return false, "", err

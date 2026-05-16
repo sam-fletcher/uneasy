@@ -171,7 +171,7 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {
-			respondInternalErr(w, "could not tear marginalia", err)
+			respondInternalErr(w, r, "could not tear marginalia", err)
 			return
 		}
 
@@ -239,7 +239,7 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			AssetID:  body.AssetID,
 			PlayerID: player.ID,
 		}); err != nil {
-			respondInternalErr(w, "could not grant secret visibility", err)
+			respondInternalErr(w, r, "could not grant secret visibility", err)
 			return
 		}
 

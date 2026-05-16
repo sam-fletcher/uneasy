@@ -240,7 +240,7 @@ func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.False(t, eligible)
-	assert.Contains(t, msg, "already have a token")
+	assert.Contains(t, msg, "already have this plan prepared")
 }
 
 func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {

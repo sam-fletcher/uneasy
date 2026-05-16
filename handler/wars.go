@@ -115,7 +115,7 @@ func GetWarState(s *db.Store) http.HandlerFunc {
 		}
 		resp, err := buildWarState(ctx, s.Q, war)
 		if err != nil {
-			respondInternalErr(w, "could not build war state", err)
+			respondInternalErr(w, r, "could not build war state", err)
 			return
 		}
 		respond(w, http.StatusOK, resp)
@@ -134,14 +134,14 @@ func ListWars(s *db.Store) http.HandlerFunc {
 		ctx := r.Context()
 		wars, err := s.Q.ListActiveWarsByGame(ctx, gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load wars", err)
+			respondInternalErr(w, r, "could not load wars", err)
 			return
 		}
 		out := make([]WarStateResponse, 0, len(wars))
 		for _, war := range wars {
 			ws, err := buildWarState(ctx, s.Q, war)
 			if err != nil {
-				respondInternalErr(w, "could not build war state", err)
+				respondInternalErr(w, r, "could not build war state", err)
 				return
 			}
 			out = append(out, ws)

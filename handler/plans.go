@@ -440,7 +440,7 @@ func ListPlans(s *db.Store) http.HandlerFunc {
 		}
 		plans, err := s.Q.ListPlansByGame(r.Context(), gameID)
 		if err != nil {
-			respondInternalErr(w, "could not load plans", err)
+			respondInternalErr(w, r, "could not load plans", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"plans": plans})
@@ -492,7 +492,7 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 		// A player with no peers cannot prepare any plans.
 		hasPeers, err := playerHasPeers(ctx, s.Q, gameID, player.ID)
 		if err != nil {
-			respondInternalErr(w, "could not check peer assets", err)
+			respondInternalErr(w, r, "could not check peer assets", err)
 			return
 		}
 		if !hasPeers {
@@ -676,7 +676,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return txErr
 		})
 		if err != nil {
-			respondHTTPErr(w, err)
+			respondHTTPErr(w, r, err)
 			return
 		}
 
@@ -849,7 +849,7 @@ func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:     plan.ID,
 			Status: model.PlanResolving,
 		}); err != nil {
-			respondInternalErr(w, "could not update plan status", err)
+			respondInternalErr(w, r, "could not update plan status", err)
 			return
 		}
 
@@ -860,7 +860,7 @@ func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		deps := &PlanDeps{Store: s, Manager: manager}
 		roll, err := h.OnResolve(ctx, deps, plan)
 		if err != nil {
-			respondInternalErr(w, "could not begin resolution", err)
+			respondInternalErr(w, r, "could not begin resolution", err)
 			return
 		}
 
@@ -947,12 +947,12 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		deps := &PlanDeps{Store: s, Manager: manager}
 		if err := h.ApplyChoice(ctx, deps, plan, &resData, body.Choices, body.Result); err != nil {
-			respondInternalErr(w, "could not apply plan effects", err)
+			respondInternalErr(w, r, "could not apply plan effects", err)
 			return
 		}
 
 		if err := saveResolutionData(ctx, s.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, "could not save choices", err)
+			respondInternalErr(w, r, "could not save choices", err)
 			return
 		}
 
@@ -1015,7 +1015,7 @@ func CompletePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:     plan.ID,
 			Result: &resultStr,
 		}); err != nil {
-			respondInternalErr(w, "could not complete plan", err)
+			respondInternalErr(w, r, "could not complete plan", err)
 			return
 		}
 
