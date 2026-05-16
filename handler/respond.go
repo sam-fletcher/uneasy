@@ -5,6 +5,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 )
 
@@ -46,10 +47,29 @@ func httpErr(status int, msg string) *httpError {
 // chain via errors.As) is a *httpError, the status and message come from it;
 // otherwise the response is 500 with err.Error() as the message.
 func respondHTTPErr(w http.ResponseWriter, err error) {
-	var he *httpError
-	if errors.As(err, &he) {
+	if he, ok := errors.AsType[*httpError](err); ok {
 		respondErr(w, he.Status, he.Msg)
 		return
 	}
+	slog.Error("internal handler error", "err", err)
 	respondErr(w, http.StatusInternalServerError, err.Error())
+}
+
+// respondInternalErr writes a 500 response with both a user-facing message
+// and the underlying error's text, and logs the full error server-side.
+// Use at sites that previously swallowed the cause:
+//
+//	if _, err := q.CreatePlan(...); err != nil {
+//	    respondInternalErr(w, "could not create plan", err)
+//	    return
+//	}
+//
+// Response body: {"error": "could not create plan: <err.Error()>"}
+// Server log: level=ERROR msg="could not create plan" err=<err.Error()>
+//
+// For 4xx errors (validation, conflict, etc.) keep using respondErr — the
+// caller-facing message is the whole point and there is no err to log.
+func respondInternalErr(w http.ResponseWriter, msg string, err error) {
+	slog.Error(msg, "err", err)
+	respondErr(w, http.StatusInternalServerError, msg+": "+err.Error())
 }

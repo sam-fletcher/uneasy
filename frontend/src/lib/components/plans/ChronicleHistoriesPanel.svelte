@@ -34,6 +34,7 @@
 	import { playerColor } from '$lib/playerColor';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -278,8 +279,7 @@
 
 			{#if isFocusPlayer && !invokePhaseClosed}
 				<div class="plan-form" style="margin-top:0.5rem;">
-					<div class="form-label">
-						<span class="form-label-text">Invoke an artifact (pre-roll):</span>
+					<FormField label="Invoke an artifact (pre-roll)">
 						{#if uninvokedArtifacts.length === 0}
 							<p class="choices-note muted">No artifacts available to invoke.</p>
 						{:else}
@@ -296,7 +296,7 @@
 								{/each}
 							</div>
 						{/if}
-					</div>
+					</FormField>
 					<button class="action-btn"
 						onclick={() => submitInvoke(plan)}
 						disabled={invokeBusy || invokeAssetID == null}>
@@ -355,8 +355,7 @@
 
 				{#if !myMarSubmitted && currentPlayerID != null}
 					<div class="plan-form">
-						<div class="form-label">
-							<span class="form-label-text">Your choice:</span>
+						<FormField label="Your choice">
 							<div class="chip-row">
 								{#each OPTIONS as opt}
 									<button
@@ -370,11 +369,10 @@
 									>{opt.label}</button>
 								{/each}
 							</div>
-						</div>
+						</FormField>
 						{#if marSelected === 'break_artifact' || marSelected === 'invoke_another'}
 							{@const marArtifacts = marSelected === 'break_artifact' ? invokedArtifacts : uninvokedArtifacts}
-							<div class="form-label">
-								<span class="form-label-text">Artifact:</span>
+							<FormField label="Artifact">
 								{#if marArtifacts.length === 0}
 									<p class="choices-note muted">No eligible artifacts.</p>
 								{:else}
@@ -391,7 +389,7 @@
 										{/each}
 									</div>
 								{/if}
-							</div>
+							</FormField>
 						{/if}
 						<button class="action-btn primary"
 							onclick={() => submitMarChoice(plan)}
@@ -443,8 +441,7 @@
 						<p class="choices-header">
 							Break an invoked artifact ({baRemaining} remaining)
 						</p>
-						<div class="form-label">
-							<span class="form-label-text">Marginalium to tear:</span>
+						<FormField label="Marginalium to tear">
 							{#if baArtifactsWithMarginalia.length === 0}
 								<p class="choices-note muted">No intact marginalia on invoked artifacts.</p>
 							{:else}
@@ -469,7 +466,7 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 						<button class="action-btn primary"
 							onclick={() => submitBreakArtifact(plan)}
 							disabled={baBusy || baAssetID == null || baMargID == null}>

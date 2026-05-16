@@ -248,12 +248,12 @@ func GetDuelState(s *db.Store) http.HandlerFunc {
 		ctx := r.Context()
 		stakes, err := s.Q.ListDuelStakesByPlan(ctx, plan.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load stakes")
+			respondInternalErr(w, "could not load stakes", err)
 			return
 		}
 		bouts, err := s.Q.ListDuelBoutsByPlan(ctx, plan.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load bouts")
+			respondInternalErr(w, "could not load bouts", err)
 			return
 		}
 
@@ -392,7 +392,7 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		resData.SetDuelState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save champion")
+			respondInternalErr(w, "could not save champion", err)
 			return
 		}
 
@@ -446,7 +446,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		rank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, player.ID, model.CategoryEsteem)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load esteem rank")
+			respondInternalErr(w, "could not load esteem rank", err)
 			return
 		}
 		if body.Count > gamepkg.MaxStakes(rank) {
@@ -492,7 +492,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			resData.SetDuelState(state)
 
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save stake counts")
+				respondInternalErr(w, "could not save stake counts", err)
 				return
 			}
 
@@ -503,7 +503,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 		} else {
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save stake reveal")
+				respondInternalErr(w, "could not save stake reveal", err)
 				return
 			}
 		}
@@ -567,7 +567,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			PlanID: plan.ID, PlayerID: player.ID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load existing stakes")
+			respondInternalErr(w, "could not load existing stakes", err)
 			return
 		}
 		if len(existing) > 0 {
@@ -608,7 +608,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 				HiddenDie: face,
 			})
 			if errStake != nil {
-				respondErr(w, http.StatusInternalServerError, "could not create stake")
+				respondInternalErr(w, "could not create stake", errStake)
 				return
 			}
 			createdStakes = append(createdStakes, stake)
@@ -617,7 +617,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 		// If both players have staked, advance to bouts.
 		allStakes, err := deps.Q.ListDuelStakesByPlan(ctx, plan.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load stakes")
+			respondInternalErr(w, "could not load stakes", err)
 			return
 		}
 		total := int16(len(allStakes))
@@ -626,7 +626,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			state.CurrentBout = 0
 			resData.SetDuelState(state)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not advance phase")
+				respondInternalErr(w, "could not advance phase", err)
 				return
 			}
 		}
@@ -711,14 +711,14 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 			DeclarerDie:     &stake.HiddenDie,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create bout")
+			respondInternalErr(w, "could not create bout", err)
 			return
 		}
 
 		state.CurrentBout = boutNumber
 		resData.SetDuelState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save bout state")
+			respondInternalErr(w, "could not save bout state", err)
 			return
 		}
 
@@ -803,7 +803,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			decSide, gamepkg.Declaration(*latest.Declaration), declDie, respStake.HiddenDie,
 		)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not resolve bout: "+err.Error())
+			respondInternalErr(w, "could not resolve bout", err)
 			return
 		}
 
@@ -824,7 +824,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			IsMatch:          outcome.Match,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not resolve bout")
+			respondInternalErr(w, "could not resolve bout", err)
 			return
 		}
 
@@ -865,7 +865,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			PlanID: plan.ID, PlayerID: plan.PreparerID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not count stakes")
+			respondInternalErr(w, "could not count stakes", err)
 			return
 		}
 		var targLeft int64
@@ -874,7 +874,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 				PlanID: plan.ID, PlayerID: *plan.TargetPlayerID,
 			})
 			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not count stakes")
+				respondInternalErr(w, "could not count stakes", err)
 				return
 			}
 		}
@@ -882,13 +882,13 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 		if prepLeft == 0 || targLeft == 0 {
 			// Bouts complete — create the standard roll with accumulated dice.
 			if err := pduelCreateFinalRoll(ctx, deps, plan, &resData, &state); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not create final roll: "+err.Error())
+				respondInternalErr(w, "could not create final roll", err)
 				return
 			}
 		} else {
 			resData.SetDuelState(state)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save state")
+				respondInternalErr(w, "could not save state", err)
 				return
 			}
 		}

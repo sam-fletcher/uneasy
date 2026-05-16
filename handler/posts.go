@@ -37,7 +37,7 @@ func ListGamePosts(s *db.Store) http.HandlerFunc {
 				ID:     afterID,
 			})
 			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not load posts")
+				respondInternalErr(w, "could not load posts", err)
 				return
 			}
 			respond(w, http.StatusOK, map[string]any{"posts": posts})
@@ -46,7 +46,7 @@ func ListGamePosts(s *db.Store) http.HandlerFunc {
 
 		posts, err := s.Q.ListGamePosts(ctx, gameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load posts")
+			respondInternalErr(w, "could not load posts", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"posts": posts})
@@ -100,7 +100,7 @@ func CreatePlayerPost(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			SpeakingAsAssetID: speakingAs,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save post")
+			respondInternalErr(w, "could not save post", err)
 			return
 		}
 

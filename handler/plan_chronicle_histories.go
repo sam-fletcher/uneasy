@@ -191,7 +191,7 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save invoked artifact")
+			respondInternalErr(w, "could not save invoked artifact", err)
 			return
 		}
 
@@ -262,7 +262,7 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+			respondInternalErr(w, "could not tear marginalia", err)
 			return
 		}
 
@@ -350,7 +350,7 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		resData.Choices = append(resData.Choices, entry)
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save mar choice")
+			respondInternalErr(w, "could not save mar choice", err)
 			return
 		}
 

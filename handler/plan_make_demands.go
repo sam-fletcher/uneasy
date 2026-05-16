@@ -269,7 +269,7 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		target, err := deps.Q.GetPlanByID(ctx, *plan.TargetedPlanID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load target plan")
+			respondInternalErr(w, "could not load target plan", err)
 			return
 		}
 		if player.ID != plan.PreparerID && player.ID != target.PreparerID {
@@ -308,7 +308,7 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			Option:   body.Option,
 		})
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save draft pick")
+			respondInternalErr(w, "could not save draft pick", err)
 			return
 		}
 
@@ -328,14 +328,14 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 			raw, err := json.Marshal(winners)
 			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not encode option winners")
+				respondInternalErr(w, "could not encode option winners", err)
 				return
 			}
 			if err := deps.Q.SetDemandOptionWinners(ctx, dbgen.SetDemandOptionWinnersParams{
 				ID:                  plan.ID,
 				DemandOptionWinners: raw,
 			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not save option winners")
+				respondInternalErr(w, "could not save option winners", err)
 				return
 			}
 		}
@@ -389,7 +389,7 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		targetOfDemand, err := deps.Q.GetPlanByID(ctx, *plan.TargetedPlanID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load target plan")
+			respondInternalErr(w, "could not load target plan", err)
 			return
 		}
 		if player.ID != targetOfDemand.PreparerID {
@@ -413,7 +413,7 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load game")
+			respondInternalErr(w, "could not load game", err)
 			return
 		}
 
@@ -433,7 +433,7 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 				OriginPlanID:      plan.ID,
 			})
 			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not record pending counter-demand")
+				respondInternalErr(w, "could not record pending counter-demand", err)
 				return
 			}
 			broadcastEvent(deps.Manager, plan.GameID, demandEventCounterPending, map[string]any{
@@ -446,7 +446,7 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 
 		resData.CounterDemandPlaced = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save counter-demand state")
+			respondInternalErr(w, "could not save counter-demand state", err)
 			return
 		}
 
@@ -623,7 +623,7 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		_, winners, err := gamepkg.DemandWinnersForTargetPlan(ctx, deps.Q, plan)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load demand winners")
+			respondInternalErr(w, "could not load demand winners", err)
 			return
 		}
 		winnerID, ok := winners[gamepkg.DemandOptionControlLeverage]
@@ -656,7 +656,7 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 
 		existingDice, err := deps.Q.ListDiceByRoll(ctx, roll.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not list dice")
+			respondInternalErr(w, "could not list dice", err)
 			return
 		}
 		committed := map[int64]struct{}{}
@@ -687,7 +687,7 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 			if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
 				ID: assetID, IsLeveraged: true,
 			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not leverage asset")
+				respondInternalErr(w, "could not leverage asset", err)
 				return
 			}
 			// Target preparer's own dice would not be interference; these are
@@ -698,7 +698,7 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 				IsInterference:   plan.PreparerID != roll.ActorID,
 				LeveragedAssetID: &assetID,
 			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not add leverage die")
+				respondInternalErr(w, "could not add leverage die", err)
 				return
 			}
 			committed[assetID] = struct{}{}
@@ -745,7 +745,7 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		_, winners, err := gamepkg.DemandWinnersForTargetPlan(ctx, deps.Q, plan)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load demand winners")
+			respondInternalErr(w, "could not load demand winners", err)
 			return
 		}
 		winnerID, ok := winners[gamepkg.DemandOptionKeepOrChangeTarget]
@@ -785,12 +785,12 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load game")
+			respondInternalErr(w, "could not load game", err)
 			return
 		}
 		preparer, err := deps.Q.GetPlayerByID(ctx, plan.PreparerID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load target preparer")
+			respondInternalErr(w, "could not load target preparer", err)
 			return
 		}
 		vc := &ValidationContext{
@@ -811,7 +811,7 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			TargetAssetID:  body.TargetAssetID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not update plan targets")
+			respondInternalErr(w, "could not update plan targets", err)
 			return
 		}
 

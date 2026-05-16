@@ -101,7 +101,7 @@ func ListAssets(s *db.Store) http.HandlerFunc {
 
 		assets, err := s.Q.ListAssetsByGame(r.Context(), gameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load assets")
+			respondInternalErr(w, "could not load assets", err)
 			return
 		}
 
@@ -267,7 +267,7 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				Name: name,
 			})
 			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not update name")
+				respondInternalErr(w, "could not update name", err)
 				return
 			}
 			asset.Name = name
@@ -283,7 +283,7 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		enriched, err := loadAssetEnriched(r, s.Q, asset.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not reload asset")
+			respondInternalErr(w, "could not reload asset", err)
 			return
 		}
 
@@ -317,7 +317,7 @@ func tearAndReplaceOldMainCharacter(
 			TornByID: &player.ID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+			respondInternalErr(w, "could not tear marginalia", err)
 			return false
 		}
 		if h, ok := manager.Get(asset.GameID); ok {
@@ -329,7 +329,7 @@ func tearAndReplaceOldMainCharacter(
 		}
 		if decision.DestroysOldMC {
 			if err := q.DestroyAsset(ctx, oldMC.ID); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not destroy old main character")
+				respondInternalErr(w, "could not destroy old main character", err)
 				return false
 			}
 			if h, ok := manager.Get(asset.GameID); ok {
@@ -346,7 +346,7 @@ func tearAndReplaceOldMainCharacter(
 		IsMainCharacter: false,
 	})
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, "could not clear old main character")
+		respondInternalErr(w, "could not clear old main character", err)
 		return false
 	}
 	if !oldMC.IsDestroyed {
@@ -380,7 +380,7 @@ func applyMainCharacterChange(
 			ID:              asset.ID,
 			IsMainCharacter: false,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not update main character")
+			respondInternalErr(w, "could not update main character", err)
 			return false
 		}
 		return true
@@ -389,7 +389,7 @@ func applyMainCharacterChange(
 	// Find existing MC (if any, other than the asset being promoted).
 	owned, err := q.ListAssetsByOwner(ctx, player.ID)
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, "could not list owner assets")
+		respondInternalErr(w, "could not list owner assets", err)
 		return false
 	}
 	var oldMC *dbgen.Asset
@@ -404,7 +404,7 @@ func applyMainCharacterChange(
 	if oldMC != nil {
 		oldMargs, err = q.ListMarginaliaByAsset(ctx, oldMC.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load old main character marginalia")
+			respondInternalErr(w, "could not load old main character marginalia", err)
 			return false
 		}
 	}
@@ -427,7 +427,7 @@ func applyMainCharacterChange(
 		IsMainCharacter: true,
 	})
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, "could not update main character")
+		respondInternalErr(w, "could not update main character", err)
 		return false
 	}
 	return true
@@ -463,7 +463,7 @@ func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		existing, err := s.Q.ListMarginaliaByAsset(ctx, asset.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check marginalia")
+			respondInternalErr(w, "could not check marginalia", err)
 			return
 		}
 		if int64(len(existing)) >= maxMarginalia {
@@ -491,7 +491,7 @@ func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Text:     body.Text,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not add marginalia")
+			respondInternalErr(w, "could not add marginalia", err)
 			return
 		}
 
@@ -553,7 +553,7 @@ func UpdateMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:   m.ID,
 			Text: body.Text,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not update marginalia")
+			respondInternalErr(w, "could not update marginalia", err)
 			return
 		}
 		m.Text = body.Text
@@ -603,7 +603,7 @@ func TearMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+			respondInternalErr(w, "could not tear marginalia", err)
 			return
 		}
 
@@ -672,7 +672,7 @@ func LeverageAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:          asset.ID,
 			IsLeveraged: true,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not leverage asset")
+			respondInternalErr(w, "could not leverage asset", err)
 			return
 		}
 
@@ -708,7 +708,7 @@ func RefreshAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:          asset.ID,
 			IsLeveraged: false,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not refresh asset")
+			respondInternalErr(w, "could not refresh asset", err)
 			return
 		}
 
@@ -751,7 +751,7 @@ func TakeAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:      asset.ID,
 			OwnerID: player.ID,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not take asset")
+			respondInternalErr(w, "could not take asset", err)
 			return
 		}
 
@@ -814,7 +814,7 @@ func WriteSecret(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Text:     body.Text,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not write secret")
+			respondInternalErr(w, "could not write secret", err)
 			return
 		}
 
@@ -845,7 +845,7 @@ func GetSecrets(s *db.Store) http.HandlerFunc {
 			PlayerID: player.ID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load secrets")
+			respondInternalErr(w, "could not load secrets", err)
 			return
 		}
 		if secrets == nil {
@@ -872,7 +872,7 @@ func ListVisibleSecretsForGame(s *db.Store) http.HandlerFunc {
 			PlayerID: player.ID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load secrets")
+			respondInternalErr(w, "could not load secrets", err)
 			return
 		}
 		if secrets == nil {

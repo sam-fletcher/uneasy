@@ -21,6 +21,7 @@
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -205,18 +206,16 @@
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
 
-		<div class="form-label">
-			<span class="form-label-text">Target player:</span>
+		<FormField label="Target player">
 			<PlayerChips
 				players={otherPlayers}
 				isActive={(p) => ecTargetPlayerID === p.id}
 				onSelect={(p) => selectTargetPlayer(p.id)}
 			/>
-		</div>
+		</FormField>
 
 		{#if ecTargetPlayerID != null}
-			<div class="form-label">
-				<span class="form-label-text">Target peer:</span>
+			<FormField label="Target peer">
 				{#if ecTargetPlayerAssets.length === 0}
 					<p class="muted" style="margin: 0;">This player has no peers to exchange.</p>
 				{:else}
@@ -233,7 +232,7 @@
 						{/each}
 					</div>
 				{/if}
-			</div>
+			</FormField>
 		{/if}
 
 		<label class="form-label">
@@ -271,8 +270,7 @@
 							<strong>{playerName(players, plan.preparer_id)}</strong> wants one of your peers.
 							You may offer a peer as a fair trade.
 						</p>
-						<div class="form-label">
-							<span class="form-label-text">Offer a peer:</span>
+						<FormField label="Offer a peer">
 							{#if myIntactPeers.length === 0}
 								<p class="choices-note muted">You have no peers to offer.</p>
 							{:else}
@@ -288,7 +286,7 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 						<button class="action-btn primary" onclick={() => onFTOffer(plan)}
 							disabled={!ftOfferedAssetID || ftOfferBusy}>
 							{ftOfferBusy ? '…' : 'Offer peer'}
@@ -360,8 +358,7 @@
 							The exchange was messy. You must break one of your own marginalia before this plan completes.
 						</p>
 						{#if messyError}<p class="res-error">{messyError}</p>{/if}
-						<div class="form-label">
-							<span class="form-label-text">Marginalium to break:</span>
+						<FormField label="Marginalium to break">
 							{#if myAssetsWithMarginalia.length === 0}
 								<p class="choices-note muted">You have no intact marginalia.</p>
 							{:else}
@@ -377,7 +374,7 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 						<button class="action-btn primary" onclick={() => onMessyBreak(plan)}
 							disabled={!messyMarginaliaID || messyBusy}>
 							{messyBusy ? '…' : 'Break marginalia'}

@@ -331,7 +331,7 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 			ID:       m.ID,
 			TornByID: &player.ID,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+			respondInternalErr(w, "could not tear marginalia", err)
 			return
 		}
 
@@ -424,7 +424,7 @@ func srTakeAssetHandler(deps *PlanDeps) http.HandlerFunc {
 			ID:      asset.ID,
 			OwnerID: newOwnerID,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not transfer asset")
+			respondInternalErr(w, "could not transfer asset", err)
 			return
 		}
 
@@ -500,7 +500,7 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Remove source attribution from the rumor.
 		if err := deps.Q.SetRumorSourceHidden(ctx, *resData.RumorID); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not hide rumor source")
+			respondInternalErr(w, "could not hide rumor source", err)
 			return
 		}
 
@@ -514,13 +514,13 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			AuthorID: player.ID,
 			Text:     secretText,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not write secret")
+			respondInternalErr(w, "could not write secret", err)
 			return
 		}
 
 		resData.SourceHidden = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save hide-source state")
+			respondInternalErr(w, "could not save hide-source state", err)
 			return
 		}
 

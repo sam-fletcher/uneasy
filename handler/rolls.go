@@ -287,7 +287,7 @@ func LeverageRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Check the asset hasn't already been committed to this roll.
 		existingDice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check dice")
+			respondInternalErr(w, "could not check dice", err)
 			return
 		}
 		for _, d := range existingDice {
@@ -312,7 +312,7 @@ func LeverageRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:          body.AssetID,
 			IsLeveraged: true,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not leverage asset")
+			respondInternalErr(w, "could not leverage asset", err)
 			return
 		}
 
@@ -326,7 +326,7 @@ func LeverageRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			LeveragedAssetID: &body.AssetID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not add die")
+			respondInternalErr(w, "could not add die", err)
 			return
 		}
 
@@ -444,7 +444,7 @@ func Vote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			PlayerID: player.ID,
 			Vote:     body.Vote,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not record vote")
+			respondInternalErr(w, "could not record vote", err)
 			return
 		}
 
@@ -540,7 +540,7 @@ func CloseLeverage(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		dice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load dice")
+			respondInternalErr(w, "could not load dice", err)
 			return
 		}
 
@@ -557,14 +557,14 @@ func CloseLeverage(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Outcome: new(outcome),
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not resolve roll")
+			respondInternalErr(w, "could not resolve roll", err)
 			return
 		}
 
 		// Re-fetch the resolved roll and all dice (with faces + cancelled flags).
 		resolvedRoll, err := s.Q.GetDiceRollByID(ctx, roll.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not reload roll")
+			respondInternalErr(w, "could not reload roll", err)
 			return
 		}
 		finalDice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
@@ -643,7 +643,7 @@ func rollAndCancelDice(
 		} else {
 			f = int16(rand.IntN(diceSides) + 1)
 			if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not set die face")
+				respondInternalErr(w, "could not set die face", err)
 				return nil, nil, err
 			}
 		}
@@ -661,7 +661,7 @@ func rollAndCancelDice(
 	// Mark cancelled dice in the database.
 	for cancelledID := range cancelledIDs {
 		if err := q.SetDieCancelled(ctx, cancelledID); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not cancel die")
+			respondInternalErr(w, "could not cancel die", err)
 			return nil, nil, err
 		}
 	}
@@ -729,7 +729,7 @@ func UseBankedDie(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			LeveragedAssetID: nil,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not add banked die to roll")
+			respondInternalErr(w, "could not add banked die to roll", err)
 			return
 		}
 
@@ -738,7 +738,7 @@ func UseBankedDie(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:   die.ID,
 			Face: &banked.Face,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not set banked die face")
+			respondInternalErr(w, "could not set banked die face", err)
 			return
 		}
 
@@ -747,7 +747,7 @@ func UseBankedDie(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:         body.BankedDieID,
 			UsedRollID: &roll.ID,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not mark banked die as used")
+			respondInternalErr(w, "could not mark banked die as used", err)
 			return
 		}
 

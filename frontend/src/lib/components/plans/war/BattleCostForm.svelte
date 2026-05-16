@@ -9,6 +9,7 @@
 	import { playerColor } from '$lib/playerColor';
 	import AssetCardSelectable from '../../AssetCardSelectable.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
+	import FormField from '../FormField.svelte';
 
 	export type BattleSubmission =
 		| { kind: 'peace'; terms: string }
@@ -113,18 +114,16 @@
 </script>
 
 {#if opponents.length > 0}
-	<div class="form-label">
-		<span class="form-label-text">Opponent:</span>
+	<FormField label="Opponent">
 		<PlayerChips
 			players={opponentPlayers}
 			isActive={(p) => opponentID === p.id}
 			onSelect={(p) => (opponentID = opponentID === p.id ? null : p.id)}
 		/>
-	</div>
+	</FormField>
 {/if}
 
-<div class="form-label">
-	<span class="form-label-text">How will you pay?</span>
+<FormField label="How will you pay?">
 	<div class="chip-row">
 		<button type="button" class="chip-btn"
 			class:active={kind === 'break_asset'}
@@ -148,11 +147,10 @@
 			need to pay using one of the options above.
 		{/if}
 	</p>
-</div>
+</FormField>
 
 {#if kind === 'break_asset'}
-	<div class="form-label">
-		<span class="form-label-text">Marginalium to tear:</span>
+	<FormField label="Marginalium to tear">
 		{#if marginaliaAssets.length === 0}
 			<p class="choices-note muted">You have no intact marginalia.</p>
 		{:else}
@@ -168,10 +166,9 @@
 				{/each}
 			</div>
 		{/if}
-	</div>
+	</FormField>
 {:else if kind === 'leverage_two'}
-	<div class="form-label">
-		<span class="form-label-text">Pick two assets to leverage:</span>
+	<FormField label="Pick two assets to leverage">
 		{#if unleveraged.length < 2}
 			<p class="choices-note muted">You don't have two un-leveraged assets available.</p>
 		{:else}
@@ -188,7 +185,7 @@
 				{/each}
 			</div>
 		{/if}
-	</div>
+	</FormField>
 {:else}
 	<label class="form-label">
 		Peace terms:

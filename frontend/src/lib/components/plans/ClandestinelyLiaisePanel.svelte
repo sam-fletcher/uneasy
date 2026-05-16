@@ -23,6 +23,7 @@
 	import { playerName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -235,14 +236,13 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<div class="form-label">
-			<span class="form-label-text">Partner:</span>
+		<FormField label="Partner">
 			<PlayerChips
 				players={otherPlayers}
 				isActive={(p) => clPartnerID === p.id}
 				onSelect={(p) => (clPartnerID = clPartnerID === p.id ? null : p.id)}
 			/>
-		</div>
+		</FormField>
 		<label class="form-label">
 			Details:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
@@ -368,8 +368,7 @@
 				{#if iShared}
 					<p class="choices-note">You've submitted. Waiting for your partner…</p>
 				{:else}
-					<div class="form-label">
-						<span class="form-label-text">Pick one:</span>
+					<FormField label="Pick one">
 						<div class="chip-row">
 							{#each SHARE_OPTIONS as opt}
 								<button
@@ -390,7 +389,7 @@
 								<p class="choices-note muted" style="margin:0.25rem 0 0;">{activeOpt.hint}</p>
 							{/if}
 						{/if}
-					</div>
+					</FormField>
 
 					{#if shareChoiceKey && SHARE_NEEDS_ASSET.has(shareChoiceKey)}
 						{@const candidates = otherParticipantAssets.filter(a =>
@@ -419,8 +418,7 @@
 					{/if}
 
 					{#if shareChoiceKey && SHARE_NEEDS_FACE.has(shareChoiceKey)}
-						<div class="form-label">
-							<span class="form-label-text">Die face to bank:</span>
+						<FormField label="Die face to bank">
 							<div class="chip-row">
 								{#each [1, 2, 3, 4, 5, 6] as face}
 									<button
@@ -434,7 +432,7 @@
 									</button>
 								{/each}
 							</div>
-						</div>
+						</FormField>
 					{/if}
 
 					<button class="action-btn primary"

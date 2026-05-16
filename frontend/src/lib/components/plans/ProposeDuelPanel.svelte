@@ -31,6 +31,7 @@
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -475,16 +476,14 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<div class="form-label">
-			<span class="form-label-text">Challenger:</span>
+		<FormField label="Challenger">
 			<PlayerChips
 				players={otherPlayers}
 				isActive={(p) => prepTargetPlayerID === p.id}
 				onSelect={(p) => (prepTargetPlayerID = prepTargetPlayerID === p.id ? null : p.id)}
 			/>
-		</div>
-		<div class="form-label">
-			<span class="form-label-text">Duel of:</span>
+		</FormField>
+		<FormField label="Duel of">
 			<div class="chip-row">
 				<button
 					type="button"
@@ -499,7 +498,7 @@
 					onclick={() => (prepDuelType = 'wits')}
 				>Wits / Trial</button>
 			</div>
-		</div>
+		</FormField>
 		<label class="form-label">
 			Location:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
@@ -775,8 +774,7 @@
 							{/each}
 						</div>
 						{#if !boutInProgress}
-							<div class="form-label">
-								<span class="form-label-text">Declare:</span>
+							<FormField label="Declare">
 								<div class="chip-row">
 									<button
 										type="button"
@@ -791,7 +789,7 @@
 										onclick={() => (pickedDeclaration = 'low')}
 									>Low</button>
 								</div>
-							</div>
+							</FormField>
 						{/if}
 						{#if boutError}<p class="res-error">{boutError}</p>{/if}
 						<button class="action-btn primary"

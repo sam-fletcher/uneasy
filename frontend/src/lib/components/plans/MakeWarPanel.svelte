@@ -39,6 +39,7 @@
 	import { playerName, parseResolutionData, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -337,14 +338,13 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<div class="form-label">
-			<span class="form-label-text">Declare war on (one or more):</span>
+		<FormField label="Declare war on (one or more)">
 			<PlayerChips
 				players={otherPlayers}
 				isActive={(p) => enemyIDs.has(p.id)}
 				onSelect={(p) => toggleEnemy(p.id)}
 			/>
-		</div>
+		</FormField>
 		<label class="form-label">
 			Notes (optional):
 				<textarea rows={2} bind:value={prepNotes} class="form-textarea"

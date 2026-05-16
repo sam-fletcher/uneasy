@@ -134,7 +134,7 @@ func setAndBroadcastFocusPlayer(
 		FocusPlayerID: &focusPlayer.ID,
 	})
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, "could not set focus player")
+		respondInternalErr(w, "could not set focus player", err)
 		return false
 	}
 	if fp, err := q.GetPlayerByID(ctx, focusPlayer.ID); err == nil {
@@ -157,7 +157,7 @@ func validateStartMainEvent(
 	// Validate: rankings must be set (3 tracks × 5 positions = 15 entries).
 	rankings, err := q.ListRankingsByGame(ctx, gameID)
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, "could not load rankings")
+		respondInternalErr(w, "could not load rankings", err)
 		return nil, nil, false
 	}
 	if len(rankings) < totalRankings {
@@ -170,7 +170,7 @@ func validateStartMainEvent(
 
 	players, err := q.GetPlayersByGame(ctx, gameID)
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, "could not load players")
+		respondInternalErr(w, "could not load players", err)
 		return nil, nil, false
 	}
 
@@ -199,7 +199,7 @@ func StartPrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		count, err := s.Q.CountPlayersInGame(ctx, game.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not count players")
+			respondInternalErr(w, "could not count players", err)
 			return
 		}
 		if count < minPlayerCount || count > maxPlayerCount {
@@ -213,7 +213,7 @@ func StartPrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Phase: model.PhasePrologue,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not update phase")
+			respondInternalErr(w, "could not update phase", err)
 			return
 		}
 
@@ -261,7 +261,7 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			*game.PrologueRankingStep == "extra_peers" {
 			extras, err := s.Q.ListExtraPeersByGame(ctx, game.ID)
 			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not load extra peers")
+				respondInternalErr(w, "could not load extra peers", err)
 				return
 			}
 			if len(extras) < len(players) {
@@ -273,7 +273,7 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		// Create public record rows 1–13.
 		if err := s.Q.CreatePublicRecordRows(ctx, game.ID); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not create public record")
+			respondInternalErr(w, "could not create public record", err)
 			return
 		}
 
@@ -282,7 +282,7 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:         game.ID,
 			CurrentRow: 1,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not set starting row")
+			respondInternalErr(w, "could not set starting row", err)
 			return
 		}
 
@@ -297,7 +297,7 @@ func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ID:    game.ID,
 			Phase: model.PhaseMainEvent,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not update phase")
+			respondInternalErr(w, "could not update phase", err)
 			return
 		}
 
@@ -335,7 +335,7 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 
 		players, err := s.Q.GetPlayersByGame(ctx, gameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load members")
+			respondInternalErr(w, "could not load members", err)
 			return
 		}
 

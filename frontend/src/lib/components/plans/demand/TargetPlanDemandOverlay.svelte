@@ -20,6 +20,7 @@
 	import { playerColor } from '$lib/playerColor';
 	import AssetCardSelectable from '../../AssetCardSelectable.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
+	import FormField from '../FormField.svelte';
 
 	interface Props {
 		/** The plan being targeted (the resolve panel renders this). */
@@ -199,18 +200,16 @@
 			<div class="demand-form">
 				<p class="choices-header">Re-aim this plan</p>
 				{#if retargetError}<p class="res-error">{retargetError}</p>{/if}
-				<div class="form-label">
-					<span class="form-label-text">Target player:</span>
+				<FormField label="Target player">
 					<PlayerChips
 						{players}
 						isActive={(p) => retargetPlayerID === p.id}
 						onSelect={selectRetargetPlayer}
 					/>
-				</div>
+				</FormField>
 
 				{#if retargetPlayerID != null}
-					<div class="form-label">
-						<span class="form-label-text">Target asset (optional):</span>
+					<FormField label="Target asset (optional)">
 						{#if retargetCandidateAssets.length === 0}
 							<p class="choices-note muted">This player has no intact assets.</p>
 						{:else}
@@ -226,7 +225,7 @@
 								{/each}
 							</div>
 						{/if}
-					</div>
+					</FormField>
 				{/if}
 
 				<button class="action-btn primary" onclick={submitRetarget} disabled={retargetBusy}>

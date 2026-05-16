@@ -110,12 +110,12 @@ func GetPrologueSheets(s *db.Store) http.HandlerFunc {
 		ctx := r.Context()
 		claims, err := s.Q.ListPrologueChoiceClaimsByGame(ctx, gameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load claims")
+			respondInternalErr(w, "could not load claims", err)
 			return
 		}
 		active, turnNumber, err := prologueTurnState(ctx, s.Q, gameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not compute turn order")
+			respondInternalErr(w, "could not compute turn order", err)
 			return
 		}
 		var activeID *int64
@@ -143,7 +143,7 @@ func GetPrologueCards(s *db.Store) http.HandlerFunc {
 		}
 		cards, err := s.Q.ListPlayerCardsByGame(r.Context(), gameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load cards")
+			respondInternalErr(w, "could not load cards", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"cards": cards})
@@ -687,7 +687,7 @@ func BeginPrologueRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Every player must have 3 turns recorded.
 		players, err := s.Q.GetPlayersByGame(ctx, game.ID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load players")
+			respondInternalErr(w, "could not load players", err)
 			return
 		}
 		for _, p := range players {
@@ -695,7 +695,7 @@ func BeginPrologueRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				GameID: game.ID, PlayerID: p.ID,
 			})
 			if err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not count turns")
+				respondInternalErr(w, "could not count turns", err)
 				return
 			}
 			if n < prologueTurnsPerPlayer {

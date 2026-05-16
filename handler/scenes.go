@@ -254,7 +254,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			RowNumber: new(gameRow.CurrentRow),
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check pending plans")
+			respondInternalErr(w, "could not check pending plans", err)
 			return
 		}
 		if len(pending) > 0 {
@@ -264,7 +264,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		// Block if a scene is already active.
 		if existing, err := loadActiveScene(ctx, s.Q, gameRow.ID); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not check active scene")
+			respondInternalErr(w, "could not check active scene", err)
 			return
 		} else if existing != nil {
 			respondErr(w, http.StatusConflict, "a scene is already active")
@@ -363,7 +363,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		resp, err := buildSceneResponse(ctx, s.Q, &scene)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not assemble scene response")
+			respondInternalErr(w, "could not assemble scene response", err)
 			return
 		}
 
@@ -466,7 +466,7 @@ func GetActiveSceneHandler(s *db.Store) http.HandlerFunc {
 		ctx := r.Context()
 		scene, err := loadActiveScene(ctx, s.Q, gameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load scene")
+			respondInternalErr(w, "could not load scene", err)
 			return
 		}
 		if scene == nil {
@@ -475,7 +475,7 @@ func GetActiveSceneHandler(s *db.Store) http.HandlerFunc {
 		}
 		resp, err := buildSceneResponse(ctx, s.Q, scene)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load scene peers")
+			respondInternalErr(w, "could not load scene peers", err)
 			return
 		}
 		respond(w, http.StatusOK, resp)
@@ -542,7 +542,7 @@ func ClaimScenePeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			ControllerPlayerID: &player.ID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not claim peer")
+			respondInternalErr(w, "could not claim peer", err)
 			return
 		}
 		if n == 0 {

@@ -10,6 +10,7 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName } from './shared';
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -92,8 +93,7 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<div class="form-label">
-			<span class="form-label-text">Number of peers:</span>
+		<FormField label="Number of peers">
 			<div class="chip-row">
 				{#each [1, 2, 3, 4] as n}
 					<button
@@ -106,7 +106,7 @@
 					</button>
 				{/each}
 			</div>
-		</div>
+		</FormField>
 		<p class="form-hint">Difficulty will be {2 + miPeerCount}.</p>
 		<label class="form-label">
 			Intent:

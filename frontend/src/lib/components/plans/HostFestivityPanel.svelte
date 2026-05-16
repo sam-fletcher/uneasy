@@ -29,6 +29,7 @@
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -541,8 +542,7 @@
 						</strong>
 						— pick one option:
 					</p>
-					<div class="form-label">
-						<span class="form-label-text">Pick one option:</span>
+					<FormField label="Pick one option">
 						<div class="chip-row">
 							{#each opts as o}
 								<button
@@ -557,7 +557,7 @@
 								>{o.label}</button>
 							{/each}
 						</div>
-					</div>
+					</FormField>
 
 					<!-- Sub-forms by choice -->
 					{#if pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you'}
@@ -573,8 +573,7 @@
 								placeholder="Name of the new peer" />
 						</label>
 					{:else if pickedChoice === 'take_center_peer'}
-						<div class="form-label">
-							<span class="form-label-text">Peer to take from the center:</span>
+						<FormField label="Peer to take from the center">
 							{#if myCenterPeerCandidates.length === 0}
 								<p class="choices-note muted">No peers in the center of the table.</p>
 							{:else}
@@ -591,10 +590,9 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 					{:else if pickedChoice === 'disagreement'}
-						<div class="form-label">
-							<span class="form-label-text">Peer to set in the center:</span>
+						<FormField label="Peer to set in the center">
 							{#if myOwnPeers.length === 0}
 								<p class="choices-note muted">You have no peers to set in the center.</p>
 							{:else}
@@ -610,13 +608,12 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 					{:else if pickedChoice === 'challenge_duel'}
 						{@const duelTargetPlayers = otherGuests
 							.map(gid => players.find(p => p.id === gid))
 							.filter((p): p is typeof players[number] => p != null)}
-						<div class="form-label">
-							<span class="form-label-text">Challenge:</span>
+						<FormField label="Challenge">
 							<PlayerChips
 								players={duelTargetPlayers}
 								isActive={(p) => pickedDuelTargetID === p.id}
@@ -627,7 +624,7 @@
 									This challenge must be accepted.
 								</p>
 							{/if}
-						</div>
+						</FormField>
 					{/if}
 
 					{#if pickerError}<p class="res-error">{pickerError}</p>{/if}
@@ -652,8 +649,7 @@
 						Insist on a mar
 					</button>
 				{:else}
-					<div class="form-label">
-						<span class="form-label-text">Force a mar option on the host:</span>
+					<FormField label="Force a mar option on the host">
 						<div class="chip-row">
 							{#each MAR_OPTS as o}
 								<button
@@ -667,7 +663,7 @@
 								>{o.label}</button>
 							{/each}
 						</div>
-					</div>
+					</FormField>
 					{#if insistChoice === 'rumor_about_you'}
 						<label class="form-label">
 							Rumor text (about the host):
@@ -676,8 +672,7 @@
 					{:else if insistChoice === 'disagreement'}
 						{@const hostPeers = assets.filter(a =>
 							a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed)}
-						<div class="form-label">
-							<span class="form-label-text">Host peer to set in the center:</span>
+						<FormField label="Host peer to set in the center">
 							{#if hostPeers.length === 0}
 								<p class="choices-note muted">The host has no peers to set in the center.</p>
 							{:else}
@@ -693,7 +688,7 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 					{/if}
 					{#if insistError}<p class="res-error">{insistError}</p>{/if}
 					<div style="display:flex;gap:0.5rem;">
@@ -733,8 +728,7 @@
 					{@const pendingGuestPlayers = pendingHostGuests
 						.map(gid => players.find(p => p.id === gid))
 						.filter((p): p is typeof players[number] => p != null)}
-					<div class="form-label">
-						<span class="form-label-text">Guest:</span>
+					<FormField label="Guest">
 						<PlayerChips
 							players={pendingGuestPlayers}
 							isActive={(p) => hostPickerGuestID === p.id}
@@ -749,10 +743,9 @@
 								Outcome: {fest.outcomes[String(hostPickerGuestID)]}
 							</p>
 						{/if}
-					</div>
+					</FormField>
 					{#if hostPickerGuestID != null}
-						<div class="form-label">
-							<span class="form-label-text">Pick a make option:</span>
+						<FormField label="Pick a make option">
 							<div class="chip-row">
 								{#each HOST_MAKE_OPTS as o}
 									<button
@@ -766,7 +759,7 @@
 									>{o.label}</button>
 								{/each}
 							</div>
-						</div>
+						</FormField>
 						{#if hostPickedChoice === 'spread_rumor'}
 							<label class="form-label">
 								Rumor text:
@@ -780,8 +773,7 @@
 									placeholder="Name of the new peer" />
 							</label>
 						{:else if hostPickedChoice === 'take_center_peer'}
-							<div class="form-label">
-								<span class="form-label-text">Peer to take from the center:</span>
+							<FormField label="Peer to take from the center">
 								{#if myCenterPeerCandidates.length === 0}
 									<p class="choices-note muted">No peers in the center.</p>
 								{:else}
@@ -798,7 +790,7 @@
 										{/each}
 									</div>
 								{/if}
-							</div>
+							</FormField>
 						{/if}
 					{/if}
 					{#if hostPickerError}<p class="res-error">{hostPickerError}</p>{/if}

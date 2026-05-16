@@ -25,6 +25,7 @@
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -257,8 +258,7 @@
 						<p class="choices-header">
 							Break a resource ({brRemaining} remaining)
 						</p>
-						<div class="form-label">
-							<span class="form-label-text">Marginalium to tear:</span>
+						<FormField label="Marginalium to tear">
 							{#if brResourcesWithMarginalia.length === 0}
 								<p class="choices-note muted">No intact marginalia on any resource.</p>
 							{:else}
@@ -283,7 +283,7 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 						<button class="action-btn primary"
 							onclick={() => submitBreakResource(plan)}
 							disabled={brBusy || brAssetID == null || brMargID == null}>
@@ -297,8 +297,7 @@
 						<p class="choices-header">
 							Reveal an asset's secrets ({rsRemaining} remaining)
 						</p>
-						<div class="form-label">
-							<span class="form-label-text">Asset:</span>
+						<FormField label="Asset">
 							{#if allAssets.length === 0}
 								<p class="choices-note muted">No assets available.</p>
 							{:else}
@@ -315,7 +314,7 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 						<button class="action-btn primary"
 							onclick={() => submitRevealSecret(plan)}
 							disabled={rsBusy || rsAssetID == null}>

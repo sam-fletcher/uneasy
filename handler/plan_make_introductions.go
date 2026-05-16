@@ -174,7 +174,7 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load game")
+			respondInternalErr(w, "could not load game", err)
 			return
 		}
 
@@ -186,7 +186,7 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 		// If target row exceeds the public record, the peer is lost.
 		if targetRow > publicRecordRowCount {
 			if err = deps.Q.DestroyAsset(ctx, body.PeerAssetID); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not destroy peer asset")
+				respondInternalErr(w, "could not destroy peer asset", err)
 				return
 			}
 			broadcastEvent(

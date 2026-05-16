@@ -29,6 +29,7 @@
 	import { parseResolutionData, playerName, assetName, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -272,18 +273,16 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<div class="form-label">
-			<span class="form-label-text">Asset owner:</span>
+		<FormField label="Asset owner">
 			<PlayerChips
 				players={ownersWithAssets}
 				isActive={(p) => prepFilterOwnerID === p.id}
 				onSelect={(p) => selectRumorOwner(p.id)}
 			/>
-		</div>
+		</FormField>
 
 		{#if prepFilterOwnerID != null}
-			<div class="form-label">
-				<span class="form-label-text">Asset the rumor is about:</span>
+			<FormField label="Asset the rumor is about">
 				{#if filteredIntactAssets.length === 0}
 					<p class="muted" style="margin: 0;">This player has no intact assets.</p>
 				{:else}
@@ -300,7 +299,7 @@
 						{/each}
 					</div>
 				{/if}
-			</div>
+			</FormField>
 		{/if}
 		<label class="form-label">
 			Rumor:
@@ -384,8 +383,7 @@
 						<p class="choices-header">
 							{rollOutcome === 'mar' ? 'Break a preparer asset' : 'Break target asset'} ({btRemaining} remaining)
 						</p>
-						<div class="form-label">
-							<span class="form-label-text">Marginalium to tear:</span>
+						<FormField label="Marginalium to tear">
 							{#if btMarginaliaAssets.length === 0}
 								<p class="choices-note muted">No intact marginalia available.</p>
 							{:else}
@@ -409,7 +407,7 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 						<button class="action-btn primary"
 							onclick={() => submitBreakTarget(plan)}
 							disabled={btBusy || btMargID == null}>
@@ -424,8 +422,7 @@
 							{rollOutcome === 'mar' ? 'Take a preparer asset' : 'Take target asset'} ({taRemaining} remaining)
 						</p>
 						{#if rollOutcome === 'mar'}
-							<div class="form-label">
-								<span class="form-label-text">Preparer's asset:</span>
+							<FormField label="Preparer's asset">
 								<div class="peer-cards">
 									{#each preparerAssets as a (a.id)}
 										<AssetCardSelectable
@@ -437,7 +434,7 @@
 										/>
 									{/each}
 								</div>
-							</div>
+							</FormField>
 							<p class="choices-note">
 								Confirm the preparer has consented to giving up this asset.
 							</p>
@@ -460,8 +457,7 @@
 						<p class="choices-header">
 							Hide source ({hsRemaining} remaining)
 						</p>
-						<div class="form-label">
-							<span class="form-label-text">Hide on one of your assets:</span>
+						<FormField label="Hide on one of your assets">
 							{#if hsAssetOptions.length === 0}
 								<p class="choices-note muted">No eligible assets.</p>
 							{:else}
@@ -477,7 +473,7 @@
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 						<label class="form-label">
 							Secret text:
 							<textarea rows={2} bind:value={hsSecret} class="form-textarea"

@@ -77,23 +77,23 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load game")
+			respondInternalErr(w, "could not load game", err)
 			return
 		}
 
 		snap, err := mwSnapshotWar(ctx, deps.Q, war)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load war participants")
+			respondInternalErr(w, "could not load war participants", err)
 			return
 		}
 		ranks, err := mwPowerRanks(ctx, deps.Q, plan.GameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load rankings")
+			respondInternalErr(w, "could not load rankings", err)
 			return
 		}
 		missing, err := mwOutstandingCostsForWar(ctx, deps.Q, snap, ranks, game.CurrentRow)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not compute outstanding costs")
+			respondInternalErr(w, "could not compute outstanding costs", err)
 			return
 		}
 		if len(missing) == 0 {
@@ -136,7 +136,7 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 			Surrendered: body.Surrender,
 			IsEntry:     false,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not record battle cost")
+			respondInternalErr(w, "could not record battle cost", err)
 			return
 		}
 
@@ -148,7 +148,7 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 
 		if body.Surrender {
 			if err := mwApplySurrender(ctx, deps, war, snap, player.ID, game.CurrentRow); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not apply surrender")
+				respondInternalErr(w, "could not apply surrender", err)
 				return
 			}
 			respond(w, http.StatusOK, map[string]any{
@@ -273,7 +273,7 @@ func mwApplyBreakAsset(
 		ID: m.ID, TornByID: &player.ID,
 	})
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, "could not tear marginalia")
+		respondInternalErr(w, "could not tear marginalia", err)
 		return nil, nil, false
 	}
 	broadcastEvent(deps.Manager, gameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
@@ -325,7 +325,7 @@ func mwApplyLeverageTwo(
 			ID: id, IsLeveraged: true,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not leverage asset")
+			respondInternalErr(w, "could not leverage asset", err)
 			return nil, nil, false
 		}
 	}
@@ -375,7 +375,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load game")
+			respondInternalErr(w, "could not load game", err)
 			return
 		}
 
@@ -393,7 +393,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 
 		snap, err := mwSnapshotWar(ctx, deps.Q, war)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load war participants")
+			respondInternalErr(w, "could not load war participants", err)
 			return
 		}
 		targets := gamepkg.ActiveOpponents(
@@ -410,7 +410,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			WarID: war.ID, RowNumber: game.CurrentRow, PayerID: player.ID,
 		})
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load existing payments")
+			respondInternalErr(w, "could not load existing payments", err)
 			return
 		}
 		for _, bc := range existing {
@@ -437,7 +437,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			Surrendered: false,
 			IsEntry:     true,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not record entry payment")
+			respondInternalErr(w, "could not record entry payment", err)
 			return
 		}
 
@@ -458,7 +458,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			if err := deps.Q.SetWarParticipantEntryComplete(ctx, dbgen.SetWarParticipantEntryCompleteParams{
 				WarID: war.ID, PlayerID: player.ID,
 			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not mark entry complete")
+				respondInternalErr(w, "could not mark entry complete", err)
 				return
 			}
 			broadcastEvent(deps.Manager, plan.GameID, model.EventWarEntryCompleted, model.WarEntryCompletedPayload{
@@ -531,13 +531,13 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
 			ID: asset.ID, OwnerID: player.ID,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not transfer asset")
+			respondInternalErr(w, "could not transfer asset", err)
 			return
 		}
 		if err := deps.Q.FulfillSurrenderClaim(ctx, dbgen.FulfillSurrenderClaimParams{
 			ID: claim.ID, AssetID: &asset.ID,
 		}); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not fulfill claim")
+			respondInternalErr(w, "could not fulfill claim", err)
 			return
 		}
 

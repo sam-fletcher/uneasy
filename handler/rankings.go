@@ -22,7 +22,7 @@ func GetRankings(s *db.Store) http.HandlerFunc {
 
 		rankings, err := s.Q.ListRankingsByGame(r.Context(), gameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load rankings")
+			respondInternalErr(w, "could not load rankings", err)
 			return
 		}
 

@@ -268,7 +268,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not load game")
+			respondInternalErr(w, "could not load game", err)
 			return
 		}
 
@@ -292,7 +292,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 				Side:        body.Side,
 				JoinedAtRow: game.CurrentRow,
 			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not join war")
+				respondInternalErr(w, "could not join war", err)
 				return
 			}
 			_ = deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
@@ -306,7 +306,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 				Side:        body.Side,
 				JoinedAtRow: game.CurrentRow,
 			}); err != nil {
-				respondErr(w, http.StatusInternalServerError, "could not join war")
+				respondInternalErr(w, "could not join war", err)
 				return
 			}
 		}
@@ -340,7 +340,7 @@ func mwPostSceneHandler(deps *PlanDeps) http.HandlerFunc {
 		resData := loadResolutionData(plan.ResolutionData)
 		resData.WarScenePosted = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondErr(w, http.StatusInternalServerError, "could not save scene state")
+			respondInternalErr(w, "could not save scene state", err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "scene_posted": true})
@@ -397,6 +397,15 @@ func applyMakeWarDelayResult(
 		ID:        planID,
 		RowNumber: new(targetRow),
 	})
+
+	// Refresh the plan to capture the just-set row_number before broadcasting.
+	// Mirrors reveals.go's post-SetPlanRowNumber path so consumers of
+	// EventPlanPrepared see the real row.
+	if refreshed, gErr := q.GetPlanByID(ctx, planID); gErr == nil {
+		plan = refreshed
+	}
+	broadcastEvent(manager, plan.GameID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
+	EmitPlanPrepared(ctx, q, manager, plan)
 
 	if resData.WarID == nil {
 		return
