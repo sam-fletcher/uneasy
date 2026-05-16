@@ -16,6 +16,7 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
+	import PlayerChips from './PlayerChips.svelte';
 	import { playerName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -231,27 +232,29 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
+		<div class="form-label">
+			<span class="form-label-text">Partner:</span>
+			<PlayerChips
+				players={otherPlayers}
+				isActive={(p) => clPartnerID === p.id}
+				onSelect={(p) => (clPartnerID = clPartnerID === p.id ? null : p.id)}
+			/>
+		</div>
 		<label class="form-label">
-			Partner:
-			<select bind:value={clPartnerID} class="form-textarea" style="height:auto;">
-				<option value={null}>— pick a partner —</option>
-				{#each otherPlayers as p}
-					<option value={p.id}>{p.display_name}</option>
-				{/each}
-			</select>
-		</label>
-		<label class="form-label">
-			Notes (optional):
+			Details:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="Where are you meeting? In what capacity?"></textarea>
+				placeholder="Which peers are meeting? Where? Will you share a meal, meet under a bridge, or something more intimate?"></textarea>
 		</label>
 		<p class="choices-note muted">
 			Once prepared, you and your partner each reveal a die to set
 			the delay (average rounded up).
 		</p>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Prepare Clandestinely Liaise'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep}
+				disabled={prepBusy || clPartnerID == null}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if mode === 'alwaysOn' && plan}

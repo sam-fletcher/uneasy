@@ -12,6 +12,9 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import PlayerChips from './PlayerChips.svelte';
+	import { playerColor } from '$lib/playerColor';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData,
 		playerName, assetName, intactMarginalia,
@@ -54,6 +57,24 @@
 			? assets.filter(a => a.owner_id === ecTargetPlayerID && a.asset_type === 'peer' && !a.is_destroyed)
 			: []
 	);
+
+	// Pre-select the first other player so peer cards appear without an extra
+	// tap. Switching player clears any peer selection (single target overall).
+	$effect(() => {
+		if (ecTargetPlayerID == null && otherPlayers.length > 0) {
+			ecTargetPlayerID = otherPlayers[0].id;
+		}
+	});
+
+	function selectTargetPlayer(pid: number) {
+		if (ecTargetPlayerID === pid) return;
+		ecTargetPlayerID = pid;
+		ecTargetAssetID = null;
+	}
+
+	function toggleTargetPeer(a: Asset) {
+		ecTargetAssetID = ecTargetAssetID === a.id ? null : a.id;
+	}
 
 	async function submitPrep() {
 		if (prepBusy) return;
@@ -176,38 +197,49 @@
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
 
-		<label class="form-label">
-			Target player:
-			<select bind:value={ecTargetPlayerID} class="form-select">
-				<option value={null}>— select player —</option>
-				{#each otherPlayers as p}
-					<option value={p.id}>{p.display_name}</option>
-				{/each}
-			</select>
-		</label>
+		<div class="form-label">
+			<span class="form-label-text">Target player:</span>
+			<PlayerChips
+				players={otherPlayers}
+				isActive={(p) => ecTargetPlayerID === p.id}
+				onSelect={(p) => selectTargetPlayer(p.id)}
+			/>
+		</div>
 
 		{#if ecTargetPlayerID != null}
-			<label class="form-label">
-				Target peer:
-				<select bind:value={ecTargetAssetID} class="form-select">
-					<option value={null}>— select peer —</option>
-					{#each ecTargetPlayerAssets as a}
-						<option value={a.id}>{a.name}</option>
-					{/each}
-				</select>
-			</label>
+			<div class="form-label">
+				<span class="form-label-text">Target peer:</span>
+				{#if ecTargetPlayerAssets.length === 0}
+					<p class="muted" style="margin: 0;">This player has no peers to exchange.</p>
+				{:else}
+					<div class="peer-cards">
+						{#each ecTargetPlayerAssets as a (a.id)}
+							<AssetCardSelectable
+								asset={a}
+								ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+								// ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+								selectable
+								selected={ecTargetAssetID === a.id}
+								onToggle={toggleTargetPeer}
+							/>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		{/if}
 
 		<label class="form-label">
-			Preparation notes (optional):
+			Preparation:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="Describe your approach, target, or intent…"></textarea>
+				placeholder="How are you planning to take them into your retinue?"></textarea>
 		</label>
 
-		<button class="action-btn primary" onclick={submitPrep}
-			disabled={prepBusy || !ecTargetPlayerID || !ecTargetAssetID}>
-			{prepBusy ? '…' : 'Prepare Exchange Courtiers'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep}
+				disabled={prepBusy || !ecTargetPlayerID || !ecTargetAssetID}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan}

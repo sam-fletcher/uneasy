@@ -25,6 +25,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
+	import PlayerChips from './PlayerChips.svelte';
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -472,32 +473,42 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<label class="form-label">
-			Challenger:
-			<select bind:value={prepTargetPlayerID} class="form-textarea" style="height:auto;">
-				<option value={null}>— pick a challenger —</option>
-				{#each otherPlayers as p}
-					<option value={p.id}>{p.display_name}</option>
-				{/each}
-			</select>
-		</label>
-		<fieldset class="form-label" style="border:none;padding:0;">
-			<legend style="padding:0;">Duel of:</legend>
-			<label class="choice-item" style="margin-right:1rem;">
-				<input type="radio" bind:group={prepDuelType} value="arms" /> Arms
-			</label>
-			<label class="choice-item">
-				<input type="radio" bind:group={prepDuelType} value="wits" /> Wits
-			</label>
-		</fieldset>
+		<div class="form-label">
+			<span class="form-label-text">Challenger:</span>
+			<PlayerChips
+				players={otherPlayers}
+				isActive={(p) => prepTargetPlayerID === p.id}
+				onSelect={(p) => (prepTargetPlayerID = prepTargetPlayerID === p.id ? null : p.id)}
+			/>
+		</div>
+		<div class="form-label">
+			<span class="form-label-text">Duel of:</span>
+			<div class="chip-row">
+				<button
+					type="button"
+					class="chip-btn"
+					class:active={prepDuelType === 'arms'}
+					onclick={() => (prepDuelType = 'arms')}
+				>Arms</button>
+				<button
+					type="button"
+					class="chip-btn"
+					class:active={prepDuelType === 'wits'}
+					onclick={() => (prepDuelType = 'wits')}
+				>Wits / Trial</button>
+			</div>
+		</div>
 		<label class="form-label">
 			Location:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="Where does the duel take place?"></textarea>
+				placeholder="Where will the duel take place?"></textarea>
 		</label>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Prepare Propose Duel'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep}
+				disabled={prepBusy || prepTargetPlayerID == null}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan}

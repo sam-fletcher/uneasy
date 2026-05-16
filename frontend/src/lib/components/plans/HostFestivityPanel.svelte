@@ -417,13 +417,15 @@
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
 		<label class="form-label">
-			Event:
+			Event type:
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-				placeholder="Where are you, and what sort of event is planned?"></textarea>
+				placeholder="A gala or a ball? A big feast, a hunting party, a tournament?"></textarea>
 		</label>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Prepare Host Festivity'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan}

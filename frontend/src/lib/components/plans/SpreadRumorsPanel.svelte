@@ -23,6 +23,9 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import PlayerChips from './PlayerChips.svelte';
+	import { playerColor } from '$lib/playerColor';
 	import { parseResolutionData, playerName, assetName } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -60,6 +63,36 @@
 	let prepError = $state('');
 
 	const intactAssets = $derived(assets.filter(a => !a.is_destroyed));
+
+	// Owner filter for the asset picker. Rumours about your own assets are
+	// allowed (preserves the dropdown's old behaviour), so every player —
+	// including the current one — appears as a chip.
+	let prepFilterOwnerID = $state<number | null>(null);
+	const ownersWithAssets = $derived(
+		players.filter(p => intactAssets.some(a => a.owner_id === p.id))
+	);
+	const filteredIntactAssets = $derived(
+		prepFilterOwnerID == null
+			? []
+			: intactAssets.filter(a => a.owner_id === prepFilterOwnerID)
+	);
+
+	// Pre-select the first owner so cards appear without an extra tap.
+	$effect(() => {
+		if (prepFilterOwnerID == null && ownersWithAssets.length > 0) {
+			prepFilterOwnerID = ownersWithAssets[0].id;
+		}
+	});
+
+	function selectRumorOwner(pid: number) {
+		if (prepFilterOwnerID === pid) return;
+		prepFilterOwnerID = pid;
+		prepTargetAssetID = null;
+	}
+
+	function toggleRumorAsset(a: Asset) {
+		prepTargetAssetID = prepTargetAssetID === a.id ? null : a.id;
+	}
 
 	async function submitPrep() {
 		if (prepBusy) return;
@@ -235,23 +268,47 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<label class="form-label">
-			Asset the rumor is about:
-			<select bind:value={prepTargetAssetID} class="form-select">
-				<option value={null}>Select an asset…</option>
-				{#each intactAssets as a}
-					<option value={a.id}>{a.name} (owner: {playerName(players, a.owner_id)})</option>
-				{/each}
-			</select>
-		</label>
+		<div class="form-label">
+			<span class="form-label-text">Asset owner:</span>
+			<PlayerChips
+				players={ownersWithAssets}
+				isActive={(p) => prepFilterOwnerID === p.id}
+				onSelect={(p) => selectRumorOwner(p.id)}
+			/>
+		</div>
+
+		{#if prepFilterOwnerID != null}
+			<div class="form-label">
+				<span class="form-label-text">Asset the rumor is about:</span>
+				{#if filteredIntactAssets.length === 0}
+					<p class="muted" style="margin: 0;">This player has no intact assets.</p>
+				{:else}
+					<div class="peer-cards">
+						{#each filteredIntactAssets as a (a.id)}
+							<AssetCardSelectable
+								asset={a}
+								ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+								// ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+								selectable
+								selected={prepTargetAssetID === a.id}
+								onToggle={toggleRumorAsset}
+							/>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 		<label class="form-label">
 			Rumor:
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
 				placeholder="What are people starting to say?"></textarea>
 		</label>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Prepare Spread Rumors'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep}
+				disabled={prepBusy || prepTargetAssetID == null || !prepNotes.trim()}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan}

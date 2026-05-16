@@ -264,10 +264,12 @@
 					placeholder="Frame the demand in fiction…"></textarea>
 			</label>
 
-			<button class="action-btn primary" onclick={submitPrep}
-				disabled={prepBusy || targetPlanID == null}>
-				{prepBusy ? '…' : 'Prepare Make Demands'}
-			</button>
+			<div style="text-align: center;">
+				<button class="action-btn primary" onclick={submitPrep}
+					disabled={prepBusy || targetPlanID == null}>
+					{prepBusy ? '…' : 'Prepare Plan'}
+				</button>
+			</div>
 		{/if}
 	</div>
 

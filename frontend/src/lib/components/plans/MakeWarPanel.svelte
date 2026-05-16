@@ -33,6 +33,7 @@
 	} from '$lib/api';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import BattleCostForm, { type BattleSubmission } from './war/BattleCostForm.svelte';
+	import PlayerChips from './PlayerChips.svelte';
 	import { playerName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -336,28 +337,29 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<p class="form-label">Declare war on (pick at least one):</p>
-		<div class="choice-list">
-			{#each otherPlayers as p}
-				<label class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
-					<input type="checkbox" checked={enemyIDs.has(p.id)}
-						onchange={() => toggleEnemy(p.id)} />
-					<span>{p.display_name}</span>
-				</label>
-			{/each}
+		<div class="form-label">
+			<span class="form-label-text">Declare war on (one or more):</span>
+			<PlayerChips
+				players={otherPlayers}
+				isActive={(p) => enemyIDs.has(p.id)}
+				onSelect={(p) => toggleEnemy(p.id)}
+			/>
 		</div>
 		<label class="form-label">
 			Notes (optional):
 				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-					placeholder="Casus belli, opening moves, anything to set the scene…"></textarea>
+					placeholder="Casus belli, opening move, rally cry, et cetera"></textarea>
 		</label>
 		<p class="choices-note muted">
 			Once declared, all involved players reveal a die to set the delay (average rounded up).
-			Other players may join either side during that window.
+			Other players may join either side whenever the Public Record advances.
 		</p>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Declare war'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep}
+				disabled={prepBusy || enemyIDs.size === 0}>
+				{prepBusy ? '…' : 'Declare War'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan && !shouldHide}

@@ -216,11 +216,13 @@
 		<label class="form-label">
 			Decree:
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-				placeholder="What law do you propose?"></textarea>
+				placeholder="What law are you drafting?"></textarea>
 		</label>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Prepare Propose Decree'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan}

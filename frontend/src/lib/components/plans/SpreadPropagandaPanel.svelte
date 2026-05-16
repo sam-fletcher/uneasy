@@ -92,13 +92,15 @@
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
 		<label class="form-label">
-			Preparation notes (optional):
+			Message and Methods:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="Describe your approach, target, or intent…"></textarea>
+				placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?"></textarea>
 		</label>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Prepare Spread Propaganda'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan}

@@ -82,6 +82,88 @@
 	color: #c8a96e;
 }
 
+.form-label-text { color: #c8a96e; }
+
+.player-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+}
+
+.player-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	min-height: 44px;
+	padding: 0.35rem 0.7rem;
+	border-radius: 999px;
+	border: 1px solid #333;
+	background: #1d1d1d;
+	color: #d8d4c9;
+	font-size: 0.85rem;
+	cursor: pointer;
+}
+
+.player-chip .dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: var(--owner-color, #555);
+	flex-shrink: 0;
+}
+
+.player-chip.active {
+	border-color: var(--owner-color, #c8a96e);
+	background: #221d10;
+	color: #e8e4d9;
+}
+
+.player-chip:focus-visible {
+	outline: 2px solid var(--owner-color, #c8a96e);
+	outline-offset: 1px;
+}
+
+.peer-cards {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+
+/* Generic non-coloured chip row — for numeric picks (Make Introductions
+   peer count) and small enum choices (Propose Duel arms/wits). Same
+   visual weight as .player-chip but without the owner accent. */
+.chip-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+}
+
+.chip-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 44px;
+	min-width: 44px;
+	padding: 0.35rem 0.9rem;
+	border-radius: 999px;
+	border: 1px solid #333;
+	background: #1d1d1d;
+	color: #d8d4c9;
+	font-size: 0.9rem;
+	cursor: pointer;
+}
+
+.chip-btn.active {
+	border-color: #c8a96e;
+	background: #221d10;
+	color: #e8e4d9;
+}
+
+.chip-btn:focus-visible {
+	outline: 2px solid #c8a96e;
+	outline-offset: 1px;
+}
+
 .ft-select, .form-select {
 	background: #2a2a2a;
 	border: 1px solid #555;

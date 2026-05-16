@@ -239,13 +239,15 @@
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
 		<label class="form-label">
-			Historical problem:
+			Area of study:
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-				placeholder="What piece of the past are you investigating?"></textarea>
+				placeholder="What problem are you solving? What part of history are you investigating or recording?"></textarea>
 		</label>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Prepare Chronicle Histories'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan}

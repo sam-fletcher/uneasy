@@ -92,19 +92,32 @@
 {#if mode === 'prep'}
 	<div class="plan-form">
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<label class="form-label">
-			Number of peers (1–4):
-			<input type="number" min="1" max="4" bind:value={miPeerCount} class="form-num" />
-		</label>
+		<div class="form-label">
+			<span class="form-label-text">Number of peers:</span>
+			<div class="chip-row">
+				{#each [1, 2, 3, 4] as n}
+					<button
+						type="button"
+						class="chip-btn"
+						class:active={miPeerCount === n}
+						onclick={() => (miPeerCount = n)}
+					>
+						{n}
+					</button>
+				{/each}
+			</div>
+		</div>
 		<p class="form-hint">Difficulty will be {2 + miPeerCount}.</p>
 		<label class="form-label">
-			Preparation notes (optional):
+			Intent:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="Describe your approach, target, or intent…"></textarea>
+				placeholder="What role will they fill, in court or otherwise?"></textarea>
 		</label>
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
-			{prepBusy ? '…' : 'Prepare Make Introductions'}
-		</button>
+		<div style="text-align: center;">
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+				{prepBusy ? '…' : 'Prepare Plan'}
+			</button>
+		</div>
 	</div>
 
 {:else if plan}
