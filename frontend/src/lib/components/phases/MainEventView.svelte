@@ -117,6 +117,32 @@
 			: null
 	);
 
+	// One-line label describing the current step. Driven by game state so
+	// every viewer agrees on the heading. The Public Record sidebar now
+	// carries the row-number context, so the step heading no longer needs
+	// to repeat it.
+	const stepLabel = $derived.by(() => {
+		if (plans.some(p => p.status === 'resolving')) return 'Resolving plan';
+		if (plans.some(p => p.status === 'pending' && p.row_number === game.current_row))
+			return 'Plan to resolve';
+		if (activeScene) return 'Scene';
+		if (isFocusPlayer && !sceneEnded) return 'Set the scene';
+		if (isFocusPlayer && sceneEnded && !actionTaken) return 'Prepare a plan';
+		if (isFocusPlayer && sceneEnded && actionTaken) return 'Ready to move on';
+		return '';
+	});
+
+	// Optional secondary line under the step label — calls out the alternate
+	// action when one exists (e.g. the focus player can also refresh assets
+	// instead of preparing a plan).
+	const stepSubtitle = $derived.by(() => {
+		if (isFocusPlayer && sceneEnded && !actionTaken && !hasPlansToResolve) {
+			return `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
+		}
+		return '';
+	});
+
+
 	// Local error string for non-chat actions (refresh, pass focus).
 	// Chat errors live inside ChatPanel now.
 	let error = $state('');
@@ -258,8 +284,13 @@
 	     wide desktop layouts. -->
 	<div class="play-surface">
 		<div class="scene-panel">
-			<div class="row-header">
-				<span>Row <strong>{game.current_row}</strong> of 13</span>
+			<div class="step-header">
+				<div class="step-titles">
+					<h2 class="step-label">{stepLabel}</h2>
+					{#if stepSubtitle}
+						<p class="step-subtitle">{stepSubtitle}</p>
+					{/if}
+				</div>
 				{#if focusPlayerName}
 					<span class="focus-badge">Focus: {focusPlayerName}</span>
 				{/if}
@@ -371,9 +402,14 @@
 								<!-- A plan needs to be resolved before the focus player can act. -->
 								<span class="action-label">Resolve the active plan above before acting.</span>
 							{:else}
-								<span class="action-label">
-									Prepare a plan (above) or refresh up to {maxRefresh} asset{maxRefresh === 1 ? '' : 's'}
-								</span>
+								<!-- Heading text has moved to .step-header above; the
+								     OR divider here visually separates the two options
+								     (plan-grid above ↔ refresh button below). -->
+								<div class="or-divider" aria-hidden="true">
+									<span class="or-line"></span>
+									<span class="or-label">OR</span>
+									<span class="or-line"></span>
+								</div>
 								{#if refreshable.length > 0}
 									<div class="refresh-picker">
 										{#each refreshable as asset (asset.id)}
@@ -459,7 +495,11 @@
 		display: flex;
 		flex-direction: column;
 		padding: 0.75rem 0.5rem 0;
-		overflow: hidden;
+		/* Scrollable so a tall PlanPanel doesn't push the action-bar
+		   (Refresh / Pass Focus buttons) out of reach. The parent .table-body
+		   already reserves padding-bottom for the mobile chat strip, so the
+		   bottom of this scroll viewport sits above the strip. */
+		overflow-y: auto;
 		min-height: 0;
 		flex: 1;
 	}
@@ -468,22 +508,74 @@
 		.scene-panel { padding: 0.5rem 0 0; }
 	}
 
-	.row-header {
+	/* Step header: step label (and optional subtitle) left, focus badge
+	 * right. Mirrors the Public Record sidebar's expanded-header styling
+	 * (uppercase tracked caps in the accent colour) so headings read the
+	 * same way across the layout. */
+	.step-header {
 		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
 		gap: 0.75rem;
-		align-items: center;
-		font-size: 0.85rem;
-		color: #c8a96e;
-		padding-bottom: 0.4rem;
+		padding-bottom: 0.5rem;
+		margin-bottom: 0.75rem;
 		border-bottom: 1px solid #333;
 		flex-shrink: 0;
 	}
 
+	.step-titles {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		min-width: 0;
+	}
+
+	.step-label {
+		margin: 0;
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: #c8a96e;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		line-height: 1.2;
+	}
+	.step-label:empty { display: none; }
+
+	.step-subtitle {
+		margin: 0;
+		font-size: 0.74rem;
+		color: #888;
+		line-height: 1.3;
+	}
+
 	.focus-badge {
+		font-size: 0.72rem;
+		color: #aaa;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		white-space: nowrap;
+		padding-top: 0.05rem;
+	}
+
+	/* "OR" boundary divider between the plan grid and the refresh action.
+	 * Mirrors the chat-panel boundary marker style so both contexts read
+	 * the same visual language. */
+	.or-divider {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0.6rem 0 0.5rem;
+	}
+	.or-line {
+		flex: 1;
+		height: 1px;
 		background: #3a3020;
-		padding: 0.12rem 0.4rem;
-		border-radius: 4px;
-		font-size: 0.75rem;
+	}
+	.or-label {
+		font-size: 0.78rem;
+		color: #c8a96e;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
 	}
 
 	.war-block-banner {
@@ -529,6 +621,7 @@
 		display: flex;
 		gap: 0.5rem;
 		flex-wrap: wrap;
+		justify-content: center;
 	}
 
 	.action-btn {

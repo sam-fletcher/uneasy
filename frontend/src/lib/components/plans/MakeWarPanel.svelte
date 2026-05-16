@@ -352,9 +352,8 @@
 					placeholder="Casus belli, opening moves, anything to set the scene…"></textarea>
 		</label>
 		<p class="choices-note muted">
-			Once prepared, you and every named enemy each reveal a die face;
-			delay = ceil(average). Other players may join either side during
-			that window.
+			Once declared, all involved players reveal a die to set the delay (average rounded up).
+			Other players may join either side during that window.
 		</p>
 		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
 			{prepBusy ? '…' : 'Declare war'}

@@ -34,7 +34,7 @@
 		esteem:    'Esteem',
 		knowledge: 'Knowledge',
 	};
-	const TRACKS: RankingCategory[] = ['power', 'esteem', 'knowledge'];
+	const TRACKS: RankingCategory[] = ['power', 'knowledge', 'esteem'];
 
 	interface Props {
 		gameID: number;
@@ -269,35 +269,61 @@
 		{:else if eligiblePlans.length === 0 && ineligiblePlans.length === 0}
 			<p class="muted">No plans available to prepare this turn.</p>
 		{:else}
-			<p class="picker-label">Prepare a plan:</p>
+			<!-- Flat 3-column grid: 3 track headings on the first row, then
+			     4 rows of 3 cards. Auto-flow (row-major) handles placement;
+			     equal min-height on every card guarantees uniform sizing
+			     across all 12 plans. -->
 			<div class="plan-grid">
 				{#each TRACKS as track}
-					<section class="plan-track" data-track={track}>
-						<h4 class="track-heading">{TRACK_LABEL[track]}</h4>
-						{#each TRACK_ORDER[track] as pt}
-							{@const cell = planCells.get(pt)}
-							<button
-								type="button"
-								class="plan-card"
-								class:selected={selectedPlanType === pt}
-								disabled={!cell || !cell.eligible}
-								title={cell && !cell.eligible ? cell.reason : undefined}
-								onclick={() => cell && onPlanClick(cell)}
-								onmouseenter={() => cell && onPlanHover(cell)}
-								onmouseleave={onPlanLeave}
-								onfocus={() => cell && onPlanHover(cell)}
-								onblur={onPlanLeave}
-							>
-								<div class="card-head">
-									<span class="card-title">{PLAN_SHORT[pt]}</span>
-									{#if cell?.eligible}
+					<h4 class="track-heading">{TRACK_LABEL[track]}</h4>
+				{/each}
+				{#each [0, 1, 2, 3] as rowIdx}
+					{#each TRACKS as track}
+						{@const pt = TRACK_ORDER[track][rowIdx]}
+						{@const cell = planCells.get(pt)}
+						<button
+							type="button"
+							class="plan-card"
+							class:selected={selectedPlanType === pt}
+							disabled={!cell || !cell.eligible}
+							title={cell && !cell.eligible ? cell.reason : undefined}
+							onclick={() => cell && onPlanClick(cell)}
+							onmouseenter={() => cell && onPlanHover(cell)}
+							onmouseleave={onPlanLeave}
+							onfocus={() => cell && onPlanHover(cell)}
+							onblur={onPlanLeave}
+						>
+							<div class="card-head">
+								<span class="card-title">{PLAN_SHORT[pt]}</span>
+								{#if cell?.eligible}
+									{#if pt === 'make_demands'}
+										<span class="plan-icon" aria-label="Targets another plan" title="Targets another plan">
+											<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+												<circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.2" />
+												<circle cx="10" cy="10" r="5"   fill="none" stroke="currentColor" stroke-width="1.2" />
+												<circle cx="10" cy="10" r="1.8" fill="currentColor" />
+											</svg>
+										</span>
+									{:else if pt === 'make_war' || pt === 'clandestinely_liaise'}
+										<span class="plan-icon" aria-label="Delay determined by dice roll" title="Delay determined by dice roll">
+											<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+												<rect x="2.5" y="2.5" width="15" height="15" rx="2.5" ry="2.5"
+													fill="none" stroke="currentColor" stroke-width="1.2" />
+												<circle cx="6.5"  cy="6.5"  r="1.2" fill="currentColor" />
+												<circle cx="13.5" cy="6.5"  r="1.2" fill="currentColor" />
+												<circle cx="10"   cy="10"   r="1.2" fill="currentColor" />
+												<circle cx="6.5"  cy="13.5" r="1.2" fill="currentColor" />
+												<circle cx="13.5" cy="13.5" r="1.2" fill="currentColor" />
+											</svg>
+										</span>
+									{:else}
 										<RowPill row={cell.targetRow} state={rowStateFor(cell.targetRow)} />
 									{/if}
-								</div>
-								<p class="card-desc">{PLAN_DESCRIPTION[pt]}</p>
-							</button>
-						{/each}
-					</section>
+								{/if}
+							</div>
+							<p class="card-desc">{PLAN_DESCRIPTION[pt]}</p>
+						</button>
+					{/each}
 				{/each}
 			</div>
 		{/if}

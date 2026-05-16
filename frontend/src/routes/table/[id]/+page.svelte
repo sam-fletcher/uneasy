@@ -1103,6 +1103,11 @@
 	/* ── Layout ─────────────────────────────────────────────────────────────── */
 
 	.table-page {
+		/* Single source of truth for the mobile chat strip's height. Read by
+		   ChatPanel.svelte (.strip min-height) and by .table-body's reserved
+		   padding-bottom below, so the two stay in sync. */
+		--chat-strip-height: 46px;
+
 		display: flex;
 		flex-direction: column;
 		height: 100dvh;
@@ -1123,9 +1128,10 @@
 		display: flex;
 		flex-direction: column;
 		/* Keep phase content from being hidden behind the mobile chat strip,
-		   including the iOS home-indicator safe area. Must stay in sync with
-		   the strip's min-height + padding in ChatPanel.svelte. */
-		padding-bottom: calc(56px + env(safe-area-inset-bottom));
+		   including the iOS home-indicator safe area. The extra 0.75rem is
+		   breathing room so the last bit of content isn't flush against the
+		   strip's top edge (and isn't darkened by its upward box-shadow). */
+		padding-bottom: calc(var(--chat-strip-height) + 1rem + env(safe-area-inset-bottom));
 	}
 
 	/* In main_event on mobile, the public-record rail sits to the left of the

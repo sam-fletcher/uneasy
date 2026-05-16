@@ -246,8 +246,8 @@
 				placeholder="Where are you meeting? In what capacity?"></textarea>
 		</label>
 		<p class="choices-note muted">
-			Once prepared, you and your partner will each reveal a die face to set
-			the delay (delay = ceil(average)).
+			Once prepared, you and your partner each reveal a die to set
+			the delay (average rounded up).
 		</p>
 		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
 			{prepBusy ? '…' : 'Prepare Clandestinely Liaise'}

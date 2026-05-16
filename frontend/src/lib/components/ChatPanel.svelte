@@ -488,7 +488,9 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		min-height: 56px; /* ≥44px tap target plus breathing room */
+		/* ≥44px tap target plus breathing room. Defined on .table-page so the
+		   page-level padding reservation can use the same value. */
+		min-height: var(--chat-strip-height, 56px);
 		/* Extra bottom padding accounts for the iOS home-indicator safe area
 		   so the preview text isn't clipped on devices with a gesture bar. */
 		padding: 0.85rem 1rem calc(0.85rem + env(safe-area-inset-bottom));

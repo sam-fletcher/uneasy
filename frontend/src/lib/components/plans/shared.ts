@@ -36,8 +36,8 @@ export const PLAN_DESCRIPTION: Record<PlanType, string> = {
 /** Display order within each track column (top → bottom). */
 export const TRACK_ORDER: Record<RankingCategory, PlanType[]> = {
 	power:     ['make_demands', 'propose_decree', 'exchange_courtiers', 'make_war'],
-	esteem:    ['spread_propaganda', 'spread_rumors', 'propose_duel', 'host_festivity'],
 	knowledge: ['make_introductions', 'seek_answers', 'chronicle_histories', 'clandestinely_liaise'],
+	esteem:    ['spread_propaganda', 'spread_rumors', 'propose_duel', 'host_festivity'],
 };
 
 export const PLAN_SHORT: Record<PlanType, string> = {

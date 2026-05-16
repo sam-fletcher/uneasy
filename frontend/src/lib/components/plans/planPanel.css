@@ -164,41 +164,42 @@
 	margin: 0 0 0.35rem;
 }
 
-/* Three-column grid of plan cards grouped by track. On mobile (default) the
- * tracks stack vertically; ≥640px they sit side-by-side. */
+/* Three-column grid of plan cards grouped by track. Three columns at all
+ * widths — on narrow mobile the type sizes step down so cards still fit.
+ * Flat layout: row 1 holds the 3 track headings, rows 2-5 hold 12 cards in
+ * row-major order so cards in the same visual row are equal width AND a
+ * shared min-height keeps the 4×3 grid visually balanced. */
 .plan-grid {
 	display: grid;
-	grid-template-columns: 1fr;
-	gap: 0.6rem;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 0.35rem;
+	row-gap: 0.3rem;
 }
 
 @media (min-width: 640px) {
-	.plan-grid { grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
-}
-
-.plan-track {
-	display: flex;
-	flex-direction: column;
-	gap: 0.35rem;
+	.plan-grid { gap: 0.5rem; row-gap: 0.4rem; }
 }
 
 .track-heading {
-	font-size: 0.72rem;
-	font-weight: 700;
+	font-size: 0.8rem;
+	font-weight: 400;
 	text-transform: uppercase;
 	letter-spacing: 0.08em;
 	color: #c8a96e;
 	margin: 0 0 0.1rem;
 	padding-bottom: 0.2rem;
 	border-bottom: 1px solid #3a3020;
+	text-align: center;
 }
 
 .plan-card {
 	display: flex;
 	flex-direction: column;
-	gap: 0.3rem;
-	min-height: 44px;
-	padding: 0.5rem 0.55rem;
+	gap: 0.2rem;
+	/* Standardized card size: tall enough to fit the longest description
+	 * (4 lines at narrow widths) without needing a per-row fit step. */
+	min-height: 5.5rem;
+	padding: 0.35rem 0.4rem;
 	background: #2a2a2a;
 	border: 1px solid #555;
 	border-radius: 5px;
@@ -207,6 +208,10 @@
 	cursor: pointer;
 	transition: border-color 0.12s, background 0.12s;
 	font-family: inherit;
+}
+
+@media (min-width: 640px) {
+	.plan-card { gap: 0.3rem; padding: 0.5rem 0.55rem; min-height: 5.5rem; }
 }
 
 .plan-card:not(:disabled):hover { border-color: #c8a96e; }
@@ -226,20 +231,40 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 0.4rem;
+	gap: 0.25rem;
 }
 
 .card-title {
-	font-size: 0.85rem;
+	font-size: 0.72rem;
 	font-weight: 600;
 	line-height: 1.2;
 }
 
+/* Used in lieu of a RowPill for plans whose delay is not a fixed target row
+   (make_demands targets another plan; make_war / clandestinely_liaise roll
+   for delay). Kept intentionally low-contrast so it does not draw the eye
+   away from real row pills. */
+.plan-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	color: #777;
+	flex-shrink: 0;
+}
+
 .card-desc {
-	font-size: 0.74rem;
-	line-height: 1.35;
+	font-size: 0.65rem;
+	line-height: 1.3;
 	color: #999;
 	margin: 0;
+}
+
+@media (min-width: 640px) {
+	.card-head { gap: 0.4rem; }
+	.card-title { font-size: 0.85rem; }
+	.card-desc { font-size: 0.74rem; line-height: 1.35; }
 }
 
 .plan-card.selected .card-desc { color: #b8b0a0; }
