@@ -395,7 +395,7 @@ func applyMakeWarDelayResult(
 
 	_ = q.SetPlanRowNumber(ctx, dbgen.SetPlanRowNumberParams{
 		ID:        planID,
-		RowNumber: targetRow,
+		RowNumber: new(targetRow),
 	})
 
 	if resData.WarID == nil {

@@ -62,7 +62,12 @@ func GetFullRecord(s *db.Store) http.HandlerFunc {
 
 		planByRow := make(map[int16][]dbgen.Plan)
 		for _, p := range plans {
-			planByRow[p.RowNumber] = append(planByRow[p.RowNumber], p)
+			// Plans awaiting a delay reveal have no row yet — skip them
+			// here; they're surfaced via the alwaysOn registry on the frontend.
+			if p.RowNumber == nil {
+				continue
+			}
+			planByRow[*p.RowNumber] = append(planByRow[*p.RowNumber], p)
 		}
 
 		result := make([]RecordRow, len(rows))

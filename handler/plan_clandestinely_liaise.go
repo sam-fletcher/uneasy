@@ -870,7 +870,7 @@ func clScheduleNewMeeting(
 ) {
 	count, err := deps.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
 		GameID:    originalPlan.GameID,
-		RowNumber: targetRow,
+		RowNumber: new(targetRow),
 	})
 	if err != nil {
 		count = 0
@@ -882,7 +882,7 @@ func clScheduleNewMeeting(
 		Category:         model.CategoryKnowledge,
 		PreparerID:       originalPlan.PreparerID,
 		TargetPlayerID:   &partnerID,
-		RowNumber:        targetRow,
+		RowNumber:        new(targetRow),
 		RowOrder:         int16(count),
 		PreparedAtRow:    targetRow, // prepared "at" the row it resolves on
 		PreparationNotes: originalPlan.PreparationNotes,

@@ -32,6 +32,16 @@
 		selectable?: boolean;
 		selected?: boolean;
 		onToggle?: (asset: Asset) => void;
+		/**
+		 * Marginalia-pick mode. Mutually exclusive with `selectable`. The
+		 * header checkbox is hidden; the card auto-expands; each intact
+		 * marginalia line gets its own checkbox tap target. Torn lines
+		 * remain non-interactive. Asset identity is implicit — callers
+		 * derive it from the marginalia ID.
+		 */
+		marginaliaSelectable?: boolean;
+		selectedMarginaliaID?: number | null;
+		onMarginaliaToggle?: (marginaliaID: number, asset: Asset) => void;
 		/** Disable interaction (e.g. peer already claimed by someone else). */
 		disabled?: boolean;
 		/** Render expanded by default. */
@@ -45,6 +55,9 @@
 		selectable = false,
 		selected = false,
 		onToggle,
+		marginaliaSelectable = false,
+		selectedMarginaliaID = null,
+		onMarginaliaToggle,
 		disabled = false,
 		defaultExpanded = false,
 	}: Props = $props();
@@ -53,7 +66,10 @@
 	// live binding — once the user toggles the card we want their state to
 	// stick even if the parent passes a new default. `untrack` makes that
 	// intent explicit and silences the state_referenced_locally warning.
-	let expanded = $state(untrack(() => defaultExpanded));
+	let expandedRaw = $state(untrack(() => defaultExpanded));
+	// In marginalia-pick mode the card is always expanded: the marginalia
+	// list IS the picker, so hiding it would defeat the mode.
+	const expanded = $derived(marginaliaSelectable ? true : expandedRaw);
 
 	const typeLabels: Record<Asset['asset_type'], string> = {
 		peer: 'Peer',
@@ -65,12 +81,19 @@
 	function toggleExpand(e: MouseEvent) {
 		// Don't toggle expand when the click came from the select tap area.
 		if ((e.target as HTMLElement).closest('.select-tap')) return;
-		expanded = !expanded;
+		// Marginalia-pick mode keeps the card open; header is non-collapsing.
+		if (marginaliaSelectable) return;
+		expandedRaw = !expandedRaw;
 	}
 
 	function handleSelect() {
 		if (disabled) return;
 		onToggle?.(asset);
+	}
+
+	function handleMarginaliaSelect(marginaliaID: number) {
+		if (disabled) return;
+		onMarginaliaToggle?.(marginaliaID, asset);
 	}
 
 	const liveMarginalia = $derived(asset.marginalia.filter(m => !m.is_torn));
@@ -81,6 +104,7 @@
 	class="card"
 	class:selectable
 	class:selected={selectable && selected}
+	class:marginalia-selectable={marginaliaSelectable}
 	class:disabled
 	style:--owner-color={ownerColor}
 >
@@ -107,6 +131,11 @@
 			>
 				<span class="check">{selected ? '✓' : ''}</span>
 			</span>
+		{:else if marginaliaSelectable}
+			<!-- Placeholder keeps the header grid columns aligned with the
+			     selectable variant; the actual checkbox lives on each
+			     marginalia line below. -->
+			<span class="select-tap-placeholder" aria-hidden="true"></span>
 		{/if}
 
 		<span class="dot" aria-hidden="true"></span>
@@ -139,9 +168,28 @@
 			{:else}
 				<ul class="marginalia">
 					{#each asset.marginalia as m (m.id)}
-						<li class:torn={m.is_torn}>
+						{@const isPickable = marginaliaSelectable && !m.is_torn}
+						{@const isPicked = isPickable && selectedMarginaliaID === m.id}
+						<li class:torn={m.is_torn} class:picked={isPicked}>
 							{#if m.is_torn}
 								<span class="torn-mark" aria-label="torn">✗</span>
+							{:else if marginaliaSelectable}
+								<span
+									class="select-tap m-tap"
+									role="checkbox"
+									tabindex={disabled ? -1 : 0}
+									aria-checked={isPicked}
+									aria-disabled={disabled}
+									onclick={(e) => { e.stopPropagation(); handleMarginaliaSelect(m.id); }}
+									onkeydown={(e) => {
+										if (e.key === ' ' || e.key === 'Enter') {
+											e.preventDefault();
+											handleMarginaliaSelect(m.id);
+										}
+									}}
+								>
+									<span class="check">{isPicked ? '✓' : ''}</span>
+								</span>
 							{:else}
 								<span class="bullet" aria-hidden="true">•</span>
 							{/if}
@@ -187,8 +235,42 @@
 		min-height: 44px; /* tap target */
 	}
 
-	.card.selectable .header { grid-template-columns: auto auto auto 1fr auto; }
-	.card:not(.selectable) .header { grid-template-columns: auto 1fr auto; }
+	.card.selectable .header,
+	.card.marginalia-selectable .header { grid-template-columns: auto auto auto 1fr auto; }
+
+	/* Header click is a no-op in marginalia-pick mode (the card stays open)
+	   so don't suggest a pointer affordance there. */
+	.card.marginalia-selectable .header { cursor: default; }
+	.card.marginalia-selectable .caret { display: none; }
+	.card:not(.selectable):not(.marginalia-selectable) .header { grid-template-columns: auto 1fr auto; }
+
+	.select-tap-placeholder {
+		width: 22px;
+		height: 22px;
+		flex-shrink: 0;
+	}
+
+	/* Highlight a card that has the picked marginalia, so the user can
+	   see at a glance which asset their selection belongs to. */
+	.card.marginalia-selectable:has(.marginalia li.picked) {
+		border-color: var(--owner-color, #c8a96e);
+		background: #221d10;
+	}
+
+	/* The marginalia row's own checkbox + selected state. */
+	.marginalia li {
+		min-height: 32px;
+	}
+	.marginalia li.picked {
+		color: #ffe8b8;
+	}
+	.m-tap {
+		width: 20px;
+		height: 20px;
+	}
+	.marginalia li.picked .m-tap {
+		background: var(--owner-color, #c8a96e);
+	}
 
 	.select-tap {
 		width: 22px;

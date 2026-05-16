@@ -208,7 +208,7 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 		// Count existing plans on the target row for row_order.
 		count, err := deps.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
 			GameID:    game.ID,
-			RowNumber: targetRow,
+			RowNumber: new(targetRow),
 		})
 		if err != nil {
 			count = 0
@@ -232,7 +232,7 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 				PreparerID:       plan.PreparerID,
 				TargetPlayerID:   nil,
 				TargetAssetID:    nil,
-				RowNumber:        targetRow,
+				RowNumber:        new(targetRow),
 				RowOrder:         int16(count),
 				PreparedAtRow:    game.CurrentRow,
 				PreparationNotes: nil,

@@ -993,7 +993,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 			Category:         model.CategoryEsteem,
 			PreparerID:       challengerID,
 			TargetPlayerID:   &player.ID,
-			RowNumber:        game.CurrentRow,
+			RowNumber:        new(game.CurrentRow),
 			RowOrder:         0,
 			PreparedAtRow:    game.CurrentRow,
 			PreparationNotes: &notes,

@@ -251,7 +251,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
 			GameID:    gameRow.ID,
-			RowNumber: gameRow.CurrentRow,
+			RowNumber: new(gameRow.CurrentRow),
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, "could not check pending plans")
@@ -307,7 +307,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		var resolvedPlanID *int64
 		if recent, err := s.Q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
 			GameID:    gameRow.ID,
-			RowNumber: gameRow.CurrentRow,
+			RowNumber: new(gameRow.CurrentRow),
 		}); err == nil {
 			prompt = game.FollowOnPrompt(recent.PlanType)
 			id := recent.ID

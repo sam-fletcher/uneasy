@@ -58,6 +58,10 @@
 			p.plan_type !== 'make_war' &&
 			p.preparer_id !== currentPlayerID &&
 			p.status !== 'resolved' && p.status !== 'cancelled' &&
+			// Variable-delay plans awaiting their delay reveal have no row
+			// yet; demand placement is derived from the target's row, so
+			// they're not targetable until the reveal closes.
+			p.row_number != null &&
 			!targetedSet.has(p.id),
 		);
 	});
@@ -72,7 +76,8 @@
 	);
 
 	const landingRow = $derived(
-		selectedTarget == null ? null : Math.max(selectedTarget.row_number - 1, currentRow),
+		// targetablePlans filters out null-row plans, so row_number is safe here.
+		selectedTarget == null ? null : Math.max(selectedTarget.row_number! - 1, currentRow),
 	);
 
 	async function submitPrep() {

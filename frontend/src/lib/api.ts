@@ -251,7 +251,10 @@ export interface Plan {
 	preparer_id: number;
 	target_player_id: number | null;
 	target_asset_id: number | null;
-	row_number: number;
+	/** Null while a variable-delay plan (Make War / Clandestinely Liaise) is
+	 *  awaiting its simultaneous delay reveal. The reveal closing assigns the
+	 *  real row and broadcasts plan.prepared again. */
+	row_number: number | null;
 	row_order: number;
 	prepared_at_row: number;
 	status: 'pending' | 'resolving' | 'resolved' | 'cancelled';

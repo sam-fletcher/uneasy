@@ -61,11 +61,11 @@ export const REGISTRY: Record<PlanType, PlanRegistryEntry> = {
 	clandestinely_liaise: {
 		component: C(ClandestinelyLiaisePanel),
 		// Surface the simultaneous delay-reveal UI to the two participants
-		// (preparer + target) while the plan is still pending at row 0,
-		// before normal resolution begins.
+		// (preparer + target) while the plan is still pending with no row
+		// assigned, before normal resolution begins.
 		alwaysOn: (plan, viewerID) =>
 			plan.status === 'pending'
-			&& plan.row_number === 0
+			&& plan.row_number == null
 			&& viewerID != null
 			&& (plan.preparer_id === viewerID || plan.target_player_id === viewerID),
 	},

@@ -144,8 +144,8 @@ LIMIT 1
 `
 
 type GetMostRecentResolvedPlanOnRowParams struct {
-	GameID    int64 `db:"game_id" json:"game_id"`
-	RowNumber int16 `db:"row_number" json:"row_number"`
+	GameID    int64  `db:"game_id" json:"game_id"`
+	RowNumber *int16 `db:"row_number" json:"row_number"`
 }
 
 // Used to look up the follow-on prompt source when a focus player creates

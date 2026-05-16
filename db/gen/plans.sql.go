@@ -27,8 +27,8 @@ SELECT count(*) FROM plans WHERE game_id = $1 AND row_number = $2
 `
 
 type CountPlansOnRowParams struct {
-	GameID    int64 `db:"game_id" json:"game_id"`
-	RowNumber int16 `db:"row_number" json:"row_number"`
+	GameID    int64  `db:"game_id" json:"game_id"`
+	RowNumber *int16 `db:"row_number" json:"row_number"`
 }
 
 func (q *Queries) CountPlansOnRow(ctx context.Context, arg CountPlansOnRowParams) (int64, error) {
@@ -56,7 +56,7 @@ type CreatePlanParams struct {
 	PreparerID       int64                 `db:"preparer_id" json:"preparer_id"`
 	TargetPlayerID   *int64                `db:"target_player_id" json:"target_player_id"`
 	TargetAssetID    *int64                `db:"target_asset_id" json:"target_asset_id"`
-	RowNumber        int16                 `db:"row_number" json:"row_number"`
+	RowNumber        *int16                `db:"row_number" json:"row_number"`
 	RowOrder         int16                 `db:"row_order" json:"row_order"`
 	PreparedAtRow    int16                 `db:"prepared_at_row" json:"prepared_at_row"`
 	PreparationNotes *string               `db:"preparation_notes" json:"preparation_notes"`
@@ -289,8 +289,8 @@ ORDER BY row_order ASC
 `
 
 type ListPendingPlansByRowParams struct {
-	GameID    int64 `db:"game_id" json:"game_id"`
-	RowNumber int16 `db:"row_number" json:"row_number"`
+	GameID    int64  `db:"game_id" json:"game_id"`
+	RowNumber *int16 `db:"row_number" json:"row_number"`
 }
 
 func (q *Queries) ListPendingPlansByRow(ctx context.Context, arg ListPendingPlansByRowParams) ([]Plan, error) {
@@ -448,8 +448,8 @@ ORDER BY row_order ASC
 `
 
 type ListPlansByRowParams struct {
-	GameID    int64 `db:"game_id" json:"game_id"`
-	RowNumber int16 `db:"row_number" json:"row_number"`
+	GameID    int64  `db:"game_id" json:"game_id"`
+	RowNumber *int16 `db:"row_number" json:"row_number"`
 }
 
 func (q *Queries) ListPlansByRow(ctx context.Context, arg ListPlansByRowParams) ([]Plan, error) {
@@ -652,8 +652,8 @@ UPDATE plans SET row_number = $2 WHERE id = $1
 `
 
 type SetPlanRowNumberParams struct {
-	ID        int64 `db:"id" json:"id"`
-	RowNumber int16 `db:"row_number" json:"row_number"`
+	ID        int64  `db:"id" json:"id"`
+	RowNumber *int16 `db:"row_number" json:"row_number"`
 }
 
 // Updates a plan's row_number. Used by variable-delay plans (CL, MW) after

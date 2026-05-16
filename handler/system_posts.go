@@ -45,13 +45,16 @@ func playerDisplayName(ctx context.Context, q *dbgen.Queries, playerID int64) st
 // EmitPlanPrepared writes the boundary post for plan.prepared. The Public
 // Record sidebar's plan-tap gesture jumps to this post.
 func EmitPlanPrepared(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan dbgen.Plan) {
-	row := plan.RowNumber
+	// plan.RowNumber is nullable while a variable-delay plan is waiting on
+	// its delay reveal; the row-anchored post is meaningless until a row
+	// exists, so EmitPlanPrepared is called a second time after the reveal
+	// resolves (see reveals.go).
 	planID := plan.ID
 	preparer := playerDisplayName(ctx, q, plan.PreparerID)
 	EmitSystemPost(ctx, q, manager, plan.GameID, "plan.prepared",
 		model.SeverityBoundary,
 		fmt.Sprintf("%s prepared %s.", preparer, planLabel(plan.PlanType)),
-		&row, &planID, nil,
+		plan.RowNumber, &planID, nil,
 		map[string]any{"plan_type": string(plan.PlanType), "preparer_id": plan.PreparerID})
 }
 
@@ -59,7 +62,6 @@ func EmitPlanPrepared(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 // is "make", "mar", or "cancelled" — matching EventPlanResolved's Result
 // field. Cancelled plans get DEFAULT severity; make/mar get IMPORTANT.
 func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan dbgen.Plan, result string) {
-	row := plan.RowNumber
 	planID := plan.ID
 	var code, body string
 	severity := model.SeverityImportant
@@ -79,7 +81,7 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 		body = fmt.Sprintf("%s resolved (%s).", planLabel(plan.PlanType), result)
 	}
 	EmitSystemPost(ctx, q, manager, plan.GameID, code, severity, body,
-		&row, &planID, nil,
+		plan.RowNumber, &planID, nil,
 		map[string]any{"plan_id": plan.ID, "result": result})
 }
 

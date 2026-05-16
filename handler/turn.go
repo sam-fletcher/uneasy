@@ -429,7 +429,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Step 7: are there pending plans still on this row?
 		pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
 			GameID:    game.ID,
-			RowNumber: game.CurrentRow,
+			RowNumber: new(game.CurrentRow),
 		})
 		if err != nil {
 			// Non-fatal: pass focus succeeded; leave row advance to the

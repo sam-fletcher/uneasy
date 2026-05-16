@@ -570,6 +570,18 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 
 // ── PreparePlan ───────────────────────────────────────────────────────────────
 
+// PreparePlanRequest is the request body for POST /api/tables/:id/prepare-plan.
+type PreparePlanRequest struct {
+	PlanType         model.PlanType `json:"plan_type"`
+	TargetPlayerID   *int64         `json:"target_player_id"`
+	TargetAssetID    *int64         `json:"target_asset_id"`
+	TargetPlanID     *int64         `json:"target_plan_id"`
+	PeerCount        int16          `json:"peer_count"`
+	EnemyPlayerIDs   []int64        `json:"enemy_player_ids"`
+	DuelType         string         `json:"duel_type"`
+	PreparationNotes *string        `json:"preparation_notes"`
+}
+
 // PreparePlan handles POST /api/tables/:id/prepare-plan.
 //
 // Request body:
@@ -581,8 +593,6 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 //	  "peer_count":         2,     // Make Introductions: number of peers (1–4)
 //	  "preparation_notes":  "..."  // optional flavor text
 //	}
-//
-//nolint:funlen,gocognit // plan preparation orchestration with handler-driven validation
 func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, player, ok := requireFocusPlayer(w, r, s.Q)
@@ -594,16 +604,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		var body struct {
-			PlanType         model.PlanType `json:"plan_type"`
-			TargetPlayerID   *int64         `json:"target_player_id"`
-			TargetAssetID    *int64         `json:"target_asset_id"`
-			TargetPlanID     *int64         `json:"target_plan_id"`
-			PeerCount        int16          `json:"peer_count"`
-			EnemyPlayerIDs   []int64        `json:"enemy_player_ids"`
-			DuelType         string         `json:"duel_type"`
-			PreparationNotes *string        `json:"preparation_notes"`
-		}
+		var body PreparePlanRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
@@ -649,90 +650,30 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		meta := validation.Meta
 		targetRow := validation.TargetRow
 
-		count, err := s.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
-			GameID:    game.ID,
-			RowNumber: targetRow,
-		})
-		if err != nil {
-			count = 0
+		// Variable-delay plans whose row is decided by a simultaneous reveal
+		// at prep time have no row yet — row_number stays NULL until the
+		// reveal closes (see applyMakeWarDelayResult / reveals.go). For
+		// these plans the row-count query is meaningless; row_order will be
+		// fixed up when the real row is assigned.
+		rowDeferred := body.PlanType == model.PlanMakeWar ||
+			body.PlanType == model.PlanClandestinelyLiaise
+
+		var count int64
+		if !rowDeferred {
+			c, err := s.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
+				GameID:    game.ID,
+				RowNumber: new(targetRow),
+			})
+			if err == nil {
+				count = c
+			}
 		}
 
 		var plan dbgen.Plan
-		err = s.InTx(ctx, func(q *dbgen.Queries) error {
-			p, cErr := q.CreatePlan(ctx, dbgen.CreatePlanParams{
-				GameID:           game.ID,
-				PlanType:         body.PlanType,
-				Category:         meta.Category,
-				PreparerID:       player.ID,
-				TargetPlayerID:   body.TargetPlayerID,
-				TargetAssetID:    body.TargetAssetID,
-				RowNumber:        targetRow,
-				RowOrder:         int16(count),
-				PreparedAtRow:    game.CurrentRow,
-				PreparationNotes: body.PreparationNotes,
-			})
-			if cErr != nil {
-				return httpErr(http.StatusInternalServerError, "could not create plan")
-			}
-			plan = p
-
-			if body.PlanType == model.PlanMakeIntroductions {
-				if mErr := miStoreResData(ctx, q, plan.ID, body.PeerCount); mErr != nil {
-					return httpErr(http.StatusInternalServerError, "could not save plan data")
-				}
-			}
-
-			if body.PlanType == model.PlanMakeWar {
-				resData := loadResolutionData(plan.ResolutionData)
-				resData.WarEnemyPlayerIDs = body.EnemyPlayerIDs
-				if sErr := saveResolutionData(ctx, q, plan.ID, resData); sErr != nil {
-					return httpErr(http.StatusInternalServerError, "could not save war enemies")
-				}
-				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
-					plan = refreshed
-				}
-			}
-
-			if body.PlanType == model.PlanProposeDuel {
-				resData := loadResolutionData(plan.ResolutionData)
-				resData.DuelType = body.DuelType
-				if sErr := saveResolutionData(ctx, q, plan.ID, resData); sErr != nil {
-					return httpErr(http.StatusInternalServerError, "could not save duel type")
-				}
-				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
-					plan = refreshed
-				}
-			}
-
-			if body.PlanType == model.PlanMakeDemands && body.TargetPlanID != nil {
-				if sErr := q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
-					ID:             plan.ID,
-					TargetedPlanID: body.TargetPlanID,
-				}); sErr != nil {
-					return httpErr(http.StatusInternalServerError, "could not persist demand target")
-				}
-				if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
-					plan = refreshed
-				}
-			}
-
-			h, _ := GetHandler(body.PlanType)
-			if preparer, ok := h.(OnPreparer); ok {
-				deps := &PlanDeps{Store: s.WithQ(q), Manager: manager}
-				if pErr := preparer.OnPrepare(ctx, deps, &plan); pErr != nil {
-					return httpErr(http.StatusInternalServerError, "could not initialise plan: "+pErr.Error())
-				}
-			}
-
-			if _, ptErr := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
-				GameID:   game.ID,
-				PlanType: body.PlanType,
-				PlayerID: player.ID,
-				PlanID:   plan.ID,
-			}); ptErr != nil {
-				return httpErr(http.StatusInternalServerError, "could not place plan token")
-			}
-			return nil
+		err := s.InTx(ctx, func(q *dbgen.Queries) error {
+			var txErr error
+			plan, txErr = createPlanInTx(ctx, q, s, game, player, &body, meta, targetRow, count, rowDeferred, manager)
+			return txErr
 		})
 		if err != nil {
 			respondHTTPErr(w, err)
@@ -753,6 +694,100 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		respond(w, http.StatusCreated, resp)
 	}
+}
+
+// createPlanInTx handles the database transaction for plan creation, including
+// plan-specific initialization (resolution data, tokens, handler hooks).
+func createPlanInTx(
+	ctx context.Context,
+	q *dbgen.Queries,
+	s *db.Store,
+	game *dbgen.Game,
+	player *dbgen.Player,
+	body *PreparePlanRequest,
+	meta PlanMetadata,
+	targetRow int16,
+	count int64,
+	rowDeferred bool,
+	manager *hub.Manager,
+) (dbgen.Plan, error) {
+	var rowForCreate *int16
+	if !rowDeferred {
+		rowForCreate = new(targetRow)
+	}
+	plan, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID:           game.ID,
+		PlanType:         body.PlanType,
+		Category:         meta.Category,
+		PreparerID:       player.ID,
+		TargetPlayerID:   body.TargetPlayerID,
+		TargetAssetID:    body.TargetAssetID,
+		RowNumber:        rowForCreate,
+		RowOrder:         int16(count),
+		PreparedAtRow:    game.CurrentRow,
+		PreparationNotes: body.PreparationNotes,
+	})
+	if err != nil {
+		return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not create plan: "+err.Error())
+	}
+
+	if body.PlanType == model.PlanMakeIntroductions {
+		if err = miStoreResData(ctx, q, plan.ID, body.PeerCount); err != nil {
+			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save plan data")
+		}
+	}
+
+	if body.PlanType == model.PlanMakeWar {
+		resData := loadResolutionData(plan.ResolutionData)
+		resData.WarEnemyPlayerIDs = body.EnemyPlayerIDs
+		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
+			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save war enemies")
+		}
+		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
+			plan = refreshed
+		}
+	}
+
+	if body.PlanType == model.PlanProposeDuel {
+		resData := loadResolutionData(plan.ResolutionData)
+		resData.DuelType = body.DuelType
+		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
+			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save duel type")
+		}
+		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
+			plan = refreshed
+		}
+	}
+
+	if body.PlanType == model.PlanMakeDemands && body.TargetPlanID != nil {
+		if err = q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+			ID:             plan.ID,
+			TargetedPlanID: body.TargetPlanID,
+		}); err != nil {
+			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not persist demand target")
+		}
+		if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
+			plan = refreshed
+		}
+	}
+
+	h, _ := GetHandler(body.PlanType)
+	if preparer, ok := h.(OnPreparer); ok {
+		deps := &PlanDeps{Store: s.WithQ(q), Manager: manager}
+		if err := preparer.OnPrepare(ctx, deps, &plan); err != nil {
+			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not initialise plan: "+err.Error())
+		}
+	}
+
+	if _, err = q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
+		GameID:   game.ID,
+		PlanType: body.PlanType,
+		PlayerID: player.ID,
+		PlanID:   plan.ID,
+	}); err != nil {
+		return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not place plan token")
+	}
+	return plan, nil
 }
 
 // ── GetPlan ───────────────────────────────────────────────────────────────────
@@ -797,7 +832,7 @@ func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in pending status")
 			return
 		}
-		if plan.RowNumber != game.CurrentRow {
+		if plan.RowNumber == nil || *plan.RowNumber != game.CurrentRow {
 			respondErr(w, http.StatusConflict, "plan is not scheduled for the current row")
 			return
 		}

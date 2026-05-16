@@ -267,7 +267,7 @@ func applyLiaiseDelayResult(
 	// Update the plan's row_number to the computed target.
 	_ = q.SetPlanRowNumber(ctx, dbgen.SetPlanRowNumberParams{
 		ID:        planID,
-		RowNumber: targetRow,
+		RowNumber: new(targetRow),
 	})
 
 	// Refresh plan to get the updated row_number for the boundary anchor.

@@ -381,7 +381,7 @@
 		{#if actionError}<p class="res-error">{actionError}</p>{/if}
 
 		<!-- ── Delay reveal ────────────────────────────────────────────── -->
-		{#if war && delayRevealID != null && plan.row_number === 0 && war.status === 'active'}
+		{#if war && delayRevealID != null && plan.row_number == null && war.status === 'active'}
 			<div class="choices-section">
 				<p class="choices-header">Delay reveal</p>
 				<p class="choices-note">

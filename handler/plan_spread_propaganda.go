@@ -146,7 +146,7 @@ func applyCoOpt(
 
 	count, err := deps.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
 		GameID:    game.ID,
-		RowNumber: game.CurrentRow,
+		RowNumber: new(game.CurrentRow),
 	})
 	if err != nil {
 		count = 0
@@ -160,7 +160,7 @@ func applyCoOpt(
 		PreparerID:       topPlayerID,
 		TargetPlayerID:   nil,
 		TargetAssetID:    nil,
-		RowNumber:        game.CurrentRow,
+		RowNumber:        new(game.CurrentRow),
 		RowOrder:         int16(count),
 		PreparedAtRow:    game.CurrentRow,
 		PreparationNotes: nil,

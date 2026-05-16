@@ -81,7 +81,10 @@ func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 			return 0, "another demand already targets that plan"
 		}
 	}
-	return gamepkg.DemandRowPlacement(target.RowNumber, v.Game.CurrentRow), ""
+	if target.RowNumber == nil {
+		return 0, "target plan has not been assigned a row yet (its delay reveal is still open)"
+	}
+	return gamepkg.DemandRowPlacement(*target.RowNumber, v.Game.CurrentRow), ""
 }
 
 func (mdHandler) ComputeDifficulty(
@@ -543,14 +546,17 @@ func synthesizeCounterDemand(
 		}
 	}
 
-	row := gamepkg.DemandRowPlacement(target.RowNumber, game.CurrentRow)
+	if target.RowNumber == nil {
+		return nil, "target plan has not been assigned a row yet (its delay reveal is still open)", http.StatusConflict
+	}
+	row := gamepkg.DemandRowPlacement(*target.RowNumber, game.CurrentRow)
 	if row > publicRecordRowCount {
 		return nil, "counter-demand would be placed past row 13", http.StatusConflict
 	}
 
 	count, err := deps.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
 		GameID:    game.ID,
-		RowNumber: row,
+		RowNumber: new(row),
 	})
 	if err != nil {
 		count = 0
@@ -561,7 +567,7 @@ func synthesizeCounterDemand(
 		PlanType:      model.PlanMakeDemands,
 		Category:      model.CategoryPower,
 		PreparerID:    preparerID,
-		RowNumber:     row,
+		RowNumber:     new(row),
 		RowOrder:      int16(count),
 		PreparedAtRow: game.CurrentRow,
 	})

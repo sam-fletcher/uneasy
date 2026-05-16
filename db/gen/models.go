@@ -171,7 +171,7 @@ type Plan struct {
 	PreparerID          int64                 `db:"preparer_id" json:"preparer_id"`
 	TargetPlayerID      *int64                `db:"target_player_id" json:"target_player_id"`
 	TargetAssetID       *int64                `db:"target_asset_id" json:"target_asset_id"`
-	RowNumber           int16                 `db:"row_number" json:"row_number"`
+	RowNumber           *int16                `db:"row_number" json:"row_number"`
 	RowOrder            int16                 `db:"row_order" json:"row_order"`
 	PreparedAtRow       int16                 `db:"prepared_at_row" json:"prepared_at_row"`
 	Status              model.PlanStatus      `db:"status" json:"status"`

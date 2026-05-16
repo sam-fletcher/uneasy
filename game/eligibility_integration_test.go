@@ -208,7 +208,7 @@ func makePlanWithToken(
 		PlanType:      planType,
 		Category:      category,
 		PreparerID:    preparer.ID,
-		RowNumber:     game.CurrentRow,
+		RowNumber:     &game.CurrentRow,
 		RowOrder:      0,
 		PreparedAtRow: game.CurrentRow,
 	})
@@ -395,7 +395,7 @@ func TestHasEsteemLockout_NonEsteemPlan(t *testing.T) {
 		PlanType:      model.PlanMakeDemands,
 		Category:      model.CategoryPower,
 		PreparerID:    tg.Players[0].ID,
-		RowNumber:     1,
+		RowNumber:     new(int16(1)),
 		RowOrder:      0,
 		PreparedAtRow: tg.Game.CurrentRow,
 	})
@@ -420,7 +420,7 @@ func TestHasEsteemLockout_EsteemPlanWithoutLockout(t *testing.T) {
 		PlanType:      model.PlanSpreadPropaganda,
 		Category:      model.CategoryEsteem,
 		PreparerID:    tg.Players[0].ID,
-		RowNumber:     1,
+		RowNumber:     new(int16(1)),
 		RowOrder:      0,
 		PreparedAtRow: tg.Game.CurrentRow,
 	})
@@ -444,7 +444,7 @@ func TestHasEsteemLockout_ActiveLockout(t *testing.T) {
 		PlanType:      model.PlanSpreadPropaganda,
 		Category:      model.CategoryEsteem,
 		PreparerID:    tg.Players[0].ID,
-		RowNumber:     1,
+		RowNumber:     new(int16(1)),
 		RowOrder:      0,
 		PreparedAtRow: tg.Game.CurrentRow,
 	})
@@ -478,7 +478,7 @@ func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
 		PlanType:      model.PlanSpreadPropaganda,
 		Category:      model.CategoryEsteem,
 		PreparerID:    tg.Players[0].ID,
-		RowNumber:     1,
+		RowNumber:     new(int16(1)),
 		RowOrder:      0,
 		PreparedAtRow: tg.Game.CurrentRow,
 	})
@@ -504,7 +504,7 @@ func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
 		PlanType:      model.PlanMakeDemands,
 		Category:      model.CategoryPower,
 		PreparerID:    tg.Players[0].ID,
-		RowNumber:     2,
+		RowNumber:     new(int16(2)),
 		RowOrder:      0,
 		PreparedAtRow: tg.Game.CurrentRow,
 	})
@@ -529,7 +529,7 @@ func TestHasEsteemLockout_MultipleEsteemPlans(t *testing.T) {
 			PlanType:      model.PlanSpreadPropaganda,
 			Category:      model.CategoryEsteem,
 			PreparerID:    tg.Players[0].ID,
-			RowNumber:     int16(i + 1),
+			RowNumber:     new(int16(i + 1)),
 			RowOrder:      0,
 			PreparedAtRow: tg.Game.CurrentRow,
 		})
