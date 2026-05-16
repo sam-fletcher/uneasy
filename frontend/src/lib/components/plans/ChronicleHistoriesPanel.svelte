@@ -30,7 +30,9 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import { parseResolutionData, playerName } from './shared';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import { playerColor } from '$lib/playerColor';
+	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 	import type { PlanPanelProps } from './types';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -194,10 +196,10 @@
 	let baAssetID = $state<number | null>(null);
 	let baMargID = $state<number | null>(null);
 	let baBusy = $state(false);
-	const baMarginalia = $derived(
-		baAssetID == null
-			? []
-			: (assets.find(a => a.id === baAssetID)?.marginalia ?? []).filter(m => !m.is_torn)
+	// Invoked artifacts that still have intact marginalia — candidates for
+	// the break_artifact sub-flow's marginalia-pick mode.
+	const baArtifactsWithMarginalia = $derived(
+		assetsWithIntactMarginalia(invokedArtifacts),
 	);
 	async function submitBreakArtifact(p: Plan) {
 		if (baBusy || baAssetID == null || baMargID == null) return;
@@ -276,15 +278,25 @@
 
 			{#if isFocusPlayer && !invokePhaseClosed}
 				<div class="plan-form" style="margin-top:0.5rem;">
-					<label class="form-label">
-						Invoke an artifact (pre-roll):
-						<select bind:value={invokeAssetID} class="form-select">
-							<option value={null}>Select an artifact…</option>
-							{#each uninvokedArtifacts as a}
-								<option value={a.id}>{a.name} ({playerName(players, a.owner_id)})</option>
-							{/each}
-						</select>
-					</label>
+					<div class="form-label">
+						<span class="form-label-text">Invoke an artifact (pre-roll):</span>
+						{#if uninvokedArtifacts.length === 0}
+							<p class="choices-note muted">No artifacts available to invoke.</p>
+						{:else}
+							<div class="peer-cards">
+								{#each uninvokedArtifacts as a (a.id)}
+									<AssetCardSelectable
+										asset={a}
+										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+										ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+										selectable
+										selected={invokeAssetID === a.id}
+										onToggle={() => (invokeAssetID = invokeAssetID === a.id ? null : a.id)}
+									/>
+								{/each}
+							</div>
+						{/if}
+					</div>
 					<button class="action-btn"
 						onclick={() => submitInvoke(plan)}
 						disabled={invokeBusy || invokeAssetID == null}>
@@ -343,25 +355,43 @@
 
 				{#if !myMarSubmitted && currentPlayerID != null}
 					<div class="plan-form">
-						<label class="form-label">
-							Your choice:
-							<select bind:value={marSelected} class="form-select">
-								<option value="">Select one…</option>
+						<div class="form-label">
+							<span class="form-label-text">Your choice:</span>
+							<div class="chip-row">
 								{#each OPTIONS as opt}
-									<option value={opt.key}>{opt.label}</option>
+									<button
+										type="button"
+										class="chip-btn"
+										class:active={marSelected === opt.key}
+										onclick={() => {
+											marSelected = marSelected === opt.key ? '' : opt.key;
+											marAssetID = null;
+										}}
+									>{opt.label}</button>
 								{/each}
-							</select>
-						</label>
+							</div>
+						</div>
 						{#if marSelected === 'break_artifact' || marSelected === 'invoke_another'}
-							<label class="form-label">
-								Artifact:
-								<select bind:value={marAssetID} class="form-select">
-									<option value={null}>Select an artifact…</option>
-									{#each (marSelected === 'break_artifact' ? invokedArtifacts : uninvokedArtifacts) as a}
-										<option value={a.id}>{a.name} ({playerName(players, a.owner_id)})</option>
-									{/each}
-								</select>
-							</label>
+							{@const marArtifacts = marSelected === 'break_artifact' ? invokedArtifacts : uninvokedArtifacts}
+							<div class="form-label">
+								<span class="form-label-text">Artifact:</span>
+								{#if marArtifacts.length === 0}
+									<p class="choices-note muted">No eligible artifacts.</p>
+								{:else}
+									<div class="peer-cards">
+										{#each marArtifacts as a (a.id)}
+											<AssetCardSelectable
+												asset={a}
+												ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+												ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+												selectable
+												selected={marAssetID === a.id}
+												onToggle={() => (marAssetID = marAssetID === a.id ? null : a.id)}
+											/>
+										{/each}
+									</div>
+								{/if}
+							</div>
 						{/if}
 						<button class="action-btn primary"
 							onclick={() => submitMarChoice(plan)}
@@ -413,26 +443,33 @@
 						<p class="choices-header">
 							Break an invoked artifact ({baRemaining} remaining)
 						</p>
-						<label class="form-label">
-							Artifact:
-							<select bind:value={baAssetID} class="form-select">
-								<option value={null}>Select an invoked artifact…</option>
-								{#each invokedArtifacts as a}
-									<option value={a.id}>{a.name} ({playerName(players, a.owner_id)})</option>
-								{/each}
-							</select>
-						</label>
-						{#if baAssetID != null}
-							<label class="form-label">
-								Marginalia to tear:
-								<select bind:value={baMargID} class="form-select">
-									<option value={null}>Select a marginalia…</option>
-									{#each baMarginalia as m}
-										<option value={m.id}>#{m.position}: {m.text}</option>
+						<div class="form-label">
+							<span class="form-label-text">Marginalium to tear:</span>
+							{#if baArtifactsWithMarginalia.length === 0}
+								<p class="choices-note muted">No intact marginalia on invoked artifacts.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each baArtifactsWithMarginalia as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+											marginaliaSelectable
+											selectedMarginaliaID={baMargID}
+											onMarginaliaToggle={(mID, parent) => {
+												if (baMargID === mID) {
+													baMargID = null;
+													baAssetID = null;
+												} else {
+													baMargID = mID;
+													baAssetID = parent.id;
+												}
+											}}
+										/>
 									{/each}
-								</select>
-							</label>
-						{/if}
+								</div>
+							{/if}
+						</div>
 						<button class="action-btn primary"
 							onclick={() => submitBreakArtifact(plan)}
 							disabled={baBusy || baAssetID == null || baMargID == null}>

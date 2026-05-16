@@ -23,6 +23,9 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
+	import PlayerChips from './PlayerChips.svelte';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import { playerColor } from '$lib/playerColor';
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -538,16 +541,22 @@
 						</strong>
 						— pick one option:
 					</p>
-					<div class="choice-list">
-						{#each opts as o}
-							<label class="choice-item" style="display:flex;gap:0.5rem;align-items:flex-start;">
-								<input type="radio" name="myc-{plan.id}"
-									value={o.key}
-									checked={pickedChoice === o.key}
-									onchange={() => (pickedChoice = o.key)} />
-								<span>{o.label}</span>
-							</label>
-						{/each}
+					<div class="form-label">
+						<span class="form-label-text">Pick one option:</span>
+						<div class="chip-row">
+							{#each opts as o}
+								<button
+									type="button"
+									class="chip-btn"
+									class:active={pickedChoice === o.key}
+									onclick={() => {
+										pickedChoice = pickedChoice === o.key ? null : o.key;
+										pickedAssetID = null;
+										pickedDuelTargetID = null;
+									}}
+								>{o.label}</button>
+							{/each}
+						</div>
 					</div>
 
 					<!-- Sub-forms by choice -->
@@ -564,50 +573,61 @@
 								placeholder="Name of the new peer" />
 						</label>
 					{:else if pickedChoice === 'take_center_peer'}
-						{#if myCenterPeerCandidates.length === 0}
-							<p class="choices-note muted">No peers in the center of the table.</p>
-						{:else}
-							<div class="choice-list">
-								{#each myCenterPeerCandidates as a}
-									<label class="choice-item" style="display:flex;gap:0.5rem;align-items:center;">
-										<input type="radio" name="myasset-{plan.id}"
-											value={a.id}
-											checked={pickedAssetID === a.id}
-											onchange={() => (pickedAssetID = a.id)} />
-										<span>{a.name}</span>
-									</label>
-								{/each}
-							</div>
-						{/if}
+						<div class="form-label">
+							<span class="form-label-text">Peer to take from the center:</span>
+							{#if myCenterPeerCandidates.length === 0}
+								<p class="choices-note muted">No peers in the center of the table.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each myCenterPeerCandidates as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+											selectable
+											selected={pickedAssetID === a.id}
+											onToggle={() => (pickedAssetID = pickedAssetID === a.id ? null : a.id)}
+										/>
+									{/each}
+								</div>
+							{/if}
+						</div>
 					{:else if pickedChoice === 'disagreement'}
-						{#if myOwnPeers.length === 0}
-							<p class="choices-note muted">You have no peers to set in the center.</p>
-						{:else}
-							<div class="choice-list">
-								{#each myOwnPeers as a}
-									<label class="choice-item" style="display:flex;gap:0.5rem;align-items:center;">
-										<input type="radio" name="myasset-{plan.id}"
-											value={a.id}
-											checked={pickedAssetID === a.id}
-											onchange={() => (pickedAssetID = a.id)} />
-										<span>{a.name}</span>
-									</label>
-								{/each}
-							</div>
-						{/if}
+						<div class="form-label">
+							<span class="form-label-text">Peer to set in the center:</span>
+							{#if myOwnPeers.length === 0}
+								<p class="choices-note muted">You have no peers to set in the center.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each myOwnPeers as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											selectable
+											selected={pickedAssetID === a.id}
+											onToggle={() => (pickedAssetID = pickedAssetID === a.id ? null : a.id)}
+										/>
+									{/each}
+								</div>
+							{/if}
+						</div>
 					{:else if pickedChoice === 'challenge_duel'}
-						<label class="form-label">
-							Challenge:
-							<select bind:value={pickedDuelTargetID} class="form-textarea" style="height:auto;">
-								<option value={null}>— pick a target —</option>
-								{#each otherGuests as gid}
-									<option value={gid}>
-										{playerName(players, gid)}
-										{fest.acceptDuels.includes(gid) ? ' (must accept)' : ''}
-									</option>
-								{/each}
-							</select>
-						</label>
+						{@const duelTargetPlayers = otherGuests
+							.map(gid => players.find(p => p.id === gid))
+							.filter((p): p is typeof players[number] => p != null)}
+						<div class="form-label">
+							<span class="form-label-text">Challenge:</span>
+							<PlayerChips
+								players={duelTargetPlayers}
+								isActive={(p) => pickedDuelTargetID === p.id}
+								onSelect={(p) => (pickedDuelTargetID = pickedDuelTargetID === p.id ? null : p.id)}
+							/>
+							{#if pickedDuelTargetID != null && fest.acceptDuels.includes(pickedDuelTargetID)}
+								<p class="choices-note muted" style="margin:0.25rem 0 0;">
+									This challenge must be accepted.
+								</p>
+							{/if}
+						</div>
 					{/if}
 
 					{#if pickerError}<p class="res-error">{pickerError}</p>{/if}
@@ -632,16 +652,21 @@
 						Insist on a mar
 					</button>
 				{:else}
-					<div class="choice-list">
-						{#each MAR_OPTS as o}
-							<label class="choice-item" style="display:flex;gap:0.5rem;align-items:flex-start;">
-								<input type="radio" name="insist-{plan.id}"
-									value={o.key}
-									checked={insistChoice === o.key}
-									onchange={() => (insistChoice = o.key)} />
-								<span>{o.label}</span>
-							</label>
-						{/each}
+					<div class="form-label">
+						<span class="form-label-text">Force a mar option on the host:</span>
+						<div class="chip-row">
+							{#each MAR_OPTS as o}
+								<button
+									type="button"
+									class="chip-btn"
+									class:active={insistChoice === o.key}
+									onclick={() => {
+										insistChoice = insistChoice === o.key ? null : o.key;
+										insistAssetID = null;
+									}}
+								>{o.label}</button>
+							{/each}
+						</div>
 					</div>
 					{#if insistChoice === 'rumor_about_you'}
 						<label class="form-label">
@@ -651,21 +676,24 @@
 					{:else if insistChoice === 'disagreement'}
 						{@const hostPeers = assets.filter(a =>
 							a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed)}
-						{#if hostPeers.length === 0}
-							<p class="choices-note muted">The host has no peers to set in the center.</p>
-						{:else}
-							<div class="choice-list">
-								{#each hostPeers as a}
-									<label class="choice-item" style="display:flex;gap:0.5rem;align-items:center;">
-										<input type="radio" name="insist-asset-{plan.id}"
-											value={a.id}
-											checked={insistAssetID === a.id}
-											onchange={() => (insistAssetID = a.id)} />
-										<span>{a.name}</span>
-									</label>
-								{/each}
-							</div>
-						{/if}
+						<div class="form-label">
+							<span class="form-label-text">Host peer to set in the center:</span>
+							{#if hostPeers.length === 0}
+								<p class="choices-note muted">The host has no peers to set in the center.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each hostPeers as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											selectable
+											selected={insistAssetID === a.id}
+											onToggle={() => (insistAssetID = insistAssetID === a.id ? null : a.id)}
+										/>
+									{/each}
+								</div>
+							{/if}
+						</div>
 					{/if}
 					{#if insistError}<p class="res-error">{insistError}</p>{/if}
 					<div style="display:flex;gap:0.5rem;">
@@ -702,29 +730,42 @@
 					<p class="choices-note">
 						Pick a make option for each guest who rolled mar or opted out.
 					</p>
-					<label class="form-label">
-						Guest:
-						<select bind:value={hostPickerGuestID} class="form-textarea" style="height:auto;">
-							<option value={null}>— pick a guest —</option>
-							{#each pendingHostGuests as gid}
-								<option value={gid}>
-									{playerName(players, gid)}
-									({fest.outcomes[String(gid)]})
-								</option>
-							{/each}
-						</select>
-					</label>
+					{@const pendingGuestPlayers = pendingHostGuests
+						.map(gid => players.find(p => p.id === gid))
+						.filter((p): p is typeof players[number] => p != null)}
+					<div class="form-label">
+						<span class="form-label-text">Guest:</span>
+						<PlayerChips
+							players={pendingGuestPlayers}
+							isActive={(p) => hostPickerGuestID === p.id}
+							onSelect={(p) => {
+								hostPickerGuestID = hostPickerGuestID === p.id ? null : p.id;
+								hostPickedChoice = null;
+								hostAssetID = null;
+							}}
+						/>
+						{#if hostPickerGuestID != null}
+							<p class="choices-note muted" style="margin:0.25rem 0 0;">
+								Outcome: {fest.outcomes[String(hostPickerGuestID)]}
+							</p>
+						{/if}
+					</div>
 					{#if hostPickerGuestID != null}
-						<div class="choice-list">
-							{#each HOST_MAKE_OPTS as o}
-								<label class="choice-item" style="display:flex;gap:0.5rem;align-items:flex-start;">
-									<input type="radio" name="hostc-{plan.id}"
-										value={o.key}
-										checked={hostPickedChoice === o.key}
-										onchange={() => (hostPickedChoice = o.key)} />
-									<span>{o.label}</span>
-								</label>
-							{/each}
+						<div class="form-label">
+							<span class="form-label-text">Pick a make option:</span>
+							<div class="chip-row">
+								{#each HOST_MAKE_OPTS as o}
+									<button
+										type="button"
+										class="chip-btn"
+										class:active={hostPickedChoice === o.key}
+										onclick={() => {
+											hostPickedChoice = hostPickedChoice === o.key ? null : o.key;
+											hostAssetID = null;
+										}}
+									>{o.label}</button>
+								{/each}
+							</div>
 						</div>
 						{#if hostPickedChoice === 'spread_rumor'}
 							<label class="form-label">
@@ -739,21 +780,25 @@
 									placeholder="Name of the new peer" />
 							</label>
 						{:else if hostPickedChoice === 'take_center_peer'}
-							{#if myCenterPeerCandidates.length === 0}
-								<p class="choices-note muted">No peers in the center.</p>
-							{:else}
-								<div class="choice-list">
-									{#each myCenterPeerCandidates as a}
-										<label class="choice-item" style="display:flex;gap:0.5rem;align-items:center;">
-											<input type="radio" name="host-asset-{plan.id}"
-												value={a.id}
-												checked={hostAssetID === a.id}
-												onchange={() => (hostAssetID = a.id)} />
-											<span>{a.name}</span>
-										</label>
-									{/each}
-								</div>
-							{/if}
+							<div class="form-label">
+								<span class="form-label-text">Peer to take from the center:</span>
+								{#if myCenterPeerCandidates.length === 0}
+									<p class="choices-note muted">No peers in the center.</p>
+								{:else}
+									<div class="peer-cards">
+										{#each myCenterPeerCandidates as a (a.id)}
+											<AssetCardSelectable
+												asset={a}
+												ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+												ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+												selectable
+												selected={hostAssetID === a.id}
+												onToggle={() => (hostAssetID = hostAssetID === a.id ? null : a.id)}
+											/>
+										{/each}
+									</div>
+								{/if}
+							</div>
 						{/if}
 					{/if}
 					{#if hostPickerError}<p class="res-error">{hostPickerError}</p>{/if}

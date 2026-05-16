@@ -10,6 +10,7 @@
 	import { getReveal, submitReveal, type SimultaneousReveal } from '$lib/api';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { REVEAL_EVENTS } from '$lib/ws';
+	import D6Face from './D6Face.svelte';
 
 	interface Participant {
 		player_id: number;
@@ -111,16 +112,17 @@
 		</p>
 	{:else}
 		<p class="choices-header">{prompt}</p>
-		<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0;">
+		<div class="chip-row" style="margin:0.5rem 0;">
 			{#each faces as face}
-				<label class="choice-item" style="margin:0;">
-					<input type="radio" name="reveal-{revealID}"
-						value={face}
-						checked={picked === face}
-						onchange={() => (picked = face)}
-					/>
-					{face}
-				</label>
+				<button
+					type="button"
+					class="chip-btn face-chip"
+					class:active={picked === face}
+					aria-label="Pick {face}"
+					onclick={() => (picked = face)}
+				>
+					<D6Face value={face} size={28} />
+				</button>
 			{/each}
 		</div>
 		<button class="action-btn primary" onclick={submit} disabled={busy || picked == null}>

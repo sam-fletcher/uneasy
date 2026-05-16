@@ -6,21 +6,25 @@
 -->
 <script lang="ts">
 	import type { Player, Asset } from '$lib/api';
-	import { playerName } from '../shared';
+	import { playerColor } from '$lib/playerColor';
+	import AssetCardSelectable from '../../AssetCardSelectable.svelte';
+	import PlayerChips from '../PlayerChips.svelte';
 
 	export type BattleSubmission =
 		| { kind: 'peace'; terms: string }
 		| { kind: 'battle'; opponent_id: number; choice: 'break_asset'; marginalia_id: number; surrender: boolean }
 		| { kind: 'battle'; opponent_id: number; choice: 'leverage_two'; asset_id_1: number; asset_id_2: number; surrender: boolean };
 
-	interface MarginaliumOption { id: number; label: string; }
-
 	interface Props {
 		mode: 'cost' | 'entry';
 		formKey: string | number;        // disambiguates radio names when multiple forms coexist
 		opponents: number[];
 		players: Player[];
-		marginalia: MarginaliumOption[];
+		/** Assets owned by the current player with at least one intact
+		 *  marginalium. Each intact marginalium becomes a tap target via
+		 *  AssetCardSelectable's marginalia-pick mode. */
+		marginaliaAssets: Asset[];
+		/** Current player's unleveraged assets — candidates for leverage_two. */
 		unleveraged: Asset[];
 		allowPeace: boolean;
 		allowSurrender: boolean;
@@ -29,7 +33,7 @@
 	}
 
 	let {
-		mode, formKey, opponents, players, marginalia, unleveraged,
+		mode, formKey, opponents, players, marginaliaAssets, unleveraged,
 		allowPeace, allowSurrender, submitLabel, onSubmit,
 	}: Props = $props();
 
@@ -37,8 +41,7 @@
 	let opponentID = $state<number | null>(null);
 	let kind = $state<Kind>('break_asset');
 	let marginaliaID = $state<number | null>(null);
-	let asset1 = $state<number | null>(null);
-	let asset2 = $state<number | null>(null);
+	let leverageIDs = $state<number[]>([]);
 	let surrender = $state(false);
 	let peaceTerms = $state('');
 	let busy = $state(false);
@@ -47,13 +50,12 @@
 		if (kind === 'propose_peace') return peaceTerms.trim().length > 0;
 		if (opponentID == null) return false;
 		if (kind === 'break_asset') return marginaliaID != null;
-		return asset1 != null && asset2 != null && asset1 !== asset2;
+		return leverageIDs.length === 2;
 	});
 
 	function reset() {
 		marginaliaID = null;
-		asset1 = null;
-		asset2 = null;
+		leverageIDs = [];
 		surrender = false;
 		peaceTerms = '';
 	}
@@ -61,6 +63,16 @@
 	function setKind(k: Kind) {
 		kind = k;
 		reset();
+	}
+
+	function toggleLeverage(assetID: number) {
+		if (leverageIDs.includes(assetID)) {
+			leverageIDs = leverageIDs.filter(id => id !== assetID);
+		} else if (leverageIDs.length < 2) {
+			leverageIDs = [...leverageIDs, assetID];
+		}
+		// At the cap, taps on un-selected cards are no-ops — the user
+		// must un-select one to pick another. Avoids silent rotation.
 	}
 
 	async function submit() {
@@ -78,7 +90,7 @@
 			} else {
 				s = {
 					kind: 'battle', opponent_id: opponentID!, choice: 'leverage_two',
-					asset_id_1: asset1!, asset_id_2: asset2!,
+					asset_id_1: leverageIDs[0], asset_id_2: leverageIDs[1],
 					surrender: allowSurrender && surrender,
 				};
 			}
@@ -94,71 +106,89 @@
 			: mode === 'entry' ? 'Pay entry against this opponent'
 			: 'Pay cost',
 	);
+
+	const opponentPlayers = $derived(
+		opponents.map(id => players.find(p => p.id === id)).filter((p): p is Player => p != null),
+	);
 </script>
 
-<label class="form-label">
-	Opponent:
-	<select bind:value={opponentID} class="form-textarea" style="height:auto;">
-		<option value={null}>— pick {mode === 'entry' ? 'an' : 'the'} opponent —</option>
-		{#each opponents as id}
-			<option value={id}>{playerName(players, id)}</option>
-		{/each}
-	</select>
-</label>
+{#if opponents.length > 0}
+	<div class="form-label">
+		<span class="form-label-text">Opponent:</span>
+		<PlayerChips
+			players={opponentPlayers}
+			isActive={(p) => opponentID === p.id}
+			onSelect={(p) => (opponentID = opponentID === p.id ? null : p.id)}
+		/>
+	</div>
+{/if}
 
-<div class="choice-list">
-	<label class="choice-item">
-		<input type="radio" name="bcf-{mode}-{formKey}" value="break_asset"
-			checked={kind === 'break_asset'}
-			onchange={() => setKind('break_asset')} />
-		<strong>Break an asset</strong> — tear one of your marginalia
-	</label>
-	<label class="choice-item">
-		<input type="radio" name="bcf-{mode}-{formKey}" value="leverage_two"
-			checked={kind === 'leverage_two'}
-			onchange={() => setKind('leverage_two')} />
-		<strong>Leverage two</strong> — leverage two of your un-leveraged assets
-	</label>
-	{#if allowPeace}
-		<label class="choice-item">
-			<input type="radio" name="bcf-{mode}-{formKey}" value="propose_peace"
-				checked={kind === 'propose_peace'}
-				onchange={() => setKind('propose_peace')} />
-			<strong>Propose peace</strong> — open a vote on terms; if it doesn't
-			pass unanimously you'll still need to pay using one of the options above
-		</label>
-	{/if}
+<div class="form-label">
+	<span class="form-label-text">How will you pay?</span>
+	<div class="chip-row">
+		<button type="button" class="chip-btn"
+			class:active={kind === 'break_asset'}
+			onclick={() => setKind('break_asset')}>Break an asset</button>
+		<button type="button" class="chip-btn"
+			class:active={kind === 'leverage_two'}
+			onclick={() => setKind('leverage_two')}>Leverage two</button>
+		{#if allowPeace}
+			<button type="button" class="chip-btn"
+				class:active={kind === 'propose_peace'}
+				onclick={() => setKind('propose_peace')}>Propose peace</button>
+		{/if}
+	</div>
+	<p class="choices-note muted" style="margin:0.25rem 0 0;">
+		{#if kind === 'break_asset'}
+			Tear one of your marginalia.
+		{:else if kind === 'leverage_two'}
+			Leverage two of your un-leveraged assets.
+		{:else}
+			Open a vote on terms. If it doesn't pass unanimously you'll still
+			need to pay using one of the options above.
+		{/if}
+	</p>
 </div>
 
 {#if kind === 'break_asset'}
-	<label class="form-label">
-		Marginalia to tear:
-		<select bind:value={marginaliaID} class="form-textarea" style="height:auto;">
-			<option value={null}>— pick a marginalium —</option>
-			{#each marginalia as m}
-				<option value={m.id}>{m.label}</option>
-			{/each}
-		</select>
-	</label>
+	<div class="form-label">
+		<span class="form-label-text">Marginalium to tear:</span>
+		{#if marginaliaAssets.length === 0}
+			<p class="choices-note muted">You have no intact marginalia.</p>
+		{:else}
+			<div class="peer-cards">
+				{#each marginaliaAssets as a (a.id)}
+					<AssetCardSelectable
+						asset={a}
+						ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+						marginaliaSelectable
+						selectedMarginaliaID={marginaliaID}
+						onMarginaliaToggle={(mID) => (marginaliaID = marginaliaID === mID ? null : mID)}
+					/>
+				{/each}
+			</div>
+		{/if}
+	</div>
 {:else if kind === 'leverage_two'}
-	<label class="form-label">
-		First asset to leverage:
-		<select bind:value={asset1} class="form-textarea" style="height:auto;">
-			<option value={null}>— pick an asset —</option>
-			{#each unleveraged as a}
-				<option value={a.id} disabled={a.id === asset2}>{a.name}</option>
-			{/each}
-		</select>
-	</label>
-	<label class="form-label">
-		Second asset to leverage:
-		<select bind:value={asset2} class="form-textarea" style="height:auto;">
-			<option value={null}>— pick an asset —</option>
-			{#each unleveraged as a}
-				<option value={a.id} disabled={a.id === asset1}>{a.name}</option>
-			{/each}
-		</select>
-	</label>
+	<div class="form-label">
+		<span class="form-label-text">Pick two assets to leverage:</span>
+		{#if unleveraged.length < 2}
+			<p class="choices-note muted">You don't have two un-leveraged assets available.</p>
+		{:else}
+			<div class="peer-cards">
+				{#each unleveraged as a (a.id)}
+					<AssetCardSelectable
+						asset={a}
+						ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+						selectable
+						selected={leverageIDs.includes(a.id)}
+						disabled={!leverageIDs.includes(a.id) && leverageIDs.length >= 2}
+						onToggle={() => toggleLeverage(a.id)}
+					/>
+				{/each}
+			</div>
+		{/if}
+	</div>
 {:else}
 	<label class="form-label">
 		Peace terms:

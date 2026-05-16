@@ -626,15 +626,23 @@
 			<p class="muted small">You created your extra peer: <strong>{myExtraPeer.title_name}</strong>.</p>
 		{:else}
 			<div class="extra-form">
-				<label>
-					Title:
-					<select bind:value={extraPeerName}>
-						<option value="">— pick —</option>
-						{#each unclaimedTitles as t}
-							<option value={t.name}>{t.name}</option>
-						{/each}
-					</select>
-				</label>
+				<div class="extra-title">
+					<span class="extra-title-label">Title:</span>
+					{#if unclaimedTitles.length === 0}
+						<p class="muted small" style="margin:0;">No titles remain.</p>
+					{:else}
+						<div class="title-chip-row">
+							{#each unclaimedTitles as t}
+								<button
+									type="button"
+									class="title-chip"
+									class:active={extraPeerName === t.name}
+									onclick={() => (extraPeerName = extraPeerName === t.name ? '' : t.name)}
+								>{t.name}</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 				{#if extraPeerName}
 					<label>
 						Peer name:
@@ -835,13 +843,41 @@
 		font-size: 0.85rem;
 		color: #aaa;
 	}
-	.extra-form select {
-		background: #333;
-		color: #e8e4d9;
+	.extra-title {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		font-size: 0.85rem;
+		color: #aaa;
+	}
+	.extra-title-label {
+		font-size: 0.85rem;
+		color: #aaa;
+	}
+	.title-chip-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+	.title-chip {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0.35rem 0.85rem;
+		border-radius: 999px;
 		border: 1px solid #555;
-		border-radius: 4px;
-		padding: 0.3rem 0.5rem;
+		background: #2a2a2a;
+		color: #e8e4d9;
 		font-size: 0.9rem;
+		cursor: pointer;
+	}
+	.title-chip.active {
+		border-color: #c8a96e;
+		background: #3a2f18;
+	}
+	.title-chip:focus-visible {
+		outline: 2px solid #c8a96e;
+		outline-offset: 1px;
 	}
 
 	.primary {

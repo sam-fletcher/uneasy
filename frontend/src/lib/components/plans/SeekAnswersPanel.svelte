@@ -20,7 +20,9 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import { parseResolutionData, playerName, intactMarginalia } from './shared';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import { playerColor } from '$lib/playerColor';
+	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
 
@@ -125,17 +127,17 @@
 	let rsAssetID = $state<number | null>(null);
 	let rsBusy = $state(false);
 
-	// All non-destroyed resource assets across all players.
+	// All non-destroyed resource assets across all players. Filtered further
+	// to those that still have intact marginalia for the break_resource
+	// sub-flow's marginalia-pick mode.
 	const allResources = $derived(
 		assets.filter(a => a.asset_type === 'resource' && !a.is_destroyed)
 	);
+	const brResourcesWithMarginalia = $derived(
+		assetsWithIntactMarginalia(allResources),
+	);
 	// All non-destroyed assets (reveal-secret can target any asset).
 	const allAssets = $derived(assets.filter(a => !a.is_destroyed));
-
-	const brAssetMarginalia = $derived(
-		brAssetID == null ? [] : intactMarginalia(assets, assets.find(a => a.id === brAssetID)?.owner_id ?? null)
-			.filter(m => m.assetID === brAssetID)
-	);
 
 	async function submitBreakResource(p: Plan) {
 		if (brBusy || brAssetID == null || brMargID == null) return;
@@ -255,26 +257,33 @@
 						<p class="choices-header">
 							Break a resource ({brRemaining} remaining)
 						</p>
-						<label class="form-label">
-							Resource:
-							<select bind:value={brAssetID} class="form-select">
-								<option value={null}>Select a resource…</option>
-								{#each allResources as a}
-									<option value={a.id}>{a.name} (owner: {playerName(players, a.owner_id)})</option>
-								{/each}
-							</select>
-						</label>
-						{#if brAssetID != null}
-							<label class="form-label">
-								Marginalia to tear:
-								<select bind:value={brMargID} class="form-select">
-									<option value={null}>Select a marginalia…</option>
-									{#each brAssetMarginalia as m}
-										<option value={m.id}>#{m.position}: {m.text}</option>
+						<div class="form-label">
+							<span class="form-label-text">Marginalium to tear:</span>
+							{#if brResourcesWithMarginalia.length === 0}
+								<p class="choices-note muted">No intact marginalia on any resource.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each brResourcesWithMarginalia as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+											marginaliaSelectable
+											selectedMarginaliaID={brMargID}
+											onMarginaliaToggle={(mID, parent) => {
+												if (brMargID === mID) {
+													brMargID = null;
+													brAssetID = null;
+												} else {
+													brMargID = mID;
+													brAssetID = parent.id;
+												}
+											}}
+										/>
 									{/each}
-								</select>
-							</label>
-						{/if}
+								</div>
+							{/if}
+						</div>
 						<button class="action-btn primary"
 							onclick={() => submitBreakResource(plan)}
 							disabled={brBusy || brAssetID == null || brMargID == null}>
@@ -288,15 +297,25 @@
 						<p class="choices-header">
 							Reveal an asset's secrets ({rsRemaining} remaining)
 						</p>
-						<label class="form-label">
-							Asset:
-							<select bind:value={rsAssetID} class="form-select">
-								<option value={null}>Select an asset…</option>
-								{#each allAssets as a}
-									<option value={a.id}>{a.name} (owner: {playerName(players, a.owner_id)})</option>
-								{/each}
-							</select>
-						</label>
+						<div class="form-label">
+							<span class="form-label-text">Asset:</span>
+							{#if allAssets.length === 0}
+								<p class="choices-note muted">No assets available.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each allAssets as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
+											selectable
+											selected={rsAssetID === a.id}
+											onToggle={() => (rsAssetID = rsAssetID === a.id ? null : a.id)}
+										/>
+									{/each}
+								</div>
+							{/if}
+						</div>
 						<button class="action-btn primary"
 							onclick={() => submitRevealSecret(plan)}
 							disabled={rsBusy || rsAssetID == null}>

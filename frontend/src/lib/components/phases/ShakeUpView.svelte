@@ -18,6 +18,8 @@
 		Game, Player, Asset, ShakeUpOptionInfo, ShakeUpSpend,
 		ShakeUpAdjustmentRow, ShakeUpTokensRow,
 	} from '$lib/api';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import { playerColor } from '$lib/playerColor';
 
 	interface Props {
 		gameID: string;
@@ -204,25 +206,42 @@
 			<section>
 				<h3>Announce a spend</h3>
 				<div class="announce-form">
-					<label>
-						Option:
-						<select bind:value={pickedOption}>
-							<option value="">— pick —</option>
+					<div class="su-form-row">
+						<span class="su-form-label">Option:</span>
+						<div class="su-chip-row">
 							{#each options as opt}
-								<option value={opt.Key} title={opt.Description}>{opt.Description}</option>
+								<button
+									type="button"
+									class="su-chip"
+									class:active={pickedOption === opt.Key}
+									title={opt.Description}
+									onclick={() => {
+										pickedOption = pickedOption === opt.Key ? '' : opt.Key;
+										pickedAssetID = '';
+									}}
+								>{opt.Description}</button>
 							{/each}
-						</select>
-					</label>
+						</div>
+					</div>
 					{#if pickedOptionInfo?.NeedsAsset}
-						<label>
-							Target asset:
-							<select bind:value={pickedAssetID}>
-								<option value="">— pick —</option>
-								{#each myAssets as a}
-									<option value={a.id}>{a.name} ({a.asset_type})</option>
-								{/each}
-							</select>
-						</label>
+						<div class="su-form-row">
+							<span class="su-form-label">Target asset:</span>
+							{#if myAssets.length === 0}
+								<p class="muted" style="margin:0;">No eligible assets.</p>
+							{:else}
+								<div class="su-peer-cards">
+									{#each myAssets as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											selectable
+											selected={pickedAssetID === a.id}
+											onToggle={() => (pickedAssetID = pickedAssetID === a.id ? '' : a.id)}
+										/>
+									{/each}
+								</div>
+							{/if}
+						</div>
 					{/if}
 					<button class="primary" disabled={!pickedOption || busy} onclick={announce}>
 						{busy ? '…' : 'Announce (cost 1 token)'}
@@ -259,8 +278,26 @@
 		padding: 0.75rem;
 	}
 	.roll-form { flex-direction: row; align-items: end; }
-	.announce-form label { display: flex; flex-direction: column; font-size: 0.85rem; color: #aaa; gap: 0.2rem; }
-	input, select {
+
+	.su-form-row { display: flex; flex-direction: column; gap: 0.3rem; }
+	.su-form-label { font-size: 0.85rem; color: #aaa; }
+	.su-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+	.su-chip {
+		display: inline-flex; align-items: center;
+		min-height: 44px; padding: 0.35rem 0.85rem;
+		border-radius: 999px;
+		border: 1px solid #555;
+		background: #2a2a2a;
+		color: #e8e4d9;
+		font-size: 0.9rem;
+		cursor: pointer;
+		text-align: left;
+	}
+	.su-chip.active { border-color: #c8a96e; background: #3a2f18; }
+	.su-chip:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
+
+	.su-peer-cards { display: flex; flex-direction: column; gap: 0.4rem; }
+	input {
 		background: #333; color: #e8e4d9; border: 1px solid #555;
 		border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.9rem;
 	}

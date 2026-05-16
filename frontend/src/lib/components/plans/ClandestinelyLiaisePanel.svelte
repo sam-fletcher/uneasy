@@ -17,6 +17,9 @@
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import D6Face from './D6Face.svelte';
+	import { playerColor } from '$lib/playerColor';
 	import { playerName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -329,15 +332,15 @@
 						You have no un-leveraged assets to bear the secret.
 					</p>
 				{:else}
-					<div class="choice-list">
-						{#each myUnleveragedAssets as a}
-							<label class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
-								<input type="radio" name="keep-secret-{plan.id}"
-									value={a.id}
-									checked={keepSecretAssetID === a.id}
-									onchange={() => (keepSecretAssetID = a.id)} />
-								<span>{a.name}</span>
-							</label>
+					<div class="peer-cards">
+						{#each myUnleveragedAssets as a (a.id)}
+							<AssetCardSelectable
+								asset={a}
+								ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+								selectable
+								selected={keepSecretAssetID === a.id}
+								onToggle={() => (keepSecretAssetID = keepSecretAssetID === a.id ? null : a.id)}
+							/>
 						{/each}
 					</div>
 					<button class="action-btn primary"
@@ -365,44 +368,73 @@
 				{#if iShared}
 					<p class="choices-note">You've submitted. Waiting for your partner…</p>
 				{:else}
-					<div class="choice-list">
-						{#each SHARE_OPTIONS as opt}
-							<label class="choice-item" style="display:block;">
-								<input type="radio" name="share-{plan.id}"
-									value={opt.key}
-									checked={shareChoiceKey === opt.key}
-									onchange={() => {
-										shareChoiceKey = opt.key;
+					<div class="form-label">
+						<span class="form-label-text">Pick one:</span>
+						<div class="chip-row">
+							{#each SHARE_OPTIONS as opt}
+								<button
+									type="button"
+									class="chip-btn"
+									class:active={shareChoiceKey === opt.key}
+									onclick={() => {
+										shareChoiceKey = shareChoiceKey === opt.key ? null : opt.key;
 										shareAssetID = null;
 										shareDieFace = null;
-									}} />
-								<strong>{opt.label}</strong>
-								<div class="choices-note muted" style="margin-left:1.5rem;">{opt.hint}</div>
-							</label>
-						{/each}
+									}}
+								>{opt.label}</button>
+							{/each}
+						</div>
+						{#if shareChoiceKey}
+							{@const activeOpt = SHARE_OPTIONS.find(o => o.key === shareChoiceKey)}
+							{#if activeOpt}
+								<p class="choices-note muted" style="margin:0.25rem 0 0;">{activeOpt.hint}</p>
+							{/if}
+						{/if}
 					</div>
 
 					{#if shareChoiceKey && SHARE_NEEDS_ASSET.has(shareChoiceKey)}
-						<label class="form-label" style="margin-top:0.5rem;">
-							{shareChoiceKey === 'take_gift' ? "Partner's gift" : "Partner's asset"}:
-							<select bind:value={shareAssetID} class="form-textarea" style="height:auto;">
-								<option value={null}>— pick an asset —</option>
-								{#each otherParticipantAssets.filter(a =>
-									shareChoiceKey === 'take_gift' ? a.asset_type !== 'peer' : true,
-								) as a}
-									<option value={a.id}>{a.name} ({a.asset_type})</option>
-								{/each}
-							</select>
-						</label>
+						{@const candidates = otherParticipantAssets.filter(a =>
+							shareChoiceKey === 'take_gift' ? a.asset_type !== 'peer' : true,
+						)}
+						<div class="form-label">
+							<span class="form-label-text">
+								{shareChoiceKey === 'take_gift' ? "Partner's gift" : "Partner's asset"}:
+							</span>
+							{#if candidates.length === 0}
+								<p class="choices-note muted">No eligible assets.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each candidates as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											selectable
+											selected={shareAssetID === a.id}
+											onToggle={() => (shareAssetID = shareAssetID === a.id ? null : a.id)}
+										/>
+									{/each}
+								</div>
+							{/if}
+						</div>
 					{/if}
 
 					{#if shareChoiceKey && SHARE_NEEDS_FACE.has(shareChoiceKey)}
-						<label class="form-label">
-							Die face to bank (1–6):
-							<input type="number" min="1" max="6"
-								bind:value={shareDieFace} class="form-textarea"
-								style="width:4rem;height:auto;" />
-						</label>
+						<div class="form-label">
+							<span class="form-label-text">Die face to bank:</span>
+							<div class="chip-row">
+								{#each [1, 2, 3, 4, 5, 6] as face}
+									<button
+										type="button"
+										class="chip-btn face-chip"
+										class:active={shareDieFace === face}
+										aria-label={`Bank ${face}`}
+										onclick={() => (shareDieFace = face)}
+									>
+										<D6Face value={face} size={28} />
+									</button>
+								{/each}
+							</div>
+						</div>
 					{/if}
 
 					<button class="action-btn primary"

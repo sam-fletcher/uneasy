@@ -17,7 +17,7 @@
 	import { playerColor } from '$lib/playerColor';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData,
-		playerName, assetName, intactMarginalia,
+		playerName, assetName, assetsWithIntactMarginalia,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -52,6 +52,16 @@
 	let prepError = $state('');
 
 	const otherPlayers = $derived(players.filter(p => p.id !== currentPlayerID));
+	// My intact peers — candidates for fair-trade offer in resolve mode.
+	const myIntactPeers = $derived(
+		assets.filter(a =>
+			a.owner_id === currentPlayerID && a.asset_type === 'peer' && !a.is_destroyed,
+		),
+	);
+	// Messy-break candidates: my intact assets with ≥1 untorn marginalium.
+	const myAssetsWithMarginalia = $derived(
+		assetsWithIntactMarginalia(assets, currentPlayerID),
+	);
 	const ecTargetPlayerAssets = $derived(
 		ecTargetPlayerID != null
 			? assets.filter(a => a.owner_id === ecTargetPlayerID && a.asset_type === 'peer' && !a.is_destroyed)
@@ -110,7 +120,6 @@
 	let selectedChoices = $state<string[]>([]);
 	let choicesBusy = $state(false);
 
-	let messyAssetID = $state<number | null>(null);
 	let messyMarginaliaID = $state<number | null>(null);
 	let messyBusy = $state(false);
 	let messyError = $state('');
@@ -185,7 +194,6 @@
 		try {
 			await messyBreak(p.id, messyMarginaliaID);
 			messyMarginaliaID = null;
-			messyAssetID = null;
 			onPlansChanged();
 		} catch (e) {
 			messyError = e instanceof Error ? e.message : 'Could not complete messy break.';
@@ -263,15 +271,24 @@
 							<strong>{playerName(players, plan.preparer_id)}</strong> wants one of your peers.
 							You may offer a peer as a fair trade.
 						</p>
-						<label class="ft-label">
-							Offer a peer:
-							<select bind:value={ftOfferedAssetID} class="ft-select">
-								<option value={null}>— choose a peer —</option>
-								{#each assets.filter(a => a.owner_id === currentPlayerID && a.asset_type === 'peer' && !a.is_destroyed) as a}
-									<option value={a.id}>{a.name}</option>
-								{/each}
-							</select>
-						</label>
+						<div class="form-label">
+							<span class="form-label-text">Offer a peer:</span>
+							{#if myIntactPeers.length === 0}
+								<p class="choices-note muted">You have no peers to offer.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each myIntactPeers as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											selectable
+											selected={ftOfferedAssetID === a.id}
+											onToggle={() => (ftOfferedAssetID = ftOfferedAssetID === a.id ? null : a.id)}
+										/>
+									{/each}
+								</div>
+							{/if}
+						</div>
 						<button class="action-btn primary" onclick={() => onFTOffer(plan)}
 							disabled={!ftOfferedAssetID || ftOfferBusy}>
 							{ftOfferBusy ? '…' : 'Offer peer'}
@@ -343,27 +360,24 @@
 							The exchange was messy. You must break one of your own marginalia before this plan completes.
 						</p>
 						{#if messyError}<p class="res-error">{messyError}</p>{/if}
-						<label class="form-label">
-							Choose an asset:
-							<select bind:value={messyAssetID} class="form-select">
-								<option value={null}>— select asset —</option>
-								{#each assets.filter(a => a.owner_id === currentPlayerID && !a.is_destroyed && (a.marginalia ?? []).some(m => !m.is_torn)) as a}
-									<option value={a.id}>{a.name}</option>
-								{/each}
-							</select>
-						</label>
-						{#if messyAssetID != null}
-							{@const mList = intactMarginalia(assets, currentPlayerID).filter(m => m.assetID === messyAssetID)}
-							<label class="form-label">
-								Choose marginalia to break:
-								<select bind:value={messyMarginaliaID} class="form-select">
-									<option value={null}>— select marginalia —</option>
-									{#each mList as m}
-										<option value={m.id}>{m.text}</option>
+						<div class="form-label">
+							<span class="form-label-text">Marginalium to break:</span>
+							{#if myAssetsWithMarginalia.length === 0}
+								<p class="choices-note muted">You have no intact marginalia.</p>
+							{:else}
+								<div class="peer-cards">
+									{#each myAssetsWithMarginalia as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											marginaliaSelectable
+											selectedMarginaliaID={messyMarginaliaID}
+											onMarginaliaToggle={(mID) => (messyMarginaliaID = messyMarginaliaID === mID ? null : mID)}
+										/>
 									{/each}
-								</select>
-							</label>
-						{/if}
+								</div>
+							{/if}
+						</div>
 						<button class="action-btn primary" onclick={() => onMessyBreak(plan)}
 							disabled={!messyMarginaliaID || messyBusy}>
 							{messyBusy ? '…' : 'Break marginalia'}

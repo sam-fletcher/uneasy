@@ -164,6 +164,14 @@
 	outline-offset: 1px;
 }
 
+/* Square-ish variant for die-face icon chips — the pip icon already
+   carries the meaning, so trim the horizontal padding. */
+.chip-btn.face-chip {
+	padding: 0.25rem 0.4rem;
+	color: #c8c0a8;
+}
+.chip-btn.face-chip.active { color: #ffe8b8; }
+
 .ft-select, .form-select {
 	background: #2a2a2a;
 	border: 1px solid #555;

@@ -243,7 +243,7 @@ func createPlanOnRow(
 		PlanType:      planType,
 		Category:      category,
 		PreparerID:    preparer.ID,
-		RowNumber:     row,
+		RowNumber:     &row,
 		RowOrder:      0,
 		PreparedAtRow: game.CurrentRow,
 	})

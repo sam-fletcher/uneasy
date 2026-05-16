@@ -26,6 +26,8 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import { playerColor } from '$lib/playerColor';
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -562,15 +564,15 @@
 									: 'Your opponent has declared. Make your choice.'}
 							</p>
 							{#if myPeerAssets.length > 0}
-								<div class="choice-list">
-									{#each myPeerAssets as a}
-										<label class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
-											<input type="radio" name="champion-{plan.id}"
-												value={a.id}
-												checked={championAssetID === a.id}
-												onchange={() => (championAssetID = a.id)} />
-											<span>{a.name}</span>
-										</label>
+								<div class="peer-cards">
+									{#each myPeerAssets as a (a.id)}
+										<AssetCardSelectable
+											asset={a}
+											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+											selectable
+											selected={championAssetID === a.id}
+											onToggle={() => (championAssetID = championAssetID === a.id ? null : a.id)}
+										/>
 									{/each}
 								</div>
 							{:else}
@@ -609,14 +611,16 @@
 					{#if iSubmittedStakeCount}
 						<p class="choices-note">You've submitted. Waiting for your opponent…</p>
 					{:else}
-						<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0;">
+						<div class="chip-row" style="margin:0.5rem 0;">
 							{#each Array.from({ length: myMaxStakes }, (_, i) => i + 1) as n}
-								<label class="choice-item" style="margin:0;">
-									<input type="radio" name="stake-count-{plan.id}"
-										value={n}
-										checked={stakeCountPicked === n}
-										onchange={() => (stakeCountPicked = n)} /> {n}
-								</label>
+								<button
+									type="button"
+									class="chip-btn"
+									class:active={stakeCountPicked === n}
+									onclick={() => (stakeCountPicked = n)}
+								>
+									{n}
+								</button>
 							{/each}
 						</div>
 						{#if stakeCountError}<p class="res-error">{stakeCountError}</p>{/if}
@@ -664,14 +668,15 @@
 						{#if myStakeableAssets.length === 0}
 							<p class="choices-note muted">You have no unleveraged peers available.</p>
 						{:else}
-							<div class="choice-list">
-								{#each myStakeableAssets as a}
-									<label class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
-										<input type="checkbox"
-											checked={stakeSelectionIDs.includes(a.id)}
-											onchange={() => toggleStakeSelection(a.id)} />
-										<span>{a.name}</span>
-									</label>
+							<div class="peer-cards">
+								{#each myStakeableAssets as a (a.id)}
+									<AssetCardSelectable
+										asset={a}
+										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+										selectable
+										selected={stakeSelectionIDs.includes(a.id)}
+										onToggle={() => toggleStakeSelection(a.id)}
+									/>
 								{/each}
 							</div>
 							{#if stakeSubmitError}<p class="res-error">{stakeSubmitError}</p>{/if}
@@ -754,25 +759,38 @@
 						<p class="choices-note">
 							{boutInProgress ? 'Pick one of your stakes to respond.' : 'Pick a stake and declare high or low.'}
 						</p>
-						<div class="choice-list">
-							{#each myUnresolvedStakes as s}
-								<label class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
-									<input type="radio" name="bout-stake-{plan.id}"
-										value={s.id}
-										checked={pickedStakeID === s.id}
-										onchange={() => (pickedStakeID = s.id)} />
-									<span>{stakeLabel(s)}</span>
-								</label>
+						<div class="peer-cards">
+							{#each myUnresolvedStakes as s (s.id)}
+								{@const a = assets.find(x => x.id === s.asset_id)}
+								{#if a}
+									<AssetCardSelectable
+										asset={a}
+										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+										ownerLabel={s.hidden_die != null ? `hidden d${s.hidden_die}` : 'hidden'}
+										selectable
+										selected={pickedStakeID === s.id}
+										onToggle={() => (pickedStakeID = pickedStakeID === s.id ? null : s.id)}
+									/>
+								{/if}
 							{/each}
 						</div>
 						{#if !boutInProgress}
-							<div style="display:flex;gap:1rem;margin:0.5rem 0;">
-								<label class="choice-item" style="margin:0;">
-									<input type="radio" bind:group={pickedDeclaration} value="high" /> High
-								</label>
-								<label class="choice-item" style="margin:0;">
-									<input type="radio" bind:group={pickedDeclaration} value="low" /> Low
-								</label>
+							<div class="form-label">
+								<span class="form-label-text">Declare:</span>
+								<div class="chip-row">
+									<button
+										type="button"
+										class="chip-btn"
+										class:active={pickedDeclaration === 'high'}
+										onclick={() => (pickedDeclaration = 'high')}
+									>High</button>
+									<button
+										type="button"
+										class="chip-btn"
+										class:active={pickedDeclaration === 'low'}
+										onclick={() => (pickedDeclaration = 'low')}
+									>Low</button>
+								</div>
 							</div>
 						{/if}
 						{#if boutError}<p class="res-error">{boutError}</p>{/if}

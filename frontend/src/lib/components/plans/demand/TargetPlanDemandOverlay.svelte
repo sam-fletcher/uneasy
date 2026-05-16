@@ -17,6 +17,9 @@
 <script lang="ts">
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
 	import { playerName, activeDemandAgainst, demandWinnersFromPlan } from '../shared';
+	import { playerColor } from '$lib/playerColor';
+	import AssetCardSelectable from '../../AssetCardSelectable.svelte';
+	import PlayerChips from '../PlayerChips.svelte';
 
 	interface Props {
 		/** The plan being targeted (the resolve panel renders this). */
@@ -80,6 +83,29 @@
 			retargetAssetID = plan.target_asset_id;
 		}
 	});
+
+	// Filter the asset picker by the currently-chosen target player. If no
+	// player is chosen the asset list is hidden (re-aiming to a null player
+	// means clearing the target entirely).
+	const retargetCandidateAssets = $derived(
+		retargetPlayerID == null
+			? []
+			: assets.filter(a => a.owner_id === retargetPlayerID && !a.is_destroyed),
+	);
+
+	function selectRetargetPlayer(p: Player) {
+		if (retargetPlayerID === p.id) {
+			retargetPlayerID = null;
+			retargetAssetID = null;
+		} else {
+			retargetPlayerID = p.id;
+			// Clear asset on player change unless it already belongs to them.
+			if (retargetAssetID != null) {
+				const a = assets.find(x => x.id === retargetAssetID);
+				if (!a || a.owner_id !== p.id) retargetAssetID = null;
+			}
+		}
+	}
 
 	async function submitRetarget() {
 		if (retargetBusy) return;
@@ -173,24 +199,36 @@
 			<div class="demand-form">
 				<p class="choices-header">Re-aim this plan</p>
 				{#if retargetError}<p class="res-error">{retargetError}</p>{/if}
-				<label class="form-label">
-					Target player:
-					<select bind:value={retargetPlayerID} class="form-textarea" style="height:auto;">
-						<option value={null}>— none —</option>
-						{#each players as p}
-							<option value={p.id}>{p.display_name}</option>
-						{/each}
-					</select>
-				</label>
-				<label class="form-label">
-					Target asset:
-					<select bind:value={retargetAssetID} class="form-textarea" style="height:auto;">
-						<option value={null}>— none —</option>
-						{#each assets.filter(a => !a.is_destroyed) as a}
-							<option value={a.id}>{a.name} ({playerName(players, a.owner_id)})</option>
-						{/each}
-					</select>
-				</label>
+				<div class="form-label">
+					<span class="form-label-text">Target player:</span>
+					<PlayerChips
+						{players}
+						isActive={(p) => retargetPlayerID === p.id}
+						onSelect={selectRetargetPlayer}
+					/>
+				</div>
+
+				{#if retargetPlayerID != null}
+					<div class="form-label">
+						<span class="form-label-text">Target asset (optional):</span>
+						{#if retargetCandidateAssets.length === 0}
+							<p class="choices-note muted">This player has no intact assets.</p>
+						{:else}
+							<div class="peer-cards">
+								{#each retargetCandidateAssets as a (a.id)}
+									<AssetCardSelectable
+										asset={a}
+										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+										selectable
+										selected={retargetAssetID === a.id}
+										onToggle={() => (retargetAssetID = retargetAssetID === a.id ? null : a.id)}
+									/>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
 				<button class="action-btn primary" onclick={submitRetarget} disabled={retargetBusy}>
 					{retargetBusy ? '…' : 'Apply retarget'}
 				</button>
@@ -207,15 +245,16 @@
 				{#if leverageableTargetAssets.length === 0}
 					<p class="muted">No leverageable assets on the target preparer.</p>
 				{:else}
-					<div class="choice-list">
-						{#each leverageableTargetAssets as a}
-							<label class="choice-item">
-								<input type="checkbox"
-									checked={selectedLeverageIDs.includes(a.id)}
-									onchange={() => toggleLeverage(a.id)} />
-								{a.name}
-								{#if a.is_leveraged}<em class="muted">(already leveraged)</em>{/if}
-							</label>
+					<div class="peer-cards">
+						{#each leverageableTargetAssets as a (a.id)}
+							<AssetCardSelectable
+								asset={a}
+								ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+								ownerLabel={a.is_leveraged ? 'already leveraged' : undefined}
+								selectable
+								selected={selectedLeverageIDs.includes(a.id)}
+								onToggle={() => toggleLeverage(a.id)}
+							/>
 						{/each}
 					</div>
 					<button class="action-btn primary" onclick={submitLeverage}

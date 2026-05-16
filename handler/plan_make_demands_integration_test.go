@@ -140,7 +140,7 @@ func TestMakeDemands_ImmediateCounterDemand(t *testing.T) {
 	assert.Empty(t, errMsg, "synthesize should succeed")
 	assert.NotNil(t, counter)
 
-	assert.Equal(t, int16(6), counter.RowNumber, "row = target.row - 1")
+	assert.Equal(t, new(int16(6)), counter.RowNumber, "row = target.row - 1")
 	assert.Equal(t, tg.Players[0].ID, counter.PreparerID)
 	assert.Equal(t, model.PlanMakeDemands, counter.PlanType)
 	assert.NotNil(t, counter.TargetedPlanID)
@@ -188,7 +188,7 @@ func TestMakeDemands_PendingCounterDemandConsumed(t *testing.T) {
 		"counter is owned by the deferred counter-demander")
 	assert.NotNil(t, counter.TargetedPlanID)
 	assert.Equal(t, newPlan.ID, *counter.TargetedPlanID)
-	assert.Equal(t, int16(5), counter.RowNumber, "row = newPlan.row - 1")
+	assert.Equal(t, new(int16(5)), counter.RowNumber, "row = newPlan.row - 1")
 
 	// Pending row is marked resolved.
 	open, err := q.ListOpenPendingCounterDemandsForPlayer(ctx, tg.Players[0].ID)

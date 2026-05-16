@@ -261,7 +261,7 @@ func TestGetMostRecentResolvedPlanOnRow(t *testing.T) {
 
 	got, err := q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
 		GameID:    tg.Game.ID,
-		RowNumber: row,
+		RowNumber: &row,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, resolved.ID, got.ID, "expected resolved plan, not pending plan %d", pending.ID)

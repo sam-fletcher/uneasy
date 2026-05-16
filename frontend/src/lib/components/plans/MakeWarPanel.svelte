@@ -34,7 +34,9 @@
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import BattleCostForm, { type BattleSubmission } from './war/BattleCostForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
-	import { playerName, parseResolutionData } from './shared';
+	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import { playerColor } from '$lib/playerColor';
+	import { playerName, parseResolutionData, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
 
@@ -182,13 +184,11 @@
 	});
 
 	// ── Sub-form inputs (shared by cost + entry pickers) ───────────────────
-	const myMarginalia = $derived(
-		currentPlayerID == null ? [] :
-		assets
-			.filter(a => a.owner_id === currentPlayerID && !a.is_destroyed)
-			.flatMap(a => (a.marginalia ?? [])
-				.filter(m => !m.is_torn)
-				.map(m => ({ id: m.id, label: `${a.name} — "${m.text}"` }))),
+	// Assets owned by the current player with at least one intact marginalium.
+	// BattleCostForm's marginalia-pick mode renders each card with per-line
+	// checkboxes for the asset's intact lines.
+	const myMarginaliaAssets = $derived(
+		assetsWithIntactMarginalia(assets, currentPlayerID),
 	);
 	const myUnleveraged = $derived(
 		currentPlayerID == null ? [] :
@@ -478,7 +478,7 @@
 					formKey={plan.id}
 					opponents={myOwedOpponents}
 					{players}
-					marginalia={myMarginalia}
+					marginaliaAssets={myMarginaliaAssets}
 					unleveraged={myUnleveraged}
 					allowPeace
 					allowSurrender
@@ -506,7 +506,7 @@
 						formKey={plan.id}
 						opponents={entryOpponentsOutstanding}
 						{players}
-						marginalia={myMarginalia}
+						marginaliaAssets={myMarginaliaAssets}
 						unleveraged={myUnleveraged}
 						allowPeace={false}
 						allowSurrender={false}
@@ -562,18 +562,32 @@
 		{#if myClaims.length > 0}
 			<div class="choices-section">
 				<p class="choices-header">Surrender claims</p>
-				{#each myClaims as c}
-					<div class="choice-item" style="display:block;margin-bottom:0.5rem;">
+				{#each myClaims as c (c.id)}
+					{@const claimable = targetAssetsFor(c.surrendered_id)}
+					{@const picked = claimAssetByClaim[c.id]}
+					<div style="display:block;margin-bottom:0.5rem;">
 						<p>
 							{playerName(players, c.surrendered_id)} surrendered. Pick one
 							of their assets to take:
 						</p>
-						<select bind:value={claimAssetByClaim[c.id]} class="form-textarea" style="height:auto;">
-							<option value={undefined}>— pick an asset —</option>
-							{#each targetAssetsFor(c.surrendered_id) as a}
-								<option value={a.id}>{a.name} ({a.asset_type})</option>
-							{/each}
-						</select>
+						{#if claimable.length === 0}
+							<p class="choices-note muted">No eligible assets to claim.</p>
+						{:else}
+							<div class="peer-cards">
+								{#each claimable as a (a.id)}
+									<AssetCardSelectable
+										asset={a}
+										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+										selectable
+										selected={picked === a.id}
+										onToggle={() => (claimAssetByClaim = {
+											...claimAssetByClaim,
+											[c.id]: picked === a.id ? null : a.id,
+										})}
+									/>
+								{/each}
+							</div>
+						{/if}
 						<button class="action-btn primary" style="margin-top:0.4rem;"
 							onclick={() => submitClaim(c.id, c.surrendered_id)}
 							disabled={claimBusy || claimAssetByClaim[c.id] == null}>

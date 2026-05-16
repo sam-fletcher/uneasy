@@ -187,3 +187,19 @@ export function intactMarginalia(assets: Asset[], ownerID: number | null) {
 			.map(m => ({ ...m, assetName: a.name, assetID: a.id }))
 		);
 }
+
+/**
+ * Non-destroyed assets that still have at least one untorn marginalium.
+ * Used everywhere AssetCardSelectable's marginalia-pick mode renders a
+ * card per parent asset. Optional `ownerID` narrows to a single owner.
+ */
+export function assetsWithIntactMarginalia(
+	assets: Asset[],
+	ownerID?: number | null,
+): Asset[] {
+	return assets.filter(a =>
+		!a.is_destroyed
+		&& (ownerID == null || a.owner_id === ownerID)
+		&& (a.marginalia ?? []).some(m => !m.is_torn),
+	);
+}

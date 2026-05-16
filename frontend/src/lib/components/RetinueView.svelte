@@ -306,10 +306,10 @@
 					<span class="rank-label">Esteem</span>
 					<span class="rank-num">{playerRanks.esteem ?? '—'}</span>
 				</div>
-				<div class="rank-cell total">
+				<!-- <div class="rank-cell total">
 					<span class="rank-label">Total</span>
 					<span class="rank-num">{cumulativeStatus}</span>
-				</div>
+				</div> -->
 			</section>
 		{/if}
 
@@ -524,7 +524,7 @@
 
 	.rank-strip {
 		display: grid;
-		grid-template-columns: repeat(4, 1fr);
+		grid-template-columns: repeat(3, 1fr);
 		gap: 0.4rem;
 		background: #161614;
 		border: 1px solid #2c2c2c;
