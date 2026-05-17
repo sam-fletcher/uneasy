@@ -445,14 +445,12 @@
 
 	{:else if mode === 'choosing'}
 		<p class="muted">
-			Each player takes 3 turns claiming any 3 boxes. Each box creates an asset
-			and grants two playing cards (which create or steal associated assets).
+			Each player takes 3 turns claiming any 3 boxes. Each box creates an asset and grants two playing cards.
 		</p>
-		<p class="muted">	
-			{@render suitSvg('H')} Peer |
-			{@render suitSvg('D')} Resource |
-			{@render suitSvg('S')} Artifact |
-			{@render suitSvg('C')} Holding
+		<p class="muted">
+			Playing cards determine your initial rankings, and each is one asset you'll create or steal:
+			<br>{@render suitSvg('H')} Peer &emsp;&emsp;&emsp;&emsp; {@render suitSvg('S')} Artifact
+			<br>{@render suitSvg('D')} Resource &emsp;&emsp;{@render suitSvg('C')} Holding
 		</p>
 
 		<div class="turn-banner" class:my-turn={isMyTurn}>

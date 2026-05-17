@@ -477,6 +477,8 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 //
 // Focus does NOT change again on the row advance — whoever receives it in
 // step 6 carries it into the next row.
+//
+//nolint:funlen // TODO: see if there's a clean way to break this up
 func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, _, ok := requireFocusPlayer(w, r, s.Q)

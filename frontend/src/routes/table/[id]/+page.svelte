@@ -811,6 +811,12 @@
 		{#if game}
 			<div class="game-info">
 				<span class="phase-badge">{phaseLabels[game.phase] ?? game.phase}</span>
+				{#if game.phase === 'lobby'}
+					<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
+						{game.join_code}
+						<span class="copy-hint">copy</span>
+					</button>
+				{/if}
 				<button class="tones-button" onclick={() => tonesOpen = true} aria-label="Open tones">
 					Tones
 				</button>
@@ -820,12 +826,6 @@
 				<button class="tones-button" onclick={() => rumorsOpen = true} aria-label="Open rumors">
 					Rumors{rumors.length > 0 ? ` (${rumors.length})` : ''}
 				</button>
-				{#if game.phase === 'lobby'}
-					<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
-						{game.join_code}
-						<span class="copy-hint">copy</span>
-					</button>
-				{/if}
 			</div>
 		{/if}
 	</header>
