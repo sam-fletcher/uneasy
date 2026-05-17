@@ -26,8 +26,7 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
-	import AssetCardSelectable from '../AssetCardSelectable.svelte';
-	import { playerColor } from '$lib/playerColor';
+	import CardPicker from './CardPicker.svelte';
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -295,12 +294,6 @@
 	let stakeSubmitBusy = $state(false);
 	let stakeSubmitError = $state('');
 
-	function toggleStakeSelection(id: number) {
-		stakeSelectionIDs = stakeSelectionIDs.includes(id)
-			? stakeSelectionIDs.filter(x => x !== id)
-			: [...stakeSelectionIDs, id];
-	}
-
 	async function submitStakes() {
 		if (!plan || stakeSubmitBusy) return;
 		if (stakeSelectionIDs.length !== myStakeCount) {
@@ -345,6 +338,24 @@
 	);
 
 	let pickedStakeID = $state<number | null>(null);
+	// Bout-stake picker — surface the player's stakes as cards. CardPicker
+	// keys on asset.id, so we translate between stake ID and asset ID.
+	const boutStakeAssets = $derived(
+		myUnresolvedStakes
+			.map(s => assets.find(a => a.id === s.asset_id))
+			.filter((a): a is NonNullable<typeof a> => a != null),
+	);
+	const pickedStakeAssetID = $derived(
+		myUnresolvedStakes.find(s => s.id === pickedStakeID)?.asset_id ?? null,
+	);
+	function pickBoutStakeByAssetID(assetID: number | null) {
+		const s = assetID == null ? null : myUnresolvedStakes.find(x => x.asset_id === assetID);
+		pickedStakeID = s?.id ?? null;
+	}
+	function boutStakeLabel(a: { id: number }): string {
+		const s = myUnresolvedStakes.find(x => x.asset_id === a.id);
+		return s?.hidden_die != null ? `hidden d${s.hidden_die}` : 'hidden';
+	}
 	let pickedDeclaration = $state<'high' | 'low'>('high');
 	let boutBusy = $state(false);
 	let boutError = $state('');
@@ -504,7 +515,7 @@
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
 				placeholder="Where will the duel take place?"></textarea>
 		</label>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep}
 				disabled={prepBusy || prepTargetPlayerID == null}>
 				{prepBusy ? '…' : 'Prepare Plan'}
@@ -562,23 +573,16 @@
 									? 'You have initiative — choose first.'
 									: 'Your opponent has declared. Make your choice.'}
 							</p>
-							{#if myPeerAssets.length > 0}
-								<div class="peer-cards">
-									{#each myPeerAssets as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											selectable
-											selected={championAssetID === a.id}
-											onToggle={() => (championAssetID = championAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							{:else}
-								<p class="choices-note muted">You have no peers available as champion.</p>
-							{/if}
+							<CardPicker
+								label="Pick a champion"
+								items={myPeerAssets}
+								{players}
+								emptyMessage="You have no peers available as champion."
+								selected={championAssetID}
+								onSelect={(id) => (championAssetID = id)}
+							/>
 							{#if championError}<p class="res-error">{championError}</p>{/if}
-							<div style="display:flex;gap:0.5rem;">
+							<div class="form-row">
 								<button class="action-btn primary"
 									onclick={() => submitChampion(championAssetID)}
 									disabled={championBusy || championAssetID == null}>
@@ -664,20 +668,17 @@
 							Pick exactly {myStakeCount} peer asset{myStakeCount === 1 ? '' : 's'} to stake.
 							A hidden die will be tucked under each.
 						</p>
-						{#if myStakeableAssets.length === 0}
-							<p class="choices-note muted">You have no unleveraged peers available.</p>
-						{:else}
-							<div class="peer-cards">
-								{#each myStakeableAssets as a (a.id)}
-									<AssetCardSelectable
-										asset={a}
-										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-										selectable
-										selected={stakeSelectionIDs.includes(a.id)}
-										onToggle={() => toggleStakeSelection(a.id)}
-									/>
-								{/each}
-							</div>
+						<CardPicker
+							label="Pick {myStakeCount} peer{myStakeCount === 1 ? '' : 's'} to stake"
+							items={myStakeableAssets}
+							{players}
+							emptyMessage="You have no unleveraged peers available."
+							multi
+							max={myStakeCount}
+							selectedMulti={stakeSelectionIDs}
+							onSelectMulti={(ids) => (stakeSelectionIDs = ids)}
+						/>
+						{#if myStakeableAssets.length > 0}
 							{#if stakeSubmitError}<p class="res-error">{stakeSubmitError}</p>{/if}
 							<button class="action-btn primary"
 								onclick={submitStakes}
@@ -758,21 +759,14 @@
 						<p class="choices-note">
 							{boutInProgress ? 'Pick one of your stakes to respond.' : 'Pick a stake and declare high or low.'}
 						</p>
-						<div class="peer-cards">
-							{#each myUnresolvedStakes as s (s.id)}
-								{@const a = assets.find(x => x.id === s.asset_id)}
-								{#if a}
-									<AssetCardSelectable
-										asset={a}
-										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-										ownerLabel={s.hidden_die != null ? `hidden d${s.hidden_die}` : 'hidden'}
-										selectable
-										selected={pickedStakeID === s.id}
-										onToggle={() => (pickedStakeID = pickedStakeID === s.id ? null : s.id)}
-									/>
-								{/if}
-							{/each}
-						</div>
+						<CardPicker
+							label="Pick a stake"
+							items={boutStakeAssets}
+							{players}
+							ownerLabel={boutStakeLabel}
+							selected={pickedStakeAssetID}
+							onSelect={pickBoutStakeByAssetID}
+						/>
 						{#if !boutInProgress}
 							<FormField label="Declare">
 								<div class="chip-row">

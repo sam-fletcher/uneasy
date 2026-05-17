@@ -53,14 +53,14 @@ func (srHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 4}
 }
 
-func (srHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+func (srHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetAssetID == nil {
-		return 0, "spread_rumors requires target_asset_id"
+		return nil, "spread_rumors requires target_asset_id"
 	}
 	if v.Notes == "" {
-		return 0, "spread_rumors requires preparation_notes with the rumor text"
+		return nil, "spread_rumors requires preparation_notes with the rumor text"
 	}
-	return 0, ""
+	return nil, ""
 }
 
 func (srHandler) ComputeDifficulty(

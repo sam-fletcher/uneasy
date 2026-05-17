@@ -24,8 +24,7 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
-	import AssetCardSelectable from '../AssetCardSelectable.svelte';
-	import { playerColor } from '$lib/playerColor';
+	import CardPicker from './CardPicker.svelte';
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -425,7 +424,7 @@
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
 				placeholder="A gala or a ball? A big feast, a hunting party, a tournament?"></textarea>
 		</label>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
@@ -486,7 +485,7 @@
 				{/if}
 				{#if challengeIsForMe}
 					{#if respondError}<p class="res-error">{respondError}</p>{/if}
-					<div style="display:flex;gap:0.5rem;">
+					<div class="form-row">
 						<button class="action-btn primary"
 							onclick={() => onRespond(true)}
 							disabled={respondBusy}>
@@ -521,7 +520,7 @@
 				{#if myRollID == null}
 					<!-- Decide to roll or opt out -->
 					{#if actionError}<p class="res-error">{actionError}</p>{/if}
-					<div style="display:flex;gap:0.5rem;">
+					<div class="form-row">
 						<button class="action-btn primary" onclick={onRoll} disabled={actionBusy}>
 							{actionBusy ? '…' : 'Roll'}
 						</button>
@@ -573,42 +572,24 @@
 								placeholder="Name of the new peer" />
 						</label>
 					{:else if pickedChoice === 'take_center_peer'}
-						<FormField label="Peer to take from the center">
-							{#if myCenterPeerCandidates.length === 0}
-								<p class="choices-note muted">No peers in the center of the table.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each myCenterPeerCandidates as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-											selectable
-											selected={pickedAssetID === a.id}
-											onToggle={() => (pickedAssetID = pickedAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Peer to take from the center"
+							items={myCenterPeerCandidates}
+							{players}
+							emptyMessage="No peers in the center of the table."
+							ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+							selected={pickedAssetID}
+							onSelect={(id) => (pickedAssetID = id)}
+						/>
 					{:else if pickedChoice === 'disagreement'}
-						<FormField label="Peer to set in the center">
-							{#if myOwnPeers.length === 0}
-								<p class="choices-note muted">You have no peers to set in the center.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each myOwnPeers as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											selectable
-											selected={pickedAssetID === a.id}
-											onToggle={() => (pickedAssetID = pickedAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Peer to set in the center"
+							items={myOwnPeers}
+							{players}
+							emptyMessage="You have no peers to set in the center."
+							selected={pickedAssetID}
+							onSelect={(id) => (pickedAssetID = id)}
+						/>
 					{:else if pickedChoice === 'challenge_duel'}
 						{@const duelTargetPlayers = otherGuests
 							.map(gid => players.find(p => p.id === gid))
@@ -672,26 +653,17 @@
 					{:else if insistChoice === 'disagreement'}
 						{@const hostPeers = assets.filter(a =>
 							a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed)}
-						<FormField label="Host peer to set in the center">
-							{#if hostPeers.length === 0}
-								<p class="choices-note muted">The host has no peers to set in the center.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each hostPeers as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											selectable
-											selected={insistAssetID === a.id}
-											onToggle={() => (insistAssetID = insistAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Host peer to set in the center"
+							items={hostPeers}
+							{players}
+							emptyMessage="The host has no peers to set in the center."
+							selected={insistAssetID}
+							onSelect={(id) => (insistAssetID = id)}
+						/>
 					{/if}
 					{#if insistError}<p class="res-error">{insistError}</p>{/if}
-					<div style="display:flex;gap:0.5rem;">
+					<div class="form-row">
 						<button class="action-btn primary"
 							onclick={submitInsist}
 							disabled={insistBusy || !insistChoice}>
@@ -773,24 +745,15 @@
 									placeholder="Name of the new peer" />
 							</label>
 						{:else if hostPickedChoice === 'take_center_peer'}
-							<FormField label="Peer to take from the center">
-								{#if myCenterPeerCandidates.length === 0}
-									<p class="choices-note muted">No peers in the center.</p>
-								{:else}
-									<div class="peer-cards">
-										{#each myCenterPeerCandidates as a (a.id)}
-											<AssetCardSelectable
-												asset={a}
-												ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-												ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-												selectable
-												selected={hostAssetID === a.id}
-												onToggle={() => (hostAssetID = hostAssetID === a.id ? null : a.id)}
-											/>
-										{/each}
-									</div>
-								{/if}
-							</FormField>
+							<CardPicker
+								label="Peer to take from the center"
+								items={myCenterPeerCandidates}
+								{players}
+								emptyMessage="No peers in the center."
+								ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+								selected={hostAssetID}
+								onSelect={(id) => (hostAssetID = id)}
+							/>
 						{/if}
 					{/if}
 					{#if hostPickerError}<p class="res-error">{hostPickerError}</p>{/if}

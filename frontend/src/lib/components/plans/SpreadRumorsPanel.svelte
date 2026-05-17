@@ -19,13 +19,12 @@
 	import {
 		preparePlan, makeChoice, completePlan,
 		breakTarget, takeRumorAsset, hideSource,
-		type Plan, type Asset, type Player, type DiceRoll,
+		type Plan,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import AssetCardSelectable from '../AssetCardSelectable.svelte';
 	import PlayerChips from './PlayerChips.svelte';
-	import { playerColor } from '$lib/playerColor';
+	import CardPicker from './CardPicker.svelte';
 	import { parseResolutionData, playerName, assetName, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -91,9 +90,6 @@
 		prepTargetAssetID = null;
 	}
 
-	function toggleRumorAsset(a: Asset) {
-		prepTargetAssetID = prepTargetAssetID === a.id ? null : a.id;
-	}
 
 	async function submitPrep() {
 		if (prepBusy) return;
@@ -282,31 +278,21 @@
 		</FormField>
 
 		{#if prepFilterOwnerID != null}
-			<FormField label="Asset the rumor is about">
-				{#if filteredIntactAssets.length === 0}
-					<p class="muted" style="margin: 0;">This player has no intact assets.</p>
-				{:else}
-					<div class="peer-cards">
-						{#each filteredIntactAssets as a (a.id)}
-							<AssetCardSelectable
-								asset={a}
-								ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-								// ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-								selectable
-								selected={prepTargetAssetID === a.id}
-								onToggle={toggleRumorAsset}
-							/>
-						{/each}
-					</div>
-				{/if}
-			</FormField>
+			<CardPicker
+				label="Asset the rumor is about"
+				items={filteredIntactAssets}
+				{players}
+				emptyMessage="This player has no intact assets."
+				selected={prepTargetAssetID}
+				onSelect={(id) => (prepTargetAssetID = id)}
+			/>
 		{/if}
 		<label class="form-label">
 			Rumor:
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
 				placeholder="What are people starting to say?"></textarea>
 		</label>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep}
 				disabled={prepBusy || prepTargetAssetID == null || !prepNotes.trim()}>
 				{prepBusy ? '…' : 'Prepare Plan'}
@@ -383,31 +369,18 @@
 						<p class="choices-header">
 							{rollOutcome === 'mar' ? 'Break a preparer asset' : 'Break target asset'} ({btRemaining} remaining)
 						</p>
-						<FormField label="Marginalium to tear">
-							{#if btMarginaliaAssets.length === 0}
-								<p class="choices-note muted">No intact marginalia available.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each btMarginaliaAssets as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											marginaliaSelectable
-											selectedMarginaliaID={btMargID}
-											onMarginaliaToggle={(mID, parentAsset) => {
-												if (btMargID === mID) {
-													btMargID = null;
-													btAssetID = null;
-												} else {
-													btMargID = mID;
-													btAssetID = parentAsset.id;
-												}
-											}}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Marginalium to tear"
+							items={btMarginaliaAssets}
+							{players}
+							emptyMessage="No intact marginalia available."
+							marginaliaMode
+							selectedMarginaliaID={btMargID}
+							onSelectMarginalia={(mID, parent) => {
+								btMargID = mID;
+								btAssetID = parent?.id ?? null;
+							}}
+						/>
 						<button class="action-btn primary"
 							onclick={() => submitBreakTarget(plan)}
 							disabled={btBusy || btMargID == null}>
@@ -422,19 +395,13 @@
 							{rollOutcome === 'mar' ? 'Take a preparer asset' : 'Take target asset'} ({taRemaining} remaining)
 						</p>
 						{#if rollOutcome === 'mar'}
-							<FormField label="Preparer's asset">
-								<div class="peer-cards">
-									{#each preparerAssets as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											selectable
-											selected={taAssetID === a.id}
-											onToggle={() => (taAssetID = taAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							</FormField>
+							<CardPicker
+								label="Preparer's asset"
+								items={preparerAssets}
+								{players}
+								selected={taAssetID}
+								onSelect={(id) => (taAssetID = id)}
+							/>
 							<p class="choices-note">
 								Confirm the preparer has consented to giving up this asset.
 							</p>
@@ -457,23 +424,13 @@
 						<p class="choices-header">
 							Hide source ({hsRemaining} remaining)
 						</p>
-						<FormField label="Hide on one of your assets">
-							{#if hsAssetOptions.length === 0}
-								<p class="choices-note muted">No eligible assets.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each hsAssetOptions as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											selectable
-											selected={hsAssetID === a.id}
-											onToggle={() => (hsAssetID = hsAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Hide on one of your assets"
+							items={hsAssetOptions}
+							{players}
+							selected={hsAssetID}
+							onSelect={(id) => (hsAssetID = id)}
+						/>
 						<label class="form-label">
 							Secret text:
 							<textarea rows={2} bind:value={hsSecret} class="form-textarea"

@@ -24,9 +24,15 @@ type PlanHandler interface {
 	// ValidatePreparation checks plan-specific requirements beyond the
 	// common checks (game phase, eligibility, peer ownership, row bounds).
 	// Returns a user-facing error message, or "" if valid.
-	// For variable-delay plans, also returns the computed target row;
-	// fixed-delay plans return 0 (target row is computed from Metadata.Delay).
-	ValidatePreparation(ctx context.Context, v *ValidationContext) (targetRow int16, errMsg string)
+	//
+	// targetRow encodes one of three states:
+	//   nil  — "no row yet" (Make War, Clandestinely Liaise: row is decided
+	//          by a simultaneous reveal after prep).
+	//   *int — the computed target row (Make Demands: derived from the
+	//          targeted plan's row).
+	// Fixed-delay plans (Metadata.Delay >= 0) return nil here; the common
+	// code computes targetRow as game.CurrentRow + meta.Delay.
+	ValidatePreparation(ctx context.Context, v *ValidationContext) (targetRow *int16, errMsg string)
 
 	// ComputeDifficulty returns the base difficulty for this plan.
 	ComputeDifficulty(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, resData *ResolutionData) (int16, error)

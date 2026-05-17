@@ -30,8 +30,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import AssetCardSelectable from '../AssetCardSelectable.svelte';
-	import { playerColor } from '$lib/playerColor';
+	import CardPicker from './CardPicker.svelte';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 	import type { PlanPanelProps } from './types';
 	import FormField from './FormField.svelte';
@@ -246,7 +245,7 @@
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
 				placeholder="What problem are you solving? What part of history are you investigating or recording?"></textarea>
 		</label>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
@@ -279,24 +278,15 @@
 
 			{#if isFocusPlayer && !invokePhaseClosed}
 				<div class="plan-form" style="margin-top:0.5rem;">
-					<FormField label="Invoke an artifact (pre-roll)">
-						{#if uninvokedArtifacts.length === 0}
-							<p class="choices-note muted">No artifacts available to invoke.</p>
-						{:else}
-							<div class="peer-cards">
-								{#each uninvokedArtifacts as a (a.id)}
-									<AssetCardSelectable
-										asset={a}
-										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-										ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-										selectable
-										selected={invokeAssetID === a.id}
-										onToggle={() => (invokeAssetID = invokeAssetID === a.id ? null : a.id)}
-									/>
-								{/each}
-							</div>
-						{/if}
-					</FormField>
+					<CardPicker
+						label="Invoke an artifact (pre-roll)"
+						items={uninvokedArtifacts}
+						{players}
+						emptyMessage="No artifacts available to invoke."
+						ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+						selected={invokeAssetID}
+						onSelect={(id) => (invokeAssetID = id)}
+					/>
 					<button class="action-btn"
 						onclick={() => submitInvoke(plan)}
 						disabled={invokeBusy || invokeAssetID == null}>
@@ -372,24 +362,15 @@
 						</FormField>
 						{#if marSelected === 'break_artifact' || marSelected === 'invoke_another'}
 							{@const marArtifacts = marSelected === 'break_artifact' ? invokedArtifacts : uninvokedArtifacts}
-							<FormField label="Artifact">
-								{#if marArtifacts.length === 0}
-									<p class="choices-note muted">No eligible artifacts.</p>
-								{:else}
-									<div class="peer-cards">
-										{#each marArtifacts as a (a.id)}
-											<AssetCardSelectable
-												asset={a}
-												ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-												ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-												selectable
-												selected={marAssetID === a.id}
-												onToggle={() => (marAssetID = marAssetID === a.id ? null : a.id)}
-											/>
-										{/each}
-									</div>
-								{/if}
-							</FormField>
+							<CardPicker
+								label="Artifact"
+								items={marArtifacts}
+								{players}
+								emptyMessage="No eligible artifacts."
+								ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+								selected={marAssetID}
+								onSelect={(id) => (marAssetID = id)}
+							/>
 						{/if}
 						<button class="action-btn primary"
 							onclick={() => submitMarChoice(plan)}
@@ -441,32 +422,19 @@
 						<p class="choices-header">
 							Break an invoked artifact ({baRemaining} remaining)
 						</p>
-						<FormField label="Marginalium to tear">
-							{#if baArtifactsWithMarginalia.length === 0}
-								<p class="choices-note muted">No intact marginalia on invoked artifacts.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each baArtifactsWithMarginalia as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-											marginaliaSelectable
-											selectedMarginaliaID={baMargID}
-											onMarginaliaToggle={(mID, parent) => {
-												if (baMargID === mID) {
-													baMargID = null;
-													baAssetID = null;
-												} else {
-													baMargID = mID;
-													baAssetID = parent.id;
-												}
-											}}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Marginalium to tear"
+							items={baArtifactsWithMarginalia}
+							{players}
+							emptyMessage="No intact marginalia on invoked artifacts."
+							ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+							marginaliaMode
+							selectedMarginaliaID={baMargID}
+							onSelectMarginalia={(mID, parent) => {
+								baMargID = mID;
+								baAssetID = parent?.id ?? null;
+							}}
+						/>
 						<button class="action-btn primary"
 							onclick={() => submitBreakArtifact(plan)}
 							disabled={baBusy || baAssetID == null || baMargID == null}>

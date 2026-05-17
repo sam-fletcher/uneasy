@@ -17,9 +17,8 @@
 <script lang="ts">
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
 	import { playerName, activeDemandAgainst, demandWinnersFromPlan } from '../shared';
-	import { playerColor } from '$lib/playerColor';
-	import AssetCardSelectable from '../../AssetCardSelectable.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
+	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
 
 	interface Props {
@@ -136,12 +135,6 @@
 		assets.filter(a => a.owner_id === plan.preparer_id && !a.is_destroyed),
 	);
 
-	function toggleLeverage(id: number) {
-		selectedLeverageIDs = selectedLeverageIDs.includes(id)
-			? selectedLeverageIDs.filter(x => x !== id)
-			: [...selectedLeverageIDs, id];
-	}
-
 	async function submitLeverage() {
 		if (leverageBusy || selectedLeverageIDs.length === 0) return;
 		leverageBusy = true; leverageError = '';
@@ -209,23 +202,14 @@
 				</FormField>
 
 				{#if retargetPlayerID != null}
-					<FormField label="Target asset (optional)">
-						{#if retargetCandidateAssets.length === 0}
-							<p class="choices-note muted">This player has no intact assets.</p>
-						{:else}
-							<div class="peer-cards">
-								{#each retargetCandidateAssets as a (a.id)}
-									<AssetCardSelectable
-										asset={a}
-										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-										selectable
-										selected={retargetAssetID === a.id}
-										onToggle={() => (retargetAssetID = retargetAssetID === a.id ? null : a.id)}
-									/>
-								{/each}
-							</div>
-						{/if}
-					</FormField>
+					<CardPicker
+						label="Target asset (optional)"
+						items={retargetCandidateAssets}
+						{players}
+						emptyMessage="This player has no intact assets."
+						selected={retargetAssetID}
+						onSelect={(id) => (retargetAssetID = id)}
+					/>
 				{/if}
 
 				<button class="action-btn primary" onclick={submitRetarget} disabled={retargetBusy}>
@@ -241,21 +225,17 @@
 					Leverage {playerName(players, plan.preparer_id)}'s assets onto the roll
 				</p>
 				{#if leverageError}<p class="res-error">{leverageError}</p>{/if}
-				{#if leverageableTargetAssets.length === 0}
-					<p class="muted">No leverageable assets on the target preparer.</p>
-				{:else}
-					<div class="peer-cards">
-						{#each leverageableTargetAssets as a (a.id)}
-							<AssetCardSelectable
-								asset={a}
-								ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-								ownerLabel={a.is_leveraged ? 'already leveraged' : undefined}
-								selectable
-								selected={selectedLeverageIDs.includes(a.id)}
-								onToggle={() => toggleLeverage(a.id)}
-							/>
-						{/each}
-					</div>
+				<CardPicker
+					label="Pick one or more assets"
+					items={leverageableTargetAssets}
+					{players}
+					emptyMessage="No leverageable assets on the target preparer."
+					ownerLabel={(a) => a.is_leveraged ? 'already leveraged' : undefined}
+					multi
+					selectedMulti={selectedLeverageIDs}
+					onSelectMulti={(ids) => (selectedLeverageIDs = ids)}
+				/>
+				{#if leverageableTargetAssets.length > 0}
 					<button class="action-btn primary" onclick={submitLeverage}
 						disabled={leverageBusy || selectedLeverageIDs.length === 0}>
 						{leverageBusy ? '…' : `Leverage ${selectedLeverageIDs.length} asset${selectedLeverageIDs.length === 1 ? '' : 's'}`}

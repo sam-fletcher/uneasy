@@ -113,7 +113,7 @@
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
 				placeholder="What role will they fill, in court or otherwise?"></textarea>
 		</label>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>

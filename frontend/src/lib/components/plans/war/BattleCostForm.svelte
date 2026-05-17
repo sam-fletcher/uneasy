@@ -6,9 +6,8 @@
 -->
 <script lang="ts">
 	import type { Player, Asset } from '$lib/api';
-	import { playerColor } from '$lib/playerColor';
-	import AssetCardSelectable from '../../AssetCardSelectable.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
+	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
 
 	export type BattleSubmission =
@@ -64,16 +63,6 @@
 	function setKind(k: Kind) {
 		kind = k;
 		reset();
-	}
-
-	function toggleLeverage(assetID: number) {
-		if (leverageIDs.includes(assetID)) {
-			leverageIDs = leverageIDs.filter(id => id !== assetID);
-		} else if (leverageIDs.length < 2) {
-			leverageIDs = [...leverageIDs, assetID];
-		}
-		// At the cap, taps on un-selected cards are no-ops — the user
-		// must un-select one to pick another. Avoids silent rotation.
 	}
 
 	async function submit() {
@@ -150,42 +139,31 @@
 </FormField>
 
 {#if kind === 'break_asset'}
-	<FormField label="Marginalium to tear">
-		{#if marginaliaAssets.length === 0}
-			<p class="choices-note muted">You have no intact marginalia.</p>
-		{:else}
-			<div class="peer-cards">
-				{#each marginaliaAssets as a (a.id)}
-					<AssetCardSelectable
-						asset={a}
-						ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-						marginaliaSelectable
-						selectedMarginaliaID={marginaliaID}
-						onMarginaliaToggle={(mID) => (marginaliaID = marginaliaID === mID ? null : mID)}
-					/>
-				{/each}
-			</div>
-		{/if}
-	</FormField>
+	<CardPicker
+		label="Marginalium to tear"
+		items={marginaliaAssets}
+		{players}
+		emptyMessage="You have no intact marginalia."
+		marginaliaMode
+		selectedMarginaliaID={marginaliaID}
+		onSelectMarginalia={(mID) => (marginaliaID = mID)}
+	/>
 {:else if kind === 'leverage_two'}
-	<FormField label="Pick two assets to leverage">
-		{#if unleveraged.length < 2}
+	{#if unleveraged.length < 2}
+		<FormField label="Pick two assets to leverage">
 			<p class="choices-note muted">You don't have two un-leveraged assets available.</p>
-		{:else}
-			<div class="peer-cards">
-				{#each unleveraged as a (a.id)}
-					<AssetCardSelectable
-						asset={a}
-						ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-						selectable
-						selected={leverageIDs.includes(a.id)}
-						disabled={!leverageIDs.includes(a.id) && leverageIDs.length >= 2}
-						onToggle={() => toggleLeverage(a.id)}
-					/>
-				{/each}
-			</div>
-		{/if}
-	</FormField>
+		</FormField>
+	{:else}
+		<CardPicker
+			label="Pick two assets to leverage"
+			items={unleveraged}
+			{players}
+			multi
+			max={2}
+			selectedMulti={leverageIDs}
+			onSelectMulti={(ids) => (leverageIDs = ids)}
+		/>
+	{/if}
 {:else}
 	<label class="form-label">
 		Peace terms:

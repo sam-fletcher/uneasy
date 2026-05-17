@@ -96,7 +96,7 @@
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
 				placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?"></textarea>
 		</label>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>

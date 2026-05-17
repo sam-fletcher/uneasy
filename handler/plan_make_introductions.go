@@ -53,11 +53,11 @@ func (miHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 3}
 }
 
-func (miHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+func (miHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.PeerCount < 1 || v.PeerCount > 4 {
-		return 0, "make_introductions requires peer_count between 1 and 4"
+		return nil, "make_introductions requires peer_count between 1 and 4"
 	}
-	return 0, "" // fixed delay; target row computed from Metadata().Delay
+	return nil, "" // fixed delay; target row computed from Metadata().Delay
 }
 
 func (miHandler) ComputeDifficulty(

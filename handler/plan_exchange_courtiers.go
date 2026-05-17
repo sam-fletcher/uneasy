@@ -35,9 +35,9 @@ func (ecHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: 5}
 }
 
-func (ecHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (int16, string) {
+func (ecHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	errMsg := validateExchangeCourtiersPlan(ctx, v.Q, v.Game.ID, v.TargetPlayerID, v.TargetAssetID)
-	return 0, errMsg // fixed delay; target row computed from Metadata().Delay
+	return nil, errMsg // fixed delay; target row computed from Metadata().Delay
 }
 
 func (ecHandler) ComputeDifficulty(

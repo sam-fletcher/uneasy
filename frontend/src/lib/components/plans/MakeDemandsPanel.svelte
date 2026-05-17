@@ -269,7 +269,7 @@
 					placeholder="Frame the demand in fiction…"></textarea>
 			</label>
 
-			<div style="text-align: center;">
+			<div class="form-actions">
 				<button class="action-btn primary" onclick={submitPrep}
 					disabled={prepBusy || targetPlanID == null}>
 					{prepBusy ? '…' : 'Prepare Plan'}

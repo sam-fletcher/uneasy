@@ -55,11 +55,11 @@ func (chHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 5}
 }
 
-func (chHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+func (chHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.Notes == "" {
-		return 0, "chronicle_histories requires preparation_notes describing the historical problem"
+		return nil, "chronicle_histories requires preparation_notes describing the historical problem"
 	}
-	return 0, ""
+	return nil, ""
 }
 
 func (chHandler) ComputeDifficulty(

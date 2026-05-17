@@ -17,9 +17,8 @@
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
-	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import CardPicker from './CardPicker.svelte';
 	import D6Face from './D6Face.svelte';
-	import { playerColor } from '$lib/playerColor';
 	import { playerName, parseResolutionData } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -252,7 +251,7 @@
 			Once prepared, you and your partner each reveal a die to set
 			the delay (average rounded up).
 		</p>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep}
 				disabled={prepBusy || clPartnerID == null}>
 				{prepBusy ? '…' : 'Prepare Plan'}
@@ -327,27 +326,22 @@
 							{i > 0 ? ', ' : ''}{p.display_name}
 						{/each}…
 					</p>
-				{:else if myUnleveragedAssets.length === 0}
-					<p class="choices-note muted">
-						You have no un-leveraged assets to bear the secret.
-					</p>
 				{:else}
-					<div class="peer-cards">
-						{#each myUnleveragedAssets as a (a.id)}
-							<AssetCardSelectable
-								asset={a}
-								ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-								selectable
-								selected={keepSecretAssetID === a.id}
-								onToggle={() => (keepSecretAssetID = keepSecretAssetID === a.id ? null : a.id)}
-							/>
-						{/each}
-					</div>
-					<button class="action-btn primary"
-						onclick={() => onKeepSecret(plan)}
-						disabled={keepBusy || keepSecretAssetID == null}>
-						{keepBusy ? '…' : 'Keep this secret'}
-					</button>
+					<CardPicker
+						label="Asset to hold the secret"
+						items={myUnleveragedAssets}
+						{players}
+						emptyMessage="You have no un-leveraged assets to bear the secret."
+						selected={keepSecretAssetID}
+						onSelect={(id) => (keepSecretAssetID = id)}
+					/>
+					{#if myUnleveragedAssets.length > 0}
+						<button class="action-btn primary"
+							onclick={() => onKeepSecret(plan)}
+							disabled={keepBusy || keepSecretAssetID == null}>
+							{keepBusy ? '…' : 'Keep this secret'}
+						</button>
+					{/if}
 				{/if}
 
 				{#if amPreparer && keepSecretSubmittedIDs.size >= 2}
@@ -395,26 +389,13 @@
 						{@const candidates = otherParticipantAssets.filter(a =>
 							shareChoiceKey === 'take_gift' ? a.asset_type !== 'peer' : true,
 						)}
-						<div class="form-label">
-							<span class="form-label-text">
-								{shareChoiceKey === 'take_gift' ? "Partner's gift" : "Partner's asset"}:
-							</span>
-							{#if candidates.length === 0}
-								<p class="choices-note muted">No eligible assets.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each candidates as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											selectable
-											selected={shareAssetID === a.id}
-											onToggle={() => (shareAssetID = shareAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</div>
+						<CardPicker
+							label={shareChoiceKey === 'take_gift' ? "Partner's gift" : "Partner's asset"}
+							items={candidates}
+							{players}
+							selected={shareAssetID}
+							onSelect={(id) => (shareAssetID = id)}
+						/>
 					{/if}
 
 					{#if shareChoiceKey && SHARE_NEEDS_FACE.has(shareChoiceKey)}

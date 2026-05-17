@@ -12,9 +12,8 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import AssetCardSelectable from '../AssetCardSelectable.svelte';
 	import PlayerChips from './PlayerChips.svelte';
-	import { playerColor } from '$lib/playerColor';
+	import CardPicker from './CardPicker.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData,
 		playerName, assetName, assetsWithIntactMarginalia,
@@ -215,24 +214,14 @@
 		</FormField>
 
 		{#if ecTargetPlayerID != null}
-			<FormField label="Target peer">
-				{#if ecTargetPlayerAssets.length === 0}
-					<p class="muted" style="margin: 0;">This player has no peers to exchange.</p>
-				{:else}
-					<div class="peer-cards">
-						{#each ecTargetPlayerAssets as a (a.id)}
-							<AssetCardSelectable
-								asset={a}
-								ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-								// ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-								selectable
-								selected={ecTargetAssetID === a.id}
-								onToggle={toggleTargetPeer}
-							/>
-						{/each}
-					</div>
-				{/if}
-			</FormField>
+			<CardPicker
+				label="Target peer"
+				items={ecTargetPlayerAssets}
+				{players}
+				emptyMessage="This player has no peers to exchange."
+				selected={ecTargetAssetID}
+				onSelect={(id) => (ecTargetAssetID = id)}
+			/>
 		{/if}
 
 		<label class="form-label">
@@ -241,7 +230,7 @@
 				placeholder="How are you planning to take them into your retinue?"></textarea>
 		</label>
 
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep}
 				disabled={prepBusy || !ecTargetPlayerID || !ecTargetAssetID}>
 				{prepBusy ? '…' : 'Prepare Plan'}
@@ -270,23 +259,14 @@
 							<strong>{playerName(players, plan.preparer_id)}</strong> wants one of your peers.
 							You may offer a peer as a fair trade.
 						</p>
-						<FormField label="Offer a peer">
-							{#if myIntactPeers.length === 0}
-								<p class="choices-note muted">You have no peers to offer.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each myIntactPeers as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											selectable
-											selected={ftOfferedAssetID === a.id}
-											onToggle={() => (ftOfferedAssetID = ftOfferedAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Offer a peer"
+							items={myIntactPeers}
+							{players}
+							emptyMessage="You have no peers to offer."
+							selected={ftOfferedAssetID}
+							onSelect={(id) => (ftOfferedAssetID = id)}
+						/>
 						<button class="action-btn primary" onclick={() => onFTOffer(plan)}
 							disabled={!ftOfferedAssetID || ftOfferBusy}>
 							{ftOfferBusy ? '…' : 'Offer peer'}
@@ -358,23 +338,14 @@
 							The exchange was messy. You must break one of your own marginalia before this plan completes.
 						</p>
 						{#if messyError}<p class="res-error">{messyError}</p>{/if}
-						<FormField label="Marginalium to break">
-							{#if myAssetsWithMarginalia.length === 0}
-								<p class="choices-note muted">You have no intact marginalia.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each myAssetsWithMarginalia as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											marginaliaSelectable
-											selectedMarginaliaID={messyMarginaliaID}
-											onMarginaliaToggle={(mID) => (messyMarginaliaID = messyMarginaliaID === mID ? null : mID)}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Marginalium to break"
+							items={myAssetsWithMarginalia}
+							{players}
+							marginaliaMode
+							selectedMarginaliaID={messyMarginaliaID}
+							onSelectMarginalia={(mID) => (messyMarginaliaID = mID)}
+						/>
 						<button class="action-btn primary" onclick={() => onMessyBreak(plan)}
 							disabled={!messyMarginaliaID || messyBusy}>
 							{messyBusy ? '…' : 'Break marginalia'}

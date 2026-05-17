@@ -74,16 +74,16 @@ func (clHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: -1}
 }
 
-func (clHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+func (clHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlayerID == nil {
-		return 0, "clandestinely_liaise requires target_player_id (the partner)"
+		return nil, "clandestinely_liaise requires target_player_id (the partner)"
 	}
 	if v.Player != nil && *v.TargetPlayerID == v.Player.ID {
-		return 0, "you cannot liaise with yourself"
+		return nil, "you cannot liaise with yourself"
 	}
 	// Row 0 is the placeholder value; the actual row is set after the delay reveal.
 	// The row bounds check against row 13 happens in the reveal completion flow.
-	return 0, ""
+	return nil, ""
 }
 
 // ComputeDifficulty: CL has no dice roll so difficulty is not used in play.

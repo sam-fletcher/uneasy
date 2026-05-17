@@ -52,39 +52,40 @@ func (mdHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: -1}
 }
 
-func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (int16, string) {
+func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlanID == nil {
-		return 0, "make_demands requires target_plan_id"
+		return nil, "make_demands requires target_plan_id"
 	}
 	target, err := v.Q.GetPlanByID(ctx, *v.TargetPlanID)
 	if err != nil {
-		return 0, "target plan not found"
+		return nil, "target plan not found"
 	}
 	if target.GameID != v.Game.ID {
-		return 0, "target plan is not in this game"
+		return nil, "target plan is not in this game"
 	}
 	if target.Status == model.PlanResolved || target.Status == model.PlanCancelled {
-		return 0, "target plan is already resolved or cancelled"
+		return nil, "target plan is already resolved or cancelled"
 	}
 	if target.PlanType == model.PlanMakeWar {
-		return 0, "Make War cannot be the target of a demand"
+		return nil, "Make War cannot be the target of a demand"
 	}
 	if target.PreparerID == v.Player.ID {
-		return 0, "you cannot demand against your own plan"
+		return nil, "you cannot demand against your own plan"
 	}
 	existing, err := v.Q.GetPlansTargeting(ctx, &target.ID)
 	if err != nil {
-		return 0, "could not check existing demands"
+		return nil, "could not check existing demands"
 	}
 	for _, d := range existing {
 		if d.Status != model.PlanResolved && d.Status != model.PlanCancelled {
-			return 0, "another demand already targets that plan"
+			return nil, "another demand already targets that plan"
 		}
 	}
 	if target.RowNumber == nil {
-		return 0, "target plan has not been assigned a row yet (its delay reveal is still open)"
+		return nil, "target plan has not been assigned a row yet (its delay reveal is still open)"
 	}
-	return gamepkg.DemandRowPlacement(*target.RowNumber, v.Game.CurrentRow), ""
+	row := gamepkg.DemandRowPlacement(*target.RowNumber, v.Game.CurrentRow)
+	return &row, ""
 }
 
 func (mdHandler) ComputeDifficulty(

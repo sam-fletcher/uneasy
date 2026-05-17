@@ -20,12 +20,10 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import AssetCardSelectable from '../AssetCardSelectable.svelte';
-	import { playerColor } from '$lib/playerColor';
+	import CardPicker from './CardPicker.svelte';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
-	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -192,7 +190,7 @@
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
 				placeholder="What are you learning, and how?"></textarea>
 		</label>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
@@ -258,32 +256,19 @@
 						<p class="choices-header">
 							Break a resource ({brRemaining} remaining)
 						</p>
-						<FormField label="Marginalium to tear">
-							{#if brResourcesWithMarginalia.length === 0}
-								<p class="choices-note muted">No intact marginalia on any resource.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each brResourcesWithMarginalia as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-											marginaliaSelectable
-											selectedMarginaliaID={brMargID}
-											onMarginaliaToggle={(mID, parent) => {
-												if (brMargID === mID) {
-													brMargID = null;
-													brAssetID = null;
-												} else {
-													brMargID = mID;
-													brAssetID = parent.id;
-												}
-											}}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Marginalium to tear"
+							items={brResourcesWithMarginalia}
+							{players}
+							emptyMessage="No intact marginalia on any resource."
+							ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+							marginaliaMode
+							selectedMarginaliaID={brMargID}
+							onSelectMarginalia={(mID, parent) => {
+								brMargID = mID;
+								brAssetID = parent?.id ?? null;
+							}}
+						/>
 						<button class="action-btn primary"
 							onclick={() => submitBreakResource(plan)}
 							disabled={brBusy || brAssetID == null || brMargID == null}>
@@ -297,24 +282,15 @@
 						<p class="choices-header">
 							Reveal an asset's secrets ({rsRemaining} remaining)
 						</p>
-						<FormField label="Asset">
-							{#if allAssets.length === 0}
-								<p class="choices-note muted">No assets available.</p>
-							{:else}
-								<div class="peer-cards">
-									{#each allAssets as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											ownerLabel={`Owned by ${playerName(players, a.owner_id)}`}
-											selectable
-											selected={rsAssetID === a.id}
-											onToggle={() => (rsAssetID = rsAssetID === a.id ? null : a.id)}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</FormField>
+						<CardPicker
+							label="Asset"
+							items={allAssets}
+							{players}
+							emptyMessage="No assets available."
+							ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+							selected={rsAssetID}
+							onSelect={(id) => (rsAssetID = id)}
+						/>
 						<button class="action-btn primary"
 							onclick={() => submitRevealSecret(plan)}
 							disabled={rsBusy || rsAssetID == null}>

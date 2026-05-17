@@ -55,26 +55,26 @@ func (mwHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: -1}
 }
 
-func (mwHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (int16, string) {
+func (mwHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if len(v.EnemyPlayerIDs) == 0 {
-		return 0, "make_war requires at least one entry in enemy_player_ids"
+		return nil, "make_war requires at least one entry in enemy_player_ids"
 	}
 	seen := map[int64]bool{v.Player.ID: true}
 	for _, id := range v.EnemyPlayerIDs {
 		if id == v.Player.ID {
-			return 0, "cannot declare war on yourself"
+			return nil, "cannot declare war on yourself"
 		}
 		if seen[id] {
-			return 0, "enemy_player_ids contains duplicates"
+			return nil, "enemy_player_ids contains duplicates"
 		}
 		seen[id] = true
 		p, err := v.Q.GetPlayerByID(ctx, id)
 		if err != nil || p.GameID != v.Game.ID {
-			return 0, fmt.Sprintf("enemy player %d is not in this game", id)
+			return nil, fmt.Sprintf("enemy player %d is not in this game", id)
 		}
 	}
 	// Row placeholder; the actual row_number is set after the delay reveal.
-	return 0, ""
+	return nil, ""
 }
 
 // OnPrepare creates the war row, enrols every participant on the correct

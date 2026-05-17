@@ -282,9 +282,12 @@ func validateExchangeCourtiersPlan(
 // ── preparePlanValidation ─────────────────────────────────────────────────────
 
 type preparePlanValidation struct {
-	Status                int
-	ErrMsg                string
-	TargetRow             int16
+	Status int
+	ErrMsg string
+	// TargetRow is nil when the plan defers its row to a post-prep
+	// simultaneous reveal (Make War, Clandestinely Liaise). For every other
+	// plan it holds the row the plan will sit on at creation time.
+	TargetRow             *int16
 	Meta                  PlanMetadata
 	EndgameChoiceRequired bool // overflow detected with no ending_mode set
 }
@@ -373,16 +376,21 @@ func validatePlanPreparation(
 		}
 	}
 
-	var targetRow int16
+	// targetRow is nil when the plan defers its row to a post-prep reveal
+	// (Make War, Clandestinely Liaise); the row bound is re-checked when the
+	// reveal closes (see reveals.go, applyMakeWarDelayResult).
+	var targetRow *int16
 	if meta.Delay == -1 {
 		targetRow = handlerTargetRow
 	} else {
-		targetRow = game.CurrentRow + meta.Delay
+		row := game.CurrentRow + meta.Delay
+		targetRow = &row
 	}
 
 	// Target row bounds. Past row 13 means we're hitting the end of the
-	// public record and the table needs to choose an endgame mode.
-	if targetRow > publicRecordRowCount {
+	// public record and the table needs to choose an endgame mode. Skipped
+	// when the row is deferred; the reveal-close path applies its own check.
+	if targetRow != nil && *targetRow > publicRecordRowCount {
 		switch {
 		case game.EndingMode == nil:
 			return preparePlanValidation{
@@ -398,7 +406,8 @@ func validatePlanPreparation(
 			}
 		case *game.EndingMode == EndingModeExplosiveFinale:
 			// Collapse to row 13 — every plan piles onto the final row.
-			targetRow = publicRecordRowCount
+			row := int16(publicRecordRowCount)
+			targetRow = &row
 		default:
 			return preparePlanValidation{
 				Status: http.StatusConflict,
@@ -648,21 +657,18 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		meta := validation.Meta
+		// validation.TargetRow is nil for plans whose row is decided by a
+		// post-prep simultaneous reveal (Make War, Clandestinely Liaise).
+		// For these the row-count query is meaningless and row_number stays
+		// NULL until the reveal closes (see applyMakeWarDelayResult /
+		// reveals.go); row_order will be fixed up at that point.
 		targetRow := validation.TargetRow
 
-		// Variable-delay plans whose row is decided by a simultaneous reveal
-		// at prep time have no row yet — row_number stays NULL until the
-		// reveal closes (see applyMakeWarDelayResult / reveals.go). For
-		// these plans the row-count query is meaningless; row_order will be
-		// fixed up when the real row is assigned.
-		rowDeferred := body.PlanType == model.PlanMakeWar ||
-			body.PlanType == model.PlanClandestinelyLiaise
-
 		var count int64
-		if !rowDeferred {
+		if targetRow != nil {
 			c, err := s.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
 				GameID:    game.ID,
-				RowNumber: new(targetRow),
+				RowNumber: targetRow,
 			})
 			if err == nil {
 				count = c
@@ -672,7 +678,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		var plan dbgen.Plan
 		err := s.InTx(ctx, func(q *dbgen.Queries) error {
 			var txErr error
-			plan, txErr = createPlanInTx(ctx, q, s, game, player, &body, meta, targetRow, count, rowDeferred, manager)
+			plan, txErr = createPlanInTx(ctx, q, s, game, player, &body, meta, targetRow, count, manager)
 			return txErr
 		})
 		if err != nil {
@@ -698,6 +704,10 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 // createPlanInTx handles the database transaction for plan creation, including
 // plan-specific initialization (resolution data, tokens, handler hooks).
+//
+// targetRow is nil for plans whose row is decided by a post-prep reveal
+// (Make War, Clandestinely Liaise); the row stays NULL on creation and is
+// filled in when the reveal closes.
 func createPlanInTx(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -706,15 +716,10 @@ func createPlanInTx(
 	player *dbgen.Player,
 	body *PreparePlanRequest,
 	meta PlanMetadata,
-	targetRow int16,
+	targetRow *int16,
 	count int64,
-	rowDeferred bool,
 	manager *hub.Manager,
 ) (dbgen.Plan, error) {
-	var rowForCreate *int16
-	if !rowDeferred {
-		rowForCreate = new(targetRow)
-	}
 	plan, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
 		GameID:           game.ID,
 		PlanType:         body.PlanType,
@@ -722,7 +727,7 @@ func createPlanInTx(
 		PreparerID:       player.ID,
 		TargetPlayerID:   body.TargetPlayerID,
 		TargetAssetID:    body.TargetAssetID,
-		RowNumber:        rowForCreate,
+		RowNumber:        targetRow,
 		RowOrder:         int16(count),
 		PreparedAtRow:    game.CurrentRow,
 		PreparationNotes: body.PreparationNotes,

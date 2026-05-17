@@ -218,7 +218,7 @@
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
 				placeholder="What law are you drafting?"></textarea>
 		</label>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>

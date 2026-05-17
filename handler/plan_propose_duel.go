@@ -62,17 +62,17 @@ func (pduelHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 5}
 }
 
-func (pduelHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+func (pduelHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlayerID == nil {
-		return 0, "propose_duel requires target_player_id (the challenged player)"
+		return nil, "propose_duel requires target_player_id (the challenged player)"
 	}
 	if v.Player != nil && *v.TargetPlayerID == v.Player.ID {
-		return 0, "you cannot duel yourself"
+		return nil, "you cannot duel yourself"
 	}
 	if v.Notes == "" {
-		return 0, "propose_duel requires preparation_notes (location and type of duel)"
+		return nil, "propose_duel requires preparation_notes (location and type of duel)"
 	}
-	return 0, ""
+	return nil, ""
 }
 
 func (pduelHandler) ComputeDifficulty(

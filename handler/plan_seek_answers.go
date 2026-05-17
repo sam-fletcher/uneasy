@@ -42,11 +42,11 @@ func (saHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 4}
 }
 
-func (saHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+func (saHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.Notes == "" {
-		return 0, "seek_answers requires preparation_notes describing research methods and topics"
+		return nil, "seek_answers requires preparation_notes describing research methods and topics"
 	}
-	return 0, ""
+	return nil, ""
 }
 
 func (saHandler) ComputeDifficulty(

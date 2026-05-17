@@ -49,11 +49,11 @@ func (pdHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: 4}
 }
 
-func (pdHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+func (pdHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.Notes == "" {
-		return 0, "propose_decree requires preparation_notes describing the proposed decree"
+		return nil, "propose_decree requires preparation_notes describing the proposed decree"
 	}
-	return 0, ""
+	return nil, ""
 }
 
 func (pdHandler) ComputeDifficulty(

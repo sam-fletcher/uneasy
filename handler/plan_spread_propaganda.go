@@ -40,8 +40,8 @@ func (spHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 3}
 }
 
-func (spHandler) ValidatePreparation(_ context.Context, _ *ValidationContext) (int16, string) {
-	return 0, "" // no plan-specific prerequisites; fixed delay
+func (spHandler) ValidatePreparation(_ context.Context, _ *ValidationContext) (*int16, string) {
+	return nil, "" // no plan-specific prerequisites; fixed delay
 }
 
 func (spHandler) ComputeDifficulty(

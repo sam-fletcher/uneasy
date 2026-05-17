@@ -54,11 +54,11 @@ func (hfHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 6}
 }
 
-func (hfHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (int16, string) {
+func (hfHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.Notes == "" {
-		return 0, "host_festivity requires preparation_notes (event description)"
+		return nil, "host_festivity requires preparation_notes (event description)"
 	}
-	return 0, ""
+	return nil, ""
 }
 
 func (hfHandler) ComputeDifficulty(

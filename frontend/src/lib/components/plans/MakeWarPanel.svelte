@@ -34,8 +34,7 @@
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import BattleCostForm, { type BattleSubmission } from './war/BattleCostForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
-	import AssetCardSelectable from '../AssetCardSelectable.svelte';
-	import { playerColor } from '$lib/playerColor';
+	import CardPicker from './CardPicker.svelte';
 	import { playerName, parseResolutionData, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -354,7 +353,7 @@
 			Once declared, all involved players reveal a die to set the delay (average rounded up).
 			Other players may join either side whenever the Public Record advances.
 		</p>
-		<div style="text-align: center;">
+		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep}
 				disabled={prepBusy || enemyIDs.size === 0}>
 				{prepBusy ? '…' : 'Declare War'}
@@ -538,7 +537,7 @@
 					</p>
 				{/if}
 				{#if canVoteProposal}
-					<div style="display:flex;gap:0.5rem;">
+					<div class="form-row">
 						<button class="action-btn primary"
 							onclick={() => castVote(true)} disabled={voteBusy}>
 							{voteBusy ? '…' : 'Accept'}
@@ -566,28 +565,14 @@
 					{@const claimable = targetAssetsFor(c.surrendered_id)}
 					{@const picked = claimAssetByClaim[c.id]}
 					<div style="display:block;margin-bottom:0.5rem;">
-						<p>
-							{playerName(players, c.surrendered_id)} surrendered. Pick one
-							of their assets to take:
-						</p>
-						{#if claimable.length === 0}
-							<p class="choices-note muted">No eligible assets to claim.</p>
-						{:else}
-							<div class="peer-cards">
-								{#each claimable as a (a.id)}
-									<AssetCardSelectable
-										asset={a}
-										ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-										selectable
-										selected={picked === a.id}
-										onToggle={() => (claimAssetByClaim = {
-											...claimAssetByClaim,
-											[c.id]: picked === a.id ? null : a.id,
-										})}
-									/>
-								{/each}
-							</div>
-						{/if}
+						<CardPicker
+							label={`${playerName(players, c.surrendered_id)} surrendered. Pick one of their assets to take`}
+							items={claimable}
+							{players}
+							emptyMessage="No eligible assets to claim."
+							selected={picked ?? null}
+							onSelect={(id) => (claimAssetByClaim = { ...claimAssetByClaim, [c.id]: id })}
+						/>
 						<button class="action-btn primary" style="margin-top:0.4rem;"
 							onclick={() => submitClaim(c.id, c.surrendered_id)}
 							disabled={claimBusy || claimAssetByClaim[c.id] == null}>

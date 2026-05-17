@@ -172,6 +172,29 @@
 }
 .chip-btn.face-chip.active { color: #ffe8b8; }
 
+/* Centered single submit button, or a row of related action buttons.
+   Replaces the inline style="text-align:center;" / style="display:flex"
+   patterns sprinkled across plan forms. */
+.form-actions {
+	display: flex;
+	gap: 0.5rem;
+	justify-content: center;
+	flex-wrap: wrap;
+	margin-top: 0.5rem;
+}
+/* Left-aligned variant — for sub-form buttons that should sit at the
+   start of the row rather than centered. */
+.form-actions.start { justify-content: flex-start; }
+
+/* Generic in-form row of inline children (chips, buttons, small inputs)
+   with consistent spacing — replaces inline `display:flex;gap:…` blocks. */
+.form-row {
+	display: flex;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+	align-items: center;
+}
+
 .ft-select, .form-select {
 	background: #2a2a2a;
 	border: 1px solid #555;
