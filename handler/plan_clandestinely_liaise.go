@@ -297,7 +297,7 @@ func clBothKeepSecretsSubmitted(resData ResolutionData, preparerID int64) bool {
 	const prefix = "keep_secret:"
 	prepSubmitted := false
 	partnerSubmitted := false
-	for _, c := range resData.Choices {
+	for _, c := range resData.MakeMarChoices {
 		if !strings.HasPrefix(c, prefix) {
 			continue
 		}
@@ -395,7 +395,7 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Record keep-secret choice.
 		entry := fmt.Sprintf("keep_secret:%d:%d", player.ID, body.AssetID)
-		resData.Choices = append(resData.Choices, entry)
+		resData.MakeMarChoices = append(resData.MakeMarChoices, entry)
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save keep-secret choice", err)

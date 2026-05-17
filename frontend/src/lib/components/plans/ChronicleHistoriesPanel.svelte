@@ -14,7 +14,7 @@
       we reuse the main invoke picker for.
     - Mar (all players): every non-preparer gets a single-choice picker
       and submits via marChoice. The preparer sees the list of received
-      mar choices (encoded as "playerID:choice" in resolution_data.choices).
+      mar choices (encoded as "playerID:choice" in resolution_data.make_mar_choices).
 
   Pre-roll artifact-invocation is gated by resolution_data.invoke_phase_closed,
   which the server flips true inside OnResolve (before the roll is created).
@@ -169,7 +169,7 @@
 	type MarEntry = { playerID: number; choice: string };
 	const marEntries = $derived.by<MarEntry[]>(() => {
 		if (!plan) return [];
-		return (parseResolutionData(plan).choices ?? [])
+		return (parseResolutionData(plan).make_mar_choices ?? [])
 			.map(c => {
 				const idx = c.indexOf(':');
 				if (idx < 0) return null;
@@ -233,7 +233,7 @@
 	// Make-path choices are stored as plain keys (not "pid:choice"); count
 	// those only.
 	const makeChoices = $derived(
-		plan ? (parseResolutionData(plan).choices ?? []).filter(c => !c.includes(':')) : []
+		plan ? (parseResolutionData(plan).make_mar_choices ?? []).filter(c => !c.includes(':')) : []
 	);
 </script>
 

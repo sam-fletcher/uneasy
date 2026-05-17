@@ -243,7 +243,7 @@
 	{@const rd = parseResolutionData(plan)}
 	{@const ftAssetID = rd.fair_trade_asset_id ?? null}
 	{@const ftAccepted = rd.fair_trade_accepted ?? null}
-	{@const existingChoices = rd.choices ?? []}
+	{@const existingChoices = rd.make_mar_choices ?? []}
 	{@const choicesDone = existingChoices.length > 0}
 
 	<ResolvingCard {plan} {players} error={resError}>

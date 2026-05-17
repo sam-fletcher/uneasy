@@ -460,18 +460,18 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		// when both players have submitted.
 		prefix := fmt.Sprintf("stake_count:%d:", player.ID)
 		// Remove any previous submission from this player.
-		newChoices := resData.Choices[:0]
-		for _, c := range resData.Choices {
+		newChoices := resData.MakeMarChoices[:0]
+		for _, c := range resData.MakeMarChoices {
 			if !strings.HasPrefix(c, prefix) {
 				newChoices = append(newChoices, c)
 			}
 		}
 		newChoices = append(newChoices, fmt.Sprintf("%s%d", prefix, body.Count))
-		resData.Choices = newChoices
+		resData.MakeMarChoices = newChoices
 
 		// Count distinct participants who have submitted.
 		submitted := map[int64]int16{}
-		for _, c := range resData.Choices {
+		for _, c := range resData.MakeMarChoices {
 			if !strings.HasPrefix(c, "stake_count:") {
 				continue
 			}

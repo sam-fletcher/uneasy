@@ -125,8 +125,12 @@ type ResolutionData struct {
 	RecursivePlanID *int64 `json:"recursive_plan_id,omitempty"`
 	EsteemLockout   bool   `json:"esteem_lockout,omitempty"`
 
-	// ── Seek Answers / generic choices ──
-	Choices []string `json:"choices,omitempty"`
+	// ── Make/Mar choices ──
+	// Set by the generic POST /api/plans/:id/make-choice endpoint and by
+	// per-plan handlers (e.g. Chronicle) that record per-player make/mar
+	// entries. Holds make/mar state only — pre-roll sub-state belongs on
+	// per-plan typed fields, not here.
+	MakeMarChoices []string `json:"make_mar_choices,omitempty"`
 
 	// ── Spread Rumors ──
 	SourceHidden bool   `json:"source_hidden,omitempty"`

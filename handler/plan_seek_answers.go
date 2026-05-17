@@ -84,7 +84,7 @@ func (saHandler) ApplyChoice(
 	_ []string,
 	_ string,
 ) error {
-	// Choices are recorded via ResData.Choices (done in MakeChoice).
+	// Choices are recorded via ResData.MakeMarChoices (done in MakeChoice).
 	// Mechanical effects (break_resource, reveal_secret) use extra routes.
 	return nil
 }

@@ -286,8 +286,11 @@ export interface ResolutionData {
 	recursive_plan_id?: number | null;
 	esteem_lockout?: boolean;
 
-	// ── Seek Answers / generic choices ──
-	choices?: string[];
+	// ── Make/Mar choices ──
+	// Written by POST /api/plans/:id/make-choice and by per-plan handlers
+	// (e.g. Chronicle) for per-player make/mar entries. Plan-specific
+	// pre-roll state belongs on per-plan typed fields, not here.
+	make_mar_choices?: string[];
 
 	// ── Spread Rumors ──
 	source_hidden?: boolean;

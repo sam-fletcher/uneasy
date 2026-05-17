@@ -289,7 +289,7 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 // players submit their choice. Preparer choices still go through make-choice.
 //
 // Any player in the game (including the preparer calling this route again) may
-// call this. Choices are recorded in ResData.Choices appended with
+// call this. Choices are recorded in ResData.MakeMarChoices appended with
 // "playerID:choice" encoding so multiple players' choices are tracked.
 //
 // Request body: {"choice": "break_artifact|invoke_another|echo_present|total_control", "asset_id": N}
@@ -347,7 +347,7 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Record as "playerID:choice" in Choices.
 		entry := fmt.Sprintf("%d:%s", player.ID, body.Choice)
-		resData.Choices = append(resData.Choices, entry)
+		resData.MakeMarChoices = append(resData.MakeMarChoices, entry)
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save mar choice", err)

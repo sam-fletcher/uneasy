@@ -13,7 +13,7 @@ func TestLoadResolutionData_Nil(t *testing.T) {
 	result := LoadResolutionData(nil)
 	assert.Equal(t, int16(0), result.PeerCount)
 	assert.False(t, result.EsteemLockout)
-	assert.Empty(t, result.Choices)
+	assert.Empty(t, result.MakeMarChoices)
 }
 
 // TestLoadResolutionData_Empty tests that an empty string returns a zero-value struct.
@@ -22,7 +22,7 @@ func TestLoadResolutionData_Empty(t *testing.T) {
 	result := LoadResolutionData(&empty)
 	assert.Equal(t, int16(0), result.PeerCount)
 	assert.False(t, result.EsteemLockout)
-	assert.Empty(t, result.Choices)
+	assert.Empty(t, result.MakeMarChoices)
 }
 
 // TestLoadResolutionData_EmptyJSON tests that "{}" unmarshals to a zero-value struct.
@@ -31,7 +31,7 @@ func TestLoadResolutionData_EmptyJSON(t *testing.T) {
 	result := LoadResolutionData(&emptyJSON)
 	assert.Equal(t, int16(0), result.PeerCount)
 	assert.False(t, result.EsteemLockout)
-	assert.Empty(t, result.Choices)
+	assert.Empty(t, result.MakeMarChoices)
 }
 
 // TestLoadResolutionData_PeerCount tests unmarshaling a simple PeerCount field.
@@ -54,14 +54,14 @@ func TestLoadResolutionData_MultipleFields(t *testing.T) {
 	assert.True(t, result.MessyBreakRequired)
 }
 
-// TestLoadResolutionData_Choices tests unmarshaling choice strings.
-func TestLoadResolutionData_Choices(t *testing.T) {
-	jsonStr := `{"choices": ["option1", "option2", "option3"]}`
+// TestLoadResolutionData_MakeMarChoices tests unmarshaling make/mar choice strings.
+func TestLoadResolutionData_MakeMarChoices(t *testing.T) {
+	jsonStr := `{"make_mar_choices": ["option1", "option2", "option3"]}`
 	result := LoadResolutionData(&jsonStr)
 
 	expected := []string{"option1", "option2", "option3"}
-	assert.Len(t, result.Choices, 3)
-	assert.Equal(t, expected, result.Choices)
+	assert.Len(t, result.MakeMarChoices, 3)
+	assert.Equal(t, expected, result.MakeMarChoices)
 }
 
 // TestLoadResolutionData_InvokedArtifactIDs tests unmarshaling artifact IDs.
@@ -84,7 +84,7 @@ func TestLoadResolutionData_RoundTrip(t *testing.T) {
 		FairTradeAccepted:  new(true),
 		MessyBreakRequired: false,
 		PeerCount:          2,
-		Choices:            []string{"a", "b"},
+		MakeMarChoices:     []string{"a", "b"},
 		InvokedArtifactIDs: []int64{1, 2, 3},
 		EsteemLockout:      true,
 		PartnerID:          &playerID,

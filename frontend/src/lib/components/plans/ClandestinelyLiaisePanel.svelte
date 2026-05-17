@@ -77,7 +77,7 @@
 			partnerID: rd.partner_id ?? null,
 			delayRevealID: rd.liaise_delay_reveal_id ?? null,
 			redelayRevealID: rd.redelay_reveal_id ?? null,
-			choices: rd.choices ?? [],
+			choices: rd.make_mar_choices ?? [],
 		};
 	});
 

@@ -104,7 +104,7 @@
 	</div>
 
 {:else if plan}
-	{@const existingChoices = parseResolutionData(plan).choices ?? []}
+	{@const existingChoices = parseResolutionData(plan).make_mar_choices ?? []}
 	{@const choicesDone = existingChoices.length > 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
