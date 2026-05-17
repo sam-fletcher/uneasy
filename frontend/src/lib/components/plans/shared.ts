@@ -203,3 +203,41 @@ export function assetsWithIntactMarginalia(
 		&& (a.marginalia ?? []).some(m => !m.is_torn),
 	);
 }
+
+/**
+ * Players other than the given one. Standard prep-target list shape;
+ * returns the full list if `exclude` is null (e.g. spectator view).
+ */
+export function playersExcept(players: Player[], exclude: number | null): Player[] {
+	return players.filter(p => p.id !== exclude);
+}
+
+/**
+ * Intact, un-leveraged assets owned by `ownerID`. Used by Clandestinely
+ * Liaise's keep-secret picker, Make War's leverage_two list, etc.
+ * `null` ownerID returns [].
+ */
+export function ownerUnleveragedAssets(assets: Asset[], ownerID: number | null): Asset[] {
+	if (ownerID == null) return [];
+	return assets.filter(a =>
+		a.owner_id === ownerID && !a.is_destroyed && !a.is_leveraged,
+	);
+}
+
+/**
+ * Intact assets owned by `ownerID`. `null` ownerID returns [].
+ */
+export function ownerIntactAssets(assets: Asset[], ownerID: number | null): Asset[] {
+	if (ownerID == null) return [];
+	return assets.filter(a => a.owner_id === ownerID && !a.is_destroyed);
+}
+
+/**
+ * Plans that are pending on `rowNumber`. A "pending on the current row"
+ * blocks scene resolution and demands a Resolve First panel — this is the
+ * canonical predicate. Variable-delay plans whose row hasn't been decided
+ * yet have `row_number === null` and never match.
+ */
+export function plansPendingOnRow(plans: Plan[], rowNumber: number): Plan[] {
+	return plans.filter(p => p.status === 'pending' && p.row_number === rowNumber);
+}

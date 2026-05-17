@@ -23,7 +23,7 @@
 	} from '$lib/api';
 
 	import './plans/planPanel.css';
-	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER, playerName } from './plans/shared';
+	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER, playerName, plansPendingOnRow } from './plans/shared';
 	import { REGISTRY } from './plans/registry';
 	import RowPill from './plans/RowPill.svelte';
 	import { highlightedRow } from '$lib/highlight';
@@ -87,9 +87,7 @@
 
 	const resolvingPlan = $derived(plans.find(p => p.status === 'resolving') ?? null);
 
-	const pendingOnRow = $derived(
-		plans.filter(p => p.status === 'pending' && p.row_number === currentRow)
-	);
+	const pendingOnRow = $derived(plansPendingOnRow(plans, currentRow));
 
 	const needsResolution = $derived(resolvingPlan != null || pendingOnRow.length > 0);
 

@@ -16,8 +16,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData,
-		playerName, assetName, assetsWithIntactMarginalia,
-	} from './shared';
+		playerName, assetName, assetsWithIntactMarginalia, playersExcept, }from './shared';
 
 	import type { PlanPanelProps } from './types';
 	import FormField from './FormField.svelte';
@@ -51,7 +50,7 @@
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
-	const otherPlayers = $derived(players.filter(p => p.id !== currentPlayerID));
+	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
 	// My intact peers — candidates for fair-trade offer in resolve mode.
 	const myIntactPeers = $derived(
 		assets.filter(a =>

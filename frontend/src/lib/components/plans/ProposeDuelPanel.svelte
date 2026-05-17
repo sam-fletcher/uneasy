@@ -27,7 +27,7 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
-	import { playerName, assetName, parseResolutionData } from './shared';
+	import { playerName, assetName, parseResolutionData, playersExcept }from './shared';
 
 	import type { PlanPanelProps } from './types';
 	import FormField from './FormField.svelte';
@@ -54,7 +54,7 @@
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
-	const otherPlayers = $derived(players.filter(p => p.id !== currentPlayerID));
+	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
 
 	async function submitPrep() {
 		if (prepBusy) return;

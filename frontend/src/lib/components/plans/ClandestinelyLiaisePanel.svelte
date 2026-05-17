@@ -19,7 +19,10 @@
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import D6Face from './D6Face.svelte';
-	import { playerName, parseResolutionData } from './shared';
+	import {
+		playerName, parseResolutionData,
+		playersExcept, ownerUnleveragedAssets, ownerIntactAssets,
+	} from './shared';
 
 	import type { PlanPanelProps } from './types';
 	import FormField from './FormField.svelte';
@@ -40,7 +43,7 @@
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
-	const otherPlayers = $derived(players.filter(p => p.id !== currentPlayerID));
+	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
 
 	async function submitPrep() {
 		if (prepBusy) return;
@@ -98,22 +101,12 @@
 		return out;
 	});
 
-	const myUnleveragedAssets = $derived(
-		currentPlayerID == null
-			? []
-			: assets.filter(a =>
-				a.owner_id === currentPlayerID && !a.is_destroyed && !a.is_leveraged,
-			),
-	);
+	const myUnleveragedAssets = $derived(ownerUnleveragedAssets(assets, currentPlayerID));
 	// In share-choice sub-forms, the target is "the other participant".
 	const otherParticipantID = $derived(
 		amPreparer ? clState.partnerID : (plan?.preparer_id ?? null),
 	);
-	const otherParticipantAssets = $derived(
-		otherParticipantID == null
-			? []
-			: assets.filter(a => a.owner_id === otherParticipantID && !a.is_destroyed),
-	);
+	const otherParticipantAssets = $derived(ownerIntactAssets(assets, otherParticipantID));
 
 	// Has the current player submitted keep-secret?
 	const iKeptSecret = $derived(

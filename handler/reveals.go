@@ -264,10 +264,17 @@ func applyLiaiseDelayResult(
 		return
 	}
 
-	// Update the plan's row_number to the computed target.
-	_ = q.SetPlanRowNumber(ctx, dbgen.SetPlanRowNumberParams{
+	// Compute row_order at placement time — without this the plan keeps its
+	// creation-time placeholder of 0 and would land before any plans already
+	// on the target row.
+	rowOrder, _ := q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
+		GameID:    plan.GameID,
+		RowNumber: new(targetRow),
+	})
+	_ = q.SetPlanRowAndOrder(ctx, dbgen.SetPlanRowAndOrderParams{
 		ID:        planID,
 		RowNumber: new(targetRow),
+		RowOrder:  int16(rowOrder),
 	})
 
 	// Refresh plan to get the updated row_number for the boundary anchor.

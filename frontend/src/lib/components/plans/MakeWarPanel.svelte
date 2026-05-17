@@ -35,7 +35,10 @@
 	import BattleCostForm, { type BattleSubmission } from './war/BattleCostForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
-	import { playerName, parseResolutionData, assetsWithIntactMarginalia } from './shared';
+	import {
+		playerName, parseResolutionData,
+		assetsWithIntactMarginalia, playersExcept, ownerUnleveragedAssets,
+	} from './shared';
 
 	import type { PlanPanelProps } from './types';
 	import FormField from './FormField.svelte';
@@ -61,7 +64,7 @@
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
-	const otherPlayers = $derived(players.filter(p => p.id !== currentPlayerID));
+	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
 
 	function toggleEnemy(id: number) {
 		const next = new Set(enemyIDs);
@@ -190,12 +193,7 @@
 	const myMarginaliaAssets = $derived(
 		assetsWithIntactMarginalia(assets, currentPlayerID),
 	);
-	const myUnleveraged = $derived(
-		currentPlayerID == null ? [] :
-		assets.filter(a =>
-			a.owner_id === currentPlayerID && !a.is_destroyed && !a.is_leveraged,
-		),
-	);
+	const myUnleveraged = $derived(ownerUnleveragedAssets(assets, currentPlayerID));
 
 	async function handleCostSubmit(s: BattleSubmission) {
 		if (!plan) return;

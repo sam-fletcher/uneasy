@@ -7,7 +7,7 @@
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
-	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
+	import { activeDemandAgainst, demandWinnersFromPlan, plansPendingOnRow } from '$lib/components/plans/shared';
 	import {
 		refreshAssets, passFocus,
 		listWars,
@@ -123,7 +123,7 @@
 	// to repeat it.
 	const stepLabel = $derived.by(() => {
 		if (plans.some(p => p.status === 'resolving')) return 'Resolving plan';
-		if (plans.some(p => p.status === 'pending' && p.row_number === game.current_row))
+		if (plansPendingOnRow(plans, game.current_row).length > 0)
 			return 'Plan to resolve';
 		if (activeScene) return 'Scene';
 		if (isFocusPlayer && !sceneEnded) return 'Set the scene';
@@ -224,7 +224,7 @@
 	/** True when there is an active resolving plan or a pending plan on the current row. */
 	const hasPlansToResolve = $derived(
 		plans.some(p => p.status === 'resolving') ||
-		plans.some(p => p.status === 'pending' && p.row_number === game.current_row)
+		plansPendingOnRow(plans, game.current_row).length > 0
 	);
 
 	/** True when an in-flight roll hasn't resolved yet. */

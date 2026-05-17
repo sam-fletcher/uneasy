@@ -26,7 +26,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import { playerName, parseResolutionData } from './shared';
+	import { playerName, parseResolutionData, ownerUnleveragedAssets } from './shared';
 
 	import type { PlanPanelProps } from './types';
 
@@ -110,13 +110,7 @@
 		return myRank === 1 || myRank < preparerRank;
 	});
 
-	const myUnleveragedAssets = $derived(
-		currentPlayerID == null
-			? []
-			: assets.filter(a =>
-				a.owner_id === currentPlayerID && !a.is_destroyed && !a.is_leveraged
-			)
-	);
+	const myUnleveragedAssets = $derived(ownerUnleveragedAssets(assets, currentPlayerID));
 
 	// Has the signatory called the roll yet? We treat the presence of the
 	// roll (rollActive or rollOutcome set) as the council being closed.

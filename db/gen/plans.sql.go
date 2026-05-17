@@ -647,19 +647,22 @@ func (q *Queries) SetPlanResultPreserveStatus(ctx context.Context, arg SetPlanRe
 	return err
 }
 
-const setPlanRowNumber = `-- name: SetPlanRowNumber :exec
-UPDATE plans SET row_number = $2 WHERE id = $1
+const setPlanRowAndOrder = `-- name: SetPlanRowAndOrder :exec
+UPDATE plans SET row_number = $2, row_order = $3 WHERE id = $1
 `
 
-type SetPlanRowNumberParams struct {
+type SetPlanRowAndOrderParams struct {
 	ID        int64  `db:"id" json:"id"`
 	RowNumber *int16 `db:"row_number" json:"row_number"`
+	RowOrder  int16  `db:"row_order" json:"row_order"`
 }
 
-// Updates a plan's row_number. Used by variable-delay plans (CL, MW) after
-// the simultaneous reveal determines the actual delay.
-func (q *Queries) SetPlanRowNumber(ctx context.Context, arg SetPlanRowNumberParams) error {
-	_, err := q.db.Exec(ctx, setPlanRowNumber, arg.ID, arg.RowNumber)
+// Sets a plan's row_number and row_order in a single update. Used by
+// variable-delay plans (CL, MW) after their simultaneous reveal resolves:
+// row_order is recomputed from CountPlansOnRow at that moment so the
+// newly-placed plan slots correctly behind any plans already on the row.
+func (q *Queries) SetPlanRowAndOrder(ctx context.Context, arg SetPlanRowAndOrderParams) error {
+	_, err := q.db.Exec(ctx, setPlanRowAndOrder, arg.ID, arg.RowNumber, arg.RowOrder)
 	return err
 }
 

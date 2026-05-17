@@ -54,10 +54,12 @@ SELECT * FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1;
 -- name: SetPlanResolutionData :exec
 UPDATE plans SET resolution_data = $2 WHERE id = $1;
 
--- name: SetPlanRowNumber :exec
--- Updates a plan's row_number. Used by variable-delay plans (CL, MW) after
--- the simultaneous reveal determines the actual delay.
-UPDATE plans SET row_number = $2 WHERE id = $1;
+-- name: SetPlanRowAndOrder :exec
+-- Sets a plan's row_number and row_order in a single update. Used by
+-- variable-delay plans (CL, MW) after their simultaneous reveal resolves:
+-- row_order is recomputed from CountPlansOnRow at that moment so the
+-- newly-placed plan slots correctly behind any plans already on the row.
+UPDATE plans SET row_number = $2, row_order = $3 WHERE id = $1;
 
 -- name: GetPlansTargeting :many
 -- Returns Make Demands plans whose targeted_plan_id points at the given
