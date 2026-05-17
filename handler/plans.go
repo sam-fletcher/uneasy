@@ -694,6 +694,16 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// to "the next plan you prepare" — synthesize it now.
 		counterPlanID := consumePendingCounterDemandFor(ctx, s.Q, manager, game, &plan)
 
+		// Preparing a plan is the focus player's step-5 action; pass the
+		// focus marker automatically so the prepare button is a one-click
+		// commit rather than requiring a separate Pass Focus press. The
+		// plan has already committed, so a failure here is logged and
+		// recovered via the manual /pass-focus endpoint rather than
+		// failing the request.
+		if err := autoPassFocus(r, s, manager, game); err != nil {
+			loggerFromContext(r.Context()).Error("auto pass-focus after prepare-plan", "err", err)
+		}
+
 		resp := map[string]any{"plan": plan}
 		if counterPlanID != nil {
 			resp["counter_demand_plan_id"] = *counterPlanID

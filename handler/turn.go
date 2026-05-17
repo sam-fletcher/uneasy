@@ -312,6 +312,15 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			}
 		}
 
+		// Refreshing assets is the focus player's step-5 action; pass the
+		// focus marker automatically so refresh is a one-click commit. The
+		// primary action has already committed, so a failure here is logged
+		// and recovered via the manual /pass-focus endpoint rather than
+		// failing the request.
+		if err := autoPassFocus(r, s, manager, game); err != nil {
+			loggerFromContext(r.Context()).Error("auto pass-focus after refresh-assets", "err", err)
+		}
+
 		respond(w, http.StatusOK, map[string]any{"refreshed": body.AssetIDs})
 	}
 }
@@ -375,6 +384,88 @@ func AdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
+// autoPassFocus runs steps 6–8 of the per-row loop as a side effect after the
+// focus player's primary action (plan prep, asset refresh) has already
+// succeeded. It is the same logic as PassFocus but writes no HTTP response.
+//
+// Returns an error only for hard failures (focus could not be moved, or row
+// advance failed after focus moved). Expected soft conditions — pending plans
+// remain on the row, or war costs / surrender claims block row advance — are
+// not errors; the caller's primary action still committed, and the manual
+// PassFocus endpoint remains as a recovery path either way.
+func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbgen.Game) error {
+	if game.Phase != model.PhaseMainEvent || game.FocusPlayerID == nil {
+		return nil
+	}
+	ctx := r.Context()
+
+	next, err := nextFocusPlayer(r, s.Q, game.ID, *game.FocusPlayerID)
+	if err != nil {
+		return fmt.Errorf("determine next focus player: %w", err)
+	}
+	if err = s.Q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+		ID:            game.ID,
+		FocusPlayerID: new(next.ID),
+	}); err != nil {
+		return fmt.Errorf("update focus player: %w", err)
+	}
+
+	h, hasHub := manager.Get(game.ID)
+	if hasHub {
+		h.BroadcastEvent(model.EventFocusChanged, model.FocusChangedPayload{
+			PlayerID:    next.ID,
+			DisplayName: next.DisplayName,
+		})
+	}
+
+	// Soft conditions that block row advance: pending plans, outstanding
+	// war costs, or open surrender claims. Each check is conservative —
+	// any DB error is treated as "skip row advance" so we never advance
+	// past a state we couldn't verify is clear. Failures are logged but
+	// not returned, since focus has already moved and /advance-row is the
+	// recovery path.
+	logger := loggerFromContext(ctx)
+
+	pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
+		GameID:    game.ID,
+		RowNumber: new(game.CurrentRow),
+	})
+	if err != nil {
+		logger.Warn("auto pass-focus: could not list pending plans; skipping row advance", "err", err)
+		return nil
+	}
+	if len(pending) > 0 {
+		return nil
+	}
+
+	outstanding, err := mwOutstandingCostsForGame(ctx, s.Q, game.ID, game.CurrentRow)
+	if err != nil {
+		logger.Warn("auto pass-focus: could not check outstanding war costs; skipping row advance", "err", err)
+		return nil
+	}
+	if len(outstanding) > 0 {
+		return nil
+	}
+
+	claims, err := mwOutstandingSurrenderClaimsForGame(ctx, s.Q, game.ID)
+	if err != nil {
+		logger.Warn("auto pass-focus: could not check surrender claims; skipping row advance", "err", err)
+		return nil
+	}
+	if len(claims) > 0 {
+		return nil
+	}
+
+	newRow, ended, err := advanceRowInner(r, s.Q, manager, h, game)
+	if err != nil {
+		return fmt.Errorf("advance row: %w", err)
+	}
+	if !ended {
+		mwBroadcastBattleCostsDue(ctx, s.Q, manager, game.ID, newRow)
+	}
+	return nil
+}
+
 // PassFocus handles POST /api/tables/{id}/pass-focus.
 //
 // Implements rules steps 6–8 of the per-row loop:
@@ -433,7 +524,9 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		})
 		if err != nil {
 			// Non-fatal: pass focus succeeded; leave row advance to the
-			// facilitator's manual AdvanceRow if needed.
+			// facilitator's manual /advance-row if needed. Log so a
+			// persistent DB issue here doesn't silently stall row advance.
+			loggerFromContext(ctx).Warn("pass-focus: could not list pending plans; skipping row advance", "err", err)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
@@ -452,14 +545,23 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Step 8: no plans remain — advance the row automatically, unless
-		// any active war still has unpaid battle costs for the current row.
-		if outstanding, costErr := mwOutstandingCostsForGame(
-			ctx,
-			s.Q,
-			game.ID,
-			game.CurrentRow,
-		); costErr == nil &&
-			len(outstanding) > 0 {
+		// any active war still has unpaid battle costs for the current row,
+		// or any surrender claim is still open. Both checks are conservative
+		// on error: if we can't verify the row is clear, we skip the advance
+		// and the facilitator can retry via /advance-row.
+		logger := loggerFromContext(ctx)
+
+		outstanding, costErr := mwOutstandingCostsForGame(ctx, s.Q, game.ID, game.CurrentRow)
+		if costErr != nil {
+			logger.Warn("pass-focus: could not check outstanding war costs; skipping row advance", "err", costErr)
+			respond(w, http.StatusOK, map[string]any{
+				"focus_player_id":   next.ID,
+				"focus_player_name": next.DisplayName,
+				"advance_blocked":   "could not verify war costs; retry via /advance-row",
+			})
+			return
+		}
+		if len(outstanding) > 0 {
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
@@ -467,8 +569,18 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			})
 			return
 		}
-		if claims, claimErr := mwOutstandingSurrenderClaimsForGame(ctx, s.Q, game.ID); claimErr == nil &&
-			len(claims) > 0 {
+
+		claims, claimErr := mwOutstandingSurrenderClaimsForGame(ctx, s.Q, game.ID)
+		if claimErr != nil {
+			logger.Warn("pass-focus: could not check surrender claims; skipping row advance", "err", claimErr)
+			respond(w, http.StatusOK, map[string]any{
+				"focus_player_id":   next.ID,
+				"focus_player_name": next.DisplayName,
+				"advance_blocked":   "could not verify surrender claims; retry via /advance-row",
+			})
+			return
+		}
+		if len(claims) > 0 {
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,

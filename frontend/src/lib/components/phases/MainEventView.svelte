@@ -9,7 +9,7 @@
 	import { WAR_EVENTS } from '$lib/ws';
 	import { activeDemandAgainst, demandWinnersFromPlan, plansPendingOnRow } from '$lib/components/plans/shared';
 	import {
-		refreshAssets, passFocus,
+		refreshAssets,
 		listWars,
 	} from '$lib/api';
 	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse } from '$lib/api';
@@ -127,8 +127,7 @@
 			return 'Plan to resolve';
 		if (activeScene) return 'Scene';
 		if (isFocusPlayer && !sceneEnded) return 'Set the scene';
-		if (isFocusPlayer && sceneEnded && !actionTaken) return 'Prepare a plan';
-		if (isFocusPlayer && sceneEnded && actionTaken) return 'Ready to move on';
+		if (isFocusPlayer && sceneEnded) return 'Prepare a plan';
 		return '';
 	});
 
@@ -136,7 +135,7 @@
 	// action when one exists (e.g. the focus player can also refresh assets
 	// instead of preparing a plan).
 	const stepSubtitle = $derived.by(() => {
-		if (isFocusPlayer && sceneEnded && !actionTaken && !hasPlansToResolve) {
+		if (isFocusPlayer && sceneEnded && !hasPlansToResolve) {
 			return `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
 		}
 		return '';
@@ -186,34 +185,10 @@
 		try {
 			await refreshAssets(game.id, [...selectedRefreshIDs]);
 			selectedRefreshIDs = new Set();
-			// Assets are updated via the asset.refreshed WS event; no local state needed.
-			// Move to the "done" step by marking actionTaken.
-			actionTaken = true;
+			// Assets update via asset.refreshed; the server auto-passes the
+			// focus marker (focus.changed) so no local state change is needed.
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not refresh assets.';
-		} finally {
-			actionBusy = false;
-		}
-	}
-
-	// actionTaken: focus player has chosen their action (refresh or skip).
-	// Together with sceneEnded, it drives the action bar step.
-	let actionTaken = $state(false);
-
-	// Reset actionTaken when sceneEnded resets (new row or new focus).
-	$effect(() => {
-		if (!sceneEnded) actionTaken = false;
-	});
-
-	async function onPassFocus() {
-		if (actionBusy) return;
-		actionBusy = true;
-		error = '';
-		try {
-			await passFocus(game.id);
-			// focus.changed WS event will update the parent; sceneEnded resets.
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not pass focus.';
 		} finally {
 			actionBusy = false;
 		}
@@ -263,13 +238,13 @@
 	}
 
 	/**
-	 * Called by PlanPanel specifically when the focus player prepares a plan —
-	 * their chosen step-2 action. Triggers a parent re-fetch and advances the
-	 * local action bar state.
+	 * Called by PlanPanel when the focus player prepares a plan. The server
+	 * auto-passes the focus marker after preparation succeeds; the resulting
+	 * focus.changed event drives the UI transition. We only need to refresh
+	 * the parent's plan list here.
 	 */
 	function onPlanPrepared() {
 		onPlansChanged();
-		actionTaken = true;
 	}
 
 </script>
@@ -361,7 +336,7 @@
 				{rankings}
 				{currentPlayerID}
 				{isFocusPlayer}
-				prepEnabled={isFocusPlayer && sceneEnded && !actionTaken}
+				prepEnabled={isFocusPlayer && sceneEnded}
 				{rollActive}
 				{rollOutcome}
 				{activeRoll}
@@ -388,65 +363,53 @@
 
 			<!-- ── Focus-player action bar ──────────────────────────────────── -->
 			<!--
-				Step 1 (End Scene) used to live here; it now lives in
-				SceneDetailsPanel above. The action bar only handles
-				post-scene actions (refresh / skip / prepare plan) and
-				passing focus.
+				End Scene lives in SceneDetailsPanel above; preparing a plan
+				lives in PlanPanel above. This bar only renders the refresh
+				alternative (or a wait/resolve hint). Plan prep and refresh
+				both auto-pass the focus marker server-side, so there is no
+				explicit "Pass Focus" step here.
 			-->
 			{#if isFocusPlayer && sceneEnded}
 				<div class="action-bar">
-					{#if !actionTaken}
-						<!-- Step 2: post-scene action — prepare a plan (PlanPanel above), refresh, or skip -->
-						<div class="action-step">
-							{#if hasPlansToResolve}
-								<!-- A plan needs to be resolved before the focus player can act. -->
-								<span class="action-label">Resolve the active plan above before acting.</span>
-							{:else}
-								<!-- Heading text has moved to .step-header above; the
-								     OR divider here visually separates the two options
-								     (plan-grid above ↔ refresh button below). -->
-								<div class="or-divider" aria-hidden="true">
-									<span class="or-line"></span>
-									<span class="or-label">OR</span>
-									<span class="or-line"></span>
-								</div>
-								{#if refreshable.length > 0}
-									<div class="refresh-picker">
-										{#each refreshable as asset (asset.id)}
-											<label class="refresh-item" class:selected={selectedRefreshIDs.has(asset.id)}>
-												<input
-													type="checkbox"
-													checked={selectedRefreshIDs.has(asset.id)}
-													disabled={!selectedRefreshIDs.has(asset.id) && selectedRefreshIDs.size >= maxRefresh}
-													onchange={() => toggleRefreshSelection(asset.id)}
-												/>
-												<span class="refresh-asset-name">{asset.name}</span>
-												<span class="refresh-asset-type">{asset.asset_type}</span>
-											</label>
-										{/each}
-									</div>
-								{/if}
-								<div class="action-buttons">
-									<button
-										class="action-btn primary"
-										onclick={onRefreshAssets}
-										disabled={actionBusy || selectedRefreshIDs.size === 0}
-									>
-										{actionBusy ? '…' : `Refresh ${refreshButtonCount} Asset${refreshButtonCount === 1 ? '' : 's'}`}
-									</button>
+					<div class="action-step">
+						{#if hasPlansToResolve}
+							<!-- A plan needs to be resolved before the focus player can act. -->
+							<span class="action-label">Resolve the active plan above before acting.</span>
+						{:else}
+							<!-- OR divider visually separates the plan grid (above)
+							     from the refresh-assets alternative (below). -->
+							<div class="or-divider" aria-hidden="true">
+								<span class="or-line"></span>
+								<span class="or-label">OR</span>
+								<span class="or-line"></span>
+							</div>
+							{#if refreshable.length > 0}
+								<div class="refresh-picker">
+									{#each refreshable as asset (asset.id)}
+										<label class="refresh-item" class:selected={selectedRefreshIDs.has(asset.id)}>
+											<input
+												type="checkbox"
+												checked={selectedRefreshIDs.has(asset.id)}
+												disabled={!selectedRefreshIDs.has(asset.id) && selectedRefreshIDs.size >= maxRefresh}
+												onchange={() => toggleRefreshSelection(asset.id)}
+											/>
+											<span class="refresh-asset-name">{asset.name}</span>
+											<span class="refresh-asset-type">{asset.asset_type}</span>
+										</label>
+									{/each}
 								</div>
 							{/if}
-						</div>
-
-					{:else}
-						<!-- Step 3: pass focus (server auto-advances row when all plans on this row are resolved) -->
-						<div class="action-step">
-							<span class="action-label">Ready to move on</span>
-							<button class="action-btn primary" onclick={onPassFocus} disabled={actionBusy}>
-								{actionBusy ? '…' : 'Pass Focus'}
-							</button>
-						</div>
-					{/if}
+							<div class="action-buttons">
+								<button
+									class="action-btn primary"
+									onclick={onRefreshAssets}
+									disabled={actionBusy || selectedRefreshIDs.size === 0}
+								>
+									{actionBusy ? '…' : `Refresh ${refreshButtonCount} Asset${refreshButtonCount === 1 ? '' : 's'}`}
+								</button>
+							</div>
+						{/if}
+					</div>
 				</div>
 			{:else if !isFocusPlayer && sceneEnded && game.focus_player_id != null}
 				<!-- Non-focus players see a quiet indicator post-scene only.
