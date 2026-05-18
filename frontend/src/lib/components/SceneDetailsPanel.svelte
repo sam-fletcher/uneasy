@@ -238,46 +238,8 @@
 			</button>
 			{#if endError}<span class="error inline">{endError}</span>{/if}
 		</div>
-	{:else if currentPlayerID != null && !rollActive}
-		<div class="end-bar">
-			{#if showRollForm}
-				<label class="roll-form-label">
-					Difficulty (1–6):
-					<input
-						type="number"
-						min="1"
-						max="6"
-						bind:value={rollDifficulty}
-						class="diff-input"
-					/>
-				</label>
-				<button
-					type="button"
-					class="end-btn"
-					onclick={onStartRoll}
-					disabled={rollingBusy}
-				>
-					{rollingBusy ? '…' : 'Start Roll'}
-				</button>
-				<button
-					type="button"
-					class="cancel-btn"
-					onclick={() => { showRollForm = false; }}
-					disabled={rollingBusy}
-				>
-					Cancel
-				</button>
-			{:else}
-				<button
-					type="button"
-					class="end-btn"
-					onclick={() => { showRollForm = true; }}
-				>
-					🎲 Start a dice roll
-				</button>
-			{/if}
-			{#if rollError}<span class="error inline">{rollError}</span>{/if}
-		</div>
+	<!-- {:else if currentPlayerID != null && !rollActive}
+		TODO: Decide how to handle scene rolls (heavy social component) -->
 	{/if}
 </section>
 

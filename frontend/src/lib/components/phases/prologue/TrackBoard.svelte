@@ -242,7 +242,7 @@
 		{#if firstFocusPlayer != null && players.length > 0}
 			Projected first player: <strong>{playerName(firstFocusPlayer.pid)}</strong>
 			<span class="status-detail">
-				(Lowest rank)
+				(Lowest combined rank)
 			</span>
 		{/if}
 	</div>
