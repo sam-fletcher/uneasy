@@ -130,7 +130,11 @@ type ResolutionData struct {
 	// per-plan handlers (e.g. Chronicle) that record per-player make/mar
 	// entries. Holds make/mar state only — pre-roll sub-state belongs on
 	// per-plan typed fields, not here.
-	MakeMarChoices []string `json:"make_mar_choices,omitempty"`
+	//
+	// Entries from the generic endpoint have PlayerID == nil. Per-plan
+	// handlers that track which player made each choice (Chronicle) set
+	// PlayerID.
+	MakeMarChoices []Choice `json:"make_mar_choices,omitempty"`
 
 	// ── Spread Rumors ──
 	SourceHidden bool   `json:"source_hidden,omitempty"`
@@ -197,6 +201,16 @@ type ResolutionData struct {
 // DraftChoice records a player's draft pick in Make Demands.
 type DraftChoice struct {
 	PlayerID int64  `json:"player_id"`
+	Option   string `json:"option"`
+}
+
+// Choice is one entry in ResolutionData.MakeMarChoices.
+//
+// Entries written by the generic POST /api/plans/:id/make-choice endpoint
+// leave PlayerID nil. Per-plan handlers that track per-player make/mar
+// (e.g. Chronicle) set PlayerID to the submitting player.
+type Choice struct {
+	PlayerID *int64 `json:"player_id,omitempty"`
 	Option   string `json:"option"`
 }
 

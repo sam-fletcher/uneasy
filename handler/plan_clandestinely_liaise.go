@@ -298,10 +298,10 @@ func clBothKeepSecretsSubmitted(resData ResolutionData, preparerID int64) bool {
 	prepSubmitted := false
 	partnerSubmitted := false
 	for _, c := range resData.MakeMarChoices {
-		if !strings.HasPrefix(c, prefix) {
+		if !strings.HasPrefix(c.Option, prefix) {
 			continue
 		}
-		rest := c[len(prefix):]
+		rest := c.Option[len(prefix):]
 		var playerID int64
 		_, err := fmt.Sscanf(rest, "%d", &playerID)
 		if err != nil {
@@ -394,8 +394,9 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Record keep-secret choice.
+		// TODO(stage 2): move to typed KeptSecrets field on LiaiseResolutionData.
 		entry := fmt.Sprintf("keep_secret:%d:%d", player.ID, body.AssetID)
-		resData.MakeMarChoices = append(resData.MakeMarChoices, entry)
+		resData.MakeMarChoices = append(resData.MakeMarChoices, Choice{Option: entry})
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save keep-secret choice", err)

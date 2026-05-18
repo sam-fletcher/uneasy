@@ -266,6 +266,14 @@ export interface Plan {
 	targeted_plan_id: number | null;
 }
 
+/** One entry in ResolutionData.make_mar_choices. Mirrors game.Choice
+ * (uneasy/game/plan.go). Entries from the generic POST /make-choice
+ * endpoint leave player_id null; per-plan handlers (Chronicle) set it. */
+export interface Choice {
+	player_id?: number | null;
+	option: string;
+}
+
 /** Mirrors game.ResolutionData (uneasy/game/plan.go). All fields optional —
  * only the ones relevant to a given plan type are populated. */
 export interface ResolutionData {
@@ -290,7 +298,10 @@ export interface ResolutionData {
 	// Written by POST /api/plans/:id/make-choice and by per-plan handlers
 	// (e.g. Chronicle) for per-player make/mar entries. Plan-specific
 	// pre-roll state belongs on per-plan typed fields, not here.
-	make_mar_choices?: string[];
+	//
+	// Entries from the generic endpoint have player_id == null. Per-plan
+	// handlers (Chronicle) set player_id to the submitting player.
+	make_mar_choices?: Choice[];
 
 	// ── Spread Rumors ──
 	source_hidden?: boolean;

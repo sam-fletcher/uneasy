@@ -77,7 +77,8 @@
 			partnerID: rd.partner_id ?? null,
 			delayRevealID: rd.liaise_delay_reveal_id ?? null,
 			redelayRevealID: rd.redelay_reveal_id ?? null,
-			choices: rd.make_mar_choices ?? [],
+			// TODO(stage 2): replace with typed KeptSecrets on LiaiseResolutionData.
+			choices: (rd.make_mar_choices ?? []).map(c => c.option),
 		};
 	});
 

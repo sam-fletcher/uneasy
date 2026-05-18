@@ -458,26 +458,27 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Record in Choices as "stake_count:<playerID>:<N>" so we can detect
 		// when both players have submitted.
+		// TODO(stage 2): move to typed StakeCounts field on DuelResolutionData.
 		prefix := fmt.Sprintf("stake_count:%d:", player.ID)
 		// Remove any previous submission from this player.
 		newChoices := resData.MakeMarChoices[:0]
 		for _, c := range resData.MakeMarChoices {
-			if !strings.HasPrefix(c, prefix) {
+			if !strings.HasPrefix(c.Option, prefix) {
 				newChoices = append(newChoices, c)
 			}
 		}
-		newChoices = append(newChoices, fmt.Sprintf("%s%d", prefix, body.Count))
+		newChoices = append(newChoices, Choice{Option: fmt.Sprintf("%s%d", prefix, body.Count)})
 		resData.MakeMarChoices = newChoices
 
 		// Count distinct participants who have submitted.
 		submitted := map[int64]int16{}
 		for _, c := range resData.MakeMarChoices {
-			if !strings.HasPrefix(c, "stake_count:") {
+			if !strings.HasPrefix(c.Option, "stake_count:") {
 				continue
 			}
 			var pid int64
 			var n int16
-			if _, err := fmt.Sscanf(c, "stake_count:%d:%d", &pid, &n); err == nil {
+			if _, err := fmt.Sscanf(c.Option, "stake_count:%d:%d", &pid, &n); err == nil {
 				submitted[pid] = n
 			}
 		}

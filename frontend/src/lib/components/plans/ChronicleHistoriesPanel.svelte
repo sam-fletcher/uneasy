@@ -14,7 +14,7 @@
       we reuse the main invoke picker for.
     - Mar (all players): every non-preparer gets a single-choice picker
       and submits via marChoice. The preparer sees the list of received
-      mar choices (encoded as "playerID:choice" in resolution_data.make_mar_choices).
+      mar choices (entries in resolution_data.make_mar_choices with player_id set).
 
   Pre-roll artifact-invocation is gated by resolution_data.invoke_phase_closed,
   which the server flips true inside OnResolve (before the roll is created).
@@ -164,20 +164,15 @@
 		} finally { marBusy = false; }
 	}
 
-	// Decoded mar-choice entries. Both make and mar store into Choices; on mar
-	// the server stores as "playerID:choice" strings.
+	// Decoded mar-choice entries. Both make and mar store into make_mar_choices;
+	// mar entries are the ones with player_id set (written by Chronicle's own
+	// handler), while make entries leave player_id null.
 	type MarEntry = { playerID: number; choice: string };
 	const marEntries = $derived.by<MarEntry[]>(() => {
 		if (!plan) return [];
 		return (parseResolutionData(plan).make_mar_choices ?? [])
-			.map(c => {
-				const idx = c.indexOf(':');
-				if (idx < 0) return null;
-				const pid = Number(c.slice(0, idx));
-				if (!Number.isFinite(pid)) return null;
-				return { playerID: pid, choice: c.slice(idx + 1) };
-			})
-			.filter((e): e is MarEntry => e != null);
+			.filter(c => c.player_id != null)
+			.map(c => ({ playerID: c.player_id as number, choice: c.option }));
 	});
 	const myMarSubmitted = $derived(
 		currentPlayerID != null && marEntries.some(e => e.playerID === currentPlayerID)
@@ -230,10 +225,14 @@
 	function countIn(choices: string[], key: string) {
 		return choices.filter(c => c === key).length;
 	}
-	// Make-path choices are stored as plain keys (not "pid:choice"); count
-	// those only.
+	// Make-path choices are the entries with player_id null; mar entries
+	// (player_id set) are tracked separately via marEntries.
 	const makeChoices = $derived(
-		plan ? (parseResolutionData(plan).make_mar_choices ?? []).filter(c => !c.includes(':')) : []
+		plan
+			? (parseResolutionData(plan).make_mar_choices ?? [])
+				.filter(c => c.player_id == null)
+				.map(c => c.option)
+			: []
 	);
 </script>
 

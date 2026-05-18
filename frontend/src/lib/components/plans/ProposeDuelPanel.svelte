@@ -104,7 +104,8 @@
 			prepStakeCount: rd.preparer_stake_count ?? 0,
 			targStakeCount: rd.target_stake_count ?? 0,
 			currentBout: rd.current_bout ?? 0,
-			choices: rd.make_mar_choices ?? [],
+			// TODO(stage 2): replace with typed StakeCounts on DuelResolutionData.
+			choices: (rd.make_mar_choices ?? []).map(c => c.option),
 		};
 	});
 

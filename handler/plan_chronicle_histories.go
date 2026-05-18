@@ -345,9 +345,11 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			// Purely narrative.
 		}
 
-		// Record as "playerID:choice" in Choices.
-		entry := fmt.Sprintf("%d:%s", player.ID, body.Choice)
-		resData.MakeMarChoices = append(resData.MakeMarChoices, entry)
+		// Record as a Choice with PlayerID set so the panel can attribute it.
+		resData.MakeMarChoices = append(resData.MakeMarChoices, Choice{
+			PlayerID: &player.ID,
+			Option:   body.Choice,
+		})
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save mar choice", err)

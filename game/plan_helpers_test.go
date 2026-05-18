@@ -54,14 +54,23 @@ func TestLoadResolutionData_MultipleFields(t *testing.T) {
 	assert.True(t, result.MessyBreakRequired)
 }
 
-// TestLoadResolutionData_MakeMarChoices tests unmarshaling make/mar choice strings.
+// TestLoadResolutionData_MakeMarChoices tests unmarshaling make/mar choice entries.
 func TestLoadResolutionData_MakeMarChoices(t *testing.T) {
-	jsonStr := `{"make_mar_choices": ["option1", "option2", "option3"]}`
+	playerID := int64(42)
+	jsonStr := `{"make_mar_choices": [
+		{"option": "option1"},
+		{"option": "option2", "player_id": 42},
+		{"option": "option3"}
+	]}`
 	result := LoadResolutionData(&jsonStr)
 
-	expected := []string{"option1", "option2", "option3"}
-	assert.Len(t, result.MakeMarChoices, 3)
-	assert.Equal(t, expected, result.MakeMarChoices)
+	require.Len(t, result.MakeMarChoices, 3)
+	assert.Nil(t, result.MakeMarChoices[0].PlayerID)
+	assert.Equal(t, "option1", result.MakeMarChoices[0].Option)
+	require.NotNil(t, result.MakeMarChoices[1].PlayerID)
+	assert.Equal(t, playerID, *result.MakeMarChoices[1].PlayerID)
+	assert.Equal(t, "option2", result.MakeMarChoices[1].Option)
+	assert.Nil(t, result.MakeMarChoices[2].PlayerID)
 }
 
 // TestLoadResolutionData_InvokedArtifactIDs tests unmarshaling artifact IDs.
@@ -84,7 +93,7 @@ func TestLoadResolutionData_RoundTrip(t *testing.T) {
 		FairTradeAccepted:  new(true),
 		MessyBreakRequired: false,
 		PeerCount:          2,
-		MakeMarChoices:     []string{"a", "b"},
+		MakeMarChoices:     []Choice{{Option: "a"}, {Option: "b", PlayerID: &playerID}},
 		InvokedArtifactIDs: []int64{1, 2, 3},
 		EsteemLockout:      true,
 		PartnerID:          &playerID,

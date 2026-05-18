@@ -17,6 +17,7 @@ type (
 	ValidationContext = game.ValidationContext
 	ResolutionData    = game.ResolutionData
 	DraftChoice       = game.DraftChoice
+	Choice            = game.Choice
 )
 
 // Registry delegates — handler-internal code calls these unqualified.

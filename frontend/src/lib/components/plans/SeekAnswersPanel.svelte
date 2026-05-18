@@ -198,7 +198,7 @@
 	</div>
 
 {:else if plan}
-	{@const existingChoices = parseResolutionData(plan).make_mar_choices ?? []}
+	{@const existingChoices = (parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option)}
 	{@const choicesDone = existingChoices.length > 0}
 	{@const brNeeded = countIn(existingChoices, 'break_resource')}
 	{@const rsNeeded = countIn(existingChoices, 'reveal_secret')}

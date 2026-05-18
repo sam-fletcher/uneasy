@@ -958,7 +958,10 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		resData.MakeMarChoices = body.Choices
+		resData.MakeMarChoices = make([]Choice, len(body.Choices))
+		for i, opt := range body.Choices {
+			resData.MakeMarChoices[i] = Choice{Option: opt}
+		}
 
 		deps := &PlanDeps{Store: s, Manager: manager}
 		if err := h.ApplyChoice(ctx, deps, plan, &resData, body.Choices, body.Result); err != nil {
