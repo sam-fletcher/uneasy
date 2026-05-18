@@ -78,7 +78,7 @@ func (ecHandler) ApplyChoice(
 }
 
 func (ecHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if resData.MessyBreakRequired && !resData.MessyBreakDone {
+	if ec := resData.ExchangeCourtiers; ec != nil && ec.MessyBreakRequired && !ec.MessyBreakDone {
 		return errors.New("target player must first break a marginalia (POST /plans/{planId}/messy-break)")
 	}
 	return nil
@@ -108,7 +108,8 @@ func applyExchangeCourtiersMechanic(
 	}
 
 	// Only transfer if not already done via fair trade accept.
-	if resData.FairTradeAccepted == nil || !*resData.FairTradeAccepted {
+	ec := resData.ExchangeCourtiers
+	if ec == nil || ec.FairTradeAccepted == nil || !*ec.FairTradeAccepted {
 		// Incoming side may be redirected by a resolved Make Demands
 		// (keep_assets). Preparer's outgoing asset (handled via messy/
 		// fair trade paths) is not redirected.
@@ -132,7 +133,7 @@ func applyExchangeCourtiersMechanic(
 
 	// "Messy" requires the target to break a marginalia on any of their assets.
 	if slices.Contains(choices, "messy") {
-		resData.MessyBreakRequired = true
+		resData.EnsureExchangeCourtiers().MessyBreakRequired = true
 	}
 
 	return nil
@@ -220,7 +221,7 @@ func offerFairTrade(
 		respondErr(w, http.StatusBadRequest, "fair trade offer must be a peer asset")
 		return
 	}
-	resData.FairTradeAssetID = offeredAssetID
+	resData.EnsureExchangeCourtiers().FairTradeAssetID = offeredAssetID
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondInternalErr(w, r, "could not save offer", err)
 		return
@@ -241,7 +242,8 @@ func acceptFairTrade(
 		respondErr(w, http.StatusForbidden, "only the preparer can accept or decline")
 		return
 	}
-	if resData.FairTradeAssetID == nil {
+	ec := resData.ExchangeCourtiers
+	if ec == nil || ec.FairTradeAssetID == nil {
 		respondErr(w, http.StatusConflict, "no fair trade offer has been made yet")
 		return
 	}
@@ -265,7 +267,7 @@ func acceptFairTrade(
 	}
 	// Transfer offered asset to target player.
 	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
-		ID:      *resData.FairTradeAssetID,
+		ID:      *ec.FairTradeAssetID,
 		OwnerID: *plan.TargetPlayerID,
 	}); err != nil {
 		respondInternalErr(w, r, "could not transfer offered asset", err)
@@ -273,7 +275,7 @@ func acceptFairTrade(
 	}
 
 	accepted := true
-	resData.FairTradeAccepted = &accepted
+	ec.FairTradeAccepted = &accepted
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondInternalErr(w, r, "could not save decision", err)
 		return
@@ -295,7 +297,7 @@ func acceptFairTrade(
 			OldOwnerID: *plan.TargetPlayerID,
 			NewOwnerID: recipient,
 		})
-		oa, _ := q.GetAssetByID(ctx, *resData.FairTradeAssetID)
+		oa, _ := q.GetAssetByID(ctx, *ec.FairTradeAssetID)
 		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
 			Asset:      oa,
 			OldOwnerID: plan.PreparerID,
@@ -326,7 +328,7 @@ func declineFairTrade(
 		return
 	}
 	declined := false
-	resData.FairTradeAccepted = &declined
+	resData.EnsureExchangeCourtiers().FairTradeAccepted = &declined
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondInternalErr(w, r, "could not save decision", err)
 		return
@@ -377,11 +379,12 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		if !resData.MessyBreakRequired {
+		ec := resData.EnsureExchangeCourtiers()
+		if !ec.MessyBreakRequired {
 			respondErr(w, http.StatusConflict, "no messy break is required for this plan")
 			return
 		}
-		if resData.MessyBreakDone {
+		if ec.MessyBreakDone {
 			respondErr(w, http.StatusConflict, "messy break has already been completed")
 			return
 		}
@@ -420,7 +423,7 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
-		resData.MessyBreakDone = true
+		ec.MessyBreakDone = true
 		if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record messy break", err)
 			return

@@ -73,7 +73,7 @@ func (miHandler) ComputeDifficulty(
 // plans (ResData.DelayedArrival == true) return nil — they complete with no roll.
 func (miHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	resData := loadResolutionData(plan.ResolutionData)
-	if resData.DelayedArrival {
+	if mi := resData.MakeIntroductions; mi != nil && mi.DelayedArrival {
 		return nil, nil // synthetic plan: no roll
 	}
 	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
@@ -107,7 +107,9 @@ func (miHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // miStoreResData stores peer_count in resolution_data during plan preparation.
 func miStoreResData(ctx context.Context, q *dbgen.Queries, planID int64, peerCount int16) error {
-	d := ResolutionData{PeerCount: peerCount}
+	d := ResolutionData{
+		MakeIntroductions: &MakeIntroductionsResolutionData{PeerCount: peerCount},
+	}
 	return saveResolutionData(ctx, q, planID, d)
 }
 
@@ -216,11 +218,17 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Build the synthetic plan's resolution_data.
 		parentPlanID := plan.ID
+		parentPeerCount := int16(0)
+		if pmi := parentResData.MakeIntroductions; pmi != nil {
+			parentPeerCount = pmi.PeerCount
+		}
 		syntheticResData := ResolutionData{
-			DelayedArrival:     true,
-			DelayedPeerAssetID: &body.PeerAssetID,
-			OriginalPlanID:     &parentPlanID,
-			PeerCount:          parentResData.PeerCount,
+			MakeIntroductions: &MakeIntroductionsResolutionData{
+				DelayedArrival:     true,
+				DelayedPeerAssetID: &body.PeerAssetID,
+				OriginalPlanID:     &parentPlanID,
+				PeerCount:          parentPeerCount,
+			},
 		}
 
 		var syntheticPlan dbgen.Plan
@@ -244,7 +252,8 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 			if sErr := saveResolutionData(ctx, q, syntheticPlan.ID, syntheticResData); sErr != nil {
 				return errors.New("could not save delayed arrival data")
 			}
-			parentResData.DelayedPeerPlanIDs = append(parentResData.DelayedPeerPlanIDs, syntheticPlan.ID)
+			pmi := parentResData.EnsureMakeIntroductions()
+			pmi.DelayedPeerPlanIDs = append(pmi.DelayedPeerPlanIDs, syntheticPlan.ID)
 			if sErr := saveResolutionData(ctx, q, plan.ID, parentResData); sErr != nil {
 				return errors.New("could not update parent plan data")
 			}

@@ -48,7 +48,9 @@ func TestMakeIntroductionsDifficulty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resData := ResolutionData{PeerCount: tt.peerCount}
+			resData := ResolutionData{
+				MakeIntroductions: &MakeIntroductionsResolutionData{PeerCount: tt.peerCount},
+			}
 			got := MakeIntroductionsDifficulty(resData)
 			assert.Equal(t, tt.expectedDiff, got)
 		})
@@ -160,7 +162,9 @@ func TestChronicleHistoriesDifficulty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resData := ResolutionData{
-				InvokedArtifactIDs: make([]int64, tt.artifactCount),
+				ChronicleHistories: &ChronicleHistoriesResolutionData{
+					InvokedArtifactIDs: make([]int64, tt.artifactCount),
+				},
 			}
 			got := ChronicleHistoriesDifficulty(tt.knowledgeRank, resData)
 			assert.Equal(t, tt.expectedDiff, got)

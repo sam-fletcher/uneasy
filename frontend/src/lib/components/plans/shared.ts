@@ -143,7 +143,7 @@ export type DemandWinners = Partial<Record<DemandOption, number>>;
 /** Decode a demand plan's draft picks into a winners map (option → playerID).
  * Returns an empty map if the draft is incomplete. */
 export function demandWinnersFromPlan(demand: Plan): DemandWinners {
-	const choices = parseResolutionData(demand).draft_choices ?? [];
+	const choices = parseResolutionData(demand).make_demands?.draft_choices ?? [];
 	const winners: DemandWinners = {};
 	for (const c of choices) {
 		if (DEMAND_OPTIONS.includes(c.option as DemandOption)) {

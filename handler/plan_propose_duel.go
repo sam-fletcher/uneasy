@@ -44,11 +44,11 @@ import (
 )
 
 const (
-	duelPhaseSetup   = "setup"
-	duelPhaseStaking = "staking"
-	duelPhaseBouts   = "bouts"
-	duelPhaseRoll    = "roll"
-	duelPhaseDone    = "done"
+	duelPhaseSetup   = gamepkg.DuelPhaseSetup
+	duelPhaseStaking = gamepkg.DuelPhaseStaking
+	duelPhaseBouts   = gamepkg.DuelPhaseBouts
+	duelPhaseRoll    = gamepkg.DuelPhaseRoll
+	duelPhaseDone    = gamepkg.DuelPhaseDone
 )
 
 func init() {
@@ -97,7 +97,7 @@ func (pduelHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.P
 		return nil, errors.New("propose_duel plan has no target player")
 	}
 	resData := loadResolutionData(plan.ResolutionData)
-	state := resData.DuelState()
+	state := resData.EnsureDuel()
 	state.Phase = duelPhaseSetup
 
 	prepRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, plan.PreparerID, model.CategoryEsteem)
@@ -115,7 +115,6 @@ func (pduelHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.P
 	}
 	state.InitiativePlayerID = &initiative
 
-	resData.SetDuelState(state)
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return nil, fmt.Errorf("save duel setup: %w", err)
 	}
@@ -192,14 +191,12 @@ func (pduelHandler) ApplyChoice(
 		})
 	}
 
-	state := resData.DuelState()
-	state.Phase = duelPhaseDone
-	resData.SetDuelState(state)
+	resData.EnsureDuel().Phase = duelPhaseDone
 	return nil
 }
 
 func (pduelHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if resData.DuelState().Phase != duelPhaseDone {
+	if d := resData.Duel; d == nil || d.Phase != duelPhaseDone {
 		return errors.New("duel has not completed: make-choice must be submitted after the roll resolves")
 	}
 	return nil
@@ -339,7 +336,7 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.DuelState()
+		state := resData.EnsureDuel()
 
 		if state.Phase != duelPhaseSetup {
 			respondErr(w, http.StatusConflict, "champions can only be elected during setup")
@@ -389,7 +386,6 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 			state.TargetChampionID = body.AssetID
 			state.TargetChampionDeclared = true
 		}
-		resData.SetDuelState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save champion", err)
 			return
@@ -428,7 +424,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.DuelState()
+		state := resData.EnsureDuel()
 		if state.Phase != duelPhaseSetup {
 			respondErr(w, http.StatusConflict, "stake reveal is only allowed in 'setup' phase")
 			return
@@ -456,19 +452,18 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Accumulate per-player stake counts until both have submitted.
-		if resData.StakeCounts == nil {
-			resData.StakeCounts = map[int64]int16{}
+		if state.StakeCounts == nil {
+			state.StakeCounts = map[int64]int16{}
 		}
-		resData.StakeCounts[player.ID] = body.Count
+		state.StakeCounts[player.ID] = body.Count
 
-		if len(resData.StakeCounts) >= 2 {
+		if len(state.StakeCounts) >= 2 {
 			// Both submitted — reveal and advance to staking.
-			state.PreparerStakeCount = resData.StakeCounts[plan.PreparerID]
+			state.PreparerStakeCount = state.StakeCounts[plan.PreparerID]
 			if plan.TargetPlayerID != nil {
-				state.TargetStakeCount = resData.StakeCounts[*plan.TargetPlayerID]
+				state.TargetStakeCount = state.StakeCounts[*plan.TargetPlayerID]
 			}
 			state.Phase = duelPhaseStaking
-			resData.SetDuelState(state)
 
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondInternalErr(w, r, "could not save stake counts", err)
@@ -487,7 +482,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
-		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "submitted": len(resData.StakeCounts)})
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "submitted": len(state.StakeCounts)})
 	}
 }
 
@@ -513,7 +508,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.DuelState()
+		state := resData.EnsureDuel()
 		if state.Phase != duelPhaseStaking {
 			respondErr(w, http.StatusConflict, "select-stakes is only allowed in 'staking' phase")
 			return
@@ -603,7 +598,6 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 		if total == state.PreparerStakeCount+state.TargetStakeCount {
 			state.Phase = duelPhaseBouts
 			state.CurrentBout = 0
-			resData.SetDuelState(state)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondInternalErr(w, r, "could not advance phase", err)
 				return
@@ -634,7 +628,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.DuelState()
+		state := resData.EnsureDuel()
 		if state.Phase != duelPhaseBouts {
 			respondErr(w, http.StatusConflict, "bout-declare is only allowed in 'bouts' phase")
 			return
@@ -695,7 +689,6 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		state.CurrentBout = boutNumber
-		resData.SetDuelState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save bout state", err)
 			return
@@ -730,7 +723,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.DuelState()
+		state := resData.EnsureDuel()
 		if state.Phase != duelPhaseBouts {
 			respondErr(w, http.StatusConflict, "bout-respond is only allowed in 'bouts' phase")
 			return
@@ -860,12 +853,11 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 
 		if prepLeft == 0 || targLeft == 0 {
 			// Bouts complete — create the standard roll with accumulated dice.
-			if err := pduelCreateFinalRoll(ctx, deps, plan, &resData, &state); err != nil {
+			if err := pduelCreateFinalRoll(ctx, deps, plan, &resData, state); err != nil {
 				respondInternalErr(w, r, "could not create final roll", err)
 				return
 			}
 		} else {
-			resData.SetDuelState(state)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondInternalErr(w, r, "could not save state", err)
 				return
@@ -886,13 +878,13 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 // plan's standard dice roll with dice pre-assigned. Preparer's accumulated
 // dice become actor dice; target's accumulated dice become interference.
 //
-//nolint:funlen // duel final-roll setup
+
 func pduelCreateFinalRoll(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	resData *ResolutionData,
-	state *gamepkg.DuelState,
+	state *gamepkg.DuelResolutionData,
 ) error {
 	bouts, err := deps.Q.ListDuelBoutsByPlan(ctx, plan.ID)
 	if err != nil {
@@ -978,7 +970,6 @@ func pduelCreateFinalRoll(
 	}
 
 	state.Phase = duelPhaseRoll
-	resData.SetDuelState(*state)
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
 		return err
 	}

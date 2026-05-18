@@ -170,13 +170,18 @@ func (mdHandler) CanComplete(plan *dbgen.Plan, resData *ResolutionData) error {
 	if plan.Result == nil {
 		return errors.New("demand has no result yet")
 	}
+	md := resData.MakeDemands
 	switch *plan.Result {
 	case makeOutcome:
-		if len(resData.DraftChoices) < 4 {
-			return fmt.Errorf("draft incomplete: %d of 4 options picked", len(resData.DraftChoices))
+		if md == nil || len(md.DraftChoices) < 4 {
+			n := 0
+			if md != nil {
+				n = len(md.DraftChoices)
+			}
+			return fmt.Errorf("draft incomplete: %d of 4 options picked", n)
 		}
 	case marOutcome:
-		if !resData.CounterDemandPlaced {
+		if md == nil || !md.CounterDemandPlaced {
 			return errors.New("target must place or waive the counter-demand before completing")
 		}
 	}
@@ -279,11 +284,12 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		if len(resData.DraftChoices) >= 4 {
+		md := resData.EnsureMakeDemands()
+		if len(md.DraftChoices) >= 4 {
 			respondErr(w, http.StatusConflict, "all four options have already been drafted")
 			return
 		}
-		for _, c := range resData.DraftChoices {
+		for _, c := range md.DraftChoices {
 			if c.Option == body.Option {
 				respondErr(w, http.StatusConflict, "that option has already been picked")
 				return
@@ -296,7 +302,7 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		expected := first
-		if len(resData.DraftChoices)%2 == 1 {
+		if len(md.DraftChoices)%2 == 1 {
 			expected = second
 		}
 		if player.ID != expected {
@@ -304,7 +310,7 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		resData.DraftChoices = append(resData.DraftChoices, gamepkg.DraftChoice{
+		md.DraftChoices = append(md.DraftChoices, gamepkg.DraftChoice{
 			PlayerID: player.ID,
 			Option:   body.Option,
 		})
@@ -317,14 +323,14 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			"plan_id":    plan.ID,
 			"player_id":  player.ID,
 			"option":     body.Option,
-			"pick_index": len(resData.DraftChoices),
+			"pick_index": len(md.DraftChoices),
 		})
 
 		// On the final pick, persist the winners map on the demand plan so
 		// the target plan's resolution path can consult it cheaply.
-		if len(resData.DraftChoices) == 4 {
+		if len(md.DraftChoices) == 4 {
 			winners := gamepkg.DemandOptionWinners{}
-			for _, c := range resData.DraftChoices {
+			for _, c := range md.DraftChoices {
 				winners[c.Option] = c.PlayerID
 			}
 			raw, err := json.Marshal(winners)
@@ -344,8 +350,8 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":        plan.ID,
 			"option":         body.Option,
-			"picks_done":     len(resData.DraftChoices),
-			"draft_complete": len(resData.DraftChoices) == 4,
+			"picks_done":     len(md.DraftChoices),
+			"draft_complete": len(md.DraftChoices) == 4,
 		})
 	}
 }
@@ -399,7 +405,8 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		if resData.CounterDemandPlaced {
+		md := resData.EnsureMakeDemands()
+		if md.CounterDemandPlaced {
 			respondErr(w, http.StatusConflict, "counter-demand has already been placed or deferred")
 			return
 		}
@@ -445,7 +452,7 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 		}
 
-		resData.CounterDemandPlaced = true
+		md.CounterDemandPlaced = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save counter-demand state", err)
 			return
@@ -504,7 +511,7 @@ func consumePendingCounterDemandFor(
 	// Mark the origin demand's CounterDemandPlaced so it can be completed.
 	if origin, err := q.GetPlanByID(ctx, pending.OriginPlanID); err == nil {
 		resData := loadResolutionData(origin.ResolutionData)
-		resData.CounterDemandPlaced = true
+		resData.EnsureMakeDemands().CounterDemandPlaced = true
 		_ = saveResolutionData(ctx, q, origin.ID, resData)
 	}
 

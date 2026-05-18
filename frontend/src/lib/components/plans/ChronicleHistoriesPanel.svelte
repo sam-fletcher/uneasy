@@ -85,10 +85,10 @@
 	// The server stores invoked_artifact_ids in resolution_data. We recompute
 	// from the plan on every change.
 	const resolutionState = $derived.by<{ ids: number[]; closed: boolean }>(() => {
-		const rd = parseResolutionData(plan);
+		const ch = parseResolutionData(plan).chronicle_histories ?? {};
 		return {
-			ids: rd.invoked_artifact_ids ?? [],
-			closed: rd.invoke_phase_closed ?? false,
+			ids: ch.invoked_artifact_ids ?? [],
+			closed: ch.invoke_phase_closed ?? false,
 		};
 	});
 	const invokedIDs = $derived(resolutionState.ids);

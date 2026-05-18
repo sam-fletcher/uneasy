@@ -11,8 +11,8 @@ import (
 // TestLoadResolutionData_Nil tests that nil input returns a zero-value struct.
 func TestLoadResolutionData_Nil(t *testing.T) {
 	result := LoadResolutionData(nil)
-	assert.Equal(t, int16(0), result.PeerCount)
-	assert.False(t, result.EsteemLockout)
+	assert.Nil(t, result.MakeIntroductions)
+	assert.Nil(t, result.SpreadPropaganda)
 	assert.Empty(t, result.MakeMarChoices)
 }
 
@@ -20,8 +20,8 @@ func TestLoadResolutionData_Nil(t *testing.T) {
 func TestLoadResolutionData_Empty(t *testing.T) {
 	empty := ""
 	result := LoadResolutionData(&empty)
-	assert.Equal(t, int16(0), result.PeerCount)
-	assert.False(t, result.EsteemLockout)
+	assert.Nil(t, result.MakeIntroductions)
+	assert.Nil(t, result.SpreadPropaganda)
 	assert.Empty(t, result.MakeMarChoices)
 }
 
@@ -29,29 +29,33 @@ func TestLoadResolutionData_Empty(t *testing.T) {
 func TestLoadResolutionData_EmptyJSON(t *testing.T) {
 	emptyJSON := "{}"
 	result := LoadResolutionData(&emptyJSON)
-	assert.Equal(t, int16(0), result.PeerCount)
-	assert.False(t, result.EsteemLockout)
+	assert.Nil(t, result.MakeIntroductions)
+	assert.Nil(t, result.SpreadPropaganda)
 	assert.Empty(t, result.MakeMarChoices)
 }
 
-// TestLoadResolutionData_PeerCount tests unmarshaling a simple PeerCount field.
+// TestLoadResolutionData_PeerCount tests unmarshaling a Make Introductions
+// peer_count nested under the make_introductions key.
 func TestLoadResolutionData_PeerCount(t *testing.T) {
-	jsonStr := `{"peer_count": 3}`
+	jsonStr := `{"make_introductions": {"peer_count": 3}}`
 	result := LoadResolutionData(&jsonStr)
-	assert.Equal(t, int16(3), result.PeerCount)
+	require.NotNil(t, result.MakeIntroductions)
+	assert.Equal(t, int16(3), result.MakeIntroductions.PeerCount)
 }
 
 // TestLoadResolutionData_MultipleFields tests unmarshaling multiple fields correctly.
 func TestLoadResolutionData_MultipleFields(t *testing.T) {
 	id := int64(42)
-	jsonStr := `{"fair_trade_asset_id": 42, "fair_trade_accepted": true, "messy_break_required": true}`
+	jsonStr := `{"exchange_courtiers": {"fair_trade_asset_id": 42, "fair_trade_accepted": true, "messy_break_required": true}}`
 	result := LoadResolutionData(&jsonStr)
 
-	assert.NotNil(t, result.FairTradeAssetID)
-	assert.Equal(t, id, *result.FairTradeAssetID)
-	assert.NotNil(t, result.FairTradeAccepted)
-	assert.True(t, *result.FairTradeAccepted)
-	assert.True(t, result.MessyBreakRequired)
+	require.NotNil(t, result.ExchangeCourtiers)
+	ec := result.ExchangeCourtiers
+	assert.NotNil(t, ec.FairTradeAssetID)
+	assert.Equal(t, id, *ec.FairTradeAssetID)
+	assert.NotNil(t, ec.FairTradeAccepted)
+	assert.True(t, *ec.FairTradeAccepted)
+	assert.True(t, ec.MessyBreakRequired)
 }
 
 // TestLoadResolutionData_MakeMarChoices tests unmarshaling make/mar choice entries.
@@ -75,12 +79,13 @@ func TestLoadResolutionData_MakeMarChoices(t *testing.T) {
 
 // TestLoadResolutionData_InvokedArtifactIDs tests unmarshaling artifact IDs.
 func TestLoadResolutionData_InvokedArtifactIDs(t *testing.T) {
-	jsonStr := `{"invoked_artifact_ids": [10, 20, 30]}`
+	jsonStr := `{"chronicle_histories": {"invoked_artifact_ids": [10, 20, 30]}}`
 	result := LoadResolutionData(&jsonStr)
 
 	expected := []int64{10, 20, 30}
-	assert.Len(t, result.InvokedArtifactIDs, 3)
-	assert.Equal(t, expected, result.InvokedArtifactIDs)
+	require.NotNil(t, result.ChronicleHistories)
+	assert.Len(t, result.ChronicleHistories.InvokedArtifactIDs, 3)
+	assert.Equal(t, expected, result.ChronicleHistories.InvokedArtifactIDs)
 }
 
 // TestLoadResolutionData_RoundTrip tests that a value can be marshaled and unmarshaled.
@@ -89,13 +94,14 @@ func TestLoadResolutionData_RoundTrip(t *testing.T) {
 	assetID := int64(999)
 	playerID := int64(555)
 	original := ResolutionData{
-		FairTradeAssetID:   &assetID,
-		FairTradeAccepted:  new(true),
-		MessyBreakRequired: false,
-		PeerCount:          2,
+		ExchangeCourtiers: &ExchangeCourtiersResolutionData{
+			FairTradeAssetID:  &assetID,
+			FairTradeAccepted: new(true),
+		},
+		MakeIntroductions:  &MakeIntroductionsResolutionData{PeerCount: 2},
 		MakeMarChoices:     []Choice{{Option: "a"}, {Option: "b", PlayerID: &playerID}},
-		InvokedArtifactIDs: []int64{1, 2, 3},
-		EsteemLockout:      true,
+		ChronicleHistories: &ChronicleHistoriesResolutionData{InvokedArtifactIDs: []int64{1, 2, 3}},
+		SpreadPropaganda:   &SpreadPropagandaResolutionData{EsteemLockout: true},
 		Liaise:             &LiaiseResolutionData{PartnerID: &playerID},
 	}
 
@@ -108,13 +114,16 @@ func TestLoadResolutionData_RoundTrip(t *testing.T) {
 	result := LoadResolutionData(&jsonStr)
 
 	// Verify round-trip
-	assert.NotNil(t, result.FairTradeAssetID)
-	assert.Equal(t, assetID, *result.FairTradeAssetID)
-	assert.NotNil(t, result.FairTradeAccepted)
-	assert.True(t, *result.FairTradeAccepted)
-	assert.False(t, result.MessyBreakRequired)
-	assert.Equal(t, int16(2), result.PeerCount)
-	assert.True(t, result.EsteemLockout)
+	require.NotNil(t, result.ExchangeCourtiers)
+	assert.NotNil(t, result.ExchangeCourtiers.FairTradeAssetID)
+	assert.Equal(t, assetID, *result.ExchangeCourtiers.FairTradeAssetID)
+	assert.NotNil(t, result.ExchangeCourtiers.FairTradeAccepted)
+	assert.True(t, *result.ExchangeCourtiers.FairTradeAccepted)
+	assert.False(t, result.ExchangeCourtiers.MessyBreakRequired)
+	require.NotNil(t, result.MakeIntroductions)
+	assert.Equal(t, int16(2), result.MakeIntroductions.PeerCount)
+	require.NotNil(t, result.SpreadPropaganda)
+	assert.True(t, result.SpreadPropaganda.EsteemLockout)
 	require.NotNil(t, result.Liaise)
 	require.NotNil(t, result.Liaise.PartnerID)
 	assert.Equal(t, playerID, *result.Liaise.PartnerID)
@@ -129,78 +138,53 @@ func TestLoadResolutionData_InvalidJSON(t *testing.T) {
 	assert.NotNil(t, result)
 }
 
-// TestDuelState_GetAndSet tests the DuelState accessor and mutator.
-func TestDuelState_GetAndSet(t *testing.T) {
+// TestEnsureDuel tests the EnsureDuel write-path helper.
+func TestEnsureDuel(t *testing.T) {
 	prepID := int64(100)
 	targID := int64(200)
 	initID := int64(300)
 
-	original := DuelState{
-		DuelType:           "wits",
-		PreparerChampionID: &prepID,
-		TargetChampionID:   &targID,
-		Phase:              "bouts",
-		PreparerStakeCount: 2,
-		TargetStakeCount:   3,
-		CurrentBout:        1,
-		InitiativePlayerID: &initID,
-	}
-
-	// Create a ResolutionData and set the DuelState
 	rd := ResolutionData{}
-	rd.SetDuelState(original)
+	d := rd.EnsureDuel()
+	d.DuelType = "wits"
+	d.PreparerChampionID = &prepID
+	d.TargetChampionID = &targID
+	d.Phase = DuelPhaseBouts
+	d.PreparerStakeCount = 2
+	d.TargetStakeCount = 3
+	d.CurrentBout = 1
+	d.InitiativePlayerID = &initID
 
-	// Retrieve the DuelState and verify
-	retrieved := rd.DuelState()
+	// EnsureDuel returns the same pointer on subsequent calls.
+	require.Same(t, d, rd.EnsureDuel())
 
-	assert.Equal(t, "wits", retrieved.DuelType)
-	assert.NotNil(t, retrieved.PreparerChampionID)
-	assert.Equal(t, prepID, *retrieved.PreparerChampionID)
-	assert.NotNil(t, retrieved.TargetChampionID)
-	assert.Equal(t, targID, *retrieved.TargetChampionID)
-	assert.Equal(t, "bouts", retrieved.Phase)
-	assert.Equal(t, int16(2), retrieved.PreparerStakeCount)
-	assert.Equal(t, int16(3), retrieved.TargetStakeCount)
-	assert.Equal(t, int16(1), retrieved.CurrentBout)
-	assert.NotNil(t, retrieved.InitiativePlayerID)
-	assert.Equal(t, initID, *retrieved.InitiativePlayerID)
+	require.NotNil(t, rd.Duel)
+	assert.Equal(t, "wits", rd.Duel.DuelType)
+	assert.Equal(t, DuelPhaseBouts, rd.Duel.Phase)
+	assert.Equal(t, int16(2), rd.Duel.PreparerStakeCount)
 }
 
-// TestDuelState_ZeroValues tests that DuelState() works on a zero-valued ResolutionData.
-func TestDuelState_ZeroValues(t *testing.T) {
-	rd := ResolutionData{}
-	ds := rd.DuelState()
-
-	assert.Empty(t, ds.DuelType)
-	assert.Nil(t, ds.PreparerChampionID)
-	assert.Empty(t, ds.Phase)
-	assert.Equal(t, int16(0), ds.PreparerStakeCount)
-}
-
-// TestDuelState_PartialUpdate tests that SetDuelState only updates relevant fields.
-func TestDuelState_PartialUpdate(t *testing.T) {
-	// Start with some data in other fields
+// TestDuel_PartialUpdate confirms that mutating Duel doesn't disturb other
+// nested per-plan structs on the same ResolutionData.
+func TestDuel_PartialUpdate(t *testing.T) {
 	assetID := int64(42)
 	rd := ResolutionData{
-		FairTradeAssetID: &assetID,
-		PeerCount:        5,
+		ExchangeCourtiers: &ExchangeCourtiersResolutionData{FairTradeAssetID: &assetID},
+		MakeIntroductions: &MakeIntroductionsResolutionData{PeerCount: 5},
 	}
 
-	// Update just the DuelState fields
 	prepID := int64(111)
-	ds := DuelState{
-		DuelType:           "arms",
-		PreparerChampionID: &prepID,
-		Phase:              "stake_reveal",
-	}
-	rd.SetDuelState(ds)
+	d := rd.EnsureDuel()
+	d.DuelType = "arms"
+	d.PreparerChampionID = &prepID
+	d.Phase = DuelPhaseStaking
 
-	// Verify DuelState fields are updated
-	retrieved := rd.DuelState()
-	assert.Equal(t, "arms", retrieved.DuelType)
+	require.NotNil(t, rd.Duel)
+	assert.Equal(t, "arms", rd.Duel.DuelType)
 
-	// Verify other fields are NOT affected
-	assert.NotNil(t, rd.FairTradeAssetID)
-	assert.Equal(t, assetID, *rd.FairTradeAssetID)
-	assert.Equal(t, int16(5), rd.PeerCount)
+	require.NotNil(t, rd.ExchangeCourtiers)
+	assert.NotNil(t, rd.ExchangeCourtiers.FairTradeAssetID)
+	assert.Equal(t, assetID, *rd.ExchangeCourtiers.FairTradeAssetID)
+	require.NotNil(t, rd.MakeIntroductions)
+	assert.Equal(t, int16(5), rd.MakeIntroductions.PeerCount)
 }

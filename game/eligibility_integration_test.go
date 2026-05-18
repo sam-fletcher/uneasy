@@ -451,7 +451,7 @@ func TestHasEsteemLockout_ActiveLockout(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set resolution data with EsteemLockout = true
-	resData := map[string]interface{}{"esteem_lockout": true}
+	resData := map[string]interface{}{"spread_propaganda": map[string]interface{}{"esteem_lockout": true}}
 	resDataBytes, _ := json.Marshal(resData)
 	resDataStr := string(resDataBytes)
 	err = q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{
@@ -484,7 +484,7 @@ func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	resData1 := map[string]interface{}{"esteem_lockout": true}
+	resData1 := map[string]interface{}{"spread_propaganda": map[string]interface{}{"esteem_lockout": true}}
 	resDataBytes1, _ := json.Marshal(resData1)
 	resDataStr1 := string(resDataBytes1)
 	err = q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{
@@ -535,7 +535,7 @@ func TestHasEsteemLockout_MultipleEsteemPlans(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		resData := map[string]interface{}{"esteem_lockout": true}
+		resData := map[string]interface{}{"spread_propaganda": map[string]interface{}{"esteem_lockout": true}}
 		resDataBytes, _ := json.Marshal(resData)
 		resDataStr := string(resDataBytes)
 		err = q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{

@@ -241,8 +241,9 @@
 	{@const isPreparer = currentPlayerID === plan.preparer_id}
 	{@const isTarget = plan.target_player_id != null && currentPlayerID === plan.target_player_id}
 	{@const rd = parseResolutionData(plan)}
-	{@const ftAssetID = rd.fair_trade_asset_id ?? null}
-	{@const ftAccepted = rd.fair_trade_accepted ?? null}
+	{@const ec = rd.exchange_courtiers ?? {}}
+	{@const ftAssetID = ec.fair_trade_asset_id ?? null}
+	{@const ftAccepted = ec.fair_trade_accepted ?? null}
 	{@const existingChoices = (rd.make_mar_choices ?? []).map(c => c.option)}
 	{@const choicesDone = existingChoices.length > 0}
 
@@ -327,8 +328,8 @@
 			</MakeMarPicker>
 
 		{:else if choicesDone || (rollOutcome == null && ftAccepted === true)}
-			{@const messyRequired = rd.messy_break_required ?? false}
-			{@const messyDone = rd.messy_break_done ?? false}
+			{@const messyRequired = ec.messy_break_required ?? false}
+			{@const messyDone = ec.messy_break_done ?? false}
 
 			{#if messyRequired && !messyDone}
 				{#if isTarget}

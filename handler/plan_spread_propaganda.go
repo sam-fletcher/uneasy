@@ -12,8 +12,8 @@ package handler
 //   (c) "dismissed" — no one believes it (narrative)
 //   (d) "co-opt"    — top interferer spreads their own propaganda immediately
 //
-// Esteem lockout (b): sets ResData.EsteemLockout = true. Checked in
-// validatePlanPreparation for all esteem-category plan types.
+// Esteem lockout (b): sets ResData.SpreadPropaganda.EsteemLockout = true.
+// Checked in validatePlanPreparation for all esteem-category plan types.
 //
 // Recursive resolve (d): finds the top interferer by dice count (ties broken
 // by best esteem rank), creates a new SP plan at current_row with status
@@ -87,7 +87,7 @@ func (spHandler) ApplyChoice(
 	for _, choice := range choices {
 		switch choice {
 		case "censured":
-			resData.EsteemLockout = true
+			resData.EnsureSpreadPropaganda().EsteemLockout = true
 
 		case "co-opt":
 			if err := applyCoOpt(ctx, deps, plan, resData); err != nil {
@@ -117,7 +117,7 @@ func applyCoOpt(
 	resData *ResolutionData,
 ) error {
 	// Depth cap: recursive plans cannot co-opt again.
-	if resData.OriginalPlanID != nil {
+	if sp := resData.SpreadPropaganda; sp != nil && sp.OriginalPlanID != nil {
 		return errors.New("co-opt is not available on a recursive propaganda plan")
 	}
 
@@ -180,7 +180,9 @@ func applyCoOpt(
 
 	// Tag it in ResData so its own co-opt option is blocked.
 	parentID := plan.ID
-	recursiveResData := ResolutionData{OriginalPlanID: &parentID}
+	recursiveResData := ResolutionData{
+		SpreadPropaganda: &SpreadPropagandaResolutionData{OriginalPlanID: &parentID},
+	}
 	if err = saveResolutionData(ctx, deps.Q, recursivePlan.ID, recursiveResData); err != nil {
 		return fmt.Errorf("could not save recursive plan data: %w", err)
 	}
@@ -197,7 +199,7 @@ func applyCoOpt(
 	}
 
 	// Record the recursive plan ID in the parent's ResData.
-	resData.RecursivePlanID = &recursivePlan.ID
+	resData.EnsureSpreadPropaganda().RecursivePlanID = &recursivePlan.ID
 
 	broadcastEvent(deps.Manager, game.ID, model.EventSPRecursivePlan, model.SPRecursivePlanPayload{
 		ParentPlanID:    plan.ID,

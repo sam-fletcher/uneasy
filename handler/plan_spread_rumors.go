@@ -161,7 +161,7 @@ func (srHandler) ApplyChoice(
 	if err != nil {
 		return fmt.Errorf("could not create rumor: %w", err)
 	}
-	resData.RumorID = &rumor.ID
+	resData.EnsureSpreadRumors().RumorID = &rumor.ID
 
 	broadcastEvent(deps.Manager, plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
 
@@ -190,11 +190,11 @@ func (srHandler) ApplyChoice(
 				)
 			}
 		case "reveal_source":
-			resData.SourceHidden = false
+			resData.EnsureSpreadRumors().SourceHidden = false
 			// Source is already set to preparer above; nothing more needed.
 		case "hide_source":
 			// Handled via the extra route (requires secret text).
-			resData.SourceHidden = true
+			resData.EnsureSpreadRumors().SourceHidden = true
 		}
 	}
 
@@ -482,7 +482,8 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		if resData.RumorID == nil {
+		sr := resData.SpreadRumors
+		if sr == nil || sr.RumorID == nil {
 			respondErr(w, http.StatusConflict, "rumor has not been created yet; call make-choice first")
 			return
 		}
@@ -499,7 +500,7 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Remove source attribution from the rumor.
-		if err := deps.Q.SetRumorSourceHidden(ctx, *resData.RumorID); err != nil {
+		if err := deps.Q.SetRumorSourceHidden(ctx, *sr.RumorID); err != nil {
 			respondInternalErr(w, r, "could not hide rumor source", err)
 			return
 		}
@@ -518,7 +519,7 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		resData.SourceHidden = true
+		sr.SourceHidden = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save hide-source state", err)
 			return
@@ -526,7 +527,7 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":         plan.ID,
-			"rumor_id":        *resData.RumorID,
+			"rumor_id":        *sr.RumorID,
 			"secret_asset_id": body.SecretAssetID,
 		})
 	}

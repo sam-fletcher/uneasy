@@ -108,22 +108,21 @@ type ValidationContext struct {
 // 12 plan types. Only the fields relevant to a given plan type will be set.
 type ResolutionData struct {
 	// ── Exchange Courtiers ──
-	FairTradeAssetID   *int64 `json:"fair_trade_asset_id,omitempty"`
-	FairTradeAccepted  *bool  `json:"fair_trade_accepted,omitempty"`
-	MessyBreakRequired bool   `json:"messy_break_required,omitempty"`
-	MessyBreakDone     bool   `json:"messy_break_done,omitempty"`
+	// All EC-specific state lives on the nested struct; see
+	// plan_exchange_courtiers_data.go.
+	ExchangeCourtiers *ExchangeCourtiersResolutionData `json:"exchange_courtiers,omitempty"`
 
 	// ── Make Introductions ──
-	PeerCount          int16   `json:"peer_count,omitempty"`
-	DelayedPeerPlanIDs []int64 `json:"delayed_peer_plan_ids,omitempty"`
-	// Fields for synthetic delayed-arrival plans only:
-	DelayedArrival     bool   `json:"delayed_arrival,omitempty"`
-	DelayedPeerAssetID *int64 `json:"delayed_peer_asset_id,omitempty"`
-	OriginalPlanID     *int64 `json:"original_plan_id,omitempty"`
+	// All MI-specific state lives on the nested struct; see
+	// plan_make_introductions_data.go.
+	MakeIntroductions *MakeIntroductionsResolutionData `json:"make_introductions,omitempty"`
 
 	// ── Spread Propaganda ──
-	RecursivePlanID *int64 `json:"recursive_plan_id,omitempty"`
-	EsteemLockout   bool   `json:"esteem_lockout,omitempty"`
+	// All SP-specific state lives on the nested struct; see
+	// plan_spread_propaganda_data.go. Per-plan handlers go through
+	// r.EnsureSpreadPropaganda() for writes and r.SpreadPropaganda (or
+	// LoadSpreadPropagandaData) for reads.
+	SpreadPropaganda *SpreadPropagandaResolutionData `json:"spread_propaganda,omitempty"`
 
 	// ── Make/Mar choices ──
 	// Set by the generic POST /api/plans/:id/make-choice endpoint and by
@@ -137,22 +136,19 @@ type ResolutionData struct {
 	MakeMarChoices []Choice `json:"make_mar_choices,omitempty"`
 
 	// ── Spread Rumors ──
-	SourceHidden bool   `json:"source_hidden,omitempty"`
-	RumorID      *int64 `json:"rumor_id,omitempty"`
+	// All SR-specific state lives on the nested struct; see
+	// plan_spread_rumors_data.go.
+	SpreadRumors *SpreadRumorsResolutionData `json:"spread_rumors,omitempty"`
 
 	// ── Chronicle Histories ──
-	InvokedArtifactIDs []int64 `json:"invoked_artifact_ids,omitempty"`
-	// InvokePhaseClosed flips true the moment OnResolve creates the dice roll.
-	// After that, no further invocations may change difficulty. The mar-choice
-	// "invoke_another" route may still append to InvokedArtifactIDs for
-	// narrative tracking even when this flag is set.
-	InvokePhaseClosed bool `json:"invoke_phase_closed,omitempty"`
+	// All CH-specific state lives on the nested struct; see
+	// plan_chronicle_histories_data.go.
+	ChronicleHistories *ChronicleHistoriesResolutionData `json:"chronicle_histories,omitempty"`
 
 	// ── Propose Decree ──
-	SignatoryPlayerIDs []int64 `json:"signatory_player_ids,omitempty"`
-	SignatoryID        *int64  `json:"signatory_id,omitempty"`
-	Addendum           string  `json:"addendum,omitempty"`
-	LawID              *int64  `json:"law_id,omitempty"`
+	// All PD-specific state lives on the nested struct; see
+	// plan_propose_decree_data.go.
+	ProposeDecree *ProposeDecreeResolutionData `json:"propose_decree,omitempty"`
 
 	// ── Clandestinely Liaise ──
 	// All Liaise-specific state lives on the nested struct; see
@@ -161,20 +157,9 @@ type ResolutionData struct {
 	Liaise *LiaiseResolutionData `json:"liaise,omitempty"`
 
 	// ── Propose Duel ──
-	DuelType                 string `json:"duel_type,omitempty"`
-	PreparerChampionID       *int64 `json:"preparer_champion_id,omitempty"`
-	TargetChampionID         *int64 `json:"target_champion_id,omitempty"`
-	PreparerChampionDeclared bool   `json:"preparer_champion_declared,omitempty"`
-	TargetChampionDeclared   bool   `json:"target_champion_declared,omitempty"`
-	DuelPhase                string `json:"duel_phase,omitempty"`
-	PreparerStakeCount       int16  `json:"preparer_stake_count,omitempty"`
-	TargetStakeCount         int16  `json:"target_stake_count,omitempty"`
-	CurrentBout              int16  `json:"current_bout,omitempty"`
-	InitiativePlayerID       *int64 `json:"initiative_player_id,omitempty"`
-	// StakeCounts is the pre-reveal accumulator for stake-reveal submissions
-	// in Propose Duel. Keyed by player ID. Becomes vestigial once both have
-	// submitted and PreparerStakeCount/TargetStakeCount are written.
-	StakeCounts map[int64]int16 `json:"stake_counts,omitempty"`
+	// All duel-specific state lives on the nested struct; see
+	// plan_propose_duel_data.go.
+	Duel *DuelResolutionData `json:"duel,omitempty"`
 
 	// ── Host Festivity ──
 	FestivityPhase       string            `json:"festivity_phase,omitempty"`
@@ -198,8 +183,9 @@ type ResolutionData struct {
 	WarScenePosted    bool    `json:"war_scene_posted,omitempty"`
 
 	// ── Make Demands ──
-	DraftChoices        []DraftChoice `json:"draft_choices,omitempty"`
-	CounterDemandPlaced bool          `json:"counter_demand_placed,omitempty"`
+	// All MD-specific state lives on the nested struct; see
+	// plan_make_demands_data.go.
+	MakeDemands *MakeDemandsResolutionData `json:"make_demands,omitempty"`
 }
 
 // DraftChoice records a player's draft pick in Make Demands.
@@ -247,61 +233,6 @@ func SaveResolutionData(ctx context.Context, q *dbgen.Queries, planID int64, d R
 	}
 	s := string(b)
 	return q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{ID: planID, ResolutionData: &s})
-}
-
-// ── Typed accessors ──────────────────────────────────────────────────────────
-//
-// Plan handlers work with focused views of ResolutionData instead of the full
-// union struct. Per-plan accessors make the intent explicit at call sites.
-
-// DuelState is the Propose Duel subset of ResolutionData.
-type DuelState struct {
-	DuelType           string // "arms" or "wits"
-	PreparerChampionID *int64
-	TargetChampionID   *int64
-	// *Declared flags are set once the side has submitted an elect-champion
-	// call (with or without an asset). They're how the UI knows the
-	// initiative-holder has moved so the second player's picker can unlock.
-	PreparerChampionDeclared bool
-	TargetChampionDeclared   bool
-	// Phase tracks pre-roll progression. See the propose-duel handler for
-	// the set of valid values ("stake_reveal", "staking", "bouts", "roll",
-	// "done").
-	Phase              string
-	PreparerStakeCount int16
-	TargetStakeCount   int16
-	CurrentBout        int16
-	InitiativePlayerID *int64
-}
-
-// DuelState returns the Propose Duel view of r.
-func (r *ResolutionData) DuelState() DuelState {
-	return DuelState{
-		DuelType:                 r.DuelType,
-		PreparerChampionID:       r.PreparerChampionID,
-		TargetChampionID:         r.TargetChampionID,
-		PreparerChampionDeclared: r.PreparerChampionDeclared,
-		TargetChampionDeclared:   r.TargetChampionDeclared,
-		Phase:                    r.DuelPhase,
-		PreparerStakeCount:       r.PreparerStakeCount,
-		TargetStakeCount:         r.TargetStakeCount,
-		CurrentBout:              r.CurrentBout,
-		InitiativePlayerID:       r.InitiativePlayerID,
-	}
-}
-
-// SetDuelState writes s back into r.
-func (r *ResolutionData) SetDuelState(s DuelState) {
-	r.DuelType = s.DuelType
-	r.PreparerChampionID = s.PreparerChampionID
-	r.TargetChampionID = s.TargetChampionID
-	r.PreparerChampionDeclared = s.PreparerChampionDeclared
-	r.TargetChampionDeclared = s.TargetChampionDeclared
-	r.DuelPhase = s.Phase
-	r.PreparerStakeCount = s.PreparerStakeCount
-	r.TargetStakeCount = s.TargetStakeCount
-	r.CurrentBout = s.CurrentBout
-	r.InitiativePlayerID = s.InitiativePlayerID
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────

@@ -89,8 +89,9 @@ func (chHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	}
 	// Close the invoke phase before the roll is created so that any late
 	// invoke-artifact calls are rejected and can't affect difficulty.
-	if !resData.InvokePhaseClosed {
-		resData.InvokePhaseClosed = true
+	ch := resData.EnsureChronicleHistories()
+	if !ch.InvokePhaseClosed {
+		ch.InvokePhaseClosed = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			return nil, fmt.Errorf("could not close invoke phase: %w", err)
 		}
@@ -175,19 +176,20 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
+		ch := resData.EnsureChronicleHistories()
 
 		// The invoke-artifact route is only for the pre-roll scene. Once the
 		// roll has been created (OnResolve sets InvokePhaseClosed), further
 		// artifact invocations must come through the mar-choice "invoke_another"
 		// path, which records narrative state without affecting difficulty.
-		if resData.InvokePhaseClosed {
+		if ch.InvokePhaseClosed {
 			respondErr(w, http.StatusConflict, "invoke phase is closed; the dice roll has been cast")
 			return
 		}
 
 		// Idempotent: don't add duplicates.
-		if !slices.Contains(resData.InvokedArtifactIDs, body.AssetID) {
-			resData.InvokedArtifactIDs = append(resData.InvokedArtifactIDs, body.AssetID)
+		if !slices.Contains(ch.InvokedArtifactIDs, body.AssetID) {
+			ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, body.AssetID)
 		}
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
@@ -197,7 +199,7 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":              plan.ID,
-			"invoked_artifact_ids": resData.InvokedArtifactIDs,
+			"invoked_artifact_ids": ch.InvokedArtifactIDs,
 		})
 	}
 }
@@ -239,7 +241,8 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 
 		resData := loadResolutionData(plan.ResolutionData)
-		if !slices.Contains(resData.InvokedArtifactIDs, body.AssetID) {
+		ch := resData.ChronicleHistories
+		if ch == nil || !slices.Contains(ch.InvokedArtifactIDs, body.AssetID) {
 			respondErr(w, http.StatusBadRequest, "artifact has not been invoked in this plan")
 			return
 		}
@@ -334,10 +337,11 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			// We just record the choice here.
 		case "invoke_another":
 			if body.AssetID != nil {
-				if !slices.Contains(resData.InvokedArtifactIDs, *body.AssetID) {
+				ch := resData.EnsureChronicleHistories()
+				if !slices.Contains(ch.InvokedArtifactIDs, *body.AssetID) {
 					asset, err := deps.Q.GetAssetByID(ctx, *body.AssetID)
 					if err == nil && asset.GameID == plan.GameID && asset.AssetType == model.AssetArtifact {
-						resData.InvokedArtifactIDs = append(resData.InvokedArtifactIDs, *body.AssetID)
+						ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, *body.AssetID)
 					}
 				}
 			}

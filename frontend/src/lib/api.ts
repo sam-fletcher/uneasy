@@ -286,26 +286,41 @@ export interface KeptSecret {
 // shared ResolutionData interface can reference it.
 export type { LiaiseResolutionData } from '$lib/plans/resolutionData/liaise';
 import type { LiaiseResolutionData } from '$lib/plans/resolutionData/liaise';
+export type { SpreadPropagandaResolutionData } from '$lib/plans/resolutionData/spread_propaganda';
+import type { SpreadPropagandaResolutionData } from '$lib/plans/resolutionData/spread_propaganda';
+export type { SpreadRumorsResolutionData } from '$lib/plans/resolutionData/spread_rumors';
+import type { SpreadRumorsResolutionData } from '$lib/plans/resolutionData/spread_rumors';
+export type { MakeDemandsResolutionData } from '$lib/plans/resolutionData/make_demands';
+import type { MakeDemandsResolutionData } from '$lib/plans/resolutionData/make_demands';
+export type { ProposeDecreeResolutionData } from '$lib/plans/resolutionData/propose_decree';
+import type { ProposeDecreeResolutionData } from '$lib/plans/resolutionData/propose_decree';
+export type { MakeIntroductionsResolutionData } from '$lib/plans/resolutionData/make_introductions';
+import type { MakeIntroductionsResolutionData } from '$lib/plans/resolutionData/make_introductions';
+export type { ExchangeCourtiersResolutionData } from '$lib/plans/resolutionData/exchange_courtiers';
+import type { ExchangeCourtiersResolutionData } from '$lib/plans/resolutionData/exchange_courtiers';
+export type { ChronicleHistoriesResolutionData } from '$lib/plans/resolutionData/chronicle_histories';
+import type { ChronicleHistoriesResolutionData } from '$lib/plans/resolutionData/chronicle_histories';
+export type { DuelResolutionData, DuelPhase } from '$lib/plans/resolutionData/propose_duel';
+import type { DuelResolutionData } from '$lib/plans/resolutionData/propose_duel';
 
 /** Mirrors game.ResolutionData (uneasy/game/plan.go). All fields optional —
  * only the ones relevant to a given plan type are populated. */
 export interface ResolutionData {
 	// ── Exchange Courtiers ──
-	fair_trade_asset_id?: number | null;
-	fair_trade_accepted?: boolean | null;
-	messy_break_required?: boolean;
-	messy_break_done?: boolean;
+	// All EC-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/exchange_courtiers.ts.
+	exchange_courtiers?: ExchangeCourtiersResolutionData;
 
 	// ── Make Introductions ──
-	peer_count?: number;
-	delayed_peer_plan_ids?: number[];
-	delayed_arrival?: boolean;
-	delayed_peer_asset_id?: number | null;
-	original_plan_id?: number | null;
+	// All MI-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/make_introductions.ts.
+	make_introductions?: MakeIntroductionsResolutionData;
 
 	// ── Spread Propaganda ──
-	recursive_plan_id?: number | null;
-	esteem_lockout?: boolean;
+	// All SP-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/spread_propaganda.ts. Read via
+	// parseSpreadPropagandaData(plan) for an ergonomic always-non-nil view.
+	spread_propaganda?: SpreadPropagandaResolutionData;
 
 	// ── Make/Mar choices ──
 	// Written by POST /api/plans/:id/make-choice and by per-plan handlers
@@ -317,18 +332,19 @@ export interface ResolutionData {
 	make_mar_choices?: Choice[];
 
 	// ── Spread Rumors ──
-	source_hidden?: boolean;
-	rumor_id?: number | null;
+	// All SR-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/spread_rumors.ts.
+	spread_rumors?: SpreadRumorsResolutionData;
 
 	// ── Chronicle Histories ──
-	invoked_artifact_ids?: number[];
-	invoke_phase_closed?: boolean;
+	// All CH-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/chronicle_histories.ts.
+	chronicle_histories?: ChronicleHistoriesResolutionData;
 
 	// ── Propose Decree ──
-	signatory_player_ids?: number[];
-	signatory_id?: number | null;
-	addendum?: string;
-	law_id?: number | null;
+	// All PD-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/propose_decree.ts.
+	propose_decree?: ProposeDecreeResolutionData;
 
 	// ── Clandestinely Liaise ──
 	// All Liaise-specific state lives on the nested struct; see
@@ -337,19 +353,9 @@ export interface ResolutionData {
 	liaise?: LiaiseResolutionData;
 
 	// ── Propose Duel ──
-	duel_type?: string;
-	preparer_champion_id?: number | null;
-	target_champion_id?: number | null;
-	preparer_champion_declared?: boolean;
-	target_champion_declared?: boolean;
-	duel_phase?: string;
-	preparer_stake_count?: number;
-	target_stake_count?: number;
-	current_bout?: number;
-	initiative_player_id?: number | null;
-	/** Pre-reveal accumulator for stake-reveal submissions; keyed by player ID.
-	 *  Vestigial once both have submitted and the canonical stake counts are set. */
-	stake_counts?: Record<number, number>;
+	// All duel-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/propose_duel.ts.
+	duel?: DuelResolutionData;
 
 	// ── Host Festivity ──
 	festivity_phase?: string;
@@ -373,8 +379,9 @@ export interface ResolutionData {
 	war_scene_posted?: boolean;
 
 	// ── Make Demands ──
-	draft_choices?: { player_id: number; option: string }[];
-	counter_demand_placed?: boolean;
+	// All MD-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/make_demands.ts.
+	make_demands?: MakeDemandsResolutionData;
 }
 
 /** Response shape from GET /api/plans/:id. */

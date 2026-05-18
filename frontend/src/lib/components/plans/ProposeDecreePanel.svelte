@@ -79,7 +79,7 @@
 		lawID: number | null;
 	};
 	const pdState = $derived.by<PDState>(() => {
-		const rd = parseResolutionData(plan);
+		const rd = parseResolutionData(plan).propose_decree ?? {};
 		return {
 			signatoryID: rd.signatory_id ?? null,
 			council: rd.signatory_player_ids ?? [],

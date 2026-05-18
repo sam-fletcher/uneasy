@@ -74,12 +74,13 @@ func (pdHandler) ComputeDifficulty(
 // once the council meeting is complete).
 func (pdHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	resData := loadResolutionData(plan.ResolutionData)
+	pd := resData.EnsureProposeDecree()
 
 	// Default signatory is the preparer. Council members may displace them.
-	if resData.SignatoryID == nil {
-		resData.SignatoryID = &plan.PreparerID
+	if pd.SignatoryID == nil {
+		pd.SignatoryID = &plan.PreparerID
 		// The preparer is implicitly in the council — track for completeness.
-		resData.SignatoryPlayerIDs = append(resData.SignatoryPlayerIDs, plan.PreparerID)
+		pd.SignatoryPlayerIDs = append(pd.SignatoryPlayerIDs, plan.PreparerID)
 	}
 
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
@@ -113,10 +114,12 @@ func (pdHandler) ApplyChoice(
 	}
 	displayOrder := int16(len(laws) + 1)
 
+	pd := resData.EnsureProposeDecree()
+
 	// Build optional addendum pointer.
 	var addendumPtr *string
-	if resData.Addendum != "" {
-		s := resData.Addendum
+	if pd.Addendum != "" {
+		s := pd.Addendum
 		addendumPtr = &s
 	}
 
@@ -126,14 +129,14 @@ func (pdHandler) ApplyChoice(
 		Text:         preparationNotes,
 		Addendum:     addendumPtr,
 		OriginPlanID: &planID,
-		SignatoryID:  resData.SignatoryID,
+		SignatoryID:  pd.SignatoryID,
 		DisplayOrder: displayOrder,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create law: %w", err)
 	}
 
-	resData.LawID = &law.ID
+	pd.LawID = &law.ID
 
 	if result == makeOutcome {
 		if err = pdCreateLawAsset(ctx, deps, plan, resData, preparationNotes); err != nil {
@@ -165,8 +168,8 @@ func pdCreateLawAsset(
 	}
 
 	var ownerID int64
-	if resData.SignatoryID != nil {
-		ownerID = *resData.SignatoryID
+	if pd := resData.ProposeDecree; pd != nil && pd.SignatoryID != nil {
+		ownerID = *pd.SignatoryID
 	} else {
 		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
 		if err != nil {
@@ -192,7 +195,7 @@ func pdCreateLawAsset(
 
 // CanComplete verifies that the law has been created before completing.
 func (pdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if resData.LawID == nil {
+	if resData.ProposeDecree == nil || resData.ProposeDecree.LawID == nil {
 		return errors.New("make-choice must be submitted before the plan can be completed")
 	}
 	return nil
@@ -305,16 +308,17 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
+		pd := resData.EnsureProposeDecree()
 
 		// Add to council if not already there.
-		if !slices.Contains(resData.SignatoryPlayerIDs, player.ID) {
-			resData.SignatoryPlayerIDs = append(resData.SignatoryPlayerIDs, player.ID)
+		if !slices.Contains(pd.SignatoryPlayerIDs, player.ID) {
+			pd.SignatoryPlayerIDs = append(pd.SignatoryPlayerIDs, player.ID)
 		}
 
 		// Recompute signatory: best rank (lowest) among all council members.
 		bestRank := preparerRank
 		bestPlayerID := plan.PreparerID
-		for _, memberID := range resData.SignatoryPlayerIDs {
+		for _, memberID := range pd.SignatoryPlayerIDs {
 			memberRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, memberID, model.CategoryPower)
 			if err != nil {
 				continue
@@ -324,7 +328,7 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 				bestPlayerID = memberID
 			}
 		}
-		resData.SignatoryID = &bestPlayerID
+		pd.SignatoryID = &bestPlayerID
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save council data", err)
@@ -334,14 +338,14 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastEvent(deps.Manager, plan.GameID, model.EventDecreeCouncilJoined, model.DecreeCouncilJoinedPayload{
 			PlanID:      plan.ID,
 			PlayerID:    player.ID,
-			SignatoryID: *resData.SignatoryID,
+			SignatoryID: *pd.SignatoryID,
 		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":      plan.ID,
 			"player_id":    player.ID,
-			"signatory_id": *resData.SignatoryID,
-			"council":      resData.SignatoryPlayerIDs,
+			"signatory_id": *pd.SignatoryID,
+			"council":      pd.SignatoryPlayerIDs,
 		})
 	}
 }
@@ -370,7 +374,8 @@ func pdCallRollHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 
 		resData := loadResolutionData(plan.ResolutionData)
-		if resData.SignatoryID == nil || *resData.SignatoryID != player.ID {
+		pd := resData.ProposeDecree
+		if pd == nil || pd.SignatoryID == nil || *pd.SignatoryID != player.ID {
 			respondErr(w, http.StatusForbidden, "only the current signatory may call the roll")
 			return
 		}
@@ -434,7 +439,8 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 
 		resData := loadResolutionData(plan.ResolutionData)
-		if resData.SignatoryID == nil || *resData.SignatoryID != player.ID {
+		pd := resData.EnsureProposeDecree()
+		if pd.SignatoryID == nil || *pd.SignatoryID != player.ID {
 			respondErr(w, http.StatusForbidden, "only the current signatory may set the addendum")
 			return
 		}
@@ -447,7 +453,7 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		resData.Addendum = body.Addendum
+		pd.Addendum = body.Addendum
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save addendum", err)
@@ -456,7 +462,7 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":  plan.ID,
-			"addendum": resData.Addendum,
+			"addendum": pd.Addendum,
 		})
 	}
 }

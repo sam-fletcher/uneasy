@@ -92,19 +92,19 @@
 		stakeCounts: Record<number, number>;
 	};
 	const duelRes = $derived.by<DuelRes>(() => {
-		const rd = parseResolutionData(plan);
+		const d = parseResolutionData(plan).duel ?? {};
 		return {
-			duelType: rd.duel_type ?? '',
-			phase: rd.duel_phase ?? '',
-			initiativeID: rd.initiative_player_id ?? null,
-			prepChampID: rd.preparer_champion_id ?? null,
-			targChampID: rd.target_champion_id ?? null,
-			prepChampDeclared: rd.preparer_champion_declared ?? false,
-			targChampDeclared: rd.target_champion_declared ?? false,
-			prepStakeCount: rd.preparer_stake_count ?? 0,
-			targStakeCount: rd.target_stake_count ?? 0,
-			currentBout: rd.current_bout ?? 0,
-			stakeCounts: rd.stake_counts ?? {},
+			duelType: d.duel_type ?? '',
+			phase: d.phase ?? '',
+			initiativeID: d.initiative_player_id ?? null,
+			prepChampID: d.preparer_champion_id ?? null,
+			targChampID: d.target_champion_id ?? null,
+			prepChampDeclared: d.preparer_champion_declared ?? false,
+			targChampDeclared: d.target_champion_declared ?? false,
+			prepStakeCount: d.preparer_stake_count ?? 0,
+			targStakeCount: d.target_stake_count ?? 0,
+			currentBout: d.current_bout ?? 0,
+			stakeCounts: d.stake_counts ?? {},
 		};
 	});
 

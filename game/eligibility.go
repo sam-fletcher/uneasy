@@ -92,7 +92,7 @@ func HasEsteemLockout(
 		}
 		if p.PlanType == model.PlanSpreadPropaganda {
 			rd := LoadResolutionData(p.ResolutionData)
-			if rd.EsteemLockout {
+			if rd.SpreadPropaganda != nil && rd.SpreadPropaganda.EsteemLockout {
 				return true, nil
 			}
 		}

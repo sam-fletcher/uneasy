@@ -1,0 +1,41 @@
+package game
+
+// plan_exchange_courtiers_data.go — typed resolution_data for Exchange Courtiers.
+
+import dbgen "uneasy/db/gen"
+
+// ExchangeCourtiersResolutionData holds Exchange Courtiers plan state stored
+// inside the plans.resolution_data JSON column, nested under the
+// "exchange_courtiers" key.
+type ExchangeCourtiersResolutionData struct {
+	// FairTradeAssetID is the asset the target offers back during the
+	// fair-trade pre-roll. Set when the target submits the offer.
+	FairTradeAssetID *int64 `json:"fair_trade_asset_id,omitempty"`
+	// FairTradeAccepted is set when the preparer either accepts or declines
+	// the offered trade. nil = no decision yet.
+	FairTradeAccepted *bool `json:"fair_trade_accepted,omitempty"`
+	// MessyBreakRequired flips true when the make-choice flow selects the
+	// "messy" option; it gates a follow-up break-asset extra route.
+	MessyBreakRequired bool `json:"messy_break_required,omitempty"`
+	// MessyBreakDone flips true once the break-asset route completes.
+	MessyBreakDone bool `json:"messy_break_done,omitempty"`
+}
+
+// LoadExchangeCourtiersData is a read-only convenience parser; returns a zero
+// struct when the nested key is absent.
+func LoadExchangeCourtiersData(plan *dbgen.Plan) ExchangeCourtiersResolutionData {
+	rd := LoadResolutionData(plan.ResolutionData)
+	if rd.ExchangeCourtiers == nil {
+		return ExchangeCourtiersResolutionData{}
+	}
+	return *rd.ExchangeCourtiers
+}
+
+// EnsureExchangeCourtiers returns r.ExchangeCourtiers, allocating a zero
+// struct if it was nil.
+func (r *ResolutionData) EnsureExchangeCourtiers() *ExchangeCourtiersResolutionData {
+	if r.ExchangeCourtiers == nil {
+		r.ExchangeCourtiers = &ExchangeCourtiersResolutionData{}
+	}
+	return r.ExchangeCourtiers
+}

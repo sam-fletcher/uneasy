@@ -27,7 +27,9 @@ func TestPlanDifficulty(t *testing.T) {
 			{0, 3}, {1, 3}, {2, 4}, {3, 5}, {4, 6},
 		}
 		for _, tc := range cases {
-			got := game.MakeIntroductionsDifficulty(game.ResolutionData{PeerCount: tc.peerCount})
+			got := game.MakeIntroductionsDifficulty(game.ResolutionData{
+				MakeIntroductions: &game.MakeIntroductionsResolutionData{PeerCount: tc.peerCount},
+			})
 			assert.Equal(t, tc.expected, got)
 		}
 	})
@@ -83,7 +85,9 @@ func TestPlanDifficulty(t *testing.T) {
 				for i := range ids {
 					ids[i] = int64(i + 1)
 				}
-				resData := game.ResolutionData{InvokedArtifactIDs: ids}
+				resData := game.ResolutionData{
+					ChronicleHistories: &game.ChronicleHistoriesResolutionData{InvokedArtifactIDs: ids},
+				}
 				assert.Equal(t, tc.expected, game.ChronicleHistoriesDifficulty(tc.rank, resData))
 			})
 		}

@@ -765,7 +765,7 @@ func createPlanInTx(
 
 	if body.PlanType == model.PlanProposeDuel {
 		resData := loadResolutionData(plan.ResolutionData)
-		resData.DuelType = body.DuelType
+		resData.EnsureDuel().DuelType = body.DuelType
 		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
 			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save duel type")
 		}
@@ -978,7 +978,7 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			"plan_id":              plan.ID,
 			"choices":              body.Choices,
 			"result":               body.Result,
-			"messy_break_required": resData.MessyBreakRequired,
+			"messy_break_required": resData.ExchangeCourtiers != nil && resData.ExchangeCourtiers.MessyBreakRequired,
 		})
 	}
 }

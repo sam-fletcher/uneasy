@@ -16,8 +16,11 @@ func ExchangeCourtiersDifficulty(targetRank int16) int16 {
 // Difficulty = 2 + peer_count (peer_count 0 treated as 1; range 1–4 → 3–6).
 func MakeIntroductionsDifficulty(resData ResolutionData) int16 {
 	const baseDifficulty = int16(2)
-	pc := max(resData.PeerCount, 1)
-	return baseDifficulty + pc
+	var pc int16
+	if resData.MakeIntroductions != nil {
+		pc = resData.MakeIntroductions.PeerCount
+	}
+	return baseDifficulty + max(pc, 1)
 }
 
 // SpreadPropagandaDifficulty returns the difficulty for a given preparer
@@ -46,7 +49,10 @@ func SpreadRumorsDifficulty(relevantRank int16, targetIsMainChar bool) int16 {
 //
 //	max(preparerKnowledgeRank, len(InvokedArtifactIDs))
 func ChronicleHistoriesDifficulty(preparerKnowledgeRank int16, resData ResolutionData) int16 {
-	artifactCount := int16(len(resData.InvokedArtifactIDs))
+	var artifactCount int16
+	if resData.ChronicleHistories != nil {
+		artifactCount = int16(len(resData.ChronicleHistories.InvokedArtifactIDs))
+	}
 	return max(preparerKnowledgeRank, artifactCount)
 }
 

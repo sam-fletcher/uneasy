@@ -100,7 +100,7 @@
 
 	// ── Resolve: derived state ────────────────────────────────────────────────
 
-	const rd = $derived(parseResolutionData(plan));
+	const rd = $derived(parseResolutionData(plan).make_demands ?? {});
 	const draftChoices = $derived(rd.draft_choices ?? []);
 	const counterPlaced = $derived(rd.counter_demand_placed ?? false);
 	const draftComplete = $derived(draftChoices.length === 4);
