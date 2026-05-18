@@ -18,6 +18,7 @@ type (
 	ResolutionData    = game.ResolutionData
 	DraftChoice       = game.DraftChoice
 	Choice            = game.Choice
+	KeptSecret        = game.KeptSecret
 )
 
 // Registry delegates — handler-internal code calls these unqualified.

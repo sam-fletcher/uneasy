@@ -155,10 +155,11 @@ type ResolutionData struct {
 	LawID              *int64  `json:"law_id,omitempty"`
 
 	// ── Clandestinely Liaise ──
-	PartnerID           *int64 `json:"partner_id,omitempty"`
-	LiaisePhase         string `json:"liaise_phase,omitempty"`
-	LiaiseDelayRevealID *int64 `json:"liaise_delay_reveal_id,omitempty"`
-	RedelayRevealID     *int64 `json:"redelay_reveal_id,omitempty"`
+	PartnerID           *int64       `json:"partner_id,omitempty"`
+	LiaisePhase         string       `json:"liaise_phase,omitempty"`
+	LiaiseDelayRevealID *int64       `json:"liaise_delay_reveal_id,omitempty"`
+	RedelayRevealID     *int64       `json:"redelay_reveal_id,omitempty"`
+	KeptSecrets         []KeptSecret `json:"kept_secrets,omitempty"`
 
 	// ── Propose Duel ──
 	DuelType                 string `json:"duel_type,omitempty"`
@@ -171,6 +172,10 @@ type ResolutionData struct {
 	TargetStakeCount         int16  `json:"target_stake_count,omitempty"`
 	CurrentBout              int16  `json:"current_bout,omitempty"`
 	InitiativePlayerID       *int64 `json:"initiative_player_id,omitempty"`
+	// StakeCounts is the pre-reveal accumulator for stake-reveal submissions
+	// in Propose Duel. Keyed by player ID. Becomes vestigial once both have
+	// submitted and PreparerStakeCount/TargetStakeCount are written.
+	StakeCounts map[int64]int16 `json:"stake_counts,omitempty"`
 
 	// ── Host Festivity ──
 	FestivityPhase       string            `json:"festivity_phase,omitempty"`
@@ -202,6 +207,14 @@ type ResolutionData struct {
 type DraftChoice struct {
 	PlayerID int64  `json:"player_id"`
 	Option   string `json:"option"`
+}
+
+// KeptSecret records one player's keep-secret submission in Clandestinely
+// Liaise's "Secrets We Keep" phase: the player nominates one of their own
+// assets to hold the secret of the meeting.
+type KeptSecret struct {
+	PlayerID int64 `json:"player_id"`
+	AssetID  int64 `json:"asset_id"`
 }
 
 // Choice is one entry in ResolutionData.MakeMarChoices.

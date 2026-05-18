@@ -39,7 +39,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strings"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/model"
@@ -291,25 +290,14 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 }
 
 // clBothKeepSecretsSubmitted checks whether both participants have submitted
-// their keep-secret choice by scanning the Choices slice for entries encoded
-// as "keep_secret:<playerID>:<assetID>".
+// their keep-secret choice.
 func clBothKeepSecretsSubmitted(resData ResolutionData, preparerID int64) bool {
-	const prefix = "keep_secret:"
 	prepSubmitted := false
 	partnerSubmitted := false
-	for _, c := range resData.MakeMarChoices {
-		if !strings.HasPrefix(c.Option, prefix) {
-			continue
-		}
-		rest := c.Option[len(prefix):]
-		var playerID int64
-		_, err := fmt.Sscanf(rest, "%d", &playerID)
-		if err != nil {
-			continue // TODO: code smell
-		}
-		if playerID == preparerID {
+	for _, ks := range resData.KeptSecrets {
+		if ks.PlayerID == preparerID {
 			prepSubmitted = true
-		} else if resData.PartnerID != nil && playerID == *resData.PartnerID {
+		} else if resData.PartnerID != nil && ks.PlayerID == *resData.PartnerID {
 			partnerSubmitted = true
 		}
 	}
@@ -394,9 +382,10 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Record keep-secret choice.
-		// TODO(stage 2): move to typed KeptSecrets field on LiaiseResolutionData.
-		entry := fmt.Sprintf("keep_secret:%d:%d", player.ID, body.AssetID)
-		resData.MakeMarChoices = append(resData.MakeMarChoices, Choice{Option: entry})
+		resData.KeptSecrets = append(resData.KeptSecrets, KeptSecret{
+			PlayerID: player.ID,
+			AssetID:  body.AssetID,
+		})
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save keep-secret choice", err)

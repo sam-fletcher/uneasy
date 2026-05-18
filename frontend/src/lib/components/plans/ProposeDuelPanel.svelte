@@ -89,7 +89,7 @@
 		prepStakeCount: number;
 		targStakeCount: number;
 		currentBout: number;
-		choices: string[];
+		stakeCounts: Record<number, number>;
 	};
 	const duelRes = $derived.by<DuelRes>(() => {
 		const rd = parseResolutionData(plan);
@@ -104,8 +104,7 @@
 			prepStakeCount: rd.preparer_stake_count ?? 0,
 			targStakeCount: rd.target_stake_count ?? 0,
 			currentBout: rd.current_bout ?? 0,
-			// TODO(stage 2): replace with typed StakeCounts on DuelResolutionData.
-			choices: (rd.make_mar_choices ?? []).map(c => c.option),
+			stakeCounts: rd.stake_counts ?? {},
 		};
 	});
 
@@ -269,10 +268,9 @@
 	let stakeCountPicked = $state<number | null>(null);
 	let stakeCountBusy = $state(false);
 	let stakeCountError = $state('');
-	const iSubmittedStakeCount = $derived.by(() => {
-		if (currentPlayerID == null) return false;
-		return duelRes.choices.some(c => c.startsWith(`stake_count:${currentPlayerID}:`));
-	});
+	const iSubmittedStakeCount = $derived(
+		currentPlayerID != null && duelRes.stakeCounts[currentPlayerID] != null,
+	);
 	async function submitStakeCount() {
 		if (!plan || stakeCountPicked == null || stakeCountBusy) return;
 		stakeCountBusy = true; stakeCountError = '';

@@ -274,7 +274,6 @@ func acceptFairTrade(
 
 	accepted := true
 	resData.FairTradeAccepted = &accepted
-	resData.MakeMarChoices = []Choice{{Option: "fair_trade_accepted"}}
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondInternalErr(w, r, "could not save decision", err)
 		return

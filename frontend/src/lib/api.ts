@@ -274,6 +274,13 @@ export interface Choice {
 	option: string;
 }
 
+/** One player's keep-secret submission in Clandestinely Liaise's
+ * "Secrets We Keep" phase. Mirrors game.KeptSecret. */
+export interface KeptSecret {
+	player_id: number;
+	asset_id: number;
+}
+
 /** Mirrors game.ResolutionData (uneasy/game/plan.go). All fields optional —
  * only the ones relevant to a given plan type are populated. */
 export interface ResolutionData {
@@ -322,6 +329,7 @@ export interface ResolutionData {
 	liaise_phase?: string;
 	liaise_delay_reveal_id?: number | null;
 	redelay_reveal_id?: number | null;
+	kept_secrets?: KeptSecret[];
 
 	// ── Propose Duel ──
 	duel_type?: string;
@@ -334,6 +342,9 @@ export interface ResolutionData {
 	target_stake_count?: number;
 	current_bout?: number;
 	initiative_player_id?: number | null;
+	/** Pre-reveal accumulator for stake-reveal submissions; keyed by player ID.
+	 *  Vestigial once both have submitted and the canonical stake counts are set. */
+	stake_counts?: Record<number, number>;
 
 	// ── Host Festivity ──
 	festivity_phase?: string;

@@ -36,7 +36,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
-	"strings"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -456,38 +455,17 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Record in Choices as "stake_count:<playerID>:<N>" so we can detect
-		// when both players have submitted.
-		// TODO(stage 2): move to typed StakeCounts field on DuelResolutionData.
-		prefix := fmt.Sprintf("stake_count:%d:", player.ID)
-		// Remove any previous submission from this player.
-		newChoices := resData.MakeMarChoices[:0]
-		for _, c := range resData.MakeMarChoices {
-			if !strings.HasPrefix(c.Option, prefix) {
-				newChoices = append(newChoices, c)
-			}
+		// Accumulate per-player stake counts until both have submitted.
+		if resData.StakeCounts == nil {
+			resData.StakeCounts = map[int64]int16{}
 		}
-		newChoices = append(newChoices, Choice{Option: fmt.Sprintf("%s%d", prefix, body.Count)})
-		resData.MakeMarChoices = newChoices
+		resData.StakeCounts[player.ID] = body.Count
 
-		// Count distinct participants who have submitted.
-		submitted := map[int64]int16{}
-		for _, c := range resData.MakeMarChoices {
-			if !strings.HasPrefix(c.Option, "stake_count:") {
-				continue
-			}
-			var pid int64
-			var n int16
-			if _, err := fmt.Sscanf(c.Option, "stake_count:%d:%d", &pid, &n); err == nil {
-				submitted[pid] = n
-			}
-		}
-
-		if len(submitted) >= 2 {
+		if len(resData.StakeCounts) >= 2 {
 			// Both submitted — reveal and advance to staking.
-			state.PreparerStakeCount = submitted[plan.PreparerID]
+			state.PreparerStakeCount = resData.StakeCounts[plan.PreparerID]
 			if plan.TargetPlayerID != nil {
-				state.TargetStakeCount = submitted[*plan.TargetPlayerID]
+				state.TargetStakeCount = resData.StakeCounts[*plan.TargetPlayerID]
 			}
 			state.Phase = duelPhaseStaking
 			resData.SetDuelState(state)
@@ -509,7 +487,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
-		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "submitted": len(submitted)})
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "submitted": len(resData.StakeCounts)})
 	}
 }
 

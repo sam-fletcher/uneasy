@@ -11,7 +11,7 @@
 	import {
 		preparePlan, completePlan,
 		advanceLiaise, keepSecret, shareChoice,
-		type Plan, type Asset, type Player,
+		type Plan, type Asset, type Player, type KeptSecret,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
@@ -68,7 +68,7 @@
 		partnerID: number | null;
 		delayRevealID: number | null;
 		redelayRevealID: number | null;
-		choices: string[];
+		keptSecrets: KeptSecret[];
 	};
 	const clState = $derived.by<CLState>(() => {
 		const rd = parseResolutionData(plan);
@@ -77,8 +77,7 @@
 			partnerID: rd.partner_id ?? null,
 			delayRevealID: rd.liaise_delay_reveal_id ?? null,
 			redelayRevealID: rd.redelay_reveal_id ?? null,
-			// TODO(stage 2): replace with typed KeptSecrets on LiaiseResolutionData.
-			choices: (rd.make_mar_choices ?? []).map(c => c.option),
+			keptSecrets: rd.kept_secrets ?? [],
 		};
 	});
 
@@ -112,16 +111,11 @@
 	// Has the current player submitted keep-secret?
 	const iKeptSecret = $derived(
 		currentPlayerID != null
-		&& clState.choices.some(c => c.startsWith(`keep_secret:${currentPlayerID}:`)),
+		&& clState.keptSecrets.some(ks => ks.player_id === currentPlayerID),
 	);
-	const keepSecretSubmittedIDs = $derived.by(() => {
-		const ids = new Set<number>();
-		for (const c of clState.choices) {
-			const m = c.match(/^keep_secret:(\d+):/);
-			if (m) ids.add(Number(m[1]));
-		}
-		return ids;
-	});
+	const keepSecretSubmittedIDs = $derived(
+		new Set(clState.keptSecrets.map(ks => ks.player_id)),
+	);
 
 	let resError = $state('');
 
