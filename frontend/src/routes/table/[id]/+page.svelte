@@ -663,14 +663,21 @@
 				goto(`/login?next=/table/${gameID}`);
 				return;
 			}
-			await loadGameState();
+			// Open the WS first, with loadGameState as the resync callback.
+			// createConnection will run loadGameState on every (re)connect —
+			// including this initial one — and buffer any events that
+			// arrive during the fetch so we never miss a transition. Await
+			// `ready` so we can read `players` below to find our seat.
+			const conn = createConnection(gameID, handleWSMessage, loadGameState);
+			disconnect = conn.disconnect;
+			await conn.ready;
+
 			const seat = players.find((p) => p.account_id === me.id);
 			if (!seat) {
 				goto('/profile');
 				return;
 			}
 			currentPlayerID = seat.id;
-			disconnect = createConnection(gameID, handleWSMessage);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load table.';
 		} finally {

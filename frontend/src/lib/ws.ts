@@ -1,9 +1,10 @@
-// ws.ts — WebSocket client with automatic reconnection.
+// ws.ts — WebSocket client with automatic reconnection + resync-on-connect.
 //
 // Usage:
-//   const disconnect = createConnection(gameID, (msg) => { ... });
+//   const conn = createConnection(gameID, (msg) => { ... }, loadState);
+//   await conn.ready;   // first resync done
 //   // later:
-//   disconnect();
+//   conn.disconnect();
 
 export interface WSMessage {
 	type: string;
@@ -163,13 +164,44 @@ export const DEMAND_EVENTS = [
 	'demand.leverage_set', 'demand.retargeted',
 ] as const;
 
-// createConnection opens a WebSocket to /api/tables/:id/ws and returns a
-// cleanup function. Reconnects automatically with exponential backoff if the
-// connection drops.
-export function createConnection(gameID: string | number, onMessage: MessageHandler): () => void {
+// createConnection opens a WebSocket to /api/tables/:id/ws.
+//
+// On every (re)connection it calls `onResync`, which should refetch the full
+// game state. While that fetch is in flight, incoming WS events are buffered
+// and then replayed in order once the snapshot is applied. This preserves
+// two invariants:
+//
+//   1. No event is dropped — even on the initial connect, or after a brief
+//      disconnect (server restart, HMR, screen lock, network blip), the
+//      snapshot brings us back to a known-good baseline.
+//   2. No event is clobbered by a stale snapshot — the snapshot reflects
+//      server state at some moment T; any event arriving while the snapshot
+//      is in flight is newer than T, so we replay it *on top of* the
+//      snapshot rather than letting the snapshot overwrite it.
+//
+// Returns { disconnect, ready }. Await `ready` to block until the first
+// resync has finished (useful in onMount when you need state loaded before
+// reading from it).
+export function createConnection(
+	gameID: string | number,
+	onMessage: MessageHandler,
+	onResync: () => Promise<void>,
+): { disconnect: () => void; ready: Promise<void> } {
 	let ws: WebSocket | null = null;
 	let stopped = false;
 	let retryDelay = 1000; // ms; doubles on each failed attempt, capped at 30s
+
+	// While `syncing` is true, queue incoming events instead of dispatching
+	// them. We flush the queue when the resync resolves.
+	let syncing = false;
+	let buffer: WSMessage[] = [];
+
+	// `ready` resolves after the first successful resync, so onMount can
+	// wait for initial state. Subsequent resyncs (after reconnects) don't
+	// re-create this Promise — callers only care about the first one.
+	let firstSyncDone = false;
+	let resolveReady!: () => void;
+	const ready = new Promise<void>((resolve) => { resolveReady = resolve; });
 
 	// Listen for typing events dispatched by the page component.
 	function onTyping(e: Event) {
@@ -194,6 +226,28 @@ export function createConnection(gameID: string | number, onMessage: MessageHand
 		ws.onopen = () => {
 			console.log('[ws] connected');
 			retryDelay = 1000; // reset backoff on success
+
+			// Start buffering before we kick off the resync, so that any
+			// event arriving between now and the snapshot's arrival is held.
+			syncing = true;
+			buffer = [];
+
+			// `.finally` so we release the buffer even if the resync
+			// rejected — otherwise a transient fetch failure would freeze
+			// the UI from ever applying live events again.
+			onResync().finally(() => {
+				syncing = false;
+				// Drain the buffer in arrival order. JS is single-threaded,
+				// so no new events can sneak in between these two lines.
+				const pending = buffer;
+				buffer = [];
+				for (const msg of pending) onMessage(msg);
+
+				if (!firstSyncDone) {
+					firstSyncDone = true;
+					resolveReady();
+				}
+			});
 		};
 
 		ws.onmessage = (event) => {
@@ -203,7 +257,11 @@ export function createConnection(gameID: string | number, onMessage: MessageHand
 			} catch {
 				return;
 			}
-			onMessage(msg);
+			if (syncing) {
+				buffer.push(msg);
+			} else {
+				onMessage(msg);
+			}
 		};
 
 		ws.onclose = () => {
@@ -223,9 +281,12 @@ export function createConnection(gameID: string | number, onMessage: MessageHand
 
 	connect();
 
-	return () => {
-		stopped = true;
-		window.removeEventListener('uneasy:typing', onTyping);
-		ws?.close();
+	return {
+		disconnect: () => {
+			stopped = true;
+			window.removeEventListener('uneasy:typing', onTyping);
+			ws?.close();
+		},
+		ready,
 	};
 }
