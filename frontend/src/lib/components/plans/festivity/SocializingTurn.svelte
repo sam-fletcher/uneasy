@@ -1,0 +1,223 @@
+<!-- Festivity/SocializingTurn.svelte
+  The current player's own turn during socializing: roll-or-opt-out, then
+  pick a make/mar option once the outcome is known. The make-option
+  `challenge_duel` issues a duel challenge instead of going through
+  /guest-choice (the festivity then surfaces a ChallengeBanner).
+-->
+<script lang="ts">
+	import { guestRoll, guestChoice, challengeDuel, type Asset, type Plan, type Player } from '$lib/api';
+	import PlayerChips from '../PlayerChips.svelte';
+	import CardPicker from '../CardPicker.svelte';
+	import FormField from '../FormField.svelte';
+	import { playerName } from '../shared';
+	import { MAKE_OPTS, MAR_OPTS, type FestRes } from './options';
+
+	let { plan, fest, players, assets, currentPlayerID, currentTurnID, myRollID, myEffectiveOutcome, onPlansChanged }: {
+		plan: Plan;
+		fest: FestRes;
+		players: Player[];
+		assets: Asset[];
+		currentPlayerID: number | null;
+		currentTurnID: number | null;
+		myRollID: number | null;
+		myEffectiveOutcome: 'make' | 'mar' | null;
+		onPlansChanged: () => void;
+	} = $props();
+
+	let actionBusy = $state(false);
+	let actionError = $state('');
+
+	async function onRoll() {
+		if (actionBusy) return;
+		actionBusy = true; actionError = '';
+		try { await guestRoll(plan.id, 'roll'); onPlansChanged(); }
+		catch (e) { actionError = e instanceof Error ? e.message : 'Could not roll.'; }
+		finally { actionBusy = false; }
+	}
+	async function onOptOut() {
+		if (actionBusy) return;
+		actionBusy = true; actionError = '';
+		try { await guestRoll(plan.id, 'opt_out'); onPlansChanged(); }
+		catch (e) { actionError = e instanceof Error ? e.message : 'Could not opt out.'; }
+		finally { actionBusy = false; }
+	}
+
+	let pickedChoice = $state<string | null>(null);
+	let rumorText = $state('');
+	let peerName = $state('');
+	let pickedAssetID = $state<number | null>(null);
+	let pickedDuelTargetID = $state<number | null>(null);
+	let pickerBusy = $state(false);
+	let pickerError = $state('');
+
+	const myCenterPeerCandidates = $derived(
+		assets.filter(a => fest.centeredAssetIDs.includes(a.id) && !a.is_destroyed),
+	);
+	const myOwnPeers = $derived(
+		currentPlayerID == null
+			? []
+			: assets.filter(a =>
+				a.owner_id === currentPlayerID
+				&& a.asset_type === 'peer'
+				&& !a.is_destroyed),
+	);
+	const otherGuests = $derived(
+		fest.guests.filter(id => id !== currentPlayerID),
+	);
+
+	// Reset picker when plan changes.
+	let lastPlanID = $state<number | null>(null);
+	$effect(() => {
+		if (plan.id !== lastPlanID) {
+			lastPlanID = plan.id;
+			pickedChoice = null;
+			rumorText = '';
+			peerName = '';
+			pickedAssetID = null;
+			pickedDuelTargetID = null;
+			pickerError = '';
+		}
+	});
+
+	async function submitMyChoice() {
+		if (pickerBusy || !pickedChoice) return;
+		pickerBusy = true; pickerError = '';
+		try {
+			if (myEffectiveOutcome === 'make' && pickedChoice === 'challenge_duel') {
+				if (pickedDuelTargetID == null) {
+					pickerError = 'Pick a target.';
+					return;
+				}
+				await challengeDuel(plan.id, pickedDuelTargetID);
+			} else {
+				const body: { choice: string; rumor_text?: string; peer_name?: string; asset_id?: number } = {
+					choice: pickedChoice,
+				};
+				if (pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you') {
+					body.rumor_text = rumorText.trim();
+				}
+				if (pickedChoice === 'introduce_peer') {
+					body.peer_name = peerName.trim() || 'New peer';
+				}
+				if (pickedChoice === 'take_center_peer' || pickedChoice === 'disagreement') {
+					if (pickedAssetID == null) { pickerError = 'Pick an asset.'; return; }
+					body.asset_id = pickedAssetID;
+				}
+				await guestChoice(plan.id, body);
+			}
+			pickedChoice = null;
+			rumorText = '';
+			peerName = '';
+			pickedAssetID = null;
+			pickedDuelTargetID = null;
+			onPlansChanged();
+		} catch (e) {
+			pickerError = e instanceof Error ? e.message : 'Could not submit choice.';
+		} finally { pickerBusy = false; }
+	}
+</script>
+
+<div class="choices-section">
+	<p class="choices-header">Your turn</p>
+	{#if currentTurnID !== currentPlayerID && currentTurnID != null}
+		<p class="choices-note muted">
+			{playerName(players, currentTurnID)} should go before you (lower esteem first).
+			You may still act if they insist on going later.
+		</p>
+	{/if}
+
+	{#if myRollID == null}
+		{#if actionError}<p class="res-error">{actionError}</p>{/if}
+		<div class="form-row">
+			<button class="action-btn primary" onclick={onRoll} disabled={actionBusy}>
+				{actionBusy ? '…' : 'Roll'}
+			</button>
+			<button class="action-btn" onclick={onOptOut} disabled={actionBusy}>
+				Opt out
+			</button>
+		</div>
+	{:else if myEffectiveOutcome == null}
+		<p class="choices-note muted">Rolling… resolve the dice above.</p>
+	{:else}
+		{@const opts = myEffectiveOutcome === 'make' ? MAKE_OPTS : MAR_OPTS}
+		<p class="choices-header">
+			Result:
+			<strong class="outcome-{myEffectiveOutcome}">
+				{myEffectiveOutcome === 'make' ? '✓ Make' : '✗ Mar'}
+			</strong>
+			— pick one option:
+		</p>
+		<FormField label="Pick one option">
+			<div class="chip-row">
+				{#each opts as o}
+					<button
+						type="button"
+						class="chip-btn"
+						class:active={pickedChoice === o.key}
+						onclick={() => {
+							pickedChoice = pickedChoice === o.key ? null : o.key;
+							pickedAssetID = null;
+							pickedDuelTargetID = null;
+						}}
+					>{o.label}</button>
+				{/each}
+			</div>
+		</FormField>
+
+		{#if pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you'}
+			<label class="form-label">
+				Rumor text:
+				<textarea rows={2} bind:value={rumorText} class="form-textarea"
+					placeholder="What does the rumor say?"></textarea>
+			</label>
+		{:else if pickedChoice === 'introduce_peer'}
+			<label class="form-label">
+				New peer's name:
+				<input type="text" bind:value={peerName} class="form-textarea" style="height:auto;"
+					placeholder="Name of the new peer" />
+			</label>
+		{:else if pickedChoice === 'take_center_peer'}
+			<CardPicker
+				label="Peer to take from the center"
+				items={myCenterPeerCandidates}
+				{players}
+				emptyMessage="No peers in the center of the table."
+				ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+				selected={pickedAssetID}
+				onSelect={(id) => (pickedAssetID = id)}
+			/>
+		{:else if pickedChoice === 'disagreement'}
+			<CardPicker
+				label="Peer to set in the center"
+				items={myOwnPeers}
+				{players}
+				emptyMessage="You have no peers to set in the center."
+				selected={pickedAssetID}
+				onSelect={(id) => (pickedAssetID = id)}
+			/>
+		{:else if pickedChoice === 'challenge_duel'}
+			{@const duelTargetPlayers = otherGuests
+				.map(gid => players.find(p => p.id === gid))
+				.filter((p): p is typeof players[number] => p != null)}
+			<FormField label="Challenge">
+				<PlayerChips
+					players={duelTargetPlayers}
+					isActive={(p) => pickedDuelTargetID === p.id}
+					onSelect={(p) => (pickedDuelTargetID = pickedDuelTargetID === p.id ? null : p.id)}
+				/>
+				{#if pickedDuelTargetID != null && fest.acceptDuels.includes(pickedDuelTargetID)}
+					<p class="choices-note muted" style="margin:0.25rem 0 0;">
+						This challenge must be accepted.
+					</p>
+				{/if}
+			</FormField>
+		{/if}
+
+		{#if pickerError}<p class="res-error">{pickerError}</p>{/if}
+		<button class="action-btn primary"
+			onclick={submitMyChoice}
+			disabled={pickerBusy || !pickedChoice}>
+			{pickerBusy ? '…' : 'Submit choice'}
+		</button>
+	{/if}
+</div>
