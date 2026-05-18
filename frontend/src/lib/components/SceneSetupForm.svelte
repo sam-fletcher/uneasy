@@ -36,9 +36,16 @@
 		prompt: string;
 		/** Called once the scene is created. The parent triggers a refetch. */
 		onSceneStarted: () => void;
+		/**
+		 * When true, render the form structure for non-focus players to
+		 * see, but disable all inputs and hide the submit button. No live
+		 * draft sync yet — selections shown are local-only. The waiting-on
+		 * banner already names the focus player.
+		 */
+		readOnly?: boolean;
 	}
 
-	const { gameID, assets, players, focusPlayerID, prompt, onSceneStarted }: Props = $props();
+	const { gameID, assets, players, focusPlayerID, prompt, onSceneStarted, readOnly = false }: Props = $props();
 
 	// ── Where ──────────────────────────────────────────────────────────────────
 	const holdings = $derived(
@@ -158,6 +165,7 @@
 						selectable
 						selected={selectedHoldingID === h.id}
 						onToggle={selectHolding}
+						disabled={readOnly}
 					/>
 				{/each}
 			</div>
@@ -171,6 +179,7 @@
 					value={customLocation}
 					oninput={(e) => onCustomInput((e.target as HTMLInputElement).value)}
 					maxlength={80}
+					disabled={readOnly}
 				/>
 			</label>
 		</div>
@@ -185,6 +194,7 @@
 					class="chip"
 					class:active={timeElapsed === opt.value}
 					onclick={() => selectTime(opt.value)}
+					disabled={readOnly}
 				>
 					{opt.label}
 				</button>
@@ -197,6 +207,7 @@
 			value={timeNote}
 			oninput={(e) => onTimeNoteInput((e.target as HTMLInputElement).value)}
 			maxlength={120}
+			disabled={readOnly}
 		/>
 	</div>
 
@@ -213,6 +224,7 @@
 						selectable
 						selected={selectedPeerIDs.has(peer.id)}
 						onToggle={togglePeer}
+						disabled={readOnly}
 					/>
 				{/each}
 			</div>
@@ -221,16 +233,18 @@
 
 	{#if error}<p class="error">{error}</p>{/if}
 
-	<div class="actions">
-		<button
-			type="button"
-			class="primary"
-			onclick={submit}
-			disabled={!canSubmit || submitting}
-		>
-			{submitting ? '…' : 'Begin Scene'}
-		</button>
-	</div>
+	{#if !readOnly}
+		<div class="actions">
+			<button
+				type="button"
+				class="primary"
+				onclick={submit}
+				disabled={!canSubmit || submitting}
+			>
+				{submitting ? '…' : 'Begin Scene'}
+			</button>
+		</div>
+	{/if}
 </section>
 
 <style>

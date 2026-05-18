@@ -20,6 +20,7 @@
 	} from '$lib/api';
 	import AssetCardSelectable from '../AssetCardSelectable.svelte';
 	import { playerColor } from '$lib/playerColor';
+	import type { WaitingOnState, Waitee } from '$lib/components/WaitingOnBar.svelte';
 
 	interface Props {
 		gameID: string;
@@ -27,8 +28,9 @@
 		players: Player[];
 		assets: Asset[];
 		currentPlayerID: number | null;
+		waitingOn: WaitingOnState;
 	}
-	let { gameID, game, players, assets, currentPlayerID }: Props = $props();
+	let { gameID, game, players, assets, currentPlayerID, waitingOn = $bindable() }: Props = $props();
 
 	let tokens = $state<ShakeUpTokensRow[]>([]);
 	let options = $state<ShakeUpOptionInfo[]>([]);
@@ -137,6 +139,40 @@
 	const adjustmentTotal = $derived(
 		(openSpend?.adjustments ?? []).reduce((sum, a) => sum + a.adjustment, 0)
 	);
+
+	// ── Waiting-on derivation ────────────────────────────────────────────────
+	//   Step 1 (rolling): players whose token pool is still 0 haven't rolled.
+	//   Step 2 (spending): if a spend is open, waiting on the spender to
+	//     commit. Otherwise waiting on whichever players still hold tokens
+	//     (the rule is reverse-rank order, but token count is the visible
+	//     proxy — anyone at zero has either spent down or never rolled high).
+	const shakeUpWaitingOn = $derived.by<WaitingOnState>(() => {
+		if (game.shake_up_step === 1) {
+			const notRolled = tokens
+				.filter(t => t.shake_up_tokens === 0)
+				.map<Waitee>(t => ({ kind: 'player', playerID: t.id }));
+			if (notRolled.length === 0) return { waitees: [] };
+			const waitees: Waitee[] = notRolled.length === players.length
+				? [{ kind: 'everyone' }]
+				: notRolled;
+			return { waitees, stepLabel: 'Roll for tokens' };
+		}
+		if (game.shake_up_step === 2) {
+			if (openSpend) {
+				return {
+					waitees: [{ kind: 'player', playerID: openSpend.spend.player_id }],
+					stepLabel: 'Commit the spend',
+				};
+			}
+			const stillHolding = tokens
+				.filter(t => t.shake_up_tokens > 0)
+				.map<Waitee>(t => ({ kind: 'player', playerID: t.id }));
+			if (stillHolding.length === 0) return { waitees: [] };
+			return { waitees: stillHolding, stepLabel: 'Spend tokens' };
+		}
+		return { waitees: [] };
+	});
+	$effect(() => { waitingOn = shakeUpWaitingOn; });
 </script>
 
 <div class="shake-up">
@@ -173,9 +209,6 @@
 					{busy ? '…' : 'Submit roll'}
 				</button>
 			</div>
-			{#if myTokens > 0}
-				<p class="muted small">You've rolled — waiting on others.</p>
-			{/if}
 		</section>
 
 	{:else if game.shake_up_step === 2}
@@ -249,7 +282,7 @@
 				</div>
 			</section>
 		{:else}
-			<p class="muted">You have no tokens. Waiting for others to finish spending — the category advances when everyone is at zero.</p>
+			<p class="muted">You have no tokens. The category advances when everyone is at zero.</p>
 		{/if}
 	{:else}
 		<p class="muted">Shake-Up state unavailable.</p>

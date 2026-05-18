@@ -40,6 +40,7 @@
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import { computeBrightHearts } from '$lib/prologue/refund';
+	import type { WaitingOnState, Waitee } from '$lib/components/WaitingOnBar.svelte';
 
 	interface Props {
 		gameID: string;
@@ -49,6 +50,7 @@
 		rankings: Ranking[];
 		currentPlayerID: number | null;
 		isFacilitator: boolean;
+		waitingOn: WaitingOnState;
 		onResync?: () => void;
 	}
 
@@ -60,6 +62,7 @@
 		rankings = $bindable(),
 		currentPlayerID,
 		isFacilitator,
+		waitingOn = $bindable(),
 		onResync,
 	}: Props = $props();
 
@@ -378,8 +381,15 @@
 	}
 
 	$effect(() => {
-		// Default the peer text to the bracketed title when a title is selected.
-		if (extraPeerName && !extraPeerText) extraPeerText = `[${extraPeerName}]`;
+		// Update the peer text when title changes, but preserve user customizations
+		if (extraPeerName) {
+			const current = extraPeerText.trim();
+			const bracketed = `[${extraPeerName}]`;
+			// Update if empty or if it looks like a bracketed title (hasn't been customized)
+			if (!current || (current.startsWith('[') && current.endsWith(']'))) {
+				extraPeerText = bracketed;
+			}
+		}
 	});
 
 	// ── Start main event ─────────────────────────────────────────────────────
@@ -409,6 +419,50 @@
 		if (step.startsWith('place_set_asides_')) return 'place';
 		return 'extra';
 	});
+
+	// ── Waiting-on derivation ────────────────────────────────────────────────
+	// Mode → who's blocking + what they're doing. Returns empty waitees when
+	// everyone has finished the current step (the prologue view falls back to
+	// its own "everyone finished" copy in that case).
+	const prologueWaitingOn = $derived.by<WaitingOnState>(() => {
+		if (loading) return { waitees: [] };
+		if (mode === 'choosing') {
+			if (activePlayerID == null) return { waitees: [] };
+			return {
+				waitees: [{ kind: 'player', playerID: activePlayerID }],
+				stepLabel: 'Claim a box',
+			};
+		}
+		if (mode === 'declare') {
+			const t = currentTrack;
+			if (!t) return { waitees: [] };
+			const notDone = players
+				.filter(p => !doneFlags.some(d => d.player_id === p.id && d.track === t && d.done))
+				.map<Waitee>(p => ({ kind: 'player', playerID: p.id }));
+			if (notDone.length === 0) return { waitees: [] };
+			const waitees: Waitee[] = notDone.length === players.length
+				? [{ kind: 'everyone' }]
+				: notDone;
+			return { waitees, stepLabel: `Declare hearts for ${t}` };
+		}
+		if (mode === 'place') {
+			if (rank1PlayerID == null) return { waitees: [] };
+			return {
+				waitees: [{ kind: 'player', playerID: rank1PlayerID }],
+				stepLabel: 'Place set-asides',
+			};
+		}
+		// extra
+		const notDone = players
+			.filter(p => !extraPeers.some(e => e.player_id === p.id))
+			.map<Waitee>(p => ({ kind: 'player', playerID: p.id }));
+		if (notDone.length === 0) return { waitees: [] };
+		const waitees: Waitee[] = notDone.length === players.length
+			? [{ kind: 'everyone' }]
+			: notDone;
+		return { waitees, stepLabel: 'Create an extra peer' };
+	});
+	$effect(() => { waitingOn = prologueWaitingOn; });
 </script>
 
 {#snippet suitSvg(suit: string)}
@@ -453,15 +507,9 @@
 			<br>{@render suitSvg('D')} Resource &emsp;&emsp;{@render suitSvg('C')} Holding
 		</p>
 
-		<div class="turn-banner" class:my-turn={isMyTurn}>
-			{#if isMyTurn}
-				<strong>Your turn.</strong> Claim a box from any sheet.
-			{:else if activePlayerID != null}
-				Waiting on <strong>{playerName(activePlayerID)}</strong>…
-			{:else}
-				Everyone has finished choosing.
-			{/if}
-		</div>
+		{#if activePlayerID == null}
+			<p class="muted">Everyone has finished choosing.</p>
+		{/if}
 
 		<div class="choosing-grid">
 			{#each sheets as sheet}
@@ -641,20 +689,19 @@
 						</div>
 					{/if}
 				</div>
-				{#if extraPeerName}
-					<label>
-						Peer name:
-						<input
-							type="text"
-							bind:value={extraPeerText}
-							placeholder={`[${extraPeerName}]`}
-						/>
-					</label>
-				{/if}
-				<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
-					{creatingExtra ? '…' : 'Create peer'}
-				</button>
 			</div>
+			<label>
+				Peer name:
+				<input
+					type="text"
+					bind:value={extraPeerText}
+					class="peer-input"
+					placeholder={`[${extraPeerName}]`}
+				/>
+			</label>
+			<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
+				{creatingExtra ? '…' : 'Create peer'}
+			</button>
 		{/if}
 
 	{/if}
@@ -665,7 +712,6 @@
 			class="primary"
 			onclick={advanceToMainEvent}
 			disabled={advancing || blockedOnExtras}
-			title={blockedOnExtras ? 'Waiting for all players to create their extra peer' : undefined}
 		>
 			{advancing ? '…' : 'Start Main Event'}
 		</button>
@@ -699,20 +745,6 @@
 	.muted.small { font-size: 0.8rem; }
 	.local-error { color: #e07070; font-size: 0.85rem; margin: 0; }
 
-	.turn-banner {
-		background: #1e1e1e;
-		border: 1px solid #333;
-		border-left: 3px solid #555;
-		border-radius: 6px;
-		padding: 0.5rem 0.75rem;
-		font-size: 0.9rem;
-		color: #ccc;
-	}
-	.turn-banner.my-turn {
-		border-left-color: #c8a96e;
-		background: #2a2418;
-		color: #e8e4d9;
-	}
 	.choosing-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
@@ -840,6 +872,10 @@
 		flex-direction: column;
 		font-size: 0.85rem;
 		color: #aaa;
+	}
+	.peer-input {
+		max-width: 20rem;
+		margin-top: 0.25rem;
 	}
 	.extra-title {
 		display: flex;

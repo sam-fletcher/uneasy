@@ -1,0 +1,127 @@
+<!-- WaitingOnBar.svelte
+  Page-level strip that answers "whose action is the game waiting on?"
+  Rendered once in +page.svelte across every phase. Each phase view computes
+  its own WaitingOnState and writes it via the page's bindable state.
+
+  Display rules:
+    - "Waiting On:" followed by a comma-separated waitee list.
+    - The current player renders as the literal word "You" in their player
+      colour, sorted to the front of the list.
+    - { kind: 'everyone' } collapses the list to the word "Everyone".
+    - { kind: 'label', text } renders free text for non-player waitees
+      (e.g. "1 more player to join", "facilitator to start").
+    - Empty waitees → the bar hides entirely.
+-->
+<script lang="ts" module>
+	import type { Player } from '$lib/api';
+	export type Waitee =
+		| { kind: 'player'; playerID: number }
+		| { kind: 'everyone' }
+		| { kind: 'label'; text: string };
+	export interface WaitingOnState {
+		waitees: Waitee[];
+		stepLabel?: string;
+		stepSubtitle?: string;
+	}
+</script>
+
+<script lang="ts">
+	import { playerColor } from '$lib/playerColor';
+
+	interface Props {
+		state: WaitingOnState;
+		currentPlayerID: number | null;
+		players: Player[];
+	}
+	let { state, currentPlayerID, players }: Props = $props();
+
+	const orderedWaitees = $derived.by<Waitee[]>(() => {
+		const ws = state.waitees;
+		const youIdx = ws.findIndex(
+			w => w.kind === 'player' && currentPlayerID != null && w.playerID === currentPlayerID
+		);
+		if (youIdx <= 0) return ws;
+		return [ws[youIdx], ...ws.slice(0, youIdx), ...ws.slice(youIdx + 1)];
+	});
+
+	const isEveryone = $derived(
+		orderedWaitees.length === 1 && orderedWaitees[0].kind === 'everyone'
+	);
+
+	function nameFor(id: number): string {
+		return players.find(p => p.id === id)?.display_name ?? '?';
+	}
+	function colorFor(id: number): string {
+		return playerColor(players.find(p => p.id === id));
+	}
+</script>
+
+{#if orderedWaitees.length > 0}
+	<div class="waiting-on-bar">
+		<p class="line waitees-line">
+			<span class="label">Waiting On:</span>
+			{#if isEveryone}
+				<span class="waitee">Everyone</span>
+			{:else}
+				{#each orderedWaitees as w, i}
+					{#if w.kind === 'player' && currentPlayerID != null && w.playerID === currentPlayerID}
+						<strong class="waitee you" style:color={colorFor(w.playerID)}>You</strong>
+					{:else if w.kind === 'player'}
+						<span class="waitee">{nameFor(w.playerID)}</span>
+					{:else if w.kind === 'label'}
+						<span class="waitee">{w.text}</span>
+					{/if}{#if i < orderedWaitees.length - 1}<span class="sep">, </span>{/if}
+				{/each}
+			{/if}
+		</p>
+		{#if state.stepLabel}
+			<p class="line step-label">{state.stepLabel}</p>
+		{/if}
+		{#if state.stepSubtitle}
+			<p class="line step-subtitle">{state.stepSubtitle}</p>
+		{/if}
+	</div>
+{/if}
+
+<style>
+	.waiting-on-bar {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		padding: 0.5rem 0.75rem;
+		background: #1a1a1a;
+		border-bottom: 1px solid #333;
+		flex-shrink: 0;
+	}
+	.line {
+		margin: 0;
+		font-size: 0.9rem;
+		line-height: 1.3;
+	}
+	.waitees-line {
+		color: #e8e4d9;
+	}
+	.label {
+		color: #999;
+		font-weight: 600;
+		margin-right: 0.35rem;
+	}
+	.waitee {
+		display: inline;
+	}
+	.waitee.you {
+		font-weight: 700;
+	}
+	.sep {
+		color: #999;
+	}
+	.step-label {
+		color: #c8a96e;
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.step-subtitle {
+		color: #999;
+		font-size: 0.85rem;
+	}
+</style>

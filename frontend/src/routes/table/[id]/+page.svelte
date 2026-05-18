@@ -34,6 +34,7 @@
 	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import RetinueView from '$lib/components/RetinueView.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
+	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 
 	const gameID = $derived(page.params.id as string);
@@ -122,6 +123,30 @@
 		if (game.phase === 'prologue') return prologueActivePlayerID;
 		if (game.phase === 'main_event') return game.focus_player_id;
 		return null;
+	});
+
+	// Each phase view writes its WaitingOnState here; the page renders the
+	// bar from this single source. Lobby has no phase-view component, so
+	// the page computes its lobby state inline below.
+	let waitingOn = $state<WaitingOnState>({ waitees: [] });
+	const lobbyWaitingOn = $derived.by<WaitingOnState>(() => {
+		if (!game || game.phase !== 'lobby') return { waitees: [] };
+		if (players.length < 2) {
+			const need = 2 - players.length;
+			return {
+				waitees: [{ kind: 'label', text: `${need} more player${need === 1 ? '' : 's'} to join` }],
+				stepLabel: 'Gathering players',
+			};
+		}
+		const facilitator = players.find(p => p.is_facilitator);
+		return {
+			waitees: facilitator ? [{ kind: 'player', playerID: facilitator.id }] : [],
+			stepLabel: 'Start the game',
+		};
+	});
+	$effect(() => {
+		if (game?.phase === 'lobby') waitingOn = lobbyWaitingOn;
+		else if (game?.phase === 'ended') waitingOn = { waitees: [] };
 	});
 	const tonesLocked = $derived(
 		game != null && (game.phase === 'main_event' || game.phase === 'shake_up' || game.phase === 'ended')
@@ -841,6 +866,10 @@
 		<p class="error">{error}</p>
 	{/if}
 
+	{#if !loading && game}
+		<WaitingOnBar state={waitingOn} {currentPlayerID} {players} />
+	{/if}
+
 	<!--
 		Body: on desktop ≥1024px this becomes a 2-column grid (game | chat).
 		On mobile/tablet it's a single column with the chat panel positioned
@@ -867,7 +896,6 @@
 	<!-- ── Lobby ──────────────────────────────────────────────────────────── -->
 	{:else if game?.phase === 'lobby'}
 		<div class="phase-view lobby">
-			<h2>Waiting for players</h2>
 			<p class="muted">
 				Share the join code <strong>{game.join_code}</strong> with your friends. The game needs 2–5 players.
 			</p>
@@ -898,6 +926,7 @@
 			bind:assets
 			{currentPlayerID}
 			{isFacilitator}
+			bind:waitingOn
 			onResync={loadGameState}
 		/>
 
@@ -924,6 +953,7 @@
 			{activeScene}
 			{activeScenePeers}
 			onSceneRefresh={refreshActiveScene}
+			bind:waitingOn
 		/>
 
 	<!-- ── Shake-Up ───────────────────────────────────────────────────────── -->
@@ -934,6 +964,7 @@
 			{players}
 			{assets}
 			{currentPlayerID}
+			bind:waitingOn
 		/>
 
 	<!-- ── Ended ──────────────────────────────────────────────────────────── -->

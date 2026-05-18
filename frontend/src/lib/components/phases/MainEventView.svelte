@@ -18,6 +18,7 @@
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
 	import SceneDetailsPanel from '$lib/components/SceneDetailsPanel.svelte';
 	import { followOnPromptForRow } from '$lib/scenePrompts';
+	import type { WaitingOnState, Waitee } from '$lib/components/WaitingOnBar.svelte';
 
 	interface Props {
 		game: Game;
@@ -51,6 +52,8 @@
 		activeScenePeers?: ScenePeerView[];
 		/** Called after a scene mutation so the parent can re-fetch. */
 		onSceneRefresh?: () => void;
+		/** Bound by the parent; this view publishes its waiting-on derivation here. */
+		waitingOn: WaitingOnState;
 	}
 
 	let {
@@ -74,6 +77,7 @@
 		activeScene = null,
 		activeScenePeers = [],
 		onSceneRefresh = () => {},
+		waitingOn = $bindable(),
 	}: Props = $props();
 
 	// ── War cost-of-battle gate ───────────────────────────────────────────────
@@ -108,38 +112,51 @@
 		for (const w of wars) for (const c of w.open_claims) ids.add(c.claimant_id);
 		return [...ids];
 	});
-	const playerName = (id: number) =>
-		players.find(p => p.id === id)?.display_name ?? `Player ${id}`;
+	// Waiting-on derivation. Resolves who the game is blocked on, plus a
+	// step label and optional subtitle. Priority order:
+	//   1. Plan resolving           → focus player, 'Resolving plan'
+	//   2. Plan pending on row      → focus player, 'Plan to resolve'
+	//   3. War-cost row-advance block → union of cost-payers and claimants
+	//   4. Active scene             → focus player, 'Scene'
+	//   5. Pre-scene                → focus player, 'Set the scene'
+	//   6. Post-scene action        → focus player, 'Prepare a plan' (+ refresh subtitle)
+	const mainEventWaitingOn = $derived.by<WaitingOnState>(() => {
+		const focusWaitee: Waitee[] = game.focus_player_id != null
+			? [{ kind: 'player', playerID: game.focus_player_id }]
+			: [];
 
-	const focusPlayerName = $derived(
-		game.focus_player_id
-			? players.find(p => p.id === game.focus_player_id)?.display_name ?? '?'
-			: null
-	);
-
-	// One-line label describing the current step. Driven by game state so
-	// every viewer agrees on the heading. The Public Record sidebar now
-	// carries the row-number context, so the step heading no longer needs
-	// to repeat it.
-	const stepLabel = $derived.by(() => {
-		if (plans.some(p => p.status === 'resolving')) return 'Resolving plan';
-		if (plansPendingOnRow(plans, game.current_row).length > 0)
-			return 'Plan to resolve';
-		if (activeScene) return 'Scene';
-		if (isFocusPlayer && !sceneEnded) return 'Set the scene';
-		if (isFocusPlayer && sceneEnded) return 'Prepare a plan';
-		return '';
-	});
-
-	// Optional secondary line under the step label — calls out the alternate
-	// action when one exists (e.g. the focus player can also refresh assets
-	// instead of preparing a plan).
-	const stepSubtitle = $derived.by(() => {
-		if (isFocusPlayer && sceneEnded && !hasPlansToResolve) {
-			return `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
+		if (plans.some(p => p.status === 'resolving')) {
+			return { waitees: focusWaitee, stepLabel: 'Resolving plan' };
 		}
-		return '';
+		if (plansPendingOnRow(plans, game.current_row).length > 0) {
+			return { waitees: focusWaitee, stepLabel: 'Plan to resolve' };
+		}
+		if (blockingCostPayers.length > 0 || blockingClaimants.length > 0) {
+			const ids = new Set<number>([...blockingCostPayers, ...blockingClaimants]);
+			const parts: string[] = [];
+			if (blockingCostPayers.length > 0) parts.push('cost of battle');
+			if (blockingClaimants.length > 0) parts.push('surrender-asset claims');
+			return {
+				waitees: [...ids].map(id => ({ kind: 'player', playerID: id })),
+				stepLabel: 'Row advance blocked',
+				stepSubtitle: parts.join(' · '),
+			};
+		}
+		if (activeScene) {
+			return { waitees: focusWaitee, stepLabel: 'Scene' };
+		}
+		if (game.focus_player_id != null && !sceneEnded) {
+			return { waitees: focusWaitee, stepLabel: 'Set the scene' };
+		}
+		if (game.focus_player_id != null && sceneEnded) {
+			const subtitle = isFocusPlayer
+				? `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`
+				: undefined;
+			return { waitees: focusWaitee, stepLabel: 'Prepare a plan', stepSubtitle: subtitle };
+		}
+		return { waitees: [] };
 	});
+	$effect(() => { waitingOn = mainEventWaitingOn; });
 
 
 	// Local error string for non-chat actions (refresh, pass focus).
@@ -259,39 +276,13 @@
 	     wide desktop layouts. -->
 	<div class="play-surface">
 		<div class="scene-panel">
-			<div class="step-header">
-				<div class="step-titles">
-					<h2 class="step-label">{stepLabel}</h2>
-					{#if stepSubtitle}
-						<p class="step-subtitle">{stepSubtitle}</p>
-					{/if}
-				</div>
-				{#if focusPlayerName}
-					<span class="focus-badge">Focus: {focusPlayerName}</span>
-				{/if}
-			</div>
-
-			{#if blockingCostPayers.length > 0 || blockingClaimants.length > 0}
-				<div class="war-block-banner">
-					<strong>Row advance blocked by war costs.</strong>
-					{#if blockingCostPayers.length > 0}
-						Waiting on cost of battle from:
-						{blockingCostPayers.map(playerName).join(', ')}.
-					{/if}
-					{#if blockingClaimants.length > 0}
-						Waiting on surrender-asset claims from:
-						{blockingClaimants.map(playerName).join(', ')}.
-					{/if}
-				</div>
-			{/if}
-
 			<!-- ── Scene structure ────────────────────────────────────────────
-				Three states:
+				Two states:
 				  1. Active scene  → SceneDetailsPanel (everyone; controls vary)
 				  2. No scene, focus player, no pending plans → SceneSetupForm
-				  3. No scene, anyone else                    → quiet waiting hint
 				While a plan is resolving / pending, neither panel renders —
-				PlanPanel takes over.
+				PlanPanel takes over. The page-level WaitingOnBar carries the
+				"who/what we're waiting on" copy.
 			-->
 			{#if activeScene}
 				<SceneDetailsPanel
@@ -306,19 +297,16 @@
 					{rollActive}
 					onRollCreated={onPlanRollCreated}
 				/>
-			{:else if !hasPlansToResolve && isFocusPlayer && !sceneEnded}
+			{:else if !hasPlansToResolve && !sceneEnded && game.focus_player_id != null}
 				<SceneSetupForm
 					gameID={game.id}
 					{assets}
 					{players}
-					focusPlayerID={currentPlayerID!}
+					focusPlayerID={game.focus_player_id}
 					prompt={followOnPromptForRow(plans, game.current_row)}
 					onSceneStarted={onSceneRefresh}
+					readOnly={!isFocusPlayer}
 				/>
-			{:else if !hasPlansToResolve && !sceneEnded}
-				<p class="action-note">
-					Waiting for {focusPlayerName ?? 'the focus player'} to set the scene…
-				</p>
 			{/if}
 
 			<!-- ── Plan panel ───────────────────────────────────────────────── -->
@@ -411,14 +399,6 @@
 						{/if}
 					</div>
 				</div>
-			{:else if !isFocusPlayer && sceneEnded && game.focus_player_id != null}
-				<!-- Non-focus players see a quiet indicator post-scene only.
-					 Pre-scene waiting copy lives near SceneSetupForm above. -->
-				<div class="action-bar waiting">
-					<span class="action-label">
-						Waiting for {players.find(p => p.id === game.focus_player_id)?.display_name ?? 'the focus player'}…
-					</span>
-				</div>
 			{/if}
 		</div>
 
@@ -471,55 +451,6 @@
 		.scene-panel { padding: 0.5rem 0 0; }
 	}
 
-	/* Step header: step label (and optional subtitle) left, focus badge
-	 * right. Mirrors the Public Record sidebar's expanded-header styling
-	 * (uppercase tracked caps in the accent colour) so headings read the
-	 * same way across the layout. */
-	.step-header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 0.75rem;
-		padding-bottom: 0.5rem;
-		margin-bottom: 0.75rem;
-		border-bottom: 1px solid #333;
-		flex-shrink: 0;
-	}
-
-	.step-titles {
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
-		min-width: 0;
-	}
-
-	.step-label {
-		margin: 0;
-		font-size: 0.8rem;
-		font-weight: 700;
-		color: #c8a96e;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		line-height: 1.2;
-	}
-	.step-label:empty { display: none; }
-
-	.step-subtitle {
-		margin: 0;
-		font-size: 0.74rem;
-		color: #888;
-		line-height: 1.3;
-	}
-
-	.focus-badge {
-		font-size: 0.72rem;
-		color: #aaa;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		white-space: nowrap;
-		padding-top: 0.05rem;
-	}
-
 	/* "OR" boundary divider between the plan grid and the refresh action.
 	 * Mirrors the chat-panel boundary marker style so both contexts read
 	 * the same visual language. */
@@ -541,16 +472,6 @@
 		letter-spacing: 0.08em;
 	}
 
-	.war-block-banner {
-		background: #3a1f1f;
-		border: 1px solid #6a3030;
-		color: #e7c5c5;
-		padding: 0.4rem 0.6rem;
-		border-radius: 4px;
-		font-size: 0.85rem;
-		margin: 0.3rem 0;
-	}
-
 	/* ── Action bar ──────────────────────────────────────────────────────────── */
 
 	.action-bar {
@@ -558,10 +479,6 @@
 		padding: 0.6rem 0 0;
 		border-top: 1px solid #3a3020;
 		margin-top: 0.25rem;
-	}
-
-	.action-bar.waiting {
-		border-color: #222;
 	}
 
 	.action-step {
@@ -574,10 +491,6 @@
 		font-size: 0.78rem;
 		color: #c8a96e;
 		font-style: italic;
-	}
-
-	.action-bar.waiting .action-label {
-		color: #666;
 	}
 
 	.action-buttons {
@@ -603,12 +516,6 @@
 	.action-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
-	}
-
-	.action-note {
-		font-size: 0.82rem;
-		color: #666;
-		margin: 0;
 	}
 
 	/* Refresh asset picker */
