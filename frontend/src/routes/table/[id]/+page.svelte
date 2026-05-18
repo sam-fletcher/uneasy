@@ -866,14 +866,13 @@
 		<p class="error">{error}</p>
 	{/if}
 
-	{#if !loading && game}
-		<WaitingOnBar state={waitingOn} {currentPlayerID} {players} />
-	{/if}
-
 	<!--
-		Body: on desktop ≥1024px this becomes a 2-column grid (game | chat).
+		Body: on desktop ≥1024px this becomes a 2-column grid (game | chat),
+		or 3-column when the Public Record rail is present.
 		On mobile/tablet it's a single column with the chat panel positioned
 		absolutely (strip pinned to bottom, expanded sheet covering the body).
+		WaitingOnBar lives inside .phase-column so it only spans the phase
+		content's column — not the PublicRecord rail or the Chat column.
 	-->
 	<div class="table-body" class:has-record={game?.phase === 'main_event'}>
 
@@ -888,6 +887,11 @@
 			onPlanJump={jumpToPlan}
 			onSceneJump={jumpToScene}
 		/>
+	{/if}
+
+	<div class="phase-column">
+	{#if !loading && game}
+		<WaitingOnBar state={waitingOn} {currentPlayerID} {players} />
 	{/if}
 
 	{#if loading}
@@ -990,6 +994,7 @@
 	{:else}
 		<div class="center-message">Unknown phase.</div>
 	{/if}
+	</div><!-- /.phase-column -->
 
 		{#if !loading && currentPlayerID != null && game}
 			<ChatPanel
@@ -1181,9 +1186,19 @@
 		gap: 0.75rem;
 		padding-right: 0.75rem;
 	}
-	.table-body.has-record > :global(.main-event-view),
-	.table-body.has-record > :global(.center-message) {
+	.table-body.has-record > .phase-column {
 		flex: 1;
+		min-width: 0;
+		min-height: 0;
+	}
+
+	/* Wrapper that groups WaitingOnBar with the active phase view so they
+	   occupy a single column in the body's grid/flex layout. Without this,
+	   WaitingOnBar would span every column (over the PublicRecord rail and
+	   pushing the Chat panel down on desktop). */
+	.phase-column {
+		display: flex;
+		flex-direction: column;
 		min-width: 0;
 		min-height: 0;
 	}

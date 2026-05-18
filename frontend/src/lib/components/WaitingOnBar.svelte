@@ -58,6 +58,12 @@
 
 {#if orderedWaitees.length > 0}
 	<div class="waiting-on-bar">
+		{#if state.stepLabel}
+			<p class="line step-label">{state.stepLabel}</p>
+		{/if}
+		{#if state.stepSubtitle}
+			<p class="line step-subtitle">{state.stepSubtitle}</p>
+		{/if}
 		<p class="line waitees-line">
 			<span class="label">Waiting On:</span>
 			{#if isEveryone}
@@ -74,20 +80,20 @@
 				{/each}
 			{/if}
 		</p>
-		{#if state.stepLabel}
-			<p class="line step-label">{state.stepLabel}</p>
-		{/if}
-		{#if state.stepSubtitle}
-			<p class="line step-subtitle">{state.stepSubtitle}</p>
-		{/if}
 	</div>
 {/if}
 
 <style>
+	/* Two invisible columns: heading + optional subtitle stacked on the left,
+	   waitees right-aligned in column 2 spanning both rows. When the waitees
+	   text is too long to fit beside the heading, it wraps downward into the
+	   subtitle's row instead of pushing the heading aside. */
 	.waiting-on-bar {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		column-gap: 1rem;
+		row-gap: 0.15rem;
+		align-items: baseline;
 		padding: 0.5rem 0.75rem;
 		background: #1a1a1a;
 		border-bottom: 1px solid #333;
@@ -98,7 +104,19 @@
 		font-size: 0.9rem;
 		line-height: 1.3;
 	}
+	.step-label {
+		grid-column: 1;
+		grid-row: 1;
+	}
+	.step-subtitle {
+		grid-column: 1;
+		grid-row: 2;
+	}
 	.waitees-line {
+		grid-column: 2;
+		grid-row: 1 / span 2;
+		justify-self: end;
+		text-align: right;
 		color: #e8e4d9;
 	}
 	.label {
