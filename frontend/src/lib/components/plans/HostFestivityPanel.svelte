@@ -83,21 +83,21 @@
 		centeredAssetIDs: number[];
 	};
 	const fest = $derived.by<FestRes>(() => {
-		const rd = parseResolutionData(plan);
+		const f = parseResolutionData(plan).festivity ?? {};
 		return {
-			phase: rd.festivity_phase ?? '',
-			guests: rd.guest_player_ids ?? [],
-			outcomes: rd.guest_outcomes ?? {},
-			guestMakes: rd.guest_make_choices ?? {},
-			guestMars: rd.guest_mar_choices ?? {},
-			hostChoices: rd.host_guest_choices ?? {},
-			guestRollIDs: rd.guest_roll_ids ?? {},
-			guestIOUs: rd.guest_ious ?? [],
-			hostMarInsists: rd.host_mar_insists ?? [],
-			acceptDuels: rd.accept_duels_player_ids ?? [],
-			pendingDuelPlanID: rd.pending_duel_plan_id ?? null,
-			pendingChallenge: rd.pending_challenge ?? null,
-			centeredAssetIDs: rd.centered_asset_ids ?? [],
+			phase: f.phase ?? '',
+			guests: f.guests ?? [],
+			outcomes: f.outcomes ?? {},
+			guestMakes: f.guest_makes ?? {},
+			guestMars: f.guest_mars ?? {},
+			hostChoices: f.host_choices ?? {},
+			guestRollIDs: f.guest_roll_ids ?? {},
+			guestIOUs: f.guest_ious ?? [],
+			hostMarInsists: f.host_mar_insists ?? [],
+			acceptDuels: f.accept_duels ?? [],
+			pendingDuelPlanID: f.pending_duel_plan_id ?? null,
+			pendingChallenge: f.pending_challenge ?? null,
+			centeredAssetIDs: f.centered_asset_ids ?? [],
 		};
 	});
 

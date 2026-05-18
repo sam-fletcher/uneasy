@@ -78,13 +78,12 @@ func (hfHandler) ComputeDifficulty(
 // guest creates their own via guest-roll.
 func (hfHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	resData := loadResolutionData(plan.ResolutionData)
-	state := resData.FestivityState()
+	state := resData.EnsureFestivity()
 	state.Phase = gamepkg.FestivityPhaseSocializing
 	// Host is always a guest implicitly.
 	if !state.IsGuest(plan.PreparerID) {
 		state.Guests = append(state.Guests, plan.PreparerID)
 	}
-	resData.SetFestivityState(state)
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return nil, fmt.Errorf("save festivity setup: %w", err)
 	}
@@ -104,7 +103,7 @@ func (hfHandler) ApplyChoice(
 }
 
 func (hfHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if resData.FestivityState().Phase != gamepkg.FestivityPhaseDone {
+	if resData.EnsureFestivity().Phase != gamepkg.FestivityPhaseDone {
 		return errors.New("festivity is not done: all guests must act and host must finish their choices")
 	}
 	return nil
@@ -127,7 +126,7 @@ func (hfHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 // hfBlockOnPendingChallenge writes a 409 and returns true if a challenge is
 // awaiting response; all festivity game actions (but not chat) pause until the
 // target accepts or declines.
-func hfBlockOnPendingChallenge(w http.ResponseWriter, state gamepkg.FestivityState) bool {
+func hfBlockOnPendingChallenge(w http.ResponseWriter, state *gamepkg.FestivityResolutionData) bool {
 	if state.PendingChallenge == nil {
 		return false
 	}
@@ -144,7 +143,7 @@ func hfBroadcastPhase(deps *PlanDeps, plan *dbgen.Plan, phase string) {
 // hfMaybeAdvanceToHostChoosing checks if all guests have acted and, if so,
 // transitions state.Phase to host_choosing (if not already past it).
 // Caller must persist state afterwards.
-func hfMaybeAdvanceToHostChoosing(state *gamepkg.FestivityState) bool {
+func hfMaybeAdvanceToHostChoosing(state *gamepkg.FestivityResolutionData) bool {
 	if state.Phase != gamepkg.FestivityPhaseSocializing {
 		return false
 	}
@@ -158,7 +157,12 @@ func hfMaybeAdvanceToHostChoosing(state *gamepkg.FestivityState) bool {
 // hfFinalizeIfDone: after the host submits the final pending host-choice AND
 // all IOU insists are consumed (IOUs can only be cashed before done), mark
 // the plan done and set result="make".
-func hfFinalizeIfDone(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, state *gamepkg.FestivityState) error {
+func hfFinalizeIfDone(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	state *gamepkg.FestivityResolutionData,
+) error {
 	if state.Phase != gamepkg.FestivityPhaseHostChoosing {
 		return nil
 	}
@@ -180,7 +184,7 @@ func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.FestivityState()
+		state := resData.EnsureFestivity()
 		if state.Phase != gamepkg.FestivityPhaseSocializing {
 			respondErr(w, http.StatusConflict, "festivity is no longer accepting new guests")
 			return
@@ -193,7 +197,6 @@ func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		state.Guests = append(state.Guests, player.ID)
-		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save guest list", err)
 			return
@@ -228,7 +231,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.FestivityState()
+		state := resData.EnsureFestivity()
 		if state.Phase != gamepkg.FestivityPhaseSocializing {
 			respondErr(w, http.StatusConflict, "socializing phase has ended")
 			return
@@ -263,10 +266,9 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 				state.Outcomes = map[string]string{}
 			}
 			state.Outcomes[key] = gamepkg.FestivityOutcomeOptOut
-			if hfMaybeAdvanceToHostChoosing(&state) {
-				defer hfBroadcastPhase(deps, plan, state.Phase)
+			if hfMaybeAdvanceToHostChoosing(state) {
+				defer hfBroadcastPhase(deps, plan, string(state.Phase))
 			}
-			resData.SetFestivityState(state)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondInternalErr(w, r, "could not save opt-out", err)
 				return
@@ -320,7 +322,6 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			state.GuestRollIDs = map[string]int64{}
 		}
 		state.GuestRollIDs[key] = roll.ID
-		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save guest roll id", err)
 			return
@@ -366,7 +367,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.FestivityState()
+		state := resData.EnsureFestivity()
 		key := strconv.FormatInt(player.ID, 10)
 		if !state.IsGuest(player.ID) {
 			respondErr(w, http.StatusForbidden, "you are not a guest")
@@ -415,7 +416,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			ctx,
 			deps,
 			plan,
-			&state,
+			state,
 			player.ID,
 			body.Choice,
 			body.RumorText,
@@ -445,8 +446,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			state.GuestMars[key] = body.Choice
 		}
 
-		phaseChanged := hfMaybeAdvanceToHostChoosing(&state)
-		resData.SetFestivityState(state)
+		phaseChanged := hfMaybeAdvanceToHostChoosing(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save guest choice", err)
 			return
@@ -456,7 +456,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			Outcome: state.Outcomes[key], Choice: body.Choice,
 		})
 		if phaseChanged {
-			hfBroadcastPhase(deps, plan, state.Phase)
+			hfBroadcastPhase(deps, plan, string(state.Phase))
 		}
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID, "outcome": state.Outcomes[key], "choice": body.Choice,
@@ -469,7 +469,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 type festivityOptionContext struct {
 	deps           *PlanDeps
 	plan           *dbgen.Plan
-	state          *gamepkg.FestivityState
+	state          *gamepkg.FestivityResolutionData
 	actingPlayerID int64
 	rumorText      string
 	peerName       string
@@ -498,7 +498,7 @@ func hfApplyOption(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	state *gamepkg.FestivityState,
+	state *gamepkg.FestivityResolutionData,
 	actingPlayerID int64,
 	choice, rumorText, peerName string,
 	assetID int64,
@@ -707,7 +707,7 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.FestivityState()
+		state := resData.EnsureFestivity()
 		if state.Phase == gamepkg.FestivityPhaseDone {
 			respondErr(w, http.StatusConflict, "event is over; IOUs can no longer be cashed")
 			return
@@ -721,14 +721,13 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Apply the mar effect to the host.
-		if err := hfApplyOption(ctx, deps, plan, &state, plan.PreparerID,
+		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
 			body.MarOption, body.RumorText, "", body.AssetID, false); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		state.HostMarInsists = append(state.HostMarInsists, body.MarOption)
 
-		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save insist", err)
 			return
@@ -775,7 +774,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.FestivityState()
+		state := resData.EnsureFestivity()
 		if state.Phase != gamepkg.FestivityPhaseHostChoosing {
 			respondErr(w, http.StatusConflict, "host-choice is only allowed during the host_choosing phase")
 			return
@@ -796,7 +795,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Apply the make effect to the target guest (host's choice acts FOR
 		// the guest, so actingPlayerID is the guest).
-		if err := hfApplyOption(ctx, deps, plan, &state, body.TargetPlayerID,
+		if err := hfApplyOption(ctx, deps, plan, state, body.TargetPlayerID,
 			body.Choice, body.RumorText, body.PeerName, body.AssetID, true); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
@@ -806,11 +805,10 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		state.HostChoices[tk] = body.Choice
 
-		if err := hfFinalizeIfDone(ctx, deps, plan, &state); err != nil {
+		if err := hfFinalizeIfDone(ctx, deps, plan, state); err != nil {
 			respondInternalErr(w, r, "could not finalize", err)
 			return
 		}
-		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save host choice", err)
 			return
@@ -819,7 +817,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			PlanID: plan.ID, GuestPlayerID: body.TargetPlayerID, Choice: body.Choice,
 		})
 		if state.Phase == gamepkg.FestivityPhaseDone {
-			hfBroadcastPhase(deps, plan, state.Phase)
+			hfBroadcastPhase(deps, plan, string(state.Phase))
 		}
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID, "target_player_id": body.TargetPlayerID, "choice": body.Choice, "phase": state.Phase,
@@ -856,7 +854,7 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.FestivityState()
+		state := resData.EnsureFestivity()
 		if !state.IsGuest(player.ID) || !state.IsGuest(body.TargetPlayerID) {
 			respondErr(w, http.StatusBadRequest, "challenger and target must both be guests")
 			return
@@ -894,7 +892,6 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 			TargetID:     body.TargetPlayerID,
 			Notes:        body.Notes,
 		}
-		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save challenge state", err)
 			return
@@ -939,7 +936,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.FestivityState()
+		state := resData.EnsureFestivity()
 		pc := state.PendingChallenge
 		if pc == nil {
 			respondErr(w, http.StatusConflict, "no challenge is awaiting a response")
@@ -959,7 +956,6 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 			// Challenger's make is already spent; just clear the challenge.
 			challengerID := pc.ChallengerID
 			state.PendingChallenge = nil
-			resData.SetFestivityState(state)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondInternalErr(w, r, "could not save decline", err)
 				return
@@ -1018,7 +1014,6 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 
 		state.PendingChallenge = nil
 		state.PendingDuelPlanID = &duelPlan.ID
-		resData.SetFestivityState(state)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save accept", err)
 			return

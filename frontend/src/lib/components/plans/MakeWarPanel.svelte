@@ -96,9 +96,9 @@
 	let actionError = $state('');
 
 	// Resolution data on the plan tells us about the delay reveal + scene.
-	const planRD = $derived(parseResolutionData(plan));
-	const delayRevealID = $derived(planRD.delay_reveal_id ?? null);
-	const warScenePosted = $derived(planRD.war_scene_posted ?? false);
+	const planMW = $derived(parseResolutionData(plan).make_war ?? {});
+	const delayRevealID = $derived(planMW.delay_reveal_id ?? null);
+	const warScenePosted = $derived(planMW.scene_posted ?? false);
 
 	async function refreshWar() {
 		if (!plan) return;

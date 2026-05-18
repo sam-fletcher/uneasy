@@ -30,6 +30,9 @@ type (
 	ChronicleHistoriesResolutionData = game.ChronicleHistoriesResolutionData
 	DuelResolutionData               = game.DuelResolutionData
 	DuelPhase                        = game.DuelPhase
+	MakeWarResolutionData            = game.MakeWarResolutionData
+	FestivityResolutionData          = game.FestivityResolutionData
+	FestivityPhase                   = game.FestivityPhase
 )
 
 // Registry delegates — handler-internal code calls these unqualified.

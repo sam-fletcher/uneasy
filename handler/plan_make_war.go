@@ -82,7 +82,8 @@ func (mwHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 // from resolution_data (persisted by PreparePlan before this hook fires).
 func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error {
 	resData := loadResolutionData(plan.ResolutionData)
-	if len(resData.WarEnemyPlayerIDs) == 0 {
+	mw := resData.EnsureMakeWar()
+	if len(mw.EnemyPlayerIDs) == 0 {
 		return errors.New("make_war: missing enemy list in resolution_data")
 	}
 
@@ -106,7 +107,7 @@ func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 		return fmt.Errorf("enrol preparer: %w", err)
 	}
 	// Side 2: declared enemies.
-	for _, enemyID := range resData.WarEnemyPlayerIDs {
+	for _, enemyID := range mw.EnemyPlayerIDs {
 		if err := deps.Q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
 			WarID:       war.ID,
 			PlayerID:    enemyID,
@@ -126,7 +127,7 @@ func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	if errReveal != nil {
 		return fmt.Errorf("create delay reveal: %w", errReveal)
 	}
-	all := append([]int64{plan.PreparerID}, resData.WarEnemyPlayerIDs...)
+	all := append([]int64{plan.PreparerID}, mw.EnemyPlayerIDs...)
 	for _, pid := range all {
 		if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
 			RevealID: reveal.ID,
@@ -136,8 +137,8 @@ func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 		}
 	}
 
-	resData.WarID = &war.ID
-	resData.DelayRevealID = &reveal.ID
+	mw.WarID = &war.ID
+	mw.DelayRevealID = &reveal.ID
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return fmt.Errorf("save war resolution data: %w", err)
 	}
@@ -184,7 +185,7 @@ func (mwHandler) ApplyChoice(
 // CanComplete requires the focus player to have posted the war declaration
 // scene so the record isn't finalised before the narrative moment.
 func (mwHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if !resData.WarScenePosted {
+	if resData.MakeWar == nil || !resData.MakeWar.ScenePosted {
 		return errors.New("post the war's declaration scene before completing")
 	}
 	return nil
@@ -277,9 +278,10 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		// (war becomes active) joiners must pay a full cost of battle against
 		// every existing opposing opponent before becoming active themselves.
 		resData := loadResolutionData(plan.ResolutionData)
+		mw := resData.EnsureMakeWar()
 		revealOpen := false
-		if resData.DelayRevealID != nil {
-			reveal, err := deps.Q.GetSimultaneousReveal(ctx, *resData.DelayRevealID)
+		if mw.DelayRevealID != nil {
+			reveal, err := deps.Q.GetSimultaneousReveal(ctx, *mw.DelayRevealID)
 			if err == nil && !reveal.IsComplete {
 				revealOpen = true
 			}
@@ -296,7 +298,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 				return
 			}
 			_ = deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
-				RevealID: *resData.DelayRevealID,
+				RevealID: *mw.DelayRevealID,
 				PlayerID: player.ID,
 			})
 		} else {
@@ -338,7 +340,7 @@ func mwPostSceneHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
-		resData.WarScenePosted = true
+		resData.EnsureMakeWar().ScenePosted = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save scene state", err)
 			return
@@ -372,15 +374,16 @@ func applyMakeWarDelayResult(
 	targetRow := game.CurrentRow + resultDelay
 
 	resData := loadResolutionData(plan.ResolutionData)
+	mw := resData.EnsureMakeWar()
 
 	if targetRow > publicRecordRowCount {
 		_ = q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
 			ID:     planID,
 			Status: model.PlanCancelled,
 		})
-		if resData.WarID != nil {
+		if mw.WarID != nil {
 			_ = q.EndWar(ctx, dbgen.EndWarParams{
-				ID:         *resData.WarID,
+				ID:         *mw.WarID,
 				EndReason:  new(gamepkg.WarEndPeace),
 				EndedAtRow: &game.CurrentRow,
 			})
@@ -415,11 +418,11 @@ func applyMakeWarDelayResult(
 	broadcastEvent(manager, plan.GameID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 	EmitPlanPrepared(ctx, q, manager, plan)
 
-	if resData.WarID == nil {
+	if mw.WarID == nil {
 		return
 	}
 
-	parts, err := q.ListWarParticipants(ctx, *resData.WarID)
+	parts, err := q.ListWarParticipants(ctx, *mw.WarID)
 	if err == nil {
 		infos := make([]model.WarParticipantInfo, 0, len(parts))
 		for _, p := range parts {
@@ -427,7 +430,7 @@ func applyMakeWarDelayResult(
 		}
 		broadcastEvent(manager, plan.GameID, model.EventWarDeclared, model.WarDeclaredPayload{
 			PlanID:       planID,
-			WarID:        *resData.WarID,
+			WarID:        *mw.WarID,
 			Participants: infos,
 			TargetRow:    targetRow,
 		})

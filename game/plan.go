@@ -103,27 +103,14 @@ type ValidationContext struct {
 	Notes          string
 }
 
-// ResolutionData holds plan-specific state stored as JSON in plans.resolution_data.
-// It is a superset of the old planResData type, extended with fields for all
-// 12 plan types. Only the fields relevant to a given plan type will be set.
+// ResolutionData is the unmarshal target for the plans.resolution_data JSON
+// column. It's a discriminator-free umbrella: loading and saving don't need
+// to know the plan type. Each plan with non-trivial state owns a nested
+// optional struct (defined in plan_<name>_data.go); for any given plan row,
+// at most one of those pointers is set. MakeMarChoices is the only field
+// shared across plans. Writers obtain a non-nil nested struct via
+// r.EnsureX(); readers use r.X (nil-check) or LoadXData(plan).
 type ResolutionData struct {
-	// ── Exchange Courtiers ──
-	// All EC-specific state lives on the nested struct; see
-	// plan_exchange_courtiers_data.go.
-	ExchangeCourtiers *ExchangeCourtiersResolutionData `json:"exchange_courtiers,omitempty"`
-
-	// ── Make Introductions ──
-	// All MI-specific state lives on the nested struct; see
-	// plan_make_introductions_data.go.
-	MakeIntroductions *MakeIntroductionsResolutionData `json:"make_introductions,omitempty"`
-
-	// ── Spread Propaganda ──
-	// All SP-specific state lives on the nested struct; see
-	// plan_spread_propaganda_data.go. Per-plan handlers go through
-	// r.EnsureSpreadPropaganda() for writes and r.SpreadPropaganda (or
-	// LoadSpreadPropagandaData) for reads.
-	SpreadPropaganda *SpreadPropagandaResolutionData `json:"spread_propaganda,omitempty"`
-
 	// ── Make/Mar choices ──
 	// Set by the generic POST /api/plans/:id/make-choice endpoint and by
 	// per-plan handlers (e.g. Chronicle) that record per-player make/mar
@@ -131,61 +118,20 @@ type ResolutionData struct {
 	// per-plan typed fields, not here.
 	//
 	// Entries from the generic endpoint have PlayerID == nil. Per-plan
-	// handlers that track which player made each choice (Chronicle) set
-	// PlayerID.
+	// handlers that track which player made each choice set PlayerID.
 	MakeMarChoices []Choice `json:"make_mar_choices,omitempty"`
 
-	// ── Spread Rumors ──
-	// All SR-specific state lives on the nested struct; see
-	// plan_spread_rumors_data.go.
-	SpreadRumors *SpreadRumorsResolutionData `json:"spread_rumors,omitempty"`
-
-	// ── Chronicle Histories ──
-	// All CH-specific state lives on the nested struct; see
-	// plan_chronicle_histories_data.go.
+	ExchangeCourtiers  *ExchangeCourtiersResolutionData  `json:"exchange_courtiers,omitempty"`
+	MakeIntroductions  *MakeIntroductionsResolutionData  `json:"make_introductions,omitempty"`
+	SpreadPropaganda   *SpreadPropagandaResolutionData   `json:"spread_propaganda,omitempty"`
+	SpreadRumors       *SpreadRumorsResolutionData       `json:"spread_rumors,omitempty"`
 	ChronicleHistories *ChronicleHistoriesResolutionData `json:"chronicle_histories,omitempty"`
-
-	// ── Propose Decree ──
-	// All PD-specific state lives on the nested struct; see
-	// plan_propose_decree_data.go.
-	ProposeDecree *ProposeDecreeResolutionData `json:"propose_decree,omitempty"`
-
-	// ── Clandestinely Liaise ──
-	// All Liaise-specific state lives on the nested struct; see
-	// plan_liaise_data.go. Per-plan handlers go through r.EnsureLiaise()
-	// for writes and r.Liaise (or LoadLiaiseData) for reads.
-	Liaise *LiaiseResolutionData `json:"liaise,omitempty"`
-
-	// ── Propose Duel ──
-	// All duel-specific state lives on the nested struct; see
-	// plan_propose_duel_data.go.
-	Duel *DuelResolutionData `json:"duel,omitempty"`
-
-	// ── Host Festivity ──
-	FestivityPhase       string            `json:"festivity_phase,omitempty"`
-	GuestPlayerIDs       []int64           `json:"guest_player_ids,omitempty"`
-	GuestOutcomes        map[string]string `json:"guest_outcomes,omitempty"`
-	GuestMakeChoices     map[string]string `json:"guest_make_choices,omitempty"`
-	GuestMarChoices      map[string]string `json:"guest_mar_choices,omitempty"`
-	HostGuestChoices     map[string]string `json:"host_guest_choices,omitempty"`
-	GuestRollIDs         map[string]int64  `json:"guest_roll_ids,omitempty"`
-	GuestIOUs            []int64           `json:"guest_ious,omitempty"`
-	HostMarInsists       []string          `json:"host_mar_insists,omitempty"`
-	AcceptDuelsPlayerIDs []int64           `json:"accept_duels_player_ids,omitempty"`
-	PendingDuelPlanID    *int64            `json:"pending_duel_plan_id,omitempty"`
-	PendingChallenge     *PendingChallenge `json:"pending_challenge,omitempty"`
-	CenteredAssetIDs     []int64           `json:"centered_asset_ids,omitempty"`
-
-	// ── Make War ──
-	WarID             *int64  `json:"war_id,omitempty"`
-	DelayRevealID     *int64  `json:"delay_reveal_id,omitempty"`
-	WarEnemyPlayerIDs []int64 `json:"war_enemy_player_ids,omitempty"`
-	WarScenePosted    bool    `json:"war_scene_posted,omitempty"`
-
-	// ── Make Demands ──
-	// All MD-specific state lives on the nested struct; see
-	// plan_make_demands_data.go.
-	MakeDemands *MakeDemandsResolutionData `json:"make_demands,omitempty"`
+	ProposeDecree      *ProposeDecreeResolutionData      `json:"propose_decree,omitempty"`
+	Liaise             *LiaiseResolutionData             `json:"liaise,omitempty"`
+	Duel               *DuelResolutionData               `json:"duel,omitempty"`
+	Festivity          *FestivityResolutionData          `json:"festivity,omitempty"`
+	MakeWar            *MakeWarResolutionData            `json:"make_war,omitempty"`
+	MakeDemands        *MakeDemandsResolutionData        `json:"make_demands,omitempty"`
 }
 
 // DraftChoice records a player's draft pick in Make Demands.

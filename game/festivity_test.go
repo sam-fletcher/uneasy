@@ -22,7 +22,7 @@ func TestHostFestivityDifficulty(t *testing.T) {
 
 func TestFestivityStateRoundtrip(t *testing.T) {
 	pid := int64(7)
-	s := FestivityState{
+	s := FestivityResolutionData{
 		Phase:             FestivityPhaseSocializing,
 		Guests:            []int64{1, 2, 3},
 		Outcomes:          map[string]string{"1": FestivityOutcomeMake},
@@ -32,8 +32,8 @@ func TestFestivityStateRoundtrip(t *testing.T) {
 		PendingDuelPlanID: &pid,
 	}
 	var r ResolutionData
-	r.SetFestivityState(s)
-	got := r.FestivityState()
+	*r.EnsureFestivity() = s
+	got := *r.EnsureFestivity()
 	assert.Equal(t, FestivityPhaseSocializing, got.Phase)
 	assert.Len(t, got.Guests, 3)
 	assert.True(t, got.HasAcceptDuels(2))
@@ -43,7 +43,7 @@ func TestFestivityStateRoundtrip(t *testing.T) {
 }
 
 func TestFestivityAllGuestsResolved(t *testing.T) {
-	s := FestivityState{
+	s := FestivityResolutionData{
 		Guests:   []int64{1, 2},
 		Outcomes: map[string]string{"1": FestivityOutcomeMake},
 	}
@@ -53,7 +53,7 @@ func TestFestivityAllGuestsResolved(t *testing.T) {
 }
 
 func TestFestivityPendingHostChoices(t *testing.T) {
-	s := FestivityState{
+	s := FestivityResolutionData{
 		Guests: []int64{1, 2, 3, 4},
 		Outcomes: map[string]string{
 			"1": FestivityOutcomeMake,
@@ -77,7 +77,7 @@ func TestFestivityPendingHostChoices(t *testing.T) {
 }
 
 func TestFestivityConsumeIOU(t *testing.T) {
-	s := FestivityState{GuestIOUs: []int64{1, 2, 3}}
+	s := FestivityResolutionData{GuestIOUs: []int64{1, 2, 3}}
 	require.True(t, s.ConsumeIOU(2))
 	assert.Len(t, s.GuestIOUs, 2)
 	assert.Equal(t, int64(1), s.GuestIOUs[0])

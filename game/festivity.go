@@ -1,14 +1,26 @@
 package game
 
-// festivity.go — Pure rules & state helpers for Host Festivity (Phase 3d).
+// festivity.go — Pure rules & state helpers for Host Festivity.
+//
+// Storage layout: all Host Festivity state lives in the optional `Festivity`
+// pointer on the fat ResolutionData (see plan.go). Handlers go through
+// r.EnsureFestivity() for writes and r.Festivity (or LoadFestivityData) for
+// reads.
 
-import "slices"
+import (
+	"slices"
 
-// Phase constants for Host Festivity, stored in ResolutionData.FestivityPhase.
+	dbgen "uneasy/db/gen"
+)
+
+// FestivityPhase enumerates the phases of a Host Festivity plan.
+// Values are stable on-wire strings.
+type FestivityPhase string
+
 const (
-	FestivityPhaseSocializing  = "socializing"
-	FestivityPhaseHostChoosing = "host_choosing"
-	FestivityPhaseDone         = "done"
+	FestivityPhaseSocializing  FestivityPhase = "socializing"
+	FestivityPhaseHostChoosing FestivityPhase = "host_choosing"
+	FestivityPhaseDone         FestivityPhase = "done"
 )
 
 // Guest outcome values.
@@ -68,61 +80,45 @@ type PendingChallenge struct {
 	Notes        string `json:"notes,omitempty"`
 }
 
-// FestivityState is a focused view over ResolutionData for Host Festivity.
-type FestivityState struct {
-	Phase             string
-	Guests            []int64
-	Outcomes          map[string]string // player_id (str) → "make"|"mar"|"opt_out"
-	GuestMakes        map[string]string // guest → chosen make option
-	GuestMars         map[string]string // guest → chosen mar option
-	HostChoices       map[string]string // mar/opt-out guest → host's make option
-	GuestRollIDs      map[string]int64  // guest → their roll id
-	GuestIOUs         []int64           // player IDs with unused "make guest" IOU
-	HostMarInsists    []string          // mar options forced onto the host
-	AcceptDuels       []int64           // player IDs with accept_duels flag
-	PendingDuelPlanID *int64            // blocking nested duel
-	PendingChallenge  *PendingChallenge // challenge awaiting target response
-	CenteredAssetIDs  []int64           // peers placed in center via disagreement
+// FestivityResolutionData holds all Host Festivity plan state stored inside
+// the plans.resolution_data JSON column, nested under the "festivity" key.
+type FestivityResolutionData struct {
+	Phase             FestivityPhase    `json:"phase,omitempty"`
+	Guests            []int64           `json:"guests,omitempty"`
+	Outcomes          map[string]string `json:"outcomes,omitempty"`         // player_id (str) → "make"|"mar"|"opt_out"
+	GuestMakes        map[string]string `json:"guest_makes,omitempty"`      // guest → chosen make option
+	GuestMars         map[string]string `json:"guest_mars,omitempty"`       // guest → chosen mar option
+	HostChoices       map[string]string `json:"host_choices,omitempty"`     // mar/opt-out guest → host's make option
+	GuestRollIDs      map[string]int64  `json:"guest_roll_ids,omitempty"`   // guest → their roll id
+	GuestIOUs         []int64           `json:"guest_ious,omitempty"`       // player IDs with unused "make guest" IOU
+	HostMarInsists    []string          `json:"host_mar_insists,omitempty"` // mar options forced onto the host
+	AcceptDuels       []int64           `json:"accept_duels,omitempty"`     // player IDs with accept_duels flag
+	PendingDuelPlanID *int64            `json:"pending_duel_plan_id,omitempty"`
+	PendingChallenge  *PendingChallenge `json:"pending_challenge,omitempty"`
+	CenteredAssetIDs  []int64           `json:"centered_asset_ids,omitempty"` // peers placed in center via disagreement
 }
 
-// FestivityState returns the Host Festivity view of r.
-func (r *ResolutionData) FestivityState() FestivityState {
-	return FestivityState{
-		Phase:             r.FestivityPhase,
-		Guests:            r.GuestPlayerIDs,
-		Outcomes:          r.GuestOutcomes,
-		GuestMakes:        r.GuestMakeChoices,
-		GuestMars:         r.GuestMarChoices,
-		HostChoices:       r.HostGuestChoices,
-		GuestRollIDs:      r.GuestRollIDs,
-		GuestIOUs:         r.GuestIOUs,
-		HostMarInsists:    r.HostMarInsists,
-		AcceptDuels:       r.AcceptDuelsPlayerIDs,
-		PendingDuelPlanID: r.PendingDuelPlanID,
-		PendingChallenge:  r.PendingChallenge,
-		CenteredAssetIDs:  r.CenteredAssetIDs,
+// LoadFestivityData is a read-only convenience that parses a plan's
+// resolution_data column and returns the inner FestivityResolutionData as a
+// value (zero struct when the nested key is absent).
+func LoadFestivityData(plan *dbgen.Plan) FestivityResolutionData {
+	rd := LoadResolutionData(plan.ResolutionData)
+	if rd.Festivity == nil {
+		return FestivityResolutionData{}
 	}
+	return *rd.Festivity
 }
 
-// SetFestivityState writes s back into r.
-func (r *ResolutionData) SetFestivityState(s FestivityState) {
-	r.FestivityPhase = s.Phase
-	r.GuestPlayerIDs = s.Guests
-	r.GuestOutcomes = s.Outcomes
-	r.GuestMakeChoices = s.GuestMakes
-	r.GuestMarChoices = s.GuestMars
-	r.HostGuestChoices = s.HostChoices
-	r.GuestRollIDs = s.GuestRollIDs
-	r.GuestIOUs = s.GuestIOUs
-	r.HostMarInsists = s.HostMarInsists
-	r.AcceptDuelsPlayerIDs = s.AcceptDuels
-	r.PendingDuelPlanID = s.PendingDuelPlanID
-	r.PendingChallenge = s.PendingChallenge
-	r.CenteredAssetIDs = s.CenteredAssetIDs
+// EnsureFestivity returns r.Festivity, allocating a zero struct if it was nil.
+func (r *ResolutionData) EnsureFestivity() *FestivityResolutionData {
+	if r.Festivity == nil {
+		r.Festivity = &FestivityResolutionData{}
+	}
+	return r.Festivity
 }
 
 // AllGuestsResolved returns true when every guest has an outcome recorded.
-func (s *FestivityState) AllGuestsResolved() bool {
+func (s *FestivityResolutionData) AllGuestsResolved() bool {
 	if len(s.Guests) == 0 {
 		return false
 	}
@@ -136,7 +132,7 @@ func (s *FestivityState) AllGuestsResolved() bool {
 
 // PendingHostChoices returns guests who still need a host make choice (those
 // who rolled mar or opted out, minus those already assigned).
-func (s *FestivityState) PendingHostChoices() []int64 {
+func (s *FestivityResolutionData) PendingHostChoices() []int64 {
 	out := make([]int64, 0)
 	for _, id := range s.Guests {
 		k := int64ToKey(id)
@@ -156,12 +152,12 @@ func (s *FestivityState) PendingHostChoices() []int64 {
 }
 
 // HasAcceptDuels returns true when playerID has the accept_duels flag.
-func (s *FestivityState) HasAcceptDuels(playerID int64) bool {
+func (s *FestivityResolutionData) HasAcceptDuels(playerID int64) bool {
 	return slices.Contains(s.AcceptDuels, playerID)
 }
 
 // ConsumeIOU removes one IOU for playerID and returns true if one was found.
-func (s *FestivityState) ConsumeIOU(playerID int64) bool {
+func (s *FestivityResolutionData) ConsumeIOU(playerID int64) bool {
 	for i, id := range s.GuestIOUs {
 		if id == playerID {
 			s.GuestIOUs = append(s.GuestIOUs[:i], s.GuestIOUs[i+1:]...)
@@ -172,7 +168,7 @@ func (s *FestivityState) ConsumeIOU(playerID int64) bool {
 }
 
 // IsGuest returns true if playerID is on the guest list.
-func (s *FestivityState) IsGuest(playerID int64) bool {
+func (s *FestivityResolutionData) IsGuest(playerID int64) bool {
 	return slices.Contains(s.Guests, playerID)
 }
 

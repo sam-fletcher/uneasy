@@ -754,7 +754,7 @@ func createPlanInTx(
 
 	if body.PlanType == model.PlanMakeWar {
 		resData := loadResolutionData(plan.ResolutionData)
-		resData.WarEnemyPlayerIDs = body.EnemyPlayerIDs
+		resData.EnsureMakeWar().EnemyPlayerIDs = body.EnemyPlayerIDs
 		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
 			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save war enemies")
 		}

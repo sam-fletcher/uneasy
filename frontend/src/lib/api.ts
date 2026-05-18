@@ -302,6 +302,10 @@ export type { ChronicleHistoriesResolutionData } from '$lib/plans/resolutionData
 import type { ChronicleHistoriesResolutionData } from '$lib/plans/resolutionData/chronicle_histories';
 export type { DuelResolutionData, DuelPhase } from '$lib/plans/resolutionData/propose_duel';
 import type { DuelResolutionData } from '$lib/plans/resolutionData/propose_duel';
+export type { MakeWarResolutionData } from '$lib/plans/resolutionData/make_war';
+import type { MakeWarResolutionData } from '$lib/plans/resolutionData/make_war';
+export type { FestivityResolutionData, FestivityPhase } from '$lib/plans/resolutionData/host_festivity';
+import type { FestivityResolutionData } from '$lib/plans/resolutionData/host_festivity';
 
 /** Mirrors game.ResolutionData (uneasy/game/plan.go). All fields optional —
  * only the ones relevant to a given plan type are populated. */
@@ -358,25 +362,14 @@ export interface ResolutionData {
 	duel?: DuelResolutionData;
 
 	// ── Host Festivity ──
-	festivity_phase?: string;
-	guest_player_ids?: number[];
-	guest_outcomes?: Record<string, string>;
-	guest_make_choices?: Record<string, string>;
-	guest_mar_choices?: Record<string, string>;
-	host_guest_choices?: Record<string, string>;
-	guest_roll_ids?: Record<string, number>;
-	guest_ious?: number[];
-	host_mar_insists?: string[];
-	accept_duels_player_ids?: number[];
-	pending_duel_plan_id?: number | null;
-	pending_challenge?: { challenger_id: number; target_id: number; notes?: string } | null;
-	centered_asset_ids?: number[];
+	// All HF-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/host_festivity.ts.
+	festivity?: FestivityResolutionData;
 
 	// ── Make War ──
-	war_id?: number | null;
-	delay_reveal_id?: number | null;
-	war_enemy_player_ids?: number[];
-	war_scene_posted?: boolean;
+	// All MW-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/make_war.ts.
+	make_war?: MakeWarResolutionData;
 
 	// ── Make Demands ──
 	// All MD-specific state lives on the nested struct; see
