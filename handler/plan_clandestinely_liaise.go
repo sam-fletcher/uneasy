@@ -41,16 +41,18 @@ import (
 	"slices"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
-// Liaise phases (stored in ResData.LiaisePhase).
+// Liaise phase aliases — re-export the typed enum from the game package
+// so handler code can use the unqualified names.
 const (
-	LiaiseTogetherAtLast       = "together_at_last"
-	LiaiseSecretsWeKeep        = "secrets_we_keep"
-	LiaiseThingsWeShare        = "things_we_share"
-	LiaiseWhenWillISeeYouAgain = "when_will_i_see_you_again"
-	LiaiseDone                 = "done"
+	LiaiseTogetherAtLast       = game.LiaisePhaseTogetherAtLast
+	LiaiseSecretsWeKeep        = game.LiaisePhaseSecretsWeKeep
+	LiaiseThingsWeShare        = game.LiaisePhaseThingsWeShare
+	LiaiseWhenWillISeeYouAgain = game.LiaisePhaseWhenWillISeeYouAgain
+	LiaiseDone                 = game.LiaisePhaseDone
 )
 
 // Things We Share choice values.
@@ -100,7 +102,7 @@ func (clHandler) ComputeDifficulty(
 // does not use the standard dice roll mechanism.
 func (clHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	resData := loadResolutionData(plan.ResolutionData)
-	resData.LiaisePhase = LiaiseTogetherAtLast
+	resData.EnsureLiaise().Phase = LiaiseTogetherAtLast
 
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return nil, fmt.Errorf("could not set liaise phase: %w", err)
@@ -108,7 +110,7 @@ func (clHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 
 	broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged, model.LiaisePhaseChangedPayload{
 		PlanID: plan.ID,
-		Phase:  LiaiseTogetherAtLast,
+		Phase:  string(LiaiseTogetherAtLast),
 	})
 
 	return nil, nil
@@ -129,8 +131,9 @@ func (clHandler) ApplyChoice(
 // CanComplete verifies the plan has completed all phases, including that the
 // redelay reveal (When Will I See You Again) has been resolved.
 func (clHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if resData.LiaisePhase != LiaiseDone {
-		return fmt.Errorf("liaise is still in phase %q — all four phases must complete first", resData.LiaisePhase)
+	ld := resData.EnsureLiaise()
+	if ld.Phase != LiaiseDone {
+		return fmt.Errorf("liaise is still in phase %q — all four phases must complete first", ld.Phase)
 	}
 	return nil
 }
@@ -180,8 +183,9 @@ func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 
 	// Store partner_id and reveal_id in resolution_data.
 	resData := loadResolutionData(plan.ResolutionData)
-	resData.PartnerID = &partnerID
-	resData.LiaiseDelayRevealID = &reveal.ID
+	ld := resData.EnsureLiaise()
+	ld.PartnerID = &partnerID
+	ld.DelayRevealID = &reveal.ID
 
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return fmt.Errorf("could not save liaise resolution data: %w", err)
@@ -217,14 +221,18 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
+		ld := resData.EnsureLiaise()
 
-		var nextPhase string
-		switch resData.LiaisePhase {
+		var nextPhase LiaisePhase
+		// The terminal phases (WhenWillISeeYouAgain, Done) fall through to
+		// default — advancing from them is intentionally an error.
+		//nolint:exhaustive // terminal phases handled by default
+		switch ld.Phase {
 		case LiaiseTogetherAtLast:
 			nextPhase = LiaiseSecretsWeKeep
 		case LiaiseSecretsWeKeep:
 			// Both players must have submitted keep-secret before advancing.
-			if !clBothKeepSecretsSubmitted(resData, plan.PreparerID) {
+			if !clBothKeepSecretsSubmitted(*ld, plan.PreparerID) {
 				respondErr(w, http.StatusConflict, "both players must submit keep-secret before advancing")
 				return
 			}
@@ -239,7 +247,7 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 			nextPhase = LiaiseWhenWillISeeYouAgain
 
 			// Create the redelay reveal row if not already created.
-			if resData.RedelayRevealID == nil && resData.PartnerID != nil {
+			if ld.RedelayRevealID == nil && ld.PartnerID != nil {
 				redelayReveal, err := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
 					GameID:     plan.GameID,
 					PlanID:     &plan.ID,
@@ -258,19 +266,19 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 				}
 				if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
 					RevealID: redelayReveal.ID,
-					PlayerID: *resData.PartnerID,
+					PlayerID: *ld.PartnerID,
 				}); err != nil {
 					respondInternalErr(w, r, "could not register partner in redelay reveal", err)
 					return
 				}
-				resData.RedelayRevealID = &redelayReveal.ID
+				ld.RedelayRevealID = &redelayReveal.ID
 			}
 		default:
-			respondErr(w, http.StatusConflict, fmt.Sprintf("cannot advance from phase %q", resData.LiaisePhase))
+			respondErr(w, http.StatusConflict, fmt.Sprintf("cannot advance from phase %q", ld.Phase))
 			return
 		}
 
-		resData.LiaisePhase = nextPhase
+		ld.Phase = nextPhase
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save liaise phase", err)
@@ -279,7 +287,7 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 
 		broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged, model.LiaisePhaseChangedPayload{
 			PlanID: plan.ID,
-			Phase:  nextPhase,
+			Phase:  string(nextPhase),
 		})
 
 		respond(w, http.StatusOK, map[string]any{
@@ -291,13 +299,13 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 
 // clBothKeepSecretsSubmitted checks whether both participants have submitted
 // their keep-secret choice.
-func clBothKeepSecretsSubmitted(resData ResolutionData, preparerID int64) bool {
+func clBothKeepSecretsSubmitted(ld LiaiseResolutionData, preparerID int64) bool {
 	prepSubmitted := false
 	partnerSubmitted := false
-	for _, ks := range resData.KeptSecrets {
+	for _, ks := range ld.KeptSecrets {
 		if ks.PlayerID == preparerID {
 			prepSubmitted = true
-		} else if resData.PartnerID != nil && ks.PlayerID == *resData.PartnerID {
+		} else if ld.PartnerID != nil && ks.PlayerID == *ld.PartnerID {
 			partnerSubmitted = true
 		}
 	}
@@ -331,15 +339,16 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
+		ld := resData.EnsureLiaise()
 
-		if resData.LiaisePhase != LiaiseSecretsWeKeep {
+		if ld.Phase != LiaiseSecretsWeKeep {
 			respondErr(w, http.StatusConflict, fmt.Sprintf("keep-secret requires phase %q, currently %q",
-				LiaiseSecretsWeKeep, resData.LiaisePhase))
+				LiaiseSecretsWeKeep, ld.Phase))
 			return
 		}
 
 		// Only preparer or partner may submit.
-		if !clIsParticipant(plan, player.ID, resData) {
+		if !clIsParticipant(plan, player.ID, *ld) {
 			respondErr(w, http.StatusForbidden, "only the preparer and partner may submit keep-secret")
 			return
 		}
@@ -382,7 +391,7 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Record keep-secret choice.
-		resData.KeptSecrets = append(resData.KeptSecrets, KeptSecret{
+		ld.KeptSecrets = append(ld.KeptSecrets, KeptSecret{
 			PlayerID: player.ID,
 			AssetID:  body.AssetID,
 		})
@@ -430,12 +439,13 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
+		ld := resData.EnsureLiaise()
 
-		if resData.LiaisePhase != LiaiseThingsWeShare {
+		if ld.Phase != LiaiseThingsWeShare {
 			respondErr(w, http.StatusConflict, fmt.Sprintf("share-choice requires phase %q", LiaiseThingsWeShare))
 			return
 		}
-		if !clIsParticipant(plan, player.ID, resData) {
+		if !clIsParticipant(plan, player.ID, *ld) {
 			respondErr(w, http.StatusForbidden, "only the preparer and partner may submit share-choice")
 			return
 		}
@@ -696,8 +706,9 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
+		ld := resData.EnsureLiaise()
 
-		if resData.LiaisePhase != LiaiseWhenWillISeeYouAgain {
+		if ld.Phase != LiaiseWhenWillISeeYouAgain {
 			respondErr(
 				w,
 				http.StatusConflict,
@@ -705,11 +716,11 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			)
 			return
 		}
-		if !clIsParticipant(plan, player.ID, resData) {
+		if !clIsParticipant(plan, player.ID, *ld) {
 			respondErr(w, http.StatusForbidden, "only the preparer and partner may submit redelay-reveal")
 			return
 		}
-		if resData.RedelayRevealID == nil {
+		if ld.RedelayRevealID == nil {
 			respondErr(w, http.StatusConflict, "redelay reveal not initialised")
 			return
 		}
@@ -726,7 +737,7 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Record the face in the reveal entry.
 		if err := deps.Q.SetRevealEntryFace(ctx, dbgen.SetRevealEntryFaceParams{
-			RevealID: *resData.RedelayRevealID,
+			RevealID: *ld.RedelayRevealID,
 			PlayerID: player.ID,
 			Face:     &face,
 		}); err != nil {
@@ -735,17 +746,17 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		broadcastEvent(deps.Manager, plan.GameID, model.EventRevealSubmitted, model.RevealSubmittedPayload{
-			RevealID: *resData.RedelayRevealID,
+			RevealID: *ld.RedelayRevealID,
 			PlayerID: player.ID,
 		})
 
 		// Check if both players have submitted.
-		submitted, err := deps.Q.CountRevealEntriesSubmitted(ctx, *resData.RedelayRevealID)
+		submitted, err := deps.Q.CountRevealEntriesSubmitted(ctx, *ld.RedelayRevealID)
 		if err != nil {
 			respondInternalErr(w, r, "could not check reveal status", err)
 			return
 		}
-		total, err := deps.Q.CountRevealEntries(ctx, *resData.RedelayRevealID)
+		total, err := deps.Q.CountRevealEntries(ctx, *ld.RedelayRevealID)
 		if err != nil {
 			respondInternalErr(w, r, "could not count reveal entries", err)
 			return
@@ -779,7 +790,8 @@ func clFinalizeRedelayReveal(
 	plan *dbgen.Plan,
 	resData *ResolutionData,
 ) bool {
-	entries, err := deps.Q.ListRevealEntries(ctx, *resData.RedelayRevealID)
+	ld := resData.EnsureLiaise()
+	entries, err := deps.Q.ListRevealEntries(ctx, *ld.RedelayRevealID)
 	if err != nil {
 		respondInternalErr(w, r, "could not load reveal entries", err)
 		return false
@@ -798,7 +810,7 @@ func clFinalizeRedelayReveal(
 	}
 
 	err = deps.Q.SetRevealComplete(ctx, dbgen.SetRevealCompleteParams{
-		ID:          *resData.RedelayRevealID,
+		ID:          *ld.RedelayRevealID,
 		ResultDelay: &resultDelay,
 	})
 	if err != nil {
@@ -818,21 +830,21 @@ func clFinalizeRedelayReveal(
 		})
 	}
 	broadcastEvent(deps.Manager, plan.GameID, model.EventRevealComplete, model.RevealCompletePayload{
-		RevealID:    *resData.RedelayRevealID,
+		RevealID:    *ld.RedelayRevealID,
 		Entries:     entryResults,
 		ResultDelay: resultDelay,
 	})
 
-	if !cancelled && resultDelay > 0 && resData.PartnerID != nil {
+	if !cancelled && resultDelay > 0 && ld.PartnerID != nil {
 		if game, gerr := deps.Q.GetGameByID(ctx, plan.GameID); gerr == nil {
 			newRow := game.CurrentRow + resultDelay
 			if newRow <= publicRecordRowCount {
-				clScheduleNewMeeting(ctx, deps, plan, newRow, *resData.PartnerID)
+				clScheduleNewMeeting(ctx, deps, plan, newRow, *ld.PartnerID)
 			}
 		}
 	}
 
-	resData.LiaisePhase = LiaiseDone
+	ld.Phase = LiaiseDone
 	if err = saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
 		respondInternalErr(w, r, "could not complete liaise", err)
 		return false
@@ -841,11 +853,11 @@ func clFinalizeRedelayReveal(
 }
 
 // clIsParticipant returns true if playerID is the preparer or the partner.
-func clIsParticipant(plan *dbgen.Plan, playerID int64, resData ResolutionData) bool {
+func clIsParticipant(plan *dbgen.Plan, playerID int64, ld LiaiseResolutionData) bool {
 	if playerID == plan.PreparerID {
 		return true
 	}
-	if resData.PartnerID != nil && *resData.PartnerID == playerID {
+	if ld.PartnerID != nil && *ld.PartnerID == playerID {
 		return true
 	}
 	return false
@@ -884,7 +896,7 @@ func clScheduleNewMeeting(
 
 	// Initialise resolution data for the new plan.
 	newResData := ResolutionData{
-		PartnerID: &partnerID,
+		Liaise: &LiaiseResolutionData{PartnerID: &partnerID},
 	}
 	_ = saveResolutionData(ctx, deps.Q, newPlan.ID, newResData)
 

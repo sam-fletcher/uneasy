@@ -96,7 +96,7 @@ func TestLoadResolutionData_RoundTrip(t *testing.T) {
 		MakeMarChoices:     []Choice{{Option: "a"}, {Option: "b", PlayerID: &playerID}},
 		InvokedArtifactIDs: []int64{1, 2, 3},
 		EsteemLockout:      true,
-		PartnerID:          &playerID,
+		Liaise:             &LiaiseResolutionData{PartnerID: &playerID},
 	}
 
 	// Marshal to JSON
@@ -115,8 +115,9 @@ func TestLoadResolutionData_RoundTrip(t *testing.T) {
 	assert.False(t, result.MessyBreakRequired)
 	assert.Equal(t, int16(2), result.PeerCount)
 	assert.True(t, result.EsteemLockout)
-	assert.NotNil(t, result.PartnerID)
-	assert.Equal(t, playerID, *result.PartnerID)
+	require.NotNil(t, result.Liaise)
+	require.NotNil(t, result.Liaise.PartnerID)
+	assert.Equal(t, playerID, *result.Liaise.PartnerID)
 }
 
 // TestLoadResolutionData_InvalidJSON tests that invalid JSON is gracefully handled.

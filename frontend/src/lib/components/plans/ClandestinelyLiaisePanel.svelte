@@ -13,6 +13,7 @@
 		advanceLiaise, keepSecret, shareChoice,
 		type Plan, type Asset, type Player, type KeptSecret,
 	} from '$lib/api';
+	import { parseLiaiseData, type LiaisePhase } from '$lib/plans/resolutionData/liaise';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
@@ -20,7 +21,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import D6Face from './D6Face.svelte';
 	import {
-		playerName, parseResolutionData,
+		playerName,
 		playersExcept, ownerUnleveragedAssets, ownerIntactAssets,
 	} from './shared';
 
@@ -64,20 +65,20 @@
 
 	// ── Resolve state ────────────────────────────────────────────────────────
 	type CLState = {
-		phase: string;
+		phase: LiaisePhase | '';
 		partnerID: number | null;
 		delayRevealID: number | null;
 		redelayRevealID: number | null;
 		keptSecrets: KeptSecret[];
 	};
 	const clState = $derived.by<CLState>(() => {
-		const rd = parseResolutionData(plan);
+		const ld = parseLiaiseData(plan);
 		return {
-			phase: rd.liaise_phase ?? '',
-			partnerID: rd.partner_id ?? null,
-			delayRevealID: rd.liaise_delay_reveal_id ?? null,
-			redelayRevealID: rd.redelay_reveal_id ?? null,
-			keptSecrets: rd.kept_secrets ?? [],
+			phase: ld.phase ?? '',
+			partnerID: ld.partner_id ?? null,
+			delayRevealID: ld.delay_reveal_id ?? null,
+			redelayRevealID: ld.redelay_reveal_id ?? null,
+			keptSecrets: ld.kept_secrets ?? [],
 		};
 	});
 

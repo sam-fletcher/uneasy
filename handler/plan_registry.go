@@ -10,15 +10,17 @@ import "uneasy/game"
 
 // Type aliases — handler-internal code can use these unqualified.
 type (
-	PlanHandler       = game.PlanHandler
-	OnPreparer        = game.OnPreparer
-	PlanMetadata      = game.PlanMetadata
-	PlanDeps          = game.PlanDeps
-	ValidationContext = game.ValidationContext
-	ResolutionData    = game.ResolutionData
-	DraftChoice       = game.DraftChoice
-	Choice            = game.Choice
-	KeptSecret        = game.KeptSecret
+	PlanHandler          = game.PlanHandler
+	OnPreparer           = game.OnPreparer
+	PlanMetadata         = game.PlanMetadata
+	PlanDeps             = game.PlanDeps
+	ValidationContext    = game.ValidationContext
+	ResolutionData       = game.ResolutionData
+	DraftChoice          = game.DraftChoice
+	Choice               = game.Choice
+	KeptSecret           = game.KeptSecret
+	LiaiseResolutionData = game.LiaiseResolutionData
+	LiaisePhase          = game.LiaisePhase
 )
 
 // Registry delegates — handler-internal code calls these unqualified.

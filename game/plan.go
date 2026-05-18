@@ -155,11 +155,10 @@ type ResolutionData struct {
 	LawID              *int64  `json:"law_id,omitempty"`
 
 	// ── Clandestinely Liaise ──
-	PartnerID           *int64       `json:"partner_id,omitempty"`
-	LiaisePhase         string       `json:"liaise_phase,omitempty"`
-	LiaiseDelayRevealID *int64       `json:"liaise_delay_reveal_id,omitempty"`
-	RedelayRevealID     *int64       `json:"redelay_reveal_id,omitempty"`
-	KeptSecrets         []KeptSecret `json:"kept_secrets,omitempty"`
+	// All Liaise-specific state lives on the nested struct; see
+	// plan_liaise_data.go. Per-plan handlers go through r.EnsureLiaise()
+	// for writes and r.Liaise (or LoadLiaiseData) for reads.
+	Liaise *LiaiseResolutionData `json:"liaise,omitempty"`
 
 	// ── Propose Duel ──
 	DuelType                 string `json:"duel_type,omitempty"`

@@ -281,6 +281,12 @@ export interface KeptSecret {
 	asset_id: number;
 }
 
+// Per-plan typed resolution_data views. Each plan's view lives in
+// $lib/plans/resolutionData/<name>.ts and is re-exported here so the
+// shared ResolutionData interface can reference it.
+export type { LiaiseResolutionData } from '$lib/plans/resolutionData/liaise';
+import type { LiaiseResolutionData } from '$lib/plans/resolutionData/liaise';
+
 /** Mirrors game.ResolutionData (uneasy/game/plan.go). All fields optional —
  * only the ones relevant to a given plan type are populated. */
 export interface ResolutionData {
@@ -325,11 +331,10 @@ export interface ResolutionData {
 	law_id?: number | null;
 
 	// ── Clandestinely Liaise ──
-	partner_id?: number | null;
-	liaise_phase?: string;
-	liaise_delay_reveal_id?: number | null;
-	redelay_reveal_id?: number | null;
-	kept_secrets?: KeptSecret[];
+	// All Liaise-specific state lives on the nested struct; see
+	// $lib/plans/resolutionData/liaise.ts. Read via parseLiaiseData(plan)
+	// for an ergonomic always-non-nil view.
+	liaise?: LiaiseResolutionData;
 
 	// ── Propose Duel ──
 	duel_type?: string;
