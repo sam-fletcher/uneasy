@@ -48,6 +48,15 @@
 		orderedWaitees.length === 1 && orderedWaitees[0].kind === 'everyone'
 	);
 
+	// True when the current player is among the waitees (or it's "everyone").
+	// When false, the step heading mutes to the same grey as "Waiting On:" —
+	// reinforces that the play surface is read-only for this viewer.
+	const isWaitingOnMe = $derived(
+		isEveryone ||
+		(currentPlayerID != null &&
+			orderedWaitees.some(w => w.kind === 'player' && w.playerID === currentPlayerID))
+	);
+
 	function nameFor(id: number): string {
 		return players.find(p => p.id === id)?.display_name ?? '?';
 	}
@@ -59,7 +68,7 @@
 {#if orderedWaitees.length > 0}
 	<div class="waiting-on-bar">
 		{#if state.stepLabel}
-			<p class="line step-label">{state.stepLabel}</p>
+			<p class="line step-label" class:muted={!isWaitingOnMe}>{state.stepLabel}</p>
 		{/if}
 		{#if state.stepSubtitle}
 			<p class="line step-subtitle">{state.stepSubtitle}</p>
@@ -137,6 +146,13 @@
 		color: #c8a96e;
 		font-size: 0.95rem;
 		font-weight: 600;
+	}
+	.step-label.muted {
+		color: #999;
+		/* Override the global `.muted` rule in plans/planPanel.css, which
+		   leaks in because that file is imported as a plain CSS module. */
+		font-style: normal;
+		font-size: 0.95rem;
 	}
 	.step-subtitle {
 		color: #999;

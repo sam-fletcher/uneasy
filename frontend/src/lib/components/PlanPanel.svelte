@@ -48,8 +48,9 @@
 		currentPlayerID: number | null;
 		isFocusPlayer: boolean;
 		/**
-		 * Whether the focus player is allowed to prepare a plan right now.
-		 * Should be true only during action step 2.
+		 * Whether prep UI should be shown at all (post-scene action step).
+		 * Set by the parent based on scene-end state — independent of who's
+		 * looking. Authority is conveyed by `isFocusPlayer`.
 		 */
 		prepEnabled?: boolean;
 		/** Whether any dice roll is currently active. */
@@ -169,6 +170,10 @@
 	}
 
 	$effect(() => {
+		// Only the focus player's eligibility is meaningful here; the
+		// endpoint resolves the calling player, so non-focus players would
+		// fetch their own (incorrect) eligibility. Skip the fetch for them
+		// — the grid still renders as a disabled skeleton.
 		if (prepEnabled && isFocusPlayer && !needsResolution && !eligibilityLoaded) {
 			loadEligibility();
 		}
@@ -258,19 +263,22 @@
 {/if}
 
 <!-- ── Preparation dispatch ─────────────────────────────────────────────── -->
-{#if prepEnabled && !needsResolution && isFocusPlayer}
+{#if prepEnabled && !needsResolution}
 	<div class="prep-section">
-		{#if !eligibilityLoaded}
+		{#if isFocusPlayer && !eligibilityLoaded}
 			<p class="muted">Checking eligibility…</p>
-		{:else if eligibilityError}
+		{:else if isFocusPlayer && eligibilityError}
 			<p class="res-error">{eligibilityError}</p>
-		{:else if eligiblePlans.length === 0 && ineligiblePlans.length === 0}
+		{:else if isFocusPlayer && eligiblePlans.length === 0 && ineligiblePlans.length === 0}
 			<p class="muted">No plans available to prepare this turn.</p>
 		{:else}
 			<!-- Flat 3-column grid: 3 track headings on the first row, then
 			     4 rows of 3 cards. Auto-flow (row-major) handles placement;
 			     equal min-height on every card guarantees uniform sizing
-			     across all 12 plans. -->
+			     across all 12 plans. For non-focus players the grid renders
+			     as a disabled skeleton — eligibility is per-player on the
+			     server, so we don't fetch it for them; the focus player's
+			     selection isn't synced yet either. -->
 			<div class="plan-grid">
 				{#each TRACKS as track}
 					<h4 class="track-heading">{TRACK_LABEL[track]}</h4>
@@ -278,12 +286,12 @@
 				{#each [0, 1, 2, 3] as rowIdx}
 					{#each TRACKS as track}
 						{@const pt = TRACK_ORDER[track][rowIdx]}
-						{@const cell = planCells.get(pt)}
+						{@const cell = isFocusPlayer ? planCells.get(pt) : undefined}
 						<button
 							type="button"
 							class="plan-card"
 							class:selected={selectedPlanType === pt}
-							disabled={!cell || !cell.eligible}
+							disabled={!isFocusPlayer || !cell || !cell.eligible}
 							title={cell && !cell.eligible ? cell.reason : undefined}
 							onclick={() => cell && onPlanClick(cell)}
 							onmouseenter={() => cell && onPlanHover(cell)}

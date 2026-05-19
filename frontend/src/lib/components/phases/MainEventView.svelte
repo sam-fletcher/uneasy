@@ -149,9 +149,7 @@
 			return { waitees: focusWaitee, stepLabel: 'Set the scene' };
 		}
 		if (game.focus_player_id != null && sceneEnded) {
-			const subtitle = isFocusPlayer
-				? `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`
-				: undefined;
+			const subtitle = `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
 			return { waitees: focusWaitee, stepLabel: 'Prepare a plan', stepSubtitle: subtitle };
 		}
 		return { waitees: [] };
@@ -169,8 +167,11 @@
 		currentPlayerID != null && game.focus_player_id === currentPlayerID
 	);
 
-	// Refresh-assets sub-step: which leveraged assets the player has selected.
-	let refreshable = $derived(assets.filter(a => a.owner_id === currentPlayerID && a.is_leveraged && !a.is_destroyed));
+	// Refresh-assets sub-step: which leveraged assets the focus player has
+	// selected. Keyed on focus_player_id (not currentPlayerID) so the
+	// derived `maxRefresh` count is meaningful for every observer — the
+	// picker itself is still gated behind `isFocusPlayer` below.
+	let refreshable = $derived(assets.filter(a => a.owner_id === game.focus_player_id && a.is_leveraged && !a.is_destroyed));
 	let selectedRefreshIDs = $state<Set<number>>(new Set());
 	// Refresh cap: smaller of the current row number (per rules) and how many
 	// leveraged assets the focus player actually has.
@@ -324,7 +325,7 @@
 				{rankings}
 				{currentPlayerID}
 				{isFocusPlayer}
-				prepEnabled={isFocusPlayer && sceneEnded}
+				prepEnabled={sceneEnded}
 				{rollActive}
 				{rollOutcome}
 				{activeRoll}
