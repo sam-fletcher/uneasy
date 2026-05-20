@@ -36,6 +36,7 @@
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
+	import { warDrawerOpen, activeWarCount } from '$lib/warDrawer';
 
 	const gameID = $derived(page.params.id as string);
 
@@ -858,6 +859,15 @@
 				<button class="tones-button" onclick={() => rumorsOpen = true} aria-label="Open rumors">
 					Rumors{rumors.length > 0 ? ` (${rumors.length})` : ''}
 				</button>
+				{#if $activeWarCount > 0}
+					<button
+						class="tones-button war-button"
+						onclick={() => warDrawerOpen.set(true)}
+						aria-label="Open wars"
+					>
+						War{$activeWarCount > 1 ? ` (${$activeWarCount})` : ''}
+					</button>
+				{/if}
 			</div>
 		{/if}
 	</header>
@@ -1281,6 +1291,14 @@
 	}
 	.tones-button:hover { background: #333; }
 	.tones-button:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
+
+	.war-button {
+		background: #3a1414;
+		border-color: #6a2424;
+		color: #f0c8c0;
+	}
+	.war-button:hover { background: #4a1a1a; }
+	.war-button:focus-visible { outline-color: #d07060; }
 
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
 	.tones-sheet .small { font-size: 0.85rem; }

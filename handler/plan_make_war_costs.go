@@ -72,6 +72,11 @@ func mwSnapshotWar(ctx context.Context, q *dbgen.Queries, war dbgen.War) (mwWarS
 
 // mwOutstandingCostsForWar returns the unpaid (payer, opponent) pairs for this
 // war on the given row, in reverse-power + ascending-opponent order.
+//
+// Returns no costs while the war hasn't actually begun: a Make War plan sits
+// in the public record until its delay reveal closes (plan.row_number stays
+// NULL), and the rules state cost of battle starts the row *after* the
+// declaration scene resolves — i.e. only when row > plan.row_number.
 func mwOutstandingCostsForWar(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -79,6 +84,13 @@ func mwOutstandingCostsForWar(
 	ranks map[int64]int16,
 	row int16,
 ) ([]gamepkg.BattleCostKey, error) {
+	plan, err := q.GetPlanByID(ctx, snap.War.OriginPlanID)
+	if err != nil {
+		return nil, err
+	}
+	if plan.RowNumber == nil || row <= *plan.RowNumber {
+		return nil, nil
+	}
 	paid := map[gamepkg.BattleCostKey]bool{}
 	for _, p := range snap.Active {
 		rows, err := q.ListBattleCostsByPayerForRow(ctx, dbgen.ListBattleCostsByPayerForRowParams{

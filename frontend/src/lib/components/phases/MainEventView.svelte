@@ -6,13 +6,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
-	import { WAR_EVENTS } from '$lib/ws';
-	import { activeDemandAgainst, demandWinnersFromPlan, plansPendingOnRow } from '$lib/components/plans/shared';
+	import { WAR_EVENTS, REVEAL_EVENTS } from '$lib/ws';
+	import { stayedOutOfWar } from '$lib/makeWarDismissed';
+	import { warDrawerOpen, activeWarCount } from '$lib/warDrawer';
+	import MakeWarPanel from '$lib/components/plans/MakeWarPanel.svelte';
+	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
+	import type { PlanContext } from '$lib/components/plans/types';
+	import { activeDemandAgainst, demandWinnersFromPlan, plansPendingOnRow, parseResolutionData } from '$lib/components/plans/shared';
 	import {
 		refreshAssets,
 		listWars,
+		getReveal,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse, SimultaneousReveal } from '$lib/api';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
@@ -131,6 +137,12 @@
 		if (plansPendingOnRow(plans, game.current_row).length > 0) {
 			return { waitees: focusWaitee, stepLabel: 'Plan to resolve' };
 		}
+		if (makeWarTakeover && makeWarPendingSubmitterIDs.length > 0) {
+			return {
+				waitees: makeWarPendingSubmitterIDs.map(id => ({ kind: 'player', playerID: id })),
+				stepLabel: 'Make War — delay reveal',
+			};
+		}
 		if (blockingCostPayers.length > 0 || blockingClaimants.length > 0) {
 			const ids = new Set<number>([...blockingCostPayers, ...blockingClaimants]);
 			const parts: string[] = [];
@@ -223,6 +235,53 @@
 	/** True when an in-flight roll hasn't resolved yet. */
 	const rollActive = $derived(activeRoll != null && activeRoll.outcome == null);
 
+	// ── Make War "play area takeover" ────────────────────────────────────────
+	// While a Make War plan's delay reveal is still open (row_number is null),
+	// hand the whole play area over to the war box so participants can roll
+	// and non-participants can decide to join or stay out. The takeover lifts
+	// per-user when they click "Stay out of it" (stored client-side in
+	// stayedOutOfWar) and globally once the reveal closes (server sets the
+	// plan's row_number, removing it from this query).
+	const stayedOutSet = $derived($stayedOutOfWar);
+	const makeWarTakeoverPlan = $derived(
+		plans.find(p =>
+			p.plan_type === 'make_war'
+			&& p.status === 'pending'
+			&& p.row_number == null
+			&& !stayedOutSet.has(p.id),
+		) ?? null,
+	);
+	const makeWarTakeover = $derived(makeWarTakeoverPlan != null);
+
+	const makeWarDelayRevealID = $derived(
+		makeWarTakeoverPlan
+			? parseResolutionData(makeWarTakeoverPlan).make_war?.delay_reveal_id ?? null
+			: null,
+	);
+	let makeWarReveal = $state<SimultaneousReveal | null>(null);
+	async function refreshMakeWarReveal(revealID: number) {
+		try { makeWarReveal = await getReveal(revealID); }
+		catch { makeWarReveal = null; }
+	}
+	$effect(() => {
+		const id = makeWarDelayRevealID;
+		if (id == null) { makeWarReveal = null; return; }
+		void refreshMakeWarReveal(id);
+	});
+	useWindowEvents(REVEAL_EVENTS, (e) => {
+		const id = makeWarDelayRevealID;
+		const detail = (e as CustomEvent<{ reveal_id: number }>).detail;
+		if (id != null && detail?.reveal_id === id) void refreshMakeWarReveal(id);
+	});
+	// Players in the war whose reveal entry is still face=null.
+	const makeWarPendingSubmitterIDs = $derived.by<number[]>(() => {
+		if (!makeWarReveal || makeWarReveal.is_complete) return [];
+		return makeWarReveal.entries
+			.filter(e => e.face == null)
+			.map(e => e.player_id);
+	});
+
+
 	// Block the actor's own leverage if a Make Demands `control_leverage`
 	// winner has authority over this roll's plan. Backend would 403 anyway;
 	// hiding the button avoids confusing UI.
@@ -265,6 +324,36 @@
 		onPlansChanged();
 	}
 
+	// ── War drawer (header button) ───────────────────────────────────────────
+	// Once a Make War plan is placed on the public record, its panel hides
+	// from the play area; the player accesses ongoing war state via the
+	// header "War" button. Plans still in delay-reveal stay inline as the
+	// takeover above; resolving plans render via PlanPanel's resolve mode.
+	const drawerWarPlans = $derived(
+		plans.filter(p => {
+			if (p.plan_type !== 'make_war') return false;
+			if (p.status === 'cancelled') return false;
+			if (p.row_number == null) return false; // still in delay reveal
+			const w = wars.find(x => x.origin_plan_id === p.id);
+			if (w && w.status === 'ended' && p.status === 'resolved') return false;
+			return true;
+		}),
+	);
+	$effect(() => { activeWarCount.set(drawerWarPlans.length); });
+
+	const drawerCtx = $derived<PlanContext>({
+		gameID: game.id,
+		currentRow: game.current_row,
+		plans, assets, players, rankings,
+		currentPlayerID,
+		isFocusPlayer,
+		rollActive,
+		rollOutcome,
+		activeRoll,
+		onRollCreated: onPlanRollCreated,
+		onPlansChanged,
+		onPlanPrepared,
+	});
 </script>
 
 <div class="main-event-view">
@@ -285,7 +374,7 @@
 				PlanPanel takes over. The page-level WaitingOnBar carries the
 				"who/what we're waiting on" copy.
 			-->
-			{#if activeScene}
+			{#if activeScene && !makeWarTakeover}
 				<SceneDetailsPanel
 					gameID={game.id}
 					scene={activeScene}
@@ -298,7 +387,7 @@
 					{rollActive}
 					onRollCreated={onPlanRollCreated}
 				/>
-			{:else if !hasPlansToResolve && !sceneEnded && game.focus_player_id != null}
+			{:else if !hasPlansToResolve && !sceneEnded && game.focus_player_id != null && !makeWarTakeover}
 				<SceneSetupForm
 					gameID={game.id}
 					{assets}
@@ -326,6 +415,7 @@
 				{currentPlayerID}
 				{isFocusPlayer}
 				prepEnabled={sceneEnded}
+				suppressPrep={makeWarTakeover}
 				{rollActive}
 				{rollOutcome}
 				{activeRoll}
@@ -358,7 +448,7 @@
 				both auto-pass the focus marker server-side, so there is no
 				explicit "Pass Focus" step here.
 			-->
-			{#if isFocusPlayer && sceneEnded}
+			{#if isFocusPlayer && sceneEnded && !makeWarTakeover}
 				<div class="action-bar">
 					<div class="action-step">
 						{#if hasPlansToResolve}
@@ -406,7 +496,21 @@
 	</div>
 </div>
 
+<RetinueSheet open={$warDrawerOpen} onClose={() => warDrawerOpen.set(false)}>
+	<div class="war-sheet">
+		<h3>Active Wars ({drawerWarPlans.length})</h3>
+		{#if drawerWarPlans.length === 0}
+			<p class="muted">No active wars.</p>
+		{:else}
+			{#each drawerWarPlans as p (p.id)}
+				<MakeWarPanel ctx={drawerCtx} plan={p} mode="alwaysOn" />
+			{/each}
+		{/if}
+	</div>
+</RetinueSheet>
+
 <style>
+	.war-sheet h3 { margin: 0 0 0.5rem; }
 	.main-event-view {
 		flex: 1;
 		display: flex;

@@ -1,10 +1,12 @@
 <!-- MakeWar/WarStatus.svelte
-  Participants grouped by side, join buttons for non-participants, and the
-  short "war ended" summary when applicable.
+  Two-column side layout with per-side Join buttons for non-participants
+  and a centered "Stay out of it" button below that lifts the war-box
+  takeover for the rest of the session.
 -->
 <script lang="ts">
 	import { joinWar, type Player, type WarStateResponse } from '$lib/api';
 	import { playerName } from '../shared';
+	import { stayOutOfWar } from '$lib/makeWarDismissed';
 
 	let { war, planID, players, amParticipant, onChanged, setError }: {
 		war: WarStateResponse;
@@ -17,9 +19,10 @@
 
 	let joinBusy = $state(false);
 
-	function sideName(s: 1 | 2): string {
-		return s === 1 ? 'Side 1 (declarer)' : 'Side 2 (enemies)';
-	}
+	const sides = [
+		{ side: 1 as const, name: 'Declarer' },
+		{ side: 2 as const, name: 'Enemies' },
+	];
 
 	async function joinSide(side: 1 | 2) {
 		if (joinBusy) return;
@@ -31,44 +34,54 @@
 			setError(e instanceof Error ? e.message : 'Could not join war.');
 		} finally { joinBusy = false; }
 	}
+
+	function stayOut() {
+		stayOutOfWar(planID);
+	}
 </script>
 
 <div class="choices-section">
 	<p class="choices-header">Sides</p>
-	{#each [1, 2] as s}
-		{@const sideParts = war.participants.filter(p => p.side === s)}
-		<div class="choices-note">
-			<strong>{sideName(s as 1 | 2)}:</strong>
-			{#if sideParts.length === 0}
-				<em>(empty)</em>
-			{:else}
-				{#each sideParts as p, i}
-					{i > 0 ? ', ' : ''}
-					<span>
-						{playerName(players, p.player_id)}
-						{#if p.surrendered_at_row != null}
-							<em>(surrendered, row {p.surrendered_at_row})</em>
-						{:else if !p.entry_payment_complete}
-							<em>(joining — owes entry)</em>
-						{/if}
-					</span>
-				{/each}
-			{/if}
-		</div>
-	{/each}
+
+	<div class="sides-grid">
+		{#each sides as { side, name }}
+			{@const sideParts = war.participants.filter(p => p.side === side)}
+			<div class="side-column">
+				<div class="side-header">Side {side} — {name}</div>
+				{#if sideParts.length === 0}
+					<p class="muted side-empty">(none yet)</p>
+				{:else}
+					<ul class="side-list">
+						{#each sideParts as p}
+							<li>
+								{playerName(players, p.player_id)}
+								{#if p.surrendered_at_row != null}
+									<em class="muted">(surrendered, row {p.surrendered_at_row})</em>
+								{:else if !p.entry_payment_complete}
+									<em class="muted">(joining — owes entry)</em>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+
+				{#if !amParticipant && war.status === 'active'}
+					<button
+						class="action-btn side-join-btn"
+						onclick={() => joinSide(side)}
+						disabled={joinBusy}
+					>
+						{joinBusy ? '…' : `Join Side ${side}`}
+					</button>
+				{/if}
+			</div>
+		{/each}
+	</div>
 
 	{#if !amParticipant && war.status === 'active'}
-		<p class="choices-note">
-			Join the war (free during the delay reveal; afterwards you'll
-			owe a cost-of-battle entry against every existing opposing
-			participant before counting as a full member):
-		</p>
-		<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-			<button class="action-btn" onclick={() => joinSide(1)} disabled={joinBusy}>
-				{joinBusy ? '…' : 'Join Side 1'}
-			</button>
-			<button class="action-btn" onclick={() => joinSide(2)} disabled={joinBusy}>
-				{joinBusy ? '…' : 'Join Side 2'}
+		<div class="stay-out-row">
+			<button class="action-btn stay-out-btn" onclick={stayOut} disabled={joinBusy}>
+				Stay out of it
 			</button>
 		</div>
 	{/if}
@@ -81,3 +94,62 @@
 		</p>
 	{/if}
 </div>
+
+<style>
+	.sides-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.75rem;
+	}
+	@media (min-width: 560px) {
+		.sides-grid {
+			grid-template-columns: 1fr 1fr;
+		}
+	}
+
+	.side-column {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding: 0.6rem 0.7rem;
+		border: 1px solid #3a322b;
+		border-radius: 8px;
+		background: rgba(255, 255, 255, 0.02);
+	}
+
+	.side-header {
+		font-weight: 600;
+		color: #c8a96e;
+		font-size: 0.9rem;
+	}
+
+	.side-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		font-size: 0.9rem;
+	}
+
+	.side-empty {
+		margin: 0;
+	}
+
+	.side-join-btn {
+		margin-top: auto;
+		min-height: 44px;
+	}
+
+	.stay-out-row {
+		display: flex;
+		justify-content: center;
+		margin-top: 0.25rem;
+	}
+
+	.stay-out-btn {
+		min-height: 44px;
+		min-width: 12rem;
+	}
+</style>

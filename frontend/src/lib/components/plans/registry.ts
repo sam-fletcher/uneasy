@@ -51,11 +51,13 @@ export const REGISTRY: Record<PlanType, PlanRegistryEntry> = {
 
 	make_war: {
 		component: C(MakeWarPanel),
-		// Render the per-plan war view (delay reveal, status, cost picker,
-		// peace flow, surrender claims) for every non-cancelled war plan.
-		// The panel itself hides further once the underlying war has ended
-		// AND the plan has resolved.
-		alwaysOn: (plan) => plan.status !== 'cancelled',
+		// Only surface the per-plan war view inline during the delay-reveal
+		// phase (plan is pending and hasn't been placed on the public record
+		// yet); MainEventView promotes this to a "play area takeover" so
+		// participants roll and non-participants choose to join or stay out.
+		// Once placed, the same panel is reachable via the header "War"
+		// drawer instead — see warDrawer.ts.
+		alwaysOn: (plan) => plan.status === 'pending' && plan.row_number == null,
 	},
 
 	clandestinely_liaise: {

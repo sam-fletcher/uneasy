@@ -65,7 +65,16 @@
 .ft-section, .choices-section, .complete-section {
 	display: flex;
 	flex-direction: column;
-	gap: 0.4rem;
+	gap: 0.6rem;
+}
+
+/* Breathing room between stacked sections inside a plan panel, and between
+   a nested reveal/picker section and the surrounding note text. */
+.plan-panel > * + * {
+	margin-top: 0.9rem;
+}
+.choices-section .choices-section {
+	margin-top: 0.4rem;
 }
 
 .ft-prompt {

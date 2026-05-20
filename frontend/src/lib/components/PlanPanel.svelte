@@ -53,6 +53,12 @@
 		 * looking. Authority is conveyed by `isFocusPlayer`.
 		 */
 		prepEnabled?: boolean;
+		/**
+		 * Hide the post-scene prep grid and "next pending plan" call-to-action,
+		 * leaving only alwaysOn / resolving panels visible. Used when a Make War
+		 * delay reveal needs the play area's full attention.
+		 */
+		suppressPrep?: boolean;
 		/** Whether any dice roll is currently active. */
 		rollActive: boolean;
 		/** Latest roll outcome — set by parent when roll.resolved arrives. */
@@ -70,7 +76,7 @@
 
 	let {
 		gameID, currentRow, plans, assets, players, rankings, currentPlayerID,
-		isFocusPlayer, prepEnabled = false,
+		isFocusPlayer, prepEnabled = false, suppressPrep = false,
 		rollActive, rollOutcome, activeRoll = null,
 		onRollCreated, onPlansChanged, onPlanPrepared,
 	}: Props = $props();
@@ -241,7 +247,7 @@
 	{/if}
 
 <!-- ── Pending plans on current row ─────────────────────────────────────── -->
-{:else if pendingOnRow.length > 0 && isFocusPlayer}
+{:else if pendingOnRow.length > 0 && isFocusPlayer && !suppressPrep}
 	{@const nextPlan = pendingOnRow[0]}
 	<div class="plan-panel pending">
 		<div class="plan-header">
@@ -263,7 +269,7 @@
 {/if}
 
 <!-- ── Preparation dispatch ─────────────────────────────────────────────── -->
-{#if prepEnabled && !needsResolution}
+{#if prepEnabled && !needsResolution && !suppressPrep}
 	<div class="prep-section">
 		{#if isFocusPlayer && !eligibilityLoaded}
 			<p class="muted">Checking eligibility…</p>

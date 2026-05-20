@@ -49,9 +49,11 @@
 	);
 
 	const mySubmission = $derived(
-		reveal?.entries.find(e => e.player_id === currentPlayerID) ?? null
+		reveal?.entries.find(e => e.player_id === currentPlayerID && e.face != null) ?? null
 	);
-	const submittedIDs = $derived(new Set(reveal?.entries.map(e => e.player_id) ?? []));
+	const submittedIDs = $derived(
+		new Set(reveal?.entries.filter(e => e.face != null).map(e => e.player_id) ?? [])
+	);
 	const waitingOn = $derived(
 		participants.filter(p => !submittedIDs.has(p.player_id))
 	);
@@ -105,14 +107,26 @@
 			<p class="choices-note">Result delay: <strong>{reveal.result_delay}</strong></p>
 		{/if}
 	{:else if mySubmission}
-		<p class="choices-note">
-			You've submitted. Waiting on {waitingOn.length}
-			{waitingOn.length === 1 ? 'other' : 'others'}:
-			{waitingOn.map(p => p.display_name).join(', ')}
+		<p class="choices-header">Locked in</p>
+		{#if picked != null}
+			<div class="locked-face-row">
+				<div class="locked-face">
+					<D6Face value={picked} size={40} />
+				</div>
+			</div>
+		{/if}
+		<p class="choices-note locked-note">
+			{#if waitingOn.length === 0}
+				All submissions in — revealing…
+			{:else}
+				Waiting on {waitingOn.length}
+				{waitingOn.length === 1 ? 'other' : 'others'}:
+				{waitingOn.map(p => p.display_name).join(', ')}
+			{/if}
 		</p>
 	{:else}
 		<p class="choices-header">{prompt}</p>
-		<div class="chip-row" style="margin:0.5rem 0;">
+		<div class="chip-row face-row">
 			{#each faces as face}
 				<button
 					type="button"
@@ -125,9 +139,11 @@
 				</button>
 			{/each}
 		</div>
-		<button class="action-btn primary" onclick={submit} disabled={busy || picked == null}>
-			{busy ? '…' : 'Submit'}
-		</button>
+		<div class="submit-row">
+			<button class="action-btn primary" onclick={submit} disabled={busy || picked == null}>
+				{busy ? '…' : 'Submit'}
+			</button>
+		</div>
 		{#if waitingOn.length < participants.length}
 			<p class="choices-note">
 				{participants.length - waitingOn.length} of {participants.length} submitted.
@@ -137,3 +153,27 @@
 
 	{#if error}<p class="error-text">{error}</p>{/if}
 </div>
+
+<style>
+	.face-row {
+		justify-content: center;
+	}
+	.submit-row {
+		display: flex;
+		justify-content: center;
+	}
+	.locked-face-row {
+		display: flex;
+		justify-content: center;
+	}
+	.locked-face {
+		padding: 0.4rem 0.55rem;
+		border: 1px solid #8a6a3a;
+		border-radius: 8px;
+		background: rgba(138, 106, 58, 0.12);
+		box-shadow: 0 0 0 1px rgba(200, 169, 110, 0.15) inset;
+	}
+	.locked-note {
+		text-align: center;
+	}
+</style>

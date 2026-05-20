@@ -113,7 +113,7 @@
 		</p>
 	</div>
 {:else if war.status === 'active'}
-	<p class="choices-note muted">No outstanding cost-of-battle this row.</p>
+	<p class="choices-note muted"><br>No outstanding cost-of-battle this row.</p>
 {/if}
 
 {#if itsMyCostTurn && amFullParticipant}

@@ -15,17 +15,17 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">Delay reveal</p>
+	<p class="choices-header">Vote for the war's delay</p>
 	<p class="choices-note">
-		Each war participant reveals a die face. Delay equals
-		ceil(average). Other players may join either side below.
+		The row delay is the average of each particpant's choice, rounded up. 
+		Other players may join either side below.
 	</p>
 	{#if amParticipant && currentPlayerID != null}
 		<SimultaneousRevealInput
 			revealID={delayRevealID}
 			{currentPlayerID}
 			participants={revealParticipants}
-			prompt="Pick a die face for the war's delay"
+			prompt=""
 		/>
 	{:else}
 		<p class="choices-note muted">
