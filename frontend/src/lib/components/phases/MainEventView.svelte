@@ -8,7 +8,7 @@
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS, REVEAL_EVENTS } from '$lib/ws';
 	import { stayedOutOfWar } from '$lib/makeWarDismissed';
-	import { warDrawerOpen, activeWarCount } from '$lib/warDrawer';
+	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import MakeWarPanel from '$lib/components/plans/MakeWarPanel.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import type { PlanContext } from '$lib/components/plans/types';
@@ -326,9 +326,13 @@
 
 	// ── War drawer (header button) ───────────────────────────────────────────
 	// Once a Make War plan is placed on the public record, its panel hides
-	// from the play area; the player accesses ongoing war state via the
-	// header "War" button. Plans still in delay-reveal stay inline as the
-	// takeover above; resolving plans render via PlanPanel's resolve mode.
+	// from the play area; the player accesses war state via the header
+	// "War" button. Plans still in delay-reveal stay inline as the takeover
+	// above. The button colours itself off two counts:
+	//   • pending — plan still 'pending' on a future row (war planned but
+	//     not started). Drives the yellow tint.
+	//   • active — plan resolved, war row still 'active' (war ongoing).
+	//     Drives the red tint. Both non-zero → orange.
 	const drawerWarPlans = $derived(
 		plans.filter(p => {
 			if (p.plan_type !== 'make_war') return false;
@@ -339,7 +343,14 @@
 			return true;
 		}),
 	);
-	$effect(() => { activeWarCount.set(drawerWarPlans.length); });
+	const drawerPendingCount = $derived(
+		drawerWarPlans.filter(p => p.status === 'pending').length,
+	);
+	const drawerActiveCount = $derived(
+		drawerWarPlans.length - drawerPendingCount,
+	);
+	$effect(() => { pendingWarCount.set(drawerPendingCount); });
+	$effect(() => { activeWarCount.set(drawerActiveCount); });
 
 	const drawerCtx = $derived<PlanContext>({
 		gameID: game.id,

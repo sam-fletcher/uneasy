@@ -36,7 +36,7 @@
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
-	import { warDrawerOpen, activeWarCount } from '$lib/warDrawer';
+	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 
 	const gameID = $derived(page.params.id as string);
 
@@ -859,13 +859,17 @@
 				<button class="tones-button" onclick={() => rumorsOpen = true} aria-label="Open rumors">
 					Rumors{rumors.length > 0 ? ` (${rumors.length})` : ''}
 				</button>
-				{#if $activeWarCount > 0}
+				{#if $activeWarCount + $pendingWarCount > 0}
 					<button
 						class="tones-button war-button"
+						class:war-pending={$activeWarCount === 0}
+						class:war-mixed={$activeWarCount > 0 && $pendingWarCount > 0}
 						onclick={() => warDrawerOpen.set(true)}
 						aria-label="Open wars"
 					>
-						War{$activeWarCount > 1 ? ` (${$activeWarCount})` : ''}
+						War{$activeWarCount + $pendingWarCount > 1
+							? ` (${$activeWarCount + $pendingWarCount})`
+							: ''}
 					</button>
 				{/if}
 			</div>
@@ -1299,6 +1303,24 @@
 	}
 	.war-button:hover { background: #4a1a1a; }
 	.war-button:focus-visible { outline-color: #d07060; }
+
+	/* Yellow: only pending wars (planned, not yet started). */
+	.war-button.war-pending {
+		background: #3a3014;
+		border-color: #6a5824;
+		color: #f0e0a8;
+	}
+	.war-button.war-pending:hover { background: #4a3e1a; }
+	.war-button.war-pending:focus-visible { outline-color: #d0b060; }
+
+	/* Orange: mix of pending and active. */
+	.war-button.war-mixed {
+		background: #3a2214;
+		border-color: #6a4024;
+		color: #f0c898;
+	}
+	.war-button.war-mixed:hover { background: #4a2a1a; }
+	.war-button.war-mixed:focus-visible { outline-color: #d08850; }
 
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
 	.tones-sheet .small { font-size: 0.85rem; }

@@ -4,9 +4,9 @@ package game
 //
 // MakeWarResolutionData is attached to ResolutionData as the optional
 // `MakeWar` field; it holds Make War's plan-specific state (war pointer,
-// delay reveal pointer, declared enemy list, scene-posted flag). The war
-// itself persists in the wars table; this struct only holds the cursor
-// state the plan handler needs between rows.
+// delay reveal pointer, declared enemy list). The war itself persists in
+// the wars table; this struct only holds the cursor state the plan
+// handler needs between rows.
 
 import dbgen "uneasy/db/gen"
 
@@ -24,10 +24,6 @@ type MakeWarResolutionData struct {
 	// The authoritative participant list lives on the war_participants
 	// table; this is the snapshot used during OnPrepare.
 	EnemyPlayerIDs []int64 `json:"enemy_player_ids,omitempty"`
-
-	// ScenePosted flips true when the focus player marks the one-time
-	// declaration scene posted. Gates /complete.
-	ScenePosted bool `json:"scene_posted,omitempty"`
 }
 
 // LoadMakeWarData is a read-only convenience that parses a plan's

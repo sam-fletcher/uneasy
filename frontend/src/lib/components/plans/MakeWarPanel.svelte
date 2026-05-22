@@ -3,16 +3,16 @@
 
   A Make War plan creates a `war` row and a simultaneous delay reveal at prep
   time. The plan itself sits at row 0 (pending) until the reveal closes; then
-  it advances to the rolled row and resolves narratively (declaration scene +
-  complete). The war persists across rows and ends only via peace or full
-  surrender — so the cost-of-battle picker, peace flow, and surrender-claim UI
-  must remain visible long after the plan itself has resolved.
+  it advances to the rolled row, where "Begin resolution" auto-resolves it
+  in one step (no extra prompts) and the follow scene takes over. The war
+  persists across rows and ends only via peace or full surrender — so the
+  cost-of-battle picker, peace flow, and surrender-claim UI must remain
+  visible long after the plan itself has resolved.
 
   This panel is a dispatcher. The actual phase-specific UI lives in
   `war/`: PrepForm, DelayReveal, WarStatus, CostOfBattle, PeaceFlow,
-  SurrenderClaims, DeclarationScene. The parent owns the war-state fetch
-  and refresh lifecycle; children receive a slice + `onChanged` callback
-  that re-fetches.
+  SurrenderClaims. The parent owns the war-state fetch and refresh
+  lifecycle; children receive a slice + `onChanged` callback that re-fetches.
 -->
 <script lang="ts">
 	import './planPanel.css';
@@ -31,7 +31,6 @@
 	import CostOfBattle from './war/CostOfBattle.svelte';
 	import PeaceFlow from './war/PeaceFlow.svelte';
 	import SurrenderClaims from './war/SurrenderClaims.svelte';
-	import DeclarationScene from './war/DeclarationScene.svelte';
 
 	import type { PlanPanelProps } from './types';
 
@@ -41,8 +40,6 @@
 	const assets = $derived(ctx.assets);
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
-	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	// Make War uses one underlying view for both resolve and alwaysOn
@@ -56,7 +53,6 @@
 
 	const planMW = $derived(plan ? (parseResolutionData(plan).make_war ?? {}) : {});
 	const delayRevealID = $derived(planMW.delay_reveal_id ?? null);
-	const warScenePosted = $derived(planMW.scene_posted ?? false);
 
 	async function refreshWar() {
 		if (!plan) return;
@@ -126,8 +122,7 @@
 	<div class="plan-panel resolving">
 		<div class="plan-header">
 			<span class="plan-badge resolving-badge">
-				{plan.status === 'resolving' ? 'War — declaration scene'
-					: war?.status === 'ended' ? 'War (ended)'
+				{war?.status === 'ended' ? 'War (ended)'
 					: war?.status === 'active' ? 'War — ongoing'
 					: 'War — pending'}
 			</span>
@@ -191,18 +186,6 @@
 				{players}
 				{assets}
 				onChanged={refreshWar}
-				setError={setActionError}
-			/>
-		{/if}
-
-		{#if plan.status === 'resolving'}
-			<DeclarationScene
-				planID={plan.id}
-				preparerID={plan.preparer_id}
-				{players}
-				{isFocusPlayer}
-				{warScenePosted}
-				{onPlansChanged}
 				setError={setActionError}
 			/>
 		{/if}

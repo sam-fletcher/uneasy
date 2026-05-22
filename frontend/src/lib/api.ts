@@ -1667,12 +1667,6 @@ export function joinWar(planID: number, side: 1 | 2): Promise<PlanEcho> {
 	});
 }
 
-/** Make War — focus player marks the one-time declaration scene posted.
- * Required before completing the plan. */
-export function postWarScene(planID: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/post-war-scene`, { method: 'POST' });
-}
-
 /** Make War — pay this row's cost of battle to one opponent.
  * `surrender:true` after the payment marks the payer surrendered. */
 export function payBattleCost(

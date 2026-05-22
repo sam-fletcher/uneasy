@@ -7,7 +7,6 @@ export interface MakeWarResolutionData {
 	war_id?: number | null;
 	delay_reveal_id?: number | null;
 	enemy_player_ids?: number[];
-	scene_posted?: boolean;
 }
 
 export function parseMakeWarData(plan: Plan | null | undefined): MakeWarResolutionData {

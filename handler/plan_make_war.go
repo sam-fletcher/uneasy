@@ -6,10 +6,12 @@ package handler
 // players. All war participants simultaneously reveal a die; the plan's
 // delay equals ceil(average) of the revealed faces.
 //
-// The plan's resolution is purely narrative (no dice roll, no make/mar).
-// The focus player posts one scene when the plan reaches its row, then
-// completes. The war itself persists across rows in the `wars` table until
-// peace is agreed or one side fully surrenders.
+// The plan's resolution is purely narrative (no dice roll, no make/mar)
+// and auto-completes when the focus player clicks "Begin resolution" on
+// the war-start row — the "Make War succeeded." chat log then signals the
+// war's start and play moves straight to the follow scene. The war itself
+// persists across rows in the `wars` table until peace is agreed or one
+// side fully surrenders.
 //
 // Cost of battle — the recurring mechanic — is implemented in two places:
 //   - turn.go's advanceRowInner gates row advance on unpaid costs.
@@ -19,8 +21,6 @@ package handler
 // Extra routes:
 //
 //	POST /api/plans/:planId/join-war           — non-preparer joins a side.
-//	POST /api/plans/:planId/post-war-scene     — focus player marks the
-//	                                              one-time declaration scene.
 //	POST /api/plans/:planId/pay-battle-cost    — pay one opponent's cost
 //	                                              (optional surrender modifier).
 //	POST /api/plans/:planId/pay-war-entry      — late joiner pays one
@@ -155,18 +155,29 @@ func (mwHandler) ComputeDifficulty(
 	return 0, nil
 }
 
-// OnResolve marks the plan as pre-resolved narratively. No roll is created;
-// the focus player posts a declaration scene via /post-war-scene, then
-// calls /complete. Setting the plan's result up-front lets CompletePlan
-// finalise without a roll outcome.
+// OnResolve fully resolves the plan in one step. Make War has no dice roll
+// and no make/mar decision — the only thing the "Begin resolution" click
+// signifies is the in-fiction moment the war breaks open. So we mark the
+// plan resolved with result="make", emit plan.resolved (which produces the
+// "Make War succeeded." chat log), and let the regular follow-scene flow
+// take over. The war itself persists in the wars table and is unaffected.
 func (mwHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	res := makeOutcome
-	if err := deps.Q.SetPlanResultPreserveStatus(ctx, dbgen.SetPlanResultPreserveStatusParams{
+	if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
 		ID:     plan.ID,
 		Result: &res,
 	}); err != nil {
-		return nil, fmt.Errorf("pre-record war result: %w", err)
+		return nil, fmt.Errorf("resolve war plan: %w", err)
 	}
+	refreshed, err := deps.Q.GetPlanByID(ctx, plan.ID)
+	if err != nil {
+		return nil, fmt.Errorf("reload war plan: %w", err)
+	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
+		PlanID: plan.ID,
+		Result: res,
+	})
+	EmitPlanResolved(ctx, deps.Q, deps.Manager, refreshed, res)
 	return nil, nil
 }
 
@@ -182,19 +193,15 @@ func (mwHandler) ApplyChoice(
 	return nil
 }
 
-// CanComplete requires the focus player to have posted the war declaration
-// scene so the record isn't finalised before the narrative moment.
-func (mwHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if resData.MakeWar == nil || !resData.MakeWar.ScenePosted {
-		return errors.New("post the war's declaration scene before completing")
-	}
+// CanComplete is a no-op: OnResolve already finalised the plan, so /complete
+// should never be reached. Kept to satisfy the handler interface.
+func (mwHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
 	return nil
 }
 
 func (mwHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"join-war":             mwJoinHandler(deps),
-		"post-war-scene":       mwPostSceneHandler(deps),
 		"pay-battle-cost":      mwPayBattleCostHandler(deps),
 		"pay-war-entry":        mwPayWarEntryHandler(deps),
 		"take-surrender-asset": mwTakeSurrenderAssetHandler(deps),
@@ -319,33 +326,6 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		respond(w, http.StatusOK, map[string]any{
 			"war_id": war.ID, "player_id": player.ID, "side": body.Side,
 		})
-	}
-}
-
-// ── post-war-scene ───────────────────────────────────────────────────────────
-//
-// Focus player marks the one-time narrative beat complete. Gates /complete.
-func mwPostSceneHandler(deps *PlanDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, ok := requirePlanFocus(w, r, deps.Q)
-		if !ok {
-			return
-		}
-		if !requirePlanType(w, plan, model.PlanMakeWar) {
-			return
-		}
-		if plan.Status != model.PlanResolving {
-			respondErr(w, http.StatusConflict, "plan is not in resolving status")
-			return
-		}
-		ctx := r.Context()
-		resData := loadResolutionData(plan.ResolutionData)
-		resData.EnsureMakeWar().ScenePosted = true
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, r, "could not save scene state", err)
-			return
-		}
-		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "scene_posted": true})
 	}
 }
 
