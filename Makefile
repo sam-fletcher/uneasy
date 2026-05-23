@@ -1,5 +1,5 @@
 .PHONY: build frontend server placeholder clean \
-        test test-integration vet check-frontend check sqlc
+        test test-integration test-integration-run vet check-frontend check sqlc
 
 # Full build: compile the frontend and produce a single Go binary that
 # embeds it. Output: ./server
@@ -45,6 +45,14 @@ test:
 test-integration:
 	TEST_DATABASE_URL=$(TEST_DATABASE_URL) \
 		go test -tags=integration -count=1 -p 1 ./...
+
+# Run a single integration test (or matching pattern) in one package.
+# Usage: make test-integration-run RUN=TestFoo PKG=./handler/...
+PKG ?= ./...
+test-integration-run:
+	@test -n "$(RUN)" || (echo "RUN=<test name or regex> required" && exit 1)
+	TEST_DATABASE_URL=$(TEST_DATABASE_URL) \
+		go test -tags=integration -count=1 -run '$(RUN)' -v $(PKG)
 
 vet:
 	go build ./...

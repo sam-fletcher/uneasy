@@ -170,7 +170,6 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 		r.Get("/tables/{id}/prologue/cards", handler.GetPrologueCards(store))
 		r.Get("/tables/{id}/prologue/card-suggestions", handler.GetPrologueCardSuggestions(store))
 		r.Post("/tables/{id}/prologue/choose", handler.ChoosePrologue(store, manager))
-		r.Post("/tables/{id}/prologue/begin-ranking", handler.BeginPrologueRanking(store, manager))
 		r.Post("/tables/{id}/prologue/declare-hearts", handler.DeclareHearts(store, manager))
 		r.Post("/tables/{id}/prologue/finalize-ranking", handler.FinalizeTrackRanking(store, manager))
 		r.Post("/tables/{id}/prologue/place-set-asides", handler.PlaceSetAsides(store, manager))

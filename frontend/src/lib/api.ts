@@ -739,12 +739,6 @@ export function getPrologueCardSuggestions(
 	return apiFetch(`/tables/${gameID}/prologue/card-suggestions?suit=${encodeURIComponent(suit)}`);
 }
 
-export function beginPrologueRanking(
-	gameID: string | number
-): Promise<{ step: PrologueRankingStep }> {
-	return apiFetch(`/tables/${gameID}/prologue/begin-ranking`, { method: 'POST' });
-}
-
 export function declareHearts(
 	gameID: string | number,
 	count: number

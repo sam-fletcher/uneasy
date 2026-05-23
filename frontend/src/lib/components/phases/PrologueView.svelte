@@ -11,7 +11,6 @@
 		startMainEvent,
 		getPrologueSheets,
 		getPrologueCards,
-		beginPrologueRanking,
 		placePrologueSetAsides,
 		createExtraPeer,
 		listAssets,
@@ -134,10 +133,6 @@
 
 	const myTurns = $derived(claims.filter(c => c.player_id === currentPlayerID).length);
 	const isMyTurn = $derived(activePlayerID != null && activePlayerID === currentPlayerID);
-	const everyoneFinishedChoosing = $derived(
-		players.length > 0 && players.every(p => claims.filter(c => c.player_id === p.id).length >= 3)
-	);
-
 	function playerName(id: number | null): string {
 		if (id == null) return 'Dummy';
 		return players.find(p => p.id === id)?.display_name ?? '?';
@@ -165,21 +160,6 @@
 			assets = assetData.assets;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not refresh.';
-		}
-	}
-
-	// ── Begin ranking ────────────────────────────────────────────────────────
-	let beginning = $state(false);
-	async function onBeginRanking() {
-		if (beginning) return;
-		beginning = true;
-		error = '';
-		try {
-			await beginPrologueRanking(gameID);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not begin ranking.';
-		} finally {
-			beginning = false;
 		}
 	}
 
@@ -576,17 +556,6 @@
 		<p class="muted small">
 			Turns taken: {myTurns} / 3.
 		</p>
-
-		{#if isFacilitator}
-			<button
-				class="primary"
-				onclick={onBeginRanking}
-				disabled={!everyoneFinishedChoosing || beginning}
-				title={!everyoneFinishedChoosing ? 'Every player must take 3 turns first' : undefined}
-			>
-				{beginning ? '…' : 'Begin Ranking'}
-			</button>
-		{/if}
 
 	{:else if mode === 'declare'}
 		{#if currentTrack}

@@ -4,7 +4,7 @@ package handler
 //
 // Lifecycle:
 //
-//   tone_setting → start-prologue → prologue (choosing) → begin-ranking
+//   tone_setting → start-prologue → prologue (choosing) → ranking
 //     → declare/finalize/place-set-asides repeated for power, knowledge,
 //       esteem in order
 //     → extra-peers (≤3 players) → main_event
@@ -503,6 +503,16 @@ func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		broadcastTurnAdvanced(ctx, manager, s.Q, gameID)
 
+		// If every player has now taken all three turns, transition straight
+		// into the ranking sub-flow — no separate facilitator gate.
+		nextActive, _, terr := prologueTurnState(ctx, s.Q, gameID)
+		if terr == nil && nextActive == nil {
+			if rerr := enterPrologueRanking(ctx, s, manager, gameID); rerr != nil {
+				respondInternalErr(w, r, "could not enter ranking", rerr)
+				return
+			}
+		}
+
 		respond(w, http.StatusOK, map[string]any{
 			"sheet_type":  body.SheetType,
 			"choice_name": body.ChoiceName,
@@ -664,66 +674,29 @@ func cardLabel(c gamepkg.Card) string {
 	return c.Value + suit
 }
 
-// ── Begin ranking ────────────────────────────────────────────────────────────
+// ── Enter ranking ────────────────────────────────────────────────────────────
 
-// BeginPrologueRanking handles POST /api/games/{id}/prologue/begin-ranking.
-//
-// Facilitator-only. Requires every player to have taken three turns. Detaches
-// linked_card_* from all assets in the game (the cards "live with the player"
-// from here onward, not the asset) and enters the ranking sub-flow at
-// declare_power.
-func BeginPrologueRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, s.Q)
-		if !ok {
-			return
+// enterPrologueRanking detaches linked_card_* from all assets in the game
+// (the cards "live with the player" from here onward, not the asset) and
+// enters the ranking sub-flow at declare_power. Broadcasts the step change
+// on success. Called automatically once every player has taken three turns.
+func enterPrologueRanking(ctx context.Context, s *db.Store, manager *hub.Manager, gameID int64) error {
+	step := gamepkg.PrologueStepDeclarePower
+	err := s.InTx(ctx, func(q *dbgen.Queries) error {
+		if cErr := q.ClearAssetLinkedCards(ctx, gameID); cErr != nil {
+			return fmt.Errorf("detach card links: %w", cErr)
 		}
-		if !requirePrologueChoosing(w, game) {
-			return
+		if sErr := q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
+			ID: gameID, PrologueRankingStep: &step,
+		}); sErr != nil {
+			return fmt.Errorf("set ranking step: %w", sErr)
 		}
-
-		ctx := r.Context()
-
-		// Every player must have 3 turns recorded.
-		players, err := s.Q.GetPlayersByGame(ctx, game.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load players", err)
-			return
-		}
-		for _, p := range players {
-			n, err := s.Q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
-				GameID: game.ID, PlayerID: p.ID,
-			})
-			if err != nil {
-				respondInternalErr(w, r, "could not count turns", err)
-				return
-			}
-			if n < prologueTurnsPerPlayer {
-				respondErr(w, http.StatusBadRequest,
-					fmt.Sprintf("player %s has not taken all three turns", p.DisplayName))
-				return
-			}
-		}
-
-		step := gamepkg.PrologueStepDeclarePower
-		err = s.InTx(ctx, func(q *dbgen.Queries) error {
-			if cErr := q.ClearAssetLinkedCards(ctx, game.ID); cErr != nil {
-				return httpErr(http.StatusInternalServerError, "could not detach card links")
-			}
-			if sErr := q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
-				ID: game.ID, PrologueRankingStep: &step,
-			}); sErr != nil {
-				return httpErr(http.StatusInternalServerError, "could not enter ranking step")
-			}
-			return nil
-		})
-		if err != nil {
-			respondHTTPErr(w, r, err)
-			return
-		}
-
-		broadcastEvent(manager, game.ID, model.EventPrologueRankingStepChanged,
-			model.PrologueRankingStepChangedPayload{Step: step})
-		respond(w, http.StatusOK, map[string]any{"step": step})
+		return nil
+	})
+	if err != nil {
+		return err
 	}
+	broadcastEvent(manager, gameID, model.EventPrologueRankingStepChanged,
+		model.PrologueRankingStepChangedPayload{Step: step})
+	return nil
 }
