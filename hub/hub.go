@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -23,7 +24,18 @@ import (
 	"uneasy/model"
 )
 
-const messageBufferSize = 256 // Channel buffer depth for broadcast and client sends
+const (
+	messageBufferSize = 256 // Channel buffer depth for broadcast and client sends
+
+	// pingInterval is how often the server sends a WebSocket ping. The browser
+	// answers with an automatic pong; this keeps idle connections alive across
+	// proxies (LBs, dev tooling) that would otherwise close them, and lets us
+	// notice dead peers within a bounded window.
+	pingInterval = 30 * time.Second
+	// pingTimeout is how long we wait for the pong before declaring the
+	// connection dead and tearing it down.
+	pingTimeout = 10 * time.Second
+)
 
 // ── Manager ───────────────────────────────────────────────────────────────────
 
@@ -215,8 +227,13 @@ func (c *Client) readPump(ctx context.Context) {
 	}
 }
 
-// writePump drains c.send and writes messages to the WebSocket.
+// writePump drains c.send and writes messages to the WebSocket. It also
+// sends periodic pings so idle connections survive intermediary proxies and
+// so dead peers are noticed within ~pingInterval+pingTimeout.
 func (c *Client) writePump(ctx context.Context) {
+	pingTicker := time.NewTicker(pingInterval)
+	defer pingTicker.Stop()
+
 	for {
 		select {
 		case msg, ok := <-c.send:
@@ -228,6 +245,16 @@ func (c *Client) writePump(ctx context.Context) {
 				return
 			}
 			if err := c.conn.Write(ctx, websocket.MessageText, msg); err != nil {
+				return
+			}
+		case <-pingTicker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
+			err := c.conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				// No pong in time (or ctx cancelled) — peer is gone. Closing
+				// the connection unblocks readPump, which Unregisters us.
+				_ = c.conn.Close(websocket.StatusGoingAway, "ping timeout")
 				return
 			}
 		case <-ctx.Done():
