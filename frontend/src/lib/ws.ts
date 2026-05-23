@@ -36,6 +36,12 @@ export const EventTypes = {
 	SceneEnded: 'scene.ended',
 	SceneStarted: 'scene.started',
 	ScenePeerClaimed: 'scene.peer_claimed',
+	// RowStateChanged carries the server-authoritative RowState (which
+	// rulebook step the row is in). The client renders directly off this
+	// instead of inferring from focus/scene/plan events. See lib/api.ts
+	// for the RowState type and routes/table/[id]/+page.svelte for the
+	// handler.
+	RowStateChanged: 'row_state.changed',
 
 	// Scene posts & entries (replaces post.created)
 	ScenePostCreated: 'scene_post.created',

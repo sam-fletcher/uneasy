@@ -146,6 +146,7 @@ func setAndBroadcastFocusPlayer(
 			})
 		}
 	}
+	broadcastRowState(ctx, q, manager, gameID)
 	return true
 }
 
@@ -381,19 +382,13 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 					result["current_prologue_player_id"] = id
 				}
 			}
-			// In main_event, surface the focus player's turn-scene status so a
-			// refreshing client can tell whether they are mid-scene or in
-			// the post-scene action step (no client-side inference required).
-			if game.Phase == model.PhaseMainEvent && game.FocusPlayerID != nil && game.CurrentRow > 0 {
-				turnScene, err := s.Q.GetTurnScene(ctx, dbgen.GetTurnSceneParams{
-					GameID:        gameID,
-					RowNumber:     game.CurrentRow,
-					FocusPlayerID: *game.FocusPlayerID,
-				})
-				if err == nil && turnScene.EndedAt.Valid {
-					result["turn_scene_ended_at"] = turnScene.EndedAt.Time
-				} else {
-					result["turn_scene_ended_at"] = nil
+			// In main_event, surface the authoritative RowState (which step
+			// of the row are we in?) so the client renders directly off
+			// the server's verdict instead of inferring from event side
+			// effects. See model/row_state.go.
+			if game.Phase == model.PhaseMainEvent && game.CurrentRow > 0 {
+				if rs, err := ComputeRowState(ctx, s.Q, gameID); err == nil {
+					result["row_state"] = rs
 				}
 			}
 		}

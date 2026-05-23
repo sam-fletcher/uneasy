@@ -7,18 +7,21 @@
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS, REVEAL_EVENTS } from '$lib/ws';
-	import { stayedOutOfWar } from '$lib/makeWarDismissed';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import MakeWarPanel from '$lib/components/plans/MakeWarPanel.svelte';
+	import ClandestinelyLiaisePanel from '$lib/components/plans/ClandestinelyLiaisePanel.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import type { PlanContext } from '$lib/components/plans/types';
-	import { activeDemandAgainst, demandWinnersFromPlan, plansPendingOnRow, parseResolutionData } from '$lib/components/plans/shared';
+	import { activeDemandAgainst, demandWinnersFromPlan, parseResolutionData } from '$lib/components/plans/shared';
+	import { parseLiaiseData } from '$lib/plans/resolutionData/liaise';
+	// Note: plansPendingOnRow was previously used to infer the row's
+	// step. That inference now lives server-side in ComputeRowState.
 	import {
 		refreshAssets,
 		listWars,
 		getReveal,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse, SimultaneousReveal } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
@@ -35,7 +38,10 @@
 		assets: Asset[];
 		currentPlayerID: number | null;
 		recordRows: RecordRow[];
-		sceneEnded: boolean;
+		/** Authoritative row-state from the server. Null briefly during the
+		 * first snapshot fetch; treated as a "still loading" state by the
+		 * render chain below. See model/row_state.go for the type. */
+		rowState: RowState | null;
 		playerNameMap: Map<number, string>;
 		isFacilitator: boolean;
 		/** Active (unresolved) dice roll, or null if none. */
@@ -71,7 +77,7 @@
 		assets,
 		currentPlayerID,
 		recordRows = $bindable(),
-		sceneEnded = $bindable(),
+		rowState,
 		playerNameMap,
 		isFacilitator,
 		activeRoll = $bindable(),
@@ -118,51 +124,52 @@
 		for (const w of wars) for (const c of w.open_claims) ids.add(c.claimant_id);
 		return [...ids];
 	});
-	// Waiting-on derivation. Resolves who the game is blocked on, plus a
-	// step label and optional subtitle. Priority order:
-	//   1. Plan resolving           → focus player, 'Resolving plan'
-	//   2. Plan pending on row      → focus player, 'Plan to resolve'
-	//   3. War-cost row-advance block → union of cost-payers and claimants
-	//   4. Active scene             → focus player, 'Scene'
-	//   5. Pre-scene                → focus player, 'Set the scene'
-	//   6. Post-scene action        → focus player, 'Prepare a plan' (+ refresh subtitle)
+	// Waiting-on derivation. Renders the WaitingOnBar at the top of the
+	// page based on the server-authoritative RowState kind. The "waitees"
+	// (who the game is blocked on) are usually the focus player, with two
+	// exceptions: Make War's delay reveal blocks on the pending submitters,
+	// and the row-advance gates block on the cost-payers / claimants.
 	const mainEventWaitingOn = $derived.by<WaitingOnState>(() => {
 		const focusWaitee: Waitee[] = game.focus_player_id != null
 			? [{ kind: 'player', playerID: game.focus_player_id }]
 			: [];
 
-		if (plans.some(p => p.status === 'resolving')) {
-			return { waitees: focusWaitee, stepLabel: 'Resolving plan' };
-		}
-		if (plansPendingOnRow(plans, game.current_row).length > 0) {
-			return { waitees: focusWaitee, stepLabel: 'Plan to resolve' };
-		}
-		if (makeWarTakeover && makeWarPendingSubmitterIDs.length > 0) {
-			return {
-				waitees: makeWarPendingSubmitterIDs.map(id => ({ kind: 'player', playerID: id })),
-				stepLabel: 'Make War — delay reveal',
-			};
-		}
-		if (blockingCostPayers.length > 0 || blockingClaimants.length > 0) {
-			const ids = new Set<number>([...blockingCostPayers, ...blockingClaimants]);
-			const parts: string[] = [];
-			if (blockingCostPayers.length > 0) parts.push('cost of battle');
-			if (blockingClaimants.length > 0) parts.push('surrender-asset claims');
-			return {
-				waitees: [...ids].map(id => ({ kind: 'player', playerID: id })),
-				stepLabel: 'Row advance blocked',
-				stepSubtitle: parts.join(' · '),
-			};
-		}
-		if (activeScene) {
-			return { waitees: focusWaitee, stepLabel: 'Scene' };
-		}
-		if (game.focus_player_id != null && !sceneEnded) {
-			return { waitees: focusWaitee, stepLabel: 'Set the scene' };
-		}
-		if (game.focus_player_id != null && sceneEnded) {
-			const subtitle = `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
-			return { waitees: focusWaitee, stepLabel: 'Prepare a plan', stepSubtitle: subtitle };
+		switch (rowState?.kind) {
+			case 'plan_resolving':
+				return { waitees: focusWaitee, stepLabel: 'Resolving plan' };
+			case 'plan_pending':
+				return { waitees: focusWaitee, stepLabel: 'Plan to resolve' };
+			case 'await_delay_reveal': {
+				const planType = delayRevealPlan?.plan_type;
+				const label =
+					planType === 'make_war' ? 'Make War — delay reveal'
+					: planType === 'clandestinely_liaise' ? 'Clandestinely Liaise — delay reveal'
+					: 'Delay reveal';
+				return {
+					waitees: delayRevealPendingSubmitterIDs.map(id => ({ kind: 'player', playerID: id })),
+					stepLabel: label,
+				};
+			}
+			case 'await_battle_cost':
+			case 'await_surrender_claim': {
+				const ids = new Set<number>([...blockingCostPayers, ...blockingClaimants]);
+				const parts: string[] = [];
+				if (blockingCostPayers.length > 0) parts.push('cost of battle');
+				if (blockingClaimants.length > 0) parts.push('surrender-asset claims');
+				return {
+					waitees: [...ids].map(id => ({ kind: 'player', playerID: id })),
+					stepLabel: 'Row advance blocked',
+					stepSubtitle: parts.join(' · '),
+				};
+			}
+			case 'scene_active':
+				return { waitees: focusWaitee, stepLabel: 'Scene' };
+			case 'scene_setting':
+				return { waitees: focusWaitee, stepLabel: 'Set the scene' };
+			case 'post_scene_action': {
+				const subtitle = `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
+				return { waitees: focusWaitee, stepLabel: 'Prepare a plan', stepSubtitle: subtitle };
+			}
 		}
 		return { waitees: [] };
 	});
@@ -193,7 +200,7 @@
 
 	// Reset selections when assets or step changes.
 	$effect(() => {
-		if (!sceneEnded) selectedRefreshIDs = new Set();
+		if (rowState?.kind !== 'post_scene_action') selectedRefreshIDs = new Set();
 	});
 
 	function toggleRefreshSelection(id: number) {
@@ -226,57 +233,53 @@
 
 	// ── Plan state ────────────────────────────────────────────────────────────
 
-	/** True when there is an active resolving plan or a pending plan on the current row. */
-	const hasPlansToResolve = $derived(
-		plans.some(p => p.status === 'resolving') ||
-		plansPendingOnRow(plans, game.current_row).length > 0
-	);
-
 	/** True when an in-flight roll hasn't resolved yet. */
 	const rollActive = $derived(activeRoll != null && activeRoll.outcome == null);
 
-	// ── Make War "play area takeover" ────────────────────────────────────────
-	// While a Make War plan's delay reveal is still open (row_number is null),
-	// hand the whole play area over to the war box so participants can roll
-	// and non-participants can decide to join or stay out. The takeover lifts
-	// per-user when they click "Stay out of it" (stored client-side in
-	// stayedOutOfWar) and globally once the reveal closes (server sets the
-	// plan's row_number, removing it from this query).
-	const stayedOutSet = $derived($stayedOutOfWar);
-	const makeWarTakeoverPlan = $derived(
-		plans.find(p =>
-			p.plan_type === 'make_war'
-			&& p.status === 'pending'
-			&& p.row_number == null
-			&& !stayedOutSet.has(p.id),
-		) ?? null,
-	);
-	const makeWarTakeover = $derived(makeWarTakeoverPlan != null);
-
-	const makeWarDelayRevealID = $derived(
-		makeWarTakeoverPlan
-			? parseResolutionData(makeWarTakeoverPlan).make_war?.delay_reveal_id ?? null
+	// ── Delay-reveal play area takeover ──────────────────────────────────────
+	// While kind='await_delay_reveal', a single plan (Make War or
+	// Clandestinely Liaise) is blocking the row until all participants
+	// submit a hidden die. The play area shows the appropriate panel for
+	// every player; inputs are gated per-panel by participant identity.
+	const delayRevealPlan = $derived(
+		rowState?.kind === 'await_delay_reveal' && rowState.plan_id != null
+			? plans.find(p => p.id === rowState.plan_id) ?? null
 			: null,
 	);
-	let makeWarReveal = $state<SimultaneousReveal | null>(null);
-	async function refreshMakeWarReveal(revealID: number) {
-		try { makeWarReveal = await getReveal(revealID); }
-		catch { makeWarReveal = null; }
+	const delayRevealActive = $derived(delayRevealPlan != null);
+
+	// Extract the delay reveal ID from the right slot in resolution_data
+	// depending on the plan type — the two plans store it under different
+	// keys but otherwise share the simultaneous-reveal contract.
+	const delayRevealID = $derived.by<number | null>(() => {
+		if (!delayRevealPlan) return null;
+		if (delayRevealPlan.plan_type === 'make_war') {
+			return parseResolutionData(delayRevealPlan).make_war?.delay_reveal_id ?? null;
+		}
+		if (delayRevealPlan.plan_type === 'clandestinely_liaise') {
+			return parseLiaiseData(delayRevealPlan).delay_reveal_id ?? null;
+		}
+		return null;
+	});
+	let delayReveal = $state<SimultaneousReveal | null>(null);
+	async function refreshDelayReveal(revealID: number) {
+		try { delayReveal = await getReveal(revealID); }
+		catch { delayReveal = null; }
 	}
 	$effect(() => {
-		const id = makeWarDelayRevealID;
-		if (id == null) { makeWarReveal = null; return; }
-		void refreshMakeWarReveal(id);
+		const id = delayRevealID;
+		if (id == null) { delayReveal = null; return; }
+		void refreshDelayReveal(id);
 	});
 	useWindowEvents(REVEAL_EVENTS, (e) => {
-		const id = makeWarDelayRevealID;
+		const id = delayRevealID;
 		const detail = (e as CustomEvent<{ reveal_id: number }>).detail;
-		if (id != null && detail?.reveal_id === id) void refreshMakeWarReveal(id);
+		if (id != null && detail?.reveal_id === id) void refreshDelayReveal(id);
 	});
-	// Players in the war whose reveal entry is still face=null.
-	const makeWarPendingSubmitterIDs = $derived.by<number[]>(() => {
-		if (!makeWarReveal || makeWarReveal.is_complete) return [];
-		return makeWarReveal.entries
+	// Participants whose reveal entry is still face=null.
+	const delayRevealPendingSubmitterIDs = $derived.by<number[]>(() => {
+		if (!delayReveal || delayReveal.is_complete) return [];
+		return delayReveal.entries
 			.filter(e => e.face == null)
 			.map(e => e.player_id);
 	});
@@ -385,7 +388,19 @@
 				PlanPanel takes over. The page-level WaitingOnBar carries the
 				"who/what we're waiting on" copy.
 			-->
-			{#if activeScene && !makeWarTakeover}
+			<!-- ── Delay-reveal play-area takeover ──────────────────────────
+				While a Make War or Clandestinely Liaise plan is awaiting its
+				simultaneous reveal, every player sees the same panel for the
+				blocking plan. Inputs inside each panel are gated by participant
+				identity; non-participants watch.
+			-->
+			{#if delayRevealActive && delayRevealPlan}
+				{#if delayRevealPlan.plan_type === 'make_war'}
+					<MakeWarPanel ctx={drawerCtx} plan={delayRevealPlan} mode="alwaysOn" />
+				{:else if delayRevealPlan.plan_type === 'clandestinely_liaise'}
+					<ClandestinelyLiaisePanel ctx={drawerCtx} plan={delayRevealPlan} mode="alwaysOn" />
+				{/if}
+			{:else if activeScene}
 				<SceneDetailsPanel
 					gameID={game.id}
 					scene={activeScene}
@@ -398,7 +413,7 @@
 					{rollActive}
 					onRollCreated={onPlanRollCreated}
 				/>
-			{:else if !hasPlansToResolve && !sceneEnded && game.focus_player_id != null && !makeWarTakeover}
+			{:else if rowState?.kind === 'scene_setting' && game.focus_player_id != null}
 				<SceneSetupForm
 					gameID={game.id}
 					{assets}
@@ -425,8 +440,8 @@
 				{rankings}
 				{currentPlayerID}
 				{isFocusPlayer}
-				prepEnabled={sceneEnded}
-				suppressPrep={makeWarTakeover}
+				prepEnabled={rowState?.kind === 'post_scene_action'}
+				suppressPrep={delayRevealActive}
 				{rollActive}
 				{rollOutcome}
 				{activeRoll}
@@ -459,46 +474,41 @@
 				both auto-pass the focus marker server-side, so there is no
 				explicit "Pass Focus" step here.
 			-->
-			{#if isFocusPlayer && sceneEnded && !makeWarTakeover}
+			{#if isFocusPlayer && rowState?.kind === 'post_scene_action' && !delayRevealActive}
 				<div class="action-bar">
 					<div class="action-step">
-						{#if hasPlansToResolve}
-							<!-- A plan needs to be resolved before the focus player can act. -->
-							<span class="action-label">Resolve the active plan above before acting.</span>
-						{:else}
-							<!-- OR divider visually separates the plan grid (above)
-							     from the refresh-assets alternative (below). -->
-							<div class="or-divider" aria-hidden="true">
-								<span class="or-line"></span>
-								<span class="or-label">OR</span>
-								<span class="or-line"></span>
-							</div>
-							{#if refreshable.length > 0}
-								<div class="refresh-picker">
-									{#each refreshable as asset (asset.id)}
-										<label class="refresh-item" class:selected={selectedRefreshIDs.has(asset.id)}>
-											<input
-												type="checkbox"
-												checked={selectedRefreshIDs.has(asset.id)}
-												disabled={!selectedRefreshIDs.has(asset.id) && selectedRefreshIDs.size >= maxRefresh}
-												onchange={() => toggleRefreshSelection(asset.id)}
-											/>
-											<span class="refresh-asset-name">{asset.name}</span>
-											<span class="refresh-asset-type">{asset.asset_type}</span>
-										</label>
-									{/each}
-								</div>
-							{/if}
-							<div class="action-buttons">
-								<button
-									class="action-btn primary"
-									onclick={onRefreshAssets}
-									disabled={actionBusy || selectedRefreshIDs.size === 0}
-								>
-									{actionBusy ? '…' : `Refresh ${refreshButtonCount} Asset${refreshButtonCount === 1 ? '' : 's'}`}
-								</button>
+						<!-- OR divider visually separates the plan grid (above)
+						     from the refresh-assets alternative (below). -->
+						<div class="or-divider" aria-hidden="true">
+							<span class="or-line"></span>
+							<span class="or-label">OR</span>
+							<span class="or-line"></span>
+						</div>
+						{#if refreshable.length > 0}
+							<div class="refresh-picker">
+								{#each refreshable as asset (asset.id)}
+									<label class="refresh-item" class:selected={selectedRefreshIDs.has(asset.id)}>
+										<input
+											type="checkbox"
+											checked={selectedRefreshIDs.has(asset.id)}
+											disabled={!selectedRefreshIDs.has(asset.id) && selectedRefreshIDs.size >= maxRefresh}
+											onchange={() => toggleRefreshSelection(asset.id)}
+										/>
+										<span class="refresh-asset-name">{asset.name}</span>
+										<span class="refresh-asset-type">{asset.asset_type}</span>
+									</label>
+								{/each}
 							</div>
 						{/if}
+						<div class="action-buttons">
+							<button
+								class="action-btn primary"
+								onclick={onRefreshAssets}
+								disabled={actionBusy || selectedRefreshIDs.size === 0}
+							>
+								{actionBusy ? '…' : `Refresh ${refreshButtonCount} Asset${refreshButtonCount === 1 ? '' : 's'}`}
+							</button>
+						</div>
 					</div>
 				</div>
 			{/if}
@@ -601,12 +611,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-	}
-
-	.action-label {
-		font-size: 0.78rem;
-		color: #c8a96e;
-		font-style: italic;
 	}
 
 	.action-buttons {

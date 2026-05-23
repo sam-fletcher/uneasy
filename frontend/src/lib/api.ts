@@ -499,6 +499,28 @@ export function getTable(id: string | number): Promise<{ game: Game; players: Pl
 	return apiFetch(`/tables/${id}`);
 }
 
+// RowStateKind names the rulebook step (or pre-step gate) a main-event row
+// is currently in. Authoritative — computed server-side from plans, scenes,
+// wars, and reveals. See model/row_state.go for the precedence chain.
+export type RowStateKind =
+	| 'phase_not_main_event'
+	| 'await_surrender_claim'
+	| 'await_battle_cost'
+	| 'await_delay_reveal'
+	| 'plan_resolving'
+	| 'plan_pending'
+	| 'scene_active'
+	| 'post_scene_action'
+	| 'scene_setting';
+
+export interface RowState {
+	kind: RowStateKind;
+	plan_id?: number | null;
+	scene_id?: number | null;
+	war_id?: number | null;
+	claim_id?: number | null;
+}
+
 // Full game state including phase-specific data.
 export function getGameState(id: string | number): Promise<{
 	game: Game;
@@ -508,10 +530,8 @@ export function getGameState(id: string | number): Promise<{
 	laws?: Law[];
 	rumors?: Rumor[];
 	current_prologue_player_id?: number | null;
-	/** ISO timestamp at which the focus player's turn-scene on the current
-	 * row was ended, or null if the scene is still active or not yet started.
-	 * Only present in main_event phase. */
-	turn_scene_ended_at?: string | null;
+	/** Authoritative row-state in main_event phase. Absent in other phases. */
+	row_state?: RowState;
 }> {
 	return apiFetch(`/tables/${id}/state`);
 }

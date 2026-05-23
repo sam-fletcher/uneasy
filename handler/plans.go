@@ -688,6 +688,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		broadcastEvent(manager, game.ID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 		EmitPlanPrepared(ctx, s.Q, manager, plan)
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 
 		// Consume any pending counter-demand waiting on this player: the
 		// target of a previously marred demand deferred their free counter
@@ -871,6 +872,7 @@ func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if h, hasHub := manager.Get(game.ID); hasHub {
 			h.BroadcastEvent(model.EventPlanResolving, model.PlanPayload{Plan: *plan})
 		}
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 
 		deps := &PlanDeps{Store: s, Manager: manager}
 		roll, err := h.OnResolve(ctx, deps, plan)
@@ -1042,6 +1044,7 @@ func CompletePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Result: resultStr,
 		})
 		EmitPlanResolved(ctx, s.Q, manager, *plan, resultStr)
+		broadcastRowState(ctx, s.Q, manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,

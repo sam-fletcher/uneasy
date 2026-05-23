@@ -381,6 +381,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				Peers: resp.Peers,
 			})
 		}
+		broadcastRowState(ctx, s.Q, manager, gameRow.ID)
 
 		respond(w, http.StatusCreated, resp)
 	}

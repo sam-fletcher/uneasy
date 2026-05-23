@@ -24,6 +24,11 @@ const (
 	EventSceneEnded       = "scene.ended"
 	EventSceneStarted     = "scene.started"
 	EventScenePeerClaimed = "scene.peer_claimed"
+	// EventRowStateChanged is broadcast whenever the row's authoritative
+	// state (RowState — the rulebook's step or a pre-step gate) transitions.
+	// Carries the new RowState so clients render off the server's verdict
+	// instead of inferring it from other events. See model/row_state.go.
+	EventRowStateChanged = "row_state.changed"
 
 	// Phase 2: Tone-setting
 	EventToneUpdated = "tone.updated"

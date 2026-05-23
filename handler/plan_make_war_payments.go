@@ -151,6 +151,8 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 				respondInternalErr(w, r, "could not apply surrender", err)
 				return
 			}
+			// Surrender opens claims and may end the war — both flip RowState.
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 			respond(w, http.StatusOK, map[string]any{
 				"war_id":      war.ID,
 				"row_number":  game.CurrentRow,
@@ -160,6 +162,8 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 			return
 		}
+		// Paying a cost may clear the AwaitBattleCost gate.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"war_id":      war.ID,
@@ -467,6 +471,9 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			broadcastEvent(deps.Manager, plan.GameID, model.EventWarEntryCompleted, model.WarEntryCompletedPayload{
 				WarID: war.ID, PlayerID: player.ID, Side: part.Side,
 			})
+			// Marking a participant entry-complete changes who's active in
+			// the cost-due computation; recompute row state.
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -548,6 +555,8 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 			WarID: war.ID, SurrenderedID: body.SurrenderedID,
 			ClaimantID: player.ID, AssetID: asset.ID,
 		})
+		// Fulfilling a surrender claim clears the AwaitSurrenderClaim gate.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"war_id":   war.ID,
 			"asset_id": asset.ID,

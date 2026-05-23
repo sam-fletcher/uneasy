@@ -217,6 +217,10 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if reveal.RevealType == "make_war_delay" && reveal.PlanID != nil {
 			applyMakeWarDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
 		}
+		// Both branches above either set a plan's row_number (clearing the
+		// Make War / Liaise delay-reveal gate) or cancel the plan; in either
+		// case the row-state computation will return a different kind.
+		broadcastRowState(ctx, s.Q, manager, reveal.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"reveal_id":    reveal.ID,

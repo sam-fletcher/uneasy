@@ -1,12 +1,15 @@
 <!-- MakeWar/WarStatus.svelte
-  Two-column side layout with per-side Join buttons for non-participants
-  and a centered "Stay out of it" button below that lifts the war-box
-  takeover for the rest of the session.
+  Two-column side layout. Every player sees the same panel; non-participants
+  see three choices below the columns: Join Side 1, Join Side 2, or Stay
+  out of it. The Stay-out button is purely communicative — it hides the
+  three buttons in favour of a "You're staying out" indicator, but does
+  not block the delay reveal (which completes when every reveal-entry
+  submitter is in, per the rulebook).
 -->
 <script lang="ts">
 	import { joinWar, type Player, type WarStateResponse } from '$lib/api';
 	import { playerName } from '../shared';
-	import { stayOutOfWar } from '$lib/makeWarDismissed';
+	import { warStayOuts, stayOutOfWar } from '$lib/warStayOuts';
 
 	let { war, planID, players, amParticipant, onChanged, setError }: {
 		war: WarStateResponse;
@@ -23,6 +26,11 @@
 		{ side: 1 as const, name: 'Declarer' },
 		{ side: 2 as const, name: 'Enemies' },
 	];
+
+	// Per-session: has this player chosen "Stay out of it" for this plan?
+	// If so, the three choice buttons collapse to a status indicator.
+	const stayedOut = $derived($warStayOuts.has(planID));
+	const showChoices = $derived(!amParticipant && war.status === 'active' && !stayedOut);
 
 	async function joinSide(side: 1 | 2) {
 		if (joinBusy) return;
@@ -65,7 +73,7 @@
 					</ul>
 				{/if}
 
-				{#if !amParticipant && war.status === 'active'}
+				{#if showChoices}
 					<button
 						class="action-btn side-join-btn"
 						onclick={() => joinSide(side)}
@@ -78,12 +86,14 @@
 		{/each}
 	</div>
 
-	{#if !amParticipant && war.status === 'active'}
+	{#if showChoices}
 		<div class="stay-out-row">
 			<button class="action-btn stay-out-btn" onclick={stayOut} disabled={joinBusy}>
 				Stay out of it
 			</button>
 		</div>
+	{:else if !amParticipant && war.status === 'active' && stayedOut}
+		<p class="choices-note muted stayed-out-note">You're staying out of it.</p>
 	{/if}
 
 	{#if war.status === 'ended'}
@@ -151,5 +161,10 @@
 	.stay-out-btn {
 		min-height: 44px;
 		min-width: 12rem;
+	}
+
+	.stayed-out-note {
+		text-align: center;
+		margin-top: 0.5rem;
 	}
 </style>

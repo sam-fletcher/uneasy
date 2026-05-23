@@ -177,6 +177,7 @@ func advanceRowInner(
 		}
 	}
 
+	broadcastRowState(r.Context(), q, manager, game.ID)
 	return newRow, false, nil
 }
 
@@ -226,6 +227,7 @@ func EndScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				SceneID:   endedSceneID,
 			})
 		}
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 		row := game.CurrentRow
 		var sceneIDPtr *int64
 		if endedSceneID != 0 {
@@ -417,6 +419,11 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 			DisplayName: next.DisplayName,
 		})
 	}
+	// Row state always changes when focus does (the new focus player's
+	// turn-scene state is different from the previous player's). If the
+	// row-advance path below fires too, advanceRowInner will re-broadcast
+	// with the post-advance state — idempotent.
+	broadcastRowState(ctx, s.Q, manager, game.ID)
 
 	// Soft conditions that block row advance: pending plans, outstanding
 	// war costs, or open surrender claims. Each check is conservative —
@@ -518,6 +525,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				DisplayName: next.DisplayName,
 			})
 		}
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 
 		// Step 7: are there pending plans still on this row?
 		pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{

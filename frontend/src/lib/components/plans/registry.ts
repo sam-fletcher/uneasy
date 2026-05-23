@@ -49,26 +49,14 @@ export const REGISTRY: Record<PlanType, PlanRegistryEntry> = {
 	host_festivity: { component: C(HostFestivityPanel) },
 	make_demands: { component: C(MakeDemandsPanel) },
 
-	make_war: {
-		component: C(MakeWarPanel),
-		// Only surface the per-plan war view inline during the delay-reveal
-		// phase (plan is pending and hasn't been placed on the public record
-		// yet); MainEventView promotes this to a "play area takeover" so
-		// participants roll and non-participants choose to join or stay out.
-		// Once placed, the same panel is reachable via the header "War"
-		// drawer instead — see warDrawer.ts.
-		alwaysOn: (plan) => plan.status === 'pending' && plan.row_number == null,
-	},
-
-	clandestinely_liaise: {
-		component: C(ClandestinelyLiaisePanel),
-		// Surface the simultaneous delay-reveal UI to the two participants
-		// (preparer + target) while the plan is still pending with no row
-		// assigned, before normal resolution begins.
-		alwaysOn: (plan, viewerID) =>
-			plan.status === 'pending'
-			&& plan.row_number == null
-			&& viewerID != null
-			&& (plan.preparer_id === viewerID || plan.target_player_id === viewerID),
-	},
+	// Make War and Clandestinely Liaise both have a simultaneous-reveal
+	// phase before their landing row is fixed. That phase is no longer
+	// driven by an alwaysOn predicate; it's the row_state kind
+	// 'await_delay_reveal', and MainEventView renders the appropriate
+	// panel directly in the play area for every player. Outside the
+	// delay reveal these plans take the standard prep/resolve paths.
+	// Make War's post-placement "war drawer" view is still rendered from
+	// MainEventView via warDrawer.ts, not via the registry.
+	make_war: { component: C(MakeWarPanel) },
+	clandestinely_liaise: { component: C(ClandestinelyLiaisePanel) },
 };

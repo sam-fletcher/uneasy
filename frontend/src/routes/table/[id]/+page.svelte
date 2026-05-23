@@ -17,6 +17,7 @@
 		type EndgameMode,
 		type Scene,
 		type ScenePeerView,
+		type RowState,
 	} from '$lib/api';
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
 	import type {
@@ -77,10 +78,13 @@
 	let recordRows = $state<RecordRow[]>([]);
 	let chatPosts = $state<ChatPost[]>([]);
 
-	// ── Turn step state ───────────────────────────────────────────────────────
-	// Tracks whether the focus player has ended the scene for the current row.
-	// Resets when focus changes or the row advances.
-	let sceneEnded = $state(false);
+	// ── Row state ─────────────────────────────────────────────────────────────
+	// Server-authoritative "which step of the row are we in?" — see
+	// model/row_state.go. The client never infers this from individual
+	// events; it is set from the snapshot at load time and updated by
+	// row_state.changed events. While loading, null; outside main_event
+	// the server sends kind='phase_not_main_event'.
+	let rowState = $state<RowState | null>(null);
 
 	// ── Scene state (SCENES_PLAN.md) ──────────────────────────────────────────
 	// activeScene is the currently-running scene (location/time/peers), or
@@ -260,7 +264,7 @@
 			}
 			case EventTypes.FocusChanged: {
 				if (game) game = { ...game, focus_player_id: msg.payload.player_id as number };
-				sceneEnded = false; // reset turn step when focus changes
+				// rowState is updated separately by RowStateChanged.
 				break;
 			}
 			case EventTypes.PrologueTurnAdvanced: {
@@ -270,12 +274,13 @@
 			case EventTypes.RowAdvanced: {
 				const newRow = msg.payload.row_number as number;
 				if (game) game = { ...game, current_row: newRow };
-				sceneEnded = false; // reset turn step for new row
 				// Chat is now a single continuous game-wide feed; no reset needed.
 				break;
 			}
 			case EventTypes.SceneEnded: {
-				sceneEnded = true;
+				// activeScene is content state (which scene is showing); rowState
+				// is step state. Both need to update — the latter via
+				// RowStateChanged, which arrives separately.
 				activeScene = null;
 				activeScenePeers = [];
 				break;
@@ -285,7 +290,10 @@
 				const peers = msg.payload.peers as ScenePeerView[];
 				activeScene = scene;
 				activeScenePeers = peers;
-				sceneEnded = false;
+				break;
+			}
+			case EventTypes.RowStateChanged: {
+				rowState = msg.payload.row_state as RowState;
 				break;
 			}
 			case EventTypes.ScenePeerClaimed: {
@@ -664,11 +672,8 @@
 				plans = plansData.plans;
 				activeScene = sceneData.scene;
 				activeScenePeers = sceneData.peers;
-				// Authoritative sceneEnded from the server: set when the
-				// focus player's turn-scene (the one without a resolved_plan_id)
-				// has a non-null ended_at. Survives page refresh; does not
-				// confuse plan-resolution scenes for turn-scenes.
-				sceneEnded = data.turn_scene_ended_at != null;
+				// Authoritative row-state from the server; survives refresh.
+				rowState = data.row_state ?? null;
 				if (rollData.roll) {
 					activeRoll = rollData.roll;
 					activeRollDice = rollData.dice;
@@ -959,7 +964,7 @@
 			{rumors}
 			{currentPlayerID}
 			bind:recordRows
-			bind:sceneEnded
+			{rowState}
 			{playerNameMap}
 			{isFacilitator}
 			bind:activeRoll

@@ -231,6 +231,8 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastEvent(deps.Manager, plan.GameID, model.EventWarEnded, model.WarEndedPayload{
 			WarID: war.ID, Reason: gamepkg.WarEndPeace, RowNumber: game.CurrentRow,
 		})
+		// Ending the war may clear an AwaitBattleCost gate on future rows.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"proposal_id": prop.ID,
 			"status":      gamepkg.PeaceAccepted,
