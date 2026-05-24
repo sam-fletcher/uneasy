@@ -51,9 +51,13 @@ func EmitPlanPrepared(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 	// resolves (see reveals.go).
 	planID := plan.ID
 	preparer := playerDisplayName(ctx, q, plan.PreparerID)
+	notes := ""
+	if plan.PreparationNotes != nil {
+		notes = strings.TrimSpace(*plan.PreparationNotes)
+	}
 	EmitSystemPost(ctx, q, manager, plan.GameID, "plan.prepared",
-		model.SeverityBoundary,
-		fmt.Sprintf("%s prepared %s.", preparer, planLabel(plan.PlanType)),
+		model.SeverityImportant,
+		fmt.Sprintf("%s prepared %s: %s", preparer, planLabel(plan.PlanType), notes),
 		plan.RowNumber, &planID, nil,
 		map[string]any{"plan_type": string(plan.PlanType), "preparer_id": plan.PreparerID})
 }

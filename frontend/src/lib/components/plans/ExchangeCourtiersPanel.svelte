@@ -87,6 +87,7 @@
 
 	async function submitPrep() {
 		if (prepBusy) return;
+		if (!prepNotes.trim()) { prepError = 'Preparation notes are required.'; return; }
 		prepBusy = true;
 		prepError = '';
 		try {
@@ -94,7 +95,7 @@
 				plan_type: 'exchange_courtiers',
 				target_player_id: ecTargetPlayerID,
 				target_asset_id: ecTargetAssetID,
-				preparation_notes: prepNotes.trim() || null,
+				preparation_notes: prepNotes.trim(),
 			});
 			ecTargetPlayerID = null;
 			ecTargetAssetID = null;
@@ -226,12 +227,12 @@
 		<label class="form-label">
 			Preparation:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="How are you planning to take them into your retinue?"></textarea>
+				placeholder="How are you planning to take them into your retinue?" required></textarea>
 		</label>
 
 		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep}
-				disabled={prepBusy || !ecTargetPlayerID || !ecTargetAssetID}>
+				disabled={prepBusy || !ecTargetPlayerID || !ecTargetAssetID || !prepNotes.trim()}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
 		</div>

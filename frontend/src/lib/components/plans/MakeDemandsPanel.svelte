@@ -3,7 +3,8 @@
 
   Flow:
   - Prep: pick a target plan from the public record. The demand lands on
-    max(target.row - 1, current_row); the picker shows that to the preparer.
+    the target's row, slotted in immediately before it (so it resolves
+    first within the row); the picker shows that to the preparer.
   - Resolve: dice roll → make→draft picker (alternating between demander and
     target-plan preparer, higher power-rank picks first); mar→counter-demand
     picker visible to the target.
@@ -57,7 +58,10 @@
 			p.plan_type !== 'make_demands' &&  // demand-on-demand is allowed by backend, but not on Make War — included anyway
 			p.plan_type !== 'make_war' &&
 			p.preparer_id !== currentPlayerID &&
-			p.status !== 'resolved' && p.status !== 'cancelled' &&
+			// A demand slots in *before* its target within the same row, so a
+			// target whose resolution has already started can't be demanded
+			// against — there's no "before" left.
+			p.status === 'pending' &&
 			// Variable-delay plans awaiting their delay reveal have no row
 			// yet; demand placement is derived from the target's row, so
 			// they're not targetable until the reveal closes.
@@ -75,20 +79,19 @@
 		targetPlanID == null ? null : (targetablePlans.find(p => p.id === targetPlanID) ?? null),
 	);
 
-	const landingRow = $derived(
-		// targetablePlans filters out null-row plans, so row_number is safe here.
-		selectedTarget == null ? null : Math.max(selectedTarget.row_number! - 1, currentRow),
-	);
+	const landingRow = $derived(selectedTarget?.row_number ?? null);
 
 	async function submitPrep() {
 		if (prepBusy) return;
 		if (targetPlanID == null) { prepError = 'Pick a target plan.'; return; }
+		const notes = prepNotes.trim();
+		if (notes === '') { prepError = 'Frame the demand in fiction — preparation notes are required.'; return; }
 		prepBusy = true; prepError = '';
 		try {
 			await preparePlan(gameID, {
 				plan_type: 'make_demands',
 				target_plan_id: targetPlanID,
-				preparation_notes: prepNotes.trim() || null,
+				preparation_notes: notes,
 			});
 			targetPlanID = null;
 			prepNotes = '';
@@ -255,23 +258,15 @@
 				</select>
 			</label>
 
-			{#if selectedTarget && landingRow != null}
-				<p class="choices-note">
-					This demand will land on <strong>row {landingRow}</strong>
-					(target is on row {selectedTarget.row_number}; the demand resolves
-					one row earlier, or immediately if that's the current row).
-				</p>
-			{/if}
-
 			<label class="form-label">
-				Preparation notes (optional):
+				Motivation:
 				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-					placeholder="Frame the demand in fiction…"></textarea>
+					placeholder="Why are you getting involved?" required></textarea>
 			</label>
 
 			<div class="form-actions">
 				<button class="action-btn primary" onclick={submitPrep}
-					disabled={prepBusy || targetPlanID == null}>
+					disabled={prepBusy || targetPlanID == null || !prepNotes.trim()}>
 					{prepBusy ? '…' : 'Prepare Plan'}
 				</button>
 			</div>

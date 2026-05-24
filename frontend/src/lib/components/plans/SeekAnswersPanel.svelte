@@ -188,10 +188,10 @@
 		<label class="form-label">
 			Research methods and topics:
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-				placeholder="What are you learning, and how?"></textarea>
+				placeholder="What are you learning, and how?" required></textarea>
 		</label>
 		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
 		</div>

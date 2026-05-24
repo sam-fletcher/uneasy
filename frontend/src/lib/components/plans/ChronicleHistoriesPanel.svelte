@@ -242,10 +242,10 @@
 		<label class="form-label">
 			Area of study:
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-				placeholder="What problem are you solving? What part of history are you investigating or recording?"></textarea>
+				placeholder="What problem are you solving? What part of history are you investigating or recording?" required></textarea>
 		</label>
 		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
 		</div>

@@ -40,12 +40,13 @@
 
 	async function submitPrep() {
 		if (prepBusy) return;
+		if (!prepNotes.trim()) { prepError = 'Preparation notes are required.'; return; }
 		prepBusy = true; prepError = '';
 		try {
 			await preparePlan(gameID, {
 				plan_type: 'make_introductions',
 				peer_count: miPeerCount,
-				preparation_notes: prepNotes.trim() || null,
+				preparation_notes: prepNotes.trim(),
 			});
 			miPeerCount = 1;
 			prepNotes = '';
@@ -111,10 +112,10 @@
 		<label class="form-label">
 			Intent:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="What role will they fill, in court or otherwise?"></textarea>
+				placeholder="What role will they fill, in court or otherwise?" required></textarea>
 		</label>
 		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
 		</div>

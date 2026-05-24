@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -314,6 +315,17 @@ func validatePlanPreparation(
 		return preparePlanValidation{
 			Status: http.StatusConflict,
 			ErrMsg: "game is not in the main event phase",
+		}
+	}
+
+	// Preparation notes are required for every plan — they're the only
+	// fiction-side trace some plans leave on the public record, and the
+	// system-post log includes them verbatim. Enforced centrally here so
+	// handlers don't each repeat the check.
+	if strings.TrimSpace(notes) == "" {
+		return preparePlanValidation{
+			Status: http.StatusBadRequest,
+			ErrMsg: "preparation notes are required",
 		}
 	}
 

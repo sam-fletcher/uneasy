@@ -35,10 +35,10 @@
 	<label class="form-label">
 		Event type:
 		<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-			placeholder="A gala or a ball? A big feast, a hunting party, a tournament?"></textarea>
+			placeholder="A gala or a ball? A big feast, a hunting party, a tournament?" required></textarea>
 	</label>
 	<div class="form-actions">
-		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+		<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
 			{prepBusy ? '…' : 'Prepare Plan'}
 		</button>
 	</div>

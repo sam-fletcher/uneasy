@@ -49,12 +49,13 @@
 	async function submitPrep() {
 		if (prepBusy) return;
 		if (clPartnerID == null) { prepError = 'Pick a partner.'; return; }
+		if (!prepNotes.trim()) { prepError = 'Preparation notes are required.'; return; }
 		prepBusy = true; prepError = '';
 		try {
 			await preparePlan(gameID, {
 				plan_type: 'clandestinely_liaise',
 				target_player_id: clPartnerID,
-				preparation_notes: prepNotes.trim() || null,
+				preparation_notes: prepNotes.trim(),
 			});
 			clPartnerID = null; prepNotes = '';
 			onPlanPrepared();
@@ -234,7 +235,7 @@
 		<label class="form-label">
 			Details:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="Which peers are meeting? Where? Will you share a meal, meet under a bridge, or something more intimate?"></textarea>
+				placeholder="Which peers are meeting? Where? Will you share a meal, meet under a bridge, or something more intimate?" required></textarea>
 		</label>
 		<p class="choices-note muted">
 			Once prepared, you and your partner each reveal a die to set
@@ -242,7 +243,7 @@
 		</p>
 		<div class="form-actions">
 			<button class="action-btn primary" onclick={submitPrep}
-				disabled={prepBusy || clPartnerID == null}>
+				disabled={prepBusy || clPartnerID == null || !prepNotes.trim()}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
 		</div>

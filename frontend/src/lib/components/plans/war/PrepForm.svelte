@@ -1,5 +1,5 @@
 <!-- MakeWar/PrepForm.svelte
-  Declare-war prep: pick one or more enemies + optional notes.
+  Declare-war prep: pick one or more enemies + notes (required).
 -->
 <script lang="ts">
 	import { preparePlan, type Player } from '$lib/api';
@@ -30,12 +30,13 @@
 	async function submitPrep() {
 		if (prepBusy) return;
 		if (enemyIDs.size === 0) { prepError = 'Pick at least one enemy.'; return; }
+		if (!prepNotes.trim()) { prepError = 'Preparation notes are required.'; return; }
 		prepBusy = true; prepError = '';
 		try {
 			await preparePlan(gameID, {
 				plan_type: 'make_war',
 				enemy_player_ids: [...enemyIDs],
-				preparation_notes: prepNotes.trim() || null,
+				preparation_notes: prepNotes.trim(),
 			});
 			enemyIDs = new Set();
 			prepNotes = '';
@@ -56,9 +57,9 @@
 		/>
 	</FormField>
 	<label class="form-label">
-		Notes (optional):
+		Motivation:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="Casus belli, opening move, rally cry, et cetera"></textarea>
+				placeholder="Casus belli, opening move, rally cry, et cetera" required></textarea>
 	</label>
 	<p class="choices-note muted">
 		Once declared, all involved players reveal a die to set the delay (average rounded up).
@@ -66,8 +67,8 @@
 	</p>
 	<div class="form-actions">
 		<button class="action-btn primary" onclick={submitPrep}
-			disabled={prepBusy || enemyIDs.size === 0}>
-			{prepBusy ? '…' : 'Declare War'}
+			disabled={prepBusy || enemyIDs.size === 0 || !prepNotes.trim()}>
+			{prepBusy ? '…' : 'Prepare Plan'}
 		</button>
 	</div>
 </div>

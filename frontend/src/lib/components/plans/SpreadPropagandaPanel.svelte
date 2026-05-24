@@ -40,11 +40,12 @@
 
 	async function submitPrep() {
 		if (prepBusy) return;
+		if (!prepNotes.trim()) { prepError = 'Preparation notes are required.'; return; }
 		prepBusy = true; prepError = '';
 		try {
 			await preparePlan(gameID, {
 				plan_type: 'spread_propaganda',
-				preparation_notes: prepNotes.trim() || null,
+				preparation_notes: prepNotes.trim(),
 			});
 			prepNotes = '';
 			onPlanPrepared();
@@ -94,10 +95,10 @@
 		<label class="form-label">
 			Message and Methods:
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?"></textarea>
+				placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?" required></textarea>
 		</label>
 		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy}>
+			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
 				{prepBusy ? '…' : 'Prepare Plan'}
 			</button>
 		</div>

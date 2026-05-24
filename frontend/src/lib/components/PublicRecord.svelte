@@ -16,14 +16,17 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import type { RecordRow, Plan } from '$lib/api';
+	import type { RecordRow, Plan, Player } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
+	import { playerColorByID } from '$lib/playerColor';
 
 	interface Props {
 		rows: RecordRow[];
 		currentRow: number;
 		/** Map of player_id → display_name for entry attribution. */
 		playerNames: Map<number, string>;
+		/** Used to tint plan chips with each plan preparer's color. */
+		players: Player[];
 		/** Tapping a row pill in the expanded view → jump chat to that row's anchor. */
 		onRowJump?: (rowNumber: number) => void;
 		/** Tapping a plan chip → jump chat to that plan's plan.prepared anchor. */
@@ -33,7 +36,7 @@
 		onSceneJump?: (rowNumber: number) => void;
 	}
 
-	const { rows, currentRow, playerNames, onRowJump, onPlanJump, onSceneJump }: Props = $props();
+	const { rows, currentRow, playerNames, players, onRowJump, onPlanJump, onSceneJump }: Props = $props();
 
 	const TOTAL_ROWS = 13;
 	const ENGRAILED_AFTER = new Set([4, 8, 12]);
@@ -182,22 +185,25 @@
 					<div class="row-content">
 						{#if row}
 							{#each row.plans as plan (plan.id)}
+								{@const tint = playerColorByID(plan.preparer_id, players)}
 								<button
 									class="plan-chip {planStatusClass(plan.status)}"
+									style:--player-color={tint}
 									onclick={() => onPlanJump?.(plan.id)}
-									aria-label="Jump to {planLabel(plan)}"
+									aria-label="Jump to {planLabel(plan)} by {authorName(plan.preparer_id)}"
 								>
 									<span class="plan-name">{planLabel(plan)}</span>
 									<span class="plan-status">{plan.status}</span>
 								</button>
 							{/each}
 							{#each row.entries as entry (entry.id)}
+								{@const authorColor = playerColorByID(entry.author_id, players)}
 								<button
 									class="entry-line"
 									onclick={() => onSceneJump?.(entry.row_number)}
 									aria-label="Jump to scene on row {entry.row_number}"
 								>
-									<span class="entry-author">{authorName(entry.author_id)}</span>
+									<span class="entry-author" style:color={authorColor}>{authorName(entry.author_id)}</span>
 									{entry.body}
 								</button>
 							{/each}
@@ -440,8 +446,13 @@
 		font-size: 0.72rem;
 		padding: 0.15rem 0.45rem;
 		border-radius: 10px;
+		/* --player-color is set inline to the preparer's color. The chip's
+		   border uses it directly (matching ChatPanel's name-color treatment);
+		   background stays the neutral dark so other status borders (resolving,
+		   resolved) can override the right/top/bottom edges. */
 		background: #2a2a2a;
-		border: 1px solid #444;
+		border: 1px solid var(--player-color, #444);
+		border-left: 3px solid var(--player-color, #444);
 		align-self: flex-start;
 		color: inherit;
 		cursor: pointer;
@@ -450,12 +461,14 @@
 	}
 	.plan-chip:hover { background: #333; }
 
-	.plan-name { font-weight: 600; color: #e8e4d9; }
+	.plan-name { font-weight: 600; color: var(--player-color, #e8e4d9); }
 	.plan-status { color: #888; font-size: 0.65rem; text-transform: uppercase; }
-	.plan-pending   { border-color: #666; }
-	.plan-resolving { border-color: #e0a040; background: #2a2010; }
-	.plan-resolved  { border-color: #6dbf7a; opacity: 0.7; }
-	.plan-cancelled { border-color: #555; opacity: 0.4; }
+	/* Status colors override the right/top/bottom border (keeping the
+	   preparer-color left edge intact). */
+	.plan-pending   { /* default chip styling — preparer color carries identity */ }
+	.plan-resolving { border-top-color: #e0a040; border-right-color: #e0a040; border-bottom-color: #e0a040; }
+	.plan-resolved  { border-top-color: #6dbf7a; border-right-color: #6dbf7a; border-bottom-color: #6dbf7a; opacity: 0.7; }
+	.plan-cancelled { opacity: 0.4; }
 
 	.entry-line {
 		font-size: 0.82rem;
@@ -476,7 +489,7 @@
 
 	.entry-author {
 		font-weight: 600;
-		color: #c8a96e;
+		/* color set inline from the entry author's playerColor */
 		margin-right: 0.35em;
 	}
 

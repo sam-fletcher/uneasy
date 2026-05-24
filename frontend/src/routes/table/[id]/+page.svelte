@@ -902,6 +902,7 @@
 			rows={recordRows}
 			currentRow={game.current_row}
 			playerNames={playerNameMap}
+			{players}
 			onRowJump={jumpToRow}
 			onPlanJump={jumpToPlan}
 			onSceneJump={jumpToScene}

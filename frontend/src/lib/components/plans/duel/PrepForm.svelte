@@ -72,11 +72,11 @@
 	<label class="form-label">
 		Location:
 		<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-			placeholder="Where will the duel take place?"></textarea>
+			placeholder="Where will the duel take place?" required></textarea>
 	</label>
 	<div class="form-actions">
 		<button class="action-btn primary" onclick={submitPrep}
-			disabled={prepBusy || prepTargetPlayerID == null}>
+			disabled={prepBusy || prepTargetPlayerID == null || !prepNotes.trim()}>
 			{prepBusy ? '…' : 'Prepare Plan'}
 		</button>
 	</div>
