@@ -16,14 +16,14 @@
 -->
 <script lang="ts">
 	import {
-		getPlanEligibility, resolvePlan,
+		getPlanEligibility,
 		type Plan, type PlanType, type Asset, type Player, type Ranking,
 		type EligiblePlan, type IneligiblePlan, type DiceRoll,
 		type RankingCategory,
 	} from '$lib/api';
 
 	import './plans/planPanel.css';
-	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER, playerName, plansPendingOnRow } from './plans/shared';
+	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER, playerName } from './plans/shared';
 	import { REGISTRY } from './plans/registry';
 	import RowPill from './plans/RowPill.svelte';
 	import { highlightedRow } from '$lib/highlight';
@@ -94,9 +94,13 @@
 
 	const resolvingPlan = $derived(plans.find(p => p.status === 'resolving') ?? null);
 
-	const pendingOnRow = $derived(plansPendingOnRow(plans, currentRow));
-
-	const needsResolution = $derived(resolvingPlan != null || pendingOnRow.length > 0);
+	// Pending plans on the current row are auto-kicked off server-side (see
+	// broadcastRowState in handler/row_state.go), so the client should only
+	// ever observe `resolving` here in normal play. The 'pending' status
+	// surfaces only briefly during the server-side transition, or in the
+	// rare case OnResolve errors and leaves the plan pending — neither
+	// warrants a play-area panel.
+	const needsResolution = $derived(resolvingPlan != null);
 
 	// Plans that should render out-of-band (independent of resolving status).
 	// Driven by per-plan alwaysOn predicates in the registry. Each panel may
@@ -196,25 +200,6 @@
 		}
 	});
 
-	// ── Pending-plan resolution kickoff ───────────────────────────────────────
-
-	let resError = $state('');
-	let resBusy = $state(false);
-
-	async function onResolve(plan: Plan) {
-		if (resBusy) return;
-		resBusy = true;
-		resError = '';
-		try {
-			const res = await resolvePlan(plan.id);
-			if (res.roll) onRollCreated(res.roll);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not begin resolution.';
-		} finally {
-			resBusy = false;
-		}
-	}
 </script>
 
 <!-- ── Always-on plan views (registry-driven) ──────────────────────────── -->
@@ -246,26 +231,6 @@
 		</div>
 	{/if}
 
-<!-- ── Pending plans on current row ─────────────────────────────────────── -->
-{:else if pendingOnRow.length > 0 && isFocusPlayer && !suppressPrep}
-	{@const nextPlan = pendingOnRow[0]}
-	<div class="plan-panel pending">
-		<div class="plan-header">
-			<span class="plan-badge pending-badge">Resolve first</span>
-			<strong class="plan-title">{PLAN_SHORT[nextPlan.plan_type] ?? nextPlan.plan_type}</strong>
-			<span class="plan-preparer">by {playerName(players, nextPlan.preparer_id)}</span>
-		</div>
-		{#if nextPlan.preparation_notes}
-			<p class="plan-notes">"{nextPlan.preparation_notes}"</p>
-		{/if}
-		{#if resError}
-			<p class="res-error">{resError}</p>
-		{/if}
-		<p class="resolve-note">This plan must be resolved before the regular scene.</p>
-		<button class="action-btn primary" onclick={() => onResolve(nextPlan)} disabled={resBusy}>
-			{resBusy ? '…' : 'Begin resolution'}
-		</button>
-	</div>
 {/if}
 
 <!-- ── Preparation dispatch ─────────────────────────────────────────────── -->

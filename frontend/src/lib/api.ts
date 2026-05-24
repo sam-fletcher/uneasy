@@ -1194,14 +1194,6 @@ export function getPlan(planID: number): Promise<PlanDetail> {
 	return apiFetch(`/plans/${planID}`);
 }
 
-/** Begin resolution of a pending plan on the current row. */
-export function resolvePlan(planID: number): Promise<{
-	plan_id: number;
-	roll?: DiceRoll;
-}> {
-	return apiFetch(`/plans/${planID}/resolve`, { method: 'POST' });
-}
-
 /**
  * Exchange Courtiers fair trade step.
  *

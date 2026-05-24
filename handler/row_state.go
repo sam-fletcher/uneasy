@@ -187,9 +187,24 @@ func isNoRows(err error) bool {
 
 // broadcastRowState recomputes the RowState for a game and sends a
 // row_state.changed event. Called by every handler whose action could
-// change the result of ComputeRowState. Errors are swallowed silently — a
-// missed broadcast self-heals on the next legitimate transition or on
-// the next snapshot fetch (loadGameState includes row_state).
+// change the result of ComputeRowState.
+//
+// Auto-kickoff: if the computed state is kind=plan_pending, the helper
+// immediately calls kickoffPlanResolution and recomputes. In normal play,
+// plan_pending is a transient state the table never lingers in — there is
+// no decision to make at step 2 of the row sequence (the rulebook mandates
+// the plan must resolve before the scene), so the manual "Begin resolution"
+// click was just gating a foregone conclusion. The plan is now driven
+// straight from pending → resolving without operator action.
+//
+// If the kickoff itself errors out, the plan stays pending; the row state
+// remains plan_pending and surfaces as a recovery state (clients can retry
+// via the /resolve endpoint). The error is logged but not returned —
+// broadcast helpers must not interrupt the mutation that triggered them.
+//
+// Errors from ComputeRowState or the broadcast are swallowed silently — a
+// missed broadcast self-heals on the next legitimate transition or on the
+// next snapshot fetch (loadGameState includes row_state).
 func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64) {
 	if manager == nil {
 		return
@@ -201,6 +216,21 @@ func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 	state, err := ComputeRowState(ctx, q, gameID)
 	if err != nil {
 		return
+	}
+	// If the row has reached a pending plan, auto-kick off resolution and
+	// recompute. The kickoff itself broadcasts plan.resolving; we'll then
+	// broadcast the recomputed row_state (kind=plan_resolving, or later if
+	// OnResolve fully resolved the plan synchronously, e.g. Make War).
+	if state.Kind == model.RowStatePlanPending && state.PlanID != nil {
+		plan, perr := q.GetPlanByID(ctx, *state.PlanID)
+		if perr == nil {
+			if _, kerr := kickoffPlanResolution(ctx, q, manager, &plan); kerr != nil {
+				loggerFromContext(ctx).ErrorContext(ctx, "auto-kickoff failed",
+					"plan_id", plan.ID, "game_id", gameID, "err", kerr)
+			} else if recomputed, rerr := ComputeRowState(ctx, q, gameID); rerr == nil {
+				state = recomputed
+			}
+		}
 	}
 	h.BroadcastEvent(model.EventRowStateChanged, model.RowStateChangedPayload{RowState: state})
 }

@@ -14,8 +14,6 @@
 	import type { PlanContext } from '$lib/components/plans/types';
 	import { activeDemandAgainst, demandWinnersFromPlan, parseResolutionData } from '$lib/components/plans/shared';
 	import { parseLiaiseData } from '$lib/plans/resolutionData/liaise';
-	// Note: plansPendingOnRow was previously used to infer the row's
-	// step. That inference now lives server-side in ComputeRowState.
 	import {
 		refreshAssets,
 		listWars,
@@ -138,7 +136,11 @@
 			case 'plan_resolving':
 				return { waitees: focusWaitee, stepLabel: 'Resolving plan' };
 			case 'plan_pending':
-				return { waitees: focusWaitee, stepLabel: 'Plan to resolve' };
+				// Auto-kicked off by the server; this kind only surfaces
+				// briefly mid-transition, or in the recovery path if
+				// OnResolve failed. Same copy as plan_resolving — observers
+				// don't need to distinguish.
+				return { waitees: focusWaitee, stepLabel: 'Resolving plan' };
 			case 'await_delay_reveal': {
 				const planType = delayRevealPlan?.plan_type;
 				const label =

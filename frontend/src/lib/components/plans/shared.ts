@@ -232,12 +232,3 @@ export function ownerIntactAssets(assets: Asset[], ownerID: number | null): Asse
 	return assets.filter(a => a.owner_id === ownerID && !a.is_destroyed);
 }
 
-/**
- * Plans that are pending on `rowNumber`. A "pending on the current row"
- * blocks scene resolution and demands a Resolve First panel — this is the
- * canonical predicate. Variable-delay plans whose row hasn't been decided
- * yet have `row_number === null` and never match.
- */
-export function plansPendingOnRow(plans: Plan[], rowNumber: number): Plan[] {
-	return plans.filter(p => p.status === 'pending' && p.row_number === rowNumber);
-}

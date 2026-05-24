@@ -865,11 +865,56 @@ func GetPlan(s *db.Store) http.HandlerFunc {
 
 // ── ResolvePlan ───────────────────────────────────────────────────────────────
 
+// kickoffPlanResolution flips a pending plan to 'resolving', broadcasts the
+// plan.resolving event, and invokes the plan handler's OnResolve hook (which
+// usually creates a dice roll, but for some plan types performs other
+// initialization or even fully resolves the plan, e.g. Make War).
+//
+// Caller responsibilities:
+//   - plan must be in 'pending' status with row_number == game.current_row.
+//     Callers that come from a freshly-computed RowState (kind=plan_pending)
+//     satisfy this by construction.
+//   - The caller is responsible for any row_state broadcast that should
+//     follow. Most callers go through broadcastRowState which handles both
+//     the kickoff and the final broadcast in a single helper call.
+//
+// Returns the dice roll if one was created, or nil. Errors are returned
+// verbatim — the auto-kickoff path logs and leaves the plan pending; the
+// HTTP endpoint surfaces them as 500.
+func kickoffPlanResolution(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	plan *dbgen.Plan,
+) (*dbgen.DiceRoll, error) {
+	h, supported := GetHandler(plan.PlanType)
+	if !supported {
+		return nil, fmt.Errorf("no handler for plan type %q", plan.PlanType)
+	}
+
+	if err := q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID:     plan.ID,
+		Status: model.PlanResolving,
+	}); err != nil {
+		return nil, fmt.Errorf("set plan status: %w", err)
+	}
+	// Refresh the local copy so the broadcast payload reflects the new status.
+	plan.Status = model.PlanResolving
+
+	if hub, hasHub := manager.Get(plan.GameID); hasHub {
+		hub.BroadcastEvent(model.EventPlanResolving, model.PlanPayload{Plan: *plan})
+	}
+
+	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: manager}
+	return h.OnResolve(ctx, deps, plan)
+}
+
 // ResolvePlan handles POST /api/plans/:planId/resolve.
 //
-// Focus player begins resolution. Sets the plan to 'resolving', then calls
-// h.OnResolve() which creates the dice roll (or returns nil for plans that
-// have a custom pre-roll flow, like Exchange Courtiers).
+// Normally the kickoff happens automatically inside advanceAndBroadcastRowState
+// whenever the table enters kind=plan_pending. This endpoint remains as a
+// retry/escape hatch for the rare case where OnResolve fails — the row state
+// stays pending and the focus player can re-trigger via this endpoint.
 func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, plan, ok := requirePlanFocus(w, r, s.Q)
@@ -885,33 +930,13 @@ func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		h, supported := GetHandler(plan.PlanType)
-		if !supported {
-			respondErr(w, http.StatusInternalServerError, "no handler for this plan type")
-			return
-		}
-
 		ctx := r.Context()
-
-		if err := s.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
-			ID:     plan.ID,
-			Status: model.PlanResolving,
-		}); err != nil {
-			respondInternalErr(w, r, "could not update plan status", err)
-			return
-		}
-
-		if h, hasHub := manager.Get(game.ID); hasHub {
-			h.BroadcastEvent(model.EventPlanResolving, model.PlanPayload{Plan: *plan})
-		}
-		broadcastRowState(ctx, s.Q, manager, game.ID)
-
-		deps := &PlanDeps{Store: s, Manager: manager}
-		roll, err := h.OnResolve(ctx, deps, plan)
+		roll, err := kickoffPlanResolution(ctx, s.Q, manager, plan)
 		if err != nil {
 			respondInternalErr(w, r, "could not begin resolution", err)
 			return
 		}
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 
 		resp := map[string]any{"plan_id": plan.ID}
 		if roll != nil {

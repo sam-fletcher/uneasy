@@ -12,11 +12,6 @@
 	border: 1px solid #8a6a3a;
 }
 
-.plan-panel.pending {
-	background: #1a1e1a;
-	border: 1px solid #4a6a4a;
-}
-
 .plan-header {
 	display: flex;
 	align-items: center;
@@ -35,7 +30,6 @@
 }
 
 .resolving-badge { background: #3a2800; color: #e0a040; border: 1px solid #8a6030; }
-.pending-badge   { background: #1a2a1a; color: #6dbf6d; border: 1px solid #3a6a3a; }
 
 .plan-title {
 	font-size: 0.9rem;
@@ -265,12 +259,6 @@
 	background: #1e1010;
 	border: 1px solid #6a3030;
 	border-radius: 5px;
-}
-
-.resolve-note {
-	font-size: 0.82rem;
-	color: #aaa;
-	margin: 0 0 0.25rem;
 }
 
 .prep-section {
