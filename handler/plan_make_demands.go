@@ -3,9 +3,11 @@ package handler
 // handler/plan_make_demands.go — Make Demands plan handler (Phase 3d).
 //
 // Make Demands (power, variable delay) targets another unresolved plan. The
-// demand lands on the row just before the target plan's row (or immediately,
-// if the target is on the current row). Difficulty is the target plan's
-// baseline plus the demander's power-rank deficit vs. the target's preparer.
+// demand lands on the *same* row as its target and slots in immediately
+// before it (taking the target's row_order; the target and later plans on
+// that row shift up by one), so the demand resolves first within the row.
+// Difficulty is the target plan's baseline plus the demander's power-rank
+// deficit vs. the target's preparer.
 //
 // On a made roll, the demander and target's preparer alternate drafting the
 // four demand options — control_leverage, keep_or_change_target, keep_assets,
@@ -66,6 +68,9 @@ func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	if target.Status == model.PlanResolved || target.Status == model.PlanCancelled {
 		return nil, "target plan is already resolved or cancelled"
 	}
+	if target.Status == model.PlanResolving {
+		return nil, "target plan is already resolving — a demand cannot slot in before it"
+	}
 	if target.PlanType == model.PlanMakeWar {
 		return nil, "Make War cannot be the target of a demand"
 	}
@@ -84,7 +89,7 @@ func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	if target.RowNumber == nil {
 		return nil, "target plan has not been assigned a row yet (its delay reveal is still open)"
 	}
-	row := gamepkg.DemandRowPlacement(*target.RowNumber, v.Game.CurrentRow)
+	row, _ := gamepkg.DemandPlacement(*target.RowNumber, target.RowOrder)
 	return &row, ""
 }
 
@@ -557,17 +562,20 @@ func synthesizeCounterDemand(
 	if target.RowNumber == nil {
 		return nil, "target plan has not been assigned a row yet (its delay reveal is still open)", http.StatusConflict
 	}
-	row := gamepkg.DemandRowPlacement(*target.RowNumber, game.CurrentRow)
+	if target.Status == model.PlanResolving {
+		return nil, "target plan is already resolving — a counter-demand cannot slot in before it", http.StatusConflict
+	}
+	row, rowOrder := gamepkg.DemandPlacement(*target.RowNumber, target.RowOrder)
 	if row > publicRecordRowCount {
 		return nil, "counter-demand would be placed past row 13", http.StatusConflict
 	}
 
-	count, err := deps.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
+	if err := deps.Q.ShiftRowOrderAtOrAfter(ctx, dbgen.ShiftRowOrderAtOrAfterParams{
 		GameID:    game.ID,
 		RowNumber: new(row),
-	})
-	if err != nil {
-		count = 0
+		RowOrder:  rowOrder,
+	}); err != nil {
+		return nil, "could not shift row order: " + err.Error(), http.StatusInternalServerError
 	}
 
 	plan, err := deps.Q.CreatePlan(ctx, dbgen.CreatePlanParams{
@@ -576,7 +584,7 @@ func synthesizeCounterDemand(
 		Category:      model.CategoryPower,
 		PreparerID:    preparerID,
 		RowNumber:     new(row),
-		RowOrder:      int16(count),
+		RowOrder:      rowOrder,
 		PreparedAtRow: game.CurrentRow,
 	})
 	if err != nil {

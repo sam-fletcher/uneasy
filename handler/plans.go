@@ -731,6 +731,26 @@ func createPlanInTx(
 	count int64,
 	manager *hub.Manager,
 ) (dbgen.Plan, error) {
+	rowOrder := int16(count)
+	// Make Demands is an exception: instead of appending to the target's row,
+	// it slots in immediately *before* the target so it resolves first. Take
+	// the target's row_order, then shift the target and any later plans on
+	// that row up by one. (See game.DemandPlacement.)
+	if body.PlanType == model.PlanMakeDemands && body.TargetPlanID != nil && targetRow != nil {
+		target, err := q.GetPlanByID(ctx, *body.TargetPlanID)
+		if err != nil {
+			return dbgen.Plan{}, httpErr(http.StatusBadRequest, "demand target not found")
+		}
+		rowOrder = target.RowOrder
+		if err := q.ShiftRowOrderAtOrAfter(ctx, dbgen.ShiftRowOrderAtOrAfterParams{
+			GameID:    game.ID,
+			RowNumber: targetRow,
+			RowOrder:  rowOrder,
+		}); err != nil {
+			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not shift row order: "+err.Error())
+		}
+	}
+
 	plan, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
 		GameID:           game.ID,
 		PlanType:         body.PlanType,
@@ -739,7 +759,7 @@ func createPlanInTx(
 		TargetPlayerID:   body.TargetPlayerID,
 		TargetAssetID:    body.TargetAssetID,
 		RowNumber:        targetRow,
-		RowOrder:         int16(count),
+		RowOrder:         rowOrder,
 		PreparedAtRow:    game.CurrentRow,
 		PreparationNotes: body.PreparationNotes,
 	})

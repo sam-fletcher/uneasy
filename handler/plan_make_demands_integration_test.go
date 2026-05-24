@@ -121,9 +121,10 @@ func TestMakeDemands_HappyPath_AssetRecipientTransfers(t *testing.T) {
 // ── Immediate counter-demand: synthesizeCounterDemand ─────────────────────────
 
 // After a marred demand, the target of the demand may immediately nominate a
-// new demand target. synthesizeCounterDemand should create the counter plan at
-// target.row - 1 (or the current row, whichever is later), wire the
-// targeted_plan_id column, and bypass normal token/eligibility checks.
+// new demand target. synthesizeCounterDemand should create the counter plan on
+// the *same* row as its target, slotted in immediately before it (so the
+// counter resolves first), wire the targeted_plan_id column, and bypass
+// normal token/eligibility checks.
 func TestMakeDemands_ImmediateCounterDemand(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -140,7 +141,12 @@ func TestMakeDemands_ImmediateCounterDemand(t *testing.T) {
 	assert.Empty(t, errMsg, "synthesize should succeed")
 	assert.NotNil(t, counter)
 
-	assert.Equal(t, new(int16(6)), counter.RowNumber, "row = target.row - 1")
+	assert.Equal(t, new(int16(7)), counter.RowNumber, "counter slots on the target's row")
+	// Re-fetch target — its row_order should have been shifted up by one.
+	refreshedTarget, err := q.GetPlanByID(ctx, counterTarget.ID)
+	require.NoError(t, err)
+	assert.Equal(t, counter.RowOrder+1, refreshedTarget.RowOrder,
+		"target shifted up; counter takes the slot before it")
 	assert.Equal(t, tg.Players[0].ID, counter.PreparerID)
 	assert.Equal(t, model.PlanMakeDemands, counter.PlanType)
 	assert.NotNil(t, counter.TargetedPlanID)
@@ -188,7 +194,7 @@ func TestMakeDemands_PendingCounterDemandConsumed(t *testing.T) {
 		"counter is owned by the deferred counter-demander")
 	assert.NotNil(t, counter.TargetedPlanID)
 	assert.Equal(t, newPlan.ID, *counter.TargetedPlanID)
-	assert.Equal(t, new(int16(5)), counter.RowNumber, "row = newPlan.row - 1")
+	assert.Equal(t, new(int16(6)), counter.RowNumber, "counter slots on newPlan's row")
 
 	// Pending row is marked resolved.
 	open, err := q.ListOpenPendingCounterDemandsForPlayer(ctx, tg.Players[0].ID)

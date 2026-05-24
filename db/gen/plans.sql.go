@@ -715,3 +715,23 @@ func (q *Queries) SetPlanTargets(ctx context.Context, arg SetPlanTargetsParams) 
 	_, err := q.db.Exec(ctx, setPlanTargets, arg.ID, arg.TargetPlayerID, arg.TargetAssetID)
 	return err
 }
+
+const shiftRowOrderAtOrAfter = `-- name: ShiftRowOrderAtOrAfter :exec
+UPDATE plans SET row_order = row_order + 1
+WHERE game_id = $1 AND row_number = $2 AND row_order >= $3
+`
+
+type ShiftRowOrderAtOrAfterParams struct {
+	GameID    int64  `db:"game_id" json:"game_id"`
+	RowNumber *int16 `db:"row_number" json:"row_number"`
+	RowOrder  int16  `db:"row_order" json:"row_order"`
+}
+
+// Increments row_order by 1 for all plans on (game_id, row_number) whose
+// row_order >= $3. Used to slot a Make Demands plan in *before* its target:
+// the demand takes the target's row_order; the target and any later plans
+// on that row shift up by one so the demand resolves first.
+func (q *Queries) ShiftRowOrderAtOrAfter(ctx context.Context, arg ShiftRowOrderAtOrAfterParams) error {
+	_, err := q.db.Exec(ctx, shiftRowOrderAtOrAfter, arg.GameID, arg.RowNumber, arg.RowOrder)
+	return err
+}

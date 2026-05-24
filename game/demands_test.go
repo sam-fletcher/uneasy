@@ -35,19 +35,13 @@ func TestDemandDifficulty_BaselineZero(t *testing.T) {
 	assert.Equal(t, int16(2), got)
 }
 
-func TestDemandRowPlacement_BeforeTarget(t *testing.T) {
-	// Target at row 7, game on row 3 → demand lands at row 6.
-	got := DemandRowPlacement(7, 3)
-	assert.Equal(t, int16(6), got)
-}
-
-func TestDemandRowPlacement_Immediate(t *testing.T) {
-	// Target on the current row → demand resolves now (not on row −1).
-	got := DemandRowPlacement(5, 5)
-	assert.Equal(t, int16(5), got)
-	// Also clamp when target-1 falls behind the current row.
-	got = DemandRowPlacement(4, 5)
-	assert.Equal(t, int16(5), got)
+func TestDemandPlacement_SlotsBeforeTarget(t *testing.T) {
+	// Demand lands on the target's row, taking the target's row_order so
+	// the target (and anything after it) gets shifted up by one — making
+	// the demand the plan resolved immediately before the target.
+	row, order := DemandPlacement(7, 2)
+	assert.Equal(t, int16(7), row)
+	assert.Equal(t, int16(2), order)
 }
 
 // TestDemandChain_TwoLevels exercises a chain of demands (option (a) from

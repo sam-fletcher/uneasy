@@ -39,11 +39,14 @@ func MakeDemandsDifficulty(targetDiff, demanderRank, targetRank int16) int16 {
 	return targetDiff
 }
 
-// DemandRowPlacement returns the row a demand should land on: one row before
-// the target plan's row, but never earlier than the game's current row
-// (demands on the current row resolve immediately).
-func DemandRowPlacement(targetRow, currentRow int16) int16 {
-	return max(targetRow-1, currentRow)
+// DemandPlacement returns the (row_number, row_order) a demand should land
+// on. Make Demands is an exception to the normal "rows below current" delay
+// rule: the demand goes on the *same* row as its target and slots in
+// immediately *before* it, so the demand resolves first within the row.
+// Callers must shift the row_order of the target (and anything after it on
+// that row) by +1 to make room — see ShiftRowOrderAtOrAfter.
+func DemandPlacement(targetRow, targetRowOrder int16) (int16, int16) {
+	return targetRow, targetRowOrder
 }
 
 // DemandDraftPickers returns (firstPicker, secondPicker) for the post-make

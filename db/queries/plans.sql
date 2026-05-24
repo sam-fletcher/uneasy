@@ -54,6 +54,14 @@ SELECT * FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1;
 -- name: SetPlanResolutionData :exec
 UPDATE plans SET resolution_data = $2 WHERE id = $1;
 
+-- name: ShiftRowOrderAtOrAfter :exec
+-- Increments row_order by 1 for all plans on (game_id, row_number) whose
+-- row_order >= $3. Used to slot a Make Demands plan in *before* its target:
+-- the demand takes the target's row_order; the target and any later plans
+-- on that row shift up by one so the demand resolves first.
+UPDATE plans SET row_order = row_order + 1
+WHERE game_id = $1 AND row_number = $2 AND row_order >= $3;
+
 -- name: SetPlanRowAndOrder :exec
 -- Sets a plan's row_number and row_order in a single update. Used by
 -- variable-delay plans (CL, MW) after their simultaneous reveal resolves:
