@@ -8,7 +8,7 @@
 		startPrologue,
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord, listGamePosts,
-		getRoll, getActiveRollForGame,
+		getRoll, getActiveRollForGame, listBankedDice,
 		listPlans, getPlan,
 		setEndgameMode,
 		getVisibleSecrets,
@@ -24,7 +24,7 @@
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
 		Law, Rumor,
 		ChatPost, SceneEntry, RecordRow, PresenceMember,
-		DiceRoll, DiceRollDie, DifficultyVote,
+		DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie,
 		Plan, Secret,
 	} from '$lib/api';
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
@@ -113,8 +113,9 @@
 	// It's set by roll.created WS events and on page load (via getRoll).
 	let activeRoll = $state<DiceRoll | null>(null);
 	let activeRollDice = $state<DiceRollDie[]>([]);
-	let activeRollVotes = $state<DifficultyVote[]>([]);
-	let voteOpen = $state(false);
+	let activeRollVotes = $state<VoteView[]>([]);
+	let activeRollParticipants = $state<RollParticipant[]>([]);
+	let bankedDice = $state<BankedDie[]>([]);
 
 	// ── Retinue sheet ─────────────────────────────────────────────────────────
 	let retinueOpenForPlayer = $state<number | null>(null);
@@ -397,17 +398,17 @@
 			// Dice roll events
 			case EventTypes.RollCreated: {
 				const roll = msg.payload.roll as DiceRoll;
-				// Fetch full details (includes dice) so we're in sync.
+				// Fetch full details (includes dice + participants) so we're in sync.
 				getRoll(roll.id).then(data => {
 					activeRoll = data.roll;
 					activeRollDice = data.dice;
 					activeRollVotes = data.votes;
-					voteOpen = false;
+					activeRollParticipants = data.participants;
 				}).catch(() => {
 					activeRoll = roll;
 					activeRollDice = [];
 					activeRollVotes = [];
-					voteOpen = false;
+					activeRollParticipants = [];
 				});
 				break;
 			}
@@ -418,31 +419,61 @@
 					getRoll(roll_id).then(data => {
 						activeRollDice = data.dice;
 					}).catch(() => {});
+					// Banked-die spend or asset leverage may have changed our
+					// unspent-banked list; refresh.
+					listBankedDice(gameID).then(d => { bankedDice = d.dice; }).catch(() => {});
 				}
 				break;
 			}
-			case EventTypes.RollVoteCalled: {
-				voteOpen = true;
+			case EventTypes.RollStageChanged: {
+				const { roll_id, stage } = msg.payload as { roll_id: number; stage: DiceRoll['stage'] };
+				if (activeRoll && activeRoll.id === roll_id) {
+					activeRoll = { ...activeRoll, stage };
+				}
+				break;
+			}
+			case EventTypes.RollIntentSet: {
+				const { roll_id, player_id, intent } = msg.payload as {
+					roll_id: number; player_id: number; intent: 'aid' | 'interfere';
+				};
+				if (activeRoll && activeRoll.id === roll_id) {
+					activeRollParticipants = activeRollParticipants.map(p =>
+						p.player_id === player_id ? { ...p, intent } : p
+					);
+				}
+				break;
+			}
+			case EventTypes.RollReadyChanged: {
+				const { roll_id, player_id, is_ready } = msg.payload as {
+					roll_id: number; player_id: number; is_ready: boolean;
+				};
+				if (activeRoll && activeRoll.id === roll_id) {
+					activeRollParticipants = activeRollParticipants.map(p =>
+						p.player_id === player_id ? { ...p, is_ready } : p
+					);
+				}
 				break;
 			}
 			case EventTypes.RollVoteCast: {
-				const { roll_id, player_id, vote } = msg.payload as {
-					roll_id: number; player_id: number; vote: 'yea' | 'nay';
+				const { roll_id, player_id } = msg.payload as {
+					roll_id: number; player_id: number;
 				};
 				if (activeRoll && activeRoll.id === roll_id) {
+					// Hidden ballot: only that the player voted.
 					activeRollVotes = [
 						...activeRollVotes.filter(v => v.player_id !== player_id),
-						{ roll_id, player_id, vote, voted_at: new Date().toISOString() }
+						{ roll_id, player_id, voted: true }
 					];
 				}
 				break;
 			}
 			case EventTypes.RollVoteResolved: {
-				const { roll_id, adjusted_difficulty } = msg.payload as {
-					roll_id: number; adjusted_difficulty: number;
+				const { roll_id, adjusted_difficulty, ballot } = msg.payload as {
+					roll_id: number; adjusted_difficulty: number; ballot: VoteView[];
 				};
 				if (activeRoll && activeRoll.id === roll_id) {
 					activeRoll = { ...activeRoll, adjusted_difficulty };
+					activeRollVotes = ballot;
 				}
 				break;
 			}
@@ -662,24 +693,24 @@
 			// Public record, plans, active roll, and active scene only matter
 			// in main_event.
 			if (data.game.phase === 'main_event' && data.game.current_row > 0) {
-				const [recordData, rollData, plansData, sceneData] = await Promise.all([
+				const [recordData, rollData, plansData, sceneData, bankedData] = await Promise.all([
 					getFullRecord(gameID),
 					getActiveRollForGame(gameID),
 					listPlans(gameID),
 					getActiveScene(gameID).catch(() => ({ scene: null, peers: [] as ScenePeerView[] })),
+					listBankedDice(gameID).catch(() => ({ dice: [] as BankedDie[] })),
 				]);
 				recordRows = recordData.rows;
 				plans = plansData.plans;
 				activeScene = sceneData.scene;
 				activeScenePeers = sceneData.peers;
-				// Authoritative row-state from the server; survives refresh.
 				rowState = data.row_state ?? null;
+				bankedDice = bankedData.dice;
 				if (rollData.roll) {
 					activeRoll = rollData.roll;
 					activeRollDice = rollData.dice;
 					activeRollVotes = rollData.votes;
-					// We don't know vote-open state from DB alone; check if votes exist.
-					voteOpen = rollData.votes.length > 0;
+					activeRollParticipants = rollData.participants;
 				}
 			}
 		} catch (e) {
@@ -971,7 +1002,8 @@
 			bind:activeRoll
 			bind:activeRollDice
 			bind:activeRollVotes
-			bind:voteOpen
+			bind:activeRollParticipants
+			bind:bankedDice
 			{plans}
 			onPlansChanged={refreshPlans}
 			{activeScene}

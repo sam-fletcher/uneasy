@@ -186,6 +186,7 @@ func ShakeUpRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			GameID:     gameID,
 			ActorID:    player.ID,
 			Difficulty: 0,
+			Stage:      "leverage",
 		})
 		if err != nil {
 			respondInternalErr(w, r, "could not persist roll", err)

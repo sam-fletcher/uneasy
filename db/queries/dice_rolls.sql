@@ -3,18 +3,23 @@
 -- ── Dice Rolls ───────────────────────────────────────────────────────
 
 -- name: CreateDiceRoll :one
-INSERT INTO dice_rolls (game_id, plan_id, row_number, actor_id, difficulty)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO dice_rolls (game_id, plan_id, row_number, actor_id, difficulty, stage)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetDiceRollByID :one
 SELECT * FROM dice_rolls WHERE id = $1;
 
+-- name: SetDiceRollStage :exec
+UPDATE dice_rolls SET stage = $2 WHERE id = $1;
+
 -- name: SetDiceRollAdjustedDifficulty :exec
 UPDATE dice_rolls SET adjusted_difficulty = $2 WHERE id = $1;
 
 -- name: ResolveDiceRoll :exec
-UPDATE dice_rolls SET result = $2, outcome = $3, resolved_at = now() WHERE id = $1;
+UPDATE dice_rolls
+SET result = $2, outcome = $3, resolved_at = now(), stage = 'resolved'
+WHERE id = $1;
 
 -- name: ListDiceRollsByGame :many
 SELECT * FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC;
@@ -45,7 +50,37 @@ UPDATE dice_roll_dice SET face = $2 WHERE id = $1;
 -- name: SetDieCancelled :exec
 UPDATE dice_roll_dice SET is_cancelled = TRUE WHERE id = $1;
 
--- ── Difficulty Votes ─────────────────────────────────────────────────
+-- name: SetDieCancelledBy :exec
+UPDATE dice_roll_dice
+SET is_cancelled = TRUE, cancelled_by_die_id = $2
+WHERE id = $1;
+
+-- ── Dice Roll Participants ───────────────────────────────────────────
+
+-- name: CreateRollParticipant :exec
+INSERT INTO dice_roll_participants (roll_id, player_id, intent, is_ready)
+VALUES ($1, $2, $3, $4);
+
+-- name: ListParticipantsByRoll :many
+SELECT * FROM dice_roll_participants WHERE roll_id = $1 ORDER BY player_id;
+
+-- name: GetParticipant :one
+SELECT * FROM dice_roll_participants WHERE roll_id = $1 AND player_id = $2;
+
+-- name: SetParticipantIntent :exec
+UPDATE dice_roll_participants
+SET intent = $3
+WHERE roll_id = $1 AND player_id = $2;
+
+-- name: SetParticipantReady :exec
+UPDATE dice_roll_participants
+SET is_ready = $3
+WHERE roll_id = $1 AND player_id = $2;
+
+-- name: SetAllParticipantsReady :exec
+UPDATE dice_roll_participants SET is_ready = TRUE WHERE roll_id = $1;
+
+-- ── Difficulty Votes (SMALLINT ±1) ───────────────────────────────────
 
 -- name: CreateDifficultyVote :exec
 INSERT INTO difficulty_votes (roll_id, player_id, vote)
@@ -53,12 +88,12 @@ VALUES ($1, $2, $3)
 ON CONFLICT (roll_id, player_id) DO UPDATE SET vote = EXCLUDED.vote;
 
 -- name: ListVotesByRoll :many
-SELECT * FROM difficulty_votes WHERE roll_id = $1;
+SELECT * FROM difficulty_votes WHERE roll_id = $1 ORDER BY voted_at;
 
--- name: CountVotesByRoll :one
+-- name: SumVotesByRoll :one
 SELECT
-  count(*) FILTER (WHERE vote = 'yea') AS yea_count,
-  count(*) FILTER (WHERE vote = 'nay') AS nay_count
+  count(*)::bigint               AS vote_count,
+  coalesce(sum(vote), 0)::bigint AS vote_sum
 FROM difficulty_votes WHERE roll_id = $1;
 
 -- name: ListInterferenceDiceByRoll :many

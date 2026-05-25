@@ -9,34 +9,45 @@ import (
 	"context"
 )
 
+const countUnspentBankedDiceByPlayer = `-- name: CountUnspentBankedDiceByPlayer :one
+SELECT count(*)::bigint AS dice_count
+FROM banked_dice
+WHERE game_id = $1 AND player_id = $2 AND used_at IS NULL
+`
+
+type CountUnspentBankedDiceByPlayerParams struct {
+	GameID   int64 `db:"game_id" json:"game_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+}
+
+func (q *Queries) CountUnspentBankedDiceByPlayer(ctx context.Context, arg CountUnspentBankedDiceByPlayerParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnspentBankedDiceByPlayer, arg.GameID, arg.PlayerID)
+	var dice_count int64
+	err := row.Scan(&dice_count)
+	return dice_count, err
+}
+
 const createBankedDie = `-- name: CreateBankedDie :one
 
-INSERT INTO banked_dice (game_id, player_id, face, source)
-VALUES ($1, $2, $3, $4)
-RETURNING id, game_id, player_id, face, source, created_at, used_at, used_roll_id
+INSERT INTO banked_dice (game_id, player_id, source)
+VALUES ($1, $2, $3)
+RETURNING id, game_id, player_id, source, created_at, used_at, used_roll_id
 `
 
 type CreateBankedDieParams struct {
 	GameID   int64  `db:"game_id" json:"game_id"`
 	PlayerID int64  `db:"player_id" json:"player_id"`
-	Face     int16  `db:"face" json:"face"`
 	Source   string `db:"source" json:"source"`
 }
 
 // sqlc query file for banked_dice (Clandestinely Liaise leverage_partner option).
 func (q *Queries) CreateBankedDie(ctx context.Context, arg CreateBankedDieParams) (BankedDice, error) {
-	row := q.db.QueryRow(ctx, createBankedDie,
-		arg.GameID,
-		arg.PlayerID,
-		arg.Face,
-		arg.Source,
-	)
+	row := q.db.QueryRow(ctx, createBankedDie, arg.GameID, arg.PlayerID, arg.Source)
 	var i BankedDice
 	err := row.Scan(
 		&i.ID,
 		&i.GameID,
 		&i.PlayerID,
-		&i.Face,
 		&i.Source,
 		&i.CreatedAt,
 		&i.UsedAt,
@@ -46,7 +57,7 @@ func (q *Queries) CreateBankedDie(ctx context.Context, arg CreateBankedDieParams
 }
 
 const getBankedDie = `-- name: GetBankedDie :one
-SELECT id, game_id, player_id, face, source, created_at, used_at, used_roll_id
+SELECT id, game_id, player_id, source, created_at, used_at, used_roll_id
 FROM banked_dice
 WHERE id = $1
 `
@@ -58,7 +69,6 @@ func (q *Queries) GetBankedDie(ctx context.Context, id int64) (BankedDice, error
 		&i.ID,
 		&i.GameID,
 		&i.PlayerID,
-		&i.Face,
 		&i.Source,
 		&i.CreatedAt,
 		&i.UsedAt,
@@ -68,7 +78,7 @@ func (q *Queries) GetBankedDie(ctx context.Context, id int64) (BankedDice, error
 }
 
 const listBankedDiceByPlayer = `-- name: ListBankedDiceByPlayer :many
-SELECT id, game_id, player_id, face, source, created_at, used_at, used_roll_id
+SELECT id, game_id, player_id, source, created_at, used_at, used_roll_id
 FROM banked_dice
 WHERE game_id = $1 AND player_id = $2 AND used_at IS NULL
 ORDER BY created_at ASC
@@ -93,7 +103,6 @@ func (q *Queries) ListBankedDiceByPlayer(ctx context.Context, arg ListBankedDice
 			&i.ID,
 			&i.GameID,
 			&i.PlayerID,
-			&i.Face,
 			&i.Source,
 			&i.CreatedAt,
 			&i.UsedAt,

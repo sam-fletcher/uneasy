@@ -19,7 +19,7 @@
 		listWars,
 		getReveal,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, DifficultyVote, Plan, Scene, ScenePeerView, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, Scene, ScenePeerView, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
@@ -45,8 +45,9 @@
 		/** Active (unresolved) dice roll, or null if none. */
 		activeRoll: DiceRoll | null;
 		activeRollDice: DiceRollDie[];
-		activeRollVotes: DifficultyVote[];
-		voteOpen: boolean;
+		activeRollVotes: VoteView[];
+		activeRollParticipants: RollParticipant[];
+		bankedDice: BankedDie[];
 		/** All plans for this game — owned and fetched by the parent; read-only here. */
 		plans: Plan[];
 		/**
@@ -81,7 +82,8 @@
 		activeRoll = $bindable(),
 		activeRollDice = $bindable(),
 		activeRollVotes = $bindable(),
-		voteOpen = $bindable(),
+		activeRollParticipants = $bindable(),
+		bankedDice = $bindable(),
 		plans,
 		onPlansChanged,
 		activeScene = null,
@@ -316,7 +318,7 @@
 		activeRoll = roll;
 		activeRollDice = [];
 		activeRollVotes = [];
-		voteOpen = false;
+		activeRollParticipants = [];
 	}
 
 	/**
@@ -458,12 +460,12 @@
 					bind:roll={activeRoll}
 					bind:dice={activeRollDice}
 					bind:votes={activeRollVotes}
-					bind:voteOpen
+					bind:participants={activeRollParticipants}
+					bind:bankedDice
 					{assets}
 					{currentPlayerID}
 					{players}
 					{playerNameMap}
-					{isFacilitator}
 					{actorLeverageBlocked}
 				/>
 			{/if}

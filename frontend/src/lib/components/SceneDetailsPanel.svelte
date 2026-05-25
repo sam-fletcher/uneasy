@@ -121,7 +121,11 @@
 		rollingBusy = true;
 		rollError = '';
 		try {
-			const { roll } = await createRoll(gameID, rollDifficulty);
+			const { roll } = await createRoll(gameID, {
+				actor_id: scene.focus_player_id,
+				difficulty: rollDifficulty,
+				scene_id: scene.id,
+			});
 			onRollCreated(roll);
 			showRollForm = false;
 		} catch (e) {

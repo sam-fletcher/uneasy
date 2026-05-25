@@ -11,13 +11,19 @@
 	let {
 		asset,
 		compact = false,
+		mode = 'default',
 		onTear,
 		onToggleLeverage,
+		onRollLeverage,
+		rollLeverageDisabled = false,
 	}: {
 		asset: Asset;
 		compact?: boolean;
+		mode?: 'default' | 'roll-leverage';
 		onTear: (asset: Asset, m: Marginalium) => void;
 		onToggleLeverage?: (asset: Asset) => void;
+		onRollLeverage?: (asset: Asset) => void;
+		rollLeverageDisabled?: boolean;
 	} = $props();
 </script>
 
@@ -36,7 +42,21 @@
 		</span>
 		<div class="asset-header-right">
 			<span class="asset-type-badge">{assetTypeLabels[asset.asset_type]}</span>
-			{#if compact && onToggleLeverage}
+			{#if mode === 'roll-leverage' && onRollLeverage}
+				<button
+					class="roll-lev-btn"
+					onclick={() => onRollLeverage!(asset)}
+					disabled={asset.is_leveraged || rollLeverageDisabled}
+					aria-label="Commit this asset for +1 die"
+					title={asset.is_leveraged
+						? 'Already leveraged elsewhere'
+						: rollLeverageDisabled
+							? 'Unready yourself first'
+							: 'Commit this asset for +1 die'}
+				>
+					+<span class="die-icon" aria-hidden="true">🎲</span>
+				</button>
+			{:else if compact && onToggleLeverage}
 				<button
 					class="lev-btn"
 					class:active={asset.is_leveraged}
@@ -54,12 +74,12 @@
 			{#each asset.marginalia as m (m.id)}
 				<li class:torn={m.is_torn}>
 					<span class="m-text">{m.text}</span>
-					{#if !m.is_torn}
+					{#if m.is_torn}
+						<span class="torn-label">torn</span>
+					{:else if mode !== 'roll-leverage'}
 						<button class="tear-btn" title="Tear this marginalia" onclick={() => onTear(asset, m)}>
 							✂
 						</button>
-					{:else}
-						<span class="torn-label">torn</span>
 					{/if}
 				</li>
 			{/each}
@@ -138,6 +158,33 @@
 	.lev-btn.active {
 		color: #6090c8;
 		border-color: #6090c8;
+	}
+
+	.roll-lev-btn {
+		color: #e8e4d9;
+		background: #3a3020;
+		min-width: 44px;
+		min-height: 44px;
+		padding: 0 0.45rem;
+		border: 1px solid #c8a96e;
+		border-radius: 4px;
+		font-weight: 700;
+		font-size: 0.95rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.15rem;
+		line-height: 1;
+	}
+
+	.roll-lev-btn .die-icon {
+		font-size: 1.1rem;
+	}
+
+	.roll-lev-btn:disabled {
+		color: #666;
+		background: #222;
+		border-color: #444;
+		cursor: not-allowed;
 	}
 
 	.marginalia-list {

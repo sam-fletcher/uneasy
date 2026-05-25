@@ -206,6 +206,8 @@ export interface SceneEntry {
 	created_at: string;
 }
 
+export type RollStage = 'decide_vote' | 'voting' | 'leverage' | 'resolved';
+
 export interface DiceRoll {
 	id: number;
 	game_id: number;
@@ -217,6 +219,7 @@ export interface DiceRoll {
 	adjusted_difficulty: number | null;
 	result: number | null;
 	outcome: 'make' | 'mar' | null;
+	stage: RollStage;
 	created_at: string;
 	resolved_at: string | null;
 }
@@ -229,13 +232,28 @@ export interface DiceRollDie {
 	leveraged_asset_id: number | null;
 	face: number | null;
 	is_cancelled: boolean;
+	cancelled_by_die_id: number | null;
 }
 
-export interface DifficultyVote {
+/**
+ * A vote view as returned by GET /rolls and /rolls/active. During the
+ * voting stage, other players' vote values are server-redacted and the
+ * `vote` field is omitted (`voted` is true regardless).
+ */
+export interface VoteView {
 	roll_id: number;
 	player_id: number;
-	vote: 'yea' | 'nay';
-	voted_at: string;
+	voted: true;
+	vote?: 1 | -1;
+}
+
+export type RollIntent = 'aid' | 'interfere';
+
+export interface RollParticipant {
+	roll_id: number;
+	player_id: number;
+	intent: RollIntent | null;
+	is_ready: boolean;
 }
 
 export type PlanType = 'exchange_courtiers' | 'make_introductions' | 'spread_propaganda'
@@ -1084,41 +1102,46 @@ export function passFocus(gameID: string | number): Promise<{
 	return apiFetch(`/tables/${gameID}/pass-focus`, { method: 'POST' });
 }
 
-// ── Dice Rolls (Phase 2e) ─────────────────────────────────────────────────────
+// ── Dice Rolls (Phase 2e + stage machine) ─────────────────────────────────────
 
-/**
- * Get the active (unresolved) dice roll for a game, if any.
- * Returns null in the roll field if there is no active roll.
- */
-export function getActiveRollForGame(gameID: string | number): Promise<{
+export interface ActiveRollPayload {
 	roll: DiceRoll | null;
 	dice: DiceRollDie[];
-	votes: DifficultyVote[];
-}> {
+	votes: VoteView[];
+	participants: RollParticipant[];
+}
+
+/** Get the active (unresolved) dice roll for a game, if any. */
+export function getActiveRollForGame(gameID: string | number): Promise<ActiveRollPayload> {
 	return apiFetch(`/tables/${gameID}/rolls/active`);
 }
 
-/** Create a new dice roll for the current row. The caller becomes the actor. */
+/**
+ * Create a new dice roll. The caller specifies the actor explicitly. If a
+ * scene_id or plan_id is provided, the server cross-validates the actor
+ * against the scene's focus_player_id / plan's preparer_id.
+ */
 export function createRoll(
 	gameID: string | number,
-	difficulty: number
+	params: { actor_id: number; difficulty: number; scene_id?: number; plan_id?: number }
 ): Promise<{ roll: DiceRoll }> {
 	return apiFetch(`/tables/${gameID}/rolls`, {
 		method: 'POST',
-		body: JSON.stringify({ difficulty })
+		body: JSON.stringify(params)
 	});
 }
 
-/** Get full roll state — roll, all dice, and current votes. */
+/** Get full roll state — roll, dice, redacted votes, participants. */
 export function getRoll(rollID: number): Promise<{
 	roll: DiceRoll;
 	dice: DiceRollDie[];
-	votes: DifficultyVote[];
+	votes: VoteView[];
+	participants: RollParticipant[];
 }> {
 	return apiFetch(`/rolls/${rollID}`);
 }
 
-/** Leverage one of your assets to add a die to an open roll. */
+/** Leverage one of your assets to add a die to the active roll. */
 export function leverageRoll(
 	rollID: number,
 	assetID: number
@@ -1129,14 +1152,19 @@ export function leverageRoll(
 	});
 }
 
-/** Actor opens a difficulty vote; broadcasts to all players. */
+/** Actor opens a difficulty vote (decide_vote → voting). */
 export function callVote(rollID: number): Promise<{ roll_id: number }> {
 	return apiFetch(`/rolls/${rollID}/call-vote`, { method: 'POST' });
 }
 
-/** Submit a difficulty vote (yea increases difficulty, nay decreases it). */
-export function voteOnRoll(rollID: number, vote: 'yea' | 'nay'): Promise<{
-	vote: string;
+/** Actor skips the difficulty vote (decide_vote → leverage). */
+export function skipVote(rollID: number): Promise<{ roll_id: number }> {
+	return apiFetch(`/rolls/${rollID}/skip-vote`, { method: 'POST' });
+}
+
+/** Submit a difficulty vote: +1 (harder) or -1 (easier). Hidden ballot. */
+export function voteOnRoll(rollID: number, vote: 1 | -1): Promise<{
+	vote: number;
 	adjusted_difficulty?: number;
 }> {
 	return apiFetch(`/rolls/${rollID}/vote`, {
@@ -1145,12 +1173,24 @@ export function voteOnRoll(rollID: number, vote: 'yea' | 'nay'): Promise<{
 	});
 }
 
-/** Actor or facilitator closes the leverage window and rolls all dice. */
-export function closeLeverage(rollID: number): Promise<{
-	roll: DiceRoll;
-	dice: DiceRollDie[];
-	cancelled_dice: DiceRollDie[];
-}> {
+/** Non-actor sets their intent. Locks once they commit any die. */
+export function setRollIntent(rollID: number, intent: RollIntent): Promise<{ intent: RollIntent }> {
+	return apiFetch(`/rolls/${rollID}/intent`, {
+		method: 'POST',
+		body: JSON.stringify({ intent })
+	});
+}
+
+/** Toggle ready. Setting ready=true when last unready triggers auto-resolve. */
+export function setRollReady(rollID: number, isReady: boolean): Promise<{ is_ready: boolean }> {
+	return apiFetch(`/rolls/${rollID}/ready`, {
+		method: 'POST',
+		body: JSON.stringify({ is_ready: isReady })
+	});
+}
+
+/** Legacy: actor/facilitator closes leverage. Not surfaced in the new UI. */
+export function closeLeverage(rollID: number): Promise<{ roll_id: number }> {
 	return apiFetch(`/rolls/${rollID}/close-leverage`, { method: 'POST' });
 }
 
@@ -1394,8 +1434,23 @@ export function redelayReveal(planID: number, face: number): Promise<PlanEcho> {
 	});
 }
 
-/** Spend a banked die on this roll. */
-export function useBankedDie(rollID: number, bankedDieID: number): Promise<{ roll_id: number }> {
+export interface BankedDie {
+	id: number;
+	game_id: number;
+	player_id: number;
+	source: string;
+	created_at: string;
+	used_at: string | null;
+	used_roll_id: number | null;
+}
+
+/** List the calling player's unspent banked dice in this game. */
+export function listBankedDice(gameID: string | number): Promise<{ dice: BankedDie[] }> {
+	return apiFetch(`/tables/${gameID}/banked-dice`);
+}
+
+/** Spend a banked die on this roll. Direction follows the player's intent. */
+export function useBankedDie(rollID: number, bankedDieID: number): Promise<{ die: DiceRollDie; banked_die_id: number }> {
 	return apiFetch(`/rolls/${rollID}/use-banked-die`, {
 		method: 'POST',
 		body: JSON.stringify({ banked_die_id: bankedDieID }),

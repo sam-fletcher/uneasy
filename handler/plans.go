@@ -224,6 +224,7 @@ func createPlanRoll(
 		RowNumber:  new(game.CurrentRow),
 		ActorID:    actorID,
 		Difficulty: difficulty,
+		Stage:      "decide_vote",
 	})
 	if err != nil {
 		return nil, err
@@ -237,6 +238,9 @@ func createPlanRoll(
 		}); err != nil {
 			return nil, err
 		}
+	}
+	if err := seedRollParticipants(ctx, q, game.ID, roll.ID, actorID); err != nil {
+		return nil, err
 	}
 	broadcastEvent(manager, game.ID, model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
 	return &roll, nil

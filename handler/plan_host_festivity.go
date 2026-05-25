@@ -302,6 +302,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			RowNumber:  &game.CurrentRow,
 			ActorID:    player.ID,
 			Difficulty: difficulty,
+			Stage:      "decide_vote",
 		})
 		if err != nil {
 			respondInternalErr(w, r, "could not create roll", err)
@@ -317,6 +318,10 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 				respondInternalErr(w, r, "could not create base dice", err)
 				return
 			}
+		}
+		if err := seedRollParticipants(ctx, deps.Q, plan.GameID, roll.ID, player.ID); err != nil {
+			respondInternalErr(w, r, "could not seed participants", err)
+			return
 		}
 		if state.GuestRollIDs == nil {
 			state.GuestRollIDs = map[string]int64{}

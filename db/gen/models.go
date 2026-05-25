@@ -38,7 +38,6 @@ type BankedDice struct {
 	ID         int64              `db:"id" json:"id"`
 	GameID     int64              `db:"game_id" json:"game_id"`
 	PlayerID   int64              `db:"player_id" json:"player_id"`
-	Face       int16              `db:"face" json:"face"`
 	Source     string             `db:"source" json:"source"`
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	UsedAt     pgtype.Timestamptz `db:"used_at" json:"used_at"`
@@ -58,6 +57,7 @@ type DiceRoll struct {
 	Outcome            *string            `db:"outcome" json:"outcome"`
 	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	ResolvedAt         pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
+	Stage              string             `db:"stage" json:"stage"`
 }
 
 type DiceRollDice struct {
@@ -68,13 +68,21 @@ type DiceRollDice struct {
 	LeveragedAssetID *int64 `db:"leveraged_asset_id" json:"leveraged_asset_id"`
 	Face             *int16 `db:"face" json:"face"`
 	IsCancelled      bool   `db:"is_cancelled" json:"is_cancelled"`
+	CancelledByDieID *int64 `db:"cancelled_by_die_id" json:"cancelled_by_die_id"`
+}
+
+type DiceRollParticipant struct {
+	RollID   int64   `db:"roll_id" json:"roll_id"`
+	PlayerID int64   `db:"player_id" json:"player_id"`
+	Intent   *string `db:"intent" json:"intent"`
+	IsReady  bool    `db:"is_ready" json:"is_ready"`
 }
 
 type DifficultyVote struct {
 	RollID   int64              `db:"roll_id" json:"roll_id"`
 	PlayerID int64              `db:"player_id" json:"player_id"`
-	Vote     string             `db:"vote" json:"vote"`
 	VotedAt  pgtype.Timestamptz `db:"voted_at" json:"voted_at"`
+	Vote     int16              `db:"vote" json:"vote"`
 }
 
 type DuelBout struct {
@@ -138,7 +146,6 @@ type LiaiseChoice struct {
 	PlayerID      int64              `db:"player_id" json:"player_id"`
 	Choice        string             `db:"choice" json:"choice"`
 	TargetAssetID *int64             `db:"target_asset_id" json:"target_asset_id"`
-	BankedDieFace *int16             `db:"banked_die_face" json:"banked_die_face"`
 	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 

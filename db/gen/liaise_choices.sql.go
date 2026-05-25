@@ -22,13 +22,12 @@ func (q *Queries) CountLiaiseChoicesByPlan(ctx context.Context, planID int64) (i
 
 const createLiaiseChoice = `-- name: CreateLiaiseChoice :one
 
-INSERT INTO liaise_choices (plan_id, player_id, choice, target_asset_id, banked_die_face)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO liaise_choices (plan_id, player_id, choice, target_asset_id)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (plan_id, player_id) DO UPDATE
   SET choice = EXCLUDED.choice,
-      target_asset_id = EXCLUDED.target_asset_id,
-      banked_die_face = EXCLUDED.banked_die_face
-RETURNING id, plan_id, player_id, choice, target_asset_id, banked_die_face, created_at
+      target_asset_id = EXCLUDED.target_asset_id
+RETURNING id, plan_id, player_id, choice, target_asset_id, created_at
 `
 
 type CreateLiaiseChoiceParams struct {
@@ -36,7 +35,6 @@ type CreateLiaiseChoiceParams struct {
 	PlayerID      int64  `db:"player_id" json:"player_id"`
 	Choice        string `db:"choice" json:"choice"`
 	TargetAssetID *int64 `db:"target_asset_id" json:"target_asset_id"`
-	BankedDieFace *int16 `db:"banked_die_face" json:"banked_die_face"`
 }
 
 // sqlc query file for liaise_choices (Clandestinely Liaise "Things We Share" phase).
@@ -46,7 +44,6 @@ func (q *Queries) CreateLiaiseChoice(ctx context.Context, arg CreateLiaiseChoice
 		arg.PlayerID,
 		arg.Choice,
 		arg.TargetAssetID,
-		arg.BankedDieFace,
 	)
 	var i LiaiseChoice
 	err := row.Scan(
@@ -55,14 +52,13 @@ func (q *Queries) CreateLiaiseChoice(ctx context.Context, arg CreateLiaiseChoice
 		&i.PlayerID,
 		&i.Choice,
 		&i.TargetAssetID,
-		&i.BankedDieFace,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listLiaiseChoicesByPlan = `-- name: ListLiaiseChoicesByPlan :many
-SELECT id, plan_id, player_id, choice, target_asset_id, banked_die_face, created_at
+SELECT id, plan_id, player_id, choice, target_asset_id, created_at
 FROM liaise_choices
 WHERE plan_id = $1
 ORDER BY created_at ASC
@@ -83,7 +79,6 @@ func (q *Queries) ListLiaiseChoicesByPlan(ctx context.Context, planID int64) ([]
 			&i.PlayerID,
 			&i.Choice,
 			&i.TargetAssetID,
-			&i.BankedDieFace,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

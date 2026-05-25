@@ -935,6 +935,7 @@ func pduelCreateFinalRoll(
 		RowNumber:  &game.CurrentRow,
 		ActorID:    plan.PreparerID,
 		Difficulty: difficulty,
+		Stage:      "leverage",
 	})
 	if err != nil {
 		return fmt.Errorf("create roll: %w", err)

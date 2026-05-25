@@ -1,27 +1,46 @@
 package handler
 
-// handler/rolls.go — Dice roll endpoints (Phase 2e).
+// handler/rolls.go — HTTP endpoints for the dice-roll stage machine.
 //
-// Roll lifecycle:
+// Server-driven flow:
 //
-//  1. Actor calls POST /api/tables/:id/rolls to create a roll.
-//     Two base dice are created for the actor (no asset, not interference).
-//  2. Any player calls POST /api/rolls/:rollId/leverage to commit a leveraged
-//     asset, adding one die. Actor dice are is_interference=false; all others
-//     are is_interference=true.
-//  3. (Optional) Actor calls POST /api/rolls/:rollId/call-vote to broadcast
-//     a difficulty vote to all players.
-//  4. Players call POST /api/rolls/:rollId/vote with yea or nay. When all
-//     players have voted, the server computes adjusted_difficulty.
-//  5. Actor (or facilitator) calls POST /api/rolls/:rollId/close-leverage to
-//     roll all dice and resolve the roll.
-//  6. GET /api/rolls/:rollId returns the current roll state.
+//  1. POST /api/tables/{id}/rolls (CreateRoll): caller passes
+//     {actor_id, difficulty, scene_id?, plan_id?}. Server validates the
+//     actor against the optional context, creates the roll at
+//     stage='decide_vote', seeds one participant row per game player
+//     (actor with intent='aid', others with intent=NULL), and adds the
+//     actor's 2 base dice.
+//
+//  2. Actor calls /call-vote (→ stage='voting') or /skip-vote
+//     (→ stage='leverage'). Skip path runs the leverage-entry
+//     short-circuit immediately.
+//
+//  3. During voting: each player casts +1 or -1 via /vote. Other players
+//     see only "voted: true" (server redacts). When the last vote lands,
+//     the server computes adjusted_difficulty, broadcasts the full
+//     ballot, and advances to leverage (running the short-circuit).
+//
+//  4. During leverage: non-actors pick an intent (aid/interfere) via
+//     /intent. Any player commits dice via /leverage (asset) or
+//     /use-banked-die. Each commit auto-unreadies opponents who can
+//     still commit, auto-readies the committer if they have nothing
+//     left, and writes a Minor chat log entry. Players toggle /ready;
+//     when the last unready participant readies, the server rolls and
+//     resolves automatically.
+//
+// Stage machine internals (sweeps, seed, advance) live in rolls_stage.go.
+// Pure dice math + resolution (cancellation, faces, finalize) live in
+// rolls_dice.go. Chat-log entry emitters (EmitRollCommit,
+// EmitRollSkipLeverage) live in system_posts.go alongside the other
+// system-post helpers.
+//
+// CloseLeverage remains on the backend (unsurfaced in the frontend) as a
+// future-proofing hook for table-wide decision timers.
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math/rand/v2"
 	"net/http"
 	"strconv"
 
@@ -38,9 +57,17 @@ const (
 	diceSides   = 6
 	makeOutcome = "make"
 	marOutcome  = "mar"
+
+	stageDecideVote = "decide_vote"
+	stageVoting     = "voting"
+	stageLeverage   = "leverage"
+	stageResolved   = "resolved"
+
+	intentAid       = "aid"
+	intentInterfere = "interfere"
 )
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
+// ── Shared request helpers ───────────────────────────────────────────────────
 
 // requireRollAccess parses rollId from the URL, fetches the roll, and verifies
 // the caller is a member of the roll's game. Returns roll and player.
@@ -66,20 +93,59 @@ func requireRollAccess(
 	return &roll, player, true
 }
 
-// rollIsOpen returns true when the roll has not yet been resolved (no result).
+// rollIsOpen returns true when the roll has not yet been resolved.
 func rollIsOpen(roll *dbgen.DiceRoll) bool {
 	return roll.Result == nil
 }
 
-// ── GetActiveRollForGame ──────────────────────────────────────────────────────
+// requireLeverageStage writes a 409 and returns false if the roll isn't in
+// the leverage stage.
+func requireLeverageStage(w http.ResponseWriter, roll *dbgen.DiceRoll) bool {
+	if roll.Stage != stageLeverage {
+		respondErr(w, http.StatusConflict, "action only allowed in leverage stage")
+		return false
+	}
+	return true
+}
+
+// ── Vote redaction ───────────────────────────────────────────────────────────
+
+// voteView is the redacted/full vote shape returned to a viewer. The Vote
+// pointer is nil when redacted.
+type voteView struct {
+	RollID   int64  `json:"roll_id"`
+	PlayerID int64  `json:"player_id"`
+	Voted    bool   `json:"voted"`
+	Vote     *int16 `json:"vote,omitempty"`
+}
+
+// redactVotesForViewer returns the votes array tailored to viewerID. During
+// stage='voting', other players' vote values are hidden; the viewer's own
+// vote is always visible.
+func redactVotesForViewer(
+	votes []dbgen.DifficultyVote,
+	stage string,
+	viewerID int64,
+) []voteView {
+	out := make([]voteView, 0, len(votes))
+	hide := stage == stageVoting
+	for _, v := range votes {
+		view := voteView{RollID: v.RollID, PlayerID: v.PlayerID, Voted: true}
+		if !hide || v.PlayerID == viewerID {
+			vv := v.Vote
+			view.Vote = &vv
+		}
+		out = append(out, view)
+	}
+	return out
+}
+
+// ── GetActiveRollForGame ─────────────────────────────────────────────────────
 
 // GetActiveRollForGame handles GET /api/tables/:id/rolls/active.
-//
-// Returns the most recently created unresolved roll for the game, plus its
-// dice and votes. If no roll is active, returns {"roll": null, "dice": [], "votes": []}.
 func GetActiveRollForGame(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, s.Q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -88,14 +154,11 @@ func GetActiveRollForGame(s *db.Store) http.HandlerFunc {
 		rolls, err := s.Q.ListDiceRollsByGame(ctx, gameID)
 		if err != nil {
 			respond(w, http.StatusOK, map[string]any{
-				"roll":  nil,
-				"dice":  []any{},
-				"votes": []any{},
+				"roll": nil, "dice": []any{}, "votes": []any{}, "participants": []any{},
 			})
 			return
 		}
 
-		// Find the most recent open roll.
 		var active *dbgen.DiceRoll
 		for i := len(rolls) - 1; i >= 0; i-- {
 			if rolls[i].Result == nil {
@@ -105,44 +168,83 @@ func GetActiveRollForGame(s *db.Store) http.HandlerFunc {
 		}
 		if active == nil {
 			respond(w, http.StatusOK, map[string]any{
-				"roll":  nil,
-				"dice":  []dbgen.DiceRollDice{},
-				"votes": []dbgen.DifficultyVote{},
+				"roll":         nil,
+				"dice":         []dbgen.DiceRollDice{},
+				"votes":        []voteView{},
+				"participants": []dbgen.DiceRollParticipant{},
 			})
 			return
 		}
 
-		dice, err := s.Q.ListDiceByRoll(ctx, active.ID)
-		if err != nil {
-			dice = []dbgen.DiceRollDice{}
-		}
-		votes, err := s.Q.ListVotesByRoll(ctx, active.ID)
-		if err != nil {
-			votes = []dbgen.DifficultyVote{}
-		}
+		dice, _ := s.Q.ListDiceByRoll(ctx, active.ID)
+		votes, _ := s.Q.ListVotesByRoll(ctx, active.ID)
+		parts, _ := s.Q.ListParticipantsByRoll(ctx, active.ID)
 
 		respond(w, http.StatusOK, map[string]any{
-			"roll":  active,
-			"dice":  dice,
-			"votes": votes,
+			"roll":         active,
+			"dice":         dice,
+			"votes":        redactVotesForViewer(votes, active.Stage, player.ID),
+			"participants": parts,
 		})
 	}
 }
 
-// ── CreateRoll ────────────────────────────────────────────────────────────────
+// ── CreateRoll ───────────────────────────────────────────────────────────────
+
+// validateActorContext checks that actorID is a player in gameID, and that
+// any provided sceneID / planID matches the actor (focus_player_id /
+// preparer_id respectively). Writes an error response and returns false on
+// any mismatch.
+func validateActorContext(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	gameID, actorID int64,
+	sceneID, planID *int64,
+) bool {
+	actor, err := q.GetPlayerByID(ctx, actorID)
+	if err != nil || actor.GameID != gameID {
+		respondErr(w, http.StatusBadRequest, "actor is not a member of this table")
+		return false
+	}
+	if sceneID != nil {
+		scene, err := q.GetSceneByID(ctx, *sceneID)
+		if err != nil || scene.GameID != gameID {
+			respondErr(w, http.StatusBadRequest, "scene not found")
+			return false
+		}
+		if scene.FocusPlayerID != actorID {
+			respondErr(w, http.StatusConflict, "actor must be the scene's focus player")
+			return false
+		}
+	}
+	if planID != nil {
+		plan, err := q.GetPlanByID(ctx, *planID)
+		if err != nil || plan.GameID != gameID {
+			respondErr(w, http.StatusBadRequest, "plan not found")
+			return false
+		}
+		if plan.PreparerID != actorID {
+			respondErr(w, http.StatusConflict, "actor must be the plan's preparer")
+			return false
+		}
+	}
+	return true
+}
 
 // CreateRoll handles POST /api/tables/:id/rolls.
 //
 // Request body:
 //
-//	{"difficulty": 1..6}
+//	{"actor_id": N, "difficulty": 1..6, "scene_id": N?, "plan_id": N?}
 //
-// Creates a dice roll for the current row. The caller becomes the actor and
-// receives 2 base dice (no leveraged asset). The roll is broadcast via
-// roll.created so all clients can display the panel.
+// The caller specifies the actor explicitly. If scene_id is given, actor_id
+// must equal scene.focus_player_id; if plan_id is given, must equal
+// plan.preparer_id. Roll starts at stage='decide_vote' with one participant
+// row per game player (actor with intent='aid').
 func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -157,7 +259,10 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var body struct {
-			Difficulty int16 `json:"difficulty"`
+			ActorID    int64  `json:"actor_id"`
+			Difficulty int16  `json:"difficulty"`
+			SceneID    *int64 `json:"scene_id"`
+			PlanID     *int64 `json:"plan_id"`
 		}
 		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -167,17 +272,25 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "difficulty must be between 1 and 6")
 			return
 		}
+		if body.ActorID == 0 {
+			respondErr(w, http.StatusBadRequest, "actor_id is required")
+			return
+		}
 
 		ctx := r.Context()
+		if !validateActorContext(ctx, w, s.Q, gameID, body.ActorID, body.SceneID, body.PlanID) {
+			return
+		}
 
 		var roll dbgen.DiceRoll
 		err = s.InTx(ctx, func(q *dbgen.Queries) error {
 			r2, cErr := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
 				GameID:     gameID,
-				PlanID:     nil,
+				PlanID:     body.PlanID,
 				RowNumber:  new(game.CurrentRow),
-				ActorID:    player.ID,
+				ActorID:    body.ActorID,
 				Difficulty: body.Difficulty,
+				Stage:      stageDecideVote,
 			})
 			if cErr != nil {
 				return errors.New("could not create roll")
@@ -187,14 +300,14 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			for range 2 {
 				if _, dErr := q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
 					RollID:           roll.ID,
-					PlayerID:         player.ID,
+					PlayerID:         body.ActorID,
 					IsInterference:   false,
 					LeveragedAssetID: nil,
 				}); dErr != nil {
 					return errors.New("could not create base dice")
 				}
 			}
-			return nil
+			return seedRollParticipants(ctx, q, gameID, roll.ID, body.ActorID)
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
@@ -202,60 +315,306 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		broadcastEvent(manager, gameID, model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
-
 		respond(w, http.StatusCreated, map[string]any{"roll": roll})
 	}
 }
 
-// ── GetRoll ───────────────────────────────────────────────────────────────────
+// ── GetRoll ──────────────────────────────────────────────────────────────────
 
 // GetRoll handles GET /api/rolls/:rollId.
-//
-// Returns the roll, its dice, and the current vote counts.
 func GetRoll(s *db.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		roll, _, ok := requireRollAccess(w, r, s.Q)
-		if !ok {
-			return
-		}
-
-		ctx := r.Context()
-		dice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
-		if err != nil {
-			dice = []dbgen.DiceRollDice{}
-		}
-		votes, err := s.Q.ListVotesByRoll(ctx, roll.ID)
-		if err != nil {
-			votes = []dbgen.DifficultyVote{}
-		}
-
-		respond(w, http.StatusOK, map[string]any{
-			"roll":  roll,
-			"dice":  dice,
-			"votes": votes,
-		})
-	}
-}
-
-// ── LeverageRoll ──────────────────────────────────────────────────────────────
-
-// LeverageRoll handles POST /api/rolls/:rollId/leverage.
-//
-// Request body:
-//
-//	{"asset_id": 123, "is_interference": true}
-//
-// Commits a player's asset to the roll, adding one die. The caller must own
-// the asset. The die is marked as interference when the caller is not the
-// actor. The asset must not already be committed to this roll.
-func LeverageRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		roll, player, ok := requireRollAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
-		if !rollIsOpen(roll) {
-			respondErr(w, http.StatusConflict, "roll is already resolved")
+		ctx := r.Context()
+		dice, _ := s.Q.ListDiceByRoll(ctx, roll.ID)
+		votes, _ := s.Q.ListVotesByRoll(ctx, roll.ID)
+		parts, _ := s.Q.ListParticipantsByRoll(ctx, roll.ID)
+		respond(w, http.StatusOK, map[string]any{
+			"roll":         roll,
+			"dice":         dice,
+			"votes":        redactVotesForViewer(votes, roll.Stage, player.ID),
+			"participants": parts,
+		})
+	}
+}
+
+// ── CallVote / SkipVote / Vote ───────────────────────────────────────────────
+
+// CallVote handles POST /api/rolls/:rollId/call-vote. Actor-only;
+// decide_vote → voting.
+func CallVote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roll, player, ok := requireRollAccess(w, r, s.Q)
+		if !ok {
+			return
+		}
+		if roll.Stage != stageDecideVote {
+			respondErr(w, http.StatusConflict, "vote can only be called from decide_vote stage")
+			return
+		}
+		if player.ID != roll.ActorID {
+			respondErr(w, http.StatusForbidden, "only the actor can call a difficulty vote")
+			return
+		}
+		ctx := r.Context()
+		if err := s.Q.SetDiceRollStage(ctx, dbgen.SetDiceRollStageParams{
+			ID: roll.ID, Stage: stageVoting,
+		}); err != nil {
+			respondInternalErr(w, r, "could not set stage", err)
+			return
+		}
+		broadcastEvent(manager, roll.GameID, model.EventRollStageChanged, model.RollStageChangedPayload{
+			RollID: roll.ID, Stage: stageVoting,
+		})
+		respond(w, http.StatusOK, map[string]any{"roll_id": roll.ID})
+	}
+}
+
+// SkipVote handles POST /api/rolls/:rollId/skip-vote. Actor-only;
+// decide_vote → leverage. Runs the skip-leverage short-circuit and
+// auto-resolution via advanceToLeverage.
+func SkipVote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roll, player, ok := requireRollAccess(w, r, s.Q)
+		if !ok {
+			return
+		}
+		if roll.Stage != stageDecideVote {
+			respondErr(w, http.StatusConflict, "vote can only be skipped from decide_vote stage")
+			return
+		}
+		if player.ID != roll.ActorID {
+			respondErr(w, http.StatusForbidden, "only the actor can skip the difficulty vote")
+			return
+		}
+		if err := advanceToLeverage(r.Context(), w, r, s.Q, manager, roll); err != nil {
+			respondInternalErr(w, r, "could not advance to leverage", err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{"roll_id": roll.ID})
+	}
+}
+
+// Vote handles POST /api/rolls/:rollId/vote.
+//
+// Request body: {"vote": 1} or {"vote": -1}.
+//
+// Hidden ballot: other players see only that the voter has voted (not the
+// value). When the last vote lands, the server computes adjusted_difficulty,
+// broadcasts the full ballot, and advances to leverage.
+func Vote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roll, player, ok := requireRollAccess(w, r, s.Q)
+		if !ok {
+			return
+		}
+		if roll.Stage != stageVoting {
+			respondErr(w, http.StatusConflict, "votes only accepted in voting stage")
+			return
+		}
+
+		var body struct {
+			Vote int16 `json:"vote"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if body.Vote != 1 && body.Vote != -1 {
+			respondErr(w, http.StatusBadRequest, "vote must be 1 or -1")
+			return
+		}
+
+		ctx := r.Context()
+		if err := s.Q.CreateDifficultyVote(ctx, dbgen.CreateDifficultyVoteParams{
+			RollID: roll.ID, PlayerID: player.ID, Vote: body.Vote,
+		}); err != nil {
+			respondInternalErr(w, r, "could not record vote", err)
+			return
+		}
+
+		// Hidden-ballot broadcast: no vote value.
+		broadcastEvent(manager, roll.GameID, model.EventRollVoteCast, model.RollVoteCastPayload{
+			RollID: roll.ID, PlayerID: player.ID,
+		})
+
+		allPlayers, err := s.Q.GetPlayersByGame(ctx, roll.GameID)
+		if err != nil {
+			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
+			return
+		}
+		summary, err := s.Q.SumVotesByRoll(ctx, roll.ID)
+		if err != nil {
+			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
+			return
+		}
+		if summary.VoteCount < int64(len(allPlayers)) {
+			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
+			return
+		}
+
+		// All votes in — compute, reveal, advance.
+		adj := int16(min(max(int64(roll.Difficulty)+summary.VoteSum, 1), diceSides))
+		if err = s.Q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
+			ID: roll.ID, AdjustedDifficulty: &adj,
+		}); err != nil {
+			respondInternalErr(w, r, "could not set adjusted difficulty", err)
+			return
+		}
+		roll.AdjustedDifficulty = &adj
+
+		allVotes, _ := s.Q.ListVotesByRoll(ctx, roll.ID)
+		ballot := make([]voteView, 0, len(allVotes))
+		for _, v := range allVotes {
+			vv := v.Vote
+			ballot = append(ballot, voteView{
+				RollID: v.RollID, PlayerID: v.PlayerID, Voted: true, Vote: &vv,
+			})
+		}
+		broadcastEvent(manager, roll.GameID, model.EventRollVoteResolved, model.RollVoteResolvedPayload{
+			RollID:             roll.ID,
+			AdjustedDifficulty: adj,
+			Ballot:             ballot,
+		})
+
+		if err := advanceToLeverage(ctx, w, r, s.Q, manager, roll); err != nil {
+			respondInternalErr(w, r, "could not advance to leverage", err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"vote":                body.Vote,
+			"adjusted_difficulty": adj,
+		})
+	}
+}
+
+// ── SetIntent ────────────────────────────────────────────────────────────────
+
+// SetIntent handles POST /api/rolls/:rollId/intent.
+//
+// Body: {"intent": "aid"|"interfere"}. Non-actor only; leverage stage only;
+// rejected once the player has committed any die on this roll.
+func SetIntent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roll, player, ok := requireRollAccess(w, r, s.Q)
+		if !ok || !requireLeverageStage(w, roll) {
+			return
+		}
+		if player.ID == roll.ActorID {
+			respondErr(w, http.StatusForbidden, "the actor's intent is always aid")
+			return
+		}
+
+		var body struct {
+			Intent string `json:"intent"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if body.Intent != intentAid && body.Intent != intentInterfere {
+			respondErr(w, http.StatusBadRequest, "intent must be 'aid' or 'interfere'")
+			return
+		}
+
+		ctx := r.Context()
+		// Lock: any committed die freezes intent.
+		dice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load dice", err)
+			return
+		}
+		for _, d := range dice {
+			if d.PlayerID == player.ID {
+				respondErr(w, http.StatusConflict, "intent is locked once a die is committed")
+				return
+			}
+		}
+
+		if err := s.Q.SetParticipantIntent(ctx, dbgen.SetParticipantIntentParams{
+			RollID: roll.ID, PlayerID: player.ID, Intent: &body.Intent,
+		}); err != nil {
+			respondInternalErr(w, r, "could not set intent", err)
+			return
+		}
+		broadcastEvent(manager, roll.GameID, model.EventRollIntentSet, model.RollIntentSetPayload{
+			RollID: roll.ID, PlayerID: player.ID, Intent: body.Intent,
+		})
+		respond(w, http.StatusOK, map[string]any{"intent": body.Intent})
+	}
+}
+
+// ── SetReady ─────────────────────────────────────────────────────────────────
+
+// SetReady handles POST /api/rolls/:rollId/ready.
+//
+// Body: {"is_ready": true|false}. Leverage stage only. Players cannot
+// unready when they have no dice left to commit. Setting ready=true as the
+// last unready participant triggers auto-resolution.
+func SetReady(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roll, player, ok := requireRollAccess(w, r, s.Q)
+		if !ok || !requireLeverageStage(w, roll) {
+			return
+		}
+
+		var body struct {
+			IsReady bool `json:"is_ready"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		ctx := r.Context()
+		if !body.IsReady {
+			can, err := playerCanCommit(ctx, s.Q, roll.GameID, player.ID)
+			if err != nil {
+				respondInternalErr(w, r, "could not check commit ability", err)
+				return
+			}
+			if !can {
+				respondErr(w, http.StatusConflict, "you have no dice left to commit")
+				return
+			}
+		}
+
+		if err := s.Q.SetParticipantReady(ctx, dbgen.SetParticipantReadyParams{
+			RollID: roll.ID, PlayerID: player.ID, IsReady: body.IsReady,
+		}); err != nil {
+			respondInternalErr(w, r, "could not set ready", err)
+			return
+		}
+		broadcastEvent(manager, roll.GameID, model.EventRollReadyChanged, model.RollReadyChangedPayload{
+			RollID: roll.ID, PlayerID: player.ID, IsReady: body.IsReady,
+		})
+
+		if body.IsReady {
+			if err := maybeAutoResolve(ctx, w, r, s.Q, manager, roll); err != nil {
+				respondInternalErr(w, r, "could not auto-resolve", err)
+				return
+			}
+		}
+		respond(w, http.StatusOK, map[string]any{"is_ready": body.IsReady})
+	}
+}
+
+// ── LeverageRoll ─────────────────────────────────────────────────────────────
+
+// LeverageRoll handles POST /api/rolls/:rollId/leverage.
+//
+// Body: {"asset_id": N}.
+//
+// Leverage stage only; caller must not be currently ready; non-actors must
+// have set an intent. Validates the asset, marks it leveraged, then delegates
+// to commitDie for the shared create/broadcast/log/sweep flow.
+func LeverageRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roll, player, ok := requireRollAccess(w, r, s.Q)
+		if !ok || !requireLeverageStage(w, roll) {
 			return
 		}
 
@@ -268,83 +627,107 @@ func LeverageRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-
-		// Validate the asset.
-		asset, err := s.Q.GetAssetByID(ctx, body.AssetID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "asset not found")
+		isInterference, ok := commitGate(w, r, s.Q, roll, player)
+		if !ok {
 			return
 		}
-		if asset.OwnerID != player.ID {
-			respondErr(w, http.StatusForbidden, "you can only leverage your own assets")
-			return
-		}
-		if asset.IsDestroyed {
-			respondErr(w, http.StatusConflict, "asset is destroyed")
+		asset, ok := validateLeverageAsset(ctx, w, r, s.Q, roll, player, body.AssetID)
+		if !ok {
 			return
 		}
 
-		// Check the asset hasn't already been committed to this roll.
-		existingDice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not check dice", err)
-			return
-		}
-		for _, d := range existingDice {
-			if d.LeveragedAssetID != nil && *d.LeveragedAssetID == body.AssetID {
-				respondErr(w, http.StatusConflict, "asset is already committed to this roll")
-				return
-			}
-		}
-
-		// If this roll is tied to a plan that has an active control_leverage
-		// winner on a resolved demand, the target preparer may not leverage
-		// their own assets on this roll — that right belongs to the demand
-		// winner via /demand-leverage. Other participants leverage normally.
-		if leverageBlockedByDemandWinner(ctx, s.Q, roll, player, asset) {
-			respondErr(w, http.StatusForbidden,
-				"a demand's control_leverage winner has taken over leverage of your assets on this roll")
-			return
-		}
-
-		// Mark the asset as leveraged.
-		if err = s.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
-			ID:          body.AssetID,
-			IsLeveraged: true,
+		if err := s.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+			ID: body.AssetID, IsLeveraged: true,
 		}); err != nil {
 			respondInternalErr(w, r, "could not leverage asset", err)
 			return
 		}
-
-		// Determine interference: actor's own dice are not interference.
-		isInterference := player.ID != roll.ActorID
-
-		die, err := s.Q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
-			RollID:           roll.ID,
-			PlayerID:         player.ID,
-			IsInterference:   isInterference,
-			LeveragedAssetID: &body.AssetID,
+		broadcastEvent(manager, roll.GameID, model.EventAssetLeveraged, model.AssetIDPayload{
+			AssetID: body.AssetID, PlayerID: player.ID,
 		})
-		if err != nil {
-			respondInternalErr(w, r, "could not add die", err)
+
+		die, ok := commitDie(ctx, w, r, s.Q, manager, roll, player, isInterference, &body.AssetID, &asset.Name)
+		if !ok {
 			return
 		}
-
-		if h, ok := manager.Get(roll.GameID); ok {
-			h.BroadcastEvent(model.EventAssetLeveraged, model.AssetIDPayload{
-				AssetID:  body.AssetID,
-				PlayerID: player.ID,
-			})
-			h.BroadcastEvent(model.EventRollLeverageAdded, model.RollLeverageAddedPayload{
-				RollID:         roll.ID,
-				PlayerID:       player.ID,
-				AssetID:        body.AssetID,
-				IsInterference: isInterference,
-			})
-		}
-
 		respond(w, http.StatusOK, map[string]any{"die": die})
 	}
+}
+
+// validateLeverageAsset loads and validates an asset for leverage: owned by
+// the caller, not destroyed, not already committed to this roll, not blocked
+// by a Make Demands control_leverage winner.
+func validateLeverageAsset(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	roll *dbgen.DiceRoll,
+	player *dbgen.Player,
+	assetID int64,
+) (dbgen.Asset, bool) {
+	asset, err := q.GetAssetByID(ctx, assetID)
+	if err != nil {
+		respondErr(w, http.StatusNotFound, "asset not found")
+		return dbgen.Asset{}, false
+	}
+	if asset.OwnerID != player.ID {
+		respondErr(w, http.StatusForbidden, "you can only leverage your own assets")
+		return dbgen.Asset{}, false
+	}
+	if asset.IsDestroyed {
+		respondErr(w, http.StatusConflict, "asset is destroyed")
+		return dbgen.Asset{}, false
+	}
+	existingDice, err := q.ListDiceByRoll(ctx, roll.ID)
+	if err != nil {
+		respondInternalErr(w, r, "could not check dice", err)
+		return dbgen.Asset{}, false
+	}
+	for _, d := range existingDice {
+		if d.LeveragedAssetID != nil && *d.LeveragedAssetID == assetID {
+			respondErr(w, http.StatusConflict, "asset is already committed to this roll")
+			return dbgen.Asset{}, false
+		}
+	}
+	if leverageBlockedByDemandWinner(ctx, q, roll, player, asset) {
+		respondErr(w, http.StatusForbidden,
+			"a demand's control_leverage winner has taken over leverage of your assets on this roll")
+		return dbgen.Asset{}, false
+	}
+	return asset, true
+}
+
+// commitGate enforces the shared preconditions for leveraging an asset or
+// spending a banked die: leverage stage (assumed already checked by the
+// caller), not currently ready, intent set for non-actors. Returns
+// (isInterference, ok).
+func commitGate(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	roll *dbgen.DiceRoll,
+	player *dbgen.Player,
+) (bool, bool) {
+	part, err := q.GetParticipant(r.Context(), dbgen.GetParticipantParams{
+		RollID: roll.ID, PlayerID: player.ID,
+	})
+	if err != nil {
+		respondErr(w, http.StatusForbidden, "not a participant in this roll")
+		return false, false
+	}
+	if part.IsReady {
+		respondErr(w, http.StatusConflict, "unready yourself before committing more dice")
+		return false, false
+	}
+	if player.ID == roll.ActorID {
+		return false, true
+	}
+	if part.Intent == nil {
+		respondErr(w, http.StatusConflict, "set intent (aid or interfere) before committing")
+		return false, false
+	}
+	return *part.Intent == intentInterfere, true
 }
 
 // leverageBlockedByDemandWinner returns true if the roll is tied to a plan
@@ -375,322 +758,40 @@ func leverageBlockedByDemandWinner(
 	return hasWinner && winnerID != 0 && winnerID != plan.PreparerID
 }
 
-// ── CallVote ──────────────────────────────────────────────────────────────────
+// ── ListBankedDice / UseBankedDie ────────────────────────────────────────────
 
-// CallVote handles POST /api/rolls/:rollId/call-vote.
-//
-// Actor-only. Broadcasts roll.vote_called to all players to open the
-// difficulty vote UI. No DB change — the vote state is tracked by the
-// presence of rows in difficulty_votes.
-func CallVote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+// ListBankedDice handles GET /api/tables/:id/banked-dice. Returns the
+// calling player's unspent banked dice in this game.
+func ListBankedDice(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, s.Q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
-		if !rollIsOpen(roll) {
-			respondErr(w, http.StatusConflict, "roll is already resolved")
-			return
-		}
-		if player.ID != roll.ActorID {
-			respondErr(w, http.StatusForbidden, "only the actor can call a difficulty vote")
-			return
-		}
-
-		broadcastEvent(manager, roll.GameID, model.EventRollVoteCalled, model.RollVoteCalledPayload{RollID: roll.ID})
-
-		respond(w, http.StatusOK, map[string]any{"roll_id": roll.ID})
-	}
-}
-
-// ── Vote ──────────────────────────────────────────────────────────────────────
-
-// Vote handles POST /api/rolls/:rollId/vote.
-//
-// Request body:
-//
-//	{"vote": "yea"} or {"vote": "nay"}
-//
-// Submits a difficulty vote. When all players in the game have voted, the
-// server computes adjusted_difficulty = difficulty + nay_count - yea_count
-// (clamped to 1..6) and broadcasts roll.vote_resolved.
-func Vote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, s.Q)
-		if !ok {
-			return
-		}
-		if !rollIsOpen(roll) {
-			respondErr(w, http.StatusConflict, "roll is already resolved")
-			return
-		}
-
-		var body struct {
-			Vote string `json:"vote"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid JSON")
-			return
-		}
-		if body.Vote != "yea" && body.Vote != "nay" {
-			respondErr(w, http.StatusBadRequest, "vote must be 'yea' or 'nay'")
-			return
-		}
-
-		ctx := r.Context()
-
-		if err := s.Q.CreateDifficultyVote(ctx, dbgen.CreateDifficultyVoteParams{
-			RollID:   roll.ID,
-			PlayerID: player.ID,
-			Vote:     body.Vote,
-		}); err != nil {
-			respondInternalErr(w, r, "could not record vote", err)
-			return
-		}
-
-		h, hasHub := manager.Get(roll.GameID)
-		if hasHub {
-			h.BroadcastEvent(model.EventRollVoteCast, model.RollVoteCastPayload{
-				RollID:   roll.ID,
-				PlayerID: player.ID,
-				Vote:     body.Vote,
-			})
-		}
-
-		// Check if all players have voted.
-		allPlayers, err := s.Q.GetPlayersByGame(ctx, roll.GameID)
-		if err != nil {
-			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
-			return
-		}
-		counts, err := s.Q.CountVotesByRoll(ctx, roll.ID)
-		if err != nil {
-			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
-			return
-		}
-		totalVotes := counts.YeaCount + counts.NayCount
-		if totalVotes < int64(len(allPlayers)) {
-			// Not everyone has voted yet.
-			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
-			return
-		}
-
-		// All votes in — compute and store adjusted_difficulty (clamped to 1–6).
-		adj := int16(min(
-			max(int64(roll.Difficulty)+counts.NayCount-counts.YeaCount, 1),
-			diceSides))
-		if err = s.Q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
-			ID:                 roll.ID,
-			AdjustedDifficulty: new(adj),
-		}); err != nil {
-			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
-			return
-		}
-
-		if hasHub {
-			h.BroadcastEvent(model.EventRollVoteResolved, model.RollVoteResolvedPayload{
-				RollID:             roll.ID,
-				AdjustedDifficulty: adj,
-			})
-		}
-
-		respond(w, http.StatusOK, map[string]any{
-			"vote":                body.Vote,
-			"adjusted_difficulty": adj,
-		})
-	}
-}
-
-// ── CloseLeverage ─────────────────────────────────────────────────────────────
-
-// CloseLeverage handles POST /api/rolls/:rollId/close-leverage.
-//
-// Actor or facilitator only. Closes the leverage window, assigns random faces
-// (1–6) to every die, applies interference cancellation, computes the result,
-// and broadcasts roll.resolved.
-//
-// Interference cancellation algorithm:
-//
-//	For each distinct face value:
-//	  cancel min(actorCount, interferenceCount) actor dice showing that face.
-//
-// Result = count of distinct face values in the actor's uncancelled dice.
-// Outcome = "make" if result >= effective_difficulty, else "mar".
-// Effective difficulty = adjusted_difficulty if set, otherwise difficulty.
-func CloseLeverage(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, s.Q)
-		if !ok {
-			return
-		}
-		if !rollIsOpen(roll) {
-			respondErr(w, http.StatusConflict, "roll is already resolved")
-			return
-		}
-
-		// Only the actor or the facilitator may close the leverage window.
-		isActor := player.ID == roll.ActorID
-		isFac := player.IsFacilitator
-		if !isActor && !isFac {
-			respondErr(w, http.StatusForbidden, "only the actor or facilitator can close the leverage window")
-			return
-		}
-
-		ctx := r.Context()
-
-		dice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load dice", err)
-			return
-		}
-
-		actorDice, cancelledIDs, err := rollAndCancelDice(ctx, w, r, s.Q, dice)
-		if err != nil {
-			return
-		}
-
-		result, outcome := calculateRollResult(actorDice, cancelledIDs, roll)
-
-		err = s.Q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
-			ID:      roll.ID,
-			Result:  new(result),
-			Outcome: new(outcome),
+		dice, err := s.Q.ListBankedDiceByPlayer(r.Context(), dbgen.ListBankedDiceByPlayerParams{
+			GameID: gameID, PlayerID: player.ID,
 		})
 		if err != nil {
-			respondInternalErr(w, r, "could not resolve roll", err)
+			respond(w, http.StatusOK, map[string]any{"dice": []any{}})
 			return
 		}
-
-		// Re-fetch the resolved roll and all dice (with faces + cancelled flags).
-		resolvedRoll, err := s.Q.GetDiceRollByID(ctx, roll.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not reload roll", err)
-			return
-		}
-		finalDice, err := s.Q.ListDiceByRoll(ctx, roll.ID)
-		if err != nil {
-			finalDice = []dbgen.DiceRollDice{}
-		}
-
-		// Build cancelled slice for the payload.
-		cancelledDice := []dbgen.DiceRollDice{}
-		for _, d := range finalDice {
-			if d.IsCancelled {
-				cancelledDice = append(cancelledDice, d)
-			}
-		}
-
-		broadcastEvent(manager, roll.GameID, model.EventRollResolved, model.RollResolvedPayload{
-			Roll:          resolvedRoll,
-			Dice:          finalDice,
-			CancelledDice: cancelledDice,
-		})
-
-		respond(w, http.StatusOK, map[string]any{
-			"roll":           resolvedRoll,
-			"dice":           finalDice,
-			"cancelled_dice": cancelledDice,
-		})
+		respond(w, http.StatusOK, map[string]any{"dice": dice})
 	}
 }
-
-// dieEntry is a lightweight representation of a die used in roll processing.
-type dieEntry struct {
-	id   int64
-	face int16
-}
-
-// cancelInterference groups dice by face and returns the set of cancelled
-// actor die IDs. Each interference die on a given face cancels one matching
-// actor die on that face (up to the count of actor dice on that face).
-func cancelInterference(actorDice, interfereDice []dieEntry) map[int64]struct{} {
-	// Group actor and interference dice by face value.
-	actorByFace := make(map[int16][]dieEntry)
-	for _, e := range actorDice {
-		actorByFace[e.face] = append(actorByFace[e.face], e)
-	}
-	intByFace := make(map[int16][]dieEntry)
-	for _, e := range interfereDice {
-		intByFace[e.face] = append(intByFace[e.face], e)
-	}
-
-	// For each interference face, cancel min(actorCount, intCount) actor dice.
-	cancelledIDs := make(map[int64]struct{})
-	for face, intGroup := range intByFace {
-		actorGroup := actorByFace[face]
-		for i := range min(len(intGroup), len(actorGroup)) {
-			cancelledIDs[actorGroup[i].id] = struct{}{}
-		}
-	}
-	return cancelledIDs
-}
-
-// rollAndCancelDice rolls all dice and applies interference cancellation.
-func rollAndCancelDice(
-	ctx context.Context,
-	w http.ResponseWriter,
-	r *http.Request,
-	q *dbgen.Queries,
-	dice []dbgen.DiceRollDice,
-) ([]dieEntry, map[int64]struct{}, error) {
-	var actorDice, interfereDice []dieEntry
-
-	// Assign random faces (honouring pre-set faces, e.g. from duel accumulated
-	// dice and banked dice); bucket die IDs by actor vs. interference.
-	for _, d := range dice {
-		var f int16
-		if d.Face != nil && *d.Face >= 1 && *d.Face <= diceSides {
-			f = *d.Face
-		} else {
-			f = int16(rand.IntN(diceSides) + 1)
-			if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: new(f)}); err != nil {
-				respondInternalErr(w, r, "could not set die face", err)
-				return nil, nil, err
-			}
-		}
-		e := dieEntry{id: d.ID, face: f}
-		if d.IsInterference {
-			interfereDice = append(interfereDice, e)
-		} else {
-			actorDice = append(actorDice, e)
-		}
-	}
-
-	// Apply cancellation using the pure algorithm.
-	cancelledIDs := cancelInterference(actorDice, interfereDice)
-
-	// Mark cancelled dice in the database.
-	for cancelledID := range cancelledIDs {
-		if err := q.SetDieCancelled(ctx, cancelledID); err != nil {
-			respondInternalErr(w, r, "could not cancel die", err)
-			return nil, nil, err
-		}
-	}
-	return actorDice, cancelledIDs, nil
-}
-
-// ── UseBankedDie ──────────────────────────────────────────────────────────────
 
 // UseBankedDie handles POST /api/rolls/:rollId/use-banked-die.
 //
-// Spends one of the actor's banked dice (from Clandestinely Liaise
-// leverage_partner) on this roll. The banked die contributes to the actor's
-// pool with its pre-set face value; it cannot be used as interference.
+// Spends one of the calling player's banked dice on this roll. Owner-only
+// (no actor restriction). The die rolls a random face at resolution like
+// any other die — banked dice no longer carry a pre-determined face.
+// Same gating as LeverageRoll: leverage stage, not ready, intent set for
+// non-actors; runs the same post-commit sweeps and chat log.
 //
-// Request body: {"banked_die_id": N}
+// Request body: {"banked_die_id": N}.
 func UseBankedDie(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		roll, player, ok := requireRollAccess(w, r, s.Q)
-		if !ok {
-			return
-		}
-		if !rollIsOpen(roll) {
-			respondErr(w, http.StatusConflict, "roll is already resolved")
-			return
-		}
-		// Only the actor can spend banked dice (they always go on the actor's side).
-		if player.ID != roll.ActorID {
-			respondErr(w, http.StatusForbidden, "only the actor can spend banked dice")
+		if !ok || !requireLeverageStage(w, roll) {
 			return
 		}
 
@@ -703,89 +804,87 @@ func UseBankedDie(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-
-		banked, err := s.Q.GetBankedDie(ctx, body.BankedDieID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "banked die not found")
+		isInterference, ok := commitGate(w, r, s.Q, roll, player)
+		if !ok {
 			return
 		}
-		if banked.PlayerID != player.ID {
-			respondErr(w, http.StatusForbidden, "this banked die does not belong to you")
-			return
-		}
-		if banked.GameID != roll.GameID {
-			respondErr(w, http.StatusBadRequest, "banked die does not belong to this game")
-			return
-		}
-		if banked.UsedAt.Valid {
-			respondErr(w, http.StatusConflict, "this banked die has already been spent")
+		if !validateBankedDie(ctx, w, s.Q, roll, player, body.BankedDieID) {
 			return
 		}
 
-		// Create a die entry with the pre-set face.
-		die, err := s.Q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
-			RollID:           roll.ID,
-			PlayerID:         player.ID,
-			IsInterference:   false,
-			LeveragedAssetID: nil,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not add banked die to roll", err)
-			return
-		}
-
-		// Set the face immediately (banked dice have a pre-determined face).
-		if err := s.Q.SetDieFace(ctx, dbgen.SetDieFaceParams{
-			ID:   die.ID,
-			Face: &banked.Face,
-		}); err != nil {
-			respondInternalErr(w, r, "could not set banked die face", err)
-			return
-		}
-
-		// Mark the banked die as used.
 		if err := s.Q.MarkBankedDieUsed(ctx, dbgen.MarkBankedDieUsedParams{
-			ID:         body.BankedDieID,
-			UsedRollID: &roll.ID,
+			ID: body.BankedDieID, UsedRollID: &roll.ID,
 		}); err != nil {
 			respondInternalErr(w, r, "could not mark banked die as used", err)
 			return
 		}
 
-		broadcastEvent(manager, roll.GameID, model.EventRollLeverageAdded, model.RollLeverageAddedPayload{
-			RollID:         roll.ID,
-			PlayerID:       player.ID,
-			AssetID:        0, // no asset — banked die
-			IsInterference: false,
-		})
+		die, ok := commitDie(ctx, w, r, s.Q, manager, roll, player, isInterference, nil, nil)
+		if !ok {
+			return
+		}
 
 		respond(w, http.StatusOK, map[string]any{
 			"die":           die,
 			"banked_die_id": body.BankedDieID,
-			"face":          banked.Face,
 		})
 	}
 }
 
-// ── calculateRollResult ───────────────────────────────────────────────────────
+// validateBankedDie loads and validates a banked die for spending: it exists,
+// belongs to the caller, is in this game, and hasn't already been spent.
+func validateBankedDie(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	roll *dbgen.DiceRoll,
+	player *dbgen.Player,
+	bankedDieID int64,
+) bool {
+	banked, err := q.GetBankedDie(ctx, bankedDieID)
+	if err != nil {
+		respondErr(w, http.StatusNotFound, "banked die not found")
+		return false
+	}
+	if banked.PlayerID != player.ID {
+		respondErr(w, http.StatusForbidden, "this banked die does not belong to you")
+		return false
+	}
+	if banked.GameID != roll.GameID {
+		respondErr(w, http.StatusBadRequest, "banked die does not belong to this game")
+		return false
+	}
+	if banked.UsedAt.Valid {
+		respondErr(w, http.StatusConflict, "this banked die has already been spent")
+		return false
+	}
+	return true
+}
 
-// calculateRollResult computes the result and outcome of a resolved roll.
-func calculateRollResult(actorDice []dieEntry, cancelledIDs map[int64]struct{}, roll *dbgen.DiceRoll) (int16, string) {
-	distinctFaces := make(map[int16]struct{})
-	for _, e := range actorDice {
-		if _, exists := cancelledIDs[e.id]; !exists {
-			distinctFaces[e.face] = struct{}{}
+// ── CloseLeverage (legacy, unsurfaced) ───────────────────────────────────────
+
+// CloseLeverage handles POST /api/rolls/:rollId/close-leverage. Actor or
+// facilitator only; remains on the backend as a future-proof hook (e.g. a
+// table-wide decision timer). Not surfaced in the frontend; auto-resolution
+// is the default path.
+func CloseLeverage(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roll, player, ok := requireRollAccess(w, r, s.Q)
+		if !ok {
+			return
 		}
+		if !rollIsOpen(roll) {
+			respondErr(w, http.StatusConflict, "roll is already resolved")
+			return
+		}
+		if player.ID != roll.ActorID && !player.IsFacilitator {
+			respondErr(w, http.StatusForbidden, "only the actor or facilitator can close leverage")
+			return
+		}
+		if err := finalizeRoll(r.Context(), w, r, s.Q, manager, roll); err != nil {
+			respondInternalErr(w, r, "could not finalize roll", err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{"roll_id": roll.ID})
 	}
-	result := int16(len(distinctFaces))
-
-	effectiveDifficulty := roll.Difficulty
-	if roll.AdjustedDifficulty != nil {
-		effectiveDifficulty = *roll.AdjustedDifficulty
-	}
-	outcome := marOutcome
-	if result >= effectiveDifficulty {
-		outcome = makeOutcome
-	}
-	return result, outcome
 }

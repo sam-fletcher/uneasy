@@ -1,27 +1,33 @@
 <!-- DiceRollPanel.svelte
-  Shows the active dice roll for all players.
-  - Actor sees: leverage button, call-vote button, roll (close-leverage) button.
-  - Others see: leverage-to-interfere button, vote buttons when voting is open.
-  - Everyone sees: dice pool, interference dice, cancellations, result.
+  Stage-driven dice roll panel. The server owns transitions
+  (decide_vote → voting → leverage → resolved); clients call action
+  endpoints and observe stage_changed / ready_changed / intent_set /
+  vote_resolved / resolved over WS.
 -->
 <script lang="ts">
-	import type { DiceRoll, DiceRollDie, DifficultyVote, Asset, Player } from '$lib/api';
-	import { leverageRoll, callVote, voteOnRoll, closeLeverage } from '$lib/api';
+	import type {
+		DiceRoll, DiceRollDie, VoteView, RollParticipant, RollIntent,
+		Asset, Player, BankedDie,
+	} from '$lib/api';
+	import {
+		leverageRoll, useBankedDie, callVote, skipVote, voteOnRoll,
+		setRollIntent, setRollReady,
+	} from '$lib/api';
+	import AssetCard from './AssetCard.svelte';
+	import { playerColorByID } from '$lib/playerColor';
 
 	interface Props {
 		roll: DiceRoll;
 		dice: DiceRollDie[];
-		votes: DifficultyVote[];
-		/** Is a difficulty vote currently open (call-vote was issued)? */
-		voteOpen: boolean;
+		votes: VoteView[];
+		participants: RollParticipant[];
+		bankedDice: BankedDie[];
 		assets: Asset[];
 		currentPlayerID: number | null;
 		players: Player[];
 		playerNameMap: Map<number, string>;
-		/** True if the current player is the facilitator. */
-		isFacilitator: boolean;
-		/** When true, the actor cannot leverage their own assets — a Make
-		 *  Demands `control_leverage` winner has authority over this roll. */
+		/** True when the actor cannot leverage their own assets (Make Demands
+		 *  control_leverage winner has authority). */
 		actorLeverageBlocked?: boolean;
 	}
 
@@ -29,114 +35,125 @@
 		roll = $bindable(),
 		dice = $bindable(),
 		votes = $bindable(),
-		voteOpen = $bindable(),
+		participants = $bindable(),
+		bankedDice = $bindable(),
 		assets,
 		currentPlayerID,
 		players,
 		playerNameMap,
-		isFacilitator,
 		actorLeverageBlocked = false,
 	}: Props = $props();
 
 	const isActor = $derived(currentPlayerID === roll.actor_id);
-	const isResolved = $derived(roll.result !== null);
-	const canClose = $derived((isActor || isFacilitator) && !isResolved);
+	const stage = $derived(roll.stage);
+	const me = $derived(participants.find(p => p.player_id === currentPlayerID) ?? null);
+	const myIntent = $derived<RollIntent | 'aid' | null>(
+		isActor ? 'aid' : (me?.intent ?? null)
+	);
+	const myReady = $derived(me?.is_ready ?? false);
 
-	// Split dice into actor pool and interference.
-	const actorDice = $derived(dice.filter(d => !d.is_interference));
-	const intDice = $derived(dice.filter(d => d.is_interference));
-
-	// Assets the current player could leverage (not destroyed, not already on this roll).
-	const committedAssetIDs = $derived(new Set(dice.map(d => d.leveraged_asset_id).filter(id => id != null)));
-	const leverageableAssets = $derived(
-		actorLeverageBlocked && isActor ? [] :
-		assets.filter(a =>
-			a.owner_id === currentPlayerID &&
-			!a.is_destroyed &&
-			!committedAssetIDs.has(a.id)
-		)
+	// A non-actor's intent is locked once they've committed any die for
+	// this roll. Non-actors never have automatic base dice, so every die
+	// belonging to them is a committed asset or banked-die spend.
+	// (Intent is irrelevant for the actor — they're implicitly aiding —
+	// so this check doesn't need to special-case the actor's base dice.)
+	const intentLocked = $derived(
+		dice.some(d => d.player_id === currentPlayerID)
 	);
 
-	// Votes the current player has cast.
-	const myVote = $derived(votes.find(v => v.player_id === currentPlayerID));
+	const myAssets = $derived(
+		assets.filter(a => a.owner_id === currentPlayerID && !a.is_destroyed)
+	);
+	const myUnleveragedAssets = $derived(myAssets.filter(a => !a.is_leveraged));
+	const myUnspentBanked = $derived(bankedDice.filter(b => b.used_at == null));
+	const canCommit = $derived(myUnleveragedAssets.length > 0 || myUnspentBanked.length > 0);
 
-	// Effective difficulty shown to player.
+	// Split dice into pools by side.
+	const actorPool = $derived(dice.filter(d => !d.is_interference));
+	const intPool = $derived(dice.filter(d => d.is_interference));
+
 	const effectiveDifficulty = $derived(roll.adjusted_difficulty ?? roll.difficulty);
+	const stageLabel = $derived({
+		decide_vote: 'Vote?',
+		voting: 'Voting',
+		leverage: 'Leverage',
+		resolved: 'Resolved',
+	}[stage]);
 
 	let busy = $state(false);
 	let error = $state('');
-
-	// ── Leverage ──────────────────────────────────────────────────────────────
-	let showLeveragePicker = $state(false);
-
-	async function onLeverage(assetID: number) {
+	const setErr = (e: unknown) => {
+		error = e instanceof Error ? e.message : 'Action failed.';
+	};
+	async function run(fn: () => Promise<unknown>) {
 		if (busy) return;
-		busy = true;
-		error = '';
-		try {
-			const { die } = await leverageRoll(roll.id, assetID);
-			dice = [...dice, die];
-			showLeveragePicker = false;
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not leverage asset.';
-		} finally {
-			busy = false;
-		}
+		busy = true; error = '';
+		try { await fn(); } catch (e) { setErr(e); } finally { busy = false; }
 	}
 
-	// ── Call vote ─────────────────────────────────────────────────────────────
-	async function onCallVote() {
-		if (busy) return;
-		busy = true;
-		error = '';
-		try {
-			await callVote(roll.id);
-			voteOpen = true;
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not call vote.';
-		} finally {
-			busy = false;
+	// ── decide_vote actions ───────────────────────────────────────────────────
+	const onCallVote = () => run(() => callVote(roll.id));
+	const onSkipVote = () => run(() => skipVote(roll.id));
+
+	// ── voting actions ────────────────────────────────────────────────────────
+	const myVote = $derived(votes.find(v => v.player_id === currentPlayerID));
+	const voteCount = $derived(votes.length);
+	const onVote = (v: 1 | -1) => run(() => voteOnRoll(roll.id, v));
+
+	// ── leverage actions ──────────────────────────────────────────────────────
+	const onSetIntent = (intent: RollIntent) => run(() => setRollIntent(roll.id, intent));
+	const onLeverageAsset = (asset: Asset) => run(async () => {
+		const { die } = await leverageRoll(roll.id, asset.id);
+		dice = [...dice, die];
+	});
+	const onUseBanked = (b: BankedDie) => run(async () => {
+		const { die } = await useBankedDie(roll.id, b.id);
+		dice = [...dice, die];
+		bankedDice = bankedDice.map(x => x.id === b.id ? { ...x, used_at: new Date().toISOString(), used_roll_id: roll.id } : x);
+	});
+	const onToggleReady = () => run(() => setRollReady(roll.id, !myReady));
+
+	// ── Player roster (for participants chips) ───────────────────────────────
+	// A locked-ready participant (no dice to add) is called out explicitly so
+	// the actor can see at a glance who's been auto-readied vs. who's still
+	// thinking. The actor's "Ready" click can resolve the roll the instant
+	// every other participant is ready; surfacing locked-ready prevents
+	// surprise resolutions.
+	function chipLabel(p: RollParticipant): string {
+		const name = playerNameMap.get(p.player_id) ?? '?';
+		if (p.player_id === roll.actor_id) {
+			return `${name} · actor · ${p.is_ready ? 'ready' : 'not ready'}`;
 		}
+		const intent = p.intent ?? 'choosing…';
+		if (p.is_ready && p.intent == null) {
+			return `${name} · 🔒 no dice · ready`;
+		}
+		return `${name} · ${intent} · ${p.is_ready ? 'ready' : 'not ready'}`;
 	}
 
-	// ── Vote ──────────────────────────────────────────────────────────────────
-	async function onVote(v: 'yea' | 'nay') {
-		if (busy || myVote) return;
-		busy = true;
-		error = '';
-		try {
-			const result = await voteOnRoll(roll.id, v);
-			votes = [...votes.filter(vt => vt.player_id !== currentPlayerID!), {
-				roll_id: roll.id,
-				player_id: currentPlayerID!,
-				vote: v,
-				voted_at: new Date().toISOString(),
-			}];
-			if (result.adjusted_difficulty != null) {
-				roll = { ...roll, adjusted_difficulty: result.adjusted_difficulty };
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not submit vote.';
-		} finally {
-			busy = false;
-		}
+	// ── Commit feed ──────────────────────────────────────────────────────────
+	// Show every die EXCEPT the actor's two automatic base dice (no asset,
+	// not interference). Banked-die spends and leveraged assets both show up.
+	function isActorBaseDie(d: DiceRollDie): boolean {
+		return d.player_id === roll.actor_id
+			&& d.leveraged_asset_id == null
+			&& !d.is_interference;
 	}
-
-	// ── Close / Roll ──────────────────────────────────────────────────────────
-	async function onRoll() {
-		if (busy || !canClose) return;
-		busy = true;
-		error = '';
-		try {
-			const data = await closeLeverage(roll.id);
-			roll = data.roll;
-			dice = data.dice;
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not roll dice.';
-		} finally {
-			busy = false;
-		}
-	}
+	const commitFeed = $derived(
+		dice
+			.filter(d => !isActorBaseDie(d))
+			.map(d => {
+				const asset = d.leveraged_asset_id != null
+					? assets.find(a => a.id === d.leveraged_asset_id) : undefined;
+				return {
+					id: d.id,
+					playerID: d.player_id,
+					playerName: playerNameMap.get(d.player_id) ?? '?',
+					source: asset ? asset.name : 'banked die',
+					isInterference: d.is_interference,
+				};
+			})
+	);
 </script>
 
 <div class="roll-panel">
@@ -148,119 +165,194 @@
 				→ <strong class="adjusted">{roll.adjusted_difficulty}</strong>
 			{/if}
 		</span>
-		<span class="roll-actor">
-			Actor: {playerNameMap.get(roll.actor_id) ?? '?'}
-		</span>
+		<span class="roll-actor">Actor: {playerNameMap.get(roll.actor_id) ?? '?'}</span>
+		<span class="stage-chip" data-stage={stage}>{stageLabel}</span>
 	</div>
 
 	{#if error}
 		<p class="roll-error">{error}</p>
 	{/if}
 
-	<!-- ── Dice pools ────────────────────────────────────────────────────── -->
+	<!-- Dice pools (always visible) -->
 	<div class="dice-section">
 		<div class="dice-group">
-			<span class="dice-label">Actor's dice</span>
+			<span class="dice-label">Actor pool</span>
 			<div class="dice-row">
-				{#each actorDice as die (die.id)}
+				{#each actorPool as die (die.id)}
 					<div
 						class="die"
 						class:cancelled={die.is_cancelled}
 						class:unrolled={die.face == null}
-						title={die.leveraged_asset_id
-							? `${assets.find(a => a.id === die.leveraged_asset_id)?.name ?? 'asset'} leveraged`
-							: 'base die'}
-					>
-						{die.face ?? '?'}
-					</div>
+						style:border-color={playerColorByID(die.player_id, players)}
+						title={`${playerNameMap.get(die.player_id) ?? '?'} · ${
+							die.leveraged_asset_id
+								? assets.find(a => a.id === die.leveraged_asset_id)?.name ?? 'asset'
+								: 'base/banked die'
+						}`}
+					>{die.face ?? '🎲'}</div>
 				{/each}
 			</div>
 		</div>
-
-		{#if intDice.length > 0}
+		{#if intPool.length > 0}
 			<div class="dice-group interference">
 				<span class="dice-label">Interference</span>
 				<div class="dice-row">
-					{#each intDice as die (die.id)}
+					{#each intPool as die (die.id)}
 						<div
 							class="die int"
+							class:unrolled={die.face == null}
+							style:border-color={playerColorByID(die.player_id, players)}
 							title={playerNameMap.get(die.player_id) ?? '?'}
-						>
-							{die.face ?? '?'}
-						</div>
+						>{die.face ?? '🎲'}</div>
 					{/each}
 				</div>
 			</div>
 		{/if}
 	</div>
 
-	<!-- ── Result ────────────────────────────────────────────────────────── -->
-	{#if isResolved}
-		<div class="result-banner" class:make={roll.outcome === 'make'} class:mar={roll.outcome === 'mar'}>
-			<span class="result-label">{roll.outcome === 'make' ? 'Make' : 'Mar'}</span>
-			<span class="result-score">{roll.result} distinct face{roll.result === 1 ? '' : 's'} vs. difficulty {effectiveDifficulty}</span>
+	<!-- ── Stage: decide_vote ──────────────────────────────────────────────── -->
+	{#if stage === 'decide_vote'}
+		{#if isActor}
+			<div class="stage-actions">
+				<button class="action-btn primary" onclick={onCallVote} disabled={busy}>
+					Call difficulty vote
+				</button>
+				<button class="action-btn secondary" onclick={onSkipVote} disabled={busy}>
+					Skip vote
+				</button>
+			</div>
+		{:else}
+			<p class="stage-hint">Waiting for {playerNameMap.get(roll.actor_id) ?? 'the actor'} to decide about a difficulty vote…</p>
+		{/if}
+	{/if}
+
+	<!-- ── Stage: voting ───────────────────────────────────────────────────── -->
+	{#if stage === 'voting'}
+		<div class="stage-actions">
+			<p class="stage-hint">
+				Each vote shifts difficulty by ±1. {voteCount} of {players.length} have voted.
+			</p>
+			{#if myVote}
+				<p class="stage-hint">
+					You voted <strong>{myVote.vote === 1 ? '+1 (harder)' : '−1 (easier)'}</strong>.
+					Waiting on others…
+				</p>
+			{:else}
+				<div class="vote-buttons">
+					<button class="vote-btn easier" onclick={() => onVote(-1)} disabled={busy}>
+						−1 (easier)
+					</button>
+					<button class="vote-btn harder" onclick={() => onVote(1)} disabled={busy}>
+						+1 (harder)
+					</button>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
-	<!-- ── Actions ───────────────────────────────────────────────────────── -->
-	{#if !isResolved}
-		<div class="roll-actions">
-
-			<!-- Leverage picker -->
-			{#if leverageableAssets.length > 0}
-				{#if showLeveragePicker}
-					<div class="leverage-picker">
-						<span class="picker-label">
-							{isActor ? 'Leverage to add a die:' : 'Leverage to interfere:'}
-						</span>
-						{#each leverageableAssets as asset (asset.id)}
-							<button
-								class="leverage-item"
-								onclick={() => onLeverage(asset.id)}
-								disabled={busy}
-							>
-								<span class="lev-name">{asset.name}</span>
-								<span class="lev-type">{asset.asset_type}</span>
-							</button>
-						{/each}
-						<button class="text-btn" onclick={() => { showLeveragePicker = false; }}>Cancel</button>
-					</div>
-				{:else}
-					<button class="action-btn secondary" onclick={() => { showLeveragePicker = true; }} disabled={busy}>
-						{isActor ? 'Leverage asset (+1 die)' : 'Interfere (leverage to add opposition die)'}
-					</button>
-				{/if}
+	<!-- ── Stage: leverage ─────────────────────────────────────────────────── -->
+	{#if stage === 'leverage'}
+		<!-- Intent + ready row -->
+		<div class="intent-row">
+			{#if !isActor && !myIntent}
+				<button class="intent-btn aid" onclick={() => onSetIntent('aid')} disabled={busy}>
+					Aid
+				</button>
+				<button class="intent-btn interfere" onclick={() => onSetIntent('interfere')} disabled={busy}>
+					Interfere
+				</button>
+			{:else if !isActor}
+				<span class="intent-badge" class:locked={intentLocked}>
+					{myIntent === 'aid' ? "You're aiding" : "You're interfering"}
+				</span>
 			{/if}
+			<button
+				class="ready-btn"
+				class:ready={myReady}
+				onclick={onToggleReady}
+				disabled={busy || (myReady && !canCommit)}
+				title={myReady && !canCommit ? 'You have no dice left to add — automatically ready.' : ''}
+			>
+				{myReady ? (canCommit ? 'Unready (add more dice)' : 'Ready (locked)') : 'Ready'}
+			</button>
+		</div>
 
-			<!-- Vote section -->
-			{#if voteOpen}
-				<div class="vote-section">
-					<span class="vote-label">Difficulty vote — {votes.length} of {players.length} cast</span>
-					{#if !myVote}
-						<div class="vote-buttons">
-							<button class="vote-btn yea" onclick={() => onVote('yea')} disabled={busy}>
-								👍 Yea (easier)
-							</button>
-							<button class="vote-btn nay" onclick={() => onVote('nay')} disabled={busy}>
-								👎 Nay (harder)
-							</button>
-						</div>
-					{:else}
-						<span class="vote-cast">You voted: {myVote.vote === 'yea' ? '👍 yea' : '👎 nay'}</span>
-					{/if}
+		<!-- My assets (only when intent set or I'm the actor) -->
+		{#if (isActor || myIntent) && myAssets.length > 0}
+			<div class="my-assets">
+				<span class="section-label">Your assets</span>
+				{#each myAssets as asset (asset.id)}
+					<AssetCard
+						{asset}
+						compact
+						mode="roll-leverage"
+						onRollLeverage={onLeverageAsset}
+						rollLeverageDisabled={myReady || (isActor && actorLeverageBlocked)}
+						onTear={() => {}}
+					/>
+				{/each}
+			</div>
+		{/if}
+
+		<!-- Banked dice (only when intent set or I'm the actor) -->
+		{#if (isActor || myIntent) && myUnspentBanked.length > 0}
+			<div class="banked-section">
+				<span class="section-label">Banked dice ({myUnspentBanked.length})</span>
+				<div class="banked-list">
+					{#each myUnspentBanked as b (b.id)}
+						<button
+							class="banked-btn"
+							onclick={() => onUseBanked(b)}
+							disabled={busy || myReady}
+							title="Spend this banked die (random face at resolution)"
+						>
+							🎲 Spend (+1 die)
+						</button>
+					{/each}
 				</div>
-			{:else if isActor && !voteOpen}
-				<button class="action-btn secondary" onclick={onCallVote} disabled={busy}>
-					Call difficulty vote
-				</button>
-			{/if}
+			</div>
+		{/if}
 
-			<!-- Roll button (actor or facilitator) -->
-			{#if canClose}
-				<button class="action-btn primary roll-btn" onclick={onRoll} disabled={busy}>
-					{busy ? '…' : '🎲 Roll the dice'}
-				</button>
-			{/if}
+		<!-- Public commit feed -->
+		{#if commitFeed.length > 0}
+			<div class="commit-feed">
+				<span class="section-label">Commits this roll</span>
+				<ul>
+					{#each commitFeed as c (c.id)}
+						<li>
+							<span class="dot" style:background={playerColorByID(c.playerID, players)}></span>
+							<span class="cf-name">{c.playerName}</span>
+							<span class="cf-source">· {c.source}</span>
+							<span class="cf-side" class:interfere={c.isInterference}>
+								· {c.isInterference ? 'interfere' : 'aid'}
+							</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+
+		<!-- Player roster -->
+		<div class="roster">
+			{#each participants as p (p.player_id)}
+				<span class="chip" style:border-color={playerColorByID(p.player_id, players)}>
+					{chipLabel(p)}
+				</span>
+			{/each}
+		</div>
+
+		<!-- Footer summary -->
+		<p class="footer-summary">
+			{actorPool.length} aid · {intPool.length} interfere ·
+			{participants.filter(p => p.is_ready).length} of {participants.length} ready
+		</p>
+	{/if}
+
+	<!-- ── Stage: resolved ─────────────────────────────────────────────────── -->
+	{#if stage === 'resolved'}
+		<div class="result-banner" class:make={roll.outcome === 'make'} class:mar={roll.outcome === 'mar'}>
+			<span class="result-label">{roll.outcome === 'make' ? 'Make' : 'Mar'}</span>
+			<span class="result-score">{roll.result} distinct face{roll.result === 1 ? '' : 's'} vs. difficulty {effectiveDifficulty}</span>
 		</div>
 	{/if}
 </div>
@@ -284,263 +376,170 @@
 		flex-wrap: wrap;
 	}
 
-	.roll-title {
-		font-weight: 700;
-		color: #c8a96e;
-		font-size: 0.9rem;
-	}
+	.roll-title { font-weight: 700; color: #c8a96e; font-size: 0.9rem; }
+	.roll-meta { font-size: 0.85rem; color: #aaa; }
+	.adjusted { color: #e0c070; }
+	.roll-actor { font-size: 0.78rem; color: #888; }
 
-	.roll-meta {
-		font-size: 0.85rem;
-		color: #aaa;
-	}
-
-	.adjusted {
-		color: #e0c070;
-	}
-
-	.roll-actor {
-		font-size: 0.78rem;
-		color: #888;
+	.stage-chip {
 		margin-left: auto;
-	}
-
-	.roll-error {
-		color: #e07070;
-		font-size: 0.82rem;
-		margin: 0;
-	}
-
-	/* ── Dice ─────────────────────────────────────────────────────────────── */
-
-	.dice-section {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-
-	.dice-group {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.dice-group.interference .dice-label {
-		color: #e07070;
-	}
-
-	.dice-label {
-		font-size: 0.75rem;
-		color: #888;
-		min-width: 90px;
-		flex-shrink: 0;
-	}
-
-	.dice-row {
-		display: flex;
-		gap: 0.35rem;
-		flex-wrap: wrap;
-	}
-
-	.die {
-		width: 32px;
-		height: 32px;
-		border-radius: 5px;
-		border: 2px solid #c8a96e;
-		background: #2a2010;
-		color: #e8e4d9;
-		font-weight: 700;
-		font-size: 1rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: opacity 0.2s;
-	}
-
-	.die.int {
-		border-color: #e07070;
-		background: #2a1010;
-		color: #f0b0b0;
-	}
-
-	.die.cancelled {
-		opacity: 0.3;
-		text-decoration: line-through;
-		border-style: dashed;
-	}
-
-	.die.unrolled {
-		color: #666;
-		border-color: #555;
-		border-style: dashed;
-	}
-
-	/* ── Result banner ────────────────────────────────────────────────────── */
-
-	.result-banner {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 0.5rem 0.75rem;
-		border-radius: 5px;
-		border: 1px solid;
-	}
-
-	.result-banner.make {
-		border-color: #6dbf7a;
-		background: #0a1f0a;
-	}
-
-	.result-banner.mar {
-		border-color: #e07070;
-		background: #1f0a0a;
-	}
-
-	.result-label {
-		font-size: 1.1rem;
-		font-weight: 800;
+		font-size: 0.7rem;
 		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		letter-spacing: 0.05em;
+		padding: 0.15rem 0.5rem;
+		border-radius: 3px;
+		background: #3a3020;
+		color: #c8a96e;
 	}
+	.stage-chip[data-stage="resolved"] { background: #1a3a1a; color: #6dbf7a; }
+	.stage-chip[data-stage="voting"] { background: #3a2a3a; color: #c890e0; }
 
-	.result-banner.make .result-label { color: #6dbf7a; }
-	.result-banner.mar .result-label { color: #e07070; }
+	.roll-error { color: #e07070; font-size: 0.82rem; margin: 0; }
 
-	.result-score {
-		font-size: 0.82rem;
-		color: #aaa;
+	/* Dice */
+	.dice-section { display: flex; flex-direction: column; gap: 0.4rem; }
+	.dice-group { display: flex; align-items: center; gap: 0.5rem; }
+	.dice-group.interference .dice-label { color: #e07070; }
+	.dice-label { font-size: 0.75rem; color: #888; min-width: 90px; flex-shrink: 0; }
+	.dice-row { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+	.die {
+		width: 32px; height: 32px; border-radius: 5px;
+		border: 2px solid #c8a96e; background: #2a2010;
+		color: #e8e4d9; font-weight: 700; font-size: 1rem;
+		display: flex; align-items: center; justify-content: center;
 	}
+	.die.int { background: #2a1010; color: #f0b0b0; }
+	.die.cancelled { opacity: 0.3; text-decoration: line-through; border-style: dashed; }
+	.die.unrolled { color: #888; border-style: dashed; font-size: 1.1rem; }
 
-	/* ── Actions ──────────────────────────────────────────────────────────── */
-
-	.roll-actions {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
+	/* Stage hints / actions */
+	.stage-actions { display: flex; flex-direction: column; gap: 0.5rem; }
+	.stage-hint { font-size: 0.85rem; color: #aaa; margin: 0; }
 
 	.action-btn {
-		padding: 0.4rem 0.8rem;
+		min-height: 44px;
+		padding: 0.5rem 0.8rem;
 		border-radius: 5px;
-		font-size: 0.85rem;
+		font-size: 0.9rem;
 		font-weight: 600;
 		cursor: pointer;
-		align-self: flex-start;
 	}
-
-	.action-btn.primary {
-		background: #c8a96e;
-		color: #1a1a1a;
-	}
-
-	.action-btn.secondary {
-		background: #333;
-		color: #c8a96e;
-		border: 1px solid #4a4030;
-	}
-
+	.action-btn.primary { background: #c8a96e; color: #1a1a1a; }
+	.action-btn.secondary { background: #333; color: #c8a96e; border: 1px solid #4a4030; }
 	.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-	.roll-btn {
-		align-self: stretch;
-		text-align: center;
-		font-size: 0.95rem;
-		padding: 0.5rem 0.8rem;
-	}
-
-	/* Leverage picker */
-
-	.leverage-picker {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		background: #252525;
-		border-radius: 5px;
-		padding: 0.5rem;
-	}
-
-	.picker-label {
-		font-size: 0.78rem;
-		color: #c8a96e;
-	}
-
-	.leverage-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.3rem 0.5rem;
-		border-radius: 4px;
-		background: #2a2a2a;
-		text-align: left;
-		font-size: 0.85rem;
-		border: 1px solid #444;
-		cursor: pointer;
-		color: #e8e4d9;
-	}
-
-	.leverage-item:hover { background: #333; border-color: #c8a96e; }
-	.leverage-item:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	.lev-name { flex: 1; }
-	.lev-type { font-size: 0.72rem; color: #777; text-transform: capitalize; }
-
-	.text-btn {
-		background: none;
-		color: #888;
-		font-size: 0.78rem;
-		padding: 0.2rem 0;
-		cursor: pointer;
-		text-decoration: underline dotted;
-		align-self: flex-start;
-	}
-
-	/* Vote */
-
-	.vote-section {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-		padding: 0.5rem;
-		border: 1px solid #3a3a20;
-		border-radius: 5px;
-		background: #1a1a10;
-	}
-
-	.vote-label {
-		font-size: 0.78rem;
-		color: #c8a96e;
-	}
-
-	.vote-buttons {
-		display: flex;
-		gap: 0.5rem;
-	}
-
+	/* Vote buttons */
+	.vote-buttons { display: flex; gap: 0.5rem; }
 	.vote-btn {
-		padding: 0.35rem 0.7rem;
+		flex: 1;
+		min-height: 44px;
+		padding: 0.5rem;
 		border-radius: 5px;
-		font-size: 0.85rem;
-		font-weight: 600;
+		font-size: 0.9rem;
+		font-weight: 700;
 		cursor: pointer;
 		border: 1px solid;
 	}
-
-	.vote-btn.yea {
-		background: #0a2a0a;
-		border-color: #6dbf7a;
-		color: #6dbf7a;
-	}
-
-	.vote-btn.nay {
-		background: #2a0a0a;
-		border-color: #e07070;
-		color: #e07070;
-	}
-
+	.vote-btn.easier { background: #0a2a0a; border-color: #6dbf7a; color: #6dbf7a; }
+	.vote-btn.harder { background: #2a0a0a; border-color: #e07070; color: #e07070; }
 	.vote-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-	.vote-cast {
-		font-size: 0.82rem;
-		color: #aaa;
+	/* Intent + ready row */
+	.intent-row {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		flex-wrap: wrap;
 	}
+	.intent-btn {
+		flex: 1;
+		min-height: 44px;
+		padding: 0.5rem;
+		border-radius: 5px;
+		font-size: 0.9rem;
+		font-weight: 700;
+		border: 1px solid;
+	}
+	.intent-btn.aid { background: #0a2a1a; border-color: #6dbf7a; color: #6dbf7a; }
+	.intent-btn.interfere { background: #2a0a0a; border-color: #e07070; color: #e07070; }
+	.intent-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+	.intent-badge {
+		font-size: 0.85rem;
+		color: #e0c070;
+		padding: 0.35rem 0.6rem;
+		border: 1px solid #4a3a20;
+		border-radius: 4px;
+	}
+	.intent-badge.locked { opacity: 0.6; }
+	.ready-btn {
+		min-height: 44px;
+		padding: 0.5rem 0.8rem;
+		margin-left: auto;
+		border-radius: 5px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		background: #333;
+		color: #e8e4d9;
+		border: 1px solid #555;
+		cursor: pointer;
+	}
+	.ready-btn.ready {
+		background: #1a3a1a;
+		color: #6dbf7a;
+		border-color: #6dbf7a;
+	}
+	.ready-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	/* Sections */
+	.section-label {
+		font-size: 0.78rem;
+		color: #888;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.my-assets { display: flex; flex-direction: column; gap: 0.4rem; }
+	.banked-section { display: flex; flex-direction: column; gap: 0.4rem; }
+	.banked-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+	.banked-btn {
+		min-height: 44px;
+		padding: 0.4rem 0.7rem;
+		border: 1px solid #c8a96e;
+		border-radius: 4px;
+		background: #2a2010;
+		color: #e8e4d9;
+		font-weight: 600;
+	}
+	.banked-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+	/* Commit feed */
+	.commit-feed { display: flex; flex-direction: column; gap: 0.3rem; }
+	.commit-feed ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+	.commit-feed li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: #ccc; }
+	.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+	.cf-source { color: #999; }
+	.cf-side { color: #6dbf7a; }
+	.cf-side.interfere { color: #e07070; }
+
+	/* Roster + footer */
+	.roster { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+	.chip {
+		font-size: 0.75rem;
+		padding: 0.2rem 0.5rem;
+		border: 1px solid #555;
+		border-radius: 12px;
+		color: #ccc;
+	}
+	.footer-summary { font-size: 0.82rem; color: #aaa; margin: 0; }
+
+	/* Result */
+	.result-banner {
+		display: flex; align-items: center; gap: 0.75rem;
+		padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid;
+	}
+	.result-banner.make { border-color: #6dbf7a; background: #0a1f0a; }
+	.result-banner.mar  { border-color: #e07070; background: #1f0a0a; }
+	.result-label { font-size: 1.1rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+	.result-banner.make .result-label { color: #6dbf7a; }
+	.result-banner.mar  .result-label { color: #e07070; }
+	.result-score { font-size: 0.82rem; color: #aaa; }
 </style>

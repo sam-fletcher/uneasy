@@ -131,10 +131,12 @@ const (
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
 	EventRollLeverageAdded = "roll.leverage_added"
-	EventRollVoteCalled    = "roll.vote_called"
 	EventRollVoteCast      = "roll.vote_cast"
 	EventRollVoteResolved  = "roll.vote_resolved"
 	EventRollResolved      = "roll.resolved"
+	EventRollStageChanged  = "roll.stage_changed"
+	EventRollIntentSet     = "roll.intent_set"
+	EventRollReadyChanged  = "roll.ready_changed"
 )
 
 // ── Command types (client → server) ──────────────────────────────────────────
@@ -293,22 +295,44 @@ type RollLeverageAddedPayload struct {
 	IsInterference bool  `json:"is_interference"`
 }
 
-// RollVoteCalledPayload is for the vote initiation event.
-type RollVoteCalledPayload struct {
-	RollID int64 `json:"roll_id"`
-}
-
-// RollVoteCastPayload is for individual vote events.
+// RollVoteCastPayload is for individual vote events. The vote value is
+// intentionally omitted to preserve the hidden ballot — clients only learn
+// that the player has voted, not which way.
 type RollVoteCastPayload struct {
-	RollID   int64  `json:"roll_id"`
-	PlayerID int64  `json:"player_id"`
-	Vote     string `json:"vote"`
+	RollID   int64 `json:"roll_id"`
+	PlayerID int64 `json:"player_id"`
 }
 
-// RollVoteResolvedPayload is for when all votes are in.
+// RollVoteResolvedPayload is for when all votes are in. Ballot is the full
+// per-player ±1 reveal that lands simultaneously.
 type RollVoteResolvedPayload struct {
 	RollID             int64 `json:"roll_id"`
 	AdjustedDifficulty int16 `json:"adjusted_difficulty"`
+	Ballot             any   `json:"ballot"` // []voteView from handler
+}
+
+// RollStageChangedPayload announces a server-driven stage transition.
+type RollStageChangedPayload struct {
+	RollID int64  `json:"roll_id"`
+	Stage  string `json:"stage"`
+}
+
+// RollIntentSetPayload announces a participant's intent pick.
+type RollIntentSetPayload struct {
+	RollID   int64  `json:"roll_id"`
+	PlayerID int64  `json:"player_id"`
+	Intent   string `json:"intent"`
+}
+
+// RollReadyChangedPayload announces a participant's ready-flag flip. Forced
+// is true when the server flipped the flag (auto-ready sweep, auto-unready
+// sweep) rather than the player choosing.
+type RollReadyChangedPayload struct {
+	RollID   int64  `json:"roll_id"`
+	PlayerID int64  `json:"player_id"`
+	IsReady  bool   `json:"is_ready"`
+	Forced   bool   `json:"forced,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // RollResolvedPayload carries the completed roll with all dice.

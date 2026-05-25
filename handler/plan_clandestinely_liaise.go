@@ -421,7 +421,7 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 //	 "target_asset_id": N,  // required for look_at_secret, take_gift, leverage_partner
 //	 "die_face": N}         // required for leverage_partner (1–6)
 //
-//nolint:funlen,gocognit // liaise share-choice with both-submitted finalize
+
 func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -453,7 +453,6 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		var body struct {
 			Choice        string `json:"choice"`
 			TargetAssetID *int64 `json:"target_asset_id"`
-			DieFace       *int16 `json:"die_face"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Choice == "" {
 			respondErr(w, http.StatusBadRequest, "choice is required")
@@ -478,27 +477,14 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, fmt.Sprintf("target_asset_id is required for choice %q", body.Choice))
 			return
 		}
-		if body.Choice == liaiseChoiceLeveragePartner {
-			if body.DieFace == nil || *body.DieFace < 1 || *body.DieFace > 6 {
-				respondErr(w, http.StatusBadRequest, "die_face (1–6) is required for leverage_partner")
-				return
-			}
-		}
 
-		// Apply immediate mechanical effects that don't need both reveals:
-		// (Most effects are deferred until both submit and choices are revealed.)
-		// For now, record the choice in liaise_choices.
-		var dieFace *int16
-		if body.Choice == liaiseChoiceLeveragePartner {
-			dieFace = body.DieFace
-		}
-
+		// Record the choice in liaise_choices. Effects are applied once both
+		// players have submitted.
 		if _, err := deps.Q.CreateLiaiseChoice(ctx, dbgen.CreateLiaiseChoiceParams{
 			PlanID:        plan.ID,
 			PlayerID:      player.ID,
 			Choice:        body.Choice,
 			TargetAssetID: body.TargetAssetID,
-			BankedDieFace: dieFace,
 		}); err != nil {
 			respondInternalErr(w, r, "could not record share-choice", err)
 			return
@@ -648,15 +634,14 @@ func applyLeveragePartner(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan,
 			PlayerID: choice.PlayerID,
 		})
 	}
-	if choice.BankedDieFace != nil {
-		if _, err := deps.Q.CreateBankedDie(ctx, dbgen.CreateBankedDieParams{
-			GameID:   plan.GameID,
-			PlayerID: choice.PlayerID,
-			Face:     *choice.BankedDieFace,
-			Source:   "liaise",
-		}); err != nil {
-			return fmt.Errorf("could not bank die: %w", err)
-		}
+	// Bank a die for a future roll. The die rolls a random face at resolution
+	// time like any other die — banked dice do not carry a pre-determined face.
+	if _, err := deps.Q.CreateBankedDie(ctx, dbgen.CreateBankedDieParams{
+		GameID:   plan.GameID,
+		PlayerID: choice.PlayerID,
+		Source:   "liaise",
+	}); err != nil {
+		return fmt.Errorf("could not bank die: %w", err)
 	}
 	return nil
 }

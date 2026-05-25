@@ -9,31 +9,12 @@ import (
 	"context"
 )
 
-const countVotesByRoll = `-- name: CountVotesByRoll :one
-SELECT
-  count(*) FILTER (WHERE vote = 'yea') AS yea_count,
-  count(*) FILTER (WHERE vote = 'nay') AS nay_count
-FROM difficulty_votes WHERE roll_id = $1
-`
-
-type CountVotesByRollRow struct {
-	YeaCount int64 `db:"yea_count" json:"yea_count"`
-	NayCount int64 `db:"nay_count" json:"nay_count"`
-}
-
-func (q *Queries) CountVotesByRoll(ctx context.Context, rollID int64) (CountVotesByRollRow, error) {
-	row := q.db.QueryRow(ctx, countVotesByRoll, rollID)
-	var i CountVotesByRollRow
-	err := row.Scan(&i.YeaCount, &i.NayCount)
-	return i, err
-}
-
 const createDiceRoll = `-- name: CreateDiceRoll :one
 
 
-INSERT INTO dice_rolls (game_id, plan_id, row_number, actor_id, difficulty)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at
+INSERT INTO dice_rolls (game_id, plan_id, row_number, actor_id, difficulty, stage)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage
 `
 
 type CreateDiceRollParams struct {
@@ -42,6 +23,7 @@ type CreateDiceRollParams struct {
 	RowNumber  *int16 `db:"row_number" json:"row_number"`
 	ActorID    int64  `db:"actor_id" json:"actor_id"`
 	Difficulty int16  `db:"difficulty" json:"difficulty"`
+	Stage      string `db:"stage" json:"stage"`
 }
 
 // sqlc query file for dice rolls.
@@ -53,6 +35,7 @@ func (q *Queries) CreateDiceRoll(ctx context.Context, arg CreateDiceRollParams) 
 		arg.RowNumber,
 		arg.ActorID,
 		arg.Difficulty,
+		arg.Stage,
 	)
 	var i DiceRoll
 	err := row.Scan(
@@ -68,6 +51,7 @@ func (q *Queries) CreateDiceRoll(ctx context.Context, arg CreateDiceRollParams) 
 		&i.Outcome,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.Stage,
 	)
 	return i, err
 }
@@ -76,7 +60,7 @@ const createDiceRollDie = `-- name: CreateDiceRollDie :one
 
 INSERT INTO dice_roll_dice (roll_id, player_id, is_interference, leveraged_asset_id)
 VALUES ($1, $2, $3, $4)
-RETURNING id, roll_id, player_id, is_interference, leveraged_asset_id, face, is_cancelled
+RETURNING id, roll_id, player_id, is_interference, leveraged_asset_id, face, is_cancelled, cancelled_by_die_id
 `
 
 type CreateDiceRollDieParams struct {
@@ -103,6 +87,7 @@ func (q *Queries) CreateDiceRollDie(ctx context.Context, arg CreateDiceRollDiePa
 		&i.LeveragedAssetID,
 		&i.Face,
 		&i.IsCancelled,
+		&i.CancelledByDieID,
 	)
 	return i, err
 }
@@ -115,19 +100,43 @@ ON CONFLICT (roll_id, player_id) DO UPDATE SET vote = EXCLUDED.vote
 `
 
 type CreateDifficultyVoteParams struct {
-	RollID   int64  `db:"roll_id" json:"roll_id"`
-	PlayerID int64  `db:"player_id" json:"player_id"`
-	Vote     string `db:"vote" json:"vote"`
+	RollID   int64 `db:"roll_id" json:"roll_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+	Vote     int16 `db:"vote" json:"vote"`
 }
 
-// ── Difficulty Votes ─────────────────────────────────────────────────
+// ── Difficulty Votes (SMALLINT ±1) ───────────────────────────────────
 func (q *Queries) CreateDifficultyVote(ctx context.Context, arg CreateDifficultyVoteParams) error {
 	_, err := q.db.Exec(ctx, createDifficultyVote, arg.RollID, arg.PlayerID, arg.Vote)
 	return err
 }
 
+const createRollParticipant = `-- name: CreateRollParticipant :exec
+
+INSERT INTO dice_roll_participants (roll_id, player_id, intent, is_ready)
+VALUES ($1, $2, $3, $4)
+`
+
+type CreateRollParticipantParams struct {
+	RollID   int64   `db:"roll_id" json:"roll_id"`
+	PlayerID int64   `db:"player_id" json:"player_id"`
+	Intent   *string `db:"intent" json:"intent"`
+	IsReady  bool    `db:"is_ready" json:"is_ready"`
+}
+
+// ── Dice Roll Participants ───────────────────────────────────────────
+func (q *Queries) CreateRollParticipant(ctx context.Context, arg CreateRollParticipantParams) error {
+	_, err := q.db.Exec(ctx, createRollParticipant,
+		arg.RollID,
+		arg.PlayerID,
+		arg.Intent,
+		arg.IsReady,
+	)
+	return err
+}
+
 const getDiceRollByID = `-- name: GetDiceRollByID :one
-SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at FROM dice_rolls WHERE id = $1
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls WHERE id = $1
 `
 
 func (q *Queries) GetDiceRollByID(ctx context.Context, id int64) (DiceRoll, error) {
@@ -146,12 +155,13 @@ func (q *Queries) GetDiceRollByID(ctx context.Context, id int64) (DiceRoll, erro
 		&i.Outcome,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.Stage,
 	)
 	return i, err
 }
 
 const getDiceRollByPlanID = `-- name: GetDiceRollByPlanID :one
-SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at FROM dice_rolls WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 1
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 1
 `
 
 // Returns the most recent dice roll for a given plan (used during resolution).
@@ -171,12 +181,13 @@ func (q *Queries) GetDiceRollByPlanID(ctx context.Context, planID *int64) (DiceR
 		&i.Outcome,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.Stage,
 	)
 	return i, err
 }
 
 const getOpenRollByGame = `-- name: GetOpenRollByGame :one
-SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at FROM dice_rolls
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls
 WHERE game_id = $1 AND resolved_at IS NULL
 ORDER BY created_at DESC
 LIMIT 1
@@ -198,12 +209,34 @@ func (q *Queries) GetOpenRollByGame(ctx context.Context, gameID int64) (DiceRoll
 		&i.Outcome,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.Stage,
+	)
+	return i, err
+}
+
+const getParticipant = `-- name: GetParticipant :one
+SELECT roll_id, player_id, intent, is_ready FROM dice_roll_participants WHERE roll_id = $1 AND player_id = $2
+`
+
+type GetParticipantParams struct {
+	RollID   int64 `db:"roll_id" json:"roll_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+}
+
+func (q *Queries) GetParticipant(ctx context.Context, arg GetParticipantParams) (DiceRollParticipant, error) {
+	row := q.db.QueryRow(ctx, getParticipant, arg.RollID, arg.PlayerID)
+	var i DiceRollParticipant
+	err := row.Scan(
+		&i.RollID,
+		&i.PlayerID,
+		&i.Intent,
+		&i.IsReady,
 	)
 	return i, err
 }
 
 const listDiceByRoll = `-- name: ListDiceByRoll :many
-SELECT id, roll_id, player_id, is_interference, leveraged_asset_id, face, is_cancelled FROM dice_roll_dice WHERE roll_id = $1 ORDER BY id
+SELECT id, roll_id, player_id, is_interference, leveraged_asset_id, face, is_cancelled, cancelled_by_die_id FROM dice_roll_dice WHERE roll_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListDiceByRoll(ctx context.Context, rollID int64) ([]DiceRollDice, error) {
@@ -223,6 +256,7 @@ func (q *Queries) ListDiceByRoll(ctx context.Context, rollID int64) ([]DiceRollD
 			&i.LeveragedAssetID,
 			&i.Face,
 			&i.IsCancelled,
+			&i.CancelledByDieID,
 		); err != nil {
 			return nil, err
 		}
@@ -235,7 +269,7 @@ func (q *Queries) ListDiceByRoll(ctx context.Context, rollID int64) ([]DiceRollD
 }
 
 const listDiceRollsByGame = `-- name: ListDiceRollsByGame :many
-SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC
 `
 
 func (q *Queries) ListDiceRollsByGame(ctx context.Context, gameID int64) ([]DiceRoll, error) {
@@ -260,6 +294,7 @@ func (q *Queries) ListDiceRollsByGame(ctx context.Context, gameID int64) ([]Dice
 			&i.Outcome,
 			&i.CreatedAt,
 			&i.ResolvedAt,
+			&i.Stage,
 		); err != nil {
 			return nil, err
 		}
@@ -307,8 +342,37 @@ func (q *Queries) ListInterferenceDiceByRoll(ctx context.Context, rollID int64) 
 	return items, nil
 }
 
+const listParticipantsByRoll = `-- name: ListParticipantsByRoll :many
+SELECT roll_id, player_id, intent, is_ready FROM dice_roll_participants WHERE roll_id = $1 ORDER BY player_id
+`
+
+func (q *Queries) ListParticipantsByRoll(ctx context.Context, rollID int64) ([]DiceRollParticipant, error) {
+	rows, err := q.db.Query(ctx, listParticipantsByRoll, rollID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DiceRollParticipant{}
+	for rows.Next() {
+		var i DiceRollParticipant
+		if err := rows.Scan(
+			&i.RollID,
+			&i.PlayerID,
+			&i.Intent,
+			&i.IsReady,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVotesByRoll = `-- name: ListVotesByRoll :many
-SELECT roll_id, player_id, vote, voted_at FROM difficulty_votes WHERE roll_id = $1
+SELECT roll_id, player_id, voted_at, vote FROM difficulty_votes WHERE roll_id = $1 ORDER BY voted_at
 `
 
 func (q *Queries) ListVotesByRoll(ctx context.Context, rollID int64) ([]DifficultyVote, error) {
@@ -323,8 +387,8 @@ func (q *Queries) ListVotesByRoll(ctx context.Context, rollID int64) ([]Difficul
 		if err := rows.Scan(
 			&i.RollID,
 			&i.PlayerID,
-			&i.Vote,
 			&i.VotedAt,
+			&i.Vote,
 		); err != nil {
 			return nil, err
 		}
@@ -337,7 +401,9 @@ func (q *Queries) ListVotesByRoll(ctx context.Context, rollID int64) ([]Difficul
 }
 
 const resolveDiceRoll = `-- name: ResolveDiceRoll :exec
-UPDATE dice_rolls SET result = $2, outcome = $3, resolved_at = now() WHERE id = $1
+UPDATE dice_rolls
+SET result = $2, outcome = $3, resolved_at = now(), stage = 'resolved'
+WHERE id = $1
 `
 
 type ResolveDiceRollParams struct {
@@ -348,6 +414,15 @@ type ResolveDiceRollParams struct {
 
 func (q *Queries) ResolveDiceRoll(ctx context.Context, arg ResolveDiceRollParams) error {
 	_, err := q.db.Exec(ctx, resolveDiceRoll, arg.ID, arg.Result, arg.Outcome)
+	return err
+}
+
+const setAllParticipantsReady = `-- name: SetAllParticipantsReady :exec
+UPDATE dice_roll_participants SET is_ready = TRUE WHERE roll_id = $1
+`
+
+func (q *Queries) SetAllParticipantsReady(ctx context.Context, rollID int64) error {
+	_, err := q.db.Exec(ctx, setAllParticipantsReady, rollID)
 	return err
 }
 
@@ -365,12 +440,42 @@ func (q *Queries) SetDiceRollAdjustedDifficulty(ctx context.Context, arg SetDice
 	return err
 }
 
+const setDiceRollStage = `-- name: SetDiceRollStage :exec
+UPDATE dice_rolls SET stage = $2 WHERE id = $1
+`
+
+type SetDiceRollStageParams struct {
+	ID    int64  `db:"id" json:"id"`
+	Stage string `db:"stage" json:"stage"`
+}
+
+func (q *Queries) SetDiceRollStage(ctx context.Context, arg SetDiceRollStageParams) error {
+	_, err := q.db.Exec(ctx, setDiceRollStage, arg.ID, arg.Stage)
+	return err
+}
+
 const setDieCancelled = `-- name: SetDieCancelled :exec
 UPDATE dice_roll_dice SET is_cancelled = TRUE WHERE id = $1
 `
 
 func (q *Queries) SetDieCancelled(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, setDieCancelled, id)
+	return err
+}
+
+const setDieCancelledBy = `-- name: SetDieCancelledBy :exec
+UPDATE dice_roll_dice
+SET is_cancelled = TRUE, cancelled_by_die_id = $2
+WHERE id = $1
+`
+
+type SetDieCancelledByParams struct {
+	ID               int64  `db:"id" json:"id"`
+	CancelledByDieID *int64 `db:"cancelled_by_die_id" json:"cancelled_by_die_id"`
+}
+
+func (q *Queries) SetDieCancelledBy(ctx context.Context, arg SetDieCancelledByParams) error {
+	_, err := q.db.Exec(ctx, setDieCancelledBy, arg.ID, arg.CancelledByDieID)
 	return err
 }
 
@@ -386,4 +491,57 @@ type SetDieFaceParams struct {
 func (q *Queries) SetDieFace(ctx context.Context, arg SetDieFaceParams) error {
 	_, err := q.db.Exec(ctx, setDieFace, arg.ID, arg.Face)
 	return err
+}
+
+const setParticipantIntent = `-- name: SetParticipantIntent :exec
+UPDATE dice_roll_participants
+SET intent = $3
+WHERE roll_id = $1 AND player_id = $2
+`
+
+type SetParticipantIntentParams struct {
+	RollID   int64   `db:"roll_id" json:"roll_id"`
+	PlayerID int64   `db:"player_id" json:"player_id"`
+	Intent   *string `db:"intent" json:"intent"`
+}
+
+func (q *Queries) SetParticipantIntent(ctx context.Context, arg SetParticipantIntentParams) error {
+	_, err := q.db.Exec(ctx, setParticipantIntent, arg.RollID, arg.PlayerID, arg.Intent)
+	return err
+}
+
+const setParticipantReady = `-- name: SetParticipantReady :exec
+UPDATE dice_roll_participants
+SET is_ready = $3
+WHERE roll_id = $1 AND player_id = $2
+`
+
+type SetParticipantReadyParams struct {
+	RollID   int64 `db:"roll_id" json:"roll_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+	IsReady  bool  `db:"is_ready" json:"is_ready"`
+}
+
+func (q *Queries) SetParticipantReady(ctx context.Context, arg SetParticipantReadyParams) error {
+	_, err := q.db.Exec(ctx, setParticipantReady, arg.RollID, arg.PlayerID, arg.IsReady)
+	return err
+}
+
+const sumVotesByRoll = `-- name: SumVotesByRoll :one
+SELECT
+  count(*)::bigint               AS vote_count,
+  coalesce(sum(vote), 0)::bigint AS vote_sum
+FROM difficulty_votes WHERE roll_id = $1
+`
+
+type SumVotesByRollRow struct {
+	VoteCount int64 `db:"vote_count" json:"vote_count"`
+	VoteSum   int64 `db:"vote_sum" json:"vote_sum"`
+}
+
+func (q *Queries) SumVotesByRoll(ctx context.Context, rollID int64) (SumVotesByRollRow, error) {
+	row := q.db.QueryRow(ctx, sumVotesByRoll, rollID)
+	var i SumVotesByRollRow
+	err := row.Scan(&i.VoteCount, &i.VoteSum)
+	return i, err
 }

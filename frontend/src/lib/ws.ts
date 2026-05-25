@@ -145,10 +145,12 @@ export const EventTypes = {
 	// Dice rolls
 	RollCreated: 'roll.created',
 	RollLeverageAdded: 'roll.leverage_added',
-	RollVoteCalled: 'roll.vote_called',
 	RollVoteCast: 'roll.vote_cast',
 	RollVoteResolved: 'roll.vote_resolved',
 	RollResolved: 'roll.resolved',
+	RollStageChanged: 'roll.stage_changed',
+	RollIntentSet: 'roll.intent_set',
+	RollReadyChanged: 'roll.ready_changed',
 } as const;
 
 // Grouped event names (without the `uneasy:` prefix) for window-event

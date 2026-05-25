@@ -133,6 +133,59 @@ func EmitAssetLeveraged(
 		map[string]any{"asset_id": asset.ID})
 }
 
+// EmitRollCommit writes the Minor chat-system entry for a single dice
+// commit (asset leverage or banked-die spend). assetName == nil means a
+// banked-die commit; the chat substitutes "banked die" in that case.
+func EmitRollCommit(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	roll *dbgen.DiceRoll,
+	player *dbgen.Player,
+	isInterference bool,
+	assetName *string,
+) {
+	playerName := playerDisplayName(ctx, q, player.ID)
+	target := "the roll"
+	if mc, err := q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: roll.GameID, OwnerID: roll.ActorID,
+	}); err == nil {
+		target = mc.Name
+	}
+	source := "banked die"
+	if assetName != nil {
+		source = fmt.Sprintf("%q", *assetName)
+	}
+	verb := "aided"
+	if isInterference {
+		verb = "interfered with"
+	}
+	body := fmt.Sprintf("%s's %s %s %s.", playerName, source, verb, target)
+	EmitSystemPost(ctx, q, manager, roll.GameID, "roll.commit",
+		model.SeverityMinor, body,
+		roll.RowNumber, roll.PlanID, nil,
+		map[string]any{
+			"roll_id":         roll.ID,
+			"player_id":       player.ID,
+			"is_interference": isInterference,
+		})
+}
+
+// EmitRollSkipLeverage writes the Minor chat entry that fires when the
+// leverage stage is short-circuited because no participant can add a die.
+func EmitRollSkipLeverage(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	roll *dbgen.DiceRoll,
+) {
+	EmitSystemPost(ctx, q, manager, roll.GameID, "roll.skip_leverage",
+		model.SeverityMinor,
+		"No dice can be added — rolling immediately.",
+		roll.RowNumber, roll.PlanID, nil,
+		map[string]any{"roll_id": roll.ID})
+}
+
 func EmitAssetRefreshed(
 	ctx context.Context,
 	q *dbgen.Queries,
