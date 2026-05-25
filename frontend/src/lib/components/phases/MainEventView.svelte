@@ -171,6 +171,29 @@
 					: [];
 				return { waitees, stepLabel: 'Host Festivity — challenge response' };
 			}
+			case 'await_duel_staking': {
+				// Propose Duel setup/staking — both duellists simultaneously
+				// submit stake counts then specific assets. List both as
+				// waitees; one may have already submitted but the bar can't
+				// tell that without fetching duel stakes.
+				const duelPlan = plans.find(p => p.id === rowState.plan_id);
+				const ids: number[] = [];
+				if (duelPlan?.preparer_id != null) ids.push(duelPlan.preparer_id);
+				if (duelPlan?.target_player_id != null) ids.push(duelPlan.target_player_id);
+				return {
+					waitees: ids.map(id => ({ kind: 'player', playerID: id })),
+					stepLabel: 'Propose Duel — staking',
+				};
+			}
+			case 'await_duel_bout': {
+				// Propose Duel bouts phase — either the declarer (initiative
+				// holder) or the responder owes the next action.
+				const actor = rowState.acting_player_id;
+				const waitees: Waitee[] = actor != null
+					? [{ kind: 'player', playerID: actor }]
+					: [];
+				return { waitees, stepLabel: 'Propose Duel — bout' };
+			}
 			case 'await_delay_reveal': {
 				const planType = delayRevealPlan?.plan_type;
 				const label =

@@ -12,7 +12,8 @@ package model
 //   - Step 2 (resolve pending plan):   PlanResolving / PlanPending
 //     (sub-phase overrides: AwaitDemandCounter,
 //     AwaitFestivityGuestTurn,
-//     AwaitFestivityChallengeResponse)
+//     AwaitFestivityChallengeResponse,
+//     AwaitDuelStaking, AwaitDuelBout)
 //   - Step 3 (set scene):              SceneSetting
 //   - Step 4 (roleplay scene):         SceneActive
 //   - Step 5 (prepare plan / refresh): PostSceneAction
@@ -81,6 +82,21 @@ const (
 	// challenge target.
 	RowStateAwaitFestivityChallengeResponse RowStateKind = "await_festivity_challenge_response"
 
+	// RowStateAwaitDuelStaking — a Propose Duel is in 'setup' or 'staking'
+	// phase: both duellists simultaneously submit stake counts (setup), then
+	// the specific assets (staking). Multiple waitees; the client derives
+	// pending submitters from the plan's resolution_data (preparer +
+	// target_player_id minus those who have already submitted). No
+	// ActingPlayerID — mirrors the AwaitDelayReveal multi-waitee pattern.
+	RowStateAwaitDuelStaking RowStateKind = "await_duel_staking"
+
+	// RowStateAwaitDuelBout — a Propose Duel is in 'bouts' phase. The
+	// initiative-holder declares; the responder responds. ActingPlayerID
+	// names whichever side owes the next action: if a bout has been
+	// declared and is unresolved, the responder; otherwise the declarer
+	// (= InitiativePlayerID).
+	RowStateAwaitDuelBout RowStateKind = "await_duel_bout"
+
 	// RowStatePlanPending — a plan is in 'pending' status on the current
 	// row and ready to be resolved. Step 2, queued.
 	RowStatePlanPending RowStateKind = "plan_pending"
@@ -111,7 +127,8 @@ type RowState struct {
 
 	// PlanID is the relevant plan for: PlanResolving, PlanPending,
 	// AwaitDelayReveal, AwaitDemandCounter, AwaitFestivityGuestTurn,
-	// AwaitFestivityChallengeResponse. Nil otherwise.
+	// AwaitFestivityChallengeResponse, AwaitDuelStaking, AwaitDuelBout.
+	// Nil otherwise.
 	PlanID *int64 `json:"plan_id,omitempty"`
 
 	// SceneID is the focus player's turn-scene id for: SceneActive. Nil
@@ -129,10 +146,11 @@ type RowState struct {
 
 	// ActingPlayerID names the player whose action the table is blocked on
 	// for sub-phase gates that override PlanResolving (AwaitDemandCounter,
-	// AwaitFestivityGuestTurn, AwaitFestivityChallengeResponse). Lets the
-	// WaitingOnBar attribute the wait to the actual decision-maker (often
-	// a non-focus player) rather than the resolving plan's focus player.
-	// Nil for kinds that don't need it.
+	// AwaitFestivityGuestTurn, AwaitFestivityChallengeResponse,
+	// AwaitDuelBout). Lets the WaitingOnBar attribute the wait to the
+	// actual decision-maker (often a non-focus player) rather than the
+	// resolving plan's focus player. Nil for kinds with multiple waitees
+	// (AwaitDuelStaking — client derives them) or no single decider.
 	ActingPlayerID *int64 `json:"acting_player_id,omitempty"`
 }
 

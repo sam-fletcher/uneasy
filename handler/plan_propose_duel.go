@@ -482,6 +482,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "submitted": len(state.StakeCounts)})
 	}
 }
@@ -604,6 +605,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID, "staked": len(body.AssetIDs), "stakes": createdStakes,
 		})
@@ -694,6 +696,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":     plan.ID,
 			"bout_number": boutNumber,
@@ -864,6 +867,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":        plan.ID,
 			"bout":           latest.BoutNumber,

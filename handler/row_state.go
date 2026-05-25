@@ -195,6 +195,8 @@ func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pl
 		return demandCounterSubPhase(ctx, q, plan)
 	case model.PlanHostFestivity:
 		return festivitySubPhase(ctx, q, plan)
+	case model.PlanProposeDuel:
+		return duelSubPhase(ctx, q, plan)
 	}
 	return model.RowState{}, false
 }
@@ -260,6 +262,43 @@ func festivitySubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) 
 		return model.RowState{}, false
 	}
 	return model.RowState{Kind: model.RowStateAwaitFestivityGuestTurn, ActingPlayerID: &next}, true
+}
+
+// duelSubPhase returns the narrower RowState for a resolving Propose Duel
+// plan. setup/staking are simultaneous-submit (multiple waitees, derived
+// client-side from plan.resolution_data). 'bouts' blocks on a single
+// player — the responder if a declared bout is unresolved, otherwise the
+// declarer (InitiativePlayerID). 'roll' and 'done' keep the default
+// PlanResolving copy (roll is the standard dice flow; done is terminal).
+func duelSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	state := gamepkg.LoadDuelData(plan)
+	switch state.Phase {
+	case gamepkg.DuelPhaseSetup, gamepkg.DuelPhaseStaking:
+		return model.RowState{Kind: model.RowStateAwaitDuelStaking}, true
+	case gamepkg.DuelPhaseBouts:
+		actor := duelBoutActor(ctx, q, plan, &state)
+		if actor == 0 {
+			return model.RowState{}, false
+		}
+		return model.RowState{Kind: model.RowStateAwaitDuelBout, ActingPlayerID: &actor}, true
+	case gamepkg.DuelPhaseRoll, gamepkg.DuelPhaseDone:
+		return model.RowState{}, false
+	}
+	return model.RowState{}, false
+}
+
+// duelBoutActor returns the duellist who owes the next bout action: the
+// responder if a declared bout is unresolved, else the declarer (=
+// InitiativePlayerID). Returns 0 if neither can be determined.
+func duelBoutActor(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, state *gamepkg.DuelResolutionData) int64 {
+	latest, err := q.GetLatestDuelBout(ctx, plan.ID)
+	if err == nil && !latest.ResolvedAt.Valid {
+		return latest.ResponderID
+	}
+	if state.InitiativePlayerID != nil {
+		return *state.InitiativePlayerID
+	}
+	return 0
 }
 
 // firstKey returns an arbitrary key from m. We don't care which war we

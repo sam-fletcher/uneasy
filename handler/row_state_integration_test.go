@@ -556,6 +556,143 @@ func TestComputeRowState_FestivityHostChoosing_NoOverride(t *testing.T) {
 	assert.Nil(t, got.ActingPlayerID)
 }
 
+// TestComputeRowState_AwaitDuelStaking: setup/staking phases surface as
+// AwaitDuelStaking with no acting player (multiple waitees; client derives).
+func TestComputeRowState_AwaitDuelStaking(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	row := tg.Game.CurrentRow
+	duel, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID:         tg.Game.ID,
+		PlanType:       model.PlanProposeDuel,
+		Category:       model.CategoryEsteem,
+		PreparerID:     tg.Players[0].ID,
+		TargetPlayerID: &tg.Players[1].ID,
+		RowNumber:      &row,
+		RowOrder:       0,
+		PreparedAtRow:  tg.Game.CurrentRow,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: duel.ID, Status: model.PlanResolving,
+	}))
+	resData := loadResolutionData(duel.ResolutionData)
+	state := resData.EnsureDuel()
+	state.Phase = gamepkg.DuelPhaseSetup
+	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
+
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDuelStaking, got.Kind, "setup → await_duel_staking")
+	assert.Nil(t, got.ActingPlayerID, "staking has multiple waitees, client derives")
+	require.NotNil(t, got.PlanID)
+	assert.Equal(t, duel.ID, *got.PlanID)
+
+	// 'staking' phase shares the same kind.
+	reloaded, err := q.GetPlanByID(ctx, duel.ID)
+	require.NoError(t, err)
+	resData = loadResolutionData(reloaded.ResolutionData)
+	resData.EnsureDuel().Phase = gamepkg.DuelPhaseStaking
+	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDuelStaking, got.Kind, "staking → same kind as setup")
+}
+
+// TestComputeRowState_AwaitDuelBout: bouts phase blocks on the declarer
+// (= InitiativePlayerID) until they declare, then on the responder until
+// the bout resolves.
+func TestComputeRowState_AwaitDuelBout(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	row := tg.Game.CurrentRow
+	duel, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID:         tg.Game.ID,
+		PlanType:       model.PlanProposeDuel,
+		Category:       model.CategoryEsteem,
+		PreparerID:     tg.Players[0].ID,
+		TargetPlayerID: &tg.Players[1].ID,
+		RowNumber:      &row,
+		RowOrder:       0,
+		PreparedAtRow:  tg.Game.CurrentRow,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: duel.ID, Status: model.PlanResolving,
+	}))
+
+	resData := loadResolutionData(duel.ResolutionData)
+	state := resData.EnsureDuel()
+	state.Phase = gamepkg.DuelPhaseBouts
+	initiative := tg.Players[0].ID
+	state.InitiativePlayerID = &initiative
+	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
+
+	// No bout yet → blocks on initiative-holder (declarer).
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDuelBout, got.Kind)
+	require.NotNil(t, got.ActingPlayerID)
+	assert.Equal(t, tg.Players[0].ID, *got.ActingPlayerID,
+		"no bout yet → declarer (initiative holder) acts")
+
+	// Create a stake for each duellist and a declared-but-unresolved bout.
+	asset0, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: tg.Game.ID, OwnerID: tg.Players[0].ID, CreatorID: tg.Players[0].ID,
+		AssetType: model.AssetPeer, Name: "P0 peer",
+	})
+	require.NoError(t, err)
+	stake0, err := q.CreateDuelStake(ctx, dbgen.CreateDuelStakeParams{
+		PlanID: duel.ID, PlayerID: tg.Players[0].ID, AssetID: asset0.ID, HiddenDie: 4,
+	})
+	require.NoError(t, err)
+
+	decl := string(gamepkg.DeclHigh)
+	die := int16(4)
+	_, err = q.CreateDuelBout(ctx, dbgen.CreateDuelBoutParams{
+		PlanID: duel.ID, BoutNumber: 1,
+		DeclarerID: tg.Players[0].ID, DeclarerStakeID: stake0.ID,
+		ResponderID: tg.Players[1].ID,
+		Declaration: &decl, DeclarerDie: &die,
+	})
+	require.NoError(t, err)
+
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDuelBout, got.Kind)
+	require.NotNil(t, got.ActingPlayerID)
+	assert.Equal(t, tg.Players[1].ID, *got.ActingPlayerID,
+		"declared but unresolved bout → responder acts")
+}
+
+// TestComputeRowState_DuelRollPhase_NoOverride: 'roll' phase falls back to
+// plain plan_resolving (standard dice flow; default copy is correct).
+func TestComputeRowState_DuelRollPhase_NoOverride(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	duel := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanProposeDuel, model.CategoryEsteem, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: duel.ID, Status: model.PlanResolving,
+	}))
+	resData := loadResolutionData(duel.ResolutionData)
+	resData.EnsureDuel().Phase = gamepkg.DuelPhaseRoll
+	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
+
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind)
+}
+
 // startTurnScene creates an active turn-scene for the focus player on the
 // current row. Convenience wrapper that mirrors the StartScene handler's DB
 // write but skips the location/peer machinery the tests don't need.

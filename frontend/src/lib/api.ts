@@ -530,6 +530,8 @@ export type RowStateKind =
 	| 'await_demand_counter'
 	| 'await_festivity_guest_turn'
 	| 'await_festivity_challenge_response'
+	| 'await_duel_staking'
+	| 'await_duel_bout'
 	| 'scene_active'
 	| 'post_scene_action'
 	| 'scene_setting';
