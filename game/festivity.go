@@ -172,6 +172,36 @@ func (s *FestivityResolutionData) IsGuest(playerID int64) bool {
 	return slices.Contains(s.Guests, playerID)
 }
 
+// NextSocializingTurn returns the next guest who owes an outcome during the
+// 'socializing' phase. Order: non-host guests by descending esteem rank
+// number (= ascending esteem; lowest-esteem guest goes first), then the
+// host last. Returns 0 if every guest has already acted.
+//
+// esteemRank is a lookup from playerID to that player's esteem rank in the
+// game (lower number = higher esteem). Missing entries should map to a
+// sentinel high value so they sort last among the guests.
+func (s *FestivityResolutionData) NextSocializingTurn(hostID int64, esteemRank func(int64) int16) int64 {
+	others := make([]int64, 0, len(s.Guests))
+	for _, id := range s.Guests {
+		if id != hostID {
+			others = append(others, id)
+		}
+	}
+	slices.SortFunc(others, func(a, b int64) int {
+		return int(esteemRank(b)) - int(esteemRank(a))
+	})
+	ordered := others
+	if s.IsGuest(hostID) {
+		ordered = append(ordered, hostID)
+	}
+	for _, id := range ordered {
+		if _, ok := s.Outcomes[int64ToKey(id)]; !ok {
+			return id
+		}
+	}
+	return 0
+}
+
 // int64ToKey stringifies an int64 for use as a map key in JSON-ser ResData
 // (JSON map keys must be strings).
 func int64ToKey(id int64) string {

@@ -469,6 +469,10 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 				"counter_plan_id": *counterPlanID,
 			})
 		}
+		// CounterDemandPlaced just flipped, so the row transitions out of
+		// await_demand_counter back to plan_resolving (until the demand
+		// is completed).
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":         plan.ID,

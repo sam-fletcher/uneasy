@@ -4,6 +4,7 @@ package handler
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -322,6 +323,237 @@ func TestComputeRowState_BattleCostGate_PreemptsPlans(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitBattleCost, state.Kind,
 		"battle cost must preempt plan resolution per rulebook step 1")
+}
+
+// TestComputeRowState_AwaitDemandCounter: a resolving Make Demands plan
+// whose dice roll outcome is 'mar' and whose CounterDemandPlaced flag is
+// still false should report AwaitDemandCounter instead of PlanResolving,
+// with ActingPlayerID = the demand target's preparer (= the player who
+// must decide whether to counter).
+func TestComputeRowState_AwaitDemandCounter(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// Target plan owned by P2 (so the counter actor is non-focus).
+	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, tg.Game.CurrentRow)
+	demand := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, model.CategoryPower, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: demand.ID, TargetedPlanID: &target.ID,
+	}))
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: demand.ID, Status: model.PlanResolving,
+	}))
+
+	// Resolved dice roll for the demand with outcome=mar.
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID:     tg.Game.ID,
+		PlanID:     &demand.ID,
+		RowNumber:  &tg.Game.CurrentRow,
+		ActorID:    tg.Players[0].ID,
+		Difficulty: 4,
+		Stage:      "resolved",
+	})
+	require.NoError(t, err)
+	res := int16(0)
+	mar := marOutcome
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &mar,
+	}))
+
+	state, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDemandCounter, state.Kind,
+		"marred demand with no counter yet must surface as await_demand_counter")
+	require.NotNil(t, state.PlanID)
+	assert.Equal(t, demand.ID, *state.PlanID)
+	require.NotNil(t, state.ActingPlayerID)
+	assert.Equal(t, tg.Players[1].ID, *state.ActingPlayerID,
+		"acting player must be the target plan's preparer")
+
+	// Once CounterDemandPlaced flips, the override stops firing and the
+	// row falls back to plain plan_resolving.
+	reloaded, err := q.GetPlanByID(ctx, demand.ID)
+	require.NoError(t, err)
+	resData := loadResolutionData(reloaded.ResolutionData)
+	resData.EnsureMakeDemands().CounterDemandPlaced = true
+	require.NoError(t, saveResolutionData(ctx, q, demand.ID, resData))
+
+	state, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, state.Kind,
+		"counter placed → revert to plan_resolving")
+	assert.Nil(t, state.ActingPlayerID)
+}
+
+// TestComputeRowState_AwaitDemandCounter_OnlyAfterMar: a made (or unresolved)
+// roll on a Make Demands plan must NOT trigger the counter override.
+func TestComputeRowState_AwaitDemandCounter_OnlyAfterMar(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, tg.Game.CurrentRow)
+	demand := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, model.CategoryPower, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: demand.ID, TargetedPlanID: &target.ID,
+	}))
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: demand.ID, Status: model.PlanResolving,
+	}))
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID:     tg.Game.ID,
+		PlanID:     &demand.ID,
+		RowNumber:  &tg.Game.CurrentRow,
+		ActorID:    tg.Players[0].ID,
+		Difficulty: 4,
+		Stage:      "resolved",
+	})
+	require.NoError(t, err)
+	res := int16(10)
+	make := makeOutcome
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &make,
+	}))
+
+	state, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, state.Kind,
+		"made demand should not trigger counter override")
+}
+
+// TestComputeRowState_AwaitFestivityGuestTurn: a resolving Host Festivity
+// in 'socializing' phase blocks on the next guest in esteem order — host
+// is P0 (focus); P1 has lower esteem than P2, so P1 should go first.
+func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// Esteem ranks: P0 rank 1 (highest), P2 rank 2, P1 rank 3 (lowest).
+	// Lowest-esteem guest acts first, host last.
+	for rank, pid := range []int64{tg.Players[0].ID, tg.Players[2].ID, tg.Players[1].ID} {
+		p := pid
+		require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+			GameID: tg.Game.ID, PlayerID: &p, Category: model.CategoryEsteem, Rank: int16(rank + 1),
+		}))
+	}
+
+	hf := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanHostFestivity, model.CategoryEsteem, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: hf.ID, Status: model.PlanResolving,
+	}))
+
+	// Seed festivity state: all three players are guests, none have acted.
+	resData := loadResolutionData(hf.ResolutionData)
+	state := resData.EnsureFestivity()
+	state.Phase = gamepkg.FestivityPhaseSocializing
+	state.Guests = []int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}
+	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
+
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
+	require.NotNil(t, got.ActingPlayerID)
+	assert.Equal(t, tg.Players[1].ID, *got.ActingPlayerID,
+		"lowest-esteem guest (P1, rank 3) must act first")
+	require.NotNil(t, got.PlanID)
+	assert.Equal(t, hf.ID, *got.PlanID)
+
+	// After P1 acts, the next-actor should be P2 (rank 2).
+	reloaded, err := q.GetPlanByID(ctx, hf.ID)
+	require.NoError(t, err)
+	resData = loadResolutionData(reloaded.ResolutionData)
+	state = resData.EnsureFestivity()
+	state.Outcomes = map[string]string{
+		strconv.FormatInt(tg.Players[1].ID, 10): gamepkg.FestivityOutcomeOptOut,
+	}
+	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
+
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
+	require.NotNil(t, got.ActingPlayerID)
+	assert.Equal(t, tg.Players[2].ID, *got.ActingPlayerID,
+		"after P1 acts, P2 (rank 2) goes next; host is last")
+
+	// After both guests act, only host remains — host = focus, but kind
+	// still surfaces so the WaitingOnBar's label reflects the festivity.
+	state.Outcomes[strconv.FormatInt(tg.Players[2].ID, 10)] = gamepkg.FestivityOutcomeMake
+	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
+	require.NotNil(t, got.ActingPlayerID)
+	assert.Equal(t, tg.Players[0].ID, *got.ActingPlayerID,
+		"host acts last in the socializing phase")
+}
+
+// TestComputeRowState_AwaitFestivityChallengeResponse: an open challenge
+// overrides the guest-turn kind regardless of whose turn it is.
+func TestComputeRowState_AwaitFestivityChallengeResponse(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	hf := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanHostFestivity, model.CategoryEsteem, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: hf.ID, Status: model.PlanResolving,
+	}))
+
+	resData := loadResolutionData(hf.ResolutionData)
+	state := resData.EnsureFestivity()
+	state.Phase = gamepkg.FestivityPhaseSocializing
+	state.Guests = []int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}
+	state.PendingChallenge = &gamepkg.PendingChallenge{
+		ChallengerID: tg.Players[1].ID,
+		TargetID:     tg.Players[2].ID,
+	}
+	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
+
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitFestivityChallengeResponse, got.Kind)
+	require.NotNil(t, got.ActingPlayerID)
+	assert.Equal(t, tg.Players[2].ID, *got.ActingPlayerID,
+		"challenge target is the waitee")
+}
+
+// TestComputeRowState_FestivityHostChoosing_NoOverride: outside the
+// socializing phase the festivity falls back to plain plan_resolving (the
+// host is the focus player, so the default copy is already correct).
+func TestComputeRowState_FestivityHostChoosing_NoOverride(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	hf := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanHostFestivity, model.CategoryEsteem, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: hf.ID, Status: model.PlanResolving,
+	}))
+
+	resData := loadResolutionData(hf.ResolutionData)
+	state := resData.EnsureFestivity()
+	state.Phase = gamepkg.FestivityPhaseHostChoosing
+	state.Guests = []int64{tg.Players[0].ID}
+	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
+
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind)
+	assert.Nil(t, got.ActingPlayerID)
 }
 
 // startTurnScene creates an active turn-scene for the focus player on the

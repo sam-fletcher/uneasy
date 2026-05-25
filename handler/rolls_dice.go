@@ -164,5 +164,10 @@ func finalizeRoll(
 		Dice:          finalDice,
 		CancelledDice: cancelledDice,
 	})
+	// Roll outcome can change the RowState — e.g. a marred Make Demands
+	// roll transitions plan_resolving → await_demand_counter. Recompute
+	// and broadcast unconditionally; ComputeRowState is cheap and the
+	// no-op case is harmless on the client.
+	broadcastRowState(ctx, q, manager, roll.GameID)
 	return nil
 }

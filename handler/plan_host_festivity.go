@@ -204,6 +204,7 @@ func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityGuestJoined, model.FestivityGuestJoinedPayload{
 			PlanID: plan.ID, PlayerID: player.ID,
 		})
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "player_id": player.ID})
 	}
 }
@@ -281,6 +282,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 					PlanID: plan.ID, PlayerID: player.ID, Action: "opt_out",
 				},
 			)
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "action": "opt_out"})
 			return
 		}
@@ -463,6 +465,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		if phaseChanged {
 			hfBroadcastPhase(deps, plan, string(state.Phase))
 		}
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID, "outcome": state.Outcomes[key], "choice": body.Choice,
 		})
@@ -912,6 +915,7 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 				MustAccept:   state.HasAcceptDuels(body.TargetPlayerID),
 			},
 		)
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusCreated, map[string]any{
 			"plan_id":       plan.ID,
 			"challenger_id": player.ID,
@@ -973,6 +977,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 					PlanID: plan.ID, ChallengerID: challengerID, TargetID: player.ID,
 				},
 			)
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "accepted": false})
 			return
 		}
@@ -1029,6 +1034,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 			h.BroadcastEvent(model.EventPlanResolving, model.PlanPayload{Plan: duelPlan})
 		}
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusCreated, map[string]any{
 			"plan_id": plan.ID, "duel_plan_id": duelPlan.ID, "accepted": true,
 		})

@@ -143,6 +143,34 @@
 				// OnResolve failed. Same copy as plan_resolving — observers
 				// don't need to distinguish.
 				return { waitees: focusWaitee, stepLabel: 'Resolving plan' };
+			case 'await_demand_counter': {
+				// Sub-phase of plan_resolving: a marred Make Demands roll
+				// is waiting on the demand target's decision to counter
+				// or waive. Acting player is typically not the focus player.
+				const actor = rowState.acting_player_id;
+				const waitees: Waitee[] = actor != null
+					? [{ kind: 'player', playerID: actor }]
+					: [];
+				return { waitees, stepLabel: 'Make Demands — awaiting counter' };
+			}
+			case 'await_festivity_guest_turn': {
+				// Host Festivity socializing phase: next guest (by ascending
+				// esteem; host last) owes a roll/opt-out/choice.
+				const actor = rowState.acting_player_id;
+				const waitees: Waitee[] = actor != null
+					? [{ kind: 'player', playerID: actor }]
+					: [];
+				return { waitees, stepLabel: 'Host Festivity — guest turn' };
+			}
+			case 'await_festivity_challenge_response': {
+				// Open duel challenge inside a festivity; all other actions
+				// pause until the target accepts or declines.
+				const actor = rowState.acting_player_id;
+				const waitees: Waitee[] = actor != null
+					? [{ kind: 'player', playerID: actor }]
+					: [];
+				return { waitees, stepLabel: 'Host Festivity — challenge response' };
+			}
 			case 'await_delay_reveal': {
 				const planType = delayRevealPlan?.plan_type;
 				const label =

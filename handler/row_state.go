@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/hub"
 	"uneasy/model"
 )
@@ -66,12 +67,22 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		return model.RowState{}, err
 	}
 
-	// 4. Plan currently resolving.
+	// 4. Plan currently resolving. Some plan types have sub-phases that
+	// block on a *different* player than the focus player (e.g. Make
+	// Demands' counter-demand window blocks on the target). When that's
+	// the case, return the narrower kind so the WaitingOnBar can name the
+	// actual decision-maker.
 	for i := range plans {
-		if plans[i].Status == model.PlanResolving {
-			id := plans[i].ID
-			return model.RowState{Kind: model.RowStatePlanResolving, PlanID: &id}, nil
+		if plans[i].Status != model.PlanResolving {
+			continue
 		}
+		plan := &plans[i]
+		id := plan.ID
+		if override, ok := resolvingPlanSubPhase(ctx, q, plan); ok {
+			override.PlanID = &id
+			return override, nil
+		}
+		return model.RowState{Kind: model.RowStatePlanResolving, PlanID: &id}, nil
 	}
 
 	// 5. Plan pending on the current row.
@@ -165,6 +176,90 @@ func openDelayRevealPlan(plans []dbgen.Plan) *dbgen.Plan {
 		return p
 	}
 	return nil
+}
+
+// resolvingPlanSubPhase checks whether the resolving plan is inside a
+// sub-phase that warrants its own RowState kind (i.e. the table is blocked
+// on a player other than the focus player, or the WaitingOnBar copy would
+// otherwise mis-attribute the wait). Returns the narrower RowState with
+// Kind and ActingPlayerID set; the caller fills in PlanID.
+//
+// The fan-out is by plan_type because each type's sub-phases are encoded
+// in its own resolution_data shape. Today only Make Demands' counter-
+// demand window is covered; future kinds (festivity guest turns, duel
+// bouts, etc.) plug in here.
+func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	//nolint:exhaustive // only plan types with sub-phase overrides need cases here
+	switch plan.PlanType {
+	case model.PlanMakeDemands:
+		return demandCounterSubPhase(ctx, q, plan)
+	case model.PlanHostFestivity:
+		return festivitySubPhase(ctx, q, plan)
+	}
+	return model.RowState{}, false
+}
+
+// demandCounterSubPhase returns AwaitDemandCounter if the demand was
+// resolved mar and the target hasn't yet placed or deferred their free
+// counter-demand. Detection mirrors the resolve panel: dice roll outcome
+// is the source of truth, since plan.Result isn't written until the demand
+// is completed.
+func demandCounterSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil || roll.Outcome == nil || *roll.Outcome != marOutcome {
+		return model.RowState{}, false
+	}
+	if plan.TargetedPlanID == nil {
+		return model.RowState{}, false
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	if md := resData.MakeDemands; md != nil && md.CounterDemandPlaced {
+		return model.RowState{}, false
+	}
+	target, err := q.GetPlanByID(ctx, *plan.TargetedPlanID)
+	if err != nil {
+		return model.RowState{}, false
+	}
+	actor := target.PreparerID
+	return model.RowState{Kind: model.RowStateAwaitDemandCounter, ActingPlayerID: &actor}, true
+}
+
+// festivitySubPhase returns the narrower RowState for a resolving Host
+// Festivity plan. During 'socializing': an open challenge takes precedence
+// (block on the target), otherwise block on the next guest in esteem order.
+// 'host_choosing' and 'done' keep the default PlanResolving copy — the host
+// is the preparer (= focus player at resolve time) so the existing label is
+// already accurate.
+func festivitySubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	state := gamepkg.LoadFestivityData(plan)
+	if state.Phase != gamepkg.FestivityPhaseSocializing {
+		return model.RowState{}, false
+	}
+	if state.PendingChallenge != nil {
+		actor := state.PendingChallenge.TargetID
+		return model.RowState{Kind: model.RowStateAwaitFestivityChallengeResponse, ActingPlayerID: &actor}, true
+	}
+	rankings, err := q.ListRankingsByGame(ctx, plan.GameID)
+	if err != nil {
+		return model.RowState{}, false
+	}
+	rankFor := func(playerID int64) int16 {
+		for i := range rankings {
+			r := &rankings[i]
+			if r.Category != model.CategoryEsteem || r.PlayerID == nil {
+				continue
+			}
+			if *r.PlayerID == playerID {
+				return r.Rank
+			}
+		}
+		return 999
+	}
+	next := state.NextSocializingTurn(plan.PreparerID, rankFor)
+	if next == 0 {
+		return model.RowState{}, false
+	}
+	return model.RowState{Kind: model.RowStateAwaitFestivityGuestTurn, ActingPlayerID: &next}, true
 }
 
 // firstKey returns an arbitrary key from m. We don't care which war we

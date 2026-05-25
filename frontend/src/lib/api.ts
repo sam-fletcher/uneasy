@@ -527,6 +527,9 @@ export type RowStateKind =
 	| 'await_delay_reveal'
 	| 'plan_resolving'
 	| 'plan_pending'
+	| 'await_demand_counter'
+	| 'await_festivity_guest_turn'
+	| 'await_festivity_challenge_response'
 	| 'scene_active'
 	| 'post_scene_action'
 	| 'scene_setting';
@@ -537,6 +540,10 @@ export interface RowState {
 	scene_id?: number | null;
 	war_id?: number | null;
 	claim_id?: number | null;
+	/** Player whose action the row is blocked on for sub-phase kinds that
+	 *  override plan_resolving (await_demand_counter,
+	 *  await_festivity_guest_turn, await_festivity_challenge_response). */
+	acting_player_id?: number | null;
 }
 
 // Full game state including phase-specific data.

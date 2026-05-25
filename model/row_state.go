@@ -10,6 +10,9 @@ package model
 //
 //   - Step 1 (pay battle costs):       AwaitBattleCost
 //   - Step 2 (resolve pending plan):   PlanResolving / PlanPending
+//     (sub-phase overrides: AwaitDemandCounter,
+//     AwaitFestivityGuestTurn,
+//     AwaitFestivityChallengeResponse)
 //   - Step 3 (set scene):              SceneSetting
 //   - Step 4 (roleplay scene):         SceneActive
 //   - Step 5 (prepare plan / refresh): PostSceneAction
@@ -58,6 +61,26 @@ const (
 	// Step 2, active.
 	RowStatePlanResolving RowStateKind = "plan_resolving"
 
+	// RowStateAwaitDemandCounter — a Make Demands plan is resolving, its
+	// dice roll came up 'mar', and the target of the demand has not yet
+	// placed (or deferred) their free counter-demand. The table is blocked
+	// on the target's decision, who is typically *not* the focus player.
+	// Narrower than PlanResolving so the WaitingOnBar can name the actual
+	// waitee instead of mis-attributing the wait to the focus player.
+	RowStateAwaitDemandCounter RowStateKind = "await_demand_counter"
+
+	// RowStateAwaitFestivityGuestTurn — a Host Festivity plan is in the
+	// 'socializing' phase and waiting on the next guest (in lowest-esteem-
+	// first order, host goes last) to roll or opt out. ActingPlayerID names
+	// that guest — typically not the focus player.
+	RowStateAwaitFestivityGuestTurn RowStateKind = "await_festivity_guest_turn"
+
+	// RowStateAwaitFestivityChallengeResponse — a Host Festivity plan has
+	// an open duel challenge; all other festivity actions pause until the
+	// challenged guest accepts or declines. ActingPlayerID names the
+	// challenge target.
+	RowStateAwaitFestivityChallengeResponse RowStateKind = "await_festivity_challenge_response"
+
 	// RowStatePlanPending — a plan is in 'pending' status on the current
 	// row and ready to be resolved. Step 2, queued.
 	RowStatePlanPending RowStateKind = "plan_pending"
@@ -87,7 +110,8 @@ type RowState struct {
 	Kind RowStateKind `json:"kind"`
 
 	// PlanID is the relevant plan for: PlanResolving, PlanPending,
-	// AwaitDelayReveal. Nil otherwise.
+	// AwaitDelayReveal, AwaitDemandCounter, AwaitFestivityGuestTurn,
+	// AwaitFestivityChallengeResponse. Nil otherwise.
 	PlanID *int64 `json:"plan_id,omitempty"`
 
 	// SceneID is the focus player's turn-scene id for: SceneActive. Nil
@@ -102,6 +126,14 @@ type RowState struct {
 
 	// ClaimID is the open surrender claim for: AwaitSurrenderClaim.
 	ClaimID *int64 `json:"claim_id,omitempty"`
+
+	// ActingPlayerID names the player whose action the table is blocked on
+	// for sub-phase gates that override PlanResolving (AwaitDemandCounter,
+	// AwaitFestivityGuestTurn, AwaitFestivityChallengeResponse). Lets the
+	// WaitingOnBar attribute the wait to the actual decision-maker (often
+	// a non-focus player) rather than the resolving plan's focus player.
+	// Nil for kinds that don't need it.
+	ActingPlayerID *int64 `json:"acting_player_id,omitempty"`
 }
 
 // RowStateChangedPayload is the payload for EventRowStateChanged.
