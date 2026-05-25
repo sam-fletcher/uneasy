@@ -836,12 +836,6 @@
 		align-items: end;
 		margin: 0.5rem 0;
 	}
-	.extra-form label {
-		display: flex;
-		flex-direction: column;
-		font-size: 0.85rem;
-		color: #aaa;
-	}
 	.peer-input {
 		max-width: 20rem;
 		margin-top: 0.25rem;

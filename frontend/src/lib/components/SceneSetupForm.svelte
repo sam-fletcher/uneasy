@@ -312,13 +312,6 @@
 
 	.custom-panel label { display: flex; flex-direction: column; gap: 0.3rem; }
 
-	.custom-label {
-		font-size: 0.72rem;
-		color: #888;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
 	input[type='text'] {
 		font-size: 0.9rem;
 		padding: 0.5rem 0.6rem;

@@ -360,38 +360,6 @@
 	}
 	.end-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-	.cancel-btn {
-		padding: 0.5rem 0.85rem;
-		min-height: 44px;
-		border-radius: 5px;
-		border: 1px solid #4a4030;
-		background: #2a2a2a;
-		color: #c8a96e;
-		font-size: 0.85rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.cancel-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	.roll-form-label {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.85rem;
-		color: #c8a96e;
-	}
-
-	.diff-input {
-		width: 60px;
-		padding: 0.3rem 0.4rem;
-		min-height: 36px;
-		background: #2a2a2a;
-		border: 1px solid #555;
-		border-radius: 4px;
-		color: inherit;
-		font-size: 0.9rem;
-	}
-
 	.error { color: #e07070; font-size: 0.82rem; margin: 0; }
 	.error.inline { font-size: 0.78rem; }
 </style>
