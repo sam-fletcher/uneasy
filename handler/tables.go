@@ -40,7 +40,10 @@ func createMainCharacterPeer(
 		return err
 	}
 	if h, ok := manager.Get(gameID); ok {
-		h.BroadcastEvent(model.EventAssetCreated, model.AssetPayload{Asset: asset})
+		h.BroadcastEvent(
+			model.EventAssetCreated,
+			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+		)
 	}
 	return nil
 }

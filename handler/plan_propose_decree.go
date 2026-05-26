@@ -189,7 +189,12 @@ func pdCreateLawAsset(
 		return fmt.Errorf("could not create law resource asset: %w", err)
 	}
 
-	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
+	broadcastEvent(
+		deps.Manager,
+		plan.GameID,
+		model.EventAssetCreated,
+		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+	)
 	return nil
 }
 

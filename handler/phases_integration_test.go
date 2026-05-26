@@ -12,6 +12,7 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	"uneasy/hub"
 	"uneasy/model"
 )
 
@@ -297,4 +298,119 @@ func TestGamePhaseTransition_PrologueToMainEvent(t *testing.T) {
 	updated, err := q.GetGameByID(ctx, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.PhaseMainEvent, updated.Phase)
+}
+
+// ── Auto-advance to main_event ──────────────────────────────────────────────
+
+// seedPrologueComplete returns a game in the prologue phase with the
+// minimum state advanceToMainEvent expects: 3 categories × 5 ranks
+// filled in seat order (no NULL player_ids), 3 players seated, and
+// the ranking step at extra_peers (the ≤3-player terminal state).
+func seedPrologueComplete(t *testing.T, q *dbgen.Queries) (dbgen.Game, []dbgen.Player) {
+	t.Helper()
+	ctx := context.Background()
+
+	game, err := q.CreateGame(ctx, "PROL"+randSuffix())
+	require.NoError(t, err)
+
+	players := make([]dbgen.Player, 3)
+	for i := 0; i < 3; i++ {
+		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+			Username: fmt.Sprintf("prol-p%d-%s", i+1, randSuffix()),
+			CodeHash: "x",
+		})
+		require.NoError(t, err)
+		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+			GameID:        game.ID,
+			DisplayName:   fmt.Sprintf("P%d", i+1),
+			AccountID:     acct.ID,
+			IsFacilitator: i == 0,
+		})
+		require.NoError(t, err)
+		seat := int16(i + 1)
+		require.NoError(t, q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
+			ID: p.ID, SeatOrder: &seat,
+		}))
+		p.SeatOrder = &seat
+		players[i] = p
+	}
+	require.NoError(t, q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
+		FacilitatorID: &players[0].ID, ID: game.ID,
+	}))
+
+	for _, cat := range []model.RankingCategory{
+		model.CategoryPower, model.CategoryKnowledge, model.CategoryEsteem,
+	} {
+		for rank := int16(1); rank <= 5; rank++ {
+			// Fill ranks 1..3 with players, 4..5 with NULL placeholders.
+			var pid *int64
+			if int(rank) <= len(players) {
+				pid = &players[rank-1].ID
+			}
+			require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+				GameID:   game.ID,
+				PlayerID: pid,
+				Category: cat,
+				Rank:     rank,
+			}))
+		}
+	}
+
+	require.NoError(t, q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		ID: game.ID, Phase: model.PhasePrologue,
+	}))
+	step := "extra_peers"
+	require.NoError(t, q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
+		ID: game.ID, PrologueRankingStep: &step,
+	}))
+
+	refreshed, err := q.GetGameByID(ctx, game.ID)
+	require.NoError(t, err)
+	return refreshed, players
+}
+
+func TestAdvanceToMainEvent_TransitionsPhaseAndSeedsRow1(t *testing.T) {
+	pool := openTestDB(t)
+	store := &db.Store{Q: dbgen.New(pool)}
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	game, players := seedPrologueComplete(t, store.Q)
+
+	err := advanceToMainEvent(ctx, store.Q, manager, game.ID)
+	require.NoError(t, err)
+
+	updated, err := store.Q.GetGameByID(ctx, game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PhaseMainEvent, updated.Phase)
+	assert.Equal(t, int16(1), updated.CurrentRow)
+	require.NotNil(t, updated.FocusPlayerID, "focus player must be set")
+	// With rank 1 going to player[0] across all three tracks, lowest
+	// cumulative status = player[0].
+	assert.Equal(t, players[0].ID, *updated.FocusPlayerID)
+
+	rows, err := store.Q.ListPublicRecordRows(ctx, game.ID)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, len(rows), 13, "must seed at least 13 public record rows")
+}
+
+func TestAdvanceToMainEvent_EmitsBoundaryPost(t *testing.T) {
+	pool := openTestDB(t)
+	store := &db.Store{Q: dbgen.New(pool)}
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	game, _ := seedPrologueComplete(t, store.Q)
+	require.NoError(t, advanceToMainEvent(ctx, store.Q, manager, game.ID))
+
+	posts, err := store.Q.ListGamePosts(ctx, game.ID)
+	require.NoError(t, err)
+	found := false
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == "phase.changed" && p.Body == "Main event begins" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "phase.changed boundary post for main_event must be emitted")
 }

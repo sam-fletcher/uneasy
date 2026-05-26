@@ -8,7 +8,6 @@
 -->
 <script lang="ts">
 	import {
-		startMainEvent,
 		getPrologueSheets,
 		getPrologueCards,
 		placePrologueSetAsides,
@@ -372,24 +371,6 @@
 		}
 	});
 
-	// ── Start main event ─────────────────────────────────────────────────────
-	const allExtraPeersCreated = $derived(
-		players.length > 0 && players.every(p => extraPeers.some(e => e.player_id === p.id))
-	);
-	let advancing = $state(false);
-	async function advanceToMainEvent() {
-		if (advancing) return;
-		advancing = true;
-		error = '';
-		try {
-			await startMainEvent(gameID);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not start main event.';
-		} finally {
-			advancing = false;
-		}
-	}
-
 	// ── Phase classification ─────────────────────────────────────────────────
 	type Mode = 'choosing' | 'declare' | 'place' | 'extra';
 	const mode = $derived.by<Mode>(() => {
@@ -423,7 +404,7 @@
 			const waitees: Waitee[] = notDone.length === players.length
 				? [{ kind: 'everyone' }]
 				: notDone;
-			return { waitees, stepLabel: `Declare hearts for ${t}` };
+			return { waitees, stepLabel: `Rankings: Spend ♥ for ${t.charAt(0).toUpperCase() + t.slice(1)}` };
 		}
 		if (mode === 'place') {
 			if (rank1PlayerID == null) return { waitees: [] };
@@ -675,16 +656,6 @@
 
 	{/if}
 
-	{#if isFacilitator && rankings.length >= 15}
-		{@const blockedOnExtras = mode === 'extra' && !allExtraPeersCreated}
-		<button
-			class="primary"
-			onclick={advanceToMainEvent}
-			disabled={advancing || blockedOnExtras}
-		>
-			{advancing ? '…' : 'Start Main Event'}
-		</button>
-	{/if}
 </div>
 
 {#if activeClaim}

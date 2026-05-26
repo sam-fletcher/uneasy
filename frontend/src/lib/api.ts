@@ -570,14 +570,6 @@ export function startPrologue(gameID: string | number): Promise<{ phase: GamePha
 	return apiFetch(`/tables/${gameID}/start-prologue`, { method: 'POST' });
 }
 
-export function startMainEvent(gameID: string | number): Promise<{
-	phase: GamePhase;
-	current_row: number;
-	focus_player_id: number | null;
-}> {
-	return apiFetch(`/tables/${gameID}/start-main-event`, { method: 'POST' });
-}
-
 // ── Tone Setting ─────────────────────────────────────────────────────────────
 
 export function listToneTopics(gameID: string | number): Promise<{ topics: ToneTopic[] }> {

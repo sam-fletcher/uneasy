@@ -653,7 +653,12 @@ func processPrologueCardClaim(
 	if err != nil {
 		return fmt.Errorf("record card hand: %w", err)
 	}
-	broadcastEvent(manager, gameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
+	broadcastEvent(
+		manager,
+		gameID,
+		model.EventAssetCreated,
+		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+	)
 	return nil
 }
 

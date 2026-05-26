@@ -10,6 +10,11 @@ package handler
 //
 // place_set_asides_X is skipped automatically if a track has no set-aside
 // players; finalize-ranking advances directly to the next declare step.
+//
+// The main_event transition is automatic: completing the last prologue
+// action (final track's finalize/place-set-asides for 4–5 players, or the
+// last extra peer for ≤3 players) immediately calls advanceToMainEvent —
+// no facilitator button.
 
 import (
 	"context"
@@ -297,13 +302,10 @@ func FinalizeTrackRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			nextStep = placeSetAsidesStepFor(track)
 		default:
 			nextStep = nextDeclareStepAfter(track)
-			if nextStep == "" {
-				// Last track; either go to extra_peers (≤3 players) or
-				// straight to main_event-ready (still in prologue phase
-				// until facilitator calls start-main-event).
-				if len(players) <= 3 {
-					nextStep = gamepkg.PrologueStepExtraPeers
-				}
+			if nextStep == "" && len(players) <= 3 {
+				// ≤3 players still need to create extra peers; transition
+				// to main_event happens once the last extra peer lands.
+				nextStep = gamepkg.PrologueStepExtraPeers
 			}
 		}
 
@@ -313,6 +315,16 @@ func FinalizeTrackRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		broadcastEvent(manager, game.ID, model.EventPrologueRankingStepChanged,
 			model.PrologueRankingStepChangedPayload{Step: nextStep})
+
+		// 4–5 player game finishing the last track with no set-asides:
+		// prologue is fully complete, advance straight to main_event.
+		if nextStep == "" {
+			if err := advanceToMainEvent(ctx, s.Q, manager, game.ID); err != nil {
+				respondInternalErr(w, r, "could not advance to main event", err)
+				return
+			}
+		}
+
 		respond(w, http.StatusOK, map[string]any{
 			"track":     track,
 			"ranked":    ranked,
@@ -467,6 +479,15 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		broadcastEvent(manager, gameID, model.EventPrologueRankingStepChanged,
 			model.PrologueRankingStepChangedPayload{Step: nextStep})
+
+		// 4–5 player game finishing the last track's set-asides: prologue complete.
+		if nextStep == "" {
+			if err := advanceToMainEvent(ctx, s.Q, manager, gameID); err != nil {
+				respondInternalErr(w, r, "could not advance to main event", err)
+				return
+			}
+		}
+
 		respond(w, http.StatusOK, map[string]any{"track": track, "next_step": nextStep})
 	}
 }
@@ -566,13 +587,47 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		broadcastEvent(manager, gameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
+		broadcastEvent(
+			manager,
+			gameID,
+			model.EventAssetCreated,
+			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+		)
 		broadcastEvent(manager, gameID, model.EventPrologueExtraPeerCreated,
 			model.PrologueExtraPeerCreatedPayload{
 				PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,
 			})
+
+		if err := maybeAdvanceAfterExtraPeer(ctx, s.Q, manager, gameID); err != nil {
+			respondInternalErr(w, r, "could not advance to main event", err)
+			return
+		}
+
 		respond(w, http.StatusOK, map[string]any{"asset": asset})
 	}
+}
+
+// maybeAdvanceAfterExtraPeer transitions to main_event once every player
+// in the game has created their extra peer. No-op if peers are still
+// missing.
+func maybeAdvanceAfterExtraPeer(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+) error {
+	players, err := q.GetPlayersByGame(ctx, gameID)
+	if err != nil {
+		return fmt.Errorf("load players: %w", err)
+	}
+	extras, err := q.ListExtraPeersByGame(ctx, gameID)
+	if err != nil {
+		return fmt.Errorf("load extra peers: %w", err)
+	}
+	if len(extras) < len(players) {
+		return nil
+	}
+	return advanceToMainEvent(ctx, q, manager, gameID)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

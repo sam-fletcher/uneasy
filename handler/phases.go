@@ -117,67 +117,63 @@ func findFirstFocusPlayer(
 	return best
 }
 
-// setAndBroadcastFocusPlayer sets the focus player and broadcasts the change.
-func setAndBroadcastFocusPlayer(
+// advanceToMainEvent performs the prologue → main_event transition: seeds
+// public record rows 1–13, sets current_row, picks the first focus player,
+// flips phase, and broadcasts. Callers must have verified prologue-complete
+// preconditions (rankings fully set; extra peers done for ≤3 players).
+func advanceToMainEvent(
 	ctx context.Context,
-	w http.ResponseWriter,
-	r *http.Request,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	gameID int64,
-	focusPlayer *dbgen.Player,
-) bool {
-	if focusPlayer == nil {
-		return true
-	}
-	err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
-		ID:            gameID,
-		FocusPlayerID: &focusPlayer.ID,
-	})
+) error {
+	game, err := q.GetGameByID(ctx, gameID)
 	if err != nil {
-		respondInternalErr(w, r, "could not set focus player", err)
-		return false
+		return fmt.Errorf("load game: %w", err)
 	}
-	if fp, err := q.GetPlayerByID(ctx, focusPlayer.ID); err == nil {
-		if h, ok := manager.Get(gameID); ok {
-			h.BroadcastEvent(model.EventFocusChanged, model.FocusChangedPayload{
-				PlayerID:    fp.ID,
-				DisplayName: fp.DisplayName,
-			})
-		}
-	}
-	broadcastRowState(ctx, q, manager, gameID)
-	return true
-}
-
-func validateStartMainEvent(
-	ctx context.Context,
-	w http.ResponseWriter,
-	r *http.Request,
-	q *dbgen.Queries,
-	gameID int64,
-) ([]dbgen.Ranking, []dbgen.Player, bool) {
-	// Validate: rankings must be set (3 tracks × 5 positions = 15 entries).
-	rankings, err := q.ListRankingsByGame(ctx, gameID)
-	if err != nil {
-		respondInternalErr(w, r, "could not load rankings", err)
-		return nil, nil, false
-	}
-	if len(rankings) < totalRankings {
-		respondErr(w, http.StatusBadRequest,
-			fmt.Sprintf("rankings must be fully set before starting (all %d tracks × %d positions)",
-				planTypes, rankingsPerType),
-		)
-		return nil, nil, false
-	}
-
 	players, err := q.GetPlayersByGame(ctx, gameID)
 	if err != nil {
-		respondInternalErr(w, r, "could not load players", err)
-		return nil, nil, false
+		return fmt.Errorf("load players: %w", err)
+	}
+	rankings, err := q.ListRankingsByGame(ctx, gameID)
+	if err != nil {
+		return fmt.Errorf("load rankings: %w", err)
 	}
 
-	return rankings, players, true
+	if err := q.CreatePublicRecordRows(ctx, gameID); err != nil {
+		return fmt.Errorf("create public record: %w", err)
+	}
+	if err := q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
+		ID: gameID, CurrentRow: 1,
+	}); err != nil {
+		return fmt.Errorf("set current row: %w", err)
+	}
+
+	focusPlayer := findFirstFocusPlayer(&game, players, rankings)
+	if focusPlayer != nil {
+		if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+			ID: gameID, FocusPlayerID: &focusPlayer.ID,
+		}); err != nil {
+			return fmt.Errorf("set focus player: %w", err)
+		}
+		if fp, err := q.GetPlayerByID(ctx, focusPlayer.ID); err == nil {
+			if h, ok := manager.Get(gameID); ok {
+				h.BroadcastEvent(model.EventFocusChanged, model.FocusChangedPayload{
+					PlayerID:    fp.ID,
+					DisplayName: fp.DisplayName,
+				})
+			}
+		}
+		broadcastRowState(ctx, q, manager, gameID)
+	}
+
+	if err := q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		ID: gameID, Phase: model.PhaseMainEvent,
+	}); err != nil {
+		return fmt.Errorf("update phase: %w", err)
+	}
+	broadcastPhaseChange(ctx, q, manager, gameID, model.PhaseMainEvent)
+	return nil
 }
 
 // StartPrologue handles POST /api/tables/{id}/start-prologue.
@@ -222,99 +218,6 @@ func StartPrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		broadcastPhaseChange(ctx, s.Q, manager, game.ID, model.PhasePrologue)
 		respond(w, http.StatusOK, map[string]any{"phase": model.PhasePrologue})
-	}
-}
-
-// StartMainEvent handles POST /api/tables/{id}/start-main-event.
-//
-// Transitions the game from prologue → main_event. Validates that
-// rankings are fully set and all players have seat orders. Creates the
-// public record rows 1–13 and sets current_row to 1.
-func StartMainEvent(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, s.Q)
-		if !ok {
-			return
-		}
-
-		if game.Phase != model.PhasePrologue {
-			respondErr(w, http.StatusConflict, "game is not in the prologue phase")
-			return
-		}
-		// The ranking sub-flow is either not started (legacy facilitator
-		// batch-set path) or has reached its terminal step (extra_peers
-		// for ≤3 players, or NULL after the last finalize for 4+).
-		if game.PrologueRankingStep != nil &&
-			*game.PrologueRankingStep != "extra_peers" {
-			respondErr(w, http.StatusConflict, "prologue ranking is still in progress")
-			return
-		}
-
-		ctx := r.Context()
-
-		// Validate preconditions for starting main event.
-		rankings, players, ok := validateStartMainEvent(ctx, w, r, s.Q, game.ID)
-		if !ok {
-			return
-		}
-
-		// If we're in the extra_peers step (≤3 players), every player must
-		// have created their extra peer before the main event can start.
-		if game.PrologueRankingStep != nil &&
-			*game.PrologueRankingStep == "extra_peers" {
-			extras, err := s.Q.ListExtraPeersByGame(ctx, game.ID)
-			if err != nil {
-				respondInternalErr(w, r, "could not load extra peers", err)
-				return
-			}
-			if len(extras) < len(players) {
-				respondErr(w, http.StatusConflict,
-					"all players must create their extra peer before starting the main event")
-				return
-			}
-		}
-
-		// Create public record rows 1–13.
-		if err := s.Q.CreatePublicRecordRows(ctx, game.ID); err != nil {
-			respondInternalErr(w, r, "could not create public record", err)
-			return
-		}
-
-		// Set current row to 1.
-		if err := s.Q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
-			ID:         game.ID,
-			CurrentRow: 1,
-		}); err != nil {
-			respondInternalErr(w, r, "could not set starting row", err)
-			return
-		}
-
-		// Pick the first focus player from cumulative ranking totals.
-		focusPlayer := findFirstFocusPlayer(game, players, rankings)
-		if !setAndBroadcastFocusPlayer(ctx, w, r, s.Q, manager, game.ID, focusPlayer) {
-			return
-		}
-
-		// Transition phase.
-		if err := s.Q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
-			ID:    game.ID,
-			Phase: model.PhaseMainEvent,
-		}); err != nil {
-			respondInternalErr(w, r, "could not update phase", err)
-			return
-		}
-
-		broadcastPhaseChange(ctx, s.Q, manager, game.ID, model.PhaseMainEvent)
-
-		var focusID *int64
-		if focusPlayer != nil {
-			focusID = &focusPlayer.ID
-		}
-		respond(w, http.StatusOK, map[string]any{
-			"phase":           model.PhaseMainEvent,
-			"current_row":     1,
-			"focus_player_id": focusID,
-		})
 	}
 }
 

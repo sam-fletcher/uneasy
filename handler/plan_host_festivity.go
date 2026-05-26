@@ -582,7 +582,12 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 	if err != nil {
 		return fmt.Errorf("create peer: %w", err)
 	}
-	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
+	broadcastEvent(
+		fc.deps.Manager,
+		fc.plan.GameID,
+		model.EventAssetCreated,
+		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+	)
 	return nil
 }
 

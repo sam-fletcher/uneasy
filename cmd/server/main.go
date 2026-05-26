@@ -157,7 +157,6 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 
 			// Phase transitions (facilitator actions)
 			r.Post("/tables/{id}/start-prologue", handler.StartPrologue(store, manager))
-			r.Post("/tables/{id}/start-main-event", handler.StartMainEvent(store, manager))
 			r.Post("/tables/{id}/endgame", handler.SetEndgameMode(store, manager))
 
 			// Shake-Up (Phase 4c)

@@ -720,6 +720,11 @@ func shakeUpClaimTitle(
 	if err != nil {
 		return fmt.Errorf("create title artifact: %w", err)
 	}
-	broadcastEvent(manager, gameID, model.EventAssetCreated, model.AssetPayload{Asset: asset})
+	broadcastEvent(
+		manager,
+		gameID,
+		model.EventAssetCreated,
+		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+	)
 	return nil
 }

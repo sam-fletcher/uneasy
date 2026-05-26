@@ -6,12 +6,6 @@ import (
 	"uneasy/db"
 )
 
-const (
-	planTypes       = 3
-	rankingsPerType = 5 // also status. Impacts dice rolls.
-	totalRankings   = planTypes * rankingsPerType
-)
-
 // GetRankings handles GET /api/tables/{id}/rankings.
 func GetRankings(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
