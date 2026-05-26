@@ -192,7 +192,7 @@ func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pl
 	//nolint:exhaustive // only plan types with sub-phase overrides need cases here
 	switch plan.PlanType {
 	case model.PlanMakeDemands:
-		return demandCounterSubPhase(ctx, q, plan)
+		return demandSubPhase(ctx, q, plan)
 	case model.PlanHostFestivity:
 		return festivitySubPhase(ctx, q, plan)
 	case model.PlanProposeDuel:
@@ -201,29 +201,64 @@ func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pl
 	return model.RowState{}, false
 }
 
-// demandCounterSubPhase returns AwaitDemandCounter if the demand was
-// resolved mar and the target hasn't yet placed or deferred their free
-// counter-demand. Detection mirrors the resolve panel: dice roll outcome
-// is the source of truth, since plan.Result isn't written until the demand
-// is completed.
-func demandCounterSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+// demandSubPhase routes a resolving Make Demands plan to the right
+// override: AwaitDemandDraftPick on a made roll while the four-pick draft
+// is in progress, AwaitDemandCounter on a marred roll until the target
+// counters or waives. Detection uses the dice roll outcome — plan.Result
+// isn't written until the demand is completed, so the roll is the source
+// of truth during resolution.
+func demandSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
-	if err != nil || roll.Outcome == nil || *roll.Outcome != marOutcome {
+	if err != nil || roll.Outcome == nil {
 		return model.RowState{}, false
 	}
 	if plan.TargetedPlanID == nil {
-		return model.RowState{}, false
-	}
-	resData := loadResolutionData(plan.ResolutionData)
-	if md := resData.MakeDemands; md != nil && md.CounterDemandPlaced {
 		return model.RowState{}, false
 	}
 	target, err := q.GetPlanByID(ctx, *plan.TargetedPlanID)
 	if err != nil {
 		return model.RowState{}, false
 	}
-	actor := target.PreparerID
-	return model.RowState{Kind: model.RowStateAwaitDemandCounter, ActingPlayerID: &actor}, true
+	resData := loadResolutionData(plan.ResolutionData)
+	switch *roll.Outcome {
+	case makeOutcome:
+		return demandDraftSubPhase(ctx, q, plan, &target, &resData)
+	case marOutcome:
+		if md := resData.MakeDemands; md != nil && md.CounterDemandPlaced {
+			return model.RowState{}, false
+		}
+		actor := target.PreparerID
+		return model.RowState{Kind: model.RowStateAwaitDemandCounter, ActingPlayerID: &actor}, true
+	}
+	return model.RowState{}, false
+}
+
+// demandDraftSubPhase returns AwaitDemandDraftPick when the four-pick
+// draft is still in progress, with ActingPlayerID set to whoever owes the
+// next pick (alternating starting with the higher-ranked player).
+func demandDraftSubPhase(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	target *dbgen.Plan,
+	resData *ResolutionData,
+) (model.RowState, bool) {
+	picks := 0
+	if md := resData.MakeDemands; md != nil {
+		picks = len(md.DraftChoices)
+	}
+	if picks >= 4 {
+		return model.RowState{}, false
+	}
+	first, second, err := mdDraftPickers(ctx, q, plan.GameID, plan.PreparerID, target.PreparerID)
+	if err != nil {
+		return model.RowState{}, false
+	}
+	actor := first
+	if picks%2 == 1 {
+		actor = second
+	}
+	return model.RowState{Kind: model.RowStateAwaitDemandDraftPick, ActingPlayerID: &actor}, true
 }
 
 // festivitySubPhase returns the narrower RowState for a resolving Host

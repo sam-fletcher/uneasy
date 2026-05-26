@@ -10,7 +10,7 @@ package model
 //
 //   - Step 1 (pay battle costs):       AwaitBattleCost
 //   - Step 2 (resolve pending plan):   PlanResolving / PlanPending
-//     (sub-phase overrides: AwaitDemandCounter,
+//     (sub-phase overrides: AwaitDemandCounter, AwaitDemandDraftPick,
 //     AwaitFestivityGuestTurn,
 //     AwaitFestivityChallengeResponse,
 //     AwaitDuelStaking, AwaitDuelBout)
@@ -70,6 +70,13 @@ const (
 	// waitee instead of mis-attributing the wait to the focus player.
 	RowStateAwaitDemandCounter RowStateKind = "await_demand_counter"
 
+	// RowStateAwaitDemandDraftPick — a made Make Demands plan is in the
+	// alternating draft of demand options (control_leverage,
+	// keep_or_change_target, keep_assets, perform_steps). Demander and
+	// target-plan preparer alternate; ActingPlayerID names whoever owes
+	// the next pick. Half of every draft blocks on a non-focus player.
+	RowStateAwaitDemandDraftPick RowStateKind = "await_demand_draft_pick"
+
 	// RowStateAwaitFestivityGuestTurn — a Host Festivity plan is in the
 	// 'socializing' phase and waiting on the next guest (in lowest-esteem-
 	// first order, host goes last) to roll or opt out. ActingPlayerID names
@@ -126,9 +133,9 @@ type RowState struct {
 	Kind RowStateKind `json:"kind"`
 
 	// PlanID is the relevant plan for: PlanResolving, PlanPending,
-	// AwaitDelayReveal, AwaitDemandCounter, AwaitFestivityGuestTurn,
-	// AwaitFestivityChallengeResponse, AwaitDuelStaking, AwaitDuelBout.
-	// Nil otherwise.
+	// AwaitDelayReveal, AwaitDemandCounter, AwaitDemandDraftPick,
+	// AwaitFestivityGuestTurn, AwaitFestivityChallengeResponse,
+	// AwaitDuelStaking, AwaitDuelBout. Nil otherwise.
 	PlanID *int64 `json:"plan_id,omitempty"`
 
 	// SceneID is the focus player's turn-scene id for: SceneActive. Nil
@@ -146,11 +153,12 @@ type RowState struct {
 
 	// ActingPlayerID names the player whose action the table is blocked on
 	// for sub-phase gates that override PlanResolving (AwaitDemandCounter,
-	// AwaitFestivityGuestTurn, AwaitFestivityChallengeResponse,
-	// AwaitDuelBout). Lets the WaitingOnBar attribute the wait to the
-	// actual decision-maker (often a non-focus player) rather than the
-	// resolving plan's focus player. Nil for kinds with multiple waitees
-	// (AwaitDuelStaking — client derives them) or no single decider.
+	// AwaitDemandDraftPick, AwaitFestivityGuestTurn,
+	// AwaitFestivityChallengeResponse, AwaitDuelBout). Lets the
+	// WaitingOnBar attribute the wait to the actual decision-maker (often
+	// a non-focus player) rather than the resolving plan's focus player.
+	// Nil for kinds with multiple waitees (AwaitDuelStaking — client
+	// derives them) or no single decider.
 	ActingPlayerID *int64 `json:"acting_player_id,omitempty"`
 }
 

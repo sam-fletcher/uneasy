@@ -389,8 +389,83 @@ func TestComputeRowState_AwaitDemandCounter(t *testing.T) {
 	assert.Nil(t, state.ActingPlayerID)
 }
 
-// TestComputeRowState_AwaitDemandCounter_OnlyAfterMar: a made (or unresolved)
-// roll on a Make Demands plan must NOT trigger the counter override.
+// TestComputeRowState_AwaitDemandDraftPick: a made Make Demands plan with
+// an in-progress draft surfaces as AwaitDemandDraftPick, with the acting
+// player alternating between demander and target-plan preparer by power
+// rank (higher-ranked = lower rank number picks first).
+func TestComputeRowState_AwaitDemandDraftPick(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// P0 is demander (rank 1, higher esteem → picks first).
+	// P1 is target-plan preparer (rank 2).
+	require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+		GameID: tg.Game.ID, PlayerID: &tg.Players[0].ID, Category: model.CategoryPower, Rank: 1,
+	}))
+	require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+		GameID: tg.Game.ID, PlayerID: &tg.Players[1].ID, Category: model.CategoryPower, Rank: 2,
+	}))
+
+	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, tg.Game.CurrentRow)
+	demand := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, model.CategoryPower, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: demand.ID, TargetedPlanID: &target.ID,
+	}))
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: demand.ID, Status: model.PlanResolving,
+	}))
+
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID: tg.Game.ID, PlanID: &demand.ID, RowNumber: &tg.Game.CurrentRow,
+		ActorID: tg.Players[0].ID, Difficulty: 4, Stage: "resolved",
+	})
+	require.NoError(t, err)
+	res := int16(10)
+	make := makeOutcome
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &make,
+	}))
+
+	// 0 picks: blocks on first picker (P0, rank 1).
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDemandDraftPick, got.Kind)
+	require.NotNil(t, got.ActingPlayerID)
+	assert.Equal(t, tg.Players[0].ID, *got.ActingPlayerID, "first pick = higher-ranked (P0)")
+
+	// 1 pick → second picker (P1).
+	resData := loadResolutionData(demand.ResolutionData)
+	md := resData.EnsureMakeDemands()
+	md.DraftChoices = []gamepkg.DraftChoice{
+		{PlayerID: tg.Players[0].ID, Option: gamepkg.DemandOptionControlLeverage},
+	}
+	require.NoError(t, saveResolutionData(ctx, q, demand.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDemandDraftPick, got.Kind)
+	assert.Equal(t, tg.Players[1].ID, *got.ActingPlayerID, "second pick = lower-ranked (P1)")
+
+	// 4 picks → draft complete, override clears (back to plan_resolving).
+	md.DraftChoices = []gamepkg.DraftChoice{
+		{PlayerID: tg.Players[0].ID, Option: gamepkg.DemandOptionControlLeverage},
+		{PlayerID: tg.Players[1].ID, Option: gamepkg.DemandOptionKeepOrChangeTarget},
+		{PlayerID: tg.Players[0].ID, Option: gamepkg.DemandOptionKeepAssets},
+		{PlayerID: tg.Players[1].ID, Option: gamepkg.DemandOptionPerformSteps},
+	}
+	require.NoError(t, saveResolutionData(ctx, q, demand.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind,
+		"draft complete → revert to plan_resolving (CompletePlan handles next)")
+}
+
+// TestComputeRowState_AwaitDemandCounter_OnlyAfterMar: a made demand
+// routes to the draft override, not the counter override. This guards
+// the make/mar dispatch in demandSubPhase.
 func TestComputeRowState_AwaitDemandCounter_OnlyAfterMar(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -424,8 +499,8 @@ func TestComputeRowState_AwaitDemandCounter_OnlyAfterMar(t *testing.T) {
 
 	state, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
-	assert.Equal(t, model.RowStatePlanResolving, state.Kind,
-		"made demand should not trigger counter override")
+	assert.Equal(t, model.RowStateAwaitDemandDraftPick, state.Kind,
+		"made demand routes to the draft override, not the counter override")
 }
 
 // TestComputeRowState_AwaitFestivityGuestTurn: a resolving Host Festivity

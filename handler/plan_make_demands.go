@@ -352,6 +352,10 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
+		// Each pick alternates the acting player; the final pick clears
+		// the override entirely. Broadcast so the WaitingOnBar updates.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":        plan.ID,
 			"option":         body.Option,

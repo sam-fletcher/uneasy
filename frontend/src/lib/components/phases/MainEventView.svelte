@@ -153,6 +153,16 @@
 					: [];
 				return { waitees, stepLabel: 'Make Demands — awaiting counter' };
 			}
+			case 'await_demand_draft_pick': {
+				// Made Make Demands: demander and target-plan preparer
+				// alternate the four-pick draft. Half the picks block on
+				// the non-focus player.
+				const actor = rowState.acting_player_id;
+				const waitees: Waitee[] = actor != null
+					? [{ kind: 'player', playerID: actor }]
+					: [];
+				return { waitees, stepLabel: 'Make Demands — draft pick' };
+			}
 			case 'await_festivity_guest_turn': {
 				// Host Festivity socializing phase: next guest (by ascending
 				// esteem; host last) owes a roll/opt-out/choice.
