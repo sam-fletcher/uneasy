@@ -17,6 +17,7 @@
 		type EndgameMode,
 		type Scene,
 		type ScenePeerView,
+		type SceneSetupDraft,
 		type RowState,
 	} from '$lib/api';
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
@@ -91,6 +92,11 @@
 	// null between scenes. Loaded on mount and kept in sync via WS events.
 	let activeScene = $state<Scene | null>(null);
 	let activeScenePeers = $state<ScenePeerView[]>([]);
+
+	// Ephemeral mirror of the focus player's in-flight scene-setup
+	// selections, fanned out so non-focus players can watch the form fill
+	// in. Reset on scene start so a stale draft doesn't reappear next round.
+	let sceneSetupDraft = $state<SceneSetupDraft | null>(null);
 
 	async function refreshActiveScene() {
 		if (!game || game.phase !== 'main_event') {
@@ -266,6 +272,7 @@
 			case EventTypes.FocusChanged: {
 				if (game) game = { ...game, focus_player_id: msg.payload.player_id as number };
 				// rowState is updated separately by RowStateChanged.
+				sceneSetupDraft = null;
 				break;
 			}
 			case EventTypes.PrologueTurnAdvanced: {
@@ -291,6 +298,11 @@
 				const peers = msg.payload.peers as ScenePeerView[];
 				activeScene = scene;
 				activeScenePeers = peers;
+				sceneSetupDraft = null;
+				break;
+			}
+			case EventTypes.SceneSetupDraft: {
+				sceneSetupDraft = msg.payload as SceneSetupDraft;
 				break;
 			}
 			case EventTypes.RowStateChanged: {
@@ -1008,6 +1020,7 @@
 			onPlansChanged={refreshPlans}
 			{activeScene}
 			{activeScenePeers}
+			{sceneSetupDraft}
 			onSceneRefresh={refreshActiveScene}
 			bind:waitingOn
 		/>

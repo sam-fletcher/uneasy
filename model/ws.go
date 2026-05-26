@@ -117,6 +117,11 @@ const (
 	// Phase 4d: Endgame mode selection
 	EventEndgameModeSet = "endgame.mode_set" // facilitator picked smooth_landing / explosive_finale
 
+	// Ephemeral scene-setup draft: focus player's in-flight selections,
+	// fanned out so non-focus players see what's being filled in. Not
+	// persisted; late joiners simply wait for the next keystroke.
+	EventSceneSetupDraft = "scene_setup.draft"
+
 	// Phase 4b: Structured prologue
 	EventPrologueChoiceClaimed      = "prologue.choice_claimed"           // a box was claimed
 	EventPrologueTurnAdvanced       = "prologue.turn_advanced"            // active player changed
@@ -142,8 +147,9 @@ const (
 // ── Command types (client → server) ──────────────────────────────────────────
 
 const (
-	CmdTypingStart = "typing.start"
-	CmdTypingStop  = "typing.stop"
+	CmdTypingStart     = "typing.start"
+	CmdTypingStop      = "typing.stop"
+	CmdSceneSetupDraft = "scene_setup.draft"
 )
 
 // ── Message envelope ─────────────────────────────────────────────────────────
@@ -744,3 +750,17 @@ type ShakeUpSpendCommittedPayload struct {
 
 // ShakeUpEndedPayload is for EventShakeUpEnded.
 type ShakeUpEndedPayload struct{}
+
+// SceneSetupDraftPayload is for EventSceneSetupDraft (also reused as the
+// CmdSceneSetupDraft body). The server stamps PlayerID from the sending
+// client; any value provided by the sender is overwritten. Pointer fields
+// distinguish "cleared" (null) from "absent" — though in practice the
+// focus client sends the full snapshot every change.
+type SceneSetupDraftPayload struct {
+	PlayerID       int64   `json:"player_id"`
+	HoldingID      *int64  `json:"holding_id"`
+	CustomLocation string  `json:"custom_location"`
+	TimeElapsed    string  `json:"time_elapsed"`
+	TimeNote       string  `json:"time_note"`
+	PresentPeerIDs []int64 `json:"present_peer_ids"`
+}

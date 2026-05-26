@@ -19,7 +19,7 @@
 		listWars,
 		getReveal,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, Scene, ScenePeerView, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, Scene, ScenePeerView, SceneSetupDraft, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
@@ -61,6 +61,13 @@
 		 */
 		activeScene?: Scene | null;
 		activeScenePeers?: ScenePeerView[];
+		/**
+		 * Ephemeral mirror of the focus player's in-flight scene-setup
+		 * selections. Non-focus players render the setup form from this
+		 * so they can see what's being filled in. Null until the focus
+		 * player makes their first change (late joiners see a blank form).
+		 */
+		sceneSetupDraft?: SceneSetupDraft | null;
 		/** Called after a scene mutation so the parent can re-fetch. */
 		onSceneRefresh?: () => void;
 		/** Bound by the parent; this view publishes its waiting-on derivation here. */
@@ -88,6 +95,7 @@
 		onPlansChanged,
 		activeScene = null,
 		activeScenePeers = [],
+		sceneSetupDraft = null,
 		onSceneRefresh = () => {},
 		waitingOn = $bindable(),
 	}: Props = $props();
@@ -487,6 +495,7 @@
 					prompt={followOnPromptForRow(plans, game.current_row)}
 					onSceneStarted={onSceneRefresh}
 					readOnly={!isFocusPlayer}
+					draft={sceneSetupDraft}
 				/>
 			{/if}
 

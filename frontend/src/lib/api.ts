@@ -937,6 +937,21 @@ export interface SceneResponse {
 	peers: ScenePeerView[];
 }
 
+/**
+ * Ephemeral broadcast of the focus player's in-flight scene-setup
+ * selections. Mirrors model.SceneSetupDraftPayload. Not persisted; consumed
+ * by SceneSetupForm in read-only mode so non-focus players can see what's
+ * being chosen as it happens.
+ */
+export interface SceneSetupDraft {
+	player_id: number;
+	holding_id: number | null;
+	custom_location: string;
+	time_elapsed: string;
+	time_note: string;
+	present_peer_ids: number[];
+}
+
 export function getActiveScene(gameID: string | number): Promise<SceneResponse> {
 	return apiFetch(`/tables/${gameID}/scenes/active`);
 }

@@ -131,6 +131,9 @@ export const EventTypes = {
 	// Endgame mode selection (Phase 4d)
 	EndgameModeSet: 'endgame.mode_set',
 
+	// Ephemeral: focus player's in-flight scene-setup selections
+	SceneSetupDraft: 'scene_setup.draft',
+
 	// Structured prologue (Phase 4b)
 	PrologueChoiceClaimed: 'prologue.choice_claimed',
 	PrologueTurnAdvanced: 'prologue.turn_advanced',
@@ -218,6 +221,14 @@ export function createConnection(
 	}
 	window.addEventListener('uneasy:typing', onTyping);
 
+	// Listen for scene-setup draft snapshots dispatched by SceneSetupForm.
+	// The payload is forwarded verbatim; the server stamps player_id.
+	function onSceneSetupDraft(e: Event) {
+		const detail = (e as CustomEvent<Record<string, unknown>>).detail;
+		send({ type: 'scene_setup.draft', payload: detail });
+	}
+	window.addEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
+
 	function send(msg: object) {
 		if (ws?.readyState === WebSocket.OPEN) {
 			ws.send(JSON.stringify(msg));
@@ -293,6 +304,7 @@ export function createConnection(
 		disconnect: () => {
 			stopped = true;
 			window.removeEventListener('uneasy:typing', onTyping);
+			window.removeEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
 			ws?.close();
 		},
 		ready,

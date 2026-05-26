@@ -18,7 +18,8 @@
 	loading the active scene state (the WS event will also push it).
 -->
 <script lang="ts">
-	import { createScene, type Asset, type Player, type TimeElapsed } from '$lib/api';
+	import { onDestroy } from 'svelte';
+	import { createScene, type Asset, type Player, type TimeElapsed, type SceneSetupDraft } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 
@@ -38,14 +39,21 @@
 		onSceneStarted: () => void;
 		/**
 		 * When true, render the form structure for non-focus players to
-		 * see, but disable all inputs and hide the submit button. No live
-		 * draft sync yet — selections shown are local-only. The waiting-on
-		 * banner already names the focus player.
+		 * see, but disable all inputs and hide the submit button. Selections
+		 * displayed come from `draft` (the focus player's in-flight
+		 * snapshot, broadcast over the WS). The waiting-on banner already
+		 * names the focus player.
 		 */
 		readOnly?: boolean;
+		/**
+		 * Ephemeral mirror of the focus player's selections, broadcast over
+		 * the WS. Drives the read-only render; ignored when !readOnly.
+		 * Null until the focus player's first change.
+		 */
+		draft?: SceneSetupDraft | null;
 	}
 
-	const { gameID, assets, players, focusPlayerID, prompt, onSceneStarted, readOnly = false }: Props = $props();
+	const { gameID, assets, players, focusPlayerID, prompt, onSceneStarted, readOnly = false, draft = null }: Props = $props();
 
 	// ── Where ──────────────────────────────────────────────────────────────────
 	const holdings = $derived(
@@ -108,6 +116,61 @@
 		return playerColor(players.find(p => p.id === ownerID));
 	}
 
+	// ── Display values ────────────────────────────────────────────────────────
+	// Focus player renders from local state; read-only viewers render from the
+	// draft broadcast by the focus player. Draft fields default to "empty"
+	// (null / "") so the form starts blank for late joiners until the first
+	// keystroke arrives.
+	const displayHoldingID = $derived(
+		readOnly ? (draft?.holding_id ?? null) : selectedHoldingID
+	);
+	const displayCustomLocation = $derived(
+		readOnly ? (draft?.custom_location ?? '') : customLocation
+	);
+	const displayTimeElapsed = $derived<TimeElapsed | null>(
+		readOnly
+			? ((draft?.time_elapsed ?? '') as TimeElapsed) || null
+			: timeElapsed
+	);
+	const displayTimeNote = $derived(
+		readOnly ? (draft?.time_note ?? '') : timeNote
+	);
+	const displayPeerIDs = $derived<Set<number>>(
+		readOnly ? new Set(draft?.present_peer_ids ?? []) : selectedPeerIDs
+	);
+
+	// ── Draft emission ────────────────────────────────────────────────────────
+	// While the focus player edits, broadcast a snapshot of their current
+	// selections so non-focus clients can mirror the form. Debounced for text
+	// fields (which fire on every keystroke); chip/card toggles also pass
+	// through the same debounce — 150ms is short enough to feel live.
+	let draftTimer: ReturnType<typeof setTimeout> | null = null;
+	function flushDraft() {
+		draftTimer = null;
+		const payload: Omit<SceneSetupDraft, 'player_id'> = {
+			holding_id: selectedHoldingID,
+			custom_location: customLocation,
+			time_elapsed: timeElapsed ?? '',
+			time_note: timeNote,
+			present_peer_ids: [...selectedPeerIDs],
+		};
+		window.dispatchEvent(new CustomEvent('uneasy:scene_setup_draft', { detail: payload }));
+	}
+	$effect(() => {
+		if (readOnly) return;
+		// Touch every field so $effect re-runs on any change.
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+		selectedHoldingID; customLocation; timeElapsed; timeNote; selectedPeerIDs;
+		if (draftTimer) clearTimeout(draftTimer);
+		draftTimer = setTimeout(flushDraft, 150);
+	});
+	onDestroy(() => {
+		if (draftTimer) {
+			clearTimeout(draftTimer);
+			draftTimer = null;
+		}
+	});
+
 	// ── Submit ────────────────────────────────────────────────────────────────
 	const hasLocation = $derived(
 		selectedHoldingID != null || customLocation.trim() !== ''
@@ -146,7 +209,7 @@
 	}
 </script>
 
-<section class="scene-setup">
+<section class="scene-setup" class:readonly={readOnly}>
 	<div class="prompt">
 		<span class="prompt-label">Prompt</span>
 		<p>{prompt}</p>
@@ -163,7 +226,7 @@
 						asset={h}
 						ownerColor={colorFor(h.owner_id)}
 						selectable
-						selected={selectedHoldingID === h.id}
+						selected={displayHoldingID === h.id}
 						onToggle={selectHolding}
 						disabled={readOnly}
 					/>
@@ -171,12 +234,12 @@
 			</div>
 		{/if}
 
-		<div class="custom-panel" class:active={customLocation.trim() !== ''}>
+		<div class="custom-panel" class:active={displayCustomLocation.trim() !== ''}>
 			<label>
 				<input
 					type="text"
 					placeholder="Another location"
-					value={customLocation}
+					value={displayCustomLocation}
 					oninput={(e) => onCustomInput((e.target as HTMLInputElement).value)}
 					maxlength={80}
 					disabled={readOnly}
@@ -192,7 +255,7 @@
 				<button
 					type="button"
 					class="chip"
-					class:active={timeElapsed === opt.value}
+					class:active={displayTimeElapsed === opt.value}
 					onclick={() => selectTime(opt.value)}
 					disabled={readOnly}
 				>
@@ -204,7 +267,7 @@
 			type="text"
 			class="note"
 			placeholder="Another time"
-			value={timeNote}
+			value={displayTimeNote}
 			oninput={(e) => onTimeNoteInput((e.target as HTMLInputElement).value)}
 			maxlength={120}
 			disabled={readOnly}
@@ -222,7 +285,7 @@
 						asset={peer}
 						ownerColor={colorFor(peer.owner_id)}
 						selectable
-						selected={selectedPeerIDs.has(peer.id)}
+						selected={displayPeerIDs.has(peer.id)}
 						onToggle={togglePeer}
 						disabled={readOnly}
 					/>
@@ -263,6 +326,15 @@
 		border-left: 3px solid #c8a96e;
 		border-radius: 5px;
 		padding: 0.55rem 0.7rem;
+	}
+	.scene-setup.readonly .prompt {
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		border-left: 3px solid #4a4a4a;
+	}
+	.scene-setup.readonly .prompt-label,
+	.scene-setup.readonly .section h3 {
+		color: #888;
 	}
 	.prompt-label {
 		display: block;
@@ -309,6 +381,7 @@
 		padding: 0.55rem 0.7rem;
 	}
 	.custom-panel.active { border-color: #c8a96e; background: #221d10; }
+	.scene-setup.readonly .custom-panel.active { border-color: #2a2a2a; background: #1d1d1d; }
 
 	.custom-panel label { display: flex; flex-direction: column; gap: 0.3rem; }
 
@@ -345,6 +418,11 @@
 		color: #1a1a1a;
 		border-color: #c8a96e;
 		font-weight: 600;
+	}
+	.scene-setup.readonly .chip.active {
+		background: #4a4a4a;
+		color: #e8e4d9;
+		border-color: #4a4a4a;
 	}
 
 	.note { width: 100%; }

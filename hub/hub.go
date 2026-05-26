@@ -288,5 +288,18 @@ func (c *Client) handleCommand(data []byte) {
 			DisplayName: c.player.DisplayName,
 			Typing:      false,
 		})
+	case model.CmdSceneSetupDraft:
+		// Ephemeral fan-out of the focus player's in-flight scene-setup
+		// selections. We don't validate (it's a UI hint, not a state
+		// change) but we do stamp PlayerID from the authenticated client
+		// so peers can trust the source.
+		var msg struct {
+			Payload model.SceneSetupDraftPayload `json:"payload"`
+		}
+		if err := json.Unmarshal(data, &msg); err != nil {
+			return
+		}
+		msg.Payload.PlayerID = c.player.ID
+		c.hub.BroadcastEvent(model.EventSceneSetupDraft, msg.Payload)
 	}
 }
