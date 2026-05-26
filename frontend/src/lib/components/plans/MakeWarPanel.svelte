@@ -42,9 +42,11 @@
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
-	// Make War uses one underlying view for both resolve and alwaysOn
-	// dispatches — both fall through to "the war view".
-	const isWarView = $derived(mode === 'resolve' || mode === 'alwaysOn');
+	// Make War uses a single "war view" for the resolving plan, the
+	// pre-row delay reveal, and the war drawer — anything that isn't
+	// the prep form. The branches differ only in which sub-component
+	// (DelayReveal vs WarStatus etc.) self-shows based on war state.
+	const isWarView = $derived(mode !== 'prep');
 
 	// ── War-mode state ───────────────────────────────────────────────────────
 	let war = $state<WarStateResponse | null>(null);

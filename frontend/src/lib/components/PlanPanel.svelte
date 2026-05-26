@@ -1,14 +1,15 @@
 <!-- PlanPanel.svelte
-  Dispatcher for plan preparation, resolution, and out-of-band ("alwaysOn")
-  views. Plan-type knowledge lives entirely in plans/registry.ts; this file
-  only orchestrates the three dispatch sites and constructs the PlanContext
-  that every panel consumes.
+  Dispatcher for plan preparation and resolution. Plan-type knowledge lives
+  entirely in plans/registry.ts; this file only orchestrates the dispatch
+  sites and constructs the PlanContext that every panel consumes.
 
   Modes:
-    'prep'      — focus player's preparation form (action step 2)
-    'resolve'   — currently resolving plan
-    'alwaysOn'  — out-of-band per-plan view (e.g. Make War status, Liaise
-                  delay reveal); driven by REGISTRY[type].alwaysOn predicates.
+    'prep'    — focus player's preparation form (action step 2)
+    'resolve' — currently resolving plan
+
+  Delay-reveal panels (Make War, Clandestinely Liaise) are rendered
+  directly from MainEventView for every player via the row_state kind
+  'await_delay_reveal' — they don't dispatch through here.
 
   The parent is responsible for showing DiceRollPanel when activeRoll != null.
   This component signals "a roll was created" by calling onRollCreated so the
@@ -55,8 +56,8 @@
 		prepEnabled?: boolean;
 		/**
 		 * Hide the post-scene prep grid and "next pending plan" call-to-action,
-		 * leaving only alwaysOn / resolving panels visible. Used when a Make War
-		 * delay reveal needs the play area's full attention.
+		 * leaving only the resolving panel visible. Used when a Make War delay
+		 * reveal needs the play area's full attention.
 		 */
 		suppressPrep?: boolean;
 		/** Whether any dice roll is currently active. */
@@ -101,20 +102,6 @@
 	// rare case OnResolve errors and leaves the plan pending — neither
 	// warrants a play-area panel.
 	const needsResolution = $derived(resolvingPlan != null);
-
-	// Plans that should render out-of-band (independent of resolving status).
-	// Driven by per-plan alwaysOn predicates in the registry. Each panel may
-	// still self-hide for state it can only learn by fetching (e.g. Make
-	// War's war-ended check). The resolving plan is excluded to avoid
-	// double-rendering.
-	const alwaysOnPlans = $derived(
-		plans.filter(p => {
-			const entry = REGISTRY[p.plan_type];
-			if (!entry?.alwaysOn) return false;
-			if (resolvingPlan?.id === p.id) return false;
-			return entry.alwaysOn(p, currentPlayerID);
-		}),
-	);
 
 	// ── Eligibility loading (prep mode) ───────────────────────────────────────
 
@@ -201,12 +188,6 @@
 	});
 
 </script>
-
-<!-- ── Always-on plan views (registry-driven) ──────────────────────────── -->
-{#each alwaysOnPlans as p (p.id)}
-	{@const Comp = REGISTRY[p.plan_type].component}
-	<Comp {ctx} plan={p} mode="alwaysOn" />
-{/each}
 
 <!-- ── Resolution dispatch ───────────────────────────────────────────────── -->
 {#if resolvingPlan}

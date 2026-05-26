@@ -63,7 +63,8 @@ func GetFullRecord(s *db.Store) http.HandlerFunc {
 		planByRow := make(map[int16][]dbgen.Plan)
 		for _, p := range plans {
 			// Plans awaiting a delay reveal have no row yet — skip them
-			// here; they're surfaced via the alwaysOn registry on the frontend.
+			// here; the row_state kind 'await_delay_reveal' surfaces them
+			// in the play area instead.
 			if p.RowNumber == nil {
 				continue
 			}

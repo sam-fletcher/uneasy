@@ -249,7 +249,7 @@
 		</div>
 	</div>
 
-{:else if mode === 'alwaysOn' && plan}
+{:else if mode === 'delayReveal' && plan}
 	<!-- Delay reveal — the plan is pending at row 0 until both faces are in. -->
 	<div class="plan-panel pending">
 		<div class="plan-header">

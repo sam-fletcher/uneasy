@@ -6,7 +6,7 @@
 // entry here.
 
 import type { Component } from 'svelte';
-import type { Plan, PlanType } from '$lib/api';
+import type { PlanType } from '$lib/api';
 import type { PlanPanelProps } from './types';
 
 import ExchangeCourtiersPanel from './ExchangeCourtiersPanel.svelte';
@@ -22,17 +22,8 @@ import HostFestivityPanel from './HostFestivityPanel.svelte';
 import MakeWarPanel from './MakeWarPanel.svelte';
 import MakeDemandsPanel from './MakeDemandsPanel.svelte';
 
-/** Predicate over (plan, viewer) deciding whether the plan's panel should
- *  render out-of-band — i.e. independent of being the currently resolving
- *  plan. The panel may still self-hide for fetched state it learns later
- *  (e.g. Make War's "war ended" check). */
-export type AlwaysOnPredicate = (plan: Plan, viewerID: number | null) => boolean;
-
 export interface PlanRegistryEntry {
 	component: Component<PlanPanelProps>;
-	/** When set, the panel renders out-of-band for any plan matching this
-	 *  predicate (in addition to its prep/resolve dispatches). */
-	alwaysOn?: AlwaysOnPredicate;
 }
 
 const C = <T>(c: T) => c as unknown as Component<PlanPanelProps>;
@@ -49,14 +40,12 @@ export const REGISTRY: Record<PlanType, PlanRegistryEntry> = {
 	host_festivity: { component: C(HostFestivityPanel) },
 	make_demands: { component: C(MakeDemandsPanel) },
 
-	// Make War and Clandestinely Liaise both have a simultaneous-reveal
-	// phase before their landing row is fixed. That phase is no longer
-	// driven by an alwaysOn predicate; it's the row_state kind
-	// 'await_delay_reveal', and MainEventView renders the appropriate
-	// panel directly in the play area for every player. Outside the
-	// delay reveal these plans take the standard prep/resolve paths.
-	// Make War's post-placement "war drawer" view is still rendered from
-	// MainEventView via warDrawer.ts, not via the registry.
+	// Make War and Clandestinely Liaise's simultaneous-reveal phase is
+	// driven by the row_state kind 'await_delay_reveal'; MainEventView
+	// renders the appropriate panel directly in the play area for every
+	// player. Outside the delay reveal these plans take the standard
+	// prep/resolve paths. Make War's post-placement "war drawer" view is
+	// also rendered from MainEventView, not via the registry.
 	make_war: { component: C(MakeWarPanel) },
 	clandestinely_liaise: { component: C(ClandestinelyLiaisePanel) },
 };

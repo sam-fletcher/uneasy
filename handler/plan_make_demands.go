@@ -204,6 +204,19 @@ func (mdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+// mdRollOutcome returns the resolved dice-roll outcome ("make"/"mar") for a
+// Make Demands plan, or "" if no roll exists or it hasn't resolved. Used by
+// the draft-choice and counter-demand handlers to gate by roll outcome —
+// plan.Result isn't written until CompletePlan (which also flips status
+// out of 'resolving'), so checking plan.Result here would be unreachable.
+func mdRollOutcome(ctx context.Context, q *dbgen.Queries, planID int64) string {
+	roll, err := q.GetDiceRollByPlanID(ctx, &planID)
+	if err != nil || roll.Outcome == nil {
+		return ""
+	}
+	return *roll.Outcome
+}
+
 func validDemandOption(s string) bool {
 	switch s {
 	case gamepkg.DemandOptionControlLeverage,
@@ -256,7 +269,8 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		if plan.Result == nil || *plan.Result != makeOutcome {
+		ctx := r.Context()
+		if outcome := mdRollOutcome(ctx, deps.Q, plan.ID); outcome != makeOutcome {
 			respondErr(w, http.StatusConflict, "draft is only open after a made demand")
 			return
 		}
@@ -277,7 +291,6 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		ctx := r.Context()
 		target, err := deps.Q.GetPlanByID(ctx, *plan.TargetedPlanID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load target plan", err)
@@ -393,7 +406,8 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "demand is not in resolving status")
 			return
 		}
-		if plan.Result == nil || *plan.Result != marOutcome {
+		ctx := r.Context()
+		if outcome := mdRollOutcome(ctx, deps.Q, plan.ID); outcome != marOutcome {
 			respondErr(w, http.StatusConflict, "counter-demand is only open after a marred demand")
 			return
 		}
@@ -402,7 +416,6 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		ctx := r.Context()
 		targetOfDemand, err := deps.Q.GetPlanByID(ctx, *plan.TargetedPlanID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load target plan", err)

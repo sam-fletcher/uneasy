@@ -461,9 +461,9 @@
 			-->
 			{#if delayRevealActive && delayRevealPlan}
 				{#if delayRevealPlan.plan_type === 'make_war'}
-					<MakeWarPanel ctx={drawerCtx} plan={delayRevealPlan} mode="alwaysOn" />
+					<MakeWarPanel ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
 				{:else if delayRevealPlan.plan_type === 'clandestinely_liaise'}
-					<ClandestinelyLiaisePanel ctx={drawerCtx} plan={delayRevealPlan} mode="alwaysOn" />
+					<ClandestinelyLiaisePanel ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
 				{/if}
 			{:else if activeScene}
 				<SceneDetailsPanel
@@ -589,7 +589,7 @@
 			<p class="muted">No active wars.</p>
 		{:else}
 			{#each drawerWarPlans as p (p.id)}
-				<MakeWarPanel ctx={drawerCtx} plan={p} mode="alwaysOn" />
+				<MakeWarPanel ctx={drawerCtx} plan={p} mode="resolve" />
 			{/each}
 		{/if}
 	</div>

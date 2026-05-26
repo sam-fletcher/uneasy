@@ -12,7 +12,14 @@ import type {
 	Plan, Asset, Player, Ranking, DiceRoll,
 } from '$lib/api';
 
-export type PlanMode = 'prep' | 'resolve' | 'alwaysOn';
+// 'prep' — preparation form (post-scene action).
+// 'resolve' — currently resolving plan (also reused for read-only views
+//   like the Make War "active wars" drawer, since the resolve UI is
+//   already a "show me this war" view).
+// 'delayReveal' — Make War / Clandestinely Liaise simultaneous-reveal
+//   panel, rendered by MainEventView for every player when the row_state
+//   kind is 'await_delay_reveal'.
+export type PlanMode = 'prep' | 'resolve' | 'delayReveal';
 
 export interface PlanContext {
 	gameID: number;

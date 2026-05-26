@@ -5,10 +5,16 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -16,6 +22,7 @@ import (
 	dbgen "uneasy/db/gen"
 	"uneasy/game"
 	"uneasy/hub"
+	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -200,4 +207,202 @@ func TestMakeDemands_PendingCounterDemandConsumed(t *testing.T) {
 	open, err := q.ListOpenPendingCounterDemandsForPlayer(ctx, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.Empty(t, open, "pending row should be marked resolved")
+}
+
+// ── HTTP-level tests for draft-choice and counter-demand ──────────────────────
+//
+// These exercise the actual HTTP handlers, not just the helpers underneath.
+// They regression-guard a real bug that survived for a while: the old
+// handlers gated on plan.Result, which is only written by SetPlanResult
+// (atomically transitioning status → 'resolved'). Combined with the
+// status==resolving check, both gates were unreachable and every call to
+// /draft-choice and /counter-demand 409'd. The fix routes both through
+// mdRollOutcome (dice-roll outcome lookup), so the tests below send a real
+// HTTP request to confirm a 200 is returned end-to-end.
+
+// mdHTTPHarness wires up the same middleware + plan routes as the real
+// server, scoped to what these tests need.
+type mdHTTPHarness struct {
+	tg     testGame
+	q      *dbgen.Queries
+	router http.Handler
+	tokens []string
+}
+
+func newMDHTTPHarness(t *testing.T, n int) *mdHTTPHarness {
+	t.Helper()
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, n)
+	store := db.NewStore(pool)
+	manager := hub.NewManager()
+
+	tokens := make([]string, n)
+	for i, p := range tg.Players {
+		tok, err := db.NewCookieToken()
+		require.NoError(t, err)
+		_, err = q.CreateSession(context.Background(), dbgen.CreateSessionParams{
+			Token: tok, AccountID: p.AccountID,
+		})
+		require.NoError(t, err)
+		tokens[i] = tok
+	}
+
+	r := chi.NewRouter()
+	r.Use(appMiddleware.EnsureSession(q))
+	r.Route("/api/plans/{planId}", func(rr chi.Router) {
+		deps := &game.PlanDeps{Store: store, Manager: manager}
+		h, _ := GetHandler(model.PlanMakeDemands)
+		for route, fn := range h.ExtraRoutes(deps) {
+			rr.Post("/"+route, fn)
+		}
+	})
+	return &mdHTTPHarness{tg: tg, q: q, router: r, tokens: tokens}
+}
+
+func (h *mdHTTPHarness) post(t *testing.T, playerIdx int, path string, body any) (int, map[string]any) {
+	t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		require.NoError(t, err)
+		rdr = bytes.NewReader(buf)
+	}
+	req := httptest.NewRequest("POST", path, rdr)
+	req.AddCookie(&http.Cookie{Name: "player_token", Value: h.tokens[playerIdx]})
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	rec := httptest.NewRecorder()
+	h.router.ServeHTTP(rec, req)
+	var out map[string]any
+	if rec.Body.Len() > 0 {
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	}
+	return rec.Code, out
+}
+
+// seedResolvingDemand creates a demand-with-target pair and a resolved
+// dice roll with the given outcome, ready for draft-choice/counter-demand
+// to be exercised. Returns (target, demand).
+func seedResolvingDemand(
+	t *testing.T,
+	q *dbgen.Queries,
+	tg *testGame,
+	demanderIdx, targetPreparerIdx int,
+	outcome string,
+) (dbgen.Plan, dbgen.Plan) {
+	t.Helper()
+	ctx := context.Background()
+
+	// Ranks are required because mdDraftPickers consults the power-rank
+	// table to pick the first drafter.
+	require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+		GameID: tg.Game.ID, PlayerID: &tg.Players[demanderIdx].ID,
+		Category: model.CategoryPower, Rank: 1,
+	}))
+	require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+		GameID: tg.Game.ID, PlayerID: &tg.Players[targetPreparerIdx].ID,
+		Category: model.CategoryPower, Rank: 2,
+	}))
+
+	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[targetPreparerIdx],
+		model.PlanProposeDecree, model.CategoryPower, tg.Game.CurrentRow)
+	demand := createPlanOnRow(t, q, &tg.Game, &tg.Players[demanderIdx],
+		model.PlanMakeDemands, model.CategoryPower, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: demand.ID, TargetedPlanID: &target.ID,
+	}))
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: demand.ID, Status: model.PlanResolving,
+	}))
+
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID: tg.Game.ID, PlanID: &demand.ID, RowNumber: &tg.Game.CurrentRow,
+		ActorID: tg.Players[demanderIdx].ID, Difficulty: 4, Stage: "resolved",
+	})
+	require.NoError(t, err)
+	res := int16(10)
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &outcome,
+	}))
+
+	// Re-fetch the demand so callers see the updated status/targeted_plan_id.
+	reloaded, err := q.GetPlanByID(ctx, demand.ID)
+	require.NoError(t, err)
+	return target, reloaded
+}
+
+// TestMakeDemandsHTTP_DraftChoice_AcceptedAfterMakeRoll: a made demand
+// must accept /draft-choice (the first pick by the higher-ranked drafter).
+// This regression-guards the unreachable-check bug.
+func TestMakeDemandsHTTP_DraftChoice_AcceptedAfterMakeRoll(t *testing.T) {
+	h := newMDHTTPHarness(t, 3)
+	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "make")
+
+	// Demander (P0, rank 1) picks first.
+	status, body := h.post(t, 0,
+		"/api/plans/"+itoa(demand.ID)+"/draft-choice",
+		map[string]any{"option": game.DemandOptionControlLeverage})
+	assert.Equal(t, http.StatusOK, status, "made demand should accept draft pick, got body=%v", body)
+	assert.Equal(t, float64(1), body["picks_done"])
+}
+
+// TestMakeDemandsHTTP_DraftChoice_RejectedWithoutRoll: with no resolved
+// roll, /draft-choice 409s with the "made demand" message. Guards the
+// new mdRollOutcome path.
+func TestMakeDemandsHTTP_DraftChoice_RejectedWithoutRoll(t *testing.T) {
+	h := newMDHTTPHarness(t, 3)
+	ctx := context.Background()
+
+	// Set up just enough for the handler to reach the outcome check.
+	target := createPlanOnRow(t, h.q, &h.tg.Game, &h.tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, h.tg.Game.CurrentRow)
+	demand := createPlanOnRow(t, h.q, &h.tg.Game, &h.tg.Players[0],
+		model.PlanMakeDemands, model.CategoryPower, h.tg.Game.CurrentRow)
+	require.NoError(t, h.q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: demand.ID, TargetedPlanID: &target.ID,
+	}))
+	require.NoError(t, h.q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: demand.ID, Status: model.PlanResolving,
+	}))
+
+	status, body := h.post(t, 0,
+		"/api/plans/"+itoa(demand.ID)+"/draft-choice",
+		map[string]any{"option": game.DemandOptionControlLeverage})
+	assert.Equal(t, http.StatusConflict, status)
+	assert.Contains(t, body["error"], "made demand")
+}
+
+// TestMakeDemandsHTTP_CounterDemand_AcceptedAfterMarRoll: a marred demand
+// must accept /counter-demand from the target plan's preparer (the demand
+// target). Regression guard for the same bug class.
+func TestMakeDemandsHTTP_CounterDemand_AcceptedAfterMarRoll(t *testing.T) {
+	h := newMDHTTPHarness(t, 3)
+	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "mar")
+
+	// Target-plan preparer (P1) defers the counter — simplest valid body.
+	status, body := h.post(t, 1,
+		"/api/plans/"+itoa(demand.ID)+"/counter-demand",
+		map[string]any{"target_plan_id": nil})
+	assert.Equal(t, http.StatusOK, status, "marred demand should accept counter, got body=%v", body)
+	assert.Equal(t, true, body["deferred"])
+}
+
+// TestMakeDemandsHTTP_CounterDemand_RejectedAfterMakeRoll: a made demand
+// must NOT accept /counter-demand. Guards the make/mar dispatch in
+// mdRollOutcome's caller.
+func TestMakeDemandsHTTP_CounterDemand_RejectedAfterMakeRoll(t *testing.T) {
+	h := newMDHTTPHarness(t, 3)
+	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "make")
+
+	status, body := h.post(t, 1,
+		"/api/plans/"+itoa(demand.ID)+"/counter-demand",
+		map[string]any{"target_plan_id": nil})
+	assert.Equal(t, http.StatusConflict, status)
+	assert.Contains(t, body["error"], "marred demand")
+}
+
+func itoa(n int64) string {
+	return strconv.FormatInt(n, 10)
 }

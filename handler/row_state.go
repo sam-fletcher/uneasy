@@ -208,11 +208,8 @@ func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pl
 // isn't written until the demand is completed, so the roll is the source
 // of truth during resolution.
 func demandSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
-	if err != nil || roll.Outcome == nil {
-		return model.RowState{}, false
-	}
-	if plan.TargetedPlanID == nil {
+	outcome := mdRollOutcome(ctx, q, plan.ID)
+	if outcome == "" || plan.TargetedPlanID == nil {
 		return model.RowState{}, false
 	}
 	target, err := q.GetPlanByID(ctx, *plan.TargetedPlanID)
@@ -220,7 +217,7 @@ func demandSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (mo
 		return model.RowState{}, false
 	}
 	resData := loadResolutionData(plan.ResolutionData)
-	switch *roll.Outcome {
+	switch outcome {
 	case makeOutcome:
 		return demandDraftSubPhase(ctx, q, plan, &target, &resData)
 	case marOutcome:

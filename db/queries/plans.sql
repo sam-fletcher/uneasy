@@ -38,12 +38,6 @@ UPDATE plans SET status = $2 WHERE id = $1;
 -- name: SetPlanResult :exec
 UPDATE plans SET result = $2, resolved_at = now(), status = 'resolved' WHERE id = $1;
 
--- name: SetPlanResultPreserveStatus :exec
--- Sets result without transitioning status. Used by plans without a dice roll
--- (Make War) to pre-record a narrative result so CompletePlan has something
--- to store when the focus player finalises the plan.
-UPDATE plans SET result = $2 WHERE id = $1;
-
 -- name: CountPlansOnRow :one
 SELECT count(*) FROM plans WHERE game_id = $1 AND row_number = $2;
 
