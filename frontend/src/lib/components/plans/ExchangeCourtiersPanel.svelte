@@ -4,6 +4,7 @@
   (when required) → complete.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
 		preparePlan, fairTrade, makeChoice, completePlan, messyBreak,
@@ -34,6 +35,13 @@
 	const onRollCreated = $derived(ctx.onRollCreated);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+
+	const readOnly = $derived(ctx.readOnly);
+	const prepDraft = $derived(ctx.prepDraft as {
+		target_player_id?: number | null;
+		target_asset_id?: number | null;
+		notes?: string;
+	} | null);
 
 	// Demand overlay (Stage 4): if a resolved+made demand targets this plan,
 	// the perform_steps winner submits make/mar in place of the preparer.
@@ -69,7 +77,9 @@
 
 	// Pre-select the first other player so peer cards appear without an extra
 	// tap. Switching player clears any peer selection (single target overall).
+	// Skip in read-only — the draft sync below is authoritative for viewers.
 	$effect(() => {
+		if (readOnly) return;
 		if (ecTargetPlayerID == null && otherPlayers.length > 0) {
 			ecTargetPlayerID = otherPlayers[0].id;
 		}
@@ -107,6 +117,28 @@
 			prepBusy = false;
 		}
 	}
+
+	$effect(() => {
+		if (!readOnly) return;
+		ecTargetPlayerID = prepDraft?.target_player_id ?? null;
+		ecTargetAssetID = prepDraft?.target_asset_id ?? null;
+		prepNotes = prepDraft?.notes ?? '';
+	});
+	let emitTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (readOnly || mode !== 'prep') return;
+		void ecTargetPlayerID; void ecTargetAssetID; void prepNotes;
+		if (emitTimer) clearTimeout(emitTimer);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			ctx.emitPrepDraft({
+				target_player_id: ecTargetPlayerID,
+				target_asset_id: ecTargetAssetID,
+				notes: prepNotes,
+			});
+		}, 150);
+	});
+	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 
 	// ── Resolve state ─────────────────────────────────────────────────────────
 
@@ -202,41 +234,47 @@
 </script>
 
 {#if mode === 'prep'}
-	<div class="plan-form">
-		{#if prepError}<p class="res-error">{prepError}</p>{/if}
+	<fieldset class="plan-form-fieldset" disabled={readOnly}>
+		<div class="plan-form">
+			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 
-		<FormField label="Target player">
-			<PlayerChips
-				players={otherPlayers}
-				isActive={(p) => ecTargetPlayerID === p.id}
-				onSelect={(p) => selectTargetPlayer(p.id)}
-			/>
-		</FormField>
+			<FormField label="Target player">
+				<PlayerChips
+					players={otherPlayers}
+					isActive={(p) => ecTargetPlayerID === p.id}
+					onSelect={(p) => selectTargetPlayer(p.id)}
+					{readOnly}
+				/>
+			</FormField>
 
-		{#if ecTargetPlayerID != null}
-			<CardPicker
-				label="Target peer"
-				items={ecTargetPlayerAssets}
-				{players}
-				emptyMessage="This player has no peers to exchange."
-				selected={ecTargetAssetID}
-				onSelect={(id) => (ecTargetAssetID = id)}
-			/>
-		{/if}
+			{#if ecTargetPlayerID != null}
+				<CardPicker
+					label="Target peer"
+					items={ecTargetPlayerAssets}
+					{players}
+					emptyMessage="This player has no peers to exchange."
+					selected={ecTargetAssetID}
+					onSelect={(id) => (ecTargetAssetID = id)}
+					{readOnly}
+				/>
+			{/if}
 
-		<label class="form-label">
-			Preparation:
-			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="How are you planning to take them into your retinue?" required></textarea>
-		</label>
+			<label class="form-label">
+				Preparation:
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+					placeholder="How are you planning to take them into your retinue?" required></textarea>
+			</label>
 
-		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep}
-				disabled={prepBusy || !ecTargetPlayerID || !ecTargetAssetID || !prepNotes.trim()}>
-				{prepBusy ? '…' : 'Prepare Plan'}
-			</button>
+			{#if !readOnly}
+				<div class="form-actions">
+					<button class="action-btn primary" onclick={submitPrep}
+						disabled={prepBusy || !ecTargetPlayerID || !ecTargetAssetID || !prepNotes.trim()}>
+						{prepBusy ? '…' : 'Prepare Plan'}
+					</button>
+				</div>
+			{/if}
 		</div>
-	</div>
+	</fieldset>
 
 {:else if plan}
 	{@const isPreparer = currentPlayerID === plan.preparer_id}

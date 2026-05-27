@@ -15,6 +15,7 @@
   sub-flows pick from the preparer's assets.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
@@ -42,6 +43,13 @@
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+
+	const readOnly = $derived(ctx.readOnly);
+	const prepDraft = $derived(ctx.prepDraft as {
+		filter_owner_id?: number | null;
+		target_asset_id?: number | null;
+		notes?: string;
+	} | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
 	const amChoiceActor = $derived(
@@ -78,7 +86,9 @@
 	);
 
 	// Pre-select the first owner so cards appear without an extra tap.
+	// Skip in read-only — the draft sync below is authoritative for viewers.
 	$effect(() => {
+		if (readOnly) return;
 		if (prepFilterOwnerID == null && ownersWithAssets.length > 0) {
 			prepFilterOwnerID = ownersWithAssets[0].id;
 		}
@@ -108,6 +118,28 @@
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
 		} finally { prepBusy = false; }
 	}
+
+	$effect(() => {
+		if (!readOnly) return;
+		prepFilterOwnerID = prepDraft?.filter_owner_id ?? null;
+		prepTargetAssetID = prepDraft?.target_asset_id ?? null;
+		prepNotes = prepDraft?.notes ?? '';
+	});
+	let emitTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (readOnly || mode !== 'prep') return;
+		void prepFilterOwnerID; void prepTargetAssetID; void prepNotes;
+		if (emitTimer) clearTimeout(emitTimer);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			ctx.emitPrepDraft({
+				filter_owner_id: prepFilterOwnerID,
+				target_asset_id: prepTargetAssetID,
+				notes: prepNotes,
+			});
+		}, 150);
+	});
+	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 
 	// ── Resolve ──────────────────────────────────────────────────────────────
 	let counts = $state<Record<string, number>>({
@@ -267,38 +299,44 @@
 </script>
 
 {#if mode === 'prep'}
-	<div class="plan-form">
-		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<FormField label="Asset owner">
-			<PlayerChips
-				players={ownersWithAssets}
-				isActive={(p) => prepFilterOwnerID === p.id}
-				onSelect={(p) => selectRumorOwner(p.id)}
-			/>
-		</FormField>
+	<fieldset class="plan-form-fieldset" disabled={readOnly}>
+		<div class="plan-form">
+			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			<FormField label="Asset owner">
+				<PlayerChips
+					players={ownersWithAssets}
+					isActive={(p) => prepFilterOwnerID === p.id}
+					onSelect={(p) => selectRumorOwner(p.id)}
+					{readOnly}
+				/>
+			</FormField>
 
-		{#if prepFilterOwnerID != null}
-			<CardPicker
-				label="Asset the rumor is about"
-				items={filteredIntactAssets}
-				{players}
-				emptyMessage="This player has no intact assets."
-				selected={prepTargetAssetID}
-				onSelect={(id) => (prepTargetAssetID = id)}
-			/>
-		{/if}
-		<label class="form-label">
-			Rumor:
-			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-				placeholder="What are people starting to say?"></textarea>
-		</label>
-		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep}
-				disabled={prepBusy || prepTargetAssetID == null || !prepNotes.trim()}>
-				{prepBusy ? '…' : 'Prepare Plan'}
-			</button>
+			{#if prepFilterOwnerID != null}
+				<CardPicker
+					label="Asset the rumor is about"
+					items={filteredIntactAssets}
+					{players}
+					emptyMessage="This player has no intact assets."
+					selected={prepTargetAssetID}
+					onSelect={(id) => (prepTargetAssetID = id)}
+					{readOnly}
+				/>
+			{/if}
+			<label class="form-label">
+				Rumor:
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+					placeholder="What are people starting to say?"></textarea>
+			</label>
+			{#if !readOnly}
+				<div class="form-actions">
+					<button class="action-btn primary" onclick={submitPrep}
+						disabled={prepBusy || prepTargetAssetID == null || !prepNotes.trim()}>
+						{prepBusy ? '…' : 'Prepare Plan'}
+					</button>
+				</div>
+			{/if}
 		</div>
-	</div>
+	</fieldset>
 
 {:else if plan}
 	{@const existingChoices = (parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option)}

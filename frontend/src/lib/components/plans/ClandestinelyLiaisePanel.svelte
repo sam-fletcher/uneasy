@@ -13,6 +13,7 @@
 		advanceLiaise, keepSecret, shareChoice,
 		type Plan, type Asset, type Player, type KeptSecret,
 	} from '$lib/api';
+	import { onDestroy } from 'svelte';
 	import { parseLiaiseData, type LiaisePhase } from '$lib/plans/resolutionData/liaise';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
@@ -37,6 +38,9 @@
 	const plans = $derived(ctx.plans);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+
+	const readOnly = $derived(ctx.readOnly);
+	const prepDraft = $derived(ctx.prepDraft as { partner_id?: number | null; notes?: string } | null);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 	let clPartnerID = $state<number | null>(null);
@@ -63,6 +67,23 @@
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
 		} finally { prepBusy = false; }
 	}
+
+	$effect(() => {
+		if (!readOnly) return;
+		clPartnerID = prepDraft?.partner_id ?? null;
+		prepNotes = prepDraft?.notes ?? '';
+	});
+	let emitTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (readOnly || mode !== 'prep') return;
+		void clPartnerID; void prepNotes;
+		if (emitTimer) clearTimeout(emitTimer);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			ctx.emitPrepDraft({ partner_id: clPartnerID, notes: prepNotes });
+		}, 150);
+	});
+	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 
 	// ── Resolve state ────────────────────────────────────────────────────────
 	type CLState = {
@@ -223,31 +244,36 @@
 </script>
 
 {#if mode === 'prep'}
-	<div class="plan-form">
-		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<FormField label="Partner">
-			<PlayerChips
-				players={otherPlayers}
-				isActive={(p) => clPartnerID === p.id}
-				onSelect={(p) => (clPartnerID = clPartnerID === p.id ? null : p.id)}
-			/>
-		</FormField>
-		<label class="form-label">
-			Details:
-			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="Which peers are meeting? Where? Will you share a meal, meet under a bridge, or something more intimate?" required></textarea>
-		</label>
-		<p class="choices-note muted">
-			Once prepared, you and your partner each reveal a die to set
-			the delay (average rounded up).
-		</p>
-		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep}
-				disabled={prepBusy || clPartnerID == null || !prepNotes.trim()}>
-				{prepBusy ? '…' : 'Prepare Plan'}
-			</button>
+	<fieldset class="plan-form-fieldset" disabled={readOnly}>
+		<div class="plan-form">
+			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			<FormField label="Partner">
+				<PlayerChips
+					players={otherPlayers}
+					isActive={(p) => clPartnerID === p.id}
+					onSelect={(p) => (clPartnerID = clPartnerID === p.id ? null : p.id)}
+					{readOnly}
+				/>
+			</FormField>
+			<label class="form-label">
+				Details:
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+					placeholder="Which peers are meeting? Where? Will you share a meal, meet under a bridge, or something more intimate?" required></textarea>
+			</label>
+			<p class="choices-note muted">
+				Once prepared, you and your partner each reveal a die to set
+				the delay (average rounded up).
+			</p>
+			{#if !readOnly}
+				<div class="form-actions">
+					<button class="action-btn primary" onclick={submitPrep}
+						disabled={prepBusy || clPartnerID == null || !prepNotes.trim()}>
+						{prepBusy ? '…' : 'Prepare Plan'}
+					</button>
+				</div>
+			{/if}
 		</div>
-	</div>
+	</fieldset>
 
 {:else if mode === 'delayReveal' && plan}
 	<!-- Delay reveal — the plan is pending at row 0 until both faces are in. -->

@@ -952,6 +952,24 @@ export interface SceneSetupDraft {
 	present_peer_ids: number[];
 }
 
+/**
+ * Ephemeral broadcast of the focus player's currently-highlighted plan
+ * card during the post-scene "prepare a plan" step. Mirrors
+ * model.PreparePlanDraftPayload. Not persisted. plan_type is "" when the
+ * focus player has nothing selected.
+ */
+export interface PreparePlanDraft {
+	player_id: number;
+	plan_type: string;
+	/**
+	 * Opaque per-plan-type snapshot of the prep form. The shape is owned
+	 * by the plan's panel component; consumers cast based on plan_type.
+	 * May be undefined/null when only a card is highlighted but no fields
+	 * have been touched yet.
+	 */
+	prep?: Record<string, unknown> | null;
+}
+
 export function getActiveScene(gameID: string | number): Promise<SceneResponse> {
 	return apiFetch(`/tables/${gameID}/scenes/active`);
 }
@@ -1306,6 +1324,32 @@ export function messyBreak(planID: number, marginaliaID: number): Promise<{
 		method: 'POST',
 		body: JSON.stringify({ marginalia_id: marginaliaID }),
 	});
+}
+
+/**
+ * Make Introductions — create a single peer during the pre-roll naming step.
+ * Called once per peer until peer_count peers exist; then call
+ * finalizeIntroductionsPeers to create the dice roll.
+ */
+export function createIntroductionsPeer(
+	planID: number,
+	params: { name: string; marginalia?: string[] }
+): Promise<{ plan_id: number; asset: Asset; created_peer_ids: number[] }> {
+	return apiFetch(`/plans/${planID}/create-peer`, {
+		method: 'POST',
+		body: JSON.stringify(params)
+	});
+}
+
+/**
+ * Make Introductions — finalize the pre-roll naming step. Creates the
+ * dice roll; resolution proceeds normally from there. Returns the roll.
+ */
+export function finalizeIntroductionsPeers(planID: number): Promise<{
+	plan_id: number;
+	roll: DiceRoll;
+}> {
+	return apiFetch(`/plans/${planID}/finalize-peers`, { method: 'POST' });
 }
 
 // ── Plans (Phase 3 — Tier 1) ─────────────────────────────────────────────────

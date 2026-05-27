@@ -11,6 +11,10 @@ type MakeIntroductionsResolutionData struct {
 	// PeerCount is the number of peers being introduced (1–4). Set at
 	// preparation time; drives the difficulty (2 + peer_count).
 	PeerCount int16 `json:"peer_count,omitempty"`
+	// CreatedPeerIDs records the asset IDs of peers named during the
+	// pre-roll naming step (one entry per /create-peer call). The dice
+	// roll cannot be created until len(CreatedPeerIDs) == PeerCount.
+	CreatedPeerIDs []int64 `json:"created_peer_ids,omitempty"`
 	// DelayedPeerPlanIDs records synthetic per-peer arrival plans spawned on
 	// future rows after the parent plan resolves.
 	DelayedPeerPlanIDs []int64 `json:"delayed_peer_plan_ids,omitempty"`

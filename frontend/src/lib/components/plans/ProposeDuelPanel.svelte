@@ -163,7 +163,7 @@
 </script>
 
 {#if mode === 'prep'}
-	<PrepForm {gameID} {players} {currentPlayerID} {onPlanPrepared} />
+	<PrepForm {ctx} />
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={duelStateError}>

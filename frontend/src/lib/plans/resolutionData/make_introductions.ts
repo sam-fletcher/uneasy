@@ -5,6 +5,8 @@ import { parseResolutionData } from '$lib/components/plans/shared';
 
 export interface MakeIntroductionsResolutionData {
 	peer_count?: number;
+	/** Asset IDs created so far via /create-peer in the pre-roll naming step. */
+	created_peer_ids?: number[];
 	delayed_peer_plan_ids?: number[];
 	/** Fields below only set on synthetic delayed-arrival child plans. */
 	delayed_arrival?: boolean;

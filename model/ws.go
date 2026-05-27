@@ -122,6 +122,11 @@ const (
 	// persisted; late joiners simply wait for the next keystroke.
 	EventSceneSetupDraft = "scene_setup.draft"
 
+	// Ephemeral prepare-plan draft: focus player's currently-highlighted
+	// plan card during the post-scene "prepare a plan" step. Like the
+	// scene-setup draft, it's a UI hint with no persistence.
+	EventPreparePlanDraft = "prepare_plan.draft"
+
 	// Phase 4b: Structured prologue
 	EventPrologueChoiceClaimed      = "prologue.choice_claimed"           // a box was claimed
 	EventPrologueTurnAdvanced       = "prologue.turn_advanced"            // active player changed
@@ -147,9 +152,10 @@ const (
 // ── Command types (client → server) ──────────────────────────────────────────
 
 const (
-	CmdTypingStart     = "typing.start"
-	CmdTypingStop      = "typing.stop"
-	CmdSceneSetupDraft = "scene_setup.draft"
+	CmdTypingStart      = "typing.start"
+	CmdTypingStop       = "typing.stop"
+	CmdSceneSetupDraft  = "scene_setup.draft"
+	CmdPreparePlanDraft = "prepare_plan.draft"
 )
 
 // ── Message envelope ─────────────────────────────────────────────────────────
@@ -763,4 +769,18 @@ type SceneSetupDraftPayload struct {
 	TimeElapsed    string  `json:"time_elapsed"`
 	TimeNote       string  `json:"time_note"`
 	PresentPeerIDs []int64 `json:"present_peer_ids"`
+}
+
+// PreparePlanDraftPayload is for EventPreparePlanDraft (also reused as the
+// CmdPreparePlanDraft body). The server stamps PlayerID from the sending
+// client. PlanType is the plan_type slug the focus player has selected,
+// or empty string when nothing is selected (the card was deselected).
+// Prep is an opaque per-plan-type snapshot of the prep form's current
+// inputs (notes, target IDs, etc.) — its shape is owned by the frontend;
+// the server just relays it. May be nil when the focus player has only
+// highlighted a card but not started filling out the form.
+type PreparePlanDraftPayload struct {
+	PlayerID int64          `json:"player_id"`
+	PlanType string         `json:"plan_type"`
+	Prep     map[string]any `json:"prep,omitempty"`
 }

@@ -17,9 +17,12 @@
 		players: Player[];
 		isActive: (p: Player) => boolean;
 		onSelect: (p: Player) => void;
+		/** When true, render selected chips but block clicks (used by
+		 *  non-focus viewers mirroring the focus player's choices). */
+		readOnly?: boolean;
 	}
 
-	let { players, isActive, onSelect }: Props = $props();
+	let { players, isActive, onSelect, readOnly = false }: Props = $props();
 </script>
 
 <div class="player-chips">
@@ -30,6 +33,7 @@
 			class="player-chip"
 			class:active={isActive(p)}
 			style:--owner-color={c}
+			disabled={readOnly}
 			onclick={() => onSelect(p)}
 		>
 			<span class="dot" aria-hidden="true"></span>

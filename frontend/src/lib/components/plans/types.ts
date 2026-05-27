@@ -36,6 +36,24 @@ export interface PlanContext {
 	onRollCreated: (roll: DiceRoll) => void;
 	onPlansChanged: () => void;
 	onPlanPrepared: () => void;
+	/**
+	 * True for non-focus viewers in prep mode. Panels should disable inputs
+	 * and hide the submit button when this is set, and render values from
+	 * `prepDraft` instead of local state.
+	 */
+	readOnly: boolean;
+	/**
+	 * The focus player's in-flight prep snapshot, scoped to the currently
+	 * highlighted plan_type. Null until the focus player touches the form
+	 * (or when readOnly is false). Shape is plan-specific; each panel casts.
+	 */
+	prepDraft: Record<string, unknown> | null;
+	/**
+	 * Called by panels (focus player only) when their prep inputs change.
+	 * Fans out an EventPreparePlanDraft over the WS, stitched with the
+	 * currently-selected plan_type by PlanPanel.
+	 */
+	emitPrepDraft: (prep: Record<string, unknown>) => void;
 }
 
 export interface PlanPanelProps {

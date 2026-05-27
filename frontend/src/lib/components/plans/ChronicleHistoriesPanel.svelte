@@ -22,6 +22,7 @@
   "invoke another" invocations go through the mar-choice route instead.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
@@ -47,6 +48,10 @@
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+
+	// Prep-draft mirroring (Layer 2).
+	const readOnly = $derived(ctx.readOnly);
+	const prepDraft = $derived(ctx.prepDraft as { notes?: string } | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
 	const amChoiceActor = $derived(
@@ -80,6 +85,19 @@
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
 		} finally { prepBusy = false; }
 	}
+
+	$effect(() => { if (readOnly) prepNotes = prepDraft?.notes ?? ''; });
+	let emitTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (readOnly || mode !== 'prep') return;
+		void prepNotes;
+		if (emitTimer) clearTimeout(emitTimer);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			ctx.emitPrepDraft({ notes: prepNotes });
+		}, 150);
+	});
+	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 
 	// ── Resolve: invoked-artifact tracking ───────────────────────────────────
 	// The server stores invoked_artifact_ids in resolution_data. We recompute
@@ -237,19 +255,23 @@
 </script>
 
 {#if mode === 'prep'}
-	<div class="plan-form">
-		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<label class="form-label">
-			Area of study:
-			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-				placeholder="What problem are you solving? What part of history are you investigating or recording?" required></textarea>
-		</label>
-		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
-				{prepBusy ? '…' : 'Prepare Plan'}
-			</button>
+	<fieldset class="plan-form-fieldset" disabled={readOnly}>
+		<div class="plan-form">
+			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			<label class="form-label">
+				Area of study:
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+					placeholder="What problem are you solving? What part of history are you investigating or recording?" required></textarea>
+			</label>
+			{#if !readOnly}
+				<div class="form-actions">
+					<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
+						{prepBusy ? '…' : 'Prepare Plan'}
+					</button>
+				</div>
+			{/if}
 		</div>
-	</div>
+	</fieldset>
 
 {:else if plan}
 	{@const choicesDone = makeChoices.length > 0}

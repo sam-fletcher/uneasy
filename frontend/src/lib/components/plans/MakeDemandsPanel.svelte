@@ -14,6 +14,7 @@
   handles the demand plan's own resolution UI.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
 		preparePlan, completePlan,
@@ -41,6 +42,12 @@
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+
+	const readOnly = $derived(ctx.readOnly);
+	const prepDraft = $derived(ctx.prepDraft as {
+		target_plan_id?: number | null;
+		notes?: string;
+	} | null);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 
@@ -100,6 +107,23 @@
 			prepError = e instanceof Error ? e.message : 'Could not prepare demand.';
 		} finally { prepBusy = false; }
 	}
+
+	$effect(() => {
+		if (!readOnly) return;
+		targetPlanID = prepDraft?.target_plan_id ?? null;
+		prepNotes = prepDraft?.notes ?? '';
+	});
+	let emitTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (readOnly || mode !== 'prep') return;
+		void targetPlanID; void prepNotes;
+		if (emitTimer) clearTimeout(emitTimer);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			ctx.emitPrepDraft({ target_plan_id: targetPlanID, notes: prepNotes });
+		}, 150);
+	});
+	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 
 	// ── Resolve: derived state ────────────────────────────────────────────────
 
@@ -236,42 +260,46 @@
 </script>
 
 {#if mode === 'prep'}
-	<div class="plan-form">
-		{#if prepError}<p class="res-error">{prepError}</p>{/if}
+	<fieldset class="plan-form-fieldset" disabled={readOnly}>
+		<div class="plan-form">
+			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 
-		{#if targetablePlans.length === 0}
-			<p class="muted">No plans on the public record can be demanded against
-				right now (own plans, Make War, already-resolved, and already-demanded
-				plans are excluded).</p>
-		{:else}
-			<label class="form-label">
-				Target plan:
-				<select bind:value={targetPlanID} class="form-textarea" style="height:auto;">
-					<option value={null}>— pick a plan to demand against —</option>
-					{#each targetablePlans as p}
-						<option value={p.id}>
-							{PLAN_SHORT[p.plan_type] ?? p.plan_type}
-							by {playerName(players, p.preparer_id)}
-							(row {p.row_number})
-						</option>
-					{/each}
-				</select>
-			</label>
+			{#if targetablePlans.length === 0}
+				<p class="muted">No plans on the public record can be demanded against
+					right now (own plans, Make War, already-resolved, and already-demanded
+					plans are excluded).</p>
+			{:else}
+				<label class="form-label">
+					Target plan:
+					<select bind:value={targetPlanID} class="form-textarea" style="height:auto;">
+						<option value={null}>— pick a plan to demand against —</option>
+						{#each targetablePlans as p}
+							<option value={p.id}>
+								{PLAN_SHORT[p.plan_type] ?? p.plan_type}
+								by {playerName(players, p.preparer_id)}
+								(row {p.row_number})
+							</option>
+						{/each}
+					</select>
+				</label>
 
-			<label class="form-label">
-				Motivation:
-				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-					placeholder="Why are you getting involved?" required></textarea>
-			</label>
+				<label class="form-label">
+					Motivation:
+					<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+						placeholder="Why are you getting involved?" required></textarea>
+				</label>
 
-			<div class="form-actions">
-				<button class="action-btn primary" onclick={submitPrep}
-					disabled={prepBusy || targetPlanID == null || !prepNotes.trim()}>
-					{prepBusy ? '…' : 'Prepare Plan'}
-				</button>
-			</div>
-		{/if}
-	</div>
+				{#if !readOnly}
+					<div class="form-actions">
+						<button class="action-btn primary" onclick={submitPrep}
+							disabled={prepBusy || targetPlanID == null || !prepNotes.trim()}>
+							{prepBusy ? '…' : 'Prepare Plan'}
+						</button>
+					</div>
+				{/if}
+			{/if}
+		</div>
+	</fieldset>
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={resError}>

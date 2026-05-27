@@ -131,7 +131,7 @@ func applyExchangeCourtiersMechanic(
 		})
 	}
 
-	// "Messy" requires the target to break a marginalia on any of their assets.
+	// "Messy" requires the target to break a marginalia on one of the preparer's assets.
 	if slices.Contains(choices, "messy") {
 		resData.EnsureExchangeCourtiers().MessyBreakRequired = true
 	}
@@ -356,7 +356,7 @@ func declineFairTrade(
 // messyBreakHandler handles POST /api/plans/:planId/messy-break.
 //
 // Exchange Courtiers only. After a make result with the "messy" option, the
-// target player must tear one marginalia from any asset in the game.
+// target player must tear one marginalia from one of the preparer's assets.
 //
 // Request body: {"marginalia_id": 123}
 func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
@@ -412,6 +412,10 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 		asset, err := q.GetAssetByID(ctx, m.AssetID)
 		if err != nil || asset.GameID != plan.GameID {
 			respondErr(w, http.StatusBadRequest, "marginalia does not belong to this game")
+			return
+		}
+		if asset.OwnerID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "messy break must target one of the preparer's assets")
 			return
 		}
 

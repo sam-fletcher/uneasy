@@ -301,5 +301,17 @@ func (c *Client) handleCommand(data []byte) {
 		}
 		msg.Payload.PlayerID = c.player.ID
 		c.hub.BroadcastEvent(model.EventSceneSetupDraft, msg.Payload)
+	case model.CmdPreparePlanDraft:
+		// Ephemeral fan-out of the focus player's currently-highlighted
+		// plan card. Like the scene-setup draft this is a UI hint, not a
+		// state change; PlayerID is stamped from the authenticated client.
+		var msg struct {
+			Payload model.PreparePlanDraftPayload `json:"payload"`
+		}
+		if err := json.Unmarshal(data, &msg); err != nil {
+			return
+		}
+		msg.Payload.PlayerID = c.player.ID
+		c.hub.BroadcastEvent(model.EventPreparePlanDraft, msg.Payload)
 	}
 }

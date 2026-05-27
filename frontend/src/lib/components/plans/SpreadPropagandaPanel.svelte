@@ -3,6 +3,7 @@
   Resolve flow: dice roll → make/mar choices → complete.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
@@ -27,6 +28,9 @@
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+
+	const readOnly = $derived(ctx.readOnly);
+	const prepDraft = $derived(ctx.prepDraft as { notes?: string } | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
 	const amChoiceActor = $derived(
@@ -53,6 +57,19 @@
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
 		} finally { prepBusy = false; }
 	}
+
+	$effect(() => { if (readOnly) prepNotes = prepDraft?.notes ?? ''; });
+	let emitTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (readOnly || mode !== 'prep') return;
+		void prepNotes;
+		if (emitTimer) clearTimeout(emitTimer);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			ctx.emitPrepDraft({ notes: prepNotes });
+		}, 150);
+	});
+	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 
 	// Resolve state
 	let resError = $state('');
@@ -90,19 +107,23 @@
 </script>
 
 {#if mode === 'prep'}
-	<div class="plan-form">
-		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<label class="form-label">
-			Message and Methods:
-			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-				placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?" required></textarea>
-		</label>
-		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
-				{prepBusy ? '…' : 'Prepare Plan'}
-			</button>
+	<fieldset class="plan-form-fieldset" disabled={readOnly}>
+		<div class="plan-form">
+			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			<label class="form-label">
+				Message and Methods:
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+					placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?" required></textarea>
+			</label>
+			{#if !readOnly}
+				<div class="form-actions">
+					<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
+						{prepBusy ? '…' : 'Prepare Plan'}
+					</button>
+				</div>
+			{/if}
 		</div>
-	</div>
+	</fieldset>
 
 {:else if plan}
 	{@const existingChoices = (parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option)}

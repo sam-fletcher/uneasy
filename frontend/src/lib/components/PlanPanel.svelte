@@ -20,7 +20,7 @@
 		getPlanEligibility,
 		type Plan, type PlanType, type Asset, type Player, type Ranking,
 		type EligiblePlan, type IneligiblePlan, type DiceRoll,
-		type RankingCategory,
+		type RankingCategory, type PreparePlanDraft,
 	} from '$lib/api';
 
 	import './plans/planPanel.css';
@@ -73,6 +73,12 @@
 		onPlansChanged: () => void;
 		/** Called when the focus player prepares a plan (their step-2 action). */
 		onPlanPrepared: () => void;
+		/**
+		 * Ephemeral mirror of the focus player's currently-highlighted plan
+		 * card, broadcast over the WS. Drives the read-only highlight for
+		 * non-focus viewers. Null until the focus player's first selection.
+		 */
+		preparePlanDraft?: PreparePlanDraft | null;
 	}
 
 	let {
@@ -80,16 +86,14 @@
 		isFocusPlayer, prepEnabled = false, suppressPrep = false,
 		rollActive, rollOutcome, activeRoll = null,
 		onRollCreated, onPlansChanged, onPlanPrepared,
+		preparePlanDraft = null,
 	}: Props = $props();
 
 	// ── Shared context handed to every panel ─────────────────────────────────
 
-	const ctx = $derived<PlanContext>({
-		gameID, currentRow, plans, assets, players, rankings,
-		currentPlayerID, isFocusPlayer,
-		rollActive, rollOutcome, activeRoll,
-		onRollCreated, onPlansChanged, onPlanPrepared,
-	});
+	// ctx is built further down, after `selectedPlanType` and
+	// `displaySelectedPlanType` are declared — it depends on both for
+	// `prepDraft` scoping and `emitPrepDraft`'s plan_type stamping.
 
 	// ── Derived plan state ────────────────────────────────────────────────────
 
@@ -187,6 +191,62 @@
 		}
 	});
 
+	// What the grid should visually highlight as selected: the focus player
+	// reads from local state; everyone else reads from the broadcast draft.
+	const displaySelectedPlanType = $derived<PlanType | null>(
+		isFocusPlayer
+			? selectedPlanType
+			: ((preparePlanDraft?.plan_type ?? '') as PlanType) || null
+	);
+
+	// ── Shared ctx (now that selectedPlanType + displaySelectedPlanType exist) ─
+	// Slice of the draft addressed to the currently-mounted plan panel.
+	// Guard on plan_type match so a stale draft from a previously-selected
+	// card never leaks into the new one (focus player can switch cards
+	// faster than the WS round-trip).
+	const prepDraftForSelection = $derived<Record<string, unknown> | null>(
+		preparePlanDraft &&
+		displaySelectedPlanType &&
+		preparePlanDraft.plan_type === displaySelectedPlanType
+			? (preparePlanDraft.prep ?? null)
+			: null,
+	);
+
+	function emitPrepDraft(prep: Record<string, unknown>) {
+		// Only the focus player should ever call this; double-guard so a
+		// rogue panel can't broadcast on behalf of someone else.
+		if (!isFocusPlayer || !selectedPlanType) return;
+		window.dispatchEvent(new CustomEvent('uneasy:prepare_plan_draft', {
+			detail: { plan_type: selectedPlanType, prep },
+		}));
+	}
+
+	const ctx = $derived<PlanContext>({
+		gameID, currentRow, plans, assets, players, rankings,
+		currentPlayerID, isFocusPlayer,
+		rollActive, rollOutcome, activeRoll,
+		onRollCreated, onPlansChanged, onPlanPrepared,
+		readOnly: !isFocusPlayer,
+		prepDraft: prepDraftForSelection,
+		emitPrepDraft,
+	});
+
+	// ── Card-selection draft emission (focus player only) ────────────────────
+	// Broadcast which card is currently selected so non-focus viewers can
+	// mirror the highlight. Only emit while the focus player is actually in
+	// the prep step — otherwise we'd spam stale "null" pings. Per-field prep
+	// snapshots are sent separately by the individual panels via emitPrepDraft.
+	let lastEmittedPlanType = $state<PlanType | null>(null);
+	$effect(() => {
+		if (!isFocusPlayer) return;
+		if (!prepEnabled || needsResolution || suppressPrep) return;
+		if (selectedPlanType === lastEmittedPlanType) return;
+		lastEmittedPlanType = selectedPlanType;
+		window.dispatchEvent(new CustomEvent('uneasy:prepare_plan_draft', {
+			detail: { plan_type: selectedPlanType ?? '', prep: null },
+		}));
+	});
+
 </script>
 
 <!-- ── Resolution dispatch ───────────────────────────────────────────────── -->
@@ -242,7 +302,7 @@
 						<button
 							type="button"
 							class="plan-card"
-							class:selected={selectedPlanType === pt}
+							class:selected={displaySelectedPlanType === pt}
 							disabled={!isFocusPlayer || !cell || !cell.eligible}
 							title={cell && !cell.eligible ? cell.reason : undefined}
 							onclick={() => cell && onPlanClick(cell)}
@@ -286,15 +346,15 @@
 			</div>
 		{/if}
 
-		{#if selectedPlanType}
-			{@const entry = REGISTRY[selectedPlanType]}
+		{#if displaySelectedPlanType}
+			{@const entry = REGISTRY[displaySelectedPlanType]}
 			{#if entry}
 				{@const Comp = entry.component}
 				<Comp {ctx} mode="prep" />
 			{:else}
 				<div class="plan-form">
 					<p class="form-hint">
-						Preparation form for {PLAN_SHORT[selectedPlanType] ?? selectedPlanType}
+						Preparation form for {PLAN_SHORT[displaySelectedPlanType] ?? displaySelectedPlanType}
 						is not yet implemented.
 					</p>
 				</div>

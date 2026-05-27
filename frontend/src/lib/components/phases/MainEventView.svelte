@@ -19,7 +19,7 @@
 		listWars,
 		getReveal,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, Scene, ScenePeerView, SceneSetupDraft, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, Scene, ScenePeerView, SceneSetupDraft, PreparePlanDraft, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
@@ -68,6 +68,12 @@
 		 * player makes their first change (late joiners see a blank form).
 		 */
 		sceneSetupDraft?: SceneSetupDraft | null;
+		/**
+		 * Ephemeral mirror of the focus player's currently-highlighted plan
+		 * card during the post-scene prep step. Forwarded to PlanPanel so
+		 * non-focus viewers can see which card is being considered.
+		 */
+		preparePlanDraft?: PreparePlanDraft | null;
 		/** Called after a scene mutation so the parent can re-fetch. */
 		onSceneRefresh?: () => void;
 		/** Bound by the parent; this view publishes its waiting-on derivation here. */
@@ -96,6 +102,7 @@
 		activeScene = null,
 		activeScenePeers = [],
 		sceneSetupDraft = null,
+		preparePlanDraft = null,
 		onSceneRefresh = () => {},
 		waitingOn = $bindable(),
 	}: Props = $props();
@@ -440,6 +447,11 @@
 		onRollCreated: onPlanRollCreated,
 		onPlansChanged,
 		onPlanPrepared,
+		// Drawer ctx only renders resolve-mode panels (delay reveal, active
+		// war drawer); prep-draft mirroring doesn't apply.
+		readOnly: false,
+		prepDraft: null,
+		emitPrepDraft: () => {},
 	});
 </script>
 
@@ -522,6 +534,7 @@
 				onRollCreated={onPlanRollCreated}
 				{onPlansChanged}
 				{onPlanPrepared}
+				{preparePlanDraft}
 			/>
 
 			<!-- ── Dice roll panel ───────────────────────────────────────────── -->

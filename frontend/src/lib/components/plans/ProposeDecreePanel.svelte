@@ -18,6 +18,7 @@
   representing the law is also created.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
@@ -45,6 +46,11 @@
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
+	// Prep-draft mirroring (Layer 2). Non-focus viewers read inputs from
+	// the broadcast draft; focus emits a snapshot on every change.
+	const readOnly = $derived(ctx.readOnly);
+	const prepDraft = $derived(ctx.prepDraft as { notes?: string } | null);
+
 	let performStepsWinnerID = $state<number | null>(null);
 	const amChoiceActor = $derived(
 		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
@@ -70,6 +76,24 @@
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
 		} finally { prepBusy = false; }
 	}
+
+	// Mirror the focus player's draft into local state when read-only,
+	// and debounce-broadcast our own snapshot when editing.
+	$effect(() => {
+		if (!readOnly) return;
+		prepNotes = prepDraft?.notes ?? '';
+	});
+	let emitTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (readOnly || mode !== 'prep') return;
+		void prepNotes;
+		if (emitTimer) clearTimeout(emitTimer);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			ctx.emitPrepDraft({ notes: prepNotes });
+		}, 150);
+	});
+	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 
 	// ── Resolve: decoded state ───────────────────────────────────────────────
 	type PDState = {
@@ -205,19 +229,23 @@
 </script>
 
 {#if mode === 'prep'}
-	<div class="plan-form">
-		{#if prepError}<p class="res-error">{prepError}</p>{/if}
-		<label class="form-label">
-			Decree:
-			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-				placeholder="What law are you drafting?" required></textarea>
-		</label>
-		<div class="form-actions">
-			<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
-				{prepBusy ? '…' : 'Prepare Plan'}
-			</button>
+	<fieldset class="plan-form-fieldset" disabled={readOnly}>
+		<div class="plan-form">
+			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			<label class="form-label">
+				Decree:
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+					placeholder="What law are you drafting?" required></textarea>
+			</label>
+			{#if !readOnly}
+				<div class="form-actions">
+					<button class="action-btn primary" onclick={submitPrep} disabled={prepBusy || !prepNotes.trim()}>
+						{prepBusy ? '…' : 'Prepare Plan'}
+					</button>
+				</div>
+			{/if}
 		</div>
-	</div>
+	</fieldset>
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={resError}>

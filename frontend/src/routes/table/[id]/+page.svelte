@@ -18,6 +18,7 @@
 		type Scene,
 		type ScenePeerView,
 		type SceneSetupDraft,
+		type PreparePlanDraft,
 		type RowState,
 	} from '$lib/api';
 	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
@@ -97,6 +98,11 @@
 	// selections, fanned out so non-focus players can watch the form fill
 	// in. Reset on scene start so a stale draft doesn't reappear next round.
 	let sceneSetupDraft = $state<SceneSetupDraft | null>(null);
+
+	// Ephemeral mirror of the focus player's currently-highlighted plan card
+	// during the post-scene prep step. Cleared when a plan is prepared or
+	// the row advances, so a stale highlight doesn't reappear next turn.
+	let preparePlanDraft = $state<PreparePlanDraft | null>(null);
 
 	async function refreshActiveScene() {
 		if (!game || game.phase !== 'main_event') {
@@ -273,6 +279,7 @@
 				if (game) game = { ...game, focus_player_id: msg.payload.player_id as number };
 				// rowState is updated separately by RowStateChanged.
 				sceneSetupDraft = null;
+				preparePlanDraft = null;
 				break;
 			}
 			case EventTypes.PrologueTurnAdvanced: {
@@ -303,6 +310,10 @@
 			}
 			case EventTypes.SceneSetupDraft: {
 				sceneSetupDraft = msg.payload as SceneSetupDraft;
+				break;
+			}
+			case EventTypes.PreparePlanDraft: {
+				preparePlanDraft = msg.payload as PreparePlanDraft;
 				break;
 			}
 			case EventTypes.RowStateChanged: {
@@ -504,6 +515,8 @@
 				if (!plans.find(p => p.id === prepared.id)) {
 					plans = [...plans, prepared];
 				}
+				// Plan was committed; clear the highlight broadcast.
+				preparePlanDraft = null;
 				break;
 			}
 			case EventTypes.PlanResolving: {
@@ -1021,6 +1034,7 @@
 			{activeScene}
 			{activeScenePeers}
 			{sceneSetupDraft}
+			{preparePlanDraft}
 			onSceneRefresh={refreshActiveScene}
 			bind:waitingOn
 		/>

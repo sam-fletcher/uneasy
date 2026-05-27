@@ -2,17 +2,25 @@
   Prep: pick a challenger, choose arms vs wits, describe the location.
 -->
 <script lang="ts">
-	import { preparePlan, type Player } from '$lib/api';
+	import { onDestroy } from 'svelte';
+	import { preparePlan } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';
 	import FormField from '../FormField.svelte';
 	import { playersExcept } from '../shared';
+	import type { PlanContext } from '../types';
 
-	let { gameID, players, currentPlayerID, onPlanPrepared }: {
-		gameID: number;
-		players: Player[];
-		currentPlayerID: number | null;
-		onPlanPrepared: () => void;
-	} = $props();
+	let { ctx }: { ctx: PlanContext } = $props();
+
+	const gameID = $derived(ctx.gameID);
+	const players = $derived(ctx.players);
+	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+	const readOnly = $derived(ctx.readOnly);
+	const prepDraft = $derived(ctx.prepDraft as {
+		target_player_id?: number | null;
+		duel_type?: 'arms' | 'wits';
+		notes?: string;
+	} | null);
 
 	let prepTargetPlayerID = $state<number | null>(null);
 	let prepDuelType = $state<'arms' | 'wits'>('arms');
@@ -42,42 +50,69 @@
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
 		} finally { prepBusy = false; }
 	}
+
+	$effect(() => {
+		if (!readOnly) return;
+		prepTargetPlayerID = prepDraft?.target_player_id ?? null;
+		prepDuelType = prepDraft?.duel_type ?? 'arms';
+		prepNotes = prepDraft?.notes ?? '';
+	});
+	let emitTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (readOnly) return;
+		void prepTargetPlayerID; void prepDuelType; void prepNotes;
+		if (emitTimer) clearTimeout(emitTimer);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			ctx.emitPrepDraft({
+				target_player_id: prepTargetPlayerID,
+				duel_type: prepDuelType,
+				notes: prepNotes,
+			});
+		}, 150);
+	});
+	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 </script>
 
-<div class="plan-form">
-	{#if prepError}<p class="res-error">{prepError}</p>{/if}
-	<FormField label="Challenger">
-		<PlayerChips
-			players={otherPlayers}
-			isActive={(p) => prepTargetPlayerID === p.id}
-			onSelect={(p) => (prepTargetPlayerID = prepTargetPlayerID === p.id ? null : p.id)}
-		/>
-	</FormField>
-	<FormField label="Duel of">
-		<div class="chip-row">
-			<button
-				type="button"
-				class="chip-btn"
-				class:active={prepDuelType === 'arms'}
-				onclick={() => (prepDuelType = 'arms')}
-			>Arms</button>
-			<button
-				type="button"
-				class="chip-btn"
-				class:active={prepDuelType === 'wits'}
-				onclick={() => (prepDuelType = 'wits')}
-			>Wits / Trial</button>
-		</div>
-	</FormField>
-	<label class="form-label">
-		Location:
-		<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-			placeholder="Where will the duel take place?" required></textarea>
-	</label>
-	<div class="form-actions">
-		<button class="action-btn primary" onclick={submitPrep}
-			disabled={prepBusy || prepTargetPlayerID == null || !prepNotes.trim()}>
-			{prepBusy ? '…' : 'Prepare Plan'}
-		</button>
+<fieldset class="plan-form-fieldset" disabled={readOnly}>
+	<div class="plan-form">
+		{#if prepError}<p class="res-error">{prepError}</p>{/if}
+		<FormField label="Challenger">
+			<PlayerChips
+				players={otherPlayers}
+				isActive={(p) => prepTargetPlayerID === p.id}
+				onSelect={(p) => (prepTargetPlayerID = prepTargetPlayerID === p.id ? null : p.id)}
+				{readOnly}
+			/>
+		</FormField>
+		<FormField label="Duel of">
+			<div class="chip-row">
+				<button
+					type="button"
+					class="chip-btn"
+					class:active={prepDuelType === 'arms'}
+					onclick={() => (prepDuelType = 'arms')}
+				>Arms</button>
+				<button
+					type="button"
+					class="chip-btn"
+					class:active={prepDuelType === 'wits'}
+					onclick={() => (prepDuelType = 'wits')}
+				>Wits / Trial</button>
+			</div>
+		</FormField>
+		<label class="form-label">
+			Location:
+			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+				placeholder="Where will the duel take place?" required></textarea>
+		</label>
+		{#if !readOnly}
+			<div class="form-actions">
+				<button class="action-btn primary" onclick={submitPrep}
+					disabled={prepBusy || prepTargetPlayerID == null || !prepNotes.trim()}>
+					{prepBusy ? '…' : 'Prepare Plan'}
+				</button>
+			</div>
+		{/if}
 	</div>
-</div>
+</fieldset>

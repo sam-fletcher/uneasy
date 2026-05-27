@@ -120,15 +120,12 @@ func ListAssets(s *db.Store) http.HandlerFunc {
 
 // CreateAsset handles POST /api/tables/{id}/assets.
 //
-// Creates an asset and optional initial marginalia in one call.
+// Creates an asset and optional initial marginalia in one call. Always
+// owned by the caller. Plan-gained assets (e.g. Make Introductions peers)
+// go through their plan handler's own peer-creation route, which routes
+// ownership through game.AssetRecipientForPlan so demand keep_assets
+// winners are honored.
 // Body: { asset_type, name, is_main_character?, marginalia?: ["text",...] }
-//
-// TODO(make-demands keep_assets): this endpoint is plan-agnostic and always
-// sets OwnerID to the caller. Peer assets created here during a Make
-// Introductions resolution (or similar preparer-gained asset flows routed
-// through this endpoint) therefore bypass the demand keep_assets redirect.
-// To fix: accept an optional plan_id, load that plan, and run OwnerID
-// through gamepkg.AssetRecipientForPlan when the caller is the preparer.
 func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, s.Q)

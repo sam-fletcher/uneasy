@@ -389,6 +389,22 @@
 	border-radius: 5px;
 }
 
+/* Transparent fieldset used to wrap prep forms so non-focus viewers see
+   them in read-only mode. fieldset[disabled] blocks interaction on every
+   descendant <button> / <textarea> / <select> for free; CardPicker takes a
+   readOnly prop separately since its cards are div[role=checkbox]. */
+.plan-form-fieldset {
+	border: none;
+	padding: 0;
+	margin: 0;
+	min-width: 0;
+}
+.plan-form-fieldset[disabled] {
+	/* Keep contents readable for the mirroring viewer; the browser's
+	   default greying-out reads as a styling bug here. */
+	opacity: 1;
+}
+
 .form-hint {
 	font-size: 0.78rem;
 	color: #888;

@@ -161,7 +161,7 @@
 </script>
 
 {#if mode === 'prep'}
-	<PrepForm {gameID} {onPlanPrepared} />
+	<PrepForm {ctx} />
 
 {:else if plan}
 	<ResolvingCard {plan} {players}>

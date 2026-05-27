@@ -26,9 +26,11 @@ package handler
 //	POST /api/plans/:planId/challenge-duel    — {target_player_id}.
 //	POST /api/plans/:planId/respond-challenge — {accept:bool}, target only.
 //
-// Center-of-table (disagreement mar) is modeled pragmatically: the asset is
-// leveraged and its ID recorded in CenteredAssetIDs. A true unowned-asset
-// state is deferred per PHASE3_SPEC "Not in Scope".
+// Center-of-table: assets placed in the play area (newly-introduced peers
+// from `introduce_peer` make, and peers shoved there by `disagreement` mar)
+// keep their current owner — leverage is not applied — but their IDs are
+// recorded in state.CenteredAssetIDs so the UI can list them and other
+// guests can steal them via `take_center_peer`.
 
 import (
 	"context"
@@ -582,6 +584,10 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 	if err != nil {
 		return fmt.Errorf("create peer: %w", err)
 	}
+	// New peers are placed in the play area (center of table) for the
+	// duration of the festivity — owned by their introducer but stealable
+	// by other guests via take_center_peer.
+	fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, asset.ID)
 	broadcastEvent(
 		fc.deps.Manager,
 		fc.plan.GameID,
@@ -643,14 +649,9 @@ func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext)
 	if asset.AssetType != model.AssetPeer {
 		return errors.New("disagreement target must be a peer")
 	}
-	_ = fc.deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{ID: fc.assetID, IsLeveraged: true})
-	fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, fc.assetID)
-	broadcastEvent(
-		fc.deps.Manager,
-		fc.plan.GameID,
-		model.EventAssetLeveraged,
-		model.AssetIDPayload{AssetID: fc.assetID, PlayerID: asset.OwnerID},
-	)
+	if !slices.Contains(fc.state.CenteredAssetIDs, fc.assetID) {
+		fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, fc.assetID)
+	}
 	return nil
 }
 

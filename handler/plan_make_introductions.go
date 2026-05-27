@@ -8,13 +8,14 @@ package handler
 // Make options (per peer): "retinue" (peer joins preparer), "independent"
 // (peer is unaffiliated), "gift" (peer goes to another player).
 //
-// TODO(make-demands keep_assets): MI peer assets are created via the generic
-// POST /api/tables/{id}/assets endpoint (see handler/assets.go CreateAsset),
-// which has no plan context and therefore cannot consult
-// gamepkg.AssetRecipientForPlan. If a Make Demands keep_assets winner must
-// also claim "retinue" peers gained here, the generic endpoint needs to
-// accept an optional plan_id and route ownership through that helper — or
-// MI needs to own its own peer-creation sub-route.
+// Pre-roll flow: the focus player names each peer one at a time via
+// POST /api/plans/:planId/create-peer, which routes ownership through
+// game.AssetRecipientForPlan (so a resolved Make Demands keep_assets
+// winner claims them) and records each new asset ID in
+// resolution_data.make_introductions.created_peer_ids. Once peer_count
+// peers exist, POST /api/plans/:planId/finalize-peers creates the dice
+// roll and resolution proceeds normally.
+//
 // Mar options: "delayed" (peer arrives in d6 rows), "center" (peer goes to
 // center of table = owner_id NULL, handled via asset endpoint).
 //
@@ -35,8 +36,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -69,19 +72,24 @@ func (miHandler) ComputeDifficulty(
 	return gamepkg.MakeIntroductionsDifficulty(*resData), nil
 }
 
-// OnResolve creates the dice roll for normal MI plans. Synthetic delayed-arrival
-// plans (ResData.DelayedArrival == true) return nil — they complete with no roll.
-func (miHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
-	resData := loadResolutionData(plan.ResolutionData)
-	if mi := resData.MakeIntroductions; mi != nil && mi.DelayedArrival {
-		return nil, nil // synthetic plan: no roll
+// OnResolve defers the dice roll until the focus player has named each of
+// the peer_count peers via /create-peer and called /finalize-peers. That
+// matches the rule's "pre-roll: create new peer assets with names only"
+// step. Synthetic delayed-arrival plans skip the roll entirely.
+func (miHandler) OnResolve(_ context.Context, _ *PlanDeps, _ *dbgen.Plan) (*dbgen.DiceRoll, error) {
+	return nil, nil
+}
+
+func (miHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
+	return nil // no extra prerequisites for either normal or synthetic plans
+}
+
+func (miHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"create-peer":     createPeerHandler(deps),
+		"finalize-peers":  finalizePeersHandler(deps),
+		"delayed-arrival": delayedArrivalHandler(deps),
 	}
-	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
-	if err != nil {
-		return nil, err
-	}
-	difficulty := gamepkg.MakeIntroductionsDifficulty(resData)
-	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 
 func (miHandler) ApplyChoice(
@@ -95,22 +103,179 @@ func (miHandler) ApplyChoice(
 	return nil // make/mar effects are narrative; "delayed" handled via extra route
 }
 
-func (miHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
-	return nil // no extra prerequisites for either normal or synthetic plans
-}
-
-func (miHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
-	return map[string]http.HandlerFunc{
-		"delayed-arrival": delayedArrivalHandler(deps),
-	}
-}
-
 // miStoreResData stores peer_count in resolution_data during plan preparation.
 func miStoreResData(ctx context.Context, q *dbgen.Queries, planID int64, peerCount int16) error {
 	d := ResolutionData{
 		MakeIntroductions: &MakeIntroductionsResolutionData{PeerCount: peerCount},
 	}
 	return saveResolutionData(ctx, q, planID, d)
+}
+
+// ── Pre-roll peer creation extra routes ──────────────────────────────────────
+
+// createPeerHandler handles POST /api/plans/:planId/create-peer.
+//
+// Called once per peer during the pre-roll naming step. The focus player
+// (= preparer) submits a peer name and optional marginalia; the server
+// creates the peer asset (routed through AssetRecipientForPlan so a
+// resolved Make Demands keep_assets winner claims it) and appends the new
+// asset ID to resolution_data.make_introductions.created_peer_ids.
+//
+// Request body: {"name": "...", "marginalia": ["text", ...]}
+//
+
+func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanMakeIntroductions {
+			respondErr(w, http.StatusBadRequest, "create-peer is only for Make Introductions")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the focus player can name peers")
+			return
+		}
+
+		var body struct {
+			Name       string   `json:"name"`
+			Marginalia []string `json:"marginalia"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		body.Name = strings.TrimSpace(body.Name)
+		if body.Name == "" {
+			respondErr(w, http.StatusBadRequest, "name is required")
+			return
+		}
+		if len(body.Marginalia) > maxMarginalia {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("at most %d marginalia", maxMarginalia))
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		mi := resData.EnsureMakeIntroductions()
+		if int16(len(mi.CreatedPeerIDs)) >= mi.PeerCount {
+			respondErr(w, http.StatusConflict, "all peers have already been named")
+			return
+		}
+
+		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+		if err != nil {
+			respondInternalErr(w, r, "could not resolve asset recipient", err)
+			return
+		}
+
+		var asset dbgen.Asset
+		var marginalia []dbgen.Marginalium
+		err = deps.InTx(ctx, func(q *dbgen.Queries) error {
+			a, caErr := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+				GameID:    plan.GameID,
+				OwnerID:   recipient,
+				CreatorID: player.ID,
+				AssetType: model.AssetPeer,
+				Name:      body.Name,
+			})
+			if caErr != nil {
+				return errors.New("could not create peer")
+			}
+			asset = a
+			marginalia = make([]dbgen.Marginalium, 0, len(body.Marginalia))
+			for i, text := range body.Marginalia {
+				text = strings.TrimSpace(text)
+				if text == "" {
+					continue
+				}
+				m, mErr := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+					AssetID:  asset.ID,
+					Position: int16(i + 1),
+					Text:     text,
+				})
+				if mErr != nil {
+					return errors.New("could not create marginalia")
+				}
+				marginalia = append(marginalia, m)
+			}
+			mi.CreatedPeerIDs = append(mi.CreatedPeerIDs, asset.ID)
+			return saveResolutionData(ctx, q, plan.ID, resData)
+		})
+		if err != nil {
+			respondInternalErr(w, r, "could not create peer", err)
+			return
+		}
+
+		result := assetWithMarginalia{Asset: asset, Marginalia: marginalia}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated,
+			model.AssetPayload{Asset: result})
+		respond(w, http.StatusCreated, map[string]any{
+			"plan_id":          plan.ID,
+			"asset":            result,
+			"created_peer_ids": mi.CreatedPeerIDs,
+		})
+	}
+}
+
+// finalizePeersHandler handles POST /api/plans/:planId/finalize-peers.
+//
+// Called once after all peer_count peers have been named via /create-peer.
+// Creates the dice roll that drives the rest of MI resolution. Idempotent
+// in the sense that calling it twice 409s the second time (the plan now
+// has a roll).
+func finalizePeersHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanMakeIntroductions {
+			respondErr(w, http.StatusBadRequest, "finalize-peers is only for Make Introductions")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the focus player can finalize peers")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		mi := resData.EnsureMakeIntroductions()
+		if int16(len(mi.CreatedPeerIDs)) != mi.PeerCount {
+			respondErr(w, http.StatusConflict,
+				fmt.Sprintf("expected %d peers named, got %d", mi.PeerCount, len(mi.CreatedPeerIDs)))
+			return
+		}
+		if _, err := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID); err == nil {
+			respondErr(w, http.StatusConflict, "plan roll already exists")
+			return
+		}
+
+		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load game", err)
+			return
+		}
+		difficulty := gamepkg.MakeIntroductionsDifficulty(resData)
+		roll, err := createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
+		if err != nil {
+			respondInternalErr(w, r, "could not create dice roll", err)
+			return
+		}
+		respond(w, http.StatusCreated, map[string]any{"plan_id": plan.ID, "roll": roll})
+	}
 }
 
 // ── Delayed Arrival extra route ───────────────────────────────────────────────

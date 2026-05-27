@@ -133,6 +133,8 @@ export const EventTypes = {
 
 	// Ephemeral: focus player's in-flight scene-setup selections
 	SceneSetupDraft: 'scene_setup.draft',
+	// Ephemeral: focus player's currently-highlighted plan card during prep
+	PreparePlanDraft: 'prepare_plan.draft',
 
 	// Structured prologue (Phase 4b)
 	PrologueChoiceClaimed: 'prologue.choice_claimed',
@@ -229,6 +231,13 @@ export function createConnection(
 	}
 	window.addEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
 
+	// Listen for prepare-plan draft snapshots dispatched by PlanPanel.
+	function onPreparePlanDraft(e: Event) {
+		const detail = (e as CustomEvent<Record<string, unknown>>).detail;
+		send({ type: 'prepare_plan.draft', payload: detail });
+	}
+	window.addEventListener('uneasy:prepare_plan_draft', onPreparePlanDraft);
+
 	function send(msg: object) {
 		if (ws?.readyState === WebSocket.OPEN) {
 			ws.send(JSON.stringify(msg));
@@ -305,6 +314,7 @@ export function createConnection(
 			stopped = true;
 			window.removeEventListener('uneasy:typing', onTyping);
 			window.removeEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
+			window.removeEventListener('uneasy:prepare_plan_draft', onPreparePlanDraft);
 			ws?.close();
 		},
 		ready,

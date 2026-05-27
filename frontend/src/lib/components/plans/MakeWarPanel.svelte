@@ -118,7 +118,7 @@
 </script>
 
 {#if mode === 'prep'}
-	<PrepForm {gameID} {players} {currentPlayerID} {onPlanPrepared} />
+	<PrepForm {ctx} />
 
 {:else if plan && !shouldHide}
 	<div class="plan-panel resolving">

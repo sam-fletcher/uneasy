@@ -71,6 +71,10 @@
 		marginaliaMode?: boolean;
 		selectedMarginaliaID?: number | null;
 		onSelectMarginalia?: (mID: number | null, asset: Asset | null) => void;
+
+		/** When true, render selection state but block all interaction
+		 *  (used by non-focus prep viewers mirroring the focus player). */
+		readOnly?: boolean;
 	}
 
 	let {
@@ -88,6 +92,7 @@
 		marginaliaMode = false,
 		selectedMarginaliaID,
 		onSelectMarginalia,
+		readOnly = false,
 	}: Props = $props();
 
 	function resolveOwnerLabel(a: Asset): string | undefined {
@@ -161,7 +166,7 @@
 						ownerLabel={resolveOwnerLabel(a)}
 						selectable
 						selected={multi ? isPickedMulti(a) : isPickedSingle(a)}
-						disabled={disabledMulti(a)}
+						disabled={readOnly || disabledMulti(a)}
 						onToggle={() => handleToggle(a)}
 					/>
 				{/if}
