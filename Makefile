@@ -1,5 +1,5 @@
 .PHONY: build frontend server placeholder clean \
-        test test-integration test-integration-run vet check-frontend check sqlc
+        test test-integration test-integration-run test-e2e vet check-frontend check sqlc
 
 # Full build: compile the frontend and produce a single Go binary that
 # embeds it. Output: ./server
@@ -64,7 +64,15 @@ vet:
 check-frontend:
 	cd frontend && npm run check
 
-check: vet test test-integration check-frontend
+# Playwright end-to-end tests. Drives a real browser against the server-e2e
+# container on :8090, which is bound to uneasy_test — never the dev DB.
+# Assumes `docker compose up` is already running. Shares uneasy_test with
+# `test-integration`, so don't run them concurrently (check runs them
+# sequentially).
+test-e2e:
+	cd frontend && npm run test:e2e
+
+check: vet test test-integration check-frontend test-e2e
 
 check-fast: vet test check-frontend
 

@@ -58,10 +58,11 @@ Common commands:
 ```bash
 make test               # fast unit tests
 make test-integration   # needs Postgres; see "Test database" below
+make test-e2e           # Playwright end-to-end; needs the dev stack up
 make vet                # go vet, both with and without the integration tag
 make check-frontend     # svelte-check on the frontend
 make check-fast         # vet + unit + frontend (no DB needed)
-make check              # everything, including integration
+make check              # everything, including integration and e2e
 ```
 
 `make check` is the pre-commit gate. Use `make check-fast` if you don't
@@ -81,6 +82,35 @@ docker exec uneasy-db-1 psql -U uneasy -d postgres \
 The Make targets default `TEST_DATABASE_URL` to that local instance.
 Override it via `make test-integration TEST_DATABASE_URL=...` or by
 exporting the variable.
+
+### End-to-end tests (Playwright)
+
+`make test-e2e` drives a real Chromium browser against a dedicated Go
+server (`server-e2e` in `docker-compose.yml`) listening on port 8090 and
+bound to the `uneasy_test` database. Your manual testing session on
+`:8080` uses the dev `uneasy` database and is completely untouched —
+E2E specs can call `/api/dev/reset` freely without disturbing it.
+
+**First-time setup** (one-time, after `npm ci`):
+
+```bash
+cd frontend
+npx playwright install chromium   # ~90MB browser binary, not in node_modules
+```
+
+**Running:**
+
+```bash
+docker compose up -d          # stack must be running
+make test-e2e
+```
+
+Specs live in `frontend/tests/e2e/`. Playwright config:
+`frontend/playwright.config.ts`.
+
+Note: `make test-integration` and `make test-e2e` both target
+`uneasy_test`, so don't run them concurrently. `make check` runs them
+sequentially, which is fine.
 
 ### Known-failing tests
 

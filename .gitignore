@@ -1,5 +1,6 @@
 # Go
 .air_tmp/
+.air_tmp_e2e/
 *.exe
 *.exe~
 *.dll
@@ -14,6 +15,9 @@ node_modules/
 frontend/node_modules/
 frontend/.svelte-kit/
 frontend/build/
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
 
 # Editor
 .vscode/

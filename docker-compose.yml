@@ -37,6 +37,30 @@ services:
         condition: service_healthy
     command: air
 
+  # ── Go API server bound to uneasy_test DB (for Playwright E2E) ──────────────
+  # Mirrors `server` but points at the uneasy_test database on port 8090, so
+  # automated tests can /api/dev/reset freely without touching the dev DB on
+  # 8080. The uneasy_test database must already exist — see README.
+  server-e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+      - go_cache:/root/go
+    ports:
+      - "8090:8090"
+    environment:
+      DATABASE_URL: postgres://uneasy:uneasy@db:5432/uneasy_test?sslmode=disable
+      PORT: "8090"
+      DEV_MODE: "true"
+      UNEASY_DEV: "1"
+      VITE_URL: "http://frontend:5173"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: air -c .air.e2e.toml
+
   # ── Vite dev server (hot module replacement) ─────────────────────────────────
   frontend:
     image: node:20-alpine

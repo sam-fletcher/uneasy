@@ -1,0 +1,25 @@
+# Air config for the server-e2e container. Mirrors .air.toml but writes to a
+# separate tmp dir so the two server processes don't fight over the same
+# build artifact when the source is rebuilt.
+
+root = "."
+tmp_dir = ".air_tmp_e2e"
+
+[build]
+  cmd = "go build -o .air_tmp_e2e/server ./cmd/server"
+  bin = ".air_tmp_e2e/server"
+  delay = 500
+  exclude_dir = ["frontend", ".air_tmp", ".air_tmp_e2e", "db/migrations", "cmd/server/frontend_dist"]
+  include_ext = ["go"]
+  kill_delay = "0s"
+  log = ".air_tmp_e2e/build.log"
+  rerun = false
+  send_interrupt = false
+  stop_on_error = true
+
+[log]
+  main_only = false
+  time = true
+
+[misc]
+  clean_on_exit = true
