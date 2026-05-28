@@ -56,8 +56,9 @@ The suite is split into two layers:
 Common commands:
 
 ```bash
-make test               # fast unit tests
+make test               # fast Go unit tests
 make test-integration   # needs Postgres; see "Test database" below
+make test-frontend-unit # Vitest unit tests for pure-TS lib/* modules
 make test-e2e           # Playwright end-to-end; needs the dev stack up
 make vet                # go vet, both with and without the integration tag
 make check-frontend     # svelte-check on the frontend
