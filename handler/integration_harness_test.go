@@ -28,6 +28,7 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	"uneasy/gametest"
 	"uneasy/model"
 )
 
@@ -126,90 +127,21 @@ type testGame struct {
 	Players []dbgen.Player
 }
 
-// newTestGame spins up a minimal game ready for plan preparation: phase
-// main_event, row 1, N players with distinct cookies, power rankings
-// 1..N assigned in order, public_record_rows seeded. The first player
-// is the facilitator and focus player.
-//
-// TODO: upgrade this to drive the real HTTP handlers (option (ii) in the
-// harness design) so the setup path is exercised by the integration
-// suite itself. Current implementation inserts rows directly via sqlc,
-// which is fast but will rot if the game-startup pipeline gains new
-// invariants that aren't reflected here.
+// newTestGame is a thin wrapper around gametest.SeedMainEvent that
+// generates fresh usernames per call. The implementation lives in the
+// shared gametest package so the dev /api/dev/seed endpoint and these
+// tests stay aligned.
 func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
 	t.Helper()
 	require.GreaterOrEqual(t, n, 2)
 	require.LessOrEqual(t, n, 5)
-	ctx := context.Background()
-
-	game, err := q.CreateGame(ctx, "TEST"+randSuffix())
-	require.NoError(t, err)
-
-	players := make([]dbgen.Player, n)
-	for i := 0; i < n; i++ {
-		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-			Username: fmt.Sprintf("p%d-%s", i+1, randSuffix()),
-			CodeHash: "x", // not used by these tests
-		})
-		require.NoError(t, err)
-		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
-			GameID:        game.ID,
-			DisplayName:   fmt.Sprintf("P%d", i+1),
-			AccountID:     acct.ID,
-			IsFacilitator: i == 0,
-		})
-		require.NoError(t, err)
-		seat := int16(i + 1)
-		err = q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
-			ID: p.ID, SeatOrder: &seat,
-		})
-		require.NoError(t, err)
-		// CreatePlayer returned `p` before SetPlayerSeatOrder ran, so its
-		// SeatOrder field is nil. Mirror the update on the local copy so
-		// callers see the post-update state without an extra DB round-trip.
-		p.SeatOrder = &seat
-		players[i] = p
+	usernames := make([]string, n)
+	for i := range usernames {
+		usernames[i] = fmt.Sprintf("p%d-%s", i+1, randSuffix())
 	}
-	err = q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
-		FacilitatorID: &players[0].ID, ID: game.ID,
-	})
+	seeded, err := gametest.SeedMainEvent(context.Background(), q, usernames)
 	require.NoError(t, err)
-
-	// Power rankings: player[i] gets rank i+1 (1 = highest).
-	// Also seed knowledge and esteem so anything that reads any track works.
-	for _, cat := range []model.RankingCategory{
-		model.CategoryPower, model.CategoryKnowledge, model.CategoryEsteem,
-	} {
-		for i := 0; i < n; i++ {
-			err := q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
-				GameID:   game.ID,
-				PlayerID: &players[i].ID,
-				Category: cat,
-				Rank:     int16(i + 1),
-			})
-			require.NoError(t, err)
-		}
-	}
-
-	err = q.CreatePublicRecordRows(ctx, game.ID)
-	require.NoError(t, err)
-
-	err = q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
-		ID: game.ID, Phase: model.PhaseMainEvent,
-	})
-	require.NoError(t, err)
-	err = q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
-		ID: game.ID, CurrentRow: 1,
-	})
-	require.NoError(t, err)
-	err = q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
-		ID: game.ID, FocusPlayerID: &players[0].ID,
-	})
-	require.NoError(t, err)
-
-	refreshed, err := q.GetGameByID(ctx, game.ID)
-	require.NoError(t, err)
-	return testGame{Game: refreshed, Players: players}
+	return testGame{Game: seeded.Game, Players: seeded.Players}
 }
 
 // randSuffix returns a short random string for distinct join codes /

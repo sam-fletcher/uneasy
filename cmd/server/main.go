@@ -147,6 +147,7 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 			if os.Getenv("UNEASY_DEV") == "1" {
 				r.Post("/dev/login", handler.DevLogin(store))
 				r.Post("/dev/reset", handler.DevReset(store))
+				r.Post("/dev/seed", handler.DevSeed(store))
 			}
 
 			// Tables (creation, join, info)
