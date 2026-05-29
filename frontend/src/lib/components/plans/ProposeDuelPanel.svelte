@@ -114,12 +114,16 @@
 		}
 		window.addEventListener('uneasy:duel.champion_elected', onDuelEvent);
 		window.addEventListener('uneasy:duel.stakes_revealed', onDuelEvent);
+		window.addEventListener('uneasy:duel.stakes_selected', onDuelEvent);
+		window.addEventListener('uneasy:duel.bout_declared', onDuelEvent);
 		window.addEventListener('uneasy:duel.bout_resolved', onDuelEvent);
 		window.addEventListener('uneasy:duel.bouts_complete', onDuelEvent);
 	});
 	onDestroy(() => {
 		window.removeEventListener('uneasy:duel.champion_elected', onDuelEvent);
 		window.removeEventListener('uneasy:duel.stakes_revealed', onDuelEvent);
+		window.removeEventListener('uneasy:duel.stakes_selected', onDuelEvent);
+		window.removeEventListener('uneasy:duel.bout_declared', onDuelEvent);
 		window.removeEventListener('uneasy:duel.bout_resolved', onDuelEvent);
 		window.removeEventListener('uneasy:duel.bouts_complete', onDuelEvent);
 	});

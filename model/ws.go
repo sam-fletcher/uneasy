@@ -80,6 +80,8 @@ const (
 	// Phase 3d: Propose Duel
 	EventDuelChampionElected = "duel.champion_elected" // peer elected to fight in stead
 	EventDuelStakesRevealed  = "duel.stakes_revealed"  // stake counts revealed (both submitted)
+	EventDuelStakesSelected  = "duel.stakes_selected"  // both staked; advanced to bouts
+	EventDuelBoutDeclared    = "duel.bout_declared"    // declarer opened a bout; responder's turn
 	EventDuelBoutResolved    = "duel.bout_resolved"    // bout comparison complete
 	EventDuelBoutsComplete   = "duel.bouts_complete"   // all bouts done; dice tallied
 
@@ -461,6 +463,18 @@ type DuelStakesRevealedPayload struct {
 	PlanID             int64 `json:"plan_id"`
 	PreparerStakeCount int16 `json:"preparer_stake_count"`
 	TargetStakeCount   int16 `json:"target_stake_count"`
+}
+
+// DuelStakesSelectedPayload is for EventDuelStakesSelected.
+type DuelStakesSelectedPayload struct {
+	PlanID int64 `json:"plan_id"`
+}
+
+// DuelBoutDeclaredPayload is for EventDuelBoutDeclared.
+type DuelBoutDeclaredPayload struct {
+	PlanID      int64 `json:"plan_id"`
+	BoutNumber  int16 `json:"bout_number"`
+	ResponderID int64 `json:"responder_id"`
 }
 
 // DuelBoutResolvedPayload is for EventDuelBoutResolved.

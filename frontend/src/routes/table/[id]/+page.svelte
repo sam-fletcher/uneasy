@@ -538,6 +538,8 @@
 			case EventTypes.LiaiseChoicesRevealed:
 			case EventTypes.DuelChampionElected:
 			case EventTypes.DuelStakesRevealed:
+			case EventTypes.DuelStakesSelected:
+			case EventTypes.DuelBoutDeclared:
 			case EventTypes.DuelBoutResolved:
 			case EventTypes.DuelBoutsComplete:
 			case EventTypes.FestivityGuestJoined:

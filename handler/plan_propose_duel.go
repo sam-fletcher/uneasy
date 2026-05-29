@@ -603,6 +603,13 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 				respondInternalErr(w, r, "could not advance phase", err)
 				return
 			}
+			// Mirror the stake-reveal broadcast: the waiting duellist needs a
+			// duel event to refetch the plan and pick up phase=bouts. Without
+			// it, broadcastRowState alone leaves them soft-locked on the
+			// staking panel even though it's their turn to declare.
+			broadcastEvent(deps.Manager, plan.GameID, model.EventDuelStakesSelected, model.DuelStakesSelectedPayload{
+				PlanID: plan.ID,
+			})
 		}
 
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
@@ -696,6 +703,13 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// The responder needs a duel event to refetch the bout list and render
+		// the respond UI; broadcastRowState alone won't refresh their panel.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventDuelBoutDeclared, model.DuelBoutDeclaredPayload{
+			PlanID:      plan.ID,
+			BoutNumber:  boutNumber,
+			ResponderID: pduelOpponentID(plan, player.ID),
+		})
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":     plan.ID,
