@@ -536,6 +536,7 @@
 			case EventTypes.PlanDelayedArrival:
 			case EventTypes.LiaisePhaseChanged:
 			case EventTypes.LiaiseChoicesRevealed:
+			case EventTypes.LiaiseKeepSecretSubmitted:
 			case EventTypes.DuelChampionElected:
 			case EventTypes.DuelStakesRevealed:
 			case EventTypes.DuelStakesSelected:

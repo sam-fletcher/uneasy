@@ -118,7 +118,12 @@ test('propose duel: setup → staking → bouts → final roll', async ({ browse
 	const focusGame = await fetchGame(aliceCtx, game_id);
 	const resolveCtx = ctxByPlayer[focusGame.focus_player_id!];
 	const resolveRes = await resolveCtx.request.post(`/api/plans/${duel.id}/resolve`);
-	expect(resolveRes.ok(), `resolve failed: ${await resolveRes.text()}`).toBeTruthy();
+	// Advancing onto the plan's row auto-kicks-off resolution (plans.go:918), so
+	// the explicit resolve here races with that and may 409 once the plan is
+	// already 'resolving'. Either outcome means the duel is now resolving.
+	if (!resolveRes.ok()) {
+		expect(await resolveRes.text(), 'unexpected resolve failure').toContain('not in pending status');
+	}
 
 	// ── Open both players' tables; the resolving duel panel auto-renders ─────
 	const alice = await aliceCtx.newPage();

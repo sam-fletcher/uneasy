@@ -401,6 +401,13 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// The other participant must refetch the plan to see this submission —
+		// in particular the preparer needs it to learn both have submitted and
+		// unlock the advance. Without this they'd be soft-locked on the
+		// secrets-we-keep panel until a manual refresh.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventLiaiseKeepSecretSubmitted,
+			model.LiaiseKeepSecretSubmittedPayload{PlanID: plan.ID})
+
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":  plan.ID,
 			"asset_id": body.AssetID,

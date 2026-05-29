@@ -71,6 +71,7 @@ export const EventTypes = {
 	// Clandestinely Liaise
 	LiaisePhaseChanged: 'liaise.phase_changed',
 	LiaiseChoicesRevealed: 'liaise.choices_revealed',
+	LiaiseKeepSecretSubmitted: 'liaise.keep_secret_submitted',
 
 	// Propose Duel
 	DuelChampionElected: 'duel.champion_elected',

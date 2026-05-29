@@ -70,8 +70,9 @@ const (
 	EventDecreeCouncilJoined = "decree.council_joined" // PD: player joined council
 
 	// Phase 3c: Clandestinely Liaise
-	EventLiaisePhaseChanged    = "liaise.phase_changed"    // CL: phase advanced
-	EventLiaiseChoicesRevealed = "liaise.choices_revealed" // CL: both players submitted Things We Share
+	EventLiaisePhaseChanged        = "liaise.phase_changed"         // CL: phase advanced
+	EventLiaiseChoicesRevealed     = "liaise.choices_revealed"      // CL: both players submitted Things We Share
+	EventLiaiseKeepSecretSubmitted = "liaise.keep_secret_submitted" // CL: a player nominated their kept-secret asset
 
 	// Phase 3c: Simultaneous Reveals (shared by CL and MW)
 	EventRevealSubmitted = "reveal.submitted" // player submitted a reveal entry (face hidden)
@@ -420,6 +421,11 @@ type DecreeCouncilJoinedPayload struct {
 type LiaisePhaseChangedPayload struct {
 	PlanID int64  `json:"plan_id"`
 	Phase  string `json:"phase"`
+}
+
+// LiaiseKeepSecretSubmittedPayload is for EventLiaiseKeepSecretSubmitted.
+type LiaiseKeepSecretSubmittedPayload struct {
+	PlanID int64 `json:"plan_id"`
 }
 
 // LiaiseChoicesRevealedPayload is for EventLiaiseChoicesRevealed.
