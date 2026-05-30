@@ -137,6 +137,7 @@ type ResolutionData struct {
 
 	ExchangeCourtiers  *ExchangeCourtiersResolutionData  `json:"exchange_courtiers,omitempty"`
 	MakeIntroductions  *MakeIntroductionsResolutionData  `json:"make_introductions,omitempty"`
+	SeekAnswers        *SeekAnswersResolutionData        `json:"seek_answers,omitempty"`
 	SpreadPropaganda   *SpreadPropagandaResolutionData   `json:"spread_propaganda,omitempty"`
 	SpreadRumors       *SpreadRumorsResolutionData       `json:"spread_rumors,omitempty"`
 	ChronicleHistories *ChronicleHistoriesResolutionData `json:"chronicle_histories,omitempty"`

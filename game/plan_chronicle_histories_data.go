@@ -16,6 +16,17 @@ type ChronicleHistoriesResolutionData struct {
 	// mar-choice "invoke_another" route may still append to
 	// InvokedArtifactIDs for narrative tracking even when this flag is set.
 	InvokePhaseClosed bool `json:"invoke_phase_closed,omitempty"`
+
+	// MarActive flips true the first time a mar-choice is submitted. It marks
+	// the plan as a mar resolution so CanComplete (which has no roll access)
+	// can enforce the "all players choose one option" gate.
+	MarActive bool `json:"mar_active,omitempty"`
+
+	// MarRequiredChoices is the number of distinct players who must each submit
+	// a mar choice before the plan can complete — the count of players in the
+	// game at the time the mar scene began. Captured from the mar-choice route
+	// (which has DB access) so CanComplete can gate without a query.
+	MarRequiredChoices int16 `json:"mar_required_choices,omitempty"`
 }
 
 // LoadChronicleHistoriesData is a read-only convenience parser; returns a

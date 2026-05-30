@@ -54,6 +54,15 @@
 	margin: 0.25rem 0;
 }
 
+.res-warning {
+	margin: 0.4rem 0;
+	padding: 0.4rem 0.6rem;
+	border-radius: 4px;
+	background: var(--warning-bg, #fff4e5);
+	color: var(--warning-fg, #8a5300);
+	font-size: 0.85rem;
+}
+
 .muted { color: #666; font-size: 0.82rem; font-style: italic; }
 
 .ft-section, .choices-section, .complete-section {

@@ -324,6 +324,8 @@ export type { MakeWarResolutionData } from '$lib/plans/resolutionData/make_war';
 import type { MakeWarResolutionData } from '$lib/plans/resolutionData/make_war';
 export type { FestivityResolutionData, FestivityPhase } from '$lib/plans/resolutionData/host_festivity';
 import type { FestivityResolutionData } from '$lib/plans/resolutionData/host_festivity';
+export type { SeekAnswersResolutionData } from '$lib/plans/resolutionData/seek_answers';
+import type { SeekAnswersResolutionData } from '$lib/plans/resolutionData/seek_answers';
 
 /** Mirrors game.ResolutionData (uneasy/game/plan.go). All fields optional —
  * only the ones relevant to a given plan type are populated. */
@@ -337,6 +339,11 @@ export interface ResolutionData {
 	// All MI-specific state lives on the nested struct; see
 	// $lib/plans/resolutionData/make_introductions.ts.
 	make_introductions?: MakeIntroductionsResolutionData;
+
+	// ── Seek Answers ──
+	// Tracks flawed resources (once-per-asset) and the mar self-flaw penalty;
+	// see $lib/plans/resolutionData/seek_answers.ts.
+	seek_answers?: SeekAnswersResolutionData;
 
 	// ── Spread Propaganda ──
 	// All SP-specific state lives on the nested struct; see
@@ -1506,13 +1513,24 @@ export function breakArtifact(planID: number, assetID: number, marginaliaID: num
 }
 
 /**
- * Chronicle Histories — non-preparer (or preparer) submits a mar choice.
- * `asset_id` is required for break_artifact / invoke_another.
+ * Chronicle Histories — a player submits their one mar choice.
+ * `assetID` is required for break_artifact / invoke_another; `marginaliaID`
+ * is additionally required for break_artifact (the break is applied atomically
+ * server-side, with auto-destroy on the artifact's last marginalium).
  */
-export function marChoice(planID: number, choice: string, assetID?: number): Promise<PlanEcho> {
+export function marChoice(
+	planID: number,
+	choice: string,
+	assetID?: number,
+	marginaliaID?: number,
+): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/mar-choice`, {
 		method: 'POST',
-		body: JSON.stringify({ choice, asset_id: assetID ?? null }),
+		body: JSON.stringify({
+			choice,
+			asset_id: assetID ?? null,
+			marginalia_id: marginaliaID ?? null,
+		}),
 	});
 }
 

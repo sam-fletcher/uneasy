@@ -125,6 +125,20 @@
 		allArtifacts.filter(a => !invokedIDs.includes(a.id))
 	);
 
+	// Destruction warning: tearing the last intact marginalium destroys the
+	// artifact. If empty margin slots remain (< 4 marginalia) the owner can add
+	// one first to keep it intact.
+	function destructionWarning(a: Asset | null | undefined): string {
+		if (!a) return '';
+		const total = (a.marginalia ?? []).length;
+		const intact = (a.marginalia ?? []).filter(m => !m.is_torn).length;
+		if (intact <= 1 && total < 4) {
+			return `Heads up: this is ${a.name}'s last note — tearing it will destroy `
+				+ `the artifact. Its owner can add another marginalium first to keep it intact.`;
+		}
+		return '';
+	}
+
 	let invokeAssetID = $state<number | null>(null);
 	let invokeBusy = $state(false);
 	async function submitInvoke(p: Plan) {
@@ -168,21 +182,41 @@
 	}
 
 	// ── Mar picker (per-player single choice) ────────────────────────────────
+	// break_artifact tears a marginalium on an invoked artifact (so it needs a
+	// marginalia id, applied atomically server-side); invoke_another just needs
+	// an artifact id.
 	let marSelected = $state<string>('');
 	let marAssetID = $state<number | null>(null);
+	let marMargID = $state<number | null>(null);
 	let marBusy = $state(false);
+
+	const marNeedsAsset = $derived(marSelected === 'break_artifact' || marSelected === 'invoke_another');
+	const marNeedsMarg = $derived(marSelected === 'break_artifact');
+	const marReady = $derived(
+		!!marSelected
+		&& (!marNeedsAsset || marAssetID != null)
+		&& (!marNeedsMarg || marMargID != null),
+	);
+
 	async function submitMarChoice(p: Plan) {
-		if (marBusy || !marSelected) return;
+		if (marBusy || !marReady) return;
 		marBusy = true; resError = '';
 		try {
-			const needsAsset = marSelected === 'break_artifact' || marSelected === 'invoke_another';
-			await marChoice(p.id, marSelected, needsAsset && marAssetID != null ? marAssetID : undefined);
-			marSelected = ''; marAssetID = null;
+			await marChoice(
+				p.id,
+				marSelected,
+				marNeedsAsset && marAssetID != null ? marAssetID : undefined,
+				marNeedsMarg && marMargID != null ? marMargID : undefined,
+			);
+			marSelected = ''; marAssetID = null; marMargID = null;
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not submit mar choice.';
 		} finally { marBusy = false; }
 	}
+
+	// Destruction warning for the selected mar break target.
+	const marBreakWarn = $derived(destructionWarning(invokedArtifacts.find(a => a.id === marAssetID)));
 
 	// Decoded mar-choice entries. Both make and mar store into make_mar_choices;
 	// mar entries are the ones with player_id set (written by Chronicle's own
@@ -197,6 +231,14 @@
 	const myMarSubmitted = $derived(
 		currentPlayerID != null && marEntries.some(e => e.playerID === currentPlayerID)
 	);
+
+	// Mar completeness: every player present must submit one choice before the
+	// preparer can complete. The server is the source of truth; we mirror the
+	// gate here so the button reflects it.
+	const marRequired = $derived(
+		plan ? (parseResolutionData(plan).chronicle_histories?.mar_required_choices ?? 0) : 0,
+	);
+	const allMarSubmitted = $derived(marRequired > 0 && marEntries.length >= marRequired);
 
 	// ── break_artifact sub-flow (make) ───────────────────────────────────────
 	let baDone = $state(0);
@@ -378,16 +420,31 @@
 										onclick={() => {
 											marSelected = marSelected === opt.key ? '' : opt.key;
 											marAssetID = null;
+											marMargID = null;
 										}}
 									>{opt.label}</button>
 								{/each}
 							</div>
 						</FormField>
-						{#if marSelected === 'break_artifact' || marSelected === 'invoke_another'}
-							{@const marArtifacts = marSelected === 'break_artifact' ? invokedArtifacts : uninvokedArtifacts}
+						{#if marSelected === 'break_artifact'}
 							<CardPicker
-								label="Artifact"
-								items={marArtifacts}
+								label="Invoked artifact to break (tear a marginalia)"
+								items={assetsWithIntactMarginalia(invokedArtifacts)}
+								{players}
+								emptyMessage="No intact marginalia on invoked artifacts."
+								ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+								marginaliaMode
+								selectedMarginaliaID={marMargID}
+								onSelectMarginalia={(mID, parent) => {
+									marMargID = mID;
+									marAssetID = parent?.id ?? null;
+								}}
+							/>
+							{#if marBreakWarn}<p class="res-warning">{marBreakWarn}</p>{/if}
+						{:else if marSelected === 'invoke_another'}
+							<CardPicker
+								label="Artifact to invoke"
+								items={uninvokedArtifacts}
 								{players}
 								emptyMessage="No eligible artifacts."
 								ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
@@ -397,9 +454,7 @@
 						{/if}
 						<button class="action-btn primary"
 							onclick={() => submitMarChoice(plan)}
-							disabled={marBusy || !marSelected
-								|| ((marSelected === 'break_artifact' || marSelected === 'invoke_another')
-									&& marAssetID == null)}>
+							disabled={marBusy || !marReady}>
 							{marBusy ? '…' : 'Submit choice'}
 						</button>
 					</div>
@@ -420,10 +475,14 @@
 
 				{#if isPreparer}
 					<p class="complete-note" style="margin-top:0.5rem;">
-						When every player has chosen, complete the plan.
+						{#if allMarSubmitted}
+							Every player has chosen — complete the plan.
+						{:else}
+							Waiting for all players to choose ({marEntries.length}/{marRequired})…
+						{/if}
 					</p>
 					<button class="action-btn primary"
-						onclick={() => onComplete(plan)} disabled={resBusy}>
+						onclick={() => onComplete(plan)} disabled={resBusy || !allMarSubmitted}>
 						{resBusy ? '…' : 'Complete plan'}
 					</button>
 				{/if}

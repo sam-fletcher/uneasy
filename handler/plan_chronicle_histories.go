@@ -99,20 +99,69 @@ func (chHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 
+// ApplyChoice records the preparer's make choices (kept in MakeMarChoices by
+// MakeChoice). Mechanical effects go through extra routes; here we only emit
+// the action-log entry. Mar choices do NOT flow through here — every player
+// submits via the mar-choice route — so this is a make-only path.
 func (chHandler) ApplyChoice(
-	_ context.Context,
-	_ *PlanDeps,
-	_ *dbgen.Plan,
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
 	_ *ResolutionData,
 	_ []string,
-	_ string,
+	result string,
 ) error {
-	// Narrative choices; mechanical effects go through extra routes.
+	if result == makeOutcome {
+		chLog(ctx, deps, plan, model.SeverityImportant,
+			"Chronicle Histories succeeded — the preparer shapes the scene from history.")
+	}
 	return nil
 }
 
-func (chHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
+// MaxChoices caps the preparer's make picks at the dice result ("choose options
+// equal to your result"). The mar path is per-player (one each) and is driven
+// by the mar-choice route, not make-choice, so it carries no fixed budget here.
+func (chHandler) MaxChoices(result string, rollResult, _ int16) int {
+	if result == makeOutcome {
+		return int(rollResult)
+	}
+	return -1
+}
+
+// CanComplete blocks a mar resolution until every player present when the mar
+// scene began has submitted exactly one choice ("all players choose one option
+// from the make list"). The make path has no completion prerequisite.
+func (chHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
+	ch := resData.ChronicleHistories
+	if ch == nil || !ch.MarActive {
+		return nil
+	}
+	submitted := chDistinctMarChoosers(resData)
+	if submitted < ch.MarRequiredChoices {
+		return fmt.Errorf("%d of %d players still need to choose a mar option",
+			ch.MarRequiredChoices-submitted, ch.MarRequiredChoices)
+	}
 	return nil
+}
+
+// chDistinctMarChoosers counts distinct players who have submitted a mar choice
+// (entries in MakeMarChoices with a non-nil PlayerID).
+func chDistinctMarChoosers(resData *ResolutionData) int16 {
+	seen := map[int64]struct{}{}
+	for _, c := range resData.MakeMarChoices {
+		if c.PlayerID != nil {
+			seen[*c.PlayerID] = struct{}{}
+		}
+	}
+	return int16(len(seen))
+}
+
+// chLog emits a Chronicle Histories action-log entry anchored to the plan row.
+func chLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	planID := plan.ID
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.chronicle_histories",
+		severity, body, plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
 }
 
 func (chHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
@@ -197,6 +246,10 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		chLog(ctx, deps, plan, model.SeverityDefault,
+			fmt.Sprintf("%s invoked %q to shed light on the past.",
+				playerDisplayName(ctx, deps.Q, player.ID), asset.Name))
+
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":              plan.ID,
 			"invoked_artifact_ids": ch.InvokedArtifactIDs,
@@ -247,6 +300,12 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		artifact, err := deps.Q.GetAssetByID(ctx, body.AssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "artifact not found")
+			return
+		}
+
 		m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "marginalia not found")
@@ -261,24 +320,26 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if _, err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID:       m.ID,
-			TornByID: &player.ID,
-		}); err != nil {
-			respondInternalErr(w, r, "could not tear marginalia", err)
+		// Break = tear one marginalium (auto-destroy if it was the last) — the
+		// canonical effect, shared with every other plan.
+		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &artifact, &m, player.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not break artifact", err)
 			return
 		}
 
-		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-			AssetID:  body.AssetID,
-			Position: m.Position,
-			TornByID: player.ID,
-		})
+		verb := "broke an invoked artifact,"
+		if destroyed {
+			verb = "destroyed the invoked artifact"
+		}
+		chLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s %q.",
+			playerDisplayName(ctx, deps.Q, player.ID), verb, artifact.Name))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
 			"asset_id":      body.AssetID,
 			"marginalia_id": m.ID,
+			"destroyed":     destroyed,
 		})
 	}
 }
@@ -287,16 +348,20 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 
 // chMarChoiceHandler handles POST /api/plans/:planId/mar-choice.
 //
-// During a Chronicle Histories mar result, ALL players (not just the preparer)
-// each choose one option from the make list. This route lets non-preparer
-// players submit their choice. Preparer choices still go through make-choice.
+// During a Chronicle Histories mar result, ALL players present choose one
+// option from the make list. Each player submits exactly once via this route;
+// the plan cannot complete until every player has chosen (enforced by
+// CanComplete against the player count captured on the first submission).
 //
-// Any player in the game (including the preparer calling this route again) may
-// call this. Choices are recorded in ResData.MakeMarChoices appended with
-// "playerID:choice" encoding so multiple players' choices are tracked.
+// Mechanical effects are applied immediately and atomically:
+//   - break_artifact: requires asset_id + marginalia_id (an invoked artifact);
+//     tears the marginalium via breakMarginalia (auto-destroy on the last).
+//   - invoke_another: requires asset_id; adds the artifact to the invoked list.
+//   - echo_present / total_control: narrative only.
 //
-// Request body: {"choice": "break_artifact|invoke_another|echo_present|total_control", "asset_id": N}
-// (asset_id required for break_artifact and invoke_another)
+// Request body: {"choice": "...", "asset_id": N, "marginalia_id": M}
+//
+
 func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -312,9 +377,18 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		ctx := r.Context()
+
+		// Mar choices are only valid on a marred roll.
+		if !planRollIsMar(ctx, deps.Q, plan) {
+			respondErr(w, http.StatusConflict, "mar-choice is only valid when the plan rolled a mar")
+			return
+		}
+
 		var body struct {
-			Choice  string `json:"choice"`
-			AssetID *int64 `json:"asset_id"`
+			Choice       string `json:"choice"`
+			AssetID      *int64 `json:"asset_id"`
+			MarginaliaID *int64 `json:"marginalia_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Choice == "" {
 			respondErr(w, http.StatusBadRequest, "choice is required")
@@ -327,26 +401,36 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
+		ch := resData.EnsureChronicleHistories()
 
-		// Apply mechanical effect.
-		switch body.Choice {
-		case "break_artifact":
-			// Caller should follow up with the break-artifact route.
-			// We just record the choice here.
-		case "invoke_another":
-			if body.AssetID != nil {
-				ch := resData.EnsureChronicleHistories()
-				if !slices.Contains(ch.InvokedArtifactIDs, *body.AssetID) {
-					asset, err := deps.Q.GetAssetByID(ctx, *body.AssetID)
-					if err == nil && asset.GameID == plan.GameID && asset.AssetType == model.AssetArtifact {
-						ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, *body.AssetID)
-					}
-				}
+		// One choice per player.
+		for _, c := range resData.MakeMarChoices {
+			if c.PlayerID != nil && *c.PlayerID == player.ID {
+				respondErr(w, http.StatusConflict, "you have already chosen a mar option")
+				return
 			}
-		case "echo_present", "total_control":
-			// Purely narrative.
+		}
+
+		// Capture the gate target once, when the mar scene begins.
+		if !ch.MarActive {
+			count, err := deps.Q.CountPlayersInGame(ctx, plan.GameID)
+			if err != nil {
+				respondInternalErr(w, r, "could not count players", err)
+				return
+			}
+			ch.MarActive = true
+			ch.MarRequiredChoices = int16(count)
+		}
+
+		// Apply the mechanical effect (break_artifact / invoke_another mutate
+		// state and DB; echo_present / total_control are narrative).
+		logBody, status, msg := chApplyMarEffect(ctx, deps, plan, ch, player.ID, marEffectInput{
+			choice: body.Choice, assetID: body.AssetID, marginaliaID: body.MarginaliaID,
+		})
+		if status != 0 {
+			respondErr(w, status, msg)
+			return
 		}
 
 		// Record as a Choice with PlayerID set so the panel can attribute it.
@@ -360,10 +444,85 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		chLog(ctx, deps, plan, model.SeverityDefault, logBody)
+
 		respond(w, http.StatusOK, map[string]any{
-			"plan_id":   plan.ID,
-			"player_id": player.ID,
-			"choice":    body.Choice,
+			"plan_id":          plan.ID,
+			"player_id":        player.ID,
+			"choice":           body.Choice,
+			"submitted":        chDistinctMarChoosers(&resData),
+			"required_choices": ch.MarRequiredChoices,
 		})
+	}
+}
+
+// marEffectInput bundles the request params for one mar choice's mechanical
+// effect.
+type marEffectInput struct {
+	choice       string
+	assetID      *int64
+	marginaliaID *int64
+}
+
+// chApplyMarEffect performs the mechanical effect of one mar choice and returns
+// the action-log body. On a validation/lookup failure it returns a non-zero
+// HTTP status and message for the caller to relay; status 0 means success.
+// break_artifact and invoke_another mutate `ch`/DB; the narrative options are
+// no-ops.
+func chApplyMarEffect(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	ch *ChronicleHistoriesResolutionData,
+	playerID int64,
+	in marEffectInput,
+) (logBody string, status int, msg string) {
+	who := playerDisplayName(ctx, deps.Q, playerID)
+	switch in.choice {
+	case "break_artifact":
+		if in.assetID == nil || in.marginaliaID == nil {
+			return "", http.StatusBadRequest, "break_artifact requires asset_id and marginalia_id"
+		}
+		if !slices.Contains(ch.InvokedArtifactIDs, *in.assetID) {
+			return "", http.StatusBadRequest, "artifact has not been invoked in this plan"
+		}
+		artifact, err := deps.Q.GetAssetByID(ctx, *in.assetID)
+		if err != nil {
+			return "", http.StatusNotFound, "artifact not found"
+		}
+		m, err := deps.Q.GetMarginaliaByID(ctx, *in.marginaliaID)
+		if err != nil {
+			return "", http.StatusNotFound, "marginalia not found"
+		}
+		if m.AssetID != *in.assetID {
+			return "", http.StatusBadRequest, "marginalia does not belong to the specified artifact"
+		}
+		if m.IsTorn {
+			return "", http.StatusConflict, "marginalia is already torn"
+		}
+		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &artifact, &m, playerID)
+		if err != nil {
+			return "", http.StatusInternalServerError, "could not break artifact"
+		}
+		verb := "broke"
+		if destroyed {
+			verb = "destroyed"
+		}
+		return fmt.Sprintf("%s %s the invoked artifact %q.", who, verb, artifact.Name), 0, ""
+	case "invoke_another":
+		if in.assetID == nil {
+			return "", http.StatusBadRequest, "invoke_another requires asset_id"
+		}
+		asset, err := deps.Q.GetAssetByID(ctx, *in.assetID)
+		if err != nil || asset.GameID != plan.GameID || asset.AssetType != model.AssetArtifact {
+			return "", http.StatusBadRequest, "asset must be an artifact in this game"
+		}
+		if !slices.Contains(ch.InvokedArtifactIDs, *in.assetID) {
+			ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, *in.assetID)
+		}
+		return fmt.Sprintf("%s invoked %q.", who, asset.Name), 0, ""
+	default:
+		// echo_present / total_control: purely narrative.
+		return fmt.Sprintf("%s chose %q.", who, in.choice), 0, ""
 	}
 }

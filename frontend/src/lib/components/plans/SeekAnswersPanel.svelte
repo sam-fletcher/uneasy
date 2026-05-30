@@ -7,9 +7,11 @@
     → submit via makeChoice → for each break_resource/reveal_secret pick,
     fill sub-form → complete.
 
-  The option list is the same for make and mar (per spec). For mar, the
-  server additionally auto-applies forced breaks on the preparer's own
-  resources; the UI just reflects the resulting asset updates.
+  The option list is the same for make and mar (per spec). Each resource may
+  be flawed at most once ("overlooked until now"), so flawed resources drop
+  out of the pickers. On a mar the preparer must additionally describe a flaw
+  in (difficulty − result) of their OWN resources; that penalty sub-flow blocks
+  completion until satisfied.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -142,20 +144,61 @@
 	let brMargID = $state<number | null>(null);
 	let brBusy = $state(false);
 
+	// Mar penalty selection (own resources).
+	let maAssetID = $state<number | null>(null);
+	let maMargID = $state<number | null>(null);
+	let maBusy = $state(false);
+
+	// Destruction warnings for the currently-selected break targets.
+	const brWarn = $derived(destructionWarning(assets.find(a => a.id === brAssetID)));
+	const maWarn = $derived(destructionWarning(assets.find(a => a.id === maAssetID)));
+
 	let rsAssetID = $state<number | null>(null);
 	let rsBusy = $state(false);
 
-	// All non-destroyed resource assets across all players. Filtered further
-	// to those that still have intact marginalia for the break_resource
-	// sub-flow's marginalia-pick mode.
-	const allResources = $derived(
-		assets.filter(a => a.asset_type === 'resource' && !a.is_destroyed)
+	// Seek Answers resolution state: which resources have been flawed (each may
+	// be flawed at most once) and the mar self-flaw penalty progress.
+	const saData = $derived(plan ? (parseResolutionData(plan).seek_answers ?? {}) : {});
+	const flawedIDs = $derived(new Set(saData.flawed_resource_ids ?? []));
+	const marRequired = $derived(saData.mar_self_flaws_required ?? 0);
+	const marApplied = $derived(saData.mar_self_flaws_applied ?? 0);
+	const marRemaining = $derived(Math.max(0, marRequired - marApplied));
+
+	const preparerID = $derived(plan?.preparer_id ?? null);
+	const isMar = $derived(rollOutcome === 'mar');
+
+	// Make-list "break a resource" picker: any resource with intact marginalia
+	// not yet flawed this plan. On a mar, exclude the preparer's own resources —
+	// those go through the penalty flow (the server attributes a break by owner).
+	const resourcesWithMarginalia = $derived(
+		assetsWithIntactMarginalia(assets.filter(a => a.asset_type === 'resource')),
 	);
 	const brResourcesWithMarginalia = $derived(
-		assetsWithIntactMarginalia(allResources),
+		resourcesWithMarginalia
+			.filter(a => !flawedIDs.has(a.id))
+			.filter(a => !isMar || a.owner_id !== preparerID),
+	);
+	// Mar penalty picker: the preparer's own resources, not yet flawed.
+	const penaltyResources = $derived(
+		resourcesWithMarginalia
+			.filter(a => a.owner_id === preparerID && !flawedIDs.has(a.id)),
 	);
 	// All non-destroyed assets (reveal-secret can target any asset).
 	const allAssets = $derived(assets.filter(a => !a.is_destroyed));
+
+	// Destruction warning: tearing the last intact marginalium destroys the
+	// asset. If empty margin slots remain (< 4 marginalia) the player can add
+	// one first to keep the asset alive.
+	function destructionWarning(a: Asset | null | undefined): string {
+		if (!a) return '';
+		const total = (a.marginalia ?? []).length;
+		const intact = (a.marginalia ?? []).filter(m => !m.is_torn).length;
+		if (intact <= 1 && total < 4) {
+			return `Heads up: this is ${a.name}'s last note — tearing it will destroy `
+				+ `the asset. You can add another marginalium first to keep it intact.`;
+		}
+		return '';
+	}
 
 	async function submitBreakResource(p: Plan) {
 		if (brBusy || brAssetID == null || brMargID == null) return;
@@ -168,6 +211,20 @@
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not break resource.';
 		} finally { brBusy = false; }
+	}
+
+	// Penalty self-flaw: like submitBreakResource but progress is tracked by the
+	// server (mar_self_flaws_applied), so we just refetch after each break.
+	async function submitPenaltyFlaw(p: Plan) {
+		if (maBusy || maAssetID == null || maMargID == null) return;
+		maBusy = true; resError = '';
+		try {
+			await breakResource(p.id, maAssetID, maMargID);
+			maAssetID = null; maMargID = null;
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not flaw your resource.';
+		} finally { maBusy = false; }
 	}
 
 	async function submitRevealSecret(p: Plan) {
@@ -227,7 +284,7 @@
 	{@const rsNeeded = countIn(existingChoices, 'reveal_secret')}
 	{@const brRemaining = Math.max(0, brNeeded - breakDone)}
 	{@const rsRemaining = Math.max(0, rsNeeded - revealDone)}
-	{@const subflowsDone = brRemaining === 0 && rsRemaining === 0}
+	{@const subflowsDone = brRemaining === 0 && rsRemaining === 0 && marRemaining === 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
@@ -243,8 +300,9 @@
 					</strong>
 				</p>
 				<p class="choices-note">
-					Pick options equal to your dice result (repeatable). For mar, the
-					server also auto-applies breaks to your own resources.
+					Pick options equal to your dice result (repeatable). On a mar you
+					must also describe a flaw in your own resources — that penalty
+					appears below once you apply your choices.
 				</p>
 				{#each OPTIONS as opt}
 					<div class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
@@ -292,10 +350,42 @@
 								brAssetID = parent?.id ?? null;
 							}}
 						/>
+						{#if brWarn}<p class="res-warning">{brWarn}</p>{/if}
 						<button class="action-btn primary"
 							onclick={() => submitBreakResource(plan)}
 							disabled={brBusy || brAssetID == null || brMargID == null}>
 							{brBusy ? '…' : 'Break resource'}
+						</button>
+					</div>
+				{/if}
+
+				{#if marRemaining > 0}
+					<div class="plan-form">
+						<p class="choices-header">
+							Describe a flaw in your own resources ({marRemaining} remaining)
+						</p>
+						<p class="choices-note">
+							The plan marred — you must flaw {marRequired} of your own
+							resources before completing.
+						</p>
+						<CardPicker
+							label="Your resource to flaw"
+							items={penaltyResources}
+							{players}
+							emptyMessage="No eligible resources of your own remain."
+							ownerLabel={() => 'Your resource'}
+							marginaliaMode
+							selectedMarginaliaID={maMargID}
+							onSelectMarginalia={(mID, parent) => {
+								maMargID = mID;
+								maAssetID = parent?.id ?? null;
+							}}
+						/>
+						{#if maWarn}<p class="res-warning">{maWarn}</p>{/if}
+						<button class="action-btn primary"
+							onclick={() => submitPenaltyFlaw(plan)}
+							disabled={maBusy || maAssetID == null || maMargID == null}>
+							{maBusy ? '…' : 'Flaw your resource'}
 						</button>
 					</div>
 				{/if}

@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -76,21 +77,106 @@ func (saHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 
+// ApplyChoice records the make/mar choices (kept in ResData.MakeMarChoices by
+// MakeChoice) and, on a mar, fixes the self-flaw penalty. Mechanical effects
+// (break_resource, reveal_secret) are performed afterwards via extra routes.
+//
+// Mar penalty (rules): "apply 'describe a flaw' to your own resource assets a
+// number of times equal to (difficulty − result)." Because each resource may
+// be flawed at most once and resources can only gain marginalia mid-resolution
+// (never spawn anew), the effective requirement is capped here, once, at the
+// number of the preparer's eligible own resources.
 func (saHandler) ApplyChoice(
-	_ context.Context,
-	_ *PlanDeps,
-	_ *dbgen.Plan,
-	_ *ResolutionData,
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
 	_ []string,
-	_ string,
+	result string,
 ) error {
-	// Choices are recorded via ResData.MakeMarChoices (done in MakeChoice).
-	// Mechanical effects (break_resource, reveal_secret) use extra routes.
+	if result != marOutcome {
+		saLog(ctx, deps, plan, model.SeverityDefault,
+			"Seek Answers succeeded — the preparer presses their inquiries.")
+		return nil
+	}
+
+	roll, err := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil {
+		return fmt.Errorf("could not load roll for mar penalty: %w", err)
+	}
+	diff := roll.Difficulty
+	if roll.AdjustedDifficulty != nil {
+		diff = *roll.AdjustedDifficulty
+	}
+	var res int16
+	if roll.Result != nil {
+		res = *roll.Result
+	}
+	nominal := max(diff-res, 0)
+
+	eligible, err := saEligibleOwnResources(ctx, deps, plan.GameID, plan.PreparerID, nil)
+	if err != nil {
+		return fmt.Errorf("could not count preparer resources: %w", err)
+	}
+	required := min(nominal, int16(len(eligible)))
+
+	sa := resData.EnsureSeekAnswers()
+	sa.MarSelfFlawsRequired = required
+	saLog(ctx, deps, plan, model.SeverityImportant,
+		fmt.Sprintf("Seek Answers marred — the preparer must describe a flaw in %d of their own resources.", required))
 	return nil
 }
 
-func (saHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
+// CanComplete blocks completion of a marred Seek Answers until the preparer has
+// applied the full self-flaw penalty.
+func (saHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
+	sa := resData.SeekAnswers
+	if sa == nil {
+		return nil
+	}
+	if sa.MarSelfFlawsApplied < sa.MarSelfFlawsRequired {
+		return fmt.Errorf("you must describe a flaw in %d more of your own resources before completing",
+			sa.MarSelfFlawsRequired-sa.MarSelfFlawsApplied)
+	}
 	return nil
+}
+
+// saEligibleOwnResources returns the player's non-destroyed resource assets
+// that still have at least one intact marginalium and are not present in
+// `flawed` (already flawed this resolution).
+func saEligibleOwnResources(
+	ctx context.Context,
+	deps *PlanDeps,
+	gameID, ownerID int64,
+	flawed []int64,
+) ([]dbgen.Asset, error) {
+	assets, err := deps.Q.ListAssetsByOwner(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	var out []dbgen.Asset
+	for _, a := range assets {
+		if a.GameID != gameID || a.AssetType != model.AssetResource || a.IsDestroyed {
+			continue
+		}
+		if slices.Contains(flawed, a.ID) {
+			continue
+		}
+		marg, err := deps.Q.ListIntactMarginalia(ctx, a.ID)
+		if err != nil || len(marg) == 0 {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+// saLog emits a Seek Answers action-log entry anchored to the plan's row.
+func saLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	planID := plan.ID
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.seek_answers",
+		severity, body, plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
 }
 
 // MaxChoices: both make and mar choose options from the make list equal to the
@@ -174,24 +260,51 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if _, err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID:       m.ID,
-			TornByID: &player.ID,
-		}); err != nil {
-			respondInternalErr(w, r, "could not tear marginalia", err)
+		resData := loadResolutionData(plan.ResolutionData)
+		sa := resData.EnsureSeekAnswers()
+
+		// "Describe a flaw in any resource asset that has been overlooked until
+		// now" — each resource may be flawed at most once per resolution.
+		if slices.Contains(sa.FlawedResourceIDs, asset.ID) {
+			respondErr(w, http.StatusConflict, "this resource has already been flawed in this plan")
 			return
 		}
 
-		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-			AssetID:  asset.ID,
-			Position: m.Position,
-			TornByID: player.ID,
-		})
+		// On a mar, a flaw on the preparer's own resource discharges the
+		// self-flaw penalty; a flaw on another player's resource is one of the
+		// preparer's make-list options.
+		isMar := planRollIsMar(ctx, deps.Q, plan)
+		isPenalty := isMar && asset.OwnerID == plan.PreparerID
+
+		// Break = tear one marginalium (auto-destroy if it was the last) — the
+		// canonical effect, shared with every other plan.
+		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not break resource", err)
+			return
+		}
+
+		sa.FlawedResourceIDs = append(sa.FlawedResourceIDs, asset.ID)
+		if isPenalty && sa.MarSelfFlawsApplied < sa.MarSelfFlawsRequired {
+			sa.MarSelfFlawsApplied++
+		}
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save flaw state", err)
+			return
+		}
+
+		verb := "described a flaw in"
+		if destroyed {
+			verb = "destroyed"
+		}
+		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s %q.",
+			playerDisplayName(ctx, deps.Q, player.ID), verb, asset.Name))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
 			"asset_id":      asset.ID,
 			"marginalia_id": m.ID,
+			"destroyed":     destroyed,
 		})
 	}
 }

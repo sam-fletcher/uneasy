@@ -30,6 +30,7 @@ type (
 	MIMarOutcome                     = game.MIMarOutcome
 	ExchangeCourtiersResolutionData  = game.ExchangeCourtiersResolutionData
 	ChronicleHistoriesResolutionData = game.ChronicleHistoriesResolutionData
+	SeekAnswersResolutionData        = game.SeekAnswersResolutionData
 	DuelResolutionData               = game.DuelResolutionData
 	DuelPhase                        = game.DuelPhase
 	MakeWarResolutionData            = game.MakeWarResolutionData
