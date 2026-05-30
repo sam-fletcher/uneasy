@@ -13,6 +13,16 @@ import (
 	"uneasy/model"
 )
 
+// breakVerb returns the past-tense verb for a break action's chat log: "broke"
+// for a normal tear, or "destroyed" when that tear removed the asset's last
+// marginalium. Centralises the phrasing shared by every plan that breaks.
+func breakVerb(destroyed bool) string {
+	if destroyed {
+		return "destroyed"
+	}
+	return "broke"
+}
+
 // breakMarginalia performs the canonical "break an asset" effect: tear one
 // marginalia, reveal the asset's secrets to the tearing player, broadcast the
 // tear, and — if that was the asset's last intact marginalium — destroy the

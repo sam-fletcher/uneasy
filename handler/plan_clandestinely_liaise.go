@@ -400,6 +400,9 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s entrusted the meeting's secret to %q.",
+			playerDisplayName(ctx, deps.Q, player.ID), asset.Name))
+
 		// The other participant must refetch the plan to see this submission —
 		// in particular the preparer needs it to learn both have submitted and
 		// unlock the advance. Without this they'd be soft-locked on the
@@ -459,6 +462,7 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		var body struct {
 			Choice        string `json:"choice"`
 			TargetAssetID *int64 `json:"target_asset_id"`
+			TargetMargID  *int64 `json:"target_marginalia_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Choice == "" {
 			respondErr(w, http.StatusBadRequest, "choice is required")
@@ -469,28 +473,29 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			liaiseChoiceLookAtSecret, liaiseChoiceUpdatePeer, liaiseChoiceBreakPeer,
 			liaiseChoiceTakeGift, liaiseChoiceLeveragePartner,
 		}
-		validChoice := slices.Contains(validChoices, body.Choice)
-		if !validChoice {
+		if !slices.Contains(validChoices, body.Choice) {
 			respondErr(w, http.StatusBadRequest, fmt.Sprintf("choice must be one of: %v", validChoices))
 			return
 		}
 
-		// Validate asset-required choices.
-		needsAsset := body.Choice == liaiseChoiceLookAtSecret ||
-			body.Choice == liaiseChoiceTakeGift ||
-			body.Choice == liaiseChoiceLeveragePartner
-		if needsAsset && body.TargetAssetID == nil {
-			respondErr(w, http.StatusBadRequest, fmt.Sprintf("target_asset_id is required for choice %q", body.Choice))
+		// Validate the target. Every Things We Share option targets the
+		// PARTNER's assets (the rules are second-person — "your partner's …").
+		// Each option carries a target asset (and break_peer a marginalia too).
+		partnerID := clOtherParticipantID(plan, player.ID, *ld)
+		if status, msg := clValidateShareTarget(ctx, deps, plan, partnerID, body.Choice,
+			body.TargetAssetID, body.TargetMargID); status != 0 {
+			respondErr(w, status, msg)
 			return
 		}
 
 		// Record the choice in liaise_choices. Effects are applied once both
 		// players have submitted.
 		if _, err := deps.Q.CreateLiaiseChoice(ctx, dbgen.CreateLiaiseChoiceParams{
-			PlanID:        plan.ID,
-			PlayerID:      player.ID,
-			Choice:        body.Choice,
-			TargetAssetID: body.TargetAssetID,
+			PlanID:             plan.ID,
+			PlayerID:           player.ID,
+			Choice:             body.Choice,
+			TargetAssetID:      body.TargetAssetID,
+			TargetMarginaliaID: body.TargetMargID,
 		}); err != nil {
 			respondInternalErr(w, r, "could not record share-choice", err)
 			return
@@ -541,12 +546,13 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 }
 
 // liaiseChoiceApplier applies one player's Things We Share choice. Each handler
-// is responsible for its own DB calls and event broadcasts.
+// is responsible for its own DB calls and event broadcasts. Every option
+// targets the PARTNER's asset (validated at submission in clValidateShareTarget).
 type liaiseChoiceApplier func(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	choice dbgen.LiaiseChoice,
+	choice dbgen.ListLiaiseChoicesByPlanRow,
 ) error
 
 var liaiseChoiceAppliers = map[string]liaiseChoiceApplier{
@@ -554,7 +560,7 @@ var liaiseChoiceAppliers = map[string]liaiseChoiceApplier{
 	liaiseChoiceBreakPeer:       applyBreakPeer,
 	liaiseChoiceLeveragePartner: applyLeveragePartner,
 	liaiseChoiceTakeGift:        applyTakeGift,
-	liaiseChoiceUpdatePeer:      func(context.Context, *PlanDeps, *dbgen.Plan, dbgen.LiaiseChoice) error { return nil },
+	liaiseChoiceUpdatePeer:      applyUpdatePeer,
 }
 
 // clApplyShareChoices applies the mechanical effects of both players' choices
@@ -564,7 +570,7 @@ func clApplyShareChoices(
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	_ ResolutionData,
-	choices []dbgen.LiaiseChoice,
+	choices []dbgen.ListLiaiseChoicesByPlanRow,
 ) error {
 	for _, choice := range choices {
 		applier, ok := liaiseChoiceAppliers[choice.Choice]
@@ -578,7 +584,12 @@ func clApplyShareChoices(
 	return nil
 }
 
-func applyLookAtSecret(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choice dbgen.LiaiseChoice) error {
+func applyLookAtSecret(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	choice dbgen.ListLiaiseChoicesByPlanRow,
+) error {
 	if choice.TargetAssetID == nil {
 		return nil
 	}
@@ -592,42 +603,62 @@ func applyLookAtSecret(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, ch
 		AssetID:  *choice.TargetAssetID,
 		PlayerID: choice.PlayerID,
 	})
+	clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s looked at the secrets of %s.",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), clAssetName(ctx, deps, choice.TargetAssetID)))
 	return nil
 }
 
-// applyBreakPeer tears one marginalia on the player's own (first non-destroyed)
-// peer asset.
-func applyBreakPeer(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choice dbgen.LiaiseChoice) error {
-	assets, err := deps.Q.ListAssetsByOwner(ctx, choice.PlayerID)
-	if err != nil {
-		return fmt.Errorf("could not list player assets: %w", err)
-	}
-	for _, a := range assets {
-		if a.AssetType != model.AssetPeer || a.IsDestroyed {
-			continue
-		}
-		marginalia, err := deps.Q.ListIntactMarginalia(ctx, a.ID)
-		if err != nil || len(marginalia) == 0 {
-			continue
-		}
-		m := marginalia[0]
-		if _, err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID:       m.ID,
-			TornByID: &choice.PlayerID,
-		}); err != nil {
-			return fmt.Errorf("could not tear marginalia for break_peer: %w", err)
-		}
-		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-			AssetID:  a.ID,
-			Position: m.Position,
-			TornByID: choice.PlayerID,
-		})
+// applyUpdatePeer is narrative — the player revises their partner's peer (the
+// edit happens via the asset card). We log it so the change is visible.
+func applyUpdatePeer(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	choice dbgen.ListLiaiseChoicesByPlanRow,
+) error {
+	clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s updated their partner's peer %s.",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), clAssetName(ctx, deps, choice.TargetAssetID)))
+	return nil
+}
+
+// applyBreakPeer tears the breaker's chosen marginalia on the partner's chosen
+// peer (auto-destroy if it was the last) via the canonical break helper. The
+// target asset + marginalia were validated at submission time.
+func applyBreakPeer(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	choice dbgen.ListLiaiseChoicesByPlanRow,
+) error {
+	if choice.TargetAssetID == nil || choice.TargetMarginaliaID == nil {
 		return nil
 	}
+	asset, err := deps.Q.GetAssetByID(ctx, *choice.TargetAssetID)
+	if err != nil {
+		return fmt.Errorf("break_peer: target asset not found: %w", err)
+	}
+	m, err := deps.Q.GetMarginaliaByID(ctx, *choice.TargetMarginaliaID)
+	if err != nil {
+		return fmt.Errorf("break_peer: marginalia not found: %w", err)
+	}
+	if m.IsTorn {
+		return nil // Already torn (e.g. both players targeted the same one).
+	}
+	destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, choice.PlayerID)
+	if err != nil {
+		return fmt.Errorf("could not break partner's peer: %w", err)
+	}
+	clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s %s their partner's peer %q.",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), breakVerb(destroyed), asset.Name))
 	return nil
 }
 
-func applyLeveragePartner(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choice dbgen.LiaiseChoice) error {
+func applyLeveragePartner(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	choice dbgen.ListLiaiseChoicesByPlanRow,
+) error {
 	if choice.TargetAssetID != nil {
 		if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
 			ID:          *choice.TargetAssetID,
@@ -649,26 +680,63 @@ func applyLeveragePartner(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan,
 	}); err != nil {
 		return fmt.Errorf("could not bank die: %w", err)
 	}
+	clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s leveraged %s and banked a die for a future roll.",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), clAssetName(ctx, deps, choice.TargetAssetID)))
 	return nil
 }
 
-// applyTakeGift transfers the target (partner-owned) asset to the chooser.
-// Consent is social; the server simply transfers ownership.
-func applyTakeGift(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, choice dbgen.LiaiseChoice) error {
+// applyTakeGift transfers the partner-owned target asset to the chooser.
+// Consent is social; the server transfers ownership.
+func applyTakeGift(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	choice dbgen.ListLiaiseChoicesByPlanRow,
+) error {
 	if choice.TargetAssetID == nil {
 		return nil
 	}
+	asset, err := deps.Q.GetAssetByID(ctx, *choice.TargetAssetID)
+	if err != nil {
+		return fmt.Errorf("take_gift: target asset not found: %w", err)
+	}
+	oldOwner := asset.OwnerID
 	if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
 		ID:      *choice.TargetAssetID,
 		OwnerID: choice.PlayerID,
 	}); err != nil {
 		return fmt.Errorf("could not transfer gift asset: %w", err)
 	}
-	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetIDPayload{
-		AssetID:  *choice.TargetAssetID,
-		PlayerID: choice.PlayerID,
+	updated, _ := deps.Q.GetAssetByID(ctx, *choice.TargetAssetID)
+	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+		Asset:      updated,
+		OldOwnerID: oldOwner,
+		NewOwnerID: choice.PlayerID,
 	})
+	clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s took %q from their partner as a gift.",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), asset.Name))
 	return nil
+}
+
+// clAssetName resolves an asset id to its name for log bodies; "an asset" on
+// any failure so the log line still reads cleanly.
+func clAssetName(ctx context.Context, deps *PlanDeps, assetID *int64) string {
+	if assetID == nil {
+		return "an asset"
+	}
+	a, err := deps.Q.GetAssetByID(ctx, *assetID)
+	if err != nil {
+		return "an asset"
+	}
+	return fmt.Sprintf("%q", a.Name)
+}
+
+// clLog emits a Clandestinely Liaise action-log entry anchored to the plan row.
+func clLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	planID := plan.ID
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.clandestinely_liaise",
+		severity, body, plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
 }
 
 // ── Redelay Reveal ────────────────────────────────────────────────────────────
@@ -826,13 +894,20 @@ func clFinalizeRedelayReveal(
 		ResultDelay: resultDelay,
 	})
 
+	scheduled := false
 	if !cancelled && resultDelay > 0 && ld.PartnerID != nil {
 		if game, gerr := deps.Q.GetGameByID(ctx, plan.GameID); gerr == nil {
 			newRow := game.CurrentRow + resultDelay
 			if newRow <= publicRecordRowCount {
 				clScheduleNewMeeting(ctx, deps, plan, newRow, *ld.PartnerID)
+				scheduled = true
 			}
 		}
+	}
+	if scheduled {
+		clLog(ctx, deps, plan, model.SeverityDefault, "The pair arranged to meet again.")
+	} else {
+		clLog(ctx, deps, plan, model.SeverityDefault, "The pair parted ways with no future meeting planned.")
 	}
 
 	ld.Phase = LiaiseDone
@@ -852,6 +927,83 @@ func clIsParticipant(plan *dbgen.Plan, playerID int64, ld LiaiseResolutionData) 
 		return true
 	}
 	return false
+}
+
+// clOtherParticipantID returns the participant who is NOT playerID (the
+// partner from playerID's perspective). Returns 0 if it can't be determined.
+func clOtherParticipantID(plan *dbgen.Plan, playerID int64, ld LiaiseResolutionData) int64 {
+	if playerID == plan.PreparerID {
+		if ld.PartnerID != nil {
+			return *ld.PartnerID
+		}
+		return 0
+	}
+	return plan.PreparerID
+}
+
+// clValidateShareTarget enforces that a Things We Share choice targets the
+// partner's assets per the rules (all five options are second-person — "your
+// partner's …"). Returns (0, "") when valid, or an HTTP status + message.
+//
+//   - look_at_secret / leverage_partner: any partner-owned, non-destroyed asset.
+//   - take_gift:                          a partner-owned, non-destroyed NON-peer.
+//   - update_peer / break_peer:           a partner-owned, non-destroyed PEER.
+//     break_peer additionally requires a marginalia on that peer (the breaker
+//     chooses which to tear).
+func clValidateShareTarget(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	partnerID int64,
+	choice string,
+	targetAssetID, targetMargID *int64,
+) (status int, msg string) {
+	if partnerID == 0 {
+		return http.StatusConflict, "liaison partner is not set"
+	}
+	if targetAssetID == nil {
+		return http.StatusBadRequest, fmt.Sprintf("target_asset_id is required for choice %q", choice)
+	}
+	asset, err := deps.Q.GetAssetByID(ctx, *targetAssetID)
+	if err != nil {
+		return http.StatusNotFound, "target asset not found"
+	}
+	if asset.GameID != plan.GameID {
+		return http.StatusBadRequest, "target asset does not belong to this game"
+	}
+	if asset.OwnerID != partnerID {
+		return http.StatusForbidden, "Things We Share options target your partner's assets"
+	}
+	if asset.IsDestroyed {
+		return http.StatusBadRequest, "target asset is destroyed"
+	}
+
+	switch choice {
+	case liaiseChoiceTakeGift:
+		if asset.AssetType == model.AssetPeer {
+			return http.StatusBadRequest, "a gift must be a non-peer asset"
+		}
+	case liaiseChoiceUpdatePeer, liaiseChoiceBreakPeer:
+		if asset.AssetType != model.AssetPeer {
+			return http.StatusBadRequest, fmt.Sprintf("%q targets a peer asset", choice)
+		}
+		if choice == liaiseChoiceBreakPeer {
+			if targetMargID == nil {
+				return http.StatusBadRequest, "break_peer requires target_marginalia_id (the marginalia to tear)"
+			}
+			m, err := deps.Q.GetMarginaliaByID(ctx, *targetMargID)
+			if err != nil {
+				return http.StatusNotFound, "marginalia not found"
+			}
+			if m.AssetID != *targetAssetID {
+				return http.StatusBadRequest, "marginalia does not belong to the target peer"
+			}
+			if m.IsTorn {
+				return http.StatusConflict, "marginalia is already torn"
+			}
+		}
+	}
+	return 0, ""
 }
 
 // clScheduleNewMeeting creates a new Clandestinely Liaise plan for the re-delay meeting.

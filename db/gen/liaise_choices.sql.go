@@ -7,6 +7,8 @@ package dbgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countLiaiseChoicesByPlan = `-- name: CountLiaiseChoicesByPlan :one
@@ -22,63 +24,88 @@ func (q *Queries) CountLiaiseChoicesByPlan(ctx context.Context, planID int64) (i
 
 const createLiaiseChoice = `-- name: CreateLiaiseChoice :one
 
-INSERT INTO liaise_choices (plan_id, player_id, choice, target_asset_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO liaise_choices (plan_id, player_id, choice, target_asset_id, target_marginalia_id)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (plan_id, player_id) DO UPDATE
   SET choice = EXCLUDED.choice,
-      target_asset_id = EXCLUDED.target_asset_id
-RETURNING id, plan_id, player_id, choice, target_asset_id, created_at
+      target_asset_id = EXCLUDED.target_asset_id,
+      target_marginalia_id = EXCLUDED.target_marginalia_id
+RETURNING id, plan_id, player_id, choice, target_asset_id, target_marginalia_id, created_at
 `
 
 type CreateLiaiseChoiceParams struct {
-	PlanID        int64  `db:"plan_id" json:"plan_id"`
-	PlayerID      int64  `db:"player_id" json:"player_id"`
-	Choice        string `db:"choice" json:"choice"`
-	TargetAssetID *int64 `db:"target_asset_id" json:"target_asset_id"`
+	PlanID             int64  `db:"plan_id" json:"plan_id"`
+	PlayerID           int64  `db:"player_id" json:"player_id"`
+	Choice             string `db:"choice" json:"choice"`
+	TargetAssetID      *int64 `db:"target_asset_id" json:"target_asset_id"`
+	TargetMarginaliaID *int64 `db:"target_marginalia_id" json:"target_marginalia_id"`
+}
+
+type CreateLiaiseChoiceRow struct {
+	ID                 int64              `db:"id" json:"id"`
+	PlanID             int64              `db:"plan_id" json:"plan_id"`
+	PlayerID           int64              `db:"player_id" json:"player_id"`
+	Choice             string             `db:"choice" json:"choice"`
+	TargetAssetID      *int64             `db:"target_asset_id" json:"target_asset_id"`
+	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 // sqlc query file for liaise_choices (Clandestinely Liaise "Things We Share" phase).
-func (q *Queries) CreateLiaiseChoice(ctx context.Context, arg CreateLiaiseChoiceParams) (LiaiseChoice, error) {
+func (q *Queries) CreateLiaiseChoice(ctx context.Context, arg CreateLiaiseChoiceParams) (CreateLiaiseChoiceRow, error) {
 	row := q.db.QueryRow(ctx, createLiaiseChoice,
 		arg.PlanID,
 		arg.PlayerID,
 		arg.Choice,
 		arg.TargetAssetID,
+		arg.TargetMarginaliaID,
 	)
-	var i LiaiseChoice
+	var i CreateLiaiseChoiceRow
 	err := row.Scan(
 		&i.ID,
 		&i.PlanID,
 		&i.PlayerID,
 		&i.Choice,
 		&i.TargetAssetID,
+		&i.TargetMarginaliaID,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listLiaiseChoicesByPlan = `-- name: ListLiaiseChoicesByPlan :many
-SELECT id, plan_id, player_id, choice, target_asset_id, created_at
+SELECT id, plan_id, player_id, choice, target_asset_id, target_marginalia_id, created_at
 FROM liaise_choices
 WHERE plan_id = $1
 ORDER BY created_at ASC
 `
 
-func (q *Queries) ListLiaiseChoicesByPlan(ctx context.Context, planID int64) ([]LiaiseChoice, error) {
+type ListLiaiseChoicesByPlanRow struct {
+	ID                 int64              `db:"id" json:"id"`
+	PlanID             int64              `db:"plan_id" json:"plan_id"`
+	PlayerID           int64              `db:"player_id" json:"player_id"`
+	Choice             string             `db:"choice" json:"choice"`
+	TargetAssetID      *int64             `db:"target_asset_id" json:"target_asset_id"`
+	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+func (q *Queries) ListLiaiseChoicesByPlan(ctx context.Context, planID int64) ([]ListLiaiseChoicesByPlanRow, error) {
 	rows, err := q.db.Query(ctx, listLiaiseChoicesByPlan, planID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []LiaiseChoice{}
+	items := []ListLiaiseChoicesByPlanRow{}
 	for rows.Next() {
-		var i LiaiseChoice
+		var i ListLiaiseChoicesByPlanRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlanID,
 			&i.PlayerID,
 			&i.Choice,
 			&i.TargetAssetID,
+			&i.TargetMarginaliaID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

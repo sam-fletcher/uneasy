@@ -141,12 +141,13 @@ type Law struct {
 }
 
 type LiaiseChoice struct {
-	ID            int64              `db:"id" json:"id"`
-	PlanID        int64              `db:"plan_id" json:"plan_id"`
-	PlayerID      int64              `db:"player_id" json:"player_id"`
-	Choice        string             `db:"choice" json:"choice"`
-	TargetAssetID *int64             `db:"target_asset_id" json:"target_asset_id"`
-	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ID                 int64              `db:"id" json:"id"`
+	PlanID             int64              `db:"plan_id" json:"plan_id"`
+	PlayerID           int64              `db:"player_id" json:"player_id"`
+	Choice             string             `db:"choice" json:"choice"`
+	TargetAssetID      *int64             `db:"target_asset_id" json:"target_asset_id"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
 }
 
 type Marginalium struct {

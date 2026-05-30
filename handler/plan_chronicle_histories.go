@@ -410,12 +410,8 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		verb := "broke an invoked artifact,"
-		if destroyed {
-			verb = "destroyed the invoked artifact"
-		}
-		chLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s %q.",
-			playerDisplayName(ctx, deps.Q, player.ID), verb, artifact.Name))
+		chLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s the invoked artifact %q.",
+			playerDisplayName(ctx, deps.Q, player.ID), breakVerb(destroyed), artifact.Name))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
@@ -586,11 +582,7 @@ func chApplyMarEffect(
 		if err != nil {
 			return "", http.StatusInternalServerError, "could not break artifact"
 		}
-		verb := "broke"
-		if destroyed {
-			verb = "destroyed"
-		}
-		return fmt.Sprintf("%s %s the invoked artifact %q.", who, verb, artifact.Name), 0, ""
+		return fmt.Sprintf("%s %s the invoked artifact %q.", who, breakVerb(destroyed), artifact.Name), 0, ""
 	case "invoke_another":
 		if in.assetID == nil {
 			return "", http.StatusBadRequest, "invoke_another requires asset_id"

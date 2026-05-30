@@ -96,6 +96,9 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 	r := chi.NewRouter()
 	r.Use(appMiddleware.EnsureSession(q))
 	r.Post("/api/tables/{id}/prepare-plan", PreparePlan(store, manager))
+	// Simultaneous-reveal submit — needed by variable-delay plans (Clandestinely
+	// Liaise, Make War) to assign their row before resolution.
+	r.Post("/api/reveals/{revealId}/submit", SubmitReveal(store, manager))
 	r.Route("/api/plans/{planId}", func(rr chi.Router) {
 		rr.Post("/resolve", ResolvePlan(store, manager))
 		rr.Post("/make-choice", MakeChoice(store, manager))

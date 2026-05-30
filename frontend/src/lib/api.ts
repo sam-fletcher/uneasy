@@ -1575,10 +1575,15 @@ export function keepSecret(planID: number, assetID: number): Promise<PlanEcho> {
 	});
 }
 
-/** Clandestinely Liaise (phase 3) — submit a "Things We Share" choice. */
+/**
+ * Clandestinely Liaise (phase 3) — submit a "Things We Share" choice. Every
+ * option targets the PARTNER's asset (`target_asset_id`). `break_peer` also
+ * requires `target_marginalia_id` (the breaker picks which marginalia to tear;
+ * the break applies atomically server-side with auto-destroy on the last one).
+ */
 export function shareChoice(
 	planID: number,
-	body: { choice: string; target_asset_id?: number | null; die_face?: number | null }
+	body: { choice: string; target_asset_id?: number | null; target_marginalia_id?: number | null }
 ): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/share-choice`, {
 		method: 'POST',

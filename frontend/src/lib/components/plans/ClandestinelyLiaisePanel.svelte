@@ -20,10 +20,10 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
-	import D6Face from './D6Face.svelte';
 	import {
 		playerName,
 		playersExcept, ownerUnleveragedAssets, ownerIntactAssets,
+		assetsWithIntactMarginalia,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -130,6 +130,26 @@
 		amPreparer ? clState.partnerID : (plan?.preparer_id ?? null),
 	);
 	const otherParticipantAssets = $derived(ownerIntactAssets(assets, otherParticipantID));
+	// Partner's peers (for update_peer); and partner's peers that still have an
+	// intact marginalia (for break_peer's marginalia-pick mode).
+	const partnerPeers = $derived(otherParticipantAssets.filter(a => a.asset_type === 'peer'));
+	const partnerBreakablePeers = $derived(
+		assetsWithIntactMarginalia(partnerPeers),
+	);
+
+	// Destruction warning: tearing a peer's last intact marginalium destroys it.
+	// If empty margin slots remain (< 4 total), the owner could add one first.
+	function destructionWarning(a: Asset | null | undefined): string {
+		if (!a) return '';
+		const total = (a.marginalia ?? []).length;
+		const intact = (a.marginalia ?? []).filter(m => !m.is_torn).length;
+		if (intact <= 1 && total < 4) {
+			return `Heads up: this is ${a.name}'s last note — tearing it will destroy `
+				+ `the peer. Its owner can add another marginalium first to keep it intact.`;
+		}
+		return '';
+	}
+	const shareBreakWarn = $derived(destructionWarning(assets.find(a => a.id === shareAssetID)));
 
 	// Has the current player submitted keep-secret?
 	const iKeptSecret = $derived(
@@ -171,24 +191,29 @@
 	}
 
 	// ── Phase 3: share choice ────────────────────────────────────────────────
+	// Every option targets the PARTNER's assets (the rules are second-person —
+	// "your partner's …"). update_peer / break_peer target the partner's PEER;
+	// take_gift a partner NON-peer; look / leverage any partner asset.
 	const SHARE_OPTIONS: { key: string; label: string; hint: string }[] = [
 		{ key: 'look_at_secret',   label: "Look at partner's secrets",
 			hint: "Pick one of their assets — you'll see its secrets." },
-		{ key: 'update_peer',      label: 'Update your own peer',
-			hint: 'Narrative only — edit the peer via its asset card later.' },
-		{ key: 'break_peer',       label: 'Break your own peer',
-			hint: 'Server tears one marginalia on your first intact peer.' },
+		{ key: 'update_peer',      label: "Update partner's peer",
+			hint: 'Narrative — pick their peer; edit it via its asset card later.' },
+		{ key: 'break_peer',       label: "Break partner's peer",
+			hint: 'Pick their peer and the marginalia to tear (you choose which).' },
 		{ key: 'take_gift',        label: 'Take a gift from partner',
 			hint: "Pick one of their non-peer assets — it transfers to you." },
 		{ key: 'leverage_partner', label: "Leverage partner's asset, bank a die",
-			hint: 'Pick one of their assets plus a die face (1–6) to bank.' },
+			hint: "Pick one of their assets; you bank a die for a future roll." },
 	];
-	const SHARE_NEEDS_ASSET = new Set(['look_at_secret', 'take_gift', 'leverage_partner']);
-	const SHARE_NEEDS_FACE = new Set(['leverage_partner']);
+	// look / take_gift / leverage pick a single asset; update_peer / break_peer
+	// pick the partner's peer (break_peer additionally needs a marginalia).
+	const SHARE_NEEDS_ASSET = new Set(['look_at_secret', 'take_gift', 'leverage_partner', 'update_peer', 'break_peer']);
+	const SHARE_NEEDS_MARG = new Set(['break_peer']);
 
 	let shareChoiceKey = $state<string | null>(null);
 	let shareAssetID = $state<number | null>(null);
-	let shareDieFace = $state<number | null>(null);
+	let shareMargID = $state<number | null>(null);
 	let shareBusy = $state(false);
 	let iShared = $state(false);
 
@@ -200,7 +225,7 @@
 			keepSecretAssetID = null;
 			shareChoiceKey = null;
 			shareAssetID = null;
-			shareDieFace = null;
+			shareMargID = null;
 			iShared = false;
 		}
 	});
@@ -208,8 +233,7 @@
 	const shareSubmittable = $derived.by(() => {
 		if (shareChoiceKey == null) return false;
 		if (SHARE_NEEDS_ASSET.has(shareChoiceKey) && shareAssetID == null) return false;
-		if (SHARE_NEEDS_FACE.has(shareChoiceKey)
-			&& (shareDieFace == null || shareDieFace < 1 || shareDieFace > 6)) return false;
+		if (SHARE_NEEDS_MARG.has(shareChoiceKey) && shareMargID == null) return false;
 		return true;
 	});
 
@@ -220,7 +244,7 @@
 			await shareChoice(p.id, {
 				choice: shareChoiceKey,
 				target_asset_id: SHARE_NEEDS_ASSET.has(shareChoiceKey) ? shareAssetID : null,
-				die_face: SHARE_NEEDS_FACE.has(shareChoiceKey) ? shareDieFace : null,
+				target_marginalia_id: SHARE_NEEDS_MARG.has(shareChoiceKey) ? shareMargID : null,
 			});
 			iShared = true;
 			onPlansChanged();
@@ -388,7 +412,7 @@
 									onclick={() => {
 										shareChoiceKey = shareChoiceKey === opt.key ? null : opt.key;
 										shareAssetID = null;
-										shareDieFace = null;
+										shareMargID = null;
 									}}
 								>{opt.label}</button>
 							{/each}
@@ -401,7 +425,30 @@
 						{/if}
 					</FormField>
 
-					{#if shareChoiceKey && SHARE_NEEDS_ASSET.has(shareChoiceKey)}
+					{#if shareChoiceKey === 'break_peer'}
+						<CardPicker
+							label="Partner's peer to break (tear a marginalia)"
+							items={partnerBreakablePeers}
+							{players}
+							emptyMessage="Your partner has no peer with an intact marginalia."
+							marginaliaMode
+							selectedMarginaliaID={shareMargID}
+							onSelectMarginalia={(mID, parent) => {
+								shareMargID = mID;
+								shareAssetID = parent?.id ?? null;
+							}}
+						/>
+						{#if shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}
+					{:else if shareChoiceKey === 'update_peer'}
+						<CardPicker
+							label="Partner's peer to update"
+							items={partnerPeers}
+							{players}
+							emptyMessage="Your partner has no peer to update."
+							selected={shareAssetID}
+							onSelect={(id) => (shareAssetID = id)}
+						/>
+					{:else if shareChoiceKey && SHARE_NEEDS_ASSET.has(shareChoiceKey)}
 						{@const candidates = otherParticipantAssets.filter(a =>
 							shareChoiceKey === 'take_gift' ? a.asset_type !== 'peer' : true,
 						)}
@@ -412,24 +459,6 @@
 							selected={shareAssetID}
 							onSelect={(id) => (shareAssetID = id)}
 						/>
-					{/if}
-
-					{#if shareChoiceKey && SHARE_NEEDS_FACE.has(shareChoiceKey)}
-						<FormField label="Die face to bank">
-							<div class="chip-row">
-								{#each [1, 2, 3, 4, 5, 6] as face}
-									<button
-										type="button"
-										class="chip-btn face-chip"
-										class:active={shareDieFace === face}
-										aria-label={`Bank ${face}`}
-										onclick={() => (shareDieFace = face)}
-									>
-										<D6Face value={face} size={28} />
-									</button>
-								{/each}
-							</div>
-						</FormField>
 					{/if}
 
 					<button class="action-btn primary"
