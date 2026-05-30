@@ -47,7 +47,6 @@
 	const rankings = $derived(ctx.rankings);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -211,7 +210,7 @@
 			<div class="complete-section">
 				<p class="choices-applied">The festivity has wound down.</p>
 				{#if completeError}<p class="res-error">{completeError}</p>{/if}
-				{#if isFocusPlayer}
+				{#if amHost}
 					<button class="action-btn primary" onclick={onComplete} disabled={completeBusy}>
 						{completeBusy ? '…' : 'Complete plan'}
 					</button>

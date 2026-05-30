@@ -125,20 +125,16 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 	expect(planAfterReveal.row_number, 'row_number not set after reveal').toBeTruthy();
 	await advanceToRow(game_id, planAfterReveal.row_number!, ctxByPlayer, aliceCtx);
 
-	let focusGame = await fetchGame(aliceCtx, game_id);
-	const resolveCtx = ctxByPlayer[focusGame.focus_player_id!];
-	const resolveRes = await resolveCtx.request.post(`/api/plans/${planAfterReveal.id}/resolve`);
-	// Advancing onto the plan's row auto-kicks-off resolution (plans.go:918), so
-	// the explicit resolve here races with that and may 409 once the plan is
-	// already 'resolving'. Either outcome means the liaison is now resolving.
+	// The preparer (alice) resolves their own plan. Advancing onto the plan's
+	// row auto-kicks-off resolution (plans.go), so this may 409 once the plan
+	// is already 'resolving'. Either outcome means the liaison is now resolving.
+	const resolveRes = await aliceCtx.request.post(`/api/plans/${planAfterReveal.id}/resolve`);
 	if (!resolveRes.ok()) {
 		expect(await resolveRes.text(), 'unexpected resolve failure').toContain('not in pending status');
 	}
 
-	// ── Advance together_at_last → secrets_we_keep (focus player) ────────────
-	focusGame = await fetchGame(aliceCtx, game_id);
-	const advanceCtx = ctxByPlayer[focusGame.focus_player_id!];
-	const advanceRes = await advanceCtx.request.post(`/api/plans/${planAfterReveal.id}/advance-liaise`);
+	// ── Advance together_at_last → secrets_we_keep (the preparer drives) ─────
+	const advanceRes = await aliceCtx.request.post(`/api/plans/${planAfterReveal.id}/advance-liaise`);
 	expect(advanceRes.ok(), `advance-liaise failed: ${await advanceRes.text()}`).toBeTruthy();
 
 	// ── Open both players' tables; the resolving liaise panel auto-renders ───

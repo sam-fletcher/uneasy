@@ -38,7 +38,6 @@
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -52,8 +51,11 @@
 	} | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
+	// The preparer resolves their own plan; the perform_steps demand winner may
+	// drive the choice in their place.
+	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const amChoiceActor = $derived(
-		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
 	);
 
 	const OPTIONS = [
@@ -483,7 +485,7 @@
 				{/if}
 
 				{#if subflowsDone}
-					{#if isFocusPlayer}
+					{#if isPreparer}
 						<p class="complete-note">
 							Post any follow-scene narration in the scene thread, then complete.
 						</p>
@@ -499,7 +501,7 @@
 				{/if}
 			</div>
 
-		{:else if choicesDone && isFocusPlayer}
+		{:else if choicesDone && isPreparer}
 			<!-- Mar: preparer watches the counter-rumor unfold, then completes. -->
 			<div class="complete-section">
 				{#if subflowsDone}

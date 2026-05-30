@@ -30,7 +30,6 @@
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onRollCreated = $derived(ctx.onRollCreated);
@@ -47,8 +46,11 @@
 	// Demand overlay (Stage 4): if a resolved+made demand targets this plan,
 	// the perform_steps winner submits make/mar in place of the preparer.
 	let performStepsWinnerID = $state<number | null>(null);
+	// The preparer resolves their own plan; the perform_steps demand winner may
+	// drive the choice in their place.
+	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const amChoiceActor = $derived(
-		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
 	);
 
 	// ── Prep state ────────────────────────────────────────────────────────────
@@ -307,7 +309,6 @@
 	</fieldset>
 
 {:else if plan}
-	{@const isPreparer = currentPlayerID === plan.preparer_id}
 	{@const isTarget = plan.target_player_id != null && currentPlayerID === plan.target_player_id}
 	{@const rd = parseResolutionData(plan)}
 	{@const ec = rd.exchange_courtiers ?? {}}
@@ -487,7 +488,7 @@
 					</p>
 				{/if}
 
-			{:else if isFocusPlayer}
+			{:else if isPreparer}
 				<div class="complete-section">
 					{#if existingChoices.length > 0}
 						<p class="choices-applied">Choices applied: {existingChoices.join(', ')}</p>
@@ -501,7 +502,7 @@
 				</div>
 			{/if}
 
-		{:else if !isFocusPlayer && !isTarget}
+		{:else if !isPreparer && !isTarget}
 			<p class="ft-prompt muted">
 				{playerName(players, plan.preparer_id)} is resolving Exchange Courtiers…
 			</p>

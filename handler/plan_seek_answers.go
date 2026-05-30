@@ -131,7 +131,7 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the focus player can break resources")
+			respondErr(w, http.StatusForbidden, "only the preparer can break resources")
 			return
 		}
 
@@ -218,7 +218,7 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the focus player can reveal secrets")
+			respondErr(w, http.StatusForbidden, "only the preparer can reveal secrets")
 			return
 		}
 

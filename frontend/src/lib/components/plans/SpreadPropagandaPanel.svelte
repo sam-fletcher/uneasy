@@ -29,7 +29,6 @@
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -39,8 +38,11 @@
 	const prepDraft = $derived(ctx.prepDraft as { notes?: string } | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
+	// The preparer resolves their own plan; the perform_steps demand winner may
+	// drive the choice in their place.
+	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const amChoiceActor = $derived(
-		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
 	);
 
 	// Prep state
@@ -115,7 +117,6 @@
 	// give_peer (a) and break_self (c) need the preparer to pick an asset, so
 	// they resolve through dedicated routes after the make-choice is recorded.
 	const spData = $derived(plan ? (parseResolutionData(plan).spread_propaganda ?? {}) : {});
-	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const needsGivePeer = $derived(!!spData.give_peer_required && !spData.give_peer_done);
 	const needsBreakSelf = $derived(!!spData.break_self_required && !spData.break_self_done);
 	const marEffectsPending = $derived(needsGivePeer || needsBreakSelf);
@@ -245,7 +246,7 @@
 					</div>
 				{/if}
 
-				{#if isFocusPlayer && !marEffectsPending}
+				{#if isPreparer && !marEffectsPending}
 					<p class="complete-note">
 						Write any follow-scene narration in the scene thread, then complete the plan.
 					</p>

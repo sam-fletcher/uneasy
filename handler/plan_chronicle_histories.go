@@ -147,7 +147,7 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the focus player can invoke artifacts")
+			respondErr(w, http.StatusForbidden, "only the preparer can invoke artifacts")
 			return
 		}
 

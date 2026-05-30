@@ -68,13 +68,14 @@ func TestMakeChoice_EnforcesOptionBudget(t *testing.T) {
 	// Consistent mar: result = difficulty − 1, so the mar budget is exactly 1.
 	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
 
+	preparerIdx := h.preparerIdxFor(plan.ID)
 	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
-	code, body := h.post(h.focusPlayerIdx(), path, map[string]any{
+	code, body := h.post(preparerIdx, path, map[string]any{
 		"result": "mar", "choices": []string{"lay_low", "give_peer"},
 	})
 	assert.Equalf(t, http.StatusUnprocessableEntity, code, "over-budget should 422: %v", body)
 
-	code, body = h.post(h.focusPlayerIdx(), path, map[string]any{
+	code, body = h.post(preparerIdx, path, map[string]any{
 		"result": "mar", "choices": []string{"lay_low"},
 	})
 	require.Equalf(t, http.StatusOK, code, "within budget should succeed: %v", body)
@@ -106,9 +107,9 @@ func TestSpreadPropaganda_Mar_GivePeer_BlocksUntilTransferred(t *testing.T) {
 	h.makeChoice(plan.ID, "mar", []string{"give_peer"})
 
 	// Completion is blocked until the peer is actually handed over. Completion
-	// is focus-gated, so drive it as the focus player.
+	// is preparer-gated, so drive it as the preparer.
 	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
-	code, body := h.post(h.focusPlayerIdx(), completePath, nil)
+	code, body := h.post(preparerIdx, completePath, nil)
 	require.Equalf(t, http.StatusConflict, code, "complete should be blocked: %v", body)
 
 	// Hand the peer to the recipient.
@@ -160,7 +161,7 @@ func TestSpreadPropaganda_Mar_BreakSelf_BlocksUntilBroken(t *testing.T) {
 	h.makeChoice(plan.ID, "mar", []string{"break_self"})
 
 	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
-	code, body := h.post(h.focusPlayerIdx(), completePath, nil)
+	code, body := h.post(preparerIdx, completePath, nil)
 	require.Equalf(t, http.StatusConflict, code, "complete should be blocked: %v", body)
 
 	// Breaking someone else's asset is rejected.

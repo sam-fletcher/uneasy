@@ -169,7 +169,7 @@ func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the focus player can name peers")
+			respondErr(w, http.StatusForbidden, "only the preparer can name peers")
 			return
 		}
 
@@ -276,7 +276,7 @@ func finalizePeersHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the focus player can finalize peers")
+			respondErr(w, http.StatusForbidden, "only the preparer can finalize peers")
 			return
 		}
 
@@ -340,7 +340,7 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the focus player can schedule delayed arrivals")
+			respondErr(w, http.StatusForbidden, "only the preparer can schedule delayed arrivals")
 			return
 		}
 
@@ -526,7 +526,7 @@ func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the focus player resolves the introductions")
+			respondErr(w, http.StatusForbidden, "only the preparer resolves the introductions")
 			return
 		}
 

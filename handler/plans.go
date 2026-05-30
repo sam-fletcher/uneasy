@@ -76,9 +76,11 @@ func requirePlanAccess(
 	return &plan, player, true
 }
 
-// requirePlanFocus returns the game and plan, verifying the caller is the
-// focus player and the game is in main_event phase.
-func requirePlanFocus(
+// requirePlanPreparer returns the game and plan, verifying the caller is the
+// plan's preparer and the game is in main_event phase. Per the rules each plan
+// is resolved by its own preparer (the "actor"), not the current focus player —
+// the focus player only sets scenes and prepares plans.
+func requirePlanPreparer(
 	w http.ResponseWriter,
 	r *http.Request,
 	q *dbgen.Queries,
@@ -96,8 +98,8 @@ func requirePlanFocus(
 		respondErr(w, http.StatusConflict, "game is not in the main event phase")
 		return nil, nil, false
 	}
-	if game.FocusPlayerID == nil || *game.FocusPlayerID != player.ID {
-		respondErr(w, http.StatusForbidden, "only the focus player can do this")
+	if player.ID != plan.PreparerID {
+		respondErr(w, http.StatusForbidden, "only the plan's preparer can resolve it")
 		return nil, nil, false
 	}
 	return &game, plan, true
@@ -125,17 +127,19 @@ func requirePlanResolving(w http.ResponseWriter, plan *dbgen.Plan) bool {
 	return true
 }
 
-// makeChoiceAllowedNonFocus returns true if the caller is permitted to drive
-// make-choice on this plan despite not being the current focus player.
-// Three roles qualify:
+// makeChoiceAllowedNonPreparer returns true if the caller is permitted to drive
+// make-choice on this plan despite not being the plan's preparer (the normal
+// resolver). These roles qualify because the plan text hands them a choice:
 //
 //   - Make Demands "perform_steps" winner — submits preparer-equivalent
 //     choices on the target plan.
 //   - Propose Duel target on a mar outcome — picks which staked assets to
 //     claim from the preparer.
+//   - Exchange Courtiers target on a mar outcome — chooses fair_trade /
+//     riposte / forfeit against the preparer.
 //   - Spread Rumors target-asset owner on a mar outcome — drives the
 //     counter-rumor options applied to the preparer's assets.
-func makeChoiceAllowedNonFocus(
+func makeChoiceAllowedNonPreparer(
 	ctx context.Context,
 	q *dbgen.Queries,
 	plan *dbgen.Plan,
@@ -963,7 +967,7 @@ func kickoffPlanResolution(
 // stays pending and the focus player can re-trigger via this endpoint.
 func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, plan, ok := requirePlanFocus(w, r, s.Q)
+		game, plan, ok := requirePlanPreparer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -1020,12 +1024,12 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "game is not in the main event phase")
 			return
 		}
-		// Normally only the focus player may make plan choices. A few specific
-		// roles may also drive make-choice on someone else's plan; see
-		// makeChoiceAllowedNonFocus for the exhaustive list.
-		isFocus := game.FocusPlayerID != nil && *game.FocusPlayerID == player.ID
-		if !isFocus && !makeChoiceAllowedNonFocus(r.Context(), s.Q, plan, player) {
-			respondErr(w, http.StatusForbidden, "only the focus player can do this")
+		// Normally only the plan's preparer (the resolver) may make plan
+		// choices. A few specific roles may also drive make-choice on the
+		// preparer's plan; see makeChoiceAllowedNonPreparer for the list.
+		isPreparer := player.ID == plan.PreparerID
+		if !isPreparer && !makeChoiceAllowedNonPreparer(r.Context(), s.Q, plan, player) {
+			respondErr(w, http.StatusForbidden, "only the plan's preparer can do this")
 			return
 		}
 		if plan.Status != model.PlanResolving {
@@ -1106,7 +1110,7 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // stored result field (e.g. EC fair trade accept path).
 func CompletePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, ok := requirePlanFocus(w, r, s.Q)
+		_, plan, ok := requirePlanPreparer(w, r, s.Q)
 		if !ok {
 			return
 		}

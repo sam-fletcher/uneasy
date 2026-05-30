@@ -69,6 +69,17 @@ func (pdHandler) ComputeDifficulty(
 	return gamepkg.ProposeDecreeDifficulty(rank), nil
 }
 
+// TODO(decree-signatory): resolution authority is split. call-roll and
+// set-addendum gate on the *signatory* (per the rules — "Law goes into effect
+// with the signatory's addendum"), but make-choice/complete now gate on the
+// *preparer* (requirePlanPreparer, like every other plan). When a higher-power
+// council member displaces the preparer as signatory, the signatory calls the
+// roll and writes the addendum, yet only the preparer can submit make-choice
+// (which enacts the law) and complete the plan. Decide whether enacting the law
+// should be the signatory's action and, if so, allow the signatory through
+// makeChoiceAllowedNonPreparer + CompletePlan. Part of the not-yet-done Decree
+// rules audit.
+//
 // OnResolve initialises the council: sets the default signatory to the
 // preparer and returns nil (the dice roll is created later by call-roll,
 // once the council meeting is complete).

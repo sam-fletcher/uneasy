@@ -115,12 +115,11 @@ test('propose duel: setup → staking → bouts → final roll', async ({ browse
 	const duel = plans.find((p: { plan_type: string }) => p.plan_type === 'propose_duel');
 	expect(duel, 'duel plan not found').toBeTruthy();
 
-	const focusGame = await fetchGame(aliceCtx, game_id);
-	const resolveCtx = ctxByPlayer[focusGame.focus_player_id!];
-	const resolveRes = await resolveCtx.request.post(`/api/plans/${duel.id}/resolve`);
-	// Advancing onto the plan's row auto-kicks-off resolution (plans.go:918), so
-	// the explicit resolve here races with that and may 409 once the plan is
-	// already 'resolving'. Either outcome means the duel is now resolving.
+	// The preparer (alice) resolves their own plan. Advancing onto the plan's
+	// row auto-kicks-off resolution (plans.go), so the explicit resolve here
+	// races with that and may 409 once the plan is already 'resolving'. Either
+	// outcome means the duel is now resolving.
+	const resolveRes = await aliceCtx.request.post(`/api/plans/${duel.id}/resolve`);
 	if (!resolveRes.ok()) {
 		expect(await resolveRes.text(), 'unexpected resolve failure').toContain('not in pending status');
 	}

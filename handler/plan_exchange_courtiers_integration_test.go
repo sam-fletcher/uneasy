@@ -90,9 +90,10 @@ func TestExchangeCourtiers_Mar_Forfeit_TargetClaimsPreparerPeer(t *testing.T) {
 	code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"forfeit"})
 	require.Equalf(t, http.StatusOK, code, "target make-choice: %v", body)
 
-	// Completion is blocked until the target claims a peer.
+	// Completion is blocked until the target claims a peer. Completion is
+	// preparer-gated, so drive it as the preparer.
 	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
-	code, body = h.post(h.focusPlayerIdx(), completePath, nil)
+	code, body = h.post(preparerIdx, completePath, nil)
 	require.Equalf(t, http.StatusConflict, code, "complete should be blocked: %v", body)
 
 	// A non-target player cannot claim.

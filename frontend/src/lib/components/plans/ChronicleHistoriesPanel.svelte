@@ -43,7 +43,6 @@
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -54,8 +53,11 @@
 	const prepDraft = $derived(ctx.prepDraft as { notes?: string } | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
+	// The preparer resolves their own plan; the perform_steps demand winner may
+	// drive the choice in their place.
+	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const amChoiceActor = $derived(
-		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
 	);
 
 	const OPTIONS = [
@@ -297,7 +299,7 @@
 				</ul>
 			{/if}
 
-			{#if isFocusPlayer && !invokePhaseClosed}
+			{#if isPreparer && !invokePhaseClosed}
 				<div class="plan-form" style="margin-top:0.5rem;">
 					<CardPicker
 						label="Invoke an artifact (pre-roll)"
@@ -318,7 +320,7 @@
 						additional invocations happen through the mar "invoke another" option.
 					</p>
 				</div>
-			{:else if isFocusPlayer && invokePhaseClosed}
+			{:else if isPreparer && invokePhaseClosed}
 				<p class="choices-note muted" style="margin-top:0.5rem;">
 					Invoke phase closed (dice have been rolled).
 				</p>
@@ -416,7 +418,7 @@
 					</ul>
 				{/if}
 
-				{#if isFocusPlayer}
+				{#if isPreparer}
 					<p class="complete-note" style="margin-top:0.5rem;">
 						When every player has chosen, complete the plan.
 					</p>
@@ -427,7 +429,7 @@
 				{/if}
 			</div>
 
-		{:else if choicesDone && isFocusPlayer}
+		{:else if choicesDone && isPreparer}
 			<div class="complete-section">
 				<p class="choices-applied">
 					Choices applied:

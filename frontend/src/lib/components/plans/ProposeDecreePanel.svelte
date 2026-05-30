@@ -39,7 +39,6 @@
 	const rankings = $derived(ctx.rankings);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onRollCreated = $derived(ctx.onRollCreated);
@@ -52,8 +51,11 @@
 	const prepDraft = $derived(ctx.prepDraft as { notes?: string } | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
+	// The preparer resolves their own plan; the perform_steps demand winner may
+	// drive the choice in their place.
+	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const amChoiceActor = $derived(
-		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
 	);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
@@ -383,7 +385,7 @@
 					</p>
 				{/if}
 
-				{#if isFocusPlayer}
+				{#if isPreparer}
 					<button class="action-btn primary"
 						onclick={() => onComplete(plan)} disabled={resBusy}>
 						{resBusy ? '…' : 'Complete plan'}

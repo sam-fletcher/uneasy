@@ -198,15 +198,14 @@ func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 
 // clAdvanceLiaiseHandler handles POST /api/plans/:planId/advance-liaise.
 //
-// The focus player (preparer) advances the liaise to the next phase.
-// Valid transitions:
+// The preparer advances the liaise to the next phase. Valid transitions:
 //
 //	together_at_last → secrets_we_keep
 //	secrets_we_keep  → things_we_share   (only after both keep-secret submitted)
 //	things_we_share  → when_will_i_see_you_again (only after both share-choice submitted)
 func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, ok := requirePlanFocus(w, r, deps.Q)
+		_, plan, ok := requirePlanPreparer(w, r, deps.Q)
 		if !ok {
 			return
 		}

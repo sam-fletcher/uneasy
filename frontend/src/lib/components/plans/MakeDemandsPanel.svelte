@@ -37,7 +37,6 @@
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const currentRow = $derived(ctx.currentRow);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -415,7 +414,7 @@
 			</div>
 		{/if}
 
-		{#if canComplete && isFocusPlayer}
+		{#if canComplete && plan != null && currentPlayerID === plan.preparer_id}
 			<button class="action-btn primary" onclick={onComplete} disabled={resBusy}>
 				{resBusy ? '…' : 'Complete plan'}
 			</button>

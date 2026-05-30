@@ -38,7 +38,6 @@
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -48,8 +47,11 @@
 	const prepDraft = $derived(ctx.prepDraft as { peer_count?: number; notes?: string } | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
+	// The preparer resolves their own plan; the perform_steps demand winner may
+	// drive the choice in their place.
+	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const amChoiceActor = $derived(
-		isFocusPlayer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
 	);
 
 	// Prep state
@@ -290,7 +292,7 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
-		{#if needsPeerNaming && isFocusPlayer}
+		{#if needsPeerNaming && isPreparer}
 			<div class="mi-naming">
 				<p class="form-hint">
 					Name each of the {miPeerCountTarget}
@@ -318,7 +320,7 @@
 				</div>
 			</div>
 
-		{:else if needsPeerNaming && !isFocusPlayer}
+		{:else if needsPeerNaming && !isPreparer}
 			<p class="ft-prompt muted">
 				{playerName(players, plan.preparer_id)} is naming the new peers…
 			</p>
@@ -336,7 +338,7 @@
 					onToggle={toggleChoice}
 					onSubmit={() => onApplyChoices(plan, 'make')}
 				/>
-			{:else if choicesDone && isFocusPlayer}
+			{:else if choicesDone && isPreparer}
 				<div class="complete-section">
 					<p class="complete-note">
 						Write any follow-scene narration in the scene thread, then complete the plan.
@@ -353,7 +355,7 @@
 
 		{:else if rollOutcome === 'mar'}
 			{#if !marPending}
-				{#if isFocusPlayer}
+				{#if isPreparer}
 					<div class="complete-section">
 						<p class="choices-note">The introductions were marred — resolve each newcomer's fate.</p>
 						<button class="action-btn primary" onclick={() => onApplyChoices(plan, 'mar')} disabled={choicesBusy}>
@@ -390,7 +392,7 @@
 						</div>
 					{/each}
 
-					{#if isFocusPlayer && unresolvedPeerIDs.length > 0}
+					{#if isPreparer && unresolvedPeerIDs.length > 0}
 						{@const pid = unresolvedPeerIDs[0]}
 						<div class="plan-form">
 							<p class="ft-prompt">
@@ -427,14 +429,14 @@
 						</div>
 					{/if}
 
-					{#if allPeersDone && isFocusPlayer}
+					{#if allPeersDone && isPreparer}
 						<div class="complete-section">
 							<p class="complete-note">All newcomers resolved. Complete the plan.</p>
 							<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
 								{resBusy ? '…' : 'Complete plan'}
 							</button>
 						</div>
-					{:else if !isFocusPlayer && myAuthorPeerIDs.length === 0}
+					{:else if !isPreparer && myAuthorPeerIDs.length === 0}
 						<p class="ft-prompt muted">
 							{playerName(players, plan.preparer_id)} is resolving the marred introductions…
 						</p>

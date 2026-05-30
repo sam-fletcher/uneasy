@@ -170,9 +170,8 @@ func (h *planLifecycle) jumpToRow(row int16) {
 // roll, e.g. War, Liaise, Festivity). Asserts 200.
 func (h *planLifecycle) resolve(planID int64) *dbgen.DiceRoll {
 	h.t.Helper()
-	focusIdx := h.focusPlayerIdx()
 	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/resolve"
-	code, body := h.post(focusIdx, path, nil)
+	code, body := h.post(h.preparerIdxFor(planID), path, nil)
 	require.Equalf(h.t, http.StatusOK, code, "resolve failed: %v", body)
 	if body["roll"] == nil {
 		return nil
@@ -197,9 +196,8 @@ func (h *planLifecycle) forceRoll(rollID int64, outcome string, result int16) {
 // player with the given make/mar result and choice keys. Asserts 200.
 func (h *planLifecycle) makeChoice(planID int64, result string, choices []string) {
 	h.t.Helper()
-	focusIdx := h.focusPlayerIdx()
 	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/make-choice"
-	code, body := h.post(focusIdx, path, map[string]any{
+	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{
 		"result": result, "choices": choices,
 	})
 	require.Equalf(h.t, http.StatusOK, code, "make-choice failed: %v", body)
@@ -209,9 +207,8 @@ func (h *planLifecycle) makeChoice(planID int64, result string, choices []string
 // Asserts 200.
 func (h *planLifecycle) complete(planID int64) {
 	h.t.Helper()
-	focusIdx := h.focusPlayerIdx()
 	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/complete"
-	code, body := h.post(focusIdx, path, nil)
+	code, body := h.post(h.preparerIdxFor(planID), path, nil)
 	require.Equalf(h.t, http.StatusOK, code, "complete failed: %v", body)
 }
 
@@ -238,8 +235,23 @@ func (h *planLifecycle) run(req PreparePlanRequest, outcome string, choices []st
 	return refreshed
 }
 
+// preparerIdxFor returns the index into Players of the plan's preparer — the
+// player who resolves it (resolve/make-choice/complete are preparer-gated).
+func (h *planLifecycle) preparerIdxFor(planID int64) int {
+	h.t.Helper()
+	plan, err := h.q.GetPlanByID(context.Background(), planID)
+	require.NoError(h.t, err)
+	for i, p := range h.tg.Players {
+		if p.ID == plan.PreparerID {
+			return i
+		}
+	}
+	h.t.Fatalf("preparer id %d not in test players", plan.PreparerID)
+	return -1
+}
+
 // focusPlayerIdx returns the index into Players of the current focus
-// player. Required because CompletePlan etc. enforce focus-only access.
+// player. Used for focus-player actions (scene-setting, prepare).
 func (h *planLifecycle) focusPlayerIdx() int {
 	h.t.Helper()
 	g, err := h.q.GetGameByID(context.Background(), h.tg.Game.ID)

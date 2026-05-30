@@ -43,7 +43,6 @@
 	const rankings = $derived(ctx.rankings);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const isFocusPlayer = $derived(ctx.isFocusPlayer);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
@@ -214,7 +213,7 @@
 					Duel complete. All staked assets are leveraged.
 				</p>
 				{#if completeError}<p class="res-error">{completeError}</p>{/if}
-				{#if isFocusPlayer}
+				{#if amPreparer}
 					<button class="action-btn primary"
 						onclick={onComplete} disabled={completeBusy}>
 						{completeBusy ? '…' : 'Complete plan'}

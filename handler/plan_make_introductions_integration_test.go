@@ -7,7 +7,7 @@
 //   - other_retinue  → peer joins another player's retinue
 //   - broken_arrival → another player authors the peer's marginalia
 //   - delayed        → arrival rescheduled d6 rows ahead
-//   - broken_journey → focus writes a marginalia, then breaks the peer
+//   - broken_journey → preparer writes a marginalia, then breaks the peer
 //
 // The make path lives in plan_lifecycle_examples_test.go.
 
@@ -53,7 +53,7 @@ func miToMar(t *testing.T, h *planLifecycle, peerCount int) (planID int64, prepa
 	require.NotNil(t, rollMap)
 	h.forceRoll(int64(rollMap["id"].(float64)), "mar", 0)
 
-	// Enter per-peer mar resolution (focus player records the mar result).
+	// Enter per-peer mar resolution (preparer records the mar result).
 	h.makeChoice(plan.ID, "mar", []string{})
 
 	refreshed, err := h.q.GetPlanByID(context.Background(), plan.ID)
@@ -82,7 +82,7 @@ func TestMakeIntroductions_Mar_OtherRetinue_AndGating(t *testing.T) {
 
 	// Completion is blocked: the second peer is unresolved.
 	completePath := "/api/plans/" + strconv.FormatInt(planID, 10) + "/complete"
-	code, body = h.post(h.focusPlayerIdx(), completePath, nil)
+	code, body = h.post(preparerIdx, completePath, nil)
 	require.Equalf(t, http.StatusConflict, code, "complete should be blocked: %v", body)
 
 	// Resolving the same peer twice is rejected.
@@ -119,7 +119,7 @@ func TestMakeIntroductions_Mar_BrokenArrival_AuthorWritesMarginalia(t *testing.T
 
 	// Blocked until the assigned author writes the marginalia.
 	completePath := "/api/plans/" + strconv.FormatInt(planID, 10) + "/complete"
-	code, body = h.post(h.focusPlayerIdx(), completePath, nil)
+	code, body = h.post(preparerIdx, completePath, nil)
 	require.Equalf(t, http.StatusConflict, code, "complete should be blocked: %v", body)
 
 	margPath := "/api/plans/" + strconv.FormatInt(planID, 10) + "/introductions-marginalia"
