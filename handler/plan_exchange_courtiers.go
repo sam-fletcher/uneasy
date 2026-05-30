@@ -6,10 +6,11 @@ package handler
 // from the target player. Resolution starts with a fair-trade offer step; if
 // declined, a dice roll is created and the normal roll flow proceeds.
 //
-// Make options: "legal" (standard transfer) or "messy" (transfer + target must
-// break a marginalia on one of their assets).
-// Mar options: "riposte" (preparer gives their own peer to target) or "forfeit"
-// (preparer gives target player an asset of their choice).
+// Make options (preparer): "legal" (standard transfer), "messy" (transfer +
+// target breaks one of the preparer's assets), "conspiracy" (narrative).
+// Mar options (target-driven): "fair_trade" (the trade goes through anyway),
+// "riposte"/"forfeit" (the target claims one of the preparer's peers; riposte
+// also lets the preparer break it first).
 
 import (
 	"context"
@@ -71,34 +72,53 @@ func (ecHandler) ApplyChoice(
 	choices []string,
 	result string,
 ) error {
-	if result != makeOutcome {
-		return nil // mar effects are narrative / handled via asset endpoints
+	if result == makeOutcome {
+		return applyExchangeCourtiersMake(ctx, deps, plan, choices, resData)
 	}
-	return applyExchangeCourtiersMechanic(ctx, deps.Q, deps.Manager, plan, choices, resData)
+	return applyExchangeCourtiersMar(ctx, deps, plan, choices, resData)
 }
 
 func (ecHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if ec := resData.ExchangeCourtiers; ec != nil && ec.MessyBreakRequired && !ec.MessyBreakDone {
+	ec := resData.ExchangeCourtiers
+	if ec == nil {
+		return nil
+	}
+	if ec.MessyBreakRequired && !ec.MessyBreakDone {
 		return errors.New("target player must first break a marginalia (POST /plans/{planId}/messy-break)")
+	}
+	if ec.PeerClaimsDone < ec.PeerClaimsRequired {
+		return fmt.Errorf("target must still claim %d peer(s) (POST /plans/{planId}/claim-peer)",
+			ec.PeerClaimsRequired-ec.PeerClaimsDone)
 	}
 	return nil
 }
 
 func (ecHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"fair-trade":  fairTradeHandler(deps.Q, deps.Manager),
-		"messy-break": messyBreakHandler(deps.Q, deps.Manager),
+		"fair-trade":    fairTradeHandler(deps.Q, deps.Manager),
+		"messy-break":   messyBreakHandler(deps.Q, deps.Manager),
+		"claim-peer":    ecClaimPeerHandler(deps),
+		"riposte-break": ecRiposteBreakHandler(deps),
 	}
 }
 
-// ── applyExchangeCourtiersMechanic ────────────────────────────────────────────
+// ecLog emits an Exchange Courtiers action-log entry anchored to the plan row.
+func ecLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.exchange_courtiers",
+		severity, body, plan.RowNumber, &plan.ID, nil,
+		map[string]any{"plan_id": plan.ID})
+}
 
-// applyExchangeCourtiersMechanic transfers the target asset to the preparer and
-// sets the MessyBreakRequired flag if the "messy" option was chosen.
-func applyExchangeCourtiersMechanic(
+// ── Make ──────────────────────────────────────────────────────────────────────
+
+// applyExchangeCourtiersMake transfers the targeted peer to the preparer and
+// applies the chosen make options:
+//   - "messy"      → the target must break one of the preparer's assets later.
+//   - "legal"      → everything went to plan (log only).
+//   - "conspiracy" → the peer was in on it (narrative; log only).
+func applyExchangeCourtiersMake(
 	ctx context.Context,
-	q *dbgen.Queries,
-	manager *hub.Manager,
+	deps *PlanDeps,
 	plan *dbgen.Plan,
 	choices []string,
 	resData *ResolutionData,
@@ -113,29 +133,92 @@ func applyExchangeCourtiersMechanic(
 		// Incoming side may be redirected by a resolved Make Demands
 		// (keep_assets). Preparer's outgoing asset (handled via messy/
 		// fair trade paths) is not redirected.
-		recipient, err := gamepkg.AssetRecipientForPlan(ctx, q, plan)
+		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
 		if err != nil {
 			return err
 		}
-		if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
 			ID:      *plan.TargetAssetID,
 			OwnerID: recipient,
 		}); err != nil {
 			return err
 		}
-		ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
-		broadcastEvent(manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+		ta, _ := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID)
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
 			Asset:      ta,
 			OldOwnerID: *plan.TargetPlayerID,
 			NewOwnerID: recipient,
 		})
+		ecLog(ctx, deps, plan, model.SeverityImportant,
+			fmt.Sprintf("%s took the peer %q from %s.",
+				playerDisplayName(ctx, deps.Q, recipient), ta.Name,
+				playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID)))
 	}
 
 	// "Messy" requires the target to break a marginalia on one of the preparer's assets.
 	if slices.Contains(choices, "messy") {
 		resData.EnsureExchangeCourtiers().MessyBreakRequired = true
+		ecLog(ctx, deps, plan, model.SeverityDefault,
+			"It got messy — the target may break one of the preparer's assets.")
+	}
+	if slices.Contains(choices, "conspiracy") {
+		ecLog(ctx, deps, plan, model.SeverityDefault,
+			"The peer was in on it all along.")
 	}
 
+	return nil
+}
+
+// ── Mar (target-driven) ─────────────────────────────────────────────────────
+
+// applyExchangeCourtiersMar records the target player's mar choices:
+//   - "fair_trade" → the trade goes through anyway: the targeted peer still
+//     passes to the preparer (inline).
+//   - "forfeit"    → the target claims one of the preparer's peers.
+//   - "riposte"    → the target claims one of the preparer's peers; the
+//     preparer may break it first (riposte-break route).
+//
+// Each riposte/forfeit adds one required peer-claim, performed via claim-peer.
+func applyExchangeCourtiersMar(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	choices []string,
+	resData *ResolutionData,
+) error {
+	ec := resData.EnsureExchangeCourtiers()
+	for _, c := range choices {
+		switch c {
+		case "fair_trade":
+			if plan.TargetAssetID == nil || plan.TargetPlayerID == nil {
+				continue
+			}
+			recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+			if err != nil {
+				return err
+			}
+			if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+				ID:      *plan.TargetAssetID,
+				OwnerID: recipient,
+			}); err != nil {
+				return err
+			}
+			ta, _ := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID)
+			broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+				Asset:      ta,
+				OldOwnerID: *plan.TargetPlayerID,
+				NewOwnerID: recipient,
+			})
+			ecLog(ctx, deps, plan, model.SeverityImportant,
+				fmt.Sprintf("A fair trade: %q passed to %s after all.",
+					ta.Name, playerDisplayName(ctx, deps.Q, recipient)))
+		case "forfeit":
+			ec.PeerClaimsRequired++
+		case "riposte":
+			ec.PeerClaimsRequired++
+			ec.RiposteAllowed = true
+		}
+	}
 	return nil
 }
 
@@ -419,11 +502,10 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
-		if _, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID:       m.ID,
-			TornByID: &player.ID,
-		}); err != nil {
-			respondInternalErr(w, r, "could not tear marginalia", err)
+		// breakMarginalia tears + (if it was the last) destroys, emitting the
+		// right events — fixing the prior inline tear that skipped auto-destroy.
+		if _, err := breakMarginalia(ctx, q, manager, &asset, &m, player.ID); err != nil {
+			respondInternalErr(w, r, "could not break asset", err)
 			return
 		}
 
@@ -433,16 +515,178 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
-		broadcastEvent(manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-			AssetID:  asset.ID,
-			Position: m.Position,
-			TornByID: player.ID,
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":       plan.ID,
+			"marginalia_id": m.ID,
+			"asset_id":      asset.ID,
 		})
+	}
+}
+
+// ── Claim Peer (mar riposte / forfeit) ────────────────────────────────────────
+
+// ecClaimPeerHandler handles POST /api/plans/:planId/claim-peer.
+//
+// On a mar, the target player takes one of the preparer's peers (riposte or
+// forfeit). Each chosen riposte/forfeit option allows one claim; completion is
+// blocked until all claims are made. Request body: {"asset_id": A}
+func ecClaimPeerHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanExchangeCourtiers)
+		if !ok {
+			return
+		}
+		ctx := r.Context()
+		if plan.TargetPlayerID == nil || player.ID != *plan.TargetPlayerID {
+			respondErr(w, http.StatusForbidden, "only the target player claims a peer")
+			return
+		}
+		if !planRollIsMar(ctx, deps.Q, plan) {
+			respondErr(w, http.StatusConflict, "claim-peer is only available on a mar result")
+			return
+		}
+
+		var body struct {
+			AssetID int64 `json:"asset_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 {
+			respondErr(w, http.StatusBadRequest, "asset_id is required")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		ec := resData.EnsureExchangeCourtiers()
+		if ec.PeerClaimsDone >= ec.PeerClaimsRequired {
+			respondErr(w, http.StatusConflict, "no peer claims remain for this plan")
+			return
+		}
+
+		asset, err := deps.Q.GetAssetByID(ctx, body.AssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		if asset.GameID != plan.GameID || asset.OwnerID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "you may only claim one of the preparer's peers")
+			return
+		}
+		if asset.AssetType != model.AssetPeer {
+			respondErr(w, http.StatusBadRequest, "asset must be a peer")
+			return
+		}
+		if asset.IsDestroyed {
+			respondErr(w, http.StatusConflict, "that peer has been destroyed")
+			return
+		}
+
+		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+			ID:      asset.ID,
+			OwnerID: player.ID,
+		}); err != nil {
+			respondInternalErr(w, r, "could not transfer peer", err)
+			return
+		}
+
+		ec.PeerClaimsDone++
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record claim", err)
+			return
+		}
+
+		updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+			Asset:      updated,
+			OldOwnerID: plan.PreparerID,
+			NewOwnerID: player.ID,
+		})
+		ecLog(ctx, deps, plan, model.SeverityImportant,
+			fmt.Sprintf("%s seized the peer %q from %s.",
+				playerDisplayName(ctx, deps.Q, player.ID), asset.Name,
+				playerDisplayName(ctx, deps.Q, plan.PreparerID)))
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":       plan.ID,
+			"asset_id":      asset.ID,
+			"claims_done":   ec.PeerClaimsDone,
+			"claims_needed": ec.PeerClaimsRequired,
+		})
+	}
+}
+
+// ── Riposte Break ─────────────────────────────────────────────────────────────
+
+// ecRiposteBreakHandler handles POST /api/plans/:planId/riposte-break.
+//
+// Riposte lets the preparer break one of their own peers before it is claimed.
+// Optional and only available when "riposte" was chosen. Request body:
+// {"marginalia_id": M}
+func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanExchangeCourtiers)
+		if !ok {
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the preparer may break their own peer")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		ec := resData.EnsureExchangeCourtiers()
+		if !ec.RiposteAllowed {
+			respondErr(w, http.StatusConflict, "riposte was not chosen for this plan")
+			return
+		}
+
+		var body struct {
+			MarginaliaID int64 `json:"marginalia_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MarginaliaID == 0 {
+			respondErr(w, http.StatusBadRequest, "marginalia_id is required")
+			return
+		}
+
+		ctx := r.Context()
+		m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "marginalia not found")
+			return
+		}
+		if m.IsTorn {
+			respondErr(w, http.StatusConflict, "marginalia is already torn")
+			return
+		}
+		asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		if asset.GameID != plan.GameID || asset.OwnerID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "you may only break one of your own peers")
+			return
+		}
+		// Riposte damages the peer before the target takes it — it must survive
+		// to be claimed, so refuse to tear its last intact marginalium (which
+		// would destroy it and deadlock the pending claim).
+		if intact, cErr := deps.Q.CountIntactMarginalia(ctx, asset.ID); cErr == nil && intact <= 1 {
+			respondErr(w, http.StatusConflict,
+				"cannot break the peer's last marginalia — it must survive to be claimed")
+			return
+		}
+
+		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not break peer", err)
+			return
+		}
+		ecLog(ctx, deps, plan, model.SeverityDefault,
+			fmt.Sprintf("The preparer damaged their own %q before surrendering it.", asset.Name))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
 			"marginalia_id": m.ID,
 			"asset_id":      asset.ID,
+			"destroyed":     destroyed,
 		})
 	}
 }

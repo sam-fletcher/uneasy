@@ -4,6 +4,8 @@ package handler
 
 import (
 	"context"
+	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -248,4 +250,67 @@ func TestSpreadRumors_AcceptsWithTargetAndNotes(t *testing.T) {
 	}
 	_, errMsg := srHandler{}.ValidatePreparation(ctx, vc)
 	assert.Empty(t, errMsg)
+}
+
+// TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium guards the rule
+// that tearing an asset's last intact marginalium destroys it ("all 4 gone →
+// the asset is destroyed"). The break-target route previously inlined
+// TearMarginalia and skipped the destroy check, so the final tear left the
+// asset alive. It now routes through breakMarginalia, which destroys.
+func TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	// Target asset owned by another player, carrying all 4 marginalia with the
+	// first 3 already torn — so a single break-target tear is the final one.
+	targetOwnerIdx := 1
+	target := h.seedPeer(targetOwnerIdx, "rumor target")
+	var lastM dbgen.Marginalium
+	for pos := int16(1); pos <= 4; pos++ {
+		m, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+			AssetID: target, Position: pos, Text: "a damning note",
+		})
+		require.NoError(t, err)
+		if pos < 4 {
+			_, err = h.q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{ID: m.ID})
+			require.NoError(t, err)
+		} else {
+			lastM = m
+		}
+	}
+
+	notes := "Council betrayal rumor"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSpreadRumors,
+		TargetAssetID:    &target,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll, "Spread Rumors creates its roll on resolve")
+	h.forceRoll(roll.ID, makeOutcome, 3)
+	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
+
+	// The preparer tears the final intact marginalium via break-target.
+	preparerIdx := -1
+	for i, p := range h.tg.Players {
+		if p.ID == plan.PreparerID {
+			preparerIdx = i
+		}
+	}
+	require.GreaterOrEqual(t, preparerIdx, 0, "preparer must be one of the seeded players")
+
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/break-target"
+	code, body := h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": lastM.ID})
+	require.Equalf(t, http.StatusOK, code, "break-target: %v", body)
+
+	torn, err := h.q.GetMarginaliaByID(ctx, lastM.ID)
+	require.NoError(t, err)
+	assert.True(t, torn.IsTorn, "the final marginalium should be torn")
+
+	destroyed, err := h.q.GetAssetByID(ctx, target)
+	require.NoError(t, err)
+	assert.True(t, destroyed.IsDestroyed,
+		"tearing the final marginalium via break-target must destroy the asset")
 }

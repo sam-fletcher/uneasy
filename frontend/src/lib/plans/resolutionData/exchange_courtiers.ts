@@ -8,6 +8,11 @@ export interface ExchangeCourtiersResolutionData {
 	fair_trade_accepted?: boolean | null;
 	messy_break_required?: boolean;
 	messy_break_done?: boolean;
+	/** Mar (target-driven): riposte/forfeit each require one peer claim. */
+	peer_claims_required?: number;
+	peer_claims_done?: number;
+	/** Set when "riposte" was chosen — enables the preparer's optional break. */
+	riposte_allowed?: boolean;
 }
 
 export function parseExchangeCourtiersData(

@@ -1327,6 +1327,28 @@ export function messyBreak(planID: number, marginaliaID: number): Promise<{
 }
 
 /**
+ * Exchange Courtiers mar — the target claims one of the preparer's peers
+ * (riposte/forfeit). Called by the target once per required claim.
+ */
+export function ecClaimPeer(planID: number, assetID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/claim-peer`, {
+		method: 'POST',
+		body: JSON.stringify({ asset_id: assetID }),
+	});
+}
+
+/**
+ * Exchange Courtiers mar — riposte: the preparer optionally breaks one of
+ * their own peers before the target claims it.
+ */
+export function ecRiposteBreak(planID: number, marginaliaID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/riposte-break`, {
+		method: 'POST',
+		body: JSON.stringify({ marginalia_id: marginaliaID }),
+	});
+}
+
+/**
  * Make Introductions — create a single peer during the pre-roll naming step.
  * Called once per peer until peer_count peers exist; then call
  * finalizeIntroductionsPeers to create the dice roll.
@@ -1410,6 +1432,30 @@ export function hideSource(planID: number, secretAssetID: number, secretText: st
 	return apiFetch(`/plans/${planID}/hide-source`, {
 		method: 'POST',
 		body: JSON.stringify({ secret_asset_id: secretAssetID, secret_text: secretText }),
+	});
+}
+
+/**
+ * Spread Propaganda mar (a) — the preparer hands one of their own peers to
+ * another player. Called by the preparer after choosing the "give_peer" mar
+ * option; completion is blocked until it succeeds.
+ */
+export function spGivePeer(planID: number, peerAssetID: number, toPlayerID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/give-peer`, {
+		method: 'POST',
+		body: JSON.stringify({ peer_asset_id: peerAssetID, to_player_id: toPlayerID }),
+	});
+}
+
+/**
+ * Spread Propaganda mar (c) — "break yourself." The preparer tears one
+ * marginalia from one of their own assets. Completion is blocked until it
+ * succeeds.
+ */
+export function spBreakSelf(planID: number, marginaliaID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/break-self`, {
+		method: 'POST',
+		body: JSON.stringify({ marginalia_id: marginaliaID }),
 	});
 }
 

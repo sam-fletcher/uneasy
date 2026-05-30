@@ -8,6 +8,7 @@
 	import './planPanel.css';
 	import {
 		preparePlan, fairTrade, makeChoice, completePlan, messyBreak,
+		ecClaimPeer, ecRiposteBreak,
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -231,6 +232,35 @@
 			messyError = e instanceof Error ? e.message : 'Could not complete messy break.';
 		} finally { messyBusy = false; }
 	}
+
+	// ── Mar: target claims preparer peers; preparer may riposte-break ─────────
+	let claimAssetID = $state<number | null>(null);
+	let claimBusy = $state(false);
+	async function onClaimPeer(p: Plan) {
+		if (!claimAssetID || claimBusy) return;
+		claimBusy = true; resError = '';
+		try {
+			await ecClaimPeer(p.id, claimAssetID);
+			claimAssetID = null;
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not claim peer.';
+		} finally { claimBusy = false; }
+	}
+
+	let riposteMargID = $state<number | null>(null);
+	let riposteBusy = $state(false);
+	async function onRiposteBreak(p: Plan) {
+		if (!riposteMargID || riposteBusy) return;
+		riposteBusy = true; resError = '';
+		try {
+			await ecRiposteBreak(p.id, riposteMargID);
+			riposteMargID = null;
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not break peer.';
+		} finally { riposteBusy = false; }
+	}
 </script>
 
 {#if mode === 'prep'}
@@ -285,6 +315,9 @@
 	{@const ftAccepted = ec.fair_trade_accepted ?? null}
 	{@const existingChoices = (rd.make_mar_choices ?? []).map(c => c.option)}
 	{@const choicesDone = existingChoices.length > 0}
+	{@const choiceActor = rollOutcome === 'mar' ? isTarget : amChoiceActor}
+	{@const preparerIntactPeers = assets.filter(a => a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed)}
+	{@const preparerMarginaliaAssets = assetsWithIntactMarginalia(assets, plan.preparer_id)}
 
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
@@ -348,7 +381,7 @@
 		{:else if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
-		{:else if rollOutcome != null && !choicesDone && amChoiceActor}
+		{:else if rollOutcome != null && !choicesDone && choiceActor}
 			<MakeMarPicker
 				outcome={rollOutcome}
 				options={(rollOutcome === 'make' ? MAKE_OPTIONS.exchange_courtiers : MAR_OPTIONS.exchange_courtiers) ?? []}
@@ -362,6 +395,11 @@
 						<p class="choices-note">
 							The targeted peer ({assetName(assets, plan.target_asset_id)}) will be transferred to you.
 						</p>
+					{:else}
+						<p class="choices-note">
+							The plan was marred — you choose how to respond against
+							{playerName(players, plan.preparer_id)}.
+						</p>
 					{/if}
 				{/snippet}
 			</MakeMarPicker>
@@ -369,6 +407,10 @@
 		{:else if choicesDone || (rollOutcome == null && ftAccepted === true)}
 			{@const messyRequired = ec.messy_break_required ?? false}
 			{@const messyDone = ec.messy_break_done ?? false}
+			{@const claimsReq = ec.peer_claims_required ?? 0}
+			{@const claimsDoneCount = ec.peer_claims_done ?? 0}
+			{@const claimsPending = claimsDoneCount < claimsReq}
+			{@const riposteAllowed = ec.riposte_allowed ?? false}
 
 			{#if messyRequired && !messyDone}
 				{#if isTarget}
@@ -393,6 +435,55 @@
 				{:else}
 					<p class="ft-prompt muted">
 						Waiting for {playerName(players, plan.target_player_id)} to break a marginalia…
+					</p>
+				{/if}
+
+			{:else if claimsPending}
+				{#if isTarget}
+					<div class="messy-break-section">
+						<p class="ft-prompt">
+							The plan was marred — claim a peer from
+							<strong>{playerName(players, plan.preparer_id)}</strong>
+							({claimsReq - claimsDoneCount} remaining).
+						</p>
+						<CardPicker
+							label="Peer to claim"
+							items={preparerIntactPeers}
+							{players}
+							emptyMessage="The preparer has no peers left to claim."
+							selected={claimAssetID}
+							onSelect={(id) => (claimAssetID = id)}
+						/>
+						<button class="action-btn primary" onclick={() => onClaimPeer(plan)}
+							disabled={!claimAssetID || claimBusy}>
+							{claimBusy ? '…' : 'Claim peer'}
+						</button>
+					</div>
+				{:else if isPreparer && riposteAllowed}
+					<div class="messy-break-section">
+						<p class="ft-prompt">
+							Riposte: you may break one of your own peers before
+							{playerName(players, plan.target_player_id)} claims it (optional).
+						</p>
+						<CardPicker
+							label="Marginalium to break"
+							items={preparerMarginaliaAssets}
+							{players}
+							marginaliaMode
+							selectedMarginaliaID={riposteMargID}
+							onSelectMarginalia={(mID) => (riposteMargID = mID)}
+						/>
+						<button class="action-btn secondary" onclick={() => onRiposteBreak(plan)}
+							disabled={!riposteMargID || riposteBusy}>
+							{riposteBusy ? '…' : 'Break a peer'}
+						</button>
+						<p class="ft-prompt muted">
+							Waiting for {playerName(players, plan.target_player_id)} to claim…
+						</p>
+					</div>
+				{:else}
+					<p class="ft-prompt muted">
+						Waiting for {playerName(players, plan.target_player_id)} to claim a peer…
 					</p>
 				{/if}
 

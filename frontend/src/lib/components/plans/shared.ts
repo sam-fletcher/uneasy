@@ -89,8 +89,8 @@ export const MAKE_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	exchange_courtiers: [
 		{ key: 'fair_trade', label: '(1) A Fair Trade — the trade goes through anyway' },
-		{ key: 'riposte',    label: '(2) Riposte — target takes your peer (you may break it first)' },
-		{ key: 'forfeit',    label: '(3) Forfeit — target takes your peer' },
+		{ key: 'riposte',    label: '(2) Riposte — you take one of their peers (they may break it first)' },
+		{ key: 'forfeit',    label: '(3) Forfeit — you take one of their peers' },
 	],
 	make_introductions: [
 		{ key: 'other_retinue',     label: "(a) Peer enters another player's retinue" },
@@ -102,7 +102,7 @@ export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 		{ key: 'give_peer',    label: "(a) A peer leaves your retinue (give to another player)" },
 		{ key: 'lay_low',      label: '(b) Keep your head down — next plan cannot involve esteem' },
 		{ key: 'break_self',   label: '(c) Word of your laughable ideas gets around — break yourself' },
-		{ key: 'counter_prop', label: "(d) Interfering player describes counter-propaganda in the follow-scene" },
+		{ key: 'counter_prop', label: "(d) Top interferer spreads their own propaganda now (resolves immediately)" },
 	],
 };
 

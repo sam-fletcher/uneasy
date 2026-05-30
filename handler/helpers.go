@@ -3,12 +3,28 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	dbgen "uneasy/db/gen"
 	appMiddleware "uneasy/middleware"
 )
+
+// truncateLabel trims s and shortens it to at most maxRunes runes, appending
+// an ellipsis when it had to cut. Used to derive short asset names / log
+// bodies from free-text fields. Returns "" for blank input.
+func truncateLabel(s string, maxRunes int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return s
+	}
+	if maxRunes <= 1 {
+		return string(r[:maxRunes])
+	}
+	return string(r[:maxRunes-1]) + "…"
+}
 
 // parseGamePlayer extracts the game ID from the "{id}" URL param and loads
 // the calling account's player row at that game. Writes the appropriate

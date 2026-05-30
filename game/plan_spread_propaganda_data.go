@@ -19,9 +19,25 @@ type SpreadPropagandaResolutionData struct {
 	// plan cannot be an esteem plan. Checked by HasEsteemLockout.
 	EsteemLockout bool `json:"esteem_lockout,omitempty"`
 	// OriginalPlanID is set on a recursive SP plan (the child created by
-	// mar option (d) "co-opt") to tag it as not-eligible-to-co-opt-again.
+	// mar option (d) "counter_prop") to tag it as not-eligible-to-co-opt-again.
 	// Depth cap is 1.
 	OriginalPlanID *int64 `json:"original_plan_id,omitempty"`
+
+	// ArtifactID is the asset created by the make step ("Create an artifact
+	// representing the societal shift"). Set in ApplyChoice on a make result.
+	ArtifactID *int64 `json:"artifact_id,omitempty"`
+
+	// GivePeerRequired flips true when mar option (a) "give_peer" is chosen;
+	// it gates completion until the preparer hands a peer to another player
+	// via POST /plans/{planId}/give-peer. GivePeerDone records completion.
+	GivePeerRequired bool `json:"give_peer_required,omitempty"`
+	GivePeerDone     bool `json:"give_peer_done,omitempty"`
+
+	// BreakSelfRequired flips true when mar option (c) "break_self" is chosen;
+	// it gates completion until the preparer breaks one of their own assets
+	// via POST /plans/{planId}/break-self. BreakSelfDone records completion.
+	BreakSelfRequired bool `json:"break_self_required,omitempty"`
+	BreakSelfDone     bool `json:"break_self_done,omitempty"`
 }
 
 // LoadSpreadPropagandaData is a read-only convenience that parses a plan's

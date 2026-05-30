@@ -152,6 +152,13 @@ func makeChoiceAllowedNonFocus(
 		planRollIsMar(ctx, q, plan) {
 		return true
 	}
+	// Exchange Courtiers mar is target-driven: the target player chooses
+	// fair_trade / riposte / forfeit against the preparer.
+	if plan.PlanType == model.PlanExchangeCourtiers &&
+		plan.TargetPlayerID != nil && *plan.TargetPlayerID == player.ID &&
+		planRollIsMar(ctx, q, plan) {
+		return true
+	}
 	if plan.PlanType == model.PlanSpreadRumors && plan.TargetAssetID != nil {
 		if asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID); err == nil &&
 			asset.OwnerID == player.ID && planRollIsMar(ctx, q, plan) {

@@ -10,6 +10,14 @@ export interface SpreadPropagandaResolutionData {
 	recursive_plan_id?: number | null;
 	esteem_lockout?: boolean;
 	original_plan_id?: number | null;
+	/** Artifact created by the make step ("societal shift"). */
+	artifact_id?: number | null;
+	/** Mar (a) "give_peer": a peer must be handed to another player. */
+	give_peer_required?: boolean;
+	give_peer_done?: boolean;
+	/** Mar (c) "break_self": the preparer must break one of their own assets. */
+	break_self_required?: boolean;
+	break_self_done?: boolean;
 }
 
 /** Read-only convenience parser. Returns a non-nil object (defaults when

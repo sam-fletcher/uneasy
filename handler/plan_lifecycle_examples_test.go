@@ -25,20 +25,33 @@ import (
 )
 
 // TestPlanLifecycle_SpreadPropaganda_Make exercises the full common-shape
-// lifecycle (prepare → resolve → roll → make-choice → complete) for a
-// narrative-only make outcome. Smoke-tests the planLifecycle.run() helper.
+// lifecycle (prepare → resolve → roll → make-choice → complete) and asserts
+// the rules-mandated make effect: an artifact representing the societal shift
+// is created for the preparer.
 func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
 
 	notes := "test propaganda"
 	plan := h.run(PreparePlanRequest{
 		PlanType:         model.PlanSpreadPropaganda,
 		PreparationNotes: &notes,
-	}, "make", []string{"wide"})
+	}, "make", []string{"create_artifact"})
 
 	require.NotNil(t, plan.Result)
 	assert.Equal(t, "make", *plan.Result)
 	assert.Equal(t, model.PlanResolved, plan.Status)
+
+	// The make step must have created an artifact owned by the preparer.
+	rd := loadResolutionData(plan.ResolutionData)
+	require.NotNil(t, rd.SpreadPropaganda)
+	require.NotNil(t, rd.SpreadPropaganda.ArtifactID, "make should create an artifact")
+
+	artifact, err := h.q.GetAssetByID(ctx, *rd.SpreadPropaganda.ArtifactID)
+	require.NoError(t, err)
+	assert.Equal(t, model.AssetArtifact, model.AssetType(artifact.AssetType))
+	assert.Equal(t, plan.PreparerID, artifact.OwnerID)
+	assert.Equal(t, notes, artifact.Name)
 }
 
 // TestPlanLifecycle_ExchangeCourtiers_MessyBreakRestricted regression-guards

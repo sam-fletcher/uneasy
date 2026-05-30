@@ -21,6 +21,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -71,7 +72,16 @@ func (spHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
 }
 
-// ApplyChoice handles SP mar options (b) "censured" and (d) "co-opt".
+// ApplyChoice resolves a Spread Propaganda make/mar.
+//
+// Make: always creates an artifact representing the societal shift (the rules'
+// only make effect; "create_artifact" is the single make option in the UI).
+//
+// Mar (option keys match frontend MAR_OPTIONS.spread_propaganda):
+//   - "lay_low"      → esteem lockout (preparer's next plan cannot be esteem)
+//   - "break_self"   → preparer breaks one of their own assets (extra route)
+//   - "give_peer"    → a peer leaves the preparer's retinue (extra route)
+//   - "counter_prop" → the top interferer spreads their own propaganda now
 func (spHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -80,16 +90,27 @@ func (spHandler) ApplyChoice(
 	choices []string,
 	result string,
 ) error {
-	if result != marOutcome {
-		return nil // make options are purely narrative
+	if result == makeOutcome {
+		return applySpreadPropagandaMake(ctx, deps, plan, resData)
 	}
 
 	for _, choice := range choices {
 		switch choice {
-		case "censured":
+		case "lay_low":
 			resData.EnsureSpreadPropaganda().EsteemLockout = true
+			spLog(ctx, deps, plan, model.SeverityDefault,
+				fmt.Sprintf("%s must keep their head down — their next plan cannot involve esteem.",
+					playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 
-		case "co-opt":
+		case "give_peer":
+			// Asset picker — the actual transfer happens via the give-peer route.
+			resData.EnsureSpreadPropaganda().GivePeerRequired = true
+
+		case "break_self":
+			// Asset picker — the actual break happens via the break-self route.
+			resData.EnsureSpreadPropaganda().BreakSelfRequired = true
+
+		case "counter_prop":
 			if err := applyCoOpt(ctx, deps, plan, resData); err != nil {
 				return err
 			}
@@ -98,12 +119,81 @@ func (spHandler) ApplyChoice(
 	return nil
 }
 
-func (spHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
+// applySpreadPropagandaMake creates the artifact the make step mandates. The
+// artifact is named from the preparation notes (the message) and routed
+// through AssetRecipientForPlan so a resolved Make Demands keep_assets winner
+// claims it. Idempotent: a second call is a no-op.
+func applySpreadPropagandaMake(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+) error {
+	sp := resData.EnsureSpreadPropaganda()
+	if sp.ArtifactID != nil {
+		return nil
+	}
+
+	recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+	if err != nil {
+		return fmt.Errorf("could not resolve asset recipient: %w", err)
+	}
+
+	name := "Societal shift"
+	if plan.PreparationNotes != nil {
+		if trimmed := truncateLabel(*plan.PreparationNotes, 60); trimmed != "" {
+			name = trimmed
+		}
+	}
+
+	asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID:    plan.GameID,
+		OwnerID:   recipient,
+		CreatorID: plan.PreparerID,
+		AssetType: model.AssetArtifact,
+		Name:      name,
+	})
+	if err != nil {
+		return fmt.Errorf("could not create societal-shift artifact: %w", err)
+	}
+	sp.ArtifactID = &asset.ID
+
+	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated,
+		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}})
+	spLog(ctx, deps, plan, model.SeverityDefault,
+		fmt.Sprintf("%s reshaped society — created the artifact %q.",
+			playerDisplayName(ctx, deps.Q, plan.PreparerID), name))
 	return nil
 }
 
-func (spHandler) ExtraRoutes(_ *PlanDeps) map[string]http.HandlerFunc {
+// CanComplete blocks completion until any chosen asset-picker mar effects have
+// been performed.
+func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
+	sp := resData.SpreadPropaganda
+	if sp == nil {
+		return nil
+	}
+	if sp.GivePeerRequired && !sp.GivePeerDone {
+		return errors.New("preparer must give a peer to another player (POST /plans/{planId}/give-peer)")
+	}
+	if sp.BreakSelfRequired && !sp.BreakSelfDone {
+		return errors.New("preparer must break one of their own assets (POST /plans/{planId}/break-self)")
+	}
 	return nil
+}
+
+func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"give-peer":  spGivePeerHandler(deps),
+		"break-self": spBreakSelfHandler(deps),
+	}
+}
+
+// spLog emits a Spread Propaganda action-log entry anchored to the plan's row.
+func spLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.spread_propaganda",
+		severity, body, plan.RowNumber, &plan.ID, nil,
+		map[string]any{"plan_id": plan.ID})
 }
 
 // ── Co-opt (recursive propaganda) ────────────────────────────────────────────
@@ -206,6 +296,9 @@ func applyCoOpt(
 		RecursivePlanID: recursivePlan.ID,
 		PreparerID:      topPlayerID,
 	})
+	spLog(ctx, deps, plan, model.SeverityImportant,
+		fmt.Sprintf("%s seized the moment and spread propaganda of their own — it resolves now.",
+			playerDisplayName(ctx, deps.Q, topPlayerID)))
 
 	return nil
 }
@@ -247,3 +340,197 @@ func pickBestEsteemRanked(
 
 // hasEsteemLockout is defined in the game package and aliased in
 // plan_registry.go as `hasEsteemLockout`.
+
+// ── Give Peer (mar option a) ──────────────────────────────────────────────────
+
+// spGivePeerHandler handles POST /api/plans/:planId/give-peer.
+//
+// Mar option (a): a peer leaves the preparer's retinue and is handed to
+// another player. Only the preparer may call it, only after "give_peer" was
+// chosen. Request body: {"peer_asset_id": A, "to_player_id": P}
+func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanSpreadPropaganda {
+			respondErr(w, http.StatusBadRequest, "give-peer is only for Spread Propaganda")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the preparer gives up a peer")
+			return
+		}
+
+		var body struct {
+			PeerAssetID int64 `json:"peer_asset_id"`
+			ToPlayerID  int64 `json:"to_player_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PeerAssetID == 0 || body.ToPlayerID == 0 {
+			respondErr(w, http.StatusBadRequest, "peer_asset_id and to_player_id are required")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		sp := resData.EnsureSpreadPropaganda()
+		if !sp.GivePeerRequired {
+			respondErr(w, http.StatusConflict, "this plan did not choose to give up a peer")
+			return
+		}
+		if sp.GivePeerDone {
+			respondErr(w, http.StatusConflict, "a peer has already been given up for this plan")
+			return
+		}
+
+		asset, err := deps.Q.GetAssetByID(ctx, body.PeerAssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "peer asset not found")
+			return
+		}
+		if asset.GameID != plan.GameID || asset.OwnerID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "peer must be one of your own assets")
+			return
+		}
+		if asset.AssetType != model.AssetPeer {
+			respondErr(w, http.StatusBadRequest, "asset must be a peer")
+			return
+		}
+		if body.ToPlayerID == plan.PreparerID {
+			respondErr(w, http.StatusBadRequest, "give the peer to another player, not yourself")
+			return
+		}
+		recipient, err := deps.Q.GetPlayerByID(ctx, body.ToPlayerID)
+		if err != nil || recipient.GameID != plan.GameID {
+			respondErr(w, http.StatusBadRequest, "recipient must be a player at this table")
+			return
+		}
+
+		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+			ID:      asset.ID,
+			OwnerID: body.ToPlayerID,
+		}); err != nil {
+			respondInternalErr(w, r, "could not transfer peer", err)
+			return
+		}
+
+		sp.GivePeerDone = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record give-peer", err)
+			return
+		}
+
+		updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+			Asset:      updated,
+			OldOwnerID: plan.PreparerID,
+			NewOwnerID: body.ToPlayerID,
+		})
+		spLog(ctx, deps, plan, model.SeverityDefault,
+			fmt.Sprintf("%s lost the peer %q to %s.",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID), asset.Name,
+				playerDisplayName(ctx, deps.Q, body.ToPlayerID)))
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":       plan.ID,
+			"peer_asset_id": asset.ID,
+			"to_player_id":  body.ToPlayerID,
+		})
+	}
+}
+
+// ── Break Self (mar option c) ─────────────────────────────────────────────────
+
+// spBreakSelfHandler handles POST /api/plans/:planId/break-self.
+//
+// Mar option (c): "word of your laughable ideas gets around — break yourself."
+// The preparer tears one marginalia from one of their own assets. Only the
+// preparer may call it, only after "break_self" was chosen.
+// Request body: {"marginalia_id": M}
+func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanSpreadPropaganda {
+			respondErr(w, http.StatusBadRequest, "break-self is only for Spread Propaganda")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the preparer breaks themselves")
+			return
+		}
+
+		var body struct {
+			MarginaliaID int64 `json:"marginalia_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MarginaliaID == 0 {
+			respondErr(w, http.StatusBadRequest, "marginalia_id is required")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		sp := resData.EnsureSpreadPropaganda()
+		if !sp.BreakSelfRequired {
+			respondErr(w, http.StatusConflict, "this plan did not choose to break yourself")
+			return
+		}
+		if sp.BreakSelfDone {
+			respondErr(w, http.StatusConflict, "you have already broken an asset for this plan")
+			return
+		}
+
+		m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "marginalia not found")
+			return
+		}
+		if m.IsTorn {
+			respondErr(w, http.StatusConflict, "marginalia is already torn")
+			return
+		}
+		asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		if asset.GameID != plan.GameID || asset.OwnerID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "you must break one of your own assets")
+			return
+		}
+
+		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not break asset", err)
+			return
+		}
+
+		sp.BreakSelfDone = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record break-self", err)
+			return
+		}
+
+		spLog(ctx, deps, plan, model.SeverityDefault,
+			fmt.Sprintf("%s broke their own %q amid the backlash.",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID), asset.Name))
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":       plan.ID,
+			"marginalia_id": m.ID,
+			"asset_id":      asset.ID,
+			"destroyed":     destroyed,
+		})
+	}
+}

@@ -327,19 +327,16 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if _, err := deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID:       m.ID,
-			TornByID: &player.ID,
-		}); err != nil {
-			respondInternalErr(w, r, "could not tear marginalia", err)
+		asset, err := deps.Q.GetAssetByID(ctx, expectedAssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "asset not found")
 			return
 		}
 
-		broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-			AssetID:  expectedAssetID,
-			Position: m.Position,
-			TornByID: player.ID,
-		})
+		if _, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID); err != nil {
+			respondInternalErr(w, r, "could not break target asset", err)
+			return
+		}
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
