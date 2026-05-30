@@ -1374,6 +1374,36 @@ export function finalizeIntroductionsPeers(planID: number): Promise<{
 	return apiFetch(`/plans/${planID}/finalize-peers`, { method: 'POST' });
 }
 
+/**
+ * Make Introductions mar — resolve one introduced peer. outcome is
+ * other_retinue | broken_arrival | delayed | broken_journey. other_retinue and
+ * broken_arrival need targetPlayerID; broken_journey needs text.
+ */
+export function introductionsMar(
+	planID: number,
+	params: { peer_asset_id: number; outcome: string; target_player_id?: number; text?: string }
+): Promise<{ plan_id: number; resolved: number; peer_count: number }> {
+	return apiFetch(`/plans/${planID}/introductions-mar`, {
+		method: 'POST',
+		body: JSON.stringify(params),
+	});
+}
+
+/**
+ * Make Introductions mar — the assigned author writes a broken-arrival peer's
+ * marginalia.
+ */
+export function introductionsMarginalia(
+	planID: number,
+	peerAssetID: number,
+	text: string
+): Promise<{ plan_id: number; peer_asset_id: number; marginalia_id: number }> {
+	return apiFetch(`/plans/${planID}/introductions-marginalia`, {
+		method: 'POST',
+		body: JSON.stringify({ peer_asset_id: peerAssetID, text }),
+	});
+}
+
 // ── Plans (Phase 3 — Tier 1) ─────────────────────────────────────────────────
 //
 // Thin wrappers, one per endpoint in PHASE3_SPEC.md §New Endpoints — Tier 1.

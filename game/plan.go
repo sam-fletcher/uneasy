@@ -75,6 +75,20 @@ type OnPreparer interface {
 	OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error
 }
 
+// ChoiceLimiter is an optional PlanHandler capability that bounds how many
+// make/mar options the focus player may submit, enforcing the rules' dice
+// math (e.g. "choose options equal to your result", "up to (difficulty −
+// result)"). MakeChoice checks for it via a type assertion.
+//
+// result is the outcome ("make"/"mar"); rollResult is the dice result (the
+// count of distinct faces); difficulty is the effective difficulty. Return a
+// negative number for "no fixed limit" (per-peer plans, unscoped options).
+// The limit is only enforced when rollResult/result are internally consistent
+// (make ⇒ result ≥ difficulty), so a handler can assume that invariant.
+type ChoiceLimiter interface {
+	MaxChoices(result string, rollResult, difficulty int16) int
+}
+
 // PlanMetadata holds static plan properties.
 type PlanMetadata struct {
 	Category model.RankingCategory

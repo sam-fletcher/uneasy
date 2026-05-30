@@ -15,6 +15,7 @@ type (
 	PlanMetadata                     = game.PlanMetadata
 	PlanDeps                         = game.PlanDeps
 	ValidationContext                = game.ValidationContext
+	ChoiceLimiter                    = game.ChoiceLimiter
 	ResolutionData                   = game.ResolutionData
 	DraftChoice                      = game.DraftChoice
 	Choice                           = game.Choice
@@ -26,6 +27,7 @@ type (
 	MakeDemandsResolutionData        = game.MakeDemandsResolutionData
 	ProposeDecreeResolutionData      = game.ProposeDecreeResolutionData
 	MakeIntroductionsResolutionData  = game.MakeIntroductionsResolutionData
+	MIMarOutcome                     = game.MIMarOutcome
 	ExchangeCourtiersResolutionData  = game.ExchangeCourtiersResolutionData
 	ChronicleHistoriesResolutionData = game.ChronicleHistoriesResolutionData
 	DuelResolutionData               = game.DuelResolutionData

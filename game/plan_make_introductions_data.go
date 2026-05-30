@@ -19,6 +19,14 @@ type MakeIntroductionsResolutionData struct {
 	// future rows after the parent plan resolves.
 	DelayedPeerPlanIDs []int64 `json:"delayed_peer_plan_ids,omitempty"`
 
+	// MarPending is set when the roll resolved as mar; the focus player must
+	// then resolve every introduced peer (one of the four per-peer outcomes)
+	// before the plan can complete.
+	MarPending bool `json:"mar_pending,omitempty"`
+	// MarOutcomes records the per-peer mar resolution. One entry per resolved
+	// peer; completion is gated until every created peer has a Done entry.
+	MarOutcomes []MIMarOutcome `json:"mar_outcomes,omitempty"`
+
 	// ── Fields below are only set on synthetic delayed-arrival child plans ──
 
 	// DelayedArrival flags this plan row as a synthetic per-peer arrival
@@ -30,6 +38,26 @@ type MakeIntroductionsResolutionData struct {
 	// OriginalPlanID is the parent MI plan whose roll spawned this synthetic
 	// arrival.
 	OriginalPlanID *int64 `json:"original_plan_id,omitempty"`
+}
+
+// MIMarOutcome is one introduced peer's per-peer mar resolution.
+//
+// Outcome is one of:
+//   - "other_retinue"  → the peer joins another player's retinue (transfer).
+//   - "broken_arrival" → another player (AuthorPlayerID) writes a marginalia;
+//     Done flips once they've written it.
+//   - "delayed"        → arrival rescheduled d6 rows ahead (synthetic plan).
+//   - "broken_journey" → the focus player writes a marginalia then breaks the
+//     peer.
+type MIMarOutcome struct {
+	PeerAssetID int64  `json:"peer_asset_id"`
+	Outcome     string `json:"outcome"`
+	// AuthorPlayerID is the other player assigned to write the marginalia for
+	// a "broken_arrival" outcome (nil for the other outcomes).
+	AuthorPlayerID *int64 `json:"author_player_id,omitempty"`
+	// Done marks the outcome fully applied. "broken_arrival" stays false until
+	// the assigned author writes the marginalia; the others complete inline.
+	Done bool `json:"done"`
 }
 
 // LoadMakeIntroductionsData is a read-only convenience parser; returns a zero

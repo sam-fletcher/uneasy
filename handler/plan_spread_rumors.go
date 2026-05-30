@@ -205,6 +205,15 @@ func (srHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
 	return nil
 }
 
+// MaxChoices: make picks equal to the result (repeatable); the mar counter-rumor
+// picks equal to (difficulty − result).
+func (srHandler) MaxChoices(result string, rollResult, difficulty int16) int {
+	if result == makeOutcome {
+		return int(rollResult)
+	}
+	return int(difficulty - rollResult)
+}
+
 func (srHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"break-target": srBreakTargetHandler(deps),

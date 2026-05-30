@@ -50,6 +50,36 @@ func spPrepareToMar(t *testing.T, h *planLifecycle) (dbgen.Plan, int) {
 	return plan, preparerIdx
 }
 
+// TestMakeChoice_EnforcesOptionBudget proves the server-side count cap is wired
+// into make-choice: with a consistent mar roll (budget = difficulty − result =
+// 1), two options are rejected and one is accepted.
+func TestMakeChoice_EnforcesOptionBudget(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "propaganda"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSpreadPropaganda,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	// Consistent mar: result = difficulty − 1, so the mar budget is exactly 1.
+	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
+
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
+	code, body := h.post(h.focusPlayerIdx(), path, map[string]any{
+		"result": "mar", "choices": []string{"lay_low", "give_peer"},
+	})
+	assert.Equalf(t, http.StatusUnprocessableEntity, code, "over-budget should 422: %v", body)
+
+	code, body = h.post(h.focusPlayerIdx(), path, map[string]any{
+		"result": "mar", "choices": []string{"lay_low"},
+	})
+	require.Equalf(t, http.StatusOK, code, "within budget should succeed: %v", body)
+}
+
 func TestSpreadPropaganda_Mar_LayLow_SetsEsteemLockout(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()

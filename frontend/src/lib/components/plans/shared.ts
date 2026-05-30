@@ -92,12 +92,9 @@ export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 		{ key: 'riposte',    label: '(2) Riposte — you take one of their peers (they may break it first)' },
 		{ key: 'forfeit',    label: '(3) Forfeit — you take one of their peers' },
 	],
-	make_introductions: [
-		{ key: 'other_retinue',     label: "(a) Peer enters another player's retinue" },
-		{ key: 'broken_arrival',    label: '(b) Arrives broken — another writes marginalia, then one is torn' },
-		{ key: 'other_retinue_2',   label: '(c) Delayed → enters another retinue instead (Phase 2 simplification)' },
-		{ key: 'broken_journey',    label: '(d) Arrives broken with an arduous journey' },
-	],
+	// Make Introductions mar is per-peer (other_retinue / broken_arrival /
+	// delayed / broken_journey) and rendered directly in MakeIntroductionsPanel,
+	// not via the flat MakeMarPicker — so it has no entry here.
 	spread_propaganda: [
 		{ key: 'give_peer',    label: "(a) A peer leaves your retinue (give to another player)" },
 		{ key: 'lay_low',      label: '(b) Keep your head down — next plan cannot involve esteem' },

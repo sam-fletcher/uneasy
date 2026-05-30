@@ -168,6 +168,41 @@ func makeChoiceAllowedNonFocus(
 	return false
 }
 
+// enforceChoiceBudget writes a 422 and returns false if the submitted choices
+// exceed the plan's per-result option budget (handlers opt in via ChoiceLimiter).
+// The limit is only applied when the roll's result is internally consistent
+// with the claimed outcome (make ⇒ result ≥ difficulty), so a forced/legacy
+// roll carrying a placeholder result never trips a spurious limit. Returns true
+// (proceed) when there's no limiter, no usable roll, or the budget is met.
+func enforceChoiceBudget(
+	w http.ResponseWriter,
+	h PlanHandler,
+	roll *dbgen.DiceRoll,
+	result string,
+	choices []string,
+) bool {
+	lim, ok := h.(ChoiceLimiter)
+	if !ok || roll == nil || roll.Result == nil {
+		return true
+	}
+	diff := roll.Difficulty
+	if roll.AdjustedDifficulty != nil {
+		diff = *roll.AdjustedDifficulty
+	}
+	res := *roll.Result
+	consistent := (result == makeOutcome && res >= diff) || (result == marOutcome && res < diff)
+	if !consistent {
+		return true
+	}
+	maxChoices := lim.MaxChoices(result, res, diff)
+	if maxChoices >= 0 && len(choices) > maxChoices {
+		respondErr(w, http.StatusUnprocessableEntity,
+			fmt.Sprintf("you may choose at most %d option(s) for this %s result", maxChoices, result))
+		return false
+	}
+	return true
+}
+
 // planRollIsMar returns true if plan has a resolved dice roll whose outcome
 // is mar.
 func planRollIsMar(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) bool {
@@ -1024,6 +1059,14 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		h, supported := GetHandler(plan.PlanType)
 		if !supported {
 			respondErr(w, http.StatusInternalServerError, "no handler for this plan type")
+			return
+		}
+
+		var rollPtr *dbgen.DiceRoll
+		if rollErr == nil {
+			rollPtr = &roll
+		}
+		if !enforceChoiceBudget(w, h, rollPtr, body.Result, body.Choices) {
 			return
 		}
 

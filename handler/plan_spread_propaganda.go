@@ -189,6 +189,15 @@ func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	}
 }
 
+// MaxChoices: make creates exactly one artifact; the mar list is chosen equal
+// to (difficulty − result).
+func (spHandler) MaxChoices(result string, rollResult, difficulty int16) int {
+	if result == makeOutcome {
+		return 1
+	}
+	return int(difficulty - rollResult)
+}
+
 // spLog emits a Spread Propaganda action-log entry anchored to the plan's row.
 func spLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
 	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.spread_propaganda",

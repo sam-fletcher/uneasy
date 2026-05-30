@@ -102,6 +102,15 @@ func (ecHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	}
 }
 
+// MaxChoices: up to (result − difficulty) make options; up to (difficulty −
+// result) mar options.
+func (ecHandler) MaxChoices(result string, rollResult, difficulty int16) int {
+	if result == makeOutcome {
+		return int(rollResult - difficulty)
+	}
+	return int(difficulty - rollResult)
+}
+
 // ecLog emits an Exchange Courtiers action-log entry anchored to the plan row.
 func ecLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
 	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.exchange_courtiers",

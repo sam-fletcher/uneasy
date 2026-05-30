@@ -172,7 +172,7 @@ func TestPlanLifecycle_MakeIntroductions_NamingThenRoll(t *testing.T) {
 
 	// Finish the lifecycle normally.
 	h.forceRoll(rollID, "make", 0)
-	h.makeChoice(plan.ID, "make", []string{"retinue"})
+	h.makeChoice(plan.ID, "make", []string{"peers_arrive"})
 	h.complete(plan.ID)
 
 	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)

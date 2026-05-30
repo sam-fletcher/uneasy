@@ -93,6 +93,13 @@ func (saHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
 	return nil
 }
 
+// MaxChoices: both make and mar choose options from the make list equal to the
+// result. (On a mar the preparer additionally flaws their own resources
+// difficulty − result times, applied via the break-resource route.)
+func (saHandler) MaxChoices(_ string, rollResult, _ int16) int {
+	return int(rollResult)
+}
+
 func (saHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"break-resource": saBreakResourceHandler(deps),
