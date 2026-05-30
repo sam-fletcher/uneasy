@@ -1504,6 +1504,11 @@ export function invokeArtifact(planID: number, assetID: number): Promise<PlanEch
 	});
 }
 
+/** Chronicle Histories — preparer closes the pre-roll invoke phase and casts the dice. */
+export function castChronicleRoll(planID: number): Promise<{ plan_id: number; roll?: DiceRoll }> {
+	return apiFetch(`/plans/${planID}/cast-roll`, { method: 'POST' });
+}
+
 /** Chronicle Histories — break a marginalia on an invoked artifact. */
 export function breakArtifact(planID: number, assetID: number, marginaliaID: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-artifact`, {

@@ -13,6 +13,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"testing"
@@ -48,6 +49,28 @@ func chSeedArtifact(t *testing.T, h *planLifecycle, ownerIdx int, name string, m
 	return a.ID, ids
 }
 
+// chInvoke drives POST /api/plans/{planId}/invoke-artifact as the preparer
+// during the pre-roll invoke phase. Asserts 200.
+func chInvoke(t *testing.T, h *planLifecycle, planID, assetID int64) {
+	t.Helper()
+	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/invoke-artifact"
+	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{"asset_id": assetID})
+	require.Equalf(t, http.StatusOK, code, "invoke-artifact: %v", body)
+}
+
+// chCastRoll drives POST /api/plans/{planId}/cast-roll as the preparer to close
+// the invoke phase and create the dice roll. Asserts 200 and returns the roll.
+func chCastRoll(t *testing.T, h *planLifecycle, planID int64) *dbgen.DiceRoll {
+	t.Helper()
+	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/cast-roll"
+	code, body := h.post(h.preparerIdxFor(planID), path, nil)
+	require.Equalf(t, http.StatusOK, code, "cast-roll: %v", body)
+	rollBlob, _ := json.Marshal(body["roll"])
+	var roll dbgen.DiceRoll
+	require.NoError(t, json.Unmarshal(rollBlob, &roll))
+	return &roll
+}
+
 // chPrepareToRoll drives a Chronicle Histories plan to a forced roll and
 // returns the plan and the preparer's index. Difficulty is pinned via the
 // preparer's knowledge rank so make/mar deltas are deterministic. The plan is
@@ -62,12 +85,13 @@ func chPrepareToRoll(t *testing.T, h *planLifecycle, outcome string, resultDelta
 	require.NotNil(t, plan.RowNumber)
 
 	// Pin knowledge rank to 3 so difficulty = max(rank, #invoked) = 3 (no
-	// pre-roll invocations here). Difficulty is computed at resolve time.
+	// pre-roll invocations here). Difficulty is computed at cast-roll time.
 	saPinKnowledgeRank(t, h, plan.PreparerID, 3)
 
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
-	require.NotNil(t, roll, "Chronicle Histories creates its roll on resolve")
+	// OnResolve opens the invoke phase without a roll; the preparer casts it.
+	require.Nil(t, h.resolve(plan.ID), "Chronicle Histories opens the invoke phase with no roll")
+	roll := chCastRoll(t, h, plan.ID)
 	require.Equal(t, int16(3), roll.Difficulty, "pinned knowledge rank should set difficulty")
 
 	var result int16
@@ -106,21 +130,52 @@ func TestChronicleHistories_Make_EnforcesOptionBudget(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "within budget should succeed: %v", body)
 }
 
-// chSeedInvoked records an artifact as invoked directly in resolution_data.
-// The pre-roll invoke window isn't reachable through the harness (CH's
-// OnResolve flips to 'resolving', closes the invoke phase, and casts the roll
-// in one step), so tests seed the invocation result that the pre-roll scene
-// would have produced. OnResolve preserves InvokedArtifactIDs and recomputes
-// difficulty = max(knowledge rank, #invoked).
-func chSeedInvoked(t *testing.T, h *planLifecycle, planID int64, assetIDs ...int64) {
-	t.Helper()
-	ctx := context.Background()
-	plan, err := h.q.GetPlanByID(ctx, planID)
-	require.NoError(t, err)
-	resData := loadResolutionData(plan.ResolutionData)
-	ch := resData.EnsureChronicleHistories()
-	ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, assetIDs...)
-	require.NoError(t, saveResolutionData(ctx, h.q, planID, resData))
+// TestChronicleHistories_PreRollInvoke_RaisesDifficulty proves the pre-roll
+// invoke phase is reachable through the real routes and that invoking more
+// artifacts than the preparer's knowledge rank raises the difficulty to the
+// number invoked (difficulty = max(rank, #invoked)).
+func TestChronicleHistories_PreRollInvoke_RaisesDifficulty(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+
+	// Pin knowledge rank low so the #invoked artifacts dominates.
+	saPinKnowledgeRank(t, h, plan.PreparerID, 2)
+
+	// Three artifacts owned by another player, to be invoked in the pre-roll.
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	a1, _ := chSeedArtifact(t, h, otherIdx, "first folio", 1)
+	a2, _ := chSeedArtifact(t, h, otherIdx, "second folio", 1)
+	a3, _ := chSeedArtifact(t, h, otherIdx, "third folio", 1)
+
+	h.jumpToRow(*plan.RowNumber)
+	// Resolve opens the invoke phase; no roll yet.
+	require.Nil(t, h.resolve(plan.ID), "pre-roll invoke phase opens with no roll")
+
+	// Invoke three artifacts via the real route, then cast.
+	chInvoke(t, h, plan.ID, a1)
+	chInvoke(t, h, plan.ID, a2)
+	chInvoke(t, h, plan.ID, a3)
+	roll := chCastRoll(t, h, plan.ID)
+	require.NotNil(t, roll)
+	assert.EqualValues(t, 3, roll.Difficulty,
+		"difficulty = max(knowledge rank 2, 3 invoked) = 3")
+
+	// The invoke phase is now closed; further invokes are rejected.
+	invokePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/invoke-artifact"
+	code, body := h.post(preparerIdx, invokePath, map[string]any{"asset_id": a1})
+	assert.Equalf(t, http.StatusConflict, code, "invoke after cast should 409: %v", body)
+
+	// And cast-roll is idempotent-safe — a second cast is rejected.
+	castPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/cast-roll"
+	code, body = h.post(preparerIdx, castPath, nil)
+	assert.Equalf(t, http.StatusConflict, code, "second cast should 409: %v", body)
 }
 
 // TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys invokes an
@@ -142,10 +197,11 @@ func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T)
 	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
 	artifactID, margIDs := chSeedArtifact(t, h, otherIdx, "brittle scroll", 1)
 
-	// Invoke pre-roll, then jump + resolve.
+	// Resolve opens the invoke phase; invoke pre-roll via the real route, cast.
 	h.jumpToRow(*plan.RowNumber)
-	chSeedInvoked(t, h, plan.ID, artifactID)
-	roll := h.resolve(plan.ID)
+	require.Nil(t, h.resolve(plan.ID))
+	chInvoke(t, h, plan.ID, artifactID)
+	roll := chCastRoll(t, h, plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, "make", roll.Difficulty) // consistent make
 
@@ -186,8 +242,9 @@ func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 	artifactID, margIDs := chSeedArtifact(t, h, otherIdx, "ancient codex", 2)
 
 	h.jumpToRow(*plan.RowNumber)
-	chSeedInvoked(t, h, plan.ID, artifactID)
-	roll := h.resolve(plan.ID)
+	require.Nil(t, h.resolve(plan.ID))
+	chInvoke(t, h, plan.ID, artifactID)
+	roll := chCastRoll(t, h, plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, "mar", roll.Difficulty-1) // consistent mar
 

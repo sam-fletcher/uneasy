@@ -4,9 +4,10 @@
   Prep: notes only (the historical problem).
 
   Resolve:
-    - While resolving, the preparer can invoke artifacts at any time via
-      invokeArtifact. Non-preparers see the running list of invoked
-      artifacts.
+    - Pre-roll: the preparer invokes artifacts via invokeArtifact, then
+      clicks "Cast the dice" (castChronicleRoll) to close the invoke phase
+      and create the roll. Non-preparers see the running list of invoked
+      artifacts. (Mirrors Propose Decree's council → call-roll shape.)
     - Make (preparer): counts picker over [break_artifact, invoke_another,
       echo_present, total_control] (repeatable, total = dice result).
       After apply: sub-flow for break_artifact (marginalia on an invoked
@@ -17,8 +18,8 @@
       mar choices (entries in resolution_data.make_mar_choices with player_id set).
 
   Pre-roll artifact-invocation is gated by resolution_data.invoke_phase_closed,
-  which the server flips true inside OnResolve (before the roll is created).
-  The pre-roll invoke picker is hidden once that flag is set; post-roll
+  which the server flips true inside the cast-roll route (when the roll is
+  created). The pre-roll invoke picker is hidden once that flag is set; post-roll
   "invoke another" invocations go through the mar-choice route instead.
 -->
 <script lang="ts">
@@ -26,7 +27,7 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		invokeArtifact, breakArtifact, marChoice,
+		invokeArtifact, castChronicleRoll, breakArtifact, marChoice,
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -45,6 +46,7 @@
 	const plans = $derived(ctx.plans);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
+	const onRollCreated = $derived(ctx.onRollCreated);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
@@ -151,6 +153,21 @@
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not invoke artifact.';
 		} finally { invokeBusy = false; }
+	}
+
+	// Close the pre-roll invoke phase and cast the dice. Difficulty is computed
+	// server-side as max(knowledge rank, #invoked).
+	let castBusy = $state(false);
+	async function submitCastRoll(p: Plan) {
+		if (castBusy) return;
+		castBusy = true; resError = '';
+		try {
+			const res = await castChronicleRoll(p.id);
+			if (res.roll) onRollCreated(res.roll);
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not cast the dice.';
+		} finally { castBusy = false; }
 	}
 
 	// ── Make picker ──────────────────────────────────────────────────────────
@@ -361,6 +378,11 @@
 						The invoke phase closes when the dice are rolled. After that,
 						additional invocations happen through the mar "invoke another" option.
 					</p>
+					<button class="action-btn primary"
+						onclick={() => submitCastRoll(plan)}
+						disabled={castBusy}>
+						{castBusy ? '…' : 'Done invoking — cast the dice'}
+					</button>
 				</div>
 			{:else if isPreparer && invokePhaseClosed}
 				<p class="choices-note muted" style="margin-top:0.5rem;">

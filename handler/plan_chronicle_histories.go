@@ -7,12 +7,16 @@ package handler
 //
 // Difficulty = max(preparer's knowledge rank, count of invoked artifacts).
 // NOTE: artifacts may be invoked during the pre-roll scene, so difficulty is
-// recomputed when OnResolve is called (after the invoke phase closes).
+// computed in the cast-roll route (after the invoke phase closes), not at
+// kickoff.
 //
 // Preparing: preparation_notes required (the historical problem).
 //
-// Pre-Roll: preparer invokes artifacts via the extra route. After invoking,
-// the preparer calls resolve to close the invoke phase and create the roll.
+// Pre-Roll: OnResolve opens the invoke phase (status 'resolving',
+// InvokePhaseClosed=false) without creating a roll. The preparer invokes
+// artifacts via the invoke-artifact route, then calls cast-roll to close the
+// phase and create the dice roll. This mirrors Propose Decree's
+// council → call-roll shape.
 //
 // Make: choose N options equal to the dice result (repeatable):
 //   - "break_artifact"   → tear a marginalia on an invoked artifact
@@ -30,6 +34,7 @@ package handler
 //
 // Extra routes:
 //   POST /api/plans/:planId/invoke-artifact   {"asset_id": N}
+//   POST /api/plans/:planId/cast-roll         (preparer closes invoke phase, casts dice)
 //   POST /api/plans/:planId/break-artifact    {"asset_id": N, "marginalia_id": M}
 //   POST /api/plans/:planId/mar-choice        {"choice": "...", "asset_id": N}
 
@@ -75,28 +80,22 @@ func (chHandler) ComputeDifficulty(
 	return gamepkg.ChronicleHistoriesDifficulty(rank, *resData), nil
 }
 
-// OnResolve creates the dice roll using the current difficulty (which accounts
-// for all artifacts invoked so far in the pre-roll phase).
+// OnResolve opens the pre-roll invoke phase and returns nil — no roll yet.
+// Mirrors Propose Decree's council shape: the preparer invokes artifacts via
+// the invoke-artifact route during the pre-roll scene, then closes the phase
+// and casts the dice via cast-roll (which computes difficulty and creates the
+// roll). The plan sits in 'resolving' with InvokePhaseClosed=false until then.
 func (chHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
-	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
-	if err != nil {
-		return nil, err
-	}
 	resData := loadResolutionData(plan.ResolutionData)
-	difficulty, err := chHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
-	if err != nil {
-		return nil, err
-	}
-	// Close the invoke phase before the roll is created so that any late
-	// invoke-artifact calls are rejected and can't affect difficulty.
 	ch := resData.EnsureChronicleHistories()
-	if !ch.InvokePhaseClosed {
-		ch.InvokePhaseClosed = true
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			return nil, fmt.Errorf("could not close invoke phase: %w", err)
-		}
+	ch.InvokePhaseClosed = false
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		return nil, fmt.Errorf("could not open invoke phase: %w", err)
 	}
-	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
+	chLog(ctx, deps, plan, model.SeverityDefault,
+		"Chronicle Histories pre-roll: set a scene from the past and invoke artifacts to shed light on it.")
+	// Return nil — the roll is created later when the preparer calls cast-roll.
+	return nil, nil
 }
 
 // ApplyChoice records the preparer's make choices (kept in MakeMarChoices by
@@ -167,6 +166,7 @@ func chLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 func (chHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"invoke-artifact": chInvokeArtifactHandler(deps),
+		"cast-roll":       chCastRollHandler(deps),
 		"break-artifact":  chBreakArtifactHandler(deps),
 		"mar-choice":      chMarChoiceHandler(deps),
 	}
@@ -228,7 +228,7 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		ch := resData.EnsureChronicleHistories()
 
 		// The invoke-artifact route is only for the pre-roll scene. Once the
-		// roll has been created (OnResolve sets InvokePhaseClosed), further
+		// roll has been created (cast-roll sets InvokePhaseClosed), further
 		// artifact invocations must come through the mar-choice "invoke_another"
 		// path, which records narrative state without affecting difficulty.
 		if ch.InvokePhaseClosed {
@@ -253,6 +253,88 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":              plan.ID,
 			"invoked_artifact_ids": ch.InvokedArtifactIDs,
+		})
+	}
+}
+
+// ── Cast Roll ─────────────────────────────────────────────────────────────────
+
+// chCastRollHandler handles POST /api/plans/:planId/cast-roll.
+//
+// The preparer closes the pre-roll invoke phase and casts the dice. Difficulty
+// is computed here as max(knowledge rank, #invoked artifacts), so it reflects
+// every artifact invoked during the pre-roll scene. Mirrors Propose Decree's
+// call-roll: OnResolve left the plan in 'resolving' with no roll; this route
+// creates it.
+func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanChronicleHistories {
+			respondErr(w, http.StatusBadRequest, "cast-roll is only for Chronicle Histories")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the preparer can cast the roll")
+			return
+		}
+
+		ctx := r.Context()
+
+		resData := loadResolutionData(plan.ResolutionData)
+		ch := resData.EnsureChronicleHistories()
+		if ch.InvokePhaseClosed {
+			respondErr(w, http.StatusConflict, "the dice have already been cast")
+			return
+		}
+
+		// Guard against a duplicate roll if cast-roll is somehow called twice
+		// before InvokePhaseClosed lands.
+		existingRoll, rollErr := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
+		if rollErr == nil && existingRoll.ID != 0 {
+			respondErr(w, http.StatusConflict, "a roll has already been created for this plan")
+			return
+		}
+
+		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load game", err)
+			return
+		}
+
+		// Close the invoke phase first so any late invoke-artifact call is
+		// rejected and can't affect the difficulty we're about to compute.
+		ch.InvokePhaseClosed = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not close invoke phase", err)
+			return
+		}
+
+		difficulty, err := chHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
+		if err != nil {
+			respondInternalErr(w, r, "could not compute difficulty", err)
+			return
+		}
+
+		roll, err := createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
+		if err != nil {
+			respondInternalErr(w, r, "could not create dice roll", err)
+			return
+		}
+
+		chLog(ctx, deps, plan, model.SeverityImportant,
+			fmt.Sprintf("The pre-roll scene closes with %d artifact(s) invoked — the dice are cast (difficulty %d).",
+				len(ch.InvokedArtifactIDs), difficulty))
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id": plan.ID,
+			"roll":    roll,
 		})
 	}
 }
