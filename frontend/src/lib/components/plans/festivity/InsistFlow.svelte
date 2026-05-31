@@ -89,6 +89,11 @@
 				selected={insistAssetID}
 				onSelect={(id) => (insistAssetID = id)}
 			/>
+		{:else if insistChoice === 'break_self'}
+			<p class="choices-note muted">
+				The host tears a marginalia on their own main character (they choose
+				how it's marked).
+			</p>
 		{/if}
 		{#if insistError}<p class="res-error">{insistError}</p>{/if}
 		<div class="form-row">

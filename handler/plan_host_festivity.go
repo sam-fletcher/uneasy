@@ -173,7 +173,11 @@ func hfFinalizeIfDone(
 	}
 	state.Phase = gamepkg.FestivityPhaseDone
 	res := makeOutcome
-	return deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: &res})
+	if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: &res}); err != nil {
+		return err
+	}
+	hfLog(ctx, deps, plan, model.SeverityImportant, "The festivity drew to a close.")
+	return nil
 }
 
 // ── join-festivity ───────────────────────────────────────────────────────────
@@ -206,6 +210,8 @@ func hfJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityGuestJoined, model.FestivityGuestJoinedPayload{
 			PlanID: plan.ID, PlayerID: player.ID,
 		})
+		hfLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf("%s joined the festivity.",
+			playerDisplayName(ctx, deps.Q, player.ID)))
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "player_id": player.ID})
 	}
@@ -364,10 +370,11 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		var body struct {
-			Choice    string `json:"choice"`
-			RumorText string `json:"rumor_text"`
-			PeerName  string `json:"peer_name"`
-			AssetID   int64  `json:"asset_id"`
+			Choice       string `json:"choice"`
+			RumorText    string `json:"rumor_text"`
+			PeerName     string `json:"peer_name"`
+			AssetID      int64  `json:"asset_id"`
+			MarginaliaID int64  `json:"marginalia_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -431,6 +438,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			body.RumorText,
 			body.PeerName,
 			body.AssetID,
+			body.MarginaliaID,
 			isMake,
 		); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
@@ -484,6 +492,7 @@ type festivityOptionContext struct {
 	rumorText      string
 	peerName       string
 	assetID        int64
+	marginaliaID   int64
 	isMake         bool
 }
 
@@ -511,7 +520,7 @@ func hfApplyOption(
 	state *gamepkg.FestivityResolutionData,
 	actingPlayerID int64,
 	choice, rumorText, peerName string,
-	assetID int64,
+	assetID, marginaliaID int64,
 	isMake bool,
 ) error {
 	applier, ok := festivityOptionAppliers[choice]
@@ -526,6 +535,7 @@ func hfApplyOption(
 		rumorText:      rumorText,
 		peerName:       peerName,
 		assetID:        assetID,
+		marginaliaID:   marginaliaID,
 		isMake:         isMake,
 	})
 }
@@ -558,6 +568,13 @@ func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error 
 		return fmt.Errorf("create rumor: %w", err)
 	}
 	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
+	if fc.isMake {
+		hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s spread a new rumor at the event.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID)))
+	} else {
+		hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("A rumor spread about %s.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID)))
+	}
 	return nil
 }
 
@@ -593,6 +610,14 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 		fc.plan.GameID,
 		model.EventAssetCreated,
 		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+	)
+	hfLog(
+		ctx,
+		fc.deps,
+		fc.plan,
+		model.SeverityDefault,
+		fmt.Sprintf("%s introduced a new peer, %q, to the center of the table.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), asset.Name),
 	)
 	return nil
 }
@@ -635,7 +660,17 @@ func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContex
 	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
 		Asset: updated, OldOwnerID: oldOwner, NewOwnerID: newOwner,
 	})
+	hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s took %q from the center of the table.",
+		playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), updated.Name))
 	return nil
+}
+
+// hfLog emits a Host Festivity action-log entry anchored to the plan's row.
+func hfLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	planID := plan.ID
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.host_festivity",
+		severity, body, plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
 }
 
 func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext) error {
@@ -649,38 +684,85 @@ func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext)
 	if asset.AssetType != model.AssetPeer {
 		return errors.New("disagreement target must be a peer")
 	}
+	// "Get into a disagreement with one of your peers" — the peer must belong
+	// to the acting player.
+	if asset.OwnerID != fc.actingPlayerID {
+		return errors.New("you can only have a disagreement with one of your own peers")
+	}
 	if !slices.Contains(fc.state.CenteredAssetIDs, fc.assetID) {
 		fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, fc.assetID)
 	}
+	hfLog(
+		ctx,
+		fc.deps,
+		fc.plan,
+		model.SeverityDefault,
+		fmt.Sprintf("%s fell out with their peer %q, who stormed to the center of the table.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), asset.Name),
+	)
 	return nil
 }
 
-func applyFestivityAcceptDuels(_ context.Context, fc *festivityOptionContext) error {
+func applyFestivityAcceptDuels(ctx context.Context, fc *festivityOptionContext) error {
 	if !slices.Contains(fc.state.AcceptDuels, fc.actingPlayerID) {
 		fc.state.AcceptDuels = append(fc.state.AcceptDuels, fc.actingPlayerID)
 	}
+	hfLog(
+		ctx,
+		fc.deps,
+		fc.plan,
+		model.SeverityDefault,
+		fmt.Sprintf("%s must accept any duel challenge during the event.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID)),
+	)
 	return nil
 }
 
+// applyFestivityBreakSelf tears the acting player's chosen marginalia on their
+// main character (auto-destroy if it was the last) via the canonical break
+// helper. If no marginalia is specified, falls back to the first intact one.
 func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) error {
 	mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.actingPlayerID)
 	if err != nil {
 		return fmt.Errorf("find main character: %w", err)
 	}
-	marg, err := fc.deps.Q.ListIntactMarginalia(ctx, mcID)
-	if err != nil || len(marg) == 0 {
-		return errors.New("no intact marginalia to tear")
-	}
-	m := marg[0]
-	_, err = fc.deps.Q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-		ID: m.ID, TornByID: &fc.actingPlayerID,
-	})
+	mc, err := fc.deps.Q.GetAssetByID(ctx, mcID)
 	if err != nil {
-		return fmt.Errorf("tear marginalia: %w", err)
+		return fmt.Errorf("load main character: %w", err)
 	}
-	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-		AssetID: mcID, Position: m.Position, TornByID: fc.actingPlayerID,
-	})
+
+	var m dbgen.Marginalium
+	if fc.marginaliaID != 0 {
+		m, err = fc.deps.Q.GetMarginaliaByID(ctx, fc.marginaliaID)
+		if err != nil {
+			return errors.New("marginalia not found")
+		}
+		if m.AssetID != mcID {
+			return errors.New("marginalia does not belong to your main character")
+		}
+		if m.IsTorn {
+			return errors.New("marginalia is already torn")
+		}
+	} else {
+		marg, listErr := fc.deps.Q.ListIntactMarginalia(ctx, mcID)
+		if listErr != nil || len(marg) == 0 {
+			return errors.New("no intact marginalia to tear")
+		}
+		m = marg[0]
+	}
+
+	destroyed, err := breakMarginalia(ctx, fc.deps.Q, fc.deps.Manager, &mc, &m, fc.actingPlayerID)
+	if err != nil {
+		return fmt.Errorf("break self: %w", err)
+	}
+	hfLog(
+		ctx,
+		fc.deps,
+		fc.plan,
+		model.SeverityDefault,
+		fmt.Sprintf("%s %s themselves — word of their gaffe gets around.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), breakVerb(destroyed)),
+	)
 	return nil
 }
 
@@ -706,9 +788,10 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		var body struct {
-			MarOption string `json:"mar_option"`
-			AssetID   int64  `json:"asset_id"`
-			RumorText string `json:"rumor_text"`
+			MarOption    string `json:"mar_option"`
+			AssetID      int64  `json:"asset_id"`
+			MarginaliaID int64  `json:"marginalia_id"`
+			RumorText    string `json:"rumor_text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -734,9 +817,11 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Apply the mar effect to the host.
+		// Apply the mar effect to the host. Note: a guest insisting break_self on
+		// the host cannot pick the host's marginalia for them — marginaliaID 0
+		// falls back to the host's first intact marginalium.
 		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
-			body.MarOption, body.RumorText, "", body.AssetID, false); err != nil {
+			body.MarOption, body.RumorText, "", body.AssetID, body.MarginaliaID, false); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -808,9 +893,10 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Apply the make effect to the target guest (host's choice acts FOR
-		// the guest, so actingPlayerID is the guest).
+		// the guest, so actingPlayerID is the guest). Host-choice is make-only,
+		// so no marginalia (break is a mar option) — pass 0.
 		if err := hfApplyOption(ctx, deps, plan, state, body.TargetPlayerID,
-			body.Choice, body.RumorText, body.PeerName, body.AssetID, true); err != nil {
+			body.Choice, body.RumorText, body.PeerName, body.AssetID, 0, true); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}

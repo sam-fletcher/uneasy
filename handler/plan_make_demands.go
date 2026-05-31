@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -150,7 +151,7 @@ func (mdHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 // draft itself flows through /draft-choice. On a marred demand, the counter-
 // demand window opens and is consumed via /counter-demand (Stage 5).
 func (mdHandler) ApplyChoice(
-	_ context.Context,
+	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	_ *ResolutionData,
@@ -168,7 +169,106 @@ func (mdHandler) ApplyChoice(
 			})
 		}
 	}
+
+	demander := playerDisplayName(ctx, deps.Q, plan.PreparerID)
+	targetName := mdTargetPlanLabel(ctx, deps.Q, plan)
+	if result == makeOutcome {
+		mdLog(ctx, deps, plan, model.SeverityImportant,
+			fmt.Sprintf("%s's demand against %s succeeded — they now draft control of its resolution.",
+				demander, targetName))
+	} else {
+		mdLog(ctx, deps, plan, model.SeverityImportant,
+			fmt.Sprintf("%s's demand against %s was marred — the target may counter-demand.",
+				demander, targetName))
+	}
 	return nil
+}
+
+// mdTargetPlanLabel renders a short human label for the plan a demand targets,
+// e.g. "Bob's Exchange Courtiers". Falls back gracefully on lookup failure.
+func mdTargetPlanLabel(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) string {
+	if plan.TargetedPlanID == nil {
+		return "their target plan"
+	}
+	target, err := q.GetPlanByID(ctx, *plan.TargetedPlanID)
+	if err != nil {
+		return "their target plan"
+	}
+	return fmt.Sprintf("%s's %s", playerDisplayName(ctx, q, target.PreparerID), planLabel(target.PlanType))
+}
+
+// mdPersistDraftWinners builds the option→winner map from the four draft picks,
+// persists it on the demand plan (so the target plan's resolution can consult
+// it), and emits the draft-complete action-log entry.
+func mdPersistDraftWinners(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	picks []gamepkg.DraftChoice,
+) error {
+	winners := gamepkg.DemandOptionWinners{}
+	for _, c := range picks {
+		winners[c.Option] = c.PlayerID
+	}
+	raw, err := json.Marshal(winners)
+	if err != nil {
+		return fmt.Errorf("encode option winners: %w", err)
+	}
+	if err := deps.Q.SetDemandOptionWinners(ctx, dbgen.SetDemandOptionWinnersParams{
+		ID:                  plan.ID,
+		DemandOptionWinners: raw,
+	}); err != nil {
+		return fmt.Errorf("save option winners: %w", err)
+	}
+	mdLog(ctx, deps, plan, model.SeverityImportant,
+		fmt.Sprintf("Demand draft complete: %s.", mdWinnersSummary(ctx, deps.Q, winners)))
+	return nil
+}
+
+// mdDemandOptionLabels gives each draft option a short human label for the log.
+var mdDemandOptionLabels = map[string]string{
+	gamepkg.DemandOptionControlLeverage:    "leverage control",
+	gamepkg.DemandOptionKeepOrChangeTarget: "keep/change target",
+	gamepkg.DemandOptionKeepAssets:         "keep created assets",
+	gamepkg.DemandOptionPerformSteps:       "perform make/mar steps",
+}
+
+// mdWinnersSummary renders the drafted option winners as
+// "Alice took leverage control & keep created assets; Bob took …".
+func mdWinnersSummary(ctx context.Context, q *dbgen.Queries, winners gamepkg.DemandOptionWinners) string {
+	byPlayer := map[int64][]string{}
+	// Stable option order for readable output.
+	order := []string{
+		gamepkg.DemandOptionControlLeverage,
+		gamepkg.DemandOptionKeepOrChangeTarget,
+		gamepkg.DemandOptionKeepAssets,
+		gamepkg.DemandOptionPerformSteps,
+	}
+	var playerOrder []int64
+	for _, opt := range order {
+		pid, ok := winners[opt]
+		if !ok || pid == 0 {
+			continue
+		}
+		if _, seen := byPlayer[pid]; !seen {
+			playerOrder = append(playerOrder, pid)
+		}
+		byPlayer[pid] = append(byPlayer[pid], mdDemandOptionLabels[opt])
+	}
+	parts := make([]string, 0, len(playerOrder))
+	for _, pid := range playerOrder {
+		parts = append(parts, fmt.Sprintf("%s took %s",
+			playerDisplayName(ctx, q, pid), strings.Join(byPlayer[pid], " & ")))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// mdLog emits a Make Demands action-log entry anchored to the plan's row.
+func mdLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	planID := plan.ID
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.make_demands",
+		severity, body, plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
 }
 
 func (mdHandler) CanComplete(plan *dbgen.Plan, resData *ResolutionData) error {
@@ -255,7 +355,7 @@ func mdDraftPickers(
 //	{"option": "control_leverage" | "keep_or_change_target" |
 //	           "keep_assets"      | "perform_steps"}
 //
-//nolint:gocognit // demand draft state machine (alternating-pick + recursive demand)
+
 func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -347,19 +447,7 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		// On the final pick, persist the winners map on the demand plan so
 		// the target plan's resolution path can consult it cheaply.
 		if len(md.DraftChoices) == 4 {
-			winners := gamepkg.DemandOptionWinners{}
-			for _, c := range md.DraftChoices {
-				winners[c.Option] = c.PlayerID
-			}
-			raw, err := json.Marshal(winners)
-			if err != nil {
-				respondInternalErr(w, r, "could not encode option winners", err)
-				return
-			}
-			if err := deps.Q.SetDemandOptionWinners(ctx, dbgen.SetDemandOptionWinnersParams{
-				ID:                  plan.ID,
-				DemandOptionWinners: raw,
-			}); err != nil {
+			if err := mdPersistDraftWinners(ctx, deps, plan, md.DraftChoices); err != nil {
 				respondInternalErr(w, r, "could not save option winners", err)
 				return
 			}
@@ -480,11 +568,17 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		counterer := playerDisplayName(ctx, deps.Q, player.ID)
 		if counterPlanID != nil {
 			broadcastEvent(deps.Manager, plan.GameID, demandEventCounterPlaced, map[string]any{
 				"plan_id":         plan.ID,
 				"counter_plan_id": *counterPlanID,
 			})
+			mdLog(ctx, deps, plan, model.SeverityImportant,
+				fmt.Sprintf("%s answered the marred demand with a counter-demand.", counterer))
+		} else {
+			mdLog(ctx, deps, plan, model.SeverityDefault,
+				fmt.Sprintf("%s deferred their counter-demand to their next plan.", counterer))
 		}
 		// CounterDemandPlaced just flipped, so the row transitions out of
 		// await_demand_counter back to plan_resolving (until the demand
@@ -858,6 +952,10 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			"target_asset_id":  body.TargetAssetID,
 			"player_id":        player.ID,
 		})
+
+		mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s re-aimed %s's %s under their demand.",
+			playerDisplayName(ctx, deps.Q, player.ID),
+			playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":          plan.ID,

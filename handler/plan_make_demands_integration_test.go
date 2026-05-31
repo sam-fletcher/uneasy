@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -405,4 +406,76 @@ func TestMakeDemandsHTTP_CounterDemand_RejectedAfterMakeRoll(t *testing.T) {
 
 func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
+}
+
+// mdSystemPosts returns the bodies of all plan.make_demands action-log posts in
+// the game, newest first per ListGamePosts ordering.
+func mdSystemPosts(t *testing.T, q *dbgen.Queries, gameID int64) []string {
+	t.Helper()
+	posts, err := q.ListGamePosts(context.Background(), gameID)
+	require.NoError(t, err)
+	var out []string
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == "plan.make_demands" {
+			out = append(out, p.Body)
+		}
+	}
+	return out
+}
+
+// TestMakeDemandsHTTP_DraftComplete_EmitsActionLog walks a full four-pick draft
+// and asserts the draft-complete action-log entry lands with a winners summary.
+func TestMakeDemandsHTTP_DraftComplete_EmitsActionLog(t *testing.T) {
+	h := newMDHTTPHarness(t, 3)
+	// P0 (rank 1) demands; P1 (rank 2) is the target preparer. P0 picks on the
+	// even picks (1st, 3rd), P1 on the odd (2nd, 4th).
+	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "make")
+	path := "/api/plans/" + itoa(demand.ID) + "/draft-choice"
+
+	picks := []struct {
+		idx    int
+		option string
+	}{
+		{0, game.DemandOptionControlLeverage},
+		{1, game.DemandOptionKeepOrChangeTarget},
+		{0, game.DemandOptionKeepAssets},
+		{1, game.DemandOptionPerformSteps},
+	}
+	for i, p := range picks {
+		status, body := h.post(t, p.idx, path, map[string]any{"option": p.option})
+		require.Equalf(t, http.StatusOK, status, "pick %d: %v", i+1, body)
+	}
+
+	posts := mdSystemPosts(t, h.q, h.tg.Game.ID)
+	var complete string
+	for _, b := range posts {
+		if strings.Contains(b, "draft complete") {
+			complete = b
+		}
+	}
+	require.NotEmptyf(t, complete, "expected a draft-complete action-log post; got %v", posts)
+	// P0 took control_leverage + keep_assets; P1 took the other two.
+	assert.Contains(t, complete, "leverage control")
+	assert.Contains(t, complete, "perform make/mar steps")
+}
+
+// TestMakeDemandsHTTP_CounterDemand_EmitsActionLog asserts the deferred
+// counter-demand path writes an action-log entry.
+func TestMakeDemandsHTTP_CounterDemand_EmitsActionLog(t *testing.T) {
+	h := newMDHTTPHarness(t, 3)
+	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "mar")
+
+	status, body := h.post(t, 1,
+		"/api/plans/"+itoa(demand.ID)+"/counter-demand",
+		map[string]any{"target_plan_id": nil})
+	require.Equalf(t, http.StatusOK, status, "counter-demand: %v", body)
+
+	posts := mdSystemPosts(t, h.q, h.tg.Game.ID)
+	found := false
+	for _, b := range posts {
+		if strings.Contains(b, "deferred their counter-demand") {
+			found = true
+		}
+	}
+	assert.Truef(t, found, "expected a counter-demand action-log post; got %v", posts)
 }

@@ -46,6 +46,7 @@
 	let rumorText = $state('');
 	let peerName = $state('');
 	let pickedAssetID = $state<number | null>(null);
+	let pickedMargID = $state<number | null>(null);
 	let pickedDuelTargetID = $state<number | null>(null);
 	let pickerBusy = $state(false);
 	let pickerError = $state('');
@@ -61,6 +62,28 @@
 				&& a.asset_type === 'peer'
 				&& !a.is_destroyed),
 	);
+	// The acting player's main character with an intact marginalia — the
+	// break_self target (the breaker picks which marginalia to tear).
+	const myMainCharacter = $derived(
+		currentPlayerID == null
+			? []
+			: assets.filter(a =>
+				a.owner_id === currentPlayerID
+				&& a.is_main_character
+				&& !a.is_destroyed
+				&& (a.marginalia ?? []).some(m => !m.is_torn)),
+	);
+	function destructionWarning(a: Asset | null | undefined): string {
+		if (!a) return '';
+		const total = (a.marginalia ?? []).length;
+		const intact = (a.marginalia ?? []).filter(m => !m.is_torn).length;
+		if (intact <= 1 && total < 4) {
+			return `Heads up: this is ${a.name}'s last note — tearing it will destroy `
+				+ `your main character. You can add another marginalium first to keep it intact.`;
+		}
+		return '';
+	}
+	const breakSelfWarn = $derived(destructionWarning(assets.find(a => a.id === pickedAssetID)));
 	const otherGuests = $derived(
 		fest.guests.filter(id => id !== currentPlayerID),
 	);
@@ -74,6 +97,7 @@
 			rumorText = '';
 			peerName = '';
 			pickedAssetID = null;
+			pickedMargID = null;
 			pickedDuelTargetID = null;
 			pickerError = '';
 		}
@@ -90,9 +114,10 @@
 				}
 				await challengeDuel(plan.id, pickedDuelTargetID);
 			} else {
-				const body: { choice: string; rumor_text?: string; peer_name?: string; asset_id?: number } = {
-					choice: pickedChoice,
-				};
+				const body: {
+					choice: string; rumor_text?: string; peer_name?: string;
+					asset_id?: number; marginalia_id?: number;
+				} = { choice: pickedChoice };
 				if (pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you') {
 					body.rumor_text = rumorText.trim();
 				}
@@ -102,6 +127,11 @@
 				if (pickedChoice === 'take_center_peer' || pickedChoice === 'disagreement') {
 					if (pickedAssetID == null) { pickerError = 'Pick an asset.'; return; }
 					body.asset_id = pickedAssetID;
+				}
+				if (pickedChoice === 'break_self') {
+					if (pickedMargID == null) { pickerError = 'Pick a marginalia to tear.'; return; }
+					body.asset_id = pickedAssetID ?? undefined;
+					body.marginalia_id = pickedMargID;
 				}
 				await guestChoice(plan.id, body);
 			}
@@ -157,6 +187,7 @@
 						onclick={() => {
 							pickedChoice = pickedChoice === o.key ? null : o.key;
 							pickedAssetID = null;
+							pickedMargID = null;
 							pickedDuelTargetID = null;
 						}}
 					>{o.label}</button>
@@ -195,6 +226,20 @@
 				selected={pickedAssetID}
 				onSelect={(id) => (pickedAssetID = id)}
 			/>
+		{:else if pickedChoice === 'break_self'}
+			<CardPicker
+				label="Marginalia to tear on your main character"
+				items={myMainCharacter}
+				{players}
+				emptyMessage="Your main character has no intact marginalia."
+				marginaliaMode
+				selectedMarginaliaID={pickedMargID}
+				onSelectMarginalia={(mID, parent) => {
+					pickedMargID = mID;
+					pickedAssetID = parent?.id ?? null;
+				}}
+			/>
+			{#if breakSelfWarn}<p class="res-warning">{breakSelfWarn}</p>{/if}
 		{:else if pickedChoice === 'challenge_duel'}
 			{@const duelTargetPlayers = otherGuests
 				.map(gid => players.find(p => p.id === gid))

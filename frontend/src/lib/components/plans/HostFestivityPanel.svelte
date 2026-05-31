@@ -171,6 +171,14 @@
 			· host: <strong>{playerName(players, plan.preparer_id)}</strong>
 		</p>
 
+		{#if fest.phase === 'socializing'}
+			<p class="choices-note muted">
+				Turn order is flexible: if it matters, players may insist that those
+				below them on the esteem track roll (or opt out) first. Sort it out in
+				the chat.
+			</p>
+		{/if}
+
 		<GuestList
 			{plan} {fest} {players} {rankings} {currentPlayerID}
 			{amHost} {iAmGuest} {onPlansChanged}
