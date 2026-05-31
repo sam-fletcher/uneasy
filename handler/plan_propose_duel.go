@@ -121,9 +121,22 @@ func (pduelHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.P
 	return nil, nil
 }
 
+// MaxChoices caps how many of the loser's staked assets the winner may claim:
+// "On make: take a number of opponent's staked assets equal to your result. On
+// mar: opponent takes staked assets equal to the difficulty." The natural cap
+// (you can only pick assets that were actually staked) is enforced separately in
+// ApplyChoice.
+func (pduelHandler) MaxChoices(result string, rollResult, difficulty int16) int {
+	if result == makeOutcome {
+		return int(rollResult)
+	}
+	return int(difficulty)
+}
+
 // ApplyChoice transfers assets and leverages all staked assets after the
 // standard dice roll resolves. choices is the list of asset IDs the winner
-// chose to take (as stringified int64s).
+// chose to take (as stringified int64s); each must be one of the loser's own
+// staked assets.
 func (pduelHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -167,19 +180,29 @@ func (pduelHandler) ApplyChoice(
 		loserID = plan.PreparerID
 	}
 
-	// Transfer each requested asset. Each choice is a stake asset ID; must
-	// belong to the loser.
+	// Only the loser's own staked assets may be claimed (the rules say "take a
+	// number of opponent's staked assets").
+	loserStakeIDs := make(map[int64]bool)
+	for _, s := range stakes {
+		if s.PlayerID == loserID {
+			loserStakeIDs[s.AssetID] = true
+		}
+	}
+
+	// Transfer each requested asset. Each choice is a stake asset ID staked by
+	// the loser.
+	taken := 0
 	for _, c := range choices {
 		var assetID int64
 		if _, err := fmt.Sscanf(c, "%d", &assetID); err != nil || assetID == 0 {
 			continue
 		}
+		if !loserStakeIDs[assetID] {
+			return fmt.Errorf("asset %d is not one of the losing side's staked assets", assetID)
+		}
 		asset, err := deps.Q.GetAssetByID(ctx, assetID)
 		if err != nil {
 			return fmt.Errorf("asset %d not found", assetID)
-		}
-		if asset.OwnerID != loserID {
-			return fmt.Errorf("asset %d is not owned by the losing side", assetID)
 		}
 		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
 			ID: assetID, OwnerID: winnerID,
@@ -189,10 +212,29 @@ func (pduelHandler) ApplyChoice(
 		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
 			Asset: asset, OldOwnerID: loserID, NewOwnerID: winnerID,
 		})
+		taken++
 	}
+
+	winnerName := playerDisplayName(ctx, deps.Q, winnerID)
+	loserName := playerDisplayName(ctx, deps.Q, loserID)
+	assetWord := "assets"
+	if taken == 1 {
+		assetWord = "asset"
+	}
+	pduelLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+		"%s won the duel and took %d staked %s from %s; all staked assets are leveraged.",
+		winnerName, taken, assetWord, loserName))
 
 	resData.EnsureDuel().Phase = duelPhaseDone
 	return nil
+}
+
+// pduelLog writes a plan.propose_duel action-log post.
+func pduelLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	planID := plan.ID
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.propose_duel",
+		severity, body, plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
 }
 
 func (pduelHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
