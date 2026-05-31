@@ -139,19 +139,16 @@ func applySpreadPropagandaMake(
 		return fmt.Errorf("could not resolve asset recipient: %w", err)
 	}
 
-	name := "Societal shift"
-	if plan.PreparationNotes != nil {
-		if trimmed := truncateLabel(*plan.PreparationNotes, 60); trimmed != "" {
-			name = trimmed
-		}
-	}
-
+	// The artifact is created with a neutral placeholder name; the preparer
+	// names it afterwards via the name-asset route. (Deliberately NOT derived
+	// from the propaganda message — the artifact represents the societal shift,
+	// which the preparer narrates, not a copy of their talking points.)
 	asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
 		GameID:    plan.GameID,
 		OwnerID:   recipient,
 		CreatorID: plan.PreparerID,
 		AssetType: model.AssetArtifact,
-		Name:      name,
+		Name:      propagandaArtifactNameDefault,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create societal-shift artifact: %w", err)
@@ -161,8 +158,8 @@ func applySpreadPropagandaMake(
 	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated,
 		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}})
 	spLog(ctx, deps, plan, model.SeverityDefault,
-		fmt.Sprintf("%s reshaped society — created the artifact %q.",
-			playerDisplayName(ctx, deps.Q, plan.PreparerID), name))
+		fmt.Sprintf("%s reshaped society — created a new artifact to be named.",
+			playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 	return nil
 }
 
@@ -184,8 +181,27 @@ func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 
 func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"give-peer":  spGivePeerHandler(deps),
-		"break-self": spBreakSelfHandler(deps),
+		"give-peer":     spGivePeerHandler(deps),
+		"break-self":    spBreakSelfHandler(deps),
+		"name-artifact": spNameAssetHandler(deps),
+	}
+}
+
+// spNameAssetHandler handles POST /api/plans/:planId/name-artifact.
+//
+// The preparer names the artifact the made plan created (it starts with a
+// placeholder). Optional; does not gate completion.
+func spNameAssetHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		nameCreatedPlanAsset(w, r, deps, model.PlanSpreadPropaganda,
+			func(rd *ResolutionData) *int64 {
+				if rd.SpreadPropaganda == nil {
+					return nil
+				}
+				return rd.SpreadPropaganda.ArtifactID
+			},
+			func(rd *ResolutionData) { rd.EnsureSpreadPropaganda().ArtifactNamed = true },
+		)
 	}
 }
 

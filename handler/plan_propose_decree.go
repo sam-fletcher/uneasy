@@ -34,6 +34,7 @@ package handler
 //   POST /api/plans/:planId/call-roll      Signatory closes council; creates dice roll.
 //   POST /api/plans/:planId/amend-decree   (Mar) current amender rewrites the law body.
 //   POST /api/plans/:planId/set-addendum   Signatory places the and/but addendum.
+//   POST /api/plans/:planId/name-resource  (Make) preparer names the created resource.
 
 import (
 	"context"
@@ -298,20 +299,23 @@ func pdLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 // pdCreateLawAsset creates the resource asset that accompanies a made law.
 // Owner is the signatory if present, otherwise the recipient determined by
 // AssetRecipientForPlan (which honors a keep_assets Make Demands winner).
+//
+// The asset is created with a neutral placeholder name; the preparer names it
+// afterwards via the name-asset route. (Deliberately NOT derived from the law
+// text — the resource represents the law's worldly consequence, which the
+// preparer narrates, not a copy of the decree's wording.) The created asset id
+// is recorded so the naming step knows what to rename.
 func pdCreateLawAsset(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	resData *ResolutionData,
-	preparationNotes string,
+	_ string,
 ) error {
-	assetName := fmt.Sprintf("Law: %s", preparationNotes)
-	if len(assetName) > 120 {
-		assetName = assetName[:120] + "…"
-	}
+	pd := resData.EnsureProposeDecree()
 
 	var ownerID int64
-	if pd := resData.ProposeDecree; pd != nil && pd.SignatoryID != nil {
+	if pd.SignatoryID != nil {
 		ownerID = *pd.SignatoryID
 	} else {
 		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
@@ -326,11 +330,13 @@ func pdCreateLawAsset(
 		OwnerID:   ownerID,
 		CreatorID: plan.PreparerID,
 		AssetType: model.AssetResource,
-		Name:      assetName,
+		Name:      lawResourceNameDefault,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create law resource asset: %w", err)
 	}
+
+	pd.ResourceAssetID = &asset.ID
 
 	broadcastEvent(
 		deps.Manager,
@@ -360,10 +366,31 @@ func (pdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 
 func (pdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"join-council": pdJoinCouncilHandler(deps),
-		"call-roll":    pdCallRollHandler(deps),
-		"amend-decree": pdAmendDecreeHandler(deps),
-		"set-addendum": pdSetAddendumHandler(deps),
+		"join-council":  pdJoinCouncilHandler(deps),
+		"call-roll":     pdCallRollHandler(deps),
+		"amend-decree":  pdAmendDecreeHandler(deps),
+		"set-addendum":  pdSetAddendumHandler(deps),
+		"name-resource": pdNameAssetHandler(deps),
+	}
+}
+
+// ── Name Asset ────────────────────────────────────────────────────────────────
+
+// pdNameAssetHandler handles POST /api/plans/:planId/name-resource.
+//
+// The preparer names the resource asset the made decree created (it starts with
+// a placeholder). Optional; does not gate completion.
+func pdNameAssetHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		nameCreatedPlanAsset(w, r, deps, model.PlanProposeDecree,
+			func(rd *ResolutionData) *int64 {
+				if rd.ProposeDecree == nil {
+					return nil
+				}
+				return rd.ProposeDecree.ResourceAssetID
+			},
+			func(rd *ResolutionData) { rd.EnsureProposeDecree().ResourceNamed = true },
+		)
 	}
 }
 

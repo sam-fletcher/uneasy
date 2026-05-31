@@ -1558,6 +1558,24 @@ export function callRoll(planID: number): Promise<{ plan_id: number; roll?: Dice
 }
 
 /**
+ * Name the asset a plan created during its make step. Preparer-gated; optional
+ * — the asset keeps its placeholder name until named. The route differs per
+ * plan ('name-resource' for Propose Decree, 'name-artifact' for Spread
+ * Propaganda) because all plans' extra routes share one mount, so route names
+ * must be globally unique.
+ */
+export function namePlanAsset(
+	planID: number,
+	route: 'name-resource' | 'name-artifact',
+	name: string
+): Promise<{ plan_id: number; asset: Asset }> {
+	return apiFetch(`/plans/${planID}/${route}`, {
+		method: 'POST',
+		body: JSON.stringify({ name }),
+	});
+}
+
+/**
  * Propose Decree — on a mar, the current council amender rewrites the full law
  * body (lowest power first). `text` replaces the law's text; the next amender
  * works from that output.
@@ -1607,7 +1625,12 @@ export function keepSecret(planID: number, assetID: number): Promise<PlanEcho> {
  */
 export function shareChoice(
 	planID: number,
-	body: { choice: string; target_asset_id?: number | null; target_marginalia_id?: number | null }
+	body: {
+		choice: string;
+		target_asset_id?: number | null;
+		target_marginalia_id?: number | null;
+		update_text?: string;
+	}
 ): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/share-choice`, {
 		method: 'POST',

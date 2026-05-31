@@ -22,7 +22,7 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		joinCouncil, callRoll, setAddendum, amendDecree,
+		joinCouncil, callRoll, setAddendum, amendDecree, namePlanAsset,
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -108,6 +108,8 @@
 		amendedBy: number[];
 		lawID: number | null;
 		lawText: string;
+		resourceAssetID: number | null;
+		resourceNamed: boolean;
 	};
 	const pdState = $derived.by<PDState>(() => {
 		const rd = parseResolutionData(plan).propose_decree ?? {};
@@ -121,6 +123,8 @@
 			amendedBy: rd.amended_by ?? [],
 			lawID: rd.law_id ?? null,
 			lawText: rd.law_text ?? '',
+			resourceAssetID: rd.resource_asset_id ?? null,
+			resourceNamed: rd.resource_named ?? false,
 		};
 	});
 
@@ -262,6 +266,26 @@
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not place addendum.';
 		} finally { addendumBusy = false; }
+	}
+
+	// ── Name the law's resource asset (preparer) ─────────────────────────────
+	// A made decree creates the resource with a placeholder name; the preparer
+	// then names it. Optional — it does not gate completion.
+	const needsResourceNaming = $derived(
+		isPreparer && pdState.resourceAssetID != null && !pdState.resourceNamed,
+	);
+	let resourceName = $state('');
+	let nameBusy = $state(false);
+	async function submitResourceName(p: Plan) {
+		if (nameBusy || !resourceName.trim()) return;
+		nameBusy = true; resError = '';
+		try {
+			await namePlanAsset(p.id, 'name-resource', resourceName.trim());
+			resourceName = '';
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not name the resource.';
+		} finally { nameBusy = false; }
 	}
 
 	// ── Complete ─────────────────────────────────────────────────────────────
@@ -470,6 +494,23 @@
 					<p class="choices-note muted">
 						Waiting for {playerName(players, pdState.signatoryID)} to place the addendum…
 					</p>
+				{/if}
+
+				{#if needsResourceNaming}
+					<div class="plan-form">
+						<p class="choices-header">Name the resource your decree created</p>
+						<input
+							type="text"
+							class="form-input"
+							bind:value={resourceName}
+							placeholder="Name the law's resource…"
+							maxlength={120}
+						/>
+						<button class="action-btn primary" onclick={() => submitResourceName(plan)}
+							disabled={nameBusy || !resourceName.trim()}>
+							{nameBusy ? '…' : 'Name resource'}
+						</button>
+					</div>
 				{/if}
 
 				{#if isPreparer}

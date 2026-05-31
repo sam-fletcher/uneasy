@@ -38,15 +38,17 @@ func pdCallRoll(t *testing.T, h *planLifecycle, planID int64, signatoryIdx int) 
 	return roll
 }
 
-// pdResourceAssets returns the non-destroyed resource assets in the game whose
-// name marks them as an enacted law.
+// pdResourceAssets returns the non-destroyed resource assets created by an
+// enacted decree. A made decree creates the resource with a placeholder name
+// (the preparer names it afterwards via name-asset); these tests don't rename
+// it, so the placeholder identifies them.
 func pdLawAssets(t *testing.T, h *planLifecycle) []dbgen.Asset {
 	t.Helper()
 	all, err := h.q.ListAssetsByGame(context.Background(), h.tg.Game.ID)
 	require.NoError(t, err)
 	var out []dbgen.Asset
 	for _, a := range all {
-		if a.AssetType == model.AssetResource && !a.IsDestroyed && strings.HasPrefix(a.Name, "Law: ") {
+		if a.AssetType == model.AssetResource && !a.IsDestroyed && a.Name == lawResourceNameDefault {
 			out = append(out, a)
 		}
 	}
@@ -156,6 +158,44 @@ func TestProposeDecree_Make_CreatesLawAndAsset(t *testing.T) {
 		}
 		return false
 	}, "expected an enactment action-log post; got %v", posts)
+}
+
+// TestProposeDecree_NameAsset_RenamesResource proves the preparer names the
+// resource a made decree created (it starts with a placeholder) via name-asset,
+// the resolution data records it as named, and non-preparers are rejected.
+func TestProposeDecree_NameAsset_RenamesResource(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan := pdPrepareAndResolve(t, h, 0)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	roll := pdCallRoll(t, h, plan.ID, preparerIdx)
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+	h.makeChoice(plan.ID, "make", []string{})
+
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.ResourceAssetID, "make creates the resource and records its id")
+	require.False(t, pd.ResourceNamed)
+
+	created, err := h.q.GetAssetByID(ctx, *pd.ResourceAssetID)
+	require.NoError(t, err)
+	require.Equal(t, lawResourceNameDefault, created.Name, "resource starts with a placeholder")
+
+	namePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/name-resource"
+
+	// A non-preparer cannot name it.
+	otherIdx := (preparerIdx + 1) % 3
+	code, body := h.post(otherIdx, namePath, map[string]any{"name": "Hijack"})
+	require.Equalf(t, http.StatusForbidden, code, "only the preparer may name: %v", body)
+
+	// The preparer names it; the asset is renamed and the flag flips.
+	code, body = h.post(preparerIdx, namePath, map[string]any{"name": "The Royal Granary"})
+	require.Equalf(t, http.StatusOK, code, "name-asset: %v", body)
+
+	renamed, err := h.q.GetAssetByID(ctx, *pd.ResourceAssetID)
+	require.NoError(t, err)
+	assert.Equal(t, "The Royal Granary", renamed.Name)
+	assert.True(t, pdData(t, h, plan.ID).ResourceNamed, "naming flips ResourceNamed")
 }
 
 // TestProposeDecree_Mar_AmendChainThenAddendum drives the full marred flow:

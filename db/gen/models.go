@@ -148,6 +148,7 @@ type LiaiseChoice struct {
 	TargetAssetID      *int64             `db:"target_asset_id" json:"target_asset_id"`
 	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
+	UpdateText         *string            `db:"update_text" json:"update_text"`
 }
 
 type Marginalium struct {

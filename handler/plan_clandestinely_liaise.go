@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/game"
@@ -506,11 +507,13 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			Choice        string `json:"choice"`
 			TargetAssetID *int64 `json:"target_asset_id"`
 			TargetMargID  *int64 `json:"target_marginalia_id"`
+			UpdateText    string `json:"update_text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Choice == "" {
 			respondErr(w, http.StatusBadRequest, "choice is required")
 			return
 		}
+		body.UpdateText = strings.TrimSpace(body.UpdateText)
 
 		validChoices := []string{
 			liaiseChoiceLookAtSecret, liaiseChoiceUpdatePeer, liaiseChoiceBreakPeer,
@@ -529,19 +532,25 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		// PEER specifically (the peer they brought to this liaison).
 		meetingPeerID := clPartnerMeetingPeerID(plan, player.ID, *ld)
 		if status, msg := clValidateShareTarget(ctx, deps, plan, partnerID, meetingPeerID,
-			body.Choice, body.TargetAssetID, body.TargetMargID); status != 0 {
+			body.Choice, body.TargetAssetID, body.TargetMargID, body.UpdateText); status != 0 {
 			respondErr(w, status, msg)
 			return
 		}
 
 		// Record the choice in liaise_choices. Effects are applied once both
-		// players have submitted.
+		// players have submitted. update_text is only meaningful for update_peer
+		// (the authored replacement marginalia text).
+		var updateTextPtr *string
+		if body.Choice == liaiseChoiceUpdatePeer && body.UpdateText != "" {
+			updateTextPtr = &body.UpdateText
+		}
 		if _, err := deps.Q.CreateLiaiseChoice(ctx, dbgen.CreateLiaiseChoiceParams{
 			PlanID:             plan.ID,
 			PlayerID:           player.ID,
 			Choice:             body.Choice,
 			TargetAssetID:      body.TargetAssetID,
 			TargetMarginaliaID: body.TargetMargID,
+			UpdateText:         updateTextPtr,
 		}); err != nil {
 			respondInternalErr(w, r, "could not record share-choice", err)
 			return
@@ -654,26 +663,64 @@ func applyLookAtSecret(
 	return nil
 }
 
-// applyUpdatePeer is narrative — the player revises their partner's peer (the
-// edit happens via the asset card). We log it so the change is visible. If the
-// meeting peer was destroyed before resolution (e.g. broken in another plan),
-// there is nothing to update: log a no-op rather than implying a change.
+// applyUpdatePeer rewrites one marginalia on the partner's meeting peer with
+// the actor-authored replacement text (recorded on the choice). "Updating" an
+// asset means editing one of its marginalia — tearing is reserved for break.
+// If the peer was destroyed, or the chosen marginalia was torn, before
+// resolution (e.g. broken in another plan), there is nothing to update: log a
+// no-op rather than implying a change.
 func applyUpdatePeer(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	choice dbgen.ListLiaiseChoicesByPlanRow,
 ) error {
-	if choice.TargetAssetID != nil {
-		if asset, err := deps.Q.GetAssetByID(ctx, *choice.TargetAssetID); err == nil && asset.IsDestroyed {
-			clLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
-				"%s could not update their partner's meeting peer — it no longer exists.",
-				playerDisplayName(ctx, deps.Q, choice.PlayerID)))
-			return nil
-		}
+	noop := func() {
+		clLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
+			"%s could not update their partner's meeting peer — it no longer exists.",
+			playerDisplayName(ctx, deps.Q, choice.PlayerID)))
 	}
-	clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s updated their partner's peer %s.",
-		playerDisplayName(ctx, deps.Q, choice.PlayerID), clAssetName(ctx, deps, choice.TargetAssetID)))
+
+	if choice.TargetAssetID == nil || choice.TargetMarginaliaID == nil || choice.UpdateText == nil {
+		noop()
+		return nil
+	}
+	asset, err := deps.Q.GetAssetByID(ctx, *choice.TargetAssetID)
+	if err != nil {
+		return fmt.Errorf("update_peer: target asset not found: %w", err)
+	}
+	if asset.IsDestroyed {
+		noop()
+		return nil
+	}
+	m, err := deps.Q.GetMarginaliaByID(ctx, *choice.TargetMarginaliaID)
+	if err != nil {
+		return fmt.Errorf("update_peer: marginalia not found: %w", err)
+	}
+	if m.IsTorn {
+		noop()
+		return nil
+	}
+
+	newText := strings.TrimSpace(*choice.UpdateText)
+	if newText == "" {
+		noop()
+		return nil
+	}
+	if err := deps.Q.UpdateMarginaliaText(ctx, dbgen.UpdateMarginaliaTextParams{
+		ID:   m.ID,
+		Text: newText,
+	}); err != nil {
+		return fmt.Errorf("could not update partner's peer marginalia: %w", err)
+	}
+	m.Text = newText
+	broadcastEvent(deps.Manager, plan.GameID, model.EventMarginaliaUpdated, model.MarginaliaPayload{
+		AssetID:    asset.ID,
+		Marginalia: m,
+	})
+
+	clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s rewrote a marginalia on their partner's peer %q.",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), asset.Name))
 	return nil
 }
 
@@ -1024,8 +1071,8 @@ func clPartnerMeetingPeerID(plan *dbgen.Plan, playerID int64, ld LiaiseResolutio
 //   - take_gift:                          a partner-owned, non-destroyed NON-peer.
 //   - update_peer / break_peer:           the partner's MEETING PEER specifically
 //     (meetingPeerID — the peer they brought to this liaison), non-destroyed.
-//     break_peer additionally requires a marginalia on that peer (the breaker
-//     chooses which to tear).
+//     Both require a marginalia on that peer: break_peer tears it; update_peer
+//     rewrites it (and so also requires non-empty updateText).
 func clValidateShareTarget(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -1034,6 +1081,7 @@ func clValidateShareTarget(
 	meetingPeerID *int64,
 	choice string,
 	targetAssetID, targetMargID *int64,
+	updateText string,
 ) (status int, msg string) {
 	if partnerID == 0 {
 		return http.StatusConflict, "liaison partner is not set"
@@ -1074,20 +1122,27 @@ func clValidateShareTarget(
 			return http.StatusBadRequest, fmt.Sprintf(
 				"%q must target your partner's meeting peer", choice)
 		}
-		if choice == liaiseChoiceBreakPeer {
-			if targetMargID == nil {
-				return http.StatusBadRequest, "break_peer requires target_marginalia_id (the marginalia to tear)"
+		// Both update_peer and break_peer act on a specific marginalia of the
+		// meeting peer. break_peer tears it; update_peer rewrites it.
+		if targetMargID == nil {
+			verb := "the marginalia to tear"
+			if choice == liaiseChoiceUpdatePeer {
+				verb = "the marginalia to rewrite"
 			}
-			m, err := deps.Q.GetMarginaliaByID(ctx, *targetMargID)
-			if err != nil {
-				return http.StatusNotFound, "marginalia not found"
-			}
-			if m.AssetID != *targetAssetID {
-				return http.StatusBadRequest, "marginalia does not belong to the target peer"
-			}
-			if m.IsTorn {
-				return http.StatusConflict, "marginalia is already torn"
-			}
+			return http.StatusBadRequest, fmt.Sprintf("%s requires target_marginalia_id (%s)", choice, verb)
+		}
+		m, err := deps.Q.GetMarginaliaByID(ctx, *targetMargID)
+		if err != nil {
+			return http.StatusNotFound, "marginalia not found"
+		}
+		if m.AssetID != *targetAssetID {
+			return http.StatusBadRequest, "marginalia does not belong to the target peer"
+		}
+		if m.IsTorn {
+			return http.StatusConflict, "marginalia is already torn"
+		}
+		if choice == liaiseChoiceUpdatePeer && updateText == "" {
+			return http.StatusBadRequest, "update_peer requires update_text (the rewritten marginalia)"
 		}
 	}
 	return 0, ""

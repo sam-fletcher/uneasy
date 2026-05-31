@@ -42,6 +42,13 @@ type ProposeDecreeResolutionData struct {
 	// the latest text (incl. amendments) without a separate laws fetch. Kept in
 	// sync by pdComposeLaw.
 	LawText string `json:"law_text,omitempty"`
+
+	// ResourceAssetID is the resource asset created by the make step. It is
+	// created with a neutral placeholder name; the preparer then names it via
+	// the name-asset route (ResourceNamed flips true once they do). Naming is
+	// optional — it does not gate completion.
+	ResourceAssetID *int64 `json:"resource_asset_id,omitempty"`
+	ResourceNamed   bool   `json:"resource_named,omitempty"`
 }
 
 // NextAmender returns the next council member who must amend the law on a mar,

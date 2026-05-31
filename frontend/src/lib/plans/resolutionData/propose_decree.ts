@@ -16,6 +16,10 @@ export interface ProposeDecreeResolutionData {
 	law_id?: number | null;
 	/** Current law body, mirrored from the law row for the resolve panel. */
 	law_text?: string;
+	/** Resource asset created by a made decree (starts with a placeholder name). */
+	resource_asset_id?: number | null;
+	/** True once the preparer has named the resource. */
+	resource_named?: boolean;
 }
 
 export function parseProposeDecreeData(

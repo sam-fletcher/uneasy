@@ -18,7 +18,7 @@
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName,
 		assetsWithIntactMarginalia, playersExcept,
 	} from './shared';
-	import { spGivePeer, spBreakSelf } from '$lib/api';
+	import { spGivePeer, spBreakSelf, namePlanAsset } from '$lib/api';
 
 	import type { PlanPanelProps } from './types';
 
@@ -157,6 +157,26 @@
 			resError = e instanceof Error ? e.message : 'Could not break asset.';
 		} finally { breakBusy = false; }
 	}
+
+	// ── Name the societal-shift artifact (preparer) ───────────────────────────
+	// A made plan creates the artifact with a placeholder name; the preparer
+	// then names it. Optional — it does not gate completion.
+	const needsArtifactNaming = $derived(
+		isPreparer && spData.artifact_id != null && !spData.artifact_named,
+	);
+	let artifactName = $state('');
+	let nameBusy = $state(false);
+	async function submitArtifactName(p: Plan) {
+		if (nameBusy || !artifactName.trim()) return;
+		nameBusy = true; resError = '';
+		try {
+			await namePlanAsset(p.id, 'name-artifact', artifactName.trim());
+			artifactName = '';
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not name the artifact.';
+		} finally { nameBusy = false; }
+	}
 </script>
 
 {#if mode === 'prep'}
@@ -202,6 +222,23 @@
 			<div class="complete-section">
 				{#if existingChoices.length > 0}
 					<p class="choices-applied">Choices applied: {existingChoices.join(', ')}</p>
+				{/if}
+
+				{#if needsArtifactNaming}
+					<div class="plan-form">
+						<p class="choices-header">Name the artifact your propaganda created</p>
+						<input
+							type="text"
+							class="form-input"
+							bind:value={artifactName}
+							placeholder="Name the societal shift…"
+							maxlength={120}
+						/>
+						<button class="action-btn primary" onclick={() => submitArtifactName(plan)}
+							disabled={nameBusy || !artifactName.trim()}>
+							{nameBusy ? '…' : 'Name artifact'}
+						</button>
+					</div>
 				{/if}
 
 				{#if isPreparer && needsGivePeer}

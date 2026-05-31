@@ -223,6 +223,68 @@ func TestLiaise_ShareChoice_BreakPartnerPeer_AutoDestroys(t *testing.T) {
 	assert.Equal(t, h.tg.Players[1].ID, movedGift.OwnerID, "gift should belong to the partner now")
 }
 
+// TestLiaise_ShareChoice_UpdatePeer_RewritesMarginalia proves update_peer edits
+// (rewrites) one marginalia on the partner's meeting peer — it does NOT tear it
+// (tearing is reserved for break_peer). The authored text applies once both
+// players submit.
+func TestLiaise_ShareChoice_UpdatePeer_RewritesMarginalia(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	m := clDriveToThingsWeShare(t, h)
+
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
+
+	// Preparer (0) rewrites a note on the partner's (1) meeting peer.
+	const newText = "now sworn to a rival house"
+	code, body := h.post(0, sharePath, map[string]any{
+		"choice": "update_peer", "target_asset_id": m.partnerPeerID,
+		"target_marginalia_id": m.partnerMargID, "update_text": newText,
+	})
+	require.Equalf(t, http.StatusOK, code, "preparer update_peer: %v", body)
+
+	// Not applied until both submit.
+	before, err := h.q.GetMarginaliaByID(ctx, m.partnerMargID)
+	require.NoError(t, err)
+	assert.NotEqual(t, newText, before.Text, "effects apply only once both submit")
+
+	// Partner (1) rewrites a note on the preparer's (0) meeting peer.
+	code, body = h.post(1, sharePath, map[string]any{
+		"choice": "update_peer", "target_asset_id": m.preparerPeerID,
+		"target_marginalia_id": m.preparerMargID, "update_text": "a closely guarded ally",
+	})
+	require.Equalf(t, http.StatusOK, code, "partner update_peer: %v", body)
+
+	// The note was rewritten, not torn, and the peer survives (no destruction).
+	after, err := h.q.GetMarginaliaByID(ctx, m.partnerMargID)
+	require.NoError(t, err)
+	assert.Equal(t, newText, after.Text)
+	assert.False(t, after.IsTorn, "update rewrites, never tears")
+	peer, err := h.q.GetAssetByID(ctx, m.partnerPeerID)
+	require.NoError(t, err)
+	assert.False(t, peer.IsDestroyed, "updating a note never destroys the peer")
+}
+
+// TestLiaise_ShareChoice_UpdatePeer_RequiresMarginaliaAndText proves update_peer
+// is rejected without a target marginalia or without replacement text.
+func TestLiaise_ShareChoice_UpdatePeer_RequiresMarginaliaAndText(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	m := clDriveToThingsWeShare(t, h)
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
+
+	// Missing marginalia.
+	code, body := h.post(0, sharePath, map[string]any{
+		"choice": "update_peer", "target_asset_id": m.partnerPeerID, "update_text": "x",
+	})
+	assert.Equalf(t, http.StatusBadRequest, code, "update_peer needs a marginalia: %v", body)
+
+	// Missing replacement text.
+	code, body = h.post(0, sharePath, map[string]any{
+		"choice": "update_peer", "target_asset_id": m.partnerPeerID,
+		"target_marginalia_id": m.partnerMargID,
+	})
+	assert.Equalf(t, http.StatusBadRequest, code, "update_peer needs update_text: %v", body)
+}
+
 // TestLiaise_ShareChoice_BreakPeer_RejectsNonMeetingPeer proves break_peer must
 // target the partner's MEETING peer specifically — another partner-owned peer
 // (not the one brought to the liaison) is rejected.

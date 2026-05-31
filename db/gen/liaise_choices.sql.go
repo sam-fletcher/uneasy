@@ -24,21 +24,23 @@ func (q *Queries) CountLiaiseChoicesByPlan(ctx context.Context, planID int64) (i
 
 const createLiaiseChoice = `-- name: CreateLiaiseChoice :one
 
-INSERT INTO liaise_choices (plan_id, player_id, choice, target_asset_id, target_marginalia_id)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO liaise_choices (plan_id, player_id, choice, target_asset_id, target_marginalia_id, update_text)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (plan_id, player_id) DO UPDATE
   SET choice = EXCLUDED.choice,
       target_asset_id = EXCLUDED.target_asset_id,
-      target_marginalia_id = EXCLUDED.target_marginalia_id
-RETURNING id, plan_id, player_id, choice, target_asset_id, target_marginalia_id, created_at
+      target_marginalia_id = EXCLUDED.target_marginalia_id,
+      update_text = EXCLUDED.update_text
+RETURNING id, plan_id, player_id, choice, target_asset_id, target_marginalia_id, update_text, created_at
 `
 
 type CreateLiaiseChoiceParams struct {
-	PlanID             int64  `db:"plan_id" json:"plan_id"`
-	PlayerID           int64  `db:"player_id" json:"player_id"`
-	Choice             string `db:"choice" json:"choice"`
-	TargetAssetID      *int64 `db:"target_asset_id" json:"target_asset_id"`
-	TargetMarginaliaID *int64 `db:"target_marginalia_id" json:"target_marginalia_id"`
+	PlanID             int64   `db:"plan_id" json:"plan_id"`
+	PlayerID           int64   `db:"player_id" json:"player_id"`
+	Choice             string  `db:"choice" json:"choice"`
+	TargetAssetID      *int64  `db:"target_asset_id" json:"target_asset_id"`
+	TargetMarginaliaID *int64  `db:"target_marginalia_id" json:"target_marginalia_id"`
+	UpdateText         *string `db:"update_text" json:"update_text"`
 }
 
 type CreateLiaiseChoiceRow struct {
@@ -48,6 +50,7 @@ type CreateLiaiseChoiceRow struct {
 	Choice             string             `db:"choice" json:"choice"`
 	TargetAssetID      *int64             `db:"target_asset_id" json:"target_asset_id"`
 	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
+	UpdateText         *string            `db:"update_text" json:"update_text"`
 	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
@@ -59,6 +62,7 @@ func (q *Queries) CreateLiaiseChoice(ctx context.Context, arg CreateLiaiseChoice
 		arg.Choice,
 		arg.TargetAssetID,
 		arg.TargetMarginaliaID,
+		arg.UpdateText,
 	)
 	var i CreateLiaiseChoiceRow
 	err := row.Scan(
@@ -68,13 +72,14 @@ func (q *Queries) CreateLiaiseChoice(ctx context.Context, arg CreateLiaiseChoice
 		&i.Choice,
 		&i.TargetAssetID,
 		&i.TargetMarginaliaID,
+		&i.UpdateText,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listLiaiseChoicesByPlan = `-- name: ListLiaiseChoicesByPlan :many
-SELECT id, plan_id, player_id, choice, target_asset_id, target_marginalia_id, created_at
+SELECT id, plan_id, player_id, choice, target_asset_id, target_marginalia_id, update_text, created_at
 FROM liaise_choices
 WHERE plan_id = $1
 ORDER BY created_at ASC
@@ -87,6 +92,7 @@ type ListLiaiseChoicesByPlanRow struct {
 	Choice             string             `db:"choice" json:"choice"`
 	TargetAssetID      *int64             `db:"target_asset_id" json:"target_asset_id"`
 	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
+	UpdateText         *string            `db:"update_text" json:"update_text"`
 	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
@@ -106,6 +112,7 @@ func (q *Queries) ListLiaiseChoicesByPlan(ctx context.Context, planID int64) ([]
 			&i.Choice,
 			&i.TargetAssetID,
 			&i.TargetMarginaliaID,
+			&i.UpdateText,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

@@ -51,7 +51,10 @@ func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.AssetArtifact, model.AssetType(artifact.AssetType))
 	assert.Equal(t, plan.PreparerID, artifact.OwnerID)
-	assert.Equal(t, notes, artifact.Name)
+	// The artifact is created with a placeholder name; the preparer names it
+	// afterwards via name-asset (not derived from the propaganda message).
+	assert.Equal(t, propagandaArtifactNameDefault, artifact.Name)
+	assert.False(t, rd.SpreadPropaganda.ArtifactNamed)
 }
 
 // TestPlanLifecycle_ExchangeCourtiers_MessyBreakRestricted regression-guards

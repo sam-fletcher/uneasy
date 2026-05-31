@@ -255,7 +255,7 @@
 		{ key: 'look_at_secret',   label: "Look at partner's secrets",
 			hint: "Pick one of their assets — you'll see its secrets." },
 		{ key: 'update_peer',      label: "Update partner's meeting peer",
-			hint: 'Narrative — revise the peer they brought; edit it via its asset card later.' },
+			hint: 'Rewrite one marginalia on the peer they brought (you choose which).' },
 		{ key: 'break_peer',       label: "Break partner's meeting peer",
 			hint: 'Tear a marginalia on the peer they brought (you choose which).' },
 		{ key: 'take_gift',        label: 'Take a gift from partner',
@@ -264,15 +264,18 @@
 			hint: "Pick one of their assets; you bank a die for a future roll." },
 	];
 	// look / take_gift / leverage pick a partner asset from a list; update_peer /
-	// break_peer have a FIXED target (the meeting peer) so they show no picker —
-	// break_peer additionally needs a marginalia chosen on that fixed peer.
+	// break_peer have a FIXED target (the meeting peer) so they show no asset
+	// picker — both need a marginalia chosen on that fixed peer (break_peer
+	// tears it; update_peer additionally needs the rewritten text).
 	const SHARE_NEEDS_PICKER = new Set(['look_at_secret', 'take_gift', 'leverage_partner']);
 	const SHARE_TARGETS_MEETING_PEER = new Set(['update_peer', 'break_peer']);
-	const SHARE_NEEDS_MARG = new Set(['break_peer']);
+	const SHARE_NEEDS_MARG = new Set(['update_peer', 'break_peer']);
+	const SHARE_NEEDS_TEXT = new Set(['update_peer']);
 
 	let shareChoiceKey = $state<string | null>(null);
 	let shareAssetID = $state<number | null>(null);
 	let shareMargID = $state<number | null>(null);
+	let shareUpdateText = $state('');
 	let shareBusy = $state(false);
 	let iShared = $state(false);
 
@@ -285,6 +288,7 @@
 			shareChoiceKey = null;
 			shareAssetID = null;
 			shareMargID = null;
+			shareUpdateText = '';
 			iShared = false;
 		}
 	});
@@ -302,6 +306,7 @@
 		if (SHARE_NEEDS_PICKER.has(shareChoiceKey) && shareAssetID == null) return false;
 		if (SHARE_TARGETS_MEETING_PEER.has(shareChoiceKey) && !meetingPeerLive) return false;
 		if (SHARE_NEEDS_MARG.has(shareChoiceKey) && shareMargID == null) return false;
+		if (SHARE_NEEDS_TEXT.has(shareChoiceKey) && !shareUpdateText.trim()) return false;
 		return true;
 	});
 
@@ -315,6 +320,7 @@
 				choice: shareChoiceKey,
 				target_asset_id: needsAsset ? shareEffectiveAssetID : null,
 				target_marginalia_id: SHARE_NEEDS_MARG.has(shareChoiceKey) ? shareMargID : null,
+				update_text: SHARE_NEEDS_TEXT.has(shareChoiceKey) ? shareUpdateText.trim() : undefined,
 			});
 			iShared = true;
 			onPlansChanged();
@@ -507,6 +513,7 @@
 										shareChoiceKey = shareChoiceKey === opt.key ? null : opt.key;
 										shareAssetID = null;
 										shareMargID = null;
+										shareUpdateText = '';
 									}}
 								>{opt.label}</button>
 							{/each}
@@ -521,34 +528,38 @@
 
 					{#if shareChoiceKey && SHARE_TARGETS_MEETING_PEER.has(shareChoiceKey)}
 						<!-- Target is fixed: the partner's MEETING PEER. No picker. -->
+						{@const isUpdate = shareChoiceKey === 'update_peer'}
 						{#if !meetingPeerLive}
 							<p class="choices-note muted">
-								{shareChoiceKey === 'break_peer' ? 'Break' : 'Update'} is unavailable —
+								{isUpdate ? 'Update' : 'Break'} is unavailable —
 								your partner's meeting peer no longer exists. Pick another option.
 							</p>
-						{:else if shareChoiceKey === 'break_peer'}
+						{:else}
 							<p class="choices-note">
-								Breaking <strong>{partnerMeetingPeer?.name}</strong> — choose which note to tear:
+								{isUpdate ? 'Rewriting a note on' : 'Breaking'}
+								<strong>{partnerMeetingPeer?.name}</strong> —
+								choose which note to {isUpdate ? 'rewrite' : 'tear'}:
 							</p>
 							{#if meetingPeerBreakableMarginalia.length === 0}
-								<p class="choices-note muted">This peer has no intact note to tear.</p>
+								<p class="choices-note muted">
+									This peer has no intact note to {isUpdate ? 'rewrite' : 'tear'}.
+								</p>
 							{:else}
 								<CardPicker
-									label="Note to tear"
+									label={isUpdate ? 'Note to rewrite' : 'Note to tear'}
 									items={partnerMeetingPeer ? [partnerMeetingPeer] : []}
 									{players}
-									emptyMessage="No intact note to tear."
+									emptyMessage={isUpdate ? 'No intact note to rewrite.' : 'No intact note to tear.'}
 									marginaliaMode
 									selectedMarginaliaID={shareMargID}
 									onSelectMarginalia={(mID) => { shareMargID = mID; }}
 								/>
+								{#if isUpdate && shareMargID != null}
+									<textarea rows={2} class="form-textarea" bind:value={shareUpdateText}
+										placeholder="The rewritten note…" maxlength={280}></textarea>
+								{/if}
 							{/if}
-							{#if shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}
-						{:else}
-							<p class="choices-note">
-								Updating <strong>{partnerMeetingPeer?.name}</strong> — edit it via its
-								asset card after the liaison resolves.
-							</p>
+							{#if !isUpdate && shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}
 						{/if}
 					{:else if shareChoiceKey && SHARE_NEEDS_PICKER.has(shareChoiceKey)}
 						{@const candidates = otherParticipantAssets.filter(a =>

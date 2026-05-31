@@ -25,7 +25,11 @@ type SpreadPropagandaResolutionData struct {
 
 	// ArtifactID is the asset created by the make step ("Create an artifact
 	// representing the societal shift"). Set in ApplyChoice on a make result.
-	ArtifactID *int64 `json:"artifact_id,omitempty"`
+	// It is created with a neutral placeholder name; the preparer then names it
+	// via the name-asset route (ArtifactNamed flips true once they do). Naming
+	// is optional — it does not gate completion.
+	ArtifactID    *int64 `json:"artifact_id,omitempty"`
+	ArtifactNamed bool   `json:"artifact_named,omitempty"`
 
 	// GivePeerRequired flips true when mar option (a) "give_peer" is chosen;
 	// it gates completion until the preparer hands a peer to another player
