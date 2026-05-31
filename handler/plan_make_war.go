@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -212,6 +213,30 @@ func (mwHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+// mwLog writes a plan.make_war action-log post.
+func mwLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	planID := plan.ID
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.make_war",
+		severity, body, plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
+}
+
+// mwSideLabel renders a war side for log bodies.
+func mwSideLabel(side int16) string {
+	if side == gamepkg.WarSideDeclarer {
+		return "the declarers"
+	}
+	return "the enemies"
+}
+
+// mwCostVerb renders a battle-cost choice as a past-tense clause for logs.
+func mwCostVerb(choice string) string {
+	if choice == gamepkg.WarCostLeverageTwo {
+		return "leveraged two assets"
+	}
+	return "broke an asset"
+}
+
 // mwLoadWar resolves the war for a Make War plan. Returns 404 if no war row
 // exists for this plan (the plan was cancelled before the delay resolved, or
 // called on a malformed plan), 500 on any other DB error.
@@ -323,6 +348,13 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastEvent(deps.Manager, plan.GameID, model.EventWarPlayerJoined, model.WarPlayerJoinedPayload{
 			WarID: war.ID, PlayerID: player.ID, Side: body.Side,
 		})
+		joinNote := ""
+		if !revealOpen {
+			joinNote = " (must pay the cost of battle to become active)"
+		}
+		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s joined the war on %s' side%s.",
+			player.DisplayName, mwSideLabel(body.Side), joinNote))
 		respond(w, http.StatusOK, map[string]any{
 			"war_id": war.ID, "player_id": player.ID, "side": body.Side,
 		})
@@ -405,8 +437,15 @@ func applyMakeWarDelayResult(
 	parts, err := q.ListWarParticipants(ctx, *mw.WarID)
 	if err == nil {
 		infos := make([]model.WarParticipantInfo, 0, len(parts))
+		var declarers, enemies []string
 		for _, p := range parts {
 			infos = append(infos, model.WarParticipantInfo{PlayerID: p.PlayerID, Side: p.Side})
+			name := playerDisplayName(ctx, q, p.PlayerID)
+			if p.Side == gamepkg.WarSideDeclarer {
+				declarers = append(declarers, name)
+			} else {
+				enemies = append(enemies, name)
+			}
 		}
 		broadcastEvent(manager, plan.GameID, model.EventWarDeclared, model.WarDeclaredPayload{
 			PlanID:       planID,
@@ -414,5 +453,12 @@ func applyMakeWarDelayResult(
 			Participants: infos,
 			TargetRow:    targetRow,
 		})
+		mwPlanID := planID
+		EmitSystemPost(ctx, q, manager, plan.GameID, "plan.make_war",
+			model.SeverityImportant,
+			fmt.Sprintf("War breaks out: %s vs %s. The cost of battle falls each row until peace.",
+				strings.Join(declarers, " & "), strings.Join(enemies, " & ")),
+			plan.RowNumber, &mwPlanID, nil,
+			map[string]any{"plan_id": planID, "war_id": *mw.WarID})
 	}
 }

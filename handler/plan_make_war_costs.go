@@ -141,14 +141,66 @@ func mwOutstandingCostsForGame(
 	return out, nil
 }
 
-// mwOutstandingSurrenderClaimsForGame returns surrender claims in the game
-// that have not yet been fulfilled (opponent has not taken an asset).
+// mwOutstandingSurrenderClaimsForGame returns surrender claims in the game that
+// still block row advance: unfulfilled (the opponent has not taken an asset)
+// AND fulfillable (the surrendered player still owns at least one non-destroyed
+// asset for an opponent to take).
+//
+// A surrendered player can be left with zero claimable assets — every asset
+// destroyed paying the cost of battle, or already seized by an earlier
+// claimant. The rules let each opponent take "one asset of their choice", but
+// when there is nothing left to take the claim can never be fulfilled. Treating
+// such claims as outstanding would gate the row forever (a soft-lock), so they
+// are filtered out here: with no claimable assets the seizure resolves as a
+// no-op and the row may advance.
 func mwOutstandingSurrenderClaimsForGame(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID int64,
 ) ([]dbgen.WarSurrenderClaim, error) {
-	return q.ListOpenSurrenderClaimsByGame(ctx, gameID)
+	claims, err := q.ListOpenSurrenderClaimsByGame(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	if len(claims) == 0 {
+		return nil, nil
+	}
+	// Cache per surrendered player — several opponents may hold claims against
+	// the same player, and the claimable pool only depends on the surrendered
+	// player's assets.
+	fulfillable := map[int64]bool{}
+	out := make([]dbgen.WarSurrenderClaim, 0, len(claims))
+	for _, c := range claims {
+		has, seen := fulfillable[c.SurrenderedID]
+		if !seen {
+			n, err := mwClaimableAssetCount(ctx, q, c.SurrenderedID)
+			if err != nil {
+				return nil, err
+			}
+			has = n > 0
+			fulfillable[c.SurrenderedID] = has
+		}
+		if has {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// mwClaimableAssetCount reports how many non-destroyed assets a surrendered
+// player still owns — the pool an opponent may seize via /take-surrender-asset.
+func mwClaimableAssetCount(ctx context.Context, q *dbgen.Queries, ownerID int64) (int, error) {
+	assets, err := q.ListAssetsByOwner(ctx, ownerID)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, a := range assets {
+		if !a.IsDestroyed {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // mwBroadcastBattleCostsDue sends war.battle_cost_due for each active war on

@@ -6,6 +6,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	dbgen "uneasy/db/gen"
@@ -103,6 +104,8 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			WarID: war.ID, ProposalID: prop.ID,
 			ProposerID: player.ID, Terms: body.Terms,
 		})
+		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s proposed peace terms: %s", player.DisplayName, body.Terms))
 		respond(w, http.StatusOK, map[string]any{
 			"proposal_id": prop.ID,
 			"war_id":      war.ID,
@@ -231,6 +234,8 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastEvent(deps.Manager, plan.GameID, model.EventWarEnded, model.WarEndedPayload{
 			WarID: war.ID, Reason: gamepkg.WarEndPeace, RowNumber: game.CurrentRow,
 		})
+		mwLog(ctx, deps, plan, model.SeverityImportant,
+			"All active participants agreed to peace terms — the war is over.")
 		// Ending the war may clear an AwaitBattleCost gate on future rows.
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
