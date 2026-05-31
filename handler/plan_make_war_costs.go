@@ -162,6 +162,24 @@ func mwOutstandingSurrenderClaimsForGame(
 	if err != nil {
 		return nil, err
 	}
+	return mwFulfillableSurrenderClaims(ctx, q, claims)
+}
+
+// mwFulfillableSurrenderClaims filters a set of unfulfilled surrender claims
+// down to the ones an opponent can actually act on: those whose surrendered
+// player still owns at least one non-destroyed asset to seize.
+//
+// This is the single source of truth for "is this claim outstanding", shared by
+// the row-advance gate (mwOutstandingSurrenderClaimsForGame) and the war-state
+// view (buildWarState) so the two can't drift on what counts as actionable. A
+// surrendered player can be left with zero claimable assets — every asset
+// destroyed paying the cost of battle, or already seized by an earlier claimant
+// — in which case the claim can never be fulfilled and is dropped here.
+func mwFulfillableSurrenderClaims(
+	ctx context.Context,
+	q *dbgen.Queries,
+	claims []dbgen.WarSurrenderClaim,
+) ([]dbgen.WarSurrenderClaim, error) {
 	if len(claims) == 0 {
 		return nil, nil
 	}

@@ -274,6 +274,17 @@ func TestMakeWarHTTP_SurrenderWithNoClaimableAssets_RowCanAdvance(t *testing.T) 
 	require.Empty(t, outstanding,
 		"a claim against a player with no claimable assets must not block row advance")
 
+	// …and the war-state view must agree with the gate: the unfulfillable claim
+	// is hidden so the panel doesn't render an actionable-looking surrender claim
+	// that can never be acted on.
+	wsRaw, err := h.q.ListOpenSurrenderClaimsByWar(ctx, war.ID)
+	require.NoError(t, err)
+	require.Len(t, wsRaw, 1, "underlying row still exists (unfulfilled)")
+	ws, err := buildWarState(ctx, h.q, war)
+	require.NoError(t, err)
+	require.Empty(t, ws.OpenClaims,
+		"war-state view must not surface an unfulfillable surrender claim")
+
 	game, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
 	req := httptest.NewRequest("POST", "/", nil)

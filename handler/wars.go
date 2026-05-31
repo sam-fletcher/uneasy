@@ -261,7 +261,15 @@ func buildWarState(
 		}
 	}
 
-	openClaims, err := q.ListOpenSurrenderClaimsByWar(ctx, war.ID)
+	rawClaims, err := q.ListOpenSurrenderClaimsByWar(ctx, war.ID)
+	if err != nil {
+		return WarStateResponse{}, err
+	}
+	// Mirror the row-advance gate: only surface claims an opponent can actually
+	// act on (surrendered player still owns a non-destroyed asset). Otherwise the
+	// panel would render an open, actionable-looking claim that can never be
+	// fulfilled. Shared helper keeps gate and view from drifting.
+	openClaims, err := mwFulfillableSurrenderClaims(ctx, q, rawClaims)
 	if err != nil {
 		return WarStateResponse{}, err
 	}
