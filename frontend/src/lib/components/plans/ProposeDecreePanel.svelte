@@ -22,7 +22,7 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		joinCouncil, callRoll, setAddendum,
+		joinCouncil, callRoll, setAddendum, amendDecree,
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -102,7 +102,12 @@
 		signatoryID: number | null;
 		council: number[];
 		addendum: string;
+		addendumConnector: string;
+		addendumPlaced: boolean;
+		amendmentOrder: number[];
+		amendedBy: number[];
 		lawID: number | null;
+		lawText: string;
 	};
 	const pdState = $derived.by<PDState>(() => {
 		const rd = parseResolutionData(plan).propose_decree ?? {};
@@ -110,9 +115,26 @@
 			signatoryID: rd.signatory_id ?? null,
 			council: rd.signatory_player_ids ?? [],
 			addendum: rd.addendum ?? '',
+			addendumConnector: rd.addendum_connector ?? '',
+			addendumPlaced: rd.addendum_placed ?? false,
+			amendmentOrder: rd.amendment_order ?? [],
+			amendedBy: rd.amended_by ?? [],
 			lawID: rd.law_id ?? null,
+			lawText: rd.law_text ?? '',
 		};
 	});
+
+	// Next council member who must amend the marred law (0 / null = none left).
+	const nextAmender = $derived.by<number | null>(() => {
+		for (const id of pdState.amendmentOrder) {
+			if (!pdState.amendedBy.includes(id)) return id;
+		}
+		return null;
+	});
+	const amendmentsRemaining = $derived(
+		pdState.amendmentOrder.filter(id => !pdState.amendedBy.includes(id)).length,
+	);
+	const myAmendTurn = $derived(currentPlayerID != null && nextAmender === currentPlayerID);
 
 	function powerRank(playerID: number | null): number | null {
 		if (playerID == null) return null;
@@ -194,14 +216,39 @@
 		} finally { applyBusy = false; }
 	}
 
+	// ── Amend (mar, current amender) ─────────────────────────────────────────
+	let amendDraft = $state('');
+	let amendBusy = $state(false);
+	let amendSeededFor = $state<number | null>(null);
+	// Seed the amend editor with the current law body when it becomes my turn.
+	$effect(() => {
+		if (myAmendTurn && amendSeededFor !== plan?.id) {
+			amendDraft = pdState.lawText;
+			amendSeededFor = plan?.id ?? null;
+		}
+	});
+	async function submitAmend(p: Plan) {
+		if (amendBusy || !amendDraft.trim()) return;
+		amendBusy = true; resError = '';
+		try {
+			await amendDecree(p.id, amendDraft.trim());
+			amendSeededFor = null;
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not amend the decree.';
+		} finally { amendBusy = false; }
+	}
+
 	// ── Addendum ─────────────────────────────────────────────────────────────
 	let addendumDraft = $state('');
+	let addendumConnector = $state<'and' | 'but'>('and');
 	let addendumBusy = $state(false);
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
 		if (plan && plan.id !== lastPlanID) {
 			lastPlanID = plan.id;
 			addendumDraft = pdState.addendum;
+			if (pdState.addendumConnector === 'but') addendumConnector = 'but';
 			selectedAssetIDs = [];
 		}
 	});
@@ -209,10 +256,11 @@
 		if (addendumBusy) return;
 		addendumBusy = true; resError = '';
 		try {
-			await setAddendum(p.id, addendumDraft.trim());
+			const text = addendumDraft.trim();
+			await setAddendum(p.id, text, text ? addendumConnector : undefined);
 			onPlansChanged();
 		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not save addendum.';
+			resError = e instanceof Error ? e.message : 'Could not place addendum.';
 		} finally { addendumBusy = false; }
 	}
 
@@ -353,43 +401,89 @@
 				</button>
 			</div>
 
-		<!-- After law enacted: addendum + (mar) amendment prompt + complete ─ -->
+		<!-- After law enacted: (mar) sequential amendments → addendum → complete ─ -->
 		{:else if lawEnacted}
+			{@const amendmentsDone = amendmentsRemaining === 0}
 			<div class="complete-section">
 				<p class="choices-applied">
-					Law enacted{#if rollOutcome === 'mar'} (amended){/if}.
+					Law enacted{#if rollOutcome === 'mar'} (being amended){/if}.
 				</p>
 
-				{#if rollOutcome === 'mar' && amMember && !amSignatory}
-					<p class="choices-note">
-						As a council member, post your amendment in the scene thread below.
-					</p>
+				<!-- Current law text (live, reflects amendments so far). -->
+				<p class="plan-notes">
+					<strong>Law:</strong> {pdState.lawText}
+					{#if pdState.addendumPlaced && pdState.addendum}
+						<em> — {pdState.addendumConnector} {pdState.addendum}</em>
+					{/if}
+				</p>
+
+				<!-- Mar amendment chain (sequential, lowest power first). -->
+				{#if rollOutcome === 'mar' && !amendmentsDone}
+					{#if myAmendTurn}
+						<div class="plan-form">
+							<p class="choices-header">Amend the law (your turn)</p>
+							<p class="choices-note">
+								Rewrite the law's text. The next council member amends your version.
+							</p>
+							<label class="form-label">
+								<textarea rows={3} bind:value={amendDraft} class="form-textarea"
+									placeholder="The amended law…"></textarea>
+							</label>
+							<button class="action-btn primary"
+								onclick={() => submitAmend(plan)}
+								disabled={amendBusy || !amendDraft.trim()}>
+								{amendBusy ? '…' : 'Submit amendment'}
+							</button>
+						</div>
+					{:else}
+						<p class="choices-note muted">
+							The council is amending the law ({amendmentsRemaining} to go).
+							{#if nextAmender != null}Next: {playerName(players, nextAmender)}.{/if}
+						</p>
+					{/if}
 				{/if}
 
-				{#if amSignatory}
+				<!-- Signatory's addendum (after amendments; required step). -->
+				{#if amendmentsDone && amSignatory && !pdState.addendumPlaced}
 					<div class="plan-form">
 						<p class="choices-header">Addendum</p>
+						<p class="choices-note">
+							Attach an optional rider, or place a blank one to proceed.
+						</p>
+						<div class="chip-row">
+							<button type="button" class="chip-btn" class:active={addendumConnector === 'and'}
+								onclick={() => (addendumConnector = 'and')}>and</button>
+							<button type="button" class="chip-btn" class:active={addendumConnector === 'but'}
+								onclick={() => (addendumConnector = 'but')}>but</button>
+						</div>
 						<label class="form-label">
 							<textarea rows={2} bind:value={addendumDraft} class="form-textarea"
-								placeholder="but/and …"></textarea>
+								placeholder="…the rider text (optional)"></textarea>
 						</label>
-						<button class="action-btn"
+						<button class="action-btn primary"
 							onclick={() => submitAddendum(plan)}
 							disabled={addendumBusy}>
-							{addendumBusy ? '…' : 'Save addendum'}
+							{addendumBusy ? '…' : 'Place addendum'}
 						</button>
 					</div>
-				{:else if pdState.addendum}
-					<p class="plan-notes">
-						Addendum: "<em>{pdState.addendum}</em>"
+				{:else if amendmentsDone && !pdState.addendumPlaced && !amSignatory}
+					<p class="choices-note muted">
+						Waiting for {playerName(players, pdState.signatoryID)} to place the addendum…
 					</p>
 				{/if}
 
 				{#if isPreparer}
 					<button class="action-btn primary"
-						onclick={() => onComplete(plan)} disabled={resBusy}>
+						onclick={() => onComplete(plan)}
+						disabled={resBusy || !amendmentsDone || !pdState.addendumPlaced}>
 						{resBusy ? '…' : 'Complete plan'}
 					</button>
+					{#if !amendmentsDone || !pdState.addendumPlaced}
+						<p class="choices-note muted">
+							{#if !amendmentsDone}The council is still amending the law.
+							{:else}Waiting for the signatory's addendum.{/if}
+						</p>
+					{/if}
 				{/if}
 			</div>
 

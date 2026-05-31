@@ -1557,11 +1557,32 @@ export function callRoll(planID: number): Promise<{ plan_id: number; roll?: Dice
 	return apiFetch(`/plans/${planID}/call-roll`, { method: 'POST' });
 }
 
-/** Propose Decree — signatory sets the addendum text after a make. */
-export function setAddendum(planID: number, addendum: string): Promise<PlanEcho> {
+/**
+ * Propose Decree — on a mar, the current council amender rewrites the full law
+ * body (lowest power first). `text` replaces the law's text; the next amender
+ * works from that output.
+ */
+export function amendDecree(planID: number, text: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/amend-decree`, {
+		method: 'POST',
+		body: JSON.stringify({ text }),
+	});
+}
+
+/**
+ * Propose Decree — the signatory places their addendum: an "and"/"but"
+ * connector plus optional free text. This is a required blocking step; pass a
+ * blank addendum (and omit the connector) to place an empty rider. The
+ * connector is required only when addendum text is provided.
+ */
+export function setAddendum(
+	planID: number,
+	addendum: string,
+	connector?: 'and' | 'but',
+): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/set-addendum`, {
 		method: 'POST',
-		body: JSON.stringify({ addendum }),
+		body: JSON.stringify({ addendum, connector: connector ?? '' }),
 	});
 }
 
