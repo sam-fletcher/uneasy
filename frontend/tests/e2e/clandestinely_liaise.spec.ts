@@ -92,19 +92,25 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 	await bobCtx.request.post('/api/dev/login?username=bob');
 	const ctxByPlayer = { [aliceID]: aliceCtx, [bobID]: bobCtx };
 
-	// ── Each player needs an un-leveraged asset to bear the secret ───────────
-	const mkPeer = (ctx: BrowserContext, name: string) =>
-		ctx.request.post(`/api/tables/${game_id}/assets`, {
+	// ── Each player needs a peer: it bears the secret AND is the meeting peer ─
+	const mkPeer = async (ctx: BrowserContext, name: string): Promise<number> => {
+		const res = await ctx.request.post(`/api/tables/${game_id}/assets`, {
 			data: { asset_type: 'peer', name, is_main_character: false, marginalia: [] },
 		});
-	expect((await mkPeer(aliceCtx, 'Alice Confidant')).ok()).toBeTruthy();
-	expect((await mkPeer(bobCtx, 'Bob Confidant')).ok()).toBeTruthy();
+		expect(res.ok(), `create peer failed: ${await res.text()}`).toBeTruthy();
+		return (await res.json()).asset.id as number;
+	};
+	const alicePeerID = await mkPeer(aliceCtx, 'Alice Confidant');
+	const bobPeerID = await mkPeer(bobCtx, 'Bob Confidant');
 
-	// ── Alice prepares the liaison with bob; OnPrepare opens a delay reveal ──
+	// ── Alice prepares the liaison with bob, naming both meeting peers;
+	//    OnPrepare opens a delay reveal ──────────────────────────────────────
 	const prep = await aliceCtx.request.post(`/api/tables/${game_id}/prepare-plan`, {
 		data: {
 			plan_type: 'clandestinely_liaise',
 			target_player_id: bobID,
+			preparer_peer_id: alicePeerID,
+			partner_peer_id: bobPeerID,
 			preparation_notes: 'A quiet word in the orangery.',
 		},
 	});

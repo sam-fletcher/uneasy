@@ -16,6 +16,10 @@ export type LiaisePhase =
 export interface LiaiseResolutionData {
 	phase?: LiaisePhase;
 	partner_id?: number | null;
+	/** The preparer's meeting peer (the peer they brought to the liaison). */
+	preparer_peer_id?: number | null;
+	/** The partner's meeting peer (the peer they brought to the liaison). */
+	partner_peer_id?: number | null;
 	delay_reveal_id?: number | null;
 	redelay_reveal_id?: number | null;
 	kept_secrets?: KeptSecret[];

@@ -358,6 +358,8 @@ func validatePlanPreparation(
 	targetPlanID *int64,
 	peerCount int16,
 	enemyPlayerIDs []int64,
+	preparerPeerID *int64,
+	partnerPeerID *int64,
 	notes string,
 ) preparePlanValidation {
 	// Check game phase.
@@ -428,6 +430,8 @@ func validatePlanPreparation(
 		TargetPlanID:   targetPlanID,
 		PeerCount:      peerCount,
 		EnemyPlayerIDs: enemyPlayerIDs,
+		PreparerPeerID: preparerPeerID,
+		PartnerPeerID:  partnerPeerID,
 		Notes:          notes,
 	}
 	handlerTargetRow, errMsg := h.ValidatePreparation(ctx, vc)
@@ -643,14 +647,18 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 
 // PreparePlanRequest is the request body for POST /api/tables/:id/prepare-plan.
 type PreparePlanRequest struct {
-	PlanType         model.PlanType `json:"plan_type"`
-	TargetPlayerID   *int64         `json:"target_player_id"`
-	TargetAssetID    *int64         `json:"target_asset_id"`
-	TargetPlanID     *int64         `json:"target_plan_id"`
-	PeerCount        int16          `json:"peer_count"`
-	EnemyPlayerIDs   []int64        `json:"enemy_player_ids"`
-	DuelType         string         `json:"duel_type"`
-	PreparationNotes *string        `json:"preparation_notes"`
+	PlanType       model.PlanType `json:"plan_type"`
+	TargetPlayerID *int64         `json:"target_player_id"`
+	TargetAssetID  *int64         `json:"target_asset_id"`
+	TargetPlanID   *int64         `json:"target_plan_id"`
+	PeerCount      int16          `json:"peer_count"`
+	EnemyPlayerIDs []int64        `json:"enemy_player_ids"`
+	DuelType       string         `json:"duel_type"`
+	// Clandestinely Liaise: the two SPECIFIC peers meeting — the preparer's own
+	// peer and the partner's peer. Both required (see clHandler.ValidatePreparation).
+	PreparerPeerID   *int64  `json:"preparer_peer_id"`
+	PartnerPeerID    *int64  `json:"partner_peer_id"`
+	PreparationNotes *string `json:"preparation_notes"`
 }
 
 // PreparePlan handles POST /api/tables/:id/prepare-plan.
@@ -696,6 +704,8 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			body.TargetPlanID,
 			body.PeerCount,
 			body.EnemyPlayerIDs,
+			body.PreparerPeerID,
+			body.PartnerPeerID,
 			notes,
 		)
 		if validation.Status != http.StatusOK {
@@ -840,6 +850,23 @@ func createPlanInTx(
 		resData.EnsureMakeWar().EnemyPlayerIDs = body.EnemyPlayerIDs
 		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
 			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save war enemies")
+		}
+		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
+			plan = refreshed
+		}
+	}
+
+	if body.PlanType == model.PlanClandestinelyLiaise {
+		// Stash the two meeting peers before OnPrepare runs (OnPrepare has no
+		// access to the request body, so structured prep data is stored here —
+		// same pattern as Make War's enemy list above). OnPrepare then loads and
+		// augments this resolution_data with the partner pointer + delay reveal.
+		resData := loadResolutionData(plan.ResolutionData)
+		ld := resData.EnsureLiaise()
+		ld.PreparerPeerID = body.PreparerPeerID
+		ld.PartnerPeerID = body.PartnerPeerID
+		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
+			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save liaise meeting peers")
 		}
 		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
 			plan = refreshed

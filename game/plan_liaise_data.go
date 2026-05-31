@@ -25,9 +25,16 @@ const (
 // LiaiseResolutionData holds all Clandestinely Liaise plan state stored
 // inside the plans.resolution_data JSON column, nested under the "liaise"
 // key.
+// A Clandestinely Liaise is a meeting between two SPECIFIC peers — one from
+// each player's retinue — chosen when the plan is prepared. The meeting "is
+// about" those two peers: PreparerPeerID is the preparer's meeting peer and
+// PartnerPeerID is the partner's. The Things We Share options that touch a peer
+// (update/break) target the OTHER player's meeting peer specifically.
 type LiaiseResolutionData struct {
 	Phase           LiaisePhase  `json:"phase,omitempty"`
 	PartnerID       *int64       `json:"partner_id,omitempty"`
+	PreparerPeerID  *int64       `json:"preparer_peer_id,omitempty"`
+	PartnerPeerID   *int64       `json:"partner_peer_id,omitempty"`
 	DelayRevealID   *int64       `json:"delay_reveal_id,omitempty"`
 	RedelayRevealID *int64       `json:"redelay_reveal_id,omitempty"`
 	KeptSecrets     []KeptSecret `json:"kept_secrets,omitempty"`

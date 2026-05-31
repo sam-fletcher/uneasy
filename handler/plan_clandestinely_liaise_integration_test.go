@@ -26,18 +26,35 @@ import (
 	"uneasy/model"
 )
 
+// clMeeting bundles a prepared liaison plan with the two meeting peers (one per
+// player) and a tearable marginalia on each — what most Things We Share tests
+// need to drive update_peer / break_peer against the partner's MEETING peer.
+type clMeeting struct {
+	plan           dbgen.Plan
+	preparerPeerID int64
+	preparerMargID int64
+	partnerPeerID  int64
+	partnerMargID  int64
+}
+
 // clDriveToThingsWeShare prepares a Clandestinely Liaise between players[0]
-// (preparer) and players[1] (partner), runs the delay reveal, and advances to
-// the things_we_share phase. Returns the plan.
-func clDriveToThingsWeShare(t *testing.T, h *planLifecycle) dbgen.Plan {
+// (preparer) and players[1] (partner) with a meeting peer from each retinue,
+// runs the delay reveal, and advances to the things_we_share phase.
+func clDriveToThingsWeShare(t *testing.T, h *planLifecycle) clMeeting {
 	t.Helper()
 	ctx := context.Background()
+
+	// Each player brings a specific peer to the meeting.
+	preparerPeer, preparerMarg := clSeedPeerWithMarginalia(t, h, 0, "preparer's confidant")
+	partnerPeer, partnerMarg := clSeedPeerWithMarginalia(t, h, 1, "partner's confidant")
 
 	notes := "a meeting under the bridge"
 	partnerID := h.tg.Players[1].ID
 	plan := h.prepare(PreparePlanRequest{
 		PlanType:         model.PlanClandestinelyLiaise,
 		TargetPlayerID:   &partnerID,
+		PreparerPeerID:   &preparerPeer,
+		PartnerPeerID:    &partnerPeer,
 		PreparationNotes: &notes,
 	})
 
@@ -45,6 +62,8 @@ func clDriveToThingsWeShare(t *testing.T, h *planLifecycle) dbgen.Plan {
 	rd := loadResolutionData(plan.ResolutionData)
 	ld := rd.EnsureLiaise()
 	require.NotNil(t, ld.DelayRevealID, "delay reveal must be created at prep")
+	require.Equal(t, preparerPeer, *ld.PreparerPeerID, "preparer peer stored at prep")
+	require.Equal(t, partnerPeer, *ld.PartnerPeerID, "partner peer stored at prep")
 	clSubmitReveal(t, h, *ld.DelayRevealID, 0, 2) // preparer
 	clSubmitReveal(t, h, *ld.DelayRevealID, 1, 2) // partner
 
@@ -67,7 +86,13 @@ func clDriveToThingsWeShare(t *testing.T, h *planLifecycle) dbgen.Plan {
 	require.NoError(t, err)
 	rd2 := loadResolutionData(refreshed.ResolutionData)
 	require.Equal(t, string(LiaiseThingsWeShare), string(rd2.EnsureLiaise().Phase))
-	return refreshed
+	return clMeeting{
+		plan:           refreshed,
+		preparerPeerID: preparerPeer,
+		preparerMargID: preparerMarg,
+		partnerPeerID:  partnerPeer,
+		partnerMargID:  partnerMarg,
+	}
 }
 
 // clSubmitReveal drives the real reveal-submit endpoint so the delay-reveal
@@ -120,13 +145,13 @@ func clSeedPeerWithMarginalia(t *testing.T, h *planLifecycle, ownerIdx int, name
 // must target the PARTNER's assets — a third party's asset is rejected.
 func TestLiaise_ShareChoice_RejectsForeignTarget(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
-	plan := clDriveToThingsWeShare(t, h)
+	m := clDriveToThingsWeShare(t, h)
 
 	// players[2] is not a participant; their asset is an invalid look_at_secret
 	// target (look_at_secret accepts any asset type, so ownership is what trips).
 	foreign, _ := clSeedPeerWithMarginalia(t, h, 2, "outsider's peer")
 
-	sharePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/share-choice"
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
 	code, body := h.post(0, sharePath, map[string]any{
 		"choice": "look_at_secret", "target_asset_id": foreign,
 	})
@@ -138,10 +163,10 @@ func TestLiaise_ShareChoice_RejectsForeignTarget(t *testing.T) {
 // non-peer.
 func TestLiaise_ShareChoice_TakeGift_RejectsPeer(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
-	plan := clDriveToThingsWeShare(t, h)
+	m := clDriveToThingsWeShare(t, h)
 
 	partnerPeer, _ := clSeedPeerWithMarginalia(t, h, 1, "partner's peer")
-	sharePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/share-choice"
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
 	code, body := h.post(0, sharePath, map[string]any{
 		"choice": "take_gift", "target_asset_id": partnerPeer,
 	})
@@ -154,10 +179,10 @@ func TestLiaise_ShareChoice_TakeGift_RejectsPeer(t *testing.T) {
 func TestLiaise_ShareChoice_BreakPartnerPeer_AutoDestroys(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
-	plan := clDriveToThingsWeShare(t, h)
+	m := clDriveToThingsWeShare(t, h)
 
-	// Preparer (player 0) will break the PARTNER's (player 1) peer.
-	partnerPeer, partnerMarg := clSeedPeerWithMarginalia(t, h, 1, "partner's fragile peer")
+	// Preparer (player 0) breaks the PARTNER's (player 1) MEETING peer.
+	partnerPeer, partnerMarg := m.partnerPeerID, m.partnerMargID
 	// Partner (player 1) takes a gift from the preparer (player 0) — needs a
 	// non-peer owned by player 0.
 	gift, err := h.q.CreateAsset(ctx, dbgen.CreateAssetParams{
@@ -167,9 +192,9 @@ func TestLiaise_ShareChoice_BreakPartnerPeer_AutoDestroys(t *testing.T) {
 	require.NoError(t, err)
 	giftID := gift.ID
 
-	sharePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/share-choice"
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
 
-	// Preparer: break partner's peer at the chosen marginalia.
+	// Preparer: break partner's meeting peer at the chosen marginalia.
 	code, body := h.post(0, sharePath, map[string]any{
 		"choice": "break_peer", "target_asset_id": partnerPeer, "target_marginalia_id": partnerMarg,
 	})
@@ -196,4 +221,73 @@ func TestLiaise_ShareChoice_BreakPartnerPeer_AutoDestroys(t *testing.T) {
 	movedGift, err := h.q.GetAssetByID(ctx, giftID)
 	require.NoError(t, err)
 	assert.Equal(t, h.tg.Players[1].ID, movedGift.OwnerID, "gift should belong to the partner now")
+}
+
+// TestLiaise_ShareChoice_BreakPeer_RejectsNonMeetingPeer proves break_peer must
+// target the partner's MEETING peer specifically — another partner-owned peer
+// (not the one brought to the liaison) is rejected.
+func TestLiaise_ShareChoice_BreakPeer_RejectsNonMeetingPeer(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	m := clDriveToThingsWeShare(t, h)
+
+	// A second peer the partner owns that is NOT the meeting peer.
+	otherPeer, otherMarg := clSeedPeerWithMarginalia(t, h, 1, "partner's other peer")
+
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
+	code, body := h.post(0, sharePath, map[string]any{
+		"choice": "break_peer", "target_asset_id": otherPeer, "target_marginalia_id": otherMarg,
+	})
+	assert.Equalf(t, http.StatusBadRequest, code,
+		"break_peer must target the meeting peer, not an arbitrary partner peer: %v", body)
+
+	// update_peer is likewise pinned to the meeting peer.
+	code, body = h.post(0, sharePath, map[string]any{
+		"choice": "update_peer", "target_asset_id": otherPeer,
+	})
+	assert.Equalf(t, http.StatusBadRequest, code,
+		"update_peer must target the meeting peer: %v", body)
+}
+
+// TestLiaise_Prepare_RejectsPeerNotOwned proves prep validates each meeting peer
+// belongs to the right player — a partner_peer_id the partner doesn't own fails.
+func TestLiaise_Prepare_RejectsPeerNotOwned(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	preparerPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's peer")
+	// A peer owned by the PREPARER, wrongly passed as the partner's meeting peer.
+	notPartnersPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's second peer")
+
+	notes := "a meeting"
+	partnerID := h.tg.Players[1].ID
+	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/prepare-plan"
+	code, body := h.post(h.focusPlayerIdx(), path, PreparePlanRequest{
+		PlanType:         model.PlanClandestinelyLiaise,
+		TargetPlayerID:   &partnerID,
+		PreparerPeerID:   &preparerPeer,
+		PartnerPeerID:    &notPartnersPeer,
+		PreparationNotes: &notes,
+	})
+	assert.Equalf(t, http.StatusBadRequest, code,
+		"partner's meeting peer must be owned by the partner: %v", body)
+}
+
+// TestLiaise_ShareChoice_MeetingPeerDestroyed_Graceful proves that if the
+// meeting peer is destroyed before the liaison resolves, break_peer/update_peer
+// fail gracefully (a clear 4xx, never a 500) rather than crashing.
+func TestLiaise_ShareChoice_MeetingPeerDestroyed_Graceful(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	m := clDriveToThingsWeShare(t, h)
+
+	// The partner's meeting peer is destroyed in some other plan before the
+	// liaison's Things We Share resolves.
+	require.NoError(t, h.q.DestroyAsset(ctx, m.partnerPeerID))
+
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
+	code, body := h.post(0, sharePath, map[string]any{
+		"choice": "break_peer", "target_asset_id": m.partnerPeerID, "target_marginalia_id": m.partnerMargID,
+	})
+	assert.GreaterOrEqualf(t, code, http.StatusBadRequest, "should reject: %v", body)
+	assert.Lessf(t, code, http.StatusInternalServerError,
+		"a destroyed meeting peer must be handled gracefully, not as a 500: %v", body)
 }

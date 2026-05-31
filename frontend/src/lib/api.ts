@@ -1262,6 +1262,9 @@ export function preparePlan(
 		peer_count?: number;
 		enemy_player_ids?: number[];
 		duel_type?: 'arms' | 'wits';
+		/** Clandestinely Liaise: the preparer's & partner's meeting peers. */
+		preparer_peer_id?: number | null;
+		partner_peer_id?: number | null;
 		preparation_notes?: string | null;
 	}
 ): Promise<{ plan: Plan }> {

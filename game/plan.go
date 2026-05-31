@@ -114,6 +114,8 @@ type ValidationContext struct {
 	TargetPlanID   *int64  // Make Demands only
 	PeerCount      int16   // Make Introductions only
 	EnemyPlayerIDs []int64 // Make War only
+	PreparerPeerID *int64  // Clandestinely Liaise only — preparer's meeting peer
+	PartnerPeerID  *int64  // Clandestinely Liaise only — partner's meeting peer
 	Notes          string
 }
 

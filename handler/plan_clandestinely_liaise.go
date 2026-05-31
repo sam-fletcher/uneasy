@@ -75,16 +75,59 @@ func (clHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: -1}
 }
 
-func (clHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
+func (clHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlayerID == nil {
 		return nil, "clandestinely_liaise requires target_player_id (the partner)"
 	}
 	if v.Player != nil && *v.TargetPlayerID == v.Player.ID {
 		return nil, "you cannot liaise with yourself"
 	}
+	// A liaison is a meeting between two SPECIFIC peers, one from each player's
+	// retinue, chosen at prep. Both are required and each must be a peer owned
+	// by the respective player. (The preparer selects both for now; the prep UI
+	// recommends coordinating the partner's pick in chat first.)
+	if v.Player != nil {
+		if msg := clValidateMeetingPeer(ctx, v.Q, v.Player.ID, v.PreparerPeerID,
+			"your own"); msg != "" {
+			return nil, msg
+		}
+	}
+	if msg := clValidateMeetingPeer(ctx, v.Q, *v.TargetPlayerID, v.PartnerPeerID,
+		"your partner's"); msg != "" {
+		return nil, msg
+	}
 	// Row 0 is the placeholder value; the actual row is set after the delay reveal.
 	// The row bounds check against row 13 happens in the reveal completion flow.
 	return nil, ""
+}
+
+// clValidateMeetingPeer checks that peerID names a non-destroyed peer asset
+// owned by ownerID. label ("your own" / "your partner's") personalises the
+// error. Returns "" when valid.
+func clValidateMeetingPeer(
+	ctx context.Context,
+	q *dbgen.Queries,
+	ownerID int64,
+	peerID *int64,
+	label string,
+) string {
+	if peerID == nil {
+		return fmt.Sprintf("pick %s peer to bring to the meeting", label)
+	}
+	asset, err := q.GetAssetByID(ctx, *peerID)
+	if err != nil {
+		return fmt.Sprintf("%s meeting peer not found", label)
+	}
+	if asset.OwnerID != ownerID {
+		return fmt.Sprintf("%s meeting peer must be a peer you each own", label)
+	}
+	if asset.AssetType != model.AssetPeer {
+		return fmt.Sprintf("%s meeting peer must be a peer asset", label)
+	}
+	if asset.IsDestroyed {
+		return fmt.Sprintf("%s meeting peer is destroyed", label)
+	}
+	return ""
 }
 
 // ComputeDifficulty: CL has no dice roll so difficulty is not used in play.
@@ -482,8 +525,11 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		// PARTNER's assets (the rules are second-person — "your partner's …").
 		// Each option carries a target asset (and break_peer a marginalia too).
 		partnerID := clOtherParticipantID(plan, player.ID, *ld)
-		if status, msg := clValidateShareTarget(ctx, deps, plan, partnerID, body.Choice,
-			body.TargetAssetID, body.TargetMargID); status != 0 {
+		// For update_peer/break_peer the valid target is the partner's MEETING
+		// PEER specifically (the peer they brought to this liaison).
+		meetingPeerID := clPartnerMeetingPeerID(plan, player.ID, *ld)
+		if status, msg := clValidateShareTarget(ctx, deps, plan, partnerID, meetingPeerID,
+			body.Choice, body.TargetAssetID, body.TargetMargID); status != 0 {
 			respondErr(w, status, msg)
 			return
 		}
@@ -609,13 +655,23 @@ func applyLookAtSecret(
 }
 
 // applyUpdatePeer is narrative — the player revises their partner's peer (the
-// edit happens via the asset card). We log it so the change is visible.
+// edit happens via the asset card). We log it so the change is visible. If the
+// meeting peer was destroyed before resolution (e.g. broken in another plan),
+// there is nothing to update: log a no-op rather than implying a change.
 func applyUpdatePeer(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	choice dbgen.ListLiaiseChoicesByPlanRow,
 ) error {
+	if choice.TargetAssetID != nil {
+		if asset, err := deps.Q.GetAssetByID(ctx, *choice.TargetAssetID); err == nil && asset.IsDestroyed {
+			clLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
+				"%s could not update their partner's meeting peer — it no longer exists.",
+				playerDisplayName(ctx, deps.Q, choice.PlayerID)))
+			return nil
+		}
+	}
 	clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s updated their partner's peer %s.",
 		playerDisplayName(ctx, deps.Q, choice.PlayerID), clAssetName(ctx, deps, choice.TargetAssetID)))
 	return nil
@@ -636,6 +692,14 @@ func applyBreakPeer(
 	asset, err := deps.Q.GetAssetByID(ctx, *choice.TargetAssetID)
 	if err != nil {
 		return fmt.Errorf("break_peer: target asset not found: %w", err)
+	}
+	if asset.IsDestroyed {
+		// The meeting peer was destroyed before resolution (e.g. broken in
+		// another plan). Nothing left to tear — log a no-op.
+		clLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
+			"%s could not break their partner's meeting peer — it was already destroyed.",
+			playerDisplayName(ctx, deps.Q, choice.PlayerID)))
+		return nil
 	}
 	m, err := deps.Q.GetMarginaliaByID(ctx, *choice.TargetMarginaliaID)
 	if err != nil {
@@ -941,13 +1005,25 @@ func clOtherParticipantID(plan *dbgen.Plan, playerID int64, ld LiaiseResolutionD
 	return plan.PreparerID
 }
 
+// clPartnerMeetingPeerID returns the meeting peer of playerID's PARTNER — the
+// peer the other player brought to the liaison. From the preparer's seat that's
+// PartnerPeerID; from the partner's seat it's PreparerPeerID. Returns nil if
+// the relevant peer was never set.
+func clPartnerMeetingPeerID(plan *dbgen.Plan, playerID int64, ld LiaiseResolutionData) *int64 {
+	if playerID == plan.PreparerID {
+		return ld.PartnerPeerID
+	}
+	return ld.PreparerPeerID
+}
+
 // clValidateShareTarget enforces that a Things We Share choice targets the
 // partner's assets per the rules (all five options are second-person — "your
 // partner's …"). Returns (0, "") when valid, or an HTTP status + message.
 //
 //   - look_at_secret / leverage_partner: any partner-owned, non-destroyed asset.
 //   - take_gift:                          a partner-owned, non-destroyed NON-peer.
-//   - update_peer / break_peer:           a partner-owned, non-destroyed PEER.
+//   - update_peer / break_peer:           the partner's MEETING PEER specifically
+//     (meetingPeerID — the peer they brought to this liaison), non-destroyed.
 //     break_peer additionally requires a marginalia on that peer (the breaker
 //     chooses which to tear).
 func clValidateShareTarget(
@@ -955,6 +1031,7 @@ func clValidateShareTarget(
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	partnerID int64,
+	meetingPeerID *int64,
 	choice string,
 	targetAssetID, targetMargID *int64,
 ) (status int, msg string) {
@@ -986,6 +1063,16 @@ func clValidateShareTarget(
 	case liaiseChoiceUpdatePeer, liaiseChoiceBreakPeer:
 		if asset.AssetType != model.AssetPeer {
 			return http.StatusBadRequest, fmt.Sprintf("%q targets a peer asset", choice)
+		}
+		// These options must target the partner's MEETING PEER — the specific
+		// peer they brought to the liaison — not an arbitrary partner peer.
+		if meetingPeerID == nil {
+			return http.StatusConflict, fmt.Sprintf(
+				"%q is unavailable — the meeting peer no longer exists", choice)
+		}
+		if *targetAssetID != *meetingPeerID {
+			return http.StatusBadRequest, fmt.Sprintf(
+				"%q must target your partner's meeting peer", choice)
 		}
 		if choice == liaiseChoiceBreakPeer {
 			if targetMargID == nil {
@@ -1037,9 +1124,16 @@ func clScheduleNewMeeting(
 		return // Scheduling the new meeting is best-effort.
 	}
 
-	// Initialise resolution data for the new plan.
+	// Initialise resolution data for the new plan. Carry forward the original
+	// meeting peers — the same two peers reconvene. If either has been destroyed
+	// by the time the follow-up resolves, Things We Share handles it gracefully.
+	origLD := game.LoadLiaiseData(originalPlan)
 	newResData := ResolutionData{
-		Liaise: &LiaiseResolutionData{PartnerID: &partnerID},
+		Liaise: &LiaiseResolutionData{
+			PartnerID:      &partnerID,
+			PreparerPeerID: origLD.PreparerPeerID,
+			PartnerPeerID:  origLD.PartnerPeerID,
+		},
 	}
 	_ = saveResolutionData(ctx, deps.Q, newPlan.ID, newResData)
 

@@ -23,7 +23,6 @@
 	import {
 		playerName,
 		playersExcept, ownerUnleveragedAssets, ownerIntactAssets,
-		assetsWithIntactMarginalia,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -40,28 +39,63 @@
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	const readOnly = $derived(ctx.readOnly);
-	const prepDraft = $derived(ctx.prepDraft as { partner_id?: number | null; notes?: string } | null);
+	const prepDraft = $derived(ctx.prepDraft as {
+		partner_id?: number | null;
+		notes?: string;
+		preparer_peer_id?: number | null;
+		partner_peer_id?: number | null;
+	} | null);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
+	// A liaison is a meeting between two SPECIFIC peers — one from each player's
+	// retinue — picked here. The preparer selects both (and is nudged to agree
+	// the partner's pick in chat first).
 	let clPartnerID = $state<number | null>(null);
+	let clPreparerPeerID = $state<number | null>(null);
+	let clPartnerPeerID = $state<number | null>(null);
 	let prepNotes = $state('');
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
 	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
 
+	// The peers each side could bring to the meeting (intact, owned).
+	const myPeers = $derived(
+		ownerIntactAssets(assets, currentPlayerID).filter(a => a.asset_type === 'peer'),
+	);
+	const prepPartnerPeers = $derived(
+		ownerIntactAssets(assets, clPartnerID).filter(a => a.asset_type === 'peer'),
+	);
+
+	// Drop a partner-peer pick if the partner changes (it belonged to the old one).
+	$effect(() => {
+		void clPartnerID;
+		if (clPartnerPeerID != null && !prepPartnerPeers.some(p => p.id === clPartnerPeerID)) {
+			clPartnerPeerID = null;
+		}
+	});
+
+	const prepSubmittable = $derived(
+		clPartnerID != null && clPreparerPeerID != null && clPartnerPeerID != null
+		&& !!prepNotes.trim(),
+	);
+
 	async function submitPrep() {
 		if (prepBusy) return;
 		if (clPartnerID == null) { prepError = 'Pick a partner.'; return; }
+		if (clPreparerPeerID == null) { prepError = 'Pick your meeting peer.'; return; }
+		if (clPartnerPeerID == null) { prepError = "Pick your partner's meeting peer."; return; }
 		if (!prepNotes.trim()) { prepError = 'Preparation notes are required.'; return; }
 		prepBusy = true; prepError = '';
 		try {
 			await preparePlan(gameID, {
 				plan_type: 'clandestinely_liaise',
 				target_player_id: clPartnerID,
+				preparer_peer_id: clPreparerPeerID,
+				partner_peer_id: clPartnerPeerID,
 				preparation_notes: prepNotes.trim(),
 			});
-			clPartnerID = null; prepNotes = '';
+			clPartnerID = null; clPreparerPeerID = null; clPartnerPeerID = null; prepNotes = '';
 			onPlanPrepared();
 		} catch (e) {
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
@@ -71,16 +105,23 @@
 	$effect(() => {
 		if (!readOnly) return;
 		clPartnerID = prepDraft?.partner_id ?? null;
+		clPreparerPeerID = prepDraft?.preparer_peer_id ?? null;
+		clPartnerPeerID = prepDraft?.partner_peer_id ?? null;
 		prepNotes = prepDraft?.notes ?? '';
 	});
 	let emitTimer: ReturnType<typeof setTimeout> | null = null;
 	$effect(() => {
 		if (readOnly || mode !== 'prep') return;
-		void clPartnerID; void prepNotes;
+		void clPartnerID; void clPreparerPeerID; void clPartnerPeerID; void prepNotes;
 		if (emitTimer) clearTimeout(emitTimer);
 		emitTimer = setTimeout(() => {
 			emitTimer = null;
-			ctx.emitPrepDraft({ partner_id: clPartnerID, notes: prepNotes });
+			ctx.emitPrepDraft({
+				partner_id: clPartnerID,
+				preparer_peer_id: clPreparerPeerID,
+				partner_peer_id: clPartnerPeerID,
+				notes: prepNotes,
+			});
 		}, 150);
 	});
 	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
@@ -89,6 +130,8 @@
 	type CLState = {
 		phase: LiaisePhase | '';
 		partnerID: number | null;
+		preparerPeerID: number | null;
+		partnerPeerID: number | null;
 		delayRevealID: number | null;
 		redelayRevealID: number | null;
 		keptSecrets: KeptSecret[];
@@ -98,6 +141,8 @@
 		return {
 			phase: ld.phase ?? '',
 			partnerID: ld.partner_id ?? null,
+			preparerPeerID: ld.preparer_peer_id ?? null,
+			partnerPeerID: ld.partner_peer_id ?? null,
 			delayRevealID: ld.delay_reveal_id ?? null,
 			redelayRevealID: ld.redelay_reveal_id ?? null,
 			keptSecrets: ld.kept_secrets ?? [],
@@ -130,11 +175,22 @@
 		amPreparer ? clState.partnerID : (plan?.preparer_id ?? null),
 	);
 	const otherParticipantAssets = $derived(ownerIntactAssets(assets, otherParticipantID));
-	// Partner's peers (for update_peer); and partner's peers that still have an
-	// intact marginalia (for break_peer's marginalia-pick mode).
-	const partnerPeers = $derived(otherParticipantAssets.filter(a => a.asset_type === 'peer'));
-	const partnerBreakablePeers = $derived(
-		assetsWithIntactMarginalia(partnerPeers),
+	// update_peer / break_peer target the partner's MEETING PEER specifically —
+	// the peer they brought to this liaison. From the preparer's seat that's
+	// partnerPeerID; from the partner's seat it's preparerPeerID.
+	const partnerMeetingPeerID = $derived(
+		amPreparer ? clState.partnerPeerID : clState.preparerPeerID,
+	);
+	const partnerMeetingPeer = $derived(
+		assets.find(a => a.id === partnerMeetingPeerID) ?? null,
+	);
+	// The meeting peer is targetable only if it still exists and isn't destroyed.
+	const meetingPeerLive = $derived(
+		partnerMeetingPeer != null && !partnerMeetingPeer.is_destroyed,
+	);
+	// Marginalia on the meeting peer that can still be torn (for break_peer).
+	const meetingPeerBreakableMarginalia = $derived(
+		(partnerMeetingPeer?.marginalia ?? []).filter(m => !m.is_torn),
 	);
 
 	// Destruction warning: tearing a peer's last intact marginalium destroys it.
@@ -149,7 +205,7 @@
 		}
 		return '';
 	}
-	const shareBreakWarn = $derived(destructionWarning(assets.find(a => a.id === shareAssetID)));
+	const shareBreakWarn = $derived(destructionWarning(partnerMeetingPeer));
 
 	// Has the current player submitted keep-secret?
 	const iKeptSecret = $derived(
@@ -192,23 +248,26 @@
 
 	// ── Phase 3: share choice ────────────────────────────────────────────────
 	// Every option targets the PARTNER's assets (the rules are second-person —
-	// "your partner's …"). update_peer / break_peer target the partner's PEER;
-	// take_gift a partner NON-peer; look / leverage any partner asset.
+	// "your partner's …"). update_peer / break_peer target the partner's MEETING
+	// PEER specifically (fixed — the peer they brought to the liaison); take_gift
+	// a partner NON-peer; look / leverage any partner asset.
 	const SHARE_OPTIONS: { key: string; label: string; hint: string }[] = [
 		{ key: 'look_at_secret',   label: "Look at partner's secrets",
 			hint: "Pick one of their assets — you'll see its secrets." },
-		{ key: 'update_peer',      label: "Update partner's peer",
-			hint: 'Narrative — pick their peer; edit it via its asset card later.' },
-		{ key: 'break_peer',       label: "Break partner's peer",
-			hint: 'Pick their peer and the marginalia to tear (you choose which).' },
+		{ key: 'update_peer',      label: "Update partner's meeting peer",
+			hint: 'Narrative — revise the peer they brought; edit it via its asset card later.' },
+		{ key: 'break_peer',       label: "Break partner's meeting peer",
+			hint: 'Tear a marginalia on the peer they brought (you choose which).' },
 		{ key: 'take_gift',        label: 'Take a gift from partner',
 			hint: "Pick one of their non-peer assets — it transfers to you." },
 		{ key: 'leverage_partner', label: "Leverage partner's asset, bank a die",
 			hint: "Pick one of their assets; you bank a die for a future roll." },
 	];
-	// look / take_gift / leverage pick a single asset; update_peer / break_peer
-	// pick the partner's peer (break_peer additionally needs a marginalia).
-	const SHARE_NEEDS_ASSET = new Set(['look_at_secret', 'take_gift', 'leverage_partner', 'update_peer', 'break_peer']);
+	// look / take_gift / leverage pick a partner asset from a list; update_peer /
+	// break_peer have a FIXED target (the meeting peer) so they show no picker —
+	// break_peer additionally needs a marginalia chosen on that fixed peer.
+	const SHARE_NEEDS_PICKER = new Set(['look_at_secret', 'take_gift', 'leverage_partner']);
+	const SHARE_TARGETS_MEETING_PEER = new Set(['update_peer', 'break_peer']);
 	const SHARE_NEEDS_MARG = new Set(['break_peer']);
 
 	let shareChoiceKey = $state<string | null>(null);
@@ -230,20 +289,31 @@
 		}
 	});
 
+	// The asset this choice actually targets: a fixed meeting peer for
+	// update/break, otherwise the player's picked partner asset.
+	const shareEffectiveAssetID = $derived(
+		shareChoiceKey != null && SHARE_TARGETS_MEETING_PEER.has(shareChoiceKey)
+			? partnerMeetingPeerID
+			: shareAssetID,
+	);
+
 	const shareSubmittable = $derived.by(() => {
 		if (shareChoiceKey == null) return false;
-		if (SHARE_NEEDS_ASSET.has(shareChoiceKey) && shareAssetID == null) return false;
+		if (SHARE_NEEDS_PICKER.has(shareChoiceKey) && shareAssetID == null) return false;
+		if (SHARE_TARGETS_MEETING_PEER.has(shareChoiceKey) && !meetingPeerLive) return false;
 		if (SHARE_NEEDS_MARG.has(shareChoiceKey) && shareMargID == null) return false;
 		return true;
 	});
 
 	async function onShare(p: Plan) {
 		if (!shareSubmittable || shareBusy || shareChoiceKey == null) return;
+		const needsAsset = SHARE_NEEDS_PICKER.has(shareChoiceKey)
+			|| SHARE_TARGETS_MEETING_PEER.has(shareChoiceKey);
 		shareBusy = true; resError = '';
 		try {
 			await shareChoice(p.id, {
 				choice: shareChoiceKey,
-				target_asset_id: SHARE_NEEDS_ASSET.has(shareChoiceKey) ? shareAssetID : null,
+				target_asset_id: needsAsset ? shareEffectiveAssetID : null,
 				target_marginalia_id: SHARE_NEEDS_MARG.has(shareChoiceKey) ? shareMargID : null,
 			});
 			iShared = true;
@@ -279,10 +349,34 @@
 					{readOnly}
 				/>
 			</FormField>
+			<p class="choices-note muted">
+				A liaison is a meeting between two specific peers — one from each of
+				you. Tip: agree the partner's peer with them in the chat first.
+			</p>
+			<CardPicker
+				label="Your meeting peer"
+				items={myPeers}
+				{players}
+				emptyMessage="You have no peer to bring to the meeting."
+				selected={clPreparerPeerID}
+				onSelect={(id) => (clPreparerPeerID = id)}
+			/>
+			{#if clPartnerID != null}
+				<CardPicker
+					label="Partner's meeting peer"
+					items={prepPartnerPeers}
+					{players}
+					emptyMessage="Your partner has no peer to bring to the meeting."
+					selected={clPartnerPeerID}
+					onSelect={(id) => (clPartnerPeerID = id)}
+				/>
+			{:else}
+				<p class="choices-note muted">Pick a partner to choose their meeting peer.</p>
+			{/if}
 			<label class="form-label">
 				Details:
 				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
-					placeholder="Which peers are meeting? Where? Will you share a meal, meet under a bridge, or something more intimate?" required></textarea>
+					placeholder="Where do the two peers meet? Will they share a meal, meet under a bridge, or something more intimate?" required></textarea>
 			</label>
 			<p class="choices-note muted">
 				Once prepared, you and your partner each reveal a die to set
@@ -291,7 +385,7 @@
 			{#if !readOnly}
 				<div class="form-actions">
 					<button class="action-btn primary" onclick={submitPrep}
-						disabled={prepBusy || clPartnerID == null || !prepNotes.trim()}>
+						disabled={prepBusy || !prepSubmittable}>
 						{prepBusy ? '…' : 'Prepare Plan'}
 					</button>
 				</div>
@@ -425,30 +519,38 @@
 						{/if}
 					</FormField>
 
-					{#if shareChoiceKey === 'break_peer'}
-						<CardPicker
-							label="Partner's peer to break (tear a marginalia)"
-							items={partnerBreakablePeers}
-							{players}
-							emptyMessage="Your partner has no peer with an intact marginalia."
-							marginaliaMode
-							selectedMarginaliaID={shareMargID}
-							onSelectMarginalia={(mID, parent) => {
-								shareMargID = mID;
-								shareAssetID = parent?.id ?? null;
-							}}
-						/>
-						{#if shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}
-					{:else if shareChoiceKey === 'update_peer'}
-						<CardPicker
-							label="Partner's peer to update"
-							items={partnerPeers}
-							{players}
-							emptyMessage="Your partner has no peer to update."
-							selected={shareAssetID}
-							onSelect={(id) => (shareAssetID = id)}
-						/>
-					{:else if shareChoiceKey && SHARE_NEEDS_ASSET.has(shareChoiceKey)}
+					{#if shareChoiceKey && SHARE_TARGETS_MEETING_PEER.has(shareChoiceKey)}
+						<!-- Target is fixed: the partner's MEETING PEER. No picker. -->
+						{#if !meetingPeerLive}
+							<p class="choices-note muted">
+								{shareChoiceKey === 'break_peer' ? 'Break' : 'Update'} is unavailable —
+								your partner's meeting peer no longer exists. Pick another option.
+							</p>
+						{:else if shareChoiceKey === 'break_peer'}
+							<p class="choices-note">
+								Breaking <strong>{partnerMeetingPeer?.name}</strong> — choose which note to tear:
+							</p>
+							{#if meetingPeerBreakableMarginalia.length === 0}
+								<p class="choices-note muted">This peer has no intact note to tear.</p>
+							{:else}
+								<CardPicker
+									label="Note to tear"
+									items={partnerMeetingPeer ? [partnerMeetingPeer] : []}
+									{players}
+									emptyMessage="No intact note to tear."
+									marginaliaMode
+									selectedMarginaliaID={shareMargID}
+									onSelectMarginalia={(mID) => { shareMargID = mID; }}
+								/>
+							{/if}
+							{#if shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}
+						{:else}
+							<p class="choices-note">
+								Updating <strong>{partnerMeetingPeer?.name}</strong> — edit it via its
+								asset card after the liaison resolves.
+							</p>
+						{/if}
+					{:else if shareChoiceKey && SHARE_NEEDS_PICKER.has(shareChoiceKey)}
 						{@const candidates = otherParticipantAssets.filter(a =>
 							shareChoiceKey === 'take_gift' ? a.asset_type !== 'peer' : true,
 						)}
