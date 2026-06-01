@@ -190,6 +190,7 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 
 			// Assets (list + create on the table; per-asset actions by asset ID)
 			r.Get("/tables/{id}/assets", handler.ListAssets(store))
+			r.Get("/tables/{id}/asset-suggestions", handler.GetAssetSuggestions(store))
 			r.Get("/tables/{id}/secrets/visible", handler.ListVisibleSecretsForGame(store))
 			r.Post("/tables/{id}/assets", handler.CreateAsset(store, manager))
 

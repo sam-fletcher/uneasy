@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"net/http"
 	"strings"
 
@@ -184,25 +183,12 @@ func GetPrologueCardSuggestions(s *db.Store) http.HandlerFunc {
 		assets, err := s.Q.ListAssetsByGame(r.Context(), gameID)
 		if err == nil {
 			for _, a := range assets {
-				used[strings.ToLower(strings.TrimSpace(a.Name))] = struct{}{}
+				used[normForDedup(a.Name)] = struct{}{}
 			}
-		}
-
-		available := make([]string, 0, len(pool))
-		for _, name := range pool {
-			if _, taken := used[strings.ToLower(strings.TrimSpace(name))]; taken {
-				continue
-			}
-			available = append(available, name)
-		}
-
-		rand.Shuffle(len(available), func(i, j int) { available[i], available[j] = available[j], available[i] })
-		if len(available) > 3 {
-			available = available[:3]
 		}
 
 		respond(w, http.StatusOK, map[string]any{
-			"suggestions": available,
+			"suggestions": pickUnusedSuggestions(pool, used, suggestionCount),
 			"asset_type":  assetType,
 		})
 	}

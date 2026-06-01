@@ -22,10 +22,11 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		joinCouncil, callRoll, setAddendum, amendDecree, namePlanAsset,
+		joinCouncil, callRoll, setAddendum, amendDecree, namePlanAsset, getAssetSuggestions,
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
+	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { playerName, parseResolutionData, ownerUnleveragedAssets } from './shared';
 
@@ -276,6 +277,19 @@
 	);
 	let resourceName = $state('');
 	let nameBusy = $state(false);
+	// Name suggestions (resource pool), fetched once the naming step appears.
+	let nameSuggestions = $state<string[]>([]);
+	let nameSuggLoading = $state(false);
+	let nameSuggFetched = false;
+	$effect(() => {
+		if (!needsResourceNaming || nameSuggFetched) return;
+		nameSuggFetched = true;
+		nameSuggLoading = true;
+		getAssetSuggestions(gameID, 'resource', 'name')
+			.then(res => { nameSuggestions = res.suggestions; })
+			.catch(() => { nameSuggestions = []; })
+			.finally(() => { nameSuggLoading = false; });
+	});
 	async function submitResourceName(p: Plan) {
 		if (nameBusy || !resourceName.trim()) return;
 		nameBusy = true; resError = '';
@@ -499,11 +513,11 @@
 				{#if needsResourceNaming}
 					<div class="plan-form">
 						<p class="choices-header">Name the resource your decree created</p>
-						<input
-							type="text"
-							class="form-input"
+						<SuggestionPicker
+							suggestions={nameSuggestions}
 							bind:value={resourceName}
-							placeholder="Name the law's resource…"
+							loading={nameSuggLoading}
+							customPlaceholder="Name the law's resource…"
 							maxlength={120}
 						/>
 						<button class="action-btn primary" onclick={() => submitResourceName(plan)}

@@ -766,6 +766,21 @@ export function getPrologueCardSuggestions(
 	return apiFetch(`/tables/${gameID}/prologue/card-suggestions?suit=${encodeURIComponent(suit)}`);
 }
 
+/**
+ * Type-keyed example strings for player-authored asset text, with anything
+ * already in play filtered out. kind='name' suggests asset names; 'marginalia'
+ * suggests marginalia. Returns up to 3 (fewer when the unused pool is small).
+ */
+export function getAssetSuggestions(
+	gameID: string | number,
+	assetType: AssetType,
+	kind: 'name' | 'marginalia',
+): Promise<{ suggestions: string[]; asset_type: string }> {
+	return apiFetch(
+		`/tables/${gameID}/asset-suggestions?asset_type=${encodeURIComponent(assetType)}&kind=${kind}`,
+	);
+}
+
 export function declareHearts(
 	gameID: string | number,
 	count: number

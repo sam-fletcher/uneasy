@@ -8,11 +8,12 @@
 	import {
 		preparePlan, makeChoice, completePlan,
 		createIntroductionsPeer, finalizeIntroductionsPeers,
-		introductionsMar, introductionsMarginalia,
+		introductionsMar, introductionsMarginalia, getAssetSuggestions,
 		type Plan,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
+	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
@@ -126,6 +127,21 @@
 	let peerNames = $state<string[]>([]);
 	let peersBusy = $state(false);
 	let peersError = $state('');
+
+	// Peer-name suggestions (shared across all peer slots), fetched once the
+	// naming step appears for the preparer.
+	let peerNameSuggestions = $state<string[]>([]);
+	let peerNameSuggLoading = $state(false);
+	let peerNameSuggFetched = false;
+	$effect(() => {
+		if (!needsPeerNaming || !isPreparer || peerNameSuggFetched) return;
+		peerNameSuggFetched = true;
+		peerNameSuggLoading = true;
+		getAssetSuggestions(gameID, 'peer', 'name')
+			.then(res => { peerNameSuggestions = res.suggestions; })
+			.catch(() => { peerNameSuggestions = []; })
+			.finally(() => { peerNameSuggLoading = false; });
+	});
 
 	// Resize peerNames whenever peer_count or created list changes.
 	// Already-created slots are filled with the asset's current name (so
@@ -302,16 +318,26 @@
 				{#if peersError}<p class="res-error">{peersError}</p>{/if}
 				{#each peerNames as _, i (i)}
 					{@const locked = createdPeerIDs[i] != null}
-					<label class="form-label">
-						Peer {i + 1}:
-						<input
-							type="text"
-							class="form-input"
-							bind:value={peerNames[i]}
-							disabled={locked || peersBusy}
-							placeholder="Name, title, role…"
-						/>
-					</label>
+					<div class="form-label">
+						<span>Peer {i + 1}:</span>
+						{#if locked}
+							<input
+								type="text"
+								class="form-input"
+								bind:value={peerNames[i]}
+								disabled
+							/>
+						{:else}
+							<SuggestionPicker
+								suggestions={peerNameSuggestions}
+								bind:value={peerNames[i]}
+								loading={peerNameSuggLoading}
+								customPlaceholder="Name, title, role…"
+								maxlength={120}
+								disabled={peersBusy}
+							/>
+						{/if}
+					</div>
 				{/each}
 				<div class="form-actions">
 					<button class="action-btn primary" onclick={submitPeers} disabled={peersBusy}>

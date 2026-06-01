@@ -96,6 +96,7 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 	r := chi.NewRouter()
 	r.Use(appMiddleware.EnsureSession(q))
 	r.Post("/api/tables/{id}/prepare-plan", PreparePlan(store, manager))
+	r.Get("/api/tables/{id}/asset-suggestions", GetAssetSuggestions(store))
 	// Simultaneous-reveal submit — needed by variable-delay plans (Clandestinely
 	// Liaise, Make War) to assign their row before resolution.
 	r.Post("/api/reveals/{revealId}/submit", SubmitReveal(store, manager))
@@ -132,6 +133,21 @@ func (h *planLifecycle) post(playerIdx int, path string, body any) (int, map[str
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	rec := httptest.NewRecorder()
+	h.router.ServeHTTP(rec, req)
+	out := map[string]any{}
+	if rec.Body.Len() > 0 {
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	}
+	return rec.Code, out
+}
+
+// get drives a GET request as the given player and returns the status and
+// decoded JSON body.
+func (h *planLifecycle) get(playerIdx int, path string) (int, map[string]any) {
+	h.t.Helper()
+	req := httptest.NewRequest("GET", path, nil)
+	req.AddCookie(&http.Cookie{Name: "player_token", Value: h.tokens[playerIdx]})
 	rec := httptest.NewRecorder()
 	h.router.ServeHTTP(rec, req)
 	out := map[string]any{}

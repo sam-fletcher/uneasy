@@ -5,8 +5,9 @@
   directly onto the tile parts.
 -->
 <script lang="ts">
-	import { addMarginalia, updateMarginalia, updateAsset, leverageAsset, writeSecret } from '$lib/api';
+	import { addMarginalia, updateMarginalia, updateAsset, leverageAsset, writeSecret, getAssetSuggestions } from '$lib/api';
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
+	import SuggestionPicker from './SuggestionPicker.svelte';
 
 	let {
 		playerId,
@@ -81,11 +82,28 @@
 	let saving = $state(false);
 	let editError = $state<string | null>(null);
 
-	function startAdd(assetId: number) {
-		editingAssetId = assetId;
+	// Type-keyed marginalia suggestions, fetched when the add editor opens.
+	let addSuggestions = $state<string[]>([]);
+	let suggestionsLoading = $state(false);
+
+	async function startAdd(asset: Asset) {
+		editingAssetId = asset.id;
 		editingPosition = null;
 		draftText = '';
 		editError = null;
+		addSuggestions = [];
+		suggestionsLoading = true;
+		try {
+			const res = await getAssetSuggestions(asset.game_id, asset.asset_type, 'marginalia');
+			// Ignore if the editor was closed or moved on while we were loading.
+			if (editingAssetId === asset.id && editingPosition == null) {
+				addSuggestions = res.suggestions;
+			}
+		} catch {
+			addSuggestions = [];
+		} finally {
+			if (editingAssetId === asset.id) suggestionsLoading = false;
+		}
 	}
 
 	function startEdit(asset: Asset, m: Marginalium) {
@@ -416,19 +434,31 @@
 								<p class="m-editor-label">
 									{editingPosition == null ? 'Adding marginalium' : `Editing marginalium ${editingPosition} of 4`}
 								</p>
-								<textarea
-									class="m-editor-input"
-									placeholder="Write a marginalium…"
-									bind:value={draftText}
-									disabled={saving}
-									rows={3}
-									maxlength={280}
-									onkeydown={(e) => {
-										if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
-										else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEdit(); }
-									}}
-									use:focusOnMount
-								></textarea>
+								{#if editingPosition == null}
+									<!-- Add: offer type-keyed examples, or write your own. -->
+									<SuggestionPicker
+										suggestions={addSuggestions}
+										bind:value={draftText}
+										loading={suggestionsLoading}
+										customPlaceholder="Write a marginalium…"
+										multiline
+										disabled={saving}
+									/>
+								{:else}
+									<textarea
+										class="m-editor-input"
+										placeholder="Write a marginalium…"
+										bind:value={draftText}
+										disabled={saving}
+										rows={3}
+										maxlength={280}
+										onkeydown={(e) => {
+											if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+											else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEdit(); }
+										}}
+										use:focusOnMount
+									></textarea>
+								{/if}
 								{#if editError}<p class="m-editor-error">{editError}</p>{/if}
 								<div class="m-editor-actions">
 									<button type="button" class="m-btn secondary" onclick={cancelEdit} disabled={saving}>Cancel</button>
@@ -451,7 +481,7 @@
 											</div>
 										{/if}
 									{:else if isSelf}
-										<button type="button" class="m-tile empty add" onclick={() => startAdd(asset.id)} aria-label="Add marginalia">
+										<button type="button" class="m-tile empty add" onclick={() => startAdd(asset)} aria-label="Add marginalia">
 											<span class="add-plus" aria-hidden="true">+</span>
 										</button>
 									{:else}

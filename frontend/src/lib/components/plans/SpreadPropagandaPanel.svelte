@@ -12,13 +12,14 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
 	import CardPicker from './CardPicker.svelte';
+	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName,
 		assetsWithIntactMarginalia, playersExcept,
 	} from './shared';
-	import { spGivePeer, spBreakSelf, namePlanAsset } from '$lib/api';
+	import { spGivePeer, spBreakSelf, namePlanAsset, getAssetSuggestions } from '$lib/api';
 
 	import type { PlanPanelProps } from './types';
 
@@ -166,6 +167,19 @@
 	);
 	let artifactName = $state('');
 	let nameBusy = $state(false);
+	// Name suggestions (artifact pool), fetched once the naming step appears.
+	let nameSuggestions = $state<string[]>([]);
+	let nameSuggLoading = $state(false);
+	let nameSuggFetched = false;
+	$effect(() => {
+		if (!needsArtifactNaming || nameSuggFetched) return;
+		nameSuggFetched = true;
+		nameSuggLoading = true;
+		getAssetSuggestions(gameID, 'artifact', 'name')
+			.then(res => { nameSuggestions = res.suggestions; })
+			.catch(() => { nameSuggestions = []; })
+			.finally(() => { nameSuggLoading = false; });
+	});
 	async function submitArtifactName(p: Plan) {
 		if (nameBusy || !artifactName.trim()) return;
 		nameBusy = true; resError = '';
@@ -227,11 +241,11 @@
 				{#if needsArtifactNaming}
 					<div class="plan-form">
 						<p class="choices-header">Name the artifact your propaganda created</p>
-						<input
-							type="text"
-							class="form-input"
+						<SuggestionPicker
+							suggestions={nameSuggestions}
 							bind:value={artifactName}
-							placeholder="Name the societal shift…"
+							loading={nameSuggLoading}
+							customPlaceholder="Name the societal shift…"
 							maxlength={120}
 						/>
 						<button class="action-btn primary" onclick={() => submitArtifactName(plan)}

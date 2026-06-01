@@ -86,6 +86,15 @@ RETURNING *;
 -- name: ListMarginaliaByAsset :many
 SELECT * FROM marginalia WHERE asset_id = $1 ORDER BY position;
 
+-- name: ListMarginaliaTextByGame :many
+-- All marginalia text in a game (across every asset, torn or not), for
+-- deduping suggestion pools so players aren't offered an example already in
+-- play. Joins through assets to scope by game.
+SELECT m.text
+FROM marginalia m
+JOIN assets a ON a.id = m.asset_id
+WHERE a.game_id = $1;
+
 -- name: UpdateMarginaliaText :exec
 UPDATE marginalia SET text = $2 WHERE id = $1;
 

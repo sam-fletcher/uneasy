@@ -17,6 +17,7 @@
 		type PrologueSheetType,
 		type PlayerCardRow,
 	} from '$lib/api';
+	import SuggestionPicker from '../SuggestionPicker.svelte';
 
 	interface Props {
 		gameID: string;
@@ -37,8 +38,8 @@
 		value: string;
 		isTake: boolean;
 		suggestions: string[];
-		picked: string;
-		custom: string;
+		/** The chosen text — a picked suggestion or a custom entry. */
+		text: string;
 	};
 
 	function isCardTaken(suit: string, value: string): boolean {
@@ -68,8 +69,7 @@
 			value: c.value,
 			isTake: isCardTaken(c.suit, c.value),
 			suggestions: [],
-			picked: '',
-			custom: '',
+			text: '',
 		}));
 		seededFor = choice.name;
 	});
@@ -118,8 +118,7 @@
 		if (isLawsRumors && !lawOrRumorText.trim()) return false;
 		for (const slot of cardSlots) {
 			if (slot.isTake) continue;
-			const text = slot.picked === '__custom__' ? slot.custom : slot.picked;
-			if (!text.trim()) return false;
+			if (!slot.text.trim()) return false;
 		}
 		return true;
 	});
@@ -134,7 +133,7 @@
 				.map(s => ({
 					suit: s.suit,
 					value: s.value,
-					text: (s.picked === '__custom__' ? s.custom : s.picked).trim(),
+					text: s.text.trim(),
 				}));
 			await choosePrologue(gameID, {
 				sheet_type: sheet.type as PrologueSheetType,
@@ -211,37 +210,13 @@
 
 			{#if slot.isTake}
 				<p class="muted small">This card is already in play. You'll take its asset; no new text needed.</p>
-			{:else if loadingSuggestions}
-				<p class="muted small">Loading suggestions…</p>
 			{:else}
-				<div class="suggestion-grid">
-					{#each slot.suggestions.slice(0, 3) as suggestion}
-						<button
-							type="button"
-							class="suggestion-tile"
-							class:selected={slot.picked === suggestion}
-							onclick={() => cardSlots[idx].picked = suggestion}
-						>
-							{suggestion}
-						</button>
-					{/each}
-					<button
-						type="button"
-						class="suggestion-tile custom"
-						class:selected={slot.picked === '__custom__'}
-						onclick={() => cardSlots[idx].picked = '__custom__'}
-					>
-						Custom…
-					</button>
-				</div>
-				{#if slot.picked === '__custom__'}
-					<input
-						type="text"
-						class="custom-input"
-						bind:value={cardSlots[idx].custom}
-						placeholder={`Name your ${suitTypeLabel(slot.suit)}`}
-					/>
-				{/if}
+				<SuggestionPicker
+					suggestions={slot.suggestions}
+					bind:value={cardSlots[idx].text}
+					loading={loadingSuggestions}
+					customPlaceholder={`Name your ${suitTypeLabel(slot.suit)}`}
+				/>
 			{/if}
 		</section>
 	{/each}
@@ -301,7 +276,7 @@
 	.label { color: #c8a96e; font-size: 0.85rem; font-weight: 600; }
 	.hint { font-size: 0.75rem; color: #888; }
 
-	textarea, .custom-input {
+	textarea {
 		background: #2a2a2a; color: #e8e4d9;
 		border: 1px solid #444; border-radius: 4px;
 		padding: 0.4rem 0.5rem; font-size: 0.9rem;
@@ -311,36 +286,6 @@
 	.card-head { display: flex; gap: 0.4rem; align-items: baseline; margin-bottom: 0.3rem; }
 	.muted { color: #999; }
 	.muted.small { font-size: 0.8rem; }
-
-	.suggestion-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.4rem;
-	}
-	.suggestion-tile {
-		min-height: 44px;
-		padding: 0.4rem 0.6rem;
-		background: #2a2a28;
-		border: 1px solid #3a3a3a;
-		border-radius: 6px;
-		color: #e8e4d9;
-		font-size: 0.9rem;
-		font-family: inherit;
-		text-align: center;
-		cursor: pointer;
-		word-break: break-word;
-		transition: background-color 120ms ease, border-color 120ms ease;
-	}
-	.suggestion-tile:hover { background: #34332f; }
-	.suggestion-tile.selected {
-		background: #4a3f24;
-		border-color: #c8a96e;
-		color: #fff;
-	}
-	.suggestion-tile.custom { font-style: italic; color: #c8a96e; }
-	.suggestion-tile.custom.selected { color: #fff; font-style: normal; }
-
-	.custom-input { margin-top: 0.4rem; }
 
 	footer { display: flex; gap: 0.6rem; justify-content: flex-end; }
 

@@ -4,9 +4,10 @@
   or opted out. Non-hosts see a "waiting on host" note.
 -->
 <script lang="ts">
-	import { hostChoice, type Asset, type Plan, type Player } from '$lib/api';
+	import { hostChoice, getAssetSuggestions, type Asset, type Plan, type Player } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
+	import SuggestionPicker from '../../SuggestionPicker.svelte';
 	import FormField from '../FormField.svelte';
 	import { playerName } from '../shared';
 	import { HOST_MAKE_OPTS, type FestRes } from './options';
@@ -41,6 +42,12 @@
 	let hostPickerBusy = $state(false);
 	let hostPickerError = $state('');
 
+	// Peer-name suggestions, fetched lazily the first time introduce_peer is
+	// chosen (re-fetched per plan).
+	let peerNameSuggestions = $state<string[]>([]);
+	let peerNameSuggLoading = $state(false);
+	let peerNameSuggFetched = false;
+
 	// Reset picker when plan changes.
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
@@ -52,7 +59,19 @@
 			hostPeerName = '';
 			hostAssetID = null;
 			hostPickerError = '';
+			peerNameSuggestions = [];
+			peerNameSuggFetched = false;
 		}
+	});
+
+	$effect(() => {
+		if (hostPickedChoice !== 'introduce_peer' || peerNameSuggFetched) return;
+		peerNameSuggFetched = true;
+		peerNameSuggLoading = true;
+		getAssetSuggestions(plan.game_id, 'peer', 'name')
+			.then(res => { peerNameSuggestions = res.suggestions; })
+			.catch(() => { peerNameSuggestions = []; })
+			.finally(() => { peerNameSuggLoading = false; });
 	});
 
 	async function submitHostChoice() {
@@ -136,12 +155,16 @@
 					<textarea rows={2} bind:value={hostRumor} class="form-textarea"></textarea>
 				</label>
 			{:else if hostPickedChoice === 'introduce_peer'}
-				<label class="form-label">
-					New peer's name:
-					<input type="text" bind:value={hostPeerName}
-						class="form-textarea" style="height:auto;"
-						placeholder="Name of the new peer" />
-				</label>
+				<div class="form-label">
+					<span>New peer's name:</span>
+					<SuggestionPicker
+						suggestions={peerNameSuggestions}
+						bind:value={hostPeerName}
+						loading={peerNameSuggLoading}
+						customPlaceholder="Name of the new peer"
+						maxlength={120}
+					/>
+				</div>
 			{:else if hostPickedChoice === 'take_center_peer'}
 				<CardPicker
 					label="Peer to take from the center"

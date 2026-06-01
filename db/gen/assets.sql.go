@@ -480,6 +480,36 @@ func (q *Queries) ListMarginaliaByAsset(ctx context.Context, assetID int64) ([]M
 	return items, nil
 }
 
+const listMarginaliaTextByGame = `-- name: ListMarginaliaTextByGame :many
+SELECT m.text
+FROM marginalia m
+JOIN assets a ON a.id = m.asset_id
+WHERE a.game_id = $1
+`
+
+// All marginalia text in a game (across every asset, torn or not), for
+// deduping suggestion pools so players aren't offered an example already in
+// play. Joins through assets to scope by game.
+func (q *Queries) ListMarginaliaTextByGame(ctx context.Context, gameID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, listMarginaliaTextByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var text string
+		if err := rows.Scan(&text); err != nil {
+			return nil, err
+		}
+		items = append(items, text)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSecretsByAsset = `-- name: ListSecretsByAsset :many
 SELECT s.id, s.asset_id, s.author_id, s.text, s.is_revealed, s.revealed_at, s.created_at FROM secrets s
 WHERE s.asset_id = $1
