@@ -750,7 +750,7 @@
 		try {
 			const me = await getMe();
 			if (!me) {
-				goto(`/login?next=/table/${gameID}`);
+				goto(`/?next=/table/${gameID}`);
 				return;
 			}
 			// Open the WS first, with loadGameState as the resync callback.

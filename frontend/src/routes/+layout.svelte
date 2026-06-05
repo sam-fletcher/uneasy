@@ -35,6 +35,13 @@
 				<path d="M5 10v10h14V10" />
 			</svg>
 		</a>
+		<a
+			class="buy"
+			href="https://adambell.itch.io/uneasy-lies-the-head-2e"
+			target="_blank"
+			rel="noopener noreferrer"
+			aria-label="Buy the book on itch.io (opens in a new tab)"
+		>Buy the book ↗</a>
 	</header>
 {/if}
 
@@ -102,6 +109,18 @@
 	}
 	.home:hover { color: #d9bb80; background: #2a2a2a; }
 	.home:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
+	.buy {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0 0.5rem;
+		color: #999;
+		font-size: 0.85rem;
+		text-decoration: none;
+		border-radius: 6px;
+	}
+	.buy:hover { color: #c8a96e; }
+	.buy:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
 
 	main {
 		max-width: 1500px;
