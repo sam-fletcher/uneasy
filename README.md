@@ -113,14 +113,12 @@ Note: `make test-integration` and `make test-e2e` both target
 `uneasy_test`, so don't run them concurrently. `make check` runs them
 sequentially, which is fine.
 
-### Known-failing tests
+### Test health
 
-A handful of pre-existing integration tests fail on a fresh checkout —
-mostly individual test bugs (missing FK fields on `CreatePlanToken`,
-off-by-one secret-count assertions, etc.) rather than real regressions.
-Tracked separately; if `make test-integration` shows red, check whether
-your failing tests overlap with this list before assuming it's your
-change.
+`make test` and `make test-integration` should both pass clean on a fresh
+checkout (against a dedicated `uneasy_test` database). If `make
+test-integration` shows red, treat it as a real failure to investigate —
+there is no longer a list of expected/known-failing tests to discount.
 
 ## Generating typed SQL (sqlc)
 
