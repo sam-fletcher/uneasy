@@ -45,7 +45,7 @@
 			me = await updateMe({ username: usernameDraft.trim() });
 			editingUsername = false;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not update username.';
+			error = e instanceof Error ? e.message : 'Could not update player name.';
 		}
 	}
 	async function saveEmail() {
@@ -64,9 +64,9 @@
 			await updateMe({ code: codeDraft });
 			codeDraft = '';
 			editingCode = false;
-			notice = 'Code updated.';
+			notice = 'Password updated.';
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not update code.';
+			error = e instanceof Error ? e.message : 'Could not update password.';
 		}
 	}
 	async function doLogout() {
@@ -135,14 +135,14 @@
 		<section class="card">
 			<h2>Account</h2>
 			<div class="row">
-				<span class="label">Username</span>
+				<span class="label">Player name</span>
 				{#if editingUsername}
-					<input aria-label="Username" bind:value={usernameDraft} />
+					<input aria-label="Player name" bind:value={usernameDraft} />
 					<button class="small" onclick={saveUsername}>Save</button>
 					<button class="small secondary" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
 				{:else}
 					<span>{me.username}</span>
-					<button class="small secondary" aria-label="Edit username" onclick={() => { editingUsername = true; }}>Edit</button>
+					<button class="small secondary" aria-label="Edit player name" onclick={() => { editingUsername = true; }}>Edit</button>
 				{/if}
 			</div>
 			<div class="row">
@@ -157,14 +157,14 @@
 				{/if}
 			</div>
 			<div class="row">
-				<span class="label">Code</span>
+				<span class="label">Password</span>
 				{#if editingCode}
-					<input type="password" aria-label="New code" bind:value={codeDraft} placeholder="Enter a new code" />
+					<input type="password" aria-label="New password" bind:value={codeDraft} placeholder="Enter a new password" />
 					<button class="small" onclick={saveCode} disabled={!codeDraft}>Save</button>
 					<button class="small secondary" onclick={() => { editingCode = false; codeDraft = ''; }}>Cancel</button>
 				{:else}
 					<span class="masked">••••••••</span>
-					<button class="small secondary" aria-label="Edit code" onclick={() => { editingCode = true; }}>Edit</button>
+					<button class="small secondary" aria-label="Edit password" onclick={() => { editingCode = true; }}>Edit</button>
 				{/if}
 			</div>
 		</section>

@@ -46,10 +46,16 @@ func loadActiveScene(ctx context.Context, q *dbgen.Queries, gameID int64) (*dbge
 // validateSpeakingAs returns nil if the (player, asset) attribution is
 // permitted given the active scene state, or an HTTP-friendly error message.
 //
+// Per the rules, players may only speak as a character during a Scene, and
+// only as characters present in that scene under their control.
+//
 // Rules:
-//   - assetID == 0 (unset) → always allowed (OOC).
-//   - Asset must be the player's main character, OR a scene_peer in the
-//     active scene whose controller_player_id == playerID.
+//   - assetID == 0 (unset) → always allowed (speaking as oneself).
+//   - A character attribution requires an active scene. The asset must be a
+//     scene_peer of the active scene controlled by the caller, OR the caller's
+//     main character when the caller is the scene's focus player (the focus
+//     player's main character is implicitly present and never recorded as a
+//     scene_peer).
 func validateSpeakingAs(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -70,31 +76,34 @@ func validateSpeakingAs(
 		return http.StatusBadRequest, "speak-as asset is destroyed"
 	}
 
-	// Main character of the caller is always allowed, scene or no scene.
-	if asset.IsMainCharacter && asset.OwnerID == playerID {
-		return 0, ""
-	}
-
-	// Otherwise we need an active scene with this peer assigned to the caller.
+	// Speaking as a character is only permitted while a scene is active.
 	scene, err := loadActiveScene(ctx, q, gameID)
 	if err != nil {
 		return http.StatusInternalServerError, "could not load active scene"
 	}
 	if scene == nil {
-		return http.StatusBadRequest, "no active scene for character attribution"
+		return http.StatusBadRequest, "you can only speak as a character during a scene"
 	}
 
+	// A peer present in the scene must be controlled by the caller.
 	peer, err := q.GetScenePeer(ctx, dbgen.GetScenePeerParams{
 		SceneID:     scene.ID,
 		PeerAssetID: assetID,
 	})
-	if err != nil {
-		return http.StatusBadRequest, "that character is not in the current scene"
+	if err == nil {
+		if peer.ControllerPlayerID == nil || *peer.ControllerPlayerID != playerID {
+			return http.StatusForbidden, "that character is not yours to speak as"
+		}
+		return 0, ""
 	}
-	if peer.ControllerPlayerID == nil || *peer.ControllerPlayerID != playerID {
-		return http.StatusForbidden, "that character is not yours to speak as"
+
+	// The focus player's main character is implicitly present in their scene
+	// and is never recorded as a scene_peer, so allow it explicitly.
+	if asset.IsMainCharacter && asset.OwnerID == playerID && scene.FocusPlayerID == playerID {
+		return 0, ""
 	}
-	return 0, ""
+
+	return http.StatusBadRequest, "that character is not in the current scene"
 }
 
 // peerWithController pairs a peer asset ID with its assigned controller

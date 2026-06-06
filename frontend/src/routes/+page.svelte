@@ -38,7 +38,7 @@
 
 	async function submit() {
 		if (!username.trim() || !code) {
-			error = 'Username and code are required.';
+			error = 'Player name and password are required.';
 			return;
 		}
 		loading = true;
@@ -104,12 +104,12 @@
 
 			<div class="field">
 				<input id="u" autocomplete="username" placeholder=" " bind:value={username} maxlength={40} disabled={loading} />
-				<label for="u">Username</label>
+				<label for="u">Player name</label>
 			</div>
 
 			<div class="field">
 				<input id="c" type="password" autocomplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder=" " bind:value={code} disabled={loading} />
-				<label for="c">{mode === 'login' ? 'Code' : 'Code (your password)'}</label>
+				<label for="c">Password</label>
 			</div>
 
 			{#if mode === 'signup'}

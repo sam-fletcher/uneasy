@@ -75,15 +75,27 @@
 		id == null ? '' : assets.find(a => a.id === id)?.name ?? '';
 
 	// ── Persona picker ────────────────────────────────────────────────────────
-	// The set of personae the current player may speak as right now:
-	//   - Their own main character (always — even outside a scene; the
-	//     server still rejects non-OOC posts when no scene is active).
-	//   - Any peer in the active scene whose controller_player_id == self.
-	// Plus a fixed "OOC" option that posts with no attribution.
+	// Per the rules, players speak as characters only during a Scene. The set
+	// of personae the current player may speak as right now:
+	//   - Outside a scene: none — they simply speak as themselves.
+	//   - During a scene: any peer in the scene whose controller_player_id ==
+	//     self, plus their own main character when they are the focus player
+	//     (the focus player's MC is implicitly present and never recorded as a
+	//     scene_peer).
+	// Plus a constant "self" option (posts with no character attribution),
+	// labelled with the player's own name.
 
 	type Persona =
-		| { kind: 'ooc'; label: string }
+		| { kind: 'self'; label: string }
 		| { kind: 'asset'; assetID: number; label: string };
+
+	const selfName = $derived(playerName(currentPlayerID) || 'You');
+
+	// Only the focus player's main character is implicitly present; everyone
+	// else's MC appears in activeScenePeers if the focus player added it.
+	const isFocusPlayer = $derived(
+		activeScene != null && currentPlayerID != null && activeScene.focus_player_id === currentPlayerID
+	);
 
 	const ownMainCharacter = $derived(
 		currentPlayerID == null
@@ -102,35 +114,39 @@
 
 	const personae = $derived.by<Persona[]>(() => {
 		const list: Persona[] = [];
-		if (ownMainCharacter) {
-			list.push({ kind: 'asset', assetID: ownMainCharacter.id, label: ownMainCharacter.name });
+		// Character personae are available only while a scene is active.
+		if (activeScene != null) {
+			if (isFocusPlayer && ownMainCharacter) {
+				list.push({ kind: 'asset', assetID: ownMainCharacter.id, label: ownMainCharacter.name });
+			}
+			for (const peer of myControlledPeers) {
+				// Avoid duplicating the main character if it's also in the peer list.
+				if (peer.id === ownMainCharacter?.id) continue;
+				list.push({ kind: 'asset', assetID: peer.id, label: peer.name });
+			}
 		}
-		for (const peer of myControlledPeers) {
-			// Avoid duplicating the main character if it's also in the peer list.
-			if (peer.id === ownMainCharacter?.id) continue;
-			list.push({ kind: 'asset', assetID: peer.id, label: peer.name });
-		}
-		list.push({ kind: 'ooc', label: 'OOC' });
+		list.push({ kind: 'self', label: selfName });
 		return list;
 	});
 
-	// Currently selected persona. Defaults to the main character if available,
-	// else OOC. Clamps back to a valid option whenever personae change.
-	let selectedPersonaID = $state<number | 'ooc'>('ooc');
+	// Currently selected persona. Defaults to speaking as oneself. Clamps back
+	// to a valid option whenever personae change — e.g. when a scene ends and
+	// the character options disappear.
+	let selectedPersonaID = $state<number | 'self'>('self');
 	$effect(() => {
 		const valid = personae.some(p =>
-			(p.kind === 'ooc' && selectedPersonaID === 'ooc') ||
+			(p.kind === 'self' && selectedPersonaID === 'self') ||
 			(p.kind === 'asset' && p.assetID === selectedPersonaID)
 		);
 		if (!valid) {
 			const main = personae.find(p => p.kind === 'asset');
-			selectedPersonaID = main ? (main as { assetID: number }).assetID : 'ooc';
+			selectedPersonaID = main ? (main as { assetID: number }).assetID : 'self';
 		}
 	});
 
 	const selectedPersona = $derived(
 		personae.find(p =>
-			(p.kind === 'ooc' && selectedPersonaID === 'ooc') ||
+			(p.kind === 'self' && selectedPersonaID === 'self') ||
 			(p.kind === 'asset' && p.assetID === selectedPersonaID)
 		) ?? personae[personae.length - 1]
 	);
@@ -383,17 +399,16 @@
 						{/if}
 					</div>
 				{:else}
-					{@const isOOC = post.speaking_as_asset_id == null}
-					{@const color = isOOC ? OOC_COLOR : playerColorByID(post.author_id, players)}
-					{@const personaName = isOOC
-						? playerName(post.author_id)
-						: assetName(post.speaking_as_asset_id) || playerName(post.author_id)}
-					{@const playerTag = !isOOC ? playerName(post.author_id) : ''}
+					{@const inCharacter = post.speaking_as_asset_id != null}
+					{@const color = playerColorByID(post.author_id, players)}
+					{@const personaName = inCharacter
+						? assetName(post.speaking_as_asset_id) || playerName(post.author_id)
+						: playerName(post.author_id)}
+					{@const playerTag = inCharacter ? playerName(post.author_id) : ''}
 					<div
 						class="message"
 						data-post-id={post.id}
 						class:own={post.author_id === currentPlayerID}
-						class:ooc={isOOC}
 						style:--player-color={color}
 					>
 						<span class="msg-author">
@@ -415,9 +430,9 @@
 	{#if error}<p class="error">{error}</p>{/if}
 
 	{#if currentPlayerID != null && personae.length > 1}
-		{@const isOwnSelected = selectedPersona && selectedPersona.kind === 'asset'}
+		{@const isCharacterSelected = selectedPersona && selectedPersona.kind === 'asset'}
 		{@const selfColor = playerColorByID(currentPlayerID, players)}
-		{@const personaColor = isOwnSelected ? selfColor : OOC_COLOR}
+		{@const personaColor = isCharacterSelected ? selfColor : OOC_COLOR}
 		<div class="persona-bar">
 			<button
 				type="button"
@@ -430,14 +445,14 @@
 			>
 				<span class="persona-dot" aria-hidden="true"></span>
 				<span class="persona-label">Speaking as</span>
-				<span class="persona-value">{selectedPersona?.label ?? 'OOC'}</span>
+				<span class="persona-value">{selectedPersona?.label ?? selfName}</span>
 				<span class="persona-caret" aria-hidden="true">{pickerOpen ? '▴' : '▾'}</span>
 			</button>
 			{#if pickerOpen}
 				<ul class="persona-menu" role="listbox">
-					{#each personae as p (p.kind === 'ooc' ? 'ooc' : p.assetID)}
+					{#each personae as p (p.kind === 'self' ? 'self' : p.assetID)}
 						{@const isSelected =
-							(p.kind === 'ooc' && selectedPersonaID === 'ooc') ||
+							(p.kind === 'self' && selectedPersonaID === 'self') ||
 							(p.kind === 'asset' && selectedPersonaID === p.assetID)}
 						<li>
 							<button
@@ -445,7 +460,7 @@
 								class="persona-option"
 								class:selected={isSelected}
 								onclick={() => {
-									selectedPersonaID = p.kind === 'ooc' ? 'ooc' : p.assetID;
+									selectedPersonaID = p.kind === 'self' ? 'self' : p.assetID;
 									pickerOpen = false;
 								}}
 								role="option"
@@ -664,12 +679,6 @@
 		color: var(--player-color, var(--color-accent));
 		font-size: 0.82rem;
 		white-space: nowrap;
-	}
-
-	/* OOC messages render with a neutral, italicized body to make speech vs.
-	   meta-comment visually distinct, regardless of which player is speaking. */
-	.message.ooc .msg-body {
-		color: var(--color-text-muted);
 	}
 
 	.msg-body {
