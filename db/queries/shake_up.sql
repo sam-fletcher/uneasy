@@ -46,6 +46,12 @@ UPDATE shake_up_spends
 SET final_cost = $2, committed_at = now(), applied = TRUE
 WHERE id = $1;
 
+-- name: GetLastCommittedShakeUpSpend :one
+SELECT * FROM shake_up_spends
+WHERE game_id = $1 AND category = $2 AND committed_at IS NOT NULL
+ORDER BY committed_at DESC, id DESC
+LIMIT 1;
+
 -- ── shake_up_cost_adjustments ────────────────────────────────────────────────
 
 -- name: CreateShakeUpAdjustment :one

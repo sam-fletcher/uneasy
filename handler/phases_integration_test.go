@@ -385,9 +385,10 @@ func TestAdvanceToMainEvent_TransitionsPhaseAndSeedsRow1(t *testing.T) {
 	assert.Equal(t, model.PhaseMainEvent, updated.Phase)
 	assert.Equal(t, int16(1), updated.CurrentRow)
 	require.NotNil(t, updated.FocusPlayerID, "focus player must be set")
-	// With rank 1 going to player[0] across all three tracks, lowest
-	// cumulative status = player[0].
-	assert.Equal(t, players[0].ID, *updated.FocusPlayerID)
+	// Rank 1 is the HIGHEST status, so player[0] (rank 1 on every track) is
+	// the leader and player[2] (rank 3 on every track) is the lowest-status
+	// underdog. Per PROLOGUE_RULES.md the underdog takes the first focus.
+	assert.Equal(t, players[2].ID, *updated.FocusPlayerID)
 
 	rows, err := store.Q.ListPublicRecordRows(ctx, game.ID)
 	require.NoError(t, err)

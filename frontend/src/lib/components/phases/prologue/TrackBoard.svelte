@@ -162,7 +162,7 @@
 			if (lowestRank == null || t[0] > lowestRank.total) {
 				lowestRank = { pid, total: t[0], powerTieBreaker: t[1] };
 			}
-			else if (t[0] === lowestRank.total && t[0] > lowestRank.powerTieBreaker) {
+			else if (t[0] === lowestRank.total && t[1] > lowestRank.powerTieBreaker) {
 				lowestRank = { pid, total: t[0], powerTieBreaker: t[1] };
 			}
 		}

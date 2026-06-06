@@ -62,6 +62,24 @@ func TestComputeTrackRanking_heartLosesFinalTie(t *testing.T) {
 	assert.Equal(t, []int64{1, 2}, ranked, "heart loses tie")
 }
 
+func TestComputeTrackRanking_heartTieChecksNextCard(t *testing.T) {
+	// Per PROLOGUE_RULES.md "Breaking Ties": when the high cards tie in value
+	// we check the next-highest card BEFORE applying the heart-loser rule.
+	// p1: K♣, 2♣.  p2: K♥ (declared into power), Q♣.
+	// High cards tie (K=K). Next card: p2's Q beats p1's 2 → p2 wins, even
+	// though p2's high card is a heart. (Regression: the old code made the
+	// heart lose at the K position without checking the next card.)
+	cards := []PlayerCard{
+		{1, SuitClubs, "K"},
+		{1, SuitClubs, "2"},
+		{2, SuitHearts, "K"},
+		{2, SuitClubs, "Q"},
+	}
+	decls := []HeartDeclaration{{PlayerID: 2, Track: PrologueTrackPower, Count: 1}}
+	ranked, _, _ := ComputeTrackRanking(PrologueTrackPower, []int64{1, 2}, cards, decls)
+	assert.Equal(t, []int64{2, 1}, ranked, "lower card decides before heart-loser rule")
+}
+
 func TestComputeTrackRanking_overdeclaredHearts(t *testing.T) {
 	cards := []PlayerCard{{1, SuitHearts, "5"}} // only 1 heart
 	decls := []HeartDeclaration{{PlayerID: 1, Track: PrologueTrackPower, Count: 2}}

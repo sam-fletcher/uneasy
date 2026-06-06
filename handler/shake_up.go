@@ -75,13 +75,20 @@ func GetShakeUp(s *db.Store) http.HandlerFunc {
 			"options":           shakeUpOptionsForGame(game),
 		}
 
-		// Open spend (if any).
+		// Open spend (if any). While a spend is open no one may announce, so
+		// current_actor is only meaningful when the spending step is awaiting
+		// the next announce.
 		open, err := s.Q.GetOpenShakeUpSpend(ctx, gameID)
 		if err == nil {
 			adj, _ := s.Q.ListAdjustmentsForSpend(ctx, open.ID)
 			out["open_spend"] = map[string]any{
 				"spend":       open,
 				"adjustments": adj,
+			}
+		} else if game.ShakeUpStep != nil && *game.ShakeUpStep == gamepkg.ShakeUpStepSpending &&
+			game.ShakeUpCategory != nil {
+			if actor, aerr := currentShakeUpActor(ctx, s.Q, gameID, *game.ShakeUpCategory); aerr == nil && actor != 0 {
+				out["current_actor"] = actor
 			}
 		}
 		respond(w, http.StatusOK, out)
@@ -287,6 +294,18 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// Enforce reverse-rank turn order (lowest status first, looping past
+		// players who are out of tokens). Per SHAKEUP_RULES.md.
+		actor, err := currentShakeUpActor(ctx, s.Q, gameID, *game.ShakeUpCategory)
+		if err != nil {
+			respondInternalErr(w, r, "could not determine turn", err)
+			return
+		}
+		if actor != player.ID {
+			respondErr(w, http.StatusConflict, "it is not your turn to spend")
+			return
+		}
+
 		// Spender pays the 1-token base cost immediately.
 		if player.ShakeUpTokens < 1 {
 			respondErr(w, http.StatusConflict, "you have no tokens to spend")
@@ -472,6 +491,41 @@ func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// currentShakeUpActor returns the player whose turn it is to announce a spend
+// in the current spending step, per reverse-rank order (lowest status first,
+// looping, skipping token-less players). Returns 0 if no one holds tokens.
+func currentShakeUpActor(ctx context.Context, q *dbgen.Queries, gameID int64, category string) (int64, error) {
+	rankings, err := q.ListRankingsByGame(ctx, gameID)
+	if err != nil {
+		return 0, fmt.Errorf("load rankings: %w", err)
+	}
+	rows := make([]gamepkg.RankingRow, 0, len(rankings))
+	for _, rk := range rankings {
+		rows = append(rows, gamepkg.RankingRow{
+			PlayerID: rk.PlayerID, Category: string(rk.Category), Rank: rk.Rank,
+		})
+	}
+	order := gamepkg.ShakeUpTurnOrder(category, rows)
+
+	tokens, err := q.ListShakeUpTokensByGame(ctx, gameID)
+	if err != nil {
+		return 0, fmt.Errorf("load tokens: %w", err)
+	}
+	hasTokens := make(map[int64]bool, len(tokens))
+	for _, t := range tokens {
+		hasTokens[t.ID] = t.ShakeUpTokens > 0
+	}
+
+	var lastActor *int64
+	if last, lerr := q.GetLastCommittedShakeUpSpend(ctx, dbgen.GetLastCommittedShakeUpSpendParams{
+		GameID: gameID, Category: category,
+	}); lerr == nil {
+		pid := last.PlayerID
+		lastActor = &pid
+	}
+	return gamepkg.NextShakeUpActor(order, hasTokens, lastActor), nil
+}
 
 func inShakeUpStep(w http.ResponseWriter, game *dbgen.Game, want int16) bool {
 	if game.Phase != model.PhaseShakeUp {

@@ -116,6 +116,38 @@ func (q *Queries) CreateShakeUpSpend(ctx context.Context, arg CreateShakeUpSpend
 	return i, err
 }
 
+const getLastCommittedShakeUpSpend = `-- name: GetLastCommittedShakeUpSpend :one
+SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at FROM shake_up_spends
+WHERE game_id = $1 AND category = $2 AND committed_at IS NOT NULL
+ORDER BY committed_at DESC, id DESC
+LIMIT 1
+`
+
+type GetLastCommittedShakeUpSpendParams struct {
+	GameID   int64  `db:"game_id" json:"game_id"`
+	Category string `db:"category" json:"category"`
+}
+
+func (q *Queries) GetLastCommittedShakeUpSpend(ctx context.Context, arg GetLastCommittedShakeUpSpendParams) (ShakeUpSpend, error) {
+	row := q.db.QueryRow(ctx, getLastCommittedShakeUpSpend, arg.GameID, arg.Category)
+	var i ShakeUpSpend
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlayerID,
+		&i.Category,
+		&i.OptionKey,
+		&i.TargetAssetID,
+		&i.TargetPlayerID,
+		&i.BaseCost,
+		&i.FinalCost,
+		&i.CommittedAt,
+		&i.Applied,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getOpenShakeUpSpend = `-- name: GetOpenShakeUpSpend :one
 SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at FROM shake_up_spends
 WHERE game_id = $1 AND committed_at IS NULL

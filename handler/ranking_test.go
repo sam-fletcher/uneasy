@@ -410,3 +410,45 @@ func Test_swapTokenPlayerWithAbove(t *testing.T) {
 		})
 	}
 }
+
+// TestFindFirstFocusPlayer pins the underdog selection: per PROLOGUE_RULES.md
+// the first focus player is the LOWEST-status player, and since rank 1 is the
+// highest status, that means the highest sum of ranks across the three tracks.
+// Ties go to the lowest-status-on-power player (highest power rank number).
+func TestFindFirstFocusPlayer(t *testing.T) {
+	intPtr := func(v int64) *int64 { return &v }
+	rk := func(pid int64, cat model.RankingCategory, rank int16) dbgen.Ranking {
+		return dbgen.Ranking{PlayerID: intPtr(pid), Category: cat, Rank: rank}
+	}
+
+	t.Run("highest rank sum (underdog) is chosen, not the leader", func(t *testing.T) {
+		players := []dbgen.Player{{ID: 1}, {ID: 2}}
+		rankings := []dbgen.Ranking{
+			// p1 is the leader (sum 3), p2 is the underdog (sum 12).
+			rk(1, model.CategoryPower, 1), rk(1, model.CategoryKnowledge, 1), rk(1, model.CategoryEsteem, 1),
+			rk(2, model.CategoryPower, 4), rk(2, model.CategoryKnowledge, 4), rk(2, model.CategoryEsteem, 4),
+		}
+		got := findFirstFocusPlayer(&dbgen.Game{}, players, rankings)
+		require.NotNil(t, got)
+		assert.Equal(t, int64(2), got.ID, "underdog (highest rank sum) takes the marker")
+	})
+
+	t.Run("tie on total broken by lowest power status", func(t *testing.T) {
+		players := []dbgen.Player{{ID: 1}, {ID: 2}}
+		rankings := []dbgen.Ranking{
+			// Both total 9. p1 lower-status on power (rank 5) → p1 wins.
+			rk(1, model.CategoryPower, 5), rk(1, model.CategoryKnowledge, 2), rk(1, model.CategoryEsteem, 2),
+			rk(2, model.CategoryPower, 1), rk(2, model.CategoryKnowledge, 4), rk(2, model.CategoryEsteem, 4),
+		}
+		got := findFirstFocusPlayer(&dbgen.Game{}, players, rankings)
+		require.NotNil(t, got)
+		assert.Equal(t, int64(1), got.ID, "lowest-status-on-power wins the tie")
+	})
+
+	t.Run("explicit focus player overrides computation", func(t *testing.T) {
+		players := []dbgen.Player{{ID: 1}, {ID: 2}}
+		got := findFirstFocusPlayer(&dbgen.Game{FocusPlayerID: intPtr(2)}, players, nil)
+		require.NotNil(t, got)
+		assert.Equal(t, int64(2), got.ID)
+	})
+}

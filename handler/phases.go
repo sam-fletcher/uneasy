@@ -71,8 +71,10 @@ func phaseBoundaryLabel(phase model.GamePhase) string {
 
 // findFirstFocusPlayer picks the first focus player at main-event start.
 // Per PROLOGUE_RULES.md, this is the player with the lowest cumulative
-// status (sum of ranks across the three tracks), tie broken by lowest
-// power rank. If a focus player is already set, that wins.
+// status — the underdog. Because rank 1 is the *highest* status (see
+// difficulty_test.go), lowest status means the highest sum of ranks across
+// the three tracks. Ties are broken by lowest power status, i.e. the highest
+// power rank number. If a focus player is already set, that wins.
 func findFirstFocusPlayer(
 	game *dbgen.Game,
 	players []dbgen.Player,
@@ -106,10 +108,13 @@ func findFirstFocusPlayer(
 		}
 		bt, pt := totals[best.ID], totals[p.ID]
 		switch {
-		case pt < bt:
+		case pt > bt:
+			// Higher rank sum = lower status = more of an underdog.
 			best = p
 		case pt == bt:
-			if powerRank[p.ID] < powerRank[best.ID] {
+			// Tie on total: the lower-status-on-power player (higher power
+			// rank number) takes the marker.
+			if powerRank[p.ID] > powerRank[best.ID] {
 				best = p
 			}
 		}

@@ -203,7 +203,9 @@ func ComputeTrackRanking(
 		if items[i].count != items[j].count {
 			return items[i].count > items[j].count
 		}
-		// Walk the sorted value lists position-by-position.
+		// Compare by card value only, highest to lowest. Per
+		// PROLOGUE_RULES.md, when the high cards tie we move on to the next
+		// card — heart-ness does NOT break the tie at this stage.
 		n := min(len(items[j].valSorted), len(items[i].valSorted))
 		for k := range n {
 			ri := cardRank(items[i].valSorted[k])
@@ -211,15 +213,17 @@ func ComputeTrackRanking(
 			if ri != rj {
 				return ri > rj
 			}
-			// Same rank at this position. If exactly one is a heart, that
-			// player loses the tie (the heart was the tiebreaker and
-			// loses).
-			if items[i].isHeart[k] != items[j].isHeart[k] {
-				return !items[i].isHeart[k]
-			}
 		}
-		// Identical so far; longer wins (more cards is better).
-		return len(items[i].valSorted) > len(items[j].valSorted)
+		if len(items[i].valSorted) != len(items[j].valSorted) {
+			// Identical so far; longer wins (more cards is better).
+			return len(items[i].valSorted) > len(items[j].valSorted)
+		}
+		// All card values tie. Final fallback: "the player whose high card
+		// was a heart loses." Only the high card (position 0) decides.
+		if items[i].isHeart[0] != items[j].isHeart[0] {
+			return !items[i].isHeart[0]
+		}
+		return false
 	})
 
 	for _, it := range items {

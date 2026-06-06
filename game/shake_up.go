@@ -178,3 +178,36 @@ type RankingRow struct {
 	Category string
 	Rank     int16
 }
+
+// NextShakeUpActor returns the player whose turn it is to announce a spend
+// during a category's spending step. order is the reverse-rank turn order
+// (lowest status first — see ShakeUpTurnOrder); hasTokens reports who still
+// holds spendable tokens; lastActor is the player who committed the previous
+// spend this category, or nil if none has yet.
+//
+// Turn order loops: after lastActor, the turn passes to the next player in
+// order who still holds tokens, wrapping around. Players with no tokens are
+// skipped ("Loop the turn order until everybody is out of tokens"). Returns 0
+// when no one holds tokens.
+func NextShakeUpActor(order []int64, hasTokens map[int64]bool, lastActor *int64) int64 {
+	n := len(order)
+	if n == 0 {
+		return 0
+	}
+	start := 0
+	if lastActor != nil {
+		for i, pid := range order {
+			if pid == *lastActor {
+				start = i + 1
+				break
+			}
+		}
+	}
+	for off := range n {
+		pid := order[(start+off)%n]
+		if hasTokens[pid] {
+			return pid
+		}
+	}
+	return 0
+}

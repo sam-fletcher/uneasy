@@ -658,6 +658,9 @@ export function getShakeUp(gameID: string | number): Promise<{
 	tokens: ShakeUpTokensRow[];
 	options: ShakeUpOptionInfo[] | null;
 	open_spend?: { spend: ShakeUpSpend; adjustments: ShakeUpAdjustmentRow[] };
+	// During the spending step (no open spend), the player whose turn it is
+	// to announce, per reverse-rank order. Absent otherwise.
+	current_actor?: number;
 }> {
 	return apiFetch(`/tables/${gameID}/shake-up`);
 }

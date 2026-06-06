@@ -35,6 +35,7 @@
 	let tokens = $state<ShakeUpTokensRow[]>([]);
 	let options = $state<ShakeUpOptionInfo[]>([]);
 	let openSpend = $state<{ spend: ShakeUpSpend; adjustments: ShakeUpAdjustmentRow[] } | null>(null);
+	let currentActor = $state<number | null>(null);
 	let error = $state('');
 	let busy = $state(false);
 
@@ -44,6 +45,7 @@
 			tokens = data.tokens;
 			options = data.options ?? [];
 			openSpend = data.open_spend ?? null;
+			currentActor = data.current_actor ?? null;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load shake-up state.';
 		}
@@ -68,6 +70,8 @@
 	const myTokens = $derived(
 		tokens.find(t => t.id === currentPlayerID)?.shake_up_tokens ?? 0
 	);
+	// Whose turn it is to announce a spend (reverse-rank order, server-driven).
+	const isMyTurn = $derived(currentActor != null && currentActor === currentPlayerID);
 	function playerName(id: number | null): string {
 		if (id == null) return '?';
 		return players.find(p => p.id === id)?.display_name ?? '?';
@@ -164,11 +168,14 @@
 					stepLabel: 'Commit the spend',
 				};
 			}
-			const stillHolding = tokens
-				.filter(t => t.shake_up_tokens > 0)
-				.map<Waitee>(t => ({ kind: 'player', playerID: t.id }));
-			if (stillHolding.length === 0) return { waitees: [] };
-			return { waitees: stillHolding, stepLabel: 'Spend tokens' };
+			// Reverse-rank turn order: waiting on the single active player.
+			if (currentActor != null) {
+				return {
+					waitees: [{ kind: 'player', playerID: currentActor }],
+					stepLabel: 'Spend tokens',
+				};
+			}
+			return { waitees: [] };
 		}
 		return { waitees: [] };
 	});
@@ -235,7 +242,7 @@
 					{/if}
 				</div>
 			</section>
-		{:else if myTokens > 0}
+		{:else if isMyTurn}
 			<section>
 				<h3>Announce a spend</h3>
 				<div class="announce-form">
@@ -281,6 +288,11 @@
 					</button>
 				</div>
 			</section>
+		{:else if myTokens > 0}
+			<p class="muted">
+				It's not your turn yet — waiting on <strong>{playerName(currentActor)}</strong> to spend.
+				Players take turns in reverse-rank order (lowest status first).
+			</p>
 		{:else}
 			<p class="muted">You have no tokens. The category advances when everyone is at zero.</p>
 		{/if}
