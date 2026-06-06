@@ -152,7 +152,7 @@
 		right: max(0.5rem, env(safe-area-inset-right));
 		padding: 0.6rem 0.75rem;
 		color: var(--color-text-muted);
-		font-size: 0.8rem;
+		font-size: 0.9rem;
 		text-decoration: none;
 		border-radius: 6px;
 	}
@@ -191,8 +191,10 @@
 	}
 	.subtitle {
 		margin-top: 0.75rem;
+		font-family: var(--font-serif);
+		font-size: 1.1rem;
 		color: var(--color-text-muted);
-		font-style: italic;
+		/* font-style: italic; */
 	}
 
 	.card {

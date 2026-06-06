@@ -115,7 +115,7 @@
 		min-height: 44px;
 		padding: 0 0.5rem;
 		color: var(--color-text-muted);
-		font-size: 0.85rem;
+		font-size: 0.9rem;
 		text-decoration: none;
 		border-radius: var(--radius-sm);
 	}
