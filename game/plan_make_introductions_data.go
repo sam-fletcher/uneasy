@@ -2,8 +2,6 @@ package game
 
 // plan_make_introductions_data.go — typed resolution_data for Make Introductions.
 
-import dbgen "uneasy/db/gen"
-
 // MakeIntroductionsResolutionData holds Make Introductions plan state stored
 // inside the plans.resolution_data JSON column, nested under the
 // "make_introductions" key.
@@ -58,16 +56,6 @@ type MIMarOutcome struct {
 	// Done marks the outcome fully applied. "broken_arrival" stays false until
 	// the assigned author writes the marginalia; the others complete inline.
 	Done bool `json:"done"`
-}
-
-// LoadMakeIntroductionsData is a read-only convenience parser; returns a zero
-// struct when the nested key is absent.
-func LoadMakeIntroductionsData(plan *dbgen.Plan) MakeIntroductionsResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
-	if rd.MakeIntroductions == nil {
-		return MakeIntroductionsResolutionData{}
-	}
-	return *rd.MakeIntroductions
 }
 
 // EnsureMakeIntroductions returns r.MakeIntroductions, allocating a zero

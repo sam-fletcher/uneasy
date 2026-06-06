@@ -8,8 +8,6 @@ package game
 // keep-secret submissions). See RESOLUTION_DATA_TYPING_PLAN.md for the
 // design rationale.
 
-import dbgen "uneasy/db/gen"
-
 // LiaisePhase enumerates the phases of a Clandestinely Liaise plan.
 // Values are stable on-wire strings.
 type LiaisePhase string
@@ -46,8 +44,8 @@ type LiaiseResolutionData struct {
 //
 // For writes, work with the fat ResolutionData via LoadResolutionData /
 // SaveResolutionData and use EnsureLiaise to obtain a non-nil pointer.
-func LoadLiaiseData(plan *dbgen.Plan) LiaiseResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
+func LoadLiaiseData(raw *string) LiaiseResolutionData {
+	rd := LoadResolutionData(raw)
 	if rd.Liaise == nil {
 		return LiaiseResolutionData{}
 	}

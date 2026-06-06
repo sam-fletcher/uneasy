@@ -2,8 +2,6 @@ package game
 
 // plan_exchange_courtiers_data.go — typed resolution_data for Exchange Courtiers.
 
-import dbgen "uneasy/db/gen"
-
 // ExchangeCourtiersResolutionData holds Exchange Courtiers plan state stored
 // inside the plans.resolution_data JSON column, nested under the
 // "exchange_courtiers" key.
@@ -31,16 +29,6 @@ type ExchangeCourtiersResolutionData struct {
 	// RiposteAllowed is set when "riposte" was chosen; it enables the
 	// preparer's optional pre-break of one of their peers (riposte-break).
 	RiposteAllowed bool `json:"riposte_allowed,omitempty"`
-}
-
-// LoadExchangeCourtiersData is a read-only convenience parser; returns a zero
-// struct when the nested key is absent.
-func LoadExchangeCourtiersData(plan *dbgen.Plan) ExchangeCourtiersResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
-	if rd.ExchangeCourtiers == nil {
-		return ExchangeCourtiersResolutionData{}
-	}
-	return *rd.ExchangeCourtiers
 }
 
 // EnsureExchangeCourtiers returns r.ExchangeCourtiers, allocating a zero

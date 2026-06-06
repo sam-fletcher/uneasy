@@ -7,8 +7,6 @@ package game
 // resData.Duel.* directly (use r.EnsureDuel() to get a non-nil pointer from
 // write paths).
 
-import dbgen "uneasy/db/gen"
-
 // DuelPhase enumerates the phases of a Propose Duel plan.
 // Values are stable on-wire strings.
 type DuelPhase string
@@ -60,8 +58,8 @@ type DuelResolutionData struct {
 
 // LoadDuelData is a read-only convenience parser; returns a zero struct when
 // the nested key is absent.
-func LoadDuelData(plan *dbgen.Plan) DuelResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
+func LoadDuelData(raw *string) DuelResolutionData {
+	rd := LoadResolutionData(raw)
 	if rd.Duel == nil {
 		return DuelResolutionData{}
 	}

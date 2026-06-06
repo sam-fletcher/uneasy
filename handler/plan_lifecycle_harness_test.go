@@ -35,7 +35,6 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
-	"uneasy/game"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 	"uneasy/model"
@@ -104,8 +103,8 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 		rr.Post("/resolve", ResolvePlan(store, manager))
 		rr.Post("/make-choice", MakeChoice(store, manager))
 		rr.Post("/complete", CompletePlan(store, manager))
-		deps := &game.PlanDeps{Store: store, Manager: manager}
-		for _, h := range game.AllHandlers() {
+		deps := &PlanDeps{Store: store, Manager: manager}
+		for _, h := range AllHandlers() {
 			for route, fn := range h.ExtraRoutes(deps) {
 				rr.Post("/"+route, fn)
 			}

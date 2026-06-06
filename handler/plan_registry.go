@@ -2,19 +2,17 @@ package handler
 
 // handler/plan_registry.go — Thin re-exports of the game package types.
 //
-// Domain types (PlanHandler, ResolutionData, etc.) now live in the game
-// package. These aliases keep the handler package's internal references
-// compiling without a mass-rename in one step.
+// Pure domain data/metadata types (ResolutionData, PlanMetadata, the per-plan
+// *ResolutionData structs, …) live in the game package. These aliases keep the
+// handler package's internal references unqualified. The storage-coupled plan
+// contract (PlanHandler, PlanDeps, ValidationContext, the registry,
+// saveResolutionData) lives in plan_contract.go in this package.
 
 import "uneasy/game"
 
 // Type aliases — handler-internal code can use these unqualified.
 type (
-	PlanHandler                      = game.PlanHandler
-	OnPreparer                       = game.OnPreparer
 	PlanMetadata                     = game.PlanMetadata
-	PlanDeps                         = game.PlanDeps
-	ValidationContext                = game.ValidationContext
 	ChoiceLimiter                    = game.ChoiceLimiter
 	ResolutionData                   = game.ResolutionData
 	DraftChoice                      = game.DraftChoice
@@ -38,18 +36,10 @@ type (
 	FestivityPhase                   = game.FestivityPhase
 )
 
-// Registry delegates — handler-internal code calls these unqualified.
-var (
-	RegisterPlan = game.RegisterPlan
-	GetHandler   = game.GetHandler
-	AllHandlers  = game.AllHandlers
-)
-
-// Resolution data helpers — used throughout handler plan files.
-var (
-	loadResolutionData = game.LoadResolutionData
-	saveResolutionData = game.SaveResolutionData
-)
+// Resolution data read helper — used throughout handler plan files.
+// (loadResolutionData stays in game/; saveResolutionData lives in
+// plan_contract.go because it performs the DB write.)
+var loadResolutionData = game.LoadResolutionData
 
 // Pure game-rule helpers — aliased so handler code can call them unqualified.
 var (

@@ -2,11 +2,7 @@ package game
 
 // plan_propose_decree_data.go — typed resolution_data for Propose Decree.
 
-import (
-	"slices"
-
-	dbgen "uneasy/db/gen"
-)
+import "slices"
 
 // ProposeDecreeResolutionData holds Propose Decree plan state stored inside
 // the plans.resolution_data JSON column, nested under the "propose_decree" key.
@@ -61,16 +57,6 @@ func (pd *ProposeDecreeResolutionData) NextAmender() int64 {
 		}
 	}
 	return 0
-}
-
-// LoadProposeDecreeData is a read-only convenience parser; returns a zero
-// struct when the nested key is absent.
-func LoadProposeDecreeData(plan *dbgen.Plan) ProposeDecreeResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
-	if rd.ProposeDecree == nil {
-		return ProposeDecreeResolutionData{}
-	}
-	return *rd.ProposeDecree
 }
 
 // EnsureProposeDecree returns r.ProposeDecree, allocating a zero struct if it

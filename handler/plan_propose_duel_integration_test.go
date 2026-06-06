@@ -91,7 +91,7 @@ func duelInitiative(t *testing.T, h *planLifecycle, planID int64) int64 {
 	t.Helper()
 	plan, err := h.q.GetPlanByID(context.Background(), planID)
 	require.NoError(t, err)
-	d := game.LoadDuelData(&plan)
+	d := game.LoadDuelData(plan.ResolutionData)
 	require.NotNil(t, d.InitiativePlayerID, "no initiative set")
 	return *d.InitiativePlayerID
 }

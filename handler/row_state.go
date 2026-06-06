@@ -265,7 +265,7 @@ func demandDraftSubPhase(
 // is the preparer (= focus player at resolve time) so the existing label is
 // already accurate.
 func festivitySubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	state := gamepkg.LoadFestivityData(plan)
+	state := gamepkg.LoadFestivityData(plan.ResolutionData)
 	if state.Phase != gamepkg.FestivityPhaseSocializing {
 		return model.RowState{}, false
 	}
@@ -305,7 +305,7 @@ func festivitySubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) 
 // declarer (InitiativePlayerID). 'roll' and 'done' keep the default
 // PlanResolving copy (roll is the standard dice flow; done is terminal).
 func duelSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	state := gamepkg.LoadDuelData(plan)
+	state := gamepkg.LoadDuelData(plan.ResolutionData)
 	switch state.Phase {
 	case gamepkg.DuelPhaseSetup, gamepkg.DuelPhaseStaking:
 		return model.RowState{Kind: model.RowStateAwaitDuelStaking}, true

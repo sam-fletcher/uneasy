@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
-	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -28,7 +27,7 @@ func TestMakeWar_RejectsNoEnemies(t *testing.T) {
 	tg := newTestGame(t, q, 3)
 	ctx := context.Background()
 
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:              q,
 		Game:           &tg.Game,
 		Player:         &tg.Players[0],
@@ -45,7 +44,7 @@ func TestMakeWar_RejectedDuplicateEnemies(t *testing.T) {
 	tg := newTestGame(t, q, 3)
 	ctx := context.Background()
 
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:              q,
 		Game:           &tg.Game,
 		Player:         &tg.Players[0],
@@ -62,7 +61,7 @@ func TestMakeWar_AcceptsValidEnemies(t *testing.T) {
 	tg := newTestGame(t, q, 4)
 	ctx := context.Background()
 
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:              q,
 		Game:           &tg.Game,
 		Player:         &tg.Players[0],
@@ -80,7 +79,7 @@ func TestProposeDuel_RejectsNoOpponent(t *testing.T) {
 	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:      q,
 		Game:   &tg.Game,
 		Player: &tg.Players[0],
@@ -97,7 +96,7 @@ func TestProposeDuel_RejectsSelfAsOpponent(t *testing.T) {
 
 	opponentID := tg.Players[0].ID
 	notes := "Courtyard duel"
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:              q,
 		Game:           &tg.Game,
 		Player:         &tg.Players[0],
@@ -116,7 +115,7 @@ func TestProposeDuel_RejectsNoNotes(t *testing.T) {
 	ctx := context.Background()
 
 	opponentID := tg.Players[1].ID
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:              q,
 		Game:           &tg.Game,
 		Player:         &tg.Players[0],
@@ -134,7 +133,7 @@ func TestProposeDuel_AcceptsValidDuel(t *testing.T) {
 
 	opponentID := tg.Players[1].ID
 	notes := "Courtyard duel at dawn"
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:              q,
 		Game:           &tg.Game,
 		Player:         &tg.Players[0],
@@ -153,7 +152,7 @@ func TestSeekAnswers_RejectsNoNotes(t *testing.T) {
 	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:      q,
 		Game:   &tg.Game,
 		Player: &tg.Players[0],
@@ -169,7 +168,7 @@ func TestSeekAnswers_AcceptsWithNotes(t *testing.T) {
 	ctx := context.Background()
 
 	notes := "Research tower origins in archives"
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:      q,
 		Game:   &tg.Game,
 		Player: &tg.Players[0],
@@ -187,7 +186,7 @@ func TestSpreadRumors_RejectsNoTarget(t *testing.T) {
 	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:      q,
 		Game:   &tg.Game,
 		Player: &tg.Players[0],
@@ -213,7 +212,7 @@ func TestSpreadRumors_RejectsNoNotes(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:             q,
 		Game:          &tg.Game,
 		Player:        &tg.Players[0],
@@ -241,7 +240,7 @@ func TestSpreadRumors_AcceptsWithTargetAndNotes(t *testing.T) {
 	require.NoError(t, err)
 
 	notes := "Council betrayal rumor"
-	vc := &game.ValidationContext{
+	vc := &ValidationContext{
 		Q:             q,
 		Game:          &tg.Game,
 		Player:        &tg.Players[0],

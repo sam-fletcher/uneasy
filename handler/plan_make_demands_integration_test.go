@@ -252,7 +252,7 @@ func newMDHTTPHarness(t *testing.T, n int) *mdHTTPHarness {
 	r := chi.NewRouter()
 	r.Use(appMiddleware.EnsureSession(q))
 	r.Route("/api/plans/{planId}", func(rr chi.Router) {
-		deps := &game.PlanDeps{Store: store, Manager: manager}
+		deps := &PlanDeps{Store: store, Manager: manager}
 		h, _ := GetHandler(model.PlanMakeDemands)
 		for route, fn := range h.ExtraRoutes(deps) {
 			rr.Post("/"+route, fn)

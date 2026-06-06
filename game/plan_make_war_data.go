@@ -8,8 +8,6 @@ package game
 // the wars table; this struct only holds the cursor state the plan
 // handler needs between rows.
 
-import dbgen "uneasy/db/gen"
-
 // MakeWarResolutionData holds all Make War plan state stored inside the
 // plans.resolution_data JSON column, nested under the "make_war" key.
 type MakeWarResolutionData struct {
@@ -29,8 +27,8 @@ type MakeWarResolutionData struct {
 // LoadMakeWarData is a read-only convenience that parses a plan's
 // resolution_data column and returns the inner MakeWarResolutionData as a
 // value (zero struct when the nested key is absent).
-func LoadMakeWarData(plan *dbgen.Plan) MakeWarResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
+func LoadMakeWarData(raw *string) MakeWarResolutionData {
+	rd := LoadResolutionData(raw)
 	if rd.MakeWar == nil {
 		return MakeWarResolutionData{}
 	}

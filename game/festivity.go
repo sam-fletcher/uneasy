@@ -7,11 +7,7 @@ package game
 // r.EnsureFestivity() for writes and r.Festivity (or LoadFestivityData) for
 // reads.
 
-import (
-	"slices"
-
-	dbgen "uneasy/db/gen"
-)
+import "slices"
 
 // FestivityPhase enumerates the phases of a Host Festivity plan.
 // Values are stable on-wire strings.
@@ -101,8 +97,8 @@ type FestivityResolutionData struct {
 // LoadFestivityData is a read-only convenience that parses a plan's
 // resolution_data column and returns the inner FestivityResolutionData as a
 // value (zero struct when the nested key is absent).
-func LoadFestivityData(plan *dbgen.Plan) FestivityResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
+func LoadFestivityData(raw *string) FestivityResolutionData {
+	rd := LoadResolutionData(raw)
 	if rd.Festivity == nil {
 		return FestivityResolutionData{}
 	}

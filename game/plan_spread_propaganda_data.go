@@ -6,8 +6,6 @@ package game
 // `SpreadPropaganda` field. See RESOLUTION_DATA_TYPING_PLAN.md for the design
 // rationale.
 
-import dbgen "uneasy/db/gen"
-
 // SpreadPropagandaResolutionData holds all Spread Propaganda plan state stored
 // inside the plans.resolution_data JSON column, nested under the
 // "spread_propaganda" key.
@@ -42,17 +40,6 @@ type SpreadPropagandaResolutionData struct {
 	// via POST /plans/{planId}/break-self. BreakSelfDone records completion.
 	BreakSelfRequired bool `json:"break_self_required,omitempty"`
 	BreakSelfDone     bool `json:"break_self_done,omitempty"`
-}
-
-// LoadSpreadPropagandaData is a read-only convenience that parses a plan's
-// resolution_data column and returns the inner SpreadPropagandaResolutionData
-// as a value (zero struct when the nested key is absent).
-func LoadSpreadPropagandaData(plan *dbgen.Plan) SpreadPropagandaResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
-	if rd.SpreadPropaganda == nil {
-		return SpreadPropagandaResolutionData{}
-	}
-	return *rd.SpreadPropaganda
 }
 
 // EnsureSpreadPropaganda returns r.SpreadPropaganda, allocating a zero struct

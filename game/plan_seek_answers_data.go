@@ -2,8 +2,6 @@ package game
 
 // plan_seek_answers_data.go — typed resolution_data for Seek Answers.
 
-import dbgen "uneasy/db/gen"
-
 // SeekAnswersResolutionData holds Seek Answers plan state stored inside the
 // plans.resolution_data JSON column, nested under the "seek_answers" key.
 type SeekAnswersResolutionData struct {
@@ -26,16 +24,6 @@ type SeekAnswersResolutionData struct {
 	// break-resource call on a preparer-owned resource after a mar). The plan
 	// cannot complete until this reaches MarSelfFlawsRequired.
 	MarSelfFlawsApplied int16 `json:"mar_self_flaws_applied,omitempty"`
-}
-
-// LoadSeekAnswersData is a read-only convenience parser; returns a zero struct
-// when the nested key is absent.
-func LoadSeekAnswersData(plan *dbgen.Plan) SeekAnswersResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
-	if rd.SeekAnswers == nil {
-		return SeekAnswersResolutionData{}
-	}
-	return *rd.SeekAnswers
 }
 
 // EnsureSeekAnswers returns r.SeekAnswers, allocating a zero struct if it was

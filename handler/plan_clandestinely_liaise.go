@@ -1182,7 +1182,7 @@ func clScheduleNewMeeting(
 	// Initialise resolution data for the new plan. Carry forward the original
 	// meeting peers — the same two peers reconvene. If either has been destroyed
 	// by the time the follow-up resolves, Things We Share handles it gracefully.
-	origLD := game.LoadLiaiseData(originalPlan)
+	origLD := game.LoadLiaiseData(originalPlan.ResolutionData)
 	newResData := ResolutionData{
 		Liaise: &LiaiseResolutionData{
 			PartnerID:      &partnerID,

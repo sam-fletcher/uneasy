@@ -111,7 +111,7 @@ func seedActiveWar(t *testing.T, h *planLifecycle) (planID int64, prepIdx, enemy
 	pinPowerRank(t, h, h.tg.Players[prepIdx].ID, 5)
 	pinPowerRank(t, h, enemyID, 1)
 
-	mw := game.LoadMakeWarData(&plan)
+	mw := game.LoadMakeWarData(plan.ResolutionData)
 	require.NotNil(t, mw.DelayRevealID, "delay reveal should exist after prepare")
 	revPath := "/api/reveals/" + strconv.FormatInt(*mw.DelayRevealID, 10) + "/submit"
 	for _, idx := range []int{prepIdx, enemyIdx} {

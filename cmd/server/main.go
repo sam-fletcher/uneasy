@@ -26,7 +26,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uneasy/db"
-	"uneasy/game"
 	"uneasy/handler"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
@@ -267,8 +266,8 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 				r.Post("/complete", handler.CompletePlan(store, manager))
 				// Mount plan-type-specific routes from the registry (e.g. fair-trade,
 				// messy-break for Exchange Courtiers; future plans add their own).
-				deps := &game.PlanDeps{Store: store, Manager: manager}
-				for _, h := range game.AllHandlers() {
+				deps := &handler.PlanDeps{Store: store, Manager: manager}
+				for _, h := range handler.AllHandlers() {
 					for route, fn := range h.ExtraRoutes(deps) {
 						r.Post("/"+route, fn)
 					}

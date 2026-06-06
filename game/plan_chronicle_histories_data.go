@@ -2,8 +2,6 @@ package game
 
 // plan_chronicle_histories_data.go — typed resolution_data for Chronicle Histories.
 
-import dbgen "uneasy/db/gen"
-
 // ChronicleHistoriesResolutionData holds Chronicle Histories plan state stored
 // inside the plans.resolution_data JSON column, nested under the
 // "chronicle_histories" key.
@@ -27,16 +25,6 @@ type ChronicleHistoriesResolutionData struct {
 	// game at the time the mar scene began. Captured from the mar-choice route
 	// (which has DB access) so CanComplete can gate without a query.
 	MarRequiredChoices int16 `json:"mar_required_choices,omitempty"`
-}
-
-// LoadChronicleHistoriesData is a read-only convenience parser; returns a
-// zero struct when the nested key is absent.
-func LoadChronicleHistoriesData(plan *dbgen.Plan) ChronicleHistoriesResolutionData {
-	rd := LoadResolutionData(plan.ResolutionData)
-	if rd.ChronicleHistories == nil {
-		return ChronicleHistoriesResolutionData{}
-	}
-	return *rd.ChronicleHistories
 }
 
 // EnsureChronicleHistories returns r.ChronicleHistories, allocating a zero
