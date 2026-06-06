@@ -178,8 +178,9 @@ func (s *FestivityResolutionData) IsGuest(playerID int64) bool {
 // host last. Returns 0 if every guest has already acted.
 //
 // esteemRank is a lookup from playerID to that player's esteem rank in the
-// game (lower number = higher esteem). Missing entries should map to a
-// sentinel high value so they sort last among the guests.
+// game (lower number = higher esteem). Because guests are sorted by descending
+// rank number (lowest esteem first), missing entries should map to a LOW
+// sentinel (below any real rank, e.g. 0) so they sort LAST among the guests.
 func (s *FestivityResolutionData) NextSocializingTurn(hostID int64, esteemRank func(int64) int16) int64 {
 	others := make([]int64, 0, len(s.Guests))
 	for _, id := range s.Guests {

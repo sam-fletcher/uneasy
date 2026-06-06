@@ -115,3 +115,61 @@ func MaxStakes(esteemRank int16) int16 {
 	status := max(6-esteemRank, 0)
 	return 1 + status
 }
+
+// BoutWinnerID returns the player ID that won a bout, or nil on a tie (match).
+// Pure restatement of the handler's winner pick: the declarer wins iff the
+// outcome's winning side is the declarer's side.
+func BoutWinnerID(outcome BoutOutcome, declarerSide DuelSide, declarerID, responderID int64) *int64 {
+	if outcome.Match {
+		return nil
+	}
+	wid := declarerID
+	if outcome.WinnerSide != declarerSide {
+		wid = responderID
+	}
+	return &wid
+}
+
+// DuelBoutView is the domain snapshot of one resolved bout for dice
+// accumulation — only the fields the rule needs, decoupled from dbgen. The
+// handler builds these from the bout rows in chronological order.
+type DuelBoutView struct {
+	DeclarerDie  *int16
+	ResponderDie *int16
+	IsMatch      bool
+	// WinnerIsPreparer is nil when no winner is recorded (an unfinished or
+	// undecided bout — skipped). Consulted only when !IsMatch.
+	WinnerIsPreparer *bool
+}
+
+// AccumulateDuelDice walks the bouts in order and returns the dice faces each
+// side has won. Tied-bout dice carry over: they wait in a pending pool and are
+// awarded, together with the current bout's two dice, to the winner of the next
+// non-tie bout (per the rules — "the winner gets both dice from that round as
+// well as any set aside from previous tied bouts"). Tied dice that never reach
+// a later non-tie bout (e.g. a trailing tie) are dropped — they stay with their
+// stakes. Bouts missing a die, or non-tie bouts with no recorded winner, are
+// skipped.
+func AccumulateDuelDice(bouts []DuelBoutView) (preparerDice, targetDice []int16) {
+	var pending []int16
+	for _, b := range bouts {
+		if b.DeclarerDie == nil || b.ResponderDie == nil {
+			continue
+		}
+		if b.IsMatch {
+			pending = append(pending, *b.DeclarerDie, *b.ResponderDie)
+			continue
+		}
+		if b.WinnerIsPreparer == nil {
+			continue
+		}
+		gained := append([]int16{*b.DeclarerDie, *b.ResponderDie}, pending...)
+		pending = nil
+		if *b.WinnerIsPreparer {
+			preparerDice = append(preparerDice, gained...)
+		} else {
+			targetDice = append(targetDice, gained...)
+		}
+	}
+	return preparerDice, targetDice
+}

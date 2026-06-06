@@ -133,19 +133,22 @@ func ReversePowerOrder(players []int64, ranks map[int64]int16) []int64 {
 
 // MissingBattleCosts returns a slice of (payer, opponent) pairs still owed for the
 // given row. `activeParticipants` is the list of non-surrendered participants,
-// `sides` is the side map, and `paid` is the set of (payer, opponent) pairs
-// already satisfied.
+// `sides` is the side map (which may still contain surrendered players, since a
+// war continues while either side has an active member), `surrendered` is the
+// set of player_ids who have surrendered, and `paid` is the set of (payer,
+// opponent) pairs already satisfied.
 //
-// Returned slice is empty if every active participant has paid once per
-// active opponent. Entries are ordered by reverse-power (payer) then opponent.
+// Both payers and opponents are restricted to non-surrendered participants: a
+// surrendered player neither owes the cost of battle nor is owed it. Returned
+// slice is empty if every active participant has paid once per active opponent.
+// Entries are ordered by reverse-power (payer) then opponent.
 func MissingBattleCosts(
 	activeParticipants []int64,
 	sides map[int64]int16,
 	ranks map[int64]int16,
+	surrendered map[int64]bool,
 	paid map[BattleCostKey]bool,
 ) []BattleCostKey {
-	surrendered := map[int64]bool{}
-	// Caller should have already filtered activeParticipants; pass an empty map.
 	ordered := ReversePowerOrder(activeParticipants, ranks)
 
 	var missing []BattleCostKey

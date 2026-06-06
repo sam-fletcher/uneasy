@@ -838,14 +838,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		var winnerPtr *int64
-		if !outcome.Match {
-			wid := latest.DeclarerID
-			if outcome.WinnerSide != decSide {
-				wid = latest.ResponderID
-			}
-			winnerPtr = &wid
-		}
+		winnerPtr := gamepkg.BoutWinnerID(outcome, decSide, latest.DeclarerID, latest.ResponderID)
 
 		err = deps.Q.ResolveDuelBout(ctx, dbgen.ResolveDuelBoutParams{
 			ID:               latest.ID,
@@ -950,33 +943,24 @@ func pduelCreateFinalRoll(
 	if err != nil {
 		return fmt.Errorf("list bouts: %w", err)
 	}
-	// Walk bouts in order. Tied-bout dice carry over: they join a pending pool
-	// and are awarded to the winner of the next non-tie bout (per the rules:
-	// "the winner of the bout gets both dice from that round as well as any
-	// that were set aside from previous tied bouts"). Tied dice that never
-	// find a subsequent non-tie bout are left with their stakes — the stakes
-	// themselves are still leveraged at the end of the duel.
-	var prepDice, targDice []int16
-	var pending []int16
-	for _, b := range bouts {
-		if b.DeclarerDie == nil || b.ResponderDie == nil {
-			continue
+	// Build the domain snapshot (chronological bout views) and let the pure
+	// rule accumulate winning dice, including tied-bout carry-over. See
+	// game.AccumulateDuelDice for the carry-over semantics.
+	views := make([]gamepkg.DuelBoutView, 0, len(bouts))
+	for _, bt := range bouts {
+		var winnerIsPrep *bool
+		if bt.WinnerID != nil {
+			v := *bt.WinnerID == plan.PreparerID
+			winnerIsPrep = &v
 		}
-		if b.IsMatch {
-			pending = append(pending, *b.DeclarerDie, *b.ResponderDie)
-			continue
-		}
-		if b.WinnerID == nil {
-			continue
-		}
-		gained := append([]int16{*b.DeclarerDie, *b.ResponderDie}, pending...)
-		pending = nil
-		if *b.WinnerID == plan.PreparerID {
-			prepDice = append(prepDice, gained...)
-		} else {
-			targDice = append(targDice, gained...)
-		}
+		views = append(views, gamepkg.DuelBoutView{
+			DeclarerDie:      bt.DeclarerDie,
+			ResponderDie:     bt.ResponderDie,
+			IsMatch:          bt.IsMatch,
+			WinnerIsPreparer: winnerIsPrep,
+		})
 	}
+	prepDice, targDice := gamepkg.AccumulateDuelDice(views)
 
 	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 	if err != nil {

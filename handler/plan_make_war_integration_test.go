@@ -321,3 +321,94 @@ func TestMakeWarHTTP_PeaceProposeAcceptEnds(t *testing.T) {
 	require.True(t, anyContains(posts, "proposed peace terms"), "expected peace-proposed log")
 	require.True(t, anyContains(posts, "agreed to peace terms"), "expected peace-agreed log")
 }
+
+// TestMakeWarHTTP_ContinuingWar_NoCostAgainstSurrenderedOpponent is the
+// integration-level regression for the cost-of-battle/surrendered-opponent bug
+// (game.MissingBattleCosts). It builds a 2v2 war, surrenders one enemy while
+// their ally fights on (war continues), then drives the real DB → mwSnapshotWar
+// → MissingBattleCosts path and asserts no active player owes the cost of battle
+// against the surrendered player. Pre-fix, the declarer side was charged a cost
+// against the surrendered ally.
+func TestMakeWarHTTP_ContinuingWar_NoCostAgainstSurrenderedOpponent(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	ctx := context.Background()
+
+	// 1v1 active war via the real prepare + delay-reveal flow.
+	planID, prepIdx, enemyIdx, warStartRow := seedActiveWar(t, h)
+	war, err := h.q.GetWarByOriginPlan(ctx, planID)
+	require.NoError(t, err)
+
+	// The two unused players become allies, one per side.
+	used := map[int]bool{prepIdx: true, enemyIdx: true}
+	var allyIdxs []int
+	for i := range h.tg.Players {
+		if !used[i] {
+			allyIdxs = append(allyIdxs, i)
+		}
+	}
+	require.Len(t, allyIdxs, 2)
+
+	// Read the seeded sides so allies join the correct ones.
+	parts, err := h.q.ListWarParticipants(ctx, war.ID)
+	require.NoError(t, err)
+	sideOf := map[int64]int16{}
+	for _, p := range parts {
+		sideOf[p.PlayerID] = p.Side
+	}
+	prepSide := sideOf[h.tg.Players[prepIdx].ID]
+	enemySide := sideOf[h.tg.Players[enemyIdx].ID]
+	require.NotEqual(t, prepSide, enemySide, "preparer and enemy must be on opposite sides")
+
+	declAlly := h.tg.Players[allyIdxs[0]].ID
+	enemyAlly := h.tg.Players[allyIdxs[1]].ID
+	require.NoError(t, h.q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
+		WarID: war.ID, PlayerID: declAlly, Side: prepSide, JoinedAtRow: warStartRow,
+	}))
+	require.NoError(t, h.q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
+		WarID: war.ID, PlayerID: enemyAlly, Side: enemySide, JoinedAtRow: warStartRow,
+	}))
+
+	// The enemy ally surrenders; the original enemy stays active → war continues.
+	surRow := warStartRow
+	require.NoError(t, h.q.SetWarParticipantSurrendered(ctx, dbgen.SetWarParticipantSurrenderedParams{
+		WarID: war.ID, PlayerID: enemyAlly, SurrenderedAtRow: &surRow,
+	}))
+
+	// Precondition: the surrendered ally is a fully-joined participant (so it
+	// appears in snap.Sides) — otherwise the test wouldn't exercise the bug.
+	parts, err = h.q.ListWarParticipants(ctx, war.ID)
+	require.NoError(t, err)
+	var allyJoinedAndSurrendered bool
+	for _, p := range parts {
+		if p.PlayerID == enemyAlly {
+			allyJoinedAndSurrendered = p.EntryPaymentComplete && p.SurrenderedAtRow != nil
+		}
+	}
+	require.True(t, allyJoinedAndSurrendered, "enemy ally must be joined and surrendered")
+
+	// Cost of battle is due the row after the war started.
+	costRow := warStartRow + 1
+	require.NoError(t, h.q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
+		ID: h.tg.Game.ID, CurrentRow: costRow,
+	}))
+
+	costs, err := mwOutstandingCostsForGame(ctx, h.q, h.tg.Game.ID, costRow)
+	require.NoError(t, err)
+	keys := costs[war.ID]
+	require.NotEmpty(t, keys, "active participants still owe cost of battle in a continuing war")
+
+	// The fix: no one owes a cost against the surrendered ally.
+	for _, k := range keys {
+		require.NotEqualf(t, enemyAlly, k.OpponentID,
+			"no active player should owe cost of battle against the surrendered ally (got %+v)", k)
+	}
+	// Sanity: the live cross-side opponent is still charged — the preparer owes a
+	// cost against the still-active original enemy.
+	owedAgainstLiveEnemy := false
+	for _, k := range keys {
+		if k.PayerID == h.tg.Players[prepIdx].ID && k.OpponentID == h.tg.Players[enemyIdx].ID {
+			owedAgainstLiveEnemy = true
+		}
+	}
+	require.True(t, owedAgainstLiveEnemy, "active opponents are still charged the cost of battle")
+}

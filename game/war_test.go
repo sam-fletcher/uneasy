@@ -85,7 +85,7 @@ func TestMissingBattleCosts(t *testing.T) {
 
 	// Nothing paid yet. Order: rank 5 (player 2) first, then rank 3 (player 3),
 	// then rank 1 (player 1). Each pays per opposing opponent.
-	got := MissingBattleCosts(active, sides, ranks, map[BattleCostKey]bool{})
+	got := MissingBattleCosts(active, sides, ranks, nil, map[BattleCostKey]bool{})
 	want := []BattleCostKey{
 		{PayerID: 2, OpponentID: 1}, // player 2 owes opponent 1
 		{PayerID: 3, OpponentID: 1}, // player 3 owes opponent 1
@@ -96,13 +96,42 @@ func TestMissingBattleCosts(t *testing.T) {
 
 	// After player 2 pays opponent 1: that entry is gone, rest preserved.
 	paid := map[BattleCostKey]bool{{PayerID: 2, OpponentID: 1}: true}
-	got = MissingBattleCosts(active, sides, ranks, paid)
+	got = MissingBattleCosts(active, sides, ranks, nil, paid)
 	want = []BattleCostKey{
 		{PayerID: 3, OpponentID: 1},
 		{PayerID: 1, OpponentID: 2},
 		{PayerID: 1, OpponentID: 3},
 	}
 	assert.Equal(t, want, got)
+}
+
+// TestMissingBattleCosts_ExcludesSurrenderedOpponent pins that no active player
+// owes the cost of battle against an opponent who has already surrendered, in a
+// war that continues after a partial surrender (2v2, one enemy surrenders).
+func TestMissingBattleCosts_ExcludesSurrenderedOpponent(t *testing.T) {
+	// Players 1,2 on the declarer side; 3,4 on the enemy side. Player 4 has
+	// surrendered, but player 3 is still active so the war continues.
+	sides := map[int64]int16{
+		1: WarSideDeclarer, 2: WarSideDeclarer,
+		3: WarSideEnemy, 4: WarSideEnemy,
+	}
+	ranks := map[int64]int16{1: 1, 2: 2, 3: 3, 4: 4}
+	active := []int64{1, 2, 3} // 4 surrendered → not an active payer
+	surrendered := map[int64]bool{4: true}
+
+	got := MissingBattleCosts(active, sides, ranks, surrendered, map[BattleCostKey]bool{})
+	for _, k := range got {
+		assert.NotEqualf(t, int64(4), k.OpponentID,
+			"no active player should owe a cost against surrendered player 4 (got %+v)", k)
+	}
+	// The live opponents should still be charged: 1→3, 2→3, 3→{1,2}.
+	want := []BattleCostKey{
+		{PayerID: 1, OpponentID: 3},
+		{PayerID: 2, OpponentID: 3},
+		{PayerID: 3, OpponentID: 1},
+		{PayerID: 3, OpponentID: 2},
+	}
+	assert.ElementsMatch(t, want, got)
 }
 
 func TestIsValidBattleCostChoice(t *testing.T) {

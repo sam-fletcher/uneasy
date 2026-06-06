@@ -105,7 +105,7 @@ func mwOutstandingCostsForWar(
 			paid[gamepkg.BattleCostKey{PayerID: bc.PayerID, OpponentID: bc.OpponentID}] = true
 		}
 	}
-	return gamepkg.MissingBattleCosts(snap.Active, snap.Sides, ranks, paid), nil
+	return gamepkg.MissingBattleCosts(snap.Active, snap.Sides, ranks, snap.Surrendered, paid), nil
 }
 
 // mwOutstandingCostsForGame aggregates outstanding costs across every active

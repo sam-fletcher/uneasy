@@ -287,7 +287,9 @@ func festivitySubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) 
 				return r.Rank
 			}
 		}
-		return 999
+		// Low sentinel: an unranked guest sorts LAST in NextSocializingTurn's
+		// descending-by-rank order (a high value would wrongly put them first).
+		return 0
 	}
 	next := state.NextSocializingTurn(plan.PreparerID, rankFor)
 	if next == 0 {
