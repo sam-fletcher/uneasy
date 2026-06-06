@@ -34,7 +34,7 @@
 	.row-pill[data-size="sm"] { width: 20px; height: 20px; font-size: 0.7rem; }
 	.row-pill[data-size="md"] { width: 32px; height: 32px; font-size: 0.78rem; }
 
-	.row-pill[data-state="past"]    { color: #555; background: transparent; border: 1px solid #333; }
-	.row-pill[data-state="current"] { color: #1a1a1a; background: #c8a96e; box-shadow: 0 0 0 2px #e0c080; }
-	.row-pill[data-state="future"]  { color: #aaa; background: transparent; border: 1px solid #444; }
+	.row-pill[data-state="past"]    { color: var(--color-text-faint); background: transparent; border: 1px solid var(--color-border); }
+	.row-pill[data-state="current"] { color: var(--color-bg); background: var(--color-accent); box-shadow: 0 0 0 2px #e0c080; }
+	.row-pill[data-state="future"]  { color: var(--color-text-muted); background: transparent; border: 1px solid var(--color-border-strong); }
 </style>

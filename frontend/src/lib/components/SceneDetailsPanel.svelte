@@ -259,24 +259,25 @@
 
 	.prompt {
 		background: #1f1a10;
-		border: 1px solid #3a3020;
-		border-left: 3px solid #c8a96e;
+		border: 1px solid var(--color-border-warm);
+		border-left: 3px solid var(--color-accent);
 		border-radius: 5px;
 		padding: 0.5rem 0.65rem;
 	}
 	.prompt-label {
 		display: block;
 		font-size: 0.7rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		margin-bottom: 0.15rem;
 	}
 	.prompt p {
 		margin: 0;
-		font-size: 0.9rem;
-		color: #e8e4d9;
-		line-height: 1.4;
+		font-family: var(--font-serif);
+		font-size: 1rem;
+		color: var(--color-text);
+		line-height: 1.5;
 	}
 
 	.scene-header {
@@ -297,21 +298,21 @@
 	.loc { font-weight: 600; }
 	.time { font-size: 0.82rem; color: #b0a890; }
 
-	.focus-line { font-size: 0.82rem; color: #888; }
+	.focus-line { font-size: 0.82rem; color: var(--color-text-muted); }
 	.focus-name { font-weight: 600; }
 
 	.block { display: flex; flex-direction: column; gap: 0.4rem; }
 	.block h3 {
 		margin: 0;
 		font-size: 0.78rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 	}
 
 	.hint {
 		font-size: 0.82rem;
-		color: #888;
+		color: var(--color-text-muted);
 		margin: 0;
 		font-style: italic;
 	}
@@ -329,14 +330,14 @@
 		padding: 0.4rem 0.7rem;
 		min-height: 36px;
 		border-radius: 5px;
-		border: 1px solid #c8a96e;
+		border: 1px solid var(--color-accent);
 		background: #2a2410;
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-size: 0.82rem;
 		font-weight: 600;
 		cursor: pointer;
 	}
-	.claim-btn:hover { background: #c8a96e; color: #1a1a1a; }
+	.claim-btn:hover { background: var(--color-accent); color: var(--color-bg); }
 	.claim-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	.end-bar {
@@ -344,7 +345,7 @@
 		gap: 0.6rem;
 		align-items: center;
 		padding-top: 0.4rem;
-		border-top: 1px solid #2a2a2a;
+		border-top: 1px solid var(--color-surface-2);
 	}
 
 	.end-btn {
@@ -352,14 +353,14 @@
 		min-height: 44px;
 		border-radius: 5px;
 		border: none;
-		background: #c8a96e;
-		color: #1a1a1a;
+		background: var(--color-accent);
+		color: var(--color-bg);
 		font-weight: 600;
 		font-size: 0.9rem;
 		cursor: pointer;
 	}
 	.end-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-	.error { color: #e07070; font-size: 0.82rem; margin: 0; }
+	.error { color: var(--color-danger); font-size: 0.82rem; margin: 0; }
 	.error.inline { font-size: 0.78rem; }
 </style>

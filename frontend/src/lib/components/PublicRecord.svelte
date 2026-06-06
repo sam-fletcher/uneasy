@@ -241,7 +241,7 @@
 		padding: 6px 0;
 		background: none;
 		border: none;
-		border-right: 1px solid #2a2a2a;
+		border-right: 1px solid var(--color-surface-2);
 		cursor: pointer;
 	}
 
@@ -267,13 +267,13 @@
 		flex-shrink: 0;
 	}
 
-	.rail-row[data-state="past"]    { color: #555; background: transparent; }
-	.rail-row[data-state="current"] { color: #1a1a1a; background: #c8a96e; box-shadow: 0 0 0 2px #e0c080; }
-	.rail-row[data-state="future"]  { color: #aaa; background: transparent; border: 1px solid #444; }
+	.rail-row[data-state="past"]    { color: var(--color-text-faint); background: transparent; }
+	.rail-row[data-state="current"] { color: var(--color-bg); background: var(--color-accent); box-shadow: 0 0 0 2px #e0c080; }
+	.rail-row[data-state="future"]  { color: var(--color-text-muted); background: transparent; border: 1px solid var(--color-border-strong); }
 
 	/* Cross-component highlight: e.g. when a plan card in PlanPanel is
 	 * hovered/selected, draw the eye to that plan's target row here. */
-	.rail-row.highlighted { box-shadow: 0 0 0 2px #6dbfe0; color: #e8e4d9; }
+	.rail-row.highlighted { box-shadow: 0 0 0 2px #6dbfe0; color: var(--color-text); }
 	.rail-row[data-state="future"].highlighted { border-color: #6dbfe0; }
 
 	.rail-num { line-height: 1; }
@@ -290,15 +290,15 @@
 		justify-content: center;
 		font-size: 0.6rem;
 		font-weight: 700;
-		color: #1a1a1a;
-		background: #e07070;
+		color: var(--color-bg);
+		background: var(--color-danger);
 		border-radius: 7px;
 		line-height: 1;
 	}
 
 	.rail-star {
 		font-size: 0.7rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 		opacity: 0.8;
 		line-height: 0.8;
 		margin: 1px 0;
@@ -329,8 +329,8 @@
 	.expanded {
 		display: flex;
 		flex-direction: column;
-		background: #1a1a1a;
-		border-right: 1px solid #2a2a2a;
+		background: var(--color-bg);
+		border-right: 1px solid var(--color-surface-2);
 		overflow: hidden;
 		/* Default (overlay mode, < 1280px): fixed slide-in from the left. */
 		position: fixed;
@@ -357,14 +357,14 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 0.5rem 0.6rem;
-		border-bottom: 1px solid #2a2a2a;
+		border-bottom: 1px solid var(--color-surface-2);
 		flex-shrink: 0;
 	}
 
 	.exp-header h3 {
 		margin: 0;
 		font-size: 0.8rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 	}
@@ -372,7 +372,7 @@
 	.collapse-btn {
 		background: none;
 		border: none;
-		color: #888;
+		color: var(--color-text-muted);
 		font-size: 1.2rem;
 		cursor: pointer;
 		padding: 0.2rem 0.5rem;
@@ -401,7 +401,7 @@
 	}
 
 	.record-row[data-state="past"]    { opacity: 0.6; }
-	.record-row[data-state="current"] { background: #2a2010; border-left: 2px solid #c8a96e; padding-left: 0.3rem; }
+	.record-row[data-state="current"] { background: #2a2010; border-left: 2px solid var(--color-accent); padding-left: 0.3rem; }
 	.record-row[data-state="future"]  { opacity: 0.5; }
 
 	.row-num-pill {
@@ -414,18 +414,18 @@
 		font-size: 0.7rem;
 		font-weight: 700;
 		border-radius: 50%;
-		background: #333;
-		color: #888;
+		background: var(--color-border);
+		color: var(--color-text-muted);
 		border: none;
 		padding: 0;
 		cursor: pointer;
 		transition: background 0.12s;
 	}
-	.row-num-pill:hover { background: #444; color: #e8e4d9; }
+	.row-num-pill:hover { background: var(--color-border-strong); color: var(--color-text); }
 
 	.record-row[data-state="current"] .row-num-pill {
-		background: #c8a96e;
-		color: #1a1a1a;
+		background: var(--color-accent);
+		color: var(--color-bg);
 	}
 
 	.row-num-pill.highlighted { box-shadow: 0 0 0 2px #6dbfe0; }
@@ -450,24 +450,24 @@
 		   border uses it directly (matching ChatPanel's name-color treatment);
 		   background stays the neutral dark so other status borders (resolving,
 		   resolved) can override the right/top/bottom edges. */
-		background: #2a2a2a;
-		border: 1px solid var(--player-color, #444);
-		border-left: 3px solid var(--player-color, #444);
+		background: var(--color-surface-2);
+		border: 1px solid var(--player-color, var(--color-border-strong));
+		border-left: 3px solid var(--player-color, var(--color-border-strong));
 		align-self: flex-start;
 		color: inherit;
 		cursor: pointer;
 		font-family: inherit;
 		text-align: left;
 	}
-	.plan-chip:hover { background: #333; }
+	.plan-chip:hover { background: var(--color-border); }
 
-	.plan-name { font-weight: 600; color: var(--player-color, #e8e4d9); }
-	.plan-status { color: #888; font-size: 0.65rem; text-transform: uppercase; }
+	.plan-name { font-weight: 600; color: var(--player-color, var(--color-text)); }
+	.plan-status { color: var(--color-text-muted); font-size: 0.65rem; text-transform: uppercase; }
 	/* Status colors override the right/top/bottom border (keeping the
 	   preparer-color left edge intact). */
 	.plan-pending   { /* default chip styling — preparer color carries identity */ }
 	.plan-resolving { border-top-color: #e0a040; border-right-color: #e0a040; border-bottom-color: #e0a040; }
-	.plan-resolved  { border-top-color: #6dbf7a; border-right-color: #6dbf7a; border-bottom-color: #6dbf7a; opacity: 0.7; }
+	.plan-resolved  { border-top-color: var(--color-success); border-right-color: var(--color-success); border-bottom-color: var(--color-success); opacity: 0.7; }
 	.plan-cancelled { opacity: 0.4; }
 
 	.entry-line {
@@ -495,7 +495,7 @@
 
 	.row-empty {
 		font-size: 0.75rem;
-		color: #444;
+		color: var(--color-border-strong);
 	}
 
 	/* ── Engrailed divider in expanded view ────────────────────────────────── */
@@ -515,7 +515,7 @@
 
 	.engrailed-star {
 		font-size: 0.85rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 		line-height: 1;
 	}
 </style>

@@ -56,7 +56,7 @@
 		z-index: 91;
 		max-height: 85dvh;
 		background: #1e1e1c;
-		border-top: 1px solid #3a3a3a;
+		border-top: 1px solid var(--color-border-strong);
 		border-radius: 14px 14px 0 0;
 		display: flex;
 		flex-direction: column;
@@ -85,7 +85,7 @@
 		width: 44px;
 		height: 44px;
 		background: none;
-		color: #aaa;
+		color: var(--color-text-muted);
 		font-size: 1.6rem;
 		line-height: 1;
 		padding: 0;
@@ -94,8 +94,8 @@
 		justify-content: center;
 		border-radius: 6px;
 	}
-	.close:hover { color: #e8e4d9; background: #2a2a2a; }
-	.close:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
+	.close:hover { color: var(--color-text); background: var(--color-surface-2); }
+	.close:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	.sheet-body {
 		padding: 0.5rem 1rem 1.25rem;
@@ -112,7 +112,7 @@
 			width: min(680px, 92vw);
 			max-height: 80dvh;
 			border-radius: 14px;
-			border: 1px solid #3a3a3a;
+			border: 1px solid var(--color-border-strong);
 			animation: pop-in 180ms ease-out;
 		}
 	}

@@ -1,0 +1,80 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Global design tokens + web fonts.
+
+   This is the single source of truth for the app's palette, typography, and
+   shape. Components should reference var(--color-*), var(--font-*), etc.
+   rather than hard-coding hex values, so the whole look is tunable from here.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Two self-hosted serifs (latin subset, no third-party CDN):
+   • IM Fell English — a distressed 17th-century press face. A *display* type:
+     used only for the big cover-style hero. It's a texture face, so it's kept
+     away from small sizes and body text where it reads as noise.
+   • Spectral — a screen-optimised old-style serif with a sturdy, legible
+     italic. Drives section headings and long-form narrative prose.
+   UI chrome (buttons, labels, dense game state) stays on the system sans. */
+@font-face {
+	font-family: 'IM Fell English';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/imfell-english-regular.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Spectral';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/spectral-regular.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Spectral';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/spectral-600.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Spectral';
+	font-style: italic;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/spectral-italic.woff2') format('woff2');
+}
+
+:root {
+	/* ── Surfaces (dark → light) ─────────────────────────────────────────── */
+	--color-bg: #1a1a1a;            /* page background, ink on gold buttons */
+	--color-surface-sunken: #1e1e1e;/* recessed tracks (segmented toggle) */
+	--color-surface: #252525;       /* cards, panels */
+	--color-surface-2: #2a2a2a;     /* inputs, raised rows */
+
+	/* ── Borders ─────────────────────────────────────────────────────────── */
+	--color-border: #333333;        /* default card/control border */
+	--color-border-subtle: #2e2e2e; /* faint row dividers */
+	--color-border-strong: #444444; /* lighter border / hairline emphasis */
+	--color-border-warm: #3a3020;   /* warm divider used in the game surface */
+
+	/* ── Text ────────────────────────────────────────────────────────────── */
+	--color-text: #e8e4d9;          /* primary parchment text */
+	--color-text-muted: #999999;    /* secondary labels (AA on --color-bg) */
+	--color-text-faint: #8a8a8a;    /* faint captions — contrast-safe floor */
+
+	/* ── Accent + semantic ───────────────────────────────────────────────── */
+	--color-accent: #c8a96e;        /* gilt gold — the brand colour */
+	--color-accent-hover: #d9bb80;  /* lighter gold for hovers */
+	--color-danger: #e07070;        /* errors */
+	--color-success: #6dbf7a;       /* confirmations */
+	--color-info: #6090c8;          /* informational */
+
+	/* ── Typography ──────────────────────────────────────────────────────── */
+	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-display: 'IM Fell English', Georgia, 'Times New Roman', serif; /* hero only */
+	--font-serif: 'Spectral', Georgia, 'Times New Roman', serif;          /* headings + prose */
+	--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+	/* ── Shape ───────────────────────────────────────────────────────────── */
+	--radius-sm: 6px;
+	--radius-md: 8px;
+	--radius-lg: 12px;
+}

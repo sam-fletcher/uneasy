@@ -499,7 +499,7 @@
 		gap: 0.6rem;
 		background: #2a2620;
 		border-top: 1px solid #6a5a3a;
-		color: #e8e4d9;
+		color: var(--color-text);
 		font-size: 0.9rem;
 		text-align: left;
 		z-index: 50;
@@ -515,14 +515,14 @@
 		text-overflow: ellipsis;
 	}
 
-	.strip.has-unread { color: #e8e4d9; }
+	.strip.has-unread { color: var(--color-text); }
 	.strip.has-important {
-		border-top: 2px solid #c8a96e;
+		border-top: 2px solid var(--color-accent);
 	}
 
 	.unread-badge {
-		background: #c8a96e;
-		color: #1a1a1a;
+		background: var(--color-accent);
+		color: var(--color-bg);
 		font-weight: 700;
 		font-size: 0.72rem;
 		padding: 0.1rem 0.5rem;
@@ -555,7 +555,7 @@
 			   so a jump from the rail opens chat *over* the still-expanded PR.
 			   Closing chat with the ✕ returns the user to the PR underneath. */
 			z-index: 110;
-			border-top: 1px solid #2a2a2a;
+			border-top: 1px solid var(--color-surface-2);
 		}
 	}
 
@@ -564,21 +564,21 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 0.5rem 0.8rem;
-		border-bottom: 1px solid #2a2a2a;
+		border-bottom: 1px solid var(--color-surface-2);
 		flex-shrink: 0;
 	}
 
 	.panel-header h2 {
 		margin: 0;
 		font-size: 0.95rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-weight: 600;
 	}
 
 	.collapse {
 		background: none;
 		border: none;
-		color: #888;
+		color: var(--color-text-muted);
 		font-size: 1.1rem;
 		cursor: pointer;
 		padding: 0.2rem 0.4rem;
@@ -591,22 +591,22 @@
 		align-items: center;
 		gap: 0.3rem;
 		font-size: 0.75rem;
-		color: #888;
+		color: var(--color-text-muted);
 		margin-left: auto;
 		margin-right: 0.4rem;
 	}
 
 	.severity-filter select {
-		background: #1a1a1a;
-		color: #e8e4d9;
-		border: 1px solid #333;
+		background: var(--color-bg);
+		color: var(--color-text);
+		border: 1px solid var(--color-border);
 		border-radius: 3px;
 		padding: 0.2rem 0.3rem;
 		font-size: 0.75rem;
 		cursor: pointer;
 	}
 
-	.severity-label { color: #666; }
+	.severity-label { color: var(--color-text-faint); }
 
 	/* On desktop, hide the collapse button and the strip; the panel is the
 	   permanent right column. */
@@ -634,7 +634,7 @@
 	}
 
 	.empty {
-		color: #666;
+		color: var(--color-text-faint);
 		text-align: center;
 		margin-top: 2rem;
 		font-size: 0.85rem;
@@ -655,13 +655,13 @@
 		grid-template-columns: auto 1fr auto;
 		gap: 0.4rem;
 		align-items: baseline;
-		border-left: 3px solid var(--player-color, #c8a96e);
+		border-left: 3px solid var(--player-color, var(--color-accent));
 		padding-left: 0.5rem;
 	}
 
 	.msg-author {
 		font-weight: 600;
-		color: var(--player-color, #c8a96e);
+		color: var(--player-color, var(--color-accent));
 		font-size: 0.82rem;
 		white-space: nowrap;
 	}
@@ -669,20 +669,20 @@
 	/* OOC messages render with a neutral, italicized body to make speech vs.
 	   meta-comment visually distinct, regardless of which player is speaking. */
 	.message.ooc .msg-body {
-		font-style: italic;
-		color: #999;
+		color: var(--color-text-muted);
 	}
 
 	.msg-body {
-		font-size: 0.9rem;
-		line-height: 1.45;
+		font-family: var(--font-serif);
+		font-size: 1rem;
+		line-height: 1.5;
 		white-space: pre-wrap;
 		word-break: break-word;
 	}
 
 	.msg-time {
 		font-size: 0.7rem;
-		color: #555;
+		color: var(--color-text-faint);
 		white-space: nowrap;
 	}
 
@@ -696,11 +696,11 @@
 	.boundary-line {
 		flex: 1;
 		height: 1px;
-		background: #3a3020;
+		background: var(--color-border-warm);
 	}
 	.boundary-label {
 		font-size: 0.78rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		white-space: nowrap;
@@ -718,25 +718,25 @@
 	.log.important {
 		display: block;
 		text-align: center;
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-size: 0.85rem;
 		margin: 0.35rem 0;
 	}
-	.log-glyph { color: #888; }
-	.log-time { font-size: 0.7rem; color: #555; white-space: nowrap; }
+	.log-glyph { color: var(--color-text-muted); }
+	.log-time { font-size: 0.7rem; color: var(--color-text-faint); white-space: nowrap; }
 
 	/* ── Typing + compose ─────────────────────────────────────────────────── */
 
 	.typing {
 		font-size: 0.78rem;
-		color: #777;
+		color: var(--color-text-faint);
 		min-height: 1.2em;
 		padding: 0 0.8rem;
 		flex-shrink: 0;
 	}
 
 	.error {
-		color: #e07070;
+		color: var(--color-danger);
 		font-size: 0.8rem;
 		padding: 0 0.8rem;
 		margin: 0;
@@ -747,7 +747,7 @@
 		display: flex;
 		gap: 0.5rem;
 		padding: 0.5rem 0.8rem 0.7rem;
-		border-top: 1px solid #2a2a2a;
+		border-top: 1px solid var(--color-surface-2);
 		align-items: flex-end;
 		flex-shrink: 0;
 	}
@@ -757,8 +757,8 @@
 		font-size: 0.9rem;
 		padding: 0.5rem 0.7rem;
 		border-radius: 6px;
-		border: 1px solid #444;
-		background: #2a2a2a;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-surface-2);
 		color: inherit;
 		font-family: inherit;
 		resize: none;
@@ -767,13 +767,13 @@
 	}
 
 	textarea:focus {
-		outline: 2px solid #c8a96e;
+		outline: 2px solid var(--color-accent);
 		outline-offset: 1px;
 	}
 
 	.send {
-		background: #c8a96e;
-		color: #1a1a1a;
+		background: var(--color-accent);
+		color: var(--color-bg);
 		font-weight: 600;
 		padding: 0.5rem 0.9rem;
 		min-width: 56px;
@@ -789,7 +789,7 @@
 	/* ── Player tag in messages ──────────────────────────────────────────── */
 	.msg-player-tag {
 		font-weight: 400;
-		color: #777;
+		color: var(--color-text-faint);
 		font-size: 0.72rem;
 		margin-left: 0.25rem;
 	}
@@ -808,8 +808,8 @@
 		gap: 0.45rem;
 		min-height: 36px;
 		padding: 0.3rem 0.6rem;
-		border: 1px solid #2a2a2a;
-		border-left: 3px solid var(--player-color, #c8a96e);
+		border: 1px solid var(--color-surface-2);
+		border-left: 3px solid var(--player-color, var(--color-accent));
 		background: #1d1d1d;
 		color: #d8d4c9;
 		border-radius: 5px;
@@ -818,7 +818,7 @@
 		width: 100%;
 	}
 
-	.persona-btn:hover { border-color: var(--player-color, #c8a96e); }
+	.persona-btn:hover { border-color: var(--player-color, var(--color-accent)); }
 
 	.persona-btn.open { background: #221d10; }
 
@@ -826,13 +826,13 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: var(--player-color, #c8a96e);
+		background: var(--player-color, var(--color-accent));
 		flex-shrink: 0;
 	}
 
 	.persona-label {
 		font-size: 0.72rem;
-		color: #888;
+		color: var(--color-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -840,11 +840,11 @@
 	.persona-value {
 		flex: 1;
 		font-weight: 600;
-		color: var(--player-color, #c8a96e);
+		color: var(--player-color, var(--color-accent));
 		text-align: left;
 	}
 
-	.persona-caret { color: #888; font-size: 0.78rem; }
+	.persona-caret { color: var(--color-text-muted); font-size: 0.78rem; }
 
 	.persona-menu {
 		position: absolute;
@@ -854,8 +854,8 @@
 		margin: 0;
 		padding: 0.25rem;
 		list-style: none;
-		background: #1a1a1a;
-		border: 1px solid #3a3a3a;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border-strong);
 		border-radius: 5px;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 		z-index: 60;
@@ -876,7 +876,7 @@
 		cursor: pointer;
 		border-radius: 4px;
 	}
-	.persona-option:hover { background: #252525; }
+	.persona-option:hover { background: var(--color-surface); }
 	.persona-option.selected { background: #2e2510; color: #e8d8a0; }
 
 	.persona-option-dot {

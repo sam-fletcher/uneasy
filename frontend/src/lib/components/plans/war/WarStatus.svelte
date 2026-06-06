@@ -129,7 +129,7 @@
 
 	.side-header {
 		font-weight: 600;
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-size: 0.9rem;
 	}
 

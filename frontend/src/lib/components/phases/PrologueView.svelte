@@ -679,11 +679,11 @@
 		overflow-y: auto;
 		min-height: 0;
 	}
-	.prologue-view h3 { color: #c8a96e; font-size: 1rem; margin: 0.5rem 0 0.25rem; }
+	.prologue-view h3 { color: var(--color-accent); font-size: 1rem; margin: 0.5rem 0 0.25rem; }
 
-	.muted { color: #999; font-size: 0.9rem; margin: 0; }
+	.muted { color: var(--color-text-muted); font-size: 0.9rem; margin: 0; }
 	.muted.small { font-size: 0.8rem; }
-	.local-error { color: #e07070; font-size: 0.85rem; margin: 0; }
+	.local-error { color: var(--color-danger); font-size: 0.85rem; margin: 0; }
 
 	.choosing-grid {
 		display: grid;
@@ -695,8 +695,8 @@
 	}
 
 	.sheet-panel {
-		background: #1e1e1e;
-		border: 1px solid #333;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 0.4rem;
 		display: flex;
@@ -716,9 +716,9 @@
 
 	.choice-btn {
 		text-align: left;
-		background: #2a2a2a;
-		color: #e8e4d9;
-		border: 1px solid #444;
+		background: var(--color-surface-2);
+		color: var(--color-text);
+		border: 1px solid var(--color-border-strong);
 		border-radius: 4px;
 		padding: 0.3rem 0.4rem;
 		font-size: 0.75rem;
@@ -734,16 +734,16 @@
 
 	.choice-btn.claimed { opacity: 0.5; cursor: default; }
 
-	.choice-name { font-weight: 600; color: #c8a96e; line-height: 1.15; word-break: break-word; }
+	.choice-name { font-weight: 600; color: var(--color-accent); line-height: 1.15; word-break: break-word; }
 	.choice-cards { display: flex; gap: 0.25rem; flex-wrap: wrap; }
-	.claim-by { font-size: 0.7rem; color: #888; }
+	.claim-by { font-size: 0.7rem; color: var(--color-text-muted); }
 
 	.mini-card {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.15rem;
 		background: #f4ecd8;
-		border: 1px solid #888;
+		border: 1px solid var(--color-text-muted);
 		border-radius: 3px;
 		padding: 0.1rem 0.25rem;
 		font-size: 0.75rem;
@@ -753,15 +753,15 @@
 		justify-content: center;
 	}
 	.mini-card[data-color='red']   { color: #b03030; }
-	.mini-card[data-color='black'] { color: #1a1a1a; }
+	.mini-card[data-color='black'] { color: var(--color-bg); }
 	.mini-card .mc-value { font-variant-numeric: tabular-nums; }
 	.mini-card :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
 	.hand-cards .mini-card { font-size: 0.85rem; padding: 0.15rem 0.3rem; }
 	.hand-cards .mini-card :global(.suit) { width: 1.1em; height: 1.1em; }
 
 	.hand-panel {
-		background: #1e1e1e;
-		border: 1px solid #333;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 0.75rem;
 	}
@@ -791,15 +791,15 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.35rem 0.5rem;
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-surface-2);
 		border-radius: 4px;
 		font-size: 0.85rem;
 	}
 	.extra-status li.done { border-color: #3d4d3d; }
-	.extra-name { color: #e8e4d9; }
+	.extra-name { color: var(--color-text); }
 	.extra-claim { color: #6cbf6c; font-size: 0.8rem; }
-	.extra-pending { color: #777; font-size: 0.8rem; font-style: italic; }
+	.extra-pending { color: var(--color-text-faint); font-size: 0.8rem; font-style: italic; }
 
 	.extra-form {
 		display: flex;
@@ -816,11 +816,11 @@
 		flex-direction: column;
 		gap: 0.25rem;
 		font-size: 0.85rem;
-		color: #aaa;
+		color: var(--color-text-muted);
 	}
 	.extra-title-label {
 		font-size: 0.85rem;
-		color: #aaa;
+		color: var(--color-text-muted);
 	}
 	.title-chip-row {
 		display: flex;
@@ -834,23 +834,23 @@
 		padding: 0.35rem 0.85rem;
 		border-radius: 999px;
 		border: 1px solid #555;
-		background: #2a2a2a;
-		color: #e8e4d9;
+		background: var(--color-surface-2);
+		color: var(--color-text);
 		font-size: 0.9rem;
 		cursor: pointer;
 	}
 	.title-chip.active {
-		border-color: #c8a96e;
+		border-color: var(--color-accent);
 		background: #3a2f18;
 	}
 	.title-chip:focus-visible {
-		outline: 2px solid #c8a96e;
+		outline: 2px solid var(--color-accent);
 		outline-offset: 1px;
 	}
 
 	.primary {
-		background: #c8a96e;
-		color: #1a1a1a;
+		background: var(--color-accent);
+		color: var(--color-bg);
 		font-weight: 600;
 		padding: 0.5rem 1rem;
 		border-radius: 6px;
@@ -859,8 +859,8 @@
 	.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	.secondary {
-		background: #333;
-		color: #e8e4d9;
+		background: var(--color-border);
+		color: var(--color-text);
 		font-weight: 600;
 		padding: 0.4rem 0.8rem;
 		border-radius: 6px;

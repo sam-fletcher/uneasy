@@ -92,7 +92,7 @@
 <style>
 	.asset-card {
 		background: #242420;
-		border: 1px solid #444;
+		border: 1px solid var(--color-border-strong);
 		border-radius: 6px;
 		padding: 0.6rem 0.75rem;
 		display: flex;
@@ -105,8 +105,8 @@
 		gap: 0.3rem;
 	}
 
-	.asset-card.main-char  { border-color: #c8a96e; }
-	.asset-card.leveraged  { border-color: #6090c8; opacity: 0.75; }
+	.asset-card.main-char  { border-color: var(--color-accent); }
+	.asset-card.leveraged  { border-color: var(--color-info); opacity: 0.75; }
 
 	.asset-header {
 		display: flex;
@@ -118,7 +118,7 @@
 	.asset-name {
 		font-weight: 600;
 		font-size: 0.9rem;
-		color: #e8e4d9;
+		color: var(--color-text);
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
@@ -141,32 +141,32 @@
 
 	.asset-type-badge {
 		font-size: 0.7rem;
-		background: #3a3020;
-		color: #c8a96e;
+		background: var(--color-border-warm);
+		color: var(--color-accent);
 		padding: 0.1rem 0.4rem;
 		border-radius: 3px;
 	}
 
 	.lev-btn {
 		font-size: 0.75rem;
-		color: #888;
+		color: var(--color-text-muted);
 		padding: 0.15rem 0.4rem;
 		border: 1px solid #555;
 		border-radius: 3px;
 	}
 
 	.lev-btn.active {
-		color: #6090c8;
-		border-color: #6090c8;
+		color: var(--color-info);
+		border-color: var(--color-info);
 	}
 
 	.roll-lev-btn {
-		color: #e8e4d9;
-		background: #3a3020;
+		color: var(--color-text);
+		background: var(--color-border-warm);
 		min-width: 44px;
 		min-height: 44px;
 		padding: 0 0.45rem;
-		border: 1px solid #c8a96e;
+		border: 1px solid var(--color-accent);
 		border-radius: 4px;
 		font-weight: 700;
 		font-size: 0.95rem;
@@ -181,9 +181,9 @@
 	}
 
 	.roll-lev-btn:disabled {
-		color: #666;
+		color: var(--color-text-faint);
 		background: #222;
-		border-color: #444;
+		border-color: var(--color-border-strong);
 		cursor: not-allowed;
 	}
 
@@ -224,13 +224,13 @@
 
 	.torn-label {
 		font-size: 0.7rem;
-		color: #666;
+		color: var(--color-text-faint);
 		flex-shrink: 0;
 	}
 
 	.no-marginalia {
 		font-size: 0.8rem;
-		color: #666;
+		color: var(--color-text-faint);
 		margin: 0;
 	}
 </style>

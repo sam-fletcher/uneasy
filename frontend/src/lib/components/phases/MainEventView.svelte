@@ -628,7 +628,7 @@
 	}
 
 	.local-error {
-		color: #e07070;
+		color: var(--color-danger);
 		font-size: 0.85rem;
 		padding: 0.3rem 0;
 		flex-shrink: 0;
@@ -676,11 +676,11 @@
 	.or-line {
 		flex: 1;
 		height: 1px;
-		background: #3a3020;
+		background: var(--color-border-warm);
 	}
 	.or-label {
 		font-size: 0.78rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 	}
@@ -690,7 +690,7 @@
 	.action-bar {
 		flex-shrink: 0;
 		padding: 0.6rem 0 0;
-		border-top: 1px solid #3a3020;
+		border-top: 1px solid var(--color-border-warm);
 		margin-top: 0.25rem;
 	}
 
@@ -708,7 +708,8 @@
 	}
 
 	.action-btn {
-		padding: 0.4rem 0.8rem;
+		min-height: 44px;
+		padding: 0.4rem 1rem;
 		border-radius: 5px;
 		font-size: 0.85rem;
 		font-weight: 600;
@@ -716,8 +717,8 @@
 	}
 
 	.action-btn.primary {
-		background: #c8a96e;
-		color: #1a1a1a;
+		background: var(--color-accent);
+		color: var(--color-bg);
 	}
 
 	.action-btn:disabled {
@@ -739,34 +740,35 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.3rem 0.5rem;
+		min-height: 44px;
+		padding: 0.4rem 0.6rem;
 		border-radius: 4px;
-		background: #252525;
+		background: var(--color-surface);
 		cursor: pointer;
 		font-size: 0.85rem;
 		border: 1px solid transparent;
 	}
 
 	.refresh-item.selected {
-		border-color: #c8a96e;
+		border-color: var(--color-accent);
 		background: #2e2510;
 	}
 
 	.refresh-item input[type="checkbox"] {
-		accent-color: #c8a96e;
-		width: 14px;
-		height: 14px;
+		accent-color: var(--color-accent);
+		width: 18px;
+		height: 18px;
 		cursor: pointer;
 	}
 
 	.refresh-asset-name {
 		flex: 1;
-		color: #e8e4d9;
+		color: var(--color-text);
 	}
 
 	.refresh-asset-type {
 		font-size: 0.72rem;
-		color: #777;
+		color: var(--color-text-faint);
 		text-transform: capitalize;
 	}
 </style>

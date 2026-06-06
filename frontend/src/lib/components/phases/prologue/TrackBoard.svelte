@@ -253,8 +253,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		background: #1e1e1e;
-		border: 1px solid #333;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 0.5rem;
 	}
@@ -270,13 +270,13 @@
 		flex-direction: column;
 		gap: 0.2rem;
 		background: #181818;
-		border: 1px solid #2a2a2a;
+		border: 1px solid var(--color-surface-2);
 		border-radius: 6px;
 		padding: 0.3rem;
 		min-width: 0;
 	}
 	.column.active {
-		border-color: #c8a96e;
+		border-color: var(--color-accent);
 		box-shadow: 0 0 0 1px rgba(200, 169, 110, 0.25) inset;
 	}
 
@@ -285,13 +285,13 @@
 		align-items: center;
 		gap: 0.3rem;
 		padding: 0.1rem 0.2rem 0.3rem;
-		border-bottom: 1px solid #2a2a2a;
+		border-bottom: 1px solid var(--color-surface-2);
 	}
 	.col-suit { font-size: 0.95rem; }
 	.col-suit[data-color='red'] { color: #b03030; }
-	.col-suit[data-color='black'] { color: #e8e4d9; }
+	.col-suit[data-color='black'] { color: var(--color-text); }
 	.col-label {
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-size: 0.78rem;
 		font-weight: 600;
 		text-transform: uppercase;
@@ -299,7 +299,7 @@
 	}
 	.active-pip {
 		margin-left: auto;
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-size: 0.6rem;
 	}
 
@@ -313,7 +313,7 @@
 		min-height: 32px;
 	}
 	.rank-row.dummy {
-		background: #1a1a1a;
+		background: var(--color-bg);
 		opacity: 0.5;
 	}
 	.rank-row.set-aside {
@@ -332,7 +332,7 @@
 		flex: none;
 	}
 	.rank-num {
-		color: #888;
+		color: var(--color-text-muted);
 		font-size: 0.7rem;
 		font-weight: 600;
 		min-width: 0.9rem;
@@ -345,12 +345,12 @@
 			45deg,
 			#222,
 			#222 4px,
-			#1a1a1a 4px,
-			#1a1a1a 8px
+			var(--color-bg) 4px,
+			var(--color-bg) 8px
 		);
 		border-radius: 3px;
 	}
-	.empty-slot { color: #555; font-style: italic; font-size: 0.75rem; }
+	.empty-slot { color: var(--color-text-faint); font-style: italic; font-size: 0.75rem; }
 
 	.chip {
 		flex: 1;
@@ -360,7 +360,7 @@
 		min-width: 0;
 	}
 	.chip.you {
-		outline: 1px solid #c8a96e;
+		outline: 1px solid var(--color-accent);
 		outline-offset: 1px;
 		border-radius: 3px;
 		background: rgba(200, 169, 110, 0.06);
@@ -372,7 +372,7 @@
 	}
 	.chip-name {
 		font-size: 0.75rem;
-		color: #e8e4d9;
+		color: var(--color-text);
 		font-weight: 500;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -398,7 +398,7 @@
 		display: inline-flex;
 		align-items: center;
 		background: #f4ecd8;
-		border: 1px solid #888;
+		border: 1px solid var(--color-text-muted);
 		border-radius: 2px;
 		padding: 0 0.2rem;
 		min-width: 1.2em;
@@ -409,7 +409,7 @@
 		justify-content: center;
 	}
 	.card[data-color='red'] { color: #b03030; }
-	.card[data-color='black'] { color: #1a1a1a; }
+	.card[data-color='black'] { color: var(--color-bg); }
 	.card.grey {
 		opacity: 0.45;
 		background: #d8d2c2;
@@ -418,12 +418,12 @@
 
 	.status {
 		font-size: 0.85rem;
-		color: #aaa;
+		color: var(--color-text-muted);
 		padding: 0.3rem 0.4rem;
-		border-top: 1px solid #2a2a2a;
+		border-top: 1px solid var(--color-surface-2);
 	}
-	.status strong { color: #e8e4d9; }
-	.status-detail { color: #777; font-size: 0.75rem; margin-left: 0.4rem; }
+	.status strong { color: var(--color-text); }
+	.status-detail { color: var(--color-text-faint); font-size: 0.75rem; margin-left: 0.4rem; }
 
 	@media (min-width: 600px) {
 		.columns { gap: 0.6rem; }

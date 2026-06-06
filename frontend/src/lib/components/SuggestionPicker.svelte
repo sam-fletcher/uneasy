@@ -108,7 +108,7 @@
 {/if}
 
 <style>
-	.sp-loading { color: #999; font-size: 0.8rem; margin: 0; }
+	.sp-loading { color: var(--color-text-muted); font-size: 0.8rem; margin: 0; }
 
 	.sp-grid {
 		display: grid;
@@ -119,9 +119,9 @@
 		min-height: 44px;
 		padding: 0.4rem 0.6rem;
 		background: #2a2a28;
-		border: 1px solid #3a3a3a;
+		border: 1px solid var(--color-border-strong);
 		border-radius: 6px;
-		color: #e8e4d9;
+		color: var(--color-text);
 		font-size: 0.9rem;
 		font-family: inherit;
 		text-align: center;
@@ -132,16 +132,16 @@
 	.sp-tile:hover:not(.blank) { background: #34332f; }
 	.sp-tile.selected {
 		background: #4a3f24;
-		border-color: #c8a96e;
+		border-color: var(--color-accent);
 		color: #fff;
 	}
 	.sp-tile:disabled { opacity: 0.4; cursor: not-allowed; }
-	.sp-tile.custom { font-style: italic; color: #c8a96e; }
+	.sp-tile.custom { font-style: italic; color: var(--color-accent); }
 	.sp-tile.custom.selected { color: #fff; font-style: normal; }
 	.sp-tile.blank {
 		background: transparent;
 		border-style: dashed;
-		border-color: #2c2c2c;
+		border-color: var(--color-border-subtle);
 		cursor: default;
 	}
 
@@ -149,9 +149,9 @@
 		margin-top: 0.4rem;
 		width: 100%;
 		box-sizing: border-box;
-		background: #2a2a2a;
-		color: #e8e4d9;
-		border: 1px solid #444;
+		background: var(--color-surface-2);
+		color: var(--color-text);
+		border: 1px solid var(--color-border-strong);
 		border-radius: 4px;
 		padding: 0.4rem 0.5rem;
 		font-size: 0.9rem;

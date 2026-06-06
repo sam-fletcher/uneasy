@@ -151,39 +151,39 @@
 		top: max(0.5rem, env(safe-area-inset-top));
 		right: max(0.5rem, env(safe-area-inset-right));
 		padding: 0.6rem 0.75rem;
-		color: #999;
+		color: var(--color-text-muted);
 		font-size: 0.8rem;
 		text-decoration: none;
 		border-radius: 6px;
 	}
-	.buy:hover { color: #c8a96e; }
-	.buy:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
+	.buy:hover { color: var(--color-accent); }
+	.buy:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	.hero {
 		text-align: center;
 	}
 	.kicker {
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: var(--font-display);
 		text-transform: uppercase;
 		letter-spacing: 0.28em;
 		/* Trailing letter-spacing pushes the centered text right; nudge it back. */
 		margin-right: -0.28em;
 		font-size: clamp(0.8rem, 3.5vw, 1.05rem);
 		font-weight: 700;
-		color: #c8a96e;
+		color: var(--color-accent);
 	}
 	h1 {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		margin-top: 0.35rem;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: var(--font-display);
 		font-size: clamp(2.8rem, 14vw, 4.25rem);
 		font-weight: 700;
 		line-height: 0.95;
 		text-transform: uppercase;
 		letter-spacing: 0.01em;
-		color: #c8a96e;
+		color: var(--color-accent);
 	}
 	h1 .the {
 		font-size: 0.5em;
@@ -191,15 +191,15 @@
 	}
 	.subtitle {
 		margin-top: 0.75rem;
-		color: #999;
+		color: var(--color-text-muted);
 		font-style: italic;
 	}
 
 	.card {
 		width: 100%;
 		max-width: 380px;
-		background: #252525;
-		border: 1px solid #333;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 1.5rem;
 		display: flex;
@@ -209,8 +209,8 @@
 
 	.toggle {
 		display: flex;
-		background: #1e1e1e;
-		border: 1px solid #333;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 3px;
 		margin-bottom: 0.25rem;
@@ -220,13 +220,13 @@
 		min-height: 44px;
 		padding: 0.5rem;
 		background: transparent;
-		color: #999;
+		color: var(--color-text-muted);
 		font-weight: 600;
 		border-radius: 6px;
 	}
 	.toggle button.active {
-		background: #333;
-		color: #e8e4d9;
+		background: var(--color-border);
+		color: var(--color-text);
 	}
 	.toggle button:disabled { cursor: not-allowed; }
 
@@ -244,7 +244,7 @@
 		left: 0.85rem;
 		top: 50%;
 		transform: translateY(-50%);
-		color: #8c8c8c;
+		color: var(--color-text-faint);
 		font-size: 1rem;
 		pointer-events: none;
 		transition: top 0.15s ease, font-size 0.15s ease, color 0.15s ease, transform 0.15s ease;
@@ -258,18 +258,18 @@
 		top: 0.5rem;
 		transform: none;
 		font-size: 0.7rem;
-		color: #c8a96e;
+		color: var(--color-accent);
 	}
 
-	.error { color: #e07070; font-size: 0.9rem; }
+	.error { color: var(--color-danger); font-size: 0.9rem; }
 
 	.primary {
 		min-height: 44px;
 		margin-top: 0.25rem;
-		background: #c8a96e;
-		color: #1a1a1a;
+		background: var(--color-accent);
+		color: var(--color-bg);
 		font-weight: 600;
 	}
-	.primary:hover:not(:disabled) { background: #d9bb80; }
+	.primary:hover:not(:disabled) { background: var(--color-accent-hover); }
 	.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

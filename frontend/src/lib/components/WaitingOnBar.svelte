@@ -104,8 +104,8 @@
 		row-gap: 0.15rem;
 		align-items: baseline;
 		padding: 0.5rem 0.75rem;
-		background: #1a1a1a;
-		border-bottom: 1px solid #333;
+		background: var(--color-bg);
+		border-bottom: 1px solid var(--color-border);
 		flex-shrink: 0;
 	}
 	.line {
@@ -126,10 +126,10 @@
 		grid-row: 1 / span 2;
 		justify-self: end;
 		text-align: right;
-		color: #e8e4d9;
+		color: var(--color-text);
 	}
 	.label {
-		color: #999;
+		color: var(--color-text-muted);
 		font-weight: 600;
 		margin-right: 0.35rem;
 	}
@@ -140,22 +140,22 @@
 		font-weight: 700;
 	}
 	.sep {
-		color: #999;
+		color: var(--color-text-muted);
 	}
 	.step-label {
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-size: 0.95rem;
 		font-weight: 600;
 	}
 	.step-label.muted {
-		color: #999;
+		color: var(--color-text-muted);
 		/* Override the global `.muted` rule in plans/planPanel.css, which
 		   leaks in because that file is imported as a plain CSS module. */
 		font-style: normal;
 		font-size: 0.95rem;
 	}
 	.step-subtitle {
-		color: #999;
+		color: var(--color-text-muted);
 		font-size: 0.85rem;
 	}
 </style>

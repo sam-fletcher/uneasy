@@ -204,15 +204,15 @@
 
 <style>
 	.card {
-		border: 1px solid #2a2a2a;
-		border-left: 3px solid var(--owner-color, #444);
+		border: 1px solid var(--color-surface-2);
+		border-left: 3px solid var(--owner-color, var(--color-border-strong));
 		border-radius: 5px;
 		background: #1d1d1d;
 		overflow: hidden;
 	}
 
 	.card.selectable.selected {
-		border-color: var(--owner-color, #c8a96e);
+		border-color: var(--owner-color, var(--color-accent));
 		background: #221d10;
 	}
 
@@ -253,7 +253,7 @@
 	/* Highlight a card that has the picked marginalia, so the user can
 	   see at a glance which asset their selection belongs to. */
 	.card.marginalia-selectable:has(.marginalia li.picked) {
-		border-color: var(--owner-color, #c8a96e);
+		border-color: var(--owner-color, var(--color-accent));
 		background: #221d10;
 	}
 
@@ -269,7 +269,7 @@
 		height: 20px;
 	}
 	.marginalia li.picked .m-tap {
-		background: var(--owner-color, #c8a96e);
+		background: var(--owner-color, var(--color-accent));
 	}
 
 	.select-tap {
@@ -284,14 +284,14 @@
 		cursor: pointer;
 	}
 
-	.select-tap:focus { outline: 2px solid var(--owner-color, #c8a96e); outline-offset: 1px; }
+	.select-tap:focus { outline: 2px solid var(--owner-color, var(--color-accent)); outline-offset: 1px; }
 
 	.card.selectable.selected .select-tap {
-		background: var(--owner-color, #c8a96e);
+		background: var(--owner-color, var(--color-accent));
 	}
 
 	.check {
-		color: #1a1a1a;
+		color: var(--color-bg);
 		font-size: 0.85rem;
 		font-weight: 700;
 		line-height: 1;
@@ -314,7 +314,7 @@
 
 	.name {
 		font-size: 0.92rem;
-		color: #e8e4d9;
+		color: var(--color-text);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -322,11 +322,11 @@
 
 	.owner-label {
 		font-size: 0.72rem;
-		color: #888;
+		color: var(--color-text-muted);
 	}
 
 	.main-badge {
-		color: var(--owner-color, #c8a96e);
+		color: var(--owner-color, var(--color-accent));
 		font-size: 0.78rem;
 		margin-left: 0.2rem;
 	}
@@ -336,7 +336,7 @@
 		align-items: center;
 		gap: 0.4rem;
 		font-size: 0.72rem;
-		color: #888;
+		color: var(--color-text-muted);
 		flex-shrink: 0;
 	}
 
@@ -344,14 +344,14 @@
 
 	.count {
 		font-variant-numeric: tabular-nums;
-		color: #aaa;
+		color: var(--color-text-muted);
 	}
 
-	.caret { font-size: 0.8rem; color: #888; }
+	.caret { font-size: 0.8rem; color: var(--color-text-muted); }
 
 	.body {
 		padding: 0 0.7rem 0.6rem 1rem;
-		border-top: 1px dashed #2a2a2a;
+		border-top: 1px dashed var(--color-surface-2);
 	}
 
 	.marginalia {
@@ -371,14 +371,14 @@
 		align-items: baseline;
 	}
 
-	.marginalia li.torn { color: #777; text-decoration: line-through; }
+	.marginalia li.torn { color: var(--color-text-faint); text-decoration: line-through; }
 
-	.bullet { color: var(--owner-color, #888); }
+	.bullet { color: var(--owner-color, var(--color-text-muted)); }
 	.torn-mark { color: #a05050; font-size: 0.78rem; }
 
 	.empty {
 		font-size: 0.82rem;
-		color: #666;
+		color: var(--color-text-faint);
 		margin: 0.4rem 0;
 		font-style: italic;
 	}

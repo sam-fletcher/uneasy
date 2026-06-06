@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { getMe, type Account } from '$lib/api';
+	import '../app.css';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -15,6 +16,11 @@
 		&& !HIDDEN_PATHS.includes(page.url.pathname)
 		&& !page.url.pathname.startsWith('/table/')
 	);
+	// The shared top bar currently renders only on /profile (the one logged-in
+	// route that isn't an auth page or a full-bleed table). It shows the page
+	// title on the left; extend this map as more top-level pages appear.
+	const PAGE_TITLES: Record<string, string> = { '/profile': 'Profile' };
+	const pageTitle = $derived(PAGE_TITLES[page.url.pathname] ?? '');
 	const isTableRoute = $derived(page.url.pathname.startsWith('/table/'));
 
 	onMount(async () => {
@@ -29,12 +35,7 @@
 
 {#if showHeader && me}
 	<header class="site-header">
-		<a class="home" href="/profile" aria-label="Home">
-			<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-				<path d="M3 11l9-8 9 8" />
-				<path d="M5 10v10h14V10" />
-			</svg>
-		</a>
+		<h1 class="page-title">{pageTitle}</h1>
 		<a
 			class="buy"
 			href="https://adambell.itch.io/uneasy-lies-the-head-2e"
@@ -57,17 +58,24 @@
 	}
 
 	:global(body) {
-		font-family: system-ui, -apple-system, sans-serif;
-		background: #1a1a1a;
-		color: #e8e4d9;
+		font-family: var(--font-sans);
+		background: var(--color-bg);
+		color: var(--color-text);
 		min-height: 100dvh;
+	}
+
+	/* Headings default to the text serif (Spectral) at its loaded 600 weight;
+	   body/UI stays on the sans. The hero title opts into --font-display. */
+	:global(h1, h2, h3) {
+		font-family: var(--font-serif);
+		font-weight: 600;
 	}
 
 	:global(button) {
 		cursor: pointer;
 		font-size: 1rem;
 		padding: 0.6rem 1.2rem;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 		border: none;
 		font-family: inherit;
 	}
@@ -75,16 +83,16 @@
 	:global(input) {
 		font-size: 1rem;
 		padding: 0.6rem 0.8rem;
-		border-radius: 6px;
-		border: 1px solid #444;
-		background: #2a2a2a;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-2);
 		color: inherit;
 		font-family: inherit;
 		width: 100%;
 	}
 
 	:global(input:focus) {
-		outline: 2px solid #c8a96e;
+		outline: 2px solid var(--color-accent);
 		outline-offset: 1px;
 	}
 
@@ -93,34 +101,26 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 0.6rem 1rem;
-		background: #202020;
-		border-bottom: 1px solid #2e2e2e;
+		background: var(--color-surface-sunken);
+		border-bottom: 1px solid var(--color-border-subtle);
 	}
-	.home {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 44px;
-		height: 44px;
-		margin: -0.35rem 0;
-		color: #c8a96e;
-		border-radius: 6px;
-		text-decoration: none;
+	.page-title {
+		margin: 0;
+		font-size: 1.7rem;
+		color: var(--color-accent);
 	}
-	.home:hover { color: #d9bb80; background: #2a2a2a; }
-	.home:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
 	.buy {
 		display: inline-flex;
 		align-items: center;
 		min-height: 44px;
 		padding: 0 0.5rem;
-		color: #999;
+		color: var(--color-text-muted);
 		font-size: 0.85rem;
 		text-decoration: none;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 	}
-	.buy:hover { color: #c8a96e; }
-	.buy:focus-visible { outline: 2px solid #c8a96e; outline-offset: 1px; }
+	.buy:hover { color: var(--color-accent); }
+	.buy:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	main {
 		max-width: 1500px;

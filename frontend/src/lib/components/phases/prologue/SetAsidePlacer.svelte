@@ -88,8 +88,8 @@
 
 <style>
 	.placer {
-		background: #1e1e1e;
-		border: 1px solid #333;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 0.6rem;
 		display: flex;
@@ -102,12 +102,12 @@
 		align-items: baseline;
 	}
 	.placer-title {
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-weight: 600;
 		font-size: 0.9rem;
 	}
 	.decided-by {
-		color: #888;
+		color: var(--color-text-muted);
 		font-size: 0.8rem;
 		font-style: italic;
 	}
@@ -124,18 +124,18 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.4rem 0.5rem;
-		background: #2a2a2a;
+		background: var(--color-surface-2);
 		border-radius: 4px;
 		min-height: 44px;
 	}
 	.rank-label {
-		color: #888;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		min-width: 3.5rem;
 	}
 	.placer-name {
 		flex: 1;
-		color: #e8e4d9;
+		color: var(--color-text);
 		font-size: 0.9rem;
 	}
 	.placer-controls {
@@ -143,8 +143,8 @@
 		gap: 0.25rem;
 	}
 	.arrow {
-		background: #333;
-		color: #c8a96e;
+		background: var(--color-border);
+		color: var(--color-accent);
 		border: 1px solid #555;
 		border-radius: 4px;
 		min-width: 36px;
@@ -155,8 +155,8 @@
 	.arrow:disabled { opacity: 0.3; cursor: not-allowed; }
 
 	.primary {
-		background: #c8a96e;
-		color: #1a1a1a;
+		background: var(--color-accent);
+		color: var(--color-bg);
 		font-weight: 600;
 		padding: 0.5rem 1rem;
 		border-radius: 6px;

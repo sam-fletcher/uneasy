@@ -246,7 +246,7 @@
 		max-height: 90dvh;
 		overflow-y: auto;
 		background: #1e1e1c;
-		border: 1px solid #3a3a3a;
+		border: 1px solid var(--color-border-strong);
 		border-radius: 12px;
 		padding: 1rem 1.25rem 1.25rem;
 		display: flex;
@@ -259,44 +259,44 @@
 		justify-content: space-between;
 		gap: 0.5rem;
 	}
-	h3 { color: #c8a96e; margin: 0; font-size: 1.1rem; }
+	h3 { color: var(--color-accent); margin: 0; font-size: 1.1rem; }
 	.close {
 		width: 36px; height: 36px;
-		background: none; color: #aaa;
+		background: none; color: var(--color-text-muted);
 		font-size: 1.4rem; line-height: 1;
 		border-radius: 6px;
 	}
-	.close:hover { background: #2a2a2a; color: #e8e4d9; }
+	.close:hover { background: var(--color-surface-2); color: var(--color-text); }
 
-	.local-error { color: #e07070; font-size: 0.85rem; margin: 0; }
+	.local-error { color: var(--color-danger); font-size: 0.85rem; margin: 0; }
 
-	.step { background: #161614; border: 1px solid #2c2c2c; border-radius: 8px; padding: 0.65rem 0.75rem; }
+	.step { background: #161614; border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 0.65rem 0.75rem; }
 
 	.field { display: flex; flex-direction: column; gap: 0.3rem; }
-	.label { color: #c8a96e; font-size: 0.85rem; font-weight: 600; }
-	.hint { font-size: 0.75rem; color: #888; }
+	.label { color: var(--color-accent); font-size: 0.85rem; font-weight: 600; }
+	.hint { font-size: 0.75rem; color: var(--color-text-muted); }
 
 	textarea {
-		background: #2a2a2a; color: #e8e4d9;
-		border: 1px solid #444; border-radius: 4px;
+		background: var(--color-surface-2); color: var(--color-text);
+		border: 1px solid var(--color-border-strong); border-radius: 4px;
 		padding: 0.4rem 0.5rem; font-size: 0.9rem;
 		font-family: inherit;
 	}
 
 	.card-head { display: flex; gap: 0.4rem; align-items: baseline; margin-bottom: 0.3rem; }
-	.muted { color: #999; }
+	.muted { color: var(--color-text-muted); }
 	.muted.small { font-size: 0.8rem; }
 
 	footer { display: flex; gap: 0.6rem; justify-content: flex-end; }
 
 	.primary {
-		background: #c8a96e; color: #1a1a1a; font-weight: 600;
+		background: var(--color-accent); color: var(--color-bg); font-weight: 600;
 		padding: 0.5rem 1rem; border-radius: 6px;
 	}
 	.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	.secondary {
-		background: #333; color: #e8e4d9; font-weight: 600;
+		background: var(--color-border); color: var(--color-text); font-weight: 600;
 		padding: 0.5rem 0.9rem; border-radius: 6px;
 		border: 1px solid #555;
 	}

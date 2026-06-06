@@ -177,7 +177,7 @@
 	.laws-rumors {
 		display: flex; flex-direction: column; gap: 1rem;
 		padding: 0.75rem; border: 1px solid var(--border-color, #d4c5a8);
-		background: var(--panel-bg, #2a2a2a);
+		background: var(--panel-bg, var(--color-surface-2));
 		border-radius: 6px;
 	}
 	.lr-heading { margin: 0 0 0.5rem; font-size: 0.95rem; }
@@ -185,11 +185,11 @@
 	.lr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 	.lr-item {
 		padding: 0.5rem 0.6rem;
-		background: var(--card-bg, #2a2a2a);
+		background: var(--card-bg, var(--color-surface-2));
 		border: 1px solid var(--border-color, #d4c5a8);
 		border-radius: 4px;
 	}
-	.lr-text { margin: 0 0 0.25rem; white-space: pre-wrap; }
+	.lr-text { margin: 0 0 0.25rem; white-space: pre-wrap; font-family: var(--font-serif); }
 	.lr-addendum { margin: 0 0 0.25rem; color: var(--muted, #5a5446); }
 	.lr-meta { margin: 0; font-size: 0.8rem; color: var(--muted, #8a7d61); }
 	.lr-edit {

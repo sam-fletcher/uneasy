@@ -121,8 +121,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
-		background: #1a1a1a;
-		border: 1px solid #2c2c2c;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border-subtle);
 		border-radius: 8px;
 		padding: 0.5rem 0.6rem;
 	}
@@ -134,12 +134,12 @@
 		gap: 0.4rem;
 	}
 	.heading-label {
-		color: #c8a96e;
+		color: var(--color-accent);
 		font-weight: 600;
 		font-size: 0.85rem;
 	}
 	.heading-meta {
-		color: #888;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 	}
 	.hearts {
@@ -147,7 +147,7 @@
 		flex-wrap: wrap;
 		gap: 0.4rem;
 	}
-	.empty { color: #777; font-size: 0.85rem; }
+	.empty { color: var(--color-text-faint); font-size: 0.85rem; }
 
 	.heart-card {
 		display: inline-flex;
@@ -159,7 +159,7 @@
 		padding: 0 0.5rem;
 		background: #f4ecd8;
 		color: #b03030;
-		border: 1px solid #888;
+		border: 1px solid var(--color-text-muted);
 		border-radius: 5px;
 		font-weight: 700;
 		font-size: 0.95rem;
@@ -172,7 +172,7 @@
 		box-shadow: 0 1px 3px rgba(200, 169, 110, 0.4);
 	}
 	.heart-card.on-active {
-		outline: 2px solid #c8a96e;
+		outline: 2px solid var(--color-accent);
 		outline-offset: 1px;
 	}
 	.heart-card.grey {
