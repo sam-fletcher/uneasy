@@ -4,7 +4,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +11,7 @@ import (
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
+	"uneasy/gametest"
 	"uneasy/model"
 )
 
@@ -24,28 +24,16 @@ func TestCurrentShakeUpActor_reverseRankAndAdvance(t *testing.T) {
 	ctx := context.Background()
 	esteem := string(model.CategoryEsteem)
 
-	game, err := q.CreateGame(ctx, "SHAKE"+randSuffix())
-	require.NoError(t, err)
-
-	// p1 esteem rank 1 (highest status) … p3 rank 3 (lowest). Reverse-rank
-	// turn order is therefore p3, p2, p1.
-	players := make([]dbgen.Player, 3)
-	for i := range players {
-		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-			Username: fmt.Sprintf("su-p%d-%s", i+1, randSuffix()), CodeHash: "x",
-		})
-		require.NoError(t, err)
-		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
-			GameID: game.ID, DisplayName: fmt.Sprintf("P%d", i+1), AccountID: acct.ID,
-		})
-		require.NoError(t, err)
-		players[i] = p
-		require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
-			GameID: game.ID, PlayerID: &players[i].ID, Category: model.CategoryEsteem, Rank: int16(i + 1),
-		}))
-		_, err = q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{ID: p.ID, ShakeUpTokens: 5})
-		require.NoError(t, err)
-	}
+	// SeedShakeUp gives esteem ranks in seat order (p0=1 … p2=3) and grants
+	// each player 5 tokens at the spending step — the board this test needs
+	// without the hand-rolled game/player/ranking/token setup. Reverse-rank
+	// turn order is therefore p2, p1, p0.
+	seeded := newShakeUpGame(t, q, 3,
+		gametest.WithShakeUpStep(gamepkg.ShakeUpStepSpending),
+		gametest.WithShakeUpTokens(5),
+	)
+	game := seeded.Game
+	players := seeded.Players
 
 	commitSpend := func(playerID int64) {
 		spend, err := q.CreateShakeUpSpend(ctx, dbgen.CreateShakeUpSpendParams{
