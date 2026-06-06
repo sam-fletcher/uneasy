@@ -112,13 +112,15 @@ func (saHandler) ApplyChoice(
 	if roll.Result != nil {
 		res = *roll.Result
 	}
-	nominal := max(diff-res, 0)
 
+	// Imperative shell: load the snapshot, then let the pure rule decide the
+	// penalty. saEligibleOwnResources builds a game.ResourceFlawView snapshot
+	// from the DB and applies the pure eligibility filter.
 	eligible, err := saEligibleOwnResources(ctx, deps, plan.GameID, plan.PreparerID, nil)
 	if err != nil {
 		return fmt.Errorf("could not count preparer resources: %w", err)
 	}
-	required := min(nominal, int16(len(eligible)))
+	required := gamepkg.SeekAnswersMarPenalty(diff, res, int16(len(eligible)))
 
 	sa := resData.EnsureSeekAnswers()
 	sa.MarSelfFlawsRequired = required
@@ -141,34 +143,43 @@ func (saHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	return nil
 }
 
-// saEligibleOwnResources returns the player's non-destroyed resource assets
-// that still have at least one intact marginalium and are not present in
-// `flawed` (already flawed this resolution).
+// saEligibleOwnResources returns the IDs of the player's resource assets that
+// can still be flawed this resolution. It is the imperative shell for the pure
+// game.EligibleSelfFlawResourceIDs rule: it builds the domain snapshot from the
+// DB (the owner's in-game assets plus each one's intact-marginalia count), then
+// hands the decision to the pure filter.
 func saEligibleOwnResources(
 	ctx context.Context,
 	deps *PlanDeps,
 	gameID, ownerID int64,
 	flawed []int64,
-) ([]dbgen.Asset, error) {
+) ([]int64, error) {
 	assets, err := deps.Q.ListAssetsByOwner(ctx, ownerID)
 	if err != nil {
 		return nil, err
 	}
-	var out []dbgen.Asset
+	views := make([]gamepkg.ResourceFlawView, 0, len(assets))
 	for _, a := range assets {
-		if a.GameID != gameID || a.AssetType != model.AssetResource || a.IsDestroyed {
+		if a.GameID != gameID {
 			continue
 		}
-		if slices.Contains(flawed, a.ID) {
-			continue
+		intact := 0
+		// Only resources can be flawed; skip the marginalia query otherwise.
+		if a.AssetType == model.AssetResource && !a.IsDestroyed {
+			marg, err := deps.Q.ListIntactMarginalia(ctx, a.ID)
+			if err != nil {
+				return nil, err
+			}
+			intact = len(marg)
 		}
-		marg, err := deps.Q.ListIntactMarginalia(ctx, a.ID)
-		if err != nil || len(marg) == 0 {
-			continue
-		}
-		out = append(out, a)
+		views = append(views, gamepkg.ResourceFlawView{
+			AssetID:               a.ID,
+			AssetType:             a.AssetType,
+			IsDestroyed:           a.IsDestroyed,
+			IntactMarginaliaCount: intact,
+		})
 	}
-	return out, nil
+	return gamepkg.EligibleSelfFlawResourceIDs(views, flawed), nil
 }
 
 // saLog emits a Seek Answers action-log entry anchored to the plan's row.
