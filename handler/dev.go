@@ -10,7 +10,9 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/gametest"
+	"uneasy/model"
 )
 
 // DevLogin handles POST /api/dev/login?username=foo.
@@ -59,11 +61,36 @@ func DevReset(s *db.Store) http.HandlerFunc {
 	}
 }
 
+// shakeUpStepFromName maps the JSON shake_up_step name to its int16 constant.
+func shakeUpStepFromName(name string) (int16, bool) {
+	switch name {
+	case "rolling":
+		return gamepkg.ShakeUpStepRolling, true
+	case "spending":
+		return gamepkg.ShakeUpStepSpending, true
+	default:
+		return 0, false
+	}
+}
+
 // DevSeed handles POST /api/dev/seed.
 //
-// Body shape:
+// Body shape (only phase + players are required):
 //
-//	{ "phase": "main_event", "players": ["alice", "bob"] }
+//	{
+//	  "phase": "main_event",            // or "shake_up"
+//	  "players": ["alice", "bob"],
+//	  "current_row": 9,                 // optional
+//	  "rankings": {                     // optional; per-category player order,
+//	    "power": [1, 0]                 //   value[k] = player index at rank k+1
+//	  },
+//	  "plans": [                        // optional
+//	    {"preparer_idx": 0, "plan_type": "make_war",
+//	     "category": "power", "row": 9, "row_order": 0}
+//	  ],
+//	  "shake_up_tokens": 5,             // optional (shake_up only)
+//	  "shake_up_step": "spending"       // optional (shake_up only): rolling|spending
+//	}
 //
 // Creates a game in the requested phase, seating the named accounts as
 // players (creating accounts that don't exist). Used by the Playwright
@@ -74,9 +101,21 @@ func DevReset(s *db.Store) http.HandlerFunc {
 // integration tests so the two suites can't disagree about what a valid
 // game in phase X looks like.
 func DevSeed(s *db.Store) http.HandlerFunc {
+	type planReq struct {
+		PreparerIdx int    `json:"preparer_idx"`
+		PlanType    string `json:"plan_type"`
+		Category    string `json:"category"`
+		Row         int16  `json:"row"`
+		RowOrder    int16  `json:"row_order"`
+	}
 	type request struct {
-		Phase   string   `json:"phase"`
-		Players []string `json:"players"`
+		Phase         string           `json:"phase"`
+		Players       []string         `json:"players"`
+		CurrentRow    *int16           `json:"current_row"`
+		Rankings      map[string][]int `json:"rankings"`
+		Plans         []planReq        `json:"plans"`
+		ShakeUpTokens *int16           `json:"shake_up_tokens"`
+		ShakeUpStep   *string          `json:"shake_up_step"`
 	}
 	type playerResp struct {
 		ID            int64  `json:"id"`
@@ -92,12 +131,42 @@ func DevSeed(s *db.Store) http.HandlerFunc {
 			return
 		}
 
+		opts := make([]gametest.Option, 0)
+		if body.CurrentRow != nil {
+			opts = append(opts, gametest.WithCurrentRow(*body.CurrentRow))
+		}
+		for cat, order := range body.Rankings {
+			opts = append(opts, gametest.WithRankings(model.RankingCategory(cat), order))
+		}
+		for _, p := range body.Plans {
+			opts = append(opts, gametest.WithPlan(gametest.SeedPlan{
+				PreparerIdx: p.PreparerIdx,
+				PlanType:    model.PlanType(p.PlanType),
+				Category:    model.RankingCategory(p.Category),
+				Row:         p.Row,
+				RowOrder:    p.RowOrder,
+			}))
+		}
+		if body.ShakeUpTokens != nil {
+			opts = append(opts, gametest.WithShakeUpTokens(*body.ShakeUpTokens))
+		}
+		if body.ShakeUpStep != nil {
+			step, ok := shakeUpStepFromName(*body.ShakeUpStep)
+			if !ok {
+				respondErr(w, http.StatusBadRequest, "unknown shake_up_step: "+*body.ShakeUpStep)
+				return
+			}
+			opts = append(opts, gametest.WithShakeUpStep(step))
+		}
+
 		ctx := r.Context()
 		var seeded gametest.SeededGame
 		var err error
 		switch body.Phase {
 		case "main_event":
-			seeded, err = gametest.SeedMainEvent(ctx, s.Q, body.Players)
+			seeded, err = gametest.SeedMainEvent(ctx, s.Q, body.Players, opts...)
+		case "shake_up":
+			seeded, err = gametest.SeedShakeUp(ctx, s.Q, body.Players, opts...)
 		default:
 			respondErr(w, http.StatusBadRequest, "unknown phase: "+body.Phase)
 			return

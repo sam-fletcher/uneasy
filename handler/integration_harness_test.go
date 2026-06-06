@@ -130,8 +130,9 @@ type testGame struct {
 // newTestGame is a thin wrapper around gametest.SeedMainEvent that
 // generates fresh usernames per call. The implementation lives in the
 // shared gametest package so the dev /api/dev/seed endpoint and these
-// tests stay aligned.
-func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
+// tests stay aligned. Optional gametest.Option values (WithCurrentRow,
+// WithRankings, WithPlan) shape the board beyond the blank row-1 default.
+func newTestGame(t *testing.T, q *dbgen.Queries, n int, opts ...gametest.Option) testGame {
 	t.Helper()
 	require.GreaterOrEqual(t, n, 2)
 	require.LessOrEqual(t, n, 5)
@@ -139,7 +140,7 @@ func newTestGame(t *testing.T, q *dbgen.Queries, n int) testGame {
 	for i := range usernames {
 		usernames[i] = fmt.Sprintf("p%d-%s", i+1, randSuffix())
 	}
-	seeded, err := gametest.SeedMainEvent(context.Background(), q, usernames)
+	seeded, err := gametest.SeedMainEvent(context.Background(), q, usernames, opts...)
 	require.NoError(t, err)
 	return testGame{Game: seeded.Game, Players: seeded.Players}
 }
