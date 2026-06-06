@@ -8,8 +8,8 @@
 		startPrologue,
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord, listGamePosts,
-		getRoll, getActiveRollForGame, listBankedDice,
-		listPlans, getPlan,
+		getActiveRollForGame, listBankedDice,
+		listPlans,
 		setEndgameMode,
 		getVisibleSecrets,
 		getActiveScene,
@@ -21,7 +21,8 @@
 		type PreparePlanDraft,
 		type RowState,
 	} from '$lib/api';
-	import { createConnection, EventTypes, type WSMessage } from '$lib/ws';
+	import { createConnection, type WSMessage } from '$lib/ws';
+	import { handleWSMessage as runWSMessage, type WSContext } from './ws-handlers';
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
 		Law, Rumor,
@@ -211,474 +212,42 @@
 	// ── WebSocket ─────────────────────────────────────────────────────────────
 	let disconnect: (() => void) | null = null;
 
+	// Reactive context handed to the extracted WS dispatcher (ws-handlers.ts).
+	// Each accessor is backed by a $state rune above, so the dispatcher's
+	// assignments stay reactive here. typingMap/typingTimeouts are shared by
+	// reference (mutated in place).
+	const wsCtx: WSContext = {
+		get gameID() { return gameID; },
+		loadGameState,
+		typingMap, typingTimeouts,
+		get game() { return game; }, set game(v) { game = v; },
+		get players() { return players; }, set players(v) { players = v; },
+		get members() { return members; }, set members(v) { members = v; },
+		get toneTopics() { return toneTopics; }, set toneTopics(v) { toneTopics = v; },
+		get rankings() { return rankings; }, set rankings(v) { rankings = v; },
+		get assets() { return assets; }, set assets(v) { assets = v; },
+		get laws() { return laws; }, set laws(v) { laws = v; },
+		get rumors() { return rumors; }, set rumors(v) { rumors = v; },
+		get secrets() { return secrets; }, set secrets(v) { secrets = v; },
+		get chatPosts() { return chatPosts; }, set chatPosts(v) { chatPosts = v; },
+		get recordRows() { return recordRows; }, set recordRows(v) { recordRows = v; },
+		get rowState() { return rowState; }, set rowState(v) { rowState = v; },
+		get activeScene() { return activeScene; }, set activeScene(v) { activeScene = v; },
+		get activeScenePeers() { return activeScenePeers; }, set activeScenePeers(v) { activeScenePeers = v; },
+		get sceneSetupDraft() { return sceneSetupDraft; }, set sceneSetupDraft(v) { sceneSetupDraft = v; },
+		get preparePlanDraft() { return preparePlanDraft; }, set preparePlanDraft(v) { preparePlanDraft = v; },
+		get activeRoll() { return activeRoll; }, set activeRoll(v) { activeRoll = v; },
+		get activeRollDice() { return activeRollDice; }, set activeRollDice(v) { activeRollDice = v; },
+		get activeRollVotes() { return activeRollVotes; }, set activeRollVotes(v) { activeRollVotes = v; },
+		get activeRollParticipants() { return activeRollParticipants; }, set activeRollParticipants(v) { activeRollParticipants = v; },
+		get bankedDice() { return bankedDice; }, set bankedDice(v) { bankedDice = v; },
+		get plans() { return plans; }, set plans(v) { plans = v; },
+		get prologueActivePlayerID() { return prologueActivePlayerID; }, set prologueActivePlayerID(v) { prologueActivePlayerID = v; },
+		get typingNames() { return typingNames; }, set typingNames(v) { typingNames = v; },
+	};
+
 	function handleWSMessage(msg: WSMessage) {
-		switch (msg.type) {
-			case EventTypes.PhaseChanged: {
-				const newPhase = msg.payload.phase as Game['phase'];
-				if (game) game = { ...game, phase: newPhase };
-				loadGameState();
-				break;
-			}
-			case EventTypes.PlayerJoined: {
-				const player = msg.payload.player as Player;
-				if (!players.find(p => p.id === player.id)) {
-					players = [...players, player];
-					members = [...members, { id: player.id, display_name: player.display_name, online: false }];
-				}
-				break;
-			}
-			case EventTypes.PresenceSnapshot: {
-				const snap = msg.payload.members as PresenceMember[];
-				members = members.map(m => ({
-					...m,
-					online: snap.some(s => s.id === m.id)
-				}));
-				break;
-			}
-			case EventTypes.TypingUpdate: {
-				const { player_id, display_name, typing } = msg.payload as {
-					player_id: number; display_name: string; typing: boolean;
-				};
-				const t = typingTimeouts.get(player_id);
-				if (t) clearTimeout(t);
-				if (typing) {
-					typingMap.set(player_id, display_name);
-					typingTimeouts.set(player_id, setTimeout(() => {
-						typingMap.delete(player_id);
-						typingNames = [...typingMap.values()];
-					}, 4000));
-				} else {
-					typingMap.delete(player_id);
-					typingTimeouts.delete(player_id);
-				}
-				typingNames = [...typingMap.values()];
-				break;
-			}
-			case EventTypes.ToneUpdated: {
-				const { topic_id, topic, status } = msg.payload as {
-					topic_id: number; topic: string; status: string;
-				};
-				const idx = toneTopics.findIndex(t => t.id === topic_id);
-				if (idx >= 0) {
-					toneTopics = toneTopics.map(t =>
-						t.id === topic_id ? { ...t, status: status as ToneTopic['status'] } : t
-					);
-				} else {
-					toneTopics = [...toneTopics, {
-						id: topic_id, game_id: Number(gameID), topic,
-						status: status as ToneTopic['status']
-					}];
-				}
-				break;
-			}
-			case EventTypes.RankingsUpdated: {
-				rankings = msg.payload.rankings as Ranking[];
-				break;
-			}
-			case EventTypes.FocusChanged: {
-				if (game) game = { ...game, focus_player_id: msg.payload.player_id as number };
-				// rowState is updated separately by RowStateChanged.
-				sceneSetupDraft = null;
-				preparePlanDraft = null;
-				break;
-			}
-			case EventTypes.PrologueTurnAdvanced: {
-				prologueActivePlayerID = (msg.payload.current_player_id as number | null) ?? null;
-				break;
-			}
-			case EventTypes.RowAdvanced: {
-				const newRow = msg.payload.row_number as number;
-				if (game) game = { ...game, current_row: newRow };
-				// Chat is now a single continuous game-wide feed; no reset needed.
-				break;
-			}
-			case EventTypes.SceneEnded: {
-				// activeScene is content state (which scene is showing); rowState
-				// is step state. Both need to update — the latter via
-				// RowStateChanged, which arrives separately.
-				activeScene = null;
-				activeScenePeers = [];
-				break;
-			}
-			case EventTypes.SceneStarted: {
-				const scene = msg.payload.scene as Scene;
-				const peers = msg.payload.peers as ScenePeerView[];
-				activeScene = scene;
-				activeScenePeers = peers;
-				sceneSetupDraft = null;
-				break;
-			}
-			case EventTypes.SceneSetupDraft: {
-				sceneSetupDraft = msg.payload as SceneSetupDraft;
-				break;
-			}
-			case EventTypes.PreparePlanDraft: {
-				preparePlanDraft = msg.payload as PreparePlanDraft;
-				break;
-			}
-			case EventTypes.RowStateChanged: {
-				rowState = msg.payload.row_state as RowState;
-				break;
-			}
-			case EventTypes.ScenePeerClaimed: {
-				const { scene_id, peer_asset_id, controller_id } = msg.payload as {
-					scene_id: number; peer_asset_id: number; controller_id: number;
-				};
-				if (activeScene && activeScene.id === scene_id) {
-					activeScenePeers = activeScenePeers.map(p =>
-						p.peer_asset_id === peer_asset_id
-							? { ...p, controller_player_id: controller_id }
-							: p
-					);
-				}
-				break;
-			}
-			case EventTypes.ScenePostCreated: {
-				const post = msg.payload.post as ChatPost;
-				if (!chatPosts.find(p => p.id === post.id)) {
-					chatPosts = [...chatPosts, post];
-				}
-				break;
-			}
-			case EventTypes.SceneEntryCreated: {
-				const entry = msg.payload.entry as SceneEntry;
-				recordRows = recordRows.map(row =>
-					row.row_number === entry.row_number
-						? { ...row, entries: row.entries.find(e => e.id === entry.id)
-							? row.entries
-							: [...row.entries, entry] }
-						: row
-				);
-				break;
-			}
-			// Asset events
-			case EventTypes.AssetCreated: {
-				const asset = msg.payload.asset as Asset;
-				if (!assets.find(a => a.id === asset.id)) {
-					assets = [...assets, asset];
-				}
-				break;
-			}
-			case EventTypes.AssetUpdated: {
-				const asset = msg.payload.asset as Asset;
-				assets = assets.map(a => a.id === asset.id ? asset : a);
-				break;
-			}
-			case EventTypes.AssetTaken: {
-				const asset = msg.payload.asset as Asset;
-				assets = assets.map(a => a.id === asset.id ? asset : a);
-				break;
-			}
-			case EventTypes.AssetLeveraged: {
-				const { asset_id } = msg.payload as { asset_id: number };
-				assets = assets.map(a =>
-					a.id === asset_id ? { ...a, is_leveraged: true } : a
-				);
-				break;
-			}
-			case EventTypes.AssetRefreshed: {
-				const { asset_id } = msg.payload as { asset_id: number };
-				assets = assets.map(a =>
-					a.id === asset_id ? { ...a, is_leveraged: false } : a
-				);
-				break;
-			}
-			case EventTypes.AssetDestroyed: {
-				const { asset_id } = msg.payload as { asset_id: number };
-				assets = assets.filter(a => a.id !== asset_id);
-				break;
-			}
-			case EventTypes.MarginaliaAdded: {
-				const { asset_id, marginalia } = msg.payload as { asset_id: number; marginalia: Marginalium };
-				assets = assets.map(a => {
-					if (a.id !== asset_id) return a;
-					const already = a.marginalia.find(m => m.id === marginalia.id);
-					return already ? a : { ...a, marginalia: [...a.marginalia, marginalia] };
-				});
-				break;
-			}
-			case EventTypes.MarginaliaUpdated: {
-				const { asset_id, marginalia } = msg.payload as { asset_id: number; marginalia: Marginalium };
-				assets = assets.map(a => {
-					if (a.id !== asset_id) return a;
-					return { ...a, marginalia: a.marginalia.map(m => m.id === marginalia.id ? marginalia : m) };
-				});
-				break;
-			}
-			case EventTypes.MarginaliaTorn: {
-				const { asset_id, position } = msg.payload as { asset_id: number; position: number };
-				assets = assets.map(a => {
-					if (a.id !== asset_id) return a;
-					return {
-						...a,
-						marginalia: a.marginalia.map(m =>
-							m.position === position ? { ...m, is_torn: true } : m
-						)
-					};
-				});
-				break;
-			}
-			// Dice roll events
-			case EventTypes.RollCreated: {
-				const roll = msg.payload.roll as DiceRoll;
-				// Fetch full details (includes dice + participants) so we're in sync.
-				getRoll(roll.id).then(data => {
-					activeRoll = data.roll;
-					activeRollDice = data.dice;
-					activeRollVotes = data.votes;
-					activeRollParticipants = data.participants;
-				}).catch(() => {
-					activeRoll = roll;
-					activeRollDice = [];
-					activeRollVotes = [];
-					activeRollParticipants = [];
-				});
-				break;
-			}
-			case EventTypes.RollLeverageAdded: {
-				const { roll_id } = msg.payload as { roll_id: number };
-				// Re-fetch dice so we have the actual DB row with its ID.
-				if (activeRoll && activeRoll.id === roll_id) {
-					getRoll(roll_id).then(data => {
-						activeRollDice = data.dice;
-					}).catch(() => {});
-					// Banked-die spend or asset leverage may have changed our
-					// unspent-banked list; refresh.
-					listBankedDice(gameID).then(d => { bankedDice = d.dice; }).catch(() => {});
-				}
-				break;
-			}
-			case EventTypes.RollStageChanged: {
-				const { roll_id, stage } = msg.payload as { roll_id: number; stage: DiceRoll['stage'] };
-				if (activeRoll && activeRoll.id === roll_id) {
-					activeRoll = { ...activeRoll, stage };
-				}
-				break;
-			}
-			case EventTypes.RollIntentSet: {
-				const { roll_id, player_id, intent } = msg.payload as {
-					roll_id: number; player_id: number; intent: 'aid' | 'interfere';
-				};
-				if (activeRoll && activeRoll.id === roll_id) {
-					activeRollParticipants = activeRollParticipants.map(p =>
-						p.player_id === player_id ? { ...p, intent } : p
-					);
-				}
-				break;
-			}
-			case EventTypes.RollReadyChanged: {
-				const { roll_id, player_id, is_ready } = msg.payload as {
-					roll_id: number; player_id: number; is_ready: boolean;
-				};
-				if (activeRoll && activeRoll.id === roll_id) {
-					activeRollParticipants = activeRollParticipants.map(p =>
-						p.player_id === player_id ? { ...p, is_ready } : p
-					);
-				}
-				break;
-			}
-			case EventTypes.RollVoteCast: {
-				const { roll_id, player_id } = msg.payload as {
-					roll_id: number; player_id: number;
-				};
-				if (activeRoll && activeRoll.id === roll_id) {
-					// Hidden ballot: only that the player voted.
-					activeRollVotes = [
-						...activeRollVotes.filter(v => v.player_id !== player_id),
-						{ roll_id, player_id, voted: true }
-					];
-				}
-				break;
-			}
-			case EventTypes.RollVoteResolved: {
-				const { roll_id, adjusted_difficulty, ballot } = msg.payload as {
-					roll_id: number; adjusted_difficulty: number; ballot: VoteView[];
-				};
-				if (activeRoll && activeRoll.id === roll_id) {
-					activeRoll = { ...activeRoll, adjusted_difficulty };
-					activeRollVotes = ballot;
-				}
-				break;
-			}
-			case EventTypes.RollResolved: {
-				const resolvedRoll = msg.payload.roll as DiceRoll;
-				const resolvedDice = msg.payload.dice as DiceRollDie[];
-				if (activeRoll && activeRoll.id === resolvedRoll.id) {
-					activeRoll = resolvedRoll;
-					activeRollDice = resolvedDice;
-				}
-				break;
-			}
-			// Plan events
-			case EventTypes.PlanPrepared: {
-				const prepared = msg.payload.plan as Plan;
-				if (!plans.find(p => p.id === prepared.id)) {
-					plans = [...plans, prepared];
-				}
-				// Plan was committed; clear the highlight broadcast.
-				preparePlanDraft = null;
-				break;
-			}
-			case EventTypes.PlanResolving: {
-				const resolving = msg.payload.plan as Plan;
-				plans = plans.map(p => p.id === resolving.id ? resolving : p);
-				break;
-			}
-			case EventTypes.PlanResolved: {
-				const { plan_id, result } = msg.payload as { plan_id: number; result: string };
-				plans = plans.map(p =>
-					p.id === plan_id
-						? { ...p, status: 'completed' as Plan['status'], result: result as Plan['result'] }
-						: p
-				);
-				break;
-			}
-			case EventTypes.PlanDelayedArrival:
-			case EventTypes.LiaisePhaseChanged:
-			case EventTypes.LiaiseChoicesRevealed:
-			case EventTypes.LiaiseKeepSecretSubmitted:
-			case EventTypes.DuelChampionElected:
-			case EventTypes.DuelStakesRevealed:
-			case EventTypes.DuelStakesSelected:
-			case EventTypes.DuelBoutDeclared:
-			case EventTypes.DuelBoutResolved:
-			case EventTypes.DuelBoutsComplete:
-			case EventTypes.FestivityGuestJoined:
-			case EventTypes.FestivityGuestRolled:
-			case EventTypes.FestivityGuestChose:
-			case EventTypes.FestivityHostChose:
-			case EventTypes.FestivityInsistHostMar:
-			case EventTypes.FestivityPhaseChanged:
-			case EventTypes.FestivityChallengeIssued:
-			case EventTypes.FestivityChallengeDeclined:
-			case EventTypes.FestivityDuelTriggered:
-			case EventTypes.WarDeclared:
-			case EventTypes.DemandPrepared:
-			case EventTypes.DemandResolved:
-			case EventTypes.DemandDraftPick:
-			case EventTypes.DemandCounterPending:
-			case EventTypes.DemandCounterPlaced:
-			case EventTypes.DemandRetargeted: {
-				const { plan_id } = msg.payload as { plan_id: number };
-				refreshPlan(plan_id);
-				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
-				break;
-			}
-			case EventTypes.DemandLeverageSet: {
-				// Adds dice to the target plan's open roll without going through
-				// RollLeverageAdded; refresh dice if it's the active roll.
-				const { plan_id, roll_id } = msg.payload as { plan_id: number; roll_id: number };
-				if (activeRoll && activeRoll.id === roll_id) {
-					getRoll(roll_id).then(data => { activeRollDice = data.dice; }).catch(() => {});
-				}
-				refreshPlan(plan_id);
-				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
-				break;
-			}
-			case EventTypes.WarPlayerJoined:
-			case EventTypes.WarBattleCostDue:
-			case EventTypes.WarBattleCostPaid:
-			case EventTypes.WarPlayerSurrendered:
-			case EventTypes.WarAssetSeized:
-			case EventTypes.WarEntryCompleted:
-			case EventTypes.WarPeaceProposed:
-			case EventTypes.WarPeaceVote:
-			case EventTypes.WarEnded: {
-				// War events expose war_id only; refresh all plans so any
-				// war-bearing plans pick up updated participants / costs / peace state.
-				refreshAllPlans();
-				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
-				break;
-			}
-			case EventTypes.LawEnacted: {
-				const { law } = msg.payload as { law: Law };
-				if (law) {
-					const idx = laws.findIndex(l => l.id === law.id);
-					laws = idx >= 0 ? laws.map(l => l.id === law.id ? law : l) : [...laws, law];
-				}
-				break;
-			}
-			case EventTypes.LawUpdated: {
-				const { law } = msg.payload as { law: Law };
-				if (law) laws = laws.map(l => l.id === law.id ? law : l);
-				break;
-			}
-			case EventTypes.RumorCreated: {
-				const { rumor } = msg.payload as { rumor: Rumor };
-				if (rumor) {
-					const idx = rumors.findIndex(r => r.id === rumor.id);
-					rumors = idx >= 0 ? rumors.map(r => r.id === rumor.id ? rumor : r) : [...rumors, rumor];
-				}
-				break;
-			}
-			case EventTypes.RumorUpdated: {
-				const { rumor } = msg.payload as { rumor: Rumor };
-				if (rumor) rumors = rumors.map(r => r.id === rumor.id ? rumor : r);
-				break;
-			}
-			case EventTypes.SecretCreated:
-			case EventTypes.SecretVisibilityGrant: {
-				// SecretCreated payload omits text. SecretVisibilityGrant grows
-				// the viewer's set when relevant. Either way, refetch.
-				getVisibleSecrets(gameID).then(d => { secrets = d.secrets; }).catch(() => {});
-				break;
-			}
-			case EventTypes.RevealSubmitted:
-			case EventTypes.RevealComplete: {
-				// Reveal widgets subscribe to these directly; no plan ID in payload.
-				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
-				break;
-			}
-			case EventTypes.EndgameModeSet: {
-				const mode = (msg.payload as { mode: string }).mode;
-				if (game) game = { ...game, ending_mode: mode };
-				break;
-			}
-			case EventTypes.ShakeUpStepChanged:
-			case EventTypes.ShakeUpRolled:
-			case EventTypes.ShakeUpSpendOpened:
-			case EventTypes.ShakeUpAdjusted:
-			case EventTypes.ShakeUpSpendCommitted:
-			case EventTypes.ShakeUpEnded: {
-				if (msg.type === EventTypes.ShakeUpStepChanged && game) {
-					const p = msg.payload as { category: string; step: number };
-					game = { ...game, shake_up_category: p.category, shake_up_step: p.step };
-				}
-				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
-				break;
-			}
-			case EventTypes.PrologueChoiceClaimed:
-			case EventTypes.PrologueRankingStepChanged:
-			case EventTypes.PrologueHeartsDeclared:
-			case EventTypes.PrologueTrackRanked:
-			case EventTypes.PrologueSetAsidesPlaced:
-			case EventTypes.PrologueCommittedHeartsChanged:
-			case EventTypes.PrologueDoneChanged:
-			case EventTypes.PrologueExtraPeerCreated: {
-				// Step changes update the game's ranking_step locally so the
-				// view re-renders the right sub-flow without a full reload.
-				if (msg.type === EventTypes.PrologueRankingStepChanged && game) {
-					const step = (msg.payload as { step: string }).step;
-					game = { ...game, prologue_ranking_step: step ? (step as Game['prologue_ranking_step']) : null };
-				}
-				window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
-				break;
-			}
-		}
-	}
-
-	function refreshPlan(planID: number) {
-		getPlan(planID).then(detail => {
-			const next = detail.plan;
-			const idx = plans.findIndex(p => p.id === planID);
-			plans = idx >= 0
-				? plans.map(p => p.id === planID ? next : p)
-				: [...plans, next];
-		}).catch(() => {});
-	}
-
-	function refreshAllPlans() {
-		listPlans(gameID).then(data => { plans = data.plans; }).catch(() => {});
+		runWSMessage(wsCtx, msg);
 	}
 
 	// ── Data loading ──────────────────────────────────────────────────────────
