@@ -55,9 +55,16 @@
 		 * requests for the same post so the effect re-runs.
 		 */
 		jumpRequest?: { postID: number; key: number } | null;
+		/**
+		 * Mobile expand/collapse state. Bindable so the page can close the chat
+		 * when another full-screen surface (Tones/Laws/Rumors/Retinue/War) opens
+		 * — only one such surface is shown at a time on mobile. Ignored on
+		 * desktop, where the panel is a permanent column.
+		 */
+		expanded?: boolean;
 	}
 
-	const {
+	let {
 		gameID,
 		posts,
 		players,
@@ -67,6 +74,7 @@
 		activeScenePeers = [],
 		assets = [],
 		jumpRequest = null,
+		expanded = $bindable(false),
 	}: Props = $props();
 
 	const playerName = (id: number | null) =>
@@ -154,7 +162,8 @@
 	let pickerOpen = $state(false);
 
 	// ── Expand/collapse (mobile only; desktop ignores this state) ─────────────
-	let expanded = $state(false);
+	// `expanded` is a bindable prop (see Props above) so the page can close
+	// the sheet when another surface opens.
 	function toggleExpanded() { expanded = !expanded; }
 
 	// ── Unread tracking ───────────────────────────────────────────────────────
@@ -192,7 +201,16 @@
 		const sync = () => { isDesktop = mq.matches; };
 		sync();
 		mq.addEventListener('change', sync);
-		return () => mq.removeEventListener('change', sync);
+		// ESC closes the expanded mobile sheet (matches the other overlays;
+		// no-op on desktop where the panel is a permanent column).
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape' && expanded && !isDesktop) expanded = false;
+		};
+		window.addEventListener('keydown', onKey);
+		return () => {
+			mq.removeEventListener('change', sync);
+			window.removeEventListener('keydown', onKey);
+		};
 	});
 	$effect(() => {
 		if (isDesktop && posts.length > 0) {
@@ -347,7 +365,23 @@
 	{/if}
 </button>
 
-<aside class="panel" class:expanded aria-label="Chat">
+<!--
+	Dimming scrim behind the expanded mobile sheet. Covers the body region
+	(it's absolutely positioned inside the table-body, so the header above it
+	stays bright and interactive). Tapping it closes the chat. Hidden on
+	desktop, where the panel is a permanent column.
+-->
+{#if expanded}
+	<button type="button" class="scrim" onclick={toggleExpanded} aria-label="Close chat"></button>
+{/if}
+
+<aside
+	class="panel"
+	class:expanded
+	aria-label="Chat"
+	role={expanded ? 'dialog' : undefined}
+	aria-modal={expanded ? 'true' : undefined}
+>
 	<header class="panel-header">
 		<h2>Chat</h2>
 		<label class="severity-filter" title="Hide low-severity system events">
@@ -558,19 +592,47 @@
 		color: #d8d4c9;
 	}
 
-	/* Mobile-only: when expanded, become a full-screen sheet over the page.
-	   Scoped to <1024px so a stray `expanded` on desktop can't burst out of
-	   the chat column. */
+	/* Dimming scrim — only shown on mobile while expanded (rendered
+	   conditionally, so it only exists in the DOM then). Absolutely positioned
+	   inside .table-body, so it dims the body but leaves the header bright. */
+	.scrim {
+		position: absolute;
+		inset: 0;
+		z-index: 109;
+		border: none;
+		padding: 0;
+		background: rgba(0, 0, 0, 0.55);
+		cursor: pointer;
+		animation: chat-scrim-fade 150ms ease-out;
+	}
+	@keyframes chat-scrim-fade {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+
+	/* Mobile-only: when expanded, rise as a bottom sheet over the page. A
+	   small top gap leaves the dimmed body peeking above, and rounded top
+	   corners + shadow read clearly as a floating layer rather than a page
+	   swap. Scoped to <1024px so a stray `expanded` on desktop can't burst
+	   out of the chat column. */
 	@media (max-width: 1023px) {
 		.panel.expanded {
 			display: flex;
 			position: absolute;
-			inset: 0;
-			/* Above the Public Record overlay (z-index 100 in PublicRecord.svelte)
-			   so a jump from the rail opens chat *over* the still-expanded PR.
-			   Closing chat with the ✕ returns the user to the PR underneath. */
+			left: 0;
+			right: 0;
+			bottom: 0;
+			/* Gap at the top so the scrim-dimmed body shows above the sheet. */
+			top: 0.75rem;
+			/* Above the scrim (109) and the Public Record overlay (z-index 100
+			   in PublicRecord.svelte) so a jump from the rail opens chat *over*
+			   the still-expanded PR. Closing chat returns to the PR underneath. */
 			z-index: 110;
 			border-top: 1px solid var(--color-surface-2);
+			border-radius: 14px 14px 0 0;
+			box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+			/* Clip the panel header to the rounded top corners. */
+			overflow: hidden;
 		}
 	}
 
@@ -628,6 +690,7 @@
 	@media (min-width: 1024px) {
 		.strip { display: none; }
 		.collapse { display: none; }
+		.scrim { display: none; }
 		.panel {
 			display: flex;
 			position: static;
