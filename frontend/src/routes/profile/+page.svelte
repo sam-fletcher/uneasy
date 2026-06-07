@@ -6,6 +6,7 @@
 		createTable, joinTable,
 		type Account, type MyTable,
 	} from '$lib/api';
+	import { feedbackHref } from '$lib/feedback';
 
 	let me = $state<Account | null>(null);
 	let tables = $state<MyTable[]>([]);
@@ -169,7 +170,10 @@
 			</div>
 		</section>
 
-		<button class="secondary logout" onclick={doLogout}>Log out</button>
+		<div class="footer-actions">
+			<a class="secondary feedback-btn" href={feedbackHref}>Send feedback</a>
+			<button class="secondary" onclick={doLogout}>Log out</button>
+		</div>
 	</div>
 {/if}
 
@@ -200,7 +204,10 @@
 	/* Secondary "create a table" action, set apart below the primary join row. */
 	.create-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--color-border-subtle); }
 	.create-row .hint { margin:0; }
-	.logout { align-self:center; margin-top:0.5rem; }
+	.footer-actions { display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap; margin-top:0.5rem; }
+	/* Match padding across the button and the <a>-as-button so they sit flush. */
+	.footer-actions > * { min-height:44px; padding:0 1rem; border-radius:6px; }
+	.feedback-btn { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
 	.primary { background:var(--color-accent); color:var(--color-bg); font-weight:600; }
 	.primary:hover:not(:disabled) { background:var(--color-accent-hover); }
 	.secondary { background:var(--color-border); color:var(--color-text); }

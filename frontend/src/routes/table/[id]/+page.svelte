@@ -38,6 +38,7 @@
 	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import RetinueView from '$lib/components/RetinueView.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
+	import HelpContent from '$lib/components/HelpContent.svelte';
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
@@ -135,7 +136,18 @@
 	let tonesOpen = $state(false);
 	let lawsOpen = $state(false);
 	let rumorsOpen = $state(false);
+	let helpOpen = $state(false);
 	let prologueActivePlayerID = $state<number | null>(null);
+
+	// ── Mobile chat sheet ─────────────────────────────────────────────────────
+	// Bound to ChatPanel's `expanded`. Kept here so the page can enforce one
+	// full-screen surface at a time on mobile: opening any header panel closes
+	// the chat (so the panel doesn't render behind the higher-z chat sheet),
+	// and tapping the header bar dismisses the chat.
+	let chatExpanded = $state(false);
+	function closeChatSheet() {
+		if (chatExpanded) chatExpanded = false;
+	}
 
 	const blockingPlayerID = $derived.by(() => {
 		if (!game) return null;
@@ -177,6 +189,38 @@
 
 	// Player name map passed to MainEventView for attribution.
 	const playerNameMap = $derived(new Map(players.map(p => [p.id, p.display_name])));
+
+	// Per-player rank triple (Power/Knowledge/Esteem), shown on the header chips
+	// so relative standing is visible at all times. rank 1 = top, 5 = bottom;
+	// null while rankings haven't been set yet (lobby/early prologue).
+	const ranksByPlayer = $derived.by(() => {
+		const map = new Map<number, { power: number | null; knowledge: number | null; esteem: number | null }>();
+		for (const r of rankings) {
+			if (r.player_id == null) continue;
+			let entry = map.get(r.player_id);
+			if (!entry) {
+				entry = { power: null, knowledge: null, esteem: null };
+				map.set(r.player_id, entry);
+			}
+			entry[r.category] = r.rank;
+		}
+		return map;
+	});
+
+	// The best (lowest-numbered) rank a *player* actually holds on each track.
+	// Dummy tokens (player_id null, already excluded above) can occupy the top
+	// slot, so this isn't always rank 1 — whoever holds it is highlighted gold.
+	const topRankByCategory = $derived.by(() => {
+		const best: { power: number | null; knowledge: number | null; esteem: number | null } =
+			{ power: null, knowledge: null, esteem: null };
+		for (const entry of ranksByPlayer.values()) {
+			for (const cat of ['power', 'knowledge', 'esteem'] as const) {
+				const v = entry[cat];
+				if (v != null && (best[cat] == null || v < best[cat]!)) best[cat] = v;
+			}
+		}
+		return best;
+	});
 
 	// ── Public Record → Chat jump bridge ──────────────────────────────────────
 	// Tapping a row/plan/scene in the expanded sidebar finds the anchoring
@@ -457,7 +501,15 @@
 
 <div class="table-page">
 	<!-- Header ──────────────────────────────────────────────────────────────── -->
-	<header>
+	<!--
+		Tapping the header bar closes the mobile chat sheet. Clicks on the
+		header's own buttons (Tones/Laws/Rumors/War, member chips) bubble here
+		too, so opening any of those panels also closes the chat — keeping a
+		single full-screen surface on mobile and avoiding the panel rendering
+		behind the chat sheet.
+	-->
+	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+	<header onclick={closeChatSheet}>
 		<div class="top-strip">
 			<a class="home" href="/profile" aria-label="Home">
 				<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -467,12 +519,31 @@
 			</a>
 			<div class="members">
 				{#each members as member}
-					<button type="button" class="member" class:online={member.online} class:active={member.id === blockingPlayerID} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${member.id === blockingPlayerID ? ' (their turn)' : ''}`} style:--member-color={playerColorByID(member.id, players)}>
-						<span class="dot"></span>
-						<span class="member-name">{member.display_name}</span>
+					{@const mr = ranksByPlayer.get(member.id)}
+					<button type="button" class="member" class:active={member.id === blockingPlayerID} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${member.id === blockingPlayerID ? ' (their turn)' : ''}`} style:--member-color={playerColorByID(member.id, players)}>
+						<span class="member-body">
+							<span class="member-name-row">
+								<span class="dot"></span>
+								<span class="member-name">{member.display_name}</span>
+							</span>
+							{#if mr && (mr.power != null || mr.knowledge != null || mr.esteem != null)}
+								<span class="member-ranks" aria-label={`Ranks — Power ${mr.power ?? '—'}, Knowledge ${mr.knowledge ?? '—'}, Esteem ${mr.esteem ?? '—'}`}>
+									<span class="mr" class:top={mr.power != null && mr.power === topRankByCategory.power}><span class="mr-cat">P</span>{mr.power ?? '—'}</span>
+									<span class="mr" class:top={mr.knowledge != null && mr.knowledge === topRankByCategory.knowledge}><span class="mr-cat">K</span>{mr.knowledge ?? '—'}</span>
+									<span class="mr" class:top={mr.esteem != null && mr.esteem === topRankByCategory.esteem}><span class="mr-cat">E</span>{mr.esteem ?? '—'}</span>
+								</span>
+							{/if}
+						</span>
 					</button>
 				{/each}
 			</div>
+			<button type="button" class="help-button" onclick={() => helpOpen = true} aria-label="How to play & feedback">
+				<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<circle cx="12" cy="12" r="10" />
+					<path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3" />
+					<line x1="12" y1="17" x2="12" y2="17" />
+				</svg>
+			</button>
 		</div>
 		{#if game}
 			<div class="game-info">
@@ -566,6 +637,15 @@
 			{:else if isFacilitator}
 				<p class="muted">Need at least 2 players to start.</p>
 			{/if}
+
+			<section class="lobby-help">
+				<h2>New to the game? Start here.</h2>
+				<p class="muted">
+					A two-minute primer while you wait for everyone to arrive. You can reopen this
+					any time from the <strong>?</strong> in the top-right corner.
+				</p>
+				<HelpContent />
+			</section>
 		</div>
 
 	<!-- ── Prologue ───────────────────────────────────────────────────────── -->
@@ -658,6 +738,7 @@
 				{activeScenePeers}
 				{assets}
 				jumpRequest={chatJumpRequest}
+				bind:expanded={chatExpanded}
 			/>
 		{/if}
 	</div>
@@ -743,6 +824,13 @@
 				playerNames={playerNameMap}
 				{currentPlayerID}
 			/>
+		</div>
+	</RetinueSheet>
+
+	<RetinueSheet open={helpOpen} onClose={() => helpOpen = false}>
+		<div class="help-sheet">
+			<h3>How to play</h3>
+			<HelpContent />
 		</div>
 	</RetinueSheet>
 
@@ -880,6 +968,13 @@
 		.table-body.has-record {
 			grid-template-columns: 360px 440px 1fr;
 		}
+		/* Phases without the record rail (prologue, lobby, ended) reserve the
+		   same 800px (360 record + 440 phase) on the left and give chat the
+		   remaining 1fr, so the chat column is the same width in every phase
+		   instead of being pinned to 360px while the main event's grows. */
+		.table-body:not(.has-record) {
+			grid-template-columns: 800px 1fr;
+		}
 	}
 
 	header {
@@ -922,7 +1017,8 @@
 	}
 
 	.tones-button {
-		font-size: 0.8rem;
+		font-size: 0.85rem;
+		font-weight: 400;
 		background: var(--color-surface-2);
 		color: var(--color-text);
 		padding: 0.3rem 0.7rem;
@@ -962,6 +1058,7 @@
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
 	.tones-sheet .small { font-size: 0.85rem; }
 	.laws-rumors-sheet h3 { margin: 0 0 0.5rem; }
+	.help-sheet h3 { margin: 0 0 0.75rem; }
 
 	.copy-hint {
 		font-size: 0.7rem;
@@ -991,6 +1088,25 @@
 	.home:hover { color: var(--color-accent-hover); background: var(--color-surface-2); }
 	.home:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
+	/* Help "?" sits at the far right of the top strip, opposite the home icon.
+	   .members is flex:1, so this naturally pins to the right edge. */
+	.help-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		flex-shrink: 0;
+		color: var(--color-accent);
+		background: none;
+		border: none;
+		border-radius: 6px;
+		cursor: pointer;
+	}
+	.help-button:hover { color: var(--color-accent-hover); background: var(--color-surface-2); }
+	.help-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+	.help-button svg { width: 24px; height: 24px; flex-shrink: 0; }
+
 	.members {
 		display: flex;
 		gap: 0.4rem;
@@ -1008,17 +1124,60 @@
 		gap: 0.4rem;
 		flex-shrink: 0;
 		min-height: 44px;
-		padding: 0.4rem 0.7rem;
+		padding: 0.3rem 0.7rem;
 		font-size: 0.85rem;
-		color: var(--color-text-muted);
+		color: var(--color-text);
 		background: #262626;
 		border: 1px solid var(--color-border);
 		border-radius: 999px;
 		cursor: pointer;
 	}
+
+	/* Name over a compact P/K/E rank line. The body is a column so the dot
+	   stays vertically centred against both lines. */
+	.member-body {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.12rem;
+		min-width: 0;
+	}
+	.member-name-row {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+
+	.member-ranks {
+		display: flex;
+		gap: 0.4rem;
+		font-size: 0.62rem;
+		line-height: 1;
+		color: var(--color-text-muted);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.02em;
+	}
+	.mr {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.08rem;
+	}
+	.mr-cat {
+		color: var(--color-text-faint);
+		font-size: 0.9em;
+		font-weight: 600;
+	}
+	/* The best rank held by any player on this track reads gold. */
+	.mr.top {
+		color: var(--color-accent);
+		font-weight: 700;
+	}
+	.mr.top .mr-cat {
+		color: var(--color-accent);
+	}
 	.member:hover { background: var(--color-border-subtle); }
 	.member:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-	.member.online { color: var(--color-text); }
 	.member.active {
 		border-color: var(--color-accent);
 		box-shadow: 0 0 0 1px var(--color-accent), 0 0 8px rgba(200, 169, 110, 0.45);
@@ -1033,11 +1192,9 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: #555;
+		background: var(--member-color, var(--color-text-muted));
 		flex-shrink: 0;
 	}
-
-	.member.online .dot { background: var(--member-color, var(--color-success)); }
 
 	.error {
 		color: var(--color-danger);
@@ -1119,6 +1276,18 @@
 		text-transform: uppercase;
 	}
 
+	.lobby-help {
+		margin-top: 0.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
+	}
+	.lobby-help h2 {
+		color: var(--color-accent);
+		font-size: 1.15rem;
+		margin: 0 0 0.35rem;
+	}
+	.lobby-help .muted { margin-bottom: 0.9rem; }
+
 	/* ── Tone Setting ─────────────────────────────────────────────────────── */
 
 	.tone-legend {
@@ -1163,8 +1332,8 @@
 	}
 
 	.tone-tile {
-		aspect-ratio: 3 / 2;
-		padding: 0.5rem;
+		min-height: 44px;
+		padding: 0.35rem 0.4rem;
 		border-radius: 6px;
 		border: 1px solid rgba(255,255,255,0.08);
 		background: #555;
