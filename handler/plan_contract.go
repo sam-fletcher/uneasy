@@ -22,6 +22,26 @@ import (
 	"uneasy/model"
 )
 
+// PlanMetadata holds static plan properties, returned by PlanHandler.Metadata.
+type PlanMetadata struct {
+	Category model.RankingCategory
+	Delay    int16 // Fixed delay (≥1), or -1 for variable
+}
+
+// ChoiceLimiter is an optional PlanHandler capability that bounds how many
+// make/mar options the focus player may submit, enforcing the rules' dice
+// math (e.g. "choose options equal to your result", "up to (difficulty −
+// result)"). The make-choice flow checks for it via a type assertion.
+//
+// result is the outcome ("make"/"mar"); rollResult is the dice result (the
+// count of distinct faces); difficulty is the effective difficulty. Return a
+// negative number for "no fixed limit" (per-peer plans, unscoped options).
+// The limit is only enforced when rollResult/result are internally consistent
+// (make ⇒ result ≥ difficulty), so a handler can assume that invariant.
+type ChoiceLimiter interface {
+	MaxChoices(result string, rollResult, difficulty int16) int
+}
+
 // PlanHandler is implemented by each plan type.
 type PlanHandler interface {
 	// Metadata returns the plan's category and base delay.

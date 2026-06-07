@@ -4,36 +4,12 @@
 // are independent of storage and HTTP transport.
 //
 // The storage-coupled plan orchestration contract (the PlanHandler interface,
-// PlanDeps, ValidationContext, and the handler registry) lives in the handler
-// package; keeping it there is what lets this package stay free of db/hub
-// imports.
+// PlanDeps, ValidationContext, the handler registry, plus the contract-only
+// PlanMetadata and ChoiceLimiter types) lives in the handler package; keeping
+// it there is what lets this package stay free of db/hub imports.
 package game
 
-import (
-	"encoding/json"
-
-	"uneasy/model"
-)
-
-// ChoiceLimiter is an optional PlanHandler capability that bounds how many
-// make/mar options the focus player may submit, enforcing the rules' dice
-// math (e.g. "choose options equal to your result", "up to (difficulty −
-// result)"). The make-choice flow checks for it via a type assertion.
-//
-// result is the outcome ("make"/"mar"); rollResult is the dice result (the
-// count of distinct faces); difficulty is the effective difficulty. Return a
-// negative number for "no fixed limit" (per-peer plans, unscoped options).
-// The limit is only enforced when rollResult/result are internally consistent
-// (make ⇒ result ≥ difficulty), so a handler can assume that invariant.
-type ChoiceLimiter interface {
-	MaxChoices(result string, rollResult, difficulty int16) int
-}
-
-// PlanMetadata holds static plan properties.
-type PlanMetadata struct {
-	Category model.RankingCategory
-	Delay    int16 // Fixed delay (≥1), or -1 for variable
-}
+import "encoding/json"
 
 // ResolutionData is the unmarshal target for the plans.resolution_data JSON
 // column. It's a discriminator-free umbrella: loading and saving don't need

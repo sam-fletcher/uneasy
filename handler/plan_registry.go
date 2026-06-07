@@ -12,8 +12,6 @@ import "uneasy/game"
 
 // Type aliases — handler-internal code can use these unqualified.
 type (
-	PlanMetadata                     = game.PlanMetadata
-	ChoiceLimiter                    = game.ChoiceLimiter
 	ResolutionData                   = game.ResolutionData
 	DraftChoice                      = game.DraftChoice
 	Choice                           = game.Choice
