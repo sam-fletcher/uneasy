@@ -1,4 +1,10 @@
-package game
+package handler
+
+// handler/eligibility.go — DB-backed plan-eligibility and ranking lookups.
+//
+// These are I/O helpers (they query Postgres), so per the functional-core /
+// imperative-shell split they live in the handler package, not game/. They
+// were relocated here from game/ to keep that package free of dbgen.
 
 import (
 	"context"
@@ -7,11 +13,30 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
-// CheckPlanEligible reports whether playerID may prepare planType.
-func CheckPlanEligible(
+// playerRankInCategory returns the player's rank (1–5) in the given category.
+func playerRankInCategory(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+	category model.RankingCategory,
+) (int16, error) {
+	r, err := q.GetRanking(ctx, dbgen.GetRankingParams{
+		GameID:   gameID,
+		PlayerID: &playerID,
+		Category: category,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return r.Rank, nil
+}
+
+// checkPlanEligible reports whether playerID may prepare planType.
+func checkPlanEligible(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID, playerID int64,
@@ -30,7 +55,7 @@ func CheckPlanEligible(
 		return false, "", err
 	}
 
-	myRank, err := PlayerRankInCategory(ctx, q, gameID, playerID, category)
+	myRank, err := playerRankInCategory(ctx, q, gameID, playerID, category)
 	if err != nil {
 		return false, "could not determine your ranking", err
 	}
@@ -43,7 +68,7 @@ func CheckPlanEligible(
 		return false, "", err
 	}
 	for _, tok := range tokens {
-		theirRank, err := PlayerRankInCategory(ctx, q, gameID, tok.PlayerID, category)
+		theirRank, err := playerRankInCategory(ctx, q, gameID, tok.PlayerID, category)
 		if err != nil {
 			continue
 		}
@@ -54,8 +79,8 @@ func CheckPlanEligible(
 	return true, "", nil
 }
 
-// PlayerHasPeers reports whether a player has at least one non-destroyed peer.
-func PlayerHasPeers(ctx context.Context, q *dbgen.Queries, gameID, playerID int64) (bool, error) {
+// playerHasPeers reports whether a player has at least one non-destroyed peer.
+func playerHasPeers(ctx context.Context, q *dbgen.Queries, gameID, playerID int64) (bool, error) {
 	count, err := q.CountPeerAssets(ctx, dbgen.CountPeerAssetsParams{
 		GameID:  gameID,
 		OwnerID: playerID,
@@ -63,7 +88,7 @@ func PlayerHasPeers(ctx context.Context, q *dbgen.Queries, gameID, playerID int6
 	return count > 0, err
 }
 
-// HasEsteemLockout reports whether a player has an active esteem lockout from
+// hasEsteemLockout reports whether a player has an active esteem lockout from
 // a Spread Propaganda mar option (b) "censured". The lockout is active when
 // the player's most recently prepared plan in chronological order is an esteem
 // plan whose ResData.EsteemLockout is true. It clears the moment any non-esteem
@@ -72,7 +97,7 @@ func PlayerHasPeers(ctx context.Context, q *dbgen.Queries, gameID, playerID int6
 // Algorithm: iterate recent plans newest-first. The first non-esteem plan
 // proves the lockout has cleared. The first SP plan with EsteemLockout = true
 // (with no non-esteem plan seen yet) proves it's still active.
-func HasEsteemLockout(
+func hasEsteemLockout(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID, playerID int64,
@@ -91,7 +116,7 @@ func HasEsteemLockout(
 			return false, nil
 		}
 		if p.PlanType == model.PlanSpreadPropaganda {
-			rd := LoadResolutionData(p.ResolutionData)
+			rd := game.LoadResolutionData(p.ResolutionData)
 			if rd.SpreadPropaganda != nil && rd.SpreadPropaganda.EsteemLockout {
 				return true, nil
 			}

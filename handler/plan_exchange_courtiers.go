@@ -142,7 +142,7 @@ func applyExchangeCourtiersMake(
 		// Incoming side may be redirected by a resolved Make Demands
 		// (keep_assets). Preparer's outgoing asset (handled via messy/
 		// fair trade paths) is not redirected.
-		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+		recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
 		if err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ func applyExchangeCourtiersMar(
 			if plan.TargetAssetID == nil || plan.TargetPlayerID == nil {
 				continue
 			}
-			recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+			recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
 			if err != nil {
 				return err
 			}
@@ -345,7 +345,7 @@ func acceptFairTrade(
 	}
 
 	// Transfer targeted asset to preparer (or demand keep_assets winner).
-	recipient, err := gamepkg.AssetRecipientForPlan(ctx, q, plan)
+	recipient, err := AssetRecipientForPlan(ctx, q, plan)
 	if err != nil {
 		respondInternalErr(w, r, "could not resolve asset recipient", err)
 		return

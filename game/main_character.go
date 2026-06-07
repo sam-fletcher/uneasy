@@ -3,9 +3,22 @@ package game
 import (
 	"net/http"
 
-	dbgen "uneasy/db/gen"
 	"uneasy/model"
 )
+
+// AssetView is the decoupled domain snapshot of an asset that
+// DecideMainCharacterChange needs — just enough to make the decision without
+// importing the storage row type. The handler maps dbgen.Asset → AssetView.
+type AssetView struct {
+	AssetType model.AssetType
+}
+
+// MarginaliumView is the decoupled domain snapshot of a marginalium row that
+// DecideMainCharacterChange needs. The handler maps dbgen.Marginalium → this.
+type MarginaliumView struct {
+	Position int16
+	IsTorn   bool
+}
 
 // MCDecision describes what writes the handler should perform when promoting
 // a peer to main character. Always set the new MC flag; conditionally tear
@@ -35,9 +48,9 @@ func (e *MCDecisionError) Error() string { return e.Message }
 //
 // Pure: no DB I/O, no broadcasts. The handler applies the returned decision.
 func DecideMainCharacterChange(
-	target *dbgen.Asset,
-	oldMC *dbgen.Asset,
-	oldMCMarginalia []dbgen.Marginalium,
+	target *AssetView,
+	oldMC *AssetView,
+	oldMCMarginalia []MarginaliumView,
 	tearPosition *int16,
 ) (MCDecision, *MCDecisionError) {
 	if target == nil {
@@ -80,7 +93,7 @@ func DecideMainCharacterChange(
 			Message: "invalid tear_position: must be 1–4",
 		}
 	}
-	var targetMarg *dbgen.Marginalium
+	var targetMarg *MarginaliumView
 	for i := range oldMCMarginalia {
 		if oldMCMarginalia[i].Position == pos {
 			targetMarg = &oldMCMarginalia[i]

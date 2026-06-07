@@ -38,11 +38,3 @@ type (
 // (loadResolutionData stays in game/; saveResolutionData lives in
 // plan_contract.go because it performs the DB write.)
 var loadResolutionData = game.LoadResolutionData
-
-// Pure game-rule helpers — aliased so handler code can call them unqualified.
-var (
-	playerRankInCategory = game.PlayerRankInCategory
-	playerHasPeers       = game.PlayerHasPeers
-	checkPlanEligible    = game.CheckPlanEligible
-	hasEsteemLockout     = game.HasEsteemLockout
-)

@@ -585,7 +585,7 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 	}
 	ownerID := fc.actingPlayerID
 	if fc.actingPlayerID == fc.plan.PreparerID {
-		recipient, err := gamepkg.AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
+		recipient, err := AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
 		if err != nil {
 			return fmt.Errorf("resolve asset recipient: %w", err)
 		}
@@ -636,7 +636,7 @@ func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContex
 	oldOwner := asset.OwnerID
 	newOwner := fc.actingPlayerID
 	if fc.actingPlayerID == fc.plan.PreparerID {
-		recipient, rerr := gamepkg.AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
+		recipient, rerr := AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
 		if rerr != nil {
 			return fmt.Errorf("resolve asset recipient: %w", rerr)
 		}

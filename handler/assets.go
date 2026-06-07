@@ -123,7 +123,7 @@ func ListAssets(s *db.Store) http.HandlerFunc {
 // Creates an asset and optional initial marginalia in one call. Always
 // owned by the caller. Plan-gained assets (e.g. Make Introductions peers)
 // go through their plan handler's own peer-creation route, which routes
-// ownership through game.AssetRecipientForPlan so demand keep_assets
+// ownership through AssetRecipientForPlan so demand keep_assets
 // winners are honored.
 // Body: { asset_type, name, is_main_character?, marginalia?: ["text",...] }
 func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
@@ -406,7 +406,21 @@ func applyMainCharacterChange(
 		}
 	}
 
-	decision, derr := game.DecideMainCharacterChange(asset, oldMC, oldMargs, tearPosition)
+	// Map storage rows → decoupled domain views for the pure decision.
+	var targetView *game.AssetView
+	if asset != nil {
+		targetView = &game.AssetView{AssetType: asset.AssetType}
+	}
+	var oldMCView *game.AssetView
+	if oldMC != nil {
+		oldMCView = &game.AssetView{AssetType: oldMC.AssetType}
+	}
+	margViews := make([]game.MarginaliumView, len(oldMargs))
+	for i := range oldMargs {
+		margViews[i] = game.MarginaliumView{Position: oldMargs[i].Position, IsTorn: oldMargs[i].IsTorn}
+	}
+
+	decision, derr := game.DecideMainCharacterChange(targetView, oldMCView, margViews, tearPosition)
 	if derr != nil {
 		respondErr(w, derr.Code, derr.Message)
 		return false

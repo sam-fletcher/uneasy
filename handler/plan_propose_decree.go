@@ -318,7 +318,7 @@ func pdCreateLawAsset(
 	if pd.SignatoryID != nil {
 		ownerID = *pd.SignatoryID
 	} else {
-		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+		recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
 		if err != nil {
 			return fmt.Errorf("resolve asset recipient: %w", err)
 		}

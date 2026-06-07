@@ -48,8 +48,10 @@ import (
 	"uneasy/model"
 )
 
-// OnPreparer, loadResolutionData, saveResolutionData, and all domain types
-// are now defined in the game package and re-exported via plan_registry.go.
+// The plan orchestration contract (PlanHandler, OnPreparer, PlanDeps,
+// ValidationContext, the registry, saveResolutionData) lives in
+// plan_contract.go; pure domain data types live in the game package and are
+// re-exported via plan_registry.go.
 
 // ── Access helpers ────────────────────────────────────────────────────────────
 
@@ -145,7 +147,7 @@ func makeChoiceAllowedNonPreparer(
 	plan *dbgen.Plan,
 	player *dbgen.Player,
 ) bool {
-	if _, winners, err := gamepkg.DemandWinnersForTargetPlan(ctx, q, plan); err == nil {
+	if _, winners, err := DemandWinnersForTargetPlan(ctx, q, plan); err == nil {
 		if winnerID, ok := winners[gamepkg.DemandOptionPerformSteps]; ok &&
 			winnerID == player.ID && winnerID != 0 && winnerID != plan.PreparerID {
 			return true
@@ -249,9 +251,9 @@ func broadcastEvent(manager *hub.Manager, gameID int64, eventType string, payloa
 	}
 }
 
-// Pure game-rule helpers (playerRankInCategory, playerHasPeers,
-// checkPlanEligible, hasEsteemLockout) are defined in the game package and
-// re-exported as handler-package aliases in plan_registry.go.
+// The DB-backed eligibility/ranking helpers (playerRankInCategory,
+// playerHasPeers, checkPlanEligible, hasEsteemLockout) live in
+// handler/eligibility.go — they query Postgres, so they belong in the shell.
 
 // ── createPlanRoll ────────────────────────────────────────────────────────────
 

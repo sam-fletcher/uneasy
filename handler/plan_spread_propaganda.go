@@ -134,7 +134,7 @@ func applySpreadPropagandaMake(
 		return nil
 	}
 
-	recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+	recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
 	if err != nil {
 		return fmt.Errorf("could not resolve asset recipient: %w", err)
 	}
@@ -363,8 +363,7 @@ func pickBestEsteemRanked(
 	return bestPlayerID, nil
 }
 
-// hasEsteemLockout is defined in the game package and aliased in
-// plan_registry.go as `hasEsteemLockout`.
+// hasEsteemLockout lives in handler/eligibility.go (it queries Postgres).
 
 // ── Give Peer (mar option a) ──────────────────────────────────────────────────
 

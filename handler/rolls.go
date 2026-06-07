@@ -750,7 +750,7 @@ func leverageBlockedByDemandWinner(
 	if player.ID != plan.PreparerID || asset.OwnerID != plan.PreparerID {
 		return false
 	}
-	_, winners, err := gamepkg.DemandWinnersForTargetPlan(ctx, q, &plan)
+	_, winners, err := DemandWinnersForTargetPlan(ctx, q, &plan)
 	if err != nil {
 		return false
 	}

@@ -752,7 +752,7 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		_, winners, err := gamepkg.DemandWinnersForTargetPlan(ctx, deps.Q, plan)
+		_, winners, err := DemandWinnersForTargetPlan(ctx, deps.Q, plan)
 		if err != nil {
 			respondInternalErr(w, r, "could not load demand winners", err)
 			return
@@ -874,7 +874,7 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		_, winners, err := gamepkg.DemandWinnersForTargetPlan(ctx, deps.Q, plan)
+		_, winners, err := DemandWinnersForTargetPlan(ctx, deps.Q, plan)
 		if err != nil {
 			respondInternalErr(w, r, "could not load demand winners", err)
 			return

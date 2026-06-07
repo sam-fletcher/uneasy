@@ -10,7 +10,7 @@ package handler
 //
 // Pre-roll flow: the focus player names each peer one at a time via
 // POST /api/plans/:planId/create-peer, which routes ownership through
-// game.AssetRecipientForPlan (so a resolved Make Demands keep_assets
+// AssetRecipientForPlan (so a resolved Make Demands keep_assets
 // winner claims them) and records each new asset ID in
 // resolution_data.make_introductions.created_peer_ids. Once peer_count
 // peers exist, POST /api/plans/:planId/finalize-peers creates the dice
@@ -200,7 +200,7 @@ func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		recipient, err := gamepkg.AssetRecipientForPlan(ctx, deps.Q, plan)
+		recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
 		if err != nil {
 			respondInternalErr(w, r, "could not resolve asset recipient", err)
 			return

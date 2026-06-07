@@ -1,192 +1,24 @@
 //go:build integration
 
-package game
+package handler
+
+// handler/eligibility_integration_test.go — integration coverage for the
+// DB-backed eligibility/ranking helpers (checkPlanEligible, playerHasPeers,
+// hasEsteemLockout). Relocated from game/ alongside the functions themselves
+// when they moved into the imperative shell; assertions are unchanged.
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"sync"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/model"
 )
-
-// ─ Test Database Setup ─────────────────────────────────────────────────────
-
-const testDBURLEnv = "TEST_DATABASE_URL"
-
-var (
-	gameTestHarnessOnce sync.Once
-	gameTestHarnessPool *pgxpool.Pool
-	gameTestHarnessErr  error
-)
-
-// openGameTestDB returns a pool pointing at the test database, applying
-// migrations exactly once per `go test` invocation. Skips the calling
-// test if TEST_DATABASE_URL is unset or the DB is unreachable.
-func openGameTestDB(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	url := os.Getenv(testDBURLEnv)
-	if url == "" {
-		t.Skipf("set %s to run integration tests", testDBURLEnv)
-	}
-	gameTestHarnessOnce.Do(func() {
-		pool, err := pgxpool.New(context.Background(), url)
-		if err != nil {
-			gameTestHarnessErr = fmt.Errorf("connect: %w", err)
-			return
-		}
-		if err := pool.Ping(context.Background()); err != nil {
-			gameTestHarnessErr = fmt.Errorf("ping: %w", err)
-			return
-		}
-		if err := db.RunMigrations(url); err != nil {
-			gameTestHarnessErr = fmt.Errorf("migrate: %w", err)
-			return
-		}
-		gameTestHarnessPool = pool
-	})
-	if gameTestHarnessErr != nil {
-		t.Skipf("test DB unavailable: %v", gameTestHarnessErr)
-	}
-	truncateGameTestTables(t, gameTestHarnessPool)
-	return gameTestHarnessPool
-}
-
-// truncateGameTestTables wipes every user table in the public schema between tests.
-func truncateGameTestTables(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-	ctx := context.Background()
-	rows, err := pool.Query(ctx, `
-		SELECT table_name
-		FROM information_schema.tables
-		WHERE table_schema = 'public'
-		  AND table_type = 'BASE TABLE'
-		  AND table_name <> 'schema_migrations'
-	`)
-	require.NoError(t, err)
-	defer rows.Close()
-
-	var tables []string
-	for rows.Next() {
-		var name string
-		err := rows.Scan(&name)
-		require.NoError(t, err)
-		tables = append(tables, `"`+name+`"`)
-	}
-	if len(tables) == 0 {
-		return
-	}
-
-	stmt := "TRUNCATE " + joinCommaGame(tables) + " RESTART IDENTITY CASCADE"
-	_, err = pool.Exec(ctx, stmt)
-	require.NoError(t, err)
-}
-
-func joinCommaGame(ss []string) string {
-	out := ""
-	for i, s := range ss {
-		if i > 0 {
-			out += ", "
-		}
-		out += s
-	}
-	return out
-}
-
-// gameTestGame mirrors the structure used in handler tests
-type gameTestGame struct {
-	Game    dbgen.Game
-	Players []dbgen.Player
-}
-
-// newGameTestGame creates a test game with n players
-func newGameTestGame(t *testing.T, q *dbgen.Queries, n int) gameTestGame {
-	t.Helper()
-	require.GreaterOrEqual(t, n, 2)
-	require.LessOrEqual(t, n, 5)
-	ctx := context.Background()
-
-	game, err := q.CreateGame(ctx, "TEST"+gameRandSuffix())
-	require.NoError(t, err)
-
-	players := make([]dbgen.Player, n)
-	for i := 0; i < n; i++ {
-		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-			Username: fmt.Sprintf("p%d-%s", i+1, gameRandSuffix()),
-			CodeHash: "x",
-		})
-		require.NoError(t, err)
-
-		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
-			GameID:        game.ID,
-			DisplayName:   fmt.Sprintf("P%d", i+1),
-			AccountID:     acct.ID,
-			IsFacilitator: i == 0,
-		})
-		require.NoError(t, err)
-
-		seat := int16(i + 1)
-		require.NoError(t, q.SetPlayerSeatOrder(ctx, dbgen.SetPlayerSeatOrderParams{
-			ID: p.ID, SeatOrder: &seat,
-		}))
-		players[i] = p
-	}
-
-	require.NoError(t, q.SetFacilitator(ctx, dbgen.SetFacilitatorParams{
-		FacilitatorID: &players[0].ID, ID: game.ID,
-	}))
-
-	// Power rankings: player[i] gets rank i+1 (1 = highest).
-	// Also seed knowledge and esteem so anything that reads any track works.
-	for _, cat := range []model.RankingCategory{
-		model.CategoryPower, model.CategoryKnowledge, model.CategoryEsteem,
-	} {
-		for i := 0; i < n; i++ {
-			require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
-				GameID:   game.ID,
-				PlayerID: &players[i].ID,
-				Category: cat,
-				Rank:     int16(i + 1),
-			}))
-		}
-	}
-
-	require.NoError(t, q.CreatePublicRecordRows(ctx, game.ID))
-	require.NoError(t, q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
-		ID: game.ID, Phase: model.PhaseMainEvent,
-	}))
-	require.NoError(t, q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
-		ID: game.ID, CurrentRow: 1,
-	}))
-	require.NoError(t, q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
-		ID: game.ID, FocusPlayerID: &players[0].ID,
-	}))
-
-	refreshed, err := q.GetGameByID(ctx, game.ID)
-	require.NoError(t, err)
-
-	return gameTestGame{Game: refreshed, Players: players}
-}
-
-func gameRandSuffix() string {
-	s, err := db.NewCookieToken()
-	if err != nil {
-		return "xxxxx"
-	}
-	if len(s) > 8 {
-		return s[:8]
-	}
-	return s
-}
 
 // makePlanWithToken creates a Plan plus a matching plan_token in one go.
 // Together these represent "this player has prepared a plan of this
@@ -222,12 +54,12 @@ func makePlanWithToken(
 	require.NoError(t, err)
 }
 
-// ─ CheckPlanEligible Tests ─────────────────────────────────────────────────
+// ─ checkPlanEligible Tests ─────────────────────────────────────────────────
 
 func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 3)
+	tg := newTestGame(t, q, 3)
 	ctx := context.Background()
 
 	// Player 0 (rank 1 = highest) prepares Make Demands (Power category)
@@ -235,7 +67,7 @@ func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
 		model.PlanMakeDemands, model.CategoryPower)
 
 	// Player 0 tries to prepare another Make Demands plan → should be rejected
-	eligible, msg, err := CheckPlanEligible(ctx, q, tg.Game.ID, tg.Players[0].ID,
+	eligible, msg, err := checkPlanEligible(ctx, q, tg.Game.ID, tg.Players[0].ID,
 		model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
@@ -244,9 +76,9 @@ func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
 }
 
 func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 3)
+	tg := newTestGame(t, q, 3)
 	ctx := context.Background()
 
 	// Player 0 (rank 1 = highest) has token on Make Demands
@@ -255,7 +87,7 @@ func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {
 
 	// Player 1 (rank 2) tries to prepare Make Demands → should be rejected
 	// because a higher-ranked (lower rank number) player has the token
-	eligible, msg, err := CheckPlanEligible(ctx, q, tg.Game.ID, tg.Players[1].ID,
+	eligible, msg, err := checkPlanEligible(ctx, q, tg.Game.ID, tg.Players[1].ID,
 		model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
@@ -264,9 +96,9 @@ func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {
 }
 
 func TestCheckPlanEligible_LowerRankedPlayerHasToken(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 3)
+	tg := newTestGame(t, q, 3)
 	ctx := context.Background()
 
 	// Player 2 (rank 3 = lowest) has token on Make Demands
@@ -274,31 +106,31 @@ func TestCheckPlanEligible_LowerRankedPlayerHasToken(t *testing.T) {
 		model.PlanMakeDemands, model.CategoryPower)
 
 	// Player 0 (rank 1 = highest) should be eligible because rank 3 is lower
-	eligible, msg, err := CheckPlanEligible(ctx, q, tg.Game.ID, tg.Players[0].ID,
+	eligible, msg, err := checkPlanEligible(ctx, q, tg.Game.ID, tg.Players[0].ID,
 		model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
 	assert.True(t, eligible, "Player 0 should be eligible despite Player 2 having token; msg: %s", msg)
 }
 
-// ─ PlayerHasPeers Tests ────────────────────────────────────────────────────
+// ─ playerHasPeers Tests ────────────────────────────────────────────────────
 
 func TestPlayerHasPeers_NoPeers(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 has no peer assets initially
-	has, err := PlayerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := playerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.False(t, has)
 }
 
 func TestPlayerHasPeers_WithPeers(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 creates a peer asset
@@ -313,15 +145,15 @@ func TestPlayerHasPeers_WithPeers(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now player 0 should have peers
-	has, err := PlayerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := playerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.True(t, has)
 }
 
 func TestPlayerHasPeers_DestroyedPeersDoNotCount(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 creates a peer asset
@@ -340,15 +172,15 @@ func TestPlayerHasPeers_DestroyedPeersDoNotCount(t *testing.T) {
 	require.NoError(t, err)
 
 	// Destroyed peers should not count
-	has, err := PlayerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := playerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.False(t, has)
 }
 
 func TestPlayerHasPeers_MultiplePeers(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 creates multiple peers
@@ -364,29 +196,29 @@ func TestPlayerHasPeers_MultiplePeers(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	has, err := PlayerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := playerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.True(t, has)
 }
 
-// ─ HasEsteemLockout Tests ──────────────────────────────────────────────────
+// ─ hasEsteemLockout Tests ──────────────────────────────────────────────────
 
 func TestHasEsteemLockout_NoPrevPlans(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 has no plans prepared yet
-	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := hasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.False(t, has)
 }
 
 func TestHasEsteemLockout_NonEsteemPlan(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 prepares a Power plan (Make Demands)
@@ -402,15 +234,15 @@ func TestHasEsteemLockout_NonEsteemPlan(t *testing.T) {
 	require.NoError(t, err)
 
 	// No lockout should be active
-	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := hasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.False(t, has)
 }
 
 func TestHasEsteemLockout_EsteemPlanWithoutLockout(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 prepares a Spread Propaganda plan (Esteem category)
@@ -427,15 +259,15 @@ func TestHasEsteemLockout_EsteemPlanWithoutLockout(t *testing.T) {
 	require.NoError(t, err)
 
 	// No lockout
-	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := hasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.False(t, has)
 }
 
 func TestHasEsteemLockout_ActiveLockout(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 prepares Spread Propaganda
@@ -461,15 +293,15 @@ func TestHasEsteemLockout_ActiveLockout(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lockout should be active
-	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := hasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.True(t, has)
 }
 
 func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 prepares Spread Propaganda with EsteemLockout = true
@@ -494,7 +326,7 @@ func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lockout is active
-	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := hasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.True(t, has)
 
@@ -511,15 +343,15 @@ func TestHasEsteemLockout_ClearedByNonEsteemPlan(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now the lockout should be cleared
-	has, err = HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err = hasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.False(t, has)
 }
 
 func TestHasEsteemLockout_MultipleEsteemPlans(t *testing.T) {
-	pool := openGameTestDB(t)
+	pool := openTestDB(t)
 	q := dbgen.New(pool)
-	tg := newGameTestGame(t, q, 2)
+	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
 	// Player 0 prepares two Spread Propaganda plans with lockout
@@ -546,7 +378,7 @@ func TestHasEsteemLockout_MultipleEsteemPlans(t *testing.T) {
 	}
 
 	// Lockout should be active from the most recent plan
-	has, err := HasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	has, err := hasEsteemLockout(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.True(t, has)
 }

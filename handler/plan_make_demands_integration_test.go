@@ -120,7 +120,7 @@ func TestMakeDemands_HappyPath_AssetRecipientTransfers(t *testing.T) {
 
 	reloaded, err := q.GetPlanByID(ctx, target.ID)
 	require.NoError(t, err)
-	recipient, err := game.AssetRecipientForPlan(ctx, q, &reloaded)
+	recipient, err := AssetRecipientForPlan(ctx, q, &reloaded)
 	require.NoError(t, err)
 	assert.Equal(t, tg.Players[2].ID, recipient,
 		"asset recipient should be the keep_assets winner (demander)")
