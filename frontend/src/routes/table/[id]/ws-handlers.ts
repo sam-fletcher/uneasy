@@ -349,9 +349,15 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		// Plan events
 		case EventTypes.PlanPrepared: {
 			const prepared = msg.payload.plan as Plan;
-			if (!ctx.plans.find(p => p.id === prepared.id)) {
-				ctx.plans = [...ctx.plans, prepared];
-			}
+			const idx = ctx.plans.findIndex(p => p.id === prepared.id);
+			ctx.plans = idx >= 0
+				? ctx.plans.map(p => p.id === prepared.id ? prepared : p)
+				: [...ctx.plans, prepared];
+			// Mirror the plan onto the public record so its chip appears
+			// without a full reload. row_number is null while a variable-delay
+			// plan awaits its reveal; this event re-broadcasts once the real
+			// row is assigned (see upsertPlanIntoRecord).
+			upsertPlanIntoRecord(ctx, prepared);
 			// Plan was committed; clear the highlight broadcast.
 			ctx.preparePlanDraft = null;
 			break;
@@ -359,15 +365,24 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.PlanResolving: {
 			const resolving = msg.payload.plan as Plan;
 			ctx.plans = ctx.plans.map(p => p.id === resolving.id ? resolving : p);
+			upsertPlanIntoRecord(ctx, resolving);
 			break;
 		}
 		case EventTypes.PlanResolved: {
 			const { plan_id, result } = msg.payload as { plan_id: number; result: string };
-			ctx.plans = ctx.plans.map(p =>
+			// The backend stores status 'resolved' (MarkPlanResolved); mirror
+			// that exactly so live state matches a reload and every 'resolved'
+			// check across the UI (chip styling, scene prompts, demand/war
+			// filters) fires.
+			const patch = (p: Plan): Plan =>
 				p.id === plan_id
-					? { ...p, status: 'completed' as Plan['status'], result: result as Plan['result'] }
-					: p
-			);
+					? { ...p, status: 'resolved', result: result as Plan['result'] }
+					: p;
+			ctx.plans = ctx.plans.map(patch);
+			ctx.recordRows = ctx.recordRows.map(row => {
+				if (!row.plans.some(p => p.id === plan_id)) return row;
+				return { ...row, plans: row.plans.map(patch) };
+			});
 			break;
 		}
 		case EventTypes.PlanDelayedArrival:
@@ -501,6 +516,26 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			break;
 		}
 	}
+}
+
+/**
+ * Mirror a plan onto the public record's per-row plan list so its chip
+ * appears/updates without a full reload. `row_number` is null while a
+ * variable-delay plan (Make War / Clandestinely Liaise) awaits its delay
+ * reveal; the reveal closing assigns the real row and re-broadcasts the plan,
+ * so we upsert into the assigned row and drop any stale copy from another row.
+ */
+function upsertPlanIntoRecord(ctx: WSContext, plan: Plan) {
+	if (plan.row_number == null) return;
+	const targetRow = plan.row_number;
+	ctx.recordRows = ctx.recordRows.map(row => {
+		const without = row.plans.filter(p => p.id !== plan.id);
+		if (row.row_number === targetRow) {
+			return { ...row, plans: [...without, plan] };
+		}
+		// Leave untouched rows referentially stable to avoid needless rerenders.
+		return without.length === row.plans.length ? row : { ...row, plans: without };
+	});
 }
 
 function refreshPlan(ctx: WSContext, planID: number) {
