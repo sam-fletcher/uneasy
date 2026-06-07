@@ -1,6 +1,6 @@
 .PHONY: build frontend server placeholder clean \
         test test-integration test-integration-run test-frontend-unit test-e2e \
-        vet check-frontend check sqlc
+        vet check-frontend check sqlc deadcode
 
 # Full build: compile the frontend and produce a single Go binary that
 # embeds it. Output: ./server
@@ -77,10 +77,19 @@ test-frontend-unit:
 test-e2e:
 	cd frontend && npm run test:e2e
 
-check: vet test test-integration check-frontend test-frontend-unit test-e2e
+check: check-fast test-integration test-e2e
 
-check-fast: vet test check-frontend test-frontend-unit
+check-fast: vet deadcode test check-frontend test-frontend-unit
 
 # Regenerate sqlc bindings after touching db/queries/*.sql or migrations.
 sqlc:
 	sqlc generate
+
+# Whole-program dead-code report (functions unreachable from main). Catches
+# genuinely dead *exported* helpers that golangci-lint's `unused` can't —
+# `unused` never flags exported identifiers in importable packages, which is
+# how 8 dead Load*Data parsers once hid in game/. Informational, NOT part of
+# `check`: it also lists functions reachable only from tests, so skim the
+# output rather than treating every hit as dead.
+deadcode:
+	go run golang.org/x/tools/cmd/deadcode@latest ./...

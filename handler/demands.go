@@ -30,27 +30,12 @@ func AssetRecipientForPlan(
 	q *dbgen.Queries,
 	plan *dbgen.Plan,
 ) (int64, error) {
-	demands, err := q.GetPlansTargeting(ctx, &plan.ID)
+	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
 	if err != nil {
-		return 0, fmt.Errorf("look up demands targeting plan %d: %w", plan.ID, err)
+		return 0, err
 	}
-	for _, d := range demands {
-		if d.Status != model.PlanResolved {
-			continue
-		}
-		if d.Result == nil || *d.Result != makeOutcome {
-			continue
-		}
-		if len(d.DemandOptionWinners) == 0 {
-			continue
-		}
-		var winners game.DemandOptionWinners
-		if err := json.Unmarshal(d.DemandOptionWinners, &winners); err != nil {
-			return 0, fmt.Errorf("decode demand_option_winners for plan %d: %w", d.ID, err)
-		}
-		if winner, ok := winners[game.DemandOptionKeepAssets]; ok && winner != 0 {
-			return winner, nil
-		}
+	if winner, ok := winners[game.DemandOptionKeepAssets]; ok && winner != 0 {
+		return winner, nil
 	}
 	return plan.PreparerID, nil
 }

@@ -89,14 +89,10 @@ func playerHasPeers(ctx context.Context, q *dbgen.Queries, gameID, playerID int6
 }
 
 // hasEsteemLockout reports whether a player has an active esteem lockout from
-// a Spread Propaganda mar option (b) "censured". The lockout is active when
-// the player's most recently prepared plan in chronological order is an esteem
-// plan whose ResData.EsteemLockout is true. It clears the moment any non-esteem
-// plan is prepared (that plan becomes the most recent).
-//
-// Algorithm: iterate recent plans newest-first. The first non-esteem plan
-// proves the lockout has cleared. The first SP plan with EsteemLockout = true
-// (with no non-esteem plan seen yet) proves it's still active.
+// a Spread Propaganda mar option (b) "censured". This is the I/O shell: it
+// loads the player's recent plans (newest-first), maps them to domain views
+// (parsing the SP lockout flag), and delegates the decision to the pure
+// game.EsteemLockoutActive.
 func hasEsteemLockout(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -106,21 +102,18 @@ func hasEsteemLockout(
 		GameID:     gameID,
 		PreparerID: playerID,
 	})
-	if err != nil || len(plans) == 0 {
+	if err != nil {
 		return false, err
 	}
 
-	for _, p := range plans {
-		if p.Category != model.CategoryEsteem {
-			// Non-esteem plan found after (newer than) any SP lockout → cleared.
-			return false, nil
-		}
+	views := make([]game.PlanLockoutView, len(plans))
+	for i, p := range plans {
+		v := game.PlanLockoutView{Category: p.Category, PlanType: p.PlanType}
 		if p.PlanType == model.PlanSpreadPropaganda {
 			rd := game.LoadResolutionData(p.ResolutionData)
-			if rd.SpreadPropaganda != nil && rd.SpreadPropaganda.EsteemLockout {
-				return true, nil
-			}
+			v.EsteemLockout = rd.SpreadPropaganda != nil && rd.SpreadPropaganda.EsteemLockout
 		}
+		views[i] = v
 	}
-	return false, nil
+	return game.EsteemLockoutActive(views), nil
 }
