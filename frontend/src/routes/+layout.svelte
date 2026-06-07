@@ -58,7 +58,7 @@
 	}
 
 	:global(body) {
-		font-family: var(--font-sans);
+		font-family: var(--font-serif);
 		background: var(--color-bg);
 		color: var(--color-text);
 		min-height: 100dvh;
