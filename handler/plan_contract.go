@@ -43,6 +43,24 @@ type ChoiceLimiter interface {
 }
 
 // PlanHandler is implemented by each plan type.
+//
+// Dependency-passing convention (intentional, two tiers — don't "unify" it):
+//
+//   - Read/compute methods take a bare *dbgen.Queries (ComputeDifficulty) or a
+//     parsed-request bundle holding one (ValidatePreparation's
+//     ValidationContext). They are side-effect-free, so they get only a query
+//     handle — never the hub Manager. This keeps them composable and
+//     transaction-agnostic: the caller passes the base pool *or* a tx-scoped q,
+//     and ComputeDifficulty can recurse into another plan's ComputeDifficulty
+//     (Make Demands derives its difficulty from its target plan) with the same
+//     handle.
+//   - Effect methods (OnResolve, ApplyChoice, OnPrepare, ExtraRoutes) take
+//     *PlanDeps because they mutate state and broadcast: they need the hub
+//     Manager (WebSocket events) and Store.InTx (atomic multi-write), which the
+//     compute tier deliberately must not have.
+//
+// CanComplete takes neither — it is a pure check over an already-loaded plan +
+// resolution data.
 type PlanHandler interface {
 	// Metadata returns the plan's category and base delay.
 	// Delay is -1 for variable-delay plans (Make War, Clandestinely Liaise,
@@ -112,7 +130,16 @@ type PlanDeps struct {
 	Manager *hub.Manager
 }
 
-// ValidationContext holds everything the validation step needs.
+// ValidationContext is the parsed prepare-plan request, handed to a plan's
+// ValidatePreparation. PreparePlan decodes the single (polymorphic)
+// /prepare-plan request body once, fills this struct, and passes it to whatever
+// plan type is being prepared; each validator reads only the subset of fields
+// its rules need (the rest stay nil/zero). It is the request DTO for the
+// compute tier — a query handle plus context, no hub Manager (see PlanHandler's
+// dependency-passing convention). The optional fields are the union of all
+// plans' validation inputs, hence the per-plan annotations below; this is
+// inherent to having one prepare endpoint for heterogeneous plans, not a smell
+// to flatten.
 type ValidationContext struct {
 	Q              *dbgen.Queries
 	Game           *dbgen.Game
