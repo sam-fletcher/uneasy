@@ -419,37 +419,6 @@ func (q *Queries) ListExtraPeersByGame(ctx context.Context, gameID int64) ([]Pro
 	return items, nil
 }
 
-const listHeartDeclarationsByGame = `-- name: ListHeartDeclarationsByGame :many
-SELECT id, game_id, player_id, track, count, created_at FROM prologue_heart_declarations WHERE game_id = $1
-`
-
-func (q *Queries) ListHeartDeclarationsByGame(ctx context.Context, gameID int64) ([]PrologueHeartDeclaration, error) {
-	rows, err := q.db.Query(ctx, listHeartDeclarationsByGame, gameID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PrologueHeartDeclaration{}
-	for rows.Next() {
-		var i PrologueHeartDeclaration
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.PlayerID,
-			&i.Track,
-			&i.Count,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listPlayerCardsByGame = `-- name: ListPlayerCardsByGame :many
 SELECT id, game_id, player_id, card_suit, card_value FROM player_cards WHERE game_id = $1 ORDER BY player_id, card_suit, card_value
 `
@@ -693,24 +662,6 @@ func (q *Queries) SetTrackDone(ctx context.Context, arg SetTrackDoneParams) erro
 	return err
 }
 
-const sumHeartDeclarationsByPlayer = `-- name: SumHeartDeclarationsByPlayer :one
-SELECT COALESCE(SUM(count), 0)::SMALLINT AS total
-FROM prologue_heart_declarations
-WHERE game_id = $1 AND player_id = $2
-`
-
-type SumHeartDeclarationsByPlayerParams struct {
-	GameID   int64 `db:"game_id" json:"game_id"`
-	PlayerID int64 `db:"player_id" json:"player_id"`
-}
-
-func (q *Queries) SumHeartDeclarationsByPlayer(ctx context.Context, arg SumHeartDeclarationsByPlayerParams) (int16, error) {
-	row := q.db.QueryRow(ctx, sumHeartDeclarationsByPlayer, arg.GameID, arg.PlayerID)
-	var total int16
-	err := row.Scan(&total)
-	return total, err
-}
-
 const transferPlayerCard = `-- name: TransferPlayerCard :exec
 UPDATE player_cards SET player_id = $1
 WHERE game_id = $2 AND card_suit = $3 AND card_value = $4
@@ -745,31 +696,5 @@ type UncommitHeartParams struct {
 
 func (q *Queries) UncommitHeart(ctx context.Context, arg UncommitHeartParams) error {
 	_, err := q.db.Exec(ctx, uncommitHeart, arg.GameID, arg.CardID)
-	return err
-}
-
-const upsertHeartDeclaration = `-- name: UpsertHeartDeclaration :exec
-
-INSERT INTO prologue_heart_declarations (game_id, player_id, track, count)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (game_id, player_id, track)
-DO UPDATE SET count = EXCLUDED.count
-`
-
-type UpsertHeartDeclarationParams struct {
-	GameID   int64  `db:"game_id" json:"game_id"`
-	PlayerID int64  `db:"player_id" json:"player_id"`
-	Track    string `db:"track" json:"track"`
-	Count    int16  `db:"count" json:"count"`
-}
-
-// ── heart declarations ───────────────────────────────────────────────────────
-func (q *Queries) UpsertHeartDeclaration(ctx context.Context, arg UpsertHeartDeclarationParams) error {
-	_, err := q.db.Exec(ctx, upsertHeartDeclaration,
-		arg.GameID,
-		arg.PlayerID,
-		arg.Track,
-		arg.Count,
-	)
 	return err
 }

@@ -486,7 +486,6 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		}
 		case EventTypes.PrologueChoiceClaimed:
 		case EventTypes.PrologueRankingStepChanged:
-		case EventTypes.PrologueHeartsDeclared:
 		case EventTypes.PrologueTrackRanked:
 		case EventTypes.PrologueSetAsidesPlaced:
 		case EventTypes.PrologueCommittedHeartsChanged:

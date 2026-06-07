@@ -36,61 +36,6 @@ func TestNextAmender(t *testing.T) {
 	assert.EqualValues(t, 10, pd2.NextAmender(), "returns first in order not yet amended")
 }
 
-// ── Prologue: heart-declaration validation ───────────────────────────────────
-
-func TestValidateHeartDeclarations(t *testing.T) {
-	cards := func(pid int64, n int) []PlayerCard {
-		out := make([]PlayerCard, n)
-		for i := range out {
-			out[i] = PlayerCard{PlayerID: pid, Suit: SuitHearts, Value: "Q"}
-		}
-		return out
-	}
-
-	t.Run("declared within held is valid", func(t *testing.T) {
-		err := ValidateHeartDeclarations(cards(1, 2), []HeartDeclaration{{PlayerID: 1, Track: "power", Count: 2}})
-		assert.NoError(t, err)
-	})
-
-	t.Run("declaring fewer than held is valid", func(t *testing.T) {
-		err := ValidateHeartDeclarations(cards(1, 3), []HeartDeclaration{{PlayerID: 1, Count: 1}})
-		assert.NoError(t, err)
-	})
-
-	t.Run("declarations across tracks are summed per player", func(t *testing.T) {
-		held := cards(1, 2)
-		exact := ValidateHeartDeclarations(held, []HeartDeclaration{
-			{PlayerID: 1, Track: "power", Count: 1},
-			{PlayerID: 1, Track: "esteem", Count: 1},
-		})
-		require.NoError(t, exact, "1+1 == 2 held")
-
-		over := ValidateHeartDeclarations(held, []HeartDeclaration{
-			{PlayerID: 1, Track: "power", Count: 1},
-			{PlayerID: 1, Track: "esteem", Count: 2},
-		})
-		assert.Error(t, over, "1+2 > 2 held")
-	})
-
-	t.Run("declaring with no hearts held is invalid", func(t *testing.T) {
-		nonHearts := []PlayerCard{{PlayerID: 1, Suit: SuitClubs}}
-		err := ValidateHeartDeclarations(nonHearts, []HeartDeclaration{{PlayerID: 1, Count: 1}})
-		assert.Error(t, err)
-	})
-
-	t.Run("only hearts count toward the held total", func(t *testing.T) {
-		mixed := []PlayerCard{
-			{PlayerID: 1, Suit: SuitHearts}, {PlayerID: 1, Suit: SuitClubs}, {PlayerID: 1, Suit: SuitSpades},
-		}
-		assert.Error(t, ValidateHeartDeclarations(mixed, []HeartDeclaration{{PlayerID: 1, Count: 2}}),
-			"only 1 heart held, declaring 2 is invalid")
-	})
-
-	t.Run("empty declarations are valid", func(t *testing.T) {
-		assert.NoError(t, ValidateHeartDeclarations(nil, nil))
-	})
-}
-
 // ── Prologue: committed-heart validation ─────────────────────────────────────
 
 func TestValidateCommittedHearts(t *testing.T) {

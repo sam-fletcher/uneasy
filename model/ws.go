@@ -134,7 +134,6 @@ const (
 	EventPrologueChoiceClaimed      = "prologue.choice_claimed"           // a box was claimed
 	EventPrologueTurnAdvanced       = "prologue.turn_advanced"            // active player changed
 	EventPrologueRankingStepChanged = "prologue.ranking_step_changed"     // entered/advanced ranking sub-flow
-	EventPrologueHeartsDeclared     = "prologue.hearts_declared"          // legacy: count-based heart declaration
 	EventPrologueTrackRanked        = "prologue.track_ranked"             // a track's ranks finalized (set-asides surfaced)
 	EventPrologueSetAsidesPlaced    = "prologue.set_asides_placed"        // rank-1 player placed set-aside players
 	EventPrologueCommittedHeartsChg = "prologue.committed_hearts_changed" // a player adjusted their committed hearts on a track
@@ -687,13 +686,6 @@ type PrologueTurnAdvancedPayload struct {
 // ranking sub-flow (i.e. transitioning to main_event).
 type PrologueRankingStepChangedPayload struct {
 	Step string `json:"step"`
-}
-
-// PrologueHeartsDeclaredPayload is for EventPrologueHeartsDeclared.
-type PrologueHeartsDeclaredPayload struct {
-	PlayerID int64  `json:"player_id"`
-	Track    string `json:"track"`
-	Count    int16  `json:"count"`
 }
 
 // PrologueTrackRankedPayload is for EventPrologueTrackRanked. Ranked is the

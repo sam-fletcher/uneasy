@@ -143,7 +143,6 @@ export const EventTypes = {
 	PrologueChoiceClaimed: 'prologue.choice_claimed',
 	PrologueTurnAdvanced: 'prologue.turn_advanced',
 	PrologueRankingStepChanged: 'prologue.ranking_step_changed',
-	PrologueHeartsDeclared: 'prologue.hearts_declared',
 	PrologueTrackRanked: 'prologue.track_ranked',
 	PrologueSetAsidesPlaced: 'prologue.set_asides_placed',
 	PrologueCommittedHeartsChanged: 'prologue.committed_hearts_changed',

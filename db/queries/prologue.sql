@@ -61,22 +61,6 @@ INSERT INTO assets (game_id, owner_id, creator_id, asset_type, name, linked_card
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
--- ── heart declarations ───────────────────────────────────────────────────────
-
--- name: UpsertHeartDeclaration :exec
-INSERT INTO prologue_heart_declarations (game_id, player_id, track, count)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (game_id, player_id, track)
-DO UPDATE SET count = EXCLUDED.count;
-
--- name: ListHeartDeclarationsByGame :many
-SELECT * FROM prologue_heart_declarations WHERE game_id = $1;
-
--- name: SumHeartDeclarationsByPlayer :one
-SELECT COALESCE(SUM(count), 0)::SMALLINT AS total
-FROM prologue_heart_declarations
-WHERE game_id = $1 AND player_id = $2;
-
 -- ── games.prologue_ranking_step ──────────────────────────────────────────────
 
 -- name: SetPrologueRankingStep :exec

@@ -1,8 +1,9 @@
 package handler
 
 // handler/prologue_committed_hearts.go — Endpoints for the
-// "max-commitment" prologue ranking flow (replaces DeclareHearts /
-// FinalizeTrackRanking once the frontend migrates).
+// "max-commitment" prologue ranking flow. This is the sole prologue
+// ranking flow; the legacy count-based DeclareHearts / FinalizeTrackRanking
+// path was removed once the frontend migrated.
 //
 // Players commit specific heart cards to the active track and toggle a
 // per-track "Done" flag. When every player is Done, the server resolves

@@ -9,10 +9,11 @@ package handler
 //   extra_peers (≤3 players) → main_event
 //
 // place_set_asides_X is skipped automatically if a track has no set-aside
-// players; finalize-ranking advances directly to the next declare step.
+// players; track resolution (in prologue_committed_hearts.go) advances
+// directly to the next declare step.
 //
 // The main_event transition is automatic: completing the last prologue
-// action (final track's finalize/place-set-asides for 4–5 players, or the
+// action (final track's resolution/place-set-asides for 4–5 players, or the
 // last extra peer for ≤3 players) immediately calls advanceToMainEvent —
 // no facilitator button.
 
@@ -138,200 +139,6 @@ func loadGameForPrologue(w http.ResponseWriter, ctx context.Context, q *dbgen.Qu
 		return nil
 	}
 	return &game
-}
-
-// ── Declare hearts ───────────────────────────────────────────────────────────
-
-// DeclareHearts handles POST /api/games/{id}/prologue/declare-hearts.
-//
-// Body: {"count": N}. The current track is implied by the game's
-// prologue_ranking_step. Validates that the player has enough remaining
-// hearts (hearts held minus hearts already declared on other tracks). The
-// per-track count overwrites any previous declaration on the same track.
-func DeclareHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
-		if !ok {
-			return
-		}
-		ctx := r.Context()
-		game := loadGameForPrologue(w, ctx, s.Q, gameID)
-		if game == nil {
-			return
-		}
-		if game.Phase != model.PhasePrologue || game.PrologueRankingStep == nil {
-			respondErr(w, http.StatusConflict, "ranking is not active")
-			return
-		}
-		track := trackForStep(*game.PrologueRankingStep)
-		if track == "" || *game.PrologueRankingStep != "declare_"+track {
-			respondErr(w, http.StatusConflict, "current step is not a declare step")
-			return
-		}
-
-		var body struct {
-			Count int16 `json:"count"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Count < 0 {
-			respondErr(w, http.StatusBadRequest, "count must be a non-negative integer")
-			return
-		}
-
-		// Validate against this player's hearts held minus hearts spent on
-		// other tracks.
-		cards, err := s.Q.ListPlayerCardsByPlayer(ctx, dbgen.ListPlayerCardsByPlayerParams{
-			GameID: gameID, PlayerID: player.ID,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not load cards", err)
-			return
-		}
-		held := 0
-		for _, c := range cards {
-			if c.CardSuit == "H" {
-				held++
-			}
-		}
-		alreadyTotal, err := s.Q.SumHeartDeclarationsByPlayer(ctx, dbgen.SumHeartDeclarationsByPlayerParams{
-			GameID: gameID, PlayerID: player.ID,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not load declarations", err)
-			return
-		}
-		// Re-running for the same track replaces an existing declaration, so
-		// subtract its previous value before checking.
-		decls, err := s.Q.ListHeartDeclarationsByGame(ctx, gameID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load declarations", err)
-			return
-		}
-		var prevForTrack int16
-		for _, d := range decls {
-			if d.PlayerID == player.ID && d.Track == track {
-				prevForTrack = d.Count
-				break
-			}
-		}
-		if int(alreadyTotal)-int(prevForTrack)+int(body.Count) > held {
-			respondErr(w, http.StatusBadRequest, "you do not hold that many remaining hearts")
-			return
-		}
-
-		err = s.Q.UpsertHeartDeclaration(ctx, dbgen.UpsertHeartDeclarationParams{
-			GameID: gameID, PlayerID: player.ID, Track: track, Count: body.Count,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not save declaration", err)
-			return
-		}
-		broadcastEvent(manager, gameID, model.EventPrologueHeartsDeclared, model.PrologueHeartsDeclaredPayload{
-			PlayerID: player.ID, Track: track, Count: body.Count,
-		})
-		respond(w, http.StatusOK, map[string]any{"track": track, "count": body.Count})
-	}
-}
-
-// ── Finalize ranking ─────────────────────────────────────────────────────────
-
-// FinalizeTrackRanking handles POST /api/games/{id}/prologue/finalize-ranking.
-//
-// Facilitator-only. Computes the ranking for the current track, persists the
-// auto-ranked players to the rankings table, and either advances to the
-// place_set_asides_X step (if any set-asides exist) or directly to the next
-// declare step / extra-peers / main_event when set-asides are empty.
-func FinalizeTrackRanking(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		game, ok := requireFacilitator(w, r, s.Q)
-		if !ok {
-			return
-		}
-		if game.Phase != model.PhasePrologue || game.PrologueRankingStep == nil {
-			respondErr(w, http.StatusConflict, "ranking is not active")
-			return
-		}
-		track := trackForStep(*game.PrologueRankingStep)
-		if track == "" || *game.PrologueRankingStep != "declare_"+track {
-			respondErr(w, http.StatusConflict, "current step is not a declare step")
-			return
-		}
-
-		ctx := r.Context()
-		players, err := s.Q.GetPlayersByGame(ctx, game.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load players", err)
-			return
-		}
-		ids := make([]int64, len(players))
-		for i, p := range players {
-			ids[i] = p.ID
-		}
-		cards, err := loadPrologueCards(ctx, s.Q, game.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load cards", err)
-			return
-		}
-		decls, err := loadPrologueDeclarations(ctx, s.Q, game.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load declarations", err)
-			return
-		}
-		ranked, setAside, err := gamepkg.ComputeTrackRanking(track, ids, cards, decls)
-		if err != nil {
-			respondErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		// Persist the auto-ranked portion now. Set-asides will be appended
-		// once the rank-1 player submits an ordering (or immediately if
-		// there are none).
-		err = persistTrackRanks(ctx, s.Q, game.ID, track, len(players), ranked, nil)
-		if err != nil {
-			respondErr(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		broadcastEvent(manager, game.ID, model.EventPrologueTrackRanked, model.PrologueTrackRankedPayload{
-			Track: track, Ranked: ranked, SetAside: setAside,
-		})
-
-		// Advance step. If no set-asides, skip place_set_asides_X.
-		var nextStep string
-		switch {
-		case len(setAside) > 0:
-			nextStep = placeSetAsidesStepFor(track)
-		default:
-			nextStep = nextDeclareStepAfter(track)
-			if nextStep == "" && len(players) <= 3 {
-				// ≤3 players still need to create extra peers; transition
-				// to main_event happens once the last extra peer lands.
-				nextStep = gamepkg.PrologueStepExtraPeers
-			}
-		}
-
-		if err = setRankingStep(ctx, s.Q, game.ID, nextStep); err != nil {
-			respondErr(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		broadcastEvent(manager, game.ID, model.EventPrologueRankingStepChanged,
-			model.PrologueRankingStepChangedPayload{Step: nextStep})
-
-		// 4–5 player game finishing the last track with no set-asides:
-		// prologue is fully complete, advance straight to main_event.
-		if nextStep == "" {
-			if err := advanceToMainEvent(ctx, s.Q, manager, game.ID); err != nil {
-				respondInternalErr(w, r, "could not advance to main event", err)
-				return
-			}
-		}
-
-		respond(w, http.StatusOK, map[string]any{
-			"track":     track,
-			"ranked":    ranked,
-			"set_aside": setAside,
-			"next_step": nextStep,
-		})
-	}
 }
 
 // ── Place set-asides ─────────────────────────────────────────────────────────
@@ -646,24 +453,6 @@ func loadPrologueCards(ctx context.Context, q *dbgen.Queries, gameID int64) ([]g
 			PlayerID: r.PlayerID,
 			Suit:     rune(r.CardSuit[0]),
 			Value:    r.CardValue,
-		})
-	}
-	return out, nil
-}
-
-func loadPrologueDeclarations(
-	ctx context.Context,
-	q *dbgen.Queries,
-	gameID int64,
-) ([]gamepkg.HeartDeclaration, error) {
-	rows, err := q.ListHeartDeclarationsByGame(ctx, gameID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]gamepkg.HeartDeclaration, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, gamepkg.HeartDeclaration{
-			PlayerID: r.PlayerID, Track: r.Track, Count: int(r.Count),
 		})
 	}
 	return out, nil

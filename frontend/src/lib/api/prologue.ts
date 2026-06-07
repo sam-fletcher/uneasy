@@ -66,27 +66,6 @@ export function getAssetSuggestions(
 	);
 }
 
-export function declareHearts(
-	gameID: string | number,
-	count: number
-): Promise<{ track: string; count: number }> {
-	return apiFetch(`/tables/${gameID}/prologue/declare-hearts`, {
-		method: 'POST',
-		body: JSON.stringify({ count })
-	});
-}
-
-export function finalizeTrackRanking(
-	gameID: string | number
-): Promise<{
-	track: string;
-	ranked: number[];
-	set_aside: number[];
-	next_step: PrologueRankingStep | '';
-}> {
-	return apiFetch(`/tables/${gameID}/prologue/finalize-ranking`, { method: 'POST' });
-}
-
 export function placePrologueSetAsides(
 	gameID: string | number,
 	ordering: number[]
