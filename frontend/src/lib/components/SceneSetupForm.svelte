@@ -95,7 +95,18 @@
 	}
 
 	// ── Who else ──────────────────────────────────────────────────────────────
-	// Every peer except the focus player's own main character (implicitly present).
+	// The focus player's own main character is always present. It's pinned at the
+	// top of the list, locked checked, and never sent in present_peer_ids (the
+	// server treats it as implicitly present and rejects it if listed). The rest
+	// are selectable peers.
+	const focusMainCharacter = $derived(
+		assets.find(a =>
+			a.asset_type === 'peer' &&
+			!a.is_destroyed &&
+			a.is_main_character &&
+			a.owner_id === focusPlayerID
+		) ?? null
+	);
 	const presentablePeers = $derived(
 		assets.filter(a =>
 			a.asset_type === 'peer' &&
@@ -276,10 +287,22 @@
 
 	<div class="section">
 		<h3>Who else is here</h3>
-		{#if presentablePeers.length === 0}
-			<p class="hint">No other peers in play yet.</p>
-		{:else}
-			<div class="cards">
+		<div class="cards">
+			{#if focusMainCharacter}
+				<AssetCardSelectable
+					asset={focusMainCharacter}
+					ownerColor={colorFor(focusMainCharacter.owner_id)}
+					ownerLabel="Always present"
+					selectable
+					selected={true}
+					disabled={true}
+				/>
+			{/if}
+			{#if presentablePeers.length === 0}
+				{#if !focusMainCharacter}
+					<p class="hint">No other peers in play yet.</p>
+				{/if}
+			{:else}
 				{#each presentablePeers as peer (peer.id)}
 					<AssetCardSelectable
 						asset={peer}
@@ -290,8 +313,8 @@
 						disabled={readOnly}
 					/>
 				{/each}
-			</div>
-		{/if}
+			{/if}
+		</div>
 	</div>
 
 	{#if error}<p class="error">{error}</p>{/if}

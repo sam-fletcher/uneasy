@@ -80,6 +80,23 @@
 
 	const focusPlayer = $derived(playerByID(scene.focus_player_id));
 
+	// The focus player's main character is implicitly present and never recorded
+	// as a scene_peer; surface it at the top of the Present list so it's visible
+	// alongside the claimable peers. Always played by the focus player.
+	const focusMainCharacter = $derived(
+		assets.find(a =>
+			a.asset_type === 'peer' &&
+			!a.is_destroyed &&
+			a.is_main_character &&
+			a.owner_id === scene.focus_player_id
+		) ?? null
+	);
+	const focusMainCharacterLabel = $derived(
+		scene.focus_player_id === currentPlayerID
+			? 'Played by you'
+			: `Played by ${focusPlayer?.display_name ?? 'the focus player'}`
+	);
+
 	function controllerLabel(p: ScenePeerView): { text: string; claimable: boolean } {
 		if (p.controller_player_id == null) {
 			return { text: 'Unclaimed — open to be played', claimable: true };
@@ -197,10 +214,17 @@
 
 	<div class="block">
 		<h3>Present</h3>
-		{#if peers.length === 0}
-			<p class="hint">Only the focus player's main character is present.</p>
-		{:else}
-			<div class="peer-list">
+		<div class="peer-list">
+			{#if focusMainCharacter}
+				<div class="peer-row">
+					<AssetCardSelectable
+						asset={focusMainCharacter}
+						ownerColor={colorFor(focusMainCharacter.owner_id)}
+						ownerLabel={focusMainCharacterLabel}
+					/>
+				</div>
+			{/if}
+			{#if peers.length > 0}
 				{#each peers as p (p.peer_asset_id)}
 					{@const asset = assetByID(p.peer_asset_id)}
 					{#if asset}
@@ -225,8 +249,8 @@
 						</div>
 					{/if}
 				{/each}
-			</div>
-		{/if}
+			{/if}
+		</div>
 		{#if claimError}<p class="error">{claimError}</p>{/if}
 	</div>
 
@@ -308,13 +332,6 @@
 		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-	}
-
-	.hint {
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
-		margin: 0;
-		font-style: italic;
 	}
 
 	.peer-list { display: flex; flex-direction: column; gap: 0.4rem; }
