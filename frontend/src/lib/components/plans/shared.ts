@@ -24,7 +24,7 @@ export const PLAN_DESCRIPTION: Record<PlanType, string> = {
 	exchange_courtiers:   'Take another player’s peer into your retinue.',
 	make_war:             'Declare war. Agree to peace terms, or break assets every round.',
 	spread_propaganda:    'Distribute a pamphlet to spread new thought throughout the realm.',
-	spread_rumors:        'Spread rumors to damage the reputation of assets at the table.',
+	spread_rumors:        'Spread rumors to damage the reputation of an asset.',
 	propose_duel:         'Go one-on-one in a battle of arms or wits to prove a point.',
 	host_festivity:       'Convene socially: throw a ball, host a dinner, go on a hunt.',
 	make_introductions:   'Introduce new peers to court. Add them to your retinue.',

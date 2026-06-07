@@ -169,7 +169,7 @@
 				bind:value={assetText}
 				// placeholder={`[${choice.name}]`}
 			></textarea>
-			<span class="hint">Pick a name. You'll be able to add marginalia later.</span>
+			<span class="hint">Pick a name. You can add marginalia from your Retinue.</span>
 		</label>
 	</section>
 
@@ -182,7 +182,7 @@
 					bind:value={marginaliumText}
 					placeholder={`${choice.name}`}
 				></textarea>
-				<span class="hint">Add 1 marginalia to your main character.</span>
+				<span class="hint">Adds 1 marginalia to your main character.</span>
 			</label>
 		</section>
 	{/if}
@@ -205,7 +205,7 @@
 		<section class="step">
 			<div class="card-head">
 				<strong>{cardLabel(slot.suit, slot.value)}</strong>
-				<span class="muted small">— {slot.isTake ? `take an existing ${suitTypeLabel(slot.suit)}` : `make a new ${suitTypeLabel(slot.suit)}`}</span>
+				<span class="muted small">{slot.isTake ? `Take an existing ${suitTypeLabel(slot.suit)}` : `Make a new ${suitTypeLabel(slot.suit)}`}</span>
 			</div>
 
 			{#if slot.isTake}
