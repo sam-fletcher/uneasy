@@ -42,9 +42,17 @@
 		knowledge: rankFor('knowledge'),
 		esteem: rankFor('esteem'),
 	});
-	const cumulativeStatus = $derived(
-		(playerRanks.power ?? 0) + (playerRanks.knowledge ?? 0) + (playerRanks.esteem ?? 0)
-	);
+	// Status is the inverse of rank (status = 6 − rank); it's the difficulty
+	// others face when targeting this player, where rank is their own difficulty
+	// when acting. The rules use both, so we surface both.
+	function statusFromRank(rank: number | null): number | null {
+		return rank == null ? null : 6 - rank;
+	}
+	const playerStatuses = $derived({
+		power: statusFromRank(playerRanks.power),
+		knowledge: statusFromRank(playerRanks.knowledge),
+		esteem: statusFromRank(playerRanks.esteem),
+	});
 	const hasRanks = $derived(
 		playerRanks.power != null || playerRanks.knowledge != null || playerRanks.esteem != null
 	);
@@ -312,22 +320,25 @@
 
 		{#if hasRanks}
 			<section class="rank-strip" aria-label="Track rankings">
-				<div class="rank-cell">
-					<span class="rank-label">Power</span>
-					<span class="rank-num">{playerRanks.power ?? '—'}</span>
-				</div>
-				<div class="rank-cell">
-					<span class="rank-label">Knowledge</span>
-					<span class="rank-num">{playerRanks.knowledge ?? '—'}</span>
-				</div>
-				<div class="rank-cell">
-					<span class="rank-label">Esteem</span>
-					<span class="rank-num">{playerRanks.esteem ?? '—'}</span>
-				</div>
-				<!-- <div class="rank-cell total">
-					<span class="rank-label">Total</span>
-					<span class="rank-num">{cumulativeStatus}</span>
-				</div> -->
+				{#each [
+					{ label: 'Power', rank: playerRanks.power, status: playerStatuses.power },
+					{ label: 'Knowledge', rank: playerRanks.knowledge, status: playerStatuses.knowledge },
+					{ label: 'Esteem', rank: playerRanks.esteem, status: playerStatuses.esteem },
+				] as track (track.label)}
+					<div class="rank-cell">
+						<span class="rank-label">{track.label}</span>
+						<div class="rank-pair">
+							<span class="rank-stat">
+								<span class="rank-num">{track.rank ?? '—'}</span>
+								<span class="rank-sublabel">Rank</span>
+							</span>
+							<span class="rank-stat">
+								<span class="rank-num">{track.status ?? '—'}</span>
+								<span class="rank-sublabel">Status</span>
+							</span>
+						</div>
+					</div>
+				{/each}
 			</section>
 		{/if}
 
@@ -567,18 +578,32 @@
 		align-items: center;
 		gap: 0.15rem;
 	}
-	.rank-cell.total .rank-num { color: var(--color-accent); }
 	.rank-label {
 		font-size: 0.7rem;
 		color: var(--color-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
+	.rank-pair {
+		display: flex;
+		gap: 0.7rem;
+	}
+	.rank-stat {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.05rem;
+	}
 	.rank-num {
 		font-size: 1.1rem;
 		font-weight: 600;
 		color: var(--color-text);
 		font-variant-numeric: tabular-nums;
+		line-height: 1.1;
+	}
+	.rank-sublabel {
+		font-size: 0.7rem;
+		color: var(--color-text-faint);
 	}
 
 	.meta {
