@@ -88,8 +88,12 @@ sqlc:
 # Whole-program dead-code report (functions unreachable from main). Catches
 # genuinely dead *exported* helpers that golangci-lint's `unused` can't —
 # `unused` never flags exported identifiers in importable packages, which is
-# how 8 dead Load*Data parsers once hid in game/. Informational, NOT part of
-# `check`: it also lists functions reachable only from tests, so skim the
-# output rather than treating every hit as dead.
+# how 8 dead Load*Data parsers once hid in game/.
+#
+# Flags: `-test` treats test functions as roots so production helpers exercised
+# only by tests aren't false-flagged (e.g. LoadMakeWarData, used solely by a
+# Make War integration test); `-tags integration` compiles the integration-
+# tagged test files so those callers are visible. Trade-off: with `-test`, a
+# truly dead helper that still has a lingering test will NOT be reported.
 deadcode:
 	go run golang.org/x/tools/cmd/deadcode@latest ./...

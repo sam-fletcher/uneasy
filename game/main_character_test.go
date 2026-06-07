@@ -136,6 +136,6 @@ func TestDecideMainCharacterChange(t *testing.T) {
 
 func TestDecideMainCharacterChange_NilTarget(t *testing.T) {
 	_, err := DecideMainCharacterChange(nil, nil, nil, nil)
-	require.Error(t, err)
+	require.NotNil(t, err)
 	assert.Equal(t, http.StatusInternalServerError, err.Code)
 }

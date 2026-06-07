@@ -36,8 +36,6 @@ type MCDecisionError struct {
 	Message string
 }
 
-func (e *MCDecisionError) Error() string { return e.Message }
-
 // DecideMainCharacterChange validates a request to promote `target` to main
 // character. The caller must pre-load:
 //   - target: the asset being promoted (caller has already checked ownership)

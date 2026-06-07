@@ -54,23 +54,6 @@ func TestResolveBout_InvalidDeclaration(t *testing.T) {
 	}
 }
 
-func TestBoutsComplete(t *testing.T) {
-	cases := []struct {
-		name string
-		t    DuelTallies
-		want bool
-	}{
-		{"both have stakes", DuelTallies{PreparerRemaining: 2, TargetRemaining: 3}, false},
-		{"preparer out", DuelTallies{PreparerRemaining: 0, TargetRemaining: 3}, true},
-		{"target out", DuelTallies{PreparerRemaining: 2, TargetRemaining: 0}, true},
-		{"both out", DuelTallies{}, true},
-	}
-	for _, c := range cases {
-		got := c.t.BoutsComplete()
-		assert.Equal(t, c.want, got, c.name)
-	}
-}
-
 func TestMaxStakes(t *testing.T) {
 	cases := []struct {
 		rank int16

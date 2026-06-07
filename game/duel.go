@@ -93,21 +93,6 @@ func opposingSide(s DuelSide) DuelSide {
 	return DuelSidePreparer
 }
 
-// DuelTallies holds the number of unresolved stakes on each side and the
-// accumulated winning dice on each side. Used to decide when bouts end.
-type DuelTallies struct {
-	PreparerRemaining int
-	TargetRemaining   int
-	PreparerAccumDice []int16 // faces the preparer has won
-	TargetAccumDice   []int16 // faces the target has won
-}
-
-// BoutsComplete reports whether the bout sequence should end — i.e. one or
-// both sides have no unresolved stakes left.
-func (t DuelTallies) BoutsComplete() bool {
-	return t.PreparerRemaining == 0 || t.TargetRemaining == 0
-}
-
 // MaxStakes returns the maximum number of assets a player with the given
 // esteem *status* may stake. Per the spec: min 1, max 1+status.
 // Status is 6 - rank (so rank 1 → status 5).
