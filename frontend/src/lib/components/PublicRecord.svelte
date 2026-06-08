@@ -203,8 +203,11 @@
 									onclick={() => onSceneJump?.(entry.row_number)}
 									aria-label="Jump to scene on row {entry.row_number}"
 								>
-									<span class="entry-author" style:color={authorColor}>{authorName(entry.author_id)}</span>
-									{entry.body}
+									{#if entry.body.startsWith('Scene:')}
+										<span class="entry-scene-label" style:color={authorColor}>Scene:</span>{entry.body.slice('Scene:'.length)}
+									{:else}
+										{entry.body}
+									{/if}
 								</button>
 							{/each}
 							{#if row.plans.length === 0 && row.entries.length === 0}
@@ -492,10 +495,10 @@
 	}
 	.entry-line:hover { color: var(--color-accent-hover); }
 
-	.entry-author {
+	.entry-scene-label {
 		font-weight: 600;
-		/* color set inline from the entry author's playerColor */
-		margin-right: 0.35em;
+		/* color set inline from the entry author's playerColor; the trailing
+		   space in the "Scene: …" body provides the gap to the summary text. */
 	}
 
 	.row-empty {

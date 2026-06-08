@@ -436,7 +436,7 @@ func sceneBannerText(mainCharName, holdingName string, scene *dbgen.Scene) strin
 			timeElapsed = note
 		}
 	}
-	return fmt.Sprintf("%s at %s, %s",
+	return fmt.Sprintf("Scene: %s at %s, %s",
 		mainCharName, holdingName, timeElapsed,
 	)
 }
