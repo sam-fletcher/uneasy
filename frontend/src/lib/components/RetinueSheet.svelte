@@ -54,7 +54,7 @@
 		right: 0;
 		bottom: 0;
 		z-index: 91;
-		max-height: 85dvh;
+		max-height: 90dvh;
 		background: #1e1e1c;
 		border-top: 1px solid var(--color-border-strong);
 		border-radius: 14px 14px 0 0;
