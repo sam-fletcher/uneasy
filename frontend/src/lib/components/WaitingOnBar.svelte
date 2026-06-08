@@ -85,7 +85,7 @@
 						<span class="waitee">{nameFor(w.playerID)}</span>
 					{:else if w.kind === 'label'}
 						<span class="waitee">{w.text}</span>
-					{/if}{#if i < orderedWaitees.length - 1}<span class="sep">, </span>{/if}
+					{/if}{#if i < orderedWaitees.length - 1}<span class="sep">,</span>{/if}
 				{/each}
 			{/if}
 		</p>
@@ -141,6 +141,7 @@
 	}
 	.sep {
 		color: var(--color-text-muted);
+		margin-right: 0.3rem;
 	}
 	.step-label {
 		color: var(--color-accent);
