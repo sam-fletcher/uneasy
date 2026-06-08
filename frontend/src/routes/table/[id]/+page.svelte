@@ -239,6 +239,26 @@
 		return best;
 	});
 
+	// Per-player count of "needlessly at-risk" assets, surfaced as a warning
+	// badge on each header chip. An asset qualifies when it's alive, has ≤1
+	// intact (untorn) marginalia — so it's one or zero tears from destruction —
+	// AND still has at least one empty slot the owner could fill to de-risk it.
+	// A fragile-but-full asset (e.g. 1 intact + 3 torn) isn't "needlessly" at
+	// risk: there's nothing to fill, so it's excluded. Brand-new assets with no
+	// marginalia yet (0 intact, 4 empty) are included — they need attention too.
+	const atRiskByPlayer = $derived.by(() => {
+		const map = new Map<number, number>();
+		for (const a of assets) {
+			if (a.is_destroyed) continue;
+			const intact = a.marginalia.filter(m => !m.is_torn).length;
+			const hasEmptySlot = a.marginalia.length < 4;
+			if (intact <= 1 && hasEmptySlot) {
+				map.set(a.owner_id, (map.get(a.owner_id) ?? 0) + 1);
+			}
+		}
+		return map;
+	});
+
 	// ── Public Record → Chat jump bridge ──────────────────────────────────────
 	// Tapping a row/plan/scene in the expanded sidebar finds the anchoring
 	// system post in chatPosts and pushes a request to ChatPanel, which
@@ -537,7 +557,12 @@
 			<div class="members">
 				{#each members as member}
 					{@const mr = ranksByPlayer.get(member.id)}
-					<button type="button" class="member" class:active={member.id === blockingPlayerID} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${member.id === blockingPlayerID ? ' (their turn)' : ''}`} style:--member-color={playerColorByID(member.id, players)}>
+					{@const atRisk = atRiskByPlayer.get(member.id) ?? 0}
+					{@const isMe = member.id === currentPlayerID}
+					<button type="button" class="member" class:active={member.id === blockingPlayerID} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${member.id === blockingPlayerID ? ' (their turn)' : ''}${atRisk > 0 ? ` — ${atRisk} ${atRisk === 1 ? 'asset needs' : 'assets need'} marginalia` : ''}`} style:--member-color={playerColorByID(member.id, players)}>
+						{#if atRisk > 0}
+							<span class="risk-badge" class:mine={isMe} title={`${atRisk} ${atRisk === 1 ? 'asset has' : 'assets have'} too few marginalia — fill an empty slot to avoid losing ${atRisk === 1 ? 'it' : 'them'}`} aria-hidden="true">{atRisk}</span>
+						{/if}
 						<span class="member-body">
 							<span class="member-name-row">
 								<span class="dot"></span>
@@ -1171,6 +1196,7 @@
 	.members::-webkit-scrollbar { display: none; }
 
 	.member {
+		position: relative;
 		display: inline-flex;
 		align-items: center;
 		gap: 0.4rem;
@@ -1183,6 +1209,37 @@
 		border: 1px solid var(--color-border);
 		border-radius: 999px;
 		cursor: pointer;
+	}
+
+	/* Warning badge: assets that are one tear from destruction but still have
+	   empty marginalia slots to fill. Muted amber on other players' chips for
+	   awareness; bright red on your own, where it's actionable. */
+	.risk-badge {
+		position: absolute;
+		top: -4px;
+		right: -4px;
+		z-index: 1;
+		min-width: 18px;
+		height: 18px;
+		padding: 0 4px;
+		box-sizing: border-box;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		font-size: 0.7rem;
+		font-weight: 700;
+		line-height: 1;
+		font-variant-numeric: tabular-nums;
+		background: #3a3326;
+		color: #a89464;
+		border: 1px solid #4a4030;
+	}
+	.risk-badge.mine {
+		background: #7a1f1f;
+		color: #ffd9d4;
+		border-color: #b03a3a;
+		box-shadow: 0 0 6px rgba(176, 58, 58, 0.55);
 	}
 
 	/* Name over a compact P/K/E rank line. The body is a column so the dot
