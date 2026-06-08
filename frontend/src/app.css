@@ -11,8 +11,9 @@
      used only for the big cover-style hero. It's a texture face, so it's kept
      away from small sizes and body text where it reads as noise.
    • Spectral — a screen-optimised old-style serif with a sturdy, legible
-     italic. Drives section headings and long-form narrative prose.
-   UI chrome (buttons, labels, dense game state) stays on the system sans. */
+     italic. Drives the whole UI: the body default, headings, and prose.
+   The app is fully serif. --font-sans / --font-mono below are kept only as
+   escape hatches and are currently referenced nowhere. */
 @font-face {
 	font-family: 'IM Fell English';
 	font-style: normal;
@@ -32,7 +33,13 @@
 	font-style: normal;
 	font-weight: 600;
 	font-display: swap;
-	src: url('/fonts/spectral-600.woff2') format('woff2');
+	/* EXPERIMENT — flatten heavy weights to regular.
+	   This slot is mapped at the *regular* file, so every font-weight:600 (and
+	   700, which font-matching resolves down to this 600 face) renders 400
+	   glyphs — no per-rule edits, no faux-bold. body sets font-synthesis:none
+	   so the fallback stays clean. To revert: point src back at
+	   spectral-600.woff2 and the real semibold lights up everywhere again. */
+	src: url('/fonts/spectral-regular.woff2') format('woff2');
 }
 @font-face {
 	font-family: 'Spectral';
@@ -68,7 +75,7 @@
 	--color-info: #6090c8;          /* informational */
 
 	/* ── Typography ──────────────────────────────────────────────────────── */
-	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;     /* unused — escape hatch */
 	--font-display: 'IM Fell English', Georgia, 'Times New Roman', serif; /* hero only */
 	--font-serif: 'Spectral', Georgia, 'Times New Roman', serif;          /* headings + prose */
 	--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;

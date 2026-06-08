@@ -59,13 +59,16 @@
 
 	:global(body) {
 		font-family: var(--font-serif);
+		/* Never algorithmically fake a weight we don't have a real cut for —
+		   missing weights fall back to the nearest real face cleanly. */
+		font-synthesis: none;
 		background: var(--color-bg);
 		color: var(--color-text);
 		min-height: 100dvh;
 	}
 
-	/* Headings default to the text serif (Spectral) at its loaded 600 weight;
-	   body/UI stays on the sans. The hero title opts into --font-display. */
+	/* The whole UI is Spectral (set on body above). Headings default to its
+	   600 weight; the hero title opts into --font-display. */
 	:global(h1, h2, h3) {
 		font-family: var(--font-serif);
 		font-weight: 600;
