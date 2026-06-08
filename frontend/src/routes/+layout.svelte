@@ -104,10 +104,17 @@
 		background: var(--color-surface-sunken);
 		border-bottom: 1px solid var(--color-border-subtle);
 	}
+	/* Matches the .phase-badge treatment on table pages ("LOBBY", "MAIN
+	   EVENT") so top-level page titles read as the same kind of label. */
 	.page-title {
 		margin: 0;
-		font-size: 1.7rem;
+		font-size: 0.8rem;
+		background: var(--color-border-warm);
 		color: var(--color-accent);
+		padding: 0.15rem 0.5rem;
+		border-radius: 4px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 	.buy {
 		display: inline-flex;
