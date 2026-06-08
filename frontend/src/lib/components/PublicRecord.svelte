@@ -400,9 +400,14 @@
 		border-radius: 4px;
 	}
 
-	.record-row[data-state="past"]    { opacity: 0.6; }
+	/* Past rows hold real content (earlier plans + scenes), so they stay at
+	   full contrast. Timeline position is already conveyed by the current
+	   row's warm fill + accent border and by the rail, so we don't need to
+	   dim past content. Future rows are nearly always empty (—), so a light
+	   dim is enough to read as "not yet" without greying out anything real. */
+	.record-row[data-state="past"]    { opacity: 1; }
 	.record-row[data-state="current"] { background: #2a2010; border-left: 2px solid var(--color-accent); padding-left: 0.3rem; }
-	.record-row[data-state="future"]  { opacity: 0.5; }
+	.record-row[data-state="future"]  { opacity: 0.8; }
 
 	.row-num-pill {
 		flex-shrink: 0;
@@ -472,7 +477,7 @@
 
 	.entry-line {
 		font-size: 0.82rem;
-		color: #ccc;
+		color: var(--color-text);
 		line-height: 1.4;
 		margin: 0;
 		word-break: break-word;
@@ -485,7 +490,7 @@
 		display: block;
 		width: 100%;
 	}
-	.entry-line:hover { color: #fff; }
+	.entry-line:hover { color: var(--color-accent-hover); }
 
 	.entry-author {
 		font-weight: 600;
