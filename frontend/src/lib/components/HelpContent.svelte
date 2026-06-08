@@ -12,6 +12,7 @@
 -->
 <script lang="ts">
 	import { feedbackHref } from '$lib/feedback';
+	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER } from './plans/shared';
 
 	// Panel mode (the ? sheet): the help fills the sheet to a fixed height and the
 	// body scrolls internally, so the footer is pinned and blank space is never
@@ -73,35 +74,21 @@
 	];
 
 	// The twelve plans, grouped by category, for the Plans-tab reference grid.
-	const planGroups: { category: string; plans: { name: string; desc: string }[] }[] = [
-		{
-			category: 'Power',
-			plans: [
-				{ name: 'Make Demands', desc: "Seize control of another's plan." },
-				{ name: 'Propose Decree', desc: 'Pass a law at council.' },
-				{ name: 'Exchange Courtiers', desc: 'Take a peer from a rival.' },
-				{ name: 'Make War', desc: 'Declare war; all sides pay each turn.' },
-			],
-		},
-		{
-			category: 'Knowledge',
-			plans: [
-				{ name: 'Make Introductions', desc: 'Bring new peers into play.' },
-				{ name: 'Seek Answers', desc: 'Research to uncover truths.' },
-				{ name: 'Chronicle Histories', desc: 'Play a scene from the past.' },
-				{ name: 'Clandestinely Liaise', desc: 'A secret meeting between two.' },
-			],
-		},
-		{
-			category: 'Esteem',
-			plans: [
-				{ name: 'Spread Propaganda', desc: 'Push an idea; reshape society.' },
-				{ name: 'Spread Rumors', desc: 'Spread a rumor about an asset.' },
-				{ name: 'Propose Duel', desc: 'Challenge someone to a duel.' },
-				{ name: 'Host Festivity', desc: 'Throw an event; guests may roll.' },
-			],
-		},
-	];
+	// Names and descriptions are derived from the canonical PLAN_SHORT /
+	// PLAN_DESCRIPTION used in-game, so the help and gameplay never drift.
+	const planGroups: { category: string; plans: { name: string; desc: string }[] }[] = (
+		[
+			['Power', 'power'],
+			['Knowledge', 'knowledge'],
+			['Esteem', 'esteem'],
+		] as const
+	).map(([category, track]) => ({
+		category,
+		plans: TRACK_ORDER[track].map((pt) => ({
+			name: PLAN_SHORT[pt],
+			desc: PLAN_DESCRIPTION[pt],
+		})),
+	}));
 </script>
 
 <div class="help" class:panel>

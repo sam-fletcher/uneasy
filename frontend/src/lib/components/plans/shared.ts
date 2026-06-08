@@ -23,14 +23,14 @@ export const PLAN_DESCRIPTION: Record<PlanType, string> = {
 	propose_decree:       'Bring a new law to the royal council to enact sweeping legal change.',
 	exchange_courtiers:   'Take another player’s peer into your retinue.',
 	make_war:             'Declare war. Agree to peace terms, or break assets every round.',
-	spread_propaganda:    'Distribute a pamphlet to spread new thought throughout the realm.',
+	spread_propaganda:    'Set society ablaze; create an artifact that embodies the shift.',
 	spread_rumors:        'Spread rumors to damage the reputation of an asset.',
-	propose_duel:         'Go one-on-one in a battle of arms or wits to prove a point.',
-	host_festivity:       'Convene socially: throw a ball, host a dinner, go on a hunt.',
+	propose_duel:         'Go 1-on-1 in a battle of arms or wits to win assets.',
+	host_festivity:       'Throw a ball, host a dinner, go on a hunt. Anything can happen.',
 	make_introductions:   'Introduce new peers to court. Add them to your retinue.',
-	seek_answers:         'Investigate truths and ask questions of the other players.',
-	chronicle_histories:  'Explore a situation from history. Connect it to the present.',
-	clandestinely_liaise: 'Meet in secret and share a moment with another character.',
+	seek_answers:         'Learn secrets, break assets, declare truths, get answers.',
+	chronicle_histories:  'Explore a situation from history. Break artifacts.',
+	clandestinely_liaise: 'Meet in secret. Learn secrets, change assets.',
 };
 
 /** Display order within each track column (top → bottom). */
