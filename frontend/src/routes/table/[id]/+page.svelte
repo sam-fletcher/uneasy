@@ -139,6 +139,23 @@
 	let helpOpen = $state(false);
 	let prologueActivePlayerID = $state<number | null>(null);
 
+	// ── Join-code copy feedback ───────────────────────────────────────────────
+	// Briefly flips the badge label to "Copied!" after a successful copy.
+	let joinCodeCopied = $state(false);
+	let joinCodeCopyTimer: ReturnType<typeof setTimeout> | null = null;
+	async function copyJoinCode() {
+		if (!game) return;
+		try {
+			await navigator.clipboard.writeText(game.join_code);
+			joinCodeCopied = true;
+			if (joinCodeCopyTimer) clearTimeout(joinCodeCopyTimer);
+			joinCodeCopyTimer = setTimeout(() => (joinCodeCopied = false), 1500);
+		} catch {
+			// Clipboard can reject (permissions / insecure context); leave the
+			// label unchanged so the user can still read & copy manually.
+		}
+	}
+
 	// ── Mobile chat sheet ─────────────────────────────────────────────────────
 	// Bound to ChatPanel's `expanded`. Kept here so the page can enforce one
 	// full-screen surface at a time on mobile: opening any header panel closes
@@ -548,12 +565,6 @@
 		{#if game}
 			<div class="game-info">
 				<span class="phase-badge">{phaseLabels[game.phase] ?? game.phase}</span>
-				{#if game.phase === 'lobby'}
-					<button class="code-badge" onclick={() => navigator.clipboard.writeText(game!.join_code)}>
-						{game.join_code}
-						<span class="copy-hint">copy</span>
-					</button>
-				{/if}
 				<button class="tones-button" onclick={() => tonesOpen = true} aria-label="Open tones">
 					Tones
 				</button>
@@ -619,9 +630,16 @@
 	<!-- ── Lobby ──────────────────────────────────────────────────────────── -->
 	{:else if game?.phase === 'lobby'}
 		<div class="phase-view lobby">
-			<p class="muted">
-				Share the join code <strong>{game.join_code}</strong> with your friends. The game needs 2–5 players.
-			</p>
+			<section class="lobby-join">
+				<h2>Join Code</h2>
+				<button class="code-badge" class:copied={joinCodeCopied} onclick={copyJoinCode} aria-label="Copy join code">
+					{game.join_code}
+					<span class="copy-hint" aria-live="polite">{joinCodeCopied ? 'Copied!' : 'copy'}</span>
+				</button>
+				<p class="muted">
+					Share this code with your friends to invite them. The game needs 2–5 players.
+				</p>
+			</section>
 			<div class="player-list">
 				{#each players as p}
 					<div class="player-row">
@@ -830,7 +848,7 @@
 	<RetinueSheet open={helpOpen} onClose={() => helpOpen = false}>
 		<div class="help-sheet">
 			<h3>How to play</h3>
-			<HelpContent />
+			<HelpContent panel />
 		</div>
 	</RetinueSheet>
 
@@ -1064,6 +1082,7 @@
 		font-size: 0.7rem;
 		color: var(--color-text-muted);
 	}
+	.code-badge.copied .copy-hint { color: var(--color-accent); }
 
 	.top-strip {
 		display: flex;
@@ -1281,12 +1300,23 @@
 		padding-top: 1rem;
 		border-top: 1px solid var(--color-border);
 	}
-	.lobby-help h2 {
+	.lobby h2 {
 		color: var(--color-accent);
 		font-size: 1.15rem;
 		margin: 0 0 0.35rem;
 	}
 	.lobby-help .muted { margin-bottom: 0.9rem; }
+
+	.lobby-join { margin-bottom: 0.5rem; }
+	.lobby-join .muted { 
+		margin-top: 0.5rem;
+		margin-bottom: 0.2rem; 
+	}
+	.lobby-join .code-badge {
+		display: inline-flex;
+		font-size: 1rem;
+		padding: 0.35rem 0.8rem;
+	}
 
 	/* ── Tone Setting ─────────────────────────────────────────────────────── */
 
