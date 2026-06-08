@@ -88,7 +88,7 @@
 					placeholder="Casus belli, opening move, rally cry, et cetera" required></textarea>
 		</label>
 		<p class="choices-note muted">
-			Once declared, all involved players reveal a die to set the delay (average rounded up).
+			Once declared, all involved players reveal a die face to set the delay (average rounded up).
 			Other players may join either side whenever the Public Record advances.
 		</p>
 		{#if !readOnly}

@@ -356,8 +356,9 @@
 				/>
 			</FormField>
 			<p class="choices-note muted">
-				A liaison is a meeting between two specific peers — one from each of
-				you. Tip: agree the partner's peer with them in the chat first.
+				A liaison is a meeting between two specific peers, one from each of you. 
+			</p><p class="choices-note muted">
+				Tip: discuss the choice with the other player in the chat first.
 			</p>
 			<CardPicker
 				label="Your meeting peer"
@@ -385,8 +386,8 @@
 					placeholder="Where do the two peers meet? Will they share a meal, meet under a bridge, or something more intimate?" required></textarea>
 			</label>
 			<p class="choices-note muted">
-				Once prepared, you and your partner each reveal a die to set
-				the delay (average rounded up).
+				Once prepared, you and your partner each reveal 
+				a die face to set the delay (average rounded up).
 			</p>
 			{#if !readOnly}
 				<div class="form-actions">
