@@ -19,6 +19,7 @@
 	import type { RecordRow, Plan, Player } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
 	import { playerColorByID } from '$lib/playerColor';
+	import { PLAN_SHORT } from '$lib/components/plans/shared';
 
 	interface Props {
 		rows: RecordRow[];
@@ -41,22 +42,7 @@
 	const TOTAL_ROWS = 13;
 	const ENGRAILED_AFTER = new Set([4, 8, 12]);
 
-	const PLAN_LABELS: Record<string, string> = {
-		exchange_courtiers:  'Exchange Courtiers',
-		make_introductions:  'Make Introductions',
-		spread_propaganda:   'Spread Propaganda',
-		make_demands:        'Make Demands',
-		propose_decree:      'Propose Decree',
-		make_war:            'Make War',
-		seek_answers:        'Seek Answers',
-		chronicle_histories: 'Chronicle Histories',
-		spread_rumors:       'Spread Rumors',
-		propose_duel:        'Propose Duel',
-		host_festivity:      'Host Festivity',
-		clandestinely_liaise:'Clandestinely Liaise',
-	};
-
-	const planLabel = (p: Plan) => PLAN_LABELS[p.plan_type] ?? p.plan_type;
+	const planLabel = (p: Plan) => PLAN_SHORT[p.plan_type] ?? p.plan_type;
 	const planStatusClass = (s: Plan['status']) =>
 		s === 'pending' ? 'plan-pending'
 			: s === 'resolving' ? 'plan-resolving'

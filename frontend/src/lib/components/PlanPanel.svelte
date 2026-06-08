@@ -24,7 +24,7 @@
 	} from '$lib/api';
 
 	import './plans/planPanel.css';
-	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER, playerName } from './plans/shared';
+	import { PLAN_SHORT, PLAN_DESCRIPTION, PLAN_DELAY, TRACK_ORDER, playerName } from './plans/shared';
 	import { REGISTRY } from './plans/registry';
 	import RowPill from './plans/RowPill.svelte';
 	import { highlightedRow } from '$lib/highlight';
@@ -143,12 +143,6 @@
 		});
 		return m;
 	});
-
-	function rowStateFor(targetRow: number): 'past' | 'current' | 'future' {
-		if (targetRow < currentRow) return 'past';
-		if (targetRow === currentRow) return 'current';
-		return 'future';
-	}
 
 	function onPlanClick(cell: PlanCell) {
 		if (!cell.eligible) return;
@@ -335,7 +329,7 @@
 											</svg>
 										</span>
 									{:else}
-										<RowPill row={cell.targetRow} state={rowStateFor(cell.targetRow)} />
+										<RowPill row={PLAN_DELAY[pt]} kind="delay" />
 									{/if}
 								{/if}
 							</div>

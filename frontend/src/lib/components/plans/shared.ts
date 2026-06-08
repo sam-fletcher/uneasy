@@ -1,21 +1,6 @@
 // Shared constants, parsers, and helpers for plan components.
 import type { Plan, Player, Asset, PlanType, ResolutionData, RankingCategory } from '$lib/api';
 
-export const PLAN_TRACK: Record<PlanType, RankingCategory> = {
-	exchange_courtiers:   'power',
-	propose_decree:       'power',
-	make_war:             'power',
-	make_demands:         'power',
-	spread_propaganda:    'esteem',
-	spread_rumors:        'esteem',
-	propose_duel:         'esteem',
-	host_festivity:       'esteem',
-	make_introductions:   'knowledge',
-	seek_answers:         'knowledge',
-	chronicle_histories:  'knowledge',
-	clandestinely_liaise: 'knowledge',
-};
-
 /** One-line flavour description per plan type. Sourced from "Plan Titles.md"
  * (the in-rules card copy). Kept short so plan cards stay scannable. */
 export const PLAN_DESCRIPTION: Record<PlanType, string> = {
@@ -31,6 +16,26 @@ export const PLAN_DESCRIPTION: Record<PlanType, string> = {
 	seek_answers:         'Learn secrets, break assets, declare truths, get answers.',
 	chronicle_histories:  'Explore a situation from history. Break artifacts.',
 	clandestinely_liaise: 'Meet in secret. Learn secrets, change assets.',
+};
+
+/** Static row delay per plan, mirroring each handler's `PlanMetadata.Delay`
+ * (handler/plan_*.go). A plan prepared on row N resolves on row N + delay.
+ * `-1` marks the three variable-delay plans — Make Demands, Make War, and
+ * Clandestinely Liaise — whose delay is only known after prep (target plan /
+ * dice reveal), so the grid shows an icon for them instead of a number. */
+export const PLAN_DELAY: Record<PlanType, number> = {
+	make_demands:         -1,
+	propose_decree:       4,
+	exchange_courtiers:   5,
+	make_war:             -1,
+	spread_propaganda:    3,
+	spread_rumors:        4,
+	propose_duel:         5,
+	host_festivity:       6,
+	make_introductions:   3,
+	seek_answers:         4,
+	chronicle_histories:  5,
+	clandestinely_liaise: -1,
 };
 
 /** Display order within each track column (top → bottom). */
@@ -53,21 +58,6 @@ export const PLAN_SHORT: Record<PlanType, string> = {
 	host_festivity:       'Host Festivity',
 	make_war:             'Make War',
 	make_demands:         'Make Demands',
-};
-
-export const PLAN_LABELS: Record<PlanType, string> = {
-	exchange_courtiers:   'Exchange Courtiers (Power, delay 5)',
-	make_introductions:   'Make Introductions (Knowledge, delay 3)',
-	spread_propaganda:    'Spread Propaganda (Esteem, delay 3)',
-	seek_answers:         'Seek Answers (Knowledge, delay 1)',
-	spread_rumors:        'Spread Rumors (Esteem, delay 1)',
-	chronicle_histories:  'Chronicle Histories (Knowledge, delay 1)',
-	propose_decree:       'Propose Decree (Power, delay 3)',
-	clandestinely_liaise: 'Clandestinely Liaise (Esteem, delay 3)',
-	propose_duel:         'Propose Duel (Esteem, delay 5)',
-	host_festivity:       'Host Festivity (Esteem, delay 5)',
-	make_war:             'Make War (Power, delay 5)',
-	make_demands:         'Make Demands (Power, delay 5)',
 };
 
 export interface PlanChoiceOption { key: string; label: string; }

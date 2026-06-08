@@ -9,17 +9,22 @@
     state — 'past' | 'current' | 'future' (defaults to 'future'). Matches
             the rail's colour scheme so the same row reads the same way in
             both places.
+    kind  — 'row' (default) shows the absolute row number; 'delay' shows a
+            relative "N" badge for a plan's static row delay.
 -->
 <script lang="ts">
 	interface Props {
 		row: number;
 		size?: 'sm' | 'md';
 		state?: 'past' | 'current' | 'future';
+		kind?: 'row' | 'delay';
 	}
-	let { row, size = 'sm', state = 'future' }: Props = $props();
+	let { row, size = 'sm', state = 'future', kind = 'row' }: Props = $props();
+	const label = $derived(kind === 'delay' ? `Resolves ${row} rows later` : `Row ${row}`);
+	const text = $derived(kind === 'delay' ? `${row}` : `${row}`);
 </script>
 
-<span class="row-pill" data-size={size} data-state={state} aria-label="Row {row}">{row}</span>
+<span class="row-pill" data-size={size} data-state={state} aria-label={label} title={label}>{text}</span>
 
 <style>
 	.row-pill {
