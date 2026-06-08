@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -39,7 +40,7 @@ import (
 // Returns the reveal state. Faces are hidden (null) until is_complete = true.
 func GetReveal(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		reveal, _, ok := requireRevealAccess(w, r, s.Q)
+		reveal, viewer, ok := requireRevealAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -51,27 +52,39 @@ func GetReveal(s *db.Store) http.HandlerFunc {
 			return
 		}
 
-		// Build response: hide faces until the reveal is complete.
+		// Build response: a flat object matching the frontend SimultaneousReveal
+		// type. Faces stay hidden (null) until the reveal is complete, but
+		// revealed_at is populated as soon as a participant submits — that's how
+		// clients tell who is still pending without leaking the hidden faces.
 		type entryView struct {
-			PlayerID  int64  `json:"player_id"`
-			Submitted bool   `json:"submitted"`
-			Face      *int16 `json:"face,omitempty"` // only present when complete
+			PlayerID   int64   `json:"player_id"`
+			Face       *int16  `json:"face"`        // null until the reveal completes
+			RevealedAt *string `json:"revealed_at"` // submission time, or null if not yet in
 		}
 		views := make([]entryView, 0, len(entries))
 		for _, e := range entries {
-			ev := entryView{
-				PlayerID:  e.PlayerID,
-				Submitted: e.RevealedAt.Valid,
+			ev := entryView{PlayerID: e.PlayerID}
+			if e.RevealedAt.Valid {
+				ts := e.RevealedAt.Time.Format(time.RFC3339)
+				ev.RevealedAt = &ts
 			}
-			if reveal.IsComplete && e.Face != nil {
+			// Faces are hidden until the reveal completes — except a viewer may
+			// always see their OWN face (they chose it; it leaks nothing), so the
+			// UI can keep their pick highlighted across reloads.
+			if e.Face != nil && (reveal.IsComplete || e.PlayerID == viewer.ID) {
 				ev.Face = e.Face
 			}
 			views = append(views, ev)
 		}
 
 		respond(w, http.StatusOK, map[string]any{
-			"reveal":  reveal,
-			"entries": views,
+			"id":           reveal.ID,
+			"game_id":      reveal.GameID,
+			"plan_id":      reveal.PlanID,
+			"reveal_type":  reveal.RevealType,
+			"is_complete":  reveal.IsComplete,
+			"result_delay": reveal.ResultDelay,
+			"entries":      views,
 		})
 	}
 }

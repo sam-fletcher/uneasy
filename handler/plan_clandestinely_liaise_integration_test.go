@@ -15,6 +15,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"testing"
@@ -331,6 +332,118 @@ func TestLiaise_Prepare_RejectsPeerNotOwned(t *testing.T) {
 	})
 	assert.Equalf(t, http.StatusBadRequest, code,
 		"partner's meeting peer must be owned by the partner: %v", body)
+}
+
+// TestLiaise_PrepareResponse_CarriesPartnerAndReveal proves the prepare-plan
+// HTTP response carries the resolution_data fields OnPrepare writes —
+// partner_id and delay_reveal_id. The plan.prepared broadcast reuses the same
+// struct, and non-preparer clients rely solely on that broadcast (they don't
+// refetch). Regression for a bug where the response/broadcast plan was a
+// pre-OnPrepare snapshot, so observers saw a "?" partner and no waiting-on bar.
+func TestLiaise_PrepareResponse_CarriesPartnerAndReveal(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	preparerPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's confidant")
+	partnerPeer, _ := clSeedPeerWithMarginalia(t, h, 1, "partner's confidant")
+
+	notes := "under a bridge"
+	partnerID := h.tg.Players[1].ID
+	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/prepare-plan"
+	code, body := h.post(h.focusPlayerIdx(), path, PreparePlanRequest{
+		PlanType:         model.PlanClandestinelyLiaise,
+		TargetPlayerID:   &partnerID,
+		PreparerPeerID:   &preparerPeer,
+		PartnerPeerID:    &partnerPeer,
+		PreparationNotes: &notes,
+	})
+	require.Equalf(t, http.StatusCreated, code, "prepare-plan failed: %v", body)
+
+	// Inspect the response plan directly — NOT a DB refetch — since that is what
+	// the broadcast ships to other clients.
+	planBlob, _ := json.Marshal(body["plan"])
+	var p dbgen.Plan
+	require.NoError(t, json.Unmarshal(planBlob, &p))
+
+	rd := loadResolutionData(p.ResolutionData)
+	ld := rd.EnsureLiaise()
+	require.NotNil(t, ld.PartnerID, "response plan must include partner_id")
+	assert.Equal(t, partnerID, *ld.PartnerID)
+	require.NotNil(t, ld.DelayRevealID, "response plan must include delay_reveal_id")
+	require.NotNil(t, ld.PreparerPeerID, "response plan must include preparer_peer_id")
+	assert.Equal(t, preparerPeer, *ld.PreparerPeerID)
+	require.NotNil(t, ld.PartnerPeerID, "response plan must include partner_peer_id")
+	assert.Equal(t, partnerPeer, *ld.PartnerPeerID)
+}
+
+// TestLiaise_GetReveal_PartialSubmission_ExposesRevealedAtNotFace proves the
+// GET reveal endpoint lets clients tell who has submitted (revealed_at) before
+// the reveal completes, WITHOUT leaking the hidden faces. Regression for a bug
+// where clients keyed "has submitted" off face (always null pre-completion), so
+// a submitting player got no feedback and the other player's waiting-on list
+// never shrank.
+func TestLiaise_GetReveal_PartialSubmission_ExposesRevealedAtNotFace(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	preparerPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's confidant")
+	partnerPeer, _ := clSeedPeerWithMarginalia(t, h, 1, "partner's confidant")
+
+	notes := "under a bridge"
+	partnerID := h.tg.Players[1].ID
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanClandestinelyLiaise,
+		TargetPlayerID:   &partnerID,
+		PreparerPeerID:   &preparerPeer,
+		PartnerPeerID:    &partnerPeer,
+		PreparationNotes: &notes,
+	})
+	rd := loadResolutionData(plan.ResolutionData)
+	ld := rd.EnsureLiaise()
+	require.NotNil(t, ld.DelayRevealID)
+	revealID := *ld.DelayRevealID
+
+	// Only the preparer (player 0) submits so far.
+	clSubmitReveal(t, h, revealID, 0, 4)
+
+	// The partner (player 1) reads the reveal.
+	code, body := h.get(1, "/api/reveals/"+strconv.FormatInt(revealID, 10))
+	require.Equalf(t, http.StatusOK, code, "get reveal: %v", body)
+
+	assert.Equal(t, false, body["is_complete"], "reveal not complete after one submission")
+
+	entries, ok := body["entries"].([]any)
+	require.Truef(t, ok, "entries should be a list: %v", body["entries"])
+	require.Len(t, entries, 2)
+
+	preparerPID := float64(h.tg.Players[0].ID)
+	partnerPID := float64(h.tg.Players[1].ID)
+	for _, raw := range entries {
+		e := raw.(map[string]any)
+		switch e["player_id"] {
+		case preparerPID:
+			assert.NotNil(t, e["revealed_at"], "submitter's revealed_at must be set")
+			assert.Nil(t, e["face"], "face stays hidden until the reveal completes")
+		case partnerPID:
+			assert.Nil(t, e["revealed_at"], "non-submitter's revealed_at must be null")
+			assert.Nil(t, e["face"], "non-submitter has no face")
+		default:
+			t.Fatalf("unexpected entry player_id: %v", e["player_id"])
+		}
+	}
+
+	// The submitter reading their OWN reveal sees their own face (it leaks
+	// nothing) so the UI can keep the pick highlighted, but still not the
+	// partner's, and the reveal is still incomplete.
+	code, body = h.get(0, "/api/reveals/"+strconv.FormatInt(revealID, 10))
+	require.Equalf(t, http.StatusOK, code, "get reveal as submitter: %v", body)
+	assert.Equal(t, false, body["is_complete"])
+	for _, raw := range body["entries"].([]any) {
+		e := raw.(map[string]any)
+		if e["player_id"] == preparerPID {
+			assert.EqualValues(t, 4, e["face"], "submitter sees their own face")
+		} else {
+			assert.Nil(t, e["face"], "submitter still can't see the partner's face")
+		}
+	}
 }
 
 // TestLiaise_ShareChoice_MeetingPeerDestroyed_Graceful proves that if the

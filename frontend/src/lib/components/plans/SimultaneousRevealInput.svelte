@@ -48,11 +48,13 @@
 		Array.from({ length: maxFace - minFace + 1 }, (_, i) => minFace + i)
 	);
 
+	// Submission status uses revealed_at, not face: faces stay hidden until the
+	// whole reveal completes, but revealed_at is set the moment a player submits.
 	const mySubmission = $derived(
-		reveal?.entries.find(e => e.player_id === currentPlayerID && e.face != null) ?? null
+		reveal?.entries.find(e => e.player_id === currentPlayerID && e.revealed_at != null) ?? null
 	);
 	const submittedIDs = $derived(
-		new Set(reveal?.entries.filter(e => e.face != null).map(e => e.player_id) ?? [])
+		new Set(reveal?.entries.filter(e => e.revealed_at != null).map(e => e.player_id) ?? [])
 	);
 	const waitingOn = $derived(
 		participants.filter(p => !submittedIDs.has(p.player_id))
@@ -65,6 +67,11 @@
 	async function refresh() {
 		try {
 			reveal = await getReveal(revealID);
+			// Restore the local highlight after a reload: the server returns the
+			// viewer's own face even before completion, so re-seed `picked` from it.
+			if (picked == null && mySubmission?.face != null) {
+				picked = mySubmission.face;
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load reveal';
 		}
@@ -106,26 +113,12 @@
 		{#if reveal.result_delay != null}
 			<p class="choices-note">Result delay: <strong>{reveal.result_delay}</strong></p>
 		{/if}
-	{:else if mySubmission}
-		<p class="choices-header">Locked in</p>
-		{#if picked != null}
-			<div class="locked-face-row">
-				<div class="locked-face">
-					<D6Face value={picked} size={40} />
-				</div>
-			</div>
-		{/if}
-		<p class="choices-note locked-note">
-			{#if waitingOn.length === 0}
-				All submissions in — revealing…
-			{:else}
-				Waiting on {waitingOn.length}
-				{waitingOn.length === 1 ? 'other' : 'others'}:
-				{waitingOn.map(p => p.display_name).join(', ')}
-			{/if}
-		</p>
 	{:else}
+		{@const submitted = mySubmission != null}
 		<p class="choices-header">{prompt}</p>
+		<!-- After submitting, the picker stays visible with the chosen face
+		     highlighted but locked: the faces are disabled and Submit flips to a
+		     non-interactive "Submitted" state. -->
 		<div class="chip-row face-row">
 			{#each faces as face}
 				<button
@@ -133,6 +126,7 @@
 					class="chip-btn face-chip"
 					class:active={picked === face}
 					aria-label="Pick {face}"
+					disabled={submitted || busy}
 					onclick={() => (picked = face)}
 				>
 					<D6Face value={face} size={28} />
@@ -140,11 +134,27 @@
 			{/each}
 		</div>
 		<div class="submit-row">
-			<button class="action-btn primary" onclick={submit} disabled={busy || picked == null}>
-				{busy ? '…' : 'Submit'}
-			</button>
+			{#if submitted}
+				<button class="action-btn submitted" disabled aria-disabled="true">
+					<span class="tick">✓</span> Submitted
+				</button>
+			{:else}
+				<button class="action-btn primary" onclick={submit} disabled={busy || picked == null}>
+					{busy ? '…' : 'Submit'}
+				</button>
+			{/if}
 		</div>
-		{#if waitingOn.length < participants.length}
+		{#if submitted}
+			<p class="choices-note">
+				{#if waitingOn.length === 0}
+					All submissions in — revealing…
+				{:else}
+					Waiting on {waitingOn.length}
+					{waitingOn.length === 1 ? 'other' : 'others'}:
+					{waitingOn.map(p => p.display_name).join(', ')}
+				{/if}
+			</p>
+		{:else if waitingOn.length < participants.length}
 			<p class="choices-note">
 				{participants.length - waitingOn.length} of {participants.length} submitted.
 			</p>
@@ -162,18 +172,25 @@
 		display: flex;
 		justify-content: center;
 	}
-	.locked-face-row {
-		display: flex;
-		justify-content: center;
+	/* Locked submit button: clearly inactive (grey) once the face is in, with a
+	   confirming check. Distinct from a primary :disabled which only fades. */
+	.action-btn.submitted {
+		background: var(--color-surface-2);
+		color: var(--color-text-muted);
+		border: 1px solid var(--color-border-strong);
+		cursor: default;
+		opacity: 1; /* override the global .action-btn:disabled fade */
 	}
-	.locked-face {
-		padding: 0.4rem 0.55rem;
-		border: 1px solid #8a6a3a;
-		border-radius: 8px;
-		background: rgba(138, 106, 58, 0.12);
-		box-shadow: 0 0 0 1px rgba(200, 169, 110, 0.15) inset;
+	.action-btn.submitted .tick {
+		color: var(--color-success); /* green tick */
+		font-weight: 700;
 	}
-	.locked-note {
-		text-align: center;
+	/* Locked faces: the chosen one keeps its highlight; the rest fade so the
+	   selection stays legible without inviting another click. */
+	.face-chip:disabled {
+		cursor: default;
+	}
+	.face-chip:disabled:not(.active) {
+		opacity: 0.35;
 	}
 </style>

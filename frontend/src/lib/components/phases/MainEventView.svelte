@@ -359,8 +359,10 @@
 	// Participants whose reveal entry is still face=null.
 	const delayRevealPendingSubmitterIDs = $derived.by<number[]>(() => {
 		if (!delayReveal || delayReveal.is_complete) return [];
+		// revealed_at (not face) marks who has submitted — faces stay hidden
+		// until the reveal completes, so face is null for everyone before then.
 		return delayReveal.entries
-			.filter(e => e.face == null)
+			.filter(e => e.revealed_at == null)
 			.map(e => e.player_id);
 	});
 

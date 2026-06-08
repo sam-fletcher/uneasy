@@ -149,6 +149,16 @@
 		};
 	});
 
+	// The two specific peers brought to the meeting (by stored id, seat-agnostic),
+	// for the delay-reveal play-area summary. Looked up from the shared asset list
+	// so every viewer — participant or not — can see who is meeting whom.
+	const preparerMeetingPeer = $derived(
+		assets.find(a => a.id === clState.preparerPeerID) ?? null,
+	);
+	const partnerMeetingPeerAsset = $derived(
+		assets.find(a => a.id === clState.partnerPeerID) ?? null,
+	);
+
 	const amPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const amPartner = $derived(currentPlayerID != null && clState.partnerID === currentPlayerID);
 	const amParticipant = $derived(amPreparer || amPartner);
@@ -402,21 +412,31 @@
 
 {:else if mode === 'delayReveal' && plan}
 	<!-- Delay reveal — the plan is pending at row 0 until both faces are in. -->
+	<!-- No panel header here — the page-level WaitingOnBar already names the
+	     plan ("Clandestinely Liaise — delay reveal") and who we're waiting on. -->
 	<div class="plan-panel pending">
-		<div class="plan-header">
-			<span class="plan-badge pending-badge">Pending — delay reveal</span>
-			<strong class="plan-title">Clandestinely Liaise</strong>
-			<span class="plan-preparer">by {playerName(players, plan.preparer_id)}</span>
-		</div>
 		{#if plan.preparation_notes}
 			<p class="plan-notes">"{plan.preparation_notes}"</p>
+		{/if}
+		{#if preparerMeetingPeer || partnerMeetingPeerAsset}
+			<p class="cl-meeting-peers">
+				<span class="cl-peer">
+					{playerName(players, plan.preparer_id)}'s
+					<strong>{preparerMeetingPeer?.name ?? '?'}</strong>
+				</span>
+				<span class="cl-peer-sep">meets</span>
+				<span class="cl-peer">
+					{playerName(players, clState.partnerID)}'s
+					<strong>{partnerMeetingPeerAsset?.name ?? '?'}</strong>
+				</span>
+			</p>
 		{/if}
 		{#if amParticipant && clState.delayRevealID != null && currentPlayerID != null}
 			<SimultaneousRevealInput
 				revealID={clState.delayRevealID}
 				{currentPlayerID}
 				{participants}
-				prompt="Pick a die face to set the delay"
+				prompt="Pick a die face to set the delay:"
 			/>
 		{:else}
 			<p class="choices-note muted">
@@ -633,3 +653,35 @@
 		{/if}
 	</ResolvingCard>
 {/if}
+
+<style>
+	/* The delay-reveal scene caption ("Under a bridge") is centred to match the
+	   meeting-peers summary below it. Scoped to this component, so it only
+	   affects the delay-reveal notes. */
+	.plan-notes {
+		text-align: center;
+	}
+
+	/* Meeting-peers summary in the delay-reveal play area: who is bringing whom
+	   to the liaison. Stacked and centred, with "meets" on its own line. */
+	.cl-meeting-peers {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		gap: 0.15rem;
+		/* Extra bottom margin separates the meeting summary from the reveal
+		   input ("Pick a die face…") / waiting copy that follows. */
+		margin: 0.35rem 0 1.5rem;
+		font-size: 0.9rem;
+		color: var(--color-text);
+	}
+	.cl-peer strong {
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+	.cl-peer-sep {
+		color: var(--color-text-muted);
+		font-style: italic;
+	}
+</style>

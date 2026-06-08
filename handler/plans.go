@@ -793,6 +793,8 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // targetRow is nil for plans whose row is decided by a post-prep reveal
 // (Make War, Clandestinely Liaise); the row stays NULL on creation and is
 // filled in when the reveal closes.
+//
+//nolint:funlen // sequential steps; splitting probably obscures the order
 func createPlanInTx(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -903,6 +905,14 @@ func createPlanInTx(
 		deps := &PlanDeps{Store: s.WithQ(q), Manager: manager}
 		if err := preparer.OnPrepare(ctx, deps, &plan); err != nil {
 			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not initialise plan: "+err.Error())
+		}
+		// OnPrepare writes additional resolution_data directly to the DB (e.g.
+		// liaise partner_id + delay_reveal_id, make_war delay_reveal_id) without
+		// touching the in-memory struct. Refresh so the plan.prepared broadcast
+		// carries the complete resolution_data — otherwise non-preparer clients,
+		// which rely solely on that event, render with the fields missing.
+		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
+			plan = refreshed
 		}
 	}
 
