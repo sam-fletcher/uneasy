@@ -563,16 +563,16 @@
 			</button>
 		</div>
 		{#if game}
-			<div class="game-info">
-				<span class="phase-badge">{phaseLabels[game.phase] ?? game.phase}</span>
+			<div class="game-info" class:has-war={$activeWarCount + $pendingWarCount > 0}>
+				<span class="phase-badge">{#each (phaseLabels[game.phase] ?? game.phase).split(' ') as word, i}{#if i}{' '}{/if}<span>{word}</span>{/each}</span>
 				<button class="tones-button" onclick={() => tonesOpen = true} aria-label="Open tones">
-					Tones
+					<span class="lbl">Tones</span>
 				</button>
 				<button class="tones-button" onclick={() => lawsOpen = true} aria-label="Open laws">
-					Laws{laws.length > 0 ? ` (${laws.length})` : ''}
+					<span class="lbl">Laws</span>{#if laws.length > 0}<span class="count">{laws.length}</span>{/if}
 				</button>
 				<button class="tones-button" onclick={() => rumorsOpen = true} aria-label="Open rumors">
-					Rumors{rumors.length > 0 ? ` (${rumors.length})` : ''}
+					<span class="lbl">Rumors</span>{#if rumors.length > 0}<span class="count">{rumors.length}</span>{/if}
 				</button>
 				{#if $activeWarCount + $pendingWarCount > 0}
 					<button
@@ -582,9 +582,7 @@
 						onclick={() => warDrawerOpen.set(true)}
 						aria-label="Open wars"
 					>
-						War{$activeWarCount + $pendingWarCount > 1
-							? ` (${$activeWarCount + $pendingWarCount})`
-							: ''}
+						<span class="lbl">War</span>{#if $activeWarCount + $pendingWarCount > 1}<span class="count">{$activeWarCount + $pendingWarCount}</span>{/if}
 					</button>
 				{/if}
 			</div>
@@ -1007,18 +1005,36 @@
 	.game-info {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
+		gap: 0.5rem;
 		flex-wrap: wrap;
 	}
 
+	/* Two-line, square-ish badge so it stays as narrow as a button and fits the
+	   status row on phones. The phase label's spaces are rendered as line breaks. */
 	.phase-badge {
-		font-size: 0.8rem;
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.1em;
+		min-height: 32px;
+		/* Bottom padding is trimmed because capitals have no descenders — this
+		   keeps the space above, between, and below the two words even. */
+		padding: 0.3em 0.55em 0.2em;
 		background: var(--color-border-warm);
 		color: var(--color-accent);
-		padding: 0.15rem 0.5rem;
 		border-radius: 4px;
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.04em;
+		font-family: var(--font-serif);
+		font-size: 0.76rem;
+		line-height: 1;
+		white-space: nowrap;
+	}
+	/* Wars are rare; when one is active on a phone, drop the badge so the War
+	   button takes its slot — the row never exceeds four items. */
+	@media (max-width: 599px) {
+		.game-info.has-war .phase-badge { display: none; }
 	}
 
 	.code-badge {
@@ -1035,17 +1051,34 @@
 	}
 
 	.tones-button {
+		display: inline-flex;
+		align-items: center;
+		font-family: var(--font-serif);
 		font-size: 0.85rem;
 		font-weight: 400;
 		background: var(--color-surface-2);
 		color: var(--color-text);
-		padding: 0.3rem 0.7rem;
+		padding: 0;
 		border-radius: 4px;
-		border: 1px solid var(--color-border-strong);
+		border: 1px solid var(--color-border-warm);
 		min-height: 32px;
 	}
-	.tones-button:hover { background: var(--color-border); }
+	.tones-button .lbl { padding: 0.3rem 0.7rem; }
+	.tones-button:hover { background: var(--color-border-warm); border-color: var(--color-accent); }
 	.tones-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+	/* Count: a small, dim number behind a subtle divider — a hint, not a headline. */
+	.tones-button .count {
+		align-self: stretch;
+		display: flex;
+		align-items: center;
+		padding: 0 0.42rem;
+		border-left: 1px solid #3a3326; /* subtle warm hairline */
+		color: #a89464;                 /* dimmed gilt */
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.war-button .count { border-left-color: #5a2020; color: #c89088; }
 
 	.war-button {
 		background: #3a1414;
