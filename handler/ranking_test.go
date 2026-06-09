@@ -78,7 +78,7 @@ func TestApplyRankingSwaps(t *testing.T) {
 			model.CategoryPower: {model.PlanExchangeCourtiers},
 		}
 
-		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		result, _ := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
 
 		// Player 1 should now be at rank 2, player 2 at rank 3.
 		assertRank(pr, 1, model.CategoryPower, 2)
@@ -107,7 +107,7 @@ func TestApplyRankingSwaps(t *testing.T) {
 			model.CategoryPower: {model.PlanExchangeCourtiers},
 		}
 
-		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		result, _ := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
 
 		// Player 1 should still be at rank 1.
 		assertRank(pr, 1, model.CategoryPower, 1)
@@ -134,7 +134,7 @@ func TestApplyRankingSwaps(t *testing.T) {
 			model.CategoryPower: {model.PlanExchangeCourtiers},
 		}
 
-		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		result, _ := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
 
 		// Player 1 should now be at rank 1 (skipped rank 2), player 2 at rank 3.
 		assertRank(pr, 1, model.CategoryPower, 1)
@@ -177,7 +177,7 @@ func TestApplyRankingSwaps(t *testing.T) {
 			model.CategoryPower: {model.PlanExchangeCourtiers},
 		}
 
-		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		result, _ := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
 
 		// After two adjacent token holders swap, they should return to original positions.
 		assertRank(pr, 1, model.CategoryPower, 3)
@@ -204,7 +204,7 @@ func TestApplyRankingSwaps(t *testing.T) {
 			model.CategoryPower: {model.PlanExchangeCourtiers},
 		}
 
-		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		result, _ := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
 
 		// In Phase 2, only one plan type per category, so having one token means
 		// all plan types have tokens.
@@ -241,7 +241,7 @@ func TestApplyRankingSwaps(t *testing.T) {
 			model.CategoryEsteem:    {model.PlanSpreadPropaganda},
 		}
 
-		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		result, _ := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
 
 		// Power category: has one token of one plan type → clear.
 		// Knowledge category: has no tokens → don't clear.
@@ -270,7 +270,7 @@ func TestApplyRankingSwaps(t *testing.T) {
 			model.CategoryPower: {model.PlanExchangeCourtiers},
 		}
 
-		result := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		result, _ := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
 
 		// Player 3 at rank 3 should move to rank 2 (only processed once despite stacked tokens).
 		assertRank(pr, 3, model.CategoryPower, 2)
@@ -409,6 +409,76 @@ func Test_swapTokenPlayerWithAbove(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestApplyRankingSwaps_SwapFlags pins the per-holder "did an up-swap happen"
+// signal that drives the chat glyph: true → up-arrow, false → crown (no real
+// player above to overtake). The key case is the adjacent cancel, where two
+// holders both swap (both true) yet the board nets back to where it started —
+// the arrows are the operations, not the net result.
+func TestApplyRankingSwaps_SwapFlags(t *testing.T) {
+	intPtr := func(v int64) *int64 { return &v }
+	cat := model.CategoryPower
+	catPlanTypes := map[model.RankingCategory][]model.PlanType{
+		cat: {model.PlanExchangeCourtiers},
+	}
+	tok := func(pid int64) dbgen.PlanToken {
+		return dbgen.PlanToken{PlayerID: pid, PlanType: model.PlanExchangeCourtiers}
+	}
+	// setup builds the slots + live rank map for the power track from a
+	// rank→playerID layout, then runs the swaps and returns the flags.
+	setup := func(layout map[int16]int64, tokens []dbgen.PlanToken) (
+		map[model.RankingCategory]*categorySlots, map[int64]bool,
+	) {
+		slots := map[model.RankingCategory]*categorySlots{
+			model.CategoryPower:     new(categorySlots),
+			model.CategoryKnowledge: new(categorySlots),
+			model.CategoryEsteem:    new(categorySlots),
+		}
+		pr := make(map[int64]map[model.RankingCategory]int16)
+		for rank, pid := range layout {
+			slots[cat][rank-1] = intPtr(pid)
+			pr[pid] = map[model.RankingCategory]int16{cat: rank}
+		}
+		_, swapped := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		return slots, swapped[cat]
+	}
+	// rankOf reads a player's final rank out of the slot array.
+	rankOf := func(s *categorySlots, pid int64) int16 {
+		for i := range s {
+			if s[i] != nil && *s[i] == pid {
+				return int16(i + 1)
+			}
+		}
+		return 0
+	}
+
+	t.Run("holder with a real rival above swaps (up)", func(t *testing.T) {
+		_, flags := setup(map[int16]int64{1: 10, 2: 20, 3: 30}, []dbgen.PlanToken{tok(30)})
+		assert.True(t, flags[30], "rank-3 holder overtakes rank-2 player")
+	})
+
+	t.Run("holder at the top does not swap (crown)", func(t *testing.T) {
+		_, flags := setup(map[int16]int64{1: 10, 2: 20}, []dbgen.PlanToken{tok(10)})
+		assert.False(t, flags[10], "rank-1 holder has no one to overtake")
+	})
+
+	t.Run("holder above only dummies does not swap (crown)", func(t *testing.T) {
+		// Ranks 1-2 empty (dummies); the rank-3 holder has no real rival above.
+		_, flags := setup(map[int16]int64{3: 30, 4: 40}, []dbgen.PlanToken{tok(30)})
+		assert.False(t, flags[30], "top real player can't climb past dummies")
+	})
+
+	t.Run("adjacent holders both swap and net to no movement", func(t *testing.T) {
+		// 1:10 (no token), 2:20 (token), 3:30 (token). Both swap; board returns
+		// to its starting order, but both flags are true.
+		s, flags := setup(map[int16]int64{1: 10, 2: 20, 3: 30},
+			[]dbgen.PlanToken{tok(20), tok(30)})
+		assert.True(t, flags[20], "preparer 20 performed an up-swap")
+		assert.True(t, flags[30], "preparer 30 performed an up-swap")
+		assert.EqualValues(t, 2, rankOf(s[cat], 20), "board nets back to the start")
+		assert.EqualValues(t, 3, rankOf(s[cat], 30), "board nets back to the start")
+	})
 }
 
 // TestFindFirstFocusPlayer pins the underdog selection: per PROLOGUE_RULES.md

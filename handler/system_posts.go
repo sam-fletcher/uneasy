@@ -89,15 +89,110 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 		map[string]any{"plan_id": plan.ID, "result": result})
 }
 
-// EmitRankingUpdated writes the system post for the algorithmic ranking
-// update applied when crossing an engrailed line (after rows 4/8/12).
-// Other ranking changes (shake-up, prologue) are not in scope for v1.
-func EmitRankingUpdated(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64, rowNumber int16) {
+// rankingGlyphSymbol maps a rankingMove glyph keyword to its chat symbol.
+// "up" performed an up-swap (an adjacent-preparer cancel is two of these that
+// undo each other); "top" sits atop the track with no real rival to overtake.
+func rankingGlyphSymbol(glyph string) string {
+	switch glyph {
+	case "up":
+		return "↑"
+	case "top":
+		return "👑"
+	default:
+		return "?"
+	}
+}
+
+// categoryTitle capitalizes a ranking category for display ("power" → "Power").
+func categoryTitle(cat model.RankingCategory) string {
+	s := string(cat)
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// EmitRankingUpdated narrates the algorithmic ranking update applied when
+// crossing an engrailed line (after rows 4/8/12) into the chat feed. Other
+// ranking changes (shake-up, prologue) are not in scope for v1.
+//
+// It emits, in order:
+//   - a Boundary headline that anchors the Public Record rail,
+//   - per category (in display order) an Important header,
+//   - for each prepared plan a Default numbered line listing its preparers and
+//     their movement glyphs (↑ performed an up-swap / 👑 top of the track),
+//   - an Important "Standing:" line with the category's resulting rank order,
+//   - a Minor sentence explaining the clear when every plan was prepared,
+//   - a Default "no preparations" line for an untouched category.
+//
+// rowNumber is the new row just entered; the engrailed line sits after the
+// preceding row, which is what the headline names.
+func EmitRankingUpdated(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	rowNumber int16,
+	diff *rankingUpdateDiff,
+) {
 	EmitSystemPost(ctx, q, manager, gameID, "ranking.updated",
-		model.SeverityImportant,
-		"Ranking update applied.",
+		model.SeverityBoundary,
+		fmt.Sprintf("⚖ Rankings update — after Row %d", rowNumber-1),
 		&rowNumber, nil, nil,
-		map[string]any{"row_number": rowNumber})
+		map[string]any{"row_number": rowNumber, "diff": diff})
+
+	if diff == nil {
+		return
+	}
+
+	for _, cat := range diff.Categories {
+		EmitSystemPost(ctx, q, manager, gameID, "ranking.category",
+			model.SeverityImportant, categoryTitle(cat.Category),
+			&rowNumber, nil, nil,
+			map[string]any{"category": string(cat.Category)})
+
+		if len(cat.Plans) == 0 {
+			EmitSystemPost(ctx, q, manager, gameID, "ranking.empty",
+				model.SeverityDefault, "No preparations, ranks unchanged.",
+				&rowNumber, nil, nil,
+				map[string]any{"category": string(cat.Category)})
+			continue
+		}
+
+		// Each movement, in order
+		for i, plan := range cat.Plans {
+			var movers []string
+			for _, m := range plan.Movers {
+				movers = append(movers, fmt.Sprintf("%s %s", m.Name, rankingGlyphSymbol(m.Glyph)))
+			}
+			body := fmt.Sprintf("%d. %s: %s", i+1, planLabel(plan.PlanType), strings.Join(movers, ", "))
+			EmitSystemPost(ctx, q, manager, gameID, "ranking.plan",
+				model.SeverityDefault, body,
+				&rowNumber, nil, nil,
+				map[string]any{"category": string(cat.Category), "plan_type": string(plan.PlanType)})
+		}
+
+		// The resulting ranks for the category — the payoff of the update.
+		if len(cat.Final) > 0 {
+			var ranks []string
+			for i, name := range cat.Final {
+				ranks = append(ranks, fmt.Sprintf("%d %s", i+1, name))
+			}
+			EmitSystemPost(ctx, q, manager, gameID, "ranking.standing",
+				model.SeverityImportant,
+				fmt.Sprintf("New Ranks: %s", strings.Join(ranks, " · ")),
+				&rowNumber, nil, nil,
+				map[string]any{"category": string(cat.Category), "final": cat.Final})
+		}
+
+		if cat.Cleared {
+			EmitSystemPost(ctx, q, manager, gameID, "ranking.cleared",
+				model.SeverityMinor,
+				"All plans were prepared → they're now freely available",
+				&rowNumber, nil, nil,
+				map[string]any{"category": string(cat.Category)})
+		}
+	}
 }
 
 // EmitAssetDestroyed / Leveraged / Refreshed write the corresponding

@@ -154,6 +154,20 @@ func advanceRowInner(
 
 	crossed := isEngrailedLine(oldRow, newRow)
 
+	// Run the ranking update when crossing an engrailed line. The update
+	// resolves between the old row and the new one, so emit its chat narration
+	// (and broadcast the new rankings) BEFORE the "Row N begins" boundary, so
+	// the log reads in chronological order. runRankingUpdate lives in ranking.go.
+	if crossed {
+		updatedRankings, diff, rankErr := runRankingUpdate(r.Context(), q, game.ID)
+		if rankErr == nil {
+			if h != nil {
+				h.BroadcastEvent(model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: updatedRankings})
+			}
+			EmitRankingUpdated(r.Context(), q, manager, game.ID, newRow, diff)
+		}
+	}
+
 	if h != nil {
 		h.BroadcastEvent(model.EventRowAdvanced, model.RowAdvancedPayload{
 			RowNumber:        newRow,
@@ -164,18 +178,6 @@ func advanceRowInner(
 		model.SeverityBoundary,
 		fmt.Sprintf("Row %d begins", newRow), &newRow, nil, nil,
 		map[string]any{"row_number": newRow, "crossed_engrailed": crossed})
-
-	// Run the ranking update algorithm when crossing an engrailed line.
-	// runRankingUpdate is defined in handler/plans.go (same package).
-	if crossed {
-		updatedRankings, rankErr := runRankingUpdate(r.Context(), q, game.ID)
-		if rankErr == nil && h != nil {
-			h.BroadcastEvent(model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: updatedRankings})
-		}
-		if rankErr == nil {
-			EmitRankingUpdated(r.Context(), q, manager, game.ID, newRow)
-		}
-	}
 
 	broadcastRowState(r.Context(), q, manager, game.ID)
 	return newRow, false, nil

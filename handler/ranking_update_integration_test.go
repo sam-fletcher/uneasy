@@ -47,7 +47,7 @@ func TestRunRankingUpdate_TokenHolderClimbsAndTokensCleared(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	updated, err := runRankingUpdate(ctx, q, gameID)
+	updated, diff, err := runRankingUpdate(ctx, q, gameID)
 	require.NoError(t, err)
 
 	// Read power ranks out of the returned slice.
@@ -65,4 +65,28 @@ func TestRunRankingUpdate_TokenHolderClimbsAndTokensCleared(t *testing.T) {
 	remaining, err := q.ListPlanTokensByGame(ctx, gameID)
 	require.NoError(t, err)
 	assert.Empty(t, remaining, "a fully-tokened category clears its tokens after the update")
+
+	// The narration diff describes the climb and the resulting standing.
+	require.NotNil(t, diff)
+	var power *rankingCategoryDiff
+	for i := range diff.Categories {
+		if diff.Categories[i].Category == model.CategoryPower {
+			power = &diff.Categories[i]
+		}
+	}
+	require.NotNil(t, power, "diff includes the power category")
+	require.True(t, power.Cleared, "fully-prepared category is marked cleared")
+
+	require.Len(t, power.Plans, 1, "one prepared plan on the power track")
+	require.Equal(t, model.PlanExchangeCourtiers, power.Plans[0].PlanType)
+	require.Len(t, power.Plans[0].Movers, 1)
+	assert.Equal(t, tg.Players[2].DisplayName, power.Plans[0].Movers[0].Name)
+	assert.Equal(t, "up", power.Plans[0].Movers[0].Glyph, "the climbing holder shows an up-arrow")
+
+	// Standing is rank 1→5: p0 untouched, p2 climbed over p1, then dummy fillers.
+	require.Len(t, power.Final, 5)
+	assert.Equal(t, tg.Players[0].DisplayName, power.Final[0], "rank 1")
+	assert.Equal(t, tg.Players[2].DisplayName, power.Final[1], "rank 2")
+	assert.Equal(t, tg.Players[1].DisplayName, power.Final[2], "rank 3")
+	assert.Equal(t, "Dummy", power.Final[3], "empty slot labelled Dummy")
 }
