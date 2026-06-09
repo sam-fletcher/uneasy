@@ -19,7 +19,7 @@
 		listWars,
 		getReveal,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, Scene, ScenePeerView, SceneSetupDraft, PreparePlanDraft, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, PlanToken, Scene, ScenePeerView, SceneSetupDraft, PreparePlanDraft, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
@@ -50,6 +50,9 @@
 		bankedDice: BankedDie[];
 		/** All plans for this game — owned and fetched by the parent; read-only here. */
 		plans: Plan[];
+		/** Plan tokens (one per plan_type/player), owned by the parent. Forwarded
+		 *  to PlanPanel to render the prep-grid pips for every viewer. */
+		planTokens: PlanToken[];
 		/**
 		 * Called after any plan mutation so the parent can re-fetch and push updated
 		 * plans back down. The parent owns plan state; this component never writes it.
@@ -98,6 +101,7 @@
 		activeRollParticipants = $bindable(),
 		bankedDice = $bindable(),
 		plans,
+		planTokens,
 		onPlansChanged,
 		activeScene = null,
 		activeScenePeers = [],
@@ -523,6 +527,7 @@
 				gameID={game.id}
 				currentRow={game.current_row}
 				{plans}
+				{planTokens}
 				{assets}
 				{players}
 				{rankings}

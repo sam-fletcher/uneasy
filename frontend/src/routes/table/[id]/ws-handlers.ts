@@ -4,12 +4,12 @@
 // $state runes, so assignments here stay reactive in the component.
 
 import { EventTypes, type WSMessage } from '$lib/ws';
-import { getRoll, listBankedDice, getVisibleSecrets, getPlan, listPlans } from '$lib/api';
+import { getRoll, listBankedDice, getVisibleSecrets, getPlan, listPlans, listPlanTokens } from '$lib/api';
 import type {
 	Game, Player, PresenceMember, ToneTopic, Ranking, Asset, Marginalium,
 	Law, Rumor, Secret, ChatPost, SceneEntry, RecordRow, RowState, Scene,
 	ScenePeerView, SceneSetupDraft, PreparePlanDraft, DiceRoll, DiceRollDie,
-	VoteView, RollParticipant, BankedDie, Plan,
+	VoteView, RollParticipant, BankedDie, Plan, PlanToken,
 } from '$lib/api';
 
 /**
@@ -42,6 +42,7 @@ export interface WSContext {
 	activeRollParticipants: RollParticipant[];
 	bankedDice: BankedDie[];
 	plans: Plan[];
+	planTokens: PlanToken[];
 	prologueActivePlayerID: number | null;
 	typingNames: string[];
 	readonly typingMap: Map<number, string>;
@@ -110,6 +111,8 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		}
 		case EventTypes.RankingsUpdated: {
 			ctx.rankings = msg.payload.rankings as Ranking[];
+			// A ranking update may clear plan tokens for a full category.
+			refreshPlanTokens(ctx);
 			break;
 		}
 		case EventTypes.FocusChanged: {
@@ -358,6 +361,8 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			// plan awaits its reveal; this event re-broadcasts once the real
 			// row is assigned (see upsertPlanIntoRecord).
 			upsertPlanIntoRecord(ctx, prepared);
+			// Preparing places a token; refresh the pips for every viewer.
+			refreshPlanTokens(ctx);
 			// Plan was committed; clear the highlight broadcast.
 			ctx.preparePlanDraft = null;
 			break;
@@ -536,6 +541,17 @@ function upsertPlanIntoRecord(ctx: WSContext, plan: Plan) {
 		// Leave untouched rows referentially stable to avoid needless rerenders.
 		return without.length === row.plans.length ? row : { ...row, plans: without };
 	});
+}
+
+/**
+ * Re-fetch the plan tokens so the prep-grid pips stay accurate. Called when a
+ * token may have appeared (plan.prepared) or been cleared (rankings.updated).
+ * Best-effort: a failed fetch is harmless because the next resync refills them.
+ */
+function refreshPlanTokens(ctx: WSContext) {
+	listPlanTokens(ctx.gameID)
+		.then(d => { ctx.planTokens = d.tokens; })
+		.catch(() => { /* ignore — resync keeps us in sync */ });
 }
 
 function refreshPlan(ctx: WSContext, planID: number) {

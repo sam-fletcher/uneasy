@@ -18,13 +18,14 @@
 <script lang="ts">
 	import {
 		getPlanEligibility,
-		type Plan, type PlanType, type Asset, type Player, type Ranking,
+		type Plan, type PlanToken, type PlanType, type Asset, type Player, type Ranking,
 		type EligiblePlan, type IneligiblePlan, type DiceRoll,
 		type RankingCategory, type PreparePlanDraft,
 	} from '$lib/api';
 
 	import './plans/planPanel.css';
 	import { PLAN_SHORT, PLAN_DESCRIPTION, PLAN_DELAY, TRACK_ORDER, playerName } from './plans/shared';
+	import { playerColor } from '$lib/playerColor';
 	import { REGISTRY } from './plans/registry';
 	import RowPill from './plans/RowPill.svelte';
 	import { highlightedRow } from '$lib/highlight';
@@ -42,6 +43,12 @@
 		currentRow: number;
 		/** All plans for the game (used to find a resolving plan). */
 		plans: Plan[];
+		/**
+		 * Plan tokens (one per plan_type/player). Rendered as coloured pips on
+		 * each grid cell so every viewer — including read-only ones — can see
+		 * which players hold a token on each plan's shield.
+		 */
+		planTokens: PlanToken[];
 		/** All assets in the game (used for fair-trade peer picker, etc). */
 		assets: Asset[];
 		players: Player[];
@@ -82,7 +89,7 @@
 	}
 
 	let {
-		gameID, currentRow, plans, assets, players, rankings, currentPlayerID,
+		gameID, currentRow, plans, planTokens, assets, players, rankings, currentPlayerID,
 		isFocusPlayer, prepEnabled = false, suppressPrep = false,
 		rollActive, rollOutcome, activeRoll = null,
 		onRollCreated, onPlansChanged, onPlanPrepared,
@@ -141,6 +148,27 @@
 		for (const p of ineligiblePlans) m.set(p.plan_type, {
 			type: p.plan_type, eligible: false, reason: p.reason,
 		});
+		return m;
+	});
+
+	// Token holders per plan type, resolved to Player objects and sorted by
+	// seat for a stable pip order. Built from props every viewer has, so the
+	// pips render identically in the read-only (non-focus) grid. The schema's
+	// UNIQUE (game, plan_type, player) guarantees at most one pip per player,
+	// capping each cell at the table size (≤5).
+	const tokenHoldersByType = $derived.by<Map<PlanType, Player[]>>(() => {
+		const byId = new Map(players.map(p => [p.id, p]));
+		const m = new Map<PlanType, Player[]>();
+		for (const t of planTokens) {
+			const player = byId.get(t.player_id);
+			if (!player) continue;
+			const arr = m.get(t.plan_type);
+			if (arr) arr.push(player);
+			else m.set(t.plan_type, [player]);
+		}
+		for (const arr of m.values()) {
+			arr.sort((a, b) => (a.seat_order ?? 0) - (b.seat_order ?? 0));
+		}
 		return m;
 	});
 
@@ -293,6 +321,7 @@
 					{#each TRACKS as track}
 						{@const pt = TRACK_ORDER[track][rowIdx]}
 						{@const cell = isFocusPlayer ? planCells.get(pt) : undefined}
+						{@const holders = tokenHoldersByType.get(pt) ?? []}
 						<button
 							type="button"
 							class="plan-card"
@@ -305,6 +334,7 @@
 							onfocus={() => cell && onPlanHover(cell)}
 							onblur={onPlanLeave}
 						>
+							<div class="card-body">
 							<div class="card-head">
 								<span class="card-title">{PLAN_SHORT[pt]}</span>
 								{#if cell?.eligible}
@@ -334,6 +364,21 @@
 								{/if}
 							</div>
 							<p class="card-desc">{PLAN_DESCRIPTION[pt]}</p>
+							</div>
+							{#if holders.length > 0}
+								<!-- Token pips. Kept a full-opacity sibling of .card-body
+								     so they stay legible even when the card is disabled
+								     (read-only / ineligible) — see planPanel.css. -->
+								<div class="prep-pips" aria-label="Prepared by {holders.map(h => h.display_name).join(', ')}">
+									{#each holders as h (h.id)}
+										<span
+											class="prep-pip"
+											style:--pip-color={playerColor(h)}
+											title={h.display_name}
+										></span>
+									{/each}
+								</div>
+							{/if}
 						</button>
 					{/each}
 				{/each}

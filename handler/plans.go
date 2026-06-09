@@ -524,6 +524,36 @@ func ListPlans(s *db.Store) http.HandlerFunc {
 	}
 }
 
+// ListPlanTokens handles GET /api/tables/:id/plan-tokens.
+//
+// Returns the plan tokens placed in the game — one per (plan_type, player)
+// — so every client can render which players currently hold a token on each
+// plan's shield. Tokens are placed when a player prepares a plan and cleared
+// per-category at ranking updates, so this drives the prep-grid pips for all
+// viewers (including read-only ones). Slimmed to the two fields the UI needs.
+func ListPlanTokens(s *db.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
+		if !ok {
+			return
+		}
+		tokens, err := s.Q.ListPlanTokensByGame(r.Context(), gameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load plan tokens", err)
+			return
+		}
+		type tokenEntry struct {
+			PlanType model.PlanType `json:"plan_type"`
+			PlayerID int64          `json:"player_id"`
+		}
+		out := make([]tokenEntry, len(tokens))
+		for i, t := range tokens {
+			out[i] = tokenEntry{PlanType: t.PlanType, PlayerID: t.PlayerID}
+		}
+		respond(w, http.StatusOK, map[string]any{"tokens": out})
+	}
+}
+
 // ── PlanEligibility ───────────────────────────────────────────────────────────
 
 // PlanEligibility handles GET /api/tables/:id/plan-eligibility.

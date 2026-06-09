@@ -341,9 +341,48 @@
 	color: var(--color-text);
 }
 
+/* Dim only the textual body when disabled (read-only or ineligible), so the
+   token pips below stay full-opacity and legible for every viewer. CSS opacity
+   can't be un-inherited by children, hence the pips are a sibling of .card-body
+   rather than nested inside it. */
 .plan-card:disabled {
-	opacity: 0.4;
 	cursor: not-allowed;
+}
+
+.plan-card:disabled .card-body {
+	opacity: 0.4;
+}
+
+/* Holds the title/pill row + description; flex-grows so the pip strip is
+   pushed to the bottom of the card. */
+.card-body {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+	flex: 1;
+}
+
+@media (min-width: 640px) {
+	.card-body { gap: 0.3rem; }
+}
+
+/* Token pips: who currently holds a token on this plan's shield. Centred along
+   the bottom of the card; the ring keeps dark custom colours visible on the
+   dark surface. The schema caps holders at the table size (≤5). */
+.prep-pips {
+	display: flex;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.prep-pip {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--pip-color);
+	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+	flex-shrink: 0;
 }
 
 .card-head {

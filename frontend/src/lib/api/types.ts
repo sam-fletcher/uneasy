@@ -282,6 +282,13 @@ export interface Plan {
 	targeted_plan_id: number | null;
 }
 
+/** A token placed on a plan's shield, slimmed to what the prep grid needs.
+ *  One per (plan_type, player); cleared per-category at ranking updates. */
+export interface PlanToken {
+	plan_type: PlanType;
+	player_id: number;
+}
+
 /** One entry in ResolutionData.make_mar_choices. Mirrors game.Choice
  * (uneasy/game/plan.go). Entries from the generic POST /make-choice
  * endpoint leave player_id null; per-plan handlers (Chronicle) set it. */

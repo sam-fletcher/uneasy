@@ -253,6 +253,7 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 
 			// Plans (Phase 3a+)
 			r.Get("/tables/{id}/plans", handler.ListPlans(store))
+			r.Get("/tables/{id}/plan-tokens", handler.ListPlanTokens(store))
 			r.Get("/tables/{id}/plan-eligibility", handler.PlanEligibility(store))
 			r.Post("/tables/{id}/prepare-plan", handler.PreparePlan(store, manager))
 			r.Route("/plans/{planId}", func(r chi.Router) {

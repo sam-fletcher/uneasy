@@ -9,7 +9,7 @@
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord, listGamePosts,
 		getActiveRollForGame, listBankedDice,
-		listPlans,
+		listPlans, listPlanTokens,
 		setEndgameMode,
 		getVisibleSecrets,
 		getActiveScene,
@@ -28,7 +28,7 @@
 		Law, Rumor,
 		ChatPost, SceneEntry, RecordRow, PresenceMember,
 		DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie,
-		Plan, Secret,
+		Plan, PlanToken, Secret,
 	} from '$lib/api';
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
@@ -203,6 +203,9 @@
 	// ── Plan state ────────────────────────────────────────────────────────────
 	// Loaded on mount for main_event, then kept in sync by plan.* WS events.
 	let plans = $state<Plan[]>([]);
+	// Plan tokens (one per plan_type/player) drive the prep-grid pips. Refetched
+	// on plan.prepared (a token appears) and rankings.updated (tokens may clear).
+	let planTokens = $state<PlanToken[]>([]);
 
 	// Player name map passed to MainEventView for attribution.
 	const playerNameMap = $derived(new Map(players.map(p => [p.id, p.display_name])));
@@ -323,6 +326,7 @@
 		get activeRollParticipants() { return activeRollParticipants; }, set activeRollParticipants(v) { activeRollParticipants = v; },
 		get bankedDice() { return bankedDice; }, set bankedDice(v) { bankedDice = v; },
 		get plans() { return plans; }, set plans(v) { plans = v; },
+		get planTokens() { return planTokens; }, set planTokens(v) { planTokens = v; },
 		get prologueActivePlayerID() { return prologueActivePlayerID; }, set prologueActivePlayerID(v) { prologueActivePlayerID = v; },
 		get typingNames() { return typingNames; }, set typingNames(v) { typingNames = v; },
 	};
@@ -371,15 +375,17 @@
 			// Public record, plans, active roll, and active scene only matter
 			// in main_event.
 			if (data.game.phase === 'main_event' && data.game.current_row > 0) {
-				const [recordData, rollData, plansData, sceneData, bankedData] = await Promise.all([
+				const [recordData, rollData, plansData, tokensData, sceneData, bankedData] = await Promise.all([
 					getFullRecord(gameID),
 					getActiveRollForGame(gameID),
 					listPlans(gameID),
+					listPlanTokens(gameID).catch(() => ({ tokens: [] as PlanToken[] })),
 					getActiveScene(gameID).catch(() => ({ scene: null, peers: [] as ScenePeerView[] })),
 					listBankedDice(gameID).catch(() => ({ dice: [] as BankedDie[] })),
 				]);
 				recordRows = recordData.rows;
 				plans = plansData.plans;
+				planTokens = tokensData.tokens;
 				activeScene = sceneData.scene;
 				activeScenePeers = sceneData.peers;
 				rowState = data.row_state ?? null;
@@ -455,11 +461,17 @@
 	}
 
 	// ── Plan helpers ─────────────────────────────────────────────────────────
-	/** Re-fetches the plan list. Passed to MainEventView as onPlansChanged. */
+	/** Re-fetches the plan list and tokens. Passed to MainEventView as
+	 *  onPlansChanged; preparing a plan also places a token, so the grid pips
+	 *  must stay in sync with the plan list. */
 	async function refreshPlans() {
 		try {
-			const data = await listPlans(gameID);
+			const [data, tokensData] = await Promise.all([
+				listPlans(gameID),
+				listPlanTokens(gameID).catch(() => ({ tokens: planTokens })),
+			]);
 			plans = data.plans;
+			planTokens = tokensData.tokens;
 		} catch { /* ignore — WS events will keep us in sync */ }
 	}
 
@@ -723,6 +735,7 @@
 			bind:activeRollParticipants
 			bind:bankedDice
 			{plans}
+			{planTokens}
 			onPlansChanged={refreshPlans}
 			{activeScene}
 			{activeScenePeers}

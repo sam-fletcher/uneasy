@@ -1,11 +1,20 @@
 import { apiFetch } from './client';
 import type {
-	Plan, PlanType, PlanDetail, EligiblePlan, IneligiblePlan, RankingCategory,
+	Plan, PlanType, PlanDetail, PlanToken, EligiblePlan, IneligiblePlan, RankingCategory,
 	ResolutionData, Choice, KeptSecret, DiceRoll, DiceRollDie, Asset,
 } from './types';
 
 export function listPlans(gameID: string | number): Promise<{ plans: Plan[] }> {
 	return apiFetch(`/tables/${gameID}/plans`);
+}
+
+/**
+ * Plan tokens placed in the game — one per (plan_type, player). Drives the
+ * prep-grid pips that show which players hold a token on each plan's shield.
+ * Visible to every viewer, so the colour info is available in read-only mode.
+ */
+export function listPlanTokens(gameID: string | number): Promise<{ tokens: PlanToken[] }> {
+	return apiFetch(`/tables/${gameID}/plan-tokens`);
 }
 
 /** Check which Phase 2 plans the current player is eligible to prepare. */
