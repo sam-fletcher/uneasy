@@ -46,6 +46,21 @@ func newShakeUpGame(t *testing.T, q *dbgen.Queries, n int, opts ...gametest.Opti
 	return seeded
 }
 
+// committedPosts returns the bodies of all shake_up.committed action-log posts
+// for the game, in insertion order.
+func committedPosts(t *testing.T, q *dbgen.Queries, gameID int64) []string {
+	t.Helper()
+	posts, err := q.ListGamePosts(context.Background(), gameID)
+	require.NoError(t, err)
+	var out []string
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == "shake_up.committed" {
+			out = append(out, p.Body)
+		}
+	}
+	return out
+}
+
 // rankOf returns player's rank on the given category.
 func rankOf(t *testing.T, q *dbgen.Queries, gameID int64, cat model.RankingCategory, playerID int64) int16 {
 	t.Helper()
@@ -78,7 +93,7 @@ func TestShakeUpBumpRank_SwapsWithDisplaced(t *testing.T) {
 		OptionKey: gamepkg.ShakeUpOptBumpKnowledge,
 		PlayerID:  seeded.Players[2].ID,
 	}
-	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend))
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
 
 	assert.EqualValues(t, 2, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[2].ID),
 		"spender climbs one rank")
@@ -86,6 +101,11 @@ func TestShakeUpBumpRank_SwapsWithDisplaced(t *testing.T) {
 		"displaced player drops into the vacated slot")
 	assert.EqualValues(t, 1, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[0].ID),
 		"untouched player keeps their rank")
+
+	posts := committedPosts(t, q, gameID)
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0], "rise to rank 2 on Knowledge")
+	assert.Contains(t, posts[0], "displacing")
 }
 
 // TestShakeUpBumpRank_TopRankIsNoOp pins that bumping from rank 1 does nothing.
@@ -103,11 +123,16 @@ func TestShakeUpBumpRank_TopRankIsNoOp(t *testing.T) {
 		OptionKey: gamepkg.ShakeUpOptBumpKnowledge,
 		PlayerID:  seeded.Players[0].ID,
 	}
-	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend))
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
 
 	assert.EqualValues(t, 1, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[0].ID))
 	assert.EqualValues(t, 2, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[1].ID))
 	assert.EqualValues(t, 3, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[2].ID))
+
+	// Even a no-op bump is logged — the rules dwell on spends that change nothing.
+	posts := committedPosts(t, q, gameID)
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0], "already at the top")
 }
 
 // TestShakeUpEffect_TakeAsset_TransfersOwnership pins that a take_* option
@@ -132,12 +157,16 @@ func TestShakeUpEffect_TakeAsset_TransfersOwnership(t *testing.T) {
 		PlayerID:      seeded.Players[0].ID,
 		TargetAssetID: &peer.ID,
 	}
-	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend))
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
 
 	got, err := q.GetAssetByID(ctx, peer.ID)
 	require.NoError(t, err)
 	assert.Equal(t, seeded.Players[0].ID, got.OwnerID, "asset transfers to the spender")
 	assert.False(t, got.IsDestroyed)
+
+	posts := committedPosts(t, q, gameID)
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0], `to take "Loyal guard" (peer)`)
 }
 
 // TestShakeUpEffect_BreakAsset_Destroys pins that a break_* option destroys the
@@ -162,11 +191,16 @@ func TestShakeUpEffect_BreakAsset_Destroys(t *testing.T) {
 		PlayerID:      seeded.Players[0].ID,
 		TargetAssetID: &res.ID,
 	}
-	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend))
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
 
 	got, err := q.GetAssetByID(ctx, res.ID)
 	require.NoError(t, err)
 	assert.True(t, got.IsDestroyed, "broken asset is destroyed")
+
+	posts := committedPosts(t, q, gameID)
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0], `to break`)
+	assert.Contains(t, posts[0], `"Granary" (resource)`)
 }
 
 // TestMaybeAdvanceShakeUpCategory_Progression pins the category machine: with

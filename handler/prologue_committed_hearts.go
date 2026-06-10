@@ -402,6 +402,12 @@ func resolveTrack(
 	}
 	broadcastEvent(manager, game.ID, model.EventPrologueRankingStepChanged,
 		model.PrologueRankingStepChangedPayload{Step: nextStep})
+	// When the track is fully resolved here (no multi-player set-aside hand-off
+	// to PlaceSetAsides), log its opening standing. The set-aside path logs it
+	// instead, once the rank-1 player has slotted the remaining players in.
+	if nextStep != placeSetAsidesStepFor(track) {
+		EmitPrologueTrackRanked(ctx, q, manager, game.ID, track)
+	}
 	return nil
 }
 

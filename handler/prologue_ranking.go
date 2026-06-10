@@ -274,6 +274,7 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Track: track, Ranked: final,
 		})
 		broadcastEvent(manager, gameID, model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: updated})
+		EmitPrologueTrackRanked(ctx, s.Q, manager, gameID, track)
 
 		// Advance step.
 		nextStep := nextDeclareStepAfter(track)
@@ -400,6 +401,7 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			model.EventAssetCreated,
 			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
 		)
+		EmitAssetCreated(ctx, s.Q, manager, gameID, asset, nil, nil)
 		broadcastEvent(manager, gameID, model.EventPrologueExtraPeerCreated,
 			model.PrologueExtraPeerCreatedPayload{
 				PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,

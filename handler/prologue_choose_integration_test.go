@@ -12,8 +12,80 @@ import (
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
+	"uneasy/hub"
 	"uneasy/model"
 )
+
+// prologuePostsByCode returns the bodies of all action-log posts with the given
+// system_code for a game, in insertion order.
+func prologuePostsByCode(t *testing.T, q *dbgen.Queries, gameID int64, code string) []string {
+	t.Helper()
+	posts, err := q.ListGamePosts(context.Background(), gameID)
+	require.NoError(t, err)
+	var out []string
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == code {
+			out = append(out, p.Body)
+		}
+	}
+	return out
+}
+
+// TestRecordPrologueChoice_EmitsLogPosts pins that a single prologue choice
+// writes the canonical action-log posts for the state it creates: the
+// sheet-derived asset, the title marginalium on the main character, and the
+// card-derived asset. This is the "starting board reconstructable from the log"
+// guarantee for the choosing sub-phase.
+func TestRecordPrologueChoice_EmitsLogPosts(t *testing.T) {
+	db := openTestDB(t)
+	q := dbgen.New(db)
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	game, err := q.CreateGame(ctx, "PrologueLog")
+	require.NoError(t, err)
+	require.NoError(t, q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		ID: game.ID, Phase: model.PhasePrologue,
+	}))
+	acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+		Username: "plog-" + game.JoinCode, CodeHash: "x",
+	})
+	require.NoError(t, err)
+	player, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
+		GameID: game.ID, DisplayName: "Mara", AccountID: acct.ID,
+	})
+	require.NoError(t, err)
+	_, err = q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: game.ID, OwnerID: player.ID, CreatorID: player.ID,
+		AssetType: model.AssetPeer, Name: "Mara the Bold", IsMainCharacter: true,
+	})
+	require.NoError(t, err)
+
+	body := &chooseRequestBody{
+		SheetType:       gamepkg.PrologueSheetTitles,
+		ChoiceName:      "The Monarch",
+		AssetText:       "Lady of the Vale",
+		MarginaliumText: "Beloved of the people",
+		CardAssets: []CardAssetText{
+			{Suit: "C", Value: "K", Text: "Household Guard"},
+			{Suit: "D", Value: "K", Text: "Crown Jewels"},
+		},
+	}
+	choice := gamepkg.FindPrologueChoice(body.SheetType, body.ChoiceName)
+	require.NotNil(t, choice)
+
+	_, err = recordPrologueChoice(ctx, q, manager, game.ID, player.ID, body, choice)
+	require.NoError(t, err)
+
+	created := prologuePostsByCode(t, q, game.ID, "asset.created")
+	assert.True(t, anyContains(created, "Lady of the Vale"), "sheet asset logged: %v", created)
+	assert.True(t, anyContains(created, "Household Guard"), "card asset logged: %v", created)
+
+	marg := prologuePostsByCode(t, q, game.ID, "marginalia.added")
+	require.Len(t, marg, 1)
+	assert.Contains(t, marg[0], "Beloved of the people")
+	assert.Contains(t, marg[0], "Mara the Bold")
+}
 
 // ── Integration Tests ────────────────────────────────────────────────────────
 

@@ -123,6 +123,21 @@ func (h *rollsHarness) makeAsset(t *testing.T, playerIdx int, name string) dbgen
 	return createTestHolding(t, h.q, h.tg.Game.ID, h.tg.Players[playerIdx].ID, name)
 }
 
+// postsByCode returns the bodies of all action-log posts with the given
+// system_code, in insertion order.
+func (h *rollsHarness) postsByCode(t *testing.T, code string) []string {
+	t.Helper()
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	var out []string
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == code {
+			out = append(out, p.Body)
+		}
+	}
+	return out
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 func TestRollFlow_SkipVote_AutoResolveOnLastReady(t *testing.T) {
@@ -166,6 +181,12 @@ func TestRollFlow_SkipVote_AutoResolveOnLastReady(t *testing.T) {
 	assert.Equal(t, "resolved", roll.Stage)
 	require.NotNil(t, roll.Result)
 	require.NotNil(t, roll.Outcome)
+
+	// The resolution should have written one roll.resolved action-log post
+	// naming the result against the (unadjusted) difficulty.
+	resolvedPosts := h.postsByCode(t, "roll.resolved")
+	require.Len(t, resolvedPosts, 1)
+	assert.Contains(t, resolvedPosts[0], "vs difficulty 2")
 }
 
 // Regression: actor readies first, while a non-actor with assets has not
@@ -249,6 +270,13 @@ func TestRollFlow_HiddenBallot_RevealOnLastVote(t *testing.T) {
 	require.NotNil(t, roll.AdjustedDifficulty)
 	// 3 + (1 + -1 + -1) = 2.
 	assert.Equal(t, int16(2), *roll.AdjustedDifficulty)
+
+	// The reveal should have written one roll.vote_resolved action-log post:
+	// 2 lowered (the two -1 votes), 1 raised (the +1), 3 → 2.
+	votePosts := h.postsByCode(t, "roll.vote_resolved")
+	require.Len(t, votePosts, 1)
+	assert.Contains(t, votePosts[0], "2 to lower, 1 to raise")
+	assert.Contains(t, votePosts[0], "difficulty 3 → 2")
 }
 
 func TestRollFlow_IntentLockedOnCommit(t *testing.T) {

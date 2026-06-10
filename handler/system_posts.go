@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	dbgen "uneasy/db/gen"
@@ -266,6 +267,78 @@ func EmitRollCommit(
 		})
 }
 
+// EmitDifficultyVoteResolved writes the Default chat entry that records the
+// outcome of a difficulty vote. The ballot is hidden during voting but
+// revealed simultaneously once the last vote lands (the "3, 2, 1" reveal in
+// the rules), so it's public by the time this fires. Votes follow the rules'
+// convention: −1 per yea (lower the difficulty), +1 per nay (raise it).
+//
+// adjusted is the post-vote difficulty (already clamped to 1–6 by the caller).
+func EmitDifficultyVoteResolved(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	roll *dbgen.DiceRoll,
+	votes []dbgen.DifficultyVote,
+	adjusted int16,
+) {
+	var lowered, raised int
+	ballot := make([]map[string]any, 0, len(votes))
+	for _, v := range votes {
+		if v.Vote < 0 {
+			lowered++
+		} else {
+			raised++
+		}
+		ballot = append(ballot, map[string]any{"player_id": v.PlayerID, "vote": v.Vote})
+	}
+	body := fmt.Sprintf("Difficulty vote: %d to lower, %d to raise — difficulty %d → %d",
+		lowered, raised, roll.Difficulty, adjusted)
+	EmitSystemPost(ctx, q, manager, roll.GameID, "roll.vote_resolved",
+		model.SeverityDefault, body,
+		roll.RowNumber, roll.PlanID, nil,
+		map[string]any{
+			"roll_id":             roll.ID,
+			"base_difficulty":     roll.Difficulty,
+			"adjusted_difficulty": adjusted,
+			"lowered":             lowered,
+			"raised":              raised,
+			"ballot":              ballot,
+		})
+}
+
+// EmitRollResolved writes the Important chat entry recording a dice roll's
+// outcome: the result (distinct uncancelled faces) against the effective
+// difficulty, and whether that made or marred. For a plan roll this sits one
+// tier below the plan.resolved.* post — it's the dice-level detail behind the
+// plan outcome — and is the only log entry for an in-scene roll with no plan.
+func EmitRollResolved(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	roll *dbgen.DiceRoll,
+	result int16,
+	outcome string,
+	effectiveDifficulty int16,
+) {
+	actor := playerDisplayName(ctx, q, roll.ActorID)
+	verdict := "Mar"
+	if outcome == makeOutcome {
+		verdict = "Make"
+	}
+	body := fmt.Sprintf("%s rolled %d vs difficulty %d → %s",
+		actor, result, effectiveDifficulty, verdict)
+	EmitSystemPost(ctx, q, manager, roll.GameID, "roll.resolved",
+		model.SeverityImportant, body,
+		roll.RowNumber, roll.PlanID, nil,
+		map[string]any{
+			"roll_id":              roll.ID,
+			"result":               result,
+			"outcome":              outcome,
+			"effective_difficulty": effectiveDifficulty,
+		})
+}
+
 // EmitRollSkipLeverage writes the Minor chat entry that fires when the
 // leverage stage is short-circuited because no participant can add a die.
 func EmitRollSkipLeverage(
@@ -311,6 +384,10 @@ func EmitAssetRefreshed(
 // with marginalia (CreateAsset accepts an initial set), they're folded into the
 // same line so the creation reads as a single event rather than a burst of
 // per-marginalia adds.
+// rowNumber is nullable: the prologue creates assets before any public-record
+// row exists, and scene_posts.row_number is NULL for that case. A non-nil row
+// that doesn't exist would fail the (game_id, row_number) FK and silently drop
+// the post — so prologue callers pass nil, main-event callers pass the row.
 func EmitAssetCreated(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -318,7 +395,7 @@ func EmitAssetCreated(
 	gameID int64,
 	asset dbgen.Asset,
 	marginalia []dbgen.Marginalium,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	creator := playerDisplayName(ctx, q, asset.CreatorID)
 	body := fmt.Sprintf("%s created the %s %q", creator, asset.AssetType, asset.Name)
@@ -331,7 +408,7 @@ func EmitAssetCreated(
 	}
 	EmitSystemPost(ctx, q, manager, gameID, "asset.created",
 		model.SeverityMinor, body,
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "creator_id": asset.CreatorID})
 }
 
@@ -357,6 +434,7 @@ func EmitAssetRenamed(
 
 // EmitMarginaliaAdded writes the Minor marginalia.added post, carrying the new
 // text and the asset it's on.
+// rowNumber is nullable for the prologue case — see EmitAssetCreated.
 func EmitMarginaliaAdded(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -365,13 +443,13 @@ func EmitMarginaliaAdded(
 	asset dbgen.Asset,
 	m dbgen.Marginalium,
 	actorID int64,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
 	EmitSystemPost(ctx, q, manager, gameID, "marginalia.added",
 		model.SeverityMinor,
 		fmt.Sprintf("%s added marginalia %q to %q", actor, m.Text, asset.Name),
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "author_id": actorID})
 }
 
@@ -423,6 +501,7 @@ func EmitMarginaliaTorn(
 }
 
 // EmitAssetTaken writes the Default asset.taken post for an ownership transfer.
+// rowNumber is nullable for the prologue case — see EmitAssetCreated.
 func EmitAssetTaken(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -430,14 +509,14 @@ func EmitAssetTaken(
 	gameID int64,
 	asset dbgen.Asset,
 	oldOwnerID, newOwnerID int64,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	taker := playerDisplayName(ctx, q, newOwnerID)
 	from := playerDisplayName(ctx, q, oldOwnerID)
 	EmitSystemPost(ctx, q, manager, gameID, "asset.taken",
 		model.SeverityDefault,
 		fmt.Sprintf("%s took %q from %s", taker, asset.Name, from),
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "old_owner_id": oldOwnerID, "new_owner_id": newOwnerID})
 }
 
@@ -462,4 +541,236 @@ func EmitMainCharacterChanged(
 		model.SeverityDefault, body,
 		&rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "is_main_character": isMainCharacter, "actor_id": actorID})
+}
+
+// ── Prologue (opening setup) ───────────────────────────────────────────────────
+//
+// The prologue builds the starting board. Asset creation, title marginalia, and
+// card takes reuse the canonical asset.* / marginalia.* posts (so the opening
+// pieces appear in the log identically to mid-game state — closing the raw
+// CreateAsset bypass). Laws/rumors and the per-track opening rankings get the
+// dedicated emitters below. Phase boundaries ("Prologue begins" / "Main event
+// begins") are already emitted by broadcastPhaseChange.
+
+// EmitLawEnacted writes the Default law.enacted post for a law written into the
+// public record (its mid-game edit is law.edited).
+// The prologue has no public-record row yet (rows 1–13 are created at
+// main-event start), and scene_posts.row_number is nullable for exactly this
+// "prologue / lobby" case — so these prologue emitters anchor a nil row. A
+// non-nil row that doesn't exist would silently fail the (game_id, row_number)
+// foreign key and drop the post.
+func EmitLawEnacted(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	law dbgen.Law,
+) {
+	body := fmt.Sprintf("Law enacted: %q", law.Text)
+	if law.SignatoryID != nil {
+		body = fmt.Sprintf("%s enacted a law: %q", playerDisplayName(ctx, q, *law.SignatoryID), law.Text)
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "law.enacted",
+		model.SeverityDefault, body,
+		nil, nil, nil,
+		map[string]any{"law_id": law.ID, "signatory_id": law.SignatoryID})
+}
+
+// EmitRumorCreated writes the Default rumor.created post for a rumor written
+// into the public record (its mid-game edit is rumor.edited).
+func EmitRumorCreated(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	rumor dbgen.Rumor,
+) {
+	body := fmt.Sprintf("Rumor spread: %q", rumor.Text)
+	if rumor.SourcePlayerID != nil {
+		body = fmt.Sprintf("%s spread a rumor: %q", playerDisplayName(ctx, q, *rumor.SourcePlayerID), rumor.Text)
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "rumor.created",
+		model.SeverityDefault, body,
+		nil, nil, nil,
+		map[string]any{"rumor_id": rumor.ID, "source_player_id": rumor.SourcePlayerID})
+}
+
+// EmitPrologueTrackRanked writes the Important prologue.track_ranked post fixing
+// a track's opening standing. It reads back the persisted rankings so the body
+// reflects the final order including dummy slots (rendered "—"). Emitted once
+// per track, after the track is fully resolved (set-asides placed, if any).
+func EmitPrologueTrackRanked(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	track string,
+) {
+	cat := modelCategoryForTrack(track)
+	rankings, err := q.ListRankingsByGame(ctx, gameID)
+	if err != nil {
+		return
+	}
+	names := make(map[int16]string)
+	for _, rk := range rankings {
+		if rk.Category != cat {
+			continue
+		}
+		if rk.PlayerID == nil {
+			names[rk.Rank] = "—"
+		} else {
+			names[rk.Rank] = playerDisplayName(ctx, q, *rk.PlayerID)
+		}
+	}
+	parts := make([]string, 0, 5)
+	for r := int16(1); r <= 5; r++ {
+		if n, ok := names[r]; ok {
+			parts = append(parts, fmt.Sprintf("%d %s", r, n))
+		}
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "prologue.track_ranked",
+		model.SeverityImportant,
+		fmt.Sprintf("Opening %s ranks: %s", shakeUpCategoryTitle(track), strings.Join(parts, " · ")),
+		nil, nil, nil,
+		map[string]any{"track": track})
+}
+
+// ── Shake-Up (the endgame climax) ──────────────────────────────────────────────
+//
+// The Shake-Up runs three category passes (esteem → knowledge → power), each a
+// rolling step then a spending step. None of it was logged before; these
+// emitters give the climax a full reconstructable trail. Structural events are
+// Boundary anchors; a player's roll is Minor (routine gather); announcing/
+// adjusting a spend is the bidding chatter (Default / Minor); the committed
+// spend is the Important outcome and carries the concrete effect in its body
+// and structured system_data (rather than re-firing the generic asset.* posts,
+// which would drop the shake-up framing and the token cost).
+
+// shakeUpCategoryTitle capitalizes a shake-up category string ("esteem" →
+// "Esteem") for display, reusing categoryTitle's logic.
+func shakeUpCategoryTitle(category string) string {
+	return categoryTitle(model.RankingCategory(category))
+}
+
+// EmitShakeUpBegin writes the Boundary post announcing the start of the
+// Shake-Up's first (esteem) pass.
+func EmitShakeUpBegin(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64, category string) {
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.begin",
+		model.SeverityBoundary,
+		fmt.Sprintf("⚖ The Shake-Up begins — %s", shakeUpCategoryTitle(category)),
+		nil, nil, nil,
+		map[string]any{"category": category})
+}
+
+// EmitShakeUpCategory writes the Boundary post marking the move to a new
+// category pass within the Shake-Up.
+func EmitShakeUpCategory(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64, category string) {
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.category",
+		model.SeverityBoundary,
+		fmt.Sprintf("⚖ Shake-Up — %s", shakeUpCategoryTitle(category)),
+		nil, nil, nil,
+		map[string]any{"category": category})
+}
+
+// EmitShakeUpEnded writes the Boundary post that closes the Shake-Up (and with
+// it the game) after the power pass completes.
+func EmitShakeUpEnded(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64) {
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.ended",
+		model.SeverityBoundary,
+		"⚖ The Shake-Up is complete — the game has ended.",
+		nil, nil, nil, nil)
+}
+
+// EmitShakeUpRolled writes the Minor post for one player's category roll, which
+// gathers them that many spending tokens. total is their resulting pool.
+func EmitShakeUpRolled(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID, playerID int64,
+	result, total int16,
+	category string,
+) {
+	name := playerDisplayName(ctx, q, playerID)
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.rolled",
+		model.SeverityMinor,
+		fmt.Sprintf("%s rolled %d — gains %d %s token(s) (pool: %d)",
+			name, result, result, shakeUpCategoryTitle(category), total),
+		nil, nil, nil,
+		map[string]any{"player_id": playerID, "result": result, "total": total, "category": category})
+}
+
+// shakeUpOptionPhrase turns an option's static Description ("Take a peer
+// asset.") into an inline phrase ("Take a peer asset") for log bodies.
+func shakeUpOptionPhrase(description string) string {
+	return strings.TrimSuffix(strings.TrimSpace(description), ".")
+}
+
+// EmitShakeUpAnnounced writes the Default post for an opened (announced) spend.
+// optionPhrase is the human label; targetName is the targeted asset's name (or
+// "" for option types with no asset target).
+func EmitShakeUpAnnounced(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	spend dbgen.ShakeUpSpend,
+	optionPhrase, targetName string,
+) {
+	name := playerDisplayName(ctx, q, spend.PlayerID)
+	body := fmt.Sprintf("%s announces a Shake-Up spend: %s", name, optionPhrase)
+	if targetName != "" {
+		body += fmt.Sprintf(" — targeting %q", targetName)
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.spend_announced",
+		model.SeverityDefault, body,
+		nil, nil, nil,
+		map[string]any{"spend_id": spend.ID, "player_id": spend.PlayerID, "option_key": spend.OptionKey})
+}
+
+// EmitShakeUpAdjusted writes the Minor post for a cost-adjustment bid against an
+// open spend.
+func EmitShakeUpAdjusted(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	spend dbgen.ShakeUpSpend,
+	adjusterID int64,
+	adjustment int16,
+	optionPhrase string,
+) {
+	adjuster := playerDisplayName(ctx, q, adjusterID)
+	spender := playerDisplayName(ctx, q, spend.PlayerID)
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.adjusted",
+		model.SeverityMinor,
+		fmt.Sprintf("%s adjusts %s's cost %+d (%s)", adjuster, spender, adjustment, optionPhrase),
+		nil, nil, nil,
+		map[string]any{"spend_id": spend.ID, "adjuster_id": adjusterID, "adjustment": adjustment})
+}
+
+// EmitShakeUpCommitted writes the Important outcome post for a committed spend.
+// The effect appliers build the descriptive body (which names the concrete
+// change and the final token cost) and pass effect-specific fields in extra;
+// the base spend fields are merged in here.
+func EmitShakeUpCommitted(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	spend *dbgen.ShakeUpSpend,
+	finalCost int16,
+	body string,
+	extra map[string]any,
+) {
+	data := map[string]any{
+		"spend_id":   spend.ID,
+		"player_id":  spend.PlayerID,
+		"option_key": spend.OptionKey,
+		"final_cost": finalCost,
+	}
+	maps.Copy(data, extra)
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.committed",
+		model.SeverityImportant, body,
+		nil, nil, nil, data)
 }

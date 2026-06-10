@@ -141,6 +141,7 @@ func BeginShakeUp(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, g
 	broadcastEvent(manager, gameID, model.EventShakeUpStepChanged, model.ShakeUpStepChangedPayload{
 		Category: cat, Step: step,
 	})
+	EmitShakeUpBegin(ctx, q, manager, gameID, cat)
 	return nil
 }
 
@@ -209,6 +210,7 @@ func ShakeUpRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		broadcastEvent(manager, gameID, model.EventShakeUpRolled, model.ShakeUpRolledPayload{
 			PlayerID: player.ID, Result: body.Result, Total: newTotal,
 		})
+		EmitShakeUpRolled(ctx, s.Q, manager, gameID, player.ID, body.Result, newTotal, *game.ShakeUpCategory)
 
 		// Advance to step 2 once everyone has rolled.
 		players, err := s.Q.GetPlayersByGame(ctx, gameID)
@@ -335,6 +337,13 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		broadcastEvent(manager, gameID, model.EventShakeUpSpendOpened, model.ShakeUpSpendOpenedPayload{
 			Spend: spend,
 		})
+		var targetName string
+		if body.TargetAssetID != nil {
+			if a, aErr := s.Q.GetAssetByID(ctx, *body.TargetAssetID); aErr == nil {
+				targetName = a.Name
+			}
+		}
+		EmitShakeUpAnnounced(ctx, s.Q, manager, gameID, spend, shakeUpOptionPhrase(info.Description), targetName)
 		respond(w, http.StatusOK, map[string]any{"spend": spend})
 	}
 }
@@ -396,6 +405,11 @@ func ShakeUpAdjust(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		broadcastEvent(manager, gameID, model.EventShakeUpAdjusted, model.ShakeUpAdjustedPayload{
 			SpendID: spend.ID, PlayerID: player.ID, Adjustment: body.Adjustment, AdjustmentID: adj.ID,
 		})
+		var optionPhrase string
+		if info, oErr := gamepkg.ShakeUpOption(spend.OptionKey); oErr == nil {
+			optionPhrase = shakeUpOptionPhrase(info.Description)
+		}
+		EmitShakeUpAdjusted(ctx, s.Q, manager, gameID, spend, player.ID, body.Adjustment, optionPhrase)
 		respond(w, http.StatusOK, map[string]any{"adjustment": adj})
 	}
 }
@@ -470,8 +484,8 @@ func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Apply the mechanical effect.
-		if err = applyShakeUpEffect(ctx, s.Q, manager, gameID, &spend); err != nil {
+		// Apply the mechanical effect (which also emits the committed log post).
+		if err = applyShakeUpEffect(ctx, s.Q, manager, gameID, &spend, finalCost); err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -574,6 +588,7 @@ func maybeAdvanceShakeUpCategory(
 		}
 		broadcastEvent(manager, gameID, model.EventShakeUpEnded, model.ShakeUpEndedPayload{})
 		broadcastPhaseChange(ctx, q, manager, gameID, model.PhaseEnded)
+		EmitShakeUpEnded(ctx, q, manager, gameID)
 		return nil
 	}
 	step := gamepkg.ShakeUpStepRolling
@@ -584,6 +599,7 @@ func maybeAdvanceShakeUpCategory(
 	}
 	broadcastEvent(manager, gameID, model.EventShakeUpStepChanged,
 		model.ShakeUpStepChangedPayload{Category: next, Step: step})
+	EmitShakeUpCategory(ctx, q, manager, gameID, next)
 	return nil
 }
 
@@ -594,6 +610,7 @@ func applyShakeUpEffect(
 	manager *hub.Manager,
 	gameID int64,
 	spend *dbgen.ShakeUpSpend,
+	finalCost int16,
 ) error {
 	info, err := gamepkg.ShakeUpOption(spend.OptionKey)
 	if err != nil {
@@ -602,14 +619,14 @@ func applyShakeUpEffect(
 	switch spend.OptionKey {
 	case gamepkg.ShakeUpOptTakePeer, gamepkg.ShakeUpOptTakeArtifact,
 		gamepkg.ShakeUpOptTakeResource, gamepkg.ShakeUpOptTakeHolding:
-		return shakeUpTakeAsset(ctx, q, manager, gameID, spend, expectedTakeType(spend.OptionKey))
+		return shakeUpTakeAsset(ctx, q, manager, gameID, spend, expectedTakeType(spend.OptionKey), finalCost)
 	case gamepkg.ShakeUpOptBreakResource, gamepkg.ShakeUpOptBreakHolding,
 		gamepkg.ShakeUpOptBreakPeer, gamepkg.ShakeUpOptBreakArtifact:
-		return shakeUpBreakAsset(ctx, q, manager, gameID, spend, expectedBreakType(spend.OptionKey))
+		return shakeUpBreakAsset(ctx, q, manager, gameID, spend, expectedBreakType(spend.OptionKey), finalCost)
 	case gamepkg.ShakeUpOptBumpEsteem, gamepkg.ShakeUpOptBumpKnowledge, gamepkg.ShakeUpOptBumpPower:
-		return shakeUpBumpRank(ctx, q, manager, gameID, spend.PlayerID, info.BumpsTrack)
+		return shakeUpBumpRank(ctx, q, manager, gameID, spend, info.BumpsTrack, finalCost)
 	case gamepkg.ShakeUpOptClaimTitle:
-		return shakeUpClaimTitle(ctx, q, manager, gameID, spend)
+		return shakeUpClaimTitle(ctx, q, manager, gameID, spend, finalCost)
 	}
 	return errors.New("no applier for option")
 }
@@ -649,6 +666,7 @@ func shakeUpTakeAsset(
 	gameID int64,
 	spend *dbgen.ShakeUpSpend,
 	want model.AssetType,
+	finalCost int16,
 ) error {
 	if spend.TargetAssetID == nil {
 		return errors.New("target_asset_id required")
@@ -673,6 +691,11 @@ func shakeUpTakeAsset(
 	broadcastEvent(manager, gameID, model.EventAssetTaken, model.AssetTakenPayload{
 		Asset: updated, OldOwnerID: oldOwner, NewOwnerID: spend.PlayerID,
 	})
+	spender := playerDisplayName(ctx, q, spend.PlayerID)
+	from := playerDisplayName(ctx, q, oldOwner)
+	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
+		fmt.Sprintf("%s spent %d token(s) to take %q (%s) from %s", spender, finalCost, asset.Name, want, from),
+		map[string]any{"effect": "take", "asset_id": asset.ID, "old_owner_id": oldOwner})
 	return nil
 }
 
@@ -683,6 +706,7 @@ func shakeUpBreakAsset(
 	gameID int64,
 	spend *dbgen.ShakeUpSpend,
 	want model.AssetType,
+	finalCost int16,
 ) error {
 	if spend.TargetAssetID == nil {
 		return errors.New("target_asset_id required")
@@ -701,6 +725,11 @@ func shakeUpBreakAsset(
 		return fmt.Errorf("destroy: %w", err)
 	}
 	broadcastEvent(manager, gameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
+	spender := playerDisplayName(ctx, q, spend.PlayerID)
+	owner := playerDisplayName(ctx, q, asset.OwnerID)
+	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
+		fmt.Sprintf("%s spent %d token(s) to break %s's %q (%s)", spender, finalCost, owner, asset.Name, want),
+		map[string]any{"effect": "break", "asset_id": asset.ID, "owner_id": asset.OwnerID})
 	return nil
 }
 
@@ -710,10 +739,14 @@ func shakeUpBumpRank(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
-	gameID, playerID int64,
+	gameID int64,
+	spend *dbgen.ShakeUpSpend,
 	track string,
+	finalCost int16,
 ) error {
+	playerID := spend.PlayerID
 	cat := model.RankingCategory(track)
+	spender := playerDisplayName(ctx, q, playerID)
 	rankings, err := q.ListRankingsByGame(ctx, gameID)
 	if err != nil {
 		return fmt.Errorf("load rankings: %w", err)
@@ -727,7 +760,13 @@ func shakeUpBumpRank(
 		}
 	}
 	if current <= 1 {
-		return nil // already at the top; no-op
+		// Already at the top — the token is still spent, nothing moves. The
+		// rules dwell on spends that change nothing, so log it anyway.
+		EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
+			fmt.Sprintf("%s spent %d token(s) to rise on %s, but is already at the top — no change",
+				spender, finalCost, shakeUpCategoryTitle(track)),
+			map[string]any{"effect": "bump", "track": track, "changed": false})
+		return nil
 	}
 	target = current - 1
 	for _, rk := range rankings {
@@ -749,6 +788,13 @@ func shakeUpBumpRank(
 	}
 	updated, _ := q.ListRankingsByGame(ctx, gameID)
 	broadcastEvent(manager, gameID, model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: updated})
+	body := fmt.Sprintf("%s spent %d token(s) to rise to rank %d on %s",
+		spender, finalCost, target, shakeUpCategoryTitle(track))
+	if displaced != nil {
+		body += fmt.Sprintf(" (displacing %s)", playerDisplayName(ctx, q, *displaced))
+	}
+	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost, body,
+		map[string]any{"effect": "bump", "track": track, "changed": true, "new_rank": target})
 	return nil
 }
 
@@ -763,6 +809,7 @@ func shakeUpClaimTitle(
 	manager *hub.Manager,
 	gameID int64,
 	spend *dbgen.ShakeUpSpend,
+	finalCost int16,
 ) error {
 	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
 		GameID:    gameID,
@@ -780,5 +827,9 @@ func shakeUpClaimTitle(
 		model.EventAssetCreated,
 		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
 	)
+	spender := playerDisplayName(ctx, q, spend.PlayerID)
+	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
+		fmt.Sprintf("%s spent %d token(s) to claim a new title %q", spender, finalCost, asset.Name),
+		map[string]any{"effect": "claim_title", "asset_id": asset.ID})
 	return nil
 }

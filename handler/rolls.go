@@ -479,6 +479,7 @@ func Vote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			AdjustedDifficulty: adj,
 			Ballot:             ballot,
 		})
+		EmitDifficultyVoteResolved(ctx, s.Q, manager, roll, allVotes, adj)
 
 		if err := advanceToLeverage(ctx, w, r, s.Q, manager, roll); err != nil {
 			respondInternalErr(w, r, "could not advance to leverage", err)

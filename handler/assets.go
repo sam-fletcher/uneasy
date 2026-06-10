@@ -220,7 +220,7 @@ func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			h.BroadcastEvent(model.EventAssetCreated, model.AssetPayload{Asset: result})
 		}
 		if g, err := s.Q.GetGameByID(ctx, gameID); err == nil {
-			EmitAssetCreated(ctx, s.Q, manager, gameID, asset, marginalia, g.CurrentRow)
+			EmitAssetCreated(ctx, s.Q, manager, gameID, asset, marginalia, &g.CurrentRow)
 		}
 
 		respond(w, http.StatusCreated, map[string]any{"asset": result})
@@ -562,7 +562,7 @@ func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-			EmitMarginaliaAdded(ctx, s.Q, manager, asset.GameID, *asset, m, player.ID, g.CurrentRow)
+			EmitMarginaliaAdded(ctx, s.Q, manager, asset.GameID, *asset, m, player.ID, &g.CurrentRow)
 		}
 
 		respond(w, http.StatusCreated, map[string]any{"marginalia": m})
@@ -845,7 +845,7 @@ func TakeAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-			EmitAssetTaken(ctx, s.Q, manager, asset.GameID, *asset, oldOwnerID, player.ID, g.CurrentRow)
+			EmitAssetTaken(ctx, s.Q, manager, asset.GameID, *asset, oldOwnerID, player.ID, &g.CurrentRow)
 		}
 
 		respond(w, http.StatusOK, map[string]any{"asset": enriched})

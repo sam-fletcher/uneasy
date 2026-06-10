@@ -326,7 +326,9 @@ func findOpenMarginaliaPosition(ctx context.Context, q *dbgen.Queries, assetID i
 }
 
 // addTitleMarginalium adds a marginalium to the player's main character.
-func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, playerID int64, text string) error {
+func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, manager *hub.Manager,
+	gameID, playerID int64, text string,
+) error {
 	mainCharID, err := findMainCharacter(ctx, q, playerID)
 	if err != nil {
 		return httpErr(http.StatusInternalServerError, err.Error())
@@ -340,13 +342,16 @@ func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, playerID int64, 
 		return httpErr(http.StatusConflict, "main character has no open marginalia slots")
 	}
 
-	_, err = q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+	m, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
 		AssetID:  mainCharID,
 		Position: pos,
 		Text:     text,
 	})
 	if err != nil {
 		return httpErr(http.StatusInternalServerError, "could not add title marginalium")
+	}
+	if mainChar, err := q.GetAssetByID(ctx, mainCharID); err == nil {
+		EmitMarginaliaAdded(ctx, q, manager, gameID, mainChar, m, playerID, nil)
 	}
 	return nil
 }
@@ -377,6 +382,7 @@ func addLawOrRumor(
 			return httpErr(http.StatusInternalServerError, "could not record law")
 		}
 		broadcastEvent(manager, gameID, model.EventLawEnacted, model.LawEnactedPayload{Law: law})
+		EmitLawEnacted(ctx, q, manager, gameID, law)
 	} else {
 		rumor, err := q.CreateRumor(ctx, dbgen.CreateRumorParams{
 			GameID:         gameID,
@@ -387,6 +393,7 @@ func addLawOrRumor(
 			return httpErr(http.StatusInternalServerError, "could not record rumor")
 		}
 		broadcastEvent(manager, gameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
+		EmitRumorCreated(ctx, q, manager, gameID, rumor)
 	}
 	return nil
 }
@@ -534,23 +541,29 @@ func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 	}
 
 	assetType := gamepkg.AssetTypeForSheet(body.SheetType)
-	if _, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+	choiceAsset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
 		GameID:    gameID,
 		OwnerID:   playerID,
 		CreatorID: playerID,
 		AssetType: model.AssetType(assetType),
 		Name:      body.AssetText,
-	}); err != nil {
+	})
+	if err != nil {
 		return turnNumber, httpErr(http.StatusInternalServerError, "could not create choice asset")
 	}
+	// Prologue posts predate any public-record row, so they anchor a nil row
+	// (scene_posts.row_number is nullable for exactly this case).
+	EmitAssetCreated(ctx, q, manager, gameID, choiceAsset, nil, nil)
 
 	switch body.SheetType {
 	case gamepkg.PrologueSheetTitles:
-		if err := addTitleMarginalium(ctx, q, playerID, body.MarginaliumText); err != nil {
+		if err := addTitleMarginalium(ctx, q, manager, gameID, playerID, body.MarginaliumText); err != nil {
 			return turnNumber, err
 		}
 	case gamepkg.PrologueSheetLawsRumors:
-		if err := addLawOrRumor(ctx, q, manager, gameID, playerID, body.ChoiceName, body.LawOrRumorText); err != nil {
+		if err := addLawOrRumor(
+			ctx, q, manager, gameID, playerID, body.ChoiceName, body.LawOrRumorText,
+		); err != nil {
 			return turnNumber, err
 		}
 	}
@@ -612,6 +625,7 @@ func processPrologueCardClaim(
 		broadcastEvent(manager, gameID, model.EventAssetTaken, model.AssetTakenPayload{
 			Asset: updated, OldOwnerID: oldOwner, NewOwnerID: claimerID,
 		})
+		EmitAssetTaken(ctx, q, manager, gameID, updated, oldOwner, claimerID, nil)
 		_ = existingOwner
 		return nil
 	}
@@ -645,6 +659,7 @@ func processPrologueCardClaim(
 		model.EventAssetCreated,
 		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
 	)
+	EmitAssetCreated(ctx, q, manager, gameID, asset, nil, nil)
 	return nil
 }
 

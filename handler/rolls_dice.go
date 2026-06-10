@@ -164,6 +164,11 @@ func finalizeRoll(
 		Dice:          finalDice,
 		CancelledDice: cancelledDice,
 	})
+	effectiveDifficulty := resolved.Difficulty
+	if resolved.AdjustedDifficulty != nil {
+		effectiveDifficulty = *resolved.AdjustedDifficulty
+	}
+	EmitRollResolved(ctx, q, manager, &resolved, result, outcome, effectiveDifficulty)
 	// Roll outcome can change the RowState — e.g. a marred Make Demands
 	// roll transitions plan_resolving → await_demand_counter. Recompute
 	// and broadcast unconditionally; ComputeRowState is cheap and the
