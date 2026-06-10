@@ -13,7 +13,7 @@
 		leverageRoll, useBankedDie, callVote, skipVote, voteOnRoll,
 		setRollIntent, setRollReady,
 	} from '$lib/api';
-	import AssetCard from './AssetCard.svelte';
+	import AssetCardSelectable from './AssetCardSelectable.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 
 	interface Props {
@@ -47,9 +47,6 @@
 	const isActor = $derived(currentPlayerID === roll.actor_id);
 	const stage = $derived(roll.stage);
 	const me = $derived(participants.find(p => p.player_id === currentPlayerID) ?? null);
-	const myIntent = $derived<RollIntent | 'aid' | null>(
-		isActor ? 'aid' : (me?.intent ?? null)
-	);
 	const myReady = $derived(me?.is_ready ?? false);
 
 	// A non-actor's intent is locked once they've committed any die for
@@ -67,6 +64,55 @@
 	const myUnleveragedAssets = $derived(myAssets.filter(a => !a.is_leveraged));
 	const myUnspentBanked = $derived(bankedDice.filter(b => b.used_at == null));
 	const canCommit = $derived(myUnleveragedAssets.length > 0 || myUnspentBanked.length > 0);
+	const myColor = $derived(playerColorByID(currentPlayerID, players));
+
+	// ── Draft state (Option A: nothing commits until Ready) ───────────────────
+	// Intent and dice picks live client-side until the player presses Ready,
+	// which reveals + commits them all at once. Until then nothing is broadcast,
+	// so there's no information for opponents to react to.
+	let draftIntent = $state<RollIntent | null>(null);
+	let draftAssetIds = $state<Set<number>>(new Set());
+	let draftBankedIds = $state<Set<number>>(new Set());
+
+	// Clear the draft only when a genuinely new roll appears. Keyed on roll.id
+	// (not object identity) so the frequent WS roll reassignments during a
+	// leverage stage can't wipe an in-progress draft.
+	let lastRollId = -1;
+	$effect(() => {
+		if (roll.id !== lastRollId) {
+			lastRollId = roll.id;
+			draftIntent = null;
+			draftAssetIds = new Set();
+			draftBankedIds = new Set();
+		}
+	});
+
+	// The actor always aids; non-actors fall back to any server intent (set on
+	// a prior submit) so a forced-unready keeps showing the right side.
+	const effectiveIntent = $derived<RollIntent | 'aid' | null>(
+		isActor ? 'aid' : (intentLocked ? (me?.intent ?? null) : (draftIntent ?? me?.intent ?? null))
+	);
+
+	// Asset ids I've already committed a die for on this roll (locked).
+	const myCommittedAssetIds = $derived(
+		new Set(
+			dice
+				.filter(d => d.player_id === currentPlayerID && d.leveraged_asset_id != null)
+				.map(d => d.leveraged_asset_id as number)
+		)
+	);
+
+	const draftCount = $derived(draftAssetIds.size + draftBankedIds.size);
+	const hasDraft = $derived(draftCount > 0);
+	// Non-actors must choose a side before their drafted dice can commit.
+	const needsIntent = $derived(!isActor && effectiveIntent == null && hasDraft);
+	// Dice I could still add after this submit. If zero AND I'm committing
+	// something, the server auto-readies me on the final commit — so we skip the
+	// explicit ready call to avoid racing an auto-resolve.
+	const remainingAfterSubmit = $derived(
+		myUnleveragedAssets.filter(a => !draftAssetIds.has(a.id)).length +
+		myUnspentBanked.filter(b => !draftBankedIds.has(b.id)).length
+	);
 
 	// Split dice into pools by side.
 	const actorPool = $derived(dice.filter(d => !d.is_interference));
@@ -100,18 +146,68 @@
 	const voteCount = $derived(votes.length);
 	const onVote = (v: 1 | -1) => run(() => voteOnRoll(roll.id, v));
 
-	// ── leverage actions ──────────────────────────────────────────────────────
-	const onSetIntent = (intent: RollIntent) => run(() => setRollIntent(roll.id, intent));
-	const onLeverageAsset = (asset: Asset) => run(async () => {
-		const { die } = await leverageRoll(roll.id, asset.id);
-		dice = [...dice, die];
+	// ── leverage actions (draft-then-submit) ──────────────────────────────────
+	// Intent and asset/banked picks only mutate local draft state. The Ready
+	// button submits the whole draft, then readies.
+	function setDraftIntent(intent: RollIntent) {
+		if (intentLocked || busy) return;
+		draftIntent = intent;
+	}
+	function toggleDraftAsset(asset: Asset) {
+		if (myReady || busy) return;
+		const next = new Set(draftAssetIds);
+		next.has(asset.id) ? next.delete(asset.id) : next.add(asset.id);
+		draftAssetIds = next;
+	}
+	function toggleDraftBanked(b: BankedDie) {
+		if (myReady || busy) return;
+		const next = new Set(draftBankedIds);
+		next.has(b.id) ? next.delete(b.id) : next.add(b.id);
+		draftBankedIds = next;
+	}
+
+	// Commit the draft (one API call per leverage — preserves one chat-log
+	// entry per asset), then ready. Each leverageRoll/useBankedDie reveals a
+	// die publicly; this burst is the player's reveal-on-Ready.
+	const onReadySubmit = () => run(async () => {
+		if (needsIntent) return;
+		// Snapshot everything reactive up front — the assets/bankedDice props
+		// mutate via WS as commits land, so capture the plan before any await.
+		const assetIds = [...draftAssetIds];
+		const bankedIds = [...draftBankedIds];
+		const intentToSet = !isActor && !intentLocked ? (draftIntent ?? me?.intent ?? null) : null;
+		const committingAny = assetIds.length > 0 || bankedIds.length > 0;
+		// If this submit empties my hand, the server auto-readies me on the
+		// final commit (and may auto-resolve) — so skip the explicit ready to
+		// avoid racing a resolved roll.
+		const willAutoReady = committingAny && remainingAfterSubmit === 0;
+
+		// Clear the draft immediately; we hold local copies for the API calls.
+		draftAssetIds = new Set();
+		draftBankedIds = new Set();
+
+		// 1. Intent (non-actor, not yet locked, changed from server value).
+		if (intentToSet && intentToSet !== me?.intent) {
+			await setRollIntent(roll.id, intentToSet);
+		}
+		// 2. Leverage each drafted asset.
+		for (const id of assetIds) {
+			const { die } = await leverageRoll(roll.id, id);
+			dice = [...dice, die];
+		}
+		// 3. Spend each drafted banked die.
+		for (const id of bankedIds) {
+			const { die } = await useBankedDie(roll.id, id);
+			dice = [...dice, die];
+			bankedDice = bankedDice.map(x =>
+				x.id === id ? { ...x, used_at: new Date().toISOString(), used_roll_id: roll.id } : x);
+		}
+		// 4. Ready (unless the auto-ready already covered it).
+		if (!willAutoReady) {
+			await setRollReady(roll.id, true);
+		}
 	});
-	const onUseBanked = (b: BankedDie) => run(async () => {
-		const { die } = await useBankedDie(roll.id, b.id);
-		dice = [...dice, die];
-		bankedDice = bankedDice.map(x => x.id === b.id ? { ...x, used_at: new Date().toISOString(), used_roll_id: roll.id } : x);
-	});
-	const onToggleReady = () => run(() => setRollReady(roll.id, !myReady));
+	const onUnready = () => run(() => setRollReady(roll.id, false));
 
 	// ── Player roster (for participants chips) ───────────────────────────────
 	// A locked-ready participant (no dice to add) is called out explicitly so
@@ -230,7 +326,10 @@
 	{#if stage === 'voting'}
 		<div class="stage-actions">
 			<p class="stage-hint">
-				Each vote shifts difficulty by ±1. {voteCount} of {players.length} have voted.
+				Each vote shifts difficulty by 1.
+			</p>
+			<p class="stage-hint">
+				 {voteCount} of {players.length} have voted.
 			</p>
 			{#if myVote}
 				<p class="stage-hint">
@@ -252,61 +351,88 @@
 
 	<!-- ── Stage: leverage ─────────────────────────────────────────────────── -->
 	{#if stage === 'leverage'}
-		<!-- Intent + ready row -->
+		<!-- Intent + ready row. Picks stay in the local draft until Ready. -->
 		<div class="intent-row">
-			{#if !isActor && !myIntent}
-				<button class="intent-btn aid" onclick={() => onSetIntent('aid')} disabled={busy}>
-					Aid
-				</button>
-				<button class="intent-btn interfere" onclick={() => onSetIntent('interfere')} disabled={busy}>
-					Interfere
-				</button>
-			{:else if !isActor}
-				<span class="intent-badge" class:locked={intentLocked}>
-					{myIntent === 'aid' ? "You're aiding" : "You're interfering"}
-				</span>
+			{#if !isActor}
+				{#if intentLocked}
+					<span class="intent-badge locked">
+						{effectiveIntent === 'aid' ? "You're aiding" : "You're interfering"}
+					</span>
+				{:else}
+					<button
+						class="intent-btn aid"
+						class:selected={effectiveIntent === 'aid'}
+						aria-pressed={effectiveIntent === 'aid'}
+						onclick={() => setDraftIntent('aid')}
+						disabled={busy}
+					>
+						Aid
+					</button>
+					<button
+						class="intent-btn interfere"
+						class:selected={effectiveIntent === 'interfere'}
+						aria-pressed={effectiveIntent === 'interfere'}
+						onclick={() => setDraftIntent('interfere')}
+						disabled={busy}
+					>
+						Interfere
+					</button>
+				{/if}
 			{/if}
-			<button
-				class="ready-btn"
-				class:ready={myReady}
-				onclick={onToggleReady}
-				disabled={busy || (myReady && !canCommit)}
-				title={myReady && !canCommit ? 'You have no dice left to add — automatically ready.' : ''}
-			>
-				{myReady ? (canCommit ? 'Unready (add more dice)' : 'Ready (locked)') : 'Ready'}
-			</button>
+			{#if myReady}
+				<button
+					class="ready-btn ready"
+					onclick={onUnready}
+					disabled={busy || !canCommit}
+					title={!canCommit ? 'You have no dice left to add — automatically ready.' : ''}
+				>
+					{canCommit ? 'Unready' : 'Ready (locked)'}
+				</button>
+			{:else}
+				<button
+					class="ready-btn"
+					onclick={onReadySubmit}
+					disabled={busy || needsIntent}
+					title={needsIntent ? 'Pick aid or interfere first.' : ''}
+				>
+					{hasDraft ? `Commit ${draftCount} & ready` : 'Ready'}
+				</button>
+			{/if}
 		</div>
+		<p class="ready-note">Opposing leverages will unready you.</p>
 
-		<!-- My assets (only when intent set or I'm the actor) -->
-		{#if (isActor || myIntent) && myAssets.length > 0}
+		<!-- My assets (once a side is chosen, or I'm the actor) -->
+		{#if (isActor || effectiveIntent != null) && myAssets.length > 0}
 			<div class="my-assets">
 				<span class="section-label">Your assets</span>
 				{#each myAssets as asset (asset.id)}
-					<AssetCard
+					<AssetCardSelectable
 						{asset}
-						compact
-						mode="roll-leverage"
-						onRollLeverage={onLeverageAsset}
-						rollLeverageDisabled={myReady || (isActor && actorLeverageBlocked)}
-						onTear={() => {}}
+						ownerColor={myColor}
+						leverageMode
+						leverageDrafted={draftAssetIds.has(asset.id)}
+						leverageDisabled={myReady || (isActor && actorLeverageBlocked)}
+						onToggleLeverage={toggleDraftAsset}
 					/>
 				{/each}
 			</div>
 		{/if}
 
-		<!-- Banked dice (only when intent set or I'm the actor) -->
-		{#if (isActor || myIntent) && myUnspentBanked.length > 0}
+		<!-- Banked dice (once a side is chosen, or I'm the actor) -->
+		{#if (isActor || effectiveIntent != null) && myUnspentBanked.length > 0}
 			<div class="banked-section">
 				<span class="section-label">Banked dice ({myUnspentBanked.length})</span>
 				<div class="banked-list">
 					{#each myUnspentBanked as b (b.id)}
 						<button
 							class="banked-btn"
-							onclick={() => onUseBanked(b)}
+							class:drafted={draftBankedIds.has(b.id)}
+							aria-pressed={draftBankedIds.has(b.id)}
+							onclick={() => toggleDraftBanked(b)}
 							disabled={busy || myReady}
-							title="Spend this banked die (random face at resolution)"
+							title="Spend this banked die on Ready (random face at resolution)"
 						>
-							🎲 Spend (+1 die)
+							{draftBankedIds.has(b.id) ? '🎲 Selected' : '🎲 Spend (+1 die)'}
 						</button>
 					{/each}
 				</div>
@@ -460,8 +586,12 @@
 		font-weight: 700;
 		border: 1px solid;
 	}
-	.intent-btn.aid { background: #0a2a1a; border-color: var(--color-success); color: var(--color-success); }
-	.intent-btn.interfere { background: #2a0a0a; border-color: var(--color-danger); color: var(--color-danger); }
+	.intent-btn.aid { background: transparent; border-color: var(--color-success); color: var(--color-success); }
+	.intent-btn.interfere { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
+	/* Draft picks are muted until selected, so the chosen side reads clearly. */
+	.intent-btn:not(.selected) { opacity: 0.55; }
+	.intent-btn.aid.selected { background: #0a2a1a; }
+	.intent-btn.interfere.selected { background: #2a0a0a; }
 	.intent-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 	.intent-badge {
 		font-size: 0.85rem;
@@ -489,6 +619,12 @@
 		border-color: var(--color-success);
 	}
 	.ready-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	.ready-note {
+		margin: 0;
+		font-size: 0.72rem;
+		color: var(--color-text-faint);
+		text-align: right;
+	}
 
 	/* Sections */
 	.section-label {
@@ -509,6 +645,7 @@
 		color: var(--color-text);
 		font-weight: 600;
 	}
+	.banked-btn.drafted { background: #3a2e12; border-color: var(--color-accent); color: var(--color-accent); }
 	.banked-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	/* Commit feed */

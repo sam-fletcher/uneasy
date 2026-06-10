@@ -73,6 +73,8 @@
 	--color-danger: #e07070;        /* errors */
 	--color-success: #6dbf7a;       /* confirmations */
 	--color-info: #6090c8;          /* informational */
+	--color-leveraged: #d98b3f;     /* spent/committed-but-refreshable: leveraged asset border + retinue badge */
+	--color-highlight: #6dbfe0;     /* prepare/row-activity cue: hover-prepare border + plan-count badge */
 
 	/* ── Typography ──────────────────────────────────────────────────────── */
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;     /* unused — escape hatch */

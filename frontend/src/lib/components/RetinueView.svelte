@@ -5,7 +5,7 @@
   directly onto the tile parts.
 -->
 <script lang="ts">
-	import { addMarginalia, updateMarginalia, updateAsset, leverageAsset, writeSecret, getAssetSuggestions } from '$lib/api';
+	import { addMarginalia, updateMarginalia, updateAsset, writeSecret, getAssetSuggestions } from '$lib/api';
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
 	import SuggestionPicker from './SuggestionPicker.svelte';
 
@@ -17,7 +17,6 @@
 		secrets = [],
 		rankings = [],
 		viewerPlayerId,
-		leverageActive = false,
 		onSecretsChanged,
 	}: {
 		playerId: number;
@@ -27,8 +26,6 @@
 		secrets?: Secret[];
 		rankings?: Ranking[];
 		viewerPlayerId: number | null;
-		/** True when there's an unresolved active dice roll — leverage is actionable. */
-		leverageActive?: boolean;
 		/** Called after the viewer writes a secret so the parent can refetch. */
 		onSecretsChanged?: () => void;
 	} = $props();
@@ -64,6 +61,8 @@
 	const ownedAssets = $derived(
 		assets.filter(a => a.owner_id === playerId && !a.is_destroyed)
 	);
+
+	const leveragedCount = $derived(ownedAssets.filter(a => a.is_leveraged).length);
 
 	const assetTypeLabels: Record<Asset['asset_type'], string> = {
 		peer: 'Peer',
@@ -271,31 +270,12 @@
 		}
 	}
 
-	// ── Leverage (owner only, when a roll is active) ────────────────────────
-	let leveragingId = $state<number | null>(null);
-	let leverageError = $state<string | null>(null);
-
-	async function doLeverage(asset: Asset) {
-		if (leveragingId != null) return;
-		leveragingId = asset.id;
-		leverageError = null;
-		try {
-			await leverageAsset(asset.id);
-			// AssetLeveraged WS event updates the prop.
-		} catch (e) {
-			leverageError = e instanceof Error ? e.message : 'Could not leverage.';
-		} finally {
-			leveragingId = null;
-		}
-	}
-
 	// Reset edit state when the player being viewed changes.
 	$effect(() => {
 		void playerId;
 		cancelEdit();
 		cancelRename();
 		cancelMcSwap();
-		leverageError = null;
 	});
 
 	// Action: focus the textarea when it mounts (replaces autofocus attribute,
@@ -308,14 +288,24 @@
 <div class="retinue-view">
 	{#if player}
 		<header class="retinue-header">
-			<h2>{isSelf ? 'Your Retinue' : `${player.display_name}'s Retinue`}</h2>
-			<div class="meta">
-				<span class="dot" class:online={presence?.online}></span>
-				<span class="status">{presence?.online ? 'online' : 'offline'}</span>
-				{#if player.is_facilitator}
-					<span class="tag">facilitator</span>
-				{/if}
+			<div class="header-titles">
+				<h2>{isSelf ? 'Your Retinue' : `${player.display_name}'s Retinue`}</h2>
+				<div class="meta">
+					<span class="dot" class:online={presence?.online}></span>
+					<span class="status">{presence?.online ? 'online' : 'offline'}</span>
+					{#if player.is_facilitator}
+						<span class="tag">facilitator</span>
+					{/if}
+				</div>
 			</div>
+			{#if leveragedCount > 0}
+				<span
+					class="leveraged-badge"
+					title={`${leveragedCount} leveraged ${leveragedCount === 1 ? 'asset' : 'assets'} — leveraged for a roll until refreshed`}
+				>
+					<span class="leveraged-count">{leveragedCount}</span> leveraged
+				</span>
+			{/if}
 		</header>
 
 		{#if hasRanks}
@@ -388,15 +378,6 @@
 									title="Make main character"
 								>☆</button>
 							{/if}
-							{#if isSelf && leverageActive && !asset.is_leveraged && renamingAssetId !== asset.id && mcSwapTo == null}
-								<button
-									type="button"
-									class="lev-btn"
-									onclick={() => doLeverage(asset)}
-									disabled={leveragingId === asset.id}
-									title="Commit this asset to the active roll"
-								>{leveragingId === asset.id ? '…' : 'Leverage'}</button>
-							{/if}
 							<button
 								type="button"
 								class="secrets-btn"
@@ -414,9 +395,6 @@
 							</button>
 							<span class="asset-type">{assetTypeLabels[asset.asset_type]}</span>
 						</div>
-						{#if isSelf && leverageError && leveragingId == null}
-							<p class="m-editor-error">{leverageError}</p>
-						{/if}
 						{#if renamingAssetId === asset.id && renameError}
 							<p class="m-editor-error">{renameError}</p>
 						{/if}
@@ -557,10 +535,38 @@
 		gap: 0.85rem;
 	}
 
+	.retinue-header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
 	.retinue-header h2 {
 		color: var(--color-accent);
 		font-size: 1.1rem;
 		margin: 0 0 0.3rem;
+	}
+
+	/* Spent-but-refreshable counter, top-right across from online status.
+	   Outlined (not filled) to echo the leveraged asset-card border. */
+	.leveraged-badge {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-leveraged);
+		border: 1px solid var(--color-leveraged);
+		border-radius: 999px;
+		padding: 0.15rem 0.5rem;
+		line-height: 1.2;
+		white-space: nowrap;
+	}
+	.leveraged-count {
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.rank-strip {
@@ -660,7 +666,7 @@
 		gap: 0.5rem;
 	}
 	.asset-tile.main-char { border-color: var(--color-accent); }
-	.asset-tile.leveraged { border-color: var(--color-info); opacity: 0.78; }
+	.asset-tile.leveraged { border-color: var(--color-leveraged); opacity: 0.78; }
 
 	.tile-head {
 		display: flex;
@@ -727,26 +733,6 @@
 	.mc-toggle:hover { color: var(--color-accent); border-color: #5a4d2c; background: #2a2418; }
 	.mc-toggle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 	.mc-toggle:disabled { opacity: 0.45; cursor: not-allowed; }
-
-	/* Leverage button (visible during an active roll, on non-leveraged owner assets) */
-	.lev-btn {
-		flex-shrink: 0;
-		min-height: 32px;
-		padding: 0.25rem 0.6rem;
-		background: #1f3045;
-		color: #8fb6df;
-		border: 1px solid #34587a;
-		border-radius: 4px;
-		font-family: inherit;
-		font-size: 0.72rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		cursor: pointer;
-	}
-	.lev-btn:hover { background: #243a55; color: #b1cdec; }
-	.lev-btn:focus-visible { outline: 2px solid var(--color-info); outline-offset: 1px; }
-	.lev-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 	/* Secrets eye button + count badge */
 	.secrets-btn {

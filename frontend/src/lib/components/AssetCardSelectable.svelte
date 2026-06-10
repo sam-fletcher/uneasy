@@ -15,8 +15,14 @@
 	stays decoupled from the player list. The caller resolves the color via
 	`playerColor()` from $lib/playerColor.
 
-	The component is intentionally small: it doesn't mutate the asset and
-	doesn't know about leverage / tearing. For those, see AssetCard.svelte.
+	The component is intentionally small: it doesn't mutate the asset or
+	tear marginalia. The one exception is leverage during a dice roll — pass
+	`leverageMode` to surface a die toggle in the header's left slot (used by
+	DiceRollPanel's draft-then-submit flow). The die has three states:
+	  - empty outline  → not selected; tap to add it to your draft
+	  - filled (owner)  → drafted (leverageDrafted) or already committed
+	    (asset.is_leveraged); committed dice are locked
+	The parent owns draft state and the actual commit (on Ready).
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -46,6 +52,16 @@
 		disabled?: boolean;
 		/** Render expanded by default. */
 		defaultExpanded?: boolean;
+		/**
+		 * Leverage draft toggle (DiceRollPanel). When true, a die appears in
+		 * the header's left slot. `leverageDrafted` fills it as a pending pick;
+		 * an already-committed asset (asset.is_leveraged) shows it filled and
+		 * locked. `leverageDisabled` (e.g. you're readied) blocks toggling.
+		 */
+		leverageMode?: boolean;
+		leverageDrafted?: boolean;
+		leverageDisabled?: boolean;
+		onToggleLeverage?: (asset: Asset) => void;
 	}
 
 	let {
@@ -60,7 +76,20 @@
 		onMarginaliaToggle,
 		disabled = false,
 		defaultExpanded = false,
+		leverageMode = false,
+		leverageDrafted = false,
+		leverageDisabled = false,
+		onToggleLeverage,
 	}: Props = $props();
+
+	// Committed dice are locked; drafted/committed both render filled.
+	const leverageCommitted = $derived(asset.is_leveraged);
+	const leverageFilled = $derived(leverageCommitted || leverageDrafted);
+	const leverageLocked = $derived(leverageCommitted || leverageDisabled);
+	function handleLeverage() {
+		if (leverageLocked) return;
+		onToggleLeverage?.(asset);
+	}
 
 	// `defaultExpanded` is intentionally a one-shot initial-value hint, not a
 	// live binding — once the user toggles the card we want their state to
@@ -105,6 +134,7 @@
 	class:selectable
 	class:selected={selectable && selected}
 	class:marginalia-selectable={marginaliaSelectable}
+	class:has-leverage={leverageMode && !selectable && !marginaliaSelectable}
 	class:disabled
 	style:--owner-color={ownerColor}
 >
@@ -136,6 +166,34 @@
 			     selectable variant; the actual checkbox lives on each
 			     marginalia line below. -->
 			<span class="select-tap-placeholder" aria-hidden="true"></span>
+		{:else if leverageMode}
+			<!-- Leverage draft toggle. Shares the left "act on this asset"
+			     slot with the checkbox; the two modes never appear together. -->
+			<span
+				class="lev-tap"
+				class:filled={leverageFilled}
+				class:locked={leverageLocked}
+				role="button"
+				tabindex={leverageLocked ? -1 : 0}
+				aria-pressed={leverageFilled}
+				aria-disabled={leverageLocked}
+				aria-label="Leverage this asset for +1 die"
+				title={leverageCommitted
+					? 'Committed to this roll'
+					: leverageDisabled
+						? 'Unready yourself to change your dice'
+						: leverageDrafted
+							? 'Selected — commits when you press Ready'
+							: 'Select to leverage (+1 die)'}
+				onclick={(e) => { e.stopPropagation(); handleLeverage(); }}
+				onkeydown={(e) => {
+					if (e.key === ' ' || e.key === 'Enter') {
+						e.preventDefault();
+						e.stopPropagation();
+						handleLeverage();
+					}
+				}}
+			>+<span class="die-icon" aria-hidden="true">🎲</span></span>
 		{/if}
 
 		<span class="dot" aria-hidden="true"></span>
@@ -242,7 +300,9 @@
 	   so don't suggest a pointer affordance there. */
 	.card.marginalia-selectable .header { cursor: default; }
 	.card.marginalia-selectable .caret { display: none; }
-	.card:not(.selectable):not(.marginalia-selectable) .header { grid-template-columns: auto 1fr auto; }
+	.card:not(.selectable):not(.marginalia-selectable):not(.has-leverage) .header { grid-template-columns: auto 1fr auto; }
+	/* Leverage mode keeps the base 4-column layout: the "+🎲" button takes the
+	   same left "act on this asset" slot the checkbox uses in selectable mode. */
 
 	.select-tap-placeholder {
 		width: 22px;
@@ -285,6 +345,13 @@
 	}
 
 	.select-tap:focus { outline: 2px solid var(--owner-color, var(--color-accent)); outline-offset: 1px; }
+
+	/* Invisible tap target around the header checkbox: extends the 22px box
+	   out to ~44px. Scoped to .header so the tight per-line marginalia
+	   checkboxes (.m-tap) keep their own small hit areas and don't overlap
+	   neighbouring rows. */
+	.header .select-tap { position: relative; }
+	.header .select-tap::after { content: ''; position: absolute; inset: -11px; }
 
 	.card.selectable.selected .select-tap {
 		background: var(--owner-color, var(--color-accent));
@@ -348,6 +415,43 @@
 	}
 
 	.caret { font-size: 0.8rem; color: var(--color-text-muted); }
+
+	/* Leverage draft toggle. A ~36px-tall "+🎲" chip wrapped in a 44px
+	   invisible tap target (::after) so it's comfortable to hit without
+	   inflating the header. Outlined = not picked; filled (owner colour) =
+	   drafted or already committed. Sits in the same left slot the checkbox
+	   uses. */
+	.lev-tap {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.05rem;
+		height: 36px;
+		padding: 0 0.4rem;
+		border: 1px solid var(--owner-color, var(--color-accent));
+		border-radius: 4px;
+		color: var(--color-text);
+		font-weight: 700;
+		font-size: 1rem;
+		line-height: 1;
+		flex-shrink: 0;
+		cursor: pointer;
+	}
+	/* Match the 🎲 glyph in the dashed Actor-pool / Interference boxes (1.1rem). */
+	.lev-tap .die-icon { font-size: 1.1rem; }
+	/* Invisible tap target: extends the 36px chip out to ~44px on all sides. */
+	.lev-tap::after { content: ''; position: absolute; inset: -4px; }
+	.lev-tap:focus-visible { outline: 2px solid var(--owner-color, var(--color-accent)); outline-offset: 1px; }
+	/* Drafted or committed → filled with owner colour. */
+	.lev-tap.filled { background: var(--owner-color, var(--color-accent)); color: var(--color-bg); }
+	/* Locked: committed (filled, dimmed) or readied-empty (faint outline). */
+	.lev-tap.locked { cursor: not-allowed; }
+	.lev-tap.locked.filled { opacity: 0.6; }
+	.lev-tap.locked:not(.filled) {
+		border-color: var(--color-border-strong);
+		color: var(--color-text-faint);
+		opacity: 0.55;
+	}
 
 	.body {
 		padding: 0 0.7rem 0.6rem 1rem;

@@ -148,7 +148,42 @@
 	// (who the game is blocked on) are usually the focus player, with two
 	// exceptions: Make War's delay reveal blocks on the pending submitters,
 	// and the row-advance gates block on the cost-payers / claimants.
+	// An unresolved dice roll overrides the row-state waitees: the table is
+	// blocked on the roll's own stage (whoever still owes a vote or a Ready),
+	// not on the plan's focus player.
+	function rollWaitingOn(roll: DiceRoll): WaitingOnState {
+		switch (roll.stage) {
+			case 'decide_vote':
+				return {
+					waitees: [{ kind: 'player', playerID: roll.actor_id }],
+					stepLabel: 'Dice roll — call a vote?',
+				};
+			case 'voting': {
+				const voted = new Set(activeRollVotes.map(v => v.player_id));
+				return {
+					waitees: players
+						.filter(p => !voted.has(p.id))
+						.map(p => ({ kind: 'player', playerID: p.id })),
+					stepLabel: 'Dice roll — difficulty vote',
+				};
+			}
+			case 'leverage':
+				return {
+					waitees: activeRollParticipants
+						.filter(p => !p.is_ready)
+						.map(p => ({ kind: 'player', playerID: p.player_id })),
+					stepLabel: 'Dice roll — leverage & ready',
+				};
+			default:
+				return { waitees: [] };
+		}
+	}
+
 	const mainEventWaitingOn = $derived.by<WaitingOnState>(() => {
+		if (activeRoll != null && activeRoll.outcome == null) {
+			return rollWaitingOn(activeRoll);
+		}
+
 		const focusWaitee: Waitee[] = game.focus_player_id != null
 			? [{ kind: 'player', playerID: game.focus_player_id }]
 			: [];

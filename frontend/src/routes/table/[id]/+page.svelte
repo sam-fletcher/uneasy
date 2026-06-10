@@ -898,7 +898,6 @@
 				{secrets}
 				{rankings}
 				viewerPlayerId={currentPlayerID}
-				leverageActive={activeRoll != null && activeRoll.outcome == null}
 				onSecretsChanged={() => getVisibleSecrets(gameID).then(d => { secrets = d.secrets; }).catch(() => {})}
 			/>
 		{/if}

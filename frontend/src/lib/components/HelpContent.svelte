@@ -125,7 +125,7 @@
 				<div class="record-text">
 					<p>This timeline guides the game once the prologue is over.</p>
 					<p>You step down it row by row — <em>setting a scene</em> on each, and <em>preparing plans</em> that land on later rows.</p>
-					<p>Rankings will only change at 3 points: after rows 4, 8, and 12.</p>
+					<p><em>Rankings</em> will only change at 3 points: after rows 4, 8, and 12.</p>
 					<p>The finale (the Shake-Up) occurs after row 13.</p>
 				</div>
 			</div>
@@ -133,6 +133,7 @@
 
 		{#if active === 'plans'}
 			<p>Twelve plans, split across three categories. Each blends roleplaying with a dice roll, and takes a few turns to resolve after you prepare it.</p>
+			<p>Preparing plans higher in the columns will help more when ranks are updated.</p>
 
 			<div class="plan-grid">
 				{#each planGroups as group}
@@ -153,7 +154,8 @@
 
 		{#if active === 'rankings'}
 			<p>After the prologue, everyone is ranked against each other in Power, Knowledge, and Esteem.</p>
-			<p>Your rank feeds into the dice rolls for your plans and your scenes.</p>
+			<p>Your rank feeds into the dice rolls.</p>
+			<p>The ranks will change after rows 4, 8, and 12 based on each player's <em>plans</em> in the category.</p>
 
 			<figure class="diagram">
 				<div class="ex-chip" aria-hidden="true">
@@ -273,8 +275,8 @@
 							<span class="ex-leg-text">A <em>broken</em> marginalium (like “Old war wound”); tear all four and the asset is destroyed.</span>
 						</span>
 						<span class="ex-leg-row">
-							<span class="ex-swatch-blue"></span>
-							<span class="ex-leg-text">A blue border means it's <em>leveraged</em> for a roll, until you refresh it.</span>
+							<span class="ex-swatch-leveraged"></span>
+							<span class="ex-leg-text">An amber border means it's <em>leveraged</em> for a roll, until you refresh it.</span>
 						</span>
 					</div>
 				</figcaption>
@@ -294,6 +296,7 @@
 		flex-direction: column;
 		gap: 0.75rem;
 		font-family: var(--font-serif);
+		font-size: 0.95rem;
 	}
 
 	/* Tabs: tuned to fit all five on a ~390px phone without scrolling; still
@@ -496,7 +499,7 @@
 	.ex-leg-row > :first-child { flex-shrink: 0; margin-top: 0.05rem; }
 	.ex-eye.sm { color: var(--color-accent); flex-shrink: 0; }
 	.ex-strike { flex-shrink: 0; text-decoration: line-through; opacity: 0.6; color: #cfcabd; font-size: 0.78rem; }
-	.ex-swatch-blue { flex-shrink: 0; width: 18px; height: 18px; border: 2px solid var(--color-info); border-radius: 4px; }
+	.ex-swatch-leveraged { flex-shrink: 0; width: 18px; height: 18px; border: 2px solid var(--color-leveraged); border-radius: 4px; }
 
 	.help-footer {
 		display: flex;
