@@ -286,3 +286,19 @@ func (q *Queries) SetPlayerTokenColor(ctx context.Context, arg SetPlayerTokenCol
 	_, err := q.db.Exec(ctx, setPlayerTokenColor, arg.ID, arg.TokenColor)
 	return err
 }
+
+const updateDisplayNameByAccount = `-- name: UpdateDisplayNameByAccount :exec
+UPDATE players SET display_name = $2 WHERE account_id = $1
+`
+
+type UpdateDisplayNameByAccountParams struct {
+	AccountID   int64  `db:"account_id" json:"account_id"`
+	DisplayName string `db:"display_name" json:"display_name"`
+}
+
+// Propagates an account username change to the denormalized display_name
+// copy held by every player seat that account occupies, across all games.
+func (q *Queries) UpdateDisplayNameByAccount(ctx context.Context, arg UpdateDisplayNameByAccountParams) error {
+	_, err := q.db.Exec(ctx, updateDisplayNameByAccount, arg.AccountID, arg.DisplayName)
+	return err
+}

@@ -220,6 +220,14 @@ func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddlew
 		}); err != nil {
 			return httpErr(http.StatusInternalServerError, "could not update username")
 		}
+		// players.display_name is a snapshot taken at join time, so propagate
+		// the rename to every seat this account holds across in-progress games.
+		if err := q.UpdateDisplayNameByAccount(ctx, dbgen.UpdateDisplayNameByAccountParams{
+			AccountID:   acct.ID,
+			DisplayName: *newUsername,
+		}); err != nil {
+			return httpErr(http.StatusInternalServerError, "could not update player names")
+		}
 	}
 	if newEmail != nil {
 		var emailPtr *string
