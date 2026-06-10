@@ -262,8 +262,8 @@
 
 	/* Cross-component highlight: e.g. when a plan card in PlanPanel is
 	 * hovered/selected, draw the eye to that plan's target row here. */
-	.rail-row.highlighted { box-shadow: 0 0 0 2px #6dbfe0; color: var(--color-text); }
-	.rail-row[data-state="future"].highlighted { border-color: #6dbfe0; }
+	.rail-row.highlighted { box-shadow: 0 0 0 2px var(--color-highlight); color: var(--color-text); }
+	.rail-row[data-state="future"].highlighted { border-color: var(--color-highlight); }
 
 	.rail-num { line-height: 1; }
 
@@ -280,7 +280,7 @@
 		font-size: 0.6rem;
 		font-weight: 700;
 		color: var(--color-bg);
-		background: var(--color-danger);
+		background: var(--color-highlight);
 		border-radius: 7px;
 		line-height: 1;
 	}
@@ -422,7 +422,7 @@
 		color: var(--color-bg);
 	}
 
-	.row-num-pill.highlighted { box-shadow: 0 0 0 2px #6dbfe0; }
+	.row-num-pill.highlighted { box-shadow: 0 0 0 2px var(--color-highlight); }
 	.record-row.highlighted { background: #14222a; }
 
 	.row-content {
