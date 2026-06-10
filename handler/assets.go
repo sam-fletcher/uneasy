@@ -219,6 +219,9 @@ func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if h, ok := manager.Get(gameID); ok {
 			h.BroadcastEvent(model.EventAssetCreated, model.AssetPayload{Asset: result})
 		}
+		if g, err := s.Q.GetGameByID(ctx, gameID); err == nil {
+			EmitAssetCreated(ctx, s.Q, manager, gameID, asset, marginalia, g.CurrentRow)
+		}
 
 		respond(w, http.StatusCreated, map[string]any{"asset": result})
 	}
@@ -259,6 +262,7 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				respondErr(w, http.StatusBadRequest, "name cannot be empty")
 				return
 			}
+			oldName := asset.Name
 			err := s.Q.UpdateAssetName(ctx, dbgen.UpdateAssetNameParams{
 				ID:   asset.ID,
 				Name: name,
@@ -268,6 +272,11 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				return
 			}
 			asset.Name = name
+			if name != oldName {
+				if g, gErr := s.Q.GetGameByID(ctx, asset.GameID); gErr == nil {
+					EmitAssetRenamed(ctx, s.Q, manager, asset.GameID, *asset, oldName, name, player.ID, g.CurrentRow)
+				}
+			}
 		}
 
 		if body.IsMainCharacter != nil {
@@ -276,6 +285,18 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				return
 			}
 			asset.IsMainCharacter = *body.IsMainCharacter
+			if g, gErr := s.Q.GetGameByID(ctx, asset.GameID); gErr == nil {
+				EmitMainCharacterChanged(
+					ctx,
+					s.Q,
+					manager,
+					asset.GameID,
+					*asset,
+					*body.IsMainCharacter,
+					player.ID,
+					g.CurrentRow,
+				)
+			}
 		}
 
 		enriched, err := loadAssetEnriched(r, s.Q, asset.ID)
@@ -290,6 +311,57 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		respond(w, http.StatusOK, map[string]any{"asset": enriched})
 	}
+}
+
+// tearOldMainCharacterMarginalia tears the marginalium the MC swap requires
+// (and destroys the old MC if that was its last intact one), broadcasting and
+// logging each step. Split out of tearAndReplaceOldMainCharacter to keep the
+// nesting shallow. Returns false on error.
+func tearOldMainCharacterMarginalia(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	oldMC *dbgen.Asset,
+	oldMargs []dbgen.Marginalium,
+	player *dbgen.Player,
+	decision game.MCDecision,
+) bool {
+	target := marginaliaByPosition(oldMargs, decision.TearPosition)
+	if _, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		ID:       target.ID,
+		TornByID: &player.ID,
+	}); err != nil {
+		respondInternalErr(w, r, "could not tear marginalia", err)
+		return false
+	}
+	if h, ok := manager.Get(oldMC.GameID); ok {
+		h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
+			AssetID:  oldMC.ID,
+			Position: decision.TearPosition,
+			TornByID: player.ID,
+		})
+	}
+	if g, gErr := q.GetGameByID(ctx, oldMC.GameID); gErr == nil {
+		EmitMarginaliaTorn(ctx, q, manager, oldMC.GameID, *oldMC, *target, player.ID, g.CurrentRow)
+	}
+
+	if !decision.DestroysOldMC {
+		return true
+	}
+	if err := q.DestroyAsset(ctx, oldMC.ID); err != nil {
+		respondInternalErr(w, r, "could not destroy old main character", err)
+		return false
+	}
+	if h, ok := manager.Get(oldMC.GameID); ok {
+		h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: oldMC.ID})
+	}
+	if g, gErr := q.GetGameByID(ctx, oldMC.GameID); gErr == nil {
+		EmitAssetDestroyed(ctx, q, manager, oldMC.GameID, *oldMC, g.CurrentRow)
+	}
+	oldMC.IsDestroyed = true
+	return true
 }
 
 // tearAndReplaceOldMainCharacter handles replacing an existing main character
@@ -308,31 +380,8 @@ func tearAndReplaceOldMainCharacter(
 	decision game.MCDecision,
 ) bool {
 	if decision.NeedsTear {
-		target := marginaliaByPosition(oldMargs, decision.TearPosition)
-		_, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
-			ID:       target.ID,
-			TornByID: &player.ID,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not tear marginalia", err)
+		if !tearOldMainCharacterMarginalia(ctx, w, r, q, manager, oldMC, oldMargs, player, decision) {
 			return false
-		}
-		if h, ok := manager.Get(asset.GameID); ok {
-			h.BroadcastEvent(model.EventMarginaliaTorn, model.MarginaliaTornPayload{
-				AssetID:  oldMC.ID,
-				Position: decision.TearPosition,
-				TornByID: player.ID,
-			})
-		}
-		if decision.DestroysOldMC {
-			if err := q.DestroyAsset(ctx, oldMC.ID); err != nil {
-				respondInternalErr(w, r, "could not destroy old main character", err)
-				return false
-			}
-			if h, ok := manager.Get(asset.GameID); ok {
-				h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: oldMC.ID})
-			}
-			oldMC.IsDestroyed = true
 		}
 	}
 
@@ -452,7 +501,7 @@ func applyMainCharacterChange(
 // Body: { text }
 func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, _, ok := requireAssetOwner(w, r, s.Q)
+		asset, player, ok := requireAssetOwner(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -512,6 +561,9 @@ func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				Marginalia: m,
 			})
 		}
+		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
+			EmitMarginaliaAdded(ctx, s.Q, manager, asset.GameID, *asset, m, player.ID, g.CurrentRow)
+		}
 
 		respond(w, http.StatusCreated, map[string]any{"marginalia": m})
 	}
@@ -523,7 +575,7 @@ func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // Body: { text }
 func UpdateMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		asset, _, ok := requireAssetOwner(w, r, s.Q)
+		asset, player, ok := requireAssetOwner(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -574,6 +626,9 @@ func UpdateMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				AssetID:    asset.ID,
 				Marginalia: *m,
 			})
+		}
+		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
+			EmitMarginaliaEdited(ctx, s.Q, manager, asset.GameID, *asset, *m, body.Text, player.ID, g.CurrentRow)
 		}
 
 		respond(w, http.StatusOK, map[string]any{"marginalia": m})
@@ -635,6 +690,9 @@ func TearMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				AssetID:  asset.ID,
 				PlayerID: player.ID,
 			})
+		}
+		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
+			EmitMarginaliaTorn(ctx, s.Q, manager, asset.GameID, *asset, *m, player.ID, g.CurrentRow)
 		}
 
 		// Check if that was the last intact marginalium → destroy the asset.
@@ -785,6 +843,9 @@ func TakeAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				AssetID:  asset.ID,
 				PlayerID: player.ID,
 			})
+		}
+		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
+			EmitAssetTaken(ctx, s.Q, manager, asset.GameID, *asset, oldOwnerID, player.ID, g.CurrentRow)
 		}
 
 		respond(w, http.StatusOK, map[string]any{"asset": enriched})

@@ -110,7 +110,7 @@ func UpdateLaw(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		EmitSystemPost(ctx, s.Q, manager, law.GameID, "law.edited",
 			model.SeverityTrace,
-			fmt.Sprintf("%s edited a law.", playerDisplayName(ctx, s.Q, player.ID)),
+			fmt.Sprintf("%s edited a law to %q", playerDisplayName(ctx, s.Q, player.ID), updated.Text),
 			nil, nil, nil,
 			map[string]any{"law_id": updated.ID, "editor_id": player.ID})
 		respond(w, http.StatusOK, map[string]any{"law": updated})
@@ -193,7 +193,7 @@ func UpdateRumor(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		EmitSystemPost(ctx, s.Q, manager, rumor.GameID, "rumor.edited",
 			model.SeverityTrace,
-			fmt.Sprintf("%s edited a rumor.", playerDisplayName(ctx, s.Q, player.ID)),
+			fmt.Sprintf("%s edited a rumor to %q", playerDisplayName(ctx, s.Q, player.ID), updated.Text),
 			nil, nil, nil,
 			map[string]any{"rumor_id": updated.ID, "editor_id": player.ID})
 		respond(w, http.StatusOK, map[string]any{"rumor": updated})

@@ -295,3 +295,171 @@ func EmitAssetRefreshed(
 		&rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
+
+// ── Asset & marginalia lifecycle (add / edit / tear / take / main-character) ────
+//
+// These emitters back the goal of a chat log from which the full game state can
+// be reconstructed. Severity follows the scale in model/severity.go:
+//   - adds (asset, marginalia) → Minor: a new piece of state appeared.
+//   - edits (rename, marginalia text) → Trace: a tweak to existing state.
+//   - tear / take / main-character → Default: notable, often adversarial moves.
+//
+// Marginalia are a first-class game concept, not throwaway notes, so their text
+// is always carried in the body (adds and edits alike) for reconstruction.
+
+// EmitAssetCreated writes the Minor asset.created post. When the asset is born
+// with marginalia (CreateAsset accepts an initial set), they're folded into the
+// same line so the creation reads as a single event rather than a burst of
+// per-marginalia adds.
+func EmitAssetCreated(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	marginalia []dbgen.Marginalium,
+	rowNumber int16,
+) {
+	creator := playerDisplayName(ctx, q, asset.CreatorID)
+	body := fmt.Sprintf("%s created the %s %q", creator, asset.AssetType, asset.Name)
+	if len(marginalia) > 0 {
+		quoted := make([]string, 0, len(marginalia))
+		for _, m := range marginalia {
+			quoted = append(quoted, fmt.Sprintf("%q", m.Text))
+		}
+		body += fmt.Sprintf(" with marginalia: %s", strings.Join(quoted, ", "))
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "asset.created",
+		model.SeverityMinor, body,
+		&rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "creator_id": asset.CreatorID})
+}
+
+// EmitAssetRenamed writes the Trace asset.renamed post naming both the old and
+// new asset name.
+func EmitAssetRenamed(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	oldName, newName string,
+	actorID int64,
+	rowNumber int16,
+) {
+	actor := playerDisplayName(ctx, q, actorID)
+	EmitSystemPost(ctx, q, manager, gameID, "asset.renamed",
+		model.SeverityTrace,
+		fmt.Sprintf("%s renamed %q to %q", actor, oldName, newName),
+		&rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "editor_id": actorID})
+}
+
+// EmitMarginaliaAdded writes the Minor marginalia.added post, carrying the new
+// text and the asset it's on.
+func EmitMarginaliaAdded(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	m dbgen.Marginalium,
+	actorID int64,
+	rowNumber int16,
+) {
+	actor := playerDisplayName(ctx, q, actorID)
+	EmitSystemPost(ctx, q, manager, gameID, "marginalia.added",
+		model.SeverityMinor,
+		fmt.Sprintf("%s added marginalia %q to %q", actor, m.Text, asset.Name),
+		&rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "author_id": actorID})
+}
+
+// EmitMarginaliaEdited writes the Trace marginalia.edited post, carrying the new
+// text and the asset it's on.
+func EmitMarginaliaEdited(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	m dbgen.Marginalium,
+	newText string,
+	actorID int64,
+	rowNumber int16,
+) {
+	actor := playerDisplayName(ctx, q, actorID)
+	EmitSystemPost(ctx, q, manager, gameID, "marginalia.edited",
+		model.SeverityTrace,
+		fmt.Sprintf("%s edited marginalia on %q to %q", actor, asset.Name, newText),
+		&rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "editor_id": actorID})
+}
+
+// EmitMarginaliaTorn writes the Default marginalia.torn post. Tearing is often
+// hostile, so the body names whose marginalia was torn as well as who tore it.
+func EmitMarginaliaTorn(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	m dbgen.Marginalium,
+	actorID int64,
+	rowNumber int16,
+) {
+	actor := playerDisplayName(ctx, q, actorID)
+	var body string
+	if actorID == asset.OwnerID {
+		body = fmt.Sprintf("%s tore their own marginalia %q on %q", actor, m.Text, asset.Name)
+	} else {
+		owner := playerDisplayName(ctx, q, asset.OwnerID)
+		body = fmt.Sprintf("%s tore %s's marginalia %q on %q", actor, owner, m.Text, asset.Name)
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "marginalia.torn",
+		model.SeverityDefault, body,
+		&rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "torn_by_id": actorID})
+}
+
+// EmitAssetTaken writes the Default asset.taken post for an ownership transfer.
+func EmitAssetTaken(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	oldOwnerID, newOwnerID int64,
+	rowNumber int16,
+) {
+	taker := playerDisplayName(ctx, q, newOwnerID)
+	from := playerDisplayName(ctx, q, oldOwnerID)
+	EmitSystemPost(ctx, q, manager, gameID, "asset.taken",
+		model.SeverityDefault,
+		fmt.Sprintf("%s took %q from %s", taker, asset.Name, from),
+		&rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "old_owner_id": oldOwnerID, "new_owner_id": newOwnerID})
+}
+
+// EmitMainCharacterChanged writes the Default asset.main_character post for a
+// promotion (isMainCharacter true) or demotion (false).
+func EmitMainCharacterChanged(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	isMainCharacter bool,
+	actorID int64,
+	rowNumber int16,
+) {
+	actor := playerDisplayName(ctx, q, actorID)
+	body := fmt.Sprintf("%s stepped %q down as main character", actor, asset.Name)
+	if isMainCharacter {
+		body = fmt.Sprintf("%s named %q as their main character", actor, asset.Name)
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "asset.main_character",
+		model.SeverityDefault, body,
+		&rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "is_main_character": isMainCharacter, "actor_id": actorID})
+}
