@@ -298,14 +298,15 @@
 					{/if}
 				</div>
 			</div>
-			{#if leveragedCount > 0}
-				<span
-					class="leveraged-badge"
-					title={`${leveragedCount} leveraged ${leveragedCount === 1 ? 'asset' : 'assets'} — leveraged for a roll until refreshed`}
-				>
-					<span class="leveraged-count">{leveragedCount}</span> leveraged
-				</span>
-			{/if}
+			<span
+				class="leveraged-badge"
+				class:zero={leveragedCount === 0}
+				title={leveragedCount === 0
+					? 'No assets leveraged'
+					: `${leveragedCount} leveraged ${leveragedCount === 1 ? 'asset' : 'assets'} — leveraged for a roll until refreshed`}
+			>
+				<span class="leveraged-count">{leveragedCount}</span> leveraged {leveragedCount === 1 ? 'asset' : 'assets'}
+			</span>
 		</header>
 
 		{#if hasRanks}
@@ -537,7 +538,7 @@
 
 	.retinue-header {
 		display: flex;
-		align-items: flex-start;
+		align-items: flex-end;
 		justify-content: space-between;
 		gap: 0.5rem;
 	}
@@ -567,6 +568,11 @@
 	.leveraged-count {
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
+	}
+	/* Nothing committed — keep it present but quiet so it reads as a resting state. */
+	.leveraged-badge.zero {
+		color: var(--color-text-faint);
+		border-color: var(--color-border-strong);
 	}
 
 	.rank-strip {
