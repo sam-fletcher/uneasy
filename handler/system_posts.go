@@ -585,7 +585,7 @@ func EmitRumorCreated(
 	gameID int64,
 	rumor dbgen.Rumor,
 ) {
-	body := fmt.Sprintf("Rumor spread: %q", rumor.Text)
+	body := fmt.Sprintf("Rumor spread from unknown source: %q", rumor.Text)
 	if rumor.SourcePlayerID != nil {
 		body = fmt.Sprintf("%s spread a rumor: %q", playerDisplayName(ctx, q, *rumor.SourcePlayerID), rumor.Text)
 	}

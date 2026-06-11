@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -142,11 +143,14 @@ func (srHandler) ApplyChoice(
 	existingRumors, _ := deps.Q.ListRumors(ctx, plan.GameID)
 	displayOrder := int16(len(existingRumors))
 
-	// On make, source is the preparer by default. On mar, the "counter-rumor"
-	// targets the preparer — but we still record the original preparer as source
-	// unless hide_source is chosen later.
+	// Source attribution drives both the Rumors panel ("Spread by: …") and the
+	// chat-log message. On make the preparer is the source — unless they chose
+	// "hide_source", in which case the rumor is anonymous from the start (the
+	// hide-source sub-flow later records the secret on one of their assets). On
+	// mar the counter-rumor is left unattributed.
+	hideSource := slices.Contains(choices, "hide_source")
 	var sourcePlayerID *int64
-	if result == makeOutcome {
+	if result == makeOutcome && !hideSource {
 		sourcePlayerID = &plan.PreparerID
 	}
 
@@ -162,8 +166,14 @@ func (srHandler) ApplyChoice(
 		return fmt.Errorf("could not create rumor: %w", err)
 	}
 	resData.EnsureSpreadRumors().RumorID = &rumor.ID
+	if hideSource {
+		resData.EnsureSpreadRumors().SourceHidden = true
+	}
 
 	broadcastEvent(deps.Manager, plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
+	// Chat-log entry. EmitRumorCreated names the source when one is set and
+	// stays anonymous otherwise, so a hidden spreader is never named here.
+	EmitRumorCreated(ctx, deps.Q, deps.Manager, plan.GameID, rumor)
 
 	// Apply inline choices.
 	for _, choice := range choices {

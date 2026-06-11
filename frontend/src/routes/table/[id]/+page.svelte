@@ -850,12 +850,13 @@
 
 	<RetinueSheet open={lawsOpen} onClose={() => lawsOpen = false}>
 		<div class="laws-rumors-sheet">
-			<h3>Laws ({laws.length})</h3>
+			<h3>Laws</h3> <!--  ({laws.length}) -->
 			<LawsRumors
 				kind="laws"
 				{laws}
 				{rumors}
 				{plans}
+				{players}
 				playerNames={playerNameMap}
 				{currentPlayerID}
 			/>
@@ -864,12 +865,13 @@
 
 	<RetinueSheet open={rumorsOpen} onClose={() => rumorsOpen = false}>
 		<div class="laws-rumors-sheet">
-			<h3>Rumors ({rumors.length})</h3>
+			<h3>Rumors</h3> <!--  ({rumors.length}) -->
 			<LawsRumors
 				kind="rumors"
 				{laws}
 				{rumors}
 				{plans}
+				{players}
 				playerNames={playerNameMap}
 				{currentPlayerID}
 			/>

@@ -40,6 +40,7 @@
 	const plans = $derived(ctx.plans);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
+	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
@@ -151,15 +152,30 @@
 	let choicesBusy = $state(false);
 	let resError = $state('');
 
+	const totalPicked = $derived(Object.values(counts).reduce((a, b) => a + b, 0));
+
+	// Players must pick options equal to the dice result (make) or
+	// (difficulty − result) (mar). Compute that exact count so the picker can
+	// cap increments and require the full quota before applying.
+	const requiredPicks = $derived.by(() => {
+		const result = activeRoll?.result;
+		if (result == null) return null;
+		const difficulty = activeRoll?.adjusted_difficulty ?? activeRoll?.difficulty ?? null;
+		if (rollOutcome === 'make') return Math.max(0, result);
+		if (rollOutcome === 'mar' && difficulty != null) return Math.max(0, difficulty - result);
+		return null;
+	});
+
 	function bump(key: string, delta: number) {
+		// Don't let the running total exceed the dice quota.
+		if (delta > 0 && requiredPicks != null && totalPicked >= requiredPicks) return;
 		const next = Math.max(0, (counts[key] ?? 0) + delta);
 		counts = { ...counts, [key]: next };
 	}
 
-	const totalPicked = $derived(Object.values(counts).reduce((a, b) => a + b, 0));
-
 	async function onApplyChoices(p: Plan, outcome: 'make' | 'mar') {
 		if (choicesBusy || totalPicked === 0) return;
+		if (requiredPicks != null && totalPicked !== requiredPicks) return;
 		choicesBusy = true; resError = '';
 		try {
 			const flat: string[] = [];
@@ -371,7 +387,7 @@
 					</strong>
 				</p>
 				<p class="choices-note">
-					Pick options equal to your dice result (repeatable).
+					Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
 					{#if rollOutcome === 'mar'}
 						You're driving the counter-rumor; effects apply to the preparer's assets.
 					{/if}
@@ -381,14 +397,17 @@
 						<button class="action-btn" onclick={() => bump(opt.key, -1)}
 							disabled={(counts[opt.key] ?? 0) === 0}>−</button>
 						<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
-						<button class="action-btn" onclick={() => bump(opt.key, 1)}>+</button>
+						<button class="action-btn" onclick={() => bump(opt.key, 1)}
+							disabled={requiredPicks != null && totalPicked >= requiredPicks}>+</button>
 						<span>{opt.label}</span>
 					</div>
 				{/each}
-				<p class="choices-note">Total picks: <strong>{totalPicked}</strong></p>
+				<p class="choices-note">
+					Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null} / {requiredPicks}{/if}
+				</p>
 				<button class="action-btn primary"
 					onclick={() => onApplyChoices(plan, rollOutcome!)}
-					disabled={choicesBusy || totalPicked === 0}>
+					disabled={choicesBusy || totalPicked === 0 || (requiredPicks != null && totalPicked !== requiredPicks)}>
 					{choicesBusy ? '…' : 'Apply choices'}
 				</button>
 			</div>
