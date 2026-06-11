@@ -4,32 +4,54 @@
   Rumors and Host Festivity → rumors). The authoring player may edit
   their entry inline; everyone at the table can read.
 
-  Authoring rules (matching the backend):
-    - Law:   signatory, else the origin plan's preparer.
-    - Rumor: source_player_id, else the origin plan's preparer.
+  Each card is accented with its author's token colour and carries a
+  byline so the source of a law or rumor is legible at a glance:
+    - Law:   "Proposed by" the origin plan's preparer, "Signed by" the
+             signatory (often a different, higher-power player).
+    - Rumor: "Spread by" the source player, or "Unknown" when the
+             spreader chose to hide themselves (Spread Rumors hide-source).
 -->
 <script lang="ts">
-	import { updateLaw, updateRumor, type Law, type Rumor, type Plan } from '$lib/api';
+	import { updateLaw, updateRumor, type Law, type Rumor, type Plan, type Player } from '$lib/api';
+	import { playerColor } from '$lib/playerColor';
 
 	interface Props {
 		kind?: 'laws' | 'rumors' | 'both';
 		laws: Law[];
 		rumors: Rumor[];
 		plans: Plan[];
+		players: Player[];
 		playerNames: Map<number, string>;
 		currentPlayerID: number | null;
 	}
 
-	const { kind = 'both', laws, rumors, plans, playerNames, currentPlayerID }: Props = $props();
+	const { kind = 'both', laws, rumors, plans, players, playerNames, currentPlayerID }: Props = $props();
+
+	const NEUTRAL = '#8a7d61';
 
 	function playerName(id: number | null | undefined): string {
 		if (id == null) return '?';
 		return playerNames.get(id) ?? '?';
 	}
 
+	function colorOf(id: number | null | undefined): string {
+		if (id == null) return NEUTRAL;
+		const p = players.find(pl => pl.id === id);
+		return p ? playerColor(p) : NEUTRAL;
+	}
+
 	function preparerOf(planID: number | null | undefined): number | null {
 		if (planID == null) return null;
 		return plans.find(p => p.id === planID)?.preparer_id ?? null;
+	}
+
+	// A law is accented by its proposer (the plan's preparer); if that's
+	// unknown (e.g. a prologue law with no origin plan) fall back to the
+	// signatory's colour, then neutral.
+	function lawAccent(law: Law): string {
+		const proposer = preparerOf(law.origin_plan_id);
+		if (proposer != null) return colorOf(proposer);
+		return colorOf(law.signatory_id);
 	}
 
 	function canEditLaw(law: Law): boolean {
@@ -96,18 +118,26 @@
 	}
 </script>
 
+{#snippet byline(label: string, name: string, color: string, hidden = false)}
+	<span class="lr-byline" class:hidden>
+		<span class="lr-dot" style:background={color} aria-hidden="true"></span>
+		<span class="lr-byline-label">{label}</span>
+		<span class="lr-byline-name">{name}</span>
+	</span>
+{/snippet}
+
 <aside class="laws-rumors">
 	{#if errorMsg}<p class="lr-error">{errorMsg}</p>{/if}
 
 	{#if kind !== 'rumors'}
 	<section class="lr-section">
-		<!-- <h4 class="lr-heading">Laws ({laws.length})</h4> -->
 		{#if laws.length === 0}
 			<p class="lr-empty">No laws yet.</p>
 		{:else}
 			<ul class="lr-list">
 				{#each laws as law (law.id)}
-					<li class="lr-item">
+					{@const proposerID = preparerOf(law.origin_plan_id)}
+					<li class="lr-item" style:--accent={lawAccent(law)}>
 						{#if editingLawID === law.id}
 							<textarea rows={3} bind:value={draftText} class="lr-textarea"></textarea>
 							<input type="text" bind:value={draftAddendum} class="lr-input"
@@ -122,12 +152,17 @@
 						{:else}
 							<p class="lr-text">{law.text}</p>
 							{#if law.addendum}<p class="lr-addendum"><em>…{law.addendum}</em></p>{/if}
-							<p class="lr-meta">
-								<!-- signatory: {playerName(law.signatory_id)} -->
-								{#if canEditLaw(law)}
-									· <button class="lr-edit" onclick={() => startEditLaw(law)}>edit</button>
+							<div class="lr-bylines">
+								{#if proposerID != null}
+									{@render byline('Proposed by', playerName(proposerID), colorOf(proposerID))}
 								{/if}
-							</p>
+								{#if law.signatory_id != null}
+									{@render byline('Signed by', playerName(law.signatory_id), colorOf(law.signatory_id))}
+								{/if}
+								{#if canEditLaw(law)}
+									<button class="lr-edit" onclick={() => startEditLaw(law)}>edit</button>
+								{/if}
+							</div>
 						{/if}
 					</li>
 				{/each}
@@ -138,13 +173,13 @@
 
 	{#if kind !== 'laws'}
 	<section class="lr-section">
-		<!-- <h4 class="lr-heading">Rumors ({rumors.length})</h4> -->
 		{#if rumors.length === 0}
 			<p class="lr-empty">No rumors yet.</p>
 		{:else}
 			<ul class="lr-list">
 				{#each rumors as rumor (rumor.id)}
-					<li class="lr-item">
+					{@const hidden = rumor.source_player_id == null}
+					<li class="lr-item" class:lr-anon={hidden} style:--accent={colorOf(rumor.source_player_id)}>
 						{#if editingRumorID === rumor.id}
 							<textarea rows={3} bind:value={draftText} class="lr-textarea"></textarea>
 							<div class="lr-row">
@@ -156,14 +191,17 @@
 							</div>
 						{:else}
 							<p class="lr-text">{rumor.text}</p>
-							<p class="lr-meta">
-								<!-- source: {rumor.source_player_id == null
-									? 'hidden'
-									: playerName(rumor.source_player_id)} -->
+							<div class="lr-bylines">
+								{@render byline(
+									'Spread by',
+									hidden ? 'Unknown' : playerName(rumor.source_player_id),
+									colorOf(rumor.source_player_id),
+									hidden,
+								)}
 								{#if canEditRumor(rumor)}
-									· <button class="lr-edit" onclick={() => startEditRumor(rumor)}>edit</button>
+									<button class="lr-edit" onclick={() => startEditRumor(rumor)}>edit</button>
 								{/if}
-							</p>
+							</div>
 						{/if}
 					</li>
 				{/each}
@@ -176,25 +214,46 @@
 <style>
 	.laws-rumors {
 		display: flex; flex-direction: column; gap: 1rem;
-		padding: 0.75rem; border: 1px solid var(--border-color, #d4c5a8);
-		background: var(--panel-bg, var(--color-surface-2));
+	}
+	.lr-empty { margin: 0; color: var(--color-text-muted, #999); font-style: italic; }
+	.lr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+	.lr-item {
+		--accent: #8a7d61;
+		padding: 0.6rem 0.75rem;
+		background:
+			color-mix(in srgb, var(--accent) 7%, var(--card-bg, var(--color-surface-2)));
+		border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border-color, #d4c5a8));
+		border-left: 4px solid var(--accent);
 		border-radius: 6px;
 	}
-	.lr-heading { margin: 0 0 0.5rem; font-size: 0.95rem; }
-	.lr-empty { margin: 0; color: var(--muted, #8a7d61); font-style: italic; }
-	.lr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
-	.lr-item {
-		padding: 0.5rem 0.6rem;
+	/* Anonymous rumors get a muted, dashed accent so "Unknown" reads as a
+	   deliberate absence rather than an un-coloured player. */
+	.lr-item.lr-anon {
+		border-left-style: dashed;
 		background: var(--card-bg, var(--color-surface-2));
-		border: 1px solid var(--border-color, #d4c5a8);
-		border-radius: 4px;
 	}
-	.lr-text { margin: 0 0 0.25rem; white-space: pre-wrap; font-family: var(--font-serif); }
-	.lr-addendum { margin: 0 0 0.25rem; color: var(--muted, #5a5446); }
-	.lr-meta { margin: 0; font-size: 0.8rem; color: var(--muted, #8a7d61); }
+	.lr-text { margin: 0 0 0.25rem; white-space: pre-wrap; font-family: var(--font-serif); line-height: 1.4; }
+	.lr-addendum { margin: 0 0 0.35rem; color: var(--color-text-muted, #999); font-family: var(--font-serif); }
+	.lr-bylines {
+		display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem;
+		margin-top: 0.4rem; font-size: 0.78rem;
+	}
+	.lr-byline {
+		display: inline-flex; align-items: center; gap: 0.3rem;
+		padding: 0.1rem 0.45rem 0.1rem 0.3rem;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent, #8a7d61) 22%, transparent);
+		color: var(--color-text, #e8e4d9);
+		white-space: nowrap;
+	}
+	.lr-byline.hidden { background: transparent; border: 1px dashed var(--border-color, #d4c5a8); }
+	.lr-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex: none; }
+	.lr-byline-label { color: var(--color-text-muted, #999); }
+	.lr-byline-name { font-weight: 600; }
 	.lr-edit {
-		background: none; border: none; color: inherit;
+		background: none; border: none; color: var(--color-text-muted, #999);
 		text-decoration: underline; cursor: pointer; font: inherit; padding: 0;
+		margin-left: auto;
 	}
 	.lr-textarea, .lr-input {
 		width: 100%; margin-bottom: 0.35rem; font: inherit;
