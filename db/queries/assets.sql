@@ -128,6 +128,9 @@ INSERT INTO secrets (asset_id, author_id, text)
 VALUES ($1, $2, $3)
 RETURNING *;
 
+-- name: GetSecretByID :one
+SELECT * FROM secrets WHERE id = $1;
+
 -- name: ListSecretsByAsset :many
 SELECT s.* FROM secrets s
 WHERE s.asset_id = $1

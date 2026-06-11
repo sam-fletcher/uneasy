@@ -235,17 +235,14 @@ func applyTakeGift(
 	return nil
 }
 
-// clAssetName resolves an asset id to its name for log bodies; "an asset" on
-// any failure so the log line still reads cleanly.
+// clAssetName resolves an asset id to its name for log bodies; the
+// fallbackAssetName placeholder on a nil id or any failure so the log line
+// still reads cleanly.
 func clAssetName(ctx context.Context, deps *PlanDeps, assetID *int64) string {
 	if assetID == nil {
-		return "an asset"
+		return fallbackAssetName
 	}
-	a, err := deps.Q.GetAssetByID(ctx, *assetID)
-	if err != nil {
-		return "an asset"
-	}
-	return fmt.Sprintf("%q", a.Name)
+	return assetDisplayName(ctx, deps.Q, *assetID)
 }
 
 // clLog emits a Clandestinely Liaise action-log entry anchored to the plan row.

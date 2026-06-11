@@ -43,6 +43,19 @@ func playerDisplayName(ctx context.Context, q *dbgen.Queries, playerID int64) st
 	return p.DisplayName
 }
 
+// fallbackAssetName is the placeholder used in log bodies when an asset can't
+// be resolved (deleted, or a nil id), so the line still reads cleanly.
+const fallbackAssetName = "an asset"
+
+// assetDisplayName resolves an asset id to a quoted name for log bodies,
+// falling back to fallbackAssetName on any lookup failure.
+func assetDisplayName(ctx context.Context, q *dbgen.Queries, assetID int64) string {
+	if a, err := q.GetAssetByID(ctx, assetID); err == nil {
+		return fmt.Sprintf("%q", a.Name)
+	}
+	return fallbackAssetName
+}
+
 // EmitPlanPrepared writes the boundary post for plan.prepared. The Public
 // Record sidebar's plan-tap gesture jumps to this post.
 func EmitPlanPrepared(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan dbgen.Plan) {
@@ -56,9 +69,19 @@ func EmitPlanPrepared(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 	if plan.PreparationNotes != nil {
 		notes = strings.TrimSpace(*plan.PreparationNotes)
 	}
+	body := fmt.Sprintf("%s prepared %s: %s", preparer, planLabel(plan.PlanType), notes)
+	// A handler may supply a custom descriptor (e.g. Spread Rumors names the
+	// target asset and hides a kept-secret rumor's text).
+	if h, ok := GetHandler(plan.PlanType); ok {
+		if describer, ok := h.(PreparedDescriber); ok {
+			resData := loadResolutionData(plan.ResolutionData)
+			if descriptor, ok := describer.PreparedDescriptor(ctx, q, plan, &resData); ok {
+				body = fmt.Sprintf("%s %s", preparer, descriptor)
+			}
+		}
+	}
 	EmitSystemPost(ctx, q, manager, plan.GameID, "plan.prepared",
-		model.SeverityImportant,
-		fmt.Sprintf("%s prepared %s: %s", preparer, planLabel(plan.PlanType), notes),
+		model.SeverityImportant, body,
 		plan.RowNumber, &planID, nil,
 		map[string]any{"plan_type": string(plan.PlanType), "preparer_id": plan.PreparerID})
 }

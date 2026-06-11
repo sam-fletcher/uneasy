@@ -363,6 +363,13 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			upsertPlanIntoRecord(ctx, prepared);
 			// Preparing places a token; refresh the pips for every viewer.
 			refreshPlanTokens(ctx);
+			// A secret Spread Rumors prep stashes the rumor text as a hidden
+			// Secret on the preparer's asset (not broadcast, to avoid leaking the
+			// text). Refetch visible secrets so the preparer sees their new note;
+			// the per-viewer endpoint keeps it hidden from everyone else.
+			if (prepared.plan_type === 'spread_rumors') {
+				getVisibleSecrets(ctx.gameID).then(d => { ctx.secrets = d.secrets; }).catch(() => {});
+			}
 			// Plan was committed; clear the highlight broadcast.
 			ctx.preparePlanDraft = null;
 			break;

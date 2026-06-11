@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -135,6 +136,15 @@ func (srHandler) ApplyChoice(
 	if plan.PreparationNotes != nil {
 		rumorText = *plan.PreparationNotes
 	}
+	// If the preparer kept the rumor secret, its text lives in the Secret on
+	// their asset rather than the (blanked) plan note. A Make now spreads it
+	// publicly, so pull the text back out. On a Mar the secret stays hidden —
+	// the rumor row is the target's counter-rumor placeholder instead.
+	if sr := resData.SpreadRumors; result == makeOutcome && sr != nil && sr.IsSecret && sr.SecretID != nil {
+		if secret, sErr := deps.Q.GetSecretByID(ctx, *sr.SecretID); sErr == nil {
+			rumorText = secret.Text
+		}
+	}
 	if rumorText == "" {
 		rumorText = "(no rumor text)"
 	}
@@ -224,12 +234,90 @@ func (srHandler) MaxChoices(result string, rollResult, difficulty int16) int {
 	return int(difficulty - rollResult)
 }
 
+// PreparedDescriptor customizes the plan.prepared log post. It always names the
+// target asset the rumor is about; when the preparer kept the rumor secret it
+// names the asset holding the hidden text rather than the text itself (which
+// would otherwise leak the secret), otherwise it states the rumor openly.
+func (srHandler) PreparedDescriptor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan dbgen.Plan,
+	resData *ResolutionData,
+) (string, bool) {
+	about := fallbackAssetName
+	if plan.TargetAssetID != nil {
+		about = assetDisplayName(ctx, q, *plan.TargetAssetID)
+	}
+	if sr := resData.SpreadRumors; sr != nil && sr.IsSecret && sr.SecretAssetID != nil {
+		keeper := assetDisplayName(ctx, q, *sr.SecretAssetID)
+		return fmt.Sprintf(
+			"prepared Spread Rumors: there's a rumor brewing about %s, but it's a secret kept by %s.",
+			about, keeper), true
+	}
+	notes := ""
+	if plan.PreparationNotes != nil {
+		notes = strings.TrimSpace(*plan.PreparationNotes)
+	}
+	if notes == "" {
+		return fmt.Sprintf("prepared Spread Rumors: there's a rumor brewing about %s.", about), true
+	}
+	return fmt.Sprintf("prepared Spread Rumors: there's a rumor brewing about %s — %q", about, notes), true
+}
+
 func (srHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"break-target": srBreakTargetHandler(deps),
 		"take-asset":   srTakeAssetHandler(deps),
 		"hide-source":  srHideSourceHandler(deps),
 	}
+}
+
+// stashSecretRumor implements the Spread Rumors "keep it secret for now" prep
+// option: it moves the rumor text (currently in plan.PreparationNotes) into a
+// hidden Secret on one of the preparer's own assets, clears the public note so
+// ListPlans can't leak it, and records the secret metadata in resolution_data.
+// plan is refreshed in place. Runs inside the prepare transaction (q tx-scoped);
+// returns an httpErr on a bad secret asset or a write failure.
+func stashSecretRumor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, preparerID, secretAssetID int64,
+	plan *dbgen.Plan,
+) error {
+	secretAsset, err := q.GetAssetByID(ctx, secretAssetID)
+	if err != nil || secretAsset.GameID != gameID || secretAsset.OwnerID != preparerID || secretAsset.IsDestroyed {
+		return httpErr(http.StatusBadRequest, "secret asset must be one of your own intact assets")
+	}
+	rumorText := ""
+	if plan.PreparationNotes != nil {
+		rumorText = *plan.PreparationNotes
+	}
+	secret, err := q.CreateSecret(ctx, dbgen.CreateSecretParams{
+		AssetID:  secretAsset.ID,
+		AuthorID: preparerID,
+		Text:     rumorText,
+	})
+	if err != nil {
+		return httpErr(http.StatusInternalServerError, "could not stash secret rumor")
+	}
+	if err := q.SetPlanPreparationNotes(ctx, dbgen.SetPlanPreparationNotesParams{
+		ID:               plan.ID,
+		PreparationNotes: nil,
+	}); err != nil {
+		return httpErr(http.StatusInternalServerError, "could not clear secret rumor note")
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	sr := resData.EnsureSpreadRumors()
+	sr.IsSecret = true
+	sr.SecretAssetID = &secretAsset.ID
+	sr.SecretID = &secret.ID
+	if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
+		return httpErr(http.StatusInternalServerError, "could not save secret rumor state")
+	}
+	if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
+		*plan = refreshed
+	}
+	return nil
 }
 
 // srAuthorizeActor returns (onMar, targetOwnerID, ok). onMar is true when the

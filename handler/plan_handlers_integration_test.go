@@ -313,3 +313,134 @@ func TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium(t *testing.T) 
 	assert.True(t, destroyed.IsDestroyed,
 		"tearing the final marginalium via break-target must destroy the asset")
 }
+
+// srPlanPreparedPost returns the body of the plan.prepared chat post.
+func srPlanPreparedPost(t *testing.T, h *planLifecycle) string {
+	t.Helper()
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == "plan.prepared" {
+			return p.Body
+		}
+	}
+	t.Fatal("no plan.prepared post found")
+	return ""
+}
+
+// TestSpreadRumors_Secret_HidesTextAndNamesAssets covers the "keep it secret for
+// now" prep option: the rumor text is stashed as a hidden Secret on the
+// preparer's own asset (not the public plan note), and the prepared-log post
+// names the target + holding assets without leaking the text.
+func TestSpreadRumors_Secret_HidesTextAndNamesAssets(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+	target := h.seedPeer(otherIdx, "Julius") // the rumor is about this asset
+	holder := h.seedPeer(focusIdx, "Brutus") // the preparer's own asset holds the secret
+
+	notes := "the king poisoned his brother"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSpreadRumors,
+		TargetAssetID:    &target,
+		PreparationNotes: &notes,
+		SecretAssetID:    &holder,
+	})
+
+	// The public plan note is cleared so ListPlans can't leak the rumor.
+	assert.Nil(t, plan.PreparationNotes, "secret rumor must clear the public plan note")
+
+	// The rumor text lives as a Secret on the chosen own asset.
+	secrets, err := h.q.ListSecretsByAsset(ctx, holder)
+	require.NoError(t, err)
+	require.Len(t, secrets, 1)
+	assert.Equal(t, notes, secrets[0].Text)
+
+	// resolution_data records the secret metadata.
+	resData := loadResolutionData(plan.ResolutionData)
+	require.NotNil(t, resData.SpreadRumors)
+	assert.True(t, resData.SpreadRumors.IsSecret)
+	require.NotNil(t, resData.SpreadRumors.SecretID)
+	assert.Equal(t, secrets[0].ID, *resData.SpreadRumors.SecretID)
+
+	// The prepared-log post names both assets but not the rumor text.
+	body := srPlanPreparedPost(t, h)
+	assert.Contains(t, body, "Julius")
+	assert.Contains(t, body, "Brutus")
+	assert.NotContains(t, body, notes)
+}
+
+// TestSpreadRumors_Secret_RejectsForeignAsset guards that the secret holder must
+// be one of the preparer's own assets.
+func TestSpreadRumors_Secret_RejectsForeignAsset(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+	target := h.seedPeer(otherIdx, "Julius")
+	foreign := h.seedPeer(otherIdx, "NotYours") // owned by someone else
+
+	notes := "a damning whisper"
+	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/prepare-plan"
+	code, body := h.post(focusIdx, path, PreparePlanRequest{
+		PlanType:         model.PlanSpreadRumors,
+		TargetAssetID:    &target,
+		PreparationNotes: &notes,
+		SecretAssetID:    &foreign,
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "expected 400, got: %v", body)
+}
+
+// TestSpreadRumors_Secret_PublishesOnMake confirms a kept-secret rumor becomes
+// the public rumor (with its real text) when the plan succeeds.
+func TestSpreadRumors_Secret_PublishesOnMake(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+	target := h.seedPeer(otherIdx, "Julius")
+	holder := h.seedPeer(focusIdx, "Brutus")
+
+	notes := "the crown was bought, not earned"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSpreadRumors,
+		TargetAssetID:    &target,
+		PreparationNotes: &notes,
+		SecretAssetID:    &holder,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 0)
+	h.makeChoice(plan.ID, makeOutcome, []string{})
+
+	rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.Len(t, rumors, 1)
+	assert.Equal(t, notes, rumors[0].Text, "the spread rumor must carry the kept secret's text")
+}
+
+// TestSpreadRumors_Open_StatesRumorInLog confirms the non-secret path states the
+// rumor (and names the target asset) in the prepared-log post.
+func TestSpreadRumors_Open_StatesRumorInLog(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+	target := h.seedPeer(otherIdx, "Julius")
+
+	notes := "the regent skims the treasury"
+	h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSpreadRumors,
+		TargetAssetID:    &target,
+		PreparationNotes: &notes,
+	})
+
+	body := srPlanPreparedPost(t, h)
+	assert.Contains(t, body, "Julius")
+	assert.Contains(t, body, notes)
+}

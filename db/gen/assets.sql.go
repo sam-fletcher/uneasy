@@ -321,6 +321,25 @@ func (q *Queries) GetMarginaliaByID(ctx context.Context, id int64) (Marginalium,
 	return i, err
 }
 
+const getSecretByID = `-- name: GetSecretByID :one
+SELECT id, asset_id, author_id, text, is_revealed, revealed_at, created_at FROM secrets WHERE id = $1
+`
+
+func (q *Queries) GetSecretByID(ctx context.Context, id int64) (Secret, error) {
+	row := q.db.QueryRow(ctx, getSecretByID, id)
+	var i Secret
+	err := row.Scan(
+		&i.ID,
+		&i.AssetID,
+		&i.AuthorID,
+		&i.Text,
+		&i.IsRevealed,
+		&i.RevealedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const grantSecretVisibilityForAsset = `-- name: GrantSecretVisibilityForAsset :exec
 INSERT INTO secret_visibility (secret_id, player_id)
 SELECT id, $2 FROM secrets WHERE asset_id = $1

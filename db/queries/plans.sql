@@ -48,6 +48,11 @@ SELECT * FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1;
 -- name: SetPlanResolutionData :exec
 UPDATE plans SET resolution_data = $2 WHERE id = $1;
 
+-- name: SetPlanPreparationNotes :exec
+-- Overwrites a plan's preparation_notes. Used by Spread Rumors to clear the
+-- rumor text off the public plan row once it's been stored as a hidden Secret.
+UPDATE plans SET preparation_notes = $2 WHERE id = $1;
+
 -- name: ShiftRowOrderAtOrAfter :exec
 -- Increments row_order by 1 for all plans on (game_id, row_number) whose
 -- row_order >= $3. Used to slot a Make Demands plan in *before* its target:

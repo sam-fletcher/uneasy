@@ -691,6 +691,10 @@ type PreparePlanRequest struct {
 	PreparerPeerID   *int64  `json:"preparer_peer_id"`
 	PartnerPeerID    *int64  `json:"partner_peer_id"`
 	PreparationNotes *string `json:"preparation_notes"`
+	// SecretAssetID, when set on a Spread Rumors prep, marks "keep the rumor
+	// secret for now": the rumor text is stored as a hidden Secret on this
+	// (own) asset rather than the public plan note. See createPlanInTx.
+	SecretAssetID *int64 `json:"secret_asset_id"`
 }
 
 // PreparePlan handles POST /api/tables/:id/prepare-plan.
@@ -824,7 +828,10 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // (Make War, Clandestinely Liaise); the row stays NULL on creation and is
 // filled in when the reveal closes.
 //
-//nolint:funlen // sequential steps; splitting probably obscures the order
+// each branch is a sibling stash block (war enemies, liaise peers, duel type,
+// demand target, secret rumor) and splitting the sequence obscures the order.
+//
+//nolint:funlen,gocognit // a flat per-plan-type dispatch of ordered prep steps;
 func createPlanInTx(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -915,6 +922,15 @@ func createPlanInTx(
 		}
 		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
 			plan = refreshed
+		}
+	}
+
+	// Spread Rumors "keep it secret for now": move the rumor text into a hidden
+	// Secret on one of the preparer's own assets (see stashSecretRumor) so other
+	// players can't read it until a Make publishes it.
+	if body.PlanType == model.PlanSpreadRumors && body.SecretAssetID != nil {
+		if err = stashSecretRumor(ctx, q, game.ID, player.ID, *body.SecretAssetID, &plan); err != nil {
+			return dbgen.Plan{}, err
 		}
 	}
 

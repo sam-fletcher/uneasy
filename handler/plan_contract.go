@@ -121,6 +121,21 @@ type OnPreparer interface {
 	OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error
 }
 
+// PreparedDescriber is an optional interface for plan handlers that want a
+// custom plan.prepared log body instead of the default "<preparer> prepared
+// <Label>: <notes>". The returned descriptor is the text after the preparer
+// name (e.g. `prepared Spread Rumors: there's a rumor brewing about "Julius"`).
+// Return ok=false to fall back to the default. Spread Rumors uses this to name
+// the target asset and avoid leaking a kept-secret rumor's text.
+type PreparedDescriber interface {
+	PreparedDescriptor(
+		ctx context.Context,
+		q *dbgen.Queries,
+		plan dbgen.Plan,
+		resData *ResolutionData,
+	) (descriptor string, ok bool)
+}
+
 // PlanDeps bundles shared dependencies passed to handler methods. The
 // embedded *db.Store exposes Q and Pool directly (deps.Q, deps.Pool) and
 // provides deps.InTx for atomic multi-write sequences.

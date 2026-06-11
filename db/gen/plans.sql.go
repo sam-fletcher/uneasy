@@ -602,6 +602,22 @@ func (q *Queries) SetDemandOptionWinners(ctx context.Context, arg SetDemandOptio
 	return err
 }
 
+const setPlanPreparationNotes = `-- name: SetPlanPreparationNotes :exec
+UPDATE plans SET preparation_notes = $2 WHERE id = $1
+`
+
+type SetPlanPreparationNotesParams struct {
+	ID               int64   `db:"id" json:"id"`
+	PreparationNotes *string `db:"preparation_notes" json:"preparation_notes"`
+}
+
+// Overwrites a plan's preparation_notes. Used by Spread Rumors to clear the
+// rumor text off the public plan row once it's been stored as a hidden Secret.
+func (q *Queries) SetPlanPreparationNotes(ctx context.Context, arg SetPlanPreparationNotesParams) error {
+	_, err := q.db.Exec(ctx, setPlanPreparationNotes, arg.ID, arg.PreparationNotes)
+	return err
+}
+
 const setPlanResolutionData = `-- name: SetPlanResolutionData :exec
 UPDATE plans SET resolution_data = $2 WHERE id = $1
 `

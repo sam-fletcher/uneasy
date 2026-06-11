@@ -49,6 +49,8 @@
 		filter_owner_id?: number | null;
 		target_asset_id?: number | null;
 		notes?: string;
+		keep_secret?: boolean;
+		secret_asset_id?: number | null;
 	} | null);
 
 	let performStepsWinnerID = $state<number | null>(null);
@@ -73,7 +75,23 @@
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
+	// "Keep it secret for now": the rumor text is written on the underside of one
+	// of the preparer's own assets instead of announced openly. prepSecretAssetID
+	// is which own asset holds it.
+	let prepKeepSecret = $state(false);
+	let prepSecretAssetID = $state<number | null>(null);
+
 	const intactAssets = $derived(assets.filter(a => !a.is_destroyed));
+
+	// The preparer's own intact assets — candidate holders for the secret. In
+	// prep mode the focus player drives the form, so currentPlayerID is the
+	// preparer (read-only viewers don't pick; they see a summary line instead).
+	const ownIntactAssets = $derived(
+		intactAssets.filter(a => a.owner_id === currentPlayerID)
+	);
+	const secretHolderName = $derived(
+		prepSecretAssetID == null ? '' : assetName(assets, prepSecretAssetID)
+	);
 
 	// Owner filter for the asset picker. Rumours about your own assets are
 	// allowed (preserves the dropdown's old behaviour), so every player —
@@ -108,14 +126,19 @@
 		if (prepBusy) return;
 		if (prepTargetAssetID == null) { prepError = 'Pick the asset the rumor is about.'; return; }
 		if (!prepNotes.trim()) { prepError = 'Describe the rumor.'; return; }
+		if (prepKeepSecret && prepSecretAssetID == null) {
+			prepError = 'Pick one of your assets to hide the rumor under.'; return;
+		}
 		prepBusy = true; prepError = '';
 		try {
 			await preparePlan(gameID, {
 				plan_type: 'spread_rumors',
 				target_asset_id: prepTargetAssetID,
 				preparation_notes: prepNotes.trim(),
+				secret_asset_id: prepKeepSecret ? prepSecretAssetID : undefined,
 			});
 			prepTargetAssetID = null; prepNotes = '';
+			prepKeepSecret = false; prepSecretAssetID = null;
 			onPlanPrepared();
 		} catch (e) {
 			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
@@ -127,11 +150,14 @@
 		prepFilterOwnerID = prepDraft?.filter_owner_id ?? null;
 		prepTargetAssetID = prepDraft?.target_asset_id ?? null;
 		prepNotes = prepDraft?.notes ?? '';
+		prepKeepSecret = prepDraft?.keep_secret ?? false;
+		prepSecretAssetID = prepDraft?.secret_asset_id ?? null;
 	});
 	let emitTimer: ReturnType<typeof setTimeout> | null = null;
 	$effect(() => {
 		if (readOnly || mode !== 'prep') return;
 		void prepFilterOwnerID; void prepTargetAssetID; void prepNotes;
+		void prepKeepSecret; void prepSecretAssetID;
 		if (emitTimer) clearTimeout(emitTimer);
 		emitTimer = setTimeout(() => {
 			emitTimer = null;
@@ -139,6 +165,8 @@
 				filter_owner_id: prepFilterOwnerID,
 				target_asset_id: prepTargetAssetID,
 				notes: prepNotes,
+				keep_secret: prepKeepSecret,
+				secret_asset_id: prepSecretAssetID,
 			});
 		}, 150);
 	});
@@ -343,12 +371,43 @@
 			<label class="form-label">
 				Rumor:
 				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
-					placeholder="What are people starting to say?"></textarea>
+					placeholder={prepKeepSecret
+						? 'Write the rumor — only you will see it until you spread it.'
+						: 'What are people starting to say?'}></textarea>
 			</label>
+
+			<label class="sr-secret-toggle">
+				<input type="checkbox" bind:checked={prepKeepSecret} disabled={readOnly} />
+				<span>
+					<strong>Keep it secret for now</strong>
+					<small>Hide the rumor under one of your own assets instead of
+						announcing it. Others won't see the text until you spread it.</small>
+				</span>
+			</label>
+
+			{#if prepKeepSecret}
+				{#if readOnly}
+					<p class="plan-notes">
+						Hidden under: <strong>{secretHolderName || '—'}</strong>
+					</p>
+				{:else}
+					<CardPicker
+						label="Hide the rumor under"
+						items={ownIntactAssets}
+						{players}
+						emptyMessage="You have no intact assets to hide it under."
+						selected={prepSecretAssetID}
+						onSelect={(id) => (prepSecretAssetID = id)}
+						{readOnly}
+					/>
+				{/if}
+			{/if}
+
 			{#if !readOnly}
 				<div class="form-actions">
 					<button class="action-btn primary" onclick={submitPrep}
-						disabled={prepBusy || prepTargetAssetID == null || !prepNotes.trim()}>
+						disabled={prepBusy || prepTargetAssetID == null || !prepNotes.trim()
+							|| (prepKeepSecret && prepSecretAssetID == null)}>
 						{prepBusy ? '…' : 'Prepare Plan'}
 					</button>
 				</div>
@@ -548,3 +607,27 @@
 		{/if}
 	</ResolvingCard>
 {/if}
+
+<style>
+	/* Tappable "keep it secret" row: ≥44px target, generous hit area on mobile. */
+	.sr-secret-toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.6rem;
+		min-height: 44px;
+		padding: 0.5rem 0.6rem;
+		border: 1px solid var(--color-border, #444);
+		border-radius: 6px;
+		background: var(--color-surface-2, #2a2a2a);
+		cursor: pointer;
+	}
+	.sr-secret-toggle input[type='checkbox'] {
+		width: 1.15rem;
+		height: 1.15rem;
+		margin-top: 0.15rem;
+		flex: none;
+		cursor: pointer;
+	}
+	.sr-secret-toggle span { display: flex; flex-direction: column; gap: 0.15rem; }
+	.sr-secret-toggle small { color: var(--color-text-muted, #999); line-height: 1.35; }
+</style>

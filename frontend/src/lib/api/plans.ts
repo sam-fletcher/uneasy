@@ -40,6 +40,9 @@ export function preparePlan(
 		preparer_peer_id?: number | null;
 		partner_peer_id?: number | null;
 		preparation_notes?: string | null;
+		/** Spread Rumors: when set, keep the rumor secret by storing its text as
+		 *  a hidden Secret on this (own) asset instead of the public plan note. */
+		secret_asset_id?: number | null;
 	}
 ): Promise<{ plan: Plan }> {
 	return apiFetch(`/tables/${gameID}/prepare-plan`, {
