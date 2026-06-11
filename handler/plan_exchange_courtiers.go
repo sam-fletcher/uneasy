@@ -36,6 +36,21 @@ func (ecHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: 5}
 }
 
+// PreparedDescriptor names the targeted peer in the plan.prepared log — the
+// generic line drops which courtier the preparer is angling for.
+func (ecHandler) PreparedDescriptor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan dbgen.Plan,
+	_ *ResolutionData,
+) (string, bool) {
+	if plan.TargetAssetID == nil {
+		return "", false
+	}
+	return fmt.Sprintf("prepared Exchange Courtiers, angling for the peer %s%s",
+		assetDisplayName(ctx, q, *plan.TargetAssetID), notesSuffix(plan)), true
+}
+
 func (ecHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	errMsg := validateExchangeCourtiersPlan(ctx, v.Q, v.Game.ID, v.TargetPlayerID, v.TargetAssetID)
 	return nil, errMsg // fixed delay; target row computed from Metadata().Delay

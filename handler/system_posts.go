@@ -56,6 +56,19 @@ func assetDisplayName(ctx context.Context, q *dbgen.Queries, assetID int64) stri
 	return fallbackAssetName
 }
 
+// notesSuffix renders a plan's free-text preparation notes as a trailing clause
+// for a PreparedDescriber descriptor (so naming the structured target doesn't
+// drop the preparer's flavour text), or "" when the notes are blank.
+func notesSuffix(plan dbgen.Plan) string {
+	if plan.PreparationNotes == nil {
+		return ""
+	}
+	if n := strings.TrimSpace(*plan.PreparationNotes); n != "" {
+		return fmt.Sprintf(" — %q", n)
+	}
+	return ""
+}
+
 // EmitPlanPrepared writes the boundary post for plan.prepared. The Public
 // Record sidebar's plan-tap gesture jumps to this post.
 func EmitPlanPrepared(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan dbgen.Plan) {

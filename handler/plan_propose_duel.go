@@ -59,6 +59,25 @@ func (pduelHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 5}
 }
 
+// PreparedDescriptor names the challenged player and the duel type (arms/wits)
+// in the plan.prepared log, which the generic line drops.
+func (pduelHandler) PreparedDescriptor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan dbgen.Plan,
+	resData *ResolutionData,
+) (string, bool) {
+	if plan.TargetPlayerID == nil {
+		return "", false
+	}
+	weapon := "a duel"
+	if d := resData.Duel; d != nil && d.DuelType != "" {
+		weapon = fmt.Sprintf("a duel of %s", d.DuelType)
+	}
+	return fmt.Sprintf("prepared Propose Duel, challenging %s to %s%s",
+		playerDisplayName(ctx, q, *plan.TargetPlayerID), weapon, notesSuffix(plan)), true
+}
+
 func (pduelHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlayerID == nil {
 		return nil, "propose_duel requires target_player_id (the challenged player)"

@@ -444,3 +444,110 @@ func TestSpreadRumors_Open_StatesRumorInLog(t *testing.T) {
 	assert.Contains(t, body, "Julius")
 	assert.Contains(t, body, notes)
 }
+
+// ── PreparedDescriber: prepared-log naming for target-bearing plans ──────────
+// These exercise the PreparedDescriptor methods directly (the formatting +
+// name-resolution logic); the EmitPlanPrepared wiring is covered by the Spread
+// Rumors tests above.
+
+func TestPreparedDescriptor_MakeWar_NamesEnemies(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+
+	plan := dbgen.Plan{PlanType: model.PlanMakeWar, PreparerID: tg.Players[0].ID}
+	var rd ResolutionData
+	rd.EnsureMakeWar().EnemyPlayerIDs = []int64{tg.Players[1].ID, tg.Players[2].ID}
+
+	body, ok := mwHandler{}.PreparedDescriptor(context.Background(), q, plan, &rd)
+	require.True(t, ok)
+	assert.Contains(t, body, "declaring war on")
+	assert.Contains(t, body, tg.Players[1].DisplayName)
+	assert.Contains(t, body, tg.Players[2].DisplayName)
+}
+
+func TestPreparedDescriptor_ProposeDuel_NamesOpponentAndType(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+
+	notes := "at dawn in the courtyard"
+	plan := dbgen.Plan{
+		PlanType:         model.PlanProposeDuel,
+		PreparerID:       tg.Players[0].ID,
+		TargetPlayerID:   &tg.Players[1].ID,
+		PreparationNotes: &notes,
+	}
+	var rd ResolutionData
+	rd.EnsureDuel().DuelType = "wits"
+
+	body, ok := pduelHandler{}.PreparedDescriptor(context.Background(), q, plan, &rd)
+	require.True(t, ok)
+	assert.Contains(t, body, tg.Players[1].DisplayName)
+	assert.Contains(t, body, "duel of wits")
+	assert.Contains(t, body, notes) // notesSuffix appended
+}
+
+func TestPreparedDescriptor_ExchangeCourtiers_NamesPeer(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	peer, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: tg.Game.ID, OwnerID: tg.Players[1].ID, CreatorID: tg.Players[1].ID,
+		AssetType: model.AssetPeer, Name: "Cassio",
+	})
+	require.NoError(t, err)
+
+	plan := dbgen.Plan{PlanType: model.PlanExchangeCourtiers, PreparerID: tg.Players[0].ID, TargetAssetID: &peer.ID}
+	body, ok := ecHandler{}.PreparedDescriptor(ctx, q, plan, nil)
+	require.True(t, ok)
+	assert.Contains(t, body, "Cassio")
+	assert.Contains(t, body, "angling for the peer")
+}
+
+func TestPreparedDescriptor_Liaise_NamesBothPeers(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	mine, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: tg.Game.ID, OwnerID: tg.Players[0].ID, CreatorID: tg.Players[0].ID,
+		AssetType: model.AssetPeer, Name: "Iago",
+	})
+	require.NoError(t, err)
+	theirs, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: tg.Game.ID, OwnerID: tg.Players[1].ID, CreatorID: tg.Players[1].ID,
+		AssetType: model.AssetPeer, Name: "Emilia",
+	})
+	require.NoError(t, err)
+
+	plan := dbgen.Plan{PlanType: model.PlanClandestinelyLiaise, PreparerID: tg.Players[0].ID}
+	var rd ResolutionData
+	l := rd.EnsureLiaise()
+	l.PreparerPeerID = &mine.ID
+	l.PartnerPeerID = &theirs.ID
+
+	body, ok := clHandler{}.PreparedDescriptor(ctx, q, plan, &rd)
+	require.True(t, ok)
+	assert.Contains(t, body, "secret meeting between")
+	assert.Contains(t, body, "Iago")
+	assert.Contains(t, body, "Emilia")
+}
+
+func TestPreparedDescriptor_MakeDemands_NamesTargetPlan(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	targetPlan := createPlanOnRow(t, q, &tg.Game, &tg.Players[1], model.PlanSpreadRumors, model.CategoryEsteem, 5)
+	plan := dbgen.Plan{PlanType: model.PlanMakeDemands, PreparerID: tg.Players[0].ID, TargetedPlanID: &targetPlan.ID}
+
+	body, ok := mdHandler{}.PreparedDescriptor(ctx, q, plan, nil)
+	require.True(t, ok)
+	assert.Contains(t, body, tg.Players[1].DisplayName)
+	assert.Contains(t, body, "Spread Rumors")
+}

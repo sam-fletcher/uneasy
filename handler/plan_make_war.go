@@ -56,6 +56,26 @@ func (mwHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: -1}
 }
 
+// PreparedDescriptor names the declared enemies in the plan.prepared log — the
+// generic "<Label>: <notes>" line drops who war was declared on.
+func (mwHandler) PreparedDescriptor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan dbgen.Plan,
+	resData *ResolutionData,
+) (string, bool) {
+	mw := resData.MakeWar
+	if mw == nil || len(mw.EnemyPlayerIDs) == 0 {
+		return "", false
+	}
+	names := make([]string, 0, len(mw.EnemyPlayerIDs))
+	for _, id := range mw.EnemyPlayerIDs {
+		names = append(names, playerDisplayName(ctx, q, id))
+	}
+	return fmt.Sprintf("prepared Make War, declaring war on %s%s",
+		strings.Join(names, ", "), notesSuffix(plan)), true
+}
+
 func (mwHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if len(v.EnemyPlayerIDs) == 0 {
 		return nil, "make_war requires at least one entry in enemy_player_ids"

@@ -53,6 +53,25 @@ func (mdHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryPower, Delay: -1}
 }
 
+// PreparedDescriptor names the plan being demanded (and whose it is) in the
+// plan.prepared log — the generic line drops what the demand targets.
+func (mdHandler) PreparedDescriptor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan dbgen.Plan,
+	_ *ResolutionData,
+) (string, bool) {
+	if plan.TargetedPlanID == nil {
+		return "", false
+	}
+	target, err := q.GetPlanByID(ctx, *plan.TargetedPlanID)
+	if err != nil {
+		return "", false
+	}
+	return fmt.Sprintf("prepared Make Demands on %s's %s%s",
+		playerDisplayName(ctx, q, target.PreparerID), planLabel(target.PlanType), notesSuffix(plan)), true
+}
+
 func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlanID == nil {
 		return nil, "make_demands requires target_plan_id"

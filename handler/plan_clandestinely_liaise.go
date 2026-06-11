@@ -73,6 +73,25 @@ func (clHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: -1}
 }
 
+// PreparedDescriptor names the two peers about to meet. The liaison itself is
+// "secret" in the fiction, but it's more fun for the table to know a clandestine
+// meeting is brewing (dramatic irony) — so the prepared log leans into it.
+func (clHandler) PreparedDescriptor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan dbgen.Plan,
+	resData *ResolutionData,
+) (string, bool) {
+	l := resData.Liaise
+	if l == nil || l.PreparerPeerID == nil || l.PartnerPeerID == nil {
+		return "", false
+	}
+	return fmt.Sprintf("prepared Clandestinely Liaise — a secret meeting between %s and %s%s",
+		assetDisplayName(ctx, q, *l.PreparerPeerID),
+		assetDisplayName(ctx, q, *l.PartnerPeerID),
+		notesSuffix(plan)), true
+}
+
 func (clHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlayerID == nil {
 		return nil, "clandestinely_liaise requires target_player_id (the partner)"
