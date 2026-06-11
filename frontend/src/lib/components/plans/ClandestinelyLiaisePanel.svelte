@@ -15,6 +15,7 @@
 	} from '$lib/api';
 	import { onDestroy } from 'svelte';
 	import { parseLiaiseData, type LiaisePhase } from '$lib/plans/resolutionData/liaise';
+	import { destructionWarning } from '$lib/assetRisk';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
@@ -204,17 +205,6 @@
 	);
 
 	// Destruction warning: tearing a peer's last intact marginalium destroys it.
-	// If empty margin slots remain (< 4 total), the owner could add one first.
-	function destructionWarning(a: Asset | null | undefined): string {
-		if (!a) return '';
-		const total = (a.marginalia ?? []).length;
-		const intact = (a.marginalia ?? []).filter(m => !m.is_torn).length;
-		if (intact <= 1 && total < 4) {
-			return `Heads up: this is ${a.name}'s last note — tearing it will destroy `
-				+ `the peer. Its owner can add another marginalium first to keep it intact.`;
-		}
-		return '';
-	}
 	const shareBreakWarn = $derived(destructionWarning(partnerMeetingPeer));
 
 	// Has the current player submitted keep-secret?

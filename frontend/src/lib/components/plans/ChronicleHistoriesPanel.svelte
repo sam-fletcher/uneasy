@@ -34,6 +34,7 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
+	import { destructionWarning } from '$lib/assetRisk';
 	import type { PlanPanelProps } from './types';
 	import FormField from './FormField.svelte';
 
@@ -127,19 +128,6 @@
 		allArtifacts.filter(a => !invokedIDs.includes(a.id))
 	);
 
-	// Destruction warning: tearing the last intact marginalium destroys the
-	// artifact. If empty margin slots remain (< 4 marginalia) the owner can add
-	// one first to keep it intact.
-	function destructionWarning(a: Asset | null | undefined): string {
-		if (!a) return '';
-		const total = (a.marginalia ?? []).length;
-		const intact = (a.marginalia ?? []).filter(m => !m.is_torn).length;
-		if (intact <= 1 && total < 4) {
-			return `Heads up: this is ${a.name}'s last note — tearing it will destroy `
-				+ `the artifact. Its owner can add another marginalium first to keep it intact.`;
-		}
-		return '';
-	}
 
 	let invokeAssetID = $state<number | null>(null);
 	let invokeBusy = $state(false);

@@ -22,6 +22,7 @@
 		type RowState,
 	} from '$lib/api';
 	import { createConnection, type WSMessage } from '$lib/ws';
+	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
 	import { handleWSMessage as runWSMessage, type WSContext } from './ws-handlers';
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
@@ -243,19 +244,13 @@
 	});
 
 	// Per-player count of "needlessly at-risk" assets, surfaced as a warning
-	// badge on each header chip. An asset qualifies when it's alive, has ≤1
-	// intact (untorn) marginalia — so it's one or zero tears from destruction —
-	// AND still has at least one empty slot the owner could fill to de-risk it.
-	// A fragile-but-full asset (e.g. 1 intact + 3 torn) isn't "needlessly" at
-	// risk: there's nothing to fill, so it's excluded. Brand-new assets with no
-	// marginalia yet (0 intact, 4 empty) are included — they need attention too.
+	// badge on each header chip. See isNeedlesslyAtRisk for the exact rule —
+	// it's the avoidable case (one tear from destruction but an empty slot is
+	// still fillable), shared with the Retinue panel and asset cards.
 	const atRiskByPlayer = $derived.by(() => {
 		const map = new Map<number, number>();
 		for (const a of assets) {
-			if (a.is_destroyed) continue;
-			const intact = a.marginalia.filter(m => !m.is_torn).length;
-			const hasEmptySlot = a.marginalia.length < 4;
-			if (intact <= 1 && hasEmptySlot) {
+			if (isNeedlesslyAtRisk(a)) {
 				map.set(a.owner_id, (map.get(a.owner_id) ?? 0) + 1);
 			}
 		}

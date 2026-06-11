@@ -11,6 +11,7 @@
 	import SuggestionPicker from '../../SuggestionPicker.svelte';
 	import FormField from '../FormField.svelte';
 	import { playerName } from '../shared';
+	import { destructionWarning } from '$lib/assetRisk';
 	import { MAKE_OPTS, MAR_OPTS, type FestRes } from './options';
 
 	let { plan, fest, players, assets, currentPlayerID, currentTurnID, myRollID, myEffectiveOutcome, onPlansChanged }: {
@@ -74,16 +75,6 @@
 				&& !a.is_destroyed
 				&& (a.marginalia ?? []).some(m => !m.is_torn)),
 	);
-	function destructionWarning(a: Asset | null | undefined): string {
-		if (!a) return '';
-		const total = (a.marginalia ?? []).length;
-		const intact = (a.marginalia ?? []).filter(m => !m.is_torn).length;
-		if (intact <= 1 && total < 4) {
-			return `Heads up: this is ${a.name}'s last note — tearing it will destroy `
-				+ `your main character. You can add another marginalium first to keep it intact.`;
-		}
-		return '';
-	}
 	const breakSelfWarn = $derived(destructionWarning(assets.find(a => a.id === pickedAssetID)));
 	const otherGuests = $derived(
 		fest.guests.filter(id => id !== currentPlayerID),

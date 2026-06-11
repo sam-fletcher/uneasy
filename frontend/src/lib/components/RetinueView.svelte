@@ -7,6 +7,7 @@
 <script lang="ts">
 	import { addMarginalia, updateMarginalia, updateAsset, writeSecret, getAssetSuggestions } from '$lib/api';
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
+	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
 	import SuggestionPicker from './SuggestionPicker.svelte';
 
 	let {
@@ -338,6 +339,9 @@
 		{:else}
 			<ul class="asset-grid">
 				{#each ownedAssets as asset (asset.id)}
+					<!-- Owner-only nudge: if this asset is one tear from destruction
+					     but a slot is still fillable, flag the first empty slot to fix. -->
+					{@const atRiskSlot = isSelf && isNeedlesslyAtRisk(asset) ? firstEmptySlotIndex(asset) : null}
 					<li
 						class="asset-tile"
 						class:main-char={asset.is_main_character}
@@ -471,7 +475,14 @@
 											</div>
 										{/if}
 									{:else if isSelf}
-										<button type="button" class="m-tile empty add" onclick={() => startAdd(asset)} aria-label="Add marginalia">
+										<button
+											type="button"
+											class="m-tile empty add"
+											class:at-risk={i === atRiskSlot}
+											onclick={() => startAdd(asset)}
+											aria-label={i === atRiskSlot ? `Add marginalia to ${asset.name} — it has too few notes and could be destroyed` : 'Add marginalia'}
+											title={i === atRiskSlot ? 'Too few notes — add one so a single break can’t destroy this asset' : undefined}
+										>
 											<span class="add-plus" aria-hidden="true">+</span>
 										</button>
 									{:else}
@@ -929,6 +940,17 @@
 	.m-tile.empty.add:hover { color: var(--color-accent); border-color: #5a5a52; }
 	.m-tile.empty.add:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 	.add-plus { font-size: 1.4rem; line-height: 1; }
+
+	/* Needlessly-at-risk nudge: solid red border on the next fillable slot,
+	   matching the red header-chip risk badge. Hover/focus keep the red so the
+	   warning doesn't disappear mid-interaction. */
+	.m-tile.empty.add.at-risk {
+		border-style: solid;
+		border-color: #b03a3a;
+		color: #c96a6a;
+	}
+	.m-tile.empty.add.at-risk:hover { color: #e07070; border-color: #c44545; }
+	.m-tile.empty.add.at-risk:focus-visible { outline-color: #b03a3a; }
 
 	/* Owner edit affordance on filled (untorn) slots */
 	.m-tile.filled {

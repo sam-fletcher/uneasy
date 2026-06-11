@@ -25,6 +25,7 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
+	import { destructionWarning } from '$lib/assetRisk';
 
 	import type { PlanPanelProps } from './types';
 
@@ -186,19 +187,6 @@
 	// All non-destroyed assets (reveal-secret can target any asset).
 	const allAssets = $derived(assets.filter(a => !a.is_destroyed));
 
-	// Destruction warning: tearing the last intact marginalium destroys the
-	// asset. If empty margin slots remain (< 4 marginalia) the player can add
-	// one first to keep the asset alive.
-	function destructionWarning(a: Asset | null | undefined): string {
-		if (!a) return '';
-		const total = (a.marginalia ?? []).length;
-		const intact = (a.marginalia ?? []).filter(m => !m.is_torn).length;
-		if (intact <= 1 && total < 4) {
-			return `Heads up: this is ${a.name}'s last note — tearing it will destroy `
-				+ `the asset. You can add another marginalium first to keep it intact.`;
-		}
-		return '';
-	}
 
 	async function submitBreakResource(p: Plan) {
 		if (brBusy || brAssetID == null || brMargID == null) return;

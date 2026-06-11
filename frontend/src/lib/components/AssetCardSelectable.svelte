@@ -27,6 +27,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { Asset } from '$lib/api';
+	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
 
 	interface Props {
 		asset: Asset;
@@ -127,6 +128,10 @@
 
 	const liveMarginalia = $derived(asset.marginalia.filter(m => !m.is_torn));
 	const tornCount = $derived(asset.marginalia.length - liveMarginalia.length);
+
+	// One tear from destruction but a slot is still fillable — tint the count
+	// and caret red so the fragility reads at a glance. See isNeedlesslyAtRisk.
+	const atRisk = $derived(isNeedlesslyAtRisk(asset));
 </script>
 
 <div
@@ -212,10 +217,14 @@
 
 		<span class="meta">
 			<span class="type">{typeLabels[asset.asset_type]}</span>
-			<span class="count">
+			<span
+				class="count"
+				class:at-risk={atRisk}
+				title={atRisk ? 'Too few notes — one break could destroy this asset' : undefined}
+			>
 				{liveMarginalia.length}{tornCount > 0 ? ` / ${asset.marginalia.length}` : ''}
 			</span>
-			<span class="caret" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+			<span class="caret" class:at-risk={atRisk} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
 		</span>
 	</button>
 
@@ -415,6 +424,11 @@
 	}
 
 	.caret { font-size: 0.8rem; color: var(--color-text-muted); }
+
+	/* Needlessly-at-risk: red count + caret, matching the header-chip risk
+	   badge. Title on .count carries the meaning for non-colour users. */
+	.count.at-risk { color: #d65a5a; font-weight: 700; }
+	.caret.at-risk { color: #d65a5a; }
 
 	/* Leverage draft toggle. A ~36px-tall "+🎲" chip wrapped in a 44px
 	   invisible tap target (::after) so it's comfortable to hit without
