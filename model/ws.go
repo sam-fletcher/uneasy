@@ -57,12 +57,15 @@ const (
 	EventPlanResolved  = "plan.resolved"
 
 	// Phase 3b: Plan mechanics
-	EventPlanDelayedArrival    = "plan.delayed_arrival"    // MI: peer scheduled for future row
-	EventRumorCreated          = "rumor.created"           // SR: rumor written to record
-	EventRumorUpdated          = "rumor.updated"           // rumor text edited
-	EventSPRecursivePlan       = "plan.sp_recursive"       // SP: recursive propaganda created
-	EventSecretVisibilityGrant = "secret.visibility_grant" // SA/CL: visibility granted
-	EventSecretCreated         = "secret.created"          // any player wrote a secret
+	EventPlanDelayedArrival = "plan.delayed_arrival" // MI: peer scheduled for future row
+	EventRumorCreated       = "rumor.created"        // SR: rumor written to record
+	EventRumorUpdated       = "rumor.updated"        // rumor text edited
+
+	EventRumorTakeConsentRequested = "rumor.take_consent_requested" // SR: take-asset awaiting victim's consent
+	EventRumorTakeConsentResolved  = "rumor.take_consent_resolved"  // SR: victim agreed/disagreed
+	EventSPRecursivePlan           = "plan.sp_recursive"            // SP: recursive propaganda created
+	EventSecretVisibilityGrant     = "secret.visibility_grant"      // SA/CL: visibility granted
+	EventSecretCreated             = "secret.created"               // any player wrote a secret
 
 	// Phase 3c: Propose Decree
 	EventLawEnacted          = "law.enacted"           // PD: law created
@@ -368,6 +371,13 @@ type PlanDelayedArrivalPayload struct {
 // RumorCreatedPayload is for EventRumorCreated (Spread Rumors).
 type RumorCreatedPayload struct {
 	Rumor any `json:"rumor"` // dbgen.Rumor
+}
+
+// RumorTakeConsentPayload is for EventRumorTakeConsentRequested and
+// EventRumorTakeConsentResolved. Clients refetch the plan to pick up the
+// pending/cleared take-consent state from its resolution_data.
+type RumorTakeConsentPayload struct {
+	PlanID int64 `json:"plan_id"`
 }
 
 // SPRecursivePlanPayload is for EventSPRecursivePlan.

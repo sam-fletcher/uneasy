@@ -551,3 +551,164 @@ func TestPreparedDescriptor_MakeDemands_NamesTargetPlan(t *testing.T) {
 	assert.Contains(t, body, tg.Players[1].DisplayName)
 	assert.Contains(t, body, "Spread Rumors")
 }
+
+// ── Spread Rumors: take-asset consent gate ──────────────────────────────────
+
+// TestSpreadRumors_TakeConsent_AgreeTransfersAsset covers the happy path: the
+// aggressor names an asset to take (any of the victim's, not just the rumor's
+// target), the victim is asked, and on agreement the choices commit and the
+// asset transfers. Also asserts the table blocks on the victim while pending,
+// and that a non-victim cannot answer.
+func TestSpreadRumors_TakeConsent_AgreeTransfersAsset(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+	preparerID := h.tg.Players[focusIdx].ID
+	victimID := h.tg.Players[otherIdx].ID
+
+	target := h.seedPeer(otherIdx, "Julius")     // the rumor's target asset
+	loot := h.seedPeer(otherIdx, "Crown Jewels") // a DIFFERENT asset, still the victim's
+
+	notes := "the king is a fraud"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+
+	reqPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/request-take-consent"
+	code, body := h.post(focusIdx, reqPath, map[string]any{
+		"result": makeOutcome, "choices": []string{"take_asset"}, "take_asset_ids": []int64{loot},
+	})
+	require.Equalf(t, http.StatusOK, code, "request-take-consent: %v", body)
+	assert.Equal(t, true, body["pending"])
+
+	// Nothing committed before consent: no transfer, no rumor.
+	a, err := h.q.GetAssetByID(ctx, loot)
+	require.NoError(t, err)
+	assert.Equal(t, victimID, a.OwnerID, "asset must not move before consent")
+	rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Empty(t, rumors, "no rumor until the choices commit")
+
+	// The row blocks on the victim.
+	rs, err := ComputeRowState(ctx, h.q, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitTakeConsent, rs.Kind)
+	require.NotNil(t, rs.ActingPlayerID)
+	assert.Equal(t, victimID, *rs.ActingPlayerID)
+
+	respPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/respond-take-consent"
+
+	// A non-victim (the aggressor) cannot answer their own request.
+	code, body = h.post(focusIdx, respPath, map[string]any{"agree": true})
+	require.Equalf(t, http.StatusForbidden, code, "non-victim respond: %v", body)
+
+	// The victim agrees.
+	code, body = h.post(otherIdx, respPath, map[string]any{"agree": true})
+	require.Equalf(t, http.StatusOK, code, "respond agree: %v", body)
+
+	// Asset transferred; choices recorded; take resolved; rumor created.
+	a, err = h.q.GetAssetByID(ctx, loot)
+	require.NoError(t, err)
+	assert.Equal(t, preparerID, a.OwnerID, "asset must transfer to the aggressor on agreement")
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.Len(t, rd.MakeMarChoices, 1)
+	assert.Equal(t, "take_asset", rd.MakeMarChoices[0].Option)
+	require.NotNil(t, rd.SpreadRumors)
+	assert.True(t, rd.SpreadRumors.TakeResolved)
+	assert.Nil(t, rd.SpreadRumors.PendingTakeConsent)
+	rumors, err = h.q.ListRumors(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Len(t, rumors, 1, "agreement commits the rumor")
+}
+
+// TestSpreadRumors_TakeConsent_DisagreeBlocksAndDisables covers the refusal
+// path: nothing transfers, no rumor is written, the option is flagged denied,
+// and the aggressor can re-pick other options without take_asset.
+func TestSpreadRumors_TakeConsent_DisagreeBlocksAndDisables(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+	victimID := h.tg.Players[otherIdx].ID
+
+	target := h.seedPeer(otherIdx, "Julius")
+	loot := h.seedPeer(otherIdx, "Crown Jewels")
+
+	notes := "a damning whisper"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+
+	reqPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/request-take-consent"
+	code, body := h.post(focusIdx, reqPath, map[string]any{
+		"result": makeOutcome, "choices": []string{"take_asset"}, "take_asset_ids": []int64{loot},
+	})
+	require.Equalf(t, http.StatusOK, code, "request-take-consent: %v", body)
+
+	respPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/respond-take-consent"
+	code, body = h.post(otherIdx, respPath, map[string]any{"agree": false})
+	require.Equalf(t, http.StatusOK, code, "respond disagree: %v", body)
+
+	// No transfer, no rumor, nothing committed.
+	a, err := h.q.GetAssetByID(ctx, loot)
+	require.NoError(t, err)
+	assert.Equal(t, victimID, a.OwnerID, "asset must not move on refusal")
+	rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Empty(t, rumors, "no rumor on refusal")
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolving, refreshed.Status, "plan stays resolving after refusal")
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.SpreadRumors)
+	assert.True(t, rd.SpreadRumors.TakeAssetDenied, "take option must be flagged denied")
+	assert.Nil(t, rd.SpreadRumors.PendingTakeConsent, "pending request must clear")
+	assert.Empty(t, rd.MakeMarChoices, "no choices committed on refusal")
+
+	// The aggressor re-picks a non-take option and it commits normally.
+	h.makeChoice(plan.ID, makeOutcome, []string{"reveal_source"})
+}
+
+// TestSpreadRumors_MakeChoice_RejectsTakeAsset guards that take_asset can't be
+// committed through the generic make-choice route — it must go through the
+// consent gate.
+func TestSpreadRumors_MakeChoice_RejectsTakeAsset(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+	target := h.seedPeer(otherIdx, "Julius")
+
+	notes := "rumor"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+
+	mcPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
+	code, body := h.post(focusIdx, mcPath, map[string]any{
+		"result": makeOutcome, "choices": []string{"take_asset"},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "make-choice with take_asset must be rejected: %v", body)
+}

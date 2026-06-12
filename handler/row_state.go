@@ -197,6 +197,21 @@ func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pl
 		return festivitySubPhase(ctx, q, plan)
 	case model.PlanProposeDuel:
 		return duelSubPhase(ctx, q, plan)
+	case model.PlanSpreadRumors:
+		return srSubPhase(plan)
+	}
+	return model.RowState{}, false
+}
+
+// srSubPhase returns AwaitTakeConsent while a Spread Rumors "take asset" choice
+// is waiting on the victim's agree/disagree. ActingPlayerID names the victim
+// (the asset owner), so the table blocks on them rather than the resolving
+// plan's focus player. No pending consent → keep the default PlanResolving copy.
+func srSubPhase(plan *dbgen.Plan) (model.RowState, bool) {
+	resData := loadResolutionData(plan.ResolutionData)
+	if sr := resData.SpreadRumors; sr != nil && sr.PendingTakeConsent != nil {
+		victim := sr.PendingTakeConsent.VictimID
+		return model.RowState{Kind: model.RowStateAwaitTakeConsent, ActingPlayerID: &victim}, true
 	}
 	return model.RowState{}, false
 }

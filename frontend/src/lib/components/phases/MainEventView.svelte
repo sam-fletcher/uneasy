@@ -258,6 +258,15 @@
 					: [];
 				return { waitees, stepLabel: 'Propose Duel — bout' };
 			}
+			case 'await_take_consent': {
+				// Spread Rumors take-asset — the victim must agree or disagree
+				// before anything else happens. ActingPlayerID names them.
+				const actor = rowState.acting_player_id;
+				const waitees: Waitee[] = actor != null
+					? [{ kind: 'player', playerID: actor }]
+					: [];
+				return { waitees, stepLabel: 'Spread Rumors — consent to take asset' };
+			}
 			case 'await_delay_reveal': {
 				const planType = delayRevealPlan?.plan_type;
 				const label =

@@ -13,7 +13,8 @@ package handler
 // (repeatable):
 //   - "break_target"  → tear a marginalia on the target asset
 //   - "leverage_target" → leverage the target asset
-//   - "take_asset"    → transfer target asset (social consent assumed)
+//   - "take_asset"    → transfer any of the victim's assets (requires the
+//                       victim's consent — see request/respond-take-consent)
 //   - "hide_source"   → set rumors.source_player_id = NULL; write secret on own asset
 //   - "reveal_source" → set rumors.source_player_id = preparer_id
 //
@@ -23,13 +24,23 @@ package handler
 //
 // Extra routes (all accept either the preparer on a make result, or the
 // target-asset owner on a mar result):
-//   POST /api/plans/:planId/break-target    {"marginalia_id": M, "asset_id"?: A}
-//   POST /api/plans/:planId/take-asset      {"consent": true, "asset_id"?: A}
-//   POST /api/plans/:planId/hide-source     {"secret_asset_id": N, "secret_text": "..."}
+//   POST /api/plans/:planId/break-target          {"marginalia_id": M, "asset_id"?: A}
+//   POST /api/plans/:planId/hide-source           {"secret_asset_id": N, "secret_text": "..."}
+//   POST /api/plans/:planId/request-take-consent  {"choices": [...], "result": "...", "take_asset_ids": [A, …]}
+//   POST /api/plans/:planId/respond-take-consent  {"agree": true|false}
 //
 // On mar, asset_id specifies which of the preparer's assets the target player
-// is tearing/taking (the counter-rumor applies to preparer assets, not the
-// plan's target asset).
+// is tearing (the counter-rumor applies to preparer assets, not the plan's
+// target asset).
+//
+// "take asset" is consent-gated: unlike break/leverage (which only touch the
+// plan's original target asset), a take can claim ANY of the victim's assets —
+// the target-asset owner on make, the preparer on mar — and the aggressor may
+// take several (one per "take_asset" pick). The aggressor names the specific
+// assets up front via request-take-consent; nothing is committed until the
+// victim agrees via respond-take-consent. On agree the choices are applied and
+// the assets transfer; on disagree nothing happens and the aggressor returns to
+// the option picker with "take asset" disabled. See srRequestTakeConsentHandler.
 
 import (
 	"context"
@@ -269,9 +280,10 @@ func (srHandler) PreparedDescriptor(
 
 func (srHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"break-target": srBreakTargetHandler(deps),
-		"take-asset":   srTakeAssetHandler(deps),
-		"hide-source":  srHideSourceHandler(deps),
+		"break-target":         srBreakTargetHandler(deps),
+		"hide-source":          srHideSourceHandler(deps),
+		"request-take-consent": srRequestTakeConsentHandler(deps),
+		"respond-take-consent": srRespondTakeConsentHandler(deps),
 	}
 }
 
@@ -323,40 +335,40 @@ func stashSecretRumor(
 	return nil
 }
 
-// srAuthorizeActor returns (onMar, targetOwnerID, ok). onMar is true when the
-// caller is the target-asset owner acting during a mar result. It responds
-// with the appropriate HTTP error if the caller is not authorized.
+// srAuthorizeActor returns (onMar, ok). onMar is true when the caller is the
+// target-asset owner acting during a mar result. It responds with the
+// appropriate HTTP error if the caller is not authorized.
 func srAuthorizeActor(
 	ctx context.Context,
 	w http.ResponseWriter,
 	q *dbgen.Queries,
 	plan *dbgen.Plan,
 	player *dbgen.Player,
-) (onMar bool, targetOwnerID int64, ok bool) {
+) (onMar bool, ok bool) {
 	if player.ID == plan.PreparerID {
-		return false, 0, true
+		return false, true
 	}
 	// Non-preparer: allowed only if (a) plan has a target asset, (b) caller owns
 	// it, and (c) the roll resolved as "mar".
 	if plan.TargetAssetID == nil {
 		respondErr(w, http.StatusForbidden, "only the preparer can use this route")
-		return false, 0, false
+		return false, false
 	}
 	asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID)
 	if err != nil {
 		respondErr(w, http.StatusNotFound, "target asset not found")
-		return false, 0, false
+		return false, false
 	}
 	if player.ID != asset.OwnerID {
 		respondErr(w, http.StatusForbidden, "only the preparer or the target asset's owner can use this route")
-		return false, 0, false
+		return false, false
 	}
 	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
 	if err != nil || roll.Outcome == nil || *roll.Outcome != marOutcome {
 		respondErr(w, http.StatusForbidden, "target asset's owner can only act on a mar result")
-		return false, 0, false
+		return false, false
 	}
-	return true, asset.OwnerID, true
+	return true, true
 }
 
 // ── Break Target ──────────────────────────────────────────────────────────────
@@ -384,7 +396,7 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		onMar, _, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player)
+		onMar, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player)
 		if !authz {
 			return
 		}
@@ -461,103 +473,314 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
-// ── Take Asset ────────────────────────────────────────────────────────────────
+// ── Take Asset (consent-gated) ─────────────────────────────────────────────────
 
-// srTakeAssetHandler handles POST /api/plans/:planId/take-asset.
+// srRequestTakeConsentHandler handles POST /api/plans/:planId/request-take-consent.
 //
-// On make (preparer): transfers the plan's target asset to the preparer.
-// Request body: {"consent": true}
+// The aggressor (preparer on make, target-asset owner on mar) submits their full
+// set of make/mar picks together with the specific assets they want to take
+// (one asset_id per "take_asset" pick). Nothing is committed: the picks and
+// asset list are stashed in resolution_data and the victim — the player who owns
+// those assets — is asked to agree or disagree. ComputeRowState then surfaces
+// await_take_consent so the WaitingOnBar names the victim and the table holds.
 //
-// On mar (target-asset owner): transfers one of the preparer's assets to the
-// target-asset owner. Request body: {"consent": true, "asset_id": A}
-func srTakeAssetHandler(deps *PlanDeps) http.HandlerFunc {
+// The take may claim ANY of the victim's assets (not only the rumor's target
+// asset). On make the victim is the target asset's owner; on mar the victim is
+// the preparer. If the aggressor would be taking from themselves (a rumor about
+// their own asset), no one else's consent is needed and the choices commit
+// immediately.
+//
+// Request body: {"choices": [...], "result": "make"|"mar", "take_asset_ids": [A, …]}
+//
+// srBuildTakeConsentRequest decodes and validates a take-consent request body:
+// the result must match the roll and fit the dice budget, there must be exactly
+// one asset per "take_asset" pick, and every named asset must be a distinct,
+// intact asset owned by the victim (the target-asset owner on make, the
+// preparer on mar). On any problem it writes the HTTP error and returns ok=false.
+//
+
+func srBuildTakeConsentRequest(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	player *dbgen.Player,
+	onMar bool,
+) (*gamepkg.TakeConsentRequest, bool) {
+	var body struct {
+		Choices      []string `json:"choices"`
+		Result       string   `json:"result"`
+		TakeAssetIDs []int64  `json:"take_asset_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondErr(w, http.StatusBadRequest, "invalid JSON")
+		return nil, false
+	}
+	if body.Result != makeOutcome && body.Result != marOutcome {
+		respondErr(w, http.StatusBadRequest, "result must be 'make' or 'mar'")
+		return nil, false
+	}
+
+	// The result must match the roll, and the picks must fit the dice budget.
+	roll, rollErr := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if rollErr == nil && roll.Outcome != nil && *roll.Outcome != body.Result {
+		respondErr(w, http.StatusConflict,
+			fmt.Sprintf("result '%s' does not match roll outcome '%s'", body.Result, *roll.Outcome))
+		return nil, false
+	}
+	var rollPtr *dbgen.DiceRoll
+	if rollErr == nil {
+		rollPtr = &roll
+	}
+	if !enforceChoiceBudget(w, srHandler{}, rollPtr, body.Result, body.Choices) {
+		return nil, false
+	}
+
+	// Exactly one asset per "take_asset" pick.
+	k := 0
+	for _, c := range body.Choices {
+		if c == "take_asset" {
+			k++
+		}
+	}
+	if k == 0 {
+		respondErr(w, http.StatusBadRequest, "choices contain no take_asset to consent to")
+		return nil, false
+	}
+	if len(body.TakeAssetIDs) != k {
+		respondErr(w, http.StatusBadRequest,
+			fmt.Sprintf("expected %d take_asset_ids to match your take_asset picks", k))
+		return nil, false
+	}
+
+	// Resolve the victim: the player who would lose the assets.
+	var victimID int64
+	if onMar {
+		victimID = plan.PreparerID
+	} else {
+		if plan.TargetAssetID == nil {
+			respondErr(w, http.StatusConflict, "plan has no target asset")
+			return nil, false
+		}
+		targetAsset, err := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "target asset not found")
+			return nil, false
+		}
+		victimID = targetAsset.OwnerID
+	}
+
+	// Every named asset must be a distinct, intact asset the victim owns.
+	seen := make(map[int64]bool, len(body.TakeAssetIDs))
+	for _, aid := range body.TakeAssetIDs {
+		if seen[aid] {
+			respondErr(w, http.StatusBadRequest, "take_asset_ids must be distinct")
+			return nil, false
+		}
+		seen[aid] = true
+		asset, err := deps.Q.GetAssetByID(ctx, aid)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "asset not found")
+			return nil, false
+		}
+		if asset.GameID != plan.GameID || asset.OwnerID != victimID {
+			respondErr(w, http.StatusBadRequest, "each asset must belong to the player losing it")
+			return nil, false
+		}
+		if asset.IsDestroyed {
+			respondErr(w, http.StatusBadRequest, "cannot take a destroyed asset")
+			return nil, false
+		}
+	}
+
+	return &gamepkg.TakeConsentRequest{
+		Choices:     body.Choices,
+		Result:      body.Result,
+		AssetIDs:    body.TakeAssetIDs,
+		VictimID:    victimID,
+		RequestedBy: player.ID,
+	}, true
+}
+
+func srRequestTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadRumors)
 		if !ok {
 			return
 		}
-		if plan.PlanType != model.PlanSpreadRumors {
-			respondErr(w, http.StatusBadRequest, "take-asset is only for Spread Rumors")
-			return
-		}
-		if plan.Status != model.PlanResolving {
-			respondErr(w, http.StatusConflict, "plan is not in resolving status")
-			return
-		}
 		ctx := r.Context()
-		onMar, targetOwnerID, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player)
+		onMar, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player)
 		if !authz {
 			return
 		}
-		if !onMar && plan.TargetAssetID == nil {
-			respondErr(w, http.StatusConflict, "plan has no target asset")
+
+		req, ok := srBuildTakeConsentRequest(ctx, w, r, deps, plan, player, onMar)
+		if !ok {
+			return
+		}
+
+		// Self-consent: taking from yourself needs no one else's agreement.
+		if req.VictimID == player.ID {
+			if err := srCommitTakeConsent(ctx, deps, plan, req); err != nil {
+				respondInternalErr(w, r, "could not apply choices", err)
+				return
+			}
+			broadcastEvent(deps.Manager, plan.GameID, model.EventRumorTakeConsentResolved,
+				model.RumorTakeConsentPayload{PlanID: plan.ID})
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "committed": true})
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		sr := resData.EnsureSpreadRumors()
+		sr.PendingTakeConsent = req
+		sr.TakeAssetDenied = false
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save consent request", err)
+			return
+		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventRumorTakeConsentRequested,
+			model.RumorTakeConsentPayload{PlanID: plan.ID})
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":   plan.ID,
+			"pending":   true,
+			"victim_id": req.VictimID,
+		})
+	}
+}
+
+// srRespondTakeConsentHandler handles POST /api/plans/:planId/respond-take-consent.
+//
+// Only the victim named in the open request may respond. On agree the stashed
+// choices are committed (rumor created, leverage/reveal applied) and each named
+// asset transfers to the aggressor. On disagree nothing is committed, the option
+// is flagged denied (so the aggressor's picker disables it), and the aggressor
+// returns to the option picker.
+//
+// Request body: {"agree": true|false}
+func srRespondTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadRumors)
+		if !ok {
+			return
+		}
+		ctx := r.Context()
+
+		resData := loadResolutionData(plan.ResolutionData)
+		sr := resData.SpreadRumors
+		if sr == nil || sr.PendingTakeConsent == nil {
+			respondErr(w, http.StatusConflict, "no pending take-asset consent request")
+			return
+		}
+		req := sr.PendingTakeConsent
+		if player.ID != req.VictimID {
+			respondErr(w, http.StatusForbidden, "only the asset owner may respond to this consent request")
 			return
 		}
 
 		var body struct {
-			Consent bool   `json:"consent"`
-			AssetID *int64 `json:"asset_id"`
+			Agree bool `json:"agree"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Consent {
-			respondErr(w, http.StatusBadRequest, "consent must be true to transfer asset")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
-		var assetToTransfer int64
-		var newOwnerID int64
-		if onMar {
-			if body.AssetID == nil {
-				respondErr(w, http.StatusBadRequest, "asset_id is required on mar (one of the preparer's assets)")
+		if !body.Agree {
+			sr.PendingTakeConsent = nil
+			sr.TakeAssetDenied = true
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondInternalErr(w, r, "could not save consent response", err)
 				return
 			}
-			preparerAsset, err := deps.Q.GetAssetByID(ctx, *body.AssetID)
-			if err != nil {
-				respondErr(w, http.StatusNotFound, "asset not found")
-				return
-			}
-			if preparerAsset.OwnerID != plan.PreparerID || preparerAsset.GameID != plan.GameID {
-				respondErr(w, http.StatusBadRequest, "asset must be one of the preparer's assets in this game")
-				return
-			}
-			assetToTransfer = preparerAsset.ID
-			newOwnerID = targetOwnerID
-		} else {
-			assetToTransfer = *plan.TargetAssetID
-			newOwnerID = plan.PreparerID
-		}
-
-		asset, err := deps.Q.GetAssetByID(ctx, assetToTransfer)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "asset not found")
-			return
-		}
-		oldOwnerID := asset.OwnerID
-
-		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-			ID:      asset.ID,
-			OwnerID: newOwnerID,
-		}); err != nil {
-			respondInternalErr(w, r, "could not transfer asset", err)
+			broadcastEvent(deps.Manager, plan.GameID, model.EventRumorTakeConsentResolved,
+				model.RumorTakeConsentPayload{PlanID: plan.ID})
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "agreed": false})
 			return
 		}
 
-		updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-				Asset:      updated,
-				OldOwnerID: oldOwnerID,
-				NewOwnerID: newOwnerID,
-			})
+		if err := srCommitTakeConsent(ctx, deps, plan, req); err != nil {
+			respondInternalErr(w, r, "could not apply consented choices", err)
+			return
 		}
-		if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
-			EmitAssetTaken(ctx, deps.Q, deps.Manager, plan.GameID, updated, oldOwnerID, newOwnerID, &g.CurrentRow)
-		}
+		broadcastEvent(deps.Manager, plan.GameID, model.EventRumorTakeConsentResolved,
+			model.RumorTakeConsentPayload{PlanID: plan.ID})
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "agreed": true})
+	}
+}
 
-		respond(w, http.StatusOK, map[string]any{
-			"plan_id":  plan.ID,
-			"asset_id": asset.ID,
+// srCommitTakeConsent applies an agreed-to (or self-consented) take: it records
+// the make/mar choices and runs srHandler.ApplyChoice exactly as MakeChoice
+// would (creating the rumor row and applying inline leverage/reveal effects),
+// then transfers each named asset to the aggressor and marks the take resolved.
+// Clears the pending request. Mirrors the commit half of MakeChoice so the two
+// paths stay in sync.
+func srCommitTakeConsent(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	req *gamepkg.TakeConsentRequest,
+) error {
+	resData := loadResolutionData(plan.ResolutionData)
+	resData.MakeMarChoices = make([]Choice, len(req.Choices))
+	for i, opt := range req.Choices {
+		resData.MakeMarChoices[i] = Choice{Option: opt}
+	}
+	if err := (srHandler{}).ApplyChoice(ctx, deps, plan, &resData, req.Choices, req.Result); err != nil {
+		return fmt.Errorf("apply choices: %w", err)
+	}
+	// The aggressor receives the assets: the preparer on make, the target-asset
+	// owner on mar — i.e. whoever requested the take.
+	for _, aid := range req.AssetIDs {
+		if err := transferRumorAsset(ctx, deps, plan, aid, req.RequestedBy); err != nil {
+			return err
+		}
+	}
+	sr := resData.EnsureSpreadRumors()
+	sr.TakeResolved = true
+	sr.PendingTakeConsent = nil
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		return fmt.Errorf("save resolution data: %w", err)
+	}
+	return nil
+}
+
+// transferRumorAsset transfers a single asset to newOwnerID and emits the
+// asset.taken event + action-log post. Shared by the consent-grant path.
+func transferRumorAsset(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	assetID, newOwnerID int64,
+) error {
+	asset, err := deps.Q.GetAssetByID(ctx, assetID)
+	if err != nil {
+		return fmt.Errorf("asset not found: %w", err)
+	}
+	oldOwnerID := asset.OwnerID
+	if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		ID:      asset.ID,
+		OwnerID: newOwnerID,
+	}); err != nil {
+		return fmt.Errorf("could not transfer asset: %w", err)
+	}
+	updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
+	if h, ok := deps.Manager.Get(plan.GameID); ok {
+		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
+			Asset:      updated,
+			OldOwnerID: oldOwnerID,
+			NewOwnerID: newOwnerID,
 		})
 	}
+	if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
+		EmitAssetTaken(ctx, deps.Q, deps.Manager, plan.GameID, updated, oldOwnerID, newOwnerID, &g.CurrentRow)
+	}
+	return nil
 }
 
 // ── Hide Source ───────────────────────────────────────────────────────────────
@@ -584,7 +807,7 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		if _, _, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player); !authz {
+		if _, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player); !authz {
 			return
 		}
 

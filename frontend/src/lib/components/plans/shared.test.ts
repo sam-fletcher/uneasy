@@ -12,6 +12,7 @@ import {
 	ownerUnleveragedAssets,
 	ownerIntactAssets,
 } from './shared';
+import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -97,6 +98,34 @@ describe('parseResolutionData', () => {
 		expect(parseResolutionData(plan({ resolution_data: rd }))).toEqual({
 			spread_rumors: { source_hidden: true },
 		});
+	});
+});
+
+// ── parseSpreadRumorsData (take-asset consent) ───────────────────────────────
+
+describe('parseSpreadRumorsData', () => {
+	it('returns {} when there is no spread_rumors data', () => {
+		expect(parseSpreadRumorsData(plan())).toEqual({});
+	});
+	it('surfaces an open take-asset consent request', () => {
+		const rd = JSON.stringify({
+			spread_rumors: {
+				pending_take_consent: {
+					choices: ['take_asset', 'leverage_target'],
+					result: 'make',
+					asset_ids: [7, 9],
+					victim_id: 2,
+					requested_by: 1,
+				},
+			},
+		});
+		const sr = parseSpreadRumorsData(plan({ resolution_data: rd }));
+		expect(sr.pending_take_consent?.victim_id).toBe(2);
+		expect(sr.pending_take_consent?.asset_ids).toEqual([7, 9]);
+	});
+	it('surfaces the denied flag once the owner refuses', () => {
+		const rd = JSON.stringify({ spread_rumors: { take_asset_denied: true } });
+		expect(parseSpreadRumorsData(plan({ resolution_data: rd })).take_asset_denied).toBe(true);
 	});
 });
 

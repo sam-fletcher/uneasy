@@ -19,9 +19,10 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		breakTarget, takeRumorAsset, hideSource,
+		breakTarget, requestTakeConsent, respondTakeConsent, hideSource,
 		type Plan,
 	} from '$lib/api';
+	import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
@@ -195,25 +196,60 @@
 	});
 
 	function bump(key: string, delta: number) {
+		// "Take asset" is locked off once the owner has declined it (no looping).
+		if (key === 'take_asset' && takeAssetDenied) return;
 		// Don't let the running total exceed the dice quota.
 		if (delta > 0 && requiredPicks != null && totalPicked >= requiredPicks) return;
 		const next = Math.max(0, (counts[key] ?? 0) + delta);
 		counts = { ...counts, [key]: next };
 	}
 
+	function flatChoices(): string[] {
+		const flat: string[] = [];
+		for (const opt of OPTIONS) {
+			for (let i = 0; i < (counts[opt.key] ?? 0); i++) flat.push(opt.key);
+		}
+		return flat;
+	}
+
+	// Two-step apply: when "take asset" is picked, the aggressor first names the
+	// specific assets to take (consent screen), since those can be ANY of the
+	// victim's assets. Without a take, choices commit straight away.
+	type TakeStep = 'options' | 'assets';
+	let takeStep = $state<TakeStep>('options');
+	let takeSelected = $state<number[]>([]);
+
 	async function onApplyChoices(p: Plan, outcome: 'make' | 'mar') {
 		if (choicesBusy || totalPicked === 0) return;
 		if (requiredPicks != null && totalPicked !== requiredPicks) return;
+		if ((counts.take_asset ?? 0) > 0) {
+			// Advance to the asset-selection screen rather than committing.
+			takeSelected = [];
+			takeStep = 'assets';
+			return;
+		}
 		choicesBusy = true; resError = '';
 		try {
-			const flat: string[] = [];
-			for (const opt of OPTIONS) {
-				for (let i = 0; i < (counts[opt.key] ?? 0); i++) flat.push(opt.key);
-			}
-			await makeChoice(p.id, outcome, flat);
+			await makeChoice(p.id, outcome, flatChoices());
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not apply choices.';
+		} finally { choicesBusy = false; }
+	}
+
+	// Submit the take-asset consent request: the aggressor's full picks plus the
+	// chosen victim assets. Nothing commits until the victim agrees.
+	async function onRequestConsent(p: Plan, outcome: 'make' | 'mar') {
+		if (choicesBusy) return;
+		if (takeSelected.length !== (counts.take_asset ?? 0)) return;
+		choicesBusy = true; resError = '';
+		try {
+			await requestTakeConsent(p.id, outcome, flatChoices(), takeSelected);
+			takeStep = 'options';
+			takeSelected = [];
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not request consent.';
 		} finally { choicesBusy = false; }
 	}
 
@@ -233,15 +269,53 @@
 		return amChoiceActor;
 	});
 
+	// ── Take-asset consent state (from resolution_data) ───────────────────────
+	const srData = $derived(parseSpreadRumorsData(plan));
+	const pendingConsent = $derived(srData.pending_take_consent ?? null);
+	const takeAssetDenied = $derived(srData.take_asset_denied ?? false);
+	const isConsentVictim = $derived(
+		pendingConsent != null && currentPlayerID === pendingConsent.victim_id,
+	);
+
+	// The victim of a take: target-asset owner on make, preparer on mar. The
+	// aggressor selects from this player's intact assets on the consent screen.
+	const victimID = $derived(
+		rollOutcome === 'mar' ? (plan?.preparer_id ?? null) : targetAssetOwnerID,
+	);
+	const victimAssets = $derived(
+		victimID == null ? [] : assets.filter(a => a.owner_id === victimID && !a.is_destroyed),
+	);
+
+	// Once the owner declines, blank any take_asset picks so the quota re-fills
+	// with other options and the disabled control reads 0.
+	$effect(() => {
+		if (takeAssetDenied && (counts.take_asset ?? 0) > 0) {
+			counts = { ...counts, take_asset: 0 };
+		}
+	});
+
+	async function onRespondConsent(p: Plan, agree: boolean) {
+		if (choicesBusy) return;
+		choicesBusy = true; resError = '';
+		try {
+			await respondTakeConsent(p.id, agree);
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not respond.';
+		} finally { choicesBusy = false; }
+	}
+
 	// ── Sub-flows (counters reset per plan) ──────────────────────────────────
+	// take_asset has no post-commit sub-flow: the transfer happens at consent
+	// time, so only break_target and hide_source remain here.
 	let btDone = $state(0);
-	let taDone = $state(0);
 	let hsDone = $state(0);
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
 		if (plan && plan.id !== lastPlanID) {
 			lastPlanID = plan.id;
-			btDone = 0; taDone = 0; hsDone = 0;
+			btDone = 0; hsDone = 0;
+			takeStep = 'options'; takeSelected = [];
 		}
 	});
 
@@ -283,24 +357,6 @@
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not break target.';
 		} finally { btBusy = false; }
-	}
-
-	// take_asset: on make the server transfers plan.target_asset_id; on mar
-	// the actor picks one of the preparer's assets to take.
-	let taAssetID = $state<number | null>(null);
-	let taBusy = $state(false);
-	async function submitTakeAsset(p: Plan) {
-		if (taBusy) return;
-		if (rollOutcome === 'mar' && taAssetID == null) return;
-		taBusy = true; resError = '';
-		try {
-			await takeRumorAsset(p.id, true, rollOutcome === 'mar' ? taAssetID! : undefined);
-			taDone += 1;
-			taAssetID = null;
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not take asset.';
-		} finally { taBusy = false; }
 	}
 
 	// hide_source: actor hides their own role as source on one of their own
@@ -419,12 +475,10 @@
 	{@const existingChoices = (parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option)}
 	{@const choicesDone = existingChoices.length > 0}
 	{@const btNeeded = countIn(existingChoices, 'break_target')}
-	{@const taNeeded = countIn(existingChoices, 'take_asset')}
 	{@const hsNeeded = countIn(existingChoices, 'hide_source')}
 	{@const btRemaining = Math.max(0, btNeeded - btDone)}
-	{@const taRemaining = Math.max(0, taNeeded - taDone)}
 	{@const hsRemaining = Math.max(0, hsNeeded - hsDone)}
-	{@const subflowsDone = btRemaining === 0 && taRemaining === 0 && hsRemaining === 0}
+	{@const subflowsDone = btRemaining === 0 && hsRemaining === 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
@@ -437,6 +491,90 @@
 
 		{#if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
+
+		{:else if pendingConsent != null}
+			<!-- A take-asset request is open: everything holds until the victim
+			     (the asset owner) agrees or disagrees. -->
+			{#if isConsentVictim}
+				<div class="consent-box">
+					<p class="choices-header">Consent needed</p>
+					<p class="choices-note">
+						<strong>{playerName(players, pendingConsent.requested_by)}</strong>
+						{rollOutcome === 'mar' ? 'wants to take, via their counter-rumor,' : 'wants to take'}
+						the following from you:
+					</p>
+					<ul class="consent-assets">
+						{#each pendingConsent.asset_ids as aid}
+							<li><strong>{assetName(assets, aid)}</strong></li>
+						{/each}
+					</ul>
+					{#if plan.target_asset_id}
+						<p class="choices-note">
+							The rumor concerns <strong>{assetName(assets, plan.target_asset_id)}</strong>.
+						</p>
+					{/if}
+						{#if pendingConsent.choices.some(c => c !== 'take_asset')}
+						<p class="choices-note">
+							They'll also:
+							{#each OPTIONS as opt}
+								{#if opt.key !== 'take_asset' && pendingConsent.choices.filter(c => c === opt.key).length > 0}
+									<span>{opt.label} × {pendingConsent.choices.filter(c => c === opt.key).length}; </span>
+								{/if}
+							{/each}
+						</p>
+					{/if}
+					<div class="form-actions" style="display:flex;gap:0.5rem;">
+						<button class="action-btn primary"
+							onclick={() => onRespondConsent(plan, true)} disabled={choicesBusy}>
+							{choicesBusy ? '…' : 'Agree'}
+						</button>
+						<button class="action-btn"
+							onclick={() => onRespondConsent(plan, false)} disabled={choicesBusy}>
+							Disagree
+						</button>
+					</div>
+				</div>
+			{:else}
+				<p class="ft-prompt muted">
+					Waiting for {playerName(players, pendingConsent.victim_id)} to agree to give up
+					{pendingConsent.asset_ids.length === 1
+						? assetName(assets, pendingConsent.asset_ids[0])
+						: `${pendingConsent.asset_ids.length} assets`}…
+				</p>
+			{/if}
+
+		{:else if rollOutcome != null && !choicesDone && isActor && takeStep === 'assets'}
+			<!-- Step 2 of a take: name the specific assets to take from the victim. -->
+			{@const k = counts.take_asset ?? 0}
+			<div class="choices-section">
+				<p class="choices-header">Choose {k} asset{k === 1 ? '' : 's'} to take</p>
+				<p class="choices-note">
+					From {playerName(players, victimID)}'s assets — they'll be asked to consent.
+				</p>
+				<CardPicker
+					label="Assets to take"
+					items={victimAssets}
+					{players}
+					emptyMessage="This player has no assets to take."
+					multi
+					max={k}
+					selectedMulti={takeSelected}
+					onSelectMulti={(ids) => (takeSelected = ids)}
+				/>
+				<p class="choices-note">
+					Selected: <strong>{takeSelected.length}</strong> / {k}
+				</p>
+				<div class="form-actions" style="display:flex;gap:0.5rem;">
+					<button class="action-btn primary"
+						onclick={() => onRequestConsent(plan, rollOutcome!)}
+						disabled={choicesBusy || takeSelected.length !== k}>
+						{choicesBusy ? '…' : 'Request consent'}
+					</button>
+					<button class="action-btn" onclick={() => { takeStep = 'options'; }}>
+						Back
+					</button>
+				</div>
+			</div>
 
 		{:else if rollOutcome != null && !choicesDone && isActor}
 			<div class="choices-section">
@@ -451,14 +589,21 @@
 						You're driving the counter-rumor; effects apply to the preparer's assets.
 					{/if}
 				</p>
+				{#if takeAssetDenied}
+					<p class="choices-note muted">
+						The owner declined the asset transfer — choose other options.
+					</p>
+				{/if}
 				{#each OPTIONS as opt}
-					<div class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
+					{@const optDisabled = opt.key === 'take_asset' && takeAssetDenied}
+					<div class="choice-item" style="display:flex;align-items:center;gap:0.5rem;"
+						class:muted={optDisabled}>
 						<button class="action-btn" onclick={() => bump(opt.key, -1)}
 							disabled={(counts[opt.key] ?? 0) === 0}>−</button>
 						<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
 						<button class="action-btn" onclick={() => bump(opt.key, 1)}
-							disabled={requiredPicks != null && totalPicked >= requiredPicks}>+</button>
-						<span>{opt.label}</span>
+							disabled={optDisabled || (requiredPicks != null && totalPicked >= requiredPicks)}>+</button>
+						<span>{opt.label}{#if optDisabled} <em>(declined)</em>{/if}</span>
 					</div>
 				{/each}
 				<p class="choices-note">
@@ -467,7 +612,7 @@
 				<button class="action-btn primary"
 					onclick={() => onApplyChoices(plan, rollOutcome!)}
 					disabled={choicesBusy || totalPicked === 0 || (requiredPicks != null && totalPicked !== requiredPicks)}>
-					{choicesBusy ? '…' : 'Apply choices'}
+					{choicesBusy ? '…' : ((counts.take_asset ?? 0) > 0 ? 'Next: choose assets' : 'Apply choices')}
 				</button>
 			</div>
 
@@ -503,36 +648,6 @@
 							onclick={() => submitBreakTarget(plan)}
 							disabled={btBusy || btMargID == null}>
 							{btBusy ? '…' : 'Tear marginalia'}
-						</button>
-					</div>
-				{/if}
-
-				{#if taRemaining > 0}
-					<div class="plan-form">
-						<p class="choices-header">
-							{rollOutcome === 'mar' ? 'Take a preparer asset' : 'Take target asset'} ({taRemaining} remaining)
-						</p>
-						{#if rollOutcome === 'mar'}
-							<CardPicker
-								label="Preparer's asset"
-								items={preparerAssets}
-								{players}
-								selected={taAssetID}
-								onSelect={(id) => (taAssetID = id)}
-							/>
-							<p class="choices-note">
-								Confirm the preparer has consented to giving up this asset.
-							</p>
-						{:else}
-							<p class="choices-note">
-								Confirm the target player has consented to giving up
-								<strong>{assetName(assets, plan.target_asset_id)}</strong>.
-							</p>
-						{/if}
-						<button class="action-btn primary"
-							onclick={() => submitTakeAsset(plan)}
-							disabled={taBusy || (rollOutcome === 'mar' && taAssetID == null)}>
-							{taBusy ? '…' : 'Transfer asset'}
 						</button>
 					</div>
 				{/if}
@@ -609,6 +724,22 @@
 {/if}
 
 <style>
+	/* Take-asset consent prompt shown to the victim. */
+	.consent-box {
+		border: 1px solid var(--color-border, #444);
+		border-radius: 6px;
+		background: var(--color-surface-2, #2a2a2a);
+		padding: 0.6rem 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.consent-assets {
+		margin: 0;
+		padding-left: 1.2rem;
+	}
+	.consent-box .form-actions button { min-height: 44px; }
+
 	/* Tappable "keep it secret" row: ≥44px target, generous hit area on mobile. */
 	.sr-secret-toggle {
 		display: flex;

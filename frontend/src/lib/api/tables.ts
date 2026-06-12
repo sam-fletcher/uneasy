@@ -34,6 +34,7 @@ export type RowStateKind =
 	| 'await_festivity_challenge_response'
 	| 'await_duel_staking'
 	| 'await_duel_bout'
+	| 'await_take_consent'
 	| 'scene_active'
 	| 'post_scene_action'
 	| 'scene_setting';

@@ -104,6 +104,12 @@ const (
 	// (= InitiativePlayerID).
 	RowStateAwaitDuelBout RowStateKind = "await_duel_bout"
 
+	// RowStateAwaitTakeConsent — a Spread Rumors "take asset" choice is
+	// waiting for the victim (the player who would lose the asset) to agree
+	// or disagree. The aggressor's picks are not yet committed; nothing else
+	// may happen until the victim responds. ActingPlayerID names the victim.
+	RowStateAwaitTakeConsent RowStateKind = "await_take_consent"
+
 	// RowStatePlanPending — a plan is in 'pending' status on the current
 	// row and ready to be resolved. Step 2, queued.
 	RowStatePlanPending RowStateKind = "plan_pending"
@@ -154,9 +160,9 @@ type RowState struct {
 	// ActingPlayerID names the player whose action the table is blocked on
 	// for sub-phase gates that override PlanResolving (AwaitDemandCounter,
 	// AwaitDemandDraftPick, AwaitFestivityGuestTurn,
-	// AwaitFestivityChallengeResponse, AwaitDuelBout). Lets the
-	// WaitingOnBar attribute the wait to the actual decision-maker (often
-	// a non-focus player) rather than the resolving plan's focus player.
+	// AwaitFestivityChallengeResponse, AwaitDuelBout, AwaitTakeConsent).
+	// Lets the WaitingOnBar attribute the wait to the actual decision-maker
+	// (often a non-focus player) rather than the resolving plan's focus player.
 	// Nil for kinds with multiple waitees (AwaitDuelStaking — client
 	// derives them) or no single decider.
 	ActingPlayerID *int64 `json:"acting_player_id,omitempty"`

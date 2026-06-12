@@ -118,6 +118,8 @@ export const EventTypes = {
 	LawUpdated: 'law.updated',
 	RumorCreated: 'rumor.created',
 	RumorUpdated: 'rumor.updated',
+	RumorTakeConsentRequested: 'rumor.take_consent_requested',
+	RumorTakeConsentResolved: 'rumor.take_consent_resolved',
 
 	// Secrets
 	SecretCreated: 'secret.created',

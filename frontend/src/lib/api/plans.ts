@@ -230,17 +230,35 @@ export function breakTarget(planID: number, marginaliaID: number, assetID?: numb
 }
 
 /**
- * Spread Rumors — consent-based asset transfer.
+ * Spread Rumors — request the victim's consent to take asset(s).
  *
- * On make (preparer) the server transfers plan.target_asset_id; omit
- * `assetID`. On mar (target-asset owner) `assetID` must be one of the
- * preparer's assets, which is then transferred to the target-asset owner.
- * (Named `takeRumorAsset` to avoid collision with the asset-level `takeAsset`.)
+ * Submits the aggressor's full picks plus the specific assets they want to
+ * take (one per `take_asset` pick). Nothing is committed until the victim
+ * responds via {@link respondTakeConsent}. The assets must belong to the
+ * victim: the target-asset owner on make, the preparer on mar. If the victim
+ * is the aggressor themselves the server commits immediately (no gate).
  */
-export function takeRumorAsset(planID: number, consent: boolean, assetID?: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/take-asset`, {
+export function requestTakeConsent(
+	planID: number,
+	result: 'make' | 'mar',
+	choices: string[],
+	takeAssetIDs: number[],
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/request-take-consent`, {
 		method: 'POST',
-		body: JSON.stringify({ consent, asset_id: assetID ?? null }),
+		body: JSON.stringify({ choices, result, take_asset_ids: takeAssetIDs }),
+	});
+}
+
+/**
+ * Spread Rumors — the victim agrees or disagrees to an open take-asset request.
+ * On agree the choices are committed and the assets transfer; on disagree
+ * nothing happens and the aggressor returns to the option picker.
+ */
+export function respondTakeConsent(planID: number, agree: boolean): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/respond-take-consent`, {
+		method: 'POST',
+		body: JSON.stringify({ agree }),
 	});
 }
 

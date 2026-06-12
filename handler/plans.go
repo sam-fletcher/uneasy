@@ -36,6 +36,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -1132,6 +1133,16 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		if body.Result != makeOutcome && body.Result != marOutcome {
 			respondErr(w, http.StatusBadRequest, "result must be 'make' or 'mar'")
+			return
+		}
+
+		// Spread Rumors' "take asset" is consent-gated and must go through
+		// request-take-consent (which names the specific assets and asks the
+		// victim). A direct make-choice carrying it would commit the other
+		// choices without ever obtaining consent, so reject it here.
+		if plan.PlanType == model.PlanSpreadRumors && slices.Contains(body.Choices, "take_asset") {
+			respondErr(w, http.StatusBadRequest,
+				"take_asset requires the target's consent; use request-take-consent")
 			return
 		}
 

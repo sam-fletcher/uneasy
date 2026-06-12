@@ -422,7 +422,9 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.DemandDraftPick:
 		case EventTypes.DemandCounterPending:
 		case EventTypes.DemandCounterPlaced:
-		case EventTypes.DemandRetargeted: {
+		case EventTypes.DemandRetargeted:
+		case EventTypes.RumorTakeConsentRequested:
+		case EventTypes.RumorTakeConsentResolved: {
 			const { plan_id } = msg.payload as { plan_id: number };
 			refreshPlan(ctx, plan_id);
 			window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
