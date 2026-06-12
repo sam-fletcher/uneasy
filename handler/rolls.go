@@ -160,10 +160,28 @@ func GetActiveRollForGame(s *db.Store) http.HandlerFunc {
 		}
 
 		var active *dbgen.DiceRoll
+		// 1) The latest still-open roll, if any.
 		for i := len(rolls) - 1; i >= 0; i-- {
 			if rolls[i].Result == nil {
 				active = new(rolls[i])
 				break
+			}
+		}
+		// 2) Otherwise, a resolved roll whose plan is still being resolved. Its
+		//    make/mar outcome drives the plan's option picker, and once the roll
+		//    has resolved this endpoint is the only place a reloading client can
+		//    recover that outcome — without it the resolution UI goes blank
+		//    (every branch keys off the roll outcome) until choices are applied.
+		if active == nil {
+			for i := len(rolls) - 1; i >= 0; i-- {
+				if rolls[i].PlanID == nil {
+					continue
+				}
+				plan, err := s.Q.GetPlanByID(ctx, *rolls[i].PlanID)
+				if err == nil && plan.Status == model.PlanResolving {
+					active = new(rolls[i])
+					break
+				}
 			}
 		}
 		if active == nil {

@@ -495,3 +495,58 @@ func TestRollFlow_ActorContextValidation(t *testing.T) {
 	})
 	assert.Equal(t, http.StatusCreated, status)
 }
+
+// Regression: once a plan-linked roll has resolved but the plan is still being
+// resolved (status='resolving'), the active-roll endpoint must keep returning
+// it. The make/mar option picker keys off the roll outcome, so a reloading
+// preparer that can no longer recover the roll is left staring at a blank
+// resolution card until choices are applied.
+func TestActiveRoll_ResolvedRollOfResolvingPlan_StillReturned(t *testing.T) {
+	h := newRollsHarness(t, 2)
+	ctx := context.Background()
+
+	plan, err := h.q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID:        h.tg.Game.ID,
+		PlanType:      model.PlanSpreadRumors,
+		Category:      model.CategoryEsteem,
+		PreparerID:    h.tg.Players[0].ID,
+		RowNumber:     &h.tg.Game.CurrentRow,
+		RowOrder:      0,
+		PreparedAtRow: h.tg.Game.CurrentRow,
+	})
+	require.NoError(t, err)
+
+	roll, err := h.q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID:     h.tg.Game.ID,
+		PlanID:     &plan.ID,
+		ActorID:    h.tg.Players[0].ID,
+		Difficulty: 2,
+		Stage:      stageLeverage,
+	})
+	require.NoError(t, err)
+
+	// Resolve the roll (make) and move the plan into resolution.
+	result := int16(3)
+	require.NoError(t, h.q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &result, Outcome: ptrStr(makeOutcome),
+	}))
+	require.NoError(t, h.q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: plan.ID, Status: model.PlanResolving,
+	}))
+
+	status, body := h.do(t, 0, "GET",
+		fmt.Sprintf("/api/tables/%d/rolls/active", h.tg.Game.ID), nil)
+	require.Equal(t, http.StatusOK, status)
+	active := asMap(t, body, "roll")
+	assert.Equal(t, roll.ID, asInt64(t, active["id"]))
+	assert.Equal(t, makeOutcome, active["outcome"])
+
+	// Once the plan finishes resolving, the roll drops off again.
+	require.NoError(t, h.q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: plan.ID, Status: model.PlanResolved,
+	}))
+	status, body = h.do(t, 0, "GET",
+		fmt.Sprintf("/api/tables/%d/rolls/active", h.tg.Game.ID), nil)
+	require.Equal(t, http.StatusOK, status)
+	assert.Nil(t, body["roll"], "resolved-and-completed plan should expose no active roll")
+}
