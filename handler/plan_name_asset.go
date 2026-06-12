@@ -89,9 +89,15 @@ func nameCreatedPlanAsset(
 	}
 	assetID := *assetIDPtr
 
+	before, _ := deps.Q.GetAssetByID(ctx, assetID)
 	if err := deps.Q.UpdateAssetName(ctx, dbgen.UpdateAssetNameParams{ID: assetID, Name: name}); err != nil {
 		respondInternalErr(w, r, "could not rename asset", err)
 		return
+	}
+	// Authoring the placeholder-named asset is a rename in the action log, so the
+	// final name is reconstructable (asset.created logged the placeholder).
+	if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
+		EmitAssetRenamed(ctx, deps.Q, deps.Manager, plan.GameID, before, before.Name, name, player.ID, g.CurrentRow)
 	}
 	markNamed(&resData)
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {

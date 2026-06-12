@@ -102,6 +102,11 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 			BoutNumber:  boutNumber,
 			ResponderID: pduelOpponentID(plan, player.ID),
 		})
+		pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"Bout %d — %s opens with %q, calling %s. %s must answer.",
+			boutNumber, playerDisplayName(ctx, deps.Q, player.ID),
+			assetDisplayName(ctx, deps.Q, stake.AssetID), body.Declaration,
+			playerDisplayName(ctx, deps.Q, pduelOpponentID(plan, player.ID))))
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":     plan.ID,
@@ -232,6 +237,24 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 				WinnerID:     winID,
 				IsMatch:      outcome.Match,
 			})
+		}
+
+		// Both dice are now public — narrate the exchange. A match means the
+		// stakes clash and carry forward (see AccumulateDuelDice).
+		declName := playerDisplayName(ctx, deps.Q, latest.DeclarerID)
+		respName := playerDisplayName(ctx, deps.Q, latest.ResponderID)
+		if outcome.Match {
+			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"Bout %d: %s rolled %d, %s rolled %d — a dead match. The blades lock and the stakes carry forward.",
+				latest.BoutNumber, declName, declDie, respName, respStake.HiddenDie))
+		} else {
+			winName := declName
+			if winnerPtr != nil && *winnerPtr == latest.ResponderID {
+				winName = respName
+			}
+			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"Bout %d: %s rolled %d, %s rolled %d — %s takes the exchange.",
+				latest.BoutNumber, declName, declDie, respName, respStake.HiddenDie, winName))
 		}
 
 		// Check remaining stakes.
@@ -368,6 +391,15 @@ func pduelCreateFinalRoll(
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
 		return err
 	}
+
+	oppID := plan.PreparerID
+	if plan.TargetPlayerID != nil {
+		oppID = *plan.TargetPlayerID
+	}
+	pduelLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+		"The bouts are settled — %s carries %d dice into the final roll, %s carries %d. Now fate decides.",
+		playerDisplayName(ctx, deps.Q, plan.PreparerID), len(prepDice),
+		playerDisplayName(ctx, deps.Q, oppID), len(targDice)))
 
 	if h, ok := deps.Manager.Get(plan.GameID); ok {
 		h.BroadcastEvent(model.EventRollCreated, model.RollCreatedPayload{Roll: rollRow})

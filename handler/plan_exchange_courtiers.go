@@ -396,15 +396,14 @@ func acceptFairTrade(
 		return
 	}
 
-	h, hasHub := manager.Get(game.ID)
-	if hasHub {
-		ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
+	ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
+	oa, _ := q.GetAssetByID(ctx, *ec.FairTradeAssetID)
+	if h, hasHub := manager.Get(game.ID); hasHub {
 		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
 			Asset:      ta,
 			OldOwnerID: *plan.TargetPlayerID,
 			NewOwnerID: recipient,
 		})
-		oa, _ := q.GetAssetByID(ctx, *ec.FairTradeAssetID)
 		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
 			Asset:      oa,
 			OldOwnerID: plan.PreparerID,
@@ -415,6 +414,10 @@ func acceptFairTrade(
 			Result: makeOutcome,
 		})
 	}
+	// Log both legs of the fair-trade swap; EmitPlanResolved only records the
+	// outcome, not which peers changed hands.
+	EmitAssetTaken(ctx, q, manager, game.ID, ta, *plan.TargetPlayerID, recipient, &game.CurrentRow)
+	EmitAssetTaken(ctx, q, manager, game.ID, oa, plan.PreparerID, *plan.TargetPlayerID, &game.CurrentRow)
 	EmitPlanResolved(ctx, q, manager, *plan, makeOutcome)
 
 	respond(w, http.StatusOK, map[string]any{

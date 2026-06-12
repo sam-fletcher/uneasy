@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -106,6 +107,16 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 		}
 
+		who := playerDisplayName(ctx, deps.Q, player.ID)
+		if body.AssetID != nil {
+			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s sends %s into the ring to fight as their champion.",
+				who, assetDisplayName(ctx, deps.Q, *body.AssetID)))
+		} else {
+			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s steps onto the duelling ground to answer for themselves.", who))
+		}
+
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID, "player_id": player.ID, "asset_id": body.AssetID,
 		})
@@ -180,6 +191,14 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 				PreparerStakeCount: state.PreparerStakeCount,
 				TargetStakeCount:   state.TargetStakeCount,
 			})
+			prepName := playerDisplayName(ctx, deps.Q, plan.PreparerID)
+			targName := prepName
+			if plan.TargetPlayerID != nil {
+				targName = playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID)
+			}
+			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"The terms are set: %s wagers %d, %s wagers %d. Now they choose what to stake.",
+				prepName, state.PreparerStakeCount, targName, state.TargetStakeCount))
 		} else {
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondInternalErr(w, r, "could not save stake reveal", err)
@@ -201,7 +220,7 @@ func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
 // die is visible only to the asset owner; the opponent sees only that a
 // stake has been placed.
 //
-//nolint:gocognit // stake-selection lifecycle including target-claim path
+//nolint:gocognit,funlen // stake-selection lifecycle including target-claim path
 func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanProposeDuel)
@@ -293,6 +312,14 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 			createdStakes = append(createdStakes, stake)
 		}
+
+		stakeNames := make([]string, 0, len(body.AssetIDs))
+		for _, aid := range body.AssetIDs {
+			stakeNames = append(stakeNames, fmt.Sprintf("%q", assetDisplayName(ctx, deps.Q, aid)))
+		}
+		pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s lays their stakes on the line: %s — each guarding a hidden die.",
+			playerDisplayName(ctx, deps.Q, player.ID), strings.Join(stakeNames, ", ")))
 
 		// If both players have staked, advance to bouts.
 		allStakes, err := deps.Q.ListDuelStakesByPlan(ctx, plan.ID)

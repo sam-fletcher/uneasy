@@ -11,6 +11,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,18 @@ func duelSystemPosts(t *testing.T, q *dbgen.Queries, gameID int64) []string {
 		}
 	}
 	return out
+}
+
+// duelPostWith returns the first plan.propose_duel post body containing substr.
+// The duel emits many narrative posts (champions, stakes, bouts, outcome), so
+// callers locate the one they care about rather than assuming a position.
+func duelPostWith(posts []string, substr string) (string, bool) {
+	for _, p := range posts {
+		if strings.Contains(p, substr) {
+			return p, true
+		}
+	}
+	return "", false
 }
 
 // pinEsteemRank forces playerID into a specific esteem rank by swapping slots
@@ -254,8 +267,9 @@ func TestProposeDuelHTTP_Make_TakesStakeLeveragesAndLogs(t *testing.T) {
 	// Action-log emitted.
 	posts := duelSystemPosts(t, h.q, h.tg.Game.ID)
 	require.NotEmpty(t, posts, "expected a plan.propose_duel action-log post")
-	require.Contains(t, posts[0], "won the duel")
-	require.Contains(t, posts[0], "leveraged")
+	outcome, ok := duelPostWith(posts, "won the duel")
+	require.True(t, ok, "expected a duel-outcome post")
+	require.Contains(t, outcome, "leveraged")
 }
 
 // TestProposeDuelHTTP_Mar_TargetTakesPreparerStake: on a mar, the target (a
@@ -289,7 +303,8 @@ func TestProposeDuelHTTP_Mar_TargetTakesPreparerStake(t *testing.T) {
 
 	posts := duelSystemPosts(t, h.q, h.tg.Game.ID)
 	require.NotEmpty(t, posts)
-	require.Contains(t, posts[0], "won the duel")
+	_, ok := duelPostWith(posts, "won the duel")
+	require.True(t, ok, "expected a duel-outcome post")
 }
 
 // TestProposeDuelHTTP_RejectsNonStakedAndOverBudget: the claim must be limited

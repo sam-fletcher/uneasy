@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -238,6 +239,10 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 				MustAccept:   state.HasAcceptDuels(body.TargetPlayerID),
 			},
 		)
+		hfLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+			"%s threw down a challenge across the hall, calling out %s to a duel.",
+			playerDisplayName(ctx, deps.Q, player.ID),
+			playerDisplayName(ctx, deps.Q, body.TargetPlayerID)))
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusCreated, map[string]any{
 			"plan_id":       plan.ID,
@@ -252,6 +257,8 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 
 // Body: {"accept": true|false}. Only the challenge's target may call.
 // Decline is refused if the target has the accept_duels mar.
+//
+//nolint:funlen // decline + accept (nested-duel spawn) paths in one handler
 func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
@@ -300,6 +307,10 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 					PlanID: plan.ID, ChallengerID: challengerID, TargetID: player.ID,
 				},
 			)
+			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s waved off %s's challenge, and the moment passed.",
+				playerDisplayName(ctx, deps.Q, player.ID),
+				playerDisplayName(ctx, deps.Q, challengerID)))
 			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "accepted": false})
 			return
@@ -331,6 +342,14 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not create nested duel", err)
 			return
 		}
+		hfLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+			"%s took up %s's challenge — steel will settle it.",
+			playerDisplayName(ctx, deps.Q, player.ID),
+			playerDisplayName(ctx, deps.Q, challengerID)))
+		// The nested duel is created directly (not via PreparePlan), so emit its
+		// "prepared" post by hand — otherwise the spawned duel would surface in
+		// the log only at resolution, with no opening beat.
+		EmitPlanPrepared(ctx, deps.Q, deps.Manager, duelPlan)
 		if err := deps.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
 			ID: duelPlan.ID, Status: model.PlanResolving,
 		}); err != nil {

@@ -208,6 +208,9 @@ func (srHandler) ApplyChoice(
 					model.EventAssetLeveraged,
 					model.AssetIDPayload{AssetID: *plan.TargetAssetID},
 				)
+				if asset, aErr := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID); aErr == nil {
+					EmitAssetLeveraged(ctx, deps.Q, deps.Manager, plan.GameID, asset, game.CurrentRow)
+				}
 			}
 		case "reveal_source":
 			resData.EnsureSpreadRumors().SourceHidden = false
@@ -444,6 +447,12 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not break target asset", err)
 			return
 		}
+		// breakMarginalia logs the asset.destroyed post when a tear removes the
+		// last marginalium, but not the tear itself — emit the canonical
+		// marginalia.torn post so the break shows in the action log either way.
+		if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
+			EmitMarginaliaTorn(ctx, deps.Q, deps.Manager, plan.GameID, asset, m, player.ID, g.CurrentRow)
+		}
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
@@ -532,13 +541,16 @@ func srTakeAssetHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
 		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
 			h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
 				Asset:      updated,
 				OldOwnerID: oldOwnerID,
 				NewOwnerID: newOwnerID,
 			})
+		}
+		if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
+			EmitAssetTaken(ctx, deps.Q, deps.Manager, plan.GameID, updated, oldOwnerID, newOwnerID, &g.CurrentRow)
 		}
 
 		respond(w, http.StatusOK, map[string]any{

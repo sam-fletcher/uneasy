@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -20,7 +21,7 @@ import (
 // The target preparer's own leverage of their own assets is separately blocked
 // while a control_leverage winner exists (see handler/rolls.go LeverageRoll).
 //
-//nolint:gocognit // leverage rights handoff to demand winner
+//nolint:gocognit,funlen // leverage rights handoff to demand winner
 func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -82,6 +83,7 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
+		var leveragedNames []string
 		for _, assetID := range body.AssetIDs {
 			asset, err := deps.Q.GetAssetByID(ctx, assetID)
 			if err != nil {
@@ -117,6 +119,7 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 				respondInternalErr(w, r, "could not add leverage die", err)
 				return
 			}
+			leveragedNames = append(leveragedNames, fmt.Sprintf("%q", asset.Name))
 			committed[assetID] = struct{}{}
 		}
 
@@ -126,6 +129,16 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 			"asset_ids": body.AssetIDs,
 			"player_id": player.ID,
 		})
+
+		// The demand winner is spending the target's own assets against them — a
+		// pointed, dramatic move worth narrating in the log.
+		if len(leveragedNames) > 0 {
+			mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+				"Holding the reins of %s's plan, %s forced %s into the roll against them.",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID),
+				playerDisplayName(ctx, deps.Q, player.ID),
+				strings.Join(leveragedNames, ", ")))
+		}
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
