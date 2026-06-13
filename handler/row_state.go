@@ -199,6 +199,21 @@ func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pl
 		return duelSubPhase(ctx, q, plan)
 	case model.PlanSpreadRumors:
 		return srSubPhase(plan)
+	case model.PlanSeekAnswers:
+		return saSubPhase(plan)
+	}
+	return model.RowState{}, false
+}
+
+// saSubPhase returns AwaitQuestionAnswer while a Seek Answers "ask a player a
+// question" pick is waiting on the target's answer or veto. ActingPlayerID names
+// the target, so the table blocks on them rather than the resolving plan's focus
+// player. No pending question → keep the default PlanResolving copy.
+func saSubPhase(plan *dbgen.Plan) (model.RowState, bool) {
+	resData := loadResolutionData(plan.ResolutionData)
+	if sa := resData.SeekAnswers; sa != nil && sa.PendingQuestion != nil {
+		target := sa.PendingQuestion.TargetID
+		return model.RowState{Kind: model.RowStateAwaitQuestionAnswer, ActingPlayerID: &target}, true
 	}
 	return model.RowState{}, false
 }

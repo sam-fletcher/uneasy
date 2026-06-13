@@ -4,8 +4,10 @@
   Flow:
   - Prep: notes textarea (required).
   - Resolve: dice roll → pick option counts (repeatable, total = dice result)
-    → submit via makeChoice → for each break_resource/reveal_secret pick,
-    fill sub-form → complete.
+    → submit via makeChoice → fill a sub-form per pick (break_resource,
+    reveal_secret, declare_truth, ask_question) → complete. ask_question is a
+    two-sided flow: the target answers (or, if they outrank the preparer on
+    knowledge, vetoes the first question once).
 
   The option list is the same for make and mar (per spec). Each resource may
   be flawed at most once ("overlooked until now"), so flawed resources drop
@@ -19,11 +21,13 @@
 	import {
 		preparePlan, makeChoice, completePlan,
 		breakResource, revealSecret,
+		declareTruth, askQuestion, vetoQuestion, answerQuestion,
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import CardPicker from './CardPicker.svelte';
+	import PlayerChips from './PlayerChips.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
@@ -39,6 +43,7 @@
 	const plans = $derived(ctx.plans);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
+	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
@@ -55,8 +60,8 @@
 
 	const OPTIONS = [
 		{ key: 'break_resource', label: 'Break a resource (describe a flaw)' },
-		{ key: 'declare_truth',  label: 'Declare something true (scene post)' },
-		{ key: 'ask_question',   label: 'Ask a player a truthful question (scene post)' },
+		{ key: 'declare_truth',  label: 'Declare something true' },
+		{ key: 'ask_question',   label: 'Ask a player a truthful question' },
 		{ key: 'reveal_secret',  label: "Reveal an asset's secrets to you" },
 	] as const;
 
@@ -101,15 +106,21 @@
 	let choicesBusy = $state(false);
 	let resError = $state('');
 
+	const totalPicked = $derived(Object.values(counts).reduce((a, b) => a + b, 0));
+	// "Choose a number of these options equal to your result" — exactly result,
+	// on both a make and a mar (MaxChoices = result).
+	const requiredPicks = $derived(activeRoll?.result ?? null);
+
 	function bump(key: string, delta: number) {
+		// Don't let the running total exceed the dice quota.
+		if (delta > 0 && requiredPicks != null && totalPicked >= requiredPicks) return;
 		const next = Math.max(0, (counts[key] ?? 0) + delta);
 		counts = { ...counts, [key]: next };
 	}
 
-	const totalPicked = $derived(Object.values(counts).reduce((a, b) => a + b, 0));
-
 	async function onApplyChoices(p: Plan, outcome: 'make' | 'mar') {
 		if (choicesBusy || totalPicked === 0) return;
+		if (requiredPicks != null && totalPicked !== requiredPicks) return;
 		choicesBusy = true; resError = '';
 		try {
 			const flat: string[] = [];
@@ -124,22 +135,9 @@
 	}
 
 	// ── Sub-flows: break_resource, reveal_secret ─────────────────────────────
-	// We track remaining sub-actions locally: one per recorded pick, decremented
-	// as the preparer submits each. The server is the source of truth; if the
-	// page is reloaded mid-flow, the user may see remaining counts reset — they
-	// should re-submit any outstanding actions.
-	let breakDone = $state(0);
-	let revealDone = $state(0);
-
-	// Reset sub-flow counters whenever the plan id changes.
-	let lastPlanID = $state<number | null>(null);
-	$effect(() => {
-		if (plan && plan.id !== lastPlanID) {
-			lastPlanID = plan.id;
-			breakDone = 0;
-			revealDone = 0;
-		}
-	});
+	// Completion is server-authoritative (resolution_data counters, derived from
+	// saData below) so a refresh/remount can't re-prompt — and re-run — a step
+	// that already happened; the handlers also reject any step beyond the pick.
 
 	// Sub-form selection state
 	let brAssetID = $state<number | null>(null);
@@ -165,6 +163,13 @@
 	const marRequired = $derived(saData.mar_self_flaws_required ?? 0);
 	const marApplied = $derived(saData.mar_self_flaws_applied ?? 0);
 	const marRemaining = $derived(Math.max(0, marRequired - marApplied));
+	// Server-recorded make-list sub-flow progress (see comment above).
+	const breakDone = $derived(saData.break_resource_done ?? 0);
+	const revealDone = $derived(saData.reveal_secret_done ?? 0);
+	const declareTruthDone = $derived(saData.declare_truth_done ?? 0);
+	const askQuestionDone = $derived(saData.ask_question_done ?? 0);
+	const pendingQuestion = $derived(saData.pending_question ?? null);
+	const askVetoedHint = $derived(saData.current_ask_vetoed ?? false);
 
 	const preparerID = $derived(plan?.preparer_id ?? null);
 	const isMar = $derived(rollOutcome === 'mar');
@@ -185,8 +190,11 @@
 		resourcesWithMarginalia
 			.filter(a => a.owner_id === preparerID && !flawedIDs.has(a.id)),
 	);
-	// All non-destroyed assets (reveal-secret can target any asset).
-	const allAssets = $derived(assets.filter(a => !a.is_destroyed));
+	// Reveal-secret targets another player's asset ("ask a player to show you the
+	// underside of a specific one of their assets") — never the preparer's own.
+	const revealableAssets = $derived(
+		assets.filter(a => !a.is_destroyed && a.owner_id !== preparerID),
+	);
 
 
 	async function submitBreakResource(p: Plan) {
@@ -194,7 +202,6 @@
 		brBusy = true; resError = '';
 		try {
 			await breakResource(p.id, brAssetID, brMargID);
-			breakDone += 1;
 			brAssetID = null; brMargID = null;
 			onPlansChanged();
 		} catch (e) {
@@ -221,12 +228,68 @@
 		rsBusy = true; resError = '';
 		try {
 			await revealSecret(p.id, rsAssetID);
-			revealDone += 1;
 			rsAssetID = null;
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not reveal secret.';
 		} finally { rsBusy = false; }
+	}
+
+	// ── declare_truth / ask_question sub-flows ───────────────────────────────
+	let dtText = $state('');
+	let dtBusy = $state(false);
+	async function submitDeclareTruth(p: Plan) {
+		if (dtBusy || !dtText.trim()) return;
+		dtBusy = true; resError = '';
+		try {
+			await declareTruth(p.id, dtText.trim());
+			dtText = '';
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not declare truth.';
+		} finally { dtBusy = false; }
+	}
+
+	// Other players the preparer can question.
+	const questionTargets = $derived(players.filter(p => p.id !== plan?.preparer_id));
+	let aqTargetID = $state<number | null>(null);
+	let aqQuestion = $state('');
+	let aqBusy = $state(false);
+	async function submitAskQuestion(p: Plan) {
+		if (aqBusy || aqTargetID == null || !aqQuestion.trim()) return;
+		aqBusy = true; resError = '';
+		try {
+			await askQuestion(p.id, aqTargetID, aqQuestion.trim());
+			aqTargetID = null; aqQuestion = '';
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not ask question.';
+		} finally { aqBusy = false; }
+	}
+
+	// Target's answer/veto of the open question.
+	let answerText = $state('');
+	let answerBusy = $state(false);
+	async function submitAnswer(p: Plan) {
+		if (answerBusy || !answerText.trim()) return;
+		answerBusy = true; resError = '';
+		try {
+			await answerQuestion(p.id, answerText.trim());
+			answerText = '';
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not answer.';
+		} finally { answerBusy = false; }
+	}
+	async function submitVeto(p: Plan) {
+		if (answerBusy) return;
+		answerBusy = true; resError = '';
+		try {
+			await vetoQuestion(p.id);
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not veto.';
+		} finally { answerBusy = false; }
 	}
 
 	// ── Complete ────────────────────────────────────────────────────────────
@@ -271,9 +334,14 @@
 	{@const choicesDone = existingChoices.length > 0}
 	{@const brNeeded = countIn(existingChoices, 'break_resource')}
 	{@const rsNeeded = countIn(existingChoices, 'reveal_secret')}
+	{@const dtNeeded = countIn(existingChoices, 'declare_truth')}
+	{@const aqNeeded = countIn(existingChoices, 'ask_question')}
 	{@const brRemaining = Math.max(0, brNeeded - breakDone)}
 	{@const rsRemaining = Math.max(0, rsNeeded - revealDone)}
-	{@const subflowsDone = brRemaining === 0 && rsRemaining === 0 && marRemaining === 0}
+	{@const dtRemaining = Math.max(0, dtNeeded - declareTruthDone)}
+	{@const aqRemaining = Math.max(0, aqNeeded - askQuestionDone)}
+	{@const subflowsDone = brRemaining === 0 && rsRemaining === 0 && marRemaining === 0
+		&& dtRemaining === 0 && aqRemaining === 0 && pendingQuestion == null}
 
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
@@ -289,8 +357,8 @@
 					</strong>
 				</p>
 				<p class="choices-note">
-					Pick options equal to your dice result (repeatable). On a mar you
-					must also describe a flaw in your own resources — that penalty
+					Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose exactly <strong>{requiredPicks}</strong>{/if}. On a mar
+					you must also describe a flaw in your own resources — that penalty
 					appears below once you apply your choices.
 				</p>
 				{#each OPTIONS as opt}
@@ -298,16 +366,53 @@
 						<button class="action-btn" onclick={() => bump(opt.key, -1)}
 							disabled={(counts[opt.key] ?? 0) === 0}>−</button>
 						<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
-						<button class="action-btn" onclick={() => bump(opt.key, 1)}>+</button>
+						<button class="action-btn" onclick={() => bump(opt.key, 1)}
+							disabled={requiredPicks != null && totalPicked >= requiredPicks}>+</button>
 						<span>{opt.label}</span>
 					</div>
 				{/each}
-				<p class="choices-note">Total picks: <strong>{totalPicked}</strong></p>
+				<p class="choices-note">
+					Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null} / {requiredPicks}{/if}
+				</p>
 				<button class="action-btn primary"
 					onclick={() => onApplyChoices(plan, rollOutcome!)}
-					disabled={choicesBusy || totalPicked === 0}>
+					disabled={choicesBusy || totalPicked === 0 || (requiredPicks != null && totalPicked !== requiredPicks)}>
 					{choicesBusy ? '…' : 'Apply choices'}
 				</button>
+			</div>
+
+		{:else if pendingQuestion != null && pendingQuestion.target_id === currentPlayerID}
+			<!-- The questioned player answers truthfully — or vetoes, if they
+			     outrank the preparer on knowledge. -->
+			<div class="plan-form">
+				<p class="choices-header">
+					{playerName(players, plan.preparer_id)} asks you a question
+				</p>
+				<blockquote class="q-quote">{pendingQuestion.question}</blockquote>
+				<label class="form-label">
+					Your truthful answer:
+					<textarea rows={3} bind:value={answerText} class="form-textarea"
+						placeholder="Answer the question…"></textarea>
+				</label>
+				<div class="form-actions start">
+					<button class="action-btn primary"
+						onclick={() => submitAnswer(plan)}
+						disabled={answerBusy || !answerText.trim()}>
+						{answerBusy ? '…' : 'Answer'}
+					</button>
+					{#if pendingQuestion.vetoable}
+						<button class="action-btn secondary"
+							onclick={() => submitVeto(plan)} disabled={answerBusy}>
+							Veto (ask another)
+						</button>
+					{/if}
+				</div>
+				{#if pendingQuestion.vetoable}
+					<p class="choices-note muted">
+						You outrank {playerName(players, plan.preparer_id)} on knowledge, so you
+						may veto this first question — they'll have to ask another.
+					</p>
+				{/if}
 			</div>
 
 		{:else if choicesDone && isPreparer}
@@ -379,7 +484,7 @@
 						</p>
 						<CardPicker
 							label="Asset"
-							items={allAssets}
+							items={revealableAssets}
 							{players}
 							emptyMessage="No assets available."
 							ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
@@ -391,6 +496,63 @@
 							disabled={rsBusy || rsAssetID == null}>
 							{rsBusy ? '…' : 'Reveal secrets'}
 						</button>
+					</div>
+				{/if}
+
+				{#if dtRemaining > 0}
+					<div class="plan-form">
+						<p class="choices-header">
+							Declare something true ({dtRemaining} remaining)
+						</p>
+						<p class="choices-note">
+							It can't contradict any truth already known to the table.
+						</p>
+						<label class="form-label">
+							The truth you declare:
+							<textarea rows={2} bind:value={dtText} class="form-textarea"
+								placeholder="Declare something true about the world…"></textarea>
+						</label>
+						<button class="action-btn primary"
+							onclick={() => submitDeclareTruth(plan)}
+							disabled={dtBusy || !dtText.trim()}>
+							{dtBusy ? '…' : 'Declare truth'}
+						</button>
+					</div>
+				{/if}
+
+				{#if aqRemaining > 0}
+					<div class="plan-form">
+						<p class="choices-header">
+							Ask a player a question ({aqRemaining} remaining)
+						</p>
+						{#if pendingQuestion != null}
+							<p class="choices-note">
+								Waiting for {playerName(players, pendingQuestion.target_id)} to answer
+								{#if pendingQuestion.vetoable}or veto {/if}your question:
+							</p>
+							<blockquote class="q-quote">{pendingQuestion.question}</blockquote>
+						{:else}
+							{#if askVetoedHint}
+								<p class="choices-note muted">
+									Your last question was vetoed — ask another (it can't be vetoed).
+								</p>
+							{/if}
+							<PlayerChips
+								players={questionTargets}
+								isActive={(p) => p.id === aqTargetID}
+								onSelect={(p) => (aqTargetID = p.id)}
+							/>
+							<label class="form-label">
+								Your question:
+								<textarea rows={2} bind:value={aqQuestion} class="form-textarea"
+									placeholder="Ask a question they must answer truthfully…"></textarea>
+							</label>
+							<button class="action-btn primary"
+								onclick={() => submitAskQuestion(plan)}
+								disabled={aqBusy || aqTargetID == null || !aqQuestion.trim()}>
+								{aqBusy ? '…' : 'Ask question'}
+							</button>
+						{/if}
 					</div>
 				{/if}
 

@@ -267,6 +267,15 @@
 					: [];
 				return { waitees, stepLabel: 'Spread Rumors — consent to take asset' };
 			}
+			case 'await_question_answer': {
+				// Seek Answers ask-a-question — the target must answer (or veto)
+				// before the plan can proceed. ActingPlayerID names them.
+				const actor = rowState.acting_player_id;
+				const waitees: Waitee[] = actor != null
+					? [{ kind: 'player', playerID: actor }]
+					: [];
+				return { waitees, stepLabel: 'Seek Answers — answer a question' };
+			}
 			case 'await_delay_reveal': {
 				const planType = delayRevealPlan?.plan_type;
 				const label =

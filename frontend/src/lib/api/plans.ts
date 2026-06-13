@@ -215,6 +215,35 @@ export function revealSecret(planID: number, assetID: number): Promise<PlanEcho>
 	});
 }
 
+/** Seek Answers — declare a truth (logged); make-list "declare something true". */
+export function declareTruth(planID: number, text: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/declare-truth`, {
+		method: 'POST',
+		body: JSON.stringify({ text }),
+	});
+}
+
+/** Seek Answers — ask a player a question, awaiting their answer (or veto). */
+export function askQuestion(planID: number, targetID: number, question: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/ask-question`, {
+		method: 'POST',
+		body: JSON.stringify({ target_id: targetID, question }),
+	});
+}
+
+/** Seek Answers — the target vetoes the open question (one-time, if they outrank). */
+export function vetoQuestion(planID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/veto-question`, { method: 'POST' });
+}
+
+/** Seek Answers — the target answers the open question (logged). */
+export function answerQuestion(planID: number, answer: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/answer-question`, {
+		method: 'POST',
+		body: JSON.stringify({ answer }),
+	});
+}
+
 /**
  * Spread Rumors — break a marginalia.
  *

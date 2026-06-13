@@ -381,6 +381,13 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "artifact has not been invoked in this plan")
 			return
 		}
+		// Server-authoritative completion: a stale client (re-prompted after a
+		// refresh) must not tear more marginalia than the picked break_artifact
+		// count. (The mar break_artifact path is a separate per-player mar-choice.)
+		if int(ch.BreakArtifactDone) >= pickedChoiceCount(&resData, "break_artifact") {
+			respondErr(w, http.StatusConflict, "break-artifact already completed for this plan")
+			return
+		}
 
 		artifact, err := deps.Q.GetAssetByID(ctx, body.AssetID)
 		if err != nil {
@@ -407,6 +414,12 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &artifact, &m, player.ID)
 		if err != nil {
 			respondInternalErr(w, r, "could not break artifact", err)
+			return
+		}
+
+		ch.BreakArtifactDone++
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record break-artifact progress", err)
 			return
 		}
 

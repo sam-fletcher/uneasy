@@ -24,6 +24,38 @@ type SeekAnswersResolutionData struct {
 	// break-resource call on a preparer-owned resource after a mar). The plan
 	// cannot complete until this reaches MarSelfFlawsRequired.
 	MarSelfFlawsApplied int16 `json:"mar_self_flaws_applied,omitempty"`
+
+	// BreakResourceDone / RevealSecretDone / DeclareTruthDone / AskQuestionDone
+	// count completed make-list sub-flow steps. They are the server-authoritative
+	// completion signal (the panel shows picked − done remaining), and the
+	// handlers reject any step beyond the picked count — so a stale client
+	// re-prompted after a refresh can't run extra steps. Mar-penalty self-flaws
+	// are tracked by MarSelfFlawsApplied instead, not here.
+	BreakResourceDone int16 `json:"break_resource_done,omitempty"`
+	RevealSecretDone  int16 `json:"reveal_secret_done,omitempty"`
+	DeclareTruthDone  int16 `json:"declare_truth_done,omitempty"`
+	AskQuestionDone   int16 `json:"ask_question_done,omitempty"`
+
+	// PendingQuestion is the open ask-question awaiting the target's answer or
+	// veto. While set, no new question may be asked and the plan can't complete.
+	PendingQuestion *SeekAnswersQuestion `json:"pending_question,omitempty"`
+	// CurrentAskVetoed marks that the in-progress ask-question pick already spent
+	// its single veto, so the re-asked question ("ask another in its stead")
+	// can't be vetoed again. Cleared once that pick is answered.
+	CurrentAskVetoed bool `json:"current_ask_vetoed,omitempty"`
+}
+
+// SeekAnswersQuestion is an open "ask a player a question" awaiting the target's
+// response. Stored in SeekAnswersResolutionData.PendingQuestion.
+type SeekAnswersQuestion struct {
+	// TargetID is the player who must answer (or veto).
+	TargetID int64 `json:"target_id"`
+	// Question is the preparer's question text.
+	Question string `json:"question"`
+	// Vetoable is true while the target — who outranks the preparer on the
+	// knowledge track — may veto this formulation ("can veto the first
+	// question"). It is false on a re-ask, so the replacement question stands.
+	Vetoable bool `json:"vetoable"`
 }
 
 // EnsureSeekAnswers returns r.SeekAnswers, allocating a zero struct if it was

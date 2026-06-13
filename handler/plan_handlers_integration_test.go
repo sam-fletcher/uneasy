@@ -314,6 +314,55 @@ func TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium(t *testing.T) 
 		"tearing the final marginalium via break-target must destroy the asset")
 }
 
+// TestSpreadRumors_HideSource_IsIdempotent covers the post-commit "hide source"
+// sub-flow: writing the source-secret records server-side completion, and a
+// second attempt (a stale client re-prompted after a refresh/remount) is
+// rejected so it can't write a duplicate secret under a different asset.
+func TestSpreadRumors_HideSource_IsIdempotent(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+
+	target := h.seedPeer(otherIdx, "rumor target")  // rumor about someone else's asset
+	holder := h.seedPeer(focusIdx, "Cover Story")   // preparer's own asset to hide under
+	other := h.seedPeer(focusIdx, "Spare Identity") // a different own asset for the retry
+
+	notes := "the chancellor cheats at cards"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+	h.makeChoice(plan.ID, makeOutcome, []string{"hide_source"})
+
+	hidePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/hide-source"
+
+	// First hide-source: secret written, completion recorded.
+	code, body := h.post(focusIdx, hidePath, map[string]any{"secret_asset_id": holder})
+	require.Equalf(t, http.StatusOK, code, "hide-source: %v", body)
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.SpreadRumors)
+	assert.Equal(t, 1, rd.SpreadRumors.HideSourceDone)
+	secrets, err := h.q.ListSecretsByAsset(ctx, holder)
+	require.NoError(t, err)
+	assert.Len(t, secrets, 1, "exactly one source-secret written")
+
+	// Second attempt against a different asset is rejected; no duplicate secret.
+	code, body = h.post(focusIdx, hidePath, map[string]any{"secret_asset_id": other})
+	require.Equalf(t, http.StatusConflict, code, "duplicate hide-source must be rejected: %v", body)
+	otherSecrets, err := h.q.ListSecretsByAsset(ctx, other)
+	require.NoError(t, err)
+	assert.Empty(t, otherSecrets, "rejected retry must not write a second secret")
+}
+
 // srPlanPreparedPost returns the body of the plan.prepared chat post.
 func srPlanPreparedPost(t *testing.T, h *planLifecycle) string {
 	t.Helper()

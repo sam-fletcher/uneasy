@@ -207,3 +207,19 @@ func saveResolutionData(ctx context.Context, q *dbgen.Queries, planID int64, d R
 	s := string(b)
 	return q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{ID: planID, ResolutionData: &s})
 }
+
+// pickedChoiceCount returns how many times option appears in the committed
+// make/mar choices — i.e. how many of that post-commit sub-flow step the actor
+// owes. Sub-flow handlers (Spread Rumors break/hide-source, Seek Answers
+// break/reveal, Chronicle break-artifact) gate against it so a step can't run
+// more times than was picked — which a stale client, re-prompted after a
+// refresh/remount, would otherwise attempt.
+func pickedChoiceCount(resData *ResolutionData, option string) int {
+	n := 0
+	for _, c := range resData.MakeMarChoices {
+		if c.Option == option {
+			n++
+		}
+	}
+	return n
+}

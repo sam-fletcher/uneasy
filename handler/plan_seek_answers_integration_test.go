@@ -16,6 +16,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -130,6 +131,90 @@ func TestSeekAnswers_Make_BreakResource_RejectsDoubleFlaw(t *testing.T) {
 	assert.Equalf(t, http.StatusConflict, code, "second flaw on the same resource should 409: %v", body)
 }
 
+// TestSeekAnswers_Make_BreakResource_CapsAtPickedCount proves the make-list break
+// sub-flow is server-capped at the picked count: a stale client re-prompted
+// after a refresh can't flaw an extra resource beyond what was chosen.
+func TestSeekAnswers_Make_BreakResource_CapsAtPickedCount(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 3)
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	resA, margsA := saSeedResource(t, h, otherIdx, "tome A", 2)
+	resB, margsB := saSeedResource(t, h, otherIdx, "tome B", 2)
+
+	// Only one break picked.
+	h.makeChoice(plan.ID, "make", []string{"break_resource"})
+
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/break-resource"
+	code, body := h.post(preparerIdx, breakPath, map[string]any{
+		"asset_id": resA, "marginalia_id": margsA[0],
+	})
+	require.Equalf(t, http.StatusOK, code, "first (only) break: %v", body)
+
+	// A second, distinct break exceeds the picked count and is rejected.
+	code, body = h.post(preparerIdx, breakPath, map[string]any{
+		"asset_id": resB, "marginalia_id": margsB[0],
+	})
+	require.Equalf(t, http.StatusConflict, code, "break beyond the picked count must be rejected: %v", body)
+	intact, err := h.q.GetMarginaliaByID(ctx, margsB[0])
+	require.NoError(t, err)
+	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalium")
+}
+
+// TestSeekAnswers_Make_RevealSecret_CapsAtPickedCount proves the reveal-secret
+// sub-flow is server-capped at the picked count, so a re-prompted client can't
+// reveal more assets' secrets than were chosen.
+func TestSeekAnswers_Make_RevealSecret_CapsAtPickedCount(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 3)
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	assetA, _ := saSeedResource(t, h, otherIdx, "ledger A", 1)
+	assetB, _ := saSeedResource(t, h, otherIdx, "ledger B", 1)
+
+	h.makeChoice(plan.ID, "make", []string{"reveal_secret"})
+
+	revealPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/reveal-secret"
+	code, body := h.post(preparerIdx, revealPath, map[string]any{"asset_id": assetA})
+	require.Equalf(t, http.StatusOK, code, "first (only) reveal: %v", body)
+
+	code, body = h.post(preparerIdx, revealPath, map[string]any{"asset_id": assetB})
+	require.Equalf(t, http.StatusConflict, code, "reveal beyond the picked count must be rejected: %v", body)
+}
+
+// TestSeekAnswers_Mar_ForeignBreak_CapsAtPickedCount proves that on a mar, a
+// break against another player's resource is a make-list pick and is bounded by
+// the result (the rules grant result-many make-list options on a mar too) — not
+// an unlimited side effect.
+func TestSeekAnswers_Mar_ForeignBreak_CapsAtPickedCount(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "mar", 2)
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	resA, margsA := saSeedResource(t, h, otherIdx, "rival ledger A", 1)
+	resB, margsB := saSeedResource(t, h, otherIdx, "rival ledger B", 1)
+
+	// One make-list break pick on the mar.
+	h.makeChoice(plan.ID, "mar", []string{"break_resource"})
+
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/break-resource"
+	code, body := h.post(preparerIdx, breakPath, map[string]any{
+		"asset_id": resA, "marginalia_id": margsA[0],
+	})
+	require.Equalf(t, http.StatusOK, code, "first foreign break (within the pick): %v", body)
+
+	// A second foreign break exceeds the single make-list pick and is rejected.
+	code, body = h.post(preparerIdx, breakPath, map[string]any{
+		"asset_id": resB, "marginalia_id": margsB[0],
+	})
+	require.Equalf(t, http.StatusConflict, code, "foreign break beyond the picked count must be rejected: %v", body)
+	intact, err := h.q.GetMarginaliaByID(ctx, margsB[0])
+	require.NoError(t, err)
+	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalium")
+}
+
 // TestSeekAnswers_Mar_SelfFlawPenalty_BlocksUntilApplied proves a marred plan
 // requires (difficulty − result) self-flaws on the preparer's own resources
 // before it can complete.
@@ -149,8 +234,10 @@ func TestSeekAnswers_Mar_SelfFlawPenalty_BlocksUntilApplied(t *testing.T) {
 	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
 	foreign, foreignMargs := saSeedResource(t, h, otherIdx, "rival ledger", 1)
 
-	// No make-list options — just suffer the penalty.
-	h.makeChoice(plan.ID, "mar", []string{})
+	// One make-list break pick (the rules grant result-many make-list options on
+	// a mar) so the foreign flaw below is a legitimate, bounded make-list break;
+	// plus the self-flaw penalty.
+	h.makeChoice(plan.ID, "mar", []string{"break_resource"})
 
 	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
 	require.NotNil(t, rd.SeekAnswers)
@@ -269,4 +356,141 @@ func saPinKnowledgeRank(t *testing.T, h *planLifecycle, playerID int64, target i
 			GameID: h.tg.Game.ID, PlayerID: occupant, Category: model.CategoryKnowledge, Rank: curRank,
 		}))
 	}
+}
+
+// saAllLogBodies joins every action-log post body for substring assertions.
+func saAllLogBodies(t *testing.T, h *planLifecycle) string {
+	t.Helper()
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	var sb strings.Builder
+	for _, p := range posts {
+		sb.WriteString(p.Body)
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
+// TestSeekAnswers_DeclareTruth_LogsAndCaps proves the declare_truth sub-flow logs
+// the truth and is capped at the picked count.
+func TestSeekAnswers_DeclareTruth_LogsAndCaps(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 1)
+	h.makeChoice(plan.ID, "make", []string{"declare_truth"})
+
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/declare-truth"
+	code, body := h.post(preparerIdx, path, map[string]any{"text": "The crown is bankrupt."})
+	require.Equalf(t, http.StatusOK, code, "declare: %v", body)
+	assert.Contains(t, saAllLogBodies(t, h), "The crown is bankrupt.")
+
+	// Capped at the single pick.
+	code, body = h.post(preparerIdx, path, map[string]any{"text": "another truth"})
+	require.Equalf(t, http.StatusConflict, code, "second declare must be capped: %v", body)
+}
+
+// TestSeekAnswers_AskQuestion_AnswerFlow proves the ask→answer flow: the target
+// (who doesn't outrank) can't veto, the plan blocks while pending, only the
+// target may answer, and the Q&A is logged.
+func TestSeekAnswers_AskQuestion_AnswerFlow(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 1)
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	targetID := h.tg.Players[otherIdx].ID
+	// Put the preparer at the top of the knowledge track so no target outranks
+	// them — the difficulty was already locked at resolve, so this is safe.
+	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
+
+	h.makeChoice(plan.ID, "make", []string{"ask_question"})
+
+	askPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/ask-question"
+	answerPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/answer-question"
+	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
+
+	code, body := h.post(preparerIdx, askPath, map[string]any{"target_id": targetID, "question": "Where were you?"})
+	require.Equalf(t, http.StatusOK, code, "ask: %v", body)
+	assert.Equal(t, false, body["vetoable"], "a lower-ranked target cannot veto")
+
+	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	require.NotNil(t, rd.SeekAnswers.PendingQuestion)
+
+	// The WaitingOn bar must name the target: the row blocks on them.
+	rs, err := ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitQuestionAnswer, rs.Kind)
+	require.NotNil(t, rs.ActingPlayerID)
+	assert.Equal(t, targetID, *rs.ActingPlayerID)
+
+	// Completion blocks while a question is pending.
+	code, _ = h.post(preparerIdx, completePath, nil)
+	require.Equal(t, http.StatusConflict, code)
+
+	// Only the target may answer.
+	code, _ = h.post(preparerIdx, answerPath, map[string]any{"answer": "x"})
+	require.Equal(t, http.StatusForbidden, code)
+
+	code, body = h.post(otherIdx, answerPath, map[string]any{"answer": "At the library."})
+	require.Equalf(t, http.StatusOK, code, "answer: %v", body)
+
+	final := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	assert.Nil(t, final.SeekAnswers.PendingQuestion)
+	assert.Equal(t, int16(1), final.SeekAnswers.AskQuestionDone)
+
+	// The block clears once answered — the row no longer waits on the target.
+	rs, err = ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, model.RowStateAwaitQuestionAnswer, rs.Kind)
+
+	logs := saAllLogBodies(t, h)
+	assert.Contains(t, logs, "Where were you?")
+	assert.Contains(t, logs, "At the library.")
+}
+
+// TestSeekAnswers_AskQuestion_VetoThenReask proves a higher-knowledge target can
+// veto the first question once; the re-ask can't be vetoed and is answered.
+func TestSeekAnswers_AskQuestion_VetoThenReask(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 1)
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	targetID := h.tg.Players[otherIdx].ID
+	saPinKnowledgeRank(t, h, targetID, 1) // outranks the preparer (rank 3)
+
+	h.makeChoice(plan.ID, "make", []string{"ask_question"})
+
+	askPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/ask-question"
+	vetoPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/veto-question"
+	answerPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/answer-question"
+
+	code, body := h.post(preparerIdx, askPath, map[string]any{"target_id": targetID, "question": "first?"})
+	require.Equalf(t, http.StatusOK, code, "ask: %v", body)
+	assert.Equal(t, true, body["vetoable"], "a higher-ranked target can veto")
+
+	// Only the target may veto.
+	code, _ = h.post(preparerIdx, vetoPath, nil)
+	require.Equal(t, http.StatusForbidden, code)
+
+	code, body = h.post(otherIdx, vetoPath, nil)
+	require.Equalf(t, http.StatusOK, code, "veto: %v", body)
+	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	assert.Nil(t, rd.SeekAnswers.PendingQuestion)
+	assert.True(t, rd.SeekAnswers.CurrentAskVetoed)
+	assert.Equal(t, int16(0), rd.SeekAnswers.AskQuestionDone, "veto doesn't complete the pick")
+
+	// Re-ask — no longer vetoable.
+	code, body = h.post(preparerIdx, askPath, map[string]any{"target_id": targetID, "question": "second?"})
+	require.Equalf(t, http.StatusOK, code, "re-ask: %v", body)
+	assert.Equal(t, false, body["vetoable"], "the re-asked question can't be vetoed")
+
+	// The target can't veto the replacement.
+	code, _ = h.post(otherIdx, vetoPath, nil)
+	require.Equal(t, http.StatusConflict, code)
+
+	// Answer completes the pick.
+	code, body = h.post(otherIdx, answerPath, map[string]any{"answer": "here."})
+	require.Equalf(t, http.StatusOK, code, "answer: %v", body)
+	final := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	assert.Equal(t, int16(1), final.SeekAnswers.AskQuestionDone)
+	assert.False(t, final.SeekAnswers.CurrentAskVetoed)
 }

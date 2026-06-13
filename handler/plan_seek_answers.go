@@ -24,9 +24,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -130,11 +132,15 @@ func (saHandler) ApplyChoice(
 }
 
 // CanComplete blocks completion of a marred Seek Answers until the preparer has
-// applied the full self-flaw penalty.
+// applied the full self-flaw penalty, and blocks any Seek Answers while a
+// question is still awaiting its target's answer or veto.
 func (saHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	sa := resData.SeekAnswers
 	if sa == nil {
 		return nil
+	}
+	if sa.PendingQuestion != nil {
+		return errors.New("a question is awaiting an answer before you can complete")
 	}
 	if sa.MarSelfFlawsApplied < sa.MarSelfFlawsRequired {
 		return fmt.Errorf("you must describe a flaw in %d more of your own resources before completing",
@@ -199,8 +205,12 @@ func (saHandler) MaxChoices(_ string, rollResult, _ int16) int {
 
 func (saHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"break-resource": saBreakResourceHandler(deps),
-		"reveal-secret":  saRevealSecretHandler(deps),
+		"break-resource":  saBreakResourceHandler(deps),
+		"reveal-secret":   saRevealSecretHandler(deps),
+		"declare-truth":   saDeclareTruthHandler(deps),
+		"ask-question":    saAskQuestionHandler(deps),
+		"veto-question":   saVetoQuestionHandler(deps),
+		"answer-question": saAnswerQuestionHandler(deps),
 	}
 }
 
@@ -213,6 +223,8 @@ func (saHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 //   - Mar penalty: preparer's own resource assets.
 //
 // Request body: {"asset_id": N, "marginalia_id": M}
+//
+//nolint:gocognit // possibly improvable later
 func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -281,11 +293,31 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// On a mar, a flaw on the preparer's own resource discharges the
-		// self-flaw penalty; a flaw on another player's resource is one of the
-		// preparer's make-list options.
+		// A flaw on the preparer's own resource on a mar discharges the self-flaw
+		// penalty; every other flaw — make-list breaks on a make, and breaks on
+		// ANOTHER player's resource on a mar — is one of the "choose options from
+		// the make list equal to your result" picks (the rules give those on a mar
+		// too). So the make-list cap applies to both makes and mar foreign breaks.
 		isMar := planRollIsMar(ctx, deps.Q, plan)
 		isPenalty := isMar && asset.OwnerID == plan.PreparerID
+
+		// Server-authoritative completion: a flaw can't run more times than it was
+		// owed — the self-flaw penalty is capped at the required count, a make-list
+		// break (incl. a mar foreign break) at the picked count. Closes both the
+		// duplicate-on-refresh window and the rules gap where a mar foreign break
+		// was unbounded by the result.
+		switch {
+		case isPenalty:
+			if sa.MarSelfFlawsApplied >= sa.MarSelfFlawsRequired {
+				respondErr(w, http.StatusConflict, "all required self-flaws have already been applied")
+				return
+			}
+		default:
+			if int(sa.BreakResourceDone) >= pickedChoiceCount(&resData, "break_resource") {
+				respondErr(w, http.StatusConflict, "break-resource already completed for this plan")
+				return
+			}
+		}
 
 		// Break = tear one marginalium (auto-destroy if it was the last) — the
 		// canonical effect, shared with every other plan.
@@ -296,8 +328,11 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		sa.FlawedResourceIDs = append(sa.FlawedResourceIDs, asset.ID)
-		if isPenalty && sa.MarSelfFlawsApplied < sa.MarSelfFlawsRequired {
+		switch {
+		case isPenalty:
 			sa.MarSelfFlawsApplied++
+		default:
+			sa.BreakResourceDone++
 		}
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save flaw state", err)
@@ -365,12 +400,33 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "asset does not belong to this game")
 			return
 		}
+		// "Ask a PLAYER to show you the underside of a specific one of THEIR
+		// assets" — the target is someone else's asset, never your own.
+		if asset.OwnerID == plan.PreparerID {
+			respondErr(w, http.StatusBadRequest, "reveal-secret targets another player's asset")
+			return
+		}
+
+		// Server-authoritative completion: a stale client (re-prompted after a
+		// refresh) must not reveal more assets than the picked reveal-secret count.
+		resData := loadResolutionData(plan.ResolutionData)
+		sa := resData.EnsureSeekAnswers()
+		if int(sa.RevealSecretDone) >= pickedChoiceCount(&resData, "reveal_secret") {
+			respondErr(w, http.StatusConflict, "reveal-secret already completed for this plan")
+			return
+		}
 
 		if err := deps.Q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
 			AssetID:  body.AssetID,
 			PlayerID: player.ID,
 		}); err != nil {
 			respondInternalErr(w, r, "could not grant secret visibility", err)
+			return
+		}
+
+		sa.RevealSecretDone++
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record reveal-secret progress", err)
 			return
 		}
 
@@ -384,4 +440,264 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			"asset_id": body.AssetID,
 		})
 	}
+}
+
+// ── Declare Truth ───────────────────────────────────────────────────────────────
+
+// saDeclareTruthHandler handles POST /api/plans/:planId/declare-truth.
+//
+// The make-list option "Declare something true about the world." Narrative: the
+// preparer records the truth, which is logged at Default severity. (The "no
+// contradictions" constraint is social, enforced at the table.)
+// Request body: {"text": "..."}
+func saDeclareTruthHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := saRequirePreparerResolving(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		var body struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		text := strings.TrimSpace(body.Text)
+		if text == "" {
+			respondErr(w, http.StatusBadRequest, "truth text is required")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		sa := resData.EnsureSeekAnswers()
+		if int(sa.DeclareTruthDone) >= pickedChoiceCount(&resData, "declare_truth") {
+			respondErr(w, http.StatusConflict, "declare-truth already completed for this plan")
+			return
+		}
+
+		saLog(ctx, deps, plan, model.SeverityDefault,
+			fmt.Sprintf("%s declared a truth: %q", playerDisplayName(ctx, deps.Q, player.ID), text))
+
+		sa.DeclareTruthDone++
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record declared truth", err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID})
+	}
+}
+
+// ── Ask Question ────────────────────────────────────────────────────────────────
+
+// saAskQuestionHandler handles POST /api/plans/:planId/ask-question.
+//
+// The make-list option "Ask a player a question, which they must respond
+// truthfully to." The preparer names a target (another player) and a question;
+// it then awaits the target's answer or — if the target outranks the preparer on
+// the knowledge track — a one-time veto. Only one question may be open at a time.
+// Request body: {"target_id": N, "question": "..."}
+func saAskQuestionHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, _, ok := saRequirePreparerResolving(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		var body struct {
+			TargetID int64  `json:"target_id"`
+			Question string `json:"question"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		question := strings.TrimSpace(body.Question)
+		if body.TargetID == 0 || question == "" {
+			respondErr(w, http.StatusBadRequest, "target_id and question are required")
+			return
+		}
+		if body.TargetID == plan.PreparerID {
+			respondErr(w, http.StatusBadRequest, "ask another player, not yourself")
+			return
+		}
+
+		ctx := r.Context()
+		target, err := deps.Q.GetPlayerByID(ctx, body.TargetID)
+		if err != nil || target.GameID != plan.GameID {
+			respondErr(w, http.StatusBadRequest, "target must be a player at this table")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		sa := resData.EnsureSeekAnswers()
+		if sa.PendingQuestion != nil {
+			respondErr(w, http.StatusConflict, "resolve the pending question before asking another")
+			return
+		}
+		if int(sa.AskQuestionDone) >= pickedChoiceCount(&resData, "ask_question") {
+			respondErr(w, http.StatusConflict, "ask-question already completed for this plan")
+			return
+		}
+
+		// The target may veto only the FIRST formulation, and only if they
+		// outrank the preparer on knowledge (lower rank number = higher status).
+		vetoable := false
+		if !sa.CurrentAskVetoed {
+			targetRank, tErr := playerRankInCategory(ctx, deps.Q, plan.GameID, body.TargetID, model.CategoryKnowledge)
+			preparerRank, pErr := playerRankInCategory(
+				ctx,
+				deps.Q,
+				plan.GameID,
+				plan.PreparerID,
+				model.CategoryKnowledge,
+			)
+			if tErr == nil && pErr == nil && targetRank < preparerRank {
+				vetoable = true
+			}
+		}
+
+		sa.PendingQuestion = &gamepkg.SeekAnswersQuestion{
+			TargetID: body.TargetID,
+			Question: question,
+			Vetoable: vetoable,
+		}
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record question", err)
+			return
+		}
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "target_id": body.TargetID, "vetoable": vetoable})
+	}
+}
+
+// saVetoQuestionHandler handles POST /api/plans/:planId/veto-question.
+//
+// The target — who outranks the preparer on knowledge — vetoes the open
+// question once; the preparer must then ask another, which cannot be vetoed.
+func saVetoQuestionHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := saRequireResolving(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		sa := resData.SeekAnswers
+		if sa == nil || sa.PendingQuestion == nil {
+			respondErr(w, http.StatusConflict, "no question is awaiting a response")
+			return
+		}
+		q := sa.PendingQuestion
+		if player.ID != q.TargetID {
+			respondErr(w, http.StatusForbidden, "only the player being asked may veto")
+			return
+		}
+		if !q.Vetoable {
+			respondErr(w, http.StatusConflict, "this question cannot be vetoed")
+			return
+		}
+
+		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s vetoed %s's question — they outrank them on knowledge and must be asked another.",
+			playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, plan.PreparerID)))
+
+		sa.PendingQuestion = nil
+		sa.CurrentAskVetoed = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record veto", err)
+			return
+		}
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "vetoed": true})
+	}
+}
+
+// saAnswerQuestionHandler handles POST /api/plans/:planId/answer-question.
+//
+// The target answers the open question truthfully; the question and answer are
+// logged at Default severity and the ask-question pick is marked complete.
+// Request body: {"answer": "..."}
+func saAnswerQuestionHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := saRequireResolving(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		var body struct {
+			Answer string `json:"answer"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		answer := strings.TrimSpace(body.Answer)
+		if answer == "" {
+			respondErr(w, http.StatusBadRequest, "answer is required")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		sa := resData.SeekAnswers
+		if sa == nil || sa.PendingQuestion == nil {
+			respondErr(w, http.StatusConflict, "no question is awaiting an answer")
+			return
+		}
+		q := sa.PendingQuestion
+		if player.ID != q.TargetID {
+			respondErr(w, http.StatusForbidden, "only the player being asked may answer")
+			return
+		}
+
+		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s asked %s: %q — they answered: %q",
+			playerDisplayName(ctx, deps.Q, plan.PreparerID), playerDisplayName(ctx, deps.Q, player.ID),
+			q.Question, answer))
+
+		sa.PendingQuestion = nil
+		sa.CurrentAskVetoed = false
+		sa.AskQuestionDone++
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record answer", err)
+			return
+		}
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID})
+	}
+}
+
+// saRequireResolving loads the plan + caller and checks it's a Seek Answers plan
+// in resolving status. Used by routes any participant may call (veto/answer).
+func saRequireResolving(
+	w http.ResponseWriter, r *http.Request, q *dbgen.Queries,
+) (*dbgen.Plan, *dbgen.Player, bool) {
+	plan, player, ok := requirePlanAccess(w, r, q)
+	if !ok {
+		return nil, nil, false
+	}
+	if plan.PlanType != model.PlanSeekAnswers {
+		respondErr(w, http.StatusBadRequest, "this route is only for Seek Answers")
+		return nil, nil, false
+	}
+	if plan.Status != model.PlanResolving {
+		respondErr(w, http.StatusConflict, "plan is not in resolving status")
+		return nil, nil, false
+	}
+	return plan, player, true
+}
+
+// saRequirePreparerResolving is saRequireResolving plus a preparer-only check —
+// for the make-list routes only the preparer drives (declare/ask).
+func saRequirePreparerResolving(
+	w http.ResponseWriter, r *http.Request, q *dbgen.Queries,
+) (*dbgen.Plan, *dbgen.Player, bool) {
+	plan, player, ok := saRequireResolving(w, r, q)
+	if !ok {
+		return nil, nil, false
+	}
+	if player.ID != plan.PreparerID {
+		respondErr(w, http.StatusForbidden, "only the preparer can use this route")
+		return nil, nil, false
+	}
+	return plan, player, true
 }

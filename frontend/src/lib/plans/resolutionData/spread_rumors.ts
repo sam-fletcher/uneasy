@@ -22,6 +22,11 @@ export interface SpreadRumorsResolutionData {
 	take_asset_denied?: boolean;
 	/** Set once an agreed-to take has transferred; the take step is complete. */
 	take_resolved?: boolean;
+	/** How many picked break_target / hide_source sub-flow steps the server has
+	 *  recorded as done. The per-step picker shows (picked − done) remaining, so
+	 *  a refresh/remount doesn't re-prompt a completed step. */
+	break_target_done?: number;
+	hide_source_done?: number;
 }
 
 export function parseSpreadRumorsData(

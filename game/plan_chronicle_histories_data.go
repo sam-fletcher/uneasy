@@ -25,6 +25,13 @@ type ChronicleHistoriesResolutionData struct {
 	// game at the time the mar scene began. Captured from the mar-choice route
 	// (which has DB access) so CanComplete can gate without a query.
 	MarRequiredChoices int16 `json:"mar_required_choices,omitempty"`
+
+	// BreakArtifactDone counts completed make-list break_artifact sub-flow steps.
+	// Server-authoritative completion (the panel shows picked − done remaining);
+	// the break-artifact route rejects any step beyond the picked count so a
+	// stale client re-prompted after a refresh can't tear extra marginalia. The
+	// mar break_artifact path is a per-player mar-choice, counted separately.
+	BreakArtifactDone int16 `json:"break_artifact_done,omitempty"`
 }
 
 // EnsureChronicleHistories returns r.ChronicleHistories, allocating a zero

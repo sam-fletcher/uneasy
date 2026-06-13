@@ -33,6 +33,16 @@ type SpreadRumorsResolutionData struct {
 	// tells the panel the take-asset step is complete (the transfer happens at
 	// consent time, not in a later sub-flow).
 	TakeResolved bool `json:"take_resolved,omitempty"`
+
+	// BreakTargetDone / HideSourceDone count how many of the picked break_target
+	// / hide_source sub-flow steps have actually been carried out (a marginalia
+	// torn, a source-secret written). They are the server-authoritative
+	// completion signal so the panel doesn't re-prompt after a refresh/remount —
+	// the per-step picker shows (picked − done) remaining. The handlers also
+	// reject any step beyond the picked count, so a stale client can't write a
+	// duplicate.
+	BreakTargetDone int `json:"break_target_done,omitempty"`
+	HideSourceDone  int `json:"hide_source_done,omitempty"`
 }
 
 // TakeConsentRequest captures an open "take asset" consent gate: the

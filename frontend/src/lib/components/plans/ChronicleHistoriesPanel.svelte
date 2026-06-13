@@ -247,12 +247,16 @@
 	const allMarSubmitted = $derived(marRequired > 0 && marEntries.length >= marRequired);
 
 	// ── break_artifact sub-flow (make) ───────────────────────────────────────
-	let baDone = $state(0);
+	// Completion is server-authoritative (resolution_data counter) so a refresh
+	// can't re-prompt — and re-run — a break that already happened; the handler
+	// also rejects any break beyond the picked count.
+	const baDone = $derived(
+		plan ? (parseResolutionData(plan).chronicle_histories?.break_artifact_done ?? 0) : 0,
+	);
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
 		if (plan && plan.id !== lastPlanID) {
 			lastPlanID = plan.id;
-			baDone = 0;
 			counts = { break_artifact: 0, invoke_another: 0, echo_present: 0, total_control: 0 };
 		}
 	});
@@ -269,7 +273,6 @@
 		baBusy = true; resError = '';
 		try {
 			await breakArtifact(p.id, baAssetID, baMargID);
-			baDone += 1;
 			baAssetID = null; baMargID = null;
 			onPlansChanged();
 		} catch (e) {

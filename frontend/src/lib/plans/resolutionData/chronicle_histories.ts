@@ -13,6 +13,12 @@ export interface ChronicleHistoriesResolutionData {
 	 * complete — the player count captured when the mar scene began.
 	 */
 	mar_required_choices?: number;
+	/**
+	 * Completed make-list break_artifact sub-flow steps (server-authoritative).
+	 * The picker shows (picked − done) remaining, so a refresh doesn't re-prompt
+	 * a finished break.
+	 */
+	break_artifact_done?: number;
 }
 
 export function parseChronicleHistoriesData(

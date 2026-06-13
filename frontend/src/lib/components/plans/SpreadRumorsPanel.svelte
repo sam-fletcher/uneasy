@@ -306,16 +306,17 @@
 		} finally { choicesBusy = false; }
 	}
 
-	// ── Sub-flows (counters reset per plan) ──────────────────────────────────
+	// ── Sub-flows ─────────────────────────────────────────────────────────────
 	// take_asset has no post-commit sub-flow: the transfer happens at consent
-	// time, so only break_target and hide_source remain here.
-	let btDone = $state(0);
-	let hsDone = $state(0);
+	// time, so only break_target and hide_source remain here. Their completion
+	// is server-authoritative (resolution_data counters), so a refresh/remount
+	// can't re-prompt — and re-submit — a step that already ran.
+	const btDone = $derived(srData.break_target_done ?? 0);
+	const hsDone = $derived(srData.hide_source_done ?? 0);
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
 		if (plan && plan.id !== lastPlanID) {
 			lastPlanID = plan.id;
-			btDone = 0; hsDone = 0;
 			takeStep = 'options'; takeSelected = [];
 		}
 	});
@@ -352,7 +353,6 @@
 		btBusy = true; resError = '';
 		try {
 			await breakTarget(p.id, btMargID, rollOutcome === 'mar' ? btAssetID! : undefined);
-			btDone += 1;
 			btMargID = null; btAssetID = null;
 			onPlansChanged();
 		} catch (e) {
@@ -374,7 +374,6 @@
 		hsBusy = true; resError = '';
 		try {
 			await hideSource(p.id, hsAssetID);
-			hsDone += 1;
 			hsAssetID = null;
 			onPlansChanged();
 		} catch (e) {

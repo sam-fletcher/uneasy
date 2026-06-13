@@ -110,6 +110,11 @@ const (
 	// may happen until the victim responds. ActingPlayerID names the victim.
 	RowStateAwaitTakeConsent RowStateKind = "await_take_consent"
 
+	// RowStateAwaitQuestionAnswer — a Seek Answers "ask a player a question"
+	// pick is waiting for the target to answer (or veto). Nothing else may
+	// happen until they respond. ActingPlayerID names the target.
+	RowStateAwaitQuestionAnswer RowStateKind = "await_question_answer"
+
 	// RowStatePlanPending — a plan is in 'pending' status on the current
 	// row and ready to be resolved. Step 2, queued.
 	RowStatePlanPending RowStateKind = "plan_pending"

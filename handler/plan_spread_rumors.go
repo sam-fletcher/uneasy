@@ -381,6 +381,8 @@ func srAuthorizeActor(
 // On mar (target-asset owner): tears a marginalia on one of the preparer's
 // assets (the counter-rumor applies to preparer assets).
 // Request body: {"marginalia_id": M, "asset_id": A}
+//
+//nolint:gocognit // possibly improvable later
 func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -402,6 +404,15 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		if !onMar && plan.TargetAssetID == nil {
 			respondErr(w, http.StatusConflict, "plan has no target asset")
+			return
+		}
+
+		// Server-authoritative completion: a stale client (re-prompted after a
+		// refresh) must not tear more marginalia than were picked.
+		resData := loadResolutionData(plan.ResolutionData)
+		sr := resData.EnsureSpreadRumors()
+		if sr.BreakTargetDone >= pickedChoiceCount(&resData, "break_target") {
+			respondErr(w, http.StatusConflict, "break-target already completed for this plan")
 			return
 		}
 
@@ -464,6 +475,12 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 		// marginalia.torn post so the break shows in the action log either way.
 		if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
 			EmitMarginaliaTorn(ctx, deps.Q, deps.Manager, plan.GameID, asset, m, player.ID, g.CurrentRow)
+		}
+
+		sr.BreakTargetDone++
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record break-target progress", err)
+			return
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -830,6 +847,12 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "rumor has not been created yet; call make-choice first")
 			return
 		}
+		// Server-authoritative completion: a stale client (re-prompted after a
+		// refresh) must not write more source-secrets than were picked.
+		if sr.HideSourceDone >= pickedChoiceCount(&resData, "hide_source") {
+			respondErr(w, http.StatusConflict, "hide-source already completed for this plan")
+			return
+		}
 
 		// Validate the secret-bearing asset belongs to the caller.
 		secretAsset, err := deps.Q.GetAssetByID(ctx, body.SecretAssetID)
@@ -868,6 +891,7 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		sr.SourceHidden = true
+		sr.HideSourceDone++
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save hide-source state", err)
 			return

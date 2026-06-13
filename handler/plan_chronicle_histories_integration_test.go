@@ -221,6 +221,52 @@ func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T)
 	h.complete(plan.ID)
 }
 
+// TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount proves the make-list
+// break_artifact sub-flow is server-capped at the picked count, so a stale
+// client re-prompted after a refresh can't tear an extra marginalium.
+func TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	saPinKnowledgeRank(t, h, plan.PreparerID, 3)
+
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	// Two marginalia so the first break doesn't destroy the artifact.
+	artifactID, margIDs := chSeedArtifact(t, h, otherIdx, "sturdy codex", 2)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	chInvoke(t, h, plan.ID, artifactID)
+	roll := chCastRoll(t, h, plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+
+	// Only one break picked.
+	h.makeChoice(plan.ID, "make", []string{"break_artifact"})
+
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/break-artifact"
+	code, body := h.post(preparerIdx, breakPath, map[string]any{
+		"asset_id": artifactID, "marginalia_id": margIDs[0],
+	})
+	require.Equalf(t, http.StatusOK, code, "first (only) break: %v", body)
+
+	// A second break exceeds the picked count and is rejected.
+	code, body = h.post(preparerIdx, breakPath, map[string]any{
+		"asset_id": artifactID, "marginalia_id": margIDs[1],
+	})
+	require.Equalf(t, http.StatusConflict, code, "break beyond the picked count must be rejected: %v", body)
+	intact, err := h.q.GetMarginaliaByID(ctx, margIDs[1])
+	require.NoError(t, err)
+	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalium")
+}
+
 // TestChronicleHistories_Mar_AllPlayersMustChoose proves a marred plan blocks
 // completion until every player present submits one choice, and that a mar
 // break_artifact tears its marginalium atomically.
