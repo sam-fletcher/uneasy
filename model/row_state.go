@@ -115,6 +115,26 @@ const (
 	// happen until they respond. ActingPlayerID names the target.
 	RowStateAwaitQuestionAnswer RowStateKind = "await_question_answer"
 
+	// RowStateLiaiseResolving — a Clandestinely Liaise plan is resolving and a
+	// collaborative submit phase blocks on the participants, not the focus
+	// player (who is often not even a participant). ActingPlayerIDs names the
+	// participants who still owe a submission (or the preparer once both are in,
+	// who must advance). The preparer-only phases (together_at_last, done) do
+	// NOT use this kind — they ride the generic plan_resolving case, which names
+	// the resolving plan's preparer.
+	RowStateLiaiseResolving RowStateKind = "liaise_resolving"
+
+	// RowStateAwaitCourtierResponse — an Exchange Courtiers plan is resolving
+	// inside a target-driven sub-step (fair-trade offer, messy break, mar
+	// choices, or peer claims). ActingPlayerID names the target player, who is
+	// not the preparer (the normal resolver) and not the focus player.
+	RowStateAwaitCourtierResponse RowStateKind = "await_courtier_response"
+
+	// RowStateAwaitChronicleChoices — a marred Chronicle Histories plan is
+	// resolving and every player present when the mar scene began must each
+	// submit one option. ActingPlayerIDs names those who still owe a choice.
+	RowStateAwaitChronicleChoices RowStateKind = "await_chronicle_choices"
+
 	// RowStatePlanPending — a plan is in 'pending' status on the current
 	// row and ready to be resolved. Step 2, queued.
 	RowStatePlanPending RowStateKind = "plan_pending"
@@ -165,14 +185,24 @@ type RowState struct {
 	ClaimID *int64 `json:"claim_id,omitempty"`
 
 	// ActingPlayerID names the player whose action the table is blocked on
-	// for sub-phase gates that override PlanResolving (AwaitDemandCounter,
-	// AwaitDemandDraftPick, AwaitFestivityGuestTurn,
-	// AwaitFestivityChallengeResponse, AwaitDuelBout, AwaitTakeConsent).
+	// for single-actor sub-phase gates that override PlanResolving
+	// (AwaitDemandCounter, AwaitDemandDraftPick, AwaitFestivityGuestTurn,
+	// AwaitFestivityChallengeResponse, AwaitDuelBout, AwaitTakeConsent,
+	// AwaitQuestionAnswer, AwaitCourtierResponse).
 	// Lets the WaitingOnBar attribute the wait to the actual decision-maker
 	// (often a non-focus player) rather than the resolving plan's focus player.
-	// Nil for kinds with multiple waitees (AwaitDuelStaking — client
-	// derives them) or no single decider.
+	// Nil when the wait is on multiple players (see ActingPlayerIDs) or has no
+	// single decider.
 	ActingPlayerID *int64 `json:"acting_player_id,omitempty"`
+
+	// ActingPlayerIDs names the full set of players the table is blocked on
+	// for multi-actor sub-phase gates (LiaiseResolving submit phases,
+	// AwaitChronicleChoices). Populated server-side from resolution_data so the
+	// WaitingOnBar reflects exactly who still owes an action — never the focus
+	// player and never a stale client guess. The frontend normalizes the two
+	// fields as `acting_player_ids ?? [acting_player_id]`. Nil for single-actor
+	// kinds.
+	ActingPlayerIDs []int64 `json:"acting_player_ids,omitempty"`
 }
 
 // RowStateChangedPayload is the payload for EventRowStateChanged.

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -329,40 +330,23 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Check if both players have now submitted.
-		count, err := deps.Q.CountLiaiseChoicesByPlan(ctx, plan.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not count choices", err)
-			return
+		// Mirror the submission into resolution_data so it rides the game-state
+		// snapshot: the panel derives "I've submitted" from this (refresh-safe,
+		// no client-local flag) and the WaitingOnBar names who still owes a
+		// pick. The liaise_choices upsert is idempotent (UNIQUE plan_id,
+		// player_id), so record the submitter at most once here too.
+		if !slices.Contains(ld.ShareSubmitterIDs, player.ID) {
+			ld.ShareSubmitterIDs = append(ld.ShareSubmitterIDs, player.ID)
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondInternalErr(w, r, "could not record share submission", err)
+				return
+			}
 		}
 
-		if count >= 2 {
-			// Both have submitted — reveal choices and apply effects.
-			choices, err := deps.Q.ListLiaiseChoicesByPlan(ctx, plan.ID)
-			if err != nil {
-				respondInternalErr(w, r, "could not load choices", err)
-				return
-			}
-
-			if err := clApplyShareChoices(ctx, deps, plan, resData, choices); err != nil {
-				respondInternalErr(w, r, "could not apply share choices", err)
-				return
-			}
-
-			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, r, "could not save liaise data", err)
-				return
-			}
-
-			broadcastEvent(
-				deps.Manager,
-				plan.GameID,
-				model.EventLiaiseChoicesRevealed,
-				model.LiaiseChoicesRevealedPayload{
-					PlanID:  plan.ID,
-					Choices: choices,
-				},
-			)
+		// Once both have submitted, reveal and apply both choices.
+		if status, msg := clRevealSharesIfBothIn(ctx, deps, plan, resData); status != 0 {
+			respondErr(w, status, msg)
+			return
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -371,6 +355,36 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			"choice":    body.Choice,
 		})
 	}
+}
+
+// clRevealSharesIfBothIn checks whether both participants have submitted their
+// Things We Share choice; if so it applies both choices' effects, persists the
+// resolution_data, and broadcasts the reveal. Returns a non-zero HTTP status +
+// message on failure, or (0, "") when nothing failed (whether or not the second
+// submission has arrived).
+func clRevealSharesIfBothIn(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, resData ResolutionData,
+) (int, string) {
+	count, err := deps.Q.CountLiaiseChoicesByPlan(ctx, plan.ID)
+	if err != nil {
+		return http.StatusInternalServerError, "could not count choices"
+	}
+	if count < 2 {
+		return 0, ""
+	}
+	choices, err := deps.Q.ListLiaiseChoicesByPlan(ctx, plan.ID)
+	if err != nil {
+		return http.StatusInternalServerError, "could not load choices"
+	}
+	if err := clApplyShareChoices(ctx, deps, plan, resData, choices); err != nil {
+		return http.StatusInternalServerError, "could not apply share choices"
+	}
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		return http.StatusInternalServerError, "could not save liaise data"
+	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventLiaiseChoicesRevealed,
+		model.LiaiseChoicesRevealedPayload{PlanID: plan.ID, Choices: choices})
+	return 0, ""
 }
 
 // liaiseChoiceApplier applies one player's Things We Share choice. Each handler

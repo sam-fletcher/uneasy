@@ -136,6 +136,7 @@
 		delayRevealID: number | null;
 		redelayRevealID: number | null;
 		keptSecrets: KeptSecret[];
+		shareSubmitterIDs: number[];
 	};
 	const clState = $derived.by<CLState>(() => {
 		const ld = parseLiaiseData(plan);
@@ -147,6 +148,7 @@
 			delayRevealID: ld.delay_reveal_id ?? null,
 			redelayRevealID: ld.redelay_reveal_id ?? null,
 			keptSecrets: ld.kept_secrets ?? [],
+			shareSubmitterIDs: ld.share_submitter_ids ?? [],
 		};
 	});
 
@@ -277,9 +279,14 @@
 	let shareMargID = $state<number | null>(null);
 	let shareUpdateText = $state('');
 	let shareBusy = $state(false);
-	let iShared = $state(false);
+	// Whether the current player has submitted their Things We Share choice.
+	// Server-authoritative (from resolution_data) so a refresh mid-phase doesn't
+	// re-prompt — the submission is the canonical signal, never a local flag.
+	const iShared = $derived(
+		currentPlayerID != null && clState.shareSubmitterIDs.includes(currentPlayerID),
+	);
 
-	// Reset per-plan state on plan change.
+	// Reset per-plan draft state on plan change.
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
 		if (plan && plan.id !== lastPlanID) {
@@ -289,7 +296,6 @@
 			shareAssetID = null;
 			shareMargID = null;
 			shareUpdateText = '';
-			iShared = false;
 		}
 	});
 
@@ -322,7 +328,7 @@
 				target_marginalia_id: SHARE_NEEDS_MARG.has(shareChoiceKey) ? shareMargID : null,
 				update_text: SHARE_NEEDS_TEXT.has(shareChoiceKey) ? shareUpdateText.trim() : undefined,
 			});
-			iShared = true;
+			// iShared now reflects resolution_data; the refetch surfaces it.
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not submit share choice.';
@@ -445,19 +451,26 @@
 		<!-- Phase 1: Together At Last ─────────────────────────────── -->
 		{:else if clState.phase === 'together_at_last'}
 			<div class="choices-section">
-				<p class="choices-header">Together at last</p>
+				<p class="choices-header">Together at Last</p>
 				<p class="choices-note">
-					Set the scene of your meeting in the posts below. When you're ready
-					to move on, the preparer advances the liaison.
+					{playerName(players, plan.preparer_id)} and
+					{playerName(players, clState.partnerID)} — set the scene of your
+					meeting together in the chat. Where are you? What are you doing?
+					Are you sharing a meal, meeting under a bridge under the cover
+					of night, or perhaps something more intimate?
 				</p>
 				{#if amPreparer}
+					<p class="choices-note muted">
+						When you're both ready, advance the liaison.
+					</p>
 					<button class="action-btn primary"
 						onclick={() => onAdvance(plan)} disabled={advanceBusy}>
 						{advanceBusy ? '…' : 'Advance to Secrets We Keep'}
 					</button>
 				{:else}
 					<p class="choices-note muted">
-						Waiting for {playerName(players, plan.preparer_id)} to advance…
+						Once you're both ready, {playerName(players, plan.preparer_id)}
+						will advance the liaison.
 					</p>
 				{/if}
 			</div>

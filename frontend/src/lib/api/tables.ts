@@ -36,6 +36,9 @@ export type RowStateKind =
 	| 'await_duel_bout'
 	| 'await_take_consent'
 	| 'await_question_answer'
+	| 'liaise_resolving'
+	| 'await_courtier_response'
+	| 'await_chronicle_choices'
 	| 'scene_active'
 	| 'post_scene_action'
 	| 'scene_setting';
@@ -46,10 +49,15 @@ export interface RowState {
 	scene_id?: number | null;
 	war_id?: number | null;
 	claim_id?: number | null;
-	/** Player whose action the row is blocked on for sub-phase kinds that
-	 *  override plan_resolving (await_demand_counter,
-	 *  await_festivity_guest_turn, await_festivity_challenge_response). */
+	/** Player whose action the row is blocked on for single-actor sub-phase
+	 *  kinds that override plan_resolving (await_demand_counter,
+	 *  await_festivity_guest_turn, await_festivity_challenge_response,
+	 *  await_courtier_response, …). */
 	acting_player_id?: number | null;
+	/** Full set of players the row is blocked on for multi-actor sub-phase
+	 *  kinds (liaise_resolving submit phases, await_chronicle_choices).
+	 *  Normalize with `acting_player_ids ?? compact([acting_player_id])`. */
+	acting_player_ids?: number[] | null;
 }
 
 // Full game state including phase-specific data.

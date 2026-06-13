@@ -23,6 +23,10 @@ export interface LiaiseResolutionData {
 	delay_reveal_id?: number | null;
 	redelay_reveal_id?: number | null;
 	kept_secrets?: KeptSecret[];
+	/** Participants who have submitted their Things We Share choice. Mirrors
+	 *  kept_secrets — server-authoritative so the panel doesn't re-prompt on
+	 *  refresh and the WaitingOnBar can name who still owes a pick. */
+	share_submitter_ids?: number[];
 }
 
 /** Read-only convenience parser. Returns a non-nil object (defaults when

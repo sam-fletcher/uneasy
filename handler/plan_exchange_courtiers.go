@@ -243,6 +243,9 @@ func applyExchangeCourtiersMar(
 			ec.RiposteAllowed = true
 		}
 	}
+	// The target has now made their mar choices; the WaitingOnBar stops blocking
+	// on them (any remaining peer claims are tracked separately).
+	ec.MarChoicesSubmitted = true
 	return nil
 }
 

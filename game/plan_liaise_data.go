@@ -36,6 +36,14 @@ type LiaiseResolutionData struct {
 	DelayRevealID   *int64       `json:"delay_reveal_id,omitempty"`
 	RedelayRevealID *int64       `json:"redelay_reveal_id,omitempty"`
 	KeptSecrets     []KeptSecret `json:"kept_secrets,omitempty"`
+	// ShareSubmitterIDs records which participants have submitted their Things
+	// We Share choice. The choices themselves live in the liaise_choices table
+	// (a side table, hidden until both are in), but the *fact* of submission
+	// must be visible in the game-state snapshot so the panel doesn't re-prompt
+	// after a refresh and the WaitingOnBar can name who still owes a pick —
+	// server-authoritative, mirroring KeptSecrets. Written in the share-choice
+	// handler alongside the liaise_choices upsert.
+	ShareSubmitterIDs []int64 `json:"share_submitter_ids,omitempty"`
 }
 
 // LoadLiaiseData is a read-only convenience that parses a plan's

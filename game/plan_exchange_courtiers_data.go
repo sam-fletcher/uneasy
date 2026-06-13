@@ -29,6 +29,12 @@ type ExchangeCourtiersResolutionData struct {
 	// RiposteAllowed is set when "riposte" was chosen; it enables the
 	// preparer's optional pre-break of one of their peers (riposte-break).
 	RiposteAllowed bool `json:"riposte_allowed,omitempty"`
+	// MarChoicesSubmitted flips true once the target has submitted their mar
+	// option choices. It is the server-authoritative signal that the target's
+	// choice step is done — a fair_trade-only mar leaves no other trace (no peer
+	// claims, no messy break), so the WaitingOnBar needs this flag to stop
+	// blocking on the target after they choose.
+	MarChoicesSubmitted bool `json:"mar_choices_submitted,omitempty"`
 }
 
 // EnsureExchangeCourtiers returns r.ExchangeCourtiers, allocating a zero

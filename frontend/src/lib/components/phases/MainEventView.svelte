@@ -188,94 +188,62 @@
 			? [{ kind: 'player', playerID: game.focus_player_id }]
 			: [];
 
+		// Waitees from a sub-phase's server-computed acting set. Multi-actor
+		// kinds populate acting_player_ids; single-actor kinds populate
+		// acting_player_id. The backend names the exact decision-maker(s) from
+		// resolution_data, so the bar never guesses or mis-attributes.
+		const actingWaitees = (): Waitee[] => {
+			const ids = rowState?.acting_player_ids
+				?? (rowState?.acting_player_id != null ? [rowState.acting_player_id] : []);
+			return ids.map(id => ({ kind: 'player', playerID: id }));
+		};
+
 		switch (rowState?.kind) {
 			case 'plan_resolving':
-				return { waitees: focusWaitee, stepLabel: 'Resolving plan' };
-			case 'plan_pending':
-				// Auto-kicked off by the server; this kind only surfaces
-				// briefly mid-transition, or in the recovery path if
-				// OnResolve failed. Same copy as plan_resolving — observers
-				// don't need to distinguish.
-				return { waitees: focusWaitee, stepLabel: 'Resolving plan' };
-			case 'await_demand_counter': {
-				// Sub-phase of plan_resolving: a marred Make Demands roll
-				// is waiting on the demand target's decision to counter
-				// or waive. Acting player is typically not the focus player.
-				const actor = rowState.acting_player_id;
-				const waitees: Waitee[] = actor != null
-					? [{ kind: 'player', playerID: actor }]
-					: [];
-				return { waitees, stepLabel: 'Make Demands — awaiting counter' };
+			case 'plan_pending': {
+				// A plan is resolved by its PREPARER, never the focus player
+				// (the focus player only sets scenes and prepares plans). Look
+				// the preparer up from the resolving plan. plan_pending is the
+				// brief pre-kickoff/recovery state — same copy. Sub-phase kinds
+				// below override for non-preparer / multi-actor waits.
+				const plan = plans.find(p => p.id === rowState?.plan_id);
+				const waitees: Waitee[] = plan?.preparer_id != null
+					? [{ kind: 'player', playerID: plan.preparer_id }]
+					: focusWaitee;
+				return { waitees, stepLabel: 'Resolving plan' };
 			}
-			case 'await_demand_draft_pick': {
-				// Made Make Demands: demander and target-plan preparer
-				// alternate the four-pick draft. Half the picks block on
-				// the non-focus player.
-				const actor = rowState.acting_player_id;
-				const waitees: Waitee[] = actor != null
-					? [{ kind: 'player', playerID: actor }]
-					: [];
-				return { waitees, stepLabel: 'Make Demands — draft pick' };
-			}
-			case 'await_festivity_guest_turn': {
-				// Host Festivity socializing phase: next guest (by ascending
-				// esteem; host last) owes a roll/opt-out/choice.
-				const actor = rowState.acting_player_id;
-				const waitees: Waitee[] = actor != null
-					? [{ kind: 'player', playerID: actor }]
-					: [];
-				return { waitees, stepLabel: 'Host Festivity — guest turn' };
-			}
-			case 'await_festivity_challenge_response': {
-				// Open duel challenge inside a festivity; all other actions
-				// pause until the target accepts or declines.
-				const actor = rowState.acting_player_id;
-				const waitees: Waitee[] = actor != null
-					? [{ kind: 'player', playerID: actor }]
-					: [];
-				return { waitees, stepLabel: 'Host Festivity — challenge response' };
-			}
-			case 'await_duel_staking': {
-				// Propose Duel setup/staking — both duellists simultaneously
-				// submit stake counts then specific assets. List both as
-				// waitees; one may have already submitted but the bar can't
-				// tell that without fetching duel stakes.
-				const duelPlan = plans.find(p => p.id === rowState.plan_id);
-				const ids: number[] = [];
-				if (duelPlan?.preparer_id != null) ids.push(duelPlan.preparer_id);
-				if (duelPlan?.target_player_id != null) ids.push(duelPlan.target_player_id);
-				return {
-					waitees: ids.map(id => ({ kind: 'player', playerID: id })),
-					stepLabel: 'Propose Duel — staking',
-				};
-			}
-			case 'await_duel_bout': {
-				// Propose Duel bouts phase — either the declarer (initiative
-				// holder) or the responder owes the next action.
-				const actor = rowState.acting_player_id;
-				const waitees: Waitee[] = actor != null
-					? [{ kind: 'player', playerID: actor }]
-					: [];
-				return { waitees, stepLabel: 'Propose Duel — bout' };
-			}
-			case 'await_take_consent': {
-				// Spread Rumors take-asset — the victim must agree or disagree
-				// before anything else happens. ActingPlayerID names them.
-				const actor = rowState.acting_player_id;
-				const waitees: Waitee[] = actor != null
-					? [{ kind: 'player', playerID: actor }]
-					: [];
-				return { waitees, stepLabel: 'Spread Rumors — consent to take asset' };
-			}
-			case 'await_question_answer': {
-				// Seek Answers ask-a-question — the target must answer (or veto)
-				// before the plan can proceed. ActingPlayerID names them.
-				const actor = rowState.acting_player_id;
-				const waitees: Waitee[] = actor != null
-					? [{ kind: 'player', playerID: actor }]
-					: [];
-				return { waitees, stepLabel: 'Seek Answers — answer a question' };
-			}
+			case 'await_demand_counter':
+				return { waitees: actingWaitees(), stepLabel: 'Make Demands — awaiting counter' };
+			case 'await_demand_draft_pick':
+				return { waitees: actingWaitees(), stepLabel: 'Make Demands — draft pick' };
+			case 'await_festivity_guest_turn':
+				return { waitees: actingWaitees(), stepLabel: 'Host Festivity — guest turn' };
+			case 'await_festivity_challenge_response':
+				return { waitees: actingWaitees(), stepLabel: 'Host Festivity — challenge response' };
+			case 'await_duel_staking':
+				// Both duellists stake simultaneously; the backend filters to
+				// whoever still owes a stake (acting_player_ids).
+				return { waitees: actingWaitees(), stepLabel: 'Propose Duel — staking' };
+			case 'await_duel_bout':
+				return { waitees: actingWaitees(), stepLabel: 'Propose Duel — bout' };
+			case 'await_take_consent':
+				return { waitees: actingWaitees(), stepLabel: 'Spread Rumors — consent to take asset' };
+			case 'await_question_answer':
+				return { waitees: actingWaitees(), stepLabel: 'Seek Answers — answer a question' };
+			case 'liaise_resolving':
+				// Collaborative submit phase (secrets / things-we-share /
+				// when-will-I-see-you-again). The backend names who still owes a
+				// submission, or the preparer once both are in (must advance).
+				return { waitees: actingWaitees(), stepLabel: 'Clandestinely Liaise' };
+			case 'await_courtier_response':
+				// Exchange Courtiers target-driven sub-step (offer / messy break
+				// / mar choices / peer claims). Blocks on the target, not the
+				// preparer or focus player.
+				return { waitees: actingWaitees(), stepLabel: 'Exchange Courtiers — target responds' };
+			case 'await_chronicle_choices':
+				// Marred Chronicle Histories — every present player owes one
+				// choice. Backend names those who still haven't chosen.
+				return { waitees: actingWaitees(), stepLabel: 'Chronicle Histories — all choose' };
 			case 'await_delay_reveal': {
 				const planType = delayRevealPlan?.plan_type;
 				const label =

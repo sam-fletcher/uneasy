@@ -359,6 +359,247 @@ func TestComputeRowState_AwaitDelayReveal_Liaise(t *testing.T) {
 	assert.Equal(t, cl.ID, *state.PlanID)
 }
 
+// TestComputeRowState_LiaiseResolving: a resolving Clandestinely Liaise must
+// never block on the focus player (who is often not even a participant). The
+// preparer-only phases (together_at_last, done) ride the generic plan_resolving
+// case — whose preparer-naming is the frontend's job — so the backend reports
+// plain plan_resolving. The collaborative submit phases surface
+// liaise_resolving with ActingPlayerIDs naming who still owes a submission, or
+// the preparer once both are in.
+func TestComputeRowState_LiaiseResolving(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// P0 preparer, P1 partner. P2 may hold focus — must never be named.
+	cl := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanClandestinelyLiaise, model.CategoryKnowledge, tg.Game.CurrentRow)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: cl.ID, Status: model.PlanResolving,
+	}))
+
+	mutate := func(fn func(ld *gamepkg.LiaiseResolutionData)) {
+		reloaded, err := q.GetPlanByID(ctx, cl.ID)
+		require.NoError(t, err)
+		resData := loadResolutionData(reloaded.ResolutionData)
+		ld := resData.EnsureLiaise()
+		ld.PartnerID = &tg.Players[1].ID
+		fn(ld)
+		require.NoError(t, saveResolutionData(ctx, q, cl.ID, resData))
+	}
+
+	// together_at_last → preparer-only → generic plan_resolving (no override).
+	mutate(func(ld *gamepkg.LiaiseResolutionData) { ld.Phase = gamepkg.LiaisePhaseTogetherAtLast })
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind,
+		"together_at_last rides the generic case (frontend names the preparer)")
+
+	// secrets_we_keep, neither submitted → both participants.
+	mutate(func(ld *gamepkg.LiaiseResolutionData) {
+		ld.Phase = gamepkg.LiaisePhaseSecretsWeKeep
+		ld.KeptSecrets = nil
+	})
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateLiaiseResolving, got.Kind)
+	assert.ElementsMatch(t, []int64{tg.Players[0].ID, tg.Players[1].ID}, got.ActingPlayerIDs,
+		"neither has committed a secret → both owe one")
+
+	// secrets_we_keep, both submitted → preparer owes the advance.
+	mutate(func(ld *gamepkg.LiaiseResolutionData) {
+		ld.KeptSecrets = []gamepkg.KeptSecret{
+			{PlayerID: tg.Players[0].ID, AssetID: 1},
+			{PlayerID: tg.Players[1].ID, AssetID: 2},
+		}
+	})
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateLiaiseResolving, got.Kind)
+	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
+		"both committed → preparer owes the advance click")
+
+	// things_we_share, partner submitted → preparer still owes a pick.
+	mutate(func(ld *gamepkg.LiaiseResolutionData) {
+		ld.Phase = gamepkg.LiaisePhaseThingsWeShare
+		ld.ShareSubmitterIDs = []int64{tg.Players[1].ID}
+	})
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateLiaiseResolving, got.Kind)
+	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
+		"partner submitted their share-choice → only the preparer still owes one")
+
+	// done → preparer-only → generic plan_resolving.
+	mutate(func(ld *gamepkg.LiaiseResolutionData) { ld.Phase = gamepkg.LiaisePhaseDone })
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind,
+		"done rides the generic case (frontend names the preparer)")
+}
+
+// TestComputeRowState_AwaitCourtierResponse: a resolving Exchange Courtiers
+// blocks on the TARGET during the target-driven sub-steps (offer, messy break,
+// peer claims, mar choices) and rides the generic plan_resolving case for the
+// preparer's steps.
+func TestComputeRowState_AwaitCourtierResponse(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	row := tg.Game.CurrentRow
+	ec, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID:         tg.Game.ID,
+		PlanType:       model.PlanExchangeCourtiers,
+		Category:       model.CategoryPower,
+		PreparerID:     tg.Players[0].ID,
+		TargetPlayerID: &tg.Players[1].ID,
+		RowNumber:      &row,
+		RowOrder:       0,
+		PreparedAtRow:  tg.Game.CurrentRow,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: ec.ID, Status: model.PlanResolving,
+	}))
+
+	mutate := func(fn func(ec *gamepkg.ExchangeCourtiersResolutionData)) {
+		reloaded, err := q.GetPlanByID(ctx, ec.ID)
+		require.NoError(t, err)
+		resData := loadResolutionData(reloaded.ResolutionData)
+		fn(resData.EnsureExchangeCourtiers())
+		require.NoError(t, saveResolutionData(ctx, q, ec.ID, resData))
+	}
+	expectTarget := func(msg string) {
+		got, err := ComputeRowState(ctx, q, tg.Game.ID)
+		require.NoError(t, err)
+		assert.Equal(t, model.RowStateAwaitCourtierResponse, got.Kind, msg)
+		require.NotNil(t, got.ActingPlayerID)
+		assert.Equal(t, tg.Players[1].ID, *got.ActingPlayerID, msg)
+	}
+	expectGeneric := func(msg string) {
+		got, err := ComputeRowState(ctx, q, tg.Game.ID)
+		require.NoError(t, err)
+		assert.Equal(t, model.RowStatePlanResolving, got.Kind, msg)
+	}
+
+	// No resolution_data yet → target owes the opening fair-trade offer.
+	expectTarget("opening offer is the target's")
+
+	// Offer made, no decision → preparer owes accept/decline (generic).
+	assetID := int64(1)
+	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) { e.FairTradeAssetID = &assetID })
+	expectGeneric("accept/decline is the preparer's")
+
+	// Declined + messy break outstanding → target.
+	declined := false
+	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
+		e.FairTradeAccepted = &declined
+		e.MessyBreakRequired = true
+	})
+	expectTarget("messy break is the target's")
+
+	// Messy break done, peer claims outstanding → target.
+	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
+		e.MessyBreakDone = true
+		e.PeerClaimsRequired = 2
+		e.PeerClaimsDone = 1
+	})
+	expectTarget("peer claims are the target's")
+
+	// All claims done, no mar roll → generic (preparer completes).
+	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) { e.PeerClaimsDone = 2 })
+	expectGeneric("nothing target-side outstanding → generic")
+
+	// A marred roll with choices not yet submitted → target owes mar choices.
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID: tg.Game.ID, PlanID: &ec.ID, RowNumber: &row,
+		ActorID: tg.Players[0].ID, Difficulty: 4, Stage: "resolved",
+	})
+	require.NoError(t, err)
+	res := int16(0)
+	mar := marOutcome
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &mar,
+	}))
+	// Reset the post-claim flags so only the mar-choice gate is live.
+	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
+		e.PeerClaimsRequired = 0
+		e.PeerClaimsDone = 0
+		e.MarChoicesSubmitted = false
+	})
+	expectTarget("mar choices are the target's until submitted")
+
+	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) { e.MarChoicesSubmitted = true })
+	expectGeneric("mar choices submitted → generic (preparer completes)")
+}
+
+// TestComputeRowState_AwaitChronicleChoices: a marred Chronicle Histories blocks
+// on every present player who hasn't yet submitted a mar choice.
+func TestComputeRowState_AwaitChronicleChoices(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	row := tg.Game.CurrentRow
+	ch := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanChronicleHistories, model.CategoryKnowledge, row)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: ch.ID, Status: model.PlanResolving,
+	}))
+
+	// A make roll keeps it generic (preparer-driven, no all-players gate).
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID: tg.Game.ID, PlanID: &ch.ID, RowNumber: &row,
+		ActorID: tg.Players[0].ID, Difficulty: 4, Stage: "resolved",
+	})
+	require.NoError(t, err)
+	res := int16(9)
+	make := makeOutcome
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &make,
+	}))
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind, "make path is preparer-driven")
+
+	// Flip the roll to mar → every present player owes a choice.
+	mar := marOutcome
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &mar,
+	}))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitChronicleChoices, got.Kind)
+	assert.ElementsMatch(t,
+		[]int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
+		"nobody has chosen yet → all present players owe a choice")
+
+	// P0 and P2 submit → only P1 remains.
+	reloaded, err := q.GetPlanByID(ctx, ch.ID)
+	require.NoError(t, err)
+	resData := loadResolutionData(reloaded.ResolutionData)
+	resData.MakeMarChoices = []gamepkg.Choice{
+		{PlayerID: &tg.Players[0].ID}, {PlayerID: &tg.Players[2].ID},
+	}
+	require.NoError(t, saveResolutionData(ctx, q, ch.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitChronicleChoices, got.Kind)
+	assert.Equal(t, []int64{tg.Players[1].ID}, got.ActingPlayerIDs,
+		"only the player who hasn't chosen is named")
+
+	// All three submit → generic (preparer completes).
+	resData.MakeMarChoices = append(resData.MakeMarChoices, gamepkg.Choice{PlayerID: &tg.Players[1].ID})
+	require.NoError(t, saveResolutionData(ctx, q, ch.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind, "all chose → generic")
+}
+
 // TestComputeRowState_SurrenderClaim_PreemptsPlans: per the rulebook,
 // resolving an open surrender claim (a consequence of step 1's battle costs)
 // blocks all play — including plan resolution and preparation.

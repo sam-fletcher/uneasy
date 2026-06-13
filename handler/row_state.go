@@ -281,8 +281,166 @@ func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pl
 		return srSubPhase(plan)
 	case model.PlanSeekAnswers:
 		return saSubPhase(plan)
+	case model.PlanClandestinelyLiaise:
+		return liaiseSubPhase(ctx, q, plan)
+	case model.PlanExchangeCourtiers:
+		return ecSubPhase(ctx, q, plan)
+	case model.PlanChronicleHistories:
+		return chSubPhase(ctx, q, plan)
 	}
 	return model.RowState{}, false
+}
+
+// liaiseSubPhase narrows a resolving Clandestinely Liaise during its
+// collaborative submit phases so the WaitingOnBar names exactly who still owes
+// a submission — never the focus player, who (unlike every other resolving
+// plan) is often not even a participant, since the liaison was prepared on an
+// earlier turn and resolves on its delayed row. The preparer-only phases
+// (together_at_last, done) return false and ride the generic plan_resolving
+// case, which already names the resolving plan's preparer.
+func liaiseSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	resData := loadResolutionData(plan.ResolutionData)
+	ld := resData.Liaise
+	if ld == nil || ld.PartnerID == nil {
+		return model.RowState{}, false
+	}
+	participants := []int64{plan.PreparerID, *ld.PartnerID}
+
+	// pendingThen names participants who still owe a submission; once all are
+	// in, it falls back to the preparer, who owes the "Advance" click.
+	pendingThen := func(submitted map[int64]bool, whenDone []int64) []int64 {
+		var pending []int64
+		for _, p := range participants {
+			if !submitted[p] {
+				pending = append(pending, p)
+			}
+		}
+		if len(pending) == 0 {
+			return whenDone
+		}
+		return pending
+	}
+
+	//nolint:exhaustive // together_at_last/done handled by default (ride generic)
+	switch ld.Phase {
+	case gamepkg.LiaisePhaseSecretsWeKeep:
+		submitted := map[int64]bool{}
+		for _, ks := range ld.KeptSecrets {
+			submitted[ks.PlayerID] = true
+		}
+		ids := pendingThen(submitted, []int64{plan.PreparerID})
+		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+	case gamepkg.LiaisePhaseThingsWeShare:
+		submitted := map[int64]bool{}
+		for _, id := range ld.ShareSubmitterIDs {
+			submitted[id] = true
+		}
+		ids := pendingThen(submitted, []int64{plan.PreparerID})
+		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+	case gamepkg.LiaisePhaseWhenWillISeeYouAgain:
+		// Both participants reveal a redelay face simultaneously; the reveal
+		// completing advances the plan on its own, so name only those who still
+		// owe a face (no "advance" click). All in → ride the generic case.
+		submitted := liaiseRedelaySubmitters(ctx, q, ld)
+		ids := pendingThen(submitted, nil)
+		if len(ids) == 0 {
+			return model.RowState{}, false
+		}
+		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+	default:
+		return model.RowState{}, false
+	}
+}
+
+// liaiseRedelaySubmitters returns the set of participants who have submitted a
+// face in the when-will-I-see-you-again redelay reveal.
+func liaiseRedelaySubmitters(ctx context.Context, q *dbgen.Queries, ld *gamepkg.LiaiseResolutionData) map[int64]bool {
+	submitted := map[int64]bool{}
+	if ld.RedelayRevealID == nil {
+		return submitted
+	}
+	entries, err := q.ListRevealEntries(ctx, *ld.RedelayRevealID)
+	if err != nil {
+		return submitted
+	}
+	for _, e := range entries {
+		if e.Face != nil {
+			submitted[e.PlayerID] = true
+		}
+	}
+	return submitted
+}
+
+// ecSubPhase narrows a resolving Exchange Courtiers to AwaitCourtierResponse
+// during its target-driven sub-steps, so the bar blocks on the target player
+// (never the preparer or focus player). The preparer's sub-steps (accept/decline,
+// make choices, riposte break, completion) return false and ride the generic
+// plan_resolving case (which names the preparer).
+func ecSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	if plan.TargetPlayerID == nil {
+		return model.RowState{}, false
+	}
+	target := *plan.TargetPlayerID
+	blockTarget := model.RowState{Kind: model.RowStateAwaitCourtierResponse, ActingPlayerID: &target}
+
+	ec := loadResolutionData(plan.ResolutionData).ExchangeCourtiers
+	// Before any fair-trade action the target owes the opening offer.
+	if ec == nil {
+		return blockTarget, true
+	}
+	// Fair-trade step still open: target owes the offer until one is made;
+	// then the preparer owes accept/decline (generic).
+	if ec.FairTradeAccepted == nil {
+		if ec.FairTradeAssetID == nil {
+			return blockTarget, true
+		}
+		return model.RowState{}, false
+	}
+	// Post-roll target-driven sub-steps.
+	if ec.MessyBreakRequired && !ec.MessyBreakDone {
+		return blockTarget, true
+	}
+	if ec.PeerClaimsDone < ec.PeerClaimsRequired {
+		return blockTarget, true
+	}
+	// A marred roll hands the option choices to the target; block on them until
+	// they submit (a fair_trade-only mar leaves no other trace, hence the flag).
+	if !ec.MarChoicesSubmitted && planRollIsMar(ctx, q, plan) {
+		return blockTarget, true
+	}
+	return model.RowState{}, false
+}
+
+// chSubPhase narrows a marred Chronicle Histories to AwaitChronicleChoices: every
+// player present when the mar scene began must each submit one option. The bar
+// names those who still owe a choice (game players minus the distinct submitters
+// in MakeMarChoices). The make path and a fully-chosen mar return false and ride
+// the generic plan_resolving case (the preparer completes).
+func chSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	if !planRollIsMar(ctx, q, plan) {
+		return model.RowState{}, false
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	submitted := map[int64]bool{}
+	for _, c := range resData.MakeMarChoices {
+		if c.PlayerID != nil {
+			submitted[*c.PlayerID] = true
+		}
+	}
+	players, err := q.GetPlayersByGame(ctx, plan.GameID)
+	if err != nil {
+		return model.RowState{}, false
+	}
+	var pending []int64
+	for i := range players {
+		if !submitted[players[i].ID] {
+			pending = append(pending, players[i].ID)
+		}
+	}
+	if len(pending) == 0 {
+		return model.RowState{}, false
+	}
+	return model.RowState{Kind: model.RowStateAwaitChronicleChoices, ActingPlayerIDs: pending}, true
 }
 
 // saSubPhase returns AwaitQuestionAnswer while a Seek Answers "ask a player a
@@ -418,7 +576,8 @@ func duelSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (mode
 	state := gamepkg.LoadDuelData(plan.ResolutionData)
 	switch state.Phase {
 	case gamepkg.DuelPhaseSetup, gamepkg.DuelPhaseStaking:
-		return model.RowState{Kind: model.RowStateAwaitDuelStaking}, true
+		ids := duelStakingActors(ctx, q, plan, &state)
+		return model.RowState{Kind: model.RowStateAwaitDuelStaking, ActingPlayerIDs: ids}, true
 	case gamepkg.DuelPhaseBouts:
 		actor := duelBoutActor(ctx, q, plan, &state)
 		if actor == 0 {
@@ -429,6 +588,61 @@ func duelSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (mode
 		return model.RowState{}, false
 	}
 	return model.RowState{}, false
+}
+
+// duelStakingActors returns the duellists who still owe a staking action,
+// filtering the "both duellists" default down to who actually hasn't submitted.
+// In setup that's whoever hasn't revealed a stake count; in staking, whoever
+// hasn't staked their full count of assets. An empty result (a transient
+// between-sub-step moment) falls back to both, so the bar never blanks out.
+func duelStakingActors(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	state *gamepkg.DuelResolutionData,
+) []int64 {
+	participants := []int64{plan.PreparerID}
+	if plan.TargetPlayerID != nil {
+		participants = append(participants, *plan.TargetPlayerID)
+	}
+
+	var pending []int64
+	//nolint:exhaustive // only setup/staking filter; other phases hit default
+	switch state.Phase {
+	case gamepkg.DuelPhaseSetup:
+		for _, p := range participants {
+			if _, ok := state.StakeCounts[p]; !ok {
+				pending = append(pending, p)
+			}
+		}
+	case gamepkg.DuelPhaseStaking:
+		stakes, err := q.ListDuelStakesByPlan(ctx, plan.ID)
+		if err != nil {
+			return participants
+		}
+		staked := map[int64]int16{}
+		for i := range stakes {
+			staked[stakes[i].PlayerID]++
+		}
+		required := func(pid int64) int16 {
+			if pid == plan.PreparerID {
+				return state.PreparerStakeCount
+			}
+			return state.TargetStakeCount
+		}
+		for _, p := range participants {
+			if staked[p] < required(p) {
+				pending = append(pending, p)
+			}
+		}
+	default:
+		return participants
+	}
+
+	if len(pending) == 0 {
+		return participants
+	}
+	return pending
 }
 
 // duelBoutActor returns the duellist who owes the next bout action: the
