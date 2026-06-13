@@ -149,9 +149,11 @@ type RowState struct {
 	// AwaitDuelStaking, AwaitDuelBout. Nil otherwise.
 	PlanID *int64 `json:"plan_id,omitempty"`
 
-	// SceneID is the focus player's turn-scene id for: SceneActive. Nil
-	// otherwise (including for plan-resolution scenes, whose presence
-	// already implies PlanResolving).
+	// SceneID is the focus player's active scene id for: SceneActive. This
+	// covers both a blank-row turn-scene and the follow-scene set after a
+	// plan resolves (when two plans share a row, the focus player roleplays
+	// the resolved plan's follow-scene before the next plan resolves). Nil
+	// for all other kinds.
 	SceneID *int64 `json:"scene_id,omitempty"`
 
 	// WarID is the war that owes battle costs for: AwaitBattleCost. If

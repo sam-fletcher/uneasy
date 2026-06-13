@@ -148,6 +148,149 @@ func TestComputeRowState_PlanResolving_BeatsPending(t *testing.T) {
 	assert.Equal(t, resolving.ID, *state.PlanID)
 }
 
+// createResolvedPlanOnRow inserts a plan already in the 'resolved' state
+// (result + resolved_at set) on the given row, for tests that exercise the
+// follow-scene turn between two plans on one row.
+func createResolvedPlanOnRow(
+	t *testing.T,
+	q *dbgen.Queries,
+	game *dbgen.Game,
+	preparer *dbgen.Player,
+	planType model.PlanType,
+	category model.RankingCategory,
+	row int16,
+) dbgen.Plan {
+	t.Helper()
+	p := createPlanOnRow(t, q, game, preparer, planType, category, row)
+	result := "make"
+	require.NoError(t, q.SetPlanResult(context.Background(), dbgen.SetPlanResultParams{
+		ID: p.ID, Result: &result,
+	}))
+	resolved, err := q.GetPlanByID(context.Background(), p.ID)
+	require.NoError(t, err)
+	return resolved
+}
+
+// startFollowScene creates the follow-scene attached to a resolved plan
+// (resolved_plan_id set), mirroring what CreateScene writes after a
+// resolution. Returns the scene so tests can end it.
+func startFollowScene(t *testing.T, q *dbgen.Queries, game *dbgen.Game, focus *dbgen.Player, resolvedPlanID int64) dbgen.Scene {
+	t.Helper()
+	custom := "Follow-scene location"
+	scene, err := q.CreateScene(context.Background(), dbgen.CreateSceneParams{
+		GameID:         game.ID,
+		RowNumber:      game.CurrentRow,
+		FocusPlayerID:  focus.ID,
+		LocationCustom: &custom,
+		TimeElapsed:    model.TimeHours,
+		Prompt:         "follow",
+		ResolvedPlanID: &resolvedPlanID,
+	})
+	require.NoError(t, err)
+	return scene
+}
+
+// TestComputeRowState_FollowSceneSetting_AfterFirstResolve: with two plans on
+// a row, once the first resolves the focus player owes its follow-scene before
+// the second plan resolves. The state must be SceneSetting — NOT PlanPending —
+// even though a second plan is pending on the current row. This is the core of
+// the multi-plan-per-row sequencing fix.
+func TestComputeRowState_FollowSceneSetting_AfterFirstResolve(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	_ = createResolvedPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanProposeDecree, model.CategoryEsteem, tg.Game.CurrentRow)
+	pending := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanMakeIntroductions, model.CategoryKnowledge, tg.Game.CurrentRow)
+
+	state, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateSceneSetting, state.Kind,
+		"focus player owes the first plan's follow-scene before the second plan resolves")
+	assert.Nil(t, state.PlanID, "SceneSetting must not surface the pending second plan")
+	_ = pending
+}
+
+// TestComputeRowState_FollowSceneActive: while the follow-scene for the
+// just-resolved plan is in progress, the row is SceneActive — the pending
+// second plan does not pre-empt it.
+func TestComputeRowState_FollowSceneActive(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	resolved := createResolvedPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanProposeDecree, model.CategoryEsteem, tg.Game.CurrentRow)
+	_ = createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanMakeIntroductions, model.CategoryKnowledge, tg.Game.CurrentRow)
+	scene := startFollowScene(t, q, &tg.Game, &tg.Players[0], resolved.ID)
+
+	state, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateSceneActive, state.Kind)
+	require.NotNil(t, state.SceneID)
+	assert.Equal(t, scene.ID, *state.SceneID)
+}
+
+// TestComputeRowState_FollowScenePostAction: once the follow-scene ends and
+// its setter still holds focus, the row is PostSceneAction (prepare/refresh)
+// — still ahead of the pending second plan.
+func TestComputeRowState_FollowScenePostAction(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	resolved := createResolvedPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanProposeDecree, model.CategoryEsteem, tg.Game.CurrentRow)
+	_ = createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanMakeIntroductions, model.CategoryKnowledge, tg.Game.CurrentRow)
+	scene := startFollowScene(t, q, &tg.Game, &tg.Players[0], resolved.ID)
+	require.NoError(t, q.EndScene(ctx, scene.ID))
+
+	// Focus is still the setter (Players[0]).
+	require.NoError(t, q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+		ID: tg.Game.ID, FocusPlayerID: &tg.Players[0].ID,
+	}))
+
+	state, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePostSceneAction, state.Kind)
+}
+
+// TestComputeRowState_FollowSceneDone_NextPlanPending: after the follow-scene
+// ends AND focus passes to another player, the resolved plan's turn is
+// complete and the second pending plan finally surfaces as PlanPending for the
+// new focus player to resolve.
+func TestComputeRowState_FollowSceneDone_NextPlanPending(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	resolved := createResolvedPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanProposeDecree, model.CategoryEsteem, tg.Game.CurrentRow)
+	pending := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanMakeIntroductions, model.CategoryKnowledge, tg.Game.CurrentRow)
+	scene := startFollowScene(t, q, &tg.Game, &tg.Players[0], resolved.ID)
+	require.NoError(t, q.EndScene(ctx, scene.ID))
+
+	// Focus passed from the setter (Players[0]) to Players[1].
+	require.NoError(t, q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+		ID: tg.Game.ID, FocusPlayerID: &tg.Players[1].ID,
+	}))
+
+	state, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanPending, state.Kind)
+	require.NotNil(t, state.PlanID)
+	assert.Equal(t, pending.ID, *state.PlanID)
+}
+
 // TestComputeRowState_AwaitDelayReveal_MakeWar: a Make War plan whose
 // row_number is still nil takes precedence over scene state but is
 // dethroned by an actively-resolving plan.

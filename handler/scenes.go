@@ -195,6 +195,59 @@ func validateAndProcessScenePeers(
 	return peers, 0, ""
 }
 
+// validateSceneTiming enforces when a scene may be set and returns the
+// follow-scene source — the most-recently resolved plan on the current row,
+// or nil for a blank-row / row-start scene. A non-zero statusCode + message
+// signals a precondition failure (mirrors validateAndProcessScenePeers).
+//
+//   - a plan is mid-resolution                → block (resolve it first)
+//   - no plan resolved yet, but plans pending → block (resolve the topmost
+//     plan before scening, per the per-row loop)
+//   - a plan resolved, its follow-scene set   → block (already scened)
+//   - a plan resolved, no follow-scene yet    → allow; return that plan
+//     (the follow-scene is allowed even while later plans on the row pend)
+//   - blank row, nothing pending              → allow; return nil
+func validateSceneTiming(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+	currentRow int16,
+) (recent *dbgen.Plan, statusCode int, errMsg string) {
+	if _, err := q.GetResolvingPlanForGame(ctx, gameID); err == nil {
+		return nil, http.StatusConflict, "resolve the active plan before setting a scene"
+	}
+
+	if r0, err := q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
+		GameID:    gameID,
+		RowNumber: new(currentRow),
+	}); err == nil {
+		recent = &r0
+	}
+
+	if recent == nil {
+		pending, err := q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
+			GameID:    gameID,
+			RowNumber: new(currentRow),
+		})
+		if err != nil {
+			return nil, http.StatusInternalServerError, "could not check pending plans"
+		}
+		if len(pending) > 0 {
+			return nil, http.StatusConflict, "resolve pending plans on this row before setting a scene"
+		}
+		return nil, 0, ""
+	}
+
+	if scenes, err := q.ListScenesForRow(ctx, dbgen.ListScenesForRowParams{
+		GameID:    gameID,
+		RowNumber: currentRow,
+	}); err == nil && findFollowScene(scenes, recent.ID) != nil {
+		return nil, http.StatusConflict, "the follow-scene for the last resolved plan has already been set"
+	}
+
+	return recent, 0, ""
+}
+
 // ── HTTP handlers ────────────────────────────────────────────────────────────
 
 // CreateScene handles POST /api/tables/{id}/scenes.
@@ -253,21 +306,12 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		// Block if a plan is currently resolving or any plans are pending on this row.
-		if _, err := s.Q.GetResolvingPlanForGame(ctx, gameRow.ID); err == nil {
-			respondErr(w, http.StatusConflict, "resolve the active plan before setting a scene")
-			return
-		}
-		pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
-			GameID:    gameRow.ID,
-			RowNumber: new(gameRow.CurrentRow),
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not check pending plans", err)
-			return
-		}
-		if len(pending) > 0 {
-			respondErr(w, http.StatusConflict, "resolve pending plans on this row before setting a scene")
+		// Enforce the rulebook ordering for setting a scene and recover the
+		// follow-scene source (the most-recently resolved plan on this row, if
+		// any). `recent` is reused below for the prompt + resolved_plan_id.
+		recent, statusCode, errMsg := validateSceneTiming(ctx, s.Q, gameRow.ID, gameRow.CurrentRow)
+		if statusCode != 0 {
+			respondErr(w, statusCode, errMsg)
 			return
 		}
 
@@ -310,14 +354,11 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Look up the prompt + resolved plan id from the most recent
-		// resolved plan on this row, if any.
+		// Carry the follow-on prompt + resolved plan id from the most recent
+		// resolved plan on this row, if any (looked up above as `recent`).
 		prompt := ""
 		var resolvedPlanID *int64
-		if recent, err := s.Q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
-			GameID:    gameRow.ID,
-			RowNumber: new(gameRow.CurrentRow),
-		}); err == nil {
+		if recent != nil {
 			prompt = game.FollowOnPrompt(recent.PlanType)
 			id := recent.ID
 			resolvedPlanID = &id
@@ -338,7 +379,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var scene dbgen.Scene
-		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+		err := s.InTx(ctx, func(q *dbgen.Queries) error {
 			sc, cErr := q.CreateScene(ctx, dbgen.CreateSceneParams{
 				GameID:            gameRow.ID,
 				RowNumber:         gameRow.CurrentRow,

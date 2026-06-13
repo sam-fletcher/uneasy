@@ -85,6 +85,22 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		return model.RowState{Kind: model.RowStatePlanResolving, PlanID: &id}, nil
 	}
 
+	// 4.5. Follow-scene turn for a plan that just resolved on this row.
+	// When two plans share a row, the rulebook inserts a full focus-player
+	// turn between them — set the scene (using the resolved plan's follow-on
+	// prompt), roleplay, prepare/refresh, pass focus — before the next plan
+	// resolves. Without this gate the pending-plan step below would win and
+	// the next plan would be auto-kicked off the instant the first resolved,
+	// skipping the scene/prepare/pass steps entirely. The gate only fires
+	// while the resolved plan's follow-scene turn is still in progress (its
+	// setter still holds focus); once they pass, it falls through to the
+	// pending-plan step so the next plan resolves for the new focus player.
+	if rs, ok, err := followSceneGate(ctx, q, &game); err != nil {
+		return model.RowState{}, err
+	} else if ok {
+		return rs, nil
+	}
+
 	// 5. Plan pending on the current row.
 	if top := topPendingPlanOnRow(plans, game.CurrentRow); top != nil {
 		id := top.ID
@@ -124,6 +140,70 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 	}
 	// 8. Turn-scene ended → focus player is in post-scene action step.
 	return model.RowState{Kind: model.RowStatePostSceneAction}, nil
+}
+
+// findFollowScene returns the follow-scene set for a resolved plan (the scene
+// whose resolved_plan_id points at it), or nil if none exists yet. There is at
+// most one per plan: CreateScene attaches resolved_plan_id to the scene set
+// after a resolution, and only one such scene is allowed per resolved plan.
+func findFollowScene(scenes []dbgen.Scene, planID int64) *dbgen.Scene {
+	for i := range scenes {
+		if scenes[i].ResolvedPlanID != nil && *scenes[i].ResolvedPlanID == planID {
+			return &scenes[i]
+		}
+	}
+	return nil
+}
+
+// followSceneGate reports the focus player's row-state when the most-recently
+// resolved plan on the current row still owes (or is mid-) its follow-scene
+// turn. It returns ok=false — deferring to the normal pending-plan precedence —
+// when no plan has resolved on this row yet (we're at the row's first
+// resolution, which the rulebook runs before any scene), or when the resolved
+// plan's follow-scene turn is already complete (its setter has passed focus).
+//
+//   - no follow-scene yet          → SceneSetting   (focus owes the scene)
+//   - follow-scene not ended       → SceneActive    (roleplaying it)
+//   - follow-scene ended, setter still holds focus → PostSceneAction
+//   - follow-scene ended, focus moved on → ok=false (turn done; next plan resolves)
+func followSceneGate(ctx context.Context, q *dbgen.Queries, game *dbgen.Game) (model.RowState, bool, error) {
+	recent, err := q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
+		GameID:    game.ID,
+		RowNumber: new(game.CurrentRow),
+	})
+	if err != nil {
+		if isNoRows(err) {
+			// No plan has resolved on this row → row start; resolve first.
+			return model.RowState{}, false, nil
+		}
+		return model.RowState{}, false, err
+	}
+
+	scenes, err := q.ListScenesForRow(ctx, dbgen.ListScenesForRowParams{
+		GameID:    game.ID,
+		RowNumber: game.CurrentRow,
+	})
+	if err != nil {
+		return model.RowState{}, false, err
+	}
+
+	follow := findFollowScene(scenes, recent.ID)
+	if follow == nil {
+		// The focus player owes the just-resolved plan's follow-scene.
+		return model.RowState{Kind: model.RowStateSceneSetting}, true, nil
+	}
+	if !follow.EndedAt.Valid {
+		id := follow.ID
+		return model.RowState{Kind: model.RowStateSceneActive, SceneID: &id}, true, nil
+	}
+	// Follow-scene ended. If its setter still holds focus, they owe the
+	// post-scene action (prepare a plan or refresh) before passing. Once
+	// they've passed — focus has moved to another player — the turn is
+	// complete and the next pending plan should resolve.
+	if game.FocusPlayerID != nil && *game.FocusPlayerID == follow.FocusPlayerID {
+		return model.RowState{Kind: model.RowStatePostSceneAction}, true, nil
+	}
+	return model.RowState{}, false, nil
 }
 
 // topPendingPlanOnRow returns the lowest-row_order pending plan on rowNumber,

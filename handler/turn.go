@@ -421,11 +421,6 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 			DisplayName: next.DisplayName,
 		})
 	}
-	// Row state always changes when focus does (the new focus player's
-	// turn-scene state is different from the previous player's). If the
-	// row-advance path below fires too, advanceRowInner will re-broadcast
-	// with the post-advance state — idempotent.
-	broadcastRowState(ctx, s.Q, manager, game.ID)
 
 	// Soft conditions that block row advance: pending plans, outstanding
 	// war costs, or open surrender claims. Each check is conservative —
@@ -435,33 +430,46 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 	// recovery path.
 	logger := loggerFromContext(ctx)
 
+	// Decide row advance from the PRE-kickoff plan state. broadcastRowState
+	// auto-kicks-off a pending plan (pending → resolving) as a side effect; if
+	// we broadcast before this check, a freshly-kicked-off plan would no longer
+	// count as "pending" and the row could advance past an unresolved plan.
 	pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
 		GameID:    game.ID,
 		RowNumber: new(game.CurrentRow),
 	})
 	if err != nil {
 		logger.Warn("auto pass-focus: could not list pending plans; skipping row advance", "err", err)
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
 	if len(pending) > 0 {
+		// Plans remain — the new focus player resolves the next one. The
+		// broadcast auto-kicks it off now that focus has moved on from the
+		// just-resolved plan's follow-scene turn.
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
 
 	outstanding, err := mwOutstandingCostsForGame(ctx, s.Q, game.ID, game.CurrentRow)
 	if err != nil {
 		logger.Warn("auto pass-focus: could not check outstanding war costs; skipping row advance", "err", err)
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
 	if len(outstanding) > 0 {
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
 
 	claims, err := mwOutstandingSurrenderClaimsForGame(ctx, s.Q, game.ID)
 	if err != nil {
 		logger.Warn("auto pass-focus: could not check surrender claims; skipping row advance", "err", err)
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
 	if len(claims) > 0 {
+		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
 
@@ -527,9 +535,12 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				DisplayName: next.DisplayName,
 			})
 		}
-		broadcastRowState(ctx, s.Q, manager, game.ID)
 
-		// Step 7: are there pending plans still on this row?
+		// Step 7: are there pending plans still on this row? Check BEFORE
+		// broadcasting row state: broadcastRowState auto-kicks-off a pending
+		// plan (pending → resolving) as a side effect, which would otherwise
+		// hide it from this check and let the row advance past an unresolved
+		// plan.
 		pending, err := s.Q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
 			GameID:    game.ID,
 			RowNumber: new(game.CurrentRow),
@@ -539,6 +550,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			// facilitator's manual /advance-row if needed. Log so a
 			// persistent DB issue here doesn't silently stall row advance.
 			loggerFromContext(ctx).Warn("pass-focus: could not list pending plans; skipping row advance", "err", err)
+			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
@@ -547,8 +559,10 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		if len(pending) > 0 {
-			// Plans remain — new focus player will resolve the next one.
-			// No row advance yet.
+			// Plans remain — new focus player will resolve the next one. The
+			// broadcast auto-kicks it off now that focus has moved on from the
+			// just-resolved plan's follow-scene turn. No row advance yet.
+			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
@@ -566,6 +580,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		outstanding, costErr := mwOutstandingCostsForGame(ctx, s.Q, game.ID, game.CurrentRow)
 		if costErr != nil {
 			logger.Warn("pass-focus: could not check outstanding war costs; skipping row advance", "err", costErr)
+			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
@@ -574,6 +589,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		if len(outstanding) > 0 {
+			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
@@ -585,6 +601,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		claims, claimErr := mwOutstandingSurrenderClaimsForGame(ctx, s.Q, game.ID)
 		if claimErr != nil {
 			logger.Warn("pass-focus: could not check surrender claims; skipping row advance", "err", claimErr)
+			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
@@ -593,6 +610,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		if len(claims) > 0 {
+			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
