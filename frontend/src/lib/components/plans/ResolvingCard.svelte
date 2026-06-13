@@ -12,9 +12,12 @@
 		plan: Plan;
 		players: Player[];
 		error?: string;
+		/** Set false to suppress the generic preparation-notes line and render
+		    a custom version in the body (e.g. Spread Rumors' quoted rumor). */
+		showNotes?: boolean;
 		children: Snippet;
 	}
-	let { plan, players, error = '', children }: Props = $props();
+	let { plan, players, error = '', showNotes = true, children }: Props = $props();
 </script>
 
 <div class="plan-panel resolving">
@@ -24,7 +27,7 @@
 		<span class="plan-preparer">by {playerName(players, plan.preparer_id)}</span>
 	</div>
 
-	{#if plan.preparation_notes}
+	{#if showNotes && plan.preparation_notes}
 		<p class="plan-notes">"{plan.preparation_notes}"</p>
 	{/if}
 

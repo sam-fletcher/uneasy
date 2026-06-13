@@ -25,7 +25,7 @@ package handler
 // Extra routes (all accept either the preparer on a make result, or the
 // target-asset owner on a mar result):
 //   POST /api/plans/:planId/break-target          {"marginalia_id": M, "asset_id"?: A}
-//   POST /api/plans/:planId/hide-source           {"secret_asset_id": N, "secret_text": "..."}
+//   POST /api/plans/:planId/hide-source           {"secret_asset_id": N, "secret_text"?: "..."}
 //   POST /api/plans/:planId/request-take-consent  {"choices": [...], "result": "...", "take_asset_ids": [A, …]}
 //   POST /api/plans/:planId/respond-take-consent  {"agree": true|false}
 //
@@ -791,7 +791,11 @@ func transferRumorAsset(
 // actor's own assets recording the hidden source. On a make result the actor
 // is the preparer; on a mar result the actor is the target-asset owner (who
 // is hiding themselves as the source of the counter-rumor).
-// Request body: {"secret_asset_id": N, "secret_text": "..."}
+//
+// The secret's text is auto-derived from the rumor itself ("You were the
+// source of the rumor: …") so the actor only has to pick the asset to tuck it
+// under. secret_text is an optional override.
+// Request body: {"secret_asset_id": N, "secret_text"?: "..."}
 func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -844,10 +848,15 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Write the secret on the chosen asset.
-		secretText := body.SecretText
+		// Write the secret on the chosen asset. By default the secret simply
+		// records the rumor it conceals the source of; secret_text overrides it.
+		secretText := strings.TrimSpace(body.SecretText)
 		if secretText == "" {
-			secretText = "Source of a rumor (hidden)"
+			rumorText := "(no rumor text)"
+			if rumor, rErr := deps.Q.GetRumorByID(ctx, *sr.RumorID); rErr == nil {
+				rumorText = rumor.Text
+			}
+			secretText = fmt.Sprintf("You were the source of the rumor: %q", rumorText)
 		}
 		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
 			AssetID:  body.SecretAssetID,

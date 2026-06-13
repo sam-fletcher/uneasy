@@ -570,7 +570,13 @@ function refreshPlan(ctx: WSContext, planID: number) {
 		ctx.plans = idx >= 0
 			? ctx.plans.map(p => p.id === planID ? next : p)
 			: [...ctx.plans, next];
-	}).catch(() => {});
+	}).catch(() => {
+		// A dropped single-plan refetch would otherwise leave this client stuck
+		// on stale plan state — e.g. a resolved take-consent that never advances
+		// to "hide source" until a manual page refresh. Fall back to a full
+		// plans reload (the same path a manual refresh takes) so we self-heal.
+		refreshAllPlans(ctx);
+	});
 }
 
 function refreshAllPlans(ctx: WSContext) {

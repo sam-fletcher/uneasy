@@ -27,6 +27,7 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
+	import ChoicesApplied from './ChoicesApplied.svelte';
 	import { parseResolutionData, playerName, assetName, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -362,7 +363,6 @@
 	// hide_source: actor hides their own role as source on one of their own
 	// assets. Actor = preparer on make, target-asset owner on mar.
 	let hsAssetID = $state<number | null>(null);
-	let hsSecret = $state('');
 	let hsBusy = $state(false);
 	const hsAssetOptions = $derived(
 		rollOutcome === 'mar'
@@ -370,12 +370,12 @@
 			: preparerAssets
 	);
 	async function submitHideSource(p: Plan) {
-		if (hsBusy || hsAssetID == null || !hsSecret.trim()) return;
+		if (hsBusy || hsAssetID == null) return;
 		hsBusy = true; resError = '';
 		try {
-			await hideSource(p.id, hsAssetID, hsSecret.trim());
+			await hideSource(p.id, hsAssetID);
 			hsDone += 1;
-			hsAssetID = null; hsSecret = '';
+			hsAssetID = null;
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not hide source.';
@@ -480,14 +480,20 @@
 	{@const hsRemaining = Math.max(0, hsNeeded - hsDone)}
 	{@const subflowsDone = btRemaining === 0 && hsRemaining === 0}
 
-	<ResolvingCard {plan} {players} error={resError}>
+	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
-		{#if plan.target_asset_id}
-			<p class="plan-notes">
-				Target: <strong>{assetName(assets, plan.target_asset_id)}</strong>
-			</p>
-		{/if}
+		<div class="rumor-summary">
+			{#if plan.preparation_notes}
+				<p class="rumor-label">Rumor</p>
+				<blockquote class="rumor-quote">{plan.preparation_notes}</blockquote>
+			{/if}
+			{#if plan.target_asset_id}
+				<p class="rumor-target">
+					Targeting: <strong>{assetName(assets, plan.target_asset_id)}</strong>
+				</p>
+			{/if}
+		</div>
 
 		{#if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
@@ -496,39 +502,42 @@
 			<!-- A take-asset request is open: everything holds until the victim
 			     (the asset owner) agrees or disagrees. -->
 			{#if isConsentVictim}
+				{@const takeCount = pendingConsent.asset_ids.length}
+				{@const breakCount = countIn(pendingConsent.choices, 'break_target')}
+				{@const leverageCount = countIn(pendingConsent.choices, 'leverage_target')}
+				{@const aboutName = plan.target_asset_id != null ? assetName(assets, plan.target_asset_id) : null}
+
+				<!-- Secondary effects hit the victim's own target asset but need no
+				     consent — kept out of the callout as a plain FYI line. -->
+				{#if (breakCount > 0 || leverageCount > 0) && aboutName}
+					<p class="choices-note">
+						No consent on these — {rollOutcome === 'mar' ? 'their counter-rumor' : 'this rumor'}
+						also hits <strong>{aboutName}</strong>:
+					</p>
+					<ul class="effect-fyi">
+						{#if breakCount > 0}<li>Tears a marginalia{#if breakCount > 1} (×{breakCount}){/if}</li>{/if}
+						{#if leverageCount > 0}<li>Leverages it{#if leverageCount > 1} (×{leverageCount}){/if}</li>{/if}
+					</ul>
+				{/if}
+
+				<!-- The callout: the one thing the victim actually decides. -->
 				<div class="consent-box">
 					<p class="choices-header">Consent needed</p>
 					<p class="choices-note">
-						<strong>{playerName(players, pendingConsent.requested_by)}</strong>
-						{rollOutcome === 'mar' ? 'wants to take, via their counter-rumor,' : 'wants to take'}
-						the following from you:
+						<strong>{playerName(players, pendingConsent.requested_by)}</strong> wants to take
+						{takeCount === 1 ? 'this asset' : `these ${takeCount} assets`} from you:
 					</p>
 					<ul class="consent-assets">
 						{#each pendingConsent.asset_ids as aid}
 							<li><strong>{assetName(assets, aid)}</strong></li>
 						{/each}
 					</ul>
-					{#if plan.target_asset_id}
-						<p class="choices-note">
-							The rumor concerns <strong>{assetName(assets, plan.target_asset_id)}</strong>.
-						</p>
-					{/if}
-						{#if pendingConsent.choices.some(c => c !== 'take_asset')}
-						<p class="choices-note">
-							They'll also:
-							{#each OPTIONS as opt}
-								{#if opt.key !== 'take_asset' && pendingConsent.choices.filter(c => c === opt.key).length > 0}
-									<span>{opt.label} × {pendingConsent.choices.filter(c => c === opt.key).length}; </span>
-								{/if}
-							{/each}
-						</p>
-					{/if}
-					<div class="form-actions" style="display:flex;gap:0.5rem;">
+					<div class="form-actions start">
 						<button class="action-btn primary"
 							onclick={() => onRespondConsent(plan, true)} disabled={choicesBusy}>
 							{choicesBusy ? '…' : 'Agree'}
 						</button>
-						<button class="action-btn"
+						<button class="action-btn secondary"
 							onclick={() => onRespondConsent(plan, false)} disabled={choicesBusy}>
 							Disagree
 						</button>
@@ -618,14 +627,7 @@
 
 		{:else if choicesDone && isActor}
 			<div class="complete-section">
-				<p class="choices-applied">
-					Choices applied:
-					{#each OPTIONS as opt}
-						{#if countIn(existingChoices, opt.key) > 0}
-							<span>{opt.label} × {countIn(existingChoices, opt.key)}; </span>
-						{/if}
-					{/each}
-				</p>
+				<ChoicesApplied choices={existingChoices} options={OPTIONS} />
 
 				{#if btRemaining > 0}
 					<div class="plan-form">
@@ -657,6 +659,9 @@
 						<p class="choices-header">
 							Hide source ({hsRemaining} remaining)
 						</p>
+						<p class="choices-note muted">
+							An asset of your choice will hide the Secret that you spread the rumor.
+						</p>
 						<CardPicker
 							label="Hide on one of your assets"
 							items={hsAssetOptions}
@@ -664,14 +669,9 @@
 							selected={hsAssetID}
 							onSelect={(id) => (hsAssetID = id)}
 						/>
-						<label class="form-label">
-							Secret text:
-							<textarea rows={2} bind:value={hsSecret} class="form-textarea"
-								placeholder="Write the secret recording that you're the source…"></textarea>
-						</label>
 						<button class="action-btn primary"
 							onclick={() => submitHideSource(plan)}
-							disabled={hsBusy || hsAssetID == null || !hsSecret.trim()}>
+							disabled={hsBusy || hsAssetID == null}>
 							{hsBusy ? '…' : 'Hide source'}
 						</button>
 					</div>
@@ -680,7 +680,7 @@
 				{#if subflowsDone}
 					{#if isPreparer}
 						<p class="complete-note">
-							Post any follow-scene narration in the scene thread, then complete.
+							Post any follow-scene narration in the chat, then complete.
 						</p>
 						<button class="action-btn primary"
 							onclick={() => onComplete(plan)} disabled={resBusy}>
@@ -724,11 +724,40 @@
 {/if}
 
 <style>
-	/* Take-asset consent prompt shown to the victim. */
+	/* The rumor as a pull-quote — in-world prose, set apart from the action UI.
+	   A muted left bar distinguishes it from the accent bar on the consent box. */
+	.rumor-summary { display: flex; flex-direction: column; gap: 0.3rem; }
+	.rumor-label {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-text-faint);
+		margin: 0;
+	}
+	.rumor-quote {
+		margin: 0;
+		padding: 0.1rem 0 0.1rem 0.7rem;
+		border-left: 3px solid var(--color-border-strong);
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-size: 0.95rem;
+		line-height: 1.4;
+		color: var(--color-text);
+	}
+	.rumor-target {
+		font-size: 0.82rem;
+		color: var(--color-text-muted);
+		margin: 0;
+	}
+
+	/* Take-asset consent callout shown to the victim. A single left accent bar
+	   marks it as the actionable block — no nested boxes, and the type scale
+	   reuses the shared .choices-header / .choices-note sizes. */
 	.consent-box {
-		border: 1px solid var(--color-border, #444);
+		border: 1px solid var(--color-border);
+		border-left: 3px solid var(--color-accent);
 		border-radius: 6px;
-		background: var(--color-surface-2, #2a2a2a);
+		background: var(--color-surface-2);
 		padding: 0.6rem 0.75rem;
 		display: flex;
 		flex-direction: column;
@@ -737,8 +766,18 @@
 	.consent-assets {
 		margin: 0;
 		padding-left: 1.2rem;
+		font-size: 0.85rem;
 	}
 	.consent-box .form-actions button { min-height: 44px; }
+
+	/* Secondary (no-consent) effects listed above the callout. */
+	.effect-fyi {
+		margin: 0;
+		padding-left: 1.2rem;
+		font-size: 0.82rem;
+		color: var(--color-text-muted);
+		line-height: 1.4;
+	}
 
 	/* Tappable "keep it secret" row: ≥44px target, generous hit area on mobile. */
 	.sr-secret-toggle {
@@ -761,4 +800,6 @@
 	}
 	.sr-secret-toggle span { display: flex; flex-direction: column; gap: 0.15rem; }
 	.sr-secret-toggle small { color: var(--color-text-muted, #999); line-height: 1.35; }
+
+	/* Choices-applied list styling */
 </style>

@@ -494,7 +494,7 @@
 						<p class="choices-applied">Choices applied: {existingChoices.join(', ')}</p>
 					{/if}
 					<p class="complete-note">
-						Write any follow-scene narration in the scene thread, then complete the plan.
+						Write any follow-scene narration in the chat, then complete the plan.
 					</p>
 					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
 						{resBusy ? '…' : 'Complete plan'}

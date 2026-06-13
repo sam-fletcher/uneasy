@@ -84,7 +84,7 @@ func (pdHandler) ComputeDifficulty(
 // in the 2026-05 rules audit): the signatory has real sway during resolution —
 // they call the roll (call-roll) and write the addendum (set-addendum), both
 // signatory-gated — and on a mar the other council members gate progress by
-// amending the preparer's text (narrative, in the scene thread). But the
+// amending the preparer's text (narrative, in the chat). But the
 // PREPARER remains the plan's resolver: only they submit make-choice (which
 // enacts the law and, on a make, creates the resource asset) and complete the
 // plan, consistent with every other plan. This holds even when a higher-power

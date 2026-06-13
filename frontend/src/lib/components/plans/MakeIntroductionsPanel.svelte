@@ -367,7 +367,7 @@
 			{:else if choicesDone && isPreparer}
 				<div class="complete-section">
 					<p class="complete-note">
-						Write any follow-scene narration in the scene thread, then complete the plan.
+						Write any follow-scene narration in the chat, then complete the plan.
 					</p>
 					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
 						{resBusy ? '…' : 'Complete plan'}

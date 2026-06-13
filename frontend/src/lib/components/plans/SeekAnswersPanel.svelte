@@ -24,6 +24,7 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import CardPicker from './CardPicker.svelte';
+	import ChoicesApplied from './ChoicesApplied.svelte';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 
@@ -311,14 +312,7 @@
 
 		{:else if choicesDone && isPreparer}
 			<div class="complete-section">
-				<p class="choices-applied">
-					Choices applied:
-					{#each OPTIONS as opt}
-						{#if countIn(existingChoices, opt.key) > 0}
-							<span>{opt.label} × {countIn(existingChoices, opt.key)}; </span>
-						{/if}
-					{/each}
-				</p>
+				<ChoicesApplied choices={existingChoices} options={OPTIONS} />
 
 				{#if brRemaining > 0}
 					<div class="plan-form">

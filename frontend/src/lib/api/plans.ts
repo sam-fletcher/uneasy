@@ -262,11 +262,15 @@ export function respondTakeConsent(planID: number, agree: boolean): Promise<Plan
 	});
 }
 
-/** Spread Rumors — hide the rumor source behind a secret-bearing asset. */
-export function hideSource(planID: number, secretAssetID: number, secretText: string): Promise<PlanEcho> {
+/**
+ * Spread Rumors — hide the rumor source behind a secret-bearing asset. The
+ * secret text is auto-derived from the rumor server-side; secretText is an
+ * optional override.
+ */
+export function hideSource(planID: number, secretAssetID: number, secretText?: string): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/hide-source`, {
 		method: 'POST',
-		body: JSON.stringify({ secret_asset_id: secretAssetID, secret_text: secretText }),
+		body: JSON.stringify({ secret_asset_id: secretAssetID, secret_text: secretText ?? '' }),
 	});
 }
 
