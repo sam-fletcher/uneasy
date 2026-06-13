@@ -170,6 +170,18 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// Reject a duplicate submission. The UI hides the form after submitting
+		// (it derives iKeptSecret from the server-side kept_secrets), so a stale
+		// client, a retry, or a direct API call is the only way to reach here a
+		// second time — and without this guard it would write a second secret on
+		// a second asset and append a duplicate KeptSecrets entry. Mirror the
+		// share-choice idempotence guard above and Spread Rumors' principle that
+		// a stale client can't write a duplicate.
+		if slices.ContainsFunc(ld.KeptSecrets, func(ks KeptSecret) bool { return ks.PlayerID == player.ID }) {
+			respondErr(w, http.StatusConflict, "you have already submitted a keep-secret")
+			return
+		}
+
 		var body struct {
 			AssetID int64 `json:"asset_id"`
 		}

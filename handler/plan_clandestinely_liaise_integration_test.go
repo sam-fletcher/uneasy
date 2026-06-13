@@ -142,6 +142,85 @@ func clSeedPeerWithMarginalia(t *testing.T, h *planLifecycle, ownerIdx int, name
 	return a.ID, m.ID
 }
 
+// TestLiaise_KeepSecret_RejectsDuplicateSubmission proves the keep-secret
+// handler guards against a double-write: a second submission by the same
+// participant (a stale client after a refresh, a retry, or a direct API call) is
+// rejected with 409 and no second secret is written. Without the guard a second
+// secret would land on a second asset and a duplicate KeptSecrets entry would be
+// appended.
+func TestLiaise_KeepSecret_RejectsDuplicateSubmission(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	// Drive a liaison into the secrets_we_keep phase (mirrors the first half of
+	// clDriveToThingsWeShare, stopping before both secrets are kept).
+	preparerPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's confidant")
+	partnerPeer, _ := clSeedPeerWithMarginalia(t, h, 1, "partner's confidant")
+
+	notes := "a meeting under the bridge"
+	partnerID := h.tg.Players[1].ID
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanClandestinelyLiaise,
+		TargetPlayerID:   &partnerID,
+		PreparerPeerID:   &preparerPeer,
+		PartnerPeerID:    &partnerPeer,
+		PreparationNotes: &notes,
+	})
+
+	rd := loadResolutionData(plan.ResolutionData)
+	ld := rd.EnsureLiaise()
+	require.NotNil(t, ld.DelayRevealID, "delay reveal must be created at prep")
+	clSubmitReveal(t, h, *ld.DelayRevealID, 0, 2) // preparer
+	clSubmitReveal(t, h, *ld.DelayRevealID, 1, 2) // partner
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	require.NotNil(t, refreshed.RowNumber, "row should be set after delay reveal")
+	h.jumpToRow(*refreshed.RowNumber)
+	require.Nil(t, h.resolve(plan.ID), "CL has no dice roll")
+
+	// together_at_last → secrets_we_keep.
+	clAdvance(t, h, plan.ID)
+
+	// The preparer's main character bears the secret on the first submission.
+	mc, err := h.q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[0].ID,
+	})
+	require.NoError(t, err)
+	secretsBefore, err := h.q.ListSecretsByAsset(ctx, mc.ID)
+	require.NoError(t, err)
+
+	keepPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/keep-secret"
+
+	// First submission succeeds.
+	code, body := h.post(0, keepPath, map[string]any{"asset_id": mc.ID})
+	require.Equalf(t, http.StatusOK, code, "first keep-secret should succeed: %v", body)
+
+	// Second submission by the SAME player is rejected.
+	code, body = h.post(0, keepPath, map[string]any{"asset_id": mc.ID})
+	assert.Equalf(t, http.StatusConflict, code,
+		"a second keep-secret by the same player must be rejected: %v", body)
+
+	// Exactly one secret was written on the asset (one more than before).
+	secretsAfter, err := h.q.ListSecretsByAsset(ctx, mc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, len(secretsBefore)+1, len(secretsAfter),
+		"exactly one secret must be written despite the duplicate submission")
+
+	// resolution_data carries a single KeptSecrets entry for the preparer.
+	refreshed, err = h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rdAfter := loadResolutionData(refreshed.ResolutionData)
+	ldAfter := rdAfter.EnsureLiaise()
+	preparerEntries := 0
+	for _, ks := range ldAfter.KeptSecrets {
+		if ks.PlayerID == h.tg.Players[0].ID {
+			preparerEntries++
+		}
+	}
+	assert.Equal(t, 1, preparerEntries, "exactly one KeptSecrets entry for the preparer")
+}
+
 // TestLiaise_ShareChoice_RejectsForeignTarget proves Things We Share options
 // must target the PARTNER's assets — a third party's asset is rejected.
 func TestLiaise_ShareChoice_RejectsForeignTarget(t *testing.T) {
