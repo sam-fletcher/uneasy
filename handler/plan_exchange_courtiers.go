@@ -720,3 +720,43 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 		})
 	}
 }
+
+// ResolvingWaitees narrows a resolving Exchange Courtiers to AwaitCourtierResponse
+// during its target-driven sub-steps, so the bar blocks on the target player
+// (never the preparer or focus player). The preparer's sub-steps (accept/decline,
+// make choices, riposte break, completion) return false and ride the generic
+// plan_resolving case (which names the preparer).
+func (ecHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	if plan.TargetPlayerID == nil {
+		return model.RowState{}, false
+	}
+	target := *plan.TargetPlayerID
+	blockTarget := model.RowState{Kind: model.RowStateAwaitCourtierResponse, ActingPlayerIDs: []int64{target}}
+
+	ec := loadResolutionData(plan.ResolutionData).ExchangeCourtiers
+	// Before any fair-trade action the target owes the opening offer.
+	if ec == nil {
+		return blockTarget, true
+	}
+	// Fair-trade step still open: target owes the offer until one is made;
+	// then the preparer owes accept/decline (generic).
+	if ec.FairTradeAccepted == nil {
+		if ec.FairTradeAssetID == nil {
+			return blockTarget, true
+		}
+		return model.RowState{}, false
+	}
+	// Post-roll target-driven sub-steps.
+	if ec.MessyBreakRequired && !ec.MessyBreakDone {
+		return blockTarget, true
+	}
+	if ec.PeerClaimsDone < ec.PeerClaimsRequired {
+		return blockTarget, true
+	}
+	// A marred roll hands the option choices to the target; block on them until
+	// they submit (a fair_trade-only mar leaves no other trace, hence the flag).
+	if !ec.MarChoicesSubmitted && planRollIsMar(ctx, q, plan) {
+		return blockTarget, true
+	}
+	return model.RowState{}, false
+}

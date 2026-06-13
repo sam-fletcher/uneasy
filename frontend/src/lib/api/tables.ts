@@ -49,14 +49,11 @@ export interface RowState {
 	scene_id?: number | null;
 	war_id?: number | null;
 	claim_id?: number | null;
-	/** Player whose action the row is blocked on for single-actor sub-phase
-	 *  kinds that override plan_resolving (await_demand_counter,
-	 *  await_festivity_guest_turn, await_festivity_challenge_response,
-	 *  await_courtier_response, …). */
-	acting_player_id?: number | null;
-	/** Full set of players the row is blocked on for multi-actor sub-phase
-	 *  kinds (liaise_resolving submit phases, await_chronicle_choices).
-	 *  Normalize with `acting_player_ids ?? compact([acting_player_id])`. */
+	/** The full, server-authoritative set of players whose action the row is
+	 *  blocked on — for every actor-naming kind, including the generic
+	 *  plan_resolving / plan_pending case (the resolving plan's preparer) and the
+	 *  single- and multi-actor sub-phase gates. Read directly; there is no
+	 *  client-side preparer/focus proxy. Absent only for kinds with no actor. */
 	acting_player_ids?: number[] | null;
 }
 

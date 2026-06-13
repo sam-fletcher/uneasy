@@ -364,3 +364,105 @@ func pduelSide(plan *dbgen.Plan, playerID int64) gamepkg.DuelSide {
 	}
 	return gamepkg.DuelSideTarget
 }
+
+// ResolvingWaitees returns the narrower RowState for a resolving Propose Duel
+// plan. setup/staking are simultaneous-submit; ActingPlayerIDs lists whoever
+// still owes a submission. 'bouts' blocks on a single player — the responder if
+// a declared bout is unresolved, otherwise the declarer (InitiativePlayerID).
+// 'roll' and 'done' return false and ride the generic PlanResolving case (roll
+// is the standard dice flow; done is terminal).
+func (pduelHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	state := gamepkg.LoadDuelData(plan.ResolutionData)
+	switch state.Phase {
+	case gamepkg.DuelPhaseSetup, gamepkg.DuelPhaseStaking:
+		ids := duelStakingActors(ctx, q, plan, &state)
+		if len(ids) == 0 {
+			// Both duellists have submitted; the phase is about to advance.
+			// Ride the generic resolution case (which names the preparer)
+			// rather than naming both duellists — naming everyone when no one
+			// owes anything is the over-attribution class this whole audit set
+			// out to remove. Mirrors the liaise "all in → preparer" convention.
+			return model.RowState{}, false
+		}
+		return model.RowState{Kind: model.RowStateAwaitDuelStaking, ActingPlayerIDs: ids}, true
+	case gamepkg.DuelPhaseBouts:
+		actor := duelBoutActor(ctx, q, plan, &state)
+		if actor == 0 {
+			return model.RowState{}, false
+		}
+		return model.RowState{Kind: model.RowStateAwaitDuelBout, ActingPlayerIDs: []int64{actor}}, true
+	case gamepkg.DuelPhaseRoll, gamepkg.DuelPhaseDone:
+		return model.RowState{}, false
+	}
+	return model.RowState{}, false
+}
+
+// duelStakingActors returns the duellists who still owe a staking action.
+// In setup that's whoever hasn't revealed a stake count; in staking, whoever
+// hasn't staked their full count of assets. The result may be empty (both
+// submitted, phase about to advance); the caller rides the generic preparer
+// case in that event rather than naming both — see ResolvingWaitees.
+func duelStakingActors(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	state *gamepkg.DuelResolutionData,
+) []int64 {
+	participants := []int64{plan.PreparerID}
+	if plan.TargetPlayerID != nil {
+		participants = append(participants, *plan.TargetPlayerID)
+	}
+
+	var pending []int64
+	//nolint:exhaustive // only setup/staking filter; other phases hit default
+	switch state.Phase {
+	case gamepkg.DuelPhaseSetup:
+		for _, p := range participants {
+			if _, ok := state.StakeCounts[p]; !ok {
+				pending = append(pending, p)
+			}
+		}
+	case gamepkg.DuelPhaseStaking:
+		stakes, err := q.ListDuelStakesByPlan(ctx, plan.ID)
+		if err != nil {
+			return participants
+		}
+		staked := map[int64]int16{}
+		for i := range stakes {
+			staked[stakes[i].PlayerID]++
+		}
+		required := func(pid int64) int16 {
+			if pid == plan.PreparerID {
+				return state.PreparerStakeCount
+			}
+			return state.TargetStakeCount
+		}
+		for _, p := range participants {
+			if staked[p] < required(p) {
+				pending = append(pending, p)
+			}
+		}
+	default:
+		return participants
+	}
+
+	// pending may be empty — both duellists have submitted. We return it as-is;
+	// the caller treats an empty set as "ride the generic preparer case" rather
+	// than re-naming both duellists (which would mask a genuine filter bug as a
+	// spurious "waiting on both").
+	return pending
+}
+
+// duelBoutActor returns the duellist who owes the next bout action: the
+// responder if a declared bout is unresolved, else the declarer (=
+// InitiativePlayerID). Returns 0 if neither can be determined.
+func duelBoutActor(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, state *gamepkg.DuelResolutionData) int64 {
+	latest, err := q.GetLatestDuelBout(ctx, plan.ID)
+	if err == nil && !latest.ResolvedAt.Valid {
+		return latest.ResponderID
+	}
+	if state.InitiativePlayerID != nil {
+		return *state.InitiativePlayerID
+	}
+	return 0
+}

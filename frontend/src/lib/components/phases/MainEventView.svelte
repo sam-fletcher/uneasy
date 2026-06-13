@@ -25,7 +25,7 @@
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
 	import SceneDetailsPanel from '$lib/components/SceneDetailsPanel.svelte';
 	import { followOnPromptForRow } from '$lib/scenePrompts';
-	import type { WaitingOnState, Waitee } from '$lib/components/WaitingOnBar.svelte';
+	import { mainEventWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 
 	interface Props {
 		game: Game;
@@ -143,142 +143,27 @@
 		for (const w of wars) for (const c of w.open_claims) ids.add(c.claimant_id);
 		return [...ids];
 	});
-	// Waiting-on derivation. Renders the WaitingOnBar at the top of the
-	// page based on the server-authoritative RowState kind. The "waitees"
-	// (who the game is blocked on) are usually the focus player, with two
-	// exceptions: Make War's delay reveal blocks on the pending submitters,
-	// and the row-advance gates block on the cost-payers / claimants.
-	// An unresolved dice roll overrides the row-state waitees: the table is
-	// blocked on the roll's own stage (whoever still owes a vote or a Ready),
-	// not on the plan's focus player.
-	function rollWaitingOn(roll: DiceRoll): WaitingOnState {
-		switch (roll.stage) {
-			case 'decide_vote':
-				return {
-					waitees: [{ kind: 'player', playerID: roll.actor_id }],
-					stepLabel: 'Dice roll — call a vote?',
-				};
-			case 'voting': {
-				const voted = new Set(activeRollVotes.map(v => v.player_id));
-				return {
-					waitees: players
-						.filter(p => !voted.has(p.id))
-						.map(p => ({ kind: 'player', playerID: p.id })),
-					stepLabel: 'Dice roll — difficulty vote',
-				};
-			}
-			case 'leverage':
-				return {
-					waitees: activeRollParticipants
-						.filter(p => !p.is_ready)
-						.map(p => ({ kind: 'player', playerID: p.player_id })),
-					stepLabel: 'Dice roll — leverage & ready',
-				};
-			default:
-				return { waitees: [] };
-		}
-	}
-
-	const mainEventWaitingOn = $derived.by<WaitingOnState>(() => {
-		if (activeRoll != null && activeRoll.outcome == null) {
-			return rollWaitingOn(activeRoll);
-		}
-
-		const focusWaitee: Waitee[] = game.focus_player_id != null
-			? [{ kind: 'player', playerID: game.focus_player_id }]
-			: [];
-
-		// Waitees from a sub-phase's server-computed acting set. Multi-actor
-		// kinds populate acting_player_ids; single-actor kinds populate
-		// acting_player_id. The backend names the exact decision-maker(s) from
-		// resolution_data, so the bar never guesses or mis-attributes.
-		const actingWaitees = (): Waitee[] => {
-			const ids = rowState?.acting_player_ids
-				?? (rowState?.acting_player_id != null ? [rowState.acting_player_id] : []);
-			return ids.map(id => ({ kind: 'player', playerID: id }));
-		};
-
-		switch (rowState?.kind) {
-			case 'plan_resolving':
-			case 'plan_pending': {
-				// A plan is resolved by its PREPARER, never the focus player
-				// (the focus player only sets scenes and prepares plans). Look
-				// the preparer up from the resolving plan. plan_pending is the
-				// brief pre-kickoff/recovery state — same copy. Sub-phase kinds
-				// below override for non-preparer / multi-actor waits.
-				const plan = plans.find(p => p.id === rowState?.plan_id);
-				const waitees: Waitee[] = plan?.preparer_id != null
-					? [{ kind: 'player', playerID: plan.preparer_id }]
-					: focusWaitee;
-				return { waitees, stepLabel: 'Resolving plan' };
-			}
-			case 'await_demand_counter':
-				return { waitees: actingWaitees(), stepLabel: 'Make Demands — awaiting counter' };
-			case 'await_demand_draft_pick':
-				return { waitees: actingWaitees(), stepLabel: 'Make Demands — draft pick' };
-			case 'await_festivity_guest_turn':
-				return { waitees: actingWaitees(), stepLabel: 'Host Festivity — guest turn' };
-			case 'await_festivity_challenge_response':
-				return { waitees: actingWaitees(), stepLabel: 'Host Festivity — challenge response' };
-			case 'await_duel_staking':
-				// Both duellists stake simultaneously; the backend filters to
-				// whoever still owes a stake (acting_player_ids).
-				return { waitees: actingWaitees(), stepLabel: 'Propose Duel — staking' };
-			case 'await_duel_bout':
-				return { waitees: actingWaitees(), stepLabel: 'Propose Duel — bout' };
-			case 'await_take_consent':
-				return { waitees: actingWaitees(), stepLabel: 'Spread Rumors — consent to take asset' };
-			case 'await_question_answer':
-				return { waitees: actingWaitees(), stepLabel: 'Seek Answers — answer a question' };
-			case 'liaise_resolving':
-				// Collaborative submit phase (secrets / things-we-share /
-				// when-will-I-see-you-again). The backend names who still owes a
-				// submission, or the preparer once both are in (must advance).
-				return { waitees: actingWaitees(), stepLabel: 'Clandestinely Liaise' };
-			case 'await_courtier_response':
-				// Exchange Courtiers target-driven sub-step (offer / messy break
-				// / mar choices / peer claims). Blocks on the target, not the
-				// preparer or focus player.
-				return { waitees: actingWaitees(), stepLabel: 'Exchange Courtiers — target responds' };
-			case 'await_chronicle_choices':
-				// Marred Chronicle Histories — every present player owes one
-				// choice. Backend names those who still haven't chosen.
-				return { waitees: actingWaitees(), stepLabel: 'Chronicle Histories — all choose' };
-			case 'await_delay_reveal': {
-				const planType = delayRevealPlan?.plan_type;
-				const label =
-					planType === 'make_war' ? 'Make War — delay reveal'
-					: planType === 'clandestinely_liaise' ? 'Clandestinely Liaise — delay reveal'
-					: 'Delay reveal';
-				return {
-					waitees: delayRevealPendingSubmitterIDs.map(id => ({ kind: 'player', playerID: id })),
-					stepLabel: label,
-				};
-			}
-			case 'await_battle_cost':
-			case 'await_surrender_claim': {
-				const ids = new Set<number>([...blockingCostPayers, ...blockingClaimants]);
-				const parts: string[] = [];
-				if (blockingCostPayers.length > 0) parts.push('cost of battle');
-				if (blockingClaimants.length > 0) parts.push('surrender-asset claims');
-				return {
-					waitees: [...ids].map(id => ({ kind: 'player', playerID: id })),
-					stepLabel: 'Row advance blocked',
-					stepSubtitle: parts.join(' · '),
-				};
-			}
-			case 'scene_active':
-				return { waitees: focusWaitee, stepLabel: 'Scene' };
-			case 'scene_setting':
-				return { waitees: focusWaitee, stepLabel: 'Set the scene' };
-			case 'post_scene_action': {
-				const subtitle = `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
-				return { waitees: focusWaitee, stepLabel: 'Prepare a plan', stepSubtitle: subtitle };
-			}
-		}
-		return { waitees: [] };
-	});
-	$effect(() => { waitingOn = mainEventWaitingOn; });
+	// Waiting-on derivation. The pure logic lives in $lib/waitingOn (unit-tested
+	// there); this view just feeds it the reactive inputs and publishes the
+	// result. The server's RowState is authoritative for who must act — the
+	// generic plan_resolving case carries the preparer in acting_player_ids, so
+	// there is no client-side preparer/focus proxy here anymore.
+	const waitingOnState = $derived.by<WaitingOnState>(() =>
+		mainEventWaitingOn({
+			rowState,
+			focusPlayerID: game.focus_player_id ?? null,
+			players,
+			activeRoll,
+			activeRollVotes,
+			activeRollParticipants,
+			delayRevealPlanType: delayRevealPlan?.plan_type ?? null,
+			delayRevealPendingSubmitterIDs,
+			blockingCostPayers,
+			blockingClaimants,
+			maxRefresh,
+		}),
+	);
+	$effect(() => { waitingOn = waitingOnState; });
 
 
 	// Local error string for non-chat actions (refresh, pass focus).

@@ -110,6 +110,23 @@ type PlanHandler interface {
 	ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc
 }
 
+// ResolvingWaitees is an optional PlanHandler capability that lets a plan own
+// the "who is the row waiting on?" computation while it is resolving, instead
+// of a central switch in row_state.go reaching into each plan's resolution_data.
+//
+// ComputeRowState calls it for a plan in 'resolving' status. Return ok=true
+// with the narrower RowState (Kind + ActingPlayerIDs populated) to override the
+// generic case; the caller fills in PlanID. Return ok=false to ride the generic
+// PlanResolving case, which names the plan's preparer — preparer-only sub-steps
+// (the common case) need not be enumerated, they just fall through.
+//
+// Cohesion is the point: a plan's waiting-on logic lives next to its OnResolve /
+// CanComplete, so the two are reviewed together. The June 2026 audit's missed
+// gaps were all in plans whose waiting-on sat far away in the central switch.
+type ResolvingWaitees interface {
+	ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool)
+}
+
 // OnPreparer is an optional interface for plan handlers that need to run setup
 // immediately after the plan row is created in PreparePlan. For example,
 // Clandestinely Liaise uses it to create the simultaneous reveal and register

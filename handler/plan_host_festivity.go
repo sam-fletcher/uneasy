@@ -483,3 +483,46 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 // festivityOptionContext bundles the parameters threaded through every
 // festivity option applier.
+
+// ResolvingWaitees returns the narrower RowState for a resolving Host Festivity
+// plan. During 'socializing': an open challenge takes precedence (block on the
+// target), otherwise block on the next guest in esteem order. 'host_choosing'
+// and 'done' return false and ride the generic PlanResolving case — the host is
+// the preparer (= focus player at resolve time) so the existing label is already
+// accurate.
+func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	state := gamepkg.LoadFestivityData(plan.ResolutionData)
+	if state.Phase != gamepkg.FestivityPhaseSocializing {
+		return model.RowState{}, false
+	}
+	if state.PendingChallenge != nil {
+		actor := state.PendingChallenge.TargetID
+		return model.RowState{
+			Kind:            model.RowStateAwaitFestivityChallengeResponse,
+			ActingPlayerIDs: []int64{actor},
+		}, true
+	}
+	rankings, err := q.ListRankingsByGame(ctx, plan.GameID)
+	if err != nil {
+		return model.RowState{}, false
+	}
+	rankFor := func(playerID int64) int16 {
+		for i := range rankings {
+			r := &rankings[i]
+			if r.Category != model.CategoryEsteem || r.PlayerID == nil {
+				continue
+			}
+			if *r.PlayerID == playerID {
+				return r.Rank
+			}
+		}
+		// Low sentinel: an unranked guest sorts LAST in NextSocializingTurn's
+		// descending-by-rank order (a high value would wrongly put them first).
+		return 0
+	}
+	next := state.NextSocializingTurn(plan.PreparerID, rankFor)
+	if next == 0 {
+		return model.RowState{}, false
+	}
+	return model.RowState{Kind: model.RowStateAwaitFestivityGuestTurn, ActingPlayerIDs: []int64{next}}, true
+}

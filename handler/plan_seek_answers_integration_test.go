@@ -419,8 +419,8 @@ func TestSeekAnswers_AskQuestion_AnswerFlow(t *testing.T) {
 	rs, err := ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitQuestionAnswer, rs.Kind)
-	require.NotNil(t, rs.ActingPlayerID)
-	assert.Equal(t, targetID, *rs.ActingPlayerID)
+	require.Len(t, rs.ActingPlayerIDs, 1)
+	assert.Equal(t, targetID, rs.ActingPlayerIDs[0])
 
 	// Completion blocks while a question is pending.
 	code, _ = h.post(preparerIdx, completePath, nil)

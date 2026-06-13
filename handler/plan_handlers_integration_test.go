@@ -649,8 +649,8 @@ func TestSpreadRumors_TakeConsent_AgreeTransfersAsset(t *testing.T) {
 	rs, err := ComputeRowState(ctx, h.q, h.tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitTakeConsent, rs.Kind)
-	require.NotNil(t, rs.ActingPlayerID)
-	assert.Equal(t, victimID, *rs.ActingPlayerID)
+	require.Len(t, rs.ActingPlayerIDs, 1)
+	assert.Equal(t, victimID, rs.ActingPlayerIDs[0])
 
 	respPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/respond-take-consent"
 

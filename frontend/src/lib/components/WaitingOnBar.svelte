@@ -14,15 +14,11 @@
 -->
 <script lang="ts" module>
 	import type { Player } from '$lib/api';
-	export type Waitee =
-		| { kind: 'player'; playerID: number }
-		| { kind: 'everyone' }
-		| { kind: 'label'; text: string };
-	export interface WaitingOnState {
-		waitees: Waitee[];
-		stepLabel?: string;
-		stepSubtitle?: string;
-	}
+	// Types now live in $lib/waitingOn (the pure derivation module) so the
+	// dependency points component → lib, not lib → component. Re-exported here
+	// for any legacy importers that still reach for them via this component.
+	import type { Waitee, WaitingOnState } from '$lib/waitingOn';
+	export type { Waitee, WaitingOnState } from '$lib/waitingOn';
 </script>
 
 <script lang="ts">

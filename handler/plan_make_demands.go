@@ -364,3 +364,59 @@ func mdDraftPickers(
 	first, second := gamepkg.DemandDraftPickers(demanderID, targetPreparerID, demanderRank, targetRank)
 	return first, second, nil
 }
+
+// ResolvingWaitees routes a resolving Make Demands plan to the right override:
+// AwaitDemandDraftPick on a made roll while the four-pick draft is in progress,
+// AwaitDemandCounter on a marred roll until the target counters or waives.
+// Detection uses the dice roll outcome — plan.Result isn't written until the
+// demand is completed, so the roll is the source of truth during resolution.
+func (mdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	outcome := mdRollOutcome(ctx, q, plan.ID)
+	if outcome == "" || plan.TargetedPlanID == nil {
+		return model.RowState{}, false
+	}
+	target, err := q.GetPlanByID(ctx, *plan.TargetedPlanID)
+	if err != nil {
+		return model.RowState{}, false
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	switch outcome {
+	case makeOutcome:
+		return demandDraftSubPhase(ctx, q, plan, &target, &resData)
+	case marOutcome:
+		if md := resData.MakeDemands; md != nil && md.CounterDemandPlaced {
+			return model.RowState{}, false
+		}
+		actor := target.PreparerID
+		return model.RowState{Kind: model.RowStateAwaitDemandCounter, ActingPlayerIDs: []int64{actor}}, true
+	}
+	return model.RowState{}, false
+}
+
+// demandDraftSubPhase returns AwaitDemandDraftPick when the four-pick draft is
+// still in progress, with ActingPlayerIDs set to whoever owes the next pick
+// (alternating starting with the higher-ranked player).
+func demandDraftSubPhase(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	target *dbgen.Plan,
+	resData *ResolutionData,
+) (model.RowState, bool) {
+	picks := 0
+	if md := resData.MakeDemands; md != nil {
+		picks = len(md.DraftChoices)
+	}
+	if picks >= 4 {
+		return model.RowState{}, false
+	}
+	first, second, err := mdDraftPickers(ctx, q, plan.GameID, plan.PreparerID, target.PreparerID)
+	if err != nil {
+		return model.RowState{}, false
+	}
+	actor := first
+	if picks%2 == 1 {
+		actor = second
+	}
+	return model.RowState{Kind: model.RowStateAwaitDemandDraftPick, ActingPlayerIDs: []int64{actor}}, true
+}

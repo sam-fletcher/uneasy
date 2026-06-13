@@ -613,3 +613,35 @@ func chApplyMarEffect(
 		return fmt.Sprintf("%s chose %q.", who, in.choice), 0, ""
 	}
 }
+
+// ResolvingWaitees narrows a marred Chronicle Histories to AwaitChronicleChoices:
+// every player present when the mar scene began must each submit one option. The
+// bar names those who still owe a choice (game players minus the distinct
+// submitters in MakeMarChoices). The make path and a fully-chosen mar return
+// false and ride the generic plan_resolving case (the preparer completes).
+func (chHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	if !planRollIsMar(ctx, q, plan) {
+		return model.RowState{}, false
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	submitted := map[int64]bool{}
+	for _, c := range resData.MakeMarChoices {
+		if c.PlayerID != nil {
+			submitted[*c.PlayerID] = true
+		}
+	}
+	players, err := q.GetPlayersByGame(ctx, plan.GameID)
+	if err != nil {
+		return model.RowState{}, false
+	}
+	var pending []int64
+	for i := range players {
+		if !submitted[players[i].ID] {
+			pending = append(pending, players[i].ID)
+		}
+	}
+	if len(pending) == 0 {
+		return model.RowState{}, false
+	}
+	return model.RowState{Kind: model.RowStateAwaitChronicleChoices, ActingPlayerIDs: pending}, true
+}

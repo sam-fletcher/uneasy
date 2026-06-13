@@ -38,7 +38,7 @@
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import { computeBrightHearts } from '$lib/prologue/refund';
-	import type { WaitingOnState, Waitee } from '$lib/components/WaitingOnBar.svelte';
+	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 
 	interface Props {
 		gameID: string;

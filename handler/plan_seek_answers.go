@@ -701,3 +701,16 @@ func saRequirePreparerResolving(
 	}
 	return plan, player, true
 }
+
+// ResolvingWaitees returns AwaitQuestionAnswer while a Seek Answers "ask a player
+// a question" pick is waiting on the target's answer or veto. ActingPlayerIDs
+// names the target, so the table blocks on them rather than the resolving plan's
+// focus player. No pending question → ride the generic PlanResolving case.
+func (saHandler) ResolvingWaitees(_ context.Context, _ *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	resData := loadResolutionData(plan.ResolutionData)
+	if sa := resData.SeekAnswers; sa != nil && sa.PendingQuestion != nil {
+		target := sa.PendingQuestion.TargetID
+		return model.RowState{Kind: model.RowStateAwaitQuestionAnswer, ActingPlayerIDs: []int64{target}}, true
+	}
+	return model.RowState{}, false
+}

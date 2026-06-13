@@ -904,3 +904,16 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 		})
 	}
 }
+
+// ResolvingWaitees returns AwaitTakeConsent while a Spread Rumors "take asset"
+// choice is waiting on the victim's agree/disagree. ActingPlayerIDs names the
+// victim (the asset owner), so the table blocks on them rather than the resolving
+// plan's focus player. No pending consent → ride the generic PlanResolving case.
+func (srHandler) ResolvingWaitees(_ context.Context, _ *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	resData := loadResolutionData(plan.ResolutionData)
+	if sr := resData.SpreadRumors; sr != nil && sr.PendingTakeConsent != nil {
+		victim := sr.PendingTakeConsent.VictimID
+		return model.RowState{Kind: model.RowStateAwaitTakeConsent, ActingPlayerIDs: []int64{victim}}, true
+	}
+	return model.RowState{}, false
+}

@@ -476,8 +476,8 @@ func TestComputeRowState_AwaitCourtierResponse(t *testing.T) {
 		got, err := ComputeRowState(ctx, q, tg.Game.ID)
 		require.NoError(t, err)
 		assert.Equal(t, model.RowStateAwaitCourtierResponse, got.Kind, msg)
-		require.NotNil(t, got.ActingPlayerID)
-		assert.Equal(t, tg.Players[1].ID, *got.ActingPlayerID, msg)
+		require.Len(t, got.ActingPlayerIDs, 1)
+		assert.Equal(t, tg.Players[1].ID, got.ActingPlayerIDs[0], msg)
 	}
 	expectGeneric := func(msg string) {
 		got, err := ComputeRowState(ctx, q, tg.Game.ID)
@@ -754,8 +754,8 @@ func TestComputeRowState_AwaitDemandCounter(t *testing.T) {
 		"marred demand with no counter yet must surface as await_demand_counter")
 	require.NotNil(t, state.PlanID)
 	assert.Equal(t, demand.ID, *state.PlanID)
-	require.NotNil(t, state.ActingPlayerID)
-	assert.Equal(t, tg.Players[1].ID, *state.ActingPlayerID,
+	require.Len(t, state.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[1].ID, state.ActingPlayerIDs[0],
 		"acting player must be the target plan's preparer")
 
 	// Once CounterDemandPlaced flips, the override stops firing and the
@@ -770,7 +770,8 @@ func TestComputeRowState_AwaitDemandCounter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStatePlanResolving, state.Kind,
 		"counter placed → revert to plan_resolving")
-	assert.Nil(t, state.ActingPlayerID)
+	assert.Equal(t, []int64{tg.Players[0].ID}, state.ActingPlayerIDs,
+		"generic resolution names the demand's own preparer")
 }
 
 // TestComputeRowState_AwaitDemandDraftPick: a made Make Demands plan with
@@ -818,8 +819,8 @@ func TestComputeRowState_AwaitDemandDraftPick(t *testing.T) {
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitDemandDraftPick, got.Kind)
-	require.NotNil(t, got.ActingPlayerID)
-	assert.Equal(t, tg.Players[0].ID, *got.ActingPlayerID, "first pick = higher-ranked (P0)")
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[0].ID, got.ActingPlayerIDs[0], "first pick = higher-ranked (P0)")
 
 	// 1 pick → second picker (P1).
 	resData := loadResolutionData(demand.ResolutionData)
@@ -831,7 +832,7 @@ func TestComputeRowState_AwaitDemandDraftPick(t *testing.T) {
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitDemandDraftPick, got.Kind)
-	assert.Equal(t, tg.Players[1].ID, *got.ActingPlayerID, "second pick = lower-ranked (P1)")
+	assert.Equal(t, tg.Players[1].ID, got.ActingPlayerIDs[0], "second pick = lower-ranked (P1)")
 
 	// 4 picks → draft complete, override clears (back to plan_resolving).
 	md.DraftChoices = []gamepkg.DraftChoice{
@@ -921,8 +922,8 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
-	require.NotNil(t, got.ActingPlayerID)
-	assert.Equal(t, tg.Players[1].ID, *got.ActingPlayerID,
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[1].ID, got.ActingPlayerIDs[0],
 		"lowest-esteem guest (P1, rank 3) must act first")
 	require.NotNil(t, got.PlanID)
 	assert.Equal(t, hf.ID, *got.PlanID)
@@ -940,8 +941,8 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
-	require.NotNil(t, got.ActingPlayerID)
-	assert.Equal(t, tg.Players[2].ID, *got.ActingPlayerID,
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[2].ID, got.ActingPlayerIDs[0],
 		"after P1 acts, P2 (rank 2) goes next; host is last")
 
 	// After both guests act, only host remains — host = focus, but kind
@@ -951,8 +952,8 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
-	require.NotNil(t, got.ActingPlayerID)
-	assert.Equal(t, tg.Players[0].ID, *got.ActingPlayerID,
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[0].ID, got.ActingPlayerIDs[0],
 		"host acts last in the socializing phase")
 }
 
@@ -983,8 +984,8 @@ func TestComputeRowState_AwaitFestivityChallengeResponse(t *testing.T) {
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityChallengeResponse, got.Kind)
-	require.NotNil(t, got.ActingPlayerID)
-	assert.Equal(t, tg.Players[2].ID, *got.ActingPlayerID,
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[2].ID, got.ActingPlayerIDs[0],
 		"challenge target is the waitee")
 }
 
@@ -1012,11 +1013,13 @@ func TestComputeRowState_FestivityHostChoosing_NoOverride(t *testing.T) {
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStatePlanResolving, got.Kind)
-	assert.Nil(t, got.ActingPlayerID)
+	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
+		"host_choosing rides generic resolution → names the preparer (host)")
 }
 
 // TestComputeRowState_AwaitDuelStaking: setup/staking phases surface as
-// AwaitDuelStaking with no acting player (multiple waitees; client derives).
+// AwaitDuelStaking with ActingPlayerIDs holding the duellists who still owe a
+// submission (both, before anyone stakes).
 func TestComputeRowState_AwaitDuelStaking(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -1046,19 +1049,42 @@ func TestComputeRowState_AwaitDuelStaking(t *testing.T) {
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitDuelStaking, got.Kind, "setup → await_duel_staking")
-	assert.Nil(t, got.ActingPlayerID, "staking has multiple waitees, client derives")
+	assert.ElementsMatch(t, []int64{tg.Players[0].ID, tg.Players[1].ID}, got.ActingPlayerIDs,
+		"setup with no stakes yet → both duellists owe a submission")
 	require.NotNil(t, got.PlanID)
 	assert.Equal(t, duel.ID, *got.PlanID)
 
-	// 'staking' phase shares the same kind.
+	// 'staking' phase shares the same kind. Each duellist owes 1 staked asset
+	// (counts revealed in setup) and neither has staked yet → both pending.
 	reloaded, err := q.GetPlanByID(ctx, duel.ID)
 	require.NoError(t, err)
 	resData = loadResolutionData(reloaded.ResolutionData)
-	resData.EnsureDuel().Phase = gamepkg.DuelPhaseStaking
+	ds := resData.EnsureDuel()
+	ds.Phase = gamepkg.DuelPhaseStaking
+	ds.PreparerStakeCount = 1
+	ds.TargetStakeCount = 1
 	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitDuelStaking, got.Kind, "staking → same kind as setup")
+
+	// A3: once BOTH duellists have submitted their stake counts (setup phase
+	// complete, pending set empty), the row must NOT keep naming both duellists.
+	// It rides the generic resolution case, which names the preparer — naming
+	// everyone when no one owes anything is the over-attribution bug class.
+	reloaded, err = q.GetPlanByID(ctx, duel.ID)
+	require.NoError(t, err)
+	resData = loadResolutionData(reloaded.ResolutionData)
+	ds = resData.EnsureDuel()
+	ds.Phase = gamepkg.DuelPhaseSetup
+	ds.StakeCounts = map[int64]int16{tg.Players[0].ID: 1, tg.Players[1].ID: 1}
+	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind,
+		"both stake counts in → generic resolution, not await_duel_staking")
+	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
+		"generic resolution names the preparer, never both duellists")
 }
 
 // TestComputeRowState_AwaitDuelBout: bouts phase blocks on the declarer
@@ -1097,8 +1123,8 @@ func TestComputeRowState_AwaitDuelBout(t *testing.T) {
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitDuelBout, got.Kind)
-	require.NotNil(t, got.ActingPlayerID)
-	assert.Equal(t, tg.Players[0].ID, *got.ActingPlayerID,
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[0].ID, got.ActingPlayerIDs[0],
 		"no bout yet → declarer (initiative holder) acts")
 
 	// Create a stake for each duellist and a declared-but-unresolved bout.
@@ -1125,8 +1151,8 @@ func TestComputeRowState_AwaitDuelBout(t *testing.T) {
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitDuelBout, got.Kind)
-	require.NotNil(t, got.ActingPlayerID)
-	assert.Equal(t, tg.Players[1].ID, *got.ActingPlayerID,
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[1].ID, got.ActingPlayerIDs[0],
 		"declared but unresolved bout → responder acts")
 }
 

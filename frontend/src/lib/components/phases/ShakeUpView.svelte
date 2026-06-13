@@ -20,7 +20,7 @@
 	} from '$lib/api';
 	import AssetCardSelectable from '../AssetCardSelectable.svelte';
 	import { playerColor } from '$lib/playerColor';
-	import type { WaitingOnState, Waitee } from '$lib/components/WaitingOnBar.svelte';
+	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 
 	interface Props {
 		gameID: string;

@@ -73,32 +73,31 @@ const (
 	// RowStateAwaitDemandDraftPick — a made Make Demands plan is in the
 	// alternating draft of demand options (control_leverage,
 	// keep_or_change_target, keep_assets, perform_steps). Demander and
-	// target-plan preparer alternate; ActingPlayerID names whoever owes
+	// target-plan preparer alternate; ActingPlayerIDs names whoever owes
 	// the next pick. Half of every draft blocks on a non-focus player.
 	RowStateAwaitDemandDraftPick RowStateKind = "await_demand_draft_pick"
 
 	// RowStateAwaitFestivityGuestTurn — a Host Festivity plan is in the
 	// 'socializing' phase and waiting on the next guest (in lowest-esteem-
-	// first order, host goes last) to roll or opt out. ActingPlayerID names
+	// first order, host goes last) to roll or opt out. ActingPlayerIDs names
 	// that guest — typically not the focus player.
 	RowStateAwaitFestivityGuestTurn RowStateKind = "await_festivity_guest_turn"
 
 	// RowStateAwaitFestivityChallengeResponse — a Host Festivity plan has
 	// an open duel challenge; all other festivity actions pause until the
-	// challenged guest accepts or declines. ActingPlayerID names the
+	// challenged guest accepts or declines. ActingPlayerIDs names the
 	// challenge target.
 	RowStateAwaitFestivityChallengeResponse RowStateKind = "await_festivity_challenge_response"
 
 	// RowStateAwaitDuelStaking — a Propose Duel is in 'setup' or 'staking'
 	// phase: both duellists simultaneously submit stake counts (setup), then
-	// the specific assets (staking). Multiple waitees; the client derives
-	// pending submitters from the plan's resolution_data (preparer +
-	// target_player_id minus those who have already submitted). No
-	// ActingPlayerID — mirrors the AwaitDelayReveal multi-waitee pattern.
+	// the specific assets (staking). ActingPlayerIDs holds the duellists who
+	// still owe a submission (preparer + target_player_id minus those already
+	// in), filtered server-side.
 	RowStateAwaitDuelStaking RowStateKind = "await_duel_staking"
 
 	// RowStateAwaitDuelBout — a Propose Duel is in 'bouts' phase. The
-	// initiative-holder declares; the responder responds. ActingPlayerID
+	// initiative-holder declares; the responder responds. ActingPlayerIDs
 	// names whichever side owes the next action: if a bout has been
 	// declared and is unresolved, the responder; otherwise the declarer
 	// (= InitiativePlayerID).
@@ -107,12 +106,12 @@ const (
 	// RowStateAwaitTakeConsent — a Spread Rumors "take asset" choice is
 	// waiting for the victim (the player who would lose the asset) to agree
 	// or disagree. The aggressor's picks are not yet committed; nothing else
-	// may happen until the victim responds. ActingPlayerID names the victim.
+	// may happen until the victim responds. ActingPlayerIDs names the victim.
 	RowStateAwaitTakeConsent RowStateKind = "await_take_consent"
 
 	// RowStateAwaitQuestionAnswer — a Seek Answers "ask a player a question"
 	// pick is waiting for the target to answer (or veto). Nothing else may
-	// happen until they respond. ActingPlayerID names the target.
+	// happen until they respond. ActingPlayerIDs names the target.
 	RowStateAwaitQuestionAnswer RowStateKind = "await_question_answer"
 
 	// RowStateLiaiseResolving — a Clandestinely Liaise plan is resolving and a
@@ -126,7 +125,7 @@ const (
 
 	// RowStateAwaitCourtierResponse — an Exchange Courtiers plan is resolving
 	// inside a target-driven sub-step (fair-trade offer, messy break, mar
-	// choices, or peer claims). ActingPlayerID names the target player, who is
+	// choices, or peer claims). ActingPlayerIDs names the target player, who is
 	// not the preparer (the normal resolver) and not the focus player.
 	RowStateAwaitCourtierResponse RowStateKind = "await_courtier_response"
 
@@ -184,24 +183,22 @@ type RowState struct {
 	// ClaimID is the open surrender claim for: AwaitSurrenderClaim.
 	ClaimID *int64 `json:"claim_id,omitempty"`
 
-	// ActingPlayerID names the player whose action the table is blocked on
-	// for single-actor sub-phase gates that override PlanResolving
+	// ActingPlayerIDs names the full set of players whose action the table is
+	// blocked on. The single, authoritative home for "who must act" — set
+	// server-side for every actor-naming kind, including the generic
+	// PlanResolving / PlanPending case (where it holds the resolving plan's
+	// preparer, who owns the resolution) and the single-actor sub-phase gates
 	// (AwaitDemandCounter, AwaitDemandDraftPick, AwaitFestivityGuestTurn,
 	// AwaitFestivityChallengeResponse, AwaitDuelBout, AwaitTakeConsent,
-	// AwaitQuestionAnswer, AwaitCourtierResponse).
-	// Lets the WaitingOnBar attribute the wait to the actual decision-maker
-	// (often a non-focus player) rather than the resolving plan's focus player.
-	// Nil when the wait is on multiple players (see ActingPlayerIDs) or has no
-	// single decider.
-	ActingPlayerID *int64 `json:"acting_player_id,omitempty"`
-
-	// ActingPlayerIDs names the full set of players the table is blocked on
-	// for multi-actor sub-phase gates (LiaiseResolving submit phases,
-	// AwaitChronicleChoices). Populated server-side from resolution_data so the
+	// AwaitQuestionAnswer, AwaitCourtierResponse — each a one-element slice) as
+	// well as the multi-actor gates (LiaiseResolving submit phases,
+	// AwaitChronicleChoices, AwaitDuelStaking).
+	//
+	// Computed from persisted state (resolution_data, rankings, reveals), so the
 	// WaitingOnBar reflects exactly who still owes an action — never the focus
-	// player and never a stale client guess. The frontend normalizes the two
-	// fields as `acting_player_ids ?? [acting_player_id]`. Nil for single-actor
-	// kinds.
+	// player (who, for a delayed plan, is often not even a participant) and never
+	// a stale client guess. The frontend reads it directly; there is no
+	// client-side preparer/focus proxy. Nil only for kinds with no actor to name.
 	ActingPlayerIDs []int64 `json:"acting_player_ids,omitempty"`
 }
 

@@ -253,3 +253,83 @@ func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 
 	return nil
 }
+
+// ResolvingWaitees narrows a resolving Clandestinely Liaise during its
+// collaborative submit phases so the WaitingOnBar names exactly who still owes
+// a submission — never the focus player, who (unlike every other resolving
+// plan) is often not even a participant, since the liaison was prepared on an
+// earlier turn and resolves on its delayed row. The preparer-only phases
+// (together_at_last, done) return false and ride the generic plan_resolving
+// case, which already names the resolving plan's preparer.
+func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	resData := loadResolutionData(plan.ResolutionData)
+	ld := resData.Liaise
+	if ld == nil || ld.PartnerID == nil {
+		return model.RowState{}, false
+	}
+	participants := []int64{plan.PreparerID, *ld.PartnerID}
+
+	// pendingThen names participants who still owe a submission; once all are
+	// in, it falls back to the preparer, who owes the "Advance" click.
+	pendingThen := func(submitted map[int64]bool, whenDone []int64) []int64 {
+		var pending []int64
+		for _, p := range participants {
+			if !submitted[p] {
+				pending = append(pending, p)
+			}
+		}
+		if len(pending) == 0 {
+			return whenDone
+		}
+		return pending
+	}
+
+	//nolint:exhaustive // together_at_last/done handled by default (ride generic)
+	switch ld.Phase {
+	case game.LiaisePhaseSecretsWeKeep:
+		submitted := map[int64]bool{}
+		for _, ks := range ld.KeptSecrets {
+			submitted[ks.PlayerID] = true
+		}
+		ids := pendingThen(submitted, []int64{plan.PreparerID})
+		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+	case game.LiaisePhaseThingsWeShare:
+		submitted := map[int64]bool{}
+		for _, id := range ld.ShareSubmitterIDs {
+			submitted[id] = true
+		}
+		ids := pendingThen(submitted, []int64{plan.PreparerID})
+		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+	case game.LiaisePhaseWhenWillISeeYouAgain:
+		// Both participants reveal a redelay face simultaneously; the reveal
+		// completing advances the plan on its own, so name only those who still
+		// owe a face (no "advance" click). All in → ride the generic case.
+		submitted := liaiseRedelaySubmitters(ctx, q, ld)
+		ids := pendingThen(submitted, nil)
+		if len(ids) == 0 {
+			return model.RowState{}, false
+		}
+		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+	default:
+		return model.RowState{}, false
+	}
+}
+
+// liaiseRedelaySubmitters returns the set of participants who have submitted a
+// face in the when-will-I-see-you-again redelay reveal.
+func liaiseRedelaySubmitters(ctx context.Context, q *dbgen.Queries, ld *game.LiaiseResolutionData) map[int64]bool {
+	submitted := map[int64]bool{}
+	if ld.RedelayRevealID == nil {
+		return submitted
+	}
+	entries, err := q.ListRevealEntries(ctx, *ld.RedelayRevealID)
+	if err != nil {
+		return submitted
+	}
+	for _, e := range entries {
+		if e.Face != nil {
+			submitted[e.PlayerID] = true
+		}
+	}
+	return submitted
+}
