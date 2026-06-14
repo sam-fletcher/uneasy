@@ -47,7 +47,7 @@ export function firstEmptySlotIndex(asset: Asset): number | null {
  */
 export function destructionWarning(asset: Asset | null | undefined): string {
 	if (!asset || !isNeedlesslyAtRisk(asset)) return '';
-	return "Heads up: this is the asset's last marginalia — tearing it will "
-		+ 'destroy the asset — but there are empty slots. The owner should add '
-		+ 'another marginalia before you tear it.';
+	return "Heads up: this is the asset's last marginalia, but there are empty slots."
+		+ ' Tearing it will destroy the asset.'
+		+ ' The owner should add another marginalia before you tear it.';
 }

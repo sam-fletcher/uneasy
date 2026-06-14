@@ -509,10 +509,13 @@
 								{#if isSelf}
 									<textarea
 										class="m-editor-input"
-										placeholder="Write a secret on this asset…"
+										placeholder="Write a secret on this asset. Secrets can be anything, as long as:
+	1. It doesn't contradict anything already established
+	2. It's something your character has the power or opportunity to know or make true
+	3. It doesn't take away agency from another player's character."
 										bind:value={newSecretText}
 										disabled={secretSaving}
-										rows={2}
+										rows={4}
 										maxlength={500}
 										onkeydown={(e) => {
 											if (e.key === 'Escape') { e.preventDefault(); toggleSecrets(asset.id); }

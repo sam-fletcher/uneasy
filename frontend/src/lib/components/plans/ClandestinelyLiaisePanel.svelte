@@ -261,11 +261,11 @@
 	// a partner NON-peer; look / leverage any partner asset.
 	const SHARE_OPTIONS: { key: string; label: string; hint: string }[] = [
 		{ key: 'look_at_secret',   label: "Look at partner's secrets",
-			hint: "Pick one of their assets — you'll see its secrets." },
+			hint: "Pick one of their assets — you'll learn its secrets." },
 		{ key: 'update_peer',      label: "Update partner's meeting peer",
-			hint: 'Rewrite one marginalia on the peer they brought (you choose which).' },
+			hint: '' },
 		{ key: 'break_peer',       label: "Break partner's meeting peer",
-			hint: 'Tear a marginalia on the peer they brought (you choose which).' },
+			hint: '' },
 		{ key: 'take_gift',        label: 'Take a gift from partner',
 			hint: "Pick one of their non-peer assets — it transfers to you." },
 		{ key: 'leverage_partner', label: "Leverage partner's asset, bank a die",
@@ -521,9 +521,9 @@
 		<!-- Phase 3: Things We Share ──────────────────────────────── -->
 		{:else if clState.phase === 'things_we_share'}
 			<div class="choices-section">
-				<p class="choices-header">Things we share</p>
+				<p class="choices-header">Things We Share</p>
 				<p class="choices-note">
-					Pick one option. Both picks are revealed once both have submitted.
+					Pick one option. Picks are revealed once both players have submitted.
 				</p>
 				{#if iShared}
 					<p class="choices-note">You've submitted. Waiting for your partner…</p>
@@ -562,27 +562,27 @@
 							</p>
 						{:else}
 							<p class="choices-note">
-								{isUpdate ? 'Rewriting a note on' : 'Breaking'}
+								{isUpdate ? 'Rewrite one marginalia on' : 'Break'}
 								<strong>{partnerMeetingPeer?.name}</strong> —
-								choose which note to {isUpdate ? 'rewrite' : 'tear'}:
+								choose which marginalia to {isUpdate ? 'rewrite' : 'tear'}:
 							</p>
 							{#if meetingPeerBreakableMarginalia.length === 0}
 								<p class="choices-note muted">
-									This peer has no intact note to {isUpdate ? 'rewrite' : 'tear'}.
+									This peer has no intact marginalia to {isUpdate ? 'rewrite' : 'tear'}.
 								</p>
 							{:else}
 								<CardPicker
-									label={isUpdate ? 'Note to rewrite' : 'Note to tear'}
+									label={isUpdate ? 'Marginalia to rewrite' : 'Marginalia to tear'}
 									items={partnerMeetingPeer ? [partnerMeetingPeer] : []}
 									{players}
-									emptyMessage={isUpdate ? 'No intact note to rewrite.' : 'No intact note to tear.'}
+									emptyMessage={isUpdate ? 'No intact marginalia to rewrite.' : 'No intact marginalia to tear.'}
 									marginaliaMode
 									selectedMarginaliaID={shareMargID}
 									onSelectMarginalia={(mID) => { shareMargID = mID; }}
 								/>
 								{#if isUpdate && shareMargID != null}
 									<textarea rows={2} class="form-textarea" bind:value={shareUpdateText}
-										placeholder="The rewritten note…" maxlength={280}></textarea>
+										placeholder="The rewritten marginalia…" maxlength={280}></textarea>
 								{/if}
 							{/if}
 							{#if !isUpdate && shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}

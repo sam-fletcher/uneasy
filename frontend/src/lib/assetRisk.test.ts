@@ -59,9 +59,9 @@ describe('firstEmptySlotIndex', () => {
 describe('destructionWarning', () => {
 	it('returns the warning sentence when needlessly at risk', () => {
 		expect(destructionWarning(asset([marg(1)]))).toBe(
-			"Heads up: this is the asset's last marginalia — tearing it will " +
-				'destroy the asset — but there are empty slots. The owner should add ' +
-				'another marginalia before you tear it.',
+			"Heads up: this is the asset's last marginalia, but there are empty slots." +
+			' Tearing it will destroy the asset.' +
+			' The owner should add another marginalia before you tear it.',
 		);
 	});
 
