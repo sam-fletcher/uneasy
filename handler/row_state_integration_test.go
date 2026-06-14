@@ -4,6 +4,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
@@ -493,27 +494,33 @@ func TestComputeRowState_AwaitCourtierResponse(t *testing.T) {
 	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) { e.FairTradeAssetID = &assetID })
 	expectGeneric("accept/decline is the preparer's")
 
-	// Declined + messy break outstanding → target.
+	// Declined + messy break outstanding (phase = messy_break) → target.
 	declined := false
 	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
 		e.FairTradeAccepted = &declined
 		e.MessyBreakRequired = true
+		e.Phase = gamepkg.ECPhaseMessyBreak
 	})
 	expectTarget("messy break is the target's")
 
-	// Messy break done, peer claims outstanding → target.
+	// Messy break done, peer claims outstanding (phase = peer_claims) → target.
 	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
 		e.MessyBreakDone = true
+		e.Phase = gamepkg.ECPhasePeerClaims
 		e.PeerClaimsRequired = 2
 		e.PeerClaimsDone = 1
 	})
 	expectTarget("peer claims are the target's")
 
-	// All claims done, no mar roll → generic (preparer completes).
-	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) { e.PeerClaimsDone = 2 })
+	// All claims done (phase = done) → generic (preparer completes).
+	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
+		e.PeerClaimsDone = 2
+		e.Phase = gamepkg.ECPhaseDone
+	})
 	expectGeneric("nothing target-side outstanding → generic")
 
-	// A marred roll with choices not yet submitted → target owes mar choices.
+	// A marred roll in the roll phase, choices not yet submitted → target owes
+	// the mar choices.
 	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
 		GameID: tg.Game.ID, PlanID: &ec.ID, RowNumber: &row,
 		ActorID: tg.Players[0].ID, Difficulty: 4, Stage: "resolved",
@@ -524,16 +531,145 @@ func TestComputeRowState_AwaitCourtierResponse(t *testing.T) {
 	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
 		ID: roll.ID, Result: &res, Outcome: &mar,
 	}))
-	// Reset the post-claim flags so only the mar-choice gate is live.
 	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
-		e.PeerClaimsRequired = 0
-		e.PeerClaimsDone = 0
-		e.MarChoicesSubmitted = false
+		e.Phase = gamepkg.ECPhaseRoll
 	})
 	expectTarget("mar choices are the target's until submitted")
 
-	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) { e.MarChoicesSubmitted = true })
+	// Submitting the mar choices advances the cursor out of roll → generic.
+	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) { e.Phase = gamepkg.ECPhaseDone })
 	expectGeneric("mar choices submitted → generic (preparer completes)")
+}
+
+// TestComputeRowState_DuelMarTarget: in a Propose Duel's roll phase, a marred
+// roll hands the asset-claim make-choice to the target; the bar must name the
+// target (the mar winner), not the preparer, until ApplyChoice advances the
+// phase to 'done'. A made/pre-roll window stays with the preparer. (A2.)
+func TestComputeRowState_DuelMarTarget(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	row := tg.Game.CurrentRow
+	plan, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID:         tg.Game.ID,
+		PlanType:       model.PlanProposeDuel,
+		Category:       model.CategoryEsteem,
+		PreparerID:     tg.Players[0].ID,
+		TargetPlayerID: &tg.Players[1].ID,
+		RowNumber:      &row,
+		RowOrder:       0,
+		PreparedAtRow:  tg.Game.CurrentRow,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: plan.ID, Status: model.PlanResolving,
+	}))
+
+	setDuelPhase := func(p gamepkg.DuelPhase) {
+		reloaded, err := q.GetPlanByID(ctx, plan.ID)
+		require.NoError(t, err)
+		rd := loadResolutionData(reloaded.ResolutionData)
+		rd.EnsureDuel().Phase = p
+		require.NoError(t, saveResolutionData(ctx, q, plan.ID, rd))
+	}
+	expectActor := func(id int64, msg string) {
+		got, err := ComputeRowState(ctx, q, tg.Game.ID)
+		require.NoError(t, err)
+		assert.Equal(t, model.RowStatePlanResolving, got.Kind, msg)
+		assert.Equal(t, []int64{id}, got.ActingPlayerIDs, msg)
+	}
+
+	// Roll phase, roll not yet resolved → the preparer owns the roll (generic).
+	setDuelPhase(gamepkg.DuelPhaseRoll)
+	expectActor(tg.Players[0].ID, "pre-roll → preparer owns the roll")
+
+	// A marred roll hands the asset claim to the target.
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID: tg.Game.ID, PlanID: &plan.ID, RowNumber: &row,
+		ActorID: tg.Players[0].ID, Difficulty: 4, Stage: "resolved",
+	})
+	require.NoError(t, err)
+	res := int16(0)
+	mar := marOutcome
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &mar,
+	}))
+	expectActor(tg.Players[1].ID, "marred roll → target claims assets")
+
+	// ApplyChoice advances the cursor to done → the preparer completes (generic).
+	setDuelPhase(gamepkg.DuelPhaseDone)
+	expectActor(tg.Players[0].ID, "done → preparer completes")
+}
+
+// TestComputeRowState_DemandPerformStepsWinner: when a made Make Demands' the
+// perform_steps option is won by someone other than the target plan's preparer,
+// that winner drives the target plan's post-roll make-choice. The generic
+// resolving case must name the winner until they submit, then the target
+// preparer (who completes). (A2.)
+func TestComputeRowState_DemandPerformStepsWinner(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	row := tg.Game.CurrentRow
+	// Target plan owned by P1; resolving with a resolved roll, no choices yet.
+	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, row)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: target.ID, Status: model.PlanResolving,
+	}))
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID: tg.Game.ID, PlanID: &target.ID, RowNumber: &row,
+		ActorID: tg.Players[1].ID, Difficulty: 4, Stage: "resolved",
+	})
+	require.NoError(t, err)
+	res := int16(9)
+	mk := makeOutcome
+	require.NoError(t, q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: roll.ID, Result: &res, Outcome: &mk,
+	}))
+
+	// A resolved, made demand by P0 targets it, with P0 winning perform_steps.
+	demand := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, model.CategoryPower, row)
+	require.NoError(t, q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: demand.ID, TargetedPlanID: &target.ID,
+	}))
+	raw, err := json.Marshal(gamepkg.DemandOptionWinners{
+		gamepkg.DemandOptionPerformSteps: tg.Players[0].ID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.SetDemandOptionWinners(ctx, dbgen.SetDemandOptionWinnersParams{
+		ID: demand.ID, DemandOptionWinners: raw,
+	}))
+	made := makeOutcome
+	require.NoError(t, q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
+		ID: demand.ID, Result: &made,
+	}))
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: demand.ID, Status: model.PlanResolved,
+	}))
+
+	// Window: the perform_steps winner (P0) owes the choice, not the preparer P1.
+	got, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind)
+	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
+		"perform_steps winner drives the target plan's choice")
+
+	// Once the choice is submitted, the target preparer completes (generic).
+	reloaded, err := q.GetPlanByID(ctx, target.ID)
+	require.NoError(t, err)
+	resData := loadResolutionData(reloaded.ResolutionData)
+	resData.MakeMarChoices = []gamepkg.Choice{{Option: "legal"}}
+	require.NoError(t, saveResolutionData(ctx, q, target.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{tg.Players[1].ID}, got.ActingPlayerIDs,
+		"choice submitted → target preparer completes")
 }
 
 // TestComputeRowState_AwaitChronicleChoices: a marred Chronicle Histories blocks

@@ -179,11 +179,16 @@ func applyExchangeCourtiersMake(
 				playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID)))
 	}
 
-	// "Messy" requires the target to break a marginalia on one of the preparer's assets.
+	// "Messy" requires the target to break a marginalia on one of the preparer's
+	// assets before completion; otherwise the made resolution is done.
+	ec = resData.EnsureExchangeCourtiers()
 	if slices.Contains(choices, "messy") {
-		resData.EnsureExchangeCourtiers().MessyBreakRequired = true
+		ec.MessyBreakRequired = true
+		ec.Phase = gamepkg.ECPhaseMessyBreak
 		ecLog(ctx, deps, plan, model.SeverityDefault,
 			"It got messy — the target may break one of the preparer's assets.")
+	} else {
+		ec.Phase = gamepkg.ECPhaseDone
 	}
 	if slices.Contains(choices, "conspiracy") {
 		ecLog(ctx, deps, plan, model.SeverityDefault,
@@ -243,9 +248,16 @@ func applyExchangeCourtiersMar(
 			ec.RiposteAllowed = true
 		}
 	}
-	// The target has now made their mar choices; the WaitingOnBar stops blocking
-	// on them (any remaining peer claims are tracked separately).
-	ec.MarChoicesSubmitted = true
+	// The target has now made their mar choices. Advance the cursor: a
+	// forfeit/riposte leaves peer claims outstanding (still target-side); a
+	// fair_trade-only mar leaves no trace, so resolution is done. This phase
+	// advance is what lets the WaitingOnBar stop blocking on the target without
+	// a separate "mar choices submitted" marker.
+	if ec.PeerClaimsRequired > 0 {
+		ec.Phase = gamepkg.ECPhasePeerClaims
+	} else {
+		ec.Phase = gamepkg.ECPhaseDone
+	}
 	return nil
 }
 
@@ -386,6 +398,7 @@ func acceptFairTrade(
 
 	accepted := true
 	ec.FairTradeAccepted = &accepted
+	ec.Phase = gamepkg.ECPhaseDone // fair trade accepted → resolution complete
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondInternalErr(w, r, "could not save decision", err)
 		return
@@ -441,7 +454,9 @@ func declineFairTrade(
 		return
 	}
 	declined := false
-	resData.EnsureExchangeCourtiers().FairTradeAccepted = &declined
+	ec := resData.EnsureExchangeCourtiers()
+	ec.FairTradeAccepted = &declined
+	ec.Phase = gamepkg.ECPhaseRoll // declined → dice roll + post-roll choice
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
 		respondInternalErr(w, r, "could not save decision", err)
 		return
@@ -540,6 +555,7 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 		}
 
 		ec.MessyBreakDone = true
+		ec.Phase = gamepkg.ECPhaseDone // last target-side step on a made roll
 		if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record messy break", err)
 			return
@@ -618,6 +634,9 @@ func ecClaimPeerHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		ec.PeerClaimsDone++
+		if ec.PeerClaimsDone >= ec.PeerClaimsRequired {
+			ec.Phase = gamepkg.ECPhaseDone // all peer claims taken
+		}
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record claim", err)
 			return
@@ -723,9 +742,9 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 
 // ResolvingWaitees narrows a resolving Exchange Courtiers to AwaitCourtierResponse
 // during its target-driven sub-steps, so the bar blocks on the target player
-// (never the preparer or focus player). The preparer's sub-steps (accept/decline,
-// make choices, riposte break, completion) return false and ride the generic
-// plan_resolving case (which names the preparer).
+// (never the preparer or focus player). It reads the explicit Phase cursor; the
+// preparer's steps (accept/decline, make choice, riposte break, completion) fall
+// through to the generic plan_resolving case (which names the preparer).
 func (ecHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	if plan.TargetPlayerID == nil {
 		return model.RowState{}, false
@@ -733,30 +752,30 @@ func (ecHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	target := *plan.TargetPlayerID
 	blockTarget := model.RowState{Kind: model.RowStateAwaitCourtierResponse, ActingPlayerIDs: []int64{target}}
 
-	ec := loadResolutionData(plan.ResolutionData).ExchangeCourtiers
-	// Before any fair-trade action the target owes the opening offer.
-	if ec == nil {
-		return blockTarget, true
-	}
-	// Fair-trade step still open: target owes the offer until one is made;
-	// then the preparer owes accept/decline (generic).
-	if ec.FairTradeAccepted == nil {
-		if ec.FairTradeAssetID == nil {
+	switch loadResolutionData(plan.ResolutionData).ExchangeCourtiers.CurrentPhase() {
+	case gamepkg.ECPhaseFairTrade:
+		// Target owes the opening offer until one is made; then the preparer
+		// owes accept/decline (generic).
+		ec := loadResolutionData(plan.ResolutionData).ExchangeCourtiers
+		if ec == nil || ec.FairTradeAssetID == nil {
 			return blockTarget, true
 		}
 		return model.RowState{}, false
-	}
-	// Post-roll target-driven sub-steps.
-	if ec.MessyBreakRequired && !ec.MessyBreakDone {
+	case gamepkg.ECPhaseRoll:
+		// A marred roll hands the option choices to the target; block on them
+		// until they submit (which advances the phase out of roll). The pre-roll
+		// window and a made roll are the preparer's, so they ride the generic
+		// case (planRollIsMar is false until the roll resolves as mar).
+		if planRollIsMar(ctx, q, plan) {
+			return blockTarget, true
+		}
+		return model.RowState{}, false
+	case gamepkg.ECPhaseMessyBreak, gamepkg.ECPhasePeerClaims:
+		// Target owes the messy break / remaining peer claims.
 		return blockTarget, true
-	}
-	if ec.PeerClaimsDone < ec.PeerClaimsRequired {
-		return blockTarget, true
-	}
-	// A marred roll hands the option choices to the target; block on them until
-	// they submit (a fair_trade-only mar leaves no other trace, hence the flag).
-	if !ec.MarChoicesSubmitted && planRollIsMar(ctx, q, plan) {
-		return blockTarget, true
+	case gamepkg.ECPhaseDone:
+		// Resolution complete; the preparer completes (generic).
+		return model.RowState{}, false
 	}
 	return model.RowState{}, false
 }

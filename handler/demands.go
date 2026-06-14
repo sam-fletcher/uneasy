@@ -40,6 +40,37 @@ func AssetRecipientForPlan(
 	return plan.PreparerID, nil
 }
 
+// pendingPerformStepsChooser returns the "perform_steps" demand winner who owes
+// the make/mar choice on a plan targeted by a made Make Demands, while that
+// choice is still outstanding — and ok=false otherwise.
+//
+// When a demand's perform_steps option is won by someone other than the target
+// plan's preparer, that winner (not the preparer) drives the target plan's
+// make-choice. During the post-roll window before they submit, the generic
+// plan_resolving case would otherwise name the preparer; this lets it name the
+// actual chooser instead. Once they submit (MakeMarChoices populated) the
+// preparer completes, so this returns ok=false and the bar falls back to them.
+func pendingPerformStepsChooser(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (int64, bool) {
+	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
+	if err != nil || winners == nil {
+		return 0, false
+	}
+	winnerID, ok := winners[game.DemandOptionPerformSteps]
+	if !ok || winnerID == 0 || winnerID == plan.PreparerID {
+		return 0, false
+	}
+	// Only once the roll has resolved (the chooser can't act before then) and
+	// only while the choice is still outstanding.
+	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil || roll.Outcome == nil {
+		return 0, false
+	}
+	if len(loadResolutionData(plan.ResolutionData).MakeMarChoices) > 0 {
+		return 0, false
+	}
+	return winnerID, true
+}
+
 // DemandWinnersForTargetPlan returns the resolved made demand (if any) that
 // targets the given plan, along with its decoded option-winners map. Returns
 // (nil, nil, nil) if no such demand exists. Used by target-plan integration

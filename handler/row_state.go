@@ -77,7 +77,7 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		}
 		plan := &plans[i]
 		id := plan.ID
-		if override, ok := resolvingPlanSubPhase(ctx, q, plan); ok {
+		if override, ok := planResolvingWaitees(ctx, q, plan); ok {
 			override.PlanID = &id
 			return override, nil
 		}
@@ -85,10 +85,20 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		// focus player — a delayed plan routinely resolves on a row whose focus
 		// is someone else). Name the preparer authoritatively so the client
 		// needs no focus/preparer proxy of its own.
+		//
+		// Exception: a Make Demands "perform_steps" winner drives this (target)
+		// plan's post-roll make-choice in the preparer's stead. While that choice
+		// is outstanding the bar names the winner, not the preparer. This handoff
+		// is cross-plan (the chooser isn't a participant of *this* plan's type) so
+		// it can't live in a per-plan ResolvingWaitees; it belongs here.
+		actor := plan.PreparerID
+		if chooser, ok := pendingPerformStepsChooser(ctx, q, plan); ok {
+			actor = chooser
+		}
 		return model.RowState{
 			Kind:            model.RowStatePlanResolving,
 			PlanID:          &id,
-			ActingPlayerIDs: []int64{plan.PreparerID},
+			ActingPlayerIDs: []int64{actor},
 		}, nil
 	}
 
@@ -270,18 +280,18 @@ func openDelayRevealPlan(plans []dbgen.Plan) *dbgen.Plan {
 	return nil
 }
 
-// resolvingPlanSubPhase checks whether the resolving plan is inside a
-// sub-phase that warrants its own RowState kind (i.e. the table is blocked
-// on a player other than the focus player, or the WaitingOnBar copy would
-// otherwise mis-attribute the wait). Returns the narrower RowState with
-// Kind and ActingPlayerIDs set; the caller fills in PlanID.
+// planResolvingWaitees asks the resolving plan's handler whether it wants to
+// override the generic preparer case with a narrower RowState (table blocked on
+// a player other than the focus player, or a wait the WaitingOnBar would
+// otherwise mis-attribute). Returns the narrower RowState with Kind and
+// ActingPlayerIDs set; the caller fills in PlanID.
 //
 // Each plan owns this logic via the optional ResolvingWaitees capability
 // (defined next to its OnResolve / CanComplete). Plans without the capability
 // (the linear single-step plans) ride the generic preparer case. There is no
 // central per-type switch any more — adding a plan's waiting-on no longer means
-// editing this file.
-func resolvingPlanSubPhase(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+// editing this file; this is just the type-assertion seam.
+func planResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	h, ok := GetHandler(plan.PlanType)
 	if !ok {
 		return model.RowState{}, false

@@ -391,7 +391,21 @@ func (pduelHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan
 			return model.RowState{}, false
 		}
 		return model.RowState{Kind: model.RowStateAwaitDuelBout, ActingPlayerIDs: []int64{actor}}, true
-	case gamepkg.DuelPhaseRoll, gamepkg.DuelPhaseDone:
+	case gamepkg.DuelPhaseRoll:
+		// A marred roll hands the asset-claim make-choice to the *target* (the
+		// mar winner): they pick which of the preparer's staked assets to take.
+		// Until ApplyChoice advances the phase to 'done', the bar must name the
+		// target, not the preparer. A made roll is claimed by the preparer, so it
+		// rides the generic case. planRollIsMar is false until the roll resolves,
+		// so the pre-roll window (preparer owns the roll) also stays generic.
+		if plan.TargetPlayerID != nil && planRollIsMar(ctx, q, plan) {
+			return model.RowState{
+				Kind:            model.RowStatePlanResolving,
+				ActingPlayerIDs: []int64{*plan.TargetPlayerID},
+			}, true
+		}
+		return model.RowState{}, false
+	case gamepkg.DuelPhaseDone:
 		return model.RowState{}, false
 	}
 	return model.RowState{}, false
