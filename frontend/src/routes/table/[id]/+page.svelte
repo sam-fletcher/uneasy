@@ -43,6 +43,7 @@
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
+	import { provideSecretCounts } from '$lib/secretCountsContext';
 
 	const gameID = $derived(page.params.id as string);
 
@@ -211,15 +212,11 @@
 	// Player name map passed to MainEventView for attribution.
 	const playerNameMap = $derived(new Map(players.map(p => [p.id, p.display_name])));
 
-	// Secrets the viewer can read, counted per asset. Asset cards show this as
-	// the "known" eye; the asset's public secret_count minus this is the
-	// hidden ("struck eye") remainder. Passed down so play-area cards get it
-	// without each refetching secrets.
-	const knownSecretCounts = $derived.by(() => {
-		const map = new Map<number, number>();
-		for (const s of secrets) map.set(s.asset_id, (map.get(s.asset_id) ?? 0) + 1);
-		return map;
-	});
+	// Publish the per-viewer "known secret" lookup to the asset-card seams
+	// (CardPicker, scene + dice panels) via context, so they don't each thread
+	// the visible-secrets array. The asset's public secret_count minus this is
+	// the hidden ("struck eye") remainder. Backed by the live `secrets` state.
+	provideSecretCounts(() => secrets);
 
 	// Per-player rank triple (Power/Knowledge/Esteem), shown on the header chips
 	// so relative standing is visible at all times. rank 1 = top, 5 = bottom;
@@ -730,7 +727,6 @@
 			{laws}
 			{rumors}
 			{currentPlayerID}
-			{knownSecretCounts}
 			bind:recordRows
 			{rowState}
 			{playerNameMap}

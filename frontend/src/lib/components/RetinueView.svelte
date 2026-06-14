@@ -8,6 +8,7 @@
 	import { addMarginalia, updateMarginalia, updateAsset, writeSecret, getAssetSuggestions } from '$lib/api';
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
 	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
+	import { knownCount, hiddenCount } from '$lib/secretCounts';
 	import SuggestionPicker from './SuggestionPicker.svelte';
 
 	let {
@@ -247,7 +248,7 @@
 	// the public total minus the ones they can see. The open-eye button already
 	// carries the readable count; this feeds the passive struck-eye beside it.
 	function hiddenSecretsFor(asset: Asset): number {
-		return Math.max(0, asset.secret_count - secretsForAsset(asset.id).length);
+		return hiddenCount(asset, knownCount(secrets, asset.id));
 	}
 
 	function toggleSecrets(assetId: number) {

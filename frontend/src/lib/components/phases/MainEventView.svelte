@@ -35,10 +35,6 @@
 		rumors: Rumor[];
 		assets: Asset[];
 		currentPlayerID: number | null;
-		/** Secrets the viewer can read, counted per asset id. Forwarded to the
-		 *  play-area asset cards so they can show the known/hidden secret split.
-		 *  The hidden count is the asset's public secret_count minus this. */
-		knownSecretCounts: Map<number, number>;
 		recordRows: RecordRow[];
 		/** Authoritative row-state from the server. Null briefly during the
 		 * first snapshot fetch; treated as a "still loading" state by the
@@ -95,7 +91,6 @@
 		rumors,
 		assets,
 		currentPlayerID,
-		knownSecretCounts,
 		recordRows = $bindable(),
 		rowState,
 		playerNameMap,
@@ -410,7 +405,6 @@
 					{assets}
 					{players}
 					{currentPlayerID}
-					{knownSecretCounts}
 					{isFocusPlayer}
 					onSceneEnded={onSceneRefresh}
 					{rollActive}
@@ -468,7 +462,6 @@
 					{currentPlayerID}
 					{players}
 					{playerNameMap}
-					{knownSecretCounts}
 					{actorLeverageBlocked}
 				/>
 			{/if}

@@ -28,6 +28,7 @@
 	import { untrack } from 'svelte';
 	import type { Asset } from '$lib/api';
 	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
+	import { hiddenCount } from '$lib/secretCounts';
 
 	interface Props {
 		asset: Asset;
@@ -110,7 +111,7 @@
 	// can't push hidden negative.
 	const showSecrets = $derived(knownSecretCount !== undefined);
 	const knownSecrets = $derived(Math.max(0, knownSecretCount ?? 0));
-	const hiddenSecrets = $derived(Math.max(0, asset.secret_count - knownSecrets));
+	const hiddenSecrets = $derived(hiddenCount(asset, knownSecrets));
 
 	// `defaultExpanded` is intentionally a one-shot initial-value hint, not a
 	// live binding — once the user toggles the card we want their state to

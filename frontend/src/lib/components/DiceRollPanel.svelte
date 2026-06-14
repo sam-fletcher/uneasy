@@ -15,6 +15,7 @@
 	} from '$lib/api';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 	import { playerColorByID } from '$lib/playerColor';
+	import { useSecretCounts } from '$lib/secretCountsContext';
 
 	interface Props {
 		roll: DiceRoll;
@@ -26,9 +27,6 @@
 		currentPlayerID: number | null;
 		players: Player[];
 		playerNameMap: Map<number, string>;
-		/** Per-asset count of secrets the viewer can read; the leverage cards
-		 *  derive the hidden remainder from the asset's public secret_count. */
-		knownSecretCounts: Map<number, number>;
 		/** True when the actor cannot leverage their own assets (Make Demands
 		 *  control_leverage winner has authority). */
 		actorLeverageBlocked?: boolean;
@@ -44,9 +42,11 @@
 		currentPlayerID,
 		players,
 		playerNameMap,
-		knownSecretCounts,
 		actorLeverageBlocked = false,
 	}: Props = $props();
+
+	// Per-viewer known-secret counts (undefined outside a provider → no eyes).
+	const secretCounts = useSecretCounts();
 
 	const isActor = $derived(currentPlayerID === roll.actor_id);
 	const stage = $derived(roll.stage);
@@ -413,7 +413,7 @@
 					<AssetCardSelectable
 						{asset}
 						ownerColor={myColor}
-						knownSecretCount={knownSecretCounts.get(asset.id) ?? 0}
+						knownSecretCount={secretCounts?.known(asset.id)}
 						leverageMode
 						leverageDrafted={draftAssetIds.has(asset.id)}
 						leverageDisabled={myReady || (isActor && actorLeverageBlocked)}

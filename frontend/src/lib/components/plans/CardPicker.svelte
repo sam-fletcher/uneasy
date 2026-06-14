@@ -45,6 +45,7 @@
 <script lang="ts">
 	import type { Asset, Player } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
+	import { useSecretCounts } from '$lib/secretCountsContext';
 	import AssetCardSelectable from '../AssetCardSelectable.svelte';
 	import FormField from './FormField.svelte';
 
@@ -98,6 +99,11 @@
 	function resolveOwnerLabel(a: Asset): string | undefined {
 		return typeof ownerLabel === 'function' ? ownerLabel(a) : ownerLabel;
 	}
+
+	// This is the asset-card seam for plan pickers: read the per-viewer known
+	// counts here so the leaf card can show the secret eyes without every plan
+	// panel threading the data. Undefined outside a provider → no eyes.
+	const secretCounts = useSecretCounts();
 
 	function ownerColorFor(a: Asset): string {
 		return playerColor(players.find(p => p.id === a.owner_id));
@@ -155,6 +161,7 @@
 						asset={a}
 						ownerColor={ownerColorFor(a)}
 						ownerLabel={resolveOwnerLabel(a)}
+						knownSecretCount={secretCounts?.known(a.id)}
 						marginaliaSelectable
 						selectedMarginaliaID={selectedMarginaliaID ?? null}
 						onMarginaliaToggle={handleMarginaliaToggle}
@@ -164,6 +171,7 @@
 						asset={a}
 						ownerColor={ownerColorFor(a)}
 						ownerLabel={resolveOwnerLabel(a)}
+						knownSecretCount={secretCounts?.known(a.id)}
 						selectable
 						selected={multi ? isPickedMulti(a) : isPickedSingle(a)}
 						disabled={readOnly || disabledMulti(a)}

@@ -23,6 +23,7 @@
 		type TimeElapsed,
 	} from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
+	import { useSecretCounts } from '$lib/secretCountsContext';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 
 	interface Props {
@@ -32,9 +33,6 @@
 		assets: Asset[];
 		players: Player[];
 		currentPlayerID: number | null;
-		/** Per-asset count of secrets the viewer can read; the card derives the
-		 *  hidden remainder from the asset's public secret_count. */
-		knownSecretCounts: Map<number, number>;
 		isFocusPlayer: boolean;
 		/** Called once End Scene resolves so the parent can refetch state. */
 		onSceneEnded: () => void;
@@ -51,12 +49,14 @@
 		assets,
 		players,
 		currentPlayerID,
-		knownSecretCounts,
 		isFocusPlayer,
 		onSceneEnded,
 		rollActive = false,
 		onRollCreated = () => {},
 	}: Props = $props();
+
+	// Per-viewer known-secret counts (undefined outside a provider → no eyes).
+	const secretCounts = useSecretCounts();
 
 	const timeLabels: Record<TimeElapsed, string> = {
 		moments: 'Moments later',
@@ -212,7 +212,7 @@
 			<AssetCardSelectable
 				asset={locationAsset}
 				ownerColor={colorFor(locationAsset.owner_id)}
-				knownSecretCount={knownSecretCounts.get(locationAsset.id) ?? 0}
+				knownSecretCount={secretCounts?.known(locationAsset.id)}
 			/>
 		</div>
 	{/if}
@@ -226,7 +226,7 @@
 						asset={focusMainCharacter}
 						ownerColor={colorFor(focusMainCharacter.owner_id)}
 						ownerLabel={focusMainCharacterLabel}
-						knownSecretCount={knownSecretCounts.get(focusMainCharacter.id) ?? 0}
+						knownSecretCount={secretCounts?.known(focusMainCharacter.id)}
 					/>
 				</div>
 			{/if}
@@ -241,7 +241,7 @@
 								asset={asset}
 								ownerColor={ctrlColor}
 								ownerLabel={lbl.text}
-								knownSecretCount={knownSecretCounts.get(asset.id) ?? 0}
+								knownSecretCount={secretCounts?.known(asset.id)}
 							/>
 							{#if lbl.claimable && !isFocusPlayer && currentPlayerID != null}
 								<button
