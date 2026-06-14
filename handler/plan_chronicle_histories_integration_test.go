@@ -297,10 +297,17 @@ func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 	marPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/mar-choice"
 	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
 
+	p0, p1, p2 := h.tg.Players[0].ID, h.tg.Players[1].ID, h.tg.Players[2].ID
+
+	// C3 attribution: a marred CH blocks on EVERY present player until each has
+	// submitted a choice — the bar names all three, then narrows as they submit.
+	h.assertWaitees("mar, no one has chosen", model.RowStateAwaitChronicleChoices, p0, p1, p2)
+
 	// Player 0 chooses echo_present.
 	code, body := h.post(0, marPath, map[string]any{"choice": "echo_present"})
 	require.Equalf(t, http.StatusOK, code, "p0 mar-choice: %v", body)
 	assert.EqualValues(t, 3, body["required_choices"], "gate target = player count")
+	h.assertWaitees("p0 chose", model.RowStateAwaitChronicleChoices, p1, p2)
 
 	// Re-submitting is rejected (one choice per player).
 	code, body = h.post(0, marPath, map[string]any{"choice": "total_control"})
@@ -318,6 +325,7 @@ func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 	torn, err := h.q.GetMarginaliaByID(ctx, margIDs[0])
 	require.NoError(t, err)
 	assert.True(t, torn.IsTorn, "mar break_artifact should tear the marginalium in-call")
+	h.assertWaitees("p1 chose (via break)", model.RowStateAwaitChronicleChoices, p2)
 
 	// Still blocked at 2/3.
 	code, body = h.post(preparerIdx, completePath, nil)
@@ -326,6 +334,11 @@ func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 	// Player 2 (the preparer) chooses the final option.
 	code, body = h.post(2, marPath, map[string]any{"choice": "total_control"})
 	require.Equalf(t, http.StatusOK, code, "p2 mar-choice: %v", body)
+
+	// All present have chosen → the row rides the generic resolution case,
+	// naming the preparer who completes (never lingering on "all players").
+	h.assertWaitees("all chose, preparer completes",
+		model.RowStatePlanResolving, plan.PreparerID)
 
 	// Now completion succeeds.
 	h.complete(plan.ID)

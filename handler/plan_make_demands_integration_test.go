@@ -341,12 +341,25 @@ func TestMakeDemandsHTTP_DraftChoice_AcceptedAfterMakeRoll(t *testing.T) {
 	h := newMDHTTPHarness(t, 3)
 	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "make")
 
+	// C3 attribution: a made demand opens the alternating draft. The bar names
+	// the higher-ranked drafter first (P0, power rank 1), through the real flow.
+	rs, err := ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDemandDraftPick, rs.Kind, "made demand → draft")
+	assert.Equal(t, []int64{h.tg.Players[0].ID}, rs.ActingPlayerIDs, "first pick = rank-1 demander")
+
 	// Demander (P0, rank 1) picks first.
 	status, body := h.post(t, 0,
 		"/api/plans/"+itoa(demand.ID)+"/draft-choice",
 		map[string]any{"option": game.DemandOptionControlLeverage})
 	assert.Equal(t, http.StatusOK, status, "made demand should accept draft pick, got body=%v", body)
 	assert.Equal(t, float64(1), body["picks_done"])
+
+	// After the first pick the draft alternates to the lower-ranked drafter (the
+	// target plan's preparer, P1) — the bar follows the turn.
+	rs, err = ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{h.tg.Players[1].ID}, rs.ActingPlayerIDs, "second pick = target preparer")
 }
 
 // TestMakeDemandsHTTP_DraftChoice_RejectedWithoutRoll: with no resolved
@@ -382,12 +395,26 @@ func TestMakeDemandsHTTP_CounterDemand_AcceptedAfterMarRoll(t *testing.T) {
 	h := newMDHTTPHarness(t, 3)
 	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "mar")
 
+	// C3 attribution: a marred demand blocks on the TARGET plan's preparer (P1),
+	// who decides whether to counter — not the demander, not the focus player.
+	rs, err := ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitDemandCounter, rs.Kind, "marred demand → counter window")
+	assert.Equal(t, []int64{h.tg.Players[1].ID}, rs.ActingPlayerIDs, "counter actor = target preparer")
+
 	// Target-plan preparer (P1) defers the counter — simplest valid body.
 	status, body := h.post(t, 1,
 		"/api/plans/"+itoa(demand.ID)+"/counter-demand",
 		map[string]any{"target_plan_id": nil})
 	assert.Equal(t, http.StatusOK, status, "marred demand should accept counter, got body=%v", body)
 	assert.Equal(t, true, body["deferred"])
+
+	// Counter placed → the override clears; the row rides generic resolution,
+	// naming the demand's own preparer (P0).
+	rs, err = ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, rs.Kind, "counter placed → generic")
+	assert.Equal(t, []int64{h.tg.Players[0].ID}, rs.ActingPlayerIDs, "generic names the demander")
 }
 
 // TestMakeDemandsHTTP_CounterDemand_RejectedAfterMakeRoll: a made demand

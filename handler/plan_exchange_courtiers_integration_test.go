@@ -86,9 +86,20 @@ func TestExchangeCourtiers_Mar_Forfeit_TargetClaimsPreparerPeer(t *testing.T) {
 
 	plan, preparerIdx, targetIdx := ecToMar(t, h)
 	spoils := h.seedPeer(preparerIdx, "preparer's prize peer")
+	targetID := h.tg.Players[targetIdx].ID
+
+	// C3 attribution: a marred EC hands the option choice to the TARGET, so the
+	// bar must name the target (a non-focus, non-preparer player) — not the
+	// resolving plan's focus player.
+	h.assertWaitees("mar, awaiting target's choice",
+		model.RowStateAwaitCourtierResponse, targetID)
 
 	code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"forfeit"})
 	require.Equalf(t, http.StatusOK, code, "target make-choice: %v", body)
+
+	// Still the target: a forfeit owes a peer claim before the plan can complete.
+	h.assertWaitees("forfeit, awaiting target's peer claim",
+		model.RowStateAwaitCourtierResponse, targetID)
 
 	// Completion is blocked until the target claims a peer. Completion is
 	// preparer-gated, so drive it as the preparer.
@@ -104,6 +115,18 @@ func TestExchangeCourtiers_Mar_Forfeit_TargetClaimsPreparerPeer(t *testing.T) {
 	// Target claims the preparer's peer.
 	code, body = h.post(targetIdx, claimPath, map[string]any{"asset_id": spoils})
 	require.Equalf(t, http.StatusOK, code, "claim-peer: %v", body)
+
+	// Claim satisfied → the target owes nothing more; the row rides the generic
+	// resolution case naming the PREPARER, who completes.
+	h.assertWaitees("claim done, preparer completes",
+		model.RowStatePlanResolving, plan.PreparerID)
+
+	// C2 refresh-safety: a second claim (stale client after refresh, or a retry)
+	// is rejected — the guard is PeerClaimsDone >= PeerClaimsRequired — so no
+	// extra peer is taken.
+	code, body = h.post(targetIdx, claimPath, map[string]any{"asset_id": spoils})
+	assert.Equalf(t, http.StatusConflict, code,
+		"a second peer claim must be rejected: %v", body)
 
 	h.complete(plan.ID)
 

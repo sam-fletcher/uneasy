@@ -31,6 +31,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"uneasy/db"
@@ -116,6 +117,25 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 		t: t, pool: pool, q: q, store: store, manager: manager,
 		tg: tg, router: r, tokens: tokens,
 	}
+}
+
+// rowState computes the current authoritative RowState for the game — the
+// exact value the WaitingOnBar renders off. Lets lifecycle tests assert who the
+// bar names at each transition (C3), not just the asset-level side effects.
+func (h *planLifecycle) rowState() model.RowState {
+	h.t.Helper()
+	rs, err := ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
+	require.NoError(h.t, err)
+	return rs
+}
+
+// assertWaitees asserts the row is in kind and blocked on exactly want
+// (order-independent). msg is a short label for the transition under test.
+func (h *planLifecycle) assertWaitees(msg string, kind model.RowStateKind, want ...int64) {
+	h.t.Helper()
+	rs := h.rowState()
+	assert.Equalf(h.t, kind, rs.Kind, "%s: row-state kind", msg)
+	assert.ElementsMatchf(h.t, want, rs.ActingPlayerIDs, "%s: waitees", msg)
 }
 
 // post issues an authenticated POST as players[i] and returns the status
