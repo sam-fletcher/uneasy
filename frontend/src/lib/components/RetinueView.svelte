@@ -383,6 +383,21 @@
 									title="Make main character"
 								>☆</button>
 							{/if}
+							{#if asset.is_leveraged}
+								<!-- Leveraged status glyph next to the secrets eye. Replaces
+								     the orange tile border (see .asset-tile.leveraged); the
+								     0.78 dim is kept as an ambient "exhausted" cue. -->
+								<span class="lev-badge" title="Leveraged — spent for a roll until refreshed" aria-label="Leveraged">
+									<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<rect x="3" y="3" width="18" height="18" rx="3" />
+										<circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+										<circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" />
+										<circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+										<circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" />
+										<circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" />
+									</svg>
+								</span>
+							{/if}
 							<button
 								type="button"
 								class="secrets-btn"
@@ -686,7 +701,10 @@
 		gap: 0.5rem;
 	}
 	.asset-tile.main-char { border-color: var(--color-accent); }
-	.asset-tile.leveraged { border-color: var(--color-leveraged); opacity: 0.78; }
+	/* Leveraged: dim the tile as an ambient "exhausted" cue. The state is named
+	   explicitly by the .lev-badge die in the tile head, so no border tint here
+	   (it would collide with the owner/main-char border anyway). */
+	.asset-tile.leveraged { opacity: 0.78; }
 
 	.tile-head {
 		display: flex;
@@ -753,6 +771,16 @@
 	.mc-toggle:hover { color: var(--color-accent); border-color: #5a4d2c; background: #2a2418; }
 	.mc-toggle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 	.mc-toggle:disabled { opacity: 0.45; cursor: not-allowed; }
+
+	/* Leveraged status glyph in the tile head, sat beside the secrets eye.
+	   Passive indicator (not a button) — matches the eye's 18px footprint. */
+	.lev-badge {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-leveraged);
+	}
 
 	/* Secrets eye button + count badge */
 	.secrets-btn {

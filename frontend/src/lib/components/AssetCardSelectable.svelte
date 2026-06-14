@@ -209,6 +209,22 @@
 				{#if asset.is_main_character}
 					<span class="main-badge" title="Main character">★</span>
 				{/if}
+				{#if asset.is_leveraged}
+					<!-- Passive status glyph: this asset is spent for a roll until
+					     refreshed. Echoes the "+🎲" leverage chip; tinted
+					     --color-leveraged. Shown in every mode (leverage mode filters
+					     leveraged assets out of its own list, so no double-die there). -->
+					<span class="lev-badge" title="Leveraged — spent for a roll until refreshed" aria-label="Leveraged">
+						<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<rect x="3" y="3" width="18" height="18" rx="3" />
+							<circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+							<circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" />
+							<circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+							<circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" />
+							<circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" />
+						</svg>
+					</span>
+				{/if}
 			</span>
 			{#if ownerLabel}
 				<span class="owner-label">{ownerLabel}</span>
@@ -406,6 +422,14 @@
 		font-size: 0.78rem;
 		margin-left: 0.2rem;
 	}
+
+	/* Leveraged status glyph, inline after the name (shares the row with the
+	   ★ main-char badge). Passive — not a tap target. */
+	.lev-badge {
+		color: var(--color-leveraged);
+		margin-left: 0.2rem;
+	}
+	.lev-badge svg { vertical-align: -0.18em; }
 
 	.meta {
 		display: flex;

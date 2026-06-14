@@ -246,7 +246,7 @@
 			<figure class="diagram">
 				<div class="ex-asset main" aria-hidden="true">
 					<div class="ex-asset-head">
-						<span class="ex-asset-name">Lady Mirabel <span class="ex-star">★</span></span>
+						<span class="ex-asset-name">Lady Mirabel <span class="ex-star">★</span><span class="ex-lev"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /></svg></span></span>
 						<span class="ex-eye">
 							<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
 							<span class="ex-eye-badge">2</span>
@@ -267,16 +267,16 @@
 							<span class="ex-leg-text">Your <em>main character</em> — a peer you play.</span>
 						</span>
 						<span class="ex-leg-row">
+							<span class="ex-lev sm"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /></svg></span>
+							<span class="ex-leg-text">A <em>die</em> after the name means it's <em>leveraged</em> for a roll, until you refresh it.</span>
+						</span>
+						<span class="ex-leg-row">
 							<span class="ex-eye sm"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></span>
 							<span class="ex-leg-text"><em>Secrets</em> on the underside — revealed if the asset is taken or broken.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-strike">torn</span>
 							<span class="ex-leg-text">A <em>broken</em> marginalium (like “Old war wound”); tear all four and the asset is destroyed.</span>
-						</span>
-						<span class="ex-leg-row">
-							<span class="ex-swatch-leveraged"></span>
-							<span class="ex-leg-text">An amber border means it's <em>leveraged</em> for a roll, until you refresh it.</span>
 						</span>
 					</div>
 				</figcaption>
@@ -499,7 +499,10 @@
 	.ex-leg-row > :first-child { flex-shrink: 0; margin-top: 0.05rem; }
 	.ex-eye.sm { color: var(--color-accent); flex-shrink: 0; }
 	.ex-strike { flex-shrink: 0; text-decoration: line-through; opacity: 0.6; color: #cfcabd; font-size: 0.78rem; }
-	.ex-swatch-leveraged { flex-shrink: 0; width: 18px; height: 18px; border: 2px solid var(--color-leveraged); border-radius: 4px; }
+	/* Leveraged die — inline after the name in the example card, and in the legend. */
+	.ex-lev { color: var(--color-leveraged); display: inline-flex; align-items: center; }
+	.ex-lev svg { vertical-align: -0.18em; }
+	.ex-lev.sm { flex-shrink: 0; }
 
 	.help-footer {
 		display: flex;
