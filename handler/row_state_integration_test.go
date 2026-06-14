@@ -365,8 +365,9 @@ func TestComputeRowState_AwaitDelayReveal_Liaise(t *testing.T) {
 // preparer-only phases (together_at_last, done) ride the generic plan_resolving
 // case — whose preparer-naming is the frontend's job — so the backend reports
 // plain plan_resolving. The collaborative submit phases surface
-// liaise_resolving with ActingPlayerIDs naming who still owes a submission, or
-// the preparer once both are in.
+// liaise_resolving with ActingPlayerIDs naming who still owes a submission;
+// once both are in the phase auto-advances, so the transient both-in state rides
+// the generic plan_resolving case.
 func TestComputeRowState_LiaiseResolving(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -408,7 +409,10 @@ func TestComputeRowState_LiaiseResolving(t *testing.T) {
 	assert.ElementsMatch(t, []int64{tg.Players[0].ID, tg.Players[1].ID}, got.ActingPlayerIDs,
 		"neither has committed a secret → both owe one")
 
-	// secrets_we_keep, both submitted → preparer owes the advance.
+	// secrets_we_keep, both submitted → no one owes a submission. The second
+	// keep-secret auto-advances the phase, so this both-in state is never the
+	// table's resting state; defensively it rides the generic plan_resolving case
+	// rather than naming anyone for a (no-longer-existent) advance click.
 	mutate(func(ld *gamepkg.LiaiseResolutionData) {
 		ld.KeptSecrets = []gamepkg.KeptSecret{
 			{PlayerID: tg.Players[0].ID, AssetID: 1},
@@ -417,9 +421,8 @@ func TestComputeRowState_LiaiseResolving(t *testing.T) {
 	})
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
-	assert.Equal(t, model.RowStateLiaiseResolving, got.Kind)
-	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
-		"both committed → preparer owes the advance click")
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind,
+		"both committed → auto-advances, so it rides the generic case (no advance click)")
 
 	// things_we_share, partner submitted → preparer still owes a pick.
 	mutate(func(ld *gamepkg.LiaiseResolutionData) {
@@ -431,6 +434,16 @@ func TestComputeRowState_LiaiseResolving(t *testing.T) {
 	assert.Equal(t, model.RowStateLiaiseResolving, got.Kind)
 	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
 		"partner submitted their share-choice → only the preparer still owes one")
+
+	// things_we_share, both submitted → like secrets_we_keep, the second pick
+	// auto-advances to the redelay reveal, so this both-in state rides generic.
+	mutate(func(ld *gamepkg.LiaiseResolutionData) {
+		ld.ShareSubmitterIDs = []int64{tg.Players[1].ID, tg.Players[0].ID}
+	})
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStatePlanResolving, got.Kind,
+		"both submitted their share-choice → auto-advances, so it rides the generic case")
 
 	// done → preparer-only → generic plan_resolving.
 	mutate(func(ld *gamepkg.LiaiseResolutionData) { ld.Phase = gamepkg.LiaisePhaseDone })

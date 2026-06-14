@@ -113,6 +113,40 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// clEnsureRedelayReveal creates the "When will I see you again?" redelay
+// simultaneous reveal and registers both participants, if it does not already
+// exist. Mutates ld.RedelayRevealID; the caller is responsible for persisting
+// resolution_data. No-op when the reveal already exists or the partner is unset.
+func clEnsureRedelayReveal(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, ld *LiaiseResolutionData,
+) error {
+	if ld.RedelayRevealID != nil || ld.PartnerID == nil {
+		return nil
+	}
+	redelayReveal, err := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
+		GameID:     plan.GameID,
+		PlanID:     &plan.ID,
+		RevealType: "liaise_redelay",
+	})
+	if err != nil {
+		return fmt.Errorf("create redelay reveal: %w", err)
+	}
+	if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
+		RevealID: redelayReveal.ID,
+		PlayerID: plan.PreparerID,
+	}); err != nil {
+		return fmt.Errorf("register preparer in redelay reveal: %w", err)
+	}
+	if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
+		RevealID: redelayReveal.ID,
+		PlayerID: *ld.PartnerID,
+	}); err != nil {
+		return fmt.Errorf("register partner in redelay reveal: %w", err)
+	}
+	ld.RedelayRevealID = &redelayReveal.ID
+	return nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // clFinalizeRedelayReveal runs the "both submitted" branch of redelay-reveal:

@@ -75,18 +75,18 @@ func clDriveToThingsWeShare(t *testing.T, h *planLifecycle) clMeeting {
 	h.jumpToRow(*refreshed.RowNumber)
 	require.Nil(t, h.resolve(plan.ID), "CL has no dice roll")
 
-	// together_at_last → secrets_we_keep.
+	// together_at_last → secrets_we_keep (the only manually-advanced phase).
 	clAdvance(t, h, plan.ID)
 	// Both keep a secret (any owned un-leveraged asset; the seeded MC works).
+	// The second keep-secret auto-advances secrets_we_keep → things_we_share.
 	clKeepSecret(t, h, plan.ID, 0)
 	clKeepSecret(t, h, plan.ID, 1)
-	// secrets_we_keep → things_we_share.
-	clAdvance(t, h, plan.ID)
 
 	refreshed, err = h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)
 	rd2 := loadResolutionData(refreshed.ResolutionData)
-	require.Equal(t, string(LiaiseThingsWeShare), string(rd2.EnsureLiaise().Phase))
+	require.Equal(t, string(LiaiseThingsWeShare), string(rd2.EnsureLiaise().Phase),
+		"the second keep-secret submission must auto-advance to things_we_share")
 	return clMeeting{
 		plan:           refreshed,
 		preparerPeerID: preparerPeer,
@@ -342,6 +342,17 @@ func TestLiaise_ShareChoice_UpdatePeer_RewritesMarginalia(t *testing.T) {
 	peer, err := h.q.GetAssetByID(ctx, m.partnerPeerID)
 	require.NoError(t, err)
 	assert.False(t, peer.IsDestroyed, "updating a note never destroys the peer")
+
+	// The second share submission auto-advances things_we_share →
+	// when_will_i_see_you_again and creates the redelay reveal — no manual
+	// advance click. (Pre-fix the preparer had to press "Advance" here.)
+	refreshed, err := h.q.GetPlanByID(ctx, m.plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	ld := rd.EnsureLiaise()
+	assert.Equal(t, string(LiaiseWhenWillISeeYouAgain), string(ld.Phase),
+		"both share-choices in → auto-advance to when_will_i_see_you_again")
+	require.NotNil(t, ld.RedelayRevealID, "redelay reveal must be created on auto-advance")
 }
 
 // TestLiaise_ShareChoice_UpdatePeer_RequiresMarginaliaAndText proves update_peer

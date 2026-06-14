@@ -64,31 +64,9 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 			nextPhase = LiaiseWhenWillISeeYouAgain
 
 			// Create the redelay reveal row if not already created.
-			if ld.RedelayRevealID == nil && ld.PartnerID != nil {
-				redelayReveal, err := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
-					GameID:     plan.GameID,
-					PlanID:     &plan.ID,
-					RevealType: "liaise_redelay",
-				})
-				if err != nil {
-					respondInternalErr(w, r, "could not create redelay reveal", err)
-					return
-				}
-				if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
-					RevealID: redelayReveal.ID,
-					PlayerID: plan.PreparerID,
-				}); err != nil {
-					respondInternalErr(w, r, "could not register preparer in redelay reveal", err)
-					return
-				}
-				if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
-					RevealID: redelayReveal.ID,
-					PlayerID: *ld.PartnerID,
-				}); err != nil {
-					respondInternalErr(w, r, "could not register partner in redelay reveal", err)
-					return
-				}
-				ld.RedelayRevealID = &redelayReveal.ID
+			if err := clEnsureRedelayReveal(ctx, deps, plan, ld); err != nil {
+				respondInternalErr(w, r, "could not create redelay reveal", err)
+				return
 			}
 		default:
 			respondErr(w, http.StatusConflict, fmt.Sprintf("cannot advance from phase %q", ld.Phase))
@@ -235,6 +213,17 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			AssetID:  body.AssetID,
 		})
 
+		// Once both participants have nominated an asset, advance straight to
+		// Things We Share. Secrets We Keep has no post-submission decision — each
+		// pick is already logged as it lands — so a manual "Advance" click would be
+		// pure friction (and left the second submitter staring at a "Waiting for …"
+		// with nobody named). The phase change is server-authoritative, so a
+		// refresh can't re-prompt the keep-secret form.
+		bothKept := clBothKeepSecretsSubmitted(*ld, plan.PreparerID)
+		if bothKept {
+			ld.Phase = LiaiseThingsWeShare
+		}
+
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save keep-secret choice", err)
 			return
@@ -243,18 +232,24 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s entrusted the meeting's secret to %q.",
 			playerDisplayName(ctx, deps.Q, player.ID), asset.Name))
 
-		// The other participant must refetch the plan to see this submission —
-		// in particular the preparer needs it to learn both have submitted and
-		// unlock the advance. Without this they'd be soft-locked on the
-		// secrets-we-keep panel until a manual refresh.
+		// The other participant must refetch the plan to see this submission.
+		// Without this they'd be soft-locked on the secrets-we-keep panel until a
+		// manual refresh.
 		broadcastEvent(deps.Manager, plan.GameID, model.EventLiaiseKeepSecretSubmitted,
 			model.LiaiseKeepSecretSubmittedPayload{PlanID: plan.ID})
 
+		// When both are in we auto-advanced above; tell clients so their panels
+		// move to Things We Share live (LiaisePhaseChanged drives a plan refetch).
+		if bothKept {
+			broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged,
+				model.LiaisePhaseChangedPayload{PlanID: plan.ID, Phase: string(LiaiseThingsWeShare)})
+		}
+
 		// This submission narrows the acting set (the submitter no longer owes a
-		// keep-secret; once both are in the preparer owes the advance click).
-		// KeepSecretSubmitted only triggers a plan refetch on clients, not a row
-		// state recompute, so without this the WaitingOnBar keeps naming the
-		// submitter until a manual refresh — the reported bug.
+		// keep-secret; once both are in the phase moves on and names both share
+		// pickers). KeepSecretSubmitted/PhaseChanged only trigger a plan refetch on
+		// clients, not a row state recompute, so without this the WaitingOnBar
+		// keeps naming the submitter until a manual refresh — the reported bug.
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
@@ -373,14 +368,36 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Once both have submitted, reveal and apply both choices.
-		if status, msg := clRevealSharesIfBothIn(ctx, deps, plan, resData); status != 0 {
+		bothShared, status, msg := clRevealSharesIfBothIn(ctx, deps, plan, resData)
+		if status != 0 {
 			respondErr(w, status, msg)
 			return
 		}
 
-		// The submitter no longer owes a share-choice; once both are in the
-		// preparer owes the advance click. Recompute row state so the
-		// WaitingOnBar reflects the new acting set live, not just on refresh.
+		// With both picks revealed and applied, advance straight to "When will I
+		// see you again?" — there is no preparer decision left in this phase, so a
+		// manual "Advance" click would be pure friction (and left the second
+		// submitter staring at "Waiting for your partner…"). Mirrors the
+		// auto-advance out of Secrets We Keep; server-authoritative so a refresh
+		// can't re-prompt the share form.
+		if bothShared {
+			ld.Phase = LiaiseWhenWillISeeYouAgain
+			if err := clEnsureRedelayReveal(ctx, deps, plan, ld); err != nil {
+				respondInternalErr(w, r, "could not create redelay reveal", err)
+				return
+			}
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondInternalErr(w, r, "could not save liaise phase", err)
+				return
+			}
+			broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged,
+				model.LiaisePhaseChangedPayload{PlanID: plan.ID, Phase: string(LiaiseWhenWillISeeYouAgain)})
+		}
+
+		// The submitter no longer owes a share-choice; once both are in the phase
+		// moves on to the redelay reveal (which names both who still owe a face).
+		// Recompute row state so the WaitingOnBar reflects the new acting set live,
+		// not just on refresh.
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
@@ -393,32 +410,32 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 // clRevealSharesIfBothIn checks whether both participants have submitted their
 // Things We Share choice; if so it applies both choices' effects, persists the
-// resolution_data, and broadcasts the reveal. Returns a non-zero HTTP status +
-// message on failure, or (0, "") when nothing failed (whether or not the second
-// submission has arrived).
+// resolution_data, and broadcasts the reveal. The bothIn return reports whether
+// both submissions were in (so the caller can auto-advance the phase). Returns a
+// non-zero HTTP status + message on failure, or (false/true, 0, "") otherwise.
 func clRevealSharesIfBothIn(
 	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, resData ResolutionData,
-) (int, string) {
+) (bothIn bool, status int, msg string) {
 	count, err := deps.Q.CountLiaiseChoicesByPlan(ctx, plan.ID)
 	if err != nil {
-		return http.StatusInternalServerError, "could not count choices"
+		return false, http.StatusInternalServerError, "could not count choices"
 	}
 	if count < 2 {
-		return 0, ""
+		return false, 0, ""
 	}
 	choices, err := deps.Q.ListLiaiseChoicesByPlan(ctx, plan.ID)
 	if err != nil {
-		return http.StatusInternalServerError, "could not load choices"
+		return false, http.StatusInternalServerError, "could not load choices"
 	}
 	if err := clApplyShareChoices(ctx, deps, plan, resData, choices); err != nil {
-		return http.StatusInternalServerError, "could not apply share choices"
+		return false, http.StatusInternalServerError, "could not apply share choices"
 	}
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-		return http.StatusInternalServerError, "could not save liaise data"
+		return false, http.StatusInternalServerError, "could not save liaise data"
 	}
 	broadcastEvent(deps.Manager, plan.GameID, model.EventLiaiseChoicesRevealed,
 		model.LiaiseChoicesRevealedPayload{PlanID: plan.ID, Choices: choices})
-	return 0, ""
+	return true, 0, ""
 }
 
 // liaiseChoiceApplier applies one player's Things We Share choice. Each handler

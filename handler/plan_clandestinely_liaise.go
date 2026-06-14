@@ -269,21 +269,6 @@ func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	}
 	participants := []int64{plan.PreparerID, *ld.PartnerID}
 
-	// pendingThen names participants who still owe a submission; once all are
-	// in, it falls back to the preparer, who owes the "Advance" click.
-	pendingThen := func(submitted map[int64]bool, whenDone []int64) []int64 {
-		var pending []int64
-		for _, p := range participants {
-			if !submitted[p] {
-				pending = append(pending, p)
-			}
-		}
-		if len(pending) == 0 {
-			return whenDone
-		}
-		return pending
-	}
-
 	//nolint:exhaustive // together_at_last/done handled by default (ride generic)
 	switch ld.Phase {
 	case game.LiaisePhaseSecretsWeKeep:
@@ -291,28 +276,37 @@ func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		for _, ks := range ld.KeptSecrets {
 			submitted[ks.PlayerID] = true
 		}
-		ids := pendingThen(submitted, []int64{plan.PreparerID})
-		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+		return liaisePendingState(participants, submitted)
 	case game.LiaisePhaseThingsWeShare:
 		submitted := map[int64]bool{}
 		for _, id := range ld.ShareSubmitterIDs {
 			submitted[id] = true
 		}
-		ids := pendingThen(submitted, []int64{plan.PreparerID})
-		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+		return liaisePendingState(participants, submitted)
 	case game.LiaisePhaseWhenWillISeeYouAgain:
-		// Both participants reveal a redelay face simultaneously; the reveal
-		// completing advances the plan on its own, so name only those who still
-		// owe a face (no "advance" click). All in → ride the generic case.
 		submitted := liaiseRedelaySubmitters(ctx, q, ld)
-		ids := pendingThen(submitted, nil)
-		if len(ids) == 0 {
-			return model.RowState{}, false
-		}
-		return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: ids}, true
+		return liaisePendingState(participants, submitted)
 	default:
 		return model.RowState{}, false
 	}
+}
+
+// liaisePendingState names the participants who still owe a submission in a
+// collaborative liaise sub-phase. All three submit phases auto-advance the
+// moment both participants are in (no preparer "Advance" click), so when nobody
+// is pending the row rides the generic plan_resolving case (returns false) — the
+// transient both-in state is never the table's resting state.
+func liaisePendingState(participants []int64, submitted map[int64]bool) (model.RowState, bool) {
+	var pending []int64
+	for _, p := range participants {
+		if !submitted[p] {
+			pending = append(pending, p)
+		}
+	}
+	if len(pending) == 0 {
+		return model.RowState{}, false
+	}
+	return model.RowState{Kind: model.RowStateLiaiseResolving, ActingPlayerIDs: pending}, true
 }
 
 // liaiseRedelaySubmitters returns the set of participants who have submitted a

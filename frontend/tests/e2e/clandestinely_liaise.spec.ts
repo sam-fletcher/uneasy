@@ -9,8 +9,9 @@ import { test, expect, request as pwRequest, type BrowserContext, type Page } fr
 // fast-forwarding the record to the plan's row, resolving, and advancing to
 // the secrets phase) is driven over the API — it isn't the subject. The
 // bug-prone part is the keep-secret loop: the preparer submits first, the
-// partner submits second, and the preparer's "Advance" affordance must
-// appear live, with no manual reload. Pre-fix it never did.
+// partner submits second, and once both are in the liaison auto-advances to
+// Things We Share — that transition must reach the preparer's panel live, with
+// no manual reload. Pre-fix the hand-off never reached the waiting party at all.
 
 const E2E = 'http://localhost:8090';
 
@@ -160,13 +161,14 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 	await keepSecret(alice, 'Alice Confidant');
 	await expect(section(alice, 'Secrets we keep').getByText(/Waiting for/)).toBeVisible();
 
-	// Partner (bob) submits SECOND. Pre-fix this emitted no event, so alice's
-	// panel never refetched and her advance button never appeared. With the
-	// fix, the broadcast drives alice's plan refetch and the button shows live.
+	// Partner (bob) submits SECOND. With both secrets in, the server auto-advances
+	// the liaison straight to Things We Share — there is no manual "Advance" click.
+	// The phase-change broadcast must drive alice's panel refetch so her panel
+	// moves to the next phase live, with no manual reload (the soft-lock this spec
+	// guards). Both players land in Things We Share.
 	await keepSecret(bob, 'Bob Confidant');
-	await expect(
-		section(alice, 'Secrets we keep').getByRole('button', { name: 'Advance to Things We Share' }),
-	).toBeVisible({ timeout: 10_000 });
+	await expect(section(alice, 'Things we share')).toBeVisible({ timeout: 10_000 });
+	await expect(section(bob, 'Things we share')).toBeVisible({ timeout: 10_000 });
 
 	await aliceCtx.close();
 	await bobCtx.close();

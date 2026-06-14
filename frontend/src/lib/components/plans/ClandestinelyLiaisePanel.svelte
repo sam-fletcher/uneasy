@@ -484,18 +484,21 @@
 		<!-- Phase 2: Secrets We Keep ──────────────────────────────── -->
 		{:else if clState.phase === 'secrets_we_keep'}
 			<div class="choices-section">
-				<p class="choices-header">Secrets we keep</p>
+				<p class="choices-header">Secrets We Keep</p>
 				<p class="choices-note">
 					Each of you nominates one of your own assets to hold the secret of
-					this meeting. Picks are revealed only once both have submitted.
+					this meeting.
 				</p>
 				{#if iKeptSecret}
-					<p class="choices-note">
-						You've committed your secret. Waiting for
-						{#each participants.filter(p => !keepSecretSubmittedIDs.has(p.player_id)) as p, i}
-							{i > 0 ? ', ' : ''}{p.display_name}
-						{/each}…
-					</p>
+					{@const waitingFor = participants.filter(p => !keepSecretSubmittedIDs.has(p.player_id))}
+					{#if waitingFor.length > 0}
+						<p class="choices-note">
+							You've committed your secret. Waiting for
+							{waitingFor.map(p => p.display_name).join(', ')}…
+						</p>
+					{:else}
+						<p class="choices-note">Both secrets are committed.</p>
+					{/if}
 				{:else}
 					<CardPicker
 						label="Asset to hold the secret"
@@ -512,13 +515,6 @@
 							{keepBusy ? '…' : 'Keep this secret'}
 						</button>
 					{/if}
-				{/if}
-
-				{#if amPreparer && keepSecretSubmittedIDs.size >= 2}
-					<button class="action-btn primary" style="margin-top:0.5rem;"
-						onclick={() => onAdvance(plan)} disabled={advanceBusy}>
-						{advanceBusy ? '…' : 'Advance to Things We Share'}
-					</button>
 				{/if}
 			</div>
 
@@ -609,16 +605,6 @@
 						disabled={shareBusy || !shareSubmittable}>
 						{shareBusy ? '…' : 'Submit share choice'}
 					</button>
-				{/if}
-
-				{#if amPreparer}
-					<button class="action-btn" style="margin-top:0.5rem;"
-						onclick={() => onAdvance(plan)} disabled={advanceBusy}>
-						{advanceBusy ? '…' : 'Advance to "When will I see you again?"'}
-					</button>
-					<p class="choices-note muted">
-						(Advance once both players have submitted above.)
-					</p>
 				{/if}
 			</div>
 
