@@ -16,6 +16,8 @@
 	import { onDestroy } from 'svelte';
 	import { parseLiaiseData, type LiaisePhase } from '$lib/plans/resolutionData/liaise';
 	import { destructionWarning } from '$lib/assetRisk';
+	import { hiddenCount } from '$lib/secretCounts';
+	import { useSecretCounts } from '$lib/secretCountsContext';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import SimultaneousRevealInput from './SimultaneousRevealInput.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
@@ -194,6 +196,12 @@
 		amPreparer ? clState.partnerID : (plan?.preparer_id ?? null),
 	);
 	const otherParticipantAssets = $derived(ownerIntactAssets(assets, otherParticipantID));
+	// look_at_secret only makes sense on an asset that still holds a secret the
+	// picker can't already read — otherwise the chip reveals nothing. The
+	// existence count is public; "known" is viewer-scoped via the shared lookup.
+	const secretCounts = useSecretCounts();
+	const hasUnknownSecret = (a: Asset): boolean =>
+		hiddenCount(a, secretCounts?.known(a.id) ?? 0) > 0;
 	// update_peer / break_peer target the partner's MEETING PEER specifically —
 	// the peer they brought to this liaison. From the preparer's seat that's
 	// partnerPeerID; from the partner's seat it's preparerPeerID.
@@ -588,12 +596,18 @@
 							{#if !isUpdate && shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}
 						{/if}
 					{:else if shareChoiceKey && SHARE_NEEDS_PICKER.has(shareChoiceKey)}
-						{@const candidates = otherParticipantAssets.filter(a =>
-							shareChoiceKey === 'take_gift' ? a.asset_type !== 'peer' : true,
-						)}
+						{@const candidates = otherParticipantAssets.filter(a => {
+							if (shareChoiceKey === 'take_gift') return a.asset_type !== 'peer';
+							// look_at_secret: only assets holding a secret you can't read.
+							if (shareChoiceKey === 'look_at_secret') return hasUnknownSecret(a);
+							return true;
+						})}
 						<CardPicker
 							label={shareChoiceKey === 'take_gift' ? "Partner's gift" : "Partner's asset"}
 							items={candidates}
+							emptyMessage={shareChoiceKey === 'look_at_secret'
+								? "Your partner has no assets with secrets you can't already read."
+								: 'No eligible assets.'}
 							{players}
 							selected={shareAssetID}
 							onSelect={(id) => (shareAssetID = id)}
