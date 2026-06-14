@@ -235,13 +235,14 @@
 		{/if}
 
 		{#if active === 'assets'}
-			<p>Everything your character controls is an asset. Four types:</p>
+			<p>Everything your character controls is an asset. There are 4 types:</p>
 			<ul>
 				<li><em>Holdings</em> — land and buildings.</li>
 				<li><em>Peers</em> — the people of the court.</li>
 				<li><em>Artifacts</em> — trinkets, relics, and other objects.</li>
 				<li><em>Resources</em> — anything from materials to traditions to logistics.</li>
 			</ul>
+			<p>Each asset has up to 4 <em>marginalia</em> — descriptive words or phrases that flesh out the asset.</p>
 
 			<figure class="diagram">
 				<div class="ex-asset main" aria-hidden="true">
@@ -272,15 +273,15 @@
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-eye sm known"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></span>
-							<span class="ex-leg-text">An open eye counts the <em>secrets</em> held by the asset that are known to you.</span>
+							<span class="ex-leg-text"><em>Secrets</em> held by the asset that are known to you.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-eye sm hidden"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg></span>
-							<span class="ex-leg-text">A struck eye counts secrets hidden from you. To learn them, you must <em>take</em> or <em>break</em> the asset.</span>
+							<span class="ex-leg-text">Secrets hidden from you. To learn them, you must <em>take</em> or <em>break</em> the asset.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-strike">torn</span>
-							<span class="ex-leg-text">A <em>broken</em> marginalia (like “Old war wound”); tear all four and the asset is destroyed.</span>
+							<span class="ex-leg-text">A <em>torn</em> marginalia, caused by <em>breaking</em> the asset. Tear them all and the asset is destroyed.</span>
 						</span>
 					</div>
 				</figcaption>

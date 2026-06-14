@@ -225,7 +225,7 @@
 
 		<span class="name-block">
 			<span class="name">
-				{asset.name}
+				<span class="name-text">{asset.name}</span>
 				{#if asset.is_main_character}
 					<span class="main-badge" title="Main character">★</span>
 				{/if}
@@ -443,12 +443,22 @@
 		gap: 0.05rem;
 	}
 
+	/* Flex row so the trailing status badges (★ / die / eyes) stay visible while
+	   only the name text truncates. Putting overflow:hidden on .name itself
+	   clipped the badges whenever the name filled the column. */
 	.name {
+		display: flex;
+		align-items: center;
+		min-width: 0;
 		font-size: 0.92rem;
 		color: var(--color-text);
-		white-space: nowrap;
+	}
+
+	.name-text {
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.owner-label {
@@ -460,6 +470,7 @@
 		color: var(--owner-color, var(--color-accent));
 		font-size: 0.78rem;
 		margin-left: 0.2rem;
+		flex-shrink: 0;
 	}
 
 	/* Leveraged status glyph, inline after the name (shares the row with the
@@ -467,6 +478,7 @@
 	.lev-badge {
 		color: var(--color-leveraged);
 		margin-left: 0.2rem;
+		flex-shrink: 0;
 	}
 	.lev-badge svg { vertical-align: -0.18em; }
 
@@ -478,6 +490,7 @@
 		align-items: center;
 		gap: 1px;
 		margin-left: 0.2rem;
+		flex-shrink: 0;
 	}
 	.sec-badge svg { vertical-align: -0.18em; }
 	.sec-badge.known { color: var(--color-accent); }

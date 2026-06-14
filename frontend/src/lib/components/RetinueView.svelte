@@ -405,21 +405,31 @@
 									</svg>
 								</span>
 							{/if}
-							<button
-								type="button"
-								class="secrets-btn"
-								class:has-secrets={secretsForAsset(asset.id).length > 0}
-								class:active={secretsOpenForAssetId === asset.id}
-								onclick={() => toggleSecrets(asset.id)}
-								aria-label={secretsForAsset(asset.id).length > 0 ? `View ${secretsForAsset(asset.id).length} secret(s)` : 'Write a secret'}
-								title="Secrets"
-							>
-								<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-									<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-									<circle cx="12" cy="12" r="3" />
-								</svg>
-								{#if secretsForAsset(asset.id).length > 0}<span class="secrets-badge">{secretsForAsset(asset.id).length}</span>{/if}
-							</button>
+							{#if isSelf || secretsForAsset(asset.id).length > 0}
+								<!-- Open (known) eye. Always gold. On your own assets it's the
+								     write-a-secret affordance, prefixed with "+" (the same add
+								     convention as the marginalia "+" tiles and the +🎲 leverage
+								     chip). On others' assets it's read-only and only appears when
+								     you can actually read something (no dead grey button beside
+								     the struck eye). -->
+								<button
+									type="button"
+									class="secrets-btn"
+									class:active={secretsOpenForAssetId === asset.id}
+									onclick={() => toggleSecrets(asset.id)}
+									aria-label={isSelf
+										? (secretsForAsset(asset.id).length > 0 ? `Write or view ${secretsForAsset(asset.id).length} secret(s)` : 'Write a secret')
+										: `View ${secretsForAsset(asset.id).length} secret(s)`}
+									title={isSelf ? 'Write a secret' : 'Secrets you can read'}
+								>
+									{#if isSelf}<span class="secrets-plus" aria-hidden="true">+</span>{/if}
+									<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+										<circle cx="12" cy="12" r="3" />
+									</svg>
+									{#if secretsForAsset(asset.id).length > 0}<span class="secrets-badge">{secretsForAsset(asset.id).length}</span>{/if}
+								</button>
+							{/if}
 							{#if hiddenSecretsFor(asset) > 0}
 								<!-- Struck eye: secrets that exist here but are hidden from
 								     this viewer (total − readable). Passive indicator; the
@@ -818,7 +828,10 @@
 	}
 	.hidden-secrets-num { font-size: 0.7rem; font-weight: 600; }
 
-	/* Secrets eye button + count badge */
+	/* Open (known) secrets eye button + count badge. Always gold — it's the
+	   readable eye whether or not it currently holds secrets. The leading "+"
+	   (own assets only) marks it as writable; read-only eyes on others' assets
+	   drop the "+". */
 	.secrets-btn {
 		position: relative;
 		flex-shrink: 0;
@@ -828,16 +841,19 @@
 		background: none;
 		border: 1px solid transparent;
 		border-radius: 4px;
-		color: var(--color-text-faint);
+		color: var(--color-accent);
 		cursor: pointer;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
+		gap: 1px;
 	}
-	.secrets-btn:hover { color: var(--color-accent); border-color: #5a5a52; background: #232320; }
+	.secrets-btn:hover { color: var(--color-accent-hover); border-color: #5a5a52; background: #232320; }
 	.secrets-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-	.secrets-btn.has-secrets { color: var(--color-accent); }
-	.secrets-btn.active { color: var(--color-text); border-color: #5a5a52; background: #2a2a26; }
+	.secrets-btn.active { border-color: #5a5a52; background: #2a2a26; }
+
+	/* "+" add affordance prefixed to the writable (own-asset) eye. */
+	.secrets-plus { font-size: 1rem; font-weight: 700; line-height: 1; }
 
 	.secrets-badge {
 		position: absolute;
