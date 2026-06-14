@@ -23,7 +23,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import {
 		playerName,
-		playersExcept, ownerUnleveragedAssets, ownerIntactAssets,
+		playersExcept, ownerIntactAssets,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -182,7 +182,13 @@
 		return out;
 	});
 
-	const myUnleveragedAssets = $derived(ownerUnleveragedAssets(assets, currentPlayerID));
+	// Keep-secret picker: the rule is "one of your assets" (THE_12_PLANS_RULES
+	// §Secrets We Keep) — writing a secret on an asset's underside, which the
+	// backend allows for ANY owned asset regardless of leverage. So this list
+	// must NOT exclude leveraged assets (a stricter filter wrongly hid the main
+	// character, which is the asset most often leveraged through play). Only
+	// destroyed assets are excluded — you can't write on a torn-up asset.
+	const myKeepSecretAssets = $derived(ownerIntactAssets(assets, currentPlayerID));
 	// In share-choice sub-forms, the target is "the other participant".
 	const otherParticipantID = $derived(
 		amPreparer ? clState.partnerID : (plan?.preparer_id ?? null),
@@ -493,13 +499,13 @@
 				{:else}
 					<CardPicker
 						label="Asset to hold the secret"
-						items={myUnleveragedAssets}
+						items={myKeepSecretAssets}
 						{players}
 						emptyMessage="You have no un-leveraged assets to bear the secret."
 						selected={keepSecretAssetID}
 						onSelect={(id) => (keepSecretAssetID = id)}
 					/>
-					{#if myUnleveragedAssets.length > 0}
+					{#if myKeepSecretAssets.length > 0}
 						<button class="action-btn primary"
 							onclick={() => onKeepSecret(plan)}
 							disabled={keepBusy || keepSecretAssetID == null}>

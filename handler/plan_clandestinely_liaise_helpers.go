@@ -99,6 +99,12 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
+		// A submission narrows the acting set (the submitter no longer owes a
+		// face), and the final submission finalizes the liaise — both change
+		// ComputeRowState's result. RevealSubmitted/Complete drive a plan
+		// refetch on clients, not a row-state recompute, so broadcast it here.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
 			"player_id": player.ID,

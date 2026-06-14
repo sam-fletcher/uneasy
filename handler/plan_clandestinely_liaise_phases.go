@@ -107,6 +107,14 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 			Phase:  string(nextPhase),
 		})
 
+		// The new phase changes who the table is waiting on (e.g.
+		// together_at_last names only the preparer, but secrets_we_keep and
+		// things_we_share name both participants). LiaisePhaseChanged alone only
+		// refetches the plan on clients — it does not recompute row state — so
+		// the WaitingOnBar would stay stale until a manual refresh. Recompute
+		// and broadcast row state, as every other multi-actor sub-phase does.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,
 			"phase":   nextPhase,
@@ -137,6 +145,7 @@ func clBothKeepSecretsSubmitted(ld LiaiseResolutionData, preparerID int64) bool 
 // of their own assets to hold the secret of this meeting. The server writes a
 // new secret on the asset's underside. Choices are revealed to both players
 // once both have submitted.
+// TODO: Should this reject destroyed assets? The UI is hiding them but what's the right call here?
 //
 // Request body: {"asset_id": N}
 func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
@@ -209,7 +218,8 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		if plan.PreparationNotes != nil {
 			preparationNotes = *plan.PreparationNotes
 		}
-		secretText := fmt.Sprintf("[Clandestine meeting — %s]", preparationNotes)
+		secretText := fmt.Sprintf("Clandestine meeting with %s — %s",
+			playerDisplayName(ctx, deps.Q, player.ID), preparationNotes)
 		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
 			AssetID:  body.AssetID,
 			AuthorID: player.ID,
@@ -239,6 +249,13 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		// secrets-we-keep panel until a manual refresh.
 		broadcastEvent(deps.Manager, plan.GameID, model.EventLiaiseKeepSecretSubmitted,
 			model.LiaiseKeepSecretSubmittedPayload{PlanID: plan.ID})
+
+		// This submission narrows the acting set (the submitter no longer owes a
+		// keep-secret; once both are in the preparer owes the advance click).
+		// KeepSecretSubmitted only triggers a plan refetch on clients, not a row
+		// state recompute, so without this the WaitingOnBar keeps naming the
+		// submitter until a manual refresh — the reported bug.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":  plan.ID,
@@ -360,6 +377,11 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, status, msg)
 			return
 		}
+
+		// The submitter no longer owes a share-choice; once both are in the
+		// preparer owes the advance click. Recompute row state so the
+		// WaitingOnBar reflects the new acting set live, not just on refresh.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
