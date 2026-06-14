@@ -28,6 +28,12 @@ type assetWithMarginalia struct {
 	dbgen.Asset
 
 	Marginalia []dbgen.Marginalium `json:"marginalia"`
+	// SecretCount is the total number of secrets on the asset (existence),
+	// public to every player. The content stays gated by secret_visibility;
+	// clients derive the "known to me" count from the visible-secrets list and
+	// treat the remainder (SecretCount − known) as hidden. Newly-created assets
+	// have none, so the zero value is correct wherever it isn't set.
+	SecretCount int64 `json:"secret_count"`
 }
 
 // loadAssetEnriched fetches an asset and its marginalia in two queries.
@@ -40,7 +46,9 @@ func loadAssetEnriched(r *http.Request, q *dbgen.Queries, assetID int64) (assetW
 	if err != nil || marginalia == nil {
 		marginalia = []dbgen.Marginalium{}
 	}
-	return assetWithMarginalia{Asset: asset, Marginalia: marginalia}, nil
+	// Total secret count (existence) — public; tolerate errors as zero.
+	secretCount, _ := q.CountSecretsByAsset(r.Context(), assetID)
+	return assetWithMarginalia{Asset: asset, Marginalia: marginalia, SecretCount: secretCount}, nil
 }
 
 // requireAssetAccess validates the assetId URL param, loads the asset, and
@@ -105,13 +113,25 @@ func ListAssets(s *db.Store) http.HandlerFunc {
 			return
 		}
 
+		// Total secret count per asset (existence), in one query. Content stays
+		// gated by secret_visibility; only the count is public.
+		secretCounts, _ := s.Q.CountSecretsByGame(r.Context(), gameID)
+		secretCountByAsset := make(map[int64]int64, len(secretCounts))
+		for _, c := range secretCounts {
+			secretCountByAsset[c.AssetID] = c.SecretCount
+		}
+
 		result := make([]assetWithMarginalia, 0, len(assets))
 		for _, a := range assets {
 			marginalia, _ := s.Q.ListMarginaliaByAsset(r.Context(), a.ID)
 			if marginalia == nil {
 				marginalia = []dbgen.Marginalium{}
 			}
-			result = append(result, assetWithMarginalia{Asset: a, Marginalia: marginalia})
+			result = append(result, assetWithMarginalia{
+				Asset:       a,
+				Marginalia:  marginalia,
+				SecretCount: secretCountByAsset[a.ID],
+			})
 		}
 
 		respond(w, http.StatusOK, map[string]any{"assets": result})
@@ -235,7 +255,7 @@ func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // When promoting a peer to main character and an existing main character
 // already exists for this player, the rules require tearing one of the
 // existing MC's marginalia. Callers must pass `tear_position` (1–4) pointing
-// at an untorn marginalium on the old MC. If the old MC has no untorn
+// at an untorn marginalia on the old MC. If the old MC has no untorn
 // marginalia (e.g. all 4 already torn), the swap proceeds without tearing.
 func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -313,7 +333,7 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
-// tearOldMainCharacterMarginalia tears the marginalium the MC swap requires
+// tearOldMainCharacterMarginalia tears the marginalia the MC swap requires
 // (and destroys the old MC if that was its last intact one), broadcasting and
 // logging each step. Split out of tearAndReplaceOldMainCharacter to keep the
 // nesting shallow. Returns false on error.
@@ -695,7 +715,7 @@ func TearMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			EmitMarginaliaTorn(ctx, s.Q, manager, asset.GameID, *asset, *m, player.ID, g.CurrentRow)
 		}
 
-		// Check if that was the last intact marginalium → destroy the asset.
+		// Check if that was the last intact marginalia → destroy the asset.
 		// DestroyIfAllMarginaliaTorn composes the "no intact remain" check
 		// and the flip into a single SQL statement; rows=1 means the tear
 		// just completed the destruction.

@@ -54,6 +54,16 @@
 		/** Render expanded by default. */
 		defaultExpanded?: boolean;
 		/**
+		 * Number of secrets on this asset whose content the viewer can read.
+		 * The total (existence) comes from `asset.secret_count`; the difference
+		 * is shown as a struck-eye "hidden from you" count. Both are passive
+		 * indicators after the name. Leaving this undefined hides the secret
+		 * indicators entirely — pickers that don't compute the viewer's known
+		 * count opt out by simply not passing it (otherwise the viewer's own
+		 * secrets would wrongly read as hidden).
+		 */
+		knownSecretCount?: number;
+		/**
 		 * Leverage draft toggle (DiceRollPanel). When true, a die appears in
 		 * the header's left slot. `leverageDrafted` fills it as a pending pick;
 		 * an already-committed asset (asset.is_leveraged) shows it filled and
@@ -77,6 +87,7 @@
 		onMarginaliaToggle,
 		disabled = false,
 		defaultExpanded = false,
+		knownSecretCount,
 		leverageMode = false,
 		leverageDrafted = false,
 		leverageDisabled = false,
@@ -91,6 +102,15 @@
 		if (leverageLocked) return;
 		onToggleLeverage?.(asset);
 	}
+
+	// Secret indicators: open eye = secrets you can read, struck eye = secrets
+	// that exist but are hidden from you (total − known). Only shown when the
+	// caller supplies the viewer's known count (see prop doc); each eye then
+	// renders only if its own count is non-zero. Clamp so a stale known count
+	// can't push hidden negative.
+	const showSecrets = $derived(knownSecretCount !== undefined);
+	const knownSecrets = $derived(Math.max(0, knownSecretCount ?? 0));
+	const hiddenSecrets = $derived(Math.max(0, asset.secret_count - knownSecrets));
 
 	// `defaultExpanded` is intentionally a one-shot initial-value hint, not a
 	// live binding — once the user toggles the card we want their state to
@@ -223,6 +243,25 @@
 							<circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" />
 							<circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" />
 						</svg>
+					</span>
+				{/if}
+				{#if showSecrets && knownSecrets > 0}
+					<!-- Open eye: secrets whose content you can read. -->
+					<span class="sec-badge known" title={`${knownSecrets} secret${knownSecrets === 1 ? '' : 's'} you can read`} aria-label={`${knownSecrets} secrets you can read`}>
+						<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+							<circle cx="12" cy="12" r="3" />
+						</svg><span class="sec-num">{knownSecrets}</span>
+					</span>
+				{/if}
+				{#if showSecrets && hiddenSecrets > 0}
+					<!-- Struck eye: secrets that exist but are hidden from you. -->
+					<span class="sec-badge hidden" title={`${hiddenSecrets} secret${hiddenSecrets === 1 ? '' : 's'} hidden from you`} aria-label={`${hiddenSecrets} secrets hidden from you`}>
+						<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+							<circle cx="12" cy="12" r="3" />
+							<line x1="3" y1="21" x2="21" y2="3" />
+						</svg><span class="sec-num">{hiddenSecrets}</span>
 					</span>
 				{/if}
 			</span>
@@ -430,6 +469,20 @@
 		margin-left: 0.2rem;
 	}
 	.lev-badge svg { vertical-align: -0.18em; }
+
+	/* Secret indicators after the name. Open eye (known) reads in gold like the
+	   Retinue eye; struck eye (hidden) is muted to read as "not available to
+	   you". Passive — not tap targets here. */
+	.sec-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 1px;
+		margin-left: 0.2rem;
+	}
+	.sec-badge svg { vertical-align: -0.18em; }
+	.sec-badge.known { color: var(--color-accent); }
+	.sec-badge.hidden { color: var(--color-text-muted); }
+	.sec-num { font-size: 0.72rem; font-weight: 600; }
 
 	.meta {
 		display: flex;

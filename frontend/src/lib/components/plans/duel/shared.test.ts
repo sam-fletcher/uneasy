@@ -52,6 +52,7 @@ function asset(id: number, name: string): Asset {
 		created_at: '2026-01-01T00:00:00Z',
 		destroyed_at: null,
 		marginalia: [],
+		secret_count: 0,
 	};
 }
 

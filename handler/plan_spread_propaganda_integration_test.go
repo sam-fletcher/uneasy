@@ -151,7 +151,7 @@ func TestSpreadPropaganda_Mar_BreakSelf_BlocksUntilBroken(t *testing.T) {
 
 	plan, preparerIdx := spPrepareToMar(t, h)
 
-	// Give the preparer an asset with a marginalium to tear.
+	// Give the preparer an asset with a marginalia to tear.
 	ownPeer := h.seedPeer(preparerIdx, "thin-skinned peer")
 	m, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
 		AssetID: ownPeer, Position: 1, Text: "a cherished note",
@@ -175,7 +175,7 @@ func TestSpreadPropaganda_Mar_BreakSelf_BlocksUntilBroken(t *testing.T) {
 	code, body = h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": mForeign.ID})
 	assert.Equalf(t, http.StatusForbidden, code, "breaking a foreign asset should 403: %v", body)
 
-	// Break the preparer's own marginalium.
+	// Break the preparer's own marginalia.
 	code, body = h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": m.ID})
 	require.Equalf(t, http.StatusOK, code, "break-self: %v", body)
 
@@ -183,5 +183,5 @@ func TestSpreadPropaganda_Mar_BreakSelf_BlocksUntilBroken(t *testing.T) {
 
 	torn, err := h.q.GetMarginaliaByID(ctx, m.ID)
 	require.NoError(t, err)
-	assert.True(t, torn.IsTorn, "the preparer's marginalium should be torn")
+	assert.True(t, torn.IsTorn, "the preparer's marginalia should be torn")
 }

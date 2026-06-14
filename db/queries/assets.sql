@@ -165,6 +165,20 @@ INSERT INTO secret_visibility (secret_id, player_id)
 SELECT id, $2 FROM secrets WHERE asset_id = $1
 ON CONFLICT DO NOTHING;
 
+-- name: CountSecretsByAsset :one
+-- Total secrets on an asset (existence). Public to all players — only the
+-- content stays gated by secret_visibility. See SECRETS_RULES.md.
+SELECT COUNT(*) FROM secrets WHERE asset_id = $1;
+
+-- name: CountSecretsByGame :many
+-- Total secret count per asset across a game, for the enriched asset list.
+-- Assets with no secrets are simply absent (callers default them to 0).
+SELECT s.asset_id, COUNT(*) AS secret_count
+FROM secrets s
+JOIN assets a ON s.asset_id = a.id
+WHERE a.game_id = $1
+GROUP BY s.asset_id;
+
 -- name: RefreshAllAssets :exec
 -- Un-leverage every asset in a game. Used at Shake-Up entry per rules.
 UPDATE assets SET is_leveraged = FALSE WHERE game_id = $1;

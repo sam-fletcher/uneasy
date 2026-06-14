@@ -222,7 +222,7 @@ func validateChooseRequestBody(r *http.Request) (*chooseRequestBody, error) {
 		SheetType       string          `json:"sheet_type"`
 		ChoiceName      string          `json:"choice_name"`
 		AssetText       string          `json:"asset_text"`
-		MarginaliumText string          `json:"marginalium_text"`
+		MarginaliumText string          `json:"marginalia_text"`
 		LawOrRumorText  string          `json:"law_or_rumor_text"`
 		CardAssets      []CardAssetText `json:"card_assets"`
 	}
@@ -243,7 +243,7 @@ func validateChooseRequestBody(r *http.Request) (*chooseRequestBody, error) {
 		return nil, errors.New("asset_text is required")
 	}
 	if body.SheetType == gamepkg.PrologueSheetTitles && body.MarginaliumText == "" {
-		return nil, errors.New("marginalium_text is required for titles")
+		return nil, errors.New("marginalia_text is required for titles")
 	}
 	if body.SheetType == gamepkg.PrologueSheetLawsRumors && body.LawOrRumorText == "" {
 		return nil, errors.New("law_or_rumor_text is required for laws_rumors")
@@ -325,7 +325,7 @@ func findOpenMarginaliaPosition(ctx context.Context, q *dbgen.Queries, assetID i
 	return 0, nil
 }
 
-// addTitleMarginalium adds a marginalium to the player's main character.
+// addTitleMarginalium adds a marginalia to the player's main character.
 func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, manager *hub.Manager,
 	gameID, playerID int64, text string,
 ) error {
@@ -348,7 +348,7 @@ func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, manager *hub.Man
 		Text:     text,
 	})
 	if err != nil {
-		return httpErr(http.StatusInternalServerError, "could not add title marginalium")
+		return httpErr(http.StatusInternalServerError, "could not add title marginalia")
 	}
 	if mainChar, err := q.GetAssetByID(ctx, mainCharID); err == nil {
 		EmitMarginaliaAdded(ctx, q, manager, gameID, mainChar, m, playerID, nil)
@@ -430,7 +430,7 @@ func broadcastTurnAdvanced(ctx context.Context, manager *hub.Manager, q *dbgen.Q
 //	  "sheet_type":         "...",
 //	  "choice_name":        "...",
 //	  "asset_text":         "...",   // name for the sheet-derived asset
-//	  "marginalium_text":   "...",   // titles only — added to main character
+//	  "marginalia_text":   "...",   // titles only — added to main character
 //	  "law_or_rumor_text":  "...",   // laws_rumors only — added to public record
 //	  "card_assets": [
 //	    {"suit":"C","value":"K","text":"..."}, ...    // text required for makes; ignored for takes
@@ -438,7 +438,7 @@ func broadcastTurnAdvanced(ctx context.Context, manager *hub.Manager, q *dbgen.Q
 //	}
 //
 // Records the prologue_choice row, creates the choice-specific asset, adds
-// the title marginalium / law / rumor as appropriate, and processes both
+// the title marginalia / law / rumor as appropriate, and processes both
 // linked cards (make-or-take semantics). Players are required to author
 // every text field; silent automation is not permitted.
 func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
@@ -471,7 +471,7 @@ func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// All writes for a single choice — turn record, choice asset, sheet-type
-		// side-effect (marginalium/law/rumor), and per-card make-or-take —
+		// side-effect (marginalia/law/rumor), and per-card make-or-take —
 		// must commit atomically. Without this, a downstream failure (e.g.
 		// "no open marginalia slots") leaves the prologue_choice row
 		// committed, silently consuming the player's turn and shifting the

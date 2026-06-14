@@ -716,6 +716,61 @@ func TestSecret_WriterTracking(t *testing.T) {
 	assert.Len(t, secrets, 2)
 }
 
+// Secret counts reflect existence, not visibility: every secret on an asset
+// is counted regardless of who authored it or who can read it. This backs the
+// "all players know a secret exists, not its content" model.
+func TestCountSecrets_ExistenceRegardlessOfVisibility(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	mkAsset := func(name string) dbgen.Asset {
+		a, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID:    tg.Game.ID,
+			OwnerID:   tg.Players[0].ID,
+			CreatorID: tg.Players[0].ID,
+			AssetType: model.AssetPeer,
+			Name:      name,
+		})
+		require.NoError(t, err)
+		return a
+	}
+	assetA := mkAsset("Two secrets")
+	assetB := mkAsset("One secret")
+	assetC := mkAsset("No secrets")
+
+	// Two secrets on A by different authors (neither viewer-scoped), one on B.
+	for _, p := range []int64{tg.Players[0].ID, tg.Players[1].ID} {
+		_, err := q.CreateSecret(ctx, dbgen.CreateSecretParams{AssetID: assetA.ID, AuthorID: p, Text: "x"})
+		require.NoError(t, err)
+	}
+	_, err := q.CreateSecret(ctx, dbgen.CreateSecretParams{AssetID: assetB.ID, AuthorID: tg.Players[0].ID, Text: "y"})
+	require.NoError(t, err)
+
+	// Per-asset count.
+	for _, tc := range []struct {
+		asset dbgen.Asset
+		want  int64
+	}{{assetA, 2}, {assetB, 1}, {assetC, 0}} {
+		got, err := q.CountSecretsByAsset(ctx, tc.asset.ID)
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, got, tc.asset.Name)
+	}
+
+	// Per-game count: assets with no secrets are absent (callers default to 0).
+	rows, err := q.CountSecretsByGame(ctx, tg.Game.ID)
+	require.NoError(t, err)
+	byAsset := make(map[int64]int64, len(rows))
+	for _, row := range rows {
+		byAsset[row.AssetID] = row.SecretCount
+	}
+	assert.Equal(t, int64(2), byAsset[assetA.ID])
+	assert.Equal(t, int64(1), byAsset[assetB.ID])
+	_, present := byAsset[assetC.ID]
+	assert.False(t, present, "asset with no secrets should be absent from the grouped count")
+}
+
 // ── Asset Renaming Tests ────────────────────────────────────────────────────
 
 func TestUpdateAsset_RenameAsset(t *testing.T) {

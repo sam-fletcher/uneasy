@@ -96,6 +96,54 @@ func (q *Queries) CountPeerAssets(ctx context.Context, arg CountPeerAssetsParams
 	return count, err
 }
 
+const countSecretsByAsset = `-- name: CountSecretsByAsset :one
+SELECT COUNT(*) FROM secrets WHERE asset_id = $1
+`
+
+// Total secrets on an asset (existence). Public to all players — only the
+// content stays gated by secret_visibility. See SECRETS_RULES.md.
+func (q *Queries) CountSecretsByAsset(ctx context.Context, assetID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countSecretsByAsset, assetID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSecretsByGame = `-- name: CountSecretsByGame :many
+SELECT s.asset_id, COUNT(*) AS secret_count
+FROM secrets s
+JOIN assets a ON s.asset_id = a.id
+WHERE a.game_id = $1
+GROUP BY s.asset_id
+`
+
+type CountSecretsByGameRow struct {
+	AssetID     int64 `db:"asset_id" json:"asset_id"`
+	SecretCount int64 `db:"secret_count" json:"secret_count"`
+}
+
+// Total secret count per asset across a game, for the enriched asset list.
+// Assets with no secrets are simply absent (callers default them to 0).
+func (q *Queries) CountSecretsByGame(ctx context.Context, gameID int64) ([]CountSecretsByGameRow, error) {
+	rows, err := q.db.Query(ctx, countSecretsByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountSecretsByGameRow{}
+	for rows.Next() {
+		var i CountSecretsByGameRow
+		if err := rows.Scan(&i.AssetID, &i.SecretCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countTornMarginalia = `-- name: CountTornMarginalia :one
 SELECT count(*) FROM marginalia WHERE asset_id = $1 AND is_torn = TRUE
 `
@@ -231,7 +279,7 @@ WHERE a.id = $1
 // Marks an asset destroyed iff none of its marginalia remain intact. The
 // caller (the TearMarginalia handler) invokes this after a tear; a return
 // of 1 means the tear completed the destruction, 0 means the asset still
-// has at least one intact marginalium and survives. Composing the rule in
+// has at least one intact marginalia and survives. Composing the rule in
 // a single statement keeps the "last tear destroys" invariant testable at
 // the queries layer instead of buried in handler logic.
 func (q *Queries) DestroyIfAllMarginaliaTorn(ctx context.Context, id int64) (int64, error) {
@@ -715,7 +763,7 @@ type TearMarginaliaParams struct {
 	TornByID *int64 `db:"torn_by_id" json:"torn_by_id"`
 }
 
-// Tearing is one-shot — a torn marginalium cannot be torn again. The
+// Tearing is one-shot — a torn marginalia cannot be torn again. The
 // WHERE-clause guard makes the update idempotent at the SQL layer; callers
 // treat a 0-row return as "already torn / no such marginalia". The
 // handler also checks before calling for a friendlier error, but this

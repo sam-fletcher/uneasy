@@ -26,6 +26,9 @@
 		currentPlayerID: number | null;
 		players: Player[];
 		playerNameMap: Map<number, string>;
+		/** Per-asset count of secrets the viewer can read; the leverage cards
+		 *  derive the hidden remainder from the asset's public secret_count. */
+		knownSecretCounts: Map<number, number>;
 		/** True when the actor cannot leverage their own assets (Make Demands
 		 *  control_leverage winner has authority). */
 		actorLeverageBlocked?: boolean;
@@ -41,6 +44,7 @@
 		currentPlayerID,
 		players,
 		playerNameMap,
+		knownSecretCounts,
 		actorLeverageBlocked = false,
 	}: Props = $props();
 
@@ -409,6 +413,7 @@
 					<AssetCardSelectable
 						{asset}
 						ownerColor={myColor}
+						knownSecretCount={knownSecretCounts.get(asset.id) ?? 0}
 						leverageMode
 						leverageDrafted={draftAssetIds.has(asset.id)}
 						leverageDisabled={myReady || (isActor && actorLeverageBlocked)}

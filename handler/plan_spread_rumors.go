@@ -471,7 +471,7 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		// breakMarginalia logs the asset.destroyed post when a tear removes the
-		// last marginalium, but not the tear itself — emit the canonical
+		// last marginalia, but not the tear itself — emit the canonical
 		// marginalia.torn post so the break shows in the action log either way.
 		if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
 			EmitMarginaliaTorn(ctx, deps.Q, deps.Manager, plan.GameID, asset, m, player.ID, g.CurrentRow)

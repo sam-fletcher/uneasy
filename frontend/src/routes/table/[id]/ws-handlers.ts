@@ -482,10 +482,21 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			if (rumor) ctx.rumors = ctx.rumors.map(r => r.id === rumor.id ? rumor : r);
 			break;
 		}
-		case EventTypes.SecretCreated:
+		case EventTypes.SecretCreated: {
+			// A new secret exists. Its existence is public, so bump the asset's
+			// secret_count for everyone (the open/struck-eye totals stay live
+			// without an asset refetch). The text stays gated — refetch visible
+			// secrets so anyone with visibility picks up the content.
+			const { asset_id } = msg.payload as { asset_id: number };
+			ctx.assets = ctx.assets.map(a =>
+				a.id === asset_id ? { ...a, secret_count: a.secret_count + 1 } : a
+			);
+			getVisibleSecrets(ctx.gameID).then(d => { ctx.secrets = d.secrets; }).catch(() => {});
+			break;
+		}
 		case EventTypes.SecretVisibilityGrant: {
-			// SecretCreated payload omits text. SecretVisibilityGrant grows
-			// the viewer's set when relevant. Either way, refetch.
+			// No new secret — only the viewer's readable set may grow. Refetch
+			// visible secrets; secret_count (existence) is unchanged.
 			getVisibleSecrets(ctx.gameID).then(d => { ctx.secrets = d.secrets; }).catch(() => {});
 			break;
 		}

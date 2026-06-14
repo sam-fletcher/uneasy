@@ -129,6 +129,10 @@ export interface Asset {
 	destroyed_at: string | null;
 	// Enriched by the API — always present in list/create/update responses.
 	marginalia: Marginalium[];
+	// Total secrets on the asset (existence), public to every player. The
+	// content stays gated; the viewer derives how many they can read from the
+	// visible-secrets list and treats the remainder as hidden.
+	secret_count: number;
 }
 
 export interface Law {

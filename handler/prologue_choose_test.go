@@ -19,7 +19,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 			"sheet_type": "titles",
 			"choice_name": "Lady",
 			"asset_text": "  Lady of the North  ",
-			"marginalium_text": "  Noble Blood  ",
+			"marginalia_text": "  Noble Blood  ",
 			"law_or_rumor_text": "",
 			"card_assets": [
 				{"suit": "h", "value": "K", "text": "  A Loyal Guard  "},
@@ -44,7 +44,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 			"sheet_type": "laws_rumors",
 			"choice_name": "The Law of Equal Exchange",
 			"asset_text": "Scroll of Laws",
-			"marginalium_text": "",
+			"marginalia_text": "",
 			"law_or_rumor_text": "All trades must be witnessed by a third party",
 			"card_assets": []
 		}`)))
@@ -70,7 +70,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 		body := io.NopCloser(bytes.NewReader([]byte(`{
 			"sheet_type": "titles",
 			"choice_name": "Lady",
-			"marginalium_text": "Text"
+			"marginalia_text": "Text"
 		}`)))
 		r := &http.Request{Body: body}
 
@@ -84,7 +84,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 			"sheet_type": "titles",
 			"choice_name": "Lady",
 			"asset_text": "   ",
-			"marginalium_text": "Text"
+			"marginalia_text": "Text"
 		}`)))
 		r := &http.Request{Body: body}
 
@@ -93,7 +93,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 		assert.Contains(t, err.Error(), "asset_text is required")
 	})
 
-	t.Run("missing marginalium_text for titles", func(t *testing.T) {
+	t.Run("missing marginalia_text for titles", func(t *testing.T) {
 		body := io.NopCloser(bytes.NewReader([]byte(`{
 			"sheet_type": "titles",
 			"choice_name": "Lady",
@@ -103,7 +103,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 
 		_, err := validateChooseRequestBody(r)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "marginalium_text is required")
+		assert.Contains(t, err.Error(), "marginalia_text is required")
 	})
 
 	t.Run("missing law_or_rumor_text for laws_rumors", func(t *testing.T) {

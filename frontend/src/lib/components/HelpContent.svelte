@@ -247,9 +247,9 @@
 				<div class="ex-asset main" aria-hidden="true">
 					<div class="ex-asset-head">
 						<span class="ex-asset-name">Lady Mirabel <span class="ex-star">★</span><span class="ex-lev"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /></svg></span></span>
-						<span class="ex-eye">
-							<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-							<span class="ex-eye-badge">2</span>
+						<span class="ex-eyes">
+							<span class="ex-eye known"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg><span class="ex-eye-num">1</span></span>
+							<span class="ex-eye hidden"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg><span class="ex-eye-num">2</span></span>
 						</span>
 						<span class="ex-asset-type">Peer</span>
 					</div>
@@ -271,12 +271,16 @@
 							<span class="ex-leg-text">A <em>die</em> after the name means it's <em>leveraged</em> for a roll, until you refresh it.</span>
 						</span>
 						<span class="ex-leg-row">
-							<span class="ex-eye sm"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></span>
-							<span class="ex-leg-text"><em>Secrets</em> on the underside — revealed if the asset is taken or broken.</span>
+							<span class="ex-eye sm known"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></span>
+							<span class="ex-leg-text">An open eye counts the <em>secrets</em> held by the asset that are known to you.</span>
+						</span>
+						<span class="ex-leg-row">
+							<span class="ex-eye sm hidden"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg></span>
+							<span class="ex-leg-text">A struck eye counts secrets hidden from you. To learn them, you must <em>take</em> or <em>break</em> the asset.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-strike">torn</span>
-							<span class="ex-leg-text">A <em>broken</em> marginalium (like “Old war wound”); tear all four and the asset is destroyed.</span>
+							<span class="ex-leg-text">A <em>broken</em> marginalia (like “Old war wound”); tear all four and the asset is destroyed.</span>
 						</span>
 					</div>
 				</figcaption>
@@ -478,12 +482,11 @@
 	.ex-asset-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.5rem; }
 	.ex-asset-name { justify-self: start; font-size: 0.95rem; color: var(--color-text); display: inline-flex; align-items: center; gap: 0.4rem; }
 	.ex-star { font-size: 0.7rem; background: #4a3010; color: #e8c080; padding: 0.1rem 0.4rem; border-radius: 3px; }
-	.ex-eye { justify-self: center; position: relative; display: inline-flex; align-items: center; color: var(--color-accent); }
-	.ex-eye-badge {
-		position: absolute; top: -6px; right: -7px; min-width: 15px; height: 15px; padding: 0 3px;
-		background: var(--color-accent); color: var(--color-bg); border-radius: 8px;
-		font-size: 0.6rem; font-weight: 700; line-height: 15px; text-align: center;
-	}
+	.ex-eyes { justify-self: center; display: inline-flex; align-items: center; gap: 0.45rem; }
+	.ex-eye { display: inline-flex; align-items: center; gap: 1px; }
+	.ex-eye.known { color: var(--color-accent); }
+	.ex-eye.hidden { color: var(--color-text-muted); }
+	.ex-eye-num { font-size: 0.7rem; font-weight: 600; }
 	.ex-asset-type { justify-self: end; font-size: 0.7rem; background: var(--color-border-warm); color: var(--color-accent); padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
 	.ex-mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
 	.ex-mtile {
@@ -497,7 +500,7 @@
 	.ex-legend { display: flex; flex-direction: column; gap: 0.5rem; }
 	.ex-leg-row { display: flex; align-items: flex-start; gap: 0.5rem; }
 	.ex-leg-row > :first-child { flex-shrink: 0; margin-top: 0.05rem; }
-	.ex-eye.sm { color: var(--color-accent); flex-shrink: 0; }
+	.ex-eye.sm { flex-shrink: 0; }
 	.ex-strike { flex-shrink: 0; text-decoration: line-through; opacity: 0.6; color: #cfcabd; font-size: 0.78rem; }
 	/* Leveraged die — inline after the name in the example card, and in the legend. */
 	.ex-lev { color: var(--color-leveraged); display: inline-flex; align-items: center; }

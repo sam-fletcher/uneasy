@@ -33,7 +33,7 @@ func prologuePostsByCode(t *testing.T, q *dbgen.Queries, gameID int64, code stri
 
 // TestRecordPrologueChoice_EmitsLogPosts pins that a single prologue choice
 // writes the canonical action-log posts for the state it creates: the
-// sheet-derived asset, the title marginalium on the main character, and the
+// sheet-derived asset, the title marginalia on the main character, and the
 // card-derived asset. This is the "starting board reconstructable from the log"
 // guarantee for the choosing sub-phase.
 func TestRecordPrologueChoice_EmitsLogPosts(t *testing.T) {

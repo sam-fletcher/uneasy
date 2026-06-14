@@ -243,6 +243,13 @@
 		return secrets.filter(s => s.asset_id === assetId);
 	}
 
+	// Secrets that exist on the asset but whose content this viewer can't read:
+	// the public total minus the ones they can see. The open-eye button already
+	// carries the readable count; this feeds the passive struck-eye beside it.
+	function hiddenSecretsFor(asset: Asset): number {
+		return Math.max(0, asset.secret_count - secretsForAsset(asset.id).length);
+	}
+
 	function toggleSecrets(assetId: number) {
 		if (secretsOpenForAssetId === assetId) {
 			secretsOpenForAssetId = null;
@@ -413,6 +420,23 @@
 								</svg>
 								{#if secretsForAsset(asset.id).length > 0}<span class="secrets-badge">{secretsForAsset(asset.id).length}</span>{/if}
 							</button>
+							{#if hiddenSecretsFor(asset) > 0}
+								<!-- Struck eye: secrets that exist here but are hidden from
+								     this viewer (total − readable). Passive indicator; the
+								     open-eye button beside it owns the readable ones. -->
+								<span
+									class="hidden-secrets"
+									title={`${hiddenSecretsFor(asset)} secret${hiddenSecretsFor(asset) === 1 ? '' : 's'} hidden from you`}
+									aria-label={`${hiddenSecretsFor(asset)} secrets hidden from you`}
+								>
+									<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+										<circle cx="12" cy="12" r="3" />
+										<line x1="3" y1="21" x2="21" y2="3" />
+									</svg>
+									<span class="hidden-secrets-num">{hiddenSecretsFor(asset)}</span>
+								</span>
+							{/if}
 							<span class="asset-type">{assetTypeLabels[asset.asset_type]}</span>
 						</div>
 						{#if renamingAssetId === asset.id && renameError}
@@ -421,7 +445,7 @@
 						{#if mcSwapTo != null && currentMC && asset.id === currentMC.id}
 							<div class="mc-picker">
 								<p class="m-editor-label">
-									Pick a marginalium to break on {asset.name}
+									Pick a marginalia to break on {asset.name}
 								</p>
 								<div class="mc-picker-list">
 									{#each slotsFor(asset) as slot, i (i)}
@@ -441,7 +465,7 @@
 						{:else if editingAssetId === asset.id}
 							<div class="m-editor">
 								<p class="m-editor-label">
-									{editingPosition == null ? 'Adding marginalium' : `Editing marginalium ${editingPosition} of 4`}
+									{editingPosition == null ? 'Adding marginalia' : `Editing marginalia ${editingPosition} of 4`}
 								</p>
 								{#if editingPosition == null}
 									<!-- Add: offer type-keyed examples, or write your own. -->
@@ -449,14 +473,14 @@
 										suggestions={addSuggestions}
 										bind:value={draftText}
 										loading={suggestionsLoading}
-										customPlaceholder="Write a marginalium…"
+										customPlaceholder="Write a marginalia…"
 										multiline
 										disabled={saving}
 									/>
 								{:else}
 									<textarea
 										class="m-editor-input"
-										placeholder="Write a marginalium…"
+										placeholder="Write a marginalia…"
 										bind:value={draftText}
 										disabled={saving}
 										rows={3}
@@ -481,7 +505,7 @@
 								{#each slotsFor(asset) as slot, i (i)}
 									{#if slot}
 										{#if isSelf && !slot.is_torn}
-											<button type="button" class="m-tile filled" onclick={() => startEdit(asset, slot)} aria-label={`Edit marginalium ${slot.position}`}>
+											<button type="button" class="m-tile filled" onclick={() => startEdit(asset, slot)} aria-label={`Edit marginalia ${slot.position}`}>
 												<span class="m-tile-text">{slot.text}</span>
 											</button>
 										{:else}
@@ -782,6 +806,18 @@
 		color: var(--color-leveraged);
 	}
 
+	/* Struck eye + count: secrets hidden from this viewer. Passive (not a
+	   button), muted to read as "not available to you" against the gold open
+	   eye beside it. */
+	.hidden-secrets {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 1px;
+		color: var(--color-text-muted);
+	}
+	.hidden-secrets-num { font-size: 0.7rem; font-weight: 600; }
+
 	/* Secrets eye button + count badge */
 	.secrets-btn {
 		position: relative;
@@ -863,7 +899,7 @@
 
 	.empty.small { font-size: 0.82rem; padding: 0.3rem 0; }
 
-	/* Pick-a-marginalium-to-break picker (replaces grid on old MC during swap) */
+	/* Pick-a-marginalia-to-break picker (replaces grid on old MC during swap) */
 	.mc-picker {
 		display: flex;
 		flex-direction: column;

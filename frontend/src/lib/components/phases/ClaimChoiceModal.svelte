@@ -1,7 +1,7 @@
 <!--
   Step-by-step authoring modal for a Prologue choice. The player drafts:
     1. The sheet-derived asset's text (prefilled with [choice text]).
-    2. (titles) A title marginalium for their main character, prefilled.
+    2. (titles) A title marginalia for their main character, prefilled.
     2. (laws_rumors) A public-record entry, prefilled.
     3. For each fresh card: a multiple-choice picker (3 unused examples + Custom).
        Cards already owned by another player become takes — no text needed.
@@ -51,7 +51,7 @@
 	// different choice (Svelte 5 was warning that $state(propValue) only
 	// captures the initial prop value, not a reactive reference).
 	let assetText = $state('');
-	let marginaliumText = $state('');
+	let marginaliaText = $state('');
 	let lawOrRumorText = $state('');
 	let cardSlots = $state<CardSlot[]>([]);
 
@@ -62,7 +62,7 @@
 	$effect(() => {
 		if (seededFor === choice.name) return;
 		assetText = `[${choice.name}]`;
-		marginaliumText = `[${choice.name}]`;
+		marginaliaText = `[${choice.name}]`;
 		lawOrRumorText = `[${choice.name}]`;
 		cardSlots = choice.cards.map(c => ({
 			suit: c.suit,
@@ -114,7 +114,7 @@
 
 	const ready = $derived.by(() => {
 		if (!assetText.trim()) return false;
-		if (isTitles && !marginaliumText.trim()) return false;
+		if (isTitles && !marginaliaText.trim()) return false;
 		if (isLawsRumors && !lawOrRumorText.trim()) return false;
 		for (const slot of cardSlots) {
 			if (slot.isTake) continue;
@@ -139,7 +139,7 @@
 				sheet_type: sheet.type as PrologueSheetType,
 				choice_name: choice.name,
 				asset_text: assetText.trim(),
-				marginalium_text: isTitles ? marginaliumText.trim() : undefined,
+				marginalia_text: isTitles ? marginaliaText.trim() : undefined,
 				law_or_rumor_text: isLawsRumors ? lawOrRumorText.trim() : undefined,
 				card_assets,
 			});
@@ -179,7 +179,7 @@
 				<span class="label">A title held by your main character</span>
 				<textarea
 					rows="1"
-					bind:value={marginaliumText}
+					bind:value={marginaliaText}
 					placeholder={`${choice.name}`}
 				></textarea>
 				<span class="hint">Adds 1 marginalia to your main character.</span>

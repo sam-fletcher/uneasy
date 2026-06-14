@@ -32,6 +32,9 @@
 		assets: Asset[];
 		players: Player[];
 		currentPlayerID: number | null;
+		/** Per-asset count of secrets the viewer can read; the card derives the
+		 *  hidden remainder from the asset's public secret_count. */
+		knownSecretCounts: Map<number, number>;
 		isFocusPlayer: boolean;
 		/** Called once End Scene resolves so the parent can refetch state. */
 		onSceneEnded: () => void;
@@ -48,6 +51,7 @@
 		assets,
 		players,
 		currentPlayerID,
+		knownSecretCounts,
 		isFocusPlayer,
 		onSceneEnded,
 		rollActive = false,
@@ -208,6 +212,7 @@
 			<AssetCardSelectable
 				asset={locationAsset}
 				ownerColor={colorFor(locationAsset.owner_id)}
+				knownSecretCount={knownSecretCounts.get(locationAsset.id) ?? 0}
 			/>
 		</div>
 	{/if}
@@ -221,6 +226,7 @@
 						asset={focusMainCharacter}
 						ownerColor={colorFor(focusMainCharacter.owner_id)}
 						ownerLabel={focusMainCharacterLabel}
+						knownSecretCount={knownSecretCounts.get(focusMainCharacter.id) ?? 0}
 					/>
 				</div>
 			{/if}
@@ -235,6 +241,7 @@
 								asset={asset}
 								ownerColor={ctrlColor}
 								ownerLabel={lbl.text}
+								knownSecretCount={knownSecretCounts.get(asset.id) ?? 0}
 							/>
 							{#if lbl.claimable && !isFocusPlayer && currentPlayerID != null}
 								<button
