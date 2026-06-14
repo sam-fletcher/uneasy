@@ -141,7 +141,7 @@
 		} finally { giveBusy = false; }
 	}
 
-	// break_self: tear one marginalium from one of the preparer's own assets.
+	// break_self: tear one marginalia from one of the preparer's own assets.
 	const breakSelfAssets = $derived(
 		plan ? assetsWithIntactMarginalia(assets, plan.preparer_id) : []
 	);
@@ -280,7 +280,7 @@
 
 				{#if isPreparer && needsBreakSelf}
 					<div class="plan-form">
-						<p class="choices-header">Break yourself — tear a marginalium from one of your assets</p>
+						<p class="choices-header">Break yourself — tear a marginalia from one of your assets</p>
 						<CardPicker
 							label="Marginalium to tear"
 							items={breakSelfAssets}

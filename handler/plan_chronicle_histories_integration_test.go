@@ -5,9 +5,9 @@
 // after the audit:
 //
 //   - make budget cap: "choose options equal to your result" (ChoiceLimiter).
-//   - break-artifact uses breakMarginalia (auto-destroy on the last marginalium).
+//   - break-artifact uses breakMarginalia (auto-destroy on the last marginalia).
 //   - mar: every player present must submit one choice before completion;
-//     a mar break_artifact tears its marginalium atomically in the mar-choice.
+//     a mar break_artifact tears its marginalia atomically in the mar-choice.
 
 package handler
 
@@ -179,7 +179,7 @@ func TestChronicleHistories_PreRollInvoke_RaisesDifficulty(t *testing.T) {
 }
 
 // TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys invokes an
-// artifact pre-roll, then breaks its single marginalium on the make path and
+// artifact pre-roll, then breaks its single marginalia on the make path and
 // asserts auto-destruction.
 func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
@@ -212,7 +212,7 @@ func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T)
 		"asset_id": artifactID, "marginalia_id": margIDs[0],
 	})
 	require.Equalf(t, http.StatusOK, code, "break-artifact: %v", body)
-	assert.Equal(t, true, body["destroyed"], "tearing the last marginalium destroys the artifact")
+	assert.Equal(t, true, body["destroyed"], "tearing the last marginalia destroys the artifact")
 
 	destroyed, err := h.q.GetAssetByID(ctx, artifactID)
 	require.NoError(t, err)
@@ -223,7 +223,7 @@ func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T)
 
 // TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount proves the make-list
 // break_artifact sub-flow is server-capped at the picked count, so a stale
-// client re-prompted after a refresh can't tear an extra marginalium.
+// client re-prompted after a refresh can't tear an extra marginalia.
 func TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
@@ -264,12 +264,12 @@ func TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount(t *testing.T) {
 	require.Equalf(t, http.StatusConflict, code, "break beyond the picked count must be rejected: %v", body)
 	intact, err := h.q.GetMarginaliaByID(ctx, margIDs[1])
 	require.NoError(t, err)
-	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalium")
+	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalia")
 }
 
 // TestChronicleHistories_Mar_AllPlayersMustChoose proves a marred plan blocks
 // completion until every player present submits one choice, and that a mar
-// break_artifact tears its marginalium atomically.
+// break_artifact tears its marginalia atomically.
 func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
@@ -324,7 +324,7 @@ func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "p1 mar break: %v", body)
 	torn, err := h.q.GetMarginaliaByID(ctx, margIDs[0])
 	require.NoError(t, err)
-	assert.True(t, torn.IsTorn, "mar break_artifact should tear the marginalium in-call")
+	assert.True(t, torn.IsTorn, "mar break_artifact should tear the marginalia in-call")
 	h.assertWaitees("p1 chose (via break)", model.RowStateAwaitChronicleChoices, p2)
 
 	// Still blocked at 2/3.

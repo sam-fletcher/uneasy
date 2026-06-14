@@ -5,7 +5,7 @@
 // audit found the handler ignored the mar self-flaw penalty and bypassed the
 // canonical break helper:
 //
-//   - make "break_resource": tears one marginalium, auto-destroys on the last,
+//   - make "break_resource": tears one marginalia, auto-destroys on the last,
 //     and rejects flawing the same resource twice ("overlooked until now").
 //   - mar penalty: the preparer must describe a flaw in (difficulty − result)
 //     of their *own* resources; completion is blocked until satisfied.
@@ -82,7 +82,7 @@ func saPrepareToRoll(t *testing.T, h *planLifecycle, outcome string, resultDelta
 }
 
 // TestSeekAnswers_Make_BreakResource_AutoDestroysOnLast proves the make-side
-// break tears one marginalium and destroys the resource when it was the last,
+// break tears one marginalia and destroys the resource when it was the last,
 // using the canonical break helper.
 func TestSeekAnswers_Make_BreakResource_AutoDestroysOnLast(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
@@ -99,7 +99,7 @@ func TestSeekAnswers_Make_BreakResource_AutoDestroysOnLast(t *testing.T) {
 		"asset_id": resourceID, "marginalia_id": margIDs[0],
 	})
 	require.Equalf(t, http.StatusOK, code, "break-resource: %v", body)
-	assert.Equal(t, true, body["destroyed"], "tearing the last marginalium destroys the asset")
+	assert.Equal(t, true, body["destroyed"], "tearing the last marginalia destroys the asset")
 
 	destroyed, err := h.q.GetAssetByID(ctx, resourceID)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestSeekAnswers_Make_BreakResource_CapsAtPickedCount(t *testing.T) {
 	require.Equalf(t, http.StatusConflict, code, "break beyond the picked count must be rejected: %v", body)
 	intact, err := h.q.GetMarginaliaByID(ctx, margsB[0])
 	require.NoError(t, err)
-	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalium")
+	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalia")
 }
 
 // TestSeekAnswers_Make_RevealSecret_CapsAtPickedCount proves the reveal-secret
@@ -212,7 +212,7 @@ func TestSeekAnswers_Mar_ForeignBreak_CapsAtPickedCount(t *testing.T) {
 	require.Equalf(t, http.StatusConflict, code, "foreign break beyond the picked count must be rejected: %v", body)
 	intact, err := h.q.GetMarginaliaByID(ctx, margsB[0])
 	require.NoError(t, err)
-	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalium")
+	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalia")
 }
 
 // TestSeekAnswers_Mar_SelfFlawPenalty_BlocksUntilApplied proves a marred plan
@@ -278,11 +278,11 @@ func TestSeekAnswers_Mar_SelfFlawPenalty_BlocksUntilApplied(t *testing.T) {
 	require.NotNil(t, final.SeekAnswers)
 	assert.Equal(t, int16(2), final.SeekAnswers.MarSelfFlawsApplied, "both self-flaws recorded")
 
-	// Sanity: own resources lost their marginalium and were destroyed.
+	// Sanity: own resources lost their marginalia and were destroyed.
 	for _, id := range []int64{ownA, ownB} {
 		a, err := h.q.GetAssetByID(ctx, id)
 		require.NoError(t, err)
-		assert.True(t, a.IsDestroyed, "self-flawed single-marginalium resource should be destroyed")
+		assert.True(t, a.IsDestroyed, "self-flawed single-marginalia resource should be destroyed")
 	}
 }
 

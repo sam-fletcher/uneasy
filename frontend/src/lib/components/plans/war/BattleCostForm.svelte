@@ -21,7 +21,7 @@
 		opponents: number[];
 		players: Player[];
 		/** Assets owned by the current player with at least one intact
-		 *  marginalium. Each intact marginalium becomes a tap target via
+		 *  marginalia. Each intact marginalia becomes a tap target via
 		 *  AssetCardSelectable's marginalia-pick mode. */
 		marginaliaAssets: Asset[];
 		/** Current player's unleveraged assets — candidates for leverage_two. */

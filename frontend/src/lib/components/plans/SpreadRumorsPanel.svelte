@@ -340,7 +340,7 @@
 	//  - mar:  any of the preparer's intact assets that still have intact
 	//          marginalia.
 	// AssetCardSelectable's marginalia-pick mode renders the per-line
-	// checkboxes; asset identity is derived from the chosen marginalium.
+	// checkboxes; asset identity is derived from the chosen marginalia.
 	const btMarginaliaAssets = $derived.by(() => {
 		if (rollOutcome === 'mar') {
 			return assetsWithIntactMarginalia(preparerAssets);

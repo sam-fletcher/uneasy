@@ -126,7 +126,7 @@ func clKeepSecret(t *testing.T, h *planLifecycle, planID int64, playerIdx int) {
 }
 
 // clSeedPeerWithMarginalia creates a peer owned by players[ownerIdx] with one
-// intact marginalium and returns the asset + marginalia ids.
+// intact marginalia and returns the asset + marginalia ids.
 func clSeedPeerWithMarginalia(t *testing.T, h *planLifecycle, ownerIdx int, name string) (int64, int64) {
 	t.Helper()
 	ctx := context.Background()
@@ -292,10 +292,10 @@ func TestLiaise_ShareChoice_BreakPartnerPeer_AutoDestroys(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusOK, code, "partner take_gift: %v", body)
 
-	// Partner's peer lost its last marginalium → destroyed.
+	// Partner's peer lost its last marginalia → destroyed.
 	destroyed, err := h.q.GetAssetByID(ctx, partnerPeer)
 	require.NoError(t, err)
-	assert.True(t, destroyed.IsDestroyed, "breaking the last marginalium destroys the peer")
+	assert.True(t, destroyed.IsDestroyed, "breaking the last marginalia destroys the peer")
 
 	// Gift transferred to the partner (player 1).
 	movedGift, err := h.q.GetAssetByID(ctx, giftID)

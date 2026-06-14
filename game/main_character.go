@@ -13,7 +13,7 @@ type AssetView struct {
 	AssetType model.AssetType
 }
 
-// MarginaliumView is the decoupled domain snapshot of a marginalium row that
+// MarginaliumView is the decoupled domain snapshot of a marginalia row that
 // DecideMainCharacterChange needs. The handler maps dbgen.Marginalium → this.
 type MarginaliumView struct {
 	Position int16
@@ -22,7 +22,7 @@ type MarginaliumView struct {
 
 // MCDecision describes what writes the handler should perform when promoting
 // a peer to main character. Always set the new MC flag; conditionally tear
-// a marginalium on the old MC and conditionally destroy the old MC.
+// a marginalia on the old MC and conditionally destroy the old MC.
 type MCDecision struct {
 	NeedsTear     bool
 	TearPosition  int16 // valid only when NeedsTear

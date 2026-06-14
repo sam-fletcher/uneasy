@@ -332,7 +332,7 @@ func TestTearMarginalia_DestroyOnLastTorn(t *testing.T) {
 
 	// Tear the only marginalia, then run the composition the handler runs:
 	// DestroyIfAllMarginaliaTorn flips is_destroyed iff no intact marginalia
-	// remain. With one marginalium torn and none intact, it should fire.
+	// remain. With one marginalia torn and none intact, it should fire.
 	tornByID := tg.Players[0].ID
 	_, err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 		ID:       m1.ID,
@@ -388,7 +388,7 @@ func TestDestroyIfAllMarginaliaTorn_LeavesAssetWhenSomeRemain(t *testing.T) {
 
 	rows, err := q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), rows, "asset must survive while any marginalium is intact")
+	assert.Equal(t, int64(0), rows, "asset must survive while any marginalia is intact")
 
 	updated, err := q.GetAssetByID(ctx, asset.ID)
 	require.NoError(t, err)

@@ -186,7 +186,7 @@
 
 	// ── Set as main character (owner, peers only) ──────────────────────────
 	// Two-step flow: tap ☆ on a non-main peer → if old MC has untorn marginalia,
-	// that tile shows a picker; tapping a marginalium fires the atomic swap.
+	// that tile shows a picker; tapping a marginalia fires the atomic swap.
 	let mcSwapTo = $state<number | null>(null); // new MC asset id (target of swap)
 	let mcSwapSaving = $state(false);
 	let mcSwapError = $state<string | null>(null);

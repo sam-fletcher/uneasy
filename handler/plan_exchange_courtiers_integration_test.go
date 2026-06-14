@@ -160,7 +160,7 @@ func TestExchangeCourtiers_Mar_Riposte_PreparerBreaksThenTargetClaims(t *testing
 	require.Equalf(t, http.StatusOK, code, "riposte-break: %v", body)
 	torn, err := h.q.GetMarginaliaByID(ctx, m.ID)
 	require.NoError(t, err)
-	assert.True(t, torn.IsTorn, "marginalium should be torn by the riposte break")
+	assert.True(t, torn.IsTorn, "marginalia should be torn by the riposte break")
 
 	// Target claims the (now-damaged) peer.
 	claimPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/claim-peer"

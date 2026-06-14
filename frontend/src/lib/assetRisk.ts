@@ -13,7 +13,7 @@ import type { Asset } from '$lib/api';
 
 /**
  * True when an asset is *needlessly* at risk: alive, ≤1 intact (untorn)
- * marginalium — so one tear from destruction — AND still has at least one empty
+ * marginalia — so one tear from destruction — AND still has at least one empty
  * slot the owner could fill to avert it. Brand-new assets (0 intact, 4 empty)
  * count: they also need a note before they're safe.
  */

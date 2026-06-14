@@ -33,7 +33,7 @@ type ResourceFlawView struct {
 
 // EligibleSelfFlawResourceIDs filters a snapshot to the resource assets that can
 // still be flawed: a non-destroyed resource carrying at least one intact
-// marginalium, not already flawed this resolution. Order is preserved.
+// marginalia, not already flawed this resolution. Order is preserved.
 func EligibleSelfFlawResourceIDs(views []ResourceFlawView, flawed []int64) []int64 {
 	flawedSet := make(map[int64]struct{}, len(flawed))
 	for _, id := range flawed {

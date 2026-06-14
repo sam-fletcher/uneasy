@@ -352,7 +352,7 @@ export function breakArtifact(planID: number, assetID: number, marginaliaID: num
  * Chronicle Histories — a player submits their one mar choice.
  * `assetID` is required for break_artifact / invoke_another; `marginaliaID`
  * is additionally required for break_artifact (the break is applied atomically
- * server-side, with auto-destroy on the artifact's last marginalium).
+ * server-side, with auto-destroy on the artifact's last marginalia).
  */
 export function marChoice(
 	planID: number,

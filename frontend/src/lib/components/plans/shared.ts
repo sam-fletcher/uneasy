@@ -176,7 +176,7 @@ export function intactMarginalia(assets: Asset[], ownerID: number | null) {
 }
 
 /**
- * Non-destroyed assets that still have at least one untorn marginalium.
+ * Non-destroyed assets that still have at least one untorn marginalia.
  * Used everywhere AssetCardSelectable's marginalia-pick mode renders a
  * card per parent asset. Optional `ownerID` narrows to a single owner.
  */

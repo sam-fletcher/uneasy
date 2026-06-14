@@ -126,7 +126,7 @@ func seedActiveWar(t *testing.T, h *planLifecycle) (planID int64, prepIdx, enemy
 }
 
 // seedAssetWithMarginalium creates a peer owned by players[ownerIdx] carrying a
-// single marginalium, returning the asset id and marginalia id.
+// single marginalia, returning the asset id and marginalia id.
 func seedAssetWithMarginalium(t *testing.T, h *planLifecycle, ownerIdx int, name string) (int64, int64) {
 	t.Helper()
 	assetID := h.seedPeer(ownerIdx, name)
@@ -140,7 +140,7 @@ func seedAssetWithMarginalium(t *testing.T, h *planLifecycle, ownerIdx int, name
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 // TestMakeWarHTTP_BreakAssetCost_DestroysAndLogs: paying the cost of battle via
-// break_asset tears the marginalium (auto-destroying the asset when it was the
+// break_asset tears the marginalia (auto-destroying the asset when it was the
 // last one) and logs the payment; the war-start beat is also logged.
 func TestMakeWarHTTP_BreakAssetCost_DestroysAndLogs(t *testing.T) {
 	h := newPlanLifecycle(t, 5)
@@ -164,7 +164,7 @@ func TestMakeWarHTTP_BreakAssetCost_DestroysAndLogs(t *testing.T) {
 	ctx := context.Background()
 	a, err := h.q.GetAssetByID(ctx, assetA)
 	require.NoError(t, err)
-	require.True(t, a.IsDestroyed, "breaking the last marginalium should destroy the asset")
+	require.True(t, a.IsDestroyed, "breaking the last marginalia should destroy the asset")
 
 	require.True(t, anyContains(warSystemPosts(t, h.q, h.tg.Game.ID), "broke an asset"),
 		"expected a battle-cost log post")
@@ -229,7 +229,7 @@ func TestMakeWarHTTP_SurrenderWithNoClaimableAssets_RowCanAdvance(t *testing.T) 
 	enemyID := h.tg.Players[enemyIdx].ID
 
 	// Strip the surrendering player down to a single claimable asset: destroy
-	// every asset they currently own, then seed one peer carrying a marginalium
+	// every asset they currently own, then seed one peer carrying a marginalia
 	// that the break_asset surrender payment will itself destroy. After paying,
 	// the preparer owns zero non-destroyed assets.
 	owned, err := h.q.ListAssetsByOwner(ctx, prepID)

@@ -188,7 +188,7 @@
 	}
 
 	// ── Mar picker (per-player single choice) ────────────────────────────────
-	// break_artifact tears a marginalium on an invoked artifact (so it needs a
+	// break_artifact tears a marginalia on an invoked artifact (so it needs a
 	// marginalia id, applied atomically server-side); invoke_another just needs
 	// an artifact id.
 	let marSelected = $state<string>('');

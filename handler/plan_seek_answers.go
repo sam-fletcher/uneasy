@@ -319,7 +319,7 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
-		// Break = tear one marginalium (auto-destroy if it was the last) — the
+		// Break = tear one marginalia (auto-destroy if it was the last) — the
 		// canonical effect, shared with every other plan.
 		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID)
 		if err != nil {

@@ -409,7 +409,7 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Break = tear one marginalium (auto-destroy if it was the last) — the
+		// Break = tear one marginalia (auto-destroy if it was the last) — the
 		// canonical effect, shared with every other plan.
 		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &artifact, &m, player.ID)
 		if err != nil {
@@ -446,7 +446,7 @@ func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 //
 // Mechanical effects are applied immediately and atomically:
 //   - break_artifact: requires asset_id + marginalia_id (an invoked artifact);
-//     tears the marginalium via breakMarginalia (auto-destroy on the last).
+//     tears the marginalia via breakMarginalia (auto-destroy on the last).
 //   - invoke_another: requires asset_id; adds the artifact to the invoked list.
 //   - echo_present / total_control: narrative only.
 //

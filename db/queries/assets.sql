@@ -53,7 +53,7 @@ UPDATE assets SET is_destroyed = TRUE, destroyed_at = now() WHERE id = $1;
 -- Marks an asset destroyed iff none of its marginalia remain intact. The
 -- caller (the TearMarginalia handler) invokes this after a tear; a return
 -- of 1 means the tear completed the destruction, 0 means the asset still
--- has at least one intact marginalium and survives. Composing the rule in
+-- has at least one intact marginalia and survives. Composing the rule in
 -- a single statement keeps the "last tear destroys" invariant testable at
 -- the queries layer instead of buried in handler logic.
 UPDATE assets a
@@ -99,7 +99,7 @@ WHERE a.game_id = $1;
 UPDATE marginalia SET text = $2 WHERE id = $1;
 
 -- name: TearMarginalia :execrows
--- Tearing is one-shot — a torn marginalium cannot be torn again. The
+-- Tearing is one-shot — a torn marginalia cannot be torn again. The
 -- WHERE-clause guard makes the update idempotent at the SQL layer; callers
 -- treat a 0-row return as "already torn / no such marginalia". The
 -- handler also checks before calling for a friendlier error, but this

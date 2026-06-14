@@ -96,7 +96,7 @@ func TestHostFestivity_Mar_BreakSelf_AutoDestroysOnLast(t *testing.T) {
 
 	destroyed, err := h.q.GetAssetByID(ctx, mcID)
 	require.NoError(t, err)
-	assert.True(t, destroyed.IsDestroyed, "tearing the last marginalium destroys the main character")
+	assert.True(t, destroyed.IsDestroyed, "tearing the last marginalia destroys the main character")
 }
 
 // TestHostFestivity_Mar_Disagreement_RejectsForeignPeer proves disagreement must

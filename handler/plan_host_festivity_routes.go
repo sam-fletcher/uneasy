@@ -51,7 +51,7 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Apply the mar effect to the host. Note: a guest insisting break_self on
 		// the host cannot pick the host's marginalia for them — marginaliaID 0
-		// falls back to the host's first intact marginalium.
+		// falls back to the host's first intact marginalia.
 		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
 			body.MarOption, body.RumorText, "", body.AssetID, body.MarginaliaID, false); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())

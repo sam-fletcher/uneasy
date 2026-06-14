@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { isNeedlesslyAtRisk, firstEmptySlotIndex, destructionWarning } from './assetRisk';
 import type { Asset, Marginalium } from '$lib/api';
 
-// Minimal marginalium builder; only the fields the helpers read matter.
+// Minimal marginalia builder; only the fields the helpers read matter.
 function marg(position: number, is_torn = false): Marginalium {
 	return { id: position, asset_id: 1, position, text: `m${position}`, is_torn } as Marginalium;
 }

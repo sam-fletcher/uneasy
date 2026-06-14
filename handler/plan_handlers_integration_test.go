@@ -252,7 +252,7 @@ func TestSpreadRumors_AcceptsWithTargetAndNotes(t *testing.T) {
 }
 
 // TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium guards the rule
-// that tearing an asset's last intact marginalium destroys it ("all 4 gone →
+// that tearing an asset's last intact marginalia destroys it ("all 4 gone →
 // the asset is destroyed"). The break-target route previously inlined
 // TearMarginalia and skipped the destroy check, so the final tear left the
 // asset alive. It now routes through breakMarginalia, which destroys.
@@ -291,7 +291,7 @@ func TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium(t *testing.T) 
 	h.forceRoll(roll.ID, makeOutcome, 3)
 	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
 
-	// The preparer tears the final intact marginalium via break-target.
+	// The preparer tears the final intact marginalia via break-target.
 	preparerIdx := -1
 	for i, p := range h.tg.Players {
 		if p.ID == plan.PreparerID {
@@ -306,12 +306,12 @@ func TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium(t *testing.T) 
 
 	torn, err := h.q.GetMarginaliaByID(ctx, lastM.ID)
 	require.NoError(t, err)
-	assert.True(t, torn.IsTorn, "the final marginalium should be torn")
+	assert.True(t, torn.IsTorn, "the final marginalia should be torn")
 
 	destroyed, err := h.q.GetAssetByID(ctx, target)
 	require.NoError(t, err)
 	assert.True(t, destroyed.IsDestroyed,
-		"tearing the final marginalium via break-target must destroy the asset")
+		"tearing the final marginalia via break-target must destroy the asset")
 }
 
 // TestSpreadRumors_HideSource_IsIdempotent covers the post-commit "hide source"

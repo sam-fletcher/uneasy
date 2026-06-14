@@ -15,7 +15,7 @@ import (
 
 // breakVerb returns the past-tense verb for a break action's chat log: "broke"
 // for a normal tear, or "destroyed" when that tear removed the asset's last
-// marginalium. Centralises the phrasing shared by every plan that breaks.
+// marginalia. Centralises the phrasing shared by every plan that breaks.
 func breakVerb(destroyed bool) string {
 	if destroyed {
 		return "destroyed"
@@ -25,7 +25,7 @@ func breakVerb(destroyed bool) string {
 
 // breakMarginalia performs the canonical "break an asset" effect: tear one
 // marginalia, reveal the asset's secrets to the tearing player, broadcast the
-// tear, and — if that was the asset's last intact marginalium — destroy the
+// tear, and — if that was the asset's last intact marginalia — destroy the
 // asset and emit the asset.destroyed events. Returns whether the asset was
 // destroyed.
 //
@@ -65,7 +65,7 @@ func breakMarginalia(
 		PlayerID: tornBy,
 	})
 
-	// If that was the last intact marginalium, the asset is destroyed.
+	// If that was the last intact marginalia, the asset is destroyed.
 	destroyedRows, _ := q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
 	if destroyedRows > 0 {
 		broadcastEvent(manager, asset.GameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})

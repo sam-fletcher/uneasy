@@ -273,7 +273,7 @@ describe('assetsWithIntactMarginalia', () => {
 	const destroyed = asset({ id: 3, owner_id: 2, is_destroyed: true, marginalia: [marg({ id: 3, asset_id: 3 })] });
 	const otherOwner = asset({ id: 4, owner_id: 9, marginalia: [marg({ id: 4, asset_id: 4 })] });
 
-	it('keeps only non-destroyed assets that still have an untorn marginalium', () => {
+	it('keeps only non-destroyed assets that still have an untorn marginalia', () => {
 		const result = assetsWithIntactMarginalia([withMarg, allTorn, destroyed]);
 		expect(result.map(a => a.id)).toEqual([1]);
 	});

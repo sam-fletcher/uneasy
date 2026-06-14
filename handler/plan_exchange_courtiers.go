@@ -715,7 +715,7 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		// Riposte damages the peer before the target takes it — it must survive
-		// to be claimed, so refuse to tear its last intact marginalium (which
+		// to be claimed, so refuse to tear its last intact marginalia (which
 		// would destroy it and deadlock the pending claim).
 		if intact, cErr := deps.Q.CountIntactMarginalia(ctx, asset.ID); cErr == nil && intact <= 1 {
 			respondErr(w, http.StatusConflict,

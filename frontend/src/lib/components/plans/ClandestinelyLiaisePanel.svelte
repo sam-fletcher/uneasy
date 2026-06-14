@@ -212,7 +212,7 @@
 		(partnerMeetingPeer?.marginalia ?? []).filter(m => !m.is_torn),
 	);
 
-	// Destruction warning: tearing a peer's last intact marginalium destroys it.
+	// Destruction warning: tearing a peer's last intact marginalia destroys it.
 	const shareBreakWarn = $derived(destructionWarning(partnerMeetingPeer));
 
 	// Has the current player submitted keep-secret?

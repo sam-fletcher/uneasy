@@ -68,7 +68,7 @@
 			a.owner_id === currentPlayerID && a.asset_type === 'peer' && !a.is_destroyed,
 		),
 	);
-	// Messy-break candidates: my intact assets with ≥1 untorn marginalium.
+	// Messy-break candidates: my intact assets with ≥1 untorn marginalia.
 	const myAssetsWithMarginalia = $derived(
 		assetsWithIntactMarginalia(assets, currentPlayerID),
 	);
