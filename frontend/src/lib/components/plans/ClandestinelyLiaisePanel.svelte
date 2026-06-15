@@ -9,7 +9,7 @@
 <script lang="ts">
 	import './planPanel.css';
 	import {
-		preparePlan, completePlan,
+		preparePlan,
 		advanceLiaise, keepSecret, shareChoice,
 		type Plan, type Asset, type Player, type KeptSecret,
 	} from '$lib/api';
@@ -349,18 +349,6 @@
 		} finally { shareBusy = false; }
 	}
 
-	// ── Complete ─────────────────────────────────────────────────────────────
-	let completeBusy = $state(false);
-	async function onComplete(p: Plan) {
-		if (completeBusy) return;
-		completeBusy = true; resError = '';
-		try {
-			await completePlan(p.id);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not complete plan.';
-		} finally { completeBusy = false; }
-	}
 </script>
 
 {#if mode === 'prep'}
@@ -627,8 +615,8 @@
 			<div class="choices-section">
 				<p class="choices-header">When will I see you again?</p>
 				<p class="choices-note">
-					Reveal a die face (1–6) to schedule another liaison, or 0 to
-					part ways. If either of you picks 0, no follow-up is scheduled.
+					Reveal a die face (1–6) to choose how many rows until the next liaison. 
+					If either of you picks 0, no follow-up is scheduled.
 				</p>
 				{#if clState.redelayRevealID != null && currentPlayerID != null}
 					<SimultaneousRevealInput
@@ -636,25 +624,19 @@
 						{currentPlayerID}
 						{participants}
 						allowZero={true}
-						prompt="Pick a face (0 = cancel)"
+						prompt="Pick a row delay (or 0 to part ways):"
 					/>
 				{/if}
 			</div>
 
 		<!-- Done ──────────────────────────────────────────────────── -->
 		{:else if clState.phase === 'done'}
+			<!-- The liaison auto-resolves the moment the redelay reveal finalizes
+			     (no make/mar roll, no decision left), so this is only ever a brief
+			     transient before the plan flips to 'resolved'. No Complete button —
+			     the chat log carries the outcome. -->
 			<div class="complete-section">
 				<p class="choices-applied">The liaison is complete.</p>
-				{#if amPreparer}
-					<button class="action-btn primary"
-						onclick={() => onComplete(plan)} disabled={completeBusy}>
-						{completeBusy ? '…' : 'Complete plan'}
-					</button>
-				{:else}
-					<p class="choices-note muted">
-						Waiting for {playerName(players, plan.preparer_id)} to close the plan…
-					</p>
-				{/if}
 			</div>
 
 		{:else}

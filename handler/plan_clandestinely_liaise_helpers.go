@@ -126,7 +126,7 @@ func clEnsureRedelayReveal(
 	redelayReveal, err := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
 		GameID:     plan.GameID,
 		PlanID:     &plan.ID,
-		RevealType: "liaise_redelay",
+		RevealType: revealTypeLiaiseRedelay,
 	})
 	if err != nil {
 		return fmt.Errorf("create redelay reveal: %w", err)
@@ -206,10 +206,40 @@ func clFinalizeRedelayReveal(
 		ResultDelay: resultDelay,
 	})
 
+	if err = clApplyRedelayOutcome(ctx, deps, plan, resData, resultDelay, cancelled); err != nil {
+		respondInternalErr(w, r, "could not complete liaise", err)
+		return false
+	}
+	return true
+}
+
+// clApplyRedelayOutcome finalizes the "When will I see you again?" reveal once
+// the result delay is known: it schedules the follow-up Clandestinely Liaise
+// plan (unless the pair cancelled with a 0, the delay is non-positive, or there
+// is no room left on the record), logs the outcome, marks the liaise done, and
+// resolves the plan. resData is mutated and persisted.
+//
+// The liaison auto-resolves here — there is no make/mar roll and no preparer
+// decision left to make, so it never goes through the manual CompletePlan
+// endpoint (which requires a roll outcome or stored result CL never has). This
+// mirrors Exchange Courtiers' fair-trade path, which likewise resolves directly
+// with a "make" outcome. The phase-change broadcast still fires because clients
+// refetch the plan on liaise.phase_changed (reveal.complete only refreshes the
+// reveal widget); the row-state recompute is left to the callers.
+func clApplyRedelayOutcome(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	resultDelay int16,
+	cancelled bool,
+) error {
+	ld := resData.EnsureLiaise()
+
 	scheduled := false
 	if !cancelled && resultDelay > 0 && ld.PartnerID != nil {
-		if game, gerr := deps.Q.GetGameByID(ctx, plan.GameID); gerr == nil {
-			newRow := game.CurrentRow + resultDelay
+		if g, gerr := deps.Q.GetGameByID(ctx, plan.GameID); gerr == nil {
+			newRow := g.CurrentRow + resultDelay
 			if newRow <= publicRecordRowCount {
 				clScheduleNewMeeting(ctx, deps, plan, newRow, *ld.PartnerID)
 				scheduled = true
@@ -223,11 +253,26 @@ func clFinalizeRedelayReveal(
 	}
 
 	ld.Phase = LiaiseDone
-	if err = saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
-		respondInternalErr(w, r, "could not complete liaise", err)
-		return false
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
+		return err
 	}
-	return true
+	broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged,
+		model.LiaisePhaseChangedPayload{PlanID: plan.ID, Phase: string(LiaiseDone)})
+
+	// Resolve the plan outright (status → resolved). A liaison always "makes":
+	// it carries no roll and no failure path.
+	if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
+		ID:     plan.ID,
+		Result: new(makeOutcome),
+	}); err != nil {
+		return err
+	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
+		PlanID: plan.ID,
+		Result: makeOutcome,
+	})
+	EmitPlanResolved(ctx, deps.Q, deps.Manager, *plan, makeOutcome)
+	return nil
 }
 
 // clIsParticipant returns true if playerID is the preparer or the partner.

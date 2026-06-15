@@ -556,3 +556,120 @@ func TestLiaise_ShareChoice_MeetingPeerDestroyed_Graceful(t *testing.T) {
 	assert.Lessf(t, code, http.StatusInternalServerError,
 		"a destroyed meeting peer must be handled gracefully, not as a 500: %v", body)
 }
+
+// clDriveToRedelay drives a liaison through Things We Share (both players read
+// the other's secret — the lowest-friction share choice) into the
+// when_will_i_see_you_again phase, and returns the meeting plus the redelay
+// reveal id ready for both faces.
+func clDriveToRedelay(t *testing.T, h *planLifecycle) (clMeeting, int64) {
+	t.Helper()
+	m := clDriveToThingsWeShare(t, h)
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
+
+	// look_at_secret targets any partner-owned asset — each player peeks at the
+	// other's meeting peer. The second submission auto-advances to the redelay.
+	code, body := h.post(0, sharePath, map[string]any{
+		"choice": "look_at_secret", "target_asset_id": m.partnerPeerID,
+	})
+	require.Equalf(t, http.StatusOK, code, "preparer look_at_secret: %v", body)
+	code, body = h.post(1, sharePath, map[string]any{
+		"choice": "look_at_secret", "target_asset_id": m.preparerPeerID,
+	})
+	require.Equalf(t, http.StatusOK, code, "partner look_at_secret: %v", body)
+
+	refreshed, err := h.q.GetPlanByID(context.Background(), m.plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	ld := rd.EnsureLiaise()
+	require.Equal(t, string(LiaiseWhenWillISeeYouAgain), string(ld.Phase),
+		"both share-choices in → auto-advance to when_will_i_see_you_again")
+	require.NotNil(t, ld.RedelayRevealID, "redelay reveal must exist")
+	m.plan = refreshed
+	return m, *ld.RedelayRevealID
+}
+
+// TestLiaise_Redelay_SchedulesFollowUp proves that completing the "When will I
+// see you again?" reveal via the generic reveal-submit endpoint (the one the UI
+// actually calls) finalizes the liaison: it marks the phase done and schedules
+// a new Clandestinely Liaise plan on the result-delay row, carrying forward the
+// same partner and meeting peers. Regression test for the soft-lock where the
+// reveal completed but nothing downstream ran.
+func TestLiaise_Redelay_SchedulesFollowUp(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	m, redelayID := clDriveToRedelay(t, h)
+
+	currentRow := h.tg.Game.CurrentRow
+	preparerID := h.tg.Players[0].ID
+	partnerID := h.tg.Players[1].ID
+
+	// Sam=2, Charlie=1 → ceil(avg)=2, scheduling a meeting two rows ahead.
+	clSubmitReveal(t, h, redelayID, 0, 2)
+	clSubmitReveal(t, h, redelayID, 1, 1)
+
+	// The liaison auto-resolves on the final reveal — no manual Complete step.
+	refreshed, err := h.q.GetPlanByID(ctx, m.plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	ld := rd.EnsureLiaise()
+	assert.Equal(t, string(LiaiseDone), string(ld.Phase),
+		"completing the redelay reveal must finalize the liaison to done")
+	assert.Equal(t, model.PlanResolved, refreshed.Status,
+		"the liaison must auto-resolve when the redelay reveal finalizes")
+	require.NotNil(t, refreshed.Result)
+	assert.Equal(t, "make", *refreshed.Result, "a liaison always resolves as a make")
+
+	// A follow-up Clandestinely Liaise was scheduled two rows ahead.
+	wantRow := currentRow + 2
+	plans, err := h.q.ListPlansByRow(ctx, dbgen.ListPlansByRowParams{
+		GameID: h.tg.Game.ID, RowNumber: new(wantRow),
+	})
+	require.NoError(t, err)
+	var followUp *dbgen.Plan
+	for i := range plans {
+		if plans[i].PlanType == model.PlanClandestinelyLiaise && plans[i].ID != m.plan.ID {
+			followUp = &plans[i]
+		}
+	}
+	require.NotNilf(t, followUp, "a follow-up liaison must be scheduled on row %d", wantRow)
+	assert.Equal(t, preparerID, followUp.PreparerID, "same preparer")
+	require.NotNil(t, followUp.TargetPlayerID)
+	assert.Equal(t, partnerID, *followUp.TargetPlayerID, "same partner")
+
+	// The follow-up carries forward both meeting peers (the same pair reconvenes).
+	frd := loadResolutionData(followUp.ResolutionData)
+	fld := frd.EnsureLiaise()
+	require.NotNil(t, fld.PreparerPeerID)
+	require.NotNil(t, fld.PartnerPeerID)
+	assert.Equal(t, m.preparerPeerID, *fld.PreparerPeerID)
+	assert.Equal(t, m.partnerPeerID, *fld.PartnerPeerID)
+}
+
+// TestLiaise_Redelay_CancelSchedulesNothing proves that when either player picks
+// face 0, the redelay is cancelled: the liaison finalizes to done but no
+// follow-up plan is scheduled.
+func TestLiaise_Redelay_CancelSchedulesNothing(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	m, redelayID := clDriveToRedelay(t, h)
+
+	before, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+
+	// The partner cancels with a 0.
+	clSubmitReveal(t, h, redelayID, 0, 3)
+	clSubmitReveal(t, h, redelayID, 1, 0)
+
+	refreshed, err := h.q.GetPlanByID(ctx, m.plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	ld := rd.EnsureLiaise()
+	assert.Equal(t, string(LiaiseDone), string(ld.Phase),
+		"a cancelled redelay still finalizes the liaison to done")
+	assert.Equal(t, model.PlanResolved, refreshed.Status,
+		"a cancelled liaison still auto-resolves")
+
+	after, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Len(t, after, len(before), "a face-0 cancel must not schedule a follow-up plan")
+}

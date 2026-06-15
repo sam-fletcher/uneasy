@@ -221,7 +221,7 @@ func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	reveal, err := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
 		GameID:     plan.GameID,
 		PlanID:     &plan.ID,
-		RevealType: "liaise_delay",
+		RevealType: revealTypeLiaiseDelay,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create liaise delay reveal: %w", err)

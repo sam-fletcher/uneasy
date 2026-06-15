@@ -33,6 +33,14 @@ import (
 	"uneasy/model"
 )
 
+// Simultaneous reveal types. Stored in simultaneous_reveals.reveal_type and
+// switched on to dispatch the right downstream effect when a reveal completes.
+const (
+	revealTypeLiaiseDelay   = "liaise_delay"
+	revealTypeLiaiseRedelay = "liaise_redelay"
+	revealTypeMakeWarDelay  = "make_war_delay"
+)
+
 // ── GetReveal ─────────────────────────────────────────────────────────────────
 
 // GetReveal handles GET /api/reveals/:revealId.
@@ -101,7 +109,7 @@ func GetReveal(s *db.Store) http.HandlerFunc {
 //
 // Request body: {"face": N}
 //
-//nolint:funlen // simultaneous reveal lifecycle
+
 func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reveal, player, ok := requireRevealAccess(w, r, s.Q)
@@ -123,7 +131,7 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		// Validate face range by reveal type.
 		minFace := int16(1)
-		if reveal.RevealType == "liaise_redelay" {
+		if reveal.RevealType == revealTypeLiaiseRedelay {
 			minFace = 0 // 0 means "cancel future meeting"
 		}
 		if body.Face < minFace || body.Face > 6 {
@@ -189,52 +197,11 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// All submitted — compute result delay and complete the reveal.
-		entries, err := s.Q.ListRevealEntries(ctx, reveal.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load reveal entries", err)
+		// All submitted — complete the reveal and fire its downstream effects.
+		resultDelay, entryResults, ok := finalizeReveal(ctx, w, r, s, manager, reveal)
+		if !ok {
 			return
 		}
-
-		resultDelay := revealCeilAverage(entries)
-		if err := s.Q.SetRevealComplete(ctx, dbgen.SetRevealCompleteParams{
-			ID:          reveal.ID,
-			ResultDelay: &resultDelay,
-		}); err != nil {
-			respondInternalErr(w, r, "could not complete reveal", err)
-			return
-		}
-
-		// Build payload with all faces.
-		entryResults := make([]model.RevealEntryResult, 0, len(entries))
-		for _, e := range entries {
-			var f int16
-			if e.Face != nil {
-				f = *e.Face
-			}
-			entryResults = append(entryResults, model.RevealEntryResult{
-				PlayerID: e.PlayerID,
-				Face:     f,
-			})
-		}
-		broadcastEvent(manager, reveal.GameID, model.EventRevealComplete, model.RevealCompletePayload{
-			RevealID:    reveal.ID,
-			Entries:     entryResults,
-			ResultDelay: resultDelay,
-		})
-
-		// Apply downstream effects for liaise_delay: set the plan's row_number.
-		if reveal.RevealType == "liaise_delay" && reveal.PlanID != nil {
-			applyLiaiseDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
-		}
-		if reveal.RevealType == "make_war_delay" && reveal.PlanID != nil {
-			applyMakeWarDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
-		}
-		// Both branches above either set a plan's row_number (clearing the
-		// Make War / Liaise delay-reveal gate) or cancel the plan; in either
-		// case the row-state computation will return a different kind.
-		broadcastRowState(ctx, s.Q, manager, reveal.GameID)
-
 		respond(w, http.StatusOK, map[string]any{
 			"reveal_id":    reveal.ID,
 			"result_delay": resultDelay,
@@ -242,6 +209,86 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			"is_complete":  true,
 		})
 	}
+}
+
+// finalizeReveal runs the "all participants submitted" branch of a simultaneous
+// reveal: it computes the result delay (honouring a liaise_redelay cancel),
+// marks the reveal complete, broadcasts the faces, dispatches the reveal type's
+// downstream effect, and recomputes row state. Returns the result delay and the
+// per-player faces for the HTTP response, or ok=false after writing an error.
+func finalizeReveal(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	s *db.Store,
+	manager *hub.Manager,
+	reveal *dbgen.SimultaneousReveal,
+) (resultDelay int16, entryResults []model.RevealEntryResult, ok bool) {
+	entries, err := s.Q.ListRevealEntries(ctx, reveal.ID)
+	if err != nil {
+		respondInternalErr(w, r, "could not load reveal entries", err)
+		return 0, nil, false
+	}
+
+	// liaise_redelay lets a participant pick face 0 to cancel the follow-up
+	// meeting; when either does, the result delay is 0 and nothing is scheduled.
+	// Every other reveal type uses the ceil-average of the submitted faces.
+	cancelled := false
+	if reveal.RevealType == revealTypeLiaiseRedelay {
+		for _, e := range entries {
+			if e.Face == nil || *e.Face == 0 {
+				cancelled = true
+				break
+			}
+		}
+	}
+	if !cancelled {
+		resultDelay = revealCeilAverage(entries)
+	}
+	if err := s.Q.SetRevealComplete(ctx, dbgen.SetRevealCompleteParams{
+		ID:          reveal.ID,
+		ResultDelay: &resultDelay,
+	}); err != nil {
+		respondInternalErr(w, r, "could not complete reveal", err)
+		return 0, nil, false
+	}
+
+	// Build payload with all faces.
+	entryResults = make([]model.RevealEntryResult, 0, len(entries))
+	for _, e := range entries {
+		var f int16
+		if e.Face != nil {
+			f = *e.Face
+		}
+		entryResults = append(entryResults, model.RevealEntryResult{
+			PlayerID: e.PlayerID,
+			Face:     f,
+		})
+	}
+	broadcastEvent(manager, reveal.GameID, model.EventRevealComplete, model.RevealCompletePayload{
+		RevealID:    reveal.ID,
+		Entries:     entryResults,
+		ResultDelay: resultDelay,
+	})
+
+	// Dispatch the reveal type's downstream effect. Each either sets a plan's
+	// row_number (clearing a delay-reveal gate), cancels the plan, or finalizes
+	// a liaison — so row state always changes afterwards.
+	if reveal.PlanID != nil {
+		switch reveal.RevealType {
+		case revealTypeLiaiseDelay:
+			applyLiaiseDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
+		case revealTypeMakeWarDelay:
+			applyMakeWarDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
+		case revealTypeLiaiseRedelay:
+			// "When will I see you again?": log the outcome, schedule the
+			// follow-up meeting unless cancelled, and mark the liaise done.
+			applyLiaiseRedelayResult(ctx, s, manager, *reveal.PlanID, resultDelay, cancelled)
+		}
+	}
+	broadcastRowState(ctx, s.Q, manager, reveal.GameID)
+
+	return resultDelay, entryResults, true
 }
 
 // ── applyLiaiseDelayResult ────────────────────────────────────────────────────
@@ -300,6 +347,29 @@ func applyLiaiseDelayResult(
 	}
 	broadcastEvent(manager, plan.GameID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 	EmitPlanPrepared(ctx, q, manager, plan)
+}
+
+// ── applyLiaiseRedelayResult ──────────────────────────────────────────────────
+
+// applyLiaiseRedelayResult finalizes the Clandestinely Liaise "When will I see
+// you again?" reveal: it schedules the follow-up meeting (unless the pair
+// cancelled with a 0 or there is no room left on the record), logs the outcome,
+// and marks the liaise done. Best-effort, mirroring applyLiaiseDelayResult.
+func applyLiaiseRedelayResult(
+	ctx context.Context,
+	s *db.Store,
+	manager *hub.Manager,
+	planID int64,
+	resultDelay int16,
+	cancelled bool,
+) {
+	plan, err := s.Q.GetPlanByID(ctx, planID)
+	if err != nil {
+		return
+	}
+	deps := &PlanDeps{Store: s, Manager: manager}
+	resData := loadResolutionData(plan.ResolutionData)
+	_ = clApplyRedelayOutcome(ctx, deps, &plan, &resData, resultDelay, cancelled)
 }
 
 // ── requireRevealAccess ───────────────────────────────────────────────────────

@@ -143,7 +143,7 @@ func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	reveal, errReveal := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
 		GameID:     plan.GameID,
 		PlanID:     &plan.ID,
-		RevealType: "make_war_delay",
+		RevealType: revealTypeMakeWarDelay,
 	})
 	if errReveal != nil {
 		return fmt.Errorf("create delay reveal: %w", errReveal)
