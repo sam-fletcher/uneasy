@@ -22,7 +22,6 @@
 		type RowState,
 	} from '$lib/api';
 	import { createConnection, type WSMessage } from '$lib/ws';
-	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
 	import { handleWSMessage as runWSMessage, type WSContext } from './ws-handlers';
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
@@ -44,6 +43,9 @@
 	import { playerColorByID } from '$lib/playerColor';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import { provideSecretCounts } from '$lib/secretCountsContext';
+	import {
+		rankTriplesByPlayer, topRanks, atRiskCountByPlayer, typingIndicatorLabel,
+	} from '$lib/tableHeader';
 
 	const gameID = $derived(page.params.id as string);
 
@@ -73,12 +75,7 @@
 	let typingMap = new Map<number, string>();
 	let typingTimeouts = new Map<number, ReturnType<typeof setTimeout>>();
 
-	const typingLabel = $derived(
-		typingNames.length === 0 ? '' :
-		typingNames.length === 1 ? `${typingNames[0]} is writing…` :
-		typingNames.length === 2 ? `${typingNames[0]} and ${typingNames[1]} are writing…` :
-		'Several people are writing…'
-	);
+	const typingLabel = $derived(typingIndicatorLabel(typingNames));
 
 	// ── Public record + unified chat feed ─────────────────────────────────────
 	let recordRows = $state<RecordRow[]>([]);
@@ -221,48 +218,16 @@
 	// Per-player rank triple (Power/Knowledge/Esteem), shown on the header chips
 	// so relative standing is visible at all times. rank 1 = top, 5 = bottom;
 	// null while rankings haven't been set yet (lobby/early prologue).
-	const ranksByPlayer = $derived.by(() => {
-		const map = new Map<number, { power: number | null; knowledge: number | null; esteem: number | null }>();
-		for (const r of rankings) {
-			if (r.player_id == null) continue;
-			let entry = map.get(r.player_id);
-			if (!entry) {
-				entry = { power: null, knowledge: null, esteem: null };
-				map.set(r.player_id, entry);
-			}
-			entry[r.category] = r.rank;
-		}
-		return map;
-	});
-
-	// The best (lowest-numbered) rank a *player* actually holds on each track.
-	// Dummy tokens (player_id null, already excluded above) can occupy the top
-	// slot, so this isn't always rank 1 — whoever holds it is highlighted gold.
-	const topRankByCategory = $derived.by(() => {
-		const best: { power: number | null; knowledge: number | null; esteem: number | null } =
-			{ power: null, knowledge: null, esteem: null };
-		for (const entry of ranksByPlayer.values()) {
-			for (const cat of ['power', 'knowledge', 'esteem'] as const) {
-				const v = entry[cat];
-				if (v != null && (best[cat] == null || v < best[cat]!)) best[cat] = v;
-			}
-		}
-		return best;
-	});
-
-	// Per-player count of "needlessly at-risk" assets, surfaced as a warning
-	// badge on each header chip. See isNeedlesslyAtRisk for the exact rule —
-	// it's the avoidable case (one tear from destruction but an empty slot is
-	// still fillable), shared with the Retinue panel and asset cards.
-	const atRiskByPlayer = $derived.by(() => {
-		const map = new Map<number, number>();
-		for (const a of assets) {
-			if (isNeedlesslyAtRisk(a)) {
-				map.set(a.owner_id, (map.get(a.owner_id) ?? 0) + 1);
-			}
-		}
-		return map;
-	});
+	// Header-chip derivations live in $lib/tableHeader (pure + unit-tested).
+	// rank 1 = top, 5 = bottom; null while rankings haven't been set yet.
+	const ranksByPlayer = $derived(rankTriplesByPlayer(rankings));
+	// The best (lowest-numbered) rank a *player* actually holds on each track —
+	// not always rank 1, since a dummy token can occupy the top slot. Whoever
+	// holds the player-best is highlighted gold.
+	const topRankByCategory = $derived(topRanks(ranksByPlayer));
+	// Per-player count of "needlessly at-risk" assets — the warning badge on
+	// each header chip (the avoidable case; see isNeedlesslyAtRisk).
+	const atRiskByPlayer = $derived(atRiskCountByPlayer(assets));
 
 	// ── Public Record → Chat jump bridge ──────────────────────────────────────
 	// Tapping a row/plan/scene in the expanded sidebar finds the anchoring

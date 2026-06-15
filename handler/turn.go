@@ -20,6 +20,7 @@ package handler
 // step-7/8 logic automatically.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -451,24 +452,9 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 		return nil
 	}
 
-	outstanding, err := mwOutstandingCostsForGame(ctx, s.Q, game.ID, game.CurrentRow)
-	if err != nil {
-		logger.Warn("auto pass-focus: could not check outstanding war costs; skipping row advance", "err", err)
-		broadcastRowState(ctx, s.Q, manager, game.ID)
-		return nil
-	}
-	if len(outstanding) > 0 {
-		broadcastRowState(ctx, s.Q, manager, game.ID)
-		return nil
-	}
-
-	claims, err := mwOutstandingSurrenderClaimsForGame(ctx, s.Q, game.ID)
-	if err != nil {
-		logger.Warn("auto pass-focus: could not check surrender claims; skipping row advance", "err", err)
-		broadcastRowState(ctx, s.Q, manager, game.ID)
-		return nil
-	}
-	if len(claims) > 0 {
+	if rowAdvanceBlockReason(ctx, s.Q, game.ID, game.CurrentRow) != "" {
+		// Unpaid battle costs or open surrender claims — the row holds. The
+		// caller's primary action still committed; PassFocus/AdvanceRow recover.
 		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
@@ -494,8 +480,6 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 //
 // Focus does NOT change again on the row advance — whoever receives it in
 // step 6 carries it into the next row.
-//
-//nolint:funlen // TODO: see if there's a clean way to break this up
 func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, _, ok := requireFocusPlayer(w, r, s.Q)
@@ -570,51 +554,17 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Step 8: no plans remain — advance the row automatically, unless
-		// any active war still has unpaid battle costs for the current row,
-		// or any surrender claim is still open. Both checks are conservative
-		// on error: if we can't verify the row is clear, we skip the advance
-		// and the facilitator can retry via /advance-row.
-		logger := loggerFromContext(ctx)
-
-		outstanding, costErr := mwOutstandingCostsForGame(ctx, s.Q, game.ID, game.CurrentRow)
-		if costErr != nil {
-			logger.Warn("pass-focus: could not check outstanding war costs; skipping row advance", "err", costErr)
+		// Step 8: no plans remain — advance the row automatically, unless an
+		// active war still has unpaid battle costs for the current row or an
+		// open surrender claim. rowAdvanceBlockReason is conservative on a DB
+		// error: it returns a "retry via /advance-row" message rather than
+		// advancing the row unverified.
+		if reason := rowAdvanceBlockReason(ctx, s.Q, game.ID, game.CurrentRow); reason != "" {
 			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
-				"advance_blocked":   "could not verify war costs; retry via /advance-row",
-			})
-			return
-		}
-		if len(outstanding) > 0 {
-			broadcastRowState(ctx, s.Q, manager, game.ID)
-			respond(w, http.StatusOK, map[string]any{
-				"focus_player_id":   next.ID,
-				"focus_player_name": next.DisplayName,
-				"advance_blocked":   "outstanding battle costs must be paid before the row can advance",
-			})
-			return
-		}
-
-		claims, claimErr := mwOutstandingSurrenderClaimsForGame(ctx, s.Q, game.ID)
-		if claimErr != nil {
-			logger.Warn("pass-focus: could not check surrender claims; skipping row advance", "err", claimErr)
-			broadcastRowState(ctx, s.Q, manager, game.ID)
-			respond(w, http.StatusOK, map[string]any{
-				"focus_player_id":   next.ID,
-				"focus_player_name": next.DisplayName,
-				"advance_blocked":   "could not verify surrender claims; retry via /advance-row",
-			})
-			return
-		}
-		if len(claims) > 0 {
-			broadcastRowState(ctx, s.Q, manager, game.ID)
-			respond(w, http.StatusOK, map[string]any{
-				"focus_player_id":   next.ID,
-				"focus_player_name": next.DisplayName,
-				"advance_blocked":   "opposing players must take an asset from each surrendered player before the row can advance",
+				"advance_blocked":   reason,
 			})
 			return
 		}
@@ -649,4 +599,35 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			"crossed_engrailed": isEngrailedLine(game.CurrentRow, newRow),
 		})
 	}
+}
+
+// rowAdvanceBlockReason reports why the current row cannot advance yet, or ""
+// when it is clear to advance. A non-empty result is a player-facing message
+// for the "advance_blocked" response field. A war must have all battle costs
+// for the current row paid and all surrender claims taken before the row may
+// advance. DB-check failures are logged and treated conservatively (the row is
+// reported as blocked with a "retry via /advance-row" message) rather than
+// advancing the row on unverified state.
+func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, currentRow int16) string {
+	logger := loggerFromContext(ctx)
+
+	outstanding, err := mwOutstandingCostsForGame(ctx, q, gameID, currentRow)
+	if err != nil {
+		logger.WarnContext(ctx, "row-advance gate: could not check outstanding war costs; skipping advance", "err", err)
+		return "could not verify war costs; retry via /advance-row"
+	}
+	if len(outstanding) > 0 {
+		return "outstanding battle costs must be paid before the row can advance"
+	}
+
+	claims, err := mwOutstandingSurrenderClaimsForGame(ctx, q, gameID)
+	if err != nil {
+		logger.WarnContext(ctx, "row-advance gate: could not check surrender claims; skipping advance", "err", err)
+		return "could not verify surrender claims; retry via /advance-row"
+	}
+	if len(claims) > 0 {
+		return "opposing players must take an asset from each surrendered player before the row can advance"
+	}
+
+	return ""
 }

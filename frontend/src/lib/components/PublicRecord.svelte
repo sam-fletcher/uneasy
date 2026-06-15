@@ -458,8 +458,8 @@
 	.plan-name { font-weight: 600; color: var(--player-color, var(--color-text)); }
 	.plan-status { color: var(--color-text-muted); font-size: 0.65rem; text-transform: uppercase; }
 	/* Status colors override the right/top/bottom border (keeping the
-	   preparer-color left edge intact). */
-	.plan-pending   { /* default chip styling — preparer color carries identity */ }
+	   preparer-color left edge intact). Pending chips get no override — the
+	   preparer color on the left edge carries identity. */
 	.plan-resolving { border-top-color: #e0a040; border-right-color: #e0a040; border-bottom-color: #e0a040; }
 	.plan-resolved  { border-top-color: var(--color-success); border-right-color: var(--color-success); border-bottom-color: var(--color-success); opacity: 0.7; }
 	.plan-cancelled { opacity: 0.4; }

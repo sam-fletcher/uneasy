@@ -127,6 +127,30 @@ type ResolvingWaitees interface {
 	ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool)
 }
 
+// Per-player submission-state convention (read before adding a plan sub-flow).
+//
+// When a plan's resolution waits on one or more players to each submit
+// something (a make/mar choice, a kept secret, a peer claim, a counter-vote),
+// where that "has player X submitted yet?" bit lives is a contract, not a
+// free choice:
+//
+//   - DEFAULT: store it in the plan's resolution_data (the server-authoritative
+//     game-state snapshot), and guard the write with a backend dedupe check —
+//     a stale client re-prompted after a refresh must produce one effect, not
+//     two (return 409 on the second submit). Examples already in the tree:
+//     PeerClaimsDone >= PeerClaimsRequired (Exchange Courtiers), the keep-secret
+//     and break/hide done-markers (Liaise, Spread Rumors), MarSelfFlawsApplied
+//     (Seek Answers).
+//   - Side tables (liaise_choices, duel_staked_assets) are fine for the *bulk*
+//     payload of a submission, but a submission MARKER must still land in
+//     resolution_data so ComputeRowState / ResolvingWaitees can answer
+//     "who still has to act?" without joining every side table.
+//
+// The rule exists because submission state historically lived in four places
+// (resolution_data, side tables, reveal entries, dice rolls), so waiting-on had
+// to special-case each — the source of the June 2026 waiting-on bugs. Keep it
+// in one place. See also feedback_subflow_server_authoritative.
+
 // OnPreparer is an optional interface for plan handlers that need to run setup
 // immediately after the plan row is created in PreparePlan. For example,
 // Clandestinely Liaise uses it to create the simultaneous reveal and register

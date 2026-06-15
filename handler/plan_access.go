@@ -1,0 +1,206 @@
+package handler
+
+// handler/plan_access.go — Access and authorization helpers shared by the
+// common plan lifecycle handlers (plans.go) and the per-plan extra-route
+// handlers (plan_*.go). These resolve the plan from the URL, verify the caller
+// belongs to the game / is the preparer, and guard plan type and status.
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+
+	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
+	"uneasy/model"
+)
+
+// requirePlanAccess parses planId and verifies the caller belongs to the plan's game.
+func requirePlanAccess(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+) (*dbgen.Plan, *dbgen.Player, bool) {
+	planID, err := strconv.ParseInt(chi.URLParam(r, "planId"), 10, 64)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, "invalid plan id")
+		return nil, nil, false
+	}
+	plan, err := q.GetPlanByID(r.Context(), planID)
+	if err != nil {
+		respondErr(w, http.StatusNotFound, "plan not found")
+		return nil, nil, false
+	}
+	player, ok := requirePlayerInGame(w, r, q, plan.GameID)
+	if !ok {
+		return nil, nil, false
+	}
+	return &plan, player, true
+}
+
+// requirePlanPreparer returns the game and plan, verifying the caller is the
+// plan's preparer and the game is in main_event phase. Per the rules each plan
+// is resolved by its own preparer (the "actor"), not the current focus player —
+// the focus player only sets scenes and prepares plans.
+func requirePlanPreparer(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+) (*dbgen.Game, *dbgen.Plan, bool) {
+	plan, player, ok := requirePlanAccess(w, r, q)
+	if !ok {
+		return nil, nil, false
+	}
+	game, err := q.GetGameByID(r.Context(), plan.GameID)
+	if err != nil {
+		respondErr(w, http.StatusNotFound, "table not found")
+		return nil, nil, false
+	}
+	if game.Phase != model.PhaseMainEvent {
+		respondErr(w, http.StatusConflict, "game is not in the main event phase")
+		return nil, nil, false
+	}
+	if player.ID != plan.PreparerID {
+		respondErr(w, http.StatusForbidden, "only the plan's preparer can resolve it")
+		return nil, nil, false
+	}
+	return &game, plan, true
+}
+
+// requirePlanType writes a 400 and returns false if the plan isn't of the
+// expected type. Used by plan-specific extra-route handlers to guard against
+// a route being called with the wrong plan ID.
+func requirePlanType(w http.ResponseWriter, plan *dbgen.Plan, want model.PlanType) bool {
+	if plan.PlanType != want {
+		respondErr(w, http.StatusBadRequest, "route is only for "+string(want)+" plans")
+		return false
+	}
+	return true
+}
+
+// requirePlanResolving writes a 409 and returns false if the plan isn't in
+// the resolving status. Several plans' extra routes fire only during the
+// resolving phase.
+func requirePlanResolving(w http.ResponseWriter, plan *dbgen.Plan) bool {
+	if plan.Status != model.PlanResolving {
+		respondErr(w, http.StatusConflict, "plan is not in resolving status")
+		return false
+	}
+	return true
+}
+
+// makeChoiceAllowedNonPreparer returns true if the caller is permitted to drive
+// make-choice on this plan despite not being the plan's preparer (the normal
+// resolver). These roles qualify because the plan text hands them a choice:
+//
+//   - Make Demands "perform_steps" winner — submits preparer-equivalent
+//     choices on the target plan.
+//   - Propose Duel target on a mar outcome — picks which staked assets to
+//     claim from the preparer.
+//   - Exchange Courtiers target on a mar outcome — chooses fair_trade /
+//     riposte / forfeit against the preparer.
+//   - Spread Rumors target-asset owner on a mar outcome — drives the
+//     counter-rumor options applied to the preparer's assets.
+func makeChoiceAllowedNonPreparer(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	player *dbgen.Player,
+) bool {
+	if _, winners, err := DemandWinnersForTargetPlan(ctx, q, plan); err == nil {
+		if winnerID, ok := winners[gamepkg.DemandOptionPerformSteps]; ok &&
+			winnerID == player.ID && winnerID != 0 && winnerID != plan.PreparerID {
+			return true
+		}
+	}
+	if plan.PlanType == model.PlanProposeDuel &&
+		plan.TargetPlayerID != nil && *plan.TargetPlayerID == player.ID &&
+		planRollIsMar(ctx, q, plan) {
+		return true
+	}
+	// Exchange Courtiers mar is target-driven: the target player chooses
+	// fair_trade / riposte / forfeit against the preparer.
+	if plan.PlanType == model.PlanExchangeCourtiers &&
+		plan.TargetPlayerID != nil && *plan.TargetPlayerID == player.ID &&
+		planRollIsMar(ctx, q, plan) {
+		return true
+	}
+	if plan.PlanType == model.PlanSpreadRumors && plan.TargetAssetID != nil {
+		if asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID); err == nil &&
+			asset.OwnerID == player.ID && planRollIsMar(ctx, q, plan) {
+			return true
+		}
+	}
+	return false
+}
+
+// enforceChoiceBudget writes a 422 and returns false if the submitted choices
+// exceed the plan's per-result option budget (handlers opt in via ChoiceLimiter).
+// The limit is only applied when the roll's result is internally consistent
+// with the claimed outcome (make ⇒ result ≥ difficulty), so a forced/legacy
+// roll carrying a placeholder result never trips a spurious limit. Returns true
+// (proceed) when there's no limiter, no usable roll, or the budget is met.
+func enforceChoiceBudget(
+	w http.ResponseWriter,
+	h PlanHandler,
+	roll *dbgen.DiceRoll,
+	result string,
+	choices []string,
+) bool {
+	lim, ok := h.(ChoiceLimiter)
+	if !ok || roll == nil || roll.Result == nil {
+		return true
+	}
+	diff := roll.Difficulty
+	if roll.AdjustedDifficulty != nil {
+		diff = *roll.AdjustedDifficulty
+	}
+	res := *roll.Result
+	consistent := (result == makeOutcome && res >= diff) || (result == marOutcome && res < diff)
+	if !consistent {
+		return true
+	}
+	maxChoices := lim.MaxChoices(result, res, diff)
+	if maxChoices >= 0 && len(choices) > maxChoices {
+		respondErr(w, http.StatusUnprocessableEntity,
+			fmt.Sprintf("you may choose at most %d option(s) for this %s result", maxChoices, result))
+		return false
+	}
+	return true
+}
+
+// planRollIsMar returns true if plan has a resolved dice roll whose outcome
+// is mar.
+func planRollIsMar(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) bool {
+	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil {
+		return false
+	}
+	return roll.Outcome != nil && *roll.Outcome == marOutcome
+}
+
+// requirePlanForExtraRoute combines requirePlanAccess + requirePlanType +
+// requirePlanResolving — the preamble of most plan extra-route handlers.
+// Returns the plan and caller's player on success; writes the appropriate
+// HTTP error and returns false otherwise.
+func requirePlanForExtraRoute(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	wantType model.PlanType,
+) (*dbgen.Plan, *dbgen.Player, bool) {
+	plan, player, ok := requirePlanAccess(w, r, q)
+	if !ok {
+		return nil, nil, false
+	}
+	if !requirePlanType(w, plan, wantType) {
+		return nil, nil, false
+	}
+	if !requirePlanResolving(w, plan) {
+		return nil, nil, false
+	}
+	return plan, player, true
+}

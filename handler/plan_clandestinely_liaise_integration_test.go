@@ -221,6 +221,48 @@ func TestLiaise_KeepSecret_RejectsDuplicateSubmission(t *testing.T) {
 	assert.Equal(t, 1, preparerEntries, "exactly one KeptSecrets entry for the preparer")
 }
 
+// TestLiaise_ShareChoice_RejectsResubmitAfterBothIn proves the share-choice
+// phase guard makes the Things We Share step refresh-safe. Once both
+// participants have submitted, the phase auto-advances to "when will I see you
+// again", so a stale client re-prompted after a refresh (or a retry) cannot
+// re-run a share-choice — the second pass rides the phase check and is rejected
+// with 409, applying no further effect. This is the share-choice analogue of
+// the keep-secret double-write guard (TestLiaise_KeepSecret_RejectsDuplicateSubmission).
+func TestLiaise_ShareChoice_RejectsResubmitAfterBothIn(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	m := clDriveToThingsWeShare(t, h)
+
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
+
+	// Both participants look at their partner's meeting peer — narrative-only
+	// (no asset is torn or moved). The second submission auto-advances the
+	// phase out of things_we_share.
+	code, body := h.post(0, sharePath, map[string]any{
+		"choice": "look_at_secret", "target_asset_id": m.partnerPeerID,
+	})
+	require.Equalf(t, http.StatusOK, code, "preparer look_at_secret: %v", body)
+	code, body = h.post(1, sharePath, map[string]any{
+		"choice": "look_at_secret", "target_asset_id": m.preparerPeerID,
+	})
+	require.Equalf(t, http.StatusOK, code, "partner look_at_secret: %v", body)
+
+	// The phase advanced past things_we_share once both were in.
+	refreshed, err := h.q.GetPlanByID(ctx, m.plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	phase := rd.EnsureLiaise().Phase
+	require.NotEqualf(t, string(LiaiseThingsWeShare), string(phase),
+		"both submissions must auto-advance out of things_we_share (got %q)", phase)
+
+	// A stale re-submit by a participant is now rejected by the phase guard.
+	code, body = h.post(0, sharePath, map[string]any{
+		"choice": "look_at_secret", "target_asset_id": m.partnerPeerID,
+	})
+	assert.Equalf(t, http.StatusConflict, code,
+		"a re-submitted share-choice after the phase advanced must 409: %v", body)
+}
+
 // TestLiaise_ShareChoice_RejectsForeignTarget proves Things We Share options
 // must target the PARTNER's assets — a third party's asset is rejected.
 func TestLiaise_ShareChoice_RejectsForeignTarget(t *testing.T) {
