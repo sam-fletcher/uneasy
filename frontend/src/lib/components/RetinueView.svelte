@@ -373,29 +373,41 @@
 							{:else if isSelf}
 								<button type="button" class="asset-name editable" onclick={() => startRename(asset)} aria-label={`Rename ${asset.name}`}>
 									{asset.name}
-									{#if asset.is_main_character}<span class="main-badge">★</span>{/if}
 								</button>
 							{:else}
 								<span class="asset-name">
 									{asset.name}
-									{#if asset.is_main_character}<span class="main-badge">★</span>{/if}
 								</span>
 							{/if}
-							{#if isSelf && asset.asset_type === 'peer' && !asset.is_main_character && renamingAssetId !== asset.id && mcSwapTo == null}
+							<!-- Status glyphs + type word in one right-aligned cluster,
+							     generously separated from the name (see .tile-head-meta). -->
+							<div class="tile-head-meta">
+							{#if asset.is_main_character}
+								<!-- Main character: filled star, sharing the status-icon
+								     footprint. Passive — the MC is changed by the ☆ toggle on
+								     another peer, not by un-setting it here. -->
+								<span class="hi main-star" title="Main character" aria-label="Main character">
+									<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg>
+								</span>
+							{:else if isSelf && asset.asset_type === 'peer' && renamingAssetId !== asset.id && mcSwapTo == null}
+								<!-- Make-main-character toggle: outline star (reads as "set
+								     this"), same footprint as the filled star. -->
 								<button
 									type="button"
-									class="mc-toggle"
+									class="hi mc-toggle"
 									onclick={() => startMcSwap(asset)}
 									disabled={mcSwapSaving}
 									aria-label={`Make ${asset.name} the main character`}
 									title="Make main character"
-								>☆</button>
+								>
+									<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg>
+								</button>
 							{/if}
 							{#if asset.is_leveraged}
-								<!-- Leveraged status glyph next to the secrets eye. Replaces
-								     the orange tile border (see .asset-tile.leveraged); the
-								     0.78 dim is kept as an ambient "exhausted" cue. -->
-								<span class="lev-badge" title="Leveraged — spent for a roll until refreshed" aria-label="Leveraged">
+								<!-- Leveraged status glyph. Replaces the orange tile border
+								     (see .asset-tile.leveraged); the 0.78 dim is kept as an
+								     ambient "exhausted" cue. -->
+								<span class="hi lev-badge" title="Leveraged — spent for a roll until refreshed" aria-label="Leveraged">
 									<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 										<rect x="3" y="3" width="18" height="18" rx="3" />
 										<circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
@@ -408,11 +420,12 @@
 							{/if}
 							{#if isSelf || secretsForAsset(asset.id).length > 0}
 								<!-- Open (known) eye. Always gold. On your own assets it's the
-								     write-a-secret affordance, prefixed with "+" (the same add
-								     convention as the marginalia "+" tiles and the +🎲 leverage
-								     chip). On others' assets it's read-only and only appears when
-								     you can actually read something (no dead grey button beside
-								     the struck eye). -->
+								     write-a-secret affordance, prefixed with an inline "+" (the
+								     same add convention as the marginalia "+" tiles). On others'
+								     assets it's read-only and only appears when you can actually
+								     read something. Unlike the single-glyph icons this is a
+								     comfortable rectangle so the "+" and eye both breathe; the
+								     readable count rides the corner. -->
 								<button
 									type="button"
 									class="secrets-btn"
@@ -428,15 +441,15 @@
 										<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
 										<circle cx="12" cy="12" r="3" />
 									</svg>
-									{#if secretsForAsset(asset.id).length > 0}<span class="secrets-badge">{secretsForAsset(asset.id).length}</span>{/if}
+									{#if secretsForAsset(asset.id).length > 0}<span class="corner-badge known">{secretsForAsset(asset.id).length}</span>{/if}
 								</button>
 							{/if}
 							{#if hiddenSecretsFor(asset) > 0}
 								<!-- Struck eye: secrets that exist here but are hidden from
-								     this viewer (total − readable). Passive indicator; the
-								     open-eye button beside it owns the readable ones. -->
+								     this viewer (total − readable). Passive; its count rides the
+								     corner like the open eye's, so both eyes share one footprint. -->
 								<span
-									class="hidden-secrets"
+									class="hi hidden-secrets"
 									title={`${hiddenSecretsFor(asset)} secret${hiddenSecretsFor(asset) === 1 ? '' : 's'} hidden from you`}
 									aria-label={`${hiddenSecretsFor(asset)} secrets hidden from you`}
 								>
@@ -445,10 +458,11 @@
 										<circle cx="12" cy="12" r="3" />
 										<line x1="3" y1="21" x2="21" y2="3" />
 									</svg>
-									<span class="hidden-secrets-num">{hiddenSecretsFor(asset)}</span>
+									<span class="corner-badge hidden">{hiddenSecretsFor(asset)}</span>
 								</span>
 							{/if}
 							<span class="asset-type">{assetTypeLabels[asset.asset_type]}</span>
+							</div>
 						</div>
 						{#if renamingAssetId === asset.id && renameError}
 							<p class="m-editor-error">{renameError}</p>
@@ -561,7 +575,7 @@
 										class="m-editor-input"
 										placeholder="Write a secret on this asset. Secrets can be anything, as long as:
 	1. It doesn't contradict anything already established
-	2. It's something your character has the power or opportunity to know or make true
+	2. Your character has the ability to know or make true
 	3. It doesn't take away agency from another player's character."
 										bind:value={newSecretText}
 										disabled={secretSaving}
@@ -748,6 +762,17 @@
 		gap: 0.5rem;
 	}
 
+	/* Trailing icons (☆ / die / eyes) + the type chip, kept together and pushed
+	   to the right edge. padding-left guarantees a generous gap from the name
+	   even when a long name fills the row. */
+	.tile-head-meta {
+		display: flex;
+		align-items: center;
+		gap: 1.0rem;
+		flex-shrink: 0;
+		padding-left: 0.75rem;
+	}
+
 	.asset-name {
 		font-weight: 600;
 		font-size: 0.95rem;
@@ -789,88 +814,81 @@
 	}
 	.rename-input:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
-	/* "Make main character" toggle (☆ on non-main peer) */
-	.mc-toggle {
-		flex-shrink: 0;
-		min-width: 32px;
-		height: 32px;
-		padding: 0 0.4rem;
-		background: none;
-		border: 1px solid transparent;
-		border-radius: 4px;
-		color: #8a7a52;
-		font-size: 1.1rem;
-		line-height: 1;
-		cursor: pointer;
-	}
-	.mc-toggle:hover { color: var(--color-accent); border-color: #5a4d2c; background: #2a2418; }
-	.mc-toggle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-	.mc-toggle:disabled { opacity: 0.45; cursor: not-allowed; }
-
-	/* Leveraged status glyph in the tile head, sat beside the secrets eye.
-	   Passive indicator (not a button) — matches the eye's 18px footprint. */
-	.lev-badge {
+	/* ── Tile-head status icons ──────────────────────────────────────────────
+	   Every item in the cluster — icons AND the type chip — is sized to hug its
+	   own content, so the flex `gap` on .tile-head-meta is the single, uniform
+	   spacer between all of them (no element carries extra box padding that
+	   would inflate its neighbours' gaps). The interactive ones (mc-toggle,
+	   secrets) get their hover/active "box" from a box-shadow spread + an
+	   ::after hit area — both layout-neutral, so they never change the spacing. */
+	.hi {
+		position: relative;
 		flex-shrink: 0;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--color-leveraged);
 	}
-
-	/* Struck eye + count: secrets hidden from this viewer. Passive (not a
-	   button), muted to read as "not available to you" against the gold open
-	   eye beside it. */
-	.hidden-secrets {
-		flex-shrink: 0;
-		display: inline-flex;
-		align-items: center;
-		gap: 1px;
-		color: var(--color-text-muted);
+	button.hi,
+	.secrets-btn {
+		padding: 0;
+		background: none;
+		border: none;
+		border-radius: 4px;
+		cursor: pointer;
 	}
-	.hidden-secrets-num { font-size: 0.7rem; font-weight: 600; }
+	/* ~26px tap area centred on the glyph; -4px meets the neighbour's edge at the
+	   0.5rem gap without overlapping it. */
+	button.hi::after,
+	.secrets-btn::after { content: ''; position: absolute; inset: -4px; }
+	button.hi:focus-visible,
+	.secrets-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+	button.hi:disabled { opacity: 0.45; cursor: not-allowed; }
 
-	/* Open (known) secrets eye button + count badge. Always gold — it's the
-	   readable eye whether or not it currently holds secrets. The leading "+"
-	   (own assets only) marks it as writable; read-only eyes on others' assets
-	   drop the "+". */
+	/* Main character: filled star (changed elsewhere via the ☆ toggle). */
+	.main-star { color: var(--color-accent); }
+
+	/* Make-main-character toggle: outline star, brightening to gold with a soft
+	   box on hover (box-shadow spread = padded look, zero layout footprint). */
+	.mc-toggle { color: #8a7a52; }
+	.mc-toggle:hover { color: var(--color-accent); background: #232320; box-shadow: 0 0 0 4px #232320; }
+
+	.lev-badge { color: var(--color-leveraged); }
+
+	/* Writable/readable secrets eye — an inline "+" beside the eye. No outer
+	   padding, so it sits in the row on the same gap as everything else. */
 	.secrets-btn {
 		position: relative;
 		flex-shrink: 0;
-		min-width: 36px;
-		height: 32px;
-		padding: 0 0.4rem;
-		background: none;
-		border: 1px solid transparent;
-		border-radius: 4px;
-		color: var(--color-accent);
-		cursor: pointer;
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		gap: 1px;
+		gap: 0.15rem;
+		color: var(--color-accent);
 	}
-	.secrets-btn:hover { color: var(--color-accent-hover); border-color: #5a5a52; background: #232320; }
-	.secrets-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-	.secrets-btn.active { border-color: #5a5a52; background: #2a2a26; }
-
-	/* "+" add affordance prefixed to the writable (own-asset) eye. */
+	.secrets-btn:hover { color: var(--color-accent-hover); background: #232320; box-shadow: 0 0 0 4px #232320; }
+	.secrets-btn.active { background: #2a2a26; box-shadow: 0 0 0 4px #2a2a26; }
+	/* Inline "+" prefix on the writable (own-asset) eye. */
 	.secrets-plus { font-size: 1rem; font-weight: 700; line-height: 1; }
 
-	.secrets-badge {
+	/* Struck eye: muted to read as "not available to you" against the gold eye. */
+	.hidden-secrets { color: var(--color-text-muted); }
+
+	/* Count badge on either eye, riding the top-right corner so the glyph keeps
+	   its footprint. */
+	.corner-badge {
 		position: absolute;
-		top: -4px;
-		right: -4px;
-		min-width: 16px;
-		height: 16px;
-		padding: 0 4px;
-		background: var(--color-accent);
-		color: var(--color-bg);
+		top: -8px;
+		right: -8px;
+		min-width: 15px;
+		height: 15px;
+		padding: 0 3px;
 		border-radius: 8px;
-		font-size: 0.65rem;
+		font-size: 0.62rem;
 		font-weight: 700;
 		line-height: 16px;
 		text-align: center;
 	}
+	.corner-badge.known { background: var(--color-accent); color: var(--color-bg); }
+	.corner-badge.hidden { background: #3a3a36; color: var(--color-text-muted); }
 
 	/* Secrets panel (expanded under the marginalia area) */
 	.secrets-panel {
@@ -952,15 +970,6 @@
 		flex-shrink: 0;
 		font-weight: 600;
 		color: var(--color-accent);
-	}
-
-	.main-badge {
-		font-size: 0.7rem;
-		background: #4a3010;
-		color: #e8c080;
-		padding: 0.1rem 0.4rem;
-		border-radius: 3px;
-		flex-shrink: 0;
 	}
 
 	.asset-type {

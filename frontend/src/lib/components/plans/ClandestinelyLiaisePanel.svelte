@@ -570,7 +570,7 @@
 							</p>
 						{:else}
 							<p class="choices-note">
-								{isUpdate ? 'Rewrite one marginalia on' : 'Break'}
+								{isUpdate ? 'Update' : 'Break'}
 								<strong>{partnerMeetingPeer?.name}</strong> —
 								choose which marginalia to {isUpdate ? 'rewrite' : 'tear'}:
 							</p>

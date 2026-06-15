@@ -29,6 +29,7 @@
 	import type { Asset } from '$lib/api';
 	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
 	import { hiddenCount } from '$lib/secretCounts';
+	import AssetTypeIcon from './AssetTypeIcon.svelte';
 
 	interface Props {
 		asset: Asset;
@@ -121,13 +122,6 @@
 	// In marginalia-pick mode the card is always expanded: the marginalia
 	// list IS the picker, so hiding it would defeat the mode.
 	const expanded = $derived(marginaliaSelectable ? true : expandedRaw);
-
-	const typeLabels: Record<Asset['asset_type'], string> = {
-		peer: 'Peer',
-		holding: 'Holding',
-		artifact: 'Artifact',
-		resource: 'Resource',
-	};
 
 	function toggleExpand(e: MouseEvent) {
 		// Don't toggle expand when the click came from the select tap area.
@@ -227,52 +221,54 @@
 		<span class="name-block">
 			<span class="name">
 				<span class="name-text">{asset.name}</span>
-				{#if asset.is_main_character}
-					<span class="main-badge" title="Main character">★</span>
-				{/if}
-				{#if asset.is_leveraged}
-					<!-- Passive status glyph: this asset is spent for a roll until
-					     refreshed. Echoes the "+🎲" leverage chip; tinted
-					     --color-leveraged. Shown in every mode (leverage mode filters
-					     leveraged assets out of its own list, so no double-die there). -->
-					<span class="lev-badge" title="Leveraged — spent for a roll until refreshed" aria-label="Leveraged">
-						<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<rect x="3" y="3" width="18" height="18" rx="3" />
-							<circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
-							<circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" />
-							<circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
-							<circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" />
-							<circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" />
-						</svg>
-					</span>
-				{/if}
-				{#if showSecrets && knownSecrets > 0}
-					<!-- Open eye: secrets whose content you can read. -->
-					<span class="sec-badge known" title={`${knownSecrets} secret${knownSecrets === 1 ? '' : 's'} you can read`} aria-label={`${knownSecrets} secrets you can read`}>
-						<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-							<circle cx="12" cy="12" r="3" />
-						</svg><span class="sec-num">{knownSecrets}</span>
-					</span>
-				{/if}
-				{#if showSecrets && hiddenSecrets > 0}
-					<!-- Struck eye: secrets that exist but are hidden from you. -->
-					<span class="sec-badge hidden" title={`${hiddenSecrets} secret${hiddenSecrets === 1 ? '' : 's'} hidden from you`} aria-label={`${hiddenSecrets} secrets hidden from you`}>
-						<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-							<circle cx="12" cy="12" r="3" />
-							<line x1="3" y1="21" x2="21" y2="3" />
-						</svg><span class="sec-num">{hiddenSecrets}</span>
-					</span>
-				{/if}
 			</span>
 			{#if ownerLabel}
 				<span class="owner-label">{ownerLabel}</span>
 			{/if}
 		</span>
 
+		<!-- Status glyphs + type live in one right-aligned cluster, generously
+		     separated from the name by the 1fr name-block. -->
 		<span class="meta">
-			<span class="type">{typeLabels[asset.asset_type]}</span>
+			{#if asset.is_main_character}
+				<span class="main-badge" title="Main character">★</span>
+			{/if}
+			{#if asset.is_leveraged}
+				<!-- Passive status glyph: this asset is spent for a roll until
+				     refreshed. Echoes the "+🎲" leverage chip; tinted
+				     --color-leveraged. Shown in every mode (leverage mode filters
+				     leveraged assets out of its own list, so no double-die there). -->
+				<span class="lev-badge" title="Leveraged — spent for a roll until refreshed" aria-label="Leveraged">
+					<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<rect x="3" y="3" width="18" height="18" rx="3" />
+						<circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+						<circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" />
+						<circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+						<circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" />
+						<circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" />
+					</svg>
+				</span>
+			{/if}
+			{#if showSecrets && knownSecrets > 0}
+				<!-- Open eye: secrets whose content you can read. -->
+				<span class="sec-badge known" title={`${knownSecrets} secret${knownSecrets === 1 ? '' : 's'} you can read`} aria-label={`${knownSecrets} secrets you can read`}>
+					<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+						<circle cx="12" cy="12" r="3" />
+					</svg><span class="sec-num">{knownSecrets}</span>
+				</span>
+			{/if}
+			{#if showSecrets && hiddenSecrets > 0}
+				<!-- Struck eye: secrets that exist but are hidden from you. -->
+				<span class="sec-badge hidden" title={`${hiddenSecrets} secret${hiddenSecrets === 1 ? '' : 's'} hidden from you`} aria-label={`${hiddenSecrets} secrets hidden from you`}>
+					<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+						<circle cx="12" cy="12" r="3" />
+						<line x1="3" y1="21" x2="21" y2="3" />
+					</svg><span class="sec-num">{hiddenSecrets}</span>
+				</span>
+			{/if}
+			<AssetTypeIcon type={asset.asset_type} />
 			<span
 				class="count"
 				class:at-risk={atRisk}
@@ -358,8 +354,11 @@
 		min-height: 44px; /* tap target */
 	}
 
+	/* select/marginalia/leverage modes all add one left "act" slot, giving 4
+	   children — the same 4-column base layout. (The earlier 5-column value left
+	   .meta in the 1fr track, so it left-aligned instead of hugging the right.) */
 	.card.selectable .header,
-	.card.marginalia-selectable .header { grid-template-columns: auto auto auto 1fr auto; }
+	.card.marginalia-selectable .header { grid-template-columns: auto auto 1fr auto; }
 
 	/* Header click is a no-op in marginalia-pick mode (the card stays open)
 	   so don't suggest a pointer affordance there. */
@@ -444,9 +443,8 @@
 		gap: 0.05rem;
 	}
 
-	/* Flex row so the trailing status badges (★ / die / eyes) stay visible while
-	   only the name text truncates. Putting overflow:hidden on .name itself
-	   clipped the badges whenever the name filled the column. */
+	/* Name holds only the (truncating) text now; status glyphs moved to the
+	   right-aligned .meta cluster. */
 	.name {
 		display: flex;
 		align-items: center;
@@ -470,27 +468,24 @@
 	.main-badge {
 		color: var(--owner-color, var(--color-accent));
 		font-size: 0.78rem;
-		margin-left: 0.2rem;
 		flex-shrink: 0;
 	}
 
-	/* Leveraged status glyph, inline after the name (shares the row with the
-	   ★ main-char badge). Passive — not a tap target. */
+	/* Leveraged status glyph in the right-aligned meta cluster. Passive — not a
+	   tap target. */
 	.lev-badge {
 		color: var(--color-leveraged);
-		margin-left: 0.2rem;
 		flex-shrink: 0;
 	}
 	.lev-badge svg { vertical-align: -0.18em; }
 
-	/* Secret indicators after the name. Open eye (known) reads in gold like the
-	   Retinue eye; struck eye (hidden) is muted to read as "not available to
+	/* Secret indicators in the meta cluster. Open eye (known) reads in gold like
+	   the Retinue eye; struck eye (hidden) is muted to read as "not available to
 	   you". Passive — not tap targets here. */
 	.sec-badge {
 		display: inline-flex;
 		align-items: center;
 		gap: 1px;
-		margin-left: 0.2rem;
 		flex-shrink: 0;
 	}
 	.sec-badge svg { vertical-align: -0.18em; }
@@ -507,14 +502,21 @@
 		flex-shrink: 0;
 	}
 
-	.type { text-transform: uppercase; letter-spacing: 0.05em; }
-
+	/* The marginalia count reads like a note in the margin: a vertical hairline
+	   (echoing the Laws/Rumors count divider) separates it from the type icon,
+	   and it stretches to the row height so the rule has presence. Default text
+	   colour matches the name; only the at-risk case goes red. */
 	.count {
+		align-self: stretch;
+		display: flex;
+		align-items: center;
+		padding-left: 0.45rem;
+		border-left: 1px solid var(--color-border-warm);
 		font-variant-numeric: tabular-nums;
-		color: var(--color-text-muted);
+		color: var(--color-text);
 	}
 
-	.caret { font-size: 0.8rem; color: var(--color-text-muted); }
+	.caret { font-size: 0.8rem; color: var(--color-text); }
 
 	/* Needlessly-at-risk: red count + caret, matching the header-chip risk
 	   badge. Title on .count carries the meaning for non-colour users. */
