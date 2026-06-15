@@ -573,7 +573,7 @@
 					{@const mr = ranksByPlayer.get(member.id)}
 					{@const atRisk = atRiskByPlayer.get(member.id) ?? 0}
 					{@const isMe = member.id === currentPlayerID}
-					<button type="button" class="member" class:active={member.id === blockingPlayerID} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${member.id === blockingPlayerID ? ' (their turn)' : ''}${atRisk > 0 ? ` — ${atRisk} ${atRisk === 1 ? 'asset needs' : 'assets need'} marginalia` : ''}`} style:--member-color={playerColorByID(member.id, players)}>
+					<button type="button" class="member" class:active={isMe} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${isMe ? ' (you)' : ''}${member.id === blockingPlayerID ? ' (their turn)' : ''}${atRisk > 0 ? ` — ${atRisk} ${atRisk === 1 ? 'asset needs' : 'assets need'} marginalia` : ''}`} style:--member-color={playerColorByID(member.id, players)}>
 						{#if atRisk > 0}
 							<span class="risk-badge" class:mine={isMe} title={`${atRisk} ${atRisk === 1 ? 'asset has' : 'assets have'} too few marginalia — fill an empty slot to avoid losing ${atRisk === 1 ? 'it' : 'them'}`} aria-hidden="true">{atRisk}</span>
 						{/if}
@@ -902,6 +902,7 @@
 				{secrets}
 				{rankings}
 				viewerPlayerId={currentPlayerID}
+				focusPlayerId={blockingPlayerID}
 				onSecretsChanged={() => getVisibleSecrets(gameID).then(d => { secrets = d.secrets; }).catch(() => {})}
 			/>
 		{/if}

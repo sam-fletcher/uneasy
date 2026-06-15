@@ -19,6 +19,7 @@
 		secrets = [],
 		rankings = [],
 		viewerPlayerId,
+		focusPlayerId = null,
 		onSecretsChanged,
 	}: {
 		playerId: number;
@@ -28,6 +29,9 @@
 		secrets?: Secret[];
 		rankings?: Ranking[];
 		viewerPlayerId: number | null;
+		/** The player currently holding focus (their turn). Surfaced as a badge,
+		    visible to all viewers, on that player's retinue. */
+		focusPlayerId?: number | null;
 		/** Called after the viewer writes a secret so the parent can refetch. */
 		onSecretsChanged?: () => void;
 	} = $props();
@@ -59,6 +63,7 @@
 	const player = $derived(players.find(p => p.id === playerId) ?? null);
 	const presence = $derived(members.find(m => m.id === playerId) ?? null);
 	const isSelf = $derived(viewerPlayerId === playerId);
+	const isFocusPlayer = $derived(focusPlayerId != null && focusPlayerId === playerId);
 
 	const ownedAssets = $derived(
 		assets.filter(a => a.owner_id === playerId && !a.is_destroyed)
@@ -307,15 +312,22 @@
 					{/if}
 				</div>
 			</div>
-			<span
-				class="leveraged-badge"
-				class:zero={leveragedCount === 0}
-				title={leveragedCount === 0
-					? 'No assets leveraged'
-					: `${leveragedCount} leveraged ${leveragedCount === 1 ? 'asset' : 'assets'} — leveraged for a roll until refreshed`}
-			>
-				<span class="leveraged-count">{leveragedCount}</span> leveraged {leveragedCount === 1 ? 'asset' : 'assets'}
-			</span>
+			<div class="header-badges">
+				{#if isFocusPlayer}
+					<span class="focus-badge" title="Focus player — they'll set the next scene and then prepare another plan">
+						Sets next scene
+					</span>
+				{/if}
+				<span
+					class="leveraged-badge"
+					class:zero={leveragedCount === 0}
+					title={leveragedCount === 0
+						? 'No assets leveraged'
+						: `${leveragedCount} leveraged ${leveragedCount === 1 ? 'asset' : 'assets'} — leveraged for a roll until refreshed`}
+				>
+					<span class="leveraged-count">{leveragedCount}</span> leveraged {leveragedCount === 1 ? 'asset' : 'assets'}
+				</span>
+			</div>
 		</header>
 
 		{#if hasRanks}
@@ -404,9 +416,8 @@
 								</button>
 							{/if}
 							{#if asset.is_leveraged}
-								<!-- Leveraged status glyph. Replaces the orange tile border
-								     (see .asset-tile.leveraged); the 0.78 dim is kept as an
-								     ambient "exhausted" cue. -->
+								<!-- Leveraged status glyph — the sole "exhausted" cue now that
+								     the tile is neither dimmed nor border-tinted for it. -->
 								<span class="hi lev-badge" title="Leveraged — spent for a roll until refreshed" aria-label="Leveraged">
 									<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 										<rect x="3" y="3" width="18" height="18" rx="3" />
@@ -626,6 +637,33 @@
 		margin: 0 0 0.3rem;
 	}
 
+	/* Right-aligned badge cluster (Focus Player + leveraged count). */
+	.header-badges {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	/* Focus-player marker, visible to all viewers on the focus player's retinue.
+	   Filled gold to read as the dominant "it's their turn" cue, contrasting the
+	   outlined leveraged badge beside it. */
+	.focus-badge {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.7rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-bg);
+		background: var(--color-accent);
+		border-radius: 999px;
+		padding: 0.15rem 0.55rem;
+		line-height: 1.2;
+		white-space: nowrap;
+	}
+
 	/* Spent-but-refreshable counter, top-right across from online status.
 	   Outlined (not filled) to echo the leveraged asset-card border. */
 	.leveraged-badge {
@@ -742,18 +780,16 @@
 
 	.asset-tile {
 		background: #242420;
-		border: 1px solid var(--color-border-strong);
-		border-radius: 8px;
+		border: 0.5px solid var(--color-accent);
+		border-radius: 10px;
 		padding: 0.6rem 0.7rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	.asset-tile.main-char { border-color: var(--color-accent); }
-	/* Leveraged: dim the tile as an ambient "exhausted" cue. The state is named
-	   explicitly by the .lev-badge die in the tile head, so no border tint here
-	   (it would collide with the owner/main-char border anyway). */
-	.asset-tile.leveraged { opacity: 0.78; }
+	/* The main character is distinguished by the filled star in its tile head, so
+	   the gold border is shared by every asset tile. Leveraged tiles carry the
+	   .lev-badge die in the tile head as their only "exhausted" cue. */
 
 	.tile-head {
 		display: flex;
