@@ -828,3 +828,57 @@ func TestListAssets_FiltersByGame(t *testing.T) {
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(assets), 3)
 }
+
+// Pins the tombstone invariant: a destroyed asset must appear ONLY in the
+// display query (ListAllAssetsByGame, used by the retinue handler) and must
+// be excluded from every gameplay-facing query (ListAssetsByGame /
+// ListAssetsByOwner). If a future refactor lets a destroyed asset leak into
+// the filtered queries it would re-enter mechanics — this test fails first.
+func TestListAllAssetsByGame_IncludesDestroyed_GameplayQueriesExclude(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+	owner := tg.Players[0].ID
+
+	live, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: tg.Game.ID, OwnerID: owner, CreatorID: owner,
+		AssetType: model.AssetPeer, Name: "Living Ally",
+	})
+	require.NoError(t, err)
+
+	dead, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: tg.Game.ID, OwnerID: owner, CreatorID: owner,
+		AssetType: model.AssetPeer, Name: "Fallen Ally",
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.DestroyAsset(ctx, dead.ID))
+
+	ids := func(assets []dbgen.Asset) map[int64]bool {
+		m := make(map[int64]bool, len(assets))
+		for _, a := range assets {
+			m[a.ID] = true
+		}
+		return m
+	}
+
+	// Display query: both present.
+	all, err := q.ListAllAssetsByGame(ctx, tg.Game.ID)
+	require.NoError(t, err)
+	allIDs := ids(all)
+	assert.True(t, allIDs[live.ID], "live asset in display query")
+	assert.True(t, allIDs[dead.ID], "destroyed asset in display query")
+
+	// Gameplay queries: destroyed excluded.
+	byGame, err := q.ListAssetsByGame(ctx, tg.Game.ID)
+	require.NoError(t, err)
+	gameIDs := ids(byGame)
+	assert.True(t, gameIDs[live.ID], "live asset in game query")
+	assert.False(t, gameIDs[dead.ID], "destroyed asset must NOT be in game query")
+
+	byOwner, err := q.ListAssetsByOwner(ctx, owner)
+	require.NoError(t, err)
+	ownerIDs := ids(byOwner)
+	assert.True(t, ownerIDs[live.ID], "live asset in owner query")
+	assert.False(t, ownerIDs[dead.ID], "destroyed asset must NOT be in owner query")
+}

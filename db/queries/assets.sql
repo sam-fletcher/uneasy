@@ -14,6 +14,15 @@ SELECT * FROM assets WHERE id = $1;
 SELECT * FROM assets WHERE game_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC;
 
+-- name: ListAllAssetsByGame :many
+-- Like ListAssetsByGame but INCLUDES destroyed assets. Used ONLY by the
+-- retinue display handler so destroyed assets can render as read-only
+-- "tombstone" cards. Never use this in gameplay logic — every mechanics
+-- path (counts, plan targeting, roll staging) must stay on the filtered
+-- ListAssetsByGame / ListAssetsByOwner so destroyed assets never leak in.
+SELECT * FROM assets WHERE game_id = $1
+ORDER BY created_at ASC;
+
 -- name: ListAssetsByOwner :many
 SELECT * FROM assets WHERE owner_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC;

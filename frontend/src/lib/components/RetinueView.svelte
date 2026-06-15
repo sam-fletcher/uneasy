@@ -65,9 +65,22 @@
 	const isSelf = $derived(viewerPlayerId === playerId);
 	const isFocusPlayer = $derived(focusPlayerId != null && focusPlayerId === playerId);
 
+	// Live assets only. Every count, MC-swap, and at-risk computation below
+	// reads from this, so destroyed assets never affect gameplay-facing state.
 	const ownedAssets = $derived(
 		assets.filter(a => a.owner_id === playerId && !a.is_destroyed)
 	);
+
+	// Destroyed assets, grouped to the bottom of the list as read-only
+	// "tombstone" cards. Purely visual — they feed nothing but the render loop.
+	const destroyedAssets = $derived(
+		assets
+			.filter(a => a.owner_id === playerId && a.is_destroyed)
+			.sort((a, b) => (a.destroyed_at ?? '').localeCompare(b.destroyed_at ?? ''))
+	);
+
+	// Render order: live assets first (created order), then tombstones.
+	const displayAssets = $derived([...ownedAssets, ...destroyedAssets]);
 
 	const leveragedCount = $derived(ownedAssets.filter(a => a.is_leveraged).length);
 
@@ -354,19 +367,33 @@
 			</section>
 		{/if}
 
-		{#if ownedAssets.length === 0}
+		{#if displayAssets.length === 0}
 			<p class="empty">No assets yet.</p>
 		{:else}
 			<ul class="asset-grid">
-				{#each ownedAssets as asset (asset.id)}
+				{#each displayAssets as asset (asset.id)}
+					<!-- A destroyed asset renders as a read-only "tombstone": all edit
+					     affordances are suppressed (canEdit), the card is greyed and
+					     stamped with an X. It's visual-only — it affects no counts. -->
+					{@const dead = asset.is_destroyed}
+					{@const canEdit = isSelf && !dead}
 					<!-- Owner-only nudge: if this asset is one tear from destruction
 					     but a slot is still fillable, flag the first empty slot to fix. -->
-					{@const atRiskSlot = isSelf && isNeedlesslyAtRisk(asset) ? firstEmptySlotIndex(asset) : null}
+					{@const atRiskSlot = canEdit && isNeedlesslyAtRisk(asset) ? firstEmptySlotIndex(asset) : null}
 					<li
 						class="asset-tile"
 						class:main-char={asset.is_main_character}
 						class:leveraged={asset.is_leveraged}
+						class:destroyed={dead}
+						aria-label={dead ? `${asset.name} — destroyed` : undefined}
 					>
+						{#if dead}
+							<span class="destroyed-badge">Destroyed</span>
+							<svg class="tombstone-x" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+								<line x1="6" y1="6" x2="94" y2="94" />
+								<line x1="94" y1="6" x2="6" y2="94" />
+							</svg>
+						{/if}
 						<div class="tile-head">
 							{#if renamingAssetId === asset.id}
 								<input
@@ -382,7 +409,7 @@
 									}}
 									use:focusOnMount
 								/>
-							{:else if isSelf}
+							{:else if canEdit}
 								<button type="button" class="asset-name editable" onclick={() => startRename(asset)} aria-label={`Rename ${asset.name}`}>
 									{asset.name}
 								</button>
@@ -401,7 +428,7 @@
 								<span class="hi main-star" title="Main character" aria-label="Main character">
 									<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg>
 								</span>
-							{:else if isSelf && asset.asset_type === 'peer' && renamingAssetId !== asset.id && mcSwapTo == null}
+							{:else if canEdit && asset.asset_type === 'peer' && renamingAssetId !== asset.id && mcSwapTo == null}
 								<!-- Make-main-character toggle: outline star (reads as "set
 								     this"), same footprint as the filled star. -->
 								<button
@@ -429,7 +456,7 @@
 									</svg>
 								</span>
 							{/if}
-							{#if isSelf || secretsForAsset(asset.id).length > 0}
+							{#if !dead && (isSelf || secretsForAsset(asset.id).length > 0)}
 								<!-- Open (known) eye. Always gold. On your own assets it's the
 								     write-a-secret affordance, prefixed with an inline "+" (the
 								     same add convention as the marginalia "+" tiles). On others'
@@ -454,6 +481,20 @@
 									</svg>
 									{#if secretsForAsset(asset.id).length > 0}<span class="corner-badge known">{secretsForAsset(asset.id).length}</span>{/if}
 								</button>
+							{:else if dead && secretsForAsset(asset.id).length > 0}
+								<!-- Tombstone: the readable-secret count survives as a passive,
+								     non-clickable record of secrets lost with the asset. -->
+								<span
+									class="hi secrets-static"
+									title={`${secretsForAsset(asset.id).length} secret${secretsForAsset(asset.id).length === 1 ? '' : 's'} lost with this asset`}
+									aria-label={`${secretsForAsset(asset.id).length} secrets lost with this asset`}
+								>
+									<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+										<circle cx="12" cy="12" r="3" />
+									</svg>
+									<span class="corner-badge known">{secretsForAsset(asset.id).length}</span>
+								</span>
 							{/if}
 							{#if hiddenSecretsFor(asset) > 0}
 								<!-- Struck eye: secrets that exist here but are hidden from
@@ -540,7 +581,7 @@
 							<div class="m-grid">
 								{#each slotsFor(asset) as slot, i (i)}
 									{#if slot}
-										{#if isSelf && !slot.is_torn}
+										{#if canEdit && !slot.is_torn}
 											<button type="button" class="m-tile filled" onclick={() => startEdit(asset, slot)} aria-label={`Edit marginalia ${slot.position}`}>
 												<span class="m-tile-text">{slot.text}</span>
 											</button>
@@ -549,7 +590,7 @@
 												<span class="m-tile-text">{slot.text}</span>
 											</div>
 										{/if}
-									{:else if isSelf}
+									{:else if canEdit}
 										<button
 											type="button"
 											class="m-tile empty add"
@@ -787,6 +828,45 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
+
+	/* Tombstone: a destroyed asset kept visible as a read-only record. Greyed
+	   and desaturated (text stays legible — we don't crush opacity), stamped
+	   with a large X, and inert to interaction. All edit affordances are
+	   already suppressed in markup via canEdit; pointer-events is a backstop. */
+	.asset-tile.destroyed {
+		position: relative;
+		filter: grayscale(1);
+		opacity: 0.72;
+		border-color: var(--color-text-faint, #6b6b66);
+		border-style: dashed;
+		pointer-events: none;
+	}
+	.asset-tile.destroyed .tombstone-x {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		stroke: var(--color-text-faint, #6b6b66);
+		stroke-width: 2;
+		opacity: 0.55;
+		pointer-events: none;
+	}
+	.asset-tile.destroyed .destroyed-badge {
+		position: absolute;
+		top: 0.4rem;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 1;
+		font-size: 0.62rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		font-weight: 700;
+		color: var(--color-text-faint, #6b6b66);
+		border: 0.5px solid var(--color-text-faint, #6b6b66);
+		border-radius: 4px;
+		padding: 0.1rem 0.4rem;
+		background: #242420;
+	}
 	/* The main character is distinguished by the filled star in its tile head, so
 	   the gold border is shared by every asset tile. Leveraged tiles carry the
 	   .lev-badge die in the tile head as their only "exhausted" cue. */
@@ -904,6 +984,10 @@
 	.secrets-btn.active { background: #2a2a26; box-shadow: 0 0 0 4px #2a2a26; }
 	/* Inline "+" prefix on the writable (own-asset) eye. */
 	.secrets-plus { font-size: 1rem; font-weight: 700; line-height: 1; }
+
+	/* Tombstone's passive readable-secret eye — same gold as the live eye, but
+	   a plain span (no hover/press), a record rather than an affordance. */
+	.secrets-static { color: var(--color-accent); }
 
 	/* Struck eye: muted to read as "not available to you" against the gold eye. */
 	.hidden-secrets { color: var(--color-text-muted); }

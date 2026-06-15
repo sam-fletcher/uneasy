@@ -107,7 +107,11 @@ func ListAssets(s *db.Store) http.HandlerFunc {
 			return
 		}
 
-		assets, err := s.Q.ListAssetsByGame(r.Context(), gameID)
+		// Display path only: include destroyed assets so the retinue can
+		// render them as read-only "tombstone" cards. Gameplay logic must
+		// never use this query — it stays on the filtered ListAssetsByGame /
+		// ListAssetsByOwner so destroyed assets never leak into mechanics.
+		assets, err := s.Q.ListAllAssetsByGame(r.Context(), gameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load assets", err)
 			return

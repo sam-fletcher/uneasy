@@ -381,9 +381,14 @@
 		background: #221d10;
 	}
 
-	/* The marginalia row's own checkbox + selected state. */
+	/* The marginalia row's own checkbox + selected state. In pick mode the row
+	   carries a checkbox, so centre-align the line with it rather than sitting
+	   the text on its baseline (which leaves the box floating high). */
 	.marginalia li {
 		min-height: 32px;
+	}
+	.card.marginalia-selectable .marginalia li {
+		align-items: center;
 	}
 	.marginalia li.picked {
 		color: #ffe8b8;

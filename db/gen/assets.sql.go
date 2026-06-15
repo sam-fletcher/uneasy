@@ -405,6 +405,50 @@ func (q *Queries) GrantSecretVisibilityForAsset(ctx context.Context, arg GrantSe
 	return err
 }
 
+const listAllAssetsByGame = `-- name: ListAllAssetsByGame :many
+SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE game_id = $1
+ORDER BY created_at ASC
+`
+
+// Like ListAssetsByGame but INCLUDES destroyed assets. Used ONLY by the
+// retinue display handler so destroyed assets can render as read-only
+// "tombstone" cards. Never use this in gameplay logic — every mechanics
+// path (counts, plan targeting, roll staging) must stay on the filtered
+// ListAssetsByGame / ListAssetsByOwner so destroyed assets never leak in.
+func (q *Queries) ListAllAssetsByGame(ctx context.Context, gameID int64) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, listAllAssetsByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Asset{}
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.OwnerID,
+			&i.CreatorID,
+			&i.AssetType,
+			&i.Name,
+			&i.IsMainCharacter,
+			&i.IsLeveraged,
+			&i.IsDestroyed,
+			&i.CreatedAt,
+			&i.DestroyedAt,
+			&i.LinkedCardSuit,
+			&i.LinkedCardValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAssetsByGame = `-- name: ListAssetsByGame :many
 SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE game_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC
