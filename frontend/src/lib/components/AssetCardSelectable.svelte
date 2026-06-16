@@ -59,10 +59,13 @@
 		 * Number of secrets on this asset whose content the viewer can read.
 		 * The total (existence) comes from `asset.secret_count`; the difference
 		 * is shown as a struck-eye "hidden from you" count. Both are passive
-		 * indicators after the name. Leaving this undefined hides the secret
-		 * indicators entirely — pickers that don't compute the viewer's known
-		 * count opt out by simply not passing it (otherwise the viewer's own
-		 * secrets would wrongly read as hidden).
+		 * indicators after the name. Visibility is author/grant-based, not
+		 * owner-based: a secret you authored on any asset (including a foreign
+		 * secret planted on your own asset that you can't read) resolves
+		 * correctly as long as you pass the real per-viewer count from the
+		 * secret-counts seam. Leaving this undefined hides the indicators
+		 * entirely — only do that when you have no known-count source; passing
+		 * a fake 0 would force every existing secret to read as hidden.
 		 */
 		knownSecretCount?: number;
 		/**

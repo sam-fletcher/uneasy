@@ -24,6 +24,7 @@
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
 	import SceneDetailsPanel from '$lib/components/SceneDetailsPanel.svelte';
+	import CardPicker from '$lib/components/plans/CardPicker.svelte';
 	import { followOnPromptForRow } from '$lib/scenePrompts';
 	import { mainEventWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 
@@ -181,27 +182,17 @@
 	// derived `maxRefresh` count is meaningful for every observer — the
 	// picker itself is still gated behind `isFocusPlayer` below.
 	let refreshable = $derived(assets.filter(a => a.owner_id === game.focus_player_id && a.is_leveraged && !a.is_destroyed));
-	let selectedRefreshIDs = $state<Set<number>>(new Set());
+	let selectedRefreshIDs = $state<number[]>([]);
 	// Refresh cap: smaller of the current row number (per rules) and how many
 	// leveraged assets the focus player actually has.
 	let maxRefresh = $derived(Math.min(game.current_row, refreshable.length));
 	// Button label: how many assets the click would refresh right now.
-	let refreshButtonCount = $derived(selectedRefreshIDs.size > 0 ? selectedRefreshIDs.size : maxRefresh);
+	let refreshButtonCount = $derived(selectedRefreshIDs.length > 0 ? selectedRefreshIDs.length : maxRefresh);
 
 	// Reset selections when assets or step changes.
 	$effect(() => {
-		if (rowState?.kind !== 'post_scene_action') selectedRefreshIDs = new Set();
+		if (rowState?.kind !== 'post_scene_action') selectedRefreshIDs = [];
 	});
-
-	function toggleRefreshSelection(id: number) {
-		const next = new Set(selectedRefreshIDs);
-		if (next.has(id)) {
-			next.delete(id);
-		} else if (next.size < maxRefresh) {
-			next.add(id);
-		}
-		selectedRefreshIDs = next;
-	}
 
 	let actionBusy = $state(false);
 
@@ -210,8 +201,8 @@
 		actionBusy = true;
 		error = '';
 		try {
-			await refreshAssets(game.id, [...selectedRefreshIDs]);
-			selectedRefreshIDs = new Set();
+			await refreshAssets(game.id, selectedRefreshIDs);
+			selectedRefreshIDs = [];
 			// Assets update via asset.refreshed; the server auto-passes the
 			// focus marker (focus.changed) so no local state change is needed.
 		} catch (e) {
@@ -485,26 +476,21 @@
 							<span class="or-line"></span>
 						</div>
 						{#if refreshable.length > 0}
-							<div class="refresh-picker">
-								{#each refreshable as asset (asset.id)}
-									<label class="refresh-item" class:selected={selectedRefreshIDs.has(asset.id)}>
-										<input
-											type="checkbox"
-											checked={selectedRefreshIDs.has(asset.id)}
-											disabled={!selectedRefreshIDs.has(asset.id) && selectedRefreshIDs.size >= maxRefresh}
-											onchange={() => toggleRefreshSelection(asset.id)}
-										/>
-										<span class="refresh-asset-name">{asset.name}</span>
-										<span class="refresh-asset-type">{asset.asset_type}</span>
-									</label>
-								{/each}
-							</div>
+							<CardPicker
+								label="Refresh leveraged assets"
+								items={refreshable}
+								{players}
+								multi
+								max={maxRefresh}
+								selectedMulti={selectedRefreshIDs}
+								onSelectMulti={(ids) => selectedRefreshIDs = ids}
+							/>
 						{/if}
 						<div class="action-buttons">
 							<button
 								class="action-btn primary"
 								onclick={onRefreshAssets}
-								disabled={actionBusy || selectedRefreshIDs.size === 0}
+								disabled={actionBusy || selectedRefreshIDs.length === 0}
 							>
 								{actionBusy ? '…' : `Refresh ${refreshButtonCount} Asset${refreshButtonCount === 1 ? '' : 's'}`}
 							</button>
@@ -637,51 +623,5 @@
 	.action-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
-	}
-
-	/* Refresh asset picker */
-
-	.refresh-picker {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		max-height: 120px;
-		overflow-y: auto;
-	}
-
-	.refresh-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		min-height: 44px;
-		padding: 0.4rem 0.6rem;
-		border-radius: 4px;
-		background: var(--color-surface);
-		cursor: pointer;
-		font-size: 0.85rem;
-		border: 1px solid transparent;
-	}
-
-	.refresh-item.selected {
-		border-color: var(--color-accent);
-		background: #2e2510;
-	}
-
-	.refresh-item input[type="checkbox"] {
-		accent-color: var(--color-accent);
-		width: 18px;
-		height: 18px;
-		cursor: pointer;
-	}
-
-	.refresh-asset-name {
-		flex: 1;
-		color: var(--color-text);
-	}
-
-	.refresh-asset-type {
-		font-size: 0.72rem;
-		color: var(--color-text-faint);
-		text-transform: capitalize;
 	}
 </style>
