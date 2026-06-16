@@ -102,7 +102,6 @@ const (
 	EventWarEnded           = "war.ended"
 
 	// Phase 3d: Host Festivity
-	EventFestivityGuestJoined       = "festivity.guest_joined"
 	EventFestivityGuestRolled       = "festivity.guest_rolled"
 	EventFestivityGuestChose        = "festivity.guest_chose"
 	EventFestivityHostChose         = "festivity.host_chose"
@@ -513,12 +512,6 @@ type DuelBoutsCompletePayload struct {
 }
 
 // ── Phase 3d payload types — Host Festivity ──────────────────────────────────
-
-// FestivityGuestJoinedPayload is for EventFestivityGuestJoined.
-type FestivityGuestJoinedPayload struct {
-	PlanID   int64 `json:"plan_id"`
-	PlayerID int64 `json:"player_id"`
-}
 
 // FestivityGuestRolledPayload is for EventFestivityGuestRolled.
 // Action is "roll" or "opt_out". RollID is 0 when opting out.

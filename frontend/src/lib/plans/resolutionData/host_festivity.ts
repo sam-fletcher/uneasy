@@ -13,7 +13,8 @@ export interface PendingChallenge {
 
 export interface FestivityResolutionData {
 	phase?: FestivityPhase;
-	guests?: number[];
+	// No stored guest list: every player at the table attends as a guest, so the
+	// guest set is derived from the game's players, not from resolution_data.
 	outcomes?: Record<string, string>;
 	guest_makes?: Record<string, string>;
 	guest_mars?: Record<string, string>;

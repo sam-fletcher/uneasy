@@ -82,7 +82,6 @@ export const EventTypes = {
 	DuelBoutsComplete: 'duel.bouts_complete',
 
 	// Host Festivity
-	FestivityGuestJoined: 'festivity.guest_joined',
 	FestivityGuestRolled: 'festivity.guest_rolled',
 	FestivityGuestChose: 'festivity.guest_chose',
 	FestivityHostChose: 'festivity.host_chose',

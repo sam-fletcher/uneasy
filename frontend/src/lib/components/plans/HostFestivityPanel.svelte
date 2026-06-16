@@ -53,11 +53,14 @@
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	// ── Resolve: parse resolution_data ───────────────────────────────────────
+	// Every player at the table is a guest (the roster is fixed once a game
+	// starts), so the guest list is derived from `players`, not stored in
+	// resolution_data.
 	const fest = $derived.by<FestRes>(() => {
 		const f = parseResolutionData(plan).festivity ?? {};
 		return {
 			phase: f.phase ?? '',
-			guests: f.guests ?? [],
+			guests: players.map(p => p.id),
 			outcomes: f.outcomes ?? {},
 			guestMakes: f.guest_makes ?? {},
 			guestMars: f.guest_mars ?? {},
@@ -134,7 +137,6 @@
 		if (plan && d?.plan_id === plan.id) onPlansChanged();
 	}
 	const FEST_EVENTS = [
-		'uneasy:festivity.guest_joined',
 		'uneasy:festivity.guest_rolled',
 		'uneasy:festivity.guest_chose',
 		'uneasy:festivity.host_chose',
@@ -173,16 +175,12 @@
 
 		{#if fest.phase === 'socializing'}
 			<p class="choices-note muted">
-				Turn order is flexible: if it matters, players may insist that those
-				below them on the esteem track roll (or opt out) first. Sort it out in
-				the chat.
+				Turn order is flexible: if it matters, players with a 
+				lower Esteem rank must roll (or opt out) first. Decide in the chat.
 			</p>
 		{/if}
 
-		<GuestList
-			{plan} {fest} {players} {rankings} {currentPlayerID}
-			{amHost} {iAmGuest} {onPlansChanged}
-		/>
+		<GuestList {plan} {fest} {players} {rankings} />
 
 		{#if fest.pendingChallenge}
 			<ChallengeBanner

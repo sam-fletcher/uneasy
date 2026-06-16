@@ -619,12 +619,8 @@ export function boutRespond(planID: number, stakeID: number): Promise<PlanEcho> 
 	});
 }
 
-// Host Festivity.
-
-/** Host Festivity — join as a guest. */
-export function joinFestivity(planID: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/join-festivity`, { method: 'POST' });
-}
+// Host Festivity. Every player at the table attends as a guest by default —
+// there is no join step.
 
 /** Host Festivity — guest commits to rolling or opts out. */
 export function guestRoll(planID: number, action: 'roll' | 'opt_out'): Promise<{ plan_id: number; roll?: DiceRoll }> {

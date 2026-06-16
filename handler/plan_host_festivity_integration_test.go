@@ -38,16 +38,13 @@ func hfPrepareToSocializing(t *testing.T, h *planLifecycle) (dbgen.Plan, int) {
 	return plan, h.preparerIdxFor(plan.ID)
 }
 
-// hfGuestRollMar makes players[idx] join, roll, and forces a mar outcome on
-// their guest roll. Returns once the roll is resolved as mar.
+// hfGuestRollMar makes players[idx] roll and forces a mar outcome on their
+// guest roll. Every player is a guest by default, so there is no join step.
+// Returns once the roll is resolved as mar.
 func hfGuestRollMar(t *testing.T, h *planLifecycle, planID int64, idx int) {
 	t.Helper()
-	join := "/api/plans/" + strconv.FormatInt(planID, 10) + "/join-festivity"
-	code, body := h.post(idx, join, nil)
-	require.Equalf(t, http.StatusOK, code, "join-festivity: %v", body)
-
 	rollPath := "/api/plans/" + strconv.FormatInt(planID, 10) + "/guest-roll"
-	code, body = h.post(idx, rollPath, map[string]any{"action": "roll"})
+	code, body := h.post(idx, rollPath, map[string]any{"action": "roll"})
 	require.Equalf(t, http.StatusCreated, code, "guest-roll: %v", body)
 
 	// Force the just-created guest roll to a mar outcome.

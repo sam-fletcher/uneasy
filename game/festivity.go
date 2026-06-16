@@ -78,9 +78,12 @@ type PendingChallenge struct {
 
 // FestivityResolutionData holds all Host Festivity plan state stored inside
 // the plans.resolution_data JSON column, nested under the "festivity" key.
+//
+// There is no stored guest list: every player at the table attends as a guest
+// (the roster is fixed once a game starts), so callers derive the guest set
+// from the game's players and pass it to the helpers below.
 type FestivityResolutionData struct {
 	Phase             FestivityPhase    `json:"phase,omitempty"`
-	Guests            []int64           `json:"guests,omitempty"`
 	Outcomes          map[string]string `json:"outcomes,omitempty"`         // player_id (str) → "make"|"mar"|"opt_out"
 	GuestMakes        map[string]string `json:"guest_makes,omitempty"`      // guest → chosen make option
 	GuestMars         map[string]string `json:"guest_mars,omitempty"`       // guest → chosen mar option
@@ -114,11 +117,12 @@ func (r *ResolutionData) EnsureFestivity() *FestivityResolutionData {
 }
 
 // AllGuestsResolved returns true when every guest has an outcome recorded.
-func (s *FestivityResolutionData) AllGuestsResolved() bool {
-	if len(s.Guests) == 0 {
+// guests is the table roster (every player attends).
+func (s *FestivityResolutionData) AllGuestsResolved(guests []int64) bool {
+	if len(guests) == 0 {
 		return false
 	}
-	for _, id := range s.Guests {
+	for _, id := range guests {
 		if _, ok := s.Outcomes[int64ToKey(id)]; !ok {
 			return false
 		}
@@ -127,10 +131,11 @@ func (s *FestivityResolutionData) AllGuestsResolved() bool {
 }
 
 // PendingHostChoices returns guests who still need a host make choice (those
-// who rolled mar or opted out, minus those already assigned).
-func (s *FestivityResolutionData) PendingHostChoices() []int64 {
+// who rolled mar or opted out, minus those already assigned). guests is the
+// table roster (every player attends).
+func (s *FestivityResolutionData) PendingHostChoices(guests []int64) []int64 {
 	out := make([]int64, 0)
-	for _, id := range s.Guests {
+	for _, id := range guests {
 		k := int64ToKey(id)
 		oc, ok := s.Outcomes[k]
 		if !ok {
@@ -163,23 +168,23 @@ func (s *FestivityResolutionData) ConsumeIOU(playerID int64) bool {
 	return false
 }
 
-// IsGuest returns true if playerID is on the guest list.
-func (s *FestivityResolutionData) IsGuest(playerID int64) bool {
-	return slices.Contains(s.Guests, playerID)
-}
-
 // NextSocializingTurn returns the next guest who owes an outcome during the
 // 'socializing' phase. Order: non-host guests by descending esteem rank
 // number (= ascending esteem; lowest-esteem guest goes first), then the
-// host last. Returns 0 if every guest has already acted.
+// host last. Returns 0 if every guest has already acted. guests is the table
+// roster (every player attends).
 //
 // esteemRank is a lookup from playerID to that player's esteem rank in the
 // game (lower number = higher esteem). Because guests are sorted by descending
 // rank number (lowest esteem first), missing entries should map to a LOW
 // sentinel (below any real rank, e.g. 0) so they sort LAST among the guests.
-func (s *FestivityResolutionData) NextSocializingTurn(hostID int64, esteemRank func(int64) int16) int64 {
-	others := make([]int64, 0, len(s.Guests))
-	for _, id := range s.Guests {
+func (s *FestivityResolutionData) NextSocializingTurn(
+	guests []int64,
+	hostID int64,
+	esteemRank func(int64) int16,
+) int64 {
+	others := make([]int64, 0, len(guests))
+	for _, id := range guests {
 		if id != hostID {
 			others = append(others, id)
 		}
@@ -188,7 +193,7 @@ func (s *FestivityResolutionData) NextSocializingTurn(hostID int64, esteemRank f
 		return int(esteemRank(b)) - int(esteemRank(a))
 	})
 	ordered := others
-	if s.IsGuest(hostID) {
+	if slices.Contains(guests, hostID) {
 		ordered = append(ordered, hostID)
 	}
 	for _, id := range ordered {

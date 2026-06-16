@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 
 	dbgen "uneasy/db/gen"
@@ -137,7 +138,12 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		state.HostChoices[tk] = body.Choice
 
-		if err := hfFinalizeIfDone(ctx, deps, plan, state); err != nil {
+		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load roster", err)
+			return
+		}
+		if err := hfFinalizeIfDone(ctx, deps, plan, state, roster); err != nil {
 			respondInternalErr(w, r, "could not finalize", err)
 			return
 		}
@@ -187,8 +193,15 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureFestivity()
-		if !state.IsGuest(player.ID) || !state.IsGuest(body.TargetPlayerID) {
-			respondErr(w, http.StatusBadRequest, "challenger and target must both be guests")
+		// The challenger is a guest by construction (every player attends); the
+		// target just has to be a real player at the table.
+		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load roster", err)
+			return
+		}
+		if !slices.Contains(roster, body.TargetPlayerID) {
+			respondErr(w, http.StatusBadRequest, "challenge target must be a guest")
 			return
 		}
 		// Caller must have rolled make.

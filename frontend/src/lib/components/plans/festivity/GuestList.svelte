@@ -1,22 +1,18 @@
 <!-- Festivity/GuestList.svelte
-  Renders the esteem-ordered guest list with each guest's current status,
-  plus a "Join as guest" button for non-guest non-host players during the
-  socializing phase. Owns its esteem-rank derivation.
+  Renders the esteem-ordered guest list with each guest's current status.
+  Every player attends as a guest by default (added in the handler's
+  OnResolve), so there is no opt-in. Owns its esteem-rank derivation.
 -->
 <script lang="ts">
-	import { joinFestivity, type Plan, type Player, type Ranking } from '$lib/api';
+	import { type Plan, type Player, type Ranking } from '$lib/api';
 	import { playerName } from '../shared';
 	import type { FestRes } from './options';
 
-	let { plan, fest, players, rankings, currentPlayerID, amHost, iAmGuest, onPlansChanged }: {
+	let { plan, fest, players, rankings }: {
 		plan: Plan;
 		fest: FestRes;
 		players: Player[];
 		rankings: Ranking[];
-		currentPlayerID: number | null;
-		amHost: boolean;
-		iAmGuest: boolean;
-		onPlansChanged: () => void;
 	} = $props();
 
 	function esteemRank(playerID: number | null): number {
@@ -48,17 +44,6 @@
 		if (fest.guestRollIDs[k]) return 'rolling';
 		return 'waiting';
 	}
-
-	let actionBusy = $state(false);
-	let actionError = $state('');
-
-	async function onJoin() {
-		if (actionBusy) return;
-		actionBusy = true; actionError = '';
-		try { await joinFestivity(plan.id); onPlansChanged(); }
-		catch (e) { actionError = e instanceof Error ? e.message : 'Could not join.'; }
-		finally { actionBusy = false; }
-	}
 </script>
 
 <div class="choices-section">
@@ -80,14 +65,5 @@
 				</li>
 			{/each}
 		</ul>
-	{/if}
-
-	{#if fest.phase === 'socializing' && !iAmGuest && currentPlayerID != null && !amHost}
-		{#if actionError}<p class="res-error">{actionError}</p>{/if}
-		<button class="action-btn"
-			onclick={onJoin}
-			disabled={actionBusy}>
-			{actionBusy ? '…' : 'Join as guest'}
-		</button>
 	{/if}
 </div>

@@ -1061,11 +1061,11 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 		ID: hf.ID, Status: model.PlanResolving,
 	}))
 
-	// Seed festivity state: all three players are guests, none have acted.
+	// Seed festivity state: socializing, none have acted. The guest list is
+	// the table roster (all three players) — derived, not stored.
 	resData := loadResolutionData(hf.ResolutionData)
 	state := resData.EnsureFestivity()
 	state.Phase = gamepkg.FestivityPhaseSocializing
-	state.Guests = []int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}
 	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
 
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
@@ -1123,7 +1123,6 @@ func TestComputeRowState_AwaitFestivityChallengeResponse(t *testing.T) {
 	resData := loadResolutionData(hf.ResolutionData)
 	state := resData.EnsureFestivity()
 	state.Phase = gamepkg.FestivityPhaseSocializing
-	state.Guests = []int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}
 	state.PendingChallenge = &gamepkg.PendingChallenge{
 		ChallengerID: tg.Players[1].ID,
 		TargetID:     tg.Players[2].ID,
@@ -1156,7 +1155,6 @@ func TestComputeRowState_FestivityHostChoosing_NoOverride(t *testing.T) {
 	resData := loadResolutionData(hf.ResolutionData)
 	state := resData.EnsureFestivity()
 	state.Phase = gamepkg.FestivityPhaseHostChoosing
-	state.Guests = []int64{tg.Players[0].ID}
 	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
 
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)

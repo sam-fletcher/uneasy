@@ -407,7 +407,6 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.DuelBoutDeclared:
 		case EventTypes.DuelBoutResolved:
 		case EventTypes.DuelBoutsComplete:
-		case EventTypes.FestivityGuestJoined:
 		case EventTypes.FestivityGuestRolled:
 		case EventTypes.FestivityGuestChose:
 		case EventTypes.FestivityHostChose:
