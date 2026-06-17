@@ -634,6 +634,7 @@ func kickoffPlanResolution(
 	if hub, hasHub := manager.Get(plan.GameID); hasHub {
 		hub.BroadcastEvent(model.EventPlanResolving, model.PlanPayload{Plan: *plan})
 	}
+	EmitPlanResolving(ctx, q, manager, *plan)
 
 	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: manager}
 	return h.OnResolve(ctx, deps, plan)

@@ -99,6 +99,18 @@ func EmitPlanPrepared(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 		map[string]any{"plan_type": string(plan.PlanType), "preparer_id": plan.PreparerID})
 }
 
+// EmitPlanResolving writes the system post marking the moment a plan flips from
+// pending to resolving. It mirrors EmitPlanResolved's make/mar tier (IMPORTANT)
+// so the start and end of a resolution read at the same weight in the log.
+func EmitPlanResolving(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan dbgen.Plan) {
+	planID := plan.ID
+	EmitSystemPost(ctx, q, manager, plan.GameID, "plan.resolving",
+		model.SeverityImportant,
+		fmt.Sprintf("%s is resolving.", planLabel(plan.PlanType)),
+		plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
+}
+
 // EmitPlanResolved writes the system post for a plan resolution. result
 // is "make", "mar", or "cancelled" — matching EventPlanResolved's Result
 // field. Cancelled plans get DEFAULT severity; make/mar get IMPORTANT.
