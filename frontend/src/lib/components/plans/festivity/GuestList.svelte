@@ -28,13 +28,6 @@
 		return fest.guests.includes(hostID) ? [...others, hostID] : others;
 	});
 
-	const currentTurnID = $derived.by<number | null>(() => {
-		for (const id of orderedGuests) {
-			if (!(String(id) in fest.outcomes)) return id;
-		}
-		return null;
-	});
-
 	function guestStatus(pid: number): string {
 		const k = String(pid);
 		const oc = fest.outcomes[k];
@@ -54,14 +47,10 @@
 		<ul class="plan-notes" style="margin:0;padding-left:1.25rem;">
 			{#each orderedGuests as gid (gid)}
 				{@const isHost = gid === plan.preparer_id}
-				{@const isTurn = gid === currentTurnID}
-				<li class:muted={!isTurn && (String(gid) in fest.outcomes)}>
+				<li class:muted={String(gid) in fest.outcomes}>
 					<strong>{playerName(players, gid)}</strong>
 					{#if isHost}<em> (host)</em>{/if}
 					— {guestStatus(gid)}
-					{#if isTurn && fest.phase === 'socializing'}
-						<span class="muted"> · their turn</span>
-					{/if}
 				</li>
 			{/each}
 		</ul>

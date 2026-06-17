@@ -14,7 +14,10 @@
 	import { destructionWarning } from '$lib/assetRisk';
 	import { MAKE_OPTS, MAR_OPTS, type FestRes } from './options';
 
-	let { plan, fest, players, assets, currentPlayerID, currentTurnID, myRollID, myEffectiveOutcome, onPlansChanged }: {
+	let {
+		plan, fest, players, assets, currentPlayerID, currentTurnID, myRollID,
+		myEffectiveOutcome, difficulty, blockedByOtherRoll, activeRollerID, onPlansChanged,
+	}: {
 		plan: Plan;
 		fest: FestRes;
 		players: Player[];
@@ -23,6 +26,12 @@
 		currentTurnID: number | null;
 		myRollID: number | null;
 		myEffectiveOutcome: 'make' | 'mar' | null;
+		/** Roll difficulty (host's esteem status), shown on the Roll button. */
+		difficulty: number;
+		/** True while another guest is mid-turn — disables roll/opt-out. */
+		blockedByOtherRoll: boolean;
+		/** The guest currently mid-turn, for the "waiting on" note. */
+		activeRollerID: number | null;
 		onPlansChanged: () => void;
 	} = $props();
 
@@ -167,11 +176,21 @@
 
 	{#if myRollID == null}
 		{#if actionError}<p class="res-error">{actionError}</p>{/if}
+		{#if blockedByOtherRoll}
+			<p class="choices-note muted">
+				Waiting for {playerName(players, activeRollerID)} to finish their turn…
+			</p>
+		{/if}
 		<div class="form-row">
-			<button class="action-btn primary" onclick={onRoll} disabled={actionBusy}>
-				{actionBusy ? '…' : 'Roll'}
+			<button
+				class="action-btn primary"
+				onclick={onRoll}
+				disabled={actionBusy || blockedByOtherRoll}
+				title="Difficulty {difficulty} — the host's standing in esteem (higher is harder to impress)"
+			>
+				{actionBusy ? '…' : `Roll · difficulty ${difficulty}`}
 			</button>
-			<button class="action-btn" onclick={onOptOut} disabled={actionBusy}>
+			<button class="action-btn" onclick={onOptOut} disabled={actionBusy || blockedByOtherRoll}>
 				Opt out
 			</button>
 		</div>

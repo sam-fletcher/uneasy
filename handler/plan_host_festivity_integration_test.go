@@ -96,6 +96,53 @@ func TestHostFestivity_Mar_BreakSelf_AutoDestroysOnLast(t *testing.T) {
 	assert.True(t, destroyed.IsDestroyed, "tearing the last marginalia destroys the main character")
 }
 
+// TestHostFestivity_HostFreeMake_BenefitsHost proves the host's free make (the
+// one they take for each guest who marred or opted out) benefits the HOST, not
+// the guest: introduce_peer adds the new peer to the host's own retinue.
+func TestHostFestivity_HostFreeMake_BenefitsHost(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+	hostID := h.tg.Players[hostIdx].ID
+
+	rollPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/guest-roll"
+	choicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/guest-choice"
+
+	// g1 rolls a mar and locks it in (owes the host a free make).
+	hfGuestRollMar(t, h, plan.ID, g1)
+	code, body := h.post(g1, choicePath, map[string]any{"choice": "accept_duels"})
+	require.Equalf(t, http.StatusOK, code, "g1 mar choice: %v", body)
+
+	// g2 and the host opt out — now every guest has acted → host_choosing.
+	code, body = h.post(g2, rollPath, map[string]any{"action": "opt_out"})
+	require.Equalf(t, http.StatusOK, code, "g2 opt out: %v", body)
+	code, body = h.post(hostIdx, rollPath, map[string]any{"action": "opt_out"})
+	require.Equalf(t, http.StatusOK, code, "host opt out: %v", body)
+
+	// Host takes introduce_peer for g1's owed slot.
+	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
+	code, body = h.post(hostIdx, hostChoicePath, map[string]any{
+		"target_player_id": h.tg.Players[g1].ID,
+		"choice":           "introduce_peer",
+		"peer_name":        "Gilded Guest",
+	})
+	require.Equalf(t, http.StatusOK, code, "host-choice introduce_peer: %v", body)
+
+	// The new peer belongs to the HOST, not g1.
+	hostAssets, err := h.q.ListAssetsByOwner(ctx, hostID)
+	require.NoError(t, err)
+	var found bool
+	for _, a := range hostAssets {
+		if a.GameID == h.tg.Game.ID && a.AssetType == model.AssetPeer && a.Name == "Gilded Guest" {
+			found = true
+		}
+	}
+	assert.True(t, found, "the host's free make adds the peer to the host's own retinue")
+}
+
 // TestHostFestivity_Mar_Disagreement_RejectsForeignPeer proves disagreement must
 // target one of the acting player's own peers.
 func TestHostFestivity_Mar_Disagreement_RejectsForeignPeer(t *testing.T) {

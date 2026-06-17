@@ -471,7 +471,10 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 // ResolvingWaitees returns the narrower RowState for a resolving Host Festivity
 // plan. During 'socializing': an open challenge takes precedence (block on the
-// target), otherwise block on the next guest in esteem order. 'host_choosing'
+// target); otherwise, if a guest is mid-turn (rolled but not yet chosen) the
+// table blocks on that single guest, else it blocks on every guest who has not
+// yet acted. Turn order is a soft suggestion (surfaced in the panel), not a
+// hard gate — opting out never makes a player the sole blocker. 'host_choosing'
 // and 'done' return false and ride the generic PlanResolving case — the host is
 // the preparer (= focus player at resolve time) so the existing label is already
 // accurate.
@@ -491,27 +494,17 @@ func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	if err != nil {
 		return model.RowState{}, false
 	}
-	rankings, err := q.ListRankingsByGame(ctx, plan.GameID)
-	if err != nil {
+	// A guest mid-turn (rolled, not yet chosen) holds up the table alone.
+	if roller := state.ActiveRoller(roster); roller != 0 {
+		return model.RowState{
+			Kind:            model.RowStateAwaitFestivityGuestTurn,
+			ActingPlayerIDs: []int64{roller},
+		}, true
+	}
+	// Otherwise everyone who hasn't acted is still owed.
+	pending := state.PendingGuests(roster)
+	if len(pending) == 0 {
 		return model.RowState{}, false
 	}
-	rankFor := func(playerID int64) int16 {
-		for i := range rankings {
-			r := &rankings[i]
-			if r.Category != model.CategoryEsteem || r.PlayerID == nil {
-				continue
-			}
-			if *r.PlayerID == playerID {
-				return r.Rank
-			}
-		}
-		// Low sentinel: an unranked guest sorts LAST in NextSocializingTurn's
-		// descending-by-rank order (a high value would wrongly put them first).
-		return 0
-	}
-	next := state.NextSocializingTurn(roster, plan.PreparerID, rankFor)
-	if next == 0 {
-		return model.RowState{}, false
-	}
-	return model.RowState{Kind: model.RowStateAwaitFestivityGuestTurn, ActingPlayerIDs: []int64{next}}, true
+	return model.RowState{Kind: model.RowStateAwaitFestivityGuestTurn, ActingPlayerIDs: pending}, true
 }

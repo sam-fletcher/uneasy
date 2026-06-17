@@ -7,11 +7,10 @@
 	import { insistHostMar, type Asset, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
-	import { MAR_OPTS, type FestRes } from './options';
+	import { MAR_OPTS } from './options';
 
-	let { plan, fest, players, assets, onPlansChanged }: {
+	let { plan, players, assets, onPlansChanged }: {
 		plan: Plan;
-		fest: FestRes;
 		players: Player[];
 		assets: Asset[];
 		onPlansChanged: () => void;
@@ -48,11 +47,7 @@
 	}
 </script>
 
-<div class="choices-section">
-	<p class="choices-header">You hold an IOU</p>
-	<p class="choices-note">
-		As a guest who rolled make, you may force the host to take one mar option.
-	</p>
+<div class="insist-flow">
 	{#if !insistOpen}
 		<button class="action-btn" onclick={() => (insistOpen = true)}>
 			Insist on a mar
@@ -106,10 +101,5 @@
 				Cancel
 			</button>
 		</div>
-	{/if}
-	{#if fest.hostMarInsists.length > 0}
-		<p class="choices-note muted">
-			Forced on host so far: {fest.hostMarInsists.join(', ')}
-		</p>
 	{/if}
 </div>

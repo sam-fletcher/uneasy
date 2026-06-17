@@ -1037,23 +1037,14 @@ func TestComputeRowState_AwaitDemandCounter_OnlyAfterMar(t *testing.T) {
 		"made demand routes to the draft override, not the counter override")
 }
 
-// TestComputeRowState_AwaitFestivityGuestTurn: a resolving Host Festivity
-// in 'socializing' phase blocks on the next guest in esteem order — host
-// is P0 (focus); P1 has lower esteem than P2, so P1 should go first.
+// TestComputeRowState_AwaitFestivityGuestTurn: a resolving Host Festivity in
+// 'socializing' phase blocks on every guest who has not yet acted; once a guest
+// is mid-turn (rolled but not chosen) the table blocks on that guest alone.
 func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 3)
 	ctx := context.Background()
-
-	// Esteem ranks: P0 rank 1 (highest), P2 rank 2, P1 rank 3 (lowest).
-	// Lowest-esteem guest acts first, host last.
-	for rank, pid := range []int64{tg.Players[0].ID, tg.Players[2].ID, tg.Players[1].ID} {
-		p := pid
-		require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
-			GameID: tg.Game.ID, PlayerID: &p, Category: model.CategoryEsteem, Rank: int16(rank + 1),
-		}))
-	}
 
 	hf := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
 		model.PlanHostFestivity, model.CategoryEsteem, tg.Game.CurrentRow)
@@ -1068,16 +1059,17 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	state.Phase = gamepkg.FestivityPhaseSocializing
 	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
 
+	// Nobody has acted → every guest is owed.
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
-	require.Len(t, got.ActingPlayerIDs, 1)
-	assert.Equal(t, tg.Players[1].ID, got.ActingPlayerIDs[0],
-		"lowest-esteem guest (P1, rank 3) must act first")
+	assert.ElementsMatch(t,
+		[]int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
+		"with no one acted, the table waits on every guest")
 	require.NotNil(t, got.PlanID)
 	assert.Equal(t, hf.ID, *got.PlanID)
 
-	// After P1 acts, the next-actor should be P2 (rank 2).
+	// P1 opts out → no longer owed; P0 and P2 remain.
 	reloaded, err := q.GetPlanByID(ctx, hf.ID)
 	require.NoError(t, err)
 	resData = loadResolutionData(reloaded.ResolutionData)
@@ -1090,20 +1082,20 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
-	require.Len(t, got.ActingPlayerIDs, 1)
-	assert.Equal(t, tg.Players[2].ID, got.ActingPlayerIDs[0],
-		"after P1 acts, P2 (rank 2) goes next; host is last")
+	assert.ElementsMatch(t, []int64{tg.Players[0].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
+		"opting out removes a guest from the owed set without blocking the others")
 
-	// After both guests act, only host remains — host = focus, but kind
-	// still surfaces so the WaitingOnBar's label reflects the festivity.
-	state.Outcomes[strconv.FormatInt(tg.Players[2].ID, 10)] = gamepkg.FestivityOutcomeMake
+	// P2 starts a roll (roll id set, no outcome) → table blocks on P2 alone.
+	state.GuestRollIDs = map[string]int64{
+		strconv.FormatInt(tg.Players[2].ID, 10): 999,
+	}
 	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
 	require.Len(t, got.ActingPlayerIDs, 1)
-	assert.Equal(t, tg.Players[0].ID, got.ActingPlayerIDs[0],
-		"host acts last in the socializing phase")
+	assert.Equal(t, tg.Players[2].ID, got.ActingPlayerIDs[0],
+		"a guest mid-turn holds up the table alone")
 }
 
 // TestComputeRowState_AwaitFestivityChallengeResponse: an open challenge

@@ -74,6 +74,31 @@ func TestFestivityPendingHostChoices(t *testing.T) {
 	assert.True(t, seen[4])
 }
 
+func TestFestivityPendingGuests(t *testing.T) {
+	roster := []int64{10, 20, 30}
+	s := FestivityResolutionData{
+		Outcomes: map[string]string{"20": FestivityOutcomeMake},
+	}
+	// Roster order preserved; resolved guest (20) dropped.
+	assert.Equal(t, []int64{10, 30}, s.PendingGuests(roster))
+	s.Outcomes["10"] = FestivityOutcomeOptOut
+	s.Outcomes["30"] = FestivityOutcomeMar
+	assert.Empty(t, s.PendingGuests(roster))
+}
+
+func TestFestivityActiveRoller(t *testing.T) {
+	roster := []int64{10, 20, 30}
+	// Nobody rolling.
+	s := FestivityResolutionData{Outcomes: map[string]string{}, GuestRollIDs: map[string]int64{}}
+	assert.EqualValues(t, 0, s.ActiveRoller(roster))
+	// 20 has rolled but not chosen → mid-turn.
+	s.GuestRollIDs["20"] = 99
+	assert.EqualValues(t, 20, s.ActiveRoller(roster))
+	// 20 has now chosen → no longer mid-turn.
+	s.Outcomes["20"] = FestivityOutcomeMar
+	assert.EqualValues(t, 0, s.ActiveRoller(roster))
+}
+
 func TestFestivityConsumeIOU(t *testing.T) {
 	s := FestivityResolutionData{GuestIOUs: []int64{1, 2, 3}}
 	require.True(t, s.ConsumeIOU(2))

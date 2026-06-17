@@ -102,17 +102,17 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">Host's make picks</p>
+	<p class="choices-header">The host's free makes</p>
 	{#if pendingHostGuests.length === 0}
-		<p class="choices-note">All host choices have been made.</p>
+		<p class="choices-note">The host has taken all their free makes.</p>
 	{:else if !amHost}
 		<p class="choices-note muted">
-			Waiting for the host to choose for:
+			The host takes a make for themself, one for each of:
 			{pendingHostGuests.map(id => playerName(players, id)).join(', ')}
 		</p>
 	{:else}
 		<p class="choices-note">
-			Pick a make option for each guest who rolled mar or opted out.
+			Take one make for yourself for each guest who rolled a mar or opted out.
 		</p>
 		{@const pendingGuestPlayers = pendingHostGuests
 			.map(gid => players.find(p => p.id === gid))

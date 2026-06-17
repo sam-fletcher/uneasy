@@ -30,6 +30,7 @@
 	import { playerName, assetName, parseResolutionData } from './shared';
 
 	import PrepForm from './festivity/PrepForm.svelte';
+	import Buffet from './festivity/Buffet.svelte';
 	import GuestList from './festivity/GuestList.svelte';
 	import ChallengeBanner from './festivity/ChallengeBanner.svelte';
 	import SocializingTurn from './festivity/SocializingTurn.svelte';
@@ -106,6 +107,36 @@
 		currentPlayerID != null && fest.acceptDuels.includes(currentPlayerID),
 	);
 
+	// Roll difficulty = the host's esteem status (6 − rank, min 1), the same for
+	// every guest. Mirrors gamepkg.HostFestivityDifficulty so the button can show
+	// it without a server round-trip.
+	const difficulty = $derived(Math.max(6 - esteemRank(plan?.preparer_id ?? null), 1));
+
+	// A guest who has rolled but not yet recorded an outcome is mid-turn. Their
+	// turn serializes play: everyone else's roll / opt-out is held until they
+	// finish (best-effort — the backend doesn't hard-lock concurrent rolls).
+	const activeRollerID = $derived.by<number | null>(() => {
+		for (const id of fest.guests) {
+			const k = String(id);
+			if (k in fest.guestRollIDs && !(k in fest.outcomes)) return id;
+		}
+		return null;
+	});
+	const blockedByOtherRoll = $derived(
+		activeRollerID != null && activeRollerID !== currentPlayerID,
+	);
+
+	// ── Favour trackers ──────────────────────────────────────────────────────
+	// Guests who currently hold an IOU (rolled a make → may force a host mar).
+	const iouHolders = $derived(fest.guestIOUs);
+	// Guests who grant the host a free make (rolled mar or opted out).
+	const hostMakeOwed = $derived(
+		fest.guests.filter(id => {
+			const oc = fest.outcomes[String(id)];
+			return oc === 'mar' || oc === 'opt_out';
+		}),
+	);
+
 	// ── Active roll outcome (fallback fetch) ─────────────────────────────────
 	// If our own roll has resolved but the parent's activeRoll is gone (e.g. it
 	// was cleared), fetch the roll once to recover the outcome.
@@ -168,16 +199,34 @@
 	<ResolvingCard {plan} {players}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
 
-		<p class="choices-note">
-			Phase: <strong>{fest.phase || '(starting)'}</strong>
-			· host: <strong>{playerName(players, plan.preparer_id)}</strong>
-		</p>
+		<div class="fest-phasebar">
+			<ol class="fest-steps" aria-label="Festivity progress">
+				{#each [['socializing', 'Socializing'], ['host_choosing', 'Host choosing'], ['done', 'Done']] as [key, label] (key)}
+					<li class:current={fest.phase === key}>{label}</li>
+				{/each}
+			</ol>
+			<span class="fest-host">Host: <strong>{playerName(players, plan.preparer_id)}</strong></span>
+		</div>
 
 		{#if fest.phase === 'socializing'}
-			<p class="choices-note muted">
-				Turn order is flexible: if it matters, players with a 
-				lower Esteem rank must roll (or opt out) first. Decide in the chat.
+			{#if amHost}
+				<p class="choices-note">
+					As host: Introduce the event in the chat. Where is it taking place, and
+					what kind of event is it?
+				</p>
+			{/if}
+			<p class="choices-note choices-emph">
+				Roleplay your characters making their entrances and socializing amongst each other. 
+				At any point each attendee may make a dice roll, and choose one option from the Make or Mar list.
 			</p>
+			<p class="choices-note muted">
+				Turn order is flexible: if it matters, players with a
+				lower Esteem rank must roll (or opt out) first. Resolve in the chat.
+			</p>
+		{/if}
+
+		{#if fest.phase === 'socializing' || fest.phase === 'host_choosing'}
+			<Buffet />
 		{/if}
 
 		<GuestList {plan} {fest} {players} {rankings} />
@@ -193,16 +242,56 @@
 		{#if fest.phase === 'socializing' && iAmGuest && !fest.pendingChallenge && myOutcome == null}
 			<SocializingTurn
 				{plan} {fest} {players} {assets} {currentPlayerID}
-				{currentTurnID} {myRollID} {myEffectiveOutcome} {onPlansChanged}
+				{currentTurnID} {myRollID} {myEffectiveOutcome}
+				{difficulty} {blockedByOtherRoll} {activeRollerID} {onPlansChanged}
 			/>
 		{/if}
 
-		{#if iHaveIOU && fest.phase !== 'done' && !fest.pendingChallenge}
-			<InsistFlow {plan} {fest} {players} {assets} {onPlansChanged} />
+		<!-- IOU tracker: who can force the host into a mar, plus the holder's action. -->
+		{#if fest.phase !== 'done'}
+			<div class="choices-section">
+				<p class="choices-header">The host's Mars</p>
+				{#if iouHolders.length === 0}
+					<p class="choices-note muted">
+						A guest who rolls a Make can insist the host to choose a Mar at any point during the festivity. No one has that power yet.
+					</p>
+				{:else}
+					<ul class="plan-notes fest-ledger">
+						{#each iouHolders as holderID (holderID)}
+							<li>
+								<strong>{playerName(players, holderID)}</strong>{#if holderID === currentPlayerID}<em> (you)</em>{/if}
+								— may insist the host take a Mar
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if fest.hostMarInsists.length > 0}
+					<p class="choices-note muted">Insisted upon the host so far: {fest.hostMarInsists.join(', ')}</p>
+				{/if}
+				{#if iHaveIOU && !fest.pendingChallenge}
+					<InsistFlow {plan} {players} {assets} {onPlansChanged} />
+				{/if}
+			</div>
 		{/if}
 
+		<!-- Host's free makes: owed by mar/opt-out guests, taken by the host. -->
 		{#if fest.phase === 'host_choosing'}
 			<HostChoosing {plan} {fest} {players} {assets} {amHost} {onPlansChanged} />
+		{:else if fest.phase === 'socializing' && hostMakeOwed.length > 0}
+			<div class="choices-section">
+				<p class="choices-header">The host's free Makes</p>
+				<p class="choices-note muted">
+					Before the event winds down, the host gets one Make for each:
+				</p>
+				<ul class="plan-notes fest-ledger">
+					{#each hostMakeOwed as owedID (owedID)}
+						<li>
+							<strong>{playerName(players, owedID)}</strong>
+							— {fest.outcomes[String(owedID)] === 'opt_out' ? 'opted out' : 'rolled a mar'}
+						</li>
+					{/each}
+				</ul>
+			</div>
 		{/if}
 
 		{#if fest.centeredAssetIDs.length > 0}
@@ -226,3 +315,52 @@
 
 	</ResolvingCard>
 {/if}
+
+<style>
+	.fest-phasebar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+		padding-bottom: 0.6rem;
+		border-bottom: 1px solid var(--color-border-warm);
+	}
+	.fest-steps {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		font-size: 0.85rem;
+		color: var(--color-text-faint);
+	}
+	.fest-steps li + li::before {
+		content: '›';
+		margin-right: 0.4rem;
+		color: var(--color-text-faint);
+	}
+	.fest-steps li.current {
+		color: var(--color-accent);
+		font-weight: 500;
+	}
+	.fest-host {
+		font-size: 0.85rem;
+		color: var(--color-text-muted);
+	}
+	.choices-emph {
+		border-left: 2px solid var(--color-accent);
+		padding-left: 0.6rem;
+		color: var(--color-accent-hover);
+	}
+	.fest-ledger {
+		margin: 0.25rem 0;
+		padding-left: 1.25rem;
+	}
+	.fest-ledger li {
+		margin: 0.15rem 0;
+	}
+</style>

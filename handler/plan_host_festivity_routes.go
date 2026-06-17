@@ -125,10 +125,12 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Apply the make effect to the target guest (host's choice acts FOR
-		// the guest, so actingPlayerID is the guest). Host-choice is make-only,
-		// so no marginalia (break is a mar option) — pass 0.
-		if err := hfApplyOption(ctx, deps, plan, state, body.TargetPlayerID,
+		// The make benefits the HOST: per the rules, for each guest who rolled a
+		// mar or opted out, the host takes a make for themself. body.TargetPlayerID
+		// only identifies which owed slot is being filled (recorded in
+		// HostChoices below) — the effect's actor is the host. Host-choice is
+		// make-only, so no marginalia (break is a mar option) — pass 0.
+		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
 			body.Choice, body.RumorText, body.PeerName, body.AssetID, 0, true); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return

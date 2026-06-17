@@ -168,38 +168,34 @@ func (s *FestivityResolutionData) ConsumeIOU(playerID int64) bool {
 	return false
 }
 
-// NextSocializingTurn returns the next guest who owes an outcome during the
-// 'socializing' phase. Order: non-host guests by descending esteem rank
-// number (= ascending esteem; lowest-esteem guest goes first), then the
-// host last. Returns 0 if every guest has already acted. guests is the table
-// roster (every player attends).
-//
-// esteemRank is a lookup from playerID to that player's esteem rank in the
-// game (lower number = higher esteem). Because guests are sorted by descending
-// rank number (lowest esteem first), missing entries should map to a LOW
-// sentinel (below any real rank, e.g. 0) so they sort LAST among the guests.
-func (s *FestivityResolutionData) NextSocializingTurn(
-	guests []int64,
-	hostID int64,
-	esteemRank func(int64) int16,
-) int64 {
-	others := make([]int64, 0, len(guests))
+// PendingGuests returns the roster members who have not yet recorded an
+// outcome (rolled-and-chosen, or opted out). guests is the table roster (every
+// player attends), preserving its order in the result.
+func (s *FestivityResolutionData) PendingGuests(guests []int64) []int64 {
+	out := make([]int64, 0, len(guests))
 	for _, id := range guests {
-		if id != hostID {
-			others = append(others, id)
-		}
-	}
-	slices.SortFunc(others, func(a, b int64) int {
-		return int(esteemRank(b)) - int(esteemRank(a))
-	})
-	ordered := others
-	if slices.Contains(guests, hostID) {
-		ordered = append(ordered, hostID)
-	}
-	for _, id := range ordered {
 		if _, ok := s.Outcomes[int64ToKey(id)]; !ok {
-			return id
+			out = append(out, id)
 		}
+	}
+	return out
+}
+
+// ActiveRoller returns the guest who is mid-turn — they have created a roll but
+// not yet recorded an outcome (still resolving the dice or picking make/mar).
+// Turns are serialized one at a time, so at most one such guest normally
+// exists; the roster is scanned in order for determinism. Returns 0 if no roll
+// is in progress. guests is the table roster.
+func (s *FestivityResolutionData) ActiveRoller(guests []int64) int64 {
+	for _, id := range guests {
+		k := int64ToKey(id)
+		if _, rolling := s.GuestRollIDs[k]; !rolling {
+			continue
+		}
+		if _, resolved := s.Outcomes[k]; resolved {
+			continue
+		}
+		return id
 	}
 	return 0
 }
