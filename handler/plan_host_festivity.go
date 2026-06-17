@@ -3,12 +3,14 @@ package handler
 // handler/plan_host_festivity.go — Host Festivity plan handler (Phase 3d).
 //
 // Host Festivity (esteem, delay 6). The host throws a social event; every
-// player at the table attends as a guest, then each guest independently rolls
-// (or opts out) against the host's esteem status to pick a make or mar effect. After
-// all guests have acted, the host selects one make option for each guest
-// who rolled a mar or opted out (including themselves). Guests who rolled
-// a make hold an IOU that lets them force the host to take a mar option
-// at any time before the event concludes.
+// other player at the table attends as a guest, then each guest independently
+// rolls (or opts out) against the host's esteem status to pick a make or mar
+// effect. The host does not roll: they've earned a free make for hosting
+// (recorded up front via OnResolve as FestivityOutcomeHost) rather than risk a
+// mar that rolling would expose them to. After all guests have acted, the host
+// selects one make option for each guest who rolled a mar or opted out, plus
+// their own earned make. Guests who rolled a make hold an IOU that lets them
+// force the host to take a mar option at any time before the event concludes.
 //
 // Phases (stored in ResolutionData.FestivityPhase):
 //
@@ -75,13 +77,27 @@ func (hfHandler) ComputeDifficulty(
 }
 
 // OnResolve sets the phase to socializing. No plan-level dice roll; each
-// guest creates their own via guest-roll.
+// guest creates their own via guest-roll. The host's outcome is recorded up
+// front as FestivityOutcomeHost — they don't roll or opt out, they've earned a
+// free make for hosting (taken during host_choosing). This both removes the
+// footgun (rolling is strictly worse than the guaranteed make) and surfaces the
+// earned make to the host from the start.
 func (hfHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	resData := loadResolutionData(plan.ResolutionData)
 	state := resData.EnsureFestivity()
 	state.Phase = gamepkg.FestivityPhaseSocializing
 	// No guest list is stored — every player at the table attends as a guest
 	// (the roster is fixed once a game starts), so it's derived where needed.
+	// Pre-record the host's earned free make so they're never prompted to roll.
+	if state.Outcomes == nil {
+		state.Outcomes = map[string]string{}
+	}
+	state.Outcomes[strconv.FormatInt(plan.PreparerID, 10)] = gamepkg.FestivityOutcomeHost
+	// In the degenerate case where the host is the only player, no guest action
+	// will ever fire the advance, so check here too.
+	if roster, err := hfRoster(ctx, deps.Q, plan.GameID); err == nil {
+		hfMaybeAdvanceToHostChoosing(state, roster)
+	}
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return nil, fmt.Errorf("save festivity setup: %w", err)
 	}
@@ -215,6 +231,11 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		if body.Action != "roll" && body.Action != "opt_out" {
 			respondErr(w, http.StatusBadRequest, "action must be 'roll' or 'opt_out'")
+			return
+		}
+		if player.ID == plan.PreparerID {
+			respondErr(w, http.StatusForbidden,
+				"the host doesn't roll — you hold a free make, earned for hosting, to take as the event winds down")
 			return
 		}
 
@@ -368,6 +389,11 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		state := resData.EnsureFestivity()
 		key := strconv.FormatInt(player.ID, 10)
 		// Every player at the table is a guest, so no membership check is needed.
+		if player.ID == plan.PreparerID {
+			respondErr(w, http.StatusForbidden,
+				"the host takes their earned make via host-choice, not guest-choice")
+			return
+		}
 		if hfBlockOnPendingChallenge(w, state) {
 			return
 		}

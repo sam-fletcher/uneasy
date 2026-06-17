@@ -42,7 +42,7 @@
 				<p class="choices-note" style="margin:0 0 0.25rem;">Plus, choose one:</p>
 				<ul class="buffet-list">
 					{#each MAKE_OPTS as o (o.key)}
-						<li>{o.label} — <span class="muted">{o.desc}</span></li>
+						<li>{o.label} <span class="muted">{o.desc}</span></li>
 					{/each}
 				</ul>
 			{:else if tab === 'mar'}
@@ -50,7 +50,7 @@
 				<p class="choices-note" style="margin:0 0 0.25rem;">Plus, choose one:</p>
 				<ul class="buffet-list">
 					{#each MAR_OPTS as o (o.key)}
-						<li>{o.label} — <span class="muted">{o.desc}</span></li>
+						<li>{o.label} <span class="muted">{o.desc}</span></li>
 					{/each}
 				</ul>
 			{:else}

@@ -166,13 +166,13 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">Your turn</p>
+	<!-- <p class="choices-header">Anyone's turn</p>
 	{#if currentTurnID !== currentPlayerID && currentTurnID != null}
 		<p class="choices-note muted">
 			{playerName(players, currentTurnID)} should go before you (lower esteem first).
 			You may still act if they insist on going later.
 		</p>
-	{/if}
+	{/if} -->
 
 	{#if myRollID == null}
 		{#if actionError}<p class="res-error">{actionError}</p>{/if}

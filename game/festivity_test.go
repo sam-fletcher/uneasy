@@ -51,27 +51,30 @@ func TestFestivityAllGuestsResolved(t *testing.T) {
 }
 
 func TestFestivityPendingHostChoices(t *testing.T) {
-	roster := []int64{1, 2, 3, 4}
+	roster := []int64{1, 2, 3, 4, 5}
 	s := FestivityResolutionData{
 		Outcomes: map[string]string{
 			"1": FestivityOutcomeMake,
 			"2": FestivityOutcomeMar,
 			"3": FestivityOutcomeOptOut,
 			"4": FestivityOutcomeMar,
+			"5": FestivityOutcomeHost, // host's own earned free make
 		},
 		HostChoices: map[string]string{
 			"2": FestivityMakeSpreadRumor,
 		},
 	}
 	pending := s.PendingHostChoices(roster)
-	require.Len(t, pending, 2)
-	// Order-independent check: should be {3, 4}.
+	require.Len(t, pending, 3)
+	// Order-independent check: should be {3, 4, 5} — the host's own slot (5) is
+	// owed a make just like mar/opt-out guests.
 	seen := map[int64]bool{}
 	for _, id := range pending {
 		seen[id] = true
 	}
 	assert.True(t, seen[3])
 	assert.True(t, seen[4])
+	assert.True(t, seen[5])
 }
 
 func TestFestivityPendingGuests(t *testing.T) {

@@ -7,17 +7,17 @@
 // `desc` is the one-line effect shown in the read-only buffet reference.
 
 export const MAKE_OPTS = [
-	{ key: 'spread_rumor',     label: 'Spread a new rumour',            desc: 'A notecard goes under the public record, sourced to you.' },
-	{ key: 'introduce_peer',   label: 'Introduce a new peer',           desc: 'A new peer joins your retinue (placed in the centre for now).' },
-	{ key: 'take_center_peer', label: 'Take a peer from the centre',    desc: 'A peer in the centre of the table joins your retinue.' },
-	{ key: 'challenge_duel',   label: 'Challenge someone to a duel',    desc: 'Call out a guest; if they accept, resolve a duel right away.' },
+	{ key: 'spread_rumor',     label: 'Spread a new rumor',            	desc: '' },
+	{ key: 'introduce_peer',   label: 'Introduce a new peer',           desc: '— They\'ll join your retinue if not taken during the festivity.' },
+	{ key: 'take_center_peer', label: 'Take an available peer',   		desc: '— A free peer at the festivity joins your retinue.' },
+	{ key: 'challenge_duel',   label: 'Propose a duel',    				desc: '— Challenge a player; if they accept, duel right away.' },
 ];
 
 export const MAR_OPTS = [
-	{ key: 'rumor_about_you', label: 'A rumour spreads about you',      desc: 'A notecard goes under the public record, aimed at your character.' },
-	{ key: 'disagreement',    label: 'Fall out with one of your peers', desc: 'One of your own peers is set in the centre of the table.' },
-	{ key: 'accept_duels',    label: 'Must accept any duel challenge',  desc: 'For the rest of the event you cannot decline a duel.' },
-	{ key: 'break_self',      label: 'Break yourself',                  desc: 'Tear a marginalia on your main character.' },
+	{ key: 'rumor_about_you', label: 'A rumor spreads about you',      	desc: '— Create a rumor targeting your main character.' },
+	{ key: 'disagreement',    label: 'A peer considers leaving', 		desc: '— They\'re available for anyone to take. If not taken, they\'ll rejoin you, broken.' },
+	{ key: 'accept_duels',    label: 'You must accept all duels',  		desc: 'during the festivity.' },
+	{ key: 'break_self',      label: 'Break yourself',                  desc: '— Tear a marginalia on your main character.' },
 ];
 
 export const HOST_MAKE_OPTS = MAKE_OPTS.filter(o => o.key !== 'challenge_duel');

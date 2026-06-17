@@ -2,8 +2,11 @@
   Prep + resolve UI for Host Festivity (Tier 3, Esteem, delay 6).
 
   Resolution phases (driven by resolution_data.festivity_phase):
-    socializing   — guests join, then take turns (lower esteem first, host last).
-    host_choosing — host picks a make option for each guest who marred / opted out.
+    socializing   — guests take turns (lower esteem first). The host doesn't
+                    roll: they hold a free make earned for hosting, recorded up
+                    front (outcome "host") and taken in host_choosing.
+    host_choosing — host picks a make option for themself (the earned make) and
+                    for each guest who marred / opted out.
     done          — host clicks Complete.
 
   Each guest creates their own dice roll via /guest-roll. The active roll is
@@ -129,11 +132,12 @@
 	// ── Favour trackers ──────────────────────────────────────────────────────
 	// Guests who currently hold an IOU (rolled a make → may force a host mar).
 	const iouHolders = $derived(fest.guestIOUs);
-	// Guests who grant the host a free make (rolled mar or opted out).
+	// Guests who grant the host a free make (rolled mar or opted out), plus the
+	// host's own slot — they've earned a free make for hosting.
 	const hostMakeOwed = $derived(
 		fest.guests.filter(id => {
 			const oc = fest.outcomes[String(id)];
-			return oc === 'mar' || oc === 'opt_out';
+			return oc === 'mar' || oc === 'opt_out' || oc === 'host';
 		}),
 	);
 
@@ -199,20 +203,24 @@
 	<ResolvingCard {plan} {players}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
 
-		<div class="fest-phasebar">
+		<!-- <div class="fest-phasebar">
 			<ol class="fest-steps" aria-label="Festivity progress">
 				{#each [['socializing', 'Socializing'], ['host_choosing', 'Host choosing'], ['done', 'Done']] as [key, label] (key)}
 					<li class:current={fest.phase === key}>{label}</li>
 				{/each}
 			</ol>
 			<span class="fest-host">Host: <strong>{playerName(players, plan.preparer_id)}</strong></span>
-		</div>
+		</div> -->
 
 		{#if fest.phase === 'socializing'}
 			{#if amHost}
 				<p class="choices-note">
 					As host: Introduce the event in the chat. Where is it taking place, and
 					what kind of event is it?
+				</p>
+				<p class="choices-note muted">
+					You don't roll — you've earned a free Make for hosting. Take it as the
+					event winds down (listed under “The host's free Makes” below).
 				</p>
 			{/if}
 			<p class="choices-note choices-emph">
@@ -285,9 +293,11 @@
 				</p>
 				<ul class="plan-notes fest-ledger">
 					{#each hostMakeOwed as owedID (owedID)}
+						{@const oc = fest.outcomes[String(owedID)]}
 						<li>
 							<strong>{playerName(players, owedID)}</strong>
-							— {fest.outcomes[String(owedID)] === 'opt_out' ? 'opted out' : 'rolled a mar'}
+							{#if oc === 'host'}<em> (you, host)</em>{/if}
+							— {oc === 'host' ? 'earned for hosting' : oc === 'opt_out' ? 'opted out' : 'rolled a mar'}
 						</li>
 					{/each}
 				</ul>

@@ -25,10 +25,18 @@
 		fest.guests.filter(id => {
 			const k = String(id);
 			const oc = fest.outcomes[k];
-			if (oc !== 'mar' && oc !== 'opt_out') return false;
+			if (oc !== 'mar' && oc !== 'opt_out' && oc !== 'host') return false;
 			return !(k in fest.hostChoices);
 		}),
 	);
+
+	// Friendly label for why each owed slot grants the host a make.
+	function owedReason(pid: number): string {
+		const oc = fest.outcomes[String(pid)];
+		if (oc === 'host') return 'earned for hosting';
+		if (oc === 'opt_out') return 'opted out';
+		return 'rolled a mar';
+	}
 
 	const centerPeerCandidates = $derived(
 		assets.filter(a => fest.centeredAssetIDs.includes(a.id) && !a.is_destroyed),
@@ -112,7 +120,8 @@
 		</p>
 	{:else}
 		<p class="choices-note">
-			Take one make for yourself for each guest who rolled a mar or opted out.
+			Take one make for yourself for hosting, and one more for each guest who
+			rolled a mar or opted out.
 		</p>
 		{@const pendingGuestPlayers = pendingHostGuests
 			.map(gid => players.find(p => p.id === gid))
@@ -129,7 +138,7 @@
 			/>
 			{#if hostPickerGuestID != null}
 				<p class="choices-note muted" style="margin:0.25rem 0 0;">
-					Outcome: {fest.outcomes[String(hostPickerGuestID)]}
+					{owedReason(hostPickerGuestID)}
 				</p>
 			{/if}
 		</FormField>

@@ -116,11 +116,12 @@ func TestHostFestivity_HostFreeMake_BenefitsHost(t *testing.T) {
 	code, body := h.post(g1, choicePath, map[string]any{"choice": "accept_duels"})
 	require.Equalf(t, http.StatusOK, code, "g1 mar choice: %v", body)
 
-	// g2 and the host opt out — now every guest has acted → host_choosing.
+	// The host doesn't roll — they may not, and don't need to (their earned make
+	// is recorded up front). Once g2 opts out, every guest has acted → host_choosing.
+	code, body = h.post(hostIdx, rollPath, map[string]any{"action": "opt_out"})
+	require.Equalf(t, http.StatusForbidden, code, "host must not be allowed to roll/opt-out: %v", body)
 	code, body = h.post(g2, rollPath, map[string]any{"action": "opt_out"})
 	require.Equalf(t, http.StatusOK, code, "g2 opt out: %v", body)
-	code, body = h.post(hostIdx, rollPath, map[string]any{"action": "opt_out"})
-	require.Equalf(t, http.StatusOK, code, "host opt out: %v", body)
 
 	// Host takes introduce_peer for g1's owed slot.
 	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
@@ -141,6 +142,59 @@ func TestHostFestivity_HostFreeMake_BenefitsHost(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "the host's free make adds the peer to the host's own retinue")
+}
+
+// TestHostFestivity_HostEarnedMake proves the host is pre-recorded with the
+// FestivityOutcomeHost outcome (so they never roll), and may take that earned
+// make for themself via host-choice targeting their own id.
+func TestHostFestivity_HostEarnedMake(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+	hostID := h.tg.Players[hostIdx].ID
+
+	// The host's earned make is recorded up front, before anyone acts.
+	reloaded, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(reloaded.ResolutionData)
+	st := rd.EnsureFestivity()
+	assert.Equal(t, "host", st.Outcomes[strconv.FormatInt(hostID, 10)],
+		"host outcome is pre-recorded as the earned free make")
+
+	rollPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/guest-roll"
+	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
+
+	// The host cannot roll.
+	code, body := h.post(hostIdx, rollPath, map[string]any{"action": "roll"})
+	require.Equalf(t, http.StatusForbidden, code, "host roll must be forbidden: %v", body)
+
+	// Both guests opt out → host_choosing (the host is already resolved).
+	for _, idx := range []int{g1, g2} {
+		code, body = h.post(idx, rollPath, map[string]any{"action": "opt_out"})
+		require.Equalf(t, http.StatusOK, code, "guest opt out: %v", body)
+	}
+
+	// The host takes their own earned make, targeting themself.
+	code, body = h.post(hostIdx, hostChoicePath, map[string]any{
+		"target_player_id": hostID,
+		"choice":           "introduce_peer",
+		"peer_name":        "Host's Own Guest",
+	})
+	require.Equalf(t, http.StatusOK, code, "host self make: %v", body)
+
+	// New peer belongs to the host.
+	hostAssets, err := h.q.ListAssetsByOwner(ctx, hostID)
+	require.NoError(t, err)
+	var found bool
+	for _, a := range hostAssets {
+		if a.GameID == h.tg.Game.ID && a.AssetType == model.AssetPeer && a.Name == "Host's Own Guest" {
+			found = true
+		}
+	}
+	assert.True(t, found, "the host's earned make adds the peer to their own retinue")
 }
 
 // TestHostFestivity_Mar_Disagreement_RejectsForeignPeer proves disagreement must

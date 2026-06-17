@@ -34,6 +34,7 @@
 		if (oc === 'make') return `make → ${fest.guestMakes[k] ?? '?'}`;
 		if (oc === 'mar') return `mar → ${fest.guestMars[k] ?? '?'}`;
 		if (oc === 'opt_out') return 'opted out';
+		if (oc === 'host') return 'free make (host)';
 		if (fest.guestRollIDs[k]) return 'rolling';
 		return 'waiting';
 	}

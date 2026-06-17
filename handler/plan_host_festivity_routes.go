@@ -116,8 +116,11 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		tk := strconv.FormatInt(body.TargetPlayerID, 10)
 		oc, ok := state.Outcomes[tk]
-		if !ok || (oc != gamepkg.FestivityOutcomeMar && oc != gamepkg.FestivityOutcomeOptOut) {
-			respondErr(w, http.StatusBadRequest, "target guest did not roll mar or opt out")
+		if !ok || (oc != gamepkg.FestivityOutcomeMar &&
+			oc != gamepkg.FestivityOutcomeOptOut &&
+			oc != gamepkg.FestivityOutcomeHost) {
+			respondErr(w, http.StatusBadRequest,
+				"target guest is not owed a host make (did not mar, opt out, or host the event)")
 			return
 		}
 		if _, done := state.HostChoices[tk]; done {
@@ -126,10 +129,11 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// The make benefits the HOST: per the rules, for each guest who rolled a
-		// mar or opted out, the host takes a make for themself. body.TargetPlayerID
-		// only identifies which owed slot is being filled (recorded in
-		// HostChoices below) — the effect's actor is the host. Host-choice is
-		// make-only, so no marginalia (break is a mar option) — pass 0.
+		// mar or opted out — plus the host's own earned slot — the host takes a
+		// make for themself. body.TargetPlayerID only identifies which owed slot
+		// is being filled (recorded in HostChoices below) — the effect's actor is
+		// the host. Host-choice is make-only, so no marginalia (break is a mar
+		// option) — pass 0.
 		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
 			body.Choice, body.RumorText, body.PeerName, body.AssetID, 0, true); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())

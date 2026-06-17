@@ -1052,37 +1052,40 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 		ID: hf.ID, Status: model.PlanResolving,
 	}))
 
-	// Seed festivity state: socializing, none have acted. The guest list is
-	// the table roster (all three players) — derived, not stored.
+	// Seed festivity state: socializing, host (P0) pre-recorded with their earned
+	// make (as OnResolve does), no guest has acted. The guest list is the table
+	// roster (all three players) — derived, not stored.
 	resData := loadResolutionData(hf.ResolutionData)
 	state := resData.EnsureFestivity()
 	state.Phase = gamepkg.FestivityPhaseSocializing
+	state.Outcomes = map[string]string{
+		strconv.FormatInt(tg.Players[0].ID, 10): gamepkg.FestivityOutcomeHost,
+	}
 	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
 
-	// Nobody has acted → every guest is owed.
+	// No guest has acted → the table waits on both guests; the host (pre-resolved)
+	// is never an owed actor during socializing.
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
 	assert.ElementsMatch(t,
-		[]int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
-		"with no one acted, the table waits on every guest")
+		[]int64{tg.Players[1].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
+		"with no guest acted, the table waits on every guest but not the host")
 	require.NotNil(t, got.PlanID)
 	assert.Equal(t, hf.ID, *got.PlanID)
 
-	// P1 opts out → no longer owed; P0 and P2 remain.
+	// P1 opts out → no longer owed; only P2 remains.
 	reloaded, err := q.GetPlanByID(ctx, hf.ID)
 	require.NoError(t, err)
 	resData = loadResolutionData(reloaded.ResolutionData)
 	state = resData.EnsureFestivity()
-	state.Outcomes = map[string]string{
-		strconv.FormatInt(tg.Players[1].ID, 10): gamepkg.FestivityOutcomeOptOut,
-	}
+	state.Outcomes[strconv.FormatInt(tg.Players[1].ID, 10)] = gamepkg.FestivityOutcomeOptOut
 	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
 
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
-	assert.ElementsMatch(t, []int64{tg.Players[0].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
+	assert.ElementsMatch(t, []int64{tg.Players[2].ID}, got.ActingPlayerIDs,
 		"opting out removes a guest from the owed set without blocking the others")
 
 	// P2 starts a roll (roll id set, no outcome) → table blocks on P2 alone.

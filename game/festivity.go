@@ -24,6 +24,12 @@ const (
 	FestivityOutcomeMake   = "make"
 	FestivityOutcomeMar    = "mar"
 	FestivityOutcomeOptOut = "opt_out"
+	// FestivityOutcomeHost is the host's pre-recorded outcome. The host does not
+	// roll or opt out: as the one throwing the event, they've earned a free make
+	// for hosting, taken during the host_choosing phase like the makes owed by
+	// guests who marred or opted out. It is assigned in OnResolve so the host is
+	// never prompted to roll (which is strictly worse than the guaranteed make).
+	FestivityOutcomeHost = "host"
 )
 
 // Make option keys.
@@ -131,8 +137,8 @@ func (s *FestivityResolutionData) AllGuestsResolved(guests []int64) bool {
 }
 
 // PendingHostChoices returns guests who still need a host make choice (those
-// who rolled mar or opted out, minus those already assigned). guests is the
-// table roster (every player attends).
+// who rolled mar, opted out, or the host's own earned slot, minus those already
+// assigned). guests is the table roster (every player attends).
 func (s *FestivityResolutionData) PendingHostChoices(guests []int64) []int64 {
 	out := make([]int64, 0)
 	for _, id := range guests {
@@ -141,7 +147,7 @@ func (s *FestivityResolutionData) PendingHostChoices(guests []int64) []int64 {
 		if !ok {
 			continue
 		}
-		if oc != FestivityOutcomeMar && oc != FestivityOutcomeOptOut {
+		if oc != FestivityOutcomeMar && oc != FestivityOutcomeOptOut && oc != FestivityOutcomeHost {
 			continue
 		}
 		if _, assigned := s.HostChoices[k]; assigned {
