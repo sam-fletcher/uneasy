@@ -22,6 +22,21 @@ export const MAR_OPTS = [
 
 export const HOST_MAKE_OPTS = MAKE_OPTS.filter(o => o.key !== 'challenge_duel');
 
+// Third-person past-tense phrases for the scorecard ("The Talk of the Event"),
+// where the MAKE_OPTS/MAR_OPTS labels (second person) read awkwardly.
+export const MAKE_PHRASE: Record<string, string> = {
+	spread_rumor: 'spread a rumor',
+	introduce_peer: 'introduced a peer',
+	take_center_peer: 'took a peer from the table',
+	challenge_duel: 'called for a duel',
+};
+export const MAR_PHRASE: Record<string, string> = {
+	rumor_about_you: 'a rumor spread about them',
+	disagreement: 'fell out with a peer',
+	accept_duels: 'agreed to answer any duel',
+	break_self: 'embarrassed themselves',
+};
+
 // The "always" effects that apply on top of any chosen option, surfaced in the
 // buffet so players understand the full consequence before they roll.
 export const MAKE_ALWAYS = 'You can insist the host choose one Mar at any point during the festivity.';

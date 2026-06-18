@@ -1,8 +1,9 @@
 <!-- Festivity/HostChoosing.svelte
-  The host's extra makes — their spoils for hosting (one make) plus one per
-  guest who marred or opted out. Shown whenever the host still has makes to
-  take; the host picks an option and spends one make at a time. Not tied to any
-  guest. Non-hosts see a read-only count.
+  The host's extra-makes control — their spoils for hosting (one make) plus one
+  per guest who marred or opted out. Host-only (the parent renders it only for
+  the host, and only while makes remain); the host picks an option and spends
+  one make at a time, not tied to any guest. Everyone else reads the host's
+  progress off the scorecard ("Working the room — N of M"), not here.
 -->
 <script lang="ts">
 	import { hostChoice, getAssetSuggestions, type Asset, type Plan, type Player } from '$lib/api';
@@ -12,12 +13,11 @@
 	import { playerName } from '../shared';
 	import { HOST_MAKE_OPTS, earnedHostMakes, type FestRes } from './options';
 
-	let { plan, fest, players, assets, amHost, onPlansChanged }: {
+	let { plan, fest, players, assets, onPlansChanged }: {
 		plan: Plan;
 		fest: FestRes;
 		players: Player[];
 		assets: Asset[];
-		amHost: boolean;
 		onPlansChanged: () => void;
 	} = $props();
 
@@ -93,22 +93,11 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">The host's extra Makes</p>
-	<p class="choices-note muted">
-		Taken {taken} of {earned} — one for hosting, plus one for each guest who
-		rolled a Mar or opted out.
+	<p class="choices-header">
+		Your extra Makes <span class="muted" style="font-weight:400;">· {taken} of {earned} taken</span>
 	</p>
-	{#if remaining <= 0}
-		<p class="choices-note">The host has taken all their extra Makes.</p>
-	{:else if !amHost}
-		<p class="choices-note muted">
-			The host has {remaining} extra {remaining === 1 ? 'Make' : 'Makes'} left to take.
-		</p>
-	{:else}
-		<p class="choices-note">
-			Take one Make for yourself ({remaining} left):
-		</p>
-		<FormField label="Pick a make option">
+	{#if remaining > 0}
+		<FormField label="Take a Make — pick one">
 			<div class="chip-row">
 				{#each HOST_MAKE_OPTS as o}
 					<button
@@ -154,13 +143,7 @@
 		<button class="action-btn primary"
 			onclick={submitHostChoice}
 			disabled={hostPickerBusy || !hostPickedChoice}>
-			{hostPickerBusy ? '…' : 'Take this Make'}
+			{hostPickerBusy ? '…' : `Take this Make (${remaining} left)`}
 		</button>
-	{/if}
-
-	{#if fest.hostMakesTaken.length > 0}
-		<p class="choices-note muted" style="margin-top:0.5rem;">
-			Taken so far: {fest.hostMakesTaken.join(', ')}
-		</p>
 	{/if}
 </div>

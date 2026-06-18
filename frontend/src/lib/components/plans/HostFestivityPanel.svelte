@@ -29,7 +29,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import { assetName, parseResolutionData, playerName } from './shared';
+	import { assetName, parseResolutionData } from './shared';
 
 	import PrepForm from './festivity/PrepForm.svelte';
 	import Buffet from './festivity/Buffet.svelte';
@@ -38,7 +38,7 @@
 	import SocializingTurn from './festivity/SocializingTurn.svelte';
 	import InsistFlow from './festivity/InsistFlow.svelte';
 	import HostChoosing from './festivity/HostChoosing.svelte';
-	import { festivityEndable, type FestRes } from './festivity/options';
+	import { festivityEndable, earnedHostMakes, type FestRes } from './festivity/options';
 
 	import type { PlanPanelProps } from './types';
 
@@ -114,9 +114,11 @@
 		activeRollerID != null && activeRollerID !== currentPlayerID,
 	);
 
-	// ── Favour trackers ──────────────────────────────────────────────────────
-	// Guests who currently hold an IOU (rolled a make → may inflict a host mar).
-	const iouHolders = $derived(fest.guestIOUs);
+	// ── Action gates ─────────────────────────────────────────────────────────
+	// Extra makes the host has earned but not yet taken.
+	const hostMakesLeft = $derived(
+		plan == null ? 0 : earnedHostMakes(fest, plan.preparer_id) - fest.hostMakesTaken.length,
+	);
 	// Whether the host may now wind the event down.
 	const endable = $derived(plan != null && festivityEndable(fest, plan.preparer_id));
 
@@ -183,29 +185,18 @@
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
 
 		{#if isResolving}
-			{#if amHost}
-				<p class="choices-note">
+			<p class="choices-note">
+				{#if amHost}
 					As host: Introduce the event in the chat. Where is it taking place, and
 					what kind of event is it?
-				</p>
-				<p class="choices-note muted">
-					You don't roll — you've earned an extra Make for hosting. Take it any
-					time (under "The host's extra Makes" below), along with one for each
-					guest who Mars or opts out.
-				</p>
-			{/if}
-			<p class="choices-note choices-emph">
-				Roleplay your characters making their entrances and socializing amongst each other.
-				At any point each attendee may make a dice roll, and choose one option from the Make or Mar list.
+				{:else}
+					Make your entrance in chat, socialize, and roll for a Make — but risk a Mar!
+				{/if}
 			</p>
-			<p class="choices-note muted">
-				Resolve one roll at a time — finish choosing an option before the next person acts.
-			</p>
-
 			<Buffet />
 		{/if}
 
-		<GuestList {plan} {fest} {players} {rankings} />
+		<GuestList {plan} {fest} {players} {currentPlayerID} />
 
 		{#if fest.pendingChallenge}
 			<ChallengeBanner
@@ -215,6 +206,7 @@
 			/>
 		{/if}
 
+		<!-- Your move(s): each control appears only for the player who can use it. -->
 		{#if isResolving && iAmGuest && !amHost && !fest.pendingChallenge && myOutcome == null}
 			<SocializingTurn
 				{plan} {fest} {players} {assets} {currentPlayerID}
@@ -223,34 +215,15 @@
 			/>
 		{/if}
 
-		<!-- IOU tracker: successful guests may inflict a mar on the host. -->
-		{#if isResolving}
-			<div class="choices-section">
-				<p class="choices-header">The host's Mars</p>
-				{#if iouHolders.length === 0}
-					<p class="choices-note muted">
-						A guest who rolls a Make can inflict a Mar on the host at any point during the festivity. No one has that power yet.
-					</p>
-				{:else}
-					<ul class="plan-notes fest-ledger">
-						{#each iouHolders as holderID (holderID)}
-							<li>
-								<strong>{playerName(players, holderID)}</strong>{#if holderID === currentPlayerID}<em> (you)</em>{/if}
-								— may inflict a Mar on the host
-							</li>
-						{/each}
-					</ul>
-				{/if}
-				{#if fest.hostMarInsists.length > 0}
-					<p class="choices-note muted">Inflicted on the host so far: {fest.hostMarInsists.join(', ')}</p>
-				{/if}
-				{#if iHaveIOU && !fest.pendingChallenge && !blockedByOtherRoll}
-					<InsistFlow {plan} {players} {assets} {onPlansChanged} />
-				{/if}
-			</div>
+		{#if isResolving && amHost && hostMakesLeft > 0}
+			<HostChoosing {plan} {fest} {players} {assets} {onPlansChanged} />
+		{/if}
 
-			<!-- The host's extra makes (their spoils). -->
-			<HostChoosing {plan} {fest} {players} {assets} {amHost} {onPlansChanged} />
+		{#if isResolving && iHaveIOU && !fest.pendingChallenge && !blockedByOtherRoll}
+			<div class="choices-section">
+				<p class="choices-header">Your hold over the host</p>
+				<InsistFlow {plan} {players} {assets} {onPlansChanged} />
+			</div>
 		{/if}
 
 		{#if fest.centeredAssetIDs.length > 0}
@@ -263,13 +236,12 @@
 		{#if isResolving && amHost}
 			<div class="complete-section">
 				{#if endError}<p class="res-error">{endError}</p>{/if}
-				{#if !endable}
-					<p class="choices-note muted">
-						You can wind the event down once every guest has chosen, you've taken
-						all your extra Makes, and every Mar has been inflicted.
-					</p>
-				{/if}
-				<button class="action-btn primary" onclick={onEndEvent} disabled={endBusy || !endable}>
+				<button
+					class="action-btn primary"
+					onclick={onEndEvent}
+					disabled={endBusy || !endable}
+					title={endable ? '' : 'Everyone must settle first: all guests chosen, all your Makes taken, all Mars inflicted.'}
+				>
 					{endBusy ? '…' : 'End the event'}
 				</button>
 			</div>
@@ -280,17 +252,3 @@
 	</ResolvingCard>
 {/if}
 
-<style>
-	.choices-emph {
-		border-left: 2px solid var(--color-accent);
-		padding-left: 0.6rem;
-		color: var(--color-accent-hover);
-	}
-	.fest-ledger {
-		margin: 0.25rem 0;
-		padding-left: 1.25rem;
-	}
-	.fest-ledger li {
-		margin: 0.15rem 0;
-	}
-</style>
