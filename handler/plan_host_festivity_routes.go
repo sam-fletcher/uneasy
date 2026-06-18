@@ -58,10 +58,16 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Apply the mar effect to the host. Note: a guest insisting break_self on
-		// the host cannot pick the host's marginalia for them — marginaliaID 0
-		// falls back to the host's first intact marginalia.
-		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
+		// Some mars can't be applied by the insisting guest: they hinge on a choice
+		// about the host's OWN assets (which marginalia to tear for break_self,
+		// which peer falls out for disagreement). Those only record an obligation
+		// the host settles via resolve-host-mar; every other mar applies at once.
+		if gamepkg.MarNeedsHostResolution(body.MarOption) {
+			state.PendingHostMars = append(state.PendingHostMars, body.MarOption)
+			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s insisted the host %s — the host must choose how.",
+				playerDisplayName(ctx, deps.Q, player.ID), hfInsistedMarPhrase(body.MarOption)))
+		} else if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
 			body.MarOption, body.RumorText, "", body.AssetID, body.MarginaliaID, false); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
@@ -80,7 +86,122 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 				PlanID: plan.ID, InsisterID: player.ID, MarOption: body.MarOption,
 			},
 		)
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "mar_option": body.MarOption})
+	}
+}
+
+// hfInsistedMarPhrase is the chat-log fragment for a mar the host must resolve
+// themselves, used when a guest insists it ("… insisted the host <phrase>").
+func hfInsistedMarPhrase(marOption string) string {
+	switch marOption {
+	case gamepkg.FestivityMarBreakSelf:
+		return "break themselves"
+	case gamepkg.FestivityMarDisagreement:
+		return "fall out with one of their peers"
+	}
+	return "take a mar"
+}
+
+// ── resolve-host-mar ──────────────────────────────────────────────────────────
+
+// hfResolveHostMarHandler lets the host settle a mar a guest insisted on them
+// that hinges on a choice about the host's own assets — break_self (which
+// marginalia on their main character to tear) and disagreement (which of their
+// peers falls out). The insisting guest can't make these calls; only the owner
+// can. Host-only, and guarded by the pending-mar queue so it can't be called
+// more times than were insisted.
+func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
+		if !ok {
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the host may resolve a mar they were dealt")
+			return
+		}
+		var body struct {
+			MarOption    string `json:"mar_option"`
+			MarginaliaID int64  `json:"marginalia_id"`
+			AssetID      int64  `json:"asset_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if !gamepkg.MarNeedsHostResolution(body.MarOption) {
+			respondErr(w, http.StatusBadRequest, "that mar is not one the host resolves")
+			return
+		}
+
+		ctx := r.Context()
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "the event is over")
+			return
+		}
+		resData := loadResolutionData(plan.ResolutionData)
+		state := resData.EnsureFestivity()
+		if hfBlockOnPendingChallenge(w, state) {
+			return
+		}
+		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load roster", err)
+			return
+		}
+		if hfBlockOnActiveRoll(w, state, roster, player.ID) {
+			return
+		}
+		if !slices.Contains(state.PendingHostMars, body.MarOption) {
+			respondErr(w, http.StatusConflict, "you have no such mar to resolve")
+			return
+		}
+
+		// Soft-lock guard for break_self: if the host's main character has no intact
+		// marginalia left, there is nothing to tear. Settle the debt as a no-op so
+		// the event can still be wound down rather than blocking on the impossible.
+		if body.MarOption == gamepkg.FestivityMarBreakSelf {
+			hasIntact, herr := hfHostHasIntactMarginalia(ctx, deps, plan)
+			if herr != nil {
+				respondInternalErr(w, r, "could not inspect host main character", herr)
+				return
+			}
+			if !hasIntact {
+				hfLog(ctx, deps, plan, model.SeverityDefault,
+					"The host had nothing left to tear — the insisted break passes.")
+				state.RemovePendingHostMar(body.MarOption)
+				if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+					respondInternalErr(w, r, "could not save resolved mar", err)
+					return
+				}
+				hfBroadcastUpdated(deps, plan)
+				broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+				respond(w, http.StatusOK, map[string]any{
+					"plan_id": plan.ID, "pending_host_mars": state.PendingHostMars,
+				})
+				return
+			}
+		}
+
+		// The host is the actor and chooses the asset themselves (marginalia for a
+		// break, peer for a disagreement).
+		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
+			body.MarOption, "", "", body.AssetID, body.MarginaliaID, false); err != nil {
+			respondErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		state.RemovePendingHostMar(body.MarOption)
+
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save resolved mar", err)
+			return
+		}
+		hfBroadcastUpdated(deps, plan)
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id": plan.ID, "pending_host_mars": state.PendingHostMars,
+		})
 	}
 }
 

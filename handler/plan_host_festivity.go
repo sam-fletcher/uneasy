@@ -30,6 +30,9 @@ package handler
 //	POST /api/plans/:planId/guest-roll        — {action:"roll"|"opt_out"}.
 //	POST /api/plans/:planId/guest-choice      — {choice, ...option params}.
 //	POST /api/plans/:planId/insist-host-mar   — {mar_option}, consumes IOU.
+//	POST /api/plans/:planId/resolve-host-mar  — host settles an insisted mar that
+//	                                            needs their own choice (break_self,
+//	                                            disagreement).
 //	POST /api/plans/:planId/host-choice       — {choice, ...option params}.
 //	POST /api/plans/:planId/challenge-duel    — {target_player_id}.
 //	POST /api/plans/:planId/respond-challenge — {accept:bool}, target only.
@@ -137,6 +140,7 @@ func (hfHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 		"guest-roll":        hfGuestRollHandler(deps),
 		"guest-choice":      hfGuestChoiceHandler(deps),
 		"insist-host-mar":   hfInsistHostMarHandler(deps),
+		"resolve-host-mar":  hfResolveHostMarHandler(deps),
 		"host-choice":       hfHostChoiceHandler(deps),
 		"challenge-duel":    hfChallengeDuelHandler(deps),
 		"respond-challenge": hfRespondChallengeHandler(deps),
@@ -504,7 +508,8 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 //     before anything else happens);
 //  3. otherwise the table waits on everyone who still owes an action — guests
 //     who haven't chosen, successful guests who haven't inflicted their mar, and
-//     the host while they still have earned makes to take;
+//     the host while they still have earned makes to take or an insisted mar to
+//     resolve themselves (break_self / disagreement);
 //  4. when nothing is outstanding, it waits on the host to wind the event down.
 func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	if plan.Status != model.PlanResolving {
@@ -535,7 +540,8 @@ func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 			waiters = append(waiters, id)
 		}
 	}
-	if state.RemainingHostMakes(roster) > 0 && !slices.Contains(waiters, plan.PreparerID) {
+	if (state.RemainingHostMakes(roster) > 0 || len(state.PendingHostMars) > 0) &&
+		!slices.Contains(waiters, plan.PreparerID) {
 		waiters = append(waiters, plan.PreparerID)
 	}
 	// Nothing outstanding → the host may now wind the event down.
@@ -567,8 +573,9 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		state := gamepkg.LoadFestivityData(plan.ResolutionData)
-		if hfBlockOnPendingChallenge(w, &state) {
+		resData := loadResolutionData(plan.ResolutionData)
+		state := resData.EnsureFestivity()
+		if hfBlockOnPendingChallenge(w, state) {
 			return
 		}
 		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
@@ -580,6 +587,18 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict,
 				"the festivity is still in full swing: every guest must choose, "+
 					"the host must take all their makes, and all mars must be inflicted")
+			return
+		}
+
+		// Settle every disagreement whose peer no one took: it rejoins its owner
+		// broken. Do this before resolving so the breaks land while the plan (and
+		// its action-log row) is still open.
+		if err := hfBreakAbandonedDisagreementPeers(ctx, deps, plan, state); err != nil {
+			respondInternalErr(w, r, "could not settle abandoned peers", err)
+			return
+		}
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save festivity wind-down", err)
 			return
 		}
 

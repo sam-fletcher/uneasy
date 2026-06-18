@@ -1111,6 +1111,22 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	require.Len(t, got.ActingPlayerIDs, 1)
 	assert.Equal(t, tg.Players[0].ID, got.ActingPlayerIDs[0],
 		"nothing outstanding → the host is waited on to end the event")
+
+	// A guest insists break_self on the host (a pending break the host must
+	// resolve) → the table still waits on the host even though all makes are
+	// taken and no IOUs remain.
+	reloaded, err = q.GetPlanByID(ctx, hf.ID)
+	require.NoError(t, err)
+	resData = loadResolutionData(reloaded.ResolutionData)
+	state = resData.EnsureFestivity()
+	state.PendingHostMars = []string{gamepkg.FestivityMarBreakSelf}
+	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[0].ID, got.ActingPlayerIDs[0],
+		"a pending host-resolved mar keeps the host in Waiting On")
 }
 
 // TestComputeRowState_AwaitFestivityChallengeResponse: an open challenge

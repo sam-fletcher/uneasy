@@ -88,6 +88,29 @@
 		fest.guests.filter(id => id !== currentPlayerID),
 	);
 
+	// Whether the picked option has all its required sub-input filled in.
+	// Mirrors the per-choice checks in submitMyChoice so the Submit button
+	// stays disabled until the work is done.
+	const choiceReady = $derived.by(() => {
+		if (!pickedChoice) return false;
+		switch (pickedChoice) {
+			case 'challenge_duel':
+				return pickedDuelTargetID != null;
+			case 'introduce_peer':
+				return peerName.trim().length > 0;
+			case 'spread_rumor':
+			case 'rumor_about_you':
+				return rumorText.trim().length > 0;
+			case 'take_center_peer':
+			case 'disagreement':
+				return pickedAssetID != null;
+			case 'break_self':
+				return pickedMargID != null;
+			default:
+				return true;
+		}
+	});
+
 	// Peer-name suggestions, fetched lazily when introduce_peer is chosen.
 	let peerNameSuggestions = $state<string[]>([]);
 	let peerNameSuggLoading = $state(false);
@@ -139,7 +162,7 @@
 					body.rumor_text = rumorText.trim();
 				}
 				if (pickedChoice === 'introduce_peer') {
-					body.peer_name = peerName.trim() || 'New peer';
+					body.peer_name = peerName.trim();
 				}
 				if (pickedChoice === 'take_center_peer' || pickedChoice === 'disagreement') {
 					if (pickedAssetID == null) { pickerError = 'Pick an asset.'; return; }
@@ -233,10 +256,10 @@
 			</div>
 		{:else if pickedChoice === 'take_center_peer'}
 			<CardPicker
-				label="Peer to take from the center"
+				label="Available peers at the event to add to your retinue"
 				items={myCenterPeerCandidates}
 				{players}
-				emptyMessage="No peers in the center of the table."
+				emptyMessage="No peers looking for a retinue."
 				ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
 				selected={pickedAssetID}
 				onSelect={(id) => (pickedAssetID = id)}
@@ -285,7 +308,7 @@
 		{#if pickerError}<p class="res-error">{pickerError}</p>{/if}
 		<button class="action-btn primary"
 			onclick={submitMyChoice}
-			disabled={pickerBusy || !pickedChoice}>
+			disabled={pickerBusy || !choiceReady}>
 			{pickerBusy ? '…' : 'Submit choice'}
 		</button>
 	{/if}

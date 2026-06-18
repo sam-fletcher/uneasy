@@ -688,6 +688,19 @@ export function insistHostMar(
 	});
 }
 
+/** Host Festivity — host settles a mar insisted on them that needs their own
+ *  choice: break_self (which marginalia to tear) or disagreement (which of their
+ *  peers falls out). */
+export function resolveHostMar(
+	planID: number,
+	body: { mar_option: string; marginalia_id?: number; asset_id?: number },
+): Promise<{ plan_id: number; pending_host_mars: string[] }> {
+	return apiFetch(`/plans/${planID}/resolve-host-mar`, {
+		method: 'POST',
+		body: JSON.stringify(body),
+	});
+}
+
 // Make War.
 
 export interface WarParticipantInfo {

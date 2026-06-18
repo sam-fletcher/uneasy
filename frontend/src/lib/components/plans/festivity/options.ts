@@ -52,6 +52,7 @@ export type FestRes = {
 	guestRollIDs: Record<string, number>;
 	guestIOUs: number[];
 	hostMarInsists: string[];
+	pendingHostMars: string[];
 	acceptDuels: number[];
 	pendingDuelPlanID: number | null;
 	pendingChallenge: { challenger_id: number; target_id: number; notes?: string } | null;
@@ -70,9 +71,11 @@ export function earnedHostMakes(fest: FestRes, hostID: number): number {
 }
 
 /** Whether the host may wind the event down: every guest has chosen, all earned
- *  makes are taken, and every outstanding mar (a guest IOU) has been inflicted. */
+ *  makes are taken, every outstanding mar (a guest IOU) has been inflicted, and
+ *  every insisted mar the host must resolve themselves has been settled. */
 export function festivityEndable(fest: FestRes, hostID: number): boolean {
 	const allChosen = fest.guests.every((id) => String(id) in fest.outcomes);
 	const makesLeft = earnedHostMakes(fest, hostID) - fest.hostMakesTaken.length;
-	return allChosen && makesLeft <= 0 && fest.guestIOUs.length === 0;
+	return allChosen && makesLeft <= 0 && fest.guestIOUs.length === 0
+		&& fest.pendingHostMars.length === 0;
 }

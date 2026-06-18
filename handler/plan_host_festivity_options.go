@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -68,9 +69,9 @@ func hfApplyOption(
 }
 
 func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error {
-	txt := fc.rumorText
+	txt := strings.TrimSpace(fc.rumorText)
 	if txt == "" {
-		txt = "(untold rumor)"
+		return errors.New("rumor text is required")
 	}
 	var targetAssetID *int64
 	if !fc.isMake {
@@ -106,9 +107,9 @@ func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error 
 }
 
 func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext) error {
-	name := fc.peerName
+	name := strings.TrimSpace(fc.peerName)
 	if name == "" {
-		name = "New peer"
+		return errors.New("peer name is required")
 	}
 	ownerID := fc.actingPlayerID
 	if fc.actingPlayerID == fc.plan.PreparerID {
@@ -176,13 +177,10 @@ func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContex
 	if err != nil {
 		return fmt.Errorf("transfer asset: %w", err)
 	}
-	remaining := fc.state.CenteredAssetIDs[:0]
-	for _, id := range fc.state.CenteredAssetIDs {
-		if id != fc.assetID {
-			remaining = append(remaining, id)
-		}
-	}
-	fc.state.CenteredAssetIDs = append([]int64(nil), remaining...)
+	fc.state.CenteredAssetIDs = removeID(fc.state.CenteredAssetIDs, fc.assetID)
+	// A peer that's taken won't rejoin its old owner broken — drop it from the
+	// disagreement watch-list too.
+	fc.state.DisagreementAssetIDs = removeID(fc.state.DisagreementAssetIDs, fc.assetID)
 	updated, _ := fc.deps.Q.GetAssetByID(ctx, fc.assetID)
 	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
 		Asset: updated, OldOwnerID: oldOwner, NewOwnerID: newOwner,
@@ -218,6 +216,12 @@ func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext)
 	}
 	if !slices.Contains(fc.state.CenteredAssetIDs, fc.assetID) {
 		fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, fc.assetID)
+	}
+	// Track that this peer reached the center via a disagreement: if no one takes
+	// it before the event ends, it rejoins its owner broken (see
+	// hfBreakAbandonedDisagreementPeers).
+	if !slices.Contains(fc.state.DisagreementAssetIDs, fc.assetID) {
+		fc.state.DisagreementAssetIDs = append(fc.state.DisagreementAssetIDs, fc.assetID)
 	}
 	hfLog(
 		ctx,
@@ -291,6 +295,73 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), breakVerb(destroyed)),
 	)
 	return nil
+}
+
+// removeID returns ids with the first occurrence of target removed, preserving
+// order. Returns a fresh slice (empty, never sharing the input's backing array).
+func removeID(ids []int64, target int64) []int64 {
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id != target {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// hfBreakAbandonedDisagreementPeers settles the tail end of every disagreement
+// when the event winds down: a peer shoved to the center that no guest took
+// "rejoins its owner, broken." The peer never actually changed hands (a
+// disagreement keeps the owner), so rejoining is just dropping the centered flag;
+// "broken" tears one marginalia, destroying the peer if it was the last.
+//
+// Unlike the insisted break_self / disagreement *choices* (which the owner picks,
+// via resolve-host-mar), this break is automatic: the rules frame the rejoin as a
+// consequence of not being taken, not a decision. Owner is the actor.
+func hfBreakAbandonedDisagreementPeers(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, state *gamepkg.FestivityResolutionData,
+) error {
+	for _, id := range state.DisagreementAssetIDs {
+		asset, err := deps.Q.GetAssetByID(ctx, id)
+		if err != nil || asset.IsDestroyed {
+			continue // already gone — nothing to break
+		}
+		marg, err := deps.Q.ListIntactMarginalia(ctx, id)
+		if err != nil || len(marg) == 0 {
+			continue // nothing left to tear
+		}
+		m := marg[0]
+		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, asset.OwnerID)
+		if err != nil {
+			return fmt.Errorf("break abandoned peer %d: %w", id, err)
+		}
+		owner := playerDisplayName(ctx, deps.Q, asset.OwnerID)
+		if destroyed {
+			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%q never made up with %s and fell apart for good.", asset.Name, owner))
+		} else {
+			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%q rejoined %s, broken by the falling-out.", asset.Name, owner))
+		}
+		state.CenteredAssetIDs = removeID(state.CenteredAssetIDs, id)
+	}
+	state.DisagreementAssetIDs = nil
+	return nil
+}
+
+// hfHostHasIntactMarginalia reports whether the host's main character still has
+// at least one un-torn marginalia — i.e. whether an insisted break_self has
+// anything to tear.
+func hfHostHasIntactMarginalia(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (bool, error) {
+	mcID, err := hfFindMainCharacter(ctx, deps, plan.GameID, plan.PreparerID)
+	if err != nil {
+		return false, err
+	}
+	marg, err := deps.Q.ListIntactMarginalia(ctx, mcID)
+	if err != nil {
+		return false, err
+	}
+	return len(marg) > 0, nil
 }
 
 func hfFindMainCharacter(ctx context.Context, deps *PlanDeps, gameID, playerID int64) (int64, error) {

@@ -38,6 +38,7 @@
 	import SocializingTurn from './festivity/SocializingTurn.svelte';
 	import InsistFlow from './festivity/InsistFlow.svelte';
 	import HostChoosing from './festivity/HostChoosing.svelte';
+	import HostPendingMar from './festivity/HostPendingMar.svelte';
 	import { festivityEndable, earnedHostMakes, type FestRes } from './festivity/options';
 
 	import type { PlanPanelProps } from './types';
@@ -68,6 +69,7 @@
 			guestRollIDs: f.guest_roll_ids ?? {},
 			guestIOUs: f.guest_ious ?? [],
 			hostMarInsists: f.host_mar_insists ?? [],
+			pendingHostMars: f.pending_host_mars ?? [],
 			acceptDuels: f.accept_duels ?? [],
 			pendingDuelPlanID: f.pending_duel_plan_id ?? null,
 			pendingChallenge: f.pending_challenge ?? null,
@@ -219,18 +221,31 @@
 			<HostChoosing {plan} {fest} {players} {assets} {onPlansChanged} />
 		{/if}
 
+		{#if isResolving && amHost && fest.pendingHostMars.length > 0 && !fest.pendingChallenge}
+			<HostPendingMar
+				{plan} {players} {assets}
+				pendingHostMars={fest.pendingHostMars}
+				{onPlansChanged}
+			/>
+		{/if}
+
 		{#if isResolving && iHaveIOU && !fest.pendingChallenge && !blockedByOtherRoll}
 			<div class="choices-section">
-				<p class="choices-header">Your hold over the host</p>
-				<InsistFlow {plan} {players} {assets} {onPlansChanged} />
+				<p class="choices-header">Your hold over the host:</p>
+				<InsistFlow {plan} {onPlansChanged} />
 			</div>
 		{/if}
 
 		{#if fest.centeredAssetIDs.length > 0}
-			<p class="choices-note muted">
-				Center of the table:
-				{fest.centeredAssetIDs.map(id => assetName(assets, id)).join(', ')}
+			<p>	</p>
+			<p class="choices-header">
+				Available peers to join a retinue:
 			</p>
+			<ul class="choices-note">
+				{#each fest.centeredAssetIDs as aid}
+					<li>{assetName(assets, aid)}</li>
+				{/each}
+			</ul>
 		{/if}
 
 		{#if isResolving && amHost}

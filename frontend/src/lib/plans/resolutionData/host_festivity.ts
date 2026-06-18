@@ -21,10 +21,12 @@ export interface FestivityResolutionData {
 	guest_roll_ids?: Record<string, number>;
 	guest_ious?: number[];
 	host_mar_insists?: string[];
+	pending_host_mars?: string[];
 	accept_duels?: number[];
 	pending_duel_plan_id?: number | null;
 	pending_challenge?: PendingChallenge | null;
 	centered_asset_ids?: number[];
+	disagreement_asset_ids?: number[];
 }
 
 export function parseFestivityData(plan: Plan | null | undefined): FestivityResolutionData {

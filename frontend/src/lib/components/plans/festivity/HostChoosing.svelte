@@ -36,6 +36,19 @@
 	let hostPickerBusy = $state(false);
 	let hostPickerError = $state('');
 
+	// Whether the picked make has its required sub-input filled in — mirrors the
+	// per-choice checks in submitHostChoice so the button stays disabled (the
+	// server's non-empty validation is the backstop, not the first line).
+	const hostChoiceReady = $derived.by(() => {
+		if (!hostPickedChoice) return false;
+		switch (hostPickedChoice) {
+			case 'spread_rumor': return hostRumor.trim().length > 0;
+			case 'introduce_peer': return hostPeerName.trim().length > 0;
+			case 'take_center_peer': return hostAssetID != null;
+			default: return true;
+		}
+	});
+
 	// Peer-name suggestions, fetched lazily the first time introduce_peer is
 	// chosen (re-fetched per plan).
 	let peerNameSuggestions = $state<string[]>([]);
@@ -74,8 +87,14 @@
 			const body: { choice: string; rumor_text?: string; peer_name?: string; asset_id?: number } = {
 				choice: hostPickedChoice,
 			};
-			if (hostPickedChoice === 'spread_rumor') body.rumor_text = hostRumor.trim();
-			if (hostPickedChoice === 'introduce_peer') body.peer_name = hostPeerName.trim() || 'New peer';
+			if (hostPickedChoice === 'spread_rumor') {
+				if (!hostRumor.trim()) { hostPickerError = 'Enter the rumor.'; return; }
+				body.rumor_text = hostRumor.trim();
+			}
+			if (hostPickedChoice === 'introduce_peer') {
+				if (!hostPeerName.trim()) { hostPickerError = 'Name the new peer.'; return; }
+				body.peer_name = hostPeerName.trim();
+			}
 			if (hostPickedChoice === 'take_center_peer') {
 				if (hostAssetID == null) { hostPickerError = 'Pick a centered peer.'; return; }
 				body.asset_id = hostAssetID;
@@ -142,7 +161,7 @@
 		{#if hostPickerError}<p class="res-error">{hostPickerError}</p>{/if}
 		<button class="action-btn primary"
 			onclick={submitHostChoice}
-			disabled={hostPickerBusy || !hostPickedChoice}>
+			disabled={hostPickerBusy || !hostChoiceReady}>
 			{hostPickerBusy ? '…' : `Take this Make (${remaining} left)`}
 		</button>
 	{/if}

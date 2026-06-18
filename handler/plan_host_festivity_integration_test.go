@@ -123,6 +123,181 @@ func TestHostFestivity_Mar_BreakSelf_AutoDestroysOnLast(t *testing.T) {
 	assert.True(t, destroyed.IsDestroyed, "tearing the last marginalia destroys the main character")
 }
 
+// TestHostFestivity_BlankInputsRejected proves the rumor/peer-name options
+// require real input — no silent "(untold rumor)" / "New peer" fallback.
+func TestHostFestivity_BlankInputsRejected(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+
+	choicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/guest-choice"
+	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
+
+	// The host's earned (hosting) make can't introduce a nameless peer. Done
+	// first, before any guest roll locks the table.
+	code, body := h.post(hostIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "  "})
+	require.Equalf(t, http.StatusBadRequest, code, "blank peer name rejected: %v", body)
+
+	// Whitespace-only rumor text is rejected too.
+	rollID := hfStartRoll(t, h, plan.ID, g1)
+	h.forceRoll(rollID, "make", 0)
+	code, body = h.post(g1, choicePath, map[string]any{"choice": "spread_rumor", "rumor_text": "   "})
+	require.Equalf(t, http.StatusBadRequest, code, "blank rumor text rejected: %v", body)
+}
+
+// TestHostFestivity_InsistBreakSelf_HostResolves proves that a guest insisting
+// break_self on the host does NOT auto-tear a marginalia — it records a pending
+// break that only the host can settle, choosing which marginalia to tear.
+func TestHostFestivity_InsistBreakSelf_HostResolves(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+
+	// Two marginalia on the HOST's main character so tearing one won't destroy it.
+	hostMCID, hostMargIDs := hfSeedMCMarginalia(t, h, hostIdx, 2)
+
+	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
+	endPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/end-event"
+
+	// g1 rolls a make (earning an IOU) and insists break_self on the host.
+	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	code, body := h.post(g1, insistPath, map[string]any{"mar_option": "break_self"})
+	require.Equalf(t, http.StatusOK, code, "g1 insist break_self: %v", body)
+
+	// The break is only pending — nothing was torn automatically.
+	state := hfChallengeState(t, h, plan.ID)
+	assert.Equal(t, []string{"break_self"}, state.PendingHostMars, "insist records a pending host break")
+	for _, id := range hostMargIDs {
+		m, err := h.q.GetMarginaliaByID(ctx, id)
+		require.NoError(t, err)
+		assert.False(t, m.IsTorn, "no marginalia is torn before the host resolves")
+	}
+
+	// The event can't be wound down while a break is owed.
+	code, body = h.post(hostIdx, endPath, nil)
+	require.Equalf(t, http.StatusConflict, code, "end with a break pending: %v", body)
+
+	// A non-host can't resolve the host's break.
+	code, body = h.post(g1, breakPath, map[string]any{"mar_option": "break_self", "marginalia_id": hostMargIDs[0]})
+	require.Equalf(t, http.StatusForbidden, code, "non-host resolve break: %v", body)
+
+	// The host resolves it, choosing which marginalia to tear.
+	code, body = h.post(hostIdx, breakPath, map[string]any{"mar_option": "break_self", "marginalia_id": hostMargIDs[1]})
+	require.Equalf(t, http.StatusOK, code, "host resolves break: %v", body)
+
+	state = hfChallengeState(t, h, plan.ID)
+	assert.Empty(t, state.PendingHostMars, "resolving clears the pending break")
+	chosen, err := h.q.GetMarginaliaByID(ctx, hostMargIDs[1])
+	require.NoError(t, err)
+	assert.True(t, chosen.IsTorn, "the host's chosen marginalia is torn")
+	other, err := h.q.GetMarginaliaByID(ctx, hostMargIDs[0])
+	require.NoError(t, err)
+	assert.False(t, other.IsTorn, "the marginalia the host did not pick stays intact")
+
+	intact, err := h.q.GetAssetByID(ctx, hostMCID)
+	require.NoError(t, err)
+	assert.False(t, intact.IsDestroyed, "tearing one of two marginalia does not destroy the MC")
+}
+
+// TestHostFestivity_InsistDisagreement_HostResolves proves that a guest insisting
+// disagreement on the host doesn't pick the host's peer for them — it records a
+// pending mar the host settles, choosing which of their own peers falls out.
+func TestHostFestivity_InsistDisagreement_HostResolves(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+
+	// The host owns a peer (with a marginalia) they can fall out with.
+	peerID := h.seedPeer(hostIdx, "Loyal Aide")
+	_, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{AssetID: peerID, Position: 1, Text: "devoted"})
+	require.NoError(t, err)
+
+	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
+	resolvePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
+
+	// g1 rolls a make (earning an IOU) and insists disagreement on the host.
+	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "psst"})
+	code, body := h.post(g1, insistPath, map[string]any{"mar_option": "disagreement"})
+	require.Equalf(t, http.StatusOK, code, "g1 insist disagreement: %v", body)
+
+	// Pending only — nothing centered until the host chooses which peer.
+	state := hfChallengeState(t, h, plan.ID)
+	assert.Equal(t, []string{"disagreement"}, state.PendingHostMars, "insist records a pending disagreement")
+	assert.NotContains(t, state.CenteredAssetIDs, peerID, "no peer is centered before the host picks")
+
+	// A non-host can't resolve the host's disagreement.
+	code, body = h.post(g1, resolvePath, map[string]any{"mar_option": "disagreement", "asset_id": peerID})
+	require.Equalf(t, http.StatusForbidden, code, "non-host resolve disagreement: %v", body)
+
+	// The host resolves it, choosing which of their peers falls out.
+	code, body = h.post(hostIdx, resolvePath, map[string]any{"mar_option": "disagreement", "asset_id": peerID})
+	require.Equalf(t, http.StatusOK, code, "host resolves disagreement: %v", body)
+
+	state = hfChallengeState(t, h, plan.ID)
+	assert.Empty(t, state.PendingHostMars, "resolving clears the pending disagreement")
+	assert.Contains(t, state.CenteredAssetIDs, peerID, "the host's chosen peer is now in the center")
+	assert.Contains(t, state.DisagreementAssetIDs, peerID, "it's tracked for the rejoin-broken settlement")
+}
+
+// TestHostFestivity_Disagreement_AbandonedPeerRejoinsBroken proves the tail of a
+// disagreement: a peer no one took from the center rejoins its owner broken when
+// the event ends (one marginalia torn).
+func TestHostFestivity_Disagreement_AbandonedPeerRejoinsBroken(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+
+	// g1 owns a peer with two marginalia (so breaking one won't destroy it).
+	peerID := h.seedPeer(g1, "Old Friend")
+	var margIDs []int64
+	for i := range 2 {
+		m, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+			AssetID: peerID, Position: int16(i + 1), Text: "note"})
+		require.NoError(t, err)
+		margIDs = append(margIDs, m.ID)
+	}
+
+	// g1 rolls a mar and falls out with their own peer — it goes to the center.
+	hfGuestRoll(t, h, plan.ID, g1, "mar", "disagreement", map[string]any{"asset_id": peerID})
+	state := hfChallengeState(t, h, plan.ID)
+	require.Contains(t, state.DisagreementAssetIDs, peerID)
+
+	// Host takes every earned make (hosting + g1's mar = 2), then ends the event.
+	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
+	endPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/end-event"
+	for i := range 2 {
+		code, body := h.post(hostIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "Guest"})
+		require.Equalf(t, http.StatusOK, code, "host make %d: %v", i, body)
+	}
+	code, body := h.post(hostIdx, endPath, nil)
+	require.Equalf(t, http.StatusOK, code, "host ends event: %v", body)
+
+	// The un-taken peer rejoined g1 broken: exactly one marginalia torn, peer alive.
+	torn := 0
+	for _, id := range margIDs {
+		m, err := h.q.GetMarginaliaByID(ctx, id)
+		require.NoError(t, err)
+		if m.IsTorn {
+			torn++
+		}
+	}
+	assert.Equal(t, 1, torn, "exactly one marginalia is torn on the abandoned peer")
+	peer, err := h.q.GetAssetByID(ctx, peerID)
+	require.NoError(t, err)
+	assert.False(t, peer.IsDestroyed, "breaking one of two marginalia doesn't destroy the peer")
+
+	state = hfChallengeState(t, h, plan.ID)
+	assert.Empty(t, state.DisagreementAssetIDs, "the watch-list is cleared once the event ends")
+}
+
 // TestHostFestivity_HostFreeMake_BenefitsHost proves an extra make benefits the
 // HOST, not the triggering guest: introduce_peer adds the new peer to the host's
 // own retinue.

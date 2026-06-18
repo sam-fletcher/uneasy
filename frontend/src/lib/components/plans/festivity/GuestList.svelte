@@ -77,7 +77,7 @@
 						<span class="verdict"
 							class:outcome-make={e.tone === 'make'}
 							class:outcome-mar={e.tone === 'mar'}
-						>{e.headline}</span>{#if e.detail}<span class="detail"> — {e.detail}</span>{/if}
+						>{e.headline}</span>{#if e.detail}<span class="detail">&nbsp;—&nbsp;{e.detail}</span>{/if}
 					</div>
 				</li>
 			{/each}
