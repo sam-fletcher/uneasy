@@ -303,13 +303,18 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not compute difficulty", err)
 			return
 		}
+		// Festivity rolls skip the difficulty-vote step entirely to keep the
+		// event moving — the guest goes straight to leverage, exactly as if
+		// "Skip vote" had been pressed (advanceToLeverage below runs the same
+		// short-circuit). Duels likewise start at leverage; only generic
+		// scene/plan rolls offer the vote.
 		roll, err := deps.Q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
 			GameID:     plan.GameID,
 			PlanID:     &plan.ID,
 			RowNumber:  &game.CurrentRow,
 			ActorID:    player.ID,
 			Difficulty: difficulty,
-			Stage:      "decide_vote",
+			Stage:      stageLeverage,
 		})
 		if err != nil {
 			if isUniqueViolation(err, openRollConstraint) {
@@ -347,6 +352,14 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			h.BroadcastEvent(model.EventFestivityGuestRolled, model.FestivityGuestRolledPayload{
 				PlanID: plan.ID, PlayerID: player.ID, Action: "roll", RollID: roll.ID,
 			})
+		}
+		// Run the leverage-entry short-circuit (force-ready anyone with no dice,
+		// emit the skip-leverage log, auto-resolve if nobody can commit). The
+		// resolution data above is already persisted, so an immediate
+		// auto-resolve sees GuestRollIDs. Mirrors the SkipVote path.
+		if err := advanceToLeverage(ctx, w, r, deps.Q, deps.Manager, &roll); err != nil {
+			respondInternalErr(w, r, "could not advance to leverage", err)
+			return
 		}
 		respond(w, http.StatusCreated, map[string]any{"plan_id": plan.ID, "roll": roll})
 	}

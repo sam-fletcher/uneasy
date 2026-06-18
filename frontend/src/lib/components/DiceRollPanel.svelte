@@ -123,6 +123,37 @@
 	const intPool = $derived(dice.filter(d => d.is_interference));
 
 	const effectiveDifficulty = $derived(roll.adjusted_difficulty ?? roll.difficulty);
+
+	// Result scoring counts DISTINCT uncancelled actor-pool faces, so a repeat
+	// of a face already showing is "free" — it doesn't raise the score. On a
+	// resolved roll, flag those redundant copies (the first die to show a face
+	// is kept; later matches are duplicates) so the count is legible. Cancelled
+	// dice are skipped entirely: interference already removed them, and they
+	// don't reserve a face for the distinct-count.
+	const duplicateDieIds = $derived.by(() => {
+		const dups = new Set<number>();
+		if (stage !== 'resolved') return dups;
+		const seenFaces = new Set<number>();
+		for (const d of actorPool) {
+			if (d.is_cancelled || d.face == null) continue;
+			if (seenFaces.has(d.face)) dups.add(d.id);
+			else seenFaces.add(d.face);
+		}
+		return dups;
+	});
+
+	// Title text for a die, annotated with why it isn't counting (titles are a
+	// desktop-only affordance — the visible caption below covers touch).
+	function dieTitle(d: DiceRollDie): string {
+		const who = playerNameMap.get(d.player_id) ?? '?';
+		const src = d.leveraged_asset_id
+			? assets.find(a => a.id === d.leveraged_asset_id)?.name ?? 'asset'
+			: 'base/banked die';
+		if (d.is_cancelled) return `${who} · ${src} · cancelled by interference`;
+		if (duplicateDieIds.has(d.id)) return `${who} · ${src} · duplicate face (doesn't add to the score)`;
+		return `${who} · ${src}`;
+	}
+
 	const stageLabel = $derived({
 		decide_vote: 'Vote?',
 		voting: 'Voting',
@@ -282,13 +313,10 @@
 					<div
 						class="die"
 						class:cancelled={die.is_cancelled}
+						class:duplicate={duplicateDieIds.has(die.id)}
 						class:unrolled={die.face == null}
 						style:border-color={playerColorByID(die.player_id, players)}
-						title={`${playerNameMap.get(die.player_id) ?? '?'} · ${
-							die.leveraged_asset_id
-								? assets.find(a => a.id === die.leveraged_asset_id)?.name ?? 'asset'
-								: 'base/banked die'
-						}`}
+						title={dieTitle(die)}
 					>{die.face ?? '🎲'}</div>
 				{/each}
 			</div>
@@ -308,6 +336,9 @@
 				</div>
 			</div>
 		{/if}
+		<!-- {#if duplicateDieIds.size > 0}
+			<p class="dupe-hint">Greyed dice repeat a face already counted — only distinct faces add to the score.</p>
+		{/if} -->
 	</div>
 
 	<!-- ── Stage: decide_vote ──────────────────────────────────────────────── -->
@@ -533,6 +564,7 @@
 	.dice-group.interference .dice-label { color: var(--color-danger); }
 	.dice-label { font-size: 0.75rem; color: var(--color-text-muted); min-width: 90px; flex-shrink: 0; }
 	.dice-row { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+	.dupe-hint { font-size: 0.72rem; color: var(--color-text-faint); margin: 0; }
 	.die {
 		width: 32px; height: 32px; border-radius: 5px;
 		border: 2px solid var(--color-accent); background: #2a2010;
@@ -541,6 +573,10 @@
 	}
 	.die.int { background: #2a1010; color: #f0b0b0; }
 	.die.cancelled { opacity: 0.3; text-decoration: line-through; border-style: dashed; }
+	/* Duplicate (uncancelled but redundant) faces: greyed out and desaturated
+	   so they read as "doesn't count," yet stay distinct from the dashed,
+	   struck-through interference-cancelled dice. */
+	.die.duplicate { opacity: 0.45; filter: grayscale(1); color: var(--color-text-faint); }
 	.die.unrolled { color: var(--color-text-muted); border-style: dashed; font-size: 1.1rem; }
 
 	/* Stage hints / actions */
