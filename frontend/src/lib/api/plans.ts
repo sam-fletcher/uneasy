@@ -641,15 +641,20 @@ export function guestChoice(
 	});
 }
 
-/** Host Festivity — host submits a make choice on behalf of a mar/opt-out guest. */
+/** Host Festivity — host spends one of their earned extra makes (their spoils). */
 export function hostChoice(
 	planID: number,
-	body: { target_player_id: number; choice: string } & Record<string, unknown>
-): Promise<PlanEcho> {
+	body: { choice: string } & Record<string, unknown>
+): Promise<{ plan_id: number; choice: string; makes_remaining: number }> {
 	return apiFetch(`/plans/${planID}/host-choice`, {
 		method: 'POST',
 		body: JSON.stringify(body),
 	});
+}
+
+/** Host Festivity — host winds the event down (gated server-side). */
+export function endFestivity(planID: number): Promise<{ plan_id: number; result: string }> {
+	return apiFetch(`/plans/${planID}/end-event`, { method: 'POST' });
 }
 
 /** Host Festivity — challenge a guest to a duel; spawns a Propose Duel plan. */

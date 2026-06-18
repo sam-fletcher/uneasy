@@ -1052,43 +1052,32 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 		ID: hf.ID, Status: model.PlanResolving,
 	}))
 
-	// Seed festivity state: socializing, host (P0) pre-recorded with their earned
-	// make (as OnResolve does), no guest has acted. The guest list is the table
-	// roster (all three players) — derived, not stored.
+	// Seed festivity state: host (P0) pre-recorded with their earned make (as
+	// OnResolve does), no guest has acted. The guest list is the table roster
+	// (all three players) — derived, not stored.
+	hostKey := strconv.FormatInt(tg.Players[0].ID, 10)
 	resData := loadResolutionData(hf.ResolutionData)
 	state := resData.EnsureFestivity()
-	state.Phase = gamepkg.FestivityPhaseSocializing
-	state.Outcomes = map[string]string{
-		strconv.FormatInt(tg.Players[0].ID, 10): gamepkg.FestivityOutcomeHost,
-	}
+	state.Outcomes = map[string]string{hostKey: gamepkg.FestivityOutcomeHost}
 	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
 
-	// No guest has acted → the table waits on both guests; the host (pre-resolved)
-	// is never an owed actor during socializing.
+	// No guest has chosen → the table waits on both guests AND the host, who
+	// still holds an unspent earned make.
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
 	assert.ElementsMatch(t,
-		[]int64{tg.Players[1].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
-		"with no guest acted, the table waits on every guest but not the host")
+		[]int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
+		"waits on unchosen guests and the host (unspent make)")
 	require.NotNil(t, got.PlanID)
 	assert.Equal(t, hf.ID, *got.PlanID)
 
-	// P1 opts out → no longer owed; only P2 remains.
+	// P2 starts a roll (roll id set, no outcome) → roll-and-choice in progress
+	// blocks the table on P2 alone.
 	reloaded, err := q.GetPlanByID(ctx, hf.ID)
 	require.NoError(t, err)
 	resData = loadResolutionData(reloaded.ResolutionData)
 	state = resData.EnsureFestivity()
-	state.Outcomes[strconv.FormatInt(tg.Players[1].ID, 10)] = gamepkg.FestivityOutcomeOptOut
-	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
-
-	got, err = ComputeRowState(ctx, q, tg.Game.ID)
-	require.NoError(t, err)
-	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
-	assert.ElementsMatch(t, []int64{tg.Players[2].ID}, got.ActingPlayerIDs,
-		"opting out removes a guest from the owed set without blocking the others")
-
-	// P2 starts a roll (roll id set, no outcome) → table blocks on P2 alone.
 	state.GuestRollIDs = map[string]int64{
 		strconv.FormatInt(tg.Players[2].ID, 10): 999,
 	}
@@ -1098,7 +1087,30 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
 	require.Len(t, got.ActingPlayerIDs, 1)
 	assert.Equal(t, tg.Players[2].ID, got.ActingPlayerIDs[0],
-		"a guest mid-turn holds up the table alone")
+		"a roll-and-choice in progress holds up the table alone")
+
+	// Everyone settled (both guests opted out, host took all earned makes, no
+	// outstanding mars) → the table waits on the host alone to wind it down.
+	reloaded, err = q.GetPlanByID(ctx, hf.ID)
+	require.NoError(t, err)
+	resData = loadResolutionData(reloaded.ResolutionData)
+	state = resData.EnsureFestivity()
+	state.GuestRollIDs = nil
+	state.Outcomes[strconv.FormatInt(tg.Players[1].ID, 10)] = gamepkg.FestivityOutcomeOptOut
+	state.Outcomes[strconv.FormatInt(tg.Players[2].ID, 10)] = gamepkg.FestivityOutcomeOptOut
+	// Earned = host + 2 opt-outs = 3 makes; mark all three taken.
+	state.HostMakesTaken = []string{
+		gamepkg.FestivityMakeSpreadRumor,
+		gamepkg.FestivityMakeSpreadRumor,
+		gamepkg.FestivityMakeSpreadRumor,
+	}
+	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
+	require.Len(t, got.ActingPlayerIDs, 1)
+	assert.Equal(t, tg.Players[0].ID, got.ActingPlayerIDs[0],
+		"nothing outstanding → the host is waited on to end the event")
 }
 
 // TestComputeRowState_AwaitFestivityChallengeResponse: an open challenge
@@ -1117,7 +1129,6 @@ func TestComputeRowState_AwaitFestivityChallengeResponse(t *testing.T) {
 
 	resData := loadResolutionData(hf.ResolutionData)
 	state := resData.EnsureFestivity()
-	state.Phase = gamepkg.FestivityPhaseSocializing
 	state.PendingChallenge = &gamepkg.PendingChallenge{
 		ChallengerID: tg.Players[1].ID,
 		TargetID:     tg.Players[2].ID,
@@ -1130,33 +1141,6 @@ func TestComputeRowState_AwaitFestivityChallengeResponse(t *testing.T) {
 	require.Len(t, got.ActingPlayerIDs, 1)
 	assert.Equal(t, tg.Players[2].ID, got.ActingPlayerIDs[0],
 		"challenge target is the waitee")
-}
-
-// TestComputeRowState_FestivityHostChoosing_NoOverride: outside the
-// socializing phase the festivity falls back to plain plan_resolving (the
-// host is the focus player, so the default copy is already correct).
-func TestComputeRowState_FestivityHostChoosing_NoOverride(t *testing.T) {
-	pool := openTestDB(t)
-	q := dbgen.New(pool)
-	tg := newTestGame(t, q, 3)
-	ctx := context.Background()
-
-	hf := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
-		model.PlanHostFestivity, model.CategoryEsteem, tg.Game.CurrentRow)
-	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
-		ID: hf.ID, Status: model.PlanResolving,
-	}))
-
-	resData := loadResolutionData(hf.ResolutionData)
-	state := resData.EnsureFestivity()
-	state.Phase = gamepkg.FestivityPhaseHostChoosing
-	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
-
-	got, err := ComputeRowState(ctx, q, tg.Game.ID)
-	require.NoError(t, err)
-	assert.Equal(t, model.RowStatePlanResolving, got.Kind)
-	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
-		"host_choosing rides generic resolution → names the preparer (host)")
 }
 
 // TestComputeRowState_AwaitDuelStaking: setup/staking phases surface as

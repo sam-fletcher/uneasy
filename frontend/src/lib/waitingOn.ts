@@ -132,7 +132,7 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 		case 'await_demand_draft_pick':
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — draft pick' };
 		case 'await_festivity_guest_turn':
-			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — guest turn' };
+			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — in progress' };
 		case 'await_festivity_challenge_response':
 			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — challenge response' };
 		case 'await_duel_staking':

@@ -31,7 +31,6 @@ type (
 	DuelPhase                        = game.DuelPhase
 	MakeWarResolutionData            = game.MakeWarResolutionData
 	FestivityResolutionData          = game.FestivityResolutionData
-	FestivityPhase                   = game.FestivityPhase
 )
 
 // Resolution data read helper — used throughout handler plan files.

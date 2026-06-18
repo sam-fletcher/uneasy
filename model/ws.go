@@ -107,7 +107,7 @@ const (
 	EventFestivityHostChose         = "festivity.host_chose"
 	EventFestivityInsistHostMar     = "festivity.insist_host_mar"
 	EventFestivityDuelTriggered     = "festivity.duel_triggered"
-	EventFestivityPhaseChanged      = "festivity.phase_changed"
+	EventFestivityUpdated           = "festivity.updated"
 	EventFestivityChallengeIssued   = "festivity.challenge_issued"
 	EventFestivityChallengeDeclined = "festivity.challenge_declined"
 
@@ -531,10 +531,11 @@ type FestivityGuestChosePayload struct {
 }
 
 // FestivityHostChosePayload is for EventFestivityHostChose.
+// FestivityHostChosePayload announces the host spending one of their earned
+// extra makes (their spoils — not tied to any particular guest).
 type FestivityHostChosePayload struct {
-	PlanID        int64  `json:"plan_id"`
-	GuestPlayerID int64  `json:"guest_player_id"`
-	Choice        string `json:"choice"`
+	PlanID int64  `json:"plan_id"`
+	Choice string `json:"choice"`
 }
 
 // FestivityInsistHostMarPayload is for EventFestivityInsistHostMar.
@@ -550,10 +551,10 @@ type FestivityDuelTriggeredPayload struct {
 	DuelPlanID int64 `json:"duel_plan_id"`
 }
 
-// FestivityPhaseChangedPayload is for EventFestivityPhaseChanged.
-type FestivityPhaseChangedPayload struct {
-	PlanID int64  `json:"plan_id"`
-	Phase  string `json:"phase"`
+// FestivityUpdatedPayload is for EventFestivityUpdated — a generic nudge to
+// refetch the festivity plan when no more specific event fits (e.g. OnResolve).
+type FestivityUpdatedPayload struct {
+	PlanID int64 `json:"plan_id"`
 }
 
 // FestivityChallengeIssuedPayload is for EventFestivityChallengeIssued.

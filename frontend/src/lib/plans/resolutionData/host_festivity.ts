@@ -3,22 +3,21 @@
 import type { Plan } from '$lib/api';
 import { parseResolutionData } from '$lib/components/plans/shared';
 
-export type FestivityPhase = 'socializing' | 'host_choosing' | 'done';
-
 export interface PendingChallenge {
 	challenger_id: number;
 	target_id: number;
 	notes?: string;
 }
 
+// Host Festivity has no phases — the event is open while the plan is resolving
+// and ends when the host winds it down. There is no stored guest list either:
+// every player at the table attends, so the guest set is derived from the
+// game's players, not from resolution_data.
 export interface FestivityResolutionData {
-	phase?: FestivityPhase;
-	// No stored guest list: every player at the table attends as a guest, so the
-	// guest set is derived from the game's players, not from resolution_data.
 	outcomes?: Record<string, string>;
 	guest_makes?: Record<string, string>;
 	guest_mars?: Record<string, string>;
-	host_choices?: Record<string, string>;
+	host_makes_taken?: string[];
 	guest_roll_ids?: Record<string, number>;
 	guest_ious?: number[];
 	host_mar_insists?: string[];

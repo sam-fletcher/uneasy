@@ -29,12 +29,11 @@ export const MAR_ALWAYS = 'The host can choose a free Make at any point during t
 export const OPT_OUT_EFFECT = 'The host can choose a free Make at any point during the festivity.';
 
 export type FestRes = {
-	phase: string;
 	guests: number[];
 	outcomes: Record<string, string>;
 	guestMakes: Record<string, string>;
 	guestMars: Record<string, string>;
-	hostChoices: Record<string, string>;
+	hostMakesTaken: string[];
 	guestRollIDs: Record<string, number>;
 	guestIOUs: number[];
 	hostMarInsists: string[];
@@ -43,3 +42,22 @@ export type FestRes = {
 	pendingChallenge: { challenger_id: number; target_id: number; notes?: string } | null;
 	centeredAssetIDs: number[];
 };
+
+/** Extra makes the host has earned: one for hosting, one per guest who marred
+ *  or opted out. They're the host's spoils, counted — not tied to a guest. */
+export function earnedHostMakes(fest: FestRes, hostID: number): number {
+	let n = 0;
+	for (const id of fest.guests) {
+		const oc = fest.outcomes[String(id)];
+		if (oc === 'mar' || oc === 'opt_out' || (id === hostID && oc === 'host')) n++;
+	}
+	return n;
+}
+
+/** Whether the host may wind the event down: every guest has chosen, all earned
+ *  makes are taken, and every outstanding mar (a guest IOU) has been inflicted. */
+export function festivityEndable(fest: FestRes, hostID: number): boolean {
+	const allChosen = fest.guests.every((id) => String(id) in fest.outcomes);
+	const makesLeft = earnedHostMakes(fest, hostID) - fest.hostMakesTaken.length;
+	return allChosen && makesLeft <= 0 && fest.guestIOUs.length === 0;
+}

@@ -15,7 +15,7 @@
 	import { MAKE_OPTS, MAR_OPTS, type FestRes } from './options';
 
 	let {
-		plan, fest, players, assets, currentPlayerID, currentTurnID, myRollID,
+		plan, fest, players, assets, currentPlayerID, myRollID,
 		myEffectiveOutcome, difficulty, blockedByOtherRoll, activeRollerID, onPlansChanged,
 	}: {
 		plan: Plan;
@@ -23,14 +23,13 @@
 		players: Player[];
 		assets: Asset[];
 		currentPlayerID: number | null;
-		currentTurnID: number | null;
 		myRollID: number | null;
 		myEffectiveOutcome: 'make' | 'mar' | null;
 		/** Roll difficulty (host's esteem status), shown on the Roll button. */
 		difficulty: number;
-		/** True while another guest is mid-turn — disables roll/opt-out. */
+		/** True while another guest's roll-and-choice is in progress — blocks acting. */
 		blockedByOtherRoll: boolean;
-		/** The guest currently mid-turn, for the "waiting on" note. */
+		/** The guest whose roll-and-choice is in progress, for the "waiting on" note. */
 		activeRollerID: number | null;
 		onPlansChanged: () => void;
 	} = $props();
@@ -166,19 +165,11 @@
 </script>
 
 <div class="choices-section">
-	<!-- <p class="choices-header">Anyone's turn</p>
-	{#if currentTurnID !== currentPlayerID && currentTurnID != null}
-		<p class="choices-note muted">
-			{playerName(players, currentTurnID)} should go before you (lower esteem first).
-			You may still act if they insist on going later.
-		</p>
-	{/if} -->
-
 	{#if myRollID == null}
 		{#if actionError}<p class="res-error">{actionError}</p>{/if}
 		{#if blockedByOtherRoll}
 			<p class="choices-note muted">
-				Waiting for {playerName(players, activeRollerID)} to finish their turn…
+				Waiting for {playerName(players, activeRollerID)} to finish their roll…
 			</p>
 		{/if}
 		<div class="form-row">

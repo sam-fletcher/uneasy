@@ -411,7 +411,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.FestivityGuestChose:
 		case EventTypes.FestivityHostChose:
 		case EventTypes.FestivityInsistHostMar:
-		case EventTypes.FestivityPhaseChanged:
+		case EventTypes.FestivityUpdated:
 		case EventTypes.FestivityChallengeIssued:
 		case EventTypes.FestivityChallengeDeclined:
 		case EventTypes.FestivityDuelTriggered:

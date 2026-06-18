@@ -82,7 +82,7 @@ describe('actor-naming sub-phase kinds', () => {
 	const cases: Array<{ kind: RowStateKind; label: string }> = [
 		{ kind: 'await_demand_counter', label: 'Make Demands — awaiting counter' },
 		{ kind: 'await_demand_draft_pick', label: 'Make Demands — draft pick' },
-		{ kind: 'await_festivity_guest_turn', label: 'Host Festivity — guest turn' },
+		{ kind: 'await_festivity_guest_turn', label: 'Host Festivity — in progress' },
 		{ kind: 'await_festivity_challenge_response', label: 'Host Festivity — challenge response' },
 		{ kind: 'await_duel_bout', label: 'Propose Duel — bout' },
 		{ kind: 'await_take_consent', label: 'Spread Rumors — consent to take asset' },

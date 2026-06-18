@@ -188,11 +188,15 @@ func (q *Queries) GetDiceRollByPlanID(ctx context.Context, planID *int64) (DiceR
 
 const getOpenRollByGame = `-- name: GetOpenRollByGame :one
 SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls
-WHERE game_id = $1 AND resolved_at IS NULL
+WHERE game_id = $1 AND resolved_at IS NULL AND is_shake_up = FALSE
 ORDER BY created_at DESC
 LIMIT 1
 `
 
+// The game's in-flight interactive roll, if any. Mirrors the
+// uq_one_open_roll_per_game index: shake-up rolls (a separate instant mechanic
+// that leaves rows permanently unresolved) are excluded, so this returns only a
+// genuine interactive roll still awaiting resolution.
 func (q *Queries) GetOpenRollByGame(ctx context.Context, gameID int64) (DiceRoll, error) {
 	row := q.db.QueryRow(ctx, getOpenRollByGame, gameID)
 	var i DiceRoll

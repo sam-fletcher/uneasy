@@ -9,15 +9,13 @@ package game
 
 import "slices"
 
-// FestivityPhase enumerates the phases of a Host Festivity plan.
-// Values are stable on-wire strings.
-type FestivityPhase string
-
-const (
-	FestivityPhaseSocializing  FestivityPhase = "socializing"
-	FestivityPhaseHostChoosing FestivityPhase = "host_choosing"
-	FestivityPhaseDone         FestivityPhase = "done"
-)
+// A Host Festivity has no discrete phases or turns. The whole event is one open
+// stretch of socializing: guests roll/opt-out and pick make/mar options, the
+// host takes their extra makes, and successful guests inflict extra mars on the
+// host — all freely interleaved, in any order. The only ordering constraint is
+// that a single roll-and-choice must conclude before the next action starts
+// (see ActiveRoller). The event is "open" while the plan is resolving and ends
+// when the host winds it down (CanComplete gates that — see EventEndable).
 
 // Guest outcome values.
 const (
@@ -25,10 +23,9 @@ const (
 	FestivityOutcomeMar    = "mar"
 	FestivityOutcomeOptOut = "opt_out"
 	// FestivityOutcomeHost is the host's pre-recorded outcome. The host does not
-	// roll or opt out: as the one throwing the event, they've earned a free make
-	// for hosting, taken during the host_choosing phase like the makes owed by
-	// guests who marred or opted out. It is assigned in OnResolve so the host is
-	// never prompted to roll (which is strictly worse than the guaranteed make).
+	// roll or opt out: as the one throwing the event, they've earned an extra
+	// make for hosting. It is assigned in OnResolve so the host is never prompted
+	// to roll (which is strictly worse than the guaranteed make).
 	FestivityOutcomeHost = "host"
 )
 
@@ -89,14 +86,13 @@ type PendingChallenge struct {
 // (the roster is fixed once a game starts), so callers derive the guest set
 // from the game's players and pass it to the helpers below.
 type FestivityResolutionData struct {
-	Phase             FestivityPhase    `json:"phase,omitempty"`
-	Outcomes          map[string]string `json:"outcomes,omitempty"`         // player_id (str) → "make"|"mar"|"opt_out"
+	Outcomes          map[string]string `json:"outcomes,omitempty"`         // player_id (str) → "make"|"mar"|"opt_out"|"host"
 	GuestMakes        map[string]string `json:"guest_makes,omitempty"`      // guest → chosen make option
 	GuestMars         map[string]string `json:"guest_mars,omitempty"`       // guest → chosen mar option
-	HostChoices       map[string]string `json:"host_choices,omitempty"`     // mar/opt-out guest → host's make option
+	HostMakesTaken    []string          `json:"host_makes_taken,omitempty"` // make options the host has spent (their spoils)
 	GuestRollIDs      map[string]int64  `json:"guest_roll_ids,omitempty"`   // guest → their roll id
-	GuestIOUs         []int64           `json:"guest_ious,omitempty"`       // player IDs with unused "make guest" IOU
-	HostMarInsists    []string          `json:"host_mar_insists,omitempty"` // mar options forced onto the host
+	GuestIOUs         []int64           `json:"guest_ious,omitempty"`       // players who succeeded and may still inflict a mar on the host
+	HostMarInsists    []string          `json:"host_mar_insists,omitempty"` // mar options inflicted on the host
 	AcceptDuels       []int64           `json:"accept_duels,omitempty"`     // player IDs with accept_duels flag
 	PendingDuelPlanID *int64            `json:"pending_duel_plan_id,omitempty"`
 	PendingChallenge  *PendingChallenge `json:"pending_challenge,omitempty"`
@@ -136,26 +132,35 @@ func (s *FestivityResolutionData) AllGuestsResolved(guests []int64) bool {
 	return true
 }
 
-// PendingHostChoices returns guests who still need a host make choice (those
-// who rolled mar, opted out, or the host's own earned slot, minus those already
-// assigned). guests is the table roster (every player attends).
-func (s *FestivityResolutionData) PendingHostChoices(guests []int64) []int64 {
-	out := make([]int64, 0)
+// EarnedHostMakes returns how many extra makes the host has earned: one for
+// hosting (the host's own "host" outcome) plus one for every guest who rolled a
+// mar or opted out. These are the host's spoils, not debts owed to those guests
+// — the trigger guest is irrelevant once counted. guests is the table roster.
+func (s *FestivityResolutionData) EarnedHostMakes(guests []int64) int {
+	n := 0
 	for _, id := range guests {
-		k := int64ToKey(id)
-		oc, ok := s.Outcomes[k]
-		if !ok {
-			continue
+		switch s.Outcomes[int64ToKey(id)] {
+		case FestivityOutcomeMar, FestivityOutcomeOptOut, FestivityOutcomeHost:
+			n++
 		}
-		if oc != FestivityOutcomeMar && oc != FestivityOutcomeOptOut && oc != FestivityOutcomeHost {
-			continue
-		}
-		if _, assigned := s.HostChoices[k]; assigned {
-			continue
-		}
-		out = append(out, id)
 	}
-	return out
+	return n
+}
+
+// RemainingHostMakes returns the number of extra makes the host has earned but
+// not yet taken.
+func (s *FestivityResolutionData) RemainingHostMakes(guests []int64) int {
+	return s.EarnedHostMakes(guests) - len(s.HostMakesTaken)
+}
+
+// EventEndable reports whether the host may wind the event down: every guest has
+// chosen an option, the host has taken all their earned makes, and every
+// outstanding mar (a successful guest's IOU) has been inflicted. guests is the
+// table roster.
+func (s *FestivityResolutionData) EventEndable(guests []int64) bool {
+	return s.AllGuestsResolved(guests) &&
+		s.RemainingHostMakes(guests) <= 0 &&
+		len(s.GuestIOUs) == 0
 }
 
 // HasAcceptDuels returns true when playerID has the accept_duels flag.
@@ -187,11 +192,12 @@ func (s *FestivityResolutionData) PendingGuests(guests []int64) []int64 {
 	return out
 }
 
-// ActiveRoller returns the guest who is mid-turn — they have created a roll but
-// not yet recorded an outcome (still resolving the dice or picking make/mar).
-// Turns are serialized one at a time, so at most one such guest normally
-// exists; the roster is scanned in order for determinism. Returns 0 if no roll
-// is in progress. guests is the table roster.
+// ActiveRoller returns the guest whose roll-and-choice is in progress — they
+// have created a roll but not yet recorded an outcome (still resolving the dice
+// or picking make/mar). A roll-and-choice must conclude before the next action
+// starts, so at most one such guest normally exists; the roster is scanned in
+// order for determinism. Returns 0 if no roll is in progress. guests is the
+// table roster.
 func (s *FestivityResolutionData) ActiveRoller(guests []int64) int64 {
 	for _, id := range guests {
 		k := int64ToKey(id)

@@ -550,3 +550,35 @@ func TestActiveRoll_ResolvedRollOfResolvingPlan_StillReturned(t *testing.T) {
 	require.Equal(t, http.StatusOK, status)
 	assert.Nil(t, body["roll"], "resolved-and-completed plan should expose no active roll")
 }
+
+// TestCreateRoll_OneOpenRollPerGame proves the game allows only one in-flight
+// interactive roll at a time: a second create is refused with 409 while the
+// first is open, and allowed again once the first resolves. This is the
+// general guard backing Host Festivity's concurrent-roller protection.
+func TestCreateRoll_OneOpenRollPerGame(t *testing.T) {
+	h := newRollsHarness(t, 2)
+	ctx := context.Background()
+	path := fmt.Sprintf("/api/tables/%d/rolls", h.tg.Game.ID)
+
+	status, body := h.do(t, 0, "POST", path, map[string]any{
+		"actor_id": h.tg.Players[0].ID, "difficulty": 2,
+	})
+	require.Equal(t, http.StatusCreated, status, body)
+	rollID := asInt64(t, asMap(t, body, "roll")["id"])
+
+	// A second roll while the first is open is refused.
+	status, body = h.do(t, 1, "POST", path, map[string]any{
+		"actor_id": h.tg.Players[1].ID, "difficulty": 2,
+	})
+	require.Equal(t, http.StatusConflict, status, body)
+
+	// Resolve the first roll → a new roll is allowed again.
+	res, oc := int16(2), "make"
+	require.NoError(t, h.q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
+		ID: rollID, Result: &res, Outcome: &oc,
+	}))
+	status, body = h.do(t, 1, "POST", path, map[string]any{
+		"actor_id": h.tg.Players[1].ID, "difficulty": 2,
+	})
+	require.Equal(t, http.StatusCreated, status, body)
+}

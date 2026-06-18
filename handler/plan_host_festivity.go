@@ -5,27 +5,35 @@ package handler
 // Host Festivity (esteem, delay 6). The host throws a social event; every
 // other player at the table attends as a guest, then each guest independently
 // rolls (or opts out) against the host's esteem status to pick a make or mar
-// effect. The host does not roll: they've earned a free make for hosting
+// effect. The host does not roll: they've earned an extra make for hosting
 // (recorded up front via OnResolve as FestivityOutcomeHost) rather than risk a
-// mar that rolling would expose them to. After all guests have acted, the host
-// selects one make option for each guest who rolled a mar or opted out, plus
-// their own earned make. Guests who rolled a make hold an IOU that lets them
-// force the host to take a mar option at any time before the event concludes.
+// mar that rolling would expose them to.
 //
-// Phases (stored in ResolutionData.FestivityPhase):
+// There are no phases or turns — the whole event is one open stretch of
+// socializing. All of these happen freely, in any order:
 //
-//	"socializing"   — guests joining, rolling, opting out, and choosing.
-//	"host_choosing" — all guests acted; host picks makes for mar/opt-out.
-//	"done"          — final host choice submitted; event over.
+//   - guests roll/opt-out and pick a make or mar option;
+//   - the host takes their extra makes (one for hosting, one per guest who
+//     marred or opted out) — these are the host's spoils, not debts owed to
+//     those guests, so they're tracked as a count, not per-guest;
+//   - successful (make-rolling) guests inflict an extra mar on the host.
+//
+// The only ordering rule: a single roll-and-choice must conclude before the
+// next action starts (see hfBlockOnActiveRoll). The host winds the event down
+// via the end-event route — gated on every guest having chosen, every earned
+// make taken, and every outstanding mar inflicted (FestivityResolutionData.
+// EventEndable). Generic /complete is refused (CanComplete) so the gate can't
+// be skipped.
 //
 // Extra routes:
 //
 //	POST /api/plans/:planId/guest-roll        — {action:"roll"|"opt_out"}.
 //	POST /api/plans/:planId/guest-choice      — {choice, ...option params}.
 //	POST /api/plans/:planId/insist-host-mar   — {mar_option}, consumes IOU.
-//	POST /api/plans/:planId/host-choice       — {target_player_id, choice}.
+//	POST /api/plans/:planId/host-choice       — {choice, ...option params}.
 //	POST /api/plans/:planId/challenge-duel    — {target_player_id}.
 //	POST /api/plans/:planId/respond-challenge — {accept:bool}, target only.
+//	POST /api/plans/:planId/end-event         — host winds the event down.
 //
 // Center-of-table: assets placed in the play area (newly-introduced peers
 // from `introduce_peer` make, and peers shoved there by `disagreement` mar)
@@ -39,6 +47,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 
 	dbgen "uneasy/db/gen"
@@ -76,37 +85,30 @@ func (hfHandler) ComputeDifficulty(
 	return gamepkg.HostFestivityDifficulty(rank), nil
 }
 
-// OnResolve sets the phase to socializing. No plan-level dice roll; each
-// guest creates their own via guest-roll. The host's outcome is recorded up
-// front as FestivityOutcomeHost — they don't roll or opt out, they've earned a
-// free make for hosting (taken during host_choosing). This both removes the
-// footgun (rolling is strictly worse than the guaranteed make) and surfaces the
-// earned make to the host from the start.
+// OnResolve opens the event. No plan-level dice roll; each guest creates their
+// own via guest-roll. The host's outcome is recorded up front as
+// FestivityOutcomeHost — they don't roll or opt out, they've earned an extra
+// make for hosting. This both removes the footgun (rolling is strictly worse
+// than the guaranteed make) and surfaces the earned make to the host from the
+// start.
 func (hfHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	resData := loadResolutionData(plan.ResolutionData)
 	state := resData.EnsureFestivity()
-	state.Phase = gamepkg.FestivityPhaseSocializing
 	// No guest list is stored — every player at the table attends as a guest
 	// (the roster is fixed once a game starts), so it's derived where needed.
-	// Pre-record the host's earned free make so they're never prompted to roll.
+	// Pre-record the host's earned make so they're never prompted to roll.
 	if state.Outcomes == nil {
 		state.Outcomes = map[string]string{}
 	}
 	state.Outcomes[strconv.FormatInt(plan.PreparerID, 10)] = gamepkg.FestivityOutcomeHost
-	// In the degenerate case where the host is the only player, no guest action
-	// will ever fire the advance, so check here too.
-	if roster, err := hfRoster(ctx, deps.Q, plan.GameID); err == nil {
-		hfMaybeAdvanceToHostChoosing(state, roster)
-	}
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return nil, fmt.Errorf("save festivity setup: %w", err)
 	}
 	// kickoffPlanResolution broadcasts plan.resolving *before* OnResolve runs,
-	// so its payload carries the pre-resolve resolution_data (no phase, no
-	// guests). Clients watching the kickoff live — notably the host — would
-	// otherwise keep that empty snapshot. Broadcasting phase_changed prompts
-	// every client to refetch the plan and pick up socializing + the guests.
-	hfBroadcastPhase(deps, plan, string(state.Phase))
+	// so its payload carries the pre-resolve resolution_data (no host outcome).
+	// Clients watching the kickoff live — notably the host — would otherwise
+	// keep that stale snapshot, so nudge every client to refetch the plan.
+	hfBroadcastUpdated(deps, plan)
 	return nil, nil
 }
 
@@ -122,11 +124,12 @@ func (hfHandler) ApplyChoice(
 	return nil
 }
 
-func (hfHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	if resData.EnsureFestivity().Phase != gamepkg.FestivityPhaseDone {
-		return errors.New("festivity is not done: all guests must act and host must finish their choices")
-	}
-	return nil
+// CanComplete blocks the generic /complete path. A festivity is wound down by
+// the host via the dedicated end-event route, which loads the roster (every
+// player) to gate on EventEndable — state the pure CanComplete contract can't
+// reach. Routing here would skip that gate, so it is refused.
+func (hfHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
+	return errors.New("a festivity is wound down via the host's end-event action, not generic completion")
 }
 
 func (hfHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
@@ -137,6 +140,7 @@ func (hfHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 		"host-choice":       hfHostChoiceHandler(deps),
 		"challenge-duel":    hfChallengeDuelHandler(deps),
 		"respond-challenge": hfRespondChallengeHandler(deps),
+		"end-event":         hfEndEventHandler(deps),
 	}
 }
 
@@ -168,54 +172,38 @@ func hfRoster(ctx context.Context, q *dbgen.Queries, gameID int64) ([]int64, err
 	return ids, nil
 }
 
-func hfBroadcastPhase(deps *PlanDeps, plan *dbgen.Plan, phase string) {
-	broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityPhaseChanged, model.FestivityPhaseChangedPayload{
-		PlanID: plan.ID, Phase: phase,
+// hfBroadcastUpdated nudges every client to refetch the festivity plan. Used
+// where state changed without a more specific event (notably OnResolve, before
+// any guest action).
+func hfBroadcastUpdated(deps *PlanDeps, plan *dbgen.Plan) {
+	broadcastEvent(deps.Manager, plan.GameID, model.EventFestivityUpdated, model.FestivityUpdatedPayload{
+		PlanID: plan.ID,
 	})
 }
 
-// hfMaybeAdvanceToHostChoosing checks if all guests have acted and, if so,
-// transitions state.Phase to host_choosing (if not already past it). roster is
-// the full guest list (every player). Caller must persist state afterwards.
-func hfMaybeAdvanceToHostChoosing(state *gamepkg.FestivityResolutionData, roster []int64) bool {
-	if state.Phase != gamepkg.FestivityPhaseSocializing {
-		return false
-	}
-	if !state.AllGuestsResolved(roster) {
-		return false
-	}
-	state.Phase = gamepkg.FestivityPhaseHostChoosing
-	return true
-}
-
-// hfFinalizeIfDone: after the host submits the final pending host-choice AND
-// all IOU insists are consumed (IOUs can only be cashed before done), mark
-// the plan done and set result="make".
-func hfFinalizeIfDone(
-	ctx context.Context,
-	deps *PlanDeps,
-	plan *dbgen.Plan,
+// hfBlockOnActiveRoll writes a 409 and returns true if another guest's
+// roll-and-choice is in progress. A single roll-and-choice must conclude
+// (dice resolved *and* a make/mar option chosen) before any other festivity
+// action starts, so the table reads clearly. The active roller themselves is
+// exempt — they are the one completing the sequence. roster is the full guest
+// list (every player).
+func hfBlockOnActiveRoll(
+	w http.ResponseWriter,
 	state *gamepkg.FestivityResolutionData,
 	roster []int64,
-) error {
-	if state.Phase != gamepkg.FestivityPhaseHostChoosing {
-		return nil
+	actorID int64,
+) bool {
+	if roller := state.ActiveRoller(roster); roller != 0 && roller != actorID {
+		respondErr(w, http.StatusConflict,
+			"a dice roll is in progress — wait for it to conclude, then try again")
+		return true
 	}
-	if len(state.PendingHostChoices(roster)) > 0 {
-		return nil
-	}
-	state.Phase = gamepkg.FestivityPhaseDone
-	res := makeOutcome
-	if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: &res}); err != nil {
-		return err
-	}
-	hfLog(ctx, deps, plan, model.SeverityImportant, "The festivity drew to a close.")
-	return nil
+	return false
 }
 
 // ── guest-roll ───────────────────────────────────────────────────────────────
 
-//nolint:funlen,gocognit // guest roll lifecycle (roll + advance + finalize)
+//nolint:funlen,gocognit // guest roll lifecycle (opt-out vs roll-creation paths)
 func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
@@ -240,12 +228,12 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.EnsureFestivity()
-		if state.Phase != gamepkg.FestivityPhaseSocializing {
-			respondErr(w, http.StatusConflict, "socializing phase has ended")
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "the festivity is over")
 			return
 		}
+		resData := loadResolutionData(plan.ResolutionData)
+		state := resData.EnsureFestivity()
 		if hfBlockOnPendingChallenge(w, state) {
 			return
 		}
@@ -253,6 +241,10 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load roster", err)
+			return
+		}
+		// A roll-and-choice already in flight blocks any new action.
+		if hfBlockOnActiveRoll(w, state, roster, player.ID) {
 			return
 		}
 		if state.PendingDuelPlanID != nil {
@@ -278,9 +270,6 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 				state.Outcomes = map[string]string{}
 			}
 			state.Outcomes[key] = gamepkg.FestivityOutcomeOptOut
-			if hfMaybeAdvanceToHostChoosing(state, roster) {
-				defer hfBroadcastPhase(deps, plan, string(state.Phase))
-			}
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondInternalErr(w, r, "could not save opt-out", err)
 				return
@@ -298,7 +287,12 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// action == "roll": create a dice roll for the guest.
+		// action == "roll": create a dice roll for the guest. One in-flight
+		// interactive roll per game (friendly pre-check; uq_one_open_roll_per_game
+		// is the atomic backstop on the CreateDiceRoll below).
+		if blockIfOpenRoll(ctx, w, r, deps.Q, plan.GameID) {
+			return
+		}
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load game", err)
@@ -318,6 +312,10 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			Stage:      "decide_vote",
 		})
 		if err != nil {
+			if isUniqueViolation(err, openRollConstraint) {
+				respondErr(w, http.StatusConflict, openRollBusyMsg)
+				return
+			}
 			respondInternalErr(w, r, "could not create roll", err)
 			return
 		}
@@ -365,7 +363,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 //
 // challenge_duel goes through /challenge-duel, not here.
 //
-//nolint:gocognit,funlen // guest make/mar dispatch with phase-advance side effects
+
 func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
@@ -468,12 +466,8 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			state.GuestMars[key] = body.Choice
 		}
 
-		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load roster", err)
-			return
-		}
-		phaseChanged := hfMaybeAdvanceToHostChoosing(state, roster)
+		// The choosing guest is the active roller concluding their own
+		// roll-and-choice; no active-roll guard is needed for them.
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save guest choice", err)
 			return
@@ -482,9 +476,6 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			PlanID: plan.ID, PlayerID: player.ID,
 			Outcome: state.Outcomes[key], Choice: body.Choice,
 		})
-		if phaseChanged {
-			hfBroadcastPhase(deps, plan, string(state.Phase))
-		}
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID, "outcome": state.Outcomes[key], "choice": body.Choice,
@@ -492,45 +483,105 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
-// festivityOptionContext bundles the parameters threaded through every
-// festivity option applier.
-
-// ResolvingWaitees returns the narrower RowState for a resolving Host Festivity
-// plan. During 'socializing': an open challenge takes precedence (block on the
-// target); otherwise, if a guest is mid-turn (rolled but not yet chosen) the
-// table blocks on that single guest, else it blocks on every guest who has not
-// yet acted. Turn order is a soft suggestion (surfaced in the panel), not a
-// hard gate — opting out never makes a player the sole blocker. 'host_choosing'
-// and 'done' return false and ride the generic PlanResolving case — the host is
-// the preparer (= focus player at resolve time) so the existing label is already
-// accurate.
+// ResolvingWaitees names every player who must still act for a resolving Host
+// Festivity to be windable-down. Precedence:
+//
+//  1. an open duel challenge blocks on the target alone;
+//  2. a roll-and-choice in progress blocks on that guest alone (it must conclude
+//     before anything else happens);
+//  3. otherwise the table waits on everyone who still owes an action — guests
+//     who haven't chosen, successful guests who haven't inflicted their mar, and
+//     the host while they still have earned makes to take;
+//  4. when nothing is outstanding, it waits on the host to wind the event down.
 func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	state := gamepkg.LoadFestivityData(plan.ResolutionData)
-	if state.Phase != gamepkg.FestivityPhaseSocializing {
+	if plan.Status != model.PlanResolving {
 		return model.RowState{}, false
 	}
+	state := gamepkg.LoadFestivityData(plan.ResolutionData)
 	if state.PendingChallenge != nil {
-		actor := state.PendingChallenge.TargetID
 		return model.RowState{
 			Kind:            model.RowStateAwaitFestivityChallengeResponse,
-			ActingPlayerIDs: []int64{actor},
+			ActingPlayerIDs: []int64{state.PendingChallenge.TargetID},
 		}, true
 	}
 	roster, err := hfRoster(ctx, q, plan.GameID)
 	if err != nil {
 		return model.RowState{}, false
 	}
-	// A guest mid-turn (rolled, not yet chosen) holds up the table alone.
 	if roller := state.ActiveRoller(roster); roller != 0 {
 		return model.RowState{
 			Kind:            model.RowStateAwaitFestivityGuestTurn,
 			ActingPlayerIDs: []int64{roller},
 		}, true
 	}
-	// Otherwise everyone who hasn't acted is still owed.
-	pending := state.PendingGuests(roster)
-	if len(pending) == 0 {
-		return model.RowState{}, false
+	// Everyone with an outstanding obligation: unchosen guests, then successful
+	// guests still holding a mar to inflict, then the host if makes remain.
+	waiters := state.PendingGuests(roster)
+	for _, id := range state.GuestIOUs {
+		if !slices.Contains(waiters, id) {
+			waiters = append(waiters, id)
+		}
 	}
-	return model.RowState{Kind: model.RowStateAwaitFestivityGuestTurn, ActingPlayerIDs: pending}, true
+	if state.RemainingHostMakes(roster) > 0 && !slices.Contains(waiters, plan.PreparerID) {
+		waiters = append(waiters, plan.PreparerID)
+	}
+	// Nothing outstanding → the host may now wind the event down.
+	if len(waiters) == 0 {
+		waiters = []int64{plan.PreparerID}
+	}
+	return model.RowState{Kind: model.RowStateAwaitFestivityGuestTurn, ActingPlayerIDs: waiters}, true
+}
+
+// ── end-event ────────────────────────────────────────────────────────────────
+
+// hfEndEventHandler resolves the festivity. Host-only, and gated on
+// EventEndable: every guest has chosen, the host has taken all their earned
+// makes, and every outstanding mar has been inflicted. Mirrors the tail of
+// CompletePlan (festivity can't use the generic path — see CanComplete).
+func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
+		if !ok {
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the host may end the event")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "the festivity is already over")
+			return
+		}
+
+		ctx := r.Context()
+		state := gamepkg.LoadFestivityData(plan.ResolutionData)
+		if hfBlockOnPendingChallenge(w, &state) {
+			return
+		}
+		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load roster", err)
+			return
+		}
+		if !state.EventEndable(roster) {
+			respondErr(w, http.StatusConflict,
+				"the festivity is still in full swing: every guest must choose, "+
+					"the host must take all their makes, and all mars must be inflicted")
+			return
+		}
+
+		// The festivity always benefits the host, so its result is a make.
+		res := makeOutcome
+		if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: &res}); err != nil {
+			respondInternalErr(w, r, "could not end the festivity", err)
+			return
+		}
+		hfLog(ctx, deps, plan, model.SeverityImportant, "The festivity drew to a close.")
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
+			PlanID: plan.ID, Result: res,
+		})
+		EmitPlanResolved(ctx, deps.Q, deps.Manager, *plan, res)
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "result": res})
+	}
 }

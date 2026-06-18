@@ -1,36 +1,35 @@
 <!-- HostFestivityPanel.svelte
   Prep + resolve UI for Host Festivity (Tier 3, Esteem, delay 6).
 
-  Resolution phases (driven by resolution_data.festivity_phase):
-    socializing   — guests take turns (lower esteem first). The host doesn't
-                    roll: they hold a free make earned for hosting, recorded up
-                    front (outcome "host") and taken in host_choosing.
-    host_choosing — host picks a make option for themself (the earned make) and
-                    for each guest who marred / opted out.
-    done          — host clicks Complete.
+  There are no phases or turns. While the plan is resolving, the event is one
+  open stretch of socializing: guests roll/opt-out and pick a make/mar option,
+  the host takes their extra makes (their spoils — one for hosting, one per
+  guest who marred or opted out), and successful guests inflict mars on the
+  host. The only ordering rule is that a single roll-and-choice must conclude
+  before the next action starts. The host winds the event down (End the event)
+  once everything is settled.
 
   Each guest creates their own dice roll via /guest-roll. The active roll is
   surfaced through the parent's <DiceRollPanel> using the standard
   activeRoll/rollOutcome props. Once the roll resolves, the guest submits a
   make/mar choice through /guest-choice (or /challenge-duel for duels).
 
-  This panel is a dispatcher. Phase- and role-specific UI lives in
-  `festivity/`: PrepForm, GuestList, ChallengeBanner, SocializingTurn,
-  InsistFlow, HostChoosing. The parent owns the `fest` derivation, the
-  active-roll-fallback fetch, and the WS subscription; children get
-  slices + `onPlansChanged`.
+  This panel is a dispatcher. Role-specific UI lives in `festivity/`: PrepForm,
+  GuestList, ChallengeBanner, SocializingTurn, InsistFlow, HostChoosing. The
+  parent owns the `fest` derivation, the active-roll-fallback fetch, and the WS
+  subscription; children get slices + `onPlansChanged`.
 -->
 <script lang="ts">
 	import './planPanel.css';
 	import { onMount, onDestroy } from 'svelte';
 	import {
-		completePlan,
+		endFestivity,
 		getRoll,
 		type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import { playerName, assetName, parseResolutionData } from './shared';
+	import { assetName, parseResolutionData, playerName } from './shared';
 
 	import PrepForm from './festivity/PrepForm.svelte';
 	import Buffet from './festivity/Buffet.svelte';
@@ -39,13 +38,12 @@
 	import SocializingTurn from './festivity/SocializingTurn.svelte';
 	import InsistFlow from './festivity/InsistFlow.svelte';
 	import HostChoosing from './festivity/HostChoosing.svelte';
-	import type { FestRes } from './festivity/options';
+	import { festivityEndable, type FestRes } from './festivity/options';
 
 	import type { PlanPanelProps } from './types';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
-	const gameID = $derived(ctx.gameID);
 	const assets = $derived(ctx.assets);
 	const players = $derived(ctx.players);
 	const rankings = $derived(ctx.rankings);
@@ -54,7 +52,6 @@
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
-	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 
 	// ── Resolve: parse resolution_data ───────────────────────────────────────
 	// Every player at the table is a guest (the roster is fixed once a game
@@ -63,12 +60,11 @@
 	const fest = $derived.by<FestRes>(() => {
 		const f = parseResolutionData(plan).festivity ?? {};
 		return {
-			phase: f.phase ?? '',
 			guests: players.map(p => p.id),
 			outcomes: f.outcomes ?? {},
 			guestMakes: f.guest_makes ?? {},
 			guestMars: f.guest_mars ?? {},
-			hostChoices: f.host_choices ?? {},
+			hostMakesTaken: f.host_makes_taken ?? [],
 			guestRollIDs: f.guest_roll_ids ?? {},
 			guestIOUs: f.guest_ious ?? [],
 			hostMarInsists: f.host_mar_insists ?? [],
@@ -79,6 +75,10 @@
 		};
 	});
 
+	// The event is open while the plan is resolving; it ends when the host winds
+	// it down. No phases.
+	const isResolving = $derived(plan?.status === 'resolving');
+
 	const meKey = $derived(currentPlayerID == null ? '' : String(currentPlayerID));
 	const amHost = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const iAmGuest = $derived(currentPlayerID != null && fest.guests.includes(currentPlayerID));
@@ -86,25 +86,11 @@
 	const myRollID = $derived(meKey ? fest.guestRollIDs[meKey] ?? null : null);
 	const iHaveIOU = $derived(currentPlayerID != null && fest.guestIOUs.includes(currentPlayerID));
 
-	// Esteem-ordered turn pointer — also computed inside GuestList for its
-	// own display, but the dispatcher needs it so SocializingTurn can show
-	// "X should go before you".
 	function esteemRank(playerID: number | null): number {
 		if (playerID == null) return 999;
 		const r = rankings.find(x => x.category === 'esteem' && x.player_id === playerID);
 		return r?.rank ?? 999;
 	}
-	const currentTurnID = $derived.by<number | null>(() => {
-		if (plan == null) return null;
-		const hostID = plan.preparer_id;
-		const others = fest.guests.filter(id => id !== hostID);
-		others.sort((a, b) => esteemRank(b) - esteemRank(a));
-		const ordered = fest.guests.includes(hostID) ? [...others, hostID] : others;
-		for (const id of ordered) {
-			if (!(String(id) in fest.outcomes)) return id;
-		}
-		return null;
-	});
 
 	const mustAccept = $derived(
 		currentPlayerID != null && fest.acceptDuels.includes(currentPlayerID),
@@ -115,9 +101,8 @@
 	// it without a server round-trip.
 	const difficulty = $derived(Math.max(6 - esteemRank(plan?.preparer_id ?? null), 1));
 
-	// A guest who has rolled but not yet recorded an outcome is mid-turn. Their
-	// turn serializes play: everyone else's roll / opt-out is held until they
-	// finish (best-effort — the backend doesn't hard-lock concurrent rolls).
+	// A guest who has rolled but not yet recorded an outcome holds a
+	// roll-and-choice in progress; it must conclude before anyone else may act.
 	const activeRollerID = $derived.by<number | null>(() => {
 		for (const id of fest.guests) {
 			const k = String(id);
@@ -130,16 +115,10 @@
 	);
 
 	// ── Favour trackers ──────────────────────────────────────────────────────
-	// Guests who currently hold an IOU (rolled a make → may force a host mar).
+	// Guests who currently hold an IOU (rolled a make → may inflict a host mar).
 	const iouHolders = $derived(fest.guestIOUs);
-	// Guests who grant the host a free make (rolled mar or opted out), plus the
-	// host's own slot — they've earned a free make for hosting.
-	const hostMakeOwed = $derived(
-		fest.guests.filter(id => {
-			const oc = fest.outcomes[String(id)];
-			return oc === 'mar' || oc === 'opt_out' || oc === 'host';
-		}),
-	);
+	// Whether the host may now wind the event down.
+	const endable = $derived(plan != null && festivityEndable(fest, plan.preparer_id));
 
 	// ── Active roll outcome (fallback fetch) ─────────────────────────────────
 	// If our own roll has resolved but the parent's activeRoll is gone (e.g. it
@@ -176,7 +155,7 @@
 		'uneasy:festivity.guest_chose',
 		'uneasy:festivity.host_chose',
 		'uneasy:festivity.insist_host_mar',
-		'uneasy:festivity.phase_changed',
+		'uneasy:festivity.updated',
 		'uneasy:festivity.challenge_issued',
 		'uneasy:festivity.challenge_declined',
 		'uneasy:festivity.duel_triggered',
@@ -184,15 +163,15 @@
 	onMount(() => { for (const ev of FEST_EVENTS) window.addEventListener(ev, onFestEvent); });
 	onDestroy(() => { for (const ev of FEST_EVENTS) window.removeEventListener(ev, onFestEvent); });
 
-	// ── Complete (host) ──────────────────────────────────────────────────────
-	let completeBusy = $state(false);
-	let completeError = $state('');
-	async function onComplete() {
-		if (!plan || completeBusy) return;
-		completeBusy = true; completeError = '';
-		try { await completePlan(plan.id); onPlansChanged(); }
-		catch (e) { completeError = e instanceof Error ? e.message : 'Could not complete plan.'; }
-		finally { completeBusy = false; }
+	// ── End the event (host) ─────────────────────────────────────────────────
+	let endBusy = $state(false);
+	let endError = $state('');
+	async function onEndEvent() {
+		if (!plan || endBusy) return;
+		endBusy = true; endError = '';
+		try { await endFestivity(plan.id); onPlansChanged(); }
+		catch (e) { endError = e instanceof Error ? e.message : 'Could not end the event.'; }
+		finally { endBusy = false; }
 	}
 </script>
 
@@ -203,37 +182,26 @@
 	<ResolvingCard {plan} {players}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
 
-		<!-- <div class="fest-phasebar">
-			<ol class="fest-steps" aria-label="Festivity progress">
-				{#each [['socializing', 'Socializing'], ['host_choosing', 'Host choosing'], ['done', 'Done']] as [key, label] (key)}
-					<li class:current={fest.phase === key}>{label}</li>
-				{/each}
-			</ol>
-			<span class="fest-host">Host: <strong>{playerName(players, plan.preparer_id)}</strong></span>
-		</div> -->
-
-		{#if fest.phase === 'socializing'}
+		{#if isResolving}
 			{#if amHost}
 				<p class="choices-note">
 					As host: Introduce the event in the chat. Where is it taking place, and
 					what kind of event is it?
 				</p>
 				<p class="choices-note muted">
-					You don't roll — you've earned a free Make for hosting. Take it as the
-					event winds down (listed under “The host's free Makes” below).
+					You don't roll — you've earned an extra Make for hosting. Take it any
+					time (under "The host's extra Makes" below), along with one for each
+					guest who Mars or opts out.
 				</p>
 			{/if}
 			<p class="choices-note choices-emph">
-				Roleplay your characters making their entrances and socializing amongst each other. 
+				Roleplay your characters making their entrances and socializing amongst each other.
 				At any point each attendee may make a dice roll, and choose one option from the Make or Mar list.
 			</p>
 			<p class="choices-note muted">
-				Turn order is flexible: if it matters, players with a
-				lower Esteem rank must roll (or opt out) first. Resolve in the chat.
+				Resolve one roll at a time — finish choosing an option before the next person acts.
 			</p>
-		{/if}
 
-		{#if fest.phase === 'socializing' || fest.phase === 'host_choosing'}
 			<Buffet />
 		{/if}
 
@@ -247,61 +215,42 @@
 			/>
 		{/if}
 
-		{#if fest.phase === 'socializing' && iAmGuest && !fest.pendingChallenge && myOutcome == null}
+		{#if isResolving && iAmGuest && !amHost && !fest.pendingChallenge && myOutcome == null}
 			<SocializingTurn
 				{plan} {fest} {players} {assets} {currentPlayerID}
-				{currentTurnID} {myRollID} {myEffectiveOutcome}
+				{myRollID} {myEffectiveOutcome}
 				{difficulty} {blockedByOtherRoll} {activeRollerID} {onPlansChanged}
 			/>
 		{/if}
 
-		<!-- IOU tracker: who can force the host into a mar, plus the holder's action. -->
-		{#if fest.phase !== 'done'}
+		<!-- IOU tracker: successful guests may inflict a mar on the host. -->
+		{#if isResolving}
 			<div class="choices-section">
 				<p class="choices-header">The host's Mars</p>
 				{#if iouHolders.length === 0}
 					<p class="choices-note muted">
-						A guest who rolls a Make can insist the host to choose a Mar at any point during the festivity. No one has that power yet.
+						A guest who rolls a Make can inflict a Mar on the host at any point during the festivity. No one has that power yet.
 					</p>
 				{:else}
 					<ul class="plan-notes fest-ledger">
 						{#each iouHolders as holderID (holderID)}
 							<li>
 								<strong>{playerName(players, holderID)}</strong>{#if holderID === currentPlayerID}<em> (you)</em>{/if}
-								— may insist the host take a Mar
+								— may inflict a Mar on the host
 							</li>
 						{/each}
 					</ul>
 				{/if}
 				{#if fest.hostMarInsists.length > 0}
-					<p class="choices-note muted">Insisted upon the host so far: {fest.hostMarInsists.join(', ')}</p>
+					<p class="choices-note muted">Inflicted on the host so far: {fest.hostMarInsists.join(', ')}</p>
 				{/if}
-				{#if iHaveIOU && !fest.pendingChallenge}
+				{#if iHaveIOU && !fest.pendingChallenge && !blockedByOtherRoll}
 					<InsistFlow {plan} {players} {assets} {onPlansChanged} />
 				{/if}
 			</div>
-		{/if}
 
-		<!-- Host's free makes: owed by mar/opt-out guests, taken by the host. -->
-		{#if fest.phase === 'host_choosing'}
+			<!-- The host's extra makes (their spoils). -->
 			<HostChoosing {plan} {fest} {players} {assets} {amHost} {onPlansChanged} />
-		{:else if fest.phase === 'socializing' && hostMakeOwed.length > 0}
-			<div class="choices-section">
-				<p class="choices-header">The host's free Makes</p>
-				<p class="choices-note muted">
-					Before the event winds down, the host gets one Make for each:
-				</p>
-				<ul class="plan-notes fest-ledger">
-					{#each hostMakeOwed as owedID (owedID)}
-						{@const oc = fest.outcomes[String(owedID)]}
-						<li>
-							<strong>{playerName(players, owedID)}</strong>
-							{#if oc === 'host'}<em> (you, host)</em>{/if}
-							— {oc === 'host' ? 'earned for hosting' : oc === 'opt_out' ? 'opted out' : 'rolled a mar'}
-						</li>
-					{/each}
-				</ul>
-			</div>
 		{/if}
 
 		{#if fest.centeredAssetIDs.length > 0}
@@ -311,56 +260,27 @@
 			</p>
 		{/if}
 
-		{#if fest.phase === 'done'}
+		{#if isResolving && amHost}
 			<div class="complete-section">
-				<p class="choices-applied">The festivity has wound down.</p>
-				{#if completeError}<p class="res-error">{completeError}</p>{/if}
-				{#if amHost}
-					<button class="action-btn primary" onclick={onComplete} disabled={completeBusy}>
-						{completeBusy ? '…' : 'Complete plan'}
-					</button>
+				{#if endError}<p class="res-error">{endError}</p>{/if}
+				{#if !endable}
+					<p class="choices-note muted">
+						You can wind the event down once every guest has chosen, you've taken
+						all your extra Makes, and every Mar has been inflicted.
+					</p>
 				{/if}
+				<button class="action-btn primary" onclick={onEndEvent} disabled={endBusy || !endable}>
+					{endBusy ? '…' : 'End the event'}
+				</button>
 			</div>
+		{:else if !isResolving}
+			<p class="choices-applied">The festivity has wound down.</p>
 		{/if}
 
 	</ResolvingCard>
 {/if}
 
 <style>
-	.fest-phasebar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		margin-bottom: 0.75rem;
-		padding-bottom: 0.6rem;
-		border-bottom: 1px solid var(--color-border-warm);
-	}
-	.fest-steps {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.4rem;
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		font-size: 0.85rem;
-		color: var(--color-text-faint);
-	}
-	.fest-steps li + li::before {
-		content: '›';
-		margin-right: 0.4rem;
-		color: var(--color-text-faint);
-	}
-	.fest-steps li.current {
-		color: var(--color-accent);
-		font-weight: 500;
-	}
-	.fest-host {
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
-	}
 	.choices-emph {
 		border-left: 2px solid var(--color-accent);
 		padding-left: 0.6rem;

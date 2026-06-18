@@ -299,6 +299,11 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if !validateActorContext(ctx, w, s.Q, gameID, body.ActorID, body.SceneID, body.PlanID) {
 			return
 		}
+		// One in-flight interactive roll per game (friendly pre-check; the
+		// uq_one_open_roll_per_game index is the atomic backstop below).
+		if blockIfOpenRoll(ctx, w, r, s.Q, gameID) {
+			return
+		}
 
 		var roll dbgen.DiceRoll
 		err = s.InTx(ctx, func(q *dbgen.Queries) error {
@@ -311,7 +316,7 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				Stage:      stageDecideVote,
 			})
 			if cErr != nil {
-				return errors.New("could not create roll")
+				return cErr // preserved so a lost race maps to 409 below
 			}
 			roll = r2
 
@@ -328,6 +333,10 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return seedRollParticipants(ctx, q, gameID, roll.ID, body.ActorID)
 		})
 		if err != nil {
+			if isUniqueViolation(err, openRollConstraint) {
+				respondErr(w, http.StatusConflict, openRollBusyMsg)
+				return
+			}
 			respondErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}

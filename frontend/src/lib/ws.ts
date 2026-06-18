@@ -86,7 +86,7 @@ export const EventTypes = {
 	FestivityGuestChose: 'festivity.guest_chose',
 	FestivityHostChose: 'festivity.host_chose',
 	FestivityInsistHostMar: 'festivity.insist_host_mar',
-	FestivityPhaseChanged: 'festivity.phase_changed',
+	FestivityUpdated: 'festivity.updated',
 	FestivityChallengeIssued: 'festivity.challenge_issued',
 	FestivityChallengeDeclined: 'festivity.challenge_declined',
 	FestivityDuelTriggered: 'festivity.duel_triggered',

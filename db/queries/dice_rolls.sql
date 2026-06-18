@@ -25,8 +25,12 @@ WHERE id = $1;
 SELECT * FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC;
 
 -- name: GetOpenRollByGame :one
+-- The game's in-flight interactive roll, if any. Mirrors the
+-- uq_one_open_roll_per_game index: shake-up rolls (a separate instant mechanic
+-- that leaves rows permanently unresolved) are excluded, so this returns only a
+-- genuine interactive roll still awaiting resolution.
 SELECT * FROM dice_rolls
-WHERE game_id = $1 AND resolved_at IS NULL
+WHERE game_id = $1 AND resolved_at IS NULL AND is_shake_up = FALSE
 ORDER BY created_at DESC
 LIMIT 1;
 

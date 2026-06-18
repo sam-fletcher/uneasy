@@ -1,16 +1,16 @@
 <!-- Festivity/HostChoosing.svelte
-  Host's per-guest make-option picker. Active during the host_choosing
-  phase; the host fills in a make option for every guest who rolled mar
-  or opted out. Non-hosts see a "waiting on host" note.
+  The host's extra makes — their spoils for hosting (one make) plus one per
+  guest who marred or opted out. Shown whenever the host still has makes to
+  take; the host picks an option and spends one make at a time. Not tied to any
+  guest. Non-hosts see a read-only count.
 -->
 <script lang="ts">
 	import { hostChoice, getAssetSuggestions, type Asset, type Plan, type Player } from '$lib/api';
-	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
 	import SuggestionPicker from '../../SuggestionPicker.svelte';
 	import FormField from '../FormField.svelte';
 	import { playerName } from '../shared';
-	import { HOST_MAKE_OPTS, type FestRes } from './options';
+	import { HOST_MAKE_OPTS, earnedHostMakes, type FestRes } from './options';
 
 	let { plan, fest, players, assets, amHost, onPlansChanged }: {
 		plan: Plan;
@@ -21,28 +21,14 @@
 		onPlansChanged: () => void;
 	} = $props();
 
-	const pendingHostGuests = $derived(
-		fest.guests.filter(id => {
-			const k = String(id);
-			const oc = fest.outcomes[k];
-			if (oc !== 'mar' && oc !== 'opt_out' && oc !== 'host') return false;
-			return !(k in fest.hostChoices);
-		}),
-	);
-
-	// Friendly label for why each owed slot grants the host a make.
-	function owedReason(pid: number): string {
-		const oc = fest.outcomes[String(pid)];
-		if (oc === 'host') return 'earned for hosting';
-		if (oc === 'opt_out') return 'opted out';
-		return 'rolled a mar';
-	}
+	const earned = $derived(earnedHostMakes(fest, plan.preparer_id));
+	const taken = $derived(fest.hostMakesTaken.length);
+	const remaining = $derived(earned - taken);
 
 	const centerPeerCandidates = $derived(
 		assets.filter(a => fest.centeredAssetIDs.includes(a.id) && !a.is_destroyed),
 	);
 
-	let hostPickerGuestID = $state<number | null>(null);
 	let hostPickedChoice = $state<string | null>(null);
 	let hostRumor = $state('');
 	let hostPeerName = $state('');
@@ -61,7 +47,6 @@
 	$effect(() => {
 		if (plan.id !== lastPlanID) {
 			lastPlanID = plan.id;
-			hostPickerGuestID = null;
 			hostPickedChoice = null;
 			hostRumor = '';
 			hostPeerName = '';
@@ -83,11 +68,10 @@
 	});
 
 	async function submitHostChoice() {
-		if (hostPickerBusy || hostPickerGuestID == null || !hostPickedChoice) return;
+		if (hostPickerBusy || !hostPickedChoice) return;
 		hostPickerBusy = true; hostPickerError = '';
 		try {
-			const body: { target_player_id: number; choice: string; rumor_text?: string; peer_name?: string; asset_id?: number } = {
-				target_player_id: hostPickerGuestID,
+			const body: { choice: string; rumor_text?: string; peer_name?: string; asset_id?: number } = {
 				choice: hostPickedChoice,
 			};
 			if (hostPickedChoice === 'spread_rumor') body.rumor_text = hostRumor.trim();
@@ -97,109 +81,86 @@
 				body.asset_id = hostAssetID;
 			}
 			await hostChoice(plan.id, body);
-			hostPickerGuestID = null;
 			hostPickedChoice = null;
 			hostRumor = '';
 			hostPeerName = '';
 			hostAssetID = null;
 			onPlansChanged();
 		} catch (e) {
-			hostPickerError = e instanceof Error ? e.message : 'Could not submit host choice.';
+			hostPickerError = e instanceof Error ? e.message : 'Could not take the make.';
 		} finally { hostPickerBusy = false; }
 	}
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">The host's free makes</p>
-	{#if pendingHostGuests.length === 0}
-		<p class="choices-note">The host has taken all their free makes.</p>
+	<p class="choices-header">The host's extra Makes</p>
+	<p class="choices-note muted">
+		Taken {taken} of {earned} — one for hosting, plus one for each guest who
+		rolled a Mar or opted out.
+	</p>
+	{#if remaining <= 0}
+		<p class="choices-note">The host has taken all their extra Makes.</p>
 	{:else if !amHost}
 		<p class="choices-note muted">
-			The host takes a make for themself, one for each of:
-			{pendingHostGuests.map(id => playerName(players, id)).join(', ')}
+			The host has {remaining} extra {remaining === 1 ? 'Make' : 'Makes'} left to take.
 		</p>
 	{:else}
 		<p class="choices-note">
-			Take one make for yourself for hosting, and one more for each guest who
-			rolled a mar or opted out.
+			Take one Make for yourself ({remaining} left):
 		</p>
-		{@const pendingGuestPlayers = pendingHostGuests
-			.map(gid => players.find(p => p.id === gid))
-			.filter((p): p is typeof players[number] => p != null)}
-		<FormField label="Guest">
-			<PlayerChips
-				players={pendingGuestPlayers}
-				isActive={(p) => hostPickerGuestID === p.id}
-				onSelect={(p) => {
-					hostPickerGuestID = hostPickerGuestID === p.id ? null : p.id;
-					hostPickedChoice = null;
-					hostAssetID = null;
-				}}
-			/>
-			{#if hostPickerGuestID != null}
-				<p class="choices-note muted" style="margin:0.25rem 0 0;">
-					{owedReason(hostPickerGuestID)}
-				</p>
-			{/if}
+		<FormField label="Pick a make option">
+			<div class="chip-row">
+				{#each HOST_MAKE_OPTS as o}
+					<button
+						type="button"
+						class="chip-btn"
+						class:active={hostPickedChoice === o.key}
+						onclick={() => {
+							hostPickedChoice = hostPickedChoice === o.key ? null : o.key;
+							hostAssetID = null;
+						}}
+					>{o.label}</button>
+				{/each}
+			</div>
 		</FormField>
-		{#if hostPickerGuestID != null}
-			<FormField label="Pick a make option">
-				<div class="chip-row">
-					{#each HOST_MAKE_OPTS as o}
-						<button
-							type="button"
-							class="chip-btn"
-							class:active={hostPickedChoice === o.key}
-							onclick={() => {
-								hostPickedChoice = hostPickedChoice === o.key ? null : o.key;
-								hostAssetID = null;
-							}}
-						>{o.label}</button>
-					{/each}
-				</div>
-			</FormField>
-			{#if hostPickedChoice === 'spread_rumor'}
-				<label class="form-label">
-					Rumor text:
-					<textarea rows={2} bind:value={hostRumor} class="form-textarea"></textarea>
-				</label>
-			{:else if hostPickedChoice === 'introduce_peer'}
-				<div class="form-label">
-					<span>New peer's name:</span>
-					<SuggestionPicker
-						suggestions={peerNameSuggestions}
-						bind:value={hostPeerName}
-						loading={peerNameSuggLoading}
-						customPlaceholder="Name of the new peer"
-						maxlength={120}
-					/>
-				</div>
-			{:else if hostPickedChoice === 'take_center_peer'}
-				<CardPicker
-					label="Peer to take from the center"
-					items={centerPeerCandidates}
-					{players}
-					emptyMessage="No peers in the center."
-					ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
-					selected={hostAssetID}
-					onSelect={(id) => (hostAssetID = id)}
+		{#if hostPickedChoice === 'spread_rumor'}
+			<label class="form-label">
+				Rumor text:
+				<textarea rows={2} bind:value={hostRumor} class="form-textarea"></textarea>
+			</label>
+		{:else if hostPickedChoice === 'introduce_peer'}
+			<div class="form-label">
+				<span>New peer's name:</span>
+				<SuggestionPicker
+					suggestions={peerNameSuggestions}
+					bind:value={hostPeerName}
+					loading={peerNameSuggLoading}
+					customPlaceholder="Name of the new peer"
+					maxlength={120}
 				/>
-			{/if}
+			</div>
+		{:else if hostPickedChoice === 'take_center_peer'}
+			<CardPicker
+				label="Peer to take from the center"
+				items={centerPeerCandidates}
+				{players}
+				emptyMessage="No peers in the center."
+				ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+				selected={hostAssetID}
+				onSelect={(id) => (hostAssetID = id)}
+			/>
 		{/if}
 		{#if hostPickerError}<p class="res-error">{hostPickerError}</p>{/if}
 		<button class="action-btn primary"
 			onclick={submitHostChoice}
-			disabled={hostPickerBusy || hostPickerGuestID == null || !hostPickedChoice}>
-			{hostPickerBusy ? '…' : 'Submit pick'}
+			disabled={hostPickerBusy || !hostPickedChoice}>
+			{hostPickerBusy ? '…' : 'Take this Make'}
 		</button>
 	{/if}
 
-	{#if Object.keys(fest.hostChoices).length > 0}
+	{#if fest.hostMakesTaken.length > 0}
 		<p class="choices-note muted" style="margin-top:0.5rem;">
-			Done so far:
-			{Object.entries(fest.hostChoices)
-				.map(([pid, c]) => `${playerName(players, Number(pid))} → ${c}`)
-				.join('; ')}
+			Taken so far: {fest.hostMakesTaken.join(', ')}
 		</p>
 	{/if}
 </div>

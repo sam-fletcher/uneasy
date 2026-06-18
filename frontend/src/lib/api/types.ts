@@ -331,7 +331,7 @@ export type { DuelResolutionData, DuelPhase } from '$lib/plans/resolutionData/pr
 import type { DuelResolutionData } from '$lib/plans/resolutionData/propose_duel';
 export type { MakeWarResolutionData } from '$lib/plans/resolutionData/make_war';
 import type { MakeWarResolutionData } from '$lib/plans/resolutionData/make_war';
-export type { FestivityResolutionData, FestivityPhase } from '$lib/plans/resolutionData/host_festivity';
+export type { FestivityResolutionData } from '$lib/plans/resolutionData/host_festivity';
 import type { FestivityResolutionData } from '$lib/plans/resolutionData/host_festivity';
 export type { SeekAnswersResolutionData } from '$lib/plans/resolutionData/seek_answers';
 import type { SeekAnswersResolutionData } from '$lib/plans/resolutionData/seek_answers';

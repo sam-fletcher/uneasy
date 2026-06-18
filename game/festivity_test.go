@@ -23,9 +23,9 @@ func TestHostFestivityDifficulty(t *testing.T) {
 func TestFestivityStateRoundtrip(t *testing.T) {
 	pid := int64(7)
 	s := FestivityResolutionData{
-		Phase:             FestivityPhaseSocializing,
 		Outcomes:          map[string]string{"1": FestivityOutcomeMake},
 		GuestMakes:        map[string]string{"1": FestivityMakeSpreadRumor},
+		HostMakesTaken:    []string{FestivityMakeIntroducePeer},
 		GuestIOUs:         []int64{1},
 		AcceptDuels:       []int64{2},
 		PendingDuelPlanID: &pid,
@@ -33,7 +33,7 @@ func TestFestivityStateRoundtrip(t *testing.T) {
 	var r ResolutionData
 	*r.EnsureFestivity() = s
 	got := *r.EnsureFestivity()
-	assert.Equal(t, FestivityPhaseSocializing, got.Phase)
+	assert.Equal(t, []string{FestivityMakeIntroducePeer}, got.HostMakesTaken)
 	assert.True(t, got.HasAcceptDuels(2))
 	assert.False(t, got.HasAcceptDuels(1))
 	assert.NotNil(t, got.PendingDuelPlanID)
@@ -50,31 +50,49 @@ func TestFestivityAllGuestsResolved(t *testing.T) {
 	assert.True(t, s.AllGuestsResolved(roster))
 }
 
-func TestFestivityPendingHostChoices(t *testing.T) {
+func TestFestivityHostMakesAndEndable(t *testing.T) {
 	roster := []int64{1, 2, 3, 4, 5}
 	s := FestivityResolutionData{
 		Outcomes: map[string]string{
-			"1": FestivityOutcomeMake,
-			"2": FestivityOutcomeMar,
-			"3": FestivityOutcomeOptOut,
-			"4": FestivityOutcomeMar,
-			"5": FestivityOutcomeHost, // host's own earned free make
+			"1": FestivityOutcomeMake,   // success → holds a mar to inflict
+			"2": FestivityOutcomeMar,    // +1 host make
+			"3": FestivityOutcomeOptOut, // +1 host make
+			"4": FestivityOutcomeMar,    // +1 host make
+			"5": FestivityOutcomeHost,   // +1 host make (for hosting)
 		},
-		HostChoices: map[string]string{
-			"2": FestivityMakeSpreadRumor,
-		},
+		GuestIOUs: []int64{1},
 	}
-	pending := s.PendingHostChoices(roster)
-	require.Len(t, pending, 3)
-	// Order-independent check: should be {3, 4, 5} — the host's own slot (5) is
-	// owed a make just like mar/opt-out guests.
-	seen := map[int64]bool{}
-	for _, id := range pending {
-		seen[id] = true
+	// Earned = mar + mar + opt_out + host = 4; a guest's own make never earns
+	// the host one.
+	assert.Equal(t, 4, s.EarnedHostMakes(roster))
+	assert.Equal(t, 4, s.RemainingHostMakes(roster))
+
+	// Not endable: host has taken no makes and player 1's mar is unspent.
+	assert.False(t, s.EventEndable(roster))
+
+	// Host takes all four makes — still not endable while the IOU is unspent.
+	s.HostMakesTaken = []string{
+		FestivityMakeSpreadRumor, FestivityMakeIntroducePeer,
+		FestivityMakeSpreadRumor, FestivityMakeIntroducePeer,
 	}
-	assert.True(t, seen[3])
-	assert.True(t, seen[4])
-	assert.True(t, seen[5])
+	assert.Equal(t, 0, s.RemainingHostMakes(roster))
+	assert.False(t, s.EventEndable(roster))
+
+	// Player 1 inflicts their mar → everything settled → endable.
+	require.True(t, s.ConsumeIOU(1))
+	assert.True(t, s.EventEndable(roster))
+}
+
+func TestFestivityEventEndableRequiresAllChosen(t *testing.T) {
+	roster := []int64{1, 2}
+	// Player 2 hasn't chosen yet → not endable even with no makes/mars pending.
+	s := FestivityResolutionData{
+		Outcomes: map[string]string{"1": FestivityOutcomeHost},
+	}
+	s.HostMakesTaken = []string{FestivityMakeSpreadRumor} // the host's one earned make
+	assert.False(t, s.EventEndable(roster))
+	s.Outcomes["2"] = FestivityOutcomeMake
+	assert.True(t, s.EventEndable(roster))
 }
 
 func TestFestivityPendingGuests(t *testing.T) {
