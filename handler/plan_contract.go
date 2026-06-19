@@ -177,6 +177,27 @@ type PreparedDescriber interface {
 	) (descriptor string, ok bool)
 }
 
+// ResolvedDescriber is an optional interface for plan handlers that want a
+// custom plan.resolved.* log body instead of the default "<Label> succeeded."
+// / "<Label> marred." / "<Label> cancelled.". The returned body fully replaces
+// the default sentence (the system_code and severity stay tied to result, so
+// the post still anchors the Public Record correctly). result is "make",
+// "mar", or "cancelled", matching EmitPlanResolved. Return ok=false to fall
+// back to the default for any outcome the handler doesn't want to override.
+//
+// This exists because the always-make plans (Host Festivity, Exchange
+// Courtiers, Clandestinely Liaise) read tautologically as "X succeeded." —
+// they always do — so a flavor line ("The festivity drew to a close.") carries
+// more meaning than the generic template.
+type ResolvedDescriber interface {
+	ResolvedDescriptor(
+		ctx context.Context,
+		q *dbgen.Queries,
+		plan dbgen.Plan,
+		result string,
+	) (body string, ok bool)
+}
+
 // PlanDeps bundles shared dependencies passed to handler methods. The
 // embedded *db.Store exposes Q and Pool directly (deps.Q, deps.Pool) and
 // provides deps.InTx for atomic multi-write sequences.

@@ -135,6 +135,16 @@ func (hfHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
 	return errors.New("a festivity is wound down via the host's end-event action, not generic completion")
 }
 
+// ResolvedDescriptor gives the festivity's always-make resolution a flavor line
+// instead of the tautological "Host Festivity succeeded." (it always succeeds —
+// the event exists to benefit the host).
+func (hfHandler) ResolvedDescriptor(_ context.Context, _ *dbgen.Queries, _ dbgen.Plan, result string) (string, bool) {
+	if result == makeOutcome {
+		return "The festivity drew to a close.", true
+	}
+	return "", false
+}
+
 func (hfHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"guest-roll":        hfGuestRollHandler(deps),
@@ -608,10 +618,11 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not end the festivity", err)
 			return
 		}
-		hfLog(ctx, deps, plan, model.SeverityImportant, "The festivity drew to a close.")
 		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
 			PlanID: plan.ID, Result: res,
 		})
+		// EmitPlanResolved renders the festivity's custom "drew to a close" line
+		// (via hfHandler.ResolvedDescriptor) in place of "Host Festivity succeeded."
 		EmitPlanResolved(ctx, deps.Q, deps.Manager, *plan, res)
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "result": res})

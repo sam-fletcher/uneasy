@@ -133,6 +133,16 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 		code = "plan.resolved"
 		body = fmt.Sprintf("%s resolved (%s).", planLabel(plan.PlanType), result)
 	}
+	// A handler may supply a custom resolution line (e.g. Host Festivity reads
+	// "The festivity drew to a close." rather than the tautological
+	// "Host Festivity succeeded."). The code/severity stay outcome-derived.
+	if h, ok := GetHandler(plan.PlanType); ok {
+		if describer, ok := h.(ResolvedDescriber); ok {
+			if custom, ok := describer.ResolvedDescriptor(ctx, q, plan, result); ok {
+				body = custom
+			}
+		}
+	}
 	EmitSystemPost(ctx, q, manager, plan.GameID, code, severity, body,
 		plan.RowNumber, &planID, nil,
 		map[string]any{"plan_id": plan.ID, "result": result})
