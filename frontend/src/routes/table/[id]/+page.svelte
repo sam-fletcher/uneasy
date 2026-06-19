@@ -433,12 +433,20 @@
 	 *  must stay in sync with the plan list. */
 	async function refreshPlans() {
 		try {
-			const [data, tokensData] = await Promise.all([
+			// Also refetch assets: many plan actions mutate assets (festivity
+			// introduces/takes peers, war seizes, duels/demands break marginalia),
+			// but asset deltas otherwise arrive only over the WebSocket. Pulling
+			// them here means the actor's own screen (retinue, peer lists) reflects
+			// the change even if the socket is momentarily down — plans alone left
+			// it stale until a reload.
+			const [data, tokensData, assetData] = await Promise.all([
 				listPlans(gameID),
 				listPlanTokens(gameID).catch(() => ({ tokens: planTokens })),
+				listAssets(gameID).catch(() => ({ assets })),
 			]);
 			plans = data.plans;
 			planTokens = tokensData.tokens;
+			assets = assetData.assets;
 		} catch { /* ignore — WS events will keep us in sync */ }
 	}
 
