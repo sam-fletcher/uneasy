@@ -14,11 +14,16 @@ export interface ChronicleHistoriesResolutionData {
 	 */
 	mar_required_choices?: number;
 	/**
-	 * Completed make-list break_artifact sub-flow steps (server-authoritative).
-	 * The picker shows (picked − done) remaining, so a refresh doesn't re-prompt
-	 * a finished break.
+	 * Number of make options the preparer must choose (the dice result),
+	 * captured server-side on the first make-step. The picker shows
+	 * (make_budget − make_choices_done) remaining.
 	 */
-	break_artifact_done?: number;
+	make_budget?: number;
+	/**
+	 * Make options submitted so far via make-step (server-authoritative), so a
+	 * refresh doesn't re-prompt a finished choice or allow over-picking.
+	 */
+	make_choices_done?: number;
 }
 
 export function parseChronicleHistoriesData(

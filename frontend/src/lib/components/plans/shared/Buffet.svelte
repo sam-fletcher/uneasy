@@ -1,62 +1,77 @@
-<!-- Festivity/Buffet.svelte
-  Read-only "what can happen?" reference for the festivity. Collapsible
+<!-- shared/Buffet.svelte
+  Read-only "what can happen?" reference, shared across plans. Collapsible
   (collapsed by default) and fully interactive for everyone — switching tabs
-  commits nothing. The actual choice is made via the separate picker in
-  SocializingTurn; this is purely informational so guests can weigh the
-  make / mar / opt-out consequences before they roll.
+  commits nothing. The actual choice is made via each plan's own picker; this is
+  purely informational so players can weigh the consequences before they roll.
+
+  Data-driven: pass `tabs`, each with an optional `always` line (an effect that
+  applies on top of any chosen option), an optional `intro` line above the list,
+  and an `opts` list of { label, desc }. A tab with only `always` (no opts)
+  renders just that line (e.g. the festivity opt-out tab).
 -->
 <script lang="ts">
-	import {
-		MAKE_OPTS, MAR_OPTS, MAKE_ALWAYS, MAR_ALWAYS, OPT_OUT_EFFECT,
-	} from './options';
+	export type BuffetOpt = { key: string; label: string; desc?: string };
+	export type BuffetTab = {
+		key: string;
+		label: string;
+		always?: string;
+		intro?: string;
+		opts?: BuffetOpt[];
+	};
 
-	type Tab = 'make' | 'mar' | 'opt';
-	// Collapsed by default — it's an on-demand reference, not always-on prose.
-	let open = $state(false);
-	let tab = $state<Tab>('make');
+	let {
+		tabs,
+		heading = 'What can happen?',
+		defaultTab = '',
+		open = false,
+	}: {
+		tabs: BuffetTab[];
+		heading?: string;
+		defaultTab?: string;
+		open?: boolean;
+	} = $props();
+
+	// These props seed the component's own (uncontrolled) state once on mount.
+	// svelte-ignore state_referenced_locally
+	let isOpen = $state(open);
+	// svelte-ignore state_referenced_locally
+	let active = $state(defaultTab || tabs[0]?.key || '');
+	const current = $derived(tabs.find((t) => t.key === active) ?? tabs[0]);
 </script>
 
-<div class="choices-section buffet" class:open>
+<div class="choices-section buffet" class:open={isOpen}>
 	<button
 		type="button"
 		class="buffet-toggle"
-		aria-expanded={open}
-		onclick={() => (open = !open)}
+		aria-expanded={isOpen}
+		onclick={() => (isOpen = !isOpen)}
 	>
-		<span class="choices-header" style="margin:0;">What can happen?</span>
+		<span class="choices-header" style="margin:0;">{heading}</span>
 		<span class="buffet-caret" aria-hidden="true">▾</span>
 	</button>
 
-	{#if open}
+	{#if isOpen}
 	<div class="buffet-body">
 		<div class="buffet-tabs" role="tablist">
-			<button type="button" class="buffet-tab" class:active={tab === 'make'}
-				role="tab" aria-selected={tab === 'make'} onclick={() => (tab = 'make')}>Make</button>
-			<button type="button" class="buffet-tab" class:active={tab === 'mar'}
-				role="tab" aria-selected={tab === 'mar'} onclick={() => (tab = 'mar')}>Mar</button>
-			<button type="button" class="buffet-tab" class:active={tab === 'opt'}
-				role="tab" aria-selected={tab === 'opt'} onclick={() => (tab = 'opt')}>Opt out</button>
+			{#each tabs as t (t.key)}
+				<button type="button" class="buffet-tab" class:active={active === t.key}
+					role="tab" aria-selected={active === t.key} onclick={() => (active = t.key)}>{t.label}</button>
+			{/each}
 		</div>
 
 		<div class="buffet-pane">
-			{#if tab === 'make'}
-				<p class="choices-note buffet-always">{MAKE_ALWAYS}</p>
-				<p class="choices-note" style="margin:0 0 0.25rem;">Plus, choose one:</p>
+			{#if current?.always}
+				<p class="choices-note buffet-always">{current.always}</p>
+			{/if}
+			{#if current?.opts && current.opts.length > 0}
+				{#if current.intro}
+					<p class="choices-note" style="margin:0 0 0.25rem;">{current.intro}</p>
+				{/if}
 				<ul class="buffet-list">
-					{#each MAKE_OPTS as o (o.key)}
-						<li>{o.label} <span class="muted">{o.desc}</span></li>
+					{#each current.opts as o (o.key)}
+						<li>{o.label}{#if o.desc} <span class="muted">{o.desc}</span>{/if}</li>
 					{/each}
 				</ul>
-			{:else if tab === 'mar'}
-				<p class="choices-note buffet-always">{MAR_ALWAYS}</p>
-				<p class="choices-note" style="margin:0 0 0.25rem;">Plus, choose one:</p>
-				<ul class="buffet-list">
-					{#each MAR_OPTS as o (o.key)}
-						<li>{o.label} <span class="muted">{o.desc}</span></li>
-					{/each}
-				</ul>
-			{:else}
-				<p class="choices-note buffet-always">{OPT_OUT_EFFECT}</p>
 			{/if}
 		</div>
 	</div>

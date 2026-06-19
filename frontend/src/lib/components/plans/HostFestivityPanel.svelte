@@ -32,14 +32,24 @@
 	import { assetName, parseResolutionData } from './shared';
 
 	import PrepForm from './festivity/PrepForm.svelte';
-	import Buffet from './festivity/Buffet.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 	import GuestList from './festivity/GuestList.svelte';
 	import ChallengeBanner from './festivity/ChallengeBanner.svelte';
 	import SocializingTurn from './festivity/SocializingTurn.svelte';
 	import InsistFlow from './festivity/InsistFlow.svelte';
 	import HostChoosing from './festivity/HostChoosing.svelte';
 	import HostPendingMar from './festivity/HostPendingMar.svelte';
-	import { festivityEndable, earnedHostMakes, type FestRes } from './festivity/options';
+	import {
+		festivityEndable, earnedHostMakes, type FestRes,
+		MAKE_OPTS, MAR_OPTS, MAKE_ALWAYS, MAR_ALWAYS, OPT_OUT_EFFECT,
+	} from './festivity/options';
+
+	// Tabs for the shared read-only buffet reference (make / mar / opt-out).
+	const buffetTabs: BuffetTab[] = [
+		{ key: 'make', label: 'Make', always: MAKE_ALWAYS, intro: 'Plus, choose one:', opts: MAKE_OPTS },
+		{ key: 'mar', label: 'Mar', always: MAR_ALWAYS, intro: 'Plus, choose one:', opts: MAR_OPTS },
+		{ key: 'opt', label: 'Opt out', always: OPT_OUT_EFFECT },
+	];
 
 	import type { PlanPanelProps } from './types';
 
@@ -195,7 +205,7 @@
 					Make your entrance in chat, socialize, and roll for a Make — but risk a Mar!
 				{/if}
 			</p>
-			<Buffet />
+			<Buffet tabs={buffetTabs} />
 		{/if}
 
 		<GuestList {plan} {fest} {players} {currentPlayerID} />

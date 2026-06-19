@@ -26,12 +26,19 @@ type ChronicleHistoriesResolutionData struct {
 	// (which has DB access) so CanComplete can gate without a query.
 	MarRequiredChoices int16 `json:"mar_required_choices,omitempty"`
 
-	// BreakArtifactDone counts completed make-list break_artifact sub-flow steps.
-	// Server-authoritative completion (the panel shows picked − done remaining);
-	// the break-artifact route rejects any step beyond the picked count so a
-	// stale client re-prompted after a refresh can't tear extra marginalia. The
-	// mar break_artifact path is a per-player mar-choice, counted separately.
-	BreakArtifactDone int16 `json:"break_artifact_done,omitempty"`
+	// MakeBudget is the number of make options the preparer must choose — the
+	// dice result ("choose options equal to your result"). Captured from the
+	// first make-step submission (which has roll access) so CanComplete can gate
+	// completion without a query, mirroring MarRequiredChoices on the mar path.
+	MakeBudget int16 `json:"make_budget,omitempty"`
+
+	// MakeChoicesDone counts make options submitted one at a time via the
+	// make-step route. Server-authoritative completion (the panel shows
+	// MakeBudget − done remaining); the route rejects any step beyond MakeBudget
+	// so a stale client re-prompted after a refresh can't over-pick. Each step
+	// applies its mechanical effect (break/invoke) inline, so there is no
+	// separate post-apply break sub-flow on the make path.
+	MakeChoicesDone int16 `json:"make_choices_done,omitempty"`
 }
 
 // EnsureChronicleHistories returns r.ChronicleHistories, allocating a zero

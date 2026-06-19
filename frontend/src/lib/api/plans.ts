@@ -327,24 +327,41 @@ export function spBreakSelf(planID: number, marginaliaID: number): Promise<PlanE
 	});
 }
 
-/** Chronicle Histories — add an artifact to the invoked list (pre-roll or via make option). */
-export function invokeArtifact(planID: number, assetID: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/invoke-artifact`, {
+/**
+ * Chronicle Histories — the preparer sets the scene in one shot: invoke the
+ * chosen artifacts (all at once, so difficulty is final), post the scene
+ * narration, and cast the dice.
+ */
+export function castChronicleRoll(
+	planID: number,
+	artifactIDs: number[],
+	scene?: string,
+): Promise<{ plan_id: number; roll?: DiceRoll }> {
+	return apiFetch(`/plans/${planID}/cast-roll`, {
 		method: 'POST',
-		body: JSON.stringify({ asset_id: assetID }),
+		body: JSON.stringify({ artifact_ids: artifactIDs, scene: scene ?? '' }),
 	});
 }
 
-/** Chronicle Histories — preparer closes the pre-roll invoke phase and casts the dice. */
-export function castChronicleRoll(planID: number): Promise<{ plan_id: number; roll?: DiceRoll }> {
-	return apiFetch(`/plans/${planID}/cast-roll`, { method: 'POST' });
-}
-
-/** Chronicle Histories — break a marginalia on an invoked artifact. */
-export function breakArtifact(planID: number, assetID: number, marginaliaID: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/break-artifact`, {
+/**
+ * Chronicle Histories — submit one make option (of `result`-many), one at a
+ * time, with optional narration folded into the action-log entry. `assetID` is
+ * required for break_artifact / invoke_another; `marginaliaID` is additionally
+ * required for break_artifact (the break is applied atomically server-side).
+ */
+export function makeStep(
+	planID: number,
+	option: string,
+	opts?: { narration?: string; assetID?: number | null; marginaliaID?: number | null },
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/make-step`, {
 		method: 'POST',
-		body: JSON.stringify({ asset_id: assetID, marginalia_id: marginaliaID }),
+		body: JSON.stringify({
+			option,
+			narration: opts?.narration ?? '',
+			asset_id: opts?.assetID ?? null,
+			marginalia_id: opts?.marginaliaID ?? null,
+		}),
 	});
 }
 

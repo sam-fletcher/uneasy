@@ -4,8 +4,9 @@
 // coverage for Chronicle Histories. Guards the rules-correct behaviour added
 // after the audit:
 //
-//   - make budget cap: "choose options equal to your result" (ChoiceLimiter).
-//   - break-artifact uses breakMarginalia (auto-destroy on the last marginalia).
+//   - make budget cap: "choose options equal to your result", enforced by the
+//     make-step route (MakeBudget / MakeChoicesDone), one option at a time.
+//   - make-step break_artifact uses breakMarginalia (auto-destroy on the last).
 //   - mar: every player present must submit one choice before completion;
 //     a mar break_artifact tears its marginalia atomically in the mar-choice.
 
@@ -16,6 +17,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,21 +51,28 @@ func chSeedArtifact(t *testing.T, h *planLifecycle, ownerIdx int, name string, m
 	return a.ID, ids
 }
 
-// chInvoke drives POST /api/plans/{planId}/invoke-artifact as the preparer
-// during the pre-roll invoke phase. Asserts 200.
-func chInvoke(t *testing.T, h *planLifecycle, planID, assetID int64) {
-	t.Helper()
-	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/invoke-artifact"
-	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{"asset_id": assetID})
-	require.Equalf(t, http.StatusOK, code, "invoke-artifact: %v", body)
+// chMakeStep drives POST /api/plans/{planId}/make-step as the preparer, posting
+// one make option (with optional target ids) and returning the status + body so
+// callers can assert success or a budget-cap rejection.
+func chMakeStep(h *planLifecycle, planID int64, option string, assetID, marginaliaID int64) (int, map[string]any) {
+	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/make-step"
+	payload := map[string]any{"option": option}
+	if assetID != 0 {
+		payload["asset_id"] = assetID
+	}
+	if marginaliaID != 0 {
+		payload["marginalia_id"] = marginaliaID
+	}
+	return h.post(h.preparerIdxFor(planID), path, payload)
 }
 
-// chCastRoll drives POST /api/plans/{planId}/cast-roll as the preparer to close
-// the invoke phase and create the dice roll. Asserts 200 and returns the roll.
-func chCastRoll(t *testing.T, h *planLifecycle, planID int64) *dbgen.DiceRoll {
+// chCastRoll drives POST /api/plans/{planId}/cast-roll as the preparer: it
+// invokes the given artifacts (all at once), closes the pre-roll phase, and
+// creates the dice roll. Asserts 200 and returns the roll.
+func chCastRoll(t *testing.T, h *planLifecycle, planID int64, artifactIDs ...int64) *dbgen.DiceRoll {
 	t.Helper()
 	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/cast-roll"
-	code, body := h.post(h.preparerIdxFor(planID), path, nil)
+	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{"artifact_ids": artifactIDs})
 	require.Equalf(t, http.StatusOK, code, "cast-roll: %v", body)
 	rollBlob, _ := json.Marshal(body["roll"])
 	var roll dbgen.DiceRoll
@@ -130,10 +139,9 @@ func TestChronicleHistories_Make_EnforcesOptionBudget(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "within budget should succeed: %v", body)
 }
 
-// TestChronicleHistories_PreRollInvoke_RaisesDifficulty proves the pre-roll
-// invoke phase is reachable through the real routes and that invoking more
-// artifacts than the preparer's knowledge rank raises the difficulty to the
-// number invoked (difficulty = max(rank, #invoked)).
+// TestChronicleHistories_PreRollInvoke_RaisesDifficulty proves cast-roll invokes
+// the chosen artifacts and that invoking more than the preparer's knowledge rank
+// raises the difficulty to the number invoked (difficulty = max(rank, #invoked)).
 func TestChronicleHistories_PreRollInvoke_RaisesDifficulty(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 
@@ -158,24 +166,52 @@ func TestChronicleHistories_PreRollInvoke_RaisesDifficulty(t *testing.T) {
 	// Resolve opens the invoke phase; no roll yet.
 	require.Nil(t, h.resolve(plan.ID), "pre-roll invoke phase opens with no roll")
 
-	// Invoke three artifacts via the real route, then cast.
-	chInvoke(t, h, plan.ID, a1)
-	chInvoke(t, h, plan.ID, a2)
-	chInvoke(t, h, plan.ID, a3)
-	roll := chCastRoll(t, h, plan.ID)
+	// Invoke three artifacts in one cast.
+	roll := chCastRoll(t, h, plan.ID, a1, a2, a3)
 	require.NotNil(t, roll)
 	assert.EqualValues(t, 3, roll.Difficulty,
 		"difficulty = max(knowledge rank 2, 3 invoked) = 3")
 
-	// The invoke phase is now closed; further invokes are rejected.
-	invokePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/invoke-artifact"
-	code, body := h.post(preparerIdx, invokePath, map[string]any{"asset_id": a1})
-	assert.Equalf(t, http.StatusConflict, code, "invoke after cast should 409: %v", body)
-
-	// And cast-roll is idempotent-safe — a second cast is rejected.
+	// cast-roll is idempotent-safe — a second cast is rejected.
 	castPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/cast-roll"
-	code, body = h.post(preparerIdx, castPath, nil)
+	code, body := h.post(preparerIdx, castPath, nil)
 	assert.Equalf(t, http.StatusConflict, code, "second cast should 409: %v", body)
+}
+
+// TestChronicleHistories_PreRoll_SceneLogged proves cast-roll posts the
+// preparer's scene text as their own (player-authored) action-log entry, and
+// that the old pre-roll system message is gone.
+func TestChronicleHistories_PreRoll_SceneLogged(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	saPinKnowledgeRank(t, h, plan.PreparerID, 2)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+
+	const scene = "Smoke still hung over the ruined hall as the council convened."
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/cast-roll"
+	code, body := h.post(preparerIdx, path, map[string]any{"scene": scene})
+	require.Equalf(t, http.StatusOK, code, "cast-roll with scene: %v", body)
+
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	sceneLogged := false
+	for _, p := range posts {
+		if p.Body == scene && p.AuthorID != nil && *p.AuthorID == plan.PreparerID {
+			sceneLogged = true
+		}
+		require.NotContains(t, p.Body, "invoke artifacts to shed light",
+			"the old pre-roll system message must no longer be logged")
+	}
+	assert.True(t, sceneLogged, "the preparer's scene text should be logged as their post")
 }
 
 // TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys invokes an
@@ -192,7 +228,8 @@ func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T)
 	})
 	require.NotNil(t, plan.RowNumber)
 	preparerIdx := h.preparerIdxFor(plan.ID)
-	saPinKnowledgeRank(t, h, plan.PreparerID, 3)
+	// Rank 1 so difficulty = max(rank 1, 1 invoked) = 1 and the make budget is one.
+	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
 
 	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
 	artifactID, margIDs := chSeedArtifact(t, h, otherIdx, "brittle scroll", 1)
@@ -200,19 +237,15 @@ func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T)
 	// Resolve opens the invoke phase; invoke pre-roll via the real route, cast.
 	h.jumpToRow(*plan.RowNumber)
 	require.Nil(t, h.resolve(plan.ID))
-	chInvoke(t, h, plan.ID, artifactID)
-	roll := chCastRoll(t, h, plan.ID)
+	roll := chCastRoll(t, h, plan.ID, artifactID)
 	require.NotNil(t, roll)
-	h.forceRoll(roll.ID, "make", roll.Difficulty) // consistent make
+	// difficulty = max(rank 1, 1 invoked) = 1; force a make with result 1 so the
+	// budget is a single option.
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
 
-	h.makeChoice(plan.ID, "make", []string{"break_artifact"})
-
-	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/break-artifact"
-	code, body := h.post(preparerIdx, breakPath, map[string]any{
-		"asset_id": artifactID, "marginalia_id": margIDs[0],
-	})
-	require.Equalf(t, http.StatusOK, code, "break-artifact: %v", body)
-	assert.Equal(t, true, body["destroyed"], "tearing the last marginalia destroys the artifact")
+	// One make-step breaks the invoked artifact's only marginalia (auto-destroy).
+	code, body := chMakeStep(h, plan.ID, "break_artifact", artifactID, margIDs[0])
+	require.Equalf(t, http.StatusOK, code, "make-step break_artifact: %v", body)
 
 	destroyed, err := h.q.GetAssetByID(ctx, artifactID)
 	require.NoError(t, err)
@@ -221,10 +254,11 @@ func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T)
 	h.complete(plan.ID)
 }
 
-// TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount proves the make-list
-// break_artifact sub-flow is server-capped at the picked count, so a stale
-// client re-prompted after a refresh can't tear an extra marginalia.
-func TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount(t *testing.T) {
+// TestChronicleHistories_Make_StepCapsAtBudget proves the make path is
+// server-capped at MakeBudget (the dice result): a stale client re-prompted
+// after a refresh can't submit an extra option (and so can't tear an extra
+// marginalia).
+func TestChronicleHistories_Make_StepCapsAtBudget(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
@@ -235,7 +269,8 @@ func TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	preparerIdx := h.preparerIdxFor(plan.ID)
-	saPinKnowledgeRank(t, h, plan.PreparerID, 3)
+	// Rank 1 so difficulty = 1 and the make budget is a single option.
+	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
 
 	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
 	// Two marginalia so the first break doesn't destroy the artifact.
@@ -243,28 +278,96 @@ func TestChronicleHistories_Make_BreakArtifact_CapsAtPickedCount(t *testing.T) {
 
 	h.jumpToRow(*plan.RowNumber)
 	require.Nil(t, h.resolve(plan.ID))
-	chInvoke(t, h, plan.ID, artifactID)
-	roll := chCastRoll(t, h, plan.ID)
+	roll := chCastRoll(t, h, plan.ID, artifactID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
 
-	// Only one break picked.
-	h.makeChoice(plan.ID, "make", []string{"break_artifact"})
+	// First (only budgeted) step breaks one marginalia.
+	code, body := chMakeStep(h, plan.ID, "break_artifact", artifactID, margIDs[0])
+	require.Equalf(t, http.StatusOK, code, "first (only) make-step: %v", body)
 
-	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/break-artifact"
-	code, body := h.post(preparerIdx, breakPath, map[string]any{
-		"asset_id": artifactID, "marginalia_id": margIDs[0],
-	})
-	require.Equalf(t, http.StatusOK, code, "first (only) break: %v", body)
-
-	// A second break exceeds the picked count and is rejected.
-	code, body = h.post(preparerIdx, breakPath, map[string]any{
-		"asset_id": artifactID, "marginalia_id": margIDs[1],
-	})
-	require.Equalf(t, http.StatusConflict, code, "break beyond the picked count must be rejected: %v", body)
+	// A second step exceeds the budget and is rejected.
+	code, body = chMakeStep(h, plan.ID, "break_artifact", artifactID, margIDs[1])
+	require.Equalf(t, http.StatusConflict, code, "make-step beyond the budget must be rejected: %v", body)
 	intact, err := h.q.GetMarginaliaByID(ctx, margIDs[1])
 	require.NoError(t, err)
-	assert.False(t, intact.IsTorn, "the rejected break must not tear a marginalia")
+	assert.False(t, intact.IsTorn, "the rejected step must not tear a marginalia")
+}
+
+// TestChronicleHistories_Make_NarrationFoldedIntoLog proves the optional
+// per-option narration is folded into the single make-step action-log entry.
+func TestChronicleHistories_Make_NarrationFoldedIntoLog(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	roll := chCastRoll(t, h, plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, "make", roll.Difficulty) // difficulty = rank 1 → budget 1
+
+	const narration = "The river ran red beneath the old bridge."
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-step"
+	code, body := h.post(h.preparerIdxFor(plan.ID), path, map[string]any{
+		"option": "echo_present", "narration": narration,
+	})
+	require.Equalf(t, http.StatusOK, code, "make-step echo_present: %v", body)
+
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	found := false
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == "plan.chronicle_histories" &&
+			strings.Contains(p.Body, narration) {
+			found = true
+		}
+	}
+	assert.True(t, found, "the make-step log entry should contain the folded narration")
+
+	h.complete(plan.ID)
+}
+
+// TestChronicleHistories_Make_CompletionGatedByBudget proves the make path
+// cannot complete until every budgeted option has been submitted.
+func TestChronicleHistories_Make_CompletionGatedByBudget(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	// Rank 2, no invocations → difficulty = 2 → budget 2.
+	saPinKnowledgeRank(t, h, plan.PreparerID, 2)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	roll := chCastRoll(t, h, plan.ID)
+	require.NotNil(t, roll)
+	require.EqualValues(t, 2, roll.Difficulty)
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+
+	// First of two options.
+	code, body := chMakeStep(h, plan.ID, "echo_present", 0, 0)
+	require.Equalf(t, http.StatusOK, code, "first make-step: %v", body)
+
+	// Completion is blocked: one option still owed.
+	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
+	code, body = h.post(h.preparerIdxFor(plan.ID), completePath, nil)
+	require.Equalf(t, http.StatusConflict, code, "complete before budget met must 409: %v", body)
+
+	// Second option; now completion succeeds.
+	code, body = chMakeStep(h, plan.ID, "echo_present", 0, 0)
+	require.Equalf(t, http.StatusOK, code, "second make-step: %v", body)
+	h.complete(plan.ID)
 }
 
 // TestChronicleHistories_Mar_AllPlayersMustChoose proves a marred plan blocks
@@ -289,8 +392,7 @@ func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 
 	h.jumpToRow(*plan.RowNumber)
 	require.Nil(t, h.resolve(plan.ID))
-	chInvoke(t, h, plan.ID, artifactID)
-	roll := chCastRoll(t, h, plan.ID)
+	roll := chCastRoll(t, h, plan.ID, artifactID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, "mar", roll.Difficulty-1) // consistent mar
 

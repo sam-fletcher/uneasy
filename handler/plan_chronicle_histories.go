@@ -13,10 +13,9 @@ package handler
 // Preparing: preparation_notes required (the historical problem).
 //
 // Pre-Roll: OnResolve opens the invoke phase (status 'resolving',
-// InvokePhaseClosed=false) without creating a roll. The preparer invokes
-// artifacts via the invoke-artifact route, then calls cast-roll to close the
-// phase and create the dice roll. This mirrors Propose Decree's
-// council → call-roll shape.
+// InvokePhaseClosed=false) without creating a roll. The preparer then sets the
+// scene in one shot via cast-roll: it records the chosen artifact invocations,
+// posts the scene narration, closes the phase, and creates the dice roll.
 //
 // Make: choose N options equal to the dice result (repeatable):
 //   - "break_artifact"   → tear a marginalia on an invoked artifact
@@ -33,9 +32,8 @@ package handler
 // AssetRecipientForPlan(ctx, q, plan).
 //
 // Extra routes:
-//   POST /api/plans/:planId/invoke-artifact   {"asset_id": N}
-//   POST /api/plans/:planId/cast-roll         (preparer closes invoke phase, casts dice)
-//   POST /api/plans/:planId/break-artifact    {"asset_id": N, "marginalia_id": M}
+//   POST /api/plans/:planId/cast-roll         {"artifact_ids": [N], "scene": "..."}
+//   POST /api/plans/:planId/make-step         {"option": "...", "narration": "...", "asset_id": N, "marginalia_id": M}
 //   POST /api/plans/:planId/mar-choice        {"choice": "...", "asset_id": N}
 
 import (
@@ -44,6 +42,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -81,10 +80,12 @@ func (chHandler) ComputeDifficulty(
 }
 
 // OnResolve opens the pre-roll invoke phase and returns nil — no roll yet.
-// Mirrors Propose Decree's council shape: the preparer invokes artifacts via
-// the invoke-artifact route during the pre-roll scene, then closes the phase
-// and casts the dice via cast-roll (which computes difficulty and creates the
-// roll). The plan sits in 'resolving' with InvokePhaseClosed=false until then.
+// Mirrors Propose Decree's council shape: the plan sits in 'resolving' with
+// InvokePhaseClosed=false until the preparer sets the scene, chooses the
+// artifacts to invoke, and casts the dice via the cast-roll route (which records
+// the invocations, posts the scene, computes difficulty, and creates the roll).
+// No log entry here — the standard plan.resolving post already marks the start,
+// and the preparer's own scene text is logged by cast-roll.
 func (chHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	resData := loadResolutionData(plan.ResolutionData)
 	ch := resData.EnsureChronicleHistories()
@@ -92,8 +93,6 @@ func (chHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return nil, fmt.Errorf("could not open invoke phase: %w", err)
 	}
-	chLog(ctx, deps, plan, model.SeverityDefault,
-		"Chronicle Histories pre-roll: set a scene from the past and invoke artifacts to shed light on it.")
 	// Return nil — the roll is created later when the preparer calls cast-roll.
 	return nil, nil
 }
@@ -127,18 +126,27 @@ func (chHandler) MaxChoices(result string, rollResult, _ int16) int {
 	return -1
 }
 
-// CanComplete blocks a mar resolution until every player present when the mar
-// scene began has submitted exactly one choice ("all players choose one option
-// from the make list"). The make path has no completion prerequisite.
+// CanComplete enforces both resolution gates without roll access:
+//   - mar: every player present when the mar scene began must have submitted
+//     exactly one choice ("all players choose one option from the make list");
+//   - make: the preparer must have submitted all MakeBudget options
+//     ("choose options equal to your result"), one per make-step.
 func (chHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	ch := resData.ChronicleHistories
-	if ch == nil || !ch.MarActive {
+	if ch == nil {
 		return nil
 	}
-	submitted := chDistinctMarChoosers(resData)
-	if submitted < ch.MarRequiredChoices {
-		return fmt.Errorf("%d of %d players still need to choose a mar option",
-			ch.MarRequiredChoices-submitted, ch.MarRequiredChoices)
+	if ch.MarActive {
+		submitted := chDistinctMarChoosers(resData)
+		if submitted < ch.MarRequiredChoices {
+			return fmt.Errorf("%d of %d players still need to choose a mar option",
+				ch.MarRequiredChoices-submitted, ch.MarRequiredChoices)
+		}
+		return nil
+	}
+	if ch.MakeBudget > 0 && ch.MakeChoicesDone < ch.MakeBudget {
+		return fmt.Errorf("%d of %d make choices still need to be submitted",
+			ch.MakeBudget-ch.MakeChoicesDone, ch.MakeBudget)
 	}
 	return nil
 }
@@ -165,95 +173,9 @@ func chLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 
 func (chHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"invoke-artifact": chInvokeArtifactHandler(deps),
-		"cast-roll":       chCastRollHandler(deps),
-		"break-artifact":  chBreakArtifactHandler(deps),
-		"mar-choice":      chMarChoiceHandler(deps),
-	}
-}
-
-// ── Invoke Artifact ───────────────────────────────────────────────────────────
-
-// chInvokeArtifactHandler handles POST /api/plans/:planId/invoke-artifact.
-//
-// Usable during the pre-roll scene (plan status = 'resolving' before roll is
-// created) and during make when "invoke_another" is chosen. Any artifact
-// belonging to any player in the game may be invoked.
-//
-// Request body: {"asset_id": N}
-func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
-		if !ok {
-			return
-		}
-		if plan.PlanType != model.PlanChronicleHistories {
-			respondErr(w, http.StatusBadRequest, "invoke-artifact is only for Chronicle Histories")
-			return
-		}
-		if plan.Status != model.PlanResolving {
-			respondErr(w, http.StatusConflict, "plan is not in resolving status")
-			return
-		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer can invoke artifacts")
-			return
-		}
-
-		var body struct {
-			AssetID int64 `json:"asset_id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 {
-			respondErr(w, http.StatusBadRequest, "asset_id is required")
-			return
-		}
-
-		ctx := r.Context()
-
-		asset, err := deps.Q.GetAssetByID(ctx, body.AssetID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "artifact not found")
-			return
-		}
-		if asset.GameID != plan.GameID {
-			respondErr(w, http.StatusBadRequest, "artifact does not belong to this game")
-			return
-		}
-		if asset.AssetType != model.AssetArtifact {
-			respondErr(w, http.StatusBadRequest, "target asset must be an artifact")
-			return
-		}
-
-		resData := loadResolutionData(plan.ResolutionData)
-		ch := resData.EnsureChronicleHistories()
-
-		// The invoke-artifact route is only for the pre-roll scene. Once the
-		// roll has been created (cast-roll sets InvokePhaseClosed), further
-		// artifact invocations must come through the mar-choice "invoke_another"
-		// path, which records narrative state without affecting difficulty.
-		if ch.InvokePhaseClosed {
-			respondErr(w, http.StatusConflict, "invoke phase is closed; the dice roll has been cast")
-			return
-		}
-
-		// Idempotent: don't add duplicates.
-		if !slices.Contains(ch.InvokedArtifactIDs, body.AssetID) {
-			ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, body.AssetID)
-		}
-
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, r, "could not save invoked artifact", err)
-			return
-		}
-
-		chLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s invoked %q to shed light on the past.",
-				playerDisplayName(ctx, deps.Q, player.ID), asset.Name))
-
-		respond(w, http.StatusOK, map[string]any{
-			"plan_id":              plan.ID,
-			"invoked_artifact_ids": ch.InvokedArtifactIDs,
-		})
+		"cast-roll":  chCastRollHandler(deps),
+		"make-step":  chMakeStepHandler(deps),
+		"mar-choice": chMarChoiceHandler(deps),
 	}
 }
 
@@ -261,11 +183,14 @@ func chInvokeArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 
 // chCastRollHandler handles POST /api/plans/:planId/cast-roll.
 //
-// The preparer closes the pre-roll invoke phase and casts the dice. Difficulty
-// is computed here as max(knowledge rank, #invoked artifacts), so it reflects
-// every artifact invoked during the pre-roll scene. Mirrors Propose Decree's
-// call-roll: OnResolve left the plan in 'resolving' with no roll; this route
-// creates it.
+// The preparer sets the pre-roll scene in one shot: they choose the artifacts to
+// invoke (all at once, so the difficulty meter settles before the roll) and
+// optionally write the scene. This route records the invoked artifacts, posts
+// the scene as the preparer's narration anchored to the plan row, closes the
+// invoke phase, computes difficulty = max(knowledge rank, #invoked), and casts
+// the dice.
+//
+// Request body: {"artifact_ids": [N, ...], "scene": "..."}
 func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -287,6 +212,14 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 
 		ctx := r.Context()
 
+		var body struct {
+			ArtifactIDs []int64 `json:"artifact_ids"`
+			Scene       string  `json:"scene"`
+		}
+		// The body is optional (a scene with no invocations is valid); ignore a
+		// decode error so an empty body resolves to the zero struct.
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
 		resData := loadResolutionData(plan.ResolutionData)
 		ch := resData.EnsureChronicleHistories()
 		if ch.InvokePhaseClosed {
@@ -302,14 +235,29 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// Validate and record the invoked artifacts (deduped). Each must be an
+		// artifact belonging to a player in this game.
+		invoked := make([]int64, 0, len(body.ArtifactIDs))
+		for _, id := range body.ArtifactIDs {
+			if slices.Contains(invoked, id) {
+				continue
+			}
+			asset, err := deps.Q.GetAssetByID(ctx, id)
+			if err != nil || asset.GameID != plan.GameID || asset.AssetType != model.AssetArtifact {
+				respondErr(w, http.StatusBadRequest, "each artifact_id must be an artifact in this game")
+				return
+			}
+			invoked = append(invoked, id)
+		}
+		ch.InvokedArtifactIDs = invoked
+
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 
-		// Close the invoke phase first so any late invoke-artifact call is
-		// rejected and can't affect the difficulty we're about to compute.
+		// Close the invoke phase so the difficulty we compute is final.
 		ch.InvokePhaseClosed = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not close invoke phase", err)
@@ -328,9 +276,22 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		chLog(ctx, deps, plan, model.SeverityImportant,
-			fmt.Sprintf("The pre-roll scene closes with %d artifact(s) invoked — the dice are cast (difficulty %d).",
-				len(ch.InvokedArtifactIDs), difficulty))
+		// Log the preparer's scene as their own narration, anchored to the plan
+		// row (replaces the old OnResolve pre-roll system message).
+		if scene := strings.TrimSpace(body.Scene); scene != "" {
+			post, perr := deps.Q.CreatePlayerMessage(ctx, dbgen.CreatePlayerMessageParams{
+				GameID:    plan.GameID,
+				AuthorID:  &player.ID,
+				Body:      scene,
+				RowNumber: plan.RowNumber,
+				PlanID:    &plan.ID,
+			})
+			if perr == nil {
+				if h, ok := deps.Manager.Get(plan.GameID); ok {
+					h.BroadcastEvent(model.EventScenePostCreated, model.ScenePostCreatedPayload{Post: post})
+				}
+			}
+		}
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,
@@ -339,98 +300,120 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
-// ── Break Artifact ────────────────────────────────────────────────────────────
+// ── Make Step ───────────────────────────────────────────────────────────────
 
-// chBreakArtifactHandler handles POST /api/plans/:planId/break-artifact.
+// chMakeStepHandler handles POST /api/plans/:planId/make-step.
 //
-// Tears a marginalia on an artifact that has been invoked in this plan.
-// Usable by the preparer (make option "break_artifact") or by any player
-// during mar (handled by game consensus; this endpoint enforces the invoked-
-// artifact constraint but not make/mar context).
+// On a made roll the preparer chooses options "equal to your result", one at a
+// time, so any surrounding narration can be posted to chat between picks. Each
+// step applies its mechanical effect inline (reusing chApplyMarEffect, the same
+// helper the mar path uses) and folds the player's optional narration into the
+// single action-log entry alongside the mechanical note.
 //
-// Request body: {"asset_id": N, "marginalia_id": M}
-func chBreakArtifactHandler(deps *PlanDeps) http.HandlerFunc {
+// Completion is server-authoritative: MakeBudget (the dice result) is captured
+// on the first step, MakeChoicesDone counts submitted steps, and the route
+// rejects any step beyond MakeBudget so a stale client can't over-pick.
+//
+// Request body: {"option": "...", "narration": "...", "asset_id": N, "marginalia_id": M}
+func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
 		if !ok {
 			return
 		}
 		if plan.PlanType != model.PlanChronicleHistories {
-			respondErr(w, http.StatusBadRequest, "break-artifact is only for Chronicle Histories")
+			respondErr(w, http.StatusBadRequest, "make-step is only for Chronicle Histories")
 			return
 		}
 		if plan.Status != model.PlanResolving {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-
-		var body struct {
-			AssetID      int64 `json:"asset_id"`
-			MarginaliaID int64 `json:"marginalia_id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 || body.MarginaliaID == 0 {
-			respondErr(w, http.StatusBadRequest, "asset_id and marginalia_id are required")
+		// The preparer resolves their own plan; a perform_steps demand winner may
+		// drive the choice in their place (same actor set as the generic make).
+		if player.ID != plan.PreparerID &&
+			!makeChoiceAllowedNonPreparer(r.Context(), deps.Q, plan, player) {
+			respondErr(w, http.StatusForbidden, "only the plan's preparer can make choices")
 			return
 		}
 
 		ctx := r.Context()
 
+		// Make steps are only valid on a made roll; capture the result as the budget.
+		roll, rollErr := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
+		if rollErr != nil || roll.Outcome == nil || *roll.Outcome != makeOutcome {
+			respondErr(w, http.StatusConflict, "make-step is only valid when the plan rolled a make")
+			return
+		}
+		if roll.Result == nil || *roll.Result < 1 {
+			respondErr(w, http.StatusConflict, "the roll has no result yet")
+			return
+		}
+
+		var body struct {
+			Option       string `json:"option"`
+			Narration    string `json:"narration"`
+			AssetID      *int64 `json:"asset_id"`
+			MarginaliaID *int64 `json:"marginalia_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Option == "" {
+			respondErr(w, http.StatusBadRequest, "option is required")
+			return
+		}
+		validChoices := []string{"break_artifact", "invoke_another", "echo_present", "total_control"}
+		if !slices.Contains(validChoices, body.Option) {
+			respondErr(w, http.StatusBadRequest, fmt.Sprintf("option must be one of: %v", validChoices))
+			return
+		}
+
 		resData := loadResolutionData(plan.ResolutionData)
-		ch := resData.ChronicleHistories
-		if ch == nil || !slices.Contains(ch.InvokedArtifactIDs, body.AssetID) {
-			respondErr(w, http.StatusBadRequest, "artifact has not been invoked in this plan")
-			return
+		ch := resData.EnsureChronicleHistories()
+
+		// Capture the budget once, on the first step, and announce the success.
+		// (Chronicle's make path uses make-step, not the generic make-choice
+		// route that would otherwise emit this via ApplyChoice.)
+		if ch.MakeBudget == 0 {
+			ch.MakeBudget = *roll.Result
+			chLog(ctx, deps, plan, model.SeverityImportant,
+				"Chronicle Histories succeeded — the preparer shapes the scene from history.")
 		}
-		// Server-authoritative completion: a stale client (re-prompted after a
-		// refresh) must not tear more marginalia than the picked break_artifact
-		// count. (The mar break_artifact path is a separate per-player mar-choice.)
-		if int(ch.BreakArtifactDone) >= pickedChoiceCount(&resData, "break_artifact") {
-			respondErr(w, http.StatusConflict, "break-artifact already completed for this plan")
+		// Server-authoritative completion: never accept more than the budget.
+		if ch.MakeChoicesDone >= ch.MakeBudget {
+			respondErr(w, http.StatusConflict, "all make choices have already been submitted")
 			return
 		}
 
-		artifact, err := deps.Q.GetAssetByID(ctx, body.AssetID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "artifact not found")
+		// Apply the mechanical effect (break_artifact / invoke_another mutate
+		// state and DB; echo_present / total_control are narrative). Reuses the
+		// same helper as the mar path.
+		logBody, status, msg := chApplyMarEffect(ctx, deps, plan, ch, player.ID, marEffectInput{
+			choice: body.Option, assetID: body.AssetID, marginaliaID: body.MarginaliaID,
+		})
+		if status != 0 {
+			respondErr(w, status, msg)
 			return
 		}
 
-		m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "marginalia not found")
-			return
-		}
-		if m.AssetID != body.AssetID {
-			respondErr(w, http.StatusBadRequest, "marginalia does not belong to the specified artifact")
-			return
-		}
-		if m.IsTorn {
-			respondErr(w, http.StatusConflict, "marginalia is already torn")
-			return
-		}
+		// Record as a make-path Choice (PlayerID nil) and advance the counter.
+		resData.MakeMarChoices = append(resData.MakeMarChoices, Choice{Option: body.Option})
+		ch.MakeChoicesDone++
 
-		// Break = tear one marginalia (auto-destroy if it was the last) — the
-		// canonical effect, shared with every other plan.
-		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &artifact, &m, player.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not break artifact", err)
-			return
-		}
-
-		ch.BreakArtifactDone++
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, r, "could not record break-artifact progress", err)
+			respondInternalErr(w, r, "could not save make choice", err)
 			return
 		}
 
-		chLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s the invoked artifact %q.",
-			playerDisplayName(ctx, deps.Q, player.ID), breakVerb(destroyed), artifact.Name))
+		// Fold the player's narration into the single mechanical log entry.
+		if narration := strings.TrimSpace(body.Narration); narration != "" {
+			logBody = logBody + " " + narration
+		}
+		chLog(ctx, deps, plan, model.SeverityDefault, logBody)
 
 		respond(w, http.StatusOK, map[string]any{
-			"plan_id":       plan.ID,
-			"asset_id":      body.AssetID,
-			"marginalia_id": m.ID,
-			"destroyed":     destroyed,
+			"plan_id":      plan.ID,
+			"option":       body.Option,
+			"choices_done": ch.MakeChoicesDone,
+			"make_budget":  ch.MakeBudget,
 		})
 	}
 }
