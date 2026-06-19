@@ -742,7 +742,7 @@
 					{#each ['power', 'knowledge', 'esteem'] as cat}
 						<div class="rank-col">
 							<h4>{cat}</h4>
-							{#each rankings.filter(r => r.category === (cat as RankingCategory)).sort((a, b) => a.rank - b.rank) as r}
+							{#each rankings.filter(r => r.category === (cat as RankingCategory) && r.player_id !== null).sort((a, b) => a.rank - b.rank) as r}
 								<div class="rank-slot-display">{r.rank}. {rankingLabel(r.player_id)}</div>
 							{/each}
 						</div>

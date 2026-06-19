@@ -232,10 +232,12 @@ func EmitRankingUpdated(
 		}
 
 		// The resulting ranks for the category — the payoff of the update.
+		// Only occupied ranks appear; dummy/filler slots are omitted, so the
+		// rank numbers may skip (e.g. "2 Sam · 4 Charlie").
 		if len(cat.Final) > 0 {
 			var ranks []string
-			for i, name := range cat.Final {
-				ranks = append(ranks, fmt.Sprintf("%d %s", i+1, name))
+			for _, st := range cat.Final {
+				ranks = append(ranks, fmt.Sprintf("%d %s", st.Rank, st.Name))
 			}
 			EmitSystemPost(ctx, q, manager, gameID, "ranking.standing",
 				model.SeverityImportant,

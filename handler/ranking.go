@@ -5,22 +5,28 @@ package handler
 // runRankingUpdate is called by advanceRowInner (turn.go) whenever current_row
 // crosses an engrailed line (after rows 4, 8, 12).
 //
-// Algorithm per rulebook §"Updating Rankings":
+// Algorithm per rulebook §"Updating Rankings" (resolution order confirmed by
+// the designer):
 //
-//  1. For each category (power, knowledge, esteem), gather all player tokens.
-//  2. Process tokens from worst rank to best rank (bottom of plan stack upward).
-//     For each token: swap that player with whoever is one rank above them on the
-//     ranking track. If already at rank 1, or the slot above is nil (dummy/static
-//     mode), skip.
-//  3. After processing all tokens in a category: if every plan type in that
-//     category has at least one token, clear all tokens for that category
-//     (returning them to their players).
+//  1. Process categories in display order: Power, then Knowledge, then Esteem.
+//     The three sheets are independent, so the order only matters for a
+//     consistent action log.
+//  2. Within a sheet, resolve every *token* one-by-one — NOT one per player.
+//     Start at the bottom-most plan of the sheet and move up; within a plan,
+//     start at the bottom-most token (the first player to have prepared it) and
+//     move up the stack. For each token, swap that player with the token one
+//     position above them on the sheet's ranking track. If already at the top
+//     (or only dummy/static slots sit above), do nothing. Ranks update live, so
+//     a player who holds several tokens on a sheet climbs once per token.
+//  3. After processing all tokens in a category: if every plan on that sheet has
+//     at least one token, clear all tokens for that category (returning them to
+//     their players).
 //  4. Upsert all modified ranking slots back to the DB.
 //
-// Note on multi-token adjacency: the rules process worst-to-best (bottom of
-// stack first) with live rank updates after each swap. Two token holders at
-// adjacent ranks will effectively cancel each other — this is the intended
-// board behaviour when multiple players stack tokens on the same plan.
+// Token order within a plan is placement order (earliest first), read from the
+// token row id — NOT the holders' current ranks, which may have shifted since
+// they prepared. Plan order within a sheet is the reverse of categorySheetPlans
+// (which lists plans top-to-bottom), so the bottom-most plan resolves first.
 
 import (
 	"context"
@@ -34,75 +40,64 @@ import (
 // Index i holds the player ID at rank i+1, or nil if the slot is unoccupied (dummy).
 type categorySlots [5]*int64
 
-// applyRankingSwaps applies the worst-to-best token-holder swap algorithm and
-// determines whether tokens should be cleared for each category.
+// tokensForPlan returns the tokens on one plan, ordered bottom-to-top of the
+// stack — i.e. by placement order (earliest-prepared first), which the row id
+// (a BIGSERIAL) tracks. This is the order the rules resolve a plan's stack in,
+// and it is deliberately NOT the holders' current ranks: a holder's rank may
+// have shifted since they prepared, but their position in the stack does not.
+func tokensForPlan(tokens []dbgen.PlanToken, pt model.PlanType) []dbgen.PlanToken {
+	var out []dbgen.PlanToken
+	for _, tok := range tokens {
+		if tok.PlanType == pt {
+			out = append(out, tok)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// applyRankingSwaps resolves every token on each sheet one-by-one and determines
+// whether tokens should be cleared for each category. Each token is its own
+// swap, so a player holding several tokens on a sheet climbs once per token.
 //
 // Modifies slots and playerRank in place. Returns two maps:
-//   - shouldClearTokens[cat]: whether every plan type in that category had at
-//     least one token holder (and thus tokens should be cleared after this call).
-//   - swapped[cat][playerID]: whether that holder performed an up-swap (true) or
-//     was already at the top with no real rival above (false). The chat narration
-//     reads this to show an up-arrow vs. a crown; a net-zero "cancel" between two
-//     adjacent holders is simply two true entries that undo each other.
+//   - shouldClearTokens[cat]: whether every plan on that sheet had at least one
+//     token (and thus tokens should be cleared after this call).
+//   - swapped[cat][planType][playerID]: whether that specific token performed an
+//     up-swap (true) or found only the top / dummy slots above it (false). The
+//     chat narration reads this to show an up-arrow vs. a crown.
 func applyRankingSwaps(
 	slots map[model.RankingCategory]*categorySlots,
 	playerRank map[int64]map[model.RankingCategory]int16,
 	tokens []dbgen.PlanToken,
 	categoryPlanTypes map[model.RankingCategory][]model.PlanType,
-) (map[model.RankingCategory]bool, map[model.RankingCategory]map[int64]bool) {
+) (map[model.RankingCategory]bool, map[model.RankingCategory]map[model.PlanType]map[int64]bool) {
 	shouldClearTokens := make(map[model.RankingCategory]bool)
-	swapped := make(map[model.RankingCategory]map[int64]bool)
+	swapped := make(map[model.RankingCategory]map[model.PlanType]map[int64]bool)
 
 	for cat, planTypes := range categoryPlanTypes {
 		s := slots[cat]
-
-		// Gather unique token players for this category (de-duplicate stacked tokens).
-		seen := make(map[int64]struct{})
-		var tokenPlayers []int64
-		for _, pt := range planTypes {
-			for _, tok := range tokens {
-				if tok.PlanType == pt {
-					if _, dup := seen[tok.PlayerID]; !dup {
-						seen[tok.PlayerID] = struct{}{}
-						tokenPlayers = append(tokenPlayers, tok.PlayerID)
-					}
-				}
-			}
-		}
-		if len(tokenPlayers) == 0 {
-			shouldClearTokens[cat] = false
-			continue
-		}
-
-		// Sort worst → best (highest rank# first = bottom of stack first).
-		sort.Slice(tokenPlayers, func(i, j int) bool {
-			ri := playerRank[tokenPlayers[i]][cat]
-			rj := playerRank[tokenPlayers[j]][cat]
-			return ri > rj
-		})
-
-		catSwapped := make(map[int64]bool)
-		for _, pid := range tokenPlayers {
-			catSwapped[pid] = swapTokenPlayerWithAbove(pid, cat, s, playerRank)
-		}
+		catSwapped := make(map[model.PlanType]map[int64]bool)
 		swapped[cat] = catSwapped
 
-		// After all tokens in this category are resolved: if every plan type
-		// on this sheet has at least one token, mark for clearing.
+		// Resolve plans bottom-to-top on the sheet (categoryPlanTypes lists them
+		// top-to-bottom, so iterate in reverse), and within each plan resolve its
+		// stack in placement order. Each token triggers one up-swap.
 		allHaveTokens := true
-		for _, pt := range planTypes {
-			found := false
-			for _, tok := range tokens {
-				if tok.PlanType == pt {
-					found = true
-					break
-				}
-			}
-			if !found {
+		for i := len(planTypes) - 1; i >= 0; i-- {
+			planTokens := tokensForPlan(tokens, planTypes[i])
+			if len(planTokens) == 0 {
 				allHaveTokens = false
-				break
+				continue
+			}
+			planSwapped := make(map[int64]bool)
+			catSwapped[planTypes[i]] = planSwapped
+			for _, tok := range planTokens {
+				planSwapped[tok.PlayerID] = swapTokenPlayerWithAbove(tok.PlayerID, cat, s, playerRank)
 			}
 		}
+
+		// Clear the sheet's tokens only if every plan on it had a holder.
 		shouldClearTokens[cat] = allHaveTokens
 	}
 
@@ -172,19 +167,31 @@ type rankingMove struct {
 }
 
 // rankingPlanLine is one prepared plan and the preparers it affected, ordered
-// bottom-to-top (worst rank first) to match the rules' resolution order.
+// bottom-to-top of the token stack (placement order, earliest preparer first)
+// to match the rules' resolution order.
 type rankingPlanLine struct {
 	PlanType model.PlanType `json:"plan_type"`
 	Movers   []rankingMove  `json:"movers"`
 }
 
+// rankStanding is one occupied slot in a category's final standing: a real
+// player and their (true, 1-indexed) rank. Dummy/filler slots are a backend
+// contrivance for sub-5-player games and are never represented here — they are
+// the absence of a player, so they are omitted entirely from the narration. A
+// gap in the rank numbers (e.g. "2 Sam · 4 Charlie") is the only trace they
+// leave.
+type rankStanding struct {
+	Rank int16  `json:"rank"`
+	Name string `json:"name"`
+}
+
 // rankingCategoryDiff is one category's narration: its prepared plans in
-// resolution order, the final standing (rank 1→5, with "Dummy" for empty
-// slots), and whether the category's preparations cleared.
+// resolution order, the final standing (occupied ranks only, dummies omitted),
+// and whether the category's preparations cleared.
 type rankingCategoryDiff struct {
 	Category model.RankingCategory `json:"category"`
 	Plans    []rankingPlanLine     `json:"plans"`
-	Final    []string              `json:"final"`
+	Final    []rankStanding        `json:"final"`
 	Cleared  bool                  `json:"cleared"`
 }
 
@@ -202,6 +209,33 @@ var rankingCategoryOrder = []model.RankingCategory{
 	model.CategoryPower,
 	model.CategoryKnowledge,
 	model.CategoryEsteem,
+}
+
+// categorySheetPlans is the full composition of each ranking category's plan
+// preparation sheet: all four plans on that sheet, in the rules' top-to-bottom
+// listing order (THE_12_PLANS_RULES.md). The ranking update walks these to
+// gather token holders and to decide whether every plan on the sheet was
+// prepared (which clears the sheet's tokens). The set is asserted against the
+// plan registry in TestCategorySheetPlansMatchRegistry so it can't drift.
+var categorySheetPlans = map[model.RankingCategory][]model.PlanType{
+	model.CategoryPower: {
+		model.PlanMakeDemands,
+		model.PlanProposeDecree,
+		model.PlanExchangeCourtiers,
+		model.PlanMakeWar,
+	},
+	model.CategoryKnowledge: {
+		model.PlanMakeIntroductions,
+		model.PlanSeekAnswers,
+		model.PlanChronicleHistories,
+		model.PlanClandestinelyLiaise,
+	},
+	model.CategoryEsteem: {
+		model.PlanSpreadPropaganda,
+		model.PlanSpreadRumors,
+		model.PlanProposeDuel,
+		model.PlanHostFestivity,
+	},
 }
 
 // runRankingUpdate executes the ranking update and returns the updated rankings
@@ -244,35 +278,23 @@ func runRankingUpdate(
 	// Kept live — updated after each swap so subsequent swaps use current positions,
 	// not the initial snapshot.
 	playerRank := make(map[int64]map[model.RankingCategory]int16)
-	// startRank is a frozen copy of the pre-swap ranks, used by the diff to
-	// decide whether a preparer climbed (final < start) and to order preparers
-	// bottom-to-top within a plan line.
-	startRank := make(map[int64]map[model.RankingCategory]int16)
 	for _, rk := range rankings {
 		if rk.PlayerID == nil {
 			continue
 		}
 		if _, ok := playerRank[*rk.PlayerID]; !ok {
 			playerRank[*rk.PlayerID] = make(map[model.RankingCategory]int16)
-			startRank[*rk.PlayerID] = make(map[model.RankingCategory]int16)
 		}
 		playerRank[*rk.PlayerID][rk.Category] = rk.Rank
-		startRank[*rk.PlayerID][rk.Category] = rk.Rank
 	}
 
-	// Phase 2: one plan type per category (extended in future phases).
-	categoryPlanTypes := map[model.RankingCategory][]model.PlanType{
-		model.CategoryPower:     {model.PlanExchangeCourtiers},
-		model.CategoryKnowledge: {model.PlanMakeIntroductions},
-		model.CategoryEsteem:    {model.PlanSpreadPropaganda},
-	}
+	categoryPlanTypes := categorySheetPlans
 
 	shouldClearTokens, swapped := applyRankingSwaps(slots, playerRank, tokens, categoryPlanTypes)
 
-	// Build the narration diff from the per-holder swap outcomes and the final
-	// board (slots, mutated in place by the swaps). startRank is the frozen
-	// "before", used only to order preparers bottom-to-top.
-	diff := buildRankingDiff(ctx, q, tokens, categoryPlanTypes, startRank, swapped, slots, shouldClearTokens)
+	// Build the narration diff from the per-token swap outcomes and the final
+	// board (slots, mutated in place by the swaps).
+	diff := buildRankingDiff(ctx, q, tokens, categoryPlanTypes, swapped, slots, shouldClearTokens)
 
 	for cat, shouldClear := range shouldClearTokens {
 		if shouldClear {
@@ -307,22 +329,21 @@ func runRankingUpdate(
 	return final, diff, nil
 }
 
-// buildRankingDiff assembles the chat-narration diff from the per-holder swap
-// outcomes. For each category (in display order) it walks that category's plan
-// types in resolution order, and for every plan with at least one preparer
-// records the preparers bottom-to-top with an "up" or "top" glyph.
+// buildRankingDiff assembles the chat-narration diff from the per-token swap
+// outcomes. For each category (in display order) it walks that category's plans
+// in resolution order (bottom-most plan first), and for every plan with at least
+// one token records its holders in placement order with an "up" or "top" glyph.
 //
-// The glyph reflects the operation, not the net result: a holder who performed
-// an up-swap is "up" even if a later swap put them back. Read in order, the
-// arrows fully reconstruct the final standings — including the cases that net to
-// no movement — so no separate "no change" marker is needed.
+// The glyph reflects the operation, not the net result: a token that performed
+// an up-swap is "up" even if a later swap put its holder back. Read in order,
+// the arrows fully reconstruct the final standings — including the cases that
+// net to no movement — so no separate "no change" marker is needed.
 func buildRankingDiff(
 	ctx context.Context,
 	q *dbgen.Queries,
 	tokens []dbgen.PlanToken,
 	categoryPlanTypes map[model.RankingCategory][]model.PlanType,
-	startRank map[int64]map[model.RankingCategory]int16,
-	swapped map[model.RankingCategory]map[int64]bool,
+	swapped map[model.RankingCategory]map[model.PlanType]map[int64]bool,
 	finalSlots map[model.RankingCategory]*categorySlots,
 	cleared map[model.RankingCategory]bool,
 ) *rankingUpdateDiff {
@@ -330,46 +351,37 @@ func buildRankingDiff(
 	for _, cat := range rankingCategoryOrder {
 		catDiff := rankingCategoryDiff{Category: cat, Cleared: cleared[cat]}
 
-		// Final standing, rank 1→5, with "Dummy" for unoccupied (filler) slots —
-		// matching the ended-phase rankings display's label convention.
-		for _, pid := range finalSlots[cat] {
+		// Final standing — occupied ranks only. Unoccupied (dummy/filler) slots
+		// are skipped entirely; their rank number is simply absent from the list.
+		for i, pid := range finalSlots[cat] {
 			if pid == nil {
-				catDiff.Final = append(catDiff.Final, "Dummy")
 				continue
 			}
-			catDiff.Final = append(catDiff.Final, playerDisplayName(ctx, q, *pid))
+			catDiff.Final = append(catDiff.Final, rankStanding{
+				Rank: int16(i + 1),
+				Name: playerDisplayName(ctx, q, *pid),
+			})
 		}
 
-		for _, pt := range categoryPlanTypes[cat] {
-			// Preparers of this plan, de-duped, ordered worst rank first so the
-			// line reads bottom-to-top like the physical resolution order.
-			seen := make(map[int64]struct{})
-			var pids []int64
-			for _, tok := range tokens {
-				if tok.PlanType != pt {
-					continue
-				}
-				if _, dup := seen[tok.PlayerID]; dup {
-					continue
-				}
-				seen[tok.PlayerID] = struct{}{}
-				pids = append(pids, tok.PlayerID)
-			}
-			if len(pids) == 0 {
+		// Plans resolve bottom-to-top on the sheet; categoryPlanTypes lists them
+		// top-to-bottom, so walk it in reverse to match the resolution sequence.
+		planTypes := categoryPlanTypes[cat]
+		for i := len(planTypes) - 1; i >= 0; i-- {
+			pt := planTypes[i]
+			// Holders of this plan, in placement order (bottom-most token first).
+			planTokens := tokensForPlan(tokens, pt)
+			if len(planTokens) == 0 {
 				continue
 			}
-			sort.Slice(pids, func(i, j int) bool {
-				return startRank[pids[i]][cat] > startRank[pids[j]][cat]
-			})
 
 			line := rankingPlanLine{PlanType: pt}
-			for _, pid := range pids {
+			for _, tok := range planTokens {
 				glyph := "top"
-				if swapped[cat][pid] {
+				if swapped[cat][pt][tok.PlayerID] {
 					glyph = "up"
 				}
 				line.Movers = append(line.Movers, rankingMove{
-					Name:  playerDisplayName(ctx, q, pid),
+					Name:  playerDisplayName(ctx, q, tok.PlayerID),
 					Glyph: glyph,
 				})
 			}

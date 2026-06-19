@@ -143,24 +143,14 @@ func TestApplyRankingSwaps(t *testing.T) {
 		assertTokenClear(result, model.CategoryPower, true)
 	})
 
-	t.Run("two adjacent token holders cancel each other", func(t *testing.T) {
-		// Player 1 at rank 3, player 2 at rank 2 (adjacent).
-		// Both have tokens. Worst-to-best processing: player 1 (rank 3) swaps up to rank 2,
-		// displacing player 2 to rank 3. Then player 2 (now at rank 3) might swap up,
-		// but the algorithm processes worst-to-best in initial order, so player 2's
-		// updated position isn't re-processed. Actually wait, let me re-read the algorithm...
-		//
-		// Looking at the code: playerRank is kept live, so after player 1 swaps,
-		// player 2's rank is updated in the live map. But tokenPlayers list was built
-		// before the swaps, so we process: player 1 first (rank 3), then player 2 (now rank 3).
-		// When we process player 2 at their new rank 3, they might swap again.
-		// Actually, the comment says "Two token holders at adjacent ranks will effectively
-		// cancel each other", so let's test that.
-		//
-		// Initial: player 1 rank 3, player 2 rank 2.
-		// Process player 1 (worst): rank 3 → rank 2, player 2 goes rank 2 → rank 3.
-		// Process player 2 (now at rank 3): rank 3 → rank 2, player 1 goes rank 2 → rank 3.
-		// Net: they swapped back to original positions.
+	t.Run("two adjacent token holders on one plan cancel each other", func(t *testing.T) {
+		// Player 1 at rank 3, player 2 at rank 2 (adjacent), both stacked on the
+		// same plan. Tokens resolve bottom-of-stack first; the bottom token is the
+		// first preparer, which (by the eligibility rules) is the worse-ranked one
+		// — here player 1 (id 1), then player 2 (id 2). Live ranks mean:
+		//   - process player 1 (rank 3): 3 → 2, player 2 displaced 2 → 3.
+		//   - process player 2 (now rank 3): 3 → 2, player 1 displaced 2 → 3.
+		// Net: they swap back to their original positions.
 		slots := mkSlots(model.CategoryPower,
 			map[int16]*int64{
 				3: intPtr(1),
@@ -170,8 +160,8 @@ func TestApplyRankingSwaps(t *testing.T) {
 		pr := buildPlayerRank(slots)
 
 		tokens := []dbgen.PlanToken{
-			{PlayerID: 1, PlanType: model.PlanExchangeCourtiers},
-			{PlayerID: 2, PlanType: model.PlanExchangeCourtiers},
+			{ID: 1, PlayerID: 1, PlanType: model.PlanExchangeCourtiers},
+			{ID: 2, PlayerID: 2, PlanType: model.PlanExchangeCourtiers},
 		}
 		catPlanTypes := map[model.RankingCategory][]model.PlanType{
 			model.CategoryPower: {model.PlanExchangeCourtiers},
@@ -183,7 +173,7 @@ func TestApplyRankingSwaps(t *testing.T) {
 		assertRank(pr, 1, model.CategoryPower, 3)
 		assertRank(pr, 2, model.CategoryPower, 2)
 		assertRank(pr, 3, model.CategoryPower, 1)
-		// Having tokens in Phase 2 means all plan types have tokens → should clear.
+		// The sole listed plan type has a token → sheet is fully prepared → clear.
 		assertTokenClear(result, model.CategoryPower, true)
 	})
 
@@ -251,30 +241,31 @@ func TestApplyRankingSwaps(t *testing.T) {
 		assertTokenClear(result, model.CategoryEsteem, false)
 	})
 
-	t.Run("stacked tokens on same plan type deduplicated", func(t *testing.T) {
-		// Player 3 has two tokens on the same plan type (stacked).
-		// Should only process player 3 once.
+	t.Run("one player holding two plans in a category climbs once per token", func(t *testing.T) {
+		// Player 3 (rank 3) holds tokens on two different power-sheet plans.
+		// Each token is its own swap, so player 3 climbs twice: 3 → 2 → 1. This is
+		// the case the old per-player de-dup got wrong.
 		slots := mkSlots(model.CategoryPower,
 			map[int16]*int64{
-				1: intPtr(2),
-				2: intPtr(1),
+				1: intPtr(1),
+				2: intPtr(2),
 				3: intPtr(3),
 			})
 		pr := buildPlayerRank(slots)
 
+		// Bottom-most plan (Make War) resolves first, then Exchange Courtiers.
 		tokens := []dbgen.PlanToken{
-			{PlayerID: 3, PlanType: model.PlanExchangeCourtiers},
-			{PlayerID: 3, PlanType: model.PlanExchangeCourtiers}, // duplicate
-		}
-		catPlanTypes := map[model.RankingCategory][]model.PlanType{
-			model.CategoryPower: {model.PlanExchangeCourtiers},
+			{ID: 1, PlayerID: 3, PlanType: model.PlanMakeWar},
+			{ID: 2, PlayerID: 3, PlanType: model.PlanExchangeCourtiers},
 		}
 
-		result, _ := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
+		result, _ := applyRankingSwaps(slots, pr, tokens, categorySheetPlans)
 
-		// Player 3 at rank 3 should move to rank 2 (only processed once despite stacked tokens).
-		assertRank(pr, 3, model.CategoryPower, 2)
-		assertTokenClear(result, model.CategoryPower, true)
+		assertRank(pr, 3, model.CategoryPower, 1)
+		assertRank(pr, 1, model.CategoryPower, 2)
+		assertRank(pr, 2, model.CategoryPower, 3)
+		// Only 2 of the 4 power-sheet plans had tokens → sheet not cleared.
+		assertTokenClear(result, model.CategoryPower, false)
 	})
 }
 
@@ -422,11 +413,14 @@ func TestApplyRankingSwaps_SwapFlags(t *testing.T) {
 	catPlanTypes := map[model.RankingCategory][]model.PlanType{
 		cat: {model.PlanExchangeCourtiers},
 	}
-	tok := func(pid int64) dbgen.PlanToken {
-		return dbgen.PlanToken{PlayerID: pid, PlanType: model.PlanExchangeCourtiers}
+	// tok builds a token with an explicit id so the stack resolves in a
+	// deterministic placement order (lower id = bottom of stack = resolved first).
+	tok := func(id, pid int64) dbgen.PlanToken {
+		return dbgen.PlanToken{ID: id, PlayerID: pid, PlanType: model.PlanExchangeCourtiers}
 	}
 	// setup builds the slots + live rank map for the power track from a
-	// rank→playerID layout, then runs the swaps and returns the flags.
+	// rank→playerID layout, then runs the swaps and returns the per-holder flags
+	// for the (single) Exchange Courtiers plan.
 	setup := func(layout map[int16]int64, tokens []dbgen.PlanToken) (
 		map[model.RankingCategory]*categorySlots, map[int64]bool,
 	) {
@@ -441,7 +435,7 @@ func TestApplyRankingSwaps_SwapFlags(t *testing.T) {
 			pr[pid] = map[model.RankingCategory]int16{cat: rank}
 		}
 		_, swapped := applyRankingSwaps(slots, pr, tokens, catPlanTypes)
-		return slots, swapped[cat]
+		return slots, swapped[cat][model.PlanExchangeCourtiers]
 	}
 	// rankOf reads a player's final rank out of the slot array.
 	rankOf := func(s *categorySlots, pid int64) int16 {
@@ -454,26 +448,28 @@ func TestApplyRankingSwaps_SwapFlags(t *testing.T) {
 	}
 
 	t.Run("holder with a real rival above swaps (up)", func(t *testing.T) {
-		_, flags := setup(map[int16]int64{1: 10, 2: 20, 3: 30}, []dbgen.PlanToken{tok(30)})
+		_, flags := setup(map[int16]int64{1: 10, 2: 20, 3: 30}, []dbgen.PlanToken{tok(1, 30)})
 		assert.True(t, flags[30], "rank-3 holder overtakes rank-2 player")
 	})
 
 	t.Run("holder at the top does not swap (crown)", func(t *testing.T) {
-		_, flags := setup(map[int16]int64{1: 10, 2: 20}, []dbgen.PlanToken{tok(10)})
+		_, flags := setup(map[int16]int64{1: 10, 2: 20}, []dbgen.PlanToken{tok(1, 10)})
 		assert.False(t, flags[10], "rank-1 holder has no one to overtake")
 	})
 
 	t.Run("holder above only dummies does not swap (crown)", func(t *testing.T) {
 		// Ranks 1-2 empty (dummies); the rank-3 holder has no real rival above.
-		_, flags := setup(map[int16]int64{3: 30, 4: 40}, []dbgen.PlanToken{tok(30)})
+		_, flags := setup(map[int16]int64{3: 30, 4: 40}, []dbgen.PlanToken{tok(1, 30)})
 		assert.False(t, flags[30], "top real player can't climb past dummies")
 	})
 
 	t.Run("adjacent holders both swap and net to no movement", func(t *testing.T) {
-		// 1:10 (no token), 2:20 (token), 3:30 (token). Both swap; board returns
-		// to its starting order, but both flags are true.
+		// 1:10 (no token), 2:20 (token), 3:30 (token), both stacked on the same
+		// plan. The bottom token (first preparer, worse rank → player 30, id 1)
+		// resolves first, then player 20 (id 2). Both swap; the board returns to
+		// its starting order, but both flags are true.
 		s, flags := setup(map[int16]int64{1: 10, 2: 20, 3: 30},
-			[]dbgen.PlanToken{tok(20), tok(30)})
+			[]dbgen.PlanToken{tok(1, 30), tok(2, 20)})
 		assert.True(t, flags[20], "preparer 20 performed an up-swap")
 		assert.True(t, flags[30], "preparer 30 performed an up-swap")
 		assert.EqualValues(t, 2, rankOf(s[cat], 20), "board nets back to the start")
@@ -521,4 +517,26 @@ func TestFindFirstFocusPlayer(t *testing.T) {
 		require.NotNil(t, got)
 		assert.Equal(t, int64(2), got.ID)
 	})
+}
+
+// TestCategorySheetPlansMatchRegistry guards that categorySheetPlans (the
+// hardcoded composition of each ranking sheet) stays in lockstep with the plan
+// registry: every registered plan appears exactly once, filed under the
+// category its handler reports. This is the canary for the original bug, where
+// the sheet map listed only one plan per category — so untracked plans were
+// silently ignored by the ranking update.
+func TestCategorySheetPlansMatchRegistry(t *testing.T) {
+	seen := map[model.PlanType]bool{}
+	for cat, plans := range categorySheetPlans {
+		for _, pt := range plans {
+			require.False(t, seen[pt], "plan %s listed more than once in categorySheetPlans", pt)
+			seen[pt] = true
+			h, ok := GetHandler(pt)
+			require.True(t, ok, "plan %s in categorySheetPlans has no registered handler", pt)
+			assert.Equal(t, cat, h.Metadata().Category, "plan %s filed under the wrong category", pt)
+		}
+	}
+	for pt := range AllHandlers() {
+		assert.True(t, seen[pt], "registered plan %s is missing from categorySheetPlans", pt)
+	}
 }
