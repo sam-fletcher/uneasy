@@ -144,13 +144,16 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 		fc.deps,
 		fc.plan,
 		model.SeverityDefault,
-		fmt.Sprintf("%s introduced a new peer, %q, to the center of the table.",
+		fmt.Sprintf("%s introduced a new peer, %q, to the festivity.",
 			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), asset.Name),
 	)
 	return nil
 }
 
 func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContext) error {
+	// The "center" referred to is the physical table in a real-life game;
+	// for the digital game, this framing is not shown to players,
+	// instead we focus on the narrative of peers considering changing retinues.
 	if fc.assetID == 0 {
 		return errors.New("asset_id required")
 	}
@@ -159,7 +162,7 @@ func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContex
 		return errors.New("asset not found")
 	}
 	if !slices.Contains(fc.state.CenteredAssetIDs, fc.assetID) {
-		return errors.New("asset is not in the center of the table")
+		return errors.New("asset is not in available to take into your retinue")
 	}
 	oldOwner := asset.OwnerID
 	newOwner := fc.actingPlayerID
@@ -185,7 +188,7 @@ func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContex
 	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
 		Asset: updated, OldOwnerID: oldOwner, NewOwnerID: newOwner,
 	})
-	hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s took %q from the center of the table.",
+	hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s took %q into their retinue.",
 		playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), updated.Name))
 	return nil
 }
@@ -228,7 +231,7 @@ func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext)
 		fc.deps,
 		fc.plan,
 		model.SeverityDefault,
-		fmt.Sprintf("%s fell out with their peer %q, who stormed to the center of the table.",
+		fmt.Sprintf("%s fell out with their peer %q, who is now considering changing retinue.",
 			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), asset.Name),
 	)
 	return nil

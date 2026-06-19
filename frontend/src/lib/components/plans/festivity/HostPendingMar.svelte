@@ -87,7 +87,7 @@
 
 		{#if current === 'break_self'}
 			<p class="choices-note muted">
-				A guest insisted you break yourself. Choose a marginalia on your main
+				A guest has caused you to break yourself. Choose a marginalia on your main
 				character to tear.
 			</p>
 			{#if hasIntact}
@@ -109,8 +109,8 @@
 			</button>
 		{:else}
 			<p class="choices-note muted">
-				A guest insisted you fall out with one of your peers. Choose which peer
-				storms off to the center of the table.
+				A guest has caused you to fall out with one of your peers. Choose which peer
+				is considering changing retinue.
 			</p>
 			<CardPicker
 				label="Peer to set in the center"
