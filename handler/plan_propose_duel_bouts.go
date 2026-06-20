@@ -102,11 +102,11 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 			BoutNumber:  boutNumber,
 			ResponderID: pduelOpponentID(plan, player.ID),
 		})
-		pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"Bout %d — %s opens with %s, calling %s. %s must answer.",
-			boutNumber, playerDisplayName(ctx, deps.Q, player.ID),
-			assetDisplayName(ctx, deps.Q, stake.AssetID), body.Declaration,
-			playerDisplayName(ctx, deps.Q, pduelOpponentID(plan, player.ID))))
+		// pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		// 	"Bout %d — %s opens with %s, calling %s. %s must answer.",
+		// 	boutNumber, playerDisplayName(ctx, deps.Q, player.ID),
+		// 	assetDisplayName(ctx, deps.Q, stake.AssetID), body.Declaration,
+		// 	playerDisplayName(ctx, deps.Q, pduelOpponentID(plan, player.ID))))
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":     plan.ID,
@@ -245,7 +245,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 		respName := playerDisplayName(ctx, deps.Q, latest.ResponderID)
 		if outcome.Match {
 			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"Bout %d: %s rolled %d, %s rolled %d — a dead match. The blades lock and the stakes carry forward.",
+				"Bout %d: %s rolled %d, %s rolled %d — an even match. The stakes rise.",
 				latest.BoutNumber, declName, declDie, respName, respStake.HiddenDie))
 		} else {
 			winName := declName

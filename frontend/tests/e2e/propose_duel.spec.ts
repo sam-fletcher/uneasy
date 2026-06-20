@@ -136,14 +136,14 @@ test('propose duel: setup → staking → bouts → final roll', async ({ browse
 	// Bouts phase: alice has initiative (higher esteem status) → she declares.
 	const aliceBout = section(alice, 'Bout');
 	await expect(aliceBout).toBeVisible({ timeout: 10_000 });
-	await aliceBout.locator('.card', { hasText: 'Alice Peer' }).getByRole('checkbox').click();
+	await aliceBout.locator('.stake-line.pick', { hasText: 'Alice Peer' }).click();
 	await aliceBout.getByRole('button', { name: 'High' }).click();
 	await aliceBout.getByRole('button', { name: 'Declare' }).click();
 
 	// Bob responds with his stake; the single bout resolves both stakes.
 	const bobBout = section(bob, 'Bout');
 	await expect(bobBout.getByRole('button', { name: 'Respond' })).toBeVisible({ timeout: 10_000 });
-	await bobBout.locator('.card', { hasText: 'Bob Peer' }).getByRole('checkbox').click();
+	await bobBout.locator('.stake-line.pick', { hasText: 'Bob Peer' }).click();
 	await bobBout.getByRole('button', { name: 'Respond' }).click();
 
 	// With one stake each, both run out → duel hands off to the final roll.
