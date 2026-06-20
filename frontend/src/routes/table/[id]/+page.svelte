@@ -362,6 +362,14 @@
 					activeRollDice = rollData.dice;
 					activeRollVotes = rollData.votes;
 					activeRollParticipants = rollData.participants;
+				} else {
+					// No active roll server-side (none open, and any plan-linked
+					// roll's plan has finished resolving). Clear any stale roll so a
+					// resync after a resolution doesn't leave the panel up.
+					activeRoll = null;
+					activeRollDice = [];
+					activeRollVotes = [];
+					activeRollParticipants = [];
 				}
 			}
 		} catch (e) {

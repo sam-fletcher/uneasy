@@ -450,9 +450,9 @@
 									onSelect={(id) => (makeAssetID = id)}
 								/>
 							{/if}
-							<FormField label="Narration (posted with this choice)">
+							<FormField label="Summary (you can expand in the chat):">
 								<textarea rows={2} bind:value={makeNarration} class="form-textarea"
-									placeholder="Describe this beat of the scene…" required></textarea>
+									placeholder="Describe this beat of the scene" required></textarea>
 							</FormField>
 							<button class="action-btn primary"
 								onclick={() => submitMakeStep(plan)}

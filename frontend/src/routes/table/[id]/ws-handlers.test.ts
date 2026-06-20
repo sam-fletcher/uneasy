@@ -100,4 +100,41 @@ describe('plan.prepared record sync', () => {
 		// And the flat plan list stays in lockstep with the backend value.
 		expect(ctx.plans.find(p => p.id === 42)?.status).toBe('resolved');
 	});
+
+	it('clears the active roll when its own plan resolves', () => {
+		const plan = makePlan({ id: 42, row_number: 3, status: 'resolving' });
+		const ctx = makeCtx({
+			plans: [plan],
+			activeRoll: { id: 9, plan_id: 42, outcome: 'make' },
+			activeRollDice: [{ id: 1 }],
+			activeRollVotes: [{ player_id: 1 }],
+			activeRollParticipants: [{ player_id: 1 }],
+		} as unknown as Partial<WSContext>);
+
+		handleWSMessage(ctx, {
+			type: EventTypes.PlanResolved,
+			payload: { plan_id: 42, result: 'make' },
+		});
+
+		expect(ctx.activeRoll).toBeNull();
+		expect(ctx.activeRollDice).toEqual([]);
+		expect(ctx.activeRollVotes).toEqual([]);
+		expect(ctx.activeRollParticipants).toEqual([]);
+	});
+
+	it('leaves an active roll that belongs to a different plan', () => {
+		const plan = makePlan({ id: 42, row_number: 3, status: 'resolving' });
+		const otherRoll = { id: 9, plan_id: 99, outcome: null };
+		const ctx = makeCtx({
+			plans: [plan],
+			activeRoll: otherRoll,
+		} as unknown as Partial<WSContext>);
+
+		handleWSMessage(ctx, {
+			type: EventTypes.PlanResolved,
+			payload: { plan_id: 42, result: 'make' },
+		});
+
+		expect(ctx.activeRoll).toBe(otherRoll);
+	});
 });

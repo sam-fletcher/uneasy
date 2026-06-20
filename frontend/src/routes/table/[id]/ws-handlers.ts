@@ -401,6 +401,20 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 				if (!row.plans.some(p => p.id === plan_id)) return row;
 				return { ...row, plans: row.plans.map(patch) };
 			});
+			// The plan's dice roll is kept visible through the resolving sub-flow
+			// so the make/mar option picker can read its outcome. Once the plan
+			// leaves 'resolving', that roll is done — clear it so the resolved
+			// roll panel doesn't linger. This mirrors GetActiveRollForGame, which
+			// stops returning the roll the moment its plan is no longer resolving
+			// (so a reload already drops it); without this, the live view kept the
+			// panel up until the next reload (most visible on Chronicle Histories,
+			// whose long multi-step resolution invites frequent reloads).
+			if (ctx.activeRoll && ctx.activeRoll.plan_id === plan_id) {
+				ctx.activeRoll = null;
+				ctx.activeRollDice = [];
+				ctx.activeRollVotes = [];
+				ctx.activeRollParticipants = [];
+			}
 			break;
 		}
 		case EventTypes.PlanDelayedArrival:
