@@ -106,6 +106,14 @@
 		)
 	);
 
+	// Assets to show in the leverage picker: unleveraged assets (selectable) plus
+	// any I've already committed for THIS roll (locked, but kept visible so the
+	// player can see what they've spent). Assets leveraged on a *prior* roll are
+	// hidden — they can't be selected and only lengthen the list.
+	const visibleAssets = $derived(
+		myAssets.filter(a => !a.is_leveraged || myCommittedAssetIds.has(a.id))
+	);
+
 	const draftCount = $derived(draftAssetIds.size + draftBankedIds.size);
 	const hasDraft = $derived(draftCount > 0);
 	// Non-actors must choose a side before their drafted dice can commit.
@@ -436,25 +444,8 @@
 		</div>
 		<p class="ready-note">Opposing leverages will unready you.</p>
 
-		<!-- My assets (once a side is chosen, or I'm the actor) -->
-		{#if (isActor || effectiveIntent != null) && myAssets.length > 0}
-			<div class="my-assets">
-				<span class="section-label">Your assets</span>
-				{#each myAssets as asset (asset.id)}
-					<AssetCardSelectable
-						{asset}
-						ownerColor={myColor}
-						knownSecretCount={secretCounts?.known(asset.id)}
-						leverageMode
-						leverageDrafted={draftAssetIds.has(asset.id)}
-						leverageDisabled={myReady || (isActor && actorLeverageBlocked)}
-						onToggleLeverage={toggleDraftAsset}
-					/>
-				{/each}
-			</div>
-		{/if}
-
-		<!-- Banked dice (once a side is chosen, or I'm the actor) -->
+		<!-- Banked dice (once a side is chosen, or I'm the actor). Rare and free,
+		     so they lead the leverage choices above the asset list. -->
 		{#if (isActor || effectiveIntent != null) && myUnspentBanked.length > 0}
 			<div class="banked-section">
 				<span class="section-label">Banked dice ({myUnspentBanked.length})</span>
@@ -472,6 +463,25 @@
 						</button>
 					{/each}
 				</div>
+			</div>
+		{/if}
+
+		<!-- My assets (once a side is chosen, or I'm the actor). Assets leveraged
+		     on a prior roll are filtered out; current-roll commits stay visible. -->
+		{#if (isActor || effectiveIntent != null) && visibleAssets.length > 0}
+			<div class="my-assets">
+				<span class="section-label">Your assets</span>
+				{#each visibleAssets as asset (asset.id)}
+					<AssetCardSelectable
+						{asset}
+						ownerColor={myColor}
+						knownSecretCount={secretCounts?.known(asset.id)}
+						leverageMode
+						leverageDrafted={draftAssetIds.has(asset.id)}
+						leverageDisabled={myReady || (isActor && actorLeverageBlocked)}
+						onToggleLeverage={toggleDraftAsset}
+					/>
+				{/each}
 			</div>
 		{/if}
 
