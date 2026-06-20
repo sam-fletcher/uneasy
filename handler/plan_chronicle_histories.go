@@ -405,7 +405,7 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Fold the player's narration into the single mechanical log entry.
 		if narration := strings.TrimSpace(body.Narration); narration != "" {
-			logBody = logBody + " " + narration
+			logBody = logBody + " The chronicler's notes say: " + narration
 		}
 		chLog(ctx, deps, plan, model.SeverityDefault, logBody)
 
@@ -578,7 +578,7 @@ func chApplyMarEffect(
 		if err != nil {
 			return "", http.StatusInternalServerError, "could not break artifact"
 		}
-		return fmt.Sprintf("%s %s the invoked artifact %s.%s", who, breakVerb(destroyed), assetMark(artifact.Name),
+		return fmt.Sprintf("%s %s %s. %s", who, breakVerb(destroyed), assetMark(artifact.Name),
 			brokenAssetDetail(ctx, deps.Q, artifact.OwnerID, &m, destroyed)), 0, ""
 	case "invoke_another":
 		if in.assetID == nil {

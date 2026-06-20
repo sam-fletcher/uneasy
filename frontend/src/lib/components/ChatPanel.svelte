@@ -33,16 +33,20 @@
 	import { playerColorByID, OOC_COLOR } from '$lib/playerColor';
 	import { SEVERITY } from '$lib/severity';
 
-	// System-log bodies use a tiny markdown subset: **bold** spans wrap
-	// player-authored asset names (the backend emits them). renderLogBody escapes
-	// the body first — names are user input — then turns the **…** the server
-	// produced into <strong>, so it's safe to inject with {@html}. Player chat
-	// messages do NOT pass through here; their ** is shown verbatim.
+	// System-log bodies use a tiny markup subset: **…** spans wrap
+	// player-authored asset names (the backend emits them via assetMark).
+	// renderLogBody escapes the body first — names are user input — then turns the
+	// **…** the server produced into <em>, so it's safe to inject with {@html}.
+	// Emphasis is rendered *italic*, not bold: the Spectral 600 face is mapped to
+	// the regular woff2 and body sets font-synthesis:none, so bold is a no-op
+	// app-wide (see app.css). The double-asterisk delimiter stays so a stray '*'
+	// in quoted marginalia text doesn't trip the parser. Player chat messages do
+	// NOT pass through here; their ** is shown verbatim.
 	function escapeHtml(s: string): string {
 		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
 	function renderLogBody(body: string): string {
-		return escapeHtml(body).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+		return escapeHtml(body).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>');
 	}
 	// stripLogMarkup drops the ** delimiters for plain-text contexts (the
 	// collapsed-strip preview) where markup can't render.

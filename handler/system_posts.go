@@ -48,10 +48,11 @@ func playerDisplayName(ctx context.Context, q *dbgen.Queries, playerID int64) st
 const fallbackAssetName = "an asset"
 
 // assetMark renders a player-authored asset name for log bodies. Names are
-// bolded (markdown) rather than quoted so they stand out from the surrounding
-// prose without quote clutter; the chat feed renders this markup. Marginalia,
-// rumor, secret, and free-text choices stay quoted — bolding is reserved for
-// names.
+// emphasised (wrapped in **…**) rather than quoted so they stand out from the
+// surrounding prose without quote clutter; the chat feed renders this markup as
+// italic (bold is disabled app-wide — see ChatPanel.renderLogBody / app.css).
+// Marginalia, rumor, secret, and free-text choices stay quoted — emphasis is
+// reserved for names.
 func assetMark(name string) string {
 	return "**" + name + "**"
 }
