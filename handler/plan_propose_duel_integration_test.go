@@ -161,32 +161,21 @@ func seedDuelToRoll(
 	h.jumpToRow(*plan.RowNumber)
 	h.resolve(plan.ID) // duel resolve returns no roll; sets phase=setup
 
-	// Champion election: the initiative-holder declares first, then the other.
-	init := duelInitiative(t, h, plan.ID)
-	initIdx := idxOfPlayer(t, h, init)
-	otherIdx := prepIdx
-	if initIdx == prepIdx {
-		otherIdx = targIdx
-	}
-	for _, idx := range []int{initIdx, otherIdx} {
+	// Champion election is optional and simultaneous; nil = fight in person.
+	// Both sides pass here so the duel proceeds without champions.
+	for _, idx := range []int{prepIdx, targIdx} {
 		code, body := h.post(idx, duelRoute(plan.ID, "elect-champion"),
 			map[string]any{"asset_id": nil})
 		require.Equalf(t, http.StatusOK, code, "elect-champion: %v", body)
 	}
 
-	// Stake-count reveal (simultaneous).
-	codeP, bodyP := h.post(prepIdx, duelRoute(plan.ID, "stake-reveal"),
-		map[string]any{"count": len(prepStakeAssets)})
-	require.Equalf(t, http.StatusOK, codeP, "prep stake-reveal: %v", bodyP)
-	codeT, bodyT := h.post(targIdx, duelRoute(plan.ID, "stake-reveal"),
-		map[string]any{"count": len(targStakeAssets)})
-	require.Equalf(t, http.StatusOK, codeT, "target stake-reveal: %v", bodyT)
-
-	// Select specific stakes.
-	codeP, bodyP = h.post(prepIdx, duelRoute(plan.ID, "select-stakes"),
+	// Commit stakes — a single combined step (count = len(asset_ids)). The
+	// opponent's stakes stay hidden until both commit; the second commit
+	// advances the duel straight to the bouts.
+	codeP, bodyP := h.post(prepIdx, duelRoute(plan.ID, "select-stakes"),
 		map[string]any{"asset_ids": prepStakeAssets})
 	require.Equalf(t, http.StatusOK, codeP, "prep select-stakes: %v", bodyP)
-	codeT, bodyT = h.post(targIdx, duelRoute(plan.ID, "select-stakes"),
+	codeT, bodyT := h.post(targIdx, duelRoute(plan.ID, "select-stakes"),
 		map[string]any{"asset_ids": targStakeAssets})
 	require.Equalf(t, http.StatusOK, codeT, "target select-stakes: %v", bodyT)
 
@@ -305,6 +294,75 @@ func TestProposeDuelHTTP_Mar_TargetTakesPreparerStake(t *testing.T) {
 	require.NotEmpty(t, posts)
 	_, ok := duelPostWith(posts, "won the duel")
 	require.True(t, ok, "expected a duel-outcome post")
+}
+
+// TestProposeDuelHTTP_AllowsLeveragedStake: an already-leveraged asset may be
+// staked. The rules place no leverage (or type) restriction on stakes, and
+// resolution leverages every stake again — a no-op for one already leveraged.
+func TestProposeDuelHTTP_AllowsLeveragedStake(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	prepPeer := h.seedPeer(prepIdx0, "Preparer stake")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+
+	// Pre-leverage the preparer's stake; it must still be stakeable.
+	require.NoError(t, h.q.SetAssetLeveraged(context.Background(),
+		dbgen.SetAssetLeveragedParams{ID: prepPeer, IsLeveraged: true}))
+
+	// seedDuelToRoll drives select-stakes; if the leveraged asset were rejected
+	// its internal require would fail before we reach the roll.
+	planID, _ := seedDuelToRoll(t, h, targIdx, []int64{prepPeer}, []int64{targPeer})
+
+	_, err := h.q.GetDiceRollByPlanID(context.Background(), &planID)
+	require.NoError(t, err, "leveraged stake should flow through to the final roll")
+}
+
+// TestProposeDuelHTTP_StakeLogGatedOnBothCommitting: the stake-commit narration
+// must not fire on the first commit (it names the count, which would leak it and
+// hand the second mover an advantage). Both sides' commits are logged together
+// only once both have committed.
+func TestProposeDuelHTTP_StakeLogGatedOnBothCommitting(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx := h.focusPlayerIdx()
+	targIdx := (prepIdx + 1) % 5
+	targetID := h.tg.Players[targIdx].ID
+
+	prepPeer := h.seedPeer(prepIdx, "Preparer stake")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+
+	notes := "Courtyard duel at dawn"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanProposeDuel,
+		TargetPlayerID:   &targetID,
+		DuelType:         "arms",
+		PreparationNotes: &notes,
+	})
+	pinEsteemRank(t, h, targetID, 5)
+	pinEsteemRank(t, h, h.tg.Players[prepIdx].ID, 1)
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	h.resolve(plan.ID)
+
+	// Preparer commits first → no stake-commit narration yet.
+	code, body := h.post(prepIdx, duelRoute(plan.ID, "select-stakes"),
+		map[string]any{"asset_ids": []int64{prepPeer}})
+	require.Equalf(t, http.StatusOK, code, "prep select-stakes: %v", body)
+	_, leaked := duelPostWith(duelSystemPosts(t, h.q, h.tg.Game.ID), "on the line")
+	require.False(t, leaked, "stake-commit log must not appear before both commit")
+
+	// Target commits second → both commits are narrated together.
+	code, body = h.post(targIdx, duelRoute(plan.ID, "select-stakes"),
+		map[string]any{"asset_ids": []int64{targPeer}})
+	require.Equalf(t, http.StatusOK, code, "target select-stakes: %v", body)
+	var onTheLine int
+	for _, p := range duelSystemPosts(t, h.q, h.tg.Game.ID) {
+		if strings.Contains(p, "on the line") {
+			onTheLine++
+		}
+	}
+	require.Equal(t, 2, onTheLine, "both duellists' stake commits logged once both are in")
 }
 
 // TestProposeDuelHTTP_RejectsNonStakedAndOverBudget: the claim must be limited

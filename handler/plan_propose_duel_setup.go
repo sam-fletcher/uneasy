@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
-	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -48,26 +47,10 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "champions can only be elected during setup")
 			return
 		}
-		alreadyDeclared := state.PreparerChampionDeclared
-		if player.ID != plan.PreparerID {
-			alreadyDeclared = state.TargetChampionDeclared
-		}
-		if alreadyDeclared {
-			respondErr(w, http.StatusConflict, "you have already declared your champion choice")
-			return
-		}
-		// Initiative-holder declares first.
-		if state.InitiativePlayerID != nil && *state.InitiativePlayerID != player.ID {
-			initHas := state.PreparerChampionDeclared
-			if *state.InitiativePlayerID != plan.PreparerID {
-				initHas = state.TargetChampionDeclared
-			}
-			if !initHas {
-				respondErr(w, http.StatusConflict,
-					"the player with initiative must declare their champion choice first")
-				return
-			}
-		}
+		// Champion election is optional and simultaneous: either duellist may
+		// nominate a peer (or pass nil to fight in person) at any time during
+		// setup, and may change their mind until staking begins. It gates
+		// nothing — the phase advances on the stake-count reveal alone.
 
 		if body.AssetID != nil {
 			asset, err := deps.Q.GetAssetByID(ctx, *body.AssetID)
@@ -83,6 +66,24 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 				respondErr(w, http.StatusBadRequest, "champion must be a peer asset")
 				return
 			}
+		}
+
+		// No-op guard: if the duellist's choice is unchanged, don't re-save,
+		// re-broadcast, or (most importantly) re-log. The client commits a single
+		// final choice, but this also defends against any redundant calls.
+		var current *int64
+		if player.ID == plan.PreparerID {
+			current = state.PreparerChampionID
+		} else {
+			current = state.TargetChampionID
+		}
+		unchanged := (current == nil && body.AssetID == nil) ||
+			(current != nil && body.AssetID != nil && *current == *body.AssetID)
+		if unchanged {
+			respond(w, http.StatusOK, map[string]any{
+				"plan_id": plan.ID, "player_id": player.ID, "asset_id": body.AssetID,
+			})
+			return
 		}
 
 		if player.ID == plan.PreparerID {
@@ -107,14 +108,22 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 		}
 
-		who := playerDisplayName(ctx, deps.Q, player.ID)
+		// Log in narrative terms: the duellist is their main character, who either
+		// steps up themselves or sends another peer in their stead. Naming the MC
+		// (not the out-of-game player) keeps the log in-fiction.
+		duellistName := playerDisplayName(ctx, deps.Q, player.ID)
+		if mc, mcErr := deps.Q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+			GameID: plan.GameID, OwnerID: player.ID,
+		}); mcErr == nil {
+			duellistName = mc.Name
+		}
 		if body.AssetID != nil {
 			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"%s sends %s into the ring to fight as their champion.",
-				who, assetDisplayName(ctx, deps.Q, *body.AssetID)))
+				"%s elects %s as their champion.",
+				duellistName, assetDisplayName(ctx, deps.Q, *body.AssetID)))
 		} else {
 			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"%s steps onto the duelling ground to answer for themselves.", who))
+				"%s will fight for themselves.", duellistName))
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -123,104 +132,19 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
-// ── Stake Reveal ──────────────────────────────────────────────────────────────
-
-// pduelStakeRevealHandler: POST /api/plans/:planId/stake-reveal
-// Body: {"count": N}. Min 1; max 1+esteem status.
-// Counts are held until both players submit, then revealed.
-func pduelStakeRevealHandler(deps *PlanDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanProposeDuel)
-		if !ok {
-			return
-		}
-		if !pduelIsParticipant(plan, player.ID) {
-			respondErr(w, http.StatusForbidden, "only duellists may reveal stakes")
-			return
-		}
-
-		resData := loadResolutionData(plan.ResolutionData)
-		state := resData.EnsureDuel()
-		if state.Phase != duelPhaseSetup {
-			respondErr(w, http.StatusConflict, "stake reveal is only allowed in 'setup' phase")
-			return
-		}
-
-		var body struct {
-			Count int16 `json:"count"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Count < 1 {
-			respondErr(w, http.StatusBadRequest, "count must be ≥ 1")
-			return
-		}
-
-		ctx := r.Context()
-		rank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, player.ID, model.CategoryEsteem)
-		if err != nil {
-			respondInternalErr(w, r, "could not load esteem rank", err)
-			return
-		}
-		if body.Count > gamepkg.MaxStakes(rank) {
-			respondErr(w, http.StatusBadRequest,
-				fmt.Sprintf("count %d exceeds maximum %d for your esteem status",
-					body.Count, gamepkg.MaxStakes(rank)))
-			return
-		}
-
-		// Accumulate per-player stake counts until both have submitted.
-		if state.StakeCounts == nil {
-			state.StakeCounts = map[int64]int16{}
-		}
-		state.StakeCounts[player.ID] = body.Count
-
-		if len(state.StakeCounts) >= 2 {
-			// Both submitted — reveal and advance to staking.
-			state.PreparerStakeCount = state.StakeCounts[plan.PreparerID]
-			if plan.TargetPlayerID != nil {
-				state.TargetStakeCount = state.StakeCounts[*plan.TargetPlayerID]
-			}
-			state.Phase = duelPhaseStaking
-
-			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, r, "could not save stake counts", err)
-				return
-			}
-
-			broadcastEvent(deps.Manager, plan.GameID, model.EventDuelStakesRevealed, model.DuelStakesRevealedPayload{
-				PlanID:             plan.ID,
-				PreparerStakeCount: state.PreparerStakeCount,
-				TargetStakeCount:   state.TargetStakeCount,
-			})
-			prepName := playerDisplayName(ctx, deps.Q, plan.PreparerID)
-			targName := prepName
-			if plan.TargetPlayerID != nil {
-				targName = playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID)
-			}
-			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"The terms are set: %s wagers %d, %s wagers %d. Now they choose what to stake.",
-				prepName, state.PreparerStakeCount, targName, state.TargetStakeCount))
-		} else {
-			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, r, "could not save stake reveal", err)
-				return
-			}
-		}
-
-		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
-		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "submitted": len(state.StakeCounts)})
-	}
-}
-
 // ── Select Stakes ─────────────────────────────────────────────────────────────
 
 // pduelSelectStakesHandler: POST /api/plans/:planId/select-stakes
 // Body: {"asset_ids": [N, ...]}
-// The count must match the player's revealed stake count. Server rolls a
-// hidden d6 for each asset and stores it in duel_staked_assets. The hidden
-// die is visible only to the asset owner; the opponent sees only that a
-// stake has been placed.
 //
-//nolint:gocognit,funlen // stake-selection lifecycle including target-claim path
+// A single combined commit: the duellist picks which assets to stake (the count
+// is len(asset_ids), which must be 1..1+their esteem status). The server rolls
+// and tucks a hidden d6 under each. A duellist's stakes — and even their count —
+// stay hidden from the opponent until BOTH have committed (see GetDuelState),
+// preserving the rules' simultaneous blind reveal. Once both have committed, the
+// duel advances straight to the bouts.
+//
+//nolint:gocognit,funlen // combined count+selection commit plus the advance path
 func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanProposeDuel)
@@ -234,16 +158,9 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureDuel()
-		if state.Phase != duelPhaseStaking {
-			respondErr(w, http.StatusConflict, "select-stakes is only allowed in 'staking' phase")
+		if state.Phase != duelPhaseSetup {
+			respondErr(w, http.StatusConflict, "stakes are chosen during setup")
 			return
-		}
-
-		var expected int16
-		if player.ID == plan.PreparerID {
-			expected = state.PreparerStakeCount
-		} else {
-			expected = state.TargetStakeCount
 		}
 
 		var body struct {
@@ -253,15 +170,28 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		if int16(len(body.AssetIDs)) != expected {
-			respondErr(w, http.StatusBadRequest,
-				fmt.Sprintf("expected %d asset_ids to match your stake count", expected))
-			return
-		}
 
 		ctx := r.Context()
 
-		// Check whether this player has already staked.
+		// The count is whatever the duellist selected: at least one, at most
+		// 1 + their esteem status.
+		rank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, player.ID, model.CategoryEsteem)
+		if err != nil {
+			respondInternalErr(w, r, "could not load esteem rank", err)
+			return
+		}
+		n := int16(len(body.AssetIDs))
+		if n < 1 {
+			respondErr(w, http.StatusBadRequest, "stake at least one asset")
+			return
+		}
+		if n > gamepkg.MaxStakes(rank) {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("staking %d exceeds your maximum of %d", n, gamepkg.MaxStakes(rank)))
+			return
+		}
+
+		// Reject a second commit.
 		existing, err := deps.Q.ListDuelStakesByPlanPlayer(ctx, dbgen.ListDuelStakesByPlanPlayerParams{
 			PlanID: plan.ID, PlayerID: player.ID,
 		})
@@ -270,11 +200,11 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		if len(existing) > 0 {
-			respondErr(w, http.StatusConflict, "you have already selected your stakes")
+			respondErr(w, http.StatusConflict, "you have already committed your stakes")
 			return
 		}
 
-		// Validate each asset: owned, non-destroyed, not already leveraged.
+		// Validate each asset: owned, non-destroyed (already-leveraged is fine).
 		for _, aid := range body.AssetIDs {
 			asset, errAsset := deps.Q.GetAssetByID(ctx, aid)
 			if errAsset != nil {
@@ -287,10 +217,6 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 			if asset.IsDestroyed {
 				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is destroyed", aid))
-				return
-			}
-			if asset.IsLeveraged {
-				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is already leveraged", aid))
 				return
 			}
 		}
@@ -313,37 +239,72 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 			createdStakes = append(createdStakes, stake)
 		}
 
-		stakeNames := make([]string, 0, len(body.AssetIDs))
-		for _, aid := range body.AssetIDs {
-			stakeNames = append(stakeNames, assetDisplayName(ctx, deps.Q, aid))
-		}
-		pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"%s lays their stakes on the line: %s — each guarding a hidden die.",
-			playerDisplayName(ctx, deps.Q, player.ID), strings.Join(stakeNames, ", ")))
-
-		// If both players have staked, advance to bouts.
+		// Determine commit state from the stake rows themselves — never from a
+		// count written into resolution_data, which is sent to every client and
+		// would leak this side's count to the opponent before both have committed.
 		allStakes, err := deps.Q.ListDuelStakesByPlan(ctx, plan.ID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load stakes", err)
 			return
 		}
-		total := int16(len(allStakes))
-		if total == state.PreparerStakeCount+state.TargetStakeCount {
+		var prepCount, targCount int16
+		for i := range allStakes {
+			if allStakes[i].PlayerID == plan.PreparerID {
+				prepCount++
+			} else {
+				targCount++
+			}
+		}
+		bothCommitted := prepCount > 0 && targCount > 0
+		if bothCommitted {
+			// Both sides are in — now it's safe to record the (about-to-be-public)
+			// counts and advance straight to the bouts.
+			state.PreparerStakeCount = prepCount
+			state.TargetStakeCount = targCount
 			state.Phase = duelPhaseBouts
 			state.CurrentBout = 0
-			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, r, "could not advance phase", err)
-				return
+		}
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save stakes", err)
+			return
+		}
+
+		// Narrate ONLY once both sides have committed. Logging on the first commit
+		// would reveal that side's count to the opponent before they choose,
+		// handing the second mover a last-mover advantage — so we hold the
+		// narration and reveal both counts together. (The assets themselves stay
+		// secret until the duel resolves; we name only counts + the duellists.)
+		if bothCommitted {
+			duellistName := func(pid int64) string {
+				if mc, mcErr := deps.Q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+					GameID: plan.GameID, OwnerID: pid,
+				}); mcErr == nil {
+					return mc.Name
+				}
+				return playerDisplayName(ctx, deps.Q, pid)
 			}
-			// Mirror the stake-reveal broadcast: the waiting duellist needs a
-			// duel event to refetch the plan and pick up phase=bouts. Without
-			// it, broadcastRowState alone leaves them soft-locked on the
-			// staking panel even though it's their turn to declare.
+			stakeWord := func(c int16) string {
+				if c == 1 {
+					return "stake"
+				}
+				return "stakes"
+			}
+			logCommit := func(pid int64, count int16) {
+				pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+					"%s lays %d %s on the line, each guarding a hidden die.",
+					duellistName(pid), count, stakeWord(count)))
+			}
+			logCommit(plan.PreparerID, prepCount)
+			if plan.TargetPlayerID != nil {
+				logCommit(*plan.TargetPlayerID, targCount)
+			}
+
+			// Reveal and move to the bouts. The waiting duellist needs a duel event
+			// to refetch and leave the setup panel.
 			broadcastEvent(deps.Manager, plan.GameID, model.EventDuelStakesSelected, model.DuelStakesSelectedPayload{
 				PlanID: plan.ID,
 			})
 		}
-
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID, "staked": len(body.AssetIDs), "stakes": createdStakes,

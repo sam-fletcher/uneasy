@@ -11,10 +11,7 @@ export type DuelRes = {
 	targChampID: number | null;
 	prepChampDeclared: boolean;
 	targChampDeclared: boolean;
-	prepStakeCount: number;
-	targStakeCount: number;
 	currentBout: number;
-	stakeCounts: Record<number, number>;
 };
 
 // Per-stake display string. While unresolved we show "hidden" or

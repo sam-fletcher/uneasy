@@ -39,8 +39,10 @@ type DuelResolutionData struct {
 	// Phase tracks pre-roll progression (setup → staking → bouts → roll → done).
 	Phase DuelPhase `json:"phase,omitempty"`
 
-	// PreparerStakeCount / TargetStakeCount are the canonical stake counts
-	// once both have submitted; they pin the number of bouts that must run.
+	// PreparerStakeCount / TargetStakeCount are the committed stake counts,
+	// written only once BOTH duellists have committed (and the duel advances to
+	// the bouts). They are deliberately left zero during setup so a duellist's
+	// count never leaks to the opponent via resolution_data before both commit.
 	PreparerStakeCount int16 `json:"preparer_stake_count,omitempty"`
 	TargetStakeCount   int16 `json:"target_stake_count,omitempty"`
 
@@ -49,11 +51,6 @@ type DuelResolutionData struct {
 
 	// InitiativePlayerID is the side currently expected to act.
 	InitiativePlayerID *int64 `json:"initiative_player_id,omitempty"`
-
-	// StakeCounts is the pre-reveal accumulator for stake-reveal
-	// submissions. Keyed by player ID. Becomes vestigial once both have
-	// submitted and PreparerStakeCount / TargetStakeCount are written.
-	StakeCounts map[int64]int16 `json:"stake_counts,omitempty"`
 }
 
 // LoadDuelData is a read-only convenience parser; returns a zero struct when

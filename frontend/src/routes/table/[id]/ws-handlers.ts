@@ -422,7 +422,6 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.LiaiseChoicesRevealed:
 		case EventTypes.LiaiseKeepSecretSubmitted:
 		case EventTypes.DuelChampionElected:
-		case EventTypes.DuelStakesRevealed:
 		case EventTypes.DuelStakesSelected:
 		case EventTypes.DuelBoutDeclared:
 		case EventTypes.DuelBoutResolved:

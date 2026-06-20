@@ -2,17 +2,18 @@
   Prep + resolve UI for Propose Duel (Tier 3, Esteem, delay 5).
 
   Resolution is driven by resolution_data.duel_phase:
-    setup    — champion election (initiative-gated) + stake-count reveal.
-    staking  — each duelist picks which assets to stake.
+    setup    — who duels (a peer; main character by default) + a single
+               combined stake commit (which assets, count derived). Both stay
+               hidden from the opponent until both commit, then → bouts.
     bouts    — declarer/responder bout loop with hidden dice.
     roll     — standard dice roll with accumulated bout dice pre-loaded.
     done     — winner has claimed stakes; preparer completes.
 
   This panel is a dispatcher. The per-phase UI lives in `duel/`: PrepForm,
-  SetupPhase, StakingPhase, BoutsPhase, RollPhase. The parent owns the
-  duel-state fetch, WS subscription, and shared identity/derivation work;
-  children get slices + onPlansChanged + (where needed) an onRefresh
-  callback that re-runs `getDuelState`.
+  SetupPhase, BoutsPhase, RollPhase. The parent owns the duel-state fetch, WS
+  subscription, and shared identity/derivation work; children get slices +
+  onPlansChanged + (where needed) an onRefresh callback that re-runs
+  `getDuelState`.
 -->
 <script lang="ts">
 	import './planPanel.css';
@@ -28,7 +29,6 @@
 
 	import PrepForm from './duel/PrepForm.svelte';
 	import SetupPhase from './duel/SetupPhase.svelte';
-	import StakingPhase from './duel/StakingPhase.svelte';
 	import BoutsPhase from './duel/BoutsPhase.svelte';
 	import RollPhase from './duel/RollPhase.svelte';
 	import type { DuelRes } from './duel/shared';
@@ -60,10 +60,7 @@
 			targChampID: d.target_champion_id ?? null,
 			prepChampDeclared: d.preparer_champion_declared ?? false,
 			targChampDeclared: d.target_champion_declared ?? false,
-			prepStakeCount: d.preparer_stake_count ?? 0,
-			targStakeCount: d.target_stake_count ?? 0,
 			currentBout: d.current_bout ?? 0,
-			stakeCounts: d.stake_counts ?? {},
 		};
 	});
 
@@ -85,6 +82,14 @@
 		return Math.max(6 - r, 0);
 	}
 	const myMaxStakes = $derived(1 + statusOf(currentPlayerID));
+
+	// Difficulty = the challenged player's esteem status (mirrors
+	// game.ProposeDuelDifficulty). It's how many of the loser's stakes change
+	// hands on a mar, so it's worth surfacing up front.
+	const difficulty = $derived.by(() => {
+		const r = esteemRank(plan?.target_player_id ?? null);
+		return r == null ? null : Math.max(6 - r, 1);
+	});
 
 	// ── Duel-state fetch + live refresh ──────────────────────────────────────
 	let duelState = $state<DuelStateResponse | null>(null);
@@ -112,7 +117,6 @@
 			refreshDuelState();
 		}
 		window.addEventListener('uneasy:duel.champion_elected', onDuelEvent);
-		window.addEventListener('uneasy:duel.stakes_revealed', onDuelEvent);
 		window.addEventListener('uneasy:duel.stakes_selected', onDuelEvent);
 		window.addEventListener('uneasy:duel.bout_declared', onDuelEvent);
 		window.addEventListener('uneasy:duel.bout_resolved', onDuelEvent);
@@ -120,7 +124,6 @@
 	});
 	onDestroy(() => {
 		window.removeEventListener('uneasy:duel.champion_elected', onDuelEvent);
-		window.removeEventListener('uneasy:duel.stakes_revealed', onDuelEvent);
 		window.removeEventListener('uneasy:duel.stakes_selected', onDuelEvent);
 		window.removeEventListener('uneasy:duel.bout_declared', onDuelEvent);
 		window.removeEventListener('uneasy:duel.bout_resolved', onDuelEvent);
@@ -172,24 +175,17 @@
 	<ResolvingCard {plan} {players} error={duelStateError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
 
-		<p class="choices-note">
-			{duelRes.duelType === 'wits' ? 'Duel of wits' : duelRes.duelType === 'arms' ? 'Duel of arms' : 'Duel'}
-			· initiative: <strong>{playerName(players, duelRes.initiativeID)}</strong>
+		<p class="choices-note" style="margin:0;">
+			{playerName(players, plan.preparer_id)}
+			vs {playerName(players, plan.target_player_id)}
+			{#if difficulty != null}· difficulty <strong>{difficulty}</strong>{/if}
 		</p>
 
 		{#if duelRes.phase === 'setup' || duelRes.phase === ''}
 			<SetupPhase
 				{plan} {duelRes} {players} {assets} {currentPlayerID}
 				{amParticipant} {amPreparer} {amTarget} {myMaxStakes}
-				{onPlansChanged}
-			/>
-
-		{:else if duelRes.phase === 'staking'}
-			<StakingPhase
-				{plan} {duelRes} {players} {assets} {currentPlayerID}
-				{amParticipant} {amPreparer} {amTarget}
-				{myStakes} {bouts}
-				{onPlansChanged} onRefresh={refreshDuelState}
+				{myStakes} {onPlansChanged} onRefresh={refreshDuelState}
 			/>
 
 		{:else if duelRes.phase === 'bouts'}

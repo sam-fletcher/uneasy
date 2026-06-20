@@ -97,6 +97,7 @@
 			{playerName(players, winnerID)} takes {effectiveTake}
 			{effectiveTake === 1 ? 'stake' : 'stakes'} from
 			{playerName(players, loserID)}.
+			Afterwards, <em>every</em> staked asset on both sides is leveraged.
 		</p>
 		{#if amWinner}
 			{#if effectiveTake === 0}
@@ -109,6 +110,10 @@
 					{takeBusy ? '…' : 'Apply result'}
 				</button>
 			{:else}
+				<p class="choices-note">
+					Choose {effectiveTake} of {playerName(players, loserID)}'s
+					staked {effectiveTake === 1 ? 'asset' : 'assets'} to take:
+				</p>
 				<div class="choice-list">
 					{#each loserStakes as s}
 						<label class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">

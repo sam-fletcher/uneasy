@@ -54,19 +54,15 @@ function section(page: Page, header: string) {
 	return page.locator('.choices-section', { hasText: header });
 }
 
-async function submitStakeCount(page: Page, count: string) {
-	const sec = section(page, 'Stake count');
-	await expect(sec.getByRole('button', { name: 'Submit stake count' })).toBeVisible();
-	await sec.getByRole('button', { name: count, exact: true }).click();
-	await sec.getByRole('button', { name: 'Submit stake count' }).click();
-}
-
+// Stakes are committed in a single step now: check the asset(s), then Commit.
+// The count is derived from the selection, and stays hidden from the opponent
+// until both sides commit.
 async function stakeAsset(page: Page, assetName: string) {
-	const sec = section(page, 'Selecting stakes');
+	const sec = section(page, 'Choose assets to stake');
 	const card = sec.locator('.card', { hasText: assetName });
 	await expect(card).toBeVisible();
 	await card.getByRole('checkbox').click();
-	await sec.getByRole('button', { name: /^Stake 1\/1$/ }).click();
+	await sec.getByRole('button', { name: /^Commit 1 stake$/ }).click();
 }
 
 test('propose duel: setup → staking → bouts → final roll', async ({ browser }) => {
@@ -132,11 +128,8 @@ test('propose duel: setup → staking → bouts → final roll', async ({ browse
 		bob.goto(`/table/${game_id}`),
 	]);
 
-	// Setup phase: each secretly commits to staking 1 asset.
-	await submitStakeCount(alice, '1');
-	await submitStakeCount(bob, '1');
-
-	// Staking phase: each picks their single peer.
+	// Setup phase: each duellist commits their single staked peer. Alice's
+	// stake stays hidden from bob until he also commits, then → bouts.
 	await stakeAsset(alice, 'Alice Peer');
 	await stakeAsset(bob, 'Bob Peer');
 

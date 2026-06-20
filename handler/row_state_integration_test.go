@@ -1159,9 +1159,11 @@ func TestComputeRowState_AwaitFestivityChallengeResponse(t *testing.T) {
 		"challenge target is the waitee")
 }
 
-// TestComputeRowState_AwaitDuelStaking: setup/staking phases surface as
-// AwaitDuelStaking with ActingPlayerIDs holding the duellists who still owe a
-// submission (both, before anyone stakes).
+// TestComputeRowState_AwaitDuelStaking: during setup the row surfaces as
+// AwaitDuelStaking, naming whichever duellists have not yet committed their
+// stakes. Commit-state is derived from the stake rows (a commit creates all of
+// a duellist's stakes atomically), so neither side's count leaks before both
+// commit. Once both have committed, the row rides the generic resolution case.
 func TestComputeRowState_AwaitDuelStaking(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -1184,47 +1186,51 @@ func TestComputeRowState_AwaitDuelStaking(t *testing.T) {
 		ID: duel.ID, Status: model.PlanResolving,
 	}))
 	resData := loadResolutionData(duel.ResolutionData)
-	state := resData.EnsureDuel()
-	state.Phase = gamepkg.DuelPhaseSetup
+	resData.EnsureDuel().Phase = gamepkg.DuelPhaseSetup
 	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
 
+	// commitStake creates an asset for the player and stakes it (mirrors a
+	// single combined select-stakes commit).
+	commitStake := func(playerID int64) {
+		asset, aErr := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID:    tg.Game.ID,
+			OwnerID:   playerID,
+			CreatorID: playerID,
+			AssetType: model.AssetPeer,
+			Name:      "stake",
+		})
+		require.NoError(t, aErr)
+		_, sErr := q.CreateDuelStake(ctx, dbgen.CreateDuelStakeParams{
+			PlanID: duel.ID, PlayerID: playerID, AssetID: asset.ID, HiddenDie: 3,
+		})
+		require.NoError(t, sErr)
+	}
+
+	// Nobody has committed → both duellists owe a stake commit.
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitDuelStaking, got.Kind, "setup → await_duel_staking")
 	assert.ElementsMatch(t, []int64{tg.Players[0].ID, tg.Players[1].ID}, got.ActingPlayerIDs,
-		"setup with no stakes yet → both duellists owe a submission")
+		"setup with no stakes yet → both duellists owe a commit")
 	require.NotNil(t, got.PlanID)
 	assert.Equal(t, duel.ID, *got.PlanID)
 
-	// 'staking' phase shares the same kind. Each duellist owes 1 staked asset
-	// (counts revealed in setup) and neither has staked yet → both pending.
-	reloaded, err := q.GetPlanByID(ctx, duel.ID)
-	require.NoError(t, err)
-	resData = loadResolutionData(reloaded.ResolutionData)
-	ds := resData.EnsureDuel()
-	ds.Phase = gamepkg.DuelPhaseStaking
-	ds.PreparerStakeCount = 1
-	ds.TargetStakeCount = 1
-	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
+	// Only the preparer has committed → the target alone is still pending.
+	commitStake(tg.Players[0].ID)
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
-	assert.Equal(t, model.RowStateAwaitDuelStaking, got.Kind, "staking → same kind as setup")
+	assert.Equal(t, model.RowStateAwaitDuelStaking, got.Kind, "one committed → still await_duel_staking")
+	assert.Equal(t, []int64{tg.Players[1].ID}, got.ActingPlayerIDs,
+		"only the duellist who hasn't committed is named")
 
-	// A3: once BOTH duellists have submitted their stake counts (setup phase
-	// complete, pending set empty), the row must NOT keep naming both duellists.
-	// It rides the generic resolution case, which names the preparer — naming
-	// everyone when no one owes anything is the over-attribution bug class.
-	reloaded, err = q.GetPlanByID(ctx, duel.ID)
-	require.NoError(t, err)
-	resData = loadResolutionData(reloaded.ResolutionData)
-	ds = resData.EnsureDuel()
-	ds.Phase = gamepkg.DuelPhaseSetup
-	ds.StakeCounts = map[int64]int16{tg.Players[0].ID: 1, tg.Players[1].ID: 1}
-	require.NoError(t, saveResolutionData(ctx, q, duel.ID, resData))
+	// Both committed (pending empty) → ride the generic resolution case, which
+	// names the preparer. Naming everyone when no one owes anything is the
+	// over-attribution bug class.
+	commitStake(tg.Players[1].ID)
 	got, err = ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStatePlanResolving, got.Kind,
-		"both stake counts in → generic resolution, not await_duel_staking")
+		"both committed → generic resolution, not await_duel_staking")
 	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
 		"generic resolution names the preparer, never both duellists")
 }

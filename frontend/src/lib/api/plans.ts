@@ -600,16 +600,10 @@ export function electChampion(planID: number, assetID: number | null): Promise<P
 	});
 }
 
-/** Propose Duel — simultaneously reveal stake count (1..1+status). */
-export function stakeReveal(planID: number, count: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/stake-reveal`, {
-		method: 'POST',
-		body: JSON.stringify({ count }),
-	});
-}
-
-/** Propose Duel — select the specific assets to stake. Response includes the
- * caller's newly created stakes (with hidden dice). */
+/** Propose Duel — commit which assets to stake (count = asset_ids.length, max
+ * 1+esteem status). A single combined step: the count and the specific assets
+ * are submitted together and stay hidden from the opponent until both commit.
+ * Response includes the caller's newly created stakes (with hidden dice). */
 export function selectStakes(
 	planID: number,
 	assetIDs: number[],

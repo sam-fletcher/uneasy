@@ -75,7 +75,6 @@ export const EventTypes = {
 
 	// Propose Duel
 	DuelChampionElected: 'duel.champion_elected',
-	DuelStakesRevealed: 'duel.stakes_revealed',
 	DuelStakesSelected: 'duel.stakes_selected',
 	DuelBoutDeclared: 'duel.bout_declared',
 	DuelBoutResolved: 'duel.bout_resolved',

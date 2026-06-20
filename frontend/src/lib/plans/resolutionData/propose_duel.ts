@@ -3,7 +3,7 @@
 import type { Plan } from '$lib/api';
 import { parseResolutionData } from '$lib/components/plans/shared';
 
-export type DuelPhase = 'setup' | 'staking' | 'bouts' | 'roll' | 'done';
+export type DuelPhase = 'setup' | 'bouts' | 'roll' | 'done';
 
 export interface DuelResolutionData {
 	duel_type?: string;
@@ -12,13 +12,13 @@ export interface DuelResolutionData {
 	preparer_champion_declared?: boolean;
 	target_champion_declared?: boolean;
 	phase?: DuelPhase;
+	/** Committed stake counts, written only once BOTH duellists commit (the duel
+	 *  then advances to the bouts). Left undefined during setup so a count never
+	 *  leaks to the opponent before both have committed. */
 	preparer_stake_count?: number;
 	target_stake_count?: number;
 	current_bout?: number;
 	initiative_player_id?: number | null;
-	/** Pre-reveal accumulator for stake-reveal submissions; keyed by player ID.
-	 *  Vestigial once both have submitted and the canonical stake counts are set. */
-	stake_counts?: Record<number, number>;
 }
 
 export function parseDuelData(plan: Plan | null | undefined): DuelResolutionData {

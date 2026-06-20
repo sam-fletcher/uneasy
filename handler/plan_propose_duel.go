@@ -264,7 +264,6 @@ func (pduelHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 func (pduelHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"elect-champion": pduelElectChampionHandler(deps),
-		"stake-reveal":   pduelStakeRevealHandler(deps),
 		"select-stakes":  pduelSelectStakesHandler(deps),
 		"bout-declare":   pduelBoutDeclareHandler(deps),
 		"bout-respond":   pduelBoutRespondHandler(deps),
@@ -312,8 +311,17 @@ func GetDuelState(s *db.Store) http.HandlerFunc {
 			return
 		}
 
-		views := make([]duelStakeView, len(stakes))
-		for i, s := range stakes {
+		// During setup (before both duellists have committed) a player's stakes —
+		// and even their count — stay hidden from the opponent, preserving the
+		// rules' simultaneous blind reveal. The caller always sees their own.
+		duelState := gamepkg.LoadDuelData(plan.ResolutionData)
+		inSetup := duelState.Phase == gamepkg.DuelPhaseSetup || duelState.Phase == ""
+
+		views := make([]duelStakeView, 0, len(stakes))
+		for _, s := range stakes {
+			if inSetup && s.PlayerID != player.ID {
+				continue
+			}
 			v := duelStakeView{
 				ID:         s.ID,
 				PlanID:     s.PlanID,
@@ -328,7 +336,7 @@ func GetDuelState(s *db.Store) http.HandlerFunc {
 				face := s.HiddenDie
 				v.HiddenDie = &face
 			}
-			views[i] = v
+			views = append(views, v)
 		}
 
 		respond(w, http.StatusOK, map[string]any{
@@ -375,7 +383,7 @@ func (pduelHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan
 	state := gamepkg.LoadDuelData(plan.ResolutionData)
 	switch state.Phase {
 	case gamepkg.DuelPhaseSetup, gamepkg.DuelPhaseStaking:
-		ids := duelStakingActors(ctx, q, plan, &state)
+		ids := duelStakingActors(ctx, q, plan)
 		if len(ids) == 0 {
 			// Both duellists have submitted; the phase is about to advance.
 			// Ride the generic resolution case (which names the preparer)
@@ -411,59 +419,35 @@ func (pduelHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan
 	return model.RowState{}, false
 }
 
-// duelStakingActors returns the duellists who still owe a staking action.
-// In setup that's whoever hasn't revealed a stake count; in staking, whoever
-// hasn't staked their full count of assets. The result may be empty (both
-// submitted, phase about to advance); the caller rides the generic preparer
-// case in that event rather than naming both — see ResolvingWaitees.
-func duelStakingActors(
-	ctx context.Context,
-	q *dbgen.Queries,
-	plan *dbgen.Plan,
-	state *gamepkg.DuelResolutionData,
-) []int64 {
+// duelStakingActors returns the duellists who still owe a stake commit during
+// setup — anyone who hasn't placed their stakes yet. A commit creates all of a
+// duellist's stake rows atomically, so "has any stake row" == "has committed".
+// We derive this from the stake rows rather than from a count in resolution_data
+// so the opponent's commit (and count) never leaks before both are in. The
+// result may be empty (both committed, phase about to advance to bouts); the
+// caller then rides the generic preparer case rather than naming both — see
+// ResolvingWaitees.
+func duelStakingActors(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) []int64 {
 	participants := []int64{plan.PreparerID}
 	if plan.TargetPlayerID != nil {
 		participants = append(participants, *plan.TargetPlayerID)
 	}
 
-	var pending []int64
-	//nolint:exhaustive // only setup/staking filter; other phases hit default
-	switch state.Phase {
-	case gamepkg.DuelPhaseSetup:
-		for _, p := range participants {
-			if _, ok := state.StakeCounts[p]; !ok {
-				pending = append(pending, p)
-			}
-		}
-	case gamepkg.DuelPhaseStaking:
-		stakes, err := q.ListDuelStakesByPlan(ctx, plan.ID)
-		if err != nil {
-			return participants
-		}
-		staked := map[int64]int16{}
-		for i := range stakes {
-			staked[stakes[i].PlayerID]++
-		}
-		required := func(pid int64) int16 {
-			if pid == plan.PreparerID {
-				return state.PreparerStakeCount
-			}
-			return state.TargetStakeCount
-		}
-		for _, p := range participants {
-			if staked[p] < required(p) {
-				pending = append(pending, p)
-			}
-		}
-	default:
+	stakes, err := q.ListDuelStakesByPlan(ctx, plan.ID)
+	if err != nil {
 		return participants
 	}
+	committed := map[int64]bool{}
+	for i := range stakes {
+		committed[stakes[i].PlayerID] = true
+	}
 
-	// pending may be empty — both duellists have submitted. We return it as-is;
-	// the caller treats an empty set as "ride the generic preparer case" rather
-	// than re-naming both duellists (which would mask a genuine filter bug as a
-	// spurious "waiting on both").
+	var pending []int64
+	for _, p := range participants {
+		if !committed[p] {
+			pending = append(pending, p)
+		}
+	}
 	return pending
 }
 
