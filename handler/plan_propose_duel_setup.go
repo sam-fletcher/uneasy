@@ -315,7 +315,7 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 
 		stakeNames := make([]string, 0, len(body.AssetIDs))
 		for _, aid := range body.AssetIDs {
-			stakeNames = append(stakeNames, fmt.Sprintf("%q", assetDisplayName(ctx, deps.Q, aid)))
+			stakeNames = append(stakeNames, assetDisplayName(ctx, deps.Q, aid))
 		}
 		pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 			"%s lays their stakes on the line: %s — each guarding a hidden die.",

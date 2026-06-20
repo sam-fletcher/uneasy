@@ -343,8 +343,9 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 		if destroyed {
 			verb = "destroyed"
 		}
-		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s %q.",
-			playerDisplayName(ctx, deps.Q, player.ID), verb, asset.Name))
+		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s %s.%s",
+			playerDisplayName(ctx, deps.Q, player.ID), verb, assetMark(asset.Name),
+			brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,

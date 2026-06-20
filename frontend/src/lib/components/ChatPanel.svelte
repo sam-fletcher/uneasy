@@ -33,6 +33,23 @@
 	import { playerColorByID, OOC_COLOR } from '$lib/playerColor';
 	import { SEVERITY } from '$lib/severity';
 
+	// System-log bodies use a tiny markdown subset: **bold** spans wrap
+	// player-authored asset names (the backend emits them). renderLogBody escapes
+	// the body first — names are user input — then turns the **…** the server
+	// produced into <strong>, so it's safe to inject with {@html}. Player chat
+	// messages do NOT pass through here; their ** is shown verbatim.
+	function escapeHtml(s: string): string {
+		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	}
+	function renderLogBody(body: string): string {
+		return escapeHtml(body).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+	}
+	// stripLogMarkup drops the ** delimiters for plain-text contexts (the
+	// collapsed-strip preview) where markup can't render.
+	function stripLogMarkup(body: string): string {
+		return body.replace(/\*\*(.+?)\*\*/g, '$1');
+	}
+
 	interface Props {
 		gameID: string | number;
 		posts: ChatPost[];
@@ -241,8 +258,9 @@
 	const latestPreview = $derived.by(() => {
 		if (!latestPost) return 'No messages yet';
 		// System posts (no author) just show the body — boundaries and log
-		// entries are already self-contained sentences.
-		if (latestPost.author_id == null) return latestPost.body;
+		// entries are already self-contained sentences. Strip the bold markup
+		// since the strip is plain text.
+		if (latestPost.author_id == null) return stripLogMarkup(latestPost.body);
 		const author = playerName(latestPost.author_id);
 		return author ? `${author}: ${latestPost.body}` : latestPost.body;
 	});
@@ -414,7 +432,8 @@
 				{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
 					<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
 						<span class="boundary-line"></span>
-						<span class="boundary-label">{post.body}</span>
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						<span class="boundary-label">{@html renderLogBody(post.body)}</span>
 						<span class="boundary-line"></span>
 					</div>
 				{:else if post.author_id == null}
@@ -425,10 +444,12 @@
 						data-code={post.system_code}
 					>
 						{#if post.severity >= SEVERITY.IMPORTANT}
-							<span class="log-body">{post.body}</span>
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+							<span class="log-body">{@html renderLogBody(post.body)}</span>
 						{:else}
 							<span class="log-glyph" aria-hidden="true">•</span>
-							<span class="log-body">{post.body}</span>
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+							<span class="log-body">{@html renderLogBody(post.body)}</span>
 							<span class="log-time">{fmtTime(post.created_at)}</span>
 						{/if}
 					</div>

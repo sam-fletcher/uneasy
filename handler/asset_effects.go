@@ -7,6 +7,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
@@ -21,6 +22,30 @@ func breakVerb(destroyed bool) string {
 		return "destroyed"
 	}
 	return "broke"
+}
+
+// brokenAssetPrompt returns the trailing clause inviting an asset's owner to
+// narrate the effect of a break: " <Owner>, how has the asset changed?". It
+// returns "" when the tear destroyed the asset — nothing remains to re-describe,
+// and a separate asset.destroyed post already records the loss.
+func brokenAssetPrompt(ctx context.Context, q *dbgen.Queries, ownerID int64, destroyed bool) string {
+	if destroyed {
+		return ""
+	}
+	return fmt.Sprintf(" %s, how has the asset changed?", playerDisplayName(ctx, q, ownerID))
+}
+
+// brokenAssetDetail is brokenAssetPrompt prefixed with the text of the marginalia
+// just torn, for plan break logs whose flavour line doesn't already quote it. The
+// marginalia text stays quoted (only asset names are bolded — see assetMark).
+func brokenAssetDetail(
+	ctx context.Context,
+	q *dbgen.Queries,
+	ownerID int64,
+	m *dbgen.Marginalium,
+	destroyed bool,
+) string {
+	return fmt.Sprintf(" The torn marginalia read %q.", m.Text) + brokenAssetPrompt(ctx, q, ownerID, destroyed)
 }
 
 // breakMarginalia performs the canonical "break an asset" effect: tear one

@@ -125,8 +125,8 @@ func applyUpdatePeer(
 		Marginalia: m,
 	})
 
-	clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s rewrote a marginalia on their partner's peer %q.",
-		playerDisplayName(ctx, deps.Q, choice.PlayerID), asset.Name))
+	clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s rewrote a marginalia on their partner's peer %s.",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), assetMark(asset.Name)))
 	return nil
 }
 
@@ -165,8 +165,9 @@ func applyBreakPeer(
 	if err != nil {
 		return fmt.Errorf("could not break partner's peer: %w", err)
 	}
-	clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s %s their partner's peer %q.",
-		playerDisplayName(ctx, deps.Q, choice.PlayerID), breakVerb(destroyed), asset.Name))
+	clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s %s their partner's peer %s.%s",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), breakVerb(destroyed), assetMark(asset.Name),
+		brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
 	return nil
 }
 
@@ -230,8 +231,8 @@ func applyTakeGift(
 		OldOwnerID: oldOwner,
 		NewOwnerID: choice.PlayerID,
 	})
-	clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s took %q from their partner as a gift.",
-		playerDisplayName(ctx, deps.Q, choice.PlayerID), asset.Name))
+	clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s took %s from their partner as a gift.",
+		playerDisplayName(ctx, deps.Q, choice.PlayerID), assetMark(asset.Name)))
 	return nil
 }
 

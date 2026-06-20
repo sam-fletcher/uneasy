@@ -213,16 +213,19 @@ func TearMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				PlayerID: player.ID,
 			})
 		}
-		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-			EmitMarginaliaTorn(ctx, s.Q, manager, asset.GameID, *asset, *m, player.ID, g.CurrentRow)
-		}
-
 		// Check if that was the last intact marginalia → destroy the asset.
 		// DestroyIfAllMarginaliaTorn composes the "no intact remain" check
 		// and the flip into a single SQL statement; rows=1 means the tear
-		// just completed the destruction.
+		// just completed the destruction. Computed before the torn post so its
+		// "how has the asset changed?" prompt is suppressed on a destroy.
 		destroyedRows, _ := s.Q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
-		if destroyedRows > 0 {
+		destroyed := destroyedRows > 0
+
+		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
+			EmitMarginaliaTorn(ctx, s.Q, manager, asset.GameID, *asset, *m, player.ID, destroyed, g.CurrentRow)
+		}
+
+		if destroyed {
 			if h, ok := manager.Get(asset.GameID); ok {
 				h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{
 					AssetID: asset.ID,

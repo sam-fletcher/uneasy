@@ -46,7 +46,17 @@ func tearOldMainCharacterMarginalia(
 		})
 	}
 	if g, gErr := q.GetGameByID(ctx, oldMC.GameID); gErr == nil {
-		EmitMarginaliaTorn(ctx, q, manager, oldMC.GameID, *oldMC, *target, player.ID, g.CurrentRow)
+		EmitMarginaliaTorn(
+			ctx,
+			q,
+			manager,
+			oldMC.GameID,
+			*oldMC,
+			*target,
+			player.ID,
+			decision.DestroysOldMC,
+			g.CurrentRow,
+		)
 	}
 
 	if !decision.DestroysOldMC {

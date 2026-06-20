@@ -456,8 +456,8 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 			NewOwnerID: body.ToPlayerID,
 		})
 		spLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s lost the peer %q to %s.",
-				playerDisplayName(ctx, deps.Q, plan.PreparerID), asset.Name,
+			fmt.Sprintf("%s lost the peer %s to %s.",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name),
 				playerDisplayName(ctx, deps.Q, body.ToPlayerID)))
 
 		respond(w, http.StatusOK, map[string]any{
@@ -547,8 +547,9 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		spLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s broke their own %q amid the backlash.",
-				playerDisplayName(ctx, deps.Q, plan.PreparerID), asset.Name))
+			fmt.Sprintf("%s broke their own %s amid the backlash.%s",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name),
+				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,

@@ -578,7 +578,8 @@ func chApplyMarEffect(
 		if err != nil {
 			return "", http.StatusInternalServerError, "could not break artifact"
 		}
-		return fmt.Sprintf("%s %s the invoked artifact %q.", who, breakVerb(destroyed), artifact.Name), 0, ""
+		return fmt.Sprintf("%s %s the invoked artifact %s.%s", who, breakVerb(destroyed), assetMark(artifact.Name),
+			brokenAssetDetail(ctx, deps.Q, artifact.OwnerID, &m, destroyed)), 0, ""
 	case "invoke_another":
 		if in.assetID == nil {
 			return "", http.StatusBadRequest, "invoke_another requires asset_id"
@@ -590,7 +591,7 @@ func chApplyMarEffect(
 		if !slices.Contains(ch.InvokedArtifactIDs, *in.assetID) {
 			ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, *in.assetID)
 		}
-		return fmt.Sprintf("%s invoked %q.", who, asset.Name), 0, ""
+		return fmt.Sprintf("%s invoked %s.", who, assetMark(asset.Name)), 0, ""
 	default:
 		// echo_present / total_control: purely narrative.
 		return fmt.Sprintf("%s chose %q.", who, in.choice), 0, ""

@@ -174,8 +174,8 @@ func applyExchangeCourtiersMake(
 			NewOwnerID: recipient,
 		})
 		ecLog(ctx, deps, plan, model.SeverityImportant,
-			fmt.Sprintf("%s took the peer %q from %s.",
-				playerDisplayName(ctx, deps.Q, recipient), ta.Name,
+			fmt.Sprintf("%s took the peer %s from %s.",
+				playerDisplayName(ctx, deps.Q, recipient), assetMark(ta.Name),
 				playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID)))
 	}
 
@@ -239,8 +239,8 @@ func applyExchangeCourtiersMar(
 				NewOwnerID: recipient,
 			})
 			ecLog(ctx, deps, plan, model.SeverityImportant,
-				fmt.Sprintf("A fair trade: %q passed to %s after all.",
-					ta.Name, playerDisplayName(ctx, deps.Q, recipient)))
+				fmt.Sprintf("A fair trade: %s passed to %s after all.",
+					assetMark(ta.Name), playerDisplayName(ctx, deps.Q, recipient)))
 		case "forfeit":
 			ec.PeerClaimsRequired++
 		case "riposte":
@@ -649,8 +649,8 @@ func ecClaimPeerHandler(deps *PlanDeps) http.HandlerFunc {
 			NewOwnerID: player.ID,
 		})
 		ecLog(ctx, deps, plan, model.SeverityImportant,
-			fmt.Sprintf("%s seized the peer %q from %s.",
-				playerDisplayName(ctx, deps.Q, player.ID), asset.Name,
+			fmt.Sprintf("%s seized the peer %s from %s.",
+				playerDisplayName(ctx, deps.Q, player.ID), assetMark(asset.Name),
 				playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 
 		respond(w, http.StatusOK, map[string]any{
@@ -729,7 +729,8 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		ecLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("The preparer damaged their own %q before surrendering it.", asset.Name))
+			fmt.Sprintf("The preparer damaged their own %s before surrendering it.%s", assetMark(asset.Name),
+				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,

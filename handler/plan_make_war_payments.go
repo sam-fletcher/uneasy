@@ -287,9 +287,16 @@ func mwApplyBreakAsset(
 	}
 	// Canonical tear + auto-destroy (also grants secret visibility to the
 	// tearer, like every other break in the codebase).
-	if _, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID); err != nil {
+	destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID)
+	if err != nil {
 		respondInternalErr(w, r, "could not tear marginalia", err)
 		return nil, nil, false
+	}
+	// breakMarginalia doesn't log the tear itself — emit the canonical
+	// marginalia.torn post so the war break shows in the action log (it owns the
+	// asset, so the prompt invites them to re-describe what they damaged).
+	if g, gErr := deps.Q.GetGameByID(ctx, asset.GameID); gErr == nil {
+		EmitMarginaliaTorn(ctx, deps.Q, deps.Manager, asset.GameID, asset, m, player.ID, destroyed, g.CurrentRow)
 	}
 	return &asset.ID, nil, true
 }

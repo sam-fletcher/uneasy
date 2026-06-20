@@ -191,6 +191,7 @@
 	const makeNeedsMarg = $derived(makeOption === 'break_artifact');
 	const makeReady = $derived(
 		!!makeOption
+		&& !!makeNarration.trim()
 		&& (!makeNeedsAsset || makeAssetID != null)
 		&& (!makeNeedsMarg || makeMargID != null),
 	);
@@ -375,12 +376,12 @@
 				<FormField label="Set the scene">
 					<textarea rows={3} bind:value={sceneText} class="form-textarea"
 						placeholder="Describe the moment from the past you're shedding light on…"
-						disabled={!isPreparer}></textarea>
+						disabled={!isPreparer} required></textarea>
 				</FormField>
 				{#if isPreparer}
 					<button class="action-btn primary"
 						onclick={() => submitPreRoll(plan)}
-						disabled={preRollBusy}>
+						disabled={preRollBusy || !sceneText.trim()}>
 						{preRollBusy ? '…' : 'Set the scene & gather your dice'}
 					</button>
 				{:else}
@@ -403,7 +404,7 @@
 				{#if makeRemaining > 0}
 					<p class="choices-note">
 						<strong>{makeRemaining}</strong> of {makeBudget}
-						choice{makeBudget === 1 ? '' : 's'} remaining — submit them one at a time.
+						choice{makeBudget === 1 ? '' : 's'} remaining — weave them into the scene.
 					</p>
 					{#if amChoiceActor}
 						<div class="plan-form">
@@ -449,9 +450,9 @@
 									onSelect={(id) => (makeAssetID = id)}
 								/>
 							{/if}
-							<FormField label="Narration (optional — posted with this choice)">
+							<FormField label="Narration (posted with this choice)">
 								<textarea rows={2} bind:value={makeNarration} class="form-textarea"
-									placeholder="Describe this beat of the scene…"></textarea>
+									placeholder="Describe this beat of the scene…" required></textarea>
 							</FormField>
 							<button class="action-btn primary"
 								onclick={() => submitMakeStep(plan)}

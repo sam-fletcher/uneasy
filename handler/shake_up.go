@@ -693,9 +693,23 @@ func shakeUpTakeAsset(
 	})
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
 	from := playerDisplayName(ctx, q, oldOwner)
-	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
-		fmt.Sprintf("%s spent %d token(s) to take %q (%s) from %s", spender, finalCost, asset.Name, want, from),
-		map[string]any{"effect": "take", "asset_id": asset.ID, "old_owner_id": oldOwner})
+	EmitShakeUpCommitted(
+		ctx,
+		q,
+		manager,
+		gameID,
+		spend,
+		finalCost,
+		fmt.Sprintf(
+			"%s spent %d token(s) to take %s (%s) from %s",
+			spender,
+			finalCost,
+			assetMark(asset.Name),
+			want,
+			from,
+		),
+		map[string]any{"effect": "take", "asset_id": asset.ID, "old_owner_id": oldOwner},
+	)
 	return nil
 }
 
@@ -727,9 +741,23 @@ func shakeUpBreakAsset(
 	broadcastEvent(manager, gameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
 	owner := playerDisplayName(ctx, q, asset.OwnerID)
-	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
-		fmt.Sprintf("%s spent %d token(s) to break %s's %q (%s)", spender, finalCost, owner, asset.Name, want),
-		map[string]any{"effect": "break", "asset_id": asset.ID, "owner_id": asset.OwnerID})
+	EmitShakeUpCommitted(
+		ctx,
+		q,
+		manager,
+		gameID,
+		spend,
+		finalCost,
+		fmt.Sprintf(
+			"%s spent %d token(s) to break %s's %s (%s)",
+			spender,
+			finalCost,
+			owner,
+			assetMark(asset.Name),
+			want,
+		),
+		map[string]any{"effect": "break", "asset_id": asset.ID, "owner_id": asset.OwnerID},
+	)
 	return nil
 }
 
@@ -829,7 +857,7 @@ func shakeUpClaimTitle(
 	)
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
 	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
-		fmt.Sprintf("%s spent %d token(s) to claim a new title %q", spender, finalCost, asset.Name),
+		fmt.Sprintf("%s spent %d token(s) to claim a new title %s", spender, finalCost, assetMark(asset.Name)),
 		map[string]any{"effect": "claim_title", "asset_id": asset.ID})
 	return nil
 }

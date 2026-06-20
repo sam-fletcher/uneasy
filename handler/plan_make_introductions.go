@@ -621,8 +621,17 @@ func applyMIPeerOutcome(
 			Asset: updated, OldOwnerID: plan.PreparerID, NewOwnerID: recipient,
 		})
 		outcome.Done = true
-		miLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%q joined %s's retinue instead.", peer.Name, playerDisplayName(ctx, deps.Q, recipient)))
+		miLog(
+			ctx,
+			deps,
+			plan,
+			model.SeverityDefault,
+			fmt.Sprintf(
+				"%s joined %s's retinue instead.",
+				assetMark(peer.Name),
+				playerDisplayName(ctx, deps.Q, recipient),
+			),
+		)
 
 	case "broken_arrival":
 		author, vErr := miValidateOtherPlayer(ctx, deps.Q, plan, targetPlayer)
@@ -630,8 +639,17 @@ func applyMIPeerOutcome(
 			return outcome, http.StatusBadRequest, vErr, nil
 		}
 		outcome.AuthorPlayerID = &author // Done stays false until the author writes
-		miLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%q arrived broken — %s will define them.", peer.Name, playerDisplayName(ctx, deps.Q, author)))
+		miLog(
+			ctx,
+			deps,
+			plan,
+			model.SeverityDefault,
+			fmt.Sprintf(
+				"%s arrived broken — %s will define them.",
+				assetMark(peer.Name),
+				playerDisplayName(ctx, deps.Q, author),
+			),
+		)
 
 	case "delayed":
 		_, _, _, lost, err := scheduleDelayedArrival(ctx, deps, plan, resData, peer.ID)
@@ -639,14 +657,20 @@ func applyMIPeerOutcome(
 			return outcome, 0, "", err
 		}
 		if lost {
-			miLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%q was lost on the journey.", peer.Name))
+			miLog(
+				ctx,
+				deps,
+				plan,
+				model.SeverityDefault,
+				fmt.Sprintf("%s was lost on the journey.", assetMark(peer.Name)),
+			)
 		} else {
 			miLog(
 				ctx,
 				deps,
 				plan,
 				model.SeverityDefault,
-				fmt.Sprintf("%q was delayed and will arrive later.", peer.Name),
+				fmt.Sprintf("%s was delayed and will arrive later.", assetMark(peer.Name)),
 			)
 		}
 		outcome.Done = true
@@ -670,7 +694,7 @@ func applyMIPeerOutcome(
 		}
 		outcome.Done = true
 		miLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%q survived an arduous journey — arrived broken.", peer.Name))
+			fmt.Sprintf("%s survived an arduous journey — arrived broken.", assetMark(peer.Name)))
 
 	default:
 		return outcome, http.StatusBadRequest,
@@ -768,7 +792,7 @@ func introductionsMarginaliaHandler(deps *PlanDeps) http.HandlerFunc {
 
 		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetUpdated, model.AssetIDPayload{AssetID: peer.ID})
 		miLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s defined the newcomer %q.", playerDisplayName(ctx, deps.Q, player.ID), peer.Name))
+			fmt.Sprintf("%s defined the newcomer %s.", playerDisplayName(ctx, deps.Q, player.ID), assetMark(peer.Name)))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,

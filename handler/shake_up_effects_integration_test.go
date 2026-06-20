@@ -166,7 +166,7 @@ func TestShakeUpEffect_TakeAsset_TransfersOwnership(t *testing.T) {
 
 	posts := committedPosts(t, q, gameID)
 	require.Len(t, posts, 1)
-	assert.Contains(t, posts[0], `to take "Loyal guard" (peer)`)
+	assert.Contains(t, posts[0], `to take **Loyal guard** (peer)`)
 }
 
 // TestShakeUpEffect_BreakAsset_Destroys pins that a break_* option destroys the
@@ -200,7 +200,7 @@ func TestShakeUpEffect_BreakAsset_Destroys(t *testing.T) {
 	posts := committedPosts(t, q, gameID)
 	require.Len(t, posts, 1)
 	assert.Contains(t, posts[0], `to break`)
-	assert.Contains(t, posts[0], `"Granary" (resource)`)
+	assert.Contains(t, posts[0], `**Granary** (resource)`)
 }
 
 // TestMaybeAdvanceShakeUpCategory_Progression pins the category machine: with

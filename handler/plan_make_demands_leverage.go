@@ -119,7 +119,7 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 				respondInternalErr(w, r, "could not add leverage die", err)
 				return
 			}
-			leveragedNames = append(leveragedNames, fmt.Sprintf("%q", asset.Name))
+			leveragedNames = append(leveragedNames, assetMark(asset.Name))
 			committed[assetID] = struct{}{}
 		}
 

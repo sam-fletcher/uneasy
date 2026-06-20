@@ -47,11 +47,20 @@ func playerDisplayName(ctx context.Context, q *dbgen.Queries, playerID int64) st
 // be resolved (deleted, or a nil id), so the line still reads cleanly.
 const fallbackAssetName = "an asset"
 
-// assetDisplayName resolves an asset id to a quoted name for log bodies,
-// falling back to fallbackAssetName on any lookup failure.
+// assetMark renders a player-authored asset name for log bodies. Names are
+// bolded (markdown) rather than quoted so they stand out from the surrounding
+// prose without quote clutter; the chat feed renders this markup. Marginalia,
+// rumor, secret, and free-text choices stay quoted — bolding is reserved for
+// names.
+func assetMark(name string) string {
+	return "**" + name + "**"
+}
+
+// assetDisplayName resolves an asset id to a marked (bolded) name for log
+// bodies, falling back to fallbackAssetName on any lookup failure.
 func assetDisplayName(ctx context.Context, q *dbgen.Queries, assetID int64) string {
 	if a, err := q.GetAssetByID(ctx, assetID); err == nil {
-		return fmt.Sprintf("%q", a.Name)
+		return assetMark(a.Name)
 	}
 	return fallbackAssetName
 }
@@ -269,7 +278,7 @@ func EmitAssetDestroyed(
 ) {
 	EmitSystemPost(ctx, q, manager, gameID, "asset.destroyed",
 		model.SeverityDefault,
-		fmt.Sprintf("%s destroyed.", asset.Name),
+		fmt.Sprintf("%s destroyed.", assetMark(asset.Name)),
 		&rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
@@ -284,7 +293,7 @@ func EmitAssetLeveraged(
 ) {
 	EmitSystemPost(ctx, q, manager, gameID, "asset.leveraged",
 		model.SeverityMinor,
-		fmt.Sprintf("%s leveraged.", asset.Name),
+		fmt.Sprintf("%s leveraged.", assetMark(asset.Name)),
 		&rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
@@ -310,7 +319,7 @@ func EmitRollCommit(
 	}
 	source := "banked die"
 	if assetName != nil {
-		source = fmt.Sprintf("%q", *assetName)
+		source = assetMark(*assetName)
 	}
 	verb := "aided"
 	if isInterference {
@@ -424,7 +433,7 @@ func EmitAssetRefreshed(
 ) {
 	EmitSystemPost(ctx, q, manager, gameID, "asset.refreshed",
 		model.SeverityMinor,
-		fmt.Sprintf("%s refreshed.", asset.Name),
+		fmt.Sprintf("%s refreshed.", assetMark(asset.Name)),
 		&rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
@@ -458,7 +467,7 @@ func EmitAssetCreated(
 	rowNumber *int16,
 ) {
 	creator := playerDisplayName(ctx, q, asset.CreatorID)
-	body := fmt.Sprintf("%s created the %s %q", creator, asset.AssetType, asset.Name)
+	body := fmt.Sprintf("%s created the %s %s", creator, asset.AssetType, assetMark(asset.Name))
 	if len(marginalia) > 0 {
 		quoted := make([]string, 0, len(marginalia))
 		for _, m := range marginalia {
@@ -487,7 +496,7 @@ func EmitAssetRenamed(
 	actor := playerDisplayName(ctx, q, actorID)
 	EmitSystemPost(ctx, q, manager, gameID, "asset.renamed",
 		model.SeverityTrace,
-		fmt.Sprintf("%s renamed %q to %q", actor, oldName, newName),
+		fmt.Sprintf("%s renamed %s to %s", actor, assetMark(oldName), assetMark(newName)),
 		&rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "editor_id": actorID})
 }
@@ -508,7 +517,7 @@ func EmitMarginaliaAdded(
 	actor := playerDisplayName(ctx, q, actorID)
 	EmitSystemPost(ctx, q, manager, gameID, "marginalia.added",
 		model.SeverityMinor,
-		fmt.Sprintf("%s added marginalia %q to %q", actor, m.Text, asset.Name),
+		fmt.Sprintf("%s added marginalia %q to %s", actor, m.Text, assetMark(asset.Name)),
 		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "author_id": actorID})
 }
@@ -529,13 +538,16 @@ func EmitMarginaliaEdited(
 	actor := playerDisplayName(ctx, q, actorID)
 	EmitSystemPost(ctx, q, manager, gameID, "marginalia.edited",
 		model.SeverityTrace,
-		fmt.Sprintf("%s edited marginalia on %q to %q", actor, asset.Name, newText),
+		fmt.Sprintf("%s edited marginalia on %s to %q", actor, assetMark(asset.Name), newText),
 		&rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "editor_id": actorID})
 }
 
 // EmitMarginaliaTorn writes the Default marginalia.torn post. Tearing is often
-// hostile, so the body names whose marginalia was torn as well as who tore it.
+// hostile, so the body names whose marginalia was torn as well as who tore it,
+// quotes the torn text, and — unless the tear destroyed the asset — invites the
+// owner to narrate how the asset has changed. Pass destroyed so the prompt is
+// suppressed when nothing remains to re-describe.
 func EmitMarginaliaTorn(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -544,16 +556,18 @@ func EmitMarginaliaTorn(
 	asset dbgen.Asset,
 	m dbgen.Marginalium,
 	actorID int64,
+	destroyed bool,
 	rowNumber int16,
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
 	var body string
 	if actorID == asset.OwnerID {
-		body = fmt.Sprintf("%s tore their own marginalia %q on %q", actor, m.Text, asset.Name)
+		body = fmt.Sprintf("%s tore their own marginalia %q on %s", actor, m.Text, assetMark(asset.Name))
 	} else {
 		owner := playerDisplayName(ctx, q, asset.OwnerID)
-		body = fmt.Sprintf("%s tore %s's marginalia %q on %q", actor, owner, m.Text, asset.Name)
+		body = fmt.Sprintf("%s tore %s's marginalia %q on %s", actor, owner, m.Text, assetMark(asset.Name))
 	}
+	body += brokenAssetPrompt(ctx, q, asset.OwnerID, destroyed)
 	EmitSystemPost(ctx, q, manager, gameID, "marginalia.torn",
 		model.SeverityDefault, body,
 		&rowNumber, nil, nil,
@@ -575,7 +589,7 @@ func EmitAssetTaken(
 	from := playerDisplayName(ctx, q, oldOwnerID)
 	EmitSystemPost(ctx, q, manager, gameID, "asset.taken",
 		model.SeverityDefault,
-		fmt.Sprintf("%s took %q from %s", taker, asset.Name, from),
+		fmt.Sprintf("%s took %s from %s", taker, assetMark(asset.Name), from),
 		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "old_owner_id": oldOwnerID, "new_owner_id": newOwnerID})
 }
@@ -593,9 +607,9 @@ func EmitMainCharacterChanged(
 	rowNumber int16,
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
-	body := fmt.Sprintf("%s stepped %q down as main character", actor, asset.Name)
+	body := fmt.Sprintf("%s stepped %s down as main character", actor, assetMark(asset.Name))
 	if isMainCharacter {
-		body = fmt.Sprintf("%s named %q as their main character", actor, asset.Name)
+		body = fmt.Sprintf("%s named %s as their main character", actor, assetMark(asset.Name))
 	}
 	EmitSystemPost(ctx, q, manager, gameID, "asset.main_character",
 		model.SeverityDefault, body,
@@ -780,7 +794,7 @@ func EmitShakeUpAnnounced(
 	name := playerDisplayName(ctx, q, spend.PlayerID)
 	body := fmt.Sprintf("%s announces a Shake-Up spend: %s", name, optionPhrase)
 	if targetName != "" {
-		body += fmt.Sprintf(" — targeting %q", targetName)
+		body += fmt.Sprintf(" — targeting %s", assetMark(targetName))
 	}
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.spend_announced",
 		model.SeverityDefault, body,

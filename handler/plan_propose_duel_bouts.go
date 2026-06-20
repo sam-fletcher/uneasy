@@ -103,7 +103,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 			ResponderID: pduelOpponentID(plan, player.ID),
 		})
 		pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"Bout %d — %s opens with %q, calling %s. %s must answer.",
+			"Bout %d — %s opens with %s, calling %s. %s must answer.",
 			boutNumber, playerDisplayName(ctx, deps.Q, player.ID),
 			assetDisplayName(ctx, deps.Q, stake.AssetID), body.Declaration,
 			playerDisplayName(ctx, deps.Q, pduelOpponentID(plan, player.ID))))

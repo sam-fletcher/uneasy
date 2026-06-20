@@ -144,8 +144,8 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 		fc.deps,
 		fc.plan,
 		model.SeverityDefault,
-		fmt.Sprintf("%s introduced a new peer, %q, to the festivity.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), asset.Name),
+		fmt.Sprintf("%s introduced a new peer, %s, to the festivity.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(asset.Name)),
 	)
 	return nil
 }
@@ -188,8 +188,8 @@ func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContex
 	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
 		Asset: updated, OldOwnerID: oldOwner, NewOwnerID: newOwner,
 	})
-	hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s took %q into their retinue.",
-		playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), updated.Name))
+	hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s took %s into their retinue.",
+		playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(updated.Name)))
 	return nil
 }
 
@@ -231,8 +231,8 @@ func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext)
 		fc.deps,
 		fc.plan,
 		model.SeverityDefault,
-		fmt.Sprintf("%s fell out with their peer %q, who is now considering changing retinue.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), asset.Name),
+		fmt.Sprintf("%s fell out with their peer %s, who is now considering changing retinue.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(asset.Name)),
 	)
 	return nil
 }
@@ -294,8 +294,9 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 		fc.deps,
 		fc.plan,
 		model.SeverityDefault,
-		fmt.Sprintf("%s %s themselves — word of their gaffe gets around.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), breakVerb(destroyed)),
+		fmt.Sprintf("%s %s themselves — word of their gaffe gets around.%s",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), breakVerb(destroyed),
+			brokenAssetDetail(ctx, fc.deps.Q, mc.OwnerID, &m, destroyed)),
 	)
 	return nil
 }
@@ -339,12 +340,13 @@ func hfBreakAbandonedDisagreementPeers(
 			return fmt.Errorf("break abandoned peer %d: %w", id, err)
 		}
 		owner := playerDisplayName(ctx, deps.Q, asset.OwnerID)
+		detail := brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)
 		if destroyed {
 			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"%q never made up with %s and fell apart for good.", asset.Name, owner))
+				"%s never made up with %s and fell apart for good.%s", assetMark(asset.Name), owner, detail))
 		} else {
 			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"%q rejoined %s, broken by the falling-out.", asset.Name, owner))
+				"%s rejoined %s, broken by the falling-out.%s", assetMark(asset.Name), owner, detail))
 		}
 		state.CenteredAssetIDs = removeID(state.CenteredAssetIDs, id)
 	}

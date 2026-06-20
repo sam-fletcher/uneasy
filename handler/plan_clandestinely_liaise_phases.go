@@ -229,8 +229,8 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s entrusted the meeting's secret to %q.",
-			playerDisplayName(ctx, deps.Q, player.ID), asset.Name))
+		clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s entrusted the meeting's secret to %s.",
+			playerDisplayName(ctx, deps.Q, player.ID), assetMark(asset.Name)))
 
 		// The other participant must refetch the plan to see this submission.
 		// Without this they'd be soft-locked on the secrets-we-keep panel until a
