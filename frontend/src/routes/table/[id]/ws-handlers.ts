@@ -273,6 +273,12 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 				ctx.activeRollVotes = [];
 				ctx.activeRollParticipants = [];
 			});
+			// A plan-linked roll may have been cast in the same request that mutated
+			// the plan's resolution_data (e.g. Chronicle Histories' cast-roll flips
+			// invoke_phase_closed). The preparer's own API response refreshes their
+			// plan; other clients only get this event, so refetch the plan here or
+			// their pre-roll UI stays stale until a manual page refresh.
+			if (roll.plan_id != null) refreshPlan(ctx, roll.plan_id);
 			break;
 		}
 		case EventTypes.RollLeverageAdded: {
