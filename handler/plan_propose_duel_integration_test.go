@@ -296,6 +296,31 @@ func TestProposeDuelHTTP_Mar_TargetTakesPreparerStake(t *testing.T) {
 	require.True(t, ok, "expected a duel-outcome post")
 }
 
+// TestProposeDuelHTTP_FinalRollAutoResolves: the duel's final roll has no
+// leverage window. The bout dice are the whole roll, so once the bouts finish
+// the server resolves the roll immediately — it lands at stage='resolved' with
+// a result/outcome, ready for the make-choice claim, rather than parking in the
+// leverage stage waiting on input that the rules don't permit.
+func TestProposeDuelHTTP_FinalRollAutoResolves(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	prepPeer := h.seedPeer(prepIdx0, "Preparer stake")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+
+	planID, _ := seedDuelToRoll(t, h, targIdx,
+		[]int64{prepPeer}, []int64{targPeer})
+
+	// No forceRoll: assert the bout-respond handler resolved it on its own.
+	roll, err := h.q.GetDiceRollByPlanID(context.Background(), &planID)
+	require.NoError(t, err)
+	require.Equal(t, "resolved", roll.Stage, "final roll should skip leverage and resolve")
+	require.NotNil(t, roll.Result, "auto-resolved roll should have a result")
+	require.NotNil(t, roll.Outcome, "auto-resolved roll should have an outcome")
+	require.Contains(t, []string{"make", "mar"}, *roll.Outcome)
+}
+
 // TestProposeDuelHTTP_AllowsLeveragedStake: an already-leveraged asset may be
 // staked. The rules place no leverage (or type) restriction on stakes, and
 // resolution leverages every stake again — a no-op for one already leveraged.

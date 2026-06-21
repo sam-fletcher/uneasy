@@ -19,8 +19,12 @@ import type { Asset } from '$lib/api';
  */
 export function isNeedlesslyAtRisk(asset: Asset): boolean {
 	if (asset.is_destroyed) return false;
-	const intact = asset.marginalia.filter((m) => !m.is_torn).length;
-	const hasEmptySlot = asset.marginalia.length < 4;
+	// Defensive: some WS payloads (e.g. asset.taken) can carry a marginalia-less
+	// asset row. Treat a missing list as empty so this pure helper never throws
+	// inside a derived — a throw there breaks Svelte's reactivity batch.
+	const marginalia = asset.marginalia ?? [];
+	const intact = marginalia.filter((m) => !m.is_torn).length;
+	const hasEmptySlot = marginalia.length < 4;
 	return intact <= 1 && hasEmptySlot;
 }
 

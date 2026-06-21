@@ -7,9 +7,9 @@ import { test, expect, request as pwRequest, type BrowserContext, type Page } fr
 // the plan's row, and the resolve trigger) is done over the API: it isn't
 // what we're testing and driving it through the UI would dwarf the actual
 // subject. The interactive, bug-prone part — stake-count reveal, stake
-// selection, the bout declare/respond loop, and the accumulated-dice
-// hand-off — is driven entirely through the rendered panels for both
-// players, ending when the duel reaches its final dice roll.
+// selection, the bout declare/respond loop, the accumulated-dice hand-off,
+// and the winner's take-stakes claim — is driven entirely through the
+// rendered panels for both players, ending at the duel's done state.
 //
 // Dice are server-rolled (handler/rolls_dice.go) so bout outcomes are
 // random; assertions check flow progression, never specific dice values.
@@ -65,7 +65,7 @@ async function stakeAsset(page: Page, assetName: string) {
 	await sec.getByRole('button', { name: /^Commit 1 stake$/ }).click();
 }
 
-test('propose duel: setup → staking → bouts → final roll', async ({ browser }) => {
+test('propose duel: setup → staking → bouts → final roll → take', async ({ browser }) => {
 	// ── Seed a main_event game with alice (focus) + bob ──────────────────────
 	const fixture = await pwRequest.newContext({ baseURL: E2E });
 	await fixture.post('/api/dev/reset');
@@ -146,9 +146,61 @@ test('propose duel: setup → staking → bouts → final roll', async ({ browse
 	await bobBout.locator('.stake-line.pick', { hasText: 'Bob Peer' }).click();
 	await bobBout.getByRole('button', { name: 'Respond' }).click();
 
-	// With one stake each, both run out → duel hands off to the final roll.
-	await expect(section(alice, 'The final roll')).toBeVisible({ timeout: 10_000 });
-	await expect(section(bob, 'The final roll')).toBeVisible({ timeout: 10_000 });
+	// With one stake each, both run out → the duel hands off to its final roll.
+	// pduelCreateFinalRoll builds that roll already-resolved (finalizeRoll lands
+	// it at stage='resolved'), so the make/mar outcome and the winner's
+	// take-stakes UI appear immediately — there's no dice-roll interaction.
+	const aliceRoll = section(alice, 'The final roll');
+	const bobRoll = section(bob, 'The final roll');
+	await expect(aliceRoll).toBeVisible({ timeout: 10_000 });
+	await expect(bobRoll).toBeVisible({ timeout: 10_000 });
+
+	// Dice are server-rolled, so the winner (and thus who steals from whom) is
+	// random. The winner's panel carries the take controls; the loser's shows a
+	// "claim stakes" waiting note. Wait for that resolved state to settle, then
+	// read the winner off whichever page got the controls.
+	const peerName: Record<number, string> = { [aliceID]: 'Alice Peer', [bobID]: 'Bob Peer' };
+	const takeBtn = (sec: ReturnType<typeof section>) =>
+		sec.getByRole('button', { name: /^(Take \d+\/\d+|Apply result)$/ });
+	await expect(
+		takeBtn(aliceRoll).or(aliceRoll.getByText(/to claim stakes/)),
+	).toBeVisible({ timeout: 10_000 });
+	const aliceWon = (await takeBtn(aliceRoll).count()) > 0;
+	const winner = aliceWon ? alice : bob;
+	const winnerID = aliceWon ? aliceID : bobID;
+	const loserID = aliceWon ? bobID : aliceID;
+	const loserPeerName = peerName[loserID];
+
+	// Claim the stakes. effectiveTake is min(takeCount, 1 stake): a mar (or a
+	// make with result ≥ 1) gives a real pick through the standard asset
+	// CardPicker — the regression guard for this step — while a make with
+	// result 0 short-circuits to an auto-apply button with nothing to choose.
+	const winnerRoll = section(winner, 'The final roll');
+	let stole = false;
+	const applyBtn = winnerRoll.getByRole('button', { name: 'Apply result' });
+	if (await applyBtn.count()) {
+		await applyBtn.click();
+	} else {
+		// The loser's staked peer renders as one standard selectable asset card.
+		const card = winnerRoll.locator('.card', { hasText: loserPeerName });
+		await expect(card).toHaveCount(1);
+		await card.getByRole('checkbox').click();
+		await winnerRoll.getByRole('button', { name: /^Take 1\/1$/ }).click();
+		stole = true;
+	}
+
+	// Both sides land on the done screen once the take applies.
+	const done = 'Duel complete. All staked assets are leveraged.';
+	await expect(alice.getByText(done)).toBeVisible({ timeout: 10_000 });
+	await expect(bob.getByText(done)).toBeVisible({ timeout: 10_000 });
+
+	// Verify the take actually moved the asset: on a pick the loser's staked peer
+	// now belongs to the winner; on an auto-apply nothing transfers.
+	const assetsRes = await aliceCtx.request.get(`/api/tables/${game_id}/assets`);
+	const { assets } = await assetsRes.json();
+	const loserPeer = assets.find((a: { name: string }) => a.name === loserPeerName);
+	expect(loserPeer, `loser peer ${loserPeerName} missing`).toBeTruthy();
+	expect(loserPeer.owner_id).toBe(stole ? winnerID : loserID);
 
 	await aliceCtx.close();
 	await bobCtx.close();

@@ -278,7 +278,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 
 		if prepLeft == 0 || targLeft == 0 {
 			// Bouts complete — create the standard roll with accumulated dice.
-			if err := pduelCreateFinalRoll(ctx, deps, plan, &resData, state); err != nil {
+			if err := pduelCreateFinalRoll(ctx, w, r, deps, plan, &resData, state); err != nil {
 				respondInternalErr(w, r, "could not create final roll", err)
 				return
 			}
@@ -304,9 +304,18 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 // plan's standard dice roll with dice pre-assigned. Preparer's accumulated
 // dice become actor dice; target's accumulated dice become interference.
 //
-
+// Unlike a normal plan roll, the duel's final roll has no leverage window:
+// the rules resolve it "using accumulated bout dice" with nothing else added
+// ("Both leverage all staked assets" consumes the stakes afterwards in
+// ApplyChoice — it does not add leverage dice here). Every die's face is
+// already known from the bouts, so we broadcast roll.created (to mount the
+// panel) and then finalizeRoll immediately. finalizeRoll preserves pre-set
+// faces (see rollAndCancelDice) and lands the roll at stage='resolved', so
+// players see the outcome in the standard dice panel with nothing to do.
 func pduelCreateFinalRoll(
 	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	resData *ResolutionData,
@@ -402,6 +411,8 @@ func pduelCreateFinalRoll(
 		playerDisplayName(ctx, deps.Q, oppID), len(targDice)))
 
 	if h, ok := deps.Manager.Get(plan.GameID); ok {
+		// Mount the panel first, then resolve below so clients receive
+		// roll.created before roll.resolved.
 		h.BroadcastEvent(model.EventRollCreated, model.RollCreatedPayload{Roll: rollRow})
 		h.BroadcastEvent(model.EventDuelBoutsComplete, model.DuelBoutsCompletePayload{
 			PlanID:       plan.ID,
@@ -409,6 +420,15 @@ func pduelCreateFinalRoll(
 			OpponentDice: targDice,
 			RollID:       rollRow.ID,
 		})
+	}
+
+	// No leverage window: resolve immediately. All faces are pre-set, so
+	// finalizeRoll keeps them, applies interference cancellation, computes the
+	// result/outcome, sets stage='resolved', and broadcasts roll.resolved. The
+	// take-stakes make-choice flow then reads the outcome (phase stays 'roll'
+	// until ApplyChoice advances it to 'done').
+	if err := finalizeRoll(ctx, w, r, deps.Q, deps.Manager, &rollRow); err != nil {
+		return fmt.Errorf("resolve duel roll: %w", err)
 	}
 	return nil
 }

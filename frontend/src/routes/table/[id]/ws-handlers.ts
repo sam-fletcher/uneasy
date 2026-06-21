@@ -205,8 +205,15 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			break;
 		}
 		case EventTypes.AssetTaken: {
+			// The take payload is a raw asset row — it carries the new owner_id but
+			// NOT marginalia or secret_count (those aren't columns on the asset
+			// table). Merge over the existing entry so we apply the ownership change
+			// without dropping marginalia; a take never alters the notes. Replacing
+			// wholesale would leave marginalia undefined and crash every consumer
+			// that reads it (isNeedlesslyAtRisk, AssetCardSelectable, the header
+			// at-risk count), which throws inside a derived and freezes reactivity.
 			const asset = msg.payload.asset as Asset;
-			ctx.assets = ctx.assets.map(a => a.id === asset.id ? asset : a);
+			ctx.assets = ctx.assets.map(a => a.id === asset.id ? { ...a, ...asset } : a);
 			break;
 		}
 		case EventTypes.AssetLeveraged: {
@@ -422,6 +429,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.LiaiseChoicesRevealed:
 		case EventTypes.LiaiseKeepSecretSubmitted:
 		case EventTypes.DuelChampionElected:
+		case EventTypes.PlanChoiceApplied:
 		case EventTypes.DuelStakesSelected:
 		case EventTypes.DuelBoutDeclared:
 		case EventTypes.DuelBoutResolved:

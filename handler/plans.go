@@ -782,6 +782,15 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// make-choice can mutate shared resolution state that other players are
+		// watching (e.g. the duel's phase flips to 'done' once the winner claims
+		// stakes). Only the acting client gets this HTTP response, so nudge
+		// everyone else to refetch the plan — otherwise their panel stays on the
+		// pre-choice "waiting" state until a manual page refresh.
+		broadcastEvent(manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+			PlanID: plan.ID,
+		})
+
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":              plan.ID,
 			"choices":              body.Choices,

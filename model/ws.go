@@ -52,9 +52,10 @@ const (
 	EventRankingsUpdated = "rankings.updated"
 
 	// Phase 2: Plans
-	EventPlanPrepared  = "plan.prepared"
-	EventPlanResolving = "plan.resolving"
-	EventPlanResolved  = "plan.resolved"
+	EventPlanPrepared      = "plan.prepared"
+	EventPlanResolving     = "plan.resolving"
+	EventPlanResolved      = "plan.resolved"
+	EventPlanChoiceApplied = "plan.choice_applied" // make-choice mutated shared resolution state; non-actors must refetch
 
 	// Phase 3b: Plan mechanics
 	EventPlanDelayedArrival = "plan.delayed_arrival" // MI: peer scheduled for future row
@@ -296,6 +297,13 @@ type PlanPayload struct {
 type PlanResolvedPayload struct {
 	PlanID int64  `json:"plan_id"`
 	Result string `json:"result"`
+}
+
+// PlanChoiceAppliedPayload carries the plan whose resolution state changed via
+// make-choice, so non-acting clients can refetch it (the acting client already
+// has the HTTP response).
+type PlanChoiceAppliedPayload struct {
+	PlanID int64 `json:"plan_id"`
 }
 
 // RollCreatedPayload wraps a dice roll for the created event.

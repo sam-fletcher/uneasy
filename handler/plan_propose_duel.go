@@ -16,9 +16,12 @@ package handler
 //	               once both players have staked their nominated counts.
 //	"bouts"        Declarer/responder bout loop. Ends when one side is out of
 //	               unresolved stakes; server creates the standard dice roll
-//	               with accumulated dice pre-assigned and advances to "roll".
-//	"roll"         Normal dice-roll flow (leverage window, close leverage).
-//	               make-choice applies asset transfers and leverages all stakes.
+//	               with accumulated dice pre-assigned, resolves it immediately
+//	               (no leverage window — the bout dice are the whole roll), and
+//	               advances to "roll".
+//	"roll"         The resolved roll shows in the standard dice panel; no dice
+//	               can be added. make-choice applies asset transfers and
+//	               leverages all stakes.
 //	"done"         Final state after complete.
 //
 // Extra routes:

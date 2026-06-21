@@ -7,7 +7,8 @@
 -->
 <script lang="ts">
 	import { makeChoice, type Asset, type DiceRoll, type DuelBout, type DuelStake, type Plan, type Player } from '$lib/api';
-	import { playerName, assetName } from '../shared';
+	import CardPicker from '../CardPicker.svelte';
+	import { playerName } from '../shared';
 	import { computeAccumulated, type DuelRes } from './shared';
 
 	let { plan, duelRes, players, assets, currentPlayerID, stakes, bouts, activeRoll, rollActive, rollOutcome, onPlansChanged }: {
@@ -41,18 +42,20 @@
 	);
 	const amWinner = $derived(winnerID != null && currentPlayerID === winnerID);
 	const loserStakes = $derived(stakes.filter(s => s.player_id === loserID));
+	// The take operates on the loser's staked Asset records; CardPicker wants
+	// Asset objects, so resolve each stake's asset (dropping any that have since
+	// vanished).
+	const loserStakeAssets = $derived(
+		loserStakes
+			.map(s => assets.find(a => a.id === s.asset_id))
+			.filter((a): a is Asset => a != null),
+	);
 	const effectiveTake = $derived(Math.min(takeCount, loserStakes.length));
 	const choicesApplied = $derived(duelRes.phase === 'done');
 
 	let takeSelectionIDs = $state<number[]>([]);
 	let takeBusy = $state(false);
 	let takeError = $state('');
-
-	function toggleTakeSelection(assetID: number) {
-		takeSelectionIDs = takeSelectionIDs.includes(assetID)
-			? takeSelectionIDs.filter(x => x !== assetID)
-			: [...takeSelectionIDs, assetID];
-	}
 
 	async function submitTake() {
 		if (takeBusy) return;
@@ -114,16 +117,15 @@
 					Choose {effectiveTake} of {playerName(players, loserID)}'s
 					staked {effectiveTake === 1 ? 'asset' : 'assets'} to take:
 				</p>
-				<div class="choice-list">
-					{#each loserStakes as s}
-						<label class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
-							<input type="checkbox"
-								checked={takeSelectionIDs.includes(s.asset_id)}
-								onchange={() => toggleTakeSelection(s.asset_id)} />
-							<span>{assetName(assets, s.asset_id)}</span>
-						</label>
-					{/each}
-				</div>
+				<CardPicker
+					label="Check the assets you'll take"
+					items={loserStakeAssets}
+					{players}
+					multi
+					max={effectiveTake}
+					selectedMulti={takeSelectionIDs}
+					onSelectMulti={(ids) => (takeSelectionIDs = ids)}
+				/>
 				{#if takeError}<p class="res-error">{takeError}</p>{/if}
 				<button class="action-btn primary"
 					onclick={submitTake}
