@@ -265,9 +265,27 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 				r.Post("/complete", handler.CompletePlan(store, manager))
 				// Mount plan-type-specific routes from the registry (e.g. fair-trade,
 				// messy-break for Exchange Courtiers; future plans add their own).
+				// Every handler's extra routes share this one flat path namespace,
+				// so two plans registering the same key would silently shadow each
+				// other (the symptom: one plan's request hitting another's handler).
+				// Guard against it at startup: seed with the core per-plan routes and
+				// panic on any collision so the conflict surfaces at boot, not in a
+				// confusing 4xx mid-game.
 				deps := &handler.PlanDeps{Store: store, Manager: manager}
-				for _, h := range handler.AllHandlers() {
+				routeOwner := map[string]string{
+					"":            "core", // POST /plans/{planId}
+					"complete":    "core",
+					"make-choice": "core",
+					"resolve":     "core",
+				}
+				for pt, h := range handler.AllHandlers() {
 					for route, fn := range h.ExtraRoutes(deps) {
+						if owner, dup := routeOwner[route]; dup {
+							panic(fmt.Sprintf(
+								"duplicate plan extra-route %q: registered by both %s and %s",
+								route, owner, pt))
+						}
+						routeOwner[route] = string(pt)
 						r.Post("/"+route, fn)
 					}
 				}
