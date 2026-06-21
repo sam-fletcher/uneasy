@@ -209,6 +209,28 @@ func TestSeekAnswers_Make_RevealSecret_CapsAtPickedCount(t *testing.T) {
 	require.Equalf(t, http.StatusConflict, code, "reveal beyond the picked count must be rejected: %v", body)
 }
 
+// TestSeekAnswers_CanComplete_BlockedUntilMakeListDone proves completion is
+// server-gated on the committed make-list picks: a declare_truth pick must be
+// performed before the plan can resolve, so the client's sub-flow gate is no
+// longer the only enforcement.
+func TestSeekAnswers_CanComplete_BlockedUntilMakeListDone(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 2)
+	h.makeChoice(plan.ID, "make", []string{"declare_truth"})
+
+	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
+	code, body := h.post(preparerIdx, completePath, nil)
+	require.Equalf(t, http.StatusConflict, code,
+		"complete must be blocked with an unconsumed declare_truth pick: %v", body)
+
+	dtPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/declare-truth"
+	code, body = h.post(preparerIdx, dtPath, map[string]any{"text": "The river runs north."})
+	require.Equalf(t, http.StatusOK, code, "declare-truth: %v", body)
+
+	h.complete(plan.ID)
+}
+
 // TestSeekAnswers_ForfeitStep_DischargesWhenNoTarget proves a make-list
 // break_resource pick with no breakable resource in the game can be forfeited as
 // a no-op, which discharges the remaining pick so the plan can complete. This is

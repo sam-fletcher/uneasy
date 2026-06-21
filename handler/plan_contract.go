@@ -14,6 +14,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"uneasy/db"
@@ -284,4 +285,31 @@ func pickedChoiceCount(resData *ResolutionData, option string) int {
 		}
 	}
 	return n
+}
+
+// subflowProgress pairs a committed make-list option with how many of its picks
+// have been resolved and a human label for the error message.
+type subflowProgress struct {
+	option string
+	label  string
+	done   int
+}
+
+// subflowPicksRemaining returns an error naming the first listed make-list option
+// whose committed picks haven't all been resolved, or nil if every one is fully
+// consumed. CanComplete uses it to make post-commit sub-flow completion
+// server-authoritative: a stale or hand-rolled client can't /complete with
+// committed mechanical effects still unspent (the client's own "all steps done"
+// gate is then just UX, not the only line of defence). The picked count comes
+// from the committed MakeMarChoices; a depletable option that legitimately has no
+// target left is first discharged to "done" via the plan's forfeit route, so this
+// check passes once nothing actionable remains.
+func subflowPicksRemaining(resData *ResolutionData, steps ...subflowProgress) error {
+	for _, s := range steps {
+		if picked := pickedChoiceCount(resData, s.option); s.done < picked {
+			return fmt.Errorf("%d of %d %s pick(s) still to resolve before completing",
+				picked-s.done, picked, s.label)
+		}
+	}
+	return nil
 }

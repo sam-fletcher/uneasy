@@ -277,6 +277,22 @@ export function answerQuestion(planID: number, answer: string): Promise<PlanEcho
 }
 
 /**
+ * Spread Rumors — forfeit a depletable step's remaining picks as a no-op when no
+ * valid target remains (the target asset out of intact marginalia, or no own
+ * asset to hide the source under). The server re-verifies no target exists, so
+ * the plan can complete instead of wedging on a pick it can't satisfy.
+ */
+export function forfeitSpreadRumorsStep(
+	planID: number,
+	step: 'break_target' | 'hide_source',
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/sr-forfeit-step`, {
+		method: 'POST',
+		body: JSON.stringify({ step }),
+	});
+}
+
+/**
  * Spread Rumors — break a marginalia.
  *
  * On make (preparer) the marginalia must belong to the plan's target asset

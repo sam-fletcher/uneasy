@@ -790,8 +790,7 @@
 
 					{#if subflowsDone && canSubflow}
 						<p class="complete-note">
-							Post any questions, truths, or follow-scene narration in the scene
-							thread, then complete the plan.
+							Bring the scene to a close, then complete the plan.
 						</p>
 						<button class="action-btn primary"
 							onclick={() => onComplete(plan)} disabled={resBusy}>

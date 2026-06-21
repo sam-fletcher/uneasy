@@ -761,3 +761,113 @@ func TestSpreadRumors_MakeChoice_RejectsTakeAsset(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusBadRequest, code, "make-choice with take_asset must be rejected: %v", body)
 }
+
+// TestSpreadRumors_CanComplete_BlockedWhilePendingTakeConsent proves the plan
+// cannot be completed while a take-asset request is awaiting the victim's answer
+// — completing would strand the in-flight transfer. Once the victim agrees, the
+// plan completes. (Server-authoritative: CanComplete now blocks the pending take,
+// not just the client.)
+func TestSpreadRumors_CanComplete_BlockedWhilePendingTakeConsent(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+
+	target := h.seedPeer(otherIdx, "Julius")
+	loot := h.seedPeer(otherIdx, "Crown Jewels")
+
+	notes := "the king is a fraud"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+
+	reqPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/request-take-consent"
+	code, body := h.post(focusIdx, reqPath, map[string]any{
+		"result": makeOutcome, "choices": []string{"take_asset"}, "take_asset_ids": []int64{loot},
+	})
+	require.Equalf(t, http.StatusOK, code, "request-take-consent: %v", body)
+
+	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
+	code, body = h.post(focusIdx, completePath, nil)
+	require.Equalf(t, http.StatusConflict, code, "complete must be blocked while consent is pending: %v", body)
+
+	respPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/respond-take-consent"
+	code, body = h.post(otherIdx, respPath, map[string]any{"agree": true})
+	require.Equalf(t, http.StatusOK, code, "respond agree: %v", body)
+	h.complete(plan.ID)
+}
+
+// TestSpreadRumors_ForfeitBreakTarget_DischargesWhenNoTarget proves a committed
+// break_target pick with no intact marginalia left to tear blocks completion and
+// can be forfeited as a no-op so the plan can resolve. Mirrors Seek Answers'
+// forfeit escape hatch for the depletable break step.
+func TestSpreadRumors_ForfeitBreakTarget_DischargesWhenNoTarget(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+
+	// Target asset with NO intact marginalia — break_target has nothing to tear.
+	target := h.seedPeer(otherIdx, "rumor target")
+
+	notes := "an unfalsifiable whisper"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
+
+	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
+	code, body := h.post(focusIdx, completePath, nil)
+	require.Equalf(t, http.StatusConflict, code,
+		"complete must be blocked with an unconsumed break_target pick: %v", body)
+
+	forfeitPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/sr-forfeit-step"
+	code, body = h.post(focusIdx, forfeitPath, map[string]any{"step": "break_target"})
+	require.Equalf(t, http.StatusOK, code, "forfeit with no target should succeed: %v", body)
+	assert.EqualValues(t, 1, body["forfeited"])
+
+	h.complete(plan.ID)
+}
+
+// TestSpreadRumors_ForfeitBreakTarget_RejectedWhenTargetExists proves the server
+// refuses to forfeit a break_target pick while the target asset still has intact
+// marginalia to tear.
+func TestSpreadRumors_ForfeitBreakTarget_RejectedWhenTargetExists(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+
+	target := h.seedPeer(otherIdx, "rumor target")
+	_, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: target, Position: 1, Text: "a damning note",
+	})
+	require.NoError(t, err)
+
+	notes := "a provable slight"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
+
+	forfeitPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/sr-forfeit-step"
+	code, body := h.post(focusIdx, forfeitPath, map[string]any{"step": "break_target"})
+	require.Equalf(t, http.StatusConflict, code,
+		"forfeit must be rejected while a marginalia remains: %v", body)
+}

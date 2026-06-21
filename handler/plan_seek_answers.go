@@ -158,7 +158,17 @@ func (saHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 		return fmt.Errorf("you must break %d more of your own resources before completing",
 			sa.MarSelfFlawsRequired-sa.MarSelfFlawsApplied)
 	}
-	return nil
+	// Make-list completeness is server-authoritative: every committed pick must be
+	// performed (or forfeited via seek-forfeit-step when no target remains) before
+	// the plan can resolve. break_resource/reveal_secret are depletable and have a
+	// forfeit path; declare_truth/ask_question always have a valid target in a live
+	// game, so they're simply performed.
+	return subflowPicksRemaining(resData,
+		subflowProgress{"break_resource", "break-resource", int(sa.BreakResourceDone)},
+		subflowProgress{"reveal_secret", "reveal-secret", int(sa.RevealSecretDone)},
+		subflowProgress{"declare_truth", "declare-truth", int(sa.DeclareTruthDone)},
+		subflowProgress{"ask_question", "ask-question", int(sa.AskQuestionDone)},
+	)
 }
 
 // saEligibleOwnResources returns the IDs of the player's resource assets that

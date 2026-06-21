@@ -19,7 +19,7 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		breakTarget, requestTakeConsent, respondTakeConsent, hideSource,
+		breakTarget, requestTakeConsent, respondTakeConsent, hideSource, forfeitSpreadRumorsStep,
 		type Plan,
 	} from '$lib/api';
 	import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
@@ -199,6 +199,8 @@
 	function bump(key: string, delta: number) {
 		// "Take asset" is locked off once the owner has declined it (no looping).
 		if (key === 'take_asset' && takeAssetDenied) return;
+		// Don't pick break_target more times than there are marginalia to tear.
+		if (delta > 0 && key === 'break_target' && (counts.break_target ?? 0) >= btMarginaliaCap) return;
 		// Don't let the running total exceed the dice quota.
 		if (delta > 0 && requiredPicks != null && totalPicked >= requiredPicks) return;
 		const next = Math.max(0, (counts[key] ?? 0) + delta);
@@ -347,6 +349,15 @@
 		}
 		return targetAsset ? assetsWithIntactMarginalia([targetAsset]) : [];
 	});
+	// Each break_target pick tears one marginalia, so the live cap is the total
+	// intact marginalia available — picking more would commit a pick with nothing
+	// left to tear, which then wedges resolution (CanComplete blocks until every
+	// break_target pick is performed or forfeited via sr-forfeit-step).
+	const btMarginaliaCap = $derived(
+		btMarginaliaAssets.reduce(
+			(sum, a) => sum + (a.marginalia ?? []).filter((m) => !m.is_torn).length, 0,
+		),
+	);
 	async function submitBreakTarget(p: Plan) {
 		if (btBusy || btMargID == null) return;
 		if (rollOutcome === 'mar' && btAssetID == null) return;
@@ -379,6 +390,22 @@
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not hide source.';
 		} finally { hsBusy = false; }
+	}
+
+	// Discharge a depletable step that has remaining picks but no live target —
+	// break_target with no intact marginalia, or hide_source with no own asset.
+	// The server re-checks no target exists, so this only resolves a genuine
+	// dead-end. Without it the plan wedges (completion is now server-gated).
+	let forfeitBusy = $state(false);
+	async function forfeitStep(p: Plan, step: 'break_target' | 'hide_source') {
+		if (forfeitBusy) return;
+		forfeitBusy = true; resError = '';
+		try {
+			await forfeitSpreadRumorsStep(p.id, step);
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not skip step.';
+		} finally { forfeitBusy = false; }
 	}
 
 	// ── Complete ─────────────────────────────────────────────────────────────
@@ -604,14 +631,15 @@
 				{/if}
 				{#each OPTIONS as opt}
 					{@const optDisabled = opt.key === 'take_asset' && takeAssetDenied}
+					{@const atBreakCap = opt.key === 'break_target' && (counts.break_target ?? 0) >= btMarginaliaCap}
 					<div class="choice-item" style="display:flex;align-items:center;gap:0.5rem;"
 						class:muted={optDisabled}>
 						<button class="action-btn" onclick={() => bump(opt.key, -1)}
 							disabled={(counts[opt.key] ?? 0) === 0}>−</button>
 						<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
 						<button class="action-btn" onclick={() => bump(opt.key, 1)}
-							disabled={optDisabled || (requiredPicks != null && totalPicked >= requiredPicks)}>+</button>
-						<span>{opt.label}{#if optDisabled} <em>(declined)</em>{/if}</span>
+							disabled={optDisabled || atBreakCap || (requiredPicks != null && totalPicked >= requiredPicks)}>+</button>
+						<span>{opt.label}{#if optDisabled} <em>(declined)</em>{:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}</span>
 					</div>
 				{/each}
 				<p class="choices-note">
@@ -645,11 +673,19 @@
 								btAssetID = parent?.id ?? null;
 							}}
 						/>
-						<button class="action-btn primary"
-							onclick={() => submitBreakTarget(plan)}
-							disabled={btBusy || btMargID == null}>
-							{btBusy ? '…' : 'Tear marginalia'}
-						</button>
+						{#if btMarginaliaAssets.length === 0}
+							<p class="choices-note muted">No intact marginalia left to tear — this pick has no valid target.</p>
+							<button class="action-btn primary"
+								onclick={() => forfeitStep(plan, 'break_target')} disabled={forfeitBusy}>
+								{forfeitBusy ? '…' : 'Skip — no valid targets'}
+							</button>
+						{:else}
+							<button class="action-btn primary"
+								onclick={() => submitBreakTarget(plan)}
+								disabled={btBusy || btMargID == null}>
+								{btBusy ? '…' : 'Tear marginalia'}
+							</button>
+						{/if}
 					</div>
 				{/if}
 
@@ -668,11 +704,19 @@
 							selected={hsAssetID}
 							onSelect={(id) => (hsAssetID = id)}
 						/>
-						<button class="action-btn primary"
-							onclick={() => submitHideSource(plan)}
-							disabled={hsBusy || hsAssetID == null}>
-							{hsBusy ? '…' : 'Hide source'}
-						</button>
+						{#if hsAssetOptions.length === 0}
+							<p class="choices-note muted">You have no asset to hide the source under — this pick has no valid target.</p>
+							<button class="action-btn primary"
+								onclick={() => forfeitStep(plan, 'hide_source')} disabled={forfeitBusy}>
+								{forfeitBusy ? '…' : 'Skip — no valid targets'}
+							</button>
+						{:else}
+							<button class="action-btn primary"
+								onclick={() => submitHideSource(plan)}
+								disabled={hsBusy || hsAssetID == null}>
+								{hsBusy ? '…' : 'Hide source'}
+							</button>
+						{/if}
 					</div>
 				{/if}
 

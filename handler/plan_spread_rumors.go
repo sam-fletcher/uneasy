@@ -62,6 +62,13 @@ func init() {
 
 type srHandler struct{}
 
+// Make/mar option keys for Spread Rumors. Defined as constants because several
+// are referenced across the handler, its sub-flow routes, and CanComplete.
+const (
+	srOptBreakTarget = "break_target"
+	srOptHideSource  = "hide_source"
+)
+
 func (srHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 4}
 }
@@ -169,7 +176,7 @@ func (srHandler) ApplyChoice(
 	// "hide_source", in which case the rumor is anonymous from the start (the
 	// hide-source sub-flow later records the secret on one of their assets). On
 	// mar the counter-rumor is left unattributed.
-	hideSource := slices.Contains(choices, "hide_source")
+	hideSource := slices.Contains(choices, srOptHideSource)
 	var sourcePlayerID *int64
 	if result == makeOutcome && !hideSource {
 		sourcePlayerID = &plan.PreparerID
@@ -226,7 +233,7 @@ func (srHandler) ApplyChoice(
 		case "reveal_source":
 			resData.EnsureSpreadRumors().SourceHidden = false
 			// Source is already set to preparer above; nothing more needed.
-		case "hide_source":
+		case srOptHideSource:
 			// Handled via the extra route (requires secret text).
 			resData.EnsureSpreadRumors().SourceHidden = true
 		}
@@ -235,8 +242,24 @@ func (srHandler) ApplyChoice(
 	return nil
 }
 
-func (srHandler) CanComplete(_ *dbgen.Plan, _ *ResolutionData) error {
-	return nil
+// CanComplete blocks completion while a take-asset consent request is still
+// awaiting the owner's answer (the analogue of Seek Answers' pending-question
+// gate — completing here would strand an in-flight asset transfer), and until
+// every committed break_target / hide_source pick has been performed or forfeited
+// (sr-forfeit-step). The make/mar effects are server-authoritative: the client's
+// "all steps done" gate is UX, not the only enforcement.
+func (srHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
+	sr := resData.SpreadRumors
+	if sr == nil {
+		return nil
+	}
+	if sr.PendingTakeConsent != nil {
+		return errors.New("a take-asset request is awaiting the owner's consent before you can complete")
+	}
+	return subflowPicksRemaining(resData,
+		subflowProgress{srOptBreakTarget, "break-target", sr.BreakTargetDone},
+		subflowProgress{srOptHideSource, "hide-source", sr.HideSourceDone},
+	)
 }
 
 // MaxChoices: make picks equal to the result (repeatable); the mar counter-rumor
@@ -284,7 +307,167 @@ func (srHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 		"hide-source":          srHideSourceHandler(deps),
 		"request-take-consent": srRequestTakeConsentHandler(deps),
 		"respond-take-consent": srRespondTakeConsentHandler(deps),
+		"sr-forfeit-step":      srForfeitStepHandler(deps),
 	}
+}
+
+// srLog emits a Spread Rumors action-log entry anchored to the plan's row.
+func srLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+	planID := plan.ID
+	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.spread_rumors",
+		severity, body, plan.RowNumber, &planID, nil,
+		map[string]any{"plan_id": plan.ID})
+}
+
+// ── Forfeit Step ──────────────────────────────────────────────────────────────
+
+// srForfeitStepHandler handles POST /api/plans/:planId/sr-forfeit-step.
+//
+// Discharges the remaining picks of a depletable step as a no-op when no valid
+// target remains: break_target with the target asset out of intact marginalia
+// (make) or all the preparer's assets out of them (mar), or hide_source with no
+// asset of the actor's own to tuck the source-secret under. Mirrors Seek Answers'
+// seek-forfeit-step — without it a committed pick with no target wedges the plan,
+// since CanComplete now blocks until break_target/hide_source picks are consumed.
+// The server re-verifies that NO eligible target exists before discharging.
+//
+// Request body: {"step": "break_target" | "hide_source"}
+func srForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadRumors)
+		if !ok {
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+		ctx := r.Context()
+		onMar, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player)
+		if !authz {
+			return
+		}
+		var body struct {
+			Step string `json:"step"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		sr := resData.EnsureSpreadRumors()
+
+		var remaining, eligible int
+		var noun string
+		var err error
+		switch body.Step {
+		case srOptBreakTarget:
+			remaining = pickedChoiceCount(&resData, srOptBreakTarget) - sr.BreakTargetDone
+			eligible, err = srEligibleBreakTargets(ctx, deps, plan, onMar)
+			noun = "marginalia to tear"
+		case srOptHideSource:
+			remaining = pickedChoiceCount(&resData, srOptHideSource) - sr.HideSourceDone
+			eligible, err = srEligibleHideAssets(ctx, deps, plan, player.ID)
+			noun = "asset to hide the source under"
+		default:
+			respondErr(w, http.StatusBadRequest, "step must be break_target or hide_source")
+			return
+		}
+		if err != nil {
+			respondInternalErr(w, r, "could not count eligible targets", err)
+			return
+		}
+		if remaining <= 0 {
+			respondErr(w, http.StatusConflict, "no remaining picks to forfeit for this step")
+			return
+		}
+		if eligible > 0 {
+			respondErr(w, http.StatusConflict, "valid targets remain — complete the step instead of forfeiting")
+			return
+		}
+
+		switch body.Step {
+		case srOptBreakTarget:
+			sr.BreakTargetDone += remaining
+		case srOptHideSource:
+			sr.HideSourceDone += remaining
+		}
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record forfeit", err)
+			return
+		}
+
+		picks := "picks"
+		if remaining == 1 {
+			picks = "pick"
+		}
+		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s had no eligible %s — %d %s forfeited.",
+			playerDisplayName(ctx, deps.Q, player.ID), noun, remaining, picks))
+
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied,
+			model.PlanChoiceAppliedPayload{PlanID: plan.ID})
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "step": body.Step, "forfeited": remaining})
+	}
+}
+
+// srEligibleBreakTargets counts marginalia the actor could still tear with a
+// break_target pick: on a make, the intact marginalia on the (undestroyed) target
+// asset; on a mar, the intact marginalia across all the preparer's assets.
+func srEligibleBreakTargets(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, onMar bool) (int, error) {
+	if onMar {
+		assets, err := deps.Q.ListAssetsByOwner(ctx, plan.PreparerID)
+		if err != nil {
+			return 0, err
+		}
+		count := 0
+		for _, a := range assets {
+			if a.GameID != plan.GameID || a.IsDestroyed {
+				continue
+			}
+			n, err := deps.Q.CountIntactMarginalia(ctx, a.ID)
+			if err != nil {
+				return 0, err
+			}
+			count += int(n)
+		}
+		return count, nil
+	}
+	if plan.TargetAssetID == nil {
+		return 0, nil
+	}
+	asset, err := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID)
+	if err != nil {
+		return 0, err
+	}
+	if asset.IsDestroyed {
+		return 0, nil
+	}
+	n, err := deps.Q.CountIntactMarginalia(ctx, asset.ID)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+// srEligibleHideAssets counts the actor's own undestroyed assets available to
+// tuck a hidden-source secret under. A secret can stack on any one of them, so a
+// single eligible asset satisfies every remaining hide_source pick — the count is
+// only ever used as "is it zero?".
+func srEligibleHideAssets(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, actorID int64) (int, error) {
+	assets, err := deps.Q.ListAssetsByOwner(ctx, actorID)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, a := range assets {
+		if a.GameID == plan.GameID && !a.IsDestroyed {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // stashSecretRumor implements the Spread Rumors "keep it secret for now" prep
@@ -411,7 +594,7 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 		// refresh) must not tear more marginalia than were picked.
 		resData := loadResolutionData(plan.ResolutionData)
 		sr := resData.EnsureSpreadRumors()
-		if sr.BreakTargetDone >= pickedChoiceCount(&resData, "break_target") {
+		if sr.BreakTargetDone >= pickedChoiceCount(&resData, srOptBreakTarget) {
 			respondErr(w, http.StatusConflict, "break-target already completed for this plan")
 			return
 		}
@@ -850,7 +1033,7 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		// Server-authoritative completion: a stale client (re-prompted after a
 		// refresh) must not write more source-secrets than were picked.
-		if sr.HideSourceDone >= pickedChoiceCount(&resData, "hide_source") {
+		if sr.HideSourceDone >= pickedChoiceCount(&resData, srOptHideSource) {
 			respondErr(w, http.StatusConflict, "hide-source already completed for this plan")
 			return
 		}
