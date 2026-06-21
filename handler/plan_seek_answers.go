@@ -139,7 +139,7 @@ func (saHandler) ApplyChoice(
 	sa := resData.EnsureSeekAnswers()
 	sa.MarSelfFlawsRequired = required
 	saLog(ctx, deps, plan, model.SeverityImportant,
-		fmt.Sprintf("Seek Answers marred — the preparer must describe a flaw in %d of their own resources.", required))
+		fmt.Sprintf("Seek Answers marred — the preparer must break %d of their own resources.", required))
 	return nil
 }
 
@@ -155,7 +155,7 @@ func (saHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 		return errors.New("a question is awaiting an answer before you can complete")
 	}
 	if sa.MarSelfFlawsApplied < sa.MarSelfFlawsRequired {
-		return fmt.Errorf("you must describe a flaw in %d more of your own resources before completing",
+		return fmt.Errorf("you must break %d more of your own resources before completing",
 			sa.MarSelfFlawsRequired-sa.MarSelfFlawsApplied)
 	}
 	return nil
@@ -217,13 +217,14 @@ func (saHandler) MaxChoices(_ string, rollResult, _ int16) int {
 
 func (saHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"seek-cast-roll":  saCastRollHandler(deps),
-		"break-resource":  saBreakResourceHandler(deps),
-		"reveal-secret":   saRevealSecretHandler(deps),
-		"declare-truth":   saDeclareTruthHandler(deps),
-		"ask-question":    saAskQuestionHandler(deps),
-		"veto-question":   saVetoQuestionHandler(deps),
-		"answer-question": saAnswerQuestionHandler(deps),
+		"seek-cast-roll":    saCastRollHandler(deps),
+		"break-resource":    saBreakResourceHandler(deps),
+		"reveal-secret":     saRevealSecretHandler(deps),
+		"declare-truth":     saDeclareTruthHandler(deps),
+		"ask-question":      saAskQuestionHandler(deps),
+		"veto-question":     saVetoQuestionHandler(deps),
+		"answer-question":   saAnswerQuestionHandler(deps),
+		"seek-forfeit-step": saForfeitStepHandler(deps),
 	}
 }
 
@@ -446,7 +447,7 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		verb := "described a flaw in"
+		verb := "broke"
 		if destroyed {
 			verb = "destroyed"
 		}
@@ -533,10 +534,17 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		sa.RevealSecretDone++
+		sa.RevealedAssetIDs = append(sa.RevealedAssetIDs, asset.ID)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record reveal-secret progress", err)
 			return
 		}
+
+		// Log the fact (not the content) so the action log records what happened —
+		// every other make-list step logs, and this one previously didn't. The
+		// existence of an asset's secrets is public; only their text stays gated.
+		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s learned the secrets of %s.",
+			playerDisplayName(ctx, deps.Q, player.ID), assetMark(asset.Name)))
 
 		broadcastEvent(deps.Manager, plan.GameID, model.EventSecretVisibilityGrant, model.SecretVisibilityGrantPayload{
 			AssetID:  body.AssetID,
@@ -548,6 +556,179 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			"asset_id": body.AssetID,
 		})
 	}
+}
+
+// ── Forfeit Step ──────────────────────────────────────────────────────────────
+
+// saForfeitStepHandler handles POST /api/plans/:planId/seek-forfeit-step.
+//
+// Discharges the remaining picks of a depletable step as a no-op when no valid
+// target remains. Three steps can deplete: a make-list "break_resource" (every
+// breakable resource already torn/destroyed), a make-list "reveal_secret" (no
+// asset left whose secrets the preparer can't already read), and the mar
+// "mar_penalty" self-flaw (no eligible own resource left). Without this escape
+// hatch such a plan wedges — a committed pick can never be satisfied, so
+// CanComplete blocks forever and the picker shows a dead, disabled button. This
+// can arise from over-picking a category past its live target count, or from a
+// concurrent plan removing the last target between commit and resolution.
+//
+// The server re-verifies that NO eligible target exists before discharging, so a
+// stale or malicious client can't forfeit a step it could still perform. Nothing
+// happens to any asset; the forfeit is logged for transparency.
+//
+// Request body: {"step": "break_resource" | "reveal_secret" | "mar_penalty"}
+func saForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := saRequirePreparerResolving(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		var body struct {
+			Step string `json:"step"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		sa := resData.EnsureSeekAnswers()
+		isMar := planRollIsMar(ctx, deps.Q, plan)
+
+		var remaining, eligible int
+		var noun string
+		var err error
+		switch body.Step {
+		case "break_resource":
+			remaining = pickedChoiceCount(&resData, "break_resource") - int(sa.BreakResourceDone)
+			eligible, err = saEligibleBreakTargetCount(ctx, deps, plan, sa, isMar)
+			noun = "resource to break"
+		case "reveal_secret":
+			remaining = pickedChoiceCount(&resData, "reveal_secret") - int(sa.RevealSecretDone)
+			eligible, err = saEligibleRevealTargetCount(ctx, deps, plan)
+			noun = "asset whose secrets to learn"
+		case "mar_penalty":
+			remaining = int(sa.MarSelfFlawsRequired - sa.MarSelfFlawsApplied)
+			var own []int64
+			own, err = saEligibleOwnResources(ctx, deps, plan.GameID, plan.PreparerID, sa.FlawedResourceIDs)
+			eligible = len(own)
+			noun = "own resource to break"
+		default:
+			respondErr(w, http.StatusBadRequest, "step must be break_resource, reveal_secret, or mar_penalty")
+			return
+		}
+		if err != nil {
+			respondInternalErr(w, r, "could not count eligible targets", err)
+			return
+		}
+		if remaining <= 0 {
+			respondErr(w, http.StatusConflict, "no remaining picks to forfeit for this step")
+			return
+		}
+		if eligible > 0 {
+			respondErr(w, http.StatusConflict, "valid targets remain — complete the step instead of forfeiting")
+			return
+		}
+
+		switch body.Step {
+		case "break_resource":
+			sa.BreakResourceDone += int16(remaining)
+		case "reveal_secret":
+			sa.RevealSecretDone += int16(remaining)
+		case "mar_penalty":
+			sa.MarSelfFlawsApplied += int16(remaining)
+		}
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record forfeit", err)
+			return
+		}
+
+		picks := "picks"
+		if remaining == 1 {
+			picks = "pick"
+		}
+		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s had no eligible %s — %d %s forfeited.",
+			playerDisplayName(ctx, deps.Q, player.ID), noun, remaining, picks))
+
+		// The forfeit advances the preparer's sub-flow (a done-counter jumps), which
+		// lives in resolution_data. Nudge non-actors to refetch the plan, since
+		// broadcastRowState alone won't refresh resolution_data on their clients.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied,
+			model.PlanChoiceAppliedPayload{PlanID: plan.ID})
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "step": body.Step, "forfeited": remaining})
+	}
+}
+
+// saEligibleBreakTargetCount counts resources the preparer could still break as a
+// make-list pick: any resource in the game with intact marginalia, not yet
+// flawed this plan, excluding the preparer's own on a mar (those route through
+// the penalty flow). Mirror of the frontend brResourcesWithMarginalia picker.
+func saEligibleBreakTargetCount(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, sa *gamepkg.SeekAnswersResolutionData, isMar bool,
+) (int, error) {
+	assets, err := deps.Q.ListAssetsByGame(ctx, plan.GameID)
+	if err != nil {
+		return 0, err
+	}
+	flawed := make(map[int64]bool, len(sa.FlawedResourceIDs))
+	for _, id := range sa.FlawedResourceIDs {
+		flawed[id] = true
+	}
+	count := 0
+	for _, a := range assets {
+		if a.AssetType != model.AssetResource || a.IsDestroyed || flawed[a.ID] {
+			continue
+		}
+		if isMar && a.OwnerID == plan.PreparerID {
+			continue
+		}
+		intact, err := deps.Q.CountIntactMarginalia(ctx, a.ID)
+		if err != nil {
+			return 0, err
+		}
+		if intact > 0 {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// saEligibleRevealTargetCount counts assets whose secrets the preparer could
+// still learn: another player's undestroyed asset that holds at least one secret
+// the preparer can't yet read. Mirror of the frontend revealableAssets picker
+// (preparer view).
+func saEligibleRevealTargetCount(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (int, error) {
+	assets, err := deps.Q.ListAssetsByGame(ctx, plan.GameID)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, a := range assets {
+		if a.IsDestroyed || a.OwnerID == plan.PreparerID {
+			continue
+		}
+		total, err := deps.Q.CountSecretsByAsset(ctx, a.ID)
+		if err != nil {
+			return 0, err
+		}
+		if total == 0 {
+			continue
+		}
+		visible, err := deps.Q.ListVisibleSecrets(ctx, dbgen.ListVisibleSecretsParams{
+			AssetID:  a.ID,
+			PlayerID: plan.PreparerID,
+		})
+		if err != nil {
+			return 0, err
+		}
+		if int64(len(visible)) < total {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // ── Declare Truth ───────────────────────────────────────────────────────────────
@@ -589,6 +770,7 @@ func saDeclareTruthHandler(deps *PlanDeps) http.HandlerFunc {
 			fmt.Sprintf("%s declared a truth: %q", playerDisplayName(ctx, deps.Q, player.ID), text))
 
 		sa.DeclareTruthDone++
+		sa.DeclaredTruths = append(sa.DeclaredTruths, text)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record declared truth", err)
 			return
@@ -674,6 +856,12 @@ func saAskQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not record question", err)
 			return
 		}
+		// The question text lives in the plan's resolution_data, which the target
+		// watches via their plan panel. broadcastRowState only updates row_state on
+		// the client, not the plan — so nudge non-actors to refetch the plan, else
+		// the target's answer/veto UI stays hidden until a manual page refresh.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied,
+			model.PlanChoiceAppliedPayload{PlanID: plan.ID})
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "target_id": body.TargetID, "vetoable": vetoable})
 	}
@@ -716,6 +904,11 @@ func saVetoQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not record veto", err)
 			return
 		}
+		// Clearing the pending question changes the preparer's panel (back to the
+		// ask form). Nudge non-actors to refetch the plan, since broadcastRowState
+		// alone won't refresh resolution_data on their clients.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied,
+			model.PlanChoiceAppliedPayload{PlanID: plan.ID})
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "vetoed": true})
 	}
@@ -762,6 +955,11 @@ func saAnswerQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			playerDisplayName(ctx, deps.Q, plan.PreparerID), playerDisplayName(ctx, deps.Q, player.ID),
 			q.Question, answer))
 
+		sa.AnsweredQuestions = append(sa.AnsweredQuestions, gamepkg.SeekAnswersAnsweredQuestion{
+			TargetID: q.TargetID,
+			Question: q.Question,
+			Answer:   answer,
+		})
 		sa.PendingQuestion = nil
 		sa.CurrentAskVetoed = false
 		sa.AskQuestionDone++
@@ -769,6 +967,11 @@ func saAnswerQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not record answer", err)
 			return
 		}
+		// The answer advances the preparer's sub-flow (ask_question_done++, pending
+		// cleared). Nudge non-actors to refetch the plan, since broadcastRowState
+		// alone won't refresh resolution_data on their clients.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied,
+			model.PlanChoiceAppliedPayload{PlanID: plan.ID})
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID})
 	}

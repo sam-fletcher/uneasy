@@ -43,6 +43,17 @@ type SeekAnswersResolutionData struct {
 	DeclareTruthDone  int16 `json:"declare_truth_done,omitempty"`
 	AskQuestionDone   int16 `json:"ask_question_done,omitempty"`
 
+	// RevealedAssetIDs / DeclaredTruths / AnsweredQuestions record the specifics
+	// of each completed make-list step, so the panel can show the choice that was
+	// made (read-only, to every viewer) instead of collapsing to a count once a
+	// picker commits. This is the Tier-1 committed-state pattern (see ADR-006).
+	// Only public facts live here — resolution_data is exposed to all players, so
+	// reveal records the asset ID (existence is public), never any secret content.
+	// FlawedResourceIDs already covers break-resource and mar-penalty steps.
+	RevealedAssetIDs  []int64                       `json:"revealed_asset_ids,omitempty"`
+	DeclaredTruths    []string                      `json:"declared_truths,omitempty"`
+	AnsweredQuestions []SeekAnswersAnsweredQuestion `json:"answered_questions,omitempty"`
+
 	// PendingQuestion is the open ask-question awaiting the target's answer or
 	// veto. While set, no new question may be asked and the plan can't complete.
 	PendingQuestion *SeekAnswersQuestion `json:"pending_question,omitempty"`
@@ -63,6 +74,18 @@ type SeekAnswersQuestion struct {
 	// knowledge track — may veto this formulation ("can veto the first
 	// question"). It is false on a re-ask, so the replacement question stands.
 	Vetoable bool `json:"vetoable"`
+}
+
+// SeekAnswersAnsweredQuestion is a completed ask-question: the question the
+// preparer put to a target and the truthful answer they gave. Recorded for
+// Tier-1 read-only display (ADR-006); the chat log holds the same exchange.
+type SeekAnswersAnsweredQuestion struct {
+	// TargetID is the player who answered.
+	TargetID int64 `json:"target_id"`
+	// Question is the preparer's question text.
+	Question string `json:"question"`
+	// Answer is the target's truthful answer.
+	Answer string `json:"answer"`
 }
 
 // EnsureSeekAnswers returns r.SeekAnswers, allocating a zero struct if it was

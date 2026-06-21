@@ -36,6 +36,26 @@ export interface SeekAnswersResolutionData {
 	pending_question?: SeekAnswersQuestion | null;
 	/** The in-progress ask-question pick already spent its one veto. */
 	current_ask_vetoed?: boolean;
+
+	/**
+	 * Specifics of each completed make-list step, recorded so the panel can show
+	 * the choice that was made (read-only, to every viewer) instead of collapsing
+	 * to a count once a picker commits — the Tier-1 committed-state pattern
+	 * (ADR-006). Only public facts: reveal stores the asset id (existence is
+	 * public), never secret content. Breaks come from flawed_resource_ids.
+	 */
+	revealed_asset_ids?: number[];
+	/** Each truth the preparer declared this resolution, in order. */
+	declared_truths?: string[];
+	/** Each resolved ask-question: target, question, and the answer given. */
+	answered_questions?: SeekAnswersAnsweredQuestion[];
+}
+
+/** A completed ask-question: the question put to a target and their answer. */
+export interface SeekAnswersAnsweredQuestion {
+	target_id: number;
+	question: string;
+	answer: string;
 }
 
 /** An open "ask a player a question" awaiting the target's response. */

@@ -198,8 +198,62 @@ func TestSeekAnswers_Make_RevealSecret_CapsAtPickedCount(t *testing.T) {
 	code, body := h.post(preparerIdx, revealPath, map[string]any{"asset_id": assetA})
 	require.Equalf(t, http.StatusOK, code, "first (only) reveal: %v", body)
 
+	// The reveal is recorded as Tier-1 read-only state and now emits an action-log
+	// entry (it previously logged nothing, unlike every other make-list step).
+	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	require.NotNil(t, rd.SeekAnswers)
+	assert.Equal(t, []int64{assetA}, rd.SeekAnswers.RevealedAssetIDs, "the revealed asset is recorded")
+	assert.Contains(t, saAllLogBodies(t, h), "learned the secrets of", "reveal must emit an action-log entry")
+
 	code, body = h.post(preparerIdx, revealPath, map[string]any{"asset_id": assetB})
 	require.Equalf(t, http.StatusConflict, code, "reveal beyond the picked count must be rejected: %v", body)
+}
+
+// TestSeekAnswers_ForfeitStep_DischargesWhenNoTarget proves a make-list
+// break_resource pick with no breakable resource in the game can be forfeited as
+// a no-op, which discharges the remaining pick so the plan can complete. This is
+// the escape hatch for an over-picked or concurrently-depleted depletable step,
+// which would otherwise wedge the resolve loop (the Complete button never shows).
+func TestSeekAnswers_ForfeitStep_DischargesWhenNoTarget(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 2)
+	// No resource exists, so break_resource has no valid target.
+	h.makeChoice(plan.ID, "make", []string{"break_resource"})
+
+	forfeitPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/seek-forfeit-step"
+	code, body := h.post(preparerIdx, forfeitPath, map[string]any{"step": "break_resource"})
+	require.Equalf(t, http.StatusOK, code, "forfeit with no target should succeed: %v", body)
+	assert.EqualValues(t, 1, body["forfeited"], "the single remaining pick is forfeited")
+
+	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	require.NotNil(t, rd.SeekAnswers)
+	assert.Equal(t, int16(1), rd.SeekAnswers.BreakResourceDone, "the forfeited pick is recorded as done")
+	assert.Empty(t, rd.SeekAnswers.FlawedResourceIDs, "forfeit is a no-op — nothing is flawed")
+	assert.Contains(t, saAllLogBodies(t, h), "forfeited", "forfeit emits an action-log entry")
+
+	h.complete(plan.ID)
+}
+
+// TestSeekAnswers_ForfeitStep_RejectedWhenTargetExists proves the server refuses
+// to forfeit a step the preparer could still perform — a breakable resource is
+// present, so the pick must be spent, not skipped.
+func TestSeekAnswers_ForfeitStep_RejectedWhenTargetExists(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 2)
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	saSeedResource(t, h, otherIdx, "breakable ledger", 1)
+
+	h.makeChoice(plan.ID, "make", []string{"break_resource"})
+
+	forfeitPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/seek-forfeit-step"
+	code, body := h.post(preparerIdx, forfeitPath, map[string]any{"step": "break_resource"})
+	require.Equalf(t, http.StatusConflict, code, "forfeit must be rejected while a target remains: %v", body)
+
+	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	require.NotNil(t, rd.SeekAnswers)
+	assert.Equal(t, int16(0), rd.SeekAnswers.BreakResourceDone, "rejected forfeit changes nothing")
 }
 
 // TestSeekAnswers_Mar_ForeignBreak_CapsAtPickedCount proves that on a mar, a
@@ -487,6 +541,11 @@ func TestSeekAnswers_DeclareTruth_LogsAndCaps(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "declare: %v", body)
 	assert.Contains(t, saAllLogBodies(t, h), "The crown is bankrupt.")
 
+	// The truth is recorded as Tier-1 read-only state.
+	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	require.NotNil(t, rd.SeekAnswers)
+	assert.Equal(t, []string{"The crown is bankrupt."}, rd.SeekAnswers.DeclaredTruths, "the declared truth is recorded")
+
 	// Capped at the single pick.
 	code, body = h.post(preparerIdx, path, map[string]any{"text": "another truth"})
 	require.Equalf(t, http.StatusConflict, code, "second declare must be capped: %v", body)
@@ -539,6 +598,12 @@ func TestSeekAnswers_AskQuestion_AnswerFlow(t *testing.T) {
 	final := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
 	assert.Nil(t, final.SeekAnswers.PendingQuestion)
 	assert.Equal(t, int16(1), final.SeekAnswers.AskQuestionDone)
+
+	// The resolved Q&A is recorded as Tier-1 read-only state.
+	require.Len(t, final.SeekAnswers.AnsweredQuestions, 1)
+	assert.Equal(t, targetID, final.SeekAnswers.AnsweredQuestions[0].TargetID)
+	assert.Equal(t, "Where were you?", final.SeekAnswers.AnsweredQuestions[0].Question)
+	assert.Equal(t, "At the library.", final.SeekAnswers.AnsweredQuestions[0].Answer)
 
 	// The block clears once answered — the row no longer waits on the target.
 	rs, err = ComputeRowState(context.Background(), h.q, h.tg.Game.ID)

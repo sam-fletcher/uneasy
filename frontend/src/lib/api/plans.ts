@@ -230,6 +230,23 @@ export function revealSecret(planID: number, assetID: number): Promise<PlanEcho>
 	});
 }
 
+/**
+ * Seek Answers — forfeit a depletable step's remaining picks as a no-op when no
+ * valid target remains (every breakable resource gone, no unread secret-bearing
+ * asset, or no eligible own resource for the mar penalty). The server re-verifies
+ * that no target exists before discharging, so the plan can complete instead of
+ * wedging on a pick that can never be satisfied.
+ */
+export function forfeitSeekStep(
+	planID: number,
+	step: 'break_resource' | 'reveal_secret' | 'mar_penalty',
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/seek-forfeit-step`, {
+		method: 'POST',
+		body: JSON.stringify({ step }),
+	});
+}
+
 /** Seek Answers — declare a truth (logged); make-list "declare something true". */
 export function declareTruth(planID: number, text: string): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/declare-truth`, {
