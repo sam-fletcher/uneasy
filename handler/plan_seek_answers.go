@@ -7,6 +7,13 @@ package handler
 //
 // Preparing: description of research methods/topics (preparation_notes required).
 //
+// Pre-Roll: OnResolve opens the plan in 'resolving' with no roll. The preparer
+// restates their methods and describes one thing they've learned so far via the
+// cast-roll route, which posts that narration as their own scene post, computes
+// difficulty, and creates the dice roll. (Mirrors Chronicle Histories' cast-roll
+// pre-roll, minus the artifact invocations — Seek Answers' pre-roll is purely
+// narrative and does not affect difficulty.)
+//
 // Make: choose N options equal to the dice result (repeatable):
 //   - "break_resource"  → tear a marginalia on a target resource asset
 //   - "declare_truth"   → narrative (posted as scene_post)
@@ -18,6 +25,7 @@ package handler
 // assets equal to (difficulty - result); the preparer chooses which ones.
 //
 // Extra routes:
+//   POST /api/plans/:planId/seek-cast-roll   {"narration": "..."}
 //   POST /api/plans/:planId/break-resource   {"asset_id": N, "marginalia_id": M}
 //   POST /api/plans/:planId/reveal-secret    {"asset_id": N}
 
@@ -65,18 +73,22 @@ func (saHandler) ComputeDifficulty(
 	return gamepkg.SeekAnswersDifficulty(rank), nil
 }
 
-// OnResolve creates the dice roll immediately (no pre-roll step).
+// OnResolve opens the pre-roll narration step and returns nil — no roll yet.
+// The plan sits in 'resolving' with PreRollDone=false until the preparer
+// restates their methods, describes one thing they've learned, and casts the
+// dice via the cast-roll route (which posts that narration, computes difficulty,
+// and creates the roll). Mirrors Chronicle Histories. No log entry here — the
+// standard plan.resolving post already marks the start, and the preparer's
+// pre-roll narration is logged by cast-roll.
 func (saHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
-	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
-	if err != nil {
-		return nil, err
-	}
 	resData := loadResolutionData(plan.ResolutionData)
-	difficulty, err := saHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
-	if err != nil {
-		return nil, err
+	sa := resData.EnsureSeekAnswers()
+	sa.PreRollDone = false
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		return nil, fmt.Errorf("could not open pre-roll step: %w", err)
 	}
-	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
+	// Return nil — the roll is created later when the preparer calls cast-roll.
+	return nil, nil
 }
 
 // ApplyChoice records the make/mar choices (kept in ResData.MakeMarChoices by
@@ -205,12 +217,107 @@ func (saHandler) MaxChoices(_ string, rollResult, _ int16) int {
 
 func (saHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
+		"seek-cast-roll":  saCastRollHandler(deps),
 		"break-resource":  saBreakResourceHandler(deps),
 		"reveal-secret":   saRevealSecretHandler(deps),
 		"declare-truth":   saDeclareTruthHandler(deps),
 		"ask-question":    saAskQuestionHandler(deps),
 		"veto-question":   saVetoQuestionHandler(deps),
 		"answer-question": saAnswerQuestionHandler(deps),
+	}
+}
+
+// ── Cast Roll (pre-roll) ──────────────────────────────────────────────────────
+
+// saCastRollHandler handles POST /api/plans/:planId/seek-cast-roll. (The route
+// key differs from Chronicle's cast-roll because extra-route keys share one
+// global path namespace across plan types.)
+//
+// The pre-roll narration step: the preparer restates their research methods and
+// describes one thing they've learned so far. This route posts that narration as
+// the preparer's own scene post (anchored to the plan row), computes difficulty,
+// closes the pre-roll, and casts the dice. The narration is required — it is the
+// whole of the Seek Answers pre-roll.
+//
+// Request body: {"narration": "..."}
+func saCastRollHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := saRequirePreparerResolving(w, r, deps.Q)
+		if !ok {
+			return
+		}
+
+		var body struct {
+			Narration string `json:"narration"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		narration := strings.TrimSpace(body.Narration)
+		if narration == "" {
+			respondErr(w, http.StatusBadRequest,
+				"restate your methods and describe one thing you've learned before casting")
+			return
+		}
+
+		ctx := r.Context()
+
+		resData := loadResolutionData(plan.ResolutionData)
+		sa := resData.EnsureSeekAnswers()
+		if sa.PreRollDone {
+			respondErr(w, http.StatusConflict, "the dice have already been cast")
+			return
+		}
+		// Guard against a duplicate roll if cast-roll is somehow called twice
+		// before PreRollDone lands.
+		if existing, rErr := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID); rErr == nil && existing.ID != 0 {
+			respondErr(w, http.StatusConflict, "a roll has already been created for this plan")
+			return
+		}
+
+		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load game", err)
+			return
+		}
+		difficulty, err := saHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
+		if err != nil {
+			respondInternalErr(w, r, "could not compute difficulty", err)
+			return
+		}
+
+		roll, err := createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
+		if err != nil {
+			respondInternalErr(w, r, "could not create dice roll", err)
+			return
+		}
+
+		sa.PreRollDone = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not close pre-roll step", err)
+			return
+		}
+
+		// Log the preparer's pre-roll narration as their own scene post, anchored
+		// to the plan row (the same shape Chronicle Histories uses for its scene).
+		post, perr := deps.Q.CreatePlayerMessage(ctx, dbgen.CreatePlayerMessageParams{
+			GameID:    plan.GameID,
+			AuthorID:  &player.ID,
+			Body:      narration,
+			RowNumber: plan.RowNumber,
+			PlanID:    &plan.ID,
+		})
+		if perr == nil {
+			if h, ok := deps.Manager.Get(plan.GameID); ok {
+				h.BroadcastEvent(model.EventScenePostCreated, model.ScenePostCreatedPayload{Post: post})
+			}
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id": plan.ID,
+			"roll":    roll,
+		})
 	}
 }
 

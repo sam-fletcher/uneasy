@@ -20,7 +20,7 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		breakResource, revealSecret,
+		castSeekAnswersRoll, breakResource, revealSecret,
 		declareTruth, askQuestion, vetoQuestion, answerQuestion,
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
@@ -46,6 +46,7 @@
 	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
+	const onRollCreated = $derived(ctx.onRollCreated);
 
 	const readOnly = $derived(ctx.readOnly);
 	const prepDraft = $derived(ctx.prepDraft as { notes?: string } | null);
@@ -98,6 +99,24 @@
 		}, 150);
 	});
 	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
+
+	// ── Pre-roll: restate methods + one thing learned, then cast ─────────────
+	// OnResolve opens the plan with no roll; the preparer writes their pre-roll
+	// narration and casts via cast-roll, which posts it and creates the dice.
+	let preRollText = $state('');
+	let preRollBusy = $state(false);
+	async function submitPreRoll(p: Plan) {
+		if (preRollBusy || !preRollText.trim()) return;
+		preRollBusy = true; resError = '';
+		try {
+			const res = await castSeekAnswersRoll(p.id, preRollText.trim());
+			if (res.roll) onRollCreated(res.roll);
+			preRollText = '';
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not cast your dice.';
+		} finally { preRollBusy = false; }
+	}
 
 	// ── Resolve: option counts picker ────────────────────────────────────────
 	let counts = $state<Record<string, number>>({
@@ -159,6 +178,7 @@
 	// Seek Answers resolution state: which resources have been flawed (each may
 	// be flawed at most once) and the mar self-flaw penalty progress.
 	const saData = $derived(plan ? (parseResolutionData(plan).seek_answers ?? {}) : {});
+	const preRollDone = $derived(saData.pre_roll_done ?? false);
 	const flawedIDs = $derived(new Set(saData.flawed_resource_ids ?? []));
 	const marRequired = $derived(saData.mar_self_flaws_required ?? 0);
 	const marApplied = $derived(saData.mar_self_flaws_applied ?? 0);
@@ -346,7 +366,34 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
-		{#if rollActive && !choicesDone}
+		{#if !preRollDone}
+			<!-- Pre-roll: restate methods + describe one thing learned, then cast.
+			     The narration is the preparer's own; only they can write it. -->
+			<!-- <div class="plan-form"> -->
+				<p class="choices-header">What have you learned?</p>
+				{#if isPreparer}
+					<p class="choices-note">
+						<!-- Restate your research methods, and describe one thing you've learned while researching. -->
+					</p>
+					<label class="form-label">
+						<!-- Your pre-roll narration: -->
+						<textarea rows={4} bind:value={preRollText} class="form-textarea"
+							placeholder="Restate your research methods, and describe one thing you've learned while researching."
+						></textarea>
+					</label>
+					<button class="action-btn primary"
+						onclick={() => submitPreRoll(plan)}
+						disabled={preRollBusy || !preRollText.trim()}>
+						{preRollBusy ? '…' : 'Submit'}
+					</button>
+				{:else}
+					<p class="ft-prompt muted">
+						{playerName(players, plan.preparer_id)} is researching…
+					</p>
+				{/if}
+			<!-- </div> -->
+
+		{:else if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
 		{:else if rollOutcome != null && !choicesDone && amChoiceActor}

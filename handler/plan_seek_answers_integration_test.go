@@ -14,6 +14,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,6 +51,22 @@ func saSeedResource(t *testing.T, h *planLifecycle, ownerIdx int, name string, m
 	return a.ID, ids
 }
 
+// saCastRoll drives POST /api/plans/{planId}/seek-cast-roll as the preparer: it posts
+// the pre-roll narration, closes the pre-roll step, and creates the dice roll.
+// Asserts 200 and returns the roll.
+func saCastRoll(t *testing.T, h *planLifecycle, planID int64) *dbgen.DiceRoll {
+	t.Helper()
+	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/seek-cast-roll"
+	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{
+		"narration": "I cross-referenced the ledgers, and learned the seal was forged.",
+	})
+	require.Equalf(t, http.StatusOK, code, "cast-roll: %v", body)
+	rollBlob, _ := json.Marshal(body["roll"])
+	var roll dbgen.DiceRoll
+	require.NoError(t, json.Unmarshal(rollBlob, &roll))
+	return &roll
+}
+
 // saPrepareToRoll drives a Seek Answers plan to a forced roll and returns the
 // plan and the preparer's index. The plan is left pre make-choice.
 func saPrepareToRoll(t *testing.T, h *planLifecycle, outcome string, resultDelta int16) (dbgen.Plan, int, *dbgen.DiceRoll) {
@@ -67,9 +84,11 @@ func saPrepareToRoll(t *testing.T, h *planLifecycle, outcome string, resultDelta
 	saPinKnowledgeRank(t, h, plan.PreparerID, 3)
 
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	// OnResolve opens the pre-roll narration step with no roll; the preparer
+	// casts the dice via cast-roll after restating their methods.
+	require.Nil(t, h.resolve(plan.ID), "Seek Answers opens the pre-roll step with no roll")
+	roll := saCastRoll(t, h, plan.ID)
 	require.Equal(t, int16(3), roll.Difficulty, "pinned knowledge rank should set difficulty")
-	require.NotNil(t, roll, "Seek Answers creates its roll on resolve")
 
 	var result int16
 	if outcome == "make" {
@@ -310,6 +329,90 @@ func TestSeekAnswers_Mar_PenaltyCappedByResources(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "own flaw: %v", body)
 
 	h.complete(plan.ID)
+}
+
+// TestSeekAnswers_PreRoll_OpensWithoutRoll proves OnResolve opens the pre-roll
+// narration step with no roll, and that cast-roll posts the preparer's narration
+// as their own scene post, flips pre_roll_done, and creates the dice roll.
+func TestSeekAnswers_PreRoll_OpensWithoutRoll(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "researching the archives"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSeekAnswers,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID), "Seek Answers opens the pre-roll step with no roll")
+
+	// No roll exists yet, and pre_roll_done is false.
+	_, rollErr := h.q.GetDiceRollByPlanID(context.Background(), &plan.ID)
+	require.Error(t, rollErr, "no roll should exist before cast-roll")
+	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	require.NotNil(t, rd.SeekAnswers)
+	assert.False(t, rd.SeekAnswers.PreRollDone, "pre-roll should still be open")
+
+	const narration = "I retraced my sources, and learned the envoy never arrived."
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/seek-cast-roll"
+	code, body := h.post(preparerIdx, path, map[string]any{"narration": narration})
+	require.Equalf(t, http.StatusOK, code, "cast-roll: %v", body)
+	require.NotNil(t, body["roll"], "cast-roll should return the created roll")
+
+	// pre_roll_done flipped, the roll now exists, and the narration is logged as
+	// the preparer's own post.
+	rd = loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	assert.True(t, rd.SeekAnswers.PreRollDone, "pre-roll should be closed after casting")
+	_, rollErr = h.q.GetDiceRollByPlanID(context.Background(), &plan.ID)
+	require.NoError(t, rollErr, "a roll should exist after cast-roll")
+
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	logged := false
+	for _, p := range posts {
+		if p.Body == narration && p.AuthorID != nil && *p.AuthorID == plan.PreparerID {
+			logged = true
+		}
+	}
+	assert.True(t, logged, "the preparer's pre-roll narration should be logged as their post")
+}
+
+// TestSeekAnswers_PreRoll_Guards proves cast-roll requires the narration, is
+// preparer-only, and rejects a second cast.
+func TestSeekAnswers_PreRoll_Guards(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "researching the archives"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSeekAnswers,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/seek-cast-roll"
+
+	// Empty narration is rejected.
+	code, body := h.post(preparerIdx, path, map[string]any{"narration": "   "})
+	require.Equalf(t, http.StatusBadRequest, code, "empty narration must 400: %v", body)
+
+	// Only the preparer may cast.
+	code, body = h.post(otherIdx, path, map[string]any{"narration": "not mine to cast"})
+	require.Equalf(t, http.StatusForbidden, code, "non-preparer cast must 403: %v", body)
+
+	// First real cast succeeds.
+	code, body = h.post(preparerIdx, path, map[string]any{"narration": "methods restated; I learned X."})
+	require.Equalf(t, http.StatusOK, code, "first cast: %v", body)
+
+	// A second cast is rejected.
+	code, body = h.post(preparerIdx, path, map[string]any{"narration": "again"})
+	require.Equalf(t, http.StatusConflict, code, "second cast must 409: %v", body)
 }
 
 // mustGetPlan fetches a plan by id, failing the test on error.

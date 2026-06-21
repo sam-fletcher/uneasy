@@ -5,6 +5,13 @@ package game
 // SeekAnswersResolutionData holds Seek Answers plan state stored inside the
 // plans.resolution_data JSON column, nested under the "seek_answers" key.
 type SeekAnswersResolutionData struct {
+	// PreRollDone gates the pre-roll narration step. OnResolve opens the plan in
+	// 'resolving' with PreRollDone=false and no roll; the preparer restates their
+	// methods and describes one thing they've learned via the cast-roll route,
+	// which posts that narration, flips this true, and creates the dice roll.
+	// Mirrors Chronicle Histories' invoke_phase_closed.
+	PreRollDone bool `json:"pre_roll_done,omitempty"`
+
 	// FlawedResourceIDs records every resource asset flawed during this
 	// resolution. Each resource may be flawed at most once — the option is
 	// "describe a flaw in any resource asset that has been overlooked until

@@ -199,6 +199,21 @@ export function introductionsMarginalia(
 
 type PlanEcho = { plan_id: number } & Record<string, unknown>;
 
+/**
+ * Seek Answers — the pre-roll narration step: the preparer restates their
+ * research methods and describes one thing they've learned so far. The server
+ * posts that narration as the preparer's scene post and casts the dice.
+ */
+export function castSeekAnswersRoll(
+	planID: number,
+	narration: string,
+): Promise<{ plan_id: number; roll?: DiceRoll }> {
+	return apiFetch(`/plans/${planID}/seek-cast-roll`, {
+		method: 'POST',
+		body: JSON.stringify({ narration }),
+	});
+}
+
 /** Seek Answers — break a marginalia on a target resource asset. */
 export function breakResource(planID: number, assetID: number, marginaliaID: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-resource`, {

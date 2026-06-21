@@ -5,6 +5,13 @@
  */
 export interface SeekAnswersResolutionData {
 	/**
+	 * Gates the pre-roll narration step. False (or absent) until the preparer
+	 * restates their methods and describes one thing they've learned via
+	 * cast-roll, which then creates the dice roll. Mirrors Chronicle Histories'
+	 * invoke_phase_closed.
+	 */
+	pre_roll_done?: boolean;
+	/**
 	 * Resource asset ids flawed during this resolution. Each resource may be
 	 * flawed at most once ("a resource asset that has been overlooked until
 	 * now"); the break picker filters these out.
