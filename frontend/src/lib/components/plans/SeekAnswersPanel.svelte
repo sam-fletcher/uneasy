@@ -31,6 +31,8 @@
 	import ChoicesApplied from './ChoicesApplied.svelte';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
+	import { hiddenCount } from '$lib/secretCounts';
+	import { useSecretCounts } from '$lib/secretCountsContext';
 
 	import type { PlanPanelProps } from './types';
 
@@ -61,9 +63,9 @@
 
 	const OPTIONS = [
 		{ key: 'break_resource', label: 'Break a resource (describe a flaw)' },
-		{ key: 'declare_truth',  label: 'Declare something true' },
-		{ key: 'ask_question',   label: 'Ask a player a truthful question' },
-		{ key: 'reveal_secret',  label: "Reveal an asset's secrets to you" },
+		{ key: 'declare_truth',  label: 'Declare something true about the world' },
+		{ key: 'ask_question',   label: 'Ask a player a question (they must be truthful)' },
+		{ key: 'reveal_secret',  label: "Learn the secrets of an asset" },
 	] as const;
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
@@ -131,6 +133,8 @@
 	const requiredPicks = $derived(activeRoll?.result ?? null);
 
 	function bump(key: string, delta: number) {
+		// Can't pick an option with no valid target.
+		if (delta > 0 && !optionAvailable[key]) return;
 		// Don't let the running total exceed the dice quota.
 		if (delta > 0 && requiredPicks != null && totalPicked >= requiredPicks) return;
 		const next = Math.max(0, (counts[key] ?? 0) + delta);
@@ -178,7 +182,20 @@
 	// Seek Answers resolution state: which resources have been flawed (each may
 	// be flawed at most once) and the mar self-flaw penalty progress.
 	const saData = $derived(plan ? (parseResolutionData(plan).seek_answers ?? {}) : {});
-	const preRollDone = $derived(saData.pre_roll_done ?? false);
+	// Pre-roll is done once this plan's dice exist. pre_roll_done is the
+	// server-authoritative flag for plans created under the pre-roll flow; the
+	// roll-existence and committed-choices fallbacks free legacy in-flight plans
+	// — resolved before the pre-roll step shipped, so they have no flag — from
+	// being trapped on the pre-roll screen.
+	const rollForThisPlan = $derived(
+		plan != null && activeRoll != null && activeRoll.plan_id === plan.id,
+	);
+	const hasCommittedChoices = $derived(
+		plan != null && (parseResolutionData(plan).make_mar_choices ?? []).length > 0,
+	);
+	const preRollDone = $derived(
+		(saData.pre_roll_done ?? false) || rollForThisPlan || hasCommittedChoices,
+	);
 	const flawedIDs = $derived(new Set(saData.flawed_resource_ids ?? []));
 	const marRequired = $derived(saData.mar_self_flaws_required ?? 0);
 	const marApplied = $derived(saData.mar_self_flaws_applied ?? 0);
@@ -211,9 +228,16 @@
 			.filter(a => a.owner_id === preparerID && !flawedIDs.has(a.id)),
 	);
 	// Reveal-secret targets another player's asset ("ask a player to show you the
-	// underside of a specific one of their assets") — never the preparer's own.
+	// underside of a specific one of their assets") — never the preparer's own,
+	// and only assets that still hold a secret the preparer can't already read
+	// (revealing grants visibility on the asset's secrets, so one already fully
+	// known to you is not a valid target). Existence is public; "known" is
+	// viewer-scoped via the shared lookup.
+	const secretCounts = useSecretCounts();
+	const hasUnknownSecret = (a: Asset): boolean =>
+		hiddenCount(a, secretCounts?.known(a.id) ?? 0) > 0;
 	const revealableAssets = $derived(
-		assets.filter(a => !a.is_destroyed && a.owner_id !== preparerID),
+		assets.filter(a => !a.is_destroyed && a.owner_id !== preparerID && hasUnknownSecret(a)),
 	);
 
 
@@ -272,6 +296,17 @@
 
 	// Other players the preparer can question.
 	const questionTargets = $derived(players.filter(p => p.id !== plan?.preparer_id));
+
+	// Per-option availability for the counts picker: an option with no valid
+	// target can't be picked, so we disable it. declare_truth is always possible;
+	// the others need a live target (a breakable resource, a questionable player,
+	// or an asset whose secrets you don't already hold).
+	const optionAvailable = $derived<Record<string, boolean>>({
+		break_resource: brResourcesWithMarginalia.length > 0,
+		declare_truth: true,
+		ask_question: questionTargets.length > 0,
+		reveal_secret: revealableAssets.length > 0,
+	});
 	let aqTargetID = $state<number | null>(null);
 	let aqQuestion = $state('');
 	let aqBusy = $state(false);
@@ -404,18 +439,19 @@
 					</strong>
 				</p>
 				<p class="choices-note">
-					Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose exactly <strong>{requiredPicks}</strong>{/if}. On a mar
-					you must also describe a flaw in your own resources — that penalty
-					appears below once you apply your choices.
+					Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose exactly {requiredPicks}{/if}. 
+					On a mar you must also describe a flaw in (break) your own resource assets, after this step.
 				</p>
 				{#each OPTIONS as opt}
-					<div class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
+					{@const available = optionAvailable[opt.key]}
+					<div class="choice-item" class:unavailable={!available}
+						style="display:flex;align-items:center;gap:0.5rem;">
 						<button class="action-btn" onclick={() => bump(opt.key, -1)}
 							disabled={(counts[opt.key] ?? 0) === 0}>−</button>
 						<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
 						<button class="action-btn" onclick={() => bump(opt.key, 1)}
-							disabled={requiredPicks != null && totalPicked >= requiredPicks}>+</button>
-						<span>{opt.label}</span>
+							disabled={!available || (requiredPicks != null && totalPicked >= requiredPicks)}>+</button>
+						<span>{opt.label}{#if !available}<span class="choices-note muted"> — no valid targets</span>{/if}</span>
 					</div>
 				{/each}
 				<p class="choices-note">
@@ -489,37 +525,6 @@
 							onclick={() => submitBreakResource(plan)}
 							disabled={brBusy || brAssetID == null || brMargID == null}>
 							{brBusy ? '…' : 'Break resource'}
-						</button>
-					</div>
-				{/if}
-
-				{#if marRemaining > 0}
-					<div class="plan-form">
-						<p class="choices-header">
-							Describe a flaw in your own resources ({marRemaining} remaining)
-						</p>
-						<p class="choices-note">
-							The plan marred — you must flaw {marRequired} of your own
-							resources before completing.
-						</p>
-						<CardPicker
-							label="Your resource to flaw"
-							items={penaltyResources}
-							{players}
-							emptyMessage="No eligible resources of your own remain."
-							ownerLabel={() => 'Your resource'}
-							marginaliaMode
-							selectedMarginaliaID={maMargID}
-							onSelectMarginalia={(mID, parent) => {
-								maMargID = mID;
-								maAssetID = parent?.id ?? null;
-							}}
-						/>
-						{#if maWarn}<p class="res-warning">{maWarn}</p>{/if}
-						<button class="action-btn primary"
-							onclick={() => submitPenaltyFlaw(plan)}
-							disabled={maBusy || maAssetID == null || maMargID == null}>
-							{maBusy ? '…' : 'Flaw your resource'}
 						</button>
 					</div>
 				{/if}
@@ -603,6 +608,37 @@
 					</div>
 				{/if}
 
+				{#if marRemaining > 0}
+					<!-- The mar penalty (flaw your own resources) is listed last so the
+					     make-list tasks are settled before this consequence. -->
+					<div class="plan-form">
+						<p class="choices-header">
+							Describe a flaw in your own resource assets
+						</p>
+						<p class="choices-note">
+							The plan marred by {marRequired} — you must break {marRequired} of your own resources.
+						</p>
+						<CardPicker
+							label="Choose a marginallia to tear"
+							items={penaltyResources}
+							{players}
+							emptyMessage="No eligible resources of your own remain."
+							marginaliaMode
+							selectedMarginaliaID={maMargID}
+							onSelectMarginalia={(mID, parent) => {
+								maMargID = mID;
+								maAssetID = parent?.id ?? null;
+							}}
+						/>
+						{#if maWarn}<p class="res-warning">{maWarn}</p>{/if}
+						<button class="action-btn primary"
+							onclick={() => submitPenaltyFlaw(plan)}
+							disabled={maBusy || maAssetID == null || maMargID == null}>
+							{maBusy ? '…' : 'Break your resource'}
+						</button>
+					</div>
+				{/if}
+
 				{#if subflowsDone}
 					<p class="complete-note">
 						Post any questions, truths, or follow-scene narration in the scene
@@ -630,4 +666,5 @@
 		border: 1px solid var(--border, #ccc);
 		border-radius: 4px;
 	}
+	.choice-item.unavailable { opacity: 0.55; }
 </style>
