@@ -114,24 +114,17 @@ export function messyBreak(planID: number, marginaliaID: number): Promise<{
 }
 
 /**
- * Exchange Courtiers mar — the target claims one of the preparer's peers
- * (riposte/forfeit). Called by the target once per required claim.
+ * Exchange Courtiers mar — riposte: the preparer goes first, either breaking
+ * one of their own peers (passing a marginaliaID) or skipping the break
+ * (passing null), before the target claims the surrendered peer.
  */
-export function ecClaimPeer(planID: number, assetID: number): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/claim-peer`, {
-		method: 'POST',
-		body: JSON.stringify({ asset_id: assetID }),
-	});
-}
-
-/**
- * Exchange Courtiers mar — riposte: the preparer optionally breaks one of
- * their own peers before the target claims it.
- */
-export function ecRiposteBreak(planID: number, marginaliaID: number): Promise<PlanEcho> {
+export function ecRiposteBreak(planID: number, marginaliaID: number | null): Promise<PlanEcho> {
+	const body = marginaliaID == null
+		? { action: 'skip' }
+		: { marginalia_id: marginaliaID };
 	return apiFetch(`/plans/${planID}/riposte-break`, {
 		method: 'POST',
-		body: JSON.stringify({ marginalia_id: marginaliaID }),
+		body: JSON.stringify(body),
 	});
 }
 

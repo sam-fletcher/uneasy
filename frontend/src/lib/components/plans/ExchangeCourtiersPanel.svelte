@@ -8,11 +8,12 @@
 	import './planPanel.css';
 	import {
 		preparePlan, fairTrade, makeChoice, completePlan, messyBreak,
-		ecClaimPeer, ecRiposteBreak,
+		ecRiposteBreak,
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
@@ -25,6 +26,36 @@
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
+	// Read-only "what can happen?" reference (shared Buffet), shown across the
+	// whole plan so players can weigh the trade / make / mar consequences before
+	// they commit. The level numbers and margin caps mirror the handler's
+	// ecMakeLevels/ecMarLevels and ValidateChoices.
+	const EC_BUFFET_TABS: BuffetTab[] = [
+		{
+			key: 'trade', label: 'Trade',
+			always: "Before any roll, the target may name one of the preparer's peers to receive in exchange for the targeted peer. If the preparer accepts, the two peers swap with no roll. Otherwise, they roll.",
+		},
+		{
+			key: 'make', label: 'Make',
+			always: "You take the targeted peer.",
+			intro: "Then choose one, based on how much you beat the difficulty by:",
+			opts: [
+				{ key: 'messy', label: '+0: Messy', desc: " — They break one of your assets." },
+				{ key: 'legal', label: '+1: Legal', desc: " — Everything went according to plan." },
+				{ key: 'conspiracy', label: '+2: Conspiracy', desc: " — The peer was in on it from the start." },
+			],
+		},
+		{
+			key: 'mar', label: 'Mar',
+			intro: "The target chooses one, based on how much you missed the difficulty by:",
+			opts: [
+				{ key: 'fair_trade', label: '-1: A Fair Trade', desc: " — The offered trade goes through." },
+				{ key: 'riposte', label: '-2: Riposte', desc: " — They take the requested asset (you may break it first)." },
+				{ key: 'forfeit', label: '-3: Forfeit', desc: " — They take the requested asset." },
+			],
+		},
+	];
+
 	const gameID = $derived(ctx.gameID);
 	const assets = $derived(ctx.assets);
 	const players = $derived(ctx.players);
@@ -32,6 +63,7 @@
 	const plans = $derived(ctx.plans);
 	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
+	const activeRoll = $derived(ctx.activeRoll);
 	const onRollCreated = $derived(ctx.onRollCreated);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
@@ -62,16 +94,6 @@
 	let prepError = $state('');
 
 	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
-	// My intact peers — candidates for fair-trade offer in resolve mode.
-	const myIntactPeers = $derived(
-		assets.filter(a =>
-			a.owner_id === currentPlayerID && a.asset_type === 'peer' && !a.is_destroyed,
-		),
-	);
-	// Messy-break candidates: my intact assets with ≥1 untorn marginalia.
-	const myAssetsWithMarginalia = $derived(
-		assetsWithIntactMarginalia(assets, currentPlayerID),
-	);
 	const ecTargetPlayerAssets = $derived(
 		ecTargetPlayerID != null
 			? assets.filter(a => a.owner_id === ecTargetPlayerID && a.asset_type === 'peer' && !a.is_destroyed)
@@ -155,16 +177,32 @@
 	let selectedChoices = $state<string[]>([]);
 	let choicesBusy = $state(false);
 
+	// Per-rules option levels (mirror ecMakeLevels/ecMarLevels in the handler).
+	// The chosen option's level may not exceed the dice margin; the backend
+	// enforces this too, but disabling here keeps the UI honest.
+	const EC_MAKE_LEVELS: Record<string, number> = { messy: 0, legal: 1, conspiracy: 2 };
+	const EC_MAR_LEVELS: Record<string, number> = { fair_trade: 1, riposte: 2, forfeit: 3 };
+	const choiceMargin = $derived.by(() => {
+		if (!activeRoll || activeRoll.result == null) return null;
+		const diff = activeRoll.adjusted_difficulty ?? activeRoll.difficulty;
+		return rollOutcome === 'make' ? activeRoll.result - diff : diff - activeRoll.result;
+	});
+	const disabledChoiceKeys = $derived.by(() => {
+		if (choiceMargin == null) return [];
+		const levels = rollOutcome === 'make' ? EC_MAKE_LEVELS : EC_MAR_LEVELS;
+		return Object.entries(levels)
+			.filter(([, lvl]) => lvl > choiceMargin)
+			.map(([key]) => key);
+	});
+
 	let messyMarginaliaID = $state<number | null>(null);
 	let messyBusy = $state(false);
 	let messyError = $state('');
 
-	function toggleChoice(key: string) {
-		if (selectedChoices.includes(key)) {
-			selectedChoices = selectedChoices.filter(k => k !== key);
-		} else {
-			selectedChoices = [...selectedChoices, key];
-		}
+	// EC picks exactly one option (single-select), so a choice replaces any
+	// prior selection rather than toggling it on/off.
+	function selectChoice(key: string) {
+		selectedChoices = [key];
 	}
 
 	async function onFTOffer(p: Plan) {
@@ -235,28 +273,15 @@
 		} finally { messyBusy = false; }
 	}
 
-	// ── Mar: target claims preparer peers; preparer may riposte-break ─────────
-	let claimAssetID = $state<number | null>(null);
-	let claimBusy = $state(false);
-	async function onClaimPeer(p: Plan) {
-		if (!claimAssetID || claimBusy) return;
-		claimBusy = true; resError = '';
-		try {
-			await ecClaimPeer(p.id, claimAssetID);
-			claimAssetID = null;
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not claim peer.';
-		} finally { claimBusy = false; }
-	}
-
+	// ── Mar: on a riposte the preparer breaks/surrenders the requested peer ────
 	let riposteMargID = $state<number | null>(null);
 	let riposteBusy = $state(false);
-	async function onRiposteBreak(p: Plan) {
-		if (!riposteMargID || riposteBusy) return;
+	// marginaliaID null = skip the break and surrender the peer intact.
+	async function submitRiposte(p: Plan, marginaliaID: number | null) {
+		if (riposteBusy) return;
 		riposteBusy = true; resError = '';
 		try {
-			await ecRiposteBreak(p.id, riposteMargID);
+			await ecRiposteBreak(p.id, marginaliaID);
 			riposteMargID = null;
 			onPlansChanged();
 		} catch (e) {
@@ -307,6 +332,11 @@
 			{/if}
 		</div>
 	</fieldset>
+	<!-- Outside the disabled fieldset so its toggle/tabs stay interactive in
+	     read-only viewer mode. -->
+	<div class="ec-prep-buffet">
+		<Buffet tabs={EC_BUFFET_TABS} />
+	</div>
 
 {:else if plan}
 	{@const isTarget = plan.target_player_id != null && currentPlayerID === plan.target_player_id}
@@ -323,44 +353,56 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		<Buffet tabs={EC_BUFFET_TABS} />
 		{#if ftAccepted == null && !rollActive}
 			{#if ftAssetID == null}
 				<!-- No offer yet -->
 				{#if isTarget}
 					<div class="ft-section">
 						<p class="ft-prompt">
-							<strong>{playerName(players, plan.preparer_id)}</strong> wants one of your peers.
-							You may offer a peer as a fair trade.
+							<strong>{playerName(players, plan.preparer_id)}</strong> wants
+							<strong>{assetName(assets, plan.target_asset_id)}</strong>. You may name
+							one of their peers to receive in exchange — a fair trade.
 						</p>
 						<CardPicker
-							label="Offer a peer"
-							items={myIntactPeers}
+							label="Peer to receive in trade"
+							items={preparerIntactPeers}
 							{players}
-							emptyMessage="You have no peers to offer."
+							emptyMessage="The preparer has no peers to trade."
 							selected={ftOfferedAssetID}
 							onSelect={(id) => (ftOfferedAssetID = id)}
 						/>
 						<button class="action-btn primary" onclick={() => onFTOffer(plan)}
 							disabled={!ftOfferedAssetID || ftOfferBusy}>
-							{ftOfferBusy ? '…' : 'Offer peer'}
+							{ftOfferBusy ? '…' : 'Propose trade'}
 						</button>
 					</div>
 				{:else if isPreparer}
-					<p class="ft-prompt muted">
-						Waiting for {playerName(players, plan.target_player_id)} to offer a peer…
-					</p>
-					<button class="action-btn secondary" onclick={() => onFTDecline(plan)} disabled={ftDecideBusy}>
-						{ftDecideBusy ? '…' : 'Skip — proceed to dice roll'}
-					</button>
+					{#if preparerIntactPeers.length === 0}
+						<!-- The target can't name one of the preparer's peers if there are
+						     none; let the preparer proceed straight to the roll. -->
+						<p class="ft-prompt">
+							You have no peers for {playerName(players, plan.target_player_id)} to
+							request in trade.
+						</p>
+						<button class="action-btn secondary" onclick={() => onFTDecline(plan)} disabled={ftDecideBusy}>
+							{ftDecideBusy ? '…' : 'Proceed to dice roll'}
+						</button>
+					{:else}
+						<p class="ft-prompt">
+							Waiting for {playerName(players, plan.target_player_id)} to propose a fair trade for their peer,
+							<em>{assetName(assets, plan.target_asset_id)}</em>.
+						</p>
+					{/if}
 				{/if}
 			{:else}
 				<!-- Offer has been made. Preparer decides. -->
 				{#if isPreparer}
 					<div class="ft-section">
 						<p class="ft-prompt">
-							{playerName(players, plan.target_player_id)} offers
-							<strong>{assetName(assets, ftAssetID)}</strong> as a fair trade
-							for <strong>{assetName(assets, plan.target_asset_id)}</strong>.
+							{playerName(players, plan.target_player_id)} will hand over
+							<em>{assetName(assets, plan.target_asset_id)}</em> if you give them
+							<em>{assetName(assets, ftAssetID)}</em>.
 						</p>
 						<div class="ft-actions">
 							<button class="action-btn primary" onclick={() => onFTAccept(plan)} disabled={ftDecideBusy}>
@@ -372,8 +414,8 @@
 						</div>
 					</div>
 				{:else}
-					<p class="ft-prompt muted">
-						You offered <strong>{assetName(assets, ftAssetID)}</strong>.
+					<p class="ft-prompt">
+						You asked for <em>{assetName(assets, ftAssetID)}</em> in exchange.
 						Waiting for {playerName(players, plan.preparer_id)}'s decision…
 					</p>
 				{/if}
@@ -388,7 +430,9 @@
 				options={(rollOutcome === 'make' ? MAKE_OPTIONS.exchange_courtiers : MAR_OPTIONS.exchange_courtiers) ?? []}
 				selected={selectedChoices}
 				busy={choicesBusy}
-				onToggle={toggleChoice}
+				single
+				disabledKeys={disabledChoiceKeys}
+				onToggle={selectChoice}
 				onSubmit={() => onApplyChoices(plan, rollOutcome!)}
 			>
 				{#snippet header()}
@@ -408,22 +452,26 @@
 		{:else if choicesDone || (rollOutcome == null && ftAccepted === true)}
 			{@const messyRequired = ec.messy_break_required ?? false}
 			{@const messyDone = ec.messy_break_done ?? false}
-			{@const claimsReq = ec.peer_claims_required ?? 0}
-			{@const claimsDoneCount = ec.peer_claims_done ?? 0}
-			{@const claimsPending = claimsDoneCount < claimsReq}
 			{@const riposteAllowed = ec.riposte_allowed ?? false}
+			{@const riposteResolved = ec.riposte_break_resolved ?? false}
+			{@const ripostePending = riposteAllowed && !riposteResolved}
+			{@const requestedPeerName = assetName(assets, ftAssetID)}
+			{@const requestedPeerMarginalia = preparerMarginaliaAssets.filter(a => a.id === ftAssetID)}
 
 			{#if messyRequired && !messyDone}
 				{#if isTarget}
 					<div class="messy-break-section">
 						<p class="ft-prompt">
-							The exchange was messy. You must break one of your own marginalia before this plan completes.
+							The exchange was messy. You may break one of
+							<strong>{playerName(players, plan.preparer_id)}</strong>'s marginalia
+							before this plan completes.
 						</p>
 						{#if messyError}<p class="res-error">{messyError}</p>{/if}
 						<CardPicker
 							label="Marginalium to break"
-							items={myAssetsWithMarginalia}
+							items={preparerMarginaliaAssets}
 							{players}
+							emptyMessage="The preparer has no marginalia to break."
 							marginaliaMode
 							selectedMarginaliaID={messyMarginaliaID}
 							onSelectMarginalia={(mID) => (messyMarginaliaID = mID)}
@@ -439,52 +487,37 @@
 					</p>
 				{/if}
 
-			{:else if claimsPending}
-				{#if isTarget}
+			{:else if ripostePending}
+				{#if isPreparer}
 					<div class="messy-break-section">
 						<p class="ft-prompt">
-							The plan was marred — claim a peer from
-							<strong>{playerName(players, plan.preparer_id)}</strong>
-							({claimsReq - claimsDoneCount} remaining).
-						</p>
-						<CardPicker
-							label="Peer to claim"
-							items={preparerIntactPeers}
-							{players}
-							emptyMessage="The preparer has no peers left to claim."
-							selected={claimAssetID}
-							onSelect={(id) => (claimAssetID = id)}
-						/>
-						<button class="action-btn primary" onclick={() => onClaimPeer(plan)}
-							disabled={!claimAssetID || claimBusy}>
-							{claimBusy ? '…' : 'Claim peer'}
-						</button>
-					</div>
-				{:else if isPreparer && riposteAllowed}
-					<div class="messy-break-section">
-						<p class="ft-prompt">
-							Riposte: you may break one of your own peers before
-							{playerName(players, plan.target_player_id)} claims it (optional).
+							Riposte: <strong>{playerName(players, plan.target_player_id)}</strong> takes
+							your <em>{requestedPeerName}</em>. You may break it first, or surrender it intact.
 						</p>
 						<CardPicker
 							label="Marginalium to break"
-							items={preparerMarginaliaAssets}
+							items={requestedPeerMarginalia}
 							{players}
+							emptyMessage="This peer has no marginalia to break."
 							marginaliaMode
 							selectedMarginaliaID={riposteMargID}
 							onSelectMarginalia={(mID) => (riposteMargID = mID)}
 						/>
-						<button class="action-btn secondary" onclick={() => onRiposteBreak(plan)}
-							disabled={!riposteMargID || riposteBusy}>
-							{riposteBusy ? '…' : 'Break a peer'}
-						</button>
-						<p class="ft-prompt muted">
-							Waiting for {playerName(players, plan.target_player_id)} to claim…
-						</p>
+						<div class="ft-actions">
+							<button class="action-btn secondary" onclick={() => submitRiposte(plan, riposteMargID)}
+								disabled={!riposteMargID || riposteBusy}>
+								{riposteBusy ? '…' : 'Break, then surrender'}
+							</button>
+							<button class="action-btn secondary" onclick={() => submitRiposte(plan, null)}
+								disabled={riposteBusy}>
+								{riposteBusy ? '…' : 'Surrender intact'}
+							</button>
+						</div>
 					</div>
 				{:else}
 					<p class="ft-prompt muted">
-						Waiting for {playerName(players, plan.target_player_id)} to claim a peer…
+						Riposte — waiting for {playerName(players, plan.preparer_id)} to break or
+						surrender <em>{requestedPeerName}</em>…
 					</p>
 				{/if}
 
@@ -509,3 +542,10 @@
 		{/if}
 	</ResolvingCard>
 {/if}
+
+<style>
+	/* Space the prep-mode reference off the form above it. */
+	.ec-prep-buffet {
+		margin-top: 0.75rem;
+	}
+</style>

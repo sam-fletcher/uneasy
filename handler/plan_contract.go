@@ -43,6 +43,21 @@ type ChoiceLimiter interface {
 	MaxChoices(result string, rollResult, difficulty int16) int
 }
 
+// ChoiceValidator is an optional PlanHandler capability that fully validates a
+// make/mar choice submission against the roll, for plans whose rules don't fit
+// ChoiceLimiter's simple count cap. Exchange Courtiers uses it: the rules say
+// pick *exactly one* option whose numeric level may not exceed the margin
+// between result and difficulty (result−difficulty for make, difficulty−result
+// for mar). A handler provides either this or ChoiceLimiter, not both — they are
+// checked in the same place (enforceChoiceBudget), with ChoiceValidator winning.
+//
+// Like ChoiceLimiter, it is only consulted when rollResult/result are internally
+// consistent (make ⇒ result ≥ difficulty), so the handler can assume that
+// invariant. Return a user-facing error to reject the submission (422), or nil.
+type ChoiceValidator interface {
+	ValidateChoices(result string, rollResult, difficulty int16, choices []string) error
+}
+
 // PlanHandler is implemented by each plan type.
 //
 // Dependency-passing convention (intentional, two tiers — don't "unify" it):
@@ -139,7 +154,7 @@ type ResolvingWaitees interface {
 //     game-state snapshot), and guard the write with a backend dedupe check —
 //     a stale client re-prompted after a refresh must produce one effect, not
 //     two (return 409 on the second submit). Examples already in the tree:
-//     PeerClaimsDone >= PeerClaimsRequired (Exchange Courtiers), the keep-secret
+//     RiposteBreakResolved / MessyBreakDone (Exchange Courtiers), the keep-secret
 //     and break/hide done-markers (Liaise, Spread Rumors), MarSelfFlawsApplied
 //     (Seek Answers).
 //   - Side tables (liaise_choices, duel_staked_assets) are fine for the *bulk*

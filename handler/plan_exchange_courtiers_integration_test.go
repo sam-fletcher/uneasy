@@ -25,18 +25,21 @@ import (
 	"uneasy/model"
 )
 
-// ecToMar drives an EC plan to a marred roll: prepare (preparer = current
-// focus), target the next player's seeded peer, jump to the row, decline the
-// fair trade to force the dice roll, then mark it mar. Returns the plan and the
-// preparer/target indices.
-func ecToMar(t *testing.T, h *planLifecycle) (dbgen.Plan, int, int) {
+// ecToRoll drives an EC plan to its dice roll: prepare (preparer = current
+// focus), target the next player's seeded peer, jump to the row, have the target
+// name a seeded preparer peer (the requested peer) as the rules require, then
+// decline to force the roll. Returns the plan, the preparer/target indices, the
+// targeted peer (the target's), the requested peer (the preparer's), the roll
+// id, and the roll's difficulty.
+func ecToRoll(t *testing.T, h *planLifecycle) (plan dbgen.Plan, preparerIdx, targetIdx int, targetPeer, requestedPeer, rollID, difficulty int64) {
 	t.Helper()
-	preparerIdx := h.focusPlayerIdx()
-	targetIdx := (preparerIdx + 1) % len(h.tg.Players)
-	targetPeer := h.seedPeer(targetIdx, "coveted peer")
+	preparerIdx = h.focusPlayerIdx()
+	targetIdx = (preparerIdx + 1) % len(h.tg.Players)
+	targetPeer = h.seedPeer(targetIdx, "coveted peer")
+	requestedPeer = h.seedPeer(preparerIdx, "requested peer")
 
 	notes := "exchange"
-	plan := h.prepare(PreparePlanRequest{
+	plan = h.prepare(PreparePlanRequest{
 		PlanType:         model.PlanExchangeCourtiers,
 		TargetPlayerID:   &h.tg.Players[targetIdx].ID,
 		TargetAssetID:    &targetPeer,
@@ -46,13 +49,25 @@ func ecToMar(t *testing.T, h *planLifecycle) (dbgen.Plan, int, int) {
 	h.jumpToRow(*plan.RowNumber)
 	require.Nil(t, h.resolve(plan.ID), "EC defers its roll behind the fair-trade step")
 
+	code, body := ecOffer(t, h, targetIdx, plan.ID, requestedPeer)
+	require.Equalf(t, http.StatusOK, code, "offer: %v", body)
 	declinePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/fair-trade"
-	code, body := h.post(preparerIdx, declinePath, map[string]any{"action": "decline"})
+	code, body = h.post(preparerIdx, declinePath, map[string]any{"action": "decline"})
 	require.Equalf(t, http.StatusOK, code, "decline: %v", body)
 	rollMap, _ := body["roll"].(map[string]any)
 	require.NotNil(t, rollMap, "decline should create a roll")
-	h.forceRoll(int64(rollMap["id"].(float64)), "mar", 0)
-	return plan, preparerIdx, targetIdx
+	return plan, preparerIdx, targetIdx, targetPeer, requestedPeer,
+		int64(rollMap["id"].(float64)), int64(rollMap["difficulty"].(float64))
+}
+
+// ecToMarWithRequest drives EC to a marred roll with the fair-trade offer in
+// place. Returns the plan, indices, the targeted peer (the target's) and the
+// requested peer (the preparer's).
+func ecToMarWithRequest(t *testing.T, h *planLifecycle) (plan dbgen.Plan, preparerIdx, targetIdx int, targetPeer, requestedPeer int64) {
+	t.Helper()
+	plan, preparerIdx, targetIdx, targetPeer, requestedPeer, rollID, _ := ecToRoll(t, h)
+	h.forceRoll(rollID, "mar", 0)
+	return plan, preparerIdx, targetIdx, targetPeer, requestedPeer
 }
 
 // ecMakeChoice posts make-choice as a specific player (EC's mar choice is made
@@ -63,29 +78,11 @@ func ecMakeChoice(t *testing.T, h *planLifecycle, playerIdx int, planID int64, c
 	return h.post(playerIdx, path, map[string]any{"result": "mar", "choices": choices})
 }
 
-func TestExchangeCourtiers_Mar_FairTrade_PeerStillPasses(t *testing.T) {
+func TestExchangeCourtiers_Mar_Forfeit_TakesRequestedPeer(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
-	plan, _, targetIdx := ecToMar(t, h)
-	require.NotNil(t, plan.TargetAssetID)
-
-	code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"fair_trade"})
-	require.Equalf(t, http.StatusOK, code, "target make-choice: %v", body)
-	h.complete(plan.ID)
-
-	// Despite the mar, the targeted peer ends up with the preparer.
-	asset, err := h.q.GetAssetByID(ctx, *plan.TargetAssetID)
-	require.NoError(t, err)
-	assert.Equal(t, plan.PreparerID, asset.OwnerID)
-}
-
-func TestExchangeCourtiers_Mar_Forfeit_TargetClaimsPreparerPeer(t *testing.T) {
-	h := newPlanLifecycle(t, 3)
-	ctx := context.Background()
-
-	plan, preparerIdx, targetIdx := ecToMar(t, h)
-	spoils := h.seedPeer(preparerIdx, "preparer's prize peer")
+	plan, _, targetIdx, targetPeer, requestedPeer := ecToMarWithRequest(t, h)
 	targetID := h.tg.Players[targetIdx].ID
 
 	// C3 attribution: a marred EC hands the option choice to the TARGET, so the
@@ -95,80 +92,229 @@ func TestExchangeCourtiers_Mar_Forfeit_TargetClaimsPreparerPeer(t *testing.T) {
 		model.RowStateAwaitCourtierResponse, targetID)
 
 	code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"forfeit"})
-	require.Equalf(t, http.StatusOK, code, "target make-choice: %v", body)
+	require.Equalf(t, http.StatusOK, code, "forfeit: %v", body)
 
-	// Still the target: a forfeit owes a peer claim before the plan can complete.
-	h.assertWaitees("forfeit, awaiting target's peer claim",
-		model.RowStateAwaitCourtierResponse, targetID)
-
-	// Completion is blocked until the target claims a peer. Completion is
-	// preparer-gated, so drive it as the preparer.
-	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
-	code, body = h.post(preparerIdx, completePath, nil)
-	require.Equalf(t, http.StatusConflict, code, "complete should be blocked: %v", body)
-
-	// A non-target player cannot claim.
-	claimPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/claim-peer"
-	code, _ = h.post(preparerIdx, claimPath, map[string]any{"asset_id": spoils})
-	assert.Equal(t, http.StatusForbidden, code, "only the target may claim")
-
-	// Target claims the preparer's peer.
-	code, body = h.post(targetIdx, claimPath, map[string]any{"asset_id": spoils})
-	require.Equalf(t, http.StatusOK, code, "claim-peer: %v", body)
-
-	// Claim satisfied → the target owes nothing more; the row rides the generic
-	// resolution case naming the PREPARER, who completes.
-	h.assertWaitees("claim done, preparer completes",
+	// Forfeit takes the requested peer outright and inline — nothing further is
+	// owed, so the row rides the generic case naming the PREPARER, who completes.
+	h.assertWaitees("forfeit done, preparer completes",
 		model.RowStatePlanResolving, plan.PreparerID)
 
-	// C2 refresh-safety: a second claim (stale client after refresh, or a retry)
-	// is rejected — the guard is PeerClaimsDone >= PeerClaimsRequired — so no
-	// extra peer is taken.
-	code, body = h.post(targetIdx, claimPath, map[string]any{"asset_id": spoils})
-	assert.Equalf(t, http.StatusConflict, code,
-		"a second peer claim must be rejected: %v", body)
+	// The target took the peer they requested; their own targeted peer stays put
+	// (no swap on a forfeit).
+	claimed, err := h.q.GetAssetByID(ctx, requestedPeer)
+	require.NoError(t, err)
+	assert.Equal(t, targetID, claimed.OwnerID, "requested peer should belong to the target")
+	tp, err := h.q.GetAssetByID(ctx, targetPeer)
+	require.NoError(t, err)
+	assert.Equal(t, targetID, tp.OwnerID, "targeted peer stays with the target (no swap)")
 
 	h.complete(plan.ID)
-
-	claimed, err := h.q.GetAssetByID(ctx, spoils)
-	require.NoError(t, err)
-	assert.Equal(t, h.tg.Players[targetIdx].ID, claimed.OwnerID, "peer should now belong to the target")
 }
 
-func TestExchangeCourtiers_Mar_Riposte_PreparerBreaksThenTargetClaims(t *testing.T) {
+// ecOffer posts a fair-trade offer as the target, naming one of the preparer's
+// peers to receive in exchange.
+func ecOffer(t *testing.T, h *planLifecycle, targetIdx int, planID, offeredAssetID int64) (int, map[string]any) {
+	t.Helper()
+	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/fair-trade"
+	return h.post(targetIdx, path, map[string]any{"action": "offer", "offered_asset_id": offeredAssetID})
+}
+
+// TestExchangeCourtiers_FairTrade_AcceptSwapsBothPeers covers the corrected
+// fair-trade direction: the target names a peer in the *preparer's* retinue, and
+// accepting swaps it for the targeted peer (both legs move).
+func TestExchangeCourtiers_FairTrade_AcceptSwapsBothPeers(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
-	plan, preparerIdx, targetIdx := ecToMar(t, h)
-	// Two marginalia so the riposte break damages but doesn't destroy the peer.
-	peer := h.seedPeer(preparerIdx, "battered peer")
-	m, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
-		AssetID: peer, Position: 1, Text: "a proud note",
+	preparerIdx := h.focusPlayerIdx()
+	targetIdx := (preparerIdx + 1) % len(h.tg.Players)
+	targetPeer := h.seedPeer(targetIdx, "coveted peer")
+	preparerPeer := h.seedPeer(preparerIdx, "preparer's peer")
+
+	notes := "exchange"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanExchangeCourtiers,
+		TargetPlayerID:   &h.tg.Players[targetIdx].ID,
+		TargetAssetID:    &targetPeer,
+		PreparationNotes: &notes,
+	})
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+
+	// The target may not offer one of their *own* peers — it must name one of
+	// the preparer's.
+	ownPeer := h.seedPeer(targetIdx, "target's own peer")
+	code, body := ecOffer(t, h, targetIdx, plan.ID, ownPeer)
+	require.Equalf(t, http.StatusForbidden, code, "offering own peer should 403: %v", body)
+
+	// Name the preparer's peer, then the preparer accepts.
+	code, body = ecOffer(t, h, targetIdx, plan.ID, preparerPeer)
+	require.Equalf(t, http.StatusOK, code, "offer preparer's peer: %v", body)
+	acceptPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/fair-trade"
+	code, body = h.post(preparerIdx, acceptPath, map[string]any{"action": "accept"})
+	require.Equalf(t, http.StatusOK, code, "accept: %v", body)
+
+	// Both legs of the swap moved.
+	tp, err := h.q.GetAssetByID(ctx, targetPeer)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[preparerIdx].ID, tp.OwnerID, "targeted peer should go to the preparer")
+	pp, err := h.q.GetAssetByID(ctx, preparerPeer)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[targetIdx].ID, pp.OwnerID, "offered peer should go to the target")
+
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status)
+	require.NotNil(t, resolved.Result)
+	assert.Equal(t, "make", *resolved.Result)
+}
+
+// TestExchangeCourtiers_Mar_FairTrade_CompletesOfferedSwap covers the second leg
+// of the mar "A Fair Trade" option: when the target had named a preparer peer
+// pre-roll, that peer passes back to them as the targeted peer goes to the
+// preparer.
+func TestExchangeCourtiers_Mar_FairTrade_CompletesOfferedSwap(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	preparerIdx := h.focusPlayerIdx()
+	targetIdx := (preparerIdx + 1) % len(h.tg.Players)
+	targetPeer := h.seedPeer(targetIdx, "coveted peer")
+	preparerPeer := h.seedPeer(preparerIdx, "preparer's peer")
+
+	notes := "exchange"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanExchangeCourtiers,
+		TargetPlayerID:   &h.tg.Players[targetIdx].ID,
+		TargetAssetID:    &targetPeer,
+		PreparationNotes: &notes,
+	})
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+
+	// Target names the preparer's peer pre-roll; the preparer declines and rolls.
+	code, body := ecOffer(t, h, targetIdx, plan.ID, preparerPeer)
+	require.Equalf(t, http.StatusOK, code, "offer: %v", body)
+	declinePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/fair-trade"
+	code, body = h.post(preparerIdx, declinePath, map[string]any{"action": "decline"})
+	require.Equalf(t, http.StatusOK, code, "decline: %v", body)
+	rollMap, _ := body["roll"].(map[string]any)
+	require.NotNil(t, rollMap)
+	h.forceRoll(int64(rollMap["id"].(float64)), "mar", 0)
+
+	// On the mar the target picks "A Fair Trade" — the offered swap goes through.
+	code, body = ecMakeChoice(t, h, targetIdx, plan.ID, []string{"fair_trade"})
+	require.Equalf(t, http.StatusOK, code, "target fair_trade: %v", body)
+	h.complete(plan.ID)
+
+	tp, err := h.q.GetAssetByID(ctx, targetPeer)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[preparerIdx].ID, tp.OwnerID, "targeted peer → preparer")
+	pp, err := h.q.GetAssetByID(ctx, preparerPeer)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[targetIdx].ID, pp.OwnerID, "offered peer → target")
+}
+
+// TestExchangeCourtiers_LevelCap_RejectsTooHighOption covers the rules' level
+// cap wired through make-choice: on a make with margin 0 the player may only
+// pick Messy (level 0); Conspiracy (level 2) is rejected.
+func TestExchangeCourtiers_LevelCap_RejectsTooHighOption(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _, _, _, rollID, difficulty := ecToRoll(t, h)
+	// Margin 0: result == difficulty (a bare make).
+	h.forceRoll(rollID, "make", int16(difficulty))
+
+	mcPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
+	code, body := h.post(preparerIdx, mcPath, map[string]any{"result": "make", "choices": []string{"conspiracy"}})
+	require.Equalf(t, http.StatusUnprocessableEntity, code,
+		"conspiracy (level 2) beyond margin 0 should 422: %v", body)
+
+	// Two options at once is rejected even when each fits.
+	code, body = h.post(preparerIdx, mcPath, map[string]any{"result": "make", "choices": []string{"messy", "legal"}})
+	require.Equalf(t, http.StatusUnprocessableEntity, code,
+		"multi-select should 422: %v", body)
+
+	// Messy (level 0) is allowed.
+	code, body = h.post(preparerIdx, mcPath, map[string]any{"result": "make", "choices": []string{"messy"}})
+	require.Equalf(t, http.StatusOK, code, "messy within margin: %v", body)
+}
+
+// TestExchangeCourtiers_Mar_Riposte_BreaksThenSurrendersRequestedPeer covers
+// riposte: the preparer goes first, the break must land on the *requested* peer,
+// and afterwards that same peer passes to the target (damaged).
+func TestExchangeCourtiers_Mar_Riposte_BreaksThenSurrendersRequestedPeer(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, preparerIdx, targetIdx, targetPeer, requestedPeer := ecToMarWithRequest(t, h)
+	targetID := h.tg.Players[targetIdx].ID
+
+	// Two marginalia on the requested peer so the break doesn't destroy it; a
+	// decoy peer with its own marginalia the preparer must NOT be able to break.
+	firstMarg, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: requestedPeer, Position: 1, Text: "note",
 	})
 	require.NoError(t, err)
 	_, err = h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
-		AssetID: peer, Position: 2, Text: "a second note",
+		AssetID: requestedPeer, Position: 2, Text: "second note",
+	})
+	require.NoError(t, err)
+	decoy := h.seedPeer(preparerIdx, "decoy peer")
+	decoyMarg, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: decoy, Position: 1, Text: "decoy note",
 	})
 	require.NoError(t, err)
 
 	code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"riposte"})
-	require.Equalf(t, http.StatusOK, code, "target make-choice: %v", body)
+	require.Equalf(t, http.StatusOK, code, "riposte: %v", body)
 
-	// Preparer breaks the peer before it changes hands.
+	// A riposte waits on the PREPARER first (to break or surrender).
+	h.assertWaitees("riposte awaits preparer", model.RowStatePlanResolving, plan.PreparerID)
+
 	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/riposte-break"
-	code, body = h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": m.ID})
-	require.Equalf(t, http.StatusOK, code, "riposte-break: %v", body)
-	torn, err := h.q.GetMarginaliaByID(ctx, m.ID)
-	require.NoError(t, err)
-	assert.True(t, torn.IsTorn, "marginalia should be torn by the riposte break")
+	// The break must be on the requested peer, not some other peer.
+	code, body = h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": decoyMarg.ID})
+	require.Equalf(t, http.StatusBadRequest, code, "breaking a non-requested peer should 400: %v", body)
 
-	// Target claims the (now-damaged) peer.
-	claimPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/claim-peer"
-	code, body = h.post(targetIdx, claimPath, map[string]any{"asset_id": peer})
-	require.Equalf(t, http.StatusOK, code, "claim-peer: %v", body)
+	// Break the requested peer, which then passes to the target.
+	code, body = h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": firstMarg.ID})
+	require.Equalf(t, http.StatusOK, code, "riposte-break: %v", body)
+	torn, err := h.q.GetMarginaliaByID(ctx, firstMarg.ID)
+	require.NoError(t, err)
+	assert.True(t, torn.IsTorn, "the requested peer's marginalia should be torn")
 
 	h.complete(plan.ID)
-	claimed, err := h.q.GetAssetByID(ctx, peer)
+
+	claimed, err := h.q.GetAssetByID(ctx, requestedPeer)
+	require.NoError(t, err)
+	assert.Equal(t, targetID, claimed.OwnerID, "requested peer → target (damaged)")
+	tp, err := h.q.GetAssetByID(ctx, targetPeer)
+	require.NoError(t, err)
+	assert.Equal(t, targetID, tp.OwnerID, "targeted peer stays with the target (no swap)")
+	d, err := h.q.GetAssetByID(ctx, decoy)
+	require.NoError(t, err)
+	assert.Equal(t, plan.PreparerID, d.OwnerID, "decoy stays with the preparer")
+}
+
+// TestExchangeCourtiers_Mar_Riposte_SurrenderIntact covers the riposte skip: the
+// preparer surrenders the requested peer without damaging it.
+func TestExchangeCourtiers_Mar_Riposte_SurrenderIntact(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, preparerIdx, targetIdx, _, requestedPeer := ecToMarWithRequest(t, h)
+
+	code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"riposte"})
+	require.Equalf(t, http.StatusOK, code, "riposte: %v", body)
+
+	// Preparer surrenders intact; the requested peer passes to the target.
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/riposte-break"
+	code, body = h.post(preparerIdx, breakPath, map[string]any{"action": "skip"})
+	require.Equalf(t, http.StatusOK, code, "riposte surrender: %v", body)
+	h.complete(plan.ID)
+
+	claimed, err := h.q.GetAssetByID(ctx, requestedPeer)
 	require.NoError(t, err)
 	assert.Equal(t, h.tg.Players[targetIdx].ID, claimed.OwnerID)
 }

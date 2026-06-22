@@ -16,9 +16,21 @@
 		onSubmit: () => void;
 		/** Optional per-plan note rendered above the option list. */
 		header?: Snippet;
+		/**
+		 * When true, render radio buttons (choose exactly one option) instead of
+		 * checkboxes. Used by plans whose rules pick a single option.
+		 */
+		single?: boolean;
+		/** Option keys to disable (e.g. beyond the dice-margin level cap). */
+		disabledKeys?: string[];
 	}
 
-	let { outcome, options, selected, busy, onToggle, onSubmit, header }: Props = $props();
+	let {
+		outcome, options, selected, busy, onToggle, onSubmit, header,
+		single = false, disabledKeys = [],
+	}: Props = $props();
+
+	const nothingSelected = $derived(selected.length === 0);
 </script>
 
 <div class="choices-section">
@@ -29,11 +41,12 @@
 	{#if header}{@render header()}{/if}
 
 	{#if options.length > 0}
-		<p class="choices-note">Select options to apply:</p>
+		<p class="choices-note">{single ? 'Choose one option:' : 'Select options to apply:'}</p>
 		{#each options as opt}
-			<label class="choice-item">
-				<input type="checkbox"
+			<label class="choice-item" class:disabled={disabledKeys.includes(opt.key)}>
+				<input type={single ? 'radio' : 'checkbox'}
 					checked={selected.includes(opt.key)}
+					disabled={disabledKeys.includes(opt.key)}
 					onchange={() => onToggle(opt.key)}
 				/>
 				{opt.label}
@@ -41,7 +54,14 @@
 		{/each}
 	{/if}
 
-	<button class="action-btn primary" onclick={onSubmit} disabled={busy}>
+	<button class="action-btn primary" onclick={onSubmit} disabled={busy || (single && nothingSelected)}>
 		{busy ? '…' : 'Apply choices'}
 	</button>
 </div>
+
+<style>
+	.choice-item.disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+</style>

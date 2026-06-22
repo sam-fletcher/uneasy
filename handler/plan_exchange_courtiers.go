@@ -3,14 +3,16 @@ package handler
 // handler/plan_exchange_courtiers.go — Exchange Courtiers plan handler.
 //
 // Exchange Courtiers (power, delay 5): The preparer attempts to take a peer
-// from the target player. Resolution starts with a fair-trade offer step; if
-// declined, a dice roll is created and the normal roll flow proceeds.
+// from the target player. Resolution starts with a fair-trade pre-roll where
+// the target names a peer in the *preparer's* retinue (the "requested" peer) to
+// receive in exchange; the preparer accepts (the peers swap, no roll) or
+// declines (a dice roll is created and the normal roll flow proceeds).
 //
 // Make options (preparer): "legal" (standard transfer), "messy" (transfer +
 // target breaks one of the preparer's assets), "conspiracy" (narrative).
-// Mar options (target-driven): "fair_trade" (the trade goes through anyway),
-// "riposte"/"forfeit" (the target claims one of the preparer's peers; riposte
-// also lets the preparer break it first).
+// Mar options (target-driven), all acting on the requested peer: "fair_trade"
+// (the offered swap goes through), "forfeit" (the target takes the requested
+// peer), "riposte" (same, but the preparer may break it first).
 
 import (
 	"context"
@@ -101,9 +103,10 @@ func (ecHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	if ec.MessyBreakRequired && !ec.MessyBreakDone {
 		return errors.New("target player must first break a marginalia (POST /plans/{planId}/messy-break)")
 	}
-	if ec.PeerClaimsDone < ec.PeerClaimsRequired {
-		return fmt.Errorf("target must still claim %d peer(s) (POST /plans/{planId}/claim-peer)",
-			ec.PeerClaimsRequired-ec.PeerClaimsDone)
+	if ec.RiposteAllowed && !ec.RiposteBreakResolved {
+		return errors.New(
+			"preparer must first break or surrender the requested peer (POST /plans/{planId}/riposte-break)",
+		)
 	}
 	return nil
 }
@@ -112,18 +115,38 @@ func (ecHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"fair-trade":    fairTradeHandler(deps.Q, deps.Manager),
 		"messy-break":   messyBreakHandler(deps.Q, deps.Manager),
-		"claim-peer":    ecClaimPeerHandler(deps),
 		"riposte-break": ecRiposteBreakHandler(deps),
 	}
 }
 
-// MaxChoices: up to (result − difficulty) make options; up to (difficulty −
-// result) mar options.
-func (ecHandler) MaxChoices(result string, rollResult, difficulty int16) int {
-	if result == makeOutcome {
-		return int(rollResult - difficulty)
+// ecMakeLevels / ecMarLevels map each option to its rules "level" — the number
+// printed on the rules card. The chosen option's level may not exceed the
+// player's margin (result−difficulty for make; difficulty−result for mar). Make
+// starts at 0 (Messy is forced even on a bare make); mar starts at 1 (a mar
+// always falls short by ≥1).
+var (
+	ecMakeLevels = map[string]int16{"messy": 0, "legal": 1, "conspiracy": 2}
+	ecMarLevels  = map[string]int16{"fair_trade": 1, "riposte": 2, "forfeit": 3}
+)
+
+// ValidateChoices enforces the EC rule: choose exactly one option, and its level
+// may not exceed the margin between the result and the difficulty.
+func (ecHandler) ValidateChoices(result string, rollResult, difficulty int16, choices []string) error {
+	if len(choices) != 1 {
+		return errors.New("choose exactly one option")
 	}
-	return int(difficulty - rollResult)
+	levels, margin := ecMakeLevels, rollResult-difficulty
+	if result == marOutcome {
+		levels, margin = ecMarLevels, difficulty-rollResult
+	}
+	level, ok := levels[choices[0]]
+	if !ok {
+		return fmt.Errorf("unknown option %q", choices[0])
+	}
+	if level > margin {
+		return fmt.Errorf("option %q is beyond your margin of %d — pick a lower option", choices[0], margin)
+	}
+	return nil
 }
 
 // ecLog emits an Exchange Courtiers action-log entry anchored to the plan row.
@@ -200,14 +223,14 @@ func applyExchangeCourtiersMake(
 
 // ── Mar (target-driven) ─────────────────────────────────────────────────────
 
-// applyExchangeCourtiersMar records the target player's mar choices:
-//   - "fair_trade" → the trade goes through anyway: the targeted peer still
-//     passes to the preparer (inline).
-//   - "forfeit"    → the target claims one of the preparer's peers.
-//   - "riposte"    → the target claims one of the preparer's peers; the
-//     preparer may break it first (riposte-break route).
-//
-// Each riposte/forfeit adds one required peer-claim, performed via claim-peer.
+// applyExchangeCourtiersMar records the target player's single mar choice. All
+// three act on the requested peer (FairTradeAssetID), which the target named in
+// the pre-roll trade:
+//   - "fair_trade" → the offered swap goes through: targeted peer → preparer,
+//     requested peer → target (inline).
+//   - "forfeit"    → the target takes the requested peer (inline); no swap.
+//   - "riposte"    → the preparer may break the requested peer first, then it
+//     passes to the target (deferred to the riposte-break route).
 func applyExchangeCourtiersMar(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -241,23 +264,75 @@ func applyExchangeCourtiersMar(
 			ecLog(ctx, deps, plan, model.SeverityImportant,
 				fmt.Sprintf("A fair trade: %s passed to %s after all.",
 					assetMark(ta.Name), playerDisplayName(ctx, deps.Q, recipient)))
+			// Second leg: the peer the target named from the preparer's retinue
+			// passes back to them, completing the swap they offered pre-roll. If
+			// no offer was made (the preparer skipped straight to the roll), only
+			// the targeted peer changes hands.
+			if ec.FairTradeAssetID != nil {
+				if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+					ID:      *ec.FairTradeAssetID,
+					OwnerID: *plan.TargetPlayerID,
+				}); err != nil {
+					return err
+				}
+				oa, _ := deps.Q.GetAssetByID(ctx, *ec.FairTradeAssetID)
+				broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+					Asset:      oa,
+					OldOwnerID: plan.PreparerID,
+					NewOwnerID: *plan.TargetPlayerID,
+				})
+				ecLog(ctx, deps, plan, model.SeverityImportant,
+					fmt.Sprintf("%s received %s in exchange.",
+						playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID), assetMark(oa.Name)))
+			}
 		case "forfeit":
-			ec.PeerClaimsRequired++
+			// The target takes the requested peer outright; no swap.
+			if ec.FairTradeAssetID != nil {
+				if err := ecGivePeerToTarget(ctx, deps, plan, *ec.FairTradeAssetID); err != nil {
+					return err
+				}
+			}
 		case "riposte":
-			ec.PeerClaimsRequired++
+			// The preparer gets first crack at the requested peer before it
+			// passes to the target — deferred to the riposte-break route.
 			ec.RiposteAllowed = true
 		}
 	}
-	// The target has now made their mar choices. Advance the cursor: a
-	// forfeit/riposte leaves peer claims outstanding (still target-side); a
-	// fair_trade-only mar leaves no trace, so resolution is done. This phase
-	// advance is what lets the WaitingOnBar stop blocking on the target without
-	// a separate "mar choices submitted" marker.
-	if ec.PeerClaimsRequired > 0 {
-		ec.Phase = gamepkg.ECPhasePeerClaims
+	// Advance the cursor: a riposte still owes the preparer's break/surrender
+	// step (which performs the transfer); fair_trade and forfeit both resolve
+	// inline, so they're done. This is what lets the WaitingOnBar stop blocking
+	// on the target without a separate "mar choices submitted" marker.
+	if ec.RiposteAllowed {
+		ec.Phase = gamepkg.ECPhaseRiposte
 	} else {
 		ec.Phase = gamepkg.ECPhaseDone
 	}
+	return nil
+}
+
+// ecGivePeerToTarget transfers a peer from the preparer to the target player,
+// broadcasting the change and logging it. Used by the mar forfeit and riposte
+// paths, where the target takes the peer they requested in the pre-roll trade.
+func ecGivePeerToTarget(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, assetID int64) error {
+	if plan.TargetPlayerID == nil {
+		return nil
+	}
+	if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		ID:      assetID,
+		OwnerID: *plan.TargetPlayerID,
+	}); err != nil {
+		return err
+	}
+	a, _ := deps.Q.GetAssetByID(ctx, assetID)
+	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
+		Asset:      a,
+		OldOwnerID: plan.PreparerID,
+		NewOwnerID: *plan.TargetPlayerID,
+	})
+	ecLog(ctx, deps, plan, model.SeverityImportant,
+		fmt.Sprintf("%s took the requested peer %s from %s.",
+			playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID), assetMark(a.Name),
+			playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 	return nil
 }
 
@@ -267,9 +342,13 @@ func applyExchangeCourtiersMar(
 //
 // Exchange Courtiers only. Three sub-actions via the body:
 //
-//	{"action": "offer",   "offered_asset_id": 123} — target player offers a peer
-//	{"action": "accept"}                           — preparer accepts; assets exchanged
+//	{"action": "offer",   "offered_asset_id": 123} — target names a peer in the
+//	                                                  preparer's retinue to receive
+//	{"action": "accept"}                           — preparer accepts; peers swapped
 //	{"action": "decline"}                          — preparer declines; dice roll created
+//
+// Per the rules the target "indicates a peer in your [the preparer's] retinue
+// that would serve as a fair trade"; accepting swaps it for the targeted peer.
 func fairTradeHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, q)
@@ -305,7 +384,7 @@ func fairTradeHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 		switch body.Action {
 		case "offer":
-			offerFairTrade(r, ctx, w, q, &resData, plan, player, body.OfferedAssetID)
+			offerFairTrade(r, ctx, w, q, manager, &resData, plan, player, body.OfferedAssetID)
 		case "accept":
 			acceptFairTrade(r, ctx, w, q, &resData, plan, player, manager, game)
 		case "decline":
@@ -318,7 +397,7 @@ func fairTradeHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc {
 
 func offerFairTrade(
 	r *http.Request,
-	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
+	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries, manager *hub.Manager,
 	resData *ResolutionData, plan *dbgen.Plan, player *dbgen.Player,
 	offeredAssetID *int64,
 ) {
@@ -335,8 +414,10 @@ func offerFairTrade(
 		respondErr(w, http.StatusNotFound, "offered asset not found")
 		return
 	}
-	if asset.OwnerID != player.ID {
-		respondErr(w, http.StatusForbidden, "you can only offer your own assets")
+	// The rules have the target indicate a peer in the *preparer's* retinue to
+	// receive in exchange for the targeted peer — not one of their own.
+	if asset.OwnerID != plan.PreparerID {
+		respondErr(w, http.StatusForbidden, "the fair trade must name one of the preparer's peers")
 		return
 	}
 	if asset.AssetType != model.AssetPeer {
@@ -348,6 +429,11 @@ func offerFairTrade(
 		respondInternalErr(w, r, "could not save offer", err)
 		return
 	}
+	// Nudge the other clients (the preparer, who now owes accept/decline) to
+	// refetch — only the offering target gets this HTTP response.
+	broadcastEvent(manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+		PlanID: plan.ID,
+	})
 	respond(w, http.StatusOK, map[string]any{
 		"plan_id":          plan.ID,
 		"offered_asset_id": offeredAssetID,
@@ -453,8 +539,25 @@ func declineFairTrade(
 		respondErr(w, http.StatusForbidden, "only the preparer can accept or decline")
 		return
 	}
-	declined := false
 	ec := resData.EnsureExchangeCourtiers()
+	// The target must name a peer before the roll (the rules' pre-roll step), so
+	// forfeit/riposte have a peer to take. The only exception is a preparer with
+	// no peers to request — then the roll proceeds with nothing to surrender.
+	if ec.FairTradeAssetID == nil {
+		peers, err := q.CountPeerAssets(ctx, dbgen.CountPeerAssetsParams{
+			GameID: plan.GameID, OwnerID: plan.PreparerID,
+		})
+		if err != nil {
+			respondInternalErr(w, r, "could not count preparer peers", err)
+			return
+		}
+		if peers > 0 {
+			respondErr(w, http.StatusConflict,
+				"the target must propose a fair trade before you can roll")
+			return
+		}
+	}
+	declined := false
 	ec.FairTradeAccepted = &declined
 	ec.Phase = gamepkg.ECPhaseRoll // declined → dice roll + post-roll choice
 	if err := saveResolutionData(ctx, q, plan.ID, *resData); err != nil {
@@ -561,6 +664,11 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
+		// Nudge other clients (the preparer, who can now complete) to refetch the
+		// plan — the asset events alone don't carry the resolution_data change.
+		broadcastEvent(manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+			PlanID: plan.ID,
+		})
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
 			"marginalia_id": m.ID,
@@ -569,106 +677,15 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 	}
 }
 
-// ── Claim Peer (mar riposte / forfeit) ────────────────────────────────────────
-
-// ecClaimPeerHandler handles POST /api/plans/:planId/claim-peer.
-//
-// On a mar, the target player takes one of the preparer's peers (riposte or
-// forfeit). Each chosen riposte/forfeit option allows one claim; completion is
-// blocked until all claims are made. Request body: {"asset_id": A}
-func ecClaimPeerHandler(deps *PlanDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanExchangeCourtiers)
-		if !ok {
-			return
-		}
-		ctx := r.Context()
-		if plan.TargetPlayerID == nil || player.ID != *plan.TargetPlayerID {
-			respondErr(w, http.StatusForbidden, "only the target player claims a peer")
-			return
-		}
-		if !planRollIsMar(ctx, deps.Q, plan) {
-			respondErr(w, http.StatusConflict, "claim-peer is only available on a mar result")
-			return
-		}
-
-		var body struct {
-			AssetID int64 `json:"asset_id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 {
-			respondErr(w, http.StatusBadRequest, "asset_id is required")
-			return
-		}
-
-		resData := loadResolutionData(plan.ResolutionData)
-		ec := resData.EnsureExchangeCourtiers()
-		if ec.PeerClaimsDone >= ec.PeerClaimsRequired {
-			respondErr(w, http.StatusConflict, "no peer claims remain for this plan")
-			return
-		}
-
-		asset, err := deps.Q.GetAssetByID(ctx, body.AssetID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "asset not found")
-			return
-		}
-		if asset.GameID != plan.GameID || asset.OwnerID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "you may only claim one of the preparer's peers")
-			return
-		}
-		if asset.AssetType != model.AssetPeer {
-			respondErr(w, http.StatusBadRequest, "asset must be a peer")
-			return
-		}
-		if asset.IsDestroyed {
-			respondErr(w, http.StatusConflict, "that peer has been destroyed")
-			return
-		}
-
-		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-			ID:      asset.ID,
-			OwnerID: player.ID,
-		}); err != nil {
-			respondInternalErr(w, r, "could not transfer peer", err)
-			return
-		}
-
-		ec.PeerClaimsDone++
-		if ec.PeerClaimsDone >= ec.PeerClaimsRequired {
-			ec.Phase = gamepkg.ECPhaseDone // all peer claims taken
-		}
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, r, "could not record claim", err)
-			return
-		}
-
-		updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-			Asset:      updated,
-			OldOwnerID: plan.PreparerID,
-			NewOwnerID: player.ID,
-		})
-		ecLog(ctx, deps, plan, model.SeverityImportant,
-			fmt.Sprintf("%s seized the peer %s from %s.",
-				playerDisplayName(ctx, deps.Q, player.ID), assetMark(asset.Name),
-				playerDisplayName(ctx, deps.Q, plan.PreparerID)))
-
-		respond(w, http.StatusOK, map[string]any{
-			"plan_id":       plan.ID,
-			"asset_id":      asset.ID,
-			"claims_done":   ec.PeerClaimsDone,
-			"claims_needed": ec.PeerClaimsRequired,
-		})
-	}
-}
-
 // ── Riposte Break ─────────────────────────────────────────────────────────────
 
 // ecRiposteBreakHandler handles POST /api/plans/:planId/riposte-break.
 //
-// Riposte lets the preparer break one of their own peers before it is claimed.
-// Optional and only available when "riposte" was chosen. Request body:
-// {"marginalia_id": M}
+// On a riposte the preparer acts on the requested peer (the one the target named
+// in the pre-roll trade) before it passes to them: break a marginalia on it
+// ({"marginalia_id": M}) or surrender it intact ({"action": "skip"}). Either
+// way the peer then transfers to the target and the plan can complete. Only
+// available when "riposte" was chosen, and only once.
 func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanExchangeCourtiers)
@@ -686,16 +703,47 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "riposte was not chosen for this plan")
 			return
 		}
+		if ec.RiposteBreakResolved {
+			respondErr(w, http.StatusConflict, "the riposte break has already been resolved")
+			return
+		}
+		if ec.FairTradeAssetID == nil {
+			respondErr(w, http.StatusConflict, "no peer was requested, so there is nothing to surrender")
+			return
+		}
+		requestedID := *ec.FairTradeAssetID
 
 		var body struct {
-			MarginaliaID int64 `json:"marginalia_id"`
+			Action       string `json:"action"`
+			MarginaliaID int64  `json:"marginalia_id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MarginaliaID == 0 {
-			respondErr(w, http.StatusBadRequest, "marginalia_id is required")
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		ctx := r.Context()
+
+		// Skip: the preparer surrenders the requested peer intact.
+		if body.Action == "skip" {
+			if err := ecGivePeerToTarget(ctx, deps, plan, requestedID); err != nil {
+				respondInternalErr(w, r, "could not surrender peer", err)
+				return
+			}
+			ec.RiposteBreakResolved = true
+			ec.Phase = gamepkg.ECPhaseDone
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondInternalErr(w, r, "could not record riposte skip", err)
+				return
+			}
+			broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+				PlanID: plan.ID,
+			})
+			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "skipped": true})
 			return
 		}
 
-		ctx := r.Context()
+		if body.MarginaliaID == 0 {
+			respondErr(w, http.StatusBadRequest, "marginalia_id is required (or action 'skip')")
+			return
+		}
+
 		m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "marginalia not found")
@@ -705,21 +753,22 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "marginalia is already torn")
 			return
 		}
-		asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
+		// The break must land on the requested peer — that is the one being
+		// surrendered ("your peer, whom you may first break").
+		if m.AssetID != requestedID {
+			respondErr(w, http.StatusBadRequest, "the break must be on the requested peer")
+			return
+		}
+		asset, err := deps.Q.GetAssetByID(ctx, requestedID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "asset not found")
 			return
 		}
-		if asset.GameID != plan.GameID || asset.OwnerID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "you may only break one of your own peers")
-			return
-		}
-		// Riposte damages the peer before the target takes it — it must survive
-		// to be claimed, so refuse to tear its last intact marginalia (which
-		// would destroy it and deadlock the pending claim).
+		// The peer must survive the break so it can still pass to the target, so
+		// refuse to tear its last intact marginalia (which would destroy it).
 		if intact, cErr := deps.Q.CountIntactMarginalia(ctx, asset.ID); cErr == nil && intact <= 1 {
 			respondErr(w, http.StatusConflict,
-				"cannot break the peer's last marginalia — it must survive to be claimed")
+				"cannot break the peer's last marginalia — it must survive to be surrendered")
 			return
 		}
 
@@ -731,7 +780,20 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 		ecLog(ctx, deps, plan, model.SeverityDefault,
 			fmt.Sprintf("The preparer damaged their own %s before surrendering it.%s", assetMark(asset.Name),
 				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
+		if err := ecGivePeerToTarget(ctx, deps, plan, requestedID); err != nil {
+			respondInternalErr(w, r, "could not surrender peer", err)
+			return
+		}
+		ec.RiposteBreakResolved = true
+		ec.Phase = gamepkg.ECPhaseDone
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record riposte break", err)
+			return
+		}
 
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+			PlanID: plan.ID,
+		})
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
 			"marginalia_id": m.ID,
@@ -771,8 +833,12 @@ func (ecHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 			return blockTarget, true
 		}
 		return model.RowState{}, false
-	case gamepkg.ECPhaseMessyBreak, gamepkg.ECPhasePeerClaims:
-		// Target owes the messy break / remaining peer claims.
+	case gamepkg.ECPhaseRiposte:
+		// The preparer must break or surrender the requested peer; the row waits
+		// on them (generic), not the target.
+		return model.RowState{}, false
+	case gamepkg.ECPhaseMessyBreak:
+		// Target owes the messy break.
 		return blockTarget, true
 	case gamepkg.ECPhaseDone:
 		// Resolution complete; the preparer completes (generic).

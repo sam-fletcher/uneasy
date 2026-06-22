@@ -154,7 +154,7 @@
 
 		{#if active === 'rankings'}
 			<p>After the prologue, everyone is ranked against each other in Power, Knowledge, and Esteem.</p>
-			<p>Your rank feeds into the dice rolls.</p>
+			<p>The relevant rank feeds into the dice rolls for plans.</p>
 			<p>The ranks will change after rows 4, 8, and 12 based on each player's <em>plans</em> in the category.</p>
 
 			<figure class="diagram">

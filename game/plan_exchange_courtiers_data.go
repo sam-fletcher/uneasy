@@ -25,9 +25,12 @@ const (
 	// ECPhaseMessyBreak — a made roll chose "messy": the target must break one
 	// of the preparer's assets before the plan can complete.
 	ECPhaseMessyBreak ExchangeCourtiersPhase = "messy_break"
-	// ECPhasePeerClaims — a marred roll chose forfeit/riposte: the target claims
-	// the preparer's peer(s). Held until PeerClaimsDone == PeerClaimsRequired.
-	ECPhasePeerClaims ExchangeCourtiersPhase = "peer_claims"
+	// ECPhaseRiposte — a marred roll chose "riposte": the preparer may break the
+	// requested peer before it passes to the target (or surrender it intact).
+	// Held until the preparer acts (RiposteBreakResolved), which also performs
+	// the transfer. "forfeit" needs no such step — it transfers inline — and
+	// "fair_trade" resolves inline too, so both go straight to ECPhaseDone.
+	ECPhaseRiposte ExchangeCourtiersPhase = "riposte"
 	// ECPhaseDone — resolution is mechanically complete; the preparer completes
 	// the plan. Rides the generic plan_resolving case.
 	ECPhaseDone ExchangeCourtiersPhase = "done"
@@ -41,8 +44,10 @@ type ExchangeCourtiersResolutionData struct {
 	// Use CurrentPhase() to read it (maps the zero value to ECPhaseFairTrade).
 	Phase ExchangeCourtiersPhase `json:"phase,omitempty"`
 
-	// FairTradeAssetID is the asset the target offers back during the
-	// fair-trade pre-roll. Set when the target submits the offer.
+	// FairTradeAssetID is the peer in the *preparer's* retinue that the target
+	// names during the fair-trade pre-roll — the "requested" peer. Set when the
+	// target submits the offer. It is the peer the target receives on a fair
+	// trade, and the peer they take on a riposte/forfeit.
 	FairTradeAssetID *int64 `json:"fair_trade_asset_id,omitempty"`
 	// FairTradeAccepted is set when the preparer either accepts or declines
 	// the offered trade. nil = no decision yet.
@@ -54,16 +59,19 @@ type ExchangeCourtiersResolutionData struct {
 	MessyBreakDone bool `json:"messy_break_done,omitempty"`
 
 	// ── Mar fields (target-driven) ────────────────────────────────────────
-	// On a mar the *target* player chooses options. "fair_trade" transfers
-	// the targeted peer to the preparer inline. "riposte"/"forfeit" each let
-	// the target claim one of the preparer's peers, so PeerClaimsRequired is
-	// the number of riposte+forfeit options chosen and PeerClaimsDone counts
-	// completed claims; completion is gated until they match.
-	PeerClaimsRequired int16 `json:"peer_claims_required,omitempty"`
-	PeerClaimsDone     int16 `json:"peer_claims_done,omitempty"`
-	// RiposteAllowed is set when "riposte" was chosen; it enables the
-	// preparer's optional pre-break of one of their peers (riposte-break).
+	// On a mar the *target* player chooses one option, all of which act on the
+	// requested peer (FairTradeAssetID): "fair_trade" completes the offered swap
+	// inline; "forfeit" hands the requested peer to the target inline; "riposte"
+	// lets the preparer first break the requested peer, then it passes to the
+	// target (see RiposteAllowed / RiposteBreakResolved).
+	//
+	// RiposteAllowed is set when "riposte" was chosen; it gates the preparer's
+	// break-or-surrender step (the riposte-break route).
 	RiposteAllowed bool `json:"riposte_allowed,omitempty"`
+	// RiposteBreakResolved flips true once the preparer has taken their riposte
+	// turn — either breaking the requested peer or surrendering it intact — which
+	// also performs the transfer to the target.
+	RiposteBreakResolved bool `json:"riposte_break_resolved,omitempty"`
 }
 
 // CurrentPhase returns Phase, mapping the zero value to the opening

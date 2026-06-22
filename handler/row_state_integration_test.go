@@ -516,18 +516,18 @@ func TestComputeRowState_AwaitCourtierResponse(t *testing.T) {
 	})
 	expectTarget("messy break is the target's")
 
-	// Messy break done, peer claims outstanding (phase = peer_claims) → target.
+	// Riposte chosen, break/surrender outstanding (phase = riposte) → the
+	// PREPARER owes the break-or-surrender step, so the row rides generic.
 	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
 		e.MessyBreakDone = true
-		e.Phase = gamepkg.ECPhasePeerClaims
-		e.PeerClaimsRequired = 2
-		e.PeerClaimsDone = 1
+		e.Phase = gamepkg.ECPhaseRiposte
+		e.RiposteAllowed = true
 	})
-	expectTarget("peer claims are the target's")
+	expectGeneric("riposte break/surrender is the preparer's")
 
-	// All claims done (phase = done) → generic (preparer completes).
+	// Riposte resolved (phase = done) → generic (preparer completes).
 	mutate(func(e *gamepkg.ExchangeCourtiersResolutionData) {
-		e.PeerClaimsDone = 2
+		e.RiposteBreakResolved = true
 		e.Phase = gamepkg.ECPhaseDone
 	})
 	expectGeneric("nothing target-side outstanding → generic")

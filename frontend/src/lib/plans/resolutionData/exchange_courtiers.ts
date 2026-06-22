@@ -13,6 +13,10 @@ export interface ExchangeCourtiersResolutionData {
 	peer_claims_done?: number;
 	/** Set when "riposte" was chosen — enables the preparer's optional break. */
 	riposte_allowed?: boolean;
+	/** True once the preparer has taken their riposte turn (broke a peer or skipped). */
+	riposte_break_resolved?: boolean;
+	/** The peer the preparer broke; the target must claim this same peer. */
+	riposte_claim_asset_id?: number | null;
 }
 
 export function parseExchangeCourtiersData(

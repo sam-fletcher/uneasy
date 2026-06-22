@@ -138,11 +138,13 @@ func makeChoiceAllowedNonPreparer(
 }
 
 // enforceChoiceBudget writes a 422 and returns false if the submitted choices
-// exceed the plan's per-result option budget (handlers opt in via ChoiceLimiter).
-// The limit is only applied when the roll's result is internally consistent
-// with the claimed outcome (make ⇒ result ≥ difficulty), so a forced/legacy
-// roll carrying a placeholder result never trips a spurious limit. Returns true
-// (proceed) when there's no limiter, no usable roll, or the budget is met.
+// violate the plan's per-result option rules. Handlers opt in via ChoiceLimiter
+// (a simple count cap) or ChoiceValidator (full validation — level cap +
+// single-select, e.g. Exchange Courtiers); ChoiceValidator wins if both exist.
+// Rules are only applied when the roll's result is internally consistent with
+// the claimed outcome (make ⇒ result ≥ difficulty), so a forced/legacy roll
+// carrying a placeholder result never trips a spurious limit. Returns true
+// (proceed) when there's no limiter/validator, no usable roll, or the rules pass.
 func enforceChoiceBudget(
 	w http.ResponseWriter,
 	h PlanHandler,
@@ -150,8 +152,7 @@ func enforceChoiceBudget(
 	result string,
 	choices []string,
 ) bool {
-	lim, ok := h.(ChoiceLimiter)
-	if !ok || roll == nil || roll.Result == nil {
+	if roll == nil || roll.Result == nil {
 		return true
 	}
 	diff := roll.Difficulty
@@ -161,6 +162,19 @@ func enforceChoiceBudget(
 	res := *roll.Result
 	consistent := (result == makeOutcome && res >= diff) || (result == marOutcome && res < diff)
 	if !consistent {
+		return true
+	}
+	// A full validator (level cap + single-select for Exchange Courtiers) takes
+	// precedence over the simple count cap; handlers implement one or the other.
+	if v, ok := h.(ChoiceValidator); ok {
+		if err := v.ValidateChoices(result, res, diff, choices); err != nil {
+			respondErr(w, http.StatusUnprocessableEntity, err.Error())
+			return false
+		}
+		return true
+	}
+	lim, ok := h.(ChoiceLimiter)
+	if !ok {
 		return true
 	}
 	maxChoices := lim.MaxChoices(result, res, diff)

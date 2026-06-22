@@ -97,8 +97,12 @@ func TestPlanLifecycle_ExchangeCourtiers_MessyBreakRestricted(t *testing.T) {
 	roll := h.resolve(plan.ID)
 	assert.Nil(t, roll, "EC defers its roll behind the fair-trade step")
 
-	declinePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/fair-trade"
-	code, body := h.post(0, declinePath, map[string]any{"action": "decline"})
+	// The target (P2) must name one of the preparer's peers before the preparer
+	// can decline and roll (the rules' pre-roll step).
+	ftPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/fair-trade"
+	code, body := h.post(1, ftPath, map[string]any{"action": "offer", "offered_asset_id": preparerPeer})
+	require.Equalf(t, http.StatusOK, code, "offer: %v", body)
+	code, body = h.post(0, ftPath, map[string]any{"action": "decline"})
 	require.Equalf(t, http.StatusOK, code, "decline: %v", body)
 	// fair-trade decline returns the freshly-created dice roll.
 	rollMap, _ := body["roll"].(map[string]any)
