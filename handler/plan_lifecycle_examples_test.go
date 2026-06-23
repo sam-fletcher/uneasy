@@ -119,11 +119,11 @@ func TestPlanLifecycle_ExchangeCourtiers_MessyBreakRestricted(t *testing.T) {
 	assert.Equalf(t, http.StatusForbidden, code,
 		"messy-break on non-preparer asset should 403, got %d: %v", code, body)
 
-	// Now break a preparer peer's marginalia — should succeed.
+	// Now break a preparer peer's marginalia — should succeed. The messy break is
+	// the final step, so the plan auto-completes (no separate Complete call).
 	code, body = h.post(1, mbPath, map[string]any{"marginalia_id": mPreparer.ID})
 	require.Equalf(t, http.StatusOK, code, "messy-break on preparer asset: %v", body)
-
-	h.complete(plan.ID)
+	assert.Equal(t, true, body["resolved"], "messy break should auto-resolve the plan")
 
 	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)

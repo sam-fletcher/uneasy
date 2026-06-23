@@ -7,7 +7,7 @@
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
-		preparePlan, fairTrade, makeChoice, completePlan, messyBreak,
+		preparePlan, fairTrade, makeChoice, messyBreak,
 		ecRiposteBreak,
 		type Plan, type Asset, type Player, type DiceRoll,
 	} from '$lib/api';
@@ -168,7 +168,6 @@
 	// ── Resolve state ─────────────────────────────────────────────────────────
 
 	let resError = $state('');
-	let resBusy = $state(false);
 
 	let ftOfferedAssetID = $state<number | null>(null);
 	let ftOfferBusy = $state(false);
@@ -254,17 +253,6 @@
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not apply choices.';
 		} finally { choicesBusy = false; }
-	}
-
-	async function onComplete(p: Plan) {
-		if (resBusy) return;
-		resBusy = true; resError = '';
-		try {
-			await completePlan(p.id);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not complete plan.';
-		} finally { resBusy = false; }
 	}
 
 	async function onMessyBreak(p: Plan) {
@@ -546,18 +534,12 @@
 					</p>
 				{/if}
 
-			{:else if isPreparer}
-				<div class="complete-section">
-					{#if existingChoices.length > 0}
-						<p class="choices-applied">Choices applied: {existingChoices.join(', ')}</p>
-					{/if}
-					<p class="complete-note">
-						Write any follow-scene narration in the chat, then complete the plan.
-					</p>
-					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
-						{resBusy ? '…' : 'Complete plan'}
-					</button>
-				</div>
+			{:else}
+				<!-- The make/mar choice (and any messy/riposte sub-step) is the last
+				     action: the server resolves the plan automatically once nothing
+				     remains, so there's no manual "Complete" step. This note only
+				     shows in the brief window before the resolved state arrives. -->
+				<p class="ft-prompt muted">Resolving…</p>
 			{/if}
 
 		{:else if !isPreparer && !isTarget}

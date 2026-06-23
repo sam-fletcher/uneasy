@@ -95,9 +95,12 @@ func TestExchangeCourtiers_Mar_Forfeit_TakesRequestedPeer(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "forfeit: %v", body)
 
 	// Forfeit takes the requested peer outright and inline — nothing further is
-	// owed, so the row rides the generic case naming the PREPARER, who completes.
-	h.assertWaitees("forfeit done, preparer completes",
-		model.RowStatePlanResolving, plan.PreparerID)
+	// owed, so the plan auto-completes from the choice itself (no separate
+	// "Complete plan" step), and the response says so.
+	assert.Equal(t, true, body["resolved"], "forfeit should auto-resolve the plan")
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status, "plan should be resolved without a Complete call")
 
 	// The target took the peer they requested; their own targeted peer stays put
 	// (no swap on a forfeit).
@@ -107,8 +110,6 @@ func TestExchangeCourtiers_Mar_Forfeit_TakesRequestedPeer(t *testing.T) {
 	tp, err := h.q.GetAssetByID(ctx, targetPeer)
 	require.NoError(t, err)
 	assert.Equal(t, targetID, tp.OwnerID, "targeted peer stays with the target (no swap)")
-
-	h.complete(plan.ID)
 }
 
 // ecOffer posts a fair-trade offer as the target, naming one of the preparer's
@@ -203,9 +204,13 @@ func TestExchangeCourtiers_Mar_FairTrade_CompletesOfferedSwap(t *testing.T) {
 	h.forceRoll(int64(rollMap["id"].(float64)), "mar", 0)
 
 	// On the mar the target picks "A Fair Trade" — the offered swap goes through.
+	// fair_trade resolves inline, so the plan auto-completes from the choice.
 	code, body = ecMakeChoice(t, h, targetIdx, plan.ID, []string{"fair_trade"})
 	require.Equalf(t, http.StatusOK, code, "target fair_trade: %v", body)
-	h.complete(plan.ID)
+	assert.Equal(t, true, body["resolved"], "fair_trade should auto-resolve the plan")
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status)
 
 	tp, err := h.q.GetAssetByID(ctx, targetPeer)
 	require.NoError(t, err)
@@ -277,14 +282,18 @@ func TestExchangeCourtiers_Mar_Riposte_BreaksThenSurrendersRequestedPeer(t *test
 	code, body = h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": decoyMarg.ID})
 	require.Equalf(t, http.StatusBadRequest, code, "breaking a non-requested peer should 400: %v", body)
 
-	// Break the requested peer, which then passes to the target.
+	// Break the requested peer, which then passes to the target. The riposte
+	// break is the final mar step, so the plan auto-completes here.
 	code, body = h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": firstMarg.ID})
 	require.Equalf(t, http.StatusOK, code, "riposte-break: %v", body)
+	assert.Equal(t, true, body["resolved"], "riposte break should auto-resolve the plan")
 	torn, err := h.q.GetMarginaliaByID(ctx, firstMarg.ID)
 	require.NoError(t, err)
 	assert.True(t, torn.IsTorn, "the requested peer's marginalia should be torn")
 
-	h.complete(plan.ID)
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status)
 
 	claimed, err := h.q.GetAssetByID(ctx, requestedPeer)
 	require.NoError(t, err)
@@ -308,11 +317,16 @@ func TestExchangeCourtiers_Mar_Riposte_SurrenderIntact(t *testing.T) {
 	code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"riposte"})
 	require.Equalf(t, http.StatusOK, code, "riposte: %v", body)
 
-	// Preparer surrenders intact; the requested peer passes to the target.
+	// Preparer surrenders intact; the requested peer passes to the target and the
+	// plan auto-completes (no separate Complete step).
 	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/riposte-break"
 	code, body = h.post(preparerIdx, breakPath, map[string]any{"action": "skip"})
 	require.Equalf(t, http.StatusOK, code, "riposte surrender: %v", body)
-	h.complete(plan.ID)
+	assert.Equal(t, true, body["resolved"], "riposte surrender should auto-resolve the plan")
+
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status)
 
 	claimed, err := h.q.GetAssetByID(ctx, requestedPeer)
 	require.NoError(t, err)

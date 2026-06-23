@@ -143,6 +143,22 @@ type ResolvingWaitees interface {
 	ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool)
 }
 
+// AutoCompleter is an optional PlanHandler capability: when a make/mar choice
+// (or a post-choice sub-step) leaves the plan mechanically finished, the plan
+// resolves itself instead of waiting for the preparer to click "Complete".
+//
+// The make-choice flow and a plan's terminal sub-step routes call it via
+// maybeAutoComplete, which only finalizes when CanComplete also passes (no
+// sub-step still owed) — so returning true at a non-terminal moment is safe.
+//
+// Exchange Courtiers uses it: its ending view offers no decision and no
+// information the action log doesn't already carry, so the extra click was pure
+// friction. Plans that want the preparer to pause (e.g. to narrate a
+// follow-scene before the row advances) simply omit this interface.
+type AutoCompleter interface {
+	AutoCompleteAfterChoice(plan *dbgen.Plan, resData *ResolutionData) bool
+}
+
 // Per-player submission-state convention (read before adding a plan sub-flow).
 //
 // When a plan's resolution waits on one or more players to each submit

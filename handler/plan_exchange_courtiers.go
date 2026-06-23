@@ -95,6 +95,17 @@ func (ecHandler) ApplyChoice(
 	return applyExchangeCourtiersMar(ctx, deps, plan, choices, resData)
 }
 
+// AutoCompleteAfterChoice resolves Exchange Courtiers without a manual Complete
+// click once its resolution cursor reaches ECPhaseDone — the ending view holds
+// no decision, and the asset transfers already emitted their own log entries.
+// Every terminal path lands on ECPhaseDone (a bare make/mar choice, or the
+// messy-break / riposte-break sub-step that follows), so this covers them all;
+// the messy and riposte choices park on their own phases until the sub-step is
+// done, so they don't auto-complete early.
+func (ecHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, resData *ResolutionData) bool {
+	return resData.ExchangeCourtiers.CurrentPhase() == gamepkg.ECPhaseDone
+}
+
 func (ecHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	ec := resData.ExchangeCourtiers
 	if ec == nil {
@@ -664,15 +675,24 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			return
 		}
 
-		// Nudge other clients (the preparer, who can now complete) to refetch the
-		// plan — the asset events alone don't carry the resolution_data change.
-		broadcastEvent(manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
-			PlanID: plan.ID,
-		})
+		// The messy break is the final step of a made roll, so the plan resolves
+		// itself here. finalize fans out the resolved + row-state events; only
+		// nudge a plain choice-applied refetch in the (unexpected) case it didn't.
+		resolved, err := maybeAutoComplete(ctx, q, manager, ecHandler{}, plan, &resData, planResultString(ctx, q, plan))
+		if err != nil {
+			respondInternalErr(w, r, "could not complete plan", err)
+			return
+		}
+		if !resolved {
+			broadcastEvent(manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+				PlanID: plan.ID,
+			})
+		}
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
 			"marginalia_id": m.ID,
 			"asset_id":      asset.ID,
+			"resolved":      resolved,
 		})
 	}
 }
@@ -722,20 +742,7 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Skip: the preparer surrenders the requested peer intact.
 		if body.Action == "skip" {
-			if err := ecGivePeerToTarget(ctx, deps, plan, requestedID); err != nil {
-				respondInternalErr(w, r, "could not surrender peer", err)
-				return
-			}
-			ec.RiposteBreakResolved = true
-			ec.Phase = gamepkg.ECPhaseDone
-			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, r, "could not record riposte skip", err)
-				return
-			}
-			broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
-				PlanID: plan.ID,
-			})
-			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "skipped": true})
+			ecRiposteSurrender(ctx, w, r, deps, plan, &resData, requestedID)
 			return
 		}
 
@@ -791,16 +798,66 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
-			PlanID: plan.ID,
-		})
+		resolved, err := ecAutoCompleteAfterRiposte(ctx, deps, plan, &resData)
+		if err != nil {
+			respondInternalErr(w, r, "could not complete plan", err)
+			return
+		}
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
 			"marginalia_id": m.ID,
 			"asset_id":      asset.ID,
 			"destroyed":     destroyed,
+			"resolved":      resolved,
 		})
 	}
+}
+
+// ecRiposteSurrender handles the riposte "skip" sub-action: the preparer
+// surrenders the requested peer intact, which transfers it to the target and
+// lands the plan on ECPhaseDone, so it auto-completes.
+func ecRiposteSurrender(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+	deps *PlanDeps, plan *dbgen.Plan, resData *ResolutionData, requestedID int64,
+) {
+	if err := ecGivePeerToTarget(ctx, deps, plan, requestedID); err != nil {
+		respondInternalErr(w, r, "could not surrender peer", err)
+		return
+	}
+	ec := resData.EnsureExchangeCourtiers()
+	ec.RiposteBreakResolved = true
+	ec.Phase = gamepkg.ECPhaseDone
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
+		respondInternalErr(w, r, "could not record riposte skip", err)
+		return
+	}
+	resolved, err := ecAutoCompleteAfterRiposte(ctx, deps, plan, resData)
+	if err != nil {
+		respondInternalErr(w, r, "could not complete plan", err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "skipped": true, "resolved": resolved})
+}
+
+// ecAutoCompleteAfterRiposte resolves the plan once the preparer's riposte
+// break/surrender — the final mar step — is recorded. finalize fans out the
+// resolved + row-state events; if it didn't resolve (unexpected), fall back to a
+// plain choice-applied nudge so clients still refetch. Returns whether it
+// resolved the plan.
+func ecAutoCompleteAfterRiposte(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, resData *ResolutionData,
+) (bool, error) {
+	resolved, err := maybeAutoComplete(
+		ctx, deps.Q, deps.Manager, ecHandler{}, plan, resData, planResultString(ctx, deps.Q, plan))
+	if err != nil {
+		return false, err
+	}
+	if !resolved {
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+			PlanID: plan.ID,
+		})
+	}
+	return resolved, nil
 }
 
 // ResolvingWaitees narrows a resolving Exchange Courtiers to AwaitCourtierResponse

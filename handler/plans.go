@@ -782,19 +782,33 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// When the choice leaves nothing further to decide, plans that opt into
+		// auto-completion (Exchange Courtiers) resolve themselves here rather than
+		// waiting on a separate "Complete plan" click — finalize already fans out
+		// the resolved + row-state events, so other clients refetch.
+		resolved, err := maybeAutoComplete(ctx, s.Q, manager, h, plan, &resData, body.Result)
+		if err != nil {
+			respondInternalErr(w, r, "could not auto-complete plan", err)
+			return
+		}
+
 		// make-choice can mutate shared resolution state that other players are
 		// watching (e.g. the duel's phase flips to 'done' once the winner claims
 		// stakes). Only the acting client gets this HTTP response, so nudge
 		// everyone else to refetch the plan — otherwise their panel stays on the
-		// pre-choice "waiting" state until a manual page refresh.
-		broadcastEvent(manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
-			PlanID: plan.ID,
-		})
+		// pre-choice "waiting" state until a manual page refresh. Skip when we
+		// auto-resolved: the resolved broadcast above already triggers a refetch.
+		if !resolved {
+			broadcastEvent(manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+				PlanID: plan.ID,
+			})
+		}
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":              plan.ID,
 			"choices":              body.Choices,
 			"result":               body.Result,
+			"resolved":             resolved,
 			"messy_break_required": resData.ExchangeCourtiers != nil && resData.ExchangeCourtiers.MessyBreakRequired,
 		})
 	}
@@ -834,36 +848,85 @@ func CompletePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Determine result from roll outcome or existing plan result (fair trade).
-		resultStr := ""
-		roll, rollErr := s.Q.GetDiceRollByPlanID(ctx, &plan.ID)
-		if rollErr == nil && roll.Outcome != nil {
-			resultStr = *roll.Outcome
-		} else if plan.Result != nil {
-			resultStr = *plan.Result
-		}
+		resultStr := planResultString(ctx, s.Q, plan)
 		if resultStr == "" {
 			respondErr(w, http.StatusConflict, "cannot complete plan: no roll outcome and no stored result")
 			return
 		}
 
-		if err := s.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
-			ID:     plan.ID,
-			Result: &resultStr,
-		}); err != nil {
+		if err := finalizePlanResolution(ctx, s.Q, manager, plan, resultStr); err != nil {
 			respondInternalErr(w, r, "could not complete plan", err)
 			return
 		}
-
-		broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
-			PlanID: plan.ID,
-			Result: resultStr,
-		})
-		EmitPlanResolved(ctx, s.Q, manager, *plan, resultStr)
-		broadcastRowState(ctx, s.Q, manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,
 			"result":  resultStr,
 		})
 	}
+}
+
+// planResultString resolves a plan's outcome from its linked dice roll, falling
+// back to the stored plan.Result (set by roll-less paths like the EC fair-trade
+// accept). Returns "" when neither is available.
+func planResultString(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) string {
+	if roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID); err == nil && roll.Outcome != nil {
+		return *roll.Outcome
+	}
+	if plan.Result != nil {
+		return *plan.Result
+	}
+	return ""
+}
+
+// finalizePlanResolution marks a resolving plan resolved and fans out the
+// resolution events — the shared tail of the explicit CompletePlan endpoint and
+// the auto-completion paths (see maybeAutoComplete). Assumes CanComplete has
+// already passed and resultStr is non-empty ("make"/"mar"/"cancelled").
+func finalizePlanResolution(
+	ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan *dbgen.Plan, resultStr string,
+) error {
+	if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
+		ID:     plan.ID,
+		Result: &resultStr,
+	}); err != nil {
+		return err
+	}
+	broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
+		PlanID: plan.ID,
+		Result: resultStr,
+	})
+	EmitPlanResolved(ctx, q, manager, *plan, resultStr)
+	broadcastRowState(ctx, q, manager, plan.GameID)
+	return nil
+}
+
+// maybeAutoComplete resolves a plan in place when its handler opts into
+// auto-completion (AutoCompleter) and no sub-step remains owed (CanComplete).
+// It is called at a plan's terminal transitions — the make/mar choice and any
+// post-choice sub-step route — so a plan whose ending view holds no decision or
+// information (Exchange Courtiers) resolves itself instead of stranding the
+// preparer on a no-op "Complete" click. Returns true if it resolved the plan;
+// a no-op (false, nil) for handlers that don't opt in or still owe a step.
+func maybeAutoComplete(
+	ctx context.Context, q *dbgen.Queries, manager *hub.Manager,
+	h PlanHandler, plan *dbgen.Plan, resData *ResolutionData, resultStr string,
+) (bool, error) {
+	ac, ok := h.(AutoCompleter)
+	if !ok || !ac.AutoCompleteAfterChoice(plan, resData) {
+		return false, nil
+	}
+	if resultStr == "" {
+		return false, nil
+	}
+	// A still-owed sub-step (CanComplete error) just means "not ready to resolve
+	// yet", not a failure — the actor finishes via the plan's sub-step route,
+	// which calls back here once it lands on the terminal phase.
+	if h.CanComplete(plan, resData) != nil {
+		return false, nil //nolint:nilerr // not-ready sub-step, not an error
+	}
+	if err := finalizePlanResolution(ctx, q, manager, plan, resultStr); err != nil {
+		return false, err
+	}
+	return true, nil
 }
