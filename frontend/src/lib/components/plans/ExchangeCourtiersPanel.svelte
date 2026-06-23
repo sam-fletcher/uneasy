@@ -194,6 +194,12 @@
 			.filter(([, lvl]) => lvl > choiceMargin)
 			.map(([key]) => key);
 	});
+	// Why a locked tier can't be picked: it needs a margin at least its level.
+	function choiceLockReason(key: string): string | undefined {
+		if (!disabledChoiceKeys.includes(key)) return undefined;
+		const lvl = (rollOutcome === 'make' ? EC_MAKE_LEVELS : EC_MAR_LEVELS)[key];
+		return `needs ${rollOutcome === 'make' ? '+' : '−'}${lvl}`;
+	}
 
 	let messyMarginaliaID = $state<number | null>(null);
 	let messyBusy = $state(false);
@@ -353,7 +359,12 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
-		<Buffet tabs={EC_BUFFET_TABS} />
+		<!-- Reference the full make/mar options only up to the roll. Once an
+		     outcome is in, the picker carries those descriptions, so showing the
+		     Buffet too would state them twice. -->
+		{#if rollOutcome == null}
+			<Buffet tabs={EC_BUFFET_TABS} />
+		{/if}
 		{#if ftAccepted == null && !rollActive}
 			{#if ftAssetID == null}
 				<!-- No offer yet -->
@@ -444,18 +455,20 @@
 				busy={choicesBusy}
 				single
 				disabledKeys={disabledChoiceKeys}
+				lockReason={choiceLockReason}
 				onToggle={selectChoice}
 				onSubmit={() => onApplyChoices(plan, rollOutcome!)}
 			>
 				{#snippet header()}
 					{#if rollOutcome === 'make'}
 						<p class="choices-note">
-							The targeted peer ({assetName(assets, plan.target_asset_id)}) will be transferred to you.
+							You beat the difficulty{#if choiceMargin != null} by {choiceMargin}{/if} — the targeted peer
+							({assetName(assets, plan.target_asset_id)}) will be transferred to you.
 						</p>
 					{:else}
 						<p class="choices-note">
-							The plan was marred — you choose how to respond against
-							{playerName(players, plan.preparer_id)}.
+							{playerName(players, plan.preparer_id)}'s plan was marred {#if choiceMargin != null} by {choiceMargin}{/if} —
+							choose how you respond.
 						</p>
 					{/if}
 				{/snippet}

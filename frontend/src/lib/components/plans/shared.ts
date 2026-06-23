@@ -60,13 +60,24 @@ export const PLAN_SHORT: Record<PlanType, string> = {
 	make_demands:         'Make Demands',
 };
 
-export interface PlanChoiceOption { key: string; label: string; }
+export interface PlanChoiceOption {
+	key: string;
+	label: string;
+	/** One-line consequence, rendered under the title in card mode. */
+	desc?: string;
+	/**
+	 * Outcome level (e.g. 0/1/2 for makes, 1/2/3 for mars). When set, the
+	 * picker renders a signed badge ("+1", "−2") and the parent may gate it
+	 * against the dice margin via disabledKeys. Omit for level-less options.
+	 */
+	level?: number;
+}
 
 export const MAKE_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	exchange_courtiers: [
-		{ key: 'messy',      label: '(0) Messy — target may break one of your assets' },
-		{ key: 'legal',      label: '(1) Legal — everything went to plan' },
-		{ key: 'conspiracy', label: '(2) Conspiracy — the peer was in on it' },
+		{ key: 'messy',      level: 0, label: 'Messy',      desc: 'The target may break one of your assets.' },
+		{ key: 'legal',      level: 1, label: 'Legal',      desc: 'Everything went according to plan.' },
+		{ key: 'conspiracy', level: 2, label: 'Conspiracy', desc: 'The peer was in on it from the start.' },
 	],
 	make_introductions: [
 		{ key: 'peers_arrive', label: 'Peers arrive — add marginalia to each new peer' },
@@ -78,9 +89,9 @@ export const MAKE_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 
 export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	exchange_courtiers: [
-		{ key: 'fair_trade', label: '(1) A Fair Trade — the trade goes through anyway' },
-		{ key: 'riposte',    label: '(2) Riposte — you take one of their peers (they may break it first)' },
-		{ key: 'forfeit',    label: '(3) Forfeit — you take one of their peers' },
+		{ key: 'fair_trade', level: 1, label: 'A Fair Trade', desc: 'The offered trade goes through anyway.' },
+		{ key: 'riposte',    level: 2, label: 'Riposte',      desc: 'You take the requested peer — you may break it first.' },
+		{ key: 'forfeit',    level: 3, label: 'Forfeit',      desc: 'You take the requested peer.' },
 	],
 	// Make Introductions mar is per-peer (other_retinue / broken_arrival /
 	// delayed / broken_journey) and rendered directly in MakeIntroductionsPanel,
