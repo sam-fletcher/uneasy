@@ -429,7 +429,7 @@
 					disabled={busy || !canCommit}
 					title={!canCommit ? 'You have no dice left to add — automatically ready.' : ''}
 				>
-					{canCommit ? 'Unready' : 'Ready (locked)'}
+					{canCommit ? 'Unready' : 'Ready (maxed out)'}
 				</button>
 			{:else}
 				<button

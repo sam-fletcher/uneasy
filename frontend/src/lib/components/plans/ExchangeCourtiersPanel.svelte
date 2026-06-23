@@ -422,6 +422,18 @@
 			{/if}
 
 		{:else if rollActive && !choicesDone}
+			<div class="ec-stakes">
+				<ul class="ec-stakes-list">
+					<li>
+						On a make: {playerName(players, plan.preparer_id)} takes <em>{assetName(assets, plan.target_asset_id)}</em>.
+					</li>
+					{#if ftAssetID != null}
+						<li>
+							On a mar: {playerName(players, plan.target_player_id)} takes <em>{assetName(assets, ftAssetID)}</em>.
+						</li>
+					{/if}
+				</ul>
+			</div>
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
 		{:else if rollOutcome != null && !choicesDone && choiceActor}
@@ -547,5 +559,18 @@
 	/* Space the prep-mode reference off the form above it. */
 	.ec-prep-buffet {
 		margin-top: 0.75rem;
+	}
+	/* At-a-glance stakes shown while the roll is open, so players can gauge how
+	   much to leverage. */
+	.ec-stakes {
+		margin: 0.9rem 0;
+		font-size: 0.85rem;
+	}
+	.ec-stakes-list {
+		margin: 0.25rem 0 0;
+		padding-left: 1.1rem;
+	}
+	.ec-stakes-list li {
+		margin: 0.2rem 0;
 	}
 </style>

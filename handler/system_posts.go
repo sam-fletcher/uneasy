@@ -316,7 +316,7 @@ func EmitRollCommit(
 	if mc, err := q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
 		GameID: roll.GameID, OwnerID: roll.ActorID,
 	}); err == nil {
-		target = mc.Name
+		target = assetMark(mc.Name)
 	}
 	source := "banked die"
 	if assetName != nil {
