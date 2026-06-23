@@ -190,6 +190,7 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 			r.Get("/tables/{id}/asset-suggestions", handler.GetAssetSuggestions(store))
 			r.Get("/tables/{id}/secrets/visible", handler.ListVisibleSecretsForGame(store))
 			r.Post("/tables/{id}/assets", handler.CreateAsset(store, manager))
+			r.Post("/tables/{id}/replace-main-character", handler.ReplaceMainCharacterWithNewPeer(store, manager))
 
 			r.Route("/assets/{assetId}", func(r chi.Router) {
 				r.Put("/", handler.UpdateAsset(store, manager))

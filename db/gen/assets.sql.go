@@ -405,6 +405,25 @@ func (q *Queries) GrantSecretVisibilityForAsset(ctx context.Context, arg GrantSe
 	return err
 }
 
+const leverageAllPlayerAssets = `-- name: LeverageAllPlayerAssets :exec
+UPDATE assets SET is_leveraged = TRUE
+WHERE owner_id = $1 AND game_id = $2 AND is_destroyed = FALSE
+`
+
+type LeverageAllPlayerAssetsParams struct {
+	OwnerID int64 `db:"owner_id" json:"owner_id"`
+	GameID  int64 `db:"game_id" json:"game_id"`
+}
+
+// Mark every one of a player's non-destroyed assets in a game as leveraged.
+// Backs the "conscript a new main character" escape hatch: a player with no
+// peers left may create one, but the cost is that all of their assets
+// (including the new peer) become leveraged.
+func (q *Queries) LeverageAllPlayerAssets(ctx context.Context, arg LeverageAllPlayerAssetsParams) error {
+	_, err := q.db.Exec(ctx, leverageAllPlayerAssets, arg.OwnerID, arg.GameID)
+	return err
+}
+
 const listAllAssetsByGame = `-- name: ListAllAssetsByGame :many
 SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE game_id = $1
 ORDER BY created_at ASC
@@ -621,6 +640,44 @@ func (q *Queries) ListMarginaliaTextByGame(ctx context.Context, gameID int64) ([
 	return items, nil
 }
 
+const listPlayersMissingMainCharacter = `-- name: ListPlayersMissingMainCharacter :many
+SELECT p.id FROM players p
+WHERE p.game_id = $1
+  AND NOT EXISTS (
+    SELECT 1 FROM assets a
+    WHERE a.owner_id = p.id
+      AND a.game_id = p.game_id
+      AND a.is_main_character = TRUE
+      AND a.is_destroyed = FALSE
+  )
+ORDER BY p.joined_at
+`
+
+// Returns the ids of players in a game who have no non-destroyed main
+// character. In the main event every player must always have exactly one, so a
+// non-empty result means those players owe a replacement choice (their main
+// character was taken, traded, or destroyed). Drives
+// RowStateAwaitMainCharacterChoice.
+func (q *Queries) ListPlayersMissingMainCharacter(ctx context.Context, gameID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listPlayersMissingMainCharacter, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSecretsByAsset = `-- name: ListSecretsByAsset :many
 SELECT s.id, s.asset_id, s.author_id, s.text, s.is_revealed, s.revealed_at, s.created_at FROM secrets s
 WHERE s.asset_id = $1
@@ -822,7 +879,7 @@ func (q *Queries) TearMarginalia(ctx context.Context, arg TearMarginaliaParams) 
 }
 
 const transferAsset = `-- name: TransferAsset :exec
-UPDATE assets SET owner_id = $2 WHERE id = $1
+UPDATE assets SET owner_id = $2, is_main_character = FALSE WHERE id = $1
 `
 
 type TransferAssetParams struct {
@@ -830,6 +887,14 @@ type TransferAssetParams struct {
 	OwnerID int64 `db:"owner_id" json:"owner_id"`
 }
 
+// Reassign an asset to a new owner. Clearing is_main_character is part of the
+// transfer itself, not the caller's job: a main character is per-owner, so it
+// can never remain "main" across an ownership boundary. This single chokepoint
+// backs every take/trade/payment path (direct takes, Exchange Courtiers, Host
+// Festivity, Make War payments, Propose Duel, Spread Rumors/Propaganda, etc.),
+// guaranteeing a player can never end up holding two main characters. The
+// player who *lost* their main character then owes a replacement choice,
+// surfaced as RowStateAwaitMainCharacterChoice.
 func (q *Queries) TransferAsset(ctx context.Context, arg TransferAssetParams) error {
 	_, err := q.db.Exec(ctx, transferAsset, arg.ID, arg.OwnerID)
 	return err

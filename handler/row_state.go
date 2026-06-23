@@ -18,6 +18,7 @@ import (
 //  2. Outstanding surrender claim → AwaitSurrenderClaim
 //  3. Outstanding battle cost     → AwaitBattleCost            (rulebook step 1)
 //  4. Plan resolving              → PlanResolving              (step 2, active)
+//  4x. Player owes a replacement main character → AwaitMainCharacterChoice
 //  5. Plan pending on current row → PlanPending                (step 2, queued)
 //  6. Open delay-reveal plan      → AwaitDelayReveal           (Make War / CL)
 //  7. Focus player has a started, not-yet-ended turn-scene → SceneActive (step 4)
@@ -38,27 +39,12 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		return model.RowState{Kind: model.RowStatePhaseNotMainEvent}, nil
 	}
 
-	// 2. Surrender claim still open. Step 1 of the rulebook — but in
-	// practice claims only arise from a prior row's surrender, so they
-	// surface here as the highest-priority unresolved gate.
-	claims, err := q.ListOpenSurrenderClaimsByGame(ctx, gameID)
-	if err != nil {
-		return model.RowState{}, err
-	}
-	if len(claims) > 0 {
-		id := claims[0].ID
-		return model.RowState{Kind: model.RowStateAwaitSurrenderClaim, ClaimID: &id}, nil
-	}
-
-	// 3. Outstanding battle costs on the current row. Rulebook step 1:
-	// nothing else may happen until each war participant pays (or peace
-	// has been agreed). Sits above plan resolution/preparation.
-	outstanding, err := mwOutstandingCostsForGame(ctx, q, gameID, game.CurrentRow)
-	if err != nil {
-		return model.RowState{}, err
-	}
-	if warID, ok := firstKey(outstanding); ok {
-		return model.RowState{Kind: model.RowStateAwaitBattleCost, WarID: &warID}, nil
+	// 2/3. War-conflict gates (open surrender claim, then outstanding battle
+	// costs) — the highest-priority unresolved blocks, above plan resolution.
+	if rs, ok, gErr := warConflictGate(ctx, q, gameID, game.CurrentRow); gErr != nil {
+		return model.RowState{}, gErr
+	} else if ok {
+		return rs, nil
 	}
 
 	plans, err := q.ListPlansByGame(ctx, gameID)
@@ -100,6 +86,19 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 			PlanID:          &id,
 			ActingPlayerIDs: []int64{actor},
 		}, nil
+	}
+
+	// 4.x. Replacement main character owed. A take/trade/payment (or a fatal
+	// break) may have left a player with no main character. Every player must
+	// always have exactly one, so the table pauses here until each such player
+	// picks a replacement. Placed below the active plan-resolution gates above
+	// (a resolution that *caused* the loss finishes first, including its
+	// post-commit sub-flows) but above the follow-scene/pending/turn states, so
+	// the obligation surfaces before any new turn or plan kickoff.
+	if rs, ok, gErr := mainCharacterChoiceGate(ctx, q, gameID); gErr != nil {
+		return model.RowState{}, gErr
+	} else if ok {
+		return rs, nil
 	}
 
 	// 4.5. Follow-scene turn for a plan that just resolved on this row.
@@ -341,6 +340,53 @@ func isNoRows(err error) bool {
 // Errors from ComputeRowState or the broadcast are swallowed silently — a
 // missed broadcast self-heals on the next legitimate transition or on the
 // next snapshot fetch (loadGameState includes row_state).
+// warConflictGate reports the two war-conflict gates that preempt plan
+// resolution: an open surrender claim (rulebook step 1), then any outstanding
+// battle cost on the current row. ok is false when neither applies. Split out of
+// ComputeRowState to keep it short.
+func warConflictGate(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+	currentRow int16,
+) (model.RowState, bool, error) {
+	claims, err := q.ListOpenSurrenderClaimsByGame(ctx, gameID)
+	if err != nil {
+		return model.RowState{}, false, err
+	}
+	if len(claims) > 0 {
+		id := claims[0].ID
+		return model.RowState{Kind: model.RowStateAwaitSurrenderClaim, ClaimID: &id}, true, nil
+	}
+
+	outstanding, err := mwOutstandingCostsForGame(ctx, q, gameID, currentRow)
+	if err != nil {
+		return model.RowState{}, false, err
+	}
+	if warID, ok := firstKey(outstanding); ok {
+		return model.RowState{Kind: model.RowStateAwaitBattleCost, WarID: &warID}, true, nil
+	}
+	return model.RowState{}, false, nil
+}
+
+// mainCharacterChoiceGate reports the replacement-main-character gate
+// (RowStateAwaitMainCharacterChoice) when any player has lost their main
+// character — taken, traded, or destroyed — and has none. ok is false when
+// every player still has one. Split out of ComputeRowState to keep it short.
+func mainCharacterChoiceGate(ctx context.Context, q *dbgen.Queries, gameID int64) (model.RowState, bool, error) {
+	missing, err := q.ListPlayersMissingMainCharacter(ctx, gameID)
+	if err != nil {
+		return model.RowState{}, false, err
+	}
+	if len(missing) == 0 {
+		return model.RowState{}, false, nil
+	}
+	return model.RowState{
+		Kind:            model.RowStateAwaitMainCharacterChoice,
+		ActingPlayerIDs: missing,
+	}, true, nil
+}
+
 func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64) {
 	if manager == nil {
 		return

@@ -355,7 +355,11 @@ func TestRollFlow_AutoUnreadyOnOpposingLeverage(t *testing.T) {
 
 func TestRollFlow_SkipLeverageWhenNoOneCanCommit(t *testing.T) {
 	h := newRollsHarness(t, 2)
-	// Nobody has any assets or banked dice.
+	// Nobody has any assets or banked dice. Clear the seeded main-character
+	// peers so no one has a leverageable asset.
+	for i := range h.tg.Players {
+		destroyPlayerAssets(t, h.q, h.tg.Players[i].ID)
+	}
 
 	path := fmt.Sprintf("/api/tables/%d/rolls", h.tg.Game.ID)
 	_, body := h.do(t, 0, "POST", path, map[string]any{

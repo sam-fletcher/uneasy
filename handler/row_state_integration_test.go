@@ -87,6 +87,86 @@ func TestComputeRowState_PostSceneAction(t *testing.T) {
 	assert.Equal(t, model.RowStatePostSceneAction, state.Kind)
 }
 
+// TestComputeRowState_AwaitMainCharacterChoice covers the lost-main-character
+// gap fix end to end at the state layer: transferring a player's main character
+// away clears its flag (the chokepoint, so the taker never holds two), leaving
+// the previous owner owing a replacement choice — which the gate surfaces and
+// names. Promoting a fresh peer clears it.
+func TestComputeRowState_AwaitMainCharacterChoice(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	loser, taker := tg.Players[0], tg.Players[1]
+
+	mc, err := q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: tg.Game.ID, OwnerID: loser.ID,
+	})
+	require.NoError(t, err)
+
+	// Taker grabs the loser's main character.
+	require.NoError(t, q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		ID: mc.ID, OwnerID: taker.ID,
+	}))
+
+	// Chokepoint: the transfer itself cleared the flag — the taker keeps only
+	// their own main character, never two.
+	moved, err := q.GetAssetByID(ctx, mc.ID)
+	require.NoError(t, err)
+	assert.False(t, moved.IsMainCharacter, "transfer clears the main-character flag")
+	assert.Equal(t, taker.ID, moved.OwnerID)
+	takerMC, err := q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: tg.Game.ID, OwnerID: taker.ID,
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, mc.ID, takerMC.ID, "taker still has only their own main character")
+
+	// Gate: the loser owes a replacement choice; nobody else does.
+	state, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitMainCharacterChoice, state.Kind)
+	assert.Equal(t, []int64{loser.ID}, state.ActingPlayerIDs)
+
+	// Loser promotes a fresh peer → gate clears.
+	_, err = q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: tg.Game.ID, OwnerID: loser.ID, CreatorID: loser.ID,
+		AssetType: model.AssetPeer, Name: "Understudy", IsMainCharacter: true,
+	})
+	require.NoError(t, err)
+
+	state, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, model.RowStateAwaitMainCharacterChoice, state.Kind)
+}
+
+// TestComputeRowState_AwaitMainCharacterChoice_PreemptsTurn proves the gate
+// sits above the focus-player turn states: even with the focus player mid-turn,
+// a different player who lost their main character blocks the table first.
+func TestComputeRowState_AwaitMainCharacterChoice_PreemptsTurn(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	// Focus player (players[0]) is actively setting a scene.
+	startTurnScene(t, q, &tg.Game, &tg.Players[0])
+
+	// The other player loses their main character.
+	mc, err := q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: tg.Game.ID, OwnerID: tg.Players[1].ID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		ID: mc.ID, OwnerID: tg.Players[0].ID,
+	}))
+
+	state, err := ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.RowStateAwaitMainCharacterChoice, state.Kind)
+	assert.Equal(t, []int64{tg.Players[1].ID}, state.ActingPlayerIDs)
+}
+
 // TestComputeRowState_PlanPending: a pending plan on the current row wins
 // over the post-scene action step.
 func TestComputeRowState_PlanPending_BeatsPostScene(t *testing.T) {

@@ -41,6 +41,18 @@ const (
 	// surrendering player before the row can advance. Blocks everything.
 	RowStateAwaitSurrenderClaim RowStateKind = "await_surrender_claim"
 
+	// RowStateAwaitMainCharacterChoice — at least one player has lost their
+	// main character (it was taken, traded, or destroyed) and has no main
+	// character anymore. Every player must always have exactly one, so the
+	// table pauses until each such player picks a replacement: promoting an
+	// existing peer, or — when they have no peers left — conscripting a brand
+	// new one (at the cost of all their assets becoming leveraged). Sits below
+	// the active plan-resolution gates (an in-progress resolution that caused
+	// the loss finishes first) but above the focus-turn states. ActingPlayerIDs
+	// names every player who still owes a choice. Derived, not stored: a player
+	// owes a choice exactly when they have no non-destroyed main character.
+	RowStateAwaitMainCharacterChoice RowStateKind = "await_main_character_choice"
+
 	// RowStateAwaitBattleCost — at least one war participant owes a battle
 	// cost on the current row. Per the rulebook this is step 1 of every
 	// row with an active war; the server treats it as a gate on row

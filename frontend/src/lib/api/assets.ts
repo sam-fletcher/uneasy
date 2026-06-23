@@ -30,6 +30,19 @@ export function updateAsset(
 	});
 }
 
+// Conscript a brand new peer as your main character — the "no peers left"
+// escape hatch when your main character was taken/destroyed and you have no
+// peer to promote. Costs all your assets becoming leveraged (server-enforced).
+export function replaceMainCharacter(
+	gameID: string | number,
+	params: { name: string; marginalia: string[] }
+): Promise<{ asset: Asset }> {
+	return apiFetch(`/tables/${gameID}/replace-main-character`, {
+		method: 'POST',
+		body: JSON.stringify(params)
+	});
+}
+
 // ── Marginalia ────────────────────────────────────────────────────────────────
 
 export function addMarginalia(

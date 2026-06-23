@@ -145,6 +145,19 @@ func newTestGame(t *testing.T, q *dbgen.Queries, n int, opts ...gametest.Option)
 	return testGame{Game: seeded.Game, Players: seeded.Players}
 }
 
+// destroyPlayerAssets destroys every asset a player owns. Seeded games now give
+// each player a main-character peer (mirroring the prologue), so tests that need
+// a player with genuinely no assets/peers must clear the seed first.
+func destroyPlayerAssets(t *testing.T, q *dbgen.Queries, playerID int64) {
+	t.Helper()
+	ctx := context.Background()
+	assets, err := q.ListAssetsByOwner(ctx, playerID)
+	require.NoError(t, err)
+	for i := range assets {
+		require.NoError(t, q.DestroyAsset(ctx, assets[i].ID))
+	}
+}
+
 // randSuffix returns a short random string for distinct join codes /
 // cookie tokens across subtests within the same process lifetime.
 func randSuffix() string {

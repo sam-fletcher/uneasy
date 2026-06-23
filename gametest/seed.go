@@ -137,11 +137,43 @@ func seedBase(ctx context.Context, q *dbgen.Queries, usernames []string, cfg see
 		return SeededGame{}, fmt.Errorf("set focus player: %w", err)
 	}
 
+	if err := seedMainCharacters(ctx, q, game.ID, players); err != nil {
+		return SeededGame{}, err
+	}
+
 	if err := seedPlans(ctx, q, game.ID, players, cfg); err != nil {
 		return SeededGame{}, err
 	}
 
 	return SeededGame{Game: game, Players: players}, nil
+}
+
+// seedMainCharacters gives every player a peer asset flagged as their main
+// character. Production reaches main_event (and shake_up) only via the
+// prologue, where each player creates exactly one main character; mirroring
+// that here keeps the "every player always has a main character" invariant true
+// for seeded games — which ComputeRowState now relies on (a player with no main
+// character is treated as owing a replacement choice).
+//
+// The seeded main character has no marginalia: the prologue explicitly allows a
+// main character to start blank ("you don't need to fill these all the way out
+// yet"), and leaving positions 1–4 free lets tests add their own marginalia
+// without colliding.
+func seedMainCharacters(ctx context.Context, q *dbgen.Queries, gameID int64, players []dbgen.Player) error {
+	for i := range players {
+		p := &players[i]
+		if _, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID:          gameID,
+			OwnerID:         p.ID,
+			CreatorID:       p.ID,
+			AssetType:       model.AssetPeer,
+			Name:            fmt.Sprintf("%s (main character)", p.DisplayName),
+			IsMainCharacter: true,
+		}); err != nil {
+			return fmt.Errorf("seed main character for %q: %w", p.DisplayName, err)
+		}
+	}
+	return nil
 }
 
 // seedRankings writes all three tracks. For each category the rank slot k+1 is

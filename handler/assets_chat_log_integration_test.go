@@ -67,6 +67,7 @@ func newAssetHarness(t *testing.T, n int) *assetHarness {
 	r := chi.NewRouter()
 	r.Use(appMiddleware.EnsureSession(q))
 	r.Post("/api/tables/{id}/assets", CreateAsset(store, manager))
+	r.Post("/api/tables/{id}/replace-main-character", ReplaceMainCharacterWithNewPeer(store, manager))
 	r.Route("/api/assets/{assetId}", func(rr chi.Router) {
 		rr.Put("/", UpdateAsset(store, manager))
 		rr.Post("/marginalia", AddMarginalia(store, manager))
@@ -262,4 +263,81 @@ func TestChatLog_MainCharacterPromoted(t *testing.T) {
 	require.Contains(t, p.Body, owner)
 	require.Contains(t, p.Body, "Protagonist")
 	require.True(t, strings.Contains(p.Body, "main character"))
+}
+
+// TestReplaceMainCharacter_ConscriptLeveragesAllAssets covers the "no peers
+// left" escape hatch: a player whose main character was taken, and who has no
+// peer to promote, conscripts a brand new one — at the custom-rule cost of all
+// their assets becoming leveraged.
+func TestReplaceMainCharacter_ConscriptLeveragesAllAssets(t *testing.T) {
+	h := newAssetHarness(t, 2)
+	ctx := context.Background()
+	loser := h.tg.Players[0]
+
+	// Give the loser a non-peer asset, so we can prove the cost hits every
+	// asset they own — not just the freshly conscripted peer.
+	holding, err := h.q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: h.tg.Game.ID, OwnerID: loser.ID, CreatorID: loser.ID,
+		AssetType: model.AssetHolding, Name: "Keep", IsMainCharacter: false,
+	})
+	require.NoError(t, err)
+
+	// Player 1 takes the loser's only peer (their seeded main character),
+	// leaving the loser with no peer to promote.
+	mc, err := h.q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: h.tg.Game.ID, OwnerID: loser.ID,
+	})
+	require.NoError(t, err)
+	code, _ := h.do("POST", 1, assetPath(mc.ID, "/take"), nil)
+	require.Equal(t, http.StatusOK, code)
+
+	// Conscript a new main character.
+	code, body := h.do("POST", 0,
+		"/api/tables/"+strconv.FormatInt(h.tg.Game.ID, 10)+"/replace-main-character",
+		map[string]any{"name": "Heir", "marginalia": []string{"bold", "untested"}})
+	require.Equalf(t, http.StatusCreated, code, "conscript: %v", body)
+
+	// They have a main character again, and it is leveraged.
+	newMC, err := h.q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: h.tg.Game.ID, OwnerID: loser.ID,
+	})
+	require.NoError(t, err)
+	require.True(t, newMC.IsLeveraged, "the conscripted main character is leveraged")
+
+	// The cost hit every asset they own.
+	keep, err := h.q.GetAssetByID(ctx, holding.ID)
+	require.NoError(t, err)
+	require.True(t, keep.IsLeveraged, "all of the conscriptor's assets become leveraged")
+
+	// And it logged the conscription.
+	p := h.postBySystemCode("asset.main_character")
+	require.Contains(t, p.Body, "conscripted")
+}
+
+// TestReplaceMainCharacter_RejectedWhenPeerAvailable proves the conscript route
+// is the no-peers-left escape hatch only: a player who still owns a peer must
+// promote it (free) instead of conscripting a new one (which costs leverage).
+func TestReplaceMainCharacter_RejectedWhenPeerAvailable(t *testing.T) {
+	h := newAssetHarness(t, 2)
+	ctx := context.Background()
+	loser := h.tg.Players[0]
+
+	// Give the loser a spare peer, then take their main character. They now
+	// have no main character but DO have a peer to promote.
+	_, err := h.q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: h.tg.Game.ID, OwnerID: loser.ID, CreatorID: loser.ID,
+		AssetType: model.AssetPeer, Name: "Spare", IsMainCharacter: false,
+	})
+	require.NoError(t, err)
+	mc, err := h.q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: h.tg.Game.ID, OwnerID: loser.ID,
+	})
+	require.NoError(t, err)
+	code, _ := h.do("POST", 1, assetPath(mc.ID, "/take"), nil)
+	require.Equal(t, http.StatusOK, code)
+
+	code, body := h.do("POST", 0,
+		"/api/tables/"+strconv.FormatInt(h.tg.Game.ID, 10)+"/replace-main-character",
+		map[string]any{"name": "Heir", "marginalia": []string{"bold", "untested"}})
+	require.Equalf(t, http.StatusConflict, code, "should reject conscript while a peer exists: %v", body)
 }

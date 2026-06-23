@@ -121,7 +121,9 @@ func TestPlayerHasPeers_NoPeers(t *testing.T) {
 	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
 
-	// Player 0 has no peer assets initially
+	// Clear the seeded main-character peer so player 0 genuinely has no peers.
+	destroyPlayerAssets(t, q, tg.Players[0].ID)
+
 	has, err := playerHasPeers(ctx, q, tg.Game.ID, tg.Players[0].ID)
 	require.NoError(t, err)
 	assert.False(t, has)
@@ -155,6 +157,9 @@ func TestPlayerHasPeers_DestroyedPeersDoNotCount(t *testing.T) {
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
+
+	// Clear the seeded main-character peer so only DeadAlly (below) exists.
+	destroyPlayerAssets(t, q, tg.Players[0].ID)
 
 	// Player 0 creates a peer asset
 	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{

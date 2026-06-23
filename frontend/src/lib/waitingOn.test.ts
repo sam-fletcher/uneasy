@@ -88,6 +88,7 @@ describe('actor-naming sub-phase kinds', () => {
 		{ kind: 'await_take_consent', label: 'Spread Rumors — consent to take asset' },
 		{ kind: 'await_question_answer', label: 'Seek Answers — answer a question' },
 		{ kind: 'await_courtier_response', label: 'Exchange Courtiers — target responds' },
+		{ kind: 'await_main_character_choice', label: 'Choose a new main character' },
 	];
 	it.each(cases)('$kind → names acting_player_ids with label "$label"', ({ kind, label }) => {
 		const got = mainEventWaitingOn(

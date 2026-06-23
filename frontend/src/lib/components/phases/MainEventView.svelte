@@ -25,6 +25,7 @@
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
 	import SceneDetailsPanel from '$lib/components/SceneDetailsPanel.svelte';
 	import CardPicker from '$lib/components/plans/CardPicker.svelte';
+	import MainCharacterChoicePanel from '$lib/components/MainCharacterChoicePanel.svelte';
 	import { followOnPromptForRow } from '$lib/scenePrompts';
 	import { mainEventWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 
@@ -217,6 +218,13 @@
 	/** True when an in-flight roll hasn't resolved yet. */
 	const rollActive = $derived(activeRoll != null && activeRoll.outcome == null);
 
+	// ── Replacement main-character takeover ──────────────────────────────────
+	// A player lost their main character (taken/traded/destroyed). The whole
+	// table pauses until every such player picks a replacement. This takeover
+	// hides the normal scene/plan surface for everyone while it's open.
+	const mcChoiceActive = $derived(rowState?.kind === 'await_main_character_choice');
+	const mcActingIDs = $derived(rowState?.acting_player_ids ?? []);
+
 	// ── Delay-reveal play area takeover ──────────────────────────────────────
 	// While kind='await_delay_reveal', a single plan (Make War or
 	// Clandestinely Liaise) is blocking the row until all participants
@@ -382,7 +390,16 @@
 				blocking plan. Inputs inside each panel are gated by participant
 				identity; non-participants watch.
 			-->
-			{#if delayRevealActive && delayRevealPlan}
+			{#if mcChoiceActive}
+				<MainCharacterChoicePanel
+					gameID={game.id}
+					{assets}
+					{players}
+					{currentPlayerID}
+					actingPlayerIDs={mcActingIDs}
+					{playerNameMap}
+				/>
+			{:else if delayRevealActive && delayRevealPlan}
 				{#if delayRevealPlan.plan_type === 'make_war'}
 					<MakeWarPanel ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
 				{:else if delayRevealPlan.plan_type === 'clandestinely_liaise'}
@@ -420,6 +437,7 @@
 				1. A plan is currently resolving or pending on this row (visible to all).
 				2. The focus player is in their post-scene action step (prep enabled).
 			-->
+			{#if !mcChoiceActive}
 			<PlanPanel
 				gameID={game.id}
 				currentRow={game.current_row}
@@ -440,6 +458,7 @@
 				{onPlanPrepared}
 				{preparePlanDraft}
 			/>
+			{/if}
 
 			<!-- ── Dice roll panel ───────────────────────────────────────────── -->
 			{#if activeRoll}

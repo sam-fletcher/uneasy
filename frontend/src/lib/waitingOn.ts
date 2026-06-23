@@ -178,6 +178,10 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 				stepSubtitle: parts.join(' · '),
 			};
 		}
+		case 'await_main_character_choice':
+			// One or more players lost their main character; each must choose a
+			// replacement before play resumes. The backend names them all.
+			return { waitees: actingWaitees(), stepLabel: 'Choose a new main character' };
 		case 'scene_active':
 			return { waitees: focusWaitee, stepLabel: 'Scene' };
 		case 'scene_setting':

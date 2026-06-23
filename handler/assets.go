@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -331,7 +332,189 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			h.BroadcastEvent(model.EventAssetUpdated, model.AssetPayload{Asset: enriched})
 		}
 
+		// A main-character change can satisfy a pending replacement-choice gate
+		// (the player who lost their MC just promoted a peer). Recompute so the
+		// gate clears for the whole table.
+		if body.IsMainCharacter != nil {
+			broadcastRowState(r.Context(), s.Q, manager, asset.GameID)
+		}
+
 		respond(w, http.StatusOK, map[string]any{"asset": enriched})
+	}
+}
+
+// ReplaceMainCharacterWithNewPeer handles
+// POST /api/tables/{id}/replace-main-character.
+//
+// The "no peers left" escape hatch for the replacement-main-character gate
+// (RowStateAwaitMainCharacterChoice): when a player has lost their main
+// character and has no remaining peer to promote, they conscript a brand new
+// peer to be their main character. The custom-rule cost is that ALL of their
+// assets — including the new peer — become leveraged.
+//
+// Guarded to that exact situation: rejected if the caller still has a main
+// character (nothing to replace) or still owns a non-destroyed peer (they must
+// promote it via PUT /assets/{id} instead, which is free).
+// Body: { name, marginalia: ["text", ...] }  (>= 2 marginalia, per "Make").
+func ReplaceMainCharacterWithNewPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		if !ok {
+			return
+		}
+		name, margs, ok := parseConscriptBody(w, r)
+		if !ok {
+			return
+		}
+
+		ctx := r.Context()
+		owned, err := s.Q.ListAssetsByOwner(ctx, player.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not list owner assets", err)
+			return
+		}
+		if !ensureOwesConscription(w, owned, gameID) {
+			return
+		}
+
+		asset, marginalia, err := createConscriptedMainCharacter(ctx, s, gameID, player.ID, name, margs)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		broadcastConscription(r, s.Q, manager, gameID, player.ID, asset, marginalia, owned)
+		// Clears the replacement-choice gate now that the player has an MC again.
+		broadcastRowState(ctx, s.Q, manager, gameID)
+
+		enriched, _ := loadAssetEnriched(r, s.Q, asset.ID)
+		respond(w, http.StatusCreated, map[string]any{"asset": enriched})
+	}
+}
+
+// parseConscriptBody decodes and validates the conscript request body, writing
+// the error response itself on failure. Requires a name and >= 2 marginalia
+// (per the "Make" rule), capped at maxMarginalia.
+func parseConscriptBody(w http.ResponseWriter, r *http.Request) (string, []string, bool) {
+	var body struct {
+		Name       string   `json:"name"`
+		Marginalia []string `json:"marginalia"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondErr(w, http.StatusBadRequest, "invalid JSON")
+		return "", nil, false
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		respondErr(w, http.StatusBadRequest, "name is required")
+		return "", nil, false
+	}
+	margs := make([]string, 0, len(body.Marginalia))
+	for _, m := range body.Marginalia {
+		if m = strings.TrimSpace(m); m != "" {
+			margs = append(margs, m)
+		}
+	}
+	if len(margs) < 2 {
+		respondErr(w, http.StatusBadRequest, "a new character needs at least 2 marginalia")
+		return "", nil, false
+	}
+	if len(margs) > maxMarginalia {
+		respondErr(w, http.StatusBadRequest, fmt.Sprintf("at most %d marginalia", maxMarginalia))
+		return "", nil, false
+	}
+	return name, margs, true
+}
+
+// ensureOwesConscription guards the conscript route to its exact situation: the
+// caller has no main character (nothing to replace ⇒ reject) and no
+// non-destroyed peer (a peer ⇒ they must promote it, which is free). Writes the
+// 409 response itself; returns false when the route does not apply.
+func ensureOwesConscription(w http.ResponseWriter, owned []dbgen.Asset, gameID int64) bool {
+	for i := range owned {
+		a := &owned[i]
+		if a.GameID != gameID || a.IsDestroyed {
+			continue
+		}
+		if a.IsMainCharacter {
+			respondErr(w, http.StatusConflict, "you already have a main character")
+			return false
+		}
+		if a.AssetType == model.AssetPeer {
+			respondErr(w, http.StatusConflict, "promote one of your existing peers instead")
+			return false
+		}
+	}
+	return true
+}
+
+// createConscriptedMainCharacter creates the new peer (flagged main character)
+// with its marginalia and applies the custom-rule cost — every asset the player
+// owns becomes leveraged — atomically in one transaction.
+func createConscriptedMainCharacter(
+	ctx context.Context, s *db.Store, gameID, ownerID int64, name string, margs []string,
+) (dbgen.Asset, []dbgen.Marginalium, error) {
+	var asset dbgen.Asset
+	var marginalia []dbgen.Marginalium
+	err := s.InTx(ctx, func(q *dbgen.Queries) error {
+		var caErr error
+		asset, caErr = q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID:          gameID,
+			OwnerID:         ownerID,
+			CreatorID:       ownerID,
+			AssetType:       model.AssetPeer,
+			Name:            name,
+			IsMainCharacter: true,
+		})
+		if caErr != nil {
+			return errors.New("could not create main character")
+		}
+		marginalia = make([]dbgen.Marginalium, 0, len(margs))
+		for i, text := range margs {
+			m, mErr := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+				AssetID: asset.ID, Position: int16(i + 1), Text: text,
+			})
+			if mErr != nil {
+				return errors.New("could not create marginalia")
+			}
+			marginalia = append(marginalia, m)
+		}
+		if lErr := q.LeverageAllPlayerAssets(ctx, dbgen.LeverageAllPlayerAssetsParams{
+			OwnerID: ownerID, GameID: gameID,
+		}); lErr != nil {
+			return errors.New("could not leverage assets")
+		}
+		return nil
+	})
+	return asset, marginalia, err
+}
+
+// broadcastConscription announces the new main character, re-pushes the player's
+// now-leveraged assets (a full per-asset reload keeps the merge-not-replace
+// contract — see the asset.taken payload note), and logs the conscription.
+// `owned` is the pre-conscription asset list (their existing assets).
+func broadcastConscription(
+	r *http.Request, q *dbgen.Queries, manager *hub.Manager,
+	gameID, ownerID int64, asset dbgen.Asset, marginalia []dbgen.Marginalium, owned []dbgen.Asset,
+) {
+	ctx := r.Context()
+	if h, ok := manager.Get(gameID); ok {
+		if e, err := loadAssetEnriched(r, q, asset.ID); err == nil {
+			h.BroadcastEvent(model.EventAssetCreated, model.AssetPayload{Asset: e})
+		}
+		for i := range owned {
+			a := &owned[i]
+			if a.GameID != gameID || a.IsDestroyed {
+				continue
+			}
+			if e, err := loadAssetEnriched(r, q, a.ID); err == nil {
+				h.BroadcastEvent(model.EventAssetUpdated, model.AssetPayload{Asset: e})
+			}
+		}
+	}
+	if g, err := q.GetGameByID(ctx, gameID); err == nil {
+		EmitAssetCreated(ctx, q, manager, gameID, asset, marginalia, &g.CurrentRow)
+		EmitMainCharacterConscripted(ctx, q, manager, gameID, asset, ownerID, g.CurrentRow)
 	}
 }
 
@@ -465,6 +648,11 @@ func TakeAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
 			EmitAssetTaken(ctx, s.Q, manager, asset.GameID, *asset, oldOwnerID, player.ID, &g.CurrentRow)
 		}
+
+		// Taking a main character clears its flag (TransferAsset), leaving the
+		// previous owner without one. Recompute so the table surfaces the
+		// replacement-choice gate (RowStateAwaitMainCharacterChoice) live.
+		broadcastRowState(ctx, s.Q, manager, asset.GameID)
 
 		respond(w, http.StatusOK, map[string]any{"asset": enriched})
 	}

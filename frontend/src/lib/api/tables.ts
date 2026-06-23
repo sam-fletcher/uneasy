@@ -25,6 +25,7 @@ export type RowStateKind =
 	| 'phase_not_main_event'
 	| 'await_surrender_claim'
 	| 'await_battle_cost'
+	| 'await_main_character_choice'
 	| 'await_delay_reveal'
 	| 'plan_resolving'
 	| 'plan_pending'

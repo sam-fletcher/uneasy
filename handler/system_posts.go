@@ -618,6 +618,29 @@ func EmitMainCharacterChanged(
 		map[string]any{"asset_id": asset.ID, "is_main_character": isMainCharacter, "actor_id": actorID})
 }
 
+// EmitMainCharacterConscripted writes the post for the "no peers left" escape
+// hatch: a player who lost their main character and had no peer to promote
+// conscripted a brand new one, at the cost of all their assets becoming
+// leveraged. Default severity — it changes board state the table should see.
+func EmitMainCharacterConscripted(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	actorID int64,
+	rowNumber int16,
+) {
+	actor := playerDisplayName(ctx, q, actorID)
+	body := fmt.Sprintf(
+		"%s had no peers left and conscripted %s as their new main character — all of their assets are now leveraged",
+		actor, assetMark(asset.Name))
+	EmitSystemPost(ctx, q, manager, gameID, "asset.main_character",
+		model.SeverityDefault, body,
+		&rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "is_main_character": true, "actor_id": actorID, "conscripted": true})
+}
+
 // ── Prologue (opening setup) ───────────────────────────────────────────────────
 //
 // The prologue builds the starting board. Asset creation, title marginalia, and

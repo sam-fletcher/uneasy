@@ -53,7 +53,40 @@ UPDATE assets SET is_leveraged = $2 WHERE id = $1;
 UPDATE assets SET is_leveraged = FALSE WHERE id = $1;
 
 -- name: TransferAsset :exec
-UPDATE assets SET owner_id = $2 WHERE id = $1;
+-- Reassign an asset to a new owner. Clearing is_main_character is part of the
+-- transfer itself, not the caller's job: a main character is per-owner, so it
+-- can never remain "main" across an ownership boundary. This single chokepoint
+-- backs every take/trade/payment path (direct takes, Exchange Courtiers, Host
+-- Festivity, Make War payments, Propose Duel, Spread Rumors/Propaganda, etc.),
+-- guaranteeing a player can never end up holding two main characters. The
+-- player who *lost* their main character then owes a replacement choice,
+-- surfaced as RowStateAwaitMainCharacterChoice.
+UPDATE assets SET owner_id = $2, is_main_character = FALSE WHERE id = $1;
+
+-- name: LeverageAllPlayerAssets :exec
+-- Mark every one of a player's non-destroyed assets in a game as leveraged.
+-- Backs the "conscript a new main character" escape hatch: a player with no
+-- peers left may create one, but the cost is that all of their assets
+-- (including the new peer) become leveraged.
+UPDATE assets SET is_leveraged = TRUE
+WHERE owner_id = $1 AND game_id = $2 AND is_destroyed = FALSE;
+
+-- name: ListPlayersMissingMainCharacter :many
+-- Returns the ids of players in a game who have no non-destroyed main
+-- character. In the main event every player must always have exactly one, so a
+-- non-empty result means those players owe a replacement choice (their main
+-- character was taken, traded, or destroyed). Drives
+-- RowStateAwaitMainCharacterChoice.
+SELECT p.id FROM players p
+WHERE p.game_id = $1
+  AND NOT EXISTS (
+    SELECT 1 FROM assets a
+    WHERE a.owner_id = p.id
+      AND a.game_id = p.game_id
+      AND a.is_main_character = TRUE
+      AND a.is_destroyed = FALSE
+  )
+ORDER BY p.joined_at;
 
 -- name: DestroyAsset :exec
 UPDATE assets SET is_destroyed = TRUE, destroyed_at = now() WHERE id = $1;
