@@ -289,12 +289,15 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			break;
 		}
 		case EventTypes.RollLeverageAdded: {
-			const { roll_id } = msg.payload as { roll_id: number };
-			// Re-fetch dice so we have the actual DB row with its ID.
+			const { roll_id, die } = msg.payload as { roll_id: number; die: DiceRollDie };
+			// Append the broadcast die row directly. Refetching the whole roll
+			// per event raced: two commits in quick succession issued overlapping
+			// getRoll calls, and an older response landing last clobbered the
+			// newer dice list, so a die went missing until a manual refresh.
 			if (ctx.activeRoll && ctx.activeRoll.id === roll_id) {
-				getRoll(roll_id).then(data => {
-					ctx.activeRollDice = data.dice;
-				}).catch(() => {});
+				if (!ctx.activeRollDice.some(d => d.id === die.id)) {
+					ctx.activeRollDice = [...ctx.activeRollDice, die];
+				}
 				// Banked-die spend or asset leverage may have changed our
 				// unspent-banked list; refresh.
 				listBankedDice(ctx.gameID).then(d => { ctx.bankedDice = d.dice; }).catch(() => {});

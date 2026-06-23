@@ -319,6 +319,7 @@ func commitDie(
 		PlayerID:       player.ID,
 		AssetID:        assetIDForEvent,
 		IsInterference: isInterference,
+		Die:            die,
 	})
 	EmitRollCommit(ctx, q, manager, roll, player, isInterference, assetNameForLog)
 	if err := postCommitSweeps(ctx, w, r, q, manager, roll, player.ID, isInterference); err != nil {

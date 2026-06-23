@@ -311,12 +311,19 @@ type RollCreatedPayload struct {
 	Roll any `json:"roll"` // dbgen.DiceRoll
 }
 
-// RollLeverageAddedPayload is for leverage commitment events.
+// RollLeverageAddedPayload is for leverage commitment events. Die carries the
+// freshly-created die row (dbgen.DiceRollDice) so clients can append it
+// directly instead of refetching the whole roll — refetching per event races:
+// two commits in quick succession issue overlapping fetches, and an older
+// response landing last clobbers the newer dice list. The die's face is nil
+// during the leverage stage, so this leaks nothing not already public via the
+// asset.leveraged event.
 type RollLeverageAddedPayload struct {
 	RollID         int64 `json:"roll_id"`
 	PlayerID       int64 `json:"player_id"`
 	AssetID        int64 `json:"asset_id"`
 	IsInterference bool  `json:"is_interference"`
+	Die            any   `json:"die"` // dbgen.DiceRollDice
 }
 
 // RollVoteCastPayload is for individual vote events. The vote value is
