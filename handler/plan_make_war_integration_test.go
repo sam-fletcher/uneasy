@@ -127,6 +127,66 @@ func seedActiveWar(t *testing.T, h *planLifecycle) (planID int64, prepIdx, enemy
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+// TestMakeWarHTTP_DelayRevealHoldsRow: preparing Make War auto-passes focus
+// (like any plan), but the row must NOT advance while the delay reveal is open
+// — otherwise every participant's delay vote is skipped and the war silently
+// lands one row late. The freshly-prepared war plan has a NULL row_number, so
+// the per-row pending-plan checks miss it; rowAdvanceBlockReason now catches it
+// via openDelayRevealPlan. Regression test for that gate.
+func TestMakeWarHTTP_DelayRevealHoldsRow(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+
+	before, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	startRow := before.CurrentRow
+
+	prepIdx := h.focusPlayerIdx()
+	enemyIdx := (prepIdx + 1) % len(h.tg.Players)
+	enemyID := h.tg.Players[enemyIdx].ID
+
+	notes := "the row must hold"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanMakeWar,
+		EnemyPlayerIDs:   []int64{enemyID},
+		PreparationNotes: &notes,
+	})
+
+	// The reveal is open and the plan has no row yet.
+	require.Nil(t, plan.RowNumber, "war plan should have no row until the reveal closes")
+
+	// The row must not have advanced past the open reveal.
+	afterPrep, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.Equal(t, startRow, afterPrep.CurrentRow,
+		"row advanced past the open Make War delay reveal — the vote was skipped")
+
+	// Row state should surface the open reveal so every client shows the vote.
+	rs, err := ComputeRowState(ctx, h.q, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RowStateAwaitDelayReveal, rs.Kind,
+		"row state should be await_delay_reveal while participants vote")
+	require.NotNil(t, rs.PlanID)
+	require.Equal(t, plan.ID, *rs.PlanID)
+
+	// Submitting both faces of 2 → ceil(avg)=2 closes the reveal; the war then
+	// lands at startRow+2, computed from the row that was correctly held.
+	mw := game.LoadMakeWarData(plan.ResolutionData)
+	require.NotNil(t, mw.DelayRevealID)
+	revPath := "/api/reveals/" + strconv.FormatInt(*mw.DelayRevealID, 10) + "/submit"
+	for _, idx := range []int{prepIdx, enemyIdx} {
+		code, body := h.post(idx, revPath, map[string]any{"face": 2})
+		require.Equalf(t, http.StatusOK, code, "reveal submit: %v", body)
+	}
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	require.NotNil(t, refreshed.RowNumber, "war should have a row after the reveal closes")
+	require.Equal(t, startRow+2, *refreshed.RowNumber,
+		"war should land at the held row + voted delay")
+}
+
+
 // TestMakeWarHTTP_BreakAssetCost_DestroysAndLogs: paying the cost of battle via
 // break_asset tears the marginalia (auto-destroying the asset when it was the
 // last one) and logs the payment; the war-start beat is also logged.

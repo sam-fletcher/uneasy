@@ -352,6 +352,18 @@ func AdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		h, _ := manager.Get(game.ID) // nil if no clients connected — advanceRowInner handles nil
 
+		// An open delay reveal (Make War / Clandestinely Liaise) holds the row
+		// until every participant submits — its plan has a NULL row_number, so
+		// it is invisible to the per-row pending checks elsewhere.
+		if plans, err := s.Q.ListPlansByGame(r.Context(), game.ID); err != nil {
+			respondInternalErr(w, r, "could not check delay reveals", err)
+			return
+		} else if openDelayRevealPlan(plans) != nil {
+			respondErr(w, http.StatusConflict,
+				"a pending war declaration or liaison is still awaiting its delay reveal")
+			return
+		}
+
 		if outstanding, err := mwOutstandingCostsForGame(r.Context(), s.Q, game.ID, game.CurrentRow); err != nil {
 			respondInternalErr(w, r, "could not check battle costs", err)
 			return
@@ -610,6 +622,20 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // advancing the row on unverified state.
 func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, currentRow int16) string {
 	logger := loggerFromContext(ctx)
+
+	// An open delay reveal (Make War / Clandestinely Liaise) holds the row
+	// until every participant has submitted their die. Such a plan has a NULL
+	// row_number, so it is invisible to the ListPendingPlansByRow(currentRow)
+	// check the callers run before this gate — without this branch the row
+	// advances straight past the vote, dropping the declaration's delay roll.
+	plans, err := q.ListPlansByGame(ctx, gameID)
+	if err != nil {
+		logger.WarnContext(ctx, "row-advance gate: could not list plans for delay reveal check; skipping advance", "err", err)
+		return "could not verify delay reveals; retry via /advance-row"
+	}
+	if openDelayRevealPlan(plans) != nil {
+		return "a pending war declaration or liaison is still awaiting its delay reveal"
+	}
 
 	outstanding, err := mwOutstandingCostsForGame(ctx, q, gameID, currentRow)
 	if err != nil {
