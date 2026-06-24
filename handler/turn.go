@@ -630,7 +630,12 @@ func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, 
 	// advances straight past the vote, dropping the declaration's delay roll.
 	plans, err := q.ListPlansByGame(ctx, gameID)
 	if err != nil {
-		logger.WarnContext(ctx, "row-advance gate: could not list plans for delay reveal check; skipping advance", "err", err)
+		logger.WarnContext(
+			ctx,
+			"row-advance gate: could not list plans for delay reveal check; skipping advance",
+			"err",
+			err,
+		)
 		return "could not verify delay reveals; retry via /advance-row"
 	}
 	if openDelayRevealPlan(plans) != nil {
