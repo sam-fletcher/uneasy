@@ -80,6 +80,21 @@ describe('plan.prepared record sync', () => {
 		expect(ctx.plans.filter(p => p.id === 42)).toHaveLength(1);
 	});
 
+	it('orders chips by row_order, not arrival order', () => {
+		const ctx = makeCtx();
+		// A plan with a higher row_order arrives first (e.g. a delay-reveal war
+		// landing on a busy row, or a plan re-broadcast), then one that should
+		// resolve — and display — before it. Live order must match row_order so
+		// the Public Record agrees with the backend resolution order.
+		const second = makePlan({ id: 99, row_number: 3, row_order: 1 });
+		handleWSMessage(ctx, { type: EventTypes.PlanPrepared, payload: { plan: second } });
+		const first = makePlan({ id: 42, row_number: 3, row_order: 0 });
+		handleWSMessage(ctx, { type: EventTypes.PlanPrepared, payload: { plan: first } });
+
+		expect(ctx.recordRows.find(r => r.row_number === 3)?.plans.map(p => p.id))
+			.toEqual([42, 99]);
+	});
+
 	it('keeps the chip status in sync on resolve', () => {
 		const plan = makePlan({ id: 42, row_number: 3, status: 'pending' });
 		const ctx = makeCtx({

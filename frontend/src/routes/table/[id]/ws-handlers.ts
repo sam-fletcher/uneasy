@@ -585,7 +585,12 @@ function upsertPlanIntoRecord(ctx: WSContext, plan: Plan) {
 	ctx.recordRows = ctx.recordRows.map(row => {
 		const without = row.plans.filter(p => p.id !== plan.id);
 		if (row.row_number === targetRow) {
-			return { ...row, plans: [...without, plan] };
+			// Insert by row_order so the live record matches resolution order
+			// (and a reload, which sorts by row_order). Appending instead would
+			// show plans in arrival order — e.g. a Make Demands plan slotted in
+			// before its target, or a delay-reveal war landing on a busy row,
+			// would display out of sequence until the next full reload.
+			return { ...row, plans: [...without, plan].sort((a, b) => a.row_order - b.row_order) };
 		}
 		// Leave untouched rows referentially stable to avoid needless rerenders.
 		return without.length === row.plans.length ? row : { ...row, plans: without };
