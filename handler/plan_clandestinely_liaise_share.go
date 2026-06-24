@@ -219,18 +219,17 @@ func applyTakeGift(
 		return fmt.Errorf("take_gift: target asset not found: %w", err)
 	}
 	oldOwner := asset.OwnerID
-	if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-		ID:      *choice.TargetAssetID,
-		OwnerID: choice.PlayerID,
-	}); err != nil {
+	if _, err := takeAssetEffect(
+		ctx,
+		deps.Q,
+		deps.Manager,
+		plan.GameID,
+		*choice.TargetAssetID,
+		oldOwner,
+		choice.PlayerID,
+	); err != nil {
 		return fmt.Errorf("could not transfer gift asset: %w", err)
 	}
-	updated, _ := deps.Q.GetAssetByID(ctx, *choice.TargetAssetID)
-	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-		Asset:      updated,
-		OldOwnerID: oldOwner,
-		NewOwnerID: choice.PlayerID,
-	})
 	clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s took %s from their partner as a gift.",
 		playerDisplayName(ctx, deps.Q, choice.PlayerID), assetMark(asset.Name)))
 	return nil

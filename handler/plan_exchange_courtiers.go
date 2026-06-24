@@ -195,18 +195,18 @@ func applyExchangeCourtiersMake(
 		if err != nil {
 			return err
 		}
-		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-			ID:      *plan.TargetAssetID,
-			OwnerID: recipient,
-		}); err != nil {
+		ta, err := takeAssetEffect(
+			ctx,
+			deps.Q,
+			deps.Manager,
+			plan.GameID,
+			*plan.TargetAssetID,
+			*plan.TargetPlayerID,
+			recipient,
+		)
+		if err != nil {
 			return err
 		}
-		ta, _ := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID)
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-			Asset:      ta,
-			OldOwnerID: *plan.TargetPlayerID,
-			NewOwnerID: recipient,
-		})
 		ecLog(ctx, deps, plan, model.SeverityImportant,
 			fmt.Sprintf("%s took the peer %s from %s.",
 				playerDisplayName(ctx, deps.Q, recipient), assetMark(ta.Name),
@@ -260,18 +260,18 @@ func applyExchangeCourtiersMar(
 			if err != nil {
 				return err
 			}
-			if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-				ID:      *plan.TargetAssetID,
-				OwnerID: recipient,
-			}); err != nil {
+			ta, err := takeAssetEffect(
+				ctx,
+				deps.Q,
+				deps.Manager,
+				plan.GameID,
+				*plan.TargetAssetID,
+				*plan.TargetPlayerID,
+				recipient,
+			)
+			if err != nil {
 				return err
 			}
-			ta, _ := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID)
-			broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-				Asset:      ta,
-				OldOwnerID: *plan.TargetPlayerID,
-				NewOwnerID: recipient,
-			})
 			ecLog(ctx, deps, plan, model.SeverityImportant,
 				fmt.Sprintf("A fair trade: %s passed to %s after all.",
 					assetMark(ta.Name), playerDisplayName(ctx, deps.Q, recipient)))
@@ -280,18 +280,18 @@ func applyExchangeCourtiersMar(
 			// no offer was made (the preparer skipped straight to the roll), only
 			// the targeted peer changes hands.
 			if ec.FairTradeAssetID != nil {
-				if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-					ID:      *ec.FairTradeAssetID,
-					OwnerID: *plan.TargetPlayerID,
-				}); err != nil {
+				oa, err := takeAssetEffect(
+					ctx,
+					deps.Q,
+					deps.Manager,
+					plan.GameID,
+					*ec.FairTradeAssetID,
+					plan.PreparerID,
+					*plan.TargetPlayerID,
+				)
+				if err != nil {
 					return err
 				}
-				oa, _ := deps.Q.GetAssetByID(ctx, *ec.FairTradeAssetID)
-				broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-					Asset:      oa,
-					OldOwnerID: plan.PreparerID,
-					NewOwnerID: *plan.TargetPlayerID,
-				})
 				ecLog(ctx, deps, plan, model.SeverityImportant,
 					fmt.Sprintf("%s received %s in exchange.",
 						playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID), assetMark(oa.Name)))
@@ -328,18 +328,10 @@ func ecGivePeerToTarget(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, a
 	if plan.TargetPlayerID == nil {
 		return nil
 	}
-	if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-		ID:      assetID,
-		OwnerID: *plan.TargetPlayerID,
-	}); err != nil {
+	a, err := takeAssetEffect(ctx, deps.Q, deps.Manager, plan.GameID, assetID, plan.PreparerID, *plan.TargetPlayerID)
+	if err != nil {
 		return err
 	}
-	a, _ := deps.Q.GetAssetByID(ctx, assetID)
-	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-		Asset:      a,
-		OldOwnerID: plan.PreparerID,
-		NewOwnerID: *plan.TargetPlayerID,
-	})
 	ecLog(ctx, deps, plan, model.SeverityImportant,
 		fmt.Sprintf("%s took the requested peer %s from %s.",
 			playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID), assetMark(a.Name),
@@ -471,24 +463,22 @@ func acceptFairTrade(
 		return
 	}
 
-	// Transfer targeted asset to preparer (or demand keep_assets winner).
+	// Transfer targeted asset to preparer (or demand keep_assets winner); each
+	// new owner learns the secrets of the peer they receive (takeAssetEffect also
+	// broadcasts asset.taken + the secret-visibility grant).
 	recipient, err := AssetRecipientForPlan(ctx, q, plan)
 	if err != nil {
 		respondInternalErr(w, r, "could not resolve asset recipient", err)
 		return
 	}
-	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
-		ID:      *plan.TargetAssetID,
-		OwnerID: recipient,
-	}); err != nil {
+	ta, err := takeAssetEffect(ctx, q, manager, game.ID, *plan.TargetAssetID, *plan.TargetPlayerID, recipient)
+	if err != nil {
 		respondInternalErr(w, r, "could not transfer targeted asset", err)
 		return
 	}
 	// Transfer offered asset to target player.
-	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
-		ID:      *ec.FairTradeAssetID,
-		OwnerID: *plan.TargetPlayerID,
-	}); err != nil {
+	oa, err := takeAssetEffect(ctx, q, manager, game.ID, *ec.FairTradeAssetID, plan.PreparerID, *plan.TargetPlayerID)
+	if err != nil {
 		respondInternalErr(w, r, "could not transfer offered asset", err)
 		return
 	}
@@ -509,19 +499,9 @@ func acceptFairTrade(
 		return
 	}
 
-	ta, _ := q.GetAssetByID(ctx, *plan.TargetAssetID)
-	oa, _ := q.GetAssetByID(ctx, *ec.FairTradeAssetID)
+	// Asset transfers (and their secret-visibility grants) already broadcast
+	// above via takeAssetEffect; only the plan-resolved fan-out remains.
 	if h, hasHub := manager.Get(game.ID); hasHub {
-		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-			Asset:      ta,
-			OldOwnerID: *plan.TargetPlayerID,
-			NewOwnerID: recipient,
-		})
-		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-			Asset:      oa,
-			OldOwnerID: plan.PreparerID,
-			NewOwnerID: *plan.TargetPlayerID,
-		})
 		h.BroadcastEvent(model.EventPlanResolved, model.PlanResolvedPayload{
 			PlanID: plan.ID,
 			Result: makeOutcome,

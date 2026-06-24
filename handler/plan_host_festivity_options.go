@@ -173,10 +173,7 @@ func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContex
 		}
 		newOwner = recipient
 	}
-	err = fc.deps.Q.TransferAsset(
-		ctx,
-		dbgen.TransferAssetParams{ID: fc.assetID, OwnerID: newOwner},
-	)
+	updated, err := takeAssetEffect(ctx, fc.deps.Q, fc.deps.Manager, fc.plan.GameID, fc.assetID, oldOwner, newOwner)
 	if err != nil {
 		return fmt.Errorf("transfer asset: %w", err)
 	}
@@ -184,10 +181,6 @@ func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContex
 	// A peer that's taken won't rejoin its old owner broken — drop it from the
 	// disagreement watch-list too.
 	fc.state.DisagreementAssetIDs = removeID(fc.state.DisagreementAssetIDs, fc.assetID)
-	updated, _ := fc.deps.Q.GetAssetByID(ctx, fc.assetID)
-	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-		Asset: updated, OldOwnerID: oldOwner, NewOwnerID: newOwner,
-	})
 	hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s took %s into their retinue.",
 		playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(updated.Name)))
 	return nil

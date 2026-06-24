@@ -609,9 +609,7 @@ func processPrologueCardClaim(
 		if oldOwner == claimerID {
 			return nil // already mine; rare but possible if same card listed twice
 		}
-		err = q.TransferAsset(ctx, dbgen.TransferAssetParams{
-			ID: asset.ID, OwnerID: claimerID,
-		})
+		updated, err := takeAssetEffect(ctx, q, manager, gameID, asset.ID, oldOwner, claimerID)
 		if err != nil {
 			return fmt.Errorf("transfer asset: %w", err)
 		}
@@ -621,10 +619,6 @@ func processPrologueCardClaim(
 		if err != nil {
 			return fmt.Errorf("transfer card: %w", err)
 		}
-		updated, _ := q.GetAssetByID(ctx, asset.ID)
-		broadcastEvent(manager, gameID, model.EventAssetTaken, model.AssetTakenPayload{
-			Asset: updated, OldOwnerID: oldOwner, NewOwnerID: claimerID,
-		})
 		EmitAssetTaken(ctx, q, manager, gameID, updated, oldOwner, claimerID, nil)
 		_ = existingOwner
 		return nil

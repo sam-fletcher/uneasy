@@ -220,18 +220,12 @@ func (pduelHandler) ApplyChoice(
 		if !loserStakeIDs[assetID] {
 			return fmt.Errorf("asset %d is not one of the losing side's staked assets", assetID)
 		}
-		asset, err := deps.Q.GetAssetByID(ctx, assetID)
-		if err != nil {
+		if _, err := deps.Q.GetAssetByID(ctx, assetID); err != nil {
 			return fmt.Errorf("asset %d not found", assetID)
 		}
-		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-			ID: assetID, OwnerID: winnerID,
-		}); err != nil {
+		if _, err := takeAssetEffect(ctx, deps.Q, deps.Manager, plan.GameID, assetID, loserID, winnerID); err != nil {
 			return fmt.Errorf("transfer asset %d: %w", assetID, err)
 		}
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-			Asset: asset, OldOwnerID: loserID, NewOwnerID: winnerID,
-		})
 		taken++
 	}
 

@@ -18,7 +18,7 @@ import (
 //  2. Outstanding surrender claim → AwaitSurrenderClaim
 //  3. Outstanding battle cost     → AwaitBattleCost            (rulebook step 1)
 //  4. Plan resolving              → PlanResolving              (step 2, active)
-//  4x. Player owes a replacement main character → AwaitMainCharacterChoice
+//     4x. Player owes a replacement main character → AwaitMainCharacterChoice
 //  5. Plan pending on current row → PlanPending                (step 2, queued)
 //  6. Open delay-reveal plan      → AwaitDelayReveal           (Make War / CL)
 //  7. Focus player has a started, not-yet-ended turn-scene → SceneActive (step 4)

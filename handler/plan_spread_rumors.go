@@ -964,19 +964,9 @@ func transferRumorAsset(
 		return fmt.Errorf("asset not found: %w", err)
 	}
 	oldOwnerID := asset.OwnerID
-	if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-		ID:      asset.ID,
-		OwnerID: newOwnerID,
-	}); err != nil {
+	updated, err := takeAssetEffect(ctx, deps.Q, deps.Manager, plan.GameID, asset.ID, oldOwnerID, newOwnerID)
+	if err != nil {
 		return fmt.Errorf("could not transfer asset: %w", err)
-	}
-	updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
-	if h, ok := deps.Manager.Get(plan.GameID); ok {
-		h.BroadcastEvent(model.EventAssetTaken, model.AssetTakenPayload{
-			Asset:      updated,
-			OldOwnerID: oldOwnerID,
-			NewOwnerID: newOwnerID,
-		})
 	}
 	if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
 		EmitAssetTaken(ctx, deps.Q, deps.Manager, plan.GameID, updated, oldOwnerID, newOwnerID, &g.CurrentRow)

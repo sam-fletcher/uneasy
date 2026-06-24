@@ -331,6 +331,38 @@ func (h *planLifecycle) seedPeer(ownerIdx int, name string) int64 {
 	return a.ID
 }
 
+// seedSecret writes a secret on assetID authored by players[authorIdx]. Only
+// the author can see it until someone takes or breaks the asset (which grants
+// the new owner / breaker visibility) — used to assert that transfers carry
+// secret visibility with them.
+func (h *planLifecycle) seedSecret(assetID int64, authorIdx int, text string) int64 {
+	h.t.Helper()
+	s, err := h.q.CreateSecret(context.Background(), dbgen.CreateSecretParams{
+		AssetID:  assetID,
+		AuthorID: h.tg.Players[authorIdx].ID,
+		Text:     text,
+	})
+	require.NoError(h.t, err)
+	return s.ID
+}
+
+// assertSecretVisible asserts that players[viewerIdx] can read the secret on
+// assetID identified by secretID.
+func (h *planLifecycle) assertSecretVisible(msg string, assetID, secretID int64, viewerIdx int) {
+	h.t.Helper()
+	visible, err := h.q.ListVisibleSecrets(context.Background(), dbgen.ListVisibleSecretsParams{
+		AssetID:  assetID,
+		PlayerID: h.tg.Players[viewerIdx].ID,
+	})
+	require.NoError(h.t, err)
+	for _, s := range visible {
+		if s.ID == secretID {
+			return
+		}
+	}
+	h.t.Fatalf("%s: secret %d on asset %d not visible to player index %d", msg, secretID, assetID, viewerIdx)
+}
+
 // seedPeerWithMarginalia creates a peer owned by players[ownerIdx] carrying one
 // marginalia at position 1, and returns (assetID, marginaliaID). The marginalia
 // text is fixed ("a note") and unasserted; callers that need a marginalia

@@ -682,15 +682,9 @@ func shakeUpTakeAsset(
 		return errors.New("asset is destroyed")
 	}
 	oldOwner := asset.OwnerID
-	if err = q.TransferAsset(ctx, dbgen.TransferAssetParams{
-		ID: asset.ID, OwnerID: spend.PlayerID,
-	}); err != nil {
+	if _, err = takeAssetEffect(ctx, q, manager, gameID, asset.ID, oldOwner, spend.PlayerID); err != nil {
 		return fmt.Errorf("transfer: %w", err)
 	}
-	updated, _ := q.GetAssetByID(ctx, asset.ID)
-	broadcastEvent(manager, gameID, model.EventAssetTaken, model.AssetTakenPayload{
-		Asset: updated, OldOwnerID: oldOwner, NewOwnerID: spend.PlayerID,
-	})
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
 	from := playerDisplayName(ctx, q, oldOwner)
 	EmitShakeUpCommitted(

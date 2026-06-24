@@ -101,3 +101,53 @@ func breakMarginalia(
 	}
 	return false, nil
 }
+
+// grantSecretsOnTake gives newOwnerID visibility on every secret of an asset and
+// broadcasts the secret-visibility grant, per the rules: "if you take or break
+// an asset, you can look on its underside to learn any secrets it might be
+// holding" (SECRETS_RULES.md). The DB grant is idempotent (a no-op if already
+// visible). Use this whenever an asset changes hands; takeAssetEffect wraps it
+// for the common transfer+broadcast case, while sites that emit a non-standard
+// transfer event (e.g. Make War's war.seized) call this directly after their own
+// transfer. Skipping it is the bug class that left new owners unable to read the
+// secrets of assets they had just taken.
+func grantSecretsOnTake(
+	ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID, assetID, newOwnerID int64,
+) {
+	_ = q.GrantSecretVisibilityForAsset(ctx, dbgen.GrantSecretVisibilityForAssetParams{
+		AssetID:  assetID,
+		PlayerID: newOwnerID,
+	})
+	broadcastEvent(manager, gameID, model.EventSecretVisibilityGrant, model.SecretVisibilityGrantPayload{
+		AssetID:  assetID,
+		PlayerID: newOwnerID,
+	})
+}
+
+// takeAssetEffect performs the canonical "a player takes ownership of an asset"
+// effect: transfer ownership, grant the new owner visibility on the asset's
+// secrets, and broadcast both asset.taken (with the refreshed asset) and the
+// secret-visibility grant. Returns the refreshed asset so callers can use its
+// post-transfer fields. This is the single source of truth for an asset changing
+// hands through the standard asset.taken event; callers add their own
+// context-specific chat-log line. Sites with a bespoke transfer event use
+// grantSecretsOnTake instead.
+func takeAssetEffect(
+	ctx context.Context, q *dbgen.Queries, manager *hub.Manager,
+	gameID, assetID, oldOwnerID, newOwnerID int64,
+) (dbgen.Asset, error) {
+	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
+		ID:      assetID,
+		OwnerID: newOwnerID,
+	}); err != nil {
+		return dbgen.Asset{}, err
+	}
+	updated, _ := q.GetAssetByID(ctx, assetID)
+	broadcastEvent(manager, gameID, model.EventAssetTaken, model.AssetTakenPayload{
+		Asset:      updated,
+		OldOwnerID: oldOwnerID,
+		NewOwnerID: newOwnerID,
+	})
+	grantSecretsOnTake(ctx, q, manager, gameID, assetID, newOwnerID)
+	return updated, nil
+}

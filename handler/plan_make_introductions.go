@@ -613,13 +613,17 @@ func applyMIPeerOutcome(
 		if vErr != "" {
 			return outcome, http.StatusBadRequest, vErr, nil
 		}
-		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{ID: peer.ID, OwnerID: recipient}); err != nil {
+		if _, err := takeAssetEffect(
+			ctx,
+			deps.Q,
+			deps.Manager,
+			plan.GameID,
+			peer.ID,
+			plan.PreparerID,
+			recipient,
+		); err != nil {
 			return outcome, 0, "", err
 		}
-		updated, _ := deps.Q.GetAssetByID(ctx, peer.ID)
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-			Asset: updated, OldOwnerID: plan.PreparerID, NewOwnerID: recipient,
-		})
 		outcome.Done = true
 		miLog(
 			ctx,

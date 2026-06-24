@@ -435,10 +435,15 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if err := deps.Q.TransferAsset(ctx, dbgen.TransferAssetParams{
-			ID:      asset.ID,
-			OwnerID: body.ToPlayerID,
-		}); err != nil {
+		if _, err := takeAssetEffect(
+			ctx,
+			deps.Q,
+			deps.Manager,
+			plan.GameID,
+			asset.ID,
+			plan.PreparerID,
+			body.ToPlayerID,
+		); err != nil {
 			respondInternalErr(w, r, "could not transfer peer", err)
 			return
 		}
@@ -449,12 +454,6 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		updated, _ := deps.Q.GetAssetByID(ctx, asset.ID)
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetTaken, model.AssetTakenPayload{
-			Asset:      updated,
-			OldOwnerID: plan.PreparerID,
-			NewOwnerID: body.ToPlayerID,
-		})
 		spLog(ctx, deps, plan, model.SeverityDefault,
 			fmt.Sprintf("%s lost the peer %s to %s.",
 				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name),

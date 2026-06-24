@@ -170,6 +170,64 @@ func TestExchangeCourtiers_FairTrade_AcceptSwapsBothPeers(t *testing.T) {
 	assert.Equal(t, "make", *resolved.Result)
 }
 
+// TestExchangeCourtiers_FairTrade_AcceptCarriesSecretVisibility is a regression
+// for the bug where a swapped peer's secrets did not follow it to its new owner:
+// EC transferred peers without granting secret visibility (unlike the canonical
+// take/break path), so each player ended up holding a peer whose secrets they
+// still could not read. After an accepted fair trade, each new owner must be
+// able to see the secret on the peer they received — taking an asset lets you
+// learn its secrets (SECRETS_RULES.md).
+func TestExchangeCourtiers_FairTrade_AcceptCarriesSecretVisibility(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	preparerIdx := h.focusPlayerIdx()
+	targetIdx := (preparerIdx + 1) % len(h.tg.Players)
+	targetPeer := h.seedPeer(targetIdx, "coveted peer")
+	preparerPeer := h.seedPeer(preparerIdx, "preparer's peer")
+
+	// Each peer hides a secret authored by its current owner, so the other
+	// player cannot see it until the swap hands them the peer.
+	targetSecret := h.seedSecret(targetPeer, targetIdx, "the coveted peer's confession")
+	preparerSecret := h.seedSecret(preparerPeer, preparerIdx, "the preparer peer's confession")
+
+	notes := "exchange"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanExchangeCourtiers,
+		TargetPlayerID:   &h.tg.Players[targetIdx].ID,
+		TargetAssetID:    &targetPeer,
+		PreparationNotes: &notes,
+	})
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+
+	code, body := ecOffer(t, h, targetIdx, plan.ID, preparerPeer)
+	require.Equalf(t, http.StatusOK, code, "offer preparer's peer: %v", body)
+	acceptPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/fair-trade"
+	code, body = h.post(preparerIdx, acceptPath, map[string]any{"action": "accept"})
+	require.Equalf(t, http.StatusOK, code, "accept: %v", body)
+
+	// Both new owners can now read the secret on the peer they received.
+	h.assertSecretVisible("preparer received the coveted peer", targetPeer, targetSecret, preparerIdx)
+	h.assertSecretVisible("target received the preparer's peer", preparerPeer, preparerSecret, targetIdx)
+}
+
+// TestExchangeCourtiers_Mar_Forfeit_CarriesSecretVisibility is the mar-path
+// counterpart: when the target forfeits and takes the requested peer, they must
+// gain visibility on its secrets.
+func TestExchangeCourtiers_Mar_Forfeit_CarriesSecretVisibility(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, _, targetIdx, _, requestedPeer := ecToMarWithRequest(t, h)
+	// The preparer authored a secret on the peer the target is about to claim.
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	secret := h.seedSecret(requestedPeer, preparerIdx, "the requested peer's confession")
+
+	code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"forfeit"})
+	require.Equalf(t, http.StatusOK, code, "forfeit: %v", body)
+
+	h.assertSecretVisible("target forfeited the requested peer", requestedPeer, secret, targetIdx)
+}
+
 // TestExchangeCourtiers_Mar_FairTrade_CompletesOfferedSwap covers the second leg
 // of the mar "A Fair Trade" option: when the target had named a preparer peer
 // pre-roll, that peer passes back to them as the targeted peer goes to the

@@ -151,6 +151,12 @@ func TestShakeUpEffect_TakeAsset_TransfersOwnership(t *testing.T) {
 		AssetType: model.AssetPeer, Name: "Loyal guard",
 	})
 	require.NoError(t, err)
+	// A secret authored by the current owner — the spender can't see it until the
+	// take grants visibility (taking an asset lets you learn its secrets).
+	secret, err := q.CreateSecret(ctx, dbgen.CreateSecretParams{
+		AssetID: peer.ID, AuthorID: seeded.Players[1].ID, Text: "the guard's true allegiance",
+	})
+	require.NoError(t, err)
 
 	spend := &dbgen.ShakeUpSpend{
 		OptionKey:     gamepkg.ShakeUpOptTakePeer,
@@ -163,6 +169,14 @@ func TestShakeUpEffect_TakeAsset_TransfersOwnership(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, seeded.Players[0].ID, got.OwnerID, "asset transfers to the spender")
 	assert.False(t, got.IsDestroyed)
+
+	// Regression: the spender now reads the secret on the asset they took.
+	visible, err := q.ListVisibleSecrets(ctx, dbgen.ListVisibleSecretsParams{
+		AssetID: peer.ID, PlayerID: seeded.Players[0].ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, visible, 1, "spender should see the taken asset's secret")
+	assert.Equal(t, secret.ID, visible[0].ID)
 
 	posts := committedPosts(t, q, gameID)
 	require.Len(t, posts, 1)

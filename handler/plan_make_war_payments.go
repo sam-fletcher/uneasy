@@ -557,6 +557,10 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not transfer asset", err)
 			return
 		}
+		// Seizing the asset lets the claimant learn its secrets (the war.seized
+		// event below is bespoke, so grant + broadcast the visibility directly
+		// rather than through takeAssetEffect's asset.taken path).
+		grantSecretsOnTake(ctx, deps.Q, deps.Manager, plan.GameID, asset.ID, player.ID)
 		if err := deps.Q.FulfillSurrenderClaim(ctx, dbgen.FulfillSurrenderClaimParams{
 			ID: claim.ID, AssetID: &asset.ID,
 		}); err != nil {
