@@ -179,7 +179,9 @@
 									aria-label="Jump to {planLabel(plan)} by {authorName(plan.preparer_id)}"
 								>
 									<span class="plan-name">{planLabel(plan)}</span>
-									<span class="plan-status">{plan.status}</span>
+									{#if plan.status !== 'resolved'}
+										<span class="plan-status">{plan.status}</span>
+									{/if}
 								</button>
 							{/each}
 							{#each row.entries as entry (entry.id)}
@@ -460,8 +462,8 @@
 	/* Status colors override the right/top/bottom border (keeping the
 	   preparer-color left edge intact). Pending chips get no override — the
 	   preparer color on the left edge carries identity. */
-	.plan-resolving { border-top-color: #e0a040; border-right-color: #e0a040; border-bottom-color: #e0a040; }
-	.plan-resolved  { border-top-color: var(--color-success); border-right-color: var(--color-success); border-bottom-color: var(--color-success); opacity: 0.7; }
+	.plan-resolving .plan-status { color: var(--color-text); }
+	.plan-resolved  { opacity: 0.7; }
 	.plan-cancelled { opacity: 0.4; }
 
 	.entry-line {
