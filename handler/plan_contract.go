@@ -217,10 +217,12 @@ type PreparedDescriber interface {
 // "mar", or "cancelled", matching EmitPlanResolved. Return ok=false to fall
 // back to the default for any outcome the handler doesn't want to override.
 //
-// This exists because the always-make plans (Host Festivity, Exchange
-// Courtiers, Clandestinely Liaise) read tautologically as "X succeeded." —
-// they always do — so a flavor line ("The festivity drew to a close.") carries
-// more meaning than the generic template.
+// This exists because the always-make plans (Host Festivity, Clandestinely
+// Liaise) read tautologically as "X succeeded." — they carry no roll and no
+// failure path, so they always do — and a flavor line ("The festivity drew to
+// a close.") carries more meaning than the generic template. Plans with a
+// genuine make/mar outcome (including Exchange Courtiers, whose mar branch is
+// real) keep the generic template, where "marred" is meaningful.
 type ResolvedDescriber interface {
 	ResolvedDescriptor(
 		ctx context.Context,

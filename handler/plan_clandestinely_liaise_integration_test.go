@@ -46,8 +46,8 @@ func clDriveToThingsWeShare(t *testing.T, h *planLifecycle) clMeeting {
 	ctx := context.Background()
 
 	// Each player brings a specific peer to the meeting.
-	preparerPeer, preparerMarg := clSeedPeerWithMarginalia(t, h, 0, "preparer's confidant")
-	partnerPeer, partnerMarg := clSeedPeerWithMarginalia(t, h, 1, "partner's confidant")
+	preparerPeer, preparerMarg := h.seedPeerWithMarginalia(0, "preparer's confidant")
+	partnerPeer, partnerMarg := h.seedPeerWithMarginalia(1, "partner's confidant")
 
 	notes := "a meeting under the bridge"
 	partnerID := h.tg.Players[1].ID
@@ -125,23 +125,6 @@ func clKeepSecret(t *testing.T, h *planLifecycle, planID int64, playerIdx int) {
 	require.Equalf(t, http.StatusOK, code, "keep-secret: %v", body)
 }
 
-// clSeedPeerWithMarginalia creates a peer owned by players[ownerIdx] with one
-// intact marginalia and returns the asset + marginalia ids.
-func clSeedPeerWithMarginalia(t *testing.T, h *planLifecycle, ownerIdx int, name string) (int64, int64) {
-	t.Helper()
-	ctx := context.Background()
-	a, err := h.q.CreateAsset(ctx, dbgen.CreateAssetParams{
-		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[ownerIdx].ID,
-		CreatorID: h.tg.Players[ownerIdx].ID, AssetType: model.AssetPeer, Name: name,
-	})
-	require.NoError(t, err)
-	m, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
-		AssetID: a.ID, Position: 1, Text: "note",
-	})
-	require.NoError(t, err)
-	return a.ID, m.ID
-}
-
 // TestLiaise_KeepSecret_RejectsDuplicateSubmission proves the keep-secret
 // handler guards against a double-write: a second submission by the same
 // participant (a stale client after a refresh, a retry, or a direct API call) is
@@ -154,8 +137,8 @@ func TestLiaise_KeepSecret_RejectsDuplicateSubmission(t *testing.T) {
 
 	// Drive a liaison into the secrets_we_keep phase (mirrors the first half of
 	// clDriveToThingsWeShare, stopping before both secrets are kept).
-	preparerPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's confidant")
-	partnerPeer, _ := clSeedPeerWithMarginalia(t, h, 1, "partner's confidant")
+	preparerPeer, _ := h.seedPeerWithMarginalia(0, "preparer's confidant")
+	partnerPeer, _ := h.seedPeerWithMarginalia(1, "partner's confidant")
 
 	notes := "a meeting under the bridge"
 	partnerID := h.tg.Players[1].ID
@@ -271,7 +254,7 @@ func TestLiaise_ShareChoice_RejectsForeignTarget(t *testing.T) {
 
 	// players[2] is not a participant; their asset is an invalid look_at_secret
 	// target (look_at_secret accepts any asset type, so ownership is what trips).
-	foreign, _ := clSeedPeerWithMarginalia(t, h, 2, "outsider's peer")
+	foreign, _ := h.seedPeerWithMarginalia(2, "outsider's peer")
 
 	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
 	code, body := h.post(0, sharePath, map[string]any{
@@ -287,7 +270,7 @@ func TestLiaise_ShareChoice_TakeGift_RejectsPeer(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	m := clDriveToThingsWeShare(t, h)
 
-	partnerPeer, _ := clSeedPeerWithMarginalia(t, h, 1, "partner's peer")
+	partnerPeer, _ := h.seedPeerWithMarginalia(1, "partner's peer")
 	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
 	code, body := h.post(0, sharePath, map[string]any{
 		"choice": "take_gift", "target_asset_id": partnerPeer,
@@ -426,7 +409,7 @@ func TestLiaise_ShareChoice_BreakPeer_RejectsNonMeetingPeer(t *testing.T) {
 	m := clDriveToThingsWeShare(t, h)
 
 	// A second peer the partner owns that is NOT the meeting peer.
-	otherPeer, otherMarg := clSeedPeerWithMarginalia(t, h, 1, "partner's other peer")
+	otherPeer, otherMarg := h.seedPeerWithMarginalia(1, "partner's other peer")
 
 	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
 	code, body := h.post(0, sharePath, map[string]any{
@@ -448,9 +431,9 @@ func TestLiaise_ShareChoice_BreakPeer_RejectsNonMeetingPeer(t *testing.T) {
 func TestLiaise_Prepare_RejectsPeerNotOwned(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 
-	preparerPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's peer")
+	preparerPeer, _ := h.seedPeerWithMarginalia(0, "preparer's peer")
 	// A peer owned by the PREPARER, wrongly passed as the partner's meeting peer.
-	notPartnersPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's second peer")
+	notPartnersPeer, _ := h.seedPeerWithMarginalia(0, "preparer's second peer")
 
 	notes := "a meeting"
 	partnerID := h.tg.Players[1].ID
@@ -475,8 +458,8 @@ func TestLiaise_Prepare_RejectsPeerNotOwned(t *testing.T) {
 func TestLiaise_PrepareResponse_CarriesPartnerAndReveal(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 
-	preparerPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's confidant")
-	partnerPeer, _ := clSeedPeerWithMarginalia(t, h, 1, "partner's confidant")
+	preparerPeer, _ := h.seedPeerWithMarginalia(0, "preparer's confidant")
+	partnerPeer, _ := h.seedPeerWithMarginalia(1, "partner's confidant")
 
 	notes := "under a bridge"
 	partnerID := h.tg.Players[1].ID
@@ -516,8 +499,8 @@ func TestLiaise_PrepareResponse_CarriesPartnerAndReveal(t *testing.T) {
 func TestLiaise_GetReveal_PartialSubmission_ExposesRevealedAtNotFace(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 
-	preparerPeer, _ := clSeedPeerWithMarginalia(t, h, 0, "preparer's confidant")
-	partnerPeer, _ := clSeedPeerWithMarginalia(t, h, 1, "partner's confidant")
+	preparerPeer, _ := h.seedPeerWithMarginalia(0, "preparer's confidant")
+	partnerPeer, _ := h.seedPeerWithMarginalia(1, "partner's confidant")
 
 	notes := "under a bridge"
 	partnerID := h.tg.Players[1].ID

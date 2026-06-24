@@ -92,6 +92,17 @@ func (clHandler) PreparedDescriptor(
 		notesSuffix(plan)), true
 }
 
+// ResolvedDescriptor gives the liaison's always-make resolution a flavor line
+// instead of the tautological "Clandestinely Liaise succeeded." — a liaison
+// carries no roll and no failure path (see OnResolve), so it always "makes";
+// the meeting simply happens. result is always makeOutcome here.
+func (clHandler) ResolvedDescriptor(_ context.Context, _ *dbgen.Queries, _ dbgen.Plan, result string) (string, bool) {
+	if result == makeOutcome {
+		return "The clandestine meeting came to an end.", true
+	}
+	return "", false
+}
+
 func (clHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlayerID == nil {
 		return nil, "clandestinely_liaise requires target_player_id (the partner)"

@@ -125,18 +125,6 @@ func seedActiveWar(t *testing.T, h *planLifecycle) (planID int64, prepIdx, enemy
 	return plan.ID, prepIdx, enemyIdx, *refreshed.RowNumber
 }
 
-// seedAssetWithMarginalium creates a peer owned by players[ownerIdx] carrying a
-// single marginalia, returning the asset id and marginalia id.
-func seedAssetWithMarginalium(t *testing.T, h *planLifecycle, ownerIdx int, name string) (int64, int64) {
-	t.Helper()
-	assetID := h.seedPeer(ownerIdx, name)
-	m, err := h.q.CreateMarginalia(context.Background(), dbgen.CreateMarginaliaParams{
-		AssetID: assetID, Position: 1, Text: "a note",
-	})
-	require.NoError(t, err)
-	return assetID, m.ID
-}
-
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 // TestMakeWarHTTP_BreakAssetCost_DestroysAndLogs: paying the cost of battle via
@@ -150,7 +138,7 @@ func TestMakeWarHTTP_BreakAssetCost_DestroysAndLogs(t *testing.T) {
 	require.True(t, anyContains(warSystemPosts(t, h.q, h.tg.Game.ID), "War breaks out"),
 		"expected a War breaks out log post")
 
-	assetA, margA := seedAssetWithMarginalium(t, h, prepIdx, "Frontline asset")
+	assetA, margA := h.seedPeerWithMarginalia(prepIdx, "Frontline asset")
 	h.jumpToRow(warRow + 1) // cost of battle is due the row after the war starts
 
 	enemyID := h.tg.Players[enemyIdx].ID
@@ -176,7 +164,7 @@ func TestMakeWarHTTP_SurrenderSeizeAndEnd(t *testing.T) {
 	h := newPlanLifecycle(t, 5)
 	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
 
-	_, margA := seedAssetWithMarginalium(t, h, prepIdx, "Sacrificed asset")
+	_, margA := h.seedPeerWithMarginalia(prepIdx, "Sacrificed asset")
 	seizable := h.seedPeer(prepIdx, "Spoils of war")
 	h.jumpToRow(warRow + 1)
 
@@ -237,7 +225,7 @@ func TestMakeWarHTTP_SurrenderWithNoClaimableAssets_RowCanAdvance(t *testing.T) 
 	for _, a := range owned {
 		require.NoError(t, h.q.DestroyAsset(ctx, a.ID))
 	}
-	_, margA := seedAssetWithMarginalium(t, h, prepIdx, "Final holding")
+	_, margA := h.seedPeerWithMarginalia(prepIdx, "Final holding")
 
 	h.jumpToRow(warRow + 1)
 

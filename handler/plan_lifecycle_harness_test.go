@@ -330,3 +330,18 @@ func (h *planLifecycle) seedPeer(ownerIdx int, name string) int64 {
 	require.NoError(h.t, err)
 	return a.ID
 }
+
+// seedPeerWithMarginalia creates a peer owned by players[ownerIdx] carrying one
+// marginalia at position 1, and returns (assetID, marginaliaID). The marginalia
+// text is fixed ("a note") and unasserted; callers that need a marginalia
+// target (Make War cost-of-battle, Clandestinely Liaise tear/rewrite) use the
+// returned IDs.
+func (h *planLifecycle) seedPeerWithMarginalia(ownerIdx int, name string) (assetID, margID int64) {
+	h.t.Helper()
+	assetID = h.seedPeer(ownerIdx, name)
+	m, err := h.q.CreateMarginalia(context.Background(), dbgen.CreateMarginaliaParams{
+		AssetID: assetID, Position: 1, Text: "a note",
+	})
+	require.NoError(h.t, err)
+	return assetID, m.ID
+}
