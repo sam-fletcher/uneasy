@@ -9,7 +9,7 @@ package handler
 // per-track "Done" flag. When every player is Done, the server resolves
 // the track: bright (necessary) hearts lock in; grey (wasted) hearts are
 // refunded by deleting their committed-hearts rows so they're available
-// for the next track. The set-aside flow (rank-1 player slotting in
+// for the next track. The set-aside flow (top-ranked player slotting in
 // zero-suit players) is unchanged and still uses PlaceSetAsides.
 
 import (
@@ -356,7 +356,7 @@ func resolveTrack(
 	}
 
 	// Single set-aside has no decision to make — auto-place so the
-	// rank-1 player isn't prompted for a trivial choice.
+	// top-ranked player isn't prompted for a trivial choice.
 	autoPlaced := len(setAside) == 1
 	persistedSetAside := []int64(nil)
 	if autoPlaced {
@@ -404,7 +404,7 @@ func resolveTrack(
 		model.PrologueRankingStepChangedPayload{Step: nextStep})
 	// When the track is fully resolved here (no multi-player set-aside hand-off
 	// to PlaceSetAsides), log its opening standing. The set-aside path logs it
-	// instead, once the rank-1 player has slotted the remaining players in.
+	// instead, once the top-ranked player has slotted the remaining players in.
 	if nextStep != placeSetAsidesStepFor(track) {
 		EmitPrologueTrackRanked(ctx, q, manager, game.ID, track)
 	}

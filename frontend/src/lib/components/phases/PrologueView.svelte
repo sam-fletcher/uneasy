@@ -3,7 +3,7 @@
 
     null   →  choosing: pick boxes from the three sheets; cards make-or-take
     declare_X        →  hearts declaration for the current track
-    place_set_asides_X →  rank-1 player slots zero-suit players in
+    place_set_asides_X →  top-ranked player slots zero-suit players in
     extra_peers      →  ≤3-player rule: each picks one unused title
 -->
 <script lang="ts">
@@ -270,24 +270,24 @@
 		return players.filter(p => !ranked.has(p.id)).map(p => p.id);
 	});
 
-	const isMyTurnForSetAsides = $derived.by(() => {
+	// The player at the top of the current track: the highest-status *real*
+	// player, i.e. the lowest-numbered rank with a non-dummy player. Can't assume
+	// rank 1 — in 2–3 player games dummy tokens occupy rank 1, so the top player
+	// sits at rank 2. Mirrors the backend's PlaceSetAsides auth check.
+	const topTrackPlayerID = $derived.by(() => {
 		const t = currentTrack;
-		if (!t) return false;
-		const r1 = rankings.find(r => r.category === t && r.rank === 1);
-		return r1?.player_id === currentPlayerID;
+		if (!t) return null;
+		const real = rankings.filter((r) => r.category === t && r.player_id != null);
+		if (real.length === 0) return null;
+		return real.reduce((top, r) => (r.rank < top.rank ? r : top)).player_id ?? null;
 	});
+
+	const isMyTurnForSetAsides = $derived(topTrackPlayerID === currentPlayerID);
 
 	let setAsideOrdering = $state<number[]>([]);
 	$effect(() => {
 		// Initialize ordering from set-asides whenever they change.
 		setAsideOrdering = [...setAsidePlayers];
-	});
-
-	const rank1PlayerID = $derived.by(() => {
-		const t = currentTrack;
-		if (!t) return null;
-		const r = rankings.find((rr) => rr.category === t && rr.rank === 1);
-		return r?.player_id ?? null;
 	});
 
 	const setAsideOpenRanks = $derived.by(() => {
@@ -407,9 +407,9 @@
 			return { waitees, stepLabel: `Rankings: Spend ♥ for ${t.charAt(0).toUpperCase() + t.slice(1)}` };
 		}
 		if (mode === 'place') {
-			if (rank1PlayerID == null) return { waitees: [] };
+			if (topTrackPlayerID == null) return { waitees: [] };
 			return {
-				waitees: [{ kind: 'player', playerID: rank1PlayerID }],
+				waitees: [{ kind: 'player', playerID: topTrackPlayerID }],
 				stepLabel: 'Place set-asides',
 			};
 		}
@@ -585,12 +585,12 @@
 				activeTrack={currentTrack as PrologueTrack}
 				{currentPlayerID}
 			/>
-			{#if rank1PlayerID != null && setAsideOrdering.length > 0}
+			{#if topTrackPlayerID != null && setAsideOrdering.length > 0}
 				<SetAsidePlacer
 					{players}
 					{setAsideOrdering}
 					openRanks={setAsideOpenRanks}
-					rank1PlayerID={rank1PlayerID}
+					topTrackPlayerID={topTrackPlayerID}
 					isMyTurn={isMyTurnForSetAsides}
 					busy={placing}
 					onReorder={(next) => (setAsideOrdering = next)}

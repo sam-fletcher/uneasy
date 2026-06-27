@@ -147,7 +147,7 @@ func loadGameForPrologue(w http.ResponseWriter, ctx context.Context, q *dbgen.Qu
 //
 // Body: {"ordering": [player_id, ...]}.
 //
-// Caller must be the rank-1 player on the current track. The ordering must
+// Caller must be the top-ranked player on the current track. The ordering must
 // be a permutation of the set-aside players (those not yet given a
 // rankings.rank for this track). Server appends them to the rankings, then
 // advances to the next declare step (or extra-peers / done).
@@ -174,22 +174,31 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Caller must be rank-1 on this track.
+		// Caller must be the player at the top of this track. Per PROLOGUE_RULES
+		// step 6, "the player at the top of each track adds the set-aside players"
+		// — that's the highest-status *real* player, i.e. the non-dummy ranking
+		// with the lowest rank number. We can't assume rank 1: in 2–3 player games
+		// dummy tokens occupy rank 1 (see dummyRanksForPlayerCount), so the top
+		// player there sits at rank 2.
 		rankings, err := s.Q.ListRankingsByGame(ctx, gameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load rankings", err)
 			return
 		}
 		cat := modelCategoryForTrack(track)
-		var rank1 *int64
+		var topPlayer *int64
+		var topRank int16
 		for _, rk := range rankings {
-			if rk.Category == cat && rk.Rank == 1 {
-				rank1 = rk.PlayerID
-				break
+			if rk.Category != cat || rk.PlayerID == nil {
+				continue
+			}
+			if topPlayer == nil || rk.Rank < topRank {
+				topPlayer = rk.PlayerID
+				topRank = rk.Rank
 			}
 		}
-		if rank1 == nil || *rank1 != player.ID {
-			respondErr(w, http.StatusForbidden, "only the track's rank-1 player can place set-asides")
+		if topPlayer == nil || *topPlayer != player.ID {
+			respondErr(w, http.StatusForbidden, "only the track's top-ranked player can place set-asides")
 			return
 		}
 

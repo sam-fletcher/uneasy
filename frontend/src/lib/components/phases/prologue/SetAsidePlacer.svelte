@@ -1,7 +1,7 @@
 <!-- SetAsidePlacer.svelte
   Shown during the place_set_asides_X step. Renders the open ranks on
   the active track with the set-aside players slotted in tentatively;
-  the track's rank-1 player can reorder. Everyone else sees a
+  the track's top-ranked player can reorder. Everyone else sees a
   "Decided by [name]" overlay.
 
   When there's only one set-aside, the server auto-places it and this
@@ -14,7 +14,7 @@
 		players: Player[];
 		setAsideOrdering: number[];
 		openRanks: number[]; // ascending
-		rank1PlayerID: number;
+		topTrackPlayerID: number;
 		isMyTurn: boolean;
 		busy?: boolean;
 		onReorder: (next: number[]) => void;
@@ -25,7 +25,7 @@
 		players,
 		setAsideOrdering,
 		openRanks,
-		rank1PlayerID,
+		topTrackPlayerID,
 		isMyTurn,
 		busy = false,
 		onReorder,
@@ -50,7 +50,7 @@
 	<div class="placer-head">
 		<span class="placer-title">Set-aside placement</span>
 		{#if !isMyTurn}
-			<span class="decided-by">Decided by {playerName(rank1PlayerID)}</span>
+			<span class="decided-by">Decided by {playerName(topTrackPlayerID)}</span>
 		{/if}
 	</div>
 
