@@ -103,35 +103,32 @@ func TestPlanDifficulty(t *testing.T) {
 	})
 }
 
-// TestProposeDecreeCouncilEligibility tests the eligibility rules for
-// joining a Propose Decree council.
+// TestProposeDecreeCouncilEligibility tests the leverage-to-join eligibility
+// rule for a Propose Decree council.
 func TestProposeDecreeCouncilEligibility(t *testing.T) {
-	// Eligibility rule: joiner must have rank 1 (Monarch), or rank < preparerRank.
+	// Mirrors pdJoinCouncilHandler: the leverage-to-join path is for the "other
+	// players" — those ranked strictly BELOW the preparer on power (higher rank
+	// number). The Monarch and everyone ranked above the preparer are auto-seated
+	// for free, so they never use this path. (Higher rank number = lower power.)
 	checkEligible := func(joinerRank, preparerRank int16) bool {
-		return joinerRank == 1 || joinerRank < preparerRank
+		return joinerRank > preparerRank
 	}
 
-	t.Run("Monarch (rank 1) is always eligible", func(t *testing.T) {
-		assert.True(t, checkEligible(1, 1), "Monarch eligible even if preparer is also rank 1")
-		assert.True(t, checkEligible(1, 3))
-		assert.True(t, checkEligible(1, 5))
+	t.Run("player ranked below preparer may leverage to join", func(t *testing.T) {
+		assert.True(t, checkEligible(3, 2))
+		assert.True(t, checkEligible(5, 2))
+		assert.True(t, checkEligible(4, 3))
 	})
 
-	t.Run("player ranked above preparer is eligible", func(t *testing.T) {
-		// rank 2 can join when preparer is rank 3, 4, or 5
-		assert.True(t, checkEligible(2, 3))
-		assert.True(t, checkEligible(2, 4))
-		assert.True(t, checkEligible(4, 5))
+	t.Run("Monarch and higher-power players are auto-seated, not join-eligible", func(t *testing.T) {
+		assert.False(t, checkEligible(1, 3), "Monarch is already seated")
+		assert.False(t, checkEligible(2, 3), "ranked above the preparer → already seated")
+		assert.False(t, checkEligible(4, 5))
 	})
 
-	t.Run("player ranked equal to preparer is not eligible", func(t *testing.T) {
+	t.Run("equal rank is not eligible", func(t *testing.T) {
+		// Ranks are unique per category in practice; guard the boundary anyway.
 		assert.False(t, checkEligible(3, 3))
-		assert.False(t, checkEligible(4, 4))
-	})
-
-	t.Run("player ranked below preparer is not eligible", func(t *testing.T) {
-		assert.False(t, checkEligible(4, 3))
-		assert.False(t, checkEligible(5, 2))
 	})
 }
 

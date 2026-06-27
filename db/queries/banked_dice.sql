@@ -26,3 +26,10 @@ WHERE game_id = $1 AND player_id = $2 AND used_at IS NULL;
 UPDATE banked_dice
 SET used_at = now(), used_roll_id = $2
 WHERE id = $1;
+
+-- name: DeleteUnspentBankedDiceBySource :exec
+-- Discards every unspent banked die of a given source in a game. Used by
+-- Propose Decree to clear the ephemeral 'decree' dice a joiner did not spend
+-- on the council roll, so they cannot leak onto a later, unrelated roll.
+DELETE FROM banked_dice
+WHERE game_id = $1 AND source = $2 AND used_at IS NULL;

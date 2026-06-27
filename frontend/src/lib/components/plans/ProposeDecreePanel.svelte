@@ -4,10 +4,10 @@
   Prep: notes (the decree text).
 
   Resolve has three phases:
-    1. Council meeting — no dice roll yet. Eligible non-members (Monarch
-       or power-ranked above the preparer) see a multi-asset picker to
-       join. The current signatory (highest-power council member; the
-       preparer by default) sees a "Call the roll" button.
+    1. Council meeting — no dice roll yet. Eligible non-members (anyone
+       ranked BELOW the preparer on power) see a multi-asset picker to
+       join by leveraging. The current signatory (highest-power council
+       member; the preparer by default) sees a "Call the roll" button.
     2. Rolling — dice play out.
     3. Post-roll — signatory writes the addendum; preparer completes.
        On mar, the other council members narrate amendments via scene posts
@@ -22,7 +22,7 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		joinCouncil, callRoll, setAddendum, amendDecree, namePlanAsset, getAssetSuggestions,
+		joinCouncil, callRoll, setAddendum, amendDecree, skipAmend, namePlanAsset, getAssetSuggestions,
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -155,12 +155,13 @@
 	const amSignatory = $derived(
 		currentPlayerID != null && pdState.signatoryID === currentPlayerID
 	);
-	// Eligible to join: Monarch (rank 1) or power-ranked above the preparer,
-	// and not already in the council (the preparer is auto-seated).
+	// Eligible to join by leveraging: the "other players" — those ranked BELOW
+	// the preparer on power (higher rank number). The Monarch and everyone above
+	// the preparer are already auto-seated for free, so they never use this path.
 	const canJoin = $derived.by(() => {
 		if (!plan || currentPlayerID == null || amMember) return false;
 		if (myRank == null || preparerRank == null) return false;
-		return myRank === 1 || myRank < preparerRank;
+		return myRank > preparerRank;
 	});
 
 	const myUnleveragedAssets = $derived(ownerUnleveragedAssets(assets, currentPlayerID));
@@ -241,6 +242,17 @@
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not amend the decree.';
+		} finally { amendBusy = false; }
+	}
+	async function submitSkipAmend(p: Plan) {
+		if (amendBusy) return;
+		amendBusy = true; resError = '';
+		try {
+			await skipAmend(p.id);
+			amendSeededFor = null;
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not skip your amendment.';
 		} finally { amendBusy = false; }
 	}
 
@@ -369,7 +381,9 @@
 				<div class="plan-form" style="margin-top:0.5rem;">
 					<p class="choices-header">Join the council</p>
 					<p class="choices-note">
-						Leverage one or more of your assets to join the discussion.
+						Leverage one or more of your assets to join the discussion. Each
+						asset becomes a die you'll add — to help or interfere — when the
+						signatory calls the roll.
 					</p>
 					{#if myUnleveragedAssets.length === 0}
 						<p class="choices-note muted">You have no un-leveraged assets to offer.</p>
@@ -393,8 +407,9 @@
 				</div>
 			{:else if !amMember && currentPlayerID != null}
 				<p class="choices-note muted" style="margin-top:0.5rem;">
-					Only the Monarch or players ranked above the preparer on power
-					may join the council.
+					Only players ranked below the preparer on power may leverage to
+					join the council. The Monarch and higher-power members are already
+					seated.
 				</p>
 			{/if}
 
@@ -425,8 +440,8 @@
 				</p>
 				<p class="choices-note">
 					{#if rollOutcome === 'make'}
-						The decree becomes law. A resource asset owned by the signatory
-						will be created.
+						The decree becomes law. A resource asset representing what you
+						gain — owned by you, the preparer — will be created.
 					{:else}
 						The decree passes, amended by the council. No resource asset is
 						created; other council members should narrate amendments in the scene.
@@ -467,11 +482,18 @@
 								<textarea rows={3} bind:value={amendDraft} class="form-textarea"
 									placeholder="The amended law…"></textarea>
 							</label>
-							<button class="action-btn primary"
-								onclick={() => submitAmend(plan)}
-								disabled={amendBusy || !amendDraft.trim()}>
-								{amendBusy ? '…' : 'Submit amendment'}
-							</button>
+							<div class="form-actions">
+								<button class="action-btn primary"
+									onclick={() => submitAmend(plan)}
+									disabled={amendBusy || !amendDraft.trim()}>
+									{amendBusy ? '…' : 'Submit amendment'}
+								</button>
+								<button class="action-btn"
+									onclick={() => submitSkipAmend(plan)}
+									disabled={amendBusy}>
+									{amendBusy ? '…' : 'Leave unchanged'}
+								</button>
+							</div>
 						</div>
 					{:else}
 						<p class="choices-note muted">

@@ -50,6 +50,12 @@ import (
 	"uneasy/model"
 )
 
+// decreeBankedDieSource tags the ephemeral banked dice a player mints by
+// leveraging assets to join the council. They are spendable only on the
+// decree's own roll (one open roll per game) and any left unspent are
+// discarded when the law is enacted — see ApplyChoice.
+const decreeBankedDieSource = "decree"
+
 func init() {
 	RegisterPlan(model.PlanProposeDecree, pdHandler{})
 }
@@ -225,6 +231,16 @@ func (pdHandler) ApplyChoice(
 		pd.AmendmentOrder = order
 	}
 
+	// The council roll is over: discard any 'decree' banked dice the joiners
+	// never spent so they cannot leak onto a later, unrelated roll. (Spent dice
+	// are marked used and untouched.)
+	if err := deps.Q.DeleteUnspentBankedDiceBySource(ctx, dbgen.DeleteUnspentBankedDiceBySourceParams{
+		GameID: plan.GameID,
+		Source: decreeBankedDieSource,
+	}); err != nil {
+		return fmt.Errorf("could not clear unspent council dice: %w", err)
+	}
+
 	broadcastEvent(deps.Manager, plan.GameID, model.EventLawEnacted, model.LawEnactedPayload{
 		PlanID: plan.ID,
 		Law:    law,
@@ -297,8 +313,11 @@ func pdLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 }
 
 // pdCreateLawAsset creates the resource asset that accompanies a made law.
-// Owner is the signatory if present, otherwise the recipient determined by
-// AssetRecipientForPlan (which honors a keep_assets Make Demands winner).
+// Owner is the recipient determined by AssetRecipientForPlan — the preparer by
+// default (the rule grants "what YOU gain" to the decree's proposer), or a
+// keep_assets Make Demands winner if one has taken over. NOT the signatory:
+// the signatory signs the law into being, but the worldly resource belongs to
+// the player who drafted and resolved the decree.
 //
 // The asset is created with a neutral placeholder name; the preparer names it
 // afterwards via the name-asset route. (Deliberately NOT derived from the law
@@ -314,15 +333,9 @@ func pdCreateLawAsset(
 ) error {
 	pd := resData.EnsureProposeDecree()
 
-	var ownerID int64
-	if pd.SignatoryID != nil {
-		ownerID = *pd.SignatoryID
-	} else {
-		recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
-		if err != nil {
-			return fmt.Errorf("resolve asset recipient: %w", err)
-		}
-		ownerID = recipient
+	ownerID, err := AssetRecipientForPlan(ctx, deps.Q, plan)
+	if err != nil {
+		return fmt.Errorf("resolve asset recipient: %w", err)
 	}
 
 	asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
@@ -364,11 +377,66 @@ func (pdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	return nil
 }
 
+// ResolvingWaitees names the player the table is actually waiting on at each
+// Propose Decree sub-phase, since the signatory and the amenders are usually
+// NOT the preparer (auto-seating means a higher-power member almost always
+// holds the pen). Without this override the generic case would mis-attribute
+// every wait to the preparer.
+//
+//   - Pre-roll, no roll yet → the signatory (only they can call the roll;
+//     lower-power joins are optional, so they don't block).
+//   - Roll in progress / post-roll before enact → generic preparer case (the
+//     preparer drives the roll and submits the enacting make-choice).
+//   - Mar amendment chain incomplete → the next amender.
+//   - Amendments done, addendum unplaced → the signatory.
+//   - Addendum placed → generic preparer case (they complete the plan).
+func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	pd := loadResolutionData(plan.ResolutionData).ProposeDecree
+	if pd == nil {
+		return model.RowState{}, false
+	}
+
+	signatory := func() (model.RowState, bool) {
+		if pd.SignatoryID == nil {
+			return model.RowState{}, false
+		}
+		return model.RowState{
+			Kind:            model.RowStatePlanResolving,
+			ActingPlayerIDs: []int64{*pd.SignatoryID},
+		}, true
+	}
+
+	// The law row appears only at make-choice. Before it exists, the blocker
+	// is the signatory (call the roll) — unless the roll has already been
+	// called, in which case the preparer owns the roll/enact (generic case).
+	if pd.LawID == nil {
+		if roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID); err == nil && roll.ID != 0 {
+			return model.RowState{}, false
+		}
+		return signatory()
+	}
+
+	// Law enacted. On a mar the council amends in turn — name the next amender.
+	if next := pd.NextAmender(); next != 0 {
+		return model.RowState{
+			Kind:            model.RowStatePlanResolving,
+			ActingPlayerIDs: []int64{next},
+		}, true
+	}
+	// Amendments done; the signatory must place the addendum.
+	if !pd.AddendumPlaced {
+		return signatory()
+	}
+	// Addendum placed: the preparer completes — generic case.
+	return model.RowState{}, false
+}
+
 func (pdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"join-council":  pdJoinCouncilHandler(deps),
 		"call-roll":     pdCallRollHandler(deps),
 		"amend-decree":  pdAmendDecreeHandler(deps),
+		"skip-amend":    pdSkipAmendHandler(deps),
 		"set-addendum":  pdSetAddendumHandler(deps),
 		"name-resource": pdNameAssetHandler(deps),
 	}
@@ -399,8 +467,9 @@ func pdNameAssetHandler(deps *PlanDeps) http.HandlerFunc {
 // pdJoinCouncilHandler handles POST /api/plans/:planId/join-council.
 //
 // A player joins the council by leveraging ≥1 of their assets. Eligible
-// players: rank 1 on the power track (Monarch), or any player ranked above
-// the preparer on the power track.
+// players: anyone ranked BELOW the preparer on the power track (the "other
+// players" of pre-roll rule 2). Everyone ranked above the preparer — including
+// whoever sits highest on the track — is already auto-seated for free.
 //
 // After joining, the signatory is recalculated: the player with the best
 // (lowest) power rank among all council members becomes the new signatory.
@@ -453,14 +522,21 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Eligibility: joiner must be rank 1 (Monarch) or rank < preparer's rank.
-		if joinerRank != 1 && joinerRank >= preparerRank {
+		// Eligibility: the leverage-to-join path is for the "other players" — those
+		// ranked BELOW the preparer on power (higher rank number). The Monarch and
+		// everyone ranked above the preparer are already auto-seated for free at
+		// OnResolve, so they have no reason (and no route) to leverage in.
+		if joinerRank <= preparerRank {
 			respondErr(w, http.StatusForbidden,
-				"only the Monarch or players ranked above the preparer may join the council")
+				"only players ranked below the preparer on power may leverage to join the council")
 			return
 		}
 
-		// Verify and leverage each specified asset.
+		// Verify and leverage each specified asset. Each leveraged asset provides
+		// one die "to help or interfere when the roll comes" (pre-roll rule 2): we
+		// mark the asset leveraged (the join cost) and mint an ephemeral 'decree'
+		// banked die the joiner spends during the roll's leverage stage. Any decree
+		// die left unspent is discarded when the law is enacted (ApplyChoice).
 		for _, assetID := range body.AssetIDs {
 			asset, err := deps.Q.GetAssetByID(ctx, assetID)
 			if err != nil {
@@ -484,6 +560,14 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 				IsLeveraged: true,
 			}); err != nil {
 				respondInternalErr(w, r, "could not leverage asset", err)
+				return
+			}
+			if _, err := deps.Q.CreateBankedDie(ctx, dbgen.CreateBankedDieParams{
+				GameID:   plan.GameID,
+				PlayerID: player.ID,
+				Source:   decreeBankedDieSource,
+			}); err != nil {
+				respondInternalErr(w, r, "could not create council die", err)
 				return
 			}
 			broadcastEvent(deps.Manager, plan.GameID, model.EventAssetLeveraged, model.AssetIDPayload{
@@ -526,13 +610,17 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 			SignatoryID: *pd.SignatoryID,
 		})
 
+		dieNoun := "a die"
+		if len(body.AssetIDs) > 1 {
+			dieNoun = fmt.Sprintf("%d dice", len(body.AssetIDs))
+		}
 		pdLog(
 			ctx,
 			deps,
 			plan,
 			model.SeverityDefault,
-			fmt.Sprintf("%s joined the council; %s now holds the signatory's pen.",
-				playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, *pd.SignatoryID)),
+			fmt.Sprintf("%s leveraged into the council, bringing %s to the roll.",
+				playerDisplayName(ctx, deps.Q, player.ID), dieNoun),
 		)
 
 		respond(w, http.StatusOK, map[string]any{
@@ -683,6 +771,65 @@ func pdAmendDecreeHandler(deps *PlanDeps) http.HandlerFunc {
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
 			"amended":   player.ID,
+			"next":      pd.NextAmender(),
+			"remaining": len(pd.AmendmentOrder) - len(pd.AmendedBy),
+		})
+	}
+}
+
+// ── Skip Amend (mar) ──────────────────────────────────────────────────────────
+
+// pdSkipAmendHandler handles POST /api/plans/:planId/skip-amend.
+//
+// The rules let each council member amend the marred law "at will" — i.e. they
+// may decline. This advances the amendment chain past the current amender
+// WITHOUT changing the law's text, so a member content with the current wording
+// can pass. The table still pauses on each member in turn (their explicit pass
+// is required); only the current NextAmender() may skip.
+func pdSkipAmendHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanProposeDecree {
+			respondErr(w, http.StatusBadRequest, "skip-amend is only for Propose Decree")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		pd := resData.EnsureProposeDecree()
+		if pd.LawID == nil {
+			respondErr(w, http.StatusConflict, "the decree has not been enacted yet")
+			return
+		}
+		next := pd.NextAmender()
+		if next == 0 {
+			respondErr(w, http.StatusConflict, "the council has finished amending the law")
+			return
+		}
+		if player.ID != next {
+			respondErr(w, http.StatusConflict, "it is not your turn to amend the law")
+			return
+		}
+
+		pd.AmendedBy = append(pd.AmendedBy, player.ID)
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save skip", err)
+			return
+		}
+
+		pdLog(ctx, deps, plan, model.SeverityDefault,
+			fmt.Sprintf("%s left the decree's text unchanged.", playerDisplayName(ctx, deps.Q, player.ID)))
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":   plan.ID,
+			"skipped":   player.ID,
 			"next":      pd.NextAmender(),
 			"remaining": len(pd.AmendmentOrder) - len(pd.AmendedBy),
 		})

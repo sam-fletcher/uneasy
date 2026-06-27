@@ -56,6 +56,24 @@ func (q *Queries) CreateBankedDie(ctx context.Context, arg CreateBankedDieParams
 	return i, err
 }
 
+const deleteUnspentBankedDiceBySource = `-- name: DeleteUnspentBankedDiceBySource :exec
+DELETE FROM banked_dice
+WHERE game_id = $1 AND source = $2 AND used_at IS NULL
+`
+
+type DeleteUnspentBankedDiceBySourceParams struct {
+	GameID int64  `db:"game_id" json:"game_id"`
+	Source string `db:"source" json:"source"`
+}
+
+// Discards every unspent banked die of a given source in a game. Used by
+// Propose Decree to clear the ephemeral 'decree' dice a joiner did not spend
+// on the council roll, so they cannot leak onto a later, unrelated roll.
+func (q *Queries) DeleteUnspentBankedDiceBySource(ctx context.Context, arg DeleteUnspentBankedDiceBySourceParams) error {
+	_, err := q.db.Exec(ctx, deleteUnspentBankedDiceBySource, arg.GameID, arg.Source)
+	return err
+}
+
 const getBankedDie = `-- name: GetBankedDie :one
 SELECT id, game_id, player_id, source, created_at, used_at, used_roll_id
 FROM banked_dice

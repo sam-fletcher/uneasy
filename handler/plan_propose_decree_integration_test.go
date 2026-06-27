@@ -260,3 +260,232 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 	assert.Nil(t, law.Addendum, "blank addendum leaves the rider empty")
 	assert.Equal(t, assetsBefore, len(pdLawAssets(t, h)), "a marred decree creates NO resource asset")
 }
+
+// TestProposeDecree_JoinCouncil_MintsAndCleansUpDice proves the leverage-to-join
+// path actually produces dice (pre-roll rule 2). A lower-power player joins by
+// leveraging two assets, minting two ephemeral 'decree' banked dice; one is
+// spent on the roll, the other is discarded when the law is enacted so it can't
+// leak onto a later roll.
+func TestProposeDecree_JoinCouncil_MintsAndCleansUpDice(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	// Preparer = players[1] (power rank 2). players[0] (rank 1) auto-seats and
+	// signs; players[2] (rank 3) is the lower-power "other player" who may join.
+	plan := pdPrepareAndResolve(t, h, 1)
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	require.Equal(t, h.tg.Players[0].ID, *pd.SignatoryID, "highest-power member signs")
+
+	joinerIdx := 2
+	joinerID := h.tg.Players[joinerIdx].ID
+	a1 := h.seedPeer(joinerIdx, "Guild ledger")
+	a2 := h.seedPeer(joinerIdx, "Harbor writ")
+
+	joinPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/join-council"
+	code, body := h.post(joinerIdx, joinPath, map[string]any{"asset_ids": []int64{a1, a2}})
+	require.Equalf(t, http.StatusOK, code, "join-council: %v", body)
+
+	// Two assets leveraged → two 'decree' banked dice for the joiner.
+	dice, err := h.q.ListBankedDiceByPlayer(ctx, dbgen.ListBankedDiceByPlayerParams{
+		GameID: h.tg.Game.ID, PlayerID: joinerID,
+	})
+	require.NoError(t, err)
+	require.Len(t, dice, 2, "each leveraged asset mints one council die")
+	for _, d := range dice {
+		assert.Equal(t, "decree", d.Source, "council dice are tagged 'decree'")
+	}
+	// The joiner is now a council member; a lower-power join does not change the
+	// signatory (players[0] still outranks everyone present).
+	pd = pdData(t, h, plan.ID)
+	assert.Contains(t, pd.SignatoryPlayerIDs, joinerID, "joiner is seated")
+	require.NotNil(t, pd.SignatoryID)
+	assert.Equal(t, h.tg.Players[0].ID, *pd.SignatoryID, "signatory unchanged by lower-power join")
+
+	// Signatory calls the roll; the joiner spends ONE die (mark it used as the
+	// real leverage flow would), leaving the other unspent.
+	roll := pdCallRoll(t, h, plan.ID, 0)
+	spent := dice[0].ID
+	require.NoError(t, h.q.MarkBankedDieUsed(ctx, dbgen.MarkBankedDieUsedParams{
+		ID: spent, UsedRollID: &roll.ID,
+	}))
+
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+	h.makeChoice(plan.ID, "make", []string{})
+
+	// The spent die survives (it's history of the roll); the unspent one is gone.
+	_, err = h.q.GetBankedDie(ctx, spent)
+	assert.NoError(t, err, "a spent council die is retained")
+	unspentLeft, err := h.q.CountUnspentBankedDiceByPlayer(ctx, dbgen.CountUnspentBankedDiceByPlayerParams{
+		GameID: h.tg.Game.ID, PlayerID: joinerID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), unspentLeft, "unspent council dice are discarded at enactment")
+}
+
+// TestProposeDecree_JoinCouncil_RejectsHigherPower proves the eligibility is the
+// right way round: the leverage-to-join path is for players ranked BELOW the
+// preparer. A higher-power player (already auto-seated) is refused and mints no
+// die.
+func TestProposeDecree_JoinCouncil_RejectsHigherPower(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	// Preparer = players[1] (rank 2); players[0] (rank 1) outranks them.
+	plan := pdPrepareAndResolve(t, h, 1)
+
+	higherIdx := 0
+	asset := h.seedPeer(higherIdx, "Crown seal")
+	joinPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/join-council"
+	code, body := h.post(higherIdx, joinPath, map[string]any{"asset_ids": []int64{asset}})
+	require.Equalf(t, http.StatusForbidden, code, "higher-power player may not leverage to join: %v", body)
+
+	count, err := h.q.CountUnspentBankedDiceByPlayer(ctx, dbgen.CountUnspentBankedDiceByPlayerParams{
+		GameID: h.tg.Game.ID, PlayerID: h.tg.Players[higherIdx].ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count, "a rejected join mints no die")
+}
+
+// TestProposeDecree_Make_ResourceOwnedByPreparer proves the made decree's
+// resource is owned by the preparer ("what YOU gain"), not the higher-power
+// signatory who signs it.
+func TestProposeDecree_Make_ResourceOwnedByPreparer(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	// Preparer = players[2] (rank 3); signatory = players[0] (rank 1) ≠ preparer.
+	plan := pdPrepareAndResolve(t, h, 2)
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	require.NotEqual(t, plan.PreparerID, *pd.SignatoryID, "signatory differs from preparer")
+
+	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, *pd.SignatoryID))
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+	h.makeChoice(plan.ID, "make", []string{})
+
+	pd = pdData(t, h, plan.ID)
+	require.NotNil(t, pd.ResourceAssetID)
+	asset, err := h.q.GetAssetByID(ctx, *pd.ResourceAssetID)
+	require.NoError(t, err)
+	assert.Equal(t, plan.PreparerID, asset.OwnerID, "the resource belongs to the preparer, not the signatory")
+}
+
+// TestProposeDecree_CallRoll_SignatoryGated proves only the signatory (not the
+// preparer, when they differ) may call the roll.
+func TestProposeDecree_CallRoll_SignatoryGated(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	// Preparer = players[2]; signatory = players[0].
+	plan := pdPrepareAndResolve(t, h, 2)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	require.NotEqual(t, plan.PreparerID, *pd.SignatoryID)
+
+	callPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/call-roll"
+	code, body := h.post(preparerIdx, callPath, nil)
+	require.Equalf(t, http.StatusForbidden, code, "preparer (non-signatory) may not call the roll: %v", body)
+
+	// The signatory can.
+	code, body = h.post(pdPlayerIdx(t, h, *pd.SignatoryID), callPath, nil)
+	require.Equalf(t, http.StatusOK, code, "signatory calls the roll: %v", body)
+}
+
+// TestProposeDecree_SkipAmend_AdvancesChain proves an amender may decline to
+// change the law ("amend at will") via skip-amend, advancing the chain without
+// editing the text, while the next member still amends.
+func TestProposeDecree_SkipAmend_AdvancesChain(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	// Preparer = players[2]; amenders lowest power first = players[1], players[0].
+	plan := pdPrepareAndResolve(t, h, 2)
+	pd := pdData(t, h, plan.ID)
+	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, *pd.SignatoryID))
+	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
+	h.makeChoice(plan.ID, "mar", []string{})
+
+	pd = pdData(t, h, plan.ID)
+	require.Len(t, pd.AmendmentOrder, 2)
+	firstIdx := pdPlayerIdx(t, h, pd.AmendmentOrder[0])
+	secondIdx := pdPlayerIdx(t, h, pd.AmendmentOrder[1])
+
+	// First amender skips (leaves the body unchanged).
+	skipPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/skip-amend"
+	code, body := h.post(firstIdx, skipPath, nil)
+	require.Equalf(t, http.StatusOK, code, "skip-amend: %v", body)
+
+	// The skip advanced the queue; the second amender now amends for real.
+	amendPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/amend-decree"
+	code, body = h.post(secondIdx, amendPath, map[string]any{"text": "Only the second hand wrote"})
+	require.Equalf(t, http.StatusOK, code, "second amend: %v", body)
+
+	// Chain complete: signatory addenda, preparer completes.
+	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
+	code, body = h.post(pdPlayerIdx(t, h, *pd.SignatoryID), addPath, map[string]any{"connector": "", "addendum": ""})
+	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
+	h.complete(plan.ID)
+
+	laws, err := h.q.ListLaws(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Only the second hand wrote", laws[len(laws)-1].Text,
+		"a skip leaves the prior text; only the real amendment shows")
+
+	// The skip is recorded in the action log.
+	posts := pdSystemPostBodies(t, h)
+	assert.Conditionf(t, func() bool {
+		for _, b := range posts {
+			if strings.Contains(b, "left the decree's text unchanged") {
+				return true
+			}
+		}
+		return false
+	}, "expected a skip action-log post; got %v", posts)
+}
+
+// TestProposeDecree_Waitees_NamesSignatoryAndAmenders proves the WaitingOn bar
+// names the actual actor at each sub-phase — the signatory pre-roll and for the
+// addendum, each amender in turn during a mar, and the preparer to complete —
+// rather than mis-attributing every wait to the preparer.
+func TestProposeDecree_Waitees_NamesSignatoryAndAmenders(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	// Preparer = players[2] (rank 3); signatory = players[0] (rank 1).
+	plan := pdPrepareAndResolve(t, h, 2)
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	sigID := *pd.SignatoryID
+	preparerID := plan.PreparerID
+
+	// Pre-roll: the council convenes; only the signatory can call the roll.
+	h.assertWaitees("pre-roll", model.RowStatePlanResolving, sigID)
+
+	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, sigID))
+	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
+	h.makeChoice(plan.ID, "mar", []string{})
+
+	// Mar amendment chain: each amender in turn (lowest power first).
+	pd = pdData(t, h, plan.ID)
+	require.Len(t, pd.AmendmentOrder, 2)
+	first, second := pd.AmendmentOrder[0], pd.AmendmentOrder[1]
+	h.assertWaitees("first amend", model.RowStatePlanResolving, first)
+
+	amendPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/amend-decree"
+	code, body := h.post(pdPlayerIdx(t, h, first), amendPath, map[string]any{"text": "v1"})
+	require.Equalf(t, http.StatusOK, code, "first amend: %v", body)
+	h.assertWaitees("second amend", model.RowStatePlanResolving, second)
+
+	code, body = h.post(pdPlayerIdx(t, h, second), amendPath, map[string]any{"text": "v2"})
+	require.Equalf(t, http.StatusOK, code, "second amend: %v", body)
+
+	// Amendments done → the signatory must place the addendum.
+	h.assertWaitees("addendum", model.RowStatePlanResolving, sigID)
+
+	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
+	code, body = h.post(pdPlayerIdx(t, h, sigID), addPath, map[string]any{"connector": "", "addendum": ""})
+	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
+
+	// Addendum placed → the preparer completes.
+	h.assertWaitees("complete", model.RowStatePlanResolving, preparerID)
+}

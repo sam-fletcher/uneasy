@@ -474,6 +474,15 @@ export function amendDecree(planID: number, text: string): Promise<PlanEcho> {
 }
 
 /**
+ * Propose Decree — on a mar, the current amender declines to change the law
+ * ("amend at will"), advancing the chain to the next member without editing
+ * the text.
+ */
+export function skipAmend(planID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/skip-amend`, { method: 'POST' });
+}
+
+/**
  * Propose Decree — the signatory places their addendum: an "and"/"but"
  * connector plus optional free text. This is a required blocking step; pass a
  * blank addendum (and omit the connector) to place an empty rider. The
