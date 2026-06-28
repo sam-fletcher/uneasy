@@ -268,9 +268,10 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var body struct {
-			OptionKey      string `json:"option_key"`
-			TargetAssetID  *int64 `json:"target_asset_id"`
-			TargetPlayerID *int64 `json:"target_player_id"`
+			OptionKey          string `json:"option_key"`
+			TargetAssetID      *int64 `json:"target_asset_id"`
+			TargetMarginaliaID *int64 `json:"target_marginalia_id"`
+			TargetPlayerID     *int64 `json:"target_player_id"`
 		}
 		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -287,6 +288,12 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		if info.NeedsAsset && body.TargetAssetID == nil {
 			respondErr(w, http.StatusBadRequest, "target_asset_id required for "+info.Key)
+			return
+		}
+		// Break options tear one marginalia (the canonical break), so the breaker
+		// must name which one.
+		if info.NeedsMarginalia &&
+			!validateShakeUpBreakTarget(ctx, w, s.Q, info, body.TargetAssetID, body.TargetMarginaliaID) {
 			return
 		}
 
@@ -322,13 +329,14 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		spend, err := s.Q.CreateShakeUpSpend(ctx, dbgen.CreateShakeUpSpendParams{
-			GameID:         gameID,
-			PlayerID:       player.ID,
-			Category:       info.Category,
-			OptionKey:      info.Key,
-			TargetAssetID:  body.TargetAssetID,
-			TargetPlayerID: body.TargetPlayerID,
-			BaseCost:       1,
+			GameID:             gameID,
+			PlayerID:           player.ID,
+			Category:           info.Category,
+			OptionKey:          info.Key,
+			TargetAssetID:      body.TargetAssetID,
+			TargetMarginaliaID: body.TargetMarginaliaID,
+			TargetPlayerID:     body.TargetPlayerID,
+			BaseCost:           1,
 		})
 		if err != nil {
 			respondInternalErr(w, r, "could not create spend", err)
@@ -707,6 +715,45 @@ func shakeUpTakeAsset(
 	return nil
 }
 
+// validateShakeUpBreakTarget checks an announce-time break target: a marginalia
+// must be named, exist, belong to the named asset, and still be intact. It
+// writes the error response and returns false on any failure. The apply step
+// (shakeUpBreakAsset) re-checks authoritatively at commit, since the marginalia
+// could be torn by another action while the spend is open.
+func validateShakeUpBreakTarget(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	info gamepkg.ShakeUpOptionInfo,
+	targetAssetID, targetMarginaliaID *int64,
+) bool {
+	if targetMarginaliaID == nil {
+		respondErr(w, http.StatusBadRequest, "target_marginalia_id required for "+info.Key)
+		return false
+	}
+	m, err := q.GetMarginaliaByID(ctx, *targetMarginaliaID)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, "target marginalia not found")
+		return false
+	}
+	if targetAssetID == nil || m.AssetID != *targetAssetID {
+		respondErr(w, http.StatusBadRequest, "marginalia does not belong to the target asset")
+		return false
+	}
+	if m.IsTorn {
+		respondErr(w, http.StatusConflict, "marginalia is already torn")
+		return false
+	}
+	return true
+}
+
+// shakeUpBreakAsset applies a "break a … asset" spend by tearing the single
+// marginalia the breaker chose — the canonical break (see breakMarginalia):
+// "tear off one marginalia = breaking an asset; all 4 gone → destroyed". This
+// also grants the breaker visibility on the asset's secrets and, via
+// EmitMarginaliaTorn, writes the standard marginalia.torn log with its
+// "how has it changed?" prompt — none of which the old whole-asset DestroyAsset
+// did. The shake_up.committed post still records the token spend for the ledger.
 func shakeUpBreakAsset(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -719,6 +766,9 @@ func shakeUpBreakAsset(
 	if spend.TargetAssetID == nil {
 		return errors.New("target_asset_id required")
 	}
+	if spend.TargetMarginaliaID == nil {
+		return errors.New("target_marginalia_id required")
+	}
 	asset, err := q.GetAssetByID(ctx, *spend.TargetAssetID)
 	if err != nil {
 		return fmt.Errorf("asset not found: %w", err)
@@ -729,12 +779,41 @@ func shakeUpBreakAsset(
 	if asset.IsDestroyed {
 		return errors.New("asset is already destroyed")
 	}
-	if err = q.DestroyAsset(ctx, asset.ID); err != nil {
-		return fmt.Errorf("destroy: %w", err)
+	m, err := q.GetMarginaliaByID(ctx, *spend.TargetMarginaliaID)
+	if err != nil {
+		return fmt.Errorf("marginalia not found: %w", err)
 	}
-	broadcastEvent(manager, gameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
+	if m.AssetID != asset.ID {
+		return errors.New("marginalia does not belong to the target asset")
+	}
+	if m.IsTorn {
+		return errors.New("marginalia is already torn")
+	}
+
+	// Canonical tear + destroy-if-last + secret-visibility grant to the breaker.
+	destroyed, err := breakMarginalia(ctx, q, manager, &asset, &m, spend.PlayerID)
+	if err != nil {
+		return fmt.Errorf("tear marginalia: %w", err)
+	}
+	// breakMarginalia doesn't log the tear; emit the canonical marginalia.torn
+	// post (with the owner re-describe prompt) like every other break.
+	if g, gErr := q.GetGameByID(ctx, gameID); gErr == nil {
+		EmitMarginaliaTorn(ctx, q, manager, gameID, asset, m, spend.PlayerID, destroyed, g.CurrentRow)
+	}
+
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
 	owner := playerDisplayName(ctx, q, asset.OwnerID)
+	body := fmt.Sprintf(
+		"%s spent %d token(s) to break %s's %s (%s)",
+		spender,
+		finalCost,
+		owner,
+		assetMark(asset.Name),
+		want,
+	)
+	if destroyed {
+		body += ", destroying it"
+	}
 	EmitShakeUpCommitted(
 		ctx,
 		q,
@@ -742,15 +821,14 @@ func shakeUpBreakAsset(
 		gameID,
 		spend,
 		finalCost,
-		fmt.Sprintf(
-			"%s spent %d token(s) to break %s's %s (%s)",
-			spender,
-			finalCost,
-			owner,
-			assetMark(asset.Name),
-			want,
-		),
-		map[string]any{"effect": "break", "asset_id": asset.ID, "owner_id": asset.OwnerID},
+		body,
+		map[string]any{
+			"effect":        "break",
+			"asset_id":      asset.ID,
+			"owner_id":      asset.OwnerID,
+			"marginalia_id": m.ID,
+			"destroyed":     destroyed,
+		},
 	)
 	return nil
 }

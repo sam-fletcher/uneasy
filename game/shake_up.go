@@ -55,42 +55,71 @@ const (
 
 // ShakeUpOptionInfo is the static metadata for a Shake-Up option.
 type ShakeUpOptionInfo struct {
-	Key         string
-	Category    string
-	Description string
-	NeedsAsset  bool   // true → spend body must include target_asset_id
-	BumpsTrack  string // non-empty for bump_X options; the track being bumped
+	Key             string
+	Category        string
+	Description     string
+	NeedsAsset      bool   // true → spend body must include target_asset_id
+	NeedsMarginalia bool   // true → spend body must also include target_marginalia_id (break options: break = tear one marginalia)
+	BumpsTrack      string // non-empty for bump_X options; the track being bumped
 }
 
-// shakeUpOptions is the canonical option table.
+// shakeUpOptions is the canonical option table. Break options tear a single
+// marginalia (NeedsMarginalia) — "break = tear off one marginalia; all 4 gone →
+// destroyed" — so they carry both the target asset and the chosen marginalia.
 var shakeUpOptions = map[string]ShakeUpOptionInfo{
-	ShakeUpOptTakePeer:      {ShakeUpOptTakePeer, ShakeUpCategoryEsteem, "Take a peer asset.", true, ""},
-	ShakeUpOptTakeArtifact:  {ShakeUpOptTakeArtifact, ShakeUpCategoryEsteem, "Take an artifact asset.", true, ""},
-	ShakeUpOptBreakResource: {ShakeUpOptBreakResource, ShakeUpCategoryEsteem, "Break a resource asset.", true, ""},
+	ShakeUpOptTakePeer:     {ShakeUpOptTakePeer, ShakeUpCategoryEsteem, "Take a peer asset.", true, false, ""},
+	ShakeUpOptTakeArtifact: {ShakeUpOptTakeArtifact, ShakeUpCategoryEsteem, "Take an artifact asset.", true, false, ""},
+	ShakeUpOptBreakResource: {
+		ShakeUpOptBreakResource, ShakeUpCategoryEsteem, "Break a resource asset.", true, true, "",
+	},
 	ShakeUpOptBumpKnowledge: {
 		ShakeUpOptBumpKnowledge,
 		ShakeUpCategoryEsteem,
 		"Bump up one rank on knowledge.",
 		false,
+		false,
 		"knowledge",
 	},
-	ShakeUpOptTakeResource: {ShakeUpOptTakeResource, ShakeUpCategoryKnowledge, "Take a resource asset.", true, ""},
-	ShakeUpOptBreakHolding: {ShakeUpOptBreakHolding, ShakeUpCategoryKnowledge, "Break a holding asset.", true, ""},
-	ShakeUpOptBreakPeer:    {ShakeUpOptBreakPeer, ShakeUpCategoryKnowledge, "Break a peer asset.", true, ""},
+	ShakeUpOptTakeResource: {
+		ShakeUpOptTakeResource,
+		ShakeUpCategoryKnowledge,
+		"Take a resource asset.",
+		true,
+		false,
+		"",
+	},
+	ShakeUpOptBreakHolding: {
+		ShakeUpOptBreakHolding,
+		ShakeUpCategoryKnowledge,
+		"Break a holding asset.",
+		true,
+		true,
+		"",
+	},
+	ShakeUpOptBreakPeer: {ShakeUpOptBreakPeer, ShakeUpCategoryKnowledge, "Break a peer asset.", true, true, ""},
 	ShakeUpOptBumpPower: {
 		ShakeUpOptBumpPower,
 		ShakeUpCategoryKnowledge,
 		"Bump up one rank on power.",
 		false,
+		false,
 		"power",
 	},
-	ShakeUpOptTakeHolding:   {ShakeUpOptTakeHolding, ShakeUpCategoryPower, "Take a holding asset.", true, ""},
-	ShakeUpOptBreakArtifact: {ShakeUpOptBreakArtifact, ShakeUpCategoryPower, "Break an artifact asset.", true, ""},
-	ShakeUpOptClaimTitle:    {ShakeUpOptClaimTitle, ShakeUpCategoryPower, "Claim a new title.", false, ""},
+	ShakeUpOptTakeHolding: {ShakeUpOptTakeHolding, ShakeUpCategoryPower, "Take a holding asset.", true, false, ""},
+	ShakeUpOptBreakArtifact: {
+		ShakeUpOptBreakArtifact,
+		ShakeUpCategoryPower,
+		"Break an artifact asset.",
+		true,
+		true,
+		"",
+	},
+	ShakeUpOptClaimTitle: {ShakeUpOptClaimTitle, ShakeUpCategoryPower, "Claim a new title.", false, false, ""},
 	ShakeUpOptBumpEsteem: {
 		ShakeUpOptBumpEsteem,
 		ShakeUpCategoryPower,
 		"Bump up one rank on esteem.",
+		false,
 		false,
 		"esteem",
 	},

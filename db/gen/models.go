@@ -360,18 +360,19 @@ type ShakeUpCostAdjustment struct {
 }
 
 type ShakeUpSpend struct {
-	ID             int64              `db:"id" json:"id"`
-	GameID         int64              `db:"game_id" json:"game_id"`
-	PlayerID       int64              `db:"player_id" json:"player_id"`
-	Category       string             `db:"category" json:"category"`
-	OptionKey      string             `db:"option_key" json:"option_key"`
-	TargetAssetID  *int64             `db:"target_asset_id" json:"target_asset_id"`
-	TargetPlayerID *int64             `db:"target_player_id" json:"target_player_id"`
-	BaseCost       int16              `db:"base_cost" json:"base_cost"`
-	FinalCost      *int16             `db:"final_cost" json:"final_cost"`
-	CommittedAt    pgtype.Timestamptz `db:"committed_at" json:"committed_at"`
-	Applied        bool               `db:"applied" json:"applied"`
-	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ID                 int64              `db:"id" json:"id"`
+	GameID             int64              `db:"game_id" json:"game_id"`
+	PlayerID           int64              `db:"player_id" json:"player_id"`
+	Category           string             `db:"category" json:"category"`
+	OptionKey          string             `db:"option_key" json:"option_key"`
+	TargetAssetID      *int64             `db:"target_asset_id" json:"target_asset_id"`
+	TargetPlayerID     *int64             `db:"target_player_id" json:"target_player_id"`
+	BaseCost           int16              `db:"base_cost" json:"base_cost"`
+	FinalCost          *int16             `db:"final_cost" json:"final_cost"`
+	CommittedAt        pgtype.Timestamptz `db:"committed_at" json:"committed_at"`
+	Applied            bool               `db:"applied" json:"applied"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
 }
 
 type SimultaneousReveal struct {

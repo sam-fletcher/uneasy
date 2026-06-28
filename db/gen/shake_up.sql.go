@@ -72,19 +72,20 @@ func (q *Queries) CreateShakeUpAdjustment(ctx context.Context, arg CreateShakeUp
 const createShakeUpSpend = `-- name: CreateShakeUpSpend :one
 
 INSERT INTO shake_up_spends (
-  game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at
+  game_id, player_id, category, option_key, target_asset_id, target_marginalia_id, target_player_id, base_cost
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id
 `
 
 type CreateShakeUpSpendParams struct {
-	GameID         int64  `db:"game_id" json:"game_id"`
-	PlayerID       int64  `db:"player_id" json:"player_id"`
-	Category       string `db:"category" json:"category"`
-	OptionKey      string `db:"option_key" json:"option_key"`
-	TargetAssetID  *int64 `db:"target_asset_id" json:"target_asset_id"`
-	TargetPlayerID *int64 `db:"target_player_id" json:"target_player_id"`
-	BaseCost       int16  `db:"base_cost" json:"base_cost"`
+	GameID             int64  `db:"game_id" json:"game_id"`
+	PlayerID           int64  `db:"player_id" json:"player_id"`
+	Category           string `db:"category" json:"category"`
+	OptionKey          string `db:"option_key" json:"option_key"`
+	TargetAssetID      *int64 `db:"target_asset_id" json:"target_asset_id"`
+	TargetMarginaliaID *int64 `db:"target_marginalia_id" json:"target_marginalia_id"`
+	TargetPlayerID     *int64 `db:"target_player_id" json:"target_player_id"`
+	BaseCost           int16  `db:"base_cost" json:"base_cost"`
 }
 
 // ── shake_up_spends ──────────────────────────────────────────────────────────
@@ -95,6 +96,7 @@ func (q *Queries) CreateShakeUpSpend(ctx context.Context, arg CreateShakeUpSpend
 		arg.Category,
 		arg.OptionKey,
 		arg.TargetAssetID,
+		arg.TargetMarginaliaID,
 		arg.TargetPlayerID,
 		arg.BaseCost,
 	)
@@ -112,12 +114,13 @@ func (q *Queries) CreateShakeUpSpend(ctx context.Context, arg CreateShakeUpSpend
 		&i.CommittedAt,
 		&i.Applied,
 		&i.CreatedAt,
+		&i.TargetMarginaliaID,
 	)
 	return i, err
 }
 
 const getLastCommittedShakeUpSpend = `-- name: GetLastCommittedShakeUpSpend :one
-SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at FROM shake_up_spends
+SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id FROM shake_up_spends
 WHERE game_id = $1 AND category = $2 AND committed_at IS NOT NULL
 ORDER BY committed_at DESC, id DESC
 LIMIT 1
@@ -144,12 +147,13 @@ func (q *Queries) GetLastCommittedShakeUpSpend(ctx context.Context, arg GetLastC
 		&i.CommittedAt,
 		&i.Applied,
 		&i.CreatedAt,
+		&i.TargetMarginaliaID,
 	)
 	return i, err
 }
 
 const getOpenShakeUpSpend = `-- name: GetOpenShakeUpSpend :one
-SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at FROM shake_up_spends
+SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id FROM shake_up_spends
 WHERE game_id = $1 AND committed_at IS NULL
 ORDER BY created_at DESC
 LIMIT 1
@@ -171,12 +175,13 @@ func (q *Queries) GetOpenShakeUpSpend(ctx context.Context, gameID int64) (ShakeU
 		&i.CommittedAt,
 		&i.Applied,
 		&i.CreatedAt,
+		&i.TargetMarginaliaID,
 	)
 	return i, err
 }
 
 const getShakeUpSpend = `-- name: GetShakeUpSpend :one
-SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at FROM shake_up_spends WHERE id = $1
+SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id FROM shake_up_spends WHERE id = $1
 `
 
 func (q *Queries) GetShakeUpSpend(ctx context.Context, id int64) (ShakeUpSpend, error) {
@@ -195,6 +200,7 @@ func (q *Queries) GetShakeUpSpend(ctx context.Context, id int64) (ShakeUpSpend, 
 		&i.CommittedAt,
 		&i.Applied,
 		&i.CreatedAt,
+		&i.TargetMarginaliaID,
 	)
 	return i, err
 }

@@ -183,9 +183,26 @@ func TestShakeUpEffect_TakeAsset_TransfersOwnership(t *testing.T) {
 	assert.Contains(t, posts[0], `to take **Loyal guard** (peer)`)
 }
 
-// TestShakeUpEffect_BreakAsset_Destroys pins that a break_* option destroys the
-// target asset.
-func TestShakeUpEffect_BreakAsset_Destroys(t *testing.T) {
+// postsByCode returns the bodies of all action-log posts with the given system
+// code, in insertion order.
+func postsByCode(t *testing.T, q *dbgen.Queries, gameID int64, code string) []string {
+	t.Helper()
+	posts, err := q.ListGamePosts(context.Background(), gameID)
+	require.NoError(t, err)
+	var out []string
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == code {
+			out = append(out, p.Body)
+		}
+	}
+	return out
+}
+
+// TestShakeUpEffect_BreakAsset_TearsOneMarginalia pins the canonical break: a
+// break_* option tears ONE marginalia (not the whole asset), leaving a
+// multi-marginalia asset intact, revealing its secrets to the breaker, and
+// writing the standard marginalia.torn log entry.
+func TestShakeUpEffect_BreakAsset_TearsOneMarginalia(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	ctx := context.Background()
@@ -199,22 +216,133 @@ func TestShakeUpEffect_BreakAsset_Destroys(t *testing.T) {
 		AssetType: model.AssetResource, Name: "Granary",
 	})
 	require.NoError(t, err)
+	m1, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: res.ID, Position: 1, Text: "well-stocked",
+	})
+	require.NoError(t, err)
+	_, err = q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: res.ID, Position: 2, Text: "guarded",
+	})
+	require.NoError(t, err)
+	// A secret the breaker can't see until the tear grants visibility.
+	secret, err := q.CreateSecret(ctx, dbgen.CreateSecretParams{
+		AssetID: res.ID, AuthorID: seeded.Players[1].ID, Text: "the granary is nearly empty",
+	})
+	require.NoError(t, err)
 
 	spend := &dbgen.ShakeUpSpend{
-		OptionKey:     gamepkg.ShakeUpOptBreakResource,
-		PlayerID:      seeded.Players[0].ID,
-		TargetAssetID: &res.ID,
+		OptionKey:          gamepkg.ShakeUpOptBreakResource,
+		PlayerID:           seeded.Players[0].ID,
+		TargetAssetID:      &res.ID,
+		TargetMarginaliaID: &m1.ID,
 	}
 	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
 
 	got, err := q.GetAssetByID(ctx, res.ID)
 	require.NoError(t, err)
-	assert.True(t, got.IsDestroyed, "broken asset is destroyed")
+	assert.False(t, got.IsDestroyed, "tearing one of two marginalia must not destroy the asset")
+
+	torn, err := q.GetMarginaliaByID(ctx, m1.ID)
+	require.NoError(t, err)
+	assert.True(t, torn.IsTorn, "the chosen marginalia is torn")
+
+	// Regression: the breaker now reads the asset's secret (break grants sight).
+	visible, err := q.ListVisibleSecrets(ctx, dbgen.ListVisibleSecretsParams{
+		AssetID: res.ID, PlayerID: seeded.Players[0].ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, visible, 1, "breaker should see the broken asset's secret")
+	assert.Equal(t, secret.ID, visible[0].ID)
+
+	// Canonical marginalia.torn entry with the owner re-describe prompt.
+	torns := postsByCode(t, q, gameID, "marginalia.torn")
+	require.Len(t, torns, 1)
+	assert.Contains(t, torns[0], "how has the asset changed?")
+
+	// The shake-up ledger line still records the token spend; the asset survived,
+	// so it does not say "destroying it".
+	posts := committedPosts(t, q, gameID)
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0], `to break`)
+	assert.Contains(t, posts[0], `**Granary** (resource)`)
+	assert.NotContains(t, posts[0], "destroying it")
+}
+
+// TestShakeUpEffect_BreakAsset_DestroysOnLastMarginalia pins that tearing the
+// asset's final intact marginalia destroys it (4-of-4 gone → destroyed).
+func TestShakeUpEffect_BreakAsset_DestroysOnLastMarginalia(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	seeded := newShakeUpGame(t, q, 2)
+	gameID := seeded.Game.ID
+
+	res, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: gameID, OwnerID: seeded.Players[1].ID, CreatorID: seeded.Players[1].ID,
+		AssetType: model.AssetResource, Name: "Granary",
+	})
+	require.NoError(t, err)
+	// Only one intact marginalia: tearing it removes the last one.
+	m, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: res.ID, Position: 1, Text: "last plank",
+	})
+	require.NoError(t, err)
+
+	spend := &dbgen.ShakeUpSpend{
+		OptionKey:          gamepkg.ShakeUpOptBreakResource,
+		PlayerID:           seeded.Players[0].ID,
+		TargetAssetID:      &res.ID,
+		TargetMarginaliaID: &m.ID,
+	}
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
+
+	got, err := q.GetAssetByID(ctx, res.ID)
+	require.NoError(t, err)
+	assert.True(t, got.IsDestroyed, "tearing the last marginalia destroys the asset")
 
 	posts := committedPosts(t, q, gameID)
 	require.Len(t, posts, 1)
 	assert.Contains(t, posts[0], `to break`)
 	assert.Contains(t, posts[0], `**Granary** (resource)`)
+	assert.Contains(t, posts[0], "destroying it")
+}
+
+// TestShakeUpEffect_BreakAsset_RequiresMarginalia pins the authoritative
+// apply-time guard: a break spend with no marginalia chosen is rejected (and the
+// asset is left untouched) rather than silently destroying the whole asset.
+func TestShakeUpEffect_BreakAsset_RequiresMarginalia(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	seeded := newShakeUpGame(t, q, 2)
+	gameID := seeded.Game.ID
+
+	res, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: gameID, OwnerID: seeded.Players[1].ID, CreatorID: seeded.Players[1].ID,
+		AssetType: model.AssetResource, Name: "Granary",
+	})
+	require.NoError(t, err)
+	_, err = q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: res.ID, Position: 1, Text: "intact",
+	})
+	require.NoError(t, err)
+
+	spend := &dbgen.ShakeUpSpend{
+		OptionKey:     gamepkg.ShakeUpOptBreakResource,
+		PlayerID:      seeded.Players[0].ID,
+		TargetAssetID: &res.ID,
+		// TargetMarginaliaID deliberately nil.
+	}
+	err = applyShakeUpEffect(ctx, q, manager, gameID, spend, 1)
+	require.Error(t, err, "break without a marginalia target must be rejected")
+
+	got, err := q.GetAssetByID(ctx, res.ID)
+	require.NoError(t, err)
+	assert.False(t, got.IsDestroyed, "the asset must be untouched when the break is rejected")
 }
 
 // TestMaybeAdvanceShakeUpCategory_Progression pins the category machine: with

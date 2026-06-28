@@ -94,20 +94,42 @@
 	// ── Step 2: announce spend ──────────────────────────────────────────────
 	let pickedOption = $state<string>('');
 	let pickedAssetID = $state<number | ''>('');
+	// Break options tear one marginalia, so the breaker also picks which.
+	let pickedMarginaliaID = $state<number | ''>('');
 	const pickedOptionInfo = $derived(options.find(o => o.Key === pickedOption));
 	const myAssets = $derived(assets.filter(a => !a.is_destroyed));
+	// Intact (un-torn) marginalia on the chosen asset — the breakable choices.
+	const breakableMarginalia = $derived(
+		pickedAssetID === ''
+			? []
+			: (myAssets.find(a => a.id === pickedAssetID)?.marginalia ?? []).filter(m => !m.is_torn)
+	);
+	// A break announce is only ready once a marginalia is chosen.
+	const announceReady = $derived(
+		!!pickedOption &&
+		(!pickedOptionInfo?.NeedsAsset || pickedAssetID !== '') &&
+		(!pickedOptionInfo?.NeedsMarginalia || pickedMarginaliaID !== '')
+	);
 
 	async function announce() {
-		if (!pickedOption || busy) return;
+		if (!announceReady || busy) return;
 		busy = true; error = '';
 		try {
-			const body: { option_key: string; target_asset_id?: number } = { option_key: pickedOption };
+			const body: {
+				option_key: string;
+				target_asset_id?: number;
+				target_marginalia_id?: number;
+			} = { option_key: pickedOption };
 			if (pickedOptionInfo?.NeedsAsset && pickedAssetID !== '') {
 				body.target_asset_id = pickedAssetID as number;
+			}
+			if (pickedOptionInfo?.NeedsMarginalia && pickedMarginaliaID !== '') {
+				body.target_marginalia_id = pickedMarginaliaID as number;
 			}
 			await shakeUpSpend(gameID, body);
 			pickedOption = '';
 			pickedAssetID = '';
+			pickedMarginaliaID = '';
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not announce spend.';
 		} finally {
@@ -258,6 +280,7 @@
 									onclick={() => {
 										pickedOption = pickedOption === opt.Key ? '' : opt.Key;
 										pickedAssetID = '';
+										pickedMarginaliaID = '';
 									}}
 								>{opt.Description}</button>
 							{/each}
@@ -276,14 +299,37 @@
 											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
 											selectable
 											selected={pickedAssetID === a.id}
-											onToggle={() => (pickedAssetID = pickedAssetID === a.id ? '' : a.id)}
+											onToggle={() => {
+												pickedAssetID = pickedAssetID === a.id ? '' : a.id;
+												pickedMarginaliaID = '';
+											}}
 										/>
 									{/each}
 								</div>
 							{/if}
 						</div>
 					{/if}
-					<button class="primary" disabled={!pickedOption || busy} onclick={announce}>
+					{#if pickedOptionInfo?.NeedsMarginalia && pickedAssetID !== ''}
+						<div class="su-form-row">
+							<span class="su-form-label">Marginalia to tear (breaking tears one):</span>
+							{#if breakableMarginalia.length === 0}
+								<p class="muted" style="margin:0;">This asset has no intact marginalia to tear.</p>
+							{:else}
+								<div class="su-chip-row">
+									{#each breakableMarginalia as m (m.id)}
+										<button
+											type="button"
+											class="su-chip"
+											class:active={pickedMarginaliaID === m.id}
+											onclick={() =>
+												(pickedMarginaliaID = pickedMarginaliaID === m.id ? '' : m.id)}
+										>{m.text}</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
+					<button class="primary" disabled={!announceReady || busy} onclick={announce}>
 						{busy ? '…' : 'Announce (cost 1 token)'}
 					</button>
 				</div>

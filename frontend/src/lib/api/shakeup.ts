@@ -7,6 +7,9 @@ export interface ShakeUpOptionInfo {
 	Category: ShakeUpCategory;
 	Description: string;
 	NeedsAsset: boolean;
+	// Break options also require a marginalia choice: breaking = tearing one
+	// marginalia off the target asset.
+	NeedsMarginalia: boolean;
 	BumpsTrack: string;
 }
 
@@ -17,6 +20,7 @@ export interface ShakeUpSpend {
 	category: ShakeUpCategory;
 	option_key: string;
 	target_asset_id: number | null;
+	target_marginalia_id: number | null;
 	target_player_id: number | null;
 	base_cost: number;
 	final_cost: number | null;
@@ -64,7 +68,12 @@ export function shakeUpRoll(
 
 export function shakeUpSpend(
 	gameID: string | number,
-	body: { option_key: string; target_asset_id?: number; target_player_id?: number }
+	body: {
+		option_key: string;
+		target_asset_id?: number;
+		target_marginalia_id?: number;
+		target_player_id?: number;
+	}
 ): Promise<{ spend: ShakeUpSpend }> {
 	return apiFetch(`/tables/${gameID}/shake-up/spend`, {
 		method: 'POST',
