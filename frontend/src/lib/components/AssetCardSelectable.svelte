@@ -29,7 +29,9 @@
 	import type { Asset } from '$lib/api';
 	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
 	import { hiddenCount } from '$lib/secretCounts';
+	import { useSuccession } from '$lib/successionContext';
 	import AssetTypeIcon from './AssetTypeIcon.svelte';
+	import CrownGlyph from './CrownGlyph.svelte';
 
 	interface Props {
 		asset: Asset;
@@ -150,6 +152,10 @@
 	// One tear from destruction but a slot is still fillable — tint the count
 	// and caret red so the fragility reads at a glance. See isNeedlesslyAtRisk.
 	const atRisk = $derived(isNeedlesslyAtRisk(asset));
+
+	// Line-of-succession crown lookup (ADR-007). Undefined when no provider is
+	// mounted (isolated stories/tests) → no crowns render.
+	const succession = useSuccession();
 </script>
 
 <div
@@ -315,7 +321,18 @@
 							{:else}
 								<span class="bullet" aria-hidden="true">•</span>
 							{/if}
-							<span class="m-text">{m.text}</span>
+							<!-- Text + crown share a centred line so the glyph sits on the
+							     text's vertical middle, independent of the row's baseline
+							     alignment and 32px min-height. -->
+							<span class="m-line">
+								<span class="m-text">{m.text}</span>
+								{#if m.title}
+									{@const crown = succession?.crown(m.id)}
+									{#if crown}
+										<CrownGlyph mark={crown} size={14} />
+									{/if}
+								{/if}
+							</span>
 						</li>
 					{/each}
 				</ul>
@@ -591,6 +608,17 @@
 	}
 
 	.marginalia li.torn { color: var(--color-text-faint); text-decoration: line-through; }
+
+	/* Text + trailing crown on one centred line. align-items:center keeps the
+	   glyph on the text's vertical middle even though the row aligns to baseline
+	   and is taller (min-height 32px) than the text. */
+	.m-line {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+		flex: 1;
+	}
 
 	.bullet { color: var(--owner-color, var(--color-text-muted)); }
 	.torn-mark { color: #a05050; font-size: 0.78rem; }

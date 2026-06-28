@@ -43,6 +43,7 @@
 	import { playerColorByID } from '$lib/playerColor';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import { provideSecretCounts } from '$lib/secretCountsContext';
+	import { provideSuccession } from '$lib/successionContext';
 	import {
 		rankTriplesByPlayer, topRanks, atRiskCountByPlayer, typingIndicatorLabel,
 	} from '$lib/tableHeader';
@@ -214,6 +215,11 @@
 	// the visible-secrets array. The asset's public secret_count minus this is
 	// the hidden ("struck eye") remainder. Backed by the live `secrets` state.
 	provideSecretCounts(() => secrets);
+
+	// Publish the line-of-succession crown lookup to the same asset-card + retinue
+	// surfaces (ADR-007, Phase D). Crown role is a whole-game computation over all
+	// live title marginalia, so the surfaces can't derive it from their own props.
+	provideSuccession(() => assets, () => game?.throne_established ?? false);
 
 	// Per-player rank triple (Power/Knowledge/Esteem), shown on the header chips
 	// so relative standing is visible at all times. rank 1 = top, 5 = bottom;

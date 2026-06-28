@@ -49,6 +49,19 @@ export interface WSContext {
 	readonly typingTimeouts: Map<number, ReturnType<typeof setTimeout>>;
 }
 
+// The throne is established the first time a `monarch` title is claimed, and the
+// flag never flips back (ADR-007). The backend sets it in the same path that
+// adds the monarch-title marginalia, but emits no game-state event — so clients
+// learn of it from that marginalia arriving (MarginaliaAdded for a main-character
+// claim, or AssetCreated for an extra-peer claim). Flipping it here keeps the
+// crown UI live without a refetch; monotonic, so re-seeing the title is a no-op.
+function establishThroneIfMonarch(ctx: WSContext, marginalia: Marginalium[]) {
+	if (!ctx.game || ctx.game.throne_established) return;
+	if (marginalia.some(m => m.title === 'monarch')) {
+		ctx.game = { ...ctx.game, throne_established: true };
+	}
+}
+
 export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 	switch (msg.type) {
 		case EventTypes.PhaseChanged: {
@@ -197,6 +210,9 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			if (!ctx.assets.find(a => a.id === asset.id)) {
 				ctx.assets = [...ctx.assets, asset];
 			}
+			// Extra-peer monarch claim (≤3-player games) arrives as a new asset
+			// carrying its title marginalia — establish the throne if so.
+			establishThroneIfMonarch(ctx, asset.marginalia ?? []);
 			break;
 		}
 		case EventTypes.AssetUpdated: {
@@ -242,6 +258,8 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 				const already = a.marginalia.find(m => m.id === marginalia.id);
 				return already ? a : { ...a, marginalia: [...a.marginalia, marginalia] };
 			});
+			// Main-character monarch claim establishes the throne (ADR-007).
+			establishThroneIfMonarch(ctx, [marginalia]);
 			break;
 		}
 		case EventTypes.MarginaliaUpdated: {

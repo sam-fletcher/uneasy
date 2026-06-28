@@ -9,7 +9,13 @@
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
 	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
 	import { knownCount, hiddenCount } from '$lib/secretCounts';
+	import { useSuccession } from '$lib/successionContext';
 	import SuggestionPicker from './SuggestionPicker.svelte';
+	import CrownGlyph from './CrownGlyph.svelte';
+
+	// Line-of-succession crown lookup (ADR-007). Undefined when no provider is
+	// mounted → no crowns render.
+	const succession = useSuccession();
 
 	let {
 		playerId,
@@ -320,9 +326,9 @@
 				<div class="meta">
 					<span class="dot" class:online={presence?.online}></span>
 					<span class="status">{presence?.online ? 'online' : 'offline'}</span>
-					{#if player.is_facilitator}
+					<!-- {#if player.is_facilitator}
 						<span class="tag">facilitator</span>
-					{/if}
+					{/if} -->
 				</div>
 			</div>
 			<div class="header-badges">
@@ -581,13 +587,16 @@
 							<div class="m-grid">
 								{#each slotsFor(asset) as slot, i (i)}
 									{#if slot}
+										{@const crown = slot.title ? succession?.crown(slot.id) : undefined}
 										{#if canEdit && !slot.is_torn}
-											<button type="button" class="m-tile filled" onclick={() => startEdit(asset, slot)} aria-label={`Edit marginalia ${slot.position}`}>
+											<button type="button" class="m-tile filled" class:titled={!!crown} onclick={() => startEdit(asset, slot)} aria-label={`Edit marginalia ${slot.position}`}>
 												<span class="m-tile-text">{slot.text}</span>
+												{#if crown}<CrownGlyph mark={crown} size={14} />{/if}
 											</button>
 										{:else}
-											<div class="m-tile" class:torn={slot.is_torn}>
+											<div class="m-tile" class:torn={slot.is_torn} class:titled={!!crown}>
 												<span class="m-tile-text">{slot.text}</span>
+												{#if crown}<CrownGlyph mark={crown} size={14} />{/if}
 											</div>
 										{/if}
 									{:else if canEdit}
@@ -1128,6 +1137,9 @@
 		background: transparent;
 		border: 1px dashed #3a3a36;
 	}
+	/* Title marginalia (a claimed throne-line role) carries a crown after its
+	   text — give the glyph breathing room from the text. */
+	.m-tile.titled { gap: 0.3rem; }
 	.m-tile.torn {
 		opacity: 0.45;
 		text-decoration: line-through;

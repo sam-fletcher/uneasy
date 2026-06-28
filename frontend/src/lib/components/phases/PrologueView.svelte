@@ -39,6 +39,8 @@
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import { computeBrightHearts } from '$lib/prologue/refund';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
+	import CrownGlyph from '../CrownGlyph.svelte';
+	import type { CrownMark } from '$lib/succession';
 
 	interface Props {
 		gameID: string;
@@ -129,6 +131,35 @@
 		for (const c of claims) m.set(`${c.sheet_type}::${c.choice_name}`, c);
 		return m;
 	});
+
+	// Prologue picker crown (ADR-007 §8). The Monarch box always shows the crown
+	// so players see the role exists and is contestable; the heir boxes reveal a
+	// (number-less) successor crown only once a Monarch has actually been claimed
+	// (throne_established). The General is deliberately never marked — narratively
+	// it is not in the official line of succession. No ordinals here: the picker
+	// shows that the role exists, not the live order (picks are still happening).
+	const PROLOGUE_HEIR_TITLES = new Set([
+		'true_heir', 'favored_heir', 'claimant', 'consort',
+	]);
+	// "Has a monarch been claimed yet?" — gates the heir crowns. Prefer the durable
+	// game flag, but also derive it from this view's live-reloaded claims so the
+	// heir crowns appear the instant the Monarch box is taken, without waiting for
+	// throne_established to propagate (i.e. without a page refresh).
+	const monarchClaimed = $derived.by(() => {
+		if (game.throne_established) return true;
+		const t = titlesSheet;
+		const monarchChoice = t?.choices.find(c => c.id === 'monarch');
+		if (!monarchChoice) return false;
+		return claimMap.has(`titles::${monarchChoice.name}`)
+			|| extraPeers.some(p => p.title_name === monarchChoice.name);
+	});
+	function prologueCrown(id: string | undefined): CrownMark | null {
+		if (id === 'monarch') return { role: 'monarch' };
+		if (id && PROLOGUE_HEIR_TITLES.has(id)) {
+			return monarchClaimed ? { role: 'successor' } : null;
+		}
+		return null;
+	}
 
 	const myTurns = $derived(claims.filter(c => c.player_id === currentPlayerID).length);
 	const isMyTurn = $derived(activePlayerID != null && activePlayerID === currentPlayerID);
@@ -485,7 +516,13 @@
 								title={choice.description || ''}
 								onclick={() => openClaimModal(sheet, choice)}
 							>
-								<span class="choice-name">{choice.name}</span>
+								<span class="choice-name">
+									{choice.name}
+									{#if sheet.type === 'titles'}
+										{@const crown = prologueCrown(choice.id)}
+										{#if crown}<CrownGlyph mark={crown} size={13} />{/if}
+									{/if}
+								</span>
 								<span class="choice-cards">
 									{@render miniCard(choice.cards[0].value, choice.cards[0].suit)}
 									{@render miniCard(choice.cards[1].value, choice.cards[1].suit)}
@@ -725,7 +762,7 @@
 
 	.choice-btn.claimed { opacity: 0.5; cursor: default; }
 
-	.choice-name { font-weight: 600; color: var(--color-accent); line-height: 1.15; word-break: break-word; }
+	.choice-name { display: flex; align-items: center; gap: 0.25rem; font-weight: 600; color: var(--color-accent); line-height: 1.15; word-break: break-word; }
 	.choice-cards { display: flex; gap: 0.25rem; flex-wrap: wrap; }
 	.claim-by { font-size: 0.7rem; color: var(--color-text-muted); }
 

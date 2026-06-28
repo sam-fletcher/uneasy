@@ -25,6 +25,7 @@ function marg(overrides: Partial<Marginalium> = {}): Marginalium {
 		is_torn: false,
 		torn_at: null,
 		torn_by_id: null,
+		title: null,
 		...overrides,
 	};
 }

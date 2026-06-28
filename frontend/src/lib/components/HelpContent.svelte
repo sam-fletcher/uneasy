@@ -13,6 +13,7 @@
 <script lang="ts">
 	import { feedbackHref } from '$lib/feedback';
 	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER } from './plans/shared';
+	import CrownGlyph from './CrownGlyph.svelte';
 
 	// Panel mode (the ? sheet): the help fills the sheet to a fixed height and the
 	// body scrolls internally, so the footer is pinned and blank space is never
@@ -256,7 +257,7 @@
 					</div>
 					<div class="ex-mgrid">
 						<span class="ex-mtile">Silver-tongued</span>
-						<span class="ex-mtile">Spymaster</span>
+						<span class="ex-mtile titled">Second heir<CrownGlyph mark={{ role: 'successor', ordinal: 2 }} size={14} /></span>
 						<span class="ex-mtile torn">Old war wound</span>
 						<span class="ex-mtile empty">+</span>
 					</div>
@@ -278,6 +279,10 @@
 						<span class="ex-leg-row">
 							<span class="ex-eye sm hidden"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg></span>
 							<span class="ex-leg-text">Secrets hidden from you. To learn them, you must <em>take</em> or <em>break</em> the asset.</span>
+						</span>
+						<span class="ex-leg-row">
+							<CrownGlyph mark={{ role: 'successor', ordinal: 2 }} size={14} />
+							<span class="ex-leg-text">A <em>crown</em> on a peer's marginalia means they are in the line of succession for the throne.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-strike">torn</span>
@@ -495,6 +500,7 @@
 		border-radius: 5px; font-size: 0.78rem; line-height: 1.25; color: #cfcabd; display: flex; align-items: center;
 	}
 	.ex-mtile.torn { opacity: 0.45; text-decoration: line-through; }
+	.ex-mtile.titled { gap: 0.3rem; }
 	.ex-mtile.empty { background: transparent; border: 1px dashed #3a3a36; justify-content: center; color: #6a6a64; font-size: 1.2rem; }
 
 	/* Legend under the example card */

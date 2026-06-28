@@ -33,6 +33,12 @@ export interface Game {
 	prologue_ranking_step: PrologueRankingStep | null;
 	shake_up_category: string | null;
 	shake_up_step: number | null;
+	/**
+	 * Set true the first time a `monarch` title is claimed (Prologue or Shake
+	 * Up) and never flips back (ADR-007). The load-bearing gate for the monarch
+	 * role and the crown UI: while false, no monarch exists and no crown renders.
+	 */
+	throne_established: boolean;
 }
 
 export type PrologueRankingStep =
@@ -115,6 +121,12 @@ export interface Marginalium {
 	is_torn: boolean;
 	torn_at: string | null;
 	torn_by_id: number | null;
+	/**
+	 * Stable title id stamped at claim time when this marginalia embodies a
+	 * claimed title (ADR-007), e.g. "monarch", "true_heir". Null for ordinary
+	 * marginalia. Immutable after claim. Drives the line-of-succession crown UI.
+	 */
+	title: string | null;
 }
 
 export interface Asset {
