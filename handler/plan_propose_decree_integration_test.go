@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -488,4 +489,78 @@ func TestProposeDecree_Waitees_NamesSignatoryAndAmenders(t *testing.T) {
 
 	// Addendum placed → the preparer completes.
 	h.assertWaitees("complete", model.RowStatePlanResolving, preparerID)
+}
+
+// TestProposeDecree_LowPowerMonarch_SignsAndSeated proves ADR-007 Phase C: a
+// monarch ranked BELOW the preparer (and below everyone else) is still
+// auto-seated and still signs — power rank no longer fakes the monarch. The
+// throne is established by stamping a monarch title + tripping the gate.
+func TestProposeDecree_LowPowerMonarch_SignsAndSeated(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	// Establish the throne with the monarch on players[2] (power rank 3 — the
+	// lowest of the three). Preparer will be players[0] (rank 1).
+	establishThrone(t, h.pool, h.tg.Game.ID)
+	seedTitledAsset(t, h.q, h.pool, h.tg.Game.ID, h.tg.Players[2].ID, "Fallen Crown", game.TitleMonarch)
+
+	plan := pdPrepareAndResolve(t, h, 0)
+	pd := pdData(t, h, plan.ID)
+
+	require.NotNil(t, pd.SignatoryID)
+	assert.Equal(t, h.tg.Players[2].ID, *pd.SignatoryID,
+		"the monarch signs even at the worst power rank")
+	assert.Contains(t, pd.SignatoryPlayerIDs, h.tg.Players[2].ID,
+		"the monarch is auto-seated despite ranking below the preparer")
+	assert.Contains(t, pd.SignatoryPlayerIDs, plan.PreparerID, "the preparer is seated")
+}
+
+// TestProposeDecree_Throneless_FallsBackToPower proves the throneless table is
+// unchanged from the post-audit behavior: a monarch title marginalia exists but
+// the gate is NOT tripped, so currentMonarch returns "no monarch" and signatory
+// selection falls back to pure power rank.
+func TestProposeDecree_Throneless_FallsBackToPower(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	// Stamp a monarch title on players[1] but DO NOT establish the throne — a
+	// lone claim with no gate is a powerless pretender.
+	seedTitledAsset(t, h.q, h.pool, h.tg.Game.ID, h.tg.Players[1].ID, "Pretender", game.TitleMonarch)
+
+	// Preparer = players[2] (rank 3); the highest-power member is players[0].
+	plan := pdPrepareAndResolve(t, h, 2)
+	pd := pdData(t, h, plan.ID)
+
+	require.NotNil(t, pd.SignatoryID)
+	assert.Equal(t, h.tg.Players[0].ID, *pd.SignatoryID,
+		"with no throne the highest-power member signs, ignoring the pretender")
+}
+
+// TestProposeDecree_MonarchKeepsSignatureWhenHigherPowerJoins proves the
+// signatory is fixed at seating: a reigning low-power monarch keeps the pen
+// even when a member ranked ABOVE them (but still below the preparer) leverages
+// in. join-council adds the member and their dice but never moves the signature.
+func TestProposeDecree_MonarchKeepsSignatureWhenHigherPowerJoins(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+
+	// Monarch = players[3] (rank 4, the lowest). Preparer = players[1] (rank 2).
+	// Joiner = players[2] (rank 3): below the preparer (eligible to leverage in)
+	// but higher power than the monarch.
+	establishThrone(t, h.pool, h.tg.Game.ID)
+	seedTitledAsset(t, h.q, h.pool, h.tg.Game.ID, h.tg.Players[3].ID, "Diminished Crown", game.TitleMonarch)
+
+	plan := pdPrepareAndResolve(t, h, 1)
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	require.Equal(t, h.tg.Players[3].ID, *pd.SignatoryID, "the monarch signs pre-join")
+
+	joinerIdx := 2
+	asset := h.seedPeer(joinerIdx, "Guild charter")
+	joinPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/join-council"
+	code, body := h.post(joinerIdx, joinPath, map[string]any{"asset_ids": []int64{asset}})
+	require.Equalf(t, http.StatusOK, code, "join-council: %v", body)
+
+	pd = pdData(t, h, plan.ID)
+	assert.Contains(t, pd.SignatoryPlayerIDs, h.tg.Players[joinerIdx].ID, "joiner is seated")
+	require.NotNil(t, pd.SignatoryID)
+	assert.Equal(t, h.tg.Players[3].ID, *pd.SignatoryID,
+		"the monarch keeps the signature despite a higher-power joiner")
 }

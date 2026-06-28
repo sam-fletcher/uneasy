@@ -33,7 +33,11 @@ import (
 // The signature carries an error because a DB failure must NOT masquerade as
 // "no monarch" — that would silently mis-seat the council signatory.
 //
-//nolint:unused // wired into Propose Decree auto-seat + signatory in ADR-007 Phase C
+// monarchAssetID is returned alongside the owner because it is the asset the
+// crown UI (Phase D) and take-vs-tear semantics (ADR-007 §6) key off; Propose
+// Decree only needs the owner, hence the unparam suppression.
+//
+//nolint:unparam // monarchAssetID is part of the role contract (Phase D / §6)
 func currentMonarch(
 	ctx context.Context,
 	q *dbgen.Queries,

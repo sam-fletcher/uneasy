@@ -9,10 +9,12 @@ package handler
 //
 // Pre-Roll (Council Meeting):
 //   - The preparer states the drafted decree.
-//   - The council is auto-seated at OnResolve: the preparer plus every player
-//     ranked ABOVE them on power (they attend without leveraging). Lower-ranked
-//     players may still join by leveraging ≥1 asset via join-council.
-//   - The highest-power member is the signatory.
+//   - The council is auto-seated at OnResolve: the preparer, every player
+//     ranked ABOVE them on power, and the monarchOwner (any rank) when a throne
+//     is established — all attend without leveraging. Lower-ranked players may
+//     still join by leveraging ≥1 asset via join-council.
+//   - The signatory is the monarchOwner if a throne is established, else the
+//     highest-power member. It is fixed when the council is seated.
 //   - The signatory calls the roll when discussion is done.
 //
 // The law row is created at enact (make-choice) time with the decree body and
@@ -112,10 +114,21 @@ func (pdHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 			return nil, err
 		}
 		pd.SignatoryPlayerIDs = council
-		// Signatory = the highest-power member (lowest rank number).
-		sig, err := pdHighestPowerMember(ctx, deps.Q, plan.GameID, council)
+		// Signatory = the monarchOwner if a throne is established, else the
+		// highest-power member (lowest rank number) — the rules' "the monarch
+		// OR the player highest on the power track among those present".
+		_, monarchOwnerID, ok, err := currentMonarch(ctx, deps.Q, plan.GameID)
 		if err != nil {
 			return nil, err
+		}
+		var sig int64
+		if ok {
+			sig = monarchOwnerID
+		} else {
+			sig, err = pdHighestPowerMember(ctx, deps.Q, plan.GameID, council)
+			if err != nil {
+				return nil, err
+			}
 		}
 		pd.SignatoryID = &sig
 	}
@@ -128,10 +141,12 @@ func (pdHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return nil, nil
 }
 
-// pdAutoSeatCouncil returns the initial council: the preparer plus every player
-// ranked above them on the power track (Monarch and higher-status peers attend
-// automatically). Order is unspecified; signatory/amender ordering is computed
-// from ranks separately.
+// pdAutoSeatCouncil returns the initial council: the preparer, every player
+// ranked above them on the power track (higher-status peers attend
+// automatically), and — when a throne is established — the monarchOwner
+// regardless of power rank (ADR-007 §5: "The monarch and players above you on
+// the power track may each be present"). Order is unspecified;
+// signatory/amender ordering is computed from ranks separately.
 func pdAutoSeatCouncil(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]int64, error) {
 	preparerRank, err := playerRankInCategory(ctx, q, plan.GameID, plan.PreparerID, model.CategoryPower)
 	if err != nil {
@@ -150,6 +165,15 @@ func pdAutoSeatCouncil(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) 
 		if rk.Rank < preparerRank && *rk.PlayerID != plan.PreparerID {
 			council = append(council, *rk.PlayerID)
 		}
+	}
+	// The monarchOwner is auto-seated at any power rank (they may already be in
+	// the council via the power-rank pass, so dedupe).
+	_, monarchOwnerID, ok, err := currentMonarch(ctx, q, plan.GameID)
+	if err != nil {
+		return nil, fmt.Errorf("current monarch: %w", err)
+	}
+	if ok && !slices.Contains(council, monarchOwnerID) {
+		council = append(council, monarchOwnerID)
 	}
 	return council, nil
 }
@@ -469,14 +493,17 @@ func pdNameAssetHandler(deps *PlanDeps) http.HandlerFunc {
 // A player joins the council by leveraging ≥1 of their assets. Eligible
 // players: anyone ranked BELOW the preparer on the power track (the "other
 // players" of pre-roll rule 2). Everyone ranked above the preparer — including
-// whoever sits highest on the track — is already auto-seated for free.
+// whoever sits highest on the track, and the monarchOwner at any rank — is
+// already auto-seated for free.
 //
-// After joining, the signatory is recalculated: the player with the best
-// (lowest) power rank among all council members becomes the new signatory.
+// Joining does NOT change the signatory: it was fixed when the council was
+// seated (OnResolve), and an eligible joiner is always ranked below the
+// preparer, so they can never out-rank the sitting signatory. Joining just
+// adds a member and the dice they leverage in.
 //
 // Request body: {"asset_ids": [N, ...]}
 //
-//nolint:funlen,gocognit // signatory selection with eligibility branches
+//nolint:funlen,gocognit // verify-and-leverage loop with eligibility branches
 func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -579,25 +606,15 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		resData := loadResolutionData(plan.ResolutionData)
 		pd := resData.EnsureProposeDecree()
 
-		// Add to council if not already there.
+		// Add to council if not already there. The signatory does NOT move:
+		// it was fixed when the council was seated (OnResolve), and joining
+		// cannot change it. A joiner is by eligibility ranked below the preparer,
+		// so they can never out-rank the sitting signatory; and the game's
+		// linear async flow offers no chance to depose the monarch between
+		// seating and the roll. So joining only adds a member and their dice.
 		if !slices.Contains(pd.SignatoryPlayerIDs, player.ID) {
 			pd.SignatoryPlayerIDs = append(pd.SignatoryPlayerIDs, player.ID)
 		}
-
-		// Recompute signatory: best rank (lowest) among all council members.
-		bestRank := preparerRank
-		bestPlayerID := plan.PreparerID
-		for _, memberID := range pd.SignatoryPlayerIDs {
-			memberRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, memberID, model.CategoryPower)
-			if err != nil {
-				continue
-			}
-			if memberRank < bestRank {
-				bestRank = memberRank
-				bestPlayerID = memberID
-			}
-		}
-		pd.SignatoryID = &bestPlayerID
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save council data", err)
