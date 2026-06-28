@@ -1,8 +1,8 @@
 <!--
   Step-by-step authoring modal for a Prologue choice. The player drafts:
-    1. The sheet-derived asset's text (prefilled with [choice text]).
-    2. (titles) A title marginalia for their main character, prefilled.
-    2. (laws_rumors) A public-record entry, prefilled.
+    1. The sheet-derived asset's text (blank; placeholder hints only).
+    2. (titles) A title marginalia for their main character.
+    2. (laws_rumors) A public-record entry.
     3. For each fresh card: a multiple-choice picker (3 unused examples + Custom).
        Cards already owned by another player become takes — no text needed.
 
@@ -61,9 +61,12 @@
 	let seededFor = '';
 	$effect(() => {
 		if (seededFor === choice.name) return;
-		assetText = `[${choice.name}]`;
-		marginaliaText = `[${choice.name}]`;
-		lawOrRumorText = `[${choice.name}]`;
+		// Start blank so the player must author a real name — the old
+		// `[choice.name]` defaults persisted literal "[The Monarch]" when left
+		// unedited (ADR-007 §7). Placeholders below hint without submitting.
+		assetText = '';
+		marginaliaText = '';
+		lawOrRumorText = '';
 		cardSlots = choice.cards.map(c => ({
 			suit: c.suit,
 			value: c.value,
@@ -167,7 +170,7 @@
 			<textarea
 				rows="1"
 				bind:value={assetText}
-				// placeholder={`[${choice.name}]`}
+				placeholder={`Name your ${sheet.choice_asset_type}`}
 			></textarea>
 			<span class="hint">Pick a name. You can add marginalia from your Retinue.</span>
 		</label>
@@ -180,7 +183,7 @@
 				<textarea
 					rows="1"
 					bind:value={marginaliaText}
-					placeholder={`${choice.name}`}
+					placeholder={choice.name}
 				></textarea>
 				<span class="hint">Adds 1 marginalia to your main character.</span>
 			</label>
@@ -194,7 +197,7 @@
 				<textarea
 					rows="2"
 					bind:value={lawOrRumorText}
-					// placeholder={`[${choice.name}]`}
+					placeholder={choice.name.toLowerCase().includes('law') ? 'State the new law' : 'State the new rumor'}
 				></textarea>
 				<span class="hint">Describe the {choice.name.toLowerCase().includes('law') ? 'law' : 'rumor'}.</span>
 			</label>

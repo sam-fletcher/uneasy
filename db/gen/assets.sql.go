@@ -259,6 +259,44 @@ func (q *Queries) CreateSecret(ctx context.Context, arg CreateSecretParams) (Sec
 	return i, err
 }
 
+const createTitleMarginalia = `-- name: CreateTitleMarginalia :one
+INSERT INTO marginalia (asset_id, position, text, title)
+VALUES ($1, $2, $3, $4)
+RETURNING id, asset_id, position, text, is_torn, torn_at, torn_by_id, title
+`
+
+type CreateTitleMarginaliaParams struct {
+	AssetID  int64   `db:"asset_id" json:"asset_id"`
+	Position int16   `db:"position" json:"position"`
+	Text     string  `db:"text" json:"text"`
+	Title    *string `db:"title" json:"title"`
+}
+
+// Like CreateMarginalia but stamps the canonical title id (ADR-007). Used only
+// by the title-claim paths (Prologue, and later Shake Up). The title is
+// immutable after claim: UpdateMarginaliaText only touches text, so there is no
+// path to relabel an ordinary note into a title.
+func (q *Queries) CreateTitleMarginalia(ctx context.Context, arg CreateTitleMarginaliaParams) (Marginalium, error) {
+	row := q.db.QueryRow(ctx, createTitleMarginalia,
+		arg.AssetID,
+		arg.Position,
+		arg.Text,
+		arg.Title,
+	)
+	var i Marginalium
+	err := row.Scan(
+		&i.ID,
+		&i.AssetID,
+		&i.Position,
+		&i.Text,
+		&i.IsTorn,
+		&i.TornAt,
+		&i.TornByID,
+		&i.Title,
+	)
+	return i, err
+}
+
 const destroyAsset = `-- name: DestroyAsset :exec
 UPDATE assets SET is_destroyed = TRUE, destroyed_at = now() WHERE id = $1
 `

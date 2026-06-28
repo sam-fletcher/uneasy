@@ -60,6 +60,18 @@ func (q *Queries) CreateGame(ctx context.Context, joinCode string) (Game, error)
 	return i, err
 }
 
+const establishThrone = `-- name: EstablishThrone :exec
+UPDATE games SET throne_established = TRUE WHERE id = $1
+`
+
+// Trips the throne_established gate the first time a monarch title is claimed
+// (ADR-007). Idempotent and one-way: it never flips back to false, so a later
+// destroy of the monarch's asset can't erase that the throne ever existed.
+func (q *Queries) EstablishThrone(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, establishThrone, id)
+	return err
+}
+
 const getGameByID = `-- name: GetGameByID :one
 SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step, shake_up_category, shake_up_step, throne_established FROM games WHERE id = $1
 `

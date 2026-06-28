@@ -125,6 +125,15 @@ INSERT INTO marginalia (asset_id, position, text)
 VALUES ($1, $2, $3)
 RETURNING *;
 
+-- name: CreateTitleMarginalia :one
+-- Like CreateMarginalia but stamps the canonical title id (ADR-007). Used only
+-- by the title-claim paths (Prologue, and later Shake Up). The title is
+-- immutable after claim: UpdateMarginaliaText only touches text, so there is no
+-- path to relabel an ordinary note into a title.
+INSERT INTO marginalia (asset_id, position, text, title)
+VALUES ($1, $2, $3, $4)
+RETURNING *;
+
 -- name: ListMarginaliaByAsset :many
 SELECT * FROM marginalia WHERE asset_id = $1 ORDER BY position;
 

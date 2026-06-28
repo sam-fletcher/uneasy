@@ -359,17 +359,8 @@
 		}
 	}
 
-	$effect(() => {
-		// Update the peer text when title changes, but preserve user customizations
-		if (extraPeerName) {
-			const current = extraPeerText.trim();
-			const bracketed = `[${extraPeerName}]`;
-			// Update if empty or if it looks like a bracketed title (hasn't been customized)
-			if (!current || (current.startsWith('[') && current.endsWith(']'))) {
-				extraPeerText = bracketed;
-			}
-		}
-	});
+	// The peer name starts blank and is authored by the player — no bracketed
+	// `[Title]` auto-fill (ADR-007 §7); the input placeholder hints instead.
 
 	// ── Phase classification ─────────────────────────────────────────────────
 	type Mode = 'choosing' | 'declare' | 'place' | 'extra';
@@ -646,7 +637,7 @@
 					type="text"
 					bind:value={extraPeerText}
 					class="peer-input"
-					placeholder={`[${extraPeerName}]`}
+					placeholder="Name your peer"
 				/>
 			</label>
 			<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>

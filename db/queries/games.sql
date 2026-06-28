@@ -29,3 +29,9 @@ SELECT count(*) FROM players WHERE game_id = $1;
 
 -- name: SetEndingMode :exec
 UPDATE games SET ending_mode = $2 WHERE id = $1;
+
+-- name: EstablishThrone :exec
+-- Trips the throne_established gate the first time a monarch title is claimed
+-- (ADR-007). Idempotent and one-way: it never flips back to false, so a later
+-- destroy of the monarch's asset can't erase that the throne ever existed.
+UPDATE games SET throne_established = TRUE WHERE id = $1;

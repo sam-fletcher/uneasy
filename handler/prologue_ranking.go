@@ -311,6 +311,50 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 // ── Extra peers (≤3 players) ─────────────────────────────────────────────────
 
+// insertExtraPeerWithTitle creates the extra peer, records the extra-peer claim,
+// and stamps the claimed title on a marginalia of the peer (ADR-007). The title
+// lives on the marginalia so currentMonarch — which reads marginalia.title
+// across all assets, not just main characters — can find an extra-peer
+// monarch/heir in ≤3-player games. Claiming the monarch title trips the
+// throne_established gate. Runs inside the caller's transaction.
+func insertExtraPeerWithTitle(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+	titleName, peerText, titleID string,
+) (dbgen.Asset, dbgen.Marginalium, error) {
+	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID:    gameID,
+		OwnerID:   playerID,
+		CreatorID: playerID,
+		AssetType: model.AssetPeer,
+		Name:      peerText,
+	})
+	if err != nil {
+		return dbgen.Asset{}, dbgen.Marginalium{}, errors.New("could not create extra peer")
+	}
+	if _, err := q.InsertExtraPeer(ctx, dbgen.InsertExtraPeerParams{
+		GameID: gameID, PlayerID: playerID, TitleName: titleName, AssetID: asset.ID,
+	}); err != nil {
+		return dbgen.Asset{}, dbgen.Marginalium{}, errors.New("could not record extra peer")
+	}
+	marg, err := q.CreateTitleMarginalia(ctx, dbgen.CreateTitleMarginaliaParams{
+		AssetID:  asset.ID,
+		Position: 1,
+		Text:     titleName,
+		Title:    &titleID,
+	})
+	if err != nil {
+		return dbgen.Asset{}, dbgen.Marginalium{}, errors.New("could not stamp extra peer title")
+	}
+	if titleID == gamepkg.TitleMonarch {
+		if err := q.EstablishThrone(ctx, gameID); err != nil {
+			return dbgen.Asset{}, dbgen.Marginalium{}, errors.New("could not establish the throne")
+		}
+	}
+	return asset, marg, nil
+}
+
 // CreateExtraPeer handles POST /api/games/{id}/prologue/extra-peer.
 //
 // Body: {"title_name": "..."}. Creates one additional peer asset for the
@@ -346,7 +390,8 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "peer_text is required")
 			return
 		}
-		if gamepkg.FindPrologueChoice(gamepkg.PrologueSheetTitles, body.TitleName) == nil {
+		choice := gamepkg.FindPrologueChoice(gamepkg.PrologueSheetTitles, body.TitleName)
+		if choice == nil {
 			respondErr(w, http.StatusBadRequest, "unknown title")
 			return
 		}
@@ -381,24 +426,19 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var asset dbgen.Asset
+		var titleMarg dbgen.Marginalium
 		err = s.InTx(ctx, func(q *dbgen.Queries) error {
-			a, cErr := q.CreateAsset(ctx, dbgen.CreateAssetParams{
-				GameID:    gameID,
-				OwnerID:   player.ID,
-				CreatorID: player.ID,
-				AssetType: model.AssetPeer,
-				Name:      body.PeerText,
-			})
-			if cErr != nil {
-				return errors.New("could not create extra peer")
-			}
-			asset = a
-			if _, iErr := q.InsertExtraPeer(ctx, dbgen.InsertExtraPeerParams{
-				GameID: gameID, PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,
-			}); iErr != nil {
-				return errors.New("could not record extra peer")
-			}
-			return nil
+			var iErr error
+			asset, titleMarg, iErr = insertExtraPeerWithTitle(
+				ctx,
+				q,
+				gameID,
+				player.ID,
+				body.TitleName,
+				body.PeerText,
+				choice.ID,
+			)
+			return iErr
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
@@ -408,9 +448,9 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			manager,
 			gameID,
 			model.EventAssetCreated,
-			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{titleMarg}}},
 		)
-		EmitAssetCreated(ctx, s.Q, manager, gameID, asset, nil, nil)
+		EmitAssetCreated(ctx, s.Q, manager, gameID, asset, []dbgen.Marginalium{titleMarg}, nil)
 		broadcastEvent(manager, gameID, model.EventPrologueExtraPeerCreated,
 			model.PrologueExtraPeerCreatedPayload{
 				PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,

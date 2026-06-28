@@ -82,8 +82,13 @@ func (c Card) MarshalJSON() ([]byte, error) {
 
 // PrologueChoice is one box on a prologue sheet. The two linked cards drive
 // make-or-take of card-asset linkage; their order is presentation-only.
+//
+// ID is the stable title id (ADR-007) for boxes on the titles sheet — it is
+// stamped onto the claim marginalia and is the canonical role. It is empty for
+// the hailing-from and laws-rumors sheets, which carry no title.
 type PrologueChoice struct {
 	Name        string  `json:"name"`
+	ID          string  `json:"id,omitempty"`
 	Description string  `json:"description"`
 	Cards       [2]Card `json:"cards"`
 }
@@ -111,72 +116,84 @@ const (
 var titlesSheet = []PrologueChoice{
 	{
 		Name: "The Monarch",
+		ID:   TitleMonarch,
 		Description: "You are the head of the kingdom. All members of the court are your subjects, " +
 			"and all decisions are yours.",
 		Cards: [2]Card{{SuitClubs, "K"}, {SuitDiamonds, "K"}},
 	},
 	{
 		Name: "The Consort",
+		ID:   TitleConsort,
 		Description: "You are the legal spouse of the monarch or another member of the court, " +
 			"but you hold greater ambition.",
 		Cards: [2]Card{{SuitHearts, "K"}, {SuitDiamonds, "Q"}},
 	},
 	{
 		Name: "The True Heir",
+		ID:   TitleTrueHeir,
 		Description: "By the law, you shall inherit the title of monarch whenever the time comes. " +
 			"You will surely rule one day.",
 		Cards: [2]Card{{SuitHearts, "K"}, {SuitClubs, "A"}},
 	},
 	{
 		Name: "The Favored Heir",
+		ID:   TitleFavoredHeir,
 		Description: "You might not legally be first in line, but you are favored to inherit the throne " +
 			"by the current monarch.",
 		Cards: [2]Card{{SuitHearts, "J"}, {SuitDiamonds, "A"}},
 	},
 	{
 		Name: "The Claimant",
+		ID:   TitleClaimant,
 		Description: "You have a legitimate claim to the title of monarch, but for some reason " +
 			"you're on the outside looking in.",
 		Cards: [2]Card{{SuitDiamonds, "K"}, {SuitClubs, "A"}},
 	},
 	{
 		Name: "The Paramour",
+		ID:   TitleParamour,
 		Description: "You are having an affair with the monarch or another member of the court. " +
 			"Perhaps it's love, perhaps it's not.",
 		Cards: [2]Card{{SuitDiamonds, "Q"}, {SuitClubs, "Q"}},
 	},
 	{
 		Name: "The Absolver",
+		ID:   TitleAbsolver,
 		Description: "You are the head of church. You speak for your religion and aim to ensure its practice " +
 			"throughout the realm.",
 		Cards: [2]Card{{SuitHearts, "A"}, {SuitDiamonds, "J"}},
 	},
 	{
 		Name: "The Heretic",
+		ID:   TitleHeretic,
 		Description: "You don't abide the standard religion of the realm. You might practice another faith, " +
 			"or reject religion completely.",
 		Cards: [2]Card{{SuitHearts, "A"}, {SuitHearts, "Q"}},
 	},
 	{
 		Name: "The Visiting Royal",
+		ID:   TitleVisitingRoyal,
 		Description: "You are the head of another kingdom. You might be visiting for peace talks, " +
 			"or just as a show of good faith.",
 		Cards: [2]Card{{SuitClubs, "J"}, {SuitHearts, "Q"}},
 	},
 	{
 		Name: "The General",
+		ID:   TitleGeneral,
 		Description: "You are a master of arms and commander of armies. When things come to blows, " +
 			"it's unwise to cross you.",
 		Cards: [2]Card{{SuitClubs, "Q"}, {SuitClubs, "J"}},
 	},
 	{
 		Name: "The Lawyer",
+		ID:   TitleLawyer,
 		Description: "You know the laws of the realm better than anybody. You will bend the law " +
 			"to shape the realm.",
 		Cards: [2]Card{{SuitClubs, "K"}, {SuitHearts, "J"}},
 	},
 	{
 		Name: "The Spymaster",
+		ID:   TitleSpymaster,
 		Description: "You have an ear in every room, and eyes on every document. With knowledge, " +
 			"all things are possible.",
 		Cards: [2]Card{{SuitDiamonds, "A"}, {SuitDiamonds, "J"}},

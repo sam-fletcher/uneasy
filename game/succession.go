@@ -7,6 +7,7 @@ package game
 // "The " dropped, lowercased, spaces → underscores: "The True Heir" →
 // "true_heir". These ids are durable game state (immutable after claim), so the
 // strings below are part of the on-disk contract — do not rename them.
+// Throne-line title ids (the line of succession; see SuccessionOrder).
 const (
 	TitleMonarch     = "monarch"
 	TitleTrueHeir    = "true_heir"
@@ -14,6 +15,18 @@ const (
 	TitleClaimant    = "claimant"
 	TitleConsort     = "consort"
 	TitleGeneral     = "general"
+)
+
+// Title ids outside the line of succession. These are still real, stampable
+// titles (they get a marginalia.title at claim time, like any title) but they
+// confer no claim to this realm's throne, so SuccessionRank reports ok=false.
+const (
+	TitleParamour      = "paramour"
+	TitleAbsolver      = "absolver"
+	TitleHeretic       = "heretic"
+	TitleVisitingRoyal = "visiting_royal"
+	TitleLawyer        = "lawyer"
+	TitleSpymaster     = "spymaster"
 )
 
 // SuccessionOrder is the predefined throne line (ADR-007's "SUCCESSION_ORDER"),

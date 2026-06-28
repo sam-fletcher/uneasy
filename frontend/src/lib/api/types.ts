@@ -53,6 +53,8 @@ export interface PrologueCard {
 
 export interface PrologueChoice {
 	name: string;
+	/** Stable title id (ADR-007); present only on titles-sheet choices. */
+	id?: string;
 	description: string;
 	cards: [PrologueCard, PrologueCard];
 }

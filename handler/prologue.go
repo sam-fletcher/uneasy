@@ -325,9 +325,14 @@ func findOpenMarginaliaPosition(ctx context.Context, q *dbgen.Queries, assetID i
 	return 0, nil
 }
 
-// addTitleMarginalium adds a marginalia to the player's main character.
+// addTitleMarginalium adds the claimed title to the player's main character as
+// a marginalia stamped with its canonical title id (ADR-007). The marginalia
+// text is the player's freeform flavor; titleID is the immutable role. The
+// role lives on the marginalia — the symbolic artifact created alongside it
+// carries no title. Claiming the monarch title trips the throne_established
+// gate (the load-bearing flag the line of succession depends on).
 func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, manager *hub.Manager,
-	gameID, playerID int64, text string,
+	gameID, playerID int64, text, titleID string,
 ) error {
 	mainCharID, err := findMainCharacter(ctx, q, playerID)
 	if err != nil {
@@ -342,14 +347,23 @@ func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, manager *hub.Man
 		return httpErr(http.StatusConflict, "main character has no open marginalia slots")
 	}
 
-	m, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+	m, err := q.CreateTitleMarginalia(ctx, dbgen.CreateTitleMarginaliaParams{
 		AssetID:  mainCharID,
 		Position: pos,
 		Text:     text,
+		Title:    &titleID,
 	})
 	if err != nil {
 		return httpErr(http.StatusInternalServerError, "could not add title marginalia")
 	}
+
+	// Establishing the monarchy is the one-way gate the succession hinges on.
+	if titleID == gamepkg.TitleMonarch {
+		if err := q.EstablishThrone(ctx, gameID); err != nil {
+			return httpErr(http.StatusInternalServerError, "could not establish the throne")
+		}
+	}
+
 	if mainChar, err := q.GetAssetByID(ctx, mainCharID); err == nil {
 		EmitMarginaliaAdded(ctx, q, manager, gameID, mainChar, m, playerID, nil)
 	}
@@ -557,7 +571,9 @@ func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 
 	switch body.SheetType {
 	case gamepkg.PrologueSheetTitles:
-		if err := addTitleMarginalium(ctx, q, manager, gameID, playerID, body.MarginaliumText); err != nil {
+		if err := addTitleMarginalium(
+			ctx, q, manager, gameID, playerID, body.MarginaliumText, choice.ID,
+		); err != nil {
 			return turnNumber, err
 		}
 	case gamepkg.PrologueSheetLawsRumors:
