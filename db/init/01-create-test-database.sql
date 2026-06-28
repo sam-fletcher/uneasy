@@ -1,0 +1,14 @@
+-- Postgres runs every *.sql in /docker-entrypoint-initdb.d exactly once, on a
+-- first boot with an empty data directory (i.e. a brand-new postgres_data
+-- volume — including right after `docker compose down -v`). The official image
+-- only auto-creates the single database named by POSTGRES_DB (here `uneasy`),
+-- so the dedicated test database has to be created here.
+--
+-- Why a separate database at all: the integration and e2e suites TRUNCATE and
+-- reset data aggressively, so they must live in their own database and never
+-- touch the dev `uneasy` DB that holds your manual games.
+--
+-- This script only runs on a fresh volume. An existing volume won't re-run it,
+-- so a one-time manual `CREATE DATABASE uneasy_test;` is still the fix there
+-- (see README) — but you'll never need it again after a `down -v`.
+CREATE DATABASE uneasy_test;

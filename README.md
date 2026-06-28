@@ -71,9 +71,15 @@ have Postgres up.
 
 ### Test database
 
-When the dev stack is running (`docker compose up -d`) the Postgres
-container exposes 5432 on the host. Create a one-time test database
-beside your dev one:
+The integration and e2e suites run against a dedicated `uneasy_test`
+database (kept separate from the dev `uneasy` DB so tests can reset data
+freely without touching your manual games). On a **fresh Postgres volume**
+it's created automatically by `db/init/01-create-test-database.sql`, which
+the image runs on first boot — so a `docker compose down -v` followed by
+`docker compose up` recreates it for you.
+
+If you have a pre-existing volume (created before that init script), create
+it once by hand:
 
 ```bash
 docker exec uneasy-db-1 psql -U uneasy -d postgres \

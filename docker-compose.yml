@@ -10,6 +10,9 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Auto-create the uneasy_test database on a fresh volume (e.g. after
+      # `docker compose down -v`). Runs only when the data dir is empty.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U uneasy"]
       interval: 5s
