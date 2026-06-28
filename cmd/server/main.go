@@ -147,6 +147,7 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 				r.Post("/dev/login", handler.DevLogin(store))
 				// r.Post("/dev/reset", handler.DevReset(store)) // disabled: too destructive
 				r.Post("/dev/seed", handler.DevSeed(store))
+				r.Post("/dev/advance-row", handler.DevAdvanceRow(store, manager))
 			}
 
 			// Tables (creation, join, info)

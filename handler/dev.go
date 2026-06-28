@@ -12,6 +12,7 @@ import (
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/gametest"
+	"uneasy/hub"
 	"uneasy/model"
 )
 
@@ -58,6 +59,85 @@ func DevReset(s *db.Store) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// DevAdvanceRow handles POST /api/dev/advance-row.
+//
+// Jumps a game's current_row directly, the generic half of "jump to a plan's
+// resolution" for manual testing: seed a main_event game, prepare a plan
+// through the real UI (so its bespoke prep state is captured faithfully), then
+// call this to skip the intervening rows and land on the plan's row. The plan
+// stays pending — resolution kickoff lives in the row-advance path, which a
+// direct row-set bypasses — so you click "resolve" in the UI, exercising that
+// trigger too.
+//
+// Body (give either plan_id, or game_id + row):
+//
+//	{ "plan_id": 123 }            // jump that plan's game to the plan's row
+//	{ "game_id": 5, "row": 9 }    // jump game 5 to row 9
+//
+// Mounted only when UNEASY_DEV=1.
+func DevAdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	type request struct {
+		PlanID *int64 `json:"plan_id"`
+		GameID *int64 `json:"game_id"`
+		Row    *int16 `json:"row"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body request
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		ctx := r.Context()
+		var gameID int64
+		var row int16
+		switch {
+		case body.PlanID != nil:
+			plan, err := s.Q.GetPlanByID(ctx, *body.PlanID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				respondErr(w, http.StatusNotFound, "plan not found")
+				return
+			}
+			if err != nil {
+				respondInternalErr(w, r, "could not load plan", err)
+				return
+			}
+			if plan.RowNumber == nil {
+				respondErr(
+					w,
+					http.StatusConflict,
+					"plan has no assigned row yet (variable-delay plans assign their row at reveal)",
+				)
+				return
+			}
+			gameID, row = plan.GameID, *plan.RowNumber
+		case body.GameID != nil && body.Row != nil:
+			gameID, row = *body.GameID, *body.Row
+		default:
+			respondErr(w, http.StatusBadRequest, "provide plan_id, or game_id and row")
+			return
+		}
+
+		if row < 1 || row > 13 {
+			respondErr(w, http.StatusBadRequest, "row out of range 1..13")
+			return
+		}
+
+		if err := s.Q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
+			ID: gameID, CurrentRow: row,
+		}); err != nil {
+			respondInternalErr(w, r, "could not set current row", err)
+			return
+		}
+		broadcastRowState(ctx, s.Q, manager, gameID)
+
+		respond(w, http.StatusOK, map[string]any{
+			"game_id":     gameID,
+			"current_row": row,
+		})
 	}
 }
 
