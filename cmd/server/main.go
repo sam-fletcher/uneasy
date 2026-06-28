@@ -145,9 +145,9 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 			// Dev-only routes — gated by UNEASY_DEV=1. Never mount in prod.
 			if os.Getenv("UNEASY_DEV") == "1" {
 				r.Post("/dev/login", handler.DevLogin(store))
-				// r.Post("/dev/reset", handler.DevReset(store)) // disabled: too destructive
 				r.Post("/dev/seed", handler.DevSeed(store))
 				r.Post("/dev/advance-row", handler.DevAdvanceRow(store, manager))
+				r.Post("/dev/delete-game", handler.DevDeleteGame(store))
 			}
 
 			// Tables (creation, join, info)

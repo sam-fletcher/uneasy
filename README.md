@@ -200,20 +200,28 @@ npm ls <package-name>   # e.g. npm ls axios
 ## Dev testing workflow
 
 Manual UI testing usually means juggling several "players" at once. With
-`UNEASY_DEV=1` (already set in `docker-compose.yml`) the server exposes
-two shortcuts that make this painless:
+`UNEASY_DEV=1` (already set in `docker-compose.yml`) the server exposes a
+few shortcuts that make this painless:
 
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/dev/login?username=foo` | Find or create the account `foo`, open a session, set the cookie. No code required. |
-| <redacted; too destructive> | `TRUNCATE accounts, games CASCADE` — wipes all account, session, and game data. Schema is untouched. |
+| `POST /api/dev/seed` | Create a game in a given phase (`main_event` / `shake_up`) with named players, each holding one asset of every type. See the `DevSeed` doc comment for the body shape. |
+| `POST /api/dev/advance-row` | Jump a game's `current_row` — `{"plan_id":N}` (to that plan's row) or `{"game_id":N,"row":R}`. Lands you on a prepared plan's resolution row without clicking through the rows between. |
+| `POST /api/dev/delete-game` | `{"game_id":N}` — hard-delete a single game and all its data (cascade), leaving accounts and other games intact. The everyday cleanup tool. |
+
+There is deliberately **no** "wipe everything" endpoint: that was too easy
+to fire by accident. Only the lead developer should ever wipe the whole dev database (always manually, never via an AI tool), using:
+`docker exec uneasy-db-1 psql -U uneasy -d uneasy -c "TRUNCATE accounts, games RESTART IDENTITY CASCADE;"`
+— or `docker compose down -v` for a full volume reset (note: that also drops
+`uneasy_test`, which the init script then recreates on the next `up`).
 
 These routes are only mounted when `UNEASY_DEV=1`, so production binaries
 will 404 on them.
 
 ### A quick note on POST vs GET
 
-Both dev endpoints are `POST`, not `GET`. Typing a URL into the browser's
+The dev endpoints are `POST`, not `GET`. Typing a URL into the browser's
 address bar always sends a `GET`, so visiting
 `http://localhost:8080/api/dev/login?username=alice` directly will return
 `405 Method Not Allowed` (or 404). You need to actually issue a `POST`.

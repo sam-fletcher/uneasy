@@ -50,12 +50,35 @@ func DevLogin(s *db.Store) http.HandlerFunc {
 	}
 }
 
-// DevReset handles POST /api/dev/reset. Wipes all game and account data.
-// Schema (migrations) is left untouched.
-func DevReset(s *db.Store) http.HandlerFunc {
+// DevDeleteGame handles POST /api/dev/delete-game.
+//
+// Hard-deletes a single game and all of its data (cascade, migration 039),
+// leaving accounts and every other game intact. Replaces the old DevReset,
+// which TRUNCATEd everything — too blunt and too easy to fire by accident.
+//
+// Body: { "game_id": N }. Mounted only when UNEASY_DEV=1.
+func DevDeleteGame(s *db.Store) http.HandlerFunc {
+	type request struct {
+		GameID *int64 `json:"game_id"`
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := s.Q.DevWipe(r.Context()); err != nil {
-			respondErr(w, http.StatusInternalServerError, err.Error())
+		var body request
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if body.GameID == nil {
+			respondErr(w, http.StatusBadRequest, "game_id required")
+			return
+		}
+
+		rows, err := s.Q.DeleteGame(r.Context(), *body.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not delete game", err)
+			return
+		}
+		if rows == 0 {
+			respondErr(w, http.StatusNotFound, "game not found")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

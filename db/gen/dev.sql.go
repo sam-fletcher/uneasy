@@ -9,13 +9,19 @@ import (
 	"context"
 )
 
-const devWipe = `-- name: DevWipe :exec
+const deleteGame = `-- name: DeleteGame :execrows
 
-TRUNCATE accounts, games RESTART IDENTITY CASCADE
+DELETE FROM games WHERE id = $1
 `
 
 // Dev-only queries (mounted behind UNEASY_DEV=1).
-func (q *Queries) DevWipe(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, devWipe)
-	return err
+// Hard-deletes a single game and, via ON DELETE CASCADE (migration 039), all of
+// its rows across every game-scoped table. Returns the number of games deleted
+// (0 if the id didn't exist).
+func (q *Queries) DeleteGame(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteGame, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
