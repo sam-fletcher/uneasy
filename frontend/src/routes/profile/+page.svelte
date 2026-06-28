@@ -24,21 +24,36 @@
 	let busy = $state(false);
 	let notice = $state('');
 
-	onMount(async () => {
+	// Reject if a fetch hangs (e.g. a wedged dev server) so the page can show a
+	// retry button instead of a permanent "Loading…".
+	function withTimeout<T>(p: Promise<T>, ms = 10000): Promise<T> {
+		return Promise.race([
+			p,
+			new Promise<T>((_, reject) =>
+				setTimeout(() => reject(new Error('Timed out loading your profile.')), ms)
+			),
+		]);
+	}
+
+	async function load() {
+		loading = true;
+		error = '';
 		try {
-			const acct = await getMe();
+			const acct = await withTimeout(getMe());
 			if (!acct) { goto('/'); return; }
 			me = acct;
 			usernameDraft = acct.username;
 			emailDraft = acct.email ?? '';
-			const res = await listMyTables();
+			const res = await withTimeout(listMyTables());
 			tables = res.tables;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load profile.';
 		} finally {
 			loading = false;
 		}
-	});
+	}
+
+	onMount(load);
 
 	async function saveUsername() {
 		error = ''; notice = '';
@@ -99,7 +114,12 @@
 
 {#if loading}
 	<p class="muted">Loading…</p>
-{:else if me}
+{:else if !me}
+	<div class="load-error">
+		<p class="error">{error || 'Could not load your profile.'}</p>
+		<button class="primary" onclick={load}>Retry</button>
+	</div>
+{:else}
 	<div class="profile">
 		{#if error}<p class="error">{error}</p>{/if}
 		{#if notice}<p class="status">{notice}</p>{/if}
@@ -190,6 +210,8 @@
 	.row span:not(.label) { flex:1; min-width:0; }
 	.tag { color:var(--color-accent); font-size:0.75rem; margin-left:0.5rem; }
 	.muted { color:var(--color-text-muted); }
+	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:600px; margin:0 auto; padding-top:2rem; }
+	.load-error .primary { min-height:44px; padding:0 1.25rem; border-radius:6px; }
 	.status { color:var(--color-accent); font-size:0.9rem; }
 	.error { color:var(--color-danger); font-size:0.9rem; }
 	/* On narrow screens, let the field label sit on its own line so the value
