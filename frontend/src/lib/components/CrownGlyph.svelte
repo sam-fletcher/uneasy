@@ -50,7 +50,9 @@
 		stroke-linejoin="round"
 		aria-hidden="true"
 	>
-		<path d="M3 8 L6.5 12 L12 5 L17.5 12 L21 8 L19.5 19 L4.5 19 Z" />
+		<!-- Chunky three-peak crown: vertical outer edges and a short, beefy base.
+		     Same shape as the brand favicon — keep in sync with static/favicon.svg. -->
+		<path d="M3 19 L3 8.5 L7 13.5 L12 5.5 L17 13.5 L21 8.5 L21 19 Z" />
 	</svg>
 	{#if !isMonarch && mark.ordinal != null}
 		<span class="ordinal" aria-hidden="true">{mark.ordinal}</span>

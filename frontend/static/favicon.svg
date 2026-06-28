@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#1a1a1a"/>
+  <!-- Same crown path as the in-app monarch glyph (CrownGlyph.svelte), so the
+       favicon and the line-of-succession marker share one shape. The path is
+       drawn in a 24-unit box (x 3..21, y 5.5..19); the transform scales and
+       centres it to nearly fill the 32-unit tile so the peaks stay legible at
+       favicon sizes. Keep this path in sync with CrownGlyph.svelte. -->
+  <path transform="translate(-2 -2.4) scale(1.5)" fill="#c8a96e"
+        d="M3 19 L3 8.5 L7 13.5 L12 5.5 L17 13.5 L21 8.5 L21 19 Z"/>
+</svg>
