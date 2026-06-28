@@ -248,12 +248,16 @@
 			<figure class="diagram">
 				<div class="ex-asset main" aria-hidden="true">
 					<div class="ex-asset-head">
-						<span class="ex-asset-name">Lady Mirabel <span class="ex-star">★</span><span class="ex-lev"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /></svg></span></span>
-						<span class="ex-eyes">
-							<span class="ex-eye known"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg><span class="ex-eye-num">1</span></span>
-							<span class="ex-eye hidden"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg><span class="ex-eye-num">2</span></span>
+						<span class="ex-asset-name">Lady Mirabel</span>
+						<!-- Status glyphs + type chip in one right-aligned cluster, mirroring
+						     the real asset card's .tile-head-meta. -->
+						<span class="ex-meta">
+							<span class="ex-star" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg></span>
+							<span class="ex-lev" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /></svg></span>
+							<span class="ex-eye known" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg><span class="ex-corner known">1</span></span>
+							<span class="ex-eye hidden" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg><span class="ex-corner hidden">2</span></span>
+							<span class="ex-asset-type">Peer</span>
 						</span>
-						<span class="ex-asset-type">Peer</span>
 					</div>
 					<div class="ex-mgrid">
 						<span class="ex-mtile">Silver-tongued</span>
@@ -265,7 +269,7 @@
 				<figcaption>
 					<div class="ex-legend">
 						<span class="ex-leg-row">
-							<span class="ex-star">★</span>
+							<span class="ex-star" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" stroke="none"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg></span>
 							<span class="ex-leg-text">Your <em>main character</em> — a peer you play.</span>
 						</span>
 						<span class="ex-leg-row">
@@ -484,16 +488,18 @@
 		width: 100%; max-width: 340px; margin: 0 auto;
 	}
 	.ex-asset.main { border-color: var(--color-accent); }
-	/* Name | eye | type — the eye sits centred between the star and the badge. */
-	.ex-asset-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.5rem; }
-	.ex-asset-name { justify-self: start; font-size: 0.95rem; color: var(--color-text); display: inline-flex; align-items: center; gap: 0.4rem; }
-	.ex-star { font-size: 0.7rem; background: #4a3010; color: #e8c080; padding: 0.1rem 0.4rem; border-radius: 3px; }
-	.ex-eyes { justify-self: center; display: inline-flex; align-items: center; gap: 0.45rem; }
-	.ex-eye { display: inline-flex; align-items: center; gap: 1px; }
+	/* Name on the left; status glyphs + type chip in one right-aligned cluster. */
+	.ex-asset-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+	.ex-asset-name { font-size: 0.95rem; color: var(--color-text); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+	.ex-meta { display: inline-flex; align-items: center; gap: 0.7rem; flex-shrink: 0; padding-left: 0.75rem; }
+	.ex-star { color: var(--color-accent); display: inline-flex; align-items: center; }
+	.ex-eye { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
 	.ex-eye.known { color: var(--color-accent); }
 	.ex-eye.hidden { color: var(--color-text-muted); }
-	.ex-eye-num { font-size: 0.7rem; font-weight: 600; }
-	.ex-asset-type { justify-self: end; font-size: 0.7rem; background: var(--color-border-warm); color: var(--color-accent); padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+	.ex-corner { position: absolute; top: -8px; right: -8px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; font-size: 0.62rem; font-weight: 700; line-height: 16px; text-align: center; }
+	.ex-corner.known { background: var(--color-accent); color: var(--color-bg); }
+	.ex-corner.hidden { background: #3a3a36; color: var(--color-text-muted); }
+	.ex-asset-type { flex-shrink: 0; font-size: 0.7rem; background: var(--color-border-warm); color: var(--color-accent); padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
 	.ex-mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
 	.ex-mtile {
 		min-height: 38px; padding: 0.35rem 0.45rem; background: #1d1d1a; border: 1px solid #383530;
