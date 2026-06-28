@@ -200,7 +200,7 @@ two shortcuts that make this painless:
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/dev/login?username=foo` | Find or create the account `foo`, open a session, set the cookie. No code required. |
-| `POST /api/dev/reset` | `TRUNCATE accounts, games CASCADE` — wipes all account, session, and game data. Schema is untouched. |
+| <redacted; too destructive> | `TRUNCATE accounts, games CASCADE` — wipes all account, session, and game data. Schema is untouched. |
 
 These routes are only mounted when `UNEASY_DEV=1`, so production binaries
 will 404 on them.
@@ -255,25 +255,6 @@ to a file. Open `cookies.txt` and find the `session` (or similar) cookie
 value, then in your browser's DevTools go to **Application → Cookies →
 http://localhost:8080** and add it manually. Option A is almost always
 faster.
-
-### Resetting between test runs
-
-Same idea — `/api/dev/reset` is also a POST. Either run it from any
-browser console:
-
-```js
-await fetch('/api/dev/reset', { method: 'POST' });
-```
-
-Or from a terminal:
-
-```bash
-curl -X POST http://localhost:8080/api/dev/reset
-```
-
-Faster than restarting the DB container; preserves the schema so you
-don't re-run migrations. After resetting, you'll need to re-run the
-dev-login step in each browser profile to seed new sessions.
 
 ### Logging in normally
 
