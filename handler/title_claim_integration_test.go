@@ -40,7 +40,7 @@ func seedProloguePlayer(t *testing.T, q *dbgen.Queries, label string) (dbgen.Gam
 		ID: game.ID, Phase: model.PhasePrologue,
 	}))
 	acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-		Username: label + "-" + game.JoinCode, CodeHash: "x",
+		Username: label + "-" + game.JoinCode, PasswordHash: "x",
 	})
 	require.NoError(t, err)
 	player, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{

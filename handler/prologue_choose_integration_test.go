@@ -48,7 +48,7 @@ func TestRecordPrologueChoice_EmitsLogPosts(t *testing.T) {
 		ID: game.ID, Phase: model.PhasePrologue,
 	}))
 	acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-		Username: "plog-" + game.JoinCode, CodeHash: "x",
+		Username: "plog-" + game.JoinCode, PasswordHash: "x",
 	})
 	require.NoError(t, err)
 	player, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
@@ -101,8 +101,8 @@ func TestFindOpenMarginaliaPosition(t *testing.T) {
 
 	// Create account and player
 	acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-		Username: "player-" + game.JoinCode,
-		CodeHash: "test",
+		Username:     "player-" + game.JoinCode,
+		PasswordHash: "test",
 	})
 	require.NoError(t, err)
 
@@ -171,8 +171,8 @@ func TestValidatePlayerCanChoose(t *testing.T) {
 	require.NoError(t, err)
 
 	acct1, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-		Username: "p1-" + game.JoinCode,
-		CodeHash: "test",
+		Username:     "p1-" + game.JoinCode,
+		PasswordHash: "test",
 	})
 	require.NoError(t, err)
 	player1, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
@@ -183,8 +183,8 @@ func TestValidatePlayerCanChoose(t *testing.T) {
 	require.NoError(t, err)
 
 	acct2, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-		Username: "p2-" + game.JoinCode,
-		CodeHash: "test",
+		Username:     "p2-" + game.JoinCode,
+		PasswordHash: "test",
 	})
 	require.NoError(t, err)
 	player2, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
@@ -254,8 +254,8 @@ func TestChoosePrologueIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-		Username: "test-" + game.JoinCode,
-		CodeHash: "test",
+		Username:     "test-" + game.JoinCode,
+		PasswordHash: "test",
 	})
 	require.NoError(t, err)
 	player, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{

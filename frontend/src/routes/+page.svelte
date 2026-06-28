@@ -14,7 +14,7 @@
 	let formReady = $state(false);
 
 	let username = $state('');
-	let code = $state('');
+	let password = $state('');
 	let email = $state('');
 	let error = $state('');
 	let loading = $state(false);
@@ -37,7 +37,7 @@
 	}
 
 	async function submit() {
-		if (!username.trim() || !code) {
+		if (!username.trim() || !password) {
 			error = 'Player name and password are required.';
 			return;
 		}
@@ -45,11 +45,11 @@
 		error = '';
 		try {
 			if (mode === 'login') {
-				await login(username.trim(), code);
+				await login(username.trim(), password);
 			} else {
 				await createAccount({
 					username: username.trim(),
-					code,
+					password,
 					email: email.trim() || null,
 				});
 			}
@@ -108,7 +108,7 @@
 			</div>
 
 			<div class="field">
-				<input id="c" type="password" autocomplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder=" " bind:value={code} disabled={loading} />
+				<input id="c" type="password" autocomplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder=" " bind:value={password} disabled={loading} />
 				<label for="c">Password</label>
 			</div>
 

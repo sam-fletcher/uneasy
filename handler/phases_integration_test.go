@@ -32,7 +32,7 @@ func TestStartPrologue_RejectsUnderMinPlayers(t *testing.T) {
 
 	// Add only 1 player
 	acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-		Username: "solo-" + game.JoinCode, CodeHash: "x",
+		Username: "solo-" + game.JoinCode, PasswordHash: "x",
 	})
 	require.NoError(t, err)
 	_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
@@ -59,7 +59,7 @@ func TestStartPrologue_RejectsOverMaxPlayers(t *testing.T) {
 
 	for i := 0; i < 6; i++ {
 		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), CodeHash: "x",
+			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), PasswordHash: "x",
 		})
 		require.NoError(t, err)
 		_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
@@ -90,7 +90,7 @@ func TestStartPrologue_AcceptsValidPlayerCounts(t *testing.T) {
 
 			for i := 0; i < playerCount; i++ {
 				acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-					Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), CodeHash: "x",
+					Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), PasswordHash: "x",
 				})
 				require.NoError(t, err)
 				_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
@@ -122,7 +122,7 @@ func TestStartPrologue_SeedsDefaultToneTopics(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), CodeHash: "x",
+			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), PasswordHash: "x",
 		})
 		require.NoError(t, err)
 		_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
@@ -161,7 +161,7 @@ func TestPrologue_RequiresLobbyPhase(t *testing.T) {
 	// Create some players
 	for i := 0; i < 3; i++ {
 		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), CodeHash: "x",
+			Username: fmt.Sprintf("p%d-%s", i, game.JoinCode), PasswordHash: "x",
 		})
 		require.NoError(t, err)
 		_, err = q.CreatePlayer(ctx, dbgen.CreatePlayerParams{
@@ -316,8 +316,8 @@ func seedPrologueComplete(t *testing.T, q *dbgen.Queries) (dbgen.Game, []dbgen.P
 	players := make([]dbgen.Player, 3)
 	for i := 0; i < 3; i++ {
 		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
-			Username: fmt.Sprintf("prol-p%d-%s", i+1, randSuffix()),
-			CodeHash: "x",
+			Username:     fmt.Sprintf("prol-p%d-%s", i+1, randSuffix()),
+			PasswordHash: "x",
 		})
 		require.NoError(t, err)
 		p, err := q.CreatePlayer(ctx, dbgen.CreatePlayerParams{

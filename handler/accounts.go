@@ -20,13 +20,13 @@ const sessionCookieMaxAge = int(365 * 24 * time.Hour / time.Second)
 
 // CreateAccount handles POST /api/accounts.
 //
-// Body: {"username": "...", "code": "...", "email": "..."?}
+// Body: {"username": "...", "password": "...", "email": "..."?}
 // Creates the account, opens a session, and sets the cookie.
 func CreateAccount(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Username string  `json:"username"`
-			Code     string  `json:"code"`
+			Password string  `json:"password"`
 			Email    *string `json:"email"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -38,8 +38,8 @@ func CreateAccount(s *db.Store) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "username is required")
 			return
 		}
-		if body.Code == "" {
-			respondErr(w, http.StatusBadRequest, "code is required")
+		if body.Password == "" {
+			respondErr(w, http.StatusBadRequest, "password is required")
 			return
 		}
 
@@ -53,16 +53,16 @@ func CreateAccount(s *db.Store) http.HandlerFunc {
 			return
 		}
 
-		hash, err := bcrypt.GenerateFromPassword([]byte(body.Code), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 		if err != nil {
-			respondInternalErr(w, r, "could not hash code", err)
+			respondInternalErr(w, r, "could not hash password", err)
 			return
 		}
 
 		account, err := s.Q.CreateAccount(ctx, dbgen.CreateAccountParams{
-			Username: body.Username,
-			CodeHash: string(hash),
-			Email:    body.Email,
+			Username:     body.Username,
+			PasswordHash: string(hash),
+			Email:        body.Email,
 		})
 		if err != nil {
 			respondInternalErr(w, r, "could not create account", err)
@@ -96,7 +96,7 @@ func GetMe() http.HandlerFunc {
 
 // UpdateMe handles PATCH /api/accounts/me.
 //
-// Body fields are all optional: {"username": ..., "email": ..., "code": ...}.
+// Body fields are all optional: {"username": ..., "email": ..., "password": ...}.
 func UpdateMe(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
@@ -108,7 +108,7 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 		var body struct {
 			Username *string `json:"username"`
 			Email    *string `json:"email"`
-			Code     *string `json:"code"`
+			Password *string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -139,23 +139,23 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 				newEmail = &empty
 			}
 		}
-		var newCodeHash *string
-		if body.Code != nil {
-			if *body.Code == "" {
-				respondErr(w, http.StatusBadRequest, "code cannot be empty")
+		var newPasswordHash *string
+		if body.Password != nil {
+			if *body.Password == "" {
+				respondErr(w, http.StatusBadRequest, "password cannot be empty")
 				return
 			}
-			hash, err := bcrypt.GenerateFromPassword([]byte(*body.Code), bcrypt.DefaultCost)
+			hash, err := bcrypt.GenerateFromPassword([]byte(*body.Password), bcrypt.DefaultCost)
 			if err != nil {
-				respondInternalErr(w, r, "could not hash code", err)
+				respondInternalErr(w, r, "could not hash password", err)
 				return
 			}
 			h := string(hash)
-			newCodeHash = &h
+			newPasswordHash = &h
 		}
 
 		err := s.InTx(ctx, func(q *dbgen.Queries) error {
-			return updateAccountFields(ctx, q, acct, newUsername, newEmail, newCodeHash)
+			return updateAccountFields(ctx, q, acct, newUsername, newEmail, newPasswordHash)
 		})
 		if err != nil {
 			respondHTTPErr(w, r, err)
@@ -208,7 +208,7 @@ func accountResponse(a *dbgen.Account) map[string]any {
 // updateAccountFields applies the given account field updates within a transaction.
 // It returns the appropriate HTTP status code and any error encountered.
 func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddleware.Account,
-	newUsername, newEmail *string, newCodeHash *string,
+	newUsername, newEmail *string, newPasswordHash *string,
 ) error {
 	if newUsername != nil {
 		if existing, err := q.GetAccountByUsername(ctx, *newUsername); err == nil && existing.ID != acct.ID {
@@ -241,12 +241,12 @@ func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddlew
 			return httpErr(http.StatusInternalServerError, "could not update email")
 		}
 	}
-	if newCodeHash != nil {
-		if _, err := q.UpdateAccountCode(ctx, dbgen.UpdateAccountCodeParams{
-			ID:       acct.ID,
-			CodeHash: *newCodeHash,
+	if newPasswordHash != nil {
+		if _, err := q.UpdateAccountPassword(ctx, dbgen.UpdateAccountPasswordParams{
+			ID:           acct.ID,
+			PasswordHash: *newPasswordHash,
 		}); err != nil {
-			return httpErr(http.StatusInternalServerError, "could not update code")
+			return httpErr(http.StatusInternalServerError, "could not update password")
 		}
 	}
 	return nil

@@ -11,25 +11,25 @@ import (
 
 const createAccount = `-- name: CreateAccount :one
 
-INSERT INTO accounts (username, code_hash, email)
+INSERT INTO accounts (username, password_hash, email)
 VALUES ($1, $2, $3)
-RETURNING id, username, code_hash, email, created_at, updated_at
+RETURNING id, username, password_hash, email, created_at, updated_at
 `
 
 type CreateAccountParams struct {
-	Username string  `db:"username" json:"username"`
-	CodeHash string  `db:"code_hash" json:"code_hash"`
-	Email    *string `db:"email" json:"email"`
+	Username     string  `db:"username" json:"username"`
+	PasswordHash string  `db:"password_hash" json:"password_hash"`
+	Email        *string `db:"email" json:"email"`
 }
 
 // sqlc query file for accounts.
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
-	row := q.db.QueryRow(ctx, createAccount, arg.Username, arg.CodeHash, arg.Email)
+	row := q.db.QueryRow(ctx, createAccount, arg.Username, arg.PasswordHash, arg.Email)
 	var i Account
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
-		&i.CodeHash,
+		&i.PasswordHash,
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -38,7 +38,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, username, code_hash, email, created_at, updated_at FROM accounts WHERE id = $1
+SELECT id, username, password_hash, email, created_at, updated_at FROM accounts WHERE id = $1
 `
 
 func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error) {
@@ -47,7 +47,7 @@ func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error)
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
-		&i.CodeHash,
+		&i.PasswordHash,
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -56,7 +56,7 @@ func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error)
 }
 
 const getAccountByUsername = `-- name: GetAccountByUsername :one
-SELECT id, username, code_hash, email, created_at, updated_at FROM accounts WHERE LOWER(username) = LOWER($1)
+SELECT id, username, password_hash, email, created_at, updated_at FROM accounts WHERE LOWER(username) = LOWER($1)
 `
 
 func (q *Queries) GetAccountByUsername(ctx context.Context, lower string) (Account, error) {
@@ -65,32 +65,7 @@ func (q *Queries) GetAccountByUsername(ctx context.Context, lower string) (Accou
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
-		&i.CodeHash,
-		&i.Email,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateAccountCode = `-- name: UpdateAccountCode :one
-UPDATE accounts SET code_hash = $2, updated_at = now()
-WHERE id = $1
-RETURNING id, username, code_hash, email, created_at, updated_at
-`
-
-type UpdateAccountCodeParams struct {
-	ID       int64  `db:"id" json:"id"`
-	CodeHash string `db:"code_hash" json:"code_hash"`
-}
-
-func (q *Queries) UpdateAccountCode(ctx context.Context, arg UpdateAccountCodeParams) (Account, error) {
-	row := q.db.QueryRow(ctx, updateAccountCode, arg.ID, arg.CodeHash)
-	var i Account
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.CodeHash,
+		&i.PasswordHash,
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -101,7 +76,7 @@ func (q *Queries) UpdateAccountCode(ctx context.Context, arg UpdateAccountCodePa
 const updateAccountEmail = `-- name: UpdateAccountEmail :one
 UPDATE accounts SET email = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, username, code_hash, email, created_at, updated_at
+RETURNING id, username, password_hash, email, created_at, updated_at
 `
 
 type UpdateAccountEmailParams struct {
@@ -115,7 +90,32 @@ func (q *Queries) UpdateAccountEmail(ctx context.Context, arg UpdateAccountEmail
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
-		&i.CodeHash,
+		&i.PasswordHash,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateAccountPassword = `-- name: UpdateAccountPassword :one
+UPDATE accounts SET password_hash = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, username, password_hash, email, created_at, updated_at
+`
+
+type UpdateAccountPasswordParams struct {
+	ID           int64  `db:"id" json:"id"`
+	PasswordHash string `db:"password_hash" json:"password_hash"`
+}
+
+func (q *Queries) UpdateAccountPassword(ctx context.Context, arg UpdateAccountPasswordParams) (Account, error) {
+	row := q.db.QueryRow(ctx, updateAccountPassword, arg.ID, arg.PasswordHash)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -126,7 +126,7 @@ func (q *Queries) UpdateAccountEmail(ctx context.Context, arg UpdateAccountEmail
 const updateAccountUsername = `-- name: UpdateAccountUsername :one
 UPDATE accounts SET username = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, username, code_hash, email, created_at, updated_at
+RETURNING id, username, password_hash, email, created_at, updated_at
 `
 
 type UpdateAccountUsernameParams struct {
@@ -140,7 +140,7 @@ func (q *Queries) UpdateAccountUsername(ctx context.Context, arg UpdateAccountUs
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
-		&i.CodeHash,
+		&i.PasswordHash,
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,

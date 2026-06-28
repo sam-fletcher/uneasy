@@ -33,8 +33,8 @@ func DevLogin(s *db.Store) http.HandlerFunc {
 		if errors.Is(err, pgx.ErrNoRows) {
 			hash, _ := bcrypt.GenerateFromPassword([]byte("dev"), bcrypt.MinCost)
 			account, err = s.Q.CreateAccount(ctx, dbgen.CreateAccountParams{
-				Username: username,
-				CodeHash: string(hash),
+				Username:     username,
+				PasswordHash: string(hash),
 			})
 		}
 		if err != nil {

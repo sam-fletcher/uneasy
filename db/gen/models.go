@@ -10,12 +10,12 @@ import (
 )
 
 type Account struct {
-	ID        int64              `db:"id" json:"id"`
-	Username  string             `db:"username" json:"username"`
-	CodeHash  string             `db:"code_hash" json:"code_hash"`
-	Email     *string            `db:"email" json:"email"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	ID           int64              `db:"id" json:"id"`
+	Username     string             `db:"username" json:"username"`
+	PasswordHash string             `db:"password_hash" json:"password_hash"`
+	Email        *string            `db:"email" json:"email"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 type Asset struct {

@@ -258,7 +258,7 @@ func findOrCreateAccount(ctx context.Context, q *dbgen.Queries, username string)
 	// will surface a real error.
 	hash, _ := bcrypt.GenerateFromPassword([]byte("dev"), bcrypt.MinCost)
 	return q.CreateAccount(ctx, dbgen.CreateAccountParams{
-		Username: username,
-		CodeHash: string(hash),
+		Username:     username,
+		PasswordHash: string(hash),
 	})
 }

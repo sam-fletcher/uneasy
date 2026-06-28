@@ -12,31 +12,31 @@ import (
 
 // CreateSession handles POST /api/sessions (log in).
 //
-// Body: {"username": "...", "code": "..."}
+// Body: {"username": "...", "password": "..."}
 // On success: opens a session, sets the cookie, returns the account.
 func CreateSession(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Username string `json:"username"`
-			Code     string `json:"code"`
+			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		if body.Username == "" || body.Code == "" {
-			respondErr(w, http.StatusBadRequest, "username and code are required")
+		if body.Username == "" || body.Password == "" {
+			respondErr(w, http.StatusBadRequest, "username and password are required")
 			return
 		}
 
 		ctx := r.Context()
 		account, err := s.Q.GetAccountByUsername(ctx, body.Username)
 		if err != nil {
-			respondErr(w, http.StatusUnauthorized, "incorrect username or code")
+			respondErr(w, http.StatusUnauthorized, "incorrect username or password")
 			return
 		}
-		if bcrypt.CompareHashAndPassword([]byte(account.CodeHash), []byte(body.Code)) != nil {
-			respondErr(w, http.StatusUnauthorized, "incorrect username or code")
+		if bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(body.Password)) != nil {
+			respondErr(w, http.StatusUnauthorized, "incorrect username or password")
 			return
 		}
 

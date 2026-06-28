@@ -3,7 +3,7 @@ import type { Account, MyTable } from './types';
 
 export function createAccount(body: {
 	username: string;
-	code: string;
+	password: string;
 	email?: string | null;
 }): Promise<Account> {
 	return apiFetch<Account>('/accounts', {
@@ -12,10 +12,10 @@ export function createAccount(body: {
 	});
 }
 
-export function login(username: string, code: string): Promise<Account> {
+export function login(username: string, password: string): Promise<Account> {
 	return apiFetch<Account>('/sessions', {
 		method: 'POST',
-		body: JSON.stringify({ username, code })
+		body: JSON.stringify({ username, password })
 	});
 }
 
@@ -33,7 +33,7 @@ export async function getMe(): Promise<Account | null> {
 export function updateMe(patch: {
 	username?: string;
 	email?: string | null;
-	code?: string;
+	password?: string;
 }): Promise<Account> {
 	return apiFetch<Account>('/accounts/me', {
 		method: 'PATCH',

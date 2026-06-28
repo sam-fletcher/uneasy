@@ -17,8 +17,8 @@
 	let usernameDraft = $state('');
 	let editingEmail = $state(false);
 	let emailDraft = $state('');
-	let editingCode = $state(false);
-	let codeDraft = $state('');
+	let editingPassword = $state(false);
+	let passwordDraft = $state('');
 
 	let joinCode = $state('');
 	let busy = $state(false);
@@ -73,13 +73,13 @@
 			error = e instanceof Error ? e.message : 'Could not update email.';
 		}
 	}
-	async function saveCode() {
-		if (!codeDraft) return;
+	async function savePassword() {
+		if (!passwordDraft) return;
 		error = ''; notice = '';
 		try {
-			await updateMe({ code: codeDraft });
-			codeDraft = '';
-			editingCode = false;
+			await updateMe({ password: passwordDraft });
+			passwordDraft = '';
+			editingPassword = false;
 			notice = 'Password updated.';
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not update password.';
@@ -179,13 +179,13 @@
 			</div>
 			<div class="row">
 				<span class="label">Password</span>
-				{#if editingCode}
-					<input type="password" aria-label="New password" bind:value={codeDraft} placeholder="Enter a new password" />
-					<button class="small" onclick={saveCode} disabled={!codeDraft}>Save</button>
-					<button class="small secondary" onclick={() => { editingCode = false; codeDraft = ''; }}>Cancel</button>
+				{#if editingPassword}
+					<input type="password" aria-label="New password" bind:value={passwordDraft} placeholder="Enter a new password" />
+					<button class="small" onclick={savePassword} disabled={!passwordDraft}>Save</button>
+					<button class="small secondary" onclick={() => { editingPassword = false; passwordDraft = ''; }}>Cancel</button>
 				{:else}
 					<span class="masked">••••••••</span>
-					<button class="small secondary" aria-label="Edit password" onclick={() => { editingCode = true; }}>Edit</button>
+					<button class="small secondary" aria-label="Edit password" onclick={() => { editingPassword = true; }}>Edit</button>
 				{/if}
 			</div>
 		</section>
