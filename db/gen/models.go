@@ -375,6 +375,8 @@ type ShakeUpSpend struct {
 	Applied            bool               `db:"applied" json:"applied"`
 	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
+	TargetTitleID      *string            `db:"target_title_id" json:"target_title_id"`
+	TitleFlavor        *string            `db:"title_flavor" json:"title_flavor"`
 }
 
 type SimultaneousReveal struct {

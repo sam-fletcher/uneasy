@@ -345,6 +345,235 @@ func TestShakeUpEffect_BreakAsset_RequiresMarginalia(t *testing.T) {
 	assert.False(t, got.IsDestroyed, "the asset must be untouched when the break is rejected")
 }
 
+// titleMarginaliaCount counts intact title-bearing marginalia on an asset.
+func marginaliaCountOf(t *testing.T, q *dbgen.Queries, assetID int64) int {
+	t.Helper()
+	ms, err := q.ListMarginaliaByAsset(context.Background(), assetID)
+	require.NoError(t, err)
+	return len(ms)
+}
+
+// TestShakeUpEffect_ClaimTitle_Monarch pins the ADR-007 Shake-Up claim-title
+// rework: claiming the monarch title stamps a marginalia (no artifact) on the
+// claimer's own peer, trips throne_established, and makes currentMonarch resolve
+// to the claimer — exactly like a Prologue monarch claim.
+func TestShakeUpEffect_ClaimTitle_Monarch(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	seeded := newShakeUpGame(t, q, 3)
+	gameID := seeded.Game.ID
+	claimer := seeded.Players[1]
+
+	mcID, err := findMainCharacter(ctx, q, claimer.ID)
+	require.NoError(t, err)
+	assetsBefore, err := q.ListAssetsByGame(ctx, gameID)
+	require.NoError(t, err)
+
+	titleID := gamepkg.TitleMonarch
+	flavor := "crowned at the Midwinter Accord"
+	spend := &dbgen.ShakeUpSpend{
+		OptionKey:     gamepkg.ShakeUpOptClaimTitle,
+		PlayerID:      claimer.ID,
+		TargetAssetID: &mcID,
+		TargetTitleID: &titleID,
+		TitleFlavor:   &flavor,
+	}
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
+
+	// No artifact (or any asset) was created — the role lives on the marginalia.
+	assetsAfter, err := q.ListAssetsByGame(ctx, gameID)
+	require.NoError(t, err)
+	assert.Len(t, assetsAfter, len(assetsBefore), "claim-title must not create an asset")
+
+	// The title marginalia is stamped on the claimer's peer with the right id.
+	ms, err := q.ListMarginaliaByAsset(ctx, mcID)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+	require.NotNil(t, ms[0].Title)
+	assert.Equal(t, gamepkg.TitleMonarch, *ms[0].Title)
+	assert.Equal(t, flavor, ms[0].Text, "flavor text becomes the marginalia text")
+
+	// The throne gate tripped and currentMonarch resolves to the claimer.
+	g, err := q.GetGameByID(ctx, gameID)
+	require.NoError(t, err)
+	assert.True(t, g.ThroneEstablished)
+	gotAsset, gotOwner, ok, err := currentMonarch(ctx, q, gameID)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, mcID, gotAsset)
+	assert.Equal(t, claimer.ID, gotOwner)
+
+	posts := committedPosts(t, q, gameID)
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0], "claim the title **The Monarch**")
+}
+
+// TestShakeUpEffect_ClaimTitle_NonMonarchNoGate pins that claiming a title
+// outside the line of succession stamps the marginalia but does NOT establish
+// the throne (no monarch role appears).
+func TestShakeUpEffect_ClaimTitle_NonMonarchNoGate(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	seeded := newShakeUpGame(t, q, 2)
+	gameID := seeded.Game.ID
+	claimer := seeded.Players[0]
+	mcID, err := findMainCharacter(ctx, q, claimer.ID)
+	require.NoError(t, err)
+
+	titleID := gamepkg.TitleSpymaster
+	spend := &dbgen.ShakeUpSpend{
+		OptionKey:     gamepkg.ShakeUpOptClaimTitle,
+		PlayerID:      claimer.ID,
+		TargetAssetID: &mcID,
+		TargetTitleID: &titleID,
+	}
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
+
+	ms, err := q.ListMarginaliaByAsset(ctx, mcID)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+	require.NotNil(t, ms[0].Title)
+	assert.Equal(t, gamepkg.TitleSpymaster, *ms[0].Title)
+	// No flavor → marginalia text defaults to the title's display name.
+	assert.Equal(t, "The Spymaster", ms[0].Text)
+
+	g, err := q.GetGameByID(ctx, gameID)
+	require.NoError(t, err)
+	assert.False(t, g.ThroneEstablished, "a non-line title must not establish the throne")
+	_, _, ok, err := currentMonarch(ctx, q, gameID)
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
+// TestShakeUpEffect_ClaimTitle_AlreadyClaimedRejected pins game-wide title
+// uniqueness: a title already claimed elsewhere (even on another peer) can't be
+// re-minted, and the target peer is left untouched.
+func TestShakeUpEffect_ClaimTitle_AlreadyClaimedRejected(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	seeded := newShakeUpGame(t, q, 2)
+	gameID := seeded.Game.ID
+
+	// Player 0 already holds the monarch title (claimed earlier, on their MC).
+	p0mc, err := findMainCharacter(ctx, q, seeded.Players[0].ID)
+	require.NoError(t, err)
+	existingTitle := gamepkg.TitleMonarch
+	_, err = q.CreateTitleMarginalia(ctx, dbgen.CreateTitleMarginaliaParams{
+		AssetID: p0mc, Position: 1, Text: "The Monarch", Title: &existingTitle,
+	})
+	require.NoError(t, err)
+
+	// Player 1 tries to claim the monarch title too → rejected.
+	p1mc, err := findMainCharacter(ctx, q, seeded.Players[1].ID)
+	require.NoError(t, err)
+	titleID := gamepkg.TitleMonarch
+	spend := &dbgen.ShakeUpSpend{
+		OptionKey:     gamepkg.ShakeUpOptClaimTitle,
+		PlayerID:      seeded.Players[1].ID,
+		TargetAssetID: &p1mc,
+		TargetTitleID: &titleID,
+	}
+	err = applyShakeUpEffect(ctx, q, manager, gameID, spend, 1)
+	require.Error(t, err, "claiming an already-claimed title must be rejected")
+	assert.Equal(t, 0, marginaliaCountOf(t, q, p1mc), "the target peer must be left untouched")
+}
+
+// TestShakeUpBumpRank_SkipsDummy pins the dummy-skip fix: a bump climbs PAST a
+// dummy slot and swaps with the first real player above, leaving the dummy in
+// place (matching the engrailed ranking update). Previously the bump swapped
+// straight into the dummy's slot, corrupting the track.
+func TestShakeUpBumpRank_SkipsDummy(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	seeded := newShakeUpGame(t, q, 3)
+	gameID := seeded.Game.ID
+
+	// Lay out the esteem track with a dummy between two real players:
+	//   rank1 = p1 (real), rank2 = dummy, rank3 = p0 (the bumper).
+	setEsteem := func(rank int16, pid *int64) {
+		require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+			GameID: gameID, PlayerID: pid, Category: model.CategoryEsteem, Rank: rank,
+		}))
+	}
+	p0, p1, p2 := seeded.Players[0].ID, seeded.Players[1].ID, seeded.Players[2].ID
+	setEsteem(1, &p1)
+	setEsteem(2, nil) // dummy
+	setEsteem(3, &p0)
+	setEsteem(4, &p2)
+
+	spend := &dbgen.ShakeUpSpend{OptionKey: gamepkg.ShakeUpOptBumpEsteem, PlayerID: p0}
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
+
+	assert.EqualValues(t, 1, rankOf(t, q, gameID, model.CategoryEsteem, p0), "bumper climbs past the dummy to rank 1")
+	assert.EqualValues(t, 3, rankOf(t, q, gameID, model.CategoryEsteem, p1), "overtaken real player drops to the bumper's old slot")
+
+	// The dummy slot is untouched (still nil at rank 2).
+	rankings, err := q.ListRankingsByGame(ctx, gameID)
+	require.NoError(t, err)
+	for _, rk := range rankings {
+		if rk.Category == model.CategoryEsteem && rk.Rank == 2 {
+			assert.Nil(t, rk.PlayerID, "the dummy slot stays a dummy")
+		}
+	}
+
+	posts := committedPosts(t, q, gameID)
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0], "rise to rank 1")
+}
+
+// TestShakeUpBumpRank_DummyAboveIsNoOp pins that a real player with only a dummy
+// (or nothing) above is effectively at the top: the bump is a logged no-op and
+// must NOT swap them into the dummy's slot.
+func TestShakeUpBumpRank_DummyAboveIsNoOp(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	manager := hub.NewManager()
+
+	seeded := newShakeUpGame(t, q, 3)
+	gameID := seeded.Game.ID
+
+	// rank1 = dummy, rank2 = p0 (bumper, top real player), rank3 = p1.
+	setEsteem := func(rank int16, pid *int64) {
+		require.NoError(t, q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+			GameID: gameID, PlayerID: pid, Category: model.CategoryEsteem, Rank: rank,
+		}))
+	}
+	p0, p1, p2 := seeded.Players[0].ID, seeded.Players[1].ID, seeded.Players[2].ID
+	setEsteem(1, nil) // dummy
+	setEsteem(2, &p0)
+	setEsteem(3, &p1)
+	setEsteem(4, &p2)
+
+	spend := &dbgen.ShakeUpSpend{OptionKey: gamepkg.ShakeUpOptBumpEsteem, PlayerID: p0}
+	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
+
+	assert.EqualValues(t, 2, rankOf(t, q, gameID, model.CategoryEsteem, p0), "top real player must not climb into the dummy slot")
+	rankings, err := q.ListRankingsByGame(ctx, gameID)
+	require.NoError(t, err)
+	for _, rk := range rankings {
+		if rk.Category == model.CategoryEsteem && rk.Rank == 1 {
+			assert.Nil(t, rk.PlayerID, "the dummy slot stays a dummy")
+		}
+	}
+
+	posts := committedPosts(t, q, gameID)
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0], "already at the top")
+}
+
 // TestMaybeAdvanceShakeUpCategory_Progression pins the category machine: with
 // every pool empty, the spending step advances esteem → knowledge → power →
 // ended.

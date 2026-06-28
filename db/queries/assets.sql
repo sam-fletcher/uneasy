@@ -163,6 +163,19 @@ WHERE a.game_id = $1
   AND a.is_destroyed = FALSE
 ORDER BY a.id;
 
+-- name: ListClaimedTitleIDsByGame :many
+-- Every title id ever stamped on a marginalia in the game, torn or not,
+-- destroyed asset or not — the full set of titles already claimed at ANY claim
+-- site (Prologue choosing-phase, ≤3-player extra-peer, prior Shake-Up claims).
+-- Used to enforce game-wide title uniqueness for Shake-Up "Claim a new title":
+-- a title is "already claimed" even if its bearer was later deposed, so torn /
+-- destroyed claims still count.
+SELECT DISTINCT m.title
+FROM marginalia m
+JOIN assets a ON a.id = m.asset_id
+WHERE a.game_id = $1
+  AND m.title IS NOT NULL;
+
 -- name: UpdateMarginaliaText :exec
 UPDATE marginalia SET text = $2 WHERE id = $1;
 

@@ -22,11 +22,22 @@ export interface ShakeUpSpend {
 	target_asset_id: number | null;
 	target_marginalia_id: number | null;
 	target_player_id: number | null;
+	// claim_title: the chosen title id + freeform marginalia flavor text.
+	target_title_id: string | null;
+	title_flavor: string | null;
 	base_cost: number;
 	final_cost: number | null;
 	committed_at: string | null;
 	applied: boolean;
 	created_at: string;
+}
+
+// A title the "Claim a new title" picker may offer (not yet claimed game-wide).
+export interface ClaimableTitle {
+	id: string;
+	name: string;
+	description: string;
+	in_succession: boolean;
 }
 
 export interface ShakeUpAdjustmentRow {
@@ -48,6 +59,8 @@ export function getShakeUp(gameID: string | number): Promise<{
 	shake_up_step: number | null;
 	tokens: ShakeUpTokensRow[];
 	options: ShakeUpOptionInfo[] | null;
+	// Titles still unclaimed game-wide, for the "Claim a new title" picker.
+	claimable_titles?: ClaimableTitle[];
 	open_spend?: { spend: ShakeUpSpend; adjustments: ShakeUpAdjustmentRow[] };
 	// During the spending step (no open spend), the player whose turn it is
 	// to announce, per reverse-rank order. Absent otherwise.
@@ -73,6 +86,8 @@ export function shakeUpSpend(
 		target_asset_id?: number;
 		target_marginalia_id?: number;
 		target_player_id?: number;
+		target_title_id?: string;
+		title_flavor?: string;
 	}
 ): Promise<{ spend: ShakeUpSpend }> {
 	return apiFetch(`/tables/${gameID}/shake-up/spend`, {

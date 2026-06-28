@@ -586,6 +586,40 @@ func (q *Queries) ListAssetsByOwner(ctx context.Context, ownerID int64) ([]Asset
 	return items, nil
 }
 
+const listClaimedTitleIDsByGame = `-- name: ListClaimedTitleIDsByGame :many
+SELECT DISTINCT m.title
+FROM marginalia m
+JOIN assets a ON a.id = m.asset_id
+WHERE a.game_id = $1
+  AND m.title IS NOT NULL
+`
+
+// Every title id ever stamped on a marginalia in the game, torn or not,
+// destroyed asset or not — the full set of titles already claimed at ANY claim
+// site (Prologue choosing-phase, ≤3-player extra-peer, prior Shake-Up claims).
+// Used to enforce game-wide title uniqueness for Shake-Up "Claim a new title":
+// a title is "already claimed" even if its bearer was later deposed, so torn /
+// destroyed claims still count.
+func (q *Queries) ListClaimedTitleIDsByGame(ctx context.Context, gameID int64) ([]*string, error) {
+	rows, err := q.db.Query(ctx, listClaimedTitleIDsByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*string{}
+	for rows.Next() {
+		var title *string
+		if err := rows.Scan(&title); err != nil {
+			return nil, err
+		}
+		items = append(items, title)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIntactMarginalia = `-- name: ListIntactMarginalia :many
 SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id, title FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE ORDER BY position
 `

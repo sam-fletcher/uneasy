@@ -325,14 +325,18 @@
 				online: false
 			}));
 
-			// Load assets in lobby (for main-character editing) and during
-			// prologue/main_event (full retinue). Secrets only exist once the
-			// prologue has begun.
-			if (data.game.phase === 'lobby' || data.game.phase === 'prologue' || data.game.phase === 'main_event') {
+			// Load assets in lobby (for main-character editing) and during every
+			// phase that shows the retinue or targets assets: prologue, main_event,
+			// the shake_up endgame (take/break/claim-title pickers + crown display),
+			// and the ended summary. Secrets only exist once the prologue has begun.
+			if (data.game.phase === 'lobby' || data.game.phase === 'prologue' ||
+				data.game.phase === 'main_event' || data.game.phase === 'shake_up' ||
+				data.game.phase === 'ended') {
 				const assetData = await listAssets(gameID);
 				assets = assetData.assets;
 			}
-			if (data.game.phase === 'prologue' || data.game.phase === 'main_event') {
+			if (data.game.phase === 'prologue' || data.game.phase === 'main_event' ||
+				data.game.phase === 'shake_up' || data.game.phase === 'ended') {
 				try {
 					const sd = await getVisibleSecrets(gameID);
 					secrets = sd.secrets;

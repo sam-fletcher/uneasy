@@ -16,7 +16,7 @@
 	} from '$lib/api';
 	import type {
 		Game, Player, Asset, ShakeUpOptionInfo, ShakeUpSpend,
-		ShakeUpAdjustmentRow, ShakeUpTokensRow,
+		ShakeUpAdjustmentRow, ShakeUpTokensRow, ClaimableTitle,
 	} from '$lib/api';
 	import AssetCardSelectable from '../AssetCardSelectable.svelte';
 	import { playerColor } from '$lib/playerColor';
@@ -34,6 +34,7 @@
 
 	let tokens = $state<ShakeUpTokensRow[]>([]);
 	let options = $state<ShakeUpOptionInfo[]>([]);
+	let claimableTitles = $state<ClaimableTitle[]>([]);
 	let openSpend = $state<{ spend: ShakeUpSpend; adjustments: ShakeUpAdjustmentRow[] } | null>(null);
 	let currentActor = $state<number | null>(null);
 	let error = $state('');
@@ -44,6 +45,7 @@
 			const data = await getShakeUp(gameID);
 			tokens = data.tokens;
 			options = data.options ?? [];
+			claimableTitles = data.claimable_titles ?? [];
 			openSpend = data.open_spend ?? null;
 			currentActor = data.current_actor ?? null;
 		} catch (e) {
@@ -96,19 +98,32 @@
 	let pickedAssetID = $state<number | ''>('');
 	// Break options tear one marginalia, so the breaker also picks which.
 	let pickedMarginaliaID = $state<number | ''>('');
+	// Claim-a-title picks a title id + the peer (one of mine, with a free slot)
+	// that receives it + optional freeform marginalia flavor.
+	let pickedTitleID = $state<string>('');
+	let titleFlavor = $state<string>('');
 	const pickedOptionInfo = $derived(options.find(o => o.Key === pickedOption));
+	const isClaimTitle = $derived(pickedOptionInfo?.Key === 'claim_title');
 	const myAssets = $derived(assets.filter(a => !a.is_destroyed));
+	// My own peers with a free marginalia slot (positions 1–4; torn marginalia
+	// still occupy their slot) — the only valid recipients of a new title.
+	const titleablePeers = $derived(
+		assets.filter(a => a.owner_id === currentPlayerID && a.asset_type === 'peer'
+			&& !a.is_destroyed && a.marginalia.length < 4)
+	);
 	// Intact (un-torn) marginalia on the chosen asset — the breakable choices.
 	const breakableMarginalia = $derived(
 		pickedAssetID === ''
 			? []
 			: (myAssets.find(a => a.id === pickedAssetID)?.marginalia ?? []).filter(m => !m.is_torn)
 	);
-	// A break announce is only ready once a marginalia is chosen.
+	// A break announce is only ready once a marginalia is chosen; a claim-title
+	// announce needs both a title and one of my peers to bear it.
 	const announceReady = $derived(
 		!!pickedOption &&
 		(!pickedOptionInfo?.NeedsAsset || pickedAssetID !== '') &&
-		(!pickedOptionInfo?.NeedsMarginalia || pickedMarginaliaID !== '')
+		(!pickedOptionInfo?.NeedsMarginalia || pickedMarginaliaID !== '') &&
+		(!isClaimTitle || (pickedTitleID !== '' && pickedAssetID !== ''))
 	);
 
 	async function announce() {
@@ -119,6 +134,8 @@
 				option_key: string;
 				target_asset_id?: number;
 				target_marginalia_id?: number;
+				target_title_id?: string;
+				title_flavor?: string;
 			} = { option_key: pickedOption };
 			if (pickedOptionInfo?.NeedsAsset && pickedAssetID !== '') {
 				body.target_asset_id = pickedAssetID as number;
@@ -126,10 +143,17 @@
 			if (pickedOptionInfo?.NeedsMarginalia && pickedMarginaliaID !== '') {
 				body.target_marginalia_id = pickedMarginaliaID as number;
 			}
+			if (isClaimTitle) {
+				body.target_title_id = pickedTitleID;
+				body.target_asset_id = pickedAssetID as number;
+				if (titleFlavor.trim()) body.title_flavor = titleFlavor.trim();
+			}
 			await shakeUpSpend(gameID, body);
 			pickedOption = '';
 			pickedAssetID = '';
 			pickedMarginaliaID = '';
+			pickedTitleID = '';
+			titleFlavor = '';
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not announce spend.';
 		} finally {
@@ -281,6 +305,8 @@
 										pickedOption = pickedOption === opt.Key ? '' : opt.Key;
 										pickedAssetID = '';
 										pickedMarginaliaID = '';
+										pickedTitleID = '';
+										titleFlavor = '';
 									}}
 								>{opt.Description}</button>
 							{/each}
@@ -328,6 +354,55 @@
 								</div>
 							{/if}
 						</div>
+					{/if}
+					{#if isClaimTitle}
+						<div class="su-form-row">
+							<span class="su-form-label">Title to claim (unclaimed this game):</span>
+							{#if claimableTitles.length === 0}
+								<p class="muted" style="margin:0;">Every title has already been claimed.</p>
+							{:else}
+								<div class="su-chip-row">
+									{#each claimableTitles as t (t.id)}
+										<button
+											type="button"
+											class="su-chip"
+											class:active={pickedTitleID === t.id}
+											title={t.description}
+											onclick={() => (pickedTitleID = pickedTitleID === t.id ? '' : t.id)}
+										>{t.name}{#if t.in_succession}&nbsp;♛{/if}</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						{#if pickedTitleID !== ''}
+							<div class="su-form-row">
+								<span class="su-form-label">Peer to bear the title (must have a free marginalia slot):</span>
+								{#if titleablePeers.length === 0}
+									<p class="muted" style="margin:0;">You have no peer with a free marginalia slot.</p>
+								{:else}
+									<div class="su-peer-cards">
+										{#each titleablePeers as a (a.id)}
+											<AssetCardSelectable
+												asset={a}
+												ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
+												selectable
+												selected={pickedAssetID === a.id}
+												onToggle={() => (pickedAssetID = pickedAssetID === a.id ? '' : a.id)}
+											/>
+										{/each}
+									</div>
+								{/if}
+							</div>
+							<div class="su-form-row">
+								<span class="su-form-label">Marginalia text (optional — defaults to the title name):</span>
+								<input
+									type="text"
+									maxlength="120"
+									placeholder="e.g. crowned at the Midwinter Accord"
+									bind:value={titleFlavor}
+								/>
+							</div>
+						{/if}
 					{/if}
 					<button class="primary" disabled={!announceReady || busy} onclick={announce}>
 						{busy ? '…' : 'Announce (cost 1 token)'}

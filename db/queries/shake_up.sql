@@ -28,8 +28,9 @@ SELECT id, shake_up_tokens FROM players WHERE game_id = $1 ORDER BY id;
 
 -- name: CreateShakeUpSpend :one
 INSERT INTO shake_up_spends (
-  game_id, player_id, category, option_key, target_asset_id, target_marginalia_id, target_player_id, base_cost
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  game_id, player_id, category, option_key, target_asset_id, target_marginalia_id, target_player_id,
+  target_title_id, title_flavor, base_cost
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
 -- name: GetShakeUpSpend :one

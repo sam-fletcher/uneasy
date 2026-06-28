@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -75,6 +76,13 @@ func GetShakeUp(s *db.Store) http.HandlerFunc {
 			"options":           shakeUpOptionsForGame(game),
 		}
 
+		// The "Claim a new title" option (Power category) offers every title not
+		// already claimed game-wide (ADR-007). Compute it server-side so the picker
+		// can't offer a taken title.
+		if claimable, cerr := claimableTitles(ctx, s.Q, gameID); cerr == nil {
+			out["claimable_titles"] = claimable
+		}
+
 		// Open spend (if any). While a spend is open no one may announce, so
 		// current_actor is only meaningful when the spending step is awaiting
 		// the next announce.
@@ -100,6 +108,45 @@ func shakeUpOptionsForGame(game dbgen.Game) []gamepkg.ShakeUpOptionInfo {
 		return nil
 	}
 	return gamepkg.ShakeUpOptionsForCategory(*game.ShakeUpCategory)
+}
+
+// claimableTitleInfo is one title the Shake-Up "Claim a new title" picker may
+// offer: a stable id, its display name + description, and whether it sits in the
+// line of succession (so the UI can flag throne-line titles with a crown).
+type claimableTitleInfo struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	InSuccession bool   `json:"in_succession"`
+}
+
+// claimableTitles returns every title not yet claimed anywhere in the game, in
+// the titles-sheet order, for the claim-title picker.
+func claimableTitles(ctx context.Context, q *dbgen.Queries, gameID int64) ([]claimableTitleInfo, error) {
+	claimedIDs, err := q.ListClaimedTitleIDsByGame(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	claimed := make(map[string]bool, len(claimedIDs))
+	for _, c := range claimedIDs {
+		if c != nil {
+			claimed[*c] = true
+		}
+	}
+	out := make([]claimableTitleInfo, 0, len(gamepkg.TitlesSheet()))
+	for _, t := range gamepkg.TitlesSheet() {
+		if claimed[t.ID] {
+			continue
+		}
+		_, inLine := gamepkg.SuccessionRank(t.ID)
+		out = append(out, claimableTitleInfo{
+			ID:           t.ID,
+			Name:         t.Name,
+			Description:  t.Description,
+			InSuccession: inLine,
+		})
+	}
+	return out, nil
 }
 
 // ── Begin trigger ────────────────────────────────────────────────────────────
@@ -268,10 +315,12 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var body struct {
-			OptionKey          string `json:"option_key"`
-			TargetAssetID      *int64 `json:"target_asset_id"`
-			TargetMarginaliaID *int64 `json:"target_marginalia_id"`
-			TargetPlayerID     *int64 `json:"target_player_id"`
+			OptionKey          string  `json:"option_key"`
+			TargetAssetID      *int64  `json:"target_asset_id"`
+			TargetMarginaliaID *int64  `json:"target_marginalia_id"`
+			TargetPlayerID     *int64  `json:"target_player_id"`
+			TargetTitleID      *string `json:"target_title_id"`
+			TitleFlavor        *string `json:"title_flavor"`
 		}
 		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -294,6 +343,13 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// must name which one.
 		if info.NeedsMarginalia &&
 			!validateShakeUpBreakTarget(ctx, w, s.Q, info, body.TargetAssetID, body.TargetMarginaliaID) {
+			return
+		}
+		// Claim-a-new-title stamps a marginalia onto one of the claimer's own peers
+		// (ADR-007). Validate the chosen title + receiving peer up front; the apply
+		// step re-checks authoritatively at commit.
+		if info.Key == gamepkg.ShakeUpOptClaimTitle &&
+			!validateShakeUpClaimTitle(ctx, w, s.Q, gameID, player.ID, body.TargetTitleID, body.TargetAssetID) {
 			return
 		}
 
@@ -336,6 +392,8 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			TargetAssetID:      body.TargetAssetID,
 			TargetMarginaliaID: body.TargetMarginaliaID,
 			TargetPlayerID:     body.TargetPlayerID,
+			TargetTitleID:      body.TargetTitleID,
+			TitleFlavor:        body.TitleFlavor,
 			BaseCost:           1,
 		})
 		if err != nil {
@@ -683,6 +741,9 @@ func shakeUpTakeAsset(
 	if err != nil {
 		return fmt.Errorf("asset not found: %w", err)
 	}
+	if asset.GameID != gameID {
+		return errors.New("target asset belongs to another game")
+	}
 	if asset.AssetType != want {
 		return fmt.Errorf("target must be a %s asset", want)
 	}
@@ -773,6 +834,9 @@ func shakeUpBreakAsset(
 	if err != nil {
 		return fmt.Errorf("asset not found: %w", err)
 	}
+	if asset.GameID != gameID {
+		return errors.New("target asset belongs to another game")
+	}
 	if asset.AssetType != want {
 		return fmt.Errorf("target must be a %s asset", want)
 	}
@@ -851,29 +915,44 @@ func shakeUpBumpRank(
 	if err != nil {
 		return fmt.Errorf("load rankings: %w", err)
 	}
-	var current, target int16
-	var displaced *int64
+	// Build the category's rank→occupant map (nil = dummy/empty slot) so we can
+	// climb past dummies. Dummy tokens occupy real rank slots (e.g. rank 1 in
+	// 2–3p games), so "rank N-1" is not necessarily a real player — bumping must
+	// pass over dummies and swap with the first *real* player above, matching the
+	// engrailed ranking update (swapTokenPlayerWithAbove). Swapping into a dummy's
+	// slot would corrupt the track and let a top-real player illegitimately "rise".
+	occupant := map[int16]*int64{}
+	var current int16
 	for _, rk := range rankings {
-		if rk.Category == cat && rk.PlayerID != nil && *rk.PlayerID == playerID {
+		if rk.Category != cat {
+			continue
+		}
+		occupant[rk.Rank] = rk.PlayerID
+		if rk.PlayerID != nil && *rk.PlayerID == playerID {
 			current = rk.Rank
+		}
+	}
+	// Search upward from current-1 for the first real player to overtake; skip
+	// dummy (nil) slots. No real player above → the spender is effectively at the
+	// top, so the bump is a (logged) no-op.
+	var target int16
+	var displaced *int64
+	for r := current - 1; r >= 1; r-- {
+		if occupant[r] != nil {
+			target = r
+			displaced = occupant[r]
 			break
 		}
 	}
-	if current <= 1 {
-		// Already at the top — the token is still spent, nothing moves. The
-		// rules dwell on spends that change nothing, so log it anyway.
+	if target == 0 {
+		// Already at the top (only dummies / nothing above) — the token is still
+		// spent, nothing moves. The rules dwell on spends that change nothing, so
+		// log it anyway.
 		EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
 			fmt.Sprintf("%s spent %d token(s) to rise on %s, but is already at the top — no change",
 				spender, finalCost, shakeUpCategoryTitle(track)),
 			map[string]any{"effect": "bump", "track": track, "changed": false})
 		return nil
-	}
-	target = current - 1
-	for _, rk := range rankings {
-		if rk.Category == cat && rk.Rank == target {
-			displaced = rk.PlayerID
-			break
-		}
 	}
 	pid := playerID
 	if err = q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
@@ -898,11 +977,87 @@ func shakeUpBumpRank(
 	return nil
 }
 
-// shakeUpClaimTitle creates an artifact asset representing a freshly
-// claimed title. The title text comes from the spend body's
-// (currently target_player_id is repurposed as a title-text carrier — see
-// note on payload). For Phase 4c, we keep this minimal: a generic artifact
-// named "Title" that the player renames via the asset-edit endpoint.
+// shakeUpTitleAlreadyClaimed reports whether titleID has been claimed anywhere in
+// the game (ADR-007 game-wide uniqueness). It counts every claim site — Prologue
+// choosing-phase claims, the ≤3-player extra-peer claim, and prior Shake-Up
+// claims — and counts torn / destroyed claims too: a deposed monarch's title is
+// still "already claimed", so it can't be re-minted onto a fresh peer.
+func shakeUpTitleAlreadyClaimed(ctx context.Context, q *dbgen.Queries, gameID int64, titleID string) (bool, error) {
+	claimed, err := q.ListClaimedTitleIDsByGame(ctx, gameID)
+	if err != nil {
+		return false, fmt.Errorf("load claimed titles: %w", err)
+	}
+	for _, c := range claimed {
+		if c != nil && *c == titleID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// validateShakeUpClaimTitle checks an announce-time claim-title spend: the chosen
+// title must be a real, game-wide-unclaimed title, and the receiving asset must
+// be one of the claimer's own peers with a free marginalia slot. It writes the
+// error response and returns false on any failure. shakeUpClaimTitle re-checks
+// authoritatively at commit (another claim could land while this spend is open).
+func validateShakeUpClaimTitle(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+	titleID *string,
+	targetAssetID *int64,
+) bool {
+	if titleID == nil || gamepkg.TitleChoiceByID(*titleID) == nil {
+		respondErr(w, http.StatusBadRequest, "target_title_id must be a valid title")
+		return false
+	}
+	claimed, err := shakeUpTitleAlreadyClaimed(ctx, q, gameID, *titleID)
+	if err != nil {
+		respondInternalErr(w, nil, "could not check claimed titles", err)
+		return false
+	}
+	if claimed {
+		respondErr(w, http.StatusConflict, "that title has already been claimed")
+		return false
+	}
+	if targetAssetID == nil {
+		respondErr(w, http.StatusBadRequest, "target_asset_id (the peer to title) required for claim_title")
+		return false
+	}
+	asset, err := q.GetAssetByID(ctx, *targetAssetID)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, "target asset not found")
+		return false
+	}
+	if asset.OwnerID != playerID {
+		respondErr(w, http.StatusForbidden, "you can only title your own peer")
+		return false
+	}
+	if asset.AssetType != model.AssetPeer || asset.IsDestroyed {
+		respondErr(w, http.StatusBadRequest, "the title must be stamped on one of your peers")
+		return false
+	}
+	pos, err := findOpenMarginaliaPosition(ctx, q, asset.ID)
+	if err != nil {
+		respondInternalErr(w, nil, "could not inspect marginalia", err)
+		return false
+	}
+	if pos == 0 {
+		respondErr(w, http.StatusConflict, "that peer has no free marginalia slot for a title")
+		return false
+	}
+	return true
+}
+
+// shakeUpClaimTitle stamps a freshly claimed title as a marginalia on one of the
+// claimer's peers (ADR-007). Unlike the pre-ADR stub — which minted a generic
+// "New Title" artifact invisible to the line of succession — this routes through
+// the same CreateTitleMarginalia + EstablishThrone path the Prologue uses, so a
+// monarchy or heir claimed here is a real, contestable title: it trips the throne
+// gate when it's the monarch, and currentMonarch / Propose Decree / the crown UI
+// all pick it up. No artifact and no playing cards are created — the role lives
+// on the marginalia.
 func shakeUpClaimTitle(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -911,25 +1066,82 @@ func shakeUpClaimTitle(
 	spend *dbgen.ShakeUpSpend,
 	finalCost int16,
 ) error {
-	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
-		GameID:    gameID,
-		OwnerID:   spend.PlayerID,
-		CreatorID: spend.PlayerID,
-		AssetType: model.AssetArtifact,
-		Name:      "New Title",
+	if spend.TargetTitleID == nil {
+		return errors.New("target_title_id required")
+	}
+	titleID := *spend.TargetTitleID
+	choice := gamepkg.TitleChoiceByID(titleID)
+	if choice == nil {
+		return errors.New("unknown title")
+	}
+	// Re-check uniqueness at commit: another player may have claimed this title
+	// while the spend was open.
+	claimed, err := shakeUpTitleAlreadyClaimed(ctx, q, gameID, titleID)
+	if err != nil {
+		return err
+	}
+	if claimed {
+		return errors.New("that title has already been claimed")
+	}
+	if spend.TargetAssetID == nil {
+		return errors.New("target_asset_id required")
+	}
+	asset, err := q.GetAssetByID(ctx, *spend.TargetAssetID)
+	if err != nil {
+		return fmt.Errorf("asset not found: %w", err)
+	}
+	if asset.OwnerID != spend.PlayerID || asset.AssetType != model.AssetPeer || asset.IsDestroyed {
+		return errors.New("the title must be stamped on one of your own peers")
+	}
+	pos, err := findOpenMarginaliaPosition(ctx, q, asset.ID)
+	if err != nil {
+		return fmt.Errorf("inspect marginalia: %w", err)
+	}
+	if pos == 0 {
+		return errors.New("that peer has no free marginalia slot for a title")
+	}
+
+	// The marginalia text is the player's freeform flavor; the title id is the
+	// immutable role. Default to the title's display name when no flavor is given.
+	text := choice.Name
+	if spend.TitleFlavor != nil && strings.TrimSpace(*spend.TitleFlavor) != "" {
+		text = strings.TrimSpace(*spend.TitleFlavor)
+	}
+	m, err := q.CreateTitleMarginalia(ctx, dbgen.CreateTitleMarginaliaParams{
+		AssetID:  asset.ID,
+		Position: pos,
+		Text:     text,
+		Title:    &titleID,
 	})
 	if err != nil {
-		return fmt.Errorf("create title artifact: %w", err)
+		return fmt.Errorf("create title marginalia: %w", err)
 	}
-	broadcastEvent(
-		manager,
-		gameID,
-		model.EventAssetCreated,
-		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
-	)
+
+	// Claiming the monarch title trips the one-way throne gate the succession
+	// hinges on — exactly as the Prologue claim does.
+	if titleID == gamepkg.TitleMonarch {
+		if err = q.EstablishThrone(ctx, gameID); err != nil {
+			return fmt.Errorf("establish throne: %w", err)
+		}
+	}
+
+	// Broadcast the new marginalia so connected clients update the peer's card and
+	// flip throne_established live (ws-handlers' establishThroneIfMonarch) — that's
+	// what lights up the Phase D crown UI without a refresh.
+	broadcastEvent(manager, gameID, model.EventMarginaliaAdded, model.MarginaliaPayload{
+		AssetID:    asset.ID,
+		Marginalia: m,
+	})
+
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
 	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
-		fmt.Sprintf("%s spent %d token(s) to claim a new title %s", spender, finalCost, assetMark(asset.Name)),
-		map[string]any{"effect": "claim_title", "asset_id": asset.ID})
+		fmt.Sprintf("%s spent %d token(s) to claim the title %s on %s",
+			spender, finalCost, assetMark(choice.Name), assetMark(asset.Name)),
+		map[string]any{
+			"effect":        "claim_title",
+			"title":         titleID,
+			"asset_id":      asset.ID,
+			"marginalia_id": m.ID,
+		})
 	return nil
 }

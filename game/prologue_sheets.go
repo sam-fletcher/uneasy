@@ -272,6 +272,28 @@ func FindPrologueChoice(sheetType, name string) *PrologueChoice {
 	return nil
 }
 
+// TitlesSheet returns the 12 title boxes (ADR-007: each carries a stable title
+// id). Used by Shake-Up "Claim a new title" to offer the unclaimed titles.
+func TitlesSheet() []PrologueChoice {
+	return titlesSheet
+}
+
+// TitleChoiceByID returns the titles-sheet choice with the given stable title id
+// (e.g. "monarch", "true_heir"), or nil if no title carries that id. The
+// Shake-Up claim-title path uses this to validate the chosen id and to read the
+// title's display name.
+func TitleChoiceByID(id string) *PrologueChoice {
+	if id == "" {
+		return nil
+	}
+	for i := range titlesSheet {
+		if titlesSheet[i].ID == id {
+			return &titlesSheet[i]
+		}
+	}
+	return nil
+}
+
 // AssetTypeForSheet returns the asset type a claim on the given sheet
 // creates ("artifact"/"holding"/"resource"), or "" if unknown.
 func AssetTypeForSheet(sheetType string) string {
