@@ -40,7 +40,9 @@ func TestSeedMainEvent_Options_ShapeTheBoard(t *testing.T) {
 	ctx := context.Background()
 
 	// Three players: bump current_row to 9, reverse the power track (player 2
-	// at rank 1, player 0 at rank 3), and drop a Make War plan on row 9.
+	// highest status, player 0 lowest), and drop a Make War plan on row 9.
+	// For 3 players the open ranks are 2,3,4 (dummies sit at 1 and 5), so the
+	// reversed track maps player2→2, player1→3, player0→4.
 	tg := newTestGame(t, q, 3,
 		gametest.WithCurrentRow(9),
 		gametest.WithRankings(model.CategoryPower, []int{2, 1, 0}),
@@ -57,13 +59,14 @@ func TestSeedMainEvent_Options_ShapeTheBoard(t *testing.T) {
 	require.NoError(t, err)
 	byPlayer := rankByPlayer(rankings)
 
-	// Power track was reversed: order [2,1,0] → player2=rank1, player0=rank3.
-	assert.EqualValues(t, 1, byPlayer[model.CategoryPower][tg.Players[2].ID])
-	assert.EqualValues(t, 2, byPlayer[model.CategoryPower][tg.Players[1].ID])
-	assert.EqualValues(t, 3, byPlayer[model.CategoryPower][tg.Players[0].ID])
-	// Untouched tracks keep seat order (player i → rank i+1).
-	assert.EqualValues(t, 1, byPlayer[model.CategoryEsteem][tg.Players[0].ID])
-	assert.EqualValues(t, 3, byPlayer[model.CategoryEsteem][tg.Players[2].ID])
+	// Power track was reversed: order [2,1,0] over open ranks [2,3,4] →
+	// player2=rank2, player1=rank3, player0=rank4.
+	assert.EqualValues(t, 2, byPlayer[model.CategoryPower][tg.Players[2].ID])
+	assert.EqualValues(t, 3, byPlayer[model.CategoryPower][tg.Players[1].ID])
+	assert.EqualValues(t, 4, byPlayer[model.CategoryPower][tg.Players[0].ID])
+	// Untouched tracks keep seat order over the open ranks (player i → open[i]).
+	assert.EqualValues(t, 2, byPlayer[model.CategoryEsteem][tg.Players[0].ID])
+	assert.EqualValues(t, 4, byPlayer[model.CategoryEsteem][tg.Players[2].ID])
 
 	plans, err := q.ListPlansByGame(ctx, tg.Game.ID)
 	require.NoError(t, err)

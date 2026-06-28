@@ -13,9 +13,9 @@ type seedConfig struct {
 	currentRow int16
 
 	// rankings overrides, keyed by category. Each value is a slice of player
-	// indices in rank order: value[k] is the index (into usernames) of the
-	// player awarded rank k+1. A nil entry for a category falls back to seat
-	// order (player i → rank i+1).
+	// indices in status order (highest status first): value[k] is the index
+	// (into usernames) of the player awarded the k-th open rank slot for the
+	// player count (game.OpenRanks). A nil entry falls back to seat order.
 	rankings map[model.RankingCategory][]int
 
 	plans []SeedPlan
@@ -46,7 +46,8 @@ func WithCurrentRow(row int16) Option {
 }
 
 // WithRankings overrides one category's ranking order. orderByIdx[k] is the
-// player index awarded rank k+1; it must be a permutation of 0..N-1.
+// player index awarded the k-th open rank slot for the player count (highest
+// status first); it must be a permutation of 0..N-1.
 func WithRankings(cat model.RankingCategory, orderByIdx []int) Option {
 	return func(c *seedConfig) {
 		if c.rankings == nil {

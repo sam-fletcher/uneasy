@@ -33,11 +33,12 @@ func TestRunRankingUpdate_TokenHolderClimbsTokensNotCleared(t *testing.T) {
 	q := dbgen.New(pool)
 	ctx := context.Background()
 
-	// Default power ranks: p0=1, p1=2, p2=3.
+	// Default 3-player power ranks: dummies sit at ranks 1 and 5, so the real
+	// players occupy the open ranks 2,3,4 → p0=2, p1=3, p2=4.
 	tg := newTestGame(t, q, 3)
 	gameID := tg.Game.ID
 
-	// p2 (rank 3) holds a token on one power-sheet plan (Exchange Courtiers).
+	// p2 (rank 4) holds a token on one power-sheet plan (Exchange Courtiers).
 	plan := createPlanOnRow(t, q, &tg.Game, &tg.Players[2],
 		model.PlanExchangeCourtiers, model.CategoryPower, 4)
 	_, err := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{
@@ -58,9 +59,9 @@ func TestRunRankingUpdate_TokenHolderClimbsTokensNotCleared(t *testing.T) {
 			powerRank[*r.PlayerID] = r.Rank
 		}
 	}
-	assert.EqualValues(t, 2, powerRank[tg.Players[2].ID], "token holder climbs 3 → 2")
-	assert.EqualValues(t, 3, powerRank[tg.Players[1].ID], "player above is displaced 2 → 3")
-	assert.EqualValues(t, 1, powerRank[tg.Players[0].ID], "rank-1 player is untouched")
+	assert.EqualValues(t, 3, powerRank[tg.Players[2].ID], "token holder climbs 4 → 3")
+	assert.EqualValues(t, 4, powerRank[tg.Players[1].ID], "player above is displaced 3 → 4")
+	assert.EqualValues(t, 2, powerRank[tg.Players[0].ID], "top real player is untouched")
 
 	// Only one of the four power-sheet plans was prepared → tokens stay put.
 	remaining, err := q.ListPlanTokensByGame(ctx, gameID)
@@ -86,21 +87,21 @@ func TestRunRankingUpdate_TokenHolderClimbsTokensNotCleared(t *testing.T) {
 
 	// Standing lists occupied ranks only — three real players, no dummy fillers.
 	require.Len(t, power.Final, 3)
-	assert.Equal(t, rankStanding{Rank: 1, Name: tg.Players[0].DisplayName}, power.Final[0])
-	assert.Equal(t, rankStanding{Rank: 2, Name: tg.Players[2].DisplayName}, power.Final[1])
-	assert.Equal(t, rankStanding{Rank: 3, Name: tg.Players[1].DisplayName}, power.Final[2])
+	assert.Equal(t, rankStanding{Rank: 2, Name: tg.Players[0].DisplayName}, power.Final[0])
+	assert.Equal(t, rankStanding{Rank: 3, Name: tg.Players[2].DisplayName}, power.Final[1])
+	assert.Equal(t, rankStanding{Rank: 4, Name: tg.Players[1].DisplayName}, power.Final[2])
 }
 
 // TestRunRankingUpdate_MultiTokenHolderClimbsPerToken pins the fix for the
 // per-player de-dup bug: a player who prepared two plans on one sheet climbs
-// once per token, resolved bottom-most plan first. p2 (rank 3) holds Make War
-// (bottom of the power sheet) and Exchange Courtiers, so it climbs 3 → 2 → 1.
+// once per token, resolved bottom-most plan first. p2 (rank 4) holds Make War
+// (bottom of the power sheet) and Exchange Courtiers, so it climbs 4 → 3 → 2.
 func TestRunRankingUpdate_MultiTokenHolderClimbsPerToken(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	ctx := context.Background()
 
-	// Default power ranks: p0=1, p1=2, p2=3.
+	// Default 3-player power ranks (open ranks 2,3,4): p0=2, p1=3, p2=4.
 	tg := newTestGame(t, q, 3)
 	gameID := tg.Game.ID
 
@@ -124,9 +125,9 @@ func TestRunRankingUpdate_MultiTokenHolderClimbsPerToken(t *testing.T) {
 			powerRank[*r.PlayerID] = r.Rank
 		}
 	}
-	assert.EqualValues(t, 1, powerRank[tg.Players[2].ID], "two tokens → climbs 3 → 2 → 1")
-	assert.EqualValues(t, 2, powerRank[tg.Players[0].ID], "displaced to rank 2")
-	assert.EqualValues(t, 3, powerRank[tg.Players[1].ID], "displaced to rank 3")
+	assert.EqualValues(t, 2, powerRank[tg.Players[2].ID], "two tokens → climbs 4 → 3 → 2")
+	assert.EqualValues(t, 3, powerRank[tg.Players[0].ID], "displaced to rank 3")
+	assert.EqualValues(t, 4, powerRank[tg.Players[1].ID], "displaced to rank 4")
 
 	// Only two of the four power-sheet plans were prepared → tokens stay put.
 	remaining, err := q.ListPlanTokensByGame(ctx, gameID)
@@ -157,8 +158,9 @@ func TestRunRankingUpdate_FullSheetClears(t *testing.T) {
 	tg := newTestGame(t, q, 3)
 	gameID := tg.Game.ID
 
-	// p0 (rank 1) prepares all four power-sheet plans, so every plan on the
-	// sheet has a token. (Rank 1 can't climb, but that's irrelevant to clearing.)
+	// p0 (rank 2, the top real player) prepares all four power-sheet plans, so
+	// every plan on the sheet has a token. (Only a dummy sits above it at rank 1,
+	// so it can't climb — but that's irrelevant to clearing.)
 	for _, pt := range categorySheetPlans[model.CategoryPower] {
 		plan := createPlanOnRow(t, q, &tg.Game, &tg.Players[0], pt, model.CategoryPower, 4)
 		_, err := q.CreatePlanToken(ctx, dbgen.CreatePlanTokenParams{

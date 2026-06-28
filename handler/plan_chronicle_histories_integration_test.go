@@ -218,7 +218,9 @@ func TestChronicleHistories_PreRoll_SceneLogged(t *testing.T) {
 // artifact pre-roll, then breaks its single marginalia on the make path and
 // asserts auto-destruction.
 func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T) {
-	h := newPlanLifecycle(t, 3)
+	// 4 players so rank 1 is a real slot (the knowledge dummy sits at rank 3),
+	// letting us pin difficulty — and therefore the make budget — to 1.
+	h := newPlanLifecycle(t, 4)
 	ctx := context.Background()
 
 	notes := "the lost charter"
@@ -259,7 +261,9 @@ func TestChronicleHistories_Make_BreakInvokedArtifact_AutoDestroys(t *testing.T)
 // after a refresh can't submit an extra option (and so can't tear an extra
 // marginalia).
 func TestChronicleHistories_Make_StepCapsAtBudget(t *testing.T) {
-	h := newPlanLifecycle(t, 3)
+	// 4 players so rank 1 is a real slot (the knowledge dummy sits at rank 3),
+	// letting us pin difficulty — and therefore the make budget — to 1.
+	h := newPlanLifecycle(t, 4)
 	ctx := context.Background()
 
 	notes := "the lost charter"
@@ -297,7 +301,9 @@ func TestChronicleHistories_Make_StepCapsAtBudget(t *testing.T) {
 // TestChronicleHistories_Make_NarrationFoldedIntoLog proves the optional
 // per-option narration is folded into the single make-step action-log entry.
 func TestChronicleHistories_Make_NarrationFoldedIntoLog(t *testing.T) {
-	h := newPlanLifecycle(t, 3)
+	// 4 players so rank 1 is a real slot (the knowledge dummy sits at rank 3),
+	// letting us pin difficulty — and therefore the make budget — to 1.
+	h := newPlanLifecycle(t, 4)
 
 	notes := "the lost charter"
 	plan := h.prepare(PreparePlanRequest{

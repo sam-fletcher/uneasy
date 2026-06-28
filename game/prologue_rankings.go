@@ -1,9 +1,47 @@
 package game
 
+import "slices"
+
 // prologue_rankings.go — Shared primitives for the prologue ranking
 // algorithm. The per-track sort itself lives in prologue_refund.go
 // (ComputeTrackRankingFromCommitments / rankFromContributions); this file
 // holds the card view and value-comparison helper both paths use.
+
+// DummyRanks returns the rank slots (1-indexed) occupied by dummy tokens for
+// a game with n real players, per PROLOGUE_RULES.md:
+//   - 5 players: none
+//   - 4 players: rank 3
+//   - 3 players: ranks 1 and 5
+//   - 2 players: ranks 1, 3, and 5
+//
+// Dummies pad the fixed 1–5 track so smaller games still span the full status
+// range. Note rank 1 is a dummy in 2–3 player games, so the top *real* player
+// is not at rank 1.
+func DummyRanks(n int) []int16 {
+	switch n {
+	case 4:
+		return []int16{3}
+	case 3:
+		return []int16{1, 5}
+	case 2:
+		return []int16{1, 3, 5}
+	}
+	return nil
+}
+
+// OpenRanks returns ranks 1..5 with the dummy positions removed, in ascending
+// order — i.e. the slots real players occupy, highest status (lowest rank
+// number) first. For n real players it always has length n.
+func OpenRanks(n int) []int16 {
+	dummies := DummyRanks(n)
+	out := make([]int16, 0, 5)
+	for r := int16(1); r <= 5; r++ {
+		if !slices.Contains(dummies, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
 // PlayerCard is a simplified view of a row in the player_cards table.
 type PlayerCard struct {

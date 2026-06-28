@@ -26,12 +26,14 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
 // SeededGame is what every seed function returns: the game row plus the
 // players in input order. Player[0] is always the facilitator and focus
-// player; rankings default to 1..N in input order.
+// player; rankings default to the open rank slots for the player count, in
+// input order (see seedRankings).
 type SeededGame struct {
 	Game    dbgen.Game
 	Players []dbgen.Player
@@ -44,7 +46,8 @@ type SeededGame struct {
 // Invariants of the returned game (with no options):
 //   - phase = main_event, current_row = 1
 //   - public_record_rows seeded
-//   - power/knowledge/esteem rankings 1..N in input order
+//   - power/knowledge/esteem: real players on the open rank slots for the
+//     player count (e.g. ranks 2,4 for 2 players), dummy tokens on the rest
 //   - player[0] is facilitator and focus_player_id
 //
 // Options (WithCurrentRow, WithRankings, WithPlan) override the defaults.
@@ -193,11 +196,20 @@ func seedStartingAssets(ctx context.Context, q *dbgen.Queries, gameID int64, pla
 	return nil
 }
 
-// seedRankings writes all three tracks. For each category the rank slot k+1 is
-// assigned to player order[k] (default: seat order). UpsertRanking keys the
-// (game, category, rank) slot, so iterating distinct ranks with distinct
+// seedRankings writes all three tracks as a *valid* spread: real players are
+// placed on the open rank slots for the player count (game.OpenRanks), and the
+// dummy slots (game.DummyRanks) are filled with nil-player rows. This mirrors
+// the real prologue, where the fixed 1–5 track is padded with dummy tokens for
+// <5-player games — so e.g. a 2-player game has real players at ranks 2 and 4,
+// not 1 and 2.
+//
+// Within each category the open ranks are filled in player order[k] (default:
+// seat order) from highest status (lowest open rank) down. UpsertRanking keys
+// the (game, category, rank) slot, so iterating distinct ranks with distinct
 // players fills each track exactly once.
 func seedRankings(ctx context.Context, q *dbgen.Queries, gameID int64, players []dbgen.Player, cfg seedConfig) error {
+	open := game.OpenRanks(len(players))
+	dummies := game.DummyRanks(len(players))
 	for _, cat := range []model.RankingCategory{
 		model.CategoryPower, model.CategoryKnowledge, model.CategoryEsteem,
 	} {
@@ -208,10 +220,18 @@ func seedRankings(ctx context.Context, q *dbgen.Queries, gameID int64, players [
 				idx = order[pos]
 			}
 			pid := players[idx].ID
+			rank := open[pos]
 			if err := q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
-				GameID: gameID, PlayerID: &pid, Category: cat, Rank: int16(pos + 1),
+				GameID: gameID, PlayerID: &pid, Category: cat, Rank: rank,
 			}); err != nil {
-				return fmt.Errorf("upsert ranking %s rank %d: %w", cat, pos+1, err)
+				return fmt.Errorf("upsert ranking %s rank %d: %w", cat, rank, err)
+			}
+		}
+		for _, rank := range dummies {
+			if err := q.UpsertRanking(ctx, dbgen.UpsertRankingParams{
+				GameID: gameID, PlayerID: nil, Category: cat, Rank: rank,
+			}); err != nil {
+				return fmt.Errorf("upsert dummy ranking %s rank %d: %w", cat, rank, err)
 			}
 		}
 	}

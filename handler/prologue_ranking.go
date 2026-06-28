@@ -85,37 +85,6 @@ func placeSetAsidesStepFor(track string) string {
 	return ""
 }
 
-// dummyRanksForPlayerCount returns the ranks (1-indexed) occupied by dummy
-// tokens given the player count. Per PROLOGUE_RULES.md:
-//   - 5 players: no dummies
-//   - 4 players: rank 3
-//   - 3 players: ranks 1 and 5
-//   - 2 players: ranks 1, 3, and 5
-func dummyRanksForPlayerCount(n int) []int16 {
-	switch n {
-	case 4:
-		return []int16{3}
-	case 3:
-		return []int16{1, 5}
-	case 2:
-		return []int16{1, 3, 5}
-	}
-	return nil
-}
-
-// openRanks returns ranks 1..5 with the dummy positions filtered out, in
-// ascending order — i.e. the slots auto-ranked + set-aside players fill.
-func openRanks(playerCount int) []int16 {
-	dummies := dummyRanksForPlayerCount(playerCount)
-	out := make([]int16, 0, 5)
-	for r := int16(1); r <= 5; r++ {
-		if !slices.Contains(dummies, r) {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
 // requirePrologueStep writes 409 and returns false unless the game is in the
 // prologue phase at the expected ranking step.
 func requirePrologueStep(w http.ResponseWriter, game *dbgen.Game, want string) bool {
@@ -178,7 +147,7 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// step 6, "the player at the top of each track adds the set-aside players"
 		// — that's the highest-status *real* player, i.e. the non-dummy ranking
 		// with the lowest rank number. We can't assume rank 1: in 2–3 player games
-		// dummy tokens occupy rank 1 (see dummyRanksForPlayerCount), so the top
+		// dummy tokens occupy rank 1 (see gamepkg.DummyRanks), so the top
 		// player there sits at rank 2.
 		rankings, err := s.Q.ListRankingsByGame(ctx, gameID)
 		if err != nil {
@@ -241,7 +210,7 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			}
 		}
 		open := []int16{}
-		for _, rank := range openRanks(len(players)) {
+		for _, rank := range gamepkg.OpenRanks(len(players)) {
 			if !taken[rank] {
 				open = append(open, rank)
 			}
@@ -529,7 +498,7 @@ func persistTrackRanks(
 		return fmt.Errorf("clear ranking: %w", err)
 	}
 
-	open := openRanks(playerCount)
+	open := gamepkg.OpenRanks(playerCount)
 	all := append([]int64(nil), autoRanked...)
 	all = append(all, setAside...)
 	if len(all) > len(open) {
@@ -569,7 +538,7 @@ func fillDummyRanks(
 			taken[rk.Rank] = true
 		}
 	}
-	dummies := dummyRanksForPlayerCount(playerCount)
+	dummies := gamepkg.DummyRanks(playerCount)
 	for r := int16(1); r <= 5; r++ {
 		if taken[r] {
 			continue

@@ -84,31 +84,33 @@ func TestShakeUpBumpRank_SwapsWithDisplaced(t *testing.T) {
 	ctx := context.Background()
 	manager := hub.NewManager()
 
-	// Default knowledge ranks: p0=1, p1=2, p2=3.
+	// Default 3-player knowledge ranks (open ranks 2,3,4; dummies at 1,5):
+	// p0=2, p1=3, p2=4.
 	seeded := newShakeUpGame(t, q, 3)
 	gameID := seeded.Game.ID
 
-	// p2 (rank 3) bumps knowledge → climbs to rank 2; p1 is displaced to rank 3.
+	// p2 (rank 4) bumps knowledge → climbs to rank 3; p1 is displaced to rank 4.
 	spend := &dbgen.ShakeUpSpend{
 		OptionKey: gamepkg.ShakeUpOptBumpKnowledge,
 		PlayerID:  seeded.Players[2].ID,
 	}
 	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
 
-	assert.EqualValues(t, 2, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[2].ID),
+	assert.EqualValues(t, 3, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[2].ID),
 		"spender climbs one rank")
-	assert.EqualValues(t, 3, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[1].ID),
+	assert.EqualValues(t, 4, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[1].ID),
 		"displaced player drops into the vacated slot")
-	assert.EqualValues(t, 1, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[0].ID),
+	assert.EqualValues(t, 2, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[0].ID),
 		"untouched player keeps their rank")
 
 	posts := committedPosts(t, q, gameID)
 	require.Len(t, posts, 1)
-	assert.Contains(t, posts[0], "rise to rank 2 on Knowledge")
+	assert.Contains(t, posts[0], "rise to rank 3 on Knowledge")
 	assert.Contains(t, posts[0], "displacing")
 }
 
-// TestShakeUpBumpRank_TopRankIsNoOp pins that bumping from rank 1 does nothing.
+// TestShakeUpBumpRank_TopRankIsNoOp pins that bumping from the top real rank
+// does nothing (only a dummy sits above it).
 func TestShakeUpBumpRank_TopRankIsNoOp(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -118,16 +120,16 @@ func TestShakeUpBumpRank_TopRankIsNoOp(t *testing.T) {
 	seeded := newShakeUpGame(t, q, 3)
 	gameID := seeded.Game.ID
 
-	// p0 is already knowledge rank 1.
+	// p0 is the top real player on knowledge (rank 2; only a dummy at rank 1).
 	spend := &dbgen.ShakeUpSpend{
 		OptionKey: gamepkg.ShakeUpOptBumpKnowledge,
 		PlayerID:  seeded.Players[0].ID,
 	}
 	require.NoError(t, applyShakeUpEffect(ctx, q, manager, gameID, spend, 1))
 
-	assert.EqualValues(t, 1, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[0].ID))
-	assert.EqualValues(t, 2, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[1].ID))
-	assert.EqualValues(t, 3, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[2].ID))
+	assert.EqualValues(t, 2, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[0].ID))
+	assert.EqualValues(t, 3, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[1].ID))
+	assert.EqualValues(t, 4, rankOf(t, q, gameID, model.CategoryKnowledge, seeded.Players[2].ID))
 
 	// Even a no-op bump is logged — the rules dwell on spends that change nothing.
 	posts := committedPosts(t, q, gameID)

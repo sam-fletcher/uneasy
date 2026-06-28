@@ -583,8 +583,9 @@ func TestSeekAnswers_AskQuestion_AnswerFlow(t *testing.T) {
 	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
 	targetID := h.tg.Players[otherIdx].ID
 	// Put the preparer at the top of the knowledge track so no target outranks
-	// them — the difficulty was already locked at resolve, so this is safe.
-	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
+	// them — the difficulty was already locked at resolve, so this is safe. Rank
+	// 2 is the top real slot in a 3-player game (a dummy sits at rank 1).
+	saPinKnowledgeRank(t, h, plan.PreparerID, 2)
 
 	h.makeChoice(plan.ID, "make", []string{"ask_question"})
 
@@ -645,7 +646,9 @@ func TestSeekAnswers_AskQuestion_VetoThenReask(t *testing.T) {
 	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 1)
 	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
 	targetID := h.tg.Players[otherIdx].ID
-	saPinKnowledgeRank(t, h, targetID, 1) // outranks the preparer (rank 3)
+	// Rank 2 is the top real slot in a 3-player game (dummy at rank 1), so the
+	// target now outranks the preparer (who sits at rank 3 or 4) on knowledge.
+	saPinKnowledgeRank(t, h, targetID, 2)
 
 	h.makeChoice(plan.ID, "make", []string{"ask_question"})
 

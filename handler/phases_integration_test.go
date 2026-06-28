@@ -227,7 +227,8 @@ func TestMainEvent_AllPlayersHaveRankings(t *testing.T) {
 		} {
 			found := false
 			for _, r := range rankings {
-				if *r.PlayerID == player.ID && r.Category == category {
+				// Dummy slots (nil PlayerID) pad <5-player tracks; skip them.
+				if r.PlayerID != nil && *r.PlayerID == player.ID && r.Category == category {
 					found = true
 					break
 				}
