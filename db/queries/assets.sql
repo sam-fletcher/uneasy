@@ -137,6 +137,23 @@ FROM marginalia m
 JOIN assets a ON a.id = m.asset_id
 WHERE a.game_id = $1;
 
+-- name: ListLiveTitlesByGame :many
+-- Title-bearing marginalia that still confer a live claim, for computing the
+-- current monarch / line of succession (ADR-007). Returns the title id plus the
+-- controlling asset and its owner so the caller picks the highest-ranked claim
+-- per game.SuccessionOrder. Filters BOTH torn marginalia AND destroyed assets:
+-- a direct DestroyAsset can orphan an un-torn title, so the asset filter is what
+-- keeps us from crowning a ghost. Ordered by asset_id for a deterministic pick
+-- when (abnormally) two assets bear the same title.
+SELECT m.title, a.id AS asset_id, a.owner_id
+FROM marginalia m
+JOIN assets a ON a.id = m.asset_id
+WHERE a.game_id = $1
+  AND m.title IS NOT NULL
+  AND m.is_torn = FALSE
+  AND a.is_destroyed = FALSE
+ORDER BY a.id;
+
 -- name: UpdateMarginaliaText :exec
 UPDATE marginalia SET text = $2 WHERE id = $1;
 

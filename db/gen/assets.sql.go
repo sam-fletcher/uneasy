@@ -205,7 +205,7 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset
 const createMarginalia = `-- name: CreateMarginalia :one
 INSERT INTO marginalia (asset_id, position, text)
 VALUES ($1, $2, $3)
-RETURNING id, asset_id, position, text, is_torn, torn_at, torn_by_id
+RETURNING id, asset_id, position, text, is_torn, torn_at, torn_by_id, title
 `
 
 type CreateMarginaliaParams struct {
@@ -225,6 +225,7 @@ func (q *Queries) CreateMarginalia(ctx context.Context, arg CreateMarginaliaPara
 		&i.IsTorn,
 		&i.TornAt,
 		&i.TornByID,
+		&i.Title,
 	)
 	return i, err
 }
@@ -350,7 +351,7 @@ func (q *Queries) GetMainCharacterByOwner(ctx context.Context, arg GetMainCharac
 
 const getMarginaliaByID = `-- name: GetMarginaliaByID :one
 
-SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id FROM marginalia WHERE id = $1
+SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id, title FROM marginalia WHERE id = $1
 `
 
 // ── Marginalia ───────────────────────────────────────────────────────
@@ -365,6 +366,7 @@ func (q *Queries) GetMarginaliaByID(ctx context.Context, id int64) (Marginalium,
 		&i.IsTorn,
 		&i.TornAt,
 		&i.TornByID,
+		&i.Title,
 	)
 	return i, err
 }
@@ -547,7 +549,7 @@ func (q *Queries) ListAssetsByOwner(ctx context.Context, ownerID int64) ([]Asset
 }
 
 const listIntactMarginalia = `-- name: ListIntactMarginalia :many
-SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE ORDER BY position
+SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id, title FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE ORDER BY position
 `
 
 func (q *Queries) ListIntactMarginalia(ctx context.Context, assetID int64) ([]Marginalium, error) {
@@ -567,6 +569,7 @@ func (q *Queries) ListIntactMarginalia(ctx context.Context, assetID int64) ([]Ma
 			&i.IsTorn,
 			&i.TornAt,
 			&i.TornByID,
+			&i.Title,
 		); err != nil {
 			return nil, err
 		}
@@ -578,8 +581,52 @@ func (q *Queries) ListIntactMarginalia(ctx context.Context, assetID int64) ([]Ma
 	return items, nil
 }
 
+const listLiveTitlesByGame = `-- name: ListLiveTitlesByGame :many
+SELECT m.title, a.id AS asset_id, a.owner_id
+FROM marginalia m
+JOIN assets a ON a.id = m.asset_id
+WHERE a.game_id = $1
+  AND m.title IS NOT NULL
+  AND m.is_torn = FALSE
+  AND a.is_destroyed = FALSE
+ORDER BY a.id
+`
+
+type ListLiveTitlesByGameRow struct {
+	Title   *string `db:"title" json:"title"`
+	AssetID int64   `db:"asset_id" json:"asset_id"`
+	OwnerID int64   `db:"owner_id" json:"owner_id"`
+}
+
+// Title-bearing marginalia that still confer a live claim, for computing the
+// current monarch / line of succession (ADR-007). Returns the title id plus the
+// controlling asset and its owner so the caller picks the highest-ranked claim
+// per game.SuccessionOrder. Filters BOTH torn marginalia AND destroyed assets:
+// a direct DestroyAsset can orphan an un-torn title, so the asset filter is what
+// keeps us from crowning a ghost. Ordered by asset_id for a deterministic pick
+// when (abnormally) two assets bear the same title.
+func (q *Queries) ListLiveTitlesByGame(ctx context.Context, gameID int64) ([]ListLiveTitlesByGameRow, error) {
+	rows, err := q.db.Query(ctx, listLiveTitlesByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLiveTitlesByGameRow{}
+	for rows.Next() {
+		var i ListLiveTitlesByGameRow
+		if err := rows.Scan(&i.Title, &i.AssetID, &i.OwnerID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMarginaliaByAsset = `-- name: ListMarginaliaByAsset :many
-SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id FROM marginalia WHERE asset_id = $1 ORDER BY position
+SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id, title FROM marginalia WHERE asset_id = $1 ORDER BY position
 `
 
 func (q *Queries) ListMarginaliaByAsset(ctx context.Context, assetID int64) ([]Marginalium, error) {
@@ -599,6 +646,7 @@ func (q *Queries) ListMarginaliaByAsset(ctx context.Context, assetID int64) ([]M
 			&i.IsTorn,
 			&i.TornAt,
 			&i.TornByID,
+			&i.Title,
 		); err != nil {
 			return nil, err
 		}

@@ -126,6 +126,7 @@ type Game struct {
 	PrologueRankingStep *string            `db:"prologue_ranking_step" json:"prologue_ranking_step"`
 	ShakeUpCategory     *string            `db:"shake_up_category" json:"shake_up_category"`
 	ShakeUpStep         *int16             `db:"shake_up_step" json:"shake_up_step"`
+	ThroneEstablished   bool               `db:"throne_established" json:"throne_established"`
 }
 
 type Law struct {
@@ -159,6 +160,7 @@ type Marginalium struct {
 	IsTorn   bool               `db:"is_torn" json:"is_torn"`
 	TornAt   pgtype.Timestamptz `db:"torn_at" json:"torn_at"`
 	TornByID *int64             `db:"torn_by_id" json:"torn_by_id"`
+	Title    *string            `db:"title" json:"title"`
 }
 
 type PendingCounterDemand struct {
