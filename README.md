@@ -276,3 +276,25 @@ The dev shortcut bypasses the code check, but the regular sign-up /
 login flow at `/signup` and `/login` still works in dev. Use it when
 you're testing the auth UI itself; use the dev shortcut when you just
 need a session and don't care which one.
+
+
+### Example: jumping to Plan preparation
+
+In the console: 
+
+```js
+// 1. Become alice in THIS window
+await fetch('/api/dev/login?username=alice', { method: 'POST' });
+
+// 2. Seed a 2-player main-event game (each player gets one asset of every type)
+await (await fetch('/api/dev/seed', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ phase: 'main_event', players: ['alice', 'bob'] })
+})).json();   // ← note the game_id it logs
+
+// 3. Jump that game to a resolution row
+await (await fetch('/api/dev/advance-row', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ game_id: 1, row: 9 })   // or { plan_id: N }
+})).json();
+```
