@@ -510,8 +510,7 @@
 					</p>
 					{#each OPTIONS as opt}
 						{@const available = optionAvailable[opt.key]}
-						<div class="choice-item" class:unavailable={!available}
-							style="display:flex;align-items:center;gap:0.5rem;">
+						<div class="stepper-row" class:unavailable={!available}>
 							<button class="action-btn" onclick={() => bump(opt.key, -1)}
 								disabled={(counts[opt.key] ?? 0) === 0}>−</button>
 							<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
@@ -825,7 +824,7 @@
 		border: 1px solid var(--border, #ccc);
 		border-radius: 4px;
 	}
-	.choice-item.unavailable { opacity: 0.55; }
+	.stepper-row.unavailable { opacity: 0.55; }
 
 	/* Transparent fieldset wrapping a resolve phase. disabled blocks every
 	   descendant control for free; CardPicker / PlayerChips take readOnly

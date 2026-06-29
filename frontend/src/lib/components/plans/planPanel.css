@@ -240,19 +240,16 @@
 	margin-left: 2rem;
 }
 
-/* Inline radio/checkbox rows still used by Make Demands, Propose Decree,
-   Seek Answers, Spread Rumors, and SimultaneousRevealInput. */
-.choice-item {
+/* Numeric stepper rows (−/＋ buttons + count) used by the Seek Answers and
+   Spread Rumors pick-count UIs. Not a choice input — just a labelled row. */
+.stepper-row {
 	display: flex;
-	align-items: flex-start;
-	gap: 0.4rem;
+	align-items: center;
+	gap: 0.5rem;
 	font-size: 0.82rem;
 	color: #ccc;
-	cursor: pointer;
 	line-height: 1.4;
 }
-
-.choice-item input { accent-color: var(--color-accent); margin-top: 0.15em; flex-shrink: 0; }
 
 /* Tappable option cards (make/mar picker). Mirror .chip-btn's active gold
    treatment but laid out as a full-width row with a badge + title + desc. */

@@ -105,7 +105,7 @@
 		<p class="choices-note">Loading reveal…</p>
 	{:else if reveal.is_complete}
 		<p class="choices-header"><strong>Reveal complete</strong></p>
-		<ul class="choice-item" style="list-style:none;padding:0;">
+		<ul class="reveal-list">
 			{#each reveal.entries as entry}
 				<li>{nameFor(entry.player_id)}: <strong>{entry.face}</strong></li>
 			{/each}
@@ -167,6 +167,15 @@
 <style>
 	.face-row {
 		justify-content: center;
+	}
+	/* Read-only list of revealed faces — not a choice input. */
+	.reveal-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--color-text-muted);
+		line-height: 1.4;
 	}
 	.submit-row {
 		display: flex;

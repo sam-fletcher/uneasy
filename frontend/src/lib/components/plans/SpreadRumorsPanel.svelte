@@ -632,8 +632,7 @@
 				{#each OPTIONS as opt}
 					{@const optDisabled = opt.key === 'take_asset' && takeAssetDenied}
 					{@const atBreakCap = opt.key === 'break_target' && (counts.break_target ?? 0) >= btMarginaliaCap}
-					<div class="choice-item" style="display:flex;align-items:center;gap:0.5rem;"
-						class:muted={optDisabled}>
+					<div class="stepper-row" class:muted={optDisabled}>
 						<button class="action-btn" onclick={() => bump(opt.key, -1)}
 							disabled={(counts[opt.key] ?? 0) === 0}>−</button>
 						<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>

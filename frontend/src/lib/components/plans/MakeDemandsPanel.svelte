@@ -333,12 +333,14 @@
 						<p class="choices-note">Your turn to pick.</p>
 						<div class="choice-list">
 							{#each remainingOptions as opt}
-								<label class="choice-item">
-									<input type="radio" name="draft-{plan.id}" value={opt}
-										checked={pickedOption === opt}
-										onchange={() => { pickedOption = opt; }} />
-									{DEMAND_OPTION_LABELS[opt]}
-								</label>
+								<button type="button" class="choice-card"
+									class:active={pickedOption === opt}
+									aria-pressed={pickedOption === opt}
+									onclick={() => { pickedOption = opt; }}>
+									<span class="choice-text">
+										<span class="choice-title">{DEMAND_OPTION_LABELS[opt]}{#if pickedOption === opt}<span class="choice-tick"> ✓</span>{/if}</span>
+									</span>
+								</button>
 							{/each}
 						</div>
 						<button class="action-btn primary" onclick={submitDraftPick}
@@ -382,24 +384,24 @@
 					</p>
 					<div class="choice-list">
 						{#each counterTargetablePlans as p}
-							<label class="choice-item">
-								<input type="radio" name="counter-{plan.id}" value={p.id}
-									checked={counterChoice === p.id}
-									onchange={() => { counterChoice = p.id; }} />
-								{PLAN_SHORT[p.plan_type] ?? p.plan_type}
-								(row {p.row_number})
-							</label>
+							<button type="button" class="choice-card"
+								class:active={counterChoice === p.id}
+								aria-pressed={counterChoice === p.id}
+								onclick={() => { counterChoice = p.id; }}>
+								<span class="choice-text">
+									<span class="choice-title">{PLAN_SHORT[p.plan_type] ?? p.plan_type} (row {p.row_number}){#if counterChoice === p.id}<span class="choice-tick"> ✓</span>{/if}</span>
+								</span>
+							</button>
 						{/each}
-						<label class="choice-item">
-							<input type="radio" name="counter-{plan.id}" value="defer"
-								checked={counterChoice === 'defer'}
-								onchange={() => { counterChoice = 'defer'; }} />
-							<strong>Defer</strong> — counter the next plan
-							{playerName(players, plan.preparer_id)} prepares
-							{#if counterTargetablePlans.length === 0}
-								(no eligible plans yet)
-							{/if}
-						</label>
+						<button type="button" class="choice-card"
+							class:active={counterChoice === 'defer'}
+							aria-pressed={counterChoice === 'defer'}
+							onclick={() => { counterChoice = 'defer'; }}>
+							<span class="choice-text">
+								<span class="choice-title"><strong>Defer</strong> — counter the next plan
+									{playerName(players, plan.preparer_id)} prepares{#if counterTargetablePlans.length === 0} (no eligible plans yet){/if}{#if counterChoice === 'defer'}<span class="choice-tick"> ✓</span>{/if}</span>
+							</span>
+						</button>
 					</div>
 					<button class="action-btn primary" onclick={submitCounter}
 						disabled={counterBusy || counterChoice == null}>
