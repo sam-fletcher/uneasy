@@ -1,11 +1,13 @@
 //go:build integration
 
 // handler/plan_propose_decree_integration_test.go — end-to-end coverage for
-// Propose Decree. Drives the council → call-roll → enact → addendum → complete
-// flow and asserts the rules-correct outcomes:
+// Propose Decree. Drives the council → call-roll → pass → (amend) → addendum →
+// enact flow and asserts the rules-correct outcomes. The law goes into effect
+// WITH its addendum, so the law row is created last, at enact-law (the preparer's
+// terminal action, which auto-resolves the plan):
 //
-//   - make: a law row is created AND a resource asset representing it.
-//   - mar:  a law row is created with NO resource asset.
+//   - make: enact-law creates a law row AND a resource asset (named in the call).
+//   - mar:  enact-law creates a law row with NO resource asset.
 //   - action-log entries land for call-roll and enactment.
 
 package handler
@@ -59,21 +61,30 @@ func pdDeclineRemaining(t *testing.T, h *planLifecycle, planID int64) {
 	}
 }
 
-// pdResourceAssets returns the non-destroyed resource assets created by an
-// enacted decree. A made decree creates the resource with a placeholder name
-// (the preparer names it afterwards via name-asset); these tests don't rename
-// it, so the placeholder identifies them.
-func pdLawAssets(t *testing.T, h *planLifecycle) []dbgen.Asset {
+// pdResourceCount returns the number of non-destroyed resource assets in the
+// game. A made decree creates one (named in the enact-law call); tests compare a
+// before/after delta. (Seeded games already hold resource assets, so the delta —
+// not the absolute count — is what matters.)
+func pdResourceCount(t *testing.T, h *planLifecycle) int {
 	t.Helper()
 	all, err := h.q.ListAssetsByGame(context.Background(), h.tg.Game.ID)
 	require.NoError(t, err)
-	var out []dbgen.Asset
+	n := 0
 	for _, a := range all {
-		if a.AssetType == model.AssetResource && !a.IsDestroyed && a.Name == lawResourceNameDefault {
-			out = append(out, a)
+		if a.AssetType == model.AssetResource && !a.IsDestroyed {
+			n++
 		}
 	}
-	return out
+	return n
+}
+
+// pdEnact has the preparer enact the (resolved) decree — the terminal step. On a
+// make pass a non-empty resourceName; on a mar pass "".
+func pdEnact(t *testing.T, h *planLifecycle, planID int64, resourceName string) {
+	t.Helper()
+	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/enact-law"
+	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{"resource_name": resourceName})
+	require.Equalf(t, http.StatusOK, code, "enact-law: %v", body)
 }
 
 func pdSystemPostBodies(t *testing.T, h *planLifecycle) []string {
@@ -162,7 +173,7 @@ func TestProposeDecree_Make_CreatesLawAndAsset(t *testing.T) {
 
 	lawsBefore, err := h.q.ListLaws(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
-	assetsBefore := len(pdLawAssets(t, h))
+	assetsBefore := pdResourceCount(t, h)
 
 	// Lower-power players must decide before the roll can be called.
 	pdDeclineRemaining(t, h, plan.ID)
@@ -170,21 +181,31 @@ func TestProposeDecree_Make_CreatesLawAndAsset(t *testing.T) {
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
 	h.makeChoice(plan.ID, "make", []string{})
 
-	// Completion is blocked until the signatory places the addendum.
+	// No law exists yet — the addendum and enactment are still owed.
 	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
 	code, body := h.post(preparerIdx, completePath, nil)
-	require.Equalf(t, http.StatusConflict, code, "complete should block pre-addendum: %v", body)
+	require.Equalf(t, http.StatusConflict, code, "complete should block pre-enactment: %v", body)
 
-	// Place an "and" addendum, then complete.
+	// Signatory (here the preparer/Monarch) places an "and" addendum.
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
 	code, body = h.post(preparerIdx, addPath, map[string]any{"connector": "and", "addendum": "exempting grain"})
 	require.Equalf(t, http.StatusOK, code, "set-addendum: %v", body)
-	h.complete(plan.ID)
+
+	// Still no law until the preparer enacts.
+	lawsMid, err := h.q.ListLaws(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.Len(t, lawsMid, len(lawsBefore), "no law row until enactment")
+
+	// Enacting creates the law + named resource and auto-resolves the plan.
+	pdEnact(t, h, plan.ID, "The Royal Granary")
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status, "enact-law auto-resolves the plan")
 
 	lawsAfter, err := h.q.ListLaws(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
 	require.Len(t, lawsAfter, len(lawsBefore)+1, "a law row should be created")
-	assert.Equal(t, assetsBefore+1, len(pdLawAssets(t, h)), "a made decree creates a resource asset")
+	assert.Equal(t, assetsBefore+1, pdResourceCount(t, h), "a made decree creates a resource asset")
 
 	// The addendum is composed onto the law row as "and …".
 	law := lawsAfter[len(lawsAfter)-1]
@@ -203,10 +224,10 @@ func TestProposeDecree_Make_CreatesLawAndAsset(t *testing.T) {
 	}, "expected an enactment action-log post; got %v", posts)
 }
 
-// TestProposeDecree_NameAsset_RenamesResource proves the preparer names the
-// resource a made decree created (it starts with a placeholder) via name-asset,
-// the resolution data records it as named, and non-preparers are rejected.
-func TestProposeDecree_NameAsset_RenamesResource(t *testing.T) {
+// TestProposeDecree_Enact_CreatesNamedResource proves enactment creates the
+// resource asset already named (no placeholder, single transaction), that
+// enact-law is preparer-gated, and that a made decree's enact requires a name.
+func TestProposeDecree_Enact_CreatesNamedResource(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
@@ -217,29 +238,34 @@ func TestProposeDecree_NameAsset_RenamesResource(t *testing.T) {
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
 	h.makeChoice(plan.ID, "make", []string{})
 
-	pd := pdData(t, h, plan.ID)
-	require.NotNil(t, pd.ResourceAssetID, "make creates the resource and records its id")
-	require.False(t, pd.ResourceNamed)
+	// Signatory (here the preparer/Monarch) places the addendum first.
+	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
+	code, body := h.post(preparerIdx, addPath, map[string]any{"connector": "", "addendum": ""})
+	require.Equalf(t, http.StatusOK, code, "set-addendum: %v", body)
 
+	// No resource exists before enactment.
+	require.Nil(t, pdData(t, h, plan.ID).ResourceAssetID, "no resource until enactment")
+
+	enactPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/enact-law"
+
+	// A non-preparer cannot enact.
+	otherIdx := (preparerIdx + 1) % 3
+	code, body = h.post(otherIdx, enactPath, map[string]any{"resource_name": "Hijack"})
+	require.Equalf(t, http.StatusForbidden, code, "only the preparer may enact: %v", body)
+
+	// A made decree's enact requires a resource name.
+	code, body = h.post(preparerIdx, enactPath, map[string]any{"resource_name": ""})
+	require.Equalf(t, http.StatusBadRequest, code, "made enact needs a name: %v", body)
+
+	// The preparer enacts with a name; the asset is created already named.
+	code, body = h.post(preparerIdx, enactPath, map[string]any{"resource_name": "The Royal Granary"})
+	require.Equalf(t, http.StatusOK, code, "enact-law: %v", body)
+
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.ResourceAssetID, "enactment creates the resource and records its id")
 	created, err := h.q.GetAssetByID(ctx, *pd.ResourceAssetID)
 	require.NoError(t, err)
-	require.Equal(t, lawResourceNameDefault, created.Name, "resource starts with a placeholder")
-
-	namePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/name-resource"
-
-	// A non-preparer cannot name it.
-	otherIdx := (preparerIdx + 1) % 3
-	code, body := h.post(otherIdx, namePath, map[string]any{"name": "Hijack"})
-	require.Equalf(t, http.StatusForbidden, code, "only the preparer may name: %v", body)
-
-	// The preparer names it; the asset is renamed and the flag flips.
-	code, body = h.post(preparerIdx, namePath, map[string]any{"name": "The Royal Granary"})
-	require.Equalf(t, http.StatusOK, code, "name-asset: %v", body)
-
-	renamed, err := h.q.GetAssetByID(ctx, *pd.ResourceAssetID)
-	require.NoError(t, err)
-	assert.Equal(t, "The Royal Granary", renamed.Name)
-	assert.True(t, pdData(t, h, plan.ID).ResourceNamed, "naming flips ResourceNamed")
+	assert.Equal(t, "The Royal Granary", created.Name, "resource is created already named")
 }
 
 // TestProposeDecree_Mar_AmendChainThenAddendum drives the full marred flow:
@@ -254,7 +280,7 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 	// Amenders, lowest power first = players[1] then players[0].
 	plan := pdPrepareAndResolve(t, h, 2)
 	preparerIdx := h.preparerIdxFor(plan.ID)
-	assetsBefore := len(pdLawAssets(t, h))
+	assetsBefore := pdResourceCount(t, h)
 
 	pd := pdData(t, h, plan.ID)
 	require.NotNil(t, pd.SignatoryID)
@@ -285,7 +311,7 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 		require.Equalf(t, http.StatusOK, code, "amend %d: %v", i+1, body)
 	}
 
-	// Completion still blocked until the addendum is placed.
+	// Completion still blocked until the addendum is placed and the law enacted.
 	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
 	code, body = h.post(preparerIdx, completePath, nil)
 	require.Equalf(t, http.StatusConflict, code, "complete should block pre-addendum: %v", body)
@@ -294,7 +320,12 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
 	code, body = h.post(sigIdx, addPath, map[string]any{"connector": "", "addendum": ""})
 	require.Equalf(t, http.StatusOK, code, "blank addendum: %v", body)
-	h.complete(plan.ID)
+
+	// The preparer enacts (no resource on a mar); this auto-resolves the plan.
+	pdEnact(t, h, plan.ID, "")
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status, "enact-law auto-resolves the plan")
 
 	laws, err := h.q.ListLaws(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
@@ -302,7 +333,7 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 	law := laws[len(laws)-1]
 	assert.Equal(t, "Amended body v2", law.Text, "final body is the last amender's text")
 	assert.Nil(t, law.Addendum, "blank addendum leaves the rider empty")
-	assert.Equal(t, assetsBefore, len(pdLawAssets(t, h)), "a marred decree creates NO resource asset")
+	assert.Equal(t, assetsBefore, pdResourceCount(t, h), "a marred decree creates NO resource asset")
 }
 
 // TestProposeDecree_JoinCouncil_MintsAndCleansUpDice proves the leverage-to-join
@@ -406,9 +437,17 @@ func TestProposeDecree_Make_ResourceOwnedByPreparer(t *testing.T) {
 	require.NotNil(t, pd.SignatoryID)
 	require.NotEqual(t, plan.PreparerID, *pd.SignatoryID, "signatory differs from preparer")
 
-	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, *pd.SignatoryID))
+	sigIdx := pdPlayerIdx(t, h, *pd.SignatoryID)
+	roll := pdCallRoll(t, h, plan.ID, sigIdx)
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
 	h.makeChoice(plan.ID, "make", []string{})
+
+	// Signatory places the addendum; the preparer then enacts and names the
+	// resource (which is owned by the preparer, not the signatory).
+	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
+	code, body := h.post(sigIdx, addPath, map[string]any{"connector": "", "addendum": ""})
+	require.Equalf(t, http.StatusOK, code, "set-addendum: %v", body)
+	pdEnact(t, h, plan.ID, "The Spoils")
 
 	pd = pdData(t, h, plan.ID)
 	require.NotNil(t, pd.ResourceAssetID)
@@ -467,11 +506,11 @@ func TestProposeDecree_SkipAmend_AdvancesChain(t *testing.T) {
 	code, body = h.post(secondIdx, amendPath, map[string]any{"text": "Only the second hand wrote"})
 	require.Equalf(t, http.StatusOK, code, "second amend: %v", body)
 
-	// Chain complete: signatory addenda, preparer completes.
+	// Chain complete: signatory addenda, preparer enacts (auto-resolves).
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
 	code, body = h.post(pdPlayerIdx(t, h, *pd.SignatoryID), addPath, map[string]any{"connector": "", "addendum": ""})
 	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
-	h.complete(plan.ID)
+	pdEnact(t, h, plan.ID, "")
 
 	laws, err := h.q.ListLaws(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
@@ -532,8 +571,9 @@ func TestProposeDecree_Waitees_NamesSignatoryAndAmenders(t *testing.T) {
 	code, body = h.post(pdPlayerIdx(t, h, sigID), addPath, map[string]any{"connector": "", "addendum": ""})
 	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
 
-	// Addendum placed → the preparer completes.
-	h.assertWaitees("complete", model.RowStatePlanResolving, preparerID)
+	// Addendum placed → the preparer enacts the law (which auto-completes).
+	h.assertWaitees("enact", model.RowStatePlanResolving, preparerID)
+	pdEnact(t, h, plan.ID, "")
 }
 
 // TestProposeDecree_DebateGate proves the pre-roll drafting step: until the
@@ -591,6 +631,12 @@ func TestProposeDecree_DebateGate(t *testing.T) {
 	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, sigID))
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
 	h.makeChoice(plan.ID, "make", []string{})
+	// The law is enacted only after the signatory's addendum and the preparer's
+	// enact-law.
+	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
+	code, body = h.post(pdPlayerIdx(t, h, sigID), addPath, map[string]any{"connector": "", "addendum": ""})
+	require.Equalf(t, http.StatusOK, code, "set-addendum: %v", body)
+	pdEnact(t, h, plan.ID, "Tax relief fund")
 	laws, err := h.q.ListLaws(context.Background(), h.tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, final, laws[len(laws)-1].Text, "the enacted law uses the finalized text")

@@ -2,17 +2,20 @@ package handler
 
 // plan_name_asset.go — shared "name-asset" plan route.
 //
-// A few plans create an asset as a mechanical consequence of their make step
-// (Propose Decree's resource, Spread Propaganda's artifact). The rules call for
-// the player to author that asset, but the asset must exist the moment the make
-// resolves so downstream mechanics have something to point at. We square this
-// by creating the asset with a neutral placeholder name and then letting the
-// PREPARER name it via this route.
+// Some plans create an asset as a mechanical consequence of their make step
+// (Spread Propaganda's artifact). The rules call for the player to author that
+// asset, but the asset must exist the moment the make resolves so downstream
+// mechanics have something to point at. We square this by creating the asset
+// with a neutral placeholder name and then letting the PREPARER name it via this
+// route.
 //
 // It is a plan-scoped, preparer-gated rename — distinct from the owner-gated
 // PUT /api/assets/:id route — because the namer (preparer) is not necessarily
-// the owner (e.g. a decree resource owned by the signatory). Naming is optional
-// and does not gate plan completion; the placeholder simply stands until named.
+// the owner. Naming is optional and does not gate plan completion; the
+// placeholder simply stands until named.
+//
+// (Propose Decree no longer uses this path: it authors and creates its resource
+// in a single transaction at enactment, so the asset never exists unnamed.)
 
 import (
 	"encoding/json"
@@ -27,11 +30,8 @@ import (
 // maxAssetNameLen bounds a player-authored asset name (runes).
 const maxAssetNameLen = 120
 
-// Placeholder names used until the preparer authors the real one.
-const (
-	lawResourceNameDefault        = "[Resource produced by the new law]"
-	propagandaArtifactNameDefault = "[Artifact produced by propaganda]"
-)
+// Placeholder name used until the preparer authors the real one.
+const propagandaArtifactNameDefault = "[Artifact produced by propaganda]"
 
 // nameCreatedPlanAsset renames the single asset a plan created during its make
 // step. assetIDOf returns the stored asset id (nil if none created yet);

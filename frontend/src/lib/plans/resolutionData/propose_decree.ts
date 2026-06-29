@@ -9,6 +9,8 @@ export interface ProposeDecreeResolutionData {
 	declined_player_ids?: number[];
 	/** True once the preparer has finalized the text and opened the debate. */
 	debate_started?: boolean;
+	/** The applied roll outcome ("make"/"mar"); set means the decree was passed. */
+	outcome?: string;
 	signatory_id?: number | null;
 	addendum?: string;
 	addendum_connector?: string;
@@ -17,13 +19,12 @@ export interface ProposeDecreeResolutionData {
 	amendment_order?: number[];
 	/** Mar: players who have already taken their amend turn. */
 	amended_by?: number[];
+	/** Set only once the addendum is placed (enactment); the law row's id. */
 	law_id?: number | null;
-	/** Current law body, mirrored from the law row for the resolve panel. */
+	/** Current working law body (staged in resolution_data until enactment). */
 	law_text?: string;
-	/** Resource asset created by a made decree (starts with a placeholder name). */
+	/** Resource asset created (already named) by a made decree at enactment. */
 	resource_asset_id?: number | null;
-	/** True once the preparer has named the resource. */
-	resource_named?: boolean;
 }
 
 export function parseProposeDecreeData(

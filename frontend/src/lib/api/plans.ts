@@ -460,13 +460,12 @@ export function callRoll(planID: number): Promise<{ plan_id: number; roll?: Dice
 /**
  * Name the asset a plan created during its make step. Preparer-gated; optional
  * — the asset keeps its placeholder name until named. The route differs per
- * plan ('name-resource' for Propose Decree, 'name-artifact' for Spread
- * Propaganda) because all plans' extra routes share one mount, so route names
- * must be globally unique.
+ * plan ('name-artifact' for Spread Propaganda) because all plans' extra routes
+ * share one mount, so route names must be globally unique.
  */
 export function namePlanAsset(
 	planID: number,
-	route: 'name-resource' | 'name-artifact',
+	route: 'name-artifact',
 	name: string
 ): Promise<{ plan_id: number; asset: Asset }> {
 	return apiFetch(`/plans/${planID}/${route}`, {
@@ -510,6 +509,22 @@ export function setAddendum(
 	return apiFetch(`/plans/${planID}/set-addendum`, {
 		method: 'POST',
 		body: JSON.stringify({ addendum, connector: connector ?? '' }),
+	});
+}
+
+/**
+ * Propose Decree — the preparer enacts the passed decree (the terminal action):
+ * writes the law and, on a make, creates the resource asset under `resourceName`
+ * in the same call. The plan auto-resolves, so no separate complete is needed.
+ * `resourceName` is required on a make and ignored on a mar.
+ */
+export function enactLaw(
+	planID: number,
+	resourceName?: string,
+): Promise<{ plan_id: number; law_id: number | null; resolved: boolean }> {
+	return apiFetch(`/plans/${planID}/enact-law`, {
+		method: 'POST',
+		body: JSON.stringify({ resource_name: resourceName ?? '' }),
 	});
 }
 

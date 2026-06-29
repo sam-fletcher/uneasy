@@ -12,20 +12,21 @@
        close the debate and call the roll only once it's open AND every eligible
        player has decided.
     2. Rolling — dice play out.
-    3. Post-roll — signatory writes the addendum; preparer completes.
-       On mar, the other council members narrate amendments via scene posts
-       (we surface a prompt; the actual posting happens in SceneView).
+    3. Post-roll — the preparer passes the decree (make-choice). On a mar the
+       council then amends the body in turn (lowest power first). Finally the
+       signatory places the addendum, which ENACTS the law; the preparer
+       completes (and, on a make, names the resource the enacted law created).
 
-  The law row is created server-side when make-choice is submitted (with an
-  empty choices array — PD has no option picks). On make a resource asset
-  representing the law is also created.
+  The law goes into effect WITH its addendum, so the law row is created
+  server-side only when set-addendum is submitted — not at make-choice. On a
+  make the resource asset is created at that same enactment step.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
-		preparePlan, makeChoice, completePlan,
-		startDebate, joinCouncil, declineCouncil, callRoll, setAddendum, amendDecree, skipAmend, namePlanAsset, getAssetSuggestions,
+		preparePlan, makeChoice,
+		startDebate, joinCouncil, declineCouncil, callRoll, setAddendum, amendDecree, skipAmend, enactLaw, getAssetSuggestions,
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -108,6 +109,7 @@
 		council: number[];
 		declined: number[];
 		debateStarted: boolean;
+		outcome: string;
 		addendum: string;
 		addendumConnector: string;
 		addendumPlaced: boolean;
@@ -116,7 +118,6 @@
 		lawID: number | null;
 		lawText: string;
 		resourceAssetID: number | null;
-		resourceNamed: boolean;
 	};
 	const pdState = $derived.by<PDState>(() => {
 		const rd = parseResolutionData(plan).propose_decree ?? {};
@@ -125,6 +126,7 @@
 			council: rd.signatory_player_ids ?? [],
 			declined: rd.declined_player_ids ?? [],
 			debateStarted: rd.debate_started ?? false,
+			outcome: rd.outcome ?? '',
 			addendum: rd.addendum ?? '',
 			addendumConnector: rd.addendum_connector ?? '',
 			addendumPlaced: rd.addendum_placed ?? false,
@@ -133,7 +135,6 @@
 			lawID: rd.law_id ?? null,
 			lawText: rd.law_text ?? '',
 			resourceAssetID: rd.resource_asset_id ?? null,
-			resourceNamed: rd.resource_named ?? false,
 		};
 	});
 
@@ -198,7 +199,10 @@
 	// Has the signatory called the roll yet? We treat the presence of the
 	// roll (rollActive or rollOutcome set) as the council being closed.
 	const councilClosed = $derived(rollActive || rollOutcome != null);
-	// The law exists once make-choice has fired. ApplyChoice sets law_id.
+	// make-choice ("pass the decree") records the outcome and opens the
+	// law-writing sub-flow (amendments, then the addendum). The law is only
+	// ENACTED — its row created, law_id set — once the addendum is placed.
+	const outcomeApplied = $derived(pdState.outcome !== '');
 	const lawEnacted = $derived(pdState.lawID != null);
 	const debateStarted = $derived(pdState.debateStarted);
 
@@ -271,29 +275,20 @@
 		} finally { callBusy = false; }
 	}
 
-	// ── Apply make-choice (no option picks; just creates the law) ────────────
-	// On a make the preparer also names the resource the decree creates, in the
-	// same step: enact, then name the freshly-created asset. (When a perform_steps
-	// demand winner enacts in the preparer's stead they can't name it — the
-	// preparer does so afterward via the standalone naming fallback.)
+	// ── Apply make-choice ("pass the decree"; no option picks) ───────────────
+	// This records the roll's outcome and opens the law-writing sub-flow — it does
+	// NOT enact the law. The law goes into effect (and, on a make, its resource is
+	// created) only once the signatory places the addendum, so naming the resource
+	// happens afterward (needsResourceNaming), not here.
 	let applyBusy = $state(false);
 	async function applyResult(p: Plan, outcome: 'make' | 'mar') {
 		if (applyBusy) return;
-		const nameAtEnact = outcome === 'make' && isPreparer;
-		if (nameAtEnact && !resourceName.trim()) {
-			resError = 'Name the resource your decree creates.';
-			return;
-		}
 		applyBusy = true; resError = '';
 		try {
 			await makeChoice(p.id, outcome, []);
-			if (nameAtEnact) {
-				await namePlanAsset(p.id, 'name-resource', resourceName.trim());
-				resourceName = '';
-			}
 			onPlansChanged();
 		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not enact the law.';
+			resError = e instanceof Error ? e.message : 'Could not pass the decree.';
 		} finally { applyBusy = false; }
 	}
 
@@ -356,26 +351,20 @@
 		} finally { addendumBusy = false; }
 	}
 
-	// ── Name the law's resource asset (preparer) ─────────────────────────────
-	// On a make the preparer names the resource inline at the Enact step (see
-	// applyResult). The standalone block below is a fallback for the cases that
-	// can't name at enact: a perform_steps winner enacted, or the inline naming
-	// call failed. It's optional — naming does not gate completion.
-	const namingAtEnact = $derived(
-		isPreparer && rollOutcome === 'make' && !lawEnacted,
-	);
-	const needsResourceNaming = $derived(
-		isPreparer && pdState.resourceAssetID != null && !pdState.resourceNamed,
-	);
+	// ── Enact the law (preparer; terminal action) ────────────────────────────
+	// After the signatory's addendum, the preparer enacts: this writes the law
+	// and, on a make, creates the resource asset under the name authored here (one
+	// transaction — the asset never exists unnamed). The plan auto-resolves.
+	const awaitingEnact = $derived(outcomeApplied && pdState.addendumPlaced && !lawEnacted);
+	const isMakeEnact = $derived(rollOutcome === 'make');
 	let resourceName = $state('');
-	let nameBusy = $state(false);
-	// Name suggestions (resource pool), fetched once a naming UI first appears —
-	// either the inline Enact-step picker or the standalone fallback.
+	let enactBusy = $state(false);
+	// Resource name suggestions, fetched once the preparer's enact step appears.
 	let nameSuggestions = $state<string[]>([]);
 	let nameSuggLoading = $state(false);
 	let nameSuggFetched = false;
 	$effect(() => {
-		if (!(namingAtEnact || needsResourceNaming) || nameSuggFetched) return;
+		if (!(awaitingEnact && isPreparer && isMakeEnact) || nameSuggFetched) return;
 		nameSuggFetched = true;
 		nameSuggLoading = true;
 		getAssetSuggestions(gameID, 'resource', 'name')
@@ -383,29 +372,20 @@
 			.catch(() => { nameSuggestions = []; })
 			.finally(() => { nameSuggLoading = false; });
 	});
-	async function submitResourceName(p: Plan) {
-		if (nameBusy || !resourceName.trim()) return;
-		nameBusy = true; resError = '';
+	async function submitEnact(p: Plan) {
+		if (enactBusy) return;
+		if (isMakeEnact && !resourceName.trim()) {
+			resError = 'Name the resource your decree creates.';
+			return;
+		}
+		enactBusy = true; resError = '';
 		try {
-			await namePlanAsset(p.id, 'name-resource', resourceName.trim());
+			await enactLaw(p.id, isMakeEnact ? resourceName.trim() : undefined);
 			resourceName = '';
 			onPlansChanged();
 		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not name the resource.';
-		} finally { nameBusy = false; }
-	}
-
-	// ── Complete ─────────────────────────────────────────────────────────────
-	let resBusy = $state(false);
-	async function onComplete(p: Plan) {
-		if (resBusy) return;
-		resBusy = true; resError = '';
-		try {
-			await completePlan(p.id);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not complete plan.';
-		} finally { resBusy = false; }
+			resError = e instanceof Error ? e.message : 'Could not enact the law.';
+		} finally { enactBusy = false; }
 	}
 </script>
 
@@ -563,11 +543,11 @@
 			{/if}
 
 		<!-- Roll in progress ─────────────────────────────────────────── -->
-		{:else if rollActive && !lawEnacted}
+		{:else if rollActive && !outcomeApplied}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
-		<!-- Post-roll: enact the law (no option picks) ──────────────── -->
-		{:else if rollOutcome != null && !lawEnacted && amChoiceActor}
+		<!-- Post-roll: pass the decree (no option picks; does NOT enact yet) ─── -->
+		{:else if rollOutcome != null && !outcomeApplied && amChoiceActor}
 			<div class="choices-section">
 				<p class="choices-header">
 					Result: <strong class="outcome-{rollOutcome}">
@@ -576,36 +556,30 @@
 				</p>
 				<p class="choices-note">
 					{#if rollOutcome === 'make'}
-						The decree becomes law. Create a resource representing what you gain from the law.
+						The decree passes. The signatory adds the addendum, then it takes effect
+						and you gain a resource.
 					{:else}
-						The decree passes, amended by the council.
+						The decree passes, amended by the council; the signatory then adds the
+						addendum and it takes effect.
 					{/if}
 				</p>
-				{#if namingAtEnact}
-					<p class="form-label-text">
-						Name your new resource:
-					</p>
-					<SuggestionPicker
-						suggestions={nameSuggestions}
-						bind:value={resourceName}
-						loading={nameSuggLoading}
-						customPlaceholder="Name the resource resulting from the law…"
-						maxlength={120}
-					/>
-				{/if}
 				<button class="action-btn primary"
 					onclick={() => applyResult(plan, rollOutcome!)}
-					disabled={applyBusy || (namingAtEnact && !resourceName.trim())}>
-					{applyBusy ? '…' : rollOutcome === 'make' ? 'Enact law & create resource' : 'Enact'}
+					disabled={applyBusy}>
+					{applyBusy ? '…' : 'Pass the decree'}
 				</button>
 			</div>
 
-		<!-- After law enacted: (mar) sequential amendments → addendum → complete ─ -->
-		{:else if lawEnacted}
+		<!-- Decree passed: (mar) amendments → addendum (enacts) → complete ──── -->
+		{:else if outcomeApplied}
 			{@const amendmentsDone = amendmentsRemaining === 0}
 			<div class="complete-section">
 				<p class="choices-applied">
-					Law enacted{#if rollOutcome === 'mar'} (being amended){/if}.
+					{#if lawEnacted}
+						Law enacted.
+					{:else}
+						The decree passed — writing the law{#if rollOutcome === 'mar'} (being amended){/if}.
+					{/if}
 				</p>
 
 				<!-- Current law text (live, reflects amendments so far). -->
@@ -649,68 +623,74 @@
 					{/if}
 				{/if}
 
-				<!-- Signatory's addendum (after amendments; required step). -->
-				{#if amendmentsDone && amSignatory && !pdState.addendumPlaced}
-					<div class="plan-form">
-						<p class="choices-header">Addendum</p>
-						<p class="choices-note">
-							Attach an optional rider, or place a blank one to proceed.
-						</p>
-						<div class="chip-row">
-							<button type="button" class="chip-btn" class:active={addendumConnector === 'and'}
-								onclick={() => (addendumConnector = 'and')}>and</button>
-							<button type="button" class="chip-btn" class:active={addendumConnector === 'but'}
-								onclick={() => (addendumConnector = 'but')}>but</button>
+				<!-- Signatory's addendum (after amendments; required step, comes
+				     immediately before the preparer enacts). -->
+				{#if amendmentsDone && !pdState.addendumPlaced}
+					{#if amSignatory}
+						<div class="plan-form">
+							<p class="choices-header">Addendum</p>
+							<p class="choices-note">
+								Add your rider (or leave it blank). {playerName(players, plan.preparer_id)}
+								then enacts the law.
+							</p>
+							<div class="chip-row">
+								<button type="button" class="chip-btn" class:active={addendumConnector === 'and'}
+									onclick={() => (addendumConnector = 'and')}>and</button>
+								<button type="button" class="chip-btn" class:active={addendumConnector === 'but'}
+									onclick={() => (addendumConnector = 'but')}>but</button>
+							</div>
+							<label class="form-label">
+								<textarea rows={2} bind:value={addendumDraft} class="form-textarea"
+									placeholder="…the rider text (optional)"></textarea>
+							</label>
+							<button class="action-btn primary"
+								onclick={() => submitAddendum(plan)}
+								disabled={addendumBusy}>
+								{addendumBusy ? '…' : 'Place addendum'}
+							</button>
 						</div>
-						<label class="form-label">
-							<textarea rows={2} bind:value={addendumDraft} class="form-textarea"
-								placeholder="…the rider text (optional)"></textarea>
-						</label>
-						<button class="action-btn primary"
-							onclick={() => submitAddendum(plan)}
-							disabled={addendumBusy}>
-							{addendumBusy ? '…' : 'Place addendum'}
-						</button>
-					</div>
-				{:else if amendmentsDone && !pdState.addendumPlaced && !amSignatory}
-					<p class="choices-note muted">
-						Waiting for {playerName(players, pdState.signatoryID)} to place the addendum…
-					</p>
-				{/if}
-
-				{#if needsResourceNaming}
-					<div class="plan-form">
-						<p class="choices-header">Name the resource your decree created</p>
-						<SuggestionPicker
-							suggestions={nameSuggestions}
-							bind:value={resourceName}
-							loading={nameSuggLoading}
-							customPlaceholder="Name the law's resource…"
-							maxlength={120}
-						/>
-						<button class="action-btn primary" onclick={() => submitResourceName(plan)}
-							disabled={nameBusy || !resourceName.trim()}>
-							{nameBusy ? '…' : 'Name resource'}
-						</button>
-					</div>
-				{/if}
-
-				{#if isPreparer}
-					<button class="action-btn primary"
-						onclick={() => onComplete(plan)}
-						disabled={resBusy || !amendmentsDone || !pdState.addendumPlaced}>
-						{resBusy ? '…' : 'Complete plan'}
-					</button>
-					{#if !amendmentsDone || !pdState.addendumPlaced}
+					{:else}
 						<p class="choices-note muted">
-							{#if !amendmentsDone}The council is still amending the law.
-							{:else}Waiting for the signatory's addendum.{/if}
+							Waiting for {playerName(players, pdState.signatoryID)} to place the addendum…
+						</p>
+					{/if}
+				{/if}
+
+				<!-- Enactment (preparer; terminal). The final law text is shown above,
+				     so the preparer authors the resource with full context. -->
+				{#if awaitingEnact}
+					{#if isPreparer}
+						<div class="plan-form">
+							<p class="choices-header">Enact the law</p>
+							{#if isMakeEnact}
+								<p class="choices-note">
+									The law above takes effect. Name the resource it creates for you.
+								</p>
+								<SuggestionPicker
+									suggestions={nameSuggestions}
+									bind:value={resourceName}
+									loading={nameSuggLoading}
+									customPlaceholder="Name the law's resource…"
+									maxlength={120}
+								/>
+							{:else}
+								<p class="choices-note">The law above takes effect (no resource on a mar).</p>
+							{/if}
+							<button class="action-btn primary"
+								onclick={() => submitEnact(plan)}
+								disabled={enactBusy || (isMakeEnact && !resourceName.trim())}>
+								{enactBusy ? '…' : 'Enact the law'}
+							</button>
+						</div>
+					{:else}
+						<p class="choices-note muted">
+							Waiting for {playerName(players, plan.preparer_id)} to enact the law…
 						</p>
 					{/if}
 				{/if}
 			</div>
 
-		{:else if !amChoiceActor && !lawEnacted}
+		{:else if !amChoiceActor && !outcomeApplied}
 			<p class="ft-prompt muted">
 				{playerName(players, plan.preparer_id)} is resolving Propose Decree…
 			</p>

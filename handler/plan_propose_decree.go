@@ -21,17 +21,22 @@ package handler
 //   - The signatory calls the roll to close the debate — only once it has been
 //     opened AND every eligible player has joined or declined.
 //
-// The law row is created at enact (make-choice) time with the decree body and
-// no addendum, then UPDATED IN PLACE as the law is written:
+// The law is written entirely in resolution_data first and only ENACTED (the law
+// row created, appearing under Laws) at the end — the rules put the decree "into
+// effect WITH the signatory's addendum", so the addendum (and, on a mar, the
+// amendments) must be decided first. The sub-flow, after the roll:
 //
-//   Make: a resource asset is created; the signatory places the addendum.
-//   Mar:  NO asset; the non-preparer council members rewrite the body in turn
-//         (lowest power first, each working from the previous output), THEN the
-//         signatory places the addendum.
+//   1. make-choice ("pass the decree", preparer): records the outcome; no law.
+//   2. Mar only: the non-preparer council members rewrite the body in turn
+//      (lowest power first, each working from the previous output).
+//   3. set-addendum (signatory): records the "and"/"but" rider — the step right
+//      before enactment, so the preparer enacts with the final text in view.
+//   4. enact-law (preparer): creates the law row and, on a make, the resource
+//      asset (authored/named in the same call — no placeholder). Then the plan
+//      auto-resolves (AutoCompleteAfterChoice) — no separate Complete step.
 //
 // The final law = amended body + an "and"/"but" connector + the signatory's
-// (optional) rider text. Completion is gated on all amendments done AND the
-// addendum placed (a required step even if the rider text is blank).
+// (optional) rider text.
 //
 // Follow Scene: Your character interacting with a law.
 //
@@ -41,8 +46,8 @@ package handler
 //   POST /api/plans/:planId/decline-council Lower-ranked player declines to join.
 //   POST /api/plans/:planId/call-roll       Signatory closes the debate; creates dice roll.
 //   POST /api/plans/:planId/amend-decree   (Mar) current amender rewrites the law body.
-//   POST /api/plans/:planId/set-addendum   Signatory places the and/but addendum.
-//   POST /api/plans/:planId/name-resource  (Make) preparer names the created resource.
+//   POST /api/plans/:planId/set-addendum   Signatory records the and/but addendum.
+//   POST /api/plans/:planId/enact-law      Preparer enacts the law (+ named resource on Make); auto-resolves.
 
 import (
 	"context"
@@ -212,9 +217,12 @@ func pdHighestPowerMember(ctx context.Context, q *dbgen.Queries, gameID int64, c
 	return best, nil
 }
 
-// ApplyChoice creates the law record. On make, it also creates a resource
-// asset representing the enacted law; on mar it records the law without
-// a corresponding asset.
+// ApplyChoice records the roll's outcome and opens the law-writing sub-flow. It
+// does NOT enact the law: per the rules the decree "goes into effect WITH the
+// signatory's addendum", so the law row (and, on a make, the resource asset) are
+// created later, when the addendum is placed (pdEnactLaw, called from
+// set-addendum). On a mar this step computes the amendment order; the council
+// then rewrites the body before the addendum is placed and the law takes effect.
 func (pdHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -227,46 +235,18 @@ func (pdHandler) ApplyChoice(
 
 	// The law body is the text the preparer finalized when opening the debate
 	// (start-debate). Fall back to the preparation notes for any decree whose
-	// debate predates that step.
+	// debate predates that step. It becomes the working body the council may
+	// amend (on a mar) and is written to the law row at enactment.
 	body := pd.LawText
 	if body == "" && plan.PreparationNotes != nil {
 		body = *plan.PreparationNotes
 	}
-
-	// Compute the next display_order for laws in this game.
-	laws, err := deps.Q.ListLaws(ctx, plan.GameID)
-	if err != nil {
-		return fmt.Errorf("could not list laws: %w", err)
-	}
-	displayOrder := int16(len(laws) + 1)
-
-	// The law row is created now (so it appears in the Laws panel immediately)
-	// with the decree body and no addendum yet. The signatory's addendum and,
-	// on a mar, the council's amendments update this row in place before the
-	// plan completes.
-	planID := plan.ID
-	law, err := deps.Q.CreateLaw(ctx, dbgen.CreateLawParams{
-		GameID:       plan.GameID,
-		Text:         body,
-		Addendum:     nil,
-		OriginPlanID: &planID,
-		SignatoryID:  pd.SignatoryID,
-		DisplayOrder: displayOrder,
-	})
-	if err != nil {
-		return fmt.Errorf("could not create law: %w", err)
-	}
-
-	pd.LawID = &law.ID
 	pd.LawText = body
+	pd.Outcome = result
 
-	if result == makeOutcome {
-		if err = pdCreateLawAsset(ctx, deps, plan, resData, body); err != nil {
-			return err
-		}
-	} else {
+	if result != makeOutcome {
 		// Mar: the non-preparer council members amend the body in turn, lowest
-		// power first. Compute that order now.
+		// power first. Compute that order now; they amend before the addendum.
 		order, err := pdAmendmentOrder(ctx, deps.Q, plan, pd.SignatoryPlayerIDs)
 		if err != nil {
 			return err
@@ -284,9 +264,10 @@ func (pdHandler) ApplyChoice(
 		return fmt.Errorf("could not clear unspent council dice: %w", err)
 	}
 
-	broadcastEvent(deps.Manager, plan.GameID, model.EventLawEnacted, model.LawEnactedPayload{
+	// Non-acting clients refetch the plan to pick up the new sub-phase. The law
+	// row doesn't exist yet, so there's no law.enacted event to send.
+	broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
 		PlanID: plan.ID,
-		Law:    law,
 	})
 
 	signatory := "the council"
@@ -300,7 +281,7 @@ func (pdHandler) ApplyChoice(
 			plan,
 			model.SeverityImportant,
 			fmt.Sprintf(
-				"The decree was enacted, signed by %s, and a new resource was created. Awaiting the addendum.",
+				"The decree passed. It takes effect once %s places the addendum.",
 				signatory,
 			),
 		)
@@ -311,12 +292,68 @@ func (pdHandler) ApplyChoice(
 			plan,
 			model.SeverityImportant,
 			fmt.Sprintf(
-				"The decree passed but was marred — the council amends it (lowest power first) before %s adds the addendum.",
+				"The decree passed but was marred — the council amends it (lowest power first), "+
+					"then %s places the addendum, and only then does it take effect.",
 				signatory,
 			),
 		)
 	}
 
+	return nil
+}
+
+// pdEnactLaw puts the decree into effect: it creates the law row with the final
+// body and the signatory's composed addendum, and — on a make — creates the
+// resource asset under the preparer-authored resourceName (one transaction, no
+// placeholder). This is the LAST writing step, called from enact-law, so the law
+// goes under Laws already carrying its addendum (and, on a mar, the council's
+// amendments), as the rules require. Sets pd.LawID; the caller saves
+// resolution_data. resourceName is ignored on a mar (no asset).
+func pdEnactLaw(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, resData *ResolutionData, resourceName string) error {
+	pd := resData.EnsureProposeDecree()
+
+	laws, err := deps.Q.ListLaws(ctx, plan.GameID)
+	if err != nil {
+		return fmt.Errorf("could not list laws: %w", err)
+	}
+	displayOrder := int16(len(laws) + 1)
+
+	planID := plan.ID
+	law, err := deps.Q.CreateLaw(ctx, dbgen.CreateLawParams{
+		GameID:       plan.GameID,
+		Text:         pd.LawText,
+		Addendum:     pdComposeAddendum(pd),
+		OriginPlanID: &planID,
+		SignatoryID:  pd.SignatoryID,
+		DisplayOrder: displayOrder,
+	})
+	if err != nil {
+		return fmt.Errorf("could not create law: %w", err)
+	}
+	pd.LawID = &law.ID
+
+	if pd.Outcome == makeOutcome {
+		if err = pdCreateLawAsset(ctx, deps, plan, resData, resourceName); err != nil {
+			return err
+		}
+	}
+
+	broadcastEvent(deps.Manager, plan.GameID, model.EventLawEnacted, model.LawEnactedPayload{
+		PlanID: plan.ID,
+		Law:    law,
+	})
+
+	signatory := "the council"
+	if pd.SignatoryID != nil {
+		signatory = playerDisplayName(ctx, deps.Q, *pd.SignatoryID)
+	}
+	if pd.Outcome == makeOutcome {
+		pdLog(ctx, deps, plan, model.SeverityImportant,
+			fmt.Sprintf("The decree was enacted, signed by %s, and a new resource was created.", signatory))
+	} else {
+		pdLog(ctx, deps, plan, model.SeverityImportant,
+			fmt.Sprintf("The amended decree was enacted, signed by %s.", signatory))
+	}
 	return nil
 }
 
@@ -355,24 +392,23 @@ func pdLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 		map[string]any{"plan_id": plan.ID})
 }
 
-// pdCreateLawAsset creates the resource asset that accompanies a made law.
-// Owner is the recipient determined by AssetRecipientForPlan — the preparer by
-// default (the rule grants "what YOU gain" to the decree's proposer), or a
-// keep_assets Make Demands winner if one has taken over. NOT the signatory:
-// the signatory signs the law into being, but the worldly resource belongs to
-// the player who drafted and resolved the decree.
+// pdCreateLawAsset creates the resource asset that accompanies a made law, under
+// the preparer-authored name. Owner is the recipient determined by
+// AssetRecipientForPlan — the preparer by default (the rule grants "what YOU
+// gain" to the decree's proposer), or a keep_assets Make Demands winner if one
+// has taken over. NOT the signatory: the signatory signs the law into being, but
+// the worldly resource belongs to the player who drafted and resolved the decree.
 //
-// The asset is created with a neutral placeholder name; the preparer names it
-// afterwards via the name-asset route. (Deliberately NOT derived from the law
-// text — the resource represents the law's worldly consequence, which the
-// preparer narrates, not a copy of the decree's wording.) The created asset id
-// is recorded so the naming step knows what to rename.
+// The name is authored by the preparer at enactment with the final law text in
+// view (deliberately NOT derived from the law wording — the resource represents
+// the law's worldly consequence the preparer narrates). Created and named in one
+// call, so the asset never exists unnamed.
 func pdCreateLawAsset(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	resData *ResolutionData,
-	_ string,
+	name string,
 ) error {
 	pd := resData.EnsureProposeDecree()
 
@@ -386,7 +422,7 @@ func pdCreateLawAsset(
 		OwnerID:   ownerID,
 		CreatorID: plan.PreparerID,
 		AssetType: model.AssetResource,
-		Name:      lawResourceNameDefault,
+		Name:      name,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create law resource asset: %w", err)
@@ -403,12 +439,15 @@ func pdCreateLawAsset(
 	return nil
 }
 
-// CanComplete gates completion on the full law-writing sequence: the law must
-// be enacted (make-choice), on a mar every council amender must have taken
-// their turn, and the signatory must have placed their addendum (even if blank).
+// CanComplete gates completion on the full law-writing sequence: the outcome
+// must be applied (make-choice), on a mar every council amender must have taken
+// their turn, the signatory must have placed their addendum (even if blank), and
+// the preparer must have enacted the law (which creates the law row, so LawID is
+// the enactment signal). Completion normally runs automatically right after
+// enact-law (AutoCompleteAfterChoice).
 func (pdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	pd := resData.ProposeDecree
-	if pd == nil || pd.LawID == nil {
+	if pd == nil || !pd.OutcomeApplied() {
 		return errors.New("make-choice must be submitted before the plan can be completed")
 	}
 	if next := pd.NextAmender(); next != 0 {
@@ -416,6 +455,9 @@ func (pdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	}
 	if !pd.AddendumPlaced {
 		return errors.New("the signatory must place their addendum before completing")
+	}
+	if pd.LawID == nil {
+		return errors.New("the preparer must enact the law before completing")
 	}
 	return nil
 }
@@ -428,11 +470,12 @@ func (pdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 //
 //   - Pre-roll, no roll yet → the signatory (only they can call the roll;
 //     lower-power joins are optional, so they don't block).
-//   - Roll in progress / post-roll before enact → generic preparer case (the
-//     preparer drives the roll and submits the enacting make-choice).
+//   - Roll in progress / post-roll before make-choice → generic preparer case
+//     (the preparer drives the roll and submits make-choice to pass the decree).
 //   - Mar amendment chain incomplete → the next amender.
 //   - Amendments done, addendum unplaced → the signatory.
-//   - Addendum placed → generic preparer case (they complete the plan).
+//   - Addendum placed, law not yet enacted → generic preparer case (they enact,
+//     which auto-completes the plan).
 func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	pd := loadResolutionData(plan.ResolutionData).ProposeDecree
 	if pd == nil {
@@ -449,10 +492,10 @@ func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		}, true
 	}
 
-	// The law row appears only at make-choice. Before it exists, the blocker
-	// is the signatory (call the roll) — unless the roll has already been
-	// called, in which case the preparer owns the roll/enact (generic case).
-	if pd.LawID == nil {
+	// Until make-choice is submitted (the outcome applied), the blocker is the
+	// signatory (call the roll) — unless the roll has already been called, in
+	// which case the preparer owns the roll/enact (generic case).
+	if !pd.OutcomeApplied() {
 		if roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID); err == nil && roll.ID != 0 {
 			return model.RowState{}, false
 		}
@@ -479,7 +522,7 @@ func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		return signatory()
 	}
 
-	// Law enacted. On a mar the council amends in turn — name the next amender.
+	// Outcome applied. On a mar the council amends in turn — name the next amender.
 	if next := pd.NextAmender(); next != 0 {
 		return model.RowState{
 			Kind:            model.RowStatePlanResolving,
@@ -490,7 +533,8 @@ func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	if !pd.AddendumPlaced {
 		return signatory()
 	}
-	// Addendum placed: the preparer completes — generic case.
+	// Addendum placed: the preparer enacts the law (which auto-completes the
+	// plan) — generic case names the preparer.
 	return model.RowState{}, false
 }
 
@@ -503,28 +547,15 @@ func (pdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 		"amend-decree":    pdAmendDecreeHandler(deps),
 		"skip-amend":      pdSkipAmendHandler(deps),
 		"set-addendum":    pdSetAddendumHandler(deps),
-		"name-resource":   pdNameAssetHandler(deps),
+		"enact-law":       pdEnactLawHandler(deps),
 	}
 }
 
-// ── Name Asset ────────────────────────────────────────────────────────────────
-
-// pdNameAssetHandler handles POST /api/plans/:planId/name-resource.
-//
-// The preparer names the resource asset the made decree created (it starts with
-// a placeholder). Optional; does not gate completion.
-func pdNameAssetHandler(deps *PlanDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		nameCreatedPlanAsset(w, r, deps, model.PlanProposeDecree,
-			func(rd *ResolutionData) *int64 {
-				if rd.ProposeDecree == nil {
-					return nil
-				}
-				return rd.ProposeDecree.ResourceAssetID
-			},
-			func(rd *ResolutionData) { rd.EnsureProposeDecree().ResourceNamed = true },
-		)
-	}
+// AutoCompleteAfterChoice opts Propose Decree into auto-completion: enact-law is
+// the terminal action (it writes the law and, on a make, the named resource), so
+// once CanComplete passes the plan resolves itself — no separate Complete click.
+func (pdHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, _ *ResolutionData) bool {
+	return true
 }
 
 // ── Start Debate ────────────────────────────────────────────────────────────
@@ -1012,8 +1043,8 @@ func pdAmendDecreeHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		pd := resData.EnsureProposeDecree()
-		if pd.LawID == nil {
-			respondErr(w, http.StatusConflict, "the decree has not been enacted yet")
+		if !pd.OutcomeApplied() {
+			respondErr(w, http.StatusConflict, "the decree has not been resolved yet")
 			return
 		}
 		next := pd.NextAmender()
@@ -1034,10 +1065,9 @@ func pdAmendDecreeHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if err := pdComposeLaw(ctx, deps.Q, *pd.LawID, body.Text, pd); err != nil {
-			respondInternalErr(w, r, "could not update law text", err)
-			return
-		}
+		// The law isn't enacted yet — amend the working body in resolution_data.
+		// It becomes the law row's text at enactment (set-addendum).
+		pd.LawText = body.Text
 		pd.AmendedBy = append(pd.AmendedBy, player.ID)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save amendment", err)
@@ -1046,7 +1076,10 @@ func pdAmendDecreeHandler(deps *PlanDeps) http.HandlerFunc {
 
 		pdLog(ctx, deps, plan, model.SeverityDefault,
 			fmt.Sprintf("%s amended the decree's text.", playerDisplayName(ctx, deps.Q, player.ID)))
-		pdBroadcastLaw(ctx, deps, plan, *pd.LawID)
+		// No law row yet; non-actors refetch the plan to see the revised body.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+			PlanID: plan.ID,
+		})
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
@@ -1084,8 +1117,8 @@ func pdSkipAmendHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		pd := resData.EnsureProposeDecree()
-		if pd.LawID == nil {
-			respondErr(w, http.StatusConflict, "the decree has not been enacted yet")
+		if !pd.OutcomeApplied() {
+			respondErr(w, http.StatusConflict, "the decree has not been resolved yet")
 			return
 		}
 		next := pd.NextAmender()
@@ -1120,11 +1153,14 @@ func pdSkipAmendHandler(deps *PlanDeps) http.HandlerFunc {
 
 // pdSetAddendumHandler handles POST /api/plans/:planId/set-addendum.
 //
-// The signatory attaches their rider to the law: an "and"/"but" connector plus
-// optional free text. This is a required blocking step (AddendumPlaced) — the
-// signatory must confirm it (even with blank text) before the plan completes.
-// Only valid once the law is enacted and (on a mar) the council has finished
-// amending.
+// The signatory records their rider — an "and"/"but" connector plus optional
+// free text. This is a required step (AddendumPlaced), confirmed even with blank
+// text, and it comes immediately BEFORE enactment: the preparer then enacts the
+// law (enact-law), which writes the law row carrying this addendum. Keeping the
+// addendum a distinct, signatory-only step means the preparer sees the final law
+// text (body + amendments + addendum) when authoring the resource. Only valid
+// once the decree is resolved (make-choice) and, on a mar, the council has
+// finished amending.
 //
 // Request body: {"connector": "and"|"but", "addendum": "free text"}
 func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
@@ -1150,8 +1186,12 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusForbidden, "only the current signatory may set the addendum")
 			return
 		}
-		if pd.LawID == nil {
-			respondErr(w, http.StatusConflict, "the decree has not been enacted yet")
+		if !pd.OutcomeApplied() {
+			respondErr(w, http.StatusConflict, "the decree has not been resolved yet")
+			return
+		}
+		if pd.AddendumPlaced {
+			respondErr(w, http.StatusConflict, "the addendum has already been placed")
 			return
 		}
 		if next := pd.NextAmender(); next != 0 {
@@ -1176,25 +1216,22 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 		pd.Addendum = strings.TrimSpace(body.Addendum)
 		pd.AddendumConnector = body.Connector
 		pd.AddendumPlaced = true
-
-		// Re-fetch the (possibly amended) law body and rewrite text+addendum.
-		law, err := deps.Q.GetLawByID(ctx, *pd.LawID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load law", err)
-			return
-		}
-		if err := pdComposeLaw(ctx, deps.Q, *pd.LawID, law.Text, pd); err != nil {
-			respondInternalErr(w, r, "could not save addendum", err)
-			return
-		}
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save addendum", err)
 			return
 		}
 
+		signatoryName := playerDisplayName(ctx, deps.Q, player.ID)
+		preparerName := playerDisplayName(ctx, deps.Q, plan.PreparerID)
 		pdLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s placed the signatory's addendum.", playerDisplayName(ctx, deps.Q, player.ID)))
-		pdBroadcastLaw(ctx, deps, plan, *pd.LawID)
+			fmt.Sprintf("%s placed the signatory's addendum; %s will enact the law.", signatoryName, preparerName))
+
+		// The law is not enacted here — the preparer enacts it (enact-law). Nudge
+		// non-acting clients to refetch the updated sub-phase.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+			PlanID: plan.ID,
+		})
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
@@ -1204,44 +1241,111 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
-// pdComposeLaw writes the law body and the composed addendum rider to the law
-// row. The addendum column holds "<connector> <text>" (e.g. "but salt is
-// exempt"), or NULL when the signatory left it blank.
-func pdComposeLaw(
-	ctx context.Context,
-	q *dbgen.Queries,
-	lawID int64,
-	body string,
-	pd *ProposeDecreeResolutionData,
-) error {
-	var addendumPtr *string
-	if pd.AddendumPlaced && pd.Addendum != "" {
-		rider := pd.Addendum
-		if pd.AddendumConnector != "" {
-			rider = pd.AddendumConnector + " " + pd.Addendum
+// ── Enact Law ───────────────────────────────────────────────────────────────
+
+// pdEnactLawHandler handles POST /api/plans/:planId/enact-law.
+//
+// The preparer enacts the passed decree — the plan's terminal action. It writes
+// the law row (carrying the body, any amendments, and the signatory's addendum)
+// and, on a make, creates the resource asset NAMED IN THIS SAME CALL (the rules
+// grant the proposer "what you gain"; authoring it here, with the final law in
+// view, keeps creation and naming a single transaction — no placeholder). The
+// plan then auto-resolves (AutoCompleteAfterChoice), so there is no separate
+// Complete step.
+//
+// Request body (make only): {"resource_name": "the resource's name"}
+func pdEnactLawHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, plan, ok := requirePlanPreparer(w, r, deps.Q)
+		if !ok {
+			return
 		}
-		addendumPtr = &rider
+		if plan.PlanType != model.PlanProposeDecree {
+			respondErr(w, http.StatusBadRequest, "enact-law is only for Propose Decree")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		pd := resData.EnsureProposeDecree()
+		if !pd.OutcomeApplied() {
+			respondErr(w, http.StatusConflict, "the decree has not been resolved yet")
+			return
+		}
+		if next := pd.NextAmender(); next != 0 {
+			respondErr(w, http.StatusConflict, "the council must finish amending before the law is enacted")
+			return
+		}
+		if !pd.AddendumPlaced {
+			respondErr(w, http.StatusConflict, "the signatory must place the addendum before the law is enacted")
+			return
+		}
+		if pd.LawID != nil {
+			respondErr(w, http.StatusConflict, "the law has already been enacted")
+			return
+		}
+
+		var body struct {
+			ResourceName string `json:"resource_name"`
+		}
+		// A body is optional on a mar (no asset); required on a make.
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		resourceName := strings.TrimSpace(body.ResourceName)
+		if pd.Outcome == makeOutcome {
+			if resourceName == "" {
+				respondErr(w, http.StatusBadRequest, "resource_name is required to enact a made decree")
+				return
+			}
+			if len([]rune(resourceName)) > maxAssetNameLen {
+				respondErr(w, http.StatusBadRequest,
+					fmt.Sprintf("resource_name must be at most %d characters", maxAssetNameLen))
+				return
+			}
+		}
+
+		if err := pdEnactLaw(ctx, deps, plan, &resData, resourceName); err != nil {
+			respondInternalErr(w, r, "could not enact the law", err)
+			return
+		}
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save enactment", err)
+			return
+		}
+
+		// The decree is fully written: auto-resolve (no separate Complete click).
+		resolved, err := maybeAutoComplete(ctx, deps.Q, deps.Manager, pdHandler{}, plan, &resData,
+			planResultString(ctx, deps.Q, plan))
+		if err != nil {
+			respondInternalErr(w, r, "could not complete plan", err)
+			return
+		}
+		if !resolved {
+			broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+				PlanID: plan.ID,
+			})
+		}
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":  plan.ID,
+			"law_id":   pd.LawID,
+			"resolved": resolved,
+		})
 	}
-	_, err := q.UpdateLawText(ctx, dbgen.UpdateLawTextParams{
-		ID:       lawID,
-		Text:     body,
-		Addendum: addendumPtr,
-	})
-	if err == nil {
-		pd.LawText = body
-	}
-	return err
 }
 
-// pdBroadcastLaw re-broadcasts the law row so clients refresh the Laws panel
-// after an amendment or addendum edit.
-func pdBroadcastLaw(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, lawID int64) {
-	law, err := deps.Q.GetLawByID(ctx, lawID)
-	if err != nil {
-		return
+// pdComposeAddendum builds the law's addendum rider: "<connector> <text>" (e.g.
+// "but salt is exempt"), or nil when the signatory left the rider blank.
+func pdComposeAddendum(pd *ProposeDecreeResolutionData) *string {
+	if !pd.AddendumPlaced || pd.Addendum == "" {
+		return nil
 	}
-	broadcastEvent(deps.Manager, plan.GameID, model.EventLawEnacted, model.LawEnactedPayload{
-		PlanID: plan.ID,
-		Law:    law,
-	})
+	rider := pd.Addendum
+	if pd.AddendumConnector != "" {
+		rider = pd.AddendumConnector + " " + pd.Addendum
+	}
+	return &rider
 }
