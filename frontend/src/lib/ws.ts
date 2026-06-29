@@ -74,6 +74,11 @@ export const EventTypes = {
 	LiaiseChoicesRevealed: 'liaise.choices_revealed',
 	LiaiseKeepSecretSubmitted: 'liaise.keep_secret_submitted',
 
+	// Propose Decree
+	DecreeCouncilJoined: 'decree.council_joined',
+	DecreeCouncilDeclined: 'decree.council_declined',
+	DecreeDebateStarted: 'decree.debate_started',
+
 	// Propose Duel
 	DuelChampionElected: 'duel.champion_elected',
 	DuelStakesSelected: 'duel.stakes_selected',

@@ -15,6 +15,19 @@ type ProposeDecreeResolutionData struct {
 	// attach the addendum.
 	SignatoryID *int64 `json:"signatory_id,omitempty"`
 
+	// DeclinedPlayerIDs are the eligible-to-join players (ranked below the
+	// preparer on power, not auto-seated) who explicitly declined to join the
+	// council. Joining and declining are the two ways an eligible player records
+	// a decision; the signatory cannot call the roll until every eligible player
+	// has done one or the other.
+	DeclinedPlayerIDs []int64 `json:"declined_player_ids,omitempty"`
+
+	// DebateStarted flips true when the preparer finalizes the decree's text and
+	// opens the council debate (the start-debate route). Until then the preparer
+	// is still drafting; the signatory cannot call the roll before the debate has
+	// been opened. The finalized text is stored in LawText.
+	DebateStarted bool `json:"debate_started,omitempty"`
+
 	// Addendum is the signatory's optional free-text rider. AddendumConnector
 	// ("and"/"but") is prepended to it in the final law. AddendumPlaced flips
 	// true when the signatory confirms their addendum (even if blank) — a
@@ -34,9 +47,11 @@ type ProposeDecreeResolutionData struct {
 	// LawID is the law row created at enact (make-choice) time. Its text/addendum
 	// are updated in place by amendments and the addendum step.
 	LawID *int64 `json:"law_id,omitempty"`
-	// LawText mirrors the law row's current body so the resolve panel can show
-	// the latest text (incl. amendments) without a separate laws fetch. Kept in
-	// sync by pdComposeLaw.
+	// LawText holds the decree's working body. The preparer finalizes it when
+	// opening the debate (start-debate), it becomes the enacted law row's text at
+	// make-choice, and on a mar it mirrors the row as the council amends it — so
+	// the resolve panel can always show the latest text without a separate laws
+	// fetch. Kept in sync by pdComposeLaw after enactment.
 	LawText string `json:"law_text,omitempty"`
 
 	// ResourceAssetID is the resource asset created by the make step. It is

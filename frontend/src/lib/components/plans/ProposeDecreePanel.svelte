@@ -4,10 +4,13 @@
   Prep: notes (the decree text).
 
   Resolve has three phases:
-    1. Council meeting — no dice roll yet. Eligible non-members (anyone
-       ranked BELOW the preparer on power) see a multi-asset picker to
-       join by leveraging. The current signatory (highest-power council
-       member; the preparer by default) sees a "Call the roll" button.
+    1. Council meeting — no dice roll yet. The preparer finalizes the decree's
+       text and opens the debate (posting the proposed law to the chat).
+       Eligible players (ranked BELOW the preparer on power) leverage one asset
+       to join, or decline; this can happen before or during the debate. The
+       signatory (highest-power council member; the preparer by default) can
+       close the debate and call the roll only once it's open AND every eligible
+       player has decided.
     2. Rolling — dice play out.
     3. Post-roll — signatory writes the addendum; preparer completes.
        On mar, the other council members narrate amendments via scene posts
@@ -22,10 +25,11 @@
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		joinCouncil, callRoll, setAddendum, amendDecree, skipAmend, namePlanAsset, getAssetSuggestions,
+		startDebate, joinCouncil, declineCouncil, callRoll, setAddendum, amendDecree, skipAmend, namePlanAsset, getAssetSuggestions,
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
+	import CardPicker from './CardPicker.svelte';
 	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { playerName, parseResolutionData, ownerUnleveragedAssets } from './shared';
@@ -102,6 +106,8 @@
 	type PDState = {
 		signatoryID: number | null;
 		council: number[];
+		declined: number[];
+		debateStarted: boolean;
 		addendum: string;
 		addendumConnector: string;
 		addendumPlaced: boolean;
@@ -117,6 +123,8 @@
 		return {
 			signatoryID: rd.signatory_id ?? null,
 			council: rd.signatory_player_ids ?? [],
+			declined: rd.declined_player_ids ?? [],
+			debateStarted: rd.debate_started ?? false,
 			addendum: rd.addendum ?? '',
 			addendumConnector: rd.addendum_connector ?? '',
 			addendumPlaced: rd.addendum_placed ?? false,
@@ -155,13 +163,34 @@
 	const amSignatory = $derived(
 		currentPlayerID != null && pdState.signatoryID === currentPlayerID
 	);
-	// Eligible to join by leveraging: the "other players" — those ranked BELOW
-	// the preparer on power (higher rank number). The Monarch and everyone above
-	// the preparer are already auto-seated for free, so they never use this path.
-	const canJoin = $derived.by(() => {
-		if (!plan || currentPlayerID == null || amMember) return false;
+	const amDeclined = $derived(
+		currentPlayerID != null && pdState.declined.includes(currentPlayerID)
+	);
+	// Eligible to decide (join or decline): the "other players" — those ranked
+	// BELOW the preparer on power (higher rank number). The Monarch and everyone
+	// above the preparer are already auto-seated for free, so they never decide.
+	const eligibleToDecide = $derived.by(() => {
+		if (!plan || currentPlayerID == null) return false;
 		if (myRank == null || preparerRank == null) return false;
 		return myRank > preparerRank;
+	});
+	// Still owes a decision: eligible, and has neither joined nor declined.
+	const canDecide = $derived(eligibleToDecide && !amMember && !amDeclined);
+
+	// Eligible players (ranked below the preparer) who have not yet joined or
+	// declined — the council can't be closed until this is empty. Auto-seated
+	// members (Monarch, higher-power players) are already in council, so
+	// excluding the council list keeps them out without needing the monarch here.
+	const pendingDeciderIDs = $derived.by<number[]>(() => {
+		if (preparerRank == null) return [];
+		return players
+			.filter(p => {
+				const r = powerRank(p.id);
+				return r != null && r > preparerRank
+					&& !pdState.council.includes(p.id)
+					&& !pdState.declined.includes(p.id);
+			})
+			.map(p => p.id);
 	});
 
 	const myUnleveragedAssets = $derived(ownerUnleveragedAssets(assets, currentPlayerID));
@@ -171,20 +200,41 @@
 	const councilClosed = $derived(rollActive || rollOutcome != null);
 	// The law exists once make-choice has fired. ApplyChoice sets law_id.
 	const lawEnacted = $derived(pdState.lawID != null);
+	const debateStarted = $derived(pdState.debateStarted);
 
-	// ── Join council ─────────────────────────────────────────────────────────
+	// ── Start the debate (preparer finalizes the text) ────────────────────────
+	// A textbox pre-populated with the drafted decree; the preparer edits it as
+	// desired, then opens the debate (which posts the proposed law to the chat).
+	let debateDraft = $state('');
+	let debateDraftSeeded = $state<number | null>(null);
+	$effect(() => {
+		if (!plan || debateStarted) return;
+		if (debateDraftSeeded !== plan.id) {
+			debateDraft = pdState.lawText || (plan.preparation_notes ?? '');
+			debateDraftSeeded = plan.id;
+		}
+	});
+	let debateBusy = $state(false);
+	async function submitStartDebate(p: Plan) {
+		if (debateBusy || !debateDraft.trim()) return;
+		debateBusy = true; resError = '';
+		try {
+			await startDebate(p.id, debateDraft.trim());
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not open the debate.';
+		} finally { debateBusy = false; }
+	}
+
+	// ── Join / decline council ────────────────────────────────────────────────
+	// Exactly one asset may be leveraged to take a seat; more can be leveraged
+	// once the roll is open, so the picker is capped at one.
 	let selectedAssetIDs = $state<number[]>([]);
 	let joinBusy = $state(false);
 	let resError = $state('');
 
-	function toggleAsset(id: number) {
-		selectedAssetIDs = selectedAssetIDs.includes(id)
-			? selectedAssetIDs.filter(x => x !== id)
-			: [...selectedAssetIDs, id];
-	}
-
 	async function submitJoin(p: Plan) {
-		if (joinBusy || selectedAssetIDs.length === 0) return;
+		if (joinBusy || selectedAssetIDs.length !== 1) return;
 		joinBusy = true; resError = '';
 		try {
 			await joinCouncil(p.id, selectedAssetIDs);
@@ -192,6 +242,18 @@
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not join council.';
+		} finally { joinBusy = false; }
+	}
+
+	async function submitDecline(p: Plan) {
+		if (joinBusy) return;
+		joinBusy = true; resError = '';
+		try {
+			await declineCouncil(p.id);
+			selectedAssetIDs = [];
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not decline.';
 		} finally { joinBusy = false; }
 	}
 
@@ -210,12 +272,25 @@
 	}
 
 	// ── Apply make-choice (no option picks; just creates the law) ────────────
+	// On a make the preparer also names the resource the decree creates, in the
+	// same step: enact, then name the freshly-created asset. (When a perform_steps
+	// demand winner enacts in the preparer's stead they can't name it — the
+	// preparer does so afterward via the standalone naming fallback.)
 	let applyBusy = $state(false);
 	async function applyResult(p: Plan, outcome: 'make' | 'mar') {
 		if (applyBusy) return;
+		const nameAtEnact = outcome === 'make' && isPreparer;
+		if (nameAtEnact && !resourceName.trim()) {
+			resError = 'Name the resource your decree creates.';
+			return;
+		}
 		applyBusy = true; resError = '';
 		try {
 			await makeChoice(p.id, outcome, []);
+			if (nameAtEnact) {
+				await namePlanAsset(p.id, 'name-resource', resourceName.trim());
+				resourceName = '';
+			}
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not enact the law.';
@@ -282,19 +357,25 @@
 	}
 
 	// ── Name the law's resource asset (preparer) ─────────────────────────────
-	// A made decree creates the resource with a placeholder name; the preparer
-	// then names it. Optional — it does not gate completion.
+	// On a make the preparer names the resource inline at the Enact step (see
+	// applyResult). The standalone block below is a fallback for the cases that
+	// can't name at enact: a perform_steps winner enacted, or the inline naming
+	// call failed. It's optional — naming does not gate completion.
+	const namingAtEnact = $derived(
+		isPreparer && rollOutcome === 'make' && !lawEnacted,
+	);
 	const needsResourceNaming = $derived(
 		isPreparer && pdState.resourceAssetID != null && !pdState.resourceNamed,
 	);
 	let resourceName = $state('');
 	let nameBusy = $state(false);
-	// Name suggestions (resource pool), fetched once the naming step appears.
+	// Name suggestions (resource pool), fetched once a naming UI first appears —
+	// either the inline Enact-step picker or the standalone fallback.
 	let nameSuggestions = $state<string[]>([]);
 	let nameSuggLoading = $state(false);
 	let nameSuggFetched = false;
 	$effect(() => {
-		if (!needsResourceNaming || nameSuggFetched) return;
+		if (!(namingAtEnact || needsResourceNaming) || nameSuggFetched) return;
 		nameSuggFetched = true;
 		nameSuggLoading = true;
 		getAssetSuggestions(gameID, 'resource', 'name')
@@ -357,71 +438,126 @@
 			<p class="choices-header">
 				Council ({pdState.council.length})
 				{#if pdState.signatoryID != null}
-					· signatory: <strong>{playerName(players, pdState.signatoryID)}</strong>
+					· Signatory: {playerName(players, pdState.signatoryID)}
 				{/if}
 			</p>
 			{#if pdState.council.length === 0}
-				<p class="choices-note muted">No one has joined yet.</p>
+				<p class="choices-note muted">Something has gone wrong; try refreshing the page.</p>
 			{:else}
 				<ul class="plan-notes" style="margin:0;padding-left:1.25rem;">
 					{#each pdState.council as pid}
 						<li>
 							{playerName(players, pid)}
-							{#if pid === pdState.signatoryID}<strong> (signatory)</strong>{/if}
+							{#if pid === pdState.signatoryID}(signatory){/if}
 							{#if pid === plan.preparer_id}<span class="muted"> (preparer)</span>{/if}
 						</li>
 					{/each}
 				</ul>
 			{/if}
+			{#if pdState.declined.length > 0}
+				<p class="choices-note muted" style="margin-top:0.35rem;">
+					Declined: {pdState.declined.map(id => playerName(players, id)).join(', ')}
+				</p>
+			{/if}
 		</div>
 
-		<!-- Council phase: join form + call-roll ──────────────────────── -->
+		<!-- Council phase: finalize text → debate → join/decline → call-roll ── -->
 		{#if !councilClosed}
-			{#if canJoin}
-				<div class="plan-form" style="margin-top:0.5rem;">
-					<p class="choices-header">Join the council</p>
-					<p class="choices-note">
-						Leverage one or more of your assets to join the discussion. Each
-						asset becomes a die you'll add — to help or interfere — when the
-						signatory calls the roll.
-					</p>
-					{#if myUnleveragedAssets.length === 0}
-						<p class="choices-note muted">You have no un-leveraged assets to offer.</p>
-					{:else}
-						<div class="choice-list">
-							{#each myUnleveragedAssets as a}
-								<label class="choice-item" style="display:flex;align-items:center;gap:0.5rem;">
-									<input type="checkbox"
-										checked={selectedAssetIDs.includes(a.id)}
-										onchange={() => toggleAsset(a.id)} />
-									<span>{a.name}</span>
-								</label>
-							{/each}
-						</div>
+			<!-- Step 1: the preparer finalizes the decree and opens the debate. -->
+			{#if !debateStarted}
+				{#if isPreparer}
+					<div class="plan-form" style="margin-top:0.5rem;">
+						<p class="choices-header">Finalize your decree</p>
+						<p class="choices-note">
+							Decide the text of the law you're proposing, then open the debate.
+						</p>
+						<label class="form-label">
+							<textarea rows={4} bind:value={debateDraft} class="form-textarea"
+								placeholder="The decree's text…"></textarea>
+						</label>
 						<button class="action-btn primary"
-							onclick={() => submitJoin(plan)}
-							disabled={joinBusy || selectedAssetIDs.length === 0}>
-							{joinBusy ? '…' : `Join (${selectedAssetIDs.length} asset${selectedAssetIDs.length === 1 ? '' : 's'})`}
+							onclick={() => submitStartDebate(plan)}
+							disabled={debateBusy || !debateDraft.trim()}>
+							{debateBusy ? '…' : 'Open the debate'}
 						</button>
-					{/if}
+					</div>
+				{:else}
+					<p class="choices-note muted" style="margin-top:0.5rem;">
+						{playerName(players, plan.preparer_id)} is finalizing the decree…
+					</p>
+				{/if}
+			{:else}
+				<!-- Debate open: show the proposed law under discussion. -->
+				<p class="choices-header" style="margin-top:1rem;">
+					Proposed decree being debated:
+				</p>
+				<p class="plan-notes">"{pdState.lawText}"</p>
+			{/if}
+
+			<!-- Join / decline — available while the council forms (before and
+			     during the debate). -->
+			{#if canDecide}
+				<div class="plan-form" style="margin-top:0.5rem;">
+					<p class="choices-header">Join the council?</p>
+					<p class="choices-note">
+						Leverage one asset to join the debate — it becomes a die you can use
+						during the roll to help or interfere.
+					</p>
+					<CardPicker
+						label="Leverage one asset to join"
+						items={myUnleveragedAssets}
+						{players}
+						emptyMessage="You have no un-leveraged assets to offer — you can only decline."
+						multi
+						max={1}
+						selectedMulti={selectedAssetIDs}
+						onSelectMulti={(ids) => (selectedAssetIDs = ids)}
+					/>
+					<div class="form-actions">
+						{#if myUnleveragedAssets.length > 0}
+							<button class="action-btn primary"
+								onclick={() => submitJoin(plan)}
+								disabled={joinBusy || selectedAssetIDs.length !== 1}>
+								{joinBusy ? '…' : 'Join'}
+							</button>
+						{/if}
+						<button class="action-btn secondary"
+							onclick={() => submitDecline(plan)}
+							disabled={joinBusy}>
+							{joinBusy ? '…' : 'Decline'}
+						</button>
+					</div>
 				</div>
+			{:else if amDeclined}
+				<p class="choices-note muted" style="margin-top:0.5rem;">
+					You declined to join the council.
+				</p>
 			{:else if !amMember && currentPlayerID != null}
 				<p class="choices-note muted" style="margin-top:0.5rem;">
-					Only players ranked below the preparer on power may leverage to
-					join the council. The Monarch and higher-power members are already
-					seated.
+					The Monarch and members with higher power than the decree proposer
+					are already seated.
 				</p>
 			{/if}
 
-			{#if amSignatory}
+			<!-- Step 4: the signatory closes the debate (only once it's open and
+			     every eligible player has decided). -->
+			{#if amSignatory && debateStarted}
 				<div class="plan-form" style="margin-top:0.5rem;">
-					<p class="choices-note">
-						When discussion is done, close the council and call the roll.
-					</p>
+					{#if pendingDeciderIDs.length > 0}
+						<p class="choices-note muted">
+							Waiting on {pendingDeciderIDs.map(id => playerName(players, id)).join(', ')}
+							to decide if they want to join the council.
+						</p>
+					{:else}
+						<p class="choices-note">
+							The council members are final. Discuss the proposed decree in the chat.
+							When the discussion is done, call for the roll.
+						</p>
+					{/if}
 					<button class="action-btn primary"
 						onclick={() => submitCallRoll(plan)}
-						disabled={callBusy}>
-						{callBusy ? '…' : 'Call the roll'}
+						disabled={callBusy || pendingDeciderIDs.length > 0}>
+						{callBusy ? '…' : 'End the debate'}
 					</button>
 				</div>
 			{/if}
@@ -440,17 +576,27 @@
 				</p>
 				<p class="choices-note">
 					{#if rollOutcome === 'make'}
-						The decree becomes law. A resource asset representing what you
-						gain — owned by you, the preparer — will be created.
+						The decree becomes law. Create a resource representing what you gain from the law.
 					{:else}
-						The decree passes, amended by the council. No resource asset is
-						created; other council members should narrate amendments in the scene.
+						The decree passes, amended by the council.
 					{/if}
 				</p>
+				{#if namingAtEnact}
+					<p class="form-label-text">
+						Name your new resource:
+					</p>
+					<SuggestionPicker
+						suggestions={nameSuggestions}
+						bind:value={resourceName}
+						loading={nameSuggLoading}
+						customPlaceholder="Name the resource resulting from the law…"
+						maxlength={120}
+					/>
+				{/if}
 				<button class="action-btn primary"
 					onclick={() => applyResult(plan, rollOutcome!)}
-					disabled={applyBusy}>
-					{applyBusy ? '…' : 'Enact'}
+					disabled={applyBusy || (namingAtEnact && !resourceName.trim())}>
+					{applyBusy ? '…' : rollOutcome === 'make' ? 'Enact law & create resource' : 'Enact'}
 				</button>
 			</div>
 
@@ -488,7 +634,7 @@
 									disabled={amendBusy || !amendDraft.trim()}>
 									{amendBusy ? '…' : 'Submit amendment'}
 								</button>
-								<button class="action-btn"
+								<button class="action-btn secondary"
 									onclick={() => submitSkipAmend(plan)}
 									disabled={amendBusy}>
 									{amendBusy ? '…' : 'Leave unchanged'}

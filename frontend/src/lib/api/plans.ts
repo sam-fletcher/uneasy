@@ -430,12 +430,26 @@ export function marChoice(
 
 // ── Plans (Phase 3 — Tier 2) ─────────────────────────────────────────────────
 
-/** Propose Decree — join the council by leveraging one or more assets. */
+/** Propose Decree — the preparer finalizes the decree's text and opens the debate. */
+export function startDebate(planID: number, text: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/start-debate`, {
+		method: 'POST',
+		body: JSON.stringify({ text }),
+	});
+}
+
+/** Propose Decree — join the council by leveraging exactly one asset (more can
+ *  be leveraged once the roll is open). */
 export function joinCouncil(planID: number, assetIDs: number[]): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/join-council`, {
 		method: 'POST',
 		body: JSON.stringify({ asset_ids: assetIDs }),
 	});
+}
+
+/** Propose Decree — an eligible player declines to join the council. */
+export function declineCouncil(planID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/decline-council`, { method: 'POST' });
 }
 
 /** Propose Decree — the current signatory closes the council and triggers the roll. */

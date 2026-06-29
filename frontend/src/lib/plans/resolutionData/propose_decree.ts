@@ -5,6 +5,10 @@ import { parseResolutionData } from '$lib/components/plans/shared';
 
 export interface ProposeDecreeResolutionData {
 	signatory_player_ids?: number[];
+	/** Eligible players who explicitly declined to join the council. */
+	declined_player_ids?: number[];
+	/** True once the preparer has finalized the text and opened the debate. */
+	debate_started?: boolean;
 	signatory_id?: number | null;
 	addendum?: string;
 	addendum_connector?: string;

@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,6 +38,25 @@ func pdCallRoll(t *testing.T, h *planLifecycle, planID int64, signatoryIdx int) 
 	var roll dbgen.DiceRoll
 	require.NoError(t, json.Unmarshal(rollBlob, &roll))
 	return roll
+}
+
+// pdDeclineRemaining has every eligible non-council player decline to join, so
+// the signatory may close the council and call the roll. The council seated at
+// OnResolve already holds the preparer and every higher-power member, so the
+// players left out are exactly the lower-power eligible joiners. A no-op when the
+// preparer is lowest power (everyone is auto-seated). Tests that don't exercise
+// the join flow call this to clear the pre-roll decision gate.
+func pdDeclineRemaining(t *testing.T, h *planLifecycle, planID int64) {
+	t.Helper()
+	pd := pdData(t, h, planID)
+	for i, p := range h.tg.Players {
+		if slices.Contains(pd.SignatoryPlayerIDs, p.ID) {
+			continue
+		}
+		path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/decline-council"
+		code, body := h.post(i, path, nil)
+		require.Equalf(t, http.StatusOK, code, "decline-council: %v", body)
+	}
 }
 
 // pdResourceAssets returns the non-destroyed resource assets created by an
@@ -69,9 +89,10 @@ func pdSystemPostBodies(t *testing.T, h *planLifecycle) []string {
 	return out
 }
 
-// pdPrepareAndResolve prepares a decree as players[focusIdx] and kicks off
-// resolution (no roll yet — call-roll creates it). Returns the plan.
-func pdPrepareAndResolve(t *testing.T, h *planLifecycle, focusIdx int) dbgen.Plan {
+// pdPrepareResolveNoDebate prepares a decree as players[focusIdx] and kicks off
+// resolution, stopping BEFORE the preparer opens the debate (so a test can
+// exercise the drafting / debate-gate state). Returns the plan.
+func pdPrepareResolveNoDebate(t *testing.T, h *planLifecycle, focusIdx int) dbgen.Plan {
 	t.Helper()
 	h.setFocus(focusIdx)
 	notes := "All trade taxes are halved"
@@ -82,6 +103,25 @@ func pdPrepareAndResolve(t *testing.T, h *planLifecycle, focusIdx int) dbgen.Pla
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
 	require.Nil(t, h.resolve(plan.ID), "Propose Decree creates its roll via call-roll, not resolve")
+	return plan
+}
+
+// pdStartDebate has the preparer finalize the text and open the debate — the
+// required step before the signatory can call the roll.
+func pdStartDebate(t *testing.T, h *planLifecycle, planID int64) {
+	t.Helper()
+	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/start-debate"
+	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{"text": "All trade taxes are halved"})
+	require.Equalf(t, http.StatusOK, code, "start-debate: %v", body)
+}
+
+// pdPrepareAndResolve prepares a decree, kicks off resolution, and opens the
+// debate — the common path to a rollable decree (no roll yet; call-roll creates
+// it). Use pdPrepareResolveNoDebate when a test needs the pre-debate state.
+func pdPrepareAndResolve(t *testing.T, h *planLifecycle, focusIdx int) dbgen.Plan {
+	t.Helper()
+	plan := pdPrepareResolveNoDebate(t, h, focusIdx)
+	pdStartDebate(t, h, plan.ID)
 	return plan
 }
 
@@ -124,6 +164,8 @@ func TestProposeDecree_Make_CreatesLawAndAsset(t *testing.T) {
 	require.NoError(t, err)
 	assetsBefore := len(pdLawAssets(t, h))
 
+	// Lower-power players must decide before the roll can be called.
+	pdDeclineRemaining(t, h, plan.ID)
 	roll := pdCallRoll(t, h, plan.ID, preparerIdx)
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
 	h.makeChoice(plan.ID, "make", []string{})
@@ -170,6 +212,7 @@ func TestProposeDecree_NameAsset_RenamesResource(t *testing.T) {
 
 	plan := pdPrepareAndResolve(t, h, 0)
 	preparerIdx := h.preparerIdxFor(plan.ID)
+	pdDeclineRemaining(t, h, plan.ID)
 	roll := pdCallRoll(t, h, plan.ID, preparerIdx)
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
 	h.makeChoice(plan.ID, "make", []string{})
@@ -263,16 +306,15 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 }
 
 // TestProposeDecree_JoinCouncil_MintsAndCleansUpDice proves the leverage-to-join
-// path actually produces dice (pre-roll rule 2). A lower-power player joins by
-// leveraging two assets, minting two ephemeral 'decree' banked dice; one is
-// spent on the roll, the other is discarded when the law is enacted so it can't
-// leak onto a later roll.
+// path produces exactly one die (pre-roll rule 2: exactly one asset is leveraged
+// to take a seat) and that an unspent 'decree' die is discarded when the law is
+// enacted so it can't leak onto a later roll.
 func TestProposeDecree_JoinCouncil_MintsAndCleansUpDice(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
-	// Preparer = players[1] (power rank 2). players[0] (rank 1) auto-seats and
-	// signs; players[2] (rank 3) is the lower-power "other player" who may join.
+	// Preparer = players[1] (power rank 3). players[0] (rank 2) auto-seats and
+	// signs; players[2] (rank 4) is the lower-power "other player" who may join.
 	plan := pdPrepareAndResolve(t, h, 1)
 	pd := pdData(t, h, plan.ID)
 	require.NotNil(t, pd.SignatoryID)
@@ -284,18 +326,28 @@ func TestProposeDecree_JoinCouncil_MintsAndCleansUpDice(t *testing.T) {
 	a2 := h.seedPeer(joinerIdx, "Harbor writ")
 
 	joinPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/join-council"
+
+	// Only one asset may be leveraged at the council stage — two is rejected and
+	// mints nothing.
 	code, body := h.post(joinerIdx, joinPath, map[string]any{"asset_ids": []int64{a1, a2}})
+	require.Equalf(t, http.StatusBadRequest, code, "two-asset join is rejected: %v", body)
+	count, err := h.q.CountUnspentBankedDiceByPlayer(ctx, dbgen.CountUnspentBankedDiceByPlayerParams{
+		GameID: h.tg.Game.ID, PlayerID: joinerID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(0), count, "a rejected join mints no die")
+
+	// Joining with one asset mints exactly one 'decree' banked die.
+	code, body = h.post(joinerIdx, joinPath, map[string]any{"asset_ids": []int64{a1}})
 	require.Equalf(t, http.StatusOK, code, "join-council: %v", body)
 
-	// Two assets leveraged → two 'decree' banked dice for the joiner.
 	dice, err := h.q.ListBankedDiceByPlayer(ctx, dbgen.ListBankedDiceByPlayerParams{
 		GameID: h.tg.Game.ID, PlayerID: joinerID,
 	})
 	require.NoError(t, err)
-	require.Len(t, dice, 2, "each leveraged asset mints one council die")
-	for _, d := range dice {
-		assert.Equal(t, "decree", d.Source, "council dice are tagged 'decree'")
-	}
+	require.Len(t, dice, 1, "one leveraged asset mints one council die")
+	assert.Equal(t, "decree", dice[0].Source, "council dice are tagged 'decree'")
+
 	// The joiner is now a council member; a lower-power join does not change the
 	// signatory (players[0] still outranks everyone present).
 	pd = pdData(t, h, plan.ID)
@@ -303,20 +355,13 @@ func TestProposeDecree_JoinCouncil_MintsAndCleansUpDice(t *testing.T) {
 	require.NotNil(t, pd.SignatoryID)
 	assert.Equal(t, h.tg.Players[0].ID, *pd.SignatoryID, "signatory unchanged by lower-power join")
 
-	// Signatory calls the roll; the joiner spends ONE die (mark it used as the
-	// real leverage flow would), leaving the other unspent.
+	// Every eligible player has now decided (the only joiner joined), so the
+	// signatory can close the council. The minted die is left unspent.
 	roll := pdCallRoll(t, h, plan.ID, 0)
-	spent := dice[0].ID
-	require.NoError(t, h.q.MarkBankedDieUsed(ctx, dbgen.MarkBankedDieUsedParams{
-		ID: spent, UsedRollID: &roll.ID,
-	}))
-
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
 	h.makeChoice(plan.ID, "make", []string{})
 
-	// The spent die survives (it's history of the roll); the unspent one is gone.
-	_, err = h.q.GetBankedDie(ctx, spent)
-	assert.NoError(t, err, "a spent council die is retained")
+	// The unspent council die is discarded at enactment.
 	unspentLeft, err := h.q.CountUnspentBankedDiceByPlayer(ctx, dbgen.CountUnspentBankedDiceByPlayerParams{
 		GameID: h.tg.Game.ID, PlayerID: joinerID,
 	})
@@ -489,6 +534,145 @@ func TestProposeDecree_Waitees_NamesSignatoryAndAmenders(t *testing.T) {
 
 	// Addendum placed → the preparer completes.
 	h.assertWaitees("complete", model.RowStatePlanResolving, preparerID)
+}
+
+// TestProposeDecree_DebateGate proves the pre-roll drafting step: until the
+// preparer finalizes the decree's text and opens the debate, the table waits on
+// the preparer and the roll cannot be called; opening the debate records the
+// finalized text, posts the proposed law to the chat, and hands the wait to the
+// signatory.
+func TestProposeDecree_DebateGate(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	// Preparer = players[2] (lowest power): everyone else is auto-seated, so the
+	// only pre-roll gate is the preparer opening the debate.
+	plan := pdPrepareResolveNoDebate(t, h, 2)
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	sigID := *pd.SignatoryID
+	require.False(t, pd.DebateStarted)
+
+	// Pre-debate: the table waits on the preparer to finalize, not the signatory.
+	h.assertWaitees("drafting", model.RowStatePlanResolving, plan.PreparerID)
+
+	// The signatory cannot call the roll before the debate is opened.
+	callPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/call-roll"
+	code, body := h.post(pdPlayerIdx(t, h, sigID), callPath, nil)
+	require.Equalf(t, http.StatusConflict, code, "roll blocked before the debate opens: %v", body)
+
+	// Only the preparer may open the debate.
+	startPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/start-debate"
+	code, _ = h.post(pdPlayerIdx(t, h, sigID), startPath, map[string]any{"text": "x"})
+	require.Equal(t, http.StatusForbidden, code, "only the preparer opens the debate")
+
+	// The preparer finalizes an edited text and opens the debate.
+	final := "Finalized: all trade taxes are abolished"
+	code, body = h.post(h.preparerIdxFor(plan.ID), startPath, map[string]any{"text": final})
+	require.Equalf(t, http.StatusOK, code, "start-debate: %v", body)
+
+	pd = pdData(t, h, plan.ID)
+	assert.True(t, pd.DebateStarted)
+	assert.Equal(t, final, pd.LawText, "the finalized text is recorded")
+
+	// The proposed law is posted to the chat to seed discussion.
+	posts := pdSystemPostBodies(t, h)
+	assert.Conditionf(t, func() bool {
+		for _, b := range posts {
+			if strings.Contains(b, "opened the council debate") && strings.Contains(b, final) {
+				return true
+			}
+		}
+		return false
+	}, "expected a debate-opened post containing the proposed law; got %v", posts)
+
+	// Debate open, no eligible joiners → the wait passes to the signatory, who can
+	// now call the roll. The enacted law carries the finalized (edited) text.
+	h.assertWaitees("debate open", model.RowStatePlanResolving, sigID)
+	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, sigID))
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+	h.makeChoice(plan.ID, "make", []string{})
+	laws, err := h.q.ListLaws(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, final, laws[len(laws)-1].Text, "the enacted law uses the finalized text")
+}
+
+// TestProposeDecree_DraftingWaitsOnPreparerAndJoiners proves the Waiting-On bar
+// names every player who can act on a pre-roll gate in parallel: while the
+// preparer is still drafting, the eligible joiners can already join/decline, so
+// all of them appear together (not just the preparer).
+func TestProposeDecree_DraftingWaitsOnPreparerAndJoiners(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	// Preparer = players[0] (rank 2); players[1] (rank 3) and players[2] (rank 4)
+	// are the eligible joiners. Debate not yet opened.
+	plan := pdPrepareResolveNoDebate(t, h, 0)
+	preparerID := plan.PreparerID
+	p1, p2 := h.tg.Players[1].ID, h.tg.Players[2].ID
+
+	// Drafting: the preparer AND both undecided joiners are all actionable.
+	h.assertWaitees("drafting", model.RowStatePlanResolving, preparerID, p1, p2)
+
+	// A joiner decides while the preparer is still drafting → they drop off, the
+	// preparer and the remaining joiner stay.
+	declinePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/decline-council"
+	code, body := h.post(1, declinePath, nil)
+	require.Equalf(t, http.StatusOK, code, "decline: %v", body)
+	h.assertWaitees("one decided", model.RowStatePlanResolving, preparerID, p2)
+
+	// The preparer opens the debate → only the still-undecided joiner remains.
+	pdStartDebate(t, h, plan.ID)
+	h.assertWaitees("debate open", model.RowStatePlanResolving, p2)
+}
+
+// TestProposeDecree_CouncilDecisionGate proves the pre-roll council gate: while
+// any eligible (lower-power) player still owes a join/decline decision the bar
+// names those players and the signatory cannot call the roll; once everyone has
+// joined or declined the wait passes to the signatory and the roll can be called.
+func TestProposeDecree_CouncilDecisionGate(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	// Preparer = players[0] (rank 2); no higher-power real player (rank 1 is a
+	// dummy), so the preparer is also the signatory. players[1] (rank 3) and
+	// players[2] (rank 4) are the eligible joiners who must decide.
+	plan := pdPrepareAndResolve(t, h, 0)
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	sigID := *pd.SignatoryID
+	require.Equal(t, plan.PreparerID, sigID, "preparer signs when no one outranks them")
+
+	p1, p2 := h.tg.Players[1].ID, h.tg.Players[2].ID
+	callPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/call-roll"
+	declinePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/decline-council"
+	joinPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/join-council"
+
+	// Pre-roll: the bar waits on both undecided eligible players, not the signatory.
+	h.assertWaitees("undecided", model.RowStatePlanResolving, p1, p2)
+
+	// The signatory cannot call the roll until everyone has decided.
+	code, body := h.post(pdPlayerIdx(t, h, sigID), callPath, nil)
+	require.Equalf(t, http.StatusConflict, code, "roll blocked while players are undecided: %v", body)
+
+	// players[1] declines → only players[2] remains.
+	code, body = h.post(1, declinePath, nil)
+	require.Equalf(t, http.StatusOK, code, "decline: %v", body)
+	h.assertWaitees("one left", model.RowStatePlanResolving, p2)
+
+	// A decided player cannot decide again, by either route.
+	code, _ = h.post(1, declinePath, nil)
+	require.Equal(t, http.StatusConflict, code, "cannot decline twice")
+	asset := h.seedPeer(1, "Second thoughts")
+	code, _ = h.post(1, joinPath, map[string]any{"asset_ids": []int64{asset}})
+	require.Equal(t, http.StatusConflict, code, "a declined player cannot then join")
+
+	// players[2] joins (one asset) → everyone has decided; the wait passes to the
+	// signatory and the roll can be called.
+	a := h.seedPeer(2, "Harbor writ")
+	code, body = h.post(2, joinPath, map[string]any{"asset_ids": []int64{a}})
+	require.Equalf(t, http.StatusOK, code, "join: %v", body)
+	h.assertWaitees("all decided", model.RowStatePlanResolving, sigID)
+
+	code, body = h.post(pdPlayerIdx(t, h, sigID), callPath, nil)
+	require.Equalf(t, http.StatusOK, code, "roll callable once all decided: %v", body)
 }
 
 // TestProposeDecree_LowPowerMonarch_SignsAndSeated proves ADR-007 Phase C: a

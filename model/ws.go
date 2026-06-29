@@ -69,9 +69,11 @@ const (
 	EventSecretCreated             = "secret.created"               // any player wrote a secret
 
 	// Phase 3c: Propose Decree
-	EventLawEnacted          = "law.enacted"           // PD: law created
-	EventLawUpdated          = "law.updated"           // law text/addendum edited
-	EventDecreeCouncilJoined = "decree.council_joined" // PD: player joined council
+	EventLawEnacted            = "law.enacted"             // PD: law created
+	EventLawUpdated            = "law.updated"             // law text/addendum edited
+	EventDecreeCouncilJoined   = "decree.council_joined"   // PD: player joined council
+	EventDecreeCouncilDeclined = "decree.council_declined" // PD: player declined to join
+	EventDecreeDebateStarted   = "decree.debate_started"   // PD: preparer opened the debate
 
 	// Phase 3c: Clandestinely Liaise
 	EventLiaisePhaseChanged        = "liaise.phase_changed"         // CL: phase advanced

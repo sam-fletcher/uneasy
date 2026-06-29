@@ -8,14 +8,18 @@ package handler
 // Difficulty: preparer's rank on the power track.
 //
 // Pre-Roll (Council Meeting):
-//   - The preparer states the drafted decree.
 //   - The council is auto-seated at OnResolve: the preparer, every player
 //     ranked ABOVE them on power, and the monarchOwner (any rank) when a throne
 //     is established — all attend without leveraging. Lower-ranked players may
-//     still join by leveraging ≥1 asset via join-council.
+//     still join by leveraging exactly one asset via join-council, or opt out
+//     via decline-council.
+//   - The preparer finalizes the decree's text and opens the debate
+//     (start-debate), which posts the proposed law to the chat. Lower-ranked
+//     players may join/decline before or after this.
 //   - The signatory is the monarchOwner if a throne is established, else the
 //     highest-power member. It is fixed when the council is seated.
-//   - The signatory calls the roll when discussion is done.
+//   - The signatory calls the roll to close the debate — only once it has been
+//     opened AND every eligible player has joined or declined.
 //
 // The law row is created at enact (make-choice) time with the decree body and
 // no addendum, then UPDATED IN PLACE as the law is written:
@@ -32,8 +36,10 @@ package handler
 // Follow Scene: Your character interacting with a law.
 //
 // Extra routes:
-//   POST /api/plans/:planId/join-council   Lower-ranked player joins by leveraging assets.
-//   POST /api/plans/:planId/call-roll      Signatory closes council; creates dice roll.
+//   POST /api/plans/:planId/start-debate    Preparer finalizes the text and opens the debate.
+//   POST /api/plans/:planId/join-council    Lower-ranked player joins by leveraging one asset.
+//   POST /api/plans/:planId/decline-council Lower-ranked player declines to join.
+//   POST /api/plans/:planId/call-roll       Signatory closes the debate; creates dice roll.
 //   POST /api/plans/:planId/amend-decree   (Mar) current amender rewrites the law body.
 //   POST /api/plans/:planId/set-addendum   Signatory places the and/but addendum.
 //   POST /api/plans/:planId/name-resource  (Make) preparer names the created resource.
@@ -137,6 +143,16 @@ func (pdHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 		return nil, fmt.Errorf("could not initialise decree resolution data: %w", err)
 	}
 
+	// kickoffPlanResolution broadcasts plan.resolving *before* this hook runs, so
+	// its payload carried the pre-resolve resolution_data (an empty council).
+	// Clients watching the kickoff live — notably the preparer — would otherwise
+	// keep that stale snapshot and show "No one has joined yet" with themselves
+	// absent. Re-broadcast the seeded plan so the auto-seated council (preparer +
+	// higher-power members + signatory) appears immediately, not just on refetch.
+	if fresh, err := deps.Q.GetPlanByID(ctx, plan.ID); err == nil {
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolving, model.PlanPayload{Plan: fresh})
+	}
+
 	// Return nil — the roll is created later when the signatory calls call-roll.
 	return nil, nil
 }
@@ -207,9 +223,14 @@ func (pdHandler) ApplyChoice(
 	_ []string,
 	result string,
 ) error {
-	var preparationNotes string
-	if plan.PreparationNotes != nil {
-		preparationNotes = *plan.PreparationNotes
+	pd := resData.EnsureProposeDecree()
+
+	// The law body is the text the preparer finalized when opening the debate
+	// (start-debate). Fall back to the preparation notes for any decree whose
+	// debate predates that step.
+	body := pd.LawText
+	if body == "" && plan.PreparationNotes != nil {
+		body = *plan.PreparationNotes
 	}
 
 	// Compute the next display_order for laws in this game.
@@ -219,8 +240,6 @@ func (pdHandler) ApplyChoice(
 	}
 	displayOrder := int16(len(laws) + 1)
 
-	pd := resData.EnsureProposeDecree()
-
 	// The law row is created now (so it appears in the Laws panel immediately)
 	// with the decree body and no addendum yet. The signatory's addendum and,
 	// on a mar, the council's amendments update this row in place before the
@@ -228,7 +247,7 @@ func (pdHandler) ApplyChoice(
 	planID := plan.ID
 	law, err := deps.Q.CreateLaw(ctx, dbgen.CreateLawParams{
 		GameID:       plan.GameID,
-		Text:         preparationNotes,
+		Text:         body,
 		Addendum:     nil,
 		OriginPlanID: &planID,
 		SignatoryID:  pd.SignatoryID,
@@ -239,10 +258,10 @@ func (pdHandler) ApplyChoice(
 	}
 
 	pd.LawID = &law.ID
-	pd.LawText = preparationNotes
+	pd.LawText = body
 
 	if result == makeOutcome {
-		if err = pdCreateLawAsset(ctx, deps, plan, resData, preparationNotes); err != nil {
+		if err = pdCreateLawAsset(ctx, deps, plan, resData, body); err != nil {
 			return err
 		}
 	} else {
@@ -437,6 +456,26 @@ func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		if roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID); err == nil && roll.ID != 0 {
 			return model.RowState{}, false
 		}
+		// Pre-roll council meeting. Name everyone who can currently act on a gate
+		// that blocks the roll, since several can act in parallel:
+		//   - the preparer, until they finalize the text and open the debate;
+		//   - every eligible player who still owes a join/decline decision (they
+		//     may decide before or during the debate);
+		//   - the signatory, but only once the debate is open AND all have decided
+		//     (until then they cannot call the roll, so they're not yet actionable).
+		var actors []int64
+		if !pd.DebateStarted {
+			actors = append(actors, plan.PreparerID)
+		}
+		if pending, err := pdPendingDeciders(ctx, q, plan, pd); err == nil {
+			actors = append(actors, pending...)
+		}
+		if len(actors) > 0 {
+			return model.RowState{
+				Kind:            model.RowStatePlanResolving,
+				ActingPlayerIDs: actors,
+			}, true
+		}
 		return signatory()
 	}
 
@@ -457,12 +496,14 @@ func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 
 func (pdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"join-council":  pdJoinCouncilHandler(deps),
-		"call-roll":     pdCallRollHandler(deps),
-		"amend-decree":  pdAmendDecreeHandler(deps),
-		"skip-amend":    pdSkipAmendHandler(deps),
-		"set-addendum":  pdSetAddendumHandler(deps),
-		"name-resource": pdNameAssetHandler(deps),
+		"start-debate":    pdStartDebateHandler(deps),
+		"join-council":    pdJoinCouncilHandler(deps),
+		"decline-council": pdDeclineCouncilHandler(deps),
+		"call-roll":       pdCallRollHandler(deps),
+		"amend-decree":    pdAmendDecreeHandler(deps),
+		"skip-amend":      pdSkipAmendHandler(deps),
+		"set-addendum":    pdSetAddendumHandler(deps),
+		"name-resource":   pdNameAssetHandler(deps),
 	}
 }
 
@@ -486,22 +527,99 @@ func pdNameAssetHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// ── Start Debate ────────────────────────────────────────────────────────────
+
+// pdStartDebateHandler handles POST /api/plans/:planId/start-debate.
+//
+// The preparer finalizes the decree's text (pre-populated from their preparation
+// notes, editable here) and opens the council debate. This is a required pre-roll
+// step: the finalized text becomes the law body at enactment, and the signatory
+// cannot call the roll until the debate has been opened (and every eligible
+// player has decided). Opening the debate posts the proposed law to the chat to
+// seed discussion. Only the preparer may do this, once.
+//
+// Request body: {"text": "the finalized decree body"}
+func pdStartDebateHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanProposeDecree {
+			respondErr(w, http.StatusBadRequest, "start-debate is only for Propose Decree")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the preparer may open the debate")
+			return
+		}
+
+		var body struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Text) == "" {
+			respondErr(w, http.StatusBadRequest, "text (the finalized decree body) is required")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		pd := resData.EnsureProposeDecree()
+		if pd.DebateStarted {
+			respondErr(w, http.StatusConflict, "the debate has already been opened")
+			return
+		}
+
+		pd.LawText = strings.TrimSpace(body.Text)
+		pd.DebateStarted = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not open the debate", err)
+			return
+		}
+
+		broadcastEvent(deps.Manager, plan.GameID, model.EventDecreeDebateStarted, model.DecreeCouncilJoinedPayload{
+			PlanID:   plan.ID,
+			PlayerID: player.ID,
+		})
+		pdLog(ctx, deps, plan, model.SeverityImportant,
+			fmt.Sprintf("%s opened the council debate on the proposed decree:\n\n%q",
+				playerDisplayName(ctx, deps.Q, player.ID), pd.LawText))
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":   plan.ID,
+			"law_text":  pd.LawText,
+			"debate_on": true,
+		})
+	}
+}
+
 // ── Join Council ──────────────────────────────────────────────────────────────
 
 // pdJoinCouncilHandler handles POST /api/plans/:planId/join-council.
 //
-// A player joins the council by leveraging ≥1 of their assets. Eligible
+// A player joins the council by leveraging exactly ONE of their assets at this
+// stage (it becomes a die for the roll). More assets can be leveraged normally
+// once the roll is open — the council step is just the cost of a seat. Eligible
 // players: anyone ranked BELOW the preparer on the power track (the "other
 // players" of pre-roll rule 2). Everyone ranked above the preparer — including
 // whoever sits highest on the track, and the monarchOwner at any rank — is
 // already auto-seated for free.
 //
+// Joining and declining (decline-council) are the two ways an eligible player
+// records their pre-roll decision; an eligible player who has already joined or
+// declined cannot join again.
+//
 // Joining does NOT change the signatory: it was fixed when the council was
 // seated (OnResolve), and an eligible joiner is always ranked below the
 // preparer, so they can never out-rank the sitting signatory. Joining just
-// adds a member and the dice they leverage in.
+// adds a member and the one die they leverage in.
 //
-// Request body: {"asset_ids": [N, ...]}
+// Request body: {"asset_ids": [N]}  (exactly one)
 //
 //nolint:funlen,gocognit // verify-and-leverage loop with eligibility branches
 func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
@@ -522,8 +640,9 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		var body struct {
 			AssetIDs []int64 `json:"asset_ids"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.AssetIDs) == 0 {
-			respondErr(w, http.StatusBadRequest, "asset_ids (non-empty array) is required")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.AssetIDs) != 1 {
+			respondErr(w, http.StatusBadRequest,
+				"exactly one asset_id is required to join the council (more can be leveraged once the roll is open)")
 			return
 		}
 
@@ -556,6 +675,21 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		if joinerRank <= preparerRank {
 			respondErr(w, http.StatusForbidden,
 				"only players ranked below the preparer on power may leverage to join the council")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		pd := resData.EnsureProposeDecree()
+
+		// An eligible player decides once. If they have already joined or declined,
+		// they cannot join again (this also guards the auto-seated monarchOwner, who
+		// is below the preparer on rank but already sits on the council).
+		if slices.Contains(pd.SignatoryPlayerIDs, player.ID) {
+			respondErr(w, http.StatusConflict, "you are already on the council")
+			return
+		}
+		if slices.Contains(pd.DeclinedPlayerIDs, player.ID) {
+			respondErr(w, http.StatusConflict, "you have already declined to join the council")
 			return
 		}
 
@@ -603,18 +737,13 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 		}
 
-		resData := loadResolutionData(plan.ResolutionData)
-		pd := resData.EnsureProposeDecree()
-
-		// Add to council if not already there. The signatory does NOT move:
-		// it was fixed when the council was seated (OnResolve), and joining
-		// cannot change it. A joiner is by eligibility ranked below the preparer,
-		// so they can never out-rank the sitting signatory; and the game's
-		// linear async flow offers no chance to depose the monarch between
-		// seating and the roll. So joining only adds a member and their dice.
-		if !slices.Contains(pd.SignatoryPlayerIDs, player.ID) {
-			pd.SignatoryPlayerIDs = append(pd.SignatoryPlayerIDs, player.ID)
-		}
+		// Add to council. The signatory does NOT move: it was fixed when the
+		// council was seated (OnResolve), and joining cannot change it. A joiner is
+		// by eligibility ranked below the preparer, so they can never out-rank the
+		// sitting signatory; and the game's linear async flow offers no chance to
+		// depose the monarch between seating and the roll. So joining only adds a
+		// member and their one die.
+		pd.SignatoryPlayerIDs = append(pd.SignatoryPlayerIDs, player.ID)
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save council data", err)
@@ -627,18 +756,18 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 			SignatoryID: *pd.SignatoryID,
 		})
 
-		dieNoun := "a die"
-		if len(body.AssetIDs) > 1 {
-			dieNoun = fmt.Sprintf("%d dice", len(body.AssetIDs))
-		}
 		pdLog(
 			ctx,
 			deps,
 			plan,
 			model.SeverityDefault,
-			fmt.Sprintf("%s leveraged into the council, bringing %s to the roll.",
-				playerDisplayName(ctx, deps.Q, player.ID), dieNoun),
+			fmt.Sprintf("%s leveraged into the council, bringing a die to the roll.",
+				playerDisplayName(ctx, deps.Q, player.ID)),
 		)
+
+		// The waiting-on bar names the eligible players who still owe a join/decline
+		// decision; recompute and rebroadcast the row state now that one decided.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":      plan.ID,
@@ -647,6 +776,122 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 			"council":      pd.SignatoryPlayerIDs,
 		})
 	}
+}
+
+// ── Decline Council ────────────────────────────────────────────────────────────
+
+// pdDeclineCouncilHandler handles POST /api/plans/:planId/decline-council.
+//
+// An eligible player (ranked below the preparer on power, not auto-seated)
+// records that they will NOT join the council. Declining is the counterpart to
+// join-council: the signatory cannot call the roll until every eligible player
+// has either joined or declined, and the waiting-on bar names whoever still
+// owes that decision. No assets are leveraged.
+func pdDeclineCouncilHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanProposeDecree {
+			respondErr(w, http.StatusBadRequest, "decline-council is only for Propose Decree")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+
+		ctx := r.Context()
+
+		if player.ID == plan.PreparerID {
+			respondErr(w, http.StatusConflict, "the preparer cannot decline their own council")
+			return
+		}
+
+		preparerRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, plan.PreparerID, model.CategoryPower)
+		if err != nil {
+			respondInternalErr(w, r, "could not determine preparer power rank", err)
+			return
+		}
+		declinerRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, player.ID, model.CategoryPower)
+		if err != nil {
+			respondInternalErr(w, r, "could not determine your power rank", err)
+			return
+		}
+		if declinerRank <= preparerRank {
+			respondErr(w, http.StatusForbidden,
+				"only players ranked below the preparer on power decide whether to join the council")
+			return
+		}
+
+		resData := loadResolutionData(plan.ResolutionData)
+		pd := resData.EnsureProposeDecree()
+		if slices.Contains(pd.SignatoryPlayerIDs, player.ID) {
+			respondErr(w, http.StatusConflict, "you are already on the council")
+			return
+		}
+		if slices.Contains(pd.DeclinedPlayerIDs, player.ID) {
+			respondErr(w, http.StatusConflict, "you have already declined to join the council")
+			return
+		}
+
+		pd.DeclinedPlayerIDs = append(pd.DeclinedPlayerIDs, player.ID)
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save your decision", err)
+			return
+		}
+
+		broadcastEvent(deps.Manager, plan.GameID, model.EventDecreeCouncilDeclined, model.DecreeCouncilJoinedPayload{
+			PlanID:   plan.ID,
+			PlayerID: player.ID,
+		})
+		pdLog(ctx, deps, plan, model.SeverityDefault,
+			fmt.Sprintf("%s declined to join the council.", playerDisplayName(ctx, deps.Q, player.ID)))
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+
+		respond(w, http.StatusOK, map[string]any{
+			"plan_id":   plan.ID,
+			"player_id": player.ID,
+			"declined":  pd.DeclinedPlayerIDs,
+		})
+	}
+}
+
+// pdPendingDeciders returns the eligible players (ranked below the preparer on
+// power) who have neither joined the council nor declined — the players the
+// table is waiting on during the council meeting. Auto-seated members (the
+// monarchOwner, anyone above the preparer) are already in SignatoryPlayerIDs and
+// so never appear here.
+func pdPendingDeciders(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	pd *gamepkg.ProposeDecreeResolutionData,
+) ([]int64, error) {
+	preparerRank, err := playerRankInCategory(ctx, q, plan.GameID, plan.PreparerID, model.CategoryPower)
+	if err != nil {
+		return nil, fmt.Errorf("preparer power rank: %w", err)
+	}
+	ranks, err := q.ListRankingsByGame(ctx, plan.GameID)
+	if err != nil {
+		return nil, fmt.Errorf("list rankings: %w", err)
+	}
+	var pending []int64
+	for _, rk := range ranks {
+		if rk.Category != model.CategoryPower || rk.PlayerID == nil {
+			continue
+		}
+		id := *rk.PlayerID
+		if rk.Rank <= preparerRank {
+			continue // preparer or higher power: auto-seated, no decision owed
+		}
+		if slices.Contains(pd.SignatoryPlayerIDs, id) || slices.Contains(pd.DeclinedPlayerIDs, id) {
+			continue // already joined or declined
+		}
+		pending = append(pending, id)
+	}
+	return pending, nil
 }
 
 // ── Call Roll ─────────────────────────────────────────────────────────────────
@@ -676,6 +921,24 @@ func pdCallRollHandler(deps *PlanDeps) http.HandlerFunc {
 		pd := resData.ProposeDecree
 		if pd == nil || pd.SignatoryID == nil || *pd.SignatoryID != player.ID {
 			respondErr(w, http.StatusForbidden, "only the current signatory may call the roll")
+			return
+		}
+
+		// The debate must be open before it can be closed: the preparer finalizes
+		// the decree's text and opens discussion (start-debate) first.
+		if !pd.DebateStarted {
+			respondErr(w, http.StatusConflict, "the preparer must open the debate before the roll can be called")
+			return
+		}
+
+		// The council meeting must conclude first: every eligible player has to
+		// join or decline before the signatory may close discussion and roll.
+		if pending, perr := pdPendingDeciders(ctx, deps.Q, plan, pd); perr != nil {
+			respondInternalErr(w, r, "could not check council decisions", perr)
+			return
+		} else if len(pending) > 0 {
+			respondErr(w, http.StatusConflict,
+				"every eligible player must join or decline before the roll can be called")
 			return
 		}
 
@@ -710,7 +973,7 @@ func pdCallRollHandler(deps *PlanDeps) http.HandlerFunc {
 			deps,
 			plan,
 			model.SeverityDefault,
-			fmt.Sprintf("%s closed the council and called the roll on the decree.",
+			fmt.Sprintf("%s declared the debate over and calls for the dice roll.",
 				playerDisplayName(ctx, deps.Q, player.ID)),
 		)
 
