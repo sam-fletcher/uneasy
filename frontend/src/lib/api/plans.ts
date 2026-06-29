@@ -458,17 +458,15 @@ export function callRoll(planID: number): Promise<{ plan_id: number; roll?: Dice
 }
 
 /**
- * Name the asset a plan created during its make step. Preparer-gated; optional
- * — the asset keeps its placeholder name until named. The route differs per
- * plan ('name-artifact' for Spread Propaganda) because all plans' extra routes
- * share one mount, so route names must be globally unique.
+ * Spread Propaganda — on a made plan the preparer authors the societal-shift
+ * artifact: it is created under `name` in a single transaction (no placeholder).
+ * Preparer-gated and required — completion is blocked until it exists.
  */
-export function namePlanAsset(
+export function createArtifact(
 	planID: number,
-	route: 'name-artifact',
 	name: string
 ): Promise<{ plan_id: number; asset: Asset }> {
-	return apiFetch(`/plans/${planID}/${route}`, {
+	return apiFetch(`/plans/${planID}/create-artifact`, {
 		method: 'POST',
 		body: JSON.stringify({ name }),
 	});

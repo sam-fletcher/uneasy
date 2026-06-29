@@ -19,7 +19,7 @@
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName,
 		assetsWithIntactMarginalia, playersExcept,
 	} from './shared';
-	import { spGivePeer, spBreakSelf, namePlanAsset, getAssetSuggestions } from '$lib/api';
+	import { spGivePeer, spBreakSelf, createArtifact, getAssetSuggestions } from '$lib/api';
 
 	import type { PlanPanelProps } from './types';
 
@@ -121,6 +121,10 @@
 	const needsGivePeer = $derived(!!spData.give_peer_required && !spData.give_peer_done);
 	const needsBreakSelf = $derived(!!spData.break_self_required && !spData.break_self_done);
 	const marEffectsPending = $derived(needsGivePeer || needsBreakSelf);
+	// A made plan requires the preparer to author the artifact before completion.
+	const artifactPending = $derived(!!spData.artifact_required && spData.artifact_id == null);
+	// Everything the preparer must still do before the plan can be completed.
+	const preparerActionPending = $derived(marEffectsPending || artifactPending);
 
 	// give_peer: pick one of the preparer's peers and a recipient player.
 	const preparerPeers = $derived(
@@ -159,12 +163,11 @@
 		} finally { breakBusy = false; }
 	}
 
-	// ── Name the societal-shift artifact (preparer) ───────────────────────────
-	// A made plan creates the artifact with a placeholder name; the preparer
-	// then names it. Optional — it does not gate completion.
-	const needsArtifactNaming = $derived(
-		isPreparer && spData.artifact_id != null && !spData.artifact_named,
-	);
+	// ── Author the societal-shift artifact (preparer) ─────────────────────────
+	// A made plan requires the preparer to author the artifact: create-artifact
+	// creates it under the chosen name in one transaction (no placeholder). It is
+	// required — it gates completion until the artifact exists.
+	const needsArtifactCreation = $derived(isPreparer && artifactPending);
 	let artifactName = $state('');
 	let nameBusy = $state(false);
 	// Name suggestions (artifact pool), fetched once the naming step appears.
@@ -172,7 +175,7 @@
 	let nameSuggLoading = $state(false);
 	let nameSuggFetched = false;
 	$effect(() => {
-		if (!needsArtifactNaming || nameSuggFetched) return;
+		if (!needsArtifactCreation || nameSuggFetched) return;
 		nameSuggFetched = true;
 		nameSuggLoading = true;
 		getAssetSuggestions(gameID, 'artifact', 'name')
@@ -184,11 +187,11 @@
 		if (nameBusy || !artifactName.trim()) return;
 		nameBusy = true; resError = '';
 		try {
-			await namePlanAsset(p.id, 'name-artifact', artifactName.trim());
+			await createArtifact(p.id, artifactName.trim());
 			artifactName = '';
 			onPlansChanged();
 		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not name the artifact.';
+			resError = e instanceof Error ? e.message : 'Could not author the artifact.';
 		} finally { nameBusy = false; }
 	}
 </script>
@@ -238,9 +241,9 @@
 					<p class="choices-applied">Choices applied: {existingChoices.join(', ')}</p>
 				{/if}
 
-				{#if needsArtifactNaming}
+				{#if needsArtifactCreation}
 					<div class="plan-form">
-						<p class="choices-header">Name the artifact your propaganda created</p>
+						<p class="choices-header">Author the artifact your propaganda created</p>
 						<SuggestionPicker
 							suggestions={nameSuggestions}
 							bind:value={artifactName}
@@ -250,7 +253,7 @@
 						/>
 						<button class="action-btn primary" onclick={() => submitArtifactName(plan)}
 							disabled={nameBusy || !artifactName.trim()}>
-							{nameBusy ? '…' : 'Name artifact'}
+							{nameBusy ? '…' : 'Create artifact'}
 						</button>
 					</div>
 				{/if}
@@ -297,16 +300,16 @@
 					</div>
 				{/if}
 
-				{#if isPreparer && !marEffectsPending}
+				{#if isPreparer && !preparerActionPending}
 					<p class="complete-note">
 						Write any follow-scene narration in the chat, then complete the plan.
 					</p>
 					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
 						{resBusy ? '…' : 'Complete plan'}
 					</button>
-				{:else if marEffectsPending && !isPreparer}
+				{:else if preparerActionPending && !isPreparer}
 					<p class="ft-prompt muted">
-						Waiting for {playerName(players, plan.preparer_id)} to face the fallout…
+						Waiting for {playerName(players, plan.preparer_id)} to {artifactPending && !marEffectsPending ? 'author the artifact' : 'face the fallout'}…
 					</p>
 				{/if}
 			</div>

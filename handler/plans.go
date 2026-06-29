@@ -44,6 +44,11 @@ import (
 	"uneasy/model"
 )
 
+// maxAssetNameLen bounds a player-authored asset name (runes). Shared by the
+// plan routes that author a named asset at resolution (Propose Decree's
+// enact-law, Spread Propaganda's create-artifact).
+const maxAssetNameLen = 120
+
 // The plan orchestration contract (PlanHandler, OnPreparer, PlanDeps,
 // ValidationContext, the registry, saveResolutionData) lives in
 // plan_contract.go; pure domain data types live in the game package and are

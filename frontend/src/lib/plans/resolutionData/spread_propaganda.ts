@@ -10,10 +10,10 @@ export interface SpreadPropagandaResolutionData {
 	recursive_plan_id?: number | null;
 	esteem_lockout?: boolean;
 	original_plan_id?: number | null;
-	/** Artifact created by the make step ("societal shift"). */
+	/** True on a made plan: the preparer must author the artifact (create-artifact). */
+	artifact_required?: boolean;
+	/** The authored societal-shift artifact; set once create-artifact runs. */
 	artifact_id?: number | null;
-	/** True once the preparer has named the artifact. */
-	artifact_named?: boolean;
 	/** Mar (a) "give_peer": a peer must be handed to another player. */
 	give_peer_required?: boolean;
 	give_peer_done?: boolean;

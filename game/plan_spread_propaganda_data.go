@@ -21,13 +21,15 @@ type SpreadPropagandaResolutionData struct {
 	// Depth cap is 1.
 	OriginalPlanID *int64 `json:"original_plan_id,omitempty"`
 
-	// ArtifactID is the asset created by the make step ("Create an artifact
-	// representing the societal shift"). Set in ApplyChoice on a make result.
-	// It is created with a neutral placeholder name; the preparer then names it
-	// via the name-asset route (ArtifactNamed flips true once they do). Naming
-	// is optional — it does not gate completion.
-	ArtifactID    *int64 `json:"artifact_id,omitempty"`
-	ArtifactNamed bool   `json:"artifact_named,omitempty"`
+	// ArtifactRequired flips true on a made plan ("Create an artifact
+	// representing the societal shift"): the preparer must then author the
+	// artifact via POST /plans/{planId}/create-artifact, which creates it under
+	// the chosen name (no placeholder) and records ArtifactID. It gates
+	// completion until ArtifactID is set.
+	ArtifactRequired bool `json:"artifact_required,omitempty"`
+	// ArtifactID is the asset created — and named — by create-artifact on a
+	// made plan. Nil until the preparer authors it.
+	ArtifactID *int64 `json:"artifact_id,omitempty"`
 
 	// GivePeerRequired flips true when mar option (a) "give_peer" is chosen;
 	// it gates completion until the preparer hands a peer to another player

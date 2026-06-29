@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -74,8 +75,10 @@ func (spHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 
 // ApplyChoice resolves a Spread Propaganda make/mar.
 //
-// Make: always creates an artifact representing the societal shift (the rules'
-// only make effect; "create_artifact" is the single make option in the UI).
+// Make: opens the artifact-authoring sub-flow (the rules' only make effect;
+// "create_artifact" is the single make option in the UI). The artifact itself is
+// created — and named — later by the preparer via create-artifact, in one
+// transaction (no placeholder); see applySpreadPropagandaMake.
 //
 // Mar (option keys match frontend MAR_OPTIONS.spread_propaganda):
 //   - "lay_low"      → esteem lockout (preparer's next plan cannot be esteem)
@@ -119,10 +122,12 @@ func (spHandler) ApplyChoice(
 	return nil
 }
 
-// applySpreadPropagandaMake creates the artifact the make step mandates. The
-// artifact is named from the preparation notes (the message) and routed
-// through AssetRecipientForPlan so a resolved Make Demands keep_assets winner
-// claims it. Idempotent: a second call is a no-op.
+// applySpreadPropagandaMake opens the artifact-authoring sub-flow the make step
+// mandates. It does NOT create the artifact: the rules call for the preparer to
+// author it ("Create an artifact representing the societal shift"), so the asset
+// is created — and named — in one transaction by create-artifact (spCreateArtifact),
+// never as a placeholder. Here we only flag that the artifact is owed; CanComplete
+// gates the plan until it exists. Idempotent.
 func applySpreadPropagandaMake(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -131,44 +136,25 @@ func applySpreadPropagandaMake(
 ) error {
 	sp := resData.EnsureSpreadPropaganda()
 	if sp.ArtifactID != nil {
-		return nil
+		return nil // already authored (idempotent re-apply)
 	}
+	sp.ArtifactRequired = true
 
-	recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
-	if err != nil {
-		return fmt.Errorf("could not resolve asset recipient: %w", err)
-	}
-
-	// The artifact is created with a neutral placeholder name; the preparer
-	// names it afterwards via the name-asset route. (Deliberately NOT derived
-	// from the propaganda message — the artifact represents the societal shift,
-	// which the preparer narrates, not a copy of their talking points.)
-	asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
-		GameID:    plan.GameID,
-		OwnerID:   recipient,
-		CreatorID: plan.PreparerID,
-		AssetType: model.AssetArtifact,
-		Name:      propagandaArtifactNameDefault,
-	})
-	if err != nil {
-		return fmt.Errorf("could not create societal-shift artifact: %w", err)
-	}
-	sp.ArtifactID = &asset.ID
-
-	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated,
-		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}})
 	spLog(ctx, deps, plan, model.SeverityDefault,
-		fmt.Sprintf("%s reshaped society — created a new artifact to be named.",
+		fmt.Sprintf("%s reshaped society — they must now author the artifact embodying the shift.",
 			playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 	return nil
 }
 
-// CanComplete blocks completion until any chosen asset-picker mar effects have
-// been performed.
+// CanComplete blocks completion until the made artifact has been authored and any
+// chosen asset-picker mar effects have been performed.
 func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	sp := resData.SpreadPropaganda
 	if sp == nil {
 		return nil
+	}
+	if sp.ArtifactRequired && sp.ArtifactID == nil {
+		return errors.New("preparer must author the societal-shift artifact (POST /plans/{planId}/create-artifact)")
 	}
 	if sp.GivePeerRequired && !sp.GivePeerDone {
 		return errors.New("preparer must give a peer to another player (POST /plans/{planId}/give-peer)")
@@ -181,27 +167,103 @@ func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 
 func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"give-peer":     spGivePeerHandler(deps),
-		"break-self":    spBreakSelfHandler(deps),
-		"name-artifact": spNameAssetHandler(deps),
+		"give-peer":       spGivePeerHandler(deps),
+		"break-self":      spBreakSelfHandler(deps),
+		"create-artifact": spCreateArtifactHandler(deps),
 	}
 }
 
-// spNameAssetHandler handles POST /api/plans/:planId/name-artifact.
+// spCreateArtifactHandler handles POST /api/plans/:planId/create-artifact.
 //
-// The preparer names the artifact the made plan created (it starts with a
-// placeholder). Optional; does not gate completion.
-func spNameAssetHandler(deps *PlanDeps) http.HandlerFunc {
+// On a made plan the preparer authors the artifact embodying the societal shift:
+// this creates it under the chosen name in a single transaction (no placeholder)
+// and routes ownership through AssetRecipientForPlan, so a resolved Make Demands
+// keep_assets winner claims it. Preparer-gated and required — it gates completion
+// (CanComplete) until the artifact exists. Mirrors Propose Decree's enact-law.
+//
+// Request body: {"name": "the artifact's name"}
+func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		nameCreatedPlanAsset(w, r, deps, model.PlanSpreadPropaganda,
-			func(rd *ResolutionData) *int64 {
-				if rd.SpreadPropaganda == nil {
-					return nil
-				}
-				return rd.SpreadPropaganda.ArtifactID
-			},
-			func(rd *ResolutionData) { rd.EnsureSpreadPropaganda().ArtifactNamed = true },
-		)
+		_, plan, ok := requirePlanPreparer(w, r, deps.Q)
+		if !ok {
+			return
+		}
+		if plan.PlanType != model.PlanSpreadPropaganda {
+			respondErr(w, http.StatusBadRequest, "create-artifact is only for Spread Propaganda")
+			return
+		}
+		if plan.Status != model.PlanResolving {
+			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+			return
+		}
+
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		name := strings.TrimSpace(body.Name)
+		if name == "" {
+			respondErr(w, http.StatusBadRequest, "name is required to author the artifact")
+			return
+		}
+		if len([]rune(name)) > maxAssetNameLen {
+			respondErr(w, http.StatusBadRequest,
+				fmt.Sprintf("name must be at most %d characters", maxAssetNameLen))
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		sp := resData.EnsureSpreadPropaganda()
+		if !sp.ArtifactRequired {
+			respondErr(w, http.StatusConflict, "this plan does not call for an artifact")
+			return
+		}
+		if sp.ArtifactID != nil {
+			respondErr(w, http.StatusConflict, "the artifact has already been authored")
+			return
+		}
+
+		recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
+		if err != nil {
+			respondInternalErr(w, r, "could not resolve asset recipient", err)
+			return
+		}
+
+		// Created already named (deliberately NOT derived from the propaganda
+		// message — the artifact represents the societal shift the preparer
+		// narrates, not a copy of their talking points).
+		asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID:    plan.GameID,
+			OwnerID:   recipient,
+			CreatorID: plan.PreparerID,
+			AssetType: model.AssetArtifact,
+			Name:      name,
+		})
+		if err != nil {
+			respondInternalErr(w, r, "could not create societal-shift artifact", err)
+			return
+		}
+		sp.ArtifactID = &asset.ID
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record the artifact", err)
+			return
+		}
+
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated,
+			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}})
+		spLog(ctx, deps, plan, model.SeverityDefault,
+			fmt.Sprintf("%s authored a new artifact, %s, embodying the societal shift.",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name)))
+		// make-choice's panel watches for the artifact to appear; nudge non-actors.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
+			PlanID: plan.ID,
+		})
+
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "asset": asset})
 	}
 }
 

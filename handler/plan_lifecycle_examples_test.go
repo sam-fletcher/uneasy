@@ -24,37 +24,98 @@ import (
 	"uneasy/model"
 )
 
-// TestPlanLifecycle_SpreadPropaganda_Make exercises the full common-shape
-// lifecycle (prepare → resolve → roll → make-choice → complete) and asserts
-// the rules-mandated make effect: an artifact representing the societal shift
-// is created for the preparer.
+// TestPlanLifecycle_SpreadPropaganda_Make exercises the make path step by step
+// (prepare → resolve → roll → make-choice → create-artifact → complete) and
+// asserts the rules-mandated make effect: the preparer authors an artifact
+// representing the societal shift. The artifact is created ALREADY NAMED in a
+// single transaction — no placeholder ever exists — and completion is blocked
+// until it does, mirroring Propose Decree's enact-law. It also proves the make
+// path requires a name.
 func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
 	notes := "test propaganda"
-	plan := h.run(PreparePlanRequest{
+	plan := h.prepare(PreparePlanRequest{
 		PlanType:         model.PlanSpreadPropaganda,
 		PreparationNotes: &notes,
-	}, "make", []string{"create_artifact"})
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll, "SP creates its roll on resolve")
+	h.forceRoll(roll.ID, "make", 0)
 
-	require.NotNil(t, plan.Result)
-	assert.Equal(t, "make", *plan.Result)
-	assert.Equal(t, model.PlanResolved, plan.Status)
+	// The seed gives each player one artifact, so count rather than assert zero:
+	// make-choice must not mint a (placeholder) artifact of its own.
+	artifactsBefore := countArtifacts(t, h, ctx)
+	h.makeChoice(plan.ID, "make", []string{"create_artifact"})
 
-	// The make step must have created an artifact owned by the preparer.
-	rd := loadResolutionData(plan.ResolutionData)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+
+	planAfterChoice, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	// make-choice opens the authoring sub-flow but creates no asset (no placeholder).
+	rd := loadResolutionData(planAfterChoice.ResolutionData)
 	require.NotNil(t, rd.SpreadPropaganda)
-	require.NotNil(t, rd.SpreadPropaganda.ArtifactID, "make should create an artifact")
+	assert.True(t, rd.SpreadPropaganda.ArtifactRequired, "make should require an artifact")
+	require.Nil(t, rd.SpreadPropaganda.ArtifactID, "no artifact exists until the preparer authors it")
+	assert.Equal(t, artifactsBefore, countArtifacts(t, h, ctx),
+		"make-choice must not create a placeholder artifact")
 
+	// Completion is blocked until the artifact is authored.
+	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
+	code, body := h.post(preparerIdx, completePath, nil)
+	require.Equalf(t, http.StatusConflict, code, "complete should be blocked: %v", body)
+
+	createPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/create-artifact"
+
+	// A non-preparer cannot author the artifact.
+	otherIdx := (preparerIdx + 1) % 3
+	code, body = h.post(otherIdx, createPath, map[string]any{"name": "Hijack"})
+	require.Equalf(t, http.StatusForbidden, code, "only the preparer may author: %v", body)
+
+	// The make path requires a name.
+	code, body = h.post(preparerIdx, createPath, map[string]any{"name": ""})
+	require.Equalf(t, http.StatusBadRequest, code, "authoring needs a name: %v", body)
+
+	// The preparer authors the artifact with a name — created already named.
+	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "The New Orthodoxy"})
+	require.Equalf(t, http.StatusOK, code, "create-artifact: %v", body)
+
+	planAfterCreate, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd = loadResolutionData(planAfterCreate.ResolutionData)
+	require.NotNil(t, rd.SpreadPropaganda.ArtifactID, "create-artifact records the asset id")
 	artifact, err := h.q.GetAssetByID(ctx, *rd.SpreadPropaganda.ArtifactID)
 	require.NoError(t, err)
 	assert.Equal(t, model.AssetArtifact, model.AssetType(artifact.AssetType))
 	assert.Equal(t, plan.PreparerID, artifact.OwnerID)
-	// The artifact is created with a placeholder name; the preparer names it
-	// afterwards via name-asset (not derived from the propaganda message).
-	assert.Equal(t, propagandaArtifactNameDefault, artifact.Name)
-	assert.False(t, rd.SpreadPropaganda.ArtifactNamed)
+	assert.Equal(t, "The New Orthodoxy", artifact.Name, "artifact is created already named")
+	assert.Equal(t, artifactsBefore+1, countArtifacts(t, h, ctx),
+		"exactly one artifact is minted, by create-artifact")
+
+	// Now completion succeeds.
+	h.complete(plan.ID)
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	require.NotNil(t, resolved.Result)
+	assert.Equal(t, "make", *resolved.Result)
+	assert.Equal(t, model.PlanResolved, resolved.Status)
+}
+
+// countArtifacts returns how many artifact assets exist in the test game.
+func countArtifacts(t *testing.T, h *planLifecycle, ctx context.Context) int {
+	t.Helper()
+	assets, err := h.q.ListAssetsByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	n := 0
+	for _, a := range assets {
+		if model.AssetType(a.AssetType) == model.AssetArtifact {
+			n++
+		}
+	}
+	return n
 }
 
 // TestPlanLifecycle_ExchangeCourtiers_MessyBreakRestricted regression-guards
