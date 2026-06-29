@@ -149,6 +149,13 @@ func finalizeRoll(
 	if err != nil {
 		return err
 	}
+	// Plans whose post-roll make-choice carries no decision (Propose Decree)
+	// record the outcome here, before the broadcasts below, so every client that
+	// refetches on roll.resolved already sees the result applied — no flash of a
+	// decision-free "pass" gate, and the async sub-flow advances immediately.
+	if err := applyAutoChoiceOnRoll(ctx, q, manager, &resolved); err != nil {
+		return err
+	}
 	finalDice, err := q.ListDiceByRoll(ctx, roll.ID)
 	if err != nil {
 		finalDice = []dbgen.DiceRollDice{}

@@ -472,11 +472,20 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.DemandRetargeted:
 		case EventTypes.RumorTakeConsentRequested:
 		case EventTypes.RumorTakeConsentResolved:
-		case EventTypes.DecreeCouncilJoined:
 		case EventTypes.DecreeCouncilDeclined:
 		case EventTypes.DecreeDebateStarted: {
 			const { plan_id } = msg.payload as { plan_id: number };
 			refreshPlan(ctx, plan_id);
+			window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
+			break;
+		}
+		case EventTypes.DecreeCouncilJoined: {
+			const { plan_id } = msg.payload as { plan_id: number };
+			refreshPlan(ctx, plan_id);
+			// Joining the council mints an ephemeral 'decree' banked die for the
+			// roll. Refresh the unspent-banked list so the +1 die shows up the
+			// moment the roll opens, rather than only after a manual page refresh.
+			listBankedDice(ctx.gameID).then(d => { ctx.bankedDice = d.dice; }).catch(() => {});
 			window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
 			break;
 		}

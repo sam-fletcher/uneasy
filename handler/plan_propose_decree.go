@@ -233,6 +233,14 @@ func (pdHandler) ApplyChoice(
 ) error {
 	pd := resData.EnsureProposeDecree()
 
+	// Idempotent: the outcome is applied automatically when the roll resolves
+	// (AutoApplyChoiceOnRoll), so a later make-choice for the same plan — a stale
+	// client, or a test driving the legacy path — must not re-run the effects
+	// (recomputing the amendment order, re-clearing dice, duplicating the log).
+	if pd.OutcomeApplied() {
+		return nil
+	}
+
 	// The law body is the text the preparer finalized when opening the debate
 	// (start-debate). Fall back to the preparation notes for any decree whose
 	// debate predates that step. It becomes the working body the council may
@@ -309,7 +317,13 @@ func (pdHandler) ApplyChoice(
 // goes under Laws already carrying its addendum (and, on a mar, the council's
 // amendments), as the rules require. Sets pd.LawID; the caller saves
 // resolution_data. resourceName is ignored on a mar (no asset).
-func pdEnactLaw(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, resData *ResolutionData, resourceName string) error {
+func pdEnactLaw(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	resourceName string,
+) error {
 	pd := resData.EnsureProposeDecree()
 
 	laws, err := deps.Q.ListLaws(ctx, plan.GameID)
@@ -555,6 +569,16 @@ func (pdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 // the terminal action (it writes the law and, on a make, the named resource), so
 // once CanComplete passes the plan resolves itself — no separate Complete click.
 func (pdHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, _ *ResolutionData) bool {
+	return true
+}
+
+// AutoApplyChoiceOnRoll opts Propose Decree into recording the roll's outcome
+// the instant the dice land: passing the decree is not a decision (the outcome
+// is whatever the roll says), so finalizeRoll applies it via ApplyChoice instead
+// of parking the row on a no-op "Pass the decree" gate. The real decisions — the
+// council's amendments (mar), the signatory's addendum, the resource name —
+// still follow in the law-writing sub-flow.
+func (pdHandler) AutoApplyChoiceOnRoll() bool {
 	return true
 }
 
@@ -1222,9 +1246,8 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		signatoryName := playerDisplayName(ctx, deps.Q, player.ID)
-		preparerName := playerDisplayName(ctx, deps.Q, plan.PreparerID)
 		pdLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s placed the signatory's addendum; %s will enact the law.", signatoryName, preparerName))
+			fmt.Sprintf("%s placed the signatory's addendum to the end of the law.", signatoryName))
 
 		// The law is not enacted here — the preparer enacts it (enact-law). Nudge
 		// non-acting clients to refetch the updated sub-phase.

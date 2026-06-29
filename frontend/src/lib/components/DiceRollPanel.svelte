@@ -209,6 +209,16 @@
 		draftBankedIds = next;
 	}
 
+	// Append a freshly committed die, guarding against the roll.leverage_added
+	// WS broadcast for the SAME die having already landed during our await. The
+	// server broadcasts to every client including us, and that handler appends
+	// too; without this dedup a race produces two dice rows sharing one id, and
+	// the keyed {#each ... (die.id)} pools throw each_key_duplicate — which
+	// freezes the interference list until a manual refresh reloads clean dice.
+	function addDie(die: DiceRollDie) {
+		if (!dice.some(d => d.id === die.id)) dice = [...dice, die];
+	}
+
 	// Commit the draft (one API call per leverage — preserves one chat-log
 	// entry per asset), then ready. Each leverageRoll/useBankedDie reveals a
 	// die publicly; this burst is the player's reveal-on-Ready.
@@ -236,12 +246,12 @@
 		// 2. Leverage each drafted asset.
 		for (const id of assetIds) {
 			const { die } = await leverageRoll(roll.id, id);
-			dice = [...dice, die];
+			addDie(die);
 		}
 		// 3. Spend each drafted banked die.
 		for (const id of bankedIds) {
 			const { die } = await useBankedDie(roll.id, id);
-			dice = [...dice, die];
+			addDie(die);
 			bankedDice = bankedDice.map(x =>
 				x.id === id ? { ...x, used_at: new Date().toISOString(), used_roll_id: roll.id } : x);
 		}

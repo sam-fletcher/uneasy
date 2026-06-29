@@ -179,7 +179,6 @@ func TestProposeDecree_Make_CreatesLawAndAsset(t *testing.T) {
 	pdDeclineRemaining(t, h, plan.ID)
 	roll := pdCallRoll(t, h, plan.ID, preparerIdx)
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
-	h.makeChoice(plan.ID, "make", []string{})
 
 	// No law exists yet — the addendum and enactment are still owed.
 	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
@@ -236,7 +235,6 @@ func TestProposeDecree_Enact_CreatesNamedResource(t *testing.T) {
 	pdDeclineRemaining(t, h, plan.ID)
 	roll := pdCallRoll(t, h, plan.ID, preparerIdx)
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
-	h.makeChoice(plan.ID, "make", []string{})
 
 	// Signatory (here the preparer/Monarch) places the addendum first.
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
@@ -288,7 +286,6 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 
 	roll := pdCallRoll(t, h, plan.ID, sigIdx) // signatory calls the roll
 	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
-	h.makeChoice(plan.ID, "mar", []string{})
 
 	// Amendment order should be the two higher-power members, lowest first.
 	pd = pdData(t, h, plan.ID)
@@ -390,7 +387,6 @@ func TestProposeDecree_JoinCouncil_MintsAndCleansUpDice(t *testing.T) {
 	// signatory can close the council. The minted die is left unspent.
 	roll := pdCallRoll(t, h, plan.ID, 0)
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
-	h.makeChoice(plan.ID, "make", []string{})
 
 	// The unspent council die is discarded at enactment.
 	unspentLeft, err := h.q.CountUnspentBankedDiceByPlayer(ctx, dbgen.CountUnspentBankedDiceByPlayerParams{
@@ -440,7 +436,6 @@ func TestProposeDecree_Make_ResourceOwnedByPreparer(t *testing.T) {
 	sigIdx := pdPlayerIdx(t, h, *pd.SignatoryID)
 	roll := pdCallRoll(t, h, plan.ID, sigIdx)
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
-	h.makeChoice(plan.ID, "make", []string{})
 
 	// Signatory places the addendum; the preparer then enacts and names the
 	// resource (which is owned by the preparer, not the signatory).
@@ -489,7 +484,6 @@ func TestProposeDecree_SkipAmend_AdvancesChain(t *testing.T) {
 	pd := pdData(t, h, plan.ID)
 	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, *pd.SignatoryID))
 	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
-	h.makeChoice(plan.ID, "mar", []string{})
 
 	pd = pdData(t, h, plan.ID)
 	require.Len(t, pd.AmendmentOrder, 2)
@@ -548,7 +542,6 @@ func TestProposeDecree_Waitees_NamesSignatoryAndAmenders(t *testing.T) {
 
 	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, sigID))
 	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
-	h.makeChoice(plan.ID, "mar", []string{})
 
 	// Mar amendment chain: each amender in turn (lowest power first).
 	pd = pdData(t, h, plan.ID)
@@ -630,7 +623,6 @@ func TestProposeDecree_DebateGate(t *testing.T) {
 	h.assertWaitees("debate open", model.RowStatePlanResolving, sigID)
 	roll := pdCallRoll(t, h, plan.ID, pdPlayerIdx(t, h, sigID))
 	h.forceRoll(roll.ID, "make", roll.Difficulty)
-	h.makeChoice(plan.ID, "make", []string{})
 	// The law is enacted only after the signatory's addendum and the preparer's
 	// enact-law.
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"

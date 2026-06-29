@@ -226,9 +226,16 @@ func (h *planLifecycle) resolve(planID int64) *dbgen.DiceRoll {
 // care it's fine to pass 0.
 func (h *planLifecycle) forceRoll(rollID int64, outcome string, result int16) {
 	h.t.Helper()
-	require.NoError(h.t, h.q.ResolveDiceRoll(context.Background(), dbgen.ResolveDiceRollParams{
+	ctx := context.Background()
+	require.NoError(h.t, h.q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
 		ID: rollID, Result: &result, Outcome: &outcome,
 	}))
+	// Mirror finalizeRoll: plans that auto-apply their outcome on roll resolution
+	// (Propose Decree) do so here too, so tests exercise the real post-roll flow
+	// instead of a path forceRoll alone would bypass.
+	resolved, err := h.q.GetDiceRollByID(ctx, rollID)
+	require.NoError(h.t, err)
+	require.NoError(h.t, applyAutoChoiceOnRoll(ctx, h.q, h.manager, &resolved))
 }
 
 // makeChoice drives POST /api/plans/{planId}/make-choice as the focus

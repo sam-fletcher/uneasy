@@ -159,6 +159,21 @@ type AutoCompleter interface {
 	AutoCompleteAfterChoice(plan *dbgen.Plan, resData *ResolutionData) bool
 }
 
+// AutoApplyChoiceOnRoll is an optional PlanHandler capability: when the plan's
+// dice roll resolves, the resolution applies the roll's outcome immediately
+// (calling ApplyChoice with no option picks) instead of leaving the row parked
+// on a decision-free "pass" gate. Use it only when the post-roll make-choice
+// carries no decision — the outcome is fully fixed by the roll and the actor
+// would merely acknowledge it. ApplyChoice MUST be idempotent (re-applying the
+// same outcome is a no-op), since the manual make-choice endpoint stays mounted.
+//
+// Propose Decree uses it: passing the decree is automatic once the dice land;
+// the real decisions (the amendments, the addendum, the resource name) all come
+// afterward, so the "Pass the decree" click was pure friction.
+type AutoApplyChoiceOnRoll interface {
+	AutoApplyChoiceOnRoll() bool
+}
+
 // Per-player submission-state convention (read before adding a plan sub-flow).
 //
 // When a plan's resolution waits on one or more players to each submit

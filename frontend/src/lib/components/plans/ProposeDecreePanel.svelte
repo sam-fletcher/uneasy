@@ -12,10 +12,12 @@
        close the debate and call the roll only once it's open AND every eligible
        player has decided.
     2. Rolling — dice play out.
-    3. Post-roll — the preparer passes the decree (make-choice). On a mar the
-       council then amends the body in turn (lowest power first). Finally the
-       signatory places the addendum, which ENACTS the law; the preparer
-       completes (and, on a make, names the resource the enacted law created).
+    3. Post-roll — passing the decree is automatic: the outcome carries no
+       decision, so the server records it the instant the roll resolves
+       (pdHandler.AutoApplyChoiceOnRoll) and the law-writing sub-flow opens with
+       no "pass" click. On a mar the council then amends the body in turn (lowest
+       power first). Finally the signatory places the addendum, which ENACTS the
+       law; the preparer completes (and, on a make, names the resource created).
 
   The law goes into effect WITH its addendum, so the law row is created
   server-side only when set-addendum is submitted — not at make-choice. On a
@@ -25,7 +27,7 @@
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
-		preparePlan, makeChoice,
+		preparePlan,
 		startDebate, joinCouncil, declineCouncil, callRoll, setAddendum, amendDecree, skipAmend, enactLaw, getAssetSuggestions,
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
@@ -275,22 +277,10 @@
 		} finally { callBusy = false; }
 	}
 
-	// ── Apply make-choice ("pass the decree"; no option picks) ───────────────
-	// This records the roll's outcome and opens the law-writing sub-flow — it does
-	// NOT enact the law. The law goes into effect (and, on a make, its resource is
-	// created) only once the signatory places the addendum, so naming the resource
-	// happens afterward (needsResourceNaming), not here.
-	let applyBusy = $state(false);
-	async function applyResult(p: Plan, outcome: 'make' | 'mar') {
-		if (applyBusy) return;
-		applyBusy = true; resError = '';
-		try {
-			await makeChoice(p.id, outcome, []);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not pass the decree.';
-		} finally { applyBusy = false; }
-	}
+	// Passing the decree is no longer a manual step: the outcome carries no
+	// decision (it's whatever the roll says), so the server records it the instant
+	// the roll resolves (pdHandler.AutoApplyChoiceOnRoll) and the law-writing
+	// sub-flow below opens automatically. See ProposeDecreePanel's header comment.
 
 	// ── Amend (mar, current amender) ─────────────────────────────────────────
 	let amendDraft = $state('');
@@ -542,38 +532,26 @@
 				</div>
 			{/if}
 
-		<!-- Roll in progress ─────────────────────────────────────────── -->
-		{:else if rollActive && !outcomeApplied}
-			<p class="ft-prompt muted">Dice roll in progress…</p>
-
-		<!-- Post-roll: pass the decree (no option picks; does NOT enact yet) ─── -->
-		{:else if rollOutcome != null && !outcomeApplied && amChoiceActor}
-			<div class="choices-section">
-				<p class="choices-header">
-					Result: <strong class="outcome-{rollOutcome}">
-						{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
-					</strong>
-				</p>
-				<p class="choices-note">
-					{#if rollOutcome === 'make'}
-						The decree passes. The signatory adds the addendum, then it takes effect
-						and you gain a resource.
-					{:else}
-						The decree passes, amended by the council; the signatory then adds the
-						addendum and it takes effect.
-					{/if}
-				</p>
-				<button class="action-btn primary"
-					onclick={() => applyResult(plan, rollOutcome!)}
-					disabled={applyBusy}>
-					{applyBusy ? '…' : 'Pass the decree'}
-				</button>
-			</div>
+		<!-- Roll in progress / just resolved — passing the decree is automatic
+		     (the outcome is whatever the dice say), so there's no gate here: the
+		     server records it on roll resolution and the law-writing sub-flow
+		     opens below. This branch only covers the brief in-flight window. ── -->
+		{:else if (rollActive || rollOutcome != null) && !outcomeApplied}
+			<p class="ft-prompt muted">
+				{rollOutcome == null ? 'Dice roll in progress…' : 'Recording the result…'}
+			</p>
 
 		<!-- Decree passed: (mar) amendments → addendum (enacts) → complete ──── -->
 		{:else if outcomeApplied}
 			{@const amendmentsDone = amendmentsRemaining === 0}
 			<div class="complete-section">
+				{#if !lawEnacted && rollOutcome != null}
+					<p class="choices-header">
+						Result: <strong class="outcome-{rollOutcome}">
+							{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
+						</strong>
+					</p>
+				{/if}
 				<p class="choices-applied">
 					{#if lawEnacted}
 						Law enacted.
@@ -628,10 +606,9 @@
 				{#if amendmentsDone && !pdState.addendumPlaced}
 					{#if amSignatory}
 						<div class="plan-form">
-							<p class="choices-header">Addendum</p>
+							<p class="choices-header">Signatory's Addendum</p>
 							<p class="choices-note">
-								Add your rider (or leave it blank). {playerName(players, plan.preparer_id)}
-								then enacts the law.
+								Add your rider to the final law's text (or leave it blank).
 							</p>
 							<div class="chip-row">
 								<button type="button" class="chip-btn" class:active={addendumConnector === 'and'}
@@ -641,7 +618,7 @@
 							</div>
 							<label class="form-label">
 								<textarea rows={2} bind:value={addendumDraft} class="form-textarea"
-									placeholder="…the rider text (optional)"></textarea>
+									placeholder='a simple phrase. (optional)'></textarea>
 							</label>
 							<button class="action-btn primary"
 								onclick={() => submitAddendum(plan)}

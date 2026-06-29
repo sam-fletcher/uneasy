@@ -935,3 +935,53 @@ func maybeAutoComplete(
 	}
 	return true, nil
 }
+
+// applyAutoChoiceOnRoll records a resolved roll's outcome automatically for
+// plans that opt in via AutoApplyChoiceOnRoll — those whose post-roll
+// make-choice carries no decision (the outcome is fixed by the dice). It mirrors
+// the MakeChoice handler's ApplyChoice → save → maybe-auto-complete tail, minus
+// the option-pick budget (there are no options). It is a no-op for rolls not
+// tied to such a plan, and — because the handler's ApplyChoice is idempotent —
+// safe to call even if the outcome was already applied.
+//
+// Called from finalizeRoll so the result is recorded server-side the moment the
+// dice land, rather than waiting for the actor to open the page and click "pass"
+// (which would stall the async play-by-post sub-flow on a no-op gate).
+func applyAutoChoiceOnRoll(
+	ctx context.Context, q *dbgen.Queries, manager *hub.Manager, roll *dbgen.DiceRoll,
+) error {
+	if roll.PlanID == nil || roll.Outcome == nil {
+		return nil
+	}
+	plan, err := q.GetPlanByID(ctx, *roll.PlanID)
+	if err != nil {
+		return err
+	}
+	if plan.Status != model.PlanResolving {
+		return nil
+	}
+	h, ok := GetHandler(plan.PlanType)
+	if !ok {
+		return nil
+	}
+	applier, ok := h.(AutoApplyChoiceOnRoll)
+	if !ok || !applier.AutoApplyChoiceOnRoll() {
+		return nil
+	}
+
+	resData := loadResolutionData(plan.ResolutionData)
+	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: manager}
+	if err := h.ApplyChoice(ctx, deps, &plan, &resData, nil, *roll.Outcome); err != nil {
+		return err
+	}
+	if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
+		return err
+	}
+	// A decision-free outcome can leave the plan terminally finished (e.g. a plan
+	// with no post-choice sub-flow); auto-complete if so. Plans with sub-steps
+	// (Propose Decree) fail CanComplete here, so this is a safe no-op for them.
+	if _, err := maybeAutoComplete(ctx, q, manager, h, &plan, &resData, *roll.Outcome); err != nil {
+		return err
+	}
+	return nil
+}
