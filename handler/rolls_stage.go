@@ -27,14 +27,29 @@ import (
 // assets, no unspent banked dice) is auto-readied at seed — there is
 // nothing for them to do, so blocking on their explicit Ready click would
 // just be busywork.
+//
+// Exception: a Make Demands control_leverage winner against the roll's plan is
+// always seeded UNREADY, even with no own dice, until they finalize their
+// leverage decision (see pendingControlLeverageChooser). Otherwise a winner with
+// nothing of their own to commit would be auto-readied here and the roll could
+// resolve before they ever set the preparer's leverage. planID is the roll's
+// plan (nil for plan-less rolls), used only to find that winner.
 func seedRollParticipants(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID, rollID, actorID int64,
+	planID *int64,
 ) error {
 	players, err := q.GetPlayersByGame(ctx, gameID)
 	if err != nil {
 		return fmt.Errorf("load players: %w", err)
+	}
+	var leverageChooser int64
+	if planID != nil {
+		plan, err := q.GetPlanByID(ctx, *planID)
+		if err == nil {
+			leverageChooser = pendingControlLeverageChooser(ctx, q, &plan)
+		}
 	}
 	aid := intentAid
 	for _, p := range players {
@@ -46,16 +61,36 @@ func seedRollParticipants(
 		if err != nil {
 			return err
 		}
+		ready := !canCommit
+		if p.ID == leverageChooser {
+			// Blocks the roll until they finalize their leverage decision.
+			ready = false
+		}
 		if err := q.CreateRollParticipant(ctx, dbgen.CreateRollParticipantParams{
 			RollID:   rollID,
 			PlayerID: p.ID,
 			Intent:   intent,
-			IsReady:  !canCommit,
+			IsReady:  ready,
 		}); err != nil {
 			return fmt.Errorf("create participant: %w", err)
 		}
 	}
 	return nil
+}
+
+// rollControlLeverageChooserPending returns the Make Demands control_leverage
+// winner who still owes the leverage decision on this roll's plan, or 0. Used by
+// the auto-ready sweep and the skip-leverage short-circuit to keep that winner
+// blocking the roll until they finalize.
+func rollControlLeverageChooserPending(ctx context.Context, q *dbgen.Queries, roll *dbgen.DiceRoll) int64 {
+	if roll.PlanID == nil {
+		return 0
+	}
+	plan, err := q.GetPlanByID(ctx, *roll.PlanID)
+	if err != nil {
+		return 0
+	}
+	return pendingControlLeverageChooser(ctx, q, &plan)
 }
 
 // playerCanCommit returns true when the player has at least one
@@ -104,6 +139,11 @@ func runAutoReadySweep(
 		return err
 	}
 	if can {
+		return nil
+	}
+	// A Make Demands control_leverage winner who hasn't finalized stays unready
+	// even with no own dice — their pending leverage decision blocks the roll.
+	if rollControlLeverageChooserPending(ctx, q, roll) == playerID {
 		return nil
 	}
 	if err := q.SetParticipantReady(ctx, dbgen.SetParticipantReadyParams{
@@ -249,7 +289,10 @@ func advanceToLeverage(
 			break
 		}
 	}
-	if !anyCanCommit {
+	// A pending control_leverage winner still has a decision to make even when
+	// nobody can commit dice, so the roll must not short-circuit past them.
+	leverageChooserPending := rollControlLeverageChooserPending(ctx, q, roll) != 0
+	if !anyCanCommit && !leverageChooserPending {
 		if err := q.SetAllParticipantsReady(ctx, roll.ID); err != nil {
 			return err
 		}

@@ -113,6 +113,15 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 			}
 		}
 	})
+	// Roll endpoints — needed by tests that drive a plan's dice roll through its
+	// stage machine directly (e.g. the Make Demands control_leverage timing test
+	// asserting the roll waits for the demand winner before resolving).
+	r.Route("/api/rolls/{rollId}", func(rr chi.Router) {
+		rr.Post("/skip-vote", SkipVote(store, manager))
+		rr.Post("/intent", SetIntent(store, manager))
+		rr.Post("/leverage", LeverageRoll(store, manager))
+		rr.Post("/ready", SetReady(store, manager))
+	})
 
 	return &planLifecycle{
 		t: t, pool: pool, q: q, store: store, manager: manager,

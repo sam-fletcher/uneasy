@@ -349,7 +349,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 				return
 			}
 		}
-		if err := seedRollParticipants(ctx, deps.Q, plan.GameID, roll.ID, player.ID); err != nil {
+		if err := seedRollParticipants(ctx, deps.Q, plan.GameID, roll.ID, player.ID, new(plan.ID)); err != nil {
 			respondInternalErr(w, r, "could not seed participants", err)
 			return
 		}

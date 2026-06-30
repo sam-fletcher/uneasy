@@ -21,6 +21,14 @@ import (
 // The target preparer's own leverage of their own assets is separately blocked
 // while a control_leverage winner exists (see handler/rolls.go LeverageRoll).
 //
+// This call is the winner's FINALIZE signal: each successful call flips the
+// plan's demand_leverage_finalized flag, after which the winner stops blocking
+// the roll and readies normally (so the roll can auto-resolve). An empty
+// asset_ids list is valid and meaningful — it leverages none of the preparer's
+// assets, deliberately guaranteeing the roll's failure per the rulebook. Until
+// this fires, the winner is seeded unready and excluded from the auto-ready
+// sweeps (see rolls_stage.go), so the roll cannot resolve without them.
+//
 //nolint:gocognit,funlen // leverage rights handoff to demand winner
 func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +146,36 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 				playerDisplayName(ctx, deps.Q, plan.PreparerID),
 				playerDisplayName(ctx, deps.Q, player.ID),
 				strings.Join(leveragedNames, ", ")))
+		} else {
+			// Leveraging none is a deliberate move (guaranteeing failure), so it
+			// gets its own log line rather than passing silently.
+			mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+				"Holding the reins of %s's plan, %s leveraged none of their assets — leaving the roll to fail.",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID),
+				playerDisplayName(ctx, deps.Q, player.ID)))
 		}
+
+		// Finalize: flip the plan's flag so the winner stops blocking the roll,
+		// then let them ready normally and resolve if everyone else is in. Done
+		// after the leverage writes above so the gate clears only once their
+		// decision is locked in.
+		resData := loadResolutionData(plan.ResolutionData)
+		resData.DemandLeverageFinalized = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not finalize demand leverage", err)
+			return
+		}
+		if err := runAutoReadySweep(ctx, deps.Q, deps.Manager, &roll, player.ID); err != nil {
+			respondInternalErr(w, r, "could not update ready state", err)
+			return
+		}
+		if err := maybeAutoResolve(ctx, w, r, deps.Q, deps.Manager, &roll); err != nil {
+			respondInternalErr(w, r, "could not auto-resolve roll", err)
+			return
+		}
+		// Clears the AwaitDemandLeverage row-state gate even when the roll didn't
+		// resolve yet (the winner kept their own dice in hand).
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,

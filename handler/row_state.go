@@ -63,6 +63,18 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		}
 		plan := &plans[i]
 		id := plan.ID
+		// Pre-roll cross-player gate: a Make Demands control_leverage winner owes
+		// the leverage decision on this (target) plan's still-open roll. They block
+		// the roll from resolving, so name them rather than letting a sub-phase
+		// override or the generic preparer case mis-attribute the wait. This is the
+		// pre-roll mirror of the post-roll perform_steps handoff handled below.
+		if chooser := pendingControlLeverageChooser(ctx, q, plan); chooser != 0 {
+			return model.RowState{
+				Kind:            model.RowStateAwaitDemandLeverage,
+				PlanID:          &id,
+				ActingPlayerIDs: []int64{chooser},
+			}, nil
+		}
 		if override, ok := planResolvingWaitees(ctx, q, plan); ok {
 			override.PlanID = &id
 			return override, nil

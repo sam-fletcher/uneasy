@@ -131,6 +131,11 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — awaiting counter' };
 		case 'await_demand_draft_pick':
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — draft pick' };
+		case 'await_demand_leverage':
+			// Control_leverage winner owes the leverage decision on the target
+			// plan's open roll. Usually surfaced via the active-roll path above
+			// (they're seeded unready); this is the row-state fallback.
+			return { waitees: actingWaitees(), stepLabel: 'Make Demands — control leverage' };
 		case 'await_festivity_guest_turn':
 			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — in progress' };
 		case 'await_festivity_challenge_response':

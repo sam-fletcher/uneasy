@@ -330,7 +330,7 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 					return errors.New("could not create base dice")
 				}
 			}
-			return seedRollParticipants(ctx, q, gameID, roll.ID, body.ActorID)
+			return seedRollParticipants(ctx, q, gameID, roll.ID, body.ActorID, body.PlanID)
 		})
 		if err != nil {
 			if isUniqueViolation(err, openRollConstraint) {

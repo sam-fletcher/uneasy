@@ -99,7 +99,7 @@ func createPlanRoll(
 			return nil, err
 		}
 	}
-	if err := seedRollParticipants(ctx, q, game.ID, roll.ID, actorID); err != nil {
+	if err := seedRollParticipants(ctx, q, game.ID, roll.ID, actorID, new(plan.ID)); err != nil {
 		return nil, err
 	}
 	broadcastEvent(manager, game.ID, model.EventRollCreated, model.RollCreatedPayload{Roll: roll})

@@ -89,6 +89,17 @@ const (
 	// the next pick. Half of every draft blocks on a non-focus player.
 	RowStateAwaitDemandDraftPick RowStateKind = "await_demand_draft_pick"
 
+	// RowStateAwaitDemandLeverage — a plan targeted by a made Make Demands is
+	// resolving, and the demand's control_leverage winner (someone other than
+	// the target plan's preparer) still owes their leverage decision on the
+	// still-open roll. They alone choose how many of the preparer's assets are
+	// leveraged onto the roll — including none, to guarantee failure — so the
+	// roll is held open until they finalize. ActingPlayerIDs names that winner,
+	// who is typically not the focus player. Narrower than PlanResolving so the
+	// WaitingOnBar names the actual decision-maker, not the preparer. The
+	// pre-roll mirror of the post-roll perform_steps handoff.
+	RowStateAwaitDemandLeverage RowStateKind = "await_demand_leverage"
+
 	// RowStateAwaitFestivityGuestTurn — a Host Festivity plan is in the
 	// 'socializing' phase and waiting on the next guest (in lowest-esteem-
 	// first order, host goes last) to roll or opt out. ActingPlayerIDs names
@@ -176,8 +187,9 @@ type RowState struct {
 
 	// PlanID is the relevant plan for: PlanResolving, PlanPending,
 	// AwaitDelayReveal, AwaitDemandCounter, AwaitDemandDraftPick,
-	// AwaitFestivityGuestTurn, AwaitFestivityChallengeResponse,
-	// AwaitDuelStaking, AwaitDuelBout. Nil otherwise.
+	// AwaitDemandLeverage, AwaitFestivityGuestTurn,
+	// AwaitFestivityChallengeResponse, AwaitDuelStaking, AwaitDuelBout. Nil
+	// otherwise.
 	PlanID *int64 `json:"plan_id,omitempty"`
 
 	// SceneID is the focus player's active scene id for: SceneActive. This

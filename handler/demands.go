@@ -81,6 +81,44 @@ func pendingPerformStepsChooser(ctx context.Context, q *dbgen.Queries, plan *dbg
 	return winnerID, true
 }
 
+// pendingControlLeverageChooser returns the "control_leverage" demand winner who
+// still owes the leverage decision on a plan targeted by a made Make Demands,
+// while that decision is still outstanding — and 0 otherwise.
+//
+// When a demand's control_leverage option is won by someone other than the
+// target plan's preparer, that winner (not the preparer) decides how many of the
+// preparer's own assets are leveraged onto the target plan's roll — including
+// none, to guarantee the roll's failure. Because "leverage none" leaves zero
+// demand-leveraged dice (indistinguishable from "hasn't acted yet"), the winner
+// must explicitly finalize; until they do, they block the roll. This names them
+// so the pre-roll wait isn't mis-attributed to the preparer, mirroring the
+// post-roll pendingPerformStepsChooser handoff.
+//
+// Returns 0 when: there is no such demand; the winner is the preparer (no
+// handoff — they leverage their own assets directly); they have already
+// finalized; or the target plan's roll is no longer open (the window has
+// closed).
+func pendingControlLeverageChooser(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
+	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
+	if err != nil || winners == nil {
+		return 0
+	}
+	winnerID := winners[game.DemandOptionControlLeverage]
+	if winnerID == 0 || winnerID == plan.PreparerID {
+		return 0
+	}
+	if loadResolutionData(plan.ResolutionData).DemandLeverageFinalized {
+		return 0
+	}
+	// Only while the target plan's roll is still open: the winner can act only
+	// during the leverage window, and once the roll resolves the gate is moot.
+	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil || !rollIsOpen(&roll) {
+		return 0
+	}
+	return winnerID
+}
+
 // DemandWinnersForTargetPlan returns the resolved made demand (if any) that
 // targets the given plan, along with its decoded option-winners map. Returns
 // (nil, nil, nil) if no such demand exists. Used by target-plan integration

@@ -29,6 +29,19 @@ type ResolutionData struct {
 	// handlers that track which player made each choice set PlayerID.
 	MakeMarChoices []Choice `json:"make_mar_choices,omitempty"`
 
+	// DemandLeverageFinalized records that the Make Demands control_leverage
+	// winner against this (target) plan has finalized their leverage decision
+	// on the plan's roll. It rides the top level — not the per-plan nested
+	// struct — because the target can be any plan type, and the flag is a
+	// Make Demands cross-plan concern, not part of the target type's own state.
+	//
+	// The flag is needed because "leverage none of the target's assets" (a
+	// legitimate, failure-guaranteeing choice) is indistinguishable from
+	// "hasn't acted yet": both leave zero demand-leveraged dice. Until it flips,
+	// the winner blocks the roll (seeded unready, excluded from the auto-ready
+	// sweeps); once it flips they ready normally and the roll can resolve.
+	DemandLeverageFinalized bool `json:"demand_leverage_finalized,omitempty"`
+
 	ExchangeCourtiers  *ExchangeCourtiersResolutionData  `json:"exchange_courtiers,omitempty"`
 	MakeIntroductions  *MakeIntroductionsResolutionData  `json:"make_introductions,omitempty"`
 	SeekAnswers        *SeekAnswersResolutionData        `json:"seek_answers,omitempty"`
