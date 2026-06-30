@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -61,6 +62,56 @@ func miToMar(t *testing.T, h *planLifecycle, peerCount int) (planID int64, prepa
 	rd := loadResolutionData(refreshed.ResolutionData)
 	require.NotNil(t, rd.MakeIntroductions)
 	return plan.ID, preparerIdx, rd.MakeIntroductions.CreatedPeerIDs
+}
+
+// TestMakeIntroductions_PerformStepsWinnerNamesPeers proves a Make Demands
+// perform_steps win lets the demander drive the pre-roll make step (create-peer)
+// in the preparer's stead, the preparer is locked out, and the keep_assets win
+// routes the introduced peer into the demander's retinue.
+func TestMakeIntroductions_PerformStepsWinnerNamesPeers(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	preparerIdx := h.focusPlayerIdx()
+	demanderIdx := (preparerIdx + 1) % 3
+
+	notes := "introductions"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanMakeIntroductions,
+		PeerCount:        1,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID), "MI defers its roll until peers are named")
+
+	// A resolved, made demand hands perform_steps + keep_assets to the demander.
+	h.seedMadeDemand(demanderIdx, plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[demanderIdx].ID,
+		game.DemandOptionKeepAssets:   h.tg.Players[demanderIdx].ID,
+	})
+
+	createPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/create-peer"
+
+	// The preparer is locked out of naming peers now that the demander holds it.
+	code, body := h.post(preparerIdx, createPath, map[string]any{"name": "Preparer's pick"})
+	require.Equalf(t, http.StatusForbidden, code,
+		"preparer must be locked out when the demander won perform_steps: %v", body)
+
+	// The demander names the peer instead.
+	code, body = h.post(demanderIdx, createPath, map[string]any{"name": "Demander's pick"})
+	require.Equalf(t, http.StatusCreated, code,
+		"perform_steps winner should drive create-peer: %v", body)
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.MakeIntroductions)
+	require.Len(t, rd.MakeIntroductions.CreatedPeerIDs, 1)
+	peer, err := h.q.GetAssetByID(ctx, rd.MakeIntroductions.CreatedPeerIDs[0])
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[demanderIdx].ID, peer.OwnerID,
+		"keep_assets winner owns the introduced peer")
 }
 
 func TestMakeIntroductions_Mar_OtherRetinue_AndGating(t *testing.T) {

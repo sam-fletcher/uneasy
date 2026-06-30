@@ -710,11 +710,12 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "game is not in the main event phase")
 			return
 		}
-		// Normally only the plan's preparer (the resolver) may make plan
-		// choices. A few specific roles may also drive make-choice on the
-		// preparer's plan; see makeChoiceAllowedNonPreparer for the list.
-		isPreparer := player.ID == plan.PreparerID
-		if !isPreparer && !makeChoiceAllowedNonPreparer(r.Context(), s.Q, plan, player) {
+		// The plan's resolution actor drives make-choice — normally the preparer,
+		// but a Make Demands perform_steps win transfers that to the winner (and
+		// locks out the preparer); see actsForPreparer. A few plans additionally
+		// hand the *mar* choice to their target/victim; see marChoiceTargetRole.
+		if !actsForPreparer(r.Context(), s.Q, plan, player.ID) &&
+			!marChoiceTargetRole(r.Context(), s.Q, plan, player) {
 			respondErr(w, http.StatusForbidden, "only the plan's preparer can do this")
 			return
 		}

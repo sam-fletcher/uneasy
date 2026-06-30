@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -326,6 +327,59 @@ func TestLiaise_ShareChoice_BreakPartnerPeer_AutoDestroys(t *testing.T) {
 	movedGift, err := h.q.GetAssetByID(ctx, giftID)
 	require.NoError(t, err)
 	assert.Equal(t, h.tg.Players[1].ID, movedGift.OwnerID, "gift should belong to the partner now")
+}
+
+// TestLiaise_TakeGift_KeepAssetsDemandScoping proves a resolved Make Demands
+// keep_assets winner intercepts the PREPARER's take_gift (the gift lands with the
+// demander), while the PARTNER's own take from the preparer is left untouched —
+// only the preparer's gains are the demand's to claim.
+func TestLiaise_TakeGift_KeepAssetsDemandScoping(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	m := clDriveToThingsWeShare(t, h)
+
+	// A non-peer each player can gift the other.
+	partnerGift, err := h.q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[1].ID,
+		CreatorID: h.tg.Players[1].ID, AssetType: model.AssetArtifact, Name: "partner's locket",
+	})
+	require.NoError(t, err)
+	preparerGift, err := h.q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[0].ID,
+		CreatorID: h.tg.Players[0].ID, AssetType: model.AssetArtifact, Name: "preparer's trinket",
+	})
+	require.NoError(t, err)
+
+	// Player 2 holds a resolved, made demand against the liaison with keep_assets.
+	h.seedMadeDemand(2, m.plan.ID, game.DemandOptionWinners{
+		game.DemandOptionKeepAssets: h.tg.Players[2].ID,
+	})
+
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
+
+	// Partner (1) takes the preparer's trinket; no effects until both submit.
+	code, body := h.post(1, sharePath, map[string]any{
+		"choice": "take_gift", "target_asset_id": preparerGift.ID,
+	})
+	require.Equalf(t, http.StatusOK, code, "partner take_gift: %v", body)
+
+	// Preparer (0) takes the partner's locket — second submission applies both.
+	code, body = h.post(0, sharePath, map[string]any{
+		"choice": "take_gift", "target_asset_id": partnerGift.ID,
+	})
+	require.Equalf(t, http.StatusOK, code, "preparer take_gift: %v", body)
+
+	// Preparer's gain is intercepted by the demand winner (player 2).
+	movedLocket, err := h.q.GetAssetByID(ctx, partnerGift.ID)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[2].ID, movedLocket.OwnerID,
+		"keep_assets demand winner should receive the preparer's gift")
+
+	// The partner's take from the preparer is unaffected — it stays with the partner.
+	movedTrinket, err := h.q.GetAssetByID(ctx, preparerGift.ID)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[1].ID, movedTrinket.OwnerID,
+		"partner's own take must not be redirected by the demand")
 }
 
 // TestLiaise_ShareChoice_UpdatePeer_RewritesMarginalia proves update_peer edits

@@ -36,6 +36,7 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 	"uneasy/model"
@@ -383,4 +384,36 @@ func (h *planLifecycle) seedPeerWithMarginalia(ownerIdx int, name string) (asset
 	})
 	require.NoError(h.t, err)
 	return assetID, m.ID
+}
+
+// seedMadeDemand creates a resolved, *made* Make Demands plan (owned by
+// players[demanderIdx]) targeting targetPlanID, persisting the given
+// option→winner-player-ID map on demand_option_winners. It bypasses the demand
+// draft entirely so target-plan tests can exercise the demand hooks
+// (keep_assets routing, perform_steps gating, control_leverage) directly. Keys
+// are game.DemandOption* constants. Returns the reloaded demand plan.
+func (h *planLifecycle) seedMadeDemand(
+	demanderIdx int,
+	targetPlanID int64,
+	winners game.DemandOptionWinners,
+) dbgen.Plan {
+	h.t.Helper()
+	ctx := context.Background()
+	demand := createPlanOnRow(h.t, h.q, &h.tg.Game, &h.tg.Players[demanderIdx],
+		model.PlanMakeDemands, model.CategoryPower, 1)
+	require.NoError(h.t, h.q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: demand.ID, TargetedPlanID: &targetPlanID,
+	}))
+	raw, err := json.Marshal(winners)
+	require.NoError(h.t, err)
+	require.NoError(h.t, h.q.SetDemandOptionWinners(ctx, dbgen.SetDemandOptionWinnersParams{
+		ID: demand.ID, DemandOptionWinners: raw,
+	}))
+	made := makeOutcome
+	require.NoError(h.t, h.q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
+		ID: demand.ID, Result: &made,
+	}))
+	reloaded, err := h.q.GetPlanByID(ctx, demand.ID)
+	require.NoError(h.t, err)
+	return reloaded
 }

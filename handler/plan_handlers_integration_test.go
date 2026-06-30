@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -312,6 +313,61 @@ func TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium(t *testing.T) 
 	require.NoError(t, err)
 	assert.True(t, destroyed.IsDestroyed,
 		"tearing the final marginalia via break-target must destroy the asset")
+}
+
+// TestSpreadRumors_TakeAsset_KeepAssetsDemandIntercepts proves a resolved Make
+// Demands keep_assets winner intercepts the preparer's "take_asset" spoils on a
+// made roll: the taken asset lands with the demander, not the preparer.
+func TestSpreadRumors_TakeAsset_KeepAssetsDemandIntercepts(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	prepIdx := h.focusPlayerIdx()
+	victimIdx := (prepIdx + 1) % 3
+	demanderIdx := (prepIdx + 2) % 3
+
+	// Rumor subject owned by the victim, plus a separate spoils asset the
+	// preparer will take from the victim on a made roll.
+	target := h.seedPeer(victimIdx, "rumor target")
+	spoils, err := h.q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[victimIdx].ID,
+		CreatorID: h.tg.Players[victimIdx].ID, AssetType: model.AssetArtifact, Name: "victim's signet",
+	})
+	require.NoError(t, err)
+
+	notes := "a damaging whisper"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSpreadRumors,
+		TargetAssetID:    &target,
+		PreparationNotes: &notes,
+	})
+	require.Equal(t, h.tg.Players[prepIdx].ID, plan.PreparerID, "focus player is the preparer")
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll, "Spread Rumors creates its roll on resolve")
+	h.forceRoll(roll.ID, makeOutcome, 6) // generous budget for one take_asset
+
+	// A resolved, made demand against the rumor plan hands keep_assets to the demander.
+	h.seedMadeDemand(demanderIdx, plan.ID, game.DemandOptionWinners{
+		game.DemandOptionKeepAssets: h.tg.Players[demanderIdx].ID,
+	})
+
+	// Preparer requests to take the victim's signet; the victim must consent.
+	reqPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/request-take-consent"
+	code, body := h.post(prepIdx, reqPath, map[string]any{
+		"choices": []string{"take_asset"}, "result": makeOutcome, "take_asset_ids": []int64{spoils.ID},
+	})
+	require.Equalf(t, http.StatusOK, code, "request-take-consent: %v", body)
+
+	respPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/respond-take-consent"
+	code, body = h.post(victimIdx, respPath, map[string]any{"agree": true})
+	require.Equalf(t, http.StatusOK, code, "respond-take-consent: %v", body)
+
+	moved, err := h.q.GetAssetByID(ctx, spoils.ID)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[demanderIdx].ID, moved.OwnerID,
+		"keep_assets demand winner should receive the taken asset, not the preparer")
 }
 
 // TestSpreadRumors_HideSource_IsIdempotent covers the post-commit "hide source"

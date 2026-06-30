@@ -184,16 +184,11 @@ func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 // Request body: {"name": "the artifact's name"}
 func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, ok := requirePlanPreparer(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadPropaganda)
 		if !ok {
 			return
 		}
-		if plan.PlanType != model.PlanSpreadPropaganda {
-			respondErr(w, http.StatusBadRequest, "create-artifact is only for Spread Propaganda")
-			return
-		}
-		if plan.Status != model.PlanResolving {
-			respondErr(w, http.StatusConflict, "plan is not in resolving status")
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 
@@ -448,8 +443,7 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer gives up a peer")
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 
@@ -551,8 +545,7 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer breaks themselves")
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 

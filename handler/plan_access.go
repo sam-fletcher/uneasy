@@ -14,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	dbgen "uneasy/db/gen"
-	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -92,37 +91,57 @@ func requirePlanResolving(w http.ResponseWriter, plan *dbgen.Plan) bool {
 	return true
 }
 
-// makeChoiceAllowedNonPreparer returns true if the caller is permitted to drive
-// make-choice on this plan despite not being the plan's preparer (the normal
-// resolver). These roles qualify because the plan text hands them a choice:
+// actsForPreparer reports whether playerID may drive plan's make/mar resolution
+// steps as the preparer-equivalent. Authority is the preparer's by default, but
+// a resolved, made Make Demands "perform_steps" win TRANSFERS it to the winner:
+// when the demander wins, they perform the steps and the preparer is locked out;
+// when the preparer wins (or there's no demand) the preparer keeps it. This is
+// the single source of truth for "who resolves this plan", shared by the
+// standard make-choice path and the per-plan make-resolution routes.
+func actsForPreparer(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, playerID int64) bool {
+	if winner := performStepsWinner(ctx, q, plan); winner != 0 {
+		return playerID == winner
+	}
+	return playerID == plan.PreparerID
+}
+
+// requireResolutionActor is the route guard form of actsForPreparer: it writes a
+// 403 and returns false when the caller may not drive this plan's resolution.
+// Per-plan resolution routes use it in place of a bare preparer check so a
+// perform_steps demand winner is honored uniformly.
+func requireResolutionActor(
+	w http.ResponseWriter,
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	playerID int64,
+) bool {
+	if !actsForPreparer(ctx, q, plan, playerID) {
+		respondErr(w, http.StatusForbidden, "only the plan's preparer (or a demand's perform-steps winner) can do this")
+		return false
+	}
+	return true
+}
+
+// marChoiceTargetRole returns true if the caller is a non-preparer who the plan
+// text hands a make-choice on a *mar* outcome — independent of any demand. The
+// mar of these plans is target-driven by design, so the target/victim drives it
+// (not the preparer, and not a perform_steps winner):
 //
-//   - Make Demands "perform_steps" winner — submits preparer-equivalent
-//     choices on the target plan.
-//   - Propose Duel target on a mar outcome — picks which staked assets to
-//     claim from the preparer.
-//   - Exchange Courtiers target on a mar outcome — chooses fair_trade /
-//     riposte / forfeit against the preparer.
-//   - Spread Rumors target-asset owner on a mar outcome — drives the
-//     counter-rumor options applied to the preparer's assets.
-func makeChoiceAllowedNonPreparer(
+//   - Propose Duel target — picks which staked assets to claim from the preparer.
+//   - Exchange Courtiers target — chooses fair_trade / riposte / forfeit.
+//   - Spread Rumors target-asset owner — drives the counter-rumor options.
+func marChoiceTargetRole(
 	ctx context.Context,
 	q *dbgen.Queries,
 	plan *dbgen.Plan,
 	player *dbgen.Player,
 ) bool {
-	if _, winners, err := DemandWinnersForTargetPlan(ctx, q, plan); err == nil {
-		if winnerID, ok := winners[gamepkg.DemandOptionPerformSteps]; ok &&
-			winnerID == player.ID && winnerID != 0 && winnerID != plan.PreparerID {
-			return true
-		}
-	}
 	if plan.PlanType == model.PlanProposeDuel &&
 		plan.TargetPlayerID != nil && *plan.TargetPlayerID == player.ID &&
 		planRollIsMar(ctx, q, plan) {
 		return true
 	}
-	// Exchange Courtiers mar is target-driven: the target player chooses
-	// fair_trade / riposte / forfeit against the preparer.
 	if plan.PlanType == model.PlanExchangeCourtiers &&
 		plan.TargetPlayerID != nil && *plan.TargetPlayerID == player.ID &&
 		planRollIsMar(ctx, q, plan) {

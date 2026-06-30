@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -101,6 +102,71 @@ func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resolved.Result)
 	assert.Equal(t, "make", *resolved.Result)
+	assert.Equal(t, model.PlanResolved, resolved.Status)
+}
+
+// TestPlanLifecycle_SpreadPropaganda_PerformStepsWinnerResolves proves a Make
+// Demands perform_steps win TRANSFERS the resolution to the demander: the
+// preparer is locked out of both make-choice and the create-artifact make step,
+// the demander drives them in the preparer's stead, and the keep_assets win
+// routes the authored artifact to the demander. The preparer still completes
+// (the established hand-back — completion is preparer-owned).
+func TestPlanLifecycle_SpreadPropaganda_PerformStepsWinnerResolves(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	preparerIdx := h.focusPlayerIdx()
+	demanderIdx := (preparerIdx + 1) % 3
+
+	notes := "test propaganda"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSpreadPropaganda,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll, "SP creates its roll on resolve")
+	h.forceRoll(roll.ID, "make", 0)
+
+	// A resolved, made demand hands perform_steps + keep_assets to the demander.
+	h.seedMadeDemand(demanderIdx, plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[demanderIdx].ID,
+		game.DemandOptionKeepAssets:   h.tg.Players[demanderIdx].ID,
+	})
+
+	// The preparer is locked out of make-choice now that the demander holds it.
+	makeChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
+	code, body := h.post(preparerIdx, makeChoicePath, map[string]any{"result": "make", "choices": []string{"create_artifact"}})
+	require.Equalf(t, http.StatusForbidden, code, "preparer must be locked out of make-choice: %v", body)
+
+	// The demander (perform_steps winner) drives the make-choice instead.
+	code, body = h.post(demanderIdx, makeChoicePath, map[string]any{"result": "make", "choices": []string{"create_artifact"}})
+	require.Equalf(t, http.StatusOK, code, "perform_steps winner should drive make-choice: %v", body)
+
+	createPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/create-artifact"
+
+	// The preparer is locked out of the create-artifact make step too.
+	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "Preparer's orthodoxy"})
+	require.Equalf(t, http.StatusForbidden, code, "preparer must be locked out of create-artifact: %v", body)
+
+	// The demander authors the artifact; keep_assets routes it to them.
+	code, body = h.post(demanderIdx, createPath, map[string]any{"name": "The Demander's Orthodoxy"})
+	require.Equalf(t, http.StatusOK, code, "perform_steps winner should drive create-artifact: %v", body)
+
+	planAfter, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(planAfter.ResolutionData)
+	require.NotNil(t, rd.SpreadPropaganda.ArtifactID, "create-artifact records the asset id")
+	artifact, err := h.q.GetAssetByID(ctx, *rd.SpreadPropaganda.ArtifactID)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[demanderIdx].ID, artifact.OwnerID,
+		"keep_assets winner owns the authored artifact")
+
+	// Completion remains the preparer's (established hand-back).
+	h.complete(plan.ID)
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
 	assert.Equal(t, model.PlanResolved, resolved.Status)
 }
 

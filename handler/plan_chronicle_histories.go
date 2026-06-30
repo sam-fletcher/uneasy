@@ -329,11 +329,9 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		// The preparer resolves their own plan; a perform_steps demand winner may
-		// drive the choice in their place (same actor set as the generic make).
-		if player.ID != plan.PreparerID &&
-			!makeChoiceAllowedNonPreparer(r.Context(), deps.Q, plan, player) {
-			respondErr(w, http.StatusForbidden, "only the plan's preparer can make choices")
+		// The preparer resolves their own plan; a perform_steps demand winner
+		// drives the make steps in their place (and locks out the preparer).
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 

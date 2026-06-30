@@ -168,8 +168,7 @@ func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer can name peers")
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 
@@ -275,8 +274,7 @@ func finalizePeersHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer can finalize peers")
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 
@@ -339,8 +337,7 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer can schedule delayed arrivals")
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 
@@ -525,8 +522,7 @@ func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer resolves the introductions")
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 

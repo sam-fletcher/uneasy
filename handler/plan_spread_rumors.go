@@ -936,9 +936,19 @@ func srCommitTakeConsent(
 		return fmt.Errorf("apply choices: %w", err)
 	}
 	// The aggressor receives the assets: the preparer on make, the target-asset
-	// owner on mar — i.e. whoever requested the take.
+	// owner on mar — i.e. whoever requested the take. When the take is the
+	// preparer's own gain (make), a resolved Make Demands keep_assets winner
+	// intercepts it; a third party's mar riposte against the preparer is left
+	// untouched (see AssetRecipientForPlan's preparer-scoped contract).
+	recipient := req.RequestedBy
+	if req.RequestedBy == plan.PreparerID {
+		var rerr error
+		if recipient, rerr = AssetRecipientForPlan(ctx, deps.Q, plan); rerr != nil {
+			return fmt.Errorf("resolve asset recipient: %w", rerr)
+		}
+	}
 	for _, aid := range req.AssetIDs {
-		if err := transferRumorAsset(ctx, deps, plan, aid, req.RequestedBy); err != nil {
+		if err := transferRumorAsset(ctx, deps, plan, aid, recipient); err != nil {
 			return err
 		}
 	}

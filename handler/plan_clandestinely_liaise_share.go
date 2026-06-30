@@ -205,6 +205,12 @@ func applyLeveragePartner(
 
 // applyTakeGift transfers the partner-owned target asset to the chooser.
 // Consent is social; the server transfers ownership.
+//
+// When the chooser is the plan's own preparer, a resolved Make Demands
+// keep_assets winner intercepts the gift (the plan's spoils flow to the
+// demander instead). The partner's own take from the preparer is left
+// untouched — only the preparer's gains are the demand's to claim (see
+// AssetRecipientForPlan's preparer-scoped contract).
 func applyTakeGift(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -218,6 +224,12 @@ func applyTakeGift(
 	if err != nil {
 		return fmt.Errorf("take_gift: target asset not found: %w", err)
 	}
+	recipient := choice.PlayerID
+	if choice.PlayerID == plan.PreparerID {
+		if recipient, err = AssetRecipientForPlan(ctx, deps.Q, plan); err != nil {
+			return fmt.Errorf("take_gift: resolve asset recipient: %w", err)
+		}
+	}
 	oldOwner := asset.OwnerID
 	if _, err := takeAssetEffect(
 		ctx,
@@ -226,12 +238,20 @@ func applyTakeGift(
 		plan.GameID,
 		*choice.TargetAssetID,
 		oldOwner,
-		choice.PlayerID,
+		recipient,
 	); err != nil {
 		return fmt.Errorf("could not transfer gift asset: %w", err)
 	}
-	clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s took %s from their partner as a gift.",
-		playerDisplayName(ctx, deps.Q, choice.PlayerID), assetMark(asset.Name)))
+	if recipient == choice.PlayerID {
+		clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf("%s took %s from their partner as a gift.",
+			playerDisplayName(ctx, deps.Q, choice.PlayerID), assetMark(asset.Name)))
+	} else {
+		// keep_assets demand winner intercepted the preparer's gift.
+		clLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+			"%s's liaison yielded %s as a gift — seized by %s under their demand.",
+			playerDisplayName(ctx, deps.Q, choice.PlayerID), assetMark(asset.Name),
+			playerDisplayName(ctx, deps.Q, recipient)))
+	}
 	return nil
 }
 

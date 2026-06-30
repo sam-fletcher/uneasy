@@ -40,6 +40,20 @@ func AssetRecipientForPlan(
 	return plan.PreparerID, nil
 }
 
+// performStepsWinner returns the player who holds the perform_steps option of a
+// resolved, made Make Demands against plan — i.e. who drives this plan's make/mar
+// resolution steps in the preparer's stead. Returns 0 when there is no such
+// demand (so the preparer performs their own steps as usual). The winner may
+// itself be the preparer (if they won the draft), in which case authority is
+// unchanged.
+func performStepsWinner(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
+	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
+	if err != nil || winners == nil {
+		return 0
+	}
+	return winners[game.DemandOptionPerformSteps]
+}
+
 // pendingPerformStepsChooser returns the "perform_steps" demand winner who owes
 // the make/mar choice on a plan targeted by a made Make Demands, while that
 // choice is still outstanding — and ok=false otherwise.
@@ -51,12 +65,8 @@ func AssetRecipientForPlan(
 // actual chooser instead. Once they submit (MakeMarChoices populated) the
 // preparer completes, so this returns ok=false and the bar falls back to them.
 func pendingPerformStepsChooser(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (int64, bool) {
-	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
-	if err != nil || winners == nil {
-		return 0, false
-	}
-	winnerID, ok := winners[game.DemandOptionPerformSteps]
-	if !ok || winnerID == 0 || winnerID == plan.PreparerID {
+	winnerID := performStepsWinner(ctx, q, plan)
+	if winnerID == 0 || winnerID == plan.PreparerID {
 		return 0, false
 	}
 	// Only once the roll has resolved (the chooser can't act before then) and
