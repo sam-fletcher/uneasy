@@ -43,7 +43,7 @@
 
 <div class="choices-section">
 	<p class="choices-header">
-		Result: <strong class="outcome-{outcome}">{outcome === 'make' ? '✓ Make' : '✗ Mar'}</strong>
+		Result: <span class="outcome-{outcome}">{outcome === 'make' ? '✓ Make' : '✗ Mar'}</span>
 	</p>
 
 	{#if header}{@render header()}{/if}

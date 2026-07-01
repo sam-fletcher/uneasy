@@ -305,7 +305,7 @@
 		{@const targetSummary = targetPlan
 			? `${PLAN_SHORT[targetPlan.plan_type] ?? targetPlan.plan_type} by ${playerName(players, targetPlan.preparer_id)} (row ${targetPlan.row_number})`
 			: 'unknown target'}
-		<p class="choices-note">Targeting: <strong>{targetSummary}</strong></p>
+		<p class="choices-note">Targeting: {targetSummary}</p>
 
 		{#if rollActive}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
@@ -321,7 +321,7 @@
 					<ul class="plan-notes" style="padding-left:1rem;">
 						{#each draftChoices as c}
 							<li>
-								<strong>{playerName(players, c.player_id)}</strong>
+								{playerName(players, c.player_id)}
 								picked <em>{c.option.replace(/_/g, ' ')}</em>
 							</li>
 						{/each}
@@ -354,14 +354,14 @@
 					{/if}
 				{:else}
 					<p class="choices-note">
-						<strong>Draft complete.</strong> The cross-cutting effects (leverage,
+						Draft complete. The cross-cutting effects (leverage,
 						retarget, perform-steps, keep-assets) now apply to the target plan.
 					</p>
 					<ul class="plan-notes" style="padding-left:1rem;">
 						{#each DEMAND_OPTIONS as opt}
 							<li>
 								<em>{opt.replace(/_/g, ' ')}</em>:
-								<strong>{playerName(players, winners[opt] ?? null)}</strong>
+								{playerName(players, winners[opt] ?? null)}
 							</li>
 						{/each}
 					</ul>
@@ -398,7 +398,7 @@
 							aria-pressed={counterChoice === 'defer'}
 							onclick={() => { counterChoice = 'defer'; }}>
 							<span class="choice-text">
-								<span class="choice-title"><strong>Defer</strong> — counter the next plan
+								<span class="choice-title">Defer — counter the next plan
 									{playerName(players, plan.preparer_id)} prepares{#if counterTargetablePlans.length === 0} (no eligible plans yet){/if}{#if counterChoice === 'defer'}<span class="choice-tick"> ✓</span>{/if}</span>
 							</span>
 						</button>

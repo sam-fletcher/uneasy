@@ -73,7 +73,7 @@
 		</div>
 	{:else if myProposalVote}
 		<p class="choices-note muted">
-			You voted: <strong>{myProposalVote.accepted ? 'accept' : 'reject'}</strong>
+			You voted: {myProposalVote.accepted ? 'accept' : 'reject'}
 		</p>
 	{:else if !amFullParticipant}
 		<p class="choices-note muted">Only active war participants vote on peace.</p>

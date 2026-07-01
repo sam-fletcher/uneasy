@@ -240,7 +240,7 @@
 		title="Lowest sum of ranks. On a tie, the lowest Power player goes first."
 	>
 		{#if firstFocusPlayer != null && players.length > 0}
-			Projected first player: <strong>{playerName(firstFocusPlayer.pid)}</strong>
+			Projected first player: {playerName(firstFocusPlayer.pid)}
 			<span class="status-detail">
 				(Lowest combined rank)
 			</span>
@@ -422,7 +422,6 @@
 		padding: 0.3rem 0.4rem;
 		border-top: 1px solid var(--color-surface-2);
 	}
-	.status strong { color: var(--color-text); }
 	.status-detail { color: var(--color-text-faint); font-size: 0.75rem; margin-left: 0.4rem; }
 
 	@media (min-width: 600px) {

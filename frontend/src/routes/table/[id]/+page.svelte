@@ -688,7 +688,7 @@
 				<h2>New to the game? Start here.</h2>
 				<p class="muted">
 					A two-minute primer while you wait for everyone to arrive. You can reopen this
-					any time from the <strong>?</strong> in the top-right corner.
+					any time from the ? in the top-right corner.
 				</p>
 				<HelpContent />
 			</section>

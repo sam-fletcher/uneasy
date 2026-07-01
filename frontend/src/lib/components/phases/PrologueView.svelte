@@ -647,7 +647,7 @@
 		</ul>
 
 		{#if myExtraPeer}
-			<p class="muted small">You created your extra peer: <strong>{myExtraPeer.title_name}</strong>.</p>
+			<p class="muted small">You created your extra peer: {myExtraPeer.title_name}.</p>
 		{:else}
 			<div class="extra-form">
 				<div class="extra-title">

@@ -71,7 +71,7 @@
 				{@const e = entryFor(gid)}
 				<li>
 					<div class="who">
-						<strong>{playerName(players, gid)}</strong>{#if gid === currentPlayerID}<em>&nbsp;(you)</em>{/if}{#if gid === plan.preparer_id}<em>&nbsp;(host)</em>{/if}
+						{playerName(players, gid)}{#if gid === currentPlayerID}<em>&nbsp;(you)</em>{/if}{#if gid === plan.preparer_id}<em>&nbsp;(host)</em>{/if}
 					</div>
 					<div class="say" class:pending={e.tone === 'pending'}>
 						<span class="verdict"

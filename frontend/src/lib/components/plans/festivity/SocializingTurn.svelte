@@ -214,9 +214,9 @@
 		{@const opts = myEffectiveOutcome === 'make' ? MAKE_OPTS : MAR_OPTS}
 		<p class="choices-header">
 			Result:
-			<strong class="outcome-{myEffectiveOutcome}">
+			<span class="outcome-{myEffectiveOutcome}">
 				{myEffectiveOutcome === 'make' ? '✓ Make' : '✗ Mar'}
-			</strong>
+			</span>
 			— pick one option:
 		</p>
 		<FormField label="Pick one option">

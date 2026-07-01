@@ -92,9 +92,9 @@
 	{:else if rollOutcome != null && !choicesApplied}
 		<p class="choices-header">
 			Result:
-			<strong class="outcome-{rollOutcome}">
+			<span class="outcome-{rollOutcome}">
 				{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
-			</strong>
+			</span>
 		</p>
 		<p class="choices-note">
 			{playerName(players, winnerID)} takes {effectiveTake}

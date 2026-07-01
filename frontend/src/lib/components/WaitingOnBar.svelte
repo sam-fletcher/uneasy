@@ -76,7 +76,7 @@
 			{:else}
 				{#each orderedWaitees as w, i}
 					{#if w.kind === 'player' && currentPlayerID != null && w.playerID === currentPlayerID}
-						<strong class="waitee you" style:color={colorFor(w.playerID)}>You</strong>
+						<span class="waitee you" style:color={colorFor(w.playerID)}>You</span>
 					{:else if w.kind === 'player'}
 						<span class="waitee">{nameFor(w.playerID)}</span>
 					{:else if w.kind === 'label'}
@@ -131,9 +131,6 @@
 	}
 	.waitee {
 		display: inline;
-	}
-	.waitee.you {
-		font-weight: 700;
 	}
 	.sep {
 		color: var(--color-text-muted);

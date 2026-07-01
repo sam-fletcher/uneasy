@@ -150,17 +150,17 @@
 {#if demand && draftComplete}
 	<div class="demand-banner">
 		<p class="demand-banner-header">
-			<strong>Demand in effect</strong> from
+			Demand in effect from
 			{playerName(players, demand.preparer_id)}
 		</p>
 		<ul class="demand-winners">
 			{#if winners.perform_steps != null && winners.perform_steps !== plan.preparer_id}
 				<li>
 					{#if amPerformStepsWinner}
-						<strong>You</strong> will submit this plan's make/mar choices
+						You will submit this plan's make/mar choices
 						in {playerName(players, plan.preparer_id)}'s place.
 					{:else}
-						<strong>{playerName(players, winners.perform_steps)}</strong>
+						{playerName(players, winners.perform_steps)}
 						will submit this plan's make/mar choices in
 						{playerName(players, plan.preparer_id)}'s place.
 					{/if}
@@ -170,19 +170,19 @@
 				<li>
 					Any assets this plan would have given
 					{playerName(players, plan.preparer_id)}
-					go to <strong>{playerName(players, winners.keep_assets)}</strong> instead.
+					go to {playerName(players, winners.keep_assets)} instead.
 				</li>
 			{/if}
 			{#if winners.control_leverage != null && winners.control_leverage !== plan.preparer_id}
 				<li>
-					<strong>{playerName(players, winners.control_leverage)}</strong>
+					{playerName(players, winners.control_leverage)}
 					controls leverage of {playerName(players, plan.preparer_id)}'s
 					assets on this plan's roll.
 				</li>
 			{/if}
 			{#if winners.keep_or_change_target != null && winners.keep_or_change_target !== plan.preparer_id}
 				<li>
-					<strong>{playerName(players, winners.keep_or_change_target)}</strong>
+					{playerName(players, winners.keep_or_change_target)}
 					may re-aim this plan's target before the roll resolves.
 				</li>
 			{/if}

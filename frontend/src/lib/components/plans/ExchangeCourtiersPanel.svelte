@@ -359,8 +359,8 @@
 				{#if isTarget}
 					<div class="ft-section">
 						<p class="ft-prompt">
-							<strong>{playerName(players, plan.preparer_id)}</strong> wants
-							<strong>{assetName(assets, plan.target_asset_id)}</strong>. You may name
+							{playerName(players, plan.preparer_id)} wants
+							<em>{assetName(assets, plan.target_asset_id)}</em>. You may name
 							one of their peers to receive in exchange — a fair trade.
 						</p>
 						<CardPicker
@@ -476,7 +476,7 @@
 					<div class="messy-break-section">
 						<p class="ft-prompt">
 							The exchange was messy. You may break one of
-							<strong>{playerName(players, plan.preparer_id)}</strong>'s marginalia
+							{playerName(players, plan.preparer_id)}'s marginalia
 							before this plan completes.
 						</p>
 						{#if messyError}<p class="res-error">{messyError}</p>{/if}
@@ -504,7 +504,7 @@
 				{#if isPreparer}
 					<div class="messy-break-section">
 						<p class="ft-prompt">
-							Riposte: <strong>{playerName(players, plan.target_player_id)}</strong> takes
+							Riposte: {playerName(players, plan.target_player_id)} takes
 							your <em>{requestedPeerName}</em>. You may break it first, or surrender it intact.
 						</p>
 						<CardPicker

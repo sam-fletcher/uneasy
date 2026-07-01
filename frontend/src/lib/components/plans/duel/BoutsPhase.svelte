@@ -182,7 +182,7 @@
 <div class="choices-section">
 	<p class="choices-header">
 		Bout {duelRes.currentBout + (boutInProgress ? 0 : 1)} of {totalBouts}
-		· <strong>{playerName(players, currentActorID)}</strong>
+		· {playerName(players, currentActorID)}
 		{#if boutInProgress}to respond{:else}to declare{/if}
 	</p>
 

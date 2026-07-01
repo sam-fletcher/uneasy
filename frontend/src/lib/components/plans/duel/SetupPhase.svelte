@@ -163,7 +163,7 @@
 			</div>
 		{:else}
 			<p class="choices-note">
-				<strong>{duelerName(currentPlayerID, myChampionID)}</strong> {verbPhrase}.
+				{duelerName(currentPlayerID, myChampionID)} {verbPhrase}.
 				<button type="button" class="inline-link" onclick={openPicker}>
 					Send someone else
 				</button>

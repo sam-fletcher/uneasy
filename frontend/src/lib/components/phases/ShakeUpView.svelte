@@ -232,8 +232,8 @@
 	<header>
 		<h2>Shake-Up</h2>
 		<div class="state">
-			<span>Category: <strong>{game.shake_up_category ?? '—'}</strong></span>
-			<span>Step: <strong>{game.shake_up_step === 1 ? 'rolling' : game.shake_up_step === 2 ? 'spending' : '—'}</strong></span>
+			<span>Category: {game.shake_up_category ?? '—'}</span>
+			<span>Step: {game.shake_up_step === 1 ? 'rolling' : game.shake_up_step === 2 ? 'spending' : '—'}</span>
 			<span>Your tokens: <strong>{myTokens}</strong></span>
 		</div>
 	</header>
@@ -269,8 +269,8 @@
 			<section class="spend-panel">
 				<h3>Open spend</h3>
 				<p>
-					<strong>{playerName(openSpend.spend.player_id)}</strong>
-					announced <strong>{openSpend.spend.option_key}</strong>
+					{playerName(openSpend.spend.player_id)}
+					announced {openSpend.spend.option_key}
 					{#if openSpend.spend.target_asset_id != null}
 						on asset #{openSpend.spend.target_asset_id}
 					{/if}
@@ -411,7 +411,7 @@
 			</section>
 		{:else if myTokens > 0}
 			<p class="muted">
-				It's not your turn yet — waiting on <strong>{playerName(currentActor)}</strong> to spend.
+				It's not your turn yet — waiting on {playerName(currentActor)} to spend.
 				Players take turns in reverse-rank order (lowest status first).
 			</p>
 		{:else}

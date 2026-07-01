@@ -98,7 +98,7 @@
 
 	{#if war.status === 'ended'}
 		<p class="choices-note">
-			<strong>The war is over.</strong>
+			The war is over.
 			{#if war.end_reason}({war.end_reason}){/if}
 			{#if war.ended_at_row != null} Ended on row {war.ended_at_row}.{/if}
 		</p>

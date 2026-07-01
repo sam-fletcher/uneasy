@@ -407,7 +407,7 @@
 					{#each myAuthorPeerIDs as pid (pid)}
 						<div class="plan-form">
 							<p class="ft-prompt">
-								Write the marginalia that defines <strong>{assetName(assets, pid)}</strong>.
+								Write the marginalia that defines <em>{assetName(assets, pid)}</em>.
 							</p>
 							<textarea rows={2} class="form-textarea" bind:value={authorText}
 								placeholder="Who has arrived at court?"></textarea>
@@ -422,7 +422,7 @@
 						{@const pid = unresolvedPeerIDs[0]}
 						<div class="plan-form">
 							<p class="ft-prompt">
-								Resolve <strong>{assetName(assets, pid)}</strong>
+								Resolve <em>{assetName(assets, pid)}</em>
 								({unresolvedPeerIDs.length} remaining):
 							</p>
 							<div class="chip-row">

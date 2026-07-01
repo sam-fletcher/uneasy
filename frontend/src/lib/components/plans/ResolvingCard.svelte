@@ -23,7 +23,7 @@
 <div class="plan-panel resolving">
 	<div class="plan-header">
 		<span class="plan-badge resolving-badge">Resolving</span>
-		<strong class="plan-title">{PLAN_SHORT[plan.plan_type] ?? plan.plan_type}</strong>
+		<span class="plan-title">{PLAN_SHORT[plan.plan_type] ?? plan.plan_type}</span>
 		<span class="plan-preparer">by {playerName(players, plan.preparer_id)}</span>
 	</div>
 

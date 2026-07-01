@@ -420,12 +420,12 @@
 			<p class="cl-meeting-peers">
 				<span class="cl-peer">
 					{playerName(players, plan.preparer_id)}'s
-					<strong>{preparerMeetingPeer?.name ?? '?'}</strong>
+					<em>{preparerMeetingPeer?.name ?? '?'}</em>
 				</span>
 				<span class="cl-peer-sep">meets</span>
 				<span class="cl-peer">
 					{playerName(players, clState.partnerID)}'s
-					<strong>{partnerMeetingPeerAsset?.name ?? '?'}</strong>
+					<em>{partnerMeetingPeerAsset?.name ?? '?'}</em>
 				</span>
 			</p>
 		{/if}
@@ -559,7 +559,7 @@
 						{:else}
 							<p class="choices-note">
 								{isUpdate ? 'Update' : 'Break'}
-								<strong>{partnerMeetingPeer?.name}</strong> —
+								<em>{partnerMeetingPeer?.name}</em> —
 								choose which marginalia to {isUpdate ? 'rewrite' : 'tear'}:
 							</p>
 							{#if meetingPeerBreakableMarginalia.length === 0}
@@ -667,9 +667,8 @@
 		font-size: 0.9rem;
 		color: var(--color-text);
 	}
-	.cl-peer strong {
+	.cl-peer em {
 		color: var(--color-accent);
-		font-weight: 600;
 	}
 	.cl-peer-sep {
 		color: var(--color-text-muted);

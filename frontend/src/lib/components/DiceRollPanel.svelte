@@ -386,7 +386,7 @@
 			</p>
 			{#if myVote}
 				<p class="stage-hint">
-					You voted <strong>{myVote.vote === 1 ? '+1 (harder)' : '−1 (easier)'}</strong>.
+					You voted {myVote.vote === 1 ? '+1 (harder)' : '−1 (easier)'}.
 					Waiting on others…
 				</p>
 			{:else}
@@ -558,7 +558,7 @@
 		flex-wrap: wrap;
 	}
 
-	.roll-title { font-weight: 700; color: var(--color-accent); font-size: 0.9rem; }
+	.roll-title { color: var(--color-accent); font-size: 0.9rem; }
 	.roll-meta { font-size: 0.85rem; color: var(--color-text-muted); }
 	.adjusted { color: #e0c070; }
 	.roll-actor { font-size: 0.78rem; color: var(--color-text-muted); }
@@ -736,7 +736,7 @@
 	}
 	.result-banner.make { border-color: var(--color-success); background: #0a1f0a; }
 	.result-banner.mar  { border-color: var(--color-danger); background: #1f0a0a; }
-	.result-label { font-size: 1.1rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+	.result-label { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.06em; }
 	.result-banner.make .result-label { color: var(--color-success); }
 	.result-banner.mar  .result-label { color: var(--color-danger); }
 	.result-score { font-size: 0.82rem; color: var(--color-text-muted); }

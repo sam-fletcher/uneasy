@@ -121,8 +121,8 @@
 		{:else}
 			<p class="warn">
 				You have no peers left to promote. You may conscript a brand new
-				character — but the upheaval costs you: <strong>all of your assets,
-				including this new one, will become leveraged.</strong>
+				character — but the upheaval costs you: all of your assets,
+				including this new one, will become leveraged.
 			</p>
 			<label class="field">
 				<span>Name</span>

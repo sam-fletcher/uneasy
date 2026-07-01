@@ -37,8 +37,8 @@
 <div class="choices-section">
 	<p class="choices-header">
 		Duel challenge:
-		<strong>{playerName(players, challenge.challenger_id)}</strong>
-		→ <strong>{playerName(players, challenge.target_id)}</strong>
+		{playerName(players, challenge.challenger_id)}
+		→ {playerName(players, challenge.target_id)}
 	</p>
 	{#if challenge.notes}
 		<p class="plan-notes">"{challenge.notes}"</p>

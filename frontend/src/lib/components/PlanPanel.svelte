@@ -282,7 +282,7 @@
 		<div class="plan-panel resolving">
 			<div class="plan-header">
 				<span class="plan-badge resolving-badge">Resolving</span>
-				<strong class="plan-title">{PLAN_SHORT[resolvingPlan.plan_type] ?? resolvingPlan.plan_type}</strong>
+				<span class="plan-title">{PLAN_SHORT[resolvingPlan.plan_type] ?? resolvingPlan.plan_type}</span>
 				<span class="plan-preparer">by {playerName(players, resolvingPlan.preparer_id)}</span>
 			</div>
 			{#if resolvingPlan.preparation_notes}

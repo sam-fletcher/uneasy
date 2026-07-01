@@ -547,9 +547,9 @@
 			<div class="complete-section">
 				{#if !lawEnacted && rollOutcome != null}
 					<p class="choices-header">
-						Result: <strong class="outcome-{rollOutcome}">
+						Result: <span class="outcome-{rollOutcome}">
 							{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
-						</strong>
+						</span>
 					</p>
 				{/if}
 				<p class="choices-applied">
@@ -562,7 +562,7 @@
 
 				<!-- Current law text (live, reflects amendments so far). -->
 				<p class="plan-notes">
-					<strong>Law:</strong> {pdState.lawText}
+					Law: {pdState.lawText}
 					{#if pdState.addendumPlaced && pdState.addendum}
 						<em> — {pdState.addendumConnector} {pdState.addendum}</em>
 					{/if}

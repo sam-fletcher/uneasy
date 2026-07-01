@@ -104,7 +104,7 @@
 	{#if !reveal}
 		<p class="choices-note">Loading reveal…</p>
 	{:else if reveal.is_complete}
-		<p class="choices-header"><strong>Reveal complete</strong></p>
+		<p class="choices-header">Reveal complete</p>
 		<ul class="reveal-list">
 			{#each reveal.entries as entry}
 				<li>{nameFor(entry.player_id)}: <strong>{entry.face}</strong></li>

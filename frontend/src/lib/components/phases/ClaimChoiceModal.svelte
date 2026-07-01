@@ -207,7 +207,7 @@
 	{#each cardSlots as slot, idx (slot.suit + slot.value)}
 		<section class="step">
 			<div class="card-head">
-				<strong>{cardLabel(slot.suit, slot.value)}</strong>
+				<span>{cardLabel(slot.suit, slot.value)}</span>
 				<span class="muted small">{slot.isTake ? `Take an existing ${suitTypeLabel(slot.suit)}` : `Make a new ${suitTypeLabel(slot.suit)}`}</span>
 			</div>
 

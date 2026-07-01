@@ -398,7 +398,7 @@
 		{:else if rollOutcome === 'make'}
 			<div class="choices-section">
 				<p class="choices-header">
-					Result: <strong class="outcome-make">✓ Make</strong>
+					Result: <span class="outcome-make">✓ Make</span>
 				</p>
 
 				{#if makeRemaining > 0}
@@ -491,7 +491,7 @@
 			<!-- Every player picks one option during mar ─────────────────── -->
 			<div class="choices-section">
 				<p class="choices-header">
-					Result: <strong class="outcome-mar">✗ Mar</strong>
+					Result: <span class="outcome-mar">✗ Mar</span>
 				</p>
 				<p class="choices-note">
 					Each player (including the preparer) chooses one option from the

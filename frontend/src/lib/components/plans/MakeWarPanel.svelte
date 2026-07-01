@@ -128,7 +128,7 @@
 					: war?.status === 'active' ? 'War — ongoing'
 					: 'War — pending'}
 			</span>
-			<strong class="plan-title">Make War</strong>
+			<span class="plan-title">Make War</span>
 			<span class="plan-preparer">by {playerName(players, plan.preparer_id)}</span>
 		</div>
 		{#if plan.preparation_notes}

@@ -461,7 +461,7 @@
 			<label class="sr-secret-toggle">
 				<input type="checkbox" bind:checked={prepKeepSecret} disabled={readOnly} />
 				<span>
-					<strong>Keep it secret for now</strong>
+					Keep it secret for now
 					<small>Hide the rumor under one of your own assets instead of
 						announcing it. Others won't see the text until you spread it.</small>
 				</span>
@@ -470,7 +470,7 @@
 			{#if prepKeepSecret}
 				{#if readOnly}
 					<p class="plan-notes">
-						Hidden under: <strong>{secretHolderName || '—'}</strong>
+						Hidden under: <em>{secretHolderName || '—'}</em>
 					</p>
 				{:else}
 					<CardPicker
@@ -516,7 +516,7 @@
 			{/if}
 			{#if plan.target_asset_id}
 				<p class="rumor-target">
-					Targeting: <strong>{assetName(assets, plan.target_asset_id)}</strong>
+					Targeting: <em>{assetName(assets, plan.target_asset_id)}</em>
 				</p>
 			{/if}
 		</div>
@@ -538,7 +538,7 @@
 				{#if (breakCount > 0 || leverageCount > 0) && aboutName}
 					<p class="choices-note">
 						No consent on these — {rollOutcome === 'mar' ? 'their counter-rumor' : 'this rumor'}
-						also hits <strong>{aboutName}</strong>:
+						also hits <em>{aboutName}</em>:
 					</p>
 					<ul class="effect-fyi">
 						{#if breakCount > 0}<li>Tears a marginalia{#if breakCount > 1} (×{breakCount}){/if}</li>{/if}
@@ -550,12 +550,12 @@
 				<div class="consent-box">
 					<p class="choices-header">Consent needed</p>
 					<p class="choices-note">
-						<strong>{playerName(players, pendingConsent.requested_by)}</strong> wants to take
+						{playerName(players, pendingConsent.requested_by)} wants to take
 						{takeCount === 1 ? 'this asset' : `these ${takeCount} assets`} from you:
 					</p>
 					<ul class="consent-assets">
 						{#each pendingConsent.asset_ids as aid}
-							<li><strong>{assetName(assets, aid)}</strong></li>
+							<li><em>{assetName(assets, aid)}</em></li>
 						{/each}
 					</ul>
 					<div class="form-actions start">
@@ -614,9 +614,9 @@
 		{:else if rollOutcome != null && !choicesDone && isActor}
 			<div class="choices-section">
 				<p class="choices-header">
-					Result: <strong class="outcome-{rollOutcome}">
+					Result: <span class="outcome-{rollOutcome}">
 						{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
-					</strong>
+					</span>
 				</p>
 				<p class="choices-note">
 					Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
