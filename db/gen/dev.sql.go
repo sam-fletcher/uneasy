@@ -15,9 +15,9 @@ DELETE FROM games WHERE id = $1
 `
 
 // Dev-only queries (mounted behind UNEASY_DEV=1).
-// Hard-deletes a single game and, via ON DELETE CASCADE (migration 039), all of
-// its rows across every game-scoped table. Returns the number of games deleted
-// (0 if the id didn't exist).
+// Hard-deletes a single game and, via ON DELETE CASCADE (migrations 039 and
+// 041), all of its rows across every game-scoped table. Returns the number
+// of games deleted (0 if the id didn't exist).
 func (q *Queries) DeleteGame(ctx context.Context, id int64) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteGame, id)
 	if err != nil {

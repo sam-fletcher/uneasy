@@ -30,6 +30,23 @@ func countByGame(t *testing.T, pool *pgxpool.Pool, table string, gameID int64) i
 	return n
 }
 
+// countByID returns SELECT count(*) FROM <table> WHERE <idCol> IN (ids...).
+// Used for tables with no game_id column of their own — their only route
+// back to the game is through a parent row's id (asset, plan, dice roll,
+// duel stake, shake-up spend, secret).
+func countByID(t *testing.T, pool *pgxpool.Pool, table, idCol string, ids []int64) int {
+	t.Helper()
+	if len(ids) == 0 {
+		return 0
+	}
+	var n int
+	// table/idCol are fixed literals from the test, not user input.
+	err := pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM "+table+" WHERE "+idCol+" = ANY($1)", ids).Scan(&n)
+	require.NoError(t, err)
+	return n
+}
+
 func TestDeleteGame_CascadesAndIsolates(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -53,6 +70,90 @@ func TestDeleteGame_CascadesAndIsolates(t *testing.T) {
 			"%s should be populated before delete", tbl)
 	}
 
+	// Populate tables whose only foreign key path back to the game is
+	// through a parent row's id rather than their own game_id column
+	// (migration 041 fixed these — they used to have no cascade route to
+	// `games` at all, so DeleteGame errored on a foreign key violation as
+	// soon as one of them was non-empty; marginalia, created by every
+	// Titles-sheet claim in the prologue, was the one real games always hit).
+	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: target.Game.ID, OwnerID: target.Players[0].ID, CreatorID: target.Players[0].ID,
+		AssetType: model.AssetHolding, Name: "landmine holding",
+	})
+	require.NoError(t, err)
+
+	_, err = q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: asset.ID, Position: 1, Text: "a note",
+	})
+	require.NoError(t, err)
+
+	secret, err := q.CreateSecret(ctx, dbgen.CreateSecretParams{
+		AssetID: asset.ID, AuthorID: target.Players[0].ID, Text: "a secret",
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.AddSecretVisibility(ctx, dbgen.AddSecretVisibilityParams{
+		SecretID: secret.ID, PlayerID: target.Players[1].ID,
+	}))
+
+	roll, err := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
+		GameID: target.Game.ID, ActorID: target.Players[0].ID, Difficulty: 3, Stage: "resolved",
+	})
+	require.NoError(t, err)
+	_, err = q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+		RollID: roll.ID, PlayerID: target.Players[0].ID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.CreateDifficultyVote(ctx, dbgen.CreateDifficultyVoteParams{
+		RollID: roll.ID, PlayerID: target.Players[1].ID, Vote: 1,
+	}))
+
+	duelPlan, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID: target.Game.ID, PlanType: model.PlanProposeDuel, Category: model.CategoryPower,
+		PreparerID: target.Players[0].ID, RowNumber: intPtr(1), PreparedAtRow: 1,
+	})
+	require.NoError(t, err)
+	stake, err := q.CreateDuelStake(ctx, dbgen.CreateDuelStakeParams{
+		PlanID: duelPlan.ID, PlayerID: target.Players[0].ID, AssetID: asset.ID, HiddenDie: 4,
+	})
+	require.NoError(t, err)
+	_, err = q.CreateDuelBout(ctx, dbgen.CreateDuelBoutParams{
+		PlanID: duelPlan.ID, BoutNumber: 1,
+		DeclarerID: target.Players[0].ID, DeclarerStakeID: stake.ID,
+		ResponderID: target.Players[1].ID,
+	})
+	require.NoError(t, err)
+
+	liaisePlan, err := q.CreatePlan(ctx, dbgen.CreatePlanParams{
+		GameID: target.Game.ID, PlanType: model.PlanClandestinelyLiaise, Category: model.CategoryKnowledge,
+		PreparerID: target.Players[0].ID, RowNumber: intPtr(1), PreparedAtRow: 1,
+	})
+	require.NoError(t, err)
+	_, err = q.CreateLiaiseChoice(ctx, dbgen.CreateLiaiseChoiceParams{
+		PlanID: liaisePlan.ID, PlayerID: target.Players[0].ID, Choice: "break_peer",
+		TargetAssetID: &asset.ID,
+	})
+	require.NoError(t, err)
+
+	spend, err := q.CreateShakeUpSpend(ctx, dbgen.CreateShakeUpSpendParams{
+		GameID: target.Game.ID, PlayerID: target.Players[0].ID,
+		Category: "power", OptionKey: "take_holding",
+	})
+	require.NoError(t, err)
+	_, err = q.CreateShakeUpAdjustment(ctx, dbgen.CreateShakeUpAdjustmentParams{
+		SpendID: spend.ID, PlayerID: target.Players[1].ID, Adjustment: 1,
+	})
+	require.NoError(t, err)
+
+	require.Positive(t, countByID(t, pool, "marginalia", "asset_id", []int64{asset.ID}))
+	require.Positive(t, countByID(t, pool, "secrets", "asset_id", []int64{asset.ID}))
+	require.Positive(t, countByID(t, pool, "secret_visibility", "secret_id", []int64{secret.ID}))
+	require.Positive(t, countByID(t, pool, "dice_roll_dice", "roll_id", []int64{roll.ID}))
+	require.Positive(t, countByID(t, pool, "difficulty_votes", "roll_id", []int64{roll.ID}))
+	require.Positive(t, countByID(t, pool, "duel_staked_assets", "plan_id", []int64{duelPlan.ID}))
+	require.Positive(t, countByID(t, pool, "duel_bouts", "plan_id", []int64{duelPlan.ID}))
+	require.Positive(t, countByID(t, pool, "liaise_choices", "plan_id", []int64{liaisePlan.ID}))
+	require.Positive(t, countByID(t, pool, "shake_up_cost_adjustments", "spend_id", []int64{spend.ID}))
+
 	rows, err := q.DeleteGame(ctx, target.Game.ID)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, rows, "exactly one game deleted")
@@ -67,6 +168,17 @@ func TestDeleteGame_CascadesAndIsolates(t *testing.T) {
 			"%s should be empty after cascade delete", tbl)
 	}
 
+	// And every grandchild-only table (migration 041) is empty too.
+	assert.Zero(t, countByID(t, pool, "marginalia", "asset_id", []int64{asset.ID}))
+	assert.Zero(t, countByID(t, pool, "secrets", "asset_id", []int64{asset.ID}))
+	assert.Zero(t, countByID(t, pool, "secret_visibility", "secret_id", []int64{secret.ID}))
+	assert.Zero(t, countByID(t, pool, "dice_roll_dice", "roll_id", []int64{roll.ID}))
+	assert.Zero(t, countByID(t, pool, "difficulty_votes", "roll_id", []int64{roll.ID}))
+	assert.Zero(t, countByID(t, pool, "duel_staked_assets", "plan_id", []int64{duelPlan.ID}))
+	assert.Zero(t, countByID(t, pool, "duel_bouts", "plan_id", []int64{duelPlan.ID}))
+	assert.Zero(t, countByID(t, pool, "liaise_choices", "plan_id", []int64{liaisePlan.ID}))
+	assert.Zero(t, countByID(t, pool, "shake_up_cost_adjustments", "spend_id", []int64{spend.ID}))
+
 	// The control game is untouched.
 	_, err = q.GetGameByID(ctx, control.Game.ID)
 	require.NoError(t, err)
@@ -75,6 +187,8 @@ func TestDeleteGame_CascadesAndIsolates(t *testing.T) {
 	assert.Positive(t, countByGame(t, pool, "assets", control.Game.ID),
 		"control game's assets must survive deletion of another game")
 }
+
+func intPtr(v int16) *int16 { return &v }
 
 func TestDeleteGame_MissingIDDeletesNothing(t *testing.T) {
 	pool := openTestDB(t)

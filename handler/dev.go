@@ -52,9 +52,10 @@ func DevLogin(s *db.Store) http.HandlerFunc {
 
 // DevDeleteGame handles POST /api/dev/delete-game.
 //
-// Hard-deletes a single game and all of its data (cascade, migration 039),
-// leaving accounts and every other game intact. Replaces the old DevReset,
-// which TRUNCATEd everything — too blunt and too easy to fire by accident.
+// Hard-deletes a single game and all of its data (cascade, migrations 039
+// and 041), leaving accounts and every other game intact. Replaces the old
+// DevReset, which TRUNCATEd everything — too blunt and too easy to fire by
+// accident.
 //
 // Body: { "game_id": N }. Mounted only when UNEASY_DEV=1.
 func DevDeleteGame(s *db.Store) http.HandlerFunc {
