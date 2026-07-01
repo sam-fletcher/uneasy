@@ -6,6 +6,7 @@
     mar  → target wins,   takes `adjusted_difficulty` stakes from preparer
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { makeChoice, type Asset, type DiceRoll, type DuelBout, type DuelStake, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import { playerName } from '../shared';

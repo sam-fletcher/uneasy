@@ -7,6 +7,7 @@
   and gates nothing; the phase advances on the stake-count reveal alone.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { electChampion, selectStakes, type Asset, type DuelStake, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import { playerName, assetName } from '../shared';

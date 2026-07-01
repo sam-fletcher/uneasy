@@ -8,6 +8,7 @@
   never reach here. Pending mars are settled one at a time (the first in queue).
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { resolveHostMar, type Asset, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import { playerName } from '../shared';

@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import type {
 		DiceRoll, DiceRollDie, VoteView, RollParticipant, RollIntent,
 		Asset, Player, BankedDie,
@@ -320,7 +321,7 @@
 	</div>
 
 	{#if error}
-		<p class="roll-error">{error}</p>
+		<p class="error-text">{error}</p>
 	{/if}
 
 	<!-- Dice pools (always visible) -->
@@ -577,15 +578,12 @@
 	.stage-chip[data-stage="resolved"] { background: #1a3a1a; color: var(--color-success); }
 	.stage-chip[data-stage="voting"] { background: #3a2a3a; color: #c890e0; }
 
-	.roll-error { color: var(--color-danger); font-size: 0.82rem; margin: 0; }
-
 	/* Dice */
 	.dice-section { display: flex; flex-direction: column; gap: 0.4rem; }
 	.dice-group { display: flex; align-items: center; gap: 0.5rem; }
 	.dice-group.interference .dice-label { color: var(--color-danger); }
 	.dice-label { font-size: 0.75rem; color: var(--color-text-muted); min-width: 90px; flex-shrink: 0; }
 	.dice-row { display: flex; gap: 0.35rem; flex-wrap: wrap; }
-	.dupe-hint { font-size: 0.72rem; color: var(--color-text-faint); margin: 0; }
 	.die {
 		width: 32px; height: 32px; border-radius: 5px;
 		border: 2px solid var(--color-accent); background: #2a2010;

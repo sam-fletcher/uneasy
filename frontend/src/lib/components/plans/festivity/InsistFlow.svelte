@@ -8,6 +8,7 @@
   picks the option, and the host settles the specifics later (HostPendingMar).
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { insistHostMar, type Plan } from '$lib/api';
 	import FormField from '../FormField.svelte';
 	import { MAR_OPTS } from './options';

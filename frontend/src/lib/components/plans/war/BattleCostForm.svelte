@@ -5,6 +5,7 @@
    - entry mode: late-joiner war entry payment (break / leverage only).
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import type { Player, Asset } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';

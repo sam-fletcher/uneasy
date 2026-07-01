@@ -4,6 +4,7 @@
   `accept_duels` cannot decline.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { respondChallenge, type Player } from '$lib/api';
 	import { playerName } from '../shared';
 

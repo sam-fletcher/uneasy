@@ -9,6 +9,7 @@
   side-by-side from 560px up.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { boutDeclare, boutRespond, type Asset, type DuelBout, type DuelStake, type Plan, type Player } from '$lib/api';
 	import FormField from '../FormField.svelte';
 	import { playerName, assetName } from '../shared';
@@ -404,7 +405,4 @@
 		color: var(--color-accent);
 	}
 
-	.won-feeds { margin: 0; font-size: 0.72rem; }
-
-	.last-bout { margin-top: 0.3rem; }
 </style>

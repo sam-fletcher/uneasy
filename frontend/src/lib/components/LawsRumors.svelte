@@ -12,6 +12,8 @@
              spreader chose to hide themselves (Spread Rumors hide-source).
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import { updateLaw, updateRumor, type Law, type Rumor, type Plan, type Player } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
 
@@ -127,7 +129,7 @@
 {/snippet}
 
 <aside class="laws-rumors">
-	{#if errorMsg}<p class="lr-error">{errorMsg}</p>{/if}
+	{#if errorMsg}<p class="error-text">{errorMsg}</p>{/if}
 
 	{#if kind !== 'rumors'}
 	<section class="lr-section">
@@ -259,5 +261,4 @@
 		padding: 0.25rem 0.35rem;
 	}
 	.lr-row { display: flex; gap: 0.4rem; }
-	.lr-error { color: #a00; margin: 0; }
 </style>

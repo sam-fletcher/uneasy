@@ -12,6 +12,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import {
 		claimScenePeer,
 		createRoll,
@@ -259,7 +260,7 @@
 				{/each}
 			{/if}
 		</div>
-		{#if claimError}<p class="error">{claimError}</p>{/if}
+		{#if claimError}<p class="error-text">{claimError}</p>{/if}
 	</div>
 
 	{#if isFocusPlayer}
@@ -272,7 +273,7 @@
 			>
 				{endingScene ? '…' : 'End Scene'}
 			</button>
-			{#if endError}<span class="error inline">{endError}</span>{/if}
+			{#if endError}<span class="error-text inline">{endError}</span>{/if}
 		</div>
 	<!-- {:else if currentPlayerID != null && !rollActive}
 		TODO: Decide how to handle scene rolls (heavy social component) -->
@@ -370,6 +371,4 @@
 		border-top: 1px solid var(--color-surface-2);
 	}
 
-	.error { color: var(--color-danger); font-size: 0.82rem; margin: 0; }
-	.error.inline { font-size: 0.78rem; }
 </style>

@@ -2,6 +2,7 @@
   Describes the event type as the prep notes. Notes are required.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { onDestroy } from 'svelte';
 	import { preparePlan } from '$lib/api';
 	import type { PlanContext } from '../types';

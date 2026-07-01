@@ -10,6 +10,8 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
+	import '$lib/components/shared/modalShell.css';
 	import {
 		choosePrologue,
 		getPrologueCardSuggestions,
@@ -156,14 +158,14 @@
 	}
 </script>
 
-<div class="backdrop" onclick={onClose} role="presentation"></div>
+<div class="modal-backdrop backdrop" onclick={onClose} role="presentation"></div>
 <div class="modal" role="dialog" aria-modal="true" aria-labelledby="claim-modal-heading">
 	<header>
 		<h3 id="claim-modal-heading">{choice.name}</h3>
-		<button class="close" onclick={onClose} aria-label="Cancel">×</button>
+		<button class="modal-close" onclick={onClose} aria-label="Cancel">×</button>
 	</header>
 
-	{#if error}<p class="local-error">{error}</p>{/if}
+	{#if error}<p class="error-text">{error}</p>{/if}
 
 	<section class="step">
 		<label class="field">
@@ -209,11 +211,11 @@
 		<section class="step">
 			<div class="card-head">
 				<span>{cardLabel(slot.suit, slot.value)}</span>
-				<span class="muted small">{slot.isTake ? `Take an existing ${suitTypeLabel(slot.suit)}` : `Make a new ${suitTypeLabel(slot.suit)}`}</span>
+				<span class="muted-text small">{slot.isTake ? `Take an existing ${suitTypeLabel(slot.suit)}` : `Make a new ${suitTypeLabel(slot.suit)}`}</span>
 			</div>
 
 			{#if slot.isTake}
-				<p class="muted small">This card is already in play. You'll take its asset; no new text needed.</p>
+				<p class="muted-text small">This card is already in play. You'll take its asset; no new text needed.</p>
 			{:else}
 				<SuggestionPicker
 					suggestions={slot.suggestions}
@@ -235,9 +237,6 @@
 
 <style>
 	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0,0,0,0.6);
 		z-index: 95;
 	}
 	.modal {
@@ -264,15 +263,6 @@
 		gap: 0.5rem;
 	}
 	h3 { color: var(--color-accent); margin: 0; font-size: 1.1rem; }
-	.close {
-		width: 36px; height: 36px;
-		background: none; color: var(--color-text-muted);
-		font-size: 1.4rem; line-height: 1;
-		border-radius: 6px;
-	}
-	.close:hover { background: var(--color-surface-2); color: var(--color-text); }
-
-	.local-error { color: var(--color-danger); font-size: 0.85rem; margin: 0; }
 
 	.step { background: #161614; border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 0.65rem 0.75rem; }
 
@@ -288,8 +278,6 @@
 	}
 
 	.card-head { display: flex; gap: 0.4rem; align-items: baseline; margin-bottom: 0.3rem; }
-	.muted { color: var(--color-text-muted); }
-	.muted.small { font-size: 0.8rem; }
 
 	footer { display: flex; gap: 0.6rem; justify-content: flex-end; }
 </style>

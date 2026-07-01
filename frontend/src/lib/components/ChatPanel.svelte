@@ -21,6 +21,7 @@
 	component is a controlled view + an input that POSTs new player messages.
 -->
 <script lang="ts">
+	import '$lib/components/shared/statusText.css';
 	import { onMount, tick, untrack } from 'svelte';
 	import {
 		createPlayerPost,
@@ -486,7 +487,7 @@
 
 	<div class="typing" aria-live="polite">{typingLabel}</div>
 
-	{#if error}<p class="error">{error}</p>{/if}
+	{#if error}<p class="error-text error">{error}</p>{/if}
 
 	{#if currentPlayerID != null && personae.length > 1}
 		{@const isCharacterSelected = selectedPersona && selectedPersona.kind === 'asset'}
@@ -830,10 +831,7 @@
 	}
 
 	.error {
-		color: var(--color-danger);
-		font-size: 0.8rem;
 		padding: 0 0.8rem;
-		margin: 0;
 		flex-shrink: 0;
 	}
 

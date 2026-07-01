@@ -5,6 +5,7 @@
   /guest-choice (the festivity then surfaces a ChallengeBanner).
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { guestRoll, guestChoice, challengeDuel, getAssetSuggestions, type Asset, type Plan, type Player } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';

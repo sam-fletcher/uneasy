@@ -1,0 +1,37 @@
+/* Shared full-screen-dialog backdrop scrim + close button, used by any modal
+   (RetinueSheet, ClaimChoiceModal, ...). Import as a side effect wherever a
+   component needs .modal-backdrop or .modal-close.
+
+   Only the backdrop and close button are common enough to share — the dialog
+   box itself (bottom sheet vs. centered card, sizing, entry animation) stays
+   local to each component since those genuinely differ. Layer local classes
+   on top for anything dialog-specific (z-index, position, animation). */
+
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.6);
+}
+
+/* ≥44px on a side — the project's minimum mobile tap target. */
+.modal-close {
+	width: 44px;
+	height: 44px;
+	background: none;
+	color: var(--color-text-muted);
+	font-size: 1.5rem;
+	line-height: 1;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--radius-sm);
+}
+.modal-close:hover {
+	color: var(--color-text);
+	background: var(--color-surface-2);
+}
+.modal-close:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 1px;
+}

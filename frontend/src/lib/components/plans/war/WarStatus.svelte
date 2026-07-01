@@ -7,6 +7,7 @@
   submitter is in, per the rulebook).
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { joinWar, type Player, type WarStateResponse } from '$lib/api';
 	import { playerName } from '../shared';
 	import { warStayOuts, stayOutOfWar } from '$lib/warStayOuts';

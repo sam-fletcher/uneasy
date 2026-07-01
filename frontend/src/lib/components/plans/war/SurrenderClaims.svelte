@@ -3,6 +3,7 @@
   Only renders when the current player holds at least one open claim.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { takeSurrenderAsset, type Asset, type Player, type WarStateResponse } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import { playerName } from '../shared';

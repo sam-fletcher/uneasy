@@ -1,0 +1,29 @@
+/* Shared muted-caption and inline-error text treatment, used across phase
+   views, plan-adjacent modals, and top-level routes. Import as a side effect
+   wherever a component needs .muted-text or .error-text.
+
+   Named "-text" rather than the bare .muted/.error you'll see inside
+   lib/components/plans/ — that tree already has its own global .muted rule
+   (plans/planPanel.css) with a different look (italic, faint), loaded the
+   same unscoped way. Reusing the bare name here would race it for the same
+   class on any page where both stylesheets end up loaded (see the workaround
+   in WaitingOnBar.svelte). Keep the two namespaces distinct instead of
+   fighting over one. */
+
+.muted-text {
+	color: var(--color-text-muted);
+	font-size: 0.9rem;
+	margin: 0;
+}
+.muted-text.small {
+	font-size: 0.8rem;
+}
+
+.error-text {
+	color: var(--color-danger);
+	font-size: 0.85rem;
+	margin: 0;
+}
+.error-text.inline {
+	font-size: 0.78rem;
+}

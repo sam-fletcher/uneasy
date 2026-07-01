@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import type { Asset, Player } from '$lib/api';
 	import { updateAsset, replaceMainCharacter } from '$lib/api';
 	import CardPicker from '$lib/components/plans/CardPicker.svelte';
@@ -145,7 +146,7 @@
 			</div>
 		{/if}
 
-		{#if err}<p class="error">{err}</p>{/if}
+		{#if err}<p class="error-text">{err}</p>{/if}
 	{:else}
 		<p class="lede">
 			Waiting for {otherWaiters.length > 0 ? otherWaiters.join(', ') : 'a player'} to
@@ -218,10 +219,5 @@
 	.ghost:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
-	}
-	.error {
-		margin: 0;
-		color: var(--color-danger);
-		font-size: 0.82rem;
 	}
 </style>

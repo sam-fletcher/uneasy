@@ -2,6 +2,7 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/rankChip.css';
+	import '$lib/components/shared/statusText.css';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
@@ -622,7 +623,7 @@
 	</header>
 
 	{#if error}
-		<p class="error">{error}</p>
+		<p class="error-text error">{error}</p>
 	{/if}
 
 	<!--
@@ -666,7 +667,7 @@
 					{game.join_code}
 					<span class="copy-hint" aria-live="polite">{joinCodeCopied ? 'Copied!' : 'copy'}</span>
 				</button>
-				<p class="muted">
+				<p class="muted-text">
 					Share this code with your friends to invite them. The game needs 2–5 players.
 				</p>
 			</section>
@@ -683,12 +684,12 @@
 					{advancing ? '…' : nextPhaseLabel['lobby']}
 				</button>
 			{:else if isFacilitator}
-				<p class="muted">Need at least 2 players to start.</p>
+				<p class="muted-text">Need at least 2 players to start.</p>
 			{/if}
 
 			<section class="lobby-help">
 				<h2>New to the game? Start here.</h2>
-				<p class="muted">
+				<p class="muted-text">
 					A two-minute primer while you wait for everyone to arrive. You can reopen this
 					any time from the ? in the top-right corner.
 				</p>
@@ -755,7 +756,7 @@
 	{:else if game?.phase === 'ended'}
 		<div class="phase-view ended">
 			<h2>Game Over</h2>
-			<p class="muted">The public record is sealed. Thank you for playing.</p>
+			<p class="muted-text">The public record is sealed. Thank you for playing.</p>
 			{#if rankings.length > 0}
 				<h3>Final Rankings</h3>
 				<div class="rankings-preview">
@@ -795,7 +796,7 @@
 	<RetinueSheet open={tonesOpen} onClose={() => tonesOpen = false}>
 		<div class="tones-sheet">
 			<h3>Tones</h3>
-			<p class="muted small">
+			<p class="muted-text small">
 				Themes and topics your group wants to include or avoid. Tap a tile to cycle its status.
 				{#if tonesLocked}<br /><em>Locked — the main event has begun.</em>{/if}
 			</p>
@@ -905,14 +906,14 @@
 		<div class="endgame-overlay">
 			<div class="endgame-modal">
 				<h3>Choose an endgame mode</h3>
-				<p class="muted small">
+				<p class="muted-text small">
 					A plan would land past row 13. Pick how the game should wind down — this can't be undone.
 				</p>
 				{#if endgamePromptModes.includes('smooth_landing')}
 					<button class="action-btn primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('smooth_landing')}>
 						Smooth Landing
 					</button>
-					<p class="muted small">
+					<p class="muted-text small">
 						Disallow plans past row 13. Let in-flight plans complete on their existing rows, then Shake-Up.
 					</p>
 				{/if}
@@ -920,7 +921,7 @@
 					<button class="action-btn primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('explosive_finale')}>
 						Explosive Finale
 					</button>
-					<p class="muted small">
+					<p class="muted-text small">
 						Collapse all remaining plans onto row 13. Resolve them in sequence with no scenes between, then Shake-Up.
 					</p>
 				{/if}
@@ -1298,8 +1299,6 @@
 	}
 
 	.error {
-		color: var(--color-danger);
-		font-size: 0.85rem;
 		padding: 0.5rem 0;
 		flex-shrink: 0;
 	}
@@ -1336,12 +1335,6 @@
 		margin: 0;
 	}
 
-	.muted {
-		color: var(--color-text-muted);
-		font-size: 0.9rem;
-		line-height: 1.5;
-		margin: 0;
-	}
 
 
 	/* ── Lobby ──────────────────────────────────────────────────────────────── */
@@ -1374,12 +1367,12 @@
 		font-size: 1.15rem;
 		margin: 0 0 0.35rem;
 	}
-	.lobby-help .muted { margin-bottom: 0.9rem; }
+	.lobby-help .muted-text { margin-bottom: 0.9rem; }
 
 	.lobby-join { margin-bottom: 0.5rem; }
-	.lobby-join .muted { 
+	.lobby-join .muted-text {
 		margin-top: 0.5rem;
-		margin-bottom: 0.2rem; 
+		margin-bottom: 0.2rem;
 	}
 	.lobby-join .code-badge {
 		display: inline-flex;
@@ -1540,6 +1533,4 @@
 	}
 	.endgame-modal h3 { color: var(--color-accent); margin: 0; font-size: 1.1rem; }
 	.endgame-modal .secondary { align-self: flex-end; }
-	.endgame-modal .muted { color: var(--color-text-muted); font-size: 0.9rem; margin: 0; }
-	.endgame-modal .muted.small { font-size: 0.8rem; }
 </style>

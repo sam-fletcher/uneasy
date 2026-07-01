@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS, REVEAL_EVENTS } from '$lib/ws';
@@ -369,7 +370,7 @@
 
 <div class="main-event-view">
 	{#if error}
-		<p class="local-error">{error}</p>
+		<p class="error-text local-error">{error}</p>
 	{/if}
 
 	<!-- Play surface — single column. PublicRecord lives at the page level
@@ -527,7 +528,7 @@
 	<div class="war-sheet">
 		<h3>Active Wars ({drawerWarPlans.length})</h3>
 		{#if drawerWarPlans.length === 0}
-			<p class="muted">No active wars.</p>
+			<p class="muted-text">No active wars.</p>
 		{:else}
 			{#each drawerWarPlans as p (p.id)}
 				<MakeWarPanel ctx={drawerCtx} plan={p} mode="resolve" />
@@ -547,8 +548,6 @@
 	}
 
 	.local-error {
-		color: var(--color-danger);
-		font-size: 0.85rem;
 		padding: 0.3rem 0;
 		flex-shrink: 0;
 	}

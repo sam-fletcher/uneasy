@@ -3,6 +3,7 @@
   larger screens. Dismissed via ESC, backdrop tap, or close button.
 -->
 <script lang="ts">
+	import '$lib/components/shared/modalShell.css';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 
@@ -27,11 +28,11 @@
 </script>
 
 {#if open}
-	<div class="backdrop" onclick={onClose} role="presentation"></div>
+	<div class="modal-backdrop backdrop" onclick={onClose} role="presentation"></div>
 	<div class="sheet" role="dialog" aria-modal="true">
 		<div class="sheet-header">
 			<span class="grabber" aria-hidden="true"></span>
-			<button class="close" onclick={onClose} aria-label="Close">×</button>
+			<button class="modal-close close" onclick={onClose} aria-label="Close">×</button>
 		</div>
 		<div class="sheet-body">
 			{@render children()}
@@ -41,9 +42,6 @@
 
 <style>
 	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.55);
 		z-index: 90;
 		animation: fade-in 150ms ease-out;
 	}
@@ -82,20 +80,7 @@
 		position: absolute;
 		top: 0.25rem;
 		right: 0.25rem;
-		width: 44px;
-		height: 44px;
-		background: none;
-		color: var(--color-text-muted);
-		font-size: 1.6rem;
-		line-height: 1;
-		padding: 0;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 6px;
 	}
-	.close:hover { color: var(--color-text); background: var(--color-surface-2); }
-	.close:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	.sheet-body {
 		padding: 0.5rem 1rem 1.25rem;

@@ -8,6 +8,7 @@
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/rankStrip.css';
 	import '$lib/components/shared/cornerBadge.css';
+	import '$lib/components/shared/statusText.css';
 	import { addMarginalia, updateMarginalia, updateAsset, writeSecret, getAssetSuggestions } from '$lib/api';
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
 	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
@@ -526,7 +527,7 @@
 							</div>
 						</div>
 						{#if renamingAssetId === asset.id && renameError}
-							<p class="m-editor-error">{renameError}</p>
+							<p class="error-text">{renameError}</p>
 						{/if}
 						{#if mcSwapTo != null && currentMC && asset.id === currentMC.id}
 							<div class="mc-picker">
@@ -543,7 +544,7 @@
 										{/if}
 									{/each}
 								</div>
-								{#if mcSwapError}<p class="m-editor-error">{mcSwapError}</p>{/if}
+								{#if mcSwapError}<p class="error-text">{mcSwapError}</p>{/if}
 								<div class="m-editor-actions">
 									<button type="button" class="action-btn secondary" onclick={cancelMcSwap} disabled={mcSwapSaving}>Cancel</button>
 								</div>
@@ -578,7 +579,7 @@
 										use:focusOnMount
 									></textarea>
 								{/if}
-								{#if editError}<p class="m-editor-error">{editError}</p>{/if}
+								{#if editError}<p class="error-text">{editError}</p>{/if}
 								<div class="m-editor-actions">
 									<button type="button" class="action-btn secondary" onclick={cancelEdit} disabled={saving}>Cancel</button>
 									<button type="button" class="action-btn primary" onclick={saveEdit} disabled={saving || !draftText.trim()}>
@@ -650,7 +651,7 @@
 											else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveSecret(asset); }
 										}}
 									></textarea>
-									{#if secretError}<p class="m-editor-error">{secretError}</p>{/if}
+									{#if secretError}<p class="error-text">{secretError}</p>{/if}
 								{/if}
 								<div class="m-editor-actions">
 									<button type="button" class="action-btn secondary" onclick={() => toggleSecrets(asset.id)} disabled={secretSaving}>Close</button>
@@ -758,16 +759,6 @@
 		background: #555;
 	}
 	.dot.online { background: var(--color-success); }
-
-	.tag {
-		font-size: 0.7rem;
-		background: var(--color-border-warm);
-		color: var(--color-accent);
-		padding: 0.1rem 0.4rem;
-		border-radius: 3px;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
 
 	.empty {
 		color: var(--color-text-faint);
@@ -1155,12 +1146,6 @@
 		min-height: 84px;
 	}
 	.m-editor-input:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-
-	.m-editor-error {
-		color: var(--color-danger);
-		font-size: 0.78rem;
-		margin: 0;
-	}
 
 	.m-editor-actions {
 		display: flex;

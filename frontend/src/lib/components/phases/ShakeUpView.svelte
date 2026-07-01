@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		getShakeUp, shakeUpRoll, shakeUpSpend, shakeUpAdjust, shakeUpCommit,
@@ -239,7 +240,7 @@
 		</div>
 	</header>
 
-	{#if error}<p class="local-error">{error}</p>{/if}
+	{#if error}<p class="error-text">{error}</p>{/if}
 
 	<section class="tokens-panel">
 		<h3>Token pools</h3>
@@ -253,7 +254,7 @@
 	{#if game.shake_up_step === 1}
 		<section>
 			<h3>Submit your roll</h3>
-			<p class="muted small">
+			<p class="muted-text small">
 				Roll your dice (you may leverage your own assets, but no help/interference). Enter the total result.
 				It will be added to your token pool.
 			</p>
@@ -276,7 +277,7 @@
 						on asset #{openSpend.spend.target_asset_id}
 					{/if}
 				</p>
-				<p class="muted small">
+				<p class="muted-text small">
 					Base cost {openSpend.spend.base_cost} · adjustments {adjustmentTotal >= 0 ? '+' : ''}{adjustmentTotal}
 					· running cost: <strong>{openSpend.spend.base_cost + adjustmentTotal}</strong>
 				</p>
@@ -317,7 +318,7 @@
 						<div class="su-form-row">
 							<span class="su-form-label">Target asset:</span>
 							{#if myAssets.length === 0}
-								<p class="muted" style="margin:0;">No eligible assets.</p>
+								<p class="muted-text" style="margin:0;">No eligible assets.</p>
 							{:else}
 								<div class="su-peer-cards">
 									{#each myAssets as a (a.id)}
@@ -340,7 +341,7 @@
 						<div class="su-form-row">
 							<span class="su-form-label">Marginalia to tear (breaking tears one):</span>
 							{#if breakableMarginalia.length === 0}
-								<p class="muted" style="margin:0;">This asset has no intact marginalia to tear.</p>
+								<p class="muted-text" style="margin:0;">This asset has no intact marginalia to tear.</p>
 							{:else}
 								<div class="su-chip-row">
 									{#each breakableMarginalia as m (m.id)}
@@ -360,7 +361,7 @@
 						<div class="su-form-row">
 							<span class="su-form-label">Title to claim (unclaimed this game):</span>
 							{#if claimableTitles.length === 0}
-								<p class="muted" style="margin:0;">Every title has already been claimed.</p>
+								<p class="muted-text" style="margin:0;">Every title has already been claimed.</p>
 							{:else}
 								<div class="su-chip-row">
 									{#each claimableTitles as t (t.id)}
@@ -379,7 +380,7 @@
 							<div class="su-form-row">
 								<span class="su-form-label">Peer to bear the title (must have a free marginalia slot):</span>
 								{#if titleablePeers.length === 0}
-									<p class="muted" style="margin:0;">You have no peer with a free marginalia slot.</p>
+									<p class="muted-text" style="margin:0;">You have no peer with a free marginalia slot.</p>
 								{:else}
 									<div class="su-peer-cards">
 										{#each titleablePeers as a (a.id)}
@@ -411,15 +412,15 @@
 				</div>
 			</section>
 		{:else if myTokens > 0}
-			<p class="muted">
+			<p class="muted-text">
 				It's not your turn yet — waiting on {playerName(currentActor)} to spend.
 				Players take turns in reverse-rank order (lowest status first).
 			</p>
 		{:else}
-			<p class="muted">You have no tokens. The category advances when everyone is at zero.</p>
+			<p class="muted-text">You have no tokens. The category advances when everyone is at zero.</p>
 		{/if}
 	{:else}
-		<p class="muted">Shake-Up state unavailable.</p>
+		<p class="muted-text">Shake-Up state unavailable.</p>
 	{/if}
 </div>
 
@@ -432,9 +433,6 @@
 	.shake-up h2 { color: var(--color-accent); font-size: 1.3rem; margin: 0; }
 	.shake-up h3 { color: var(--color-accent); font-size: 1rem; margin: 0.25rem 0; }
 	.state { display: flex; gap: 1.25rem; font-size: 0.9rem; color: #ccc; flex-wrap: wrap; margin-top: 0.25rem; }
-	.muted { color: var(--color-text-muted); font-size: 0.9rem; margin: 0; }
-	.muted.small { font-size: 0.8rem; }
-	.local-error { color: var(--color-danger); font-size: 0.85rem; margin: 0; }
 
 	.tokens-panel ul { list-style: none; padding: 0; margin: 0.25rem 0 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; }
 

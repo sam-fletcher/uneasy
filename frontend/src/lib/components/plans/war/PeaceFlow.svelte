@@ -4,6 +4,7 @@
   proposing replaces paying cost that row.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { votePeace, type Player, type WarStateResponse } from '$lib/api';
 	import { playerName } from '../shared';
 

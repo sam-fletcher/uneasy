@@ -15,6 +15,7 @@
   winners from the demand's resolution_data — no extra fetches.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
 	import { playerName, activeDemandAgainst, demandWinnersFromPlan } from '../shared';
 	import PlayerChips from '../PlayerChips.svelte';

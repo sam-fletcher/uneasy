@@ -19,6 +19,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import { onDestroy } from 'svelte';
 	import { createScene, type Asset, type Player, type TimeElapsed, type SceneSetupDraft } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
@@ -318,7 +319,7 @@
 		</div>
 	</div>
 
-	{#if error}<p class="error">{error}</p>{/if}
+	{#if error}<p class="error-text">{error}</p>{/if}
 
 	{#if !readOnly}
 		<div class="actions">
@@ -448,12 +449,6 @@
 	}
 
 	.note { width: 100%; }
-
-	.error {
-		color: var(--color-danger);
-		font-size: 0.82rem;
-		margin: 0;
-	}
 
 	.actions { display: flex; gap: 0.5rem; }
 </style>

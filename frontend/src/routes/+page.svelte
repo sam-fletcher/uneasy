@@ -1,6 +1,7 @@
 <!-- Combined entry screen: title + log in / sign up in one mobile-first page. -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
@@ -120,7 +121,7 @@
 				</div>
 			{/if}
 
-			{#if error}<p class="error">{error}</p>{/if}
+			{#if error}<p class="error-text">{error}</p>{/if}
 
 			<button class="action-btn primary" type="submit" disabled={loading}>
 				{#if loading}
@@ -260,8 +261,6 @@
 		font-size: 0.7rem;
 		color: var(--color-accent);
 	}
-
-	.error { color: var(--color-danger); font-size: 0.9rem; }
 
 	.primary { margin-top: 0.25rem; }
 </style>

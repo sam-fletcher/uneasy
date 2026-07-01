@@ -9,6 +9,7 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/cardGlyph.css';
+	import '$lib/components/shared/statusText.css';
 	import {
 		getPrologueSheets,
 		getPrologueCards,
@@ -476,24 +477,24 @@
 
 <div class="prologue-view">
 	{#if error}
-		<p class="local-error">{error}</p>
+		<p class="error-text">{error}</p>
 	{/if}
 
 	{#if loading}
-		<p class="muted">Loading prologue…</p>
+		<p class="muted-text">Loading prologue…</p>
 
 	{:else if mode === 'choosing'}
-		<p class="muted">
+		<p class="muted-text">
 			Each player takes 3 turns claiming any 3 boxes. Each box creates an asset and grants two playing cards.
 		</p>
-		<p class="muted">
+		<p class="muted-text">
 			Playing cards determine your initial rankings, and each is one asset you'll create or steal:
 			<br>{@render suitSvg('H')} Peer &emsp;&emsp;&emsp;&emsp; {@render suitSvg('S')} Artifact
 			<br>{@render suitSvg('D')} Resource &emsp;&emsp;{@render suitSvg('C')} Holding
 		</p>
 
 		{#if activePlayerID == null}
-			<p class="muted">Everyone has finished choosing.</p>
+			<p class="muted-text">Everyone has finished choosing.</p>
 		{/if}
 
 		<div class="choosing-grid">
@@ -501,11 +502,11 @@
 				<section class="sheet-panel">
 					<h3>{sheet.display_name}</h3>
 					{#if sheet.display_name === 'Titles'}
-						<p class="muted small">Gain the title & an {sheet.choice_asset_type}.</p>
+						<p class="muted-text small">Gain the title & an {sheet.choice_asset_type}.</p>
 					{:else if sheet.display_name === 'Hailing From'}
-						<p class="muted small">Describe your home & gain a {sheet.choice_asset_type}.</p>
+						<p class="muted-text small">Describe your home & gain a {sheet.choice_asset_type}.</p>
 					{:else if sheet.display_name === 'Laws & Rumors'}
-						<p class="muted small">Create a law or rumour. What {sheet.choice_asset_type} did you gain?</p>
+						<p class="muted-text small">Create a law or rumour. What {sheet.choice_asset_type} did you gain?</p>
 					{/if}
 					<div class="choice-list">
 						{#each sheet.choices as choice}
@@ -542,7 +543,7 @@
 		<section class="hand-panel">
 			<h3>Your Hand ({myCards.length} card{myCards.length === 1 ? '' : 's'})</h3>
 			{#if myCards.length === 0}
-				<p class="muted small">No cards yet — claim a box to start collecting them.</p>
+				<p class="muted-text small">No cards yet — claim a box to start collecting them.</p>
 			{:else}
 				<div class="hand-cards">
 					{#each myCards as c}
@@ -564,7 +565,7 @@
 			/>
 		{/if}
 
-		<p class="muted small">
+		<p class="muted-text small">
 			Turns taken: {myTurns} / 3.
 		</p>
 
@@ -599,7 +600,7 @@
 			>
 				{savingDone ? '…' : myDoneOnTrack ? 'Done ✓ (tap to undo)' : "I'm done"}
 			</button>
-			<p class="muted small">
+			<p class="muted-text small">
 				Once every player marks Done, this track resolves: hearts doing work lock in, the rest return to your hand.
 			</p>
 		{/if}
@@ -630,7 +631,7 @@
 		{/if}
 
 	{:else if mode === 'extra'}
-		<p class="muted">
+		<p class="muted-text">
 			Extra peers: with three or fewer players, each player picks one unused title to flesh out the cast.
 		</p>
 
@@ -649,13 +650,13 @@
 		</ul>
 
 		{#if myExtraPeer}
-			<p class="muted small">You created your extra peer: {myExtraPeer.title_name}.</p>
+			<p class="muted-text small">You created your extra peer: {myExtraPeer.title_name}.</p>
 		{:else}
 			<div class="extra-form">
 				<div class="extra-title">
 					<span class="extra-title-label">Title:</span>
 					{#if unclaimedTitles.length === 0}
-						<p class="muted small" style="margin:0;">No titles remain.</p>
+						<p class="muted-text small" style="margin:0;">No titles remain.</p>
 					{:else}
 						<div class="title-chip-row">
 							{#each unclaimedTitles as t}
@@ -710,10 +711,6 @@
 		min-height: 0;
 	}
 	.prologue-view h3 { color: var(--color-accent); font-size: 1rem; margin: 0.5rem 0 0.25rem; }
-
-	.muted { color: var(--color-text-muted); font-size: 0.9rem; margin: 0; }
-	.muted.small { font-size: 0.8rem; }
-	.local-error { color: var(--color-danger); font-size: 0.85rem; margin: 0; }
 
 	.choosing-grid {
 		display: grid;

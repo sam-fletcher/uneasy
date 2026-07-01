@@ -6,6 +6,7 @@
   progress off the scorecard ("Working the room — N of M"), not here.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { hostChoice, getAssetSuggestions, type Asset, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import SuggestionPicker from '../../SuggestionPicker.svelte';

@@ -2,6 +2,7 @@
   Prep: pick a challenger, choose arms vs wits, describe the location.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { onDestroy } from 'svelte';
 	import { preparePlan } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';

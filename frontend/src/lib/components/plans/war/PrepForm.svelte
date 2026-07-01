@@ -2,6 +2,7 @@
   Declare-war prep: pick one or more enemies + notes (required).
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { onDestroy } from 'svelte';
 	import { preparePlan } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';

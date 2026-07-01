@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import {
@@ -114,15 +115,15 @@
 </script>
 
 {#if loading}
-	<p class="muted">Loading…</p>
+	<p class="muted-text">Loading…</p>
 {:else if !me}
 	<div class="load-error">
-		<p class="error">{error || 'Could not load your profile.'}</p>
+		<p class="error-text">{error || 'Could not load your profile.'}</p>
 		<button class="action-btn primary" onclick={load}>Retry</button>
 	</div>
 {:else}
 	<div class="profile">
-		{#if error}<p class="error">{error}</p>{/if}
+		{#if error}<p class="error-text">{error}</p>{/if}
 		{#if notice}<p class="status">{notice}</p>{/if}
 
 		{#if tables.length > 0}
@@ -210,10 +211,8 @@
 	.row input { flex:1; min-width:0; min-height:44px; }
 	.row span:not(.label) { flex:1; min-width:0; }
 	.tag { color:var(--color-accent); font-size:0.75rem; margin-left:0.5rem; }
-	.muted { color:var(--color-text-muted); }
 	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:600px; margin:0 auto; padding-top:2rem; }
 	.status { color:var(--color-accent); font-size:0.9rem; }
-	.error { color:var(--color-danger); font-size:0.9rem; }
 	/* On narrow screens, let the field label sit on its own line so the value
 	   and its buttons get the full width instead of cramping. */
 	@media (max-width: 460px) {
