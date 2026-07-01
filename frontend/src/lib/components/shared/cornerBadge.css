@@ -1,0 +1,19 @@
+/* Shared count badge riding the top-right corner of a glyph (e.g. the
+   known/hidden secret-count eyes). Import this file as a side effect
+   wherever a component needs .corner-badge. */
+
+.corner-badge {
+	position: absolute;
+	top: -8px;
+	right: -8px;
+	min-width: 15px;
+	height: 15px;
+	padding: 0 3px;
+	border-radius: 8px;
+	font-size: 0.62rem;
+	font-weight: 600;
+	line-height: 16px;
+	text-align: center;
+}
+.corner-badge.known { background: var(--color-accent); color: var(--color-bg); }
+.corner-badge.hidden { background: #3a3a36; color: var(--color-text-muted); }

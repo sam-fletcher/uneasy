@@ -1,0 +1,46 @@
+/* Shared Power/Knowledge/Esteem rank-strip look: a 3-column grid of
+   rank/status pairs. Import this file as a side effect wherever a component
+   needs .rank-strip. */
+
+.rank-strip {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 0.4rem;
+	background: #161614;
+	border: 1px solid var(--color-border-subtle);
+	border-radius: 8px;
+	padding: 0.5rem 0.6rem;
+}
+.rank-cell {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.15rem;
+}
+.rank-label {
+	font-size: 0.7rem;
+	color: var(--color-text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+.rank-pair {
+	display: flex;
+	gap: 0.7rem;
+}
+.rank-stat {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.05rem;
+}
+.rank-num {
+	font-size: 1.1rem;
+	font-weight: 600;
+	color: var(--color-text);
+	font-variant-numeric: tabular-nums;
+	line-height: 1.1;
+}
+.rank-sublabel {
+	font-size: 0.7rem;
+	color: var(--color-text-faint);
+}

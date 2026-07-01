@@ -1,0 +1,20 @@
+/* Shared compact "P2 K1 E4" rank-chip look. Import this file as a side
+   effect wherever a component needs .mr. */
+
+.mr {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.08rem;
+}
+.mr-cat {
+	color: var(--color-text-faint);
+	font-size: 0.9em;
+}
+/* The best rank held by any player on this track reads gold. */
+.mr.top {
+	color: var(--color-accent);
+	font-weight: 600;
+}
+.mr.top .mr-cat {
+	color: var(--color-accent);
+}

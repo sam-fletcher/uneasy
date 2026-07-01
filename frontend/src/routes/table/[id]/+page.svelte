@@ -1,6 +1,7 @@
 <!-- Game shell: loads full game state, routes to phase-specific views. -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/rankChip.css';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
@@ -1275,23 +1276,6 @@
 		color: var(--color-text-muted);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: 0.02em;
-	}
-	.mr {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 0.08rem;
-	}
-	.mr-cat {
-		color: var(--color-text-faint);
-		font-size: 0.9em;
-	}
-	/* The best rank held by any player on this track reads gold. */
-	.mr.top {
-		color: var(--color-accent);
-		font-weight: 600;
-	}
-	.mr.top .mr-cat {
-		color: var(--color-accent);
 	}
 	.member:hover { background: var(--color-border-subtle); }
 	.member:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }

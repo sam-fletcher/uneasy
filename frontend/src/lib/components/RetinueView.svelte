@@ -6,6 +6,8 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/rankStrip.css';
+	import '$lib/components/shared/cornerBadge.css';
 	import { addMarginalia, updateMarginalia, updateAsset, writeSecret, getAssetSuggestions } from '$lib/api';
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
 	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
@@ -741,49 +743,6 @@
 		border-color: var(--color-border-strong);
 	}
 
-	.rank-strip {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.4rem;
-		background: #161614;
-		border: 1px solid var(--color-border-subtle);
-		border-radius: 8px;
-		padding: 0.5rem 0.6rem;
-	}
-	.rank-cell {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.15rem;
-	}
-	.rank-label {
-		font-size: 0.7rem;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-	.rank-pair {
-		display: flex;
-		gap: 0.7rem;
-	}
-	.rank-stat {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.05rem;
-	}
-	.rank-num {
-		font-size: 1.1rem;
-		font-weight: 600;
-		color: var(--color-text);
-		font-variant-numeric: tabular-nums;
-		line-height: 1.1;
-	}
-	.rank-sublabel {
-		font-size: 0.7rem;
-		color: var(--color-text-faint);
-	}
-
 	.meta {
 		display: flex;
 		align-items: center;
@@ -997,24 +956,6 @@
 
 	/* Struck eye: muted to read as "not available to you" against the gold eye. */
 	.hidden-secrets { color: var(--color-text-muted); }
-
-	/* Count badge on either eye, riding the top-right corner so the glyph keeps
-	   its footprint. */
-	.corner-badge {
-		position: absolute;
-		top: -8px;
-		right: -8px;
-		min-width: 15px;
-		height: 15px;
-		padding: 0 3px;
-		border-radius: 8px;
-		font-size: 0.62rem;
-		font-weight: 600;
-		line-height: 16px;
-		text-align: center;
-	}
-	.corner-badge.known { background: var(--color-accent); color: var(--color-bg); }
-	.corner-badge.hidden { background: #3a3a36; color: var(--color-text-muted); }
 
 	/* Secrets panel (expanded under the marginalia area) */
 	.secrets-panel {

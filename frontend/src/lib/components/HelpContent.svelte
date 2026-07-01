@@ -11,6 +11,9 @@
   visible from every tab.
 -->
 <script lang="ts">
+	import '$lib/components/shared/rankStrip.css';
+	import '$lib/components/shared/rankChip.css';
+	import '$lib/components/shared/cornerBadge.css';
 	import { feedbackHref } from '$lib/feedback';
 	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER } from './plans/shared';
 	import CrownGlyph from './CrownGlyph.svelte';
@@ -163,9 +166,9 @@
 					<span class="ex-chip-body">
 						<span class="ex-chip-name"><span class="ex-dot"></span>Alric</span>
 						<span class="ex-ranks">
-							<span class="ex-mr"><span class="ex-mr-cat">P</span>2</span>
-							<span class="ex-mr top"><span class="ex-mr-cat">K</span>1</span>
-							<span class="ex-mr"><span class="ex-mr-cat">E</span>4</span>
+							<span class="mr"><span class="mr-cat">P</span>2</span>
+							<span class="mr top"><span class="mr-cat">K</span>1</span>
+							<span class="mr"><span class="mr-cat">E</span>4</span>
 						</span>
 					</span>
 				</div>
@@ -173,13 +176,13 @@
 			</figure>
 
 			<figure class="diagram">
-				<div class="ex-rankstrip" aria-hidden="true">
+				<div class="rank-strip ex-rankstrip" aria-hidden="true">
 					{#each exRankStrip as t}
-						<div class="ex-rank-cell">
-							<span class="ex-rank-label">{t.label}</span>
-							<div class="ex-rank-pair">
-								<span class="ex-rank-stat"><span class="ex-rank-num">{t.rank}</span><span class="ex-rank-sub">Rank</span></span>
-								<span class="ex-rank-stat"><span class="ex-rank-num">{t.status}</span><span class="ex-rank-sub">Status</span></span>
+						<div class="rank-cell">
+							<span class="rank-label">{t.label}</span>
+							<div class="rank-pair">
+								<span class="rank-stat"><span class="rank-num">{t.rank}</span><span class="rank-sublabel">Rank</span></span>
+								<span class="rank-stat"><span class="rank-num">{t.status}</span><span class="rank-sublabel">Status</span></span>
 							</div>
 						</div>
 					{/each}
@@ -254,8 +257,8 @@
 						<span class="ex-meta">
 							<span class="ex-star" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg></span>
 							<span class="ex-lev" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /></svg></span>
-							<span class="ex-eye known" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg><span class="ex-corner known">1</span></span>
-							<span class="ex-eye hidden" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg><span class="ex-corner hidden">2</span></span>
+							<span class="ex-eye known" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg><span class="corner-badge known">1</span></span>
+							<span class="ex-eye hidden" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg><span class="corner-badge hidden">2</span></span>
 							<span class="ex-asset-type">Peer</span>
 						</span>
 					</div>
@@ -463,23 +466,11 @@
 	.ex-chip-name { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--color-text); }
 	.ex-dot { width: 8px; height: 8px; border-radius: 50%; background: #7fb5d6; flex-shrink: 0; }
 	.ex-ranks { display: flex; gap: 0.4rem; font-size: 0.62rem; line-height: 1; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-	.ex-mr { display: inline-flex; align-items: baseline; gap: 0.08rem; }
-	.ex-mr-cat { color: var(--color-text-faint); font-size: 0.9em; }
-	.ex-mr.top { color: var(--color-accent); font-weight: 600; }
-	.ex-mr.top .ex-mr-cat { color: var(--color-accent); }
 
 	/* ── Rank-strip replica (Rankings tab) ───────────────────────────────── */
-	.ex-rankstrip {
-		display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem;
-		background: #161614; border: 1px solid var(--color-border-subtle);
-		border-radius: 8px; padding: 0.5rem 0.6rem; width: 100%; max-width: 340px; margin: 0 auto;
-	}
-	.ex-rank-cell { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
-	.ex-rank-label { font-size: 0.66rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-	.ex-rank-pair { display: flex; gap: 0.7rem; }
-	.ex-rank-stat { display: flex; flex-direction: column; align-items: center; gap: 0.05rem; }
-	.ex-rank-num { font-size: 1.05rem; color: var(--color-text); font-variant-numeric: tabular-nums; line-height: 1.1; }
-	.ex-rank-sub { font-size: 0.66rem; color: var(--color-text-faint); }
+	/* .rank-strip itself (grid/colors/etc.) comes from shared/rankStrip.css;
+	   this just centres it in the narrow help diagram box. */
+	.ex-rankstrip { width: 100%; max-width: 340px; margin: 0 auto; }
 
 	/* ── Example asset card (Assets tab) ─────────────────────────────────── */
 	.ex-asset {
@@ -496,9 +487,6 @@
 	.ex-eye { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
 	.ex-eye.known { color: var(--color-accent); }
 	.ex-eye.hidden { color: var(--color-text-muted); }
-	.ex-corner { position: absolute; top: -8px; right: -8px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; font-size: 0.62rem; font-weight: 600; line-height: 16px; text-align: center; }
-	.ex-corner.known { background: var(--color-accent); color: var(--color-bg); }
-	.ex-corner.hidden { background: #3a3a36; color: var(--color-text-muted); }
 	.ex-asset-type { flex-shrink: 0; font-size: 0.7rem; background: var(--color-border-warm); color: var(--color-accent); padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
 	.ex-mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
 	.ex-mtile {
