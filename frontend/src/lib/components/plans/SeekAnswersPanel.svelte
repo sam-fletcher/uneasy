@@ -818,12 +818,6 @@
 {/if}
 
 <style>
-	:global(.form-select) {
-		width: 100%;
-		padding: 0.4rem;
-		border: 1px solid var(--border, #ccc);
-		border-radius: 4px;
-	}
 	.stepper-row.unavailable { opacity: 0.55; }
 
 	/* Transparent fieldset wrapping a resolve phase. disabled blocks every

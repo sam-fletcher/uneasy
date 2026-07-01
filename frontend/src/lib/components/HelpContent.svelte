@@ -14,6 +14,7 @@
 	import '$lib/components/shared/rankStrip.css';
 	import '$lib/components/shared/rankChip.css';
 	import '$lib/components/shared/cornerBadge.css';
+	import '$lib/components/shared/marginaliaTile.css';
 	import { feedbackHref } from '$lib/feedback';
 	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER } from './plans/shared';
 	import CrownGlyph from './CrownGlyph.svelte';
@@ -263,10 +264,10 @@
 						</span>
 					</div>
 					<div class="ex-mgrid">
-						<span class="ex-mtile">Silver-tongued</span>
-						<span class="ex-mtile titled">Second heir<CrownGlyph mark={{ role: 'successor', ordinal: 2 }} size={14} /></span>
-						<span class="ex-mtile torn">Old war wound</span>
-						<span class="ex-mtile empty">+</span>
+						<span class="m-tile ex-mtile">Silver-tongued</span>
+						<span class="m-tile ex-mtile titled">Second heir<CrownGlyph mark={{ role: 'successor', ordinal: 2 }} size={14} /></span>
+						<span class="m-tile ex-mtile torn">Old war wound</span>
+						<span class="m-tile ex-mtile empty">+</span>
 					</div>
 				</div>
 				<figcaption>
@@ -459,7 +460,7 @@
 	.ex-chip {
 		display: flex; align-items: center; gap: 0.4rem;
 		min-height: 44px; padding: 0.3rem 0.7rem;
-		background: #262626; border: 1px solid var(--color-border); border-radius: 999px;
+		background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: 999px;
 		width: fit-content; margin: 0 auto;
 	}
 	.ex-chip-body { display: flex; flex-direction: column; align-items: center; gap: 0.12rem; }
@@ -489,20 +490,18 @@
 	.ex-eye.hidden { color: var(--color-text-muted); }
 	.ex-asset-type { flex-shrink: 0; font-size: 0.7rem; background: var(--color-border-warm); color: var(--color-accent); padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
 	.ex-mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
-	.ex-mtile {
-		min-height: 38px; padding: 0.35rem 0.45rem; background: #1d1d1a; border: 1px solid #383530;
-		border-radius: 5px; font-size: 0.78rem; line-height: 1.25; color: #cfcabd; display: flex; align-items: center;
-	}
-	.ex-mtile.torn { opacity: 0.45; text-decoration: line-through; }
-	.ex-mtile.titled { gap: 0.3rem; }
-	.ex-mtile.empty { background: transparent; border: 1px dashed #3a3a36; justify-content: center; color: #6a6a64; font-size: 1.2rem; }
+	/* Base look (background/border/color/torn/titled/empty) comes from
+	   shared/marginaliaTile.css via the .m-tile class alongside .ex-mtile;
+	   this is just the static replica's own sizing and "+" glyph. */
+	.ex-mtile { min-height: 38px; }
+	.ex-mtile.empty { justify-content: center; color: #6a6a64; font-size: 1.2rem; }
 
 	/* Legend under the example card */
 	.ex-legend { display: flex; flex-direction: column; gap: 0.5rem; }
 	.ex-leg-row { display: flex; align-items: flex-start; gap: 0.5rem; }
 	.ex-leg-row > :first-child { flex-shrink: 0; margin-top: 0.05rem; }
 	.ex-eye.sm { flex-shrink: 0; }
-	.ex-strike { flex-shrink: 0; text-decoration: line-through; opacity: 0.6; color: #cfcabd; font-size: 0.78rem; }
+	.ex-strike { flex-shrink: 0; text-decoration: line-through; opacity: 0.6; color: var(--color-text-secondary); font-size: 0.78rem; }
 	/* Leveraged die — inline after the name in the example card, and in the legend. */
 	.ex-lev { color: var(--color-leveraged); display: inline-flex; align-items: center; }
 	.ex-lev svg { vertical-align: -0.18em; }

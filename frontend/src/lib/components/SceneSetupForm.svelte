@@ -401,11 +401,11 @@
 	.custom-panel {
 		border: 1px solid var(--color-surface-2);
 		border-radius: 5px;
-		background: #1d1d1d;
+		background: var(--color-surface-sunken);
 		padding: 0.55rem 0.7rem;
 	}
 	.custom-panel.active { border-color: var(--color-accent); background: #221d10; }
-	.scene-setup.readonly .custom-panel.active { border-color: var(--color-surface-2); background: #1d1d1d; }
+	.scene-setup.readonly .custom-panel.active { border-color: var(--color-surface-2); background: var(--color-surface-sunken); }
 
 	.custom-panel label { display: flex; flex-direction: column; gap: 0.3rem; }
 

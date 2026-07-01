@@ -562,7 +562,7 @@
 
 	.roll-title { color: var(--color-accent); font-size: 0.9rem; }
 	.roll-meta { font-size: 0.85rem; color: var(--color-text-muted); }
-	.adjusted { color: #e0c070; }
+	.adjusted { color: var(--color-accent-hover); }
 	.roll-actor { font-size: 0.78rem; color: var(--color-text-muted); }
 
 	.stage-chip {
@@ -642,7 +642,7 @@
 	.intent-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 	.intent-badge {
 		font-size: 0.85rem;
-		color: #e0c070;
+		color: var(--color-accent-hover);
 		padding: 0.35rem 0.6rem;
 		border: 1px solid #4a3a20;
 		border-radius: 4px;
@@ -656,7 +656,7 @@
 		font-size: 0.9rem;
 		background: var(--color-border);
 		color: var(--color-text);
-		border: 1px solid #555;
+		border: 1px solid var(--color-neutral);
 		cursor: pointer;
 	}
 	.ready-btn.ready {
@@ -696,7 +696,7 @@
 	/* Commit feed */
 	.commit-feed { display: flex; flex-direction: column; gap: 0.3rem; }
 	.commit-feed ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
-	.commit-feed li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: #ccc; }
+	.commit-feed li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: var(--color-text-muted); }
 	.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 	.cf-source { color: var(--color-text-muted); }
 	.cf-side { color: var(--color-success); }
@@ -707,9 +707,9 @@
 	.chip {
 		font-size: 0.75rem;
 		padding: 0.2rem 0.5rem;
-		border: 1px solid #555;
+		border: 1px solid var(--color-neutral);
 		border-radius: 12px;
-		color: #ccc;
+		color: var(--color-text-muted);
 	}
 	.footer-summary { font-size: 0.82rem; color: var(--color-text-muted); margin: 0; }
 

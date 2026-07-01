@@ -64,6 +64,7 @@
 
 	/* ── Text ────────────────────────────────────────────────────────────── */
 	--color-text: #e8e4d9;          /* primary parchment text */
+	--color-text-secondary: #cfcabd;/* muted body text on ledger-style cards (asset/marginalia tiles) */
 	--color-text-muted: #999999;    /* secondary labels (AA on --color-bg) */
 	--color-text-faint: #8a8a8a;    /* faint captions — contrast-safe floor */
 
@@ -73,6 +74,7 @@
 	--color-danger: #e07070;        /* errors */
 	--color-success: #6dbf7a;       /* confirmations */
 	--color-info: #6090c8;          /* informational */
+	--color-neutral: #555555;       /* default/offline/unset state — status dots, disabled borders */
 	--color-leveraged: #d98b3f;     /* spent/committed-but-refreshable: leveraged asset border + retinue badge */
 	--color-highlight: #6dbfe0;     /* prepare/row-activity cue: hover-prepare border + plan-count badge */
 

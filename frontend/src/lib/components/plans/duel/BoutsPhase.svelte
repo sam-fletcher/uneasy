@@ -279,8 +279,8 @@
 		flex-direction: column;
 		gap: 0.4rem;
 		padding: 0.5rem 0.6rem;
-		background: var(--color-surface-2, #1d1d1d);
-		border: 1px solid var(--color-border, #4a3a20);
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
 		border-radius: 6px;
 	}
 	.duel-side.is-mine { border-color: var(--color-accent); }
@@ -319,7 +319,7 @@
 		min-height: 2.75rem;       /* ≥44px tap target */
 		padding: 0.35rem 0.45rem;
 		background: transparent;
-		border: 1px solid var(--color-border, #4a3a20);
+		border: 1px solid var(--color-border);
 		border-radius: 5px;
 		color: var(--color-text);
 		cursor: pointer;
@@ -337,7 +337,7 @@
 		width: 1rem;
 		height: 1rem;
 		flex-shrink: 0;
-		border: 1px solid var(--color-border, #5a4a2a);
+		border: 1px solid var(--color-border);
 		border-radius: 3px;
 		font-size: 0.7rem;
 		line-height: 1;

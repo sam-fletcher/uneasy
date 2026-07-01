@@ -1,0 +1,26 @@
+/* Shared marginalia-tile look (the m-tile in RetinueView's 2×2 grid, and
+   HelpContent's static replica). Import as a side effect wherever .m-tile
+   is used; component-local <style> blocks layer on top for anything that
+   diverges (tap-target sizing, interactive/add-slot states) since those
+   don't apply to the static replica. */
+
+.m-tile {
+	padding: 0.35rem 0.45rem;
+	background: #1d1d1a;
+	border: 1px solid #383530;
+	border-radius: 5px;
+	font-size: 0.78rem;
+	line-height: 1.25;
+	color: var(--color-text-secondary);
+	display: flex;
+	align-items: center;
+}
+.m-tile.torn {
+	opacity: 0.45;
+	text-decoration: line-through;
+}
+.m-tile.titled { gap: 0.3rem; }
+.m-tile.empty {
+	background: transparent;
+	border: 1px dashed #3a3a36;
+}

@@ -145,7 +145,7 @@
 	.arrow {
 		background: var(--color-border);
 		color: var(--color-accent);
-		border: 1px solid #555;
+		border: 1px solid var(--color-neutral);
 		border-radius: 4px;
 		min-width: 36px;
 		min-height: 36px;

@@ -9,6 +9,7 @@
 	import '$lib/components/shared/rankStrip.css';
 	import '$lib/components/shared/cornerBadge.css';
 	import '$lib/components/shared/statusText.css';
+	import '$lib/components/shared/marginaliaTile.css';
 	import { addMarginalia, updateMarginalia, updateAsset, writeSecret, getAssetSuggestions } from '$lib/api';
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
 	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
@@ -756,7 +757,7 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: #555;
+		background: var(--color-neutral);
 	}
 	.dot.online { background: var(--color-success); }
 
@@ -796,7 +797,7 @@
 		position: relative;
 		filter: grayscale(1);
 		opacity: 0.72;
-		border-color: var(--color-text-faint, #6b6b66);
+		border-color: var(--color-text-faint, #8a8a8a);
 		border-style: dashed;
 		pointer-events: none;
 	}
@@ -805,7 +806,7 @@
 		inset: 0;
 		width: 100%;
 		height: 100%;
-		stroke: var(--color-text-faint, #6b6b66);
+		stroke: var(--color-text-faint, #8a8a8a);
 		stroke-width: 2;
 		opacity: 0.55;
 		pointer-events: none;
@@ -819,8 +820,8 @@
 		font-size: 0.62rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		color: var(--color-text-faint, #6b6b66);
-		border: 0.5px solid var(--color-text-faint, #6b6b66);
+		color: var(--color-text-faint, #8a8a8a);
+		border: 0.5px solid var(--color-text-faint, #8a8a8a);
 		border-radius: 4px;
 		padding: 0.1rem 0.4rem;
 		background: #242420;
@@ -977,7 +978,7 @@
 		border-radius: 5px;
 		font-size: 0.85rem;
 		line-height: 1.4;
-		color: #cfcabd;
+		color: var(--color-text-secondary);
 	}
 	.secret-row.authored { border-left: 2px solid var(--color-accent); }
 
@@ -1017,7 +1018,7 @@
 		border-radius: 5px;
 		font-family: inherit;
 		font-size: 0.85rem;
-		color: #cfcabd;
+		color: var(--color-text-secondary);
 		cursor: pointer;
 	}
 	.mc-picker-item:hover { background: #261b1b; border-color: #b35454; color: var(--color-danger); }
@@ -1048,29 +1049,12 @@
 		gap: 0.35rem;
 	}
 
+	/* Base look (background/border/color/torn/titled/empty) comes from
+	   shared/marginaliaTile.css; this is just the real grid's tap-target
+	   sizing and clipping, which the static HelpContent replica doesn't need. */
 	.m-tile {
 		min-height: 44px;
-		padding: 0.35rem 0.45rem;
-		background: #1d1d1a;
-		border: 1px solid #383530;
-		border-radius: 5px;
-		font-size: 0.78rem;
-		line-height: 1.25;
-		color: #cfcabd;
-		display: flex;
-		align-items: center;
 		overflow: hidden;
-	}
-	.m-tile.empty {
-		background: transparent;
-		border: 1px dashed #3a3a36;
-	}
-	/* Title marginalia (a claimed throne-line role) carries a crown after its
-	   text — give the glyph breathing room from the text. */
-	.m-tile.titled { gap: 0.3rem; }
-	.m-tile.torn {
-		opacity: 0.45;
-		text-decoration: line-through;
 	}
 
 	.m-tile-text {
@@ -1102,7 +1086,7 @@
 		border-color: #b03a3a;
 		color: #c96a6a;
 	}
-	.m-tile.empty.add.at-risk:hover { color: #e07070; border-color: #c44545; }
+	.m-tile.empty.add.at-risk:hover { color: var(--color-danger); border-color: #c44545; }
 	.m-tile.empty.add.at-risk:focus-visible { outline-color: #b03a3a; }
 
 	/* Owner edit affordance on filled (untorn) slots */
@@ -1110,7 +1094,7 @@
 		text-align: left;
 		font-family: inherit;
 		font-size: 0.78rem;
-		color: #cfcabd;
+		color: var(--color-text-secondary);
 		cursor: pointer;
 	}
 	.m-tile.filled:hover { background: #232320; border-color: #5a5a52; }

@@ -901,7 +901,7 @@
 		padding: 0.3rem 0.6rem;
 		border: 1px solid var(--color-surface-2);
 		border-left: 3px solid var(--player-color, var(--color-accent));
-		background: #1d1d1d;
+		background: var(--color-surface-sunken);
 		color: #d8d4c9;
 		border-radius: 5px;
 		cursor: pointer;

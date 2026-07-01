@@ -259,7 +259,7 @@
 	}
 
 	.rail-row[data-state="past"]    { color: var(--color-text-faint); background: transparent; }
-	.rail-row[data-state="current"] { color: var(--color-bg); background: var(--color-accent); box-shadow: 0 0 0 2px #e0c080; }
+	.rail-row[data-state="current"] { color: var(--color-bg); background: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent-hover); }
 	.rail-row[data-state="future"]  { color: var(--color-text-muted); background: transparent; border: 1px solid var(--color-border-strong); }
 
 	/* Cross-component highlight: e.g. when a plan card in PlanPanel is

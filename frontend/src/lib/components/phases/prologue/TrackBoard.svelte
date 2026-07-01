@@ -383,7 +383,7 @@
 		width: 6px;
 		height: 6px;
 		border-radius: 50%;
-		background: #6cbf6c;
+		background: var(--color-success);
 		flex: none;
 	}
 	.chip-cards {

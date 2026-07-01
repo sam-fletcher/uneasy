@@ -783,7 +783,7 @@
 		margin-top: 0.4rem;
 	}
 
-	.done-btn.active { background: #6cbf6c; }
+	.done-btn.active { background: var(--color-success); }
 
 	.extra-status {
 		list-style: none;
@@ -807,7 +807,7 @@
 	}
 	.extra-status li.done { border-color: #3d4d3d; }
 	.extra-name { color: var(--color-text); }
-	.extra-claim { color: #6cbf6c; font-size: 0.8rem; }
+	.extra-claim { color: var(--color-success); font-size: 0.8rem; }
 	.extra-pending { color: var(--color-text-faint); font-size: 0.8rem; font-style: italic; }
 
 	.extra-form {
@@ -842,7 +842,7 @@
 		min-height: 44px;
 		padding: 0.35rem 0.85rem;
 		border-radius: 999px;
-		border: 1px solid #555;
+		border: 1px solid var(--color-neutral);
 		background: var(--color-surface-2);
 		color: var(--color-text);
 		font-size: 0.9rem;

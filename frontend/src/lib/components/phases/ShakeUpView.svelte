@@ -432,7 +432,7 @@
 	}
 	.shake-up h2 { color: var(--color-accent); font-size: 1.3rem; margin: 0; }
 	.shake-up h3 { color: var(--color-accent); font-size: 1rem; margin: 0.25rem 0; }
-	.state { display: flex; gap: 1.25rem; font-size: 0.9rem; color: #ccc; flex-wrap: wrap; margin-top: 0.25rem; }
+	.state { display: flex; gap: 1.25rem; font-size: 0.9rem; color: var(--color-text-muted); flex-wrap: wrap; margin-top: 0.25rem; }
 
 	.tokens-panel ul { list-style: none; padding: 0; margin: 0.25rem 0 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; }
 
@@ -451,7 +451,7 @@
 		display: inline-flex; align-items: center;
 		min-height: 44px; padding: 0.35rem 0.85rem;
 		border-radius: 999px;
-		border: 1px solid #555;
+		border: 1px solid var(--color-neutral);
 		background: var(--color-surface-2);
 		color: var(--color-text);
 		font-size: 0.9rem;
@@ -463,7 +463,7 @@
 
 	.su-peer-cards { display: flex; flex-direction: column; gap: 0.4rem; }
 	input {
-		background: var(--color-border); color: var(--color-text); border: 1px solid #555;
+		background: var(--color-border); color: var(--color-text); border: 1px solid var(--color-neutral);
 		border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.9rem;
 	}
 

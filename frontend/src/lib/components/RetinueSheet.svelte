@@ -72,7 +72,7 @@
 		width: 40px;
 		height: 4px;
 		margin: 0 auto;
-		background: #555;
+		background: var(--color-neutral);
 		border-radius: 2px;
 	}
 

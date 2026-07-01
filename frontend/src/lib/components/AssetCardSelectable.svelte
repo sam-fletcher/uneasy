@@ -346,7 +346,7 @@
 		border: 1px solid var(--color-surface-2);
 		border-left: 3px solid var(--owner-color, var(--color-border-strong));
 		border-radius: 5px;
-		background: #1d1d1d;
+		background: var(--color-surface-sunken);
 		overflow: hidden;
 	}
 
@@ -424,7 +424,7 @@
 	.select-tap {
 		width: 22px;
 		height: 22px;
-		border: 1px solid var(--owner-color, #555);
+		border: 1px solid var(--owner-color, var(--color-neutral));
 		border-radius: 4px;
 		display: inline-flex;
 		align-items: center;
@@ -456,7 +456,7 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: var(--owner-color, #555);
+		background: var(--owner-color, var(--color-neutral));
 		flex-shrink: 0;
 	}
 
