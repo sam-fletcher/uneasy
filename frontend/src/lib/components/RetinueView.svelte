@@ -731,7 +731,7 @@
 		white-space: nowrap;
 	}
 	.leveraged-count {
-		font-weight: 700;
+		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 	}
 	/* Nothing committed — keep it present but quiet so it reads as a resting state. */
@@ -988,7 +988,7 @@
 	.secrets-btn:hover { color: var(--color-accent-hover); background: #232320; box-shadow: 0 0 0 4px #232320; }
 	.secrets-btn.active { background: #2a2a26; box-shadow: 0 0 0 4px #2a2a26; }
 	/* Inline "+" prefix on the writable (own-asset) eye. */
-	.secrets-plus { font-size: 1rem; font-weight: 700; line-height: 1; }
+	.secrets-plus { font-size: 1rem; font-weight: 600; line-height: 1; }
 
 	/* Tombstone's passive readable-secret eye — same gold as the live eye, but
 	   a plain span (no hover/press), a record rather than an affordance. */
@@ -1008,7 +1008,7 @@
 		padding: 0 3px;
 		border-radius: 8px;
 		font-size: 0.62rem;
-		font-weight: 700;
+		font-weight: 600;
 		line-height: 16px;
 		text-align: center;
 	}

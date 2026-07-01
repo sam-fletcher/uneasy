@@ -588,7 +588,7 @@
 	.die {
 		width: 32px; height: 32px; border-radius: 5px;
 		border: 2px solid var(--color-accent); background: #2a2010;
-		color: var(--color-text); font-weight: 700; font-size: 1rem;
+		color: var(--color-text); font-weight: 600; font-size: 1rem;
 		display: flex; align-items: center; justify-content: center;
 	}
 	.die.int { background: #2a1010; color: #f0b0b0; }

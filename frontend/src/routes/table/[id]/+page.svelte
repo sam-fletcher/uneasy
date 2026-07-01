@@ -1236,7 +1236,7 @@
 		justify-content: center;
 		border-radius: 999px;
 		font-size: 0.7rem;
-		font-weight: 700;
+		font-weight: 600;
 		line-height: 1;
 		font-variant-numeric: tabular-nums;
 		background: #3a3326;
@@ -1287,7 +1287,7 @@
 	/* The best rank held by any player on this track reads gold. */
 	.mr.top {
 		color: var(--color-accent);
-		font-weight: 700;
+		font-weight: 600;
 	}
 	.mr.top .mr-cat {
 		color: var(--color-accent);

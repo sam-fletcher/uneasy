@@ -544,7 +544,7 @@
 
 	/* Needlessly-at-risk: red count + caret, matching the header-chip risk
 	   badge. Title on .count carries the meaning for non-colour users. */
-	.count.at-risk { color: #d65a5a; font-weight: 700; }
+	.count.at-risk { color: #d65a5a; font-weight: 600; }
 	.caret.at-risk { color: #d65a5a; }
 
 	/* Leverage draft toggle. A ~36px-tall "+🎲" chip wrapped in a 44px

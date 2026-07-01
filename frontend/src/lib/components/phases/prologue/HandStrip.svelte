@@ -160,7 +160,7 @@
 		color: #b03030;
 		border: 1px solid var(--color-text-muted);
 		border-radius: 5px;
-		font-weight: 700;
+		font-weight: 600;
 		font-size: 0.95rem;
 		cursor: pointer;
 		font-variant-numeric: tabular-nums;

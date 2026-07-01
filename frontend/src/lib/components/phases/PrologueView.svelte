@@ -775,7 +775,7 @@
 		border-radius: 3px;
 		padding: 0.1rem 0.25rem;
 		font-size: 0.75rem;
-		font-weight: 700;
+		font-weight: 600;
 		line-height: 1;
 		min-width: 1.6em;
 		justify-content: center;

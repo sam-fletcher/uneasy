@@ -370,7 +370,7 @@
 		padding: 0 0.2rem;
 		border-radius: 4px;
 		font-size: 0.8rem;
-		font-weight: 700;
+		font-weight: 600;
 		background: #2a2418;
 		border: 1px solid #5a4a2a;
 		color: #e0d4b0;

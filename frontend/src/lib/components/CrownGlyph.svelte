@@ -74,7 +74,7 @@
 	.crown svg { display: block; }
 	.ordinal {
 		font-size: 0.62rem;
-		font-weight: 700;
+		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		color: inherit;
 	}

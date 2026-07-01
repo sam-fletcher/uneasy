@@ -465,7 +465,7 @@
 	.ex-ranks { display: flex; gap: 0.4rem; font-size: 0.62rem; line-height: 1; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 	.ex-mr { display: inline-flex; align-items: baseline; gap: 0.08rem; }
 	.ex-mr-cat { color: var(--color-text-faint); font-size: 0.9em; }
-	.ex-mr.top { color: var(--color-accent); font-weight: 700; }
+	.ex-mr.top { color: var(--color-accent); font-weight: 600; }
 	.ex-mr.top .ex-mr-cat { color: var(--color-accent); }
 
 	/* ── Rank-strip replica (Rankings tab) ───────────────────────────────── */
@@ -496,7 +496,7 @@
 	.ex-eye { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
 	.ex-eye.known { color: var(--color-accent); }
 	.ex-eye.hidden { color: var(--color-text-muted); }
-	.ex-corner { position: absolute; top: -8px; right: -8px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; font-size: 0.62rem; font-weight: 700; line-height: 16px; text-align: center; }
+	.ex-corner { position: absolute; top: -8px; right: -8px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; font-size: 0.62rem; font-weight: 600; line-height: 16px; text-align: center; }
 	.ex-corner.known { background: var(--color-accent); color: var(--color-bg); }
 	.ex-corner.hidden { background: #3a3a36; color: var(--color-text-muted); }
 	.ex-asset-type { flex-shrink: 0; font-size: 0.7rem; background: var(--color-border-warm); color: var(--color-accent); padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }

@@ -401,7 +401,7 @@
 		padding: 0 0.2rem;
 		min-width: 1.2em;
 		font-size: 0.62rem;
-		font-weight: 700;
+		font-weight: 600;
 		line-height: 1.4;
 		font-variant-numeric: tabular-nums;
 		justify-content: center;
