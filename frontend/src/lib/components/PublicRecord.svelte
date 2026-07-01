@@ -254,6 +254,7 @@
 		height: 32px;
 		border-radius: 50%;
 		font-size: 0.78rem;
+		font-weight: 600;
 		flex-shrink: 0;
 	}
 
@@ -279,6 +280,7 @@
 		align-items: center;
 		justify-content: center;
 		font-size: 0.6rem;
+		font-weight: 600;
 		color: var(--color-bg);
 		background: var(--color-highlight);
 		border-radius: 7px;
