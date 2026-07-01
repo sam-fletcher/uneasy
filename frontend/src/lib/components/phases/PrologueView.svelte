@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/cardGlyph.css';
 	import {
 		getPrologueSheets,
 		getPrologueCards,
@@ -467,7 +468,7 @@
 {/snippet}
 
 {#snippet miniCard(value: string, suit: string)}
-	<span class="mini-card" data-color={suitColor(suit)}>
+	<span class="card-glyph" data-color={suitColor(suit)}>
 		<span class="mc-value">{value}</span>
 		{@render suitSvg(suit)}
 	</span>
@@ -767,26 +768,9 @@
 	.choice-cards { display: flex; gap: 0.25rem; flex-wrap: wrap; }
 	.claim-by { font-size: 0.7rem; color: var(--color-text-muted); }
 
-	.mini-card {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.15rem;
-		background: #f4ecd8;
-		border: 1px solid var(--color-text-muted);
-		border-radius: 3px;
-		padding: 0.1rem 0.25rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		line-height: 1;
-		min-width: 1.6em;
-		justify-content: center;
-	}
-	.mini-card[data-color='red']   { color: #b03030; }
-	.mini-card[data-color='black'] { color: var(--color-bg); }
-	.mini-card .mc-value { font-variant-numeric: tabular-nums; }
-	.mini-card :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
-	.hand-cards .mini-card { font-size: 0.85rem; padding: 0.15rem 0.3rem; }
-	.hand-cards .mini-card :global(.suit) { width: 1.1em; height: 1.1em; }
+	.card-glyph :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
+	.hand-cards .card-glyph { font-size: 0.85rem; padding: 0.15rem 0.3rem; }
+	.hand-cards .card-glyph :global(.suit) { width: 1.1em; height: 1.1em; }
 
 	.hand-panel {
 		background: var(--color-surface-sunken);

@@ -10,6 +10,7 @@
   Heading: "Maximum commitment if needed".
 -->
 <script lang="ts">
+	import '$lib/components/shared/cardGlyph.css';
 	import type { CommittedHeart, PlayerCardRow, PrologueTrack } from '$lib/api';
 	import { cardRank } from '$lib/prologue/refund';
 
@@ -94,7 +95,8 @@
 			{@const greyHere = onActive && !brightSet.has(h.id)}
 			<button
 				type="button"
-				class="heart-card"
+				class="card-glyph tappable heart-card"
+				data-color="red"
 				class:on-active={onActive}
 				class:grey={greyHere}
 				class:locked
@@ -149,21 +151,7 @@
 	.empty { color: var(--color-text-faint); font-size: 0.85rem; }
 
 	.heart-card {
-		display: inline-flex;
-		flex-direction: row;
-		align-items: center;
-		gap: 0.15rem;
-		min-height: 44px;
-		min-width: 44px;
-		padding: 0 0.5rem;
-		background: #f4ecd8;
-		color: #b03030;
-		border: 1px solid var(--color-text-muted);
-		border-radius: 5px;
-		font-weight: 600;
-		font-size: 0.95rem;
-		cursor: pointer;
-		font-variant-numeric: tabular-nums;
+		justify-content: flex-start;
 		transition: transform 80ms ease, box-shadow 80ms ease, opacity 120ms ease;
 	}
 	.heart-card:hover:not(:disabled) {

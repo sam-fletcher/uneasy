@@ -1,0 +1,39 @@
+/* Shared playing-card glyph look: a small inline chip showing a card
+   value, colored red/black by suit, on a cream background. Import this
+   file as a side effect wherever a component needs .card-glyph. */
+
+.card-glyph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.15rem;
+	background: #f4ecd8;
+	border: 1px solid var(--color-text-muted);
+	border-radius: 3px;
+	padding: 0.1rem 0.25rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	line-height: 1;
+	min-width: 1.6em;
+	font-variant-numeric: tabular-nums;
+}
+
+.card-glyph[data-color='red']   { color: #b03030; }
+.card-glyph[data-color='black'] { color: var(--color-bg); }
+
+.card-glyph.small {
+	border-radius: 2px;
+	padding: 0 0.2rem;
+	min-width: 1.2em;
+	font-size: 0.62rem;
+	line-height: 1.4;
+}
+
+.card-glyph.tappable {
+	min-height: 44px;
+	min-width: 44px;
+	padding: 0 0.5rem;
+	border-radius: 5px;
+	font-size: 0.95rem;
+	cursor: pointer;
+}

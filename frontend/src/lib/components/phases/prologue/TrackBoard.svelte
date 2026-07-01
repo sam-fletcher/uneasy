@@ -7,6 +7,7 @@
   See PROLOGUE_RANKING_UI_PLAN.md.
 -->
 <script lang="ts">
+	import '$lib/components/shared/cardGlyph.css';
 	import type {
 		Player,
 		PlayerCardRow,
@@ -205,13 +206,13 @@
 								</div>
 								<div class="chip-cards">
 									{#each suitCardsForPlayer(pid, t.suitChar) as c}
-										<span class="card" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
+										<span class="card-glyph small" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
 											{c.card_value}
 										</span>
 									{/each}
 									{#each committedHeartsForPlayer(pid, t.id) as h}
 										<span
-											class="card heart"
+											class="card-glyph small heart"
 											class:grey={!(bright.get(pid)?.has(h.card_id) ?? false)}
 											data-color="red"
 											title={(bright.get(pid)?.has(h.card_id) ?? false)
@@ -392,23 +393,7 @@
 		min-height: 1.05rem; /* matches a card row so empty/no-cards chips don't shrink */
 		align-items: center;
 	}
-	.card {
-		display: inline-flex;
-		align-items: center;
-		background: #f4ecd8;
-		border: 1px solid var(--color-text-muted);
-		border-radius: 2px;
-		padding: 0 0.2rem;
-		min-width: 1.2em;
-		font-size: 0.62rem;
-		font-weight: 600;
-		line-height: 1.4;
-		font-variant-numeric: tabular-nums;
-		justify-content: center;
-	}
-	.card[data-color='red'] { color: #b03030; }
-	.card[data-color='black'] { color: var(--color-bg); }
-	.card.grey {
+	.card-glyph.grey {
 		opacity: 0.45;
 		background: #d8d2c2;
 		text-decoration: line-through;
@@ -429,6 +414,6 @@
 		.rank-num { font-size: 0.85rem; min-width: 1.2rem; }
 		.col-label { font-size: 0.85rem; }
 		.chip-name { font-size: 0.85rem; }
-		.card { font-size: 0.7rem; min-width: 1.4em; padding: 0.05rem 0.25rem; }
+		.card-glyph.small { font-size: 0.7rem; min-width: 1.4em; padding: 0.05rem 0.25rem; }
 	}
 </style>
