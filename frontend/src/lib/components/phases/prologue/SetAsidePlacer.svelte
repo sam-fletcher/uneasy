@@ -8,6 +8,7 @@
   component is never shown.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import type { Player } from '$lib/api';
 
 	interface Props {
@@ -80,7 +81,7 @@
 	</ol>
 
 	{#if isMyTurn}
-		<button class="primary confirm" onclick={onConfirm} disabled={busy}>
+		<button class="action-btn primary" onclick={onConfirm} disabled={busy}>
 			{busy ? '…' : 'Confirm placement'}
 		</button>
 	{/if}
@@ -152,15 +153,4 @@
 		cursor: pointer;
 	}
 	.arrow:disabled { opacity: 0.3; cursor: not-allowed; }
-
-	.primary {
-		background: var(--color-accent);
-		color: var(--color-bg);
-		padding: 0.5rem 1rem;
-		border-radius: 6px;
-		border: none;
-		cursor: pointer;
-	}
-	.primary:disabled { opacity: 0.4; cursor: not-allowed; }
-	.confirm { align-self: flex-start; min-height: 44px; }
 </style>

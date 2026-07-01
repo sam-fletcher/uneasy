@@ -5,6 +5,7 @@
   directly onto the tile parts.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { addMarginalia, updateMarginalia, updateAsset, writeSecret, getAssetSuggestions } from '$lib/api';
 	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
 	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
@@ -542,7 +543,7 @@
 								</div>
 								{#if mcSwapError}<p class="m-editor-error">{mcSwapError}</p>{/if}
 								<div class="m-editor-actions">
-									<button type="button" class="m-btn secondary" onclick={cancelMcSwap} disabled={mcSwapSaving}>Cancel</button>
+									<button type="button" class="action-btn secondary" onclick={cancelMcSwap} disabled={mcSwapSaving}>Cancel</button>
 								</div>
 							</div>
 						{:else if editingAssetId === asset.id}
@@ -577,8 +578,8 @@
 								{/if}
 								{#if editError}<p class="m-editor-error">{editError}</p>{/if}
 								<div class="m-editor-actions">
-									<button type="button" class="m-btn secondary" onclick={cancelEdit} disabled={saving}>Cancel</button>
-									<button type="button" class="m-btn primary" onclick={saveEdit} disabled={saving || !draftText.trim()}>
+									<button type="button" class="action-btn secondary" onclick={cancelEdit} disabled={saving}>Cancel</button>
+									<button type="button" class="action-btn primary" onclick={saveEdit} disabled={saving || !draftText.trim()}>
 										{saving ? '…' : 'Save'}
 									</button>
 								</div>
@@ -650,9 +651,9 @@
 									{#if secretError}<p class="m-editor-error">{secretError}</p>{/if}
 								{/if}
 								<div class="m-editor-actions">
-									<button type="button" class="m-btn secondary" onclick={() => toggleSecrets(asset.id)} disabled={secretSaving}>Close</button>
+									<button type="button" class="action-btn secondary" onclick={() => toggleSecrets(asset.id)} disabled={secretSaving}>Close</button>
 									{#if isSelf}
-										<button type="button" class="m-btn primary" onclick={() => saveSecret(asset)} disabled={secretSaving || !newSecretText.trim()}>
+										<button type="button" class="action-btn primary" onclick={() => saveSecret(asset)} disabled={secretSaving || !newSecretText.trim()}>
 											{secretSaving ? '…' : 'Add secret'}
 										</button>
 									{/if}
@@ -1226,14 +1227,4 @@
 		gap: 0.5rem;
 	}
 
-	.m-btn {
-		padding: 0.45rem 0.9rem;
-		min-height: 40px;
-		border-radius: 6px;
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-	.m-btn.primary { background: var(--color-accent); color: var(--color-bg); }
-	.m-btn.secondary { background: var(--color-border); color: var(--color-text); border: 1px solid #4a4a44; }
-	.m-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>

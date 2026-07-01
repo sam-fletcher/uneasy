@@ -1,5 +1,7 @@
 /* Shared styles for PlanPanel and all per-plan components. */
 
+@import '../shared/actionButton.css';
+
 .plan-panel {
 	border-radius: 6px;
 	padding: 0.6rem 0.75rem;
@@ -564,24 +566,3 @@
 	resize: none;
 }
 
-.action-btn {
-	padding: 0.35rem 0.7rem;
-	border-radius: 5px;
-	font-size: 0.83rem;
-	cursor: pointer;
-	align-self: flex-start;
-	border: none;
-}
-
-.action-btn.primary {
-	background: var(--color-accent);
-	color: var(--color-bg);
-}
-
-.action-btn.secondary {
-	background: var(--color-border);
-	color: var(--color-accent);
-	border: 1px solid #4a4030;
-}
-
-.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }

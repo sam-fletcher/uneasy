@@ -10,6 +10,7 @@
       to lock in the final cost and trigger the mechanical effect.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		getShakeUp, shakeUpRoll, shakeUpSpend, shakeUpAdjust, shakeUpCommit,
@@ -258,7 +259,7 @@
 			</p>
 			<div class="roll-form">
 				<input type="number" min="1" max="60" bind:value={rollResult} />
-				<button class="primary" disabled={busy || myTokens > 0} onclick={submitRoll}>
+				<button class="action-btn primary" disabled={busy || myTokens > 0} onclick={submitRoll}>
 					{busy ? '…' : 'Submit roll'}
 				</button>
 			</div>
@@ -281,10 +282,10 @@
 				</p>
 				<div class="adjust-buttons">
 					{#if !isMySpend}
-						<button disabled={busy || myTokens < 1} onclick={() => adjust(1)}>+1 (costs you 1 token)</button>
-						<button disabled={busy || myTokens < 1} onclick={() => adjust(-1)}>−1 (costs you 1 token)</button>
+						<button class="action-btn secondary" disabled={busy || myTokens < 1} onclick={() => adjust(1)}>+1 (costs you 1 token)</button>
+						<button class="action-btn secondary" disabled={busy || myTokens < 1} onclick={() => adjust(-1)}>−1 (costs you 1 token)</button>
 					{:else}
-						<button class="primary" disabled={busy} onclick={commit}>Commit</button>
+						<button class="action-btn primary" disabled={busy} onclick={commit}>Commit</button>
 					{/if}
 				</div>
 			</section>
@@ -404,7 +405,7 @@
 							</div>
 						{/if}
 					{/if}
-					<button class="primary" disabled={!announceReady || busy} onclick={announce}>
+					<button class="action-btn primary" disabled={!announceReady || busy} onclick={announce}>
 						{busy ? '…' : 'Announce (cost 1 token)'}
 					</button>
 				</div>
@@ -472,12 +473,4 @@
 		background: var(--color-surface-sunken); border: 1px solid var(--color-border-strong); border-radius: 8px; padding: 0.75rem;
 	}
 	.adjust-buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
-
-	button {
-		background: var(--color-border); color: var(--color-text); border: 1px solid #555;
-		border-radius: 6px; padding: 0.4rem 0.8rem;
-		cursor: pointer;
-	}
-	button:disabled { opacity: 0.4; cursor: not-allowed; }
-	.primary { background: var(--color-accent); color: var(--color-bg); border-color: var(--color-accent); }
 </style>

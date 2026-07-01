@@ -1,0 +1,27 @@
+/* Shared action-button look, used across the plans/ system and everywhere
+   else in the app. Import this file as a side effect wherever a component
+   needs .action-btn (directly, or transitively via planPanel.css). */
+
+.action-btn {
+	padding: 0.5rem 1rem;
+	min-height: 44px;
+	border-radius: var(--radius-sm);
+	font-size: 0.9rem;
+	border: none;
+	cursor: pointer;
+	align-self: flex-start;
+}
+
+.action-btn.primary { background: var(--color-accent); color: var(--color-bg); }
+.action-btn.primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+
+.action-btn.secondary { background: var(--color-border); color: var(--color-accent); border: 1px solid #4a4030; }
+.action-btn.secondary:hover:not(:disabled) { background: #3e3e3e; }
+
+.action-btn.small {
+	padding: 0.35rem 0.7rem;
+	font-size: 0.83rem;
+	min-height: 36px;
+}
+
+.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }

@@ -1,5 +1,6 @@
 <!-- Combined entry screen: title + log in / sign up in one mobile-first page. -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
@@ -121,7 +122,7 @@
 
 			{#if error}<p class="error">{error}</p>{/if}
 
-			<button class="primary" type="submit" disabled={loading}>
+			<button class="action-btn primary" type="submit" disabled={loading}>
 				{#if loading}
 					{mode === 'login' ? 'Logging in…' : 'Creating…'}
 				{:else}
@@ -262,12 +263,5 @@
 
 	.error { color: var(--color-danger); font-size: 0.9rem; }
 
-	.primary {
-		min-height: 44px;
-		margin-top: 0.25rem;
-		background: var(--color-accent);
-		color: var(--color-bg);
-	}
-	.primary:hover:not(:disabled) { background: var(--color-accent-hover); }
-	.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+	.primary { margin-top: 0.25rem; }
 </style>

@@ -1,5 +1,6 @@
 <!-- Game shell: loads full game state, routes to phase-specific views. -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
@@ -677,7 +678,7 @@
 				{/each}
 			</div>
 			{#if isFacilitator && players.length >= 2}
-				<button class="primary" onclick={advancePhase} disabled={advancing}>
+				<button class="action-btn primary" onclick={advancePhase} disabled={advancing}>
 					{advancing ? '…' : nextPhaseLabel['lobby']}
 				</button>
 			{:else if isFacilitator}
@@ -907,7 +908,7 @@
 					A plan would land past row 13. Pick how the game should wind down — this can't be undone.
 				</p>
 				{#if endgamePromptModes.includes('smooth_landing')}
-					<button class="primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('smooth_landing')}>
+					<button class="action-btn primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('smooth_landing')}>
 						Smooth Landing
 					</button>
 					<p class="muted small">
@@ -915,14 +916,14 @@
 					</p>
 				{/if}
 				{#if endgamePromptModes.includes('explosive_finale')}
-					<button class="primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('explosive_finale')}>
+					<button class="action-btn primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('explosive_finale')}>
 						Explosive Finale
 					</button>
 					<p class="muted small">
 						Collapse all remaining plans onto row 13. Resolve them in sequence with no scenes between, then Shake-Up.
 					</p>
 				{/if}
-				<button class="secondary" disabled={endgameSubmitting} onclick={() => endgamePromptModes = null}>
+				<button class="action-btn secondary" disabled={endgameSubmitting} onclick={() => endgamePromptModes = null}>
 					Cancel
 				</button>
 			</div>
@@ -1358,18 +1359,6 @@
 		margin: 0;
 	}
 
-	.primary {
-		background: var(--color-accent);
-		color: var(--color-bg);
-		padding: 0.6rem 1.2rem;
-		border-radius: 6px;
-		align-self: flex-start;
-	}
-
-	.primary:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
 
 	/* ── Lobby ──────────────────────────────────────────────────────────────── */
 
@@ -1566,15 +1555,7 @@
 		gap: 0.6rem;
 	}
 	.endgame-modal h3 { color: var(--color-accent); margin: 0; font-size: 1.1rem; }
-	.endgame-modal .primary {
-		background: var(--color-accent); color: var(--color-bg);
-		padding: 0.5rem 1rem; border-radius: 6px;
-	}
-	.endgame-modal .secondary {
-		background: var(--color-border); color: var(--color-text);
-		padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid #555;
-		align-self: flex-end;
-	}
+	.endgame-modal .secondary { align-self: flex-end; }
 	.endgame-modal .muted { color: var(--color-text-muted); font-size: 0.9rem; margin: 0; }
 	.endgame-modal .muted.small { font-size: 0.8rem; }
 </style>

@@ -12,6 +12,7 @@
   Everyone else sees who the table is waiting on.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import type { Asset, Player } from '$lib/api';
 	import { updateAsset, replaceMainCharacter } from '$lib/api';
 	import CardPicker from '$lib/components/plans/CardPicker.svelte';
@@ -114,7 +115,7 @@
 				onSelect={(id) => (selectedPeerID = id)}
 			/>
 			<div class="actions">
-				<button class="btn primary" onclick={promote} disabled={busy || selectedPeerID == null}>
+				<button class="action-btn primary" onclick={promote} disabled={busy || selectedPeerID == null}>
 					{busy ? '…' : 'Make main character'}
 				</button>
 			</div>
@@ -135,10 +136,10 @@
 				</label>
 			{/each}
 			{#if newMargs.length < 4}
-				<button class="btn ghost" onclick={addMargField} disabled={busy}>+ Add marginalia</button>
+				<button class="ghost" onclick={addMargField} disabled={busy}>+ Add marginalia</button>
 			{/if}
 			<div class="actions">
-				<button class="btn primary" onclick={conscript} disabled={busy}>
+				<button class="action-btn primary" onclick={conscript} disabled={busy}>
 					{busy ? '…' : 'Conscript new main character'}
 				</button>
 			</div>
@@ -203,7 +204,7 @@
 		gap: 0.5rem;
 		margin-top: 0.3rem;
 	}
-	.btn {
+	.ghost {
 		min-height: 44px;
 		padding: 0.45rem 1rem;
 		border-radius: 5px;
@@ -212,17 +213,9 @@
 		border: 1px solid var(--color-border-warm);
 		background: transparent;
 		color: inherit;
-	}
-	.btn.primary {
-		background: var(--color-accent);
-		color: var(--color-bg);
-		border-color: var(--color-accent);
-	}
-	.btn.ghost {
 		align-self: flex-start;
-		font-weight: 500;
 	}
-	.btn:disabled {
+	.ghost:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
 	}

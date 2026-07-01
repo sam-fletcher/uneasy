@@ -4,6 +4,7 @@
   Chat now lives in the page-level ChatPanel; this view no longer owns posts.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS, REVEAL_EVENTS } from '$lib/ws';
@@ -623,23 +624,5 @@
 		gap: 0.5rem;
 		flex-wrap: wrap;
 		justify-content: center;
-	}
-
-	.action-btn {
-		min-height: 44px;
-		padding: 0.4rem 1rem;
-		border-radius: 5px;
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-
-	.action-btn.primary {
-		background: var(--color-accent);
-		color: var(--color-bg);
-	}
-
-	.action-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
 	}
 </style>

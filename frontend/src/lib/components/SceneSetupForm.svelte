@@ -18,6 +18,7 @@
 	loading the active scene state (the WS event will also push it).
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { onDestroy } from 'svelte';
 	import { createScene, type Asset, type Player, type TimeElapsed, type SceneSetupDraft } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
@@ -323,7 +324,7 @@
 		<div class="actions">
 			<button
 				type="button"
-				class="primary"
+				class="action-btn primary"
 				onclick={submit}
 				disabled={!canSubmit || submitting}
 			>
@@ -455,18 +456,4 @@
 	}
 
 	.actions { display: flex; gap: 0.5rem; }
-	.primary {
-		padding: 0.55rem 1rem;
-		min-height: 44px;
-		border-radius: 5px;
-		border: none;
-		background: var(--color-accent);
-		color: var(--color-bg);
-		font-size: 0.9rem;
-		cursor: pointer;
-	}
-	.primary:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
 </style>

@@ -11,6 +11,7 @@
 	in display-only mode so anyone can review marginalia mid-scene.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import {
 		claimScenePeer,
 		createRoll,
@@ -265,7 +266,7 @@
 		<div class="end-bar">
 			<button
 				type="button"
-				class="end-btn"
+				class="action-btn primary"
 				onclick={onEndScene}
 				disabled={endingScene}
 			>
@@ -368,18 +369,6 @@
 		padding-top: 0.4rem;
 		border-top: 1px solid var(--color-surface-2);
 	}
-
-	.end-btn {
-		padding: 0.55rem 1rem;
-		min-height: 44px;
-		border-radius: 5px;
-		border: none;
-		background: var(--color-accent);
-		color: var(--color-bg);
-		font-size: 0.9rem;
-		cursor: pointer;
-	}
-	.end-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	.error { color: var(--color-danger); font-size: 0.82rem; margin: 0; }
 	.error.inline { font-size: 0.78rem; }

@@ -9,6 +9,7 @@
   Submits everything in a single choosePrologue call.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import {
 		choosePrologue,
 		getPrologueCardSuggestions,
@@ -225,8 +226,8 @@
 	{/each}
 
 	<footer>
-		<button class="secondary" onclick={onClose} disabled={submitting}>Cancel</button>
-		<button class="primary" onclick={submit} disabled={!ready || submitting}>
+		<button class="action-btn secondary" onclick={onClose} disabled={submitting}>Cancel</button>
+		<button class="action-btn primary" onclick={submit} disabled={!ready || submitting}>
 			{submitting ? '…' : 'Claim'}
 		</button>
 	</footer>
@@ -291,16 +292,4 @@
 	.muted.small { font-size: 0.8rem; }
 
 	footer { display: flex; gap: 0.6rem; justify-content: flex-end; }
-
-	.primary {
-		background: var(--color-accent); color: var(--color-bg);
-		padding: 0.5rem 1rem; border-radius: 6px;
-	}
-	.primary:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	.secondary {
-		background: var(--color-border); color: var(--color-text);
-		padding: 0.5rem 0.9rem; border-radius: 6px;
-		border: 1px solid #555;
-	}
 </style>

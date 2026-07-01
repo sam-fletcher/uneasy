@@ -7,6 +7,7 @@
     extra_peers      →  ≤3-player rule: each picks one unused title
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import {
 		getPrologueSheets,
 		getPrologueCards,
@@ -590,7 +591,7 @@
 			/>
 
 			<button
-				class="primary done-btn"
+				class="action-btn primary done-btn"
 				class:active={myDoneOnTrack}
 				disabled={savingDone}
 				onclick={toggleDone}
@@ -677,7 +678,7 @@
 					placeholder="Name your peer"
 				/>
 			</label>
-			<button class="secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
+			<button class="action-btn secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
 				{creatingExtra ? '…' : 'Create peer'}
 			</button>
 		{/if}
@@ -801,7 +802,6 @@
 		margin-top: 0.4rem;
 	}
 
-	.done-btn { align-self: flex-start; min-height: 44px; }
 	.done-btn.active { background: #6cbf6c; }
 
 	.extra-status {
@@ -876,22 +876,4 @@
 		outline-offset: 1px;
 	}
 
-	.primary {
-		background: var(--color-accent);
-		color: var(--color-bg);
-		padding: 0.5rem 1rem;
-		border-radius: 6px;
-		align-self: flex-start;
-	}
-	.primary:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	.secondary {
-		background: var(--color-border);
-		color: var(--color-text);
-		padding: 0.4rem 0.8rem;
-		border-radius: 6px;
-		align-self: flex-start;
-		border: 1px solid #555;
-	}
-	.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

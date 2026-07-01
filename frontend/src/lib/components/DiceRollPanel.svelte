@@ -5,6 +5,7 @@
   vote_resolved / resolved over WS.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import type {
 		DiceRoll, DiceRollDie, VoteView, RollParticipant, RollIntent,
 		Asset, Player, BankedDie,
@@ -603,16 +604,6 @@
 	.stage-actions { display: flex; flex-direction: column; gap: 0.5rem; }
 	.stage-hint { font-size: 0.85rem; color: var(--color-text-muted); margin: 0; }
 
-	.action-btn {
-		min-height: 44px;
-		padding: 0.5rem 0.8rem;
-		border-radius: 5px;
-		font-size: 0.9rem;
-		cursor: pointer;
-	}
-	.action-btn.primary { background: var(--color-accent); color: var(--color-bg); }
-	.action-btn.secondary { background: var(--color-border); color: var(--color-accent); border: 1px solid #4a4030; }
-	.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	/* Vote buttons */
 	.vote-buttons { display: flex; gap: 0.5rem; }

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import {
@@ -117,7 +118,7 @@
 {:else if !me}
 	<div class="load-error">
 		<p class="error">{error || 'Could not load your profile.'}</p>
-		<button class="primary" onclick={load}>Retry</button>
+		<button class="action-btn primary" onclick={load}>Retry</button>
 	</div>
 {:else}
 	<div class="profile">
@@ -145,11 +146,11 @@
 			<p class="hint">Have a code from your host? Enter it to take a seat.</p>
 			<div class="join">
 				<input aria-label="Join code" placeholder="Join code" bind:value={joinCode} maxlength={6} style="text-transform:uppercase;letter-spacing:0.15em" />
-				<button class="primary" onclick={doJoin} disabled={busy || !joinCode.trim()}>Join</button>
+				<button class="action-btn primary" onclick={doJoin} disabled={busy || !joinCode.trim()}>Join</button>
 			</div>
 			<div class="create-row">
 				<span class="hint">Hosting a game?</span>
-				<button class="secondary" onclick={doCreate} disabled={busy}>Create a new table</button>
+				<button class="action-btn secondary" onclick={doCreate} disabled={busy}>Create a new table</button>
 			</div>
 		</section>
 
@@ -159,40 +160,40 @@
 				<span class="label">Player name</span>
 				{#if editingUsername}
 					<input aria-label="Player name" bind:value={usernameDraft} />
-					<button class="small" onclick={saveUsername}>Save</button>
-					<button class="small secondary" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
+					<button class="action-btn primary small" onclick={saveUsername}>Save</button>
+					<button class="action-btn secondary small" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
 				{:else}
 					<span>{me.username}</span>
-					<button class="small secondary" aria-label="Edit player name" onclick={() => { editingUsername = true; }}>Edit</button>
+					<button class="action-btn secondary small" aria-label="Edit player name" onclick={() => { editingUsername = true; }}>Edit</button>
 				{/if}
 			</div>
 			<div class="row">
 				<span class="label">Email</span>
 				{#if editingEmail}
 					<input type="email" aria-label="Email" bind:value={emailDraft} />
-					<button class="small" onclick={saveEmail}>Save</button>
-					<button class="small secondary" onclick={() => { editingEmail = false; emailDraft = me?.email ?? ''; }}>Cancel</button>
+					<button class="action-btn primary small" onclick={saveEmail}>Save</button>
+					<button class="action-btn secondary small" onclick={() => { editingEmail = false; emailDraft = me?.email ?? ''; }}>Cancel</button>
 				{:else}
 					<span>{me.email ?? '—'}</span>
-					<button class="small secondary" aria-label="Edit email" onclick={() => { editingEmail = true; }}>Edit</button>
+					<button class="action-btn secondary small" aria-label="Edit email" onclick={() => { editingEmail = true; }}>Edit</button>
 				{/if}
 			</div>
 			<div class="row">
 				<span class="label">Password</span>
 				{#if editingPassword}
 					<input type="password" aria-label="New password" bind:value={passwordDraft} placeholder="Enter a new password" />
-					<button class="small" onclick={savePassword} disabled={!passwordDraft}>Save</button>
-					<button class="small secondary" onclick={() => { editingPassword = false; passwordDraft = ''; }}>Cancel</button>
+					<button class="action-btn primary small" onclick={savePassword} disabled={!passwordDraft}>Save</button>
+					<button class="action-btn secondary small" onclick={() => { editingPassword = false; passwordDraft = ''; }}>Cancel</button>
 				{:else}
 					<span class="masked">••••••••</span>
-					<button class="small secondary" aria-label="Edit password" onclick={() => { editingPassword = true; }}>Edit</button>
+					<button class="action-btn secondary small" aria-label="Edit password" onclick={() => { editingPassword = true; }}>Edit</button>
 				{/if}
 			</div>
 		</section>
 
 		<div class="footer-actions">
-			<a class="secondary feedback-btn" href={feedbackHref}>Send feedback</a>
-			<button class="secondary" onclick={doLogout}>Log out</button>
+			<a class="action-btn secondary feedback-btn" href={feedbackHref}>Send feedback</a>
+			<button class="action-btn secondary" onclick={doLogout}>Log out</button>
 		</div>
 	</div>
 {/if}
@@ -211,7 +212,6 @@
 	.tag { color:var(--color-accent); font-size:0.75rem; margin-left:0.5rem; }
 	.muted { color:var(--color-text-muted); }
 	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:600px; margin:0 auto; padding-top:2rem; }
-	.load-error .primary { min-height:44px; padding:0 1.25rem; border-radius:6px; }
 	.status { color:var(--color-accent); font-size:0.9rem; }
 	.error { color:var(--color-danger); font-size:0.9rem; }
 	/* On narrow screens, let the field label sit on its own line so the value
@@ -227,15 +227,5 @@
 	.create-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--color-border-subtle); }
 	.create-row .hint { margin:0; }
 	.footer-actions { display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap; margin-top:0.5rem; }
-	/* Match padding across the button and the <a>-as-button so they sit flush. */
-	.footer-actions > * { min-height:44px; padding:0 1rem; border-radius:6px; }
 	.feedback-btn { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
-	.primary { background:var(--color-accent); color:var(--color-bg); }
-	.primary:hover:not(:disabled) { background:var(--color-accent-hover); }
-	.secondary { background:var(--color-border); color:var(--color-text); }
-	.secondary:hover:not(:disabled) { background:#3e3e3e; }
-	.small { font-size:0.85rem; padding:0.35rem 0.7rem; }
-	/* Mobile-first: every interactive control clears a 44px tap target. */
-	.profile button { min-height:44px; }
-	button:disabled { opacity:0.5; cursor:not-allowed; }
 </style>
