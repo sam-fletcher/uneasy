@@ -275,6 +275,31 @@ func clApplyRedelayOutcome(
 	return nil
 }
 
+// clShareSlotFor resolves playerID to the Things We Share slot they may fill,
+// writing a 403 and returning ok=false if they may fill neither. The PARTNER
+// always fills their own slot. The PREPARER's slot belongs to the resolution
+// actor: normally the preparer, but a Make Demands perform_steps winner stands
+// in (and the preparer is locked out). The returned slot id — the preparer's
+// when a winner drives it — keys the choice so it targets the preparer's partner
+// (clOtherParticipantID) and its spoils flow as the preparer's (take_gift
+// honoring keep_assets), and so the winner can never usurp the partner's slot.
+func clShareSlotFor(
+	w http.ResponseWriter,
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	ld *LiaiseResolutionData,
+	playerID int64,
+) (int64, bool) {
+	if ld.PartnerID != nil && *ld.PartnerID == playerID {
+		return playerID, true
+	}
+	if !requireResolutionActor(w, ctx, deps.Q, plan, playerID) {
+		return 0, false
+	}
+	return plan.PreparerID, true
+}
+
 // clIsParticipant returns true if playerID is the preparer or the partner.
 func clIsParticipant(plan *dbgen.Plan, playerID int64, ld LiaiseResolutionData) bool {
 	if playerID == plan.PreparerID {

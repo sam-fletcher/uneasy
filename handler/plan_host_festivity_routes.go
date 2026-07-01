@@ -117,8 +117,11 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the host may resolve a mar they were dealt")
+		// Settling a mar dealt to the host (which of the host's own assets to break
+		// or which peer falls out) is the host's resolution step, so a Make Demands
+		// perform_steps winner may drive it in the host's stead (locking them out).
+		// The break still lands on the host — hfApplyOption is passed plan.PreparerID.
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 		var body struct {
@@ -217,8 +220,11 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the host may take a host make")
+		// Taking a host make is the host's (preparer's) resolution step, so a Make
+		// Demands perform_steps winner may drive it in their stead (locking the host
+		// out). The make's effects still land on the host — hfApplyOption is passed
+		// plan.PreparerID below, not the caller.
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 		var body struct {

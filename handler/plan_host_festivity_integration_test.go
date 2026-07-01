@@ -620,3 +620,71 @@ func TestHostFestivity_ChallengeDuel_RequiresMake(t *testing.T) {
 	code, body = h.post(challenger, cdPath, map[string]any{"target_player_id": targetID})
 	require.Equalf(t, http.StatusForbidden, code, "challenge after a mar: %v", body)
 }
+
+// TestHostFestivity_PerformStepsWinnerDrivesHostSteps proves a Make Demands
+// perform_steps win transfers the HOST's resolution steps — taking an earned
+// make (host-choice) and settling an insisted mar (resolve-host-mar) — to the
+// winner, locking the host out. The make/mar still lands on the HOST (the winner
+// drives, the host reaps), and the guest routes (rolling, insisting, opting out)
+// stay untouched third-party roles.
+func TestHostFestivity_PerformStepsWinnerDrivesHostSteps(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	demanderIdx := (hostIdx + 1) % 4
+	insisterIdx := (hostIdx + 2) % 4
+	spareIdx := (hostIdx + 3) % 4
+	hostID := h.tg.Players[hostIdx].ID
+
+	// Two marginalia on the host's MC so an insisted break_self has something to
+	// tear without destroying the character.
+	_, hostMargIDs := hfSeedMCMarginalia(t, h, hostIdx, 2)
+
+	// A guest (third party) rolls a make and insists break_self on the host — an
+	// untouched guest role that records a mar the host must settle.
+	hfGuestRoll(t, h, plan.ID, insisterIdx, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
+	code, body := h.post(insisterIdx, insistPath, map[string]any{"mar_option": "break_self"})
+	require.Equalf(t, http.StatusOK, code, "guest insists a host mar: %v", body)
+
+	// A resolved, made demand hands perform_steps to the demander.
+	h.seedMadeDemand(demanderIdx, plan.ID, gamepkg.DemandOptionWinners{
+		gamepkg.DemandOptionPerformSteps: h.tg.Players[demanderIdx].ID,
+	})
+
+	// host-choice (make): the host is locked out; the winner drives it; the peer
+	// still lands in the HOST's retinue.
+	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
+	code, body = h.post(hostIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "Winner's Gift"})
+	require.Equalf(t, http.StatusForbidden, code, "host locked out of host-choice: %v", body)
+	code, body = h.post(demanderIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "Winner's Gift"})
+	require.Equalf(t, http.StatusOK, code, "winner drives host-choice: %v", body)
+
+	hostAssets, err := h.q.ListAssetsByOwner(ctx, hostID)
+	require.NoError(t, err)
+	var found bool
+	for _, a := range hostAssets {
+		if a.GameID == h.tg.Game.ID && a.AssetType == model.AssetPeer && a.Name == "Winner's Gift" {
+			found = true
+		}
+	}
+	assert.True(t, found, "the host make lands in the HOST's retinue, not the winner's")
+
+	// resolve-host-mar (mar): the host is locked out; the winner settles it,
+	// choosing which of the HOST's marginalia to tear.
+	resolvePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
+	code, body = h.post(hostIdx, resolvePath, map[string]any{"mar_option": "break_self", "marginalia_id": hostMargIDs[0]})
+	require.Equalf(t, http.StatusForbidden, code, "host locked out of resolve-host-mar: %v", body)
+	code, body = h.post(demanderIdx, resolvePath, map[string]any{"mar_option": "break_self", "marginalia_id": hostMargIDs[0]})
+	require.Equalf(t, http.StatusOK, code, "winner drives resolve-host-mar: %v", body)
+
+	torn, err := h.q.GetMarginaliaByID(ctx, hostMargIDs[0])
+	require.NoError(t, err)
+	assert.True(t, torn.IsTorn, "the winner's break lands on the HOST's own marginalia")
+
+	// A guest role stays untouched: a spare guest can still opt out as themselves.
+	rollPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/guest-roll"
+	code, body = h.post(spareIdx, rollPath, map[string]any{"action": "opt_out"})
+	require.Equalf(t, http.StatusOK, code, "a guest still opts out as themselves: %v", body)
+}

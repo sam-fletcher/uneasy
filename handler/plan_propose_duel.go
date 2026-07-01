@@ -356,6 +356,33 @@ func pduelIsParticipant(plan *dbgen.Plan, playerID int64) bool {
 	return false
 }
 
+// pduelEffectiveSeat returns the duellist seat playerID occupies for bout
+// actions (declare/respond), and ok=false if they hold no seat.
+//
+// A duellist occupies their own seat. A Make Demands perform_steps winner stands
+// in the PREPARER's seat — they drive the preparer's bouts and the preparer is
+// locked out of that seat. The TARGET duellist's seat is never transferred:
+// perform_steps replaces only the preparer's role, never a third party's. The
+// returned seat (not the raw caller) keys initiative/responder/stake-ownership,
+// so the bout records the preparer as the combatant regardless of who clicked.
+func pduelEffectiveSeat(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, playerID int64) (int64, bool) {
+	if pduelIsParticipant(plan, playerID) {
+		// The preparer is locked out of their own seat once a perform_steps
+		// winner (someone else) holds it.
+		if playerID == plan.PreparerID {
+			if w := performStepsWinner(ctx, q, plan); w != 0 && w != plan.PreparerID {
+				return 0, false
+			}
+		}
+		return playerID, true
+	}
+	// A non-duellist may drive the preparer's seat iff they won perform_steps.
+	if w := performStepsWinner(ctx, q, plan); w != 0 && playerID == w {
+		return plan.PreparerID, true
+	}
+	return 0, false
+}
+
 func pduelOpponentID(plan *dbgen.Plan, playerID int64) int64 {
 	if playerID == plan.PreparerID && plan.TargetPlayerID != nil {
 		return *plan.TargetPlayerID

@@ -1206,8 +1206,23 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 
 		resData := loadResolutionData(plan.ResolutionData)
 		pd := resData.EnsureProposeDecree()
-		if pd.SignatoryID == nil || *pd.SignatoryID != player.ID {
-			respondErr(w, http.StatusForbidden, "only the current signatory may set the addendum")
+		// The signatory records the addendum. When the signatory IS the preparer, a
+		// Make Demands perform_steps winner stands in for them (and the preparer is
+		// locked out) — actsForPreparer is the single source of truth. When the
+		// signatory is a higher-power third party (monarch / highest-power member),
+		// only they may sign: perform_steps replaces the preparer's role, never a
+		// third party's.
+		sigIsPreparer := pd.SignatoryID != nil && *pd.SignatoryID == plan.PreparerID
+		authorized := pd.SignatoryID != nil && *pd.SignatoryID == player.ID
+		if sigIsPreparer {
+			authorized = actsForPreparer(ctx, deps.Q, plan, player.ID)
+		}
+		if !authorized {
+			respondErr(
+				w,
+				http.StatusForbidden,
+				"only the current signatory (or, when they are the preparer, a demand's perform-steps winner) may set the addendum",
+			)
 			return
 		}
 		if !pd.OutcomeApplied() {
@@ -1279,7 +1294,7 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 // Request body (make only): {"resource_name": "the resource's name"}
 func pdEnactLawHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, ok := requirePlanPreparer(w, r, deps.Q)
+		plan, player, ok := requirePlanAccess(w, r, deps.Q)
 		if !ok {
 			return
 		}
@@ -1293,6 +1308,14 @@ func pdEnactLawHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+		// Writing the law + resource is the preparer's terminal make/mar resolution
+		// step, so a Make Demands perform_steps winner may drive it in their stead
+		// (locking the preparer out). The resource recipient is governed separately
+		// by keep_assets (pdCreateLawAsset → AssetRecipientForPlan), so relaxing the
+		// gate does not reroute the spoils.
+		if !requireResolutionActor(w, ctx, deps.Q, plan, player.ID) {
+			return
+		}
 		resData := loadResolutionData(plan.ResolutionData)
 		pd := resData.EnsureProposeDecree()
 		if !pd.OutcomeApplied() {

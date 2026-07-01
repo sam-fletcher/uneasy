@@ -156,6 +156,42 @@ func marChoiceTargetRole(
 	return false
 }
 
+// planMarIsTargetDriven reports whether the plan's *mar* outcome is resolved by
+// the target/victim rather than the preparer — the plans whose mar is handed to
+// a non-preparer in marChoiceTargetRole. A Make Demands perform_steps winner
+// stands in for the PREPARER one-to-one, so they never inherit a target-driven
+// mar (it is a third party's role); the make-choice gate uses this to fence the
+// winner out of those mars while still letting them drive the preparer-owned make.
+func planMarIsTargetDriven(plan *dbgen.Plan) bool {
+	//nolint:exhaustive // only the target-driven-mar plans need listing; the rest default to false
+	switch plan.PlanType {
+	case model.PlanProposeDuel, model.PlanExchangeCourtiers, model.PlanSpreadRumors:
+		return true
+	default:
+		return false
+	}
+}
+
+// makeChoiceAuthorized reports whether player may submit plan's make-choice. The
+// plan's resolution actor drives it — normally the preparer, but a Make Demands
+// perform_steps win transfers that to the winner (locking out the preparer); see
+// actsForPreparer. Two carve-outs:
+//
+//   - A perform_steps winner inherits only the PREPARER's own outcomes, so on a
+//     plan whose mar is target-driven they cannot reach that mar (it belongs to
+//     the target, admitted below via marChoiceTargetRole). The preparer's own
+//     pre-existing latitude is untouched.
+//   - A few plans hand the *mar* choice to their target/victim regardless of any
+//     demand; marChoiceTargetRole admits them.
+func makeChoiceAuthorized(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, player *dbgen.Player) bool {
+	actor := actsForPreparer(ctx, q, plan, player.ID)
+	if actor && player.ID != plan.PreparerID &&
+		planMarIsTargetDriven(plan) && planRollIsMar(ctx, q, plan) {
+		actor = false
+	}
+	return actor || marChoiceTargetRole(ctx, q, plan, player)
+}
+
 // enforceChoiceBudget writes a 422 and returns false if the submitted choices
 // violate the plan's per-result option rules. Handlers opt in via ChoiceLimiter
 // (a simple count cap) or ChoiceValidator (full validation — level cap +

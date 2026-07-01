@@ -786,3 +786,135 @@ func TestProposeDecree_MonarchKeepsSignatureWhenHigherPowerJoins(t *testing.T) {
 	assert.Equal(t, h.tg.Players[3].ID, *pd.SignatoryID,
 		"the monarch keeps the signature despite a higher-power joiner")
 }
+
+// TestProposeDecree_PerformStepsWinnerDrivesAddendumAndEnact proves a Make
+// Demands perform_steps win transfers the preparer's resolution steps to the
+// winner when the preparer IS the signatory: the winner places the addendum and
+// enacts the law while the preparer (and any bystander) is locked out. The made
+// decree still creates the resource, owned by the preparer (the winner drives,
+// the preparer reaps).
+func TestProposeDecree_PerformStepsWinnerDrivesAddendumAndEnact(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	// Preparer = players[0] (power rank 1 / Monarch) → signatory == preparer, so
+	// both the addendum and the enactment are the preparer's own role.
+	plan := pdPrepareAndResolve(t, h, 0)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	demanderIdx := (preparerIdx + 1) % 3
+	thirdIdx := (preparerIdx + 2) % 3
+	preparerID := h.tg.Players[preparerIdx].ID
+
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	require.Equal(t, preparerID, *pd.SignatoryID, "Monarch preparer is the signatory")
+
+	pdDeclineRemaining(t, h, plan.ID)
+	roll := pdCallRoll(t, h, plan.ID, preparerIdx)
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+
+	// A resolved, made demand hands perform_steps to the demander.
+	h.seedMadeDemand(demanderIdx, plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[demanderIdx].ID,
+	})
+
+	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
+	enactPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/enact-law"
+
+	// set-addendum: the preparer (signatory) is locked out; a bystander is still
+	// rejected; the winner signs.
+	code, body := h.post(preparerIdx, addPath, map[string]any{"connector": "and", "addendum": "exempting grain"})
+	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of set-addendum: %v", body)
+	code, _ = h.post(thirdIdx, addPath, map[string]any{"connector": "and", "addendum": "meddling"})
+	require.Equal(t, http.StatusForbidden, code, "a bystander cannot sign")
+	code, body = h.post(demanderIdx, addPath, map[string]any{"connector": "and", "addendum": "exempting grain"})
+	require.Equalf(t, http.StatusOK, code, "winner drives set-addendum: %v", body)
+
+	// enact-law: the preparer is locked out; the winner enacts.
+	assetsBefore := pdResourceCount(t, h)
+	code, body = h.post(preparerIdx, enactPath, map[string]any{"resource_name": "The Royal Granary"})
+	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of enact-law: %v", body)
+	code, body = h.post(demanderIdx, enactPath, map[string]any{"resource_name": "The Royal Granary"})
+	require.Equalf(t, http.StatusOK, code, "winner drives enact-law: %v", body)
+
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status, "enact-law auto-resolves the plan")
+	require.Equal(t, assetsBefore+1, pdResourceCount(t, h), "a made decree still creates the resource")
+
+	pd = pdData(t, h, plan.ID)
+	require.NotNil(t, pd.ResourceAssetID)
+	res, err := h.q.GetAssetByID(ctx, *pd.ResourceAssetID)
+	require.NoError(t, err)
+	assert.Equal(t, preparerID, res.OwnerID, "the resource is the preparer's spoils (no keep_assets demand)")
+}
+
+// TestProposeDecree_PerformStepsSkipsThirdPartyRoles proves the winner drives
+// only the PREPARER's role, never a third party's: on a marred decree with a
+// higher-power signatory, the winner enacts the law (the preparer's terminal
+// step) but cannot amend (the council amenders' role) nor sign (the third-party
+// signatory's addendum) — those third parties act as themselves.
+func TestProposeDecree_PerformStepsSkipsThirdPartyRoles(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	ctx := context.Background()
+
+	// Preparer = players[2] (power rank 3): players[0] (r1) and players[1] (r2)
+	// outrank them and are auto-seated; the signatory (highest power) is a THIRD
+	// PARTY. Amenders (lowest power first) = players[1] then players[0].
+	plan := pdPrepareAndResolve(t, h, 2)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	demanderIdx := 3 // lowest power → eligible joiner who declines; not a council role
+
+	pd := pdData(t, h, plan.ID)
+	require.NotNil(t, pd.SignatoryID)
+	sigIdx := pdPlayerIdx(t, h, *pd.SignatoryID)
+	require.NotEqual(t, preparerIdx, sigIdx, "signatory is a higher-power third party")
+
+	pdDeclineRemaining(t, h, plan.ID)
+	roll := pdCallRoll(t, h, plan.ID, sigIdx)
+	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
+
+	// A resolved, made demand hands perform_steps to players[3].
+	h.seedMadeDemand(demanderIdx, plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[demanderIdx].ID,
+	})
+
+	amendPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/amend-decree"
+	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
+	enactPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/enact-law"
+
+	// amend-decree is the council amenders' role: the winner does not inherit it.
+	pd = pdData(t, h, plan.ID)
+	require.NotEqual(t, h.tg.Players[demanderIdx].ID, pd.NextAmender(), "winner is not an amender")
+	code, _ := h.post(demanderIdx, amendPath, map[string]any{"text": "the winner tries to amend"})
+	require.Equal(t, http.StatusConflict, code, "the winner cannot amend (a third-party role)")
+
+	// The real amenders take their turns (third-party roles work as themselves).
+	for {
+		pd = pdData(t, h, plan.ID)
+		next := pd.NextAmender()
+		if next == 0 {
+			break
+		}
+		idx := pdPlayerIdx(t, h, next)
+		code, body := h.post(idx, amendPath, map[string]any{"text": "amended by council"})
+		require.Equalf(t, http.StatusOK, code, "amender %d amends: %v", idx, body)
+	}
+
+	// set-addendum is the SIGNATORY's role — a third party here — so the winner
+	// cannot sign; only the signatory may.
+	code, _ = h.post(demanderIdx, addPath, map[string]any{"connector": "", "addendum": ""})
+	require.Equal(t, http.StatusForbidden, code, "the winner cannot sign a third-party signatory's addendum")
+	code, body := h.post(sigIdx, addPath, map[string]any{"connector": "", "addendum": ""})
+	require.Equalf(t, http.StatusOK, code, "the third-party signatory signs as themselves: %v", body)
+
+	// enact-law IS the preparer's role: the preparer is locked out; the winner enacts.
+	code, body = h.post(preparerIdx, enactPath, map[string]any{"resource_name": ""})
+	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of enact-law: %v", body)
+	code, body = h.post(demanderIdx, enactPath, map[string]any{"resource_name": ""})
+	require.Equalf(t, http.StatusOK, code, "winner drives enact-law: %v", body)
+
+	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status, "enact-law auto-resolves the marred decree")
+}

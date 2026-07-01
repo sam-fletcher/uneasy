@@ -752,3 +752,58 @@ func TestLiaise_Redelay_CancelSchedulesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, after, len(before), "a face-0 cancel must not schedule a follow-up plan")
 }
+
+// TestLiaise_PerformStepsWinnerDrivesPreparerSlot proves a Make Demands
+// perform_steps win transfers ONLY the preparer's Things We Share slot to the
+// winner (locking the preparer out), while the partner's slot stays the
+// partner's. The winner's choice is recorded against the preparer's slot — so it
+// targets the preparer's partner and its spoils flow as the preparer's — not the
+// winner's own id.
+func TestLiaise_PerformStepsWinnerDrivesPreparerSlot(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	m := clDriveToThingsWeShare(t, h) // players[0] preparer, players[1] partner
+	preparerID := h.tg.Players[0].ID
+	partnerID := h.tg.Players[1].ID
+	demanderIdx := 2
+
+	// A resolved, made demand hands perform_steps to players[2].
+	h.seedMadeDemand(demanderIdx, m.plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[demanderIdx].ID,
+	})
+
+	sharePath := "/api/plans/" + strconv.FormatInt(m.plan.ID, 10) + "/share-choice"
+
+	// The preparer is locked out of their own share slot.
+	code, body := h.post(0, sharePath, map[string]any{
+		"choice": "look_at_secret", "target_asset_id": m.partnerPeerID,
+	})
+	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of their share slot: %v", body)
+
+	// The winner fills the preparer's slot, targeting the preparer's PARTNER.
+	code, body = h.post(demanderIdx, sharePath, map[string]any{
+		"choice": "look_at_secret", "target_asset_id": m.partnerPeerID,
+	})
+	require.Equalf(t, http.StatusOK, code, "winner drives the preparer's share slot: %v", body)
+
+	// The partner's own slot is untouched — they still submit for themselves,
+	// targeting the preparer's asset.
+	code, body = h.post(1, sharePath, map[string]any{
+		"choice": "look_at_secret", "target_asset_id": m.preparerPeerID,
+	})
+	require.Equalf(t, http.StatusOK, code, "partner still fills their own slot: %v", body)
+
+	// The winner's choice was recorded against the PREPARER's slot (not the
+	// winner's own id); the partner's under their own.
+	choices, err := h.q.ListLiaiseChoicesByPlan(ctx, m.plan.ID)
+	require.NoError(t, err)
+	bySlot := map[int64]string{}
+	for _, c := range choices {
+		bySlot[c.PlayerID] = c.Choice
+	}
+	assert.Equal(t, "look_at_secret", bySlot[preparerID], "winner's choice recorded under the preparer's slot")
+	assert.Equal(t, "look_at_secret", bySlot[partnerID], "partner's choice recorded under their own slot")
+	_, winnerHasOwnRow := bySlot[h.tg.Players[demanderIdx].ID]
+	assert.False(t, winnerHasOwnRow, "the winner does not get their own liaise-choice row")
+}

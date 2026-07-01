@@ -296,8 +296,12 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, fmt.Sprintf("share-choice requires phase %q", LiaiseThingsWeShare))
 			return
 		}
-		if !clIsParticipant(plan, player.ID, *ld) {
-			respondErr(w, http.StatusForbidden, "only the preparer and partner may submit share-choice")
+		// Resolve the caller to the Things We Share slot they may fill (writes a
+		// 403 and returns ok=false otherwise). The partner fills their own slot;
+		// the preparer's slot belongs to the resolution actor, so a perform_steps
+		// winner stands in (and the preparer is locked out).
+		slotID, ok := clShareSlotFor(w, ctx, deps, plan, ld, player.ID)
+		if !ok {
 			return
 		}
 
@@ -325,10 +329,12 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		// Validate the target. Every Things We Share option targets the
 		// PARTNER's assets (the rules are second-person — "your partner's …").
 		// Each option carries a target asset (and break_peer a marginalia too).
-		partnerID := clOtherParticipantID(plan, player.ID, *ld)
+		// slotID (not player.ID) keys the seat: a winner driving the preparer's
+		// slot still targets the preparer's partner.
+		partnerID := clOtherParticipantID(plan, slotID, *ld)
 		// For update_peer/break_peer the valid target is the partner's MEETING
 		// PEER specifically (the peer they brought to this liaison).
-		meetingPeerID := clPartnerMeetingPeerID(plan, player.ID, *ld)
+		meetingPeerID := clPartnerMeetingPeerID(plan, slotID, *ld)
 		if status, msg := clValidateShareTarget(ctx, deps, plan, partnerID, meetingPeerID,
 			body.Choice, body.TargetAssetID, body.TargetMargID, body.UpdateText); status != 0 {
 			respondErr(w, status, msg)
@@ -344,7 +350,7 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		if _, err := deps.Q.CreateLiaiseChoice(ctx, dbgen.CreateLiaiseChoiceParams{
 			PlanID:             plan.ID,
-			PlayerID:           player.ID,
+			PlayerID:           slotID,
 			Choice:             body.Choice,
 			TargetAssetID:      body.TargetAssetID,
 			TargetMarginaliaID: body.TargetMargID,
@@ -359,8 +365,8 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		// no client-local flag) and the WaitingOnBar names who still owes a
 		// pick. The liaise_choices upsert is idempotent (UNIQUE plan_id,
 		// player_id), so record the submitter at most once here too.
-		if !slices.Contains(ld.ShareSubmitterIDs, player.ID) {
-			ld.ShareSubmitterIDs = append(ld.ShareSubmitterIDs, player.ID)
+		if !slices.Contains(ld.ShareSubmitterIDs, slotID) {
+			ld.ShareSubmitterIDs = append(ld.ShareSubmitterIDs, slotID)
 			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 				respondInternalErr(w, r, "could not record share submission", err)
 				return
@@ -402,7 +408,7 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
-			"player_id": player.ID,
+			"player_id": slotID,
 			"choice":    body.Choice,
 		})
 	}

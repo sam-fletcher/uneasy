@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
@@ -438,4 +439,122 @@ func TestProposeDuelHTTP_RejectsNonStakedAndOverBudget(t *testing.T) {
 	b, err := h.q.GetAssetByID(ctx, targPeerB)
 	require.NoError(t, err)
 	require.True(t, b.IsLeveraged, "unclaimed stake should still be leveraged")
+}
+
+// TestProposeDuelHTTP_PerformStepsWinnerDrivesPreparerSeat proves a Make Demands
+// perform_steps win transfers the PREPARER's side of the bouts to the winner:
+// they declare/respond with the preparer's stakes (and the bout records the
+// preparer as the combatant), the preparer is locked out of their own seat, and
+// the winner cannot usurp the TARGET duellist's seat — that third party responds
+// as themselves.
+func TestProposeDuelHTTP_PerformStepsWinnerDrivesPreparerSeat(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+
+	prepIdx := h.focusPlayerIdx()
+	targIdx := (prepIdx + 1) % 5
+	demIdx := (prepIdx + 2) % 5
+	targetID := h.tg.Players[targIdx].ID
+
+	prepPeer := h.seedPeer(prepIdx, "Preparer stake")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+
+	notes := "Courtyard duel at dawn"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanProposeDuel,
+		TargetPlayerID:   &targetID,
+		DuelType:         "arms",
+		PreparationNotes: &notes,
+	})
+	// Preparer at esteem rank 1 holds initiative; target at rank 5.
+	pinEsteemRank(t, h, targetID, 5)
+	pinEsteemRank(t, h, h.tg.Players[prepIdx].ID, 1)
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	h.resolve(plan.ID)
+
+	// Fight in person; stake one asset each so a single bout settles the duel.
+	for _, idx := range []int{prepIdx, targIdx} {
+		code, body := h.post(idx, duelRoute(plan.ID, "elect-champion"), map[string]any{"asset_id": nil})
+		require.Equalf(t, http.StatusOK, code, "elect-champion: %v", body)
+	}
+	code, body := h.post(prepIdx, duelRoute(plan.ID, "select-stakes"), map[string]any{"asset_ids": []int64{prepPeer}})
+	require.Equalf(t, http.StatusOK, code, "prep select-stakes: %v", body)
+	code, body = h.post(targIdx, duelRoute(plan.ID, "select-stakes"), map[string]any{"asset_ids": []int64{targPeer}})
+	require.Equalf(t, http.StatusOK, code, "target select-stakes: %v", body)
+
+	// Phase is bouts; the preparer holds initiative and declares first.
+	require.Equal(t, h.tg.Players[prepIdx].ID, duelInitiative(t, h, plan.ID), "preparer holds initiative")
+
+	// A resolved, made demand hands perform_steps to the demander.
+	h.seedMadeDemand(demIdx, plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[demIdx].ID,
+	})
+
+	prepStake := firstUnresolvedStakeID(t, h, plan.ID, h.tg.Players[prepIdx].ID)
+
+	// The preparer is locked out of declaring their own bout.
+	code, body = h.post(prepIdx, duelRoute(plan.ID, "bout-declare"),
+		map[string]any{"stake_id": prepStake, "declaration": "high"})
+	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of their bout seat: %v", body)
+
+	// The demander declares in the preparer's stead, using the preparer's stake.
+	code, body = h.post(demIdx, duelRoute(plan.ID, "bout-declare"),
+		map[string]any{"stake_id": prepStake, "declaration": "high"})
+	require.Equalf(t, http.StatusOK, code, "winner drives the preparer's bout: %v", body)
+
+	// The bout records the PREPARER as declarer (the seat), not the winner.
+	latest, err := h.q.GetLatestDuelBout(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[prepIdx].ID, latest.DeclarerID, "bout declarer is the preparer's seat")
+
+	// The winner cannot usurp the TARGET's seat: responding is the target's role.
+	targStake := firstUnresolvedStakeID(t, h, plan.ID, h.tg.Players[targIdx].ID)
+	code, _ = h.post(demIdx, duelRoute(plan.ID, "bout-respond"), map[string]any{"stake_id": targStake})
+	require.Equal(t, http.StatusForbidden, code, "winner cannot respond for the target duellist")
+
+	// The target responds as themselves (third-party seat untouched).
+	code, body = h.post(targIdx, duelRoute(plan.ID, "bout-respond"), map[string]any{"stake_id": targStake})
+	require.Equalf(t, http.StatusOK, code, "target responds as themselves: %v", body)
+}
+
+// TestProposeDuelHTTP_PerformStepsWinnerCannotDriveTargetMar proves the
+// target-driven-mar tightening (TASK B): on a marred duel the TARGET claims the
+// preparer's stakes, and a perform_steps winner — who inherits only the
+// PREPARER's own outcomes — cannot reach that mar make-choice. The target drives
+// it as themselves.
+func TestProposeDuelHTTP_PerformStepsWinnerCannotDriveTargetMar(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+	demIdx := (prepIdx0 + 2) % 5
+
+	prepPeer := h.seedPeer(prepIdx0, "Preparer stake")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+
+	planID, _ := seedDuelToRoll(t, h, targIdx, []int64{prepPeer}, []int64{targPeer})
+	roll, err := h.q.GetDiceRollByPlanID(ctx, &planID)
+	require.NoError(t, err)
+	h.forceRoll(roll.ID, "mar", 0) // result 0 < difficulty 1 → consistent mar
+
+	// perform_steps demand → the demander holds the preparer's resolution role.
+	h.seedMadeDemand(demIdx, planID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[demIdx].ID,
+	})
+
+	mcPath := duelRoute(planID, "make-choice")
+	claim := map[string]any{"result": "mar", "choices": []string{strconv.FormatInt(prepPeer, 10)}}
+
+	// The winner cannot drive the target-driven mar.
+	code, body := h.post(demIdx, mcPath, claim)
+	require.Equalf(t, http.StatusForbidden, code, "winner must not reach the target-driven mar: %v", body)
+
+	// The target (a third party to the demand) still claims the stake as themselves.
+	code, body = h.post(targIdx, mcPath, claim)
+	require.Equalf(t, http.StatusOK, code, "the target drives the mar as themselves: %v", body)
+
+	got, err := h.q.GetAssetByID(ctx, prepPeer)
+	require.NoError(t, err)
+	require.Equal(t, h.tg.Players[targIdx].ID, got.OwnerID, "the preparer's stake moves to the target")
 }

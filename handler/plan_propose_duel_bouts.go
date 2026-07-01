@@ -23,8 +23,15 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !pduelIsParticipant(plan, player.ID) {
-			respondErr(w, http.StatusForbidden, "only duellists may declare bouts")
+		// The bouts come AFTER the stakes are rolled, so they are post-roll
+		// resolution steps: a Make Demands perform_steps winner drives the
+		// preparer's seat (declaring/responding with the preparer's stakes), while
+		// the target duellist keeps their own seat. seat keys initiative, stake
+		// ownership, and the bout's combatant identity.
+		seat, hasSeat := pduelEffectiveSeat(r.Context(), deps.Q, plan, player.ID)
+		if !hasSeat {
+			respondErr(w, http.StatusForbidden,
+				"only duellists (or a demand's perform-steps winner) may declare bouts")
 			return
 		}
 
@@ -34,7 +41,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "bout-declare is only allowed in 'bouts' phase")
 			return
 		}
-		if state.InitiativePlayerID == nil || *state.InitiativePlayerID != player.ID {
+		if state.InitiativePlayerID == nil || *state.InitiativePlayerID != seat {
 			respondErr(w, http.StatusForbidden, "only the player with initiative may declare")
 			return
 		}
@@ -65,7 +72,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusNotFound, "stake not found")
 			return
 		}
-		if stake.PlanID != plan.ID || stake.PlayerID != player.ID {
+		if stake.PlanID != plan.ID || stake.PlayerID != seat {
 			respondErr(w, http.StatusForbidden, "that stake is not yours")
 			return
 		}
@@ -78,9 +85,9 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		_, err = deps.Q.CreateDuelBout(ctx, dbgen.CreateDuelBoutParams{
 			PlanID:          plan.ID,
 			BoutNumber:      boutNumber,
-			DeclarerID:      player.ID,
+			DeclarerID:      seat,
 			DeclarerStakeID: body.StakeID,
-			ResponderID:     pduelOpponentID(plan, player.ID),
+			ResponderID:     pduelOpponentID(plan, seat),
 			Declaration:     &body.Declaration,
 			DeclarerDie:     &stake.HiddenDie,
 		})
@@ -100,7 +107,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastEvent(deps.Manager, plan.GameID, model.EventDuelBoutDeclared, model.DuelBoutDeclaredPayload{
 			PlanID:      plan.ID,
 			BoutNumber:  boutNumber,
-			ResponderID: pduelOpponentID(plan, player.ID),
+			ResponderID: pduelOpponentID(plan, seat),
 		})
 		// pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 		// 	"Bout %d — %s opens with %s, calling %s. %s must answer.",
@@ -111,7 +118,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":     plan.ID,
 			"bout_number": boutNumber,
-			"responder":   pduelOpponentID(plan, player.ID),
+			"responder":   pduelOpponentID(plan, seat),
 		})
 	}
 }
@@ -131,8 +138,12 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !pduelIsParticipant(plan, player.ID) {
-			respondErr(w, http.StatusForbidden, "only duellists may respond")
+		// A perform_steps winner drives the preparer's seat; the target keeps
+		// theirs. seat keys the responder check and stake ownership below.
+		seat, hasSeat := pduelEffectiveSeat(r.Context(), deps.Q, plan, player.ID)
+		if !hasSeat {
+			respondErr(w, http.StatusForbidden,
+				"only duellists (or a demand's perform-steps winner) may respond")
 			return
 		}
 
@@ -153,7 +164,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "most recent bout is already resolved")
 			return
 		}
-		if latest.ResponderID != player.ID {
+		if latest.ResponderID != seat {
 			respondErr(w, http.StatusForbidden, "you are not the responder for this bout")
 			return
 		}
@@ -171,7 +182,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusNotFound, "stake not found")
 			return
 		}
-		if respStake.PlanID != plan.ID || respStake.PlayerID != player.ID {
+		if respStake.PlanID != plan.ID || respStake.PlayerID != seat {
 			respondErr(w, http.StatusForbidden, "that stake is not yours")
 			return
 		}

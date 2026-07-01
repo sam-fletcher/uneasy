@@ -357,8 +357,11 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer can break resources")
+		// Breaking a resource is the preparer's make/mar resolution step, so a Make
+		// Demands perform_steps winner may drive it in their stead. The mar self-flaw
+		// penalty still targets the preparer's own resources (asset.OwnerID ==
+		// plan.PreparerID below), regardless of who performs the break.
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 
@@ -495,8 +498,11 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer can reveal secrets")
+		// Revealing an asset's underside is the preparer's make resolution step, so a
+		// Make Demands perform_steps winner may drive it in their stead. The
+		// visibility is granted to the caller (player.ID) — the demander performing
+		// the step is the one who learns the secret.
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 
@@ -589,7 +595,7 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 // Request body: {"step": "break_resource" | "reveal_secret" | "mar_penalty"}
 func saForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := saRequirePreparerResolving(w, r, deps.Q)
+		plan, player, ok := saRequireActorResolving(w, r, deps.Q)
 		if !ok {
 			return
 		}
@@ -751,7 +757,7 @@ func saEligibleRevealTargetCount(ctx context.Context, deps *PlanDeps, plan *dbge
 // Request body: {"text": "..."}
 func saDeclareTruthHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := saRequirePreparerResolving(w, r, deps.Q)
+		plan, player, ok := saRequireActorResolving(w, r, deps.Q)
 		if !ok {
 			return
 		}
@@ -800,7 +806,7 @@ func saDeclareTruthHandler(deps *PlanDeps) http.HandlerFunc {
 // Request body: {"target_id": N, "question": "..."}
 func saAskQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, _, ok := saRequirePreparerResolving(w, r, deps.Q)
+		plan, _, ok := saRequireActorResolving(w, r, deps.Q)
 		if !ok {
 			return
 		}
@@ -1007,8 +1013,10 @@ func saRequireResolving(
 	return plan, player, true
 }
 
-// saRequirePreparerResolving is saRequireResolving plus a preparer-only check —
-// for the make-list routes only the preparer drives (declare/ask).
+// saRequirePreparerResolving is saRequireResolving plus a strict preparer-only
+// check — for the roll trigger (seek-cast-roll). The preparer still rolls even
+// when a Make Demands perform_steps win has transferred the post-roll resolution
+// steps, so this route is never relaxed.
 func saRequirePreparerResolving(
 	w http.ResponseWriter, r *http.Request, q *dbgen.Queries,
 ) (*dbgen.Plan, *dbgen.Player, bool) {
@@ -1018,6 +1026,25 @@ func saRequirePreparerResolving(
 	}
 	if player.ID != plan.PreparerID {
 		respondErr(w, http.StatusForbidden, "only the preparer can use this route")
+		return nil, nil, false
+	}
+	return plan, player, true
+}
+
+// saRequireActorResolving is saRequireResolving plus the resolution-actor check —
+// for the post-roll make-list resolution routes (declare-truth, ask-question,
+// forfeit-step; break-resource and reveal-secret check inline). The actor is
+// normally the preparer, but a Make Demands perform_steps win transfers the role
+// to the winner (locking the preparer out). The roll trigger stays preparer-only
+// via saRequirePreparerResolving.
+func saRequireActorResolving(
+	w http.ResponseWriter, r *http.Request, q *dbgen.Queries,
+) (*dbgen.Plan, *dbgen.Player, bool) {
+	plan, player, ok := saRequireResolving(w, r, q)
+	if !ok {
+		return nil, nil, false
+	}
+	if !requireResolutionActor(w, r.Context(), q, plan, player.ID) {
 		return nil, nil, false
 	}
 	return plan, player, true

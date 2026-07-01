@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -686,4 +687,60 @@ func TestSeekAnswers_AskQuestion_VetoThenReask(t *testing.T) {
 	final := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
 	assert.Equal(t, int16(1), final.SeekAnswers.AskQuestionDone)
 	assert.False(t, final.SeekAnswers.CurrentAskVetoed)
+}
+
+// TestSeekAnswers_PerformStepsWinnerDrivesMakeList proves a Make Demands
+// perform_steps win transfers the preparer's post-roll make-list resolution
+// (make-choice, reveal-secret, ask-question) to the winner and locks the
+// preparer out — while the question's TARGET, a third party, still answers as
+// themselves (perform_steps never reaches a third party's role).
+func TestSeekAnswers_PerformStepsWinnerDrivesMakeList(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 2) // result 5 → ample picks
+	demanderIdx := (preparerIdx + 1) % 3
+	targetIdx := (preparerIdx + 2) % 3
+
+	// A secret-bearing asset owned by the reveal/question target.
+	holder := h.seedPeer(targetIdx, "secret holder")
+	secretID := h.seedSecret(holder, targetIdx, "the vault code is 1789")
+
+	// A resolved, made demand hands perform_steps to the demander.
+	h.seedMadeDemand(demanderIdx, plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[demanderIdx].ID,
+	})
+
+	mcPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
+	picks := map[string]any{"result": "make", "choices": []string{"reveal_secret", "ask_question"}}
+
+	// The preparer is locked out of committing the make-list picks; the winner does.
+	code, body := h.post(preparerIdx, mcPath, picks)
+	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of make-choice: %v", body)
+	code, body = h.post(demanderIdx, mcPath, picks)
+	require.Equalf(t, http.StatusOK, code, "winner drives make-choice: %v", body)
+
+	// reveal-secret: preparer locked out; the winner drives it and, as the actor,
+	// learns the secret.
+	revealPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/reveal-secret"
+	code, body = h.post(preparerIdx, revealPath, map[string]any{"asset_id": holder})
+	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of reveal-secret: %v", body)
+	code, body = h.post(demanderIdx, revealPath, map[string]any{"asset_id": holder})
+	require.Equalf(t, http.StatusOK, code, "winner drives reveal-secret: %v", body)
+	h.assertSecretVisible("winner learns the revealed secret", holder, secretID, demanderIdx)
+
+	// ask-question: preparer locked out; the winner asks the target.
+	askPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/ask-question"
+	ask := map[string]any{"target_id": h.tg.Players[targetIdx].ID, "question": "where were you?"}
+	code, body = h.post(preparerIdx, askPath, ask)
+	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of ask-question: %v", body)
+	code, body = h.post(demanderIdx, askPath, ask)
+	require.Equalf(t, http.StatusOK, code, "winner drives ask-question: %v", body)
+
+	// The TARGET (a third party) answers as themselves; the winner cannot answer
+	// on their behalf.
+	answerPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/answer-question"
+	code, _ = h.post(demanderIdx, answerPath, map[string]any{"answer": "not mine to give"})
+	require.Equal(t, http.StatusForbidden, code, "the winner cannot answer for the target")
+	code, body = h.post(targetIdx, answerPath, map[string]any{"answer": "at home"})
+	require.Equalf(t, http.StatusOK, code, "the question target answers as themselves: %v", body)
 }

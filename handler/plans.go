@@ -712,10 +712,10 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		// The plan's resolution actor drives make-choice — normally the preparer,
 		// but a Make Demands perform_steps win transfers that to the winner (and
-		// locks out the preparer); see actsForPreparer. A few plans additionally
-		// hand the *mar* choice to their target/victim; see marChoiceTargetRole.
-		if !actsForPreparer(r.Context(), s.Q, plan, player.ID) &&
-			!marChoiceTargetRole(r.Context(), s.Q, plan, player) {
+		// locks out the preparer). A perform_steps winner does NOT inherit a
+		// target-driven mar, and a few plans hand the mar to their target/victim
+		// regardless — makeChoiceAuthorized encodes both carve-outs.
+		if !makeChoiceAuthorized(r.Context(), s.Q, plan, player) {
 			respondErr(w, http.StatusForbidden, "only the plan's preparer can do this")
 			return
 		}
