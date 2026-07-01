@@ -39,7 +39,7 @@
 	   glyphs — no per-rule edits, no faux-bold. body sets font-synthesis:none
 	   so the fallback stays clean. To revert: point src back at
 	   spectral-600.woff2 and the real semibold lights up everywhere again. */
-	src: url('/fonts/spectral-regular.woff2') format('woff2');
+	src: url('/fonts/spectral-600.woff2') format('woff2');
 }
 @font-face {
 	font-family: 'Spectral';
