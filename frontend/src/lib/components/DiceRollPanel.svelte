@@ -608,7 +608,6 @@
 		padding: 0.5rem 0.8rem;
 		border-radius: 5px;
 		font-size: 0.9rem;
-		font-weight: 600;
 		cursor: pointer;
 	}
 	.action-btn.primary { background: var(--color-accent); color: var(--color-bg); }
@@ -623,7 +622,6 @@
 		padding: 0.5rem;
 		border-radius: 5px;
 		font-size: 0.9rem;
-		font-weight: 700;
 		cursor: pointer;
 		border: 1px solid;
 	}
@@ -644,7 +642,6 @@
 		padding: 0.5rem;
 		border-radius: 5px;
 		font-size: 0.9rem;
-		font-weight: 700;
 		border: 1px solid;
 	}
 	.intent-btn.aid { background: transparent; border-color: var(--color-success); color: var(--color-success); }
@@ -668,7 +665,6 @@
 		margin-left: auto;
 		border-radius: 5px;
 		font-size: 0.9rem;
-		font-weight: 600;
 		background: var(--color-border);
 		color: var(--color-text);
 		border: 1px solid #555;
@@ -704,7 +700,6 @@
 		border-radius: 4px;
 		background: #2a2010;
 		color: var(--color-text);
-		font-weight: 600;
 	}
 	.banked-btn.drafted { background: #3a2e12; border-color: var(--color-accent); color: var(--color-accent); }
 	.banked-btn:disabled { opacity: 0.4; cursor: not-allowed; }

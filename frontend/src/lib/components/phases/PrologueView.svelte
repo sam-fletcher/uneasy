@@ -762,7 +762,7 @@
 
 	.choice-btn.claimed { opacity: 0.5; cursor: default; }
 
-	.choice-name { display: flex; align-items: center; gap: 0.25rem; font-weight: 600; color: var(--color-accent); line-height: 1.15; word-break: break-word; }
+	.choice-name { display: flex; align-items: center; gap: 0.25rem; color: var(--color-accent); line-height: 1.15; word-break: break-word; }
 	.choice-cards { display: flex; gap: 0.25rem; flex-wrap: wrap; }
 	.claim-by { font-size: 0.7rem; color: var(--color-text-muted); }
 
@@ -879,7 +879,6 @@
 	.primary {
 		background: var(--color-accent);
 		color: var(--color-bg);
-		font-weight: 600;
 		padding: 0.5rem 1rem;
 		border-radius: 6px;
 		align-self: flex-start;
@@ -889,7 +888,6 @@
 	.secondary {
 		background: var(--color-border);
 		color: var(--color-text);
-		font-weight: 600;
 		padding: 0.4rem 0.8rem;
 		border-radius: 6px;
 		align-self: flex-start;

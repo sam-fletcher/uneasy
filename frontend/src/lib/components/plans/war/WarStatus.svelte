@@ -128,7 +128,6 @@
 	}
 
 	.side-header {
-		font-weight: 600;
 		color: var(--color-accent);
 		font-size: 0.9rem;
 	}

@@ -276,7 +276,7 @@
 	.step { background: #161614; border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 0.65rem 0.75rem; }
 
 	.field { display: flex; flex-direction: column; gap: 0.3rem; }
-	.label { color: var(--color-accent); font-size: 0.85rem; font-weight: 600; }
+	.label { color: var(--color-accent); font-size: 0.85rem; }
 	.hint { font-size: 0.75rem; color: var(--color-text-muted); }
 
 	textarea {
@@ -293,13 +293,13 @@
 	footer { display: flex; gap: 0.6rem; justify-content: flex-end; }
 
 	.primary {
-		background: var(--color-accent); color: var(--color-bg); font-weight: 600;
+		background: var(--color-accent); color: var(--color-bg);
 		padding: 0.5rem 1rem; border-radius: 6px;
 	}
 	.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	.secondary {
-		background: var(--color-border); color: var(--color-text); font-weight: 600;
+		background: var(--color-border); color: var(--color-text);
 		padding: 0.5rem 0.9rem; border-radius: 6px;
 		border: 1px solid #555;
 	}

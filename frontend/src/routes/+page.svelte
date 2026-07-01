@@ -169,7 +169,6 @@
 		/* Trailing letter-spacing pushes the centered text right; nudge it back. */
 		margin-right: -0.28em;
 		font-size: clamp(0.8rem, 3.5vw, 1.05rem);
-		font-weight: 700;
 		color: var(--color-accent);
 	}
 	h1 {
@@ -179,7 +178,6 @@
 		margin-top: 0.35rem;
 		font-family: var(--font-display);
 		font-size: clamp(2.8rem, 14vw, 4.25rem);
-		font-weight: 700;
 		line-height: 0.95;
 		text-transform: uppercase;
 		letter-spacing: 0.01em;
@@ -223,7 +221,6 @@
 		padding: 0.5rem;
 		background: transparent;
 		color: var(--color-text-muted);
-		font-weight: 600;
 		border-radius: 6px;
 	}
 	.toggle button.active {
@@ -270,7 +267,6 @@
 		margin-top: 0.25rem;
 		background: var(--color-accent);
 		color: var(--color-bg);
-		font-weight: 600;
 	}
 	.primary:hover:not(:disabled) { background: var(--color-accent-hover); }
 	.primary:disabled { opacity: 0.5; cursor: not-allowed; }

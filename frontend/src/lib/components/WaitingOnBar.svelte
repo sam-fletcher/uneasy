@@ -126,7 +126,6 @@
 	}
 	.label {
 		color: var(--color-text-muted);
-		font-weight: 600;
 		margin-right: 0.35rem;
 	}
 	.waitee {
@@ -139,7 +138,6 @@
 	.step-label {
 		color: var(--color-accent);
 		font-size: 0.95rem;
-		font-weight: 600;
 	}
 	.step-label.muted {
 		color: var(--color-text-muted);

@@ -381,7 +381,6 @@
 		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		font-weight: 600;
 	}
 
 	.hint {
@@ -440,7 +439,6 @@
 		background: var(--color-accent);
 		color: var(--color-bg);
 		border-color: var(--color-accent);
-		font-weight: 600;
 	}
 	.scene-setup.readonly .chip.active {
 		background: #4a4a4a;
@@ -464,7 +462,6 @@
 		border: none;
 		background: var(--color-accent);
 		color: var(--color-bg);
-		font-weight: 600;
 		font-size: 0.9rem;
 		cursor: pointer;
 	}

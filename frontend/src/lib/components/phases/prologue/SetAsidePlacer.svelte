@@ -103,7 +103,6 @@
 	}
 	.placer-title {
 		color: var(--color-accent);
-		font-weight: 600;
 		font-size: 0.9rem;
 	}
 	.decided-by {
@@ -157,7 +156,6 @@
 	.primary {
 		background: var(--color-accent);
 		color: var(--color-bg);
-		font-weight: 600;
 		padding: 0.5rem 1rem;
 		border-radius: 6px;
 		border: none;

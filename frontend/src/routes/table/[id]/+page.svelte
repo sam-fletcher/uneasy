@@ -1283,7 +1283,6 @@
 	.mr-cat {
 		color: var(--color-text-faint);
 		font-size: 0.9em;
-		font-weight: 600;
 	}
 	/* The best rank held by any player on this track reads gold. */
 	.mr.top {
@@ -1362,7 +1361,6 @@
 	.primary {
 		background: var(--color-accent);
 		color: var(--color-bg);
-		font-weight: 600;
 		padding: 0.6rem 1.2rem;
 		border-radius: 6px;
 		align-self: flex-start;
@@ -1520,7 +1518,6 @@
 		color: #fff;
 		border: 1px solid rgba(255,255,255,0.12);
 		border-radius: 6px;
-		font-weight: 600;
 		font-size: 0.9rem;
 		cursor: pointer;
 	}
@@ -1570,11 +1567,11 @@
 	}
 	.endgame-modal h3 { color: var(--color-accent); margin: 0; font-size: 1.1rem; }
 	.endgame-modal .primary {
-		background: var(--color-accent); color: var(--color-bg); font-weight: 600;
+		background: var(--color-accent); color: var(--color-bg);
 		padding: 0.5rem 1rem; border-radius: 6px;
 	}
 	.endgame-modal .secondary {
-		background: var(--color-border); color: var(--color-text); font-weight: 600;
+		background: var(--color-border); color: var(--color-text);
 		padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid #555;
 		align-self: flex-end;
 	}

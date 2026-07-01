@@ -32,7 +32,6 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 50%;
-		font-weight: 600;
 		flex-shrink: 0;
 		line-height: 1;
 	}

@@ -464,7 +464,7 @@
 	.ex-dot { width: 8px; height: 8px; border-radius: 50%; background: #7fb5d6; flex-shrink: 0; }
 	.ex-ranks { display: flex; gap: 0.4rem; font-size: 0.62rem; line-height: 1; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 	.ex-mr { display: inline-flex; align-items: baseline; gap: 0.08rem; }
-	.ex-mr-cat { color: var(--color-text-faint); font-size: 0.9em; font-weight: 600; }
+	.ex-mr-cat { color: var(--color-text-faint); font-size: 0.9em; }
 	.ex-mr.top { color: var(--color-accent); font-weight: 700; }
 	.ex-mr.top .ex-mr-cat { color: var(--color-accent); }
 

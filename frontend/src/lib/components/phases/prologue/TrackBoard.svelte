@@ -293,7 +293,6 @@
 	.col-label {
 		color: var(--color-accent);
 		font-size: 0.78rem;
-		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
@@ -324,7 +323,6 @@
 		background: #2c2638;
 		color: #a895c0;
 		font-size: 0.55rem;
-		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		padding: 0.05rem 0.3rem;

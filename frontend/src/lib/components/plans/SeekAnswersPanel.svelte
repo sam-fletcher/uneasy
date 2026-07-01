@@ -847,7 +847,6 @@
 	.sa-resolved-label {
 		margin: 0;
 		font-size: 0.82rem;
-		font-weight: 600;
 		color: var(--color-text-muted);
 	}
 	.sa-resolved-list {

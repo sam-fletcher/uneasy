@@ -254,7 +254,6 @@
 		height: 32px;
 		border-radius: 50%;
 		font-size: 0.78rem;
-		font-weight: 600;
 		flex-shrink: 0;
 	}
 
@@ -280,7 +279,6 @@
 		align-items: center;
 		justify-content: center;
 		font-size: 0.6rem;
-		font-weight: 700;
 		color: var(--color-bg);
 		background: var(--color-highlight);
 		border-radius: 7px;
@@ -408,7 +406,6 @@
 		align-items: center;
 		justify-content: center;
 		font-size: 0.7rem;
-		font-weight: 700;
 		border-radius: 50%;
 		background: var(--color-border);
 		color: var(--color-text-muted);
@@ -457,7 +454,7 @@
 	}
 	.plan-chip:hover { background: var(--color-border); }
 
-	.plan-name { font-weight: 600; color: var(--player-color, var(--color-text)); }
+	.plan-name { color: var(--player-color, var(--color-text)); }
 	.plan-status { color: var(--color-text-muted); font-size: 0.65rem; text-transform: uppercase; }
 	/* Status colors override the right/top/bottom border (keeping the
 	   preparer-color left edge intact). Pending chips get no override — the
@@ -483,11 +480,9 @@
 	}
 	.entry-line:hover { color: var(--color-accent-hover); }
 
-	.entry-scene-label {
-		font-weight: 600;
-		/* color set inline from the entry author's playerColor; the trailing
-		   space in the "Scene: …" body provides the gap to the summary text. */
-	}
+	/* .entry-scene-label color is set inline from the entry author's
+	   playerColor; the trailing space in the "Scene: …" body provides the
+	   gap to the summary text. */
 
 	.row-empty {
 		font-size: 0.75rem;

@@ -703,7 +703,6 @@
 		display: inline-flex;
 		align-items: center;
 		font-size: 0.7rem;
-		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--color-bg);
@@ -869,7 +868,6 @@
 		font-size: 0.62rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		font-weight: 700;
 		color: var(--color-text-faint, #6b6b66);
 		border: 0.5px solid var(--color-text-faint, #6b6b66);
 		border-radius: 4px;
@@ -899,7 +897,6 @@
 	}
 
 	.asset-name {
-		font-weight: 600;
 		font-size: 0.95rem;
 		color: var(--color-text);
 		display: inline-flex;
@@ -930,7 +927,6 @@
 		min-width: 0;
 		font-family: inherit;
 		font-size: 0.95rem;
-		font-weight: 600;
 		color: var(--color-text);
 		background: #1d1d1a;
 		border: 1px solid #5a5a52;
@@ -1097,7 +1093,6 @@
 
 	.mc-picker-item .m-pos {
 		flex-shrink: 0;
-		font-weight: 600;
 		color: var(--color-accent);
 	}
 
@@ -1236,7 +1231,6 @@
 		min-height: 40px;
 		border-radius: 6px;
 		font-size: 0.85rem;
-		font-weight: 600;
 		cursor: pointer;
 	}
 	.m-btn.primary { background: var(--color-accent); color: var(--color-bg); }

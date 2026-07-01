@@ -630,7 +630,6 @@
 		padding: 0.4rem 1rem;
 		border-radius: 5px;
 		font-size: 0.85rem;
-		font-weight: 600;
 		cursor: pointer;
 	}
 

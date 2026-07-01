@@ -326,11 +326,9 @@
 		font-size: 0.88rem;
 		color: #d8d4c9;
 	}
-	.loc { font-weight: 600; }
 	.time { font-size: 0.82rem; color: #b0a890; }
 
 	.focus-line { font-size: 0.82rem; color: var(--color-text-muted); }
-	.focus-name { font-weight: 600; }
 
 	.block { display: flex; flex-direction: column; gap: 0.4rem; }
 	.block h3 {
@@ -358,7 +356,6 @@
 		background: #2a2410;
 		color: var(--color-accent);
 		font-size: 0.82rem;
-		font-weight: 600;
 		cursor: pointer;
 	}
 	.claim-btn:hover { background: var(--color-accent); color: var(--color-bg); }
@@ -379,7 +376,6 @@
 		border: none;
 		background: var(--color-accent);
 		color: var(--color-bg);
-		font-weight: 600;
 		font-size: 0.9rem;
 		cursor: pointer;
 	}

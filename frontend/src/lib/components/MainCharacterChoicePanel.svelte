@@ -208,7 +208,6 @@
 		padding: 0.45rem 1rem;
 		border-radius: 5px;
 		font-size: 0.85rem;
-		font-weight: 600;
 		cursor: pointer;
 		border: 1px solid var(--color-border-warm);
 		background: transparent;

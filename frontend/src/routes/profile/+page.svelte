@@ -230,7 +230,7 @@
 	/* Match padding across the button and the <a>-as-button so they sit flush. */
 	.footer-actions > * { min-height:44px; padding:0 1rem; border-radius:6px; }
 	.feedback-btn { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
-	.primary { background:var(--color-accent); color:var(--color-bg); font-weight:600; }
+	.primary { background:var(--color-accent); color:var(--color-bg); }
 	.primary:hover:not(:disabled) { background:var(--color-accent-hover); }
 	.secondary { background:var(--color-border); color:var(--color-text); }
 	.secondary:hover:not(:disabled) { background:#3e3e3e; }

@@ -41,7 +41,6 @@
 	.choices-summary-label {
 		margin: 0;
 		font-size: 0.82rem;
-		font-weight: 600;
 		color: var(--color-text-muted);
 	}
 	.choices-summary-list {

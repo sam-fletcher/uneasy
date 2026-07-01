@@ -287,7 +287,6 @@
 	.side-name {
 		margin: 0;
 		font-size: 0.85rem;
-		font-weight: 600;
 		color: var(--color-text);
 	}
 	.side-role {

@@ -597,7 +597,6 @@
 	.unread-badge {
 		background: var(--color-accent);
 		color: var(--color-bg);
-		font-weight: 700;
 		font-size: 0.72rem;
 		padding: 0.1rem 0.5rem;
 		border-radius: 999px;
@@ -674,7 +673,6 @@
 		margin: 0;
 		font-size: 0.95rem;
 		color: var(--color-accent);
-		font-weight: 600;
 	}
 
 	.collapse {
@@ -763,7 +761,6 @@
 	}
 
 	.msg-author {
-		font-weight: 600;
 		color: var(--player-color, var(--color-accent));
 		font-size: 0.82rem;
 		white-space: nowrap;
@@ -871,7 +868,6 @@
 	.send {
 		background: var(--color-accent);
 		color: var(--color-bg);
-		font-weight: 600;
 		padding: 0.5rem 0.9rem;
 		min-width: 56px;
 		min-height: 44px;
@@ -936,7 +932,6 @@
 
 	.persona-value {
 		flex: 1;
-		font-weight: 600;
 		color: var(--player-color, var(--color-accent));
 		text-align: left;
 	}

@@ -475,7 +475,7 @@
 
 	button {
 		background: var(--color-border); color: var(--color-text); border: 1px solid #555;
-		border-radius: 6px; padding: 0.4rem 0.8rem; font-weight: 600;
+		border-radius: 6px; padding: 0.4rem 0.8rem;
 		cursor: pointer;
 	}
 	button:disabled { opacity: 0.4; cursor: not-allowed; }

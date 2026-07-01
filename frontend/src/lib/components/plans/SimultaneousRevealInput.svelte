@@ -192,7 +192,6 @@
 	}
 	.action-btn.submitted .tick {
 		color: var(--color-success); /* green tick */
-		font-weight: 700;
 	}
 	/* Locked faces: the chosen one keeps its highlight; the rest fade so the
 	   selection stays legible without inviting another click. */

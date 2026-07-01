@@ -449,7 +449,6 @@
 	.check {
 		color: var(--color-bg);
 		font-size: 0.85rem;
-		font-weight: 700;
 		line-height: 1;
 	}
 
@@ -563,7 +562,6 @@
 		border: 1px solid var(--owner-color, var(--color-accent));
 		border-radius: 4px;
 		color: var(--color-text);
-		font-weight: 700;
 		font-size: 1rem;
 		line-height: 1;
 		flex-shrink: 0;

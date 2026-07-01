@@ -71,7 +71,6 @@
 	   600 weight; the hero title opts into --font-display. */
 	:global(h1, h2, h3) {
 		font-family: var(--font-serif);
-		font-weight: 600;
 	}
 
 	:global(button) {

@@ -249,7 +249,6 @@
 	.lr-byline.hidden { background: transparent; border: 1px dashed var(--border-color, #d4c5a8); }
 	.lr-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex: none; }
 	.lr-byline-label { color: var(--color-text-muted, #999); }
-	.lr-byline-name { font-weight: 600; }
 	.lr-edit {
 		background: none; border: none; color: var(--color-text-muted, #999);
 		text-decoration: underline; cursor: pointer; font: inherit; padding: 0;

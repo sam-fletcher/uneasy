@@ -22,7 +22,6 @@
 
 .plan-badge {
 	font-size: 0.65rem;
-	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: 0.06em;
 	padding: 0.1rem 0.4rem;
@@ -569,7 +568,6 @@
 	padding: 0.35rem 0.7rem;
 	border-radius: 5px;
 	font-size: 0.83rem;
-	font-weight: 600;
 	cursor: pointer;
 	align-self: flex-start;
 	border: none;

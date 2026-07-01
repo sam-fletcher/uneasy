@@ -135,7 +135,6 @@
 	}
 	.heading-label {
 		color: var(--color-accent);
-		font-weight: 600;
 		font-size: 0.85rem;
 	}
 	.heading-meta {
