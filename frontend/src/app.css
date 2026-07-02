@@ -33,12 +33,10 @@
 	font-style: normal;
 	font-weight: 600;
 	font-display: swap;
-	/* EXPERIMENT — flatten heavy weights to regular.
-	   This slot is mapped at the *regular* file, so every font-weight:600 (and
-	   700, which font-matching resolves down to this 600 face) renders 400
-	   glyphs — no per-rule edits, no faux-bold. body sets font-synthesis:none
-	   so the fallback stays clean. To revert: point src back at
-	   spectral-600.woff2 and the real semibold lights up everywhere again. */
+	/* Real semibold face. A flatten-to-regular experiment mapped this slot to
+	   spectral-regular.woff2 for a while (every font-weight:600/700 rendered
+	   as 400 glyphs); reverted 2026-07-01, so weight 600/700 renders bold
+	   again app-wide. See git history before reintroducing the flatten. */
 	src: url('/fonts/spectral-600.woff2') format('woff2');
 }
 @font-face {

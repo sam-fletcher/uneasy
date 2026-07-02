@@ -38,11 +38,11 @@
 	// player-authored asset names (the backend emits them via assetMark).
 	// renderLogBody escapes the body first — names are user input — then turns the
 	// **…** the server produced into <em>, so it's safe to inject with {@html}.
-	// Emphasis is rendered *italic*, not bold: the Spectral 600 face is mapped to
-	// the regular woff2 and body sets font-synthesis:none, so bold is a no-op
-	// app-wide (see app.css). The double-asterisk delimiter stays so a stray '*'
-	// in quoted marginalia text doesn't trip the parser. Player chat messages do
-	// NOT pass through here; their ** is shown verbatim.
+	// Emphasis is rendered *italic*, not bold — a deliberate style choice so
+	// names read distinctly from prose without the visual weight of bold (see
+	// assetMark in system_posts.go). The double-asterisk delimiter stays so a
+	// stray '*' in quoted marginalia text doesn't trip the parser. Player chat
+	// messages do NOT pass through here; their ** is shown verbatim.
 	function escapeHtml(s: string): string {
 		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
