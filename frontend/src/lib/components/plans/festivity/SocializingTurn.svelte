@@ -6,10 +6,10 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
-	import { guestRoll, guestChoice, challengeDuel, getAssetSuggestions, type Asset, type Plan, type Player } from '$lib/api';
+	import { guestRoll, guestChoice, challengeDuel, type Asset, type Plan, type Player } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
-	import SuggestionPicker from '../../SuggestionPicker.svelte';
+	import AssetCreationForm from '../../AssetCreationForm.svelte';
 	import FormField from '../FormField.svelte';
 	import { playerName } from '../shared';
 	import { destructionWarning } from '$lib/assetRisk';
@@ -56,6 +56,7 @@
 	let pickedChoice = $state<string | null>(null);
 	let rumorText = $state('');
 	let peerName = $state('');
+	let peerMarginalia = $state('');
 	let pickedAssetID = $state<number | null>(null);
 	let pickedMargID = $state<number | null>(null);
 	let pickedDuelTargetID = $state<number | null>(null);
@@ -98,7 +99,7 @@
 			case 'challenge_duel':
 				return pickedDuelTargetID != null;
 			case 'introduce_peer':
-				return peerName.trim().length > 0;
+				return peerName.trim().length > 0 && peerMarginalia.trim().length > 0;
 			case 'spread_rumor':
 			case 'rumor_about_you':
 				return rumorText.trim().length > 0;
@@ -112,11 +113,6 @@
 		}
 	});
 
-	// Peer-name suggestions, fetched lazily when introduce_peer is chosen.
-	let peerNameSuggestions = $state<string[]>([]);
-	let peerNameSuggLoading = $state(false);
-	let peerNameSuggFetched = false;
-
 	// Reset picker when plan changes.
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
@@ -125,23 +121,12 @@
 			pickedChoice = null;
 			rumorText = '';
 			peerName = '';
+			peerMarginalia = '';
 			pickedAssetID = null;
 			pickedMargID = null;
 			pickedDuelTargetID = null;
 			pickerError = '';
-			peerNameSuggestions = [];
-			peerNameSuggFetched = false;
 		}
-	});
-
-	$effect(() => {
-		if (pickedChoice !== 'introduce_peer' || peerNameSuggFetched) return;
-		peerNameSuggFetched = true;
-		peerNameSuggLoading = true;
-		getAssetSuggestions(plan.game_id, 'peer', 'name')
-			.then(res => { peerNameSuggestions = res.suggestions; })
-			.catch(() => { peerNameSuggestions = []; })
-			.finally(() => { peerNameSuggLoading = false; });
 	});
 
 	async function submitMyChoice() {
@@ -157,13 +142,18 @@
 			} else {
 				const body: {
 					choice: string; rumor_text?: string; peer_name?: string;
-					asset_id?: number; marginalia_id?: number;
+					peer_marginalia?: string[]; asset_id?: number; marginalia_id?: number;
 				} = { choice: pickedChoice };
 				if (pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you') {
 					body.rumor_text = rumorText.trim();
 				}
 				if (pickedChoice === 'introduce_peer') {
+					if (!peerName.trim() || !peerMarginalia.trim()) {
+						pickerError = 'Name the new peer, with one marginalia.';
+						return;
+					}
 					body.peer_name = peerName.trim();
+					body.peer_marginalia = [peerMarginalia.trim()];
 				}
 				if (pickedChoice === 'take_center_peer' || pickedChoice === 'disagreement') {
 					if (pickedAssetID == null) { pickerError = 'Pick an asset.'; return; }
@@ -179,6 +169,7 @@
 			pickedChoice = null;
 			rumorText = '';
 			peerName = '';
+			peerMarginalia = '';
 			pickedAssetID = null;
 			pickedDuelTargetID = null;
 			onPlansChanged();
@@ -245,16 +236,13 @@
 					placeholder="What does the rumor say?"></textarea>
 			</label>
 		{:else if pickedChoice === 'introduce_peer'}
-			<div class="form-label">
-				<span>New peer's name:</span>
-				<SuggestionPicker
-					suggestions={peerNameSuggestions}
-					bind:value={peerName}
-					loading={peerNameSuggLoading}
-					customPlaceholder="Name of the new peer"
-					maxlength={120}
-				/>
-			</div>
+			<AssetCreationForm
+				gameID={plan.game_id}
+				assetType="peer"
+				bind:name={peerName}
+				bind:marginalia={peerMarginalia}
+				disabled={pickerBusy}
+			/>
 		{:else if pickedChoice === 'take_center_peer'}
 			<CardPicker
 				label="Available peers at the event to add to your retinue"

@@ -65,6 +65,7 @@ func TestRecordPrologueChoice_EmitsLogPosts(t *testing.T) {
 		SheetType:       gamepkg.PrologueSheetTitles,
 		ChoiceName:      "The Monarch",
 		AssetText:       "Lady of the Vale",
+		AssetMarginalia: "Keeper of the old ways",
 		MarginaliumText: "Beloved of the people",
 		CardAssets: []CardAssetText{
 			{Suit: "C", Value: "K", Text: "Household Guard"},

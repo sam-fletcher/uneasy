@@ -136,8 +136,22 @@ func TestHostFestivity_BlankInputsRejected(t *testing.T) {
 
 	// The host's earned (hosting) make can't introduce a nameless peer. Done
 	// first, before any guest roll locks the table.
-	code, body := h.post(hostIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "  "})
+	code, body := h.post(hostIdx, hostChoicePath, map[string]any{
+		"choice": "introduce_peer", "peer_name": "  ", "peer_marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusBadRequest, code, "blank peer name rejected: %v", body)
+
+	// introduce_peer requires exactly one marginalia too (host route is enough
+	// to prove it; guest-choice shares the same applier/validator).
+	code, body = h.post(hostIdx, hostChoicePath, map[string]any{
+		"choice": "introduce_peer", "peer_name": "New Peer", "peer_marginalia": []string{},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "missing marginalia rejected: %v", body)
+	code, body = h.post(hostIdx, hostChoicePath, map[string]any{
+		"choice": "introduce_peer", "peer_name": "New Peer",
+		"peer_marginalia": []string{"first", "second"},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "two marginalia rejected: %v", body)
 
 	// Whitespace-only rumor text is rejected too.
 	rollID := hfStartRoll(t, h, plan.ID, g1)
@@ -274,7 +288,9 @@ func TestHostFestivity_Disagreement_AbandonedPeerRejoinsBroken(t *testing.T) {
 	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
 	endPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/end-event"
 	for i := range 2 {
-		code, body := h.post(hostIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "Guest"})
+		code, body := h.post(hostIdx, hostChoicePath, map[string]any{
+			"choice": "introduce_peer", "peer_name": "Guest", "peer_marginalia": []string{"a trait"},
+		})
 		require.Equalf(t, http.StatusOK, code, "host make %d: %v", i, body)
 	}
 	code, body := h.post(hostIdx, endPath, nil)
@@ -328,8 +344,9 @@ func TestHostFestivity_HostFreeMake_BenefitsHost(t *testing.T) {
 	// The host takes one of their extra makes (no target — it's their spoils).
 	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
 	code, body = h.post(hostIdx, hostChoicePath, map[string]any{
-		"choice":    "introduce_peer",
-		"peer_name": "Gilded Guest",
+		"choice":          "introduce_peer",
+		"peer_name":       "Gilded Guest",
+		"peer_marginalia": []string{"a trait"},
 	})
 	require.Equalf(t, http.StatusOK, code, "host-choice introduce_peer: %v", body)
 
@@ -380,8 +397,9 @@ func TestHostFestivity_HostEarnedMake(t *testing.T) {
 
 	// The host takes one of their earned makes for themself.
 	code, body = h.post(hostIdx, hostChoicePath, map[string]any{
-		"choice":    "introduce_peer",
-		"peer_name": "Host's Own Guest",
+		"choice":          "introduce_peer",
+		"peer_name":       "Host's Own Guest",
+		"peer_marginalia": []string{"a trait"},
 	})
 	require.Equalf(t, http.StatusOK, code, "host self make: %v", body)
 
@@ -484,11 +502,14 @@ func TestHostFestivity_EndEventGate(t *testing.T) {
 	// Host takes both earned makes.
 	for i := 0; i < 2; i++ {
 		code, body = h.post(hostIdx, hostChoicePath, map[string]any{
-			"choice": "introduce_peer", "peer_name": "Guest"})
+			"choice": "introduce_peer", "peer_name": "Guest", "peer_marginalia": []string{"a trait"},
+		})
 		require.Equalf(t, http.StatusOK, code, "host make %d: %v", i, body)
 	}
 	// A third make is refused — only two were earned.
-	code, body = h.post(hostIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "Extra"})
+	code, body = h.post(hostIdx, hostChoicePath, map[string]any{
+		"choice": "introduce_peer", "peer_name": "Extra", "peer_marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusConflict, code, "over-taking makes: %v", body)
 
 	// Still not endable: g1's mar is unspent.
@@ -656,9 +677,13 @@ func TestHostFestivity_PerformStepsWinnerDrivesHostSteps(t *testing.T) {
 	// host-choice (make): the host is locked out; the winner drives it; the peer
 	// still lands in the HOST's retinue.
 	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
-	code, body = h.post(hostIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "Winner's Gift"})
+	code, body = h.post(hostIdx, hostChoicePath, map[string]any{
+		"choice": "introduce_peer", "peer_name": "Winner's Gift", "peer_marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusForbidden, code, "host locked out of host-choice: %v", body)
-	code, body = h.post(demanderIdx, hostChoicePath, map[string]any{"choice": "introduce_peer", "peer_name": "Winner's Gift"})
+	code, body = h.post(demanderIdx, hostChoicePath, map[string]any{
+		"choice": "introduce_peer", "peer_name": "Winner's Gift", "peer_marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusOK, code, "winner drives host-choice: %v", body)
 
 	hostAssets, err := h.q.ListAssetsByOwner(ctx, hostID)

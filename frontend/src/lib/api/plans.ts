@@ -459,16 +459,18 @@ export function callRoll(planID: number): Promise<{ plan_id: number; roll?: Dice
 
 /**
  * Spread Propaganda — on a made plan the preparer authors the societal-shift
- * artifact: it is created under `name` in a single transaction (no placeholder).
- * Preparer-gated and required — completion is blocked until it exists.
+ * artifact: it is created under `name` with its one required marginalia in a
+ * single transaction (no placeholder). Preparer-gated and required —
+ * completion is blocked until it exists.
  */
 export function createArtifact(
 	planID: number,
-	name: string
+	name: string,
+	marginalia: string[]
 ): Promise<{ plan_id: number; asset: Asset }> {
 	return apiFetch(`/plans/${planID}/create-artifact`, {
 		method: 'POST',
-		body: JSON.stringify({ name }),
+		body: JSON.stringify({ name, marginalia }),
 	});
 }
 
@@ -513,16 +515,21 @@ export function setAddendum(
 /**
  * Propose Decree — the preparer enacts the passed decree (the terminal action):
  * writes the law and, on a make, creates the resource asset under `resourceName`
- * in the same call. The plan auto-resolves, so no separate complete is needed.
- * `resourceName` is required on a make and ignored on a mar.
+ * with its one required marginalia in the same call. The plan auto-resolves, so
+ * no separate complete is needed. `resourceName`/`resourceMarginalia` are
+ * required on a make and ignored on a mar.
  */
 export function enactLaw(
 	planID: number,
 	resourceName?: string,
+	resourceMarginalia?: string[],
 ): Promise<{ plan_id: number; law_id: number | null; resolved: boolean }> {
 	return apiFetch(`/plans/${planID}/enact-law`, {
 		method: 'POST',
-		body: JSON.stringify({ resource_name: resourceName ?? '' }),
+		body: JSON.stringify({
+			resource_name: resourceName ?? '',
+			resource_marginalia: resourceMarginalia ?? [],
+		}),
 	});
 }
 

@@ -314,6 +314,34 @@ func TestReplaceMainCharacter_ConscriptLeveragesAllAssets(t *testing.T) {
 	require.Contains(t, p.Body, "conscripted")
 }
 
+// TestReplaceMainCharacter_MinimumMarginalia proves conscription requires a
+// name and one marginalia (relaxed from two, per the asset-creation rule) and
+// still rejects an empty marginalia list.
+func TestReplaceMainCharacter_MinimumMarginalia(t *testing.T) {
+	h := newAssetHarness(t, 2)
+	ctx := context.Background()
+	loser := h.tg.Players[0]
+
+	// Take the loser's only peer (their seeded main character), leaving them
+	// with no peer to promote — the conscript route applies.
+	mc, err := h.q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: h.tg.Game.ID, OwnerID: loser.ID,
+	})
+	require.NoError(t, err)
+	code, _ := h.do("POST", 1, assetPath(mc.ID, "/take"), nil)
+	require.Equal(t, http.StatusOK, code)
+
+	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/replace-main-character"
+
+	// Zero marginalia is still rejected.
+	code, body := h.do("POST", 0, path, map[string]any{"name": "Heir", "marginalia": []string{}})
+	require.Equalf(t, http.StatusBadRequest, code, "zero marginalia rejected: %v", body)
+
+	// Exactly one marginalia now succeeds (previously required two).
+	code, body = h.do("POST", 0, path, map[string]any{"name": "Heir", "marginalia": []string{"bold"}})
+	require.Equalf(t, http.StatusCreated, code, "one marginalia accepted: %v", body)
+}
+
 // TestReplaceMainCharacter_RejectedWhenPeerAvailable proves the conscript route
 // is the no-peers-left escape hatch only: a player who still owns a peer must
 // promote it (free) instead of conscripting a new one (which costs leverage).

@@ -12,14 +12,14 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
 	import CardPicker from './CardPicker.svelte';
-	import SuggestionPicker from '../SuggestionPicker.svelte';
+	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName,
 		assetsWithIntactMarginalia, playersExcept,
 	} from './shared';
-	import { spGivePeer, spBreakSelf, createArtifact, getAssetSuggestions } from '$lib/api';
+	import { spGivePeer, spBreakSelf, createArtifact } from '$lib/api';
 
 	import type { PlanPanelProps } from './types';
 
@@ -169,26 +169,15 @@
 	// required — it gates completion until the artifact exists.
 	const needsArtifactCreation = $derived(isPreparer && artifactPending);
 	let artifactName = $state('');
+	let artifactMarginalia = $state('');
 	let nameBusy = $state(false);
-	// Name suggestions (artifact pool), fetched once the naming step appears.
-	let nameSuggestions = $state<string[]>([]);
-	let nameSuggLoading = $state(false);
-	let nameSuggFetched = false;
-	$effect(() => {
-		if (!needsArtifactCreation || nameSuggFetched) return;
-		nameSuggFetched = true;
-		nameSuggLoading = true;
-		getAssetSuggestions(gameID, 'artifact', 'name')
-			.then(res => { nameSuggestions = res.suggestions; })
-			.catch(() => { nameSuggestions = []; })
-			.finally(() => { nameSuggLoading = false; });
-	});
 	async function submitArtifactName(p: Plan) {
-		if (nameBusy || !artifactName.trim()) return;
+		if (nameBusy || !artifactName.trim() || !artifactMarginalia.trim()) return;
 		nameBusy = true; resError = '';
 		try {
-			await createArtifact(p.id, artifactName.trim());
+			await createArtifact(p.id, artifactName.trim(), [artifactMarginalia.trim()]);
 			artifactName = '';
+			artifactMarginalia = '';
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not author the artifact.';
@@ -244,15 +233,15 @@
 				{#if needsArtifactCreation}
 					<div class="plan-form">
 						<p class="choices-header">Author the artifact your propaganda created</p>
-						<SuggestionPicker
-							suggestions={nameSuggestions}
-							bind:value={artifactName}
-							loading={nameSuggLoading}
-							customPlaceholder="Name the societal shift…"
-							maxlength={120}
+						<AssetCreationForm
+							{gameID}
+							assetType="artifact"
+							bind:name={artifactName}
+							bind:marginalia={artifactMarginalia}
+							disabled={nameBusy}
 						/>
 						<button class="action-btn primary" onclick={() => submitArtifactName(plan)}
-							disabled={nameBusy || !artifactName.trim()}>
+							disabled={nameBusy || !artifactName.trim() || !artifactMarginalia.trim()}>
 							{nameBusy ? '…' : 'Create artifact'}
 						</button>
 					</div>

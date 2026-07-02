@@ -398,11 +398,12 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		var body struct {
-			Choice       string `json:"choice"`
-			RumorText    string `json:"rumor_text"`
-			PeerName     string `json:"peer_name"`
-			AssetID      int64  `json:"asset_id"`
-			MarginaliaID int64  `json:"marginalia_id"`
+			Choice         string   `json:"choice"`
+			RumorText      string   `json:"rumor_text"`
+			PeerName       string   `json:"peer_name"`
+			PeerMarginalia []string `json:"peer_marginalia"`
+			AssetID        int64    `json:"asset_id"`
+			MarginaliaID   int64    `json:"marginalia_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -467,6 +468,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			body.Choice,
 			body.RumorText,
 			body.PeerName,
+			body.PeerMarginalia,
 			body.AssetID,
 			body.MarginaliaID,
 			isMake,

@@ -79,12 +79,17 @@ func pdResourceCount(t *testing.T, h *planLifecycle) int {
 }
 
 // pdEnact has the preparer enact the (resolved) decree — the terminal step. On a
-// make pass a non-empty resourceName; on a mar pass "".
+// make pass a non-empty resourceName (the required marginalia is derived from
+// it); on a mar pass "".
 func pdEnact(t *testing.T, h *planLifecycle, planID int64, resourceName string) {
 	t.Helper()
 	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/enact-law"
-	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{"resource_name": resourceName})
-	require.Equalf(t, http.StatusOK, code, "enact-law: %v", body)
+	body := map[string]any{"resource_name": resourceName}
+	if resourceName != "" {
+		body["resource_marginalia"] = []string{resourceName + "'s one marginalia"}
+	}
+	code, respBody := h.post(h.preparerIdxFor(planID), path, body)
+	require.Equalf(t, http.StatusOK, code, "enact-law: %v", respBody)
 }
 
 func pdSystemPostBodies(t *testing.T, h *planLifecycle) []string {
@@ -248,15 +253,32 @@ func TestProposeDecree_Enact_CreatesNamedResource(t *testing.T) {
 
 	// A non-preparer cannot enact.
 	otherIdx := (preparerIdx + 1) % 3
-	code, body = h.post(otherIdx, enactPath, map[string]any{"resource_name": "Hijack"})
+	code, body = h.post(otherIdx, enactPath, map[string]any{
+		"resource_name": "Hijack", "resource_marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusForbidden, code, "only the preparer may enact: %v", body)
 
 	// A made decree's enact requires a resource name.
-	code, body = h.post(preparerIdx, enactPath, map[string]any{"resource_name": ""})
+	code, body = h.post(preparerIdx, enactPath, map[string]any{
+		"resource_name": "", "resource_marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusBadRequest, code, "made enact needs a name: %v", body)
 
-	// The preparer enacts with a name; the asset is created already named.
-	code, body = h.post(preparerIdx, enactPath, map[string]any{"resource_name": "The Royal Granary"})
+	// A made decree's enact requires exactly one marginalia.
+	code, body = h.post(preparerIdx, enactPath, map[string]any{
+		"resource_name": "The Royal Granary", "resource_marginalia": []string{},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "made enact needs one marginalia: %v", body)
+	code, body = h.post(preparerIdx, enactPath, map[string]any{
+		"resource_name": "The Royal Granary", "resource_marginalia": []string{"first", "second"},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "made enact rejects two marginalia: %v", body)
+
+	// The preparer enacts with a name and one marginalia; the asset is created
+	// already named, with its marginalia, in one transaction.
+	code, body = h.post(preparerIdx, enactPath, map[string]any{
+		"resource_name": "The Royal Granary", "resource_marginalia": []string{"Full to bursting"},
+	})
 	require.Equalf(t, http.StatusOK, code, "enact-law: %v", body)
 
 	pd := pdData(t, h, plan.ID)
@@ -264,6 +286,12 @@ func TestProposeDecree_Enact_CreatesNamedResource(t *testing.T) {
 	created, err := h.q.GetAssetByID(ctx, *pd.ResourceAssetID)
 	require.NoError(t, err)
 	assert.Equal(t, "The Royal Granary", created.Name, "resource is created already named")
+
+	margs, err := h.q.ListMarginaliaByAsset(ctx, created.ID)
+	require.NoError(t, err)
+	require.Len(t, margs, 1, "the resource is created with exactly one marginalia")
+	assert.EqualValues(t, 1, margs[0].Position)
+	assert.Equal(t, "Full to bursting", margs[0].Text)
 }
 
 // TestProposeDecree_Mar_AmendChainThenAddendum drives the full marred flow:
@@ -832,9 +860,13 @@ func TestProposeDecree_PerformStepsWinnerDrivesAddendumAndEnact(t *testing.T) {
 
 	// enact-law: the preparer is locked out; the winner enacts.
 	assetsBefore := pdResourceCount(t, h)
-	code, body = h.post(preparerIdx, enactPath, map[string]any{"resource_name": "The Royal Granary"})
+	code, body = h.post(preparerIdx, enactPath, map[string]any{
+		"resource_name": "The Royal Granary", "resource_marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of enact-law: %v", body)
-	code, body = h.post(demanderIdx, enactPath, map[string]any{"resource_name": "The Royal Granary"})
+	code, body = h.post(demanderIdx, enactPath, map[string]any{
+		"resource_name": "The Royal Granary", "resource_marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusOK, code, "winner drives enact-law: %v", body)
 
 	resolved, err := h.q.GetPlanByID(ctx, plan.ID)

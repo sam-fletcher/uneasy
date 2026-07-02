@@ -7,9 +7,9 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
-	import { hostChoice, getAssetSuggestions, type Asset, type Plan, type Player } from '$lib/api';
+	import { hostChoice, type Asset, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
-	import SuggestionPicker from '../../SuggestionPicker.svelte';
+	import AssetCreationForm from '../../AssetCreationForm.svelte';
 	import FormField from '../FormField.svelte';
 	import { playerName } from '../shared';
 	import { HOST_MAKE_OPTS, earnedHostMakes, type FestRes } from './options';
@@ -33,6 +33,7 @@
 	let hostPickedChoice = $state<string | null>(null);
 	let hostRumor = $state('');
 	let hostPeerName = $state('');
+	let hostPeerMarginalia = $state('');
 	let hostAssetID = $state<number | null>(null);
 	let hostPickerBusy = $state(false);
 	let hostPickerError = $state('');
@@ -44,17 +45,11 @@
 		if (!hostPickedChoice) return false;
 		switch (hostPickedChoice) {
 			case 'spread_rumor': return hostRumor.trim().length > 0;
-			case 'introduce_peer': return hostPeerName.trim().length > 0;
+			case 'introduce_peer': return hostPeerName.trim().length > 0 && hostPeerMarginalia.trim().length > 0;
 			case 'take_center_peer': return hostAssetID != null;
 			default: return true;
 		}
 	});
-
-	// Peer-name suggestions, fetched lazily the first time introduce_peer is
-	// chosen (re-fetched per plan).
-	let peerNameSuggestions = $state<string[]>([]);
-	let peerNameSuggLoading = $state(false);
-	let peerNameSuggFetched = false;
 
 	// Reset picker when plan changes.
 	let lastPlanID = $state<number | null>(null);
@@ -64,37 +59,31 @@
 			hostPickedChoice = null;
 			hostRumor = '';
 			hostPeerName = '';
+			hostPeerMarginalia = '';
 			hostAssetID = null;
 			hostPickerError = '';
-			peerNameSuggestions = [];
-			peerNameSuggFetched = false;
 		}
-	});
-
-	$effect(() => {
-		if (hostPickedChoice !== 'introduce_peer' || peerNameSuggFetched) return;
-		peerNameSuggFetched = true;
-		peerNameSuggLoading = true;
-		getAssetSuggestions(plan.game_id, 'peer', 'name')
-			.then(res => { peerNameSuggestions = res.suggestions; })
-			.catch(() => { peerNameSuggestions = []; })
-			.finally(() => { peerNameSuggLoading = false; });
 	});
 
 	async function submitHostChoice() {
 		if (hostPickerBusy || !hostPickedChoice) return;
 		hostPickerBusy = true; hostPickerError = '';
 		try {
-			const body: { choice: string; rumor_text?: string; peer_name?: string; asset_id?: number } = {
-				choice: hostPickedChoice,
-			};
+			const body: {
+				choice: string; rumor_text?: string; peer_name?: string;
+				peer_marginalia?: string[]; asset_id?: number;
+			} = { choice: hostPickedChoice };
 			if (hostPickedChoice === 'spread_rumor') {
 				if (!hostRumor.trim()) { hostPickerError = 'Enter the rumor.'; return; }
 				body.rumor_text = hostRumor.trim();
 			}
 			if (hostPickedChoice === 'introduce_peer') {
-				if (!hostPeerName.trim()) { hostPickerError = 'Name the new peer.'; return; }
+				if (!hostPeerName.trim() || !hostPeerMarginalia.trim()) {
+					hostPickerError = 'Name the new peer, with one marginalia.';
+					return;
+				}
 				body.peer_name = hostPeerName.trim();
+				body.peer_marginalia = [hostPeerMarginalia.trim()];
 			}
 			if (hostPickedChoice === 'take_center_peer') {
 				if (hostAssetID == null) { hostPickerError = 'Pick a centered peer.'; return; }
@@ -104,6 +93,7 @@
 			hostPickedChoice = null;
 			hostRumor = '';
 			hostPeerName = '';
+			hostPeerMarginalia = '';
 			hostAssetID = null;
 			onPlansChanged();
 		} catch (e) {
@@ -138,16 +128,13 @@
 				<textarea rows={2} bind:value={hostRumor} class="form-textarea"></textarea>
 			</label>
 		{:else if hostPickedChoice === 'introduce_peer'}
-			<div class="form-label">
-				<span>New peer's name:</span>
-				<SuggestionPicker
-					suggestions={peerNameSuggestions}
-					bind:value={hostPeerName}
-					loading={peerNameSuggLoading}
-					customPlaceholder="Name of the new peer"
-					maxlength={120}
-				/>
-			</div>
+			<AssetCreationForm
+				gameID={plan.game_id}
+				assetType="peer"
+				bind:name={hostPeerName}
+				bind:marginalia={hostPeerMarginalia}
+				disabled={hostPickerBusy}
+			/>
 		{:else if hostPickedChoice === 'take_center_peer'}
 			<CardPicker
 				label="Peer to take from the center"

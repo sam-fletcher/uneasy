@@ -19,6 +19,7 @@ type festivityOptionContext struct {
 	actingPlayerID int64
 	rumorText      string
 	peerName       string
+	peerMarginalia []string
 	assetID        int64
 	marginaliaID   int64
 	isMake         bool
@@ -48,6 +49,7 @@ func hfApplyOption(
 	state *gamepkg.FestivityResolutionData,
 	actingPlayerID int64,
 	choice, rumorText, peerName string,
+	peerMarginalia []string,
 	assetID, marginaliaID int64,
 	isMake bool,
 ) error {
@@ -60,6 +62,7 @@ func hfApplyOption(
 		plan:           plan,
 		state:          state,
 		actingPlayerID: actingPlayerID,
+		peerMarginalia: peerMarginalia,
 		rumorText:      rumorText,
 		peerName:       peerName,
 		assetID:        assetID,
@@ -111,20 +114,30 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 	if name == "" {
 		return errors.New("peer name is required")
 	}
+	margText, err := requireOneMarginalia(fc.peerMarginalia)
+	if err != nil {
+		return err
+	}
 	ownerID := fc.actingPlayerID
 	if fc.actingPlayerID == fc.plan.PreparerID {
-		recipient, err := AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
-		if err != nil {
-			return fmt.Errorf("resolve asset recipient: %w", err)
+		recipient, rerr := AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
+		if rerr != nil {
+			return fmt.Errorf("resolve asset recipient: %w", rerr)
 		}
 		ownerID = recipient
 	}
-	asset, err := fc.deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
-		GameID:    fc.plan.GameID,
-		OwnerID:   ownerID,
-		CreatorID: fc.actingPlayerID,
-		AssetType: model.AssetPeer,
-		Name:      name,
+	var asset dbgen.Asset
+	var marginalia []dbgen.Marginalium
+	err = fc.deps.InTx(ctx, func(q *dbgen.Queries) error {
+		var caErr error
+		asset, marginalia, caErr = createAssetWithFirstMarginalia(ctx, q, dbgen.CreateAssetParams{
+			GameID:    fc.plan.GameID,
+			OwnerID:   ownerID,
+			CreatorID: fc.actingPlayerID,
+			AssetType: model.AssetPeer,
+			Name:      name,
+		}, margText)
+		return caErr
 	})
 	if err != nil {
 		return fmt.Errorf("create peer: %w", err)
@@ -137,15 +150,15 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 		fc.deps.Manager,
 		fc.plan.GameID,
 		model.EventAssetCreated,
-		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: marginalia}},
 	)
 	hfLog(
 		ctx,
 		fc.deps,
 		fc.plan,
 		model.SeverityDefault,
-		fmt.Sprintf("%s introduced a new peer, %s, to the festivity.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(asset.Name)),
+		fmt.Sprintf("%s introduced a new peer, %s, to the festivity, with marginalia: %q.",
+			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(asset.Name), margText),
 	)
 	return nil
 }

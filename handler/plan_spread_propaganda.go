@@ -181,7 +181,7 @@ func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 // keep_assets winner claims it. Preparer-gated and required — it gates completion
 // (CanComplete) until the artifact exists. Mirrors Propose Decree's enact-law.
 //
-// Request body: {"name": "the artifact's name"}
+// Request body: {"name": "the artifact's name", "marginalia": ["one entry"]}
 func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadPropaganda)
@@ -193,7 +193,8 @@ func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			Name string `json:"name"`
+			Name       string   `json:"name"`
+			Marginalia []string `json:"marginalia"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -207,6 +208,11 @@ func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		if len([]rune(name)) > maxAssetNameLen {
 			respondErr(w, http.StatusBadRequest,
 				fmt.Sprintf("name must be at most %d characters", maxAssetNameLen))
+			return
+		}
+		margText, err := requireOneMarginalia(body.Marginalia)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
@@ -231,12 +237,18 @@ func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		// Created already named (deliberately NOT derived from the propaganda
 		// message — the artifact represents the societal shift the preparer
 		// narrates, not a copy of their talking points).
-		asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
-			GameID:    plan.GameID,
-			OwnerID:   recipient,
-			CreatorID: plan.PreparerID,
-			AssetType: model.AssetArtifact,
-			Name:      name,
+		var asset dbgen.Asset
+		var marginalia []dbgen.Marginalium
+		err = deps.InTx(ctx, func(q *dbgen.Queries) error {
+			var caErr error
+			asset, marginalia, caErr = createAssetWithFirstMarginalia(ctx, q, dbgen.CreateAssetParams{
+				GameID:    plan.GameID,
+				OwnerID:   recipient,
+				CreatorID: plan.PreparerID,
+				AssetType: model.AssetArtifact,
+				Name:      name,
+			}, margText)
+			return caErr
 		})
 		if err != nil {
 			respondInternalErr(w, r, "could not create societal-shift artifact", err)
@@ -249,10 +261,10 @@ func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated,
-			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}})
+			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: marginalia}})
 		spLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s authored a new artifact, %s, embodying the societal shift.",
-				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name)))
+			fmt.Sprintf("%s authored a new artifact, %s, embodying the societal shift, with marginalia: %q.",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name), margText))
 		// make-choice's panel watches for the artifact to appear; nudge non-actors.
 		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
 			PlanID: plan.ID,

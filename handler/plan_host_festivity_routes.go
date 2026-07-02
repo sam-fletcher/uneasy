@@ -68,7 +68,7 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 				"%s insisted the host %s — the host must choose how.",
 				playerDisplayName(ctx, deps.Q, player.ID), hfInsistedMarPhrase(body.MarOption)))
 		} else if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
-			body.MarOption, body.RumorText, "", body.AssetID, body.MarginaliaID, false); err != nil {
+			body.MarOption, body.RumorText, "", nil, body.AssetID, body.MarginaliaID, false); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -190,7 +190,7 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		// The host is the actor and chooses the asset themselves (marginalia for a
 		// break, peer for a disagreement).
 		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
-			body.MarOption, "", "", body.AssetID, body.MarginaliaID, false); err != nil {
+			body.MarOption, "", "", nil, body.AssetID, body.MarginaliaID, false); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -228,10 +228,11 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		var body struct {
-			Choice    string `json:"choice"`
-			RumorText string `json:"rumor_text"`
-			PeerName  string `json:"peer_name"`
-			AssetID   int64  `json:"asset_id"`
+			Choice         string   `json:"choice"`
+			RumorText      string   `json:"rumor_text"`
+			PeerName       string   `json:"peer_name"`
+			PeerMarginalia []string `json:"peer_marginalia"`
+			AssetID        int64    `json:"asset_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -266,9 +267,10 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// The make benefits the HOST: host-choice is make-only, so no marginalia
-		// (break is a mar option) — pass 0.
+		// asset-tear (break is a mar option) — pass 0. peer_marginalia is only
+		// consumed by the introduce_peer option.
 		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
-			body.Choice, body.RumorText, body.PeerName, body.AssetID, 0, true); err != nil {
+			body.Choice, body.RumorText, body.PeerName, body.PeerMarginalia, body.AssetID, 0, true); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}

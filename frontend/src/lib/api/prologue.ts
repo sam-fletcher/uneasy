@@ -33,6 +33,7 @@ export function choosePrologue(
 		sheet_type: PrologueSheetType;
 		choice_name: string;
 		asset_text: string;
+		asset_marginalia: string[];
 		marginalia_text?: string;
 		law_or_rumor_text?: string;
 		card_assets: PrologueCardAssetText[];

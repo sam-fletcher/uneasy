@@ -84,6 +84,7 @@ func TestPrologueMonarchClaim_StampsTitleAndTripsGate(t *testing.T) {
 		SheetType:       gamepkg.PrologueSheetTitles,
 		ChoiceName:      "The Monarch",
 		AssetText:       "The Iron Crown",
+		AssetMarginalia: "Forged in the old style",
 		MarginaliumText: "Sovereign of the Vale",
 		CardAssets: []CardAssetText{
 			{Suit: "C", Value: "K", Text: "Household Guard"},
@@ -123,6 +124,7 @@ func TestPrologueNonMonarchClaim_StampsButNoGate(t *testing.T) {
 		SheetType:       gamepkg.PrologueSheetTitles,
 		ChoiceName:      "The Spymaster",
 		AssetText:       "The Cipher Ring",
+		AssetMarginalia: "Never removed, even to bathe",
 		MarginaliumText: "Eyes in every room",
 		CardAssets: []CardAssetText{
 			{Suit: "D", Value: "A", Text: "Informant Network"},

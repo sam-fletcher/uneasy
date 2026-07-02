@@ -17,6 +17,7 @@
 	import type { Asset, Player } from '$lib/api';
 	import { updateAsset, replaceMainCharacter } from '$lib/api';
 	import CardPicker from '$lib/components/plans/CardPicker.svelte';
+	import AssetCreationForm from '$lib/components/AssetCreationForm.svelte';
 
 	interface Props {
 		gameID: number;
@@ -69,28 +70,20 @@
 
 	// ── Conscript a new peer (no peers left) ──────────────────────────────────
 	let newName = $state('');
-	let newMargs = $state<string[]>(['', '']);
-
-	function addMargField() {
-		if (newMargs.length < 4) newMargs = [...newMargs, ''];
-	}
+	let newMarginalia = $state('');
 
 	async function conscript() {
 		if (busy) return;
 		const name = newName.trim();
-		const margs = newMargs.map((m) => m.trim()).filter((m) => m !== '');
-		if (name === '') {
-			err = 'Give your new character a name.';
-			return;
-		}
-		if (margs.length < 2) {
-			err = 'Write at least 2 marginalia.';
+		const marginalia = newMarginalia.trim();
+		if (name === '' || marginalia === '') {
+			err = 'Give your new character a name and one marginalia.';
 			return;
 		}
 		busy = true;
 		err = null;
 		try {
-			await replaceMainCharacter(gameID, { name, marginalia: margs });
+			await replaceMainCharacter(gameID, { name, marginalia: [marginalia] });
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Could not create main character.';
 		} finally {
@@ -126,21 +119,16 @@
 				character — but the upheaval costs you: all of your assets,
 				including this new one, will become leveraged.
 			</p>
-			<label class="field">
-				<span>Name</span>
-				<input type="text" bind:value={newName} maxlength="80" placeholder="Who steps forward?" />
-			</label>
-			{#each newMargs as _, i (i)}
-				<label class="field">
-					<span>Marginalia {i + 1}</span>
-					<input type="text" bind:value={newMargs[i]} maxlength="120" placeholder="A trait, tie, or detail" />
-				</label>
-			{/each}
-			{#if newMargs.length < 4}
-				<button class="ghost" onclick={addMargField} disabled={busy}>+ Add marginalia</button>
-			{/if}
+			<AssetCreationForm
+				{gameID}
+				assetType="peer"
+				bind:name={newName}
+				bind:marginalia={newMarginalia}
+				disabled={busy}
+			/>
 			<div class="actions">
-				<button class="action-btn primary" onclick={conscript} disabled={busy}>
+				<button class="action-btn primary" onclick={conscript}
+					disabled={busy || !newName.trim() || !newMarginalia.trim()}>
 					{busy ? '…' : 'Conscript new main character'}
 				</button>
 			</div>
@@ -184,40 +172,10 @@
 		background: color-mix(in srgb, var(--color-danger) 8%, transparent);
 		border-radius: 4px;
 	}
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
-		font-size: 0.82rem;
-	}
-	.field input {
-		min-height: 44px;
-		padding: 0.4rem 0.6rem;
-		border: 1px solid var(--color-border-warm);
-		border-radius: 5px;
-		font-size: 0.9rem;
-		background: var(--color-bg);
-		color: inherit;
-	}
 	.actions {
 		display: flex;
 		justify-content: center;
 		gap: 0.5rem;
 		margin-top: 0.3rem;
-	}
-	.ghost {
-		min-height: 44px;
-		padding: 0.45rem 1rem;
-		border-radius: 5px;
-		font-size: 0.85rem;
-		cursor: pointer;
-		border: 1px solid var(--color-border-warm);
-		background: transparent;
-		color: inherit;
-		align-self: flex-start;
-	}
-	.ghost:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
 	}
 </style>

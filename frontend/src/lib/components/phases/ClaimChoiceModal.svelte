@@ -19,8 +19,10 @@
 		type PrologueClaim,
 		type PrologueSheetType,
 		type PlayerCardRow,
+		type AssetType,
 	} from '$lib/api';
 	import SuggestionPicker from '../SuggestionPicker.svelte';
+	import AssetCreationForm from '../AssetCreationForm.svelte';
 
 	interface Props {
 		gameID: string;
@@ -54,9 +56,12 @@
 	// different choice (Svelte 5 was warning that $state(propValue) only
 	// captures the initial prop value, not a reactive reference).
 	let assetText = $state('');
+	let assetMarginalia = $state('');
 	let marginaliaText = $state('');
 	let lawOrRumorText = $state('');
 	let cardSlots = $state<CardSlot[]>([]);
+
+	const choiceAssetType = $derived(sheet.choice_asset_type.toLowerCase() as AssetType);
 
 	// Reset the form whenever the choice changes (including on first mount).
 	// Tracking the choice name lets us avoid clobbering user edits on
@@ -68,6 +73,7 @@
 		// `[choice.name]` defaults persisted literal "[The Monarch]" when left
 		// unedited (ADR-007 §7). Placeholders below hint without submitting.
 		assetText = '';
+		assetMarginalia = '';
 		marginaliaText = '';
 		lawOrRumorText = '';
 		cardSlots = choice.cards.map(c => ({
@@ -119,7 +125,7 @@
 	}
 
 	const ready = $derived.by(() => {
-		if (!assetText.trim()) return false;
+		if (!assetText.trim() || !assetMarginalia.trim()) return false;
 		if (isTitles && !marginaliaText.trim()) return false;
 		if (isLawsRumors && !lawOrRumorText.trim()) return false;
 		for (const slot of cardSlots) {
@@ -145,6 +151,7 @@
 				sheet_type: sheet.type as PrologueSheetType,
 				choice_name: choice.name,
 				asset_text: assetText.trim(),
+				asset_marginalia: [assetMarginalia.trim()],
 				marginalia_text: isTitles ? marginaliaText.trim() : undefined,
 				law_or_rumor_text: isLawsRumors ? lawOrRumorText.trim() : undefined,
 				card_assets,
@@ -168,15 +175,14 @@
 	{#if error}<p class="error-text">{error}</p>{/if}
 
 	<section class="step">
-		<label class="field">
-			<span class="label">Your new {sheet.choice_asset_type} asset</span>
-			<textarea
-				rows="1"
-				bind:value={assetText}
-				placeholder={`Name your ${sheet.choice_asset_type}`}
-			></textarea>
-			<span class="hint">Pick a name. You can add marginalia from your Retinue.</span>
-		</label>
+		<p class="label">Your new {sheet.choice_asset_type} asset</p>
+		<AssetCreationForm
+			{gameID}
+			assetType={choiceAssetType}
+			bind:name={assetText}
+			bind:marginalia={assetMarginalia}
+			disabled={submitting}
+		/>
 	</section>
 
 	{#if isTitles}

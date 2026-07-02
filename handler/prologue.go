@@ -211,6 +211,7 @@ type chooseRequestBody struct {
 	SheetType       string
 	ChoiceName      string
 	AssetText       string
+	AssetMarginalia string
 	MarginaliumText string
 	LawOrRumorText  string
 	CardAssets      []CardAssetText
@@ -222,6 +223,7 @@ func validateChooseRequestBody(r *http.Request) (*chooseRequestBody, error) {
 		SheetType       string          `json:"sheet_type"`
 		ChoiceName      string          `json:"choice_name"`
 		AssetText       string          `json:"asset_text"`
+		AssetMarginalia []string        `json:"asset_marginalia"`
 		MarginaliumText string          `json:"marginalia_text"`
 		LawOrRumorText  string          `json:"law_or_rumor_text"`
 		CardAssets      []CardAssetText `json:"card_assets"`
@@ -242,6 +244,11 @@ func validateChooseRequestBody(r *http.Request) (*chooseRequestBody, error) {
 	if body.AssetText == "" {
 		return nil, errors.New("asset_text is required")
 	}
+	assetMarg, err := requireOneMarginalia(raw.AssetMarginalia)
+	if err != nil {
+		return nil, err
+	}
+	body.AssetMarginalia = assetMarg
 	if body.SheetType == gamepkg.PrologueSheetTitles && body.MarginaliumText == "" {
 		return nil, errors.New("marginalia_text is required for titles")
 	}
@@ -555,19 +562,19 @@ func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 	}
 
 	assetType := gamepkg.AssetTypeForSheet(body.SheetType)
-	choiceAsset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+	choiceAsset, choiceMarginalia, err := createAssetWithFirstMarginalia(ctx, q, dbgen.CreateAssetParams{
 		GameID:    gameID,
 		OwnerID:   playerID,
 		CreatorID: playerID,
 		AssetType: model.AssetType(assetType),
 		Name:      body.AssetText,
-	})
+	}, body.AssetMarginalia)
 	if err != nil {
 		return turnNumber, httpErr(http.StatusInternalServerError, "could not create choice asset")
 	}
 	// Prologue posts predate any public-record row, so they anchor a nil row
 	// (scene_posts.row_number is nullable for exactly this case).
-	EmitAssetCreated(ctx, q, manager, gameID, choiceAsset, nil, nil)
+	EmitAssetCreated(ctx, q, manager, gameID, choiceAsset, choiceMarginalia, nil)
 
 	switch body.SheetType {
 	case gamepkg.PrologueSheetTitles:

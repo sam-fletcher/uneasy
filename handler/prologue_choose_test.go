@@ -19,6 +19,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 			"sheet_type": "titles",
 			"choice_name": "Lady",
 			"asset_text": "  Lady of the North  ",
+			"asset_marginalia": ["  Keeps a hidden blade  "],
 			"marginalia_text": "  Noble Blood  ",
 			"law_or_rumor_text": "",
 			"card_assets": [
@@ -34,6 +35,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 		assert.Equal(t, "titles", result.SheetType)
 		assert.Equal(t, "Lady", result.ChoiceName)
 		assert.Equal(t, "Lady of the North", result.AssetText)
+		assert.Equal(t, "Keeps a hidden blade", result.AssetMarginalia)
 		assert.Equal(t, "Noble Blood", result.MarginaliumText)
 		assert.Empty(t, result.LawOrRumorText)
 		assert.Len(t, result.CardAssets, 2)
@@ -44,6 +46,7 @@ func TestValidateChooseRequestBody(t *testing.T) {
 			"sheet_type": "laws_rumors",
 			"choice_name": "The Law of Equal Exchange",
 			"asset_text": "Scroll of Laws",
+			"asset_marginalia": ["Bound in leather"],
 			"marginalia_text": "",
 			"law_or_rumor_text": "All trades must be witnessed by a third party",
 			"card_assets": []
@@ -55,7 +58,23 @@ func TestValidateChooseRequestBody(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "laws_rumors", result.SheetType)
 		assert.Equal(t, "Scroll of Laws", result.AssetText)
+		assert.Equal(t, "Bound in leather", result.AssetMarginalia)
 		assert.Equal(t, "All trades must be witnessed by a third party", result.LawOrRumorText)
+	})
+
+	t.Run("missing asset_marginalia", func(t *testing.T) {
+		body := io.NopCloser(bytes.NewReader([]byte(`{
+			"sheet_type": "laws_rumors",
+			"choice_name": "The Law of Equal Exchange",
+			"asset_text": "Scroll of Laws",
+			"law_or_rumor_text": "All trades must be witnessed by a third party",
+			"card_assets": []
+		}`)))
+
+		r := &http.Request{Body: body}
+		_, err := validateChooseRequestBody(r)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "one marginalia")
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
@@ -97,7 +116,8 @@ func TestValidateChooseRequestBody(t *testing.T) {
 		body := io.NopCloser(bytes.NewReader([]byte(`{
 			"sheet_type": "titles",
 			"choice_name": "Lady",
-			"asset_text": "Asset"
+			"asset_text": "Asset",
+			"asset_marginalia": ["a trait"]
 		}`)))
 		r := &http.Request{Body: body}
 
@@ -110,7 +130,8 @@ func TestValidateChooseRequestBody(t *testing.T) {
 		body := io.NopCloser(bytes.NewReader([]byte(`{
 			"sheet_type": "laws_rumors",
 			"choice_name": "A Law",
-			"asset_text": "Asset"
+			"asset_text": "Asset",
+			"asset_marginalia": ["a trait"]
 		}`)))
 		r := &http.Request{Body: body}
 

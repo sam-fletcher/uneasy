@@ -28,12 +28,12 @@
 	import './planPanel.css';
 	import {
 		preparePlan,
-		startDebate, joinCouncil, declineCouncil, callRoll, setAddendum, amendDecree, skipAmend, enactLaw, getAssetSuggestions,
+		startDebate, joinCouncil, declineCouncil, callRoll, setAddendum, amendDecree, skipAmend, enactLaw,
 		type Plan, type Asset, type Player, type Ranking, type DiceRoll,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import CardPicker from './CardPicker.svelte';
-	import SuggestionPicker from '../SuggestionPicker.svelte';
+	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import { playerName, parseResolutionData, ownerUnleveragedAssets } from './shared';
 
@@ -348,30 +348,23 @@
 	const awaitingEnact = $derived(outcomeApplied && pdState.addendumPlaced && !lawEnacted);
 	const isMakeEnact = $derived(rollOutcome === 'make');
 	let resourceName = $state('');
+	let resourceMarginalia = $state('');
 	let enactBusy = $state(false);
-	// Resource name suggestions, fetched once the preparer's enact step appears.
-	let nameSuggestions = $state<string[]>([]);
-	let nameSuggLoading = $state(false);
-	let nameSuggFetched = false;
-	$effect(() => {
-		if (!(awaitingEnact && isPreparer && isMakeEnact) || nameSuggFetched) return;
-		nameSuggFetched = true;
-		nameSuggLoading = true;
-		getAssetSuggestions(gameID, 'resource', 'name')
-			.then(res => { nameSuggestions = res.suggestions; })
-			.catch(() => { nameSuggestions = []; })
-			.finally(() => { nameSuggLoading = false; });
-	});
 	async function submitEnact(p: Plan) {
 		if (enactBusy) return;
-		if (isMakeEnact && !resourceName.trim()) {
-			resError = 'Name the resource your decree creates.';
+		if (isMakeEnact && (!resourceName.trim() || !resourceMarginalia.trim())) {
+			resError = 'Name the resource your decree creates, with one marginalia.';
 			return;
 		}
 		enactBusy = true; resError = '';
 		try {
-			await enactLaw(p.id, isMakeEnact ? resourceName.trim() : undefined);
+			await enactLaw(
+				p.id,
+				isMakeEnact ? resourceName.trim() : undefined,
+				isMakeEnact ? [resourceMarginalia.trim()] : undefined,
+			);
 			resourceName = '';
+			resourceMarginalia = '';
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not enact the law.';
@@ -643,19 +636,21 @@
 								<p class="choices-note">
 									The law above takes effect. Name the resource it creates for you.
 								</p>
-								<SuggestionPicker
-									suggestions={nameSuggestions}
-									bind:value={resourceName}
-									loading={nameSuggLoading}
-									customPlaceholder="Name the law's resource…"
-									maxlength={120}
+								<AssetCreationForm
+									{gameID}
+									assetType="resource"
+									bind:name={resourceName}
+									bind:marginalia={resourceMarginalia}
+									disabled={enactBusy}
+									nameLabel="1 · Name the resource"
+									marginaliaLabel="2 · First marginalia"
 								/>
 							{:else}
 								<p class="choices-note">The law above takes effect (no resource on a mar).</p>
 							{/if}
 							<button class="action-btn primary"
 								onclick={() => submitEnact(plan)}
-								disabled={enactBusy || (isMakeEnact && !resourceName.trim())}>
+								disabled={enactBusy || (isMakeEnact && (!resourceName.trim() || !resourceMarginalia.trim()))}>
 								{enactBusy ? '…' : 'Enact the law'}
 							</button>
 						</div>

@@ -73,15 +73,26 @@ func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 
 	// A non-preparer cannot author the artifact.
 	otherIdx := (preparerIdx + 1) % 3
-	code, body = h.post(otherIdx, createPath, map[string]any{"name": "Hijack"})
+	code, body = h.post(otherIdx, createPath, map[string]any{"name": "Hijack", "marginalia": []string{"a trait"}})
 	require.Equalf(t, http.StatusForbidden, code, "only the preparer may author: %v", body)
 
 	// The make path requires a name.
-	code, body = h.post(preparerIdx, createPath, map[string]any{"name": ""})
+	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "", "marginalia": []string{"a trait"}})
 	require.Equalf(t, http.StatusBadRequest, code, "authoring needs a name: %v", body)
 
-	// The preparer authors the artifact with a name — created already named.
-	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "The New Orthodoxy"})
+	// The make path requires exactly one marginalia.
+	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "The New Orthodoxy", "marginalia": []string{}})
+	require.Equalf(t, http.StatusBadRequest, code, "authoring needs one marginalia: %v", body)
+	code, body = h.post(preparerIdx, createPath, map[string]any{
+		"name": "The New Orthodoxy", "marginalia": []string{"first", "second"},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "authoring rejects two marginalia: %v", body)
+
+	// The preparer authors the artifact with a name and one marginalia —
+	// created already named, with its marginalia, in one transaction.
+	code, body = h.post(preparerIdx, createPath, map[string]any{
+		"name": "The New Orthodoxy", "marginalia": []string{"Born of a lie"},
+	})
 	require.Equalf(t, http.StatusOK, code, "create-artifact: %v", body)
 
 	planAfterCreate, err := h.q.GetPlanByID(ctx, plan.ID)
@@ -95,6 +106,12 @@ func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 	assert.Equal(t, "The New Orthodoxy", artifact.Name, "artifact is created already named")
 	assert.Equal(t, artifactsBefore+1, countArtifacts(t, h, ctx),
 		"exactly one artifact is minted, by create-artifact")
+
+	margs, err := h.q.ListMarginaliaByAsset(ctx, artifact.ID)
+	require.NoError(t, err)
+	require.Len(t, margs, 1, "the artifact is created with exactly one marginalia")
+	assert.EqualValues(t, 1, margs[0].Position)
+	assert.Equal(t, "Born of a lie", margs[0].Text)
 
 	// Now completion succeeds.
 	h.complete(plan.ID)
@@ -147,11 +164,15 @@ func TestPlanLifecycle_SpreadPropaganda_PerformStepsWinnerResolves(t *testing.T)
 	createPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/create-artifact"
 
 	// The preparer is locked out of the create-artifact make step too.
-	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "Preparer's orthodoxy"})
+	code, body = h.post(preparerIdx, createPath, map[string]any{
+		"name": "Preparer's orthodoxy", "marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusForbidden, code, "preparer must be locked out of create-artifact: %v", body)
 
 	// The demander authors the artifact; keep_assets routes it to them.
-	code, body = h.post(demanderIdx, createPath, map[string]any{"name": "The Demander's Orthodoxy"})
+	code, body = h.post(demanderIdx, createPath, map[string]any{
+		"name": "The Demander's Orthodoxy", "marginalia": []string{"a trait"},
+	})
 	require.Equalf(t, http.StatusOK, code, "perform_steps winner should drive create-artifact: %v", body)
 
 	planAfter, err := h.q.GetPlanByID(ctx, plan.ID)

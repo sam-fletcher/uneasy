@@ -312,17 +312,18 @@ func (pdHandler) ApplyChoice(
 
 // pdEnactLaw puts the decree into effect: it creates the law row with the final
 // body and the signatory's composed addendum, and — on a make — creates the
-// resource asset under the preparer-authored resourceName (one transaction, no
-// placeholder). This is the LAST writing step, called from enact-law, so the law
-// goes under Laws already carrying its addendum (and, on a mar, the council's
-// amendments), as the rules require. Sets pd.LawID; the caller saves
-// resolution_data. resourceName is ignored on a mar (no asset).
+// resource asset under the preparer-authored resourceName and its one required
+// marginalia (one transaction, no placeholder). This is the LAST writing step,
+// called from enact-law, so the law goes under Laws already carrying its
+// addendum (and, on a mar, the council's amendments), as the rules require.
+// Sets pd.LawID; the caller saves resolution_data. resourceName/resourceMarg
+// are ignored on a mar (no asset).
 func pdEnactLaw(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	resData *ResolutionData,
-	resourceName string,
+	resourceName, resourceMarg string,
 ) error {
 	pd := resData.EnsureProposeDecree()
 
@@ -347,7 +348,7 @@ func pdEnactLaw(
 	pd.LawID = &law.ID
 
 	if pd.Outcome == makeOutcome {
-		if err = pdCreateLawAsset(ctx, deps, plan, resData, resourceName); err != nil {
+		if err = pdCreateLawAsset(ctx, deps, plan, resData, resourceName, resourceMarg); err != nil {
 			return err
 		}
 	}
@@ -363,7 +364,8 @@ func pdEnactLaw(
 	}
 	if pd.Outcome == makeOutcome {
 		pdLog(ctx, deps, plan, model.SeverityImportant,
-			fmt.Sprintf("The decree was enacted, signed by %s, and a new resource was created.", signatory))
+			fmt.Sprintf("The decree was enacted, signed by %s, and a new resource was created, with marginalia: %q.",
+				signatory, resourceMarg))
 	} else {
 		pdLog(ctx, deps, plan, model.SeverityImportant,
 			fmt.Sprintf("The amended decree was enacted, signed by %s.", signatory))
@@ -415,14 +417,15 @@ func pdLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 //
 // The name is authored by the preparer at enactment with the final law text in
 // view (deliberately NOT derived from the law wording — the resource represents
-// the law's worldly consequence the preparer narrates). Created and named in one
-// call, so the asset never exists unnamed.
+// the law's worldly consequence the preparer narrates). Created with its one
+// required marginalia in the same call, so the asset never exists unnamed or
+// blank.
 func pdCreateLawAsset(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	resData *ResolutionData,
-	name string,
+	name, margText string,
 ) error {
 	pd := resData.EnsureProposeDecree()
 
@@ -431,12 +434,18 @@ func pdCreateLawAsset(
 		return fmt.Errorf("resolve asset recipient: %w", err)
 	}
 
-	asset, err := deps.Q.CreateAsset(ctx, dbgen.CreateAssetParams{
-		GameID:    plan.GameID,
-		OwnerID:   ownerID,
-		CreatorID: plan.PreparerID,
-		AssetType: model.AssetResource,
-		Name:      name,
+	var asset dbgen.Asset
+	var marginalia []dbgen.Marginalium
+	err = deps.InTx(ctx, func(q *dbgen.Queries) error {
+		var caErr error
+		asset, marginalia, caErr = createAssetWithFirstMarginalia(ctx, q, dbgen.CreateAssetParams{
+			GameID:    plan.GameID,
+			OwnerID:   ownerID,
+			CreatorID: plan.PreparerID,
+			AssetType: model.AssetResource,
+			Name:      name,
+		}, margText)
+		return caErr
 	})
 	if err != nil {
 		return fmt.Errorf("could not create law resource asset: %w", err)
@@ -448,7 +457,7 @@ func pdCreateLawAsset(
 		deps.Manager,
 		plan.GameID,
 		model.EventAssetCreated,
-		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
+		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: marginalia}},
 	)
 	return nil
 }
@@ -1336,11 +1345,13 @@ func pdEnactLawHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			ResourceName string `json:"resource_name"`
+			ResourceName       string   `json:"resource_name"`
+			ResourceMarginalia []string `json:"resource_marginalia"`
 		}
 		// A body is optional on a mar (no asset); required on a make.
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		resourceName := strings.TrimSpace(body.ResourceName)
+		var resourceMarg string
 		if pd.Outcome == makeOutcome {
 			if resourceName == "" {
 				respondErr(w, http.StatusBadRequest, "resource_name is required to enact a made decree")
@@ -1351,9 +1362,15 @@ func pdEnactLawHandler(deps *PlanDeps) http.HandlerFunc {
 					fmt.Sprintf("resource_name must be at most %d characters", maxAssetNameLen))
 				return
 			}
+			var margErr error
+			resourceMarg, margErr = requireOneMarginalia(body.ResourceMarginalia)
+			if margErr != nil {
+				respondErr(w, http.StatusBadRequest, margErr.Error())
+				return
+			}
 		}
 
-		if err := pdEnactLaw(ctx, deps, plan, &resData, resourceName); err != nil {
+		if err := pdEnactLaw(ctx, deps, plan, &resData, resourceName, resourceMarg); err != nil {
 			respondInternalErr(w, r, "could not enact the law", err)
 			return
 		}

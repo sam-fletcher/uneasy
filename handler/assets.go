@@ -94,6 +94,44 @@ func marginaliaByPosition(list []dbgen.Marginalium, pos int16) *dbgen.Marginaliu
 	return nil
 }
 
+// requireOneMarginalia trims and filters raw marginalia strings, requiring
+// exactly one non-empty entry to remain. Every player-authored asset-creation
+// route shares this validator so the error wording stays uniform.
+func requireOneMarginalia(raw []string) (string, error) {
+	var found []string
+	for _, m := range raw {
+		if m = strings.TrimSpace(m); m != "" {
+			found = append(found, m)
+		}
+	}
+	if len(found) != 1 {
+		return "", errors.New("a new asset needs a name and one marginalia")
+	}
+	return found[0], nil
+}
+
+// createAssetWithFirstMarginalia creates an asset and its first marginalia
+// (position 1) atomically. Takes q so callers choose their own transaction —
+// plan routes have deps.Store.InTx (PlanDeps embeds *db.Store); use it where
+// the route isn't already inside one.
+func createAssetWithFirstMarginalia(
+	ctx context.Context, q *dbgen.Queries, params dbgen.CreateAssetParams, margText string,
+) (dbgen.Asset, []dbgen.Marginalium, error) {
+	asset, err := q.CreateAsset(ctx, params)
+	if err != nil {
+		return dbgen.Asset{}, nil, fmt.Errorf("could not create asset: %w", err)
+	}
+	m, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID:  asset.ID,
+		Position: 1,
+		Text:     margText,
+	})
+	if err != nil {
+		return dbgen.Asset{}, nil, fmt.Errorf("could not create marginalia: %w", err)
+	}
+	return asset, []dbgen.Marginalium{m}, nil
+}
+
 // ── Asset handlers ────────────────────────────────────────────────────────────
 
 // ListAssets handles GET /api/tables/{id}/assets.
@@ -355,7 +393,8 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // Guarded to that exact situation: rejected if the caller still has a main
 // character (nothing to replace) or still owns a non-destroyed peer (they must
 // promote it via PUT /assets/{id} instead, which is free).
-// Body: { name, marginalia: ["text", ...] }  (>= 2 marginalia, per "Make").
+// Body: { name, marginalia: ["text", ...] }  (>= 1 marginalia, per the
+// asset-creation rule).
 func ReplaceMainCharacterWithNewPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, s.Q)
@@ -393,8 +432,9 @@ func ReplaceMainCharacterWithNewPeer(s *db.Store, manager *hub.Manager) http.Han
 }
 
 // parseConscriptBody decodes and validates the conscript request body, writing
-// the error response itself on failure. Requires a name and >= 2 marginalia
-// (per the "Make" rule), capped at maxMarginalia.
+// the error response itself on failure. Requires a name and at least one
+// marginalia (per the asset-creation rule), capped at maxMarginalia. Extra
+// marginalia beyond the first can always be added from the retinue afterward.
 func parseConscriptBody(w http.ResponseWriter, r *http.Request) (string, []string, bool) {
 	var body struct {
 		Name       string   `json:"name"`
@@ -415,8 +455,8 @@ func parseConscriptBody(w http.ResponseWriter, r *http.Request) (string, []strin
 			margs = append(margs, m)
 		}
 	}
-	if len(margs) < 2 {
-		respondErr(w, http.StatusBadRequest, "a new character needs at least 2 marginalia")
+	if len(margs) < 1 {
+		respondErr(w, http.StatusBadRequest, "a new character needs a name and one marginalia")
 		return "", nil, false
 	}
 	if len(margs) > maxMarginalia {
