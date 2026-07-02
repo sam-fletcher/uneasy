@@ -181,12 +181,12 @@ func ListAssets(s *db.Store) http.HandlerFunc {
 
 // CreateAsset handles POST /api/tables/{id}/assets.
 //
-// Creates an asset and optional initial marginalia in one call. Always
-// owned by the caller. Plan-gained assets (e.g. Make Introductions peers)
-// go through their plan handler's own peer-creation route, which routes
-// ownership through AssetRecipientForPlan so demand keep_assets
+// Creates an asset and its one required initial marginalia in one call.
+// Always owned by the caller. Plan-gained assets (e.g. Make Introductions
+// peers) go through their plan handler's own peer-creation route, which
+// routes ownership through AssetRecipientForPlan so demand keep_assets
 // winners are honored.
-// Body: { asset_type, name, is_main_character?, marginalia?: ["text",...] }
+// Body: { asset_type, name, is_main_character?, marginalia: ["text"] }
 func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, s.Q)
@@ -219,9 +219,9 @@ func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		if len(body.Marginalia) > maxMarginalia {
-			respondErr(w, http.StatusBadRequest,
-				fmt.Sprintf("at most %d marginalia", maxMarginalia))
+		margText, err := requireOneMarginalia(body.Marginalia)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
@@ -229,7 +229,7 @@ func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		var asset dbgen.Asset
 		var marginalia []dbgen.Marginalium
-		err := s.InTx(ctx, func(q *dbgen.Queries) error {
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
 			if body.IsMainCharacter {
 				if cErr := q.ClearMainCharacter(ctx, dbgen.ClearMainCharacterParams{
 					OwnerID: player.ID,
@@ -240,35 +240,15 @@ func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			}
 
 			var caErr error
-			asset, caErr = q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			asset, marginalia, caErr = createAssetWithFirstMarginalia(ctx, q, dbgen.CreateAssetParams{
 				GameID:          gameID,
 				OwnerID:         player.ID,
 				CreatorID:       player.ID,
 				AssetType:       assetType,
 				Name:            body.Name,
 				IsMainCharacter: body.IsMainCharacter,
-			})
-			if caErr != nil {
-				return errors.New("could not create asset")
-			}
-
-			marginalia = make([]dbgen.Marginalium, 0, len(body.Marginalia))
-			for i, text := range body.Marginalia {
-				text = strings.TrimSpace(text)
-				if text == "" {
-					continue
-				}
-				m, mErr := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
-					AssetID:  asset.ID,
-					Position: int16(i + 1),
-					Text:     text,
-				})
-				if mErr != nil {
-					return errors.New("could not create marginalia")
-				}
-				marginalia = append(marginalia, m)
-			}
-			return nil
+			}, margText)
+			return caErr
 		})
 		if err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())

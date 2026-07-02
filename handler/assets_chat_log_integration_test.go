@@ -135,6 +135,45 @@ func assetIDFromBody(t *testing.T, body map[string]any) int64 {
 	return int64(asset["id"].(float64))
 }
 
+// TestCreateAsset_RequiresExactlyOneMarginalia proves the generic asset-
+// creation route enforces the same name-and-one-marginalia rule as every
+// other asset-creation route (Phase 8 tightening).
+func TestCreateAsset_RequiresExactlyOneMarginalia(t *testing.T) {
+	h := newAssetHarness(t, 2)
+
+	code, body := h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "Nameless",
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "missing marginalia rejected: %v", body)
+
+	code, body = h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "Nameless", "marginalia": []string{},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "empty marginalia rejected: %v", body)
+
+	code, body = h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "Nameless", "marginalia": []string{"", "   "},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "all-blank marginalia rejected: %v", body)
+
+	code, body = h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "Twice-Noted", "marginalia": []string{"first", "second"},
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "two marginalia rejected: %v", body)
+
+	code, body = h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "Well-Formed", "marginalia": []string{"a trait"},
+	})
+	require.Equalf(t, http.StatusCreated, code, "exactly one marginalia accepted: %v", body)
+	id := assetIDFromBody(t, body)
+
+	margs, err := h.q.ListMarginaliaByAsset(context.Background(), id)
+	require.NoError(t, err)
+	require.Len(t, margs, 1, "asset is created with exactly one marginalia")
+	require.Equal(t, int16(1), margs[0].Position)
+	require.Equal(t, "a trait", margs[0].Text)
+}
+
 // TestChatLog_AssetCreatedWithMarginalia: a single Minor post folds the asset
 // and its initial marginalia into one event.
 func TestChatLog_AssetCreatedWithMarginalia(t *testing.T) {
@@ -144,7 +183,7 @@ func TestChatLog_AssetCreatedWithMarginalia(t *testing.T) {
 	code, _ := h.do("POST", 0, h.tablePath(), map[string]any{
 		"asset_type": "peer",
 		"name":       "Sir Reginald",
-		"marginalia": []string{"loyal to a fault", "secretly in debt"},
+		"marginalia": []string{"loyal to a fault"},
 	})
 	require.Equal(t, http.StatusCreated, code)
 
@@ -153,7 +192,6 @@ func TestChatLog_AssetCreatedWithMarginalia(t *testing.T) {
 	require.Contains(t, p.Body, owner)
 	require.Contains(t, p.Body, "Sir Reginald")
 	require.Contains(t, p.Body, "loyal to a fault")
-	require.Contains(t, p.Body, "secretly in debt")
 }
 
 // TestChatLog_AssetRenamed: renaming emits a Trace post naming old and new.
@@ -161,7 +199,7 @@ func TestChatLog_AssetRenamed(t *testing.T) {
 	h := newAssetHarness(t, 2)
 
 	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
-		"asset_type": "holding", "name": "Old Keep",
+		"asset_type": "holding", "name": "Old Keep", "marginalia": []string{"weathered stone"},
 	})
 	id := assetIDFromBody(t, body)
 
@@ -180,10 +218,11 @@ func TestChatLog_MarginaliaAddedAndEdited(t *testing.T) {
 	h := newAssetHarness(t, 2)
 
 	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
-		"asset_type": "peer", "name": "Lady Vex",
+		"asset_type": "peer", "name": "Lady Vex", "marginalia": []string{"sharp-tongued"},
 	})
 	id := assetIDFromBody(t, body)
 
+	// Creation already occupies position 1, so the added note lands at 2.
 	code, _ := h.do("POST", 0, assetPath(id, "/marginalia"), map[string]any{"text": "owes a debt"})
 	require.Equal(t, http.StatusCreated, code)
 	added := h.postBySystemCode("marginalia.added")
@@ -191,7 +230,7 @@ func TestChatLog_MarginaliaAddedAndEdited(t *testing.T) {
 	require.Contains(t, added.Body, "owes a debt")
 	require.Contains(t, added.Body, "Lady Vex")
 
-	code, _ = h.do("PUT", 0, assetPath(id, "/marginalia/1"), map[string]any{"text": "debt forgiven"})
+	code, _ = h.do("PUT", 0, assetPath(id, "/marginalia/2"), map[string]any{"text": "debt forgiven"})
 	require.Equal(t, http.StatusOK, code)
 	edited := h.postBySystemCode("marginalia.edited")
 	require.Equal(t, model.SeverityTrace, edited.Severity)
@@ -230,7 +269,7 @@ func TestChatLog_AssetTaken(t *testing.T) {
 	taker := h.tg.Players[1].DisplayName
 
 	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
-		"asset_type": "artifact", "name": "The Crown",
+		"asset_type": "artifact", "name": "The Crown", "marginalia": []string{"gleaming"},
 	})
 	id := assetIDFromBody(t, body)
 
@@ -251,7 +290,7 @@ func TestChatLog_MainCharacterPromoted(t *testing.T) {
 	owner := h.tg.Players[0].DisplayName
 
 	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
-		"asset_type": "peer", "name": "Protagonist",
+		"asset_type": "peer", "name": "Protagonist", "marginalia": []string{"determined"},
 	})
 	id := assetIDFromBody(t, body)
 

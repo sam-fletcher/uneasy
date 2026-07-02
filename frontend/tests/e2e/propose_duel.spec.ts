@@ -87,7 +87,7 @@ test('propose duel: setup → staking → bouts → final roll → take', async 
 	// ── Each duelist needs an unleveraged peer to stake ──────────────────────
 	const mkPeer = (ctx: BrowserContext, name: string) =>
 		ctx.request.post(`/api/tables/${game_id}/assets`, {
-			data: { asset_type: 'peer', name, is_main_character: false, marginalia: [] },
+			data: { asset_type: 'peer', name, is_main_character: false, marginalia: ['unleveraged'] },
 		});
 	expect((await mkPeer(aliceCtx, 'Alice Peer')).ok()).toBeTruthy();
 	expect((await mkPeer(bobCtx, 'Bob Peer')).ok()).toBeTruthy();

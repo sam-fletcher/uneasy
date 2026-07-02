@@ -96,7 +96,7 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 	// ── Each player needs a peer: it bears the secret AND is the meeting peer ─
 	const mkPeer = async (ctx: BrowserContext, name: string): Promise<number> => {
 		const res = await ctx.request.post(`/api/tables/${game_id}/assets`, {
-			data: { asset_type: 'peer', name, is_main_character: false, marginalia: [] },
+			data: { asset_type: 'peer', name, is_main_character: false, marginalia: ['trusted go-between'] },
 		});
 		expect(res.ok(), `create peer failed: ${await res.text()}`).toBeTruthy();
 		return (await res.json()).asset.id as number;
