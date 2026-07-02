@@ -322,7 +322,7 @@
 						{#each draftChoices as c}
 							<li>
 								{playerName(players, c.player_id)}
-								picked <em>{c.option.replace(/_/g, ' ')}</em>
+								picked <em>{DEMAND_OPTION_LABELS[c.option as DemandOption] ?? c.option}</em>
 							</li>
 						{/each}
 					</ul>

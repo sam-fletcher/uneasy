@@ -11,7 +11,11 @@ package game
 // "spread_propaganda" key.
 type SpreadPropagandaResolutionData struct {
 	// RecursivePlanID points at the child SP plan spawned by mar option (d)
-	// "co-opt". Set on the parent plan.
+	// "co-opt". Set on the parent plan. Also doubles as the "already co-opted"
+	// guard: co-opt fires its side effect immediately (unlike give_peer/
+	// break_self, which defer to a sub-flow), so a duplicate "counter_prop"
+	// pick in the same choices list must no-op once this is set, or the
+	// preparer would spawn two recursive propaganda plans.
 	RecursivePlanID *int64 `json:"recursive_plan_id,omitempty"`
 	// EsteemLockout is set by mar option (b) "censured": the preparer's next
 	// plan cannot be an esteem plan. Checked by HasEsteemLockout.
@@ -31,17 +35,18 @@ type SpreadPropagandaResolutionData struct {
 	// made plan. Nil until the preparer authors it.
 	ArtifactID *int64 `json:"artifact_id,omitempty"`
 
-	// GivePeerRequired flips true when mar option (a) "give_peer" is chosen;
-	// it gates completion until the preparer hands a peer to another player
-	// via POST /plans/{planId}/give-peer. GivePeerDone records completion.
-	GivePeerRequired bool `json:"give_peer_required,omitempty"`
-	GivePeerDone     bool `json:"give_peer_done,omitempty"`
-
-	// BreakSelfRequired flips true when mar option (c) "break_self" is chosen;
-	// it gates completion until the preparer breaks one of their own assets
-	// via POST /plans/{planId}/break-self. BreakSelfDone records completion.
-	BreakSelfRequired bool `json:"break_self_required,omitempty"`
-	BreakSelfDone     bool `json:"break_self_done,omitempty"`
+	// GivePeerDone / BreakSelfDone count how many of the picked give_peer /
+	// break_self sub-flow steps have actually been carried out (a peer handed
+	// over, a marginalia broken). The mar is repeatable — the preparer may
+	// pick either option more than once — so "how many are owed" comes from
+	// pickedChoiceCount(resData, "give_peer"/"break_self") against the
+	// committed choices, not a boolean flag. This is the server-authoritative
+	// completion signal so the panel doesn't re-prompt after a refresh, and the
+	// extra-route handlers reject any step beyond the picked count so a stale
+	// client can't write a duplicate. Mirrors Spread Rumors' BreakTargetDone /
+	// HideSourceDone.
+	GivePeerDone  int `json:"give_peer_done,omitempty"`
+	BreakSelfDone int `json:"break_self_done,omitempty"`
 }
 
 // EnsureSpreadPropaganda returns r.SpreadPropaganda, allocating a zero struct

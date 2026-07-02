@@ -185,3 +185,108 @@ func TestSpreadPropaganda_Mar_BreakSelf_BlocksUntilBroken(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, torn.IsTorn, "the preparer's marginalia should be torn")
 }
+
+// TestSpreadPropaganda_Mar_GivePeer_Repeatable proves the mar is genuinely
+// repeatable per the rules ("Choose options equal to (difficulty − result)
+// (repeatable)"): picking give_peer twice must require two separate
+// give-peer transfers before completion, and a third call beyond what was
+// picked must be rejected.
+func TestSpreadPropaganda_Mar_GivePeer_Repeatable(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	// spPrepareToMar forces result=0, so the budget equals the preparer's
+	// esteem difficulty — at least 2 in a 3-player game (dummy occupies
+	// rank 1), enough room to pick give_peer twice.
+	plan, preparerIdx := spPrepareToMar(t, h)
+	recipientIdx := (preparerIdx + 1) % len(h.tg.Players)
+	giftA := h.seedPeer(preparerIdx, "first doomed peer")
+	giftB := h.seedPeer(preparerIdx, "second doomed peer")
+
+	h.makeChoice(plan.ID, "mar", []string{"give_peer", "give_peer"})
+
+	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
+	code, body := h.post(preparerIdx, completePath, nil)
+	require.Equalf(t, http.StatusConflict, code, "complete should be blocked before either transfer: %v", body)
+
+	givePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/give-peer"
+	code, body = h.post(preparerIdx, givePath, map[string]any{
+		"peer_asset_id": giftA,
+		"to_player_id":  h.tg.Players[recipientIdx].ID,
+	})
+	require.Equalf(t, http.StatusOK, code, "first give-peer: %v", body)
+
+	code, body = h.post(preparerIdx, completePath, nil)
+	require.Equalf(t, http.StatusConflict, code, "complete should still be blocked after one of two: %v", body)
+
+	code, body = h.post(preparerIdx, givePath, map[string]any{
+		"peer_asset_id": giftB,
+		"to_player_id":  h.tg.Players[recipientIdx].ID,
+	})
+	require.Equalf(t, http.StatusOK, code, "second give-peer: %v", body)
+
+	// A third call beyond the two picked is rejected.
+	giftC := h.seedPeer(preparerIdx, "not part of the deal")
+	code, body = h.post(preparerIdx, givePath, map[string]any{
+		"peer_asset_id": giftC,
+		"to_player_id":  h.tg.Players[recipientIdx].ID,
+	})
+	assert.Equalf(t, http.StatusConflict, code, "a third give-peer beyond the picked count should be rejected: %v", body)
+
+	h.complete(plan.ID)
+
+	movedA, err := h.q.GetAssetByID(ctx, giftA)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[recipientIdx].ID, movedA.OwnerID, "first peer should belong to recipient")
+	movedB, err := h.q.GetAssetByID(ctx, giftB)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[recipientIdx].ID, movedB.OwnerID, "second peer should belong to recipient")
+}
+
+// TestSpreadPropaganda_Mar_CounterProp_DoesNotDoubleFire proves that picking
+// "counter_prop" twice in one submission — legal under the repeatable budget
+// cap, since the server only enforces an upper bound on total picks — still
+// spawns exactly one recursive propaganda plan. Unlike give_peer/break_self,
+// co-opt fires its side effect immediately inside ApplyChoice rather than
+// deferring to a gated sub-flow, so it needs its own guard against a
+// duplicate pick in the same choices list.
+func TestSpreadPropaganda_Mar_CounterProp_DoesNotDoubleFire(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	notes := "propaganda"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanSpreadPropaganda,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll, "SP creates its roll on resolve")
+
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	interfererIdx := (preparerIdx + 1) % len(h.tg.Players)
+	_, err := h.q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+		RollID: roll.ID, PlayerID: h.tg.Players[interfererIdx].ID, IsInterference: true,
+	})
+	require.NoError(t, err)
+
+	h.forceRoll(roll.ID, "mar", 0)
+	h.makeChoice(plan.ID, "mar", []string{"counter_prop", "counter_prop"})
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.SpreadPropaganda)
+	require.NotNil(t, rd.SpreadPropaganda.RecursivePlanID, "co-opt should still fire once")
+
+	plans, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	spCount := 0
+	for _, p := range plans {
+		if p.PlanType == model.PlanSpreadPropaganda {
+			spCount++
+		}
+	}
+	assert.Equal(t, 2, spCount, "counter_prop picked twice should still spawn exactly one recursive plan")
+}

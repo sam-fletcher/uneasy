@@ -14,12 +14,12 @@ export interface SpreadPropagandaResolutionData {
 	artifact_required?: boolean;
 	/** The authored societal-shift artifact; set once create-artifact runs. */
 	artifact_id?: number | null;
-	/** Mar (a) "give_peer": a peer must be handed to another player. */
-	give_peer_required?: boolean;
-	give_peer_done?: boolean;
-	/** Mar (c) "break_self": the preparer must break one of their own assets. */
-	break_self_required?: boolean;
-	break_self_done?: boolean;
+	/** Mar (a) "give_peer": repeatable — how many of the picked give_peer
+	 *  transfers have actually been carried out. "Owed" is derived from how
+	 *  many times "give_peer" appears in the committed choices, not a flag. */
+	give_peer_done?: number;
+	/** Mar (c) "break_self": repeatable, same shape as give_peer_done. */
+	break_self_done?: number;
 }
 
 /** Read-only convenience parser. Returns a non-nil object (defaults when

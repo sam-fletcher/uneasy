@@ -399,7 +399,7 @@
 						{@const o = outcomeFor(pid)}
 						{#if o}
 							<p class="choices-applied">
-								{assetName(assets, pid)} — {o.outcome.replace('_', ' ')}{o.outcome === 'broken_arrival' && !o.done ? ' (awaiting marginalia)' : ' ✓'}
+								{assetName(assets, pid)} — {MI_MAR_OPTIONS.find(o2 => o2.key === o.outcome)?.label ?? o.outcome}{o.outcome === 'broken_arrival' && !o.done ? ' (awaiting marginalia)' : ' ✓'}
 							</p>
 						{/if}
 					{/each}

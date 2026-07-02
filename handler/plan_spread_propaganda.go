@@ -5,12 +5,19 @@ package handler
 // Spread Propaganda (esteem, delay 3): The preparer spreads a message.
 // Difficulty = preparer's rank on the esteem track.
 //
-// Make options: "wide", "targeted", "incite" (narrative).
-// Mar options:
-//   (a) "backfire"  — rumor reflects back at preparer (narrative)
-//   (b) "censured"  — esteem lockout: preparer's next plan cannot be an esteem plan
-//   (c) "dismissed" — no one believes it (narrative)
-//   (d) "co-opt"    — top interferer spreads their own propaganda immediately
+// Make option: "create_artifact" — the preparer authors the societal-shift
+// artifact (narrative + asset creation).
+// Mar options (repeatable — the preparer picks (difficulty − result) total,
+// possibly repeating a key):
+//   (a) "give_peer"    — a peer leaves the preparer's retinue, given to
+//                        another player (sub-flow, once per pick)
+//   (b) "lay_low"      — esteem lockout: preparer's next plan cannot be an
+//                        esteem plan (applied immediately; repeats no-op)
+//   (c) "break_self"   — the preparer breaks one of their own assets
+//                        (sub-flow, once per pick)
+//   (d) "counter_prop" — top interferer spreads their own propaganda
+//                        immediately (applied immediately; a repeat pick
+//                        no-ops once the recursive plan exists)
 //
 // Esteem lockout (b): sets ResData.SpreadPropaganda.EsteemLockout = true.
 // Checked in validatePlanPreparation for all esteem-category plan types.
@@ -100,20 +107,25 @@ func (spHandler) ApplyChoice(
 	for _, choice := range choices {
 		switch choice {
 		case "lay_low":
+			// Repeatable in the choice list, but the effect is a single flag —
+			// a second pick is a harmless no-op.
 			resData.EnsureSpreadPropaganda().EsteemLockout = true
 			spLog(ctx, deps, plan, model.SeverityDefault,
 				fmt.Sprintf("%s must keep their head down — their next plan cannot involve esteem.",
 					playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 
-		case "give_peer":
-			// Asset picker — the actual transfer happens via the give-peer route.
-			resData.EnsureSpreadPropaganda().GivePeerRequired = true
-
-		case "break_self":
-			// Asset picker — the actual break happens via the break-self route.
-			resData.EnsureSpreadPropaganda().BreakSelfRequired = true
+		case "give_peer", "break_self":
+			// Asset pickers — the actual transfer/break happens via the
+			// give-peer / break-self routes, once per pick. How many are owed
+			// comes from pickedChoiceCount, not an immediate action here.
 
 		case "counter_prop":
+			// Fires its side effect immediately (unlike give_peer/break_self,
+			// which defer to a sub-flow), so a duplicate pick in the same
+			// submission must no-op rather than spawn a second recursive plan.
+			if resData.SpreadPropaganda != nil && resData.SpreadPropaganda.RecursivePlanID != nil {
+				continue
+			}
 			if err := applyCoOpt(ctx, deps, plan, resData); err != nil {
 				return err
 			}
@@ -146,23 +158,25 @@ func applySpreadPropagandaMake(
 	return nil
 }
 
-// CanComplete blocks completion until the made artifact has been authored and any
-// chosen asset-picker mar effects have been performed.
+// CanComplete blocks completion until the made artifact has been authored and
+// every committed give_peer / break_self pick has been performed. The mar is
+// repeatable, so "how many are owed" is server-authoritative from the
+// committed choices (pickedChoiceCount), not a boolean flag — see
+// subflowPicksRemaining.
 func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
-	sp := resData.SpreadPropaganda
-	if sp == nil {
-		return nil
-	}
+	// Unlike a plain nil-check, EnsureSpreadPropaganda() also covers the case
+	// where give_peer/break_self were picked but ApplyChoice never allocated
+	// SpreadPropaganda (it has no immediate effect to record — the sub-flow
+	// routes are the only writers) — subflowPicksRemaining below still needs
+	// to run in that case.
+	sp := resData.EnsureSpreadPropaganda()
 	if sp.ArtifactRequired && sp.ArtifactID == nil {
 		return errors.New("preparer must author the societal-shift artifact (POST /plans/{planId}/create-artifact)")
 	}
-	if sp.GivePeerRequired && !sp.GivePeerDone {
-		return errors.New("preparer must give a peer to another player (POST /plans/{planId}/give-peer)")
-	}
-	if sp.BreakSelfRequired && !sp.BreakSelfDone {
-		return errors.New("preparer must break one of their own assets (POST /plans/{planId}/break-self)")
-	}
-	return nil
+	return subflowPicksRemaining(resData,
+		subflowProgress{"give_peer", "give-peer", sp.GivePeerDone},
+		subflowProgress{"break_self", "break-self", sp.BreakSelfDone},
+	)
 }
 
 func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
@@ -471,12 +485,10 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		sp := resData.EnsureSpreadPropaganda()
-		if !sp.GivePeerRequired {
-			respondErr(w, http.StatusConflict, "this plan did not choose to give up a peer")
-			return
-		}
-		if sp.GivePeerDone {
-			respondErr(w, http.StatusConflict, "a peer has already been given up for this plan")
+		// Server-authoritative completion: a stale client (re-prompted after a
+		// refresh) must not give away more peers than were picked.
+		if sp.GivePeerDone >= pickedChoiceCount(&resData, "give_peer") {
+			respondErr(w, http.StatusConflict, "give-peer already completed for this plan")
 			return
 		}
 
@@ -516,7 +528,7 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		sp.GivePeerDone = true
+		sp.GivePeerDone++
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record give-peer", err)
 			return
@@ -572,12 +584,10 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		sp := resData.EnsureSpreadPropaganda()
-		if !sp.BreakSelfRequired {
-			respondErr(w, http.StatusConflict, "this plan did not choose to break yourself")
-			return
-		}
-		if sp.BreakSelfDone {
-			respondErr(w, http.StatusConflict, "you have already broken an asset for this plan")
+		// Server-authoritative completion: a stale client (re-prompted after a
+		// refresh) must not break more assets than were picked.
+		if sp.BreakSelfDone >= pickedChoiceCount(&resData, "break_self") {
+			respondErr(w, http.StatusConflict, "break-self already completed for this plan")
 			return
 		}
 
@@ -606,7 +616,7 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		sp.BreakSelfDone = true
+		sp.BreakSelfDone++
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record break-self", err)
 			return
