@@ -46,6 +46,7 @@
 	import RetinueView from '$lib/components/RetinueView.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import HelpContent from '$lib/components/HelpContent.svelte';
+	import HelpButton from '$lib/components/HelpButton.svelte';
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
@@ -166,7 +167,6 @@
 	let tonesOpen = $state(false);
 	let lawsOpen = $state(false);
 	let rumorsOpen = $state(false);
-	let helpOpen = $state(false);
 	let prologueActivePlayerID = $state<number | null>(null);
 
 	// ── Join-code copy feedback ───────────────────────────────────────────────
@@ -625,13 +625,7 @@
 					</button>
 				{/each}
 			</div>
-			<button type="button" class="help-button" onclick={() => helpOpen = true} aria-label="How to play & feedback">
-				<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<circle cx="12" cy="12" r="10" />
-					<path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3" />
-					<line x1="12" y1="17" x2="12" y2="17" />
-				</svg>
-			</button>
+			<HelpButton />
 		</div>
 		{#if game}
 			<div class="game-info" class:has-war={$activeWarCount + $pendingWarCount > 0}>
@@ -917,13 +911,6 @@
 		</div>
 	</RetinueSheet>
 
-	<RetinueSheet open={helpOpen} onClose={() => helpOpen = false}>
-		<div class="help-sheet">
-			<h3>How to play</h3>
-			<HelpContent panel />
-		</div>
-	</RetinueSheet>
-
 	<RetinueSheet open={retinueOpenForPlayer !== null} onClose={() => retinueOpenForPlayer = null}>
 		{#if retinueOpenForPlayer !== null}
 			<RetinueView
@@ -1183,7 +1170,6 @@
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
 	.tones-sheet .small { font-size: 0.85rem; }
 	.laws-rumors-sheet h3 { margin: 0 0 0.5rem; }
-	.help-sheet h3 { margin: 0 0 0.75rem; }
 
 	.copy-hint {
 		font-size: 0.7rem;
@@ -1213,25 +1199,6 @@
 	}
 	.home:hover { color: var(--color-accent-hover); background: var(--color-surface-2); }
 	.home:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-
-	/* Help "?" sits at the far right of the top strip, opposite the home icon.
-	   .members is flex:1, so this naturally pins to the right edge. */
-	.help-button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 44px;
-		height: 44px;
-		flex-shrink: 0;
-		color: var(--color-accent);
-		background: none;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-	.help-button:hover { color: var(--color-accent-hover); background: var(--color-surface-2); }
-	.help-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-	.help-button svg { width: 24px; height: 24px; flex-shrink: 0; }
 
 	.members {
 		display: flex;

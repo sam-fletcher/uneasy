@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { getMe, type Account } from '$lib/api';
+	import HelpButton from '$lib/components/HelpButton.svelte';
 	import '../app.css';
 
 	let { children }: { children: Snippet } = $props();
@@ -36,13 +37,16 @@
 {#if showHeader && me}
 	<header class="site-header">
 		<h1 class="page-title">{pageTitle}</h1>
-		<a
-			class="buy"
-			href="https://adambell.itch.io/uneasy-lies-the-head-2e"
-			target="_blank"
-			rel="noopener noreferrer"
-			aria-label="Buy the book on itch.io (opens in a new tab)"
-		>Buy the book ↗</a>
+		<div class="header-actions">
+			<a
+				class="buy"
+				href="https://adambell.itch.io/uneasy-lies-the-head-2e"
+				target="_blank"
+				rel="noopener noreferrer"
+				aria-label="Buy the book on itch.io (opens in a new tab)"
+			>Buy the book ↗</a>
+			<HelpButton />
+		</div>
 	</header>
 {/if}
 
@@ -117,6 +121,11 @@
 		border-radius: 4px;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+	}
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
 	}
 	.buy {
 		display: inline-flex;

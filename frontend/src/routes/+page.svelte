@@ -7,6 +7,7 @@
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/state';
 	import { getMe, login, createAccount } from '$lib/api';
+	import HelpButton from '$lib/components/HelpButton.svelte';
 
 	type Mode = 'login' | 'signup';
 
@@ -65,13 +66,16 @@
 </script>
 
 <div class="screen">
-	<a
-		class="buy"
-		href="https://adambell.itch.io/uneasy-lies-the-head-2e"
-		target="_blank"
-		rel="noopener noreferrer"
-		aria-label="Buy the book on itch.io (opens in a new tab)"
-	>Buy the book ↗</a>
+	<div class="top-actions">
+		<a
+			class="buy"
+			href="https://adambell.itch.io/uneasy-lies-the-head-2e"
+			target="_blank"
+			rel="noopener noreferrer"
+			aria-label="Buy the book on itch.io (opens in a new tab)"
+		>Buy the book ↗</a>
+		<HelpButton />
+	</div>
 
 	<header class="hero">
 		<p class="kicker">Adam Bell's</p>
@@ -146,13 +150,21 @@
 		padding: 1.5rem 1rem;
 	}
 
-	/* Small "buy the book" link, top-right. Generous padding gives it a ≥44px
-	   tap target while the text itself stays unobtrusive. */
-	.buy {
+	/* "Buy the book" + Help, top-right. Generous padding on .buy gives it a
+	   ≥44px tap target while the text itself stays unobtrusive. */
+	.top-actions {
 		position: absolute;
 		top: max(0.5rem, env(safe-area-inset-top));
 		right: max(0.5rem, env(safe-area-inset-right));
-		padding: 0.6rem 0.75rem;
+		display: flex;
+		align-items: center;
+		gap: 0.15rem;
+	}
+	.buy {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0 0.75rem;
 		color: var(--color-text-muted);
 		font-size: 0.9rem;
 		text-decoration: none;
