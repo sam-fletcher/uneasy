@@ -17,22 +17,32 @@
 	  scene.started and plan.prepared are SEVERITY.IMPORTANT (75).
 	  Severity only drives the "hide bookkeeping" filter threshold.
 
-	The parent owns the posts array and pushes new entries via WS; this
-	component is a controlled view + an input that POSTs new player messages.
+	The parent owns the feed window (via `feed`, a $lib/chatFeed.ChatFeedContext
+	— see adr/CHAT_OVERHAUL_PLAN.md Phase 2) and keeps it in sync over WS; this
+	component renders it, drives pagination/read-marker/history-mode against
+	it, and POSTs new player messages.
 -->
 <script lang="ts">
 	import '$lib/components/shared/statusText.css';
-	import { onMount, tick, untrack } from 'svelte';
+	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import {
 		createPlayerPost,
 		type Asset,
-		type ChatPost,
 		type Player,
 		type Scene,
 		type ScenePeerView,
 	} from '$lib/api';
 	import { playerColorByID, OOC_COLOR } from '$lib/playerColor';
 	import { SEVERITY } from '$lib/severity';
+	import {
+		type ChatFeedContext,
+		buildFeedItems,
+		countUnread,
+		isNearBottom,
+		fetchOlderPage,
+		reportReadMarker,
+		returnToNow,
+	} from '$lib/chatFeed';
 
 	// System-log bodies use a tiny markup subset: **…** spans wrap
 	// player-authored asset names (the backend emits them via assetMark).
@@ -57,7 +67,10 @@
 
 	interface Props {
 		gameID: string | number;
-		posts: ChatPost[];
+		/** Owns the post window, live/history mode, and cursors — see
+		 *  $lib/chatFeed. A stable object; its fields are reactive getters
+		 *  backed by the page's own $state. */
+		feed: ChatFeedContext;
 		players: Player[];
 		currentPlayerID: number | null;
 		typingLabel: string;
@@ -74,7 +87,10 @@
 		 * Jump request from the Public Record sidebar. When this changes to a
 		 * non-null value, the panel expands (on mobile) and scrolls to the
 		 * post with the given ID. The `key` field disambiguates repeated
-		 * requests for the same post so the effect re-runs.
+		 * requests for the same post so the effect re-runs. By the time this
+		 * fires, the caller (+page.svelte) has already ensured the post is
+		 * loaded into `feed` — resolving the anchor and entering history mode
+		 * if it wasn't in the live window.
 		 */
 		jumpRequest?: { postID: number; key: number } | null;
 		/**
@@ -88,7 +104,7 @@
 
 	let {
 		gameID,
-		posts,
+		feed,
 		players,
 		currentPlayerID,
 		typingLabel,
@@ -98,6 +114,8 @@
 		jumpRequest = null,
 		expanded = $bindable(false),
 	}: Props = $props();
+
+	const posts = $derived(feed.posts);
 
 	const playerName = (id: number | null) =>
 		id == null ? '' : players.find(p => p.id === id)?.display_name ?? 'Unknown';
@@ -185,38 +203,16 @@
 
 	// ── Expand/collapse (mobile only; desktop ignores this state) ─────────────
 	// `expanded` is a bindable prop (see Props above) so the page can close
-	// the sheet when another surface opens.
-	function toggleExpanded() { expanded = !expanded; }
+	// the sheet when another surface opens. Closing flushes any pending
+	// read-marker report — see "Read-marker reporting" below.
+	function toggleExpanded() {
+		const closing = expanded;
+		expanded = !expanded;
+		if (closing) flushReadReport();
+	}
 
-	// ── Unread tracking ───────────────────────────────────────────────────────
-	// We track the last post ID the user has "seen" — i.e. either the panel is
-	// open (desktop, or mobile expanded) or the player just expanded it. New
-	// posts arriving while collapsed (and not authored by the current player)
-	// count as unread.
-	let lastSeenID = $state<number>(0);
-
-	// Initialize lastSeenID once we have posts on first render.
-	let initialized = false;
-	$effect(() => {
-		if (!initialized && posts.length > 0) {
-			lastSeenID = posts[posts.length - 1].id;
-			initialized = true;
-		}
-	});
-
-	// While the panel is "open" — desktop column or mobile expanded — keep the
-	// seen marker pinned to the latest post. We can't know desktop-vs-mobile
-	// directly in JS without window.matchMedia, so we err on the side of
-	// keeping it current whenever the panel is rendered open OR on desktop.
-	const isOpen = $derived(expanded);
-	$effect(() => {
-		if (isOpen && posts.length > 0) {
-			lastSeenID = posts[posts.length - 1].id;
-		}
-	});
-
-	// On desktop the panel is always open visually, even if `expanded` is
-	// false — use a window matchMedia check to keep unread at 0 there.
+	// On desktop the panel is always visible as a column, even before the user
+	// has explicitly "expanded" anything (that flag is mobile-only).
 	let isDesktop = $state(false);
 	onMount(() => {
 		const mq = window.matchMedia('(min-width: 1024px)');
@@ -234,28 +230,33 @@
 			window.removeEventListener('keydown', onKey);
 		};
 	});
-	$effect(() => {
-		if (isDesktop && posts.length > 0) {
-			lastSeenID = posts[posts.length - 1].id;
-		}
-	});
+	const isOpen = $derived(expanded || isDesktop);
 
-	const unreadPosts = $derived(
-		posts.filter(p => p.id > lastSeenID && p.author_id !== currentPlayerID)
-	);
-	const unreadCount = $derived(unreadPosts.length);
+	// ── Unread state (server-side marker; adr/CHAT_OVERHAUL_PLAN.md Phase 1c/2a) ─
+	const unreadCount = $derived(countUnread(posts, feed.lastReadPostID, currentPlayerID));
 	const hasImportantUnread = $derived(
-		unreadPosts.some(p => p.severity >= SEVERITY.IMPORTANT)
+		posts.some(p =>
+			p.id > feed.lastReadPostID && p.author_id !== currentPlayerID && p.severity >= SEVERITY.IMPORTANT
+		)
 	);
 
 	// ── Severity threshold filter ─────────────────────────────────────────────
 	// Player messages (author_id != null) are always shown; the threshold
 	// only affects system posts. Default to DEFAULT (50) so trace and minor
-	// log noise is hidden until the user opts in.
+	// log noise is hidden until the user opts in. (Phase 3 replaces this
+	// dropdown with a single "hide bookkeeping" toggle.)
 	let severityThreshold = $state<number>(SEVERITY.DEFAULT);
 
 	const visiblePosts = $derived(
 		posts.filter(p => p.author_id != null || p.severity >= severityThreshold)
+	);
+
+	// Render list: day dividers + the "New messages" divider (Phase 2a).
+	// `feed.initialReadMarker` is a snapshot taken when the window was last
+	// (re)loaded from scratch, so the divider holds still while the live
+	// marker (`feed.lastReadPostID`) advances underneath it.
+	const feedItems = $derived(
+		buildFeedItems(visiblePosts, { unreadAfterID: feed.initialReadMarker, currentPlayerID })
 	);
 
 	// ── Latest message preview (for the collapsed strip) ──────────────────────
@@ -270,22 +271,130 @@
 		return author ? `${author}: ${latestPost.body}` : latestPost.body;
 	});
 
-	// ── Auto-scroll to bottom ─────────────────────────────────────────────────
+	// ── Scroll behavior (Phase 2c) ─────────────────────────────────────────────
+	// Auto-follow the tail only while the reader is at (or returns to) the
+	// bottom; otherwise leave their position alone and surface a "↓ N new"
+	// pill instead of yanking them down mid-read.
 	let feedEl = $state<HTMLElement | null>(null);
+	const NEAR_BOTTOM_PX = 150;
+	let stickToBottom = $state(true);
+	// Baseline post id captured the moment the reader leaves the bottom; the
+	// pill counts everything newer than it. Null while stuck to the bottom
+	// (no pill to show).
+	let bottomBaselineID = $state<number | null>(null);
+	const pendingNewCount = $derived(
+		bottomBaselineID == null ? 0 : visiblePosts.filter(p => p.id > bottomBaselineID!).length
+	);
+
+	function scrollToBottomNow() {
+		stickToBottom = true;
+		bottomBaselineID = null;
+		void tick().then(() => { if (feedEl) feedEl.scrollTop = feedEl.scrollHeight; });
+	}
+
+	async function handleReturnToNow() {
+		await returnToNow(feed);
+		scrollToBottomNow();
+	}
+
+	async function loadOlder() {
+		if (!feedEl) return;
+		const oldScrollHeight = feedEl.scrollHeight;
+		const oldScrollTop = feedEl.scrollTop;
+		await fetchOlderPage(feed);
+		await tick();
+		if (feedEl) feedEl.scrollTop = oldScrollTop + (feedEl.scrollHeight - oldScrollHeight);
+	}
+
+	// One-shot: on the first render where the panel is actually visible and
+	// measurable, land on the "New messages" divider (a quarter down from the
+	// top) if there's unread content, else the bottom. Every render after
+	// that just follows stickToBottom.
+	let didInitialScroll = $state(false);
 	$effect(() => {
-		// Re-runs when posts.length changes; tick() lets the new node render
-		// before we scroll.
 		void posts.length;
 		if (!feedEl) return;
-		void tick().then(() => {
-			if (feedEl) feedEl.scrollTop = feedEl.scrollHeight;
-		});
+		if (!didInitialScroll) {
+			if (!isOpen || posts.length === 0) return;
+			didInitialScroll = true;
+			void tick().then(() => {
+				if (!feedEl) return;
+				const divider = feedEl.querySelector('[data-feed-unread-divider]') as HTMLElement | null;
+				if (divider) {
+					feedEl.scrollTop = Math.max(0, divider.offsetTop - feedEl.clientHeight * 0.25);
+					stickToBottom = false;
+					bottomBaselineID = posts[posts.length - 1]?.id ?? 0;
+				} else {
+					feedEl.scrollTop = feedEl.scrollHeight;
+					stickToBottom = true;
+				}
+			});
+			return;
+		}
+		if (stickToBottom) {
+			void tick().then(() => { if (feedEl) feedEl.scrollTop = feedEl.scrollHeight; });
+		}
+	});
+
+	function onScroll() {
+		if (!feedEl) return;
+		const near = isNearBottom(feedEl.scrollTop, feedEl.scrollHeight, feedEl.clientHeight, NEAR_BOTTOM_PX);
+		stickToBottom = near;
+		if (near) {
+			bottomBaselineID = null;
+		} else if (bottomBaselineID == null) {
+			bottomBaselineID = posts[posts.length - 1]?.id ?? 0;
+		}
+		if (feedEl.scrollTop < 100 && feed.hasMoreBefore && !feed.loadingOlder) {
+			void loadOlder();
+		}
+		scheduleReadReport();
+	}
+
+	// ── Read-marker reporting (Phase 2d) ───────────────────────────────────────
+	// Mark read when the panel is visible, the tab/window is visible, and the
+	// reader is scrolled near the bottom — debounced so a burst of arrivals
+	// doesn't fire a request per post. Conservative by design: reading halfway
+	// through a long unread run then leaving keeps the marker at the old
+	// position (see $lib/chatFeed's reportReadMarker for the history-mode
+	// guard — this never advances the marker while browsing a jumped-to
+	// window that may be discontiguous with the true unread span).
+	let readReportTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleReadReport() {
+		if (feed.mode !== 'live' || !isOpen) return;
+		if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+		if (!feedEl || !isNearBottom(feedEl.scrollTop, feedEl.scrollHeight, feedEl.clientHeight, NEAR_BOTTOM_PX)) return;
+		if (readReportTimer) clearTimeout(readReportTimer);
+		readReportTimer = setTimeout(() => { void reportReadMarker(feed); }, 2000);
+	}
+	function flushReadReport() {
+		if (readReportTimer) {
+			clearTimeout(readReportTimer);
+			readReportTimer = null;
+		}
+		void reportReadMarker(feed);
+	}
+
+	$effect(() => {
+		void posts.length;
+		void isOpen;
+		scheduleReadReport();
+	});
+
+	onMount(() => {
+		const onVisibility = () => scheduleReadReport();
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => document.removeEventListener('visibilitychange', onVisibility);
+	});
+
+	onDestroy(() => {
+		flushReadReport();
 	});
 
 	// ── Jump-to-anchor (from Public Record sidebar) ───────────────────────────
-	// When a jumpRequest arrives, expand the panel (mobile) and scroll the
-	// requested post into view. The `key` field on the request lets us
-	// re-jump to the same post repeatedly.
+	// By the time a jumpRequest arrives, +page.svelte has already resolved the
+	// anchor and (if needed) loaded it into `feed` via history mode — this
+	// effect only expands the panel (mobile) and scrolls the post into view.
 	$effect(() => {
 		if (!jumpRequest) return;
 		const targetID = jumpRequest.postID;
@@ -342,8 +451,10 @@
 					: null;
 			await createPlayerPost(gameID, body, { speakingAsAssetID });
 			newBody = '';
-			// The WS broadcast will append the post to the parent's array; no
-			// optimistic insert needed.
+			// The WS broadcast will append the post to the feed; no optimistic
+			// insert needed. Sending your own message should always land you
+			// back at the tail, even if you'd scrolled up to read history.
+			scrollToBottomNow();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not send.';
 		} finally {
@@ -427,61 +538,88 @@
 		</button>
 	</header>
 
-	<div class="feed" bind:this={feedEl}>
-		{#if visiblePosts.length === 0}
-			<p class="empty">
-				{posts.length === 0 ? 'No messages yet. Say something.' : 'No events match the current filter.'}
-			</p>
-		{:else}
-			{#each visiblePosts as post (post.id)}
-				{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
-					<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
-						<span class="boundary-line"></span>
-						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						<span class="boundary-label">{@html renderLogBody(post.body)}</span>
-						<span class="boundary-line"></span>
-					</div>
-				{:else if post.author_id == null}
-					<div
-						class="log"
-						class:important={post.severity >= SEVERITY.IMPORTANT}
-						data-post-id={post.id}
-						data-code={post.system_code}
-					>
-						{#if post.severity >= SEVERITY.IMPORTANT}
-							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-							<span class="log-body">{@html renderLogBody(post.body)}</span>
+	<div class="feed-wrap">
+		<div class="feed" bind:this={feedEl} onscroll={onScroll}>
+			{#if visiblePosts.length === 0}
+				<p class="empty">
+					{posts.length === 0 ? 'No messages yet. Say something.' : 'No events match the current filter.'}
+				</p>
+			{:else}
+				{#each feedItems as item (item.key)}
+					{#if item.kind === 'day-divider'}
+						<div class="day-divider" role="separator">
+							<span class="day-divider-line"></span>
+							<span class="day-divider-label">{item.label}</span>
+							<span class="day-divider-line"></span>
+						</div>
+					{:else if item.kind === 'unread-divider'}
+						<div class="unread-divider" data-feed-unread-divider role="separator">
+							<span class="unread-divider-line"></span>
+							<span class="unread-divider-label">New messages</span>
+							<span class="unread-divider-line"></span>
+						</div>
+					{:else}
+						{@const post = item.post}
+						{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
+							<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
+								<span class="boundary-line"></span>
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+								<span class="boundary-label">{@html renderLogBody(post.body)}</span>
+								<span class="boundary-line"></span>
+							</div>
+						{:else if post.author_id == null}
+							<div
+								class="log"
+								class:important={post.severity >= SEVERITY.IMPORTANT}
+								data-post-id={post.id}
+								data-code={post.system_code}
+							>
+								{#if post.severity >= SEVERITY.IMPORTANT}
+									<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+									<span class="log-body">{@html renderLogBody(post.body)}</span>
+								{:else}
+									<span class="log-glyph" aria-hidden="true">•</span>
+									<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+									<span class="log-body">{@html renderLogBody(post.body)}</span>
+									<span class="log-time">{fmtTime(post.created_at)}</span>
+								{/if}
+							</div>
 						{:else}
-							<span class="log-glyph" aria-hidden="true">•</span>
-							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-							<span class="log-body">{@html renderLogBody(post.body)}</span>
-							<span class="log-time">{fmtTime(post.created_at)}</span>
+							{@const inCharacter = post.speaking_as_asset_id != null}
+							{@const color = playerColorByID(post.author_id, players)}
+							{@const personaName = inCharacter
+								? assetName(post.speaking_as_asset_id) || playerName(post.author_id)
+								: playerName(post.author_id)}
+							{@const playerTag = inCharacter ? playerName(post.author_id) : ''}
+							<div
+								class="message"
+								data-post-id={post.id}
+								class:own={post.author_id === currentPlayerID}
+								style:--player-color={color}
+							>
+								<span class="msg-author">
+									{personaName}
+									{#if playerTag && playerTag !== personaName}
+										<span class="msg-player-tag">({playerTag})</span>
+									{/if}
+								</span>
+								<span class="msg-body">{post.body}</span>
+								<span class="msg-time">{fmtTime(post.created_at)}</span>
+							</div>
 						{/if}
-					</div>
-				{:else}
-					{@const inCharacter = post.speaking_as_asset_id != null}
-					{@const color = playerColorByID(post.author_id, players)}
-					{@const personaName = inCharacter
-						? assetName(post.speaking_as_asset_id) || playerName(post.author_id)
-						: playerName(post.author_id)}
-					{@const playerTag = inCharacter ? playerName(post.author_id) : ''}
-					<div
-						class="message"
-						data-post-id={post.id}
-						class:own={post.author_id === currentPlayerID}
-						style:--player-color={color}
-					>
-						<span class="msg-author">
-							{personaName}
-							{#if playerTag && playerTag !== personaName}
-								<span class="msg-player-tag">({playerTag})</span>
-							{/if}
-						</span>
-						<span class="msg-body">{post.body}</span>
-						<span class="msg-time">{fmtTime(post.created_at)}</span>
-					</div>
-				{/if}
-			{/each}
+					{/if}
+				{/each}
+			{/if}
+		</div>
+
+		{#if feed.mode === 'history'}
+			<button type="button" class="return-to-now" onclick={handleReturnToNow}>
+				⬇ Return to now
+			</button>
+		{:else if pendingNewCount > 0}
+			<button type="button" class="new-pill" onclick={scrollToBottomNow}>
+				↓ {pendingNewCount} new
+			</button>
 		{/if}
 	</div>
 
@@ -725,6 +863,14 @@
 
 	/* ── Feed ─────────────────────────────────────────────────────────────── */
 
+	.feed-wrap {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
 	.feed {
 		flex: 1;
 		overflow-y: auto;
@@ -750,6 +896,75 @@
 	@keyframes jump-pulse {
 		0%   { background: rgba(200, 169, 110, 0.45); }
 		100% { background: transparent; }
+	}
+
+	/* Day divider — a plain centered label, distinct from the accent-colored
+	   unread divider so the two don't compete visually. */
+	.day-divider {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0.2rem 0;
+	}
+	.day-divider-line {
+		flex: 1;
+		height: 1px;
+		background: var(--color-border-subtle);
+	}
+	.day-divider-label {
+		font-size: 0.72rem;
+		color: var(--color-text-faint);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		white-space: nowrap;
+	}
+
+	/* "New messages" divider — accent-colored so it reads as the one thing
+	   worth stopping to look at while scrolling past the day dividers. */
+	.unread-divider {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0.3rem 0;
+	}
+	.unread-divider-line {
+		flex: 1;
+		height: 1px;
+		background: var(--color-accent);
+		opacity: 0.5;
+	}
+	.unread-divider-label {
+		font-size: 0.72rem;
+		color: var(--color-accent);
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		white-space: nowrap;
+	}
+
+	/* "↓ N new" pill / "Return to now" — pinned to the bottom of the feed,
+	   floating above the content. ≥44px tap target (mobile-first). */
+	.new-pill, .return-to-now {
+		position: absolute;
+		left: 50%;
+		bottom: 0.6rem;
+		transform: translateX(-50%);
+		min-height: 44px;
+		padding: 0 1rem;
+		border-radius: 999px;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-accent);
+		color: var(--color-bg);
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+		z-index: 5;
+		white-space: nowrap;
+	}
+	.return-to-now {
+		background: var(--color-surface-2);
+		color: var(--color-accent);
+		border-color: var(--color-accent);
 	}
 
 	.message {

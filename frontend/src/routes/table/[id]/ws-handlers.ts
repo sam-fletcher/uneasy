@@ -11,6 +11,7 @@ import type {
 	ScenePeerView, SceneSetupDraft, PreparePlanDraft, DiceRoll, DiceRollDie,
 	VoteView, RollParticipant, BankedDie, Plan, PlanToken,
 } from '$lib/api';
+import { appendLivePost, type ChatFeedContext } from '$lib/chatFeed';
 
 /**
  * Mutable view of the table page's WS-synced state. Each property is backed
@@ -29,7 +30,10 @@ export interface WSContext {
 	laws: Law[];
 	rumors: Rumor[];
 	secrets: Secret[];
-	chatPosts: ChatPost[];
+	/** Owns the contiguous post window, live/history mode, and cursors — see
+	 *  $lib/chatFeed. A stable reference; ScenePostCreated mutates its .posts
+	 *  field via appendLivePost rather than reassigning this property. */
+	readonly chatFeed: ChatFeedContext;
 	recordRows: RecordRow[];
 	rowState: RowState | null;
 	activeScene: Scene | null;
@@ -188,9 +192,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		}
 		case EventTypes.ScenePostCreated: {
 			const post = msg.payload.post as ChatPost;
-			if (!ctx.chatPosts.find(p => p.id === post.id)) {
-				ctx.chatPosts = [...ctx.chatPosts, post];
-			}
+			appendLivePost(ctx.chatFeed, post);
 			break;
 		}
 		case EventTypes.SceneEntryCreated: {

@@ -10,7 +10,7 @@
 		getGameState, getMe,
 		startPrologue,
 		updateToneTopic, addToneTopic,
-		listAssets, getFullRecord, listGamePosts,
+		listAssets, getFullRecord,
 		getActiveRollForGame, listBankedDice,
 		listPlans, listPlanTokens,
 		setEndgameMode,
@@ -23,9 +23,13 @@
 		type SceneSetupDraft,
 		type PreparePlanDraft,
 		type RowState,
+		type AnchorRequest,
 	} from '$lib/api';
 	import { createConnection, type WSMessage } from '$lib/ws';
 	import { handleWSMessage as runWSMessage, type WSContext } from './ws-handlers';
+	import {
+		reconnectResync, resolveAnchor, enterHistoryMode, type ChatFeedContext,
+	} from '$lib/chatFeed';
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
 		Law, Rumor,
@@ -83,7 +87,30 @@
 
 	// ── Public record + unified chat feed ─────────────────────────────────────
 	let recordRows = $state<RecordRow[]>([]);
-	let chatPosts = $state<ChatPost[]>([]);
+
+	// Chat Overhaul Phase 2: the feed's state lives here (owned by the page,
+	// like every other piece of table state), wired into a ChatFeedContext
+	// (see $lib/chatFeed) whose fields are get/set accessors over these runes
+	// — the same pattern ws-handlers.ts uses for the rest of WSContext. Pass
+	// `chatFeed` itself down to ChatPanel and into wsCtx rather than threading
+	// each field as a separate prop.
+	let chatFeedPosts = $state<ChatPost[]>([]);
+	let chatFeedMode = $state<'live' | 'history'>('live');
+	let chatHasMoreBefore = $state(false);
+	let chatHasMoreAfter = $state(false);
+	let chatLastReadPostID = $state(0);
+	let chatInitialReadMarker = $state(0);
+	let chatLoadingOlder = $state(false);
+	const chatFeed: ChatFeedContext = {
+		get gameID() { return gameID; },
+		get posts() { return chatFeedPosts; }, set posts(v) { chatFeedPosts = v; },
+		get mode() { return chatFeedMode; }, set mode(v) { chatFeedMode = v; },
+		get hasMoreBefore() { return chatHasMoreBefore; }, set hasMoreBefore(v) { chatHasMoreBefore = v; },
+		get hasMoreAfter() { return chatHasMoreAfter; }, set hasMoreAfter(v) { chatHasMoreAfter = v; },
+		get lastReadPostID() { return chatLastReadPostID; }, set lastReadPostID(v) { chatLastReadPostID = v; },
+		get initialReadMarker() { return chatInitialReadMarker; }, set initialReadMarker(v) { chatInitialReadMarker = v; },
+		get loadingOlder() { return chatLoadingOlder; }, set loadingOlder(v) { chatLoadingOlder = v; },
+	};
 
 	// ── Row state ─────────────────────────────────────────────────────────────
 	// Server-authoritative "which step of the row are we in?" — see
@@ -239,34 +266,40 @@
 	const atRiskByPlayer = $derived(atRiskCountByPlayer(assets));
 
 	// ── Public Record → Chat jump bridge ──────────────────────────────────────
-	// Tapping a row/plan/scene in the expanded sidebar finds the anchoring
-	// system post in chatPosts and pushes a request to ChatPanel, which
-	// scrolls there (and on mobile, expands itself first).
+	// Tapping a row/plan/scene in the expanded sidebar resolves the anchoring
+	// system post (Chat Overhaul Phase 2e: the loaded window first, cheap;
+	// then the Phase 1d anchor endpoint) and pushes a request to ChatPanel,
+	// which scrolls there (and on mobile, expands itself first). If the
+	// anchor wasn't already loaded, this also switches the feed into history
+	// mode via an around-fetch — ChatPanel's "Return to now" button gets the
+	// player back to the live tail afterward.
 	let chatJumpRequest = $state<{ postID: number; key: number } | null>(null);
 	let jumpKey = 0;
 	function jumpTo(postID: number) {
 		chatJumpRequest = { postID, key: ++jumpKey };
 	}
-	function jumpToRow(rowNumber: number) {
-		const anchor = chatPosts.find(p =>
-			p.system_code === 'row.advanced' && p.row_number === rowNumber
-		);
-		if (anchor) { jumpTo(anchor.id); return; }
-		// Row 1 has no row.advanced post — fall back to the first post.
-		if (rowNumber === 1 && chatPosts.length > 0) jumpTo(chatPosts[0].id);
+	async function jumpToAnchor(req: AnchorRequest) {
+		const resolved = await resolveAnchor(chatFeed, req);
+		if (!resolved) return;
+		if (!resolved.inWindow) await enterHistoryMode(chatFeed, resolved.postID);
+		jumpTo(resolved.postID);
+	}
+	async function jumpToRow(rowNumber: number) {
+		if (rowNumber === 1) {
+			// Row 1 has no row.advanced post — best-effort fall back to
+			// whatever's currently the oldest loaded post (there's no anchor
+			// endpoint for "the very first post of the game").
+			if (chatFeedPosts.length > 0) jumpTo(chatFeedPosts[0].id);
+			return;
+		}
+		await jumpToAnchor({ code: 'row.advanced', row: rowNumber });
 	}
 	function jumpToPlan(planID: number) {
-		const anchor = chatPosts.find(p =>
-			p.system_code === 'plan.prepared' && p.plan_id === planID
-		);
-		if (anchor) jumpTo(anchor.id);
+		void jumpToAnchor({ code: 'plan.prepared', planID });
 	}
 	function jumpToScene(rowNumber: number) {
 		// SceneEntry doesn't carry scene_id — anchor by row's first scene.started.
-		const anchor = chatPosts.find(p =>
-			p.system_code === 'scene.started' && p.row_number === rowNumber
-		);
-		if (anchor) jumpTo(anchor.id);
+		void jumpToAnchor({ code: 'scene.started', row: rowNumber });
 	}
 
 	// ── WebSocket ─────────────────────────────────────────────────────────────
@@ -289,7 +322,7 @@
 		get laws() { return laws; }, set laws(v) { laws = v; },
 		get rumors() { return rumors; }, set rumors(v) { rumors = v; },
 		get secrets() { return secrets; }, set secrets(v) { secrets = v; },
-		get chatPosts() { return chatPosts; }, set chatPosts(v) { chatPosts = v; },
+		chatFeed,
 		get recordRows() { return recordRows; }, set recordRows(v) { recordRows = v; },
 		get rowState() { return rowState; }, set rowState(v) { rowState = v; },
 		get activeScene() { return activeScene; }, set activeScene(v) { activeScene = v; },
@@ -346,11 +379,16 @@
 				} catch { /* tolerate; secrets feature is non-critical */ }
 			}
 
-			// Chat is available in every phase, so load it unconditionally.
+			// Chat is available in every phase, so resync it unconditionally.
+			// reconnectResync (Chat Overhaul Phase 2b) does the right thing for
+			// both the very first load (empty window → full initial fetch) and
+			// every reconnect after that (live mode: cheap `after` fetch; history
+			// mode: no-op — "Return to now" catches that window up on demand).
+			// This runs on every (re)connect per createConnection's contract, so
+			// it must never refetch the whole feed.
 			try {
-				const postsData = await listGamePosts(gameID);
-				chatPosts = postsData.posts;
-			} catch { /* tolerate empty chat on failure */ }
+				await reconnectResync(chatFeed);
+			} catch { /* tolerate; WS events + the next resync keep us eventually consistent */ }
 
 			// Public record, plans, active roll, and active scene only matter
 			// in main_event.
@@ -780,7 +818,7 @@
 		{#if !loading && currentPlayerID != null && game}
 			<ChatPanel
 				{gameID}
-				posts={chatPosts}
+				feed={chatFeed}
 				{players}
 				{currentPlayerID}
 				{typingLabel}

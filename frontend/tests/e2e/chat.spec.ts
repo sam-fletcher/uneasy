@@ -7,11 +7,31 @@ import { test, expect, request as pwRequest, type APIRequestContext } from '@pla
 //
 // Table creation and join are done via the HTTP API rather than the UI —
 // the UI for those flows is exercised separately. This spec exists to pin
-// the chat + WebSocket loop specifically.
+// the chat + WebSocket loop specifically. The Chat Overhaul Phase 2 tests
+// below (catch-up, scroll-up pagination, no-yank, jump-to-history) extend
+// it — see adr/CHAT_OVERHAUL_PLAN.md.
 
 async function devLogin(api: APIRequestContext, username: string) {
   const res = await api.post(`/api/dev/login?username=${encodeURIComponent(username)}`);
   expect(res.ok(), `dev-login for ${username} failed`).toBeTruthy();
+}
+
+/** Posts `count` player messages via the API, sequentially, with bodies
+ *  `${prefix}-0` .. `${prefix}-(count-1)`. Used to build up enough chat
+ *  history that the windowed feed's pagination/context math kicks in. */
+async function sendMessages(api: APIRequestContext, tableId: number, prefix: string, count: number) {
+  for (let i = 0; i < count; i++) {
+    const res = await api.post(`/api/tables/${tableId}/posts`, { data: { body: `${prefix}-${i}` } });
+    expect(res.ok(), `post ${prefix}-${i} failed`).toBeTruthy();
+  }
+}
+
+/** The newest post's id, as seen by `api`. */
+async function newestPostID(api: APIRequestContext, tableId: number): Promise<number> {
+  const res = await api.get(`/api/tables/${tableId}/posts`);
+  expect(res.ok()).toBeTruthy();
+  const { posts } = (await res.json()) as { posts: { id: number }[] };
+  return posts[posts.length - 1].id;
 }
 
 test('alice sends a chat message; bob sees it live', async ({ browser, playwright }) => {
@@ -66,6 +86,194 @@ test('alice sends a chat message; bob sees it live', async ({ browser, playwrigh
   // The real assertion: bob's page picks it up via the WebSocket broadcast
   // without any navigation or reload.
   await expect(bobChat.getByText(message)).toBeVisible();
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});
+
+test('catch-up: messages sent while away show the unread badge and the New messages divider', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  await reset.post('http://localhost:8090/api/dev/reset');
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice');
+  await devLogin(bobCtx.request, 'bob');
+
+  const createRes = await aliceCtx.request.post('/api/tables');
+  const { game } = await createRes.json();
+  const tableId: number = game.id;
+  await bobCtx.request.post('/api/tables/join', { data: { join_code: game.join_code } });
+
+  // Bob posts while alice is "away" — she hasn't opened the table page yet,
+  // so her last_read_post_id is still 0 and every one of these is unread.
+  const awayMessage = `away-msg-${Date.now()}`;
+  await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: awayMessage } });
+
+  // Mobile viewport: the unread badge only renders on the collapsed strip
+  // (desktop's panel is always open, so it has no separate "closed" state
+  // to badge). See feedback_mobile_first.
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 390, height: 844 });
+  await alicePage.goto(`/table/${tableId}`);
+
+  const strip = alicePage.locator('.strip');
+  await expect(strip).toHaveClass(/has-unread/);
+  await expect(strip.locator('.unread-badge')).toHaveText('1');
+
+  // Opening the panel reveals the "New messages" divider right above the
+  // message that arrived while she was away. Expanded-mobile sets
+  // role="dialog" (see ChatPanel.svelte), so locate by aria-label rather
+  // than the desktop-only "complementary" role.
+  await strip.click();
+  const chat = alicePage.locator('[aria-label="Chat"]');
+  await expect(chat.getByText('New messages')).toBeVisible();
+  await expect(chat.getByText(awayMessage)).toBeVisible();
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});
+
+test('scroll-up pagination: older posts outside the initial window load on demand', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  await reset.post('http://localhost:8090/api/dev/reset');
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice');
+  await devLogin(bobCtx.request, 'bob');
+
+  const createRes = await aliceCtx.request.post('/api/tables');
+  const { game } = await createRes.json();
+  const tableId: number = game.id;
+  await bobCtx.request.post('/api/tables/join', { data: { join_code: game.join_code } });
+
+  // Build up history in two batches with alice's read marker parked between
+  // them, so a *fresh* load's "extend back 30 posts of read context" doesn't
+  // simply swallow the whole thing (a brand-new marker of 0 would pull in
+  // every unread post regardless of count, up to the 500 cap — see
+  // buildInitialWindow in handler/posts.go). filler-* ends up outside the
+  // initial window; newmsg-* stays inside it.
+  await sendMessages(bobCtx.request, tableId, 'filler', 50);
+  const markerID = await newestPostID(aliceCtx.request, tableId);
+  const markRes = await aliceCtx.request.put(`/api/tables/${tableId}/read-marker`, {
+    data: { last_read_post_id: markerID },
+  });
+  expect(markRes.ok()).toBeTruthy();
+  await sendMessages(bobCtx.request, tableId, 'newmsg', 120);
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.goto(`/table/${tableId}`);
+  const aliceChat = alicePage.getByRole('complementary', { name: 'Chat' });
+  await expect(aliceChat).toBeVisible();
+  const feed = aliceChat.locator('.feed');
+
+  await expect(feed.getByText('newmsg-0')).toBeVisible();
+  await expect(feed.getByText('filler-0')).toHaveCount(0);
+
+  await feed.evaluate((el) => { el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); });
+
+  await expect(feed.getByText('filler-0')).toBeVisible();
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});
+
+test('scrolled away from the bottom is not yanked back when a new message arrives', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  await reset.post('http://localhost:8090/api/dev/reset');
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice');
+  await devLogin(bobCtx.request, 'bob');
+
+  const createRes = await aliceCtx.request.post('/api/tables');
+  const { game } = await createRes.json();
+  const tableId: number = game.id;
+  await bobCtx.request.post('/api/tables/join', { data: { join_code: game.join_code } });
+
+  // Enough history that the feed genuinely overflows and has something to
+  // scroll away from.
+  await sendMessages(bobCtx.request, tableId, 'seed', 40);
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.goto(`/table/${tableId}`);
+  const aliceChat = alicePage.getByRole('complementary', { name: 'Chat' });
+  await expect(aliceChat).toBeVisible();
+  const feed = aliceChat.locator('.feed');
+  await expect(feed.getByText('seed-39')).toBeVisible();
+
+  await feed.evaluate((el) => { el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); });
+  const scrollTopBefore = await feed.evaluate((el) => el.scrollTop);
+
+  const message = `no-yank-${Date.now()}`;
+  await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: message } });
+
+  // The pill appears instead of the view snapping to the tail.
+  await expect(aliceChat.locator('.new-pill')).toBeVisible();
+  const scrollTopAfter = await feed.evaluate((el) => el.scrollTop);
+  expect(scrollTopAfter).toBeLessThanOrEqual(scrollTopBefore + 5);
+
+  // Tapping the pill catches her up.
+  await aliceChat.locator('.new-pill').click();
+  await expect(feed.getByText(message)).toBeVisible();
+  await expect(aliceChat.locator('.new-pill')).toHaveCount(0);
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});
+
+test('jumping to a row outside the loaded window enters history mode; Return to now exits it', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  await reset.post('http://localhost:8090/api/dev/reset');
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: gameID } = await seedRes.json();
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice'); // alice is the seed's facilitator + focus player
+  await devLogin(bobCtx.request, 'bob');
+
+  // A real row advance (not the /api/dev/* shortcut, which writes current_row
+  // directly and skips this) emits the row.advanced post the Public Record's
+  // row jump anchors on.
+  const advanceRes = await aliceCtx.request.post(`/api/tables/${gameID}/advance-row`);
+  expect(advanceRes.ok(), `advance-row failed: ${await advanceRes.text()}`).toBeTruthy();
+
+  // Same read-marker trick as the pagination test: push the row.advanced
+  // anchor far enough behind alice's marker that a fresh load's window
+  // starts after it.
+  await sendMessages(bobCtx.request, gameID, 'filler', 40);
+  const markerID = await newestPostID(aliceCtx.request, gameID);
+  await aliceCtx.request.put(`/api/tables/${gameID}/read-marker`, {
+    data: { last_read_post_id: markerID },
+  });
+  await sendMessages(bobCtx.request, gameID, 'newmsg', 120);
+
+  // Default Playwright viewport (1280x720) is exactly at PublicRecord's
+  // ≥1280px "permanent panel" breakpoint, so the row rail needs no tap to
+  // expand.
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.goto(`/table/${gameID}`);
+  const aliceChat = alicePage.getByRole('complementary', { name: 'Chat' });
+  await expect(aliceChat).toBeVisible();
+  await expect(aliceChat.getByText('Row 2 begins')).toHaveCount(0);
+
+  await alicePage.getByRole('button', { name: 'Jump to row 2' }).click();
+
+  await expect(aliceChat.locator('.return-to-now')).toBeVisible();
+  await expect(aliceChat.getByText('Row 2 begins')).toBeVisible();
+
+  await aliceChat.locator('.return-to-now').click();
+  await expect(aliceChat.locator('.return-to-now')).toHaveCount(0);
+  await expect(aliceChat.locator('.feed').getByText('newmsg-119')).toBeVisible();
 
   await aliceCtx.close();
   await bobCtx.close();

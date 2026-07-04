@@ -213,6 +213,19 @@ export interface ChatPost {
 /** @deprecated use ChatPost — retained briefly for incremental migration. */
 export type ScenePost = ChatPost;
 
+/**
+ * The envelope every GET /tables/{id}/posts mode returns (Chat Overhaul
+ * Phase 1b). `posts` is chronological (oldest → newest). `has_more_after`
+ * is only meaningful for `around` windows — the other modes' caller already
+ * knows whether they're at the live edge.
+ */
+export interface PostWindow {
+	posts: ChatPost[];
+	has_more_before: boolean;
+	has_more_after: boolean;
+	last_read_post_id: number;
+}
+
 export interface SceneEntry {
 	id: number;
 	game_id: number;
