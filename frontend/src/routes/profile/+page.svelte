@@ -168,17 +168,18 @@
 					<button class="action-btn secondary small" aria-label="Edit player name" onclick={() => { editingUsername = true; }}>Edit</button>
 				{/if}
 			</div>
-			<div class="row">
+			<!-- TODO: Hook up backend email handling -->
+			<!-- <div class="row">
 				<span class="label">Email</span>
 				{#if editingEmail}
 					<input type="email" aria-label="Email" bind:value={emailDraft} />
 					<button class="action-btn primary small" onclick={saveEmail}>Save</button>
 					<button class="action-btn secondary small" onclick={() => { editingEmail = false; emailDraft = me?.email ?? ''; }}>Cancel</button>
 				{:else}
-					<span>{me.email ?? '—'}</span>
+					<span>{me.email ?? 'Not set. For notifications and password recovery.'}</span>
 					<button class="action-btn secondary small" aria-label="Edit email" onclick={() => { editingEmail = true; }}>Edit</button>
 				{/if}
-			</div>
+			</div> -->
 			<div class="row">
 				<span class="label">Password</span>
 				{#if editingPassword}

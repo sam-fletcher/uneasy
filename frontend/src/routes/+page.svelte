@@ -114,12 +114,12 @@
 				<label for="c">Password</label>
 			</div>
 
-			{#if mode === 'signup'}
+			<!-- {#if mode === 'signup'}
 				<div class="field" transition:slide={{ duration: 180 }}>
 					<input id="e" type="email" autocomplete="email" placeholder=" " bind:value={email} disabled={loading} />
-					<label for="e">Email (optional — recovery & notifications)</label>
+					<label for="e">Email (optional: recovery & notifications)</label>
 				</div>
-			{/if}
+			{/if} -->
 
 			{#if error}<p class="error-text">{error}</p>{/if}
 
