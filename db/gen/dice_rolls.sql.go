@@ -14,7 +14,7 @@ const createDiceRoll = `-- name: CreateDiceRoll :one
 
 INSERT INTO dice_rolls (game_id, plan_id, row_number, actor_id, difficulty, stage)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage
+RETURNING id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage, shake_up_category
 `
 
 type CreateDiceRollParams struct {
@@ -52,6 +52,7 @@ func (q *Queries) CreateDiceRoll(ctx context.Context, arg CreateDiceRollParams) 
 		&i.CreatedAt,
 		&i.ResolvedAt,
 		&i.Stage,
+		&i.ShakeUpCategory,
 	)
 	return i, err
 }
@@ -135,8 +136,45 @@ func (q *Queries) CreateRollParticipant(ctx context.Context, arg CreateRollParti
 	return err
 }
 
+const createShakeUpDiceRoll = `-- name: CreateShakeUpDiceRoll :one
+INSERT INTO dice_rolls (game_id, actor_id, difficulty, stage, is_shake_up, shake_up_category)
+VALUES ($1, $2, 0, 'leverage', TRUE, $3)
+RETURNING id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage, shake_up_category
+`
+
+type CreateShakeUpDiceRollParams struct {
+	GameID          int64   `db:"game_id" json:"game_id"`
+	ActorID         int64   `db:"actor_id" json:"actor_id"`
+	ShakeUpCategory *string `db:"shake_up_category" json:"shake_up_category"`
+}
+
+// One player's step-1 roll for the current category: no difficulty (0 is the
+// shake-up sentinel), no plan/row association. Token gain is the distinct-face
+// result, computed at resolution like any other roll.
+func (q *Queries) CreateShakeUpDiceRoll(ctx context.Context, arg CreateShakeUpDiceRollParams) (DiceRoll, error) {
+	row := q.db.QueryRow(ctx, createShakeUpDiceRoll, arg.GameID, arg.ActorID, arg.ShakeUpCategory)
+	var i DiceRoll
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlanID,
+		&i.RowNumber,
+		&i.IsShakeUp,
+		&i.ActorID,
+		&i.Difficulty,
+		&i.AdjustedDifficulty,
+		&i.Result,
+		&i.Outcome,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+		&i.Stage,
+		&i.ShakeUpCategory,
+	)
+	return i, err
+}
+
 const getDiceRollByID = `-- name: GetDiceRollByID :one
-SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls WHERE id = $1
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage, shake_up_category FROM dice_rolls WHERE id = $1
 `
 
 func (q *Queries) GetDiceRollByID(ctx context.Context, id int64) (DiceRoll, error) {
@@ -156,12 +194,13 @@ func (q *Queries) GetDiceRollByID(ctx context.Context, id int64) (DiceRoll, erro
 		&i.CreatedAt,
 		&i.ResolvedAt,
 		&i.Stage,
+		&i.ShakeUpCategory,
 	)
 	return i, err
 }
 
 const getDiceRollByPlanID = `-- name: GetDiceRollByPlanID :one
-SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 1
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage, shake_up_category FROM dice_rolls WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 1
 `
 
 // Returns the most recent dice roll for a given plan (used during resolution).
@@ -182,20 +221,21 @@ func (q *Queries) GetDiceRollByPlanID(ctx context.Context, planID *int64) (DiceR
 		&i.CreatedAt,
 		&i.ResolvedAt,
 		&i.Stage,
+		&i.ShakeUpCategory,
 	)
 	return i, err
 }
 
 const getOpenRollByGame = `-- name: GetOpenRollByGame :one
-SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage, shake_up_category FROM dice_rolls
 WHERE game_id = $1 AND resolved_at IS NULL AND is_shake_up = FALSE
 ORDER BY created_at DESC
 LIMIT 1
 `
 
 // The game's in-flight interactive roll, if any. Mirrors the
-// uq_one_open_roll_per_game index: shake-up rolls (a separate instant mechanic
-// that leaves rows permanently unresolved) are excluded, so this returns only a
+// uq_one_open_roll_per_game index: shake-up rolls (a separate mechanic tracked
+// by GetOpenShakeUpRollByGame instead) are excluded, so this returns only a
 // genuine interactive roll still awaiting resolution.
 func (q *Queries) GetOpenRollByGame(ctx context.Context, gameID int64) (DiceRoll, error) {
 	row := q.db.QueryRow(ctx, getOpenRollByGame, gameID)
@@ -214,6 +254,39 @@ func (q *Queries) GetOpenRollByGame(ctx context.Context, gameID int64) (DiceRoll
 		&i.CreatedAt,
 		&i.ResolvedAt,
 		&i.Stage,
+		&i.ShakeUpCategory,
+	)
+	return i, err
+}
+
+const getOpenShakeUpRollByGame = `-- name: GetOpenShakeUpRollByGame :one
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage, shake_up_category FROM dice_rolls
+WHERE game_id = $1 AND is_shake_up = TRUE AND resolved_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+// The game's in-flight shake-up roll, if any. Step 1 rolls happen one player
+// at a time (reverse rank order), so at most one shake-up roll is open per
+// game.
+func (q *Queries) GetOpenShakeUpRollByGame(ctx context.Context, gameID int64) (DiceRoll, error) {
+	row := q.db.QueryRow(ctx, getOpenShakeUpRollByGame, gameID)
+	var i DiceRoll
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlanID,
+		&i.RowNumber,
+		&i.IsShakeUp,
+		&i.ActorID,
+		&i.Difficulty,
+		&i.AdjustedDifficulty,
+		&i.Result,
+		&i.Outcome,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+		&i.Stage,
+		&i.ShakeUpCategory,
 	)
 	return i, err
 }
@@ -273,7 +346,7 @@ func (q *Queries) ListDiceByRoll(ctx context.Context, rollID int64) ([]DiceRollD
 }
 
 const listDiceRollsByGame = `-- name: ListDiceRollsByGame :many
-SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC
+SELECT id, game_id, plan_id, row_number, is_shake_up, actor_id, difficulty, adjusted_difficulty, result, outcome, created_at, resolved_at, stage, shake_up_category FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC
 `
 
 func (q *Queries) ListDiceRollsByGame(ctx context.Context, gameID int64) ([]DiceRoll, error) {
@@ -299,6 +372,7 @@ func (q *Queries) ListDiceRollsByGame(ctx context.Context, gameID int64) ([]Dice
 			&i.CreatedAt,
 			&i.ResolvedAt,
 			&i.Stage,
+			&i.ShakeUpCategory,
 		); err != nil {
 			return nil, err
 		}

@@ -151,6 +151,33 @@ func GetActiveRollForGame(s *db.Store) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+
+		// During the Shake-Up, "the active roll" is the open shake-up roll (if
+		// any) — a direct, indexed lookup, rather than the interactive-roll scan
+		// below (which only ever tracks is_shake_up=FALSE rolls and would need a
+		// plan lookup per candidate that's meaningless once plans no longer exist).
+		if game, gerr := s.Q.GetGameByID(ctx, gameID); gerr == nil && game.Phase == model.PhaseShakeUp {
+			active, aerr := s.Q.GetOpenShakeUpRollByGame(ctx, gameID)
+			if aerr != nil {
+				respond(w, http.StatusOK, map[string]any{
+					"roll":         nil,
+					"dice":         []dbgen.DiceRollDice{},
+					"votes":        []voteView{},
+					"participants": []dbgen.DiceRollParticipant{},
+				})
+				return
+			}
+			dice, _ := s.Q.ListDiceByRoll(ctx, active.ID)
+			parts, _ := s.Q.ListParticipantsByRoll(ctx, active.ID)
+			respond(w, http.StatusOK, map[string]any{
+				"roll":         active,
+				"dice":         dice,
+				"votes":        []voteView{},
+				"participants": parts,
+			})
+			return
+		}
+
 		rolls, err := s.Q.ListDiceRollsByGame(ctx, gameID)
 		if err != nil {
 			respond(w, http.StatusOK, map[string]any{
@@ -707,6 +734,17 @@ func validateLeverageAsset(
 		respondErr(w, http.StatusConflict, "asset is destroyed")
 		return dbgen.Asset{}, false
 	}
+	if asset.IsLeveraged {
+		// Mirrors LeverageAsset's own check (handler/assets.go): an asset already
+		// leveraged — whether from an earlier roll this session or the standalone
+		// /assets/{id}/leverage action — can't be committed again until refreshed.
+		// This is what makes Shake-Up ruling 4 ("leverage is real and persistent
+		// across categories — nothing refreshes assets between them") actually
+		// hold: without it, an asset spent on the esteem roll could be leveraged
+		// again for knowledge.
+		respondErr(w, http.StatusConflict, "asset is already leveraged")
+		return dbgen.Asset{}, false
+	}
 	existingDice, err := q.ListDiceByRoll(ctx, roll.ID)
 	if err != nil {
 		respondInternalErr(w, r, "could not check dice", err)
@@ -820,6 +858,10 @@ func UseBankedDie(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		roll, player, ok := requireRollAccess(w, r, s.Q)
 		if !ok || !requireLeverageStage(w, roll) {
+			return
+		}
+		if roll.IsShakeUp {
+			respondErr(w, http.StatusConflict, "banked dice cannot be spent during the Shake-Up")
 			return
 		}
 

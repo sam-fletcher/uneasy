@@ -832,22 +832,26 @@ func EmitShakeUpEnded(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 
 // EmitShakeUpRolled writes the Default post for one player's category roll,
 // which gathers them that many spending tokens — an endgame outcome players
-// need in the record. total is their resulting pool.
+// need in the record. diceCount is how many dice were rolled (base +
+// leveraged); total is their resulting pool.
 func EmitShakeUpRolled(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	gameID, playerID int64,
-	result, total int16,
+	diceCount, result, total int16,
 	category string,
 ) {
 	name := playerDisplayName(ctx, q, playerID)
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.rolled",
 		model.SeverityDefault,
-		fmt.Sprintf("%s rolled %d — gains %d %s token(s) (pool: %d)",
-			name, result, result, shakeUpCategoryTitle(category), total),
+		fmt.Sprintf("%s rolled %d dice → %d distinct face(s) → %d %s token(s) (pool: %d)",
+			name, diceCount, result, result, shakeUpCategoryTitle(category), total),
 		nil, nil, nil,
-		map[string]any{"player_id": playerID, "result": result, "total": total, "category": category})
+		map[string]any{
+			"player_id": playerID, "dice_count": diceCount, "result": result,
+			"total": total, "category": category,
+		})
 }
 
 // shakeUpOptionPhrase turns an option's static Description ("Take a peer

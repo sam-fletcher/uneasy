@@ -123,6 +123,13 @@ func calculateRollResult(
 // finalizeRoll rolls every die, applies interference cancellation, writes
 // the result/outcome to the DB, and broadcasts roll.resolved. Called from
 // maybeAutoResolve and (legacy) CloseLeverage.
+//
+// Shake-up rolls (roll.IsShakeUp) have no difficulty and no make/mar
+// outcome — the result (distinct faces) is a token grant, not a check — so
+// they resolve with outcome=NULL and skip the plan-oriented follow-up
+// (applyAutoChoiceOnRoll, the roll.resolved chat post, RowState) in favor of
+// finalizeShakeUpRoll (handler/shake_up.go), which grants tokens and advances
+// the roller/step.
 func finalizeRoll(
 	ctx context.Context,
 	w http.ResponseWriter,
@@ -140,8 +147,13 @@ func finalizeRoll(
 		return err
 	}
 	result, outcome := calculateRollResult(actorDice, cancelledIDs, roll)
+
+	var outcomeParam *string
+	if !roll.IsShakeUp {
+		outcomeParam = &outcome
+	}
 	if err := q.ResolveDiceRoll(ctx, dbgen.ResolveDiceRollParams{
-		ID: roll.ID, Result: &result, Outcome: &outcome,
+		ID: roll.ID, Result: &result, Outcome: outcomeParam,
 	}); err != nil {
 		return err
 	}
@@ -149,12 +161,15 @@ func finalizeRoll(
 	if err != nil {
 		return err
 	}
-	// Plans whose post-roll make-choice carries no decision (Propose Decree)
-	// record the outcome here, before the broadcasts below, so every client that
-	// refetches on roll.resolved already sees the result applied — no flash of a
-	// decision-free "pass" gate, and the async sub-flow advances immediately.
-	if err := applyAutoChoiceOnRoll(ctx, q, manager, &resolved); err != nil {
-		return err
+	if !roll.IsShakeUp {
+		// Plans whose post-roll make-choice carries no decision (Propose Decree)
+		// record the outcome here, before the broadcasts below, so every client
+		// that refetches on roll.resolved already sees the result applied — no
+		// flash of a decision-free "pass" gate, and the async sub-flow advances
+		// immediately.
+		if err := applyAutoChoiceOnRoll(ctx, q, manager, &resolved); err != nil {
+			return err
+		}
 	}
 	finalDice, err := q.ListDiceByRoll(ctx, roll.ID)
 	if err != nil {
@@ -171,6 +186,11 @@ func finalizeRoll(
 		Dice:          finalDice,
 		CancelledDice: cancelledDice,
 	})
+
+	if roll.IsShakeUp {
+		return finalizeShakeUpRoll(ctx, q, manager, &resolved, int16(len(actorDice)), result)
+	}
+
 	effectiveDifficulty := resolved.Difficulty
 	if resolved.AdjustedDifficulty != nil {
 		effectiveDifficulty = *resolved.AdjustedDifficulty

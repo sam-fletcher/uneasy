@@ -26,11 +26,28 @@ SELECT * FROM dice_rolls WHERE game_id = $1 ORDER BY created_at ASC;
 
 -- name: GetOpenRollByGame :one
 -- The game's in-flight interactive roll, if any. Mirrors the
--- uq_one_open_roll_per_game index: shake-up rolls (a separate instant mechanic
--- that leaves rows permanently unresolved) are excluded, so this returns only a
+-- uq_one_open_roll_per_game index: shake-up rolls (a separate mechanic tracked
+-- by GetOpenShakeUpRollByGame instead) are excluded, so this returns only a
 -- genuine interactive roll still awaiting resolution.
 SELECT * FROM dice_rolls
 WHERE game_id = $1 AND resolved_at IS NULL AND is_shake_up = FALSE
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: CreateShakeUpDiceRoll :one
+-- One player's step-1 roll for the current category: no difficulty (0 is the
+-- shake-up sentinel), no plan/row association. Token gain is the distinct-face
+-- result, computed at resolution like any other roll.
+INSERT INTO dice_rolls (game_id, actor_id, difficulty, stage, is_shake_up, shake_up_category)
+VALUES ($1, $2, 0, 'leverage', TRUE, $3)
+RETURNING *;
+
+-- name: GetOpenShakeUpRollByGame :one
+-- The game's in-flight shake-up roll, if any. Step 1 rolls happen one player
+-- at a time (reverse rank order), so at most one shake-up roll is open per
+-- game.
+SELECT * FROM dice_rolls
+WHERE game_id = $1 AND is_shake_up = TRUE AND resolved_at IS NULL
 ORDER BY created_at DESC
 LIMIT 1;
 

@@ -58,6 +58,7 @@ type DiceRoll struct {
 	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	ResolvedAt         pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
 	Stage              string             `db:"stage" json:"stage"`
+	ShakeUpCategory    *string            `db:"shake_up_category" json:"shake_up_category"`
 }
 
 type DiceRollDice struct {

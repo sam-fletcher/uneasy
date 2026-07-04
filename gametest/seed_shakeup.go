@@ -47,6 +47,17 @@ func SeedShakeUp(ctx context.Context, q *dbgen.Queries, usernames []string, opts
 		return SeededGame{}, fmt.Errorf("set shake-up step: %w", err)
 	}
 
+	// Mirror BeginShakeUp's real-roll tail (handler/shake_up.go): when seeding
+	// step 1, open the first reverse-rank roller's roll so the roll endpoints
+	// (leverage/ready) work against the seeded game exactly like a live one.
+	// Skipped when the caller jumped straight to the spending step, since no
+	// roll should be open there.
+	if step == gamepkg.ShakeUpStepRolling {
+		if err := seedFirstShakeUpRoll(ctx, q, gameID, cat); err != nil {
+			return SeededGame{}, err
+		}
+	}
+
 	if cfg.shakeUpTokens > 0 {
 		for _, p := range seeded.Players {
 			if _, err := q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{
@@ -63,4 +74,50 @@ func SeedShakeUp(ctx context.Context, q *dbgen.Queries, usernames []string, opts
 		return SeededGame{}, fmt.Errorf("set phase: %w", err)
 	}
 	return reload(ctx, q, seeded)
+}
+
+// seedFirstShakeUpRoll opens category's first roller's roll: 2 base dice and
+// a single actor participant (intent "aid", not ready), directly in
+// stage='leverage' — mirroring handler.shakeUpOpenRollForRoller without the
+// hub broadcast (nothing is subscribed to a freshly seeded game). The first
+// roller is simply the first name in reverse-rank turn order, since no
+// shake-up rolls exist yet at seed time.
+func seedFirstShakeUpRoll(ctx context.Context, q *dbgen.Queries, gameID int64, category string) error {
+	rankings, err := q.ListRankingsByGame(ctx, gameID)
+	if err != nil {
+		return fmt.Errorf("load rankings: %w", err)
+	}
+	rows := make([]gamepkg.RankingRow, 0, len(rankings))
+	for _, rk := range rankings {
+		rows = append(rows, gamepkg.RankingRow{
+			PlayerID: rk.PlayerID, Category: string(rk.Category), Rank: rk.Rank,
+		})
+	}
+	order := gamepkg.ShakeUpTurnOrder(category, rows)
+	if len(order) == 0 {
+		return nil
+	}
+	rollerID := order[0]
+
+	cat := category
+	roll, err := q.CreateShakeUpDiceRoll(ctx, dbgen.CreateShakeUpDiceRollParams{
+		GameID: gameID, ActorID: rollerID, ShakeUpCategory: &cat,
+	})
+	if err != nil {
+		return fmt.Errorf("create shake-up roll: %w", err)
+	}
+	for range 2 {
+		if _, err := q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+			RollID: roll.ID, PlayerID: rollerID, IsInterference: false,
+		}); err != nil {
+			return fmt.Errorf("create die: %w", err)
+		}
+	}
+	aid := "aid"
+	if err := q.CreateRollParticipant(ctx, dbgen.CreateRollParticipantParams{
+		RollID: roll.ID, PlayerID: rollerID, Intent: &aid, IsReady: false,
+	}); err != nil {
+		return fmt.Errorf("create participant: %w", err)
+	}
+	return nil
 }
