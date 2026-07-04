@@ -160,6 +160,8 @@ func ListPlanTokens(s *db.Store) http.HandlerFunc {
 //
 // Returns which plan types the current player can prepare, and the computed
 // target row for each eligible plan. Ineligible plans include a reason.
+//
+//nolint:funlen // TODO: determine if there's a cleaner design
 func PlanEligibility(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, s.Q)

@@ -407,18 +407,21 @@ func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 	if manager == nil {
 		return
 	}
-	h, ok := manager.Get(gameID)
-	if !ok {
-		return
-	}
 	state, err := ComputeRowState(ctx, q, gameID)
 	if err != nil {
 		return
 	}
 	// If the row has reached a pending plan, auto-kick off resolution and
-	// recompute. The kickoff itself broadcasts plan.resolving; we'll then
-	// broadcast the recomputed row_state (kind=plan_resolving, or later if
-	// OnResolve fully resolved the plan synchronously, e.g. Make War).
+	// recompute — regardless of whether a hub exists for this game yet. The
+	// state transition (pending -> resolving) must happen even if nobody is
+	// currently connected (async play-by-post), not only when there happens
+	// to be a live broadcast to piggyback on; otherwise the plan is stuck
+	// pending until some other action incidentally re-triggers this function
+	// while a client is online. The kickoff itself broadcasts plan.resolving
+	// (a no-op if no hub exists); we'll then broadcast the recomputed
+	// row_state below (kind=plan_resolving, or later if OnResolve fully
+	// resolved the plan synchronously, e.g. Make War) — but only if there's
+	// actually a hub to broadcast to.
 	if state.Kind == model.RowStatePlanPending && state.PlanID != nil {
 		plan, perr := q.GetPlanByID(ctx, *state.PlanID)
 		if perr == nil {
@@ -429,6 +432,11 @@ func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 				state = recomputed
 			}
 		}
+	}
+
+	h, ok := manager.Get(gameID)
+	if !ok {
+		return
 	}
 	h.BroadcastEvent(model.EventRowStateChanged, model.RowStateChangedPayload{RowState: state})
 }
