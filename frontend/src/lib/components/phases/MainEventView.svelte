@@ -190,7 +190,9 @@
 	// leveraged assets the focus player actually has.
 	let maxRefresh = $derived(Math.min(game.current_row, refreshable.length));
 	// Button label: how many assets the click would refresh right now.
-	let refreshButtonCount = $derived(selectedRefreshIDs.length > 0 ? selectedRefreshIDs.length : maxRefresh);
+	// Refreshing none is a valid choice (the rules-mandated alternative to
+	// preparing a plan) so this is never coerced up to maxRefresh.
+	let refreshButtonCount = $derived(selectedRefreshIDs.length);
 
 	// Reset selections when assets or step changes.
 	$effect(() => {
@@ -514,7 +516,7 @@
 							<button
 								class="action-btn primary"
 								onclick={onRefreshAssets}
-								disabled={actionBusy || selectedRefreshIDs.length === 0}
+								disabled={actionBusy}
 							>
 								{actionBusy ? '…' : `Refresh ${refreshButtonCount} Asset${refreshButtonCount === 1 ? '' : 's'}`}
 							</button>

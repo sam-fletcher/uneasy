@@ -294,8 +294,8 @@ func finalizeReveal(
 // ── applyLiaiseDelayResult ────────────────────────────────────────────────────
 
 // applyLiaiseDelayResult updates the linked CL plan's row_number after the
-// delay reveal completes. If the computed row exceeds row 13, the plan is
-// cancelled instead.
+// delay reveal completes. If the computed row exceeds row 13, Explosive
+// Finale collapses it onto row 13 instead; otherwise the plan is cancelled.
 func applyLiaiseDelayResult(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -314,7 +314,9 @@ func applyLiaiseDelayResult(
 
 	targetRow := game.CurrentRow + resultDelay
 
-	if targetRow > publicRecordRowCount {
+	if targetRow > publicRecordRowCount && game.EndingMode != nil && *game.EndingMode == EndingModeExplosiveFinale {
+		targetRow = publicRecordRowCount
+	} else if targetRow > publicRecordRowCount {
 		// No room — cancel the plan.
 		_ = q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
 			ID:     planID,

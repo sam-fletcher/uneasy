@@ -280,11 +280,8 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		if len(body.AssetIDs) == 0 {
-			respond(w, http.StatusOK, map[string]any{"refreshed": []int64{}})
-			return
-		}
-
+		// An empty list is a valid "refresh nothing" action — the focus
+		// player still needs autoPassFocus below to move the turn on.
 		maxRefresh := int(game.CurrentRow)
 		if len(body.AssetIDs) > maxRefresh {
 			respondErr(w, http.StatusBadRequest,
@@ -403,7 +400,11 @@ func AdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		if ended {
-			respond(w, http.StatusOK, map[string]any{"phase": model.PhaseEnded})
+			// "ended" means the row advance crossed row 13 — today that
+			// always lands in Shake-Up (see advanceRowInner), never a true
+			// game-over state, so report the game's actual current phase
+			// rather than assuming.
+			respond(w, http.StatusOK, map[string]any{"phase": currentGamePhase(r.Context(), s.Q, game.ID)})
 			return
 		}
 		mwBroadcastBattleCostsDue(r.Context(), s.Q, manager, game.ID, newRow)
@@ -412,6 +413,19 @@ func AdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			"crossed_engrailed": isEngrailedLine(game.CurrentRow, newRow),
 		})
 	}
+}
+
+// currentGamePhase re-reads a game's phase from the DB. Used after a row
+// advance that crossed row 13, so the response reports what the game
+// actually transitioned into rather than assuming; falls back to
+// model.PhaseShakeUp (the only transition advanceRowInner performs today) if
+// the reload fails.
+func currentGamePhase(ctx context.Context, q *dbgen.Queries, gameID int64) model.GamePhase {
+	game, err := q.GetGameByID(ctx, gameID)
+	if err != nil {
+		return model.PhaseShakeUp
+	}
+	return game.Phase
 }
 
 // autoPassFocus runs steps 6–8 of the per-row loop as a side effect after the
@@ -608,10 +622,14 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		if ended {
+			// "ended" means the row advance crossed row 13 — today that
+			// always lands in Shake-Up (see advanceRowInner), never a true
+			// game-over state, so report the game's actual current phase
+			// rather than assuming.
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
-				"phase":             model.PhaseEnded,
+				"phase":             currentGamePhase(ctx, s.Q, game.ID),
 			})
 			return
 		}

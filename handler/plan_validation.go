@@ -165,7 +165,8 @@ func validatePlanPreparation(
 
 	// targetRow is nil when the plan defers its row to a post-prep reveal
 	// (Make War, Clandestinely Liaise); the row bound is re-checked when the
-	// reveal closes (see reveals.go, applyMakeWarDelayResult).
+	// reveal closes (see reveals.go, applyMakeWarDelayResult) — unless the
+	// bounds check below already collapses it onto row 13 (Explosive Finale).
 	var targetRow *int16
 	if meta.Delay == -1 {
 		targetRow = handlerTargetRow
@@ -174,10 +175,21 @@ func validatePlanPreparation(
 		targetRow = &row
 	}
 
+	// boundedRow is what the row-13 overflow check below runs against. A
+	// still-deferred plan (targetRow == nil) can't be checked directly, but
+	// if it has a known MinDelay (Make War, Clandestinely Liaise), even the
+	// best-case dice result is checked now rather than letting a
+	// guaranteed-futile declaration through only to be silently cancelled
+	// once the reveal completes (see applyMakeWarDelayResult).
+	boundedRow := targetRow
+	if targetRow == nil && meta.MinDelay > 0 {
+		row := game.CurrentRow + meta.MinDelay
+		boundedRow = &row
+	}
+
 	// Target row bounds. Past row 13 means we're hitting the end of the
-	// public record and the table needs to choose an endgame mode. Skipped
-	// when the row is deferred; the reveal-close path applies its own check.
-	if targetRow != nil && *targetRow > publicRecordRowCount {
+	// public record and the table needs to choose an endgame mode.
+	if boundedRow != nil && *boundedRow > publicRecordRowCount {
 		switch {
 		case game.EndingMode == nil:
 			return preparePlanValidation{

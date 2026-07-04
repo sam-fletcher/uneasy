@@ -53,7 +53,7 @@ func init() {
 type mwHandler struct{}
 
 func (mwHandler) Metadata() PlanMetadata {
-	return PlanMetadata{Category: model.CategoryPower, Delay: -1}
+	return PlanMetadata{Category: model.CategoryPower, Delay: -1, MinDelay: 1}
 }
 
 // PreparedDescriptor names the declared enemies in the plan.prepared log — the
@@ -101,6 +101,11 @@ func (mwHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 // OnPrepare creates the war row, enrols every participant on the correct
 // side, and opens a simultaneous reveal for the delay. Enemy list is read
 // from resolution_data (persisted by PreparePlan before this hook fires).
+//
+// plan.RowNumber is already non-nil when Explosive Finale collapsed this
+// declaration straight onto row 13 (validatePlanPreparation) — there's no
+// room left for even the minimum 1-row delay, so the reveal is skipped
+// entirely and the plan resolves normally when its row comes up.
 func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error {
 	resData := loadResolutionData(plan.ResolutionData)
 	mw := resData.EnsureMakeWar()
@@ -139,27 +144,30 @@ func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 		}
 	}
 
-	// Open the simultaneous reveal (all participants submit a die face).
-	reveal, errReveal := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
-		GameID:     plan.GameID,
-		PlanID:     &plan.ID,
-		RevealType: revealTypeMakeWarDelay,
-	})
-	if errReveal != nil {
-		return fmt.Errorf("create delay reveal: %w", errReveal)
-	}
-	all := append([]int64{plan.PreparerID}, mw.EnemyPlayerIDs...)
-	for _, pid := range all {
-		if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
-			RevealID: reveal.ID,
-			PlayerID: pid,
-		}); err != nil {
-			return fmt.Errorf("add reveal entry for %d: %w", pid, err)
+	mw.WarID = &war.ID
+
+	if plan.RowNumber == nil {
+		// Open the simultaneous reveal (all participants submit a die face).
+		reveal, errReveal := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
+			GameID:     plan.GameID,
+			PlanID:     &plan.ID,
+			RevealType: revealTypeMakeWarDelay,
+		})
+		if errReveal != nil {
+			return fmt.Errorf("create delay reveal: %w", errReveal)
 		}
+		all := append([]int64{plan.PreparerID}, mw.EnemyPlayerIDs...)
+		for _, pid := range all {
+			if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
+				RevealID: reveal.ID,
+				PlayerID: pid,
+			}); err != nil {
+				return fmt.Errorf("add reveal entry for %d: %w", pid, err)
+			}
+		}
+		mw.DelayRevealID = &reveal.ID
 	}
 
-	mw.WarID = &war.ID
-	mw.DelayRevealID = &reveal.ID
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return fmt.Errorf("save war resolution data: %w", err)
 	}
@@ -385,8 +393,9 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 
 // applyMakeWarDelayResult is invoked by reveals.go when the make_war_delay
 // simultaneous reveal completes. It sets the plan's row_number to
-// current_row + resultDelay (cancelling the plan — and the nascent war — if
-// the target exceeds row 13) and broadcasts war.declared.
+// current_row + resultDelay. If the target exceeds row 13, Explosive Finale
+// collapses it onto row 13 instead; otherwise the plan (and the nascent war)
+// is cancelled. Broadcasts war.declared either way.
 func applyMakeWarDelayResult(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -408,7 +417,9 @@ func applyMakeWarDelayResult(
 	resData := loadResolutionData(plan.ResolutionData)
 	mw := resData.EnsureMakeWar()
 
-	if targetRow > publicRecordRowCount {
+	if targetRow > publicRecordRowCount && game.EndingMode != nil && *game.EndingMode == EndingModeExplosiveFinale {
+		targetRow = publicRecordRowCount
+	} else if targetRow > publicRecordRowCount {
 		_ = q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
 			ID:     planID,
 			Status: model.PlanCancelled,

@@ -27,6 +27,13 @@ import (
 type PlanMetadata struct {
 	Category model.RankingCategory
 	Delay    int16 // Fixed delay (≥1), or -1 for variable
+	// MinDelay is the smallest possible delay for a variable-delay plan
+	// (Delay == -1) whose row is deferred to a post-prep dice reveal — Make
+	// War / Clandestinely Liaise can never resolve sooner than 1 row later
+	// (ceil of a d6 average, minimum face 1). Zero means "no known lower
+	// bound" (e.g. Make Demands, whose row is inherited from its target
+	// plan) and skips the row-13 overflow check below.
+	MinDelay int16
 }
 
 // ChoiceLimiter is an optional PlanHandler capability that bounds how many

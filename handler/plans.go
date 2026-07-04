@@ -221,10 +221,20 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 		for planType, h := range AllHandlers() {
 			meta := h.Metadata()
 
-			// Compute target row (variable-delay plans return -1 delay; skip row
-			// check here since we can't compute without player input).
+			// Compute target row (variable-delay plans return -1 delay; the
+			// exact row can't be computed without player input, but a known
+			// MinDelay — Make War, Clandestinely Liaise — still lets us catch
+			// the case where even the best-case dice result has no room left).
 			var targetRow int16
 			if meta.Delay == -1 {
+				if meta.MinDelay > 0 && game.CurrentRow+meta.MinDelay > publicRecordRowCount {
+					ineligible = append(ineligible, ineligibleEntry{
+						PlanType: planType,
+						Category: meta.Category,
+						Reason:   "no room on the public record (would exceed row 13)",
+					})
+					continue
+				}
 				eligible = append(eligible, eligibleEntry{
 					PlanType:  planType,
 					Category:  meta.Category,

@@ -174,7 +174,7 @@ func seedStartingAssets(ctx context.Context, q *dbgen.Queries, gameID int64, pla
 			OwnerID:         p.ID,
 			CreatorID:       p.ID,
 			AssetType:       model.AssetPeer,
-			Name:            fmt.Sprintf("%s (main character)", p.DisplayName),
+			Name:            fmt.Sprintf("%s's main character", p.DisplayName),
 			IsMainCharacter: true,
 		}); err != nil {
 			return fmt.Errorf("seed main character for %q: %w", p.DisplayName, err)

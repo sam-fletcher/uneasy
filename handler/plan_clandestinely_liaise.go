@@ -69,8 +69,9 @@ func init() {
 type clHandler struct{}
 
 func (clHandler) Metadata() PlanMetadata {
-	// Delay -1 = variable; the actual delay is determined by simultaneous reveal.
-	return PlanMetadata{Category: model.CategoryKnowledge, Delay: -1}
+	// Delay -1 = variable; the actual delay is determined by simultaneous
+	// reveal, and can never be less than 1 (see MinDelay doc comment).
+	return PlanMetadata{Category: model.CategoryKnowledge, Delay: -1, MinDelay: 1}
 }
 
 // PreparedDescriptor names the two peers about to meet. The liaison itself is
@@ -232,42 +233,50 @@ func (clHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 // ── OnPrepare ─────────────────────────────────────────────────────────────────
 
 // OnPrepare implements OnPreparer. Called immediately after the plan is created
-// by PreparePlan. Sets up the simultaneous delay reveal between preparer and partner.
+// by PreparePlan. Sets up the simultaneous delay reveal between preparer and
+// partner.
+//
+// plan.RowNumber is already non-nil when Explosive Finale collapsed this
+// liaison straight onto row 13 (validatePlanPreparation) — there's no room
+// left for even the minimum 1-row delay, so the reveal is skipped entirely
+// and the plan resolves normally when its row comes up.
 func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error {
 	if plan.TargetPlayerID == nil {
 		return errors.New("clandestinely_liaise requires a target player (partner)")
 	}
 	partnerID := *plan.TargetPlayerID
 
-	// Create the simultaneous reveal row for the delay.
-	reveal, err := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
-		GameID:     plan.GameID,
-		PlanID:     &plan.ID,
-		RevealType: revealTypeLiaiseDelay,
-	})
-	if err != nil {
-		return fmt.Errorf("could not create liaise delay reveal: %w", err)
-	}
-
-	// Register both participants.
-	if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
-		RevealID: reveal.ID,
-		PlayerID: plan.PreparerID,
-	}); err != nil {
-		return fmt.Errorf("could not add preparer to reveal: %w", err)
-	}
-	if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
-		RevealID: reveal.ID,
-		PlayerID: partnerID,
-	}); err != nil {
-		return fmt.Errorf("could not add partner to reveal: %w", err)
-	}
-
-	// Store partner_id and reveal_id in resolution_data.
 	resData := loadResolutionData(plan.ResolutionData)
 	ld := resData.EnsureLiaise()
 	ld.PartnerID = &partnerID
-	ld.DelayRevealID = &reveal.ID
+
+	if plan.RowNumber == nil {
+		// Create the simultaneous reveal row for the delay.
+		reveal, err := deps.Q.CreateSimultaneousReveal(ctx, dbgen.CreateSimultaneousRevealParams{
+			GameID:     plan.GameID,
+			PlanID:     &plan.ID,
+			RevealType: revealTypeLiaiseDelay,
+		})
+		if err != nil {
+			return fmt.Errorf("could not create liaise delay reveal: %w", err)
+		}
+
+		// Register both participants.
+		if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
+			RevealID: reveal.ID,
+			PlayerID: plan.PreparerID,
+		}); err != nil {
+			return fmt.Errorf("could not add preparer to reveal: %w", err)
+		}
+		if err := deps.Q.CreateRevealEntry(ctx, dbgen.CreateRevealEntryParams{
+			RevealID: reveal.ID,
+			PlayerID: partnerID,
+		}); err != nil {
+			return fmt.Errorf("could not add partner to reveal: %w", err)
+		}
+
+		ld.DelayRevealID = &reveal.ID
+	}
 
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return fmt.Errorf("could not save liaise resolution data: %w", err)
