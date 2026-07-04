@@ -32,10 +32,12 @@
 		type Scene,
 		type ScenePeerView,
 	} from '$lib/api';
-	import { playerColorByID, OOC_COLOR } from '$lib/playerColor';
+	import { playerColorByID } from '$lib/playerColor';
 	import { SEVERITY } from '$lib/severity';
 	import {
 		type ChatFeedContext,
+		type FeedItem,
+		type SceneGroupItem,
 		buildFeedItems,
 		countUnread,
 		isNearBottom,
@@ -43,6 +45,7 @@
 		reportReadMarker,
 		returnToNow,
 		systemCodeFamily,
+		parseSceneStartedData,
 	} from '$lib/chatFeed';
 
 	// System-log bodies use a tiny markup subset: **…** spans wrap
@@ -290,6 +293,55 @@
 		buildFeedItems(visiblePosts, { unreadAfterID: feed.initialReadMarker, currentPlayerID })
 	);
 
+	// ── Scene containers (Phase 4c) ────────────────────────────────────────────
+	// Expansion is in-memory only (per session, per the plan) — a plain map of
+	// explicit user overrides, keyed by scene id. Absent an override, a group
+	// defaults to expanded while open (still active, or the window truncated
+	// before its close) or while the unread divider falls inside it, and
+	// collapsed once ended and fully read. The game's actual live scene (from
+	// `activeScene`, not just "this group has no endPost yet") is always
+	// expanded and cannot be collapsed — a truncated-but-really-already-ended
+	// group the user hasn't loaded the close for is not locked, just defaulted.
+	let sceneExpandOverrides = $state<Record<number, boolean>>({});
+
+	function isSceneLive(group: SceneGroupItem): boolean {
+		return activeScene != null && group.sceneID === activeScene.id;
+	}
+
+	function isSceneExpanded(group: SceneGroupItem): boolean {
+		if (isSceneLive(group)) return true;
+		const override = sceneExpandOverrides[group.sceneID];
+		if (override != null) return override;
+		return group.open || group.unreadDividerInside;
+	}
+
+	function toggleSceneExpanded(group: SceneGroupItem) {
+		if (isSceneLive(group)) return;
+		sceneExpandOverrides = { ...sceneExpandOverrides, [group.sceneID]: !isSceneExpanded(group) };
+	}
+
+	// Recursively finds the scene-group (if any) whose *collapsed* contents
+	// would hide the given post id — i.e. every scene-group containing it,
+	// except when the post IS that group's own header post (always visible).
+	function findCollapsingScene(items: FeedItem[], postID: number): SceneGroupItem | null {
+		for (const item of items) {
+			if (item.kind !== 'scene-group') continue;
+			if (item.startPost?.id === postID) return null;
+			if (containsPostID(item.items, postID)) return item;
+			const nested = findCollapsingScene(item.items, postID);
+			if (nested) return nested;
+		}
+		return null;
+	}
+	function containsPostID(items: FeedItem[], postID: number): boolean {
+		return items.some((item) => {
+			if (item.kind === 'post') return item.post.id === postID;
+			if (item.kind === 'ranking-group') return item.posts.some((p) => p.id === postID);
+			if (item.kind === 'scene-group') return containsPostID(item.items, postID);
+			return false;
+		});
+	}
+
 	// ── Latest message preview (for the collapsed strip) ──────────────────────
 	const latestPost = $derived(posts.length > 0 ? posts[posts.length - 1] : null);
 	const latestPreview = $derived.by(() => {
@@ -436,6 +488,13 @@
 		// closes the panel via the X button (otherwise it re-opens itself).
 		untrack(() => {
 			if (!expanded && !isDesktop) expanded = true;
+			// A collapsed scene container hides its inner posts entirely (not
+			// just visually) — expand it first so the target actually exists
+			// in the DOM by the time we query for it below.
+			const collapsing = findCollapsingScene(feedItems, targetID);
+			if (collapsing && !isSceneExpanded(collapsing)) {
+				sceneExpandOverrides = { ...sceneExpandOverrides, [collapsing.sceneID]: true };
+			}
 		});
 		void tick().then(() => {
 			if (!feedEl) return;
@@ -567,6 +626,160 @@
 		</button>
 	</header>
 
+	<!--
+		Recursive so a scene-group's inner items (Phase 4) render through the
+		exact same day-divider/unread-divider/ranking-group/post logic as the
+		top level — single chronology, just wrapped in a container. `inScene`
+		is true only for items rendered inside a scene-group's body, and
+		drives the in-character/table-talk message register (Phase 4d).
+	-->
+	{#snippet feedEntry(item: FeedItem, inScene: boolean)}
+		{#if item.kind === 'day-divider'}
+			<div class="day-divider" role="separator">
+				<span class="day-divider-line"></span>
+				<span class="day-divider-label">{item.label}</span>
+				<span class="day-divider-line"></span>
+			</div>
+		{:else if item.kind === 'unread-divider'}
+			<div class="unread-divider" data-feed-unread-divider role="separator">
+				<span class="unread-divider-line"></span>
+				<span class="unread-divider-label">New messages</span>
+				<span class="unread-divider-line"></span>
+			</div>
+		{:else if item.kind === 'ranking-group'}
+			<div
+				class="ranking-group"
+				class:continues-run={item.continuesRun}
+				data-post-id={item.posts[0].id}
+				data-code={item.posts[0].system_code}
+			>
+				{#each item.posts as post (post.id)}
+					{#if post.system_code === 'ranking.category'}
+						<h4 class="ranking-category" data-post-id={post.id}>
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+							{@html renderLogBody(post.body)}
+						</h4>
+					{:else if post.system_code === 'ranking.standing'}
+						<div class="ranking-standing" data-post-id={post.id}>
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+							{@html renderLogBody(post.body)}
+						</div>
+					{:else if post.system_code === 'ranking.updated'}
+						<!-- No separate glyph span: the body already leads with ⚖
+						     (EmitRankingUpdated bakes it into the headline text). -->
+						<div class="ranking-headline" data-post-id={post.id}>
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+							<span>{@html renderLogBody(post.body)}</span>
+							<span class="log-time">{fmtTime(post.created_at)}</span>
+						</div>
+					{:else}
+						<div class="ranking-line" data-post-id={post.id}>
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+							{@html renderLogBody(post.body)}
+						</div>
+					{/if}
+				{/each}
+			</div>
+		{:else if item.kind === 'scene-group'}
+			{@const data = item.startPost ? parseSceneStartedData(item.startPost.system_data) : null}
+			{@const focusColor = data ? playerColorByID(data.focus_player_id, players) : 'var(--color-accent)'}
+			{@const live = isSceneLive(item)}
+			{@const isExpanded = isSceneExpanded(item)}
+			<div class="scene-group" style:--focus-color={focusColor}>
+				<button
+					type="button"
+					class="scene-header"
+					data-post-id={item.startPost?.id}
+					data-scene-id={item.sceneID}
+					onclick={() => toggleSceneExpanded(item)}
+					disabled={live}
+					aria-expanded={isExpanded}
+				>
+					<div class="scene-header-row">
+						<span class="scene-glyph" aria-hidden="true">❧</span>
+						<span class="scene-banner">
+							{item.startPost ? item.startPost.body : 'Scene in progress (earlier posts not loaded)'}
+						</span>
+						{#if item.startPost}<span class="log-time">{fmtTime(item.startPost.created_at)}</span>{/if}
+					</div>
+					{#if data?.prompt}
+						<p class="scene-prompt">{data.prompt}</p>
+					{/if}
+					{#if data && data.participants.length > 0}
+						<p class="scene-participants">With {data.participants.join(', ')}</p>
+					{/if}
+					<div class="scene-meta">
+						<span class="scene-count">
+							{item.messageCount} {item.messageCount === 1 ? 'message' : 'messages'}
+						</span>
+						{#if live}
+							<span class="scene-live">● Live</span>
+						{:else}
+							{#if !isExpanded && item.unreadCount > 0}
+								<span class="unread-badge">{item.unreadCount}</span>
+							{/if}
+							<span class="scene-caret" aria-hidden="true">{isExpanded ? '▴' : '▾'}</span>
+						{/if}
+					</div>
+				</button>
+				{#if isExpanded}
+					<div class="scene-body">
+						{#each item.items as inner (inner.key)}
+							{@render feedEntry(inner, true)}
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{:else}
+			{@const post = item.post}
+			{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
+				<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
+					<span class="boundary-line"></span>
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+					<span class="boundary-label">{@html renderLogBody(post.body)}</span>
+					<span class="boundary-line"></span>
+				</div>
+			{:else if post.author_id == null}
+				<div
+					class="log"
+					class:important={post.severity >= SEVERITY.IMPORTANT}
+					class:continues-run={item.continuesRun}
+					data-post-id={post.id}
+					data-code={post.system_code}
+				>
+					<span class="log-glyph" aria-hidden="true">{logGlyph(post.system_code)}</span>
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+					<span class="log-body">{@html renderLogBody(post.body)}</span>
+					<span class="log-time">{fmtTime(post.created_at)}</span>
+				</div>
+			{:else}
+				{@const inCharacter = post.speaking_as_asset_id != null}
+				{@const color = playerColorByID(post.author_id, players)}
+				{@const personaName = inCharacter
+					? assetName(post.speaking_as_asset_id) || playerName(post.author_id)
+					: playerName(post.author_id)}
+				{@const playerTag = inCharacter ? playerName(post.author_id) : ''}
+				<div
+					class="message"
+					data-post-id={post.id}
+					class:own={post.author_id === currentPlayerID}
+					class:in-character={inScene && inCharacter}
+					class:table-talk={inScene && !inCharacter}
+					style:--player-color={color}
+				>
+					<span class="msg-author">
+						{personaName}
+						{#if playerTag && playerTag !== personaName}
+							<span class="msg-player-tag">({playerTag})</span>
+						{/if}
+					</span>
+					<span class="msg-body">{post.body}</span>
+					<span class="msg-time">{fmtTime(post.created_at)}</span>
+				</div>
+			{/if}
+		{/if}
+	{/snippet}
+
 	<div class="feed-wrap">
 		<div class="feed" bind:this={feedEl} onscroll={onScroll}>
 			{#if visiblePosts.length === 0}
@@ -575,98 +788,7 @@
 				</p>
 			{:else}
 				{#each feedItems as item (item.key)}
-					{#if item.kind === 'day-divider'}
-						<div class="day-divider" role="separator">
-							<span class="day-divider-line"></span>
-							<span class="day-divider-label">{item.label}</span>
-							<span class="day-divider-line"></span>
-						</div>
-					{:else if item.kind === 'unread-divider'}
-						<div class="unread-divider" data-feed-unread-divider role="separator">
-							<span class="unread-divider-line"></span>
-							<span class="unread-divider-label">New messages</span>
-							<span class="unread-divider-line"></span>
-						</div>
-					{:else if item.kind === 'ranking-group'}
-						<div
-							class="ranking-group"
-							class:continues-run={item.continuesRun}
-							data-post-id={item.posts[0].id}
-							data-code={item.posts[0].system_code}
-						>
-							{#each item.posts as post (post.id)}
-								{#if post.system_code === 'ranking.category'}
-									<h4 class="ranking-category" data-post-id={post.id}>
-										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-										{@html renderLogBody(post.body)}
-									</h4>
-								{:else if post.system_code === 'ranking.standing'}
-									<div class="ranking-standing" data-post-id={post.id}>
-										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-										{@html renderLogBody(post.body)}
-									</div>
-								{:else if post.system_code === 'ranking.updated'}
-									<!-- No separate glyph span: the body already leads with ⚖
-									     (EmitRankingUpdated bakes it into the headline text). -->
-									<div class="ranking-headline" data-post-id={post.id}>
-										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-										<span>{@html renderLogBody(post.body)}</span>
-										<span class="log-time">{fmtTime(post.created_at)}</span>
-									</div>
-								{:else}
-									<div class="ranking-line" data-post-id={post.id}>
-										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-										{@html renderLogBody(post.body)}
-									</div>
-								{/if}
-							{/each}
-						</div>
-					{:else}
-						{@const post = item.post}
-						{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
-							<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
-								<span class="boundary-line"></span>
-								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-								<span class="boundary-label">{@html renderLogBody(post.body)}</span>
-								<span class="boundary-line"></span>
-							</div>
-						{:else if post.author_id == null}
-							<div
-								class="log"
-								class:important={post.severity >= SEVERITY.IMPORTANT}
-								class:continues-run={item.continuesRun}
-								data-post-id={post.id}
-								data-code={post.system_code}
-							>
-								<span class="log-glyph" aria-hidden="true">{logGlyph(post.system_code)}</span>
-								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-								<span class="log-body">{@html renderLogBody(post.body)}</span>
-								<span class="log-time">{fmtTime(post.created_at)}</span>
-							</div>
-						{:else}
-							{@const inCharacter = post.speaking_as_asset_id != null}
-							{@const color = playerColorByID(post.author_id, players)}
-							{@const personaName = inCharacter
-								? assetName(post.speaking_as_asset_id) || playerName(post.author_id)
-								: playerName(post.author_id)}
-							{@const playerTag = inCharacter ? playerName(post.author_id) : ''}
-							<div
-								class="message"
-								data-post-id={post.id}
-								class:own={post.author_id === currentPlayerID}
-								style:--player-color={color}
-							>
-								<span class="msg-author">
-									{personaName}
-									{#if playerTag && playerTag !== personaName}
-										<span class="msg-player-tag">({playerTag})</span>
-									{/if}
-								</span>
-								<span class="msg-body">{post.body}</span>
-								<span class="msg-time">{fmtTime(post.created_at)}</span>
-							</div>
-						{/if}
-					{/if}
+					{@render feedEntry(item, false)}
 				{/each}
 			{/if}
 		</div>
@@ -687,15 +809,13 @@
 	{#if error}<p class="error-text error">{error}</p>{/if}
 
 	{#if currentPlayerID != null && personae.length > 1}
-		{@const isCharacterSelected = selectedPersona && selectedPersona.kind === 'asset'}
 		{@const selfColor = playerColorByID(currentPlayerID, players)}
-		{@const personaColor = isCharacterSelected ? selfColor : OOC_COLOR}
 		<div class="persona-bar">
 			<button
 				type="button"
 				class="persona-btn"
 				class:open={pickerOpen}
-				style:--player-color={personaColor}
+				style:--player-color={selfColor}
 				onclick={() => { pickerOpen = !pickerOpen; }}
 				aria-haspopup="listbox"
 				aria-expanded={pickerOpen}
@@ -725,7 +845,7 @@
 							>
 								<span
 									class="persona-option-dot"
-									style:background={p.kind === 'asset' ? selfColor : OOC_COLOR}
+									style:background={selfColor}
 									aria-hidden="true"
 								></span>
 								<span>{p.label}</span>
@@ -1052,6 +1172,28 @@
 		white-space: nowrap;
 	}
 
+	/* In-character vs table-talk registers (Phase 4d) — only meaningful
+	   inside a scene container; outside a scene every player post uses the
+	   plain `.message` styling above unchanged. In-character gets the
+	   heavier treatment (small-caps byline, faint player-color background
+	   tint); table-talk stays lighter (slightly smaller) but keeps the
+	   player's color on the name and rule, same as outside a scene — grey
+	   OOC styling is retired for player content everywhere. */
+	.message.in-character {
+		background: color-mix(in srgb, var(--player-color, var(--color-accent)) 12%, transparent);
+		border-radius: 4px;
+		padding: 0.4rem 0.6rem 0.4rem 0.55rem;
+	}
+	.message.in-character .msg-author {
+		font-variant: small-caps;
+		font-weight: 700;
+		letter-spacing: 0.03em;
+	}
+	.message.table-talk .msg-author,
+	.message.table-talk .msg-body {
+		font-size: 0.92rem;
+	}
+
 	/* Boundary divider */
 	.boundary {
 		display: flex;
@@ -1138,6 +1280,89 @@
 		padding-left: 1.1rem;
 		font-weight: 600;
 		color: var(--color-text);
+	}
+
+	/* ── Scene container (Phase 4c) ──────────────────────────────────────────
+	   A turn scene's whole span — header card plus everything said during it
+	   — reads as one indented vignette, ruled in the focus player's color. */
+	.scene-group {
+		border-left: 3px solid var(--focus-color, var(--color-accent));
+		padding-left: 0.65rem;
+		margin: 0.3rem 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.scene-header {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		width: 100%;
+		min-height: 44px;
+		padding: 0.5rem 0.7rem;
+		border: 1px solid var(--color-border-warm);
+		border-radius: 6px;
+		background: var(--color-surface-sunken);
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.scene-header:disabled {
+		cursor: default;
+	}
+
+	.scene-header-row {
+		display: flex;
+		align-items: baseline;
+		gap: 0.4rem;
+	}
+	.scene-glyph { color: var(--focus-color, var(--color-accent)); }
+	.scene-banner {
+		flex: 1;
+		color: var(--color-accent);
+		font-size: 0.88rem;
+	}
+
+	.scene-prompt {
+		margin: 0;
+		font-style: italic;
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+	}
+
+	.scene-participants {
+		margin: 0;
+		font-size: 0.78rem;
+		color: var(--color-text-faint);
+	}
+
+	.scene-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.scene-count {
+		font-size: 0.72rem;
+		color: var(--color-text-faint);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.scene-live {
+		margin-left: auto;
+		font-size: 0.72rem;
+		color: var(--color-accent);
+	}
+	.scene-caret {
+		margin-left: auto;
+		color: var(--color-text-muted);
+	}
+
+	.scene-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
 	}
 
 	/* ── Typing + compose ─────────────────────────────────────────────────── */

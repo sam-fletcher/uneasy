@@ -335,3 +335,152 @@ test('jumping to a row outside the loaded window enters history mode; Return to 
   await aliceCtx.close();
   await bobCtx.close();
 });
+
+// Chat Overhaul Phase 4: scene containers. A turn scene's whole span —
+// in-character lines and table-talk alike (single chronology) — renders
+// inside one collapsible container, distinct from plain messages sent
+// outside any scene. Mobile-first, per feedback_mobile_first: verify the
+// narrow-viewport collapsed-strip path before the desktop column.
+test('scene container: single chronology, collapses once ended and read, expands on tap', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  await reset.post('http://localhost:8090/api/dev/reset');
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: tableId, players } = await seedRes.json();
+  const alicePlayerID: number = players[0].id;
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice'); // alice is the seed's facilitator + focus player
+  await devLogin(bobCtx.request, 'bob');
+
+  // Alice (focus player) opens a scene.
+  const sceneRes = await aliceCtx.request.post(`/api/tables/${tableId}/scenes`, {
+    data: { location_custom: 'The Mill', time_elapsed: 'days', present_peer_ids: [] },
+  });
+  expect(sceneRes.ok(), `create scene failed: ${await sceneRes.text()}`).toBeTruthy();
+
+  // Alice's main character (seeded by SeedMainEvent) to post in character;
+  // the focus player's MC is implicitly present, no claim needed.
+  const assetsRes = await aliceCtx.request.get(`/api/tables/${tableId}/assets`);
+  const { assets } = (await assetsRes.json()) as { assets: { id: number; owner_id: number; is_main_character: boolean }[] };
+  const aliceMC = assets.find((a) => a.owner_id === alicePlayerID && a.is_main_character);
+  expect(aliceMC, 'alice main character not found').toBeTruthy();
+
+  // One in-character line and one table-talk line — single chronology, both
+  // inside the scene container.
+  const icBody = 'The wind picks up.';
+  const ttBody = 'nice weather huh';
+  await aliceCtx.request.post(`/api/tables/${tableId}/posts`, {
+    data: { body: icBody, speaking_as_asset_id: aliceMC!.id },
+  });
+  await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: ttBody } });
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 390, height: 844 }); // mobile-first
+  await alicePage.goto(`/table/${tableId}`);
+  await alicePage.locator('.strip').click();
+  const chat = alicePage.locator('[aria-label="Chat"]');
+  await expect(chat).toBeVisible();
+
+  // Live scene: expanded, header shows the banner + count, and can't collapse.
+  const header = chat.locator('.scene-header');
+  await expect(header).toBeVisible();
+  await expect(header).toContainText('The Mill');
+  await expect(header).toContainText('2 messages');
+  await expect(header).toBeDisabled();
+  const box = await header.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44); // mobile-first tap target
+
+  await expect(chat.getByText(icBody)).toBeVisible();
+  await expect(chat.getByText(ttBody)).toBeVisible();
+  // Registers: in-character gets the heavier treatment, table-talk the
+  // lighter one — both only apply inside the scene container.
+  await expect(chat.locator('.message.in-character', { hasText: icBody })).toBeVisible();
+  await expect(chat.locator('.message.table-talk', { hasText: ttBody })).toBeVisible();
+
+  // Alice ends the scene, then marks everything read so the next load's
+  // default-collapse isn't overridden by an unread divider landing inside it.
+  const endRes = await aliceCtx.request.post(`/api/tables/${tableId}/end-scene`);
+  expect(endRes.ok(), `end-scene failed: ${await endRes.text()}`).toBeTruthy();
+  const markerID = await newestPostID(aliceCtx.request, tableId);
+  const markRes = await aliceCtx.request.put(`/api/tables/${tableId}/read-marker`, {
+    data: { last_read_post_id: markerID },
+  });
+  expect(markRes.ok()).toBeTruthy();
+
+  // A plain message sent after the scene ends lives outside any container
+  // and never gets the in-scene register classes.
+  const afterBody = 'the scene is over now';
+  await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: afterBody } });
+
+  await alicePage.reload();
+  await alicePage.locator('.strip').click();
+  const chat2 = alicePage.locator('[aria-label="Chat"]');
+  const header2 = chat2.locator('.scene-header');
+  await expect(header2).toBeVisible();
+  await expect(header2).toContainText('2 messages');
+  await expect(header2).not.toBeDisabled();
+
+  // Collapsed by default (ended + fully read): inner posts aren't rendered.
+  await expect(chat2.getByText(icBody)).toHaveCount(0);
+  await expect(chat2.getByText(ttBody)).toHaveCount(0);
+  await expect(chat2.getByText(afterBody)).toBeVisible();
+  const afterMessage = chat2.locator('.message', { hasText: afterBody });
+  await expect(afterMessage).not.toHaveClass(/in-character/);
+  await expect(afterMessage).not.toHaveClass(/table-talk/);
+
+  // Tap to expand reveals the single chronology again.
+  await header2.click();
+  await expect(chat2.getByText(icBody)).toBeVisible();
+  await expect(chat2.getByText(ttBody)).toBeVisible();
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});
+
+test('scene container renders in the always-open desktop chat column', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  await reset.post('http://localhost:8090/api/dev/reset');
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: tableId } = await seedRes.json();
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice');
+
+  const sceneRes = await aliceCtx.request.post(`/api/tables/${tableId}/scenes`, {
+    data: { location_custom: 'The Docks', time_elapsed: 'moments', present_peer_ids: [] },
+  });
+  expect(sceneRes.ok(), `create scene failed: ${await sceneRes.text()}`).toBeTruthy();
+  await aliceCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: 'quiet down at the docks' } });
+
+  // Default Playwright viewport (1280x720) is desktop-width; the chat panel
+  // is a permanent column, no strip to tap.
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.goto(`/table/${tableId}`);
+  const aliceChat = alicePage.getByRole('complementary', { name: 'Chat' });
+  await expect(aliceChat).toBeVisible();
+
+  const header = aliceChat.locator('.scene-header');
+  await expect(header).toBeVisible();
+  await expect(header).toContainText('The Docks');
+  await expect(header).toBeDisabled(); // still live
+
+  await aliceCtx.request.post(`/api/tables/${tableId}/end-scene`);
+  const markerID = await newestPostID(aliceCtx.request, tableId);
+  await aliceCtx.request.put(`/api/tables/${tableId}/read-marker`, { data: { last_read_post_id: markerID } });
+
+  await alicePage.reload();
+  const header2 = aliceChat.locator('.scene-header');
+  await expect(header2).not.toBeDisabled();
+  await expect(aliceChat.getByText('quiet down at the docks')).toHaveCount(0);
+  await header2.click();
+  await expect(aliceChat.getByText('quiet down at the docks')).toBeVisible();
+
+  await aliceCtx.close();
+});

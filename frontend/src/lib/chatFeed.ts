@@ -76,8 +76,74 @@ export function systemCodeFamily(code: string | null): string | null {
 	return dot === -1 ? code : code.slice(0, dot);
 }
 
+// ── Pure: scene.started system_data (Phase 4a) ────────────────────────────
+// The scene.started post's `system_data` carries everything the container
+// header needs (banner, prompt, participants) without an extra fetch.
+// Parsed defensively since ChatPost.system_data is typed `unknown`.
+
+export interface SceneStartedData {
+	scene_id: number;
+	kind: 'turn' | 'plan';
+	focus_player_id: number;
+	location: string;
+	time_label: string;
+	prompt: string;
+	participants: string[];
+}
+
+export function parseSceneStartedData(data: unknown): SceneStartedData | null {
+	if (!data || typeof data !== 'object') return null;
+	const d = data as Record<string, unknown>;
+	if (typeof d.scene_id !== 'number') return null;
+	return {
+		scene_id: d.scene_id,
+		kind: d.kind === 'plan' ? 'plan' : 'turn',
+		focus_player_id: typeof d.focus_player_id === 'number' ? d.focus_player_id : 0,
+		location: typeof d.location === 'string' ? d.location : '',
+		time_label: typeof d.time_label === 'string' ? d.time_label : '',
+		prompt: typeof d.prompt === 'string' ? d.prompt : '',
+		participants: Array.isArray(d.participants)
+			? d.participants.filter((p): p is string => typeof p === 'string')
+			: [],
+	};
+}
+
+/**
+ * A turn-scene's contiguous span of the feed (Phase 4b), built purely
+ * positionally: opens at a `scene.started` post, closes at the matching
+ * `scene.ended` post. Scenes cannot overlap, so the positional walk is safe
+ * even for posts that lack a `scene_id` stamp.
+ */
+export interface SceneGroupItem {
+	kind: 'scene-group';
+	key: string;
+	sceneID: number;
+	/** The `scene.started` post, when loaded — null if the window was
+	 *  truncated before it (the group is then inferred from an inner post's
+	 *  `scene_id` stamp, and the header falls back to minimal display). */
+	startPost: ChatPost | null;
+	/** The `scene.ended` post, once the scene has closed within this window. */
+	endPost: ChatPost | null;
+	/** No confirmed close in this window — either the scene is genuinely
+	 *  still active, or the window was truncated before its end. Both render
+	 *  as "open" (adr/CHAT_OVERHAUL_PLAN.md Phase 4b/4c). */
+	open: boolean;
+	/** Everything that happened during the scene, built with the same day/
+	 *  unread/ranking-group treatment as the top-level feed. */
+	items: FeedItem[];
+	/** Posts inside the scene, excluding the boundary markers themselves —
+	 *  the header's "N messages" figure. */
+	messageCount: number;
+	/** Unread posts inside the scene (shared unread rule), for the collapsed
+	 *  header's unread chip. */
+	unreadCount: number;
+	/** True if the "New messages" divider fell inside this scene — the
+	 *  renderer should default it to expanded even if otherwise collapsible. */
+	unreadDividerInside: boolean;
+}
+
 // ── Pure: feed items (day dividers + "New messages" divider) ─────────────
-// Scene grouping (Phase 4) extends this further. Phase 3 adds:
+// Phase 3 adds:
 //   - `continuesRun` on 'post'/'ranking-group' items: true when the
 //     immediately preceding item is also a system post with nothing (day/
 //     unread divider) between them, so the renderer can tighten the gap and
@@ -85,12 +151,14 @@ export function systemCodeFamily(code: string | null): string | null {
 //   - the 'ranking-group' kind: a maximal run of consecutive `ranking.*`
 //     posts (one EmitRankingUpdated burst) collapses into a single unit so
 //     it renders as one bordered card instead of a centered/left zigzag.
+// Phase 4 adds the 'scene-group' kind (see SceneGroupItem above).
 
 export type FeedItem =
 	| { kind: 'day-divider'; key: string; label: string }
 	| { kind: 'unread-divider'; key: string }
 	| { kind: 'post'; key: string; post: ChatPost; continuesRun: boolean }
-	| { kind: 'ranking-group'; key: string; posts: ChatPost[]; continuesRun: boolean };
+	| { kind: 'ranking-group'; key: string; posts: ChatPost[]; continuesRun: boolean }
+	| SceneGroupItem;
 
 function dayKey(iso: string): string {
 	const d = new Date(iso);
@@ -109,25 +177,32 @@ function formatDayLabel(iso: string, now: Date): string {
 
 /**
  * Builds the render list: a day divider whenever the calendar day changes,
- * and one "New messages" divider right before the first unread post (per
+ * one "New messages" divider right before the first unread post (per
  * `opts.unreadAfterID` — pass a frozen snapshot, not the live marker, so the
- * divider doesn't slide out from under a player who's still reading).
- * `posts` must already be chronological (oldest → newest), which every
- * listGamePosts mode guarantees.
+ * divider doesn't slide out from under a player who's still reading), and
+ * scene groups (Phase 4b) wrapping everything between a `scene.started` and
+ * its matching `scene.ended`. `posts` must already be chronological (oldest
+ * → newest), which every listGamePosts mode guarantees.
+ *
+ * Scene grouping is purely positional: a single `sink` pointer is retargeted
+ * to the active group's `items` array whenever we're inside one, so day
+ * dividers, the unread divider, and the ranking-burst collapsing below all
+ * apply uniformly whether the walk is currently inside a scene or not — the
+ * whole thing is one chronology, and containers are just a rendering wrapper
+ * around a contiguous span of it.
  */
 export function buildFeedItems(
 	posts: ChatPost[],
 	opts: { unreadAfterID: number; currentPlayerID: number | null; now?: Date }
 ): FeedItem[] {
 	const now = opts.now ?? new Date();
-	const items: FeedItem[] = [];
-	let lastDayKey: string | null = null;
-	let placedDivider = false;
+	const top: FeedItem[] = [];
 	const hasUnread = posts.some((p) => isUnreadPost(p, opts.unreadAfterID, opts.currentPlayerID));
 
 	// Collapse consecutive ranking.* posts (one EmitRankingUpdated burst) into
 	// a single unit so the ranking-group case below renders them as one card
-	// instead of a run of separate log lines.
+	// instead of a run of separate log lines. Independent of scene grouping —
+	// a ranking burst never straddles a scene boundary in practice.
 	const units: ChatPost[][] = [];
 	for (const post of posts) {
 		const prevUnit = units[units.length - 1];
@@ -142,32 +217,98 @@ export function buildFeedItems(
 		}
 	}
 
+	function openGroup(sceneID: number, startPost: ChatPost | null): SceneGroupItem {
+		const group: SceneGroupItem = {
+			kind: 'scene-group',
+			key: `scene-${sceneID}`,
+			sceneID,
+			startPost,
+			endPost: null,
+			open: true,
+			items: [],
+			messageCount: 0,
+			unreadCount: 0,
+			unreadDividerInside: false,
+		};
+		top.push(group);
+		return group;
+	}
+
+	let sink: FeedItem[] = top;
+	let activeGroup: SceneGroupItem | null = null;
+
+	// A window can open mid-scene (a history/around fetch, or the initial
+	// window's back-context truncated before the scene's start) — there's no
+	// scene.started post loaded to key off, so fall back to the first post's
+	// scene_id stamp and start the group headerless and open.
+	if (units.length > 0) {
+		const leadPost = units[0][0];
+		if (leadPost.scene_id != null && leadPost.system_code !== 'scene.started') {
+			activeGroup = openGroup(leadPost.scene_id, null);
+			sink = activeGroup.items;
+		}
+	}
+
+	let lastDayKey: string | null = null;
+	let placedDivider = false;
 	let prevWasSystemPost = false;
+
 	for (const unit of units) {
 		const first = unit[0];
 		const key = dayKey(first.created_at);
 		if (key !== lastDayKey) {
-			items.push({ kind: 'day-divider', key: `day-${key}`, label: formatDayLabel(first.created_at, now) });
+			sink.push({ kind: 'day-divider', key: `day-${key}`, label: formatDayLabel(first.created_at, now) });
 			lastDayKey = key;
 			prevWasSystemPost = false;
 		}
 		if (hasUnread && !placedDivider && unit.some((p) => isUnreadPost(p, opts.unreadAfterID, opts.currentPlayerID))) {
-			items.push({ kind: 'unread-divider', key: 'unread-divider' });
+			sink.push({ kind: 'unread-divider', key: 'unread-divider' });
 			placedDivider = true;
 			prevWasSystemPost = false;
+			if (activeGroup) activeGroup.unreadDividerInside = true;
+		}
+
+		// Scene boundaries are always lone units (a ranking burst never
+		// carries scene.started/scene.ended). Opening one retargets `sink` to
+		// the new group's `items` and swallows the post itself — it becomes
+		// the container header, not a rendered log line.
+		if (unit.length === 1 && first.system_code === 'scene.started' && !activeGroup) {
+			activeGroup = openGroup(first.scene_id ?? first.id, first);
+			sink = activeGroup.items;
+			prevWasSystemPost = false;
+			continue;
 		}
 
 		const isSystemUnit = first.author_id == null;
 		const continuesRun = isSystemUnit && prevWasSystemPost;
 
 		if (unit.length > 1 || systemCodeFamily(first.system_code) === 'ranking') {
-			items.push({ kind: 'ranking-group', key: `ranking-${first.id}`, posts: unit, continuesRun });
+			sink.push({ kind: 'ranking-group', key: `ranking-${first.id}`, posts: unit, continuesRun });
 		} else {
-			items.push({ kind: 'post', key: `post-${first.id}`, post: first, continuesRun });
+			sink.push({ kind: 'post', key: `post-${first.id}`, post: first, continuesRun });
 		}
 		prevWasSystemPost = isSystemUnit;
+
+		if (activeGroup) {
+			// The closing scene.ended marker itself doesn't count toward
+			// "N messages" — it isn't part of what happened in the scene.
+			if (first.system_code !== 'scene.ended') {
+				activeGroup.messageCount += unit.length;
+			}
+			for (const p of unit) {
+				if (isUnreadPost(p, opts.unreadAfterID, opts.currentPlayerID)) activeGroup.unreadCount++;
+			}
+		}
+
+		if (unit.length === 1 && first.system_code === 'scene.ended' && activeGroup) {
+			activeGroup.endPost = first;
+			activeGroup.open = false;
+			activeGroup = null;
+			sink = top;
+			prevWasSystemPost = false;
+		}
 	}
-	return items;
+	return top;
 }
 
 // ── Pure: window merge (dedup by id; WS delivery + resync overlap) ────────

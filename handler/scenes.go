@@ -418,14 +418,35 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		// Boundary post + WS broadcast.
+		// Boundary post + WS broadcast. system_data carries everything the
+		// client's scene-container header needs to render without an extra
+		// fetch (adr/CHAT_OVERHAUL_PLAN.md Phase 4a).
 		row := scene.RowNumber
 		sceneID := scene.ID
+		mainName, holdingName := resolveSceneNameParts(ctx, s.Q, &scene, player.DisplayName)
+		displayLocation := holdingName
+		if displayLocation == "" {
+			displayLocation = "an unknown place"
+		}
+		participants := []string{mainName}
+		for _, pw := range peers {
+			if asset, aErr := s.Q.GetAssetByID(ctx, pw.AssetID); aErr == nil {
+				participants = append(participants, asset.Name)
+			}
+		}
 		EmitSystemPost(ctx, s.Q, manager, gameRow.ID, "scene.started",
 			model.SeverityImportant,
-			resolveSceneBannerText(ctx, s.Q, &scene, player.DisplayName),
+			sceneBannerText(mainName, holdingName, &scene),
 			&row, nil, &sceneID,
-			map[string]any{"scene_id": scene.ID})
+			map[string]any{
+				"scene_id":        scene.ID,
+				"kind":            "turn",
+				"focus_player_id": scene.FocusPlayerID,
+				"location":        displayLocation,
+				"time_label":      sceneTimeLabel(&scene),
+				"prompt":          scene.Prompt,
+				"participants":    participants,
+			})
 		if h, ok := manager.Get(gameRow.ID); ok {
 			h.BroadcastEvent(model.EventSceneStarted, model.SceneStartedPayload{
 				Scene: scene,
@@ -459,6 +480,18 @@ func timeElapsedLabel(t model.TimeElapsed) string {
 	}
 }
 
+// sceneTimeLabel returns the display label for a scene's elapsed time,
+// preferring a free-text time note over the enum label when one is set.
+// Shared by the banner text and the scene.started system_data payload.
+func sceneTimeLabel(scene *dbgen.Scene) string {
+	if scene.TimeNote != nil {
+		if note := strings.TrimSpace(*scene.TimeNote); note != "" {
+			return note
+		}
+	}
+	return timeElapsedLabel(scene.TimeElapsed)
+}
+
 // sceneBannerText builds the banner / public-record text for a scene in the
 // form "<main character> at <holding>, <time later>" (with an optional
 // "— <time note>" suffix). Used both for the scene-start chat boundary post
@@ -472,29 +505,29 @@ func sceneBannerText(mainCharName, holdingName string, scene *dbgen.Scene) strin
 	if holdingName == "" {
 		holdingName = "an unknown place"
 	}
-	timeElapsed := timeElapsedLabel(scene.TimeElapsed)
-	if scene.TimeNote != nil {
-		if note := strings.TrimSpace(*scene.TimeNote); note != "" {
-			timeElapsed = note
-		}
-	}
 	return fmt.Sprintf("Scene: %s at %s, %s",
-		mainCharName, holdingName, timeElapsed,
+		mainCharName, holdingName, sceneTimeLabel(scene),
 	)
 }
 
-// resolveSceneBannerText looks up the main-character name and holding name
-// for the scene and returns the formatted banner text. Falls back to the
-// focus player's display name if no main character is set.
-func resolveSceneBannerText(ctx context.Context, q *dbgen.Queries, scene *dbgen.Scene, focusPlayerName string) string {
-	mainName := focusPlayerName
+// resolveSceneNameParts looks up the main-character name and holding name for
+// a scene. mainName falls back to the focus player's display name when the
+// focus player has no main-character asset set; holdingName is "" for a
+// free-text location whose holding lookup failed (callers apply their own
+// display fallback).
+func resolveSceneNameParts(
+	ctx context.Context,
+	q *dbgen.Queries,
+	scene *dbgen.Scene,
+	focusPlayerName string,
+) (mainName, holdingName string) {
+	mainName = focusPlayerName
 	if mc, err := q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
 		GameID:  scene.GameID,
 		OwnerID: scene.FocusPlayerID,
 	}); err == nil {
 		mainName = mc.Name
 	}
-	var holdingName string
 	switch {
 	case scene.LocationHoldingID != nil:
 		if a, err := q.GetAssetByID(ctx, *scene.LocationHoldingID); err == nil {
@@ -503,6 +536,14 @@ func resolveSceneBannerText(ctx context.Context, q *dbgen.Queries, scene *dbgen.
 	case scene.LocationCustom != nil:
 		holdingName = *scene.LocationCustom
 	}
+	return mainName, holdingName
+}
+
+// resolveSceneBannerText looks up the main-character name and holding name
+// for the scene and returns the formatted banner text. Falls back to the
+// focus player's display name if no main character is set.
+func resolveSceneBannerText(ctx context.Context, q *dbgen.Queries, scene *dbgen.Scene, focusPlayerName string) string {
+	mainName, holdingName := resolveSceneNameParts(ctx, q, scene, focusPlayerName)
 	return sceneBannerText(mainName, holdingName, scene)
 }
 

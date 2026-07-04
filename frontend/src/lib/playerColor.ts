@@ -9,7 +9,10 @@
 // Tweak the palette below if the color picker UI lands; downstream callers
 // only care that `playerColor()` returns a hex string.
 //
-// OOC posts use OOC_COLOR, independent of any player.
+// OOC_COLOR is reserved for system-authored content only (adr/
+// CHAT_OVERHAUL_PLAN.md Phase 4d). Player-authored content — in-character or
+// table-talk, inside a scene or out — always keeps the speaking player's own
+// color; grey no longer marks "this player is speaking OOC."
 
 import type { Player } from './api';
 
@@ -51,8 +54,8 @@ export function playerColor(player: Pick<Player, 'token_color' | 'seat_order'> |
 
 /**
  * Convenience: look up a player by id from a list and return their color.
- * Returns OOC_COLOR if id is null or the player isn't found — the
- * "speaker is the system / OOC" fallback for chat rendering.
+ * Returns OOC_COLOR if id is null (a system post — no player author) or the
+ * player isn't found.
  */
 export function playerColorByID(
 	id: number | null | undefined,
