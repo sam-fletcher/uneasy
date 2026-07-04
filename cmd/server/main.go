@@ -215,6 +215,8 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 			r.Get("/tables/{id}/record", handler.GetFullRecord(store))
 			r.Get("/tables/{id}/posts", handler.ListGamePosts(store))
 			r.Post("/tables/{id}/posts", handler.CreatePlayerPost(store, manager))
+			r.Get("/tables/{id}/posts/anchor", handler.GetPostAnchor(store))
+			r.Put("/tables/{id}/read-marker", handler.UpdateReadMarker(store))
 			r.Post("/tables/{id}/rows/{row}/summary", handler.CreateSceneEntry(store, manager))
 
 			// Scenes (SCENES_PLAN.md)

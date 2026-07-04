@@ -304,6 +304,7 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		h, hasHub := manager.Get(game.ID)
 
+		refreshed := make([]dbgen.Asset, 0, len(body.AssetIDs))
 		for _, id := range body.AssetIDs {
 			if err := s.Q.RefreshPlayerAssets(ctx, id); err != nil {
 				respondInternalErr(w, r, "could not refresh asset", err)
@@ -313,8 +314,11 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				h.BroadcastEvent(model.EventAssetRefreshed, model.AssetIDPayload{AssetID: id})
 			}
 			if asset, err := s.Q.GetAssetByID(ctx, id); err == nil {
-				EmitAssetRefreshed(ctx, s.Q, manager, game.ID, asset, game.CurrentRow)
+				refreshed = append(refreshed, asset)
 			}
+		}
+		if len(refreshed) > 0 {
+			EmitAssetsRefreshedBatch(ctx, s.Q, manager, game.ID, player.ID, refreshed, game.CurrentRow)
 		}
 
 		// Refreshing assets is the focus player's step-5 action; pass the

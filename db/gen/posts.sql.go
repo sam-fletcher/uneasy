@@ -145,6 +145,123 @@ func (q *Queries) CreateSystemPost(ctx context.Context, arg CreateSystemPostPara
 	return i, err
 }
 
+const findAnchorPostByPlan = `-- name: FindAnchorPostByPlan :one
+SELECT id FROM scene_posts
+WHERE game_id = $1 AND system_code = $2 AND plan_id = $3
+ORDER BY id ASC LIMIT 1
+`
+
+type FindAnchorPostByPlanParams struct {
+	GameID     int64   `db:"game_id" json:"game_id"`
+	SystemCode *string `db:"system_code" json:"system_code"`
+	PlanID     *int64  `db:"plan_id" json:"plan_id"`
+}
+
+func (q *Queries) FindAnchorPostByPlan(ctx context.Context, arg FindAnchorPostByPlanParams) (int64, error) {
+	row := q.db.QueryRow(ctx, findAnchorPostByPlan, arg.GameID, arg.SystemCode, arg.PlanID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const findAnchorPostByRow = `-- name: FindAnchorPostByRow :one
+SELECT id FROM scene_posts
+WHERE game_id = $1 AND system_code = $2 AND row_number = $3
+ORDER BY id ASC LIMIT 1
+`
+
+type FindAnchorPostByRowParams struct {
+	GameID     int64   `db:"game_id" json:"game_id"`
+	SystemCode *string `db:"system_code" json:"system_code"`
+	RowNumber  *int16  `db:"row_number" json:"row_number"`
+}
+
+func (q *Queries) FindAnchorPostByRow(ctx context.Context, arg FindAnchorPostByRowParams) (int64, error) {
+	row := q.db.QueryRow(ctx, findAnchorPostByRow, arg.GameID, arg.SystemCode, arg.RowNumber)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const findAnchorPostByScene = `-- name: FindAnchorPostByScene :one
+SELECT id FROM scene_posts
+WHERE game_id = $1 AND system_code = $2 AND scene_id = $3
+ORDER BY id ASC LIMIT 1
+`
+
+type FindAnchorPostBySceneParams struct {
+	GameID     int64   `db:"game_id" json:"game_id"`
+	SystemCode *string `db:"system_code" json:"system_code"`
+	SceneID    *int64  `db:"scene_id" json:"scene_id"`
+}
+
+func (q *Queries) FindAnchorPostByScene(ctx context.Context, arg FindAnchorPostBySceneParams) (int64, error) {
+	row := q.db.QueryRow(ctx, findAnchorPostByScene, arg.GameID, arg.SystemCode, arg.SceneID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const gamePostExistsAfter = `-- name: GamePostExistsAfter :one
+SELECT EXISTS (
+  SELECT 1 FROM scene_posts WHERE game_id = $1 AND id > $2
+) AS exists
+`
+
+type GamePostExistsAfterParams struct {
+	GameID int64 `db:"game_id" json:"game_id"`
+	ID     int64 `db:"id" json:"id"`
+}
+
+func (q *Queries) GamePostExistsAfter(ctx context.Context, arg GamePostExistsAfterParams) (bool, error) {
+	row := q.db.QueryRow(ctx, gamePostExistsAfter, arg.GameID, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const gamePostExistsBefore = `-- name: GamePostExistsBefore :one
+SELECT EXISTS (
+  SELECT 1 FROM scene_posts WHERE game_id = $1 AND id < $2
+) AS exists
+`
+
+type GamePostExistsBeforeParams struct {
+	GameID int64 `db:"game_id" json:"game_id"`
+	ID     int64 `db:"id" json:"id"`
+}
+
+func (q *Queries) GamePostExistsBefore(ctx context.Context, arg GamePostExistsBeforeParams) (bool, error) {
+	row := q.db.QueryRow(ctx, gamePostExistsBefore, arg.GameID, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const getScenePostByID = `-- name: GetScenePostByID :one
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts WHERE id = $1
+`
+
+func (q *Queries) GetScenePostByID(ctx context.Context, id int64) (ScenePost, error) {
+	row := q.db.QueryRow(ctx, getScenePostByID, id)
+	var i ScenePost
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.RowNumber,
+		&i.PlanID,
+		&i.AuthorID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.SystemCode,
+		&i.SystemData,
+		&i.SpeakingAsAssetID,
+		&i.Severity,
+		&i.SceneID,
+	)
+	return i, err
+}
+
 const listGamePosts = `-- name: ListGamePosts :many
 SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts
 WHERE game_id = $1
@@ -197,6 +314,149 @@ type ListGamePostsAfterParams struct {
 
 func (q *Queries) ListGamePostsAfter(ctx context.Context, arg ListGamePostsAfterParams) ([]ScenePost, error) {
 	rows, err := q.db.Query(ctx, listGamePostsAfter, arg.GameID, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScenePost{}
+	for rows.Next() {
+		var i ScenePost
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.RowNumber,
+			&i.PlanID,
+			&i.AuthorID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.SystemCode,
+			&i.SystemData,
+			&i.SpeakingAsAssetID,
+			&i.Severity,
+			&i.SceneID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGamePostsAfterLimited = `-- name: ListGamePostsAfterLimited :many
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts
+WHERE game_id = $1 AND id > $2
+ORDER BY id ASC
+LIMIT $3
+`
+
+type ListGamePostsAfterLimitedParams struct {
+	GameID int64 `db:"game_id" json:"game_id"`
+	ID     int64 `db:"id" json:"id"`
+	Limit  int32 `db:"limit" json:"limit"`
+}
+
+// Oldest `limit` posts after `id`, ascending. Used for the initial-window
+// unread span and the "after" half of an `around` window.
+func (q *Queries) ListGamePostsAfterLimited(ctx context.Context, arg ListGamePostsAfterLimitedParams) ([]ScenePost, error) {
+	rows, err := q.db.Query(ctx, listGamePostsAfterLimited, arg.GameID, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScenePost{}
+	for rows.Next() {
+		var i ScenePost
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.RowNumber,
+			&i.PlanID,
+			&i.AuthorID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.SystemCode,
+			&i.SystemData,
+			&i.SpeakingAsAssetID,
+			&i.Severity,
+			&i.SceneID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGamePostsBefore = `-- name: ListGamePostsBefore :many
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts
+WHERE game_id = $1 AND id < $2
+ORDER BY id DESC
+LIMIT $3
+`
+
+type ListGamePostsBeforeParams struct {
+	GameID int64 `db:"game_id" json:"game_id"`
+	ID     int64 `db:"id" json:"id"`
+	Limit  int32 `db:"limit" json:"limit"`
+}
+
+// Newest `limit` posts before `id`, returned newest-first — callers reverse
+// to ascending order themselves before merging into a window.
+func (q *Queries) ListGamePostsBefore(ctx context.Context, arg ListGamePostsBeforeParams) ([]ScenePost, error) {
+	rows, err := q.db.Query(ctx, listGamePostsBefore, arg.GameID, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScenePost{}
+	for rows.Next() {
+		var i ScenePost
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.RowNumber,
+			&i.PlanID,
+			&i.AuthorID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.SystemCode,
+			&i.SystemData,
+			&i.SpeakingAsAssetID,
+			&i.Severity,
+			&i.SceneID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGamePostsNewest = `-- name: ListGamePostsNewest :many
+SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts
+WHERE game_id = $1
+ORDER BY id DESC
+LIMIT $2
+`
+
+type ListGamePostsNewestParams struct {
+	GameID int64 `db:"game_id" json:"game_id"`
+	Limit  int32 `db:"limit" json:"limit"`
+}
+
+// Newest `limit` posts in the game, returned newest-first — callers reverse
+// to ascending order.
+func (q *Queries) ListGamePostsNewest(ctx context.Context, arg ListGamePostsNewestParams) ([]ScenePost, error) {
+	rows, err := q.db.Query(ctx, listGamePostsNewest, arg.GameID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

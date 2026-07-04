@@ -15,7 +15,7 @@ const createPlayer = `-- name: CreatePlayer :one
 
 INSERT INTO players (game_id, display_name, account_id, is_facilitator)
 VALUES ($1, $2, $3, $4)
-RETURNING id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens
+RETURNING id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id
 `
 
 type CreatePlayerParams struct {
@@ -44,12 +44,13 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Pla
 		&i.SeatOrder,
 		&i.AccountID,
 		&i.ShakeUpTokens,
+		&i.LastReadPostID,
 	)
 	return i, err
 }
 
 const getFirstFocusPlayer = `-- name: GetFirstFocusPlayer :one
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens FROM players
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players
 WHERE game_id = $1
 ORDER BY joined_at ASC
 LIMIT 1
@@ -69,12 +70,13 @@ func (q *Queries) GetFirstFocusPlayer(ctx context.Context, gameID int64) (Player
 		&i.SeatOrder,
 		&i.AccountID,
 		&i.ShakeUpTokens,
+		&i.LastReadPostID,
 	)
 	return i, err
 }
 
 const getNextFocusPlayer = `-- name: GetNextFocusPlayer :one
-SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens FROM players p
+SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id FROM players p
 WHERE p.game_id = $1
   AND p.joined_at > COALESCE(
     (SELECT p2.joined_at FROM players p2 WHERE p2.id = $2),
@@ -104,12 +106,13 @@ func (q *Queries) GetNextFocusPlayer(ctx context.Context, arg GetNextFocusPlayer
 		&i.SeatOrder,
 		&i.AccountID,
 		&i.ShakeUpTokens,
+		&i.LastReadPostID,
 	)
 	return i, err
 }
 
 const getPlayerByAccountAndGame = `-- name: GetPlayerByAccountAndGame :one
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens FROM players WHERE account_id = $1 AND game_id = $2
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players WHERE account_id = $1 AND game_id = $2
 `
 
 type GetPlayerByAccountAndGameParams struct {
@@ -130,12 +133,13 @@ func (q *Queries) GetPlayerByAccountAndGame(ctx context.Context, arg GetPlayerBy
 		&i.SeatOrder,
 		&i.AccountID,
 		&i.ShakeUpTokens,
+		&i.LastReadPostID,
 	)
 	return i, err
 }
 
 const getPlayerByID = `-- name: GetPlayerByID :one
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens FROM players WHERE id = $1
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players WHERE id = $1
 `
 
 func (q *Queries) GetPlayerByID(ctx context.Context, id int64) (Player, error) {
@@ -151,12 +155,13 @@ func (q *Queries) GetPlayerByID(ctx context.Context, id int64) (Player, error) {
 		&i.SeatOrder,
 		&i.AccountID,
 		&i.ShakeUpTokens,
+		&i.LastReadPostID,
 	)
 	return i, err
 }
 
 const getPlayersByGame = `-- name: GetPlayersByGame :many
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens FROM players WHERE game_id = $1 ORDER BY joined_at
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players WHERE game_id = $1 ORDER BY joined_at
 `
 
 func (q *Queries) GetPlayersByGame(ctx context.Context, gameID int64) ([]Player, error) {
@@ -178,6 +183,7 @@ func (q *Queries) GetPlayersByGame(ctx context.Context, gameID int64) ([]Player,
 			&i.SeatOrder,
 			&i.AccountID,
 			&i.ShakeUpTokens,
+			&i.LastReadPostID,
 		); err != nil {
 			return nil, err
 		}
@@ -208,7 +214,7 @@ func (q *Queries) IsPlayerInGame(ctx context.Context, arg IsPlayerInGameParams) 
 }
 
 const listPlayersByAccount = `-- name: ListPlayersByAccount :many
-SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, g.join_code
+SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id, g.join_code
 FROM players p
 JOIN games g ON g.id = p.game_id
 WHERE p.account_id = $1
@@ -216,16 +222,17 @@ ORDER BY p.joined_at DESC
 `
 
 type ListPlayersByAccountRow struct {
-	ID            int64              `db:"id" json:"id"`
-	GameID        int64              `db:"game_id" json:"game_id"`
-	DisplayName   string             `db:"display_name" json:"display_name"`
-	JoinedAt      pgtype.Timestamptz `db:"joined_at" json:"joined_at"`
-	IsFacilitator bool               `db:"is_facilitator" json:"is_facilitator"`
-	TokenColor    *string            `db:"token_color" json:"token_color"`
-	SeatOrder     *int16             `db:"seat_order" json:"seat_order"`
-	AccountID     int64              `db:"account_id" json:"account_id"`
-	ShakeUpTokens int16              `db:"shake_up_tokens" json:"shake_up_tokens"`
-	JoinCode      string             `db:"join_code" json:"join_code"`
+	ID             int64              `db:"id" json:"id"`
+	GameID         int64              `db:"game_id" json:"game_id"`
+	DisplayName    string             `db:"display_name" json:"display_name"`
+	JoinedAt       pgtype.Timestamptz `db:"joined_at" json:"joined_at"`
+	IsFacilitator  bool               `db:"is_facilitator" json:"is_facilitator"`
+	TokenColor     *string            `db:"token_color" json:"token_color"`
+	SeatOrder      *int16             `db:"seat_order" json:"seat_order"`
+	AccountID      int64              `db:"account_id" json:"account_id"`
+	ShakeUpTokens  int16              `db:"shake_up_tokens" json:"shake_up_tokens"`
+	LastReadPostID int64              `db:"last_read_post_id" json:"last_read_post_id"`
+	JoinCode       string             `db:"join_code" json:"join_code"`
 }
 
 func (q *Queries) ListPlayersByAccount(ctx context.Context, accountID int64) ([]ListPlayersByAccountRow, error) {
@@ -247,6 +254,7 @@ func (q *Queries) ListPlayersByAccount(ctx context.Context, accountID int64) ([]
 			&i.SeatOrder,
 			&i.AccountID,
 			&i.ShakeUpTokens,
+			&i.LastReadPostID,
 			&i.JoinCode,
 		); err != nil {
 			return nil, err
@@ -301,4 +309,32 @@ type UpdateDisplayNameByAccountParams struct {
 func (q *Queries) UpdateDisplayNameByAccount(ctx context.Context, arg UpdateDisplayNameByAccountParams) error {
 	_, err := q.db.Exec(ctx, updateDisplayNameByAccount, arg.AccountID, arg.DisplayName)
 	return err
+}
+
+const updateReadMarker = `-- name: UpdateReadMarker :one
+UPDATE players AS p
+SET last_read_post_id = GREATEST(
+  p.last_read_post_id,
+  LEAST(
+    $1::BIGINT,
+    COALESCE((SELECT MAX(sp.id) FROM scene_posts sp WHERE sp.game_id = $2), 0)
+  )
+)
+WHERE p.id = $3
+RETURNING p.last_read_post_id
+`
+
+type UpdateReadMarkerParams struct {
+	RequestedID int64 `db:"requested_id" json:"requested_id"`
+	GameID      int64 `db:"game_id" json:"game_id"`
+	PlayerID    int64 `db:"player_id" json:"player_id"`
+}
+
+// Monotonic: never moves the marker backwards, and clamps the requested
+// value to the game's newest post id so a stale/forged id can't overshoot.
+func (q *Queries) UpdateReadMarker(ctx context.Context, arg UpdateReadMarkerParams) (int64, error) {
+	row := q.db.QueryRow(ctx, updateReadMarker, arg.RequestedID, arg.GameID, arg.PlayerID)
+	var last_read_post_id int64
+	err := row.Scan(&last_read_post_id)
+	return last_read_post_id, err
 }

@@ -12,10 +12,10 @@
 	Two shapes of entry flow through the same feed:
 	- Player message: author_id != null, system_code == null, severity 0.
 	- System post:    author_id == null, system_code != null, severity > 0.
-	  The structural anchors the Public Record sidebar jumps to are
-	  severity = SEVERITY.BOUNDARY (100) with system_code in
-	  {row.advanced, scene.started, plan.prepared}; lower-severity
-	  system posts are action-log entries.
+	  The Public Record sidebar's jump gestures key off system_code, not
+	  severity — e.g. row.advanced is SEVERITY.BOUNDARY (100), while
+	  scene.started and plan.prepared are SEVERITY.IMPORTANT (75).
+	  Severity only drives the "hide bookkeeping" filter threshold.
 
 	The parent owns the posts array and pushes new entries via WS; this
 	component is a controlled view + an input that POSTs new player messages.

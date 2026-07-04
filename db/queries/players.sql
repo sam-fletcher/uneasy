@@ -37,6 +37,20 @@ UPDATE players SET token_color = $2 WHERE id = $1;
 -- name: SetPlayerSeatOrder :exec
 UPDATE players SET seat_order = $2 WHERE id = $1;
 
+-- name: UpdateReadMarker :one
+-- Monotonic: never moves the marker backwards, and clamps the requested
+-- value to the game's newest post id so a stale/forged id can't overshoot.
+UPDATE players AS p
+SET last_read_post_id = GREATEST(
+  p.last_read_post_id,
+  LEAST(
+    sqlc.arg(requested_id)::BIGINT,
+    COALESCE((SELECT MAX(sp.id) FROM scene_posts sp WHERE sp.game_id = sqlc.arg(game_id)), 0)
+  )
+)
+WHERE p.id = sqlc.arg(player_id)
+RETURNING p.last_read_post_id;
+
 -- name: GetNextFocusPlayer :one
 -- Returns the next player in join order after the current focus player.
 -- Caller must wrap around (use GetFirstFocusPlayer) when no row is returned.

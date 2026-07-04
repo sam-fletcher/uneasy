@@ -174,8 +174,8 @@ func TestCreateAsset_RequiresExactlyOneMarginalia(t *testing.T) {
 	require.Equal(t, "a trait", margs[0].Text)
 }
 
-// TestChatLog_AssetCreatedWithMarginalia: a single Minor post folds the asset
-// and its initial marginalia into one event.
+// TestChatLog_AssetCreatedWithMarginalia: a single Default post folds the
+// asset and its initial marginalia into one event.
 func TestChatLog_AssetCreatedWithMarginalia(t *testing.T) {
 	h := newAssetHarness(t, 2)
 	owner := h.tg.Players[0].DisplayName
@@ -188,7 +188,7 @@ func TestChatLog_AssetCreatedWithMarginalia(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code)
 
 	p := h.postBySystemCode("asset.created")
-	require.Equal(t, model.SeverityMinor, p.Severity)
+	require.Equal(t, model.SeverityDefault, p.Severity)
 	require.Contains(t, p.Body, owner)
 	require.Contains(t, p.Body, "Sir Reginald")
 	require.Contains(t, p.Body, "loyal to a fault")
@@ -212,8 +212,8 @@ func TestChatLog_AssetRenamed(t *testing.T) {
 	require.Contains(t, p.Body, "New Keep")
 }
 
-// TestChatLog_MarginaliaAddedAndEdited: add is Minor with text+asset; edit is
-// Trace with the new text+asset.
+// TestChatLog_MarginaliaAddedAndEdited: add is Default with text+asset; edit
+// is Trace with the new text+asset.
 func TestChatLog_MarginaliaAddedAndEdited(t *testing.T) {
 	h := newAssetHarness(t, 2)
 
@@ -226,7 +226,7 @@ func TestChatLog_MarginaliaAddedAndEdited(t *testing.T) {
 	code, _ := h.do("POST", 0, assetPath(id, "/marginalia"), map[string]any{"text": "owes a debt"})
 	require.Equal(t, http.StatusCreated, code)
 	added := h.postBySystemCode("marginalia.added")
-	require.Equal(t, model.SeverityMinor, added.Severity)
+	require.Equal(t, model.SeverityDefault, added.Severity)
 	require.Contains(t, added.Body, "owes a debt")
 	require.Contains(t, added.Body, "Lady Vex")
 

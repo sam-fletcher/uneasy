@@ -49,6 +49,10 @@ func loadActiveScene(ctx context.Context, q *dbgen.Queries, gameID int64) (*dbge
 // Per the rules, players may only speak as a character during a Scene, and
 // only as characters present in that scene under their control.
 //
+// scene is the game's active scene (or nil if none) — callers load it once
+// via loadActiveScene and pass it in, since they typically also need it to
+// stamp scene_id on the post being created.
+//
 // Rules:
 //   - assetID == 0 (unset) → always allowed (speaking as oneself).
 //   - A character attribution requires an active scene. The asset must be a
@@ -60,6 +64,7 @@ func validateSpeakingAs(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID, playerID, assetID int64,
+	scene *dbgen.Scene,
 ) (int, string) {
 	if assetID == 0 {
 		return 0, ""
@@ -77,10 +82,6 @@ func validateSpeakingAs(
 	}
 
 	// Speaking as a character is only permitted while a scene is active.
-	scene, err := loadActiveScene(ctx, q, gameID)
-	if err != nil {
-		return http.StatusInternalServerError, "could not load active scene"
-	}
 	if scene == nil {
 		return http.StatusBadRequest, "you can only speak as a character during a scene"
 	}

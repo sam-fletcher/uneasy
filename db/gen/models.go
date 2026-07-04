@@ -204,15 +204,16 @@ type PlanToken struct {
 }
 
 type Player struct {
-	ID            int64              `db:"id" json:"id"`
-	GameID        int64              `db:"game_id" json:"game_id"`
-	DisplayName   string             `db:"display_name" json:"display_name"`
-	JoinedAt      pgtype.Timestamptz `db:"joined_at" json:"joined_at"`
-	IsFacilitator bool               `db:"is_facilitator" json:"is_facilitator"`
-	TokenColor    *string            `db:"token_color" json:"token_color"`
-	SeatOrder     *int16             `db:"seat_order" json:"seat_order"`
-	AccountID     int64              `db:"account_id" json:"account_id"`
-	ShakeUpTokens int16              `db:"shake_up_tokens" json:"shake_up_tokens"`
+	ID             int64              `db:"id" json:"id"`
+	GameID         int64              `db:"game_id" json:"game_id"`
+	DisplayName    string             `db:"display_name" json:"display_name"`
+	JoinedAt       pgtype.Timestamptz `db:"joined_at" json:"joined_at"`
+	IsFacilitator  bool               `db:"is_facilitator" json:"is_facilitator"`
+	TokenColor     *string            `db:"token_color" json:"token_color"`
+	SeatOrder      *int16             `db:"seat_order" json:"seat_order"`
+	AccountID      int64              `db:"account_id" json:"account_id"`
+	ShakeUpTokens  int16              `db:"shake_up_tokens" json:"shake_up_tokens"`
+	LastReadPostID int64              `db:"last_read_post_id" json:"last_read_post_id"`
 }
 
 type PlayerCard struct {

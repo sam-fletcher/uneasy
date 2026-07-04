@@ -191,7 +191,7 @@ func categoryTitle(cat model.RankingCategory) string {
 //   - for each prepared plan a Default numbered line listing its preparers and
 //     their movement glyphs (↑ performed an up-swap / 👑 top of the track),
 //   - an Important "Standing:" line with the category's resulting rank order,
-//   - a Minor sentence explaining the clear when every plan was prepared,
+//   - a Default sentence explaining the clear when every plan was prepared,
 //   - a Default "no preparations" line for an untouched category.
 //
 // rowNumber is the new row just entered; the engrailed line sits after the
@@ -258,7 +258,7 @@ func EmitRankingUpdated(
 
 		if cat.Cleared {
 			EmitSystemPost(ctx, q, manager, gameID, "ranking.cleared",
-				model.SeverityMinor,
+				model.SeverityDefault,
 				"All plans were prepared → they're now freely available",
 				&rowNumber, nil, nil,
 				map[string]any{"category": string(cat.Category)})
@@ -293,15 +293,17 @@ func EmitAssetLeveraged(
 	rowNumber int16,
 ) {
 	EmitSystemPost(ctx, q, manager, gameID, "asset.leveraged",
-		model.SeverityMinor,
+		model.SeverityDefault,
 		fmt.Sprintf("%s leveraged.", assetMark(asset.Name)),
 		&rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
 
-// EmitRollCommit writes the Minor chat-system entry for a single dice
-// commit (asset leverage or banked-die spend). assetName == nil means a
-// banked-die commit; the chat substitutes "banked die" in that case.
+// EmitRollCommit writes the Default chat-system entry for a single dice
+// commit (asset leverage or banked-die spend) — "X's asset aided/interfered
+// with Y" is adversarial narrative, not routine bookkeeping (Chat Overhaul
+// Phase 1f). assetName == nil means a banked-die commit; the chat
+// substitutes "banked die" in that case.
 func EmitRollCommit(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -328,7 +330,7 @@ func EmitRollCommit(
 	}
 	body := fmt.Sprintf("%s's %s %s %s.", playerName, source, verb, target)
 	EmitSystemPost(ctx, q, manager, roll.GameID, "roll.commit",
-		model.SeverityMinor, body,
+		model.SeverityDefault, body,
 		roll.RowNumber, roll.PlanID, nil,
 		map[string]any{
 			"roll_id":         roll.ID,
@@ -439,21 +441,63 @@ func EmitAssetRefreshed(
 		map[string]any{"asset_id": asset.ID})
 }
 
+// EmitAssetsRefreshedBatch writes one combined Default post for the focus
+// player's step-5 batch refresh ("Sam refreshed A, B, and C.") in place of a
+// per-asset Minor burst — a turn action deserves one visible line, not up to
+// 13 bare "refreshed." lines (Chat Overhaul Phase 1f). Any other refresh
+// call site (the single-asset manual endpoint) keeps EmitAssetRefreshed.
+func EmitAssetsRefreshedBatch(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID, actorID int64,
+	assets []dbgen.Asset,
+	rowNumber int16,
+) {
+	actor := playerDisplayName(ctx, q, actorID)
+	names := make([]string, 0, len(assets))
+	ids := make([]int64, 0, len(assets))
+	for _, a := range assets {
+		names = append(names, assetMark(a.Name))
+		ids = append(ids, a.ID)
+	}
+	body := fmt.Sprintf("%s refreshed %s.", actor, joinWithAnd(names))
+	EmitSystemPost(ctx, q, manager, gameID, "asset.refreshed",
+		model.SeverityDefault, body,
+		&rowNumber, nil, nil,
+		map[string]any{"asset_ids": ids, "actor_id": actorID})
+}
+
+// joinWithAnd formats a string list as English prose: "A" / "A and B" /
+// "A, B, and C".
+func joinWithAnd(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	case 2:
+		return items[0] + " and " + items[1]
+	default:
+		return strings.Join(items[:len(items)-1], ", ") + ", and " + items[len(items)-1]
+	}
+}
+
 // ── Asset & marginalia lifecycle (add / edit / tear / take / main-character) ────
 //
 // These emitters back the goal of a chat log from which the full game state can
 // be reconstructed. Severity follows the scale in model/severity.go:
-//   - adds (asset, marginalia) → Minor: a new piece of state appeared.
+//   - adds (asset, marginalia) → Default: a new piece of state appeared.
 //   - edits (rename, marginalia text) → Trace: a tweak to existing state.
 //   - tear / take / main-character → Default: notable, often adversarial moves.
 //
 // Marginalia are a first-class game concept, not throwaway notes, so their text
 // is always carried in the body (adds and edits alike) for reconstruction.
 
-// EmitAssetCreated writes the Minor asset.created post. When the asset is born
-// with marginalia (CreateAsset accepts an initial set), they're folded into the
-// same line so the creation reads as a single event rather than a burst of
-// per-marginalia adds.
+// EmitAssetCreated writes the Default asset.created post — a real board-state
+// change, not bookkeeping. When the asset is born with marginalia (CreateAsset
+// accepts an initial set), they're folded into the same line so the creation
+// reads as a single event rather than a burst of per-marginalia adds.
 // rowNumber is nullable: the prologue creates assets before any public-record
 // row exists, and scene_posts.row_number is NULL for that case. A non-nil row
 // that doesn't exist would fail the (game_id, row_number) FK and silently drop
@@ -477,7 +521,7 @@ func EmitAssetCreated(
 		body += fmt.Sprintf(" with marginalia: %s", strings.Join(quoted, ", "))
 	}
 	EmitSystemPost(ctx, q, manager, gameID, "asset.created",
-		model.SeverityMinor, body,
+		model.SeverityDefault, body,
 		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "creator_id": asset.CreatorID})
 }
@@ -502,8 +546,8 @@ func EmitAssetRenamed(
 		map[string]any{"asset_id": asset.ID, "editor_id": actorID})
 }
 
-// EmitMarginaliaAdded writes the Minor marginalia.added post, carrying the new
-// text and the asset it's on.
+// EmitMarginaliaAdded writes the Default marginalia.added post, carrying the
+// new text and the asset it's on — new narrative state, often a plan effect.
 // rowNumber is nullable for the prologue case — see EmitAssetCreated.
 func EmitMarginaliaAdded(
 	ctx context.Context,
@@ -517,7 +561,7 @@ func EmitMarginaliaAdded(
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
 	EmitSystemPost(ctx, q, manager, gameID, "marginalia.added",
-		model.SeverityMinor,
+		model.SeverityDefault,
 		fmt.Sprintf("%s added marginalia %q to %s", actor, m.Text, assetMark(asset.Name)),
 		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "author_id": actorID})
@@ -779,8 +823,9 @@ func EmitShakeUpEnded(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 		nil, nil, nil, nil)
 }
 
-// EmitShakeUpRolled writes the Minor post for one player's category roll, which
-// gathers them that many spending tokens. total is their resulting pool.
+// EmitShakeUpRolled writes the Default post for one player's category roll,
+// which gathers them that many spending tokens — an endgame outcome players
+// need in the record. total is their resulting pool.
 func EmitShakeUpRolled(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -791,7 +836,7 @@ func EmitShakeUpRolled(
 ) {
 	name := playerDisplayName(ctx, q, playerID)
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.rolled",
-		model.SeverityMinor,
+		model.SeverityDefault,
 		fmt.Sprintf("%s rolled %d — gains %d %s token(s) (pool: %d)",
 			name, result, result, shakeUpCategoryTitle(category), total),
 		nil, nil, nil,
