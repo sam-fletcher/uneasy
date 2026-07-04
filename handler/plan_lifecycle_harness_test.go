@@ -98,6 +98,15 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 	r.Use(appMiddleware.EnsureSession(q))
 	r.Post("/api/tables/{id}/prepare-plan", PreparePlan(store, manager))
 	r.Get("/api/tables/{id}/asset-suggestions", GetAssetSuggestions(store))
+	// Scene + chat routes — needed by plan-scene lifecycle tests
+	// (adr/CHAT_OVERHAUL_PLAN.md Phase 5): posting in/out of character, reading
+	// the active scene + peers, and the turn-scene-only end-scene/create-scene
+	// pair (used to prove EndScene refuses a plan-scene, and that a normal
+	// follow-scene can still be set after one closes).
+	r.Post("/api/tables/{id}/posts", CreatePlayerPost(store, manager))
+	r.Get("/api/tables/{id}/scenes/active", GetActiveSceneHandler(store))
+	r.Post("/api/tables/{id}/scenes", CreateScene(store, manager))
+	r.Post("/api/tables/{id}/end-scene", EndScene(store, manager))
 	// Simultaneous-reveal submit — needed by variable-delay plans (Clandestinely
 	// Liaise, Make War) to assign their row before resolution.
 	r.Post("/api/reveals/{revealId}/submit", SubmitReveal(store, manager))
@@ -331,6 +340,51 @@ func (h *planLifecycle) setFocus(playerIdx int) {
 	require.NoError(h.t, h.q.SetFocusPlayer(context.Background(), dbgen.SetFocusPlayerParams{
 		ID: h.tg.Game.ID, FocusPlayerID: &id,
 	}))
+}
+
+// postMessage drives POST /api/tables/{id}/posts as players[playerIdx].
+// speakingAsAssetID may be 0 for table-talk (speaking as oneself). Unlike
+// prepare/resolve/etc., callers of postMessage often expect a rejection (a
+// non-participant speaking as a character they don't control), so it
+// returns the raw status/body rather than asserting success itself.
+func (h *planLifecycle) postMessage(playerIdx int, body string, speakingAsAssetID int64) (int, map[string]any) {
+	h.t.Helper()
+	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/posts"
+	return h.post(playerIdx, path, map[string]any{
+		"body": body, "speaking_as_asset_id": speakingAsAssetID,
+	})
+}
+
+// activeScene fetches GET /api/tables/{id}/scenes/active as players[viewerIdx]
+// (any player may read it) and returns the decoded scene (nil if none) plus
+// its peer rows.
+func (h *planLifecycle) activeScene(viewerIdx int) (*dbgen.Scene, []scenePeerView) {
+	h.t.Helper()
+	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/scenes/active"
+	code, body := h.get(viewerIdx, path)
+	require.Equalf(h.t, http.StatusOK, code, "get active scene: %v", body)
+	if body["scene"] == nil {
+		return nil, nil
+	}
+	sceneBlob, err := json.Marshal(body["scene"])
+	require.NoError(h.t, err)
+	var scene dbgen.Scene
+	require.NoError(h.t, json.Unmarshal(sceneBlob, &scene))
+	peersBlob, err := json.Marshal(body["peers"])
+	require.NoError(h.t, err)
+	var peers []scenePeerView
+	require.NoError(h.t, json.Unmarshal(peersBlob, &peers))
+	return &scene, peers
+}
+
+// mainCharacterID returns players[idx]'s current main-character asset id.
+func (h *planLifecycle) mainCharacterID(idx int) int64 {
+	h.t.Helper()
+	mc, err := h.q.GetMainCharacterByOwner(context.Background(), dbgen.GetMainCharacterByOwnerParams{
+		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[idx].ID,
+	})
+	require.NoError(h.t, err)
+	return mc.ID
 }
 
 // assetID is a convenience helper for tests that need a target asset on

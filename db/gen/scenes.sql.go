@@ -36,6 +36,52 @@ func (q *Queries) ClaimScenePeer(ctx context.Context, arg ClaimScenePeerParams) 
 	return result.RowsAffected(), nil
 }
 
+const createPlanScene = `-- name: CreatePlanScene :one
+INSERT INTO scenes (
+  game_id, row_number, focus_player_id, kind, plan_id
+) VALUES (
+  $1, $2, $3, 'plan', $4
+)
+RETURNING id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at, kind, plan_id
+`
+
+type CreatePlanSceneParams struct {
+	GameID        int64  `db:"game_id" json:"game_id"`
+	RowNumber     int16  `db:"row_number" json:"row_number"`
+	FocusPlayerID int64  `db:"focus_player_id" json:"focus_player_id"`
+	PlanID        *int64 `db:"plan_id" json:"plan_id"`
+}
+
+// Opens a plan-scene (adr/CHAT_OVERHAUL_PLAN.md Phase 5) at the moment a
+// roleplay-heavy plan flips to resolving. No location/time setup step —
+// those columns stay NULL, per the scenes_location_by_kind CHECK.
+func (q *Queries) CreatePlanScene(ctx context.Context, arg CreatePlanSceneParams) (Scene, error) {
+	row := q.db.QueryRow(ctx, createPlanScene,
+		arg.GameID,
+		arg.RowNumber,
+		arg.FocusPlayerID,
+		arg.PlanID,
+	)
+	var i Scene
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.RowNumber,
+		&i.FocusPlayerID,
+		&i.LocationHoldingID,
+		&i.LocationCustom,
+		&i.TimeElapsed,
+		&i.TimeNote,
+		&i.Prompt,
+		&i.ResolvedPlanID,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.Kind,
+		&i.PlanID,
+	)
+	return i, err
+}
+
 const createScene = `-- name: CreateScene :one
 
 INSERT INTO scenes (
@@ -49,19 +95,19 @@ INSERT INTO scenes (
   $6, $7,
   $8, $9
 )
-RETURNING id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at
+RETURNING id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at, kind, plan_id
 `
 
 type CreateSceneParams struct {
-	GameID            int64             `db:"game_id" json:"game_id"`
-	RowNumber         int16             `db:"row_number" json:"row_number"`
-	FocusPlayerID     int64             `db:"focus_player_id" json:"focus_player_id"`
-	LocationHoldingID *int64            `db:"location_holding_id" json:"location_holding_id"`
-	LocationCustom    *string           `db:"location_custom" json:"location_custom"`
-	TimeElapsed       model.TimeElapsed `db:"time_elapsed" json:"time_elapsed"`
-	TimeNote          *string           `db:"time_note" json:"time_note"`
-	Prompt            string            `db:"prompt" json:"prompt"`
-	ResolvedPlanID    *int64            `db:"resolved_plan_id" json:"resolved_plan_id"`
+	GameID            int64              `db:"game_id" json:"game_id"`
+	RowNumber         int16              `db:"row_number" json:"row_number"`
+	FocusPlayerID     int64              `db:"focus_player_id" json:"focus_player_id"`
+	LocationHoldingID *int64             `db:"location_holding_id" json:"location_holding_id"`
+	LocationCustom    *string            `db:"location_custom" json:"location_custom"`
+	TimeElapsed       *model.TimeElapsed `db:"time_elapsed" json:"time_elapsed"`
+	TimeNote          *string            `db:"time_note" json:"time_note"`
+	Prompt            string             `db:"prompt" json:"prompt"`
+	ResolvedPlanID    *int64             `db:"resolved_plan_id" json:"resolved_plan_id"`
 }
 
 // sqlc query file for scenes and scene_peers.
@@ -92,6 +138,8 @@ func (q *Queries) CreateScene(ctx context.Context, arg CreateSceneParams) (Scene
 		&i.ResolvedPlanID,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.Kind,
+		&i.PlanID,
 	)
 	return i, err
 }
@@ -108,7 +156,7 @@ func (q *Queries) EndScene(ctx context.Context, id int64) error {
 }
 
 const getActiveScene = `-- name: GetActiveScene :one
-SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at FROM scenes
+SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at, kind, plan_id FROM scenes
 WHERE game_id = $1 AND ended_at IS NULL
 LIMIT 1
 `
@@ -130,6 +178,8 @@ func (q *Queries) GetActiveScene(ctx context.Context, gameID int64) (Scene, erro
 		&i.ResolvedPlanID,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.Kind,
+		&i.PlanID,
 	)
 	return i, err
 }
@@ -176,7 +226,7 @@ func (q *Queries) GetMostRecentResolvedPlanOnRow(ctx context.Context, arg GetMos
 }
 
 const getSceneByID = `-- name: GetSceneByID :one
-SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at FROM scenes WHERE id = $1
+SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at, kind, plan_id FROM scenes WHERE id = $1
 `
 
 func (q *Queries) GetSceneByID(ctx context.Context, id int64) (Scene, error) {
@@ -195,6 +245,8 @@ func (q *Queries) GetSceneByID(ctx context.Context, id int64) (Scene, error) {
 		&i.ResolvedPlanID,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.Kind,
+		&i.PlanID,
 	)
 	return i, err
 }
@@ -216,11 +268,35 @@ func (q *Queries) GetScenePeer(ctx context.Context, arg GetScenePeerParams) (Sce
 	return i, err
 }
 
+const getScenePeerByOwner = `-- name: GetScenePeerByOwner :one
+SELECT sp.scene_id, sp.peer_asset_id, sp.controller_player_id FROM scene_peers sp
+JOIN assets a ON a.id = sp.peer_asset_id
+WHERE sp.scene_id = $1 AND a.owner_id = $2
+LIMIT 1
+`
+
+type GetScenePeerByOwnerParams struct {
+	SceneID int64 `db:"scene_id" json:"scene_id"`
+	OwnerID int64 `db:"owner_id" json:"owner_id"`
+}
+
+// Finds a scene's peer row for whichever asset is currently owned by
+// playerID, regardless of which specific asset id it references. Used to
+// repoint a stale peer row after a main-character swap/replacement — the
+// caller doesn't need to know the old asset id, just whose row it was.
+func (q *Queries) GetScenePeerByOwner(ctx context.Context, arg GetScenePeerByOwnerParams) (ScenePeer, error) {
+	row := q.db.QueryRow(ctx, getScenePeerByOwner, arg.SceneID, arg.OwnerID)
+	var i ScenePeer
+	err := row.Scan(&i.SceneID, &i.PeerAssetID, &i.ControllerPlayerID)
+	return i, err
+}
+
 const getTurnScene = `-- name: GetTurnScene :one
-SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at FROM scenes
+SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at, kind, plan_id FROM scenes
 WHERE game_id = $1
   AND row_number = $2
   AND focus_player_id = $3
+  AND kind = 'turn'
   AND resolved_plan_id IS NULL
 LIMIT 1
 `
@@ -235,7 +311,9 @@ type GetTurnSceneParams struct {
 // up at the start of their turn (resolved_plan_id IS NULL), regardless of
 // whether it has ended. Used by /game-state so a refreshing client can tell
 // whether the focus player is mid-scene or in their post-scene action step.
-// Distinct from plan-resolution scenes, which have a non-null resolved_plan_id.
+// Distinct from plan-resolution scenes (kind='plan'), which never carry
+// resolved_plan_id — the kind filter is defense-in-depth against the case
+// where a plan's preparer happens to also be the row's current focus player.
 func (q *Queries) GetTurnScene(ctx context.Context, arg GetTurnSceneParams) (Scene, error) {
 	row := q.db.QueryRow(ctx, getTurnScene, arg.GameID, arg.RowNumber, arg.FocusPlayerID)
 	var i Scene
@@ -252,6 +330,8 @@ func (q *Queries) GetTurnScene(ctx context.Context, arg GetTurnSceneParams) (Sce
 		&i.ResolvedPlanID,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.Kind,
+		&i.PlanID,
 	)
 	return i, err
 }
@@ -297,7 +377,7 @@ func (q *Queries) ListScenePeers(ctx context.Context, sceneID int64) ([]ScenePee
 }
 
 const listScenesForRow = `-- name: ListScenesForRow :many
-SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at FROM scenes
+SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at, kind, plan_id FROM scenes
 WHERE game_id = $1 AND row_number = $2
 ORDER BY started_at
 `
@@ -329,6 +409,8 @@ func (q *Queries) ListScenesForRow(ctx context.Context, arg ListScenesForRowPara
 			&i.ResolvedPlanID,
 			&i.StartedAt,
 			&i.EndedAt,
+			&i.Kind,
+			&i.PlanID,
 		); err != nil {
 			return nil, err
 		}
@@ -338,4 +420,27 @@ func (q *Queries) ListScenesForRow(ctx context.Context, arg ListScenesForRowPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateScenePeerAsset = `-- name: UpdateScenePeerAsset :execrows
+UPDATE scene_peers
+SET peer_asset_id = $1
+WHERE scene_id = $2
+  AND peer_asset_id = $3
+`
+
+type UpdateScenePeerAssetParams struct {
+	NewPeerAssetID int64 `db:"new_peer_asset_id" json:"new_peer_asset_id"`
+	SceneID        int64 `db:"scene_id" json:"scene_id"`
+	OldPeerAssetID int64 `db:"old_peer_asset_id" json:"old_peer_asset_id"`
+}
+
+// Repoints a scene peer row at a new asset id (a main-character swap while a
+// scene is active) without disturbing controller_player_id.
+func (q *Queries) UpdateScenePeerAsset(ctx context.Context, arg UpdateScenePeerAssetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateScenePeerAsset, arg.NewPeerAssetID, arg.SceneID, arg.OldPeerAssetID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

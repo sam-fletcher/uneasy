@@ -156,6 +156,13 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 	EmitSystemPost(ctx, q, manager, plan.GameID, code, severity, body,
 		plan.RowNumber, &planID, nil,
 		map[string]any{"plan_id": plan.ID, "result": result})
+
+	// Close this plan's plan-scene, if it opened one (adr/CHAT_OVERHAUL_PLAN.md
+	// Phase 5). Every result closes it — a cancelled plan can't leave one
+	// dangling — and this single choke point covers every EmitPlanResolved
+	// call site (the shared finalizePlanResolution path plus each plan's own
+	// custom completion route) without touching them individually.
+	closePlanSceneIfAny(ctx, q, manager, plan)
 }
 
 // rankingGlyphSymbol maps a rankingMove glyph keyword to its chat symbol.

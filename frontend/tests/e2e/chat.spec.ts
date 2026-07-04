@@ -484,3 +484,81 @@ test('scene container renders in the always-open desktop chat column', async ({ 
 
   await aliceCtx.close();
 });
+
+// Chat Overhaul Phase 5: plan-scenes. Host Festivity has no location/time
+// setup step — the plan-scene opens automatically the moment resolution
+// kicks off, with every player already a participant (no join step; see
+// hfRoster in handler/plan_host_festivity.go) — so both host and guest can
+// speak in character immediately, rendering inside the SAME scene-container
+// UI Phase 4 already built (no ChatPanel/chatFeed changes needed for this).
+test('plan-scene: a festivity renders both players\' in-character posts inside one container', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  await reset.post('http://localhost:8090/api/dev/reset');
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: tableId, players } = await seedRes.json();
+  const alicePlayerID: number = players[0].id;
+  const bobPlayerID: number = players[1].id;
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice'); // alice is the seed's facilitator + focus player
+  await devLogin(bobCtx.request, 'bob');
+
+  // Alice hosts a festivity.
+  const prepRes = await aliceCtx.request.post(`/api/tables/${tableId}/prepare-plan`, {
+    data: { plan_type: 'host_festivity', preparation_notes: 'a grand ball' },
+  });
+  expect(prepRes.ok(), `prepare-plan failed: ${await prepRes.text()}`).toBeTruthy();
+  const { plan } = await prepRes.json();
+
+  // Jump straight to the festivity's row — advance-row's row-state broadcast
+  // auto-kicks off resolution for a pending plan on the new current row (no
+  // separate "click resolve" step; see broadcastRowState in handler/row_state.go).
+  const jumpRes = await aliceCtx.request.post('/api/dev/advance-row', { data: { plan_id: plan.id } });
+  expect(jumpRes.ok(), `advance-row failed: ${await jumpRes.text()}`).toBeTruthy();
+
+  const assetsRes = await aliceCtx.request.get(`/api/tables/${tableId}/assets`);
+  const { assets } = (await assetsRes.json()) as {
+    assets: { id: number; owner_id: number; is_main_character: boolean }[];
+  };
+  const aliceMC = assets.find((a) => a.owner_id === alicePlayerID && a.is_main_character);
+  const bobMC = assets.find((a) => a.owner_id === bobPlayerID && a.is_main_character);
+  expect(aliceMC, 'alice main character not found').toBeTruthy();
+  expect(bobMC, 'bob main character not found').toBeTruthy();
+
+  const hostLine = 'Welcome, honored guests!';
+  const guestLine = 'A pleasure to be here.';
+  const hostPost = await aliceCtx.request.post(`/api/tables/${tableId}/posts`, {
+    data: { body: hostLine, speaking_as_asset_id: aliceMC!.id },
+  });
+  expect(hostPost.ok(), `host in-character post failed: ${await hostPost.text()}`).toBeTruthy();
+  const guestPost = await bobCtx.request.post(`/api/tables/${tableId}/posts`, {
+    data: { body: guestLine, speaking_as_asset_id: bobMC!.id },
+  });
+  expect(guestPost.ok(), `guest in-character post failed: ${await guestPost.text()}`).toBeTruthy();
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 390, height: 844 }); // mobile-first
+  await alicePage.goto(`/table/${tableId}`);
+  await alicePage.locator('.strip').click();
+  const chat = alicePage.locator('[aria-label="Chat"]');
+  await expect(chat).toBeVisible();
+
+  // Both in-character lines render inside ONE scene container — the plan
+  // itself, not a location/time turn-scene.
+  const header = chat.locator('.scene-header');
+  await expect(header).toBeVisible();
+  await expect(header).toContainText('Host Festivity');
+  await expect(header).toBeDisabled(); // live
+
+  await expect(chat.getByText(hostLine)).toBeVisible();
+  await expect(chat.getByText(guestLine)).toBeVisible();
+  await expect(chat.locator('.message.in-character', { hasText: hostLine })).toBeVisible();
+  await expect(chat.locator('.message.in-character', { hasText: guestLine })).toBeVisible();
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});

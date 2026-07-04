@@ -162,10 +162,17 @@
 
 	const selfName = $derived(playerName(currentPlayerID) || 'You');
 
-	// Only the focus player's main character is implicitly present; everyone
-	// else's MC appears in activeScenePeers if the focus player added it.
+	// Only the focus player's main character is implicitly present in a
+	// turn-scene; everyone else's MC appears in activeScenePeers if the focus
+	// player added it. A plan-scene has no implicit-MC shortcut — the
+	// preparer's main character is an explicit scene_peers row like every
+	// other participant's (see PlanSceneStager in the backend), so it already
+	// surfaces via myControlledPeers below without this clause.
 	const isFocusPlayer = $derived(
-		activeScene != null && currentPlayerID != null && activeScene.focus_player_id === currentPlayerID
+		activeScene != null &&
+			activeScene.kind === 'turn' &&
+			currentPlayerID != null &&
+			activeScene.focus_player_id === currentPlayerID
 	);
 
 	const ownMainCharacter = $derived(

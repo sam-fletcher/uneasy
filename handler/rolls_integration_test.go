@@ -481,7 +481,7 @@ func TestRollFlow_ActorContextValidation(t *testing.T) {
 		RowNumber:      h.tg.Game.CurrentRow,
 		FocusPlayerID:  h.tg.Players[1].ID,
 		LocationCustom: &customLoc,
-		TimeElapsed:    model.TimeHours,
+		TimeElapsed:    new(model.TimeHours),
 	})
 	require.NoError(t, err)
 

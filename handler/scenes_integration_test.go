@@ -72,7 +72,7 @@ func TestCreateScene_HoldingLocation(t *testing.T) {
 		FocusPlayerID:     tg.Players[0].ID,
 		LocationHoldingID: &holding.ID,
 		LocationCustom:    nil,
-		TimeElapsed:       model.TimeHours,
+		TimeElapsed:       new(model.TimeHours),
 		TimeNote:          nil,
 		Prompt:            "",
 		ResolvedPlanID:    nil,
@@ -82,7 +82,8 @@ func TestCreateScene_HoldingLocation(t *testing.T) {
 	require.NotNil(t, scene.LocationHoldingID)
 	assert.Equal(t, holding.ID, *scene.LocationHoldingID)
 	assert.Nil(t, scene.LocationCustom)
-	assert.Equal(t, model.TimeHours, scene.TimeElapsed)
+	require.NotNil(t, scene.TimeElapsed)
+	assert.Equal(t, model.TimeHours, *scene.TimeElapsed)
 	assert.False(t, scene.EndedAt.Valid)
 }
 
@@ -98,7 +99,7 @@ func TestCreateScene_CustomLocation(t *testing.T) {
 		RowNumber:      tg.Game.CurrentRow,
 		FocusPlayerID:  tg.Players[0].ID,
 		LocationCustom: &custom,
-		TimeElapsed:    model.TimeMoments,
+		TimeElapsed:    new(model.TimeMoments),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scene.LocationCustom)
@@ -121,7 +122,7 @@ func TestCreateScene_LocationXorEnforced(t *testing.T) {
 		FocusPlayerID:     tg.Players[0].ID,
 		LocationHoldingID: &holding.ID,
 		LocationCustom:    &custom,
-		TimeElapsed:       model.TimeHours,
+		TimeElapsed:       new(model.TimeHours),
 	})
 	require.Error(t, err, "CHECK should reject both location_holding_id and location_custom set")
 
@@ -130,7 +131,7 @@ func TestCreateScene_LocationXorEnforced(t *testing.T) {
 		GameID:        tg.Game.ID,
 		RowNumber:     tg.Game.CurrentRow,
 		FocusPlayerID: tg.Players[0].ID,
-		TimeElapsed:   model.TimeHours,
+		TimeElapsed:   new(model.TimeHours),
 	})
 	require.Error(t, err, "CHECK should reject neither location set")
 }
@@ -147,7 +148,7 @@ func TestCreateScene_OnlyOneActivePerGame(t *testing.T) {
 		RowNumber:      tg.Game.CurrentRow,
 		FocusPlayerID:  tg.Players[0].ID,
 		LocationCustom: &custom,
-		TimeElapsed:    model.TimeMoments,
+		TimeElapsed:    new(model.TimeMoments),
 	})
 	require.NoError(t, err)
 
@@ -158,7 +159,7 @@ func TestCreateScene_OnlyOneActivePerGame(t *testing.T) {
 		RowNumber:      tg.Game.CurrentRow,
 		FocusPlayerID:  tg.Players[0].ID,
 		LocationCustom: &custom2,
-		TimeElapsed:    model.TimeMoments,
+		TimeElapsed:    new(model.TimeMoments),
 	})
 	require.Error(t, err, "expected unique index violation for second active scene")
 
@@ -169,7 +170,7 @@ func TestCreateScene_OnlyOneActivePerGame(t *testing.T) {
 		RowNumber:      tg.Game.CurrentRow,
 		FocusPlayerID:  tg.Players[0].ID,
 		LocationCustom: &custom2,
-		TimeElapsed:    model.TimeMoments,
+		TimeElapsed:    new(model.TimeMoments),
 	})
 	require.NoError(t, err, "second scene should be permitted once the first has ended")
 }
@@ -198,7 +199,7 @@ func TestClaimScenePeer_Atomic(t *testing.T) {
 		RowNumber:      tg.Game.CurrentRow,
 		FocusPlayerID:  tg.Players[0].ID,
 		LocationCustom: &custom,
-		TimeElapsed:    model.TimeMoments,
+		TimeElapsed:    new(model.TimeMoments),
 	})
 	require.NoError(t, err)
 

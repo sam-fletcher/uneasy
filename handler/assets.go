@@ -326,6 +326,13 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				return
 			}
 			asset.IsMainCharacter = *body.IsMainCharacter
+			if *body.IsMainCharacter {
+				// A stale scene_peers row from the old main character (if the
+				// player was a scene participant) would otherwise silently reject
+				// the new one as "not in the current scene" — see
+				// repointScenePeerToNewMainCharacter.
+				repointScenePeerToNewMainCharacter(ctx, s.Q, manager, asset.GameID, player.ID, asset.ID)
+			}
 			if g, gErr := s.Q.GetGameByID(ctx, asset.GameID); gErr == nil {
 				EmitMainCharacterChanged(
 					ctx,
@@ -403,6 +410,9 @@ func ReplaceMainCharacterWithNewPeer(s *db.Store, manager *hub.Manager) http.Han
 		}
 
 		broadcastConscription(r, s.Q, manager, gameID, player.ID, asset, marginalia, owned)
+		// See UpdateAsset's promotion path — a stale scene_peers row from the
+		// destroyed main character would otherwise silently reject the new one.
+		repointScenePeerToNewMainCharacter(ctx, s.Q, manager, gameID, player.ID, asset.ID)
 		// Clears the replacement-choice gate now that the player has an MC again.
 		broadcastRowState(ctx, s.Q, manager, gameID)
 

@@ -380,11 +380,14 @@
 		<div class="scene-panel">
 			<!-- ── Scene structure ────────────────────────────────────────────
 				Two states:
-				  1. Active scene  → SceneDetailsPanel (everyone; controls vary)
+				  1. Active turn-scene → SceneDetailsPanel (everyone; controls vary)
 				  2. No scene, focus player, no pending plans → SceneSetupForm
 				While a plan is resolving / pending, neither panel renders —
-				PlanPanel takes over. The page-level WaitingOnBar carries the
-				"who/what we're waiting on" copy.
+				PlanPanel takes over. This includes a plan-scene (kind='plan'):
+				it has no location/time/End-Scene button to show here — only
+				the persona picker and chat container react to it (ChatPanel).
+				The page-level WaitingOnBar carries the "who/what we're
+				waiting on" copy.
 			-->
 			<!-- ── Delay-reveal play-area takeover ──────────────────────────
 				While a Make War or Clandestinely Liaise plan is awaiting its
@@ -407,7 +410,7 @@
 				{:else if delayRevealPlan.plan_type === 'clandestinely_liaise'}
 					<ClandestinelyLiaisePanel ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
 				{/if}
-			{:else if activeScene}
+			{:else if activeScene && activeScene.kind === 'turn'}
 				<SceneDetailsPanel
 					gameID={game.id}
 					scene={activeScene}

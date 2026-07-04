@@ -99,6 +99,15 @@ func (pdHandler) ComputeDifficulty(
 	return gamepkg.ProposeDecreeDifficulty(rank), nil
 }
 
+// PlanSceneParticipants: the auto-seated council (preparer + higher-power
+// players + monarchOwner) — computed directly via pdAutoSeatCouncil rather
+// than read back from resolution_data, since this runs before OnResolve
+// persists it. Lower-ranked joiners are added later via
+// pdJoinCouncilHandler's AddPlanSceneParticipant call.
+func (pdHandler) PlanSceneParticipants(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]int64, error) {
+	return pdAutoSeatCouncil(ctx, q, plan)
+}
+
 // Resolution authority is intentionally shared but PREPARER-ANCHORED (decided
 // in the 2026-05 rules audit): the signatory has real sway during resolution —
 // they call the roll (call-roll) and write the addendum (set-addendum), both
@@ -812,6 +821,13 @@ func pdJoinCouncilHandler(deps *PlanDeps) http.HandlerFunc {
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save council data", err)
 			return
+		}
+
+		// Add the joiner's main character as a plan-scene peer (adr/CHAT_OVERHAUL_PLAN.md
+		// Phase 5) so they can speak in character for the rest of the council
+		// meeting — a no-op if this plan never opened one.
+		if scene, sErr := loadActiveScene(ctx, deps.Q, plan.GameID); sErr == nil && scene != nil {
+			AddPlanSceneParticipant(ctx, deps.Q, deps.Manager, scene, player.ID)
 		}
 
 		broadcastEvent(deps.Manager, plan.GameID, model.EventDecreeCouncilJoined, model.DecreeCouncilJoinedPayload{

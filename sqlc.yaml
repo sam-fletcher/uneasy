@@ -53,3 +53,8 @@ sql:
             go_type:
               import: "uneasy/model"
               type: "TimeElapsed"
+              pointer: true
+          - column: "scenes.kind"
+            go_type:
+              import: "uneasy/model"
+              type: "SceneKind"

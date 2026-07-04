@@ -293,12 +293,14 @@ type Scene struct {
 	FocusPlayerID     int64              `db:"focus_player_id" json:"focus_player_id"`
 	LocationHoldingID *int64             `db:"location_holding_id" json:"location_holding_id"`
 	LocationCustom    *string            `db:"location_custom" json:"location_custom"`
-	TimeElapsed       model.TimeElapsed  `db:"time_elapsed" json:"time_elapsed"`
+	TimeElapsed       *model.TimeElapsed `db:"time_elapsed" json:"time_elapsed"`
 	TimeNote          *string            `db:"time_note" json:"time_note"`
 	Prompt            string             `db:"prompt" json:"prompt"`
 	ResolvedPlanID    *int64             `db:"resolved_plan_id" json:"resolved_plan_id"`
 	StartedAt         pgtype.Timestamptz `db:"started_at" json:"started_at"`
 	EndedAt           pgtype.Timestamptz `db:"ended_at" json:"ended_at"`
+	Kind              model.SceneKind    `db:"kind" json:"kind"`
+	PlanID            *int64             `db:"plan_id" json:"plan_id"`
 }
 
 type SceneEntry struct {

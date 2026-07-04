@@ -98,9 +98,15 @@ func validateSpeakingAs(
 		return 0, ""
 	}
 
-	// The focus player's main character is implicitly present in their scene
-	// and is never recorded as a scene_peer, so allow it explicitly.
-	if asset.IsMainCharacter && asset.OwnerID == playerID && scene.FocusPlayerID == playerID {
+	// The turn-scene focus player's main character is implicitly present and
+	// never recorded as a scene_peer, so allow it explicitly. Turn-scene only:
+	// a plan-scene records the preparer's main character as an explicit peer
+	// row like everyone else's (see PlanSceneStager), so this shortcut would
+	// be redundant there — and if a plan-scene's peer row were ever missing
+	// (e.g. the preparer had no main character when the scene opened), this
+	// clause must NOT paper over that by granting speech anyway.
+	if scene.Kind == model.SceneKindTurn &&
+		asset.IsMainCharacter && asset.OwnerID == playerID && scene.FocusPlayerID == playerID {
 		return 0, ""
 	}
 
@@ -387,7 +393,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				FocusPlayerID:     player.ID,
 				LocationHoldingID: holdingID,
 				LocationCustom:    customLoc,
-				TimeElapsed:       body.TimeElapsed,
+				TimeElapsed:       &body.TimeElapsed,
 				TimeNote:          timeNote,
 				Prompt:            prompt,
 				ResolvedPlanID:    resolvedPlanID,
@@ -489,7 +495,12 @@ func sceneTimeLabel(scene *dbgen.Scene) string {
 			return note
 		}
 	}
-	return timeElapsedLabel(scene.TimeElapsed)
+	// TimeElapsed is only nil for a plan-scene (kind='plan'); this helper is
+	// only ever called for turn-scenes, which always have it set.
+	if scene.TimeElapsed == nil {
+		return ""
+	}
+	return timeElapsedLabel(*scene.TimeElapsed)
 }
 
 // sceneBannerText builds the banner / public-record text for a scene in the

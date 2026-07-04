@@ -79,6 +79,25 @@ func (chHandler) ComputeDifficulty(
 	return gamepkg.ChronicleHistoriesDifficulty(rank, *resData), nil
 }
 
+// PlanSceneParticipants: every player, from the moment the plan-scene opens.
+// Make is preparer-only, but a Mar requires every player in the game to
+// submit one choice (chMarChoiceHandler, gated on CountPlayersInGame) — and
+// the outcome isn't known until after the roll, which happens after the
+// scene has already opened. Seeding the full roster up front (rather than
+// growing it only if a mar occurs) means a mar-chooser can always speak in
+// character the moment their turn comes.
+func (chHandler) PlanSceneParticipants(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]int64, error) {
+	players, err := q.GetPlayersByGame(ctx, plan.GameID)
+	if err != nil {
+		return nil, fmt.Errorf("load chronicle roster: %w", err)
+	}
+	ids := make([]int64, len(players))
+	for i := range players {
+		ids[i] = players[i].ID
+	}
+	return ids, nil
+}
+
 // OnResolve opens the pre-roll invoke phase and returns nil — no roll yet.
 // Mirrors Propose Decree's council shape: the plan sits in 'resolving' with
 // InvokePhaseClosed=false until the preparer sets the scene, chooses the

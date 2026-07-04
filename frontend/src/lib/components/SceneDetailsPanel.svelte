@@ -194,7 +194,7 @@
 				{/if}
 			</span>
 			<span class="time">
-				{timeLabels[scene.time_elapsed]}
+				{scene.time_elapsed ? timeLabels[scene.time_elapsed] : ''}
 				{#if scene.time_note}
 					— <em>{scene.time_note}</em>
 				{/if}

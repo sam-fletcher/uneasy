@@ -103,6 +103,17 @@ func (clHandler) ResolvedDescriptor(_ context.Context, _ *dbgen.Queries, _ dbgen
 	return "", false
 }
 
+// PlanSceneParticipants: the preparer and their fixed partner — known from
+// prepare time (plan.TargetPlayerID), not dynamic. The meeting plays out
+// publicly at the table like any other scene (secrecy is diegetic, gated at
+// the choice level — see keep-secret — not the scene level).
+func (clHandler) PlanSceneParticipants(_ context.Context, _ *dbgen.Queries, plan *dbgen.Plan) ([]int64, error) {
+	if plan.TargetPlayerID == nil {
+		return nil, nil
+	}
+	return []int64{plan.PreparerID, *plan.TargetPlayerID}, nil
+}
+
 func (clHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetPlayerID == nil {
 		return nil, "clandestinely_liaise requires target_player_id (the partner)"

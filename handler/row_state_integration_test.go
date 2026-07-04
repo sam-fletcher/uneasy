@@ -263,7 +263,7 @@ func startFollowScene(t *testing.T, q *dbgen.Queries, game *dbgen.Game, focus *d
 		RowNumber:      game.CurrentRow,
 		FocusPlayerID:  focus.ID,
 		LocationCustom: &custom,
-		TimeElapsed:    model.TimeHours,
+		TimeElapsed:    new(model.TimeHours),
 		Prompt:         "follow",
 		ResolvedPlanID: &resolvedPlanID,
 	})
@@ -1417,7 +1417,7 @@ func startTurnScene(t *testing.T, q *dbgen.Queries, game *dbgen.Game, focus *dbg
 		RowNumber:      game.CurrentRow,
 		FocusPlayerID:  focus.ID,
 		LocationCustom: &custom,
-		TimeElapsed:    model.TimeHours,
+		TimeElapsed:    new(model.TimeHours),
 		Prompt:         "",
 		ResolvedPlanID: nil,
 	})

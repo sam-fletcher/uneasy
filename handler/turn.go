@@ -203,10 +203,19 @@ func EndScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// If a scene is active, end it and write a public-record summary
 		// using the same "[main character] at [holding], [time later]" text
 		// as the scene-start banner. This replaces the old manual
-		// "+ Add to public record" button.
-		var endedSceneID int64
+		// "+ Add to public record" button. Only kind='turn' scenes are ended
+		// by the focus player this way — a plan-scene closes on its own when
+		// the plan resolves (closePlanSceneIfAny).
 		ctx := r.Context()
-		if active, err := loadActiveScene(ctx, s.Q, game.ID); err == nil && active != nil {
+		activeScene, activeErr := loadActiveScene(ctx, s.Q, game.ID)
+		if activeErr == nil && activeScene != nil && activeScene.Kind == model.SceneKindPlan {
+			respondErr(w, http.StatusConflict,
+				"the active scene belongs to a resolving plan and can only end when that plan resolves")
+			return
+		}
+
+		var endedSceneID int64
+		if active := activeScene; activeErr == nil && active != nil {
 			if err := s.Q.EndScene(ctx, active.ID); err == nil {
 				endedSceneID = active.ID
 				summary := resolveSceneBannerText(ctx, s.Q, active, player.DisplayName)

@@ -8,6 +8,15 @@ export type TimeElapsed =
 	| 'flashback'
 	| 'simultaneous';
 
+/**
+ * kind distinguishes a focus player's turn-scene (location/time setup) from
+ * a plan-scene (adr/CHAT_OVERHAUL_PLAN.md Phase 5) — a roleplay container
+ * opened for the duration of a roleplay-heavy plan's resolution, with no
+ * location/time setup step. time_elapsed/location are always null for a
+ * plan-scene; plan_id is always set for one, null otherwise.
+ */
+export type SceneKind = 'turn' | 'plan';
+
 export interface Scene {
 	id: number;
 	game_id: number;
@@ -15,12 +24,14 @@ export interface Scene {
 	focus_player_id: number;
 	location_holding_id: number | null;
 	location_custom: string | null;
-	time_elapsed: TimeElapsed;
+	time_elapsed: TimeElapsed | null;
 	time_note: string | null;
 	prompt: string;
 	resolved_plan_id: number | null;
 	started_at: string;
 	ended_at: string | null;
+	kind: SceneKind;
+	plan_id: number | null;
 }
 
 export interface ScenePeerView {

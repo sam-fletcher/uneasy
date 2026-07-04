@@ -88,6 +88,14 @@ func (hfHandler) ComputeDifficulty(
 	return gamepkg.HostFestivityDifficulty(rank), nil
 }
 
+// PlanSceneParticipants: every player at the table attends the festivity from
+// the moment it opens (see hfRoster) — there's no separate "join as guest"
+// action, so the plan-scene's participant set is the full roster up front,
+// with no dynamic joins to wire.
+func (hfHandler) PlanSceneParticipants(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]int64, error) {
+	return hfRoster(ctx, q, plan.GameID)
+}
+
 // OnResolve opens the event. No plan-level dice roll; each guest creates their
 // own via guest-roll. The host's outcome is recorded up front as
 // FestivityOutcomeHost — they don't roll or opt out, they've earned an extra

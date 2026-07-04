@@ -83,6 +83,20 @@ const (
 	TimeSimultaneous TimeElapsed = "simultaneous"
 )
 
+// ── Scene Kind ──────────────────────────────────────────────────────────────
+
+// SceneKind distinguishes a focus player's turn-scene (location/time setup,
+// SCENES_PLAN.md) from a plan-scene (adr/CHAT_OVERHAUL_PLAN.md Phase 5): a
+// roleplay container opened for the duration of a roleplay-heavy plan's
+// resolution, with no location/time setup step. At most one scene of either
+// kind is active per game at a time (scenes_one_active_per_game).
+type SceneKind string
+
+const (
+	SceneKindTurn SceneKind = "turn"
+	SceneKindPlan SceneKind = "plan"
+)
+
 // ── Plan Status ─────────────────────────────────────────────────────────────
 
 type PlanStatus string

@@ -247,6 +247,35 @@ type ResolvedDescriber interface {
 	) (body string, ok bool)
 }
 
+// PlanSceneStager is an optional PlanHandler capability for plans whose
+// rules call for roleplay during resolution (adr/CHAT_OVERHAUL_PLAN.md Phase
+// 5): Host Festivity, Propose Decree, Chronicle Histories, Clandestinely
+// Liaise. A plan without this interface never gets a plan-scene, and
+// validateSpeakingAs (handler/scenes.go) keeps blocking in-character speech
+// during its resolution exactly as before.
+//
+// PlanSceneParticipants returns the initial set of participant player IDs —
+// a SUBSET of the game's players (the ones actually involved in this plan's
+// resolution), not everyone. Each participant's main character becomes a
+// scene_peers row (controller = the participant themselves), so the
+// existing peer machinery — validateSpeakingAs's peer-lookup path,
+// buildSceneResponse, the client persona picker's myControlledPeers — works
+// unchanged for a plan-scene. The preparer must be included explicitly if
+// they should be able to speak as their main character: unlike a turn-scene,
+// a plan-scene has no implicit-MC shortcut for its focus player (see the
+// kind guard in validateSpeakingAs).
+//
+// Called once when the plan flips to resolving (before OnResolve runs), so
+// implementations must compute the set directly rather than reading it back
+// out of resolution_data OnResolve hasn't written yet — e.g. Propose Decree
+// calls the same pdAutoSeatCouncil helper OnResolve uses, rather than
+// reading pd.SignatoryPlayerIDs. Plans whose participant set grows mid-
+// resolution (Propose Decree's join-council) call AddPlanSceneParticipant
+// from their join route to add a peer row after the scene has opened.
+type PlanSceneStager interface {
+	PlanSceneParticipants(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]int64, error)
+}
+
 // PlanDeps bundles shared dependencies passed to handler methods. The
 // embedded *db.Store exposes Q and Pool directly (deps.Q, deps.Pool) and
 // provides deps.InTx for atomic multi-write sequences.

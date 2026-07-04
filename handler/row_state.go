@@ -179,9 +179,13 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 // whose resolved_plan_id points at it), or nil if none exists yet. There is at
 // most one per plan: CreateScene attaches resolved_plan_id to the scene set
 // after a resolution, and only one such scene is allowed per resolved plan.
+// The kind check is defense-in-depth: a plan-scene never sets resolved_plan_id
+// (it's tied to the plan it belongs to via plan_id instead), so this could
+// only matter if that invariant were ever violated.
 func findFollowScene(scenes []dbgen.Scene, planID int64) *dbgen.Scene {
 	for i := range scenes {
-		if scenes[i].ResolvedPlanID != nil && *scenes[i].ResolvedPlanID == planID {
+		if scenes[i].Kind == model.SceneKindTurn &&
+			scenes[i].ResolvedPlanID != nil && *scenes[i].ResolvedPlanID == planID {
 			return &scenes[i]
 		}
 	}
