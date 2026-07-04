@@ -9,7 +9,8 @@ import { test, expect, request as pwRequest, type APIRequestContext } from '@pla
 // the UI for those flows is exercised separately. This spec exists to pin
 // the chat + WebSocket loop specifically. The Chat Overhaul Phase 2 tests
 // below (catch-up, scroll-up pagination, no-yank, jump-to-history) extend
-// it — see adr/CHAT_OVERHAUL_PLAN.md.
+// it, and the Phase 3 test (hide-bookkeeping toggle) extends it further —
+// see adr/CHAT_OVERHAUL_PLAN.md.
 
 async function devLogin(api: APIRequestContext, username: string) {
   const res = await api.post(`/api/dev/login?username=${encodeURIComponent(username)}`);
@@ -222,6 +223,62 @@ test('scrolled away from the bottom is not yanked back when a new message arrive
   await aliceChat.locator('.new-pill').click();
   await expect(feed.getByText(message)).toBeVisible();
   await expect(aliceChat.locator('.new-pill')).toHaveCount(0);
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});
+
+test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take post visible', async ({ browser }) => {
+  // A fresh lobby-phase table has no public-record row yet, and
+  // EmitSystemPost silently drops any post whose rowNumber doesn't match an
+  // existing row (see handler/posts.go) — so asset.renamed/asset.taken would
+  // never actually land. Seed straight to main_event, like the jump-to-row
+  // test below, so the row FK is satisfied.
+  const reset = await pwRequest.newContext();
+  await reset.post('http://localhost:8090/api/dev/reset');
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: tableId } = await seedRes.json();
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice');
+  await devLogin(bobCtx.request, 'bob');
+
+  // Alice creates a peer, then renames it — asset.renamed is Trace-tier
+  // bookkeeping, hidden by default.
+  const createAssetRes = await aliceCtx.request.post(`/api/tables/${tableId}/assets`, {
+    data: { asset_type: 'peer', name: 'Original Name', is_main_character: false, marginalia: ['a trusted contact'] },
+  });
+  expect(createAssetRes.ok(), `create asset failed: ${await createAssetRes.text()}`).toBeTruthy();
+  const assetId: number = (await createAssetRes.json()).asset.id;
+
+  const renameRes = await aliceCtx.request.put(`/api/assets/${assetId}`, {
+    data: { name: 'Renamed Peer' },
+  });
+  expect(renameRes.ok(), `rename failed: ${await renameRes.text()}`).toBeTruthy();
+
+  // Bob takes it — asset.taken is Default-tier and always visible.
+  const takeRes = await bobCtx.request.post(`/api/assets/${assetId}/take`);
+  expect(takeRes.ok(), `take failed: ${await takeRes.text()}`).toBeTruthy();
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.goto(`/table/${tableId}`);
+  const aliceChat = alicePage.getByRole('complementary', { name: 'Chat' });
+  await expect(aliceChat).toBeVisible();
+  const feed = aliceChat.locator('.feed');
+
+  // Default state: bookkeeping hidden — the rename post is gone, the take
+  // post shows regardless. Display names default to the (lowercase)
+  // dev-login username — see handler/tables.go's DisplayName: acct.Username.
+  await expect(feed.getByText('bob took Renamed Peer', { exact: false })).toBeVisible();
+  await expect(feed.getByText('renamed Original Name', { exact: false })).toHaveCount(0);
+
+  // Unchecking "Hide bookkeeping" reveals the rename post too.
+  await aliceChat.getByRole('checkbox', { name: 'Hide bookkeeping' }).uncheck();
+  await expect(feed.getByText('renamed Original Name', { exact: false })).toBeVisible();
 
   await aliceCtx.close();
   await bobCtx.close();

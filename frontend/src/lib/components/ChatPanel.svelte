@@ -42,6 +42,7 @@
 		fetchOlderPage,
 		reportReadMarker,
 		returnToNow,
+		systemCodeFamily,
 	} from '$lib/chatFeed';
 
 	// System-log bodies use a tiny markup subset: **…** spans wrap
@@ -63,6 +64,25 @@
 	// collapsed-strip preview) where markup can't render.
 	function stripLogMarkup(body: string): string {
 		return body.replace(/\*\*(.+?)\*\*/g, '$1');
+	}
+
+	// Per-code-family glyph for log lines (Phase 3 item 3), replacing the
+	// generic bullet. Families not listed here (shake_up, row, phase, …) keep
+	// the bullet — the plan doesn't call for glyphs on those.
+	const FAMILY_GLYPHS: Record<string, string> = {
+		plan: '⚑',
+		demand: '⚑', // Make Demands' sub-events (demand.*) are plan chatter.
+		roll: '⚂',
+		asset: '✎',
+		marginalia: '✎',
+		law: '§',
+		rumor: '🗣',
+		ranking: '⚖',
+		scene: '❧',
+	};
+	function logGlyph(code: string | null): string {
+		const family = systemCodeFamily(code);
+		return (family && FAMILY_GLYPHS[family]) || '•';
 	}
 
 	interface Props {
@@ -240,12 +260,23 @@
 		)
 	);
 
-	// ── Severity threshold filter ─────────────────────────────────────────────
-	// Player messages (author_id != null) are always shown; the threshold
-	// only affects system posts. Default to DEFAULT (50) so trace and minor
-	// log noise is hidden until the user opts in. (Phase 3 replaces this
-	// dropdown with a single "hide bookkeeping" toggle.)
-	let severityThreshold = $state<number>(SEVERITY.DEFAULT);
+	// ── "Hide bookkeeping" toggle (Phase 3) ────────────────────────────────────
+	// Player messages (author_id != null) are always shown; the toggle only
+	// affects system posts, hiding everything below SEVERITY.DEFAULT. Persisted
+	// account-wide (not per-game) in localStorage; defaults to hidden.
+	const HIDE_BOOKKEEPING_KEY = 'uneasy.chat.hideBookkeeping';
+	function loadHideBookkeeping(): boolean {
+		if (typeof localStorage === 'undefined') return true;
+		return localStorage.getItem(HIDE_BOOKKEEPING_KEY) !== 'false';
+	}
+	let hideBookkeeping = $state(loadHideBookkeeping());
+	function toggleHideBookkeeping() {
+		hideBookkeeping = !hideBookkeeping;
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem(HIDE_BOOKKEEPING_KEY, String(hideBookkeeping));
+		}
+	}
+	const severityThreshold = $derived(hideBookkeeping ? SEVERITY.DEFAULT : SEVERITY.TRACE);
 
 	const visiblePosts = $derived(
 		posts.filter(p => p.author_id != null || p.severity >= severityThreshold)
@@ -518,15 +549,13 @@
 >
 	<header class="panel-header">
 		<h2>Chat</h2>
-		<label class="severity-filter" title="Hide low-severity system events">
-			<span class="severity-label">Show:</span>
-			<select bind:value={severityThreshold}>
-				<option value={SEVERITY.TRACE}>All events</option>
-				<option value={SEVERITY.MINOR}>Minor and up</option>
-				<option value={SEVERITY.DEFAULT}>Default and up</option>
-				<option value={SEVERITY.IMPORTANT}>Important only</option>
-				<option value={SEVERITY.BOUNDARY}>Boundaries only</option>
-			</select>
+		<label class="bookkeeping-toggle" title="Hide low-severity system events">
+			<input
+				type="checkbox"
+				checked={hideBookkeeping}
+				onchange={toggleHideBookkeeping}
+			/>
+			<span>Hide bookkeeping</span>
 		</label>
 		<button
 			type="button"
@@ -558,6 +587,40 @@
 							<span class="unread-divider-label">New messages</span>
 							<span class="unread-divider-line"></span>
 						</div>
+					{:else if item.kind === 'ranking-group'}
+						<div
+							class="ranking-group"
+							class:continues-run={item.continuesRun}
+							data-post-id={item.posts[0].id}
+							data-code={item.posts[0].system_code}
+						>
+							{#each item.posts as post (post.id)}
+								{#if post.system_code === 'ranking.category'}
+									<h4 class="ranking-category" data-post-id={post.id}>
+										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+										{@html renderLogBody(post.body)}
+									</h4>
+								{:else if post.system_code === 'ranking.standing'}
+									<div class="ranking-standing" data-post-id={post.id}>
+										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+										{@html renderLogBody(post.body)}
+									</div>
+								{:else if post.system_code === 'ranking.updated'}
+									<!-- No separate glyph span: the body already leads with ⚖
+									     (EmitRankingUpdated bakes it into the headline text). -->
+									<div class="ranking-headline" data-post-id={post.id}>
+										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+										<span>{@html renderLogBody(post.body)}</span>
+										<span class="log-time">{fmtTime(post.created_at)}</span>
+									</div>
+								{:else}
+									<div class="ranking-line" data-post-id={post.id}>
+										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+										{@html renderLogBody(post.body)}
+									</div>
+								{/if}
+							{/each}
+						</div>
 					{:else}
 						{@const post = item.post}
 						{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
@@ -571,18 +634,14 @@
 							<div
 								class="log"
 								class:important={post.severity >= SEVERITY.IMPORTANT}
+								class:continues-run={item.continuesRun}
 								data-post-id={post.id}
 								data-code={post.system_code}
 							>
-								{#if post.severity >= SEVERITY.IMPORTANT}
-									<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-									<span class="log-body">{@html renderLogBody(post.body)}</span>
-								{:else}
-									<span class="log-glyph" aria-hidden="true">•</span>
-									<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-									<span class="log-body">{@html renderLogBody(post.body)}</span>
-									<span class="log-time">{fmtTime(post.created_at)}</span>
-								{/if}
+								<span class="log-glyph" aria-hidden="true">{logGlyph(post.system_code)}</span>
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+								<span class="log-body">{@html renderLogBody(post.body)}</span>
+								<span class="log-time">{fmtTime(post.created_at)}</span>
 							</div>
 						{:else}
 							{@const inCharacter = post.speaking_as_asset_id != null}
@@ -825,27 +884,24 @@
 		min-height: 44px;
 	}
 
-	.severity-filter {
+	.bookkeeping-toggle {
 		display: flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.35rem;
+		min-height: 44px;
+		padding: 0 0.3rem;
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
 		margin-left: auto;
-		margin-right: 0.4rem;
-	}
-
-	.severity-filter select {
-		background: var(--color-bg);
-		color: var(--color-text);
-		border: 1px solid var(--color-border);
-		border-radius: 3px;
-		padding: 0.2rem 0.3rem;
-		font-size: 0.75rem;
 		cursor: pointer;
 	}
 
-	.severity-label { color: var(--color-text-faint); }
+	.bookkeeping-toggle input {
+		width: 18px;
+		height: 18px;
+		accent-color: var(--color-accent);
+		cursor: pointer;
+	}
 
 	/* On desktop, hide the collapse button and the strip; the panel is the
 	   permanent right column. */
@@ -1032,8 +1088,57 @@
 		font-size: 0.85rem;
 		margin: 0.35rem 0;
 	}
+	.log.important .log-glyph { margin-right: 0.3rem; }
+	.log.important .log-time { margin-left: 0.4rem; }
 	.log-glyph { color: var(--color-text-muted); }
 	.log-time { font-size: 0.7rem; color: var(--color-text-faint); white-space: nowrap; }
+
+	/* Tighter ledger spacing (Phase 3 item 4): a system post immediately
+	   following another system post (no divider/player message between them)
+	   pulls up toward it, so a run of bookkeeping reads as a compact ledger
+	   while player prose keeps the normal, more generous gap. Reduces the
+	   0.55rem .feed gap down to 0.15rem. */
+	.log.continues-run,
+	.ranking-group.continues-run {
+		margin-top: -0.4rem;
+	}
+
+	/* Ranking-update card (Phase 3 item 5): a whole EmitRankingUpdated burst
+	   (headline + per-category sections + standings) renders as one bordered
+	   card instead of a run of separate centered/left-aligned log lines. */
+	.ranking-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		border: 1px solid var(--color-border-warm);
+		border-radius: 6px;
+		padding: 0.55rem 0.75rem;
+		background: var(--color-surface-sunken);
+		font-size: 0.85rem;
+		color: #b0a890;
+	}
+	.ranking-headline {
+		display: flex;
+		align-items: baseline;
+		gap: 0.3rem;
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+	.ranking-headline .log-time { margin-left: auto; }
+	.ranking-category {
+		margin: 0.3rem 0 0;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--color-accent);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.ranking-line { padding-left: 1.1rem; }
+	.ranking-standing {
+		padding-left: 1.1rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
 
 	/* ── Typing + compose ─────────────────────────────────────────────────── */
 

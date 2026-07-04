@@ -65,14 +65,32 @@ export function countUnread(
 	return n;
 }
 
+// ── Pure: system_code family (drives Phase 3's per-family log glyph and the
+// ranking-burst grouping below). "plan.prepared" → "plan", "demand.resolved"
+// → "demand" (Make Demands' sub-events are plan chatter), etc. Null for
+// player messages (system_code is null) or a code with no dot.
+
+export function systemCodeFamily(code: string | null): string | null {
+	if (!code) return null;
+	const dot = code.indexOf('.');
+	return dot === -1 ? code : code.slice(0, dot);
+}
+
 // ── Pure: feed items (day dividers + "New messages" divider) ─────────────
-// Scene grouping (Phase 4) and consecutive-system-post run hints (Phase 3)
-// extend this; Phase 2 only needs the two divider kinds.
+// Scene grouping (Phase 4) extends this further. Phase 3 adds:
+//   - `continuesRun` on 'post'/'ranking-group' items: true when the
+//     immediately preceding item is also a system post with nothing (day/
+//     unread divider) between them, so the renderer can tighten the gap and
+//     read bookkeeping as a compact ledger vs. player-message prose.
+//   - the 'ranking-group' kind: a maximal run of consecutive `ranking.*`
+//     posts (one EmitRankingUpdated burst) collapses into a single unit so
+//     it renders as one bordered card instead of a centered/left zigzag.
 
 export type FeedItem =
 	| { kind: 'day-divider'; key: string; label: string }
 	| { kind: 'unread-divider'; key: string }
-	| { kind: 'post'; key: string; post: ChatPost };
+	| { kind: 'post'; key: string; post: ChatPost; continuesRun: boolean }
+	| { kind: 'ranking-group'; key: string; posts: ChatPost[]; continuesRun: boolean };
 
 function dayKey(iso: string): string {
 	const d = new Date(iso);
@@ -107,17 +125,47 @@ export function buildFeedItems(
 	let placedDivider = false;
 	const hasUnread = posts.some((p) => isUnreadPost(p, opts.unreadAfterID, opts.currentPlayerID));
 
+	// Collapse consecutive ranking.* posts (one EmitRankingUpdated burst) into
+	// a single unit so the ranking-group case below renders them as one card
+	// instead of a run of separate log lines.
+	const units: ChatPost[][] = [];
 	for (const post of posts) {
-		const key = dayKey(post.created_at);
-		if (key !== lastDayKey) {
-			items.push({ kind: 'day-divider', key: `day-${key}`, label: formatDayLabel(post.created_at, now) });
-			lastDayKey = key;
+		const prevUnit = units[units.length - 1];
+		if (
+			systemCodeFamily(post.system_code) === 'ranking' &&
+			prevUnit != null &&
+			systemCodeFamily(prevUnit[0].system_code) === 'ranking'
+		) {
+			prevUnit.push(post);
+		} else {
+			units.push([post]);
 		}
-		if (hasUnread && !placedDivider && isUnreadPost(post, opts.unreadAfterID, opts.currentPlayerID)) {
+	}
+
+	let prevWasSystemPost = false;
+	for (const unit of units) {
+		const first = unit[0];
+		const key = dayKey(first.created_at);
+		if (key !== lastDayKey) {
+			items.push({ kind: 'day-divider', key: `day-${key}`, label: formatDayLabel(first.created_at, now) });
+			lastDayKey = key;
+			prevWasSystemPost = false;
+		}
+		if (hasUnread && !placedDivider && unit.some((p) => isUnreadPost(p, opts.unreadAfterID, opts.currentPlayerID))) {
 			items.push({ kind: 'unread-divider', key: 'unread-divider' });
 			placedDivider = true;
+			prevWasSystemPost = false;
 		}
-		items.push({ kind: 'post', key: `post-${post.id}`, post });
+
+		const isSystemUnit = first.author_id == null;
+		const continuesRun = isSystemUnit && prevWasSystemPost;
+
+		if (unit.length > 1 || systemCodeFamily(first.system_code) === 'ranking') {
+			items.push({ kind: 'ranking-group', key: `ranking-${first.id}`, posts: unit, continuesRun });
+		} else {
+			items.push({ kind: 'post', key: `post-${first.id}`, post: first, continuesRun });
+		}
+		prevWasSystemPost = isSystemUnit;
 	}
 	return items;
 }

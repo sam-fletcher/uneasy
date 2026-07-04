@@ -5,6 +5,7 @@ import {
 	isUnreadPost,
 	countUnread,
 	buildFeedItems,
+	systemCodeFamily,
 	mergeAppend,
 	mergePrepend,
 	isNearBottom,
@@ -148,6 +149,94 @@ describe('buildFeedItems', () => {
 		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1, now });
 		const labels = items.filter((i) => i.kind === 'day-divider').map((i) => i.kind === 'day-divider' && i.label);
 		expect(labels).toEqual(['Yesterday', 'Today']);
+	});
+
+	it('marks a system post as continuing a run only when the previous item was also a system post', () => {
+		const posts = [
+			makePost({ id: 1, author_id: null, system_code: 'asset.created' }),
+			makePost({ id: 2, author_id: null, system_code: 'marginalia.added' }),
+			makePost({ id: 3, author_id: 1 }), // player message breaks the run
+			makePost({ id: 4, author_id: null, system_code: 'asset.renamed' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		const postItems = items.filter((i) => i.kind === 'post');
+		expect(postItems.map((i) => i.kind === 'post' && i.continuesRun)).toEqual([false, true, false, false]);
+	});
+
+	it('does not carry a run across a day divider', () => {
+		const posts = [
+			makePost({ id: 1, author_id: null, system_code: 'asset.created', created_at: '2026-07-01T09:00:00.000Z' }),
+			makePost({ id: 2, author_id: null, system_code: 'asset.renamed', created_at: '2026-07-02T09:00:00.000Z' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		const postItems = items.filter((i) => i.kind === 'post');
+		expect(postItems.map((i) => i.kind === 'post' && i.continuesRun)).toEqual([false, false]);
+	});
+
+	it('does not carry a run across the unread divider', () => {
+		const posts = [
+			makePost({ id: 1, author_id: null, system_code: 'asset.created', severity: SEVERITY.DEFAULT }),
+			makePost({ id: 2, author_id: null, system_code: 'marginalia.added', severity: SEVERITY.DEFAULT }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 1, currentPlayerID: 1 });
+		const postItems = items.filter((i) => i.kind === 'post');
+		expect(postItems.map((i) => i.kind === 'post' && i.continuesRun)).toEqual([false, false]);
+	});
+
+	it('collapses a consecutive run of ranking.* posts into one ranking-group item', () => {
+		const posts = [
+			makePost({ id: 1, author_id: null, system_code: 'ranking.updated' }),
+			makePost({ id: 2, author_id: null, system_code: 'ranking.category' }),
+			makePost({ id: 3, author_id: null, system_code: 'ranking.plan' }),
+			makePost({ id: 4, author_id: null, system_code: 'ranking.standing' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'ranking-group']);
+		const group = items.find((i) => i.kind === 'ranking-group');
+		expect(group?.kind === 'ranking-group' && group.posts.map((p) => p.id)).toEqual([1, 2, 3, 4]);
+	});
+
+	it('splits ranking groups when a non-ranking post interrupts the burst', () => {
+		const posts = [
+			makePost({ id: 1, author_id: null, system_code: 'ranking.updated' }),
+			makePost({ id: 2, author_id: null, system_code: 'ranking.category' }),
+			makePost({ id: 3, author_id: 1 }), // an in-between player message
+			makePost({ id: 4, author_id: null, system_code: 'ranking.plan' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'ranking-group', 'post', 'ranking-group']);
+	});
+
+	it('treats a lone ranking.* post as a one-post ranking-group', () => {
+		const posts = [makePost({ id: 1, author_id: null, system_code: 'ranking.updated' })];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'ranking-group']);
+	});
+
+	it('a ranking-group counts as a system post for run-continuation on both sides', () => {
+		const posts = [
+			makePost({ id: 1, author_id: null, system_code: 'asset.created' }),
+			makePost({ id: 2, author_id: null, system_code: 'ranking.updated' }),
+			makePost({ id: 3, author_id: null, system_code: 'ranking.category' }),
+			makePost({ id: 4, author_id: null, system_code: 'asset.renamed' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'post', 'ranking-group', 'post']);
+		const [, post1, group, post4] = items;
+		expect(post1.kind === 'post' && post1.continuesRun).toBe(false);
+		expect(group.kind === 'ranking-group' && group.continuesRun).toBe(true);
+		expect(post4.kind === 'post' && post4.continuesRun).toBe(true);
+	});
+});
+
+describe('systemCodeFamily', () => {
+	it('extracts the prefix before the first dot', () => {
+		expect(systemCodeFamily('plan.prepared')).toBe('plan');
+		expect(systemCodeFamily('ranking.updated')).toBe('ranking');
+	});
+
+	it('returns null for null/no-dot codes', () => {
+		expect(systemCodeFamily(null)).toBeNull();
 	});
 });
 
