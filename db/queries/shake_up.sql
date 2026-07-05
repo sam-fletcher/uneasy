@@ -66,3 +66,17 @@ SELECT * FROM shake_up_cost_adjustments WHERE spend_id = $1 ORDER BY created_at;
 -- name: SumAdjustmentsForSpend :one
 SELECT COALESCE(SUM(adjustment), 0)::SMALLINT AS total
 FROM shake_up_cost_adjustments WHERE spend_id = $1;
+
+-- ── shake_up_spend_passes ────────────────────────────────────────────────────
+
+-- name: CreateShakeUpPass :one
+INSERT INTO shake_up_spend_passes (spend_id, player_id)
+VALUES ($1, $2)
+ON CONFLICT (spend_id, player_id) DO UPDATE SET spend_id = EXCLUDED.spend_id
+RETURNING *;
+
+-- name: ListPassesForSpend :many
+SELECT * FROM shake_up_spend_passes WHERE spend_id = $1 ORDER BY created_at;
+
+-- name: DeletePassesForSpend :exec
+DELETE FROM shake_up_spend_passes WHERE spend_id = $1;

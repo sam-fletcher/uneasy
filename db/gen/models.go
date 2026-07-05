@@ -383,6 +383,13 @@ type ShakeUpSpend struct {
 	TitleFlavor        *string            `db:"title_flavor" json:"title_flavor"`
 }
 
+type ShakeUpSpendPass struct {
+	ID        int64              `db:"id" json:"id"`
+	SpendID   int64              `db:"spend_id" json:"spend_id"`
+	PlayerID  int64              `db:"player_id" json:"player_id"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type SimultaneousReveal struct {
 	ID          int64              `db:"id" json:"id"`
 	GameID      int64              `db:"game_id" json:"game_id"`

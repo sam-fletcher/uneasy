@@ -135,6 +135,7 @@ export const EventTypes = {
 	ShakeUpSpendOpened: 'shake_up.spend_opened',
 	ShakeUpAdjusted: 'shake_up.adjusted',
 	ShakeUpSpendCommitted: 'shake_up.spend_committed',
+	ShakeUpPassed: 'shake_up.passed',
 	ShakeUpEnded: 'shake_up.ended',
 
 	// Endgame mode selection (Phase 4d)

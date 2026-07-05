@@ -120,6 +120,7 @@ const (
 	EventShakeUpSpendOpened    = "shake_up.spend_opened"
 	EventShakeUpAdjusted       = "shake_up.adjusted"
 	EventShakeUpSpendCommitted = "shake_up.spend_committed"
+	EventShakeUpPassed         = "shake_up.passed"
 	EventShakeUpEnded          = "shake_up.ended"
 
 	// Phase 4d: Endgame mode selection
@@ -785,6 +786,12 @@ type ShakeUpAdjustedPayload struct {
 type ShakeUpSpendCommittedPayload struct {
 	SpendID   int64 `json:"spend_id"`
 	FinalCost int16 `json:"final_cost"`
+}
+
+// ShakeUpPassedPayload is for EventShakeUpPassed.
+type ShakeUpPassedPayload struct {
+	SpendID  int64 `json:"spend_id"`
+	PlayerID int64 `json:"player_id"`
 }
 
 // ShakeUpEndedPayload is for EventShakeUpEnded.

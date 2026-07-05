@@ -69,6 +69,32 @@ func (q *Queries) CreateShakeUpAdjustment(ctx context.Context, arg CreateShakeUp
 	return i, err
 }
 
+const createShakeUpPass = `-- name: CreateShakeUpPass :one
+
+INSERT INTO shake_up_spend_passes (spend_id, player_id)
+VALUES ($1, $2)
+ON CONFLICT (spend_id, player_id) DO UPDATE SET spend_id = EXCLUDED.spend_id
+RETURNING id, spend_id, player_id, created_at
+`
+
+type CreateShakeUpPassParams struct {
+	SpendID  int64 `db:"spend_id" json:"spend_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+}
+
+// ── shake_up_spend_passes ────────────────────────────────────────────────────
+func (q *Queries) CreateShakeUpPass(ctx context.Context, arg CreateShakeUpPassParams) (ShakeUpSpendPass, error) {
+	row := q.db.QueryRow(ctx, createShakeUpPass, arg.SpendID, arg.PlayerID)
+	var i ShakeUpSpendPass
+	err := row.Scan(
+		&i.ID,
+		&i.SpendID,
+		&i.PlayerID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createShakeUpSpend = `-- name: CreateShakeUpSpend :one
 
 INSERT INTO shake_up_spends (
@@ -124,6 +150,15 @@ func (q *Queries) CreateShakeUpSpend(ctx context.Context, arg CreateShakeUpSpend
 		&i.TitleFlavor,
 	)
 	return i, err
+}
+
+const deletePassesForSpend = `-- name: DeletePassesForSpend :exec
+DELETE FROM shake_up_spend_passes WHERE spend_id = $1
+`
+
+func (q *Queries) DeletePassesForSpend(ctx context.Context, spendID int64) error {
+	_, err := q.db.Exec(ctx, deletePassesForSpend, spendID)
+	return err
 }
 
 const getLastCommittedShakeUpSpend = `-- name: GetLastCommittedShakeUpSpend :one
@@ -247,6 +282,35 @@ func (q *Queries) ListAdjustmentsForSpend(ctx context.Context, spendID int64) ([
 			&i.SpendID,
 			&i.PlayerID,
 			&i.Adjustment,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPassesForSpend = `-- name: ListPassesForSpend :many
+SELECT id, spend_id, player_id, created_at FROM shake_up_spend_passes WHERE spend_id = $1 ORDER BY created_at
+`
+
+func (q *Queries) ListPassesForSpend(ctx context.Context, spendID int64) ([]ShakeUpSpendPass, error) {
+	rows, err := q.db.Query(ctx, listPassesForSpend, spendID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ShakeUpSpendPass{}
+	for rows.Next() {
+		var i ShakeUpSpendPass
+		if err := rows.Scan(
+			&i.ID,
+			&i.SpendID,
+			&i.PlayerID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

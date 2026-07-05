@@ -165,6 +165,7 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 			r.Post("/tables/{id}/shake-up/roll", handler.ShakeUpRoll(store, manager))
 			r.Post("/tables/{id}/shake-up/spend", handler.ShakeUpAnnounce(store, manager))
 			r.Post("/tables/{id}/shake-up/adjust", handler.ShakeUpAdjust(store, manager))
+			r.Post("/tables/{id}/shake-up/pass", handler.ShakeUpPass(store, manager))
 			r.Post("/tables/{id}/shake-up/commit", handler.ShakeUpCommit(store, manager))
 
 			// Tone-setting

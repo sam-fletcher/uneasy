@@ -89,9 +89,17 @@ func GetShakeUp(s *db.Store) http.HandlerFunc {
 		open, err := s.Q.GetOpenShakeUpSpend(ctx, gameID)
 		if err == nil {
 			adj, _ := s.Q.ListAdjustmentsForSpend(ctx, open.ID)
+			passes, _ := s.Q.ListPassesForSpend(ctx, open.ID)
+			pending, perr := shakeUpPendingReactors(ctx, s.Q, gameID, open)
+			if perr != nil {
+				pending = []int64{}
+			}
 			out["open_spend"] = map[string]any{
-				"spend":       open,
-				"adjustments": adj,
+				"spend":               open,
+				"adjustments":         adj,
+				"passes":              passes,
+				"pending_reactor_ids": pending,
+				"commit_ready":        len(pending) == 0,
 			}
 		} else if game.ShakeUpStep != nil && *game.ShakeUpStep == gamepkg.ShakeUpStepSpending &&
 			game.ShakeUpCategory != nil {
@@ -469,6 +477,55 @@ func ShakeUpRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 // ── Step 2: announce / adjust / commit ───────────────────────────────────────
 
+// shakeUpAnnounceBody is the request body for ShakeUpAnnounce.
+type shakeUpAnnounceBody struct {
+	OptionKey          string  `json:"option_key"`
+	TargetAssetID      *int64  `json:"target_asset_id"`
+	TargetMarginaliaID *int64  `json:"target_marginalia_id"`
+	TargetPlayerID     *int64  `json:"target_player_id"`
+	TargetTitleID      *string `json:"target_title_id"`
+	TitleFlavor        *string `json:"title_flavor"`
+}
+
+// validateShakeUpAnnounceTarget runs every announce-time target-shape check
+// for the chosen option — the required asset, a break's marginalia, a take's
+// asset ownership, and claim-title's title/peer — each re-checked
+// authoritatively at commit since the board can change while the spend is
+// open. Extracted from ShakeUpAnnounce to keep it flat: this only fans out to
+// the per-option validators, it doesn't duplicate their logic. Writes the
+// error response and returns false on the first failure.
+func validateShakeUpAnnounceTarget(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+	info gamepkg.ShakeUpOptionInfo,
+	body shakeUpAnnounceBody,
+) bool {
+	if info.NeedsAsset && body.TargetAssetID == nil {
+		respondErr(w, http.StatusBadRequest, "target_asset_id required for "+info.Key)
+		return false
+	}
+	// Break options tear one marginalia (the canonical break), so the breaker
+	// must name which one.
+	if info.NeedsMarginalia &&
+		!validateShakeUpBreakTarget(ctx, w, q, info, body.TargetAssetID, body.TargetMarginaliaID) {
+		return false
+	}
+	// Take options must target another player's asset of the right type.
+	if want := expectedTakeType(info.Key); want != "" &&
+		!validateShakeUpTakeTarget(ctx, w, q, gameID, playerID, want, body.TargetAssetID) {
+		return false
+	}
+	// Claim-a-new-title stamps a marginalia onto one of the claimer's own peers
+	// (ADR-007). Validate the chosen title + receiving peer up front.
+	if info.Key == gamepkg.ShakeUpOptClaimTitle &&
+		!validateShakeUpClaimTitle(ctx, w, q, gameID, playerID, body.TargetTitleID, body.TargetAssetID) {
+		return false
+	}
+	return true
+}
+
 // ShakeUpAnnounce handles POST /api/tables/{id}/shake-up/spend.
 //
 // Body: {"option_key", "target_asset_id"?, "target_player_id"?}. Creates an
@@ -490,14 +547,7 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		var body struct {
-			OptionKey          string  `json:"option_key"`
-			TargetAssetID      *int64  `json:"target_asset_id"`
-			TargetMarginaliaID *int64  `json:"target_marginalia_id"`
-			TargetPlayerID     *int64  `json:"target_player_id"`
-			TargetTitleID      *string `json:"target_title_id"`
-			TitleFlavor        *string `json:"title_flavor"`
-		}
+		var body shakeUpAnnounceBody
 		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
@@ -511,21 +561,7 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "option does not belong to the current category")
 			return
 		}
-		if info.NeedsAsset && body.TargetAssetID == nil {
-			respondErr(w, http.StatusBadRequest, "target_asset_id required for "+info.Key)
-			return
-		}
-		// Break options tear one marginalia (the canonical break), so the breaker
-		// must name which one.
-		if info.NeedsMarginalia &&
-			!validateShakeUpBreakTarget(ctx, w, s.Q, info, body.TargetAssetID, body.TargetMarginaliaID) {
-			return
-		}
-		// Claim-a-new-title stamps a marginalia onto one of the claimer's own peers
-		// (ADR-007). Validate the chosen title + receiving peer up front; the apply
-		// step re-checks authoritatively at commit.
-		if info.Key == gamepkg.ShakeUpOptClaimTitle &&
-			!validateShakeUpClaimTitle(ctx, w, s.Q, gameID, player.ID, body.TargetTitleID, body.TargetAssetID) {
+		if !validateShakeUpAnnounceTarget(ctx, w, s.Q, gameID, player.ID, info, body) {
 			return
 		}
 
@@ -644,6 +680,12 @@ func ShakeUpAdjust(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondInternalErr(w, r, "could not record adjustment", err)
 			return
 		}
+		// A cost change reopens the reaction window for everyone (ruling 5) —
+		// clear every existing pass so the commit gate re-checks from scratch.
+		if err = s.Q.DeletePassesForSpend(ctx, spend.ID); err != nil {
+			respondInternalErr(w, r, "could not reset passes", err)
+			return
+		}
 		broadcastEvent(manager, gameID, model.EventShakeUpAdjusted, model.ShakeUpAdjustedPayload{
 			SpendID: spend.ID, PlayerID: player.ID, Adjustment: body.Adjustment, AdjustmentID: adj.ID,
 		})
@@ -653,6 +695,71 @@ func ShakeUpAdjust(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		EmitShakeUpAdjusted(ctx, s.Q, manager, gameID, spend, player.ID, body.Adjustment, optionPhrase)
 		respond(w, http.StatusOK, map[string]any{"adjustment": adj})
+	}
+}
+
+// ShakeUpPass handles POST /api/tables/{id}/shake-up/pass.
+//
+// Body: {"spend_id"}. Records that the caller has reviewed the open spend and
+// declines to adjust it further ("lets it stand") — one of the two ways
+// (adjust or pass) a reactor can clear themselves from the commit gate
+// (ruling 5). Idempotent: passing again on a spend you already passed on is a
+// no-op success, not an error.
+func ShakeUpPass(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		if !ok {
+			return
+		}
+		var body struct {
+			SpendID int64 `json:"spend_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		ctx := r.Context()
+		spend, err := s.Q.GetShakeUpSpend(ctx, body.SpendID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "spend not found")
+			return
+		}
+		if spend.GameID != gameID || spend.CommittedAt.Valid {
+			respondErr(w, http.StatusConflict, "spend is not open in this table")
+			return
+		}
+		if spend.PlayerID == player.ID {
+			respondErr(w, http.StatusForbidden, "the spender cannot pass on their own spend")
+			return
+		}
+
+		existing, err := s.Q.ListPassesForSpend(ctx, spend.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not check existing passes", err)
+			return
+		}
+		alreadyPassed := false
+		for _, p := range existing {
+			if p.PlayerID == player.ID {
+				alreadyPassed = true
+				break
+			}
+		}
+
+		pass, err := s.Q.CreateShakeUpPass(ctx, dbgen.CreateShakeUpPassParams{
+			SpendID: spend.ID, PlayerID: player.ID,
+		})
+		if err != nil {
+			respondInternalErr(w, r, "could not record pass", err)
+			return
+		}
+		if !alreadyPassed {
+			broadcastEvent(manager, gameID, model.EventShakeUpPassed, model.ShakeUpPassedPayload{
+				SpendID: spend.ID, PlayerID: player.ID,
+			})
+			EmitShakeUpPassed(ctx, s.Q, manager, gameID, spend, player.ID)
+		}
+		respond(w, http.StatusOK, map[string]any{"pass": pass})
 	}
 }
 
@@ -686,6 +793,23 @@ func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		if spend.PlayerID != player.ID {
 			respondErr(w, http.StatusForbidden, "only the spender can commit")
+			return
+		}
+
+		// The spender cannot rush the commit (ruling 5): every other player who
+		// still holds a token must react — adjust or explicitly pass — first.
+		pending, err := shakeUpPendingReactors(ctx, s.Q, gameID, spend)
+		if err != nil {
+			respondInternalErr(w, r, "could not check reactors", err)
+			return
+		}
+		if len(pending) > 0 {
+			names := make([]string, len(pending))
+			for i, pid := range pending {
+				names[i] = playerDisplayName(ctx, s.Q, pid)
+			}
+			respondErr(w, http.StatusConflict,
+				fmt.Sprintf("waiting on %s to react", strings.Join(names, ", ")))
 			return
 		}
 
@@ -781,6 +905,39 @@ func currentShakeUpActor(ctx context.Context, q *dbgen.Queries, gameID int64, ca
 		lastActor = &pid
 	}
 	return gamepkg.NextShakeUpActor(order, hasTokens, lastActor), nil
+}
+
+// shakeUpPendingReactors returns the ids of every player other than the
+// spender who still holds ≥1 token and has not yet passed on this spend
+// (ruling 5: the reaction gate). Players at 0 tokens are exempt — they
+// cannot adjust anyway — so they never block a commit. Returns an empty
+// (non-nil) slice, never nil, so callers can serialize it directly.
+func shakeUpPendingReactors(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+	spend dbgen.ShakeUpSpend,
+) ([]int64, error) {
+	tokens, err := q.ListShakeUpTokensByGame(ctx, gameID)
+	if err != nil {
+		return nil, fmt.Errorf("load tokens: %w", err)
+	}
+	passes, err := q.ListPassesForSpend(ctx, spend.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load passes: %w", err)
+	}
+	passed := make(map[int64]bool, len(passes))
+	for _, p := range passes {
+		passed[p.PlayerID] = true
+	}
+	pending := []int64{}
+	for _, t := range tokens {
+		if t.ID == spend.PlayerID || t.ShakeUpTokens < 1 || passed[t.ID] {
+			continue
+		}
+		pending = append(pending, t.ID)
+	}
+	return pending, nil
 }
 
 func inShakeUpStep(w http.ResponseWriter, game *dbgen.Game, want int16) bool {
@@ -936,6 +1093,9 @@ func shakeUpTakeAsset(
 	if asset.IsDestroyed {
 		return errors.New("asset is destroyed")
 	}
+	if asset.OwnerID == spend.PlayerID {
+		return errors.New("cannot take your own asset")
+	}
 	oldOwner := asset.OwnerID
 	if _, err = takeAssetEffect(ctx, q, manager, gameID, asset.ID, oldOwner, spend.PlayerID); err != nil {
 		return fmt.Errorf("transfer: %w", err)
@@ -989,6 +1149,45 @@ func validateShakeUpBreakTarget(
 	}
 	if m.IsTorn {
 		respondErr(w, http.StatusConflict, "marginalia is already torn")
+		return false
+	}
+	return true
+}
+
+// validateShakeUpTakeTarget checks an announce-time take target: the asset
+// must exist, belong to this game, be the option's asset type, be intact, and
+// NOT be owned by the spender (taking your own asset is a meaningless no-op —
+// ruling 8). It writes the error response and returns false on any failure.
+// shakeUpTakeAsset re-checks ownership authoritatively at commit, since the
+// asset could change hands while the spend is open. Caller guarantees
+// targetAssetID is non-nil (the option's NeedsAsset check runs first).
+func validateShakeUpTakeTarget(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	gameID, spenderID int64,
+	want model.AssetType,
+	targetAssetID *int64,
+) bool {
+	asset, err := q.GetAssetByID(ctx, *targetAssetID)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, "target asset not found")
+		return false
+	}
+	if asset.GameID != gameID {
+		respondErr(w, http.StatusBadRequest, "target asset belongs to another game")
+		return false
+	}
+	if asset.AssetType != want {
+		respondErr(w, http.StatusBadRequest, fmt.Sprintf("target must be a %s asset", want))
+		return false
+	}
+	if asset.IsDestroyed {
+		respondErr(w, http.StatusConflict, "asset is destroyed")
+		return false
+	}
+	if asset.OwnerID == spenderID {
+		respondErr(w, http.StatusForbidden, "you cannot take your own asset")
 		return false
 	}
 	return true
