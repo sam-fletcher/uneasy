@@ -18,6 +18,11 @@ import (
 
 const sessionCookieMaxAge = int(365 * 24 * time.Hour / time.Second)
 
+// maxPasswordBytes is bcrypt's hard limit: bcrypt.GenerateFromPassword
+// errors on anything longer, which without this guard surfaces as a
+// confusing 500. Not a password-strength policy — there is no minimum.
+const maxPasswordBytes = 72
+
 // CreateAccount handles POST /api/accounts.
 //
 // Body: {"username": "...", "password": "...", "email": "..."?}
@@ -40,6 +45,10 @@ func CreateAccount(s *db.Store) http.HandlerFunc {
 		}
 		if body.Password == "" {
 			respondErr(w, http.StatusBadRequest, "password is required")
+			return
+		}
+		if len(body.Password) > maxPasswordBytes {
+			respondErr(w, http.StatusBadRequest, "password too long (max 72 characters)")
 			return
 		}
 
@@ -143,6 +152,10 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 		if body.Password != nil {
 			if *body.Password == "" {
 				respondErr(w, http.StatusBadRequest, "password cannot be empty")
+				return
+			}
+			if len(*body.Password) > maxPasswordBytes {
+				respondErr(w, http.StatusBadRequest, "password too long (max 72 characters)")
 				return
 			}
 			hash, err := bcrypt.GenerateFromPassword([]byte(*body.Password), bcrypt.DefaultCost)

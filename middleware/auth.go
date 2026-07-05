@@ -57,6 +57,13 @@ func AccountFromContext(ctx context.Context) *Account {
 	return v
 }
 
+// AccountContext returns a copy of ctx carrying acct, as if EnsureSession had
+// resolved it from a cookie. For handler unit tests that need to simulate a
+// logged-in request without a real session/cookie round-trip.
+func AccountContext(ctx context.Context, acct *Account) context.Context {
+	return context.WithValue(ctx, accountKey, acct)
+}
+
 // LoadPlayer returns the player row for the given account at the given
 // game, or nil if the account is not seated at that table.
 func LoadPlayer(ctx context.Context, q *dbgen.Queries, accountID, gameID int64) *dbgen.Player {

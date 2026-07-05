@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httprate"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uneasy/db"
@@ -36,6 +38,15 @@ const (
 	timeOutReqest = 30 * time.Second
 	timeOutWrite  = 0 // 0 = no write timeout (needed for WebSocket and SSE)
 	timeOutIdle   = 60 * time.Second
+)
+
+// credentialRateLimit and credentialRateWindow bound POST /api/sessions
+// (login) and POST /api/accounts (signup), sharing one bucket per IP.
+// Generous enough that no honest player ever sees it; it exists to end
+// offline-speed bcrypt guessing and drive-by account spam.
+const (
+	credentialRateLimit  = 10
+	credentialRateWindow = time.Minute
 )
 
 func main() {
@@ -80,7 +91,7 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 
 	manager := hub.NewManager()
 
-	router := setupRouter(logger, store, manager)
+	router := setupRouter(logger, store, manager, devMode)
 
 	if err := setupFrontend(router, devMode, viteURL); err != nil {
 		return err
@@ -108,7 +119,7 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 // setupRouter creates and configures the HTTP router with all middleware and routes.
 //
 //nolint:funlen // route table; one line per endpoint
-func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *chi.Mux {
+func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager, devMode bool) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Standard middleware: structured request logging and panic recovery.
@@ -120,6 +131,17 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(handler.LoggerMiddleware(logger))
+	r.Use(appMiddleware.SecurityHeaders(devMode))
+
+	// Shared by the two credential endpoints below: one bucket per IP across
+	// both login and signup. KeyByIP reads r.RemoteAddr, which RealIP (above)
+	// has already rewritten from X-Forwarded-For/X-Real-IP — Fly sets XFF, so
+	// this resolves the real client IP behind the proxy. chi v5.2.5 predates
+	// the non-deprecated ClientIPFrom*/GetClientIP replacement (needs v5.3+);
+	// revisit if chi is ever bumped.
+	credentialLimiter := httprate.LimitBy(credentialRateLimit, credentialRateWindow,
+		httprate.KeyByIP, //nolint:staticcheck // deprecated; see comment above — RealIP already normalizes RemoteAddr
+		httprate.WithLimitHandler(tooManyAttempts))
 
 	// API routes — all behind the cookie-auth middleware.
 	r.Route("/api", func(r chi.Router) {
@@ -133,21 +155,27 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 		// so a misbehaving client can't tie up a goroutine indefinitely.
 		r.Group(func(r chi.Router) {
 			r.Use(chimiddleware.Timeout(timeOutReqest))
+			// Body size cap. Scoped to this group (not the outer /api Route)
+			// so the WebSocket route above is unaffected.
+			r.Use(appMiddleware.BodyLimit)
 
 			// Accounts & sessions
-			r.Post("/accounts", handler.CreateAccount(store))
+			r.With(credentialLimiter).Post("/accounts", handler.CreateAccount(store))
 			r.Get("/accounts/me", handler.GetMe())
 			r.Patch("/accounts/me", handler.UpdateMe(store))
 			r.Get("/accounts/me/tables", handler.ListMyTables(store))
-			r.Post("/sessions", handler.CreateSession(store))
+			r.With(credentialLimiter).Post("/sessions", handler.CreateSession(store))
 			r.Delete("/sessions", handler.DeleteSession(store))
 
 			// Dev-only routes — gated by UNEASY_DEV=1. Never mount in prod.
 			if os.Getenv("UNEASY_DEV") == "1" {
+				logger.Warn("dev routes are MOUNTED — never run this in production")
 				r.Post("/dev/login", handler.DevLogin(store))
 				r.Post("/dev/seed", handler.DevSeed(store))
 				r.Post("/dev/advance-row", handler.DevAdvanceRow(store, manager))
 				r.Post("/dev/delete-game", handler.DevDeleteGame(store))
+			} else {
+				logger.Info("dev routes are OFF")
 			}
 
 			// Tables (creation, join, info)
@@ -333,6 +361,16 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 		fileServer.ServeHTTP(w, req)
 	}))
 	return nil
+}
+
+// tooManyAttempts is the httprate limit-exceeded handler for the credential
+// endpoints, shaped like handler package's {"error": "..."} responses.
+func tooManyAttempts(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusTooManyRequests)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": "too many attempts — wait a minute",
+	})
 }
 
 // env returns the value of key, or fallback if unset/empty.
