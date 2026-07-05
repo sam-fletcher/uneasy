@@ -9,22 +9,28 @@
       server advances to step 2.
     2 (spending): players take turns in reverse rank order. The active
       spender announces an option (deducts 1 token immediately), other
-      players post ±1 adjustments (1 token each), and the spender commits
-      to lock in the final cost and trigger the mechanical effect.
+      players post ±1 adjustments or explicitly pass (1 token each to
+      adjust; passing is free), and the spender commits — once every other
+      token-holding player has reacted — to lock in the final cost and
+      trigger the mechanical effect.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
-	import { onMount, onDestroy } from 'svelte';
+	import '../plans/planPanel.css';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import {
-		getShakeUp, shakeUpSpend, shakeUpAdjust, shakeUpCommit,
+		getShakeUp, shakeUpSpend, shakeUpAdjust, shakeUpCommit, shakeUpPass,
 	} from '$lib/api';
 	import type {
-		Game, Player, Asset, Ranking, DiceRoll, DiceRollDie, RollParticipant,
-		ShakeUpOptionInfo, ShakeUpSpend, ShakeUpAdjustmentRow, ShakeUpTokensRow, ClaimableTitle,
+		Game, Player, Asset, AssetType, Ranking, DiceRoll, DiceRollDie, RollParticipant,
+		ShakeUpOptionInfo, ShakeUpSpend, ShakeUpAdjustmentRow, ShakeUpPassRow, ShakeUpTokensRow,
+		ClaimableTitle,
 	} from '$lib/api';
 	import AssetCardSelectable from '../AssetCardSelectable.svelte';
 	import DiceRollPanel from '../DiceRollPanel.svelte';
+	import CardPicker from '../plans/CardPicker.svelte';
+	import Buffet, { type BuffetTab } from '../plans/shared/Buffet.svelte';
 	import { playerColor, playerColorByID } from '$lib/playerColor';
 	import { shakeUpWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 
@@ -49,7 +55,13 @@
 	let tokens = $state<ShakeUpTokensRow[]>([]);
 	let options = $state<ShakeUpOptionInfo[]>([]);
 	let claimableTitles = $state<ClaimableTitle[]>([]);
-	let openSpend = $state<{ spend: ShakeUpSpend; adjustments: ShakeUpAdjustmentRow[] } | null>(null);
+	let openSpend = $state<{
+		spend: ShakeUpSpend;
+		adjustments: ShakeUpAdjustmentRow[];
+		passes: ShakeUpPassRow[];
+		pending_reactor_ids: number[];
+		commit_ready: boolean;
+	} | null>(null);
 	let currentActor = $state<number | null>(null);
 	let currentRollerID = $state<number | null>(null);
 	let error = $state('');
@@ -96,10 +108,61 @@
 		return players.find(p => p.id === id)?.display_name ?? '?';
 	}
 
-	// ── Step 1: rolling ──────────────────────────────────────────────────────
-	// Turn order for the active category — reverse rank (lowest status
-	// first), mirroring gamepkg.ShakeUpTurnOrder. Dummy slots (player_id
-	// null) don't roll, so they're skipped.
+	// ── Act tracker ──────────────────────────────────────────────────────────
+	const CATEGORIES = ['esteem', 'knowledge', 'power'] as const;
+	const CATEGORY_LABELS: Record<(typeof CATEGORIES)[number], string> = {
+		esteem: 'Esteem', knowledge: 'Knowledge', power: 'Power',
+	};
+	const currentCategoryIndex = $derived(
+		CATEGORIES.indexOf((game.shake_up_category ?? 'esteem') as (typeof CATEGORIES)[number])
+	);
+	const stepLabel = $derived(
+		game.shake_up_step === 1 ? 'Rolling' : game.shake_up_step === 2 ? 'Spending' : '—'
+	);
+
+	// Phase intro: open by default only in the first act. A one-shot seed
+	// (like Buffet's `open` prop / AssetCardSelectable's `defaultExpanded`) —
+	// once the player toggles it, their choice sticks even as the category
+	// advances.
+	let introOpen = $state(untrack(() => game.shake_up_category === 'esteem'));
+
+	// Read-only reference of every option across all three acts (Buffet).
+	// Wording follows SHAKEUP_RULES.md's "List of Options" verbatim.
+	const BUFFET_ALWAYS =
+		'Each option costs 1 token. Others may spend their own tokens to raise or lower the cost by 1 per token. Turn order loops until everyone is out.';
+	const buffetTabs: BuffetTab[] = [
+		{
+			key: 'esteem', label: 'Esteem', always: BUFFET_ALWAYS,
+			opts: [
+				{ key: 'take_peer', label: 'Take a peer asset' },
+				{ key: 'take_artifact', label: 'Take an artifact asset' },
+				{ key: 'break_resource', label: 'Break a resource asset' },
+				{ key: 'bump_knowledge', label: 'Bump up on knowledge' },
+			],
+		},
+		{
+			key: 'knowledge', label: 'Knowledge', always: BUFFET_ALWAYS,
+			opts: [
+				{ key: 'take_resource', label: 'Take a resource asset' },
+				{ key: 'break_holding', label: 'Break a holding asset' },
+				{ key: 'break_peer', label: 'Break a peer asset' },
+				{ key: 'bump_power', label: 'Bump up on power' },
+			],
+		},
+		{
+			key: 'power', label: 'Power', always: BUFFET_ALWAYS,
+			opts: [
+				{ key: 'take_holding', label: 'Take a holding asset' },
+				{ key: 'break_artifact', label: 'Break an artifact asset' },
+				{ key: 'claim_title', label: 'Claim a new title' },
+				{ key: 'bump_esteem', label: 'Bump up on esteem' },
+			],
+		},
+	];
+
+	// ── Turn order & token pools (shared by both steps) ─────────────────────
+	// Reverse rank (lowest status first), mirroring gamepkg.ShakeUpTurnOrder.
+	// Dummy slots (player_id null) don't take turns, so they're skipped.
 	const turnOrder = $derived.by<number[]>(() => {
 		const cat = game.shake_up_category;
 		if (!cat) return [];
@@ -108,6 +171,12 @@
 			.sort((a, b) => b.rank - a.rank)
 			.map(r => r.player_id as number);
 	});
+	// Whoever the story is currently on: the roller in step 1, or the
+	// announcer/spender in step 2 (whether they're still being reacted to or
+	// already clear to commit).
+	const activeTurnPlayerID = $derived(
+		game.shake_up_step === 1 ? currentRollerID : (openSpend?.spend.player_id ?? currentActor)
+	);
 
 	// ── Step 2: announce spend ──────────────────────────────────────────────
 	let pickedOption = $state<string>('');
@@ -120,7 +189,34 @@
 	let titleFlavor = $state<string>('');
 	const pickedOptionInfo = $derived(options.find(o => o.Key === pickedOption));
 	const isClaimTitle = $derived(pickedOptionInfo?.Key === 'claim_title');
-	const myAssets = $derived(assets.filter(a => !a.is_destroyed));
+
+	// Take/break asset-type filters, keyed off the option key (matches the
+	// backend's expectedTakeType/expectedBreakType in handler/shake_up.go).
+	const TAKE_ASSET_TYPE: Record<string, AssetType> = {
+		take_peer: 'peer', take_artifact: 'artifact', take_resource: 'resource', take_holding: 'holding',
+	};
+	const BREAK_ASSET_TYPE: Record<string, AssetType> = {
+		break_resource: 'resource', break_holding: 'holding', break_peer: 'peer', break_artifact: 'artifact',
+	};
+	const isTakeOption = $derived(pickedOption in TAKE_ASSET_TYPE);
+	const targetAssetType = $derived<AssetType | null>(
+		TAKE_ASSET_TYPE[pickedOption] ?? BREAK_ASSET_TYPE[pickedOption] ?? null
+	);
+	// Take options exclude the spender's own assets (ruling 8 — a no-op);
+	// break options may target any owner's asset, including the spender's own.
+	const targetableAssets = $derived(
+		targetAssetType == null
+			? []
+			: assets.filter(a =>
+				a.asset_type === targetAssetType &&
+				!a.is_destroyed &&
+				(!isTakeOption || a.owner_id !== currentPlayerID))
+	);
+	function selectTargetAsset(id: number | null) {
+		pickedAssetID = id ?? '';
+		pickedMarginaliaID = '';
+	}
+
 	// My own peers with a free marginalia slot (positions 1–4; torn marginalia
 	// still occupy their slot) — the only valid recipients of a new title.
 	const titleablePeers = $derived(
@@ -131,7 +227,7 @@
 	const breakableMarginalia = $derived(
 		pickedAssetID === ''
 			? []
-			: (myAssets.find(a => a.id === pickedAssetID)?.marginalia ?? []).filter(m => !m.is_torn)
+			: (assets.find(a => a.id === pickedAssetID)?.marginalia ?? []).filter(m => !m.is_torn)
 	);
 	// A break announce is only ready once a marginalia is chosen; a claim-title
 	// announce needs both a title and one of my peers to bear it.
@@ -189,6 +285,18 @@
 		}
 	}
 
+	async function pass() {
+		if (!openSpend || busy) return;
+		busy = true; error = '';
+		try {
+			await shakeUpPass(gameID, openSpend.spend.id);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not pass.';
+		} finally {
+			busy = false;
+		}
+	}
+
 	async function commit() {
 		if (!openSpend || busy) return;
 		busy = true; error = '';
@@ -205,15 +313,41 @@
 	const adjustmentTotal = $derived(
 		(openSpend?.adjustments ?? []).reduce((sum, a) => sum + a.adjustment, 0)
 	);
+	const runningCost = $derived(openSpend ? Math.max(openSpend.spend.base_cost + adjustmentTotal, 0) : 0);
+	const pendingReactorIDs = $derived(openSpend?.pending_reactor_ids ?? []);
+	const commitReady = $derived(openSpend?.commit_ready ?? true);
+	const pendingReactorNames = $derived(pendingReactorIDs.map(playerName));
+	const myPassed = $derived(
+		currentPlayerID != null && (openSpend?.passes ?? []).some(p => p.player_id === currentPlayerID)
+	);
+	const spendOptionInfo = $derived.by(() => {
+		const spend = openSpend;
+		if (!spend) return undefined;
+		return options.find(o => o.Key === spend.spend.option_key);
+	});
+	// The option phrase without its trailing period, echoing the backend's
+	// shakeUpOptionPhrase (handler/system_posts.go) used for the chat log.
+	const spendPhrase = $derived(
+		(spendOptionInfo?.Description ?? openSpend?.spend.option_key ?? '').replace(/\.$/, '')
+	);
+	const spendTargetAsset = $derived.by(() => {
+		const spend = openSpend;
+		if (!spend || spend.spend.target_asset_id == null) return undefined;
+		return assets.find(a => a.id === spend.spend.target_asset_id);
+	});
 
 	// ── Waiting-on derivation ────────────────────────────────────────────────
 	// Both steps are strictly sequential turn order, so the pure function
-	// (lib/waitingOn.ts) always names exactly one party — see its vitest
-	// coverage for the step 1 / step 2 cases.
+	// (lib/waitingOn.ts) always names exactly one party (or, mid-reaction-
+	// window, the set of pending reactors) — see its vitest coverage.
 	const computedWaitingOn = $derived(shakeUpWaitingOn({
 		step: game.shake_up_step,
 		currentRollerID,
-		openSpend,
+		openSpend: openSpend ? {
+			spend: { player_id: openSpend.spend.player_id },
+			pendingReactorIDs: openSpend.pending_reactor_ids,
+			commitReady: openSpend.commit_ready,
+		} : null,
 		currentActor,
 	}));
 	$effect(() => { waitingOn = computedWaitingOn; });
@@ -222,43 +356,74 @@
 <div class="shake-up">
 	<header>
 		<h2>Shake-Up</h2>
+		<div class="act-tracker" role="list" aria-label="Shake-Up acts">
+			{#each CATEGORIES as cat, i (cat)}
+				<div
+					class="act"
+					class:current={cat === game.shake_up_category}
+					class:done={CATEGORIES.indexOf(cat) < currentCategoryIndex}
+					role="listitem"
+				>
+					<span class="act-name">{CATEGORY_LABELS[cat]}</span>
+					{#if cat === game.shake_up_category}
+						<span class="act-step">{stepLabel}</span>
+					{/if}
+				</div>
+				{#if i < CATEGORIES.length - 1}<span class="act-arrow" aria-hidden="true">→</span>{/if}
+			{/each}
+		</div>
 		<div class="state">
-			<span>Category: {game.shake_up_category ?? '—'}</span>
-			<span>Step: {game.shake_up_step === 1 ? 'rolling' : game.shake_up_step === 2 ? 'spending' : '—'}</span>
 			<span>Your tokens: <strong>{myTokens}</strong></span>
 		</div>
 	</header>
 
+	<section class="intro-block" class:open={introOpen}>
+		<button
+			type="button"
+			class="intro-toggle"
+			aria-expanded={introOpen}
+			onclick={() => (introOpen = !introOpen)}
+		>
+			<span>About the Shake-Up</span>
+			<span class="intro-caret" aria-hidden="true">▾</span>
+		</button>
+		{#if introOpen}
+			<div class="intro-body">
+				<p>
+					This is the finale. Over three acts — Esteem, then Knowledge, then
+					Power — each player rolls to earn tokens, then spends them in turn
+					to take, break, rise, and claim. Take stock of everything that's
+					happened over the last thirteen rows of the public record, and
+					embrace this last moment: once Power is settled, the game ends.
+				</p>
+			</div>
+		{/if}
+	</section>
+
 	{#if error}<p class="error-text">{error}</p>{/if}
+
+	<Buffet tabs={buffetTabs} defaultTab={game.shake_up_category ?? 'esteem'} />
 
 	<section class="tokens-panel">
 		<h3>Token pools</h3>
-		<ul>
-			{#each tokens as t}
-				<li>{playerName(t.id)}: <strong>{t.shake_up_tokens}</strong></li>
+		<p class="muted-text small">Turn order is reverse rank — lowest status first.</p>
+		<div class="roller-chips">
+			{#each turnOrder as pid (pid)}
+				<span
+					class="roller-chip"
+					class:active={pid === activeTurnPlayerID}
+					style:border-color={playerColorByID(pid, players)}
+				>
+					{playerName(pid)}: <strong>{tokens.find(t => t.id === pid)?.shake_up_tokens ?? 0}</strong>
+				</span>
 			{/each}
-		</ul>
+		</div>
 	</section>
 
 	{#if game.shake_up_step === 1}
 		<section class="rolling-section">
 			<h3>Rolling for {game.shake_up_category ?? 'this category'}</h3>
-			<p class="muted-text small">
-				Turns go in reverse-rank order (lowest status first). Each distinct
-				die face earns one token.
-			</p>
-			<div class="roller-chips">
-				{#each turnOrder as pid (pid)}
-					<span
-						class="roller-chip"
-						class:active={pid === currentRollerID}
-						class:rolled={(tokens.find(t => t.id === pid)?.shake_up_tokens ?? 0) > 0}
-						style:border-color={playerColorByID(pid, players)}
-					>
-						{playerName(pid)}: <strong>{tokens.find(t => t.id === pid)?.shake_up_tokens ?? 0}</strong>
-					</span>
-				{/each}
-			</div>
+			<p class="muted-text small">Each distinct die face earns one token.</p>
 			{#if activeRoll}
 				<DiceRollPanel
 					bind:roll={activeRoll}
@@ -280,25 +445,60 @@
 		{#if openSpend}
 			<section class="spend-panel">
 				<h3>Open spend</h3>
-				<p>
-					{playerName(openSpend.spend.player_id)}
-					announced {openSpend.spend.option_key}
-					{#if openSpend.spend.target_asset_id != null}
-						on asset #{openSpend.spend.target_asset_id}
-					{/if}
+				<p class="spend-phrase">
+					<span class="spend-player" style:color={playerColorByID(openSpend.spend.player_id, players)}>
+						{playerName(openSpend.spend.player_id)}
+					</span>
+					announced: {spendPhrase}
 				</p>
+				{#if spendTargetAsset}
+					<AssetCardSelectable
+						asset={spendTargetAsset}
+						ownerColor={playerColor(players.find(pl => pl.id === spendTargetAsset.owner_id))}
+						ownerLabel={spendTargetAsset.owner_id === currentPlayerID
+							? 'Your own'
+							: `Owned by ${playerName(spendTargetAsset.owner_id)}`}
+					/>
+				{/if}
 				<p class="muted-text small">
-					Base cost {openSpend.spend.base_cost} · adjustments {adjustmentTotal >= 0 ? '+' : ''}{adjustmentTotal}
-					· running cost: <strong>{openSpend.spend.base_cost + adjustmentTotal}</strong>
-				</p>
-				<div class="adjust-buttons">
-					{#if !isMySpend}
-						<button class="action-btn secondary" disabled={busy || myTokens < 1} onclick={() => adjust(1)}>+1 (costs you 1 token)</button>
-						<button class="action-btn secondary" disabled={busy || myTokens < 1} onclick={() => adjust(-1)}>−1 (costs you 1 token)</button>
-					{:else}
-						<button class="action-btn primary" disabled={busy} onclick={commit}>Commit</button>
+					Base cost {openSpend.spend.base_cost} · running cost: <strong>{runningCost}</strong>
+					{#if adjustmentTotal !== 0}
+						({adjustmentTotal > 0 ? '+' : ''}{adjustmentTotal} so far)
 					{/if}
-				</div>
+				</p>
+				{#if openSpend.adjustments.length > 0}
+					<ul class="adjustment-history">
+						{#each openSpend.adjustments as a (a.id)}
+							<li>
+								<span style:color={playerColorByID(a.player_id, players)}>{playerName(a.player_id)}</span>
+								{a.adjustment > 0 ? 'raised' : 'lowered'} the cost by 1
+							</li>
+						{/each}
+					</ul>
+				{/if}
+
+				{#if isMySpend}
+					{#if !commitReady}
+						<p class="muted-text small reactor-note">
+							Others can still react — waiting on {pendingReactorNames.join(', ')} to react.
+						</p>
+					{/if}
+					<div class="adjust-buttons">
+						<button class="action-btn primary" disabled={busy || !commitReady} onclick={commit}>
+							{commitReady ? (busy ? '…' : 'Commit') : 'Waiting on reactions…'}
+						</button>
+					</div>
+				{:else if myTokens > 0}
+					<div class="adjust-buttons">
+						<button class="action-btn secondary" disabled={busy} onclick={() => adjust(1)}>+1 (costs you 1 token)</button>
+						<button class="action-btn secondary" disabled={busy} onclick={() => adjust(-1)}>−1 (costs you 1 token)</button>
+						<button class="action-btn secondary" disabled={busy || myPassed} onclick={pass}>
+							{myPassed ? 'You let it stand' : 'Let it stand'}
+						</button>
+					</div>
+				{:else}
+					<p class="muted-text small">You have no tokens left to react with.</p>
+				{/if}
 			</section>
 		{:else if isMyTurn}
 			<section>
@@ -325,27 +525,16 @@
 						</div>
 					</div>
 					{#if pickedOptionInfo?.NeedsAsset}
-						<div class="su-form-row">
-							<span class="su-form-label">Target asset:</span>
-							{#if myAssets.length === 0}
-								<p class="muted-text" style="margin:0;">No eligible assets.</p>
-							{:else}
-								<div class="su-peer-cards">
-									{#each myAssets as a (a.id)}
-										<AssetCardSelectable
-											asset={a}
-											ownerColor={playerColor(players.find(pl => pl.id === a.owner_id))}
-											selectable
-											selected={pickedAssetID === a.id}
-											onToggle={() => {
-												pickedAssetID = pickedAssetID === a.id ? '' : a.id;
-												pickedMarginaliaID = '';
-											}}
-										/>
-									{/each}
-								</div>
-							{/if}
-						</div>
+						<CardPicker
+							label="Target asset"
+							items={targetableAssets}
+							{players}
+							ownerLabel={(a) => a.owner_id === currentPlayerID
+								? 'Your own'
+								: `Owned by ${playerName(a.owner_id)}`}
+							selected={pickedAssetID === '' ? null : pickedAssetID}
+							onSelect={selectTargetAsset}
+						/>
 					{/if}
 					{#if pickedOptionInfo?.NeedsMarginalia && pickedAssetID !== ''}
 						<div class="su-form-row">
@@ -442,9 +631,59 @@
 	}
 	.shake-up h2 { color: var(--color-accent); font-size: 1.3rem; margin: 0; }
 	.shake-up h3 { color: var(--color-accent); font-size: 1rem; margin: 0.25rem 0; }
-	.state { display: flex; gap: 1.25rem; font-size: 0.9rem; color: var(--color-text-muted); flex-wrap: wrap; margin-top: 0.25rem; }
+	.state { display: flex; gap: 1.25rem; font-size: 0.9rem; color: var(--color-text-muted); flex-wrap: wrap; margin-top: 0.4rem; }
 
-	.tokens-panel ul { list-style: none; padding: 0; margin: 0.25rem 0 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; }
+	/* Act tracker: Esteem → Knowledge → Power, current act lit, its step
+	   named beneath it. */
+	.act-tracker { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+	.act {
+		display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+		min-height: 44px; justify-content: center;
+		padding: 0.3rem 0.75rem;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-2);
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+	}
+	.act.done { color: var(--color-text-faint); }
+	.act.current {
+		border-color: var(--color-accent);
+		background: #3a2f18;
+		color: var(--color-accent);
+		font-weight: 600;
+	}
+	.act-step { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
+	.act-arrow { color: var(--color-text-faint); font-size: 0.9rem; }
+
+	/* Phase intro — collapsible accordion, mirrors Buffet's own toggle. */
+	.intro-block { display: flex; flex-direction: column; gap: 0; }
+	.intro-toggle {
+		display: flex; align-items: center; justify-content: space-between;
+		width: 100%; min-height: 44px; padding: 0.55rem 0.75rem;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		color: var(--color-accent);
+		font: inherit; text-align: left; cursor: pointer;
+	}
+	.intro-block.open .intro-toggle {
+		border-color: var(--color-accent);
+		border-bottom-color: transparent;
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+	.intro-caret {
+		color: var(--color-accent); font-size: 0.75rem;
+		transform: rotate(-90deg); transition: transform 0.15s ease;
+	}
+	.intro-block.open .intro-caret { transform: rotate(0); }
+	.intro-body {
+		border: 1px solid var(--color-accent); border-top: none;
+		border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
+		padding: 0.6rem 0.75rem;
+	}
+	.intro-body p { margin: 0; font-size: 0.85rem; line-height: 1.5; color: var(--color-text-muted); }
 
 	.rolling-section { display: flex; flex-direction: column; gap: 0.6rem; }
 	.roller-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
@@ -457,7 +696,6 @@
 		color: var(--color-text-muted);
 		font-size: 0.85rem;
 	}
-	.roller-chip.rolled { color: var(--color-text); }
 	.roller-chip.active {
 		border-color: var(--color-accent); background: #3a2f18;
 		color: var(--color-accent); font-weight: 600;
@@ -495,6 +733,15 @@
 
 	.spend-panel {
 		background: var(--color-surface-sunken); border: 1px solid var(--color-border-strong); border-radius: 8px; padding: 0.75rem;
+		display: flex; flex-direction: column; gap: 0.5rem;
 	}
-	.adjust-buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+	.spend-phrase { margin: 0; font-size: 0.92rem; }
+	.spend-player { font-weight: 600; }
+	.adjustment-history {
+		list-style: none; margin: 0; padding: 0;
+		display: flex; flex-direction: column; gap: 0.15rem;
+		font-size: 0.8rem; color: var(--color-text-muted);
+	}
+	.reactor-note { color: var(--color-accent-hover); }
+	.adjust-buttons { display: flex; gap: 0.5rem; margin-top: 0.25rem; flex-wrap: wrap; }
 </style>

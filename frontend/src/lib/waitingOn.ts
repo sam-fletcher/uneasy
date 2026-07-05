@@ -211,9 +211,18 @@ export interface ShakeUpWaitingOnInput {
 	/** Step 1: the player whose turn it is to roll this category
 	 *  (GetShakeUp's current_roller_id), or null once everyone has rolled. */
 	currentRollerID: number | null;
-	/** Step 2: the open spend, if any. The spender must commit it before
-	 *  anyone else may act. */
-	openSpend: { spend: { player_id: number } } | null;
+	/** Step 2: the open spend, if any. While reactors are still pending
+	 *  (ruling 5), the table waits on THEM, not the spender; once every
+	 *  reactor has adjusted or passed, the wait shifts to the spender's
+	 *  commit. */
+	openSpend: {
+		spend: { player_id: number };
+		/** Other token-holding players who haven't yet adjusted or passed
+		 *  (GetShakeUp's open_spend.pending_reactor_ids). */
+		pendingReactorIDs: number[];
+		/** GetShakeUp's open_spend.commit_ready. */
+		commitReady: boolean;
+	} | null;
 	/** Step 2: whose turn it is to announce a spend (reverse-rank order,
 	 *  GetShakeUp's current_actor), or null when no one holds tokens. */
 	currentActor: number | null;
@@ -228,6 +237,9 @@ export function shakeUpWaitingOn(input: ShakeUpWaitingOnInput): WaitingOnState {
 	}
 	if (step === 2) {
 		if (openSpend) {
+			if (!openSpend.commitReady) {
+				return { waitees: openSpend.pendingReactorIDs.map(player), stepLabel: 'React to the spend' };
+			}
 			return { waitees: [player(openSpend.spend.player_id)], stepLabel: 'Commit the spend' };
 		}
 		if (currentActor != null) {

@@ -290,12 +290,28 @@ describe('shakeUpWaitingOn', () => {
 		expect(got.waitees).toEqual([]);
 	});
 
-	it('step 2 with an open spend names the spender, not the next actor', () => {
+	it('step 2 with an open spend, all reactors clear, names the spender (not the next actor)', () => {
 		const got = shakeUpWaitingOn(
-			shakeUpInput({ step: 2, openSpend: { spend: { player_id: 3 } }, currentActor: 9 }),
+			shakeUpInput({
+				step: 2,
+				openSpend: { spend: { player_id: 3 }, pendingReactorIDs: [], commitReady: true },
+				currentActor: 9,
+			}),
 		);
 		expect(playerIDs(got.waitees)).toEqual([3]);
 		expect(got.stepLabel).toBe('Commit the spend');
+	});
+
+	it('step 2 with an open spend and pending reactors names them, not the spender', () => {
+		const got = shakeUpWaitingOn(
+			shakeUpInput({
+				step: 2,
+				openSpend: { spend: { player_id: 3 }, pendingReactorIDs: [1, 2], commitReady: false },
+				currentActor: 9,
+			}),
+		);
+		expect(playerIDs(got.waitees)).toEqual([1, 2]);
+		expect(got.stepLabel).toBe('React to the spend');
 	});
 
 	it('step 2 with no open spend names the current actor', () => {

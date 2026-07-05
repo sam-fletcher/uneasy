@@ -53,6 +53,15 @@ export interface ShakeUpTokensRow {
 	shake_up_tokens: number;
 }
 
+// A reactor's explicit "let it stand" on an open spend (ruling 5's reaction
+// gate — see shakeUpPass).
+export interface ShakeUpPassRow {
+	id: number;
+	spend_id: number;
+	player_id: number;
+	created_at: string;
+}
+
 export function getShakeUp(gameID: string | number): Promise<{
 	phase: string;
 	shake_up_category: ShakeUpCategory | null;
@@ -61,7 +70,16 @@ export function getShakeUp(gameID: string | number): Promise<{
 	options: ShakeUpOptionInfo[] | null;
 	// Titles still unclaimed game-wide, for the "Claim a new title" picker.
 	claimable_titles?: ClaimableTitle[];
-	open_spend?: { spend: ShakeUpSpend; adjustments: ShakeUpAdjustmentRow[] };
+	open_spend?: {
+		spend: ShakeUpSpend;
+		adjustments: ShakeUpAdjustmentRow[];
+		// Every other token-holding player's explicit pass on this spend.
+		passes: ShakeUpPassRow[];
+		// Other players who still hold ≥1 token and haven't yet reacted
+		// (adjusted or passed) — the spender can't commit while this is non-empty.
+		pending_reactor_ids: number[];
+		commit_ready: boolean;
+	};
 	// During the spending step (no open spend), the player whose turn it is
 	// to announce, per reverse-rank order. Absent otherwise.
 	current_actor?: number;
@@ -109,6 +127,20 @@ export function shakeUpCommit(
 	spendID: number
 ): Promise<{ spend_id: number; final_cost: number }> {
 	return apiFetch(`/tables/${gameID}/shake-up/commit`, {
+		method: 'POST',
+		body: JSON.stringify({ spend_id: spendID })
+	});
+}
+
+// Records that the caller reviewed the open spend and declines to adjust it
+// further ("lets it stand") — one of the two ways (adjust or pass) a reactor
+// clears themselves from the commit gate. Idempotent: passing again is a
+// no-op success. The spender may not call this on their own spend (403).
+export function shakeUpPass(
+	gameID: string | number,
+	spendID: number
+): Promise<{ pass: ShakeUpPassRow }> {
+	return apiFetch(`/tables/${gameID}/shake-up/pass`, {
 		method: 'POST',
 		body: JSON.stringify({ spend_id: spendID })
 	});
