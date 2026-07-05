@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -35,7 +34,11 @@ func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Text = strings.TrimSpace(body.Text)
+		text, ok := textField(w, "text", body.Text, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		body.Text = text
 		if body.Text == "" {
 			respondErr(w, http.StatusBadRequest, "text is required")
 			return
@@ -115,7 +118,11 @@ func UpdateMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Text = strings.TrimSpace(body.Text)
+		text, ok := textField(w, "text", body.Text, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		body.Text = text
 		if body.Text == "" {
 			respondErr(w, http.StatusBadRequest, "text is required")
 			return

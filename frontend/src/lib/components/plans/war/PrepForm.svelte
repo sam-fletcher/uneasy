@@ -85,7 +85,7 @@
 		</FormField>
 		<label class="form-label">
 			Motivation:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder="Casus belli, opening move, rally cry, et cetera" required></textarea>
 		</label>
 		<p class="choices-note muted">

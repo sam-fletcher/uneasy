@@ -452,7 +452,7 @@
 			{/if}
 			<label class="form-label">
 				Rumor:
-				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder={prepKeepSecret
 						? 'Write the rumor — only you will see it until you spread it.'
 						: 'What are people starting to say?'}></textarea>

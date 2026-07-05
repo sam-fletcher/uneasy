@@ -646,7 +646,7 @@
 										bind:value={newSecretText}
 										disabled={secretSaving}
 										rows={4}
-										maxlength={500}
+										maxlength={1000}
 										onkeydown={(e) => {
 											if (e.key === 'Escape') { e.preventDefault(); toggleSecrets(asset.id); }
 											else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveSecret(asset); }

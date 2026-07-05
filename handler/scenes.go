@@ -264,7 +264,7 @@ func validateSceneTiming(
 // server fills in `prompt` and `resolved_plan_id` based on the most
 // recently resolved plan on this row (if any).
 //
-//nolint:funlen,gocognit // HTTP handler with extensive validation logic
+//nolint:funlen,gocognit,cyclop // HTTP handler with extensive validation logic
 func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameRow, player, ok := requireFocusPlayer(w, r, s.Q)
@@ -381,7 +381,11 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			customLoc = &str
 		}
 		var timeNote *string
-		if tn := strings.TrimSpace(body.TimeNote); tn != "" {
+		tn, ok := textField(w, "time_note", body.TimeNote, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		if tn != "" {
 			timeNote = &tn
 		}
 

@@ -53,7 +53,7 @@
 		{#if prepError}<p class="res-error">{prepError}</p>{/if}
 		<label class="form-label">
 			Event type:
-			<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+			<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 				placeholder="A gala or a ball? A big feast, a hunting party, a tournament?" required></textarea>
 		</label>
 		{#if !readOnly}

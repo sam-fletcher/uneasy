@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -356,7 +355,11 @@ func CreatePlayerPost(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Body = strings.TrimSpace(body.Body)
+		text, ok := textField(w, "body", body.Body, maxLongTextLen)
+		if !ok {
+			return
+		}
+		body.Body = text
 		if body.Body == "" {
 			respondErr(w, http.StatusBadRequest, "body is required")
 			return

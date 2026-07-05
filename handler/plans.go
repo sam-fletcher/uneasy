@@ -44,11 +44,6 @@ import (
 	"uneasy/model"
 )
 
-// maxAssetNameLen bounds a player-authored asset name (runes). Shared by the
-// plan routes that author a named asset at resolution (Propose Decree's
-// enact-law, Spread Propaganda's create-artifact).
-const maxAssetNameLen = 120
-
 // The plan orchestration contract (PlanHandler, OnPreparer, PlanDeps,
 // ValidationContext, the registry, saveResolutionData) lives in
 // plan_contract.go; pure domain data types live in the game package and are
@@ -111,7 +106,7 @@ func createPlanRoll(
 // ListPlans handles GET /api/tables/:id/plans.
 func ListPlans(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, s.Q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -119,6 +114,9 @@ func ListPlans(s *db.Store) http.HandlerFunc {
 		if err != nil {
 			respondInternalErr(w, r, "could not load plans", err)
 			return
+		}
+		for i := range plans {
+			sanitizeLiaiseKeptSecretsForViewer(&plans[i], player.ID)
 		}
 		respond(w, http.StatusOK, map[string]any{"plans": plans})
 	}
@@ -341,7 +339,12 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		notes := ""
 		if body.PreparationNotes != nil {
-			notes = *body.PreparationNotes
+			trimmed, ok := textField(w, "preparation_notes", *body.PreparationNotes, maxNarrativeLen)
+			if !ok {
+				return
+			}
+			notes = trimmed
+			body.PreparationNotes = &trimmed
 		}
 
 		validation := validatePlanPreparation(
@@ -590,10 +593,11 @@ func createPlanInTx(
 // GetPlan handles GET /api/plans/:planId.
 func GetPlan(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, _, ok := requirePlanAccess(w, r, s.Q)
+		plan, player, ok := requirePlanAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
+		sanitizeLiaiseKeptSecretsForViewer(plan, player.ID)
 
 		resData := loadResolutionData(plan.ResolutionData)
 

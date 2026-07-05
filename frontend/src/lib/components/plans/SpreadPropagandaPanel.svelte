@@ -242,7 +242,7 @@
 			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 			<label class="form-label">
 				Message and Methods:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?" required></textarea>
 			</label>
 			{#if !readOnly}

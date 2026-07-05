@@ -244,6 +244,9 @@ func validateChooseRequestBody(r *http.Request) (*chooseRequestBody, error) {
 	if body.AssetText == "" {
 		return nil, errors.New("asset_text is required")
 	}
+	if len([]rune(body.AssetText)) > maxAssetNameLen {
+		return nil, fmt.Errorf("asset_text must be at most %d characters", maxAssetNameLen)
+	}
 	assetMarg, err := requireOneMarginalia(raw.AssetMarginalia)
 	if err != nil {
 		return nil, err
@@ -252,8 +255,19 @@ func validateChooseRequestBody(r *http.Request) (*chooseRequestBody, error) {
 	if body.SheetType == gamepkg.PrologueSheetTitles && body.MarginaliumText == "" {
 		return nil, errors.New("marginalia_text is required for titles")
 	}
+	if len([]rune(body.MarginaliumText)) > maxMarginaliaLen {
+		return nil, fmt.Errorf("marginalia_text must be at most %d characters", maxMarginaliaLen)
+	}
 	if body.SheetType == gamepkg.PrologueSheetLawsRumors && body.LawOrRumorText == "" {
 		return nil, errors.New("law_or_rumor_text is required for laws_rumors")
+	}
+	if len([]rune(body.LawOrRumorText)) > maxLongTextLen {
+		return nil, fmt.Errorf("law_or_rumor_text must be at most %d characters", maxLongTextLen)
+	}
+	for i, ca := range body.CardAssets {
+		if len([]rune(ca.Text)) > maxMarginaliaLen {
+			return nil, fmt.Errorf("card_assets[%d].text must be at most %d characters", i, maxMarginaliaLen)
+		}
 	}
 
 	return body, nil

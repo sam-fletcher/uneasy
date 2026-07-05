@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -38,7 +37,11 @@ func CreateAccount(s *db.Store) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Username = strings.TrimSpace(body.Username)
+		username, ok := textField(w, "username", body.Username, maxUsernameLen)
+		if !ok {
+			return
+		}
+		body.Username = username
 		if body.Username == "" {
 			respondErr(w, http.StatusBadRequest, "username is required")
 			return
@@ -50,6 +53,13 @@ func CreateAccount(s *db.Store) http.HandlerFunc {
 		if len(body.Password) > maxPasswordBytes {
 			respondErr(w, http.StatusBadRequest, "password too long (max 72 characters)")
 			return
+		}
+		if body.Email != nil {
+			email, ok := textField(w, "email", *body.Email, maxEmailLen)
+			if !ok {
+				return
+			}
+			body.Email = &email
 		}
 
 		ctx := r.Context()
@@ -131,7 +141,10 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 		// can partially succeed if any one fails) run atomically below.
 		var newUsername *string
 		if body.Username != nil {
-			name := strings.TrimSpace(*body.Username)
+			name, ok := textField(w, "username", *body.Username, maxUsernameLen)
+			if !ok {
+				return
+			}
 			if name == "" {
 				respondErr(w, http.StatusBadRequest, "username cannot be empty")
 				return
@@ -140,7 +153,10 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 		}
 		var newEmail *string
 		if body.Email != nil {
-			email := strings.TrimSpace(*body.Email)
+			email, ok := textField(w, "email", *body.Email, maxEmailLen)
+			if !ok {
+				return
+			}
 			if email != "" {
 				newEmail = &email
 			} else {

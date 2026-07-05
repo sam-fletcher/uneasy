@@ -107,6 +107,9 @@ func requireOneMarginalia(raw []string) (string, error) {
 	if len(found) != 1 {
 		return "", errors.New("a new asset needs a name and one marginalia")
 	}
+	if len([]rune(found[0])) > maxMarginaliaLen {
+		return "", fmt.Errorf("marginalia must be at most %d characters", maxMarginaliaLen)
+	}
 	return found[0], nil
 }
 
@@ -204,7 +207,11 @@ func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Name = strings.TrimSpace(body.Name)
+		name, ok := textField(w, "name", body.Name, maxAssetNameLen)
+		if !ok {
+			return
+		}
+		body.Name = name
 		if body.Name == "" {
 			respondErr(w, http.StatusBadRequest, "name is required")
 			return
@@ -298,7 +305,10 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		ctx := r.Context()
 
 		if body.Name != nil {
-			name := strings.TrimSpace(*body.Name)
+			name, ok := textField(w, "name", *body.Name, maxAssetNameLen)
+			if !ok {
+				return
+			}
 			if name == "" {
 				respondErr(w, http.StatusBadRequest, "name cannot be empty")
 				return
@@ -434,12 +444,15 @@ func parseConscriptBody(w http.ResponseWriter, r *http.Request) (string, []strin
 		respondErr(w, http.StatusBadRequest, "invalid JSON")
 		return "", nil, false
 	}
-	name := strings.TrimSpace(body.Name)
+	name, ok := textField(w, "name", body.Name, maxAssetNameLen)
+	if !ok {
+		return "", nil, false
+	}
 	if name == "" {
 		respondErr(w, http.StatusBadRequest, "name is required")
 		return "", nil, false
 	}
-	margs := make([]string, 0, len(body.Marginalia))
+	var margs []string
 	for _, m := range body.Marginalia {
 		if m = strings.TrimSpace(m); m != "" {
 			margs = append(margs, m)
@@ -451,6 +464,10 @@ func parseConscriptBody(w http.ResponseWriter, r *http.Request) (string, []strin
 	}
 	if len(margs) > maxMarginalia {
 		respondErr(w, http.StatusBadRequest, fmt.Sprintf("at most %d marginalia", maxMarginalia))
+		return "", nil, false
+	}
+	margs, ok = textFieldSlice(w, margs, maxMarginaliaLen)
+	if !ok {
 		return "", nil, false
 	}
 	return name, margs, true

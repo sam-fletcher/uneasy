@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -28,7 +27,7 @@ type RecordRow struct {
 // is stable now so the frontend can render the timeline.
 func GetFullRecord(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, s.Q)
+		gameID, player, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -51,6 +50,9 @@ func GetFullRecord(s *db.Store) http.HandlerFunc {
 		if err != nil {
 			respondInternalErr(w, r, "could not load plans", err)
 			return
+		}
+		for i := range plans {
+			sanitizeLiaiseKeptSecretsForViewer(&plans[i], player.ID)
 		}
 
 		// Group entries and plans by row number. Pre-allocate empty slices
@@ -115,7 +117,11 @@ func CreateSceneEntry(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Body = strings.TrimSpace(body.Body)
+		text, ok := textField(w, "body", body.Body, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		body.Body = text
 		if body.Body == "" {
 			respondErr(w, http.StatusBadRequest, "body is required")
 			return

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,5 +35,17 @@ func TestRequireOneMarginalia(t *testing.T) {
 		// second real entry always errors, blank padding or not.
 		_, err := requireOneMarginalia([]string{"A trait", "", "Another"})
 		assert.Error(t, err)
+	})
+
+	t.Run("rejects marginalia over the length cap", func(t *testing.T) {
+		_, err := requireOneMarginalia([]string{strings.Repeat("a", maxMarginaliaLen+1)})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "300")
+	})
+
+	t.Run("accepts marginalia at exactly the length cap", func(t *testing.T) {
+		got, err := requireOneMarginalia([]string{strings.Repeat("a", maxMarginaliaLen)})
+		require.NoError(t, err)
+		assert.Len(t, got, maxMarginaliaLen)
 	})
 }

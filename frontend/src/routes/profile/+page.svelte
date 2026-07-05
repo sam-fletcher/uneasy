@@ -160,7 +160,7 @@
 			<div class="row">
 				<span class="label">Player name</span>
 				{#if editingUsername}
-					<input aria-label="Player name" bind:value={usernameDraft} />
+					<input aria-label="Player name" bind:value={usernameDraft} maxlength={40} />
 					<button class="action-btn primary small" onclick={saveUsername}>Save</button>
 					<button class="action-btn secondary small" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
 				{:else}

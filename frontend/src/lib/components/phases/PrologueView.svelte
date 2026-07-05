@@ -678,6 +678,7 @@
 					bind:value={extraPeerText}
 					class="peer-input"
 					placeholder="Name your peer"
+					maxlength={120}
 				/>
 			</label>
 			<button class="action-btn secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>

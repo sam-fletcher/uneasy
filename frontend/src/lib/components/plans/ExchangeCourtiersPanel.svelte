@@ -312,7 +312,7 @@
 
 			<label class="form-label">
 				Preparation:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder="How are you planning to take them into your retinue?" required></textarea>
 			</label>
 

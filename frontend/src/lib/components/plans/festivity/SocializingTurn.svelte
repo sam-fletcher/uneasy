@@ -232,7 +232,7 @@
 		{#if pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you'}
 			<label class="form-label">
 				Rumor text:
-				<textarea rows={2} bind:value={rumorText} class="form-textarea"
+				<textarea rows={2} bind:value={rumorText} class="form-textarea" maxlength={5000}
 					placeholder="What does the rumor say?"></textarea>
 			</label>
 		{:else if pickedChoice === 'introduce_peer'}

@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strings"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -354,7 +353,11 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.PeerText = strings.TrimSpace(body.PeerText)
+		peerText, ok := textField(w, "peer_text", body.PeerText, maxAssetNameLen)
+		if !ok {
+			return
+		}
+		body.PeerText = peerText
 		if body.PeerText == "" {
 			respondErr(w, http.StatusBadRequest, "peer_text is required")
 			return

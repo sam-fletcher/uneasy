@@ -168,7 +168,7 @@
 {:else}
 	<label class="form-label">
 		Peace terms:
-		<textarea rows={3} bind:value={peaceTerms} class="form-textarea"
+		<textarea rows={3} bind:value={peaceTerms} class="form-textarea" maxlength={1000}
 			placeholder="Describe the terms you propose…"></textarea>
 	</label>
 {/if}

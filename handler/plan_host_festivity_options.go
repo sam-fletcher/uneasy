@@ -76,6 +76,9 @@ func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error 
 	if txt == "" {
 		return errors.New("rumor text is required")
 	}
+	if len([]rune(txt)) > maxLongTextLen {
+		return fmt.Errorf("rumor text must be at most %d characters", maxLongTextLen)
+	}
 	var targetAssetID *int64
 	if !fc.isMake {
 		if mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.actingPlayerID); err == nil {
@@ -113,6 +116,9 @@ func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext
 	name := strings.TrimSpace(fc.peerName)
 	if name == "" {
 		return errors.New("peer name is required")
+	}
+	if len([]rune(name)) > maxAssetNameLen {
+		return fmt.Errorf("peer name must be at most %d characters", maxAssetNameLen)
 	}
 	margText, err := requireOneMarginalia(fc.peerMarginalia)
 	if err != nil {

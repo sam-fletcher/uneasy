@@ -288,7 +288,7 @@
 			<p class="form-hint">Difficulty will be {2 + miPeerCount}.</p>
 			<label class="form-label">
 				Intent:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder="What role will they fill, in court or otherwise?" required></textarea>
 			</label>
 			{#if !readOnly}
@@ -409,7 +409,7 @@
 							<p class="ft-prompt">
 								Write the marginalia that defines <em>{assetName(assets, pid)}</em>.
 							</p>
-							<textarea rows={2} class="form-textarea" bind:value={authorText}
+							<textarea rows={2} class="form-textarea" bind:value={authorText} maxlength={300}
 								placeholder="Who has arrived at court?"></textarea>
 							<button class="action-btn primary" onclick={() => submitAuthor(pid)}
 								disabled={authorBusy || !authorText.trim()}>
@@ -442,7 +442,7 @@
 							{:else if marOutcome === 'broken_journey'}
 								<label class="form-label">
 									Marginalia (then broken):
-									<textarea rows={2} class="form-textarea" bind:value={marText}
+									<textarea rows={2} class="form-textarea" bind:value={marText} maxlength={300}
 										placeholder="The mark of an arduous journey…"></textarea>
 								</label>
 							{/if}

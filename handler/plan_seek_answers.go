@@ -36,7 +36,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -265,7 +264,10 @@ func saCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		narration := strings.TrimSpace(body.Narration)
+		narration, ok := textField(w, "narration", body.Narration, maxLongTextLen)
+		if !ok {
+			return
+		}
 		if narration == "" {
 			respondErr(w, http.StatusBadRequest,
 				"restate your methods and describe one thing you've learned before casting")
@@ -768,7 +770,10 @@ func saDeclareTruthHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		text := strings.TrimSpace(body.Text)
+		text, ok := textField(w, "text", body.Text, maxNarrativeLen)
+		if !ok {
+			return
+		}
 		if text == "" {
 			respondErr(w, http.StatusBadRequest, "truth text is required")
 			return
@@ -818,7 +823,10 @@ func saAskQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		question := strings.TrimSpace(body.Question)
+		question, ok := textField(w, "question", body.Question, maxNarrativeLen)
+		if !ok {
+			return
+		}
 		if body.TargetID == 0 || question == "" {
 			respondErr(w, http.StatusBadRequest, "target_id and question are required")
 			return
@@ -948,7 +956,10 @@ func saAnswerQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		answer := strings.TrimSpace(body.Answer)
+		answer, ok := textField(w, "answer", body.Answer, maxNarrativeLen)
+		if !ok {
+			return
+		}
 		if answer == "" {
 			respondErr(w, http.StatusBadRequest, "answer is required")
 			return

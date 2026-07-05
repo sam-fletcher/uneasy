@@ -284,7 +284,7 @@
 
 				<label class="form-label">
 					Motivation:
-					<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+					<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 						placeholder="Why are you getting involved?" required></textarea>
 				</label>
 

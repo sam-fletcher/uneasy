@@ -390,7 +390,7 @@
 			{/if}
 			<label class="form-label">
 				Details:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder="Where do the two peers meet? Will they share a meal, meet under a bridge, or something more intimate?" required></textarea>
 			</label>
 			<p class="choices-note muted">

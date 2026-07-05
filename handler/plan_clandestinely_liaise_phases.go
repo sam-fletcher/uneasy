@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strings"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/model"
@@ -315,7 +314,11 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "choice is required")
 			return
 		}
-		body.UpdateText = strings.TrimSpace(body.UpdateText)
+		updateText, ok := textField(w, "update_text", body.UpdateText, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		body.UpdateText = updateText
 
 		validChoices := []string{
 			liaiseChoiceLookAtSecret, liaiseChoiceUpdatePeer, liaiseChoiceBreakPeer,

@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -33,7 +32,11 @@ func WriteSecret(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Text = strings.TrimSpace(body.Text)
+		text, ok := textField(w, "text", body.Text, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		body.Text = text
 		if body.Text == "" {
 			respondErr(w, http.StatusBadRequest, "text is required")
 			return

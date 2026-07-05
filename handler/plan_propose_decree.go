@@ -638,6 +638,11 @@ func pdStartDebateHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "text (the finalized decree body) is required")
 			return
 		}
+		text, ok := textField(w, "text", body.Text, maxLongTextLen)
+		if !ok {
+			return
+		}
+		body.Text = text
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
@@ -1113,6 +1118,11 @@ func pdAmendDecreeHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "text (the revised law body) is required")
 			return
 		}
+		text, ok := textField(w, "text", body.Text, maxLongTextLen)
+		if !ok {
+			return
+		}
+		body.Text = text
 
 		// The law isn't enacted yet — amend the working body in resolution_data.
 		// It becomes the law row's text at enactment (set-addendum).
@@ -1271,6 +1281,11 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
+		addendum, ok := textField(w, "addendum", body.Addendum, maxLongTextLen)
+		if !ok {
+			return
+		}
+		body.Addendum = addendum
 		// A connector is only required when there's addendum text to attach.
 		if strings.TrimSpace(body.Addendum) != "" && body.Connector != "and" && body.Connector != "but" {
 			respondErr(w, http.StatusBadRequest, "connector must be 'and' or 'but' when an addendum is provided")
@@ -1366,16 +1381,14 @@ func pdEnactLawHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		// A body is optional on a mar (no asset); required on a make.
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		resourceName := strings.TrimSpace(body.ResourceName)
+		resourceName, ok := textField(w, "resource_name", body.ResourceName, maxAssetNameLen)
+		if !ok {
+			return
+		}
 		var resourceMarg string
 		if pd.Outcome == makeOutcome {
 			if resourceName == "" {
 				respondErr(w, http.StatusBadRequest, "resource_name is required to enact a made decree")
-				return
-			}
-			if len([]rune(resourceName)) > maxAssetNameLen {
-				respondErr(w, http.StatusBadRequest,
-					fmt.Sprintf("resource_name must be at most %d characters", maxAssetNameLen))
 				return
 			}
 			var margErr error

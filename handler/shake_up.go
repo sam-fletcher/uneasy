@@ -451,6 +451,13 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
+		if body.TitleFlavor != nil {
+			flavor, ok := textField(w, "title_flavor", *body.TitleFlavor, maxAssetNameLen)
+			if !ok {
+				return
+			}
+			body.TitleFlavor = &flavor
+		}
 		info, err := gamepkg.ShakeUpOption(body.OptionKey)
 		if err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())

@@ -210,6 +210,8 @@ func (chHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 // the dice.
 //
 // Request body: {"artifact_ids": [N, ...], "scene": "..."}
+//
+//nolint:gocognit // flat sequential pre-roll validation chain
 func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -238,6 +240,11 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 		// The body is optional (a scene with no invocations is valid); ignore a
 		// decode error so an empty body resolves to the zero struct.
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		scene, ok := textField(w, "scene", body.Scene, maxLongTextLen)
+		if !ok {
+			return
+		}
+		body.Scene = scene
 
 		resData := loadResolutionData(plan.ResolutionData)
 		ch := resData.EnsureChronicleHistories()
@@ -297,11 +304,11 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Log the preparer's scene as their own narration, anchored to the plan
 		// row (replaces the old OnResolve pre-roll system message).
-		if scene := strings.TrimSpace(body.Scene); scene != "" {
+		if body.Scene != "" {
 			post, perr := deps.Q.CreatePlayerMessage(ctx, dbgen.CreatePlayerMessageParams{
 				GameID:    plan.GameID,
 				AuthorID:  &player.ID,
-				Body:      scene,
+				Body:      body.Scene,
 				RowNumber: plan.RowNumber,
 				PlanID:    &plan.ID,
 			})
@@ -382,6 +389,11 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, fmt.Sprintf("option must be one of: %v", validChoices))
 			return
 		}
+		narration, ok := textField(w, "narration", body.Narration, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		body.Narration = narration
 
 		resData := loadResolutionData(plan.ResolutionData)
 		ch := resData.EnsureChronicleHistories()

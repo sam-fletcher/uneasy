@@ -1024,6 +1024,11 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "secret_asset_id is required")
 			return
 		}
+		secretTextField, ok := textField(w, "secret_text", body.SecretText, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		body.SecretText = secretTextField
 
 		resData := loadResolutionData(plan.ResolutionData)
 		sr := resData.SpreadRumors

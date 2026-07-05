@@ -40,6 +40,11 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
+		terms, ok := textField(w, "terms", body.Terms, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		body.Terms = terms
 		if body.Terms == "" {
 			respondErr(w, http.StatusBadRequest, "terms required")
 			return

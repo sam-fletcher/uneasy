@@ -125,7 +125,7 @@
 		{#if hostPickedChoice === 'spread_rumor'}
 			<label class="form-label">
 				Rumor text:
-				<textarea rows={2} bind:value={hostRumor} class="form-textarea"></textarea>
+				<textarea rows={2} bind:value={hostRumor} class="form-textarea" maxlength={5000}></textarea>
 			</label>
 		{:else if hostPickedChoice === 'introduce_peer'}
 			<AssetCreationForm

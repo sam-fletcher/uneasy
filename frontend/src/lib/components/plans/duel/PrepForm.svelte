@@ -104,7 +104,7 @@
 		</FormField>
 		<label class="form-label">
 			Location:
-			<textarea rows={2} bind:value={prepNotes} class="form-textarea"
+			<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 				placeholder="Where will the duel take place?" required></textarea>
 		</label>
 		{#if !readOnly}

@@ -73,7 +73,7 @@
 		{#if insistChoice === 'rumor_about_you'}
 			<label class="form-label">
 				Rumor text (about the host):
-				<textarea rows={2} bind:value={insistRumor} class="form-textarea"></textarea>
+				<textarea rows={2} bind:value={insistRumor} class="form-textarea" maxlength={5000}></textarea>
 			</label>
 		{:else if insistChoice === 'disagreement'}
 			<p class="choices-note muted">

@@ -34,6 +34,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -64,6 +65,42 @@ const (
 
 func init() {
 	RegisterPlan(model.PlanClandestinelyLiaise, clHandler{})
+}
+
+// sanitizeLiaiseKeptSecretsForViewer hides which asset a Clandestinely Liaise
+// participant nominated to hold the meeting's secret from every viewer but
+// that participant, while the "Secrets We Keep" phase is still awaiting a
+// submission — see clKeepSecretHandler: both picks are meant to be "revealed
+// when both have submitted," not as each one lands. resolution_data is
+// otherwise Tier 1 (public by design, ADR-006), so this is the one field that
+// needs per-viewer masking; once the phase advances past secrets_we_keep both
+// picks are public like the rest of the plan. No-op for every other plan type
+// or once the phase has moved on.
+func sanitizeLiaiseKeptSecretsForViewer(plan *dbgen.Plan, viewerID int64) {
+	if plan.PlanType != model.PlanClandestinelyLiaise || plan.ResolutionData == nil {
+		return
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	ld := resData.Liaise
+	if ld == nil || ld.Phase != LiaiseSecretsWeKeep || len(ld.KeptSecrets) == 0 {
+		return
+	}
+	masked := false
+	for i := range ld.KeptSecrets {
+		if ld.KeptSecrets[i].PlayerID != viewerID {
+			ld.KeptSecrets[i].AssetID = 0
+			masked = true
+		}
+	}
+	if !masked {
+		return
+	}
+	b, err := json.Marshal(resData)
+	if err != nil {
+		return
+	}
+	s := string(b)
+	plan.ResolutionData = &s
 }
 
 type clHandler struct{}

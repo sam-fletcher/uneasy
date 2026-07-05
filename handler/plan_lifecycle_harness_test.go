@@ -112,6 +112,7 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 	r.Post("/api/reveals/{revealId}/submit", SubmitReveal(store, manager))
 	r.Get("/api/reveals/{revealId}", GetReveal(store))
 	r.Route("/api/plans/{planId}", func(rr chi.Router) {
+		rr.Get("/", GetPlan(store))
 		rr.Post("/resolve", ResolvePlan(store, manager))
 		rr.Post("/make-choice", MakeChoice(store, manager))
 		rr.Post("/complete", CompletePlan(store, manager))

@@ -378,7 +378,7 @@
 			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 			<label class="form-label">
 				Decree:
-				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder="What law are you drafting?" required></textarea>
 			</label>
 			{#if !readOnly}
@@ -435,7 +435,7 @@
 							Decide the text of the law you're proposing, then open the debate.
 						</p>
 						<label class="form-label">
-							<textarea rows={4} bind:value={debateDraft} class="form-textarea"
+							<textarea rows={4} bind:value={debateDraft} class="form-textarea" maxlength={5000}
 								placeholder="The decree's text…"></textarea>
 						</label>
 						<button class="action-btn primary"
@@ -570,7 +570,7 @@
 								Rewrite the law's text. The next council member amends your version.
 							</p>
 							<label class="form-label">
-								<textarea rows={3} bind:value={amendDraft} class="form-textarea"
+								<textarea rows={3} bind:value={amendDraft} class="form-textarea" maxlength={5000}
 									placeholder="The amended law…"></textarea>
 							</label>
 							<div class="form-actions">
@@ -610,7 +610,7 @@
 									onclick={() => (addendumConnector = 'but')}>but</button>
 							</div>
 							<label class="form-label">
-								<textarea rows={2} bind:value={addendumDraft} class="form-textarea"
+								<textarea rows={2} bind:value={addendumDraft} class="form-textarea" maxlength={5000}
 									placeholder='a simple phrase. (optional)'></textarea>
 							</label>
 							<button class="action-btn primary"

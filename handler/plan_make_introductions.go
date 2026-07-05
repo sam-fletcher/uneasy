@@ -180,7 +180,11 @@ func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Name = strings.TrimSpace(body.Name)
+		name, ok := textField(w, "name", body.Name, maxAssetNameLen)
+		if !ok {
+			return
+		}
+		body.Name = name
 		if body.Name == "" {
 			respondErr(w, http.StatusBadRequest, "name is required")
 			return
@@ -190,6 +194,11 @@ func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 				fmt.Sprintf("at most %d marginalia", maxMarginalia))
 			return
 		}
+		trimmedMarginalia, ok := textFieldSlice(w, body.Marginalia, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		body.Marginalia = trimmedMarginalia
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
@@ -536,6 +545,11 @@ func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "peer_asset_id and outcome are required")
 			return
 		}
+		text, ok := textField(w, "text", body.Text, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		body.Text = text
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
@@ -741,6 +755,11 @@ func introductionsMarginaliaHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "peer_asset_id and text are required")
 			return
 		}
+		text, ok := textField(w, "text", body.Text, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		body.Text = text
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)

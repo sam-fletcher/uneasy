@@ -313,7 +313,7 @@
 			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 			<label class="form-label">
 				Area of study:
-				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder="What problem are you solving? What part of history are you investigating or recording?" required></textarea>
 			</label>
 			{#if !readOnly}
@@ -374,7 +374,7 @@
 					readOnly={!isPreparer}
 				/>
 				<FormField label="Set the scene">
-					<textarea rows={3} bind:value={sceneText} class="form-textarea"
+					<textarea rows={3} bind:value={sceneText} class="form-textarea" maxlength={5000}
 						placeholder="Describe the moment from the past you're shedding light on…"
 						disabled={!isPreparer} required></textarea>
 				</FormField>
@@ -451,7 +451,7 @@
 								/>
 							{/if}
 							<FormField label="Summary (you can expand in the chat):">
-								<textarea rows={2} bind:value={makeNarration} class="form-textarea"
+								<textarea rows={2} bind:value={makeNarration} class="form-textarea" maxlength={1000}
 									placeholder="Describe this beat of the scene" required></textarea>
 							</FormField>
 							<button class="action-btn primary"

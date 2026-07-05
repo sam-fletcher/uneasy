@@ -807,3 +807,93 @@ func TestLiaise_PerformStepsWinnerDrivesPreparerSlot(t *testing.T) {
 	_, winnerHasOwnRow := bySlot[h.tg.Players[demanderIdx].ID]
 	assert.False(t, winnerHasOwnRow, "the winner does not get their own liaise-choice row")
 }
+
+// TestLiaise_KeepSecret_HidesAssetFromPartnerUntilBothSubmit is the Session 3
+// hidden-info-audit regression test (adr/PUBLIC_LAUNCH_PLAN.md Session 3,
+// item 2). clKeepSecretHandler's own doc comment says Secrets We Keep picks
+// are "revealed to both players once both have submitted" — but resolution_data
+// (returned by GET /api/plans/:id to every viewer, Tier 1 per ADR-006) used to
+// record each submission's asset_id immediately, leaking the first submitter's
+// choice to the partner (and any spectator) before their own pick landed. This
+// proves the partner sees the submission (so the WaitingOnBar still works) but
+// not the asset_id, until they submit too — at which point it's public like
+// the rest of the plan.
+func TestLiaise_KeepSecret_HidesAssetFromPartnerUntilBothSubmit(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	preparerPeer, _ := h.seedPeerWithMarginalia(0, "preparer's confidant")
+	partnerPeer, _ := h.seedPeerWithMarginalia(1, "partner's confidant")
+
+	notes := "a meeting under the bridge"
+	partnerID := h.tg.Players[1].ID
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanClandestinelyLiaise,
+		TargetPlayerID:   &partnerID,
+		PreparerPeerID:   &preparerPeer,
+		PartnerPeerID:    &partnerPeer,
+		PreparationNotes: &notes,
+	})
+
+	rd := loadResolutionData(plan.ResolutionData)
+	ld := rd.EnsureLiaise()
+	clSubmitReveal(t, h, *ld.DelayRevealID, 0, 2)
+	clSubmitReveal(t, h, *ld.DelayRevealID, 1, 2)
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	h.jumpToRow(*refreshed.RowNumber)
+	require.Nil(t, h.resolve(plan.ID), "CL has no dice roll")
+
+	clAdvance(t, h, plan.ID) // together_at_last -> secrets_we_keep
+
+	mc0, err := h.q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[0].ID,
+	})
+	require.NoError(t, err)
+	clKeepSecret(t, h, plan.ID, 0)
+
+	planPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10)
+
+	// The partner (who has not submitted yet) sees the submission but not the
+	// asset it names.
+	code, body := h.get(1, planPath)
+	require.Equalf(t, http.StatusOK, code, "get plan as partner: %v", body)
+	keptSecrets := keptSecretsFromPlanResponse(t, body)
+	require.Len(t, keptSecrets, 1, "one submission recorded so far")
+	entry := keptSecrets[0].(map[string]any)
+	assert.EqualValues(t, h.tg.Players[0].ID, entry["player_id"], "submitter identity is not hidden")
+	assert.EqualValues(t, 0, entry["asset_id"],
+		"asset choice must be hidden from the partner before they submit their own")
+
+	// The submitter always sees their own choice.
+	code, body = h.get(0, planPath)
+	require.Equalf(t, http.StatusOK, code, "get plan as submitter: %v", body)
+	keptSecrets = keptSecretsFromPlanResponse(t, body)
+	entry = keptSecrets[0].(map[string]any)
+	assert.EqualValues(t, mc0.ID, entry["asset_id"], "the submitter always sees their own choice")
+
+	// Once the partner submits too, both picks become public (the phase has
+	// advanced past secrets_we_keep).
+	clKeepSecret(t, h, plan.ID, 1)
+	code, body = h.get(1, planPath)
+	require.Equalf(t, http.StatusOK, code, "get plan after both submitted: %v", body)
+	keptSecrets = keptSecretsFromPlanResponse(t, body)
+	require.Len(t, keptSecrets, 2)
+	for _, ks := range keptSecrets {
+		e := ks.(map[string]any)
+		assert.NotEqualValuesf(t, 0, e["asset_id"], "once both submit, both picks are public: %v", e)
+	}
+}
+
+// keptSecretsFromPlanResponse digs resolution_data.liaise.kept_secrets out of
+// a decoded GET /api/plans/:id response body.
+func keptSecretsFromPlanResponse(t *testing.T, body map[string]any) []any {
+	t.Helper()
+	resData, ok := body["resolution_data"].(map[string]any)
+	require.True(t, ok, "response missing resolution_data: %v", body)
+	liaise, ok := resData["liaise"].(map[string]any)
+	require.True(t, ok, "resolution_data missing liaise: %v", resData)
+	kept, _ := liaise["kept_secrets"].([]any)
+	return kept
+}

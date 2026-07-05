@@ -81,6 +81,11 @@ func UpdateLaw(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
+		text, ok := textField(w, "text", body.Text, maxLongTextLen)
+		if !ok {
+			return
+		}
+		body.Text = text
 		if body.Text == "" {
 			respondErr(w, http.StatusBadRequest, "text is required")
 			return
@@ -89,10 +94,14 @@ func UpdateLaw(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Preserve existing addendum when the field is absent.
 		addendum := law.Addendum
 		if body.Addendum != nil {
-			if *body.Addendum == "" {
+			addendumText, ok := textField(w, "addendum", *body.Addendum, maxLongTextLen)
+			if !ok {
+				return
+			}
+			if addendumText == "" {
 				addendum = nil
 			} else {
-				addendum = body.Addendum
+				addendum = &addendumText
 			}
 		}
 
@@ -176,6 +185,15 @@ func UpdateRumor(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			Text string `json:"text"`
 		}
 		if err = json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
+			respondErr(w, http.StatusBadRequest, "text is required")
+			return
+		}
+		text, ok := textField(w, "text", body.Text, maxLongTextLen)
+		if !ok {
+			return
+		}
+		body.Text = text
+		if body.Text == "" {
 			respondErr(w, http.StatusBadRequest, "text is required")
 			return
 		}

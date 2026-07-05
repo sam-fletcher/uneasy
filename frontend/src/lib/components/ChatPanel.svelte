@@ -871,6 +871,7 @@
 			oninput={onInput}
 			onkeydown={onKeydown}
 			rows={2}
+			maxlength={5000}
 			disabled={sending}
 		></textarea>
 		<button class="send" onclick={send} disabled={sending || !newBody.trim()}>

@@ -193,6 +193,7 @@
 					rows="1"
 					bind:value={marginaliaText}
 					placeholder={choice.name}
+					maxlength={300}
 				></textarea>
 				<span class="hint">Adds 1 marginalia to your main character.</span>
 			</label>
@@ -207,6 +208,7 @@
 					rows="2"
 					bind:value={lawOrRumorText}
 					placeholder={choice.name.toLowerCase().includes('law') ? 'State the new law' : 'State the new rumor'}
+					maxlength={5000}
 				></textarea>
 				<span class="hint">Describe the {choice.name.toLowerCase().includes('law') ? 'law' : 'rumor'}.</span>
 			</label>

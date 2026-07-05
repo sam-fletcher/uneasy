@@ -313,6 +313,11 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "target_player_id required")
 			return
 		}
+		notes, ok := textField(w, "preparation_notes", body.Notes, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		body.Notes = notes
 		if body.TargetPlayerID == player.ID {
 			respondErr(w, http.StatusBadRequest, "cannot duel yourself")
 			return

@@ -432,7 +432,7 @@
 			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 			<label class="form-label">
 				Research methods and topics:
-				<textarea rows={3} bind:value={prepNotes} class="form-textarea"
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
 					placeholder="What are you learning, and how?" required></textarea>
 			</label>
 			{#if !readOnly}
@@ -470,7 +470,7 @@
 			<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!canNarrate} disabled={!canNarrate}>
 				<p class="choices-header">What have you learned?</p>
 				<label class="form-label">
-					<textarea rows={4} bind:value={preRollText} class="form-textarea"
+					<textarea rows={4} bind:value={preRollText} class="form-textarea" maxlength={5000}
 						placeholder="Restate your research methods, and describe one thing you've learned while researching."
 					></textarea>
 				</label>
@@ -547,7 +547,7 @@
 				<blockquote class="q-quote">{pendingQuestion.question}</blockquote>
 				<label class="form-label">
 					Your truthful answer:
-					<textarea rows={3} bind:value={answerText} class="form-textarea"
+					<textarea rows={3} bind:value={answerText} class="form-textarea" maxlength={1000}
 						placeholder="Answer the question…"></textarea>
 				</label>
 				<div class="form-actions start">
@@ -693,7 +693,7 @@
 							</p>
 							<label class="form-label">
 								The truth you declare:
-								<textarea rows={2} bind:value={dtText} class="form-textarea"
+								<textarea rows={2} bind:value={dtText} class="form-textarea" maxlength={1000}
 									placeholder="Declare something true about the world…"></textarea>
 							</label>
 							{#if canSubflow}
@@ -731,7 +731,7 @@
 								/>
 								<label class="form-label">
 									Your question:
-									<textarea rows={2} bind:value={aqQuestion} class="form-textarea"
+									<textarea rows={2} bind:value={aqQuestion} class="form-textarea" maxlength={1000}
 										placeholder="Ask a question they must answer truthfully…"></textarea>
 								</label>
 								{#if canSubflow}

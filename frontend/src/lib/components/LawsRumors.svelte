@@ -141,9 +141,9 @@
 					{@const proposerID = preparerOf(law.origin_plan_id)}
 					<li class="lr-item" style:--accent={lawAccent(law)}>
 						{#if editingLawID === law.id}
-							<textarea rows={3} bind:value={draftText} class="lr-textarea"></textarea>
+							<textarea rows={3} bind:value={draftText} class="lr-textarea" maxlength={5000}></textarea>
 							<input type="text" bind:value={draftAddendum} class="lr-input"
-								placeholder="Addendum (but/and …)" />
+								placeholder="Addendum (but/and …)" maxlength={5000} />
 							<div class="lr-row">
 								<button class="action-btn primary" onclick={saveLaw}
 									disabled={saving || !draftText.trim()}>
@@ -183,7 +183,7 @@
 					{@const hidden = rumor.source_player_id == null}
 					<li class="lr-item" class:lr-anon={hidden} style:--accent={colorOf(rumor.source_player_id)}>
 						{#if editingRumorID === rumor.id}
-							<textarea rows={3} bind:value={draftText} class="lr-textarea"></textarea>
+							<textarea rows={3} bind:value={draftText} class="lr-textarea" maxlength={5000}></textarea>
 							<div class="lr-row">
 								<button class="action-btn primary" onclick={saveRumor}
 									disabled={saving || !draftText.trim()}>

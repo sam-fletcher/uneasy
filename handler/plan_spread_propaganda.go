@@ -32,7 +32,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -214,14 +213,12 @@ func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		name := strings.TrimSpace(body.Name)
-		if name == "" {
-			respondErr(w, http.StatusBadRequest, "name is required to author the artifact")
+		name, ok := textField(w, "name", body.Name, maxAssetNameLen)
+		if !ok {
 			return
 		}
-		if len([]rune(name)) > maxAssetNameLen {
-			respondErr(w, http.StatusBadRequest,
-				fmt.Sprintf("name must be at most %d characters", maxAssetNameLen))
+		if name == "" {
+			respondErr(w, http.StatusBadRequest, "name is required to author the artifact")
 			return
 		}
 		margText, err := requireOneMarginalia(body.Marginalia)
