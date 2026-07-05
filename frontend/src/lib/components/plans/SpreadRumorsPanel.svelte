@@ -31,6 +31,7 @@
 	import { parseResolutionData, playerName, assetName, assetsWithIntactMarginalia } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -452,7 +453,7 @@
 			{/if}
 			<label class="form-label">
 				Rumor:
-				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder={prepKeepSecret
 						? 'Write the rumor — only you will see it until you spread it.'
 						: 'What are people starting to say?'}></textarea>

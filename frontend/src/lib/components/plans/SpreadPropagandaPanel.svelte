@@ -23,6 +23,7 @@
 	import { spGivePeer, spBreakSelf, createArtifact } from '$lib/api';
 
 	import type { PlanPanelProps } from './types';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	// make and mar option keys don't overlap, so a completed choice list can
 	// be labelled without knowing which outcome produced it.
@@ -242,7 +243,7 @@
 			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 			<label class="form-label">
 				Message and Methods:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?" required></textarea>
 			</label>
 			{#if !readOnly}

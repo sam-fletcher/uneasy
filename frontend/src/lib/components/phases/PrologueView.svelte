@@ -44,6 +44,7 @@
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 	import CrownGlyph from '../CrownGlyph.svelte';
 	import type { CrownMark } from '$lib/succession';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	interface Props {
 		gameID: string;
@@ -678,7 +679,7 @@
 					bind:value={extraPeerText}
 					class="peer-input"
 					placeholder="Name your peer"
-					maxlength={120}
+					maxlength={TEXT_LIMITS.NAME}
 				/>
 			</label>
 			<button class="action-btn secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>

@@ -12,6 +12,7 @@
 	import { insistHostMar, type Plan } from '$lib/api';
 	import FormField from '../FormField.svelte';
 	import { MAR_OPTS } from './options';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	let { plan, onPlansChanged }: {
 		plan: Plan;
@@ -73,7 +74,7 @@
 		{#if insistChoice === 'rumor_about_you'}
 			<label class="form-label">
 				Rumor text (about the host):
-				<textarea rows={2} bind:value={insistRumor} class="form-textarea" maxlength={5000}></textarea>
+				<textarea rows={2} bind:value={insistRumor} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}></textarea>
 			</label>
 		{:else if insistChoice === 'disagreement'}
 			<p class="choices-note muted">

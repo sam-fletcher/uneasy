@@ -15,6 +15,7 @@
 	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
 	import { knownCount, hiddenCount } from '$lib/secretCounts';
 	import { useSuccession } from '$lib/successionContext';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import SuggestionPicker from './SuggestionPicker.svelte';
 	import CrownGlyph from './CrownGlyph.svelte';
 
@@ -646,7 +647,7 @@
 										bind:value={newSecretText}
 										disabled={secretSaving}
 										rows={4}
-										maxlength={1000}
+										maxlength={TEXT_LIMITS.NARRATIVE}
 										onkeydown={(e) => {
 											if (e.key === 'Escape') { e.preventDefault(); toggleSecrets(asset.id); }
 											else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveSecret(asset); }

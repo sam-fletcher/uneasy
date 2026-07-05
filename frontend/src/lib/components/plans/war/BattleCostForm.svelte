@@ -10,6 +10,7 @@
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	export type BattleSubmission =
 		| { kind: 'peace'; terms: string }
@@ -168,7 +169,7 @@
 {:else}
 	<label class="form-label">
 		Peace terms:
-		<textarea rows={3} bind:value={peaceTerms} class="form-textarea" maxlength={1000}
+		<textarea rows={3} bind:value={peaceTerms} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 			placeholder="Describe the terms you propose…"></textarea>
 	</label>
 {/if}

@@ -33,6 +33,7 @@
 	import Buffet, { type BuffetTab } from '../plans/shared/Buffet.svelte';
 	import { playerColor, playerColorByID } from '$lib/playerColor';
 	import { shakeUpWaitingOn, type WaitingOnState } from '$lib/waitingOn';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	interface Props {
 		gameID: string;
@@ -598,7 +599,7 @@
 								<span class="su-form-label">Marginalia text (optional — defaults to the title name):</span>
 								<input
 									type="text"
-									maxlength="120"
+									maxlength={TEXT_LIMITS.NAME}
 									placeholder="e.g. crowned at the Midwinter Accord"
 									bind:value={titleFlavor}
 								/>

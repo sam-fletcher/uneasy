@@ -9,6 +9,7 @@
 		type Account, type MyTable,
 	} from '$lib/api';
 	import { feedbackHref } from '$lib/feedback';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	let me = $state<Account | null>(null);
 	let tables = $state<MyTable[]>([]);
@@ -160,7 +161,7 @@
 			<div class="row">
 				<span class="label">Player name</span>
 				{#if editingUsername}
-					<input aria-label="Player name" bind:value={usernameDraft} maxlength={40} />
+					<input aria-label="Player name" bind:value={usernameDraft} maxlength={TEXT_LIMITS.USERNAME} />
 					<button class="action-btn primary small" onclick={saveUsername}>Save</button>
 					<button class="action-btn secondary small" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
 				{:else}

@@ -13,6 +13,7 @@
 	import FormField from '../FormField.svelte';
 	import { playerName } from '../shared';
 	import { HOST_MAKE_OPTS, earnedHostMakes, type FestRes } from './options';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	let { plan, fest, players, assets, onPlansChanged }: {
 		plan: Plan;
@@ -125,7 +126,7 @@
 		{#if hostPickedChoice === 'spread_rumor'}
 			<label class="form-label">
 				Rumor text:
-				<textarea rows={2} bind:value={hostRumor} class="form-textarea" maxlength={5000}></textarea>
+				<textarea rows={2} bind:value={hostRumor} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}></textarea>
 			</label>
 		{:else if hostPickedChoice === 'introduce_peer'}
 			<AssetCreationForm

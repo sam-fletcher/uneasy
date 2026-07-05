@@ -22,6 +22,7 @@
 		playerName, assetName, assetsWithIntactMarginalia, playersExcept, }from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -312,7 +313,7 @@
 
 			<label class="form-label">
 				Preparation:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="How are you planning to take them into your retinue?" required></textarea>
 			</label>
 

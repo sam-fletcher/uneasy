@@ -34,6 +34,7 @@
 	} from '$lib/api';
 	import { playerColorByID } from '$lib/playerColor';
 	import { SEVERITY } from '$lib/severity';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import {
 		type ChatFeedContext,
 		type FeedItem,
@@ -871,7 +872,7 @@
 			oninput={onInput}
 			onkeydown={onKeydown}
 			rows={2}
-			maxlength={5000}
+			maxlength={TEXT_LIMITS.LONG_TEXT}
 			disabled={sending}
 		></textarea>
 		<button class="send" onclick={send} disabled={sending || !newBody.trim()}>

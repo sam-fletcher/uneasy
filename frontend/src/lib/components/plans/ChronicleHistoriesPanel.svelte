@@ -39,6 +39,7 @@
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import type { PlanPanelProps } from './types';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -313,7 +314,7 @@
 			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 			<label class="form-label">
 				Area of study:
-				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
+				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="What problem are you solving? What part of history are you investigating or recording?" required></textarea>
 			</label>
 			{#if !readOnly}
@@ -374,7 +375,7 @@
 					readOnly={!isPreparer}
 				/>
 				<FormField label="Set the scene">
-					<textarea rows={3} bind:value={sceneText} class="form-textarea" maxlength={5000}
+					<textarea rows={3} bind:value={sceneText} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
 						placeholder="Describe the moment from the past you're shedding light on…"
 						disabled={!isPreparer} required></textarea>
 				</FormField>
@@ -451,7 +452,7 @@
 								/>
 							{/if}
 							<FormField label="Summary (you can expand in the chat):">
-								<textarea rows={2} bind:value={makeNarration} class="form-textarea" maxlength={1000}
+								<textarea rows={2} bind:value={makeNarration} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 									placeholder="Describe this beat of the scene" required></textarea>
 							</FormField>
 							<button class="action-btn primary"

@@ -29,6 +29,7 @@
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -390,7 +391,7 @@
 			{/if}
 			<label class="form-label">
 				Details:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="Where do the two peers meet? Will they share a meal, meet under a bridge, or something more intimate?" required></textarea>
 			</label>
 			<p class="choices-note muted">

@@ -28,6 +28,7 @@
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -284,7 +285,7 @@
 
 				<label class="form-label">
 					Motivation:
-					<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={1000}
+					<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 						placeholder="Why are you getting involved?" required></textarea>
 				</label>
 

@@ -21,6 +21,7 @@
 	} from './shared';
 	import { parseMakeIntroductionsData } from '$lib/plans/resolutionData/make_introductions';
 	import type { PlanPanelProps } from './types';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 
 	const MI_MAR_OPTIONS = [
@@ -288,7 +289,7 @@
 			<p class="form-hint">Difficulty will be {2 + miPeerCount}.</p>
 			<label class="form-label">
 				Intent:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="What role will they fill, in court or otherwise?" required></textarea>
 			</label>
 			{#if !readOnly}
@@ -333,7 +334,7 @@
 								bind:value={peerNames[i]}
 								loading={peerNameSuggLoading}
 								customPlaceholder="Name, title, role…"
-								maxlength={120}
+								maxlength={TEXT_LIMITS.NAME}
 								disabled={peersBusy}
 							/>
 						{/if}
@@ -409,7 +410,7 @@
 							<p class="ft-prompt">
 								Write the marginalia that defines <em>{assetName(assets, pid)}</em>.
 							</p>
-							<textarea rows={2} class="form-textarea" bind:value={authorText} maxlength={300}
+							<textarea rows={2} class="form-textarea" bind:value={authorText} maxlength={TEXT_LIMITS.MARGINALIA}
 								placeholder="Who has arrived at court?"></textarea>
 							<button class="action-btn primary" onclick={() => submitAuthor(pid)}
 								disabled={authorBusy || !authorText.trim()}>
@@ -442,7 +443,7 @@
 							{:else if marOutcome === 'broken_journey'}
 								<label class="form-label">
 									Marginalia (then broken):
-									<textarea rows={2} class="form-textarea" bind:value={marText} maxlength={300}
+									<textarea rows={2} class="form-textarea" bind:value={marText} maxlength={TEXT_LIMITS.MARGINALIA}
 										placeholder="The mark of an arduous journey…"></textarea>
 								</label>
 							{/if}

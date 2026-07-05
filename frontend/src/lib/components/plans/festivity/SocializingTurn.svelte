@@ -14,6 +14,7 @@
 	import { playerName } from '../shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import { MAKE_OPTS, MAR_OPTS, type FestRes } from './options';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	let {
 		plan, fest, players, assets, currentPlayerID, myRollID,
@@ -232,7 +233,7 @@
 		{#if pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you'}
 			<label class="form-label">
 				Rumor text:
-				<textarea rows={2} bind:value={rumorText} class="form-textarea" maxlength={5000}
+				<textarea rows={2} bind:value={rumorText} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
 					placeholder="What does the rumor say?"></textarea>
 			</label>
 		{:else if pickedChoice === 'introduce_peer'}

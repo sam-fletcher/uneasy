@@ -9,6 +9,7 @@
 	import FormField from '../FormField.svelte';
 	import { playersExcept } from '../shared';
 	import type { PlanContext } from '../types';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	let { ctx }: { ctx: PlanContext } = $props();
 
@@ -85,7 +86,7 @@
 		</FormField>
 		<label class="form-label">
 			Motivation:
-				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={1000}
+				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="Casus belli, opening move, rally cry, et cetera" required></textarea>
 		</label>
 		<p class="choices-note muted">

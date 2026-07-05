@@ -13,6 +13,7 @@
 	import './shared/marginaliaTile.css';
 	import type { AssetType } from '$lib/api';
 	import { getAssetSuggestions } from '$lib/api';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import AssetTypeIcon from './AssetTypeIcon.svelte';
 	import SuggestionPicker from './SuggestionPicker.svelte';
 
@@ -86,7 +87,7 @@
 			bind:value={name}
 			loading={nameSuggLoading}
 			customPlaceholder="Name your new asset…"
-			maxlength={120}
+			maxlength={TEXT_LIMITS.NAME}
 			{disabled}
 		/>
 	</section>

@@ -8,6 +8,7 @@
 	import { page } from '$app/state';
 	import { getMe, login, createAccount } from '$lib/api';
 	import HelpButton from '$lib/components/HelpButton.svelte';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	type Mode = 'login' | 'signup';
 
@@ -109,7 +110,7 @@
 			</div>
 
 			<div class="field">
-				<input id="u" autocomplete="username" placeholder=" " bind:value={username} maxlength={40} disabled={loading} />
+				<input id="u" autocomplete="username" placeholder=" " bind:value={username} maxlength={TEXT_LIMITS.USERNAME} disabled={loading} />
 				<label for="u">Player name</label>
 			</div>
 

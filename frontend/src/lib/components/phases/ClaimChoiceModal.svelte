@@ -23,6 +23,7 @@
 	} from '$lib/api';
 	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	interface Props {
 		gameID: string;
@@ -193,7 +194,7 @@
 					rows="1"
 					bind:value={marginaliaText}
 					placeholder={choice.name}
-					maxlength={300}
+					maxlength={TEXT_LIMITS.MARGINALIA}
 				></textarea>
 				<span class="hint">Adds 1 marginalia to your main character.</span>
 			</label>
@@ -208,7 +209,7 @@
 					rows="2"
 					bind:value={lawOrRumorText}
 					placeholder={choice.name.toLowerCase().includes('law') ? 'State the new law' : 'State the new rumor'}
-					maxlength={5000}
+					maxlength={TEXT_LIMITS.LONG_TEXT}
 				></textarea>
 				<span class="hint">Describe the {choice.name.toLowerCase().includes('law') ? 'law' : 'rumor'}.</span>
 			</label>
