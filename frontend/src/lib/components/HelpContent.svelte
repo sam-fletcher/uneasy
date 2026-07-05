@@ -35,6 +35,10 @@
 
 	let active = $state<TabId>('record');
 
+	// y-coordinate of the Shake-Up pseudo-row in the record diagram, one row
+	// pitch (11 units) below row 13's line (y = 7 + 12 * 11 = 139).
+	const SHAKEUP_ROW_Y = 7 + 13 * 11;
+
 	// Worked Mar example for the Dice tab. The pool is 2 starting dice + 1 help
 	// die; a single interference die cancels the matching 4. The survivors (a 1
 	// and a 6) make two distinct faces — short of a difficulty of 3.
@@ -115,7 +119,7 @@
 		{#if active === 'record'}
 			<div class="record-intro">
 				<figure class="diagram diagram-record">
-					<svg viewBox="4 0 80 156" role="img" aria-label="The 13-row Public Record timeline, played top to bottom, with the Shake-Up after the last row.">
+					<svg viewBox="4 0 80 168" role="img" aria-label="The 13-row Public Record timeline, played top to bottom, with the Shake-Up marked after the last row.">
 						{#each Array(13) as _, i}
 							{@const y = 7 + i * 11}
 							{@const engrailed = i === 3 || i === 7 || i === 11}
@@ -124,7 +128,13 @@
 								stroke={engrailed ? 'var(--color-accent)' : 'var(--color-border-strong)'}
 								stroke-width={engrailed ? 2 : 1} />
 						{/each}
-						<text x="79" y="153" text-anchor="end" class="d-cap">↓ Shake-Up</text>
+						<!-- The Shake-Up pseudo-row — same heavier ✶ glyph (vs. the
+						     engrailed ★ above) and dashed tie-line as the Public
+						     Record sidebar's row-14 treatment (PublicRecord.svelte). -->
+						<text x="17" y={SHAKEUP_ROW_Y + 4} text-anchor="end" class="d-shakeup-star">✶</text>
+						<line x1="24" y1={SHAKEUP_ROW_Y} x2="79" y2={SHAKEUP_ROW_Y}
+							stroke="var(--color-accent)" stroke-width="1.5" stroke-dasharray="2,2" />
+						<text x="79" y={SHAKEUP_ROW_Y + 14} text-anchor="end" class="d-cap">The Shake-Up</text>
 					</svg>
 				</figure>
 				<div class="record-text">
@@ -411,6 +421,9 @@
 	}
 	.d-num { font-family: var(--font-serif); font-size: 7px; fill: var(--color-text-muted); }
 	.d-cap { font-family: var(--font-serif); font-size: 8px; fill: var(--color-accent); }
+	/* Heavier than .d-num — mirrors the Public Record sidebar's rail glyph,
+	   which is likewise bigger and bolder than the engrailed ★ dividers. */
+	.d-shakeup-star { font-size: 11px; fill: var(--color-accent); }
 
 	/* ── Dice example (Dice tab) ─────────────────────────────────────────── */
 	/* Labels and the result line are HTML so they share the prose size; only

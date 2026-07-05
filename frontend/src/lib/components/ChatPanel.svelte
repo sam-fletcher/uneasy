@@ -1218,7 +1218,14 @@
 		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		white-space: nowrap;
+		/* Most boundary bodies are short ("Rankings update — after Row 4") and
+		   stay on one line at their natural width. The Shake-Up's begin/category
+		   banners are full sentences, so this must wrap instead of overflowing
+		   the chat column — max-width forces that wrap instead of the flex row
+		   just stretching the label past the viewport. */
+		max-width: 75%;
+		text-align: center;
+		line-height: 1.4;
 	}
 
 	/* Log entry */

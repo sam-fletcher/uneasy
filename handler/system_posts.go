@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/hub"
 	"uneasy/model"
 )
@@ -801,22 +802,38 @@ func shakeUpCategoryTitle(category string) string {
 	return categoryTitle(model.RankingCategory(category))
 }
 
+// shakeUpCategoryFlavor gives each act a one-line rhetorical hook for its
+// chat banner (EmitShakeUpBegin covers esteem; EmitShakeUpCategory covers
+// the other two on advance) — drawn from the same courtly-intrigue register
+// as SHAKEUP_RULES.md's framing, not a restatement of its option list (the
+// in-app Buffet already covers that mechanically).
+var shakeUpCategoryFlavor = map[string]string{
+	gamepkg.ShakeUpCategoryEsteem:    "how will you be remembered by your peers?",
+	gamepkg.ShakeUpCategoryKnowledge: "what do you know that others don't — and what will it cost to keep it?",
+	gamepkg.ShakeUpCategoryPower:     "who commands, and who obeys?",
+}
+
 // EmitShakeUpBegin writes the Boundary post announcing the start of the
-// Shake-Up's first (esteem) pass.
+// Shake-Up's first (esteem) pass, with the rulebook's reflective framing
+// ("take stock… embrace this last moment") — see SHAKEUP_RULES.md.
 func EmitShakeUpBegin(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64, category string) {
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.begin",
 		model.SeverityBoundary,
-		fmt.Sprintf("⚖ The Shake-Up begins — %s", shakeUpCategoryTitle(category)),
+		fmt.Sprintf(
+			"⚖ The Shake-Up begins. Take stock of everything that's happened over these thirteen rows, and embrace this last moment — %s: %s",
+			shakeUpCategoryTitle(category),
+			shakeUpCategoryFlavor[category],
+		),
 		nil, nil, nil,
 		map[string]any{"category": category})
 }
 
 // EmitShakeUpCategory writes the Boundary post marking the move to a new
-// category pass within the Shake-Up.
+// category pass within the Shake-Up, with that act's one-line flavor hook.
 func EmitShakeUpCategory(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64, category string) {
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.category",
 		model.SeverityBoundary,
-		fmt.Sprintf("⚖ Shake-Up — %s", shakeUpCategoryTitle(category)),
+		fmt.Sprintf("⚖ Shake-Up — %s: %s", shakeUpCategoryTitle(category), shakeUpCategoryFlavor[category]),
 		nil, nil, nil,
 		map[string]any{"category": category})
 }

@@ -229,6 +229,13 @@
 	const tonesLocked = $derived(
 		game != null && (game.phase === 'main_event' || game.phase === 'shake_up' || game.phase === 'ended')
 	);
+	// The Public Record sidebar covers main_event (the timeline itself) and
+	// shake_up/ended (its sealed "Shake-Up" pseudo-row continuity — see
+	// PublicRecord.svelte). Rows are static in the latter two, so
+	// loadGameState fetches them once and never repolls.
+	const hasRecord = $derived(
+		game != null && (game.phase === 'main_event' || game.phase === 'shake_up' || game.phase === 'ended')
+	);
 
 	// ── Plan state ────────────────────────────────────────────────────────────
 	// Loaded on mount for main_event, then kept in sync by plan.* WS events.
@@ -423,10 +430,12 @@
 					activeRollParticipants = [];
 				}
 			} else if (data.game.phase === 'shake_up' || data.game.phase === 'ended') {
-				// The endgame has no plans/record/scene, just the current shake-up
-				// roll (getActiveRollForGame is shake-up-aware). Shake-up rolls never
-				// enter the voting stage, so activeRollVotes is left alone here —
-				// ShakeUpView passes DiceRollPanel a literal empty votes array.
+				// The endgame has no plans/scene, just the current shake-up roll
+				// (getActiveRollForGame is shake-up-aware) and the now-static Public
+				// Record (rows 1-13 are frozen from here on — one fetch, no
+				// polling). Shake-up rolls never enter the voting stage, so
+				// activeRollVotes is left alone here — ShakeUpView passes
+				// DiceRollPanel a literal empty votes array.
 				try {
 					const rollData = await getActiveRollForGame(gameID);
 					if (rollData.roll) {
@@ -439,6 +448,9 @@
 						activeRollParticipants = [];
 					}
 				} catch { /* tolerate; RollCreated/RollResolved WS events keep this in sync */ }
+				try {
+					recordRows = (await getFullRecord(gameID)).rows;
+				} catch { /* tolerate; the sidebar just shows what's already loaded */ }
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load game state.';
@@ -683,14 +695,17 @@
 		WaitingOnBar lives inside .phase-column so it only spans the phase
 		content's column — not the PublicRecord rail or the Chat column.
 	-->
-	<div class="table-body" class:has-record={game?.phase === 'main_event'}>
+	<div class="table-body" class:has-record={hasRecord}>
 
-	<!-- Public Record sidebar — only in main event. Page-level so it can sit
-	     in its own grid column on wide desktop layouts (mirrors ChatPanel). -->
-	{#if !loading && game?.phase === 'main_event'}
+	<!-- Public Record sidebar — main_event, plus shake_up/ended for the sealed
+	     Shake-Up pseudo-row's continuity. Page-level so it can sit in its own
+	     grid column on wide desktop layouts (mirrors ChatPanel). -->
+	{#if !loading && hasRecord && game}
 		<PublicRecord
 			rows={recordRows}
 			currentRow={game.current_row}
+			phase={game.phase}
+			shakeUpCategory={game.shake_up_category}
 			playerNames={playerNameMap}
 			{players}
 			onRowJump={jumpToRow}
@@ -1014,10 +1029,11 @@
 		padding-bottom: calc(var(--chat-strip-height) + 1rem + env(safe-area-inset-bottom));
 	}
 
-	/* In main_event on mobile, the public-record rail sits to the left of the
-	   phase view rather than stacking above it (the rail is full-height, so
-	   stacking pushes the phase content off-screen). The chat panel is
-	   position:absolute on mobile so it stays unaffected. */
+	/* Wherever the public record shows (main_event, shake_up, ended) on
+	   mobile, its rail sits to the left of the phase view rather than
+	   stacking above it (the rail is full-height, so stacking pushes the
+	   phase content off-screen). The chat panel is position:absolute on
+	   mobile so it stays unaffected. */
 	.table-body.has-record {
 		flex-direction: row;
 		gap: 0.75rem;
@@ -1046,10 +1062,10 @@
 			grid-template-columns: 1fr 360px;
 			padding-bottom: 0;
 		}
-		/* When the public record is present (main_event), it takes the first
-		   column. Below 1280 it's a thin rail with overlay-on-tap; at ≥1280
-		   it becomes a permanent 320px panel. The phase view and chat shift
-		   to columns 2 and 3 by source order. */
+		/* When the public record is present (main_event, shake_up, ended), it
+		   takes the first column. Below 1280 it's a thin rail with
+		   overlay-on-tap; at ≥1280 it becomes a permanent 320px panel. The
+		   phase view and chat shift to columns 2 and 3 by source order. */
 		.table-body.has-record {
 			grid-template-columns: auto 1fr 360px;
 		}
@@ -1066,10 +1082,11 @@
 		.table-body.has-record {
 			grid-template-columns: 360px 440px 1fr;
 		}
-		/* Phases without the record rail (prologue, lobby, ended) reserve the
-		   same 800px (360 record + 440 phase) on the left and give chat the
+		/* Phases without the record rail (prologue, lobby) reserve the same
+		   800px (360 record + 440 phase) on the left and give chat the
 		   remaining 1fr, so the chat column is the same width in every phase
-		   instead of being pinned to 360px while the main event's grows. */
+		   instead of being pinned to 360px while the record-bearing phases'
+		   grows. */
 		.table-body:not(.has-record) {
 			grid-template-columns: 800px 1fr;
 		}

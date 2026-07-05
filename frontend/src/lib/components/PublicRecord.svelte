@@ -7,6 +7,13 @@
   colour; future rows are outlined. Rows that have ≥1 plan get a numeric
   bubble at the top-right.
 
+  After row 13, both rail and expanded list carry one more pseudo-row for
+  The Shake-Up — a heavier ✶ glyph (vs. the engrailed ★ dividers), visible
+  from row 1 of main_event onward (future), lit during shake_up (current,
+  with its three Esteem/Knowledge/Power pips filling in as categories
+  complete), and sealed once the game ends (past). This is the point: the
+  game doesn't just stop at row 13, it always has a finale ahead of it.
+
   Expanded: shows plan chips and scene-entry summaries per row. Tapping
   the rail toggles between the two states. (Animation, mobile overlay,
   and jump-to-anchor wiring all land in later steps.)
@@ -16,7 +23,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import type { RecordRow, Plan, Player } from '$lib/api';
+	import type { RecordRow, Plan, Player, GamePhase } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
 	import { playerColorByID } from '$lib/playerColor';
 	import { PLAN_SHORT } from '$lib/components/plans/shared';
@@ -24,6 +31,10 @@
 	interface Props {
 		rows: RecordRow[];
 		currentRow: number;
+		/** Drives the Shake-Up pseudo-row's state (future/current/past). */
+		phase: GamePhase;
+		/** Current shake-up category, if phase is 'shake_up'; fills the pips. */
+		shakeUpCategory: string | null;
 		/** Map of player_id → display_name for entry attribution. */
 		playerNames: Map<number, string>;
 		/** Used to tint plan chips with each plan preparer's color. */
@@ -37,10 +48,35 @@
 		onSceneJump?: (rowNumber: number) => void;
 	}
 
-	const { rows, currentRow, playerNames, players, onRowJump, onPlanJump, onSceneJump }: Props = $props();
+	const {
+		rows, currentRow, phase, shakeUpCategory, playerNames, players,
+		onRowJump, onPlanJump, onSceneJump,
+	}: Props = $props();
 
 	const TOTAL_ROWS = 13;
 	const ENGRAILED_AFTER = new Set([4, 8, 12]);
+
+	// ── The Shake-Up pseudo-row ────────────────────────────────────────────────
+	const SHAKEUP_CATEGORIES = ['esteem', 'knowledge', 'power'] as const;
+	const SHAKEUP_INITIALS: Record<(typeof SHAKEUP_CATEGORIES)[number], string> = {
+		esteem: 'E', knowledge: 'K', power: 'P',
+	};
+	// Reuses the same 'past' | 'current' | 'future' vocabulary as rowState()
+	// so the existing .record-row[data-state=...] styling applies for free,
+	// and the panel's scroll-into-view effect (which looks for
+	// [data-state="current"]) lands here automatically once the Shake-Up
+	// starts (every real row is 'past' by then — see currentRow above).
+	const shakeUpRowState = $derived<'past' | 'current' | 'future'>(
+		phase === 'ended' ? 'past' : phase === 'shake_up' ? 'current' : 'future'
+	);
+	function shakeUpPipState(cat: (typeof SHAKEUP_CATEGORIES)[number]): 'done' | 'current' | 'pending' {
+		if (phase === 'ended') return 'done';
+		if (phase !== 'shake_up' || !shakeUpCategory) return 'pending';
+		const curIdx = SHAKEUP_CATEGORIES.indexOf(shakeUpCategory as (typeof SHAKEUP_CATEGORIES)[number]);
+		if (curIdx < 0) return 'pending';
+		const idx = SHAKEUP_CATEGORIES.indexOf(cat);
+		return idx < curIdx ? 'done' : idx === curIdx ? 'current' : 'pending';
+	}
 
 	const planLabel = (p: Plan) => PLAN_SHORT[p.plan_type] ?? p.plan_type;
 	const planStatusClass = (s: Plan['status']) =>
@@ -123,6 +159,9 @@
 			<span class="rail-star" aria-hidden="true">★</span>
 		{/if}
 	{/each}
+	<span class="rail-shakeup" data-state={shakeUpRowState} aria-label="The Shake-Up">
+		<span class="rail-shakeup-glyph" aria-hidden="true">✶</span>
+	</span>
 </button>
 
 {#if expanded}
@@ -215,6 +254,18 @@
 					</li>
 				{/if}
 			{/each}
+
+			<li class="record-row shakeup-row" data-state={shakeUpRowState}>
+				<span class="row-star-pill" aria-hidden="true">✶</span>
+				<div class="row-content">
+					<span class="shakeup-label">The Shake-Up</span>
+					<div class="shakeup-pips" aria-label="Esteem, Knowledge, Power">
+						{#each SHAKEUP_CATEGORIES as cat (cat)}
+							<span class="pip" data-state={shakeUpPipState(cat)} aria-label={cat}>{SHAKEUP_INITIALS[cat]}</span>
+						{/each}
+					</div>
+				</div>
+			</li>
 		</ol>
 	</aside>
 {/if}
@@ -294,6 +345,23 @@
 		line-height: 0.8;
 		margin: 1px 0;
 	}
+
+	/* The Shake-Up's rail glyph — heavier than the engrailed ★ dividers above
+	   (bigger, full opacity, no dimming) since it marks the finale, not just
+	   a ranking checkpoint. */
+	.rail-shakeup {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+		margin-top: 2px;
+	}
+	.rail-shakeup-glyph { font-size: 1.2rem; line-height: 1; }
+	.rail-shakeup[data-state="future"]  .rail-shakeup-glyph { color: var(--color-text-muted); opacity: 0.7; }
+	.rail-shakeup[data-state="current"] .rail-shakeup-glyph { color: var(--color-accent); text-shadow: 0 0 6px var(--color-accent-hover); }
+	.rail-shakeup[data-state="past"]    .rail-shakeup-glyph { color: var(--color-text-faint); opacity: 0.8; }
 
 	/* The rail-hidden class is only used in overlay mode (the rail is in the
 	   DOM but we don't visually need it under the overlay). At ≥1280 the
@@ -511,4 +579,56 @@
 		color: var(--color-accent);
 		line-height: 1;
 	}
+
+	/* ── The Shake-Up pseudo-row ────────────────────────────────────────────── */
+
+	.shakeup-row {
+		margin-top: 0.3rem;
+		padding-top: 0.6rem;
+		border-top: 1px dashed var(--color-border-strong);
+	}
+
+	.row-star-pill {
+		flex-shrink: 0;
+		width: 1.5rem;
+		height: 1.5rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.05rem;
+		line-height: 1;
+	}
+	.shakeup-row[data-state="current"] .row-star-pill { color: var(--color-accent); }
+	.shakeup-row[data-state="past"]    .row-star-pill { color: var(--color-text-faint); }
+	.shakeup-row[data-state="future"]  .row-star-pill { color: var(--color-text-muted); }
+
+	.shakeup-label {
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	.shakeup-row[data-state="future"] .shakeup-label { color: var(--color-text-muted); }
+
+	.shakeup-pips { display: flex; gap: 0.3rem; margin-top: 0.25rem; }
+
+	.pip {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.15rem;
+		height: 1.15rem;
+		border-radius: 50%;
+		font-size: 0.6rem;
+		font-weight: 700;
+		border: 1px solid var(--color-border-strong);
+		color: var(--color-text-muted);
+		flex-shrink: 0;
+	}
+	.pip[data-state="done"] {
+		background: var(--color-accent);
+		color: var(--color-bg);
+		border-color: var(--color-accent);
+	}
+	.pip[data-state="current"] { border-color: var(--color-accent); color: var(--color-accent); }
+	.pip[data-state="pending"] { opacity: 0.6; }
 </style>
