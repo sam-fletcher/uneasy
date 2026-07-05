@@ -19,15 +19,24 @@ const baseCSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; " +
 // port — update this if VITE_URL's default port ever changes.
 const devViteWS = "ws://localhost:5173"
 
+// HeadersConfig configures SecurityHeaders. Both fields come from main.go's
+// env parsing (DEV_MODE and PUBLIC_ORIGIN respectively) and are fixed for
+// the process lifetime.
+type HeadersConfig struct {
+	// DevMode additionally allows devViteWS in connect-src, for the
+	// docker-compose dev stack's Vite HMR socket. Production never needs it.
+	DevMode bool
+	// SecureMode is true when PUBLIC_ORIGIN starts with https:// (i.e. the
+	// server is actually reachable over TLS). Enables HSTS — sending it over
+	// plain http would be a lie the browser would remember for a year.
+	SecureMode bool
+}
+
 // SecurityHeaders sets a baseline set of response headers appropriate for a
-// public site. Applied router-wide (API and static frontend alike). devMode
-// additionally allows devViteWS in connect-src so the dev stack's HMR still
-// works; production never needs it. HSTS is deliberately not set here — it
-// must be conditional on the server actually running behind TLS, which is
-// Session 2's PUBLIC_ORIGIN work.
-func SecurityHeaders(devMode bool) func(http.Handler) http.Handler {
+// public site. Applied router-wide (API and static frontend alike).
+func SecurityHeaders(cfg HeadersConfig) func(http.Handler) http.Handler {
 	connectSrc := "connect-src 'self' wss:"
-	if devMode {
+	if cfg.DevMode {
 		connectSrc += " " + devViteWS
 	}
 	csp := baseCSP + "; " + connectSrc
@@ -39,6 +48,9 @@ func SecurityHeaders(devMode bool) func(http.Handler) http.Handler {
 			h.Set("X-Frame-Options", "DENY")
 			h.Set("Referrer-Policy", "same-origin")
 			h.Set("Content-Security-Policy", csp)
+			if cfg.SecureMode {
+				h.Set("Strict-Transport-Security", "max-age=31536000")
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

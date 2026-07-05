@@ -6,6 +6,12 @@
 //	PORT           HTTP listen port (default: 8080)
 //	DEV_MODE       If "true", proxy non-API requests to VITE_URL
 //	VITE_URL       Vite dev server address (default: http://localhost:5173)
+//	PUBLIC_ORIGIN  Public URL the server is reachable at, e.g.
+//	               "https://uneasy.example". Unset = today's dev behavior
+//	               (cookies without Secure, no HSTS, WebSocket accepts any
+//	               Origin). When set with an "https://" scheme: session
+//	               cookies get the Secure flag, responses get HSTS, and the
+//	               WebSocket handshake only accepts the given host as Origin.
 package main
 
 import (
@@ -59,17 +65,41 @@ func main() {
 	port := env("PORT", "8080")
 	devMode := env("DEV_MODE", "false") == "true"
 	viteURL := env("VITE_URL", "http://localhost:5173")
+	publicOrigin := env("PUBLIC_ORIGIN", "")
+	secureMode := strings.HasPrefix(publicOrigin, "https://")
+	publicHost := parsePublicHost(publicOrigin)
 
 	// ── Server ────────────────────────────────────────────────────────────────
 
-	if err := runServer(logger, dbURL, port, devMode, viteURL); err != nil {
+	if err := runServer(logger, dbURL, port, devMode, viteURL, secureMode, publicHost); err != nil {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)
 	}
 }
 
+// parsePublicHost extracts the host (e.g. "uneasy.example") from a
+// PUBLIC_ORIGIN value like "https://uneasy.example". Returns "" if origin is
+// unset or unparseable, in which case callers fall back to dev behavior.
+func parsePublicHost(origin string) string {
+	if origin == "" {
+		return ""
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
 // runServer starts the server and handles all initialization.
-func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL string) error {
+func runServer(
+	logger *slog.Logger,
+	dbURL, port string,
+	devMode bool,
+	viteURL string,
+	secureMode bool,
+	publicHost string,
+) error {
 	dbPool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
@@ -89,9 +119,16 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 
 	store := db.NewStore(dbPool)
 
+	if err := store.Q.DeleteExpiredSessions(context.Background()); err != nil {
+		logger.Warn("startup expired-session cleanup failed", "error", err)
+	} else {
+		logger.Info("expired sessions cleaned up")
+	}
+	go expireSessionsDaily(logger, store)
+
 	manager := hub.NewManager()
 
-	router := setupRouter(logger, store, manager, devMode)
+	router := setupRouter(logger, store, manager, devMode, secureMode, publicHost)
 
 	if err := setupFrontend(router, devMode, viteURL); err != nil {
 		return err
@@ -119,8 +156,22 @@ func runServer(logger *slog.Logger, dbURL, port string, devMode bool, viteURL st
 // setupRouter creates and configures the HTTP router with all middleware and routes.
 //
 //nolint:funlen // route table; one line per endpoint
-func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager, devMode bool) *chi.Mux {
+func setupRouter(
+	logger *slog.Logger,
+	store *db.Store,
+	manager *hub.Manager,
+	devMode, secureMode bool,
+	publicHost string,
+) *chi.Mux {
 	r := chi.NewRouter()
+
+	// Configure cookie/WebSocket-origin behavior once, before any routes are
+	// mounted — mirrors how UNEASY_DEV is read once at startup below.
+	handler.SetSecureCookies(secureMode)
+	wsOriginPatterns := []string{"*"}
+	if publicHost != "" {
+		wsOriginPatterns = []string{publicHost}
+	}
 
 	// Standard middleware: structured request logging and panic recovery.
 	// The request timeout is applied per-scope below — WebSocket connections
@@ -131,7 +182,7 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager, dev
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(handler.LoggerMiddleware(logger))
-	r.Use(appMiddleware.SecurityHeaders(devMode))
+	r.Use(appMiddleware.SecurityHeaders(appMiddleware.HeadersConfig{DevMode: devMode, SecureMode: secureMode}))
 
 	// Shared by the two credential endpoints below: one bucket per IP across
 	// both login and signup. KeyByIP reads r.RemoteAddr, which RealIP (above)
@@ -149,7 +200,7 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager, dev
 
 		// WebSocket — long-lived, must run outside any per-request timeout.
 		// Registered before the timeout-bearing group below.
-		r.Get("/tables/{id}/ws", handler.WebSocket(store, manager))
+		r.Get("/tables/{id}/ws", handler.WebSocket(store, manager, wsOriginPatterns))
 
 		// Everything else: short-lived HTTP requests under a request timeout
 		// so a misbehaving client can't tie up a goroutine indefinitely.
@@ -371,6 +422,24 @@ func tooManyAttempts(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": "too many attempts — wait a minute",
 	})
+}
+
+// sessionCleanupInterval is how often expireSessionsDaily sweeps expired
+// sessions after the one-off startup cleanup in runServer.
+const sessionCleanupInterval = 24 * time.Hour
+
+// expireSessionsDaily deletes year-stale sessions once a day for the life of
+// the process. TouchSession bumps last_seen on every authenticated request,
+// so an active player's session is never touched by this — only sessions
+// abandoned for a full year are removed.
+func expireSessionsDaily(logger *slog.Logger, store *db.Store) {
+	ticker := time.NewTicker(sessionCleanupInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if err := store.Q.DeleteExpiredSessions(context.Background()); err != nil {
+			logger.Warn("expired session cleanup failed", "error", err)
+		}
+	}
 }
 
 // env returns the value of key, or fallback if unset/empty.

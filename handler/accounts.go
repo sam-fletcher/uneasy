@@ -286,6 +286,7 @@ func openSession(ctx context.Context, w http.ResponseWriter, q *dbgen.Queries, a
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   secureCookies,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   sessionCookieMaxAge,
 	})

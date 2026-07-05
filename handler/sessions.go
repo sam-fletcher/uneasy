@@ -60,6 +60,7 @@ func DeleteSession(s *db.Store) http.HandlerFunc {
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   secureCookies,
 			SameSite: http.SameSiteLaxMode,
 			MaxAge:   -1,
 		})

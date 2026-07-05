@@ -27,7 +27,12 @@ import (
 // The client can send:
 //   - {"type": "typing.start"} — throttle to once per 2–3 seconds
 //   - {"type": "typing.stop"}
-func WebSocket(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+//
+// originPatterns restricts which Origin headers may complete the WebSocket
+// handshake (see coder/websocket's OriginPatterns). main.go passes the
+// PUBLIC_ORIGIN host when set, or "*" in dev (localhost-only, so any origin
+// is fine).
+func WebSocket(s *db.Store, manager *hub.Manager, originPatterns []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -47,7 +52,7 @@ func WebSocket(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			OriginPatterns: []string{"*"},
+			OriginPatterns: originPatterns,
 		})
 		if err != nil {
 			return

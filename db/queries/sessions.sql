@@ -12,10 +12,14 @@ SELECT
   a.created_at AS a_created_at, a.updated_at AS a_updated_at
 FROM sessions s
 JOIN accounts a ON a.id = s.account_id
-WHERE s.token = $1;
+WHERE s.token = $1
+  AND s.last_seen > now() - interval '365 days';
 
 -- name: TouchSession :exec
 UPDATE sessions SET last_seen = now() WHERE token = $1;
 
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE token = $1;
+
+-- name: DeleteExpiredSessions :exec
+DELETE FROM sessions WHERE last_seen < now() - interval '365 days';

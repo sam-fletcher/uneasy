@@ -36,6 +36,15 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	return i, err
 }
 
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
+DELETE FROM sessions WHERE last_seen < now() - interval '365 days'
+`
+
+func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredSessions)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions WHERE token = $1
 `
@@ -53,6 +62,7 @@ SELECT
 FROM sessions s
 JOIN accounts a ON a.id = s.account_id
 WHERE s.token = $1
+  AND s.last_seen > now() - interval '365 days'
 `
 
 type GetSessionWithAccountRow struct {
