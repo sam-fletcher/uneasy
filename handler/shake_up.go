@@ -8,8 +8,12 @@ package handler
 //     phase=shake_up, category=esteem, step=1, all tokens zeroed.
 //
 //   For each category in [esteem, knowledge, power]:
-//     Step 1 (rolling) — every player calls ShakeUpRoll once. After the
-//       last player rolls, server advances to step 2.
+//     Step 1 (rolling) — real dice rolls through the existing stage machine
+//       (shakeUpOpenRollForRoller + the /api/rolls/:id/leverage + /ready
+//       endpoints), one player at a time in reverse-rank turn order. Each
+//       resolution grants tokens = distinct faces (finalizeShakeUpRoll) and
+//       opens the next roller's roll; after the last player rolls, server
+//       advances to step 2.
 //     Step 2 (spending) — players take turns in reverse rank order.
 //       On their turn:
 //         - announce a spend (creates shake_up_spends, base_cost=1, tokens
@@ -112,11 +116,19 @@ func GetShakeUp(s *db.Store) http.HandlerFunc {
 		// fetch its full state (dice, participants) via getActiveRollForGame/getRoll.
 		if game.ShakeUpStep != nil && *game.ShakeUpStep == gamepkg.ShakeUpStepRolling &&
 			game.ShakeUpCategory != nil {
-			if roller, rerr := shakeUpNextRoller(ctx, s.Q, gameID, *game.ShakeUpCategory); rerr == nil && roller != 0 {
-				out["current_roller_id"] = roller
-			}
+			// The open roll's actor IS the current roller. shakeUpNextRoller
+			// can't be reused here: it treats "has a dice_rolls row" as "already
+			// rolled" (correct for its other callers, which only ever run once
+			// the prior roll has resolved), so calling it while a roll is still
+			// open for someone would name the NEXT roller instead of the current
+			// one. Only fall back to it in the (practically unreachable, since
+			// the next roll is always opened synchronously) gap where no roll
+			// is open yet.
 			if openRoll, rerr := s.Q.GetOpenShakeUpRollByGame(ctx, gameID); rerr == nil {
+				out["current_roller_id"] = openRoll.ActorID
 				out["open_roll_id"] = openRoll.ID
+			} else if roller, rerr := shakeUpNextRoller(ctx, s.Q, gameID, *game.ShakeUpCategory); rerr == nil && roller != 0 {
+				out["current_roller_id"] = roller
 			}
 		}
 		respond(w, http.StatusOK, out)
@@ -360,119 +372,6 @@ func finalizeShakeUpRoll(
 	broadcastEvent(manager, resolved.GameID, model.EventShakeUpStepChanged,
 		model.ShakeUpStepChangedPayload{Category: category, Step: step})
 	return nil
-}
-
-// ── Step 1: rolling ──────────────────────────────────────────────────────────
-
-// ShakeUpRoll handles POST /api/tables/{id}/shake-up/roll.
-//
-// The caller rolls dice (own assets only — leverage selection lives in the
-// body, mirroring plan rolls). The integer result is added to the caller's
-// shake_up_tokens. After the last player rolls, the server advances to
-// step 2 of the current category.
-func ShakeUpRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
-		if !ok {
-			return
-		}
-		ctx := r.Context()
-		game, err := s.Q.GetGameByID(ctx, gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
-		if !inShakeUpStep(w, &game, gamepkg.ShakeUpStepRolling) {
-			return
-		}
-
-		var body struct {
-			Result int16 `json:"result"` // sum of dice including any leverage
-		}
-		if err = json.NewDecoder(r.Body).Decode(&body); err != nil || body.Result < 1 {
-			respondErr(w, http.StatusBadRequest, "result must be a positive integer")
-			return
-		}
-
-		// Idempotency: if the player already has a shake-up roll for the
-		// current category, reject. We use dice_rolls.is_shake_up + actor_id
-		// + a per-category check derived from created_at order; simplest:
-		// only one per (game, actor) per category — enforced via a quick
-		// sentinel using shake_up_tokens (zero for the category at start).
-		// For now, allow re-roll only when the player has 0 tokens AND the
-		// step is still 1 (i.e. they haven't rolled yet *this category*).
-		if player.ShakeUpTokens > 0 {
-			respondErr(w, http.StatusConflict, "you have already rolled for this category")
-			return
-		}
-
-		// Persist a dice_rolls row for the audit trail.
-		_, err = s.Q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
-			GameID:     gameID,
-			ActorID:    player.ID,
-			Difficulty: 0,
-			Stage:      "leverage",
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not persist roll", err)
-			return
-		}
-		newTotal, err := s.Q.AddShakeUpTokens(ctx, dbgen.AddShakeUpTokensParams{
-			ID: player.ID, ShakeUpTokens: body.Result,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not add tokens", err)
-			return
-		}
-		broadcastEvent(manager, gameID, model.EventShakeUpRolled, model.ShakeUpRolledPayload{
-			PlayerID: player.ID, Result: body.Result, Total: newTotal,
-		})
-		// Superseded by finalizeShakeUpRoll (real dice rolls); this handler is
-		// unreachable in practice (CreateDiceRoll's Difficulty:0 always trips the
-		// CHECK constraint) and slated for deletion once ShakeUpView.svelte stops
-		// calling it. diceCount has no real dice to report here, so reuse Result.
-		EmitShakeUpRolled(
-			ctx,
-			s.Q,
-			manager,
-			gameID,
-			player.ID,
-			body.Result,
-			body.Result,
-			newTotal,
-			*game.ShakeUpCategory,
-		)
-
-		// Advance to step 2 once everyone has rolled.
-		players, err := s.Q.GetPlayersByGame(ctx, gameID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load players", err)
-			return
-		}
-		allRolled := true
-		for _, p := range players {
-			fresh, err := s.Q.GetShakeUpTokens(ctx, p.ID)
-			if err != nil || fresh == 0 {
-				allRolled = false
-				break
-			}
-		}
-		if allRolled {
-			cat := *game.ShakeUpCategory
-			step := gamepkg.ShakeUpStepSpending
-			err = s.Q.SetShakeUpStep(ctx, dbgen.SetShakeUpStepParams{
-				ID: gameID, ShakeUpCategory: &cat, ShakeUpStep: &step,
-			})
-			if err != nil {
-				respondInternalErr(w, r, "could not advance step", err)
-				return
-			}
-			broadcastEvent(manager, gameID, model.EventShakeUpStepChanged,
-				model.ShakeUpStepChangedPayload{Category: cat, Step: step})
-		}
-
-		respond(w, http.StatusOK, map[string]any{"tokens": newTotal})
-	}
 }
 
 // ── Step 2: announce / adjust / commit ───────────────────────────────────────

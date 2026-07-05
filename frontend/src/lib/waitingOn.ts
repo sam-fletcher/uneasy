@@ -198,3 +198,42 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 	}
 	return { waitees: [] };
 }
+
+// ── Shake-Up ─────────────────────────────────────────────────────────────────
+// Both steps are strictly sequential turn order (reverse rank — lowest status
+// first), so exactly one party is ever named: never "everyone", unlike the
+// old self-reported-roll skeleton this replaced.
+
+/** Everything the shake-up derivation reads, all server-authoritative. */
+export interface ShakeUpWaitingOnInput {
+	/** game.shake_up_step: 1 (rolling), 2 (spending), or null before it's set. */
+	step: number | null;
+	/** Step 1: the player whose turn it is to roll this category
+	 *  (GetShakeUp's current_roller_id), or null once everyone has rolled. */
+	currentRollerID: number | null;
+	/** Step 2: the open spend, if any. The spender must commit it before
+	 *  anyone else may act. */
+	openSpend: { spend: { player_id: number } } | null;
+	/** Step 2: whose turn it is to announce a spend (reverse-rank order,
+	 *  GetShakeUp's current_actor), or null when no one holds tokens. */
+	currentActor: number | null;
+}
+
+/** Compute the WaitingOnBar state for the shake-up phase. */
+export function shakeUpWaitingOn(input: ShakeUpWaitingOnInput): WaitingOnState {
+	const { step, currentRollerID, openSpend, currentActor } = input;
+	if (step === 1) {
+		if (currentRollerID == null) return { waitees: [] };
+		return { waitees: [player(currentRollerID)], stepLabel: 'Roll for tokens' };
+	}
+	if (step === 2) {
+		if (openSpend) {
+			return { waitees: [player(openSpend.spend.player_id)], stepLabel: 'Commit the spend' };
+		}
+		if (currentActor != null) {
+			return { waitees: [player(currentActor)], stepLabel: 'Spend tokens' };
+		}
+		return { waitees: [] };
+	}
+	return { waitees: [] };
+}

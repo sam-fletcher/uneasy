@@ -422,6 +422,23 @@
 					activeRollVotes = [];
 					activeRollParticipants = [];
 				}
+			} else if (data.game.phase === 'shake_up' || data.game.phase === 'ended') {
+				// The endgame has no plans/record/scene, just the current shake-up
+				// roll (getActiveRollForGame is shake-up-aware). Shake-up rolls never
+				// enter the voting stage, so activeRollVotes is left alone here —
+				// ShakeUpView passes DiceRollPanel a literal empty votes array.
+				try {
+					const rollData = await getActiveRollForGame(gameID);
+					if (rollData.roll) {
+						activeRoll = rollData.roll;
+						activeRollDice = rollData.dice;
+						activeRollParticipants = rollData.participants;
+					} else {
+						activeRoll = null;
+						activeRollDice = [];
+						activeRollParticipants = [];
+					}
+				} catch { /* tolerate; RollCreated/RollResolved WS events keep this in sync */ }
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load game state.';
@@ -780,7 +797,11 @@
 			{game}
 			{players}
 			{assets}
+			{rankings}
 			{currentPlayerID}
+			bind:activeRoll
+			bind:activeRollDice
+			bind:activeRollParticipants
 			bind:waitingOn
 		/>
 

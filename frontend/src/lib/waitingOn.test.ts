@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { DiceRoll, Player, RollParticipant, RowState, RowStateKind, VoteView } from '$lib/api';
-import { mainEventWaitingOn, type MainEventWaitingOnInput, type Waitee } from './waitingOn';
+import {
+	mainEventWaitingOn, type MainEventWaitingOnInput, type Waitee,
+	shakeUpWaitingOn, type ShakeUpWaitingOnInput,
+} from './waitingOn';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 // The derivation reads only a handful of fields off each input; minimal casts
@@ -257,5 +260,56 @@ describe('an unresolved dice roll overrides the row-state waitees', () => {
 describe('empty states', () => {
 	it('null rowState (still loading) → no waitees', () => {
 		expect(mainEventWaitingOn(input({ rowState: null })).waitees).toEqual([]);
+	});
+});
+
+// ── Shake-Up ─────────────────────────────────────────────────────────────────
+// Both steps are strictly sequential (reverse rank order), so the derivation
+// should never fall back to naming "everyone" the way the old self-reported
+// rolling skeleton did.
+
+function shakeUpInput(over: Partial<ShakeUpWaitingOnInput> = {}): ShakeUpWaitingOnInput {
+	return {
+		step: null,
+		currentRollerID: null,
+		openSpend: null,
+		currentActor: null,
+		...over,
+	};
+}
+
+describe('shakeUpWaitingOn', () => {
+	it('step 1 names the current roller', () => {
+		const got = shakeUpWaitingOn(shakeUpInput({ step: 1, currentRollerID: 5 }));
+		expect(playerIDs(got.waitees)).toEqual([5]);
+		expect(got.stepLabel).toBe('Roll for tokens');
+	});
+
+	it('step 1 with no current roller (everyone has rolled) → no waitees', () => {
+		const got = shakeUpWaitingOn(shakeUpInput({ step: 1, currentRollerID: null }));
+		expect(got.waitees).toEqual([]);
+	});
+
+	it('step 2 with an open spend names the spender, not the next actor', () => {
+		const got = shakeUpWaitingOn(
+			shakeUpInput({ step: 2, openSpend: { spend: { player_id: 3 } }, currentActor: 9 }),
+		);
+		expect(playerIDs(got.waitees)).toEqual([3]);
+		expect(got.stepLabel).toBe('Commit the spend');
+	});
+
+	it('step 2 with no open spend names the current actor', () => {
+		const got = shakeUpWaitingOn(shakeUpInput({ step: 2, currentActor: 4 }));
+		expect(playerIDs(got.waitees)).toEqual([4]);
+		expect(got.stepLabel).toBe('Spend tokens');
+	});
+
+	it('step 2 with no open spend and no current actor (no one holds tokens) → no waitees', () => {
+		const got = shakeUpWaitingOn(shakeUpInput({ step: 2 }));
+		expect(got.waitees).toEqual([]);
+	});
+
+	it('unknown/null step → no waitees', () => {
+		expect(shakeUpWaitingOn(shakeUpInput({ step: null })).waitees).toEqual([]);
 	});
 });

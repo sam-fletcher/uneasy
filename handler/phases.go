@@ -272,10 +272,12 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 
 		// Include phase-specific data.
 		switch game.Phase {
-		case model.PhaseLobby, model.PhaseShakeUp:
+		case model.PhaseLobby:
 			// No further phase-specific data.
 
-		case model.PhasePrologue, model.PhaseMainEvent, model.PhaseEnded:
+		case model.PhasePrologue, model.PhaseMainEvent, model.PhaseShakeUp, model.PhaseEnded:
+			// Shake-up needs rankings too: turn order for both steps (reverse
+			// rank) and the bump-rank spend can move them mid-endgame.
 			rankings, err := s.Q.ListRankingsByGame(ctx, gameID)
 			if err == nil {
 				result["rankings"] = rankings

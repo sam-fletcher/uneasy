@@ -65,18 +65,15 @@ export function getShakeUp(gameID: string | number): Promise<{
 	// During the spending step (no open spend), the player whose turn it is
 	// to announce, per reverse-rank order. Absent otherwise.
 	current_actor?: number;
+	// During the rolling step, the player whose turn it is to roll this
+	// category, per reverse-rank order. Absent otherwise (or once everyone
+	// has rolled).
+	current_roller_id?: number;
+	// The open shake-up roll's id, if any — full roll state (dice,
+	// participants) comes from getActiveRollForGame / getRoll.
+	open_roll_id?: number;
 }> {
 	return apiFetch(`/tables/${gameID}/shake-up`);
-}
-
-export function shakeUpRoll(
-	gameID: string | number,
-	result: number
-): Promise<{ tokens: number }> {
-	return apiFetch(`/tables/${gameID}/shake-up/roll`, {
-		method: 'POST',
-		body: JSON.stringify({ result })
-	});
 }
 
 export function shakeUpSpend(

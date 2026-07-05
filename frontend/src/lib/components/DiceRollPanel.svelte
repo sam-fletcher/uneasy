@@ -171,6 +171,18 @@
 		resolved: 'Resolved',
 	}[stage]);
 
+	// ── Shake-Up mode ─────────────────────────────────────────────────────────
+	// Derived entirely from roll.is_shake_up — shake-up rolls are actor-only
+	// (no interference/voting), banked dice aren't spendable on them (ruling 3),
+	// and a "result" is tokens earned (distinct faces), not a make/mar outcome.
+	const isShakeUp = $derived(roll.is_shake_up);
+	const shakeUpCategoryLabel = $derived(
+		roll.shake_up_category
+			? roll.shake_up_category[0].toUpperCase() + roll.shake_up_category.slice(1)
+			: 'their category'
+	);
+	const actorName = $derived(playerNameMap.get(roll.actor_id) ?? '?');
+
 	let busy = $state(false);
 	let error = $state('');
 	const setErr = (e: unknown) => {
@@ -311,9 +323,13 @@
 	<div class="roll-header">
 		<span class="roll-title">Dice Roll</span>
 		<span class="roll-meta">
-			Difficulty <strong>{roll.difficulty}</strong>
-			{#if roll.adjusted_difficulty != null && roll.adjusted_difficulty !== roll.difficulty}
-				→ <strong class="adjusted">{roll.adjusted_difficulty}</strong>
+			{#if isShakeUp}
+				Each distinct face = 1 token.
+			{:else}
+				Difficulty <strong>{roll.difficulty}</strong>
+				{#if roll.adjusted_difficulty != null && roll.adjusted_difficulty !== roll.difficulty}
+					→ <strong class="adjusted">{roll.adjusted_difficulty}</strong>
+				{/if}
 			{/if}
 		</span>
 		<span class="roll-actor">Actor: {playerNameMap.get(roll.actor_id) ?? '?'}</span>
@@ -406,138 +422,160 @@
 
 	<!-- ── Stage: leverage ─────────────────────────────────────────────────── -->
 	{#if stage === 'leverage'}
-		<!-- Intent + ready row. Picks stay in the local draft until Ready. -->
-		<div class="intent-row">
-			{#if !isActor}
-				{#if intentLocked}
-					<span class="intent-badge locked">
-						{effectiveIntent === 'aid' ? "You're aiding" : "You're interfering"}
-					</span>
+		{#if isShakeUp && !isActor}
+			<!-- Shake-up rolls are actor-only; a non-roller has nothing to do but
+			     watch the pools fill in. -->
+			<p class="stage-hint">{actorName} is rolling for {shakeUpCategoryLabel}…</p>
+		{:else}
+			<!-- Intent + ready row. Picks stay in the local draft until Ready. -->
+			<div class="intent-row">
+				{#if !isActor}
+					{#if intentLocked}
+						<span class="intent-badge locked">
+							{effectiveIntent === 'aid' ? "You're aiding" : "You're interfering"}
+						</span>
+					{:else}
+						<button
+							class="intent-btn aid"
+							class:selected={effectiveIntent === 'aid'}
+							aria-pressed={effectiveIntent === 'aid'}
+							onclick={() => setDraftIntent('aid')}
+							disabled={busy}
+						>
+							Aid
+						</button>
+						<button
+							class="intent-btn interfere"
+							class:selected={effectiveIntent === 'interfere'}
+							aria-pressed={effectiveIntent === 'interfere'}
+							onclick={() => setDraftIntent('interfere')}
+							disabled={busy}
+						>
+							Interfere
+						</button>
+					{/if}
+				{/if}
+				{#if myReady}
+					<button
+						class="ready-btn ready"
+						onclick={onUnready}
+						disabled={busy || !canCommit}
+						title={!canCommit ? 'You have no dice left to add — automatically ready.' : ''}
+					>
+						{canCommit ? 'Unready' : (isShakeUp ? 'Rolled' : 'Ready (maxed out)')}
+					</button>
 				{:else}
 					<button
-						class="intent-btn aid"
-						class:selected={effectiveIntent === 'aid'}
-						aria-pressed={effectiveIntent === 'aid'}
-						onclick={() => setDraftIntent('aid')}
-						disabled={busy}
+						class="ready-btn"
+						onclick={onReadySubmit}
+						disabled={busy || needsIntent}
+						title={needsIntent ? 'Pick aid or interfere first.' : ''}
 					>
-						Aid
-					</button>
-					<button
-						class="intent-btn interfere"
-						class:selected={effectiveIntent === 'interfere'}
-						aria-pressed={effectiveIntent === 'interfere'}
-						onclick={() => setDraftIntent('interfere')}
-						disabled={busy}
-					>
-						Interfere
+						{#if isShakeUp}
+							{hasDraft ? `Commit ${draftCount} & roll` : 'Roll the dice'}
+						{:else}
+							{hasDraft ? `Commit ${draftCount} & ready` : 'Ready'}
+						{/if}
 					</button>
 				{/if}
+			</div>
+			{#if !isShakeUp}
+				<p class="ready-note">Opposing leverages will unready you.</p>
 			{/if}
-			{#if myReady}
-				<button
-					class="ready-btn ready"
-					onclick={onUnready}
-					disabled={busy || !canCommit}
-					title={!canCommit ? 'You have no dice left to add — automatically ready.' : ''}
-				>
-					{canCommit ? 'Unready' : 'Ready (maxed out)'}
-				</button>
-			{:else}
-				<button
-					class="ready-btn"
-					onclick={onReadySubmit}
-					disabled={busy || needsIntent}
-					title={needsIntent ? 'Pick aid or interfere first.' : ''}
-				>
-					{hasDraft ? `Commit ${draftCount} & ready` : 'Ready'}
-				</button>
-			{/if}
-		</div>
-		<p class="ready-note">Opposing leverages will unready you.</p>
 
-		<!-- Banked dice (once a side is chosen, or I'm the actor). Rare and free,
-		     so they lead the leverage choices above the asset list. -->
-		{#if (isActor || effectiveIntent != null) && myUnspentBanked.length > 0}
-			<div class="banked-section">
-				<span class="section-label">Banked dice ({myUnspentBanked.length})</span>
-				<div class="banked-list">
-					{#each myUnspentBanked as b (b.id)}
-						<button
-							class="banked-btn"
-							class:drafted={draftBankedIds.has(b.id)}
-							aria-pressed={draftBankedIds.has(b.id)}
-							onclick={() => toggleDraftBanked(b)}
-							disabled={busy || myReady}
-							title="Spend this banked die on Ready (random face at resolution)"
-						>
-							{draftBankedIds.has(b.id) ? '🎲 Selected' : '🎲 Spend (+1 die)'}
-						</button>
+			<!-- Banked dice (once a side is chosen, or I'm the actor). Rare and free,
+			     so they lead the leverage choices above the asset list. Not offered
+			     on shake-up rolls — banked dice aren't spendable there (ruling 3). -->
+			{#if !isShakeUp && (isActor || effectiveIntent != null) && myUnspentBanked.length > 0}
+				<div class="banked-section">
+					<span class="section-label">Banked dice ({myUnspentBanked.length})</span>
+					<div class="banked-list">
+						{#each myUnspentBanked as b (b.id)}
+							<button
+								class="banked-btn"
+								class:drafted={draftBankedIds.has(b.id)}
+								aria-pressed={draftBankedIds.has(b.id)}
+								onclick={() => toggleDraftBanked(b)}
+								disabled={busy || myReady}
+								title="Spend this banked die on Ready (random face at resolution)"
+							>
+								{draftBankedIds.has(b.id) ? '🎲 Selected' : '🎲 Spend (+1 die)'}
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<!-- My assets (once a side is chosen, or I'm the actor). Assets leveraged
+			     on a prior roll are filtered out; current-roll commits stay visible. -->
+			{#if (isActor || effectiveIntent != null) && visibleAssets.length > 0}
+				<div class="my-assets">
+					<span class="section-label">Your assets</span>
+					{#each visibleAssets as asset (asset.id)}
+						<AssetCardSelectable
+							{asset}
+							ownerColor={myColor}
+							knownSecretCount={secretCounts?.known(asset.id)}
+							leverageMode
+							leverageDrafted={draftAssetIds.has(asset.id)}
+							leverageDisabled={myReady || (isActor && actorLeverageBlocked)}
+							onToggleLeverage={toggleDraftAsset}
+						/>
 					{/each}
 				</div>
-			</div>
-		{/if}
+			{/if}
 
-		<!-- My assets (once a side is chosen, or I'm the actor). Assets leveraged
-		     on a prior roll are filtered out; current-roll commits stay visible. -->
-		{#if (isActor || effectiveIntent != null) && visibleAssets.length > 0}
-			<div class="my-assets">
-				<span class="section-label">Your assets</span>
-				{#each visibleAssets as asset (asset.id)}
-					<AssetCardSelectable
-						{asset}
-						ownerColor={myColor}
-						knownSecretCount={secretCounts?.known(asset.id)}
-						leverageMode
-						leverageDrafted={draftAssetIds.has(asset.id)}
-						leverageDisabled={myReady || (isActor && actorLeverageBlocked)}
-						onToggleLeverage={toggleDraftAsset}
-					/>
-				{/each}
-			</div>
-		{/if}
+			{#if !isShakeUp}
+				<!-- Public commit feed -->
+				{#if commitFeed.length > 0}
+					<div class="commit-feed">
+						<span class="section-label">Commits this roll</span>
+						<ul>
+							{#each commitFeed as c (c.id)}
+								<li>
+									<span class="dot" style:background={playerColorByID(c.playerID, players)}></span>
+									<span class="cf-name">{c.playerName}</span>
+									<span class="cf-source">· {c.source}</span>
+									<span class="cf-side" class:interfere={c.isInterference}>
+										· {c.isInterference ? 'interfere' : 'aid'}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
 
-		<!-- Public commit feed -->
-		{#if commitFeed.length > 0}
-			<div class="commit-feed">
-				<span class="section-label">Commits this roll</span>
-				<ul>
-					{#each commitFeed as c (c.id)}
-						<li>
-							<span class="dot" style:background={playerColorByID(c.playerID, players)}></span>
-							<span class="cf-name">{c.playerName}</span>
-							<span class="cf-source">· {c.source}</span>
-							<span class="cf-side" class:interfere={c.isInterference}>
-								· {c.isInterference ? 'interfere' : 'aid'}
-							</span>
-						</li>
+				<!-- Player roster -->
+				<div class="roster">
+					{#each participants as p (p.player_id)}
+						<span class="chip" style:border-color={playerColorByID(p.player_id, players)}>
+							{chipLabel(p)}
+						</span>
 					{/each}
-				</ul>
-			</div>
+				</div>
+
+				<!-- Footer summary -->
+				<p class="footer-summary">
+					{actorPool.length} aid · {intPool.length} interfere ·
+					{participants.filter(p => p.is_ready).length} of {participants.length} ready
+				</p>
+			{/if}
 		{/if}
-
-		<!-- Player roster -->
-		<div class="roster">
-			{#each participants as p (p.player_id)}
-				<span class="chip" style:border-color={playerColorByID(p.player_id, players)}>
-					{chipLabel(p)}
-				</span>
-			{/each}
-		</div>
-
-		<!-- Footer summary -->
-		<p class="footer-summary">
-			{actorPool.length} aid · {intPool.length} interfere ·
-			{participants.filter(p => p.is_ready).length} of {participants.length} ready
-		</p>
 	{/if}
 
 	<!-- ── Stage: resolved ─────────────────────────────────────────────────── -->
 	{#if stage === 'resolved'}
-		<div class="result-banner" class:make={roll.outcome === 'make'} class:mar={roll.outcome === 'mar'}>
-			<span class="result-label">{roll.outcome === 'make' ? 'Make' : 'Mar'}</span>
-			<span class="result-score">{roll.result} distinct face{roll.result === 1 ? '' : 's'} vs. difficulty {effectiveDifficulty}</span>
-		</div>
+		{#if isShakeUp}
+			<div class="result-banner shake-up">
+				<span class="result-label">+{roll.result ?? 0} token{(roll.result ?? 0) === 1 ? '' : 's'}</span>
+				<span class="result-score">{roll.result ?? 0} distinct face{(roll.result ?? 0) === 1 ? '' : 's'}</span>
+			</div>
+		{:else}
+			<div class="result-banner" class:make={roll.outcome === 'make'} class:mar={roll.outcome === 'mar'}>
+				<span class="result-label">{roll.outcome === 'make' ? 'Make' : 'Mar'}</span>
+				<span class="result-score">{roll.result} distinct face{roll.result === 1 ? '' : 's'} vs. difficulty {effectiveDifficulty}</span>
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -723,5 +761,7 @@
 	.result-label { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.06em; }
 	.result-banner.make .result-label { color: var(--color-success); }
 	.result-banner.mar  .result-label { color: var(--color-danger); }
+	.result-banner.shake-up { border-color: var(--color-accent); background: #2a2010; }
+	.result-banner.shake-up .result-label { color: var(--color-accent); }
 	.result-score { font-size: 0.82rem; color: var(--color-text-muted); }
 </style>

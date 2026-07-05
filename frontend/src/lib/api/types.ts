@@ -251,6 +251,8 @@ export interface DiceRoll {
 	stage: RollStage;
 	created_at: string;
 	resolved_at: string | null;
+	// Set only on shake-up rolls (esteem/knowledge/power); null otherwise.
+	shake_up_category: 'esteem' | 'knowledge' | 'power' | null;
 }
 
 export interface DiceRollDie {

@@ -1,9 +1,12 @@
 <!-- ShakeUpView.svelte
   Phase 4c — Shake-Up endgame UI.
 
-  Two sub-modes driven by game.shake_up_step:
-    1 (rolling): each player submits a single roll-result for the active
-      category. After the last submission the server advances to step 2.
+  Two sub-modes driven by game.shake_up_step, both reverse-rank turn order
+  (lowest status first):
+    1 (rolling): each player rolls in turn through the real dice-roll stage
+      machine (DiceRollPanel, in its shake-up mode) — the server creates the
+      open roll for whoever is up next. After the last roller resolves, the
+      server advances to step 2.
     2 (spending): players take turns in reverse rank order. The active
       spender announces an option (deducts 1 token immediately), other
       players post ±1 adjustments (1 token each), and the spender commits
@@ -14,31 +17,41 @@
 	import '$lib/components/shared/statusText.css';
 	import { onMount, onDestroy } from 'svelte';
 	import {
-		getShakeUp, shakeUpRoll, shakeUpSpend, shakeUpAdjust, shakeUpCommit,
+		getShakeUp, shakeUpSpend, shakeUpAdjust, shakeUpCommit,
 	} from '$lib/api';
 	import type {
-		Game, Player, Asset, ShakeUpOptionInfo, ShakeUpSpend,
-		ShakeUpAdjustmentRow, ShakeUpTokensRow, ClaimableTitle,
+		Game, Player, Asset, Ranking, DiceRoll, DiceRollDie, RollParticipant,
+		ShakeUpOptionInfo, ShakeUpSpend, ShakeUpAdjustmentRow, ShakeUpTokensRow, ClaimableTitle,
 	} from '$lib/api';
 	import AssetCardSelectable from '../AssetCardSelectable.svelte';
-	import { playerColor } from '$lib/playerColor';
-	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
+	import DiceRollPanel from '../DiceRollPanel.svelte';
+	import { playerColor, playerColorByID } from '$lib/playerColor';
+	import { shakeUpWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 
 	interface Props {
 		gameID: string;
 		game: Game;
 		players: Player[];
 		assets: Asset[];
+		rankings: Ranking[];
 		currentPlayerID: number | null;
+		activeRoll: DiceRoll | null;
+		activeRollDice: DiceRollDie[];
+		activeRollParticipants: RollParticipant[];
 		waitingOn: WaitingOnState;
 	}
-	let { gameID, game, players, assets, currentPlayerID, waitingOn = $bindable() }: Props = $props();
+	let {
+		gameID, game, players, assets, rankings, currentPlayerID,
+		activeRoll = $bindable(), activeRollDice = $bindable(), activeRollParticipants = $bindable(),
+		waitingOn = $bindable(),
+	}: Props = $props();
 
 	let tokens = $state<ShakeUpTokensRow[]>([]);
 	let options = $state<ShakeUpOptionInfo[]>([]);
 	let claimableTitles = $state<ClaimableTitle[]>([]);
 	let openSpend = $state<{ spend: ShakeUpSpend; adjustments: ShakeUpAdjustmentRow[] } | null>(null);
 	let currentActor = $state<number | null>(null);
+	let currentRollerID = $state<number | null>(null);
 	let error = $state('');
 	let busy = $state(false);
 
@@ -50,6 +63,7 @@
 			claimableTitles = data.claimable_titles ?? [];
 			openSpend = data.open_spend ?? null;
 			currentActor = data.current_actor ?? null;
+			currentRollerID = data.current_roller_id ?? null;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load shake-up state.';
 		}
@@ -61,13 +75,13 @@
 	onMount(() => {
 		for (const t of [
 			'shake_up.step_changed', 'shake_up.rolled', 'shake_up.spend_opened',
-			'shake_up.adjusted', 'shake_up.spend_committed', 'shake_up.ended',
+			'shake_up.adjusted', 'shake_up.spend_committed', 'shake_up.passed', 'shake_up.ended',
 		]) window.addEventListener(`uneasy:${t}`, onShakeUpEvent);
 	});
 	onDestroy(() => {
 		for (const t of [
 			'shake_up.step_changed', 'shake_up.rolled', 'shake_up.spend_opened',
-			'shake_up.adjusted', 'shake_up.spend_committed', 'shake_up.ended',
+			'shake_up.adjusted', 'shake_up.spend_committed', 'shake_up.passed', 'shake_up.ended',
 		]) window.removeEventListener(`uneasy:${t}`, onShakeUpEvent);
 	});
 
@@ -76,24 +90,24 @@
 	);
 	// Whose turn it is to announce a spend (reverse-rank order, server-driven).
 	const isMyTurn = $derived(currentActor != null && currentActor === currentPlayerID);
+	const playerNameMap = $derived(new Map(players.map(p => [p.id, p.display_name])));
 	function playerName(id: number | null): string {
 		if (id == null) return '?';
 		return players.find(p => p.id === id)?.display_name ?? '?';
 	}
 
 	// ── Step 1: rolling ──────────────────────────────────────────────────────
-	let rollResult = $state(1);
-	async function submitRoll() {
-		if (busy) return;
-		busy = true; error = '';
-		try {
-			await shakeUpRoll(gameID, rollResult);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not submit roll.';
-		} finally {
-			busy = false;
-		}
-	}
+	// Turn order for the active category — reverse rank (lowest status
+	// first), mirroring gamepkg.ShakeUpTurnOrder. Dummy slots (player_id
+	// null) don't roll, so they're skipped.
+	const turnOrder = $derived.by<number[]>(() => {
+		const cat = game.shake_up_category;
+		if (!cat) return [];
+		return rankings
+			.filter(r => r.category === cat && r.player_id !== null)
+			.sort((a, b) => b.rank - a.rank)
+			.map(r => r.player_id as number);
+	});
 
 	// ── Step 2: announce spend ──────────────────────────────────────────────
 	let pickedOption = $state<string>('');
@@ -193,41 +207,16 @@
 	);
 
 	// ── Waiting-on derivation ────────────────────────────────────────────────
-	//   Step 1 (rolling): players whose token pool is still 0 haven't rolled.
-	//   Step 2 (spending): if a spend is open, waiting on the spender to
-	//     commit. Otherwise waiting on whichever players still hold tokens
-	//     (the rule is reverse-rank order, but token count is the visible
-	//     proxy — anyone at zero has either spent down or never rolled high).
-	const shakeUpWaitingOn = $derived.by<WaitingOnState>(() => {
-		if (game.shake_up_step === 1) {
-			const notRolled = tokens
-				.filter(t => t.shake_up_tokens === 0)
-				.map<Waitee>(t => ({ kind: 'player', playerID: t.id }));
-			if (notRolled.length === 0) return { waitees: [] };
-			const waitees: Waitee[] = notRolled.length === players.length
-				? [{ kind: 'everyone' }]
-				: notRolled;
-			return { waitees, stepLabel: 'Roll for tokens' };
-		}
-		if (game.shake_up_step === 2) {
-			if (openSpend) {
-				return {
-					waitees: [{ kind: 'player', playerID: openSpend.spend.player_id }],
-					stepLabel: 'Commit the spend',
-				};
-			}
-			// Reverse-rank turn order: waiting on the single active player.
-			if (currentActor != null) {
-				return {
-					waitees: [{ kind: 'player', playerID: currentActor }],
-					stepLabel: 'Spend tokens',
-				};
-			}
-			return { waitees: [] };
-		}
-		return { waitees: [] };
-	});
-	$effect(() => { waitingOn = shakeUpWaitingOn; });
+	// Both steps are strictly sequential turn order, so the pure function
+	// (lib/waitingOn.ts) always names exactly one party — see its vitest
+	// coverage for the step 1 / step 2 cases.
+	const computedWaitingOn = $derived(shakeUpWaitingOn({
+		step: game.shake_up_step,
+		currentRollerID,
+		openSpend,
+		currentActor,
+	}));
+	$effect(() => { waitingOn = computedWaitingOn; });
 </script>
 
 <div class="shake-up">
@@ -252,18 +241,39 @@
 	</section>
 
 	{#if game.shake_up_step === 1}
-		<section>
-			<h3>Submit your roll</h3>
+		<section class="rolling-section">
+			<h3>Rolling for {game.shake_up_category ?? 'this category'}</h3>
 			<p class="muted-text small">
-				Roll your dice (you may leverage your own assets, but no help/interference). Enter the total result.
-				It will be added to your token pool.
+				Turns go in reverse-rank order (lowest status first). Each distinct
+				die face earns one token.
 			</p>
-			<div class="roll-form">
-				<input type="number" min="1" max="60" bind:value={rollResult} />
-				<button class="action-btn primary" disabled={busy || myTokens > 0} onclick={submitRoll}>
-					{busy ? '…' : 'Submit roll'}
-				</button>
+			<div class="roller-chips">
+				{#each turnOrder as pid (pid)}
+					<span
+						class="roller-chip"
+						class:active={pid === currentRollerID}
+						class:rolled={(tokens.find(t => t.id === pid)?.shake_up_tokens ?? 0) > 0}
+						style:border-color={playerColorByID(pid, players)}
+					>
+						{playerName(pid)}: <strong>{tokens.find(t => t.id === pid)?.shake_up_tokens ?? 0}</strong>
+					</span>
+				{/each}
 			</div>
+			{#if activeRoll}
+				<DiceRollPanel
+					bind:roll={activeRoll}
+					bind:dice={activeRollDice}
+					votes={[]}
+					bind:participants={activeRollParticipants}
+					bankedDice={[]}
+					{assets}
+					{currentPlayerID}
+					{players}
+					{playerNameMap}
+				/>
+			{:else}
+				<p class="muted-text small">Waiting for the next roll to start…</p>
+			{/if}
 		</section>
 
 	{:else if game.shake_up_step === 2}
@@ -436,13 +446,29 @@
 
 	.tokens-panel ul { list-style: none; padding: 0; margin: 0.25rem 0 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; }
 
-	.roll-form, .announce-form {
+	.rolling-section { display: flex; flex-direction: column; gap: 0.6rem; }
+	.roller-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+	.roller-chip {
+		display: inline-flex; align-items: center;
+		min-height: 44px; padding: 0.35rem 0.75rem;
+		border-radius: 999px;
+		border: 1px solid var(--color-neutral);
+		background: var(--color-surface-2);
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+	}
+	.roller-chip.rolled { color: var(--color-text); }
+	.roller-chip.active {
+		border-color: var(--color-accent); background: #3a2f18;
+		color: var(--color-accent); font-weight: 600;
+	}
+
+	.announce-form {
 		display: flex; flex-direction: column; gap: 0.5rem;
 		max-width: 24rem;
 		background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: 8px;
 		padding: 0.75rem;
 	}
-	.roll-form { flex-direction: row; align-items: end; }
 
 	.su-form-row { display: flex; flex-direction: column; gap: 0.3rem; }
 	.su-form-label { font-size: 0.85rem; color: var(--color-text-muted); }

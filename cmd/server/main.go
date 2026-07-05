@@ -162,7 +162,6 @@ func setupRouter(logger *slog.Logger, store *db.Store, manager *hub.Manager) *ch
 
 			// Shake-Up (Phase 4c)
 			r.Get("/tables/{id}/shake-up", handler.GetShakeUp(store))
-			r.Post("/tables/{id}/shake-up/roll", handler.ShakeUpRoll(store, manager))
 			r.Post("/tables/{id}/shake-up/spend", handler.ShakeUpAnnounce(store, manager))
 			r.Post("/tables/{id}/shake-up/adjust", handler.ShakeUpAdjust(store, manager))
 			r.Post("/tables/{id}/shake-up/pass", handler.ShakeUpPass(store, manager))

@@ -76,6 +76,7 @@ func newShakeUpRollsHarness(t *testing.T, n int, opts ...gametest.Option) *shake
 
 	r := chi.NewRouter()
 	r.Use(appMiddleware.EnsureSession(q))
+	r.Get("/api/tables/{id}/state", GetGameState(store))
 	r.Get("/api/tables/{id}/shake-up", GetShakeUp(store))
 	r.Get("/api/tables/{id}/rolls/active", GetActiveRollForGame(store))
 	r.Route("/api/rolls/{rollId}", func(rr chi.Router) {
@@ -117,6 +118,16 @@ func (h *shakeUpRollsHarness) activeRoll(t *testing.T, playerIdx int) map[string
 	t.Helper()
 	status, body := h.do(t, playerIdx, "GET",
 		fmt.Sprintf("/api/tables/%d/rolls/active", h.gameID()), nil)
+	require.Equal(t, http.StatusOK, status, body)
+	return body
+}
+
+// shakeUp fetches the game's shake-up snapshot (GetShakeUp) as playerIdx and
+// requires 200.
+func (h *shakeUpRollsHarness) shakeUp(t *testing.T, playerIdx int) map[string]any {
+	t.Helper()
+	status, body := h.do(t, playerIdx, "GET",
+		fmt.Sprintf("/api/tables/%d/shake-up", h.gameID()), nil)
 	require.Equal(t, http.StatusOK, status, body)
 	return body
 }
@@ -215,6 +226,54 @@ func TestShakeUpRoll_RealEndpoints_TwoPlayersBackToBack(t *testing.T) {
 	// No roll left open.
 	active = h.activeRoll(t, 0)
 	assert.Nil(t, active["roll"])
+}
+
+// GetGameState must include rankings during shake_up: the client needs them
+// for reverse-rank turn order in both steps (and a bump-rank spend can move
+// them mid-endgame). Regression for a gap where the phase switch in
+// GetGameState only ever populated "rankings" for prologue/main_event/ended,
+// silently omitting shake_up.
+func TestGetGameState_IncludesRankings_DuringShakeUp(t *testing.T) {
+	h := newShakeUpRollsHarness(t, 2)
+
+	status, body := h.do(t, 0, "GET", fmt.Sprintf("/api/tables/%d/state", h.gameID()), nil)
+	require.Equal(t, http.StatusOK, status, body)
+
+	rankings, ok := body["rankings"].([]any)
+	require.True(t, ok, "rankings key must be present during shake_up: %v", body)
+	assert.NotEmpty(t, rankings)
+}
+
+// GetShakeUp's current_roller_id must name whoever's roll is actually open —
+// not shakeUpNextRoller's post-resolution answer. shakeUpNextRoller treats
+// "has a dice_rolls row for this category" as "already rolled" (correct for
+// its other callers, which only ever run once the prior roll has resolved),
+// so calling it while a roll is still open would skip the true current roller
+// and name the next one instead — a regression this test guards against.
+func TestGetShakeUp_CurrentRollerID_MatchesOpenRollActor(t *testing.T) {
+	h := newShakeUpRollsHarness(t, 2)
+
+	active := h.activeRoll(t, 0)
+	roll := asMap(t, active, "roll")
+	firstActorID := asInt64(t, roll["actor_id"])
+
+	snap := h.shakeUp(t, 0)
+	assert.Equal(t, float64(firstActorID), snap["current_roller_id"],
+		"current_roller_id must match the actor of the currently open roll")
+
+	// Once the first roller resolves, the field must follow the freshly
+	// opened roll's actor (the other player) — not stay stuck, and not skip
+	// past them to report someone who hasn't rolled yet.
+	_, resolvedActorID := h.readyAsActor(t)
+	require.Equal(t, firstActorID, resolvedActorID)
+
+	active = h.activeRoll(t, 0)
+	roll = asMap(t, active, "roll")
+	secondActorID := asInt64(t, roll["actor_id"])
+	require.NotEqual(t, firstActorID, secondActorID)
+
+	snap = h.shakeUp(t, 0)
+	assert.Equal(t, float64(secondActorID), snap["current_roller_id"])
 }
 
 // Turn order: only the actor may act on their own roll. commitGate rejects a
