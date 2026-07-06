@@ -575,6 +575,32 @@ describe('reconnectResync', () => {
 		await reconnectResync(ctx);
 		expect(listGamePosts).not.toHaveBeenCalled();
 	});
+
+	it('re-windows instead of merging when the catch-up was truncated', async () => {
+		// First call: the after-fetch, truncated at the server's cap.
+		// Second call: the initial-window fallback.
+		vi.mocked(listGamePosts)
+			.mockResolvedValueOnce({
+				posts: [makePost({ id: 6 }), makePost({ id: 7 })],
+				has_more_before: false,
+				has_more_after: true,
+				last_read_post_id: 5,
+			})
+			.mockResolvedValueOnce({
+				posts: [makePost({ id: 900 }), makePost({ id: 901 })],
+				has_more_before: true,
+				has_more_after: false,
+				last_read_post_id: 5,
+			});
+		const ctx = makeCtx({ posts: [makePost({ id: 5 })], lastReadPostID: 2 });
+		await reconnectResync(ctx);
+		expect(listGamePosts).toHaveBeenNthCalledWith(1, 1, { afterID: 5 });
+		expect(listGamePosts).toHaveBeenNthCalledWith(2, 1);
+		// Window replaced wholesale — no hole between 7 and 900.
+		expect(ctx.posts.map((p) => p.id)).toEqual([900, 901]);
+		expect(ctx.hasMoreBefore).toBe(true);
+		expect(ctx.mode).toBe('live');
+	});
 });
 
 describe('enterHistoryMode / returnToNow', () => {

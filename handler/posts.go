@@ -22,6 +22,14 @@ const (
 	initialWindowCap     = 500
 	defaultPageLimit     = 50
 	maxPageLimit         = 200
+	// catchUpCap bounds the ?after= reconnect catch-up. Without it the
+	// response grows with everything posted since the client's newest post
+	// — for a tab reconnecting after weeks away, that's the entire
+	// intervening history in one allocation (measured: 42% of all server
+	// allocations under load). When the cap truncates, has_more_after=true
+	// tells the client to re-window instead of merging (chatFeed.ts
+	// reconnectResync).
+	catchUpCap = 500
 )
 
 // ListGamePosts handles GET /api/tables/{id}/posts.
@@ -30,7 +38,8 @@ const (
 // boundary markers). Four modes, chosen by query params:
 //
 //   - (none): the initial catch-up window (see buildInitialWindow).
-//   - ?after=<id>: everything newer than <id> — reconnect catch-up.
+//   - ?after=<id>: posts newer than <id>, capped at catchUpCap — reconnect
+//     catch-up. has_more_after=true signals truncation.
 //   - ?before=<id>&limit=N: a page of older posts ending just before <id>.
 //   - ?around=<id>&limit=N: a window centred on <id>, for jump-to-anchor.
 //
@@ -52,8 +61,8 @@ func ListGamePosts(s *db.Store) http.HandlerFunc {
 				respondErr(w, http.StatusBadRequest, "invalid after id")
 				return
 			}
-			posts, err := s.Q.ListGamePostsAfter(ctx, dbgen.ListGamePostsAfterParams{
-				GameID: gameID, ID: afterID,
+			posts, err := s.Q.ListGamePostsAfterLimited(ctx, dbgen.ListGamePostsAfterLimitedParams{
+				GameID: gameID, ID: afterID, Limit: catchUpCap,
 			})
 			if err != nil {
 				respondInternalErr(w, r, "could not load posts", err)

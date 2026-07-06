@@ -18,6 +18,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -25,7 +26,9 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -40,11 +43,19 @@ import (
 )
 
 const (
-	timeOutRead   = 15 * time.Second
-	timeOutReqest = 30 * time.Second
-	timeOutWrite  = 0 // 0 = no write timeout (needed for WebSocket and SSE)
-	timeOutIdle   = 60 * time.Second
+	timeOutRead     = 15 * time.Second
+	timeOutReqest   = 30 * time.Second
+	timeOutWrite    = 0 // 0 = no write timeout (needed for WebSocket and SSE)
+	timeOutIdle     = 60 * time.Second
+	timeOutShutdown = 10 * time.Second
 )
+
+// poolMaxConnIdleTime closes pool connections that sit unused, rather than
+// pgx's 30-minute default. A serverless Postgres (e.g. Neon) suspends after
+// ~5 idle minutes and severs open connections when it does; closing ours
+// first means the pool isn't holding dead connections through a quiet
+// stretch. The pool reopens connections on demand.
+const poolMaxConnIdleTime = 2 * time.Minute
 
 // credentialRateLimit and credentialRateWindow bound POST /api/sessions
 // (login) and POST /api/accounts (signup), sharing one bucket per IP.
@@ -100,7 +111,12 @@ func runServer(
 	secureMode bool,
 	publicHost string,
 ) error {
-	dbPool, err := pgxpool.New(context.Background(), dbURL)
+	poolCfg, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		return fmt.Errorf("parse database url: %w", err)
+	}
+	poolCfg.MaxConnIdleTime = poolMaxConnIdleTime
+	dbPool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
@@ -147,9 +163,34 @@ func runServer(
 		IdleTimeout:  timeOutIdle,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
+	// Serve until the platform asks us to stop (SIGTERM on deploys and
+	// machine stops; SIGINT for ctrl-C locally), then drain in-flight
+	// requests. Shutdown doesn't wait for hijacked connections, so open
+	// WebSockets don't block it — they die with the process, and clients
+	// auto-reconnect (see frontend/src/lib/ws.ts).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+
+	select {
+	case err := <-errCh:
 		return fmt.Errorf("server error: %w", err)
+	case <-ctx.Done():
 	}
+
+	logger.Info("shutdown signal received, draining requests")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeOutShutdown)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("graceful shutdown: %w", err)
+	}
+	logger.Info("server stopped")
 	return nil
 }
 
@@ -193,6 +234,20 @@ func setupRouter(
 	credentialLimiter := httprate.LimitBy(credentialRateLimit, credentialRateWindow,
 		httprate.KeyByIP, //nolint:staticcheck // deprecated; see comment above — RealIP already normalizes RemoteAddr
 		httprate.WithLimitHandler(tooManyAttempts))
+
+	// Liveness probe for the hosting platform. Deliberately DB-free: a
+	// health check that queried Postgres would count as activity and keep a
+	// scale-to-zero database (e.g. Neon) awake around the clock.
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	// Profiling endpoints (/debug/pprof/*) — dev-gated like /api/dev/*,
+	// never mounted in production.
+	if os.Getenv("UNEASY_DEV") == "1" {
+		r.Mount("/debug", chimiddleware.Profiler())
+	}
 
 	// API routes — all behind the cookie-auth middleware.
 	r.Route("/api", func(r chi.Router) {

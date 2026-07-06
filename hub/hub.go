@@ -52,16 +52,30 @@ func NewManager() *Manager {
 }
 
 // GetOrCreate returns the hub for tableID, creating and starting it if needed.
+//
+// The returned hub may be concurrently shutting down (its last client just
+// left). Callers registering a client must use the Register return value and
+// retry with a fresh GetOrCreate on failure — see handler.WebSocket.
 func (m *Manager) GetOrCreate(tableID int64) *Hub {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if h, ok := m.hubs[tableID]; ok {
 		return h
 	}
-	h := newHub(tableID)
+	h := newHub(tableID, m)
 	m.hubs[tableID] = h
 	go h.run()
 	return h
+}
+
+// remove deletes the tableID entry iff it still maps to h — a dying hub must
+// not evict the fresh hub that may have already replaced it.
+func (m *Manager) remove(tableID int64, h *Hub) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.hubs[tableID] == h {
+		delete(m.hubs, tableID)
+	}
 }
 
 // Get returns the hub for tableID if it exists.
@@ -76,25 +90,35 @@ func (m *Manager) Get(tableID int64) (*Hub, bool) {
 
 // Hub maintains the set of active WebSocket clients for one game table.
 // All fields are owned by the run() goroutine; never access them directly.
+//
+// A hub's run() goroutine exits when its last client leaves (see
+// dieIfEmpty), removing itself from the Manager so idle tables cost
+// nothing. `done` is closed at that point; Register and Unregister select
+// against it so they can never block on a dead hub.
 type Hub struct {
 	tableID    int64
+	manager    *Manager
 	clients    map[*Client]struct{}
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan []byte
+	done       chan struct{}
 }
 
-func newHub(tableID int64) *Hub {
+func newHub(tableID int64, m *Manager) *Hub {
 	return &Hub{
 		tableID:    tableID,
+		manager:    m,
 		clients:    make(map[*Client]struct{}),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan []byte, messageBufferSize),
+		done:       make(chan struct{}),
 	}
 }
 
 // run is the hub's event loop. It must be called in its own goroutine.
+// It returns — ending the hub's life — once the last client is gone.
 func (h *Hub) run() {
 	for {
 		select {
@@ -106,10 +130,14 @@ func (h *Hub) run() {
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
+				if h.dieIfEmpty() {
+					return
+				}
 				h.pushPresence()
 			}
 
 		case msg := <-h.broadcast:
+			dropped := false
 			for client := range h.clients {
 				select {
 				case client.send <- msg:
@@ -117,10 +145,32 @@ func (h *Hub) run() {
 					// Client's send buffer is full — drop it.
 					close(client.send)
 					delete(h.clients, client)
+					dropped = true
 				}
+			}
+			// Only a drop can empty the map here. A fresh hub whose first
+			// client hasn't registered yet must not die on a stray
+			// broadcast — its Register is already on the way.
+			if dropped && h.dieIfEmpty() {
+				return
 			}
 		}
 	}
+}
+
+// dieIfEmpty ends the hub's life if no clients remain: it removes the hub
+// from the Manager, then closes done to unblock any concurrent Register /
+// Unregister. That order matters — once done is observable, a retrying
+// GetOrCreate must already see the manager slot free (or replaced).
+// Returns true if the caller (run) should return. Must only be called from
+// within run().
+func (h *Hub) dieIfEmpty() bool {
+	if len(h.clients) > 0 {
+		return false
+	}
+	h.manager.remove(h.tableID, h)
+	close(h.done)
+	return true
 }
 
 // Broadcast enqueues a JSON message for delivery to all connected clients.
@@ -143,15 +193,27 @@ func (h *Hub) BroadcastEvent(eventType string, payload any) {
 	h.Broadcast(msg)
 }
 
-// Register adds a client to the hub. Call before starting the client's pumps.
-func (h *Hub) Register(c *Client) {
-	h.register <- c
+// Register adds a client to the hub. Call before starting the client's
+// pumps. Returns false if the hub shut down before the client could be
+// added — the caller should fetch a fresh hub via GetOrCreate and retry.
+func (h *Hub) Register(c *Client) bool {
+	select {
+	case h.register <- c:
+		return true
+	case <-h.done:
+		return false
+	}
 }
 
 // Unregister removes a client from the hub. Called by the client's read pump
-// on disconnect.
+// on disconnect. A no-op if the hub already shut down (possible when the
+// client was force-dropped for a full send buffer and its pumps unwound
+// after the hub died).
 func (h *Hub) Unregister(c *Client) {
-	h.unregister <- c
+	select {
+	case h.unregister <- c:
+	case <-h.done:
+	}
 }
 
 // pushPresence sends a fresh presence snapshot to every connected client.

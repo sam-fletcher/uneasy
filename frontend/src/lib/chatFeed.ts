@@ -388,6 +388,13 @@ export async function reconnectResync(ctx: ChatFeedContext): Promise<void> {
 	}
 	const newestID = ctx.posts[ctx.posts.length - 1].id;
 	const result = await listGamePosts(ctx.gameID, { afterID: newestID });
+	if (result.has_more_after) {
+		// The gap exceeded the server's catch-up cap, so this response is
+		// truncated — merging it would leave a hole between the window and
+		// "now". Re-window from scratch instead, exactly like a first load.
+		await loadInitialWindow(ctx);
+		return;
+	}
 	ctx.posts = mergeAppend(ctx.posts, result.posts);
 	ctx.lastReadPostID = Math.max(ctx.lastReadPostID, result.last_read_post_id);
 }

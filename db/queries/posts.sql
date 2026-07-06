@@ -27,11 +27,6 @@ SELECT * FROM scene_posts
 WHERE game_id = $1
 ORDER BY id ASC;
 
--- name: ListGamePostsAfter :many
-SELECT * FROM scene_posts
-WHERE game_id = $1 AND id > $2
-ORDER BY id ASC;
-
 -- name: GetScenePostByID :one
 SELECT * FROM scene_posts WHERE id = $1;
 

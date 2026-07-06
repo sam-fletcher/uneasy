@@ -58,9 +58,17 @@ func WebSocket(s *db.Store, manager *hub.Manager, originPatterns []string) http.
 			return
 		}
 
-		h := manager.GetOrCreate(gameID)
-		client := hub.NewClient(h, conn, *player, slog.Default())
-		h.Register(client)
+		// A hub shuts down when its last client leaves, so GetOrCreate can
+		// hand back a hub that died between the lookup and our Register.
+		// Register reports that; retry with a fresh hub until one takes us.
+		var client *hub.Client
+		for {
+			h := manager.GetOrCreate(gameID)
+			client = hub.NewClient(h, conn, *player, slog.Default())
+			if h.Register(client) {
+				break
+			}
+		}
 
 		client.Run(r.Context())
 	}

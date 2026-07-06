@@ -160,6 +160,21 @@ func TestListGamePosts_AfterMode(t *testing.T) {
 	require.Equal(t, false, out["has_more_after"])
 }
 
+func TestListGamePosts_AfterMode_TruncatedAtCap(t *testing.T) {
+	h := newPostsHarness(t, 2)
+	posts := h.createSystemPosts(catchUpCap + 10)
+	cursor := posts[0].ID
+
+	code, out := h.do("GET", 0, h.tablePath("/posts?after="+strconv.FormatInt(cursor, 10)), nil)
+	require.Equal(t, http.StatusOK, code)
+
+	got := out["posts"].([]any)
+	require.Len(t, got, catchUpCap, "catch-up must stop at the cap")
+	require.Equal(t, float64(posts[1].ID), got[0].(map[string]any)["id"])
+	require.Equal(t, true, out["has_more_after"],
+		"truncation must be signalled so the client re-windows")
+}
+
 func TestListGamePosts_BeforeMode(t *testing.T) {
 	h := newPostsHarness(t, 2)
 	posts := h.createSystemPosts(10)

@@ -199,7 +199,7 @@ npm ls <package-name>   # e.g. npm ls axios
 | `PORT`         | `8080`                                               | HTTP listen port               |
 | `DEV_MODE`     | `false`                                              | Proxy frontend to `VITE_URL`   |
 | `VITE_URL`     | `http://localhost:5173`                              | Vite dev server address        |
-| `UNEASY_DEV`   | unset                                                | If `1`, mounts `/api/dev/*` shortcuts (see below) |
+| `UNEASY_DEV`   | unset                                                | If `1`, mounts `/api/dev/*` shortcuts (see below) and Go profiling at `/debug/pprof/*` |
 | `PUBLIC_ORIGIN`| unset                                                | Public URL the server is reachable at, e.g. `https://uneasy.example`. Unset = dev behavior (cookies without `Secure`, no HSTS, WebSocket accepts any Origin). When set with an `https://` scheme: session cookies get `Secure`, responses get HSTS, and the WebSocket handshake only accepts that host as Origin. |
 
 ## Dev testing workflow

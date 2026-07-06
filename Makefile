@@ -21,7 +21,7 @@ placeholder:
 		> cmd/server/frontend_dist/index.html
 
 server: placeholder
-	CGO_ENABLED=0 go build -o server ./cmd/server
+	CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o server ./cmd/server
 
 clean:
 	rm -f server

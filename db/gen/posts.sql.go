@@ -301,50 +301,6 @@ func (q *Queries) ListGamePosts(ctx context.Context, gameID int64) ([]ScenePost,
 	return items, nil
 }
 
-const listGamePostsAfter = `-- name: ListGamePostsAfter :many
-SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts
-WHERE game_id = $1 AND id > $2
-ORDER BY id ASC
-`
-
-type ListGamePostsAfterParams struct {
-	GameID int64 `db:"game_id" json:"game_id"`
-	ID     int64 `db:"id" json:"id"`
-}
-
-func (q *Queries) ListGamePostsAfter(ctx context.Context, arg ListGamePostsAfterParams) ([]ScenePost, error) {
-	rows, err := q.db.Query(ctx, listGamePostsAfter, arg.GameID, arg.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ScenePost{}
-	for rows.Next() {
-		var i ScenePost
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.RowNumber,
-			&i.PlanID,
-			&i.AuthorID,
-			&i.Body,
-			&i.CreatedAt,
-			&i.SystemCode,
-			&i.SystemData,
-			&i.SpeakingAsAssetID,
-			&i.Severity,
-			&i.SceneID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listGamePostsAfterLimited = `-- name: ListGamePostsAfterLimited :many
 SELECT id, game_id, row_number, plan_id, author_id, body, created_at, system_code, system_data, speaking_as_asset_id, severity, scene_id FROM scene_posts
 WHERE game_id = $1 AND id > $2
