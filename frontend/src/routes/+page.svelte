@@ -9,6 +9,11 @@
 	import { getMe, login, createAccount } from '$lib/api';
 	import HelpButton from '$lib/components/HelpButton.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import { FEEDBACK_EMAIL } from '$lib/feedback';
+
+	const forgotPasswordHref =
+		`mailto:${FEEDBACK_EMAIL}?subject=` +
+		encodeURIComponent('Uneasy Lies the Head — password reset');
 
 	type Mode = 'login' | 'signup';
 
@@ -135,6 +140,12 @@
 					{mode === 'login' ? 'Log in' : 'Sign up'}
 				{/if}
 			</button>
+
+			{#if mode === 'login'}
+				<p class="forgot-password">
+					Forgot your password? <a href={forgotPasswordHref}>Email me</a> and I'll reset it.
+				</p>
+			{/if}
 		</form>
 	{/if}
 </div>
@@ -275,5 +286,12 @@
 		color: var(--color-accent);
 	}
 
-	.primary { margin-top: 0.25rem; }
+	.primary { margin-top: 0.25rem; align-self: center; }
+
+	.forgot-password {
+		text-align: center;
+		font-size: 0.85rem;
+		color: var(--color-text-muted);
+	}
+	.forgot-password a { color: var(--color-accent); }
 </style>
