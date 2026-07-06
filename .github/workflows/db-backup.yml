@@ -1,0 +1,70 @@
+# Weekly encrypted pg_dump of the production database, stored as a GitHub
+# Actions artifact (90-day retention). Runs are skipped cleanly until the
+# two repository secrets exist, so this workflow is safe to merge before
+# the first deploy:
+#
+#   PROD_DATABASE_URL   Postgres connection string for the production DB
+#   BACKUP_PASSPHRASE   passphrase the dump is encrypted with — artifacts
+#                       are downloadable by anyone who can see the repo,
+#                       so dumps are never uploaded in plaintext
+#
+# To restore:
+#   gh run download <run-id> --name db-backup-<date>
+#   openssl enc -d -aes-256-cbc -pbkdf2 -in uneasy-<date>.sql.gz.enc \
+#     -pass env:BACKUP_PASSPHRASE | gunzip | psql "$DATABASE_URL"
+#
+# Note: GitHub disables cron workflows after ~60 days without repo activity;
+# it sends a warning email first, and workflow_dispatch always works.
+name: db-backup
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets are configured
+        id: check
+        env:
+          HAS_SECRETS: ${{ secrets.PROD_DATABASE_URL != '' && secrets.BACKUP_PASSPHRASE != '' }}
+        run: |
+          echo "ok=$HAS_SECRETS" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_SECRETS" != "true" ]; then
+            echo "::notice::PROD_DATABASE_URL / BACKUP_PASSPHRASE not set — skipping backup"
+          fi
+
+      - name: Dump database
+        if: steps.check.outputs.ok == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        # postgres:17 client can dump 16 and 17 servers; the local compose
+        # stack runs 16 and Neon defaults to 17, so 17 covers both futures.
+        run: |
+          docker run --rm -e DATABASE_URL postgres:17-alpine \
+            pg_dump --no-owner --no-privileges "$DATABASE_URL" \
+            | gzip > dump.sql.gz
+
+      - name: Encrypt dump
+        if: steps.check.outputs.ok == 'true'
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          openssl enc -aes-256-cbc -pbkdf2 \
+            -in dump.sql.gz -out "uneasy-$(date +%F).sql.gz.enc" \
+            -pass env:BACKUP_PASSPHRASE
+          rm dump.sql.gz
+
+      - name: Upload artifact
+        if: steps.check.outputs.ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: "*.sql.gz.enc"
+          retention-days: 90
+          if-no-files-found: error

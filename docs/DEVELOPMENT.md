@@ -202,6 +202,25 @@ npm ls <package-name>   # e.g. npm ls axios
 | `UNEASY_DEV`   | unset                                                | If `1`, mounts `/api/dev/*` shortcuts (see below) and Go profiling at `/debug/pprof/*` |
 | `PUBLIC_ORIGIN`| unset                                                | Public URL the server is reachable at, e.g. `https://uneasy.example`. Unset = dev behavior (cookies without `Secure`, no HSTS, WebSocket accepts any Origin). When set with an `https://` scheme: session cookies get `Secure`, responses get HSTS, and the WebSocket handshake only accepts that host as Origin. |
 
+## Health check & database backups
+
+`GET /healthz` returns `200 ok` without touching the database — point hosting
+platform health checks here. Keep it DB-free: a health check that queries
+Postgres would keep a scale-to-zero database (e.g. Neon) awake around the
+clock.
+
+[.github/workflows/db-backup.yml](../.github/workflows/db-backup.yml) takes a
+weekly encrypted `pg_dump` of the production database and stores it as a
+GitHub Actions artifact (90-day retention). It skips cleanly until two
+repository secrets are configured — set these at deploy time:
+
+| Secret | Purpose |
+|---|---|
+| `PROD_DATABASE_URL` | Postgres connection string for the production DB |
+| `BACKUP_PASSPHRASE` | Encrypts dumps (artifacts are visible to anyone who can see the repo) |
+
+Restore instructions are in a comment at the top of the workflow file.
+
 ## Dev testing workflow
 
 Manual UI testing usually means juggling several "players" at once. With
