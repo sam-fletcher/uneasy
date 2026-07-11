@@ -813,21 +813,6 @@ var shakeUpCategoryFlavor = map[string]string{
 	gamepkg.ShakeUpCategoryPower:     "who commands, and who obeys?",
 }
 
-// EmitShakeUpBegin writes the Boundary post announcing the start of the
-// Shake-Up's first (esteem) pass, with the rulebook's reflective framing
-// ("take stock… embrace this last moment") — see SHAKEUP_RULES.md.
-func EmitShakeUpBegin(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64, category string) {
-	EmitSystemPost(ctx, q, manager, gameID, "shake_up.begin",
-		model.SeverityBoundary,
-		fmt.Sprintf(
-			"⚖ The Shake-Up begins. Take stock of everything that's happened over these thirteen rows, and embrace this last moment — %s: %s",
-			shakeUpCategoryTitle(category),
-			shakeUpCategoryFlavor[category],
-		),
-		nil, nil, nil,
-		map[string]any{"category": category})
-}
-
 // EmitShakeUpCategory writes the Boundary post marking the move to a new
 // category pass within the Shake-Up, with that act's one-line flavor hook.
 func EmitShakeUpCategory(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64, category string) {
@@ -862,7 +847,7 @@ func EmitShakeUpRolled(
 	name := playerDisplayName(ctx, q, playerID)
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.rolled",
 		model.SeverityDefault,
-		fmt.Sprintf("%s rolled %d dice → %d distinct face(s) → %d %s token(s) (pool: %d)",
+		fmt.Sprintf("%s rolled %d dice → %d distinct faces → %d %s tokens (pool: %d)",
 			name, diceCount, result, result, shakeUpCategoryTitle(category), total),
 		nil, nil, nil,
 		map[string]any{

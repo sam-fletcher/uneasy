@@ -220,7 +220,6 @@ func BeginShakeUp(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, g
 	broadcastEvent(manager, gameID, model.EventShakeUpStepChanged, model.ShakeUpStepChangedPayload{
 		Category: cat, Step: step,
 	})
-	EmitShakeUpBegin(ctx, q, manager, gameID, cat)
 
 	roller, err := shakeUpNextRoller(ctx, q, gameID, cat)
 	if err != nil {

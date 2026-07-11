@@ -407,7 +407,7 @@
 
 	<section class="tokens-panel">
 		<h3>Token pools</h3>
-		<p class="muted-text small">Turn order is reverse rank — lowest status first.</p>
+		<!-- <p class="muted-text small">Turn order is reverse rank — lowest status first.</p> -->
 		<div class="roller-chips">
 			{#each turnOrder as pid (pid)}
 				<span
@@ -415,7 +415,7 @@
 					class:active={pid === activeTurnPlayerID}
 					style:border-color={playerColorByID(pid, players)}
 				>
-					{playerName(pid)}: <strong>{tokens.find(t => t.id === pid)?.shake_up_tokens ?? 0}</strong>
+					{playerName(pid)}:&nbsp;<strong>{tokens.find(t => t.id === pid)?.shake_up_tokens ?? 0}</strong>
 				</span>
 			{/each}
 		</div>
