@@ -176,6 +176,14 @@ type Marginalium struct {
 	Title    *string            `db:"title" json:"title"`
 }
 
+type PasswordResetToken struct {
+	TokenHash string             `db:"token_hash" json:"token_hash"`
+	AccountID int64              `db:"account_id" json:"account_id"`
+	ExpiresAt pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `db:"used_at" json:"used_at"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type PendingCounterDemand struct {
 	ID                int64              `db:"id" json:"id"`
 	GameID            int64              `db:"game_id" json:"game_id"`

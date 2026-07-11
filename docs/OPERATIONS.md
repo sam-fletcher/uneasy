@@ -63,11 +63,42 @@ DELETE FROM accounts WHERE id = <account_id>;
 Deleting the account cascades to its sessions automatically (`sessions`
 does cascade off `accounts`), so there's nothing else to clean up.
 
-## Manually reset a password
+## Reset a password
 
-There's no self-service password reset at this scale (see the "Forgot
-password?" line on the login page — it just points here). To reset one by
-hand:
+There's no self-service password reset at this scale. The "Forgot
+password?" link on the login page sends the player to `/locked-out`, a
+logged-out form that pings a private Discord channel
+(`DISCORD_WEBHOOK_URL`) with their username and how to reach them
+(`adr/FEEDBACK_AND_RESET_PLAN.md`). The loop from there:
+
+1. **Discord ping arrives** with the typed username and the requester's
+   stated contact channel (email, Discord handle, or "ask my facilitator to
+   vouch for me").
+2. **Verify the requester** via that contact channel — this is a small,
+   facilitated-group game, so a quick "was that you?" over the same channel
+   is enough. Don't skip this step; it's the only thing standing in for
+   real identity verification.
+3. **Generate a reset link**, run locally against the prod `DATABASE_URL`:
+
+   ```bash
+   DATABASE_URL="$PROD_DATABASE_URL" PUBLIC_ORIGIN="https://<railway-app>.up.railway.app" \
+     go run ./cmd/resetlink '<their username>'
+   ```
+
+   This resolves the account case-insensitively, mints a single-use token
+   good for 24 hours, stores only its hash, and prints a link:
+   `<PUBLIC_ORIGIN>/reset-password?token=...`. The raw token is never stored
+   or reprinted — if you lose the output, just run the command again (the
+   unused, unexpired token from the first run is harmless to leave behind).
+4. **Send the link** over the same contact channel you verified in step 2.
+   The player opens it, sets their own new password, and is sent to the
+   login page — no placeholder password ever exists, and redeeming the
+   token signs out every existing session on that account.
+
+### Break-glass fallback: `hashpw`
+
+If `resetlink` is broken (migration issue, `cmd/resetlink` won't build,
+etc.), fall back to setting a password by hand:
 
 ```bash
 go run ./cmd/hashpw 'the-new-password'
@@ -80,9 +111,10 @@ UPDATE accounts SET password_hash = '<hash from above>', updated_at = now()
 WHERE username = '<their username>';
 ```
 
-Tell the player their new password out-of-band (email, since that's how
-they contacted you). They can change it themselves afterward from their
-profile page.
+This path involves a real plaintext password crossing whatever channel you
+send it over — prefer `resetlink` whenever it's working. Tell the player
+their new password out-of-band and have them change it immediately from
+their profile page.
 
 ## Moderation
 

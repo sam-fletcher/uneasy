@@ -21,5 +21,11 @@ UPDATE sessions SET last_seen = now() WHERE token = $1;
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE token = $1;
 
+-- name: DeleteSessionsForAccount :exec
+-- Deletes every session for an account. Used at password-reset redemption
+-- time as standard hygiene: whoever could log in before the reset can't
+-- afterward.
+DELETE FROM sessions WHERE account_id = $1;
+
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions WHERE last_seen < now() - interval '365 days';

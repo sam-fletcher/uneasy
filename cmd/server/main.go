@@ -287,6 +287,7 @@ func setupRouter(
 			// so it shares the credential endpoints' IP rate limit instead.
 			r.Post("/feedback", handler.CreateFeedback(store))
 			r.With(credentialLimiter).Post("/reset-requests", handler.CreateResetRequest(store))
+			r.With(credentialLimiter).Post("/password-resets", handler.CreatePasswordReset(store))
 
 			// Dev-only routes — gated by UNEASY_DEV=1. Never mount in prod.
 			if os.Getenv("UNEASY_DEV") == "1" {

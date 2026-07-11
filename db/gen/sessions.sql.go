@@ -54,6 +54,18 @@ func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+const deleteSessionsForAccount = `-- name: DeleteSessionsForAccount :exec
+DELETE FROM sessions WHERE account_id = $1
+`
+
+// Deletes every session for an account. Used at password-reset redemption
+// time as standard hygiene: whoever could log in before the reset can't
+// afterward.
+func (q *Queries) DeleteSessionsForAccount(ctx context.Context, accountID int64) error {
+	_, err := q.db.Exec(ctx, deleteSessionsForAccount, accountID)
+	return err
+}
+
 const getSessionWithAccount = `-- name: GetSessionWithAccount :one
 SELECT
   s.token, s.account_id, s.created_at, s.last_seen,
