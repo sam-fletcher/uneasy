@@ -12,6 +12,9 @@
 //	               Origin). When set with an "https://" scheme: session
 //	               cookies get the Secure flag, responses get HSTS, and the
 //	               WebSocket handshake only accepts the given host as Origin.
+//	DISCORD_WEBHOOK_URL  Discord webhook for feedback/reset-request
+//	               notifications (adr/FEEDBACK_AND_RESET_PLAN.md). Unset in
+//	               dev: notifications are logged to stdout instead of posted.
 package main
 
 import (
@@ -79,10 +82,11 @@ func main() {
 	publicOrigin := env("PUBLIC_ORIGIN", "")
 	secureMode := strings.HasPrefix(publicOrigin, "https://")
 	publicHost := parsePublicHost(publicOrigin)
+	discordWebhookURL := env("DISCORD_WEBHOOK_URL", "")
 
 	// ── Server ────────────────────────────────────────────────────────────────
 
-	if err := runServer(logger, dbURL, port, devMode, viteURL, secureMode, publicHost); err != nil {
+	if err := runServer(logger, dbURL, port, devMode, viteURL, secureMode, publicHost, discordWebhookURL); err != nil {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)
 	}
@@ -110,6 +114,7 @@ func runServer(
 	viteURL string,
 	secureMode bool,
 	publicHost string,
+	discordWebhookURL string,
 ) error {
 	poolCfg, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
@@ -144,7 +149,7 @@ func runServer(
 
 	manager := hub.NewManager()
 
-	router := setupRouter(logger, store, manager, devMode, secureMode, publicHost)
+	router := setupRouter(logger, store, manager, devMode, secureMode, publicHost, discordWebhookURL)
 
 	if err := setupFrontend(router, devMode, viteURL); err != nil {
 		return err
@@ -203,12 +208,14 @@ func setupRouter(
 	manager *hub.Manager,
 	devMode, secureMode bool,
 	publicHost string,
+	discordWebhookURL string,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Configure cookie/WebSocket-origin behavior once, before any routes are
 	// mounted — mirrors how UNEASY_DEV is read once at startup below.
 	handler.SetSecureCookies(secureMode)
+	handler.SetDiscordWebhookURL(discordWebhookURL)
 	wsOriginPatterns := []string{"*"}
 	if publicHost != "" {
 		wsOriginPatterns = []string{publicHost}
@@ -272,6 +279,14 @@ func setupRouter(
 			r.Get("/accounts/me/tables", handler.ListMyTables(store))
 			r.With(credentialLimiter).Post("/sessions", handler.CreateSession(store))
 			r.Delete("/sessions", handler.DeleteSession(store))
+
+			// Feedback & password-reset intake (adr/FEEDBACK_AND_RESET_PLAN.md).
+			// CreateFeedback is session-authed (checks AccountFromContext itself,
+			// like GetMe/UpdateMe above); the reset-request endpoint is logged-out
+			// by design — the requester is precisely the person who can't log in —
+			// so it shares the credential endpoints' IP rate limit instead.
+			r.Post("/feedback", handler.CreateFeedback(store))
+			r.With(credentialLimiter).Post("/reset-requests", handler.CreateResetRequest(store))
 
 			// Dev-only routes — gated by UNEASY_DEV=1. Never mount in prod.
 			if os.Getenv("UNEASY_DEV") == "1" {

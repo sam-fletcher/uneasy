@@ -107,3 +107,15 @@ const (
 	PlanResolved  PlanStatus = "resolved"
 	PlanCancelled PlanStatus = "cancelled"
 )
+
+// ── Feedback Kind ───────────────────────────────────────────────────────────
+
+// FeedbackKind distinguishes the two intakes that share the
+// feedback_submissions table (adr/FEEDBACK_AND_RESET_PLAN.md): a login-gated
+// feedback form and a logged-out "locked out?" password-reset request.
+type FeedbackKind string
+
+const (
+	FeedbackKindFeedback     FeedbackKind = "feedback"
+	FeedbackKindResetRequest FeedbackKind = "reset_request"
+)

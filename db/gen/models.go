@@ -114,6 +114,18 @@ type DuelStakedAsset struct {
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type FeedbackSubmission struct {
+	ID        int64              `db:"id" json:"id"`
+	Kind      model.FeedbackKind `db:"kind" json:"kind"`
+	AccountID *int64             `db:"account_id" json:"account_id"`
+	Username  *string            `db:"username" json:"username"`
+	GameID    *int64             `db:"game_id" json:"game_id"`
+	Body      string             `db:"body" json:"body"`
+	Contact   *string            `db:"contact" json:"contact"`
+	Context   []byte             `db:"context" json:"context"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type Game struct {
 	ID                  int64              `db:"id" json:"id"`
 	JoinCode            string             `db:"join_code" json:"join_code"`

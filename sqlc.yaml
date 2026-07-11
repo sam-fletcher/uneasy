@@ -58,3 +58,7 @@ sql:
             go_type:
               import: "uneasy/model"
               type: "SceneKind"
+          - column: "feedback_submissions.kind"
+            go_type:
+              import: "uneasy/model"
+              type: "FeedbackKind"
