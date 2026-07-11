@@ -126,6 +126,8 @@
 	</div>
 {:else}
 	<div class="profile">
+		<p class="wordmark">Uneasy Lies <span class="the">the</span> Head</p>
+
 		{#if error}<p class="error-text">{error}</p>{/if}
 		{#if notice}<p class="status">{notice}</p>{/if}
 
@@ -212,6 +214,17 @@
 
 <style>
 	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:600px; margin: 0 auto; padding-top:1rem; }
+	.wordmark {
+		text-align: center;
+		font-family: var(--font-display);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-size: clamp(1.15rem, 4.5vw, 1.6rem);
+		color: var(--color-accent);
+		margin-top: -0.8rem;
+		margin-bottom: -0.4rem;
+	}
+	.wordmark .the { font-size: 0.6em; letter-spacing: 0.1em; }
 	h2 { color:var(--color-accent); font-size:1.2rem; margin-bottom:0.75rem; }
 	.hint { color:var(--color-text-muted); font-size:0.85rem; margin-bottom:0.6rem; }
 	.card { background:var(--color-surface); border:1px solid var(--color-border); border-radius:12px; padding:1.25rem; }

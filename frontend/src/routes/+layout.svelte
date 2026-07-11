@@ -39,12 +39,23 @@
 		<h1 class="page-title">{pageTitle}</h1>
 		<div class="header-actions">
 			<a
-				class="buy"
+				class="top-link"
 				href="https://adambell.itch.io/uneasy-lies-the-head-2e"
 				target="_blank"
 				rel="noopener noreferrer"
 				aria-label="Buy the book on itch.io (opens in a new tab)"
-			>Buy the book ↗</a>
+			>The Book
+				<svg class="external-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7" /><path d="M8 7h9v9" /></svg>
+			</a>
+			<a
+				class="top-link"
+				href="https://github.com/sam-fletcher/uneasy/"
+				target="_blank"
+				rel="noopener noreferrer"
+				aria-label="View source on GitHub (opens in a new tab)"
+			>GitHub
+				<svg class="external-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7" /><path d="M8 7h9v9" /></svg>
+			</a>
 			<HelpButton />
 		</div>
 	</header>
@@ -127,9 +138,10 @@
 		align-items: center;
 		gap: 0.25rem;
 	}
-	.buy {
+	.top-link {
 		display: inline-flex;
 		align-items: center;
+		gap: 0.3em;
 		min-height: 44px;
 		padding: 0 0.5rem;
 		color: var(--color-text-muted);
@@ -137,8 +149,9 @@
 		text-decoration: none;
 		border-radius: var(--radius-sm);
 	}
-	.buy:hover { color: var(--color-accent); }
-	.buy:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+	.top-link:hover { color: var(--color-accent); }
+	.top-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+	.external-icon { flex-shrink: 0; }
 
 	main {
 		max-width: 1500px;
