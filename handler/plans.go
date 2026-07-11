@@ -154,12 +154,70 @@ func ListPlanTokens(s *db.Store) http.HandlerFunc {
 
 // ── PlanEligibility ───────────────────────────────────────────────────────────
 
+// planIneligibilityReason runs the eligibility pipeline for one plan type:
+// row room, esteem lockout, token/rank (checkPlanEligible), then the
+// handler's optional PrepEligibilityChecker hook. Returns a non-empty reason
+// if the plan is ineligible; otherwise the target row to report (-1 for
+// variable-delay plans). This mirrors validatePlanPreparation so the prep
+// grid greys out exactly the plans a prepare call would reject — prepare-time
+// validation remains authoritative.
+func planIneligibilityReason(
+	ctx context.Context,
+	q *dbgen.Queries,
+	game *dbgen.Game,
+	player *dbgen.Player,
+	planType model.PlanType,
+	h PlanHandler,
+	esteemLocked bool,
+) (reason string, targetRow int16, err error) {
+	meta := h.Metadata()
+
+	// Row room. Variable-delay plans (Delay == -1) can't know their exact row
+	// without player input, but a known MinDelay (Make War, Clandestinely
+	// Liaise) still catches the case where even the best-case dice result has
+	// no room left.
+	if meta.Delay == -1 {
+		targetRow = -1
+		if meta.MinDelay > 0 && game.CurrentRow+meta.MinDelay > publicRecordRowCount {
+			return "no room on the public record (would exceed row 13)", 0, nil
+		}
+	} else {
+		targetRow = game.CurrentRow + meta.Delay
+		if targetRow > publicRecordRowCount {
+			return "no room on the public record (would exceed row 13)", 0, nil
+		}
+	}
+
+	if esteemLocked && meta.Category == model.CategoryEsteem {
+		return "esteem lockout: your next plan must be a non-esteem plan (Spread Propaganda mar censured)", 0, nil
+	}
+
+	ok, tokenReason, err := checkPlanEligible(ctx, q, game.ID, player.ID, planType, meta.Category)
+	if err != nil {
+		return "", 0, err
+	}
+	if !ok {
+		return tokenReason, 0, nil
+	}
+
+	if checker, hasCheck := h.(PrepEligibilityChecker); hasCheck {
+		ok, hookReason, err := checker.CheckPrepEligibility(ctx, q, game.ID, player.ID)
+		if err != nil {
+			return "", 0, err
+		}
+		if !ok {
+			return hookReason, 0, nil
+		}
+	}
+	return "", targetRow, nil
+}
+
 // PlanEligibility handles GET /api/tables/:id/plan-eligibility.
 //
 // Returns which plan types the current player can prepare, and the computed
 // target row for each eligible plan. Ineligible plans include a reason.
 //
-//nolint:funlen // TODO: determine if there's a cleaner design
+
 func PlanEligibility(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, s.Q)
@@ -218,42 +276,18 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 			return
 		}
 
+		// Esteem lockout applies uniformly to every esteem plan, so check it
+		// once up front. A lookup failure degrades to "not locked" — the
+		// authoritative re-check in validatePlanPreparation still catches it.
+		esteemLocked, err := hasEsteemLockout(ctx, s.Q, gameID, player.ID)
+		if err != nil {
+			esteemLocked = false
+		}
+
 		for planType, h := range AllHandlers() {
 			meta := h.Metadata()
-
-			// Compute target row (variable-delay plans return -1 delay; the
-			// exact row can't be computed without player input, but a known
-			// MinDelay — Make War, Clandestinely Liaise — still lets us catch
-			// the case where even the best-case dice result has no room left).
-			var targetRow int16
-			if meta.Delay == -1 {
-				if meta.MinDelay > 0 && game.CurrentRow+meta.MinDelay > publicRecordRowCount {
-					ineligible = append(ineligible, ineligibleEntry{
-						PlanType: planType,
-						Category: meta.Category,
-						Reason:   "no room on the public record (would exceed row 13)",
-					})
-					continue
-				}
-				eligible = append(eligible, eligibleEntry{
-					PlanType:  planType,
-					Category:  meta.Category,
-					Delay:     -1,
-					TargetRow: -1, // variable; depends on player input
-				})
-				continue
-			}
-			targetRow = game.CurrentRow + meta.Delay
-
-			if targetRow > publicRecordRowCount {
-				ineligible = append(ineligible, ineligibleEntry{
-					PlanType: planType,
-					Category: meta.Category,
-					Reason:   "no room on the public record (would exceed row 13)",
-				})
-				continue
-			}
-			ok, reason, err := checkPlanEligible(ctx, s.Q, gameID, player.ID, planType, meta.Category)
+			reason, targetRow, err := planIneligibilityReason(
+				ctx, s.Q, &game, player, planType, h, esteemLocked)
 			if err != nil {
 				ineligible = append(ineligible, ineligibleEntry{
 					PlanType: planType,
@@ -262,20 +296,20 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 				})
 				continue
 			}
-			if ok {
-				eligible = append(eligible, eligibleEntry{
-					PlanType:  planType,
-					Category:  meta.Category,
-					Delay:     meta.Delay,
-					TargetRow: targetRow,
-				})
-			} else {
+			if reason != "" {
 				ineligible = append(ineligible, ineligibleEntry{
 					PlanType: planType,
 					Category: meta.Category,
 					Reason:   reason,
 				})
+				continue
 			}
+			eligible = append(eligible, eligibleEntry{
+				PlanType:  planType,
+				Category:  meta.Category,
+				Delay:     meta.Delay,
+				TargetRow: targetRow, // -1 when variable; depends on player input
+			})
 		}
 
 		respond(w, http.StatusOK, map[string]any{

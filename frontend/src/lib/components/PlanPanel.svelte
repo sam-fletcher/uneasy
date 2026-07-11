@@ -172,8 +172,18 @@
 		return m;
 	});
 
+	// Ineligibility reason surfaced by tapping a greyed-out card. The card's
+	// title attribute covers desktop hover, but title tooltips never fire on
+	// touch devices, so the reason also renders in a status line below the
+	// grid (mobile-first).
+	let ineligibleNotice = $state<{ type: PlanType; reason: string } | null>(null);
+
 	function onPlanClick(cell: PlanCell) {
-		if (!cell.eligible) return;
+		if (!cell.eligible) {
+			ineligibleNotice = { type: cell.type, reason: cell.reason };
+			return;
+		}
+		ineligibleNotice = null;
 		const next = selectedPlanType === cell.type ? null : cell.type;
 		selectedPlanType = next;
 		if (next) highlightedRow.set(cell.targetRow);
@@ -209,6 +219,7 @@
 			eligibilityLoaded = false;
 			eligiblePlans = [];
 			ineligiblePlans = [];
+			ineligibleNotice = null;
 			highlightedRow.set(null);
 		}
 	});
@@ -322,11 +333,17 @@
 						{@const pt = TRACK_ORDER[track][rowIdx]}
 						{@const cell = isFocusPlayer ? planCells.get(pt) : undefined}
 						{@const holders = tokenHoldersByType.get(pt) ?? []}
+						<!-- Ineligible cards stay enabled (aria-disabled + .ineligible
+						     styling) so a tap can surface the reason below the grid;
+						     native disabled would swallow the click. The non-focus
+						     skeleton stays truly disabled. -->
 						<button
 							type="button"
 							class="plan-card"
 							class:selected={displaySelectedPlanType === pt}
-							disabled={!isFocusPlayer || !cell || !cell.eligible}
+							class:ineligible={!!cell && !cell.eligible}
+							disabled={!isFocusPlayer || !cell}
+							aria-disabled={cell && !cell.eligible ? true : undefined}
 							title={cell && !cell.eligible ? cell.reason : undefined}
 							onclick={() => cell && onPlanClick(cell)}
 							onmouseenter={() => cell && onPlanHover(cell)}
@@ -383,6 +400,11 @@
 					{/each}
 				{/each}
 			</div>
+			{#if ineligibleNotice}
+				<p class="ineligible-reason" role="status">
+					<em>{PLAN_SHORT[ineligibleNotice.type]}</em> — {ineligibleNotice.reason}.
+				</p>
+			{/if}
 		{/if}
 
 		{#if displaySelectedPlanType}

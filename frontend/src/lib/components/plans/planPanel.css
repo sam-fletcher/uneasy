@@ -420,7 +420,7 @@
 	.plan-card { gap: 0.3rem; padding: 0.5rem 0.55rem; min-height: 5.5rem; }
 }
 
-.plan-card:not(:disabled):hover { border-color: var(--color-accent); }
+.plan-card:not(:disabled):not(.ineligible):hover { border-color: var(--color-accent); }
 
 .plan-card.selected {
 	background: #2e2510;
@@ -428,16 +428,28 @@
 	color: var(--color-text);
 }
 
-/* Dim only the textual body when disabled (read-only or ineligible), so the
+/* Dim only the textual body when disabled (read-only) or ineligible, so the
    token pips below stay full-opacity and legible for every viewer. CSS opacity
    can't be un-inherited by children, hence the pips are a sibling of .card-body
-   rather than nested inside it. */
-.plan-card:disabled {
+   rather than nested inside it. Ineligible cards are aria-disabled rather than
+   disabled so a tap can surface the reason (see PlanPanel.svelte). */
+.plan-card:disabled,
+.plan-card.ineligible {
 	cursor: not-allowed;
 }
 
-.plan-card:disabled .card-body {
+.plan-card:disabled .card-body,
+.plan-card.ineligible .card-body {
 	opacity: 0.4;
+}
+
+/* Tap-accessible ineligibility reason below the grid — title tooltips never
+   fire on touch devices, so tapping a greyed-out card shows its reason here. */
+.ineligible-reason {
+	font-size: 0.78rem;
+	line-height: 1.4;
+	color: var(--color-text-muted);
+	margin: 0.4rem 0 0;
 }
 
 /* Holds the title/pill row + description; flex-grows so the pip strip is

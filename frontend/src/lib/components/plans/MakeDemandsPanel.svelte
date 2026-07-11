@@ -51,8 +51,12 @@
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 
-	// A plan is targetable iff it is not own, not Make War, not already
-	// resolved/cancelled, and not already targeted by an unresolved demand.
+	// A plan is targetable iff it is not own, not Make War, not another
+	// demand, not already resolved/cancelled, and not already targeted by an
+	// unresolved demand. Must stay in lockstep with the server-side filter in
+	// mdHandler.CheckPrepEligibility / ValidatePreparation
+	// (handler/plan_make_demands.go) — the eligibility endpoint uses that
+	// filter to grey out the Make Demands card when this list would be empty.
 	const targetablePlans = $derived.by(() => {
 		const targetedSet = new Set<number>();
 		for (const p of plans) {
@@ -62,7 +66,7 @@
 			targetedSet.add(p.targeted_plan_id);
 		}
 		return plans.filter(p =>
-			p.plan_type !== 'make_demands' &&  // demand-on-demand is allowed by backend, but not on Make War — included anyway
+			p.plan_type !== 'make_demands' &&  // demand-on-demand: rejected server-side (Stage-4 routes can't service it)
 			p.plan_type !== 'make_war' &&
 			p.preparer_id !== currentPlayerID &&
 			// A demand slots in *before* its target within the same row, so a
@@ -265,9 +269,13 @@
 			{#if prepError}<p class="res-error">{prepError}</p>{/if}
 
 			{#if targetablePlans.length === 0}
-				<p class="muted">No plans on the public record can be demanded against
-					right now (own plans, Make War, already-resolved, and already-demanded
-					plans are excluded).</p>
+				<!-- Backstop only: the eligibility endpoint (mdNoTargetReason,
+				     handler/plan_make_demands.go) normally greys out the card
+				     before this panel can open. Reachable if the board changed
+				     after eligibility was fetched. -->
+				<p class="muted">No plan on the public record can be demanded against
+					right now (own plans, other demands, Make War, resolving/resolved,
+					and already-demanded plans are excluded).</p>
 			{:else}
 				<label class="form-label">
 					Target plan:

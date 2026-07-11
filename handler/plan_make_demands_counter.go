@@ -326,6 +326,11 @@ func synthesizeCounterDemand(
 	if target.PlanType == model.PlanMakeWar {
 		return nil, "Make War cannot be the target of a demand", http.StatusBadRequest
 	}
+	// Same restriction as ValidatePreparation: the Stage-4 winner routes
+	// cannot service a demand whose target is itself a demand.
+	if target.PlanType == model.PlanMakeDemands {
+		return nil, "demanding against another demand is not supported", http.StatusBadRequest
+	}
 	if target.PreparerID == preparerID {
 		return nil, "you cannot demand against your own plan", http.StatusBadRequest
 	}

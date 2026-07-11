@@ -80,6 +80,111 @@ func TestMakeDemands_RejectAlreadyDemanded(t *testing.T) {
 	assert.Contains(t, errMsg, "another demand already targets")
 }
 
+func TestMakeDemands_RejectDemandTarget(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// Target is another player's (unresolved) Make Demands plan. Demand-on-
+	// demand is rejected: the Stage-4 winner routes can't service it.
+	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanMakeDemands, model.CategoryPower, 5)
+
+	vc := &ValidationContext{
+		Q:            q,
+		Game:         &tg.Game,
+		Player:       &tg.Players[0],
+		TargetPlanID: &target.ID,
+	}
+	_, errMsg := mdHandler{}.ValidatePreparation(ctx, vc)
+	assert.NotEmpty(t, errMsg, "expected rejection")
+	assert.Contains(t, errMsg, "another demand")
+}
+
+func TestMakeDemands_CounterDemand_RejectDemandTarget(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// P1 has an unresolved Make Demands plan; P0 tries to aim a counter-
+	// demand at it. The synthesis path must apply the same restriction as
+	// ValidatePreparation.
+	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanMakeDemands, model.CategoryPower, 5)
+
+	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: hub.NewManager()}
+	_, errMsg, status := synthesizeCounterDemand(ctx, deps, &tg.Game, tg.Players[0].ID, target.ID)
+	assert.Contains(t, errMsg, "another demand")
+	assert.Equal(t, http.StatusBadRequest, status)
+}
+
+// ── CheckPrepEligibility (PrepEligibilityChecker hook) ────────────────────────
+
+func TestMakeDemands_CheckPrepEligibility_NoPlansOnRecord(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	eligible, reason, err := mdHandler{}.CheckPrepEligibility(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	require.NoError(t, err)
+	assert.False(t, eligible, "empty public record → nothing to demand against")
+	assert.Contains(t, reason, "demanded against")
+}
+
+func TestMakeDemands_CheckPrepEligibility_TargetExists(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// Another player's pending plan with a row → demandable.
+	createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, 5)
+
+	eligible, reason, err := mdHandler{}.CheckPrepEligibility(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	require.NoError(t, err)
+	assert.True(t, eligible, "expected eligible; reason: %s", reason)
+}
+
+func TestMakeDemands_CheckPrepEligibility_ExcludedTargets(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// Own plan: not demandable.
+	createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanProposeDecree, model.CategoryPower, 5)
+	// Make War: never demandable.
+	createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanMakeWar, model.CategoryPower, 6)
+	// Another demand: not demandable (demand-on-demand unsupported).
+	createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanMakeDemands, model.CategoryPower, 7)
+	// Resolving plan: a demand can't slot in before it anymore.
+	resolving := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanSpreadRumors, model.CategoryEsteem, 8)
+	require.NoError(t, q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		ID: resolving.ID, Status: model.PlanResolving,
+	}))
+	// Already targeted by an unresolved demand: taken.
+	taken := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanChronicleHistories, model.CategoryKnowledge, 9)
+	demand := createPlanOnRow(t, q, &tg.Game, &tg.Players[2],
+		model.PlanMakeDemands, model.CategoryPower, 9)
+	require.NoError(t, q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: demand.ID, TargetedPlanID: &taken.ID,
+	}))
+
+	eligible, reason, err := mdHandler{}.CheckPrepEligibility(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	require.NoError(t, err)
+	assert.False(t, eligible, "every plan on the record is excluded")
+	assert.Contains(t, reason, "demanded against")
+}
+
 // ── Happy-path: asset recipient transfers on made demand ──────────────────────
 
 // The target plan's preparer is P2 (power rank 2). The demander P3 (rank 3)

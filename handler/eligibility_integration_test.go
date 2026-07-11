@@ -113,6 +113,80 @@ func TestCheckPlanEligible_LowerRankedPlayerHasToken(t *testing.T) {
 	assert.True(t, eligible, "Player 0 should be eligible despite Player 2 having token; msg: %s", msg)
 }
 
+// ─ planIneligibilityReason Tests ───────────────────────────────────────────
+//
+// The eligibility endpoint's per-plan pipeline. These guard the fix for the
+// old Delay == -1 fast path, which skipped the token/rank checks for Make
+// War / Clandestinely Liaise / Make Demands so the prep grid showed them as
+// selectable and the dead end only surfaced as a 403 on submit.
+
+func TestPlanIneligibilityReason_VariableDelayTokenChecked(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	// Player 0 already holds a Make War token (variable-delay plan).
+	makePlanWithToken(t, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeWar, model.CategoryPower)
+
+	h, ok := GetHandler(model.PlanMakeWar)
+	require.True(t, ok)
+	reason, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeWar, h, false)
+	require.NoError(t, err)
+	assert.Contains(t, reason, "already have this plan prepared")
+}
+
+func TestPlanIneligibilityReason_EsteemLockout(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	h, ok := GetHandler(model.PlanSpreadRumors)
+	require.True(t, ok)
+	reason, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+		model.PlanSpreadRumors, h, true)
+	require.NoError(t, err)
+	assert.Contains(t, reason, "esteem lockout")
+
+	// The lockout only blocks esteem plans.
+	h, ok = GetHandler(model.PlanProposeDecree)
+	require.True(t, ok)
+	reason, _, err = planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+		model.PlanProposeDecree, h, true)
+	require.NoError(t, err)
+	assert.Empty(t, reason, "non-esteem plan should ignore the lockout")
+}
+
+func TestPlanIneligibilityReason_MakeDemandsHook(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	h, ok := GetHandler(model.PlanMakeDemands)
+	require.True(t, ok)
+
+	// Empty public record → the PrepEligibilityChecker hook reports no
+	// demandable plan.
+	reason, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, h, false)
+	require.NoError(t, err)
+	assert.Contains(t, reason, "demanded against")
+
+	// A demandable plan appears → eligible, with the variable-delay
+	// target-row sentinel.
+	createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, 5)
+	reason, targetRow, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, h, false)
+	require.NoError(t, err)
+	assert.Empty(t, reason)
+	assert.Equal(t, int16(-1), targetRow)
+}
+
 // ─ playerHasPeers Tests ────────────────────────────────────────────────────
 
 func TestPlayerHasPeers_NoPeers(t *testing.T) {

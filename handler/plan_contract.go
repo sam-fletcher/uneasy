@@ -216,6 +216,21 @@ type OnPreparer interface {
 	OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error
 }
 
+// PrepEligibilityChecker is an optional interface for plan handlers whose
+// eligibility depends on live board state beyond the generic checks
+// (tokens/rank, row room, esteem lockout) that PlanEligibility applies to
+// every plan. Make Demands uses it to report "no demandable plan exists" so
+// the prep grid can grey the card out with a reason instead of letting the
+// player select it and hit a dead end. This feeds the eligibility *endpoint*
+// only — ValidatePreparation remains the authoritative prepare-time check.
+type PrepEligibilityChecker interface {
+	CheckPrepEligibility(
+		ctx context.Context,
+		q *dbgen.Queries,
+		gameID, playerID int64,
+	) (eligible bool, reason string, err error)
+}
+
 // PreparedDescriber is an optional interface for plan handlers that want a
 // custom plan.prepared log body instead of the default "<preparer> prepared
 // <Label>: <notes>". The returned descriptor is the text after the preparer

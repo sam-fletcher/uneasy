@@ -92,6 +92,14 @@ func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	if target.PlanType == model.PlanMakeWar {
 		return nil, "Make War cannot be the target of a demand"
 	}
+	// Demand-on-demand is legal in the tabletop rules but unsupported here:
+	// the Stage-4 winner routes (demand-leverage, demand-retarget) reject a
+	// make_demands mount point, and retargeting a demand would have to move
+	// its row placement. Rejecting at prepare time keeps the game out of a
+	// state those routes can't service.
+	if target.PlanType == model.PlanMakeDemands {
+		return nil, "demanding against another demand is not supported"
+	}
 	if target.PreparerID == v.Player.ID {
 		return nil, "you cannot demand against your own plan"
 	}
@@ -109,6 +117,52 @@ func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	}
 	row, _ := gamepkg.DemandPlacement(*target.RowNumber, target.RowOrder)
 	return &row, ""
+}
+
+// mdNoTargetReason is the reason PlanEligibility reports when Make Demands
+// has nothing on the public record to demand against. Mirrored as a backstop
+// empty-state message in MakeDemandsPanel.svelte — keep the two in sync.
+const mdNoTargetReason = "no plan on the public record can be demanded against " +
+	"right now (own plans, other demands, Make War, resolving/resolved, and " +
+	"already-demanded plans are excluded)"
+
+// CheckPrepEligibility (PrepEligibilityChecker) reports whether at least one
+// plan on the public record is a valid demand target for playerID. The filter
+// must stay in lockstep with the per-target checks in ValidatePreparation
+// above: pending status, an assigned row, not Make War, not another demand,
+// not the player's own, and not already targeted by an unresolved demand.
+func (mdHandler) CheckPrepEligibility(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+) (bool, string, error) {
+	plans, err := q.ListPlansByGame(ctx, gameID)
+	if err != nil {
+		return false, "", fmt.Errorf("list plans: %w", err)
+	}
+	targeted := map[int64]struct{}{}
+	for _, p := range plans {
+		if p.PlanType != model.PlanMakeDemands || p.TargetedPlanID == nil {
+			continue
+		}
+		if p.Status == model.PlanResolved || p.Status == model.PlanCancelled {
+			continue
+		}
+		targeted[*p.TargetedPlanID] = struct{}{}
+	}
+	for _, p := range plans {
+		if p.PlanType == model.PlanMakeWar || p.PlanType == model.PlanMakeDemands {
+			continue
+		}
+		if p.PreparerID == playerID || p.Status != model.PlanPending || p.RowNumber == nil {
+			continue
+		}
+		if _, taken := targeted[p.ID]; taken {
+			continue
+		}
+		return true, "", nil
+	}
+	return false, mdNoTargetReason, nil
 }
 
 func (mdHandler) ComputeDifficulty(
