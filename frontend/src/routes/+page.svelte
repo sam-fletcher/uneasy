@@ -143,11 +143,20 @@
 			{/if}
 		</form>
 	{/if}
+
+	<p class="credits">
+		Digital adaption by
+		<a href="https://sam-fletcher.itch.io/" target="_blank" rel="noopener noreferrer">Sam Fletcher</a>
+	</p>
 </div>
 
 <style>
 	.screen {
 		position: relative;
+		/* Cancels the shared <main> wrapper's 1rem top/bottom padding so this
+		   min-height:100dvh screen doesn't end up 2rem taller than the
+		   viewport (and scrollable) on top of it. */
+		margin: -1rem 0;
 		min-height: 100dvh;
 		display: flex;
 		flex-direction: column;
@@ -289,4 +298,21 @@
 		color: var(--color-text-muted);
 	}
 	.forgot-password a { color: var(--color-accent); }
+
+	.credits {
+		position: absolute;
+		bottom: max(1.5rem, env(safe-area-inset-bottom));
+		left: 50%;
+		transform: translateX(-50%);
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		text-align: center;
+		white-space: nowrap;
+	}
+	.credits a {
+		color: var(--color-accent);
+		text-decoration: none;
+	}
+	.credits a:hover { color: var(--color-accent-hover); }
+	.credits a:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; border-radius: 2px; }
 </style>
