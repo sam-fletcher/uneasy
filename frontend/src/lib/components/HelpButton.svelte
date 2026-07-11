@@ -5,8 +5,15 @@
 <script lang="ts">
 	import RetinueSheet from './RetinueSheet.svelte';
 	import HelpContent from './HelpContent.svelte';
+	import FeedbackForm from './FeedbackForm.svelte';
+
+	// gameId/route/phase: in-game context to auto-attach to feedback sent from
+	// here. Callers outside a table (the logged-out entry screen, the global
+	// layout header) simply omit them.
+	let { gameId, route, phase }: { gameId?: string; route?: string; phase?: string } = $props();
 
 	let open = $state(false);
+	let feedbackOpen = $state(false);
 </script>
 
 <button type="button" class="help-button" onclick={() => open = true} aria-label="How to play & feedback">
@@ -20,7 +27,17 @@
 <RetinueSheet open={open} onClose={() => open = false}>
 	<div class="help-sheet">
 		<h3>How to play</h3>
-		<HelpContent panel />
+		<HelpContent panel onFeedback={() => { open = false; feedbackOpen = true; }} />
+	</div>
+</RetinueSheet>
+
+<!-- Separate sheet, not nested inside the one above (see decision 10 in
+     adr/FEEDBACK_AND_RESET_PLAN.md) — HelpContent's trigger closes `open`
+     before this one opens. -->
+<RetinueSheet open={feedbackOpen} onClose={() => feedbackOpen = false}>
+	<div class="help-sheet">
+		<h3>Send feedback</h3>
+		<FeedbackForm {gameId} {route} {phase} />
 	</div>
 </RetinueSheet>
 

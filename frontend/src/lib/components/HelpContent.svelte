@@ -15,14 +15,17 @@
 	import '$lib/components/shared/rankChip.css';
 	import '$lib/components/shared/cornerBadge.css';
 	import '$lib/components/shared/marginaliaTile.css';
-	import { feedbackHref } from '$lib/feedback';
 	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER } from './plans/shared';
 	import CrownGlyph from './CrownGlyph.svelte';
 
 	// Panel mode (the ? sheet): the help fills the sheet to a fixed height and the
 	// body scrolls internally, so the footer is pinned and blank space is never
 	// scrollable. The lobby leaves it false (footer sits in normal flow).
-	let { panel = false }: { panel?: boolean } = $props();
+	// onFeedback: called when the footer's "Send feedback" trigger is tapped —
+	// every caller supplies this (per the no-sheet-nesting ruling, opening
+	// Feedback means the CALLER closes whatever sheet it owns and opens its
+	// own separate Feedback sheet; this component has no opinion on that).
+	let { panel = false, onFeedback }: { panel?: boolean; onFeedback: () => void } = $props();
 
 	type TabId = 'record' | 'plans' | 'rankings' | 'dice' | 'assets';
 	const tabs: { id: TabId; label: string }[] = [
@@ -314,7 +317,7 @@
 
 	<footer class="help-footer">
 		<span>Something confusing or broken?</span>
-		<a class="feedback" href={feedbackHref}>Send feedback</a>
+		<button type="button" class="feedback" onclick={onFeedback}>Send feedback</button>
 	</footer>
 </div>
 

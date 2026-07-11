@@ -47,6 +47,7 @@
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import HelpContent from '$lib/components/HelpContent.svelte';
 	import HelpButton from '$lib/components/HelpButton.svelte';
+	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
@@ -167,6 +168,9 @@
 	let tonesOpen = $state(false);
 	let lawsOpen = $state(false);
 	let rumorsOpen = $state(false);
+	// Separate from HelpButton's own Feedback sheet — this one's trigger lives
+	// in the lobby phase's inline (unsheeted) HelpContent, not behind the "?".
+	let lobbyFeedbackOpen = $state(false);
 	let prologueActivePlayerID = $state<number | null>(null);
 
 	// ── Join-code copy feedback ───────────────────────────────────────────────
@@ -654,7 +658,7 @@
 					</button>
 				{/each}
 			</div>
-			<HelpButton />
+			<HelpButton gameId={gameID} route={page.url.pathname} phase={game?.phase} />
 		</div>
 		{#if game}
 			<div class="game-info" class:has-war={$activeWarCount + $pendingWarCount > 0}>
@@ -757,7 +761,7 @@
 					A two-minute primer while you wait for everyone to arrive. You can reopen this
 					any time from the ? in the top-right corner.
 				</p>
-				<HelpContent />
+				<HelpContent onFeedback={() => lobbyFeedbackOpen = true} />
 			</section>
 		</div>
 
@@ -944,6 +948,13 @@
 				playerNames={playerNameMap}
 				{currentPlayerID}
 			/>
+		</div>
+	</RetinueSheet>
+
+	<RetinueSheet open={lobbyFeedbackOpen} onClose={() => lobbyFeedbackOpen = false}>
+		<div class="tones-sheet">
+			<h3>Send feedback</h3>
+			<FeedbackForm gameId={gameID} route={page.url.pathname} phase={game?.phase} />
 		</div>
 	</RetinueSheet>
 

@@ -8,8 +8,9 @@
 		createTable, joinTable,
 		type Account, type MyTable,
 	} from '$lib/api';
-	import { feedbackHref } from '$lib/feedback';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
+	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
 
 	let me = $state<Account | null>(null);
 	let tables = $state<MyTable[]>([]);
@@ -26,6 +27,7 @@
 	let joinCode = $state('');
 	let busy = $state(false);
 	let notice = $state('');
+	let feedbackOpen = $state(false);
 
 	// Reject if a fetch hangs (e.g. a wedged dev server) so the page can show a
 	// retry button instead of a permanent "Loading…".
@@ -195,10 +197,17 @@
 		</section>
 
 		<div class="footer-actions">
-			<a class="action-btn secondary feedback-btn" href={feedbackHref}>Send feedback</a>
+			<button class="action-btn secondary feedback-btn" onclick={() => feedbackOpen = true}>Send feedback</button>
 			<button class="action-btn secondary" onclick={doLogout}>Log out</button>
 		</div>
 	</div>
+
+	<RetinueSheet open={feedbackOpen} onClose={() => feedbackOpen = false}>
+		<div class="feedback-sheet">
+			<h3>Send feedback</h3>
+			<FeedbackForm />
+		</div>
+	</RetinueSheet>
 {/if}
 
 <style>
@@ -229,4 +238,5 @@
 	.create-row .hint { margin:0; }
 	.footer-actions { display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap; margin-top:0.5rem; }
 	.feedback-btn { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
+	.feedback-sheet h3 { margin: 0 0 0.75rem; }
 </style>
