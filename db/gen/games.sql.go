@@ -122,15 +122,22 @@ func (q *Queries) GetGameByJoinCode(ctx context.Context, joinCode string) (Game,
 	return i, err
 }
 
-const listNonEndedGameIDs = `-- name: ListNonEndedGameIDs :many
-SELECT id FROM games WHERE phase != 'ended' ORDER BY id
+const listGamesNeedingNotificationReconcile = `-- name: ListGamesNeedingNotificationReconcile :many
+SELECT id FROM games WHERE phase != 'ended'
+UNION
+SELECT DISTINCT game_id FROM pending_notifications
+ORDER BY id
 `
 
-// Every game the Session 3 notification ticker reconciles each tick — an
-// 'ended' game has nobody left to wait on (ComputeWaitState always returns
-// WaitKindNobody for it), so there's nothing to reconcile or send.
-func (q *Queries) ListNonEndedGameIDs(ctx context.Context) ([]int64, error) {
-	rows, err := q.db.Query(ctx, listNonEndedGameIDs)
+// Every game the Session 3 notification ticker reconciles each tick: all
+// non-ended games (ComputeWaitState may name waitees), PLUS any ended game
+// that still has pending_notifications rows left over from before it ended —
+// reconcileWaitees correctly clears those (ComputeWaitState returns
+// WaitKindNobody for 'ended'), but only if the tick still visits the game.
+// Without the union, an ended game's stale rows are never revisited and
+// their owners get pinged forever.
+func (q *Queries) ListGamesNeedingNotificationReconcile(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listGamesNeedingNotificationReconcile)
 	if err != nil {
 		return nil, err
 	}

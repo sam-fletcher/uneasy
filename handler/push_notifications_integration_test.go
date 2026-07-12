@@ -200,6 +200,60 @@ func TestSendDueNotifications_PrunesOn410(t *testing.T) {
 		"timer still re-bumped forward even with no subscriptions left")
 }
 
+// TestRunNotificationTick_EndedGameWithLeftoverRowGetsCleared is the
+// regression test for the bug where a game ending mid-wait left its waitees'
+// pending_notifications rows behind forever: ListGamesNeedingNotificationReconcile
+// only walked non-ended games, so reconcileWaitees (which correctly clears
+// every timer once ComputeWaitState returns WaitKindNobody for 'ended') never
+// got a chance to run on this game again. Drives the full tick — not
+// reconcileWaitees directly — so the game-selection query is exercised too. A
+// real subscription behind an httptest relay confirms the ended game's due
+// row is cleared without ever being sent.
+func TestRunNotificationTick_EndedGameWithLeftoverRowGetsCleared(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	store := db.NewStore(pool)
+	ctx := context.Background()
+	tg := newTestGame(t, q, 2)
+	waitee := tg.Players[0] // scene_setting focus player, per seedBase
+
+	priv, pub, err := webpush.GenerateVAPIDKeys()
+	require.NoError(t, err)
+	t.Cleanup(func() { SetVAPIDKeys("", "", "") })
+	SetVAPIDKeys(pub, priv, "mailto:test@example.com")
+
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	p256dh, auth := testSubscriptionKeys(t)
+	_, err = q.UpsertPushSubscription(ctx, dbgen.UpsertPushSubscriptionParams{
+		AccountID: waitee.AccountID, Endpoint: srv.URL, P256dh: p256dh, Auth: auth,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, reconcileWaitees(ctx, q, tg.Game.ID))
+	rows, err := q.ListPendingNotificationsByGame(ctx, tg.Game.ID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "waitee has a timer before the game ends")
+
+	// Simulate the row falling due while the game is still live, then the
+	// game ending before the next tick fires — the bug scenario.
+	_, execErr := pool.Exec(ctx,
+		`UPDATE pending_notifications SET due_at = now() - interval '1 minute' WHERE player_id = $1`, waitee.ID)
+	require.NoError(t, execErr)
+	require.NoError(t, q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{ID: tg.Game.ID, Phase: "ended"}))
+
+	RunNotificationTick(ctx, store, slog.Default())
+
+	assert.Equal(t, 0, hits, "an ended game's leftover due row must never be sent")
+	_, err = q.GetPendingNotification(ctx, waitee.ID)
+	assert.True(t, errors.Is(err, pgx.ErrNoRows), "ended game's leftover row is cleared, not left to fire forever")
+}
+
 // TestSendDueNotifications_DisabledCadenceClearsInsteadOfRebumping: if an
 // account's cadence goes NULL between insertion and send, there's nothing to
 // re-bump to — the row is deleted outright instead.

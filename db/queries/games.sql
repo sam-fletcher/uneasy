@@ -36,8 +36,15 @@ UPDATE games SET ending_mode = $2 WHERE id = $1;
 -- destroy of the monarch's asset can't erase that the throne ever existed.
 UPDATE games SET throne_established = TRUE WHERE id = $1;
 
--- name: ListNonEndedGameIDs :many
--- Every game the Session 3 notification ticker reconciles each tick — an
--- 'ended' game has nobody left to wait on (ComputeWaitState always returns
--- WaitKindNobody for it), so there's nothing to reconcile or send.
-SELECT id FROM games WHERE phase != 'ended' ORDER BY id;
+-- name: ListGamesNeedingNotificationReconcile :many
+-- Every game the Session 3 notification ticker reconciles each tick: all
+-- non-ended games (ComputeWaitState may name waitees), PLUS any ended game
+-- that still has pending_notifications rows left over from before it ended —
+-- reconcileWaitees correctly clears those (ComputeWaitState returns
+-- WaitKindNobody for 'ended'), but only if the tick still visits the game.
+-- Without the union, an ended game's stale rows are never revisited and
+-- their owners get pinged forever.
+SELECT id FROM games WHERE phase != 'ended'
+UNION
+SELECT DISTINCT game_id FROM pending_notifications
+ORDER BY id;

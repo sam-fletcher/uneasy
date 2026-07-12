@@ -2,8 +2,9 @@ package handler
 
 // push_notifications.go — the Session 3 notification ticker
 // (adr/NOTIFICATIONS_PLAN.md): reconciles pending_notifications against
-// ComputeWaitState's current waitee set for every non-ended game, then sends
-// (and re-bumps, or prunes dead subscriptions for) every row past due_at.
+// ComputeWaitState's current waitee set for every non-ended game (plus any
+// ended game with leftover rows), then sends (and re-bumps, or prunes dead
+// subscriptions for) every row past due_at.
 //
 // NOT notify.go — that's the unrelated Discord webhook for feedback/reset-
 // request submissions (adr/FEEDBACK_AND_RESET_PLAN.md). This file's sole
@@ -81,12 +82,14 @@ func buildPushPayload(joinCode string, gameID int64) ([]byte, error) {
 	})
 }
 
-// RunNotificationTick is one full reconcile+send pass across every
-// non-ended game — the body of the minute-ticker goroutine in
-// cmd/server/main.go. Exported so that goroutine (and tests) can drive it
-// directly.
+// RunNotificationTick is one full reconcile+send pass across every game that
+// needs it — every non-ended game, plus any ended game with leftover
+// pending_notifications rows (reconcileWaitees clears those; see
+// ListGamesNeedingNotificationReconcile) — the body of the minute-ticker
+// goroutine in cmd/server/main.go. Exported so that goroutine (and tests) can
+// drive it directly.
 func RunNotificationTick(ctx context.Context, store *db.Store, logger *slog.Logger) {
-	gameIDs, err := store.Q.ListNonEndedGameIDs(ctx)
+	gameIDs, err := store.Q.ListGamesNeedingNotificationReconcile(ctx)
 	if err != nil {
 		logger.ErrorContext(ctx, "notification tick: list games failed", "err", err)
 		return
