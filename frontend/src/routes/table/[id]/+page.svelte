@@ -5,7 +5,7 @@
 	import '$lib/components/shared/statusText.css';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import {
 		getGameState, getMe,
 		startPrologue,
@@ -224,6 +224,46 @@
 	function closeChatSheet() {
 		if (chatExpanded) chatExpanded = false;
 	}
+
+	// ── Player-pill strip (mobile) ────────────────────────────────────────────
+	// .members can overflow at 4-5 players (or long names) on phone widths.
+	// Track scroll position so the header can show a fade hint on whichever
+	// edge is clipped, and scroll the viewer's own pill into view once on
+	// load — the strip never auto-follows whoever's turn it is afterward, so
+	// pill order stays stable and predictable.
+	let membersEl = $state<HTMLDivElement | null>(null);
+	let membersFadeLeft = $state(false);
+	let membersFadeRight = $state(false);
+	let ownPillScrolled = false;
+
+	// A few px of tolerance absorbs sub-pixel rounding between scrollWidth and
+	// clientWidth (fractional flex-grow widths routinely differ by 1-3px with
+	// nothing actually clipped) so the fade doesn't flicker on for a row that
+	// in fact fits.
+	const MEMBERS_FADE_SLOP_PX = 4;
+	function updateMembersFade() {
+		if (!membersEl) return;
+		const { scrollLeft, scrollWidth, clientWidth } = membersEl;
+		membersFadeLeft = scrollLeft > MEMBERS_FADE_SLOP_PX;
+		membersFadeRight = scrollLeft + clientWidth < scrollWidth - MEMBERS_FADE_SLOP_PX;
+	}
+
+	$effect(() => {
+		void members.length;
+		if (!membersEl) return;
+		void tick().then(updateMembersFade);
+		window.addEventListener('resize', updateMembersFade);
+		return () => window.removeEventListener('resize', updateMembersFade);
+	});
+
+	$effect(() => {
+		if (ownPillScrolled || !membersEl || currentPlayerID == null || members.length === 0) return;
+		ownPillScrolled = true;
+		void tick().then(() => {
+			const el = membersEl?.querySelector<HTMLElement>(`[data-member-id="${currentPlayerID}"]`);
+			el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+		});
+	});
 
 	const blockingPlayerID = $derived.by(() => {
 		if (!game) return null;
@@ -662,30 +702,32 @@
 					<path d="M5 10v10h14V10" />
 				</svg>
 			</a>
-			<div class="members">
-				{#each members as member}
-					{@const mr = ranksByPlayer.get(member.id)}
-					{@const atRisk = atRiskByPlayer.get(member.id) ?? 0}
-					{@const isMe = member.id === currentPlayerID}
-					<button type="button" class="member" class:active={isMe} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${isMe ? ' (you)' : ''}${member.id === blockingPlayerID ? ' (their turn)' : ''}${atRisk > 0 ? ` — ${atRisk} ${atRisk === 1 ? 'asset needs' : 'assets need'} marginalia` : ''}`} style:--member-color={playerColorByID(member.id, players)}>
-						{#if atRisk > 0}
-							<span class="risk-badge" class:mine={isMe} title={`${atRisk} ${atRisk === 1 ? 'asset has' : 'assets have'} too few marginalia — fill an empty slot to avoid losing ${atRisk === 1 ? 'it' : 'them'}`} aria-hidden="true">{atRisk}</span>
-						{/if}
-						<span class="member-body">
-							<span class="member-name-row">
-								<span class="dot"></span>
-								<span class="member-name">{member.display_name}</span>
-							</span>
-							{#if mr && (mr.power != null || mr.knowledge != null || mr.esteem != null)}
-								<span class="member-ranks" aria-label={`Ranks — Power ${mr.power ?? '—'}, Knowledge ${mr.knowledge ?? '—'}, Esteem ${mr.esteem ?? '—'}`}>
-									<span class="mr" class:top={mr.power != null && mr.power === topRankByCategory.power}><span class="mr-cat">P</span>{mr.power ?? '—'}</span>
-									<span class="mr" class:top={mr.knowledge != null && mr.knowledge === topRankByCategory.knowledge}><span class="mr-cat">K</span>{mr.knowledge ?? '—'}</span>
-									<span class="mr" class:top={mr.esteem != null && mr.esteem === topRankByCategory.esteem}><span class="mr-cat">E</span>{mr.esteem ?? '—'}</span>
-								</span>
+			<div class="members-wrap" class:fade-left={membersFadeLeft} class:fade-right={membersFadeRight}>
+				<div class="members" bind:this={membersEl} onscroll={updateMembersFade}>
+					{#each members as member}
+						{@const mr = ranksByPlayer.get(member.id)}
+						{@const atRisk = atRiskByPlayer.get(member.id) ?? 0}
+						{@const isMe = member.id === currentPlayerID}
+						<button type="button" class="member" class:active={isMe} data-member-id={member.id} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${isMe ? ' (you)' : ''}${member.id === blockingPlayerID ? ' (their turn)' : ''}${atRisk > 0 ? ` — ${atRisk} ${atRisk === 1 ? 'asset needs' : 'assets need'} marginalia` : ''}`} style:--member-color={playerColorByID(member.id, players)}>
+							{#if atRisk > 0}
+								<span class="risk-badge" class:mine={isMe} title={`${atRisk} ${atRisk === 1 ? 'asset has' : 'assets have'} too few marginalia — fill an empty slot to avoid losing ${atRisk === 1 ? 'it' : 'them'}`} aria-hidden="true">{atRisk}</span>
 							{/if}
-						</span>
-					</button>
-				{/each}
+							<span class="member-body">
+								<span class="member-name-row">
+									<span class="dot"></span>
+									<span class="member-name">{member.display_name}</span>
+								</span>
+								{#if mr && (mr.power != null || mr.knowledge != null || mr.esteem != null)}
+									<span class="member-ranks" aria-label={`Ranks — Power ${mr.power ?? '—'}, Knowledge ${mr.knowledge ?? '—'}, Esteem ${mr.esteem ?? '—'}`}>
+										<span class="mr" class:top={mr.power != null && mr.power === topRankByCategory.power}><span class="mr-cat">P</span>{mr.power ?? '—'}</span>
+										<span class="mr" class:top={mr.knowledge != null && mr.knowledge === topRankByCategory.knowledge}><span class="mr-cat">K</span>{mr.knowledge ?? '—'}</span>
+										<span class="mr" class:top={mr.esteem != null && mr.esteem === topRankByCategory.esteem}><span class="mr-cat">E</span>{mr.esteem ?? '—'}</span>
+									</span>
+								{/if}
+							</span>
+						</button>
+					{/each}
+				</div>
 			</div>
 			<HelpButton gameId={gameID} route={page.url.pathname} phase={game?.phase} />
 		</div>
@@ -1303,11 +1345,33 @@
 	.home:hover { color: var(--color-accent-hover); background: var(--color-surface-2); }
 	.home:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
+	/* Wraps .members so the scroll-fade hint (::before/::after below) can sit
+	   over its edges without being clipped or scrolled away by .members'
+	   own overflow-x. */
+	.members-wrap {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+	}
+	.members-wrap::before,
+	.members-wrap::after {
+		content: '';
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 20px;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.15s ease;
+	}
+	.members-wrap::before { left: 0; background: linear-gradient(to right, var(--color-bg), transparent); }
+	.members-wrap::after { right: 0; background: linear-gradient(to left, var(--color-bg), transparent); }
+	.members-wrap.fade-left::before { opacity: 1; }
+	.members-wrap.fade-right::after { opacity: 1; }
+
 	.members {
 		display: flex;
 		gap: 0.4rem;
-		flex: 1;
-		min-width: 0;
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
 		scrollbar-width: none;
@@ -1328,6 +1392,15 @@
 		border: 1px solid var(--color-border);
 		border-radius: 999px;
 		cursor: pointer;
+	}
+
+	/* Below 600px there isn't room for the roomier desktop padding — a phone
+	   in main_event can have 3 pills with rank chips fighting the fixed
+	   Home/Help buttons for ~240px. Tighten only down here; at ≥600px the
+	   full-width padding above just reads as normal breathing room. */
+	@media (max-width: 599px) {
+		.members { gap: 0.3rem; }
+		.member { padding: 0.3rem 0.45rem; }
 	}
 
 	/* Warning badge: assets that are one tear from destruction but still have
@@ -1395,7 +1468,10 @@
 	}
 
 	.member-name {
+		max-width: 10ch;
+		overflow: hidden;
 		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
 	.dot {
