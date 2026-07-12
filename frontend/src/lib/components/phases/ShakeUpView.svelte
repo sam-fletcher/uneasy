@@ -138,7 +138,7 @@
 				{ key: 'take_peer', label: 'Take a peer asset' },
 				{ key: 'take_artifact', label: 'Take an artifact asset' },
 				{ key: 'break_resource', label: 'Break a resource asset' },
-				{ key: 'bump_knowledge', label: 'Bump up on knowledge' },
+				{ key: 'bump_knowledge', label: 'Bump up on Knowledge' },
 			],
 		},
 		{
@@ -147,7 +147,7 @@
 				{ key: 'take_resource', label: 'Take a resource asset' },
 				{ key: 'break_holding', label: 'Break a holding asset' },
 				{ key: 'break_peer', label: 'Break a peer asset' },
-				{ key: 'bump_power', label: 'Bump up on power' },
+				{ key: 'bump_power', label: 'Bump up on Power' },
 			],
 		},
 		{
@@ -156,7 +156,7 @@
 				{ key: 'take_holding', label: 'Take a holding asset' },
 				{ key: 'break_artifact', label: 'Break an artifact asset' },
 				{ key: 'claim_title', label: 'Claim a new title' },
-				{ key: 'bump_esteem', label: 'Bump up on esteem' },
+				{ key: 'bump_esteem', label: 'Bump up on Esteem' },
 			],
 		},
 	];

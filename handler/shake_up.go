@@ -587,11 +587,7 @@ func ShakeUpAdjust(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		broadcastEvent(manager, gameID, model.EventShakeUpAdjusted, model.ShakeUpAdjustedPayload{
 			SpendID: spend.ID, PlayerID: player.ID, Adjustment: body.Adjustment, AdjustmentID: adj.ID,
 		})
-		var optionPhrase string
-		if info, oErr := gamepkg.ShakeUpOption(spend.OptionKey); oErr == nil {
-			optionPhrase = shakeUpOptionPhrase(info.Description)
-		}
-		EmitShakeUpAdjusted(ctx, s.Q, manager, gameID, spend, player.ID, body.Adjustment, optionPhrase)
+		EmitShakeUpAdjusted(ctx, s.Q, manager, gameID, spend, player.ID, body.Adjustment)
 		respond(w, http.StatusOK, map[string]any{"adjustment": adj})
 	}
 }
@@ -655,7 +651,6 @@ func ShakeUpPass(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			broadcastEvent(manager, gameID, model.EventShakeUpPassed, model.ShakeUpPassedPayload{
 				SpendID: spend.ID, PlayerID: player.ID,
 			})
-			EmitShakeUpPassed(ctx, s.Q, manager, gameID, spend, player.ID)
 		}
 		respond(w, http.StatusOK, map[string]any{"pass": pass})
 	}

@@ -894,34 +894,14 @@ func EmitShakeUpAdjusted(
 	spend dbgen.ShakeUpSpend,
 	adjusterID int64,
 	adjustment int16,
-	optionPhrase string,
 ) {
 	adjuster := playerDisplayName(ctx, q, adjusterID)
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.adjusted",
 		model.SeverityMinor,
-		fmt.Sprintf("%s adjusts %s's cost %+d (%s)", adjuster, spender, adjustment, optionPhrase),
+		fmt.Sprintf("%s adjusts %s's cost %+d", adjuster, spender, adjustment),
 		nil, nil, nil,
 		map[string]any{"spend_id": spend.ID, "adjuster_id": adjusterID, "adjustment": adjustment})
-}
-
-// EmitShakeUpPassed writes the Minor post for a player explicitly declining to
-// further adjust an open spend ("lets it stand") — one of the two ways a
-// reactor clears themselves from the commit gate (ruling 5).
-func EmitShakeUpPassed(
-	ctx context.Context,
-	q *dbgen.Queries,
-	manager *hub.Manager,
-	gameID int64,
-	spend dbgen.ShakeUpSpend,
-	playerID int64,
-) {
-	name := playerDisplayName(ctx, q, playerID)
-	EmitSystemPost(ctx, q, manager, gameID, "shake_up.passed",
-		model.SeverityMinor,
-		fmt.Sprintf("%s lets it stand", name),
-		nil, nil, nil,
-		map[string]any{"spend_id": spend.ID, "player_id": playerID})
 }
 
 // EmitShakeUpCommitted writes the Important outcome post for a committed spend.

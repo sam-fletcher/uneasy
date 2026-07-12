@@ -75,7 +75,7 @@ var shakeUpOptions = map[string]ShakeUpOptionInfo{
 	ShakeUpOptBumpKnowledge: {
 		ShakeUpOptBumpKnowledge,
 		ShakeUpCategoryEsteem,
-		"Bump up one rank on knowledge.",
+		"Bump up a rank on knowledge.",
 		false,
 		false,
 		"knowledge",
@@ -100,7 +100,7 @@ var shakeUpOptions = map[string]ShakeUpOptionInfo{
 	ShakeUpOptBumpPower: {
 		ShakeUpOptBumpPower,
 		ShakeUpCategoryKnowledge,
-		"Bump up one rank on power.",
+		"Bump up a rank on power.",
 		false,
 		false,
 		"power",
@@ -118,7 +118,7 @@ var shakeUpOptions = map[string]ShakeUpOptionInfo{
 	ShakeUpOptBumpEsteem: {
 		ShakeUpOptBumpEsteem,
 		ShakeUpCategoryPower,
-		"Bump up one rank on esteem.",
+		"Bump up a rank on esteem.",
 		false,
 		false,
 		"esteem",
