@@ -3,6 +3,7 @@ module uneasy
 go 1.26.1
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/coder/websocket v1.8.14
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/httprate v0.16.0
@@ -15,6 +16,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect

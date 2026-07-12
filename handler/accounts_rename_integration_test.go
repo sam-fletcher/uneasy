@@ -47,7 +47,7 @@ func TestUsernameRenamePropagatesToPlayerSeats(t *testing.T) {
 	acct := &appMiddleware.Account{ID: renamed.AccountID, Username: renamed.DisplayName}
 	newUsername := newName
 	require.NoError(t, store.InTx(ctx, func(tx *dbgen.Queries) error {
-		return updateAccountFields(ctx, tx, acct, &newUsername, nil, nil)
+		return updateAccountFields(ctx, tx, acct, &newUsername, nil, nil, false, nil)
 	}))
 
 	// Both seats held by the renamed account now show the new name.

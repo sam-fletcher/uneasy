@@ -15,6 +15,11 @@
 //	DISCORD_WEBHOOK_URL  Discord webhook for feedback/reset-request
 //	               notifications (adr/FEEDBACK_AND_RESET_PLAN.md). Unset in
 //	               dev: notifications are logged to stdout instead of posted.
+//	VAPID_PUBLIC_KEY
+//	VAPID_PRIVATE_KEY
+//	VAPID_SUBJECT  Web-push signing keypair and contact subject
+//	               (adr/NOTIFICATIONS_PLAN.md). Unset in dev: turn
+//	               notifications are logged to stdout instead of sent.
 package main
 
 import (
@@ -83,10 +88,14 @@ func main() {
 	secureMode := strings.HasPrefix(publicOrigin, "https://")
 	publicHost := parsePublicHost(publicOrigin)
 	discordWebhookURL := env("DISCORD_WEBHOOK_URL", "")
+	vapidPublicKey := env("VAPID_PUBLIC_KEY", "")
+	vapidPrivateKey := env("VAPID_PRIVATE_KEY", "")
+	vapidSubject := env("VAPID_SUBJECT", "")
 
 	// ── Server ────────────────────────────────────────────────────────────────
 
-	if err := runServer(logger, dbURL, port, devMode, viteURL, secureMode, publicHost, discordWebhookURL); err != nil {
+	if err := runServer(logger, dbURL, port, devMode, viteURL, secureMode, publicHost,
+		discordWebhookURL, vapidPublicKey, vapidPrivateKey, vapidSubject); err != nil {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)
 	}
@@ -115,6 +124,7 @@ func runServer(
 	secureMode bool,
 	publicHost string,
 	discordWebhookURL string,
+	vapidPublicKey, vapidPrivateKey, vapidSubject string,
 ) error {
 	poolCfg, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
@@ -146,10 +156,12 @@ func runServer(
 		logger.Info("expired sessions cleaned up")
 	}
 	go expireSessionsDaily(logger, store)
+	go notifyTicker(logger, store)
 
 	manager := hub.NewManager()
 
-	router := setupRouter(logger, store, manager, devMode, secureMode, publicHost, discordWebhookURL)
+	router := setupRouter(logger, store, manager, devMode, secureMode, publicHost,
+		discordWebhookURL, vapidPublicKey, vapidPrivateKey, vapidSubject)
 
 	if err := setupFrontend(router, devMode, viteURL); err != nil {
 		return err
@@ -209,6 +221,7 @@ func setupRouter(
 	devMode, secureMode bool,
 	publicHost string,
 	discordWebhookURL string,
+	vapidPublicKey, vapidPrivateKey, vapidSubject string,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -216,6 +229,7 @@ func setupRouter(
 	// mounted — mirrors how UNEASY_DEV is read once at startup below.
 	handler.SetSecureCookies(secureMode)
 	handler.SetDiscordWebhookURL(discordWebhookURL)
+	handler.SetVAPIDKeys(vapidPublicKey, vapidPrivateKey, vapidSubject)
 	wsOriginPatterns := []string{"*"}
 	if publicHost != "" {
 		wsOriginPatterns = []string{publicHost}
@@ -279,6 +293,10 @@ func setupRouter(
 			r.Get("/accounts/me/tables", handler.ListMyTables(store))
 			r.With(credentialLimiter).Post("/sessions", handler.CreateSession(store))
 			r.Delete("/sessions", handler.DeleteSession(store))
+
+			// Web push (adr/NOTIFICATIONS_PLAN.md Session 3)
+			r.Post("/push-subscriptions", handler.CreatePushSubscription(store))
+			r.Delete("/push-subscriptions", handler.DeletePushSubscription(store))
 
 			// Feedback & password-reset intake (adr/FEEDBACK_AND_RESET_PLAN.md).
 			// CreateFeedback is session-authed (checks AccountFromContext itself,
@@ -510,6 +528,23 @@ func expireSessionsDaily(logger *slog.Logger, store *db.Store) {
 		if err := store.Q.DeleteExpiredSessions(context.Background()); err != nil {
 			logger.Warn("expired session cleanup failed", "error", err)
 		}
+	}
+}
+
+// notifyTickInterval is how often notifyTicker reconciles pending_notifications
+// against the current waitee set and sends whichever rows are past due_at
+// (adr/NOTIFICATIONS_PLAN.md Session 3). A ±59s error is irrelevant at the
+// hour-scale cadences players choose from.
+const notifyTickInterval = time.Minute
+
+// notifyTicker runs RunNotificationTick once a minute for the life of the
+// process, the same reconcile+send pass every tick — no separate hooks in
+// mutation handlers to keep in sync (see the plan's rationale).
+func notifyTicker(logger *slog.Logger, store *db.Store) {
+	ticker := time.NewTicker(notifyTickInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		handler.RunNotificationTick(context.Background(), store, logger)
 	}
 }
 

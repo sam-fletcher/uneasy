@@ -10,12 +10,13 @@ import (
 )
 
 type Account struct {
-	ID           int64              `db:"id" json:"id"`
-	Username     string             `db:"username" json:"username"`
-	PasswordHash string             `db:"password_hash" json:"password_hash"`
-	Email        *string            `db:"email" json:"email"`
-	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	ID                 int64              `db:"id" json:"id"`
+	Username           string             `db:"username" json:"username"`
+	PasswordHash       string             `db:"password_hash" json:"password_hash"`
+	Email              *string            `db:"email" json:"email"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	NotifyCadenceHours *int16             `db:"notify_cadence_hours" json:"notify_cadence_hours"`
 }
 
 type Asset struct {
@@ -195,6 +196,13 @@ type PendingCounterDemand struct {
 	ResolvedPlanID    *int64             `db:"resolved_plan_id" json:"resolved_plan_id"`
 }
 
+type PendingNotification struct {
+	PlayerID       int64              `db:"player_id" json:"player_id"`
+	GameID         int64              `db:"game_id" json:"game_id"`
+	FirstWaitingAt pgtype.Timestamptz `db:"first_waiting_at" json:"first_waiting_at"`
+	DueAt          pgtype.Timestamptz `db:"due_at" json:"due_at"`
+}
+
 type Plan struct {
 	ID                  int64                 `db:"id" json:"id"`
 	GameID              int64                 `db:"game_id" json:"game_id"`
@@ -285,6 +293,15 @@ type PrologueTrackDone struct {
 type PublicRecordRow struct {
 	GameID    int64 `db:"game_id" json:"game_id"`
 	RowNumber int16 `db:"row_number" json:"row_number"`
+}
+
+type PushSubscription struct {
+	ID        int64              `db:"id" json:"id"`
+	AccountID int64              `db:"account_id" json:"account_id"`
+	Endpoint  string             `db:"endpoint" json:"endpoint"`
+	P256dh    string             `db:"p256dh" json:"p256dh"`
+	Auth      string             `db:"auth" json:"auth"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 type Ranking struct {

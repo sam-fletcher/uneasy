@@ -13,7 +13,7 @@ const createAccount = `-- name: CreateAccount :one
 
 INSERT INTO accounts (username, password_hash, email)
 VALUES ($1, $2, $3)
-RETURNING id, username, password_hash, email, created_at, updated_at
+RETURNING id, username, password_hash, email, created_at, updated_at, notify_cadence_hours
 `
 
 type CreateAccountParams struct {
@@ -33,12 +33,13 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NotifyCadenceHours,
 	)
 	return i, err
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, username, password_hash, email, created_at, updated_at FROM accounts WHERE id = $1
+SELECT id, username, password_hash, email, created_at, updated_at, notify_cadence_hours FROM accounts WHERE id = $1
 `
 
 func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error) {
@@ -51,12 +52,13 @@ func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error)
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NotifyCadenceHours,
 	)
 	return i, err
 }
 
 const getAccountByUsername = `-- name: GetAccountByUsername :one
-SELECT id, username, password_hash, email, created_at, updated_at FROM accounts WHERE LOWER(username) = LOWER($1)
+SELECT id, username, password_hash, email, created_at, updated_at, notify_cadence_hours FROM accounts WHERE LOWER(username) = LOWER($1)
 `
 
 func (q *Queries) GetAccountByUsername(ctx context.Context, lower string) (Account, error) {
@@ -69,6 +71,7 @@ func (q *Queries) GetAccountByUsername(ctx context.Context, lower string) (Accou
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NotifyCadenceHours,
 	)
 	return i, err
 }
@@ -76,7 +79,7 @@ func (q *Queries) GetAccountByUsername(ctx context.Context, lower string) (Accou
 const updateAccountEmail = `-- name: UpdateAccountEmail :one
 UPDATE accounts SET email = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, username, password_hash, email, created_at, updated_at
+RETURNING id, username, password_hash, email, created_at, updated_at, notify_cadence_hours
 `
 
 type UpdateAccountEmailParams struct {
@@ -94,6 +97,35 @@ func (q *Queries) UpdateAccountEmail(ctx context.Context, arg UpdateAccountEmail
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NotifyCadenceHours,
+	)
+	return i, err
+}
+
+const updateAccountNotifyCadence = `-- name: UpdateAccountNotifyCadence :one
+UPDATE accounts SET notify_cadence_hours = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, username, password_hash, email, created_at, updated_at, notify_cadence_hours
+`
+
+type UpdateAccountNotifyCadenceParams struct {
+	ID                 int64  `db:"id" json:"id"`
+	NotifyCadenceHours *int16 `db:"notify_cadence_hours" json:"notify_cadence_hours"`
+}
+
+// $2 may be NULL (notifications off) — callers must be presence-aware so a
+// caller-supplied null is distinguishable from "field omitted".
+func (q *Queries) UpdateAccountNotifyCadence(ctx context.Context, arg UpdateAccountNotifyCadenceParams) (Account, error) {
+	row := q.db.QueryRow(ctx, updateAccountNotifyCadence, arg.ID, arg.NotifyCadenceHours)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.NotifyCadenceHours,
 	)
 	return i, err
 }
@@ -101,7 +133,7 @@ func (q *Queries) UpdateAccountEmail(ctx context.Context, arg UpdateAccountEmail
 const updateAccountPassword = `-- name: UpdateAccountPassword :one
 UPDATE accounts SET password_hash = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, username, password_hash, email, created_at, updated_at
+RETURNING id, username, password_hash, email, created_at, updated_at, notify_cadence_hours
 `
 
 type UpdateAccountPasswordParams struct {
@@ -119,6 +151,7 @@ func (q *Queries) UpdateAccountPassword(ctx context.Context, arg UpdateAccountPa
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NotifyCadenceHours,
 	)
 	return i, err
 }
@@ -126,7 +159,7 @@ func (q *Queries) UpdateAccountPassword(ctx context.Context, arg UpdateAccountPa
 const updateAccountUsername = `-- name: UpdateAccountUsername :one
 UPDATE accounts SET username = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, username, password_hash, email, created_at, updated_at
+RETURNING id, username, password_hash, email, created_at, updated_at, notify_cadence_hours
 `
 
 type UpdateAccountUsernameParams struct {
@@ -144,6 +177,7 @@ func (q *Queries) UpdateAccountUsername(ctx context.Context, arg UpdateAccountUs
 		&i.Email,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NotifyCadenceHours,
 	)
 	return i, err
 }

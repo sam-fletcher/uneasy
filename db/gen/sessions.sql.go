@@ -69,7 +69,7 @@ func (q *Queries) DeleteSessionsForAccount(ctx context.Context, accountID int64)
 const getSessionWithAccount = `-- name: GetSessionWithAccount :one
 SELECT
   s.token, s.account_id, s.created_at, s.last_seen,
-  a.id AS a_id, a.username, a.password_hash, a.email,
+  a.id AS a_id, a.username, a.password_hash, a.email, a.notify_cadence_hours,
   a.created_at AS a_created_at, a.updated_at AS a_updated_at
 FROM sessions s
 JOIN accounts a ON a.id = s.account_id
@@ -78,16 +78,17 @@ WHERE s.token = $1
 `
 
 type GetSessionWithAccountRow struct {
-	Token        string             `db:"token" json:"token"`
-	AccountID    int64              `db:"account_id" json:"account_id"`
-	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	LastSeen     pgtype.Timestamptz `db:"last_seen" json:"last_seen"`
-	AID          int64              `db:"a_id" json:"a_id"`
-	Username     string             `db:"username" json:"username"`
-	PasswordHash string             `db:"password_hash" json:"password_hash"`
-	Email        *string            `db:"email" json:"email"`
-	ACreatedAt   pgtype.Timestamptz `db:"a_created_at" json:"a_created_at"`
-	AUpdatedAt   pgtype.Timestamptz `db:"a_updated_at" json:"a_updated_at"`
+	Token              string             `db:"token" json:"token"`
+	AccountID          int64              `db:"account_id" json:"account_id"`
+	CreatedAt          pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	LastSeen           pgtype.Timestamptz `db:"last_seen" json:"last_seen"`
+	AID                int64              `db:"a_id" json:"a_id"`
+	Username           string             `db:"username" json:"username"`
+	PasswordHash       string             `db:"password_hash" json:"password_hash"`
+	Email              *string            `db:"email" json:"email"`
+	NotifyCadenceHours *int16             `db:"notify_cadence_hours" json:"notify_cadence_hours"`
+	ACreatedAt         pgtype.Timestamptz `db:"a_created_at" json:"a_created_at"`
+	AUpdatedAt         pgtype.Timestamptz `db:"a_updated_at" json:"a_updated_at"`
 }
 
 func (q *Queries) GetSessionWithAccount(ctx context.Context, token string) (GetSessionWithAccountRow, error) {
@@ -102,6 +103,7 @@ func (q *Queries) GetSessionWithAccount(ctx context.Context, token string) (GetS
 		&i.Username,
 		&i.PasswordHash,
 		&i.Email,
+		&i.NotifyCadenceHours,
 		&i.ACreatedAt,
 		&i.AUpdatedAt,
 	)

@@ -20,6 +20,9 @@ type Account struct {
 	ID       int64
 	Username string
 	Email    *string
+	// NotifyCadenceHours is the account's web-push reminder cadence
+	// (adr/NOTIFICATIONS_PLAN.md); nil means notifications are off.
+	NotifyCadenceHours *int16
 }
 
 // EnsureSession reads the player_token cookie on every request. If a valid
@@ -40,9 +43,10 @@ func EnsureSession(q *dbgen.Queries) func(http.Handler) http.Handler {
 			if err == nil {
 				_ = q.TouchSession(ctx, cookie.Value)
 				ctx = context.WithValue(ctx, accountKey, &Account{
-					ID:       row.AID,
-					Username: row.Username,
-					Email:    row.Email,
+					ID:                 row.AID,
+					Username:           row.Username,
+					Email:              row.Email,
+					NotifyCadenceHours: row.NotifyCadenceHours,
 				})
 			}
 

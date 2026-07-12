@@ -201,6 +201,29 @@ npm ls <package-name>   # e.g. npm ls axios
 | `VITE_URL`     | `http://localhost:5173`                              | Vite dev server address        |
 | `UNEASY_DEV`   | unset                                                | If `1`, mounts `/api/dev/*` shortcuts (see below) and Go profiling at `/debug/pprof/*` |
 | `PUBLIC_ORIGIN`| unset                                                | Public URL the server is reachable at, e.g. `https://uneasy.example`. Unset = dev behavior (cookies without `Secure`, no HSTS, WebSocket accepts any Origin). When set with an `https://` scheme: session cookies get `Secure`, responses get HSTS, and the WebSocket handshake only accepts that host as Origin. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | unset | Web-push signing keypair (adr/NOTIFICATIONS_PLAN.md). Unset in dev: turn notifications are logged to stdout instead of sent. Generate once with the one-off snippet below. |
+| `VAPID_SUBJECT`  | unset | Contact info sent to the push service (a `mailto:` address or an `https://` URL), e.g. `mailto:you@example.com`. |
+
+One-off VAPID keypair generation — save as a scratch `main.go` inside `uneasy/` (it already depends on `webpush-go`) and `go run` it once:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	webpush "github.com/SherClockHolmes/webpush-go"
+)
+
+func main() {
+	priv, pub, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("VAPID_PUBLIC_KEY=" + pub)
+	fmt.Println("VAPID_PRIVATE_KEY=" + priv)
+}
+```
 
 ## Health check & database backups
 

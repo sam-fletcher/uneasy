@@ -8,7 +8,7 @@ RETURNING *;
 -- name: GetSessionWithAccount :one
 SELECT
   s.token, s.account_id, s.created_at, s.last_seen,
-  a.id AS a_id, a.username, a.password_hash, a.email,
+  a.id AS a_id, a.username, a.password_hash, a.email, a.notify_cadence_hours,
   a.created_at AS a_created_at, a.updated_at AS a_updated_at
 FROM sessions s
 JOIN accounts a ON a.id = s.account_id

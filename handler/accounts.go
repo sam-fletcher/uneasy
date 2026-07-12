@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -21,6 +22,11 @@ const sessionCookieMaxAge = int(365 * 24 * time.Hour / time.Second)
 // errors on anything longer, which without this guard surfaces as a
 // confusing 500. Not a password-strength policy — there is no minimum.
 const maxPasswordBytes = 72
+
+// validNotifyCadenceHours mirrors the accounts.notify_cadence_hours CHECK
+// constraint (migration 048) — the five cadence options a player can pick in
+// Profile → Notifications. NULL (not in this set) means off.
+var validNotifyCadenceHours = map[int16]bool{1: true, 3: true, 8: true, 24: true, 72: true}
 
 // CreateAccount handles POST /api/accounts.
 //
@@ -106,16 +112,24 @@ func GetMe() http.HandlerFunc {
 			return
 		}
 		respond(w, http.StatusOK, map[string]any{
-			"id":       acct.ID,
-			"username": acct.Username,
-			"email":    acct.Email,
+			"id":                   acct.ID,
+			"username":             acct.Username,
+			"email":                acct.Email,
+			"notify_cadence_hours": acct.NotifyCadenceHours,
+			"vapid_public_key":     vapidPublicKey,
 		})
 	}
 }
 
 // UpdateMe handles PATCH /api/accounts/me.
 //
-// Body fields are all optional: {"username": ..., "email": ..., "password": ...}.
+// Body fields are all optional: {"username": ..., "email": ..., "password": ...,
+// "notify_cadence_hours": ...}. notify_cadence_hours is presence-aware: a
+// caller-supplied JSON null ({"notify_cadence_hours": null}) explicitly turns
+// notifications off, distinct from omitting the field entirely (which leaves
+// the existing cadence untouched) — reading into a typed struct alone can't
+// tell those apart, since both decode to a nil pointer, so the raw body is
+// also decoded into a map to check key presence.
 func UpdateMe(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
@@ -124,15 +138,25 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 			return
 		}
 
-		var body struct {
-			Username *string `json:"username"`
-			Email    *string `json:"email"`
-			Password *string `json:"password"`
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, "could not read body")
+			return
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+
+		var body struct {
+			Username           *string `json:"username"`
+			Email              *string `json:"email"`
+			Password           *string `json:"password"`
+			NotifyCadenceHours *int16  `json:"notify_cadence_hours"`
+		}
+		if err := json.Unmarshal(bodyBytes, &body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
+		var rawFields map[string]json.RawMessage
+		_ = json.Unmarshal(bodyBytes, &rawFields)
+		_, cadencePresent := rawFields["notify_cadence_hours"]
 
 		ctx := r.Context()
 
@@ -157,34 +181,24 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 			if !ok {
 				return
 			}
-			if email != "" {
-				newEmail = &email
-			} else {
-				empty := ""
-				newEmail = &empty
-			}
+			newEmail = &email
 		}
 		var newPasswordHash *string
 		if body.Password != nil {
-			if *body.Password == "" {
-				respondErr(w, http.StatusBadRequest, "password cannot be empty")
+			hash, ok := hashPasswordField(w, r, *body.Password)
+			if !ok {
 				return
 			}
-			if len(*body.Password) > maxPasswordBytes {
-				respondErr(w, http.StatusBadRequest, "password too long (max 72 characters)")
-				return
-			}
-			hash, err := bcrypt.GenerateFromPassword([]byte(*body.Password), bcrypt.DefaultCost)
-			if err != nil {
-				respondInternalErr(w, r, "could not hash password", err)
-				return
-			}
-			h := string(hash)
-			newPasswordHash = &h
+			newPasswordHash = hash
+		}
+		if cadencePresent && body.NotifyCadenceHours != nil && !validNotifyCadenceHours[*body.NotifyCadenceHours] {
+			respondErr(w, http.StatusBadRequest, "notify_cadence_hours must be one of 1, 3, 8, 24, 72, or null")
+			return
 		}
 
-		err := s.InTx(ctx, func(q *dbgen.Queries) error {
-			return updateAccountFields(ctx, q, acct, newUsername, newEmail, newPasswordHash)
+		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			return updateAccountFields(ctx, q, acct, newUsername, newEmail, newPasswordHash,
+				cadencePresent, body.NotifyCadenceHours)
 		})
 		if err != nil {
 			respondHTTPErr(w, r, err)
@@ -198,6 +212,28 @@ func UpdateMe(s *db.Store) http.HandlerFunc {
 		}
 		respond(w, http.StatusOK, accountResponse(&updated))
 	}
+}
+
+// hashPasswordField validates and bcrypt-hashes a non-empty password update
+// for UpdateMe, writing the appropriate 4xx (or 500, on a hash failure) and
+// returning ok=false on any error. Split out to keep UpdateMe's branching
+// flat — the caller only needs to check ok and return.
+func hashPasswordField(w http.ResponseWriter, r *http.Request, password string) (*string, bool) {
+	if password == "" {
+		respondErr(w, http.StatusBadRequest, "password cannot be empty")
+		return nil, false
+	}
+	if len(password) > maxPasswordBytes {
+		respondErr(w, http.StatusBadRequest, "password too long (max 72 characters)")
+		return nil, false
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		respondInternalErr(w, r, "could not hash password", err)
+		return nil, false
+	}
+	h := string(hash)
+	return &h, true
 }
 
 // ListMyTables handles GET /api/accounts/me/tables.
@@ -228,16 +264,22 @@ func ListMyTables(s *db.Store) http.HandlerFunc {
 
 func accountResponse(a *dbgen.Account) map[string]any {
 	return map[string]any{
-		"id":       a.ID,
-		"username": a.Username,
-		"email":    a.Email,
+		"id":                   a.ID,
+		"username":             a.Username,
+		"email":                a.Email,
+		"notify_cadence_hours": a.NotifyCadenceHours,
 	}
 }
 
-// updateAccountFields applies the given account field updates within a transaction.
-// It returns the appropriate HTTP status code and any error encountered.
+// updateAccountFields applies the given account field updates within a
+// transaction. cadenceSet distinguishes "notify_cadence_hours omitted" (false
+// — leave untouched) from "notify_cadence_hours present in the request body"
+// (true — write newCadence, which may itself be nil to turn notifications
+// off); see UpdateMe's doc comment for why presence can't be read off
+// newCadence alone.
 func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddleware.Account,
 	newUsername, newEmail *string, newPasswordHash *string,
+	cadenceSet bool, newCadence *int16,
 ) error {
 	if newUsername != nil {
 		if existing, err := q.GetAccountByUsername(ctx, *newUsername); err == nil && existing.ID != acct.ID {
@@ -276,6 +318,14 @@ func updateAccountFields(ctx context.Context, q *dbgen.Queries, acct *appMiddlew
 			PasswordHash: *newPasswordHash,
 		}); err != nil {
 			return httpErr(http.StatusInternalServerError, "could not update password")
+		}
+	}
+	if cadenceSet {
+		if _, err := q.UpdateAccountNotifyCadence(ctx, dbgen.UpdateAccountNotifyCadenceParams{
+			ID:                 acct.ID,
+			NotifyCadenceHours: newCadence,
+		}); err != nil {
+			return httpErr(http.StatusInternalServerError, "could not update notification cadence")
 		}
 	}
 	return nil

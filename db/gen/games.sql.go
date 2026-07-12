@@ -122,6 +122,33 @@ func (q *Queries) GetGameByJoinCode(ctx context.Context, joinCode string) (Game,
 	return i, err
 }
 
+const listNonEndedGameIDs = `-- name: ListNonEndedGameIDs :many
+SELECT id FROM games WHERE phase != 'ended' ORDER BY id
+`
+
+// Every game the Session 3 notification ticker reconciles each tick — an
+// 'ended' game has nobody left to wait on (ComputeWaitState always returns
+// WaitKindNobody for it), so there's nothing to reconcile or send.
+func (q *Queries) ListNonEndedGameIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listNonEndedGameIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setCurrentRow = `-- name: SetCurrentRow :exec
 UPDATE games SET current_row = $2 WHERE id = $1
 `

@@ -35,3 +35,9 @@ UPDATE games SET ending_mode = $2 WHERE id = $1;
 -- (ADR-007). Idempotent and one-way: it never flips back to false, so a later
 -- destroy of the monarch's asset can't erase that the throne ever existed.
 UPDATE games SET throne_established = TRUE WHERE id = $1;
+
+-- name: ListNonEndedGameIDs :many
+-- Every game the Session 3 notification ticker reconciles each tick — an
+-- 'ended' game has nobody left to wait on (ComputeWaitState always returns
+-- WaitKindNobody for it), so there's nothing to reconcile or send.
+SELECT id FROM games WHERE phase != 'ended' ORDER BY id;
