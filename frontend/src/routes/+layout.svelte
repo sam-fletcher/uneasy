@@ -163,9 +163,15 @@
 		margin: 0 auto;
 		padding: 1rem;
 	}
-	/* Table route: immersive game UI fills the viewport edge-to-edge. */
+	/* Table route: immersive game UI fills the viewport edge-to-edge.
+	   overflow-x: clip guards against the table page's edge-to-edge strips
+	   (see .top-strip in table/[id]/+page.svelte) landing a fraction of a
+	   pixel past this box at fractional viewport widths — without it,
+	   document.documentElement.scrollWidth can exceed clientWidth by ~1px,
+	   letting the whole page rubber-band sideways on touch scroll. */
 	main.full-bleed {
 		max-width: 100%;
 		padding: 0 0.2rem;
+		overflow-x: clip;
 	}
 </style>

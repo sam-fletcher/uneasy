@@ -125,6 +125,21 @@
 			el?.scrollIntoView({ block: 'center' });
 		});
 	});
+
+	// ── Escape closes the overlay ──────────────────────────────────────────
+	// The scrim's own onkeydown only fires if the scrim has DOM focus, which
+	// never happens in practice (tabindex="-1", never programmatically
+	// focused). A window-level listener is the only reliable way to catch
+	// Escape from keyboard users. Only wired in overlay mode — at ≥1280px
+	// the panel is a permanent column with nothing to collapse.
+	$effect(() => {
+		if (!expanded || isWide) return;
+		const onKeydown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') toggle();
+		};
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
+	});
 </script>
 
 <!--
@@ -168,14 +183,12 @@
 	<!-- Scrim: only rendered when overlay is in play (i.e. NOT at ≥1280
 	     where the panel is a permanent column). Tap to collapse. -->
 	{#if !isWide}
-		<div
+		<button
 			class="scrim"
-			role="button"
 			tabindex="-1"
 			aria-label="Close public record"
 			onclick={toggle}
-			onkeydown={(e) => { if (e.key === 'Escape') toggle(); }}
-		></div>
+		></button>
 	{/if}
 
 	<aside
@@ -379,6 +392,8 @@
 		right: 0;
 		bottom: 0;
 		background: rgba(0, 0, 0, 0.4);
+		border: none;
+		padding: 0;
 		z-index: 90;
 		cursor: pointer;
 	}

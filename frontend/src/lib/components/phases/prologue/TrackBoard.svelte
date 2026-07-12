@@ -282,10 +282,12 @@
 	}
 
 	.col-head {
+		position: relative;
 		display: flex;
 		align-items: center;
-		gap: 0.3rem;
-		padding: 0.1rem 0.2rem 0.3rem;
+		justify-content: center;
+		gap: 0.2rem;
+		padding: 0.1rem 0.05rem 0.3rem;
 		border-bottom: 1px solid var(--color-surface-2);
 	}
 	.col-suit { font-size: 0.95rem; }
@@ -293,12 +295,16 @@
 	.col-suit[data-color='black'] { color: var(--color-text); }
 	.col-label {
 		color: var(--color-accent);
-		font-size: 0.78rem;
+		font-size: 0.62rem;
 		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		letter-spacing: 0;
+		white-space: nowrap;
 	}
 	.active-pip {
-		margin-left: auto;
+		position: absolute;
+		right: 0.1rem;
+		top: 50%;
+		transform: translateY(-50%);
 		color: var(--color-accent);
 		font-size: 0.6rem;
 	}
@@ -412,7 +418,7 @@
 		.column { padding: 0.5rem; gap: 0.3rem; }
 		.rank-row { padding: 0.3rem 0.4rem; min-height: 44px; }
 		.rank-num { font-size: 0.85rem; min-width: 1.2rem; }
-		.col-label { font-size: 0.85rem; }
+		.col-label { font-size: 0.85rem; letter-spacing: 0.04em; }
 		.chip-name { font-size: 0.85rem; }
 		.card-glyph.small { font-size: 0.7rem; min-width: 1.4em; padding: 0.05rem 0.25rem; }
 	}

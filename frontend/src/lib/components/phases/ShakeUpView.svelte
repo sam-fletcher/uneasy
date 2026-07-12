@@ -726,6 +726,17 @@
 	.act-step { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
 	.act-arrow { color: var(--color-text-faint); font-size: 0.9rem; }
 
+	/* Narrow phones: the three-pill tracker is tight enough that SPENDING
+	   (longer than ROLLING) tips it onto a wrapped second line. Shrink
+	   padding/gaps/type so all three acts always share one row. */
+	@media (max-width: 600px) {
+		.act-tracker { gap: 0.25rem; flex-wrap: nowrap; }
+		.act { padding: 0.3rem 0.4rem; }
+		.act-name { font-size: 0.78rem; }
+		.act-step { font-size: 0.6rem; }
+		.act-arrow { font-size: 0.75rem; }
+	}
+
 	/* Phase intro — collapsible accordion, mirrors Buffet's own toggle. */
 	.intro-block { display: flex; flex-direction: column; gap: 0; }
 	.intro-toggle {
