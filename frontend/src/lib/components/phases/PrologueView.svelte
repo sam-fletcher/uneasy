@@ -554,17 +554,15 @@
 			{/if}
 		</section>
 
-		{#if cards.length > 0}
-			<TrackBoard
-				{players}
-				{cards}
-				{rankings}
-				{committed}
-				{doneFlags}
-				activeTrack={'power'}
-				{currentPlayerID}
-			/>
-		{/if}
+		<TrackBoard
+			{players}
+			{cards}
+			{rankings}
+			{committed}
+			{doneFlags}
+			activeTrack={'power'}
+			{currentPlayerID}
+		/>
 
 		<p class="muted-text small">
 			Turns taken: {myTurns} / 3.
