@@ -327,15 +327,13 @@
 <div class="retinue-view">
 	{#if player}
 		<header class="retinue-header">
-			<div class="header-titles">
+			<div class="header-title-row">
 				<h2>{isSelf ? 'Your Retinue' : `${player.display_name}'s Retinue`}</h2>
-				<div class="meta">
-					<span class="dot" class:online={presence?.online}></span>
-					<span class="status">{presence?.online ? 'online' : 'offline'}</span>
-					<!-- {#if player.is_facilitator}
-						<span class="tag">facilitator</span>
-					{/if} -->
-				</div>
+				<span class="dot" class:online={presence?.online}></span>
+				<span class="status">{presence?.online ? 'online' : 'offline'}</span>
+				<!-- {#if player.is_facilitator}
+					<span class="tag">facilitator</span>
+				{/if} -->
 			</div>
 			<div class="header-badges">
 				{#if isFocusPlayer}
@@ -683,21 +681,33 @@
 
 	.retinue-header {
 		display: flex;
-		align-items: flex-end;
-		justify-content: space-between;
-		gap: 0.5rem;
-	}
-	.retinue-header h2 {
-		color: var(--color-accent);
-		font-size: 1.1rem;
-		margin: 0 0 0.3rem;
+		flex-direction: column;
+		gap: 0.3rem;
 	}
 
-	/* Right-aligned badge cluster (Focus Player + leveraged count). */
-	.header-badges {
-		flex-shrink: 0;
+	/* Row 1: title + online status inline. min-width:0 lets the h2 ellipsize
+	   instead of wrapping, since display names can run up to 40 chars. */
+	.header-title-row {
 		display: flex;
 		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.header-title-row h2 {
+		color: var(--color-accent);
+		font-size: 1.1rem;
+		margin: 0;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* Row 2: right-aligned badge cluster (Focus Player + leveraged count). */
+	.header-badges {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
 		gap: 0.4rem;
 	}
 
@@ -746,15 +756,14 @@
 		border-color: var(--color-border-strong);
 	}
 
-	.meta {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+	.status {
+		flex-shrink: 0;
 		font-size: 0.8rem;
 		color: var(--color-text-muted);
 	}
 
 	.dot {
+		flex-shrink: 0;
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
