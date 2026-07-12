@@ -225,8 +225,6 @@
 			>+<span class="die-icon" aria-hidden="true">🎲</span></span>
 		{/if}
 
-		<span class="dot" aria-hidden="true"></span>
-
 		<span class="name-block">
 			<span class="name">
 				<span class="name-text">{asset.name}</span>
@@ -361,7 +359,7 @@
 
 	.header {
 		display: grid;
-		grid-template-columns: auto auto 1fr auto;
+		grid-template-columns: auto 1fr auto;
 		align-items: center;
 		gap: 0.5rem;
 		width: 100%;
@@ -374,19 +372,18 @@
 		min-height: 44px; /* tap target */
 	}
 
-	/* select/marginalia/leverage modes all add one left "act" slot, giving 4
-	   children — the same 4-column base layout. (The earlier 5-column value left
-	   .meta in the 1fr track, so it left-aligned instead of hugging the right.) */
-	.card.selectable .header,
-	.card.marginalia-selectable .header { grid-template-columns: auto auto 1fr auto; }
+	/* select/marginalia/leverage modes all add one left "act" slot, giving 3
+	   children — the base .header layout above already fits that. Plain
+	   display-only cards drop the slot, so they get the narrower 2-column
+	   override below. (The owner dot used to be a separate column; it was
+	   dropped as redundant with the card's owner-color left border, see
+	   .card above.) */
 
 	/* Header click is a no-op in marginalia-pick mode (the card stays open)
 	   so don't suggest a pointer affordance there. */
 	.card.marginalia-selectable .header { cursor: default; }
 	.card.marginalia-selectable .caret { display: none; }
-	.card:not(.selectable):not(.marginalia-selectable):not(.has-leverage) .header { grid-template-columns: auto 1fr auto; }
-	/* Leverage mode keeps the base 4-column layout: the "+🎲" button takes the
-	   same left "act on this asset" slot the checkbox uses in selectable mode. */
+	.card:not(.selectable):not(.marginalia-selectable):not(.has-leverage) .header { grid-template-columns: 1fr auto; }
 
 	.select-tap-placeholder {
 		width: 22px;
@@ -452,14 +449,6 @@
 		line-height: 1;
 	}
 
-	.dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--owner-color, var(--color-neutral));
-		flex-shrink: 0;
-	}
-
 	.name-block {
 		display: flex;
 		flex-direction: column;
@@ -482,6 +471,20 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* Expanded card: the header is already showing the full marginalia list,
+	   so let the name breathe onto a second line instead of hard-truncating —
+	   engaging with a card should reveal the full name. Collapsed rows keep
+	   the single-line ellipsis above so list density stays intact. */
+	.header[aria-expanded='true'] .name-text {
+		overflow: hidden;
+		white-space: normal;
+		text-overflow: clip;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
 	}
 
 	.owner-label {
@@ -546,6 +549,14 @@
 	   badge. Title on .count carries the meaning for non-colour users. */
 	.count.at-risk { color: #d65a5a; font-weight: 600; }
 	.caret.at-risk { color: #d65a5a; }
+
+	/* Narrow phones (iPhone SE and similar): claw back a few px from the meta
+	   cluster's gaps so more of the name survives before ellipsis. Icon sizes
+	   are untouched — legibility of the glyphs is a hard requirement. */
+	@media (max-width: 400px) {
+		.meta { gap: 0.25rem; }
+		.count { padding-left: 0.3rem; }
+	}
 
 	/* Leverage draft toggle. A ~36px-tall "+🎲" chip wrapped in a 44px
 	   invisible tap target (::after) so it's comfortable to hit without
