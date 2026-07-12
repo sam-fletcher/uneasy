@@ -109,8 +109,13 @@ func TestPlanLifecycle_MakeDemands_ControlLeverage_WinnerSetsSubset(t *testing.T
 	require.NoError(t, err)
 	assert.False(t, wp.IsReady, "control_leverage winner must be seeded unready")
 
-	// The waiting bar names the winner during the window.
-	h.assertWaitees("leverage window", model.RowStateAwaitDemandLeverage, h.tg.Players[winnerIdx].ID)
+	// The waiting bar names the winner during the window. While the roll is
+	// open, the top-of-chain await_dice_roll gate (Notifications Session 1)
+	// supersedes await_demand_leverage — the winner is seeded unready
+	// specifically so they still land in the roll's own unready-participants
+	// acting set, matching what the client's roll override already showed
+	// before that gate moved server-side.
+	h.assertWaitees("leverage window", model.RowStateAwaitDiceRoll, h.tg.Players[winnerIdx].ID)
 
 	// The roll has NOT resolved — every other participant is ready, but it waits.
 	rl, err := h.q.GetDiceRollByID(ctx, roll.ID)

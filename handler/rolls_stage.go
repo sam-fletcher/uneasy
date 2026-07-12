@@ -271,6 +271,11 @@ func advanceToLeverage(
 	broadcastEvent(manager, roll.GameID, model.EventRollStageChanged, model.RollStageChangedPayload{
 		RollID: roll.ID, Stage: stageLeverage,
 	})
+	// The acting set changes to "unready participants" (covers both SkipVote
+	// and Vote's final-vote path, which both funnel through here). Redundant
+	// with finalizeRoll's broadcast if the skip-leverage short-circuit below
+	// immediately resolves the roll — harmless.
+	broadcastRowState(ctx, q, manager, roll.GameID)
 
 	// Skip-leverage short-circuit: if nobody has anything to commit, force
 	// everyone ready, emit a Minor chat log, and resolve immediately.
@@ -321,6 +326,10 @@ func postCommitSweeps(
 	if err := runAutoReadySweep(ctx, q, manager, roll, committerID); err != nil {
 		return err
 	}
+	// The sweeps above can flip readiness on several participants at once;
+	// recompute the unready acting set. Redundant with finalizeRoll's own
+	// broadcast if maybeAutoResolve below fully resolves the roll — harmless.
+	broadcastRowState(ctx, q, manager, roll.GameID)
 	return maybeAutoResolve(ctx, w, r, q, manager, roll)
 }
 

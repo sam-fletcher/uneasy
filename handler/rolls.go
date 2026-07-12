@@ -369,6 +369,9 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		broadcastEvent(manager, gameID, model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
+		// A new roll immediately becomes the top-of-chain row-state gate
+		// (await_dice_roll), overriding whatever the row was showing before.
+		broadcastRowState(ctx, s.Q, manager, gameID)
 		respond(w, http.StatusCreated, map[string]any{"roll": roll})
 	}
 }
@@ -423,6 +426,8 @@ func CallVote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		broadcastEvent(manager, roll.GameID, model.EventRollStageChanged, model.RollStageChangedPayload{
 			RollID: roll.ID, Stage: stageVoting,
 		})
+		// The acting set changes from [actor] to "players minus voters".
+		broadcastRowState(ctx, s.Q, manager, roll.GameID)
 		respond(w, http.StatusOK, map[string]any{"roll_id": roll.ID})
 	}
 }
@@ -506,6 +511,8 @@ func Vote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		if summary.VoteCount < int64(len(allPlayers)) {
+			// This voter drops out of the "players minus voters" acting set.
+			broadcastRowState(ctx, s.Q, manager, roll.GameID)
 			respond(w, http.StatusOK, map[string]any{"vote": body.Vote})
 			return
 		}
@@ -646,6 +653,11 @@ func SetReady(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		broadcastEvent(manager, roll.GameID, model.EventRollReadyChanged, model.RollReadyChangedPayload{
 			RollID: roll.ID, PlayerID: player.ID, IsReady: body.IsReady,
 		})
+		// This player joins or leaves the leverage-stage unready acting set.
+		// Redundant with finalizeRoll's own broadcast if this ready flip also
+		// triggers auto-resolution below — harmless, the client no-ops on a
+		// repeated row_state.changed with the same content.
+		broadcastRowState(ctx, s.Q, manager, roll.GameID)
 
 		if body.IsReady {
 			if err := maybeAutoResolve(ctx, w, r, s.Q, manager, roll); err != nil {

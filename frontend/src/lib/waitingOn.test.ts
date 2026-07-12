@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { DiceRoll, Player, RollParticipant, RowState, RowStateKind, VoteView } from '$lib/api';
+import type { DiceRoll, RowState, RowStateKind } from '$lib/api';
 import {
 	mainEventWaitingOn, type MainEventWaitingOnInput, type Waitee,
 	shakeUpWaitingOn, type ShakeUpWaitingOnInput,
@@ -9,10 +9,6 @@ import {
 // The derivation reads only a handful of fields off each input; minimal casts
 // keep the fixtures focused on what actually drives the logic.
 
-const player = (id: number) => ({ id }) as unknown as Player;
-const vote = (player_id: number) => ({ player_id }) as unknown as VoteView;
-const participant = (player_id: number, is_ready: boolean) =>
-	({ player_id, is_ready }) as unknown as RollParticipant;
 const roll = (over: Partial<DiceRoll>) => ({ stage: 'voting', outcome: null, ...over }) as DiceRoll;
 
 function rowState(kind: RowStateKind, over: Partial<RowState> = {}): RowState {
@@ -23,15 +19,8 @@ function rowState(kind: RowStateKind, over: Partial<RowState> = {}): RowState {
 function input(over: Partial<MainEventWaitingOnInput> = {}): MainEventWaitingOnInput {
 	return {
 		rowState: null,
-		focusPlayerID: null,
-		players: [],
 		activeRoll: null,
-		activeRollVotes: [],
-		activeRollParticipants: [],
 		delayRevealPlanType: null,
-		delayRevealPendingSubmitterIDs: [],
-		blockingCostPayers: [],
-		blockingClaimants: [],
 		maxRefresh: 0,
 		...over,
 	};
@@ -49,30 +38,29 @@ const playerIDs = (waitees: Waitee[]): number[] =>
 
 describe('plan_resolving — the founding regression', () => {
 	it('names the preparer from acting_player_ids, not the focus player', () => {
-		// Focus is a third party (7); the resolving plan belongs to preparer 3.
+		// The resolving plan belongs to preparer 3; nothing here names 7.
 		const got = mainEventWaitingOn(
 			input({
-				focusPlayerID: 7,
 				rowState: rowState('plan_resolving', { plan_id: 99, acting_player_ids: [3] }),
 			}),
 		);
 		expect(playerIDs(got.waitees)).toEqual([3]);
-		expect(playerIDs(got.waitees)).not.toContain(7); // never the focus bystander
+		expect(playerIDs(got.waitees)).not.toContain(7); // never a focus bystander
 		expect(got.stepLabel).toBe('Resolving plan');
 	});
 
-	it('does NOT fall back to the focus player when the acting set is empty', () => {
+	it('does NOT fall back to a focus player when the acting set is empty', () => {
 		// The old client-side proxy used focus as a fallback — that was the bug.
 		// With no acting set, the honest answer is "no one named", not "focus".
 		const got = mainEventWaitingOn(
-			input({ focusPlayerID: 7, rowState: rowState('plan_resolving', { acting_player_ids: [] }) }),
+			input({ rowState: rowState('plan_resolving', { acting_player_ids: [] }) }),
 		);
 		expect(got.waitees).toEqual([]);
 	});
 
 	it('plan_pending names the preparer the same way', () => {
 		const got = mainEventWaitingOn(
-			input({ focusPlayerID: 7, rowState: rowState('plan_pending', { acting_player_ids: [3] }) }),
+			input({ rowState: rowState('plan_pending', { acting_player_ids: [3] }) }),
 		);
 		expect(playerIDs(got.waitees)).toEqual([3]);
 		expect(got.stepLabel).toBe('Resolving plan');
@@ -85,6 +73,7 @@ describe('actor-naming sub-phase kinds', () => {
 	const cases: Array<{ kind: RowStateKind; label: string }> = [
 		{ kind: 'await_demand_counter', label: 'Make Demands — awaiting counter' },
 		{ kind: 'await_demand_draft_pick', label: 'Make Demands — draft pick' },
+		{ kind: 'await_demand_leverage', label: 'Make Demands — control leverage' },
 		{ kind: 'await_festivity_guest_turn', label: 'Host Festivity — in progress' },
 		{ kind: 'await_festivity_challenge_response', label: 'Host Festivity — challenge response' },
 		{ kind: 'await_duel_bout', label: 'Propose Duel — bout' },
@@ -94,9 +83,7 @@ describe('actor-naming sub-phase kinds', () => {
 		{ kind: 'await_main_character_choice', label: 'Choose a new main character' },
 	];
 	it.each(cases)('$kind → names acting_player_ids with label "$label"', ({ kind, label }) => {
-		const got = mainEventWaitingOn(
-			input({ focusPlayerID: 7, rowState: rowState(kind, { acting_player_ids: [5] }) }),
-		);
+		const got = mainEventWaitingOn(input({ rowState: rowState(kind, { acting_player_ids: [5] }) }));
 		expect(playerIDs(got.waitees)).toEqual([5]);
 		expect(got.stepLabel).toBe(label);
 	});
@@ -127,15 +114,62 @@ describe('actor-naming sub-phase kinds', () => {
 	});
 });
 
+// ── Dice roll ────────────────────────────────────────────────────────────────
+// Session 1 (adr/NOTIFICATIONS_PLAN.md) moved the roll override server-side:
+// await_dice_roll is just another rowState.kind, reading acting_player_ids
+// like every other kind. activeRoll now survives only for its `stage`, to
+// pick the step label.
+
+describe('await_dice_roll', () => {
+	it('decide_vote label, actor named via acting_player_ids', () => {
+		const got = mainEventWaitingOn(
+			input({
+				rowState: rowState('await_dice_roll', { roll_id: 1, acting_player_ids: [8] }),
+				activeRoll: roll({ stage: 'decide_vote', actor_id: 8 }),
+			}),
+		);
+		expect(playerIDs(got.waitees)).toEqual([8]);
+		expect(got.stepLabel).toBe('Dice roll — call a vote?');
+	});
+
+	it('voting label', () => {
+		const got = mainEventWaitingOn(
+			input({
+				rowState: rowState('await_dice_roll', { acting_player_ids: [1, 3] }),
+				activeRoll: roll({ stage: 'voting' }),
+			}),
+		);
+		expect(playerIDs(got.waitees)).toEqual([1, 3]);
+		expect(got.stepLabel).toBe('Dice roll — difficulty vote');
+	});
+
+	it('leverage label', () => {
+		const got = mainEventWaitingOn(
+			input({
+				rowState: rowState('await_dice_roll', { acting_player_ids: [2] }),
+				activeRoll: roll({ stage: 'leverage' }),
+			}),
+		);
+		expect(playerIDs(got.waitees)).toEqual([2]);
+		expect(got.stepLabel).toBe('Dice roll — leverage & ready');
+	});
+
+	it('falls back to a generic label when activeRoll has not loaded yet', () => {
+		const got = mainEventWaitingOn(
+			input({ rowState: rowState('await_dice_roll', { acting_player_ids: [2] }), activeRoll: null }),
+		);
+		expect(got.stepLabel).toBe('Dice roll');
+	});
+});
+
 // ── Delay reveal ─────────────────────────────────────────────────────────────
 
 describe('await_delay_reveal', () => {
-	it('names the pending submitters and labels by plan type (make_war)', () => {
+	it('names acting_player_ids and labels by plan type (make_war)', () => {
 		const got = mainEventWaitingOn(
 			input({
-				rowState: rowState('await_delay_reveal'),
+				rowState: rowState('await_delay_reveal', { acting_player_ids: [1, 2] }),
 				delayRevealPlanType: 'make_war',
-				delayRevealPendingSubmitterIDs: [1, 2],
 			}),
 		);
 		expect(playerIDs(got.waitees)).toEqual([1, 2]);
@@ -160,98 +194,63 @@ describe('await_delay_reveal', () => {
 // ── Row-advance gates ────────────────────────────────────────────────────────
 
 describe('await_battle_cost / await_surrender_claim', () => {
-	it('unions cost-payers and claimants, dedupes, and builds the subtitle', () => {
+	it('await_battle_cost names acting_player_ids with the cost-of-battle subtitle', () => {
 		const got = mainEventWaitingOn(
-			input({
-				rowState: rowState('await_battle_cost'),
-				blockingCostPayers: [1, 2],
-				blockingClaimants: [2, 3],
-			}),
+			input({ rowState: rowState('await_battle_cost', { acting_player_ids: [1, 2] }) }),
 		);
-		expect(playerIDs(got.waitees).sort()).toEqual([1, 2, 3]);
+		expect(playerIDs(got.waitees).sort()).toEqual([1, 2]);
 		expect(got.stepLabel).toBe('Row advance blocked');
-		expect(got.stepSubtitle).toBe('cost of battle · surrender-asset claims');
+		expect(got.stepSubtitle).toBe('cost of battle');
 	});
 
-	it('only shows the relevant subtitle part when one source is empty', () => {
+	it('await_surrender_claim names acting_player_ids with the surrender-claim subtitle', () => {
 		const got = mainEventWaitingOn(
-			input({ rowState: rowState('await_surrender_claim'), blockingClaimants: [3] }),
+			input({ rowState: rowState('await_surrender_claim', { acting_player_ids: [3] }) }),
 		);
+		expect(playerIDs(got.waitees)).toEqual([3]);
+		expect(got.stepLabel).toBe('Row advance blocked');
 		expect(got.stepSubtitle).toBe('surrender-asset claims');
 	});
 });
 
 // ── Focus-player kinds ───────────────────────────────────────────────────────
+// These now read acting_player_ids like every other kind — the backend fills
+// it with the focus player (or nothing, if none is set yet). There is no
+// client-side focus fallback left.
 
 describe('focus-player kinds', () => {
-	it('scene_active / scene_setting name the focus player', () => {
+	it('scene_active / scene_setting name acting_player_ids', () => {
 		expect(
-			playerIDs(mainEventWaitingOn(input({ focusPlayerID: 4, rowState: rowState('scene_active') })).waitees),
+			playerIDs(
+				mainEventWaitingOn(input({ rowState: rowState('scene_active', { acting_player_ids: [4] }) }))
+					.waitees,
+			),
 		).toEqual([4]);
 		expect(
-			playerIDs(mainEventWaitingOn(input({ focusPlayerID: 4, rowState: rowState('scene_setting') })).waitees),
+			playerIDs(
+				mainEventWaitingOn(input({ rowState: rowState('scene_setting', { acting_player_ids: [4] }) }))
+					.waitees,
+			),
 		).toEqual([4]);
 	});
 
-	it('post_scene_action names the focus player and pluralizes the refresh subtitle', () => {
-		const one = mainEventWaitingOn(input({ focusPlayerID: 4, rowState: rowState('post_scene_action'), maxRefresh: 1 }));
+	it('post_scene_action names acting_player_ids and pluralizes the refresh subtitle', () => {
+		const one = mainEventWaitingOn(
+			input({ rowState: rowState('post_scene_action', { acting_player_ids: [4] }), maxRefresh: 1 }),
+		);
 		expect(playerIDs(one.waitees)).toEqual([4]);
 		expect(one.stepSubtitle).toBe('or refresh 1 asset');
-		const many = mainEventWaitingOn(input({ focusPlayerID: 4, rowState: rowState('post_scene_action'), maxRefresh: 3 }));
+		const many = mainEventWaitingOn(
+			input({ rowState: rowState('post_scene_action', { acting_player_ids: [4] }), maxRefresh: 3 }),
+		);
 		expect(many.stepSubtitle).toBe('or refresh 3 assets');
 	});
 
-	it('names no one when there is no focus player', () => {
-		expect(mainEventWaitingOn(input({ focusPlayerID: null, rowState: rowState('scene_setting') })).waitees).toEqual([]);
-	});
-});
-
-// ── Active dice roll overrides the row-state ──────────────────────────────────
-
-describe('an unresolved dice roll overrides the row-state waitees', () => {
-	it('decide_vote names the roll actor', () => {
-		const got = mainEventWaitingOn(
-			input({
-				rowState: rowState('plan_resolving', { acting_player_ids: [3] }),
-				activeRoll: roll({ stage: 'decide_vote', actor_id: 8 }),
-			}),
-		);
-		expect(playerIDs(got.waitees)).toEqual([8]); // the roll, not the plan preparer
-		expect(got.stepLabel).toBe('Dice roll — call a vote?');
-	});
-
-	it('voting names players who have not yet voted', () => {
-		const got = mainEventWaitingOn(
-			input({
-				players: [player(1), player(2), player(3)],
-				activeRoll: roll({ stage: 'voting' }),
-				activeRollVotes: [vote(2)],
-			}),
-		);
-		expect(playerIDs(got.waitees)).toEqual([1, 3]);
-		expect(got.stepLabel).toBe('Dice roll — difficulty vote');
-	});
-
-	it('leverage names participants who are not ready', () => {
-		const got = mainEventWaitingOn(
-			input({
-				activeRoll: roll({ stage: 'leverage' }),
-				activeRollParticipants: [participant(1, true), participant(2, false)],
-			}),
-		);
-		expect(playerIDs(got.waitees)).toEqual([2]);
-		expect(got.stepLabel).toBe('Dice roll — leverage & ready');
-	});
-
-	it('a RESOLVED roll (outcome set) does not override — row-state wins', () => {
-		const got = mainEventWaitingOn(
-			input({
-				rowState: rowState('plan_resolving', { acting_player_ids: [3] }),
-				activeRoll: roll({ stage: 'leverage', outcome: 'make' }),
-			}),
-		);
-		expect(playerIDs(got.waitees)).toEqual([3]);
-		expect(got.stepLabel).toBe('Resolving plan');
+	it('names no one when the backend sends an empty acting set (no focus player yet)', () => {
+		expect(
+			mainEventWaitingOn(input({ rowState: rowState('scene_setting', { acting_player_ids: [] }) }))
+				.waitees,
+		).toEqual([]);
 	});
 });
 

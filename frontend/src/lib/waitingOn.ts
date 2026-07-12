@@ -9,7 +9,7 @@
 // must act — `acting_player_ids` is read directly, with no client-side
 // preparer/focus proxy (the proxy is what produced the original bug).
 
-import type { DiceRoll, VoteView, RollParticipant, Player, RowState, PlanType } from '$lib/api';
+import type { DiceRoll, RowState, PlanType } from '$lib/api';
 
 /** A single party the game is waiting on. */
 export type Waitee =
@@ -29,90 +29,44 @@ export interface WaitingOnState {
 export interface MainEventWaitingOnInput {
 	/** Authoritative row-state from the server; null briefly during first fetch. */
 	rowState: RowState | null;
-	/** The current focus player, or null if none is set yet. */
-	focusPlayerID: number | null;
-	/** All players (used to name who still owes a difficulty vote). */
-	players: Player[];
-	/** Active (unresolved) dice roll, or null. An open roll overrides the
-	 *  row-state waitees: the table is blocked on the roll's own stage. */
+	/** Active (unresolved) dice roll, or null. Only its `stage` is read here —
+	 *  purely for the AwaitDiceRoll step label; the waitees themselves come
+	 *  from `rowState.acting_player_ids` like every other kind. */
 	activeRoll: DiceRoll | null;
-	/** Votes cast so far on the active roll. */
-	activeRollVotes: VoteView[];
-	/** Participants of the active roll (for the leverage/ready stage). */
-	activeRollParticipants: RollParticipant[];
 	/** plan_type of the open delay-reveal plan, or null when not in that kind. */
 	delayRevealPlanType: PlanType | null;
-	/** Participants who still owe a hidden die in the delay reveal. */
-	delayRevealPendingSubmitterIDs: number[];
-	/** War participants who still owe a battle cost on the current row. */
-	blockingCostPayers: number[];
-	/** Claimants holding an open surrender-asset claim. */
-	blockingClaimants: number[];
 	/** Max assets the focus player may refresh (for the post-scene subtitle). */
 	maxRefresh: number;
 }
 
 const player = (playerID: number): Waitee => ({ kind: 'player', playerID });
 
-/** An unresolved dice roll blocks the table on its own stage — whoever still
- *  owes a vote-decision, a difficulty vote, or a leverage/ready submission —
- *  not on the plan's preparer or the focus player. */
-function rollWaitingOn(
-	roll: DiceRoll,
-	players: Player[],
-	votes: VoteView[],
-	participants: RollParticipant[],
-): WaitingOnState {
-	switch (roll.stage) {
+const rollStepLabel = (stage: DiceRoll['stage'] | undefined): string => {
+	switch (stage) {
 		case 'decide_vote':
-			return { waitees: [player(roll.actor_id)], stepLabel: 'Dice roll — call a vote?' };
-		case 'voting': {
-			const voted = new Set(votes.map((v) => v.player_id));
-			return {
-				waitees: players.filter((p) => !voted.has(p.id)).map((p) => player(p.id)),
-				stepLabel: 'Dice roll — difficulty vote',
-			};
-		}
+			return 'Dice roll — call a vote?';
+		case 'voting':
+			return 'Dice roll — difficulty vote';
 		case 'leverage':
-			return {
-				waitees: participants.filter((p) => !p.is_ready).map((p) => player(p.player_id)),
-				stepLabel: 'Dice roll — leverage & ready',
-			};
+			return 'Dice roll — leverage & ready';
 		default:
-			return { waitees: [] };
+			return 'Dice roll';
 	}
-}
+};
 
 /**
  * Compute the WaitingOnBar state for the main-event phase.
  *
- * Precedence: an open dice roll wins outright; otherwise the server's RowState
- * kind selects the waitees. Actor-naming kinds (plan_resolving and every
- * sub-phase gate) read `acting_player_ids` verbatim — the backend has already
- * named the exact decision-maker(s), so there is no preparer/focus fallback to
- * mis-attribute the wait. Focus-player kinds (scenes, post-scene) name the
- * focus player; the row-advance gates name the cost-payers / claimants.
+ * The server's RowState kind selects the waitees for every kind, including
+ * AwaitDiceRoll (an open dice roll — the backend checks this ahead of every
+ * other gate, so it wins the same way the client's roll override used to) and
+ * the focus-player kinds (scenes, post-scene). Every kind reads
+ * `acting_player_ids` verbatim — the backend has already named the exact
+ * decision-maker(s) from persisted state, so there is no client-side
+ * preparer/focus/roll-participant proxy left to mis-attribute the wait.
  */
 export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnState {
-	const {
-		rowState,
-		focusPlayerID,
-		players,
-		activeRoll,
-		activeRollVotes,
-		activeRollParticipants,
-		delayRevealPlanType,
-		delayRevealPendingSubmitterIDs,
-		blockingCostPayers,
-		blockingClaimants,
-		maxRefresh,
-	} = input;
-
-	if (activeRoll != null && activeRoll.outcome == null) {
-		return rollWaitingOn(activeRoll, players, activeRollVotes, activeRollParticipants);
-	}
-
-	const focusWaitee: Waitee[] = focusPlayerID != null ? [player(focusPlayerID)] : [];
+	const { rowState, activeRoll, delayRevealPlanType, maxRefresh } = input;
 
 	// The server-authoritative acting set. The backend names the exact
 	// decision-maker(s) from persisted state for every actor-naming kind —
@@ -121,6 +75,8 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 	const actingWaitees = (): Waitee[] => (rowState?.acting_player_ids ?? []).map(player);
 
 	switch (rowState?.kind) {
+		case 'await_dice_roll':
+			return { waitees: actingWaitees(), stepLabel: rollStepLabel(activeRoll?.stage) };
 		case 'plan_resolving':
 		case 'plan_pending':
 			// Resolved by its preparer (named server-side), never the focus
@@ -133,8 +89,9 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — draft pick' };
 		case 'await_demand_leverage':
 			// Control_leverage winner owes the leverage decision on the target
-			// plan's open roll. Usually surfaced via the active-roll path above
-			// (they're seeded unready); this is the row-state fallback.
+			// plan's open roll. Usually surfaced via the await_dice_roll case
+			// above (they're seeded unready on that roll); this is the row-state
+			// fallback for the gap before/after the roll itself is open.
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — control leverage' };
 		case 'await_festivity_guest_turn':
 			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — in progress' };
@@ -169,31 +126,27 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 					: delayRevealPlanType === 'clandestinely_liaise'
 						? 'Clandestinely Liaise — delay reveal'
 						: 'Delay reveal';
-			return { waitees: delayRevealPendingSubmitterIDs.map(player), stepLabel: label };
+			return { waitees: actingWaitees(), stepLabel: label };
 		}
 		case 'await_battle_cost':
-		case 'await_surrender_claim': {
-			const ids = new Set<number>([...blockingCostPayers, ...blockingClaimants]);
-			const parts: string[] = [];
-			if (blockingCostPayers.length > 0) parts.push('cost of battle');
-			if (blockingClaimants.length > 0) parts.push('surrender-asset claims');
+			return { waitees: actingWaitees(), stepLabel: 'Row advance blocked', stepSubtitle: 'cost of battle' };
+		case 'await_surrender_claim':
 			return {
-				waitees: [...ids].map(player),
+				waitees: actingWaitees(),
 				stepLabel: 'Row advance blocked',
-				stepSubtitle: parts.join(' · '),
+				stepSubtitle: 'surrender-asset claims',
 			};
-		}
 		case 'await_main_character_choice':
 			// One or more players lost their main character; each must choose a
 			// replacement before play resumes. The backend names them all.
 			return { waitees: actingWaitees(), stepLabel: 'Choose a new main character' };
 		case 'scene_active':
-			return { waitees: focusWaitee, stepLabel: 'Scene' };
+			return { waitees: actingWaitees(), stepLabel: 'Scene' };
 		case 'scene_setting':
-			return { waitees: focusWaitee, stepLabel: 'Set the scene' };
+			return { waitees: actingWaitees(), stepLabel: 'Set the scene' };
 		case 'post_scene_action': {
 			const subtitle = `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
-			return { waitees: focusWaitee, stepLabel: 'Prepare a plan', stepSubtitle: subtitle };
+			return { waitees: actingWaitees(), stepLabel: 'Prepare a plan', stepSubtitle: subtitle };
 		}
 	}
 	return { waitees: [] };

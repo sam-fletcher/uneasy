@@ -2,8 +2,8 @@ package model
 
 // RowStateKind is the discriminator for RowState — the single field that
 // names the row's current "step" in the rulebook sense (steps 1–8) plus the
-// pre-step gates (war battle costs, Make War delay reveal, open surrender
-// claims) that pause normal step progression.
+// pre-step gates (an open dice roll, war battle costs, Make War delay
+// reveal, open surrender claims) that pause normal step progression.
 //
 // The eight rulebook steps collapse to fewer kinds because some steps don't
 // need their own UI surface:
@@ -21,8 +21,9 @@ package model
 //   - Step 7 (repeat if plans remain): folded into PlanPending on the new focus
 //   - Step 8 (advance row):            handled server-side; never a UI state
 //
-// Plus the two cross-cutting gates that interrupt the normal flow:
+// Plus the cross-cutting gates that interrupt the normal flow:
 //
+//   - Open interactive dice roll:      AwaitDiceRoll          (top of the chain)
 //   - Open delay-reveal plan:          AwaitDelayReveal       (Make War, Clandestinely Liaise)
 //   - Open surrender claim:            AwaitSurrenderClaim
 //
@@ -35,6 +36,16 @@ const (
 	// RowStatePhaseNotMainEvent is returned for any phase other than
 	// main_event. Row-steps don't exist in lobby/prologue/shake_up/ended.
 	RowStatePhaseNotMainEvent RowStateKind = "phase_not_main_event"
+
+	// RowStateAwaitDiceRoll — an interactive dice roll (a Shake-Up roll is a
+	// separate mechanic and never reaches here) is open. It blocks everything
+	// else in the row — war-conflict gates, plan resolution, scene turns —
+	// until it resolves, codifying the client-side override that has always
+	// taken precedence over the row state in the WaitingOnBar. ActingPlayerIDs
+	// names whoever the roll's current stage blocks on: the actor
+	// (decide_vote), players who haven't yet cast a difficulty vote (voting),
+	// or participants who aren't ready (leverage). RollID names the roll.
+	RowStateAwaitDiceRoll RowStateKind = "await_dice_roll"
 
 	// RowStateAwaitSurrenderClaim — a surrender claim from a Make War
 	// payment is still open. The claimant must take an asset from the
@@ -207,16 +218,23 @@ type RowState struct {
 	// ClaimID is the open surrender claim for: AwaitSurrenderClaim.
 	ClaimID *int64 `json:"claim_id,omitempty"`
 
+	// RollID is the open interactive roll for: AwaitDiceRoll.
+	RollID *int64 `json:"roll_id,omitempty"`
+
 	// ActingPlayerIDs names the full set of players whose action the table is
 	// blocked on. The single, authoritative home for "who must act" — set
 	// server-side for every actor-naming kind, including the generic
 	// PlanResolving / PlanPending case (where it holds the resolving plan's
-	// preparer, who owns the resolution) and the single-actor sub-phase gates
+	// preparer, who owns the resolution), the single-actor sub-phase gates
 	// (AwaitDemandCounter, AwaitDemandDraftPick, AwaitFestivityGuestTurn,
 	// AwaitFestivityChallengeResponse, AwaitDuelBout, AwaitTakeConsent,
-	// AwaitQuestionAnswer, AwaitCourtierResponse — each a one-element slice) as
-	// well as the multi-actor gates (LiaiseResolving submit phases,
-	// AwaitChronicleChoices, AwaitDuelStaking).
+	// AwaitQuestionAnswer, AwaitCourtierResponse — each a one-element slice),
+	// the multi-actor gates (LiaiseResolving submit phases,
+	// AwaitChronicleChoices, AwaitDuelStaking), AwaitDiceRoll (the roll's
+	// current-stage actor set), AwaitDelayReveal (participants who still owe a
+	// hidden die), AwaitBattleCost / AwaitSurrenderClaim (the union of
+	// outstanding payers / open claimants across every war), and the
+	// focus-player kinds (SceneSetting, SceneActive, PostSceneAction).
 	//
 	// Computed from persisted state (resolution_data, rankings, reveals), so the
 	// WaitingOnBar reflects exactly who still owes an action — never the focus

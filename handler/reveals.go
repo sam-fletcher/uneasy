@@ -187,7 +187,11 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		if submitted < total {
-			// Not everyone has submitted yet.
+			// Not everyone has submitted yet. This submitter drops out of
+			// await_delay_reveal's pending-submitters acting set (a no-op
+			// broadcast for reveal types that don't gate row state, e.g.
+			// liaise_redelay — harmless).
+			broadcastRowState(ctx, s.Q, manager, reveal.GameID)
 			respond(w, http.StatusOK, map[string]any{
 				"reveal_id":       reveal.ID,
 				"submitted_count": submitted,

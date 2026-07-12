@@ -23,6 +23,7 @@ export function getTable(id: string | number): Promise<{ game: Game; players: Pl
 // wars, and reveals. See model/row_state.go for the precedence chain.
 export type RowStateKind =
 	| 'phase_not_main_event'
+	| 'await_dice_roll'
 	| 'await_surrender_claim'
 	| 'await_battle_cost'
 	| 'await_main_character_choice'
@@ -51,6 +52,7 @@ export interface RowState {
 	scene_id?: number | null;
 	war_id?: number | null;
 	claim_id?: number | null;
+	roll_id?: number | null;
 	/** The full, server-authoritative set of players whose action the row is
 	 *  blocked on — for every actor-naming kind, including the generic
 	 *  plan_resolving / plan_pending case (the resolving plan's preparer) and the

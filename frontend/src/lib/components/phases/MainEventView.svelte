@@ -8,20 +8,18 @@
 	import '$lib/components/shared/statusText.css';
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
-	import { WAR_EVENTS, REVEAL_EVENTS } from '$lib/ws';
+	import { WAR_EVENTS } from '$lib/ws';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import MakeWarPanel from '$lib/components/plans/MakeWarPanel.svelte';
 	import ClandestinelyLiaisePanel from '$lib/components/plans/ClandestinelyLiaisePanel.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import type { PlanContext } from '$lib/components/plans/types';
-	import { activeDemandAgainst, demandWinnersFromPlan, parseResolutionData } from '$lib/components/plans/shared';
-	import { parseLiaiseData } from '$lib/plans/resolutionData/liaise';
+	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
 	import {
 		refreshAssets,
 		listWars,
-		getReveal,
 	} from '$lib/api';
-	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, PlanToken, Scene, ScenePeerView, SceneSetupDraft, PreparePlanDraft, WarStateResponse, SimultaneousReveal, RowState } from '$lib/api';
+	import type { Game, Player, Asset, Ranking, Law, Rumor, RecordRow, DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie, Plan, PlanToken, Scene, ScenePeerView, SceneSetupDraft, PreparePlanDraft, WarStateResponse, RowState } from '$lib/api';
 	import DiceRollPanel from '$lib/components/DiceRollPanel.svelte';
 	import PlanPanel from '$lib/components/PlanPanel.svelte';
 	import SceneSetupForm from '$lib/components/SceneSetupForm.svelte';
@@ -137,33 +135,16 @@
 		}
 	});
 
-	const blockingCostPayers = $derived.by<number[]>(() => {
-		const ids = new Set<number>();
-		for (const w of wars) for (const c of w.outstanding_costs) ids.add(c.payer_id);
-		return [...ids];
-	});
-	const blockingClaimants = $derived.by<number[]>(() => {
-		const ids = new Set<number>();
-		for (const w of wars) for (const c of w.open_claims) ids.add(c.claimant_id);
-		return [...ids];
-	});
 	// Waiting-on derivation. The pure logic lives in $lib/waitingOn (unit-tested
 	// there); this view just feeds it the reactive inputs and publishes the
-	// result. The server's RowState is authoritative for who must act — the
-	// generic plan_resolving case carries the preparer in acting_player_ids, so
-	// there is no client-side preparer/focus proxy here anymore.
+	// result. The server's RowState is authoritative for who must act for
+	// every kind, including scenes/post-scene and an open dice roll — there is
+	// no client-side preparer/focus/roll-participant proxy here anymore.
 	const waitingOnState = $derived.by<WaitingOnState>(() =>
 		mainEventWaitingOn({
 			rowState,
-			focusPlayerID: game.focus_player_id ?? null,
-			players,
 			activeRoll,
-			activeRollVotes,
-			activeRollParticipants,
 			delayRevealPlanType: delayRevealPlan?.plan_type ?? null,
-			delayRevealPendingSubmitterIDs,
-			blockingCostPayers,
-			blockingClaimants,
 			maxRefresh,
 		}),
 	);
@@ -240,45 +221,6 @@
 			: null,
 	);
 	const delayRevealActive = $derived(delayRevealPlan != null);
-
-	// Extract the delay reveal ID from the right slot in resolution_data
-	// depending on the plan type — the two plans store it under different
-	// keys but otherwise share the simultaneous-reveal contract.
-	const delayRevealID = $derived.by<number | null>(() => {
-		if (!delayRevealPlan) return null;
-		if (delayRevealPlan.plan_type === 'make_war') {
-			return parseResolutionData(delayRevealPlan).make_war?.delay_reveal_id ?? null;
-		}
-		if (delayRevealPlan.plan_type === 'clandestinely_liaise') {
-			return parseLiaiseData(delayRevealPlan).delay_reveal_id ?? null;
-		}
-		return null;
-	});
-	let delayReveal = $state<SimultaneousReveal | null>(null);
-	async function refreshDelayReveal(revealID: number) {
-		try { delayReveal = await getReveal(revealID); }
-		catch { delayReveal = null; }
-	}
-	$effect(() => {
-		const id = delayRevealID;
-		if (id == null) { delayReveal = null; return; }
-		void refreshDelayReveal(id);
-	});
-	useWindowEvents(REVEAL_EVENTS, (e) => {
-		const id = delayRevealID;
-		const detail = (e as CustomEvent<{ reveal_id: number }>).detail;
-		if (id != null && detail?.reveal_id === id) void refreshDelayReveal(id);
-	});
-	// Participants whose reveal entry is still face=null.
-	const delayRevealPendingSubmitterIDs = $derived.by<number[]>(() => {
-		if (!delayReveal || delayReveal.is_complete) return [];
-		// revealed_at (not face) marks who has submitted — faces stay hidden
-		// until the reveal completes, so face is null for everyone before then.
-		return delayReveal.entries
-			.filter(e => e.revealed_at == null)
-			.map(e => e.player_id);
-	});
-
 
 	// Block the actor's own leverage if a Make Demands `control_leverage`
 	// winner has authority over this roll's plan. Backend would 403 anyway;

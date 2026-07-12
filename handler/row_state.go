@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/hub"
 	"uneasy/model"
 )
@@ -12,18 +13,26 @@ import (
 // ComputeRowState returns the single authoritative RowState for a game by
 // reading the persisted state of plans, scenes, wars, and reveals.
 //
-// Precedence chain — rulebook step 1 first, then the in-row sequence:
+// Precedence chain — the open-roll gate first, then rulebook step 1, then
+// the in-row sequence:
 //
 //  1. Not main_event              → PhaseNotMainEvent
-//  2. Outstanding surrender claim → AwaitSurrenderClaim
-//  3. Outstanding battle cost     → AwaitBattleCost            (rulebook step 1)
-//  4. Plan resolving              → PlanResolving              (step 2, active)
-//     4x. Player owes a replacement main character → AwaitMainCharacterChoice
-//  5. Plan pending on current row → PlanPending                (step 2, queued)
-//  6. Open delay-reveal plan      → AwaitDelayReveal           (Make War / CL)
-//  7. Focus player has a started, not-yet-ended turn-scene → SceneActive (step 4)
-//  8. Focus player's turn-scene has ended_at set → PostSceneAction      (step 5)
-//  9. Default                     → SceneSetting                         (step 3)
+//  2. Open interactive dice roll  → AwaitDiceRoll              (top of the chain)
+//  3. Outstanding surrender claim → AwaitSurrenderClaim
+//  4. Outstanding battle cost     → AwaitBattleCost            (rulebook step 1)
+//  5. Plan resolving              → PlanResolving              (step 2, active)
+//     5x. Player owes a replacement main character → AwaitMainCharacterChoice
+//  6. Plan pending on current row → PlanPending                (step 2, queued)
+//  7. Open delay-reveal plan      → AwaitDelayReveal           (Make War / CL)
+//  8. Focus player has a started, not-yet-ended turn-scene → SceneActive (step 4)
+//  9. Focus player's turn-scene has ended_at set → PostSceneAction      (step 5)
+//  10. Default                    → SceneSetting                        (step 3)
+//
+// Note on the roll gate: an open interactive roll (Shake-Up rolls are a
+// separate mechanic, excluded by GetOpenRollByGame) blocks everything below
+// it, including the war-conflict gates — this codifies the client-side
+// override that has always taken precedence over the row state in the
+// WaitingOnBar.
 //
 // Note on delay reveal vs. battle costs: a Make War plan that just finished
 // its reveal puts an active war on a future row (or the current one). Battle
@@ -39,7 +48,14 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		return model.RowState{Kind: model.RowStatePhaseNotMainEvent}, nil
 	}
 
-	// 2/3. War-conflict gates (open surrender claim, then outstanding battle
+	// 2. Open interactive dice roll — top-of-chain gate, above everything else.
+	if rs, ok, gErr := diceRollGate(ctx, q, gameID); gErr != nil {
+		return model.RowState{}, gErr
+	} else if ok {
+		return rs, nil
+	}
+
+	// 3/4. War-conflict gates (open surrender claim, then outstanding battle
 	// costs) — the highest-priority unresolved blocks, above plan resolution.
 	if rs, ok, gErr := warConflictGate(ctx, q, gameID, game.CurrentRow); gErr != nil {
 		return model.RowState{}, gErr
@@ -145,7 +161,11 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 	// from the plan's type via RowState.PlanID.
 	if dr := openDelayRevealPlan(plans); dr != nil {
 		id := dr.ID
-		return model.RowState{Kind: model.RowStateAwaitDelayReveal, PlanID: &id}, nil
+		ids, drErr := delayRevealPendingSubmitters(ctx, q, dr)
+		if drErr != nil {
+			return model.RowState{}, drErr
+		}
+		return model.RowState{Kind: model.RowStateAwaitDelayReveal, PlanID: &id, ActingPlayerIDs: ids}, nil
 	}
 
 	// 7/8/9. Turn-scene state for the focus player.
@@ -162,17 +182,31 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 	if err != nil {
 		if isNoRows(err) {
 			// 9. No turn-scene yet for this row & focus player.
-			return model.RowState{Kind: model.RowStateSceneSetting}, nil
+			return model.RowState{Kind: model.RowStateSceneSetting, ActingPlayerIDs: focusActingIDs(&game)}, nil
 		}
 		return model.RowState{}, err
 	}
 	if !turnScene.EndedAt.Valid {
 		// 7. Turn-scene started and still running.
 		id := turnScene.ID
-		return model.RowState{Kind: model.RowStateSceneActive, SceneID: &id}, nil
+		return model.RowState{
+			Kind:            model.RowStateSceneActive,
+			SceneID:         &id,
+			ActingPlayerIDs: focusActingIDs(&game),
+		}, nil
 	}
 	// 8. Turn-scene ended → focus player is in post-scene action step.
-	return model.RowState{Kind: model.RowStatePostSceneAction}, nil
+	return model.RowState{Kind: model.RowStatePostSceneAction, ActingPlayerIDs: focusActingIDs(&game)}, nil
+}
+
+// focusActingIDs returns the focus player as a one-element ActingPlayerIDs
+// slice, or nil when no focus player is set yet — the same "no one named"
+// semantics the client's focusWaitee fallback used before this field existed.
+func focusActingIDs(game *dbgen.Game) []int64 {
+	if game.FocusPlayerID == nil {
+		return nil
+	}
+	return []int64{*game.FocusPlayerID}
 }
 
 // findFollowScene returns the follow-scene set for a resolved plan (the scene
@@ -227,18 +261,22 @@ func followSceneGate(ctx context.Context, q *dbgen.Queries, game *dbgen.Game) (m
 	follow := findFollowScene(scenes, recent.ID)
 	if follow == nil {
 		// The focus player owes the just-resolved plan's follow-scene.
-		return model.RowState{Kind: model.RowStateSceneSetting}, true, nil
+		return model.RowState{Kind: model.RowStateSceneSetting, ActingPlayerIDs: focusActingIDs(game)}, true, nil
 	}
 	if !follow.EndedAt.Valid {
 		id := follow.ID
-		return model.RowState{Kind: model.RowStateSceneActive, SceneID: &id}, true, nil
+		return model.RowState{
+			Kind:            model.RowStateSceneActive,
+			SceneID:         &id,
+			ActingPlayerIDs: focusActingIDs(game),
+		}, true, nil
 	}
 	// Follow-scene ended. If its setter still holds focus, they owe the
 	// post-scene action (prepare a plan or refresh) before passing. Once
 	// they've passed — focus has moved to another player — the turn is
 	// complete and the next pending plan should resolve.
 	if game.FocusPlayerID != nil && *game.FocusPlayerID == follow.FocusPlayerID {
-		return model.RowState{Kind: model.RowStatePostSceneAction}, true, nil
+		return model.RowState{Kind: model.RowStatePostSceneAction, ActingPlayerIDs: focusActingIDs(game)}, true, nil
 	}
 	return model.RowState{}, false, nil
 }
@@ -372,7 +410,11 @@ func warConflictGate(
 	}
 	if len(claims) > 0 {
 		id := claims[0].ID
-		return model.RowState{Kind: model.RowStateAwaitSurrenderClaim, ClaimID: &id}, true, nil
+		return model.RowState{
+			Kind:            model.RowStateAwaitSurrenderClaim,
+			ClaimID:         &id,
+			ActingPlayerIDs: uniqueClaimantIDs(claims),
+		}, true, nil
 	}
 
 	outstanding, err := mwOutstandingCostsForGame(ctx, q, gameID, currentRow)
@@ -380,9 +422,45 @@ func warConflictGate(
 		return model.RowState{}, false, err
 	}
 	if warID, ok := firstKey(outstanding); ok {
-		return model.RowState{Kind: model.RowStateAwaitBattleCost, WarID: &warID}, true, nil
+		return model.RowState{
+			Kind:            model.RowStateAwaitBattleCost,
+			WarID:           &warID,
+			ActingPlayerIDs: uniquePayerIDs(outstanding),
+		}, true, nil
 	}
 	return model.RowState{}, false, nil
+}
+
+// uniqueClaimantIDs returns the deduped claimant ids across every open
+// surrender claim in the game (the query is already game-scoped, so this
+// naturally unions across every war with an open claim).
+func uniqueClaimantIDs(claims []dbgen.WarSurrenderClaim) []int64 {
+	seen := make(map[int64]bool, len(claims))
+	var ids []int64
+	for _, c := range claims {
+		if !seen[c.ClaimantID] {
+			seen[c.ClaimantID] = true
+			ids = append(ids, c.ClaimantID)
+		}
+	}
+	return ids
+}
+
+// uniquePayerIDs returns the deduped payer ids across every war's
+// outstanding battle costs, matching the client's blockingCostPayers union
+// (MainEventView.svelte) that this field replaces.
+func uniquePayerIDs(outstanding map[int64][]gamepkg.BattleCostKey) []int64 {
+	seen := map[int64]bool{}
+	var ids []int64
+	for _, keys := range outstanding {
+		for _, k := range keys {
+			if !seen[k.PayerID] {
+				seen[k.PayerID] = true
+				ids = append(ids, k.PayerID)
+			}
+		}
+	}
+	return ids
 }
 
 // mainCharacterChoiceGate reports the replacement-main-character gate
@@ -439,4 +517,103 @@ func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 		return
 	}
 	h.BroadcastEvent(model.EventRowStateChanged, model.RowStateChangedPayload{RowState: state})
+}
+
+// diceRollGate reports the open-interactive-roll gate (RowStateAwaitDiceRoll):
+// an open roll blocks everything else in the row until it resolves. ok is
+// false when no interactive roll is open (GetOpenRollByGame already excludes
+// Shake-Up rolls, a separate mechanic).
+func diceRollGate(ctx context.Context, q *dbgen.Queries, gameID int64) (model.RowState, bool, error) {
+	roll, err := q.GetOpenRollByGame(ctx, gameID)
+	if err != nil {
+		if isNoRows(err) {
+			return model.RowState{}, false, nil
+		}
+		return model.RowState{}, false, err
+	}
+	ids, err := diceRollActingPlayerIDs(ctx, q, &roll)
+	if err != nil {
+		return model.RowState{}, false, err
+	}
+	id := roll.ID
+	return model.RowState{
+		Kind:            model.RowStateAwaitDiceRoll,
+		RollID:          &id,
+		ActingPlayerIDs: ids,
+	}, true, nil
+}
+
+// diceRollActingPlayerIDs names whoever the roll's current stage blocks on,
+// mirroring rollWaitingOn in waitingOn.ts: decide_vote → the actor; voting →
+// players who haven't yet cast a difficulty vote; leverage → participants
+// who aren't ready.
+func diceRollActingPlayerIDs(ctx context.Context, q *dbgen.Queries, roll *dbgen.DiceRoll) ([]int64, error) {
+	switch roll.Stage {
+	case stageDecideVote:
+		return []int64{roll.ActorID}, nil
+	case stageVoting:
+		players, err := q.GetPlayersByGame(ctx, roll.GameID)
+		if err != nil {
+			return nil, err
+		}
+		votes, err := q.ListVotesByRoll(ctx, roll.ID)
+		if err != nil {
+			return nil, err
+		}
+		voted := make(map[int64]bool, len(votes))
+		for _, v := range votes {
+			voted[v.PlayerID] = true
+		}
+		var ids []int64
+		for _, p := range players {
+			if !voted[p.ID] {
+				ids = append(ids, p.ID)
+			}
+		}
+		return ids, nil
+	case stageLeverage:
+		parts, err := q.ListParticipantsByRoll(ctx, roll.ID)
+		if err != nil {
+			return nil, err
+		}
+		var ids []int64
+		for _, p := range parts {
+			if !p.IsReady {
+				ids = append(ids, p.PlayerID)
+			}
+		}
+		return ids, nil
+	default:
+		return nil, nil
+	}
+}
+
+// delayRevealPendingSubmitters names the participants who still owe a hidden
+// die in plan's open delay reveal (Make War or Clandestinely Liaise),
+// mirroring the client's delayRevealPendingSubmitterIDs derivation. Returns
+// nil when the plan has no delay-reveal id yet — a transient beat between
+// plan preparation and the reveal's creation.
+func delayRevealPendingSubmitters(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]int64, error) {
+	var revealID *int64
+	//nolint:exhaustive // openDelayRevealPlan only calls this for the two delay-reveal plan types below
+	switch plan.PlanType {
+	case model.PlanMakeWar:
+		revealID = gamepkg.LoadMakeWarData(plan.ResolutionData).DelayRevealID
+	case model.PlanClandestinelyLiaise:
+		revealID = gamepkg.LoadLiaiseData(plan.ResolutionData).DelayRevealID
+	}
+	if revealID == nil {
+		return nil, nil
+	}
+	entries, err := q.ListRevealEntries(ctx, *revealID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for _, e := range entries {
+		if !e.RevealedAt.Valid {
+			ids = append(ids, e.PlayerID)
+		}
+	}
+	return ids, nil
 }
