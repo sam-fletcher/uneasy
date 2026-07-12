@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { getMe, type Account } from '$lib/api';
 	import HelpButton from '$lib/components/HelpButton.svelte';
+	import { registerServiceWorker } from '$lib/push';
 	import '../app.css';
 
 	let { children }: { children: Snippet } = $props();
@@ -27,6 +28,10 @@
 	onMount(async () => {
 		try { me = await getMe(); } catch { /* ignore */ }
 		loaded = true;
+		// Register eagerly (not gated on notification opt-in) so the service
+		// worker is already active by the time a player taps "enable" in
+		// Profile or the lobby soft-ask — registration itself never prompts.
+		registerServiceWorker();
 	});
 </script>
 

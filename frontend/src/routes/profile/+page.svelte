@@ -11,6 +11,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
+	import { getPushState, enablePush, disablePush, type PushState } from '$lib/push';
 
 	let me = $state<Account | null>(null);
 	let tables = $state<MyTable[]>([]);
@@ -28,6 +29,14 @@
 	let busy = $state(false);
 	let notice = $state('');
 	let feedbackOpen = $state(false);
+
+	// ── Notifications ────────────────────────────────────────────────────────
+	// The cadence <select> works in strings ('off' | '1' | '3' | '8' | '24' |
+	// '72'); notify_cadence_hours itself is number | null.
+	let cadenceDraft = $state('24');
+	let cadenceSaving = $state(false);
+	let pushState = $state<PushState>('off');
+	let pushBusy = $state(false);
 
 	// Reject if a fetch hangs (e.g. a wedged dev server) so the page can show a
 	// retry button instead of a permanent "Loading…".
@@ -49,8 +58,10 @@
 			me = acct;
 			usernameDraft = acct.username;
 			emailDraft = acct.email ?? '';
+			cadenceDraft = acct.notify_cadence_hours == null ? 'off' : String(acct.notify_cadence_hours);
 			const res = await withTimeout(listMyTables());
 			tables = res.tables;
+			getPushState().then((s) => { pushState = s; });
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load profile.';
 		} finally {
@@ -63,7 +74,7 @@
 	async function saveUsername() {
 		error = ''; notice = '';
 		try {
-			me = await updateMe({ username: usernameDraft.trim() });
+			me = { ...me, ...await updateMe({ username: usernameDraft.trim() }) };
 			editingUsername = false;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not update player name.';
@@ -72,7 +83,7 @@
 	async function saveEmail() {
 		error = ''; notice = '';
 		try {
-			me = await updateMe({ email: emailDraft.trim() || null });
+			me = { ...me, ...await updateMe({ email: emailDraft.trim() || null }) };
 			editingEmail = false;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not update email.';
@@ -90,6 +101,34 @@
 			error = e instanceof Error ? e.message : 'Could not update password.';
 		}
 	}
+	async function saveCadence() {
+		error = ''; notice = '';
+		cadenceSaving = true;
+		try {
+			const hours = cadenceDraft === 'off' ? null : Number(cadenceDraft);
+			me = { ...me, ...await updateMe({ notify_cadence_hours: hours }) };
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not update reminder cadence.';
+		} finally {
+			cadenceSaving = false;
+		}
+	}
+
+	async function togglePush() {
+		if (!me) return;
+		error = '';
+		pushBusy = true;
+		try {
+			pushState = pushState === 'on'
+				? await disablePush()
+				: await enablePush(me.vapid_public_key);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not update push notifications.';
+		} finally {
+			pushBusy = false;
+		}
+	}
+
 	async function doLogout() {
 		await logout();
 		goto('/');
@@ -198,6 +237,45 @@
 			</div>
 		</section>
 
+		<section class="card">
+			<h2>Notifications</h2>
+			<p class="hint">
+				If you're on the "Waiting On" list longer than your chosen time, we'll send a reminder.
+			</p>
+			<div class="row">
+				<span class="label">Remind me</span>
+				<select aria-label="Reminder cadence" bind:value={cadenceDraft} onchange={saveCadence} disabled={cadenceSaving}>
+					<option value="1">Every hour</option>
+					<option value="3">Every 3 hours</option>
+					<option value="8">Every 8 hours</option>
+					<option value="24">Once a day</option>
+					<option value="72">Every 3 days</option>
+					<option value="off">Off</option>
+				</select>
+			</div>
+			<div class="row push-row">
+				<span class="label">This device</span>
+				{#if me.vapid_public_key === '' && pushState !== 'unsupported' && pushState !== 'ios-needs-install'}
+					<span class="muted-text small">Push isn't configured on this server yet.</span>
+				{:else if pushState === 'unsupported'}
+					<span class="muted-text small">Push notifications aren't supported in this browser.</span>
+				{:else if pushState === 'ios-needs-install'}
+					<span class="muted-text small">Add Uneasy to your Home Screen (Share → Add to Home Screen) to enable push on iPhone/iPad.</span>
+				{:else if pushState === 'denied'}
+					<span class="muted-text small">Blocked — allow notifications for this site in your browser settings.</span>
+				{:else}
+					<span>Push notifications: {pushState === 'on' ? 'On' : 'Off'}</span>
+					<button class="action-btn secondary" onclick={togglePush} disabled={pushBusy}>
+						{pushBusy ? '…' : pushState === 'on' ? 'Turn off' : 'Turn on'}
+					</button>
+				{/if}
+			</div>
+			<p class="hint push-hint">
+				The cadence above applies to your whole account; push must be turned
+				on separately on each device/browser you want reminders on.
+			</p>
+		</section>
+
 		<div class="footer-actions">
 			<button class="action-btn secondary feedback-btn" onclick={() => feedbackOpen = true}>Send feedback</button>
 			<button class="action-btn secondary" onclick={doLogout}>Log out</button>
@@ -232,8 +310,18 @@
 	.row:last-child { border-bottom:none; }
 	.label { width:5rem; color:var(--color-text-muted); font-size:0.85rem; }
 	.masked { letter-spacing:0.15em; color:var(--color-text-muted); }
-	.row input { flex:1; min-width:0; min-height:44px; }
+	.row input, .row select { flex:1; min-width:0; min-height:44px; }
+	.row select {
+		background: var(--color-surface-2);
+		color: var(--color-text);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		padding: 0 0.6rem;
+		font: inherit;
+	}
 	.row span:not(.label) { flex:1; min-width:0; }
+	.push-row { border-bottom: none; }
+	.push-hint { margin-top: -0.3rem; }
 	.tag { color:var(--color-accent); font-size:0.75rem; margin-left:0.5rem; }
 	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:600px; margin:0 auto; padding-top:2rem; }
 	.status { color:var(--color-accent); font-size:0.9rem; }

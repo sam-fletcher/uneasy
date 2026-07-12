@@ -50,6 +50,7 @@
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
+	import { getPushState, enablePush, type PushState } from '$lib/push';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import { provideSecretCounts } from '$lib/secretCountsContext';
 	import { provideSuccession } from '$lib/successionContext';
@@ -172,6 +173,30 @@
 	// in the lobby phase's inline (unsheeted) HelpContent, not behind the "?".
 	let lobbyFeedbackOpen = $state(false);
 	let prologueActivePlayerID = $state<number | null>(null);
+
+	// ── Lobby push soft-ask ──────────────────────────────────────────────────
+	const PUSH_PROMPT_DISMISSED_KEY = 'uneasy.push.lobbyPromptDismissed';
+	let vapidPublicKey = $state('');
+	let pushState = $state<PushState>('unsupported');
+	let pushCardDismissed = $state(true);
+	let pushCardBusy = $state(false);
+	const showPushCard = $derived(
+		game?.phase === 'lobby' && !pushCardDismissed
+		&& (pushState === 'off' || pushState === 'ios-needs-install')
+	);
+	function dismissPushCard() {
+		pushCardDismissed = true;
+		localStorage.setItem(PUSH_PROMPT_DISMISSED_KEY, '1');
+	}
+	async function enablePushFromLobby() {
+		pushCardBusy = true;
+		try {
+			pushState = await enablePush(vapidPublicKey);
+		} finally {
+			pushCardBusy = false;
+			dismissPushCard();
+		}
+	}
 
 	// ── Join-code copy feedback ───────────────────────────────────────────────
 	// Briefly flips the badge label to "Copied!" after a successful copy.
@@ -483,6 +508,10 @@
 				return;
 			}
 			currentPlayerID = seat.id;
+
+			vapidPublicKey = me.vapid_public_key;
+			pushCardDismissed = localStorage.getItem(PUSH_PROMPT_DISMISSED_KEY) === '1';
+			pushState = await getPushState();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load table.';
 		} finally {
@@ -753,6 +782,31 @@
 				</button>
 			{:else if isFacilitator}
 				<p class="muted-text">Need at least 2 players to start.</p>
+			{/if}
+
+			{#if showPushCard}
+				<section class="push-card">
+					{#if pushState === 'ios-needs-install'}
+						<h2>Add Uneasy to your Home Screen</h2>
+						<p class="muted-text">
+							iPhone/iPad only deliver notifications to installed apps: tap the Share icon,
+							then "Add to Home Screen". Open Uneasy from there to get notified when it's your turn.
+						</p>
+						<button class="action-btn secondary" onclick={dismissPushCard}>Got it</button>
+					{:else}
+						<h2>Get notified when it's your turn</h2>
+						<p class="muted-text">
+							Turn on push notifications for this device so you don't have to keep checking back.
+							You can change this any time in your Profile.
+						</p>
+						<div class="push-card-actions">
+							<button class="action-btn primary" onclick={enablePushFromLobby} disabled={pushCardBusy}>
+								{pushCardBusy ? '…' : 'Enable notifications'}
+							</button>
+							<button class="action-btn secondary" onclick={dismissPushCard}>Not now</button>
+						</div>
+					{/if}
+				</section>
 			{/if}
 
 			<section class="lobby-help">
@@ -1410,6 +1464,16 @@
 		border-radius: 3px;
 		text-transform: uppercase;
 	}
+
+	.push-card {
+		margin-top: 0.75rem;
+		padding: 1rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 12px;
+	}
+	.push-card .muted-text { margin-bottom: 0.75rem; }
+	.push-card-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 
 	.lobby-help {
 		margin-top: 0.5rem;

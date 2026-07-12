@@ -4,6 +4,16 @@
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!-- PWA shell (adr/NOTIFICATIONS_PLAN.md Session 4): iOS Safari only
+		     delivers web push to home-screen-installed apps, which needs the
+		     manifest + apple-touch-icon + the (non-standard but iOS-respected)
+		     apple-mobile-web-app-* tags below. -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<meta name="theme-color" content="#c8a96e" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="Uneasy" />
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

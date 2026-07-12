@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -485,6 +486,14 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 	sub, err := fs.Sub(frontendFS, "frontend_dist")
 	if err != nil {
 		return fmt.Errorf("sub frontend_dist: %w", err)
+	}
+	// Go's stdlib mime type table has no .webmanifest entry (unlike Vite's
+	// dev server, which sets this correctly) — without it, http.FileServer
+	// falls back to content-sniffing and serves the PWA manifest
+	// (adr/NOTIFICATIONS_PLAN.md Session 4) as text/plain instead of
+	// application/manifest+json.
+	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
+		return fmt.Errorf("register .webmanifest mime type: %w", err)
 	}
 	fileServer := http.FileServer(http.FS(sub))
 	r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

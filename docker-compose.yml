@@ -35,6 +35,12 @@ services:
       DEV_MODE: "true"
       UNEASY_DEV: "1"
       VITE_URL: "http://frontend:5173"
+      # Passed through from the host's .env (gitignored); unset there means
+      # unset here too, and the server falls back to its stdout-log dev
+      # default (adr/NOTIFICATIONS_PLAN.md Session 3).
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
     depends_on:
       db:
         condition: service_healthy

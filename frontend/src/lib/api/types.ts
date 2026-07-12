@@ -11,6 +11,11 @@ export interface Account {
 	id: number;
 	username: string;
 	email: string | null;
+	/** Web-push reminder cadence in hours (1/3/8/24/72), or null = off. */
+	notify_cadence_hours: number | null;
+	/** Base64url VAPID public key for pushManager.subscribe; empty string if
+	 *  the server has no VAPID keys configured (unset in dev by default). */
+	vapid_public_key: string;
 }
 
 export interface MyTable {

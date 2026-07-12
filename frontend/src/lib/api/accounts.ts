@@ -34,6 +34,7 @@ export function updateMe(patch: {
 	username?: string;
 	email?: string | null;
 	password?: string;
+	notify_cadence_hours?: number | null;
 }): Promise<Account> {
 	return apiFetch<Account>('/accounts/me', {
 		method: 'PATCH',
