@@ -87,6 +87,15 @@ func GetShakeUp(s *db.Store) http.HandlerFunc {
 			out["claimable_titles"] = claimable
 		}
 
+		// "Who must act" — single source of truth shared with ComputeWaitState
+		// (handler/wait_state.go), so this snapshot and the notification
+		// ticker never compute two different answers.
+		waitees, err := computeShakeUpWaitees(ctx, s.Q, gameID, &game)
+		if err != nil {
+			respondInternalErr(w, r, "could not compute waitees", err)
+			return
+		}
+
 		// Open spend (if any). While a spend is open no one may announce, so
 		// current_actor is only meaningful when the spending step is awaiting
 		// the next announce.
@@ -106,29 +115,19 @@ func GetShakeUp(s *db.Store) http.HandlerFunc {
 				"commit_ready":        len(pending) == 0,
 			}
 		} else if game.ShakeUpStep != nil && *game.ShakeUpStep == gamepkg.ShakeUpStepSpending &&
-			game.ShakeUpCategory != nil {
-			if actor, aerr := currentShakeUpActor(ctx, s.Q, gameID, *game.ShakeUpCategory); aerr == nil && actor != 0 {
-				out["current_actor"] = actor
-			}
+			game.ShakeUpCategory != nil && len(waitees) == 1 {
+			out["current_actor"] = waitees[0]
 		}
 
 		// Step 1 (rolling): who's up, and the open roll id if the client wants to
 		// fetch its full state (dice, participants) via getActiveRollForGame/getRoll.
 		if game.ShakeUpStep != nil && *game.ShakeUpStep == gamepkg.ShakeUpStepRolling &&
 			game.ShakeUpCategory != nil {
-			// The open roll's actor IS the current roller. shakeUpNextRoller
-			// can't be reused here: it treats "has a dice_rolls row" as "already
-			// rolled" (correct for its other callers, which only ever run once
-			// the prior roll has resolved), so calling it while a roll is still
-			// open for someone would name the NEXT roller instead of the current
-			// one. Only fall back to it in the (practically unreachable, since
-			// the next roll is always opened synchronously) gap where no roll
-			// is open yet.
 			if openRoll, rerr := s.Q.GetOpenShakeUpRollByGame(ctx, gameID); rerr == nil {
-				out["current_roller_id"] = openRoll.ActorID
 				out["open_roll_id"] = openRoll.ID
-			} else if roller, rerr := shakeUpNextRoller(ctx, s.Q, gameID, *game.ShakeUpCategory); rerr == nil && roller != 0 {
-				out["current_roller_id"] = roller
+			}
+			if len(waitees) == 1 {
+				out["current_roller_id"] = waitees[0]
 			}
 		}
 		respond(w, http.StatusOK, out)
@@ -249,13 +248,7 @@ func shakeUpNextRoller(ctx context.Context, q *dbgen.Queries, gameID int64, cate
 	if err != nil {
 		return 0, fmt.Errorf("load rankings: %w", err)
 	}
-	rows := make([]gamepkg.RankingRow, 0, len(rankings))
-	for _, rk := range rankings {
-		rows = append(rows, gamepkg.RankingRow{
-			PlayerID: rk.PlayerID, Category: string(rk.Category), Rank: rk.Rank,
-		})
-	}
-	order := gamepkg.ShakeUpTurnOrder(category, rows)
+	order := gamepkg.ShakeUpTurnOrder(category, rankingRows(rankings))
 
 	rolls, err := q.ListDiceRollsByGame(ctx, gameID)
 	if err != nil {
@@ -785,13 +778,7 @@ func currentShakeUpActor(ctx context.Context, q *dbgen.Queries, gameID int64, ca
 	if err != nil {
 		return 0, fmt.Errorf("load rankings: %w", err)
 	}
-	rows := make([]gamepkg.RankingRow, 0, len(rankings))
-	for _, rk := range rankings {
-		rows = append(rows, gamepkg.RankingRow{
-			PlayerID: rk.PlayerID, Category: string(rk.Category), Rank: rk.Rank,
-		})
-	}
-	order := gamepkg.ShakeUpTurnOrder(category, rows)
+	order := gamepkg.ShakeUpTurnOrder(category, rankingRows(rankings))
 
 	tokens, err := q.ListShakeUpTokensByGame(ctx, gameID)
 	if err != nil {

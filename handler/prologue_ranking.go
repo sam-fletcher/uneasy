@@ -46,6 +46,17 @@ func trackForStep(step string) string {
 	return ""
 }
 
+// rankingRows converts sqlc's []dbgen.Ranking to []gamepkg.RankingRow, the
+// dbgen-free view the game package's ranking helpers (TopOfTrackPlayer,
+// ShakeUpTurnOrder, ...) operate on.
+func rankingRows(rankings []dbgen.Ranking) []gamepkg.RankingRow {
+	rows := make([]gamepkg.RankingRow, 0, len(rankings))
+	for _, rk := range rankings {
+		rows = append(rows, gamepkg.RankingRow{PlayerID: rk.PlayerID, Category: string(rk.Category), Rank: rk.Rank})
+	}
+	return rows
+}
+
 // modelCategoryForTrack converts a track string to the model.RankingCategory
 // used by the rankings table.
 func modelCategoryForTrack(track string) model.RankingCategory {
@@ -154,17 +165,7 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		cat := modelCategoryForTrack(track)
-		var topPlayer *int64
-		var topRank int16
-		for _, rk := range rankings {
-			if rk.Category != cat || rk.PlayerID == nil {
-				continue
-			}
-			if topPlayer == nil || rk.Rank < topRank {
-				topPlayer = rk.PlayerID
-				topRank = rk.Rank
-			}
-		}
+		topPlayer := gamepkg.TopOfTrackPlayer(rankingRows(rankings), string(cat))
 		if topPlayer == nil || *topPlayer != player.ID {
 			respondErr(w, http.StatusForbidden, "only the track's top-ranked player can place set-asides")
 			return

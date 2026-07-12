@@ -43,6 +43,30 @@ func OpenRanks(n int) []int16 {
 	return out
 }
 
+// TopOfTrackPlayer returns the highest-status *real* player on a ranking
+// track — the non-dummy occupant with the lowest rank number. Callers can't
+// assume rank 1: dummy tokens occupy real rank slots (rank 1 in 2–3 player
+// games — see DummyRanks), so the top real player may sit at rank 2. Returns
+// nil if the track has no ranked (non-dummy) players yet.
+//
+// Shared by PlaceSetAsides's auth check and the prologue wait-state's
+// place-set-asides mode — both need the exact same "who's on top" answer,
+// and this used to be duplicated per-caller.
+func TopOfTrackPlayer(rankings []RankingRow, category string) *int64 {
+	var top *int64
+	var topRank int16
+	for _, rk := range rankings {
+		if rk.Category != category || rk.PlayerID == nil {
+			continue
+		}
+		if top == nil || rk.Rank < topRank {
+			top = rk.PlayerID
+			topRank = rk.Rank
+		}
+	}
+	return top
+}
+
 // PlayerCard is a simplified view of a row in the player_cards table.
 type PlayerCard struct {
 	PlayerID int64
