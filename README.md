@@ -13,7 +13,7 @@ whenever the next player has made theirs.
 ## Attribution
 
 *Uneasy Lies the Head* was designed by [Adam Bell](https://adambell.games/).
-Published with permission from the author. If you want the original
+This digital adaptation was published with permission from the author. If you want the original
 tabletop rules, [buy the book on itch.io](https://adambell.itch.io/uneasy-lies-the-head-2e).
 
 ## Quick start

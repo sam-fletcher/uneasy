@@ -195,49 +195,11 @@
 			</div>
 			<div class="create-row">
 				<span class="hint">Hosting a game?</span>
-				<button class="action-btn secondary" onclick={doCreate} disabled={busy}>Create a new table</button>
+				<button class="action-btn primary" onclick={doCreate} disabled={busy}>Create a new table</button>
 			</div>
 		</section>
 
-		<section class="card">
-			<h2>Account</h2>
-			<div class="row">
-				<span class="label">Player name</span>
-				{#if editingUsername}
-					<input aria-label="Player name" bind:value={usernameDraft} maxlength={TEXT_LIMITS.USERNAME} />
-					<button class="action-btn primary small" onclick={saveUsername}>Save</button>
-					<button class="action-btn secondary small" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
-				{:else}
-					<span>{me.username}</span>
-					<button class="action-btn secondary small" aria-label="Edit player name" onclick={() => { editingUsername = true; }}>Edit</button>
-				{/if}
-			</div>
-			<!-- TODO: Hook up backend email handling -->
-			<!-- <div class="row">
-				<span class="label">Email</span>
-				{#if editingEmail}
-					<input type="email" aria-label="Email" bind:value={emailDraft} />
-					<button class="action-btn primary small" onclick={saveEmail}>Save</button>
-					<button class="action-btn secondary small" onclick={() => { editingEmail = false; emailDraft = me?.email ?? ''; }}>Cancel</button>
-				{:else}
-					<span>{me.email ?? 'Not set. For notifications and password recovery.'}</span>
-					<button class="action-btn secondary small" aria-label="Edit email" onclick={() => { editingEmail = true; }}>Edit</button>
-				{/if}
-			</div> -->
-			<div class="row">
-				<span class="label">Password</span>
-				{#if editingPassword}
-					<input type="password" aria-label="New password" bind:value={passwordDraft} placeholder="Enter a new password" />
-					<button class="action-btn primary small" onclick={savePassword} disabled={!passwordDraft}>Save</button>
-					<button class="action-btn secondary small" onclick={() => { editingPassword = false; passwordDraft = ''; }}>Cancel</button>
-				{:else}
-					<span class="masked">••••••••</span>
-					<button class="action-btn secondary small" aria-label="Edit password" onclick={() => { editingPassword = true; }}>Edit</button>
-				{/if}
-			</div>
-		</section>
-
-		<section class="card">
+				<section class="card">
 			<h2>Notifications</h2>
 			<p class="hint">
 				If you're on the "Waiting On" list longer than your chosen time, we'll send a reminder.
@@ -265,7 +227,7 @@
 					<span class="muted-text small">Blocked — allow notifications for this site in your browser settings.</span>
 				{:else}
 					<span>Push notifications: {pushState === 'on' ? 'On' : 'Off'}</span>
-					<button class="action-btn secondary" onclick={togglePush} disabled={pushBusy}>
+					<button class="action-btn primary" onclick={togglePush} disabled={pushBusy}>
 						{pushBusy ? '…' : pushState === 'on' ? 'Turn off' : 'Turn on'}
 					</button>
 				{/if}
@@ -276,8 +238,46 @@
 			</p>
 		</section>
 
+		<section class="card">
+			<h2>Account</h2>
+			<div class="row">
+				<span class="label">Player name</span>
+				{#if editingUsername}
+					<input aria-label="Player name" bind:value={usernameDraft} maxlength={TEXT_LIMITS.USERNAME} />
+					<button class="action-btn primary small" onclick={saveUsername}>Save</button>
+					<button class="action-btn secondary small" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
+				{:else}
+					<span>{me.username}</span>
+					<button class="action-btn primary small" aria-label="Edit player name" onclick={() => { editingUsername = true; }}>Edit</button>
+				{/if}
+			</div>
+			<!-- TODO: Hook up backend email handling -->
+			<!-- <div class="row">
+				<span class="label">Email</span>
+				{#if editingEmail}
+					<input type="email" aria-label="Email" bind:value={emailDraft} />
+					<button class="action-btn primary small" onclick={saveEmail}>Save</button>
+					<button class="action-btn secondary small" onclick={() => { editingEmail = false; emailDraft = me?.email ?? ''; }}>Cancel</button>
+				{:else}
+					<span>{me.email ?? 'Not set. For notifications and password recovery.'}</span>
+					<button class="action-btn secondary small" aria-label="Edit email" onclick={() => { editingEmail = true; }}>Edit</button>
+				{/if}
+			</div> -->
+			<div class="row">
+				<span class="label">Password</span>
+				{#if editingPassword}
+					<input type="password" aria-label="New password" bind:value={passwordDraft} placeholder="Enter a new password" />
+					<button class="action-btn primary small" onclick={savePassword} disabled={!passwordDraft}>Save</button>
+					<button class="action-btn secondary small" onclick={() => { editingPassword = false; passwordDraft = ''; }}>Cancel</button>
+				{:else}
+					<span class="masked">••••••••</span>
+					<button class="action-btn primary small" aria-label="Edit password" onclick={() => { editingPassword = true; }}>Edit</button>
+				{/if}
+			</div>
+		</section>
+
 		<div class="footer-actions">
-			<button class="action-btn secondary feedback-btn" onclick={() => feedbackOpen = true}>Send feedback</button>
+			<button class="action-btn primary feedback-btn" onclick={() => feedbackOpen = true}>Send feedback</button>
 			<button class="action-btn secondary" onclick={doLogout}>Log out</button>
 		</div>
 	</div>
