@@ -38,7 +38,7 @@ SELECT * FROM shake_up_spends WHERE id = $1;
 
 -- name: GetOpenShakeUpSpend :one
 SELECT * FROM shake_up_spends
-WHERE game_id = $1 AND committed_at IS NULL
+WHERE game_id = $1 AND committed_at IS NULL AND abandoned_at IS NULL
 ORDER BY created_at DESC
 LIMIT 1;
 
@@ -47,10 +47,21 @@ UPDATE shake_up_spends
 SET final_cost = $2, committed_at = now(), applied = TRUE
 WHERE id = $1;
 
--- name: GetLastCommittedShakeUpSpend :one
+-- name: AbandonShakeUpSpend :exec
+-- The spend closes terminally with no effect applied: final_cost still
+-- records the cost the auction settled at (for the ledger/log), but applied
+-- stays FALSE — abandon means the mechanical effect never happens.
+UPDATE shake_up_spends
+SET final_cost = $2, abandoned_at = now()
+WHERE id = $1;
+
+-- name: GetLastResolvedShakeUpSpend :one
+-- "Resolved" = committed OR abandoned — both consume the announcer's turn
+-- (ADR-008), so turn-order derivation must see either as "the last actor".
 SELECT * FROM shake_up_spends
-WHERE game_id = $1 AND category = $2 AND committed_at IS NOT NULL
-ORDER BY committed_at DESC, id DESC
+WHERE game_id = $1 AND category = $2
+  AND (committed_at IS NOT NULL OR abandoned_at IS NOT NULL)
+ORDER BY COALESCE(committed_at, abandoned_at) DESC, id DESC
 LIMIT 1;
 
 -- ── shake_up_cost_adjustments ────────────────────────────────────────────────

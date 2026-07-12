@@ -9,6 +9,25 @@ import (
 	"context"
 )
 
+const abandonShakeUpSpend = `-- name: AbandonShakeUpSpend :exec
+UPDATE shake_up_spends
+SET final_cost = $2, abandoned_at = now()
+WHERE id = $1
+`
+
+type AbandonShakeUpSpendParams struct {
+	ID        int64  `db:"id" json:"id"`
+	FinalCost *int16 `db:"final_cost" json:"final_cost"`
+}
+
+// The spend closes terminally with no effect applied: final_cost still
+// records the cost the auction settled at (for the ledger/log), but applied
+// stays FALSE — abandon means the mechanical effect never happens.
+func (q *Queries) AbandonShakeUpSpend(ctx context.Context, arg AbandonShakeUpSpendParams) error {
+	_, err := q.db.Exec(ctx, abandonShakeUpSpend, arg.ID, arg.FinalCost)
+	return err
+}
+
 const addShakeUpTokens = `-- name: AddShakeUpTokens :one
 UPDATE players SET shake_up_tokens = shake_up_tokens + $2 WHERE id = $1
 RETURNING shake_up_tokens
@@ -101,7 +120,7 @@ INSERT INTO shake_up_spends (
   game_id, player_id, category, option_key, target_asset_id, target_marginalia_id, target_player_id,
   target_title_id, title_flavor, base_cost
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id, target_title_id, title_flavor
+RETURNING id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id, target_title_id, title_flavor, abandoned_at
 `
 
 type CreateShakeUpSpendParams struct {
@@ -148,6 +167,7 @@ func (q *Queries) CreateShakeUpSpend(ctx context.Context, arg CreateShakeUpSpend
 		&i.TargetMarginaliaID,
 		&i.TargetTitleID,
 		&i.TitleFlavor,
+		&i.AbandonedAt,
 	)
 	return i, err
 }
@@ -161,20 +181,23 @@ func (q *Queries) DeletePassesForSpend(ctx context.Context, spendID int64) error
 	return err
 }
 
-const getLastCommittedShakeUpSpend = `-- name: GetLastCommittedShakeUpSpend :one
-SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id, target_title_id, title_flavor FROM shake_up_spends
-WHERE game_id = $1 AND category = $2 AND committed_at IS NOT NULL
-ORDER BY committed_at DESC, id DESC
+const getLastResolvedShakeUpSpend = `-- name: GetLastResolvedShakeUpSpend :one
+SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id, target_title_id, title_flavor, abandoned_at FROM shake_up_spends
+WHERE game_id = $1 AND category = $2
+  AND (committed_at IS NOT NULL OR abandoned_at IS NOT NULL)
+ORDER BY COALESCE(committed_at, abandoned_at) DESC, id DESC
 LIMIT 1
 `
 
-type GetLastCommittedShakeUpSpendParams struct {
+type GetLastResolvedShakeUpSpendParams struct {
 	GameID   int64  `db:"game_id" json:"game_id"`
 	Category string `db:"category" json:"category"`
 }
 
-func (q *Queries) GetLastCommittedShakeUpSpend(ctx context.Context, arg GetLastCommittedShakeUpSpendParams) (ShakeUpSpend, error) {
-	row := q.db.QueryRow(ctx, getLastCommittedShakeUpSpend, arg.GameID, arg.Category)
+// "Resolved" = committed OR abandoned — both consume the announcer's turn
+// (ADR-008), so turn-order derivation must see either as "the last actor".
+func (q *Queries) GetLastResolvedShakeUpSpend(ctx context.Context, arg GetLastResolvedShakeUpSpendParams) (ShakeUpSpend, error) {
+	row := q.db.QueryRow(ctx, getLastResolvedShakeUpSpend, arg.GameID, arg.Category)
 	var i ShakeUpSpend
 	err := row.Scan(
 		&i.ID,
@@ -192,13 +215,14 @@ func (q *Queries) GetLastCommittedShakeUpSpend(ctx context.Context, arg GetLastC
 		&i.TargetMarginaliaID,
 		&i.TargetTitleID,
 		&i.TitleFlavor,
+		&i.AbandonedAt,
 	)
 	return i, err
 }
 
 const getOpenShakeUpSpend = `-- name: GetOpenShakeUpSpend :one
-SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id, target_title_id, title_flavor FROM shake_up_spends
-WHERE game_id = $1 AND committed_at IS NULL
+SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id, target_title_id, title_flavor, abandoned_at FROM shake_up_spends
+WHERE game_id = $1 AND committed_at IS NULL AND abandoned_at IS NULL
 ORDER BY created_at DESC
 LIMIT 1
 `
@@ -222,12 +246,13 @@ func (q *Queries) GetOpenShakeUpSpend(ctx context.Context, gameID int64) (ShakeU
 		&i.TargetMarginaliaID,
 		&i.TargetTitleID,
 		&i.TitleFlavor,
+		&i.AbandonedAt,
 	)
 	return i, err
 }
 
 const getShakeUpSpend = `-- name: GetShakeUpSpend :one
-SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id, target_title_id, title_flavor FROM shake_up_spends WHERE id = $1
+SELECT id, game_id, player_id, category, option_key, target_asset_id, target_player_id, base_cost, final_cost, committed_at, applied, created_at, target_marginalia_id, target_title_id, title_flavor, abandoned_at FROM shake_up_spends WHERE id = $1
 `
 
 func (q *Queries) GetShakeUpSpend(ctx context.Context, id int64) (ShakeUpSpend, error) {
@@ -249,6 +274,7 @@ func (q *Queries) GetShakeUpSpend(ctx context.Context, id int64) (ShakeUpSpend, 
 		&i.TargetMarginaliaID,
 		&i.TargetTitleID,
 		&i.TitleFlavor,
+		&i.AbandonedAt,
 	)
 	return i, err
 }

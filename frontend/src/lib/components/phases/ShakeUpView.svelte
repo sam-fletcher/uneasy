@@ -68,6 +68,12 @@
 	let error = $state('');
 	let busy = $state(false);
 
+	// Local, ephemeral: the reason shown when a tap on the (aria-disabled, not
+	// dead) reduce-cost button is blocked by the floor guard — Make Demands
+	// eligibility pattern (PlanPanel's ineligibleNotice). Cleared on refresh
+	// so a stale reason doesn't linger onto a different spend.
+	let reduceBlockedReason = $state('');
+
 	async function refresh() {
 		try {
 			const data = await getShakeUp(gameID);
@@ -77,6 +83,7 @@
 			openSpend = data.open_spend ?? null;
 			currentActor = data.current_actor ?? null;
 			currentRollerID = data.current_roller_id ?? null;
+			reduceBlockedReason = '';
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load shake-up state.';
 		}
@@ -88,13 +95,15 @@
 	onMount(() => {
 		for (const t of [
 			'shake_up.step_changed', 'shake_up.rolled', 'shake_up.spend_opened',
-			'shake_up.adjusted', 'shake_up.spend_committed', 'shake_up.passed', 'shake_up.ended',
+			'shake_up.adjusted', 'shake_up.spend_committed', 'shake_up.spend_abandoned',
+			'shake_up.passed', 'shake_up.ended',
 		]) window.addEventListener(`uneasy:${t}`, onShakeUpEvent);
 	});
 	onDestroy(() => {
 		for (const t of [
 			'shake_up.step_changed', 'shake_up.rolled', 'shake_up.spend_opened',
-			'shake_up.adjusted', 'shake_up.spend_committed', 'shake_up.passed', 'shake_up.ended',
+			'shake_up.adjusted', 'shake_up.spend_committed', 'shake_up.spend_abandoned',
+			'shake_up.passed', 'shake_up.ended',
 		]) window.removeEventListener(`uneasy:${t}`, onShakeUpEvent);
 	});
 
@@ -276,7 +285,7 @@
 
 	async function adjust(direction: 1 | -1) {
 		if (!openSpend || busy) return;
-		busy = true; error = '';
+		busy = true; error = ''; reduceBlockedReason = '';
 		try {
 			await shakeUpAdjust(gameID, openSpend.spend.id, direction);
 		} catch (e) {
@@ -284,6 +293,17 @@
 		} finally {
 			busy = false;
 		}
+	}
+
+	// The reduce button stays clickable (aria-disabled, not native-disabled)
+	// even at the cost floor, so a tap always surfaces why — mirrors the Make
+	// Demands ineligible-card pattern rather than silently swallowing the tap.
+	function onReduceClick() {
+		if (atCostFloor) {
+			reduceBlockedReason = "The cost can't go below 1 token.";
+			return;
+		}
+		adjust(-1);
 	}
 
 	async function pass() {
@@ -298,11 +318,14 @@
 		}
 	}
 
-	async function commit() {
+	// ADR-008 "pay or abandon": intent is required once the cost was raised
+	// (extra > 0); the plain no-intent form is only valid when extra === 0,
+	// where the spend auto-commits regardless of what's passed.
+	async function commit(intent?: 'pay' | 'abandon') {
 		if (!openSpend || busy) return;
 		busy = true; error = '';
 		try {
-			await shakeUpCommit(gameID, openSpend.spend.id);
+			await shakeUpCommit(gameID, openSpend.spend.id, intent);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not commit.';
 		} finally {
@@ -314,7 +337,14 @@
 	const adjustmentTotal = $derived(
 		(openSpend?.adjustments ?? []).reduce((sum, a) => sum + a.adjustment, 0)
 	);
-	const runningCost = $derived(openSpend ? Math.max(openSpend.spend.base_cost + adjustmentTotal, 0) : 0);
+	// The floor guard (ADR-008 §1) keeps this at ≥ 1 server-side; Math.max
+	// here just guards the brief window before a stale client catches up.
+	const runningCost = $derived(openSpend ? Math.max(openSpend.spend.base_cost + adjustmentTotal, 1) : 0);
+	const atCostFloor = $derived(runningCost <= 1);
+	// extra = final cost owed beyond the base — always ≥ 0 given the floor
+	// guard, since base_cost is always 1.
+	const extra = $derived(openSpend ? Math.max(runningCost - openSpend.spend.base_cost, 0) : 0);
+	const affordable = $derived(myTokens >= extra);
 	const pendingReactorIDs = $derived(openSpend?.pending_reactor_ids ?? []);
 	const commitReady = $derived(openSpend?.commit_ready ?? true);
 	const pendingReactorNames = $derived(pendingReactorIDs.map(playerName));
@@ -483,20 +513,59 @@
 						<p class="muted-text small reactor-note">
 							Others can still react — waiting on {pendingReactorNames.join(', ')} to react.
 						</p>
+					{:else if extra === 0}
+						<div class="adjust-buttons">
+							<button class="action-btn primary" disabled={busy} onclick={() => commit()}>
+								{busy ? '…' : 'Commit'}
+							</button>
+						</div>
+					{:else if affordable}
+						<!-- ADR-008: the cost was raised and the spender can afford it —
+						     Pay or Abandon is their real choice, not a forced completion. -->
+						<p class="muted-text small reactor-note">
+							The cost was raised to {runningCost} ({extra} more than you committed to).
+							Pay the extra, or abandon — either way the tokens already spent are gone.
+						</p>
+						<div class="adjust-buttons">
+							<button class="action-btn primary" disabled={busy} onclick={() => commit('pay')}>
+								{busy ? '…' : `Pay ${extra} more token${extra === 1 ? '' : 's'}`}
+							</button>
+							<button class="action-btn secondary" disabled={busy} onclick={() => commit('abandon')}>
+								{busy ? '…' : 'Abandon'}
+							</button>
+						</div>
+					{:else}
+						<!-- Forced abandon: the raise exceeds what's left in the spender's
+						     pool, so Pay isn't offered — only Abandon. -->
+						<p class="muted-text small reactor-note">
+							The cost was raised to {runningCost}, {extra} more than you committed to — you only
+							have {myTokens} token{myTokens === 1 ? '' : 's'} left, so you can't afford it. The
+							spend must be abandoned; the tokens already spent are gone either way.
+						</p>
+						<div class="adjust-buttons">
+							<button class="action-btn primary" disabled={busy} onclick={() => commit('abandon')}>
+								{busy ? '…' : 'Abandon'}
+							</button>
+						</div>
 					{/if}
-					<div class="adjust-buttons">
-						<button class="action-btn primary" disabled={busy || !commitReady} onclick={commit}>
-							{commitReady ? (busy ? '…' : 'Commit') : 'Waiting on reactions…'}
-						</button>
-					</div>
 				{:else if myTokens > 0}
 					<div class="adjust-buttons">
 						<button class="action-btn secondary" disabled={busy} onclick={() => adjust(1)}>+1 (costs you 1 token)</button>
-						<button class="action-btn secondary" disabled={busy} onclick={() => adjust(-1)}>−1 (costs you 1 token)</button>
+						<button
+							class="action-btn secondary"
+							class:reduce-blocked={atCostFloor}
+							disabled={busy}
+							aria-disabled={atCostFloor}
+							title={atCostFloor ? "The cost can't go below 1 token" : undefined}
+							onclick={onReduceClick}
+						>−1 (costs you 1 token)</button>
 						<button class="action-btn secondary" disabled={busy || myPassed} onclick={pass}>
 							{myPassed ? 'You let it stand' : 'Let it stand'}
 						</button>
 					</div>
+					{#if reduceBlockedReason}
+						<p class="muted-text small reactor-note" role="status">{reduceBlockedReason}</p>
+					{/if}
 				{:else}
 					<p class="muted-text small">You have no tokens left to react with.</p>
 				{/if}
@@ -745,4 +814,9 @@
 	}
 	.reactor-note { color: var(--color-accent-hover); }
 	.adjust-buttons { display: flex; gap: 0.5rem; margin-top: 0.25rem; flex-wrap: wrap; }
+
+	/* Cost-floor guard (ADR-008 §1): the reduce button stays tappable
+	   (aria-disabled, not native disabled) so a tap surfaces the reason —
+	   mirrors PlanPanel's .ineligible treatment. */
+	.action-btn.reduce-blocked { cursor: not-allowed; opacity: 0.4; }
 </style>

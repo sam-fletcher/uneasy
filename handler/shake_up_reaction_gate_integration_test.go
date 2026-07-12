@@ -150,12 +150,34 @@ func (h *shakeUpSpendHarness) pass(t *testing.T, playerIdx int, spendID int64) {
 	require.Equal(t, http.StatusOK, status, resp)
 }
 
-// commit issues a commit as playerIdx, returning (status, body) for the
-// caller to assert on (tests exercise both the 200 and 409 cases).
+// commit issues a commit as playerIdx with no intent, returning (status,
+// body) for the caller to assert on. Only meaningful for spends whose cost
+// was never raised (extra == 0) — ADR-008 auto-resolves those regardless of
+// intent. Raised-cost spends must use commitWithIntent.
 func (h *shakeUpSpendHarness) commit(t *testing.T, playerIdx int, spendID int64) (int, map[string]any) {
 	t.Helper()
 	return h.do(t, playerIdx, "POST", fmt.Sprintf("/api/tables/%d/shake-up/commit", h.gameID()),
 		map[string]any{"spend_id": spendID})
+}
+
+// commitWithIntent issues a commit as playerIdx with an explicit ADR-008
+// pay/abandon intent — required once the running cost has been raised
+// (extra > 0).
+func (h *shakeUpSpendHarness) commitWithIntent(
+	t *testing.T, playerIdx int, spendID int64, intent string,
+) (int, map[string]any) {
+	t.Helper()
+	return h.do(t, playerIdx, "POST", fmt.Sprintf("/api/tables/%d/shake-up/commit", h.gameID()),
+		map[string]any{"spend_id": spendID, "intent": intent})
+}
+
+// adjust issues a ±1 cost adjustment as playerIdx, returning (status, body)
+// for the caller to assert on (tests exercise both the 200 and 409 floor-
+// guard cases).
+func (h *shakeUpSpendHarness) adjust(t *testing.T, playerIdx int, spendID int64, delta int) (int, map[string]any) {
+	t.Helper()
+	return h.do(t, playerIdx, "POST", fmt.Sprintf("/api/tables/%d/shake-up/adjust", h.gameID()),
+		map[string]any{"spend_id": spendID, "adjustment": delta})
 }
 
 // openSpendPayload fetches GetShakeUp's open_spend object as playerIdx.
@@ -279,7 +301,9 @@ func TestShakeUpReactionGate_AdjustResetsPasses(t *testing.T) {
 	// Re-pass (including b, the adjuster) unlocks it again.
 	h.pass(t, a, spendID)
 	h.pass(t, b, spendID)
-	status, body = h.commit(t, spenderIdx, spendID)
+	// b's +1 raised the cost, so ADR-008 requires an explicit intent; the
+	// spender can afford the extra token (4 left after the base cost).
+	status, body = h.commitWithIntent(t, spenderIdx, spendID, "pay")
 	assert.Equal(t, http.StatusOK, status, body)
 }
 
@@ -327,7 +351,9 @@ func TestShakeUpReactionGate_ZeroTokenExemption(t *testing.T) {
 		"the drained player must not appear as a pending reactor")
 
 	h.pass(t, holds, spendID1)
-	status, body := h.commit(t, spenderIdx, spendID1)
+	// `drained`'s +1 raised the cost, so ADR-008 requires an explicit intent;
+	// the spender can afford the extra token (4 left after the base cost).
+	status, body := h.commitWithIntent(t, spenderIdx, spendID1, "pay")
 	require.Equal(t, http.StatusOK, status, body)
 
 	// A LATER spend: `drained` still holds 0 tokens and must be exempt again,
@@ -504,14 +530,17 @@ func TestShakeUpAuction_TokensStrictlyDecrease(t *testing.T) {
 		before := sumShakeUpTokens(t, h.q, h.gameID())
 		spendID := h.announce(t, actorIdx, map[string]any{"option_key": gamepkg.ShakeUpOptBumpKnowledge})
 
-		// On the first round, exercise the adjust path too (a negative
-		// adjustment, so the refund/burn edge case gets covered) before
-		// everyone passes — adjusting resets passes, so it must happen first
-		// or the later passes would be wiped out from under it.
-		if rounds == 0 {
+		// On the first round, exercise the adjust + raised-cost-pay path too
+		// (ADR-008: a +1 raise now requires the spender to explicitly pay the
+		// extra token at commit) before everyone passes — adjusting resets
+		// passes, so it must happen first or the later passes would be wiped
+		// out from under it. (A -1 here would hit the cost-floor guard: the
+		// running cost is 1 right after announce, and it can never drop
+		// below 1 — see TestShakeUpAdjust_CostFloorRejectsBelowOne.)
+		raised := rounds == 0
+		if raised {
 			adjusterIdx := (actorIdx + 1) % len(h.seeded.Players)
-			status, resp := h.do(t, adjusterIdx, "POST", fmt.Sprintf("/api/tables/%d/shake-up/adjust", h.gameID()),
-				map[string]any{"spend_id": spendID, "adjustment": -1})
+			status, resp := h.adjust(t, adjusterIdx, spendID, 1)
 			require.Equal(t, http.StatusOK, status, resp)
 		}
 		for i, p := range h.seeded.Players {
@@ -521,7 +550,13 @@ func TestShakeUpAuction_TokensStrictlyDecrease(t *testing.T) {
 			h.pass(t, i, spendID)
 		}
 
-		status, body := h.commit(t, actorIdx, spendID)
+		var status int
+		var body map[string]any
+		if raised {
+			status, body = h.commitWithIntent(t, actorIdx, spendID, "pay")
+		} else {
+			status, body = h.commit(t, actorIdx, spendID)
+		}
 		require.Equal(t, http.StatusOK, status, body)
 
 		after := sumShakeUpTokens(t, h.q, h.gameID())

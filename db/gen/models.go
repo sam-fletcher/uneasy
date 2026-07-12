@@ -418,6 +418,7 @@ type ShakeUpSpend struct {
 	TargetMarginaliaID *int64             `db:"target_marginalia_id" json:"target_marginalia_id"`
 	TargetTitleID      *string            `db:"target_title_id" json:"target_title_id"`
 	TitleFlavor        *string            `db:"title_flavor" json:"title_flavor"`
+	AbandonedAt        pgtype.Timestamptz `db:"abandoned_at" json:"abandoned_at"`
 }
 
 type ShakeUpSpendPass struct {

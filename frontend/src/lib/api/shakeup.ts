@@ -28,6 +28,10 @@ export interface ShakeUpSpend {
 	base_cost: number;
 	final_cost: number | null;
 	committed_at: string | null;
+	// ADR-008 "pay or abandon": set when the spend closed without applying its
+	// effect (the chooser declined, or couldn't afford, a raised cost). Mutually
+	// exclusive with committed_at.
+	abandoned_at: string | null;
 	applied: boolean;
 	created_at: string;
 }
@@ -122,13 +126,20 @@ export function shakeUpAdjust(
 	});
 }
 
+// ADR-008 "pay or abandon": intent is required once the running cost has
+// been raised above the base (extra > 0) — "pay" charges the extra tokens
+// and applies the effect, "abandon" charges nothing further and applies no
+// effect. Ignored when the cost was never raised (the spend auto-commits
+// regardless). The server stays authoritative on affordability: a "pay" it
+// can't afford is rejected (409), never capped.
 export function shakeUpCommit(
 	gameID: string | number,
-	spendID: number
-): Promise<{ spend_id: number; final_cost: number }> {
+	spendID: number,
+	intent?: 'pay' | 'abandon'
+): Promise<{ spend_id: number; final_cost: number; outcome: 'committed' | 'abandoned'; forced: boolean }> {
 	return apiFetch(`/tables/${gameID}/shake-up/commit`, {
 		method: 'POST',
-		body: JSON.stringify({ spend_id: spendID })
+		body: JSON.stringify({ spend_id: spendID, intent })
 	});
 }
 

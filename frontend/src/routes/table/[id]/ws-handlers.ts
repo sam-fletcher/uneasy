@@ -577,6 +577,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.ShakeUpSpendOpened:
 		case EventTypes.ShakeUpAdjusted:
 		case EventTypes.ShakeUpSpendCommitted:
+		case EventTypes.ShakeUpSpendAbandoned:
 		case EventTypes.ShakeUpPassed:
 		case EventTypes.ShakeUpEnded: {
 			if (msg.type === EventTypes.ShakeUpStepChanged && ctx.game) {

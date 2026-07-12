@@ -929,3 +929,42 @@ func EmitShakeUpCommitted(
 		model.SeverityImportant, body,
 		nil, nil, nil, data)
 }
+
+// EmitShakeUpAbandoned writes the Important outcome post for a spend that
+// closed without applying its effect (ADR-008 "pay or abandon") — either the
+// chooser declined a raised cost they could afford, or the raise exceeded
+// their pool and abandonment was forced. Every outcome must be reconstructable
+// from the log, even "nothing happened": the base token and every adjuster
+// token stayed burned, but no mechanical effect occurred.
+func EmitShakeUpAbandoned(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	spend *dbgen.ShakeUpSpend,
+	finalCost int16,
+	optionPhrase string,
+	forced bool,
+) {
+	name := playerDisplayName(ctx, q, spend.PlayerID)
+	var body string
+	if forced {
+		body = fmt.Sprintf(
+			"%s could not afford the raised cost (%d tokens) to %s — the spend is abandoned, tokens lost",
+			name, finalCost, optionPhrase)
+	} else {
+		body = fmt.Sprintf(
+			"%s abandons the raised spend to %s (cost would have been %d tokens) — tokens lost, no effect",
+			name, optionPhrase, finalCost)
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.abandoned",
+		model.SeverityImportant, body,
+		nil, nil, nil,
+		map[string]any{
+			"spend_id":   spend.ID,
+			"player_id":  spend.PlayerID,
+			"option_key": spend.OptionKey,
+			"final_cost": finalCost,
+			"forced":     forced,
+		})
+}

@@ -120,6 +120,7 @@ const (
 	EventShakeUpSpendOpened    = "shake_up.spend_opened"
 	EventShakeUpAdjusted       = "shake_up.adjusted"
 	EventShakeUpSpendCommitted = "shake_up.spend_committed"
+	EventShakeUpSpendAbandoned = "shake_up.spend_abandoned"
 	EventShakeUpPassed         = "shake_up.passed"
 	EventShakeUpEnded          = "shake_up.ended"
 
@@ -786,6 +787,15 @@ type ShakeUpAdjustedPayload struct {
 type ShakeUpSpendCommittedPayload struct {
 	SpendID   int64 `json:"spend_id"`
 	FinalCost int16 `json:"final_cost"`
+}
+
+// ShakeUpSpendAbandonedPayload is for EventShakeUpSpendAbandoned (ADR-008 —
+// the chooser declined, or could not afford, the raised cost; the base and
+// every adjuster token stay burned but the mechanical effect never applies).
+type ShakeUpSpendAbandonedPayload struct {
+	SpendID   int64 `json:"spend_id"`
+	FinalCost int16 `json:"final_cost"`
+	Forced    bool  `json:"forced"`
 }
 
 // ShakeUpPassedPayload is for EventShakeUpPassed.
