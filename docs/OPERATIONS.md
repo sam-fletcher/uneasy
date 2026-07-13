@@ -5,13 +5,9 @@ it's built for (a few concurrent games, ~100 accounts/year), the operator
 does everything by hand with `psql` against the production database. This
 document is that manual procedure.
 
-All commands assume you have a `psql` shell open against prod, e.g.:
-
-```bash
-fly postgres connect -a <your-postgres-app-name>
-```
-
-or, if connecting via `DATABASE_URL` directly:
+All commands assume you have a `psql` shell open against prod. Grab the
+connection string from the Neon dashboard (or `$PROD_DATABASE_URL` if you
+already have it exported) and connect directly:
 
 ```bash
 psql "$DATABASE_URL"
@@ -121,5 +117,5 @@ their profile page.
 If someone posts something awful: delete the game (see above) if it's
 scoped to one table, or delete the account if the abuse is coming from a
 specific player across games. There is no report button or automated
-filter — the feedback email is the only inbound signal, so keep an eye on
-it.
+filter — feedback submissions (pinged to the private Discord channel, see
+`handler/notify.go`) are the only inbound signal, so keep an eye on it.
