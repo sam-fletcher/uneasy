@@ -34,7 +34,9 @@ instance.
 
 ## License
 
-The code in this repository is [MIT licensed](LICENSE). 
-The game itself (its rules, text, and setting) is the intellectual 
-property of Adam Bell and is used here with his permission; 
-the MIT license does not extend to the game content.
+The code in this repository is [MIT licensed](LICENSE). *Uneasy Lies
+the Head* itself — its rules, mechanics, plan and card names, setting,
+and example text — is Adam Bell's intellectual property and is used
+here with his personal permission; that permission covers this project
+only. The MIT license does not extend to the game content. See
+[NOTICE](NOTICE) for details.

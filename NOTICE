@@ -1,0 +1,28 @@
+Uneasy Lies the Head — Game Content Notice
+===========================================
+
+The source code in this repository is licensed under the MIT License
+(see LICENSE).
+
+*Uneasy Lies the Head* itself — its rules, mechanics, plan and card
+names, setting, and example text — is an original tabletop game
+designed by Adam Bell (https://adambell.games/). It is not covered by
+the MIT License. This project is a digital adaptation published with
+Adam Bell's personal permission, and that permission covers this
+project only; it does not grant any further license, sublicense, or
+right to reuse, redistribute, or adapt the game's content.
+
+This includes, without limitation:
+  - the names and descriptions of the twelve Plans
+    (frontend/src/lib/components/plans/shared.ts, game/plan_*.go);
+  - the Prologue card structure and example asset names
+    (game/prologue_examples.json);
+  - the example marginalia text (game/marginalia_examples.json);
+  - the game's rules, phase structure, and terminology (Prologue,
+    Shake-Up, the Public Record, Secrets, ranks and suits, etc.) as
+    reflected throughout the application's code, comments, and UI text.
+
+If you fork or reuse this repository's code, you will need your own
+permission from Adam Bell to use any of the above. The original
+tabletop game is available at
+https://adambell.itch.io/uneasy-lies-the-head-2e.
