@@ -436,6 +436,34 @@
 		color: #c8c4b9;
 		font-size: 0.85rem;
 		cursor: pointer;
+		box-sizing: border-box;
+	}
+
+	@media (max-width: 360px) {
+		.chips {
+			gap: 0.3rem;
+		}
+
+		.chip {
+			flex: 0 0 calc(33.333% - 0.2rem);
+			min-width: 0;
+			padding: 0.35rem 0.45rem;
+			font-size: 0.74rem;
+			line-height: 1.1;
+			white-space: nowrap;
+		}
+	}
+
+	@media (max-width: 320px) {
+		.chips {
+			justify-content: flex-start;
+		}
+
+		.chip {
+			padding: 0.3rem 0.35rem;
+			font-size: 0.7rem;
+			min-height: 40px;
+		}
 	}
 	.chip.active {
 		background: var(--color-accent);
