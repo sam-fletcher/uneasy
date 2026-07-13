@@ -23,11 +23,11 @@ import type { Player } from './api';
  * disagree before token_color is set.
  */
 const FALLBACK_PALETTE = [
-	'#7fb3d5', // cool blue
-	'#b48ead', // muted purple
-	'#a3be8c', // sage green
-	'#f4a261', // pale orange
-	'#d08770', // terracotta
+	'#B800FF', // Royal Amethyst
+	'#0055FF', // Sapphire Blue
+	'#00CC44', // Vivid Jade
+	'#E60026', // Crimson Velvet
+	'#FF6A00', // Blazing Citrine
 ];
 
 /** Color used for OOC chat messages and OOC persona affordances. */
