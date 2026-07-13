@@ -542,13 +542,31 @@ func expireSessionsDaily(logger *slog.Logger, store *db.Store) {
 
 // notifyTickInterval is how often notifyTicker reconciles pending_notifications
 // against the current waitee set and sends whichever rows are past due_at
-// (adr/NOTIFICATIONS_PLAN.md Session 3). A ±59s error is irrelevant at the
-// hour-scale cadences players choose from.
-const notifyTickInterval = time.Minute
+// (adr/NOTIFICATIONS_PLAN.md Session 3).
+//
+// This was time.Minute until the 2026-07-12 post-deploy finding
+// (adr/PUBLIC_LAUNCH_PLAN.md "Post-deploy finding"): a query every 60s never
+// lets Neon's 5-minute idle timer fire, so the free-tier compute never
+// suspends — ~730 h/mo × 0.25 CU ≈ 182 CU-hr, blowing the 100 CU-hr/mo free
+// cap around day 16–17. At 30 minutes the compute wakes for the query, holds
+// ~5 min for the idle timer, then suspends for the rest of the interval —
+// roughly 10 min awake per hour ≈ 30 CU-hr/mo, comfortably inside the cap
+// with headroom for real player traffic on top.
+//
+// The cost is staleness: reconcileWaitees only starts a waitee's timer on the
+// tick after they actually block, and sendDueNotifications only checks
+// due_at on a tick too, so a blocked player can wait up to ~2×
+// notifyTickInterval past their chosen cadence before a push actually goes
+// out (worst case ~2h of slop on the fastest "1 hour" cadence option). That's
+// a real, user-visible degradation versus the old ±59s, but these are
+// best-effort reminders, not a delivery SLA, and the cadence options are all
+// hour-scale — accepted as the trade for not exhausting the DB budget.
+const notifyTickInterval = 30 * time.Minute
 
-// notifyTicker runs RunNotificationTick once a minute for the life of the
-// process, the same reconcile+send pass every tick — no separate hooks in
-// mutation handlers to keep in sync (see the plan's rationale).
+// notifyTicker runs RunNotificationTick every notifyTickInterval for the
+// life of the process, the same reconcile+send pass every tick — no
+// separate hooks in mutation handlers to keep in sync (see the plan's
+// rationale).
 func notifyTicker(logger *slog.Logger, store *db.Store) {
 	ticker := time.NewTicker(notifyTickInterval)
 	defer ticker.Stop()
