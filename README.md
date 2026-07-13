@@ -1,12 +1,14 @@
 # Uneasy Lies the Head
 
 A web adaptation of *[Uneasy Lies the Head](https://adambell.itch.io/uneasy-lies-the-head-2e)*,
-a 2–5 player competitive GMless tabletop RPG set in a royal court. Players
-each control a noble and their retinue, scheming and allying their way
-through a 13-row timeline toward a climactic Shake-Up — no winner, just a
-dramatic story everyone told together. This adaptation turns it into an
-asynchronous, "play by post" web game: make your move, then come back
-whenever the next player has made theirs.
+a 2-5 player competitive GMless tabletop RPG set in a royal court. 
+
+Players each control a noble and their retinue, scheming and allying their way
+toward a climactic finale. No winner, just a dramatic story everyone told together. 
+
+Designed for both desktop and mobile browsers, 
+and both real-time and "play by post" styles: make your move, 
+then come back whenever the next player has made theirs.
 
 ![Early-on in the Main Event, showing the chat log and a player's retinue](docs/images/screenshot.png)
 
@@ -32,7 +34,7 @@ instance.
 
 ## License
 
-The code in this repository is [MIT licensed](LICENSE). The game itself —
-its rules, text, and setting — is the intellectual property of Adam Bell and
-is used here with his permission; the license does not extend to the game
-content.
+The code in this repository is [MIT licensed](LICENSE). 
+The game itself (its rules, text, and setting) is the intellectual 
+property of Adam Bell and is used here with his permission; 
+the MIT license does not extend to the game content.
