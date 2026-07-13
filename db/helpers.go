@@ -88,7 +88,8 @@ func SeedDefaultToneTopics(ctx context.Context, q *dbgen.Queries, gameID int64) 
 		"Magic",
 		"Historical misogyny",
 		"Patriarchy",
-		"Dragons child abuse",
+		"Dragons",
+		"Child abuse",
 		"Science fiction",
 		"Casteism",
 	}
