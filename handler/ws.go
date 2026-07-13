@@ -13,6 +13,15 @@ import (
 	appMiddleware "uneasy/middleware"
 )
 
+// broadcastEvent sends an event to all subscribers of gameID, if a hub exists
+// for it. Replaces the repetitive `if h, ok := manager.Get(gameID); ok { ... }`
+// pattern at every broadcast site.
+func broadcastEvent(manager *hub.Manager, gameID int64, eventType string, payload any) {
+	if h, ok := manager.Get(gameID); ok {
+		h.BroadcastEvent(eventType, payload)
+	}
+}
+
 // WebSocket handles GET /api/tables/{id}/ws.
 //
 // Upgrades to a WebSocket connection for the given table. The caller must:

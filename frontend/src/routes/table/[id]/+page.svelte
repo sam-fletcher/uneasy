@@ -8,7 +8,6 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import {
 		getGameState, getMe,
-		startPrologue,
 		updateToneTopic, addToneTopic,
 		listAssets, getFullRecord,
 		getActiveRollForGame, listBankedDice,
@@ -16,7 +15,6 @@
 		setEndgameMode,
 		getVisibleSecrets,
 		getActiveScene,
-		type RankingCategory,
 		type EndgameMode,
 		type Scene,
 		type ScenePeerView,
@@ -39,18 +37,18 @@
 	} from '$lib/api';
 	import MainEventView from '$lib/components/phases/MainEventView.svelte';
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
+	import LobbyView from '$lib/components/phases/LobbyView.svelte';
 	import PrologueView from '$lib/components/phases/PrologueView.svelte';
 	import ShakeUpView from '$lib/components/phases/ShakeUpView.svelte';
+	import EndedView from '$lib/components/phases/EndedView.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import LawsRumors from '$lib/components/LawsRumors.svelte';
 	import RetinueView from '$lib/components/RetinueView.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
-	import HelpContent from '$lib/components/HelpContent.svelte';
 	import HelpButton from '$lib/components/HelpButton.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
 	import { playerColorByID } from '$lib/playerColor';
-	import { getPushState, enablePush, type PushState } from '$lib/push';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import { provideSecretCounts } from '$lib/secretCountsContext';
 	import { provideSuccession } from '$lib/successionContext';
@@ -175,45 +173,10 @@
 	let prologueActivePlayerID = $state<number | null>(null);
 
 	// ── Lobby push soft-ask ──────────────────────────────────────────────────
-	const PUSH_PROMPT_DISMISSED_KEY = 'uneasy.push.lobbyPromptDismissed';
+	// vapidPublicKey is fetched once here (from getMe, alongside the rest of
+	// onMount's auth check) and handed to LobbyView, which owns the rest of
+	// the push-enable flow (its own pushState/dismissal/enable logic).
 	let vapidPublicKey = $state('');
-	let pushState = $state<PushState>('unsupported');
-	let pushCardDismissed = $state(true);
-	let pushCardBusy = $state(false);
-	const showPushCard = $derived(
-		game?.phase === 'lobby' && !pushCardDismissed
-		&& (pushState === 'off' || pushState === 'ios-needs-install')
-	);
-	function dismissPushCard() {
-		pushCardDismissed = true;
-		localStorage.setItem(PUSH_PROMPT_DISMISSED_KEY, '1');
-	}
-	async function enablePushFromLobby() {
-		pushCardBusy = true;
-		try {
-			pushState = await enablePush(vapidPublicKey);
-		} finally {
-			pushCardBusy = false;
-			dismissPushCard();
-		}
-	}
-
-	// ── Join-code copy feedback ───────────────────────────────────────────────
-	// Briefly flips the badge label to "Copied!" after a successful copy.
-	let joinCodeCopied = $state(false);
-	let joinCodeCopyTimer: ReturnType<typeof setTimeout> | null = null;
-	async function copyJoinCode() {
-		if (!game) return;
-		try {
-			await navigator.clipboard.writeText(game.join_code);
-			joinCodeCopied = true;
-			if (joinCodeCopyTimer) clearTimeout(joinCodeCopyTimer);
-			joinCodeCopyTimer = setTimeout(() => (joinCodeCopied = false), 1500);
-		} catch {
-			// Clipboard can reject (permissions / insecure context); leave the
-			// label unchanged so the user can still read & copy manually.
-		}
-	}
 
 	// ── Mobile chat sheet ─────────────────────────────────────────────────────
 	// Bound to ChatPanel's `expanded`. Kept here so the page can enforce one
@@ -550,8 +513,6 @@
 			currentPlayerID = seat.id;
 
 			vapidPublicKey = me.vapid_public_key;
-			pushCardDismissed = localStorage.getItem(PUSH_PROMPT_DISMISSED_KEY) === '1';
-			pushState = await getPushState();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load table.';
 		} finally {
@@ -611,28 +572,6 @@
 		} catch { /* ignore — WS events will keep us in sync */ }
 	}
 
-	// ── Phase advancement (lobby only) ────────────────────────────────────────
-	let advancing = $state(false);
-
-	async function advancePhase() {
-		if (!game || advancing) return;
-		advancing = true;
-		error = '';
-		try {
-			if (game.phase === 'lobby') {
-				await startPrologue(gameID);
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not advance phase.';
-		} finally {
-			advancing = false;
-		}
-	}
-
-	const nextPhaseLabel: Record<string, string> = {
-		lobby: 'Start Prologue',
-	};
-
 	// ── Tone-setting ──────────────────────────────────────────────────────────
 	let newTopicText = $state('');
 	let addingTopic = $state(false);
@@ -676,12 +615,6 @@
 		shake_up: 'Shake-Up',
 		ended: 'Game Over',
 	};
-
-	// Player name lookup used in the ended-phase rankings display.
-	function rankingLabel(playerID: number | null): string {
-		if (playerID === null) return 'Dummy';
-		return players.find(p => p.id === playerID)?.display_name ?? '?';
-	}
 </script>
 
 <div class="table-page">
@@ -799,67 +732,14 @@
 
 	<!-- ── Lobby ──────────────────────────────────────────────────────────── -->
 	{:else if game?.phase === 'lobby'}
-		<div class="phase-view lobby">
-			<section class="lobby-join">
-				<h2>Join Code</h2>
-				<button class="code-badge" class:copied={joinCodeCopied} onclick={copyJoinCode} aria-label="Copy join code">
-					{game.join_code}
-					<span class="copy-hint" aria-live="polite">{joinCodeCopied ? 'Copied!' : 'copy'}</span>
-				</button>
-				<p class="muted-text">
-					Share this code with your friends to invite them. The game needs 2–5 players.
-				</p>
-			</section>
-			<div class="player-list">
-				{#each players as p}
-					<div class="player-row">
-						{p.display_name}
-						{#if p.is_facilitator}<span class="tag">facilitator</span>{/if}
-					</div>
-				{/each}
-			</div>
-			{#if isFacilitator && players.length >= 2}
-				<button class="action-btn primary" onclick={advancePhase} disabled={advancing}>
-					{advancing ? '…' : nextPhaseLabel['lobby']}
-				</button>
-			{:else if isFacilitator}
-				<p class="muted-text">Need at least 2 players to start.</p>
-			{/if}
-
-			{#if showPushCard}
-				<section class="push-card">
-					{#if pushState === 'ios-needs-install'}
-						<h2>Add Uneasy to your Home Screen</h2>
-						<p class="muted-text">
-							iPhone/iPad only deliver notifications to installed apps: tap the Share icon,
-							then "Add to Home Screen". Open Uneasy from there to get notified when it's your turn.
-						</p>
-						<button class="action-btn secondary" onclick={dismissPushCard}>Got it</button>
-					{:else}
-						<h2>Get notified when it's your turn</h2>
-						<p class="muted-text">
-							Turn on push notifications for this device so you don't have to keep checking back.
-							You can change this any time in your Profile.
-						</p>
-						<div class="push-card-actions">
-							<button class="action-btn primary" onclick={enablePushFromLobby} disabled={pushCardBusy}>
-								{pushCardBusy ? '…' : 'Enable notifications'}
-							</button>
-							<button class="action-btn secondary" onclick={dismissPushCard}>Not now</button>
-						</div>
-					{/if}
-				</section>
-			{/if}
-
-			<section class="lobby-help">
-				<h2>New to the game? Start here.</h2>
-				<p class="muted-text">
-					A two-minute primer while you wait for everyone to arrive. You can reopen this
-					any time from the ? in the top-right corner.
-				</p>
-				<HelpContent onFeedback={() => lobbyFeedbackOpen = true} />
-			</section>
-		</div>
+		<LobbyView
+			{gameID}
+			{game}
+			{players}
+			{isFacilitator}
+			{vapidPublicKey}
+			onFeedback={() => lobbyFeedbackOpen = true}
+		/>
 
 	<!-- ── Prologue ───────────────────────────────────────────────────────── -->
 	{:else if game?.phase === 'prologue'}
@@ -922,23 +802,7 @@
 
 	<!-- ── Ended ──────────────────────────────────────────────────────────── -->
 	{:else if game?.phase === 'ended'}
-		<div class="phase-view ended">
-			<h2>Game Over</h2>
-			<p class="muted-text">The public record is sealed. Thank you for playing.</p>
-			{#if rankings.length > 0}
-				<h3>Final Rankings</h3>
-				<div class="rankings-preview">
-					{#each ['power', 'knowledge', 'esteem'] as cat}
-						<div class="rank-col">
-							<h4>{cat}</h4>
-							{#each rankings.filter(r => r.category === (cat as RankingCategory) && r.player_id !== null).sort((a, b) => a.rank - b.rank) as r}
-								<div class="rank-slot-display">{r.rank}. {rankingLabel(r.player_id)}</div>
-							{/each}
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
+		<EndedView {rankings} {players} />
 
 	{:else}
 		<div class="center-message">Unknown phase.</div>
@@ -1243,19 +1107,6 @@
 		.game-info.has-war .phase-badge { display: none; }
 	}
 
-	.code-badge {
-		font-family: monospace;
-		font-size: 0.85rem;
-		background: var(--color-border);
-		color: var(--color-text);
-		padding: 0.2rem 0.6rem;
-		border-radius: 4px;
-		letter-spacing: 0.1em;
-		display: flex;
-		gap: 0.4rem;
-		align-items: center;
-	}
-
 	.tones-button {
 		display: inline-flex;
 		align-items: center;
@@ -1315,12 +1166,6 @@
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
 	.tones-sheet .small { font-size: 0.85rem; }
 	.laws-rumors-sheet h3 { margin: 0 0 0.5rem; }
-
-	.copy-hint {
-		font-size: 0.7rem;
-		color: var(--color-text-muted);
-	}
-	.code-badge.copied .copy-hint { color: var(--color-accent); }
 
 	.top-strip {
 		display: flex;
@@ -1495,85 +1340,6 @@
 		color: var(--color-text-muted);
 	}
 
-	/* ── Phase views ────────────────────────────────────────────────────────── */
-
-	.phase-view {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		padding: 1rem 0.75rem;
-		gap: 1rem;
-		overflow-y: auto;
-		min-height: 0;
-	}
-
-	.phase-view h2 {
-		color: var(--color-accent);
-		font-size: 1.3rem;
-		margin: 0;
-	}
-
-	.phase-view h3 {
-		color: var(--color-accent);
-		font-size: 1rem;
-		margin: 0;
-	}
-
-
-
-	/* ── Lobby ──────────────────────────────────────────────────────────────── */
-
-	.player-list { display: flex; flex-direction: column; gap: 0.4rem; }
-
-	.player-row {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.95rem;
-	}
-
-	.tag {
-		font-size: 0.7rem;
-		background: var(--color-border-warm);
-		color: var(--color-accent);
-		padding: 0.1rem 0.4rem;
-		border-radius: 3px;
-		text-transform: uppercase;
-	}
-
-	.push-card {
-		margin-top: 0.75rem;
-		padding: 1rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 12px;
-	}
-	.push-card .muted-text { margin-bottom: 0.75rem; }
-	.push-card-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-
-	.lobby-help {
-		margin-top: 0.5rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--color-border);
-	}
-	.lobby h2 {
-		color: var(--color-accent);
-		font-size: 1.15rem;
-		margin: 0 0 0.35rem;
-	}
-	.lobby-help .muted-text { margin-bottom: 0.9rem; }
-
-	.lobby-join { margin-bottom: 0.5rem; }
-	.lobby-join .muted-text {
-		margin-top: 0.5rem;
-		margin-bottom: 0.2rem;
-	}
-	.lobby-join .code-badge {
-		display: inline-flex;
-		font-size: 1rem;
-		padding: 0.35rem 0.8rem;
-	}
-
 	/* ── Tone Setting ─────────────────────────────────────────────────────── */
 
 	.tone-legend {
@@ -1682,29 +1448,6 @@
 		cursor: pointer;
 	}
 	.tone-add-button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-	/* ── Ended ──────────────────────────────────────────────────────────────── */
-
-	.rankings-preview {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 1rem;
-	}
-
-	.rank-col { display: flex; flex-direction: column; gap: 0.2rem; }
-
-	.rank-col h4 {
-		font-size: 0.8rem;
-		color: var(--color-accent);
-		text-transform: capitalize;
-		margin: 0 0 0.4rem;
-	}
-
-	.rank-slot-display {
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
-		padding: 0.15rem 0;
-	}
 
 	.endgame-overlay {
 		position: fixed;

@@ -1,6 +1,6 @@
 //go:build integration
 
-// Package handler — integration test harness.
+// Integration test harness.
 //
 // Tests in this file (and other *_integration_test.go files) talk to a real
 // Postgres database. They are gated by the `integration` build tag so the
