@@ -1,5 +1,14 @@
 # Operations runbook
 
+> **Deployment status:** live at <https://uneasy.up.railway.app> since
+> 2026-07-12 (Railway Free + Neon free tier, `aws-us-west-2`). Backup
+> restore drill done 2026-07-13: workflow artifact downloaded, decrypted
+> with `BACKUP_PASSPHRASE`, restored into a scratch DB, accounts verified.
+> The restore commands below and in the workflow header are tested, not
+> aspirational. One known quirk: a Postgres 17 dump's `SET
+> transaction_timeout` line errors harmlessly when restoring into the
+> Postgres 16 dev container.
+
 This project has no admin UI and no automated moderation — at the scale
 it's built for (a few concurrent games, ~100 accounts/year), the operator
 does everything by hand with `psql` against the production database. This
