@@ -31,7 +31,9 @@
 		rankings: Ranking[];
 		committed: CommittedHeart[];
 		doneFlags: TrackDone[];
-		activeTrack: PrologueTrack;
+		// null during box-selection: no track is being resolved yet, so no
+		// column is highlighted. Set to the live track during declare/place.
+		activeTrack: PrologueTrack | null;
 		currentPlayerID: number | null;
 	}
 
@@ -181,9 +183,6 @@
 				<header class="col-head">
 					<span class="col-suit" data-color={t.id === 'knowledge' ? 'red' : 'black'}>{t.suit}</span>
 					<span class="col-label">{t.label}</span>
-					{#if activeTrack === t.id}
-						<span class="active-pip" title="Active track">●</span>
-					{/if}
 				</header>
 				{#each rankRowsFor(proj) as row}
 					<div
@@ -236,14 +235,16 @@
 		{/each}
 	</div>
 
-	<div
-		class="status"
-		title="Lowest sum of ranks. On a tie, the lowest Power player goes first."
-	>
+	<div class="status">
+		<span class="status-hint">
+			<span class="heart-mark">♥</span> Hearts: any category
+		</span>
 		{#if firstFocusPlayer != null && players.length > 0}
-			Projected first player: {playerName(firstFocusPlayer.pid)}
-			<span class="status-detail">
-				(Lowest combined rank)
+			<span
+				class="status-focus"
+				title="Lowest combined rank"
+			>
+				Projected first player: {playerName(firstFocusPlayer.pid)}
 			</span>
 		{/if}
 	</div>
@@ -282,7 +283,6 @@
 	}
 
 	.col-head {
-		position: relative;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -300,15 +300,6 @@
 		letter-spacing: 0;
 		white-space: nowrap;
 	}
-	.active-pip {
-		position: absolute;
-		right: 0.1rem;
-		top: 50%;
-		transform: translateY(-50%);
-		color: var(--color-accent);
-		font-size: 0.6rem;
-	}
-
 	.rank-row {
 		display: flex;
 		align-items: flex-start;
@@ -406,12 +397,18 @@
 	}
 
 	.status {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.2rem 0.75rem;
 		font-size: 0.85rem;
 		color: var(--color-text-muted);
 		padding: 0.3rem 0.4rem;
 		border-top: 1px solid var(--color-surface-2);
 	}
-	.status-detail { color: var(--color-text-faint); font-size: 0.75rem; margin-left: 0.4rem; }
+	.status-hint { color: var(--color-text-secondary); }
+	.heart-mark { color: #b03030; }
+	.status-focus { margin-left: auto; text-align: right; }
 
 	@media (min-width: 600px) {
 		.columns { gap: 0.6rem; }

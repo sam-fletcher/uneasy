@@ -40,7 +40,7 @@
 	import TrackBoard from './prologue/TrackBoard.svelte';
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
-	import { computeBrightHearts } from '$lib/prologue/refund';
+	import { computeBrightHearts, cardRank } from '$lib/prologue/refund';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 	import CrownGlyph from '../CrownGlyph.svelte';
 	import type { CrownMark } from '$lib/succession';
@@ -178,6 +178,27 @@
 	function suitColor(s: string): 'red' | 'black' {
 		return s === 'H' || s === 'D' ? 'red' : 'black';
 	}
+
+	// ── Everyone's hands (public during the prologue) ─────────────────────────
+	// Cards are linked to public assets during the prologue, so every player's
+	// hand is open information. Show them all as compact per-player tiles.
+	// Hearts first so the wild cards cluster and stand out, then S/D/C, each
+	// group high-to-low.
+	const HAND_SUIT_ORDER: Record<string, number> = { H: 0, S: 1, D: 2, C: 3 };
+	const handsByPlayer = $derived.by(() =>
+		[...players]
+			.sort((a, b) => (a.seat_order ?? 0) - (b.seat_order ?? 0))
+			.map((p) => ({
+				player: p,
+				cards: cards
+					.filter((c) => c.player_id === p.id)
+					.sort(
+						(a, b) =>
+							HAND_SUIT_ORDER[a.card_suit] - HAND_SUIT_ORDER[b.card_suit] ||
+							cardRank(b.card_value) - cardRank(a.card_value)
+					),
+			}))
+	);
 
 	// ── Choose a box ─────────────────────────────────────────────────────────
 	let activeClaim = $state<{ sheet: PrologueSheet; choice: PrologueSheet['choices'][number] } | null>(null);
@@ -485,18 +506,56 @@
 		<p class="muted-text">Loading prologue…</p>
 
 	{:else if mode === 'choosing'}
-		<p class="muted-text">
-			Each player takes 3 turns claiming any 3 boxes. Each box creates an asset and grants two playing cards.
-		</p>
-		<p class="muted-text">
-			Playing cards determine your initial rankings, and each is one asset you'll create or steal:
-			<br>{@render suitSvg('H')} Peer &emsp;&emsp;&emsp;&emsp; {@render suitSvg('S')} Artifact
-			<br>{@render suitSvg('D')} Resource &emsp;&emsp;{@render suitSvg('C')} Holding
-		</p>
+		<div class="prologue-intro">
+			<p class="prologue-lede">
+				To set the stage, we create our main character's assets. 
+			</p>
+			<p class="prologue-subtext">
+				Each box below creates an asset and grants two playing cards. 
+			</p>
+			<p class="prologue-subtext">
+				Playing cards set the initial rankings, and let you create <span class="steal">or steal</span> another asset:
+			</p>
+			<div class="suit-legend">
+				<div class="suit-legend-item">
+					<span class="card-glyph legend-glyph" data-color="red">{@render suitSvg('H')}</span>
+					<span>Peer</span>
+				</div>
+				<div class="suit-legend-item">
+					<span class="card-glyph legend-glyph" data-color="black">{@render suitSvg('S')}</span>
+					<span>Artifact</span>
+				</div>
+				<div class="suit-legend-item">
+					<span class="card-glyph legend-glyph" data-color="red">{@render suitSvg('D')}</span>
+					<span>Resource</span>
+				</div>
+				<div class="suit-legend-item">
+					<span class="card-glyph legend-glyph" data-color="black">{@render suitSvg('C')}</span>
+					<span>Holding</span>
+				</div>
+			</div>
+			<p class="prologue-subtext">
+				View & edit your main character and other assets in your player menu (top of the screen). 
+			</p>
+		</div>
 
 		{#if activePlayerID == null}
 			<p class="muted-text">Everyone has finished choosing.</p>
 		{/if}
+
+		<TrackBoard
+			{players}
+			{cards}
+			{rankings}
+			{committed}
+			{doneFlags}
+			activeTrack={null}
+			{currentPlayerID}
+		/>
+
+		<p class="muted-text">
+			Turns taken: {myTurns} / 3
+		</p>
 
 		<div class="choosing-grid">
 			{#each sheets as sheet}
@@ -541,32 +600,28 @@
 			{/each}
 		</div>
 
-		<section class="hand-panel">
-			<h3>Your Hand ({myCards.length} card{myCards.length === 1 ? '' : 's'})</h3>
-			{#if myCards.length === 0}
-				<p class="muted-text small">No cards yet — claim a box to start collecting them.</p>
-			{:else}
-				<div class="hand-cards">
-					{#each myCards as c}
-						{@render miniCard(c.card_value, c.card_suit)}
-					{/each}
-				</div>
-			{/if}
+		<section class="hands-section">
+			<h3>Hands</h3>
+			<div class="hands-grid">
+				{#each handsByPlayer as hand (hand.player.id)}
+					<div class="hand-tile" class:you={hand.player.id === currentPlayerID}>
+						<div class="hand-tile-head">
+							<span class="hand-tile-name">{hand.player.display_name}</span>
+							<span class="hand-tile-count">{hand.cards.length}</span>
+						</div>
+						{#if hand.cards.length === 0}
+							<span class="hand-tile-empty">No cards yet</span>
+						{:else}
+							<div class="hand-tile-cards">
+								{#each hand.cards as c}
+									{@render miniCard(c.card_value, c.card_suit)}
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
 		</section>
-
-		<TrackBoard
-			{players}
-			{cards}
-			{rankings}
-			{committed}
-			{doneFlags}
-			activeTrack={'power'}
-			{currentPlayerID}
-		/>
-
-		<p class="muted-text small">
-			Turns taken: {myTurns} / 3.
-		</p>
 
 	{:else if mode === 'declare'}
 		{#if currentTrack}
@@ -712,6 +767,52 @@
 	}
 	.prologue-view h3 { color: var(--color-accent); font-size: 1rem; margin: 0.5rem 0 0.25rem; }
 
+	.prologue-intro {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.prologue-lede {
+		margin: 0;
+		color: var(--color-text);
+		font-size: 1.05rem;
+		line-height: 1.45;
+	}
+	@media (min-width: 600px) {
+		.prologue-lede { font-size: 1.2rem; }
+	}
+	.prologue-subtext {
+		margin: 0;
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+		line-height: 1.4;
+	}
+	/* Reuses the existing warning red from the "at-risk" marginalia cue
+	   (AssetCardSelectable) rather than minting a new hex, to draw the eye to
+	   "steal" as the aggressive option. */
+	.steal { color: #d65a5a; }
+
+	.suit-legend {
+		display: grid;
+		grid-template-columns: repeat(2, auto);
+		gap: 0.4rem 1.5rem;
+	}
+	@media (min-width: 600px) {
+		.suit-legend { grid-template-columns: repeat(4, auto); gap: 0.5rem 1.5rem; }
+	}
+	.suit-legend-item {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+	}
+	.legend-glyph {
+		padding: 0.25rem 0.4rem;
+		font-size: 1rem;
+	}
+	.legend-glyph :global(.suit) { width: 1.15em; height: 1.15em; }
+
 	.choosing-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
@@ -766,22 +867,58 @@
 	.claim-by { font-size: 0.7rem; color: var(--color-text-muted); }
 
 	.card-glyph :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
-	.hand-cards .card-glyph { font-size: 0.85rem; padding: 0.15rem 0.3rem; }
-	.hand-cards .card-glyph :global(.suit) { width: 1.1em; height: 1.1em; }
 
-	.hand-panel {
+	.hands-section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.hands-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.4rem;
+		max-width: 32rem;
+	}
+	.hand-tile {
 		background: var(--color-surface-sunken);
 		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		padding: 0.75rem;
+		padding: 0.5rem 0.6rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		min-width: 0;
 	}
-
-	.hand-cards {
+	.hand-tile.you {
+		outline: 1px solid var(--color-accent);
+		outline-offset: -1px;
+		background: rgba(200, 169, 110, 0.06);
+	}
+	.hand-tile-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.4rem;
+	}
+	.hand-tile-name {
+		color: var(--color-text);
+		font-size: 0.85rem;
+		font-weight: 500;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		min-width: 0;
+	}
+	.hand-tile.you .hand-tile-name { color: var(--color-accent); }
+	.hand-tile-count { color: var(--color-text-muted); font-size: 0.75rem; flex: none; }
+	.hand-tile-empty { color: var(--color-text-faint); font-size: 0.8rem; font-style: italic; }
+	.hand-tile-cards {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem;
-		margin-top: 0.4rem;
+		gap: 0.3rem;
 	}
+	.hand-tile-cards .card-glyph { font-size: 0.85rem; padding: 0.15rem 0.3rem; }
+	.hand-tile-cards .card-glyph :global(.suit) { width: 1.1em; height: 1.1em; }
 
 	.done-btn.active { background: var(--color-success); }
 
