@@ -10,6 +10,8 @@ Designed for both desktop and mobile browsers,
 and both real-time and "play by post" styles: make your move, 
 then come back whenever the next player has made theirs.
 
+**Play it now at [uneasy.up.railway.app](https://uneasy.up.railway.app).**
+
 ![Early-on in the Main Event, showing the chat log and a player's retinue](docs/images/screenshot.png)
 
 ## Attribution
