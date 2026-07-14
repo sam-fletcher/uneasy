@@ -788,9 +788,8 @@
 		line-height: 1.4;
 	}
 	/* Reuses the existing warning red from the "at-risk" marginalia cue
-	   (AssetCardSelectable) rather than minting a new hex, to draw the eye to
-	   "steal" as the aggressive option. */
-	.steal { color: #d65a5a; }
+	   (AssetCardSelectable) to draw the eye to "steal" as the aggressive option. */
+	.steal { color: var(--color-at-risk); }
 
 	.suit-legend {
 		display: grid;
@@ -892,7 +891,7 @@
 	.hand-tile.you {
 		outline: 1px solid var(--color-accent);
 		outline-offset: -1px;
-		background: rgba(200, 169, 110, 0.06);
+		background: color-mix(in srgb, var(--color-accent) 6%, transparent);
 	}
 	.hand-tile-head {
 		display: flex;
@@ -987,7 +986,7 @@
 	}
 	.title-chip.active {
 		border-color: var(--color-accent);
-		background: #3a2f18;
+		background: var(--color-chip-active-bg);
 	}
 	.title-chip:focus-visible {
 		outline: 2px solid var(--color-accent);

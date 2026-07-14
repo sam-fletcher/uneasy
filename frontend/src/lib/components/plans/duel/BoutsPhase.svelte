@@ -373,7 +373,7 @@
 		font-size: 0.8rem;
 		font-weight: 600;
 		background: #2a2418;
-		border: 1px solid #5a4a2a;
+		border: 1px solid var(--color-border-warm-antique);
 		color: #e0d4b0;
 		flex-shrink: 0;
 	}
@@ -392,8 +392,8 @@
 	/* Tied-dice pool, seated between the two stacked player panels. */
 	.set-aside {
 		padding: 0.4rem 0.6rem;
-		background: #1e1a10;
-		border: 1px dashed #5a4a2a;
+		background: var(--color-surface-warm-panel);
+		border: 1px dashed var(--color-border-warm-antique);
 		border-radius: 5px;
 	}
 	.set-aside.empty { opacity: 0.7; }

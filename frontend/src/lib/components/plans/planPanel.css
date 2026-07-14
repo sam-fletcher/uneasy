@@ -10,7 +10,7 @@
 }
 
 .plan-panel.resolving {
-	background: #1e1a10;
+	background: var(--color-surface-warm-panel);
 	border: 1px solid #8a6a3a;
 }
 
@@ -111,8 +111,8 @@
 	padding: 0.35rem 0.7rem;
 	border-radius: 999px;
 	border: 1px solid var(--color-border);
-	background: #1d1d1d;
-	color: #d8d4c9;
+	background: var(--color-surface-chip);
+	color: var(--color-text-secondary);
 	font-size: 0.85rem;
 	cursor: pointer;
 }
@@ -121,13 +121,13 @@
 	width: 10px;
 	height: 10px;
 	border-radius: 50%;
-	background: var(--owner-color, #555);
+	background: var(--owner-color, var(--color-neutral));
 	flex-shrink: 0;
 }
 
 .player-chip.active {
 	border-color: var(--owner-color, var(--color-accent));
-	background: #221d10;
+	background: var(--color-surface-active);
 	color: var(--color-text);
 }
 
@@ -160,15 +160,15 @@
 	padding: 0.35rem 0.9rem;
 	border-radius: 999px;
 	border: 1px solid var(--color-border);
-	background: #1d1d1d;
-	color: #d8d4c9;
+	background: var(--color-surface-chip);
+	color: var(--color-text-secondary);
 	font-size: 0.9rem;
 	cursor: pointer;
 }
 
 .chip-btn.active {
 	border-color: var(--color-accent);
-	background: #221d10;
+	background: var(--color-surface-active);
 	color: var(--color-text);
 }
 
@@ -183,7 +183,7 @@
 	padding: 0.25rem 0.4rem;
 	color: #c8c0a8;
 }
-.chip-btn.face-chip.active { color: #ffe8b8; }
+.chip-btn.face-chip.active { color: var(--color-accent-bright); }
 
 /* Centered single submit button, or a row of related action buttons.
    Replaces the inline style="text-align:center;" / style="display:flex"
@@ -210,7 +210,7 @@
 
 .ft-select, .form-select {
 	background: var(--color-surface-2);
-	border: 1px solid #555;
+	border: 1px solid var(--color-neutral);
 	border-radius: 4px;
 	color: inherit;
 	font-size: 0.85rem;
@@ -248,7 +248,7 @@
 	align-items: center;
 	gap: 0.5rem;
 	font-size: 0.82rem;
-	color: #ccc;
+	color: var(--color-text-plain);
 	line-height: 1.4;
 }
 
@@ -269,15 +269,15 @@
 	padding: 0.6rem 0.75rem;
 	border-radius: 8px;
 	border: 1px solid var(--color-border);
-	background: #1d1d1d;
-	color: #d8d4c9;
+	background: var(--color-surface-chip);
+	color: var(--color-text-secondary);
 	font: inherit;
 	text-align: left;
 	cursor: pointer;
 }
 .choice-card.active {
 	border-color: var(--color-accent);
-	background: #221d10;
+	background: var(--color-surface-active);
 	color: var(--color-text);
 }
 .choice-card:focus-visible {
@@ -286,7 +286,7 @@
 }
 .choice-card.locked {
 	border-style: dashed;
-	background: #191919;
+	background: var(--color-bg);
 	color: var(--color-text-faint);
 	cursor: not-allowed;
 }
@@ -310,7 +310,7 @@
 	color: var(--color-accent-hover);
 }
 .choice-card.locked .choice-badge {
-	background: #1d1d1d;
+	background: var(--color-surface-chip);
 	border-color: var(--color-border);
 	color: var(--color-text-faint);
 }
@@ -407,9 +407,9 @@
 	min-height: 5.5rem;
 	padding: 0.35rem 0.4rem;
 	background: var(--color-surface-2);
-	border: 1px solid #555;
+	border: 1px solid var(--color-neutral);
 	border-radius: 5px;
-	color: #ccc;
+	color: var(--color-text-plain);
 	text-align: left;
 	cursor: pointer;
 	transition: border-color 0.12s, background 0.12s;
@@ -423,7 +423,7 @@
 .plan-card:not(:disabled):not(.ineligible):hover { border-color: var(--color-accent); }
 
 .plan-card.selected {
-	background: #2e2510;
+	background: var(--color-surface-gold-dim);
 	border-color: var(--color-accent);
 	color: var(--color-text);
 }
@@ -530,8 +530,8 @@
 	flex-direction: column;
 	gap: 0.4rem;
 	padding: 0.5rem;
-	background: #1e1a10;
-	border: 1px solid #4a3a20;
+	background: var(--color-surface-warm-panel);
+	border: 1px solid var(--color-border-warm-strong);
 	border-radius: 5px;
 }
 
@@ -561,7 +561,7 @@
 	width: 60px;
 	padding: 0.2rem 0.4rem;
 	background: var(--color-surface-2);
-	border: 1px solid #555;
+	border: 1px solid var(--color-neutral);
 	border-radius: 4px;
 	color: inherit;
 	font-size: 0.85rem;
@@ -569,7 +569,7 @@
 
 .form-textarea {
 	background: var(--color-surface-2);
-	border: 1px solid #555;
+	border: 1px solid var(--color-neutral);
 	border-radius: 4px;
 	color: inherit;
 	font-family: inherit;

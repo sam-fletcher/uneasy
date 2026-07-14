@@ -156,7 +156,7 @@
 	}
 	.heart-card:hover:not(:disabled) {
 		transform: translateY(-1px);
-		box-shadow: 0 1px 3px rgba(200, 169, 110, 0.4);
+		box-shadow: 0 1px 3px color-mix(in srgb, var(--color-accent) 40%, transparent);
 	}
 	.heart-card.on-active {
 		outline: 2px solid var(--color-accent);
@@ -164,7 +164,7 @@
 	}
 	.heart-card.grey {
 		opacity: 0.5;
-		background: #d8d2c2;
+		background: var(--color-card-spent);
 	}
 	.heart-card.locked {
 		opacity: 0.3;

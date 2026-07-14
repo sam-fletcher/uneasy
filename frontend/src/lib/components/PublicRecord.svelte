@@ -480,7 +480,7 @@
 	   dim past content. Future rows are nearly always empty (—), so a light
 	   dim is enough to read as "not yet" without greying out anything real. */
 	.record-row[data-state="past"]    { opacity: 1; }
-	.record-row[data-state="current"] { background: #2a2010; border-left: 2px solid var(--color-accent); padding-left: 0.3rem; }
+	.record-row[data-state="current"] { background: var(--color-surface-gold-dim); border-left: 2px solid var(--color-accent); padding-left: 0.3rem; }
 	.record-row[data-state="future"]  { opacity: 0.8; }
 
 	.row-num-pill {
@@ -586,7 +586,7 @@
 	.engrailed-line {
 		flex: 1;
 		height: 1px;
-		background: linear-gradient(to right, transparent, #5a4a2a, transparent);
+		background: linear-gradient(to right, transparent, var(--color-border-warm-antique), transparent);
 	}
 
 	.engrailed-star {

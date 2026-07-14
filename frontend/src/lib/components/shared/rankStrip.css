@@ -6,7 +6,7 @@
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
 	gap: 0.4rem;
-	background: #161614;
+	background: var(--color-surface-warm-sunken);
 	border: 1px solid var(--color-border-subtle);
 	border-radius: 8px;
 	padding: 0.5rem 0.6rem;

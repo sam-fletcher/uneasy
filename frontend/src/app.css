@@ -75,6 +75,42 @@
 	--color-neutral: #555555;       /* default/offline/unset state — status dots, disabled borders */
 	--color-leveraged: #d98b3f;     /* spent/committed-but-refreshable: leveraged asset border + retinue badge */
 	--color-highlight: #6dbfe0;     /* prepare/row-activity cue: hover-prepare border + plan-count badge */
+	--color-accent-dim: #8a7a52;    /* outline/idle gold — MC-toggle idle state, successor crown */
+	--color-accent-bright: #ffe8b8; /* pale bright gold — picked marginalia line, active face-chip */
+	--color-accent-muted: #a89464;    /* dimmed gilt text — member risk badge (default), tones-button count */
+	--color-accent-muted-bg: #3a3326; /* dimmed gilt fill/hairline, pairs with --color-accent-muted */
+	--color-danger-muted: #b35454;  /* muted red — tone "never" swatch, MC-swap hover/focus */
+	--color-at-risk: #d65a5a;       /* at-risk warning red text — asset count/caret, prologue "steal" */
+	--color-at-risk-border: #b03a3a;       /* at-risk border — empty-marginalia warning slot, risk badge (mine) */
+	--color-at-risk-border-hover: #c44545; /* at-risk border, hovered */
+	--color-at-risk-text: #c96a6a;         /* at-risk placeholder text */
+	--color-suit-red: #b03030;      /* red-suit glyph colour (hearts/diamonds) */
+	--color-tone-include: #4f8a5c;  /* tone-setting "include" swatch/tile fill */
+	--color-tone-avoid: #b89446;    /* tone-setting "avoid detail" swatch/tile fill */
+
+	/* ── Warm ledger surfaces ──────────────────────────────────────────────
+	   A second, warmer-toned surface scale layered on top of the neutral one
+	   above. Used by asset/marginalia "ledger" cards (Retinue, marginalia
+	   tiles) and by sunken warm panels (roll panel, resolving plan, prompt
+	   boxes) that want a gold-tinted dark rather than a neutral one. */
+	--color-surface-warm-panel: #1e1a10;  /* sunken warm panel — roll panel, resolving plan, scene prompts */
+	--color-surface-warm-sunken: #1d1d1a; /* deep warm recess — inputs, secret/picker rows, marginalia tiles */
+	--color-surface-warm: #242420;        /* warm card-tile background — asset tiles */
+	--color-surface-warm-hover: #232320;  /* warm tile hover fill */
+	--color-surface-warm-active: #2a2a26; /* warm tile active/toggled fill */
+	--color-surface-chip: #1d1d1d;        /* neutral chip/pill resting fill */
+	--color-surface-active: #221d10;      /* selected/active panel fill — cards, chips, persona picker */
+	--color-surface-gold-dim: #2a2010;    /* dim gold fill — default die/banked-chip fill, "current" row */
+	--color-chip-active-bg: #3a2f18;      /* active-chip fill — Shake-Up act/roller/su chips, title chip */
+	--color-border-warm-muted: #4a4030;   /* muted warm border — secondary action button, risk badge */
+	--color-border-warm-strong: #4a3a20;  /* border for warm sunken panels (roll panel, plan form) */
+	--color-border-warm-hover: #5a5a52;   /* hover/focus border on warm ledger tiles */
+	--color-border-warm-faint: #383530;   /* faint border on warm ledger tiles (marginalia, secret row) */
+	--color-border-warm-antique: #5a4a2a; /* muted antique-gold border/rule — duel die tray, engrailed divider */
+	--color-card-spent: #d8d2c2;          /* greyed/spent playing-card face */
+	--color-text-tertiary-warm: #b0a890;  /* warm tertiary text — chat log lines, scene timestamp */
+	--color-text-faint-warm: #6a6a64;     /* dim "+" add-affordance text on warm tiles */
+	--color-text-plain: #ccc;             /* plain body text — plan card, stepper row */
 
 	/* ── Typography ──────────────────────────────────────────────────────── */
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;     /* unused — escape hatch */

@@ -257,7 +257,7 @@
 		width: min(560px, 94vw);
 		max-height: 90dvh;
 		overflow-y: auto;
-		background: #1e1e1c;
+		background: var(--color-surface-sunken);
 		border: 1px solid var(--color-border-strong);
 		border-radius: 12px;
 		padding: 1rem 1.25rem 1.25rem;
@@ -273,7 +273,7 @@
 	}
 	h3 { color: var(--color-accent); margin: 0; font-size: 1.1rem; }
 
-	.step { background: #161614; border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 0.65rem 0.75rem; }
+	.step { background: var(--color-surface-warm-sunken); border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 0.65rem 0.75rem; }
 
 	.field { display: flex; flex-direction: column; gap: 0.3rem; }
 	.label { color: var(--color-accent); font-size: 0.85rem; }

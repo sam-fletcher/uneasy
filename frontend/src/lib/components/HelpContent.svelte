@@ -491,7 +491,7 @@
 
 	/* ── Example asset card (Assets tab) ─────────────────────────────────── */
 	.ex-asset {
-		background: #242420; border: 1px solid var(--color-border-strong); border-radius: 8px;
+		background: var(--color-surface-warm); border: 1px solid var(--color-border-strong); border-radius: 8px;
 		padding: 0.6rem 0.7rem; display: flex; flex-direction: column; gap: 0.5rem;
 		width: 100%; max-width: 340px; margin: 0 auto;
 	}
@@ -510,7 +510,7 @@
 	   shared/marginaliaTile.css via the .m-tile class alongside .ex-mtile;
 	   this is just the static replica's own sizing and "+" glyph. */
 	.ex-mtile { min-height: 38px; }
-	.ex-mtile.empty { justify-content: center; color: #6a6a64; font-size: 1.2rem; }
+	.ex-mtile.empty { justify-content: center; color: var(--color-text-faint-warm); font-size: 1.2rem; }
 
 	/* Legend under the example card */
 	.ex-legend { display: flex; flex-direction: column; gap: 0.5rem; }

@@ -70,7 +70,7 @@
 	/* The reigning crown is the dominant gold cue; successors are a quieter,
 	   muted-gold outline — present but visibly secondary. */
 	.crown.monarch { color: var(--color-accent); }
-	.crown.successor { color: #8a7a52; }
+	.crown.successor { color: var(--color-accent-dim); }
 	.crown svg { display: block; }
 	.ordinal {
 		font-size: 0.62rem;

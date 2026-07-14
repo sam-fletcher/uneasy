@@ -271,7 +271,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.2rem;
-		background: #181818;
+		background: var(--color-bg);
 		border: 1px solid var(--color-surface-2);
 		border-radius: 6px;
 		padding: 0.3rem;
@@ -279,7 +279,7 @@
 	}
 	.column.active {
 		border-color: var(--color-accent);
-		box-shadow: 0 0 0 1px rgba(200, 169, 110, 0.25) inset;
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 25%, transparent) inset;
 	}
 
 	.col-head {
@@ -291,7 +291,7 @@
 		border-bottom: 1px solid var(--color-surface-2);
 	}
 	.col-suit { font-size: 0.95rem; }
-	.col-suit[data-color='red'] { color: #b03030; }
+	.col-suit[data-color='red'] { color: var(--color-suit-red); }
 	.col-suit[data-color='black'] { color: var(--color-text); }
 	.col-label {
 		color: var(--color-accent);
@@ -305,7 +305,7 @@
 		align-items: flex-start;
 		gap: 0.25rem;
 		padding: 0.2rem 0.25rem;
-		background: #232323;
+		background: var(--color-surface);
 		border-radius: 3px;
 		min-height: 32px;
 	}
@@ -359,7 +359,7 @@
 		outline: 1px solid var(--color-accent);
 		outline-offset: 1px;
 		border-radius: 3px;
-		background: rgba(200, 169, 110, 0.06);
+		background: color-mix(in srgb, var(--color-accent) 6%, transparent);
 	}
 	.chip-head {
 		display: flex;
@@ -392,7 +392,7 @@
 	}
 	.card-glyph.grey {
 		opacity: 0.45;
-		background: #d8d2c2;
+		background: var(--color-card-spent);
 		text-decoration: line-through;
 	}
 
@@ -407,7 +407,7 @@
 		border-top: 1px solid var(--color-surface-2);
 	}
 	.status-hint { color: var(--color-text-secondary); }
-	.heart-mark { color: #b03030; }
+	.heart-mark { color: var(--color-suit-red); }
 	.status-focus { margin-left: auto; text-align: right; }
 
 	@media (min-width: 600px) {

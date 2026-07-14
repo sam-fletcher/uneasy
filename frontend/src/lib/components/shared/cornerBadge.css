@@ -16,4 +16,4 @@
 	text-align: center;
 }
 .corner-badge.known { background: var(--color-accent); color: var(--color-bg); }
-.corner-badge.hidden { background: #3a3a36; color: var(--color-text-muted); }
+.corner-badge.hidden { background: var(--color-border-warm-faint); color: var(--color-text-muted); }

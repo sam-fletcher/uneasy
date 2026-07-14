@@ -350,7 +350,7 @@
 
 	.card.selectable.selected {
 		border-color: var(--owner-color, var(--color-accent));
-		background: #221d10;
+		background: var(--color-surface-active);
 	}
 
 	.card.disabled {
@@ -395,7 +395,7 @@
 	   see at a glance which asset their selection belongs to. */
 	.card.marginalia-selectable:has(.marginalia li.picked) {
 		border-color: var(--owner-color, var(--color-accent));
-		background: #221d10;
+		background: var(--color-surface-active);
 	}
 
 	/* The marginalia row's own checkbox + selected state. In pick mode the row
@@ -408,7 +408,7 @@
 		align-items: center;
 	}
 	.marginalia li.picked {
-		color: #ffe8b8;
+		color: var(--color-accent-bright);
 	}
 	.m-tap {
 		width: 20px;
@@ -547,8 +547,8 @@
 
 	/* Needlessly-at-risk: red count + caret, matching the header-chip risk
 	   badge. Title on .count carries the meaning for non-colour users. */
-	.count.at-risk { color: #d65a5a; font-weight: 600; }
-	.caret.at-risk { color: #d65a5a; }
+	.count.at-risk { color: var(--color-at-risk); font-weight: 600; }
+	.caret.at-risk { color: var(--color-at-risk); }
 
 	/* Narrow phones (iPhone SE and similar): claw back a few px from the meta
 	   cluster's gaps so more of the name survives before ellipsis. Icon sizes
@@ -607,7 +607,7 @@
 		flex-direction: column;
 		gap: 0.25rem;
 		font-size: 0.85rem;
-		color: #d8d4c9;
+		color: var(--color-text-secondary);
 	}
 
 	.marginalia li {

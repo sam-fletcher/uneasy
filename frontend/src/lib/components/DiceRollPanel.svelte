@@ -581,10 +581,10 @@
 
 <style>
 	.roll-panel {
-		border: 1px solid #4a3a20;
+		border: 1px solid var(--color-border-warm-strong);
 		border-radius: 6px;
 		padding: 0.75rem;
-		background: #1e1a10;
+		background: var(--color-surface-warm-panel);
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
@@ -624,7 +624,7 @@
 	.dice-row { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 	.die {
 		width: 32px; height: 32px; border-radius: 5px;
-		border: 2px solid var(--color-accent); background: #2a2010;
+		border: 2px solid var(--color-accent); background: var(--color-surface-gold-dim);
 		color: var(--color-text); font-weight: 600; font-size: 1rem;
 		display: flex; align-items: center; justify-content: center;
 	}
@@ -682,7 +682,7 @@
 		font-size: 0.85rem;
 		color: var(--color-accent-hover);
 		padding: 0.35rem 0.6rem;
-		border: 1px solid #4a3a20;
+		border: 1px solid var(--color-border-warm-strong);
 		border-radius: 4px;
 	}
 	.intent-badge.locked { opacity: 0.6; }
@@ -725,10 +725,10 @@
 		padding: 0.4rem 0.7rem;
 		border: 1px solid var(--color-accent);
 		border-radius: 4px;
-		background: #2a2010;
+		background: var(--color-surface-gold-dim);
 		color: var(--color-text);
 	}
-	.banked-btn.drafted { background: #3a2e12; border-color: var(--color-accent); color: var(--color-accent); }
+	.banked-btn.drafted { background: var(--color-chip-active-bg); border-color: var(--color-accent); color: var(--color-accent); }
 	.banked-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	/* Commit feed */
@@ -761,7 +761,7 @@
 	.result-label { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.06em; }
 	.result-banner.make .result-label { color: var(--color-success); }
 	.result-banner.mar  .result-label { color: var(--color-danger); }
-	.result-banner.shake-up { border-color: var(--color-accent); background: #2a2010; }
+	.result-banner.shake-up { border-color: var(--color-accent); background: var(--color-surface-gold-dim); }
 	.result-banner.shake-up .result-label { color: var(--color-accent); }
 	.result-score { font-size: 0.82rem; color: var(--color-text-muted); }
 </style>

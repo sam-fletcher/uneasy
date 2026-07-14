@@ -18,7 +18,7 @@
 	font-variant-numeric: tabular-nums;
 }
 
-.card-glyph[data-color='red']   { color: #b03030; }
+.card-glyph[data-color='red']   { color: var(--color-suit-red); }
 .card-glyph[data-color='black'] { color: var(--color-bg); }
 
 .card-glyph.small {

@@ -939,8 +939,8 @@
 		display: none;
 		flex-direction: column;
 		min-height: 0;
-		background: #181818;
-		color: #d8d4c9;
+		background: var(--color-bg);
+		color: var(--color-text-secondary);
 	}
 
 	/* Dimming scrim — only shown on mobile while expanded (rendered
@@ -1079,7 +1079,7 @@
 		border-radius: 4px;
 	}
 	@keyframes jump-pulse {
-		0%   { background: rgba(200, 169, 110, 0.45); }
+		0%   { background: color-mix(in srgb, var(--color-accent) 45%, transparent); }
 		100% { background: transparent; }
 	}
 
@@ -1237,7 +1237,7 @@
 		gap: 0.45rem;
 		align-items: baseline;
 		font-size: 0.85rem;
-		color: #b0a890;
+		color: var(--color-text-tertiary-warm);
 	}
 	.log.important {
 		display: block;
@@ -1273,7 +1273,7 @@
 		padding: 0.55rem 0.75rem;
 		background: var(--color-surface-sunken);
 		font-size: 0.85rem;
-		color: #b0a890;
+		color: var(--color-text-tertiary-warm);
 	}
 	.ranking-headline {
 		display: flex;
@@ -1463,7 +1463,7 @@
 		border: 1px solid var(--color-surface-2);
 		border-left: 3px solid var(--player-color, var(--color-accent));
 		background: var(--color-surface-sunken);
-		color: #d8d4c9;
+		color: var(--color-text-secondary);
 		border-radius: 5px;
 		cursor: pointer;
 		font-size: 0.85rem;
@@ -1472,7 +1472,7 @@
 
 	.persona-btn:hover { border-color: var(--player-color, var(--color-accent)); }
 
-	.persona-btn.open { background: #221d10; }
+	.persona-btn.open { background: var(--color-surface-active); }
 
 	.persona-dot {
 		width: 8px;
@@ -1521,14 +1521,14 @@
 		padding: 0.4rem 0.6rem;
 		border: none;
 		background: none;
-		color: #d8d4c9;
+		color: var(--color-text-secondary);
 		font-size: 0.88rem;
 		text-align: left;
 		cursor: pointer;
 		border-radius: 4px;
 	}
 	.persona-option:hover { background: var(--color-surface); }
-	.persona-option.selected { background: #2e2510; color: #e8d8a0; }
+	.persona-option.selected { background: var(--color-surface-gold-dim); color: #e8d8a0; }
 
 	.persona-option-dot {
 		width: 8px;

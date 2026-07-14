@@ -719,7 +719,7 @@
 	.act.done { color: var(--color-text-faint); }
 	.act.current {
 		border-color: var(--color-accent);
-		background: #3a2f18;
+		background: var(--color-chip-active-bg);
 		color: var(--color-accent);
 		font-weight: 600;
 	}
@@ -778,7 +778,7 @@
 		font-size: 0.85rem;
 	}
 	.roller-chip.active {
-		border-color: var(--color-accent); background: #3a2f18;
+		border-color: var(--color-accent); background: var(--color-chip-active-bg);
 		color: var(--color-accent); font-weight: 600;
 	}
 
@@ -803,7 +803,7 @@
 		cursor: pointer;
 		text-align: left;
 	}
-	.su-chip.active { border-color: var(--color-accent); background: #3a2f18; }
+	.su-chip.active { border-color: var(--color-accent); background: var(--color-chip-active-bg); }
 	.su-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	.su-peer-cards { display: flex; flex-direction: column; gap: 0.4rem; }

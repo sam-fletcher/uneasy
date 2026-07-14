@@ -790,7 +790,7 @@
 	}
 
 	.asset-tile {
-		background: #242420;
+		background: var(--color-surface-warm);
 		border: 0.5px solid var(--color-accent);
 		border-radius: 10px;
 		padding: 0.6rem 0.7rem;
@@ -834,7 +834,7 @@
 		border: 0.5px solid var(--color-text-faint, #8a8a8a);
 		border-radius: 4px;
 		padding: 0.1rem 0.4rem;
-		background: #242420;
+		background: var(--color-surface-warm);
 	}
 	/* The main character is distinguished by the filled star in its tile head, so
 	   the gold border is shared by every asset tile. Leveraged tiles carry the
@@ -881,7 +881,7 @@
 		cursor: pointer;
 		max-width: 100%;
 	}
-	button.asset-name.editable:hover { border-color: #5a5a52; background: #232320; }
+	button.asset-name.editable:hover { border-color: var(--color-border-warm-hover); background: var(--color-surface-warm-hover); }
 	button.asset-name.editable:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	.rename-input {
@@ -890,8 +890,8 @@
 		font-family: inherit;
 		font-size: 0.95rem;
 		color: var(--color-text);
-		background: #1d1d1a;
-		border: 1px solid #5a5a52;
+		background: var(--color-surface-warm-sunken);
+		border: 1px solid var(--color-border-warm-hover);
 		border-radius: 4px;
 		padding: 0.25rem 0.4rem;
 	}
@@ -932,8 +932,8 @@
 
 	/* Make-main-character toggle: outline star, brightening to gold with a soft
 	   box on hover (box-shadow spread = padded look, zero layout footprint). */
-	.mc-toggle { color: #8a7a52; }
-	.mc-toggle:hover { color: var(--color-accent); background: #232320; box-shadow: 0 0 0 4px #232320; }
+	.mc-toggle { color: var(--color-accent-dim); }
+	.mc-toggle:hover { color: var(--color-accent); background: var(--color-surface-warm-hover); box-shadow: 0 0 0 4px var(--color-surface-warm-hover); }
 
 	.lev-badge { color: var(--color-leveraged); }
 
@@ -947,8 +947,8 @@
 		gap: 0.15rem;
 		color: var(--color-accent);
 	}
-	.secrets-btn:hover { color: var(--color-accent-hover); background: #232320; box-shadow: 0 0 0 4px #232320; }
-	.secrets-btn.active { background: #2a2a26; box-shadow: 0 0 0 4px #2a2a26; }
+	.secrets-btn:hover { color: var(--color-accent-hover); background: var(--color-surface-warm-hover); box-shadow: 0 0 0 4px var(--color-surface-warm-hover); }
+	.secrets-btn.active { background: var(--color-surface-warm-active); box-shadow: 0 0 0 4px var(--color-surface-warm-active); }
 	/* Inline "+" prefix on the writable (own-asset) eye. */
 	.secrets-plus { font-size: 1rem; font-weight: 600; line-height: 1; }
 
@@ -983,8 +983,8 @@
 		align-items: flex-start;
 		gap: 0.5rem;
 		padding: 0.4rem 0.55rem;
-		background: #1d1d1a;
-		border: 1px solid #383530;
+		background: var(--color-surface-warm-sunken);
+		border: 1px solid var(--color-border-warm-faint);
 		border-radius: 5px;
 		font-size: 0.85rem;
 		line-height: 1.4;
@@ -1023,7 +1023,7 @@
 		text-align: left;
 		min-height: 44px;
 		padding: 0.5rem 0.6rem;
-		background: #1d1d1a;
+		background: var(--color-surface-warm-sunken);
 		border: 1px solid #5a3d3d;
 		border-radius: 5px;
 		font-family: inherit;
@@ -1031,8 +1031,8 @@
 		color: var(--color-text-secondary);
 		cursor: pointer;
 	}
-	.mc-picker-item:hover { background: #261b1b; border-color: #b35454; color: var(--color-danger); }
-	.mc-picker-item:focus-visible { outline: 2px solid #b35454; outline-offset: 1px; }
+	.mc-picker-item:hover { background: #261b1b; border-color: var(--color-danger-muted); color: var(--color-danger); }
+	.mc-picker-item:focus-visible { outline: 2px solid var(--color-danger-muted); outline-offset: 1px; }
 	.mc-picker-item:disabled { opacity: 0.5; cursor: not-allowed; }
 
 	.mc-picker-item .m-pos {
@@ -1079,12 +1079,12 @@
 	/* "+" add affordance on owner empty slots */
 	.m-tile.empty.add {
 		justify-content: center;
-		color: #6a6a64;
+		color: var(--color-text-faint-warm);
 		cursor: pointer;
 		font-family: inherit;
 		font-size: inherit;
 	}
-	.m-tile.empty.add:hover { color: var(--color-accent); border-color: #5a5a52; }
+	.m-tile.empty.add:hover { color: var(--color-accent); border-color: var(--color-border-warm-hover); }
 	.m-tile.empty.add:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 	.add-plus { font-size: 1.4rem; line-height: 1; }
 
@@ -1093,11 +1093,11 @@
 	   warning doesn't disappear mid-interaction. */
 	.m-tile.empty.add.at-risk {
 		border-style: solid;
-		border-color: #b03a3a;
-		color: #c96a6a;
+		border-color: var(--color-at-risk-border);
+		color: var(--color-at-risk-text);
 	}
-	.m-tile.empty.add.at-risk:hover { color: var(--color-danger); border-color: #c44545; }
-	.m-tile.empty.add.at-risk:focus-visible { outline-color: #b03a3a; }
+	.m-tile.empty.add.at-risk:hover { color: var(--color-danger); border-color: var(--color-at-risk-border-hover); }
+	.m-tile.empty.add.at-risk:focus-visible { outline-color: var(--color-at-risk-border); }
 
 	/* Owner edit affordance on filled (untorn) slots */
 	.m-tile.filled {
@@ -1107,7 +1107,7 @@
 		color: var(--color-text-secondary);
 		cursor: pointer;
 	}
-	.m-tile.filled:hover { background: #232320; border-color: #5a5a52; }
+	.m-tile.filled:hover { background: var(--color-surface-warm-hover); border-color: var(--color-border-warm-hover); }
 	.m-tile.filled:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	/* ── Inline marginalia editor (replaces grid while active) ───────────── */
@@ -1132,9 +1132,9 @@
 		font-size: 0.88rem;
 		line-height: 1.4;
 		padding: 0.5rem 0.6rem;
-		background: #1d1d1a;
+		background: var(--color-surface-warm-sunken);
 		color: var(--color-text);
-		border: 1px solid #5a5a52;
+		border: 1px solid var(--color-border-warm-hover);
 		border-radius: 6px;
 		resize: vertical;
 		min-height: 84px;

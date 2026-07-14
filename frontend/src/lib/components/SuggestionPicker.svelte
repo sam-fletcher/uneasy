@@ -118,7 +118,7 @@
 	.sp-tile {
 		min-height: 44px;
 		padding: 0.4rem 0.6rem;
-		background: #2a2a28;
+		background: var(--color-surface-2);
 		border: 1px solid var(--color-border-strong);
 		border-radius: 6px;
 		color: var(--color-text);

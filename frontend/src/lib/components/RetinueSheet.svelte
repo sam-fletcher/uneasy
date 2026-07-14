@@ -53,7 +53,7 @@
 		bottom: 0;
 		z-index: 91;
 		max-height: 90dvh;
-		background: #1e1e1c;
+		background: var(--color-surface-sunken);
 		border-top: 1px solid var(--color-border-strong);
 		border-radius: 14px 14px 0 0;
 		display: flex;

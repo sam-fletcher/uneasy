@@ -291,7 +291,7 @@
 	}
 
 	.prompt {
-		background: #1f1a10;
+		background: var(--color-surface-warm-panel);
 		border: 1px solid var(--color-border-warm);
 		border-left: 3px solid var(--color-accent);
 		border-radius: 5px;
@@ -326,9 +326,9 @@
 		flex-direction: column;
 		gap: 0.15rem;
 		font-size: 0.88rem;
-		color: #d8d4c9;
+		color: var(--color-text-secondary);
 	}
-	.time { font-size: 0.82rem; color: #b0a890; }
+	.time { font-size: 0.82rem; color: var(--color-text-tertiary-warm); }
 
 	.focus-line { font-size: 0.82rem; color: var(--color-text-muted); }
 
@@ -355,7 +355,7 @@
 		min-height: 36px;
 		border-radius: 5px;
 		border: 1px solid var(--color-accent);
-		background: #2a2410;
+		background: var(--color-surface-gold-dim);
 		color: var(--color-accent);
 		font-size: 0.82rem;
 		cursor: pointer;
