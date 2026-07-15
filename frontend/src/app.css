@@ -48,69 +48,166 @@
 }
 
 :root {
+	/* ── Tier 1: primitive ramps (adr/009-design-tokens.md) ────────────────
+	   The ONLY place colour hexes may appear, app-wide. Components never
+	   reference these directly when a semantic --color-* token fits the
+	   role. To add a colour, pick an existing step; a genuinely new step
+	   requires updating ADR-009. Steps: 50 = lightest → 950 = darkest. */
+
+	/* neutral — cool greys: chrome, the elevation ladder, plain text */
+	--neutral-950: #1a1a1a;
+	--neutral-900: #1e1e1e;
+	--neutral-850: #252525;
+	--neutral-800: #2a2a2a;
+	--neutral-700: #333333;
+	--neutral-600: #444444;
+	--neutral-500: #555555;
+	--neutral-400: #8a8a8a;
+	--neutral-300: #999999;   /* AA-contrast floor on --neutral-950 */
+	--neutral-200: #cccccc;
+	--white: #ffffff;
+
+	/* parchment — warm paper & body text */
+	--parchment-50: #fdf6e3;  /* the one playing-card face white */
+	--parchment-100: #e8e4d9;
+	--parchment-200: #cfcabd;
+	--parchment-300: #b0a890;
+	--parchment-500: #6a6a64;
+
+	/* gold — the brand gilt: fills, borders, active states */
+	--gold-100: #ffe8b8;
+	--gold-200: #e8d8a0;
+	--gold-300: #d9bb80;
+	--gold-400: #c8a96e;      /* the brand colour */
+	--gold-450: #b89446;
+	--gold-500: #a89464;
+	--gold-600: #8a7a52;
+	--gold-700: #6a5a3a;
+	--gold-800: #4a3a20;
+	--gold-850: #3a3020;
+	--gold-900: #2a2010;
+	--gold-950: #1e1a10;
+
+	/* amber — warnings / the "resolving" badge */
+	--amber-300: #e0a040;
+	--amber-600: #b8860b;
+	--amber-700: #8a6030;
+	--amber-800: #8a5300;     /* dark warning text on parchment grounds */
+	--amber-950: #3a2800;
+
+	/* orange — leveraged assets / war-mixed */
+	--orange-200: #f0c898;
+	--orange-400: #d98b3f;
+	--orange-700: #6a4024;
+	--orange-800: #4a2a1a;
+	--orange-900: #3a2214;
+
+	/* red — danger, at-risk, war, card suits */
+	--red-100: #ffd9d4;
+	--red-200: #f0b0b0;
+	--red-300: #e07070;
+	--red-400: #d65a5a;
+	--red-500: #b35454;
+	--red-600: #b03030;
+	--red-700: #6a2424;
+	--red-800: #5a2020;
+	--red-900: #3a1414;
+	--red-950: #2a0a0a;
+
+	/* green — success / tones */
+	--green-300: #6dbf7a;
+	--green-500: #4f8a5c;
+	--green-700: #3d4d3d;
+	--green-900: #1a3a1a;
+	--green-950: #0a2a0a;
+
+	/* blue — info / activity highlight */
+	--blue-300: #6dbfe0;
+	--blue-500: #6090c8;
+	--blue-950: #14222a;
+
+	/* violet — prologue track / roll-voting accent */
+	--violet-200: #c890e0;
+	--violet-300: #a895c0;
+	--violet-600: #5b4c6a;
+	--violet-900: #2c2638;
+	--violet-950: #1f1d23;
+
+	/* ── Tier 2: semantic aliases ──────────────────────────────────────────
+	   Components reference these. Names describe a ROLE, never a usage
+	   site; several roles may share one primitive — the distinct names
+	   preserve meaning while the paint consolidates. Tokens still carrying
+	   a literal hex are VISIBLE-classed merges deferred to migration PR 2
+	   (ADR-009); everything else is sub-JND or identical to before. */
+
 	/* ── Surfaces (dark → light) ─────────────────────────────────────────── */
-	--color-bg: #1a1a1a;            /* page background, ink on gold buttons */
-	--color-surface-sunken: #1e1e1e;/* recessed tracks (segmented toggle) */
-	--color-surface: #252525;       /* cards, panels */
-	--color-surface-2: #2a2a2a;     /* inputs, raised rows */
+	--color-bg: var(--neutral-950);             /* page background, ink on gold buttons */
+	--color-surface-sunken: var(--neutral-900); /* recessed tracks (segmented toggle) */
+	--color-surface: var(--neutral-850);        /* cards, panels */
+	--color-surface-2: var(--neutral-800);      /* inputs, raised rows */
 
 	/* ── Borders ─────────────────────────────────────────────────────────── */
-	--color-border: #333333;        /* default card/control border */
-	--color-border-subtle: #2e2e2e; /* faint row dividers */
-	--color-border-strong: #444444; /* lighter border / hairline emphasis */
-	--color-border-warm: #3a3020;   /* warm divider used in the game surface */
+	--color-border: var(--neutral-700);         /* default card/control border */
+	--color-border-subtle: var(--neutral-700);  /* faint row dividers (merged into --color-border, ΔE 2.3) */
+	--color-border-strong: var(--neutral-600);  /* lighter border / hairline emphasis */
+	--color-border-warm: var(--gold-850);       /* warm divider used in the game surface */
 
 	/* ── Text ────────────────────────────────────────────────────────────── */
-	--color-text: #e8e4d9;          /* primary parchment text */
-	--color-text-secondary: #cfcabd;/* muted body text on ledger-style cards (asset/marginalia tiles) */
-	--color-text-muted: #999999;    /* secondary labels (AA on --color-bg) */
-	--color-text-faint: #8a8a8a;    /* faint captions — contrast-safe floor */
+	--color-text: var(--parchment-100);           /* primary parchment text */
+	--color-text-secondary: var(--parchment-200); /* muted body text on ledger-style cards (asset/marginalia tiles) */
+	--color-text-muted: var(--neutral-300);       /* secondary labels (AA on --color-bg) */
+	--color-text-faint: var(--neutral-400);       /* faint captions — contrast-safe floor */
 
 	/* ── Accent + semantic ───────────────────────────────────────────────── */
-	--color-accent: #c8a96e;        /* gilt gold — the brand colour */
-	--color-accent-hover: #d9bb80;  /* lighter gold for hovers */
-	--color-danger: #e07070;        /* errors */
-	--color-success: #6dbf7a;       /* confirmations */
-	--color-info: #6090c8;          /* informational */
-	--color-neutral: #555555;       /* default/offline/unset state — status dots, disabled borders */
-	--color-leveraged: #d98b3f;     /* spent/committed-but-refreshable: leveraged asset border + retinue badge */
-	--color-highlight: #6dbfe0;     /* prepare/row-activity cue: hover-prepare border + plan-count badge */
-	--color-accent-dim: #8a7a52;    /* outline/idle gold — MC-toggle idle state, successor crown */
-	--color-accent-bright: #ffe8b8; /* pale bright gold — picked marginalia line, active face-chip */
-	--color-accent-muted: #a89464;    /* dimmed gilt text — member risk badge (default), tones-button count */
-	--color-accent-muted-bg: #3a3326; /* dimmed gilt fill/hairline, pairs with --color-accent-muted */
-	--color-danger-muted: #b35454;  /* muted red — tone "never" swatch, MC-swap hover/focus */
-	--color-at-risk: #d65a5a;       /* at-risk warning red text — asset count/caret, prologue "steal" */
-	--color-at-risk-border: #b03a3a;       /* at-risk border — empty-marginalia warning slot, risk badge (mine) */
-	--color-at-risk-border-hover: #c44545; /* at-risk border, hovered */
-	--color-at-risk-text: #c96a6a;         /* at-risk placeholder text */
-	--color-suit-red: #b03030;      /* red-suit glyph colour (hearts/diamonds) */
-	--color-tone-include: #4f8a5c;  /* tone-setting "include" swatch/tile fill */
-	--color-tone-avoid: #b89446;    /* tone-setting "avoid detail" swatch/tile fill */
+	--color-accent: var(--gold-400);         /* gilt gold — the brand colour */
+	--color-accent-hover: var(--gold-300);   /* lighter gold for hovers */
+	--color-danger: var(--red-300);          /* errors */
+	--color-success: var(--green-300);       /* confirmations */
+	--color-info: var(--blue-500);           /* informational */
+	--color-neutral: var(--neutral-500);     /* default/offline/unset state — status dots, disabled borders */
+	--color-leveraged: var(--orange-400);    /* spent/committed-but-refreshable: leveraged asset border + retinue badge */
+	--color-highlight: var(--blue-300);      /* prepare/row-activity cue: hover-prepare border + plan-count badge */
+	--color-accent-dim: var(--gold-600);     /* outline/idle gold — MC-toggle idle state, successor crown */
+	--color-accent-bright: var(--gold-100);  /* pale bright gold — picked marginalia line, active face-chip */
+	--color-accent-muted: var(--gold-500);   /* dimmed gilt text — member risk badge (default), tones-button count */
+	--color-accent-muted-bg: var(--gold-850);/* dimmed gilt fill/hairline, pairs with --color-accent-muted */
+	--color-danger-muted: var(--red-500);    /* muted red — tone "never" swatch, MC-swap hover/focus */
+	--color-at-risk: var(--red-400);         /* at-risk warning red text — asset count/caret, prologue "steal" */
+	--color-at-risk-border: #b03a3a;         /* at-risk border — PR2 (ADR-009): → var(--red-600) */
+	--color-at-risk-border-hover: #c44545;   /* at-risk border, hovered — PR2 (ADR-009): → hover recipe */
+	--color-at-risk-text: #c96a6a;           /* at-risk placeholder text — PR2 (ADR-009): → var(--red-300) */
+	--color-suit-red: var(--red-600);        /* red-suit glyph colour (hearts/diamonds) */
+	--color-tone-include: var(--green-500);  /* tone-setting "include" swatch/tile fill */
+	--color-tone-avoid: var(--gold-450);     /* tone-setting "avoid detail" swatch/tile fill */
+	--color-warning: var(--amber-300);          /* warning/"resolving" text on dark grounds */
+	--color-warning-border: var(--amber-700);   /* warning badge/panel border */
+	--color-warning-bg: var(--amber-950);       /* warning badge/panel fill */
 
 	/* ── Warm ledger surfaces ──────────────────────────────────────────────
-	   A second, warmer-toned surface scale layered on top of the neutral one
-	   above. Used by asset/marginalia "ledger" cards (Retinue, marginalia
-	   tiles) and by sunken warm panels (roll panel, resolving plan, prompt
-	   boxes) that want a gold-tinted dark rather than a neutral one. */
-	--color-surface-warm-panel: #1e1a10;  /* sunken warm panel — roll panel, resolving plan, scene prompts */
-	--color-surface-warm-sunken: #1d1d1a; /* deep warm recess — inputs, secret/picker rows, marginalia tiles */
-	--color-surface-warm: #242420;        /* warm card-tile background — asset tiles */
-	--color-surface-warm-hover: #232320;  /* warm tile hover fill */
-	--color-surface-warm-active: #2a2a26; /* warm tile active/toggled fill */
-	--color-surface-chip: #1d1d1d;        /* neutral chip/pill resting fill */
-	--color-surface-active: #221d10;      /* selected/active panel fill — cards, chips, persona picker */
-	--color-surface-gold-dim: #2a2010;    /* dim gold fill — default die/banked-chip fill, "current" row */
-	--color-chip-active-bg: #3a2f18;      /* active-chip fill — Shake-Up act/roller/su chips, title chip */
-	--color-border-warm-muted: #4a4030;   /* muted warm border — secondary action button, risk badge */
-	--color-border-warm-strong: #4a3a20;  /* border for warm sunken panels (roll panel, plan form) */
-	--color-border-warm-hover: #5a5a52;   /* hover/focus border on warm ledger tiles */
-	--color-border-warm-faint: #383530;   /* faint border on warm ledger tiles (marginalia, secret row) */
-	--color-border-warm-antique: #5a4a2a; /* muted antique-gold border/rule — duel die tray, engrailed divider */
-	--color-card-spent: #d8d2c2;          /* greyed/spent playing-card face */
-	--color-text-tertiary-warm: #b0a890;  /* warm tertiary text — chat log lines, scene timestamp */
-	--color-text-faint-warm: #6a6a64;     /* dim "+" add-affordance text on warm tiles */
-	--color-text-plain: #ccc;             /* plain body text — plan card, stepper row */
+	   A second, warmer-toned surface scale for asset/marginalia "ledger"
+	   cards and sunken warm panels. ADR-009 merged the tile-level steps
+	   whose warm tint was sub-JND into the neutral ladder — the semantic
+	   names survive, so re-amplifying the warmth later is an alias
+	   repoint here, not a component change. The genuinely-warm panel
+	   family (gold-850/900/950) is untouched. */
+	--color-surface-warm-panel: var(--gold-950);   /* sunken warm panel — roll panel, resolving plan, scene prompts */
+	--color-surface-warm-sunken: var(--neutral-900);/* deep warm recess — inputs, secret/picker rows, marginalia tiles */
+	--color-surface-warm: var(--neutral-850);      /* warm card-tile background — asset tiles */
+	--color-surface-warm-hover: var(--neutral-850);/* was #232320 — DARKER than its base, an invisible hover; PR2 (ADR-009): hover recipe */
+	--color-surface-warm-active: var(--neutral-800);/* warm tile active/toggled fill */
+	--color-surface-chip: var(--neutral-900);      /* neutral chip/pill resting fill */
+	--color-surface-active: var(--gold-950);       /* selected/active panel fill — cards, chips, persona picker */
+	--color-surface-gold-dim: var(--gold-900);     /* dim gold fill — default die/banked-chip fill, "current" row */
+	--color-chip-active-bg: var(--gold-850);       /* active-chip fill — Shake-Up act/roller/su chips, title chip */
+	--color-border-warm-muted: #4a4030;            /* muted warm border — PR2 (ADR-009): → var(--gold-800) */
+	--color-border-warm-strong: var(--gold-800);   /* border for warm sunken panels (roll panel, plan form) */
+	--color-border-warm-hover: #5a5a52;            /* hover/focus border on warm ledger tiles — PR2 (ADR-009): → var(--neutral-500) */
+	--color-border-warm-faint: var(--neutral-700); /* faint border on warm ledger tiles (marginalia, secret row) */
+	--color-border-warm-antique: #5a4a2a;          /* muted antique-gold border/rule — PR2 (ADR-009): → var(--gold-700) */
+	--color-card-spent: var(--parchment-200);      /* greyed/spent playing-card face */
+	--color-text-tertiary-warm: var(--parchment-300); /* warm tertiary text — chat log lines, scene timestamp */
+	--color-text-faint-warm: var(--parchment-500); /* dim "+" add-affordance text on warm tiles */
+	--color-text-plain: var(--neutral-200);        /* plain body text — plan card, stepper row */
 
 	/* ── Typography ──────────────────────────────────────────────────────── */
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;     /* unused — escape hatch */

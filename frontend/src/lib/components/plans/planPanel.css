@@ -30,7 +30,7 @@
 	border-radius: 4px;
 }
 
-.resolving-badge { background: #3a2800; color: #e0a040; border: 1px solid #8a6030; }
+.resolving-badge { background: var(--color-warning-bg); color: var(--color-warning); border: 1px solid var(--color-warning-border); }
 
 .plan-title {
 	font-size: 0.9rem;

@@ -613,8 +613,8 @@
 		background: var(--color-border-warm);
 		color: var(--color-accent);
 	}
-	.stage-chip[data-stage="resolved"] { background: #1a3a1a; color: var(--color-success); }
-	.stage-chip[data-stage="voting"] { background: #3a2a3a; color: #c890e0; }
+	.stage-chip[data-stage="resolved"] { background: var(--green-900); color: var(--color-success); }
+	.stage-chip[data-stage="voting"] { background: #3a2a3a; color: var(--violet-200); }
 
 	/* Dice */
 	.dice-section { display: flex; flex-direction: column; gap: 0.4rem; }
@@ -628,7 +628,7 @@
 		color: var(--color-text); font-weight: 600; font-size: 1rem;
 		display: flex; align-items: center; justify-content: center;
 	}
-	.die.int { background: #2a1010; color: #f0b0b0; }
+	.die.int { background: var(--red-950); color: var(--red-200); }
 	.die.cancelled { opacity: 0.3; text-decoration: line-through; border-style: dashed; }
 	/* Duplicate (uncancelled but redundant) faces: greyed out and desaturated
 	   so they read as "doesn't count," yet stay distinct from the dashed,
@@ -652,8 +652,8 @@
 		cursor: pointer;
 		border: 1px solid;
 	}
-	.vote-btn.easier { background: #0a2a0a; border-color: var(--color-success); color: var(--color-success); }
-	.vote-btn.harder { background: #2a0a0a; border-color: var(--color-danger); color: var(--color-danger); }
+	.vote-btn.easier { background: var(--green-950); border-color: var(--color-success); color: var(--color-success); }
+	.vote-btn.harder { background: var(--red-950); border-color: var(--color-danger); color: var(--color-danger); }
 	.vote-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	/* Intent + ready row */
@@ -676,7 +676,7 @@
 	/* Draft picks are muted until selected, so the chosen side reads clearly. */
 	.intent-btn:not(.selected) { opacity: 0.55; }
 	.intent-btn.aid.selected { background: #0a2a1a; }
-	.intent-btn.interfere.selected { background: #2a0a0a; }
+	.intent-btn.interfere.selected { background: var(--red-950); }
 	.intent-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 	.intent-badge {
 		font-size: 0.85rem;
@@ -698,7 +698,7 @@
 		cursor: pointer;
 	}
 	.ready-btn.ready {
-		background: #1a3a1a;
+		background: var(--green-900);
 		color: var(--color-success);
 		border-color: var(--color-success);
 	}

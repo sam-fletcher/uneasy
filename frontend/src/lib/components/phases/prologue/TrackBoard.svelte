@@ -314,12 +314,12 @@
 		opacity: 0.5;
 	}
 	.rank-row.set-aside {
-		background: #1f1d23;
-		border-left: 2px solid #5b4c6a;
+		background: var(--violet-950);
+		border-left: 2px solid var(--violet-600);
 	}
 	.set-aside-badge {
-		background: #2c2638;
-		color: #a895c0;
+		background: var(--violet-900);
+		color: var(--violet-300);
 		font-size: 0.55rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -339,8 +339,8 @@
 		height: 1.2rem;
 		background: repeating-linear-gradient(
 			45deg,
-			#222,
-			#222 4px,
+			var(--color-surface),
+			var(--color-surface) 4px,
 			var(--color-bg) 4px,
 			var(--color-bg) 8px
 		);

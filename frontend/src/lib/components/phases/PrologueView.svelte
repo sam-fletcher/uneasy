@@ -941,7 +941,7 @@
 		border-radius: 4px;
 		font-size: 0.85rem;
 	}
-	.extra-status li.done { border-color: #3d4d3d; }
+	.extra-status li.done { border-color: var(--green-700); }
 	.extra-name { color: var(--color-text); }
 	.extra-claim { color: var(--color-success); font-size: 0.8rem; }
 	.extra-pending { color: var(--color-text-faint); font-size: 0.8rem; font-style: italic; }

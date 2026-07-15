@@ -129,15 +129,15 @@
 		word-break: break-word;
 		transition: background-color 120ms ease, border-color 120ms ease;
 	}
-	.sp-tile:hover:not(.blank) { background: #34332f; }
+	.sp-tile:hover:not(.blank) { background: var(--neutral-700); }
 	.sp-tile.selected {
-		background: #4a3f24;
+		background: var(--gold-800);
 		border-color: var(--color-accent);
-		color: #fff;
+		color: var(--white);
 	}
 	.sp-tile:disabled { opacity: 0.4; cursor: not-allowed; }
 	.sp-tile.custom { font-style: italic; color: var(--color-accent); }
-	.sp-tile.custom.selected { color: #fff; font-style: normal; }
+	.sp-tile.custom.selected { color: var(--white); font-style: normal; }
 	.sp-tile.blank {
 		background: transparent;
 		border-style: dashed;

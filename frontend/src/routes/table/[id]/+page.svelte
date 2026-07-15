@@ -1135,11 +1135,11 @@
 		font-size: 0.75rem;
 		font-variant-numeric: tabular-nums;
 	}
-	.war-button .count { border-left-color: #5a2020; color: #c89088; }
+	.war-button .count { border-left-color: var(--red-800); color: #c89088; }
 
 	.war-button {
-		background: #3a1414;
-		border-color: #6a2424;
+		background: var(--red-900);
+		border-color: var(--red-700);
 		color: #f0c8c0;
 	}
 	.war-button:hover { background: #4a1a1a; }
@@ -1149,18 +1149,18 @@
 	.war-button.war-pending {
 		background: #3a3014;
 		border-color: #6a5824;
-		color: #f0e0a8;
+		color: var(--gold-200);
 	}
 	.war-button.war-pending:hover { background: #4a3e1a; }
 	.war-button.war-pending:focus-visible { outline-color: #d0b060; }
 
 	/* Orange: mix of pending and active. */
 	.war-button.war-mixed {
-		background: #3a2214;
-		border-color: #6a4024;
-		color: #f0c898;
+		background: var(--orange-900);
+		border-color: var(--orange-700);
+		color: var(--orange-200);
 	}
-	.war-button.war-mixed:hover { background: #4a2a1a; }
+	.war-button.war-mixed:hover { background: var(--orange-800); }
 	.war-button.war-mixed:focus-visible { outline-color: #d08850; }
 
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
@@ -1274,7 +1274,7 @@
 	}
 	.risk-badge.mine {
 		background: #7a1f1f;
-		color: #ffd9d4;
+		color: var(--red-100);
 		border-color: var(--color-at-risk-border);
 		box-shadow: 0 0 6px color-mix(in srgb, var(--color-at-risk-border) 55%, transparent);
 	}
@@ -1389,7 +1389,7 @@
 		border-radius: 6px;
 		border: 1px solid rgba(255,255,255,0.08);
 		background: var(--color-neutral);
-		color: #fff;
+		color: var(--white);
 		font-size: 0.85rem;
 		font-weight: 500;
 		text-align: center;
@@ -1441,7 +1441,7 @@
 		min-height: 44px;
 		padding: 0 1rem;
 		background: var(--color-info);
-		color: #fff;
+		color: var(--white);
 		border: 1px solid rgba(255,255,255,0.12);
 		border-radius: 6px;
 		font-size: 0.9rem;

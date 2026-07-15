@@ -372,7 +372,7 @@
 		border-radius: 4px;
 		font-size: 0.8rem;
 		font-weight: 600;
-		background: #2a2418;
+		background: var(--color-surface-gold-dim);
 		border: 1px solid var(--color-border-warm-antique);
 		color: #e0d4b0;
 		flex-shrink: 0;
