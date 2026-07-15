@@ -30,7 +30,7 @@
 
 	const { kind = 'both', laws, rumors, plans, players, playerNames, currentPlayerID }: Props = $props();
 
-	const NEUTRAL = '#8a7d61';
+	const NEUTRAL = 'var(--gold-600)';
 
 	function playerName(id: number | null | undefined): string {
 		if (id == null) return '?';
@@ -221,11 +221,11 @@
 	.lr-empty { margin: 0; color: var(--color-text-muted, #999); font-style: italic; }
 	.lr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 	.lr-item {
-		--accent: #8a7d61;
+		--accent: var(--gold-600);
 		padding: 0.6rem 0.75rem;
 		background:
 			color-mix(in srgb, var(--accent) 7%, var(--card-bg, var(--color-surface-2)));
-		border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border-color, #d4c5a8));
+		border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--parchment-200));
 		border-left: 4px solid var(--accent);
 		border-radius: 6px;
 	}
@@ -245,11 +245,11 @@
 		display: inline-flex; align-items: center; gap: 0.3rem;
 		padding: 0.1rem 0.45rem 0.1rem 0.3rem;
 		border-radius: 999px;
-		background: color-mix(in srgb, var(--accent, #8a7d61) 22%, transparent);
+		background: color-mix(in srgb, var(--accent) 22%, transparent);
 		color: var(--color-text, #e8e4d9);
 		white-space: nowrap;
 	}
-	.lr-byline.hidden { background: transparent; border: 1px dashed var(--border-color, #d4c5a8); }
+	.lr-byline.hidden { background: transparent; border: 1px dashed var(--parchment-200); }
 	.lr-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex: none; }
 	.lr-byline-label { color: var(--color-text-muted, #999); }
 	.lr-edit {

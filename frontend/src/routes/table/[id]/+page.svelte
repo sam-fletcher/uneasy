@@ -1135,24 +1135,22 @@
 		font-size: 0.75rem;
 		font-variant-numeric: tabular-nums;
 	}
-	.war-button .count { border-left-color: var(--red-800); color: #c89088; }
+	.war-button .count { border-left-color: var(--red-800); color: var(--red-200); }
 
 	.war-button {
 		background: var(--red-900);
 		border-color: var(--red-700);
-		color: #f0c8c0;
+		color: var(--red-100);
 	}
-	.war-button:hover { background: #4a1a1a; }
-	.war-button:focus-visible { outline-color: #d07060; }
+	.war-button:hover { background: color-mix(in srgb, var(--red-900) 92%, white); }
 
 	/* Yellow: only pending wars (planned, not yet started). */
 	.war-button.war-pending {
-		background: #3a3014;
-		border-color: #6a5824;
+		background: var(--gold-850);
+		border-color: var(--gold-700);
 		color: var(--gold-200);
 	}
-	.war-button.war-pending:hover { background: #4a3e1a; }
-	.war-button.war-pending:focus-visible { outline-color: #d0b060; }
+	.war-button.war-pending:hover { background: color-mix(in srgb, var(--gold-850) 92%, white); }
 
 	/* Orange: mix of pending and active. */
 	.war-button.war-mixed {
@@ -1161,7 +1159,6 @@
 		color: var(--orange-200);
 	}
 	.war-button.war-mixed:hover { background: var(--orange-800); }
-	.war-button.war-mixed:focus-visible { outline-color: #d08850; }
 
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
 	.tones-sheet .small { font-size: 0.85rem; }
@@ -1273,7 +1270,7 @@
 		border: 1px solid var(--color-border-warm-muted);
 	}
 	.risk-badge.mine {
-		background: #7a1f1f;
+		background: var(--red-700);
 		color: var(--red-100);
 		border-color: var(--color-at-risk-border);
 		box-shadow: 0 0 6px color-mix(in srgb, var(--color-at-risk-border) 55%, transparent);

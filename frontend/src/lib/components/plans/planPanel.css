@@ -11,7 +11,7 @@
 
 .plan-panel.resolving {
 	background: var(--color-surface-warm-panel);
-	border: 1px solid #8a6a3a;
+	border: 1px solid var(--color-warning-border);
 }
 
 .plan-header {
@@ -59,8 +59,8 @@
 	margin: 0.4rem 0;
 	padding: 0.4rem 0.6rem;
 	border-radius: 4px;
-	background: var(--warning-bg, #fff4e5);
-	color: var(--warning-fg, #8a5300);
+	background: var(--parchment-50);
+	color: var(--amber-800);
 	font-size: 0.85rem;
 }
 
@@ -181,7 +181,7 @@
    carries the meaning, so trim the horizontal padding. */
 .chip-btn.face-chip {
 	padding: 0.25rem 0.4rem;
-	color: #c8c0a8;
+	color: var(--color-text-secondary);
 }
 .chip-btn.face-chip.active { color: var(--color-accent-bright); }
 
@@ -352,8 +352,8 @@
 	flex-direction: column;
 	gap: 0.4rem;
 	padding: 0.5rem;
-	background: #1e1010;
-	border: 1px solid #6a3030;
+	background: var(--red-950);
+	border: 1px solid var(--red-700);
 	border-radius: 5px;
 }
 
@@ -523,7 +523,7 @@
 	.card-desc { font-size: 0.74rem; line-height: 1.35; }
 }
 
-.plan-card.selected .card-desc { color: #b8b0a0; }
+.plan-card.selected .card-desc { color: var(--color-text-tertiary-warm); }
 
 .plan-form {
 	display: flex;

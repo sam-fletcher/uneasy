@@ -1024,14 +1024,14 @@
 		min-height: 44px;
 		padding: 0.5rem 0.6rem;
 		background: var(--color-surface-warm-sunken);
-		border: 1px solid #5a3d3d;
+		border: 1px solid color-mix(in srgb, var(--color-danger-muted) 40%, var(--color-surface));
 		border-radius: 5px;
 		font-family: inherit;
 		font-size: 0.85rem;
 		color: var(--color-text-secondary);
 		cursor: pointer;
 	}
-	.mc-picker-item:hover { background: #261b1b; border-color: var(--color-danger-muted); color: var(--color-danger); }
+	.mc-picker-item:hover { background: color-mix(in srgb, var(--color-danger-muted) 12%, var(--color-surface)); border-color: var(--color-danger-muted); color: var(--color-danger); }
 	.mc-picker-item:focus-visible { outline: 2px solid var(--color-danger-muted); outline-offset: 1px; }
 	.mc-picker-item:disabled { opacity: 0.5; cursor: not-allowed; }
 

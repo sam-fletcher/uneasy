@@ -481,7 +481,7 @@
 	}
 	.ex-chip-body { display: flex; flex-direction: column; align-items: center; gap: 0.12rem; }
 	.ex-chip-name { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--color-text); }
-	.ex-dot { width: 8px; height: 8px; border-radius: 50%; background: #7fb5d6; flex-shrink: 0; }
+	.ex-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-highlight); flex-shrink: 0; }
 	.ex-ranks { display: flex; gap: 0.4rem; font-size: 0.62rem; line-height: 1; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 
 	/* ── Rank-strip replica (Rankings tab) ───────────────────────────────── */

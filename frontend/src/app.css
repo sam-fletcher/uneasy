@@ -136,9 +136,9 @@
 	/* ── Tier 2: semantic aliases ──────────────────────────────────────────
 	   Components reference these. Names describe a ROLE, never a usage
 	   site; several roles may share one primitive — the distinct names
-	   preserve meaning while the paint consolidates. Tokens still carrying
-	   a literal hex are VISIBLE-classed merges deferred to migration PR 2
-	   (ADR-009); everything else is sub-JND or identical to before. */
+	   preserve meaning while the paint consolidates. State variants
+	   (hover) are color-mix() recipes off their base token, so every
+	   hover has the same perceptual delta app-wide. */
 
 	/* ── Surfaces (dark → light) ─────────────────────────────────────────── */
 	--color-bg: var(--neutral-950);             /* page background, ink on gold buttons */
@@ -173,9 +173,9 @@
 	--color-accent-muted-bg: var(--gold-850);/* dimmed gilt fill/hairline, pairs with --color-accent-muted */
 	--color-danger-muted: var(--red-500);    /* muted red — tone "never" swatch, MC-swap hover/focus */
 	--color-at-risk: var(--red-400);         /* at-risk warning red text — asset count/caret, prologue "steal" */
-	--color-at-risk-border: #b03a3a;         /* at-risk border — PR2 (ADR-009): → var(--red-600) */
-	--color-at-risk-border-hover: #c44545;   /* at-risk border, hovered — PR2 (ADR-009): → hover recipe */
-	--color-at-risk-text: #c96a6a;           /* at-risk placeholder text — PR2 (ADR-009): → var(--red-300) */
+	--color-at-risk-border: var(--red-600);  /* at-risk border — empty-marginalia warning slot, risk badge (mine) */
+	--color-at-risk-border-hover: color-mix(in srgb, var(--color-at-risk-border) 75%, white); /* at-risk border, hovered */
+	--color-at-risk-text: var(--red-300);    /* at-risk placeholder text */
 	--color-suit-red: var(--red-600);        /* red-suit glyph colour (hearts/diamonds) */
 	--color-tone-include: var(--green-500);  /* tone-setting "include" swatch/tile fill */
 	--color-tone-avoid: var(--gold-450);     /* tone-setting "avoid detail" swatch/tile fill */
@@ -193,17 +193,17 @@
 	--color-surface-warm-panel: var(--gold-950);   /* sunken warm panel — roll panel, resolving plan, scene prompts */
 	--color-surface-warm-sunken: var(--neutral-900);/* deep warm recess — inputs, secret/picker rows, marginalia tiles */
 	--color-surface-warm: var(--neutral-850);      /* warm card-tile background — asset tiles */
-	--color-surface-warm-hover: var(--neutral-850);/* was #232320 — DARKER than its base, an invisible hover; PR2 (ADR-009): hover recipe */
+	--color-surface-warm-hover: color-mix(in srgb, var(--color-surface-warm) 92%, white); /* standard fill-hover recipe; replaces the old #232320, which was DARKER than its base (an invisible hover) */
 	--color-surface-warm-active: var(--neutral-800);/* warm tile active/toggled fill */
 	--color-surface-chip: var(--neutral-900);      /* neutral chip/pill resting fill */
 	--color-surface-active: var(--gold-950);       /* selected/active panel fill — cards, chips, persona picker */
 	--color-surface-gold-dim: var(--gold-900);     /* dim gold fill — default die/banked-chip fill, "current" row */
 	--color-chip-active-bg: var(--gold-850);       /* active-chip fill — Shake-Up act/roller/su chips, title chip */
-	--color-border-warm-muted: #4a4030;            /* muted warm border — PR2 (ADR-009): → var(--gold-800) */
+	--color-border-warm-muted: var(--gold-800);    /* muted warm border — secondary action button, risk badge */
 	--color-border-warm-strong: var(--gold-800);   /* border for warm sunken panels (roll panel, plan form) */
-	--color-border-warm-hover: #5a5a52;            /* hover/focus border on warm ledger tiles — PR2 (ADR-009): → var(--neutral-500) */
+	--color-border-warm-hover: var(--neutral-500); /* hover/focus border on warm ledger tiles */
 	--color-border-warm-faint: var(--neutral-700); /* faint border on warm ledger tiles (marginalia, secret row) */
-	--color-border-warm-antique: #5a4a2a;          /* muted antique-gold border/rule — PR2 (ADR-009): → var(--gold-700) */
+	--color-border-warm-antique: var(--gold-700);  /* muted antique-gold border/rule — duel die tray, engrailed divider */
 	--color-card-spent: var(--parchment-200);      /* greyed/spent playing-card face */
 	--color-text-tertiary-warm: var(--parchment-300); /* warm tertiary text — chat log lines, scene timestamp */
 	--color-text-faint-warm: var(--parchment-500); /* dim "+" add-affordance text on warm tiles */

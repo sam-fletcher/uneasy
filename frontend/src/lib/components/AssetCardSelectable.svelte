@@ -630,7 +630,7 @@
 	}
 
 	.bullet { color: var(--owner-color, var(--color-text-muted)); }
-	.torn-mark { color: #a05050; font-size: 0.78rem; }
+	.torn-mark { color: var(--color-danger-muted); font-size: 0.78rem; }
 
 	.empty {
 		font-size: 0.82rem;

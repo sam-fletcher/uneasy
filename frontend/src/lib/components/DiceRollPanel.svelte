@@ -614,7 +614,7 @@
 		color: var(--color-accent);
 	}
 	.stage-chip[data-stage="resolved"] { background: var(--green-900); color: var(--color-success); }
-	.stage-chip[data-stage="voting"] { background: #3a2a3a; color: var(--violet-200); }
+	.stage-chip[data-stage="voting"] { background: var(--violet-900); color: var(--violet-200); }
 
 	/* Dice */
 	.dice-section { display: flex; flex-direction: column; gap: 0.4rem; }
@@ -675,7 +675,7 @@
 	.intent-btn.interfere { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
 	/* Draft picks are muted until selected, so the chosen side reads clearly. */
 	.intent-btn:not(.selected) { opacity: 0.55; }
-	.intent-btn.aid.selected { background: #0a2a1a; }
+	.intent-btn.aid.selected { background: var(--green-950); }
 	.intent-btn.interfere.selected { background: var(--red-950); }
 	.intent-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 	.intent-badge {
@@ -756,8 +756,8 @@
 		display: flex; align-items: center; gap: 0.75rem;
 		padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid;
 	}
-	.result-banner.make { border-color: var(--color-success); background: #0a1f0a; }
-	.result-banner.mar  { border-color: var(--color-danger); background: #1f0a0a; }
+	.result-banner.make { border-color: var(--color-success); background: var(--green-950); }
+	.result-banner.mar  { border-color: var(--color-danger); background: var(--red-950); }
 	.result-label { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.06em; }
 	.result-banner.make .result-label { color: var(--color-success); }
 	.result-banner.mar  .result-label { color: var(--color-danger); }
