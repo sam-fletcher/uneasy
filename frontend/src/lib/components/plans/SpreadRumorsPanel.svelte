@@ -829,9 +829,9 @@
 		gap: 0.6rem;
 		min-height: 44px;
 		padding: 0.5rem 0.6rem;
-		border: 1px solid var(--color-border, #444);
+		border: 1px solid var(--color-border);
 		border-radius: 6px;
-		background: var(--color-surface-2, #2a2a2a);
+		background: var(--color-surface-2);
 		cursor: pointer;
 	}
 	.sr-secret-toggle input[type='checkbox'] {
@@ -842,7 +842,7 @@
 		cursor: pointer;
 	}
 	.sr-secret-toggle span { display: flex; flex-direction: column; gap: 0.15rem; }
-	.sr-secret-toggle small { color: var(--color-text-muted, #999); line-height: 1.35; }
+	.sr-secret-toggle small { color: var(--color-text-muted); line-height: 1.35; }
 
 	/* Choices-applied list styling */
 </style>

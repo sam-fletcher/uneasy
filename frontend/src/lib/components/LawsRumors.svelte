@@ -218,7 +218,7 @@
 	.laws-rumors {
 		display: flex; flex-direction: column; gap: 1rem;
 	}
-	.lr-empty { margin: 0; color: var(--color-text-muted, #999); font-style: italic; }
+	.lr-empty { margin: 0; color: var(--color-text-muted); font-style: italic; }
 	.lr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 	.lr-item {
 		--accent: var(--gold-600);
@@ -236,7 +236,7 @@
 		background: var(--card-bg, var(--color-surface-2));
 	}
 	.lr-text { margin: 0 0 0.25rem; white-space: pre-wrap; font-family: var(--font-serif); line-height: 1.4; }
-	.lr-addendum { margin: 0 0 0.35rem; color: var(--color-text-muted, #999); font-family: var(--font-serif); }
+	.lr-addendum { margin: 0 0 0.35rem; color: var(--color-text-muted); font-family: var(--font-serif); }
 	.lr-bylines {
 		display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem;
 		margin-top: 0.4rem; font-size: 0.78rem;
@@ -246,14 +246,14 @@
 		padding: 0.1rem 0.45rem 0.1rem 0.3rem;
 		border-radius: 999px;
 		background: color-mix(in srgb, var(--accent) 22%, transparent);
-		color: var(--color-text, #e8e4d9);
+		color: var(--color-text);
 		white-space: nowrap;
 	}
 	.lr-byline.hidden { background: transparent; border: 1px dashed var(--parchment-200); }
 	.lr-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex: none; }
-	.lr-byline-label { color: var(--color-text-muted, #999); }
+	.lr-byline-label { color: var(--color-text-muted); }
 	.lr-edit {
-		background: none; border: none; color: var(--color-text-muted, #999);
+		background: none; border: none; color: var(--color-text-muted);
 		text-decoration: underline; cursor: pointer; font: inherit; padding: 0;
 		margin-left: auto;
 	}

@@ -807,7 +807,7 @@
 		position: relative;
 		filter: grayscale(1);
 		opacity: 0.72;
-		border-color: var(--color-text-faint, #8a8a8a);
+		border-color: var(--color-text-faint);
 		border-style: dashed;
 		pointer-events: none;
 	}
@@ -816,7 +816,7 @@
 		inset: 0;
 		width: 100%;
 		height: 100%;
-		stroke: var(--color-text-faint, #8a8a8a);
+		stroke: var(--color-text-faint);
 		stroke-width: 2;
 		opacity: 0.55;
 		pointer-events: none;
@@ -830,8 +830,8 @@
 		font-size: 0.62rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		color: var(--color-text-faint, #8a8a8a);
-		border: 0.5px solid var(--color-text-faint, #8a8a8a);
+		color: var(--color-text-faint);
+		border: 0.5px solid var(--color-text-faint);
 		border-radius: 4px;
 		padding: 0.1rem 0.4rem;
 		background: var(--color-surface-warm);
