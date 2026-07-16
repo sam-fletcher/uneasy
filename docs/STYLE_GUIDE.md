@@ -37,13 +37,29 @@ Rules of thumb:
 - `rgba(0,0,0,…)` / `rgba(255,255,255,…)` washes are fine — they're
   opacity effects (shadows, scrims), not palette.
 
+**Chip trios** — the one formula for tinted chips/badges/banners:
+`bg` = the family's darkest step, `border` = hue-700, `text` = hue-200
+(families without a 200 use their pale semantic). Quiet badges/banners use
+the trio as-is; *interactive selected or CTA states* (vote buttons,
+aid/interfere) may swap in the bright semantic (`--color-success`,
+`--color-danger`, `--color-accent`) for border+text — brightness marks
+tappability, not a new colour.
+
+| trio | bg | border | text |
+|---|---|---|---|
+| `--color-chip-red-*` | red-950 | red-700 | red-200 |
+| `--color-chip-green-*` | green-950 | green-700 | `--color-success` (green-300) |
+| `--color-chip-gold-*` | gold-850 | gold-700 | gold-200 |
+| `--color-chip-violet-*` | violet-950 | violet-600 | violet-200 |
+| warning (= the orange chip) | orange-900 | orange-700 | orange-200 |
+
 Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
 
 - **gold** — the brand: accent, active/selected states, warm borders.
 - **parchment** — paper and body text; the only card-face ground (never
   bright white).
 - **neutral** — cool chrome: the elevation ladder, borders, plain text.
-- **orange** — the one warning family: leveraged, war-mixed, and every
+- **orange** — the one warning family: leveraged, pending-war, and every
   "careful now" signal.
 - **red** — danger, which *includes* the at-risk game state (one concept);
   war; and `--color-suit-red` (red-600), which is bespoke and never merges.

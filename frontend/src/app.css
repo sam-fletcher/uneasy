@@ -64,7 +64,6 @@
 	--neutral-500: #555555;
 	--neutral-400: #8a8a8a;
 	--neutral-300: #999999;   /* AA-contrast floor on --neutral-950 */
-	--neutral-200: #cccccc;
 	--white: #ffffff;
 
 	/* parchment — warm paper & body text */
@@ -88,55 +87,59 @@
 	--gold-900: #2a2010;
 	--gold-950: #1e1a10;
 
-	/* amber — RETIRED (adr/COLOR_ROLES_PLAN.md ruling 1: orange is the one
-	   warning family). Unused; deleted in Session 3. Do not reference. */
-	--amber-300: #e0a040;
-	--amber-600: #b8860b;
-	--amber-700: #8a6030;
-	--amber-950: #3a2800;
-
-	/* orange — the one warning family: leveraged, war-mixed, warning ink */
+	/* orange — the one warning family: leveraged, warning ink */
 	--orange-200: #f0c898;
 	--orange-400: #d98b3f;
 	--orange-600: #8a5300;    /* dark warning ink on parchment grounds (ex amber-800) */
 	--orange-700: #6a4024;
-	--orange-800: #4a2a1a;
 	--orange-900: #3a2214;
 
 	/* red — danger (≡ at-risk), war, card suits */
-	--red-100: #ffd9d4;
 	--red-200: #f0b0b0;
 	--red-300: #e07070;
-	--red-400: #d65a5a;
 	--red-500: #b35454;
 	--red-600: #b03030;       /* BESPOKE: suit-red only (playing-card familiarity) — never merge */
 	--red-700: #6a2424;
-	--red-800: #5a2020;
-	--red-900: #3a1414;
 	--red-950: #2a0a0a;
 
 	/* green — success / tones */
 	--green-300: #6dbf7a;
 	--green-500: #4f8a5c;
 	--green-700: #3d4d3d;
-	--green-900: #1a3a1a;
 	--green-950: #0a2a0a;
 
 	/* blue — attention: activity highlight (300) + calm info (500) */
 	--blue-300: #6dbfe0;
 	--blue-500: #6090c8;
-	--blue-950: #14222a;
 
 	/* violet — procedural, "resolution machinery in motion": roll voting,
 	   stage chips, prologue track */
 	--violet-200: #c890e0;
-	--violet-300: #a895c0;  /* unused after chip migration — S3 prunes */
 	--violet-600: #5b4c6a;
-	--violet-900: #2c2638;  /* unused after chip migration — S3 prunes */
 	--violet-950: #242032;  /* retuned 2026-07-15 (was #1f1d23, ΔE 4.5 from
 	                           neutral-900 — an invisible tint); now ΔE 13
 	                           from the neutral ladder, ΔE 3.2 from the old
-	                           violet-900 chip fill it absorbs */
+	                           violet-900 chip fill it absorbed */
+
+	/* ── Player identity colours (reference only, NOT part of the two tiers)
+	   Categorical, not ramped — five hexes picked to be maximally distinct
+	   from each other on a dark ground, plus one OOC grey. They don't fit
+	   the --<family>-<step> shape above and are never consumed via var();
+	   lib/playerColor.ts owns them at runtime (FALLBACK_PALETTE indexed by
+	   seat_order + OOC_COLOR). Listed here only so a colour audit sees
+	   them in one place and designTokens.test.ts can assert the two files
+	   agree — component code must go through playerColor()/
+	   playerColorByID(), never var(--player-*) directly (there is no
+	   static mapping from "player 1" to a DOM slot; it's per-game data). */
+	--player-1: #b800ff; /* Royal Amethyst */
+	--player-2: #0055ff; /* Sapphire Blue */
+	--player-3: #00cc44; /* Vivid Jade */
+	--player-4: #e60026; /* Crimson Velvet */
+	--player-5: #ff6a00; /* Blazing Citrine */
+	--player-ooc: #8a8a8a; /* = --neutral-400 (deliberately reused — an
+	                           independent #888888 before the
+	                           COLOR_ROLES_PLAN.md player-colour audit
+	                           found the ΔE 0.77 near-duplicate) */
 
 	/* ── Tier 2: semantic aliases ──────────────────────────────────────────
 	   Components reference these. Names describe a ROLE, never a usage

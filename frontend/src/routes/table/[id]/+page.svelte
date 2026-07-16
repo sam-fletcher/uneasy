@@ -1239,7 +1239,7 @@
 	}
 
 	/* Warning badge: assets that are one tear from destruction but still have
-	   empty marginalia slots to fill. Muted amber on other players' chips for
+	   empty marginalia slots to fill. Muted gold on other players' chips for
 	   awareness; bright red on your own, where it's actionable. */
 	.risk-badge {
 		position: absolute;
@@ -1263,10 +1263,12 @@
 		border: 1px solid var(--color-border-warm-strong);
 	}
 	.risk-badge.mine {
-		/* Deliberately brighter ground than the chip-red trio: this badge is
-		   an alert ("YOUR asset is at risk"), not a quiet status chip. */
-		background: var(--red-700);
-		color: var(--color-chip-red-text);
+		/* Same danger/at-risk red as the Retinue tiles this count refers to
+		   (.m-tile.empty.add.at-risk: color-danger text, danger-muted
+		   border) rather than the unrelated chip-red trio — the number and
+		   the boxes it's counting read as one red, not two. */
+		background: var(--color-chip-red-bg);
+		color: var(--color-danger);
 		border-color: var(--color-danger-muted);
 		box-shadow: 0 0 6px color-mix(in srgb, var(--color-danger-muted) 55%, transparent);
 	}

@@ -44,4 +44,31 @@ describe('design tokens (ADR-009)', () => {
 		}
 		expect(offenders, `colour literals found outside app.css:\n${offenders.join('\n')}`).toEqual([]);
 	});
+
+	// Player identity colours (COLOR_ROLES_PLAN.md follow-up) are categorical,
+	// not ramped, so they live in lib/playerColor.ts rather than app.css's
+	// --<family>-<step> tiers — the guard above doesn't (and shouldn't) cover
+	// that file. Instead app.css carries a reference-only --player-* block
+	// (never consumed via var()) so a colour audit sees every hex in one
+	// place; this test just asserts the two files haven't drifted apart.
+	it('playerColor.ts matches app.css\'s --player-* reference block', () => {
+		const appCss = readFileSync(join(SRC, 'app.css'), 'utf8');
+		const playerColorTs = readFileSync(join(SRC, 'lib/playerColor.ts'), 'utf8');
+
+		const cssPlayers: Record<string, string> = {};
+		for (const m of appCss.matchAll(/--player-(\w+):\s*(#[0-9a-fA-F]{6})/g)) {
+			cssPlayers[m[1]] = m[2].toLowerCase();
+		}
+
+		const paletteMatch = playerColorTs.match(/FALLBACK_PALETTE = \[([\s\S]*?)\];/);
+		const tsPalette = paletteMatch
+			? [...paletteMatch[1].matchAll(/#[0-9a-fA-F]{6}/g)].map(m => m[0].toLowerCase())
+			: [];
+		const oocMatch = playerColorTs.match(/OOC_COLOR = '(#[0-9a-fA-F]{6})'/);
+		const tsOoc = oocMatch ? oocMatch[1].toLowerCase() : null;
+
+		const cssPalette = ['1', '2', '3', '4', '5'].map(n => cssPlayers[n]);
+		expect(tsPalette, 'playerColor.ts FALLBACK_PALETTE vs app.css --player-1..5').toEqual(cssPalette);
+		expect(tsOoc, 'playerColor.ts OOC_COLOR vs app.css --player-ooc').toEqual(cssPlayers['ooc']);
+	});
 });

@@ -30,8 +30,14 @@ const FALLBACK_PALETTE = [
 	'#FF6A00', // Blazing Citrine
 ];
 
-/** Color used for OOC chat messages and OOC persona affordances. */
-export const OOC_COLOR = '#888888';
+/**
+ * Color used for OOC chat messages and OOC persona affordances. Deliberately
+ * the same grey as app.css's --neutral-400 (a colour audit found the two had
+ * drifted to within ΔE 0.77 of each other — an accidental near-duplicate,
+ * not a meaningful distinction) — kept in sync via app.css's --player-ooc
+ * cross-check (see designTokens.test.ts).
+ */
+export const OOC_COLOR = '#8a8a8a';
 
 /**
  * Returns the hex color string to use for a player anywhere in the UI.
