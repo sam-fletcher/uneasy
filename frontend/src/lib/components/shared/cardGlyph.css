@@ -37,3 +37,12 @@
 	font-size: 0.95rem;
 	cursor: pointer;
 }
+
+/* Steal marking (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S1): rings a glyph whose
+   card is already in some player's hand, so claiming that box steals the
+   linked asset. 1px border + 1px ring = 2px of visual weight with no layout
+   shift — a bare border-width bump would nudge sibling glyphs. */
+.card-glyph.held {
+	border-color: var(--color-danger-muted);
+	box-shadow: 0 0 0 1px var(--color-danger-muted);
+}

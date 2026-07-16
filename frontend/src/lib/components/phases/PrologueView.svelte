@@ -35,12 +35,13 @@
 		PrologueTrack,
 		ExtraPeer,
 	} from '$lib/api';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import ClaimChoiceModal from './ClaimChoiceModal.svelte';
 	import TrackBoard from './prologue/TrackBoard.svelte';
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import { computeBrightHearts, cardRank } from '$lib/prologue/refund';
+	import { openCount, heldCardSet } from '$lib/prologue/choosing';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 	import CrownGlyph from '../CrownGlyph.svelte';
 	import type { CrownMark } from '$lib/succession';
@@ -199,6 +200,36 @@
 					),
 			}))
 	);
+
+	// ── Choosing accordion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S1) ───────────
+	// Character-facing panel copy, keyed by the stable sheet type rather than
+	// the presentational display_name.
+	const SHEET_DESCRIPTIONS: Record<PrologueSheetType, string> = {
+		titles:
+			'Who are you at court? Claim a station — Monarch, Heretic, Spymaster — and gain an artifact of office. The title goes on your main character.',
+		hailing_from: 'Where do you come from? Describe your homeland and gain a holding there.',
+		laws_rumors:
+			'What do people whisper — or decree? Put a law or rumor on the public record and gain the resource it grants you.',
+	};
+
+	// Empty on first load (all three panels collapsed); plain component state
+	// so it survives the WS-triggered reload() calls, which only replace data.
+	let openSheets = $state<Set<PrologueSheetType>>(new Set());
+
+	async function toggleSheetPanel(type: PrologueSheetType, header: HTMLButtonElement) {
+		const next = new Set(openSheets);
+		const opening = !next.has(type);
+		if (opening) next.add(type); else next.delete(type);
+		openSheets = next;
+		if (opening) {
+			// Wait for the panel body to render before scrolling, so a tall
+			// panel doesn't strand the header above the viewport.
+			await tick();
+			header.scrollIntoView({ block: 'nearest' });
+		}
+	}
+
+	const heldCards = $derived(heldCardSet(cards));
 
 	// ── Choose a box ─────────────────────────────────────────────────────────
 	let activeClaim = $state<{ sheet: PrologueSheet; choice: PrologueSheet['choices'][number] } | null>(null);
@@ -490,8 +521,8 @@
 	{/if}
 {/snippet}
 
-{#snippet miniCard(value: string, suit: string)}
-	<span class="card-glyph" data-color={suitColor(suit)}>
+{#snippet miniCard(value: string, suit: string, held = false)}
+	<span class="card-glyph" class:held data-color={suitColor(suit)}>
 		<span class="mc-value">{value}</span>
 		{@render suitSvg(suit)}
 	</span>
@@ -534,9 +565,10 @@
 					<span>Holding</span>
 				</div>
 			</div>
-			<p class="prologue-subtext">
-				View & edit your main character and other assets in your player menu (top of the screen). 
-			</p>
+			<div class="suit-legend-item held-legend">
+				<span class="card-glyph held legend-glyph" data-color="red">{@render suitSvg('H')}</span>
+				<span>already held — claiming it steals that asset</span>
+			</div>
 		</div>
 
 		{#if activePlayerID == null}
@@ -557,45 +589,56 @@
 			Turns taken: {myTurns} / 3
 		</p>
 
-		<div class="choosing-grid">
-			{#each sheets as sheet}
-				<section class="sheet-panel">
-					<h3>{sheet.display_name}</h3>
-					{#if sheet.display_name === 'Titles'}
-						<p class="muted-text small">Gain the title & an {sheet.choice_asset_type}.</p>
-					{:else if sheet.display_name === 'Hailing From'}
-						<p class="muted-text small">Describe your home & gain a {sheet.choice_asset_type}.</p>
-					{:else if sheet.display_name === 'Laws & Rumors'}
-						<p class="muted-text small">Create a law or rumour. What {sheet.choice_asset_type} did you gain?</p>
+		<div class="sheet-accordion">
+			{#each sheets as sheet (sheet.type)}
+				{@const isOpen = openSheets.has(sheet.type)}
+				<section class="sheet-panel" class:open={isOpen}>
+					<button
+						type="button"
+						class="sheet-header"
+						aria-expanded={isOpen}
+						aria-controls={`sheet-body-${sheet.type}`}
+						onclick={(e: MouseEvent) => toggleSheetPanel(sheet.type, e.currentTarget as HTMLButtonElement)}
+					>
+						<span class="sheet-header-main">
+							<span class="sheet-name">{sheet.display_name}</span>
+							<span class="sheet-desc">{SHEET_DESCRIPTIONS[sheet.type]}</span>
+						</span>
+						<span class="sheet-open-count"><strong>{openCount(sheet, claims)}</strong> open</span>
+						<span class="sheet-caret" aria-hidden="true">▾</span>
+					</button>
+					{#if isOpen}
+						<div class="sheet-body" id={`sheet-body-${sheet.type}`} role="region" aria-label={sheet.display_name}>
+							<div class="tile-grid">
+								{#each sheet.choices as choice}
+									{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
+									<button
+										type="button"
+										class="choice-btn"
+										class:claimed={!!existingClaim}
+										disabled={!!existingClaim || !isMyTurn || activeClaim != null}
+										title={choice.description || ''}
+										onclick={() => openClaimModal(sheet, choice)}
+									>
+										<span class="choice-name">
+											{choice.name}
+											{#if sheet.type === 'titles'}
+												{@const crown = prologueCrown(choice.id)}
+												{#if crown}<CrownGlyph mark={crown} size={13} />{/if}
+											{/if}
+										</span>
+										<span class="choice-cards">
+											{@render miniCard(choice.cards[0].value, choice.cards[0].suit, heldCards.has(`${choice.cards[0].suit}::${choice.cards[0].value}`))}
+											{@render miniCard(choice.cards[1].value, choice.cards[1].suit, heldCards.has(`${choice.cards[1].suit}::${choice.cards[1].value}`))}
+										</span>
+										{#if existingClaim}
+											<span class="claim-by">— {playerName(existingClaim.player_id)}</span>
+										{/if}
+									</button>
+								{/each}
+							</div>
+						</div>
 					{/if}
-					<div class="choice-list">
-						{#each sheet.choices as choice}
-							{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
-							<button
-								type="button"
-								class="choice-btn"
-								class:claimed={!!existingClaim}
-								disabled={!!existingClaim || !isMyTurn || activeClaim != null}
-								title={choice.description || ''}
-								onclick={() => openClaimModal(sheet, choice)}
-							>
-								<span class="choice-name">
-									{choice.name}
-									{#if sheet.type === 'titles'}
-										{@const crown = prologueCrown(choice.id)}
-										{#if crown}<CrownGlyph mark={crown} size={13} />{/if}
-									{/if}
-								</span>
-								<span class="choice-cards">
-									{@render miniCard(choice.cards[0].value, choice.cards[0].suit)}
-									{@render miniCard(choice.cards[1].value, choice.cards[1].suit)}
-								</span>
-								{#if existingClaim}
-									<span class="claim-by">— {playerName(existingClaim.player_id)}</span>
-								{/if}
-							</button>
-						{/each}
-					</div>
 				</section>
 			{/each}
 		</div>
@@ -811,34 +854,95 @@
 		font-size: 1rem;
 	}
 	.legend-glyph :global(.suit) { width: 1.15em; height: 1.15em; }
+	.held-legend { margin-top: 0.1rem; }
 
-	.choosing-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.4rem;
-	}
-	@media (min-width: 600px) {
-		.choosing-grid { gap: 0.75rem; }
+	.sheet-accordion {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
 	}
 
 	.sheet-panel {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
+	.sheet-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		min-height: 44px;
+		padding: 0.55rem 0.7rem;
 		background: var(--color-surface-sunken);
 		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		padding: 0.4rem;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.sheet-panel.open .sheet-header {
+		border-color: var(--color-accent);
+		border-bottom-color: transparent;
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+	.sheet-header-main {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.15rem;
+		flex: 1;
 		min-width: 0;
 	}
+	.sheet-name { color: var(--color-accent); font-size: 0.95rem; }
+	.sheet-desc {
+		color: var(--color-text-secondary);
+		font-size: 0.78rem;
+		line-height: 1.3;
+	}
 	@media (min-width: 600px) {
-		.sheet-panel { padding: 0.75rem; gap: 0.4rem; }
+		.sheet-name { font-size: 1.05rem; }
+		.sheet-desc { font-size: 0.85rem; }
+	}
+	.sheet-open-count {
+		flex: none;
+		color: var(--color-text-muted);
+		font-size: 0.8rem;
+		white-space: nowrap;
+	}
+	.sheet-caret {
+		flex: none;
+		color: var(--color-accent);
+		font-size: 0.75rem;
+		/* Points right when collapsed; rotates down to ▾ on open. */
+		transform: rotate(-90deg);
+		transition: transform 0.15s ease;
+	}
+	.sheet-panel.open .sheet-caret { transform: rotate(0); }
+
+	.sheet-body {
+		border: 1px solid var(--color-accent);
+		border-top: none;
+		border-bottom-left-radius: 8px;
+		border-bottom-right-radius: 8px;
+		padding: 0.5rem;
+	}
+	@media (min-width: 600px) {
+		.sheet-body { padding: 0.6rem 0.75rem; }
 	}
 
-	.choice-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
+	.tile-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.5rem;
+	}
+	@media (min-width: 600px) {
+		.tile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+	}
+	@media (min-width: 900px) {
+		.tile-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 	}
 
 	.choice-btn {
@@ -846,24 +950,22 @@
 		background: var(--color-surface-2);
 		color: var(--color-text);
 		border: 1px solid var(--color-border-strong);
-		border-radius: 4px;
-		padding: 0.3rem 0.4rem;
-		font-size: 0.75rem;
+		border-radius: 6px;
+		padding: 0.5rem 0.55rem;
+		font-size: 0.85rem;
+		min-height: 44px;
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.3rem;
 		cursor: pointer;
 		min-width: 0;
 	}
-	@media (min-width: 600px) {
-		.choice-btn { padding: 0.4rem 0.6rem; font-size: 0.85rem; }
-	}
 
-	.choice-btn.claimed { opacity: 0.5; cursor: default; }
+	.choice-btn.claimed { opacity: 0.55; cursor: default; }
 
-	.choice-name { display: flex; align-items: center; gap: 0.25rem; color: var(--color-accent); line-height: 1.15; word-break: break-word; }
-	.choice-cards { display: flex; gap: 0.25rem; flex-wrap: wrap; }
-	.claim-by { font-size: 0.7rem; color: var(--color-text-muted); }
+	.choice-name { display: flex; align-items: center; gap: 0.25rem; color: var(--color-accent); line-height: 1.2; word-break: break-word; }
+	.choice-cards { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+	.claim-by { font-size: 0.72rem; color: var(--color-text-muted); }
 
 	.card-glyph :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
 
