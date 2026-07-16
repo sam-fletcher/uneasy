@@ -38,11 +38,14 @@
 	cursor: pointer;
 }
 
-/* Steal marking (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S1): rings a glyph whose
-   card is already in some player's hand, so claiming that box steals the
-   linked asset. 1px border + 1px ring = 2px of visual weight with no layout
+/* Steal marking (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S1, colour revised Round
+   2): rings a glyph whose card is already in some player's hand, so claiming
+   that box steals the linked asset. Orange, not red — "claiming this takes
+   it from its holder" is a careful-now signal (the warning family's job),
+   not near-destruction (--color-danger/-muted ≡ at-risk, a different
+   concept). 1px border + 1px ring = 2px of visual weight with no layout
    shift — a bare border-width bump would nudge sibling glyphs. */
 .card-glyph.held {
-	border-color: var(--color-danger-muted);
-	box-shadow: 0 0 0 1px var(--color-danger-muted);
+	border-color: var(--color-warning-border);
+	box-shadow: 0 0 0 1px var(--color-warning);
 }

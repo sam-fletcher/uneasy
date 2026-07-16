@@ -43,6 +43,7 @@
 	import { computeBrightHearts, cardRank } from '$lib/prologue/refund';
 	import { openCount, heldCardSet, stealPreview } from '$lib/prologue/choosing';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
+	import { playerColorByID } from '$lib/playerColor';
 	import CrownGlyph from '../CrownGlyph.svelte';
 	import type { CrownMark } from '$lib/succession';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -76,6 +77,7 @@
 	let claims = $state<PrologueClaim[]>([]);
 	let cards = $state<PlayerCardRow[]>([]);
 	let activePlayerID = $state<number | null>(null);
+	let turnNumber = $state(1);
 	let committed = $state<CommittedHeart[]>([]);
 	let doneFlags = $state<TrackDone[]>([]);
 	let extraPeers = $state<ExtraPeer[]>([]);
@@ -92,6 +94,7 @@
 			sheets = s.sheets;
 			claims = s.claims;
 			activePlayerID = s.current_player_id;
+			turnNumber = s.turn_number;
 			cards = c.cards;
 			committed = st.committed;
 			doneFlags = st.done;
@@ -137,32 +140,22 @@
 		return m;
 	});
 
-	// Prologue picker crown (ADR-007 §8). The Monarch box always shows the crown
-	// so players see the role exists and is contestable; the heir boxes reveal a
-	// (number-less) successor crown only once a Monarch has actually been claimed
-	// (throne_established). The General is deliberately never marked — narratively
-	// it is not in the official line of succession. No ordinals here: the picker
-	// shows that the role exists, not the live order (picks are still happening).
+	// Prologue picker crown (ADR-007 §8; deliberate picker-only deviation, Round
+	// 2 of PROLOGUE_CHOOSING_REDESIGN_PLAN.md). Both the Monarch box and the
+	// heir boxes always show their crown from the start of choosing, unconditionally
+	// — a picker crown just advertises that the role exists and is contestable,
+	// not the live succession order (no ordinals here; picks are still
+	// happening). This is a deliberate departure from ADR-007 §8's
+	// throne_established gate: the LIVE succession UI elsewhere (succession.ts's
+	// computeCrowns, used once play begins) still gates on throne_established,
+	// as documented there. The General is deliberately never marked here —
+	// narratively it is not in the official line of succession.
 	const PROLOGUE_HEIR_TITLES = new Set([
 		'true_heir', 'favored_heir', 'claimant', 'consort',
 	]);
-	// "Has a monarch been claimed yet?" — gates the heir crowns. Prefer the durable
-	// game flag, but also derive it from this view's live-reloaded claims so the
-	// heir crowns appear the instant the Monarch box is taken, without waiting for
-	// throne_established to propagate (i.e. without a page refresh).
-	const monarchClaimed = $derived.by(() => {
-		if (game.throne_established) return true;
-		const t = titlesSheet;
-		const monarchChoice = t?.choices.find(c => c.id === 'monarch');
-		if (!monarchChoice) return false;
-		return claimMap.has(`titles::${monarchChoice.name}`)
-			|| extraPeers.some(p => p.title_name === monarchChoice.name);
-	});
 	function prologueCrown(id: string | undefined): CrownMark | null {
 		if (id === 'monarch') return { role: 'monarch' };
-		if (id && PROLOGUE_HEIR_TITLES.has(id)) {
-			return monarchClaimed ? { role: 'successor' } : null;
-		}
+		if (id && PROLOGUE_HEIR_TITLES.has(id)) return { role: 'successor' };
 		return null;
 	}
 
@@ -233,6 +226,23 @@
 	}
 
 	const heldCards = $derived(heldCardSet(cards));
+
+	// Current tile-grid column count, mirroring .tile-grid's breakpoints
+	// (2 base / 3 ≥600px / 4 ≥900px). Needed in script so the contiguous
+	// expansion (Round 2) can work out which tile ends a visual row.
+	let tileCols = $state(2);
+	onMount(() => {
+		const mq600 = window.matchMedia('(min-width: 600px)');
+		const mq900 = window.matchMedia('(min-width: 900px)');
+		const updateCols = () => { tileCols = mq900.matches ? 4 : mq600.matches ? 3 : 2; };
+		updateCols();
+		mq600.addEventListener('change', updateCols);
+		mq900.addEventListener('change', updateCols);
+		return () => {
+			mq600.removeEventListener('change', updateCols);
+			mq900.removeEventListener('change', updateCols);
+		};
+	});
 
 	// ── Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2) ─────
 	// Exploring a box is open to every player at all times; only the on-turn
@@ -494,7 +504,7 @@
 			if (activePlayerID == null) return { waitees: [] };
 			return {
 				waitees: [{ kind: 'player', playerID: activePlayerID }],
-				stepLabel: 'Claim a box',
+				stepLabel: `Create assets — turn ${turnNumber} of ${players.length * 3}`,
 			};
 		}
 		if (mode === 'declare') {
@@ -562,15 +572,21 @@
 		<p class="muted-text">Loading prologue…</p>
 
 	{:else if mode === 'choosing'}
+		<p class="prologue-lede">
+			To set the stage, we create our main character's assets.
+		</p>
+
+		{#if activePlayerID == null}
+			<p class="muted-text">Everyone has finished choosing.</p>
+		{/if}
+
 		<div class="prologue-intro">
-			<p class="prologue-lede">
-				To set the stage, we create our main character's assets. 
-			</p>
+			<h3>Your Retinue</h3>
 			<p class="prologue-subtext">
-				Each box below creates an asset and grants two playing cards. 
+				Each box in the 3 categories below creates an asset and grants two playing cards, and lets you create <span class="steal-color">or steal</span> another asset.
 			</p>
-			<p class="prologue-subtext">
-				Playing cards set the initial rankings, and let you create <span class="steal">or steal</span> another asset:
+			<p class="prologue-subtext"> 
+				You can edit your assets (including your main character) at any time in your <em>Retinue</em> (top of the screen).
 			</p>
 			<div class="suit-legend">
 				<div class="suit-legend-item">
@@ -592,27 +608,12 @@
 			</div>
 			<div class="suit-legend-item held-legend">
 				<span class="card-glyph held legend-glyph" data-color="red">{@render suitSvg('H')}</span>
-				<span>already held — claiming it steals that asset</span>
+				<span class="steal-color">Already held — claiming it steals that asset</span>
 			</div>
 		</div>
 
-		{#if activePlayerID == null}
-			<p class="muted-text">Everyone has finished choosing.</p>
-		{/if}
+		<p class="muted-text small">Your turns: {myTurns} of 3</p>
 
-		<TrackBoard
-			{players}
-			{cards}
-			{rankings}
-			{committed}
-			{doneFlags}
-			activeTrack={null}
-			{currentPlayerID}
-		/>
-
-		<p class="muted-text">
-			Turns taken: {myTurns} / 3
-		</p>
 
 		<div class="sheet-accordion">
 			{#each sheets as sheet (sheet.type)}
@@ -622,7 +623,7 @@
 						type="button"
 						class="sheet-header"
 						aria-expanded={isOpen}
-						aria-controls={`sheet-body-${sheet.type}`}
+						aria-controls={isOpen ? `sheet-body-${sheet.type}` : undefined}
 						onclick={(e: MouseEvent) => toggleSheetPanel(sheet.type, e.currentTarget as HTMLButtonElement)}
 					>
 						<span class="sheet-header-main">
@@ -633,9 +634,13 @@
 						<span class="sheet-caret" aria-hidden="true">▾</span>
 					</button>
 					{#if isOpen}
+						{@const expandedIndex = sheet.choices.findIndex(c => `${sheet.type}::${c.name}` === expandedBox)}
+						{@const rowEnd = expandedIndex === -1
+							? -1
+							: Math.min(Math.floor(expandedIndex / tileCols) * tileCols + tileCols - 1, sheet.choices.length - 1)}
 						<div class="sheet-body" id={`sheet-body-${sheet.type}`} role="region" aria-label={sheet.display_name}>
 							<div class="tile-grid">
-								{#each sheet.choices as choice}
+								{#each sheet.choices as choice, i (choice.name)}
 									{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
 									{@const boxKey = `${sheet.type}::${choice.name}`}
 									{@const isExpanded = expandedBox === boxKey}
@@ -647,7 +652,9 @@
 										class:claimed={!!existingClaim}
 										class:expanded={isExpanded}
 										aria-expanded={isExpanded}
-										aria-controls={`${tileID}-detail`}
+										aria-controls={isExpanded ? `${tileID}-detail` : undefined}
+										aria-label={existingClaim ? `${choice.name}, claimed by ${playerName(existingClaim.player_id)}` : undefined}
+										style:box-shadow={existingClaim ? `inset 3px 0 0 ${playerColorByID(existingClaim.player_id, players)}` : undefined}
 										onclick={() => toggleExpand(boxKey)}
 									>
 										<span class="choice-name">
@@ -661,40 +668,40 @@
 											{@render miniCard(choice.cards[0].value, choice.cards[0].suit, heldCards.has(`${choice.cards[0].suit}::${choice.cards[0].value}`))}
 											{@render miniCard(choice.cards[1].value, choice.cards[1].suit, heldCards.has(`${choice.cards[1].suit}::${choice.cards[1].value}`))}
 										</span>
-										{#if existingClaim}
-											<span class="claim-by">— {playerName(existingClaim.player_id)}</span>
-										{/if}
 									</button>
-									{#if isExpanded}
-										<div class="choice-detail" id={`${tileID}-detail`} role="region" aria-labelledby={tileID}>
-											{#if choice.description}
-												<p class="detail-desc">{choice.description}</p>
+									{#if i === rowEnd}
+										{@const expChoice = sheet.choices[expandedIndex]}
+										{@const expClaim = claimMap.get(`${sheet.type}::${expChoice.name}`)}
+										{@const expTileID = `choice-${sheet.type}-${expChoice.name}`}
+										<div class="choice-detail" id={`${expTileID}-detail`} role="region" aria-labelledby={expTileID}>
+											{#if expChoice.description}
+												<p class="detail-desc">{expChoice.description}</p>
 											{/if}
-											{#if existingClaim}
-												<p class="detail-claimed">Claimed by {playerName(existingClaim.player_id)}.</p>
+											{#if expClaim}
+												<p class="detail-claimed">Claimed by {playerName(expClaim.player_id)}.</p>
 											{/if}
 											<div class="detail-cards">
-												{#each choice.cards as c}
+												{#each expChoice.cards as c}
 													{@const preview = stealPreview(c.suit, c.value, cards, assets, players)}
 													<div class="detail-card-row">
 														{@render miniCard(c.value, c.suit, preview != null)}
 														<span class="detail-card-text">
 															{#if !preview}
-																make a new {cardTypeLabel(c.suit)}
+																Make a new {cardTypeLabel(c.suit)}
 															{:else if preview.assetName}
-																takes <em>{preview.assetName}</em> from {preview.ownerName}
+																Takes <em>{preview.assetName}</em> from {preview.ownerName}
 															{:else}
-																already held by {preview.ownerName}
+																Already held by {preview.ownerName}
 															{/if}
 														</span>
 													</div>
 												{/each}
 											</div>
-											{#if !existingClaim && isMyTurn}
+											{#if !expClaim && isMyTurn}
 												<button
 													type="button"
 													class="action-btn primary detail-claim-btn"
-													onclick={() => openClaimModal(sheet, choice)}
+													onclick={() => openClaimModal(sheet, expChoice)}
 												>
 													Claim this box
 												</button>
@@ -731,6 +738,24 @@
 				{/each}
 			</div>
 		</section>
+
+		<div class="prologue-intro">
+			<h3>Starting rankings</h3>
+			<p class="prologue-subtext">
+				The playing cards set the initial rankings. You will choose tracks to spend your 
+				<span class="heart-mark" style="color: var(--color-suit-red);">♥</span> Hearts on.
+			</p>
+		</div>
+
+		<TrackBoard
+			{players}
+			{cards}
+			{rankings}
+			{committed}
+			{doneFlags}
+			activeTrack={null}
+			{currentPlayerID}
+		/>
 
 	{:else if mode === 'declare'}
 		{#if currentTrack}
@@ -898,9 +923,9 @@
 		font-size: 0.9rem;
 		line-height: 1.4;
 	}
-	/* Reuses the existing warning red from the "at-risk" marginalia cue
-	   (AssetCardSelectable) to draw the eye to "steal" as the aggressive option. */
-	.steal { color: var(--color-danger); }
+	/* Orange warning family, not danger red (Round 2 of the redesign plan):
+	   stealing is a careful-now signal, not the at-risk/near-destruction one. */
+	.steal-color { color: var(--color-warning); }
 
 	.suit-legend {
 		display: grid;
@@ -952,7 +977,10 @@
 		cursor: pointer;
 	}
 	.sheet-panel.open .sheet-header {
-		border-color: var(--color-accent);
+		/* Calmer than gold (Round 2): the expanded tile/detail join is the one
+		   gold shape on screen now, so the open panel itself steps back to the
+		   standard warm ledger border. */
+		border-color: var(--color-border-warm);
 		border-bottom-color: transparent;
 		border-bottom-left-radius: 0;
 		border-bottom-right-radius: 0;
@@ -991,7 +1019,7 @@
 	.sheet-panel.open .sheet-caret { transform: rotate(0); }
 
 	.sheet-body {
-		border: 1px solid var(--color-accent);
+		border: 1px solid var(--color-border-warm);
 		border-top: none;
 		border-bottom-left-radius: 8px;
 		border-bottom-right-radius: 8px;
@@ -1005,9 +1033,14 @@
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.5rem;
+		/* Referenced by .choice-detail's negative margin below, so the join
+		   between the expanded tile's row and its detail panel closes the same
+		   gap the grid itself uses at each breakpoint — inherited by every
+		   grid child since custom properties cascade through the DOM. */
+		--tile-grid-gap: 0.5rem;
 	}
 	@media (min-width: 600px) {
-		.tile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+		.tile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; --tile-grid-gap: 0.6rem; }
 	}
 	@media (min-width: 900px) {
 		.tile-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -1029,19 +1062,51 @@
 		min-width: 0;
 	}
 
+	/* Claimed tiles (Round 2): colour, not text — the claimer's name moved to
+	   the expansion and the aria-label; here it's just the dim + a left-edge
+	   bar in the claimer's colour (set inline via style:box-shadow, since the
+	   colour comes from playerColor.ts at runtime, not a CSS token). Inset,
+	   not border-left, so the tile's own 6px corner radius survives. */
 	.choice-btn.claimed { opacity: 0.55; }
+
+	/* Contiguous expansion (Round 2): the tile stays in its own grid cell —
+	   the detail panel is inserted as a full-width sibling after the last tile
+	   of its row (script-side row math) rather than the tile itself spanning
+	   the grid. The tile's bottom corners un-round and pull 1px into the gap
+	   so its accent border fuses with the panel's top border into one shape;
+	   a small downward caret pins the join to this tile's own column,
+	   independent of where in the row it sits. */
 	.choice-btn.expanded {
-		grid-column: 1 / -1;
+		position: relative;
 		border-color: var(--color-accent);
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+		margin-bottom: -1px;
+	}
+	.choice-btn.expanded::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		bottom: -7px;
+		width: 0;
+		height: 0;
+		border-left: 6px solid transparent;
+		border-right: 6px solid transparent;
+		border-top: 7px solid var(--color-accent);
+		transform: translateX(-50%);
+		pointer-events: none;
 	}
 
 	.choice-name { display: flex; align-items: center; gap: 0.25rem; color: var(--color-accent); line-height: 1.2; word-break: break-word; }
 	.choice-cards { display: flex; gap: 0.3rem; flex-wrap: wrap; }
-	.claim-by { font-size: 0.72rem; color: var(--color-text-muted); }
 
 	.card-glyph :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
 
-	/* Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2). */
+	/* Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2). Spans
+	   the full row width (unlike the tile it follows, since Round 2 keeps the
+	   tile in its own cell) and pulls up by the grid's own row gap so it sits
+	   flush against the row above — the expanded tile's extra 1px overlap
+	   (see .choice-btn.expanded) then fuses its border into this one. */
 	.choice-detail {
 		grid-column: 1 / -1;
 		display: flex;
@@ -1051,7 +1116,7 @@
 		border: 1px solid var(--color-accent);
 		border-radius: 6px;
 		padding: 0.65rem 0.7rem;
-		margin-top: -0.2rem;
+		margin-top: calc(-1 * var(--tile-grid-gap));
 	}
 	.detail-desc {
 		margin: 0;

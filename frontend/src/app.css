@@ -181,8 +181,8 @@
 	--color-suit-red: var(--red-600);        /* red-suit glyph colour (hearts/diamonds) — BESPOKE, never merge */
 	--color-tone-include: var(--green-500);  /* tone-setting "include" swatch/tile fill */
 	--color-tone-avoid: var(--gold-450);     /* tone-setting "avoid detail" swatch/tile fill */
-	--color-warning: var(--orange-200);         /* warning text on dark grounds (orange = the warning family, ruling 1) */
-	--color-warning-border: var(--orange-700);  /* warning badge/panel border */
+	--color-warning: var(--orange-400);         /* warning text on dark grounds (orange = the warning family, ruling 1) */
+	--color-warning-border: var(--orange-600);  /* warning badge/panel border */
 	--color-warning-bg: var(--orange-900);      /* warning badge/panel fill */
 
 	/* ── Chip trios (adr/COLOR_ROLES_PLAN.md) ──────────────────────────────
