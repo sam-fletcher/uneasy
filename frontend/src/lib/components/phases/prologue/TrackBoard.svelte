@@ -21,7 +21,6 @@
 		computeTrackRanking,
 		computeBrightHearts,
 		computeFinalSlots,
-		openRanksForCount,
 		cardRank
 	} from '$lib/prologue/refund';
 
@@ -143,125 +142,71 @@
 			.filter((h) => h.player_id === pid && h.track === track)
 			.sort((a, b) => cardRank(b.value) - cardRank(a.value));
 	}
-
-	// Cumulative status (inverse rank) across all three tracks for projected first focus.
-	// Uses each player's final slot (1..5) on each track.
-	// On a tie, the lowest Power player goes first.
-	const cumulativeByPlayer = $derived.by(() => {
-		const totals = new Map<number, [number, number]>();
-		const powers = projectTrack('power').slots;
-		const esteems = projectTrack('esteem').slots;
-		const knowledges = projectTrack('knowledge').slots;
-		for (const p of players) totals.set(p.id, [
-			(powers.get(p.id) ?? 3) + (esteems.get(p.id) ?? 3) + (knowledges.get(p.id) ?? 3),
-			powers.get(p.id) ?? 3
-		]);
-		return totals;
-	});
-
-	const firstFocusPlayer = $derived.by(() => {
-		let lowestRank: { pid: number; total: number; powerTieBreaker: number } | null = null;
-		for (const [pid, t] of cumulativeByPlayer) {
-			if (lowestRank == null || t[0] > lowestRank.total) {
-				lowestRank = { pid, total: t[0], powerTieBreaker: t[1] };
-			}
-			else if (t[0] === lowestRank.total && t[1] > lowestRank.powerTieBreaker) {
-				lowestRank = { pid, total: t[0], powerTieBreaker: t[1] };
-			}
-		}
-		return lowestRank;
-	});
 </script>
 
 <div class="track-board">
-	<div class="columns">
-		{#each TRACKS as t}
-			{@const proj = projectTrack(t.id)}
-			{@const bright = brightForTrack(t.id)}
-			{@const doneSet = doneSetForTrack(t.id)}
-			<section class="column" class:active={activeTrack === t.id}>
-				<header class="col-head">
-					<span class="col-suit" data-color={t.id === 'knowledge' ? 'red' : 'black'}>{t.suit}</span>
-					<span class="col-label">{t.label}</span>
-				</header>
-				{#each rankRowsFor(proj) as row}
-					<div
-						class="rank-row"
-						class:dummy={row.isDummy}
-						class:set-aside={row.isSetAside}
-					>
-						<span class="rank-num">{row.rank}</span>
-						{#if row.isDummy}
-							<span class="dummy-slot"></span>
-						{:else if row.playerID != null}
-							{@const pid = row.playerID}
-							{@const isYou = pid === currentPlayerID}
-							<div class="chip" class:you={isYou}>
-								<div class="chip-head">
-									<span class="chip-name">{playerName(pid)}</span>
-									{#if doneSet.has(pid)}
-										<span class="done-dot" title="Done"></span>
-									{/if}
-								</div>
-								<div class="chip-cards">
-									{#each suitCardsForPlayer(pid, t.suitChar) as c}
-										<span class="card-glyph small" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
-											{c.card_value}
-										</span>
-									{/each}
-									{#each committedHeartsForPlayer(pid, t.id) as h}
-										<span
-											class="card-glyph small heart"
-											class:grey={!(bright.get(pid)?.has(h.card_id) ?? false)}
-											data-color="red"
-											title={(bright.get(pid)?.has(h.card_id) ?? false)
-												? 'doing work'
-												: 'wasted (would be refunded)'}
-										>
-											{h.value}♥
-										</span>
-									{/each}
-									{#if row.isSetAside && committedHeartsForPlayer(pid, t.id).length === 0}
-										<span class="set-aside-badge" title="Zero cards on this track">no cards</span>
-									{/if}
-								</div>
+	{#each TRACKS as t}
+		{@const proj = projectTrack(t.id)}
+		{@const bright = brightForTrack(t.id)}
+		{@const doneSet = doneSetForTrack(t.id)}
+		<section class="column" class:active={activeTrack === t.id}>
+			<header class="col-head">
+				<span class="col-suit" data-color={t.id === 'knowledge' ? 'red' : 'black'}>{t.suit}</span>
+				<span class="col-label">{t.label}</span>
+			</header>
+			{#each rankRowsFor(proj) as row}
+				<div
+					class="rank-row"
+					class:dummy={row.isDummy}
+					class:set-aside={row.isSetAside}
+				>
+					<span class="rank-num">{row.rank}</span>
+					{#if row.isDummy}
+						<span class="dummy-slot"></span>
+					{:else if row.playerID != null}
+						{@const pid = row.playerID}
+						{@const isYou = pid === currentPlayerID}
+						<div class="chip" class:you={isYou}>
+							<div class="chip-head">
+								<span class="chip-name">{playerName(pid)}</span>
+								{#if doneSet.has(pid)}
+									<span class="done-dot" title="Done"></span>
+								{/if}
 							</div>
-						{:else}
-							<span class="empty-slot">—</span>
-						{/if}
-					</div>
-				{/each}
-			</section>
-		{/each}
-	</div>
-
-	<div class="status">
-		<span class="status-hint">
-			<span class="heart-mark">♥</span> Hearts: any category
-		</span>
-		{#if firstFocusPlayer != null && players.length > 0}
-			<span
-				class="status-focus"
-				title="Lowest combined rank"
-			>
-				Projected first player: {playerName(firstFocusPlayer.pid)}
-			</span>
-		{/if}
-	</div>
+							<div class="chip-cards">
+								{#each suitCardsForPlayer(pid, t.suitChar) as c}
+									<span class="card-glyph small" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
+										{c.card_value}
+									</span>
+								{/each}
+								{#each committedHeartsForPlayer(pid, t.id) as h}
+									<span
+										class="card-glyph small heart"
+										class:grey={!(bright.get(pid)?.has(h.card_id) ?? false)}
+										data-color="red"
+										title={(bright.get(pid)?.has(h.card_id) ?? false)
+											? 'doing work'
+											: 'wasted (would be refunded)'}
+									>
+										{h.value}♥
+									</span>
+								{/each}
+								{#if row.isSetAside && committedHeartsForPlayer(pid, t.id).length === 0}
+									<span class="set-aside-badge" title="Zero cards on this track">no cards</span>
+								{/if}
+							</div>
+						</div>
+					{:else}
+						<span class="empty-slot">—</span>
+					{/if}
+				</div>
+			{/each}
+		</section>
+	{/each}
 </div>
 
 <style>
 	.track-board {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 0.5rem;
-	}
-
-	.columns {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0.4rem;
@@ -290,12 +235,18 @@
 		padding: 0.1rem 0.05rem 0.3rem;
 		border-bottom: 1px solid var(--color-surface-2);
 	}
-	.col-suit { font-size: 0.95rem; }
-	.col-suit[data-color='red'] { color: var(--color-suit-red); }
+	/* Fixed line-height so the upsized diamond doesn't make the Knowledge
+	   header taller than the other two (the label's line box sets the
+	   header height instead). */
+	.col-suit { font-size: 0.95rem; line-height: 1rem; }
+	/* The diamond glyph's ink is ~34% narrower than the clubs' at equal font
+	   size, and it's the only red-on-dark suit; upsizing evens out its
+	   apparent size against the white suits. */
+	.col-suit[data-color='red'] { color: var(--color-suit-red); font-size: 1.1rem; }
 	.col-suit[data-color='black'] { color: var(--color-text); }
 	.col-label {
 		color: var(--color-accent);
-		font-size: 0.62rem;
+		font-size: 0.75rem;
 		text-transform: uppercase;
 		letter-spacing: 0;
 		white-space: nowrap;
@@ -397,22 +348,8 @@
 		text-decoration: line-through;
 	}
 
-	.status {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.2rem 0.75rem;
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
-		padding: 0.3rem 0.4rem;
-		border-top: 1px solid var(--color-surface-2);
-	}
-	.status-hint { color: var(--color-text-secondary); }
-	.heart-mark { color: var(--color-suit-red); }
-	.status-focus { margin-left: auto; text-align: right; }
-
 	@media (min-width: 600px) {
-		.columns { gap: 0.6rem; }
+		.track-board { gap: 0.6rem; }
 		.column { padding: 0.5rem; gap: 0.3rem; }
 		.rank-row { padding: 0.3rem 0.4rem; min-height: 44px; }
 		.rank-num { font-size: 0.85rem; min-width: 1.2rem; }
