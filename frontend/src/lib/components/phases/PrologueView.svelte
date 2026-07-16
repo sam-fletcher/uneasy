@@ -789,7 +789,7 @@
 	}
 	/* Reuses the existing warning red from the "at-risk" marginalia cue
 	   (AssetCardSelectable) to draw the eye to "steal" as the aggressive option. */
-	.steal { color: var(--color-at-risk); }
+	.steal { color: var(--color-danger); }
 
 	.suit-legend {
 		display: grid;
@@ -986,7 +986,7 @@
 	}
 	.title-chip.active {
 		border-color: var(--color-accent);
-		background: var(--color-chip-active-bg);
+		background: var(--color-accent-muted-bg);
 	}
 	.title-chip:focus-visible {
 		outline: 2px solid var(--color-accent);

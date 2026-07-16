@@ -124,7 +124,7 @@
 		justify-content: space-between;
 		padding: 0.6rem 1rem;
 		background: var(--color-surface-sunken);
-		border-bottom: 1px solid var(--color-border-subtle);
+		border-bottom: 1px solid var(--color-border);
 	}
 	/* Matches the .phase-badge treatment on table pages ("LOBBY", "MAIN
 	   EVENT") so top-level page titles read as the same kind of label. */

@@ -790,7 +790,7 @@
 	}
 
 	.asset-tile {
-		background: var(--color-surface-warm);
+		background: var(--color-surface);
 		border: 0.5px solid var(--color-accent);
 		border-radius: 10px;
 		padding: 0.6rem 0.7rem;
@@ -834,7 +834,7 @@
 		border: 0.5px solid var(--color-text-faint);
 		border-radius: 4px;
 		padding: 0.1rem 0.4rem;
-		background: var(--color-surface-warm);
+		background: var(--color-surface);
 	}
 	/* The main character is distinguished by the filled star in its tile head, so
 	   the gold border is shared by every asset tile. Leveraged tiles carry the
@@ -881,7 +881,7 @@
 		cursor: pointer;
 		max-width: 100%;
 	}
-	button.asset-name.editable:hover { border-color: var(--color-border-warm-hover); background: var(--color-surface-warm-hover); }
+	button.asset-name.editable:hover { border-color: var(--color-border-warm-hover); background: var(--color-surface-hover); }
 	button.asset-name.editable:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	.rename-input {
@@ -890,7 +890,7 @@
 		font-family: inherit;
 		font-size: 0.95rem;
 		color: var(--color-text);
-		background: var(--color-surface-warm-sunken);
+		background: var(--color-surface-sunken);
 		border: 1px solid var(--color-border-warm-hover);
 		border-radius: 4px;
 		padding: 0.25rem 0.4rem;
@@ -933,7 +933,7 @@
 	/* Make-main-character toggle: outline star, brightening to gold with a soft
 	   box on hover (box-shadow spread = padded look, zero layout footprint). */
 	.mc-toggle { color: var(--color-accent-dim); }
-	.mc-toggle:hover { color: var(--color-accent); background: var(--color-surface-warm-hover); box-shadow: 0 0 0 4px var(--color-surface-warm-hover); }
+	.mc-toggle:hover { color: var(--color-accent); background: var(--color-surface-hover); box-shadow: 0 0 0 4px var(--color-surface-hover); }
 
 	.lev-badge { color: var(--color-leveraged); }
 
@@ -947,8 +947,8 @@
 		gap: 0.15rem;
 		color: var(--color-accent);
 	}
-	.secrets-btn:hover { color: var(--color-accent-hover); background: var(--color-surface-warm-hover); box-shadow: 0 0 0 4px var(--color-surface-warm-hover); }
-	.secrets-btn.active { background: var(--color-surface-warm-active); box-shadow: 0 0 0 4px var(--color-surface-warm-active); }
+	.secrets-btn:hover { color: var(--color-accent-hover); background: var(--color-surface-hover); box-shadow: 0 0 0 4px var(--color-surface-hover); }
+	.secrets-btn.active { background: var(--color-surface-2); box-shadow: 0 0 0 4px var(--color-surface-2); }
 	/* Inline "+" prefix on the writable (own-asset) eye. */
 	.secrets-plus { font-size: 1rem; font-weight: 600; line-height: 1; }
 
@@ -983,8 +983,8 @@
 		align-items: flex-start;
 		gap: 0.5rem;
 		padding: 0.4rem 0.55rem;
-		background: var(--color-surface-warm-sunken);
-		border: 1px solid var(--color-border-warm-faint);
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border-warm);
 		border-radius: 5px;
 		font-size: 0.85rem;
 		line-height: 1.4;
@@ -1023,7 +1023,7 @@
 		text-align: left;
 		min-height: 44px;
 		padding: 0.5rem 0.6rem;
-		background: var(--color-surface-warm-sunken);
+		background: var(--color-surface-sunken);
 		border: 1px solid color-mix(in srgb, var(--color-danger-muted) 40%, var(--color-surface));
 		border-radius: 5px;
 		font-family: inherit;
@@ -1093,11 +1093,11 @@
 	   warning doesn't disappear mid-interaction. */
 	.m-tile.empty.add.at-risk {
 		border-style: solid;
-		border-color: var(--color-at-risk-border);
-		color: var(--color-at-risk-text);
+		border-color: var(--color-danger-muted);
+		color: var(--color-danger);
 	}
-	.m-tile.empty.add.at-risk:hover { color: var(--color-danger); border-color: var(--color-at-risk-border-hover); }
-	.m-tile.empty.add.at-risk:focus-visible { outline-color: var(--color-at-risk-border); }
+	.m-tile.empty.add.at-risk:hover { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger-muted) 75%, white); }
+	.m-tile.empty.add.at-risk:focus-visible { outline-color: var(--color-danger-muted); }
 
 	/* Owner edit affordance on filled (untorn) slots */
 	.m-tile.filled {
@@ -1107,7 +1107,7 @@
 		color: var(--color-text-secondary);
 		cursor: pointer;
 	}
-	.m-tile.filled:hover { background: var(--color-surface-warm-hover); border-color: var(--color-border-warm-hover); }
+	.m-tile.filled:hover { background: var(--color-surface-hover); border-color: var(--color-border-warm-hover); }
 	.m-tile.filled:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 	/* ── Inline marginalia editor (replaces grid while active) ───────────── */
@@ -1132,7 +1132,7 @@
 		font-size: 0.88rem;
 		line-height: 1.4;
 		padding: 0.5rem 0.6rem;
-		background: var(--color-surface-warm-sunken);
+		background: var(--color-surface-sunken);
 		color: var(--color-text);
 		border: 1px solid var(--color-border-warm-hover);
 		border-radius: 6px;

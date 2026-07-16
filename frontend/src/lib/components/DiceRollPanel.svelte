@@ -584,7 +584,7 @@
 		border: 1px solid var(--color-border-warm-strong);
 		border-radius: 6px;
 		padding: 0.75rem;
-		background: var(--color-surface-warm-panel);
+		background: var(--color-surface-active);
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
@@ -728,7 +728,7 @@
 		background: var(--color-surface-gold-dim);
 		color: var(--color-text);
 	}
-	.banked-btn.drafted { background: var(--color-chip-active-bg); border-color: var(--color-accent); color: var(--color-accent); }
+	.banked-btn.drafted { background: var(--color-accent-muted-bg); border-color: var(--color-accent); color: var(--color-accent); }
 	.banked-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	/* Commit feed */

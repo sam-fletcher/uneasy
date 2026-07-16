@@ -547,8 +547,8 @@
 
 	/* Needlessly-at-risk: red count + caret, matching the header-chip risk
 	   badge. Title on .count carries the meaning for non-colour users. */
-	.count.at-risk { color: var(--color-at-risk); font-weight: 600; }
-	.caret.at-risk { color: var(--color-at-risk); }
+	.count.at-risk { color: var(--color-danger); font-weight: 600; }
+	.caret.at-risk { color: var(--color-danger); }
 
 	/* Narrow phones (iPhone SE and similar): claw back a few px from the meta
 	   cluster's gaps so more of the name survives before ellipsis. Icon sizes

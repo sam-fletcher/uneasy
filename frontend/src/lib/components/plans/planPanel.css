@@ -10,7 +10,7 @@
 }
 
 .plan-panel.resolving {
-	background: var(--color-surface-warm-panel);
+	background: var(--color-surface-active);
 	border: 1px solid var(--color-warning-border);
 }
 
@@ -60,7 +60,7 @@
 	padding: 0.4rem 0.6rem;
 	border-radius: 4px;
 	background: var(--parchment-50);
-	color: var(--amber-800);
+	color: var(--orange-600);
 	font-size: 0.85rem;
 }
 
@@ -111,7 +111,7 @@
 	padding: 0.35rem 0.7rem;
 	border-radius: 999px;
 	border: 1px solid var(--color-border);
-	background: var(--color-surface-chip);
+	background: var(--color-surface-sunken);
 	color: var(--color-text-secondary);
 	font-size: 0.85rem;
 	cursor: pointer;
@@ -160,7 +160,7 @@
 	padding: 0.35rem 0.9rem;
 	border-radius: 999px;
 	border: 1px solid var(--color-border);
-	background: var(--color-surface-chip);
+	background: var(--color-surface-sunken);
 	color: var(--color-text-secondary);
 	font-size: 0.9rem;
 	cursor: pointer;
@@ -248,7 +248,7 @@
 	align-items: center;
 	gap: 0.5rem;
 	font-size: 0.82rem;
-	color: var(--color-text-plain);
+	color: var(--color-text-secondary);
 	line-height: 1.4;
 }
 
@@ -269,7 +269,7 @@
 	padding: 0.6rem 0.75rem;
 	border-radius: 8px;
 	border: 1px solid var(--color-border);
-	background: var(--color-surface-chip);
+	background: var(--color-surface-sunken);
 	color: var(--color-text-secondary);
 	font: inherit;
 	text-align: left;
@@ -310,7 +310,7 @@
 	color: var(--color-accent-hover);
 }
 .choice-card.locked .choice-badge {
-	background: var(--color-surface-chip);
+	background: var(--color-surface-sunken);
 	border-color: var(--color-border);
 	color: var(--color-text-faint);
 }
@@ -409,7 +409,7 @@
 	background: var(--color-surface-2);
 	border: 1px solid var(--color-neutral);
 	border-radius: 5px;
-	color: var(--color-text-plain);
+	color: var(--color-text-secondary);
 	text-align: left;
 	cursor: pointer;
 	transition: border-color 0.12s, background 0.12s;
@@ -530,7 +530,7 @@
 	flex-direction: column;
 	gap: 0.4rem;
 	padding: 0.5rem;
-	background: var(--color-surface-warm-panel);
+	background: var(--color-surface-active);
 	border: 1px solid var(--color-border-warm-strong);
 	border-radius: 5px;
 }

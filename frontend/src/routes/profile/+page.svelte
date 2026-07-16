@@ -306,7 +306,7 @@
 	h2 { color:var(--color-accent); font-size:1.2rem; margin-bottom:0.75rem; }
 	.hint { color:var(--color-text-muted); font-size:0.85rem; margin-bottom:0.6rem; }
 	.card { background:var(--color-surface); border:1px solid var(--color-border); border-radius:12px; padding:1.25rem; }
-	.row { display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem; padding:0.5rem 0; border-bottom:1px solid var(--color-border-subtle); }
+	.row { display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem; padding:0.5rem 0; border-bottom:1px solid var(--color-border); }
 	.row:last-child { border-bottom:none; }
 	.label { width:5rem; color:var(--color-text-muted); font-size:0.85rem; }
 	.masked { letter-spacing:0.15em; color:var(--color-text-muted); }
@@ -335,7 +335,7 @@
 	li a:hover { color:var(--color-accent); }
 	.join { display:flex; gap:0.5rem; }
 	/* Secondary "create a table" action, set apart below the primary join row. */
-	.create-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--color-border-subtle); }
+	.create-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--color-border); }
 	.create-row .hint { margin:0; }
 	.footer-actions { display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap; margin-top:0.5rem; }
 	.feedback-btn { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }

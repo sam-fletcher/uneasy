@@ -141,7 +141,7 @@
 	.sp-tile.blank {
 		background: transparent;
 		border-style: dashed;
-		border-color: var(--color-border-subtle);
+		border-color: var(--color-border);
 		cursor: default;
 	}
 

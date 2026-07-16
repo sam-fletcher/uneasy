@@ -1267,13 +1267,13 @@
 		font-variant-numeric: tabular-nums;
 		background: var(--color-accent-muted-bg);
 		color: var(--color-accent-muted);
-		border: 1px solid var(--color-border-warm-muted);
+		border: 1px solid var(--color-border-warm-strong);
 	}
 	.risk-badge.mine {
 		background: var(--red-700);
 		color: var(--red-100);
-		border-color: var(--color-at-risk-border);
-		box-shadow: 0 0 6px color-mix(in srgb, var(--color-at-risk-border) 55%, transparent);
+		border-color: var(--color-danger-muted);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--color-danger-muted) 55%, transparent);
 	}
 
 	/* Name over a compact P/K/E rank line. The body is a column so the dot
@@ -1301,7 +1301,7 @@
 		font-variant-numeric: tabular-nums;
 		letter-spacing: 0.02em;
 	}
-	.member:hover { background: var(--color-border-subtle); }
+	.member:hover { background: var(--color-border); }
 	.member:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 	.member.active {
 		border-color: var(--color-accent);

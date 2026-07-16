@@ -291,7 +291,7 @@
 	}
 
 	.prompt {
-		background: var(--color-surface-warm-panel);
+		background: var(--color-surface-active);
 		border: 1px solid var(--color-border-warm);
 		border-left: 3px solid var(--color-accent);
 		border-radius: 5px;

@@ -9,10 +9,12 @@ file is what you consult while building.
 Two tiers, both defined in [frontend/src/app.css](../frontend/src/app.css):
 
 1. **Primitives** — `--<family>-<step>` ramps (`--gold-400`, `--red-950`).
-   Nine families: `neutral`, `parchment`, `gold`, `amber`, `orange`, `red`,
-   `green`, `blue`, `violet`. Steps run 50 (lightest) → 950 (darkest).
-   Primitives are the **only** place hex literals may appear, app-wide —
-   `src/lib/designTokens.test.ts` fails the build otherwise.
+   Eight families: `neutral`, `parchment`, `gold`, `orange`, `red`,
+   `green`, `blue`, `violet` (`amber` is retired — orange is the one
+   warning family; see `adr/COLOR_ROLES_PLAN.md`). Steps run 50
+   (lightest) → 950 (darkest). Primitives are the **only** place hex
+   literals may appear, app-wide — `src/lib/designTokens.test.ts` fails
+   the build otherwise.
 2. **Semantics** — `--color-*` aliases of primitives. Components reference
    these wherever a role fits (`--color-danger`, `--color-surface-warm`);
    go straight to a primitive only for a true one-off with no role.
@@ -35,11 +37,25 @@ Rules of thumb:
 - `rgba(0,0,0,…)` / `rgba(255,255,255,…)` washes are fine — they're
   opacity effects (shadows, scrims), not palette.
 
-Family meanings: gold is the brand (accent, active states, warm borders);
-parchment is paper and body text; amber is warnings/"resolving"; orange is
-leveraged/war-mixed; red covers danger, at-risk, war, and red suits; green
-is success and tone-include; blue is info and the activity highlight;
-violet belongs to the prologue track and roll-voting.
+Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
+
+- **gold** — the brand: accent, active/selected states, warm borders.
+- **parchment** — paper and body text; the only card-face ground (never
+  bright white).
+- **neutral** — cool chrome: the elevation ladder, borders, plain text.
+- **orange** — the one warning family: leveraged, war-mixed, and every
+  "careful now" signal.
+- **red** — danger, which *includes* the at-risk game state (one concept);
+  war; and `--color-suit-red` (red-600), which is bespoke and never merges.
+- **green** — success and tone-include.
+- **blue** — attention: `--color-highlight` (activity/prepare cue) and
+  `--color-info` (calm informational fill).
+- **violet** — procedural, "the machinery of resolution is in motion":
+  roll voting, stage chips, the prologue track.
+
+Ledger warmth lives in the **frame, not the fill**: asset/marginalia tiles
+use the plain surface ladder for backgrounds and `--color-border-warm`
+(gold-850) for borders. There is no warm fill scale.
 
 ## Typography
 

@@ -491,7 +491,7 @@
 
 	/* ── Example asset card (Assets tab) ─────────────────────────────────── */
 	.ex-asset {
-		background: var(--color-surface-warm); border: 1px solid var(--color-border-strong); border-radius: 8px;
+		background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 8px;
 		padding: 0.6rem 0.7rem; display: flex; flex-direction: column; gap: 0.5rem;
 		width: 100%; max-width: 340px; margin: 0 auto;
 	}

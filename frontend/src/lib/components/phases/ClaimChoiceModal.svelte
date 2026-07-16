@@ -273,7 +273,7 @@
 	}
 	h3 { color: var(--color-accent); margin: 0; font-size: 1.1rem; }
 
-	.step { background: var(--color-surface-warm-sunken); border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 0.65rem 0.75rem; }
+	.step { background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.65rem 0.75rem; }
 
 	.field { display: flex; flex-direction: column; gap: 0.3rem; }
 	.label { color: var(--color-accent); font-size: 0.85rem; }

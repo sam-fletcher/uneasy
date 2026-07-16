@@ -249,7 +249,7 @@
 
 <style>
 	.demand-banner {
-		border: 1px solid var(--amber-600);
+		border: 1px solid var(--orange-600);
 		background: var(--parchment-50);
 		padding: 0.75rem;
 		margin-bottom: 0.75rem;
@@ -266,6 +266,6 @@
 	.demand-form {
 		margin-top: 0.75rem;
 		padding-top: 0.5rem;
-		border-top: 1px dashed var(--neutral-200);
+		border-top: 1px dashed var(--parchment-300);
 	}
 </style>

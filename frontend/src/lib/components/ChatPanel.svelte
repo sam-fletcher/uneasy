@@ -1094,7 +1094,7 @@
 	.day-divider-line {
 		flex: 1;
 		height: 1px;
-		background: var(--color-border-subtle);
+		background: var(--color-border);
 	}
 	.day-divider-label {
 		font-size: 0.72rem;

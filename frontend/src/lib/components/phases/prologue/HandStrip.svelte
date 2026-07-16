@@ -124,7 +124,7 @@
 		flex-direction: column;
 		gap: 0.4rem;
 		background: var(--color-bg);
-		border: 1px solid var(--color-border-subtle);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 0.5rem 0.6rem;
 	}

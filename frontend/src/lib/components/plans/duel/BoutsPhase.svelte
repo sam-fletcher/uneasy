@@ -392,7 +392,7 @@
 	/* Tied-dice pool, seated between the two stacked player panels. */
 	.set-aside {
 		padding: 0.4rem 0.6rem;
-		background: var(--color-surface-warm-panel);
+		background: var(--color-surface-active);
 		border: 1px dashed var(--color-border-warm-antique);
 		border-radius: 5px;
 	}
