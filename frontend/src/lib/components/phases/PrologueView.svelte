@@ -859,6 +859,8 @@
 		sheet={activeClaim.sheet}
 		choice={activeClaim.choice}
 		cards={cards}
+		assets={assets}
+		players={players}
 		onClose={() => activeClaim = null}
 		onSubmitted={onClaimSubmitted}
 	/>
