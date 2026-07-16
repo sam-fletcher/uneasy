@@ -374,7 +374,7 @@
 		font-weight: 600;
 		background: var(--color-surface-gold-dim);
 		border: 1px solid var(--color-border-warm-antique);
-		color: var(--gold-200);
+		color: var(--color-chip-gold-text);
 		flex-shrink: 0;
 	}
 	.die-mine { border-color: var(--color-accent); color: var(--color-text); }

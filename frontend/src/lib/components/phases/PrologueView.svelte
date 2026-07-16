@@ -941,7 +941,7 @@
 		border-radius: 4px;
 		font-size: 0.85rem;
 	}
-	.extra-status li.done { border-color: var(--green-700); }
+	.extra-status li.done { border-color: var(--color-chip-green-border); }
 	.extra-name { color: var(--color-text); }
 	.extra-claim { color: var(--color-success); font-size: 0.8rem; }
 	.extra-pending { color: var(--color-text-faint); font-size: 0.8rem; font-style: italic; }
@@ -986,7 +986,7 @@
 	}
 	.title-chip.active {
 		border-color: var(--color-accent);
-		background: var(--color-accent-muted-bg);
+		background: var(--color-chip-gold-bg);
 	}
 	.title-chip:focus-visible {
 		outline: 2px solid var(--color-accent);

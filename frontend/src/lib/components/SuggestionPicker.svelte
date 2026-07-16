@@ -129,9 +129,11 @@
 		word-break: break-word;
 		transition: background-color 120ms ease, border-color 120ms ease;
 	}
-	.sp-tile:hover:not(.blank) { background: var(--neutral-700); }
+	/* :not(.selected) keeps the hover rule from out-specifying .selected —
+	   without it, sticky touch-hover turned a just-tapped tile grey. */
+	.sp-tile:hover:not(.blank):not(.selected) { background: var(--color-surface-hover); }
 	.sp-tile.selected {
-		background: var(--gold-800);
+		background: var(--color-chip-gold-bg);
 		border-color: var(--color-accent);
 		color: var(--white);
 	}

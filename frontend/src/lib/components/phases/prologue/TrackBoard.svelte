@@ -314,12 +314,13 @@
 		opacity: 0.5;
 	}
 	.rank-row.set-aside {
-		background: var(--violet-950);
-		border-left: 2px solid var(--violet-600);
+		background: color-mix(in srgb, var(--color-chip-violet-border) 12%, var(--color-surface));
+		border-left: 2px solid var(--color-chip-violet-border);
 	}
 	.set-aside-badge {
-		background: var(--violet-900);
-		color: var(--violet-300);
+		background: var(--color-chip-violet-bg);
+		border: 1px solid var(--color-chip-violet-border);
+		color: var(--color-chip-violet-text);
 		font-size: 0.55rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;

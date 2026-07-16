@@ -123,7 +123,7 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		padding: 0.6rem 0.7rem;
-		border: 1px solid var(--gold-850);
+		border: 1px solid var(--color-border-warm);
 		border-radius: 8px;
 		background: rgba(255, 255, 255, 0.02);
 	}

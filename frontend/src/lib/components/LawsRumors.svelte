@@ -30,7 +30,7 @@
 
 	const { kind = 'both', laws, rumors, plans, players, playerNames, currentPlayerID }: Props = $props();
 
-	const NEUTRAL = 'var(--gold-600)';
+	const NEUTRAL = 'var(--color-accent-dim)';
 
 	function playerName(id: number | null | undefined): string {
 		if (id == null) return '?';
@@ -221,7 +221,7 @@
 	.lr-empty { margin: 0; color: var(--color-text-muted); font-style: italic; }
 	.lr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 	.lr-item {
-		--accent: var(--gold-600);
+		--accent: var(--color-accent-dim);
 		padding: 0.6rem 0.75rem;
 		background:
 			color-mix(in srgb, var(--accent) 7%, var(--card-bg, var(--color-surface-2)));

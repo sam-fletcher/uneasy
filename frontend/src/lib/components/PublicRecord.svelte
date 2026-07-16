@@ -507,7 +507,7 @@
 	}
 
 	.row-num-pill.highlighted { box-shadow: 0 0 0 2px var(--color-highlight); }
-	.record-row.highlighted { background: var(--blue-950); }
+	.record-row.highlighted { background: color-mix(in srgb, var(--color-highlight) 12%, var(--color-surface)); }
 
 	.row-content {
 		flex: 1;

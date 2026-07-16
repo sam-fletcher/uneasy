@@ -680,7 +680,6 @@
 					<button
 						class="tones-button war-button"
 						class:war-pending={$activeWarCount === 0}
-						class:war-mixed={$activeWarCount > 0 && $pendingWarCount > 0}
 						onclick={() => warDrawerOpen.set(true)}
 						aria-label="Open wars"
 					>
@@ -1130,35 +1129,29 @@
 		display: flex;
 		align-items: center;
 		padding: 0 0.42rem;
-		border-left: 1px solid var(--color-accent-muted-bg); /* subtle warm hairline */
+		border-left: 1px solid var(--color-border-warm); /* subtle warm hairline */
 		color: var(--color-accent-muted);                    /* dimmed gilt */
 		font-size: 0.75rem;
 		font-variant-numeric: tabular-nums;
 	}
-	.war-button .count { border-left-color: var(--red-800); color: var(--red-200); }
+	.war-button .count { border-left-color: var(--color-chip-red-border); color: var(--color-chip-red-text); }
 
 	.war-button {
-		background: var(--red-900);
-		border-color: var(--red-700);
-		color: var(--red-100);
+		background: var(--color-chip-red-bg);
+		border-color: var(--color-chip-red-border);
+		color: var(--color-chip-red-text);
 	}
-	.war-button:hover { background: color-mix(in srgb, var(--red-900) 92%, white); }
+	.war-button:hover { background: color-mix(in srgb, var(--color-chip-red-bg) 92%, white); }
 
-	/* Yellow: only pending wars (planned, not yet started). */
+	/* Warning: only pending wars (declared, none active yet). Two states
+	   total — red if any war is active, warning otherwise; the war drawer
+	   carries the active/pending breakdown (COLOR_ROLES_PLAN ruling). */
 	.war-button.war-pending {
-		background: var(--gold-850);
-		border-color: var(--gold-700);
-		color: var(--gold-200);
+		background: var(--color-warning-bg);
+		border-color: var(--color-warning-border);
+		color: var(--color-warning);
 	}
-	.war-button.war-pending:hover { background: color-mix(in srgb, var(--gold-850) 92%, white); }
-
-	/* Orange: mix of pending and active. */
-	.war-button.war-mixed {
-		background: var(--orange-900);
-		border-color: var(--orange-700);
-		color: var(--orange-200);
-	}
-	.war-button.war-mixed:hover { background: var(--orange-800); }
+	.war-button.war-pending:hover { background: color-mix(in srgb, var(--color-warning-bg) 92%, white); }
 
 	.tones-sheet h3 { margin: 0 0 0.5rem; }
 	.tones-sheet .small { font-size: 0.85rem; }
@@ -1265,13 +1258,15 @@
 		font-weight: 600;
 		line-height: 1;
 		font-variant-numeric: tabular-nums;
-		background: var(--color-accent-muted-bg);
+		background: var(--color-chip-gold-bg);
 		color: var(--color-accent-muted);
 		border: 1px solid var(--color-border-warm-strong);
 	}
 	.risk-badge.mine {
+		/* Deliberately brighter ground than the chip-red trio: this badge is
+		   an alert ("YOUR asset is at risk"), not a quiet status chip. */
 		background: var(--red-700);
-		color: var(--red-100);
+		color: var(--color-chip-red-text);
 		border-color: var(--color-danger-muted);
 		box-shadow: 0 0 6px color-mix(in srgb, var(--color-danger-muted) 55%, transparent);
 	}

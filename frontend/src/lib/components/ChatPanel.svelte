@@ -899,7 +899,7 @@
 		align-items: center;
 		gap: 0.6rem;
 		background: var(--color-surface);
-		border-top: 1px solid var(--gold-700);
+		border-top: 1px solid var(--color-border-warm-antique);
 		color: var(--color-text);
 		font-size: 0.9rem;
 		text-align: left;
@@ -1528,7 +1528,7 @@
 		border-radius: 4px;
 	}
 	.persona-option:hover { background: var(--color-surface); }
-	.persona-option.selected { background: var(--color-surface-gold-dim); color: var(--gold-200); }
+	.persona-option.selected { background: var(--color-surface-active); color: var(--color-chip-gold-text); }
 
 	.persona-option-dot {
 		width: 8px;
