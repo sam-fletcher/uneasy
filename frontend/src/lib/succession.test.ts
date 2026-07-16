@@ -39,6 +39,8 @@ function asset(
 		is_destroyed: opts.destroyed ?? false,
 		created_at: '2026-01-01T00:00:00Z',
 		destroyed_at: null,
+		linked_card_suit: null,
+		linked_card_value: null,
 		marginalia: marginaliaList,
 		secret_count: 0,
 	};

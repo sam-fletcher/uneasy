@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { PrologueSheet, PrologueClaim, PlayerCardRow } from '$lib/api';
-import { openCount, heldCardSet } from './choosing';
+import type { PrologueSheet, PrologueClaim, PlayerCardRow, Asset, Player } from '$lib/api';
+import { openCount, heldCardSet, stealPreview } from './choosing';
 
 function sheet(type: PrologueSheet['type'], names: string[]): PrologueSheet {
 	return {
@@ -53,5 +53,72 @@ describe('heldCardSet', () => {
 			{ id: 3, game_id: 1, player_id: 1, card_suit: 'D', card_value: 'K' },
 		];
 		expect(heldCardSet(cards)).toEqual(new Set(['H::A', 'D::K']));
+	});
+});
+
+describe('stealPreview', () => {
+	function player(id: number, name: string): Player {
+		return {
+			id,
+			game_id: 1,
+			account_id: id,
+			display_name: name,
+			joined_at: '2026-01-01T00:00:00Z',
+			is_facilitator: false,
+			token_color: null,
+			seat_order: null,
+		};
+	}
+
+	function asset(overrides: Partial<Asset> = {}): Asset {
+		return {
+			id: 1,
+			name: 'Blood of Kings',
+			linked_card_suit: null,
+			linked_card_value: null,
+			is_destroyed: false,
+			...overrides,
+		} as Asset;
+	}
+
+	const players = [player(1, 'alice'), player(2, 'carol')];
+
+	it('returns null for a fresh card nobody holds', () => {
+		const cards: PlayerCardRow[] = [];
+		expect(stealPreview('H', 'K', cards, [], players)).toBeNull();
+	});
+
+	it('resolves the owner and the linked asset for a held card', () => {
+		const cards: PlayerCardRow[] = [
+			{ id: 1, game_id: 1, player_id: 2, card_suit: 'H', card_value: 'K' },
+		];
+		const assets = [asset({ linked_card_suit: 'H', linked_card_value: 'K' })];
+		expect(stealPreview('H', 'K', cards, assets, players)).toEqual({
+			ownerName: 'carol',
+			assetName: 'Blood of Kings',
+		});
+	});
+
+	it('falls back to owner-only wording when the linked asset is destroyed', () => {
+		const cards: PlayerCardRow[] = [
+			{ id: 1, game_id: 1, player_id: 2, card_suit: 'H', card_value: 'K' },
+		];
+		const assets = [
+			asset({ linked_card_suit: 'H', linked_card_value: 'K', is_destroyed: true }),
+		];
+		expect(stealPreview('H', 'K', cards, assets, players)).toEqual({
+			ownerName: 'carol',
+			assetName: null,
+		});
+	});
+
+	it('falls back to owner-only wording when no matching asset exists at all', () => {
+		const cards: PlayerCardRow[] = [
+			{ id: 1, game_id: 1, player_id: 2, card_suit: 'H', card_value: 'K' },
+		];
+		expect(stealPreview('H', 'K', cards, [], players)).toEqual({
+			ownerName: 'carol',
+			assetName: null,
+		});
 	});
 });

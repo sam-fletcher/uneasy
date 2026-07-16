@@ -146,6 +146,10 @@ export interface Asset {
 	is_destroyed: boolean;
 	created_at: string;
 	destroyed_at: string | null;
+	// Set only for prologue-created assets — the card that makes/takes this
+	// asset (Session 2 of the choosing redesign; drives the steal preview).
+	linked_card_suit: string | null;
+	linked_card_value: string | null;
 	// Enriched by the API — always present in list/create/update responses.
 	marginalia: Marginalium[];
 	// Total secrets on the asset (existence), public to every player. The

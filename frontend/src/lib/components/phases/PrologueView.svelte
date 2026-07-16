@@ -41,7 +41,7 @@
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import { computeBrightHearts, cardRank } from '$lib/prologue/refund';
-	import { openCount, heldCardSet } from '$lib/prologue/choosing';
+	import { openCount, heldCardSet, stealPreview } from '$lib/prologue/choosing';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 	import CrownGlyph from '../CrownGlyph.svelte';
 	import type { CrownMark } from '$lib/succession';
@@ -226,10 +226,35 @@
 			// panel doesn't strand the header above the viewport.
 			await tick();
 			header.scrollIntoView({ block: 'nearest' });
+		} else if (expandedBox?.startsWith(`${type}::`)) {
+			// Expansion is scoped to its panel — collapsing the panel closes it.
+			expandedBox = null;
 		}
 	}
 
 	const heldCards = $derived(heldCardSet(cards));
+
+	// ── Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2) ─────
+	// Exploring a box is open to every player at all times; only the on-turn
+	// player additionally sees a "Claim this box" action inside it. Keyed by
+	// a string (not an index) so it survives the WS-triggered reload() calls
+	// and, if the viewed box gets claimed mid-view, updates in place instead
+	// of vanishing (claims/cards data changes, but expandedBox does not).
+	let expandedBox = $state<string | null>(null);
+
+	function toggleExpand(key: string) {
+		expandedBox = expandedBox === key ? null : key;
+	}
+
+	function cardTypeLabel(suit: string): string {
+		switch (suit) {
+			case 'C': return 'holding';
+			case 'D': return 'resource';
+			case 'S': return 'artifact';
+			case 'H': return 'peer';
+			default:  return 'asset';
+		}
+	}
 
 	// ── Choose a box ─────────────────────────────────────────────────────────
 	let activeClaim = $state<{ sheet: PrologueSheet; choice: PrologueSheet['choices'][number] } | null>(null);
@@ -612,13 +637,18 @@
 							<div class="tile-grid">
 								{#each sheet.choices as choice}
 									{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
+									{@const boxKey = `${sheet.type}::${choice.name}`}
+									{@const isExpanded = expandedBox === boxKey}
+									{@const tileID = `choice-${sheet.type}-${choice.name}`}
 									<button
 										type="button"
+										id={tileID}
 										class="choice-btn"
 										class:claimed={!!existingClaim}
-										disabled={!!existingClaim || !isMyTurn || activeClaim != null}
-										title={choice.description || ''}
-										onclick={() => openClaimModal(sheet, choice)}
+										class:expanded={isExpanded}
+										aria-expanded={isExpanded}
+										aria-controls={`${tileID}-detail`}
+										onclick={() => toggleExpand(boxKey)}
 									>
 										<span class="choice-name">
 											{choice.name}
@@ -635,6 +665,42 @@
 											<span class="claim-by">— {playerName(existingClaim.player_id)}</span>
 										{/if}
 									</button>
+									{#if isExpanded}
+										<div class="choice-detail" id={`${tileID}-detail`} role="region" aria-labelledby={tileID}>
+											{#if choice.description}
+												<p class="detail-desc">{choice.description}</p>
+											{/if}
+											{#if existingClaim}
+												<p class="detail-claimed">Claimed by {playerName(existingClaim.player_id)}.</p>
+											{/if}
+											<div class="detail-cards">
+												{#each choice.cards as c}
+													{@const preview = stealPreview(c.suit, c.value, cards, assets, players)}
+													<div class="detail-card-row">
+														{@render miniCard(c.value, c.suit, preview != null)}
+														<span class="detail-card-text">
+															{#if !preview}
+																make a new {cardTypeLabel(c.suit)}
+															{:else if preview.assetName}
+																takes <em>{preview.assetName}</em> from {preview.ownerName}
+															{:else}
+																already held by {preview.ownerName}
+															{/if}
+														</span>
+													</div>
+												{/each}
+											</div>
+											{#if !existingClaim && isMyTurn}
+												<button
+													type="button"
+													class="action-btn primary detail-claim-btn"
+													onclick={() => openClaimModal(sheet, choice)}
+												>
+													Claim this box
+												</button>
+											{/if}
+										</div>
+									{/if}
 								{/each}
 							</div>
 						</div>
@@ -961,13 +1027,59 @@
 		min-width: 0;
 	}
 
-	.choice-btn.claimed { opacity: 0.55; cursor: default; }
+	.choice-btn.claimed { opacity: 0.55; }
+	.choice-btn.expanded {
+		grid-column: 1 / -1;
+		border-color: var(--color-accent);
+	}
 
 	.choice-name { display: flex; align-items: center; gap: 0.25rem; color: var(--color-accent); line-height: 1.2; word-break: break-word; }
 	.choice-cards { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 	.claim-by { font-size: 0.72rem; color: var(--color-text-muted); }
 
 	.card-glyph :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
+
+	/* Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2). */
+	.choice-detail {
+		grid-column: 1 / -1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-accent);
+		border-radius: 6px;
+		padding: 0.65rem 0.7rem;
+		margin-top: -0.2rem;
+	}
+	.detail-desc {
+		margin: 0;
+		color: var(--color-text);
+		font-size: 0.85rem;
+		line-height: 1.4;
+	}
+	.detail-claimed {
+		margin: 0;
+		color: var(--color-text-muted);
+		font-size: 0.8rem;
+	}
+	.detail-cards {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.detail-card-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.detail-card-text {
+		font-size: 0.85rem;
+		color: var(--color-text);
+	}
+	.detail-card-text :global(em) { font-style: italic; }
+	.detail-claim-btn {
+		align-self: flex-start;
+	}
 
 	.hands-section {
 		display: flex;
