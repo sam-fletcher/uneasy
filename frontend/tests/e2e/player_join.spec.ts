@@ -1,4 +1,5 @@
-import { test, expect, request as pwRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { cleanupGameAfterEach } from './helpers';
 
 // Second multi-context spec: alice is already on the table page when bob
 // joins. Alice's roster should pick up bob's name live via the
@@ -9,11 +10,9 @@ import { test, expect, request as pwRequest } from '@playwright/test';
 // handled in routes/table/[id]/+page.svelte) and a different reactive
 // surface (the members list, not the chat feed).
 
-test('bob joining is reflected on alice\'s open table page', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
-  await reset.dispose();
+const track = cleanupGameAfterEach();
 
+test('bob joining is reflected on alice\'s open table page', async ({ browser }) => {
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
 
@@ -23,6 +22,7 @@ test('bob joining is reflected on alice\'s open table page', async ({ browser })
   const createRes = await aliceCtx.request.post('/api/tables');
   const { game } = await createRes.json();
   const tableId: number = game.id;
+  track(tableId);
   const joinCode: string = game.join_code;
 
   // Alice loads the table first and waits until her roster is rendered

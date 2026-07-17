@@ -1,4 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
+import { cleanupGameAfterEach } from './helpers';
 
 // End-to-end for Seek Answers — specifically the "ask a player a question"
 // sub-flow, which had the same soft-lock bug class as Propose Duel and
@@ -53,6 +54,8 @@ function planForm(page: Page, header: string) {
 	return page.locator('.plan-form', { hasText: header });
 }
 
+const track = cleanupGameAfterEach();
+
 test('seek answers: ask → veto → re-ask → answer each reach the other side live', async ({ browser }) => {
 	// ── Seed a main_event game with alice (preparer) + bob (target) ──────────
 	// The Seek Answers plan is seeded directly onto the current row so no
@@ -65,7 +68,6 @@ test('seek answers: ask → veto → re-ask → answer each reach the other side
 	// is alice's knowledge rank (2), but make/mar doesn't matter here — the option
 	// list is identical and ask_question needs no asset target.
 	const fixture = await pwRequest.newContext({ baseURL: E2E });
-	await fixture.post('/api/dev/reset');
 	const seedRes = await fixture.post('/api/dev/seed', {
 		data: {
 			phase: 'main_event',
@@ -77,6 +79,7 @@ test('seek answers: ask → veto → re-ask → answer each reach the other side
 	});
 	expect(seedRes.ok(), `seed failed: ${await seedRes.text()}`).toBeTruthy();
 	const { game_id } = await seedRes.json();
+	track(game_id);
 	await fixture.dispose();
 
 	const aliceCtx = await browser.newContext({ baseURL: E2E });

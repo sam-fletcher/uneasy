@@ -1,4 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { cleanupGameAfterEach } from './helpers';
 
 // End-to-end coverage for the multi-player chat path: two browser contexts
 // (alice, bob), each with its own cookie jar; alice creates a table, bob
@@ -35,12 +36,9 @@ async function newestPostID(api: APIRequestContext, tableId: number): Promise<nu
   return posts[posts.length - 1].id;
 }
 
-test('alice sends a chat message; bob sees it live', async ({ browser, playwright }) => {
-  // Global reset so we know the test starts from a clean uneasy_test.
-  const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
-  await reset.dispose();
+const track = cleanupGameAfterEach();
 
+test('alice sends a chat message; bob sees it live', async ({ browser, playwright }) => {
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
 
@@ -52,6 +50,7 @@ test('alice sends a chat message; bob sees it live', async ({ browser, playwrigh
   expect(createRes.ok()).toBeTruthy();
   const { game } = await createRes.json();
   const tableId: number = game.id;
+  track(tableId);
   const joinCode: string = game.join_code;
 
   // Bob joins by code.
@@ -93,10 +92,6 @@ test('alice sends a chat message; bob sees it live', async ({ browser, playwrigh
 });
 
 test('catch-up: messages sent while away show the unread badge and the New messages divider', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
-  await reset.dispose();
-
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   await devLogin(aliceCtx.request, 'alice');
@@ -105,6 +100,7 @@ test('catch-up: messages sent while away show the unread badge and the New messa
   const createRes = await aliceCtx.request.post('/api/tables');
   const { game } = await createRes.json();
   const tableId: number = game.id;
+  track(tableId);
   await bobCtx.request.post('/api/tables/join', { data: { join_code: game.join_code } });
 
   // Bob posts while alice is "away" — she hasn't opened the table page yet,
@@ -137,10 +133,6 @@ test('catch-up: messages sent while away show the unread badge and the New messa
 });
 
 test('scroll-up pagination: older posts outside the initial window load on demand', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
-  await reset.dispose();
-
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   await devLogin(aliceCtx.request, 'alice');
@@ -149,6 +141,7 @@ test('scroll-up pagination: older posts outside the initial window load on deman
   const createRes = await aliceCtx.request.post('/api/tables');
   const { game } = await createRes.json();
   const tableId: number = game.id;
+  track(tableId);
   await bobCtx.request.post('/api/tables/join', { data: { join_code: game.join_code } });
 
   // Build up history in two batches with alice's read marker parked between
@@ -183,10 +176,6 @@ test('scroll-up pagination: older posts outside the initial window load on deman
 });
 
 test('scrolled away from the bottom is not yanked back when a new message arrives', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
-  await reset.dispose();
-
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   await devLogin(aliceCtx.request, 'alice');
@@ -195,6 +184,7 @@ test('scrolled away from the bottom is not yanked back when a new message arrive
   const createRes = await aliceCtx.request.post('/api/tables');
   const { game } = await createRes.json();
   const tableId: number = game.id;
+  track(tableId);
   await bobCtx.request.post('/api/tables/join', { data: { join_code: game.join_code } });
 
   // Enough history that the feed genuinely overflows and has something to
@@ -235,11 +225,11 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
   // never actually land. Seed straight to main_event, like the jump-to-row
   // test below, so the row FK is satisfied.
   const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
   const { game_id: tableId } = await seedRes.json();
+  track(tableId);
   await reset.dispose();
 
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
@@ -286,11 +276,11 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
 
 test('jumping to a row outside the loaded window enters history mode; Return to now exits it', async ({ browser }) => {
   const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
   const { game_id: gameID } = await seedRes.json();
+  track(gameID);
   await reset.dispose();
 
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
@@ -343,11 +333,11 @@ test('jumping to a row outside the loaded window enters history mode; Return to 
 // narrow-viewport collapsed-strip path before the desktop column.
 test('scene container: single chronology, collapses once ended and read, expands on tap', async ({ browser }) => {
   const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
   const { game_id: tableId, players } = await seedRes.json();
+  track(tableId);
   const alicePlayerID: number = players[0].id;
   await reset.dispose();
 
@@ -443,11 +433,11 @@ test('scene container: single chronology, collapses once ended and read, expands
 
 test('scene container renders in the always-open desktop chat column', async ({ browser }) => {
   const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
   const { game_id: tableId } = await seedRes.json();
+  track(tableId);
   await reset.dispose();
 
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
@@ -493,11 +483,11 @@ test('scene container renders in the always-open desktop chat column', async ({ 
 // UI Phase 4 already built (no ChatPanel/chatFeed changes needed for this).
 test('plan-scene: a festivity renders both players\' in-character posts inside one container', async ({ browser }) => {
   const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
   const { game_id: tableId, players } = await seedRes.json();
+  track(tableId);
   const alicePlayerID: number = players[0].id;
   const bobPlayerID: number = players[1].id;
   await reset.dispose();

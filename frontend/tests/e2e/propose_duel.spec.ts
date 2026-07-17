@@ -1,4 +1,5 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Page } from '@playwright/test';
+import { cleanupGameAfterEach } from './helpers';
 
 // End-to-end for Propose Duel — the gnarliest interactive plan flow, and
 // the first plan spec to drive a full resolution through the UI.
@@ -65,15 +66,17 @@ async function stakeAsset(page: Page, assetName: string) {
 	await sec.getByRole('button', { name: /^Commit 1 stake$/ }).click();
 }
 
+const track = cleanupGameAfterEach();
+
 test('propose duel: setup → staking → bouts → final roll → take', async ({ browser }) => {
 	// ── Seed a main_event game with alice (focus) + bob ──────────────────────
 	const fixture = await pwRequest.newContext({ baseURL: E2E });
-	await fixture.post('/api/dev/reset');
 	const seedRes = await fixture.post('/api/dev/seed', {
 		data: { phase: 'main_event', players: ['alice', 'bob'] },
 	});
 	expect(seedRes.ok(), `seed failed: ${await seedRes.text()}`).toBeTruthy();
 	const { game_id, players } = await seedRes.json();
+	track(game_id);
 	const aliceID: number = players[0].id;
 	const bobID: number = players[1].id;
 	await fixture.dispose();

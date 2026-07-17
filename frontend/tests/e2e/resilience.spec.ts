@@ -1,4 +1,5 @@
-import { test, expect, request as pwRequest, type Browser, type Page } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
+import { cleanupGameAfterEach } from './helpers';
 
 // Resilience specs for the asynchronous play-by-post model: players close
 // tabs, lose connections, and come back later. Two scenarios:
@@ -14,10 +15,6 @@ import { test, expect, request as pwRequest, type Browser, type Page } from '@pl
 //      back online. Validates the reconnect path in ws.ts:295.
 
 async function setupAliceAndBob(browser: Browser) {
-  const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
-  await reset.dispose();
-
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   await aliceCtx.request.post('/api/dev/login?username=alice');
@@ -43,8 +40,11 @@ async function sendChat(page: Page, body: string) {
   await chat.getByRole('button', { name: 'Send' }).click();
 }
 
+const track = cleanupGameAfterEach();
+
 test('reload preserves chat history and re-subscribes to live updates', async ({ browser }) => {
   const { aliceCtx, bobCtx, alicePage, bobPage, gameID } = await setupAliceAndBob(browser);
+  track(gameID);
 
   const before = `before-reload-${Date.now()}`;
   await sendChat(alicePage, before);
@@ -70,7 +70,8 @@ test('reload preserves chat history and re-subscribes to live updates', async ({
 });
 
 test("bob's WebSocket auto-reconnects after a network blip", async ({ browser }) => {
-  const { aliceCtx, bobCtx, alicePage, bobPage } = await setupAliceAndBob(browser);
+  const { aliceCtx, bobCtx, alicePage, bobPage, gameID } = await setupAliceAndBob(browser);
+  track(gameID);
 
   // Sanity: live path works before the blip.
   const baseline = `baseline-${Date.now()}`;

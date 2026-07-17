@@ -1,4 +1,5 @@
-import { test, expect, request as pwRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { cleanupGameAfterEach } from './helpers';
 
 // First game-flow spec: lobby → prologue transition driven by the
 // facilitator, observed live on the non-facilitator's page.
@@ -10,11 +11,9 @@ import { test, expect, request as pwRequest } from '@playwright/test';
 // require any prologue inputs (cards dealt, hearts committed, etc.) —
 // those belong to later game-flow specs.
 
-test('facilitator starts prologue; non-facilitator sees the phase change live', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
-  await reset.post('http://localhost:8090/api/dev/reset');
-  await reset.dispose();
+const track = cleanupGameAfterEach();
 
+test('facilitator starts prologue; non-facilitator sees the phase change live', async ({ browser }) => {
   const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
   await aliceCtx.request.post('/api/dev/login?username=alice');
@@ -22,6 +21,7 @@ test('facilitator starts prologue; non-facilitator sees the phase change live', 
 
   // Alice creates and is therefore the facilitator. Bob joins by code.
   const { game } = await (await aliceCtx.request.post('/api/tables')).json();
+  track(game.id);
   await bobCtx.request.post('/api/tables/join', {
     data: { join_code: game.join_code },
   });

@@ -1,4 +1,5 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Page } from '@playwright/test';
+import { cleanupGameAfterEach } from './helpers';
 
 // End-to-end for Clandestinely Liaise — specifically the "Secrets We Keep"
 // hand-off, which had the same soft-lock bug class as Propose Duel: a
@@ -74,15 +75,17 @@ async function keepSecret(page: Page, assetName: string) {
 	await sec.getByRole('button', { name: 'Keep this secret' }).click();
 }
 
+const track = cleanupGameAfterEach();
+
 test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live', async ({ browser }) => {
 	// ── Seed a main_event game with alice (preparer) + bob (partner) ─────────
 	const fixture = await pwRequest.newContext({ baseURL: E2E });
-	await fixture.post('/api/dev/reset');
 	const seedRes = await fixture.post('/api/dev/seed', {
 		data: { phase: 'main_event', players: ['alice', 'bob'] },
 	});
 	expect(seedRes.ok(), `seed failed: ${await seedRes.text()}`).toBeTruthy();
 	const { game_id, players } = await seedRes.json();
+	track(game_id);
 	const aliceID: number = players[0].id;
 	const bobID: number = players[1].id;
 	await fixture.dispose();

@@ -1,4 +1,5 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
+import { cleanupGameAfterEach } from './helpers';
 
 // First main_event spec, exercising the new /api/dev/seed fixture path.
 //
@@ -13,17 +14,19 @@ import { test, expect, request as pwRequest } from '@playwright/test';
 // Mechanics-level main_event specs (dice rolls, plan voting, scene
 // resolution) will be built on top of this same fixture.
 
+const track = cleanupGameAfterEach();
+
 test('seeded main_event game renders the main-event view for both players', async ({ browser }) => {
-  // Reset uneasy_test, then seed a fresh game in main_event with alice
-  // and bob as players. The seed endpoint creates accounts on demand,
-  // so we don't need a prior dev-login on either side just to seed.
+  // Seed a fresh game in main_event with alice and bob as players. The seed
+  // endpoint creates accounts on demand, so we don't need a prior dev-login
+  // on either side just to seed.
   const fixture = await pwRequest.newContext({ baseURL: 'http://localhost:8090' });
-  await fixture.post('/api/dev/reset');
   const seedRes = await fixture.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
   expect(seedRes.ok(), 'seed call failed').toBeTruthy();
   const { game_id, phase, players } = await seedRes.json();
+  track(game_id);
   expect(phase).toBe('main_event');
   expect(players).toHaveLength(2);
   expect(players[0].is_facilitator).toBe(true);
