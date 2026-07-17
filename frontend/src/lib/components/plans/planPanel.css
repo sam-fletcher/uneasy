@@ -383,10 +383,6 @@
 	row-gap: 0.3rem;
 }
 
-@media (min-width: 640px) {
-	.plan-grid { gap: 0.5rem; row-gap: 0.4rem; }
-}
-
 .track-heading {
 	font-size: 0.8rem;
 	font-weight: 400;
@@ -415,10 +411,6 @@
 	cursor: pointer;
 	transition: border-color 0.12s, background 0.12s;
 	font-family: inherit;
-}
-
-@media (min-width: 640px) {
-	.plan-card { gap: 0.3rem; padding: 0.5rem 0.55rem; min-height: 5.5rem; }
 }
 
 .plan-card:not(:disabled):not(.ineligible):hover { border-color: var(--color-accent); }
@@ -460,10 +452,6 @@
 	flex-direction: column;
 	gap: 0.2rem;
 	flex: 1;
-}
-
-@media (min-width: 640px) {
-	.card-body { gap: 0.3rem; }
 }
 
 /* Token pips: who currently holds a token on this plan's shield. Centred along
@@ -516,12 +504,6 @@
 	line-height: 1.3;
 	color: var(--color-text-muted);
 	margin: 0;
-}
-
-@media (min-width: 640px) {
-	.card-head { gap: 0.4rem; }
-	.card-title { font-size: 0.85rem; }
-	.card-desc { font-size: 0.74rem; line-height: 1.35; }
 }
 
 .plan-card.selected .card-desc { color: var(--color-text-tertiary-warm); }

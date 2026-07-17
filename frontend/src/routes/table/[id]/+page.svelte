@@ -687,9 +687,9 @@
 	{/if}
 
 	<!--
-		Body: on desktop ≥1024px this becomes a 2-column grid (game | chat),
-		or 3-column when the Public Record rail is present.
-		On mobile/tablet it's a single column with the chat panel positioned
+		Body: at ≥790px (the chat dock) this becomes a 2-column grid
+		(game | chat), or 3-column when the Public Record rail is present.
+		Below that it's a single column with the chat panel positioned
 		absolutely (strip pinned to bottom, expanded sheet covering the body).
 		WaitingOnBar lives inside .phase-column so it only spans the phase
 		content's column — not the PublicRecord rail or the Chat column.
@@ -975,7 +975,7 @@
 	 * Body fills the space below the header. ChatPanel is a sibling of the
 	 * phase content. On mobile it positions itself absolutely (strip pinned
 	 * to bottom; expanded sheet covers the body), so the phase content reads
-	 * the body's full size. On desktop ≥1024px the body becomes a 2-col
+	 * the body's full size. At ≥790px (the chat dock) the body becomes a
 	 * grid: phase content on the left, chat as the permanent right column.
 	 */
 	.table-body {
@@ -991,18 +991,33 @@
 		padding-bottom: calc(var(--chat-strip-height) + 1rem + env(safe-area-inset-bottom));
 	}
 
+	/* Cap-and-center (docs/STYLE_GUIDE.md "Layout widths"): every content
+	   column is a phone-width column. Without the record, the phase view's
+	   box is at most 440 (the widest mainstream phone) and centers when the
+	   viewport has slack; views bring their own inner padding, exactly as
+	   they would against a real phone's viewport edge. */
+	.table-body:not(.has-record) > .phase-column {
+		width: 100%;
+		max-width: 440px;
+		margin-inline: auto;
+	}
+
 	/* Wherever the public record shows (main_event, shake_up, ended) on
 	   mobile, its rail sits to the left of the phase view rather than
 	   stacking above it (the rail is full-height, so stacking pushes the
 	   phase content off-screen). The chat panel is position:absolute on
-	   mobile so it stays unaffected. */
+	   mobile so it stays unaffected. Rail (44) + gutters (8) are the only
+	   chrome: on a 360 phone the phase content gets exactly 300, on a 440
+	   phone 380 — the record-phase design band. Past 440-equivalent the
+	   rail+content block centers as one unit. */
 	.table-body.has-record {
 		flex-direction: row;
-		gap: 0.75rem;
-		padding-right: 0.75rem;
+		gap: 8px;
+		padding-right: 8px;
+		justify-content: center;
 	}
 	.table-body.has-record > .phase-column {
-		flex: 1;
+		flex: 0 1 380px;
 		min-width: 0;
 		min-height: 0;
 	}
@@ -1016,41 +1031,49 @@
 		flex-direction: column;
 		min-width: 0;
 		min-height: 0;
+		/* Named query container: components inside adapt to the COLUMN's
+		   width via @container column (…), never to the viewport
+		   (docs/STYLE_GUIDE.md "Layout widths"). */
+		container: column / inline-size;
 	}
 
-	@media (min-width: 1024px) {
+	/* Chat dock (790 = 44 rail + 8 + 360 main + 8 + 360 chat + 8): chat
+	   becomes a permanent right column. Every column is minmax'd to the
+	   phone band (360–440; the record-phase main column caps at 380 = 440
+	   minus rail+gutters) and the grid centers once all columns hit their
+	   caps — no column ever grows past a phone. */
+	@media (min-width: 790px) {
 		.table-body {
 			display: grid;
-			grid-template-columns: 1fr 360px;
+			grid-template-columns: minmax(360px, 440px) minmax(360px, 440px);
+			justify-content: center;
+			gap: 8px;
+			padding-inline: 8px;
 			padding-bottom: 0;
 		}
-		/* When the public record is present (main_event, shake_up, ended), it
-		   takes the first column. Below 1280 it's a thin rail with
-		   overlay-on-tap; at ≥1280 it becomes a permanent 320px panel. The
-		   phase view and chat shift to columns 2 and 3 by source order. */
+		/* With the record (main_event, shake_up, ended): rail, phase, chat.
+		   The rail stays flush left, as on phones. */
 		.table-body.has-record {
-			grid-template-columns: auto 1fr 360px;
+			grid-template-columns: 44px minmax(360px, 380px) minmax(360px, 440px);
+			padding-left: 0;
+		}
+		/* In grid mode the base cap-and-center is the track's job. */
+		.table-body:not(.has-record) > .phase-column {
+			max-width: none;
+			margin-inline: 0;
 		}
 		/* The phase content children are direct children of .table-body; in
-		   grid mode they automatically land in column 1 (or 2 with PR), and
-		   ChatPanel in the last column. The min-width: 0 prevents long
-		   content from blowing out the column. */
+		   grid mode they land in source order (record, phase, chat). The
+		   min-width: 0 prevents long content from blowing out its column. */
 		.table-body > :global(*) { min-width: 0; min-height: 0; }
 	}
 
-	@media (min-width: 1280px) {
-		/* All three columns equal width — each one mirrors a mobile viewport,
-		   so layout/typography that works on phones works in any column. */
+	/* Record dock (1040 ≥ 8 + 280 record + 8 + 360 main + 8 + 360 chat + 8):
+	   the rail/overlay becomes a permanent 280px panel in column 1. */
+	@media (min-width: 1040px) {
 		.table-body.has-record {
-			grid-template-columns: 360px 440px 1fr;
-		}
-		/* Phases without the record rail (prologue, lobby) reserve the same
-		   800px (360 record + 440 phase) on the left and give chat the
-		   remaining 1fr, so the chat column is the same width in every phase
-		   instead of being pinned to 360px while the record-bearing phases'
-		   grows. */
-		.table-body:not(.has-record) {
-			grid-template-columns: 800px 1fr;
+			grid-template-columns: 280px minmax(360px, 380px) minmax(360px, 440px);
+			padding-left: 8px;
 		}
 	}
 
@@ -1070,10 +1093,12 @@
 		flex-wrap: wrap;
 	}
 
-	/* Wars are rare; when one is active on a phone, drop the badge (a shared
-	   component, hence :global) so the War button takes its slot — the row
-	   never exceeds four items. */
-	@media (max-width: 599px) {
+	/* Wars are rare; when one is active below the chat dock, drop the badge
+	   (a shared component, hence :global) so the War button takes its slot —
+	   the row never exceeds four items. Header rules are the one place
+	   viewport queries are legitimate (the header spans the viewport), and
+	   they use the dock literals only. */
+	@media (max-width: 789px) {
 		.game-info.has-war :global(.phase-badge) { display: none; }
 	}
 
@@ -1200,11 +1225,11 @@
 		cursor: pointer;
 	}
 
-	/* Below 600px there isn't room for the roomier desktop padding — a phone
-	   in main_event can have 3 pills with rank chips fighting the fixed
-	   Home/Help buttons for ~240px. Tighten only down here; at ≥600px the
-	   full-width padding above just reads as normal breathing room. */
-	@media (max-width: 599px) {
+	/* Below the chat dock there isn't room for the roomier desktop padding —
+	   a phone in main_event can have 3 pills with rank chips fighting the
+	   fixed Home/Help buttons for ~240px. Tighten only down here; from the
+	   dock up the full-width padding above just reads as breathing room. */
+	@media (max-width: 789px) {
 		.members { gap: 0.3rem; }
 		.member { padding: 0.3rem 0.45rem; }
 	}
@@ -1341,13 +1366,8 @@
 		margin-bottom: 0.75rem;
 	}
 
-	@media (min-width: 600px) {
-		.tone-grid { grid-template-columns: repeat(4, 1fr); }
-	}
-	@media (min-width: 900px) {
-		.tone-grid { grid-template-columns: repeat(5, 1fr); }
-	}
-
+	/* Always 3 across: the tones sheet is a content column capped at 440
+	   (docs/STYLE_GUIDE.md "Layout widths"), where 4–5 tiles never fit. */
 	.tone-tile {
 		min-height: 44px;
 		padding: 0.35rem 0.4rem;

@@ -439,7 +439,10 @@
 		box-sizing: border-box;
 	}
 
-	@media (max-width: 360px) {
+	/* Squeezed column (a 360 phone gives record-phase content exactly 300;
+	   docs/STYLE_GUIDE.md "Layout widths"): pack the time chips three per
+	   row. Container query, not viewport — the column is what matters. */
+	@container column (max-width: 300px) {
 		.chips {
 			gap: 0.3rem;
 		}
@@ -451,18 +454,6 @@
 			font-size: 0.74rem;
 			line-height: 1.1;
 			white-space: nowrap;
-		}
-	}
-
-	@media (max-width: 320px) {
-		.chips {
-			justify-content: flex-start;
-		}
-
-		.chip {
-			padding: 0.3rem 0.35rem;
-			font-size: 0.7rem;
-			min-height: 40px;
 		}
 	}
 	.chip.active {

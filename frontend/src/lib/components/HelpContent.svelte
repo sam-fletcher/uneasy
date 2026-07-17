@@ -371,12 +371,12 @@
 	   (it floated over content while the phase view scrolled) — content height
 	   varies per tab and the footer simply follows it. */
 
-	/* Panel (? sheet) on mobile: the help is a fixed height that fills the sheet,
-	   and the BODY is the only scroll region. Short tabs leave non-scrollable
-	   blank above the pinned footer; the tallest tab scrolls real content only.
-	   The 130px allowance covers the sheet header, its padding, and the
-	   "How to play" title above this component. */
-	@media (max-width: 699px) {
+	/* Panel (? sheet) below the chat dock: the help is a fixed height that fills
+	   the sheet, and the BODY is the only scroll region. Short tabs leave
+	   non-scrollable blank above the pinned footer; the tallest tab scrolls real
+	   content only. The 130px allowance covers the sheet header, its padding,
+	   and the "How to play" title above this component. */
+	@media (max-width: 789px) {
 		.help.panel { height: calc(85dvh - 130px); }
 		.help.panel .tabs { flex-shrink: 0; }
 		.help.panel .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }

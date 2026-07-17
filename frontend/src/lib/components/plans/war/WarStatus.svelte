@@ -107,15 +107,13 @@
 </div>
 
 <style>
+	/* One column always: every container this renders in is a phone-width
+	   column (≤440; docs/STYLE_GUIDE.md "Layout widths"), where two sides
+	   abreast never fit. */
 	.sides-grid {
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: 0.75rem;
-	}
-	@media (min-width: 560px) {
-		.sides-grid {
-			grid-template-columns: 1fr 1fr;
-		}
 	}
 
 	.side-column {

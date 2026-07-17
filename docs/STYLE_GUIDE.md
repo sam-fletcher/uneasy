@@ -86,11 +86,45 @@ use the plain surface ladder for backgrounds and `--color-border-warm`
 - Uppercase labels (badges, section headings) carry letter-spacing
   (`0.05–0.14em`) and small sizes; they are labels, not emphasis.
 
+## Layout widths
+
+Every content region is a phone-width column; desktop layouts differ only
+in how many columns sit side by side. The numbers are **derived** — when a
+new device class ships, recompute from the formulas rather than inventing
+values (`adr/LAYOUT_WIDTHS_PLAN.md` has the derivations, decision history,
+and the layout-by-range spec).
+
+| token | px | derivation |
+|---|---|---|
+| touch minimum | 44 | Apple HIG / WCAG 2.5.5; the record rail is exactly this wide at every viewport |
+| gutter | 8 | the shell's gap and edge padding |
+| design band | 360–440 | narrowest (Galaxy S) → widest (iPhone Pro Max) mainstream phone |
+| record-phase content min | 300 | 360 − 44 rail − 2×8. **A content box, not a viewport** — the narrowest box Main-Event/Shake-Up content (every Plan and Scene UI) must render in |
+| record-phase content cap | 380 | 440 − 44 − 2×8; one design target whether or not the rail is present |
+| column cap | 440 | top of the band. No other content column — chat, prologue, modals, profile — is ever wider; extra space becomes centering margins |
+| record width | 280 | frozen by eye 2026-07-17 (no-chip-wrap floor ≈ 246; overlay peek stays ≥ 44 up to 316); overlay = docked panel = this token |
+| chat dock | 790 | 44+8+360+8+360+8: chat docks right as soon as both columns fit at the band floor |
+| record dock | 1040 | 8+280+8+360+8+360+8 = 1032, pinned round; the rail/overlay becomes a permanent panel |
+
+Rules:
+
+- Viewport `@media` / `matchMedia` may appear **only** in the shell (the
+  table page, ChatPanel, PublicRecord) and only with the two dock
+  literals. JS reads them from `lib/breakpoints.ts`.
+  `layoutTokens.test.ts` fails anything else.
+- Components adapt with `@container` against their column, or with fluid
+  CSS — never against the viewport. Container-width allowlist: 420 (the
+  prologue tile grid's 2→3 column flip, i.e. "the column is at its cap").
+- Design and verify at 360 first; 344 (foldable covers) must not break
+  (fluid layout + `min-width: 0`, no dedicated styles).
+- Cap-and-center: above its cap a column stops growing and margins take
+  the slack.
+
 ## Layout & interaction
 
-- **Mobile-first.** Design and verify at a narrow viewport (375px) before
+- **Mobile-first.** Design and verify at a narrow viewport (360px) before
   desktop. Tap targets ≥ 44px (`min-height: 44px` on buttons/rows).
-- Chat is a bottom strip on mobile, right column at ≥ 1024px.
+- Chat is a bottom strip below 790px, a docked right column at ≥ 790px.
 - Wide content scrolls inside its own container — the page never scrolls
   horizontally.
 - Disabled-but-tappable: prefer `aria-disabled` + an explanation on tap

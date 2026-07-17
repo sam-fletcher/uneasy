@@ -327,7 +327,9 @@
 	   enough for two mobile-sized table tiles side by side (the .table-list
 	   auto-fill grid handles that), and forms gain nothing from going
 	   wider, so every section caps there. */
-	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:750px; margin: 0 auto; padding-top:1rem; }
+	/* A content column like any other: capped at 440 and centered
+	   (docs/STYLE_GUIDE.md "Layout widths"). */
+	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:440px; margin: 0 auto; padding-top:1rem; }
 	.wordmark {
 		text-align: center;
 		font-family: var(--font-display);
@@ -358,13 +360,12 @@
 	.row span:not(.label) { flex:1; min-width:0; }
 	.push-row { border-bottom: none; }
 	.push-hint { margin-top: -0.3rem; }
-	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:600px; margin:0 auto; padding-top:2rem; }
+	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:440px; margin:0 auto; padding-top:2rem; }
 	.status { color:var(--color-accent); font-size:0.9rem; }
-	/* On narrow screens, let the field label sit on its own line so the value
-	   and its buttons get the full width instead of cramping. */
-	@media (max-width: 460px) {
-		.label { width:100%; }
-	}
+	/* The field label sits on its own line so the value and its buttons get
+	   the full width instead of cramping — the page column is phone-width
+	   (≤440) at every viewport, so this is unconditional. */
+	.label { width:100%; }
 	ul { list-style:none; }
 
 	/* ── Table cards ────────────────────────────────────────────────────────

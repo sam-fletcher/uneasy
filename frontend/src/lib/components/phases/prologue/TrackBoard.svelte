@@ -348,13 +348,7 @@
 		text-decoration: line-through;
 	}
 
-	@media (min-width: 600px) {
-		.track-board { gap: 0.6rem; }
-		.column { padding: 0.5rem; gap: 0.3rem; }
-		.rank-row { padding: 0.3rem 0.4rem; min-height: 44px; }
-		.rank-num { font-size: 0.85rem; min-width: 1.2rem; }
-		.col-label { font-size: 0.85rem; letter-spacing: 0.04em; }
-		.chip-name { font-size: 0.85rem; }
-		.card-glyph.small { font-size: 0.7rem; min-width: 1.4em; padding: 0.05rem 0.25rem; }
-	}
+	/* No wide variant: the phase column is a phone-width column at every
+	   viewport (≤440; docs/STYLE_GUIDE.md "Layout widths"), so the base
+	   metrics are the only metrics. */
 </style>

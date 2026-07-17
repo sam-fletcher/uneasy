@@ -227,22 +227,15 @@
 
 	const heldCards = $derived(heldCardSet(cards));
 
-	// Current tile-grid column count, mirroring .tile-grid's breakpoints
-	// (2 base / 3 ≥600px / 4 ≥900px). Needed in script so the contiguous
-	// expansion (Round 2) can work out which tile ends a visual row.
-	let tileCols = $state(2);
-	onMount(() => {
-		const mq600 = window.matchMedia('(min-width: 600px)');
-		const mq900 = window.matchMedia('(min-width: 900px)');
-		const updateCols = () => { tileCols = mq900.matches ? 4 : mq600.matches ? 3 : 2; };
-		updateCols();
-		mq600.addEventListener('change', updateCols);
-		mq900.addEventListener('change', updateCols);
-		return () => {
-			mq600.removeEventListener('change', updateCols);
-			mq900.removeEventListener('change', updateCols);
-		};
-	});
+	// Current tile-grid column count, mirroring .tile-grid's container query
+	// (2 base / 3 when the column is ≥ 420 — the 440-cap region;
+	// docs/STYLE_GUIDE.md "Layout widths"). Needed in script so the
+	// contiguous expansion (Round 2) can work out which tile ends a visual
+	// row. Measured from the component's own width (== the phase column,
+	// the query container), so it can never disagree with the CSS the way a
+	// viewport matchMedia could.
+	let columnWidth = $state(0);
+	const tileCols = $derived(columnWidth >= 420 ? 3 : 2);
 
 	// ── Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2) ─────
 	// Exploring a box is open to every player at all times; only the on-turn
@@ -563,7 +556,7 @@
 	</span>
 {/snippet}
 
-<div class="prologue-view">
+<div class="prologue-view" bind:clientWidth={columnWidth}>
 	{#if error}
 		<p class="error-text">{error}</p>
 	{/if}
@@ -914,9 +907,6 @@
 		font-size: 1.05rem;
 		line-height: 1.45;
 	}
-	@media (min-width: 600px) {
-		.prologue-lede { font-size: 1.2rem; }
-	}
 	.prologue-subtext {
 		margin: 0;
 		color: var(--color-text-secondary);
@@ -931,9 +921,6 @@
 		display: grid;
 		grid-template-columns: repeat(2, auto);
 		gap: 0.4rem 1.5rem;
-	}
-	@media (min-width: 600px) {
-		.suit-legend { grid-template-columns: repeat(4, auto); gap: 0.5rem 1.5rem; }
 	}
 	.suit-legend-item {
 		display: flex;
@@ -998,10 +985,6 @@
 		font-size: 0.78rem;
 		line-height: 1.3;
 	}
-	@media (min-width: 600px) {
-		.sheet-name { font-size: 1.05rem; }
-		.sheet-desc { font-size: 0.85rem; }
-	}
 	.sheet-open-count {
 		flex: none;
 		color: var(--color-text-muted);
@@ -1025,10 +1008,6 @@
 		border-bottom-right-radius: 8px;
 		padding: 0.5rem;
 	}
-	@media (min-width: 600px) {
-		.sheet-body { padding: 0.6rem 0.75rem; }
-	}
-
 	.tile-grid {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1039,11 +1018,13 @@
 		   grid child since custom properties cascade through the DOM. */
 		--tile-grid-gap: 0.5rem;
 	}
-	@media (min-width: 600px) {
+	/* Three columns when the phase column is at the top of the phone band
+	   (≥ 420: the largest phones and capped desktop columns). Mirrored by
+	   `tileCols` in the script — keep the two in sync. Known cost, accepted
+	   2026-07-17: the four longest box names wrap at 3-col until they're
+	   renamed (adr/LAYOUT_WIDTHS_PLAN.md). */
+	@container column (min-width: 420px) {
 		.tile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; --tile-grid-gap: 0.6rem; }
-	}
-	@media (min-width: 900px) {
-		.tile-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 	}
 
 	.choice-btn {

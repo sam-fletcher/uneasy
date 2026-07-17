@@ -705,11 +705,15 @@
 
 	/* Act tracker: Esteem → Knowledge → Power, current act lit, its step
 	   named beneath it. */
-	.act-tracker { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+	/* The tracker is sized for the phase column's narrow end (300px;
+	   docs/STYLE_GUIDE.md "Layout widths"): SPENDING is longer than ROLLING
+	   and tips a roomier layout onto a wrapped second line, so the compact
+	   metrics are the only metrics. */
+	.act-tracker { display: flex; align-items: center; flex-wrap: nowrap; gap: 0.25rem; margin-top: 0.5rem; }
 	.act {
 		display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
 		min-height: 44px; justify-content: center;
-		padding: 0.3rem 0.75rem;
+		padding: 0.3rem 0.4rem;
 		border-radius: 6px;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface-2);
@@ -723,19 +727,9 @@
 		color: var(--color-accent);
 		font-weight: 600;
 	}
-	.act-step { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
-	.act-arrow { color: var(--color-text-faint); font-size: 0.9rem; }
-
-	/* Narrow phones: the three-pill tracker is tight enough that SPENDING
-	   (longer than ROLLING) tips it onto a wrapped second line. Shrink
-	   padding/gaps/type so all three acts always share one row. */
-	@media (max-width: 600px) {
-		.act-tracker { gap: 0.25rem; flex-wrap: nowrap; }
-		.act { padding: 0.3rem 0.4rem; }
-		.act-name { font-size: 0.78rem; }
-		.act-step { font-size: 0.6rem; }
-		.act-arrow { font-size: 0.75rem; }
-	}
+	.act-name { font-size: 0.78rem; }
+	.act-step { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; }
+	.act-arrow { color: var(--color-text-faint); font-size: 0.75rem; }
 
 	/* Phase intro — collapsible accordion, mirrors Buffet's own toggle. */
 	.intro-block { display: flex; flex-direction: column; gap: 0; }

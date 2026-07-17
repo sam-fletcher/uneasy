@@ -515,7 +515,10 @@
 	.scene-panel {
 		display: flex;
 		flex-direction: column;
-		padding: 0.75rem 0.5rem 0;
+		/* The phase column is a phone-width column at every viewport
+		   (300–380; docs/STYLE_GUIDE.md "Layout widths"), so the compact
+		   padding is the only padding. */
+		padding: 0.5rem 0 0;
 		/* Scrollable so a tall PlanPanel doesn't push the action-bar
 		   (Refresh / Pass Focus buttons) out of reach. The parent .table-body
 		   already reserves padding-bottom for the mobile chat strip, so the
@@ -523,10 +526,6 @@
 		overflow-y: auto;
 		min-height: 0;
 		flex: 1;
-	}
-
-	@media (max-width: 600px) {
-		.scene-panel { padding: 0.5rem 0 0; }
 	}
 
 	/* "OR" boundary divider between the plan grid and the refresh action.

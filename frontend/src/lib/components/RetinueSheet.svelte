@@ -88,13 +88,16 @@
 		min-height: 0;
 	}
 
-	@media (min-width: 700px) {
+	/* From the chat dock up, trade the bottom-sheet idiom for a centered
+	   dialog. Like every content column it caps at 440 (docs/STYLE_GUIDE.md
+	   "Layout widths"). */
+	@media (min-width: 790px) {
 		.sheet {
 			left: 50%;
 			right: auto;
 			bottom: 50%;
 			transform: translate(-50%, 50%);
-			width: min(680px, 92vw);
+			width: min(440px, 92vw);
 			max-height: 80dvh;
 			border-radius: 14px;
 			border: 1px solid var(--color-border-strong);

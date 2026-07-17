@@ -550,10 +550,12 @@
 	.count.at-risk { color: var(--color-danger); font-weight: 600; }
 	.caret.at-risk { color: var(--color-danger); }
 
-	/* Narrow phones (iPhone SE and similar): claw back a few px from the meta
-	   cluster's gaps so more of the name survives before ellipsis. Icon sizes
-	   are untouched — legibility of the glyphs is a hard requirement. */
-	@media (max-width: 400px) {
+	/* Narrow columns (small phones; any record-phase column): claw back a few
+	   px from the meta cluster's gaps so more of the name survives before
+	   ellipsis. Icon sizes are untouched — legibility of the glyphs is a hard
+	   requirement. Container query, not viewport (docs/STYLE_GUIDE.md
+	   "Layout widths"). */
+	@container column (max-width: 400px) {
 		.meta { gap: 0.25rem; }
 		.count { padding-left: 0.3rem; }
 	}

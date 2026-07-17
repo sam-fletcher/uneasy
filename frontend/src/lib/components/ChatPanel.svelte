@@ -2,12 +2,12 @@
 	ChatPanel.svelte — the unified game-wide chat surface.
 
 	Layout (driven by CSS, not by the parent):
-	- <1024px: collapsed = a thin strip pinned to the bottom of the viewport
+	- below the chat dock (790px): collapsed = a thin strip pinned to the bottom of the viewport
 	  showing the latest message + unread badge. Tapping the strip expands the
 	  panel into a full-screen sheet below the page header (header stays
 	  visible). Expanding does NOT auto-focus the input — the keyboard only
 	  appears when the user taps the input box (matches Discord/Slack/iMessage).
-	- ≥1024px: always-open right column. No collapse toggle.
+	- at ≥790px: always-open right column. No collapse toggle.
 
 	Two shapes of entry flow through the same feed:
 	- Player message: author_id != null, system_code == null, severity 0.
@@ -32,6 +32,7 @@
 		type Scene,
 		type ScenePeerView,
 	} from '$lib/api';
+	import { chatDockQuery } from '$lib/breakpoints';
 	import { playerColorByID } from '$lib/playerColor';
 	import { SEVERITY } from '$lib/severity';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -246,7 +247,7 @@
 	// has explicitly "expanded" anything (that flag is mobile-only).
 	let isDesktop = $state(false);
 	onMount(() => {
-		const mq = window.matchMedia('(min-width: 1024px)');
+		const mq = window.matchMedia(chatDockQuery);
 		const sync = () => { isDesktop = mq.matches; };
 		sync();
 		mq.addEventListener('change', sync);
@@ -964,14 +965,18 @@
 	/* Mobile-only: when expanded, rise as a bottom sheet over the page. A
 	   small top gap leaves the dimmed body peeking above, and rounded top
 	   corners + shadow read clearly as a floating layer rather than a page
-	   swap. Scoped to <1024px so a stray `expanded` on desktop can't burst
-	   out of the chat column. */
-	@media (max-width: 1023px) {
+	   swap. Scoped to below the chat dock (790, docs/STYLE_GUIDE.md "Layout
+	   widths") so a stray `expanded` on desktop can't burst out of the chat
+	   column. Like every content column the sheet caps at 440 — on tablets
+	   and half-screens it centers instead of stretching. */
+	@media (max-width: 789px) {
 		.panel.expanded {
 			display: flex;
 			position: absolute;
 			left: 0;
 			right: 0;
+			max-width: 440px;
+			margin-inline: auto;
 			bottom: 0;
 			/* Gap at the top so the scrim-dimmed body shows above the sheet. */
 			top: 0.75rem;
@@ -1032,9 +1037,9 @@
 		cursor: pointer;
 	}
 
-	/* On desktop, hide the collapse button and the strip; the panel is the
-	   permanent right column. */
-	@media (min-width: 1024px) {
+	/* At the chat dock, hide the collapse button and the strip; the panel is
+	   the permanent right column. */
+	@media (min-width: 790px) {
 		.strip { display: none; }
 		.collapse { display: none; }
 		.scrim { display: none; }

@@ -11,5 +11,8 @@ test('dev-login + profile renders username', async ({ page, request }) => {
   await page.context().addCookies(cookies.cookies);
 
   await page.goto('/profile');
-  await expect(page.getByText('alice')).toBeVisible();
+  // .first(): the shared e2e DB accumulates tables across runs (the old
+  // /api/dev/reset endpoint is gone), and every table card's roster pill
+  // also says "alice" — strict mode needs a single target.
+  await expect(page.getByText('alice').first()).toBeVisible();
 });

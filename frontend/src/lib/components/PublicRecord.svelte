@@ -23,6 +23,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
+	import { recordDockQuery } from '$lib/breakpoints';
 	import type { RecordRow, Plan, Player, GamePhase } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
 	import { playerColorByID } from '$lib/playerColor';
@@ -95,18 +96,19 @@
 		n < currentRow ? 'past' : n === currentRow ? 'current' : 'future';
 
 	// ── Expand / collapse ─────────────────────────────────────────────────────
-	// At ≥1280px the panel is a permanent third column (no rail, no toggle).
-	// Below that, the rail collapses and the panel overlays on tap.
+	// At the record dock (1040px, lib/breakpoints.ts) the panel is a
+	// permanent column (no rail, no toggle). Below that, the rail collapses
+	// and the panel overlays on tap.
 	let userExpanded = $state(false);
 	// Initialize synchronously (not in onMount) so the first paint already
 	// reflects the right mode — otherwise wide-desktop loads briefly with
-	// neither rail (hidden by CSS at ≥1280) nor panel (would-be-rendered
+	// neither rail (hidden by CSS at the dock) nor panel (would-be-rendered
 	// only after onMount flips isWide).
 	let isWide = $state(
-		typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
+		typeof window !== 'undefined' && window.matchMedia(recordDockQuery).matches
 	);
 	onMount(() => {
-		const mq = window.matchMedia('(min-width: 1280px)');
+		const mq = window.matchMedia(recordDockQuery);
 		const sync = () => { isWide = mq.matches; };
 		mq.addEventListener('change', sync);
 		return () => mq.removeEventListener('change', sync);
@@ -130,8 +132,8 @@
 	// The scrim's own onkeydown only fires if the scrim has DOM focus, which
 	// never happens in practice (tabindex="-1", never programmatically
 	// focused). A window-level listener is the only reliable way to catch
-	// Escape from keyboard users. Only wired in overlay mode — at ≥1280px
-	// the panel is a permanent column with nothing to collapse.
+	// Escape from keyboard users. Only wired in overlay mode — past the
+	// record dock the panel is a permanent column with nothing to collapse.
 	$effect(() => {
 		if (!expanded || isWide) return;
 		const onKeydown = (e: KeyboardEvent) => {
@@ -146,9 +148,8 @@
   The rail is always rendered (it's the layout anchor for the grid column
   on desktop and the visible strip on mobile). The expanded panel is added
   on top when expanded:
-    - mobile: as a fixed overlay covering 75vw, with a tappable scrim
-    - desktop: as an in-flow sibling that hides the rail behind it,
-      sized to 320px so the grid column grows to match.
+    - below the record dock: as a fixed 280px overlay with a tappable scrim
+    - at the dock: as an in-flow sibling filling its own 280px grid column.
 -->
 <button
 	class="rail"
@@ -180,8 +181,8 @@
 </button>
 
 {#if expanded}
-	<!-- Scrim: only rendered when overlay is in play (i.e. NOT at ≥1280
-	     where the panel is a permanent column). Tap to collapse. -->
+	<!-- Scrim: only rendered when overlay is in play (i.e. NOT past the
+	     record dock where the panel is a permanent column). Tap to collapse. -->
 	{#if !isWide}
 		<button
 			class="scrim"
@@ -194,7 +195,7 @@
 	<aside
 		class="expanded"
 		class:permanent={isWide}
-		transition:fly={{ x: -320, duration: isWide ? 0 : 180 }}
+		transition:fly={{ x: -280, duration: isWide ? 0 : 180 }}
 	>
 		<header class="exp-header">
 			<h3>Public Record</h3>
@@ -292,6 +293,9 @@
 		align-items: center;
 		gap: 2px;
 		width: 44px;
+		/* Never below the touch minimum — the phase column takes the squeeze
+		   (it is designed down to 300; docs/STYLE_GUIDE.md "Layout widths"). */
+		flex-shrink: 0;
 		height: 100%;
 		padding: 6px 0;
 		background: none;
@@ -300,12 +304,10 @@
 		cursor: pointer;
 	}
 
-	@media (min-width: 1024px) {
-		.rail { width: 48px; }
-	}
-
-	/* At ≥1280px the rail goes away entirely — the permanent panel takes its place. */
-	@media (min-width: 1280px) {
+	/* At the record dock the rail goes away entirely — the permanent panel
+	   takes its place. (The rail is 44px — the touch minimum — at every
+	   viewport; docs/STYLE_GUIDE.md "Layout widths".) */
+	@media (min-width: 1040px) {
 		.rail { display: none; }
 	}
 
@@ -377,13 +379,13 @@
 	.rail-shakeup[data-state="past"]    .rail-shakeup-glyph { color: var(--color-text-faint); opacity: 0.8; }
 
 	/* The rail-hidden class is only used in overlay mode (the rail is in the
-	   DOM but we don't visually need it under the overlay). At ≥1280 the
-	   rail is gone entirely via the rule above. */
+	   DOM but we don't visually need it under the overlay). At the record
+	   dock the rail is gone entirely via the rule above. */
 
 	/* ── Scrim (overlay mode only) ──────────────────────────────────────────
-	   Used by both mobile and the 1024–1279 "narrow desktop" range, where
-	   the panel still opens as a fixed overlay. The scrim element is only
-	   *rendered* when !isWide, so we don't need a media query here. */
+	   Used everywhere below the record dock (including the 790–1039 docked-
+	   chat range), where the panel still opens as a fixed overlay. The scrim
+	   element is only *rendered* when !isWide, so no media query here. */
 
 	.scrim {
 		position: fixed;
@@ -406,17 +408,22 @@
 		background: var(--color-bg);
 		border-right: 1px solid var(--color-surface-2);
 		overflow: hidden;
-		/* Default (overlay mode, < 1280px): fixed slide-in from the left. */
+		/* Default (overlay mode, below the record dock): fixed slide-in from
+		   the left at the record width token — the same 280 the docked panel
+		   gets, so the record renders identically everywhere. The uncovered
+		   remainder ("peek") doubles as the scrim's tap-to-close target and
+		   is ≥ 44px on every supported viewport (280 + 44 = 324 ≤ 344). */
 		position: fixed;
 		top: 0;
 		left: 0;
-		width: 75vw;
+		width: 280px;
+		max-width: calc(100vw - 44px);
 		height: 100vh;
 		z-index: 100;
 	}
 
-	/* Permanent column mode at ≥1280: in-flow, sits in its own page-grid
-	   column. The .permanent class is applied by the component when isWide. */
+	/* Permanent column mode at the record dock: in-flow, sits in its own
+	   page-grid column. The .permanent class is applied when isWide. */
 	.expanded.permanent {
 		position: relative;
 		top: auto;

@@ -36,12 +36,13 @@
 	outline-offset: 1px;
 }
 
-/* Full-screen-sheet variant: below 600px a modal this tall (e.g. the
-   Prologue claim step ledger) gets the whole viewport, its own internal
-   scroll region, and a sticky footer so the primary action is always
-   reachable past an on-screen keyboard. At >=600px it reverts to the
-   ordinary centered-card geometry — same three-part layout, just
-   repositioned and capped in size.
+/* Full-screen-sheet variant: below the chat dock (790px) a modal this tall
+   (e.g. the Prologue claim step ledger) gets the whole viewport, its own
+   internal scroll region, and a sticky footer so the primary action is
+   always reachable past an on-screen keyboard. From the dock up it reverts
+   to the ordinary centered-card geometry — same three-part layout, just
+   repositioned, and capped at 440 like every content column
+   (docs/STYLE_GUIDE.md "Layout widths").
    .modal-sheet: the outer box (replaces a local `.modal` position/sizing
      block). .modal-sheet-scroll: the internal scrolling body — put every
      scrollable section (header, steps, etc.) inside it. .modal-sheet-footer:
@@ -72,13 +73,13 @@
 	background: var(--color-surface-sunken);
 	border-top: 1px solid var(--color-border);
 }
-@media (min-width: 600px) {
+@media (min-width: 790px) {
 	.modal-sheet {
 		inset: auto;
 		left: 50%;
 		top: 50%;
 		transform: translate(-50%, -50%);
-		width: min(560px, 94vw);
+		width: min(440px, 94vw);
 		max-height: 90dvh;
 		border: 1px solid var(--color-border-strong);
 		border-radius: 12px;
