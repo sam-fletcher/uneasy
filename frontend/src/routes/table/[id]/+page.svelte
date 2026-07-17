@@ -1068,11 +1068,11 @@
 		.table-body > :global(*) { min-width: 0; min-height: 0; }
 	}
 
-	/* Record dock (1040 ≥ 8 + 280 record + 8 + 360 main + 8 + 360 chat + 8):
-	   the rail/overlay becomes a permanent 280px panel in column 1. */
-	@media (min-width: 1040px) {
+	/* Record dock (1070 ≥ 8 + 316 record + 8 + 360 main + 8 + 360 chat + 8):
+	   the rail/overlay becomes a permanent 316px panel in column 1. */
+	@media (min-width: 1070px) {
 		.table-body.has-record {
-			grid-template-columns: 280px minmax(360px, 380px) minmax(360px, 440px);
+			grid-template-columns: 316px minmax(360px, 380px) minmax(360px, 440px);
 			padding-left: 8px;
 		}
 	}

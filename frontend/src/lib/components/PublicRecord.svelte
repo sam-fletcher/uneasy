@@ -307,7 +307,7 @@
 	/* At the record dock the rail goes away entirely — the permanent panel
 	   takes its place. (The rail is 44px — the touch minimum — at every
 	   viewport; docs/STYLE_GUIDE.md "Layout widths".) */
-	@media (min-width: 1040px) {
+	@media (min-width: 1070px) {
 		.rail { display: none; }
 	}
 
@@ -409,14 +409,16 @@
 		border-right: 1px solid var(--color-surface-2);
 		overflow: hidden;
 		/* Default (overlay mode, below the record dock): fixed slide-in from
-		   the left at the record width token — the same 280 the docked panel
+		   the left at the record width token — the same 316 the docked panel
 		   gets, so the record renders identically everywhere. The uncovered
-		   remainder ("peek") doubles as the scrim's tap-to-close target and
-		   is ≥ 44px on every supported viewport (280 + 44 = 324 ≤ 344). */
+		   remainder ("peek") doubles as the scrim's tap-to-close target: at
+		   the 360 viewport floor it is exactly the 44px touch minimum, and
+		   below that (344 fold covers) the max-width clamp shrinks the panel
+		   instead so the peek never drops under 44. */
 		position: fixed;
 		top: 0;
 		left: 0;
-		width: 280px;
+		width: 316px;
 		max-width: calc(100vw - 44px);
 		height: 100vh;
 		z-index: 100;

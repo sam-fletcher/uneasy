@@ -20,7 +20,7 @@ const SRC = join(__dirname, '..');
 
 // Viewport width queries: only the dock literals (min-width form and the
 // max-width complement), and only in the shell / modal-idiom files.
-const ALLOWED_MEDIA = new Set(['789px', '790px', '1040px']);
+const ALLOWED_MEDIA = new Set(['789px', '790px', '1070px']);
 // Container width queries: the documented thresholds only.
 //   300 — the record-phase content minimum (a squeezed column)
 //   400 — AssetCardSelectable's compact meta cluster

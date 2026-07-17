@@ -102,9 +102,9 @@ and the layout-by-range spec).
 | record-phase content min | 300 | 360 − 44 rail − 2×8. **A content box, not a viewport** — the narrowest box Main-Event/Shake-Up content (every Plan and Scene UI) must render in |
 | record-phase content cap | 380 | 440 − 44 − 2×8; one design target whether or not the rail is present |
 | column cap | 440 | top of the band. No other content column — chat, prologue, modals, profile — is ever wider; extra space becomes centering margins |
-| record width | 280 | frozen by eye 2026-07-17 (no-chip-wrap floor ≈ 246; overlay peek stays ≥ 44 up to 316); overlay = docked panel = this token |
+| record width | 316 | 360 − 44: at the viewport floor the overlay peek is exactly the touch minimum (retuned up from the eye-frozen 280, 2026-07-17; no-chip-wrap floor ≈ 246); overlay = docked panel = this token, home is `RECORD_WIDTH_PX` in `lib/breakpoints.ts` |
 | chat dock | 790 | 44+8+360+8+360+8: chat docks right as soon as both columns fit at the band floor |
-| record dock | 1040 | 8+280+8+360+8+360+8 = 1032, pinned round; the rail/overlay becomes a permanent panel |
+| record dock | 1070 | 8+316+8+360+8+360+8 = 1068, pinned round; the rail/overlay becomes a permanent panel |
 
 Rules:
 
