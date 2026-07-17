@@ -159,7 +159,7 @@
 		isTitles
 			? { title: 'Your main character\'s title', text: marginaliaText }
 			: isLawsRumors
-				? { title: `A new ${isLaw ? 'Law' : 'Rumor'}`, text: lawOrRumorText }
+				? { title: `A new ${isLaw ? 'law' : 'rumor'}`, text: lawOrRumorText }
 				: null
 	);
 
@@ -329,10 +329,10 @@
 										<textarea
 											rows="2"
 											bind:value={lawOrRumorText}
-											placeholder={isLaw ? 'State the new law' : 'State the new rumor'}
+											placeholder={isLaw ? 'Describe the law' : 'Describe the rumor'}
 											maxlength={TEXT_LIMITS.LONG_TEXT}
 										></textarea>
-										<span class="hint">Describe the {isLaw ? 'law' : 'rumor'}.</span>
+										<span class="hint">Whatever you write can only be disputed by another {isLaw ? 'law' : 'rumor'}.</span>
 									</label>
 								{:else if step.kind === 'card' && cardSlot}
 									<SuggestionPicker
