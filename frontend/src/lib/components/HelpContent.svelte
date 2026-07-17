@@ -366,16 +366,10 @@
 
 	.body { color: var(--color-text); line-height: 1.55; }
 
-	/* Lobby (inline): no reserved min-height — that pushed the feedback footer far
-	   down shorter tabs, forcing a scroll through blank space to reach it.
-	   Instead the footer is sticky to the bottom of the scrolling phase view, so
-	   it stays in sight on every tab. */
-	.help:not(.panel) .help-footer {
-		position: sticky;
-		bottom: 0;
-		padding-bottom: 0.75rem;
-		background: var(--color-bg);
-	}
+	/* Lobby (inline): the footer sits in normal flow right below the help body.
+	   No reserved min-height (blank space on short tabs) and no sticky pinning
+	   (it floated over content while the phase view scrolled) — content height
+	   varies per tab and the footer simply follows it. */
 
 	/* Panel (? sheet) on mobile: the help is a fixed height that fills the sheet,
 	   and the BODY is the only scroll region. Short tabs leave non-scrollable
