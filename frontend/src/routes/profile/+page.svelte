@@ -265,7 +265,7 @@
 				{/if}
 			</div>
 			<p class="hint push-hint">
-				The cadence above applies to your whole account; push must be turned
+				The cadence applies to your whole account; push must be turned
 				on separately on each device/browser you want reminders on.
 			</p>
 		</section>

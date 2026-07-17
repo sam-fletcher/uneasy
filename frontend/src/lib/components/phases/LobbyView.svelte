@@ -180,8 +180,9 @@
 
 	.tag {
 		font-size: 0.7rem;
-		background: var(--color-border-warm);
-		color: var(--color-accent);
+		background: var(--color-chip-violet-bg);
+		border: 1px solid var(--color-chip-violet-border);
+		color: var(--color-chip-violet-text);
 		padding: 0.1rem 0.4rem;
 		border-radius: 3px;
 		text-transform: uppercase;
