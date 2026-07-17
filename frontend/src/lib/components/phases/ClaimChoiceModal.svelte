@@ -10,8 +10,10 @@
 
   Each step collapses to a one-line summary once its trim checks pass; the
   rulebook allows the steps in any order, so any header can be tapped open
-  at any time, and completing the open step just auto-advances to the next
-  incomplete one as a navigation nicety, not a gate.
+  at any time. Navigation between steps is explicit — a Next button in the
+  open step's body — never reactive: an earlier draft auto-advanced the
+  moment a step's trim check passed, which collapsed steps after a single
+  keystroke and made completed steps impossible to reopen.
 
   Submits everything in a single choosePrologue call, unchanged.
 -->
@@ -80,12 +82,8 @@
 	let lawOrRumorText = $state('');
 	let cardSlots = $state<CardSlot[]>([]);
 
-	// Which step is currently expanded for editing. Null briefly before the
-	// seed effect below picks the first incomplete step.
+	// Which step is currently expanded for editing; null = all collapsed.
 	let openStepKey = $state<string | null>(null);
-	// Plain (non-reactive) tracker read only inside the auto-advance effect,
-	// to detect the moment the *currently open* step flips to complete.
-	let lastOpenComplete = false;
 
 	const choiceAssetType = $derived(sheet.choice_asset_type.toLowerCase() as AssetType);
 
@@ -109,8 +107,8 @@
 			suggestions: [],
 			text: '',
 		}));
-		openStepKey = null;
-		lastOpenComplete = false;
+		// The asset step is always first and always starts incomplete.
+		openStepKey = 'asset';
 		seededFor = choice.name;
 	});
 
@@ -159,21 +157,23 @@
 
 	const marginaliaStep = $derived(
 		isTitles
-			? { title: 'A title held by your main character', text: marginaliaText }
+			? { title: 'Your main character\'s title', text: marginaliaText }
 			: isLawsRumors
 				? { title: `A new ${isLaw ? 'Law' : 'Rumor'}`, text: lawOrRumorText }
 				: null
 	);
 
+	// Card-step titles omit the glyph — the markup renders it as a styled
+	// (red/black) card-glyph span in front of the title instead.
 	const steps = $derived(
 		deriveClaimSteps({
-			assetTitle: `Your new ${sheet.choice_asset_type} asset`,
+			assetTitle: `Your new ${sheet.choice_asset_type}`,
 			assetText,
 			assetMarginalia,
 			marginalia: marginaliaStep,
 			cards: cardSlots.map(slot => ({
 				key: `${slot.suit}::${slot.value}`,
-				title: cardLabel(slot.suit, slot.value),
+				title: `Your new ${suitTypeLabel(slot.suit)}`,
 				isTake: slot.isTake,
 				text: slot.text,
 			})),
@@ -183,34 +183,27 @@
 	const doneCount = $derived(steps.filter(s => s.complete).length);
 	const ready = $derived(steps.length > 0 && doneCount === steps.length);
 
-	// Auto-advance: once the currently open step becomes complete, move to
-	// the next incomplete one (or collapse everything once all are done).
-	// This is pure navigation convenience — any header stays tappable at any
-	// time (decision 4: the rulebook allows the steps in any order), and a
-	// stale "still need…" note is cleared on every draft change.
+	// A stale "Still need…" note would mislead once the player keeps editing,
+	// so any draft change (anything that re-derives the steps) clears it.
 	$effect(() => {
-		const s = steps;
+		void steps;
 		claimBlockedReason = '';
-		if (s.length === 0) return;
-		if (openStepKey === null) {
-			openStepKey = s.find(x => !x.complete)?.key ?? null;
-			lastOpenComplete = s.find(x => x.key === openStepKey)?.complete ?? false;
-			return;
-		}
-		const openStep = s.find(x => x.key === openStepKey);
-		if (!openStep) return;
-		if (openStep.complete && !lastOpenComplete) {
-			const idx = s.indexOf(openStep);
-			const next = s.slice(idx + 1).find(x => !x.complete) ?? s.find(x => !x.complete);
-			openStepKey = next?.key ?? null;
-			lastOpenComplete = next ? next.complete : false;
-			return;
-		}
-		lastOpenComplete = openStep.complete;
 	});
 
 	function openStep(key: string) {
 		openStepKey = key;
+	}
+
+	/** The step the Next button should jump to from `key`: the next incomplete
+	 *  step below it, wrapping back to earlier incomplete ones; null when
+	 *  everything else is done (Next becomes Done and just collapses). */
+	function nextIncompleteAfter(key: string) {
+		const idx = steps.findIndex(x => x.key === key);
+		return (
+			steps.slice(idx + 1).find(x => !x.complete) ??
+			steps.find(x => !x.complete && x.key !== key) ??
+			null
+		);
 	}
 
 	async function submit() {
@@ -267,30 +260,15 @@
 			<p class="choice-desc">{choice.description}</p>
 		{/if}
 
-		<div class="summary-chips">
-			{#each choice.cards as c}
-				{@const preview = stealPreview(c.suit, c.value, cards, assets, players)}
-				<div class="summary-chip">
-					<span class="card-glyph" data-color={suitColor(c.suit)}>{cardLabel(c.suit, c.value)}</span>
-					<span class="summary-chip-text">
-						{#if !preview}
-							make a new {suitTypeLabel(c.suit)}
-						{:else if preview.assetName}
-							takes <em>{preview.assetName}</em> from {preview.ownerName}
-						{:else}
-							already held by {preview.ownerName}
-						{/if}
-					</span>
-				</div>
-			{/each}
-		</div>
-
 		<div class="step-ledger">
 			{#each steps as step, idx (step.key)}
 				{#if step.isTake}
 					{@const slot = cardSlots.find(s => cardStepKey(s.suit, s.value) === step.key)}
 					{@const preview = slot ? stealPreview(slot.suit, slot.value, cards, assets, players) : null}
 					<section class="step take">
+						{#if slot}
+							<span class="card-glyph" data-color={suitColor(slot.suit)}>{cardLabel(slot.suit, slot.value)}</span>
+						{/if}
 						<span class="step-title">{step.title}</span>
 						<span class="step-summary">
 							—
@@ -299,11 +277,14 @@
 							{:else if preview}
 								already held by {preview.ownerName}.
 							{/if}
-							Nothing to write.
 						</span>
 					</section>
 				{:else}
 					{@const isOpen = openStepKey === step.key}
+					{@const cardSlot =
+						step.kind === 'card'
+							? cardSlots.find(s => cardStepKey(s.suit, s.value) === step.key)
+							: null}
 					<section class="step" class:open={isOpen} class:done={step.complete}>
 						<button
 							type="button"
@@ -313,14 +294,17 @@
 							onclick={() => openStep(step.key)}
 						>
 							<span class="step-marker">{step.complete ? '✓' : idx + 1}</span>
+							{#if cardSlot}
+								<span class="card-glyph" data-color={suitColor(cardSlot.suit)}>{cardLabel(cardSlot.suit, cardSlot.value)}</span>
+							{/if}
 							<span class="step-title">{step.title}</span>
 							{#if !isOpen && step.complete}
 								<span class="step-summary">{step.summary}</span>
-								<span class="step-edit">Edit</span>
 							{/if}
 						</button>
 
 						{#if isOpen}
+							{@const nextStep = nextIncompleteAfter(step.key)}
 							<div class="step-body" id={`step-body-${idx}`}>
 								{#if step.kind === 'asset'}
 									<AssetCreationForm
@@ -350,18 +334,25 @@
 										></textarea>
 										<span class="hint">Describe the {isLaw ? 'law' : 'rumor'}.</span>
 									</label>
-								{:else if step.kind === 'card'}
-									{@const slot = cardSlots.find(s => cardStepKey(s.suit, s.value) === step.key)}
-									{#if slot}
-										<SuggestionPicker
-											suggestions={slot.suggestions}
-											bind:value={slot.text}
-											loading={loadingSuggestions}
-											customPlaceholder={`Name your ${suitTypeLabel(slot.suit)}`}
-											disabled={submitting}
-										/>
-									{/if}
+								{:else if step.kind === 'card' && cardSlot}
+									<SuggestionPicker
+										suggestions={cardSlot.suggestions}
+										bind:value={cardSlot.text}
+										loading={loadingSuggestions}
+										customPlaceholder={`Name your ${suitTypeLabel(cardSlot.suit)}`}
+										disabled={submitting}
+									/>
 								{/if}
+
+								<div class="step-next">
+									<button
+										type="button"
+										class="action-btn secondary"
+										onclick={() => (openStepKey = nextStep?.key ?? null)}
+									>
+										{nextStep ? 'Next' : 'Done'}
+									</button>
+								</div>
 							</div>
 						{/if}
 					</section>
@@ -411,19 +402,6 @@
 		font-size: 0.85rem;
 		line-height: 1.4;
 	}
-
-	.summary-chips {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-		padding: 0.6rem 0.75rem;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-	}
-	.summary-chip { display: flex; align-items: center; gap: 0.5rem; }
-	.summary-chip-text { font-size: 0.85rem; color: var(--color-text); }
-	.summary-chip-text :global(em) { font-style: italic; }
 
 	.step-ledger { display: flex; flex-direction: column; gap: 0.5rem; }
 
@@ -485,14 +463,13 @@
 	}
 	.step-summary :global(em) { font-style: italic; }
 	.step.take .step-summary { white-space: normal; }
-	.step-edit {
-		flex-shrink: 0;
-		color: var(--color-accent);
-		font-size: 0.8rem;
-		text-decoration: underline;
-	}
 
 	.step-body { padding: 0 0.75rem 0.75rem; }
+	.step-next {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: 0.6rem;
+	}
 
 	.field { display: flex; flex-direction: column; gap: 0.3rem; }
 	.hint { font-size: 0.75rem; color: var(--color-text-muted); }
