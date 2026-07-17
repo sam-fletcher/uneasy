@@ -23,7 +23,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import { recordDockQuery } from '$lib/breakpoints';
+	import { recordDockQuery, RECORD_WIDTH_PX } from '$lib/breakpoints';
 	import type { RecordRow, Plan, Player, GamePhase } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
 	import { playerColorByID } from '$lib/playerColor';
@@ -195,7 +195,7 @@
 	<aside
 		class="expanded"
 		class:permanent={isWide}
-		transition:fly={{ x: -280, duration: isWide ? 0 : 180 }}
+		transition:fly={{ x: -RECORD_WIDTH_PX, duration: isWide ? 0 : 180 }}
 	>
 		<header class="exp-header">
 			<h3>Public Record</h3>

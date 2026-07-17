@@ -93,4 +93,20 @@ describe('layout width tokens', () => {
 		// line up with it (min-width uses the dock, max-width its complement).
 		expect(new Set([`${chat - 1}px`, `${chat}px`, `${record}px`])).toEqual(ALLOWED_MEDIA);
 	});
+
+	// The record width (RECORD_WIDTH_PX) can't be read by CSS, so it has two
+	// mirrors: PublicRecord's overlay width and the table grid's record
+	// column. Retuning it means changing the constant and both mirrors —
+	// these assertions point at whichever is stale. The dock check keeps the
+	// derived breakpoint honest: dock ≥ 8+W+8+360+8+360+8.
+	it('record width CSS mirrors agree with lib/breakpoints.ts', () => {
+		const bp = readFileSync(join(SRC, 'lib/breakpoints.ts'), 'utf8');
+		const w = Number(bp.match(/RECORD_WIDTH_PX = (\d+)/)?.[1]);
+		const dock = Number(bp.match(/RECORD_DOCK_PX = (\d+)/)?.[1]);
+		const publicRecord = readFileSync(join(SRC, 'lib/components/PublicRecord.svelte'), 'utf8');
+		expect(publicRecord, `PublicRecord .expanded should be width: ${w}px`).toContain(`width: ${w}px`);
+		const tablePage = readFileSync(join(SRC, 'routes/table/[id]/+page.svelte'), 'utf8');
+		expect(tablePage, `record grid column should be ${w}px`).toContain(`grid-template-columns: ${w}px`);
+		expect(dock, 'RECORD_DOCK_PX must cover 8+W+8+360+8+360+8').toBeGreaterThanOrEqual(w + 752);
+	});
 });
