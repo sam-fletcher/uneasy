@@ -323,13 +323,16 @@
 {/if}
 
 <style>
-	/* One column, always. 750px = double the 375px design minimum: wide
-	   enough for two mobile-sized table tiles side by side (the .table-list
-	   auto-fill grid handles that), and forms gain nothing from going
-	   wider, so every section caps there. */
 	/* A content column like any other: capped at 440 and centered
-	   (docs/STYLE_GUIDE.md "Layout widths"). */
+	   (docs/STYLE_GUIDE.md "Layout widths"). From the chat dock up — the
+	   system's "two columns fit" boundary — the page widens to two column
+	   widths so the tables grid can go 2-up, while the form sections stay
+	   phone-width (forms gain nothing from width). */
 	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:440px; margin: 0 auto; padding-top:1rem; }
+	@media (min-width: 790px) {
+		.profile { max-width: 888px; } /* 440 + 8 gutter + 440 */
+		.profile > :not(.tables-card) { width: 100%; max-width: 440px; margin-inline: auto; }
+	}
 	.wordmark {
 		text-align: center;
 		font-family: var(--font-display);
@@ -363,7 +366,7 @@
 	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:440px; margin:0 auto; padding-top:2rem; }
 	.status { color:var(--color-accent); font-size:0.9rem; }
 	/* The field label sits on its own line so the value and its buttons get
-	   the full width instead of cramping — the page column is phone-width
+	   the full width instead of cramping — the form sections stay phone-width
 	   (≤440) at every viewport, so this is unconditional. */
 	.label { width:100%; }
 	ul { list-style:none; }
@@ -375,10 +378,11 @@
 	   actor" chip treatment), online = thin green ring, your-move = warm
 	   card fill, ended = whole card muted with the other treatments
 	   suppressed. */
-	/* Tiles: sized to look right at the 375px viewport minimum (~330px of
-	   card content), so two of them sit side by side once the section nears
-	   its 750px cap. min(330px, 100%) keeps the minimum from forcing
-	   overflow on phones. */
+	/* Tiles: ~330px is the card content's intrinsic minimum (sized at the
+	   phone floor), so the auto-fill grid is 1-up while the section is a
+	   single 440 column and 2-up (~420 each, inside the phone band) once
+	   the page widens at the dock. min(330px, 100%) keeps the minimum from
+	   forcing overflow on phones. */
 	.table-list {
 		display:grid;
 		grid-template-columns:repeat(auto-fill, minmax(min(330px, 100%), 1fr));
