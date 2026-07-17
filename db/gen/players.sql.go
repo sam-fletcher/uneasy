@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"uneasy/model"
 )
 
 const createPlayer = `-- name: CreatePlayer :one
@@ -214,7 +215,7 @@ func (q *Queries) IsPlayerInGame(ctx context.Context, arg IsPlayerInGameParams) 
 }
 
 const listPlayersByAccount = `-- name: ListPlayersByAccount :many
-SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id, g.join_code
+SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id, g.join_code, g.phase
 FROM players p
 JOIN games g ON g.id = p.game_id
 WHERE p.account_id = $1
@@ -233,6 +234,7 @@ type ListPlayersByAccountRow struct {
 	ShakeUpTokens  int16              `db:"shake_up_tokens" json:"shake_up_tokens"`
 	LastReadPostID int64              `db:"last_read_post_id" json:"last_read_post_id"`
 	JoinCode       string             `db:"join_code" json:"join_code"`
+	Phase          model.GamePhase    `db:"phase" json:"phase"`
 }
 
 func (q *Queries) ListPlayersByAccount(ctx context.Context, accountID int64) ([]ListPlayersByAccountRow, error) {
@@ -256,6 +258,7 @@ func (q *Queries) ListPlayersByAccount(ctx context.Context, accountID int64) ([]
 			&i.ShakeUpTokens,
 			&i.LastReadPostID,
 			&i.JoinCode,
+			&i.Phase,
 		); err != nil {
 			return nil, err
 		}

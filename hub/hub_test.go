@@ -124,6 +124,66 @@ func TestSlowClientDropCanEmptyTheHub(t *testing.T) {
 
 // drain empties and returns everything currently buffered on ch without
 // blocking.
+// closed reports whether a client's send channel has been closed by the hub —
+// the observable signal that run() has fully processed that client's removal.
+func closed(ch chan []byte) bool {
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return true
+			}
+		default:
+			return false
+		}
+	}
+}
+
+func TestPresenceRefcountsAccountConnections(t *testing.T) {
+	m := NewManager()
+	h := m.GetOrCreate(7)
+	// Account 100 has two tabs open; account 200 has one.
+	c1 := NewClient(h, nil, dbgen.Player{ID: 1, DisplayName: "p", AccountID: 100}, slog.Default())
+	c2 := NewClient(h, nil, dbgen.Player{ID: 2, DisplayName: "p", AccountID: 100}, slog.Default())
+	c3 := NewClient(h, nil, dbgen.Player{ID: 3, DisplayName: "p", AccountID: 200}, slog.Default())
+	h.Register(c1)
+	h.Register(c2)
+	h.Register(c3)
+	waitFor(t, func() bool { return m.IsAccountOnline(100) && m.IsAccountOnline(200) },
+		"registered accounts never showed online")
+
+	// Closing one of account 100's two tabs must leave it online.
+	h.Unregister(c1)
+	waitFor(t, func() bool { return closed(c1.send) }, "unregister of c1 never processed")
+	if !m.IsAccountOnline(100) {
+		t.Fatal("account with a second live tab went offline after closing one tab")
+	}
+
+	// Closing the last tab takes the account offline.
+	h.Unregister(c3)
+	waitFor(t, func() bool { return !m.IsAccountOnline(200) },
+		"account never went offline after its only tab closed")
+	h.Unregister(c2)
+	waitFor(t, func() bool { return !m.IsAccountOnline(100) },
+		"account never went offline after its last tab closed")
+}
+
+func TestPresenceDropsForceDroppedClient(t *testing.T) {
+	m := NewManager()
+	h := m.GetOrCreate(7)
+	c := NewClient(h, nil, dbgen.Player{ID: 1, DisplayName: "p", AccountID: 100}, slog.Default())
+	h.Register(c)
+	waitFor(t, func() bool { return m.IsAccountOnline(100) }, "account never showed online")
+
+	// Fill the client's send buffer so the next broadcast force-drops it.
+	for len(c.send) < cap(c.send) {
+		c.send <- []byte("x")
+	}
+	h.Broadcast([]byte(`{"type":"t"}`))
+	waitFor(t, func() bool { return !m.IsAccountOnline(100) },
+		"force-dropped client's account never went offline")
+}
+
 func drain(ch chan []byte) [][]byte {
 	var out [][]byte
 	for {

@@ -18,11 +18,28 @@ export interface Account {
 	vapid_public_key: string;
 }
 
+/** One roster entry on a profile-page table card. */
+export interface MyTablePlayer {
+	id: number;
+	display_name: string;
+	token_color: string | null;
+	seat_order: number | null;
+	/** Account-level WebSocket presence: they have *some* table open now. */
+	online: boolean;
+}
+
 export interface MyTable {
 	game_id: number;
 	join_code: string;
 	is_facilitator: boolean;
 	joined_at: string;
+	phase: GamePhase;
+	/** The viewer's own player id in this game. */
+	player_id: number;
+	/** Full roster in join order — the facilitator is always first. */
+	players: MyTablePlayer[];
+	/** Players whose action the game is blocked on (empty when ended). */
+	waiting_on_player_ids: number[];
 }
 
 export interface Game {

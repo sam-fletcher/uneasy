@@ -44,11 +44,44 @@ const (
 type Manager struct {
 	mu   sync.RWMutex
 	hubs map[int64]*Hub
+	// presence refcounts live WebSocket connections per account, across every
+	// table (app-wide, not per-game): an account with two tabs open counts 2.
+	// Maintained by each hub's run() goroutine on the register / unregister /
+	// force-drop paths, read by HTTP handlers via IsAccountOnline.
+	presence map[int64]int
 }
 
 // NewManager returns a ready Manager.
 func NewManager() *Manager {
-	return &Manager{hubs: make(map[int64]*Hub)}
+	return &Manager{hubs: make(map[int64]*Hub), presence: make(map[int64]int)}
+}
+
+// IsAccountOnline reports whether the account has at least one live WebSocket
+// connection to any table. "Online" therefore means "has a table open right
+// now" — a user reading their profile page (no WS) counts as offline.
+func (m *Manager) IsAccountOnline(accountID int64) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.presence[accountID] > 0
+}
+
+// presenceInc / presenceDec adjust the connection refcount for an account.
+// Called only from hub run() goroutines, mirroring the exact points where a
+// client enters or leaves a hub's clients map so the two can't drift.
+func (m *Manager) presenceInc(accountID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.presence[accountID]++
+}
+
+func (m *Manager) presenceDec(accountID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.presence[accountID] <= 1 {
+		delete(m.presence, accountID)
+		return
+	}
+	m.presence[accountID]--
 }
 
 // GetOrCreate returns the hub for tableID, creating and starting it if needed.
@@ -124,12 +157,14 @@ func (h *Hub) run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = struct{}{}
+			h.manager.presenceInc(client.player.AccountID)
 			h.pushPresence()
 
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
+				h.manager.presenceDec(client.player.AccountID)
 				if h.dieIfEmpty() {
 					return
 				}
@@ -145,6 +180,7 @@ func (h *Hub) run() {
 					// Client's send buffer is full — drop it.
 					close(client.send)
 					delete(h.clients, client)
+					h.manager.presenceDec(client.player.AccountID)
 					dropped = true
 				}
 			}

@@ -48,6 +48,7 @@
 	import HelpButton from '$lib/components/HelpButton.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
 	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
+	import PhaseBadge from '$lib/components/shared/PhaseBadge.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import { provideSecretCounts } from '$lib/secretCountsContext';
@@ -606,15 +607,6 @@
 		}
 	}
 
-	// ── Shared display helpers ────────────────────────────────────────────────
-	const phaseLabels: Record<string, string> = {
-		lobby: 'Lobby',
-		tone_setting: 'Tone Setting',
-		prologue: 'Prologue',
-		main_event: 'Main Event',
-		shake_up: 'Shake-Up',
-		ended: 'Game Over',
-	};
 </script>
 
 <div class="table-page">
@@ -666,7 +658,7 @@
 		</div>
 		{#if game}
 			<div class="game-info" class:has-war={$activeWarCount + $pendingWarCount > 0}>
-				<span class="phase-badge">{#each (phaseLabels[game.phase] ?? game.phase).split(' ') as word, i}{#if i}{' '}{/if}<span>{word}</span>{/each}</span>
+				<PhaseBadge phase={game.phase} />
 				<button class="tones-button" onclick={() => tonesOpen = true} aria-label="Open tones">
 					<span class="lbl">Tones</span>
 				</button>
@@ -1078,32 +1070,11 @@
 		flex-wrap: wrap;
 	}
 
-	/* Two-line, square-ish badge so it stays as narrow as a button and fits the
-	   status row on phones. The phase label's spaces are rendered as line breaks. */
-	.phase-badge {
-		display: inline-flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 0.1em;
-		min-height: 32px;
-		/* Bottom padding is trimmed because capitals have no descenders — this
-		   keeps the space above, between, and below the two words even. */
-		padding: 0.3em 0.55em 0.2em;
-		background: var(--color-border-warm);
-		color: var(--color-accent);
-		border-radius: 4px;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		font-family: var(--font-serif);
-		font-size: 0.76rem;
-		line-height: 1;
-		white-space: nowrap;
-	}
-	/* Wars are rare; when one is active on a phone, drop the badge so the War
-	   button takes its slot — the row never exceeds four items. */
+	/* Wars are rare; when one is active on a phone, drop the badge (a shared
+	   component, hence :global) so the War button takes its slot — the row
+	   never exceeds four items. */
 	@media (max-width: 599px) {
-		.game-info.has-war .phase-badge { display: none; }
+		.game-info.has-war :global(.phase-badge) { display: none; }
 	}
 
 	.tones-button {

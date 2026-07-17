@@ -170,6 +170,7 @@
 	--color-accent-hover: var(--gold-300);   /* lighter gold for hovers */
 	--color-danger: var(--red-300);          /* errors + the at-risk game state (one concept, ruling 3) */
 	--color-success: var(--green-300);       /* confirmations */
+	--color-online: var(--green-500);        /* presence ring — online player pills (profile table cards) */
 	--color-info: var(--blue-500);           /* informational */
 	--color-neutral: var(--neutral-500);     /* default/offline/unset state — status dots, disabled borders */
 	--color-leveraged: var(--orange-400);    /* spent/committed-but-refreshable: leveraged asset border + retinue badge */

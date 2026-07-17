@@ -8,6 +8,8 @@
 		createTable, joinTable,
 		type Account, type MyTable,
 	} from '$lib/api';
+	import { playerColor } from '$lib/playerColor';
+	import PhaseBadge from '$lib/components/shared/PhaseBadge.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
@@ -29,6 +31,17 @@
 	let busy = $state(false);
 	let notice = $state('');
 	let feedbackOpen = $state(false);
+
+	// ── Table cards ──────────────────────────────────────────────────────────
+	// Live games first; within each group keep the server's most-recently-
+	// joined-first order (Array.prototype.sort is stable).
+	const sortedTables = $derived(
+		[...tables].sort((a, b) => Number(a.phase === 'ended') - Number(b.phase === 'ended'))
+	);
+
+	function isYourMove(t: MyTable): boolean {
+		return t.phase !== 'ended' && t.waiting_on_player_ids.includes(t.player_id);
+	}
 
 	// ── Notifications ────────────────────────────────────────────────────────
 	// The cadence <select> works in strings ('off' | '1' | '3' | '8' | '24' |
@@ -171,14 +184,33 @@
 		{#if notice}<p class="status">{notice}</p>{/if}
 
 		{#if tables.length > 0}
-			<section class="card">
+			<section class="card tables-card">
 				<h2>Your tables</h2>
-				<ul>
-					{#each tables as t (t.game_id)}
+				<ul class="table-list">
+					{#each sortedTables as t (t.game_id)}
+						{@const ended = t.phase === 'ended'}
 						<li>
-							<a href={`/table/${t.game_id}`}>
-								Table {t.join_code}
-								{#if t.is_facilitator}<span class="tag">facilitator</span>{/if}
+							<a class="table-card" class:your-move={isYourMove(t)} class:ended href={`/table/${t.game_id}`}>
+								<span class="table-id">
+									<span class="table-code">Table <span class="code-value">{t.join_code}</span></span>
+									<PhaseBadge phase={t.phase} />
+								</span>
+								<span class="pills">
+									{#each t.players as p (p.id)}
+										{@const online = !ended && (p.online || p.id === t.player_id)}
+										{@const waited = !ended && t.waiting_on_player_ids.includes(p.id)}
+										<span
+											class="pill"
+											class:online
+											class:waited
+											style:--pill-color={playerColor(p)}
+											aria-label={`${p.display_name}${p.id === t.player_id ? ' (you)' : ''}${online ? ', online' : ''}${waited ? ', game is waiting on them' : ''}`}
+										>
+											<span class="pill-dot" aria-hidden="true"></span>
+											<span class="pill-name">{p.display_name}</span>
+										</span>
+									{/each}
+								</span>
 							</a>
 						</li>
 					{/each}
@@ -291,7 +323,11 @@
 {/if}
 
 <style>
-	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:600px; margin: 0 auto; padding-top:1rem; }
+	/* One column, always. 750px = double the 375px design minimum: wide
+	   enough for two mobile-sized table tiles side by side (the .table-list
+	   auto-fill grid handles that), and forms gain nothing from going
+	   wider, so every section caps there. */
+	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:750px; margin: 0 auto; padding-top:1rem; }
 	.wordmark {
 		text-align: center;
 		font-family: var(--font-display);
@@ -322,7 +358,6 @@
 	.row span:not(.label) { flex:1; min-width:0; }
 	.push-row { border-bottom: none; }
 	.push-hint { margin-top: -0.3rem; }
-	.tag { color:var(--color-accent); font-size:0.75rem; margin-left:0.5rem; }
 	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:600px; margin:0 auto; padding-top:2rem; }
 	.status { color:var(--color-accent); font-size:0.9rem; }
 	/* On narrow screens, let the field label sit on its own line so the value
@@ -331,8 +366,97 @@
 		.label { width:100%; }
 	}
 	ul { list-style:none; }
-	li a { color:var(--color-text); display:block; padding:0.5rem 0; text-decoration:none; }
-	li a:hover { color:var(--color-accent); }
+
+	/* ── Table cards ────────────────────────────────────────────────────────
+	   One card per game, echoing the in-table header: table id + shared
+	   PhaseBadge stacked on the left, the roster as a pill grid on the
+	   right. State channels: waited pill = gold tint (the app's "current
+	   actor" chip treatment), online = thin green ring, your-move = warm
+	   card fill, ended = whole card muted with the other treatments
+	   suppressed. */
+	/* Tiles: sized to look right at the 375px viewport minimum (~330px of
+	   card content), so two of them sit side by side once the section nears
+	   its 750px cap. min(330px, 100%) keeps the minimum from forcing
+	   overflow on phones. */
+	.table-list {
+		display:grid;
+		grid-template-columns:repeat(auto-fill, minmax(min(330px, 100%), 1fr));
+		gap:0.6rem;
+	}
+	.table-card {
+		display:flex;
+		align-items:center;
+		flex-wrap:wrap;
+		gap:0.6rem 1.25rem;
+		padding:0.7rem 0.75rem;
+		border:1px solid var(--color-border);
+		border-radius:var(--radius-md);
+		color:var(--color-text);
+		text-decoration:none;
+	}
+	.table-card:hover { border-color:var(--color-accent-dim); }
+	.table-card:focus-visible { outline:2px solid var(--color-accent); outline-offset:1px; }
+	/* The game is blocked on you: warm emphasis fill, same semantics as the
+	   in-table selected/active gold surfaces. */
+	.table-card.your-move {
+		background:var(--color-surface-active);
+		border-color:var(--color-accent-dim);
+	}
+	.table-card.ended { opacity:0.55; }
+	.table-card.ended:hover { opacity:0.8; }
+
+	.table-id {
+		display:flex;
+		flex-direction:column;
+		/* Badge centres under the (wider) table name. */
+		align-items:center;
+		gap:0.5rem;
+		flex-shrink:0;
+	}
+	.table-code { font-size:0.85rem; color:var(--color-text-muted); }
+	.code-value { color:var(--color-text); letter-spacing:0.12em; }
+
+	/* Roster pills fill the space right of the table id (the card's column
+	   gap keeps a healthy minimum distance) and centre in it both ways,
+	   wrapping to as many rows as the names need. */
+	.pills {
+		flex:1;
+		display:flex;
+		flex-wrap:wrap;
+		justify-content:center;
+		align-items:center;
+		align-content:center;
+		gap:0.4rem;
+	}
+	.pill {
+		display:inline-flex;
+		align-items:center;
+		gap:0.35rem;
+		padding:0.28rem 0.6rem;
+		font-size:0.8rem;
+		background:var(--color-surface-2);
+		border:1px solid var(--color-border);
+		border-radius:999px;
+	}
+	/* Online = ring around the pill; its *presence* is the signal (survives
+	   colour-blindness), the muted green echoes the retinue's online dot. */
+	.pill.online { box-shadow:0 0 0 1px var(--color-online); }
+	.pill.waited {
+		background:var(--color-chip-gold-bg);
+		border-color:var(--color-chip-gold-border);
+	}
+	.pill-dot {
+		width:8px; height:8px;
+		border-radius:50%;
+		background:var(--pill-color, var(--color-text-muted));
+		flex-shrink:0;
+	}
+	.pill-name {
+		max-width:10ch;
+		overflow:hidden;
+		white-space:nowrap;
+		text-overflow:ellipsis;
+	}
 	.join { display:flex; gap:0.5rem; }
 	/* Secondary "create a table" action, set apart below the primary join row. */
 	.create-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--color-border); }

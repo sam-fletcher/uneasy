@@ -291,7 +291,7 @@ func setupRouter(
 			r.With(credentialLimiter).Post("/accounts", handler.CreateAccount(store))
 			r.Get("/accounts/me", handler.GetMe())
 			r.Patch("/accounts/me", handler.UpdateMe(store))
-			r.Get("/accounts/me/tables", handler.ListMyTables(store))
+			r.Get("/accounts/me/tables", handler.ListMyTables(store, manager))
 			r.With(credentialLimiter).Post("/sessions", handler.CreateSession(store))
 			r.Delete("/sessions", handler.DeleteSession(store))
 

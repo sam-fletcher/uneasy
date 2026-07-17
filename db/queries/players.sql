@@ -15,7 +15,7 @@ SELECT * FROM players WHERE id = $1;
 SELECT * FROM players WHERE game_id = $1 ORDER BY joined_at;
 
 -- name: ListPlayersByAccount :many
-SELECT p.*, g.join_code
+SELECT p.*, g.join_code, g.phase
 FROM players p
 JOIN games g ON g.id = p.game_id
 WHERE p.account_id = $1

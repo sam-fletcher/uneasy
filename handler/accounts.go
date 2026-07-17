@@ -13,7 +13,9 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
+	"uneasy/model"
 )
 
 const sessionCookieMaxAge = int(365 * 24 * time.Hour / time.Second)
@@ -237,7 +239,13 @@ func hashPasswordField(w http.ResponseWriter, r *http.Request, password string) 
 }
 
 // ListMyTables handles GET /api/accounts/me/tables.
-func ListMyTables(s *db.Store) http.HandlerFunc {
+//
+// Each table carries enough context for the profile page to render a useful
+// card: the game's phase, the full roster in join order (facilitator first),
+// who the game is waiting on (ComputeWaitState), and who is online — account
+// -level WebSocket presence, so "online" means "has some table open", not
+// necessarily this one.
+func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
 		if acct == nil {
@@ -251,11 +259,41 @@ func ListMyTables(s *db.Store) http.HandlerFunc {
 		}
 		out := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
+			roster, rErr := s.Q.GetPlayersByGame(r.Context(), row.GameID)
+			if rErr != nil {
+				respondInternalErr(w, r, "could not list table players", rErr)
+				return
+			}
+			players := make([]map[string]any, 0, len(roster))
+			for _, p := range roster {
+				players = append(players, map[string]any{
+					"id":           p.ID,
+					"display_name": p.DisplayName,
+					"token_color":  p.TokenColor,
+					"seat_order":   p.SeatOrder,
+					"online":       m.IsAccountOnline(p.AccountID),
+				})
+			}
+			waitingOn := []int64{}
+			if row.Phase != model.PhaseEnded {
+				ws, wErr := ComputeWaitState(r.Context(), s.Q, row.GameID)
+				if wErr != nil {
+					respondInternalErr(w, r, "could not compute wait state", wErr)
+					return
+				}
+				if ws.ActingPlayerIDs != nil {
+					waitingOn = ws.ActingPlayerIDs
+				}
+			}
 			out = append(out, map[string]any{
-				"game_id":        row.GameID,
-				"join_code":      row.JoinCode,
-				"is_facilitator": row.IsFacilitator,
-				"joined_at":      row.JoinedAt,
+				"game_id":               row.GameID,
+				"join_code":             row.JoinCode,
+				"is_facilitator":        row.IsFacilitator,
+				"joined_at":             row.JoinedAt,
+				"phase":                 row.Phase,
+				"player_id":             row.ID,
+				"players":               players,
+				"waiting_on_player_ids": waitingOn,
 			})
 		}
 		respond(w, http.StatusOK, map[string]any{"tables": out})
