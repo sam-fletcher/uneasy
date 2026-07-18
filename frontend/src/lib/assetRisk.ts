@@ -35,7 +35,9 @@ export function isNeedlesslyAtRisk(asset: Asset): boolean {
  * point an at-risk asset's owner at the exact slot to fill.
  */
 export function firstEmptySlotIndex(asset: Asset): number | null {
-	const filled = new Set(asset.marginalia.map((m) => m.position));
+	// Same defence as isNeedlesslyAtRisk: a marginalia-less asset row (some WS /
+	// create payloads) must not throw inside a derived and break reactivity.
+	const filled = new Set((asset.marginalia ?? []).map((m) => m.position));
 	for (let pos = 1; pos <= 4; pos++) {
 		if (!filled.has(pos)) return pos - 1;
 	}

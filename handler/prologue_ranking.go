@@ -443,7 +443,9 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		respond(w, http.StatusOK, map[string]any{"asset": asset})
+		respond(w, http.StatusOK, map[string]any{
+			"asset": assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{titleMarg}},
+		})
 	}
 }
 

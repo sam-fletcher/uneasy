@@ -89,6 +89,91 @@ func TestSeedMainEvent_RejectsBadRankings(t *testing.T) {
 	assert.Contains(t, err.Error(), "rankings[power]")
 }
 
+func TestSeedPrologueClosing_ParksAtClosingWithNoBoard(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+
+	names := []string{"pc-a-" + randSuffix(), "pc-b-" + randSuffix(), "pc-c-" + randSuffix()}
+	seeded, err := gametest.SeedPrologueClosing(ctx, q, names)
+	require.NoError(t, err)
+
+	// Parked at the closing step of the prologue.
+	assert.Equal(t, model.PhasePrologue, seeded.Game.Phase)
+	require.NotNil(t, seeded.Game.PrologueRankingStep)
+	assert.Equal(t, gamepkg.PrologueStepClosing, *seeded.Game.PrologueRankingStep)
+
+	// Rankings seeded for all three tracks (drives the recap's final standings).
+	rankings, err := q.ListRankingsByGame(ctx, seeded.Game.ID)
+	require.NoError(t, err)
+	byPlayer := rankByPlayer(rankings)
+	assert.Len(t, byPlayer, 3, "power/knowledge/esteem all seeded")
+
+	// Every player holds their four starting assets, one of them the MC.
+	assets, err := q.ListAssetsByGame(ctx, seeded.Game.ID)
+	require.NoError(t, err)
+	assert.Len(t, assets, 4*len(names))
+	mcs := 0
+	for _, a := range assets {
+		if a.IsMainCharacter {
+			mcs++
+		}
+	}
+	assert.Equal(t, len(names), mcs, "one main character per player")
+
+	// No Public Record board yet — this is the invariant that lets a later
+	// all-ready advance run advanceToMainEvent without a dup-key insert.
+	rows, err := q.ListPublicRecordRows(ctx, seeded.Game.ID)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "prologue game must have no record rows")
+}
+
+func TestSeed_WithLawsAndRumors(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+
+	names := []string{"lr-a-" + randSuffix(), "lr-b-" + randSuffix(), "lr-c-" + randSuffix()}
+	seeded, err := gametest.SeedMainEvent(ctx, q, names,
+		gametest.WithLaw("No dueling within the palace walls."),
+		gametest.WithLaw("Grain tithes are halved in a lean year."),
+		gametest.WithRumor("The chancellor keeps two sets of books."),
+	)
+	require.NoError(t, err)
+
+	// Laws are signed by the first player, in insertion order.
+	laws, err := q.ListLaws(ctx, seeded.Game.ID)
+	require.NoError(t, err)
+	require.Len(t, laws, 2)
+	assert.Equal(t, "No dueling within the palace walls.", laws[0].Text)
+	assert.Equal(t, "Grain tithes are halved in a lean year.", laws[1].Text)
+	for _, law := range laws {
+		require.NotNil(t, law.SignatoryID)
+		assert.Equal(t, seeded.Players[0].ID, *law.SignatoryID)
+		assert.Nil(t, law.OriginPlanID, "seeded law has no origin plan")
+	}
+
+	// The rumor is sourced to the last player.
+	rumors, err := q.ListRumors(ctx, seeded.Game.ID)
+	require.NoError(t, err)
+	require.Len(t, rumors, 1)
+	assert.Equal(t, "The chancellor keeps two sets of books.", rumors[0].Text)
+	require.NotNil(t, rumors[0].SourcePlayerID)
+	assert.Equal(t, seeded.Players[len(names)-1].ID, *rumors[0].SourcePlayerID)
+
+	// No options => no seeded laws/rumors (the fixture layer stays opt-in; the
+	// dev handler is what adds the samples by default).
+	plain, err := gametest.SeedMainEvent(ctx, q,
+		[]string{"lr-x-" + randSuffix(), "lr-y-" + randSuffix()})
+	require.NoError(t, err)
+	plainLaws, err := q.ListLaws(ctx, plain.Game.ID)
+	require.NoError(t, err)
+	assert.Empty(t, plainLaws)
+	plainRumors, err := q.ListRumors(ctx, plain.Game.ID)
+	require.NoError(t, err)
+	assert.Empty(t, plainRumors)
+}
+
 func TestSeedShakeUp_Default_MirrorsBeginShakeUp(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)

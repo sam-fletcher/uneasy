@@ -68,6 +68,51 @@ func SeedMainEvent(ctx context.Context, q *dbgen.Queries, usernames []string, op
 	return reload(ctx, q, seeded)
 }
 
+// SeedPrologueClosing creates a game parked at the prologue's closing step
+// ("The Stage is Set"; phase = prologue, prologue_ranking_step = closing) with
+// the given usernames seated as players.
+//
+// Invariants of the returned game (with no options):
+//   - phase = prologue, prologue_ranking_step = closing
+//   - power/knowledge/esteem rankings seeded (so the recap's final-standings
+//     board renders), same spread as SeedMainEvent
+//   - each player holds their four starting assets (main character + one of
+//     each type), so the retinue tallies render
+//   - NO Public Record board, focus player, or closing-ready rows — this is a
+//     pre-Main-Event game, so an actual all-ready advance can run
+//     advanceToMainEvent cleanly (no dup-key board insert)
+//
+// Unlike a game that reached closing by playing the prologue, this skips the
+// choosing flow: there are no prologue claims/cards, main characters carry
+// their seeded names (not the "[Main Character]" placeholder), and no laws or
+// rumors exist. It's a fixture for eyeballing / driving the closing UI, not a
+// faithful mid-prologue board. The WithRankings option still applies.
+func SeedPrologueClosing(
+	ctx context.Context,
+	q *dbgen.Queries,
+	usernames []string,
+	opts ...Option,
+) (SeededGame, error) {
+	cfg := applyOptions(1, opts)
+	cfg.boardSetup = false // the prologue has no Public Record board yet
+	seeded, err := seedBase(ctx, q, usernames, cfg)
+	if err != nil {
+		return SeededGame{}, err
+	}
+	if err := q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		ID: seeded.Game.ID, Phase: model.PhasePrologue,
+	}); err != nil {
+		return SeededGame{}, fmt.Errorf("set phase: %w", err)
+	}
+	step := game.PrologueStepClosing
+	if err := q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
+		ID: seeded.Game.ID, PrologueRankingStep: &step,
+	}); err != nil {
+		return SeededGame{}, fmt.Errorf("set prologue step: %w", err)
+	}
+	return reload(ctx, q, seeded)
+}
+
 // seedBase builds the phase-agnostic skeleton shared by every Seed* function:
 // game, players (seat order 1..N), facilitator, rankings, public record rows,
 // current_row, focus player. It does NOT set the game phase — that is the
@@ -126,18 +171,23 @@ func seedBase(ctx context.Context, q *dbgen.Queries, usernames []string, cfg see
 		return SeededGame{}, err
 	}
 
-	if err := q.CreatePublicRecordRows(ctx, game.ID); err != nil {
-		return SeededGame{}, fmt.Errorf("create record rows: %w", err)
-	}
-	if err := q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
-		ID: game.ID, CurrentRow: cfg.currentRow,
-	}); err != nil {
-		return SeededGame{}, fmt.Errorf("set current row: %w", err)
-	}
-	if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
-		ID: game.ID, FocusPlayerID: &players[0].ID,
-	}); err != nil {
-		return SeededGame{}, fmt.Errorf("set focus player: %w", err)
+	// The Public Record board (rows, current_row, focus player) only exists
+	// from the Main Event onward. Pre-Main-Event phases (the prologue) skip it:
+	// advanceToMainEvent lays it down, and a pre-seeded board would dup-key.
+	if cfg.boardSetup {
+		if err := q.CreatePublicRecordRows(ctx, game.ID); err != nil {
+			return SeededGame{}, fmt.Errorf("create record rows: %w", err)
+		}
+		if err := q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
+			ID: game.ID, CurrentRow: cfg.currentRow,
+		}); err != nil {
+			return SeededGame{}, fmt.Errorf("set current row: %w", err)
+		}
+		if err := q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+			ID: game.ID, FocusPlayerID: &players[0].ID,
+		}); err != nil {
+			return SeededGame{}, fmt.Errorf("set focus player: %w", err)
+		}
 	}
 
 	if err := seedStartingAssets(ctx, q, game.ID, players); err != nil {
@@ -145,6 +195,10 @@ func seedBase(ctx context.Context, q *dbgen.Queries, usernames []string, cfg see
 	}
 
 	if err := seedPlans(ctx, q, game.ID, players, cfg); err != nil {
+		return SeededGame{}, err
+	}
+
+	if err := seedLawsRumors(ctx, q, game.ID, players, cfg); err != nil {
 		return SeededGame{}, err
 	}
 
@@ -252,6 +306,40 @@ func seedPlans(ctx context.Context, q *dbgen.Queries, gameID int64, players []db
 			PreparedAtRow: cfg.currentRow,
 		}); err != nil {
 			return fmt.Errorf("create plan %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// seedLawsRumors writes the configured laws and rumors onto the public record.
+// Empty unless the caller opted in via WithLaw / WithRumor (the dev seed
+// handler adds one of each so dev-seeded games aren't blank in the laws/rumors
+// UI). A seeded law is signed by players[0]; a seeded rumor is sourced to the
+// last player. Neither has an origin plan, so the LawsRumors byline falls back
+// to the signatory / source (see lawAccent in LawsRumors.svelte). display_order
+// follows insertion order, so seeded entries sort before anything later plans
+// create.
+func seedLawsRumors(ctx context.Context, q *dbgen.Queries, gameID int64, players []dbgen.Player, cfg seedConfig) error {
+	signatory := players[0].ID
+	for i, text := range cfg.laws {
+		if _, err := q.CreateLaw(ctx, dbgen.CreateLawParams{
+			GameID:       gameID,
+			Text:         text,
+			SignatoryID:  &signatory,
+			DisplayOrder: int16(i),
+		}); err != nil {
+			return fmt.Errorf("seed law %d: %w", i, err)
+		}
+	}
+	source := players[len(players)-1].ID
+	for i, text := range cfg.rumors {
+		if _, err := q.CreateRumor(ctx, dbgen.CreateRumorParams{
+			GameID:         gameID,
+			Text:           text,
+			SourcePlayerID: &source,
+			DisplayOrder:   int16(i),
+		}); err != nil {
+			return fmt.Errorf("seed rumor %d: %w", i, err)
 		}
 	}
 	return nil

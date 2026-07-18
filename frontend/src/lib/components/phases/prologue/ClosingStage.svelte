@@ -133,7 +133,12 @@
 		error = '';
 		try {
 			const result = await createExtraPeer(gameID, extraPeerName, extraPeerText.trim());
-			assets = [...assets, result.asset];
+			// The asset.created WS event may already have appended this peer (its
+			// handler dedups by id); only append if it hasn't, so we don't end up
+			// with two rows for one peer. See [[optimistic-append-ws-dup]].
+			if (!assets.find((a) => a.id === result.asset.id)) {
+				assets = [...assets, result.asset];
+			}
 			extraPeerName = '';
 			extraPeerText = '';
 			onReload();
@@ -175,7 +180,7 @@
 		<p class="error-text">{error}</p>
 	{/if}
 
-	<h2 class="closing-title">The Stage is Set</h2>
+	<h2 class="closing-title">The Stage is Set.</h2>
 	<p class="closing-lede">
 		The prologue draws to a close. Here is the court as it now stands — settle your
 		affairs, then ready yourself for the Main Event.
@@ -184,7 +189,7 @@
 	<!-- ── Recap: the prologue in review (recap-first ceremony framing) ─────── -->
 	<section class="recap" aria-label="Prologue recap">
 		<div class="recap-block">
-			<h4 class="recap-sub">Final standings</h4>
+			<h4 class="recap-sub">Starting Ranks</h4>
 			<TrackBoard
 				{players}
 				{cards}

@@ -507,7 +507,7 @@
 		const waitees: Waitee[] = notReadyIDs.length === players.length
 			? [{ kind: 'everyone' }]
 			: notReadyIDs.map<Waitee>(id => ({ kind: 'player', playerID: id }));
-		return { waitees, stepLabel: 'The stage is set' };
+		return { waitees, stepLabel: 'Finish Prologue' };
 	});
 	$effect(() => { waitingOn = prologueWaitingOn; });
 </script>

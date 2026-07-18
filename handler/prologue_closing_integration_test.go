@@ -525,6 +525,41 @@ func TestCreateExtraPeer_CompletesAllReadyCondition_Advances(t *testing.T) {
 		"creating the last missing extra peer completed the all-ready condition")
 }
 
+// TestCreateExtraPeer_ResponseIncludesTitleMarginalia guards the response
+// shape: the created peer must come back enriched with its title marginalia,
+// like every other asset-create endpoint. A raw (marginalia-less) asset here
+// makes the client's optimistic append carry `marginalia: undefined`, which
+// throws in firstEmptySlotIndex inside the Retinue's derived and freezes the
+// view (the bug this regresses).
+func TestCreateExtraPeer_ResponseIncludesTitleMarginalia(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	game, players := newClosingGame(t, q, 2)
+
+	store := db.NewStore(pool)
+	manager := hub.NewManager()
+	manager.GetOrCreate(game.ID)
+	router := closingRouter(store, manager)
+
+	rec := postJSON(t, q, router, extraPeerPath(game.ID), players[0], map[string]any{
+		"title_name": "The Spymaster", "peer_text": "A quiet informant",
+	})
+	require.Equalf(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var resp struct {
+		Asset struct {
+			ID         int64 `json:"id"`
+			Marginalia []struct {
+				Text string `json:"text"`
+			} `json:"marginalia"`
+		} `json:"asset"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.NotZero(t, resp.Asset.ID)
+	require.Len(t, resp.Asset.Marginalia, 1, "the title marginalia must be present in the response")
+	assert.NotEmpty(t, resp.Asset.Marginalia[0].Text)
+}
+
 // TestClosingReady_ConcurrentLastReady_Idempotent fires two identical
 // "last player readies" requests concurrently. Depending on how the two
 // requests interleave, the loser sees either a redundant 200 (both reach

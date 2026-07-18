@@ -182,7 +182,7 @@ func shakeUpStepFromName(name string) (int16, bool) {
 // Body shape (only phase + players are required):
 //
 //	{
-//	  "phase": "main_event",            // or "shake_up"
+//	  "phase": "main_event",            // or "shake_up" / "prologue_closing"
 //	  "players": ["alice", "bob"],
 //	  "current_row": 9,                 // optional
 //	  "rankings": {                     // optional; per-category player order,
@@ -193,7 +193,9 @@ func shakeUpStepFromName(name string) (int16, bool) {
 //	     "category": "power", "row": 9, "row_order": 0}
 //	  ],
 //	  "shake_up_tokens": 5,             // optional (shake_up only)
-//	  "shake_up_step": "spending"       // optional (shake_up only): rolling|spending
+//	  "shake_up_step": "spending",      // optional (shake_up only): rolling|spending
+//	  "laws":   ["…"],                  // optional; omit => one sample law, [] => none
+//	  "rumors": ["…"]                   // optional; omit => one sample rumor, [] => none
 //	}
 //
 // Creates a game in the requested phase, seating the named accounts as
@@ -201,9 +203,20 @@ func shakeUpStepFromName(name string) (int16, bool) {
 // E2E suite to fast-forward past phases it isn't testing right now.
 // Mounted only when UNEASY_DEV=1.
 //
+// Every seeded game gets one sample law and rumor by default, so the
+// laws/rumors UI isn't blank when eyeballing a fresh game; pass an explicit
+// (possibly empty) "laws"/"rumors" array to override.
+//
 // The fixture logic lives in package gametest, shared with the handler
 // integration tests so the two suites can't disagree about what a valid
 // game in phase X looks like.
+// Sample laws/rumors a dev-seeded game gets by default, so the laws/rumors UI
+// isn't blank when eyeballing a fresh game. Overridable per request.
+const (
+	devSeedSampleLaw   = "No noble may raise a private army within the capital without the crown's leave."
+	devSeedSampleRumor = "They say the western holdfast was lost at cards, not conquered."
+)
+
 func DevSeed(s *db.Store) http.HandlerFunc {
 	type planReq struct {
 		PreparerIdx int    `json:"preparer_idx"`
@@ -220,6 +233,9 @@ func DevSeed(s *db.Store) http.HandlerFunc {
 		Plans         []planReq        `json:"plans"`
 		ShakeUpTokens *int16           `json:"shake_up_tokens"`
 		ShakeUpStep   *string          `json:"shake_up_step"`
+		// nil => one sample entry; an explicit (possibly empty) slice overrides.
+		Laws   *[]string `json:"laws"`
+		Rumors *[]string `json:"rumors"`
 	}
 	type playerResp struct {
 		ID            int64  `json:"id"`
@@ -262,6 +278,22 @@ func DevSeed(s *db.Store) http.HandlerFunc {
 			}
 			opts = append(opts, gametest.WithShakeUpStep(step))
 		}
+		// Populate the laws/rumors UI by default; an explicit array overrides
+		// (pass [] for none).
+		laws := []string{devSeedSampleLaw}
+		if body.Laws != nil {
+			laws = *body.Laws
+		}
+		for _, text := range laws {
+			opts = append(opts, gametest.WithLaw(text))
+		}
+		rumors := []string{devSeedSampleRumor}
+		if body.Rumors != nil {
+			rumors = *body.Rumors
+		}
+		for _, text := range rumors {
+			opts = append(opts, gametest.WithRumor(text))
+		}
 
 		ctx := r.Context()
 		var seeded gametest.SeededGame
@@ -271,6 +303,8 @@ func DevSeed(s *db.Store) http.HandlerFunc {
 			seeded, err = gametest.SeedMainEvent(ctx, s.Q, body.Players, opts...)
 		case "shake_up":
 			seeded, err = gametest.SeedShakeUp(ctx, s.Q, body.Players, opts...)
+		case "prologue_closing":
+			seeded, err = gametest.SeedPrologueClosing(ctx, s.Q, body.Players, opts...)
 		default:
 			respondErr(w, http.StatusBadRequest, "unknown phase: "+body.Phase)
 			return

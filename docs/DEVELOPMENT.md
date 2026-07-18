@@ -253,7 +253,7 @@ few shortcuts that make this painless:
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/dev/login?username=foo` | Find or create the account `foo`, open a session, set the cookie. No code required. |
-| `POST /api/dev/seed` | Create a game in a given phase (`main_event` / `shake_up`) with named players, each holding one asset of every type. See the `DevSeed` doc comment for the body shape. |
+| `POST /api/dev/seed` | Create a game in a given phase (`main_event` / `shake_up` / `prologue_closing`) with named players, each holding one asset of every type. `prologue_closing` parks the game at the prologue's "The Stage is Set" step with no Public Record board yet (so an all-ready advance runs cleanly). Every seeded game also gets one sample law + rumor so the laws/rumors UI isn't blank — pass a `"laws"`/`"rumors"` array to override (`[]` for none). See the `DevSeed` doc comment for the body shape. |
 | `POST /api/dev/advance-row` | Jump a game's `current_row` — `{"plan_id":N}` (to that plan's row) or `{"game_id":N,"row":R}`. Lands you on a prepared plan's resolution row without clicking through the rows between. |
 | `POST /api/dev/delete-game` | `{"game_id":N}` — hard-delete a single game and all its data (cascade), leaving accounts and other games intact. The everyday cleanup tool. |
 

@@ -54,6 +54,13 @@ describe('firstEmptySlotIndex', () => {
 			null,
 		);
 	});
+
+	it('treats a marginalia-less asset as empty instead of throwing', () => {
+		// Some create/WS payloads omit marginalia; a throw here would break the
+		// derived that renders the Retinue (regression: extra-peer create).
+		const noMarginalia = { id: 1, is_destroyed: false } as unknown as Asset;
+		expect(firstEmptySlotIndex(noMarginalia)).toBe(0);
+	});
 });
 
 describe('destructionWarning', () => {
