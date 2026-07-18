@@ -198,6 +198,7 @@
 				{doneFlags}
 				activeTrack={null}
 				{currentPlayerID}
+				showCards={false}
 			/>
 		</div>
 

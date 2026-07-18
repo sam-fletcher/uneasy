@@ -34,9 +34,24 @@
 		// column is highlighted. Set to the live track during declare/place.
 		activeTrack: PrologueTrack | null;
 		currentPlayerID: number | null;
+		// Recap use (closing stage): rankings are persisted and cards are spent,
+		// so suit glyphs, per-player card rows, and the done-committing dot
+		// (uniformly true post-resolution) are omitted. Only valid once all
+		// three tracks are resolved — the set-aside badge lives in the card
+		// row and unresolved projections would lose it.
+		showCards?: boolean;
 	}
 
-	let { players, cards, rankings, committed, doneFlags, activeTrack, currentPlayerID }: Props = $props();
+	let {
+		players,
+		cards,
+		rankings,
+		committed,
+		doneFlags,
+		activeTrack,
+		currentPlayerID,
+		showCards = true
+	}: Props = $props();
 
 	const TRACKS: { id: PrologueTrack; label: string; suit: string; suitChar: 'C' | 'D' | 'S' }[] = [
 		{ id: 'power', label: 'Power', suit: '♣', suitChar: 'C' },
@@ -151,7 +166,9 @@
 		{@const doneSet = doneSetForTrack(t.id)}
 		<section class="column" class:active={activeTrack === t.id}>
 			<header class="col-head">
-				<span class="col-suit" data-color={t.id === 'knowledge' ? 'red' : 'black'}>{t.suit}</span>
+				{#if showCards}
+					<span class="col-suit" data-color={t.id === 'knowledge' ? 'red' : 'black'}>{t.suit}</span>
+				{/if}
 				<span class="col-label">{t.label}</span>
 			</header>
 			{#each rankRowsFor(proj) as row}
@@ -169,32 +186,34 @@
 						<div class="chip" class:you={isYou}>
 							<div class="chip-head">
 								<span class="chip-name">{playerName(pid)}</span>
-								{#if doneSet.has(pid)}
+								{#if showCards && doneSet.has(pid)}
 									<span class="done-dot" title="Done"></span>
 								{/if}
 							</div>
-							<div class="chip-cards">
-								{#each suitCardsForPlayer(pid, t.suitChar) as c}
-									<span class="card-glyph small" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
-										{c.card_value}
-									</span>
-								{/each}
-								{#each committedHeartsForPlayer(pid, t.id) as h}
-									<span
-										class="card-glyph small heart"
-										class:grey={!(bright.get(pid)?.has(h.card_id) ?? false)}
-										data-color="red"
-										title={(bright.get(pid)?.has(h.card_id) ?? false)
-											? 'doing work'
-											: 'wasted (would be refunded)'}
-									>
-										{h.value}♥
-									</span>
-								{/each}
-								{#if row.isSetAside && committedHeartsForPlayer(pid, t.id).length === 0}
-									<span class="set-aside-badge" title="Zero cards on this track">no cards</span>
-								{/if}
-							</div>
+							{#if showCards}
+								<div class="chip-cards">
+									{#each suitCardsForPlayer(pid, t.suitChar) as c}
+										<span class="card-glyph small" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
+											{c.card_value}
+										</span>
+									{/each}
+									{#each committedHeartsForPlayer(pid, t.id) as h}
+										<span
+											class="card-glyph small heart"
+											class:grey={!(bright.get(pid)?.has(h.card_id) ?? false)}
+											data-color="red"
+											title={(bright.get(pid)?.has(h.card_id) ?? false)
+												? 'doing work'
+												: 'wasted (would be refunded)'}
+										>
+											{h.value}♥
+										</span>
+									{/each}
+									{#if row.isSetAside && committedHeartsForPlayer(pid, t.id).length === 0}
+										<span class="set-aside-badge" title="Zero cards on this track">no cards</span>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					{:else}
 						<span class="empty-slot">—</span>
