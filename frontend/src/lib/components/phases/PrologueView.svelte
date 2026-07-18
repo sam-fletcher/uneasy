@@ -801,6 +801,10 @@
 			{extraPeers}
 			{sheets}
 			{claims}
+			{rankings}
+			{cards}
+			{committed}
+			{doneFlags}
 			{laws}
 			{rumors}
 			onReload={reload}

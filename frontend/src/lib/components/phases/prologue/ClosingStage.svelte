@@ -1,11 +1,10 @@
 <!-- ClosingStage.svelte
   "The Stage is Set" — the prologue's closing step (game.prologue_ranking_step
-  === 'closing'; adr/PROLOGUE_CLOSING_STAGE_PLAN.md). Checklist of hard items
-  (must complete before Ready) and soft nudges, plus the ready roster/toggle
-  that drives the all-ready auto-advance into the Main Event.
-
-  `laws`/`rumors`/`onOpenLaws`/`onOpenRumors` are plumbed through but unused
-  until Session 3 adds the recap section to this component.
+  === 'closing'; adr/PROLOGUE_CLOSING_STAGE_PLAN.md). Reads recap-first,
+  checklist-second (the ceremony framing): a review of the prologue's outcome
+  (final standings, laws & rumors, retinue tallies), then the checklist of hard
+  items (must complete before Ready) and soft nudges, then the ready
+  roster/toggle that drives the all-ready auto-advance into the Main Event.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -14,6 +13,10 @@
 	import type {
 		Player,
 		Asset,
+		Ranking,
+		PlayerCardRow,
+		CommittedHeart,
+		TrackDone,
 		PrologueSheet,
 		PrologueClaim,
 		ExtraPeer,
@@ -30,8 +33,13 @@
 		readyBlockedReason,
 		isReady,
 		myAtRiskCount,
+		retinueTallies,
+		RETINUE_TYPE_ORDER,
 	} from '$lib/prologue/closing';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import { playerColorByID } from '$lib/playerColor';
+	import TrackBoard from './TrackBoard.svelte';
+	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
 
 	interface Props {
 		gameID: string;
@@ -42,6 +50,11 @@
 		extraPeers: ExtraPeer[];
 		sheets: PrologueSheet[];
 		claims: PrologueClaim[];
+		// Recap-only reference data (final standings via TrackBoard).
+		rankings: Ranking[];
+		cards: PlayerCardRow[];
+		committed: CommittedHeart[];
+		doneFlags: TrackDone[];
 		laws?: Law[];
 		rumors?: Rumor[];
 		onReload: () => void;
@@ -61,13 +74,28 @@
 		extraPeers,
 		sheets,
 		claims,
+		rankings,
+		cards,
+		committed,
+		doneFlags,
+		laws = [],
+		rumors = [],
 		onReload,
 		onResync,
 		onOpenTones,
 		onOpenRetinue,
+		onOpenLaws,
+		onOpenRumors,
 	}: Props = $props();
 
 	let error = $state('');
+
+	function playerName(id: number): string {
+		return players.find((p) => p.id === id)?.display_name ?? '?';
+	}
+
+	// ── Recap: retinue tallies ───────────────────────────────────────────────
+	const tallies = $derived(retinueTallies(players, assets));
 
 	// ── Name your main character (hard) ──────────────────────────────────────
 	const myMainCharacter = $derived(findMainCharacter(assets, currentPlayerID));
@@ -149,8 +177,95 @@
 
 	<h2 class="closing-title">The Stage is Set</h2>
 	<p class="closing-lede">
-		The prologue draws to a close. Before the Main Event begins, put your house in order.
+		The prologue draws to a close. Here is the court as it now stands — settle your
+		affairs, then ready yourself for the Main Event.
 	</p>
+
+	<!-- ── Recap: the prologue in review (recap-first ceremony framing) ─────── -->
+	<section class="recap" aria-label="Prologue recap">
+		<div class="recap-block">
+			<h4 class="recap-sub">Final standings</h4>
+			<TrackBoard
+				{players}
+				{cards}
+				{rankings}
+				{committed}
+				{doneFlags}
+				activeTrack={null}
+				{currentPlayerID}
+			/>
+		</div>
+
+		<div class="recap-block">
+			<h4 class="recap-sub">Laws &amp; rumors</h4>
+			{#if laws.length === 0 && rumors.length === 0}
+				<p class="muted-text small" style="margin:0;">The record is quiet — no laws or rumors yet.</p>
+			{:else}
+				<div class="recap-lr">
+					{#if laws.length > 0}
+						<div class="recap-lr-group">
+							<div class="recap-lr-head">
+								<span class="recap-lr-title">Laws <span class="recap-count">{laws.length}</span></span>
+								{#if onOpenLaws}
+									<button type="button" class="recap-link" onclick={onOpenLaws}>View all</button>
+								{/if}
+							</div>
+							<ul class="recap-lr-list">
+								{#each laws as law (law.id)}
+									<li class="recap-lr-item">{law.text}</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+					{#if rumors.length > 0}
+						<div class="recap-lr-group">
+							<div class="recap-lr-head">
+								<span class="recap-lr-title">Rumors <span class="recap-count">{rumors.length}</span></span>
+								{#if onOpenRumors}
+									<button type="button" class="recap-link" onclick={onOpenRumors}>View all</button>
+								{/if}
+							</div>
+							<ul class="recap-lr-list">
+								{#each rumors as rumor (rumor.id)}
+									<li class="recap-lr-item">{rumor.text}</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+
+		<div class="recap-block">
+			<h4 class="recap-sub">Retinue</h4>
+			<ul class="recap-retinue">
+				{#each tallies as t (t.playerID)}
+					<li>
+						<span class="retinue-name">
+							<span class="retinue-dot" style:background={playerColorByID(t.playerID, players)} aria-hidden="true"></span>
+							<span class="retinue-name-text">{playerName(t.playerID)}</span>
+							{#if t.playerID === currentPlayerID}<span class="retinue-you">you</span>{/if}
+						</span>
+						<span class="retinue-counts">
+							{#each RETINUE_TYPE_ORDER as type}
+								<span class="retinue-count" class:zero={t.counts[type] === 0}>
+									<AssetTypeIcon {type} size={14} />
+									<span class="retinue-count-num">{t.counts[type]}</span>
+								</span>
+							{/each}
+						</span>
+						{#if t.takenFromOthers > 0}
+							<span class="retinue-taken" title="Assets taken from other players during the prologue">
+								{t.takenFromOthers} taken
+							</span>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</div>
+	</section>
+
+	<h3 class="section-heading">Put your house in order</h3>
 
 	<div class="checklist">
 		<section class="check-card" class:done={mcNamed}>
@@ -297,6 +412,181 @@
 		color: var(--color-text-secondary);
 		font-size: 0.9rem;
 		line-height: 1.4;
+	}
+
+	/* ── Recap ─────────────────────────────────────────────────────────────── */
+	.recap {
+		display: flex;
+		flex-direction: column;
+		gap: 0.85rem;
+	}
+	.recap-block {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.recap-sub {
+		margin: 0;
+		color: var(--color-text-muted);
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
+
+	/* Laws & rumors: two stacked groups on a phone; side by side once the
+	   column has room (mirrors the record-content band). */
+	.recap-lr {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	@container column (min-width: 420px) {
+		.recap-lr { flex-direction: row; }
+		.recap-lr-group { flex: 1 1 0; min-width: 0; }
+	}
+	.recap-lr-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.recap-lr-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.recap-lr-title {
+		color: var(--color-text);
+		font-size: 0.85rem;
+	}
+	.recap-count {
+		color: var(--color-text-muted);
+		font-weight: 600;
+		font-size: 0.78rem;
+	}
+	.recap-link {
+		background: none;
+		border: none;
+		padding: 0.25rem 0;
+		min-height: 32px;
+		color: var(--color-accent);
+		font: inherit;
+		font-size: 0.8rem;
+		text-decoration: underline;
+		cursor: pointer;
+		flex: none;
+	}
+	.recap-link:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 1px;
+	}
+	.recap-lr-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.recap-lr-item {
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
+		border-left: 3px solid var(--color-border-warm);
+		border-radius: 4px;
+		padding: 0.35rem 0.5rem;
+		color: var(--color-text-secondary);
+		font-size: 0.82rem;
+		line-height: 1.35;
+		/* Compact: at most two lines here — the full text lives behind View all. */
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	/* Retinue tallies */
+	.recap-retinue {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.recap-retinue li {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 40px;
+		padding: 0.3rem 0.5rem;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-surface-2);
+		border-radius: 4px;
+		font-size: 0.82rem;
+	}
+	.retinue-name {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		flex: 1 1 6rem;
+		min-width: 0;
+	}
+	.retinue-dot {
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
+		flex: none;
+	}
+	.retinue-name-text {
+		color: var(--color-text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		min-width: 0;
+	}
+	.retinue-you {
+		flex: none;
+		color: var(--color-text-muted);
+		font-size: 0.65rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	.retinue-counts {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex: none;
+	}
+	.retinue-count {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+		color: var(--color-text-secondary);
+	}
+	.retinue-count.zero {
+		opacity: 0.4;
+	}
+	.retinue-count-num {
+		font-weight: 600;
+		font-size: 0.78rem;
+		min-width: 0.6rem;
+	}
+	.retinue-taken {
+		flex: none;
+		background: var(--color-warning-bg);
+		border: 1px solid var(--color-warning-border);
+		color: var(--color-warning);
+		font-size: 0.68rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 999px;
+		white-space: nowrap;
+	}
+
+	.section-heading {
+		color: var(--color-accent);
+		font-size: 1rem;
+		margin: 0.35rem 0 0;
 	}
 
 	.checklist {

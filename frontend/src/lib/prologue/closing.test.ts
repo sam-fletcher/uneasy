@@ -11,6 +11,7 @@ import {
 	isReady,
 	notReadyPlayerIDs,
 	myAtRiskCount,
+	retinueTallies,
 } from './closing';
 
 function asset(overrides: Partial<Asset> = {}): Asset {
@@ -210,5 +211,61 @@ describe('myAtRiskCount', () => {
 	it('excludes destroyed assets', () => {
 		const destroyed = asset({ owner_id: 1, is_destroyed: true, marginalia: [] });
 		expect(myAtRiskCount([destroyed], 1)).toBe(0);
+	});
+});
+
+describe('retinueTallies', () => {
+	const players = [{ id: 1 }, { id: 2 }];
+
+	it('tallies each owner\'s live assets by type', () => {
+		const assets = [
+			asset({ id: 1, owner_id: 1, creator_id: 1, asset_type: 'peer', is_main_character: true }),
+			asset({ id: 2, owner_id: 1, creator_id: 1, asset_type: 'artifact' }),
+			asset({ id: 3, owner_id: 1, creator_id: 1, asset_type: 'holding' }),
+			asset({ id: 4, owner_id: 2, creator_id: 2, asset_type: 'resource' }),
+		];
+		const [one, two] = retinueTallies(players, assets);
+		expect(one.counts).toEqual({ peer: 1, artifact: 1, resource: 0, holding: 1 });
+		expect(one.total).toBe(3);
+		expect(two.counts).toEqual({ peer: 0, artifact: 0, resource: 1, holding: 0 });
+		expect(two.total).toBe(1);
+	});
+
+	it('counts assets taken from others via owner_id !== creator_id', () => {
+		const assets = [
+			// Player 1 made their own peer, and took an artifact player 2 created.
+			asset({ id: 1, owner_id: 1, creator_id: 1, asset_type: 'peer' }),
+			asset({ id: 2, owner_id: 1, creator_id: 2, asset_type: 'artifact' }),
+			// Player 2 kept only a self-made holding.
+			asset({ id: 3, owner_id: 2, creator_id: 2, asset_type: 'holding' }),
+		];
+		const [one, two] = retinueTallies(players, assets);
+		expect(one.takenFromOthers).toBe(1);
+		expect(one.total).toBe(2);
+		expect(two.takenFromOthers).toBe(0);
+	});
+
+	it('excludes destroyed assets from every tally', () => {
+		const assets = [
+			asset({ id: 1, owner_id: 1, creator_id: 1, asset_type: 'peer' }),
+			asset({ id: 2, owner_id: 1, creator_id: 2, asset_type: 'artifact', is_destroyed: true }),
+		];
+		const [one] = retinueTallies(players, assets);
+		expect(one.total).toBe(1);
+		expect(one.counts.artifact).toBe(0);
+		expect(one.takenFromOthers).toBe(0);
+	});
+
+	it('returns a zeroed tally for a player with no assets', () => {
+		const [one, two] = retinueTallies(players, [
+			asset({ id: 1, owner_id: 1, creator_id: 1, asset_type: 'peer' }),
+		]);
+		expect(one.total).toBe(1);
+		expect(two).toEqual({
+			playerID: 2,
+			counts: { peer: 0, artifact: 0, resource: 0, holding: 0 },
+			total: 0,
+			takenFromOthers: 0,
+		});
 	});
 });

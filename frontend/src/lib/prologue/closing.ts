@@ -3,6 +3,7 @@
 
 import type {
 	Asset,
+	AssetType,
 	ClosingReady,
 	ExtraPeer,
 	PrologueChoice,
@@ -82,4 +83,37 @@ export function notReadyPlayerIDs(
 export function myAtRiskCount(assets: Asset[], playerID: number | null): number {
 	if (playerID == null) return 0;
 	return assets.filter((a) => a.owner_id === playerID && isNeedlesslyAtRisk(a)).length;
+}
+
+// ── Recap tallies (S3) ──────────────────────────────────────────────────────
+
+/** One player's end-of-prologue retinue, tallied by asset type, for the recap
+ *  section. `takenFromOthers` counts assets whose current owner differs from
+ *  their creator (a proxy for "won from another player" — the plan's v1 scope;
+ *  a true steal ledger is deferred to v2). Destroyed assets are excluded — a
+ *  retinue is what the player still holds. */
+export interface RetinueTally {
+	playerID: number;
+	counts: Record<AssetType, number>;
+	total: number;
+	takenFromOthers: number;
+}
+
+/** Fixed display order for the four asset types in the recap tally, matching
+ *  the choosing-view suit legend (peer, artifact, resource, holding). */
+export const RETINUE_TYPE_ORDER: AssetType[] = ['peer', 'artifact', 'resource', 'holding'];
+
+export function retinueTallies(players: { id: number }[], assets: Asset[]): RetinueTally[] {
+	return players.map((p) => {
+		const counts: Record<AssetType, number> = { peer: 0, artifact: 0, resource: 0, holding: 0 };
+		let takenFromOthers = 0;
+		let total = 0;
+		for (const a of assets) {
+			if (a.owner_id !== p.id || a.is_destroyed) continue;
+			counts[a.asset_type] += 1;
+			total += 1;
+			if (a.owner_id !== a.creator_id) takenFromOthers += 1;
+		}
+		return { playerID: p.id, counts, total, takenFromOthers };
+	});
 }
