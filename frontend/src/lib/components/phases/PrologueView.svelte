@@ -16,13 +16,10 @@
 		getPrologueSheets,
 		getPrologueCards,
 		placePrologueSetAsides,
-		createExtraPeer,
 		listAssets,
 		getPrologueRankingState,
 		commitTrackHearts,
 		setPrologueDone,
-		setClosingReady,
-		updateAsset,
 	} from '$lib/api';
 	import type {
 		Game,
@@ -39,19 +36,22 @@
 		PrologueTrack,
 		ExtraPeer,
 		ClosingReady,
+		Law,
+		Rumor,
 	} from '$lib/api';
 	import { onMount, onDestroy, tick } from 'svelte';
 	import ClaimChoiceModal from './ClaimChoiceModal.svelte';
 	import TrackBoard from './prologue/TrackBoard.svelte';
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
+	import ClosingStage from './prologue/ClosingStage.svelte';
 	import { computeBrightHearts, cardRank } from '$lib/prologue/refund';
 	import { openCount, heldCardSet, stealPreview } from '$lib/prologue/choosing';
+	import { notReadyPlayerIDs } from '$lib/prologue/closing';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 	import { playerColorByID } from '$lib/playerColor';
 	import CrownGlyph from '../CrownGlyph.svelte';
 	import type { CrownMark } from '$lib/succession';
-	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	interface Props {
 		gameID: string;
@@ -62,7 +62,13 @@
 		currentPlayerID: number | null;
 		isFacilitator: boolean;
 		waitingOn: WaitingOnState;
+		laws?: Law[];
+		rumors?: Rumor[];
 		onResync?: () => void;
+		onOpenTones?: () => void;
+		onOpenRetinue?: () => void;
+		onOpenLaws?: () => void;
+		onOpenRumors?: () => void;
 	}
 
 	let {
@@ -74,7 +80,13 @@
 		currentPlayerID,
 		isFacilitator,
 		waitingOn = $bindable(),
+		laws,
+		rumors,
 		onResync,
+		onOpenTones,
+		onOpenRetinue,
+		onOpenLaws,
+		onOpenRumors,
 	}: Props = $props();
 
 	// ── Loaded reference data ────────────────────────────────────────────────
@@ -447,105 +459,6 @@
 		}
 	}
 
-	// ── Extra peer (≤3 players) ──────────────────────────────────────────────
-	const titlesSheet = $derived(sheets.find(s => s.type === 'titles'));
-	const extraTitlesClaimed = $derived(new Set(extraPeers.map(p => p.title_name)));
-	const unclaimedTitles = $derived.by(() => {
-		const t = titlesSheet;
-		if (!t) return [];
-		return t.choices.filter(c =>
-			!claimMap.has(`titles::${c.name}`) && !extraTitlesClaimed.has(c.name)
-		);
-	});
-	const myExtraPeer = $derived(
-		currentPlayerID == null ? null : extraPeers.find(p => p.player_id === currentPlayerID) ?? null
-	);
-
-	let extraPeerName = $state('');
-	let extraPeerText = $state('');
-	let creatingExtra = $state(false);
-	async function submitExtraPeer() {
-		if (!extraPeerName || !extraPeerText.trim() || creatingExtra) return;
-		creatingExtra = true;
-		error = '';
-		try {
-			const result = await createExtraPeer(gameID, extraPeerName, extraPeerText.trim());
-			assets = [...assets, result.asset];
-			extraPeerName = '';
-			extraPeerText = '';
-			reload();
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not create extra peer.';
-			onResync?.();
-			reload();
-		} finally {
-			creatingExtra = false;
-		}
-	}
-
-	// The peer name starts blank and is authored by the player — no bracketed
-	// `[Title]` auto-fill (ADR-007 §7); the input placeholder hints instead.
-
-	// ── Closing stage ("The Stage is Set") ───────────────────────────────────
-	// Mirrors model.MainCharacterPlaceholder (Go) — the name every player's
-	// main-character peer is created with before they choose a real one.
-	const MAIN_CHARACTER_PLACEHOLDER = '[Main Character]';
-
-	const myMainCharacter = $derived(
-		currentPlayerID == null
-			? null
-			: assets.find(a => a.owner_id === currentPlayerID && a.is_main_character) ?? null
-	);
-	const mcNamed = $derived(
-		myMainCharacter != null &&
-		myMainCharacter.name.trim() !== '' &&
-		myMainCharacter.name !== MAIN_CHARACTER_PLACEHOLDER
-	);
-	const needsExtraPeer = $derived(players.length <= 3);
-	// Server-authoritative gate mirrored client-side only to disable/explain
-	// the Ready toggle; ClosingReady re-checks both conditions itself.
-	const readyBlockedReason = $derived.by(() => {
-		if (!mcNamed) return 'Name your main character first.';
-		if (needsExtraPeer && !myExtraPeer) return 'Create your extra peer first.';
-		return null;
-	});
-	const myReady = $derived(
-		currentPlayerID == null ? false : closingReady.find(c => c.player_id === currentPlayerID)?.ready ?? false
-	);
-
-	let mcRenameDraft = $state('');
-	let savingMcRename = $state(false);
-	async function submitMcRename() {
-		const text = mcRenameDraft.trim();
-		if (!myMainCharacter || !text || savingMcRename) return;
-		savingMcRename = true;
-		error = '';
-		try {
-			await updateAsset(myMainCharacter.id, { name: text });
-			mcRenameDraft = '';
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not rename your main character.';
-		} finally {
-			savingMcRename = false;
-		}
-	}
-
-	let savingReady = $state(false);
-	async function toggleReady() {
-		if (savingReady || (readyBlockedReason && !myReady)) return;
-		savingReady = true;
-		error = '';
-		try {
-			await setClosingReady(gameID, !myReady);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not update readiness.';
-			onResync?.();
-			reload();
-		} finally {
-			savingReady = false;
-		}
-	}
-
 	// ── Phase classification ─────────────────────────────────────────────────
 	type Mode = 'choosing' | 'declare' | 'place' | 'closing';
 	const mode = $derived.by<Mode>(() => {
@@ -589,13 +502,11 @@
 			};
 		}
 		// closing
-		const notReady = players
-			.filter(p => !closingReady.some(c => c.player_id === p.id && c.ready))
-			.map<Waitee>(p => ({ kind: 'player', playerID: p.id }));
-		if (notReady.length === 0) return { waitees: [] };
-		const waitees: Waitee[] = notReady.length === players.length
+		const notReadyIDs = notReadyPlayerIDs(players, closingReady);
+		if (notReadyIDs.length === 0) return { waitees: [] };
+		const waitees: Waitee[] = notReadyIDs.length === players.length
 			? [{ kind: 'everyone' }]
-			: notReady;
+			: notReadyIDs.map<Waitee>(id => ({ kind: 'player', playerID: id }));
 		return { waitees, stepLabel: 'The stage is set' };
 	});
 	$effect(() => { waitingOn = prologueWaitingOn; });
@@ -881,101 +792,24 @@
 		{/if}
 
 	{:else if mode === 'closing'}
-		<p class="prologue-lede">The Stage is Set</p>
-		<p class="muted-text">
-			The prologue draws to a close. Before the Main Event begins, put your house in order.
-		</p>
-
-		<h3>Name your main character</h3>
-		{#if mcNamed}
-			<p class="muted-text small">✓ {myMainCharacter?.name}</p>
-		{:else}
-			<p class="muted-text small">Currently: {myMainCharacter?.name ?? '—'}</p>
-			<label>
-				New name:
-				<input
-					type="text"
-					bind:value={mcRenameDraft}
-					placeholder="Name your main character"
-					maxlength={TEXT_LIMITS.NAME}
-				/>
-			</label>
-			<button
-				class="action-btn secondary"
-				onclick={submitMcRename}
-				disabled={!mcRenameDraft.trim() || savingMcRename}
-			>
-				{savingMcRename ? '…' : 'Save name'}
-			</button>
-		{/if}
-
-		{#if needsExtraPeer}
-			<h3>Create an extra peer</h3>
-			{#if myExtraPeer}
-				<p class="muted-text small">✓ You created your extra peer: {myExtraPeer.title_name}.</p>
-			{:else}
-				<div class="extra-form">
-					<div class="extra-title">
-						<span class="extra-title-label">Title:</span>
-						{#if unclaimedTitles.length === 0}
-							<p class="muted-text small" style="margin:0;">No titles remain.</p>
-						{:else}
-							<div class="title-chip-row">
-								{#each unclaimedTitles as t}
-									<button
-										type="button"
-										class="title-chip"
-										class:active={extraPeerName === t.name}
-										onclick={() => (extraPeerName = extraPeerName === t.name ? '' : t.name)}
-									>{t.name}</button>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				</div>
-				<label>
-					Peer name:
-					<input
-						type="text"
-						bind:value={extraPeerText}
-						class="peer-input"
-						placeholder="Name your peer"
-						maxlength={TEXT_LIMITS.NAME}
-					/>
-				</label>
-				<button class="action-btn secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
-					{creatingExtra ? '…' : 'Create peer'}
-				</button>
-			{/if}
-		{/if}
-
-		<h3>Ready roster</h3>
-		<ul class="extra-status">
-			{#each players as p}
-				{@const ready = closingReady.some(c => c.player_id === p.id && c.ready)}
-				<li class:done={ready}>
-					<span class="extra-name">{p.display_name}</span>
-					{#if ready}
-						<span class="extra-claim">✓ ready</span>
-					{:else}
-						<span class="extra-pending">waiting…</span>
-					{/if}
-				</li>
-			{/each}
-		</ul>
-
-		<button
-			class="action-btn primary done-btn"
-			class:active={myReady}
-			disabled={savingReady || (!myReady && readyBlockedReason != null)}
-			title={!myReady ? (readyBlockedReason ?? undefined) : undefined}
-			onclick={toggleReady}
-		>
-			{savingReady ? '…' : myReady ? 'Ready ✓ (tap to undo)' : "I'm ready"}
-		</button>
-		{#if !myReady && readyBlockedReason}
-			<p class="muted-text small">{readyBlockedReason}</p>
-		{/if}
+		<ClosingStage
+			{gameID}
+			{players}
+			bind:assets
+			{currentPlayerID}
+			{closingReady}
+			{extraPeers}
+			{sheets}
+			{claims}
+			{laws}
+			{rumors}
+			onReload={reload}
+			{onResync}
+			{onOpenTones}
+			{onOpenRetinue}
+			{onOpenLaws}
+			{onOpenRumors}
+		/>
 
 	{/if}
 
@@ -1292,77 +1126,5 @@
 	.hand-tile-cards .card-glyph :global(.suit) { width: 1.1em; height: 1.1em; }
 
 	.done-btn.active { background: var(--color-success); }
-
-	.extra-status {
-		list-style: none;
-		padding: 0;
-		margin: 0.25rem 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		max-width: 24rem;
-	}
-	.extra-status li {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.35rem 0.5rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-surface-2);
-		border-radius: 4px;
-		font-size: 0.85rem;
-	}
-	.extra-status li.done { border-color: var(--color-chip-green-border); }
-	.extra-name { color: var(--color-text); }
-	.extra-claim { color: var(--color-success); font-size: 0.8rem; }
-	.extra-pending { color: var(--color-text-faint); font-size: 0.8rem; font-style: italic; }
-
-	.extra-form {
-		display: flex;
-		gap: 0.6rem;
-		align-items: end;
-		margin: 0.5rem 0;
-	}
-	.peer-input {
-		max-width: 20rem;
-		margin-top: 0.25rem;
-	}
-	.extra-title {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
-	}
-	.extra-title-label {
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
-	}
-	.title-chip-row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.35rem;
-	}
-	.title-chip {
-		display: inline-flex;
-		align-items: center;
-		min-height: 44px;
-		padding: 0.35rem 0.85rem;
-		border-radius: 999px;
-		border: 1px solid var(--color-neutral);
-		background: var(--color-surface-2);
-		color: var(--color-text);
-		font-size: 0.9rem;
-		cursor: pointer;
-	}
-	.title-chip.active {
-		border-color: var(--color-accent);
-		background: var(--color-chip-gold-bg);
-	}
-	.title-chip:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
-	}
 
 </style>

@@ -743,7 +743,13 @@
 			{currentPlayerID}
 			{isFacilitator}
 			bind:waitingOn
+			{laws}
+			{rumors}
 			onResync={loadGameState}
+			onOpenTones={() => tonesOpen = true}
+			onOpenRetinue={() => retinueOpenForPlayer = currentPlayerID}
+			onOpenLaws={() => lawsOpen = true}
+			onOpenRumors={() => rumorsOpen = true}
 		/>
 
 	<!-- ── Main Event ─────────────────────────────────────────────────────── -->
