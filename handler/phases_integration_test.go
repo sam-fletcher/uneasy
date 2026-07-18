@@ -12,6 +12,7 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/hub"
 	"uneasy/model"
 )
@@ -306,7 +307,8 @@ func TestGamePhaseTransition_PrologueToMainEvent(t *testing.T) {
 // seedPrologueComplete returns a game in the prologue phase with the
 // minimum state advanceToMainEvent expects: 3 categories × 5 ranks
 // filled in seat order (no NULL player_ids), 3 players seated, and
-// the ranking step at extra_peers (the ≤3-player terminal state).
+// the ranking step at closing (the terminal ranking step for all
+// player counts).
 func seedPrologueComplete(t *testing.T, q *dbgen.Queries) (dbgen.Game, []dbgen.Player) {
 	t.Helper()
 	ctx := context.Background()
@@ -360,7 +362,7 @@ func seedPrologueComplete(t *testing.T, q *dbgen.Queries) (dbgen.Game, []dbgen.P
 	require.NoError(t, q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 		ID: game.ID, Phase: model.PhasePrologue,
 	}))
-	step := "extra_peers"
+	step := gamepkg.PrologueStepClosing
 	require.NoError(t, q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
 		ID: game.ID, PrologueRankingStep: &step,
 	}))

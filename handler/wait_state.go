@@ -114,7 +114,7 @@ func computeLobbyWaitees(ctx context.Context, q *dbgen.Queries, gameID int64) ([
 //   - declare_X               → players who haven't marked themselves done
 //     spending hearts on track X.
 //   - place_set_asides_X      → track X's top-ranked real player.
-//   - anything else (extra_peers) → players who haven't created their extra peer.
+//   - anything else (closing) → players who haven't marked themselves ready.
 func computePrologueWaitees(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -147,12 +147,12 @@ func computePrologueWaitees(
 		}
 		return model.WaitKindProloguePlaceSetAsides, ids, nil
 
-	default: // extra_peers
-		ids, err := prologueExtraWaitees(ctx, q, gameID)
+	default: // closing
+		ids, err := prologueClosingWaitees(ctx, q, gameID)
 		if err != nil {
 			return "", nil, err
 		}
-		return model.WaitKindPrologueExtraPeers, ids, nil
+		return model.WaitKindPrologueClosing, ids, nil
 	}
 }
 
@@ -198,24 +198,26 @@ func prologuePlaceWaitees(ctx context.Context, q *dbgen.Queries, gameID int64, t
 	return []int64{*top}, nil
 }
 
-// prologueExtraWaitees names every player who hasn't yet created their extra
-// peer, mirroring PrologueView.svelte's extra-mode `notDone` derivation.
-func prologueExtraWaitees(ctx context.Context, q *dbgen.Queries, gameID int64) ([]int64, error) {
+// prologueClosingWaitees names every player who hasn't yet marked themselves
+// ready for the closing step, mirroring ClosingStage's not-ready derivation.
+func prologueClosingWaitees(ctx context.Context, q *dbgen.Queries, gameID int64) ([]int64, error) {
 	players, err := q.GetPlayersByGame(ctx, gameID)
 	if err != nil {
 		return nil, err
 	}
-	extras, err := q.ListExtraPeersByGame(ctx, gameID)
+	readyRows, err := q.ListClosingReadyByGame(ctx, gameID)
 	if err != nil {
 		return nil, err
 	}
-	has := make(map[int64]bool, len(extras))
-	for _, e := range extras {
-		has[e.PlayerID] = true
+	ready := make(map[int64]bool, len(readyRows))
+	for _, r := range readyRows {
+		if r.Ready {
+			ready[r.PlayerID] = true
+		}
 	}
 	var ids []int64
 	for _, p := range players {
-		if !has[p.ID] {
+		if !ready[p.ID] {
 			ids = append(ids, p.ID)
 		}
 	}

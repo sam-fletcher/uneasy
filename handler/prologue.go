@@ -7,7 +7,8 @@ package handler
 //   tone_setting → start-prologue → prologue (choosing) → ranking
 //     → declare/finalize/place-set-asides repeated for power, knowledge,
 //       esteem in order
-//     → extra-peers (≤3 players) → main_event
+//     → closing (name your MC; ≤3 players also create an extra peer)
+//     → main_event
 //
 // State columns:
 //

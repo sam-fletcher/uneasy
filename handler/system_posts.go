@@ -784,6 +784,18 @@ func EmitPrologueTrackRanked(
 		map[string]any{"track": track})
 }
 
+// EmitPrologueClosingEntered writes the boundary post marking entry into the
+// closing step — the prologue's last beat before the main event, once per
+// game (called from whichever path's ranking resolution first reaches it:
+// resolveTrack's esteem-resolves-clean branch or PlaceSetAsides's last
+// track).
+func EmitPrologueClosingEntered(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64) {
+	EmitSystemPost(ctx, q, manager, gameID, "prologue.closing_entered",
+		model.SeverityImportant,
+		"The stage is nearly set — the court makes its final preparations.",
+		nil, nil, nil, nil)
+}
+
 // ── Shake-Up (the endgame climax) ──────────────────────────────────────────────
 //
 // The Shake-Up runs three category passes (esteem → knowledge → power), each a

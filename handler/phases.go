@@ -177,6 +177,16 @@ func advanceToMainEvent(
 	}); err != nil {
 		return fmt.Errorf("update phase: %w", err)
 	}
+	// Clear the ranking step so "phase == main_event" implies
+	// "prologue_ranking_step IS NULL" — the closing-ready idempotency guard
+	// (maybeAdvanceFromClosing's fresh re-read) relies on this to recognize
+	// a concurrent request already advanced the game, since the step would
+	// otherwise be left stuck at "closing" forever.
+	if err := q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
+		ID: gameID, PrologueRankingStep: nil,
+	}); err != nil {
+		return fmt.Errorf("clear ranking step: %w", err)
+	}
 	broadcastPhaseChange(ctx, q, manager, gameID, model.PhaseMainEvent)
 	return nil
 }

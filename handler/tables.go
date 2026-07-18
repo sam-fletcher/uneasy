@@ -33,7 +33,7 @@ func createMainCharacterPeer(
 		OwnerID:         player.ID,
 		CreatorID:       player.ID,
 		AssetType:       model.AssetPeer,
-		Name:            "[Main Character]",
+		Name:            model.MainCharacterPlaceholder,
 		IsMainCharacter: true,
 	})
 	if err != nil {

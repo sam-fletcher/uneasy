@@ -28,9 +28,9 @@ const (
 	// the track's top-ranked real player must place the set-aside players.
 	WaitKindProloguePlaceSetAsides WaitStateKind = "prologue_place_set_asides"
 
-	// WaitKindPrologueExtraPeers — the extra_peers step (≤3 players):
-	// players who haven't yet created their extra peer.
-	WaitKindPrologueExtraPeers WaitStateKind = "prologue_extra_peers"
+	// WaitKindPrologueClosing — the closing step (all player counts):
+	// players who haven't yet marked themselves ready.
+	WaitKindPrologueClosing WaitStateKind = "prologue_closing"
 
 	// WaitKindShakeUpRolling — Shake-Up step 1: the current roller.
 	WaitKindShakeUpRolling WaitStateKind = "shake_up_rolling"

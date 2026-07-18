@@ -146,6 +146,7 @@ const (
 	EventPrologueCommittedHeartsChg = "prologue.committed_hearts_changed" // a player adjusted their committed hearts on a track
 	EventPrologueDoneChanged        = "prologue.done_changed"             // a player toggled their per-track Done flag
 	EventPrologueExtraPeerCreated   = "prologue.extra_peer_created"       // a player claimed their extra peer (≤3-player games)
+	EventPrologueClosingReadyChg    = "prologue.closing_ready_changed"    // a player toggled their closing-stage ready flag
 
 	// Phase 2: Dice rolls
 	EventRollCreated       = "roll.created"
@@ -748,6 +749,15 @@ type PrologueExtraPeerCreatedPayload struct {
 	PlayerID  int64  `json:"player_id"`
 	TitleName string `json:"title_name"`
 	AssetID   int64  `json:"asset_id"`
+}
+
+// PrologueClosingReadyChangedPayload is for EventPrologueClosingReadyChg.
+// Broadcast on every toggle and on gate-forced clears (advance-time
+// re-validation catching a player who un-named their main character after
+// readying).
+type PrologueClosingReadyChangedPayload struct {
+	PlayerID int64 `json:"player_id"`
+	Ready    bool  `json:"ready"`
 }
 
 // EndgameModeSetPayload is for EventEndgameModeSet.

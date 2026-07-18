@@ -58,7 +58,7 @@ const (
 	PrologueStepPlaceSetAsidesKnow   = "place_set_asides_knowledge"
 	PrologueStepDeclareEsteem        = "declare_esteem"
 	PrologueStepPlaceSetAsidesEsteem = "place_set_asides_esteem"
-	PrologueStepExtraPeers           = "extra_peers"
+	PrologueStepClosing              = "closing"
 )
 
 // Card represents a single playing card. Suit is one of 'C','D','S','H'.

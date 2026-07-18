@@ -1,10 +1,12 @@
 <!-- PrologueView.svelte
-  Structured prologue (Phase 4b). Three modes driven by game.prologue_ranking_step:
+  Structured prologue (Phase 4b). Modes driven by game.prologue_ranking_step:
 
     null   →  choosing: pick boxes from the three sheets; cards make-or-take
     declare_X        →  hearts declaration for the current track
     place_set_asides_X →  top-ranked player slots zero-suit players in
-    extra_peers      →  ≤3-player rule: each picks one unused title
+    closing          →  "The Stage is Set": name your main character, ≤3p
+                         create an extra peer, then ready up. All-ready
+                         auto-advances to the main event.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -19,6 +21,8 @@
 		getPrologueRankingState,
 		commitTrackHearts,
 		setPrologueDone,
+		setClosingReady,
+		updateAsset,
 	} from '$lib/api';
 	import type {
 		Game,
@@ -34,6 +38,7 @@
 		TrackDone,
 		PrologueTrack,
 		ExtraPeer,
+		ClosingReady,
 	} from '$lib/api';
 	import { onMount, onDestroy, tick } from 'svelte';
 	import ClaimChoiceModal from './ClaimChoiceModal.svelte';
@@ -81,6 +86,7 @@
 	let committed = $state<CommittedHeart[]>([]);
 	let doneFlags = $state<TrackDone[]>([]);
 	let extraPeers = $state<ExtraPeer[]>([]);
+	let closingReady = $state<ClosingReady[]>([]);
 	let error = $state('');
 	let loading = $state(true);
 
@@ -99,6 +105,7 @@
 			committed = st.committed;
 			doneFlags = st.done;
 			extraPeers = st.extra_peers;
+			closingReady = st.closing_ready;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load prologue data.';
 		} finally {
@@ -121,6 +128,7 @@
 		window.addEventListener('uneasy:prologue.committed_hearts_changed', onClaimEvent);
 		window.addEventListener('uneasy:prologue.done_changed', onClaimEvent);
 		window.addEventListener('uneasy:prologue.extra_peer_created', onClaimEvent);
+		window.addEventListener('uneasy:prologue.closing_ready_changed', onClaimEvent);
 	});
 	onDestroy(() => {
 		window.removeEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
@@ -131,6 +139,7 @@
 		window.removeEventListener('uneasy:prologue.committed_hearts_changed', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.done_changed', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.extra_peer_created', onClaimEvent);
+		window.removeEventListener('uneasy:prologue.closing_ready_changed', onClaimEvent);
 	});
 
 	// ── Derived: claim lookup ────────────────────────────────────────────────
@@ -308,7 +317,7 @@
 			(t) => step === `declare_${t}` || step === `place_set_asides_${t}`
 		);
 		if (idx === -1 && step !== '') {
-			// extra_peers or beyond — all resolved.
+			// closing or beyond — all resolved.
 			seq.forEach((t) => out.add(t));
 			return out;
 		}
@@ -477,14 +486,74 @@
 	// The peer name starts blank and is authored by the player — no bracketed
 	// `[Title]` auto-fill (ADR-007 §7); the input placeholder hints instead.
 
+	// ── Closing stage ("The Stage is Set") ───────────────────────────────────
+	// Mirrors model.MainCharacterPlaceholder (Go) — the name every player's
+	// main-character peer is created with before they choose a real one.
+	const MAIN_CHARACTER_PLACEHOLDER = '[Main Character]';
+
+	const myMainCharacter = $derived(
+		currentPlayerID == null
+			? null
+			: assets.find(a => a.owner_id === currentPlayerID && a.is_main_character) ?? null
+	);
+	const mcNamed = $derived(
+		myMainCharacter != null &&
+		myMainCharacter.name.trim() !== '' &&
+		myMainCharacter.name !== MAIN_CHARACTER_PLACEHOLDER
+	);
+	const needsExtraPeer = $derived(players.length <= 3);
+	// Server-authoritative gate mirrored client-side only to disable/explain
+	// the Ready toggle; ClosingReady re-checks both conditions itself.
+	const readyBlockedReason = $derived.by(() => {
+		if (!mcNamed) return 'Name your main character first.';
+		if (needsExtraPeer && !myExtraPeer) return 'Create your extra peer first.';
+		return null;
+	});
+	const myReady = $derived(
+		currentPlayerID == null ? false : closingReady.find(c => c.player_id === currentPlayerID)?.ready ?? false
+	);
+
+	let mcRenameDraft = $state('');
+	let savingMcRename = $state(false);
+	async function submitMcRename() {
+		const text = mcRenameDraft.trim();
+		if (!myMainCharacter || !text || savingMcRename) return;
+		savingMcRename = true;
+		error = '';
+		try {
+			await updateAsset(myMainCharacter.id, { name: text });
+			mcRenameDraft = '';
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not rename your main character.';
+		} finally {
+			savingMcRename = false;
+		}
+	}
+
+	let savingReady = $state(false);
+	async function toggleReady() {
+		if (savingReady || (readyBlockedReason && !myReady)) return;
+		savingReady = true;
+		error = '';
+		try {
+			await setClosingReady(gameID, !myReady);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not update readiness.';
+			onResync?.();
+			reload();
+		} finally {
+			savingReady = false;
+		}
+	}
+
 	// ── Phase classification ─────────────────────────────────────────────────
-	type Mode = 'choosing' | 'declare' | 'place' | 'extra';
+	type Mode = 'choosing' | 'declare' | 'place' | 'closing';
 	const mode = $derived.by<Mode>(() => {
 		const step = game.prologue_ranking_step;
 		if (!step) return 'choosing';
 		if (step.startsWith('declare_')) return 'declare';
 		if (step.startsWith('place_set_asides_')) return 'place';
-		return 'extra';
+		return 'closing';
 	});
 
 	// ── Waiting-on derivation ────────────────────────────────────────────────
@@ -519,15 +588,15 @@
 				stepLabel: 'Place set-asides',
 			};
 		}
-		// extra
-		const notDone = players
-			.filter(p => !extraPeers.some(e => e.player_id === p.id))
+		// closing
+		const notReady = players
+			.filter(p => !closingReady.some(c => c.player_id === p.id && c.ready))
 			.map<Waitee>(p => ({ kind: 'player', playerID: p.id }));
-		if (notDone.length === 0) return { waitees: [] };
-		const waitees: Waitee[] = notDone.length === players.length
+		if (notReady.length === 0) return { waitees: [] };
+		const waitees: Waitee[] = notReady.length === players.length
 			? [{ kind: 'everyone' }]
-			: notDone;
-		return { waitees, stepLabel: 'Create an extra peer' };
+			: notReady;
+		return { waitees, stepLabel: 'The stage is set' };
 	});
 	$effect(() => { waitingOn = prologueWaitingOn; });
 </script>
@@ -811,18 +880,83 @@
 			{/if}
 		{/if}
 
-	{:else if mode === 'extra'}
+	{:else if mode === 'closing'}
+		<p class="prologue-lede">The Stage is Set</p>
 		<p class="muted-text">
-			Extra peers: with three or fewer players, each player picks one unused title to flesh out the cast.
+			The prologue draws to a close. Before the Main Event begins, put your house in order.
 		</p>
 
+		<h3>Name your main character</h3>
+		{#if mcNamed}
+			<p class="muted-text small">✓ {myMainCharacter?.name}</p>
+		{:else}
+			<p class="muted-text small">Currently: {myMainCharacter?.name ?? '—'}</p>
+			<label>
+				New name:
+				<input
+					type="text"
+					bind:value={mcRenameDraft}
+					placeholder="Name your main character"
+					maxlength={TEXT_LIMITS.NAME}
+				/>
+			</label>
+			<button
+				class="action-btn secondary"
+				onclick={submitMcRename}
+				disabled={!mcRenameDraft.trim() || savingMcRename}
+			>
+				{savingMcRename ? '…' : 'Save name'}
+			</button>
+		{/if}
+
+		{#if needsExtraPeer}
+			<h3>Create an extra peer</h3>
+			{#if myExtraPeer}
+				<p class="muted-text small">✓ You created your extra peer: {myExtraPeer.title_name}.</p>
+			{:else}
+				<div class="extra-form">
+					<div class="extra-title">
+						<span class="extra-title-label">Title:</span>
+						{#if unclaimedTitles.length === 0}
+							<p class="muted-text small" style="margin:0;">No titles remain.</p>
+						{:else}
+							<div class="title-chip-row">
+								{#each unclaimedTitles as t}
+									<button
+										type="button"
+										class="title-chip"
+										class:active={extraPeerName === t.name}
+										onclick={() => (extraPeerName = extraPeerName === t.name ? '' : t.name)}
+									>{t.name}</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+				<label>
+					Peer name:
+					<input
+						type="text"
+						bind:value={extraPeerText}
+						class="peer-input"
+						placeholder="Name your peer"
+						maxlength={TEXT_LIMITS.NAME}
+					/>
+				</label>
+				<button class="action-btn secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
+					{creatingExtra ? '…' : 'Create peer'}
+				</button>
+			{/if}
+		{/if}
+
+		<h3>Ready roster</h3>
 		<ul class="extra-status">
 			{#each players as p}
-				{@const claim = extraPeers.find(e => e.player_id === p.id)}
-				<li class:done={claim != null}>
+				{@const ready = closingReady.some(c => c.player_id === p.id && c.ready)}
+				<li class:done={ready}>
 					<span class="extra-name">{p.display_name}</span>
-					{#if claim}
-						<span class="extra-claim">✓ {claim.title_name}</span>
+					{#if ready}
+						<span class="extra-claim">✓ ready</span>
 					{:else}
 						<span class="extra-pending">waiting…</span>
 					{/if}
@@ -830,41 +964,17 @@
 			{/each}
 		</ul>
 
-		{#if myExtraPeer}
-			<p class="muted-text small">You created your extra peer: {myExtraPeer.title_name}.</p>
-		{:else}
-			<div class="extra-form">
-				<div class="extra-title">
-					<span class="extra-title-label">Title:</span>
-					{#if unclaimedTitles.length === 0}
-						<p class="muted-text small" style="margin:0;">No titles remain.</p>
-					{:else}
-						<div class="title-chip-row">
-							{#each unclaimedTitles as t}
-								<button
-									type="button"
-									class="title-chip"
-									class:active={extraPeerName === t.name}
-									onclick={() => (extraPeerName = extraPeerName === t.name ? '' : t.name)}
-								>{t.name}</button>
-							{/each}
-						</div>
-					{/if}
-				</div>
-			</div>
-			<label>
-				Peer name:
-				<input
-					type="text"
-					bind:value={extraPeerText}
-					class="peer-input"
-					placeholder="Name your peer"
-					maxlength={TEXT_LIMITS.NAME}
-				/>
-			</label>
-			<button class="action-btn secondary" onclick={submitExtraPeer} disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}>
-				{creatingExtra ? '…' : 'Create peer'}
-			</button>
+		<button
+			class="action-btn primary done-btn"
+			class:active={myReady}
+			disabled={savingReady || (!myReady && readyBlockedReason != null)}
+			title={!myReady ? (readyBlockedReason ?? undefined) : undefined}
+			onclick={toggleReady}
+		>
+			{savingReady ? '…' : myReady ? 'Ready ✓ (tap to undo)' : "I'm ready"}
+		</button>
+		{#if !myReady && readyBlockedReason}
+			<p class="muted-text small">{readyBlockedReason}</p>
 		{/if}
 
 	{/if}

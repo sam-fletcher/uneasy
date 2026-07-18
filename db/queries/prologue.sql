@@ -130,3 +130,14 @@ SELECT EXISTS (
   SELECT 1 FROM prologue_extra_peers
   WHERE game_id = $1 AND title_name = $2
 );
+
+-- ── closing-stage ready flags ────────────────────────────────────────────────
+
+-- name: SetClosingReady :exec
+INSERT INTO prologue_closing_ready (game_id, player_id, ready, updated_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (game_id, player_id)
+DO UPDATE SET ready = EXCLUDED.ready, updated_at = now();
+
+-- name: ListClosingReadyByGame :many
+SELECT * FROM prologue_closing_ready WHERE game_id = $1;

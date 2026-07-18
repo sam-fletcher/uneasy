@@ -30,9 +30,9 @@ func TestTrackResolved(t *testing.T) {
 		{"knowledge", "declare_esteem", true},
 		{"esteem", "declare_esteem", false},
 
-		// extra_peers / past all tracks → all resolved.
-		{"power", "extra_peers", true},
-		{"esteem", "extra_peers", true},
+		// closing / past all tracks → all resolved.
+		{"power", "closing", true},
+		{"esteem", "closing", true},
 	}
 	for _, c := range cases {
 		got := trackResolved(c.track, c.currentStep)

@@ -6,16 +6,17 @@ package handler
 //
 //   declare_power → place_set_asides_power → declare_knowledge →
 //   place_set_asides_knowledge → declare_esteem → place_set_asides_esteem →
-//   extra_peers (≤3 players) → main_event
+//   closing → main_event
 //
 // place_set_asides_X is skipped automatically if a track has no set-aside
 // players; track resolution (in prologue_committed_hearts.go) advances
-// directly to the next declare step.
+// directly to the next declare step. Every player count converges on
+// closing once ranking finishes.
 //
-// The main_event transition is automatic: completing the last prologue
-// action (final track's resolution/place-set-asides for 4–5 players, or the
-// last extra peer for ≤3 players) immediately calls advanceToMainEvent —
-// no facilitator button.
+// The main_event transition is no longer automatic on the last ranking
+// action: closing is a gated step (handler/prologue_closing.go) where every
+// player must ready up — main characters named, extra peers created in ≤3p
+// games — before advanceToMainEvent runs.
 
 import (
 	"context"
@@ -129,7 +130,7 @@ func loadGameForPrologue(w http.ResponseWriter, ctx context.Context, q *dbgen.Qu
 // Caller must be the top-ranked player on the current track. The ordering must
 // be a permutation of the set-aside players (those not yet given a
 // rankings.rank for this track). Server appends them to the rankings, then
-// advances to the next declare step (or extra-peers / done).
+// advances to the next declare step (or closing, once esteem is done).
 //
 //nolint:gocognit,gocyclo,cyclop,funlen // place set-asides validates auth, permutation, and advances the step machine
 func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
@@ -256,8 +257,8 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		// Advance step.
 		nextStep := nextDeclareStepAfter(track)
-		if nextStep == "" && len(players) <= 3 {
-			nextStep = gamepkg.PrologueStepExtraPeers
+		if nextStep == "" {
+			nextStep = gamepkg.PrologueStepClosing
 		}
 		if err = setRankingStep(ctx, s.Q, gameID, nextStep); err != nil {
 			respondErr(w, http.StatusInternalServerError, err.Error())
@@ -265,13 +266,8 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		broadcastEvent(manager, gameID, model.EventPrologueRankingStepChanged,
 			model.PrologueRankingStepChangedPayload{Step: nextStep})
-
-		// 4–5 player game finishing the last track's set-asides: prologue complete.
-		if nextStep == "" {
-			if err := advanceToMainEvent(ctx, s.Q, manager, gameID); err != nil {
-				respondInternalErr(w, r, "could not advance to main event", err)
-				return
-			}
+		if nextStep == gamepkg.PrologueStepClosing {
+			EmitPrologueClosingEntered(ctx, s.Q, manager, gameID)
 		}
 
 		respond(w, http.StatusOK, map[string]any{"track": track, "next_step": nextStep})
@@ -330,7 +326,8 @@ func insertExtraPeerWithTitle(
 // caller, named after an unused title from the titles sheet. Each player
 // may create exactly one extra peer; each title may only be claimed once
 // (across both the choosing-phase and extra-peer flows). Available only
-// during the extra_peers step.
+// during the closing step, and only in games of 3 or fewer players (the
+// closing checklist's "create an extra peer" item).
 func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, s.Q)
@@ -342,7 +339,16 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if game == nil {
 			return
 		}
-		if !requirePrologueStep(w, game, gamepkg.PrologueStepExtraPeers) {
+		if !requirePrologueStep(w, game, gamepkg.PrologueStepClosing) {
+			return
+		}
+		players, err := s.Q.GetPlayersByGame(ctx, gameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load players", err)
+			return
+		}
+		if len(players) > 3 {
+			respondErr(w, http.StatusConflict, "extra peers are only created in games of 3 or fewer players")
 			return
 		}
 
@@ -429,36 +435,16 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				PlayerID: player.ID, TitleName: body.TitleName, AssetID: asset.ID,
 			})
 
-		if err := maybeAdvanceAfterExtraPeer(ctx, s.Q, manager, gameID); err != nil {
+		// Creating the last missing extra peer can complete the all-ready
+		// condition (everyone else already readied up) — run the same
+		// all-ready check the closing-ready endpoint uses.
+		if err := maybeAdvanceFromClosing(ctx, s.Q, manager, gameID); err != nil {
 			respondInternalErr(w, r, "could not advance to main event", err)
 			return
 		}
 
 		respond(w, http.StatusOK, map[string]any{"asset": asset})
 	}
-}
-
-// maybeAdvanceAfterExtraPeer transitions to main_event once every player
-// in the game has created their extra peer. No-op if peers are still
-// missing.
-func maybeAdvanceAfterExtraPeer(
-	ctx context.Context,
-	q *dbgen.Queries,
-	manager *hub.Manager,
-	gameID int64,
-) error {
-	players, err := q.GetPlayersByGame(ctx, gameID)
-	if err != nil {
-		return fmt.Errorf("load players: %w", err)
-	}
-	extras, err := q.ListExtraPeersByGame(ctx, gameID)
-	if err != nil {
-		return fmt.Errorf("load extra peers: %w", err)
-	}
-	if len(extras) < len(players) {
-		return nil
-	}
-	return advanceToMainEvent(ctx, q, manager, gameID)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

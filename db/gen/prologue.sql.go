@@ -341,6 +341,36 @@ func (q *Queries) InsertPlayerCard(ctx context.Context, arg InsertPlayerCardPara
 	return err
 }
 
+const listClosingReadyByGame = `-- name: ListClosingReadyByGame :many
+SELECT id, game_id, player_id, ready, updated_at FROM prologue_closing_ready WHERE game_id = $1
+`
+
+func (q *Queries) ListClosingReadyByGame(ctx context.Context, gameID int64) ([]PrologueClosingReady, error) {
+	rows, err := q.db.Query(ctx, listClosingReadyByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PrologueClosingReady{}
+	for rows.Next() {
+		var i PrologueClosingReady
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.PlayerID,
+			&i.Ready,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCommittedHeartsByGame = `-- name: ListCommittedHeartsByGame :many
 SELECT ch.id, ch.game_id, ch.player_id, ch.track, ch.card_id,
        pc.card_value, pc.card_suit
@@ -617,6 +647,26 @@ type ResetTrackDoneParams struct {
 
 func (q *Queries) ResetTrackDone(ctx context.Context, arg ResetTrackDoneParams) error {
 	_, err := q.db.Exec(ctx, resetTrackDone, arg.GameID, arg.Track)
+	return err
+}
+
+const setClosingReady = `-- name: SetClosingReady :exec
+
+INSERT INTO prologue_closing_ready (game_id, player_id, ready, updated_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (game_id, player_id)
+DO UPDATE SET ready = EXCLUDED.ready, updated_at = now()
+`
+
+type SetClosingReadyParams struct {
+	GameID   int64 `db:"game_id" json:"game_id"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+	Ready    bool  `db:"ready" json:"ready"`
+}
+
+// ── closing-stage ready flags ────────────────────────────────────────────────
+func (q *Queries) SetClosingReady(ctx context.Context, arg SetClosingReadyParams) error {
+	_, err := q.db.Exec(ctx, setClosingReady, arg.GameID, arg.PlayerID, arg.Ready)
 	return err
 }
 

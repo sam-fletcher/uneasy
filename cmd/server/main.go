@@ -354,6 +354,7 @@ func setupRouter(
 			r.Get("/tables/{id}/prologue/ranking-state", handler.GetPrologueRankingState(store))
 			r.Post("/tables/{id}/prologue/committed-hearts", handler.CommitTrackHearts(store, manager))
 			r.Post("/tables/{id}/prologue/done", handler.SetPrologueDone(store, manager))
+			r.Post("/tables/{id}/prologue/closing-ready", handler.ClosingReady(store, manager))
 
 			// Assets (list + create on the table; per-asset actions by asset ID)
 			r.Get("/tables/{id}/assets", handler.ListAssets(store))

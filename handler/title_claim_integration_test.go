@@ -192,7 +192,7 @@ func TestExtraPeerMonarchClaim_StampsAndTripsGate(t *testing.T) {
 	require.NoError(t, q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 		ID: tg.Game.ID, Phase: model.PhasePrologue,
 	}))
-	step := gamepkg.PrologueStepExtraPeers
+	step := gamepkg.PrologueStepClosing
 	require.NoError(t, q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
 		ID: tg.Game.ID, PrologueRankingStep: &step,
 	}))

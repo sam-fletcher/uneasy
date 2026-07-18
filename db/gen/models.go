@@ -263,6 +263,14 @@ type PrologueChoice struct {
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type PrologueClosingReady struct {
+	ID        int64              `db:"id" json:"id"`
+	GameID    int64              `db:"game_id" json:"game_id"`
+	PlayerID  int64              `db:"player_id" json:"player_id"`
+	Ready     bool               `db:"ready" json:"ready"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
 type PrologueCommittedHeart struct {
 	ID        int64              `db:"id" json:"id"`
 	GameID    int64              `db:"game_id" json:"game_id"`

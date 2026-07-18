@@ -48,9 +48,10 @@ type ExtraPeerView struct {
 }
 
 type PrologueRankingState struct {
-	Committed  []CommittedHeartView `json:"committed"`
-	Done       []TrackDoneView      `json:"done"`
-	ExtraPeers []ExtraPeerView      `json:"extra_peers"`
+	Committed    []CommittedHeartView `json:"committed"`
+	Done         []TrackDoneView      `json:"done"`
+	ExtraPeers   []ExtraPeerView      `json:"extra_peers"`
+	ClosingReady []ClosingReadyView   `json:"closing_ready"`
 }
 
 // GetPrologueRankingState handles GET /api/tables/{id}/prologue/ranking-state.
@@ -77,6 +78,11 @@ func GetPrologueRankingState(s *db.Store) http.HandlerFunc {
 			respondInternalErr(w, r, "could not load extra peers", err)
 			return
 		}
+		closingReady, err := s.Q.ListClosingReadyByGame(ctx, gameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load closing-ready flags", err)
+			return
+		}
 		commit := make([]CommittedHeartView, 0, len(committed))
 		for _, c := range committed {
 			commit = append(commit, CommittedHeartView{
@@ -96,8 +102,12 @@ func GetPrologueRankingState(s *db.Store) http.HandlerFunc {
 				PlayerID: e.PlayerID, TitleName: e.TitleName, AssetID: e.AssetID,
 			})
 		}
+		closingViews := make([]ClosingReadyView, 0, len(closingReady))
+		for _, c := range closingReady {
+			closingViews = append(closingViews, ClosingReadyView{PlayerID: c.PlayerID, Ready: c.Ready})
+		}
 		respond(w, http.StatusOK, PrologueRankingState{
-			Committed: commit, Done: doneViews, ExtraPeers: extraViews,
+			Committed: commit, Done: doneViews, ExtraPeers: extraViews, ClosingReady: closingViews,
 		})
 	}
 }
@@ -393,8 +403,8 @@ func resolveTrack(
 	default:
 		// Either no set-asides or exactly one (auto-placed above).
 		nextStep = nextDeclareStepAfter(track)
-		if nextStep == "" && len(players) <= 3 {
-			nextStep = gamepkg.PrologueStepExtraPeers
+		if nextStep == "" {
+			nextStep = gamepkg.PrologueStepClosing
 		}
 	}
 	if err := setRankingStep(ctx, q, game.ID, nextStep); err != nil {
@@ -407,6 +417,9 @@ func resolveTrack(
 	// instead, once the top-ranked player has slotted the remaining players in.
 	if nextStep != placeSetAsidesStepFor(track) {
 		EmitPrologueTrackRanked(ctx, q, manager, game.ID, track)
+	}
+	if nextStep == gamepkg.PrologueStepClosing {
+		EmitPrologueClosingEntered(ctx, q, manager, game.ID)
 	}
 	return nil
 }
@@ -473,7 +486,7 @@ func trackResolved(track, currentStep string) bool {
 		}
 	}
 	if currentIdx == -1 {
-		return true // past all tracks (extra_peers / done)
+		return true // past all tracks (closing / done)
 	}
 	for i, t := range seq {
 		if t == track {

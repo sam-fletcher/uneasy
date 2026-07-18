@@ -593,7 +593,8 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.PrologueSetAsidesPlaced:
 		case EventTypes.PrologueCommittedHeartsChanged:
 		case EventTypes.PrologueDoneChanged:
-		case EventTypes.PrologueExtraPeerCreated: {
+		case EventTypes.PrologueExtraPeerCreated:
+		case EventTypes.PrologueClosingReadyChanged: {
 			// Step changes update the game's ranking_step locally so the
 			// view re-renders the right sub-flow without a full reload.
 			if (msg.type === EventTypes.PrologueRankingStepChanged && ctx.game) {

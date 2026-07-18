@@ -212,9 +212,9 @@ func TestComputeWaitState_Prologue_PlaceSetAsides(t *testing.T) {
 		"players[0] holds rank 2 — the top REAL player once dummies occupy rank 1")
 }
 
-// TestComputeWaitState_Prologue_ExtraPeers: every player who hasn't created
-// their extra peer is named.
-func TestComputeWaitState_Prologue_ExtraPeers(t *testing.T) {
+// TestComputeWaitState_Prologue_Closing: every player who hasn't marked
+// themselves ready for the closing step is named.
+func TestComputeWaitState_Prologue_Closing(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 2)
@@ -222,25 +222,19 @@ func TestComputeWaitState_Prologue_ExtraPeers(t *testing.T) {
 	require.NoError(t, q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
 		ID: tg.Game.ID, Phase: model.PhasePrologue,
 	}))
-	step := gamepkg.PrologueStepExtraPeers
+	step := gamepkg.PrologueStepClosing
 	require.NoError(t, q.SetPrologueRankingStep(ctx, dbgen.SetPrologueRankingStepParams{
 		ID: tg.Game.ID, PrologueRankingStep: &step,
 	}))
 
 	ws, err := ComputeWaitState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
-	assert.Equal(t, model.WaitKindPrologueExtraPeers, ws.Kind)
+	assert.Equal(t, model.WaitKindPrologueClosing, ws.Kind)
 	assert.ElementsMatch(t, []int64{tg.Players[0].ID, tg.Players[1].ID}, ws.ActingPlayerIDs)
 
-	// newTestGame's seedBase already gives every player a main-character
-	// peer asset; reuse it to satisfy InsertExtraPeer's asset_id FK.
-	assets, err := q.ListAssetsByOwner(ctx, tg.Players[0].ID)
-	require.NoError(t, err)
-	require.NotEmpty(t, assets)
-	_, err = q.InsertExtraPeer(ctx, dbgen.InsertExtraPeerParams{
-		GameID: tg.Game.ID, PlayerID: tg.Players[0].ID, TitleName: "Steward", AssetID: assets[0].ID,
-	})
-	require.NoError(t, err)
+	require.NoError(t, q.SetClosingReady(ctx, dbgen.SetClosingReadyParams{
+		GameID: tg.Game.ID, PlayerID: tg.Players[0].ID, Ready: true,
+	}))
 
 	ws, err = ComputeWaitState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)

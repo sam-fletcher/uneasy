@@ -112,10 +112,16 @@ export interface ExtraPeer {
 	asset_id: number;
 }
 
+export interface ClosingReady {
+	player_id: number;
+	ready: boolean;
+}
+
 export interface PrologueRankingState {
 	committed: CommittedHeart[];
 	done: TrackDone[];
 	extra_peers: ExtraPeer[];
+	closing_ready: ClosingReady[];
 }
 
 export function getPrologueRankingState(
@@ -143,5 +149,15 @@ export function setPrologueDone(
 	return apiFetch(`/tables/${gameID}/prologue/done`, {
 		method: 'POST',
 		body: JSON.stringify({ track, done })
+	});
+}
+
+export function setClosingReady(
+	gameID: string | number,
+	ready: boolean
+): Promise<{ ready: boolean }> {
+	return apiFetch(`/tables/${gameID}/prologue/closing-ready`, {
+		method: 'POST',
+		body: JSON.stringify({ ready })
 	});
 }

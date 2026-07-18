@@ -70,7 +70,7 @@ export type PrologueRankingStep =
 	| 'place_set_asides_knowledge'
 	| 'declare_esteem'
 	| 'place_set_asides_esteem'
-	| 'extra_peers';
+	| 'closing';
 
 export type PrologueSheetType = 'titles' | 'hailing_from' | 'laws_rumors';
 

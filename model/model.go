@@ -49,6 +49,12 @@ const (
 	AssetResource AssetType = "resource"
 )
 
+// MainCharacterPlaceholder is the name every player's main-character peer
+// asset is created with (before they've chosen a real name). The prologue
+// closing gate refuses ready=true while a player's main character still
+// carries this name.
+const MainCharacterPlaceholder = "[Main Character]"
+
 // ── Plan Type ───────────────────────────────────────────────────────────────
 
 type PlanType string
