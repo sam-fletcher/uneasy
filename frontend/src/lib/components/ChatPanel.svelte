@@ -852,6 +852,7 @@
 				type="button"
 				class="persona-btn"
 				class:open={pickerOpen}
+				class:character={selectedPersona?.kind === 'asset'}
 				style:--player-color={selfColor}
 				onclick={() => { pickerOpen = !pickerOpen; }}
 				aria-haspopup="listbox"
@@ -882,7 +883,8 @@
 							>
 								<span
 									class="persona-option-dot"
-									style:background={selfColor}
+									class:muted={p.kind === 'asset'}
+									style:--player-color={selfColor}
 									aria-hidden="true"
 								></span>
 								<span>{p.label}</span>
@@ -1187,13 +1189,14 @@
 
 	/* Byline above body (adr/CHAT_VISUAL_HIERARCHY_PLAN.md S1): a
 	   side-by-side author/body/time grid crushed prose into a sliver next to
-	   long persona bylines at phone width. Prose gets the full column. */
+	   long persona bylines at phone width. Prose gets the full column.
+	   No coloured left rule — the byline is the one place a message spends
+	   player colour (S1 polish ruling: colour the byline OR a rule, never
+	   both; the jewel palette is loud enough that doses stay small). */
 	.message {
 		display: flex;
 		flex-direction: column;
 		gap: 0.15rem;
-		border-left: 3px solid var(--player-color, var(--color-accent));
-		padding-left: 0.5rem;
 	}
 
 	.msg-byline {
@@ -1239,10 +1242,16 @@
 		border-radius: 4px;
 		padding: 0.4rem 0.6rem 0.45rem 0.55rem;
 	}
+	/* The mask, not the player: a character's words aren't the player's own
+	   voice (or interests), so the in-character byline wears a muted cast of
+	   the player's colour — hue survives for attribution, but the vivid
+	   jewel tone is reserved for the player speaking as themselves. Recipe,
+	   not a hand-picked hex (docs/STYLE_GUIDE.md). */
 	.message.in-character .msg-author {
 		font-variant: small-caps;
 		letter-spacing: 0.04em;
 		font-size: 0.95rem;
+		color: color-mix(in srgb, var(--player-color, var(--color-accent)) 55%, var(--color-text-secondary));
 	}
 	.message.table-talk .msg-author,
 	.message.table-talk .msg-body {
@@ -1368,9 +1377,12 @@
 
 	/* ── Scene container (Phase 4c) ──────────────────────────────────────────
 	   A turn scene's whole span — header card plus everything said during it
-	   — reads as one indented vignette, ruled in the focus player's color. */
+	   — reads as one indented vignette. The frame is the warm ledger
+	   hairline, not the focus player's colour (a full-height jewel rule
+	   wasn't paying rent — S1 polish ruling); the focus colour survives
+	   only as the header's ❧ glyph. */
 	.scene-group {
-		border-left: 3px solid var(--focus-color, var(--color-accent));
+		border-left: 1px solid var(--color-border-warm);
 		padding-left: 0.65rem;
 		margin: 0.3rem 0;
 		display: flex;
@@ -1522,14 +1534,18 @@
 		flex-shrink: 0;
 	}
 
+	/* The bar mirrors the message registers: vivid player colour while
+	   speaking as yourself, the muted mask-cast while a character persona
+	   is selected (same 55% recipe as .in-character bylines). */
 	.persona-btn {
+		--persona-color: var(--player-color, var(--color-accent));
 		display: flex;
 		align-items: center;
 		gap: 0.45rem;
 		min-height: 36px;
 		padding: 0.3rem 0.6rem;
 		border: 1px solid var(--color-surface-2);
-		border-left: 3px solid var(--player-color, var(--color-accent));
+		border-left: 3px solid var(--persona-color);
 		background: var(--color-surface-sunken);
 		color: var(--color-text-secondary);
 		border-radius: 5px;
@@ -1537,8 +1553,11 @@
 		font-size: 0.85rem;
 		width: 100%;
 	}
+	.persona-btn.character {
+		--persona-color: color-mix(in srgb, var(--player-color, var(--color-accent)) 55%, var(--color-text-secondary));
+	}
 
-	.persona-btn:hover { border-color: var(--player-color, var(--color-accent)); }
+	.persona-btn:hover { border-color: var(--persona-color); }
 
 	.persona-btn.open { background: var(--color-surface-active); }
 
@@ -1546,7 +1565,7 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: var(--player-color, var(--color-accent));
+		background: var(--persona-color);
 		flex-shrink: 0;
 	}
 
@@ -1559,7 +1578,7 @@
 
 	.persona-value {
 		flex: 1;
-		color: var(--player-color, var(--color-accent));
+		color: var(--persona-color);
 		text-align: left;
 	}
 
@@ -1603,5 +1622,9 @@
 		height: 8px;
 		border-radius: 50%;
 		flex-shrink: 0;
+		background: var(--player-color, var(--color-accent));
+	}
+	.persona-option-dot.muted {
+		background: color-mix(in srgb, var(--player-color, var(--color-accent)) 55%, var(--color-text-secondary));
 	}
 </style>

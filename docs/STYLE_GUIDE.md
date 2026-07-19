@@ -73,6 +73,17 @@ Ledger warmth lives in the **frame, not the fill**: asset/marginalia tiles
 use the plain surface ladder for backgrounds and `--color-border-warm`
 (gold-850) for borders. There is no warm fill scale.
 
+**Player colours** (categorical, owned by `lib/playerColor.ts`; reference
+block in `app.css`, sync enforced by `designTokens.test.ts`) are jewel
+tones balanced to a 5.2–7.0 contrast band on the page bg — legible as
+small byline text, no player louder than another. Spend them sparingly:
+in chat a message colours its **byline only** (never byline + rule), and
+**in-character speech wears the muted mask-cast** —
+`color-mix(in srgb, <player> 55%, var(--color-text-secondary))` — because
+a character's words aren't the player's own voice. Vivid = the player as
+themselves; muted = the mask. Grey (`--player-ooc`) means "system", never
+a quieter player.
+
 ## Typography
 
 - **Fully serif.** `--font-serif` (Spectral) drives body, headings, prose.

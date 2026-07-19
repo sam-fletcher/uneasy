@@ -131,11 +131,15 @@
 	   agree — component code must go through playerColor()/
 	   playerColorByID(), never var(--player-*) directly (there is no
 	   static mapping from "player 1" to a DOM slot; it's per-game data). */
-	--player-1: #b800ff; /* Royal Amethyst */
-	--player-2: #0055ff; /* Sapphire Blue */
-	--player-3: #00cc44; /* Vivid Jade */
-	--player-4: #e60026; /* Crimson Velvet */
-	--player-5: #ff6a00; /* Blazing Citrine */
+	--player-1: #c46be8; /* Royal Amethyst */
+	--player-2: #5e8cff; /* Sapphire Blue */
+	--player-3: #2fb56e; /* Vivid Jade */
+	--player-4: #f0566b; /* Crimson Velvet */
+	--player-5: #ef8b33; /* Blazing Citrine */
+	/* Retuned 2026-07-19 (chat-hierarchy S1 polish): the original neon
+	   primaries ran 3.1:1 (sapphire, AA fail) to 8.1:1 (jade) as byline
+	   text on --neutral-950; these sit in a 5.2–7.0 band — same five hue
+	   identities, jewel saturation kept, luminance balanced. */
 	--player-ooc: #8a8a8a; /* = --neutral-400 (deliberately reused — an
 	                           independent #888888 before the
 	                           COLOR_ROLES_PLAN.md player-colour audit

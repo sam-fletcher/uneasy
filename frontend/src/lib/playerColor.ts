@@ -23,11 +23,14 @@ import type { Player } from './api';
  * disagree before token_color is set.
  */
 const FALLBACK_PALETTE = [
-	'#B800FF', // Royal Amethyst
-	'#0055FF', // Sapphire Blue
-	'#00CC44', // Vivid Jade
-	'#E60026', // Crimson Velvet
-	'#FF6A00', // Blazing Citrine
+	// Retuned 2026-07-19: the original neon primaries ran 3.1:1–8.1:1 as
+	// byline text on --neutral-950 (sapphire failed AA; jade shouted).
+	// Same five hue identities, luminance balanced into a 5.2–7.0 band.
+	'#C46BE8', // Royal Amethyst
+	'#5E8CFF', // Sapphire Blue
+	'#2FB56E', // Vivid Jade
+	'#F0566B', // Crimson Velvet
+	'#EF8B33', // Blazing Citrine
 ];
 
 /**
