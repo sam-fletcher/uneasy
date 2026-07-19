@@ -571,6 +571,18 @@
 	function fmtTime(iso: string) {
 		return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
+
+	function fmtFullTime(iso: string) {
+		return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+	}
+
+	// Timestamp diet (adr/CHAT_VISUAL_HIERARCHY_PLAN.md S1): per-line times
+	// are hidden until hover (pointer devices) or tap. One revealed row at a
+	// time, so taps don't accrete clutter down the feed.
+	let revealedTimeID = $state<number | null>(null);
+	function toggleTimeReveal(id: number) {
+		revealedTimeID = revealedTimeID === id ? null : id;
+	}
 </script>
 
 <!--
@@ -749,12 +761,18 @@
 					<span class="boundary-line"></span>
 				</div>
 			{:else if post.author_id == null}
+				<!-- Tap-to-reveal the timestamp; supplementary metadata only (the
+				     full date also lives in `title`), so the row stays a plain div. -->
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div
 					class="log"
 					class:important={post.severity >= SEVERITY.IMPORTANT}
 					class:continues-run={item.continuesRun}
+					class:show-time={revealedTimeID === post.id}
 					data-post-id={post.id}
 					data-code={post.system_code}
+					title={fmtFullTime(post.created_at)}
+					onclick={() => toggleTimeReveal(post.id)}
 				>
 					<span class="log-glyph" aria-hidden="true">{logGlyph(post.system_code)}</span>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -764,26 +782,36 @@
 			{:else}
 				{@const inCharacter = post.speaking_as_asset_id != null}
 				{@const color = playerColorByID(post.author_id, players)}
+				{@const speakingAsset = inCharacter
+					? assets.find(a => a.id === post.speaking_as_asset_id)
+					: undefined}
 				{@const personaName = inCharacter
-					? assetName(post.speaking_as_asset_id) || playerName(post.author_id)
+					? speakingAsset?.name || playerName(post.author_id)
 					: playerName(post.author_id)}
-				{@const playerTag = inCharacter ? playerName(post.author_id) : ''}
+				{@const borrowed = speakingAsset != null && speakingAsset.owner_id !== post.author_id}
+				<!-- The author's colour carries authorship; the byline tag only
+				     appears for a borrowed persona (speaking as a peer the author
+				     doesn't own), so the table can see who is puppeteering. -->
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div
 					class="message"
 					data-post-id={post.id}
 					class:own={post.author_id === currentPlayerID}
 					class:in-character={inScene && inCharacter}
 					class:table-talk={inScene && !inCharacter}
+					class:show-time={revealedTimeID === post.id}
 					style:--player-color={color}
+					title={fmtFullTime(post.created_at)}
+					onclick={() => toggleTimeReveal(post.id)}
 				>
-					<span class="msg-author">
-						{personaName}
-						{#if playerTag && playerTag !== personaName}
-							<span class="msg-player-tag">({playerTag})</span>
+					<span class="msg-byline">
+						<span class="msg-author">{personaName}</span>
+						{#if borrowed}
+							<span class="msg-player-tag">({playerName(post.author_id)})</span>
 						{/if}
+						<span class="msg-time">{fmtTime(post.created_at)}</span>
 					</span>
 					<span class="msg-body">{post.body}</span>
-					<span class="msg-time">{fmtTime(post.created_at)}</span>
 				</div>
 			{/if}
 		{/if}
@@ -1157,19 +1185,27 @@
 		border-color: var(--color-accent);
 	}
 
+	/* Byline above body (adr/CHAT_VISUAL_HIERARCHY_PLAN.md S1): a
+	   side-by-side author/body/time grid crushed prose into a sliver next to
+	   long persona bylines at phone width. Prose gets the full column. */
 	.message {
-		display: grid;
-		grid-template-columns: auto 1fr auto;
-		gap: 0.4rem;
-		align-items: baseline;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
 		border-left: 3px solid var(--player-color, var(--color-accent));
 		padding-left: 0.5rem;
+	}
+
+	.msg-byline {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0.35rem;
 	}
 
 	.msg-author {
 		color: var(--player-color, var(--color-accent));
 		font-size: 0.82rem;
-		white-space: nowrap;
 	}
 
 	.msg-body {
@@ -1184,24 +1220,29 @@
 		font-size: 0.7rem;
 		color: var(--color-text-faint);
 		white-space: nowrap;
+		margin-left: auto;
+		display: none;
 	}
 
 	/* In-character vs table-talk registers (Phase 4d) — only meaningful
 	   inside a scene container; outside a scene every player post uses the
 	   plain `.message` styling above unchanged. In-character gets the
-	   heavier treatment (small-caps byline, faint player-color background
-	   tint); table-talk stays lighter (slightly smaller) but keeps the
-	   player's color on the name and rule, same as outside a scene — grey
-	   OOC styling is retired for player content everywhere. */
+	   heavier treatment: small-caps byline and a neutral sunken ground (the
+	   player-colour wash it used to carry read as a saturated chat-embed
+	   against the app's parchment/ledger materiality — colour lives on the
+	   rule and byline instead; hierarchy-plan S1). Table-talk stays lighter
+	   (slightly smaller) but keeps the player's color on the name and rule,
+	   same as outside a scene — grey OOC styling is retired for player
+	   content everywhere. */
 	.message.in-character {
-		background: color-mix(in srgb, var(--player-color, var(--color-accent)) 12%, transparent);
+		background: var(--color-surface-sunken);
 		border-radius: 4px;
-		padding: 0.4rem 0.6rem 0.4rem 0.55rem;
+		padding: 0.4rem 0.6rem 0.45rem 0.55rem;
 	}
 	.message.in-character .msg-author {
 		font-variant: small-caps;
-		font-weight: 700;
-		letter-spacing: 0.03em;
+		letter-spacing: 0.04em;
+		font-size: 0.95rem;
 	}
 	.message.table-talk .msg-author,
 	.message.table-talk .msg-body {
@@ -1255,6 +1296,28 @@
 	.log.important .log-time { margin-left: 0.4rem; }
 	.log-glyph { color: var(--color-text-muted); }
 	.log-time { font-size: 0.7rem; color: var(--color-text-faint); white-space: nowrap; }
+
+	/* Timestamp diet (hierarchy-plan S1): per-line times are metadata, not
+	   content — hidden until hover (pointer devices) or tap (one row at a
+	   time; `show-time` from revealedTimeID), with the full date in the
+	   row's `title`. Scoped to feed rows so the scene-container header's
+	   time (one per container, and its tap gesture is collapse/expand)
+	   stays always-visible. */
+	.log .log-time,
+	.ranking-group .log-time {
+		display: none;
+	}
+	@media (hover: hover) {
+		.message:hover .msg-time,
+		.log:hover .log-time,
+		.ranking-group:hover .log-time {
+			display: inline;
+		}
+	}
+	.message.show-time .msg-time,
+	.log.show-time .log-time {
+		display: inline;
+	}
 
 	/* Tighter ledger spacing (Phase 3 item 4): a system post immediately
 	   following another system post (no divider/player message between them)
