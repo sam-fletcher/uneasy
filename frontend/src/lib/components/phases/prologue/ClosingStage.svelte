@@ -35,6 +35,7 @@
 		myAtRiskCount,
 		retinueTallies,
 		RETINUE_TYPE_ORDER,
+		type RetinueTally,
 	} from '$lib/prologue/closing';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import { playerColorByID } from '$lib/playerColor';
@@ -60,7 +61,8 @@
 		onReload: () => void;
 		onResync?: () => void;
 		onOpenTones?: () => void;
-		onOpenRetinue?: () => void;
+		/** Opens the retinue sheet — for `playerID` if given, else the current player. */
+		onOpenRetinue?: (playerID?: number) => void;
 		onOpenLaws?: () => void;
 		onOpenRumors?: () => void;
 	}
@@ -96,6 +98,21 @@
 
 	// ── Recap: retinue tallies ───────────────────────────────────────────────
 	const tallies = $derived(retinueTallies(players, assets));
+
+	// The row's aria-label restates the counts because a labelled button hides
+	// its inner text from assistive tech.
+	const TALLY_TYPE_LABELS: Record<Asset['asset_type'], string> = {
+		peer: 'Peers',
+		artifact: 'Artifacts',
+		resource: 'Resources',
+		holding: 'Holdings',
+	};
+	function tallyRowLabel(t: RetinueTally): string {
+		const counts = RETINUE_TYPE_ORDER.map((type) => `${TALLY_TYPE_LABELS[type]} ${t.counts[type]}`).join(', ');
+		const you = t.playerID === currentPlayerID ? ' (you)' : '';
+		const taken = t.takenFromOthers > 0 ? `; ${t.takenFromOthers} taken from others` : '';
+		return `View ${playerName(t.playerID)}'s retinue${you} — ${counts}${taken}`;
+	}
 
 	// ── Name your main character (hard) ──────────────────────────────────────
 	const myMainCharacter = $derived(findMainCharacter(assets, currentPlayerID));
@@ -247,24 +264,31 @@
 			<ul class="recap-retinue">
 				{#each tallies as t (t.playerID)}
 					<li>
-						<span class="retinue-name">
-							<span class="retinue-dot" style:background={playerColorByID(t.playerID, players)} aria-hidden="true"></span>
-							<span class="retinue-name-text">{playerName(t.playerID)}</span>
-							{#if t.playerID === currentPlayerID}<span class="retinue-you">you</span>{/if}
-						</span>
-						<span class="retinue-counts">
-							{#each RETINUE_TYPE_ORDER as type}
-								<span class="retinue-count" class:zero={t.counts[type] === 0}>
-									<AssetTypeIcon {type} size={14} />
-									<span class="retinue-count-num">{t.counts[type]}</span>
-								</span>
-							{/each}
-						</span>
-						{#if t.takenFromOthers > 0}
-							<span class="retinue-taken" title="Assets taken from other players during the prologue">
-								{t.takenFromOthers} taken
+						<button
+							type="button"
+							class="retinue-row"
+							onclick={() => onOpenRetinue?.(t.playerID)}
+							aria-label={tallyRowLabel(t)}
+						>
+							<span class="retinue-name">
+								<span class="retinue-dot" style:background={playerColorByID(t.playerID, players)} aria-hidden="true"></span>
+								<span class="retinue-name-text">{playerName(t.playerID)}</span>
+								{#if t.playerID === currentPlayerID}<span class="retinue-you">you</span>{/if}
 							</span>
-						{/if}
+							<span class="retinue-counts">
+								{#each RETINUE_TYPE_ORDER as type}
+									<span class="retinue-count" class:zero={t.counts[type] === 0}>
+										<AssetTypeIcon {type} size={14} />
+										<span class="retinue-count-num">{t.counts[type]}</span>
+									</span>
+								{/each}
+							</span>
+							{#if t.takenFromOthers > 0}
+								<span class="retinue-taken" title="Assets taken from other players during the prologue">
+									{t.takenFromOthers} taken
+								</span>
+							{/if}
+						</button>
 					</li>
 				{/each}
 			</ul>
@@ -359,7 +383,7 @@
 				<p class="check-body">
 					{riskCount} of your assets {riskCount === 1 ? 'is' : 'are'} one tear from destruction.
 				</p>
-				<button class="action-btn secondary small" onclick={onOpenRetinue}>Open Retinue</button>
+				<button class="action-btn secondary small" onclick={() => onOpenRetinue?.()}>Open Retinue</button>
 			</section>
 		{/if}
 
@@ -522,14 +546,31 @@
 	}
 	.recap-retinue li {
 		display: flex;
+	}
+	.retinue-row {
+		flex: 1;
+		min-width: 0;
+		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		min-height: 40px;
+		min-height: 44px;
 		padding: 0.3rem 0.5rem;
 		background: var(--color-surface-sunken);
 		border: 1px solid var(--color-surface-2);
 		border-radius: 4px;
+		font-family: inherit;
 		font-size: 0.82rem;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.retinue-row:hover {
+		background: color-mix(in srgb, var(--color-surface-sunken) 92%, white);
+		border-color: color-mix(in srgb, var(--color-surface-2) 75%, white);
+	}
+	.retinue-row:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 1px;
 	}
 	.retinue-name {
 		display: flex;

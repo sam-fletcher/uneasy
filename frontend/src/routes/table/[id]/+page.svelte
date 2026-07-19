@@ -747,7 +747,7 @@
 			{rumors}
 			onResync={loadGameState}
 			onOpenTones={() => tonesOpen = true}
-			onOpenRetinue={() => retinueOpenForPlayer = currentPlayerID}
+			onOpenRetinue={(playerID) => retinueOpenForPlayer = playerID ?? currentPlayerID}
 			onOpenLaws={() => lawsOpen = true}
 			onOpenRumors={() => rumorsOpen = true}
 		/>

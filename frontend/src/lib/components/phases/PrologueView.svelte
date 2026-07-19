@@ -66,7 +66,7 @@
 		rumors?: Rumor[];
 		onResync?: () => void;
 		onOpenTones?: () => void;
-		onOpenRetinue?: () => void;
+		onOpenRetinue?: (playerID?: number) => void;
 		onOpenLaws?: () => void;
 		onOpenRumors?: () => void;
 	}
