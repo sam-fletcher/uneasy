@@ -138,7 +138,7 @@
 		color: var(--white);
 	}
 	.sp-tile:disabled { opacity: 0.4; cursor: not-allowed; }
-	.sp-tile.custom { font-style: italic; color: var(--color-accent); }
+	.sp-tile.custom { color: var(--color-accent); } /* font-style: italic; */
 	.sp-tile.custom.selected { color: var(--white); font-style: normal; }
 	.sp-tile.blank {
 		background: transparent;
