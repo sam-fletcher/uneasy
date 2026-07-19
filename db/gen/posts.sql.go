@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const createPlayerMessage = `-- name: CreatePlayerMessage :one
@@ -106,14 +107,14 @@ RETURNING id, game_id, row_number, plan_id, author_id, body, created_at, system_
 `
 
 type CreateSystemPostParams struct {
-	GameID     int64   `db:"game_id" json:"game_id"`
-	Body       string  `db:"body" json:"body"`
-	RowNumber  *int16  `db:"row_number" json:"row_number"`
-	PlanID     *int64  `db:"plan_id" json:"plan_id"`
-	SceneID    *int64  `db:"scene_id" json:"scene_id"`
-	Severity   int32   `db:"severity" json:"severity"`
-	SystemCode *string `db:"system_code" json:"system_code"`
-	SystemData []byte  `db:"system_data" json:"system_data"`
+	GameID     int64           `db:"game_id" json:"game_id"`
+	Body       string          `db:"body" json:"body"`
+	RowNumber  *int16          `db:"row_number" json:"row_number"`
+	PlanID     *int64          `db:"plan_id" json:"plan_id"`
+	SceneID    *int64          `db:"scene_id" json:"scene_id"`
+	Severity   int32           `db:"severity" json:"severity"`
+	SystemCode *string         `db:"system_code" json:"system_code"`
+	SystemData json.RawMessage `db:"system_data" json:"system_data"`
 }
 
 func (q *Queries) CreateSystemPost(ctx context.Context, arg CreateSystemPostParams) (ScenePost, error) {

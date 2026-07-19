@@ -5,6 +5,8 @@
 package dbgen
 
 import (
+	"encoding/json"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"uneasy/model"
 )
@@ -373,7 +375,7 @@ type ScenePost struct {
 	Body              string             `db:"body" json:"body"`
 	CreatedAt         pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	SystemCode        *string            `db:"system_code" json:"system_code"`
-	SystemData        []byte             `db:"system_data" json:"system_data"`
+	SystemData        json.RawMessage    `db:"system_data" json:"system_data"`
 	SpeakingAsAssetID *int64             `db:"speaking_as_asset_id" json:"speaking_as_asset_id"`
 	Severity          int32              `db:"severity" json:"severity"`
 	SceneID           *int64             `db:"scene_id" json:"scene_id"`

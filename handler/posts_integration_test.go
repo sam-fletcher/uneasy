@@ -320,6 +320,44 @@ func TestGetPostAnchor_BySceneID(t *testing.T) {
 	require.Equal(t, sceneID, *post.SceneID)
 }
 
+// ── system_data wire shape ───────────────────────────────────────────────────
+
+// TestListGamePosts_SystemDataIsJSONObject guards against system_data being
+// serialized as a base64 string. dbgen.ScenePost.SystemData was typed
+// []byte, which encoding/json base64-encodes on marshal; it must stay
+// json.RawMessage so the scene-container header's prompt/participants/
+// focus-player colour survive the wire (chatFeed.ts parseSceneStartedData
+// rejects anything that isn't already a JSON object).
+func TestListGamePosts_SystemDataIsJSONObject(t *testing.T) {
+	h := newPostsHarness(t, 2)
+
+	code, sceneOut := h.do("POST", 0, h.tablePath("/scenes"), map[string]any{
+		"location_custom": "The Mill",
+		"time_elapsed":    "moments",
+	})
+	require.Equal(t, http.StatusCreated, code, "%v", sceneOut)
+	sceneID := int64(sceneOut["scene"].(map[string]any)["id"].(float64))
+
+	code, out := h.do("GET", 0, h.tablePath("/posts"), nil)
+	require.Equal(t, http.StatusOK, code)
+
+	var started map[string]any
+	for _, p := range out["posts"].([]any) {
+		post := p.(map[string]any)
+		if post["system_code"] == "scene.started" {
+			started = post
+		}
+	}
+	require.NotNil(t, started, "expected a scene.started post in the feed")
+
+	data, ok := started["system_data"].(map[string]any)
+	require.True(t, ok, "system_data must decode as a JSON object, not a base64 string: %#v", started["system_data"])
+	require.Equal(t, float64(sceneID), data["scene_id"])
+	require.Equal(t, "turn", data["kind"])
+	require.Contains(t, data, "prompt")
+	require.Contains(t, data, "participants")
+}
+
 func TestGetPostAnchor_NotFound(t *testing.T) {
 	h := newPostsHarness(t, 2)
 

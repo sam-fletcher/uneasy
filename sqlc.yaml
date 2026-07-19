@@ -62,3 +62,11 @@ sql:
             go_type:
               import: "uneasy/model"
               type: "FeedbackKind"
+          # scene_posts.system_data is served straight to the client (REST
+          # + WS) as part of the raw dbgen struct. []byte marshals to a
+          # base64 string; json.RawMessage marshals through as the object it
+          # already is, which the chat feed's scene-container headers need.
+          - column: "scene_posts.system_data"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
