@@ -74,15 +74,30 @@
 	// Per-code-family glyph for log lines (Phase 3 item 3), replacing the
 	// generic bullet. Families not listed here (shake_up, row, phase, …) keep
 	// the bullet — the plan doesn't call for glyphs on those.
+	//
+	// Glyph audit (hierarchy-plan S2): dropped 🗣 (rumor) — an emoji-
+	// presentation character that renders in colour on some platforms,
+	// clashing with every other glyph here being plain monochrome text —
+	// with no replacement (falls back to the bullet). Swapped ⚂ (roll), a
+	// 3-pip die face that's nearly blank at 0.85rem, for ⚄ — 5 pips keeps
+	// real gaps between dots at small size (unlike ⚅'s tightly-packed 6,
+	// which risks smearing into an unreadable blob under anti-aliasing)
+	// while still having more weight than ⚂'s sparse 3. Every die face
+	// measures ~15% shorter than ⚑ in this glyph's own font (canvas ink-
+	// bounding-box check, not just eyeballing) — a rendering quirk of how
+	// the face is drawn inside its em box, not a pip-count effect — so its
+	// glyph slot gets a matching font-size bump below. Dropped
+	// `ranking: '⚖'` outright: every ranking.* post always collapses into
+	// the ranking-group card below (see buildFeedItems), so this entry was
+	// unreachable dead code — the ⚖ that actually renders lives in the
+	// ranking-headline body text.
 	const FAMILY_GLYPHS: Record<string, string> = {
 		plan: '⚑',
 		demand: '⚑', // Make Demands' sub-events (demand.*) are plan chatter.
-		roll: '⚂',
+		roll: '⚄',
 		asset: '✎',
 		marginalia: '✎',
 		law: '§',
-		rumor: '🗣',
-		ranking: '⚖',
 		scene: '❧',
 	};
 	function logGlyph(code: string | null): string {
@@ -758,7 +773,22 @@
 			</div>
 		{:else}
 			{@const post = item.post}
-			{#if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
+			{#if post.author_id == null && post.system_code === 'row.advanced'}
+				<!-- Row-advance rhymes with the Public Record rail's row-number
+				     pill (PublicRecord.svelte .rail-row / .row-num-pill) instead of
+				     the plain line-label-line grammar every other boundary and the
+				     calendar day-divider share — a game-time chapter break should
+				     look like "new row", not "new day" (hierarchy-plan S2). The
+				     pill is decorative (aria-hidden); the row number is already in
+				     the post body text for assistive tech and the e2e text match. -->
+				<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
+					<span class="boundary-line"></span>
+					<span class="row-boundary-pill" aria-hidden="true">{post.row_number}</span>
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+					<span class="boundary-label">{@html renderLogBody(post.body)}</span>
+					<span class="boundary-line"></span>
+				</div>
+			{:else if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
 				<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
 					<span class="boundary-line"></span>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -772,6 +802,7 @@
 				<div
 					class="log"
 					class:important={post.severity >= SEVERITY.IMPORTANT}
+					class:minor={post.severity < SEVERITY.DEFAULT}
 					class:continues-run={item.continuesRun}
 					class:show-time={revealedTimeID === post.id}
 					data-post-id={post.id}
@@ -779,7 +810,7 @@
 					title={fmtFullTime(post.created_at)}
 					onclick={() => toggleTimeReveal(post.id)}
 				>
-					<span class="log-glyph" aria-hidden="true">{logGlyph(post.system_code)}</span>
+					<span class="log-glyph" data-family={systemCodeFamily(post.system_code)} aria-hidden="true">{logGlyph(post.system_code)}</span>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 					<span class="log-body">{@html renderLogBody(post.body)}</span>
 					<span class="log-time">{fmtTime(post.created_at)}</span>
@@ -1311,17 +1342,64 @@
 		font-size: 0.85rem;
 		color: var(--color-text-tertiary-warm);
 	}
+	/* Important system posts (hierarchy-plan S2): a left-anchored emphasized
+	   ledger row, not the old centered banner — centering is reserved for
+	   structural boundaries (row/phase/shake-up chapter breaks) now that
+	   row.advanced has its own treatment below. Same `auto 1fr auto` grid as
+	   plain `.log` rows (no display/text-align switch), so toggling "hide
+	   bookkeeping" never reflows a row's shape, only its weight. The left
+	   rule + gold text is the same "current/emphasized" recipe as
+	   PublicRecord's `.record-row[data-state="current"]`. */
 	.log.important {
-		display: block;
-		text-align: center;
+		border-left: 2px solid var(--color-accent);
+		padding-left: 0.5rem;
 		color: var(--color-accent);
-		font-size: 0.85rem;
-		margin: 0.35rem 0;
 	}
-	.log.important .log-glyph { margin-right: 0.3rem; }
-	.log.important .log-time { margin-left: 0.4rem; }
+	.log.important .log-glyph {
+		color: var(--color-accent);
+		font-size: 1rem;
+	}
+	/* The die-face glyph (⚀–⚅) sits ~15% shorter than ⚑ within its own em
+	   box in every tier — a rendering quirk of the glyph itself, not
+	   something font-size alone fixes elsewhere, so it gets its own bump
+	   here. Overrides `.log.important .log-glyph`'s font-size above for the
+	   Important+roll intersection (e.g. roll.resolved), since that rule's
+	   higher specificity would otherwise win and undo this one. */
+	.log.important .log-glyph[data-family='roll'] { font-size: 1.15rem; }
+	/* Minor/Trace tier (hierarchy-plan S2): visible only with "hide
+	   bookkeeping" off. A visibly smaller, dimmer step below Default so the
+	   ledger keeps three legible registers instead of two. Uses the same
+	   faint token as the day-divider label (contrast-safe on --color-bg),
+	   not the warm faint variant, which is calibrated for lighter tile
+	   surfaces, not the panel's near-black ground. */
+	.log.minor {
+		color: var(--color-text-faint);
+		font-size: 0.8rem;
+	}
+	.log.minor .log-glyph { color: var(--color-text-faint); }
 	.log-glyph { color: var(--color-text-muted); }
+	.log-glyph[data-family='roll'] { font-size: 1.15em; }
 	.log-time { font-size: 0.7rem; color: var(--color-text-faint); white-space: nowrap; }
+
+	/* Row-advance boundary pill (hierarchy-plan S2): a filled accent circle
+	   holding the row number — the same "current" recipe as PublicRecord's
+	   `.rail-row[data-state="current"]` / `.row-num-pill` — so the divider
+	   rhymes with the rail it's reporting instead of just being another
+	   line-label-line banner. */
+	.row-boundary-pill {
+		flex-shrink: 0;
+		width: 1.5rem;
+		height: 1.5rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.7rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		border-radius: 50%;
+		background: var(--color-accent);
+		color: var(--color-bg);
+	}
 
 	/* Timestamp diet (hierarchy-plan S1): per-line times are metadata, not
 	   content — hidden until hover (pointer devices) or tap (one row at a
