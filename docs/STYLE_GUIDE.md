@@ -84,8 +84,10 @@ a character's words aren't the player's own voice. Vivid = the player as
 themselves; muted = the mask. **A peer's colour is always its owning
 retinue's**, never the player currently roleplaying it (scene present
 lists, IC bylines, the persona picker); the byline's faint `(name)` tag is
-what identifies a borrower. Grey (`--player-ooc`) means "system", never a
-quieter player.
+what identifies a borrower. Grey (`--player-unknown`) is a defensive
+fallback for when no player can be resolved at all — it is never used for
+OOC/table-talk speech, which keeps the speaking player's own colour, and
+never means "a quieter player."
 
 ## Typography
 

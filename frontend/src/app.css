@@ -123,14 +123,15 @@
 
 	/* ── Player identity colours (reference only, NOT part of the two tiers)
 	   Categorical, not ramped — five hexes picked to be maximally distinct
-	   from each other on a dark ground, plus one OOC grey. They don't fit
-	   the --<family>-<step> shape above and are never consumed via var();
-	   lib/playerColor.ts owns them at runtime (FALLBACK_PALETTE indexed by
-	   seat_order + OOC_COLOR). Listed here only so a colour audit sees
-	   them in one place and designTokens.test.ts can assert the two files
-	   agree — component code must go through playerColor()/
-	   playerColorByID(), never var(--player-*) directly (there is no
-	   static mapping from "player 1" to a DOM slot; it's per-game data). */
+	   from each other on a dark ground, plus one grey for an unresolvable
+	   player. They don't fit the --<family>-<step> shape above and are
+	   never consumed via var(); lib/playerColor.ts owns them at runtime
+	   (DEFAULT_PALETTE indexed by seat_order + UNKNOWN_PLAYER_COLOR).
+	   Listed here only so a colour audit sees them in one place and
+	   designTokens.test.ts can assert the two files agree — component code
+	   must go through playerColor()/playerColorByID(), never
+	   var(--player-*) directly (there is no static mapping from "player 1"
+	   to a DOM slot; it's per-game data). */
 	--player-1: #c46be8; /* Royal Amethyst */
 	--player-2: #5e8cff; /* Sapphire Blue */
 	--player-3: #2fb56e; /* Vivid Jade */
@@ -140,10 +141,10 @@
 	   primaries ran 3.1:1 (sapphire, AA fail) to 8.1:1 (jade) as byline
 	   text on --neutral-950; these sit in a 5.2–7.0 band — same five hue
 	   identities, jewel saturation kept, luminance balanced. */
-	--player-ooc: #8a8a8a; /* = --neutral-400 (deliberately reused — an
-	                           independent #888888 before the
-	                           COLOR_ROLES_PLAN.md player-colour audit
-	                           found the ΔE 0.77 near-duplicate) */
+	--player-unknown: #8a8a8a; /* = --neutral-400 (deliberately reused — an
+	                               independent #888888 before the
+	                               COLOR_ROLES_PLAN.md player-colour audit
+	                               found the ΔE 0.77 near-duplicate) */
 
 	/* ── Tier 2: semantic aliases ──────────────────────────────────────────
 	   Components reference these. Names describe a ROLE, never a usage

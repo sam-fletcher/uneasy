@@ -60,15 +60,15 @@ describe('design tokens (ADR-009)', () => {
 			cssPlayers[m[1]] = m[2].toLowerCase();
 		}
 
-		const paletteMatch = playerColorTs.match(/FALLBACK_PALETTE = \[([\s\S]*?)\];/);
+		const paletteMatch = playerColorTs.match(/DEFAULT_PALETTE = \[([\s\S]*?)\];/);
 		const tsPalette = paletteMatch
 			? [...paletteMatch[1].matchAll(/#[0-9a-fA-F]{6}/g)].map(m => m[0].toLowerCase())
 			: [];
-		const oocMatch = playerColorTs.match(/OOC_COLOR = '(#[0-9a-fA-F]{6})'/);
-		const tsOoc = oocMatch ? oocMatch[1].toLowerCase() : null;
+		const unknownMatch = playerColorTs.match(/UNKNOWN_PLAYER_COLOR = '(#[0-9a-fA-F]{6})'/);
+		const tsUnknown = unknownMatch ? unknownMatch[1].toLowerCase() : null;
 
 		const cssPalette = ['1', '2', '3', '4', '5'].map(n => cssPlayers[n]);
-		expect(tsPalette, 'playerColor.ts FALLBACK_PALETTE vs app.css --player-1..5').toEqual(cssPalette);
-		expect(tsOoc, 'playerColor.ts OOC_COLOR vs app.css --player-ooc').toEqual(cssPlayers['ooc']);
+		expect(tsPalette, 'playerColor.ts DEFAULT_PALETTE vs app.css --player-1..5').toEqual(cssPalette);
+		expect(tsUnknown, 'playerColor.ts UNKNOWN_PLAYER_COLOR vs app.css --player-unknown').toEqual(cssPlayers['unknown']);
 	});
 });
