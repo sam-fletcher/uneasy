@@ -237,11 +237,13 @@
 					{@const asset = assetByID(p.peer_asset_id)}
 					{#if asset}
 						{@const lbl = controllerLabel(p)}
-						{@const ctrlColor = playerColor(playerByID(p.controller_player_id ?? undefined))}
+						<!-- A peer wears its OWNING retinue's colour regardless of
+						     who currently controls it in the scene (owner ruling,
+						     2026-07-19); the label still names the controller. -->
 						<div class="peer-row">
 							<AssetCardSelectable
 								asset={asset}
-								ownerColor={ctrlColor}
+								ownerColor={colorFor(asset.owner_id)}
 								ownerLabel={lbl.text}
 								knownSecretCount={secretCounts?.known(asset.id)}
 							/>

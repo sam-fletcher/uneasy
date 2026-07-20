@@ -81,8 +81,11 @@ in chat a message colours its **byline only** (never byline + rule), and
 **in-character speech wears the muted mask-cast** —
 `color-mix(in srgb, <player> 55%, var(--color-text-secondary))` — because
 a character's words aren't the player's own voice. Vivid = the player as
-themselves; muted = the mask. Grey (`--player-ooc`) means "system", never
-a quieter player.
+themselves; muted = the mask. **A peer's colour is always its owning
+retinue's**, never the player currently roleplaying it (scene present
+lists, IC bylines, the persona picker); the byline's faint `(name)` tag is
+what identifies a borrower. Grey (`--player-ooc`) means "system", never a
+quieter player.
 
 ## Typography
 

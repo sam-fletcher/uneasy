@@ -160,7 +160,7 @@
 
 	type Persona =
 		| { kind: 'self'; label: string }
-		| { kind: 'asset'; assetID: number; label: string };
+		| { kind: 'asset'; assetID: number; ownerID: number; label: string };
 
 	const selfName = $derived(playerName(currentPlayerID) || 'You');
 
@@ -197,12 +197,17 @@
 		// Character personae are available only while a scene is active.
 		if (activeScene != null) {
 			if (isFocusPlayer && ownMainCharacter) {
-				list.push({ kind: 'asset', assetID: ownMainCharacter.id, label: ownMainCharacter.name });
+				list.push({
+					kind: 'asset',
+					assetID: ownMainCharacter.id,
+					ownerID: ownMainCharacter.owner_id,
+					label: ownMainCharacter.name,
+				});
 			}
 			for (const peer of myControlledPeers) {
 				// Avoid duplicating the main character if it's also in the peer list.
 				if (peer.id === ownMainCharacter?.id) continue;
-				list.push({ kind: 'asset', assetID: peer.id, label: peer.name });
+				list.push({ kind: 'asset', assetID: peer.id, ownerID: peer.owner_id, label: peer.name });
 			}
 		}
 		list.push({ kind: 'self', label: selfName });
@@ -781,17 +786,21 @@
 				</div>
 			{:else}
 				{@const inCharacter = post.speaking_as_asset_id != null}
-				{@const color = playerColorByID(post.author_id, players)}
 				{@const speakingAsset = inCharacter
 					? assets.find(a => a.id === post.speaking_as_asset_id)
 					: undefined}
+				{@const color = speakingAsset
+					? playerColorByID(speakingAsset.owner_id, players)
+					: playerColorByID(post.author_id, players)}
 				{@const personaName = inCharacter
 					? speakingAsset?.name || playerName(post.author_id)
 					: playerName(post.author_id)}
 				{@const borrowed = speakingAsset != null && speakingAsset.owner_id !== post.author_id}
-				<!-- The author's colour carries authorship; the byline tag only
-				     appears for a borrowed persona (speaking as a peer the author
-				     doesn't own), so the table can see who is puppeteering. -->
+				<!-- A character always wears its OWNING retinue's colour, no
+				     matter who is roleplaying it right now (owner ruling,
+				     2026-07-19); only the byline tag names the puppeteer, and
+				     only when they're borrowing a peer they don't own. Posts as
+				     oneself keep the author's own colour. -->
 				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div
 					class="message"
@@ -847,13 +856,19 @@
 
 	{#if currentPlayerID != null && personae.length > 1}
 		{@const selfColor = playerColorByID(currentPlayerID, players)}
+		<!-- A character persona shows its owning retinue's colour (muted, the
+		     mask register), which for a borrowed peer is NOT the speaker's
+		     own; "self" keeps the speaker's vivid colour. -->
+		{@const personaColor = selectedPersona?.kind === 'asset'
+			? playerColorByID(selectedPersona.ownerID, players)
+			: selfColor}
 		<div class="persona-bar">
 			<button
 				type="button"
 				class="persona-btn"
 				class:open={pickerOpen}
 				class:character={selectedPersona?.kind === 'asset'}
-				style:--player-color={selfColor}
+				style:--player-color={personaColor}
 				onclick={() => { pickerOpen = !pickerOpen; }}
 				aria-haspopup="listbox"
 				aria-expanded={pickerOpen}
@@ -884,7 +899,9 @@
 								<span
 									class="persona-option-dot"
 									class:muted={p.kind === 'asset'}
-									style:--player-color={selfColor}
+									style:--player-color={p.kind === 'asset'
+										? playerColorByID(p.ownerID, players)
+										: selfColor}
 									aria-hidden="true"
 								></span>
 								<span>{p.label}</span>
