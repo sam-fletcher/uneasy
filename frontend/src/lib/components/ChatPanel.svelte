@@ -34,6 +34,7 @@
 		type ScenePeerView,
 	} from '$lib/api';
 	import { chatDockQuery } from '$lib/breakpoints';
+	import { renderLogBody, stripLogMarkup } from '$lib/logMarkup';
 	import { playerColorByID } from '$lib/playerColor';
 	import { SEVERITY } from '$lib/severity';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -53,25 +54,14 @@
 		parseSceneStartedData,
 	} from '$lib/chatFeed';
 
-	// System-log bodies use a tiny markup subset: **…** spans wrap
-	// player-authored asset names (the backend emits them via assetMark).
-	// renderLogBody escapes the body first — names are user input — then turns the
-	// **…** the server produced into <em>, so it's safe to inject with {@html}.
-	// Emphasis is rendered *italic*, not bold — a deliberate style choice so
-	// names read distinctly from prose without the visual weight of bold (see
-	// assetMark in system_posts.go). The double-asterisk delimiter stays so a
-	// stray '*' in quoted marginalia text doesn't trip the parser. Player chat
-	// messages do NOT pass through here; their ** is shown verbatim.
-	function escapeHtml(s: string): string {
-		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-	}
-	function renderLogBody(body: string): string {
-		return escapeHtml(body).replace(/\*\*(.+?)\*\*/g, '<em>$1</em>');
-	}
-	// stripLogMarkup drops the ** delimiters for plain-text contexts (the
-	// collapsed-strip preview) where markup can't render.
-	function stripLogMarkup(body: string): string {
-		return body.replace(/\*\*(.+?)\*\*/g, '$1');
+	// System-log bodies carry a tiny server-written markup subset — **asset
+	// names** and @@id|player names@@ — parsed in $lib/logMarkup (which also
+	// documents the escaping order and why each delimiter is doubled). Player
+	// chat messages do NOT pass through it; their asterisks show verbatim.
+	// Bound here to the roster so the template can call it with one argument,
+	// and so `players` is read during render and stays reactive.
+	function renderBody(body: string): string {
+		return renderLogBody(body, players);
 	}
 
 	// Per-code-family glyph for log lines (Phase 3 item 3), replacing the
@@ -727,7 +717,7 @@
 				{outcome === 'make' ? 'Make' : outcome === 'mar' ? 'Mar' : outcome === 'cancelled' ? 'Cancelled' : 'Resolved'}
 			</span>
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-			<span class="plan-outcome-body">{@html renderLogBody(post.body)}</span>
+			<span class="plan-outcome-body">{@html renderBody(post.body)}</span>
 		</div>
 	{/snippet}
 
@@ -762,25 +752,25 @@
 					{#if post.system_code === 'ranking.category'}
 						<h4 class="ranking-category" data-post-id={post.id}>
 							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-							{@html renderLogBody(post.body)}
+							{@html renderBody(post.body)}
 						</h4>
 					{:else if post.system_code === 'ranking.standing'}
 						<div class="ranking-standing" data-post-id={post.id}>
 							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-							{@html renderLogBody(post.body)}
+							{@html renderBody(post.body)}
 						</div>
 					{:else if post.system_code === 'ranking.updated'}
 						<!-- No separate glyph span: the body already leads with ⚖
 						     (EmitRankingUpdated bakes it into the headline text). -->
 						<div class="ranking-headline" data-post-id={post.id}>
 							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-							<span>{@html renderLogBody(post.body)}</span>
+							<span>{@html renderBody(post.body)}</span>
 							<span class="log-time">{fmtTime(post.created_at)}</span>
 						</div>
 					{:else}
 						<div class="ranking-line" data-post-id={post.id}>
 							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-							{@html renderLogBody(post.body)}
+							{@html renderBody(post.body)}
 						</div>
 					{/if}
 				{/each}
@@ -802,7 +792,7 @@
 					<div class="plan-pre-header" data-post-id={item.resolvingPost.id} data-code={item.resolvingPost.system_code}>
 						<span class="log-glyph" data-family="plan" aria-hidden="true">⚑</span>
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						<span>{@html renderLogBody(item.resolvingPost.body)}</span>
+						<span>{@html renderBody(item.resolvingPost.body)}</span>
 					</div>
 				{/if}
 				<button
@@ -873,7 +863,7 @@
 					<div class="scene-header-row">
 						<span class="scene-glyph" aria-hidden="true">⚑</span>
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						<span class="scene-banner">{@html renderLogBody(item.resolvingPost.body)}</span>
+						<span class="scene-banner">{@html renderBody(item.resolvingPost.body)}</span>
 						<span class="log-time">{fmtTime(item.resolvingPost.created_at)}</span>
 					</div>
 					{#if item.items.length > 0}
@@ -920,14 +910,14 @@
 					<span class="boundary-line"></span>
 					<span class="row-boundary-pill" aria-hidden="true">{post.row_number}</span>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-					<span class="boundary-label">{@html renderLogBody(post.body)}</span>
+					<span class="boundary-label">{@html renderBody(post.body)}</span>
 					<span class="boundary-line"></span>
 				</div>
 			{:else if post.author_id == null && post.severity >= SEVERITY.BOUNDARY}
 				<div class="boundary" data-post-id={post.id} data-code={post.system_code}>
 					<span class="boundary-line"></span>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-					<span class="boundary-label">{@html renderLogBody(post.body)}</span>
+					<span class="boundary-label">{@html renderBody(post.body)}</span>
 					<span class="boundary-line"></span>
 				</div>
 			{:else if post.author_id == null}
@@ -947,7 +937,7 @@
 				>
 					<span class="log-glyph" data-family={systemCodeFamily(post.system_code)} aria-hidden="true">{logGlyph(post.system_code)}</span>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-					<span class="log-body">{@html renderLogBody(post.body)}</span>
+					<span class="log-body">{@html renderBody(post.body)}</span>
 					<span class="log-time">{fmtTime(post.created_at)}</span>
 				</div>
 			{:else}
@@ -1514,6 +1504,24 @@
 	.log.minor .log-glyph { color: var(--color-text-faint); }
 	.log-glyph { color: var(--color-text-muted); }
 	.log-glyph[data-family='roll'] { font-size: 1.15em; }
+
+	/* Player-name marks (hierarchy-plan S4). A log body that names a player
+	   paints the name in that player's own colour — the identity channel the
+	   message bylines already teach, so "who did this" reads the same whether
+	   the line is speech or bookkeeping. Vivid, not the muted `color-mix` cast
+	   the in-character bylines wear: that muting means "a character's voice,
+	   not the player's own", and a log body naming a player is the player as
+	   themselves. Colour is the whole treatment — no weight, no italics; those
+	   channels are spent elsewhere (importance, asset names).
+
+	   Reached through `.feed` because `renderLogBody` output is injected with
+	   {@html} and so carries no scoping class (same pattern as HelpContent's
+	   `.body :global(p)`). `--mark-player-color` is set per-span by the
+	   renderer, and only ever to a validated hex; anything else leaves it
+	   unset and this fallback carries the name at normal body colour. */
+	.feed :global(.player-mark) {
+		color: var(--mark-player-color, var(--color-text-secondary));
+	}
 	.log-time { font-size: 0.7rem; color: var(--color-text-faint); white-space: nowrap; }
 
 	/* Row-advance boundary pill (hierarchy-plan S2): a filled accent circle

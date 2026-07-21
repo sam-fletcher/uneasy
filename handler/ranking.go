@@ -161,9 +161,13 @@ func swapTokenPlayerWithAbove(
 // arrow); "top" means there was no real player above to overtake (a crown).
 // A net-zero "cancel" between adjacent holders is just two "up" arrows that
 // undo each other — deducible from the ordered set, so it needs no marker.
+// PlayerID lets the emitter mark the name (playerMark) when it writes the
+// chat body; Name itself stays plain, since this struct is also stowed in
+// system_data where log markup has no meaning.
 type rankingMove struct {
-	Name  string `json:"name"`
-	Glyph string `json:"glyph"`
+	PlayerID int64  `json:"player_id"`
+	Name     string `json:"name"`
+	Glyph    string `json:"glyph"`
 }
 
 // rankingPlanLine is one prepared plan and the preparers it affected, ordered
@@ -180,9 +184,12 @@ type rankingPlanLine struct {
 // the absence of a player, so they are omitted entirely from the narration. A
 // gap in the rank numbers (e.g. "2 Sam · 4 Charlie") is the only trace they
 // leave.
+// PlayerID is carried for the same reason as rankingMove's: the body is marked
+// at emission time, the stowed JSON keeps a plain name.
 type rankStanding struct {
-	Rank int16  `json:"rank"`
-	Name string `json:"name"`
+	Rank     int16  `json:"rank"`
+	PlayerID int64  `json:"player_id"`
+	Name     string `json:"name"`
 }
 
 // rankingCategoryDiff is one category's narration: its prepared plans in
@@ -358,8 +365,9 @@ func buildRankingDiff(
 				continue
 			}
 			catDiff.Final = append(catDiff.Final, rankStanding{
-				Rank: int16(i + 1),
-				Name: playerDisplayName(ctx, q, *pid),
+				Rank:     int16(i + 1),
+				PlayerID: *pid,
+				Name:     playerPlainName(ctx, q, *pid),
 			})
 		}
 
@@ -381,8 +389,9 @@ func buildRankingDiff(
 					glyph = "up"
 				}
 				line.Movers = append(line.Movers, rankingMove{
-					Name:  playerDisplayName(ctx, q, tok.PlayerID),
-					Glyph: glyph,
+					PlayerID: tok.PlayerID,
+					Name:     playerPlainName(ctx, q, tok.PlayerID),
+					Glyph:    glyph,
 				})
 			}
 			catDiff.Plans = append(catDiff.Plans, line)

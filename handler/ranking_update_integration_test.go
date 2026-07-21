@@ -86,10 +86,18 @@ func TestRunRankingUpdate_TokenHolderClimbsTokensNotCleared(t *testing.T) {
 	assert.Equal(t, "up", power.Plans[0].Movers[0].Glyph, "the climbing holder shows an up-arrow")
 
 	// Standing lists occupied ranks only — three real players, no dummy fillers.
+	// PlayerID rides along so EmitRankingUpdated can mark the name in the chat
+	// body (playerMark); the Name here stays plain.
 	require.Len(t, power.Final, 3)
-	assert.Equal(t, rankStanding{Rank: 2, Name: tg.Players[0].DisplayName}, power.Final[0])
-	assert.Equal(t, rankStanding{Rank: 3, Name: tg.Players[2].DisplayName}, power.Final[1])
-	assert.Equal(t, rankStanding{Rank: 4, Name: tg.Players[1].DisplayName}, power.Final[2])
+	assert.Equal(t,
+		rankStanding{Rank: 2, PlayerID: tg.Players[0].ID, Name: tg.Players[0].DisplayName},
+		power.Final[0])
+	assert.Equal(t,
+		rankStanding{Rank: 3, PlayerID: tg.Players[2].ID, Name: tg.Players[2].DisplayName},
+		power.Final[1])
+	assert.Equal(t,
+		rankStanding{Rank: 4, PlayerID: tg.Players[1].ID, Name: tg.Players[1].DisplayName},
+		power.Final[2])
 }
 
 // TestRunRankingUpdate_MultiTokenHolderClimbsPerToken pins the fix for the

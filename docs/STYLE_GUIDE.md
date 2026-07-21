@@ -77,7 +77,10 @@ use the plain surface ladder for backgrounds and `--color-border-warm`
 block in `app.css`, sync enforced by `designTokens.test.ts`) are jewel
 tones balanced to a 5.2–7.0 contrast band on the page bg — legible as
 small byline text, no player louder than another. Spend them sparingly:
-in chat a message colours its **byline only** (never byline + rule), and
+in chat a message colours its **byline only** (never byline + rule), a
+**system-log body colours the player names inside it** (vivid — the log
+reports what a player did, not what a character said; see the `playerMark`
+convention under Typography), and
 **in-character speech wears the muted mask-cast** —
 `color-mix(in srgb, <player> 55%, var(--color-text-secondary))` — because
 a character's words aren't the player's own voice. Vivid = the player as
@@ -97,6 +100,13 @@ never means "a quieter player."
 - **Italic** marks asset names in running text and log bodies (rendered
   from the `assetMark` `**…**` convention). Other quoted user text stays
   quoted, not styled.
+- **Typography identifies what a word is, not how loud it is.** Log bodies
+  carry two server-written marks and no more: `**name**` for an asset
+  (italic) and `@@id|name@@` for a player (that player's colour). Verbs and
+  everything else stay plain — importance is already carried by the row's
+  tier. Both marks are emitted in `handler/system_posts.go` and parsed in
+  `lib/logMarkup.ts`; posts written before a mark existed simply render
+  plain.
 - **Bold** is reserved for standalone numeric counters (rank/status
   numbers, badge counts). Names, labels, and values stay regular weight.
 - Uppercase labels (badges, section headings) carry letter-spacing

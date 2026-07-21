@@ -150,7 +150,7 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 		oppName := playerDisplayName(ctx, deps.Q, body.OpponentID)
 		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 			"%s %s to pay the cost of battle against %s.",
-			player.DisplayName, mwCostVerb(body.Choice), oppName))
+			playerMark(player.ID, player.DisplayName), mwCostVerb(body.Choice), oppName))
 
 		if body.Surrender {
 			if err := mwApplySurrender(ctx, deps, plan, war, snap, player.ID, game.CurrentRow); err != nil {
@@ -455,7 +455,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 
 		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 			"%s %s to pay their war entry against %s.",
-			player.DisplayName, mwCostVerb(body.Choice),
+			playerMark(player.ID, player.DisplayName), mwCostVerb(body.Choice),
 			playerDisplayName(ctx, deps.Q, body.OpponentID)))
 
 		remaining := 0
@@ -483,7 +483,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 			mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 				"%s paid their full war entry and is now an active participant on %s' side.",
-				player.DisplayName, mwSideLabel(part.Side)))
+				playerMark(player.ID, player.DisplayName), mwSideLabel(part.Side)))
 			// Marking a participant entry-complete changes who's active in
 			// the cost-due computation; recompute row state.
 			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
@@ -574,7 +574,8 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 		})
 		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 			"%s seized %s from %s after their surrender.",
-			player.DisplayName, asset.Name, playerDisplayName(ctx, deps.Q, body.SurrenderedID)))
+			playerMark(player.ID, player.DisplayName), assetMark(asset.Name),
+			playerDisplayName(ctx, deps.Q, body.SurrenderedID)))
 		// Fulfilling a surrender claim clears the AwaitSurrenderClaim gate.
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{

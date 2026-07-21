@@ -195,8 +195,10 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		if plan.PreparationNotes != nil {
 			preparationNotes = *plan.PreparationNotes
 		}
+		// Plain: secret text is read on the asset's underside, not in the chat
+		// log, so it must not carry log markup.
 		secretText := fmt.Sprintf("Clandestine meeting with %s — %s",
-			playerDisplayName(ctx, deps.Q, player.ID), preparationNotes)
+			playerPlainName(ctx, deps.Q, player.ID), preparationNotes)
 		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
 			AssetID:  body.AssetID,
 			AuthorID: player.ID,

@@ -382,7 +382,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 			"%s joined the war on %s' side%s.",
-			player.DisplayName, mwSideLabel(body.Side), joinNote))
+			playerMark(player.ID, player.DisplayName), mwSideLabel(body.Side), joinNote))
 		respond(w, http.StatusOK, map[string]any{
 			"war_id": war.ID, "player_id": player.ID, "side": body.Side,
 		})

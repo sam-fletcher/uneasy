@@ -110,7 +110,7 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			ProposerID: player.ID, Terms: body.Terms,
 		})
 		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"%s proposed peace terms: %s", player.DisplayName, body.Terms))
+			"%s proposed peace terms: %s", playerMark(player.ID, player.DisplayName), body.Terms))
 		respond(w, http.StatusOK, map[string]any{
 			"proposal_id": prop.ID,
 			"war_id":      war.ID,

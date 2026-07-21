@@ -247,7 +247,7 @@ func EndScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		EmitSystemPost(ctx, s.Q, manager, game.ID, "scene.ended",
 			model.SeverityImportant,
-			fmt.Sprintf("%s ends the scene", player.DisplayName),
+			fmt.Sprintf("%s ends the scene", playerMark(player.ID, player.DisplayName)),
 			&row, nil, sceneIDPtr,
 			map[string]any{"row_number": row, "player_id": player.ID, "scene_id": endedSceneID})
 

@@ -375,7 +375,8 @@ func ShakeUpCommit(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if len(pending) > 0 {
 			names := make([]string, len(pending))
 			for i, pid := range pending {
-				names[i] = playerDisplayName(ctx, s.Q, pid)
+				// Plain: this names players in an HTTP error string, not a log body.
+				names[i] = playerPlainName(ctx, s.Q, pid)
 			}
 			respondErr(w, http.StatusConflict,
 				fmt.Sprintf("waiting on %s to react", strings.Join(names, ", ")))

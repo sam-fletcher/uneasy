@@ -33,14 +33,53 @@ func planLabel(t model.PlanType) string {
 	return strings.Join(parts, " ")
 }
 
-// playerDisplayName resolves a player ID to its display name. Falls back
-// to "Player N" if the lookup fails so the log post still gets emitted.
-func playerDisplayName(ctx context.Context, q *dbgen.Queries, playerID int64) string {
+// playerPlainName resolves a player ID to its bare display name, with no log
+// markup. Falls back to "Player N" if the lookup fails so the caller still has
+// something to print.
+//
+// Use this only OUTSIDE chat log bodies — HTTP error messages, secret text,
+// scene entries, structured system_data fields. Inside a log body use
+// playerDisplayName, which marks the name so the feed can colour it.
+func playerPlainName(ctx context.Context, q *dbgen.Queries, playerID int64) string {
 	p, err := q.GetPlayerByID(ctx, playerID)
 	if err != nil {
 		return fmt.Sprintf("Player %d", playerID)
 	}
 	return p.DisplayName
+}
+
+// playerMark renders a player's name for log bodies, tagging it with the
+// player's id so the chat feed can paint it in that player's colour — the same
+// identity channel a chat message's byline already uses (hierarchy-plan S4).
+// It is to players what assetMark is to assets: the one place a name is
+// wrapped, so there is one syntax for the feed to parse.
+//
+// Syntax: @@<id>|<name>@@. Two constraints shaped it:
+//   - It must survive the feed's escapeHtml pass untouched, so it contains no
+//     &, <, or > — the escaper is the first thing renderLogBody runs, and a
+//     delimiter that got rewritten into an entity would be unparseable.
+//   - It must not collide with user text. Log bodies quote player-authored
+//     marginalia, rumors, laws, and free-text answers verbatim. The doubled
+//     sentinel is the **…** lesson applied again — a stray '@' (or even a lone
+//     '@@') can't trip the parser, since a mark only matches with digits and a
+//     '|' between its delimiters.
+//
+// Names containing '@', '|', or '*' are returned PLAIN: the first two would
+// make the token ambiguous, and '*' could pair with an assetMark elsewhere in
+// the same body and split an <em> across the token. Losing the colour on such
+// a name is the graceful failure; emitting a malformed token is not.
+func playerMark(playerID int64, name string) string {
+	if strings.ContainsAny(name, "@|*") {
+		return name
+	}
+	return fmt.Sprintf("@@%d|%s@@", playerID, name)
+}
+
+// playerDisplayName resolves a player ID to a marked name for log bodies,
+// mirroring assetDisplayName. This is the default for anything that ends up in
+// a system post's body; see playerPlainName for the exceptions.
+func playerDisplayName(ctx context.Context, q *dbgen.Queries, playerID int64) string {
+	return playerMark(playerID, playerPlainName(ctx, q, playerID))
 }
 
 // fallbackAssetName is the placeholder used in log bodies when an asset can't
@@ -53,6 +92,7 @@ const fallbackAssetName = "an asset"
 // as italic, not bold — a deliberate style choice for names, independent of
 // the app's font weights (see ChatPanel.renderLogBody). Marginalia, rumor,
 // secret, and free-text choices stay quoted — emphasis is reserved for names.
+// playerMark below is the player-name half of the same convention.
 func assetMark(name string) string {
 	return "**" + name + "**"
 }
@@ -239,7 +279,8 @@ func EmitRankingUpdated(
 		for i, plan := range cat.Plans {
 			var movers []string
 			for _, m := range plan.Movers {
-				movers = append(movers, fmt.Sprintf("%s %s", m.Name, rankingGlyphSymbol(m.Glyph)))
+				movers = append(movers, fmt.Sprintf("%s %s",
+					playerMark(m.PlayerID, m.Name), rankingGlyphSymbol(m.Glyph)))
 			}
 			body := fmt.Sprintf("%d. %s: %s", i+1, planLabel(plan.PlanType), strings.Join(movers, ", "))
 			EmitSystemPost(ctx, q, manager, gameID, "ranking.plan",
@@ -254,7 +295,7 @@ func EmitRankingUpdated(
 		if len(cat.Final) > 0 {
 			var ranks []string
 			for _, st := range cat.Final {
-				ranks = append(ranks, fmt.Sprintf("%d %s", st.Rank, st.Name))
+				ranks = append(ranks, fmt.Sprintf("%d %s", st.Rank, playerMark(st.PlayerID, st.Name)))
 			}
 			EmitSystemPost(ctx, q, manager, gameID, "ranking.standing",
 				model.SeverityImportant,
