@@ -95,7 +95,7 @@ func breakMarginalia(
 	if destroyedRows > 0 {
 		broadcastEvent(manager, asset.GameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
 		if game, gerr := q.GetGameByID(ctx, asset.GameID); gerr == nil {
-			EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, game.CurrentRow)
+			EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, logRow(game))
 		}
 		return true, nil
 	}

@@ -119,6 +119,29 @@ func notesSuffix(plan dbgen.Plan) string {
 	return ""
 }
 
+// logRow returns the row anchor to stamp on a chat log post for the given
+// game, or nil when the game currently has no valid row to anchor to.
+//
+// This exists because scene_posts.row_number is FK-checked against
+// public_record_rows, which only holds rows 1–13 and only after the main event
+// begins. A game's current_row sits OUTSIDE that range in two common cases:
+//
+//   - the prologue, where current_row is still 0; and
+//   - the Shake-Up, where advanceRowInner has pushed current_row to 14.
+//
+// Passing current_row blind in either case violates the FK, and because
+// EmitSystemPost is best-effort the post is dropped. Every emitter that takes a
+// row anchor should be fed through here rather than &game.CurrentRow — an
+// unanchored post still appears in the feed, it just isn't a jump target for
+// the Public Record sidebar, which is the correct outcome when no row exists.
+func logRow(game dbgen.Game) *int16 {
+	if game.CurrentRow < 1 || game.CurrentRow > publicRecordRowCount {
+		return nil
+	}
+	row := game.CurrentRow
+	return &row
+}
+
 // EmitPlanPrepared writes the boundary post for plan.prepared. The Public
 // Record sidebar's plan-tap gesture jumps to this post.
 func EmitPlanPrepared(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan dbgen.Plan) {
@@ -315,20 +338,20 @@ func EmitRankingUpdated(
 }
 
 // EmitAssetDestroyed / Leveraged / Refreshed write the corresponding
-// asset.* system post. rowNumber is the row at which the change happens
-// (typically game.CurrentRow at the call site).
+// asset.* system post. rowNumber is the row at which the change happens —
+// pass logRow(game), which is nil outside the main event's rows 1–13.
 func EmitAssetDestroyed(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	gameID int64,
 	asset dbgen.Asset,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	EmitSystemPost(ctx, q, manager, gameID, "asset.destroyed",
 		model.SeverityDefault,
 		fmt.Sprintf("%s destroyed.", assetMark(asset.Name)),
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
 
@@ -338,12 +361,12 @@ func EmitAssetLeveraged(
 	manager *hub.Manager,
 	gameID int64,
 	asset dbgen.Asset,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	EmitSystemPost(ctx, q, manager, gameID, "asset.leveraged",
 		model.SeverityDefault,
 		fmt.Sprintf("%s leveraged.", assetMark(asset.Name)),
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
 
@@ -480,12 +503,12 @@ func EmitAssetRefreshed(
 	manager *hub.Manager,
 	gameID int64,
 	asset dbgen.Asset,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	EmitSystemPost(ctx, q, manager, gameID, "asset.refreshed",
 		model.SeverityMinor,
 		fmt.Sprintf("%s refreshed.", assetMark(asset.Name)),
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
 
@@ -584,13 +607,13 @@ func EmitAssetRenamed(
 	asset dbgen.Asset,
 	oldName, newName string,
 	actorID int64,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
 	EmitSystemPost(ctx, q, manager, gameID, "asset.renamed",
 		model.SeverityTrace,
 		fmt.Sprintf("%s renamed %s to %s", actor, assetMark(oldName), assetMark(newName)),
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "editor_id": actorID})
 }
 
@@ -626,13 +649,13 @@ func EmitMarginaliaEdited(
 	m dbgen.Marginalium,
 	newText string,
 	actorID int64,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
 	EmitSystemPost(ctx, q, manager, gameID, "marginalia.edited",
 		model.SeverityTrace,
 		fmt.Sprintf("%s edited marginalia on %s to %q", actor, assetMark(asset.Name), newText),
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "editor_id": actorID})
 }
 
@@ -650,7 +673,7 @@ func EmitMarginaliaTorn(
 	m dbgen.Marginalium,
 	actorID int64,
 	destroyed bool,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
 	var body string
@@ -663,7 +686,7 @@ func EmitMarginaliaTorn(
 	body += brokenAssetPrompt(ctx, q, asset.OwnerID, destroyed)
 	EmitSystemPost(ctx, q, manager, gameID, "marginalia.torn",
 		model.SeverityDefault, body,
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "torn_by_id": actorID})
 }
 
@@ -687,6 +710,35 @@ func EmitAssetTaken(
 		map[string]any{"asset_id": asset.ID, "old_owner_id": oldOwnerID, "new_owner_id": newOwnerID})
 }
 
+// EmitSecretWritten writes the Default secret.written post for a secret placed
+// on an asset's underside.
+//
+// The body names the author and the asset and STOPS THERE. Secret text must
+// never reach the action log — the log is readable by the whole table, so
+// carrying the text would defeat the entire mechanic. This is deliberately
+// unlike the asset/marginalia emitters, which do quote their text.
+//
+// Announcing the write at all is consistent with the existing model: a
+// secret's *existence* is already public via Asset.secret_count (the open-eye
+// counter), only its content is gated. This post is the log's record of the
+// same event the counter shows.
+func EmitSecretWritten(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	authorID int64,
+	rowNumber *int16,
+) {
+	author := playerDisplayName(ctx, q, authorID)
+	EmitSystemPost(ctx, q, manager, gameID, "secret.written",
+		model.SeverityDefault,
+		fmt.Sprintf("%s wrote a secret on %s", author, assetMark(asset.Name)),
+		rowNumber, nil, nil,
+		map[string]any{"asset_id": asset.ID, "author_id": authorID})
+}
+
 // EmitMainCharacterChanged writes the Default asset.main_character post for a
 // promotion (isMainCharacter true) or demotion (false).
 func EmitMainCharacterChanged(
@@ -697,7 +749,7 @@ func EmitMainCharacterChanged(
 	asset dbgen.Asset,
 	isMainCharacter bool,
 	actorID int64,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
 	body := fmt.Sprintf("%s stepped %s down as main character", actor, assetMark(asset.Name))
@@ -706,7 +758,7 @@ func EmitMainCharacterChanged(
 	}
 	EmitSystemPost(ctx, q, manager, gameID, "asset.main_character",
 		model.SeverityDefault, body,
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "is_main_character": isMainCharacter, "actor_id": actorID})
 }
 
@@ -721,7 +773,7 @@ func EmitMainCharacterConscripted(
 	gameID int64,
 	asset dbgen.Asset,
 	actorID int64,
-	rowNumber int16,
+	rowNumber *int16,
 ) {
 	actor := playerDisplayName(ctx, q, actorID)
 	body := fmt.Sprintf(
@@ -729,7 +781,7 @@ func EmitMainCharacterConscripted(
 		actor, assetMark(asset.Name))
 	EmitSystemPost(ctx, q, manager, gameID, "asset.main_character",
 		model.SeverityDefault, body,
-		&rowNumber, nil, nil,
+		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "is_main_character": true, "actor_id": actorID, "conscripted": true})
 }
 

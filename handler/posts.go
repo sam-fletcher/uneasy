@@ -432,9 +432,12 @@ func CreatePlayerPost(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // optional JSON-encodable payload stored as JSONB; its schema is determined
 // by systemCode.
 //
-// On error, the post is silently dropped — the chat log is best-effort
-// metadata, not load-bearing for game state, and we don't want a chat-write
-// failure to roll back the actual transition.
+// On error, the post is dropped (with a server-side warning) — the chat log is
+// best-effort metadata, not load-bearing for game state, and we don't want a
+// chat-write failure to roll back the actual transition. The warning exists
+// because a fully silent drop hid a real bug for a long time: rowNumber is
+// FK-checked against public_record_rows, so any anchor outside rows 1–13
+// vanished without trace. Pass row anchors through logRow (system_posts.go).
 func EmitSystemPost(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -453,6 +456,8 @@ func EmitSystemPost(
 		var err error
 		raw, err = json.Marshal(data)
 		if err != nil {
+			loggerFromContext(ctx).WarnContext(ctx, "chat log post dropped: system_data not JSON-encodable",
+				"system_code", systemCode, "game_id", gameID, "err", err)
 			return
 		}
 	}
@@ -467,6 +472,10 @@ func EmitSystemPost(
 		SystemData: raw,
 	})
 	if err != nil {
+		loggerFromContext(ctx).WarnContext(ctx, "chat log post dropped: insert failed",
+			"system_code", systemCode, "game_id", gameID,
+			"row_number", rowNumber, "plan_id", planID, "scene_id", sceneID,
+			"err", err)
 		return
 	}
 	if h, ok := manager.Get(gameID); ok {

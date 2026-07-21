@@ -87,7 +87,7 @@ func AddMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-			EmitMarginaliaAdded(ctx, s.Q, manager, asset.GameID, *asset, m, player.ID, &g.CurrentRow)
+			EmitMarginaliaAdded(ctx, s.Q, manager, asset.GameID, *asset, m, player.ID, logRow(g))
 		}
 
 		respond(w, http.StatusCreated, map[string]any{"marginalia": m})
@@ -157,7 +157,7 @@ func UpdateMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-			EmitMarginaliaEdited(ctx, s.Q, manager, asset.GameID, *asset, *m, body.Text, player.ID, g.CurrentRow)
+			EmitMarginaliaEdited(ctx, s.Q, manager, asset.GameID, *asset, *m, body.Text, player.ID, logRow(g))
 		}
 
 		respond(w, http.StatusOK, map[string]any{"marginalia": m})
@@ -229,7 +229,7 @@ func TearMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		destroyed := destroyedRows > 0
 
 		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-			EmitMarginaliaTorn(ctx, s.Q, manager, asset.GameID, *asset, *m, player.ID, destroyed, g.CurrentRow)
+			EmitMarginaliaTorn(ctx, s.Q, manager, asset.GameID, *asset, *m, player.ID, destroyed, logRow(g))
 		}
 
 		if destroyed {
@@ -239,7 +239,7 @@ func TearMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				})
 			}
 			if game, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-				EmitAssetDestroyed(ctx, s.Q, manager, asset.GameID, *asset, game.CurrentRow)
+				EmitAssetDestroyed(ctx, s.Q, manager, asset.GameID, *asset, logRow(game))
 			}
 			respond(w, http.StatusOK, map[string]any{"torn": true, "destroyed": true})
 			return

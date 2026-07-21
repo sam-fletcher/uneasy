@@ -226,7 +226,7 @@ func (srHandler) ApplyChoice(
 					model.AssetIDPayload{AssetID: *plan.TargetAssetID},
 				)
 				if asset, aErr := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID); aErr == nil {
-					EmitAssetLeveraged(ctx, deps.Q, deps.Manager, plan.GameID, asset, game.CurrentRow)
+					EmitAssetLeveraged(ctx, deps.Q, deps.Manager, plan.GameID, asset, logRow(game))
 				}
 			}
 		case "reveal_source":

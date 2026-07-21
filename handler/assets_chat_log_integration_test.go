@@ -74,6 +74,7 @@ func newAssetHarness(t *testing.T, n int) *assetHarness {
 		rr.Put("/marginalia/{pos}", UpdateMarginalia(store, manager))
 		rr.Delete("/marginalia/{pos}", TearMarginalia(store, manager))
 		rr.Post("/take", TakeAsset(store, manager))
+		rr.Post("/secrets", WriteSecret(store, manager))
 	})
 
 	return &assetHarness{
@@ -407,4 +408,175 @@ func TestReplaceMainCharacter_RejectedWhenPeerAvailable(t *testing.T) {
 		"/api/tables/"+strconv.FormatInt(h.tg.Game.ID, 10)+"/replace-main-character",
 		map[string]any{"name": "Heir", "marginalia": []string{"bold", "untested"}})
 	require.Equalf(t, http.StatusConflict, code, "should reject conscript while a peer exists: %v", body)
+}
+
+// ── Row anchors outside the main event ────────────────────────────────────────
+//
+// scene_posts.row_number is FK-checked against public_record_rows, which only
+// holds rows 1–13 and only once the main event has begun. A game's current_row
+// sits outside that range during the prologue (0) and during the Shake-Up (14,
+// where advanceRowInner leaves it). Emitters used to be handed current_row
+// blind, so in both phases the insert violated the FK and EmitSystemPost —
+// best-effort by design — dropped the post with no trace. The asset and
+// marginalia routes carry no phase guard, so this silently lost every
+// bookkeeping line outside the main event.
+//
+// logRow is the fix: it yields nil outside rows 1–13, and an unanchored post
+// still reaches the feed. These tests pin the two phases that regressed.
+// Note SeedShakeUp leaves current_row at 13, which is why the seeded fixtures
+// never reproduced the Shake-Up half — these set the row explicitly.
+
+// setPhaseAndRow forces the game off a valid public-record row, standing in for
+// the prologue (row 0) and the Shake-Up (row 14).
+func (h *assetHarness) setPhaseAndRow(phase model.GamePhase, row int16) {
+	h.t.Helper()
+	ctx := context.Background()
+	require.NoError(h.t, h.q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+		ID: h.tg.Game.ID, Phase: phase,
+	}))
+	require.NoError(h.t, h.q.SetCurrentRow(ctx, dbgen.SetCurrentRowParams{
+		ID: h.tg.Game.ID, CurrentRow: row,
+	}))
+}
+
+// assertUnanchoredLog runs fn in the given phase/row and asserts the named post
+// landed in the feed with no row anchor.
+func (h *assetHarness) assertUnanchoredLog(phase model.GamePhase, row int16, code string, fn func()) {
+	h.t.Helper()
+	h.setPhaseAndRow(phase, row)
+	fn()
+	p := h.postBySystemCode(code)
+	require.Nilf(h.t, p.RowNumber,
+		"%s post in %s should carry no row anchor (row %d does not exist)", code, phase, row)
+}
+
+// TestChatLog_MarginaliaAddedInPrologue: current_row is 0 before the main event
+// seeds rows 1–13, so the add must log unanchored rather than vanish.
+func TestChatLog_MarginaliaAddedInPrologue(t *testing.T) {
+	h := newAssetHarness(t, 2)
+
+	// Create the asset while the row is still valid, so only the add under
+	// test runs against row 0.
+	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "Lady Vex", "marginalia": []string{"sharp-tongued"},
+	})
+	id := assetIDFromBody(t, body)
+
+	h.assertUnanchoredLog(model.PhasePrologue, 0, "marginalia.added", func() {
+		code, _ := h.do("POST", 0, assetPath(id, "/marginalia"), map[string]any{"text": "owes a debt"})
+		require.Equal(t, http.StatusCreated, code)
+	})
+
+	added := h.postBySystemCode("marginalia.added")
+	require.Equal(t, model.SeverityDefault, added.Severity)
+	require.Contains(t, added.Body, "owes a debt")
+	require.Contains(t, added.Body, "Lady Vex")
+}
+
+// TestChatLog_MarginaliaTornInShakeUp: the Shake-Up leaves current_row at 14,
+// one past the last public-record row. Tearing must still log.
+func TestChatLog_MarginaliaTornInShakeUp(t *testing.T) {
+	h := newAssetHarness(t, 2)
+
+	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "The Spy", "marginalia": []string{"knows a secret"},
+	})
+	id := assetIDFromBody(t, body)
+
+	h.assertUnanchoredLog(model.PhaseShakeUp, publicRecordRowCount+1, "marginalia.torn", func() {
+		code, _ := h.do("DELETE", 1, assetPath(id, "/marginalia/1"), nil)
+		require.Equal(t, http.StatusOK, code)
+	})
+
+	torn := h.postBySystemCode("marginalia.torn")
+	require.Contains(t, torn.Body, "knows a secret")
+	require.Contains(t, torn.Body, "The Spy")
+}
+
+// TestChatLog_AssetRenamedInPrologue: renames are Trace, so they are hidden by
+// the chat's default "hide bookkeeping" filter — but they must still be written,
+// or unticking the filter reveals nothing.
+func TestChatLog_AssetRenamedInPrologue(t *testing.T) {
+	h := newAssetHarness(t, 2)
+
+	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "Old Name", "marginalia": []string{"unremarkable"},
+	})
+	id := assetIDFromBody(t, body)
+
+	h.assertUnanchoredLog(model.PhasePrologue, 0, "asset.renamed", func() {
+		code, _ := h.do("PUT", 0, assetPath(id, "/"), map[string]any{"name": "New Name"})
+		require.Equal(t, http.StatusOK, code)
+	})
+
+	renamed := h.postBySystemCode("asset.renamed")
+	require.Equal(t, model.SeverityTrace, renamed.Severity)
+	require.Contains(t, renamed.Body, "Old Name")
+	require.Contains(t, renamed.Body, "New Name")
+}
+
+// TestChatLog_MainEventStillAnchors guards the other direction: inside the main
+// event the anchor must survive, since the Public Record sidebar's jump-to-row
+// gesture depends on it.
+func TestChatLog_MainEventStillAnchors(t *testing.T) {
+	h := newAssetHarness(t, 2)
+	h.setPhaseAndRow(model.PhaseMainEvent, 4)
+
+	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "Anchored", "marginalia": []string{"present"},
+	})
+	require.NotZero(t, assetIDFromBody(t, body))
+
+	created := h.postBySystemCode("asset.created")
+	require.NotNil(t, created.RowNumber)
+	require.Equal(t, int16(4), *created.RowNumber)
+}
+
+// TestChatLog_SecretWritten: writing a secret logs that it happened and names
+// the asset — but the secret's TEXT must never appear, since the action log is
+// readable by the whole table and carrying it would defeat the mechanic. Only
+// existence is public (mirroring the open-eye counter on asset cards).
+func TestChatLog_SecretWritten(t *testing.T) {
+	h := newAssetHarness(t, 2)
+	author := h.tg.Players[0].DisplayName
+
+	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "The Confessor", "marginalia": []string{"keeps counsel"},
+	})
+	id := assetIDFromBody(t, body)
+
+	const secretText = "poisoned the old king"
+	code, _ := h.do("POST", 0, assetPath(id, "/secrets"), map[string]any{"text": secretText})
+	require.Equal(t, http.StatusCreated, code)
+
+	p := h.postBySystemCode("secret.written")
+	require.Equal(t, model.SeverityDefault, p.Severity)
+	require.Contains(t, p.Body, author)
+	require.Contains(t, p.Body, "The Confessor")
+	require.NotContainsf(t, p.Body, secretText,
+		"secret text must never reach the action log")
+
+	// Belt and braces: no post in the whole feed may carry the text.
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	for _, post := range posts {
+		require.NotContainsf(t, post.Body, secretText,
+			"secret text leaked into post %d (%v)", post.ID, post.SystemCode)
+	}
+}
+
+// TestChatLog_SecretWrittenInPrologue: secrets are written during the prologue,
+// which is exactly where the row-anchor bug swallowed posts.
+func TestChatLog_SecretWrittenInPrologue(t *testing.T) {
+	h := newAssetHarness(t, 2)
+
+	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "peer", "name": "The Confessor", "marginalia": []string{"keeps counsel"},
+	})
+	id := assetIDFromBody(t, body)
+
+	h.assertUnanchoredLog(model.PhasePrologue, 0, "secret.written", func() {
+		code, _ := h.do("POST", 0, assetPath(id, "/secrets"), map[string]any{"text": "a buried thing"})
+		require.Equal(t, http.StatusCreated, code)
+	})
 }

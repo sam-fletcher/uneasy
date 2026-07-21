@@ -92,6 +92,9 @@
 		marginalia: '✎',
 		law: '§',
 		scene: '❧',
+		// Echoes the pupil of the open/struck eye counters on asset cards,
+		// while staying a plain monochrome character like the rest of this map.
+		secret: '◉',
 	};
 	function logGlyph(code: string | null): string {
 		const family = systemCodeFamily(code);

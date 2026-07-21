@@ -296,7 +296,7 @@ func mwApplyBreakAsset(
 	// marginalia.torn post so the war break shows in the action log (it owns the
 	// asset, so the prompt invites them to re-describe what they damaged).
 	if g, gErr := deps.Q.GetGameByID(ctx, asset.GameID); gErr == nil {
-		EmitMarginaliaTorn(ctx, deps.Q, deps.Manager, asset.GameID, asset, m, player.ID, destroyed, g.CurrentRow)
+		EmitMarginaliaTorn(ctx, deps.Q, deps.Manager, asset.GameID, asset, m, player.ID, destroyed, logRow(g))
 	}
 	return &asset.ID, nil, true
 }

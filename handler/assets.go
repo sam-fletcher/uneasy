@@ -268,7 +268,7 @@ func CreateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			h.BroadcastEvent(model.EventAssetCreated, model.AssetPayload{Asset: result})
 		}
 		if g, err := s.Q.GetGameByID(ctx, gameID); err == nil {
-			EmitAssetCreated(ctx, s.Q, manager, gameID, asset, marginalia, &g.CurrentRow)
+			EmitAssetCreated(ctx, s.Q, manager, gameID, asset, marginalia, logRow(g))
 		}
 
 		respond(w, http.StatusCreated, map[string]any{"asset": result})
@@ -325,7 +325,7 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			asset.Name = name
 			if name != oldName {
 				if g, gErr := s.Q.GetGameByID(ctx, asset.GameID); gErr == nil {
-					EmitAssetRenamed(ctx, s.Q, manager, asset.GameID, *asset, oldName, name, player.ID, g.CurrentRow)
+					EmitAssetRenamed(ctx, s.Q, manager, asset.GameID, *asset, oldName, name, player.ID, logRow(g))
 				}
 			}
 		}
@@ -352,7 +352,7 @@ func UpdateAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 					*asset,
 					*body.IsMainCharacter,
 					player.ID,
-					g.CurrentRow,
+					logRow(g),
 				)
 			}
 		}
@@ -560,8 +560,8 @@ func broadcastConscription(
 		}
 	}
 	if g, err := q.GetGameByID(ctx, gameID); err == nil {
-		EmitAssetCreated(ctx, q, manager, gameID, asset, marginalia, &g.CurrentRow)
-		EmitMainCharacterConscripted(ctx, q, manager, gameID, asset, ownerID, g.CurrentRow)
+		EmitAssetCreated(ctx, q, manager, gameID, asset, marginalia, logRow(g))
+		EmitMainCharacterConscripted(ctx, q, manager, gameID, asset, ownerID, logRow(g))
 	}
 }
 
@@ -600,7 +600,7 @@ func LeverageAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		if game, err := s.Q.GetGameByID(r.Context(), asset.GameID); err == nil {
-			EmitAssetLeveraged(r.Context(), s.Q, manager, asset.GameID, *asset, game.CurrentRow)
+			EmitAssetLeveraged(r.Context(), s.Q, manager, asset.GameID, *asset, logRow(game))
 		}
 
 		respond(w, http.StatusOK, map[string]any{"leveraged": true})
@@ -635,7 +635,7 @@ func RefreshAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		if game, err := s.Q.GetGameByID(r.Context(), asset.GameID); err == nil {
-			EmitAssetRefreshed(r.Context(), s.Q, manager, asset.GameID, *asset, game.CurrentRow)
+			EmitAssetRefreshed(r.Context(), s.Q, manager, asset.GameID, *asset, logRow(game))
 		}
 
 		respond(w, http.StatusOK, map[string]any{"leveraged": false})
@@ -693,7 +693,7 @@ func TakeAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			})
 		}
 		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-			EmitAssetTaken(ctx, s.Q, manager, asset.GameID, *asset, oldOwnerID, player.ID, &g.CurrentRow)
+			EmitAssetTaken(ctx, s.Q, manager, asset.GameID, *asset, oldOwnerID, player.ID, logRow(g))
 		}
 
 		// Taking a main character clears its flag (TransferAsset), leaving the

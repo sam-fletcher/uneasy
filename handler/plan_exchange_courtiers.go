@@ -509,8 +509,8 @@ func acceptFairTrade(
 	}
 	// Log both legs of the fair-trade swap; EmitPlanResolved only records the
 	// outcome, not which peers changed hands.
-	EmitAssetTaken(ctx, q, manager, game.ID, ta, *plan.TargetPlayerID, recipient, &game.CurrentRow)
-	EmitAssetTaken(ctx, q, manager, game.ID, oa, plan.PreparerID, *plan.TargetPlayerID, &game.CurrentRow)
+	EmitAssetTaken(ctx, q, manager, game.ID, ta, *plan.TargetPlayerID, recipient, logRow(game))
+	EmitAssetTaken(ctx, q, manager, game.ID, oa, plan.PreparerID, *plan.TargetPlayerID, logRow(game))
 	EmitPlanResolved(ctx, q, manager, *plan, makeOutcome)
 
 	respond(w, http.StatusOK, map[string]any{

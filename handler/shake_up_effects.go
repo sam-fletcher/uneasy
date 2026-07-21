@@ -252,7 +252,7 @@ func shakeUpBreakAsset(
 	// breakMarginalia doesn't log the tear; emit the canonical marginalia.torn
 	// post (with the owner re-describe prompt) like every other break.
 	if g, gErr := q.GetGameByID(ctx, gameID); gErr == nil {
-		EmitMarginaliaTorn(ctx, q, manager, gameID, asset, m, spend.PlayerID, destroyed, g.CurrentRow)
+		EmitMarginaliaTorn(ctx, q, manager, gameID, asset, m, spend.PlayerID, destroyed, logRow(g))
 	}
 
 	spender := playerDisplayName(ctx, q, spend.PlayerID)

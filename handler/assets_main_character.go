@@ -55,7 +55,7 @@ func tearOldMainCharacterMarginalia(
 			*target,
 			player.ID,
 			decision.DestroysOldMC,
-			g.CurrentRow,
+			logRow(g),
 		)
 	}
 
@@ -70,7 +70,7 @@ func tearOldMainCharacterMarginalia(
 		h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{AssetID: oldMC.ID})
 	}
 	if g, gErr := q.GetGameByID(ctx, oldMC.GameID); gErr == nil {
-		EmitAssetDestroyed(ctx, q, manager, oldMC.GameID, *oldMC, g.CurrentRow)
+		EmitAssetDestroyed(ctx, q, manager, oldMC.GameID, *oldMC, logRow(g))
 	}
 	oldMC.IsDestroyed = true
 	return true

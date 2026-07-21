@@ -58,6 +58,11 @@ func WriteSecret(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				AuthorID: player.ID,
 			})
 		}
+		// The log records that a secret was written, never its text — see
+		// EmitSecretWritten.
+		if g, err := s.Q.GetGameByID(r.Context(), asset.GameID); err == nil {
+			EmitSecretWritten(r.Context(), s.Q, manager, asset.GameID, *asset, player.ID, logRow(g))
+		}
 
 		respond(w, http.StatusCreated, map[string]any{"secret": secret})
 	}
