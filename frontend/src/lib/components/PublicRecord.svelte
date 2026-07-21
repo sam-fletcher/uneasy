@@ -42,8 +42,11 @@
 		players: Player[];
 		/** Tapping a row pill in the expanded view → jump chat to that row's anchor. */
 		onRowJump?: (rowNumber: number) => void;
-		/** Tapping a plan chip → jump chat to that plan's plan.prepared anchor. */
-		onPlanJump?: (planID: number) => void;
+		/** Tapping a plan chip → jump chat to that plan's anchor. The status
+		 *  decides which post that is (a chip sits at the plan's *resolution*
+		 *  row, so anything past 'pending' anchors at plan.resolving) — the
+		 *  caller maps it; see jumpToPlan in routes/table/[id]/+page.svelte. */
+		onPlanJump?: (planID: number, status: Plan['status']) => void;
 		/** Tapping a scene entry → jump chat to the row's first scene.started anchor.
 		 *  (SceneEntry doesn't carry scene_id, so we anchor by row.) */
 		onSceneJump?: (rowNumber: number) => void;
@@ -228,7 +231,7 @@
 								<button
 									class="plan-chip {planStatusClass(plan.status)}"
 									style:--player-color={tint}
-									onclick={() => onPlanJump?.(plan.id)}
+									onclick={() => onPlanJump?.(plan.id, plan.status)}
 									aria-label="Jump to {planLabel(plan)} by {authorName(plan.preparer_id)}"
 								>
 									<span class="plan-name">{planLabel(plan)}</span>

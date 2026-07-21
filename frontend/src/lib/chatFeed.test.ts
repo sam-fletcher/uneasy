@@ -6,6 +6,7 @@ import {
 	countUnread,
 	buildFeedItems,
 	systemCodeFamily,
+	planOutcomeOf,
 	parseSceneStartedData,
 	mergeAppend,
 	mergePrepend,
@@ -387,6 +388,311 @@ describe('buildFeedItems — scene grouping (Phase 4b)', () => {
 		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'scene-group', 'post']);
 		const lastItem = items[2];
 		expect(lastItem.kind === 'post' && lastItem.post.id).toBe(4);
+	});
+});
+
+describe('buildFeedItems — plan-resolution spans (hierarchy-plan S3)', () => {
+	function planResolving(over: Partial<ChatPost> = {}): ChatPost {
+		return makePost({
+			id: 10,
+			author_id: null,
+			system_code: 'plan.resolving',
+			plan_id: 4,
+			row_number: 3,
+			severity: SEVERITY.IMPORTANT,
+			body: 'Seek Answers is resolving.',
+			...over,
+		});
+	}
+	function planResolved(over: Partial<ChatPost> = {}): ChatPost {
+		return makePost({
+			author_id: null,
+			system_code: 'plan.resolved.make',
+			plan_id: 4,
+			row_number: 3,
+			severity: SEVERITY.IMPORTANT,
+			body: 'Seek Answers succeeded.',
+			...over,
+		});
+	}
+	function planSceneStarted(over: Partial<ChatPost> = {}): ChatPost {
+		return makePost({
+			author_id: null,
+			system_code: 'scene.started',
+			plan_id: 4,
+			scene_id: 12,
+			severity: SEVERITY.IMPORTANT,
+			body: 'Host Festivity — the scene opens.',
+			system_data: {
+				scene_id: 12,
+				kind: 'plan',
+				focus_player_id: 3,
+				plan_id: 4,
+				participants: ['Aldric', 'Lady Wren'],
+			},
+			...over,
+		});
+	}
+	function planSceneEnded(over: Partial<ChatPost> = {}): ChatPost {
+		return makePost({
+			author_id: null,
+			system_code: 'scene.ended',
+			plan_id: 4,
+			scene_id: 12,
+			severity: SEVERITY.IMPORTANT,
+			body: 'Host Festivity — the scene ends.',
+			...over,
+		});
+	}
+
+	// ── Plain span (the eight plan types with no PlanSceneStager) ────────────
+
+	it('opens at plan.resolving, absorbs the resolution, and closes at the terminal post', () => {
+		const posts = [
+			planResolving({ id: 10 }),
+			makePost({ id: 11, author_id: null, system_code: 'roll.resolved', plan_id: 4, severity: SEVERITY.IMPORTANT }),
+			makePost({ id: 12, author_id: null, system_code: 'plan.seek_answers', plan_id: 4, severity: SEVERITY.DEFAULT }),
+			planResolved({ id: 13 }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'plan-group']);
+		const group = items[1];
+		if (group.kind !== 'plan-group') throw new Error('expected a plan-group');
+		expect(group.planID).toBe(4);
+		expect(group.resolvingPost.id).toBe(10);
+		expect(group.outcomePost?.id).toBe(13);
+		expect(group.outcome).toBe('make');
+		expect(group.open).toBe(false);
+		// The boundary posts are the card's header/footer, not body lines.
+		expect(group.items.map((i) => (i.kind === 'post' ? i.post.id : i.kind))).toEqual([11, 12]);
+		expect(group.messageCount).toBe(2);
+	});
+
+	it('keeps plan.prepared out of the span entirely, at its own position', () => {
+		// Preparation can precede resolution by many rows — the whole reason the
+		// span opens at plan.resolving instead (chronology invariant).
+		const posts = [
+			makePost({ id: 1, author_id: null, system_code: 'plan.prepared', plan_id: 4, severity: SEVERITY.IMPORTANT }),
+			makePost({ id: 2, author_id: null, system_code: 'row.advanced', severity: SEVERITY.BOUNDARY }),
+			planResolving({ id: 10 }),
+			planResolved({ id: 11 }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'post', 'post', 'plan-group']);
+		const prepared = items[1];
+		expect(prepared.kind === 'post' && prepared.post.id).toBe(1);
+	});
+
+	it('absorbs bystander posts from other players in order', () => {
+		// Asset/marginalia edits are never row-state gated, so they can land
+		// mid-resolution — same category of content a scene already absorbs.
+		const posts = [
+			planResolving({ id: 10 }),
+			makePost({ id: 11, author_id: null, system_code: 'asset.updated', severity: SEVERITY.MINOR }),
+			makePost({ id: 12, author_id: 5, body: 'nice roll' }),
+			planResolved({ id: 13, system_code: 'plan.resolved.mar', body: 'Seek Answers marred.' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		const group = items.find((i) => i.kind === 'plan-group');
+		if (group?.kind !== 'plan-group') throw new Error('expected a plan-group');
+		expect(group.items.map((i) => (i.kind === 'post' ? i.post.id : i.kind))).toEqual([11, 12]);
+		expect(group.outcome).toBe('mar');
+	});
+
+	it('stays open while the plan is still resolving', () => {
+		const posts = [planResolving({ id: 10 }), makePost({ id: 11, author_id: 5, body: 'watching' })];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		const group = items.find((i) => i.kind === 'plan-group');
+		if (group?.kind !== 'plan-group') throw new Error('expected a plan-group');
+		expect(group.open).toBe(true);
+		expect(group.outcomePost).toBeNull();
+	});
+
+	it('returns to the top level after the span closes', () => {
+		const posts = [
+			planResolving({ id: 10 }),
+			planResolved({ id: 11 }),
+			makePost({ id: 12, author_id: 5, body: 'after the plan' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'plan-group', 'post']);
+		const after = items[2];
+		expect(after.kind === 'post' && after.post.id).toBe(12);
+	});
+
+	it('resolves one plan per span, back to back', () => {
+		// Plan resolution is exclusive table-wide (model/row_state.go serializes
+		// the table on one step at a time), so spans never overlap — they queue.
+		const posts = [
+			planResolving({ id: 10, plan_id: 4 }),
+			planResolved({ id: 11, plan_id: 4 }),
+			planResolving({ id: 12, plan_id: 5, body: 'Spread Rumors is resolving.' }),
+			planResolved({ id: 13, plan_id: 5, system_code: 'plan.cancelled', body: 'Spread Rumors cancelled.' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'plan-group', 'plan-group']);
+		const [, first, second] = items;
+		if (first.kind !== 'plan-group' || second.kind !== 'plan-group') throw new Error('expected two plan-groups');
+		expect([first.planID, second.planID]).toEqual([4, 5]);
+		expect(second.outcome).toBe('cancelled');
+	});
+
+	it('renders a terminal post with no open span as an ordinary log line', () => {
+		// A pending plan cancelled before it ever resolved (e.g. by Make
+		// Demands), or a window truncated past its plan.resolving.
+		const posts = [
+			makePost({
+				id: 10,
+				author_id: null,
+				system_code: 'plan.cancelled',
+				plan_id: 4,
+				severity: SEVERITY.DEFAULT,
+				body: 'Seek Answers cancelled.',
+			}),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'post']);
+	});
+
+	it('counts unread posts inside the span and flags the unread-divider position', () => {
+		const posts = [
+			planResolving({ id: 10 }),
+			makePost({ id: 11, author_id: 5 }), // read
+			makePost({ id: 12, author_id: 5 }), // unread
+			planResolved({ id: 13 }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 11, currentPlayerID: 1 });
+		const group = items.find((i) => i.kind === 'plan-group');
+		if (group?.kind !== 'plan-group') throw new Error('expected a plan-group');
+		expect(group.unreadCount).toBe(1);
+		expect(group.unreadDividerInside).toBe(true);
+		expect(group.items.some((i) => i.kind === 'unread-divider')).toBe(true);
+	});
+
+	// ── Folded span (the four PlanSceneStager types) ────────────────────────
+
+	it('folds into the scene container when the plan stages a scene', () => {
+		const posts = [
+			planResolving({ id: 10, body: 'Host Festivity is resolving.' }),
+			planSceneStarted({ id: 11 }),
+			makePost({ id: 12, author_id: 5, scene_id: 12, speaking_as_asset_id: 9, body: 'in character' }),
+			planResolved({ id: 13, body: 'The festivity drew to a close.' }),
+			planSceneEnded({ id: 14 }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		// One container, not a plan card wrapping a scene card.
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'scene-group']);
+		const group = items[1];
+		if (group.kind !== 'scene-group') throw new Error('expected a scene-group');
+		expect(group.sceneID).toBe(12);
+		expect(group.planID).toBe(4);
+		expect(group.resolvingPost?.id).toBe(10);
+		expect(group.startPost?.id).toBe(11);
+		expect(group.outcomePost?.id).toBe(13);
+		expect(group.outcome).toBe('make');
+		expect(group.endPost?.id).toBe(14);
+		expect(group.open).toBe(false);
+		// The terminal post is the container's footer, not a body line; the
+		// scene.ended marker still renders inline as it always has.
+		expect(group.items.map((i) => (i.kind === 'post' ? i.post.id : i.kind))).toEqual([12, 14]);
+		expect(group.messageCount).toBe(1);
+	});
+
+	it('keeps the folded container open until scene.ended, not the terminal post', () => {
+		const posts = [
+			planResolving({ id: 10 }),
+			planSceneStarted({ id: 11 }),
+			planResolved({ id: 12 }),
+			makePost({ id: 13, author_id: 5, scene_id: 12, body: 'a last word' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		const group = items.find((i) => i.kind === 'scene-group');
+		if (group?.kind !== 'scene-group') throw new Error('expected a scene-group');
+		expect(group.open).toBe(true);
+		expect(group.outcomePost?.id).toBe(12);
+		// Still absorbing positionally after the outcome landed.
+		expect(group.items.map((i) => (i.kind === 'post' ? i.post.id : i.kind))).toEqual([13]);
+	});
+
+	it('returns to the top level after a folded span closes', () => {
+		const posts = [
+			planResolving({ id: 10 }),
+			planSceneStarted({ id: 11 }),
+			planResolved({ id: 12 }),
+			planSceneEnded({ id: 13 }),
+			makePost({ id: 14, author_id: 5, body: 'after the festivity' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'scene-group', 'post']);
+	});
+
+	it('hoists anything absorbed before the scene opened back out of the fold', () => {
+		// kickoffPlanResolution emits plan.resolving and opens the scene back to
+		// back, but a bystander edit can still interleave — it must keep its real
+		// position ahead of the container, not slide inside it.
+		const posts = [
+			planResolving({ id: 10 }),
+			makePost({ id: 11, author_id: null, system_code: 'asset.updated', severity: SEVERITY.DEFAULT }),
+			planSceneStarted({ id: 12 }),
+			planResolved({ id: 13 }),
+			planSceneEnded({ id: 14 }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'post', 'scene-group']);
+		const hoisted = items[1];
+		expect(hoisted.kind === 'post' && hoisted.post.id).toBe(11);
+		const group = items[2];
+		expect(group.kind === 'scene-group' && group.resolvingPost?.id).toBe(10);
+	});
+
+	it('leaves an ordinary turn-scene unfolded', () => {
+		const posts = [
+			makePost({
+				id: 10,
+				author_id: null,
+				system_code: 'scene.started',
+				scene_id: 12,
+				severity: SEVERITY.IMPORTANT,
+				body: 'Scene: Aldric at The Mill',
+			}),
+			makePost({ id: 11, author_id: 5, scene_id: 12, body: 'hello' }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		const group = items.find((i) => i.kind === 'scene-group');
+		if (group?.kind !== 'scene-group') throw new Error('expected a scene-group');
+		expect(group.planID).toBeNull();
+		expect(group.resolvingPost).toBeNull();
+		expect(group.outcomePost).toBeNull();
+	});
+
+	it('does not fold a scene belonging to a different plan', () => {
+		// Defensive: scenes are exclusive, so this shouldn't arise — but a
+		// mismatched plan_id must never quietly reparent the span.
+		const posts = [
+			planResolving({ id: 10, plan_id: 4 }),
+			planSceneStarted({ id: 11, plan_id: 9, scene_id: 12 }),
+		];
+		const items = buildFeedItems(posts, { unreadAfterID: 999, currentPlayerID: 1 });
+		expect(items.map((i) => i.kind)).toEqual(['day-divider', 'plan-group']);
+		const group = items[1];
+		if (group.kind !== 'plan-group') throw new Error('expected a plan-group');
+		const inner = group.items.find((i) => i.kind === 'scene-group');
+		expect(inner?.kind === 'scene-group' && inner.resolvingPost).toBeNull();
+	});
+});
+
+describe('planOutcomeOf', () => {
+	it('maps every terminal code EmitPlanResolved can write', () => {
+		expect(planOutcomeOf('plan.resolved.make')).toBe('make');
+		expect(planOutcomeOf('plan.resolved.mar')).toBe('mar');
+		expect(planOutcomeOf('plan.cancelled')).toBe('cancelled');
+		expect(planOutcomeOf('plan.resolved')).toBe('other');
+	});
+
+	it('returns null for anything that does not close a span', () => {
+		expect(planOutcomeOf('plan.resolving')).toBeNull();
+		expect(planOutcomeOf('plan.prepared')).toBeNull();
+		expect(planOutcomeOf(null)).toBeNull();
 	});
 });
 

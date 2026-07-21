@@ -124,6 +124,20 @@ export interface SceneGroupItem {
 	startPost: ChatPost | null;
 	/** The `scene.ended` post, once the scene has closed within this window. */
 	endPost: ChatPost | null;
+	/** Set only on a *plan-scene* that a plan-resolution span folded into
+	 *  (hierarchy-plan S3): the plan whose resolution opened this scene. Null
+	 *  for an ordinary turn-scene. */
+	planID: number | null;
+	/** The folded span's `plan.resolving` post — rendered as a pre-header line
+	 *  above the scene header, so the resolution and its scene read as one
+	 *  object rather than two stacked containers. */
+	resolvingPost: ChatPost | null;
+	/** The folded span's terminal post, rendered as the container's outcome
+	 *  footer. Always lands inside the scene (EmitPlanResolved writes it and
+	 *  only then calls closePlanSceneIfAny). */
+	outcomePost: ChatPost | null;
+	/** Outcome of `outcomePost`, for the footer's make/mar colouring. */
+	outcome: PlanOutcome | null;
 	/** No confirmed close in this window — either the scene is genuinely
 	 *  still active, or the window was truncated before its end. Both render
 	 *  as "open" (adr/CHAT_OVERHAUL_PLAN.md Phase 4b/4c). */
@@ -142,6 +156,76 @@ export interface SceneGroupItem {
 	unreadDividerInside: boolean;
 }
 
+// ── Pure: plan-resolution spans (hierarchy-plan S3) ───────────────────────
+// A plan's *resolution* — `plan.resolving` through its terminal post — is one
+// positional span of the feed, opened and closed by exactly the mechanism
+// `scene-group` uses above. `plan.prepared` is deliberately NOT part of it:
+// preparation can precede resolution by many rows (real days, in an async
+// game), so a container anchored there would sit far up the scrollback and
+// silently absorb content arriving now — the chronology invariant the S3
+// redesign exists to protect (adr/CHAT_VISUAL_HIERARCHY_PLAN.md).
+//
+// Absorbing everything inside the span unconditionally is safe because plan
+// resolution is exclusive table-wide: model/row_state.go serializes the table
+// on one rulebook step at a time, and PreparePlan (step 5) is unreachable
+// until the resolving plan (step 2) has finished — so a second plan can never
+// even be prepared, let alone resolve, inside an open span. What can land
+// there is bystander asset/marginalia edits (never row-state gated), exactly
+// the category `scene-group` already renders inline.
+
+/** Outcome of a plan-resolution span's terminal post. `other` is the generic
+ *  `plan.resolved` fallback EmitPlanResolved emits for an unrecognized
+ *  result — no make/mar colouring, but still a real close. */
+export type PlanOutcome = 'make' | 'mar' | 'cancelled' | 'other';
+
+/** The four terminal codes EmitPlanResolved can write (handler/system_posts.go).
+ *  Returns null for anything else, which is also the "does this post close a
+ *  span?" test. */
+export function planOutcomeOf(code: string | null): PlanOutcome | null {
+	switch (code) {
+		case 'plan.resolved.make':
+			return 'make';
+		case 'plan.resolved.mar':
+			return 'mar';
+		case 'plan.cancelled':
+			return 'cancelled';
+		case 'plan.resolved':
+			return 'other';
+		default:
+			return null;
+	}
+}
+
+/**
+ * A plan resolution that ran *without* staging a scene (the eight plan types
+ * with no PlanSceneStager): header = the `plan.resolving` post, body =
+ * everything absorbed, footer = the terminal post. The four staging types
+ * fold into `SceneGroupItem` instead — see its `resolvingPost`.
+ */
+export interface PlanGroupItem {
+	kind: 'plan-group';
+	key: string;
+	planID: number;
+	/** The `plan.resolving` post that opened the span — the card header. A
+	 *  span only ever opens on one, so this is never null. */
+	resolvingPost: ChatPost;
+	/** The terminal post, once walked; null while the resolution is still
+	 *  running (or the window truncated before it). */
+	outcomePost: ChatPost | null;
+	outcome: PlanOutcome | null;
+	/** No terminal post in this window — still resolving, or truncated. Both
+	 *  render expanded by default, same as an open scene. */
+	open: boolean;
+	/** Everything absorbed between the boundaries, with the same day/unread/
+	 *  ranking treatment as the top level. */
+	items: FeedItem[];
+	/** Posts inside the span, excluding the boundary markers — the collapsed
+	 *  header's "N entries" figure. */
+	messageCount: number;
+	unreadCount: number;
+	unreadDividerInside: boolean;
+}
+
 // ── Pure: feed items (day dividers + "New messages" divider) ─────────────
 // Phase 3 adds:
 //   - `continuesRun` on 'post'/'ranking-group' items: true when the
@@ -152,13 +236,15 @@ export interface SceneGroupItem {
 //     posts (one EmitRankingUpdated burst) collapses into a single unit so
 //     it renders as one bordered card instead of a centered/left zigzag.
 // Phase 4 adds the 'scene-group' kind (see SceneGroupItem above).
+// Hierarchy-plan S3 adds the 'plan-group' kind (see PlanGroupItem above).
 
 export type FeedItem =
 	| { kind: 'day-divider'; key: string; label: string }
 	| { kind: 'unread-divider'; key: string }
 	| { kind: 'post'; key: string; post: ChatPost; continuesRun: boolean }
 	| { kind: 'ranking-group'; key: string; posts: ChatPost[]; continuesRun: boolean }
-	| SceneGroupItem;
+	| SceneGroupItem
+	| PlanGroupItem;
 
 function dayKey(iso: string): string {
 	const d = new Date(iso);
@@ -189,7 +275,14 @@ function formatDayLabel(iso: string, now: Date): string {
  * dividers, the unread divider, and the ranking-burst collapsing below all
  * apply uniformly whether the walk is currently inside a scene or not — the
  * whole thing is one chronology, and containers are just a rendering wrapper
- * around a contiguous span of it.
+ * around a contiguous span of it. Plan-resolution spans (S3) use the identical
+ * mechanism, opening on `plan.resolving` and closing on the plan's terminal
+ * post.
+ *
+ * Chronology is the invariant every container here must respect: an item's
+ * position is fixed the moment it renders, and a container may only absorb
+ * what arrives *while it is open* — never content that would have to splice
+ * retroactively into a position already scrolled past.
  */
 export function buildFeedItems(
 	posts: ChatPost[],
@@ -217,35 +310,64 @@ export function buildFeedItems(
 		}
 	}
 
-	function openGroup(sceneID: number, startPost: ChatPost | null): SceneGroupItem {
+	function openSceneGroup(target: FeedItem[], sceneID: number, startPost: ChatPost | null): SceneGroupItem {
 		const group: SceneGroupItem = {
 			kind: 'scene-group',
 			key: `scene-${sceneID}`,
 			sceneID,
 			startPost,
 			endPost: null,
+			planID: null,
+			resolvingPost: null,
+			outcomePost: null,
+			outcome: null,
 			open: true,
 			items: [],
 			messageCount: 0,
 			unreadCount: 0,
 			unreadDividerInside: false,
 		};
-		top.push(group);
+		target.push(group);
+		return group;
+	}
+
+	function openPlanGroup(target: FeedItem[], planID: number, resolvingPost: ChatPost): PlanGroupItem {
+		const group: PlanGroupItem = {
+			kind: 'plan-group',
+			key: `plan-${planID}`,
+			planID,
+			resolvingPost,
+			outcomePost: null,
+			outcome: null,
+			open: true,
+			items: [],
+			messageCount: 0,
+			unreadCount: 0,
+			unreadDividerInside: false,
+		};
+		target.push(group);
 		return group;
 	}
 
 	let sink: FeedItem[] = top;
-	let activeGroup: SceneGroupItem | null = null;
+	let activeScene: SceneGroupItem | null = null;
+	let sceneParent: FeedItem[] = top;
+	let activePlan: PlanGroupItem | null = null;
+	let planParent: FeedItem[] = top;
 
 	// A window can open mid-scene (a history/around fetch, or the initial
 	// window's back-context truncated before the scene's start) — there's no
 	// scene.started post loaded to key off, so fall back to the first post's
-	// scene_id stamp and start the group headerless and open.
+	// scene_id stamp and start the group headerless and open. No equivalent
+	// fallback for plan spans: `plan_id` is stamped on plenty of posts outside
+	// a resolution (plan.prepared above all), so inferring one from a lead
+	// post would open spans that never existed. A window truncated past
+	// `plan.resolving` just renders its posts as ordinary lines.
 	if (units.length > 0) {
 		const leadPost = units[0][0];
 		if (leadPost.scene_id != null && leadPost.system_code !== 'scene.started') {
-			activeGroup = openGroup(leadPost.scene_id, null);
-			sink = activeGroup.items;
+			activeScene = openSceneGroup(top, leadPost.scene_id, null);
+			sink = activeScene.items;
 		}
 	}
 
@@ -265,18 +387,88 @@ export function buildFeedItems(
 			sink.push({ kind: 'unread-divider', key: 'unread-divider' });
 			placedDivider = true;
 			prevWasSystemPost = false;
-			if (activeGroup) activeGroup.unreadDividerInside = true;
+			if (activeScene) activeScene.unreadDividerInside = true;
+			if (activePlan) activePlan.unreadDividerInside = true;
+		}
+
+		// Plan-resolution span opens (S3). Same treatment as scene.started
+		// below: retarget `sink`, swallow the post — it becomes the container
+		// header, not a rendered log line.
+		if (
+			unit.length === 1 &&
+			first.system_code === 'plan.resolving' &&
+			first.plan_id != null &&
+			!activePlan
+		) {
+			planParent = sink;
+			activePlan = openPlanGroup(sink, first.plan_id, first);
+			sink = activePlan.items;
+			prevWasSystemPost = false;
+			continue;
 		}
 
 		// Scene boundaries are always lone units (a ranking burst never
 		// carries scene.started/scene.ended). Opening one retargets `sink` to
 		// the new group's `items` and swallows the post itself — it becomes
 		// the container header, not a rendered log line.
-		if (unit.length === 1 && first.system_code === 'scene.started' && !activeGroup) {
-			activeGroup = openGroup(first.scene_id ?? first.id, first);
-			sink = activeGroup.items;
+		if (unit.length === 1 && first.system_code === 'scene.started' && !activeScene) {
+			if (activePlan != null && first.plan_id === activePlan.planID) {
+				// A plan-scene opening inside its own plan's span: the span
+				// folds into the scene container rather than wrapping it in a
+				// second card (S3). kickoffPlanResolution emits plan.resolving
+				// and opens the scene back to back, so this is the expected
+				// path for the four PlanSceneStager types, not a race.
+				const folded = activePlan;
+				// Hoist the container out of its parent, putting anything it
+				// absorbed first (a bystander edit landing between the two
+				// posts — rare, but it keeps its real position) back in its
+				// place.
+				planParent.splice(planParent.indexOf(folded), 1, ...folded.items);
+				sink = planParent;
+				activePlan = null;
+				activeScene = openSceneGroup(sink, first.scene_id ?? first.id, first);
+				activeScene.planID = folded.planID;
+				activeScene.resolvingPost = folded.resolvingPost;
+				sceneParent = planParent;
+			} else {
+				sceneParent = sink;
+				activeScene = openSceneGroup(sink, first.scene_id ?? first.id, first);
+			}
+			sink = activeScene.items;
 			prevWasSystemPost = false;
 			continue;
+		}
+
+		// Plan-resolution span closes (S3) — swallowed as the container's
+		// outcome footer, in either rendering.
+		if (unit.length === 1 && first.plan_id != null && planOutcomeOf(first.system_code) != null) {
+			if (activePlan != null && activePlan.planID === first.plan_id) {
+				activePlan.outcomePost = first;
+				activePlan.outcome = planOutcomeOf(first.system_code);
+				activePlan.open = false;
+				sink = planParent;
+				activePlan = null;
+				prevWasSystemPost = false;
+				continue;
+			}
+			if (
+				activeScene != null &&
+				activeScene.planID === first.plan_id &&
+				activeScene.outcomePost == null
+			) {
+				// The folded case: the terminal post always lands *inside* the
+				// plan-scene, just before scene.ended (EmitPlanResolved writes
+				// it, then calls closePlanSceneIfAny last), so it becomes the
+				// container's footer while the scene itself stays open until
+				// its own close marker.
+				activeScene.outcomePost = first;
+				activeScene.outcome = planOutcomeOf(first.system_code);
+				prevWasSystemPost = false;
+				continue;
+			}
+			// No span open for this plan — a pending plan cancelled without
+			// ever resolving, or a window truncated past its plan.resolving.
+			// Falls through to render as an ordinary log line.
 		}
 
 		const isSystemUnit = first.author_id == null;
@@ -289,22 +481,23 @@ export function buildFeedItems(
 		}
 		prevWasSystemPost = isSystemUnit;
 
-		if (activeGroup) {
+		for (const group of [activeScene, activePlan]) {
+			if (!group) continue;
 			// The closing scene.ended marker itself doesn't count toward
 			// "N messages" — it isn't part of what happened in the scene.
 			if (first.system_code !== 'scene.ended') {
-				activeGroup.messageCount += unit.length;
+				group.messageCount += unit.length;
 			}
 			for (const p of unit) {
-				if (isUnreadPost(p, opts.unreadAfterID, opts.currentPlayerID)) activeGroup.unreadCount++;
+				if (isUnreadPost(p, opts.unreadAfterID, opts.currentPlayerID)) group.unreadCount++;
 			}
 		}
 
-		if (unit.length === 1 && first.system_code === 'scene.ended' && activeGroup) {
-			activeGroup.endPost = first;
-			activeGroup.open = false;
-			activeGroup = null;
-			sink = top;
+		if (unit.length === 1 && first.system_code === 'scene.ended' && activeScene) {
+			activeScene.endPost = first;
+			activeScene.open = false;
+			activeScene = null;
+			sink = sceneParent;
 			prevWasSystemPost = false;
 		}
 	}

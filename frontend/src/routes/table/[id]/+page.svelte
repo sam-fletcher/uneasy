@@ -334,8 +334,16 @@
 		}
 		await jumpToAnchor({ code: 'row.advanced', row: rowNumber });
 	}
-	function jumpToPlan(planID: number) {
-		void jumpToAnchor({ code: 'plan.prepared', planID });
+	function jumpToPlan(planID: number, status: Plan['status']) {
+		// A plan chip lives at the plan's *resolution* row (plan.RowNumber), not
+		// the row it was prepared on (prepared_at_row, which the record never
+		// surfaces), so anything past 'pending' should land on the resolution —
+		// which is also the plan-resolution container's opening post, so the
+		// jump lands on a card header rather than mid-card
+		// (adr/CHAT_VISUAL_HIERARCHY_PLAN.md S3). A pending plan has no
+		// plan.resolving post yet; plan.prepared is all there is to jump to.
+		const code = status === 'pending' ? 'plan.prepared' : 'plan.resolving';
+		void jumpToAnchor({ code, planID });
 	}
 	function jumpToScene(rowNumber: number) {
 		// SceneEntry doesn't carry scene_id — anchor by row's first scene.started.

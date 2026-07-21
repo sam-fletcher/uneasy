@@ -28,6 +28,7 @@
 	import {
 		createPlayerPost,
 		type Asset,
+		type ChatPost,
 		type Player,
 		type Scene,
 		type ScenePeerView,
@@ -40,6 +41,8 @@
 		type ChatFeedContext,
 		type FeedItem,
 		type SceneGroupItem,
+		type PlanGroupItem,
+		type PlanOutcome,
 		buildFeedItems,
 		countUnread,
 		isNearBottom,
@@ -349,26 +352,63 @@
 		sceneExpandOverrides = { ...sceneExpandOverrides, [group.sceneID]: !isSceneExpanded(group) };
 	}
 
-	// Recursively finds the scene-group (if any) whose *collapsed* contents
-	// would hide the given post id — i.e. every scene-group containing it,
-	// except when the post IS that group's own header post (always visible).
-	function findCollapsingScene(items: FeedItem[], postID: number): SceneGroupItem | null {
+	// ── Plan-resolution containers (hierarchy-plan S3) ────────────────────────
+	// The plain (no-scene) rendering of a plan-resolution span collapses on
+	// exactly the scene rule above, minus the isSceneLive lock: expanded while
+	// the span is still open (no terminal post loaded — still resolving, or the
+	// window truncated) or while the unread divider sits inside it, collapsed
+	// once resolved and read, and an explicit tap always wins. The header and
+	// the outcome footer stay visible either way, so a collapsed card still
+	// says which plan resolved and how.
+	let planExpandOverrides = $state<Record<number, boolean>>({});
+
+	function isPlanExpanded(group: PlanGroupItem): boolean {
+		const override = planExpandOverrides[group.planID];
+		if (override != null) return override;
+		return group.open || group.unreadDividerInside;
+	}
+
+	function togglePlanExpanded(group: PlanGroupItem) {
+		planExpandOverrides = { ...planExpandOverrides, [group.planID]: !isPlanExpanded(group) };
+	}
+
+	// Recursively finds the containers whose *collapsed* contents would hide the
+	// given post id — the whole outermost→innermost path, since expanding only
+	// one of a nested pair still leaves the target hidden. A post that IS a
+	// container's own header/footer (a scene's start post, a plan span's
+	// resolving or outcome post) renders whatever the expansion state, so it
+	// contributes no entry.
+	type ContainerItem = SceneGroupItem | PlanGroupItem;
+	function findCollapsingContainers(items: FeedItem[], postID: number): ContainerItem[] {
 		for (const item of items) {
-			if (item.kind !== 'scene-group') continue;
-			if (item.startPost?.id === postID) return null;
-			if (containsPostID(item.items, postID)) return item;
-			const nested = findCollapsingScene(item.items, postID);
-			if (nested) return nested;
+			if (item.kind !== 'scene-group' && item.kind !== 'plan-group') continue;
+			if (item.kind === 'scene-group' && item.startPost?.id === postID) return [];
+			if (item.resolvingPost?.id === postID || item.outcomePost?.id === postID) return [];
+			if (containsPostID(item.items, postID)) {
+				return [item, ...findCollapsingContainers(item.items, postID)];
+			}
 		}
-		return null;
+		return [];
 	}
 	function containsPostID(items: FeedItem[], postID: number): boolean {
 		return items.some((item) => {
 			if (item.kind === 'post') return item.post.id === postID;
 			if (item.kind === 'ranking-group') return item.posts.some((p) => p.id === postID);
-			if (item.kind === 'scene-group') return containsPostID(item.items, postID);
+			if (item.kind === 'scene-group' || item.kind === 'plan-group') {
+				return containsPostID(item.items, postID);
+			}
 			return false;
 		});
+	}
+	function isContainerExpanded(item: ContainerItem): boolean {
+		return item.kind === 'scene-group' ? isSceneExpanded(item) : isPlanExpanded(item);
+	}
+	function forceExpandContainer(item: ContainerItem) {
+		if (item.kind === 'scene-group') {
+			sceneExpandOverrides = { ...sceneExpandOverrides, [item.sceneID]: true };
+		} else {
+			planExpandOverrides = { ...planExpandOverrides, [item.planID]: true };
+		}
 	}
 
 	// ── Latest message preview (for the collapsed strip) ──────────────────────
@@ -517,12 +557,11 @@
 		// closes the panel via the X button (otherwise it re-opens itself).
 		untrack(() => {
 			if (!expanded && !isDesktop) expanded = true;
-			// A collapsed scene container hides its inner posts entirely (not
-			// just visually) — expand it first so the target actually exists
-			// in the DOM by the time we query for it below.
-			const collapsing = findCollapsingScene(feedItems, targetID);
-			if (collapsing && !isSceneExpanded(collapsing)) {
-				sceneExpandOverrides = { ...sceneExpandOverrides, [collapsing.sceneID]: true };
+			// A collapsed scene/plan container hides its inner posts entirely
+			// (not just visually) — expand them first so the target actually
+			// exists in the DOM by the time we query for it below.
+			for (const collapsing of findCollapsingContainers(feedItems, targetID)) {
+				if (!isContainerExpanded(collapsing)) forceExpandContainer(collapsing);
 			}
 		});
 		void tick().then(() => {
@@ -668,6 +707,31 @@
 	</header>
 
 	<!--
+		A plan-resolution span's terminal post (hierarchy-plan S3), shared by
+		both renderings of the span — the plain card and the plan-scene it folds
+		into. Colour follows DiceRollPanel's `.result-banner.make`/`.mar`
+		recipe, the app's existing make/mar vocabulary; a cancellation (or the
+		generic `plan.resolved` fallback) stays neutral, since neither is an
+		outcome the table won or lost.
+	-->
+	{#snippet planOutcome(post: ChatPost, outcome: PlanOutcome | null)}
+		<div
+			class="plan-outcome"
+			class:make={outcome === 'make'}
+			class:mar={outcome === 'mar'}
+			data-post-id={post.id}
+			data-code={post.system_code}
+			title={fmtFullTime(post.created_at)}
+		>
+			<span class="plan-outcome-label" aria-hidden="true">
+				{outcome === 'make' ? 'Make' : outcome === 'mar' ? 'Mar' : outcome === 'cancelled' ? 'Cancelled' : 'Resolved'}
+			</span>
+			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+			<span class="plan-outcome-body">{@html renderLogBody(post.body)}</span>
+		</div>
+	{/snippet}
+
+	<!--
 		Recursive so a scene-group's inner items (Phase 4) render through the
 		exact same day-divider/unread-divider/ranking-group/post logic as the
 		top level — single chronology, just wrapped in a container. `inScene`
@@ -726,7 +790,21 @@
 			{@const focusColor = data ? playerColorByID(data.focus_player_id, players) : 'var(--color-accent)'}
 			{@const live = isSceneLive(item)}
 			{@const isExpanded = isSceneExpanded(item)}
-			<div class="scene-group" style:--focus-color={focusColor}>
+			<div class="scene-group" class:plan-scene={item.resolvingPost != null} style:--focus-color={focusColor}>
+				{#if item.resolvingPost}
+					<!-- A plan-scene folds its resolution span in rather than
+					     nesting two containers (hierarchy-plan S3): the
+					     plan.resolving post becomes this pre-header line, and
+					     the plan's terminal post the outcome footer below. The
+					     ⚑ + "…is resolving" pair is the whole differentiation
+					     from an ordinary turn-scene — the frame stays the same
+					     because it IS the same kind of container. -->
+					<div class="plan-pre-header" data-post-id={item.resolvingPost.id} data-code={item.resolvingPost.system_code}>
+						<span class="log-glyph" data-family="plan" aria-hidden="true">⚑</span>
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						<span>{@html renderLogBody(item.resolvingPost.body)}</span>
+					</div>
+				{/if}
 				<button
 					type="button"
 					class="scene-header"
@@ -769,6 +847,63 @@
 							{@render feedEntry(inner, true)}
 						{/each}
 					</div>
+				{/if}
+				{#if item.outcomePost}
+					<!-- Footer, not a body line: it stays visible when the
+					     container is collapsed, so a folded-shut plan-scene
+					     still says how the plan landed. (Chronologically it
+					     precedes the "the scene ends" line just above it —
+					     EmitPlanResolved writes it before closePlanSceneIfAny —
+					     but it reads as the container's result.) -->
+					{@render planOutcome(item.outcomePost, item.outcome)}
+				{/if}
+			</div>
+		{:else if item.kind === 'plan-group'}
+			{@const isExpanded = isPlanExpanded(item)}
+			<div class="plan-group">
+				<button
+					type="button"
+					class="scene-header plan-header"
+					data-post-id={item.resolvingPost.id}
+					data-code={item.resolvingPost.system_code}
+					data-plan-id={item.planID}
+					onclick={() => togglePlanExpanded(item)}
+					aria-expanded={isExpanded}
+				>
+					<div class="scene-header-row">
+						<span class="scene-glyph" aria-hidden="true">⚑</span>
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						<span class="scene-banner">{@html renderLogBody(item.resolvingPost.body)}</span>
+						<span class="log-time">{fmtTime(item.resolvingPost.created_at)}</span>
+					</div>
+					{#if item.items.length > 0}
+						<div class="scene-meta">
+							<span class="scene-count">
+								{item.messageCount} {item.messageCount === 1 ? 'entry' : 'entries'}
+							</span>
+							<!-- Unlike a live scene (which the server confirms is
+							     still running, and so locks open), an open span
+							     may equally mean the window was truncated before
+							     the terminal post — so it stays collapsible, and
+							     keeps its caret to say so. -->
+							{#if item.open}
+								<span class="scene-live">● Resolving</span>
+							{:else if !isExpanded && item.unreadCount > 0}
+								<span class="unread-badge">{item.unreadCount}</span>
+							{/if}
+							<span class="scene-caret" aria-hidden="true">{isExpanded ? '▴' : '▾'}</span>
+						</div>
+					{/if}
+				</button>
+				{#if isExpanded && item.items.length > 0}
+					<div class="scene-body">
+						{#each item.items as inner (inner.key)}
+							{@render feedEntry(inner, inScene)}
+						{/each}
+					</div>
+				{/if}
+				{#if item.outcomePost}
+					{@render planOutcome(item.outcomePost, item.outcome)}
 				{/if}
 			</div>
 		{:else}
@@ -1549,12 +1684,78 @@
 		margin-left: auto;
 		color: var(--color-text-muted);
 	}
+	/* A resolving plan span shows both (it stays collapsible — see the
+	   template): the ● Resolving flag takes the free space, the caret sits
+	   right beside it rather than claiming a second auto margin. */
+	.scene-live + .scene-caret { margin-left: 0; }
 
 	.scene-body {
 		display: flex;
 		flex-direction: column;
 		gap: 0.55rem;
 	}
+
+	/* ── Plan-resolution container (hierarchy-plan S3) ───────────────────────
+	   A plan's resolution — plan.resolving through its terminal post — is one
+	   positional span, and gets the same frame as a scene: it's the same kind
+	   of object (a bounded stretch of the feed that collapses once it's over),
+	   so it should not invent a second visual language. The eight non-staging
+	   plan types render as `.plan-group` below; the four that stage a scene
+	   fold into `.scene-group` above, differentiated only by the ⚑ pre-header
+	   line and the shared outcome footer. */
+	.plan-group {
+		border-left: 1px solid var(--color-border-warm);
+		padding-left: 0.65rem;
+		margin: 0.3rem 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.plan-header .scene-glyph { color: var(--color-accent); }
+
+	/* The folded span's opening post, sitting above the scene header it
+	   introduces. Same gold Important-tier weight as the `.log.important` row
+	   it would otherwise have been, minus the left rule (the container's own
+	   rule already does that job). */
+	.plan-pre-header {
+		display: flex;
+		align-items: baseline;
+		gap: 0.45rem;
+		font-size: 0.85rem;
+		color: var(--color-accent);
+	}
+	.plan-pre-header .log-glyph {
+		color: var(--color-accent);
+		font-size: 1rem;
+	}
+
+	/* Outcome footer, shared by both renderings. Make/mar wear the same
+	   border + wash + label colour as DiceRollPanel's `.result-banner`, so a
+	   resolution reads the same in the log as it did on the dice panel that
+	   produced it. */
+	.plan-outcome {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid var(--color-border-warm);
+		border-radius: 6px;
+		background: var(--color-surface-sunken);
+		font-size: 0.85rem;
+		color: var(--color-text-tertiary-warm);
+	}
+	.plan-outcome.make { border-color: var(--color-success); background: var(--color-chip-green-bg); }
+	.plan-outcome.mar { border-color: var(--color-danger); background: var(--color-chip-red-bg); }
+	.plan-outcome-label {
+		flex-shrink: 0;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--color-text-muted);
+	}
+	.plan-outcome.make .plan-outcome-label { color: var(--color-success); }
+	.plan-outcome.mar .plan-outcome-label { color: var(--color-danger); }
+	.plan-outcome-body { flex: 1; }
 
 	/* ── Typing + compose ─────────────────────────────────────────────────── */
 
