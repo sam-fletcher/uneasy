@@ -48,11 +48,12 @@
 		countUnread,
 		isNearBottom,
 		fetchOlderPage,
+		markForCode,
 		reportReadMarker,
 		returnToNow,
-		systemCodeFamily,
 		parseSceneStartedData,
 	} from '$lib/chatFeed';
+	import LogMark from '$lib/components/LogMark.svelte';
 
 	// System-log bodies carry a tiny server-written markup subset — **asset
 	// names** and @@id|player names@@ — parsed in $lib/logMarkup (which also
@@ -62,43 +63,6 @@
 	// and so `players` is read during render and stays reactive.
 	function renderBody(body: string): string {
 		return renderLogBody(body, players);
-	}
-
-	// Per-code-family glyph for log lines (Phase 3 item 3), replacing the
-	// generic bullet. Families not listed here (shake_up, row, phase, …) keep
-	// the bullet — the plan doesn't call for glyphs on those.
-	//
-	// Glyph audit (hierarchy-plan S2): dropped 🗣 (rumor) — an emoji-
-	// presentation character that renders in colour on some platforms,
-	// clashing with every other glyph here being plain monochrome text —
-	// with no replacement (falls back to the bullet). Swapped ⚂ (roll), a
-	// 3-pip die face that's nearly blank at 0.85rem, for ⚄ — 5 pips keeps
-	// real gaps between dots at small size (unlike ⚅'s tightly-packed 6,
-	// which risks smearing into an unreadable blob under anti-aliasing)
-	// while still having more weight than ⚂'s sparse 3. Every die face
-	// measures ~15% shorter than ⚑ in this glyph's own font (canvas ink-
-	// bounding-box check, not just eyeballing) — a rendering quirk of how
-	// the face is drawn inside its em box, not a pip-count effect — so its
-	// glyph slot gets a matching font-size bump below. Dropped
-	// `ranking: '⚖'` outright: every ranking.* post always collapses into
-	// the ranking-group card below (see buildFeedItems), so this entry was
-	// unreachable dead code — the ⚖ that actually renders lives in the
-	// ranking-headline body text.
-	const FAMILY_GLYPHS: Record<string, string> = {
-		plan: '⚑',
-		demand: '⚑', // Make Demands' sub-events (demand.*) are plan chatter.
-		roll: '⚄',
-		asset: '✎',
-		marginalia: '✎',
-		law: '§',
-		scene: '❧',
-		// Echoes the pupil of the open/struck eye counters on asset cards,
-		// while staying a plain monochrome character like the rest of this map.
-		secret: '◉',
-	};
-	function logGlyph(code: string | null): string {
-		const family = systemCodeFamily(code);
-		return (family && FAMILY_GLYPHS[family]) || '•';
 	}
 
 	interface Props {
@@ -789,11 +753,11 @@
 					     nesting two containers (hierarchy-plan S3): the
 					     plan.resolving post becomes this pre-header line, and
 					     the plan's terminal post the outcome footer below. The
-					     ⚑ + "…is resolving" pair is the whole differentiation
+					     flag + "…is resolving" pair is the whole differentiation
 					     from an ordinary turn-scene — the frame stays the same
 					     because it IS the same kind of container. -->
 					<div class="plan-pre-header" data-post-id={item.resolvingPost.id} data-code={item.resolvingPost.system_code}>
-						<span class="log-glyph" data-family="plan" aria-hidden="true">⚑</span>
+						<span class="log-mark" aria-hidden="true"><LogMark family="plan" /></span>
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 						<span>{@html renderBody(item.resolvingPost.body)}</span>
 					</div>
@@ -808,7 +772,7 @@
 					aria-expanded={isExpanded}
 				>
 					<div class="scene-header-row">
-						<span class="scene-glyph" aria-hidden="true">❧</span>
+						<span class="scene-glyph log-mark" aria-hidden="true"><LogMark family="scene" /></span>
 						<span class="scene-banner">
 							{item.startPost ? item.startPost.body : 'Scene in progress (earlier posts not loaded)'}
 						</span>
@@ -864,7 +828,7 @@
 					aria-expanded={isExpanded}
 				>
 					<div class="scene-header-row">
-						<span class="scene-glyph" aria-hidden="true">⚑</span>
+						<span class="scene-glyph log-mark" aria-hidden="true"><LogMark family="plan" /></span>
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 						<span class="scene-banner">{@html renderBody(item.resolvingPost.body)}</span>
 						<span class="log-time">{fmtTime(item.resolvingPost.created_at)}</span>
@@ -938,7 +902,7 @@
 					title={fmtFullTime(post.created_at)}
 					onclick={() => toggleTimeReveal(post.id)}
 				>
-					<span class="log-glyph" data-family={systemCodeFamily(post.system_code)} aria-hidden="true">{logGlyph(post.system_code)}</span>
+					<span class="log-mark" aria-hidden="true"><LogMark family={markForCode(post.system_code)} /></span>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 					<span class="log-body">{@html renderBody(post.body)}</span>
 					<span class="log-time">{fmtTime(post.created_at)}</span>
@@ -1483,17 +1447,6 @@
 		padding-left: 0.5rem;
 		color: var(--color-accent);
 	}
-	.log.important .log-glyph {
-		color: var(--color-accent);
-		font-size: 1rem;
-	}
-	/* The die-face glyph (⚀–⚅) sits ~15% shorter than ⚑ within its own em
-	   box in every tier — a rendering quirk of the glyph itself, not
-	   something font-size alone fixes elsewhere, so it gets its own bump
-	   here. Overrides `.log.important .log-glyph`'s font-size above for the
-	   Important+roll intersection (e.g. roll.resolved), since that rule's
-	   higher specificity would otherwise win and undo this one. */
-	.log.important .log-glyph[data-family='roll'] { font-size: 1.15rem; }
 	/* Minor/Trace tier (hierarchy-plan S2): visible only with "hide
 	   bookkeeping" off. A visibly smaller, dimmer step below Default so the
 	   ledger keeps three legible registers instead of two. Uses the same
@@ -1504,9 +1457,30 @@
 		color: var(--color-text-faint);
 		font-size: 0.8rem;
 	}
-	.log.minor .log-glyph { color: var(--color-text-faint); }
-	.log-glyph { color: var(--color-text-muted); }
-	.log-glyph[data-family='roll'] { font-size: 1.15em; }
+
+	/* The family mark's slot (adr/LOG_MARKS_PLAN.md). Sizes the box that
+	   LogMark.svelte's svg fills, and carries the colour it strokes with.
+
+	   16px and centred, both measured. `line-height` is never set anywhere in
+	   this chain, so Spectral's own hhea metrics decide the row: 21.00px at
+	   0.85rem. Baseline-aligned, a mark's budget is the ascent alone — 14.40px,
+	   past which the row grows; `align-self: center` spends the 6.30px already
+	   reserved for descenders and fits up to the full 21px. Hence centre, not
+	   baseline. (Optical centring is also simply what a geometric mark wants;
+	   baseline alignment is for letterforms, which is what these no longer are.)
+
+	   No per-family size fudges here any more. The three that used to sit in
+	   this block existed only to reconcile glyphs that each resolved to a
+	   different fallback font; an svg has no such metrics to fight. */
+	.log-mark {
+		width: 16px;
+		height: 16px;
+		align-self: center;
+		flex-shrink: 0;
+		color: var(--color-text-muted);
+	}
+	.log.important .log-mark { color: var(--color-accent); }
+	.log.minor .log-mark { color: var(--color-text-faint); }
 
 	/* Player-name marks (hierarchy-plan S4). A log body that names a player
 	   paints the name in that player's own colour — the identity channel the
@@ -1655,6 +1629,9 @@
 		align-items: baseline;
 		gap: 0.4rem;
 	}
+	/* A scene header's mark takes the focus player's colour rather than the
+	   ledger's muted grey. Same specificity as `.log-mark`'s own colour, won on
+	   source order — this block sits below it deliberately. */
 	.scene-glyph { color: var(--focus-color, var(--color-accent)); }
 	.scene-banner {
 		flex: 1;
@@ -1735,10 +1712,7 @@
 		font-size: 0.85rem;
 		color: var(--color-accent);
 	}
-	.plan-pre-header .log-glyph {
-		color: var(--color-accent);
-		font-size: 1rem;
-	}
+	.plan-pre-header .log-mark { color: var(--color-accent); }
 
 	/* Outcome footer, shared by both renderings. Make/mar wear the same
 	   border + wash + label colour as DiceRollPanel's `.result-banner`, so a

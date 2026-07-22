@@ -76,6 +76,30 @@ export function systemCodeFamily(code: string | null): string | null {
 	return dot === -1 ? code : code.slice(0, dot);
 }
 
+// ── Pure: system_code → LogMark family (adr/LOG_MARKS_PLAN.md) ────────────
+// One mark per family — except that verb class has no channel of its own in
+// the panel (severity is the gold rule, identity is the player's colour,
+// objects are italic), and tearing isn't a severity of writing, it's a
+// different act on the same noun. So a family carries a second mark when it
+// contains a categorically hostile verb. Two families qualify and no others:
+// marginalia's `torn`, and asset's `taken`/`destroyed`/`leveraged`.
+//
+// The hostile mark is a different object, not a damaged one — at 16px a crack
+// or a nick is invisible (this was tested; it's why "crest + broken crest" is
+// not the pairing that shipped).
+
+const HOSTILE_MARKS: Record<string, string> = {
+	'marginalia.torn': 'tear',
+	'asset.taken': 'seize',
+	'asset.destroyed': 'seize',
+	'asset.leveraged': 'seize',
+};
+
+export function markForCode(code: string | null): string | null {
+	if (!code) return null;
+	return HOSTILE_MARKS[code] ?? systemCodeFamily(code);
+}
+
 // ── Pure: scene.started system_data (Phase 4a) ────────────────────────────
 // The scene.started post's `system_data` carries everything the container
 // header needs (banner, prompt, participants) without an extra fetch.
