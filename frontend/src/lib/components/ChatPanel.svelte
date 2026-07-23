@@ -727,9 +727,14 @@
 							{@html renderBody(post.body)}
 						</div>
 					{:else if post.system_code === 'ranking.updated'}
-						<!-- No separate glyph span: the body already leads with ⚖
-						     (EmitRankingUpdated bakes it into the headline text). -->
+						<!-- The card's own mark slot (log-marks S2). This post is
+						     SeverityBoundary but never reaches the `.boundary`
+						     branch — every ranking.* post collapses in here — so
+						     the headline is where the podium goes. The scales
+						     character that used to lead the body text is gone
+						     from EmitRankingUpdated. -->
 						<div class="ranking-headline" data-post-id={post.id}>
+							<span class="log-mark" aria-hidden="true"><LogMark family="ranking" /></span>
 							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 							<span>{@html renderBody(post.body)}</span>
 							<span class="log-time">{fmtTime(post.created_at)}</span>
@@ -1574,6 +1579,9 @@
 		color: var(--color-accent);
 		font-weight: 600;
 	}
+	/* Gold like the headline it leads — `.log-mark`'s muted default targets the
+	   mark element directly, so the parent's `color` alone can't reach it. */
+	.ranking-headline .log-mark { color: var(--color-accent); }
 	.ranking-headline .log-time { margin-left: auto; }
 	.ranking-category {
 		margin: 0.3rem 0 0;

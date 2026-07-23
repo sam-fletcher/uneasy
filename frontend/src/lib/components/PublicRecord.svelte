@@ -2,13 +2,14 @@
   Two-state public-record sidebar.
 
   Collapsed (default): a thin vertical rail showing all 13 row pills, with
-  ★ glyphs between rows 4|5, 8|9, 12|13 marking the algorithmic ranking
-  updates. Past rows are dimmed; the current row is filled in the accent
+  a podium mark between rows 4|5, 8|9, 12|13 marking the algorithmic ranking
+  updates (the same LogMark the chat feed's ranking card carries — one symbol
+  across surfaces; see adr/LOG_MARKS_PLAN.md). Past rows are dimmed; the current row is filled in the accent
   colour; future rows are outlined. Rows that have ≥1 plan get a numeric
   bubble at the top-right.
 
   After row 13, both rail and expanded list carry one more pseudo-row for
-  The Shake-Up — a heavier ✶ glyph (vs. the engrailed ★ dividers), visible
+  The Shake-Up — a heavier ✶ glyph (vs. the engrailed podium dividers), visible
   from row 1 of main_event onward (future), lit during shake_up (current,
   with its three Esteem/Knowledge/Power pips filling in as categories
   complete), and sealed once the game ends (past). This is the point: the
@@ -28,6 +29,7 @@
 	import { highlightedRow } from '$lib/highlight';
 	import { playerColorByID } from '$lib/playerColor';
 	import { PLAN_SHORT } from '$lib/components/plans/shared';
+	import LogMark from '$lib/components/LogMark.svelte';
 
 	interface Props {
 		rows: RecordRow[];
@@ -175,7 +177,7 @@
 			{/if}
 		</span>
 		{#if ENGRAILED_AFTER.has(n)}
-			<span class="rail-star" aria-hidden="true">★</span>
+			<span class="rail-rank" aria-hidden="true"><LogMark family="ranking" /></span>
 		{/if}
 	{/each}
 	<span class="rail-shakeup" data-state={shakeUpRowState} aria-label="The Shake-Up">
@@ -266,7 +268,7 @@
 				{#if ENGRAILED_AFTER.has(n)}
 					<li class="engrailed" aria-label="Ranking update">
 						<span class="engrailed-line"></span>
-						<span class="engrailed-star">★</span>
+						<span class="engrailed-rank"><LogMark family="ranking" /></span>
 						<span class="engrailed-line"></span>
 					</li>
 				{/if}
@@ -356,15 +358,22 @@
 		line-height: 1;
 	}
 
-	.rail-star {
-		font-size: 0.7rem;
+	/* The ranking-update marker between rows 4|5, 8|9, 12|13 (the engrailed
+	   lines). The podium is the app's one ranking symbol — the same
+	   `<LogMark family="ranking">` the chat feed's ranking card carries, so the
+	   two surfaces can't drift. It replaced a ★, which now means only Main
+	   Character. 14px reads its three tiers cleanly at rail scale (measured);
+	   `color` feeds the mark's `currentColor` stroke. */
+	.rail-rank {
+		display: flex;
+		width: 14px;
+		height: 14px;
 		color: var(--color-accent);
 		opacity: 0.8;
-		line-height: 0.8;
 		margin: 1px 0;
 	}
 
-	/* The Shake-Up's rail glyph — heavier than the engrailed ★ dividers above
+	/* The Shake-Up's rail glyph — heavier than the engrailed podium dividers above
 	   (bigger, full opacity, no dimming) since it marks the finale, not just
 	   a ranking checkpoint. */
 	.rail-shakeup {
@@ -601,10 +610,14 @@
 		background: linear-gradient(to right, transparent, var(--color-border-warm-antique), transparent);
 	}
 
-	.engrailed-star {
-		font-size: 0.85rem;
+	/* Same podium as the collapsed rail, one size up for the roomier expanded
+	   divider. Its own base bar sits on the flanking hairlines, so it reads as
+	   standing on the engrailed line rather than floating over it. */
+	.engrailed-rank {
+		display: flex;
+		width: 16px;
+		height: 16px;
 		color: var(--color-accent);
-		line-height: 1;
 	}
 
 	/* ── The Shake-Up pseudo-row ────────────────────────────────────────────── */

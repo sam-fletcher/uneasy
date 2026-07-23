@@ -158,7 +158,7 @@ func swapTokenPlayerWithAbove(
 // update into chat. Glyph is a keyword — "up" or "top" — that the chat emitter
 // (EmitRankingUpdated) maps to a symbol, keeping the symbol choice in the
 // presentation layer. "up" means the holder performed an up-swap (shown as an
-// arrow); "top" means there was no real player above to overtake (a crown).
+// arrow); "top" means there was no real player above to overtake.
 // A net-zero "cancel" between adjacent holders is just two "up" arrows that
 // undo each other — deducible from the ordered set, so it needs no marker.
 // PlayerID lets the emitter mark the name (playerMark) when it writes the

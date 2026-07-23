@@ -231,12 +231,24 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 // rankingGlyphSymbol maps a rankingMove glyph keyword to its chat symbol.
 // "up" performed an up-swap (an adjacent-preparer cancel is two of these that
 // undo each other); "top" sits atop the track with no real rival to overtake.
+//
+// Both stay plain text inside the body — these are inline annotations on a
+// list of movers, not the row's family mark, which the log-marks plan reserves
+// for LogMark.svelte (rule 3: never bake a mark into a body string).
+//
+// `↑` is verified present in the shipped Spectral woff2, so it renders in the
+// app's own font. A crown emoji (U+1F451) used to sit on the "top" case and
+// was replaced by the word: it is an emoji-presentation character (colour on
+// many platforms — the same fault that retired the speaking-head emoji), and a
+// screen reader announced it as "crown". The word carries the same meaning in
+// every channel at once. Written out here rather than quoted so S3's
+// no-marks-in-handler guard can't trip over this comment.
 func rankingGlyphSymbol(glyph string) string {
 	switch glyph {
 	case "up":
 		return "↑"
 	case "top":
-		return "👑"
+		return "(top)"
 	default:
 		return "?"
 	}
@@ -259,7 +271,7 @@ func categoryTitle(cat model.RankingCategory) string {
 //   - a Boundary headline that anchors the Public Record rail,
 //   - per category (in display order) an Important header,
 //   - for each prepared plan a Default numbered line listing its preparers and
-//     their movement glyphs (↑ performed an up-swap / 👑 top of the track),
+//     their movement symbols (see rankingGlyphSymbol),
 //   - an Important "Standing:" line with the category's resulting rank order,
 //   - a Default sentence explaining the clear when every plan was prepared,
 //   - a Default "no preparations" line for an untouched category.
@@ -274,9 +286,13 @@ func EmitRankingUpdated(
 	rowNumber int16,
 	diff *rankingUpdateDiff,
 ) {
+	// No mark in the body (adr/LOG_MARKS_PLAN.md rule 3). This post is
+	// SeverityBoundary but never renders through `.boundary` — every ranking.*
+	// post collapses into the ranking-group card — so its mark is the
+	// `<LogMark family="ranking">` in `.ranking-headline`, client-side.
 	EmitSystemPost(ctx, q, manager, gameID, "ranking.updated",
 		model.SeverityBoundary,
-		fmt.Sprintf("⚖ Rankings update — after Row %d", rowNumber-1),
+		fmt.Sprintf("Rankings update — after Row %d", rowNumber-1),
 		&rowNumber, nil, nil,
 		map[string]any{"row_number": rowNumber, "diff": diff})
 
@@ -908,10 +924,16 @@ func shakeUpCategoryTitle(category string) string {
 
 // EmitShakeUpCategory writes the Boundary post marking the move to a new
 // category pass within the Shake-Up, with that act's one-line flavor hook.
+//
+// No mark in the body (adr/LOG_MARKS_PLAN.md rule 3). Both this and
+// EmitShakeUpEnded render through `.boundary`'s line–label–line treatment,
+// which has no mark slot by design — the flanking rules are the whole visual
+// statement. The scales character these used to carry wasn't a shake-up mark
+// anyway; it was the ranking one, borrowed.
 func EmitShakeUpCategory(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64, category string) {
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.category",
 		model.SeverityBoundary,
-		fmt.Sprintf("⚖ Shake-Up — %s", shakeUpCategoryTitle(category)),
+		fmt.Sprintf("Shake-Up — %s", shakeUpCategoryTitle(category)),
 		nil, nil, nil,
 		map[string]any{"category": category})
 }
@@ -921,7 +943,7 @@ func EmitShakeUpCategory(ctx context.Context, q *dbgen.Queries, manager *hub.Man
 func EmitShakeUpEnded(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64) {
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.ended",
 		model.SeverityBoundary,
-		"⚖ The Shake-Up is complete — the game has ended.",
+		"The Shake-Up is complete — the game has ended.",
 		nil, nil, nil, nil)
 }
 

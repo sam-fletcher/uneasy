@@ -127,13 +127,18 @@
 							{@const y = 7 + i * 11}
 							{@const engrailed = i === 3 || i === 7 || i === 11}
 							<text x="16" y={y + 3} text-anchor="end" class="d-num">{i + 1}</text>
+							<!-- The engrailed rows (4/8/12, where rankings update) read as a
+							     heavier accent line, NOT the podium the Public Record and
+							     chat carry: at this diagram's scale the 4-bar podium didn't
+							     read (owner ruling), and the thicker gold line already says
+							     "something happens here". -->
 							<line x1="24" y1={y} x2="79" y2={y}
 								stroke={engrailed ? 'var(--color-accent)' : 'var(--color-border-strong)'}
 								stroke-width={engrailed ? 2 : 1} />
 						{/each}
-						<!-- The Shake-Up pseudo-row — same heavier ✶ glyph (vs. the
-						     engrailed ★ above) and dashed tie-line as the Public
-						     Record sidebar's row-14 treatment (PublicRecord.svelte). -->
+						<!-- The Shake-Up pseudo-row — a heavier ✶ glyph and dashed
+						     tie-line, mirroring the Public Record sidebar's row-14
+						     treatment (PublicRecord.svelte). -->
 						<text x="17" y={SHAKEUP_ROW_Y + 4} text-anchor="end" class="d-shakeup-star">✶</text>
 						<line x1="24" y1={SHAKEUP_ROW_Y} x2="79" y2={SHAKEUP_ROW_Y}
 							stroke="var(--color-accent)" stroke-width="1.5" stroke-dasharray="2,2" />
@@ -419,7 +424,7 @@
 	.d-num { font-family: var(--font-serif); font-size: 7px; fill: var(--color-text-muted); }
 	.d-cap { font-family: var(--font-serif); font-size: 8px; fill: var(--color-accent); }
 	/* Heavier than .d-num — mirrors the Public Record sidebar's rail glyph,
-	   which is likewise bigger and bolder than the engrailed ★ dividers. */
+	   which is likewise bigger and bolder than the engrailed podium dividers. */
 	.d-shakeup-star { font-size: 11px; fill: var(--color-accent); }
 
 	/* ── Dice example (Dice tab) ─────────────────────────────────────────── */
