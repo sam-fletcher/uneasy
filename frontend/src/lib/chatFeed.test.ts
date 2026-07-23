@@ -6,6 +6,7 @@ import {
 	countUnread,
 	buildFeedItems,
 	systemCodeFamily,
+	markForCode,
 	planOutcomeOf,
 	parseSceneStartedData,
 	mergeAppend,
@@ -746,6 +747,60 @@ describe('systemCodeFamily', () => {
 
 	it('returns null for null/no-dot codes', () => {
 		expect(systemCodeFamily(null)).toBeNull();
+	});
+});
+
+describe('markForCode', () => {
+	// The routing table nothing else guards (adr/LOG_MARKS_PLAN.md S3 item 1):
+	// unlike colour literals, which the app.css guard test catches, the mark map
+	// had no unit coverage at all. `markForCode` is `systemCodeFamily` plus the
+	// hostile-verb override, so these assertions are what keep a family from
+	// silently losing its mark (rule 1: every family has one) or a bookkeeping
+	// verb from wrongly inheriting a hostile one.
+
+	// One representative real code per non-hostile family in "The set" table.
+	// The two remaining keys — tear and seize — are only reachable through the
+	// hostile override, so they're covered by the routing test below, not here.
+	const familyForCode: Record<string, string> = {
+		'plan.prepared': 'plan',
+		'demand.resolved': 'demand',
+		'asset.created': 'asset',
+		'marginalia.added': 'marginalia',
+		'roll.resolved': 'roll',
+		'law.enacted': 'law',
+		'scene.started': 'scene',
+		'ranking.updated': 'ranking',
+		'shake_up.category': 'shake_up',
+		'prologue.track_ranked': 'prologue',
+		'rumor.created': 'rumor',
+		'secret.written': 'secret',
+	};
+
+	it('resolves a mark for every non-hostile family in the set', () => {
+		for (const [code, family] of Object.entries(familyForCode)) {
+			expect(markForCode(code)).toBe(family);
+		}
+	});
+
+	it('routes the three hostile verbs to their second mark', () => {
+		expect(markForCode('marginalia.torn')).toBe('tear');
+		expect(markForCode('asset.taken')).toBe('seize');
+		expect(markForCode('asset.destroyed')).toBe('seize');
+		expect(markForCode('asset.leveraged')).toBe('seize');
+	});
+
+	it('leaves bookkeeping verbs on the family mark, not the hostile one', () => {
+		// The amendment is verb-scoped, not family-scoped: only marginalia.torn
+		// becomes the tear — marginalia.added stays the pencil — and only
+		// asset.taken/destroyed/leveraged become the crossed swords.
+		expect(markForCode('marginalia.added')).toBe('marginalia');
+		expect(markForCode('marginalia.edited')).toBe('marginalia');
+		expect(markForCode('asset.created')).toBe('asset');
+		expect(markForCode('asset.renamed')).toBe('asset');
+	});
+
+	it('returns null for a player message (no system_code)', () => {
+		expect(markForCode(null)).toBeNull();
 	});
 });
 

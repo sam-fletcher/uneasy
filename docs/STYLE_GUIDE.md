@@ -171,6 +171,68 @@ Reuse before writing new CSS — these live in
 | `modalShell.css` | sheet/modal frame |
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
+| `LogMark.svelte`† | the 14 chat-log family marks (SVG); also the ranking mark on the Public Record — see **Log marks** below |
+
+† `LogMark.svelte` lives in `components/`, not `shared/` — the name
+undersells it, since it is reused outside the chat feed.
 
 Plus `plans/shared/` (Buffet, DifficultyMeter) for plan flows and
 `HelpContent` for the ?-panel/lobby help.
+
+### Log marks
+
+`LogMark.svelte` (`frontend/src/lib/components/`) holds 14 house SVG marks for
+the chat log — one per system-post family — retiring the old Unicode
+`FAMILY_GLYPHS`, of which only `§` actually existed in Spectral (the rest each
+resolved to a different fallback font per platform, the real cause of the
+metric fudges the old CSS fought). House icon idiom, same as
+`AssetTypeIcon`/`CrownGlyph`: 24×24 viewBox, `stroke=currentColor`,
+stroke-width 2, round caps/joins; die pips are the one filled/unstroked
+exception. An unknown family renders nothing — every family is meant to have a
+mark, so a blank is the louder bug than a fallback bullet.
+
+`markForCode(code)` in `$lib/chatFeed.ts` routes a `system_code` to a family
+(covered by `chatFeed.test.ts`). `handler/system_posts_marks_test.go` guards
+the other direction: no mark character may be baked back into a Go body string.
+
+**Sizing.** The mark box is owned by the caller's `.log-mark` span, not the
+component: `width/height: 16px`, `align-self: center`, `flex-shrink: 0`,
+`color: var(--color-text-muted)` — overridden to `--color-accent` on
+`.log.important` and `--color-text-faint` on `.log.minor`. Centre, **not
+baseline**: a geometric mark centres, a letterform sits on the baseline. This
+holds the `.log` row at its measured **21.00px** — `line-height` is never set
+anywhere in the chain, so it resolves to `normal` and Spectral's own `hhea`
+metrics (ascender 1059 + descender 463 over 1000 upm) decide the row. A 16px
+centred mark grows it by 0px; a 16px baseline-aligned one would add 1.50px.
+Don't add a `line-height` to "fix" this, and don't switch centring to
+baseline or start (owner ruling: centring is right, including on rows that
+wrap to two lines).
+
+**The rules the set follows** — owner-approved 2026-07-22, don't re-litigate:
+
+1. One mark per family, every family. No bullet fallback.
+2. The mark never encodes outcome, severity or magnitude. Severity is the
+   gold rule, identity is the player's colour, objects are italic; the mark is
+   only the *noun* — which part of the game the line belongs to.
+3. Never bake a mark into a body string. Bodies are prose owned by the
+   log-markup renderer; the mark slot is the mark slot. (The Go guard test
+   enforces this — it caught the scales headline and the crown emoji.)
+4. The mark must render from something the app ships, or its shape, weight and
+   colour are the reader's OS's choice.
+
+**Hostile-verb amendment.** Verb class has no channel of its own, and tearing
+isn't a *severity* of writing — it's a different act on the same noun. So a
+family carries a *second* mark when it contains a categorically hostile verb.
+Exactly two qualify: `marginalia` (`torn` → torn sheet) and `asset`
+(`taken`/`destroyed`/`leveraged` → crossed swords). The hostile mark is a
+different object, not a damaged one — at 16px a crack or a nick is invisible.
+
+**One ranking mark, everywhere.** The `ranking` podium is *not* chat-only.
+`PublicRecord.svelte` reuses the same `<LogMark family="ranking">` on the rail
+divider (`.rail-rank`, 14px) and the expanded engrailed dividers
+(`.engrailed-rank`, 16px), so the Public Record and the chat card share one
+component and can't drift. Consequently `★` now means **only Main Character**
+(the `AssetCardSelectable` badge) and `✶` **only the Shake-Up**, app-wide —
+neither doubles as the ranking marker any longer. The Help "record" schematic
+is the deliberate exception: its engrailed rows stay a heavier accent line,
+no podium, because the 4-bar shape doesn't read at that scale.
