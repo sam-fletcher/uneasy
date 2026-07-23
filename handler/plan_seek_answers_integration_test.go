@@ -601,12 +601,10 @@ func TestSeekAnswers_AskQuestion_AnswerFlow(t *testing.T) {
 	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
 	require.NotNil(t, rd.SeekAnswers.PendingQuestion)
 
-	// The WaitingOn bar must name the target: the row blocks on them.
-	rs, err := ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
-	require.NoError(t, err)
-	assert.Equal(t, model.RowStateAwaitQuestionAnswer, rs.Kind)
-	require.Len(t, rs.ActingPlayerIDs, 1)
-	assert.Equal(t, targetID, rs.ActingPlayerIDs[0])
+	// The WaitingOn bar must name the target: the row blocks on them —
+	// attribution pinned through the real ask-question flow.
+	h.assertWaitees("question asked → target answers",
+		model.RowStateAwaitQuestionAnswer, targetID)
 
 	// Completion blocks while a question is pending.
 	code, _ = h.post(preparerIdx, completePath, nil)
@@ -630,7 +628,7 @@ func TestSeekAnswers_AskQuestion_AnswerFlow(t *testing.T) {
 	assert.Equal(t, "At the library.", final.SeekAnswers.AnsweredQuestions[0].Answer)
 
 	// The block clears once answered — the row no longer waits on the target.
-	rs, err = ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
+	rs, err := ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
 	require.NoError(t, err)
 	assert.NotEqual(t, model.RowStateAwaitQuestionAnswer, rs.Kind)
 

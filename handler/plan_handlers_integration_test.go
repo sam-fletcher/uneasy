@@ -315,6 +315,78 @@ func TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium(t *testing.T) 
 		"tearing the final marginalia via break-target must destroy the asset")
 }
 
+// TestSpreadRumors_BreakTarget_RejectsResubmit proves the server-authoritative
+// completion guard: a stale client re-prompted after a refresh cannot tear a
+// second marginalia once break-target has discharged its single picked choice.
+// Break-target does not auto-complete the plan (the preparer completes
+// separately), so the plan is still resolving on the retry and the retry is
+// caught by the BreakTargetDone >= picked-count guard, not the status guard.
+func TestSpreadRumors_BreakTarget_RejectsResubmit(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+
+	// Rumor target owned by the other player, carrying TWO intact marginalia so
+	// the first break tears one without destroying the asset — a second intact
+	// marginalia remains, so the guard (not asset destruction) is what must
+	// block the retry.
+	target := h.seedPeer(otherIdx, "rumor target")
+	m1, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: target, Position: 1, Text: "first damning note",
+	})
+	require.NoError(t, err)
+	m2, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: target, Position: 2, Text: "second damning note",
+	})
+	require.NoError(t, err)
+
+	notes := "the regent forged the ledgers"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"}) // picked once → count 1
+
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/break-target"
+
+	// First break: tears one marginalia, records BreakTargetDone=1; asset survives.
+	code, body := h.post(focusIdx, breakPath, map[string]any{"marginalia_id": m1.ID})
+	require.Equalf(t, http.StatusOK, code, "first break-target: %v", body)
+
+	torn, err := h.q.GetMarginaliaByID(ctx, m1.ID)
+	require.NoError(t, err)
+	assert.True(t, torn.IsTorn, "first marginalia should be torn")
+	survivor, err := h.q.GetAssetByID(ctx, target)
+	require.NoError(t, err)
+	assert.False(t, survivor.IsDestroyed, "asset survives while a marginalia remains")
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.SpreadRumors)
+	assert.Equal(t, 1, rd.SpreadRumors.BreakTargetDone)
+
+	// Second break (stale client) against the still-intact second marginalia:
+	// rejected, and that marginalia is left intact — exactly one tear total.
+	code, body = h.post(focusIdx, breakPath, map[string]any{"marginalia_id": m2.ID})
+	require.Equalf(t, http.StatusConflict, code, "resubmitted break-target must be rejected: %v", body)
+
+	stillIntact, err := h.q.GetMarginaliaByID(ctx, m2.ID)
+	require.NoError(t, err)
+	assert.False(t, stillIntact.IsTorn, "rejected retry must not tear a second marginalia")
+
+	after, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, loadResolutionData(after.ResolutionData).SpreadRumors.BreakTargetDone,
+		"BreakTargetDone stays at 1 after a rejected retry")
+}
+
 // TestSpreadRumors_TakeAsset_KeepAssetsDemandIntercepts proves a resolved Make
 // Demands keep_assets winner intercepts the preparer's "take_asset" spoils on a
 // made roll: the taken asset lands with the demander, not the preparer.
@@ -701,12 +773,9 @@ func TestSpreadRumors_TakeConsent_AgreeTransfersAsset(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, rumors, "no rumor until the choices commit")
 
-	// The row blocks on the victim.
-	rs, err := ComputeRowState(ctx, h.q, h.tg.Game.ID)
-	require.NoError(t, err)
-	assert.Equal(t, model.RowStateAwaitTakeConsent, rs.Kind)
-	require.Len(t, rs.ActingPlayerIDs, 1)
-	assert.Equal(t, victimID, rs.ActingPlayerIDs[0])
+	// The row blocks on the victim — attribution pinned through the real flow.
+	h.assertWaitees("take-asset committed → victim consents",
+		model.RowStateAwaitTakeConsent, victimID)
 
 	respPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/respond-take-consent"
 
