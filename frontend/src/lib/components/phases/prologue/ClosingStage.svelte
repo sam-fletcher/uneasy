@@ -33,6 +33,7 @@
 		readyBlockedReason,
 		isReady,
 		myAtRiskCount,
+		blankAssets,
 		retinueTallies,
 		RETINUE_TYPE_ORDER,
 		type RetinueTally,
@@ -168,11 +169,19 @@
 		}
 	}
 
+	// ── Give every asset a marginalia (hard) ─────────────────────────────────
+	const myBlankAssets = $derived(blankAssets(assets, currentPlayerID));
+
 	// ── Shore up at-risk assets (soft) ────────────────────────────────────────
-	const riskCount = $derived(myAtRiskCount(assets, currentPlayerID));
+	// Blank assets are a subset of the at-risk set, and they already have their
+	// own hard item above — so the soft nudge counts only the rest, otherwise
+	// one asset would be scolded twice on the same page.
+	const riskCount = $derived(myAtRiskCount(assets, currentPlayerID) - myBlankAssets.length);
 
 	// ── Ready roster + toggle ────────────────────────────────────────────────
-	const blockedReason = $derived(readyBlockedReason(mcNamed, players.length, myExtraPeer != null));
+	const blockedReason = $derived(
+		readyBlockedReason(mcNamed, players.length, myExtraPeer != null, myBlankAssets.length)
+	);
 	const myReady = $derived(isReady(closingReady, currentPlayerID));
 
 	let savingReady = $state(false);
@@ -374,6 +383,32 @@
 				{/if}
 			</section>
 		{/if}
+
+		<section class="check-card" class:done={myBlankAssets.length === 0}>
+			<div class="check-head">
+				<span class="check-mark" aria-hidden="true">{myBlankAssets.length === 0 ? '✓' : '○'}</span>
+				<h3 class="check-title">Give every asset a marginalia</h3>
+			</div>
+			{#if myBlankAssets.length === 0}
+				<p class="check-body">Everything in your retinue carries a note.</p>
+			{:else}
+				<p class="check-body">
+					{myBlankAssets.length}
+					{myBlankAssets.length === 1 ? 'asset has' : 'assets have'} nothing written on
+					{myBlankAssets.length === 1 ? 'it' : 'them'} yet. An asset with no marginalia can never be
+					broken — or lost.
+				</p>
+				<ul class="blank-list">
+					{#each myBlankAssets as a (a.id)}
+						<li class="blank-item">
+							<AssetTypeIcon type={a.asset_type} size={14} />
+							<span class="blank-name">{a.name}</span>
+						</li>
+					{/each}
+				</ul>
+				<button class="action-btn secondary small" onclick={() => onOpenRetinue?.()}>Open Retinue</button>
+			{/if}
+		</section>
 
 		{#if riskCount > 0}
 			<section class="check-card soft at-risk">
@@ -702,6 +737,31 @@
 	}
 	.check-form input {
 		flex: 1 1 12rem;
+		min-width: 0;
+	}
+
+	/* Blank-asset list: names the offending assets so the player knows what to
+	   open the Retinue for. Asset names render italic app-wide. */
+	.blank-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+	.blank-item {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		color: var(--color-text-secondary);
+		font-size: 0.82rem;
+	}
+	.blank-name {
+		font-style: italic;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		min-width: 0;
 	}
 

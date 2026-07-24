@@ -190,7 +190,7 @@ func seedBase(ctx context.Context, q *dbgen.Queries, usernames []string, cfg see
 		}
 	}
 
-	if err := seedStartingAssets(ctx, q, game.ID, players); err != nil {
+	if err := seedStartingAssets(ctx, q, game.ID, players, cfg); err != nil {
 		return SeededGame{}, err
 	}
 
@@ -217,37 +217,74 @@ func seedBase(ctx context.Context, q *dbgen.Queries, usernames []string, cfg see
 // (stakes, targets, transfers). A single peer per player is not enough for most
 // plan testing.
 //
-// All four start with no marginalia: the prologue explicitly allows assets to
-// start blank ("you don't need to fill these all the way out yet"), and leaving
-// positions 1–4 free lets tests add their own marginalia without colliding.
-func seedStartingAssets(ctx context.Context, q *dbgen.Queries, gameID int64, players []dbgen.Player) error {
+// All four start with no marginalia by default: the prologue explicitly allows
+// assets to start blank ("you don't need to fill these all the way out yet"),
+// and leaving positions 1–4 free lets tests add their own marginalia without
+// colliding. Pass WithStartingMarginalia to stamp one note at position 1
+// instead — required by any fixture that must clear the prologue closing gate,
+// which refuses Ready while an owned asset is blank.
+func seedStartingAssets(
+	ctx context.Context, q *dbgen.Queries, gameID int64, players []dbgen.Player, cfg seedConfig,
+) error {
 	for i := range players {
 		p := &players[i]
-		if _, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		mc, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
 			GameID:          gameID,
 			OwnerID:         p.ID,
 			CreatorID:       p.ID,
 			AssetType:       model.AssetPeer,
 			Name:            fmt.Sprintf("%s's main character", p.DisplayName),
 			IsMainCharacter: true,
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("seed main character for %q: %w", p.DisplayName, err)
+		}
+		if err := seedFirstMarginalium(ctx, q, cfg, mc.ID, model.AssetPeer); err != nil {
+			return fmt.Errorf("seed main character marginalia for %q: %w", p.DisplayName, err)
 		}
 		for _, t := range []model.AssetType{
 			model.AssetHolding, model.AssetArtifact, model.AssetResource,
 		} {
-			if _, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			a, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
 				GameID:    gameID,
 				OwnerID:   p.ID,
 				CreatorID: p.ID,
 				AssetType: t,
 				Name:      fmt.Sprintf("%s's %s", p.DisplayName, t),
-			}); err != nil {
+			})
+			if err != nil {
 				return fmt.Errorf("seed %s for %q: %w", t, p.DisplayName, err)
+			}
+			if err := seedFirstMarginalium(ctx, q, cfg, a.ID, t); err != nil {
+				return fmt.Errorf("seed %s marginalia for %q: %w", t, p.DisplayName, err)
 			}
 		}
 	}
 	return nil
+}
+
+// seedStartingMarginaliaText is the note stamped on each seeded starting asset
+// when WithStartingMarginalia is set. Per-type wording so a seeded retinue
+// reads like a plausible one rather than four copies of the same line.
+var seedStartingMarginaliaText = map[model.AssetType]string{
+	model.AssetPeer:     "Loyal, for now.",
+	model.AssetHolding:  "Older than it looks.",
+	model.AssetArtifact: "Its provenance is disputed.",
+	model.AssetResource: "Reliable, in small quantities.",
+}
+
+// seedFirstMarginalium stamps position 1 of a seeded asset, or no-ops when the
+// caller didn't opt in.
+func seedFirstMarginalium(
+	ctx context.Context, q *dbgen.Queries, cfg seedConfig, assetID int64, t model.AssetType,
+) error {
+	if !cfg.startingMarginalia {
+		return nil
+	}
+	_, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+		AssetID: assetID, Position: 1, Text: seedStartingMarginaliaText[t],
+	})
+	return err
 }
 
 // seedRankings writes all three tracks as a *valid* spread: real players are

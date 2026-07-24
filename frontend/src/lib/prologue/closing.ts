@@ -53,16 +53,37 @@ export function unclaimedTitles(
 	);
 }
 
+/** The viewer's live assets carrying no marginalia at all. A blank asset is
+ *  invulnerable — there is nothing to tear, so it can never be broken toward
+ *  destruction — which is why clearing them is a hard gate on Ready
+ *  (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D2). Mirrors the server's
+ *  CountBlankAssetsByOwner; the server re-checks it itself.
+ *
+ *  Note this is "no notes at all", NOT isNeedlesslyAtRisk's "≤1 intact note" —
+ *  a blank asset is a subset of the at-risk set, and the two items sit side by
+ *  side in the checklist (one hard, one soft). */
+export function blankAssets(assets: Asset[], playerID: number | null): Asset[] {
+	if (playerID == null) return [];
+	// Same defence as assetRisk.ts: some WS payloads carry a marginalia-less
+	// asset row, and a throw inside a derived breaks Svelte's reactivity batch.
+	return assets.filter(
+		(a) => a.owner_id === playerID && !a.is_destroyed && (a.marginalia ?? []).length === 0
+	);
+}
+
 /** Server-authoritative gate (handler/prologue_closing.go) mirrored here only
- *  to disable/explain the Ready toggle client-side; the server re-checks both
- *  conditions itself. Null once the viewer may ready up. */
+ *  to disable/explain the Ready toggle client-side; the server re-checks every
+ *  condition itself. Null once the viewer may ready up. Condition order matches
+ *  closingReadyGateFailure so the client and server surface the same reason. */
 export function readyBlockedReason(
 	mcNamed: boolean,
 	playerCount: number,
-	hasExtraPeer: boolean
+	hasExtraPeer: boolean,
+	blankAssetCount = 0
 ): string | null {
 	if (!mcNamed) return 'Name your main character first.';
 	if (needsExtraPeer(playerCount) && !hasExtraPeer) return 'Create your extra peer first.';
+	if (blankAssetCount > 0) return 'Give every asset at least one marginalia first.';
 	return null;
 }
 

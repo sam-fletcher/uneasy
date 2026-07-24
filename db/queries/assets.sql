@@ -115,6 +115,20 @@ WHERE owner_id = $1 AND is_leveraged = FALSE AND is_destroyed = FALSE;
 SELECT count(*) FROM assets
 WHERE game_id = $1 AND owner_id = $2 AND asset_type = 'peer' AND is_destroyed = FALSE;
 
+-- name: CountBlankAssetsByOwner :one
+-- Counts a player's live assets carrying no marginalia rows at all. Such an
+-- asset is invulnerable: breakMarginalia needs a marginalium to tear, and
+-- DestroyIfAllMarginaliaTorn (above) is guarded by an EXISTS on the same
+-- table, so nothing can ever remove it from play. The prologue's closing step
+-- gates Ready on this reaching zero — see adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md
+-- (D2). Note "no rows", not "no intact rows": a fully-torn asset is already
+-- destroyed by the time this could see it.
+SELECT count(*) FROM assets a
+WHERE a.game_id = $1
+  AND a.owner_id = $2
+  AND a.is_destroyed = FALSE
+  AND NOT EXISTS (SELECT 1 FROM marginalia m WHERE m.asset_id = a.id);
+
 -- ── Marginalia ───────────────────────────────────────────────────────
 
 -- name: GetMarginaliaByID :one

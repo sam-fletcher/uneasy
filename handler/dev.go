@@ -217,26 +217,96 @@ const (
 	devSeedSampleRumor = "They say the western holdfast was lost at cards, not conquered."
 )
 
+// devSeedPlanReq is one plan placed directly onto the seeded board.
+type devSeedPlanReq struct {
+	PreparerIdx int    `json:"preparer_idx"`
+	PlanType    string `json:"plan_type"`
+	Category    string `json:"category"`
+	Row         int16  `json:"row"`
+	RowOrder    int16  `json:"row_order"`
+}
+
+// devSeedRequest is the POST /api/dev/seed body.
+type devSeedRequest struct {
+	Phase         string           `json:"phase"`
+	Players       []string         `json:"players"`
+	CurrentRow    *int16           `json:"current_row"`
+	Rankings      map[string][]int `json:"rankings"`
+	Plans         []devSeedPlanReq `json:"plans"`
+	ShakeUpTokens *int16           `json:"shake_up_tokens"`
+	ShakeUpStep   *string          `json:"shake_up_step"`
+	// nil => one sample entry; an explicit (possibly empty) slice overrides.
+	Laws   *[]string `json:"laws"`
+	Rumors *[]string `json:"rumors"`
+	// nil => on for prologue_closing, off for every other phase. Set false to
+	// seed blank (marginalia-less) assets at closing — the only way to exercise
+	// the closing gate's blank-asset item from a seeded game — or true to give
+	// a Main-Event seed notes to tear.
+	StartingMarginalia *bool `json:"starting_marginalia"`
+}
+
+// devSeedOptions translates the request body into gametest Options. Returns a
+// non-empty message when a field is unusable, which the caller turns into a 400.
+func devSeedOptions(body *devSeedRequest) ([]gametest.Option, string) {
+	opts := make([]gametest.Option, 0)
+	if body.CurrentRow != nil {
+		opts = append(opts, gametest.WithCurrentRow(*body.CurrentRow))
+	}
+	for cat, order := range body.Rankings {
+		opts = append(opts, gametest.WithRankings(model.RankingCategory(cat), order))
+	}
+	for _, p := range body.Plans {
+		opts = append(opts, gametest.WithPlan(gametest.SeedPlan{
+			PreparerIdx: p.PreparerIdx,
+			PlanType:    model.PlanType(p.PlanType),
+			Category:    model.RankingCategory(p.Category),
+			Row:         p.Row,
+			RowOrder:    p.RowOrder,
+		}))
+	}
+	if body.ShakeUpTokens != nil {
+		opts = append(opts, gametest.WithShakeUpTokens(*body.ShakeUpTokens))
+	}
+	if body.ShakeUpStep != nil {
+		step, ok := shakeUpStepFromName(*body.ShakeUpStep)
+		if !ok {
+			return nil, "unknown shake_up_step: " + *body.ShakeUpStep
+		}
+		opts = append(opts, gametest.WithShakeUpStep(step))
+	}
+	// Populate the laws/rumors UI by default; an explicit array overrides
+	// (pass [] for none).
+	laws := []string{devSeedSampleLaw}
+	if body.Laws != nil {
+		laws = *body.Laws
+	}
+	for _, text := range laws {
+		opts = append(opts, gametest.WithLaw(text))
+	}
+	rumors := []string{devSeedSampleRumor}
+	if body.Rumors != nil {
+		rumors = *body.Rumors
+	}
+	for _, text := range rumors {
+		opts = append(opts, gametest.WithRumor(text))
+	}
+	// Seeded assets stay blank except at prologue_closing, where a blank asset
+	// can never clear the closing gate and would make the seeded game
+	// unplayable out of the box. Defaulting this on for every phase would
+	// silently re-calibrate the Main-Event fixtures the e2e specs and
+	// integration tests are written against (blank assets are not eligible
+	// break targets, so plan sub-flows take different branches).
+	startingMarginalia := body.Phase == "prologue_closing"
+	if body.StartingMarginalia != nil {
+		startingMarginalia = *body.StartingMarginalia
+	}
+	if startingMarginalia {
+		opts = append(opts, gametest.WithStartingMarginalia())
+	}
+	return opts, ""
+}
+
 func DevSeed(s *db.Store) http.HandlerFunc {
-	type planReq struct {
-		PreparerIdx int    `json:"preparer_idx"`
-		PlanType    string `json:"plan_type"`
-		Category    string `json:"category"`
-		Row         int16  `json:"row"`
-		RowOrder    int16  `json:"row_order"`
-	}
-	type request struct {
-		Phase         string           `json:"phase"`
-		Players       []string         `json:"players"`
-		CurrentRow    *int16           `json:"current_row"`
-		Rankings      map[string][]int `json:"rankings"`
-		Plans         []planReq        `json:"plans"`
-		ShakeUpTokens *int16           `json:"shake_up_tokens"`
-		ShakeUpStep   *string          `json:"shake_up_step"`
-		// nil => one sample entry; an explicit (possibly empty) slice overrides.
-		Laws   *[]string `json:"laws"`
-		Rumors *[]string `json:"rumors"`
-	}
 	type playerResp struct {
 		ID            int64  `json:"id"`
 		AccountID     int64  `json:"account_id"`
@@ -245,54 +315,16 @@ func DevSeed(s *db.Store) http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		var body request
+		var body devSeedRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
-		opts := make([]gametest.Option, 0)
-		if body.CurrentRow != nil {
-			opts = append(opts, gametest.WithCurrentRow(*body.CurrentRow))
-		}
-		for cat, order := range body.Rankings {
-			opts = append(opts, gametest.WithRankings(model.RankingCategory(cat), order))
-		}
-		for _, p := range body.Plans {
-			opts = append(opts, gametest.WithPlan(gametest.SeedPlan{
-				PreparerIdx: p.PreparerIdx,
-				PlanType:    model.PlanType(p.PlanType),
-				Category:    model.RankingCategory(p.Category),
-				Row:         p.Row,
-				RowOrder:    p.RowOrder,
-			}))
-		}
-		if body.ShakeUpTokens != nil {
-			opts = append(opts, gametest.WithShakeUpTokens(*body.ShakeUpTokens))
-		}
-		if body.ShakeUpStep != nil {
-			step, ok := shakeUpStepFromName(*body.ShakeUpStep)
-			if !ok {
-				respondErr(w, http.StatusBadRequest, "unknown shake_up_step: "+*body.ShakeUpStep)
-				return
-			}
-			opts = append(opts, gametest.WithShakeUpStep(step))
-		}
-		// Populate the laws/rumors UI by default; an explicit array overrides
-		// (pass [] for none).
-		laws := []string{devSeedSampleLaw}
-		if body.Laws != nil {
-			laws = *body.Laws
-		}
-		for _, text := range laws {
-			opts = append(opts, gametest.WithLaw(text))
-		}
-		rumors := []string{devSeedSampleRumor}
-		if body.Rumors != nil {
-			rumors = *body.Rumors
-		}
-		for _, text := range rumors {
-			opts = append(opts, gametest.WithRumor(text))
+		opts, optErr := devSeedOptions(&body)
+		if optErr != "" {
+			respondErr(w, http.StatusBadRequest, optErr)
+			return
 		}
 
 		ctx := r.Context()

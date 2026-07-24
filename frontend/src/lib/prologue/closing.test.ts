@@ -11,8 +11,24 @@ import {
 	isReady,
 	notReadyPlayerIDs,
 	myAtRiskCount,
+	blankAssets,
 	retinueTallies,
 } from './closing';
+
+/** One intact marginalia at the given position, for readability in the
+ *  blank/at-risk cases below. */
+function note(assetID: number, position = 1) {
+	return {
+		id: position,
+		asset_id: assetID,
+		position,
+		text: 'x',
+		is_torn: false,
+		torn_at: null,
+		torn_by_id: null,
+		title: null,
+	};
+}
 
 function asset(overrides: Partial<Asset> = {}): Asset {
 	return {
@@ -152,6 +168,56 @@ describe('readyBlockedReason', () => {
 
 	it('is null once every hard condition is met', () => {
 		expect(readyBlockedReason(true, 2, true)).toBeNull();
+	});
+
+	it('blocks on blank assets once the earlier conditions pass', () => {
+		expect(readyBlockedReason(true, 4, false, 2)).toBe(
+			'Give every asset at least one marginalia first.'
+		);
+	});
+
+	it('reports the main-character reason ahead of blank assets, matching the server order', () => {
+		expect(readyBlockedReason(false, 4, false, 3)).toBe('Name your main character first.');
+	});
+
+	it('reports the extra-peer reason ahead of blank assets, matching the server order', () => {
+		expect(readyBlockedReason(true, 3, false, 3)).toBe('Create your extra peer first.');
+	});
+
+	it('defaults the blank count to zero so callers can omit it', () => {
+		expect(readyBlockedReason(true, 4, false)).toBeNull();
+	});
+});
+
+describe('blankAssets', () => {
+	it('is empty with no viewer', () => {
+		expect(blankAssets([asset({ owner_id: 1 })], null)).toEqual([]);
+	});
+
+	it("returns only the viewer's own note-less assets", () => {
+		const mineBlank = asset({ id: 1, owner_id: 1, marginalia: [] });
+		const mineNoted = asset({ id: 2, owner_id: 1, marginalia: [note(2)] });
+		const theirsBlank = asset({ id: 3, owner_id: 2, marginalia: [] });
+		expect(blankAssets([mineBlank, mineNoted, theirsBlank], 1).map((a) => a.id)).toEqual([1]);
+	});
+
+	it('excludes destroyed assets', () => {
+		const destroyed = asset({ owner_id: 1, is_destroyed: true, marginalia: [] });
+		expect(blankAssets([destroyed], 1)).toEqual([]);
+	});
+
+	it('counts an asset whose only note is torn as noted, not blank', () => {
+		// A torn note is still a row, so the asset is breakable-then-destroyable
+		// by the normal path — it is at risk, not invulnerable. (In practice the
+		// last tear destroys it outright; this guards the helper's semantics.)
+		const torn = asset({ id: 7, owner_id: 1, marginalia: [{ ...note(7), is_torn: true }] });
+		expect(blankAssets([torn], 1)).toEqual([]);
+	});
+
+	it('treats a marginalia-less WS payload as blank rather than throwing', () => {
+		const partial = asset({ id: 9, owner_id: 1 });
+		delete (partial as Partial<Asset>).marginalia;
+		expect(blankAssets([partial], 1).map((a) => a.id)).toEqual([9]);
 	});
 });
 

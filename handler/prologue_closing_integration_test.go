@@ -20,6 +20,7 @@ import (
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
+	"uneasy/gametest"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
 	"uneasy/model"
@@ -219,13 +220,20 @@ func newClosingGame(t *testing.T, q *dbgen.Queries, n int) (dbgen.Game, []dbgen.
 		p.SeatOrder = &seat
 		players[i] = p
 
-		_, err = q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		mc, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
 			GameID:          game.ID,
 			OwnerID:         p.ID,
 			CreatorID:       p.ID,
 			AssetType:       model.AssetPeer,
 			Name:            p.DisplayName + "'s main character",
 			IsMainCharacter: true,
+		})
+		require.NoError(t, err)
+		// One note per asset, for the same reason the MC carries a real name:
+		// this fixture exists to drive the ready gate through to an advance, and
+		// the gate refuses Ready while any owned asset is blank.
+		_, err = q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+			AssetID: mc.ID, Position: 1, Text: "Bears the weight of expectation.",
 		})
 		require.NoError(t, err)
 	}
@@ -260,6 +268,28 @@ func newClosingGame(t *testing.T, q *dbgen.Queries, n int) (dbgen.Game, []dbgen.
 	fresh, err := q.GetGameByID(ctx, game.ID)
 	require.NoError(t, err)
 	return fresh, players
+}
+
+// giveEveryAssetOneMarginalia stamps position 1 of every live asset in a game
+// that has none, so the closing gate's blank-asset condition passes. The
+// counterpart of gametest.WithStartingMarginalia for fixtures that need to
+// start blank and become valid mid-test.
+func giveEveryAssetOneMarginalia(t *testing.T, q *dbgen.Queries, gameID int64) {
+	t.Helper()
+	ctx := context.Background()
+	assets, err := q.ListAssetsByGame(ctx, gameID)
+	require.NoError(t, err)
+	for i := range assets {
+		existing, err := q.ListMarginaliaByAsset(ctx, assets[i].ID)
+		require.NoError(t, err)
+		if len(existing) > 0 {
+			continue
+		}
+		_, err = q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+			AssetID: assets[i].ID, Position: 1, Text: "A note in the margin.",
+		})
+		require.NoError(t, err)
+	}
 }
 
 // setMainCharacterName overwrites a player's main-character asset name
@@ -367,6 +397,99 @@ func TestClosingReady_MissingExtraPeerRefused(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "create your extra peer first")
 }
 
+// TestClosingReady_BlankAssetRefused covers the blank-asset hard gate
+// (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D2). Seeded assets carry no
+// marginalia by default — exactly the state a real prologue leaves card assets
+// in — and a blank asset is invulnerable, so the closing step is where they get
+// closed out.
+func TestClosingReady_BlankAssetRefused(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	tg := newTestGame(t, q, 4) // 4p: no extra-peer requirement; seeded MC names are already valid
+	moveGameToClosing(t, q, tg.Game.ID)
+
+	store := db.NewStore(pool)
+	manager := hub.NewManager()
+	manager.GetOrCreate(tg.Game.ID)
+	router := closingRouter(store, manager)
+
+	rec := postJSON(t, q, router, closingReadyPath(tg.Game.ID), tg.Players[0], map[string]any{"ready": true})
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "give every asset at least one marginalia first")
+
+	ready := closingReadyMap(t, q, tg.Game.ID)
+	assert.False(t, ready[tg.Players[0].ID], "gate failure must not record a ready row")
+
+	fresh, err := q.GetGameByID(ctx, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PhasePrologue, fresh.Phase)
+}
+
+// TestClosingReady_AllowedOnceEveryAssetHasMarginalia is the other half of the
+// blank gate: the same player, same game, passes as soon as every asset they
+// own carries a note.
+func TestClosingReady_AllowedOnceEveryAssetHasMarginalia(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 4)
+	moveGameToClosing(t, q, tg.Game.ID)
+
+	store := db.NewStore(pool)
+	manager := hub.NewManager()
+	manager.GetOrCreate(tg.Game.ID)
+	router := closingRouter(store, manager)
+
+	rec := postJSON(t, q, router, closingReadyPath(tg.Game.ID), tg.Players[0], map[string]any{"ready": true})
+	require.Equal(t, http.StatusConflict, rec.Code, "precondition: the seeded assets start blank")
+
+	giveEveryAssetOneMarginalia(t, q, tg.Game.ID)
+
+	rec = postJSON(t, q, router, closingReadyPath(tg.Game.ID), tg.Players[0], map[string]any{"ready": true})
+	require.Equalf(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	assert.True(t, closingReadyMap(t, q, tg.Game.ID)[tg.Players[0].ID])
+}
+
+// TestClosingReady_BlankAssetReportedAfterTheOtherHardItems pins the gate's
+// message order: a player who fails several conditions at once is told about
+// the main character (and, in small games, the extra peer) first. The
+// blank-asset item is the broadest and least specific, so it goes last —
+// closingReadyGateFailure and readyBlockedReason (closing.ts) must agree.
+func TestClosingReady_BlankAssetReportedAfterTheOtherHardItems(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3) // ≤3p so both the name and extra-peer items are in play
+	moveGameToClosing(t, q, tg.Game.ID)
+	setMainCharacterName(t, q, tg.Game.ID, tg.Players[0].ID, model.MainCharacterPlaceholder)
+
+	store := db.NewStore(pool)
+	manager := hub.NewManager()
+	manager.GetOrCreate(tg.Game.ID)
+	router := closingRouter(store, manager)
+
+	// All three conditions fail. The name comes first.
+	rec := postJSON(t, q, router, closingReadyPath(tg.Game.ID), tg.Players[0], map[string]any{"ready": true})
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "name your main character first")
+
+	// Name fixed; the extra peer now outranks the blank assets.
+	setMainCharacterName(t, q, tg.Game.ID, tg.Players[0].ID, "Lady Ashcombe")
+	rec = postJSON(t, q, router, closingReadyPath(tg.Game.ID), tg.Players[0], map[string]any{"ready": true})
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "create your extra peer first")
+
+	// Extra peer created (it carries its title marginalia, so it is never
+	// blank itself); only the blank starting assets remain.
+	rec = postJSON(t, q, router, extraPeerPath(tg.Game.ID), tg.Players[0], map[string]any{
+		"title_name": "The Spymaster", "peer_text": "A quiet informant",
+	})
+	require.Equalf(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	rec = postJSON(t, q, router, closingReadyPath(tg.Game.ID), tg.Players[0], map[string]any{"ready": true})
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "give every asset at least one marginalia first")
+}
+
 func TestClosingReady_UnreadyAlwaysAllowedDespiteGateFailure(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -439,7 +562,7 @@ func TestClosingReady_AdvanceTimeRevalidation_ClearsStaleReady(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	ctx := context.Background()
-	tg := newTestGame(t, q, 4)
+	tg := newTestGame(t, q, 4, gametest.WithStartingMarginalia())
 	moveGameToClosing(t, q, tg.Game.ID)
 
 	store := db.NewStore(pool)

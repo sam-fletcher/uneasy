@@ -43,6 +43,33 @@ func (q *Queries) ClearMainCharacter(ctx context.Context, arg ClearMainCharacter
 	return err
 }
 
+const countBlankAssetsByOwner = `-- name: CountBlankAssetsByOwner :one
+SELECT count(*) FROM assets a
+WHERE a.game_id = $1
+  AND a.owner_id = $2
+  AND a.is_destroyed = FALSE
+  AND NOT EXISTS (SELECT 1 FROM marginalia m WHERE m.asset_id = a.id)
+`
+
+type CountBlankAssetsByOwnerParams struct {
+	GameID  int64 `db:"game_id" json:"game_id"`
+	OwnerID int64 `db:"owner_id" json:"owner_id"`
+}
+
+// Counts a player's live assets carrying no marginalia rows at all. Such an
+// asset is invulnerable: breakMarginalia needs a marginalium to tear, and
+// DestroyIfAllMarginaliaTorn (above) is guarded by an EXISTS on the same
+// table, so nothing can ever remove it from play. The prologue's closing step
+// gates Ready on this reaching zero — see adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md
+// (D2). Note "no rows", not "no intact rows": a fully-torn asset is already
+// destroyed by the time this could see it.
+func (q *Queries) CountBlankAssetsByOwner(ctx context.Context, arg CountBlankAssetsByOwnerParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countBlankAssetsByOwner, arg.GameID, arg.OwnerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countIntactMarginalia = `-- name: CountIntactMarginalia :one
 SELECT count(*) FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE
 `

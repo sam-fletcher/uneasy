@@ -39,10 +39,11 @@ type ClosingReadyView struct {
 //
 // Body: {"ready": bool}. Un-readying is always allowed, like the track-done
 // toggle. Readying requires the caller's main character to be named (not
-// blank, not the creation placeholder) and, in games of 3 or fewer players,
-// their extra peer to already exist. When this write makes every player
-// ready, the server re-validates those same conditions for everyone before
-// advancing to main_event.
+// blank, not the creation placeholder), their extra peer to already exist in
+// games of 3 or fewer players, and every asset they own to carry at least one
+// marginalia. When this write makes every player ready, the server
+// re-validates those same conditions for everyone before advancing to
+// main_event.
 func ClosingReady(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, s.Q)
@@ -132,6 +133,22 @@ func closingReadyGateFailure(ctx context.Context, q *dbgen.Queries, gameID, play
 		if !exists {
 			return "create your extra peer first", nil
 		}
+	}
+	// Blank assets (no marginalia at all) are invulnerable — nothing to tear,
+	// so they can never be broken toward destruction. The prologue is the only
+	// place that mints them in bulk (card claims are names-only by design), so
+	// this is where they get closed out; see
+	// adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D2. Deliberate deviation from the
+	// printed prologue rules ("you don't need to fill these all the way out
+	// yet"), same family as the main-character name gate above.
+	blank, err := q.CountBlankAssetsByOwner(ctx, dbgen.CountBlankAssetsByOwnerParams{
+		GameID: gameID, OwnerID: playerID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if blank > 0 {
+		return "give every asset at least one marginalia first", nil
 	}
 	return "", nil
 }

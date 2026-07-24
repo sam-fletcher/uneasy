@@ -34,6 +34,12 @@ type seedConfig struct {
 	laws   []string
 	rumors []string
 
+	// startingMarginalia gives each seeded starting asset one marginalia at
+	// position 1. Off by default so Go fixtures keep all four slots free (tests
+	// add their own notes without colliding); the dev seed turns it on, since a
+	// blank asset can't clear the prologue closing gate.
+	startingMarginalia bool
+
 	// Shake-up-only knobs (ignored by SeedMainEvent).
 	shakeUpTokens int16  // per-player grant; 0 => none (mirrors BeginShakeUp)
 	shakeUpStep   *int16 // nil => rolling (step 1)
@@ -87,6 +93,15 @@ func WithLaw(text string) Option {
 // Repeatable. No origin plan, so the byline shows "Spread by <player>".
 func WithRumor(text string) Option {
 	return func(c *seedConfig) { c.rumors = append(c.rumors, text) }
+}
+
+// WithStartingMarginalia gives every seeded starting asset one marginalia at
+// position 1. Opt in when the fixture must satisfy the prologue closing gate
+// (which refuses Ready while any owned asset is blank) or when a break/tear
+// flow needs something to target. Leaving it off keeps all four slots free,
+// which is what most tests want.
+func WithStartingMarginalia() Option {
+	return func(c *seedConfig) { c.startingMarginalia = true }
 }
 
 // WithShakeUpTokens grants each player n shake-up tokens. Only meaningful for
