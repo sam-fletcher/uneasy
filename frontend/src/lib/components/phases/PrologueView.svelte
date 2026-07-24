@@ -546,7 +546,15 @@
 
 	{:else if mode === 'choosing'}
 		<p class="prologue-lede">
-			To set the stage, we create our main character's assets.
+			We start the game with the prologue,
+			where we take turns fleshing out our
+			characters and the world they inhabit.
+		</p>
+		<p class="prologue-lede">
+			One turn you might decide your character
+			is the monarch, and then the next you
+			might say that they hail from a castle on
+			the coast.
 		</p>
 
 		{#if activePlayerID == null}
@@ -556,10 +564,12 @@
 		<div class="prologue-intro">
 			<h3>Your Retinue</h3>
 			<p class="prologue-subtext">
-				Each box in the 3 categories below creates an asset and grants two playing cards, and lets you create <span class="steal-color">or steal</span> another asset.
+				Each player will pick 3 tiles from the 3 categories below. 
+				Each tile creates an asset and grants two playing cards, 
+				which let you create <span class="steal-color">or steal</span> another asset.
 			</p>
 			<p class="prologue-subtext"> 
-				You can edit your assets (including your main character) at any time in your <em>Retinue</em> (top of the screen).
+				You can edit your assets (including your main character) at any time in your player menu (top of the screen).
 			</p>
 			<div class="suit-legend">
 				<div class="suit-legend-item">

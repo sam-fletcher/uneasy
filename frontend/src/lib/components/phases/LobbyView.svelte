@@ -34,7 +34,7 @@
 	let joinCodeCopyTimer: ReturnType<typeof setTimeout> | null = null;
 	async function copyJoinCode() {
 		try {
-			await navigator.clipboard.writeText(game.join_code);
+			await navigator.clipboard.writeText(`https://uneasy.up.railway.app/ Table code: ${game.join_code}`);
 			joinCodeCopied = true;
 			if (joinCodeCopyTimer) clearTimeout(joinCodeCopyTimer);
 			joinCodeCopyTimer = setTimeout(() => (joinCodeCopied = false), 1500);
@@ -91,6 +91,13 @@
 	{#if error}
 		<p class="error-text">{error}</p>
 	{/if}
+	<p class="prologue-lede">
+		In <em>Uneasy Lies the Head</em>, you and your friends will:
+	</p>
+	<ul class="prologue-lede-list">
+		<li> Plot and scheme as antagonistic members of a royal court </li>
+		<li> Prepare plans to spread rumors, enact laws, host festivities, propose duels, and more </li>
+	</ul>
 	<section class="lobby-join">
 		<h2>Join Code</h2>
 		<button class="code-badge" class:copied={joinCodeCopied} onclick={copyJoinCode} aria-label="Copy join code">
