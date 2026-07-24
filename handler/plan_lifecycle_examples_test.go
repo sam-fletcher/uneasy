@@ -286,9 +286,12 @@ func TestPlanLifecycle_ExchangeCourtiers_MessyBreakRestricted(t *testing.T) {
 }
 
 // TestPlanLifecycle_MakeIntroductions_NamingThenRoll exercises MI's pre-roll
-// peer-naming step: prepare → resolve (no roll yet) → /create-peer ×N →
-// /finalize-peers → roll → make-choice → complete. Regression-guards the
-// deferred-roll behavior added when the missing peer-naming UI was filled in.
+// peer-naming step and the make step's arrivals: prepare → resolve (no roll
+// yet) → /create-peer ×N → /finalize-peers → roll → make-choice →
+// /introductions-arrival ×N → complete. Regression-guards the deferred-roll
+// behavior added when the missing peer-naming UI was filled in, and the
+// draft-peer rule that naming creates nothing (D4) — the assets appear only as
+// each peer is described.
 func TestPlanLifecycle_MakeIntroductions_NamingThenRoll(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
@@ -325,9 +328,25 @@ func TestPlanLifecycle_MakeIntroductions_NamingThenRoll(t *testing.T) {
 	require.NotNil(t, rollMap, "finalize-peers should return a roll")
 	rollID := int64(rollMap["id"].(float64))
 
-	// Finish the lifecycle normally.
 	h.forceRoll(rollID, "make", 0)
 	h.makeChoice(plan.ID, "make", []string{"peers_arrive"})
+
+	// Naming created drafts, not assets: nothing is in a retinue yet.
+	assert.Zero(t, miNamedAssetCount(t, h), "no assets row should exist before arrival")
+
+	// Completion is blocked until each newcomer has been described.
+	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
+	code, body = h.post(0, completePath, nil)
+	require.Equalf(t, http.StatusConflict, code, "complete before arrivals should 409: %v", body)
+
+	// The arrival form pays the rule's "add marginalia to each", one at a time.
+	arrivalPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/introductions-arrival"
+	for _, d := range miPlanDrafts(t, h, plan.ID) {
+		code, body = h.post(0, arrivalPath, map[string]any{
+			"draft_id": d.ID, "name": d.Name, "marginalia": "arrived with " + d.Name,
+		})
+		require.Equalf(t, http.StatusCreated, code, "arrival for %s: %v", d.Name, body)
+	}
 	h.complete(plan.ID)
 
 	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
@@ -336,7 +355,8 @@ func TestPlanLifecycle_MakeIntroductions_NamingThenRoll(t *testing.T) {
 	require.NotNil(t, refreshed.Result)
 	assert.Equal(t, "make", *refreshed.Result)
 
-	// Both peers should exist, owned by the preparer.
+	// Both peers should exist, owned by the preparer, each carrying the
+	// marginalia their arrival demanded.
 	allAssets, err := h.q.ListAssetsByGame(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
 	mi := 0
@@ -344,7 +364,36 @@ func TestPlanLifecycle_MakeIntroductions_NamingThenRoll(t *testing.T) {
 		if a.Name == "Alice" || a.Name == "Bob" {
 			mi++
 			assert.Equal(t, h.tg.Players[0].ID, a.OwnerID)
+			margs, mErr := h.q.ListMarginaliaByAsset(ctx, a.ID)
+			require.NoError(t, mErr)
+			assert.Lenf(t, margs, 1, "%s should have arrived with one marginalia", a.Name)
 		}
 	}
 	assert.Equal(t, 2, mi, "both named peers should exist in the game")
+}
+
+// miPlanDrafts returns a Make Introductions plan's recorded drafts, in naming
+// order.
+func miPlanDrafts(t *testing.T, h *planLifecycle, planID int64) []game.DraftPeer {
+	t.Helper()
+	plan, err := h.q.GetPlanByID(context.Background(), planID)
+	require.NoError(t, err)
+	rd := loadResolutionData(plan.ResolutionData)
+	require.NotNil(t, rd.MakeIntroductions)
+	return rd.MakeIntroductions.Drafts
+}
+
+// miNamedAssetCount counts the assets named after this test's two peers — the
+// direct check for "the draft has no row behind it yet".
+func miNamedAssetCount(t *testing.T, h *planLifecycle) int {
+	t.Helper()
+	assets, err := h.q.ListAssetsByGame(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	n := 0
+	for _, a := range assets {
+		if a.Name == "Alice" || a.Name == "Bob" {
+			n++
+		}
+	}
+	return n
 }

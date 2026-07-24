@@ -24,6 +24,8 @@ type (
 	ProposeDecreeResolutionData      = game.ProposeDecreeResolutionData
 	MakeIntroductionsResolutionData  = game.MakeIntroductionsResolutionData
 	MIMarOutcome                     = game.MIMarOutcome
+	MIArrival                        = game.MIArrival
+	DraftPeer                        = game.DraftPeer
 	ExchangeCourtiersResolutionData  = game.ExchangeCourtiersResolutionData
 	ChronicleHistoriesResolutionData = game.ChronicleHistoriesResolutionData
 	SeekAnswersResolutionData        = game.SeekAnswersResolutionData

@@ -1,7 +1,7 @@
 import { apiFetch } from './client';
 import type {
 	Plan, PlanType, PlanDetail, PlanToken, EligiblePlan, IneligiblePlan, RankingCategory,
-	ResolutionData, Choice, KeptSecret, DiceRoll, DiceRollDie, Asset,
+	ResolutionData, Choice, KeptSecret, DiceRoll, DiceRollDie, Asset, DraftPeer,
 } from './types';
 
 export function listPlans(gameID: string | number): Promise<{ plans: Plan[] }> {
@@ -129,15 +129,31 @@ export function ecRiposteBreak(planID: number, marginaliaID: number | null): Pro
 }
 
 /**
- * Make Introductions — create a single peer during the pre-roll naming step.
- * Called once per peer until peer_count peers exist; then call
- * finalizeIntroductionsPeers to create the dice roll.
+ * Make Introductions — name a single peer during the pre-roll naming step.
+ * Names only, as printed: this records a draft, not an asset — nobody joins a
+ * retinue until they arrive. Called once per peer until peer_count drafts
+ * exist; then call finalizeIntroductionsPeers to create the dice roll.
  */
 export function createIntroductionsPeer(
 	planID: number,
-	params: { name: string; marginalia?: string[] }
-): Promise<{ plan_id: number; asset: Asset; created_peer_ids: number[] }> {
+	params: { name: string }
+): Promise<{ plan_id: number; draft: DraftPeer; drafts: DraftPeer[] }> {
 	return apiFetch(`/plans/${planID}/create-peer`, {
+		method: 'POST',
+		body: JSON.stringify(params)
+	});
+}
+
+/**
+ * Make Introductions — the arrival form. Materializes one draft into the plan
+ * recipient's retinue with the marginalia the make step owes ("add marginalia
+ * to each"), and is also how a delayed peer turns up on their rescheduled row.
+ */
+export function introductionsArrival(
+	planID: number,
+	params: { draft_id: string; name: string; marginalia: string }
+): Promise<{ plan_id: number; draft_id: string; asset_id: number }> {
+	return apiFetch(`/plans/${planID}/introductions-arrival`, {
 		method: 'POST',
 		body: JSON.stringify(params)
 	});
@@ -157,11 +173,18 @@ export function finalizeIntroductionsPeers(planID: number): Promise<{
 /**
  * Make Introductions mar — resolve one introduced peer. outcome is
  * other_retinue | broken_arrival | delayed | broken_journey. other_retinue and
- * broken_arrival need targetPlayerID; broken_journey needs text.
+ * broken_arrival need targetPlayerID; broken_journey needs both texts (the
+ * peer's own marginalia and the mark the journey left, which arrives torn).
  */
 export function introductionsMar(
 	planID: number,
-	params: { peer_asset_id: number; outcome: string; target_player_id?: number; text?: string }
+	params: {
+		draft_id: string;
+		outcome: string;
+		target_player_id?: number;
+		text?: string;
+		journey_text?: string;
+	}
 ): Promise<{ plan_id: number; resolved: number; peer_count: number }> {
 	return apiFetch(`/plans/${planID}/introductions-mar`, {
 		method: 'POST',
@@ -170,17 +193,18 @@ export function introductionsMar(
 }
 
 /**
- * Make Introductions mar — the assigned author writes a broken-arrival peer's
- * marginalia.
+ * Make Introductions mar — the assigned player writes a newcomer's marginalia,
+ * which is also what brings them into a retinue (broken_arrival: the plan
+ * recipient's; other_retinue: the writer's own).
  */
 export function introductionsMarginalia(
 	planID: number,
-	peerAssetID: number,
+	draftID: string,
 	text: string
-): Promise<{ plan_id: number; peer_asset_id: number; marginalia_id: number }> {
+): Promise<{ plan_id: number; draft_id: string; asset_id: number }> {
 	return apiFetch(`/plans/${planID}/introductions-marginalia`, {
 		method: 'POST',
-		body: JSON.stringify({ peer_asset_id: peerAssetID, text }),
+		body: JSON.stringify({ draft_id: draftID, text }),
 	});
 }
 

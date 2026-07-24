@@ -112,6 +112,16 @@ describe('actor-naming sub-phase kinds', () => {
 			),
 		).toEqual([2, 9]);
 	});
+
+	it('await_introductions_marginalia names whoever owes a newcomer’s marginalia', () => {
+		const got = mainEventWaitingOn(
+			input({
+				rowState: rowState('await_introductions_marginalia', { acting_player_ids: [4, 5] }),
+			}),
+		);
+		expect(playerIDs(got.waitees)).toEqual([4, 5]);
+		expect(got.stepLabel).toBe('Make Introductions — describe a newcomer');
+	});
 });
 
 // ── Dice roll ────────────────────────────────────────────────────────────────

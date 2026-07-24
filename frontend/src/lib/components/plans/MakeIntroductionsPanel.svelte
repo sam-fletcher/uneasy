@@ -1,25 +1,38 @@
 <!-- MakeIntroductionsPanel.svelte
   Prep + resolve UI for the Make Introductions plan.
-  Resolve flow: dice roll → make/mar choices → complete.
+  Resolve flow: name the peers → dice roll → make/mar → arrivals → complete.
+
+  The peers named pre-roll are DRAFTS, not assets: nobody joins a retinue until
+  they arrive, and arriving is what creates them (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md
+  D4). So this panel addresses peers by draft id throughout, reads their names
+  out of resolution_data rather than the asset list, and owns two arrival forms:
+
+    - the preparer's, for the make step's "add marginalia to each" and for a
+      delayed peer finally turning up on their rescheduled row;
+    - another player's, for the two mar outcomes whose marginalia isn't the
+      preparer's to write.
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import './planPanel.css';
 	import {
 		preparePlan, makeChoice, completePlan,
-		createIntroductionsPeer, finalizeIntroductionsPeers,
+		createIntroductionsPeer, finalizeIntroductionsPeers, introductionsArrival,
 		introductionsMar, introductionsMarginalia, getAssetSuggestions,
 		type Plan,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
 	import SuggestionPicker from '../SuggestionPicker.svelte';
+	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
-		MAKE_OPTIONS, parseResolutionData, playerName, assetName, playersExcept,
+		MAKE_OPTIONS, parseResolutionData, playerName, playersExcept,
 	} from './shared';
-	import { parseMakeIntroductionsData } from '$lib/plans/resolutionData/make_introductions';
+	import {
+		parseMakeIntroductionsData, miDrafts, miHasArrived, miPendingArrivals,
+	} from '$lib/plans/resolutionData/make_introductions';
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
@@ -105,20 +118,24 @@
 
 	// Pre-roll peer-naming state.
 	//
-	// MI defers its dice roll until the focus player has named each of
-	// peer_count peers. peerNames is sized to peer_count; entries that
-	// correspond to already-created peers are filled with their asset
-	// names so the focus player can resume after a refresh.
+	// MI defers its dice roll until the preparer has named each of peer_count
+	// peers. peerNames is sized to peer_count; entries that correspond to
+	// already-recorded drafts are filled with the draft's name so the preparer
+	// can resume after a refresh.
 	const miData = $derived(plan ? parseMakeIntroductionsData(plan) : {});
 	const miPeerCountTarget = $derived(miData.peer_count ?? 0);
-	const createdPeerIDs = $derived(miData.created_peer_ids ?? []);
+	const drafts = $derived(miData.drafts ?? []);
+	// A synthetic delayed-arrival plan carries one traveller and never names
+	// anyone; it goes straight to that peer's arrival form.
+	const isDelayedArrival = $derived(!!miData.delayed_arrival);
 	const peersNamingDone = $derived(
-		miPeerCountTarget > 0 && createdPeerIDs.length >= miPeerCountTarget
+		miPeerCountTarget > 0 && drafts.length >= miPeerCountTarget
 	);
 	// True only while we're in the pre-roll naming window: plan resolving,
-	// no dice roll yet, focus player hasn't finalized.
+	// no dice roll yet, preparer hasn't finalized.
 	const needsPeerNaming = $derived(
 		plan != null
+			&& !isDelayedArrival
 			&& !rollActive
 			&& rollOutcome == null
 			&& miPeerCountTarget > 0
@@ -144,28 +161,30 @@
 			.finally(() => { peerNameSuggLoading = false; });
 	});
 
-	// Resize peerNames whenever peer_count or created list changes.
-	// Already-created slots are filled with the asset's current name (so
-	// the user can see them after a refresh); empty slots are editable.
+	// Resize peerNames whenever peer_count or the draft list changes.
+	// Already-named slots are filled with the draft's name (so the user can see
+	// them after a refresh); empty slots keep whatever's been typed so far.
+	//
+	// The carry-over read of peerNames is untracked: an effect that both reads
+	// and writes the same state re-triggers itself, and Svelte aborts the flush
+	// — which strands every other pending update in the component (it was the
+	// suggestion pickers stuck on "Loading suggestions…").
 	$effect(() => {
 		if (!plan) return;
 		const total = miPeerCountTarget;
-		const next: string[] = [];
-		for (let i = 0; i < total; i++) {
-			const createdID = createdPeerIDs[i];
-			if (createdID != null) {
-				const a = assets.find(x => x.id === createdID);
-				next.push(a?.name ?? `Peer ${i + 1}`);
-			} else {
-				next.push(peerNames[i] ?? '');
+		const named = drafts.map(d => d.name);
+		untrack(() => {
+			const next: string[] = [];
+			for (let i = 0; i < total; i++) {
+				next.push(named[i] ?? peerNames[i] ?? '');
 			}
-		}
-		peerNames = next;
+			peerNames = next;
+		});
 	});
 
 	async function submitPeers() {
 		if (peersBusy || !plan) return;
-		const startIdx = createdPeerIDs.length;
+		const startIdx = drafts.length;
 		for (let i = startIdx; i < miPeerCountTarget; i++) {
 			const name = (peerNames[i] ?? '').trim();
 			if (!name) {
@@ -183,6 +202,52 @@
 		} catch (e) {
 			peersError = e instanceof Error ? e.message : 'Could not finalize peers.';
 		} finally { peersBusy = false; }
+	}
+
+	// ── Arrival: the crossing from draft to asset ─────────────────────────────
+	//
+	// The preparer's form. Serves the make step ("add marginalia to each") and
+	// the delayed peer who finally turns up on their rescheduled row. One peer
+	// at a time, in naming order.
+	const pendingArrivals = $derived(miPendingArrivals(miData));
+	const arrivingDraft = $derived(pendingArrivals[0] ?? null);
+	const arrivalsOwed = $derived(pendingArrivals.length);
+	const allArrived = $derived(
+		(miData.make_pending || isDelayedArrival) && arrivalsOwed === 0,
+	);
+
+	let arrivalName = $state('');
+	let arrivalMarginalia = $state('');
+	let arrivalBusy = $state(false);
+	// Re-seed the form each time a different draft comes up for arrival: the
+	// name arrives pre-filled from the pre-roll, the marginalia blank. The guard
+	// is a plain let, not $state — an effect that reads its own writes
+	// re-triggers itself and Svelte aborts the flush.
+	let arrivalSeededFor: string | null = null;
+	$effect(() => {
+		const d = arrivingDraft;
+		if (!d || arrivalSeededFor === d.id) return;
+		arrivalSeededFor = d.id;
+		arrivalName = d.name;
+		arrivalMarginalia = '';
+	});
+
+	async function submitArrival() {
+		if (arrivalBusy || !plan || !arrivingDraft) return;
+		if (!arrivalName.trim() || !arrivalMarginalia.trim()) return;
+		arrivalBusy = true; resError = '';
+		try {
+			await introductionsArrival(plan.id, {
+				draft_id: arrivingDraft.id,
+				name: arrivalName.trim(),
+				marginalia: arrivalMarginalia.trim(),
+			});
+			arrivalSeededFor = null;
+			arrivalName = ''; arrivalMarginalia = '';
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not bring them to court.';
+		} finally { arrivalBusy = false; }
 	}
 
 	function toggleChoice(key: string) {
@@ -216,37 +281,50 @@
 	// ── Per-peer mar resolution ───────────────────────────────────────────────
 	const marPending = $derived(!!miData.mar_pending);
 	const marOutcomes = $derived(miData.mar_outcomes ?? []);
-	function outcomeFor(peerID: number) {
-		return marOutcomes.find(o => o.peer_asset_id === peerID) ?? null;
+	function outcomeFor(draftID: string) {
+		return marOutcomes.find(o => o.draft_id === draftID) ?? null;
 	}
-	const unresolvedPeerIDs = $derived(createdPeerIDs.filter(id => !outcomeFor(id)));
+	const unresolvedDrafts = $derived(drafts.filter(d => !outcomeFor(d.id)));
 	const allPeersDone = $derived(
-		createdPeerIDs.length > 0 && createdPeerIDs.every(id => outcomeFor(id)?.done),
+		drafts.length > 0 && drafts.every(d => outcomeFor(d.id)?.done),
 	);
-	// broken_arrival peers this player has been assigned to author.
-	const myAuthorPeerIDs = $derived(
-		marOutcomes
-			.filter(o => o.outcome === 'broken_arrival' && !o.done && o.author_player_id === currentPlayerID)
-			.map(o => o.peer_asset_id),
+	// Peers whose marginalia this player owes — both the broken_arrival author
+	// and the other_retinue recipient, since D6 hands the note to the new owner.
+	const myAuthorDrafts = $derived(
+		drafts.filter(d => {
+			const o = outcomeFor(d.id);
+			return o != null && !o.done && o.author_player_id === currentPlayerID;
+		}),
 	);
 
 	let marOutcome = $state('other_retinue');
 	let marTargetPlayer = $state<number | null>(null);
 	let marText = $state('');
+	let marJourneyText = $state('');
 	let marBusy = $state(false);
-	async function submitMar(peerID: number) {
+	const marReady = $derived(
+		((marOutcome === 'other_retinue' || marOutcome === 'broken_arrival') && marTargetPlayer != null)
+		|| marOutcome === 'delayed'
+		|| (marOutcome === 'broken_journey' && !!marText.trim() && !!marJourneyText.trim()),
+	);
+	async function submitMar(draftID: string) {
 		if (marBusy || !plan) return;
 		marBusy = true; resError = '';
 		try {
-			const params: { peer_asset_id: number; outcome: string; target_player_id?: number; text?: string } = {
-				peer_asset_id: peerID, outcome: marOutcome,
-			};
+			const params: {
+				draft_id: string; outcome: string;
+				target_player_id?: number; text?: string; journey_text?: string;
+			} = { draft_id: draftID, outcome: marOutcome };
 			if (marOutcome === 'other_retinue' || marOutcome === 'broken_arrival') {
 				params.target_player_id = marTargetPlayer ?? undefined;
 			}
-			if (marOutcome === 'broken_journey') params.text = marText.trim();
+			if (marOutcome === 'broken_journey') {
+				params.text = marText.trim();
+				params.journey_text = marJourneyText.trim();
+			}
 			await introductionsMar(plan.id, params);
-			marOutcome = 'other_retinue'; marTargetPlayer = null; marText = '';
+			marOutcome = 'other_retinue'; marTargetPlayer = null;
+			marText = ''; marJourneyText = '';
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not resolve peer.';
@@ -255,16 +333,22 @@
 
 	let authorText = $state('');
 	let authorBusy = $state(false);
-	async function submitAuthor(peerID: number) {
+	async function submitAuthor(draftID: string) {
 		if (authorBusy || !plan || !authorText.trim()) return;
 		authorBusy = true; resError = '';
 		try {
-			await introductionsMarginalia(plan.id, peerID, authorText.trim());
+			await introductionsMarginalia(plan.id, draftID, authorText.trim());
 			authorText = '';
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not write marginalia.';
 		} finally { authorBusy = false; }
+	}
+
+	/** How a resolved peer's fate reads back in the recap list. */
+	function marOutcomeLabel(o: { outcome: string; done: boolean }): string {
+		const label = MI_MAR_OPTIONS.find(x => x.key === o.outcome)?.label ?? o.outcome;
+		return o.done ? `${label} ✓` : `${label} (awaiting marginalia)`;
 	}
 </script>
 
@@ -309,16 +393,53 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
-		{#if needsPeerNaming && isPreparer}
+		{#if isDelayedArrival}
+			{#if arrivingDraft && isPreparer}
+				<div class="plan-form">
+					<p class="ft-prompt">
+						<em>{arrivingDraft.name}</em> has finally reached court. Describe them
+						as they arrive.
+					</p>
+					<AssetCreationForm
+						{gameID}
+						assetType="peer"
+						bind:name={arrivalName}
+						bind:marginalia={arrivalMarginalia}
+						disabled={arrivalBusy}
+						nameLabel="1 · Name"
+						marginaliaLabel="2 · First marginalia"
+					/>
+					<div class="form-actions">
+						<button class="action-btn primary" onclick={submitArrival}
+							disabled={arrivalBusy || !arrivalName.trim() || !arrivalMarginalia.trim()}>
+							{arrivalBusy ? '…' : 'They arrive'}
+						</button>
+					</div>
+				</div>
+			{:else if allArrived && isPreparer}
+				<div class="complete-section">
+					<p class="complete-note">The newcomer has arrived. Complete the plan.</p>
+					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
+						{resBusy ? '…' : 'Complete plan'}
+					</button>
+				</div>
+			{:else}
+				<p class="ft-prompt muted">
+					{playerName(players, plan.preparer_id)} is welcoming a delayed newcomer…
+				</p>
+			{/if}
+
+		{:else if needsPeerNaming && isPreparer}
 			<div class="mi-naming">
 				<p class="form-hint">
 					Name each of the {miPeerCountTarget}
 					{miPeerCountTarget === 1 ? 'peer' : 'peers'} you're introducing.
-					Once you finalize, the dice will roll.
+					Once you finalize, the dice will roll — you'll describe whoever
+					actually turns up.
 				</p>
 				{#if peersError}<p class="res-error">{peersError}</p>{/if}
 				{#each peerNames as _, i (i)}
-					{@const locked = createdPeerIDs[i] != null}
+					{@const locked = drafts[i] != null}
 					<div class="form-label">
 						<span>Peer {i + 1}:</span>
 						{#if locked}
@@ -342,7 +463,7 @@
 				{/each}
 				<div class="form-actions">
 					<button class="action-btn primary" onclick={submitPeers} disabled={peersBusy}>
-						{peersBusy ? '…' : (createdPeerIDs.length > 0 ? 'Resume & roll' : 'Create peers & roll')}
+						{peersBusy ? '…' : (drafts.length > 0 ? 'Resume & roll' : 'Name peers & roll')}
 					</button>
 				</div>
 			</div>
@@ -365,6 +486,29 @@
 					onToggle={toggleChoice}
 					onSubmit={() => onApplyChoices(plan, 'make')}
 				/>
+			{:else if choicesDone && arrivingDraft && isPreparer}
+				<div class="plan-form">
+					<p class="ft-prompt">
+						<em>{arrivingDraft.name}</em> arrives at court. Describe them —
+						every newcomer needs a marginalia.
+						{#if arrivalsOwed > 1}<span class="muted">({arrivalsOwed} left)</span>{/if}
+					</p>
+					<AssetCreationForm
+						{gameID}
+						assetType="peer"
+						bind:name={arrivalName}
+						bind:marginalia={arrivalMarginalia}
+						disabled={arrivalBusy}
+						nameLabel="1 · Name"
+						marginaliaLabel="2 · First marginalia"
+					/>
+					<div class="form-actions">
+						<button class="action-btn primary" onclick={submitArrival}
+							disabled={arrivalBusy || !arrivalName.trim() || !arrivalMarginalia.trim()}>
+							{arrivalBusy ? '…' : 'They arrive'}
+						</button>
+					</div>
+				</div>
 			{:else if choicesDone && isPreparer}
 				<div class="complete-section">
 					<p class="complete-note">
@@ -374,9 +518,9 @@
 						{resBusy ? '…' : 'Complete plan'}
 					</button>
 				</div>
-			{:else if !choicesDone}
+			{:else}
 				<p class="ft-prompt muted">
-					{playerName(players, plan.preparer_id)} is resolving Make Introductions…
+					{playerName(players, plan.preparer_id)} is welcoming the new peers…
 				</p>
 			{/if}
 
@@ -396,35 +540,39 @@
 				{/if}
 			{:else}
 				<div class="mi-mar">
-					{#each createdPeerIDs as pid (pid)}
-						{@const o = outcomeFor(pid)}
+					{#each drafts as d (d.id)}
+						{@const o = outcomeFor(d.id)}
 						{#if o}
-							<p class="choices-applied">
-								{assetName(assets, pid)} — {MI_MAR_OPTIONS.find(o2 => o2.key === o.outcome)?.label ?? o.outcome}{o.outcome === 'broken_arrival' && !o.done ? ' (awaiting marginalia)' : ' ✓'}
-							</p>
+							<p class="choices-applied">{d.name} — {marOutcomeLabel(o)}</p>
 						{/if}
 					{/each}
 
-					{#each myAuthorPeerIDs as pid (pid)}
+					{#each myAuthorDrafts as d (d.id)}
+						{@const o = outcomeFor(d.id)}
 						<div class="plan-form">
 							<p class="ft-prompt">
-								Write the marginalia that defines <em>{assetName(assets, pid)}</em>.
+								{#if o?.outcome === 'other_retinue'}
+									<em>{d.name}</em> is joining your retinue. Write the marginalia
+									that defines them.
+								{:else}
+									Write the marginalia that defines <em>{d.name}</em>.
+								{/if}
 							</p>
 							<textarea rows={2} class="form-textarea" bind:value={authorText} maxlength={TEXT_LIMITS.MARGINALIA}
 								placeholder="Who has arrived at court?"></textarea>
-							<button class="action-btn primary" onclick={() => submitAuthor(pid)}
+							<button class="action-btn primary" onclick={() => submitAuthor(d.id)}
 								disabled={authorBusy || !authorText.trim()}>
 								{authorBusy ? '…' : 'Write marginalia'}
 							</button>
 						</div>
 					{/each}
 
-					{#if isPreparer && unresolvedPeerIDs.length > 0}
-						{@const pid = unresolvedPeerIDs[0]}
+					{#if isPreparer && unresolvedDrafts.length > 0}
+						{@const d = unresolvedDrafts[0]}
 						<div class="plan-form">
 							<p class="ft-prompt">
-								Resolve <em>{assetName(assets, pid)}</em>
-								({unresolvedPeerIDs.length} remaining):
+								Resolve <em>{d.name}</em>
+								({unresolvedDrafts.length} remaining):
 							</p>
 							<div class="chip-row">
 								{#each MI_MAR_OPTIONS as opt (opt.key)}
@@ -440,17 +588,30 @@
 										onSelect={(p) => (marTargetPlayer = p.id)}
 									/>
 								</FormField>
+								<p class="form-hint">
+									{marOutcome === 'other_retinue'
+										? 'They write the marginalia, and the newcomer joins them once they have.'
+										: 'They write the marginalia; the newcomer arrives once it is written.'}
+								</p>
+							{:else if marOutcome === 'delayed'}
+								<p class="form-hint">
+									A d6 decides how many rows they spend on the road. Past row 13
+									and they never arrive at all.
+								</p>
 							{:else if marOutcome === 'broken_journey'}
 								<label class="form-label">
-									Marginalia (then broken):
+									Who arrived:
 									<textarea rows={2} class="form-textarea" bind:value={marText} maxlength={TEXT_LIMITS.MARGINALIA}
+										placeholder="A description, a function, a fun fact…"></textarea>
+								</label>
+								<label class="form-label">
+									What the journey cost them (arrives torn):
+									<textarea rows={2} class="form-textarea" bind:value={marJourneyText} maxlength={TEXT_LIMITS.MARGINALIA}
 										placeholder="The mark of an arduous journey…"></textarea>
 								</label>
 							{/if}
-							<button class="action-btn primary" onclick={() => submitMar(pid)}
-								disabled={marBusy
-									|| ((marOutcome === 'other_retinue' || marOutcome === 'broken_arrival') && marTargetPlayer == null)
-									|| (marOutcome === 'broken_journey' && !marText.trim())}>
+							<button class="action-btn primary" onclick={() => submitMar(d.id)}
+								disabled={marBusy || !marReady}>
 								{marBusy ? '…' : 'Resolve peer'}
 							</button>
 						</div>
@@ -463,7 +624,7 @@
 								{resBusy ? '…' : 'Complete plan'}
 							</button>
 						</div>
-					{:else if !isPreparer && myAuthorPeerIDs.length === 0}
+					{:else if !isPreparer && myAuthorDrafts.length === 0}
 						<p class="ft-prompt muted">
 							{playerName(players, plan.preparer_id)} is resolving the marred introductions…
 						</p>

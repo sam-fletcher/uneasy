@@ -29,6 +29,7 @@
 	import { highlightedRow } from '$lib/highlight';
 	import { playerColorByID } from '$lib/playerColor';
 	import { PLAN_SHORT } from '$lib/components/plans/shared';
+	import { parseMakeIntroductionsData } from '$lib/plans/resolutionData/make_introductions';
 	import LogMark from '$lib/components/LogMark.svelte';
 
 	interface Props {
@@ -84,7 +85,18 @@
 		return idx < curIdx ? 'done' : idx === curIdx ? 'current' : 'pending';
 	}
 
-	const planLabel = (p: Plan) => PLAN_SHORT[p.plan_type] ?? p.plan_type;
+	// A Make Introductions plan on a future row is usually a plan being made;
+	// a *synthetic* one is a peer on the road, and reading "Make Intro." there
+	// misdescribes it. Name the traveller instead (D9,
+	// adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md). Peers lost past row 13 leave no
+	// chip at all — they never got a row.
+	const planLabel = (p: Plan) => {
+		if (p.plan_type === 'make_introductions') {
+			const mi = parseMakeIntroductionsData(p);
+			if (mi.delayed_arrival) return `Arriving: ${mi.delayed_draft?.name ?? 'a newcomer'}`;
+		}
+		return PLAN_SHORT[p.plan_type] ?? p.plan_type;
+	};
 	const planStatusClass = (s: Plan['status']) =>
 		s === 'pending' ? 'plan-pending'
 			: s === 'resolving' ? 'plan-resolving'
@@ -553,6 +565,7 @@
 		border: 1px solid var(--player-color, var(--color-border-strong));
 		border-left: 3px solid var(--player-color, var(--color-border-strong));
 		align-self: flex-start;
+		max-width: 100%;
 		color: inherit;
 		cursor: pointer;
 		font-family: inherit;
@@ -560,7 +573,16 @@
 	}
 	.plan-chip:hover { background: var(--color-border); }
 
-	.plan-name { color: var(--player-color, var(--color-text)); }
+	/* A delayed-arrival chip carries a player-written name, so the label has no
+	   fixed length the way the plan short-names do; truncate rather than let a
+	   long one push the rail wider than its column. */
+	.plan-name {
+		color: var(--player-color, var(--color-text));
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.plan-status { color: var(--color-text-muted); font-size: 0.65rem; text-transform: uppercase; }
 	/* Status colors override the right/top/bottom border (keeping the
 	   preparer-color left edge intact). Pending chips get no override — the

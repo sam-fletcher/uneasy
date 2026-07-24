@@ -41,6 +41,7 @@ export type RowStateKind =
 	| 'await_question_answer'
 	| 'liaise_resolving'
 	| 'await_courtier_response'
+	| 'await_introductions_marginalia'
 	| 'await_chronicle_choices'
 	| 'scene_active'
 	| 'post_scene_action'

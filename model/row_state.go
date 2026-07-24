@@ -163,6 +163,14 @@ const (
 	// not the preparer (the normal resolver) and not the focus player.
 	RowStateAwaitCourtierResponse RowStateKind = "await_courtier_response"
 
+	// RowStateAwaitIntroductionsMarginalia — a marred Make Introductions plan
+	// is waiting on another player to write a newcomer's marginalia: the
+	// receiving player of an "other_retinue" peer, or the assigned author of a
+	// "broken_arrival" one. The peer is still a draft until they write, so no
+	// asset exists and the plan cannot complete. ActingPlayerIDs names every
+	// player who still owes one — none of them the preparer.
+	RowStateAwaitIntroductionsMarginalia RowStateKind = "await_introductions_marginalia"
+
 	// RowStateAwaitChronicleChoices — a marred Chronicle Histories plan is
 	// resolving and every player present when the mar scene began must each
 	// submit one option. ActingPlayerIDs names those who still owe a choice.

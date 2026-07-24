@@ -380,11 +380,13 @@ type RollResolvedPayload struct {
 
 // ── Phase 3b payload types ────────────────────────────────────────────────────
 
-// PlanDelayedArrivalPayload is for EventPlanDelayedArrival (MI).
+// PlanDelayedArrivalPayload is for EventPlanDelayedArrival (MI). The peer is
+// named rather than identified by asset id: a delayed peer is still a draft
+// while travelling and has no assets row until they turn up on ArrivalRow.
 type PlanDelayedArrivalPayload struct {
-	PlanID      int64 `json:"plan_id"`
-	PeerAssetID int64 `json:"peer_asset_id"`
-	ArrivalRow  int16 `json:"arrival_row"`
+	PlanID     int64  `json:"plan_id"`
+	PeerName   string `json:"peer_name"`
+	ArrivalRow int16  `json:"arrival_row"`
 }
 
 // RumorCreatedPayload is for EventRumorCreated (Spread Rumors).

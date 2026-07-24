@@ -5,28 +5,43 @@ package handler
 // Make Introductions (knowledge, delay 3): The preparer brings 1–4 new peers
 // into the game. Difficulty = 2 + peer_count.
 //
-// Make: peers arrive successfully (created + given marginalia during the
-// pre-roll); the make step confirms their arrival.
+// Peers named here are DRAFTS, not assets, until they turn up: nothing exists in
+// any retinue until arrival, and arrival is creation (game.DraftPeer, and
+// adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D4). That is what keeps a peer who is
+// still on the road — or who never arrives at all — off the table, where they
+// used to be breakable, takeable, leverageable and stakeable for up to six rows.
 //
-// Pre-roll flow: the focus player names each peer one at a time via
-// POST /api/plans/:planId/create-peer, which routes ownership through
-// AssetRecipientForPlan (so a resolved Make Demands keep_assets
-// winner claims them) and records each new asset ID in
-// resolution_data.make_introductions.created_peer_ids. Once peer_count
-// peers exist, POST /api/plans/:planId/finalize-peers creates the dice
-// roll and resolution proceeds normally.
+// Pre-roll flow: the preparer names each peer one at a time via
+// POST /api/plans/:planId/create-peer, which records a draft in
+// resolution_data.make_introductions.drafts. Names only, exactly as printed (D5).
+// Once peer_count drafts exist, POST /api/plans/:planId/finalize-peers creates
+// the dice roll and resolution proceeds normally.
 //
-// Mar (per-peer): on a mar the focus player resolves EACH introduced peer
-// with one of four outcomes via POST /api/plans/:planId/introductions-mar:
-//   - other_retinue  → the peer joins another player's retinue (transfer)
-//   - broken_arrival → another player authors the peer's marginalia (written
-//     later via introductions-marginalia)
-//   - delayed        → arrival rescheduled d6 rows ahead (synthetic plan; if
-//     the row exceeds the public record the peer is lost)
-//   - broken_journey → the focus player writes a marginalia, then breaks the peer
+// Make: the peers arrive successfully, and the rule's "add marginalia to each"
+// is paid one draft at a time via POST /api/plans/:planId/introductions-arrival —
+// the arrival form. Each arrival materializes the draft into the plan's asset
+// recipient's retinue (AssetRecipientForPlan, so a resolved Make Demands
+// keep_assets winner claims them). Completion is gated until every draft has
+// arrived.
 //
-// A synthetic delayed-arrival plan resolves on its row later (OnResolve returns
-// no roll; CanComplete allows immediate completion since MarPending is unset).
+// Mar (per-peer): on a mar the preparer resolves EACH introduced peer with one
+// of four outcomes via POST /api/plans/:planId/introductions-mar:
+//   - other_retinue  → the peer joins another player's retinue, and THAT player
+//     writes their marginalia (D6) via introductions-marginalia, which is also
+//     when they materialize
+//   - broken_arrival → another player authors the peer's marginalia (again via
+//     introductions-marginalia), then the peer materializes into the recipient's
+//     retinue
+//   - delayed        → the draft rides to a row d6 ahead on a synthetic plan and
+//     materializes there; if that row exceeds the public record the draft is
+//     dropped and no asset ever exists
+//   - broken_journey → the preparer writes the peer's marginalia AND the mark of
+//     the journey; the peer arrives carrying both, with the journey mark torn
+//
+// A synthetic delayed-arrival plan resolves on its row later: OnResolve returns
+// no roll, the travelling draft arrives through the same arrival route, and
+// submitting that form closes the plan — it never rolled, so there is no
+// outcome for CompletePlan to read.
 
 import (
 	"context"
@@ -68,7 +83,7 @@ func (miHandler) ComputeDifficulty(
 	return gamepkg.MakeIntroductionsDifficulty(*resData), nil
 }
 
-// OnResolve defers the dice roll until the focus player has named each of
+// OnResolve defers the dice roll until the preparer has named each of
 // the peer_count peers via /create-peer and called /finalize-peers. That
 // matches the rule's "pre-roll: create new peer assets with names only"
 // step. Synthetic delayed-arrival plans skip the roll entirely.
@@ -76,12 +91,34 @@ func (miHandler) OnResolve(_ context.Context, _ *PlanDeps, _ *dbgen.Plan) (*dbge
 	return nil, nil
 }
 
-// CanComplete gates a marred plan until every introduced peer has a resolved
-// per-peer outcome (and any broken-arrival author has written the marginalia).
-// Synthetic delayed-arrival child plans have no MarPending and complete freely.
+// CanComplete holds the plan until every peer it introduced has landed
+// somewhere definite:
+//
+//   - a synthetic delayed-arrival plan, until its travelling peer has arrived;
+//   - a made plan, until every draft has been through the arrival form (the
+//     rule's "add marginalia to each");
+//   - a marred plan, until every draft has a resolved per-peer outcome, and any
+//     peer whose marginalia another player owes has had it written.
 func (miHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	mi := resData.MakeIntroductions
-	if mi == nil || !mi.MarPending {
+	if mi == nil {
+		return nil
+	}
+	if mi.DelayedArrival {
+		if d := mi.DelayedDraft; d != nil && !mi.HasArrived(d.ID) {
+			return fmt.Errorf("%s has not arrived yet", d.Name)
+		}
+		return nil
+	}
+	if mi.MakePending {
+		for _, d := range mi.Drafts {
+			if !mi.HasArrived(d.ID) {
+				return fmt.Errorf("describe %s before completing — every newcomer needs a marginalia", d.Name)
+			}
+		}
+		return nil
+	}
+	if !mi.MarPending {
 		return nil
 	}
 	if int16(len(mi.MarOutcomes)) < mi.PeerCount {
@@ -90,17 +127,37 @@ func (miHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	}
 	for _, o := range mi.MarOutcomes {
 		if !o.Done {
-			return errors.New("a broken-arrival peer is still waiting for another player to write its marginalia")
+			return errors.New("a newcomer is still waiting for another player to write their marginalia")
 		}
 	}
 	return nil
+}
+
+// ResolvingWaitees hands the waiting bar the players who owe a mar peer's
+// marginalia — the receiving player of an "other_retinue" peer, the assigned
+// author of a "broken_arrival" one. Neither is the preparer, and until they
+// write, no asset exists and the plan cannot complete. Nothing outstanding →
+// ride the generic PlanResolving case, which names the preparer.
+func (miHandler) ResolvingWaitees(_ context.Context, _ *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	mi := loadResolutionData(plan.ResolutionData).MakeIntroductions
+	if mi == nil {
+		return model.RowState{}, false
+	}
+	authors := mi.PendingArrivalAuthors()
+	if len(authors) == 0 {
+		return model.RowState{}, false
+	}
+	return model.RowState{
+		Kind:            model.RowStateAwaitIntroductionsMarginalia,
+		ActingPlayerIDs: authors,
+	}, true
 }
 
 func (miHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"create-peer":              createPeerHandler(deps),
 		"finalize-peers":           finalizePeersHandler(deps),
-		"delayed-arrival":          delayedArrivalHandler(deps),
+		"introductions-arrival":    introductionsArrivalHandler(deps),
 		"introductions-mar":        introductionsMarHandler(deps),
 		"introductions-marginalia": introductionsMarginaliaHandler(deps),
 	}
@@ -115,12 +172,16 @@ func (miHandler) ApplyChoice(
 	result string,
 ) error {
 	if result == makeOutcome {
-		// Peers were created (and given marginalia) during the pre-roll naming
-		// step; the make step just confirms their successful arrival.
-		miLog(ctx, deps, plan, model.SeverityImportant, "The new peers arrived at court.")
+		// The pre-roll named the peers but created nothing — they are drafts
+		// until they arrive (D4). The make step is where the rule's "add
+		// marginalia to each" is paid, one arrival form per draft, gated by
+		// CanComplete.
+		resData.EnsureMakeIntroductions().MakePending = true
+		miLog(ctx, deps, plan, model.SeverityImportant,
+			"The new peers arrived at court — each must now be described.")
 		return nil
 	}
-	// Mar: the focus player resolves each introduced peer individually via the
+	// Mar: the preparer resolves each introduced peer individually via the
 	// introductions-mar route. Flag it so completion is gated until all done.
 	resData.EnsureMakeIntroductions().MarPending = true
 	return nil
@@ -141,31 +202,22 @@ func miStoreResData(ctx context.Context, q *dbgen.Queries, planID int64, peerCou
 	return saveResolutionData(ctx, q, planID, d)
 }
 
-// ── Pre-roll peer creation extra routes ──────────────────────────────────────
+// ── Pre-roll peer naming extra routes ────────────────────────────────────────
 
 // createPeerHandler handles POST /api/plans/:planId/create-peer.
 //
-// Called once per peer during the pre-roll naming step. The focus player
-// (= preparer) submits a peer name and optional marginalia; the server
-// creates the peer asset (routed through AssetRecipientForPlan so a
-// resolved Make Demands keep_assets winner claims it) and appends the new
-// asset ID to resolution_data.make_introductions.created_peer_ids.
+// Called once per peer during the pre-roll naming step. The preparer submits a
+// name — names only, as printed (D5) — and the server records a DRAFT in
+// resolution_data.make_introductions.drafts. No `assets` row is created: the
+// peer does not exist in anybody's retinue until they arrive, which may be after
+// the roll (make), after another player writes their marginalia (mar), several
+// rows later (delayed), or never at all.
 //
-// Request body: {"name": "...", "marginalia": ["text", ...]}
-//
-
+// Request body: {"name": "..."}
 func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanMakeIntroductions)
 		if !ok {
-			return
-		}
-		if plan.PlanType != model.PlanMakeIntroductions {
-			respondErr(w, http.StatusBadRequest, "create-peer is only for Make Introductions")
-			return
-		}
-		if plan.Status != model.PlanResolving {
-			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
 		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
@@ -173,8 +225,7 @@ func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			Name       string   `json:"name"`
-			Marginalia []string `json:"marginalia"`
+			Name string `json:"name"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -184,81 +235,30 @@ func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		body.Name = name
-		if body.Name == "" {
+		if name == "" {
 			respondErr(w, http.StatusBadRequest, "name is required")
 			return
 		}
-		if len(body.Marginalia) > maxMarginalia {
-			respondErr(w, http.StatusBadRequest,
-				fmt.Sprintf("at most %d marginalia", maxMarginalia))
-			return
-		}
-		trimmedMarginalia, ok := textFieldSlice(w, body.Marginalia, maxMarginaliaLen)
-		if !ok {
-			return
-		}
-		body.Marginalia = trimmedMarginalia
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		mi := resData.EnsureMakeIntroductions()
-		if int16(len(mi.CreatedPeerIDs)) >= mi.PeerCount {
+		if int16(len(mi.Drafts)) >= mi.PeerCount {
 			respondErr(w, http.StatusConflict, "all peers have already been named")
 			return
 		}
 
-		recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
-		if err != nil {
-			respondInternalErr(w, r, "could not resolve asset recipient", err)
+		draft := DraftPeer{ID: gamepkg.NewDraftPeerID(), Name: name, CreatorID: player.ID}
+		mi.Drafts = append(mi.Drafts, draft)
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record the new peer", err)
 			return
 		}
 
-		var asset dbgen.Asset
-		var marginalia []dbgen.Marginalium
-		err = deps.InTx(ctx, func(q *dbgen.Queries) error {
-			a, caErr := q.CreateAsset(ctx, dbgen.CreateAssetParams{
-				GameID:    plan.GameID,
-				OwnerID:   recipient,
-				CreatorID: player.ID,
-				AssetType: model.AssetPeer,
-				Name:      body.Name,
-			})
-			if caErr != nil {
-				return errors.New("could not create peer")
-			}
-			asset = a
-			marginalia = make([]dbgen.Marginalium, 0, len(body.Marginalia))
-			for i, text := range body.Marginalia {
-				text = strings.TrimSpace(text)
-				if text == "" {
-					continue
-				}
-				m, mErr := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
-					AssetID:  asset.ID,
-					Position: int16(i + 1),
-					Text:     text,
-				})
-				if mErr != nil {
-					return errors.New("could not create marginalia")
-				}
-				marginalia = append(marginalia, m)
-			}
-			mi.CreatedPeerIDs = append(mi.CreatedPeerIDs, asset.ID)
-			return saveResolutionData(ctx, q, plan.ID, resData)
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not create peer", err)
-			return
-		}
-
-		result := assetWithMarginalia{Asset: asset, Marginalia: marginalia}
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated,
-			model.AssetPayload{Asset: result})
 		respond(w, http.StatusCreated, map[string]any{
-			"plan_id":          plan.ID,
-			"asset":            result,
-			"created_peer_ids": mi.CreatedPeerIDs,
+			"plan_id": plan.ID,
+			"draft":   draft,
+			"drafts":  mi.Drafts,
 		})
 	}
 }
@@ -269,18 +269,15 @@ func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 // Creates the dice roll that drives the rest of MI resolution. Idempotent
 // in the sense that calling it twice 409s the second time (the plan now
 // has a roll).
+//
+// It also posts the named peers to the action log. Naming used to be visible
+// through the assets it created; now that it only records drafts, this post is
+// the table's one sight of who is being introduced before the dice decide their
+// fate.
 func finalizePeersHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanMakeIntroductions)
 		if !ok {
-			return
-		}
-		if plan.PlanType != model.PlanMakeIntroductions {
-			respondErr(w, http.StatusBadRequest, "finalize-peers is only for Make Introductions")
-			return
-		}
-		if plan.Status != model.PlanResolving {
-			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
 		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
@@ -290,9 +287,9 @@ func finalizePeersHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		mi := resData.EnsureMakeIntroductions()
-		if int16(len(mi.CreatedPeerIDs)) != mi.PeerCount {
+		if int16(len(mi.Drafts)) != mi.PeerCount {
 			respondErr(w, http.StatusConflict,
-				fmt.Sprintf("expected %d peers named, got %d", mi.PeerCount, len(mi.CreatedPeerIDs)))
+				fmt.Sprintf("expected %d peers named, got %d", mi.PeerCount, len(mi.Drafts)))
 			return
 		}
 		if _, err := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID); err == nil {
@@ -300,50 +297,65 @@ func finalizePeersHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		g, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 		difficulty := gamepkg.MakeIntroductionsDifficulty(resData)
-		roll, err := createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
+		roll, err := createPlanRoll(ctx, deps.Q, deps.Manager, &g, plan, difficulty, plan.PreparerID)
 		if err != nil {
 			respondInternalErr(w, r, "could not create dice roll", err)
 			return
 		}
+		miLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s sent word ahead of %s.",
+			playerDisplayName(ctx, deps.Q, player.ID), miDraftList(mi.Drafts)))
 		respond(w, http.StatusCreated, map[string]any{"plan_id": plan.ID, "roll": roll})
 	}
 }
 
-// ── Delayed Arrival extra route ───────────────────────────────────────────────
+// miDraftList renders drafts as an English list of marked-up names, for log
+// lines that name several newcomers at once.
+func miDraftList(drafts []DraftPeer) string {
+	names := make([]string, 0, len(drafts))
+	for _, d := range drafts {
+		names = append(names, assetMark(d.Name))
+	}
+	switch len(names) {
+	case 0:
+		return "nobody"
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " and " + names[1]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+	}
+}
 
-// delayedArrivalHandler handles POST /api/plans/:planId/delayed-arrival.
-//
-// Called by the focus player during MI resolution when they choose the mar
-// option "delayed" for a peer. The player calls this once per delayed peer.
-//
-// Request body: {"peer_asset_id": 123}
-//
-// Effects:
-//   - Rolls d6 to determine delay.
-//   - If current_row + d6 > 13: destroys the peer asset (lost in transit).
-//   - Otherwise: creates a synthetic pending plan on the target row with
-//     ResData.DelayedArrival = true, and records its ID in the parent
-//     plan's ResData.DelayedPeerPlanIDs.
-//
+// ── Arrival: the crossing from draft to asset ────────────────────────────────
 
-func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
+// introductionsArrivalHandler handles POST /api/plans/:planId/introductions-arrival.
+//
+// The arrival form. It pays the rule's "*Make:* Peers arrive successfully; add
+// marginalia to each" one peer at a time, and it is also how a delayed peer
+// turns up on the row they were rescheduled to. Either way this is the moment
+// the draft becomes a real asset in the plan recipient's retinue
+// (AssetRecipientForPlan, so a Make Demands keep_assets winner claims them).
+//
+// The two mar outcomes whose marginalia another player owes arrive through
+// introductions-marginalia instead — same crossing, different author and, for
+// other_retinue, a different retinue.
+//
+// Request body: {"draft_id": "...", "name": "...", "marginalia": "..."}
+// The name is pre-filled from the draft and may be corrected here; the
+// marginalia is required, which is what keeps a materialized peer from ever
+// being blank.
+func introductionsArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, deps.Q)
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanMakeIntroductions)
 		if !ok {
-			return
-		}
-		if plan.PlanType != model.PlanMakeIntroductions {
-			respondErr(w, http.StatusBadRequest, "delayed-arrival is only for Make Introductions")
-			return
-		}
-		if plan.Status != model.PlanResolving {
-			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return
 		}
 		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
@@ -351,64 +363,104 @@ func delayedArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			PeerAssetID int64 `json:"peer_asset_id"`
+			DraftID    string `json:"draft_id"`
+			Name       string `json:"name"`
+			Marginalia string `json:"marginalia"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PeerAssetID == 0 {
-			respondErr(w, http.StatusBadRequest, "peer_asset_id is required")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DraftID == "" {
+			respondErr(w, http.StatusBadRequest, "draft_id is required")
+			return
+		}
+		name, ok := textField(w, "name", body.Name, maxAssetNameLen)
+		if !ok {
+			return
+		}
+		margText, ok := textField(w, "marginalia", body.Marginalia, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		if margText == "" {
+			respondErr(w, http.StatusBadRequest, "a newcomer needs one marginalia to arrive")
 			return
 		}
 
 		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		mi := resData.EnsureMakeIntroductions()
+		if !mi.MakePending && !mi.DelayedArrival {
+			respondErr(w, http.StatusConflict, "this plan is not waiting on any arrivals")
+			return
+		}
+		draft := mi.Draft(body.DraftID)
+		if draft == nil {
+			respondErr(w, http.StatusBadRequest, "that peer was not introduced by this plan")
+			return
+		}
+		if mi.HasArrived(draft.ID) {
+			respondErr(w, http.StatusConflict, "that peer has already arrived")
+			return
+		}
 
-		// Validate: must be a peer asset in this game.
-		asset, err := deps.Q.GetAssetByID(ctx, body.PeerAssetID)
+		recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
 		if err != nil {
-			respondErr(w, http.StatusNotFound, "peer asset not found")
-			return
-		}
-		if asset.GameID != plan.GameID {
-			respondErr(w, http.StatusBadRequest, "asset does not belong to this game")
-			return
-		}
-		if asset.AssetType != model.AssetPeer {
-			respondErr(w, http.StatusBadRequest, "target asset must be a peer")
+			respondInternalErr(w, r, "could not resolve asset recipient", err)
 			return
 		}
 
-		parentResData := loadResolutionData(plan.ResolutionData)
-		delay, targetRow, syntheticPlanID, lost, err := scheduleDelayedArrival(
-			ctx, deps, plan, &parentResData, body.PeerAssetID)
+		arriving := *draft
+		if name != "" {
+			arriving.Name = name
+		}
+		arriving.Marginalia = margText
+
+		var asset dbgen.Asset
+		err = deps.InTx(ctx, func(q *dbgen.Queries) error {
+			a, _, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, arriving, recipient)
+			if mErr != nil {
+				return mErr
+			}
+			asset = a
+			draft.Name = arriving.Name
+			draft.Marginalia = margText
+			mi.Arrivals = append(mi.Arrivals, MIArrival{DraftID: draft.ID, AssetID: a.ID})
+			return saveResolutionData(ctx, q, plan.ID, resData)
+		})
 		if err != nil {
-			respondInternalErr(w, r, "could not schedule delayed arrival", err)
-			return
-		}
-		if lost {
-			respond(w, http.StatusOK, map[string]any{
-				"peer_asset_id": body.PeerAssetID,
-				"delay":         delay,
-				"target_row":    targetRow,
-				"outcome":       "lost",
-				"note":          "peer was lost — target row exceeds row 13",
-			})
-			return
-		}
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, parentResData); err != nil {
-			respondInternalErr(w, r, "could not update parent plan data", err)
+			respondInternalErr(w, r, "could not bring the newcomer to court", err)
 			return
 		}
 
+		if mi.DelayedArrival {
+			miLog(ctx, deps, plan, model.SeverityImportant,
+				fmt.Sprintf("%s finally arrived at court.", assetMark(asset.Name)))
+			// A synthetic arrival plan never rolled, so it has no outcome for
+			// CompletePlan to read and could never be completed by hand — it would
+			// sit resolving and hold the row. The arrival is its whole content, so
+			// finish it here: nothing is left to decide.
+			if err := finalizePlanResolution(ctx, deps.Q, deps.Manager, plan, makeOutcome); err != nil {
+				respondInternalErr(w, r, "could not close the arrival", err)
+				return
+			}
+		}
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusCreated, map[string]any{
-			"peer_asset_id":     body.PeerAssetID,
-			"delay":             delay,
-			"target_row":        targetRow,
-			"synthetic_plan_id": syntheticPlanID,
+			"plan_id":  plan.ID,
+			"draft_id": draft.ID,
+			"asset_id": asset.ID,
 		})
 	}
 }
 
+// ── Delayed arrival scheduling ───────────────────────────────────────────────
+
 // scheduleDelayedArrival rolls d6 and either schedules a synthetic per-peer
-// arrival plan d6 rows ahead, or — if that row is past the public record —
-// destroys the peer (lost in transit). It appends the synthetic plan ID to
+// arrival plan d6 rows ahead — carrying the draft, which materializes on that
+// row — or, if the target row is past the public record, reports the peer lost.
+// A lost peer leaves nothing behind: no asset was ever created, so there is
+// nothing to destroy and nothing that could have been broken, taken or staked
+// in the meantime. That is the whole point of D4.
+//
+// It appends the synthetic plan ID to
 // parentResData.MakeIntroductions.DelayedPeerPlanIDs but does NOT persist
 // parentResData; the caller saves it (so a caller updating other resData
 // fields writes once). Returns the delay, target row, the synthetic plan ID
@@ -418,26 +470,21 @@ func scheduleDelayedArrival(
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	parentResData *ResolutionData,
-	peerAssetID int64,
+	draft DraftPeer,
 ) (delay, targetRow int16, syntheticPlanID int64, lost bool, err error) {
-	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+	g, err := deps.Q.GetGameByID(ctx, plan.GameID)
 	if err != nil {
 		return 0, 0, 0, false, err
 	}
 	delay = int16(rand.IntN(diceSides) + 1) // 1–6
-	targetRow = game.CurrentRow + delay
+	targetRow = g.CurrentRow + delay
 
 	if targetRow > publicRecordRowCount {
-		if err = deps.Q.DestroyAsset(ctx, peerAssetID); err != nil {
-			return 0, 0, 0, false, err
-		}
-		broadcastEvent(deps.Manager, game.ID, model.EventAssetDestroyed,
-			model.AssetIDPayload{AssetID: peerAssetID})
 		return delay, targetRow, 0, true, nil
 	}
 
 	count, cErr := deps.Q.CountPlansOnRow(ctx, dbgen.CountPlansOnRowParams{
-		GameID:    game.ID,
+		GameID:    g.ID,
 		RowNumber: new(targetRow),
 	})
 	if cErr != nil {
@@ -445,29 +492,26 @@ func scheduleDelayedArrival(
 	}
 
 	parentPlanID := plan.ID
-	parentPeerCount := int16(0)
-	if pmi := parentResData.MakeIntroductions; pmi != nil {
-		parentPeerCount = pmi.PeerCount
-	}
 	syntheticResData := ResolutionData{
 		MakeIntroductions: &MakeIntroductionsResolutionData{
-			DelayedArrival:     true,
-			DelayedPeerAssetID: &peerAssetID,
-			OriginalPlanID:     &parentPlanID,
-			PeerCount:          parentPeerCount,
+			DelayedArrival: true,
+			DelayedDraft:   &draft,
+			OriginalPlanID: &parentPlanID,
+			// One peer is riding on this plan, whatever the parent introduced.
+			PeerCount: 1,
 		},
 	}
 
 	var syntheticPlan dbgen.Plan
 	err = deps.InTx(ctx, func(q *dbgen.Queries) error {
 		sp, txErr := q.CreatePlan(ctx, dbgen.CreatePlanParams{
-			GameID:        game.ID,
+			GameID:        g.ID,
 			PlanType:      model.PlanMakeIntroductions,
 			Category:      model.CategoryKnowledge,
 			PreparerID:    plan.PreparerID,
 			RowNumber:     new(targetRow),
 			RowOrder:      int16(count),
-			PreparedAtRow: game.CurrentRow,
+			PreparedAtRow: g.CurrentRow,
 		})
 		if txErr != nil {
 			return errors.New("could not create delayed arrival plan")
@@ -485,46 +529,30 @@ func scheduleDelayedArrival(
 	pmi := parentResData.EnsureMakeIntroductions()
 	pmi.DelayedPeerPlanIDs = append(pmi.DelayedPeerPlanIDs, syntheticPlan.ID)
 
-	broadcastEvent(deps.Manager, game.ID, model.EventPlanDelayedArrival, model.PlanDelayedArrivalPayload{
-		PlanID:      syntheticPlan.ID,
-		PeerAssetID: peerAssetID,
-		ArrivalRow:  targetRow,
+	broadcastEvent(deps.Manager, g.ID, model.EventPlanDelayedArrival, model.PlanDelayedArrivalPayload{
+		PlanID:     syntheticPlan.ID,
+		PeerName:   draft.Name,
+		ArrivalRow: targetRow,
 	})
 	return delay, targetRow, syntheticPlan.ID, false, nil
 }
 
 // ── Mar per-peer resolution ───────────────────────────────────────────────────
 
-// miCreatedPeer reports whether assetID was one of the peers introduced by this
-// plan (named during the pre-roll), and whether it has already been resolved.
-func miCreatedPeer(mi *MakeIntroductionsResolutionData, assetID int64) (created, alreadyResolved bool) {
-	for _, id := range mi.CreatedPeerIDs {
-		if id == assetID {
-			created = true
-		}
-	}
-	for _, o := range mi.MarOutcomes {
-		if o.PeerAssetID == assetID {
-			alreadyResolved = true
-		}
-	}
-	return created, alreadyResolved
-}
-
 // introductionsMarHandler handles POST /api/plans/:planId/introductions-mar.
 //
-// On a marred Make Introductions, the focus player resolves each introduced
-// peer with one of four outcomes. Request body:
+// On a marred Make Introductions, the preparer resolves each introduced peer
+// with one of four outcomes. Request body:
 //
-//	{"peer_asset_id": A, "outcome": "other_retinue", "target_player_id": P}
-//	{"peer_asset_id": A, "outcome": "broken_arrival", "target_player_id": P}
-//	{"peer_asset_id": A, "outcome": "delayed"}
-//	{"peer_asset_id": A, "outcome": "broken_journey", "text": "..."}
+//	{"draft_id": D, "outcome": "other_retinue", "target_player_id": P}
+//	{"draft_id": D, "outcome": "broken_arrival", "target_player_id": P}
+//	{"draft_id": D, "outcome": "delayed"}
+//	{"draft_id": D, "outcome": "broken_journey", "text": "...", "journey_text": "..."}
 //
-// other_retinue transfers the peer to another player; broken_arrival assigns
-// another player to author its marginalia (completed via introductions-marginalia);
-// delayed reschedules arrival d6 rows ahead; broken_journey writes a marginalia
-// then breaks the peer.
+// The peers are still drafts here — only broken_journey materializes one on the
+// spot. other_retinue and broken_arrival hand the marginalia (and so the
+// arrival) to another player via introductions-marginalia; delayed sends the
+// draft to a later row, or drops it entirely.
 func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanMakeIntroductions)
@@ -536,20 +564,24 @@ func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			PeerAssetID  int64  `json:"peer_asset_id"`
+			DraftID      string `json:"draft_id"`
 			Outcome      string `json:"outcome"`
 			TargetPlayer *int64 `json:"target_player_id"`
 			Text         string `json:"text"`
+			JourneyText  string `json:"journey_text"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PeerAssetID == 0 {
-			respondErr(w, http.StatusBadRequest, "peer_asset_id and outcome are required")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DraftID == "" {
+			respondErr(w, http.StatusBadRequest, "draft_id and outcome are required")
 			return
 		}
 		text, ok := textField(w, "text", body.Text, maxMarginaliaLen)
 		if !ok {
 			return
 		}
-		body.Text = text
+		journeyText, ok := textField(w, "journey_text", body.JourneyText, maxMarginaliaLen)
+		if !ok {
+			return
+		}
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
@@ -558,24 +590,24 @@ func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "this plan is not resolving a mar")
 			return
 		}
-		created, already := miCreatedPeer(mi, body.PeerAssetID)
-		if !created {
+		draft := gamepkg.FindDraftPeer(mi.Drafts, body.DraftID)
+		if draft == nil {
 			respondErr(w, http.StatusBadRequest, "that peer was not introduced by this plan")
 			return
 		}
-		if already {
+		if mi.MarOutcomeFor(draft.ID) != nil {
 			respondErr(w, http.StatusConflict, "that peer has already been resolved")
 			return
 		}
 
-		peer, err := deps.Q.GetAssetByID(ctx, body.PeerAssetID)
-		if err != nil || peer.GameID != plan.GameID {
-			respondErr(w, http.StatusNotFound, "peer not found in this game")
-			return
-		}
-
-		outcome, status, clientMsg, err := applyMIPeerOutcome(
-			ctx, deps, plan, &peer, &resData, body.Outcome, body.TargetPlayer, body.Text, player.ID)
+		outcome, status, clientMsg, err := applyMIPeerOutcome(ctx, deps, plan, &resData, miPeerOutcomeRequest{
+			draft:        *draft,
+			kind:         body.Outcome,
+			targetPlayer: body.TargetPlayer,
+			text:         text,
+			journeyText:  journeyText,
+			actorID:      player.ID,
+		})
 		if err != nil {
 			respondInternalErr(w, r, "could not resolve peer", err)
 			return
@@ -590,69 +622,85 @@ func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not record outcome", err)
 			return
 		}
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
-			"plan_id":       plan.ID,
-			"peer_asset_id": body.PeerAssetID,
-			"outcome":       body.Outcome,
-			"resolved":      len(mi.MarOutcomes),
-			"peer_count":    mi.PeerCount,
+			"plan_id":    plan.ID,
+			"draft_id":   draft.ID,
+			"outcome":    body.Outcome,
+			"resolved":   len(mi.MarOutcomes),
+			"peer_count": mi.PeerCount,
 		})
 	}
+}
+
+// miPeerOutcomeRequest is one introduced peer's mar resolution as the preparer
+// submitted it.
+type miPeerOutcomeRequest struct {
+	draft        DraftPeer
+	kind         string
+	targetPlayer *int64
+	// text is the peer's own marginalia — who arrived — for broken_journey.
+	text string
+	// journeyText is the mark the road left on them, torn on arrival so the peer
+	// lands broken rather than destroyed (see the broken_journey case).
+	journeyText string
+	actorID     int64
 }
 
 // applyMIPeerOutcome applies one introduced peer's mar outcome and returns the
 // recorded outcome. On a caller error it returns a non-empty clientMsg with the
 // HTTP status; on an internal failure it returns a non-nil err. The caller
 // persists resData (the outcome is appended to MarOutcomes there).
+//
+// Only broken_journey materializes its draft here. other_retinue and
+// broken_arrival record who owes the marginalia and leave the draft in limbo
+// until they write it (introductions-marginalia); delayed hands the draft to a
+// synthetic plan on a later row, or drops it.
 func applyMIPeerOutcome(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	peer *dbgen.Asset,
 	resData *ResolutionData,
-	kind string,
-	targetPlayer *int64,
-	text string,
-	actorID int64,
+	req miPeerOutcomeRequest,
 ) (MIMarOutcome, int, string, error) {
-	outcome := MIMarOutcome{PeerAssetID: peer.ID, Outcome: kind}
+	draft := req.draft
+	outcome := MIMarOutcome{DraftID: draft.ID, Outcome: req.kind}
 
-	switch kind {
+	switch req.kind {
 	case "other_retinue":
-		recipient, vErr := miValidateOtherPlayer(ctx, deps.Q, plan, targetPlayer)
+		recipient, vErr := miValidateOtherPlayer(ctx, deps.Q, plan, req.targetPlayer)
 		if vErr != "" {
 			return outcome, http.StatusBadRequest, vErr, nil
 		}
-		if _, err := takeAssetEffect(
-			ctx,
-			deps.Q,
-			deps.Manager,
-			plan.GameID,
-			peer.ID,
-			plan.PreparerID,
-			recipient,
-		); err != nil {
-			return outcome, 0, "", err
-		}
-		outcome.Done = true
+		// D6: the receiving player writes the marginalia, so this peer arrives
+		// only once they have — the owner describes their own assets. That makes
+		// (a) gate completion the same way (b) does.
+		outcome.AuthorPlayerID = &recipient
+		outcome.OwnerPlayerID = &recipient
 		miLog(
 			ctx,
 			deps,
 			plan,
 			model.SeverityDefault,
 			fmt.Sprintf(
-				"%s joined %s's retinue instead.",
-				assetMark(peer.Name),
+				"%s is joining %s's retinue instead — %s will describe them.",
+				assetMark(draft.Name),
+				playerDisplayName(ctx, deps.Q, recipient),
 				playerDisplayName(ctx, deps.Q, recipient),
 			),
 		)
 
 	case "broken_arrival":
-		author, vErr := miValidateOtherPlayer(ctx, deps.Q, plan, targetPlayer)
+		author, vErr := miValidateOtherPlayer(ctx, deps.Q, plan, req.targetPlayer)
 		if vErr != "" {
 			return outcome, http.StatusBadRequest, vErr, nil
 		}
+		recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
+		if err != nil {
+			return outcome, 0, "", err
+		}
 		outcome.AuthorPlayerID = &author // Done stays false until the author writes
+		outcome.OwnerPlayerID = &recipient
 		miLog(
 			ctx,
 			deps,
@@ -660,23 +708,25 @@ func applyMIPeerOutcome(
 			model.SeverityDefault,
 			fmt.Sprintf(
 				"%s arrived broken — %s will define them.",
-				assetMark(peer.Name),
+				assetMark(draft.Name),
 				playerDisplayName(ctx, deps.Q, author),
 			),
 		)
 
 	case "delayed":
-		_, _, _, lost, err := scheduleDelayedArrival(ctx, deps, plan, resData, peer.ID)
+		_, targetRow, _, lost, err := scheduleDelayedArrival(ctx, deps, plan, resData, draft)
 		if err != nil {
 			return outcome, 0, "", err
 		}
 		if lost {
+			// Nothing to destroy: the peer never had an assets row, so being lost
+			// is simply the draft going nowhere.
 			miLog(
 				ctx,
 				deps,
 				plan,
 				model.SeverityDefault,
-				fmt.Sprintf("%s was lost on the journey.", assetMark(peer.Name)),
+				fmt.Sprintf("%s was lost on the journey and never reached court.", assetMark(draft.Name)),
 			)
 		} else {
 			miLog(
@@ -684,31 +734,19 @@ func applyMIPeerOutcome(
 				deps,
 				plan,
 				model.SeverityDefault,
-				fmt.Sprintf("%s was delayed and will arrive later.", assetMark(peer.Name)),
+				fmt.Sprintf("%s was delayed and will arrive on row %d.", assetMark(draft.Name), targetRow),
 			)
 		}
 		outcome.Done = true
 
 	case "broken_journey":
-		if text == "" {
-			return outcome, http.StatusBadRequest, "text is required for broken_journey", nil
+		if req.text == "" || req.journeyText == "" {
+			return outcome, http.StatusBadRequest,
+				"broken_journey needs the peer's marginalia and the mark the journey left", nil
 		}
-		pos, _ := deps.Q.CountMarginalia(ctx, peer.ID)
-		if pos >= maxMarginalia {
-			return outcome, http.StatusConflict, "that peer has no room for more marginalia", nil
-		}
-		m, err := deps.Q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
-			AssetID: peer.ID, Position: int16(pos + 1), Text: text,
-		})
-		if err != nil {
+		if err := applyMIBrokenJourney(ctx, deps, plan, resData, req, &outcome); err != nil {
 			return outcome, 0, "", err
 		}
-		if _, err := breakMarginalia(ctx, deps.Q, deps.Manager, peer, &m, actorID); err != nil {
-			return outcome, 0, "", err
-		}
-		outcome.Done = true
-		miLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s survived an arduous journey — arrived broken.", assetMark(peer.Name)))
 
 	default:
 		return outcome, http.StatusBadRequest,
@@ -716,6 +754,59 @@ func applyMIPeerOutcome(
 	}
 
 	return outcome, 0, "", nil
+}
+
+// applyMIBrokenJourney materializes a peer who arrives broken from the road.
+//
+// The peer lands carrying two marginalia — who they are, and what the journey
+// cost them — and only the second is torn, so they arrive broken rather than
+// destroyed. Writing just the torn one would tear the asset's only marginalia,
+// which is exactly the destroy-on-arrival bug this replaces (see the audit in
+// adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md). It fills in outcome's owner and
+// Done, and records the arrival on resData.
+func applyMIBrokenJourney(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	req miPeerOutcomeRequest,
+	outcome *MIMarOutcome,
+) error {
+	recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
+	if err != nil {
+		return err
+	}
+	arriving := req.draft
+	arriving.Marginalia = req.text
+
+	var asset dbgen.Asset
+	err = deps.InTx(ctx, func(q *dbgen.Queries) error {
+		a, written, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, arriving, recipient)
+		if mErr != nil {
+			return mErr
+		}
+		asset = a
+		m, cErr := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+			AssetID: a.ID, Position: int16(len(written) + 1), Text: req.journeyText,
+		})
+		if cErr != nil {
+			return cErr
+		}
+		_, bErr := breakMarginalia(ctx, q, deps.Manager, &a, &m, req.actorID)
+		return bErr
+	})
+	if err != nil {
+		return err
+	}
+
+	mi := resData.EnsureMakeIntroductions()
+	mi.Arrivals = append(mi.Arrivals, MIArrival{DraftID: req.draft.ID, AssetID: asset.ID})
+	outcome.OwnerPlayerID = &recipient
+	outcome.Done = true
+	miLog(ctx, deps, plan, model.SeverityDefault,
+		fmt.Sprintf("%s survived an arduous journey — arrived broken, marked by %q.",
+			assetMark(asset.Name), req.journeyText))
+	return nil
 }
 
 // miValidateOtherPlayer checks that target points at a player at this table who
@@ -736,8 +827,13 @@ func miValidateOtherPlayer(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pl
 
 // introductionsMarginaliaHandler handles POST /api/plans/:planId/introductions-marginalia.
 //
-// For a "broken_arrival" peer, the assigned author writes the peer's marginalia.
-// Request body: {"peer_asset_id": A, "text": "..."}
+// The other-player arrival form. Two mar outcomes put a peer's marginalia in
+// somebody else's hands — "broken_arrival" (another player defines them) and
+// "other_retinue" (the receiving player does, D6) — and since arrival is
+// creation, writing it is also what brings the peer into a retinue: the one
+// named in the outcome's OwnerPlayerID.
+//
+// Request body: {"draft_id": D, "text": "..."}
 func introductionsMarginaliaHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanMakeIntroductions)
@@ -746,77 +842,78 @@ func introductionsMarginaliaHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			PeerAssetID int64  `json:"peer_asset_id"`
-			Text        string `json:"text"`
+			DraftID string `json:"draft_id"`
+			Text    string `json:"text"`
 		}
 		if err := json.NewDecoder(r.Body).
-			Decode(&body); err != nil || body.PeerAssetID == 0 ||
+			Decode(&body); err != nil || body.DraftID == "" ||
 			strings.TrimSpace(body.Text) == "" {
-			respondErr(w, http.StatusBadRequest, "peer_asset_id and text are required")
+			respondErr(w, http.StatusBadRequest, "draft_id and text are required")
 			return
 		}
 		text, ok := textField(w, "text", body.Text, maxMarginaliaLen)
 		if !ok {
 			return
 		}
-		body.Text = text
 
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		mi := resData.EnsureMakeIntroductions()
 
-		idx := -1
-		for i, o := range mi.MarOutcomes {
-			if o.PeerAssetID == body.PeerAssetID && o.Outcome == "broken_arrival" {
-				idx = i
-			}
-		}
-		if idx < 0 {
-			respondErr(w, http.StatusConflict, "no broken-arrival peer awaits a marginalia here")
+		out := mi.MarOutcomeFor(body.DraftID)
+		if out == nil || out.AuthorPlayerID == nil {
+			respondErr(w, http.StatusConflict, "no newcomer awaits a marginalia here")
 			return
 		}
-		out := mi.MarOutcomes[idx]
 		if out.Done {
 			respondErr(w, http.StatusConflict, "that peer's marginalia has already been written")
 			return
 		}
-		if out.AuthorPlayerID == nil || *out.AuthorPlayerID != player.ID {
+		if *out.AuthorPlayerID != player.ID {
 			respondErr(w, http.StatusForbidden, "only the assigned author may write this marginalia")
 			return
 		}
+		draft := gamepkg.FindDraftPeer(mi.Drafts, body.DraftID)
+		if draft == nil {
+			respondErr(w, http.StatusNotFound, "that peer was not introduced by this plan")
+			return
+		}
+		owner := plan.PreparerID
+		if out.OwnerPlayerID != nil {
+			owner = *out.OwnerPlayerID
+		}
 
-		peer, err := deps.Q.GetAssetByID(ctx, body.PeerAssetID)
-		if err != nil || peer.GameID != plan.GameID {
-			respondErr(w, http.StatusNotFound, "peer not found in this game")
-			return
-		}
-		pos, _ := deps.Q.CountMarginalia(ctx, peer.ID)
-		if pos >= maxMarginalia {
-			respondErr(w, http.StatusConflict, "that peer has no room for more marginalia")
-			return
-		}
-		m, err := deps.Q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
-			AssetID: peer.ID, Position: int16(pos + 1), Text: strings.TrimSpace(body.Text),
+		arriving := *draft
+		arriving.Marginalia = text
+
+		var asset dbgen.Asset
+		err := deps.InTx(ctx, func(q *dbgen.Queries) error {
+			a, _, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, arriving, owner)
+			if mErr != nil {
+				return mErr
+			}
+			asset = a
+			draft.Marginalia = text
+			out.Done = true
+			mi.Arrivals = append(mi.Arrivals, MIArrival{DraftID: draft.ID, AssetID: a.ID})
+			return saveResolutionData(ctx, q, plan.ID, resData)
 		})
 		if err != nil {
 			respondInternalErr(w, r, "could not write marginalia", err)
 			return
 		}
 
-		mi.MarOutcomes[idx].Done = true
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, r, "could not record marginalia", err)
-			return
-		}
-
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetUpdated, model.AssetIDPayload{AssetID: peer.ID})
 		miLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s defined the newcomer %s.", playerDisplayName(ctx, deps.Q, player.ID), assetMark(peer.Name)))
+			fmt.Sprintf("%s defined the newcomer %s, who joined %s's retinue.",
+				playerDisplayName(ctx, deps.Q, player.ID),
+				assetMark(asset.Name),
+				playerDisplayName(ctx, deps.Q, owner)))
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
-			"plan_id":       plan.ID,
-			"peer_asset_id": peer.ID,
-			"marginalia_id": m.ID,
+			"plan_id":  plan.ID,
+			"draft_id": draft.ID,
+			"asset_id": asset.ID,
 		})
 	}
 }

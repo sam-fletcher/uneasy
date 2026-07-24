@@ -7,10 +7,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/hub"
 	"uneasy/model"
 )
@@ -227,6 +230,54 @@ func resolveBreakTarget(
 		return nil, httpErr(http.StatusConflict, "marginalia is already torn")
 	}
 	return &m, nil
+}
+
+// materializeDraftPeer turns a draft peer into a real asset in ownerID's
+// retinue: the `assets` row, its first marginalia, the asset.created broadcast
+// and the action-log post, in that order.
+//
+// This is the single crossing from "exists in the fiction" to "exists in a
+// retinue" for both plans that introduce unowned peers (see game.DraftPeer and
+// adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D8: the two share this materializer,
+// not their lifecycles — when a draft arrives, who may claim it, and what
+// becomes of an unclaimed one stay per-plan policies).
+//
+// It routes through createAssetWithFirstMarginalia, so a materialized peer
+// always carries at least one marginalia; draft.Marginalia must be non-empty by
+// the time it gets here. The caller supplies its own q so it can run inside an
+// existing transaction — worth doing, since the plan's record of the arrival
+// belongs in the same commit as the asset — and adds whatever plan-specific log
+// line the moment deserves on top of the generic asset.created post. Called that
+// way the asset.created broadcast fires just before the commit rather than just
+// after; the post itself rides the transaction and rolls back with it.
+func materializeDraftPeer(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	draft game.DraftPeer,
+	ownerID int64,
+) (dbgen.Asset, []dbgen.Marginalium, error) {
+	if strings.TrimSpace(draft.Marginalia) == "" {
+		return dbgen.Asset{}, nil, errors.New("a peer needs one marginalia before they arrive")
+	}
+	asset, marginalia, err := createAssetWithFirstMarginalia(ctx, q, dbgen.CreateAssetParams{
+		GameID:    gameID,
+		OwnerID:   ownerID,
+		CreatorID: draft.CreatorID,
+		AssetType: model.AssetPeer,
+		Name:      draft.Name,
+	}, strings.TrimSpace(draft.Marginalia))
+	if err != nil {
+		return dbgen.Asset{}, nil, err
+	}
+	broadcastEvent(manager, gameID, model.EventAssetCreated, model.AssetPayload{
+		Asset: assetWithMarginalia{Asset: asset, Marginalia: marginalia},
+	})
+	if g, gErr := q.GetGameByID(ctx, gameID); gErr == nil {
+		EmitAssetCreated(ctx, q, manager, gameID, asset, marginalia, logRow(g))
+	}
+	return asset, marginalia, nil
 }
 
 // grantSecretsOnTake gives newOwnerID visibility on every secret of an asset and

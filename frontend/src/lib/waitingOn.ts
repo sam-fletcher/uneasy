@@ -116,6 +116,11 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// Exchange Courtiers target-driven sub-step (offer / messy break / mar
 			// choices / peer claims). Blocks on the target, not the preparer.
 			return { waitees: actingWaitees(), stepLabel: 'Exchange Courtiers — target responds' };
+		case 'await_introductions_marginalia':
+			// Marred Make Introductions — a newcomer's marginalia is somebody
+			// else's to write, and until they do the peer is still a draft with no
+			// asset behind them.
+			return { waitees: actingWaitees(), stepLabel: 'Make Introductions — describe a newcomer' };
 		case 'await_chronicle_choices':
 			// Marred Chronicle Histories — every present player owes one choice.
 			return { waitees: actingWaitees(), stepLabel: 'Chronicle Histories — all choose' };

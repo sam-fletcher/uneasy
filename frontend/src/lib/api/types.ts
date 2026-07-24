@@ -376,7 +376,9 @@ export type { MakeDemandsResolutionData } from '$lib/plans/resolutionData/make_d
 import type { MakeDemandsResolutionData } from '$lib/plans/resolutionData/make_demands';
 export type { ProposeDecreeResolutionData } from '$lib/plans/resolutionData/propose_decree';
 import type { ProposeDecreeResolutionData } from '$lib/plans/resolutionData/propose_decree';
-export type { MakeIntroductionsResolutionData } from '$lib/plans/resolutionData/make_introductions';
+export type {
+	MakeIntroductionsResolutionData, DraftPeer, MIArrival, MIMarOutcome,
+} from '$lib/plans/resolutionData/make_introductions';
 import type { MakeIntroductionsResolutionData } from '$lib/plans/resolutionData/make_introductions';
 export type { ExchangeCourtiersResolutionData } from '$lib/plans/resolutionData/exchange_courtiers';
 import type { ExchangeCourtiersResolutionData } from '$lib/plans/resolutionData/exchange_courtiers';
