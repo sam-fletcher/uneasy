@@ -1,5 +1,6 @@
 // Shared constants, parsers, and helpers for plan components.
 import type { Plan, Player, Asset, PlanType, ResolutionData, RankingCategory } from '$lib/api';
+import { isBlankAsset } from '$lib/assetRisk';
 
 /** One-line flavour description per plan type. Sourced from "Plan Titles.md"
  * (the in-rules card copy). Kept short so plan cards stay scannable. */
@@ -190,6 +191,9 @@ export function intactMarginalia(assets: Asset[], ownerID: number | null) {
  * Non-destroyed assets that still have at least one untorn marginalia.
  * Used everywhere AssetCardSelectable's marginalia-pick mode renders a
  * card per parent asset. Optional `ownerID` narrows to a single owner.
+ *
+ * Prefer {@link breakableAssets} for break-target pickers — a blank asset is a
+ * valid break target even though it has no marginalia to name.
  */
 export function assetsWithIntactMarginalia(
 	assets: Asset[],
@@ -200,6 +204,36 @@ export function assetsWithIntactMarginalia(
 		&& (ownerID == null || a.owner_id === ownerID)
 		&& (a.marginalia ?? []).some(m => !m.is_torn),
 	);
+}
+
+/**
+ * Non-destroyed assets a break could land on: those with an untorn marginalia
+ * to tear, plus blank ones (no marginalia at all), where the break destroys the
+ * asset outright — see adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md (D3). Optional
+ * `ownerID` narrows to a single owner.
+ *
+ * The only asset this excludes is one whose marginalia are all torn, which no
+ * live game holds: the last tear destroys.
+ *
+ * Backend mirror: handler/asset_effects.go:assetIsBreakable.
+ */
+export function breakableAssets(assets: Asset[], ownerID?: number | null): Asset[] {
+	return assets.filter(a =>
+		!a.is_destroyed
+		&& (ownerID == null || a.owner_id === ownerID)
+		&& (isBlankAsset(a) || (a.marginalia ?? []).some(m => !m.is_torn)),
+	);
+}
+
+/**
+ * How many break picks an asset can absorb: one per untorn marginalia, or 1 if
+ * it is blank (that single break destroys it). Mirrors the backend's
+ * srBreaksAvailable — the pick cap and the server's forfeit gate must agree, or
+ * a plan can commit a pick it can never spend.
+ */
+export function breaksAvailable(asset: Asset): number {
+	if (isBlankAsset(asset)) return 1;
+	return (asset.marginalia ?? []).filter(m => !m.is_torn).length;
 }
 
 /**

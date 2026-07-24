@@ -266,7 +266,9 @@ func applyFestivityAcceptDuels(ctx context.Context, fc *festivityOptionContext) 
 
 // applyFestivityBreakSelf tears the acting player's chosen marginalia on their
 // main character (auto-destroy if it was the last) via the canonical break
-// helper. If no marginalia is specified, falls back to the first intact one.
+// helper. If no marginalia is specified, falls back to the first intact one —
+// or, on a blank main character, to destroying it outright (D3), so an insisted
+// break can still be discharged by a player whose MC carries no notes.
 func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) error {
 	mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.actingPlayerID)
 	if err != nil {
@@ -277,27 +279,33 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 		return fmt.Errorf("load main character: %w", err)
 	}
 
-	var m dbgen.Marginalium
+	var m *dbgen.Marginalium
 	if fc.marginaliaID != 0 {
-		m, err = fc.deps.Q.GetMarginaliaByID(ctx, fc.marginaliaID)
-		if err != nil {
+		picked, gErr := fc.deps.Q.GetMarginaliaByID(ctx, fc.marginaliaID)
+		if gErr != nil {
 			return errors.New("marginalia not found")
 		}
-		if m.AssetID != mcID {
+		if picked.AssetID != mcID {
 			return errors.New("marginalia does not belong to your main character")
 		}
-		if m.IsTorn {
+		if picked.IsTorn {
 			return errors.New("marginalia is already torn")
 		}
+		m = &picked
 	} else {
 		marg, listErr := fc.deps.Q.ListIntactMarginalia(ctx, mcID)
-		if listErr != nil || len(marg) == 0 {
+		if listErr != nil {
+			return fmt.Errorf("list marginalia: %w", listErr)
+		}
+		if len(marg) > 0 {
+			m = &marg[0]
+		} else if blank, bErr := assetIsBlank(ctx, fc.deps.Q, mcID); bErr != nil || !blank {
 			return errors.New("no intact marginalia to tear")
 		}
-		m = marg[0]
+		// m stays nil on a blank MC — breakAsset destroys it outright.
 	}
 
-	destroyed, err := breakMarginalia(ctx, fc.deps.Q, fc.deps.Manager, &mc, &m, fc.actingPlayerID)
+	destroyed, err := breakAsset(ctx, fc.deps.Q, fc.deps.Manager, &mc, m, fc.actingPlayerID)
 	if err != nil {
 		return fmt.Errorf("break self: %w", err)
 	}
@@ -308,7 +316,7 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 		model.SeverityDefault,
 		fmt.Sprintf("%s %s themselves — word of their gaffe gets around.%s",
 			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), breakVerb(destroyed),
-			brokenAssetDetail(ctx, fc.deps.Q, mc.OwnerID, &m, destroyed)),
+			brokenAssetDetail(ctx, fc.deps.Q, mc.OwnerID, m, destroyed)),
 	)
 	return nil
 }
@@ -342,17 +350,32 @@ func hfBreakAbandonedDisagreementPeers(
 		if err != nil || asset.IsDestroyed {
 			continue // already gone — nothing to break
 		}
+		// A blank peer has nothing to tear, so its break destroys it outright
+		// (D3); only an all-torn-but-alive peer (unreachable in a live game) is
+		// skipped here.
+		var m *dbgen.Marginalium
 		marg, err := deps.Q.ListIntactMarginalia(ctx, id)
-		if err != nil || len(marg) == 0 {
-			continue // nothing left to tear
+		if err != nil {
+			return fmt.Errorf("list marginalia for abandoned peer %d: %w", id, err)
 		}
-		m := marg[0]
-		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, asset.OwnerID)
+		switch {
+		case len(marg) > 0:
+			m = &marg[0]
+		default:
+			blank, bErr := assetIsBlank(ctx, deps.Q, id)
+			if bErr != nil {
+				return fmt.Errorf("inspect abandoned peer %d: %w", id, bErr)
+			}
+			if !blank {
+				continue
+			}
+		}
+		destroyed, err := breakAsset(ctx, deps.Q, deps.Manager, &asset, m, asset.OwnerID)
 		if err != nil {
 			return fmt.Errorf("break abandoned peer %d: %w", id, err)
 		}
 		owner := playerDisplayName(ctx, deps.Q, asset.OwnerID)
-		detail := brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)
+		detail := brokenAssetDetail(ctx, deps.Q, asset.OwnerID, m, destroyed)
 		if destroyed {
 			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 				"%s never made up with %s and fell apart for good.%s", assetMark(asset.Name), owner, detail))
@@ -366,19 +389,16 @@ func hfBreakAbandonedDisagreementPeers(
 	return nil
 }
 
-// hfHostHasIntactMarginalia reports whether the host's main character still has
-// at least one un-torn marginalia — i.e. whether an insisted break_self has
-// anything to tear.
-func hfHostHasIntactMarginalia(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (bool, error) {
+// hfHostCanBreakSelf reports whether an insisted break_self has anything to
+// land on: the host's main character either has an un-torn marginalia to tear,
+// or is blank, in which case the break destroys it outright (D3). Only an
+// all-torn-but-alive MC — a state a live game never reaches — has nothing.
+func hfHostCanBreakSelf(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (bool, error) {
 	mcID, err := hfFindMainCharacter(ctx, deps, plan.GameID, plan.PreparerID)
 	if err != nil {
 		return false, err
 	}
-	marg, err := deps.Q.ListIntactMarginalia(ctx, mcID)
-	if err != nil {
-		return false, err
-	}
-	return len(marg) > 0, nil
+	return assetIsBreakable(ctx, deps.Q, mcID)
 }
 
 func hfFindMainCharacter(ctx context.Context, deps *PlanDeps, gameID, playerID int64) (int64, error) {

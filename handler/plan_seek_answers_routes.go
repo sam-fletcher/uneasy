@@ -124,7 +124,8 @@ func saCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 //
 // Request body: {"asset_id": N, "marginalia_id": M}
 //
-//nolint:gocognit // possibly improvable later
+// marginalia_id may be omitted (or 0) when the resource is blank — it has no
+// marginalia to name, so the break destroys it outright (see resolveBreakTarget).
 func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -151,8 +152,8 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			AssetID      int64 `json:"asset_id"`
 			MarginaliaID int64 `json:"marginalia_id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 || body.MarginaliaID == 0 {
-			respondErr(w, http.StatusBadRequest, "asset_id and marginalia_id are required")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 {
+			respondErr(w, http.StatusBadRequest, "asset_id is required")
 			return
 		}
 
@@ -171,18 +172,15 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "target asset must be a resource")
 			return
 		}
+		if asset.IsDestroyed {
+			respondErr(w, http.StatusConflict, "asset is already destroyed")
+			return
+		}
 
-		m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
+		// nil m = a blank resource, flawed out of existence rather than torn.
+		m, err := resolveBreakTarget(ctx, deps.Q, &asset, body.MarginaliaID)
 		if err != nil {
-			respondErr(w, http.StatusNotFound, "marginalia not found")
-			return
-		}
-		if m.AssetID != body.AssetID {
-			respondErr(w, http.StatusBadRequest, "marginalia does not belong to the specified asset")
-			return
-		}
-		if m.IsTorn {
-			respondErr(w, http.StatusConflict, "marginalia is already torn")
+			respondHTTPErr(w, r, err)
 			return
 		}
 
@@ -222,9 +220,10 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
-		// Break = tear one marginalia (auto-destroy if it was the last) — the
-		// canonical effect, shared with every other plan.
-		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID)
+		// Break = tear one marginalia (auto-destroy if it was the last), or
+		// destroy a blank resource outright — the canonical effect, shared with
+		// every other plan.
+		destroyed, err := breakAsset(ctx, deps.Q, deps.Manager, &asset, m, player.ID)
 		if err != nil {
 			respondInternalErr(w, r, "could not break resource", err)
 			return
@@ -242,18 +241,19 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		verb := "broke"
-		if destroyed {
-			verb = "destroyed"
-		}
 		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s %s.%s",
-			playerDisplayName(ctx, deps.Q, player.ID), verb, assetMark(asset.Name),
-			brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
+			playerDisplayName(ctx, deps.Q, player.ID), breakVerb(destroyed), assetMark(asset.Name),
+			brokenAssetDetail(ctx, deps.Q, asset.OwnerID, m, destroyed)))
 
+		// marginalia_id echoes 0 for a blank resource — nothing was torn.
+		var tornID int64
+		if m != nil {
+			tornID = m.ID
+		}
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
 			"asset_id":      asset.ID,
-			"marginalia_id": m.ID,
+			"marginalia_id": tornID,
 			"destroyed":     destroyed,
 		})
 	}
@@ -461,9 +461,9 @@ func saForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
 }
 
 // saEligibleBreakTargetCount counts resources the preparer could still break as a
-// make-list pick: any resource in the game with intact marginalia, not yet
-// flawed this plan, excluding the preparer's own on a mar (those route through
-// the penalty flow). Mirror of the frontend brResourcesWithMarginalia picker.
+// make-list pick: any breakable resource in the game, not yet flawed this plan,
+// excluding the preparer's own on a mar (those route through the penalty flow).
+// Mirror of the frontend brResourcesWithMarginalia picker.
 func saEligibleBreakTargetCount(
 	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, sa *gamepkg.SeekAnswersResolutionData, isMar bool,
 ) (int, error) {
@@ -483,11 +483,11 @@ func saEligibleBreakTargetCount(
 		if isMar && a.OwnerID == plan.PreparerID {
 			continue
 		}
-		intact, err := deps.Q.CountIntactMarginalia(ctx, a.ID)
+		breakable, err := assetIsBreakable(ctx, deps.Q, a.ID)
 		if err != nil {
 			return 0, err
 		}
-		if intact > 0 {
+		if breakable {
 			count++
 		}
 	}

@@ -29,7 +29,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
-	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
+	import { parseResolutionData, playerName, breakableAssets } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import { hiddenCount } from '$lib/secretCounts';
 	import { useSecretCounts } from '$lib/secretCountsContext';
@@ -234,11 +234,12 @@
 			|| answeredQuestions.length > 0 || penaltyBrokenIDs.length > 0,
 	);
 
-	// Make-list "break a resource" picker: any resource with intact marginalia
-	// not yet flawed this plan. On a mar, exclude the preparer's own resources —
+	// Make-list "break a resource" picker: any breakable resource not yet flawed
+	// this plan — one with intact marginalia, or a blank one, whose break
+	// destroys it outright. On a mar, exclude the preparer's own resources —
 	// those go through the penalty flow (the server attributes a break by owner).
 	const resourcesWithMarginalia = $derived(
-		assetsWithIntactMarginalia(assets.filter(a => a.asset_type === 'resource')),
+		breakableAssets(assets.filter(a => a.asset_type === 'resource')),
 	);
 	const brResourcesWithMarginalia = $derived(
 		resourcesWithMarginalia
@@ -623,10 +624,11 @@
 								items={brResourcesWithMarginalia}
 								{players}
 								readOnly={!canSubflow}
-								emptyMessage="No intact marginalia on any resource."
+								emptyMessage="No resource can be broken."
 								ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
 								marginaliaMode
 								selectedMarginaliaID={brMargID}
+								selectedAssetID={brAssetID}
 								onSelectMarginalia={(mID, parent) => {
 									brMargID = mID;
 									brAssetID = parent?.id ?? null;
@@ -764,6 +766,7 @@
 								emptyMessage="No eligible resources of your own remain."
 								marginaliaMode
 								selectedMarginaliaID={maMargID}
+								selectedAssetID={maAssetID}
 								onSelectMarginalia={(mID, parent) => {
 									maMargID = mID;
 									maAssetID = parent?.id ?? null;

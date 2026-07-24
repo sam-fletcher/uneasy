@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isNeedlesslyAtRisk, firstEmptySlotIndex, destructionWarning } from './assetRisk';
+import { isBlankAsset, isNeedlesslyAtRisk, firstEmptySlotIndex, destructionWarning } from './assetRisk';
 import type { Asset, Marginalium } from '$lib/api';
 
 // Minimal marginalia builder; only the fields the helpers read matter.
@@ -63,6 +63,23 @@ describe('firstEmptySlotIndex', () => {
 	});
 });
 
+describe('isBlankAsset', () => {
+	it('flags an asset with no marginalia rows', () => {
+		expect(isBlankAsset(asset([]))).toBe(true);
+	});
+
+	it('does NOT flag an asset whose only note is torn — it was never blank', () => {
+		// Marginalia are append-only, so a torn row still proves the asset had a
+		// note. Such an asset is destroyed in practice; blankness is creation-time.
+		expect(isBlankAsset(asset([marg(1, true)]))).toBe(false);
+	});
+
+	it('treats a marginalia-less payload as blank instead of throwing', () => {
+		const noMarginalia = { id: 1, is_destroyed: false } as unknown as Asset;
+		expect(isBlankAsset(noMarginalia)).toBe(true);
+	});
+});
+
 describe('destructionWarning', () => {
 	it('returns the warning sentence when needlessly at risk', () => {
 		expect(destructionWarning(asset([marg(1)]))).toBe(
@@ -72,8 +89,18 @@ describe('destructionWarning', () => {
 		);
 	});
 
+	it('uses the blank-asset wording when there is no marginalia to tear', () => {
+		expect(destructionWarning(asset([]))).toBe(
+			'Heads up: this asset has no marginalia — breaking it destroys it outright.',
+		);
+	});
+
 	it('returns empty string when not at risk', () => {
 		expect(destructionWarning(asset([marg(1), marg(2)]))).toBe('');
+	});
+
+	it('returns empty string for a destroyed asset', () => {
+		expect(destructionWarning(asset([], true))).toBe('');
 	});
 
 	it('returns empty string for null/undefined', () => {

@@ -933,11 +933,11 @@ func TestSpreadRumors_CanComplete_BlockedWhilePendingTakeConsent(t *testing.T) {
 // forfeit escape hatch for the depletable break step.
 func TestSpreadRumors_ForfeitBreakTarget_DischargesWhenNoTarget(t *testing.T) {
 	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
 
 	focusIdx := h.focusPlayerIdx()
 	otherIdx := (focusIdx + 1) % 2
 
-	// Target asset with NO intact marginalia — break_target has nothing to tear.
 	target := h.seedPeer(otherIdx, "rumor target")
 
 	notes := "an unfalsifiable whisper"
@@ -950,6 +950,12 @@ func TestSpreadRumors_ForfeitBreakTarget_DischargesWhenNoTarget(t *testing.T) {
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
+
+	// The target is destroyed out from under the pick (another player's action
+	// mid-resolution) — the concurrently-depleted case the hatch exists for. A
+	// blank-but-alive target would NOT qualify: breaking it destroys it outright
+	// (D3), so it is a target the actor could still spend the pick on.
+	require.NoError(t, h.q.DestroyAsset(ctx, target))
 
 	completePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/complete"
 	code, body := h.post(focusIdx, completePath, nil)
@@ -995,4 +1001,62 @@ func TestSpreadRumors_ForfeitBreakTarget_RejectedWhenTargetExists(t *testing.T) 
 	code, body := h.post(focusIdx, forfeitPath, map[string]any{"step": "break_target"})
 	require.Equalf(t, http.StatusConflict, code,
 		"forfeit must be rejected while a marginalia remains: %v", body)
+}
+
+// TestSpreadRumors_BreakTarget_DestroysBlankTarget proves break_target reaches a
+// target asset with no marginalia at all: the route accepts an omitted
+// marginalia_id and the break destroys the asset outright (D3). The forfeit
+// hatch must also refuse while such a target stands — a blank asset is
+// something the actor can still spend the pick on.
+func TestSpreadRumors_BreakTarget_DestroysBlankTarget(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+
+	target := h.seedPeer(otherIdx, "unwritten confidant")
+
+	notes := "a whisper about a nobody"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
+
+	forfeitPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/sr-forfeit-step"
+	code, body := h.post(focusIdx, forfeitPath, map[string]any{"step": "break_target"})
+	require.Equalf(t, http.StatusConflict, code,
+		"a blank target is breakable, so the forfeit must be refused: %v", body)
+
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/break-target"
+	code, body = h.post(focusIdx, breakPath, map[string]any{})
+	require.Equalf(t, http.StatusOK, code, "break-target on a blank asset: %v", body)
+	assert.Equal(t, true, body["destroyed"])
+
+	after, err := h.q.GetAssetByID(ctx, target)
+	require.NoError(t, err)
+	assert.True(t, after.IsDestroyed, "the blank target must be destroyed")
+
+	// No marginalia.torn post — nothing was torn; the asset.destroyed post is the
+	// whole record of the break.
+	posts, err := h.q.ListGamePosts(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	var sawDestroyed bool
+	for _, p := range posts {
+		if p.SystemCode == nil {
+			continue
+		}
+		assert.NotEqual(t, "marginalia.torn", *p.SystemCode, "nothing was torn")
+		if *p.SystemCode == "asset.destroyed" {
+			sawDestroyed = true
+		}
+	}
+	assert.True(t, sawDestroyed, "the break must write the asset.destroyed post")
+
+	h.complete(plan.ID)
 }

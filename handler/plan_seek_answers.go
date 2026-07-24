@@ -187,20 +187,26 @@ func saEligibleOwnResources(
 		if a.GameID != gameID {
 			continue
 		}
-		intact := 0
-		// Only resources can be flawed; skip the marginalia query otherwise.
+		intact, total := 0, 0
+		// Only resources can be flawed; skip the marginalia queries otherwise.
 		if a.AssetType == model.AssetResource && !a.IsDestroyed {
-			marg, err := deps.Q.ListIntactMarginalia(ctx, a.ID)
+			marg, err := deps.Q.ListMarginaliaByAsset(ctx, a.ID)
 			if err != nil {
 				return nil, err
 			}
-			intact = len(marg)
+			total = len(marg)
+			for i := range marg {
+				if !marg[i].IsTorn {
+					intact++
+				}
+			}
 		}
 		views = append(views, gamepkg.ResourceFlawView{
 			AssetID:               a.ID,
 			AssetType:             a.AssetType,
 			IsDestroyed:           a.IsDestroyed,
 			IntactMarginaliaCount: intact,
+			TotalMarginaliaCount:  total,
 		})
 	}
 	return gamepkg.EligibleSelfFlawResourceIDs(views, flawed), nil

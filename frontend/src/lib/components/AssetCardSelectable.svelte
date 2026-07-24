@@ -27,7 +27,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { Asset } from '$lib/api';
-	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
+	import { isBlankAsset, isNeedlesslyAtRisk } from '$lib/assetRisk';
 	import { hiddenCount } from '$lib/secretCounts';
 	import { useSuccession } from '$lib/successionContext';
 	import AssetTypeIcon from './AssetTypeIcon.svelte';
@@ -49,9 +49,22 @@
 		 * marginalia line gets its own checkbox tap target. Torn lines
 		 * remain non-interactive. Asset identity is implicit — callers
 		 * derive it from the marginalia ID.
+		 *
+		 * A *blank* asset (no marginalia at all) renders a single
+		 * "destroy it outright" row instead, toggling with the sentinel id 0
+		 * — there is nothing to tear, so the break takes the whole asset
+		 * (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md, D3). Callers must read
+		 * the asset from the second argument, not from the id, in that case.
 		 */
 		marginaliaSelectable?: boolean;
 		selectedMarginaliaID?: number | null;
+		/**
+		 * Which asset the current marginalia pick belongs to. Only needed in
+		 * marginalia-pick mode, and only to disambiguate the blank-asset
+		 * sentinel (id 0) between two blank cards in the same list — real
+		 * marginalia ids are already unique.
+		 */
+		selectedAssetID?: number | null;
 		onMarginaliaToggle?: (marginaliaID: number, asset: Asset) => void;
 		/** Disable interaction (e.g. peer already claimed by someone else). */
 		disabled?: boolean;
@@ -91,6 +104,7 @@
 		onToggle,
 		marginaliaSelectable = false,
 		selectedMarginaliaID = null,
+		selectedAssetID = null,
 		onMarginaliaToggle,
 		disabled = false,
 		defaultExpanded = false,
@@ -148,6 +162,15 @@
 
 	const liveMarginalia = $derived(asset.marginalia.filter(m => !m.is_torn));
 	const tornCount = $derived(asset.marginalia.length - liveMarginalia.length);
+
+	// A blank asset has no marginalia line to pick, so in pick mode it offers a
+	// single whole-asset row instead: breaking it destroys it outright. Sentinel
+	// id 0, disambiguated by selectedAssetID (see the prop doc).
+	const blank = $derived(isBlankAsset(asset));
+	const blankPickable = $derived(marginaliaSelectable && blank);
+	const blankPicked = $derived(
+		blankPickable && selectedMarginaliaID === 0 && selectedAssetID === asset.id,
+	);
 
 	// One tear from destruction but a slot is still fillable — tint the count
 	// and caret red so the fragility reads at a glance. See isNeedlesslyAtRisk.
@@ -289,7 +312,33 @@
 
 	{#if expanded}
 		<div class="body">
-			{#if asset.marginalia.length === 0}
+			{#if blankPickable}
+				<!-- Nothing to tear: the pick is the asset itself. Same checkbox
+				     affordance as a marginalia line so the row reads as one of them. -->
+				<ul class="marginalia">
+					<li class:picked={blankPicked}>
+						<span
+							class="select-tap m-tap"
+							role="checkbox"
+							tabindex={disabled ? -1 : 0}
+							aria-checked={blankPicked}
+							aria-disabled={disabled}
+							onclick={(e) => { e.stopPropagation(); handleMarginaliaSelect(0); }}
+							onkeydown={(e) => {
+								if (e.key === ' ' || e.key === 'Enter') {
+									e.preventDefault();
+									handleMarginaliaSelect(0);
+								}
+							}}
+						>
+							<span class="check">{blankPicked ? '✓' : ''}</span>
+						</span>
+						<span class="m-line">
+							<span class="m-text destroys">No marginalia — breaking destroys this asset.</span>
+						</span>
+					</li>
+				</ul>
+			{:else if asset.marginalia.length === 0}
 				<p class="empty">No marginalia recorded.</p>
 			{:else}
 				<ul class="marginalia">
@@ -633,6 +682,11 @@
 
 	.bullet { color: var(--owner-color, var(--color-text-muted)); }
 	.torn-mark { color: var(--color-danger-muted); font-size: 0.78rem; }
+
+	/* Blank-asset pick row: picking it destroys the asset, so the line reads in
+	   the danger colour rather than as ordinary marginalia text. Italic matches
+	   the .empty placeholder it replaces. */
+	.m-text.destroys { color: var(--color-danger); font-style: italic; }
 
 	.empty {
 		font-size: 0.82rem;

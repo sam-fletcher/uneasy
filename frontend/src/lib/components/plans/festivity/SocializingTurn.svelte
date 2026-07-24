@@ -11,7 +11,7 @@
 	import CardPicker from '../CardPicker.svelte';
 	import AssetCreationForm from '../../AssetCreationForm.svelte';
 	import FormField from '../FormField.svelte';
-	import { playerName } from '../shared';
+	import { breakableAssets, playerName } from '../shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import { MAKE_OPTS, MAR_OPTS, type FestRes } from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -75,16 +75,13 @@
 				&& a.asset_type === 'peer'
 				&& !a.is_destroyed),
 	);
-	// The acting player's main character with an intact marginalia — the
-	// break_self target (the breaker picks which marginalia to tear).
+	// The acting player's main character, if a break can land on it — the
+	// break_self target. The breaker picks which marginalia to tear; a blank
+	// main character offers the whole-asset row instead (breaking destroys it).
 	const myMainCharacter = $derived(
 		currentPlayerID == null
 			? []
-			: assets.filter(a =>
-				a.owner_id === currentPlayerID
-				&& a.is_main_character
-				&& !a.is_destroyed
-				&& (a.marginalia ?? []).some(m => !m.is_torn)),
+			: breakableAssets(assets.filter(a => a.owner_id === currentPlayerID && a.is_main_character)),
 	);
 	const breakSelfWarn = $derived(destructionWarning(assets.find(a => a.id === pickedAssetID)));
 	const otherGuests = $derived(
@@ -172,6 +169,9 @@
 			peerName = '';
 			peerMarginalia = '';
 			pickedAssetID = null;
+			// Cleared alongside pickedAssetID: 0 is the blank-asset sentinel, so a
+			// stale value would read as a live pick rather than "nothing chosen".
+			pickedMargID = null;
 			pickedDuelTargetID = null;
 			onPlansChanged();
 		} catch (e) {
@@ -268,9 +268,10 @@
 				label="Marginalia to tear on your main character"
 				items={myMainCharacter}
 				{players}
-				emptyMessage="Your main character has no intact marginalia."
+				emptyMessage="Your main character has nothing left to break."
 				marginaliaMode
 				selectedMarginaliaID={pickedMargID}
+				selectedAssetID={pickedAssetID}
 				onSelectMarginalia={(mID, parent) => {
 					pickedMargID = mID;
 					pickedAssetID = parent?.id ?? null;

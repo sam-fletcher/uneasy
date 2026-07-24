@@ -161,16 +161,18 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Soft-lock guard for break_self: if the host's main character has no intact
-		// marginalia left, there is nothing to tear. Settle the debt as a no-op so
+		// Soft-lock guard for break_self: if the host's main character can absorb
+		// no break at all, there is nothing to land. Settle the debt as a no-op so
 		// the event can still be wound down rather than blocking on the impossible.
+		// A *blank* main character is not that case — the break destroys it
+		// outright (D3) — so it falls through to hfApplyOption below.
 		if body.MarOption == gamepkg.FestivityMarBreakSelf {
-			hasIntact, herr := hfHostHasIntactMarginalia(ctx, deps, plan)
+			canBreak, herr := hfHostCanBreakSelf(ctx, deps, plan)
 			if herr != nil {
 				respondInternalErr(w, r, "could not inspect host main character", herr)
 				return
 			}
-			if !hasIntact {
+			if !canBreak {
 				hfLog(ctx, deps, plan, model.SeverityDefault,
 					"The host had nothing left to tear — the insisted break passes.")
 				state.RemovePendingHostMar(body.MarOption)

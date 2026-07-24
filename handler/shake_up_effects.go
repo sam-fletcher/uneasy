@@ -128,10 +128,12 @@ func shakeUpTakeAsset(
 }
 
 // validateShakeUpBreakTarget checks an announce-time break target: a marginalia
-// must be named, exist, belong to the named asset, and still be intact. It
-// writes the error response and returns false on any failure. The apply step
-// (shakeUpBreakAsset) re-checks authoritatively at commit, since the marginalia
-// could be torn by another action while the spend is open.
+// must be named, exist, belong to the named asset, and still be intact — unless
+// the asset is blank, which names no marginalia because there are none, and
+// where the break destroys the asset outright (D3). It writes the error response
+// and returns false on any failure. The apply step (shakeUpBreakAsset) re-checks
+// authoritatively at commit, since the marginalia could be torn by another
+// action while the spend is open.
 func validateShakeUpBreakTarget(
 	ctx context.Context,
 	w http.ResponseWriter,
@@ -139,16 +141,28 @@ func validateShakeUpBreakTarget(
 	info gamepkg.ShakeUpOptionInfo,
 	targetAssetID, targetMarginaliaID *int64,
 ) bool {
-	if targetMarginaliaID == nil {
-		respondErr(w, http.StatusBadRequest, "target_marginalia_id required for "+info.Key)
+	if targetAssetID == nil {
+		respondErr(w, http.StatusBadRequest, "target_asset_id required for "+info.Key)
 		return false
+	}
+	if targetMarginaliaID == nil {
+		blank, err := assetIsBlank(ctx, q, *targetAssetID)
+		if err != nil {
+			respondErr(w, http.StatusInternalServerError, "could not inspect the target asset")
+			return false
+		}
+		if !blank {
+			respondErr(w, http.StatusBadRequest, "target_marginalia_id required for "+info.Key)
+			return false
+		}
+		return true
 	}
 	m, err := q.GetMarginaliaByID(ctx, *targetMarginaliaID)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, "target marginalia not found")
 		return false
 	}
-	if targetAssetID == nil || m.AssetID != *targetAssetID {
+	if m.AssetID != *targetAssetID {
 		respondErr(w, http.StatusBadRequest, "marginalia does not belong to the target asset")
 		return false
 	}
@@ -199,12 +213,15 @@ func validateShakeUpTakeTarget(
 }
 
 // shakeUpBreakAsset applies a "break a … asset" spend by tearing the single
-// marginalia the breaker chose — the canonical break (see breakMarginalia):
+// marginalia the breaker chose — the canonical break (see breakAsset):
 // "tear off one marginalia = breaking an asset; all 4 gone → destroyed". This
 // also grants the breaker visibility on the asset's secrets and, via
 // EmitMarginaliaTorn, writes the standard marginalia.torn log with its
 // "how has it changed?" prompt — none of which the old whole-asset DestroyAsset
 // did. The shake_up.committed post still records the token spend for the ledger.
+//
+// A blank target names no marginalia (the spend's target_marginalia_id is nil):
+// there is nothing to tear, so the break destroys the asset outright (D3).
 func shakeUpBreakAsset(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -216,9 +233,6 @@ func shakeUpBreakAsset(
 ) error {
 	if spend.TargetAssetID == nil {
 		return errors.New("target_asset_id required")
-	}
-	if spend.TargetMarginaliaID == nil {
-		return errors.New("target_marginalia_id required")
 	}
 	asset, err := q.GetAssetByID(ctx, *spend.TargetAssetID)
 	if err != nil {
@@ -233,26 +247,26 @@ func shakeUpBreakAsset(
 	if asset.IsDestroyed {
 		return errors.New("asset is already destroyed")
 	}
-	m, err := q.GetMarginaliaByID(ctx, *spend.TargetMarginaliaID)
+	var marginaliaID int64
+	if spend.TargetMarginaliaID != nil {
+		marginaliaID = *spend.TargetMarginaliaID
+	}
+	m, err := resolveBreakTarget(ctx, q, &asset, marginaliaID)
 	if err != nil {
-		return fmt.Errorf("marginalia not found: %w", err)
-	}
-	if m.AssetID != asset.ID {
-		return errors.New("marginalia does not belong to the target asset")
-	}
-	if m.IsTorn {
-		return errors.New("marginalia is already torn")
+		return err
 	}
 
-	// Canonical tear + destroy-if-last + secret-visibility grant to the breaker.
-	destroyed, err := breakMarginalia(ctx, q, manager, &asset, &m, spend.PlayerID)
+	// Canonical tear + destroy-if-last + secret-visibility grant to the breaker
+	// (or outright destruction when the target is blank).
+	destroyed, err := breakAsset(ctx, q, manager, &asset, m, spend.PlayerID)
 	if err != nil {
 		return fmt.Errorf("tear marginalia: %w", err)
 	}
-	// breakMarginalia doesn't log the tear; emit the canonical marginalia.torn
-	// post (with the owner re-describe prompt) like every other break.
-	if g, gErr := q.GetGameByID(ctx, gameID); gErr == nil {
-		EmitMarginaliaTorn(ctx, q, manager, gameID, asset, m, spend.PlayerID, destroyed, logRow(g))
+	// breakAsset doesn't log the tear; emit the canonical marginalia.torn post
+	// (with the owner re-describe prompt) like every other break. A blank asset
+	// had nothing to tear — its asset.destroyed post carries the whole story.
+	if g, gErr := q.GetGameByID(ctx, gameID); gErr == nil && m != nil {
+		EmitMarginaliaTorn(ctx, q, manager, gameID, asset, *m, spend.PlayerID, destroyed, logRow(g))
 	}
 
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
@@ -268,22 +282,17 @@ func shakeUpBreakAsset(
 	if destroyed {
 		body += ", destroying it"
 	}
-	EmitShakeUpCommitted(
-		ctx,
-		q,
-		manager,
-		gameID,
-		spend,
-		finalCost,
-		body,
-		map[string]any{
-			"effect":        "break",
-			"asset_id":      asset.ID,
-			"owner_id":      asset.OwnerID,
-			"marginalia_id": m.ID,
-			"destroyed":     destroyed,
-		},
-	)
+	// marginalia_id is null on a blank target — nothing was torn.
+	meta := map[string]any{
+		"effect":    "break",
+		"asset_id":  asset.ID,
+		"owner_id":  asset.OwnerID,
+		"destroyed": destroyed,
+	}
+	if m != nil {
+		meta["marginalia_id"] = m.ID
+	}
+	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost, body, meta)
 	return nil
 }
 

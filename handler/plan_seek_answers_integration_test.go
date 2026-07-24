@@ -52,6 +52,22 @@ func saSeedResource(t *testing.T, h *planLifecycle, ownerIdx int, name string, m
 	return a.ID, ids
 }
 
+// saDestroyAllResources destroys every resource asset in the game, so a
+// break_resource pick genuinely has no target. Needed because gametest seeds
+// each player a resource, and blank assets are breakable (D3) — "no resource
+// with notes" is no longer the same thing as "nothing to break".
+func saDestroyAllResources(t *testing.T, h *planLifecycle) {
+	t.Helper()
+	ctx := context.Background()
+	assets, err := h.q.ListAssetsByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	for _, a := range assets {
+		if a.AssetType == model.AssetResource && !a.IsDestroyed {
+			require.NoError(t, h.q.DestroyAsset(ctx, a.ID))
+		}
+	}
+}
+
 // saCastRoll drives POST /api/plans/{planId}/seek-cast-roll as the preparer: it posts
 // the pre-roll narration, closes the pre-roll step, and creates the dice roll.
 // Asserts 200 and returns the roll.
@@ -241,7 +257,11 @@ func TestSeekAnswers_ForfeitStep_DischargesWhenNoTarget(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 
 	plan, preparerIdx, _ := saPrepareToRoll(t, h, "make", 2)
-	// No resource exists, so break_resource has no valid target.
+	// Every resource in the game must be gone for the step to have no target.
+	// The seeded starting retinues each hold one — and a *blank* resource is a
+	// valid break target now (breaking it destroys it outright, D3), so leaving
+	// them in place would make this a "target exists" case, not a dead end.
+	saDestroyAllResources(t, h)
 	h.makeChoice(plan.ID, "make", []string{"break_resource"})
 
 	forfeitPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/seek-forfeit-step"
@@ -391,6 +411,10 @@ func TestSeekAnswers_Mar_PenaltyCappedByResources(t *testing.T) {
 	plan, preparerIdx, roll := saPrepareToRoll(t, h, "mar", 3)
 	require.GreaterOrEqual(t, roll.Difficulty, int16(3), "need difficulty ≥ 3 for this scenario")
 
+	// Clear the seeded starting resources first: they are blank, and a blank
+	// resource is now an eligible self-flaw target (breaking destroys it, D3),
+	// so leaving one in the preparer's retinue would raise the cap to 2.
+	saDestroyAllResources(t, h)
 	only, onlyMargs := saSeedResource(t, h, preparerIdx, "sole ledger", 1)
 
 	h.makeChoice(plan.ID, "mar", []string{})

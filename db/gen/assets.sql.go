@@ -57,12 +57,13 @@ type CountBlankAssetsByOwnerParams struct {
 }
 
 // Counts a player's live assets carrying no marginalia rows at all. Such an
-// asset is invulnerable: breakMarginalia needs a marginalium to tear, and
-// DestroyIfAllMarginaliaTorn (above) is guarded by an EXISTS on the same
-// table, so nothing can ever remove it from play. The prologue's closing step
-// gates Ready on this reaching zero — see adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md
-// (D2). Note "no rows", not "no intact rows": a fully-torn asset is already
-// destroyed by the time this could see it.
+// asset has nothing to tear, so a break against it can't go through
+// DestroyIfAllMarginaliaTorn (above), whose EXISTS guard would never fire;
+// breakAsset destroys it outright instead (D3). The prologue's closing step
+// gates Ready on this reaching zero so new games never mint one — see
+// adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md (D2). Note "no rows", not "no
+// intact rows": a fully-torn asset is already destroyed by the time this
+// could see it.
 func (q *Queries) CountBlankAssetsByOwner(ctx context.Context, arg CountBlankAssetsByOwnerParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countBlankAssetsByOwner, arg.GameID, arg.OwnerID)
 	var count int64

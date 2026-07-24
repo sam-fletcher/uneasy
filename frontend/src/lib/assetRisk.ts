@@ -45,14 +45,31 @@ export function firstEmptySlotIndex(asset: Asset): number | null {
 }
 
 /**
+ * True when an asset carries no marginalia rows at all — "blank". Marginalia
+ * are append-only (tearing only flips `is_torn`), so this is fixed at creation:
+ * an asset that ever had a note can never become blank. Breaking a blank asset
+ * has nothing to tear, so it destroys the asset outright — see
+ * adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md (D3).
+ */
+export function isBlankAsset(asset: Asset): boolean {
+	return (asset.marginalia ?? []).length === 0;
+}
+
+/**
  * Pre-tear warning for plan panels: when a break target is needlessly at risk
  * (its last note, but empty slots remain), nudge the owner to top it up before
  * the tear lands. Returns '' when there's nothing to warn about, so callers can
- * render it unconditionally. Only reachable with one intact note in practice —
- * a zero-note asset has nothing to select as a tear target.
+ * render it unconditionally.
+ *
+ * A blank asset gets its own wording: there is no marginalia to tear, so the
+ * break takes the whole asset and no top-up is on offer mid-break.
  */
 export function destructionWarning(asset: Asset | null | undefined): string {
-	if (!asset || !isNeedlesslyAtRisk(asset)) return '';
+	if (!asset || asset.is_destroyed) return '';
+	if (isBlankAsset(asset)) {
+		return 'Heads up: this asset has no marginalia — breaking it destroys it outright.';
+	}
+	if (!isNeedlesslyAtRisk(asset)) return '';
 	return "Heads up: this is the asset's last marginalia, but there are empty slots."
 		+ ' Tearing it will destroy the asset.'
 		+ ' The owner should add another marginalia before you tear it.';

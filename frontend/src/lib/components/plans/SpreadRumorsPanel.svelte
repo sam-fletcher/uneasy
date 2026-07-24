@@ -28,7 +28,8 @@
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
-	import { parseResolutionData, playerName, assetName, assetsWithIntactMarginalia } from './shared';
+	import { parseResolutionData, playerName, assetName, breakableAssets, breaksAvailable } from './shared';
+	import { destructionWarning } from '$lib/assetRisk';
 
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -340,25 +341,27 @@
 	);
 	// Candidate assets for the break-target picker.
 	//  - make: only the plan's target asset (one card).
-	//  - mar:  any of the preparer's intact assets that still have intact
-	//          marginalia.
+	//  - mar:  any of the preparer's breakable assets.
 	// AssetCardSelectable's marginalia-pick mode renders the per-line
-	// checkboxes; asset identity is derived from the chosen marginalia.
+	// checkboxes; asset identity is derived from the chosen marginalia (or,
+	// for a blank asset, from the card itself — see breakableAssets).
 	const btMarginaliaAssets = $derived.by(() => {
 		if (rollOutcome === 'mar') {
-			return assetsWithIntactMarginalia(preparerAssets);
+			return breakableAssets(preparerAssets);
 		}
-		return targetAsset ? assetsWithIntactMarginalia([targetAsset]) : [];
+		return targetAsset ? breakableAssets([targetAsset]) : [];
 	});
-	// Each break_target pick tears one marginalia, so the live cap is the total
-	// intact marginalia available — picking more would commit a pick with nothing
-	// left to tear, which then wedges resolution (CanComplete blocks until every
-	// break_target pick is performed or forfeited via sr-forfeit-step).
+	// Each break_target pick spends one break, so the live cap is the total
+	// available — picking more would commit a pick with nothing left to tear,
+	// which then wedges resolution (CanComplete blocks until every break_target
+	// pick is performed or forfeited via sr-forfeit-step). Mirrors the server's
+	// srEligibleBreakTargets.
 	const btMarginaliaCap = $derived(
-		btMarginaliaAssets.reduce(
-			(sum, a) => sum + (a.marginalia ?? []).filter((m) => !m.is_torn).length, 0,
-		),
+		btMarginaliaAssets.reduce((sum, a) => sum + breaksAvailable(a), 0),
 	);
+	// Pre-tear warning for the currently-selected break target.
+	const btWarn = $derived(destructionWarning(assets.find(a => a.id === btAssetID)));
+
 	async function submitBreakTarget(p: Plan) {
 		if (btBusy || btMargID == null) return;
 		if (rollOutcome === 'mar' && btAssetID == null) return;
@@ -665,16 +668,18 @@
 							label="Marginalium to tear"
 							items={btMarginaliaAssets}
 							{players}
-							emptyMessage="No intact marginalia available."
+							emptyMessage="Nothing left to break."
 							marginaliaMode
 							selectedMarginaliaID={btMargID}
+							selectedAssetID={btAssetID}
 							onSelectMarginalia={(mID, parent) => {
 								btMargID = mID;
 								btAssetID = parent?.id ?? null;
 							}}
 						/>
+						{#if btWarn}<p class="res-warning">{btWarn}</p>{/if}
 						{#if btMarginaliaAssets.length === 0}
-							<p class="choices-note muted">No intact marginalia left to tear — this pick has no valid target.</p>
+							<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
 							<button class="action-btn primary"
 								onclick={() => forfeitStep(plan, 'break_target')} disabled={forfeitBusy}>
 								{forfeitBusy ? '…' : 'Skip — no valid targets'}

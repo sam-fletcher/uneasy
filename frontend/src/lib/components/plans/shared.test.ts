@@ -8,6 +8,8 @@ import {
 	assetName,
 	intactMarginalia,
 	assetsWithIntactMarginalia,
+	breakableAssets,
+	breaksAvailable,
 	playersExcept,
 	ownerUnleveragedAssets,
 	ownerIntactAssets,
@@ -284,6 +286,54 @@ describe('assetsWithIntactMarginalia', () => {
 	it('narrows to a single owner when ownerID is given', () => {
 		const result = assetsWithIntactMarginalia([withMarg, otherOwner], 2);
 		expect(result.map(a => a.id)).toEqual([1]);
+	});
+
+	it('excludes a blank asset — it has no marginalia line to pick', () => {
+		const blank = asset({ id: 5, owner_id: 2, marginalia: [] });
+		expect(assetsWithIntactMarginalia([withMarg, blank]).map(a => a.id)).toEqual([1]);
+	});
+});
+
+describe('breakableAssets', () => {
+	const withMarg = asset({ id: 1, owner_id: 2, marginalia: [marg({ id: 1, asset_id: 1 })] });
+	const blank = asset({ id: 2, owner_id: 2, marginalia: [] });
+	const allTorn = asset({ id: 3, owner_id: 2, marginalia: [marg({ id: 3, asset_id: 3, is_torn: true })] });
+	const destroyed = asset({ id: 4, owner_id: 2, is_destroyed: true, marginalia: [marg({ id: 4, asset_id: 4 })] });
+	const otherOwner = asset({ id: 5, owner_id: 9, marginalia: [] });
+
+	it('admits both an asset with intact marginalia and a blank one', () => {
+		const result = breakableAssets([withMarg, blank, allTorn, destroyed]);
+		expect(result.map(a => a.id)).toEqual([1, 2]);
+	});
+
+	it('excludes an all-torn (but undestroyed) asset — nothing left to break', () => {
+		expect(breakableAssets([allTorn])).toEqual([]);
+	});
+
+	it('narrows to a single owner when ownerID is given', () => {
+		expect(breakableAssets([blank, otherOwner], 2).map(a => a.id)).toEqual([2]);
+	});
+});
+
+describe('breaksAvailable', () => {
+	it('counts one break per untorn marginalia', () => {
+		const a = asset({
+			id: 1,
+			marginalia: [
+				marg({ id: 1, asset_id: 1 }),
+				marg({ id: 2, asset_id: 1 }),
+				marg({ id: 3, asset_id: 1, is_torn: true }),
+			],
+		});
+		expect(breaksAvailable(a)).toBe(2);
+	});
+
+	it('gives a blank asset exactly one break — it destroys the asset', () => {
+		expect(breaksAvailable(asset({ id: 1, marginalia: [] }))).toBe(1);
+	});
+
+	it('gives an all-torn asset none', () => {
+		expect(breaksAvailable(asset({ id: 1, marginalia: [marg({ id: 1, asset_id: 1, is_torn: true })] }))).toBe(0);
 	});
 });
 

@@ -23,17 +23,27 @@ func SeekAnswersMarPenalty(difficulty, result, eligibleCount int16) int16 {
 // ResourceFlawView is the domain snapshot of one asset for Seek Answers
 // self-flaw eligibility — only the fields the rule needs, decoupled from
 // dbgen.Asset. The handler builds these from the DB (owner's assets + their
-// intact-marginalia counts).
+// marginalia counts).
 type ResourceFlawView struct {
 	AssetID               int64
 	AssetType             model.AssetType
 	IsDestroyed           bool
 	IntactMarginaliaCount int
+	// TotalMarginaliaCount counts every marginalia row, torn or not. Zero means
+	// the asset is *blank* — it was created without notes and, since marginalia
+	// are append-only, can never gain a torn one. A blank asset is still a valid
+	// break target: the break destroys it outright rather than tearing
+	// (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md, D3).
+	TotalMarginaliaCount int
 }
 
 // EligibleSelfFlawResourceIDs filters a snapshot to the resource assets that can
-// still be flawed: a non-destroyed resource carrying at least one intact
-// marginalia, not already flawed this resolution. Order is preserved.
+// still be flawed: a non-destroyed resource that either carries at least one
+// intact marginalia or is blank, and hasn't already been flawed this resolution.
+// Order is preserved.
+//
+// The only resource this excludes is one whose marginalia are all torn — a state
+// no live game reaches, since the last tear destroys the asset.
 func EligibleSelfFlawResourceIDs(views []ResourceFlawView, flawed []int64) []int64 {
 	flawedSet := make(map[int64]struct{}, len(flawed))
 	for _, id := range flawed {
@@ -44,7 +54,7 @@ func EligibleSelfFlawResourceIDs(views []ResourceFlawView, flawed []int64) []int
 		if v.AssetType != model.AssetResource || v.IsDestroyed {
 			continue
 		}
-		if v.IntactMarginaliaCount < 1 {
+		if v.IntactMarginaliaCount < 1 && v.TotalMarginaliaCount > 0 {
 			continue
 		}
 		if _, dup := flawedSet[v.AssetID]; dup {

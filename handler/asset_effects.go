@@ -8,6 +8,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
@@ -38,6 +39,9 @@ func brokenAssetPrompt(ctx context.Context, q *dbgen.Queries, ownerID int64, des
 // brokenAssetDetail is brokenAssetPrompt prefixed with the text of the marginalia
 // just torn, for plan break logs whose flavour line doesn't already quote it. The
 // marginalia text stays quoted (only asset names are bolded — see assetMark).
+//
+// m == nil is the blank-asset break (see breakAsset): there is no torn text to
+// quote, and the break always destroys, so this contributes nothing.
 func brokenAssetDetail(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -45,6 +49,9 @@ func brokenAssetDetail(
 	m *dbgen.Marginalium,
 	destroyed bool,
 ) string {
+	if m == nil {
+		return brokenAssetPrompt(ctx, q, ownerID, destroyed)
+	}
 	return fmt.Sprintf(" The torn marginalia read %q.", m.Text) + brokenAssetPrompt(ctx, q, ownerID, destroyed)
 }
 
@@ -58,6 +65,10 @@ func brokenAssetDetail(
 // ("Break = tear off one marginalia; all 4 gone → destroyed"). The standalone
 // asset tear endpoint (assets.go) predates this helper and inlines the same
 // sequence.
+//
+// It is a thin wrapper over breakAsset for the ~10 callers that always hold a
+// concrete marginalium; reach for breakAsset directly when the target may be
+// blank.
 func breakMarginalia(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -66,6 +77,42 @@ func breakMarginalia(
 	m *dbgen.Marginalium,
 	tornBy int64,
 ) (destroyed bool, err error) {
+	return breakAsset(ctx, q, manager, asset, m, tornBy)
+}
+
+// breakAsset is breakMarginalia widened to cover the blank asset — one carrying
+// no marginalia rows at all (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md, D3).
+//
+// m != nil is the ordinary break: tear that marginalium, then destroy the asset
+// if it was the last intact one.
+//
+// m == nil means the asset is blank, so there is nothing to tear and the break
+// lands on the asset itself: it is destroyed outright. That skips the tear and,
+// with it, the secret-visibility grant the tear implies — the grant is a
+// consequence of turning the marginalia over, and nothing is turned over here.
+// Without this branch a blank asset is invulnerable: every break site names a
+// marginalia, and DestroyIfAllMarginaliaTorn is guarded by an EXISTS on the same
+// table. That guard is deliberately left alone — the blank case is settled
+// before any tear, so the query's "all torn ⇒ destroyed" invariant stays honest.
+//
+// Callers are responsible for checking blankness before passing nil; see
+// resolveBreakTarget, which does it from a request's optional marginalia id.
+func breakAsset(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	asset *dbgen.Asset,
+	m *dbgen.Marginalium,
+	tornBy int64,
+) (destroyed bool, err error) {
+	if m == nil {
+		if err = q.DestroyAsset(ctx, asset.ID); err != nil {
+			return false, err
+		}
+		emitAssetDestruction(ctx, q, manager, asset)
+		return true, nil
+	}
+
 	if _, err = q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
 		ID:       m.ID,
 		TornByID: &tornBy,
@@ -93,13 +140,93 @@ func breakMarginalia(
 	// If that was the last intact marginalia, the asset is destroyed.
 	destroyedRows, _ := q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
 	if destroyedRows > 0 {
-		broadcastEvent(manager, asset.GameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
-		if game, gerr := q.GetGameByID(ctx, asset.GameID); gerr == nil {
-			EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, logRow(game))
-		}
+		emitAssetDestruction(ctx, q, manager, asset)
 		return true, nil
 	}
 	return false, nil
+}
+
+// emitAssetDestruction broadcasts asset.destroyed and writes the matching
+// system post. Shared by breakAsset's two destroy paths so both reach clients
+// and the action log identically.
+func emitAssetDestruction(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, asset *dbgen.Asset) {
+	broadcastEvent(manager, asset.GameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
+	if game, gerr := q.GetGameByID(ctx, asset.GameID); gerr == nil {
+		EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, logRow(game))
+	}
+}
+
+// assetIsBlank reports whether an asset carries no marginalia rows at all —
+// not "no *intact* rows". Marginalia are append-only (tearing only flips
+// is_torn, there is no DELETE anywhere), so blankness is fixed at creation:
+// an asset that ever had a note can never become blank, and an asset whose
+// notes are all torn is already destroyed. Breaking a blank asset destroys it
+// outright (breakAsset with m == nil).
+func assetIsBlank(ctx context.Context, q *dbgen.Queries, assetID int64) (bool, error) {
+	n, err := q.CountMarginalia(ctx, assetID)
+	if err != nil {
+		return false, err
+	}
+	return n == 0, nil
+}
+
+// assetIsBreakable reports whether a live asset can absorb a break: it either
+// has an intact marginalia to tear, or it is blank and the break destroys it
+// outright (breakAsset with m == nil). Only an all-torn-but-alive asset is
+// unbreakable, and no such asset exists in a live game — the last tear always
+// destroys. Callers must have already excluded destroyed assets.
+//
+// This is the eligibility counterpart to resolveBreakTarget: forfeit hatches and
+// soft-lock guards refuse to discharge a pick while any eligible target remains,
+// so the two must agree on what "eligible" means or a plan can wedge.
+func assetIsBreakable(ctx context.Context, q *dbgen.Queries, assetID int64) (bool, error) {
+	blank, err := assetIsBlank(ctx, q, assetID)
+	if err != nil {
+		return false, err
+	}
+	if blank {
+		return true, nil // nothing to tear: breaking destroys it
+	}
+	intact, err := q.CountIntactMarginalia(ctx, assetID)
+	if err != nil {
+		return false, err
+	}
+	return intact > 0, nil
+}
+
+// resolveBreakTarget turns a request's optional marginalia id into the argument
+// breakAsset wants. marginaliaID == 0 means "none named", which is legal only
+// against a blank asset — the break then destroys it outright and nil is
+// returned. Naming a marginalia that belongs to another asset, or is already
+// torn, is rejected; so is omitting one on an asset that has notes to tear.
+//
+// Every route that lets a player choose a break target should resolve through
+// this, so the "blank ⇒ destroy" rule is stated once rather than re-derived per
+// plan.
+func resolveBreakTarget(
+	ctx context.Context, q *dbgen.Queries, asset *dbgen.Asset, marginaliaID int64,
+) (*dbgen.Marginalium, error) {
+	if marginaliaID == 0 {
+		blank, err := assetIsBlank(ctx, q, asset.ID)
+		if err != nil {
+			return nil, httpErr(http.StatusInternalServerError, "could not inspect the asset's marginalia")
+		}
+		if !blank {
+			return nil, httpErr(http.StatusBadRequest, "marginalia_id is required")
+		}
+		return nil, nil
+	}
+	m, err := q.GetMarginaliaByID(ctx, marginaliaID)
+	if err != nil {
+		return nil, httpErr(http.StatusNotFound, "marginalia not found")
+	}
+	if m.AssetID != asset.ID {
+		return nil, httpErr(http.StatusBadRequest, "marginalia does not belong to the specified asset")
+	}
+	if m.IsTorn {
+		return nil, httpErr(http.StatusConflict, "marginalia is already torn")
+	}
+	return &m, nil
 }
 
 // grantSecretsOnTake gives newOwnerID visibility on every secret of an asset and

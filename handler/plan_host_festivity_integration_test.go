@@ -14,6 +14,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -215,6 +216,61 @@ func TestHostFestivity_InsistBreakSelf_HostResolves(t *testing.T) {
 	intact, err := h.q.GetAssetByID(ctx, hostMCID)
 	require.NoError(t, err)
 	assert.False(t, intact.IsDestroyed, "tearing one of two marginalia does not destroy the MC")
+}
+
+// TestHostFestivity_InsistBreakSelf_BlankMainCharacterIsDestroyed proves an
+// insisted break_self still lands when the host's main character carries no
+// marginalia at all: the soft-lock guard must NOT settle it as a no-op, because
+// the break has somewhere to go — it destroys the MC outright (D3). Before the
+// backstop, a host with a blank MC discharged every insisted break for free.
+func TestHostFestivity_InsistBreakSelf_BlankMainCharacterIsDestroyed(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+
+	// The host's seeded main character is blank — no hfSeedMCMarginalia call.
+	hostMCID := h.mainCharacterID(hostIdx)
+	blank, err := h.q.CountMarginalia(ctx, hostMCID)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, blank, "this scenario needs a blank host main character")
+
+	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
+	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
+
+	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	code, body := h.post(g1, insistPath, map[string]any{"mar_option": "break_self"})
+	require.Equalf(t, http.StatusOK, code, "g1 insist break_self: %v", body)
+
+	// The host settles it with no marginalia named — there is none to name.
+	code, body = h.post(hostIdx, breakPath, map[string]any{"mar_option": "break_self"})
+	require.Equalf(t, http.StatusOK, code, "host resolves break on a blank MC: %v", body)
+
+	state := hfChallengeState(t, h, plan.ID)
+	assert.Empty(t, state.PendingHostMars, "resolving clears the pending break")
+
+	mc, err := h.q.GetAssetByID(ctx, hostMCID)
+	require.NoError(t, err)
+	assert.True(t, mc.IsDestroyed, "a blank main character is destroyed by the break")
+
+	logs := hfAllLogBodies(t, h)
+	assert.Contains(t, logs, "destroyed themselves", "the break_self log uses breakVerb(true)")
+	assert.NotContains(t, logs, "The host had nothing left to tear",
+		"the no-op escape must NOT fire — the break had a target")
+}
+
+// hfAllLogBodies concatenates every action-log body in the harness's game.
+func hfAllLogBodies(t *testing.T, h *planLifecycle) string {
+	t.Helper()
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	var sb strings.Builder
+	for _, p := range posts {
+		sb.WriteString(p.Body)
+		sb.WriteByte('\n')
+	}
+	return sb.String()
 }
 
 // TestHostFestivity_InsistDisagreement_HostResolves proves that a guest insisting

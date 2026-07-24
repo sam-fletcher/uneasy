@@ -54,6 +54,48 @@ function planForm(page: Page, header: string) {
 	return page.locator('.plan-form', { hasText: header });
 }
 
+interface AssetRow {
+	id: number;
+	owner_id: number;
+	asset_type: string;
+	is_destroyed: boolean;
+	marginalia: { id: number; is_torn: boolean }[];
+}
+
+/**
+ * Break as many of the preparer's own resources as the mar penalty demands, so
+ * CanComplete stops blocking. A no-op on a make (the required count is 0). Each
+ * resource may only be flawed once, and the server caps the requirement at the
+ * eligible count, so one pass over the list is always enough.
+ */
+async function dischargeMarSelfFlaws(ctx: APIRequestContext, gameID: number, planID: number) {
+	const planRes = await ctx.get(`/api/plans/${planID}`);
+	expect(planRes.ok(), `GET plan failed: ${await planRes.text()}`).toBeTruthy();
+	const { plan, resolution_data } = (await planRes.json()) as {
+		plan: { preparer_id: number };
+		resolution_data?: { seek_answers?: { mar_self_flaws_required?: number } };
+	};
+	const required = resolution_data?.seek_answers?.mar_self_flaws_required ?? 0;
+	if (required === 0) return;
+
+	const assetsRes = await ctx.get(`/api/tables/${gameID}/assets`);
+	expect(assetsRes.ok(), `GET assets failed: ${await assetsRes.text()}`).toBeTruthy();
+	const { assets } = (await assetsRes.json()) as { assets: AssetRow[] };
+	const own = assets.filter(
+		a => a.owner_id === plan.preparer_id && a.asset_type === 'resource' && !a.is_destroyed,
+	);
+	expect(own.length, 'the mar penalty is capped at the eligible count').toBeGreaterThanOrEqual(required);
+
+	for (let i = 0; i < required; i++) {
+		const intact = (own[i].marginalia ?? []).find(m => !m.is_torn);
+		const res = await ctx.post(`/api/plans/${planID}/break-resource`, {
+			// A blank resource names no marginalia — the break destroys it.
+			data: { asset_id: own[i].id, marginalia_id: intact?.id ?? 0 },
+		});
+		expect(res.ok(), `self-flaw failed: ${await res.text()}`).toBeTruthy();
+	}
+}
+
 const track = cleanupGameAfterEach();
 
 test('seek answers: ask → veto → re-ask → answer each reach the other side live', async ({ browser }) => {
@@ -147,6 +189,13 @@ test('seek answers: ask → veto → re-ask → answer each reach the other side
 		});
 		expect(dtRes.ok(), `declare-truth failed: ${await dtRes.text()}`).toBeTruthy();
 	}
+	// The dice are real, so this can land on a mar — which owes alice
+	// (difficulty − result) self-flaws on her own resources before the plan may
+	// complete. Discharge them over the API too; only the question loop below is
+	// the subject. Her seeded resources are blank, which is a valid break target
+	// (breaking destroys them outright — DRAFT_PEERS_AND_BLANK_ASSETS_PLAN D3),
+	// so break-resource is posted with no marginalia_id.
+	await dischargeMarSelfFlaws(aliceCtx.request, game_id, planID);
 
 	// ── Open both players' tables; the resolving Seek Answers panel renders ───
 	const alice = await aliceCtx.newPage();

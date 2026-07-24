@@ -33,7 +33,12 @@
     MARGINALIA           marginaliaMode + selectedMarginaliaID + onSelectMarginalia
                          (mID: number | null, asset: Asset | null) => void
                          — items should be assets with intact marginalia
-                           (use shared.ts:assetsWithIntactMarginalia).
+                           (use shared.ts:assetsWithIntactMarginalia), or, for
+                           break-target pickers, shared.ts:breakableAssets,
+                           which also admits blank assets. A blank card picks
+                           with the sentinel mID 0 (breaking destroys it
+                           outright); pass selectedAssetID so two blank cards
+                           don't both read as picked.
 
   `ownerLabel` is either a static string (rare; usually omitted) or a per-item
   function returning the subtitle to render under the asset name — used for
@@ -71,6 +76,9 @@
 		// MARGINALIA mode
 		marginaliaMode?: boolean;
 		selectedMarginaliaID?: number | null;
+		/** Asset the current marginalia pick belongs to. Only needed to tell two
+		 *  blank cards apart — they share the sentinel id 0. */
+		selectedAssetID?: number | null;
 		onSelectMarginalia?: (mID: number | null, asset: Asset | null) => void;
 
 		/** When true, render selection state but block all interaction
@@ -92,6 +100,7 @@
 		onSelectMulti,
 		marginaliaMode = false,
 		selectedMarginaliaID,
+		selectedAssetID,
 		onSelectMarginalia,
 		readOnly = false,
 	}: Props = $props();
@@ -142,7 +151,10 @@
 	}
 
 	function handleMarginaliaToggle(mID: number, asset: Asset) {
-		if (selectedMarginaliaID === mID) {
+		// mID 0 is the blank-asset sentinel, shared by every blank card, so
+		// "tap the picked row again to clear it" must also match the asset.
+		const same = selectedMarginaliaID === mID && (mID !== 0 || selectedAssetID === asset.id);
+		if (same) {
 			onSelectMarginalia?.(null, null);
 		} else {
 			onSelectMarginalia?.(mID, asset);
@@ -164,6 +176,7 @@
 						knownSecretCount={secretCounts?.known(a.id)}
 						marginaliaSelectable
 						selectedMarginaliaID={selectedMarginaliaID ?? null}
+						selectedAssetID={selectedAssetID ?? null}
 						onMarginaliaToggle={handleMarginaliaToggle}
 					/>
 				{:else}

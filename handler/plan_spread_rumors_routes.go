@@ -111,9 +111,13 @@ func srForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
-// srEligibleBreakTargets counts marginalia the actor could still tear with a
-// break_target pick: on a make, the intact marginalia on the (undestroyed) target
-// asset; on a mar, the intact marginalia across all the preparer's assets.
+// srEligibleBreakTargets counts the breaks the actor could still perform with a
+// break_target pick: on a make, against the (undestroyed) target asset; on a
+// mar, across all the preparer's assets.
+//
+// Each intact marginalia is one break. A *blank* asset — no marginalia rows at
+// all — offers exactly one: the break destroys it outright (D3), and marginalia
+// are append-only so no second one can ever appear.
 func srEligibleBreakTargets(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, onMar bool) (int, error) {
 	if onMar {
 		assets, err := deps.Q.ListAssetsByOwner(ctx, plan.PreparerID)
@@ -125,11 +129,11 @@ func srEligibleBreakTargets(ctx context.Context, deps *PlanDeps, plan *dbgen.Pla
 			if a.GameID != plan.GameID || a.IsDestroyed {
 				continue
 			}
-			n, err := deps.Q.CountIntactMarginalia(ctx, a.ID)
+			n, err := srBreaksAvailable(ctx, deps, a.ID)
 			if err != nil {
 				return 0, err
 			}
-			count += int(n)
+			count += n
 		}
 		return count, nil
 	}
@@ -143,11 +147,25 @@ func srEligibleBreakTargets(ctx context.Context, deps *PlanDeps, plan *dbgen.Pla
 	if asset.IsDestroyed {
 		return 0, nil
 	}
-	n, err := deps.Q.CountIntactMarginalia(ctx, asset.ID)
+	return srBreaksAvailable(ctx, deps, asset.ID)
+}
+
+// srBreaksAvailable returns how many break_target picks one live asset can
+// absorb: its intact-marginalia count, or 1 when it is blank. Mirrors the
+// frontend's btMarginaliaCap.
+func srBreaksAvailable(ctx context.Context, deps *PlanDeps, assetID int64) (int, error) {
+	total, err := deps.Q.CountMarginalia(ctx, assetID)
 	if err != nil {
 		return 0, err
 	}
-	return int(n), nil
+	if total == 0 {
+		return 1, nil
+	}
+	intact, err := deps.Q.CountIntactMarginalia(ctx, assetID)
+	if err != nil {
+		return 0, err
+	}
+	return int(intact), nil
 }
 
 // srEligibleHideAssets counts the actor's own undestroyed assets available to
@@ -263,7 +281,8 @@ func srAuthorizeActor(
 // assets (the counter-rumor applies to preparer assets).
 // Request body: {"marginalia_id": M, "asset_id": A}
 //
-//nolint:gocognit // possibly improvable later
+// marginalia_id may be omitted (or 0) when the chosen asset is blank — there is
+// nothing to tear, so the break destroys it outright (see resolveBreakTarget).
 func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -301,62 +320,52 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 			MarginaliaID int64  `json:"marginalia_id"`
 			AssetID      *int64 `json:"asset_id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MarginaliaID == 0 {
-			respondErr(w, http.StatusBadRequest, "marginalia_id is required")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
-		// Determine which asset's marginalia must match.
-		var expectedAssetID int64
-		if onMar {
-			if body.AssetID == nil {
-				respondErr(w, http.StatusBadRequest, "asset_id is required on mar (one of the preparer's assets)")
-				return
-			}
-			preparerAsset, err := deps.Q.GetAssetByID(ctx, *body.AssetID)
-			if err != nil {
-				respondErr(w, http.StatusNotFound, "asset not found")
-				return
-			}
-			if preparerAsset.OwnerID != plan.PreparerID || preparerAsset.GameID != plan.GameID {
-				respondErr(w, http.StatusBadRequest, "asset must be one of the preparer's assets in this game")
-				return
-			}
-			expectedAssetID = preparerAsset.ID
-		} else {
-			expectedAssetID = *plan.TargetAssetID
-		}
-
-		m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "marginalia not found")
+		// Determine which asset the break lands on: the plan's target on a make,
+		// the named preparer asset on a mar.
+		targetID := body.AssetID
+		if !onMar {
+			targetID = plan.TargetAssetID
+		} else if targetID == nil {
+			respondErr(w, http.StatusBadRequest, "asset_id is required on mar (one of the preparer's assets)")
 			return
 		}
-		if m.AssetID != expectedAssetID {
-			respondErr(w, http.StatusBadRequest, "marginalia does not belong to the specified asset")
-			return
-		}
-		if m.IsTorn {
-			respondErr(w, http.StatusConflict, "marginalia is already torn")
-			return
-		}
-
-		asset, err := deps.Q.GetAssetByID(ctx, expectedAssetID)
+		asset, err := deps.Q.GetAssetByID(ctx, *targetID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "asset not found")
 			return
 		}
+		if onMar && (asset.OwnerID != plan.PreparerID || asset.GameID != plan.GameID) {
+			respondErr(w, http.StatusBadRequest, "asset must be one of the preparer's assets in this game")
+			return
+		}
+		if asset.IsDestroyed {
+			respondErr(w, http.StatusConflict, "asset is already destroyed")
+			return
+		}
 
-		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID)
+		// nil m = a blank asset, destroyed outright rather than torn.
+		m, rErr := resolveBreakTarget(ctx, deps.Q, &asset, body.MarginaliaID)
+		if rErr != nil {
+			respondHTTPErr(w, r, rErr)
+			return
+		}
+
+		destroyed, err := breakAsset(ctx, deps.Q, deps.Manager, &asset, m, player.ID)
 		if err != nil {
 			respondInternalErr(w, r, "could not break target asset", err)
 			return
 		}
-		// breakMarginalia logs the asset.destroyed post when a tear removes the
-		// last marginalia, but not the tear itself — emit the canonical
-		// marginalia.torn post so the break shows in the action log either way.
-		if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
-			EmitMarginaliaTorn(ctx, deps.Q, deps.Manager, plan.GameID, asset, m, player.ID, destroyed, logRow(g))
+		// breakAsset logs the asset.destroyed post when the break removes the
+		// asset, but not the tear itself — emit the canonical marginalia.torn
+		// post so the break shows in the action log either way. A blank asset had
+		// no marginalia to tear, so the destroyed post is the whole story there.
+		if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil && m != nil {
+			EmitMarginaliaTorn(ctx, deps.Q, deps.Manager, plan.GameID, asset, *m, player.ID, destroyed, logRow(g))
 		}
 
 		sr.BreakTargetDone++
@@ -365,9 +374,15 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// marginalia_id echoes 0 for a blank asset — nothing was torn.
+		var tornID int64
+		if m != nil {
+			tornID = m.ID
+		}
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
-			"marginalia_id": m.ID,
+			"marginalia_id": tornID,
+			"destroyed":     destroyed,
 		})
 	}
 }

@@ -31,6 +31,7 @@
 	import DiceRollPanel from '../DiceRollPanel.svelte';
 	import CardPicker from '../plans/CardPicker.svelte';
 	import Buffet, { type BuffetTab } from '../plans/shared/Buffet.svelte';
+	import { isBlankAsset } from '$lib/assetRisk';
 	import { playerColor, playerColorByID } from '$lib/playerColor';
 	import { shakeUpWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -234,17 +235,24 @@
 			&& !a.is_destroyed && a.marginalia.length < 4)
 	);
 	// Intact (un-torn) marginalia on the chosen asset — the breakable choices.
-	const breakableMarginalia = $derived(
-		pickedAssetID === ''
-			? []
-			: (assets.find(a => a.id === pickedAssetID)?.marginalia ?? []).filter(m => !m.is_torn)
+	const pickedAsset = $derived(
+		pickedAssetID === '' ? null : assets.find(a => a.id === pickedAssetID) ?? null
 	);
-	// A break announce is only ready once a marginalia is chosen; a claim-title
-	// announce needs both a title and one of my peers to bear it.
+	const breakableMarginalia = $derived(
+		(pickedAsset?.marginalia ?? []).filter(m => !m.is_torn)
+	);
+	// A blank asset names no marginalia because it has none: the break destroys
+	// it outright (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md, D3), and the announce
+	// omits target_marginalia_id. Since the last tear always destroys, a live
+	// asset with no intact marginalia is necessarily blank.
+	const pickedIsBlank = $derived(pickedAsset != null && isBlankAsset(pickedAsset));
+	// A break announce is only ready once a marginalia is chosen (or the target
+	// is blank); a claim-title announce needs both a title and one of my peers to
+	// bear it.
 	const announceReady = $derived(
 		!!pickedOption &&
 		(!pickedOptionInfo?.NeedsAsset || pickedAssetID !== '') &&
-		(!pickedOptionInfo?.NeedsMarginalia || pickedMarginaliaID !== '') &&
+		(!pickedOptionInfo?.NeedsMarginalia || pickedMarginaliaID !== '' || pickedIsBlank) &&
 		(!isClaimTitle || (pickedTitleID !== '' && pickedAssetID !== ''))
 	);
 
@@ -609,7 +617,11 @@
 					{#if pickedOptionInfo?.NeedsMarginalia && pickedAssetID !== ''}
 						<div class="su-form-row">
 							<span class="su-form-label">Marginalia to tear (breaking tears one):</span>
-							{#if breakableMarginalia.length === 0}
+							{#if pickedIsBlank}
+								<p class="res-warning" style="margin:0;">
+									This asset has no marginalia — breaking it destroys it outright.
+								</p>
+							{:else if breakableMarginalia.length === 0}
 								<p class="muted-text" style="margin:0;">This asset has no intact marginalia to tear.</p>
 							{:else}
 								<div class="su-chip-row">
