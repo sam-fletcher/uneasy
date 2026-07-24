@@ -252,7 +252,7 @@
 		const facilitator = players.find(p => p.is_facilitator);
 		return {
 			waitees: facilitator ? [{ kind: 'player', playerID: facilitator.id }] : [],
-			stepLabel: 'Start the game',
+			stepLabel: 'Gathering Players',
 		};
 	});
 	$effect(() => {
