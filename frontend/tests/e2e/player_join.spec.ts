@@ -7,8 +7,13 @@ import { cleanupGameAfterEach } from './helpers';
 //
 // This is intentionally orthogonal to chat.spec.ts — same two-context
 // pattern, but exercises a different event type (EventPlayerJoined,
-// handled in routes/table/[id]/+page.svelte) and a different reactive
-// surface (the members list, not the chat feed).
+// handled in routes/table/[id]/ws-handlers.ts) and different reactive
+// surfaces (the header member chips and the lobby roster, not the chat
+// feed). Both surfaces are asserted because they read different state:
+// the chips come from `members`, the lobby list from `players`, and the
+// handler has to update both. The lobby's "Start Prologue" button is
+// the third derived surface — it's gated on `players.length >= 2`, so
+// it doubles as the check that the count, not just the render, updated.
 
 const track = cleanupGameAfterEach();
 
@@ -36,6 +41,13 @@ test('bob joining is reflected on alice\'s open table page', async ({ browser })
   await expect(alicePage.getByRole('button', { name: /View alice's retinue/ })).toBeVisible();
   await expect(alicePage.getByRole('button', { name: /View bob's retinue/ })).toHaveCount(0);
 
+  // The lobby's own roster, below the join code. Alice is the facilitator
+  // but can't start yet — one player is short of the 2-player minimum.
+  const lobbyRoster = alicePage.locator('.player-list');
+  await expect(lobbyRoster).toContainText('alice');
+  await expect(lobbyRoster).not.toContainText('bob');
+  await expect(alicePage.getByRole('button', { name: 'Start Prologue' })).toHaveCount(0);
+
   // Bob joins via API — no page navigation needed on his side. The point
   // here is that alice's already-open page picks up the event.
   const joinRes = await bobCtx.request.post('/api/tables/join', {
@@ -43,8 +55,11 @@ test('bob joining is reflected on alice\'s open table page', async ({ browser })
   });
   expect(joinRes.ok(), `bob could not join ${joinCode}`).toBeTruthy();
 
-  // Live update: bob's member chip appears on alice's page without reload.
+  // Live update, all three surfaces, no reload: the member chip, the lobby
+  // roster, and the start button the roster count gates.
   await expect(alicePage.getByRole('button', { name: /View bob's retinue/ })).toBeVisible();
+  await expect(lobbyRoster).toContainText('bob');
+  await expect(alicePage.getByRole('button', { name: 'Start Prologue' })).toBeVisible();
 
   await aliceCtx.close();
   await bobCtx.close();
