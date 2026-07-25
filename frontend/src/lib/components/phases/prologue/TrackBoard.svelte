@@ -337,13 +337,33 @@
 		align-items: center;
 		gap: 0.25rem;
 	}
+	/*
+	 * Two lines, not one. The board is three columns wide at every viewport
+	 * (deliberately — the tracks have to be comparable at a glance), and the
+	 * phase column caps at 440, so a name gets ~78px on a phone and ~96px on
+	 * a desktop: 11-14 characters, permanently. On one line every name at
+	 * the 20-char cap clipped, and since all three columns hold the SAME
+	 * five players they clipped to the same strings — the board stopped
+	 * naming anyone.
+	 *
+	 * Two lines buys ~22 characters, which covers the cap. overflow-wrap is
+	 * doing the real work: player names are typically one unbroken word, so
+	 * `white-space: normal` alone would never find a break point and the
+	 * name would just overflow. Line-clamp keeps a pathological name from
+	 * growing the row without bound (same idiom as AssetCardSelectable's
+	 * expanded card).
+	 */
 	.chip-name {
 		font-size: 0.75rem;
+		line-height: 1.25;
 		color: var(--color-text);
 		font-weight: 500;
 		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
 		flex: 1;
 		min-width: 0;
 	}
