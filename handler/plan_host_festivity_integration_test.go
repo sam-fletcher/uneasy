@@ -101,6 +101,45 @@ func hfSeedMCMarginalia(t *testing.T, h *planLifecycle, idx, n int) (int64, []in
 	return mc.ID, ids
 }
 
+// hfCenteredDraft returns the centered draft peer named name, or nil. Peers
+// introduced at the party are drafts until claimed (D7), so this is how a test
+// sees an introduction that hasn't become an asset yet.
+func hfCenteredDraft(t *testing.T, h *planLifecycle, planID int64, name string) *gamepkg.DraftPeer {
+	t.Helper()
+	for _, d := range hfChallengeState(t, h, planID).CenteredDrafts {
+		if d.Name == name {
+			return &d
+		}
+	}
+	return nil
+}
+
+// hfPeerInRetinue reports whether players[idx] owns a live peer called name.
+func hfPeerInRetinue(t *testing.T, h *planLifecycle, idx int, name string) bool {
+	t.Helper()
+	assets, err := h.q.ListAssetsByOwner(context.Background(), h.tg.Players[idx].ID)
+	require.NoError(t, err)
+	for _, a := range assets {
+		if a.GameID == h.tg.Game.ID && a.AssetType == model.AssetPeer &&
+			a.Name == name && !a.IsDestroyed {
+			return true
+		}
+	}
+	return false
+}
+
+// hfPeerAssetExists reports whether ANY player owns a peer called name — the
+// check that a draft really has no `assets` row behind it.
+func hfPeerAssetExists(t *testing.T, h *planLifecycle, name string) bool {
+	t.Helper()
+	for idx := range h.tg.Players {
+		if hfPeerInRetinue(t, h, idx, name) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestHostFestivity_Mar_BreakSelf_AutoDestroysOnLast proves a guest's break_self
 // tears their chosen marginalia and destroys the MC when it was the last.
 func TestHostFestivity_Mar_BreakSelf_AutoDestroysOnLast(t *testing.T) {
@@ -371,11 +410,10 @@ func TestHostFestivity_Disagreement_AbandonedPeerRejoinsBroken(t *testing.T) {
 }
 
 // TestHostFestivity_HostFreeMake_BenefitsHost proves an extra make benefits the
-// HOST, not the triggering guest: introduce_peer adds the new peer to the host's
-// own retinue.
+// HOST, not the triggering guest: the peer the host introduces is drafted in
+// their name and, unclaimed, ends up in the host's own retinue.
 func TestHostFestivity_HostFreeMake_BenefitsHost(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
-	ctx := context.Background()
 
 	plan, hostIdx := hfPrepareToSocializing(t, h)
 	g1 := (hostIdx + 1) % len(h.tg.Players)
@@ -406,16 +444,169 @@ func TestHostFestivity_HostFreeMake_BenefitsHost(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusOK, code, "host-choice introduce_peer: %v", body)
 
-	// The new peer belongs to the HOST, not g1.
-	hostAssets, err := h.q.ListAssetsByOwner(ctx, hostID)
+	// The peer is drafted in the HOST's name, not g1's — and is nobody's asset
+	// yet: they're working the room, free for any guest to claim (D7).
+	draft := hfCenteredDraft(t, h, plan.ID, "Gilded Guest")
+	require.NotNil(t, draft, "the host's introduction is recorded as a centered draft")
+	assert.Equal(t, hostID, draft.CreatorID, "the host introduced them, not the triggering guest")
+	assert.False(t, hfPeerAssetExists(t, h, "Gilded Guest"),
+		"a centered draft has no assets row in anyone's retinue")
+
+	// Nobody claims them, so they leave with the host when the evening ends.
+	for range 2 {
+		code, body = h.post(hostIdx, hostChoicePath, map[string]any{
+			"choice": "spread_rumor", "rumor_text": "a whisper",
+		})
+		require.Equalf(t, http.StatusOK, code, "host takes a remaining make: %v", body)
+	}
+	code, body = h.post(hostIdx, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/end-event", nil)
+	require.Equalf(t, http.StatusOK, code, "host ends the event: %v", body)
+
+	assert.True(t, hfPeerInRetinue(t, h, hostIdx, "Gilded Guest"),
+		"the host's extra make adds the peer to the host's own retinue")
+}
+
+// TestHostFestivity_IntroducedPeer_UnclaimedJoinsIntroducer proves D7's default
+// ending: a peer introduced at the party belongs to nobody while the event runs
+// — no `assets` row exists at all — and joins the *introducer's* retinue when
+// nobody has claimed them by the time the host winds the evening down.
+func TestHostFestivity_IntroducedPeer_UnclaimedJoinsIntroducer(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+
+	// g1 rolls a make and introduces a peer; g2 opts out.
+	hfGuestRoll(t, h, plan.ID, g1, "make", "introduce_peer", map[string]any{
+		"peer_name": "Ysolde of the Marches", "peer_marginalia": []string{"keeps a hawk"},
+	})
+	rollPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/guest-roll"
+	code, body := h.post(g2, rollPath, map[string]any{"action": "opt_out"})
+	require.Equalf(t, http.StatusOK, code, "g2 opt out: %v", body)
+
+	draft := hfCenteredDraft(t, h, plan.ID, "Ysolde of the Marches")
+	require.NotNil(t, draft, "the introduction is recorded as a centered draft")
+	assert.Equal(t, h.tg.Players[g1].ID, draft.CreatorID, "g1 introduced them")
+	assert.Equal(t, "keeps a hawk", draft.Marginalia,
+		"the marginalia written at introduce time rides on the draft")
+	assert.False(t, hfPeerAssetExists(t, h, "Ysolde of the Marches"),
+		"no assets row exists while the draft sits in the centre")
+
+	// Wind the event down: the host takes both earned makes (hosting + g2's
+	// opt-out) and g1 spends their IOU, then the host ends it.
+	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
+	for range 2 {
+		code, body = h.post(hostIdx, hostChoicePath, map[string]any{
+			"choice": "spread_rumor", "rumor_text": "a whisper",
+		})
+		require.Equalf(t, http.StatusOK, code, "host make: %v", body)
+	}
+	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
+	code, body = h.post(g1, insistPath, map[string]any{"mar_option": "accept_duels"})
+	require.Equalf(t, http.StatusOK, code, "g1 insists their mar: %v", body)
+	code, body = h.post(hostIdx, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/end-event", nil)
+	require.Equalf(t, http.StatusOK, code, "host ends the event: %v", body)
+
+	assert.True(t, hfPeerInRetinue(t, h, g1, "Ysolde of the Marches"),
+		"an unclaimed peer leaves with the player who introduced them")
+	assert.Empty(t, hfChallengeState(t, h, plan.ID).CenteredDrafts,
+		"the centre is emptied once the event ends")
+	assert.Contains(t, hfAllLogBodies(t, h), "Nobody else claimed",
+		"the settlement is narrated in the action log")
+}
+
+// TestHostFestivity_IntroducedPeer_ClaimedByGuest proves the other half of D7:
+// take_center_peer on a draft is a FIRST CLAIM, not a transfer — the peer
+// materializes straight into the claimant's retinue carrying the marginalia
+// their introducer wrote, and leaves the centre.
+func TestHostFestivity_IntroducedPeer_ClaimedByGuest(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+
+	hfGuestRoll(t, h, plan.ID, g1, "make", "introduce_peer", map[string]any{
+		"peer_name": "Brannoc the Quiet", "peer_marginalia": []string{"never blinks"},
+	})
+	draft := hfCenteredDraft(t, h, plan.ID, "Brannoc the Quiet")
+	require.NotNil(t, draft)
+
+	choicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/guest-choice"
+
+	// A draft that isn't in the centre can't be claimed.
+	hfGuestRollMar(t, h, plan.ID, g2)
+	code, body := h.post(g2, choicePath, map[string]any{
+		"choice": "take_center_peer", "draft_id": "not-a-real-draft",
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "unknown draft_id must be refused: %v", body)
+
+	// g2's roll is still open, so they can still choose. Force it to a make and
+	// claim the drafted peer.
+	rollID := hfChallengeState(t, h, plan.ID).GuestRollIDs[strconv.FormatInt(h.tg.Players[g2].ID, 10)]
+	h.forceRoll(rollID, "make", 0)
+	code, body = h.post(g2, choicePath, map[string]any{
+		"choice": "take_center_peer", "draft_id": draft.ID,
+	})
+	require.Equalf(t, http.StatusOK, code, "g2 claims the drafted peer: %v", body)
+
+	assert.True(t, hfPeerInRetinue(t, h, g2, "Brannoc the Quiet"),
+		"the claimed peer materializes into the claimant's retinue, not the introducer's")
+	assert.False(t, hfPeerInRetinue(t, h, g1, "Brannoc the Quiet"),
+		"the introducer keeps nothing — arrival is creation, not a transfer")
+	assert.Empty(t, hfChallengeState(t, h, plan.ID).CenteredDrafts,
+		"a claimed draft leaves the centre")
+
+	// The peer carries the marginalia their introducer wrote — materialization
+	// goes through createAssetWithFirstMarginalia, so no blank peer can arrive.
+	ctx := context.Background()
+	claimed, err := h.q.ListAssetsByOwner(ctx, h.tg.Players[g2].ID)
 	require.NoError(t, err)
-	var found bool
-	for _, a := range hostAssets {
-		if a.GameID == h.tg.Game.ID && a.AssetType == model.AssetPeer && a.Name == "Gilded Guest" {
-			found = true
+	var peerID int64
+	for _, a := range claimed {
+		if a.Name == "Brannoc the Quiet" {
+			peerID = a.ID
 		}
 	}
-	assert.True(t, found, "the host's extra make adds the peer to the host's own retinue")
+	require.NotZero(t, peerID)
+	marg, err := h.q.ListMarginaliaByAsset(ctx, peerID)
+	require.NoError(t, err)
+	require.Len(t, marg, 1, "the claimed peer arrives with exactly the introducer's note")
+	assert.Equal(t, "never blinks", marg[0].Text)
+}
+
+// TestHostFestivity_TakeCenterPeer_DisagreementPeerStillTransfers proves the
+// other kind of centered peer is untouched by D7: a real peer shoved to the
+// centre by a disagreement still changes hands through the canonical transfer,
+// carrying its secrets to the new owner.
+func TestHostFestivity_TakeCenterPeer_DisagreementPeerStillTransfers(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+
+	peerID, _ := h.seedPeerWithMarginalia(g1, "Estranged Cousin")
+	secretID := h.seedSecret(peerID, g1, "owes money to the crown")
+
+	// g1 mars and falls out with their own peer, shoving them to the centre.
+	hfGuestRoll(t, h, plan.ID, g1, "mar", "disagreement", map[string]any{"asset_id": peerID})
+	require.Contains(t, hfChallengeState(t, h, plan.ID).CenteredAssetIDs, peerID)
+
+	// g2 rolls a make and takes them — an ordinary transfer, by asset_id.
+	hfGuestRoll(t, h, plan.ID, g2, "make", "take_center_peer", map[string]any{"asset_id": peerID})
+
+	moved, err := h.q.GetAssetByID(ctx, peerID)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[g2].ID, moved.OwnerID, "the disagreement peer changes hands")
+	h.assertSecretVisible("taking a disagreement peer grants its secrets", peerID, secretID, g2)
+
+	state := hfChallengeState(t, h, plan.ID)
+	assert.NotContains(t, state.CenteredAssetIDs, peerID, "a taken peer leaves the centre")
+	assert.NotContains(t, state.DisagreementAssetIDs, peerID,
+		"and drops off the rejoin-broken watch-list")
 }
 
 // TestHostFestivity_HostEarnedMake proves the host is pre-recorded with the
@@ -459,16 +650,11 @@ func TestHostFestivity_HostEarnedMake(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusOK, code, "host self make: %v", body)
 
-	// New peer belongs to the host.
-	hostAssets, err := h.q.ListAssetsByOwner(ctx, hostID)
-	require.NoError(t, err)
-	var found bool
-	for _, a := range hostAssets {
-		if a.GameID == h.tg.Game.ID && a.AssetType == model.AssetPeer && a.Name == "Host's Own Guest" {
-			found = true
-		}
-	}
-	assert.True(t, found, "the host's earned make adds the peer to their own retinue")
+	// The new peer is drafted in the host's name (they belong to nobody until
+	// claimed, or until the event ends — see the D7 tests below).
+	draft := hfCenteredDraft(t, h, plan.ID, "Host's Own Guest")
+	require.NotNil(t, draft, "the host's earned make records a centered draft")
+	assert.Equal(t, hostID, draft.CreatorID, "the earned make is the host's own")
 }
 
 // TestHostFestivity_Mar_Disagreement_RejectsForeignPeer proves disagreement must
@@ -742,15 +928,12 @@ func TestHostFestivity_PerformStepsWinnerDrivesHostSteps(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusOK, code, "winner drives host-choice: %v", body)
 
-	hostAssets, err := h.q.ListAssetsByOwner(ctx, hostID)
-	require.NoError(t, err)
-	var found bool
-	for _, a := range hostAssets {
-		if a.GameID == h.tg.Game.ID && a.AssetType == model.AssetPeer && a.Name == "Winner's Gift" {
-			found = true
-		}
-	}
-	assert.True(t, found, "the host make lands in the HOST's retinue, not the winner's")
+	// The peer is drafted in the HOST's name, not the winner's — perform_steps
+	// hands over who acts, never who gains (keep_assets is the option that
+	// redirects gains, and it is not in play here).
+	gift := hfCenteredDraft(t, h, plan.ID, "Winner's Gift")
+	require.NotNil(t, gift, "the winner-driven make records a centered draft")
+	assert.Equal(t, hostID, gift.CreatorID, "the host make is credited to the HOST, not the winner")
 
 	// resolve-host-mar (mar): the host is locked out; the winner settles it,
 	// choosing which of the HOST's marginalia to tear.

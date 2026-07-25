@@ -29,7 +29,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import { assetName, parseResolutionData } from './shared';
+	import { parseResolutionData } from './shared';
 
 	import PrepForm from './festivity/PrepForm.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
@@ -40,7 +40,7 @@
 	import HostChoosing from './festivity/HostChoosing.svelte';
 	import HostPendingMar from './festivity/HostPendingMar.svelte';
 	import {
-		festivityEndable, earnedHostMakes, type FestRes,
+		festivityEndable, earnedHostMakes, centeredPeerNames, type FestRes,
 		MAKE_OPTS, MAR_OPTS, MAKE_ALWAYS, MAR_ALWAYS, OPT_OUT_EFFECT,
 	} from './festivity/options';
 
@@ -84,8 +84,12 @@
 			pendingDuelPlanID: f.pending_duel_plan_id ?? null,
 			pendingChallenge: f.pending_challenge ?? null,
 			centeredAssetIDs: f.centered_asset_ids ?? [],
+			centeredDrafts: f.centered_drafts ?? [],
 		};
 	});
+	// Peers waiting in the centre — introduced drafts and disagreement peers
+	// alike. Players see one list; the distinction is a storage detail.
+	const centeredNames = $derived(centeredPeerNames(fest, assets));
 
 	// The event is open while the plan is resolving; it ends when the host winds
 	// it down. No phases.
@@ -246,14 +250,14 @@
 			</div>
 		{/if}
 
-		{#if fest.centeredAssetIDs.length > 0}
+		{#if centeredNames.length > 0}
 			<p>	</p>
 			<p class="choices-header">
 				Available peers to join a retinue:
 			</p>
 			<ul class="choices-note">
-				{#each fest.centeredAssetIDs as aid}
-					<li>{assetName(assets, aid)}</li>
+				{#each centeredNames as name, i (i)}
+					<li>{name}</li>
 				{/each}
 			</ul>
 		{/if}

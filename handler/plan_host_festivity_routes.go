@@ -67,8 +67,13 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 				"%s insisted the host %s — the host must choose how.",
 				playerDisplayName(ctx, deps.Q, player.ID), hfInsistedMarPhrase(body.MarOption)))
-		} else if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
-			body.MarOption, body.RumorText, "", nil, body.AssetID, body.MarginaliaID, false); err != nil {
+		} else if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
+			ActingPlayerID: plan.PreparerID,
+			Choice:         body.MarOption,
+			RumorText:      body.RumorText,
+			AssetID:        body.AssetID,
+			MarginaliaID:   body.MarginaliaID,
+		}); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -191,8 +196,12 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// The host is the actor and chooses the asset themselves (marginalia for a
 		// break, peer for a disagreement).
-		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
-			body.MarOption, "", "", nil, body.AssetID, body.MarginaliaID, false); err != nil {
+		if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
+			ActingPlayerID: plan.PreparerID,
+			Choice:         body.MarOption,
+			AssetID:        body.AssetID,
+			MarginaliaID:   body.MarginaliaID,
+		}); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -235,6 +244,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			PeerName       string   `json:"peer_name"`
 			PeerMarginalia []string `json:"peer_marginalia"`
 			AssetID        int64    `json:"asset_id"`
+			DraftID        string   `json:"draft_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -269,10 +279,18 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// The make benefits the HOST: host-choice is make-only, so no marginalia
-		// asset-tear (break is a mar option) — pass 0. peer_marginalia is only
-		// consumed by the introduce_peer option.
-		if err := hfApplyOption(ctx, deps, plan, state, plan.PreparerID,
-			body.Choice, body.RumorText, body.PeerName, body.PeerMarginalia, body.AssetID, 0, true); err != nil {
+		// asset-tear (break is a mar option) — MarginaliaID stays 0. peer_marginalia
+		// is only consumed by the introduce_peer option.
+		if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
+			ActingPlayerID: plan.PreparerID,
+			Choice:         body.Choice,
+			RumorText:      body.RumorText,
+			PeerName:       body.PeerName,
+			PeerMarginalia: body.PeerMarginalia,
+			AssetID:        body.AssetID,
+			DraftID:        body.DraftID,
+			IsMake:         true,
+		}); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}

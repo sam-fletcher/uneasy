@@ -49,7 +49,7 @@
 -->
 <script lang="ts">
 	import type { Asset, Player } from '$lib/api';
-	import { playerColor } from '$lib/playerColor';
+	import { playerColorByID } from '$lib/playerColor';
 	import { useSecretCounts } from '$lib/secretCountsContext';
 	import AssetCardSelectable from '../AssetCardSelectable.svelte';
 	import FormField from './FormField.svelte';
@@ -114,8 +114,12 @@
 	// panel threading the data. Undefined outside a provider → no eyes.
 	const secretCounts = useSecretCounts();
 
+	// playerColorByID, not playerColor: an owner who resolves to nobody must read
+	// as nobody (grey), not fall through to the first palette slot — which is a
+	// real player's colour, and would paint an unowned card as theirs. Host
+	// Festivity's centered drafts are the live case (owner_id 0 until claimed).
 	function ownerColorFor(a: Asset): string {
-		return playerColor(players.find(p => p.id === a.owner_id));
+		return playerColorByID(a.owner_id, players);
 	}
 
 	function isPickedSingle(a: Asset): boolean {

@@ -12,7 +12,10 @@
 	import AssetCreationForm from '../../AssetCreationForm.svelte';
 	import FormField from '../FormField.svelte';
 	import { playerName } from '../shared';
-	import { HOST_MAKE_OPTS, earnedHostMakes, type FestRes } from './options';
+	import {
+		HOST_MAKE_OPTS, earnedHostMakes, centeredPeerCards, centeredPeerPick, isDraftCard,
+		type FestRes,
+	} from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	let { plan, fest, players, assets, onPlansChanged }: {
@@ -27,9 +30,8 @@
 	const taken = $derived(fest.hostMakesTaken.length);
 	const remaining = $derived(earned - taken);
 
-	const centerPeerCandidates = $derived(
-		assets.filter(a => fest.centeredAssetIDs.includes(a.id) && !a.is_destroyed),
-	);
+	// Drafts and real centered peers as one list — see options.ts.
+	const centerPeerCandidates = $derived(centeredPeerCards(fest, assets, plan.game_id));
 
 	let hostPickedChoice = $state<string | null>(null);
 	let hostRumor = $state('');
@@ -72,7 +74,7 @@
 		try {
 			const body: {
 				choice: string; rumor_text?: string; peer_name?: string;
-				peer_marginalia?: string[]; asset_id?: number;
+				peer_marginalia?: string[]; asset_id?: number; draft_id?: string;
 			} = { choice: hostPickedChoice };
 			if (hostPickedChoice === 'spread_rumor') {
 				if (!hostRumor.trim()) { hostPickerError = 'Enter the rumor.'; return; }
@@ -88,7 +90,10 @@
 			}
 			if (hostPickedChoice === 'take_center_peer') {
 				if (hostAssetID == null) { hostPickerError = 'Pick a centered peer.'; return; }
-				body.asset_id = hostAssetID;
+				// A draft peer travels as draft_id; a real one as asset_id.
+				const pick = centeredPeerPick(fest, hostAssetID);
+				if (pick == null) { hostPickerError = 'That peer is no longer available.'; return; }
+				Object.assign(body, pick);
 			}
 			await hostChoice(plan.id, body);
 			hostPickedChoice = null;
@@ -142,7 +147,9 @@
 				items={centerPeerCandidates}
 				{players}
 				emptyMessage="No peers in the center."
-				ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+				ownerLabel={(a) => isDraftCard(a)
+					? 'New to court — in nobody\'s retinue'
+					: `Owned by ${playerName(players, a.owner_id)}`}
 				selected={hostAssetID}
 				onSelect={(id) => (hostAssetID = id)}
 			/>

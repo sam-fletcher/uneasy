@@ -38,11 +38,19 @@ package handler
 //	POST /api/plans/:planId/respond-challenge — {accept:bool}, target only.
 //	POST /api/plans/:planId/end-event         — host winds the event down.
 //
-// Center-of-table: assets placed in the play area (newly-introduced peers
-// from `introduce_peer` make, and peers shoved there by `disagreement` mar)
-// keep their current owner — leverage is not applied — but their IDs are
-// recorded in state.CenteredAssetIDs so the UI can list them and other
-// guests can steal them via `take_center_peer`.
+// Center-of-table: two kinds of peer sit in the play area, and players see one
+// list of them.
+//
+//   - A peer shoved there by the `disagreement` mar keeps its current owner —
+//     leverage is not applied — and is recorded by id in
+//     state.CenteredAssetIDs. Unclaimed at the end, it rejoins its owner broken.
+//   - A peer from the `introduce_peer` make belongs to nobody at all: it is a
+//     *draft* in state.CenteredDrafts with no `assets` row until someone claims
+//     it (D7 — see game/draft_peer.go). Unclaimed at the end, it materializes
+//     into its introducer's retinue.
+//
+// Either can be claimed via `take_center_peer`, which names an asset_id or a
+// draft_id accordingly.
 
 import (
 	"context"
@@ -392,9 +400,10 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 // Body:
 //
 //	{"choice": "<key>",
-//	 "rumor_text": "...",      // spread_rumor, rumor_about_you
-//	 "peer_name": "...",        // introduce_peer
-//	 "asset_id": N}             // take_center_peer, disagreement
+//	 "rumor_text": "...",       // spread_rumor, rumor_about_you
+//	 "peer_name": "...",        // introduce_peer (+ peer_marginalia)
+//	 "asset_id": N,             // disagreement; take_center_peer of a real peer
+//	 "draft_id": "..."}         // take_center_peer of an introduced peer
 //
 // challenge_duel goes through /challenge-duel, not here.
 //
@@ -411,6 +420,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			PeerName       string   `json:"peer_name"`
 			PeerMarginalia []string `json:"peer_marginalia"`
 			AssetID        int64    `json:"asset_id"`
+			DraftID        string   `json:"draft_id"`
 			MarginaliaID   int64    `json:"marginalia_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -467,20 +477,17 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Apply effect.
-		if err := hfApplyOption(
-			ctx,
-			deps,
-			plan,
-			state,
-			player.ID,
-			body.Choice,
-			body.RumorText,
-			body.PeerName,
-			body.PeerMarginalia,
-			body.AssetID,
-			body.MarginaliaID,
-			isMake,
-		); err != nil {
+		if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
+			ActingPlayerID: player.ID,
+			Choice:         body.Choice,
+			RumorText:      body.RumorText,
+			PeerName:       body.PeerName,
+			PeerMarginalia: body.PeerMarginalia,
+			AssetID:        body.AssetID,
+			DraftID:        body.DraftID,
+			MarginaliaID:   body.MarginaliaID,
+			IsMake:         isMake,
+		}); err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -610,11 +617,17 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Settle every disagreement whose peer no one took: it rejoins its owner
-		// broken. Do this before resolving so the breaks land while the plan (and
-		// its action-log row) is still open.
+		// Settle the two kinds of peer left in the centre before resolving, so
+		// both land while the plan (and its action-log row) is still open: a
+		// disagreement peer no one took rejoins its owner broken, and a peer
+		// introduced at the party whom no one claimed leaves with the player who
+		// introduced them — becoming a real asset only now (D7).
 		if err := hfBreakAbandonedDisagreementPeers(ctx, deps, plan, state); err != nil {
 			respondInternalErr(w, r, "could not settle abandoned peers", err)
+			return
+		}
+		if err := hfSettleUnclaimedCenteredDrafts(ctx, deps, plan, &resData); err != nil {
+			respondInternalErr(w, r, "could not settle unclaimed peers", err)
 			return
 		}
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {

@@ -2,16 +2,13 @@
 
 import type { Plan } from '$lib/api';
 import { parseResolutionData } from '$lib/components/plans/shared';
+import type { DraftPeer } from './draft_peer';
 
-/** A peer who exists in the fiction but owns no asset row yet. Named in the
- *  pre-roll, materialized on arrival — see game/draft_peer.go and
- *  adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D4. */
-export interface DraftPeer {
-	id: string;
-	name: string;
-	marginalia?: string;
-	creator_id: number;
-}
+// A peer who exists in the fiction but owns no asset row yet: named in the
+// pre-roll here, materialized on arrival. The shape is shared with Host
+// Festivity, so it lives in draft_peer.ts; re-exported for the existing
+// importers (notably $lib/api's type barrel).
+export type { DraftPeer };
 
 /** One draft that has materialized, paired with the asset it became. */
 export interface MIArrival {

@@ -12,17 +12,35 @@ import (
 	"uneasy/model"
 )
 
+// festivityOptionInput carries the option-specific parameters a make/mar choice
+// may need — the union of every applier's inputs, since one route serves all of
+// them. Each applier reads only the fields its own option uses.
+type festivityOptionInput struct {
+	// ActingPlayerID is who the effect lands on. For host makes and insisted
+	// host mars that is plan.PreparerID, not necessarily the caller.
+	ActingPlayerID int64
+	Choice         string
+	RumorText      string   // spread_rumor, rumor_about_you
+	PeerName       string   // introduce_peer
+	PeerMarginalia []string // introduce_peer
+	// AssetID names a real asset: the peer to fall out with (disagreement), or
+	// a disagreement peer to take from the center.
+	AssetID int64
+	// DraftID names a centered draft to take instead — a peer introduced at the
+	// party, who owns no asset row until claimed (D7). Exactly one of AssetID
+	// and DraftID is set on take_center_peer.
+	DraftID      string
+	MarginaliaID int64 // break_self
+	IsMake       bool
+}
+
 type festivityOptionContext struct {
-	deps           *PlanDeps
-	plan           *dbgen.Plan
-	state          *gamepkg.FestivityResolutionData
-	actingPlayerID int64
-	rumorText      string
-	peerName       string
-	peerMarginalia []string
-	assetID        int64
-	marginaliaID   int64
-	isMake         bool
+	festivityOptionInput
+
+	deps    *PlanDeps
+	plan    *dbgen.Plan
+	resData *ResolutionData
+	state   *gamepkg.FestivityResolutionData
 }
 
 type festivityOptionApplier func(ctx context.Context, fc *festivityOptionContext) error
@@ -41,38 +59,32 @@ var festivityOptionAppliers = map[string]festivityOptionApplier{
 }
 
 // hfApplyOption performs the mechanical effect for a chosen make/mar option.
-// It mutates state as needed (e.g. recording centered assets, accept_duels).
+// It mutates the festivity sub-state as needed (recording centered peers,
+// accept_duels, …); the caller persists resData once the option has applied.
+// Appliers that write to the database take resData with them so their own
+// transaction can save the matching state change — see applyFestivityTakeCenterPeer.
 func hfApplyOption(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	state *gamepkg.FestivityResolutionData,
-	actingPlayerID int64,
-	choice, rumorText, peerName string,
-	peerMarginalia []string,
-	assetID, marginaliaID int64,
-	isMake bool,
+	resData *ResolutionData,
+	in festivityOptionInput,
 ) error {
-	applier, ok := festivityOptionAppliers[choice]
+	applier, ok := festivityOptionAppliers[in.Choice]
 	if !ok {
 		return nil
 	}
 	return applier(ctx, &festivityOptionContext{
-		deps:           deps,
-		plan:           plan,
-		state:          state,
-		actingPlayerID: actingPlayerID,
-		peerMarginalia: peerMarginalia,
-		rumorText:      rumorText,
-		peerName:       peerName,
-		assetID:        assetID,
-		marginaliaID:   marginaliaID,
-		isMake:         isMake,
+		festivityOptionInput: in,
+		deps:                 deps,
+		plan:                 plan,
+		resData:              resData,
+		state:                resData.EnsureFestivity(),
 	})
 }
 
 func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error {
-	txt := strings.TrimSpace(fc.rumorText)
+	txt := strings.TrimSpace(fc.RumorText)
 	if txt == "" {
 		return errors.New("rumor text is required")
 	}
@@ -80,15 +92,15 @@ func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error 
 		return fmt.Errorf("rumor text must be at most %d characters", maxLongTextLen)
 	}
 	var targetAssetID *int64
-	if !fc.isMake {
-		if mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.actingPlayerID); err == nil {
+	if !fc.IsMake {
+		if mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.ActingPlayerID); err == nil {
 			targetAssetID = &mcID
 		}
 	}
 	existing, _ := fc.deps.Q.ListRumors(ctx, fc.plan.GameID)
 	var src *int64
-	if fc.isMake {
-		src = &fc.actingPlayerID
+	if fc.IsMake {
+		src = &fc.ActingPlayerID
 	}
 	rumor, err := fc.deps.Q.CreateRumor(ctx, dbgen.CreateRumorParams{
 		GameID:         fc.plan.GameID,
@@ -102,107 +114,148 @@ func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error 
 		return fmt.Errorf("create rumor: %w", err)
 	}
 	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
-	if fc.isMake {
+	if fc.IsMake {
 		hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s spread a new rumor at the event.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID)))
+			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID)))
 	} else {
 		hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("A rumor spread about %s.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID)))
+			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID)))
 	}
 	return nil
 }
 
+// applyFestivityIntroducePeer records the new peer as a *draft* — name and the
+// one marginalia the introducer wrote, and no `assets` row at all. Per D7 the
+// peer belongs to nobody while they work the room: any guest may claim them via
+// take_center_peer, and whoever is left unclaimed leaves with their introducer
+// when the event ends (hfSettleUnclaimedCenteredDrafts). Creation is deferred to
+// that moment, so the "introduce a new peer *(if still at table → add to
+// retinue)*" rule no longer starts by contradicting itself.
 func applyFestivityIntroducePeer(ctx context.Context, fc *festivityOptionContext) error {
-	name := strings.TrimSpace(fc.peerName)
+	name := strings.TrimSpace(fc.PeerName)
 	if name == "" {
 		return errors.New("peer name is required")
 	}
 	if len([]rune(name)) > maxAssetNameLen {
 		return fmt.Errorf("peer name must be at most %d characters", maxAssetNameLen)
 	}
-	margText, err := requireOneMarginalia(fc.peerMarginalia)
+	margText, err := requireOneMarginalia(fc.PeerMarginalia)
 	if err != nil {
 		return err
 	}
-	ownerID := fc.actingPlayerID
-	if fc.actingPlayerID == fc.plan.PreparerID {
-		recipient, rerr := AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
-		if rerr != nil {
-			return fmt.Errorf("resolve asset recipient: %w", rerr)
-		}
-		ownerID = recipient
-	}
-	var asset dbgen.Asset
-	var marginalia []dbgen.Marginalium
-	err = fc.deps.InTx(ctx, func(q *dbgen.Queries) error {
-		var caErr error
-		asset, marginalia, caErr = createAssetWithFirstMarginalia(ctx, q, dbgen.CreateAssetParams{
-			GameID:    fc.plan.GameID,
-			OwnerID:   ownerID,
-			CreatorID: fc.actingPlayerID,
-			AssetType: model.AssetPeer,
-			Name:      name,
-		}, margText)
-		return caErr
+	fc.state.CenteredDrafts = append(fc.state.CenteredDrafts, gamepkg.DraftPeer{
+		ID:         gamepkg.NewDraftPeerID(),
+		Name:       name,
+		Marginalia: margText,
+		CreatorID:  fc.ActingPlayerID,
 	})
-	if err != nil {
-		return fmt.Errorf("create peer: %w", err)
-	}
-	// New peers are placed in the play area (center of table) for the
-	// duration of the festivity — owned by their introducer but stealable
-	// by other guests via take_center_peer.
-	fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, asset.ID)
-	broadcastEvent(
-		fc.deps.Manager,
-		fc.plan.GameID,
-		model.EventAssetCreated,
-		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: marginalia}},
-	)
 	hfLog(
 		ctx,
 		fc.deps,
 		fc.plan,
 		model.SeverityDefault,
 		fmt.Sprintf("%s introduced a new peer, %s, to the festivity, with marginalia: %q.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(asset.Name), margText),
+			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID), assetMark(name), margText),
 	)
 	return nil
 }
 
+// applyFestivityTakeCenterPeer claims one of the peers at the centre of the
+// party. Two kinds sit there and players see one list, so the request names
+// whichever applies: a draft introduced at the event (draft_id — a first claim,
+// materialized straight into the claimant's retinue) or a real peer shoved to
+// the centre by a disagreement (asset_id — an ordinary transfer from the owner
+// who fell out with them).
 func applyFestivityTakeCenterPeer(ctx context.Context, fc *festivityOptionContext) error {
 	// The "center" referred to is the physical table in a real-life game;
 	// for the digital game, this framing is not shown to players,
 	// instead we focus on the narrative of peers considering changing retinues.
-	if fc.assetID == 0 {
-		return errors.New("asset_id required")
+	if fc.DraftID != "" {
+		return hfClaimCenteredDraft(ctx, fc)
 	}
-	asset, err := fc.deps.Q.GetAssetByID(ctx, fc.assetID)
+	if fc.AssetID == 0 {
+		return errors.New("asset_id or draft_id required")
+	}
+	asset, err := fc.deps.Q.GetAssetByID(ctx, fc.AssetID)
 	if err != nil {
 		return errors.New("asset not found")
 	}
-	if !slices.Contains(fc.state.CenteredAssetIDs, fc.assetID) {
+	if !slices.Contains(fc.state.CenteredAssetIDs, fc.AssetID) {
 		return errors.New("asset is not in available to take into your retinue")
 	}
-	oldOwner := asset.OwnerID
-	newOwner := fc.actingPlayerID
-	if fc.actingPlayerID == fc.plan.PreparerID {
-		recipient, rerr := AssetRecipientForPlan(ctx, fc.deps.Q, fc.plan)
-		if rerr != nil {
-			return fmt.Errorf("resolve asset recipient: %w", rerr)
-		}
-		newOwner = recipient
+	newOwner, err := hfAssetOwnerFor(ctx, fc.deps, fc.plan, fc.ActingPlayerID)
+	if err != nil {
+		return err
 	}
-	updated, err := takeAssetEffect(ctx, fc.deps.Q, fc.deps.Manager, fc.plan.GameID, fc.assetID, oldOwner, newOwner)
+	updated, err := takeAssetEffect(
+		ctx,
+		fc.deps.Q,
+		fc.deps.Manager,
+		fc.plan.GameID,
+		fc.AssetID,
+		asset.OwnerID,
+		newOwner,
+	)
 	if err != nil {
 		return fmt.Errorf("transfer asset: %w", err)
 	}
-	fc.state.CenteredAssetIDs = removeID(fc.state.CenteredAssetIDs, fc.assetID)
+	fc.state.CenteredAssetIDs = removeID(fc.state.CenteredAssetIDs, fc.AssetID)
 	// A peer that's taken won't rejoin its old owner broken — drop it from the
 	// disagreement watch-list too.
-	fc.state.DisagreementAssetIDs = removeID(fc.state.DisagreementAssetIDs, fc.assetID)
+	fc.state.DisagreementAssetIDs = removeID(fc.state.DisagreementAssetIDs, fc.AssetID)
 	hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s took %s into their retinue.",
-		playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(updated.Name)))
+		playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID), assetMark(updated.Name)))
 	return nil
+}
+
+// hfClaimCenteredDraft is the draft half of take_center_peer: a first claim, not
+// a transfer. There is no prior owner and no secret to inherit (the peer has
+// existed only as a draft), so it never touches takeAssetEffect — arrival *is*
+// creation (D4). The draft leaves the centre in the same transaction that
+// creates the asset, so a failed write can't strand a peer who is both claimed
+// and still claimable.
+func hfClaimCenteredDraft(ctx context.Context, fc *festivityOptionContext) error {
+	draft := gamepkg.FindDraftPeer(fc.state.CenteredDrafts, fc.DraftID)
+	if draft == nil {
+		return errors.New("that peer is no longer available to take into your retinue")
+	}
+	claimed := *draft
+	newOwner, err := hfAssetOwnerFor(ctx, fc.deps, fc.plan, fc.ActingPlayerID)
+	if err != nil {
+		return err
+	}
+	centered := fc.state.CenteredDrafts
+	var asset dbgen.Asset
+	err = fc.deps.InTx(ctx, func(q *dbgen.Queries) error {
+		a, _, mErr := materializeDraftPeer(ctx, q, fc.deps.Manager, fc.plan.GameID, claimed, newOwner)
+		if mErr != nil {
+			return mErr
+		}
+		asset = a
+		fc.state.CenteredDrafts = gamepkg.RemoveDraftPeer(centered, claimed.ID)
+		return saveResolutionData(ctx, q, fc.plan.ID, *fc.resData)
+	})
+	if err != nil {
+		fc.state.CenteredDrafts = centered // the transaction rolled back; so does the state
+		return fmt.Errorf("claim peer: %w", err)
+	}
+	hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s took %s into their retinue.",
+		playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID), assetMark(asset.Name)))
+	return nil
+}
+
+// hfAssetOwnerFor resolves who actually receives an asset that acting player
+// gains during this festivity. Everyone receives their own — except the host,
+// whose gains are redirected by a made Make Demands' keep_assets winner.
+func hfAssetOwnerFor(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, actingPlayerID int64) (int64, error) {
+	if actingPlayerID != plan.PreparerID {
+		return actingPlayerID, nil
+	}
+	recipient, err := AssetRecipientForPlan(ctx, deps.Q, plan)
+	if err != nil {
+		return 0, fmt.Errorf("resolve asset recipient: %w", err)
+	}
+	return recipient, nil
 }
 
 // hfLog emits a Host Festivity action-log entry anchored to the plan's row.
@@ -214,10 +267,10 @@ func hfLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 }
 
 func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext) error {
-	if fc.assetID == 0 {
+	if fc.AssetID == 0 {
 		return errors.New("asset_id required for disagreement")
 	}
-	asset, err := fc.deps.Q.GetAssetByID(ctx, fc.assetID)
+	asset, err := fc.deps.Q.GetAssetByID(ctx, fc.AssetID)
 	if err != nil {
 		return errors.New("asset not found")
 	}
@@ -226,17 +279,17 @@ func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext)
 	}
 	// "Get into a disagreement with one of your peers" — the peer must belong
 	// to the acting player.
-	if asset.OwnerID != fc.actingPlayerID {
+	if asset.OwnerID != fc.ActingPlayerID {
 		return errors.New("you can only have a disagreement with one of your own peers")
 	}
-	if !slices.Contains(fc.state.CenteredAssetIDs, fc.assetID) {
-		fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, fc.assetID)
+	if !slices.Contains(fc.state.CenteredAssetIDs, fc.AssetID) {
+		fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, fc.AssetID)
 	}
 	// Track that this peer reached the center via a disagreement: if no one takes
 	// it before the event ends, it rejoins its owner broken (see
 	// hfBreakAbandonedDisagreementPeers).
-	if !slices.Contains(fc.state.DisagreementAssetIDs, fc.assetID) {
-		fc.state.DisagreementAssetIDs = append(fc.state.DisagreementAssetIDs, fc.assetID)
+	if !slices.Contains(fc.state.DisagreementAssetIDs, fc.AssetID) {
+		fc.state.DisagreementAssetIDs = append(fc.state.DisagreementAssetIDs, fc.AssetID)
 	}
 	hfLog(
 		ctx,
@@ -244,14 +297,14 @@ func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext)
 		fc.plan,
 		model.SeverityDefault,
 		fmt.Sprintf("%s fell out with their peer %s, who is now considering changing retinue.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), assetMark(asset.Name)),
+			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID), assetMark(asset.Name)),
 	)
 	return nil
 }
 
 func applyFestivityAcceptDuels(ctx context.Context, fc *festivityOptionContext) error {
-	if !slices.Contains(fc.state.AcceptDuels, fc.actingPlayerID) {
-		fc.state.AcceptDuels = append(fc.state.AcceptDuels, fc.actingPlayerID)
+	if !slices.Contains(fc.state.AcceptDuels, fc.ActingPlayerID) {
+		fc.state.AcceptDuels = append(fc.state.AcceptDuels, fc.ActingPlayerID)
 	}
 	hfLog(
 		ctx,
@@ -259,7 +312,7 @@ func applyFestivityAcceptDuels(ctx context.Context, fc *festivityOptionContext) 
 		fc.plan,
 		model.SeverityDefault,
 		fmt.Sprintf("%s must accept any duel challenge during the event.",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID)),
+			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID)),
 	)
 	return nil
 }
@@ -270,7 +323,7 @@ func applyFestivityAcceptDuels(ctx context.Context, fc *festivityOptionContext) 
 // or, on a blank main character, to destroying it outright (D3), so an insisted
 // break can still be discharged by a player whose MC carries no notes.
 func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) error {
-	mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.actingPlayerID)
+	mcID, err := hfFindMainCharacter(ctx, fc.deps, fc.plan.GameID, fc.ActingPlayerID)
 	if err != nil {
 		return fmt.Errorf("find main character: %w", err)
 	}
@@ -280,8 +333,8 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 	}
 
 	var m *dbgen.Marginalium
-	if fc.marginaliaID != 0 {
-		picked, gErr := fc.deps.Q.GetMarginaliaByID(ctx, fc.marginaliaID)
+	if fc.MarginaliaID != 0 {
+		picked, gErr := fc.deps.Q.GetMarginaliaByID(ctx, fc.MarginaliaID)
 		if gErr != nil {
 			return errors.New("marginalia not found")
 		}
@@ -305,7 +358,7 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 		// m stays nil on a blank MC — breakAsset destroys it outright.
 	}
 
-	destroyed, err := breakAsset(ctx, fc.deps.Q, fc.deps.Manager, &mc, m, fc.actingPlayerID)
+	destroyed, err := breakAsset(ctx, fc.deps.Q, fc.deps.Manager, &mc, m, fc.ActingPlayerID)
 	if err != nil {
 		return fmt.Errorf("break self: %w", err)
 	}
@@ -315,7 +368,7 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 		fc.plan,
 		model.SeverityDefault,
 		fmt.Sprintf("%s %s themselves — word of their gaffe gets around.%s",
-			playerDisplayName(ctx, fc.deps.Q, fc.actingPlayerID), breakVerb(destroyed),
+			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID), breakVerb(destroyed),
 			brokenAssetDetail(ctx, fc.deps.Q, mc.OwnerID, m, destroyed)),
 	)
 	return nil
@@ -386,6 +439,58 @@ func hfBreakAbandonedDisagreementPeers(
 		state.CenteredAssetIDs = removeID(state.CenteredAssetIDs, id)
 	}
 	state.DisagreementAssetIDs = nil
+	return nil
+}
+
+// hfSettleUnclaimedCenteredDrafts settles the other tail of the evening: a peer
+// introduced at the party whom no guest claimed leaves with the player who
+// introduced them (D7). That is the moment they become a real asset — until now
+// they existed only as a draft, which is why an unclaimed peer can't have been
+// broken, taken or leveraged while they worked the room.
+//
+// Every arrival and the emptied centre commit together, so a failure can't
+// leave the same draft both materialized and still claimable. The host's own
+// introductions still respect a made Make Demands' keep_assets winner, exactly
+// as they did when the asset was created up front.
+func hfSettleUnclaimedCenteredDrafts(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, resData *ResolutionData,
+) error {
+	state := resData.EnsureFestivity()
+	centered := state.CenteredDrafts
+	if len(centered) == 0 {
+		return nil
+	}
+	owners := make([]int64, len(centered))
+	for i, d := range centered {
+		owner, err := hfAssetOwnerFor(ctx, deps, plan, d.CreatorID)
+		if err != nil {
+			return err
+		}
+		owners[i] = owner
+	}
+
+	assets := make([]dbgen.Asset, len(centered))
+	err := deps.InTx(ctx, func(q *dbgen.Queries) error {
+		for i, d := range centered {
+			a, _, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, d, owners[i])
+			if mErr != nil {
+				return mErr
+			}
+			assets[i] = a
+		}
+		state.CenteredDrafts = nil
+		return saveResolutionData(ctx, q, plan.ID, *resData)
+	})
+	if err != nil {
+		state.CenteredDrafts = centered // the transaction rolled back; so does the state
+		return fmt.Errorf("settle unclaimed peers: %w", err)
+	}
+
+	for i, a := range assets {
+		hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"Nobody else claimed %s, who left with %s.",
+			assetMark(a.Name), playerDisplayName(ctx, deps.Q, owners[i])))
+	}
 	return nil
 }
 

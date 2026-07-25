@@ -13,7 +13,9 @@
 	import FormField from '../FormField.svelte';
 	import { breakableAssets, playerName } from '../shared';
 	import { destructionWarning } from '$lib/assetRisk';
-	import { MAKE_OPTS, MAR_OPTS, type FestRes } from './options';
+	import {
+		MAKE_OPTS, MAR_OPTS, centeredPeerCards, centeredPeerPick, isDraftCard, type FestRes,
+	} from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	let {
@@ -64,9 +66,9 @@
 	let pickerBusy = $state(false);
 	let pickerError = $state('');
 
-	const myCenterPeerCandidates = $derived(
-		assets.filter(a => fest.centeredAssetIDs.includes(a.id) && !a.is_destroyed),
-	);
+	// Everything at the centre of the party, drafts and real peers as one list —
+	// a guest picks a peer, not a storage kind (see options.ts).
+	const myCenterPeerCandidates = $derived(centeredPeerCards(fest, assets, plan.game_id));
 	const myOwnPeers = $derived(
 		currentPlayerID == null
 			? []
@@ -140,7 +142,8 @@
 			} else {
 				const body: {
 					choice: string; rumor_text?: string; peer_name?: string;
-					peer_marginalia?: string[]; asset_id?: number; marginalia_id?: number;
+					peer_marginalia?: string[]; asset_id?: number; draft_id?: string;
+					marginalia_id?: number;
 				} = { choice: pickedChoice };
 				if (pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you') {
 					body.rumor_text = rumorText.trim();
@@ -153,9 +156,16 @@
 					body.peer_name = peerName.trim();
 					body.peer_marginalia = [peerMarginalia.trim()];
 				}
-				if (pickedChoice === 'take_center_peer' || pickedChoice === 'disagreement') {
+				if (pickedChoice === 'disagreement') {
 					if (pickedAssetID == null) { pickerError = 'Pick an asset.'; return; }
 					body.asset_id = pickedAssetID;
+				}
+				if (pickedChoice === 'take_center_peer') {
+					if (pickedAssetID == null) { pickerError = 'Pick an asset.'; return; }
+					// A draft peer travels as draft_id; a real one as asset_id.
+					const pick = centeredPeerPick(fest, pickedAssetID);
+					if (pick == null) { pickerError = 'That peer is no longer available.'; return; }
+					Object.assign(body, pick);
 				}
 				if (pickedChoice === 'break_self') {
 					if (pickedMargID == null) { pickerError = 'Pick a marginalia to tear.'; return; }
@@ -250,7 +260,9 @@
 				items={myCenterPeerCandidates}
 				{players}
 				emptyMessage="No peers looking for a retinue."
-				ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+				ownerLabel={(a) => isDraftCard(a)
+					? 'New to court — in nobody\'s retinue'
+					: `Owned by ${playerName(players, a.owner_id)}`}
 				selected={pickedAssetID}
 				onSelect={(id) => (pickedAssetID = id)}
 			/>

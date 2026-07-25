@@ -97,8 +97,14 @@ type FestivityResolutionData struct {
 	AcceptDuels          []int64           `json:"accept_duels,omitempty"`      // player IDs with accept_duels flag
 	PendingDuelPlanID    *int64            `json:"pending_duel_plan_id,omitempty"`
 	PendingChallenge     *PendingChallenge `json:"pending_challenge,omitempty"`
-	CenteredAssetIDs     []int64           `json:"centered_asset_ids,omitempty"`     // peers placed in the center (introduced or shoved there by a disagreement)
+	CenteredAssetIDs     []int64           `json:"centered_asset_ids,omitempty"`     // real assets shoved to the center by a disagreement — still owned by whoever fell out with them
 	DisagreementAssetIDs []int64           `json:"disagreement_asset_ids,omitempty"` // subset of CenteredAssetIDs that landed there via a disagreement; if still uncentered when the event ends they rejoin their owner broken
+	// CenteredDrafts holds peers introduced at the party. They belong to nobody
+	// until a guest claims one (or the event ends and they leave with their
+	// introducer) — so they are drafts with no `assets` row, not owned assets
+	// parked in the center (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md, D4/D7).
+	// Players see one list: the UI merges these with CenteredAssetIDs.
+	CenteredDrafts []DraftPeer `json:"centered_drafts,omitempty"`
 }
 
 // MarNeedsHostResolution reports whether a mar option, when insisted on the
