@@ -35,7 +35,7 @@ const FOLLOW_ON_PROMPTS: Record<PlanType, string> = {
 };
 
 export const FREE_SCENE_PROMPT_FALLBACK =
-	"No follow-on prompt — set any scene.";
+	"No plan prompt — set any scene.";
 
 /**
  * Picks the prompt for a brand-new scene by finding the most recently

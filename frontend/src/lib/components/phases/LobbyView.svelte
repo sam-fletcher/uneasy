@@ -9,6 +9,7 @@
 	import type { Game, Player } from '$lib/api';
 	import { getPushState, enablePush, type PushState } from '$lib/push';
 	import HelpContent from '../HelpContent.svelte';
+	import HelpGlyph from '../HelpGlyph.svelte';
 	import { onMount } from 'svelte';
 
 	let {
@@ -153,7 +154,9 @@
 		<h2>New to the game? Start here.</h2>
 		<p class="muted-text">
 			A two-minute primer while you wait for everyone to arrive. You can reopen this
-			any time from the ? in the top-right corner.
+			any time from the <span class="help-cue" role="img" aria-label="help button"
+				><HelpGlyph size="1.15em" /></span
+			> in the top-right corner.
 		</p>
 		<HelpContent {onFeedback} />
 	</section>
@@ -229,6 +232,16 @@
 		border-top: 1px solid var(--color-border);
 	}
 	.lobby-help .muted-text { margin-bottom: 0.9rem; }
+	/* Mid-sentence stand-in for the header's help control: same glyph, same
+	   gold, sized a touch over 1em so the circle reads at caption size and
+	   nudged onto the text baseline (a geometric mark centres, a letterform
+	   sits). Inline-flex keeps it from stretching the line box. */
+	.help-cue {
+		display: inline-flex;
+		align-items: center;
+		color: var(--color-accent);
+		vertical-align: -0.2em;
+	}
 
 	.lobby-join { margin-bottom: 0.5rem; }
 	.lobby-join .muted-text {
