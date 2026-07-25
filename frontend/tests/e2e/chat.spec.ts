@@ -552,3 +552,104 @@ test('plan-scene: a festivity renders both players\' in-character posts inside o
   await aliceCtx.close();
   await bobCtx.close();
 });
+
+// Composer focus retention. Sending must not blur the compose box — people
+// fire off several messages in a row, and on mobile a blur closes the soft
+// keyboard that a later programmatic .focus() can't reopen (it happens past
+// the user gesture). Two specific regressions are pinned here: `disabled` on
+// the textarea while the POST is in flight (disabling a focused element
+// blurs it), and the Send button taking focus on click and then going
+// disabled as the box empties (dropping focus to <body>).
+test('composer keeps focus after sending, via Enter and via the Send button', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: tableId } = await seedRes.json();
+  track(tableId);
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice');
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 390, height: 844 }); // mobile-first
+  await alicePage.goto(`/table/${tableId}`);
+  await alicePage.locator('.strip').click();
+  const chat = alicePage.locator('[aria-label="Chat"]');
+  await expect(chat).toBeVisible();
+
+  const box = chat.getByPlaceholder('Write a message…');
+  await box.click();
+  await expect(box).toBeFocused();
+
+  await box.fill('first message');
+  await box.press('Enter');
+  await expect(chat.getByText('first message')).toBeVisible();
+  await expect(box).toHaveValue('');
+  await expect(box).toBeFocused();
+
+  await box.fill('second message');
+  await chat.getByRole('button', { name: 'Send' }).click();
+  await expect(chat.getByText('second message')).toBeVisible();
+  await expect(box).toHaveValue('');
+  await expect(box).toBeFocused();
+
+  await aliceCtx.close();
+});
+
+// The flip side of never disabling the textarea: send() clears the box up
+// front so a message typed while the POST is in flight isn't eaten by the
+// clear-on-success. That makes the failure path load-bearing — the text has
+// to come back, without trampling a draft the user has already started.
+test('a failed send restores the text, but never clobbers a draft typed while in flight', async ({ browser }) => {
+  const reset = await pwRequest.newContext();
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: tableId } = await seedRes.json();
+  track(tableId);
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  await devLogin(aliceCtx.request, 'alice');
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 390, height: 844 }); // mobile-first
+  // Fail every chat POST, slowly enough that there's a real in-flight window
+  // to type into.
+  await alicePage.route('**/api/tables/*/posts', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'simulated send failure' }),
+    });
+  });
+
+  await alicePage.goto(`/table/${tableId}`);
+  await alicePage.locator('.strip').click();
+  const chat = alicePage.locator('[aria-label="Chat"]');
+  await expect(chat).toBeVisible();
+
+  const box = chat.getByPlaceholder('Write a message…');
+
+  // Nothing typed since: the failed text comes straight back, ready to retry.
+  await box.fill('doomed message');
+  await box.press('Enter');
+  await expect(chat.locator('.error-text')).toContainText('simulated send failure');
+  await expect(box).toHaveValue('doomed message');
+  await expect(box).toBeFocused();
+
+  // A new draft started during the in-flight window wins; the failed message
+  // is surfaced in the error line rather than pasted over the draft.
+  await box.fill('another doomed message');
+  await box.press('Enter');
+  await box.fill('a draft typed while in flight');
+  await expect(chat.locator('.error-text')).toContainText('Unsent message: another doomed message');
+  await expect(box).toHaveValue('a draft typed while in flight');
+  await expect(box).toBeFocused();
+
+  await aliceCtx.close();
+});

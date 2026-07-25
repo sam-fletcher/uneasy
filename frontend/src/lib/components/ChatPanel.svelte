@@ -559,19 +559,26 @@
 		if (!body || sending) return;
 		sending = true;
 		error = '';
+		// Clear the box up front rather than after the await. The compose
+		// textarea is deliberately never `disabled` (see the markup below), so
+		// the user can keep typing while the POST is in flight; clearing on
+		// success would eat whatever they'd typed in the meantime. On failure
+		// we put the text back, but only if they haven't started a new message.
+		newBody = '';
 		try {
 			const speakingAsAssetID =
 				selectedPersona && selectedPersona.kind === 'asset'
 					? selectedPersona.assetID
 					: null;
 			await createPlayerPost(gameID, body, { speakingAsAssetID });
-			newBody = '';
 			// The WS broadcast will append the post to the feed; no optimistic
 			// insert needed. Sending your own message should always land you
 			// back at the tail, even if you'd scrolled up to read history.
 			scrollToBottomNow();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not send.';
+			if (!newBody) newBody = body;
+			else error += ' Unsent message: ' + body;
 		} finally {
 			sending = false;
 		}
@@ -1041,6 +1048,15 @@
 		</div>
 	{/if}
 
+	<!-- Focus must survive a send, so you can fire off several messages in a
+	     row the way you would in Discord. Two rules keep it there:
+	     1. The textarea is never `disabled` — disabling a focused element
+	        blurs it, and on mobile that blur closes the soft keyboard, which
+	        a later programmatic .focus() can't reopen (it's past the user
+	        gesture). Double-submit is already guarded inside send().
+	     2. The Send button swallows mousedown's default, so clicking it never
+	        moves focus off the textarea — otherwise the button ends up focused,
+	        then goes disabled as the box empties, and focus falls to <body>. -->
 	<div class="compose">
 		<textarea
 			placeholder="Write a message…"
@@ -1049,9 +1065,13 @@
 			onkeydown={onKeydown}
 			rows={2}
 			maxlength={TEXT_LIMITS.LONG_TEXT}
-			disabled={sending}
 		></textarea>
-		<button class="send" onclick={send} disabled={sending || !newBody.trim()}>
+		<button
+			class="send"
+			onmousedown={(e) => e.preventDefault()}
+			onclick={send}
+			disabled={sending || !newBody.trim()}
+		>
 			{sending ? '…' : 'Send'}
 		</button>
 	</div>
