@@ -579,7 +579,7 @@
 								/>
 								{#if isUpdate && shareMargID != null}
 									<textarea rows={2} class="form-textarea" bind:value={shareUpdateText}
-										placeholder="The rewritten marginalia…" maxlength={280}></textarea>
+										placeholder="The rewritten marginalia…" maxlength={TEXT_LIMITS.MARGINALIA}></textarea>
 								{/if}
 							{/if}
 							{#if !isUpdate && shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}

@@ -12,23 +12,28 @@ import (
 	appMiddleware "uneasy/middleware"
 )
 
-// Length caps (runes, after trimming) for free-text fields, generous enough
-// that no honest player ever hits them. Counts (e.g. maxMarginalia) are
-// capped separately; these bound the SIZE of each entry against a hostile
-// client sending an oversized body.
+// Length caps (runes, after trimming) for free-text fields. Counts (e.g.
+// maxMarginalia) are capped separately; these bound the SIZE of each entry
+// against a hostile client sending an oversized body.
+//
+// The first three are PRODUCT limits, each read off the narrowest surface
+// that has to render the value in full — not "generous enough that no honest
+// player ever hits them". The rest are anti-abuse bounds.
 const (
-	// Unlike the others this is a PRODUCT limit, not just an anti-abuse
-	// bound: the player name has to fit the table header's pill strip,
-	// shared between up to five players. Mirrored in
+	// The player name has to fit the table header's pill strip, shared
+	// between up to five players. Mirrored in
 	// frontend/src/lib/textLimits.ts (USERNAME), which explains the 20.
 	maxUsernameLen = 20
 	maxEmailLen    = 254
 	// maxAssetNameLen bounds a player-authored name: assets/peers, titles,
-	// festivity resources, decree resources.
-	maxAssetNameLen = 120
-	// maxMarginaliaLen bounds a single marginalia entry, a tone topic, and
-	// prologue card text.
-	maxMarginaliaLen = 300
+	// festivity resources, decree resources. Like maxUsernameLen this is a
+	// PRODUCT limit read off a surface, not an anti-abuse bound. Mirrored in
+	// frontend/src/lib/textLimits.ts (NAME), which explains the 50.
+	maxAssetNameLen = 50
+	// maxMarginaliaLen bounds a single marginalia entry, a tone topic, a
+	// scene time-note, and prologue card text. Also a product limit; see
+	// textLimits.ts (MARGINALIA) for the 160.
+	maxMarginaliaLen = 160
 	// maxNarrativeLen bounds secrets, scene/record summaries, prep notes, and
 	// other plan-resolution free text (questions, answers, declared truths,
 	// war terms).

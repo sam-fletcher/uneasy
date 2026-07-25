@@ -411,7 +411,7 @@
 									type="text"
 									bind:value={renameDraft}
 									disabled={renameSaving}
-									maxlength={80}
+									maxlength={TEXT_LIMITS.NAME}
 									onblur={() => saveRename(asset)}
 									onkeydown={(e) => {
 										if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
@@ -571,7 +571,7 @@
 										bind:value={draftText}
 										disabled={saving}
 										rows={3}
-										maxlength={280}
+										maxlength={TEXT_LIMITS.MARGINALIA}
 										onkeydown={(e) => {
 											if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
 											else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEdit(); }

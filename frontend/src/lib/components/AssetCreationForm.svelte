@@ -99,7 +99,7 @@
 			bind:value={marginalia}
 			loading={marginaliaSuggLoading}
 			customPlaceholder="A description, a function, a fun fact, or something more poetic…"
-			maxlength={280}
+			maxlength={TEXT_LIMITS.MARGINALIA}
 			multiline
 			{disabled}
 		/>

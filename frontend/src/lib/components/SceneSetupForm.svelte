@@ -23,6 +23,7 @@
 	import { onDestroy } from 'svelte';
 	import { createScene, type Asset, type Player, type TimeElapsed, type SceneSetupDraft } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 
 	interface Props {
@@ -254,7 +255,7 @@
 					placeholder="Another location"
 					value={displayCustomLocation}
 					oninput={(e) => onCustomInput((e.target as HTMLInputElement).value)}
-					maxlength={80}
+					maxlength={TEXT_LIMITS.NAME}
 					disabled={readOnly}
 				/>
 			</label>

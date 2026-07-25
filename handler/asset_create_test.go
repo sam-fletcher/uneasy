@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -40,7 +41,7 @@ func TestRequireOneMarginalia(t *testing.T) {
 	t.Run("rejects marginalia over the length cap", func(t *testing.T) {
 		_, err := requireOneMarginalia([]string{strings.Repeat("a", maxMarginaliaLen+1)})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "300")
+		assert.Contains(t, err.Error(), strconv.Itoa(maxMarginaliaLen))
 	})
 
 	t.Run("accepts marginalia at exactly the length cap", func(t *testing.T) {

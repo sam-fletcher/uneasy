@@ -9,6 +9,8 @@
   matching type-keyed example pools.
 -->
 <script lang="ts">
+	import { TEXT_LIMITS } from '$lib/textLimits';
+
 	interface Props {
 		/** Up to `slots` example strings to offer. */
 		suggestions: string[];
@@ -20,7 +22,8 @@
 		loading?: boolean;
 		/** Fixed number of suggestion slots; missing ones render as blanks. */
 		slots?: number;
-		/** Max length for the custom field. */
+		/** Max length for the custom field. Defaults to the marginalia tier —
+		 *  every current caller is writing a marginalia. */
 		maxlength?: number;
 		/** Render the custom field as a multi-line textarea (for marginalia). */
 		multiline?: boolean;
@@ -33,7 +36,7 @@
 		customPlaceholder = 'Write your own…',
 		loading = false,
 		slots = 3,
-		maxlength = 280,
+		maxlength = TEXT_LIMITS.MARGINALIA,
 		multiline = false,
 		disabled = false,
 	}: Props = $props();

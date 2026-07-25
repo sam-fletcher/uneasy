@@ -90,7 +90,7 @@ func (h *lengthCapHarness) tablePath(suffix string) string {
 	return "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + suffix
 }
 
-// TestCreateAsset_RejectsOverlongName spot-checks the maxAssetNameLen (120)
+// TestCreateAsset_RejectsOverlongName spot-checks the maxAssetNameLen (50)
 // tier via the asset-creation route.
 func TestCreateAsset_RejectsOverlongName(t *testing.T) {
 	h := newLengthCapHarness(t)
@@ -112,7 +112,7 @@ func TestCreateAsset_RejectsOverlongName(t *testing.T) {
 }
 
 // TestAddMarginalia_RejectsOverlongText spot-checks the maxMarginaliaLen
-// (300) tier via the marginalia route.
+// (160) tier via the marginalia route.
 func TestAddMarginalia_RejectsOverlongText(t *testing.T) {
 	h := newLengthCapHarness(t)
 
