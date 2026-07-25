@@ -214,6 +214,9 @@ export function createConnection(
 	let ws: WebSocket | null = null;
 	let stopped = false;
 	let retryDelay = 1000; // ms; doubles on each failed attempt, capped at 30s
+	// Pending reconnect timer, so a returning player can pre-empt it (see
+	// onVisibility below). Null whenever no retry is scheduled.
+	let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// While `syncing` is true, queue incoming events instead of dispatching
 	// them. We flush the queue when the resync resolves.
@@ -248,6 +251,31 @@ export function createConnection(
 		send({ type: 'prepare_plan.draft', payload: detail });
 	}
 	window.addEventListener('uneasy:prepare_plan_draft', onPreparePlanDraft);
+
+	// A backgrounded tab's socket usually dies — laptop sleep, phone lock, an
+	// OS suspending the connection — and by the time the player looks again
+	// the backoff may have grown to its 30s cap, so the table sits stale in
+	// front of them. Treat "the page became visible" as a human waiting:
+	// reset the backoff and pre-empt any scheduled retry.
+	//
+	// This is deliberately not a shorter global cap. Retries nobody is
+	// watching buy nothing, and every reconnect that *succeeds* runs a full
+	// resync (game state, assets, rolls, record) — real DB work on a
+	// metered free tier. Spending it when someone is looking is the trade
+	// worth making; spending it every 5s into a sleeping tab is not.
+	function onVisibility() {
+		if (stopped || document.visibilityState !== 'visible') return;
+		retryDelay = 1000;
+		// Only when a retry is actually pending: if the socket is OPEN
+		// there's nothing to do, and if it's CONNECTING an attempt is
+		// already in flight — connecting again would leak a second socket.
+		if (retryTimer !== null) {
+			clearTimeout(retryTimer);
+			retryTimer = null;
+			connect();
+		}
+	}
+	document.addEventListener('visibilitychange', onVisibility);
 
 	function send(msg: object) {
 		if (ws?.readyState === WebSocket.OPEN) {
@@ -306,7 +334,8 @@ export function createConnection(
 		ws.onclose = () => {
 			if (stopped) return;
 			console.log(`[ws] disconnected — retrying in ${retryDelay}ms`);
-			setTimeout(() => {
+			retryTimer = setTimeout(() => {
+				retryTimer = null;
 				retryDelay = Math.min(retryDelay * 2, 30_000);
 				connect();
 			}, retryDelay);
@@ -323,9 +352,14 @@ export function createConnection(
 	return {
 		disconnect: () => {
 			stopped = true;
+			if (retryTimer !== null) {
+				clearTimeout(retryTimer);
+				retryTimer = null;
+			}
 			window.removeEventListener('uneasy:typing', onTyping);
 			window.removeEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
 			window.removeEventListener('uneasy:prepare_plan_draft', onPreparePlanDraft);
+			document.removeEventListener('visibilitychange', onVisibility);
 			ws?.close();
 		},
 		ready,

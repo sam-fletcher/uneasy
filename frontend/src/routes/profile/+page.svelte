@@ -85,6 +85,64 @@
 
 	onMount(load);
 
+	// ── Refresh on return ────────────────────────────────────────────────────
+	// The table cards (roster, phase, waiting-on, online) come from one fetch
+	// in onMount and have no WebSocket behind them — an account-level socket
+	// doesn't exist, and by design: hub presence means "has a table open", so
+	// a profile page deliberately counts as offline. Without this, a player
+	// who joins your table while you sit here never appears until a reload.
+	//
+	// Refetch when the player comes back to the page instead of polling. That
+	// distinction is a cost constraint, not just taste: Neon free bills awake
+	// time against a 100 CU-hr cap and suspends after ~5 idle minutes, so a
+	// poll would hold the DB awake for as long as one tab stays open — the
+	// same failure the notifications ticker hit in 2026-07 (see
+	// adr/PUBLIC_LAUNCH_PLAN.md "Post-deploy finding"). A visibility/focus
+	// refetch can only fire when a human is already using the app.
+	//
+	// visibilitychange covers tab switches; focus covers app switches that
+	// leave the tab "visible". They overlap, which the debounce absorbs.
+	// ListMyTables is the priciest read we have (N+1: GetPlayersByGame plus a
+	// full ComputeWaitState per table), so the floor matters more here than
+	// the staleness does.
+	const REFRESH_MIN_INTERVAL_MS = 10_000;
+	let lastRefreshAt = 0;
+	let refreshing = false;
+
+	async function refreshTables() {
+		if (refreshing || loading || !me) return;
+		const now = Date.now();
+		if (now - lastRefreshAt < REFRESH_MIN_INTERVAL_MS) return;
+		lastRefreshAt = now;
+		refreshing = true;
+		try {
+			const res = await withTimeout(listMyTables());
+			tables = res.tables;
+		} catch {
+			// Leave the cards showing what they already had — a failed
+			// background refresh shouldn't replace a working page with an
+			// error. The next return to the page tries again.
+		} finally {
+			refreshing = false;
+		}
+	}
+
+	onMount(() => {
+		// `load()` is the initial fetch; count it so returning to a
+		// just-opened page doesn't immediately refetch.
+		lastRefreshAt = Date.now();
+		const onVisibility = () => {
+			if (document.visibilityState === 'visible') void refreshTables();
+		};
+		const onFocus = () => void refreshTables();
+		document.addEventListener('visibilitychange', onVisibility);
+		window.addEventListener('focus', onFocus);
+		return () => {
+			document.removeEventListener('visibilitychange', onVisibility);
+			window.removeEventListener('focus', onFocus);
+		};
+	});
+
 	async function saveUsername() {
 		error = ''; notice = '';
 		try {
