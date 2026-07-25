@@ -8,6 +8,7 @@
 	import { page } from '$app/state';
 	import { getMe, login, createAccount } from '$lib/api';
 	import HelpButton from '$lib/components/HelpButton.svelte';
+	import CharCounter from '$lib/components/CharCounter.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 
 	type Mode = 'login' | 'signup';
@@ -123,6 +124,11 @@
 			<div class="field">
 				<input id="u" autocomplete="username" placeholder=" " bind:value={username} maxlength={TEXT_LIMITS.USERNAME} disabled={loading} />
 				<label for="u">Player name</label>
+				<!-- Sign-up only: on log in the name is already chosen, and a
+				     counter on a remembered credential is just noise. -->
+				{#if mode === 'signup'}
+					<span class="field-counter"><CharCounter value={username} max={TEXT_LIMITS.USERNAME} /></span>
+				{/if}
 			</div>
 
 			<div class="field">
@@ -280,6 +286,14 @@
 	}
 	.field input {
 		padding: 1.25rem 0.8rem 0.45rem;
+	}
+	/* Pinned to the field's top-right, opposite the floating label, so the
+	   counter appearing mid-typing never reflows the form. */
+	.field-counter {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.8rem;
+		pointer-events: none;
 	}
 	.field label {
 		position: absolute;

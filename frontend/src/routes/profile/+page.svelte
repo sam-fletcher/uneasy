@@ -11,6 +11,7 @@
 	import { playerColor } from '$lib/playerColor';
 	import PhaseBadge from '$lib/components/shared/PhaseBadge.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import CharCounter from '$lib/components/CharCounter.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
 	import { getPushState, enablePush, disablePush, type PushState } from '$lib/push';
@@ -276,6 +277,7 @@
 				<span class="label">Player name</span>
 				{#if editingUsername}
 					<input aria-label="Player name" bind:value={usernameDraft} maxlength={TEXT_LIMITS.USERNAME} />
+					<CharCounter value={usernameDraft} max={TEXT_LIMITS.USERNAME} />
 					<button class="action-btn primary small" onclick={saveUsername}>Save</button>
 					<button class="action-btn secondary small" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
 				{:else}
@@ -456,8 +458,12 @@
 		background:var(--pill-color, var(--color-text-muted));
 		flex-shrink:0;
 	}
+	/* These pills WRAP (see .pills) rather than scrolling, so there's no
+	   strip to share and no reason for the header's tighter budget — a long
+	   name costs a row, not a clipped name. 26ch is the same pathological
+	   wide-glyph backstop the header chips use. */
 	.pill-name {
-		max-width:10ch;
+		max-width:26ch;
 		overflow:hidden;
 		white-space:nowrap;
 		text-overflow:ellipsis;

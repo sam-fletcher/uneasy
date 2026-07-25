@@ -635,7 +635,11 @@
 					<path d="M5 10v10h14V10" />
 				</svg>
 			</a>
-			<div class="members-wrap" class:fade-left={membersFadeLeft} class:fade-right={membersFadeRight}>
+			<!-- --member-count feeds .member-name's width budget (see its CSS):
+			     the names split the strip N ways, so the count has to reach
+			     CSS. Falls back to 1 rather than 0 so the budget stays a
+			     valid length while presence is still loading. -->
+			<div class="members-wrap" class:fade-left={membersFadeLeft} class:fade-right={membersFadeRight} style:--member-count={members.length || 1}>
 				<div class="members" bind:this={membersEl} onscroll={updateMembersFade}>
 					{#each members as member}
 						{@const mr = ranksByPlayer.get(member.id)}
@@ -1176,6 +1180,25 @@
 		padding: 0 1rem;
 	}
 
+	/* Below the chat dock the strip is fighting for every pixel: Home + Help
+	   are a fixed 88px of the ~256px a 390 phone has, so the pills lose a
+	   whole player's worth of room to chrome that isn't carrying any
+	   information. Cancel the header's own inset (leaving main.full-bleed's
+	   0.2rem hairline as the visual edge) and tighten the button-to-pill
+	   gaps, which buys the strip ~32px — about half a pill. The buttons keep
+	   their 44px touch targets; only the space around them shrinks.
+	   Deliberately NOT taken from the pills' own padding, which reads as
+	   cramped long before this does. Header rules are the one legitimate
+	   place for viewport queries (the header spans the viewport) and this
+	   uses a dock literal. */
+	@media (max-width: 789px) {
+		.top-strip {
+			gap: 0.25rem;
+			margin-inline: -0.75rem;
+			padding-inline: 0;
+		}
+	}
+
 	.home {
 		display: inline-flex;
 		align-items: center;
@@ -1197,6 +1220,10 @@
 		position: relative;
 		flex: 1;
 		min-width: 0;
+		/* Query container for .member-name's width budget below. The names
+		   size against the STRIP, not the viewport — the strip is what they
+		   actually have to share. */
+		container-type: inline-size;
 	}
 	.members-wrap::before,
 	.members-wrap::after {
@@ -1216,10 +1243,17 @@
 
 	.members {
 		display: flex;
-		gap: 0.4rem;
+		gap: var(--chip-gap);
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
 		scrollbar-width: none;
+
+		/* Everything in a pill that ISN'T the name: horizontal padding (2x),
+		   border (2x1), the colour dot, and the dot-to-name gap. Fed to
+		   .member-name's budget below, so the two can't drift apart —
+		   retune the padding and you must retune this. */
+		--chip-gap: 0.4rem;
+		--chip-chrome: 37.2px; /* 11.2*2 + 1*2 + 8 + 4.8 */
 	}
 	.members::-webkit-scrollbar { display: none; }
 
@@ -1244,7 +1278,10 @@
 	   fixed Home/Help buttons for ~240px. Tighten only down here; from the
 	   dock up the full-width padding above just reads as breathing room. */
 	@media (max-width: 789px) {
-		.members { gap: 0.3rem; }
+		.members {
+			--chip-gap: 0.3rem;
+			--chip-chrome: 29.2px; /* 7.2*2 + 1*2 + 8 + 4.8 */
+		}
 		.member { padding: 0.3rem 0.45rem; }
 	}
 
@@ -1295,7 +1332,10 @@
 	.member-name-row {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		/* 0.3rem, not the 0.4rem used elsewhere: the dot reads as attached to
+		   the name rather than as its own column, and across a 5-pill strip
+		   the difference is ~8px of name. Mirrored in --chip-chrome. */
+		gap: 0.3rem;
 		min-width: 0;
 	}
 
@@ -1316,8 +1356,35 @@
 		color: var(--color-text);
 	}
 
+	/*
+	 * Name width budget — how much of a name we show before ellipsing.
+	 *
+	 * The old rule was a flat 10ch, which ignored the room actually
+	 * available: on a 1440 desktop the strip has ~1300px, the pills use
+	 * ~490, and names were still being clipped with 800px sitting empty.
+	 *
+	 * Instead, share the strip. `200cqw` is the policy knob: names may claim
+	 * up to TWO strip-widths between them, i.e. we accept scrolling up to
+	 * one full swipe before any name is cut. That's deliberate — a scrolled
+	 * name is one gesture away, a truncated one is only recoverable by
+	 * opening that player's retinue, so scrolling is the cheaper loss.
+	 * Divide by the player count, subtract each pill's fixed chrome, and
+	 * clamp:
+	 *   floor 10ch — the old cap; below this a name stops being an
+	 *                identifier (only reachable at 5 players on a 360 phone)
+	 *   ceiling 26ch — a backstop against pathological wide-glyph names
+	 *                (20 'W's is 534px); normal 20-char names sit under it
+	 *
+	 * Shakes out (390 phone): 2-3 players never truncate, 4 truncate past
+	 * ~16 chars, 5 past ~12. Every docked width: never.
+	 */
 	.member-name {
-		max-width: 10ch;
+		max-width: clamp(
+			10ch,
+			(200cqw - var(--member-count) * var(--chip-chrome)
+				- (var(--member-count) - 1) * var(--chip-gap)) / var(--member-count),
+			26ch
+		);
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;

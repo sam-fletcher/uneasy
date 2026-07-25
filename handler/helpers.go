@@ -17,7 +17,11 @@ import (
 // capped separately; these bound the SIZE of each entry against a hostile
 // client sending an oversized body.
 const (
-	maxUsernameLen = 40
+	// Unlike the others this is a PRODUCT limit, not just an anti-abuse
+	// bound: the player name has to fit the table header's pill strip,
+	// shared between up to five players. Mirrored in
+	// frontend/src/lib/textLimits.ts (USERNAME), which explains the 20.
+	maxUsernameLen = 20
 	maxEmailLen    = 254
 	// maxAssetNameLen bounds a player-authored name: assets/peers, titles,
 	// festivity resources, decree resources.

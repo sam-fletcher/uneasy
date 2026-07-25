@@ -168,7 +168,7 @@ func TestCreateResetRequest_HappyPath(t *testing.T) {
 	h := newFeedbackHarness(t)
 
 	code, out := h.do(http.MethodPost, "/api/reset-requests", map[string]any{
-		"username": "some-locked-out-player",
+		"username": "a-locked-out-player",
 		"contact":  "player@example.com",
 		"body":     "forgot my password",
 	}, false)

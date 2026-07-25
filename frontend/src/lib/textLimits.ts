@@ -11,7 +11,13 @@
 // custom-location at 80, tone topics at 120) — those are deliberate local
 // choices predating this file and are not meant to import from here.
 export const TEXT_LIMITS = {
-	USERNAME: 40,
+	// 20, not a generic "generous" cap: the player name is rendered in the
+	// table header's pill strip, where every character is shared between up
+	// to five players. 20 clears every real first name (the longest common
+	// ones run 11-12) with room for a handle, and is the widest cap where
+	// five max-length names still fit a laptop with no scrolling. Raising it
+	// only trades header legibility for names nobody can read anyway.
+	USERNAME: 20,
 	EMAIL: 254,
 	NAME: 120,
 	MARGINALIA: 300,
