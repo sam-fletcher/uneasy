@@ -28,6 +28,7 @@ type (
 	DraftPeer                        = game.DraftPeer
 	ExchangeCourtiersResolutionData  = game.ExchangeCourtiersResolutionData
 	ChronicleHistoriesResolutionData = game.ChronicleHistoriesResolutionData
+	ChronicleStep                    = game.ChronicleStep
 	SeekAnswersResolutionData        = game.SeekAnswersResolutionData
 	DuelResolutionData               = game.DuelResolutionData
 	DuelPhase                        = game.DuelPhase

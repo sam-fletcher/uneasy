@@ -16,6 +16,16 @@ export interface TakeConsentRequest {
 export interface SpreadRumorsResolutionData {
 	source_hidden?: boolean;
 	rumor_id?: number | null;
+	/**
+	 * Set when the preparer chose "keep it secret for now" at prep time: the rumor
+	 * text lives in the Secret on secret_asset_id rather than in the (blanked)
+	 * preparation_notes, until a make publishes it. Metadata only — the prepared
+	 * log post already names the holding asset, and the Secret's text is reachable
+	 * only through the per-asset, grant-checked secrets endpoint.
+	 */
+	is_secret?: boolean;
+	secret_asset_id?: number | null;
+	secret_id?: number | null;
 	/** Set while a take-asset consent request awaits the victim's response. */
 	pending_take_consent?: TakeConsentRequest | null;
 	/** Set when the victim declined; disables the take-asset option on re-pick. */
@@ -27,6 +37,15 @@ export interface SpreadRumorsResolutionData {
 	 *  a refresh/remount doesn't re-prompt a completed step. */
 	break_target_done?: number;
 	hide_source_done?: number;
+	/**
+	 * Specifics of each completed step, shown read-only to every viewer (Tier-1,
+	 * ADR-006). All public facts: hide_source is fiction-level anonymity that the
+	 * plan.prepared post and the hide-source log entry already give away, so naming
+	 * the sheltering asset leaks nothing. Secret text never passes through here.
+	 */
+	broken_asset_ids?: number[];
+	hide_source_asset_ids?: number[];
+	taken_asset_ids?: number[];
 }
 
 export function parseSpreadRumorsData(

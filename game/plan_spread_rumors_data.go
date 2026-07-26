@@ -43,6 +43,19 @@ type SpreadRumorsResolutionData struct {
 	// duplicate.
 	BreakTargetDone int `json:"break_target_done,omitempty"`
 	HideSourceDone  int `json:"hide_source_done,omitempty"`
+
+	// Specifics of each completed step, recorded so the panel can render what was
+	// actually done read-only to every viewer rather than collapsing to a counter
+	// (Tier-1 committed state, ADR-006).
+	//
+	// All three are public facts. hide_source is fiction-level anonymity — the
+	// preparer is already named by the plan.prepared post, and the hide-source log
+	// entry states the concealment outright (the dramatic-irony convention) — so
+	// naming the sheltering asset here leaks nothing the table doesn't have. The
+	// Secret's *text* is never stored or displayed here.
+	BrokenAssetIDs     []int64 `json:"broken_asset_ids,omitempty"`
+	HideSourceAssetIDs []int64 `json:"hide_source_asset_ids,omitempty"`
+	TakenAssetIDs      []int64 `json:"taken_asset_ids,omitempty"`
 }
 
 // TakeConsentRequest captures an open "take asset" consent gate: the

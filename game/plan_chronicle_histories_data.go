@@ -39,6 +39,33 @@ type ChronicleHistoriesResolutionData struct {
 	// applies its mechanical effect (break/invoke) inline, so there is no
 	// separate post-apply break sub-flow on the make path.
 	MakeChoicesDone int16 `json:"make_choices_done,omitempty"`
+
+	// Steps records the specifics of every committed choice — which artifact a
+	// break landed on, which one was invoked, the chronicler's narration — so the
+	// panel can render what was actually done instead of collapsing to an option
+	// count once the picker commits (Tier-1 committed state, ADR-006). Both paths
+	// append here: the make path (PlayerID nil, the preparer) and the mar path
+	// (PlayerID set). MakeMarChoices is deliberately left as the completion gate
+	// and the <ChoicesApplied> source; this runs alongside it.
+	//
+	// Everything recorded is a public act — no plan secret passes through here.
+	Steps []ChronicleStep `json:"steps,omitempty"`
+}
+
+// ChronicleStep is one committed Chronicle Histories choice with its specifics.
+type ChronicleStep struct {
+	// PlayerID is nil on the make path (the preparer chooses alone) and set on
+	// the mar path, where every player submits one choice.
+	PlayerID *int64 `json:"player_id,omitempty"`
+	// Option is the chosen key: break_artifact, invoke_another, echo_present or
+	// total_control.
+	Option string `json:"option"`
+	// AssetID is the artifact the choice landed on — the one broken, or the one
+	// newly invoked. Nil for the narrative-only options.
+	AssetID *int64 `json:"asset_id,omitempty"`
+	// Narration is the chronicler's optional summary of the beat. Make path only:
+	// the mar-choice route takes no narration.
+	Narration string `json:"narration,omitempty"`
 }
 
 // EnsureChronicleHistories returns r.ChronicleHistories, allocating a zero

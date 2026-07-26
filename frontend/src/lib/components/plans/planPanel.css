@@ -534,6 +534,48 @@
 	opacity: 1;
 }
 
+/* Transparent fieldset wrapping a RESOLVE phase, so players waiting on the
+   actor see the same UI greyed out instead of a bare "X is resolving…" line
+   (Tier-1 read-only mirroring, ADR-006). The prep-phase analogue above stays at
+   full opacity because the viewer is following a live draft; here the point is
+   to read as inert. disabled blocks every descendant control for free;
+   CardPicker / PlayerChips take readOnly separately (their cards are
+   role=checkbox, not form controls).
+
+   Committed state — the "Resolved so far" lists — belongs OUTSIDE this wrapper,
+   at full opacity: it is what happened, not what someone else is doing. */
+.resolve-mirror-wrap {
+	border: none;
+	padding: 0;
+	margin: 0;
+	min-width: 0;
+}
+.resolve-mirror-wrap.resolve-mirror {
+	opacity: 0.55;
+	pointer-events: none;
+}
+
+/* Committed-state summary (Tier-1): the choices already made, shown plainly to
+   every viewer. Shared by Seek Answers, Chronicle Histories and Spread Rumors. */
+.resolved-so-far { margin: 0; }
+.resolved-so-far-label {
+	margin: 0;
+	font-size: 0.82rem;
+	color: var(--color-text-muted);
+}
+.resolved-so-far-list {
+	margin: 0.25rem 0 0 1.1rem;
+	padding: 0;
+	list-style: disc;
+	font-size: 0.85rem;
+}
+.resolved-so-far-list li { margin: 0.2rem 0; }
+.resolved-so-far-list em { font-style: italic; }
+/* The chronicler's / actor's own words, quoted inside a resolved line. */
+.resolved-so-far-list .resolved-note {
+	color: var(--color-text-muted);
+}
+
 .form-hint {
 	font-size: 0.78rem;
 	color: var(--color-text-muted);

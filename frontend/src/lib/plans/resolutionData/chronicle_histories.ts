@@ -24,6 +24,24 @@ export interface ChronicleHistoriesResolutionData {
 	 * refresh doesn't re-prompt a finished choice or allow over-picking.
 	 */
 	make_choices_done?: number;
+	/**
+	 * Specifics of every committed choice — which artifact was broken or invoked,
+	 * and the chronicler's narration — so the panel can show what was actually
+	 * done rather than a bare option count (Tier-1 committed state, ADR-006).
+	 * Both paths append: make (player_id absent) and mar (player_id set).
+	 */
+	steps?: ChronicleStep[];
+}
+
+/** One committed Chronicle Histories choice, with its specifics. */
+export interface ChronicleStep {
+	/** Absent on the make path (the preparer); set on the mar path. */
+	player_id?: number;
+	option: string;
+	/** The artifact broken or newly invoked; absent for the narrative options. */
+	asset_id?: number;
+	/** The chronicler's summary of the beat. Make path only. */
+	narration?: string;
 }
 
 export function parseChronicleHistoriesData(

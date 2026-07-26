@@ -428,6 +428,36 @@
 	function countIn(choices: string[], key: string) {
 		return choices.filter(c => c === key).length;
 	}
+
+	// ── Tier-1 committed state (ADR-006) ─────────────────────────────────────
+	// The specifics of each completed step, shown read-only to every viewer so a
+	// committed choice persists in the panel once its picker commits.
+	//
+	// Nothing here is hidden information. hide_source is fiction-level anonymity —
+	// the plan.prepared post already names the preparer, and the hide-source log
+	// entry states the concealment outright as dramatic irony — so listing it, and
+	// naming the sheltering asset, gives the table nothing it doesn't have. The
+	// Secret's *text* is never in resolution_data and never shown here.
+	const brokenAssetIDs = $derived(srData.broken_asset_ids ?? []);
+	const hideSourceAssetIDs = $derived(srData.hide_source_asset_ids ?? []);
+	const takenAssetIDs = $derived(srData.taken_asset_ids ?? []);
+	const revealedSource = $derived(
+		(parseResolutionData(plan).make_mar_choices ?? []).some(c => c.option === 'reveal_source'),
+	);
+	const leveragedCount = $derived(
+		(parseResolutionData(plan).make_mar_choices ?? []).filter(c => c.option === 'leverage_target').length,
+	);
+	// The player whose deeds these are: the preparer on make, the target-asset
+	// owner driving the counter-rumor on mar.
+	const actorName = $derived(
+		rollOutcome === 'mar' && targetAssetOwnerID != null
+			? playerName(players, targetAssetOwnerID)
+			: (plan ? playerName(players, plan.preparer_id) : ''),
+	);
+	const anyResolved = $derived(
+		brokenAssetIDs.length > 0 || hideSourceAssetIDs.length > 0 || takenAssetIDs.length > 0
+			|| revealedSource || leveragedCount > 0,
+	);
 </script>
 
 {#if mode === 'prep'}
@@ -615,8 +645,13 @@
 				</div>
 			</div>
 
-		{:else if rollOutcome != null && !choicesDone && isActor}
-			<div class="choices-section">
+		{:else if rollOutcome != null && !choicesDone}
+			<!-- Option-picking. The actor picks; everyone else sees the same option
+			     list greyed out and inert. The counts shown to a watcher are their
+			     own (zeroed) local state — mirroring the actor's uncommitted picks
+			     would need the Tier-2 resolve-draft channel ADR-006 leaves open. -->
+			<fieldset class="resolve-mirror-wrap choices-section"
+				class:resolve-mirror={!isActor} disabled={!isActor}>
 				<p class="choices-header">
 					Result: <span class="outcome-{rollOutcome}">
 						{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
@@ -648,16 +683,54 @@
 				<p class="choices-note">
 					Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null} / {requiredPicks}{/if}
 				</p>
-				<button class="action-btn primary"
-					onclick={() => onApplyChoices(plan, rollOutcome!)}
-					disabled={choicesBusy || totalPicked === 0 || (requiredPicks != null && totalPicked !== requiredPicks)}>
-					{choicesBusy ? '…' : ((counts.take_asset ?? 0) > 0 ? 'Next: choose assets' : 'Apply choices')}
-				</button>
-			</div>
+				{#if isActor}
+					<button class="action-btn primary"
+						onclick={() => onApplyChoices(plan, rollOutcome!)}
+						disabled={choicesBusy || totalPicked === 0 || (requiredPicks != null && totalPicked !== requiredPicks)}>
+						{choicesBusy ? '…' : ((counts.take_asset ?? 0) > 0 ? 'Next: choose assets' : 'Apply choices')}
+					</button>
+				{/if}
+			</fieldset>
+			{#if !isActor}
+				<p class="ft-prompt muted">{actorName} is choosing options…</p>
+			{/if}
 
-		{:else if choicesDone && isActor}
+		{:else if choicesDone}
 			<div class="complete-section">
+				<!-- Committed state (Tier-1, ADR-006): the picked options and what each
+				     step actually did, at full opacity for EVERY viewer, outside the
+				     greyed picker area. -->
 				<ChoicesApplied choices={existingChoices} options={OPTIONS} />
+				{#if anyResolved}
+					<div class="resolved-so-far">
+						<p class="resolved-so-far-label">Resolved so far:</p>
+						<ul class="resolved-so-far-list">
+							{#each brokenAssetIDs as id}
+								<li>Broke <em>{assetName(assets, id)}</em></li>
+							{/each}
+							{#if leveragedCount > 0}
+								<li>
+									Leveraged <em>{assetName(assets, plan.target_asset_id ?? 0)}</em>
+									{#if leveragedCount > 1}(×{leveragedCount}){/if}
+								</li>
+							{/if}
+							{#each takenAssetIDs as id}
+								<li>Took <em>{assetName(assets, id)}</em></li>
+							{/each}
+							{#each hideSourceAssetIDs as id}
+								<li>
+									Hid as the source — the secret is discoverable from
+									<em>{assetName(assets, id)}</em>
+								</li>
+							{/each}
+							{#if revealedSource}
+								<li>Revealed {actorName} as the source</li>
+							{/if}
+						</ul>
+					</div>
+				{/if}
+
+				<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!isActor} disabled={!isActor}>
 
 				{#if btRemaining > 0}
 					<div class="plan-form">
@@ -668,6 +741,7 @@
 							label="Marginalium to tear"
 							items={btMarginaliaAssets}
 							{players}
+							readOnly={!isActor}
 							emptyMessage="Nothing left to break."
 							marginaliaMode
 							selectedMarginaliaID={btMargID}
@@ -678,18 +752,20 @@
 							}}
 						/>
 						{#if btWarn}<p class="res-warning">{btWarn}</p>{/if}
-						{#if btMarginaliaAssets.length === 0}
-							<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
-							<button class="action-btn primary"
-								onclick={() => forfeitStep(plan, 'break_target')} disabled={forfeitBusy}>
-								{forfeitBusy ? '…' : 'Skip — no valid targets'}
-							</button>
-						{:else}
-							<button class="action-btn primary"
-								onclick={() => submitBreakTarget(plan)}
-								disabled={btBusy || btMargID == null}>
-								{btBusy ? '…' : 'Tear marginalia'}
-							</button>
+						{#if isActor}
+							{#if btMarginaliaAssets.length === 0}
+								<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
+								<button class="action-btn primary"
+									onclick={() => forfeitStep(plan, 'break_target')} disabled={forfeitBusy}>
+									{forfeitBusy ? '…' : 'Skip — no valid targets'}
+								</button>
+							{:else}
+								<button class="action-btn primary"
+									onclick={() => submitBreakTarget(plan)}
+									disabled={btBusy || btMargID == null}>
+									{btBusy ? '…' : 'Tear marginalia'}
+								</button>
+							{/if}
 						{/if}
 					</div>
 				{/if}
@@ -700,31 +776,43 @@
 							Hide source ({hsRemaining} remaining)
 						</p>
 						<p class="choices-note muted">
-							An asset of your choice will hide the Secret that you spread the rumor.
+							{#if isActor}
+								An asset of your choice will hide the Secret that you spread the rumor.
+							{:else}
+								An asset of {actorName}'s choice will hide the Secret that they spread
+								the rumor — their character stays unnamed at court, but the table sees it.
+							{/if}
 						</p>
 						<CardPicker
-							label="Hide on one of your assets"
+							label={isActor ? 'Hide on one of your assets' : `Hide on one of ${actorName}'s assets`}
 							items={hsAssetOptions}
 							{players}
+							readOnly={!isActor}
 							selected={hsAssetID}
 							onSelect={(id) => (hsAssetID = id)}
 						/>
-						{#if hsAssetOptions.length === 0}
-							<p class="choices-note muted">You have no asset to hide the source under — this pick has no valid target.</p>
-							<button class="action-btn primary"
-								onclick={() => forfeitStep(plan, 'hide_source')} disabled={forfeitBusy}>
-								{forfeitBusy ? '…' : 'Skip — no valid targets'}
-							</button>
-						{:else}
-							<button class="action-btn primary"
-								onclick={() => submitHideSource(plan)}
-								disabled={hsBusy || hsAssetID == null}>
-								{hsBusy ? '…' : 'Hide source'}
-							</button>
+						{#if isActor}
+							{#if hsAssetOptions.length === 0}
+								<p class="choices-note muted">You have no asset to hide the source under — this pick has no valid target.</p>
+								<button class="action-btn primary"
+									onclick={() => forfeitStep(plan, 'hide_source')} disabled={forfeitBusy}>
+									{forfeitBusy ? '…' : 'Skip — no valid targets'}
+								</button>
+							{:else}
+								<button class="action-btn primary"
+									onclick={() => submitHideSource(plan)}
+									disabled={hsBusy || hsAssetID == null}>
+									{hsBusy ? '…' : 'Hide source'}
+								</button>
+							{/if}
 						{/if}
 					</div>
 				{/if}
 
+				</fieldset>
+
+				<!-- Completion is always the preparer's, even on a mar where the
+				     target-asset owner drove the sub-flows. -->
 				{#if subflowsDone}
 					{#if isPreparer}
 						<p class="complete-note">
@@ -739,21 +827,12 @@
 							Sub-flows done. {playerName(players, plan.preparer_id)} will complete the plan.
 						</p>
 					{/if}
-				{/if}
-			</div>
-
-		{:else if choicesDone && isPreparer}
-			<!-- Mar: preparer watches the counter-rumor unfold, then completes. -->
-			<div class="complete-section">
-				{#if subflowsDone}
-					<button class="action-btn primary"
-						onclick={() => onComplete(plan)} disabled={resBusy}>
-						{resBusy ? '…' : 'Complete plan'}
-					</button>
-				{:else}
+				{:else if !isActor}
 					<p class="ft-prompt muted">
-						{#if targetAssetOwnerID != null}
-							{playerName(players, targetAssetOwnerID)} is applying the counter-rumor…
+						{#if rollOutcome === 'mar'}
+							{actorName} is applying the counter-rumor…
+						{:else}
+							{actorName} is resolving Spread Rumors…
 						{/if}
 					</p>
 				{/if}

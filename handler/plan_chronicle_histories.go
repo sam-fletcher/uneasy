@@ -425,6 +425,13 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Record as a make-path Choice (PlayerID nil) and advance the counter.
 		resData.MakeMarChoices = append(resData.MakeMarChoices, Choice{Option: body.Option})
+		// …and the step's specifics alongside it, so the panel can show what was
+		// actually done rather than a bare option count (Tier-1, ADR-006).
+		ch.Steps = append(ch.Steps, ChronicleStep{
+			Option:    body.Option,
+			AssetID:   chStepTarget(body.Option, body.AssetID),
+			Narration: strings.TrimSpace(body.Narration),
+		})
 		ch.MakeChoicesDone++
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
@@ -536,10 +543,16 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Record as a Choice with PlayerID set so the panel can attribute it.
+		// Record as a Choice with PlayerID set so the panel can attribute it,
+		// plus the step's specifics for the Tier-1 display (ADR-006).
 		resData.MakeMarChoices = append(resData.MakeMarChoices, Choice{
 			PlayerID: &player.ID,
 			Option:   body.Choice,
+		})
+		ch.Steps = append(ch.Steps, ChronicleStep{
+			PlayerID: &player.ID,
+			Option:   body.Choice,
+			AssetID:  chStepTarget(body.Choice, body.AssetID),
 		})
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
@@ -556,6 +569,20 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			"submitted":        chDistinctMarChoosers(&resData),
 			"required_choices": ch.MarRequiredChoices,
 		})
+	}
+}
+
+// chStepTarget returns the artifact a choice landed on, for the Tier-1 step
+// record. Only break_artifact and invoke_another touch an asset; returning nil
+// for the narrative-only options stops a client that sends a stale asset_id
+// alongside echo_present / total_control from recording a target that was
+// never touched.
+func chStepTarget(option string, assetID *int64) *int64 {
+	switch option {
+	case "break_artifact", "invoke_another":
+		return assetID
+	default:
+		return nil
 	}
 }
 
@@ -623,7 +650,22 @@ func chApplyMarEffect(
 		return fmt.Sprintf("%s invoked %s.", who, assetMark(asset.Name)), 0, ""
 	default:
 		// echo_present / total_control: purely narrative.
-		return fmt.Sprintf("%s chose %q.", who, in.choice), 0, ""
+		return fmt.Sprintf("%s %s.", who, chNarrativeChoicePhrase(in.choice)), 0, ""
+	}
+}
+
+// chNarrativeChoicePhrase renders the narrative-only options as prose for the
+// action log. The mechanical options (break_artifact, invoke_another) carry
+// their own wording; without this the log echoed the raw option key at the
+// table ("carol chose \"total_control\".").
+func chNarrativeChoicePhrase(option string) string {
+	switch option {
+	case "echo_present":
+		return "cut to the present to show history's impact"
+	case "total_control":
+		return "took narrative control of a moment"
+	default:
+		return fmt.Sprintf("chose %q", option)
 	}
 }
 

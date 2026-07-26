@@ -369,6 +369,7 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		sr.BreakTargetDone++
+		sr.BrokenAssetIDs = append(sr.BrokenAssetIDs, asset.ID)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record break-target progress", err)
 			return
@@ -667,6 +668,7 @@ func srCommitTakeConsent(
 	}
 	sr := resData.EnsureSpreadRumors()
 	sr.TakeResolved = true
+	sr.TakenAssetIDs = append(sr.TakenAssetIDs, req.AssetIDs...)
 	sr.PendingTakeConsent = nil
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 		return fmt.Errorf("save resolution data: %w", err)
@@ -794,10 +796,26 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		sr.SourceHidden = true
 		sr.HideSourceDone++
+		sr.HideSourceAssetIDs = append(sr.HideSourceAssetIDs, secretAsset.ID)
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save hide-source state", err)
 			return
 		}
+
+		// The dramatic-irony pair (adr/READONLY_TIERS_ROUND2_PLAN.md). EmitRumorCreated
+		// already carries the character-level record — "Rumor spread from unknown
+		// source" — and this is its player-level counterpart, so the table can see the
+		// gap between what they know and what their characters do. Hide-source was
+		// previously left out of the log to protect an anonymity the plan.prepared post
+		// had already given away; that rationale is superseded.
+		//
+		// Naming the sheltering asset is a breadcrumb, not a reveal: reading the Secret
+		// still costs a break or a steal. Its text never appears here — secret text
+		// stays out of the action log.
+		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s hid themselves as the source — no one at court knows the rumor came from them. "+
+				"The secret is discoverable from %s.",
+			playerDisplayName(ctx, deps.Q, player.ID), assetMark(secretAsset.Name)))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":         plan.ID,

@@ -340,6 +340,104 @@ func TestChronicleHistories_Make_NarrationFoldedIntoLog(t *testing.T) {
 	h.complete(plan.ID)
 }
 
+// TestChronicleHistories_Steps_RecordSpecificsForTier1 proves each committed
+// choice records WHICH artifact it landed on and the chronicler's narration —
+// the Tier-1 committed state the panel renders read-only to every viewer
+// (ADR-006). Before this, resolution_data held only an option count, so a
+// watcher saw "Break an invoked artifact × 1" with no way to tell which.
+//
+// Also pins that a narrative-only option records no target, even when a stale
+// client sends one.
+func TestChronicleHistories_Steps_RecordSpecificsForTier1(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	ctx := context.Background()
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
+
+	artifact, margs := chSeedArtifact(t, h, 0, "The Blackened Ledger", 2)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	// Invoking one artifact keeps difficulty at max(rank 1, 1) = 1 → budget 1.
+	roll := chCastRoll(t, h, plan.ID, artifact)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+
+	const narration = "The ink has been scraped away and rewritten."
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-step"
+	code, body := h.post(h.preparerIdxFor(plan.ID), path, map[string]any{
+		"option": "break_artifact", "asset_id": artifact,
+		"marginalia_id": margs[0], "narration": narration,
+	})
+	require.Equalf(t, http.StatusOK, code, "make-step break_artifact: %v", body)
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.ChronicleHistories)
+	require.Len(t, rd.ChronicleHistories.Steps, 1)
+
+	step := rd.ChronicleHistories.Steps[0]
+	assert.Equal(t, "break_artifact", step.Option)
+	require.NotNil(t, step.AssetID, "a break must record the artifact it landed on")
+	assert.Equal(t, artifact, *step.AssetID)
+	assert.Equal(t, narration, step.Narration)
+	assert.Nil(t, step.PlayerID, "make-path steps are the preparer's — player_id stays nil")
+
+	// MakeMarChoices is untouched: it remains the completion gate and the
+	// <ChoicesApplied> source, with Steps running alongside it.
+	require.Len(t, rd.MakeMarChoices, 1)
+	assert.Equal(t, "break_artifact", rd.MakeMarChoices[0].Option)
+
+	h.complete(plan.ID)
+}
+
+// TestChronicleHistories_Steps_NarrativeOptionRecordsNoTarget proves a stale
+// client can't attach a target to an option that never touches one.
+func TestChronicleHistories_Steps_NarrativeOptionRecordsNoTarget(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	ctx := context.Background()
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
+
+	artifact, _ := chSeedArtifact(t, h, 0, "The Blackened Ledger", 2)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	roll := chCastRoll(t, h, plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, "make", roll.Difficulty)
+
+	// echo_present is narrative-only, but the client sends an asset_id anyway.
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-step"
+	code, body := h.post(h.preparerIdxFor(plan.ID), path, map[string]any{
+		"option": "echo_present", "asset_id": artifact, "narration": "a bell tolls",
+	})
+	require.Equalf(t, http.StatusOK, code, "make-step echo_present: %v", body)
+
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.ChronicleHistories)
+	require.Len(t, rd.ChronicleHistories.Steps, 1)
+	assert.Nil(t, rd.ChronicleHistories.Steps[0].AssetID,
+		"a narrative option must not record a target it never touched")
+
+	h.complete(plan.ID)
+}
+
 // TestChronicleHistories_Make_CompletionGatedByBudget proves the make path
 // cannot complete until every budgeted option has been submitted.
 func TestChronicleHistories_Make_CompletionGatedByBudget(t *testing.T) {
@@ -447,6 +545,39 @@ func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 	// naming the preparer who completes (never lingering on "all players").
 	h.assertWaitees("all chose, preparer completes",
 		model.RowStatePlanResolving, plan.PreparerID)
+
+	// Tier-1 (ADR-006): each mar choice records its author AND its target, so
+	// the panel can render "Bea: broke ancient codex" rather than a bare count.
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.ChronicleHistories)
+	require.Len(t, rd.ChronicleHistories.Steps, 3, "one step per mar chooser")
+	byPlayer := map[int64]ChronicleStep{}
+	for _, s := range rd.ChronicleHistories.Steps {
+		require.NotNil(t, s.PlayerID, "mar steps must be attributed to their chooser")
+		byPlayer[*s.PlayerID] = s
+	}
+	assert.Equal(t, "echo_present", byPlayer[p0].Option)
+	assert.Nil(t, byPlayer[p0].AssetID, "a narrative choice records no target")
+	assert.Equal(t, "break_artifact", byPlayer[p1].Option)
+	require.NotNil(t, byPlayer[p1].AssetID, "a mar break must record which artifact it hit")
+	assert.Equal(t, artifactID, *byPlayer[p1].AssetID)
+	assert.Equal(t, "total_control", byPlayer[p2].Option)
+
+	// The narrative options read as prose in the log, not as a raw option key —
+	// the table should never see `carol chose "total_control"`.
+	posts, err := h.q.ListGamePosts(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	var narrativeLog string
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == "plan.chronicle_histories" &&
+			strings.Contains(p.Body, "narrative control") {
+			narrativeLog = p.Body
+		}
+	}
+	require.NotEmpty(t, narrativeLog, "total_control should log as prose")
+	assert.NotContains(t, narrativeLog, "total_control", "raw option keys must not reach the log")
 
 	// Now completion succeeds.
 	h.complete(plan.ID)

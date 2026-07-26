@@ -587,9 +587,9 @@
 				     live law text. -->
 				<ChoicesApplied choices={existingChoices} options={OPTIONS} />
 				{#if anyResolved}
-					<div class="sa-resolved">
-						<p class="sa-resolved-label">Resolved so far:</p>
-						<ul class="sa-resolved-list">
+					<div class="resolved-so-far">
+						<p class="resolved-so-far-label">Resolved so far:</p>
+						<ul class="resolved-so-far-list">
 							{#each makeBrokenIDs as id}
 								<li>Broke <em>{assetName(id)}</em></li>
 							{/each}
@@ -822,37 +822,7 @@
 {/if}
 
 <style>
+	/* .resolve-mirror-wrap / .resolved-so-far now live in planPanel.css — three
+	   panels share them (Seek Answers, Chronicle Histories, Spread Rumors). */
 	.stepper-row.unavailable { opacity: 0.55; }
-
-	/* Transparent fieldset wrapping a resolve phase. disabled blocks every
-	   descendant control for free; CardPicker / PlayerChips take readOnly
-	   separately (their cards are role=checkbox, not form controls). */
-	.resolve-mirror-wrap {
-		border: none;
-		padding: 0;
-		margin: 0;
-		min-width: 0;
-	}
-	/* Greyed, non-interactive mirror for players waiting on the actor. */
-	.resolve-mirror-wrap.resolve-mirror {
-		opacity: 0.55;
-		pointer-events: none;
-	}
-
-	/* Committed-state summary (Tier-1): the choices already made, shown plainly
-	   to every viewer — kept at full opacity, outside the greyed picker area. */
-	.sa-resolved { margin: 0; }
-	.sa-resolved-label {
-		margin: 0;
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
-	}
-	.sa-resolved-list {
-		margin: 0.25rem 0 0 1.1rem;
-		padding: 0;
-		list-style: disc;
-		font-size: 0.85rem;
-	}
-	.sa-resolved-list li { margin: 0.2rem 0; }
-	.sa-resolved-list em { font-style: italic; }
 </style>

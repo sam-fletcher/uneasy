@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -489,6 +490,82 @@ func TestSpreadRumors_HideSource_IsIdempotent(t *testing.T) {
 	otherSecrets, err := h.q.ListSecretsByAsset(ctx, other)
 	require.NoError(t, err)
 	assert.Empty(t, otherSecrets, "rejected retry must not write a second secret")
+}
+
+// TestSpreadRumors_HideSource_LogsDramaticIrony pins the paired-log convention
+// (adr/READONLY_TIERS_ROUND2_PLAN.md): rumor.created carries the character-level
+// record ("from unknown source") while a plan.spread_rumors post carries the
+// player-level counterpart, naming the concealer and the asset sheltering the
+// secret. Hide-source was formerly logged nowhere at all, to protect an anonymity
+// the plan.prepared post had already given away.
+//
+// The secret's TEXT must stay out of the log either way.
+func TestSpreadRumors_HideSource_LogsDramaticIrony(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	otherIdx := (focusIdx + 1) % 2
+
+	target := h.seedPeer(otherIdx, "rumor target")
+	holder := h.seedPeer(focusIdx, "Cover Story")
+
+	notes := "the chancellor cheats at cards"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolve(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+	h.makeChoice(plan.ID, makeOutcome, []string{"hide_source"})
+
+	hidePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/hide-source"
+	code, body := h.post(focusIdx, hidePath, map[string]any{"secret_asset_id": holder})
+	require.Equalf(t, http.StatusOK, code, "hide-source: %v", body)
+
+	posts, err := h.q.ListGamePosts(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	var ironyPost, rumorPost string
+	for _, p := range posts {
+		if p.SystemCode == nil {
+			continue
+		}
+		switch *p.SystemCode {
+		case "plan.spread_rumors":
+			if strings.Contains(p.Body, "hid themselves as the source") {
+				ironyPost = p.Body
+			}
+		case "rumor.created":
+			rumorPost = p.Body
+		}
+	}
+
+	require.NotEmpty(t, ironyPost, "hide-source must emit a player-level log entry")
+	assert.Contains(t, ironyPost, "no one at court knows",
+		"the entry should state what the characters don't know")
+	assert.Contains(t, ironyPost, "Cover Story",
+		"the sheltering asset is a deliberate breadcrumb — reading the secret still costs a break or a steal")
+
+	require.NotEmpty(t, rumorPost, "rumor.created should still be posted")
+	assert.Contains(t, rumorPost, "unknown source",
+		"the character-level record stays anonymous — that's the half of the pair the fiction sees")
+
+	// The secret's text never reaches the log, on either side of the pair.
+	secrets, err := h.q.ListSecretsByAsset(ctx, holder)
+	require.NoError(t, err)
+	require.Len(t, secrets, 1)
+	for _, p := range posts {
+		assert.NotContains(t, p.Body, secrets[0].Text, "secret text must never hit the action log")
+	}
+
+	// The Tier-1 record names the sheltering asset so the panel can render it.
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(refreshed.ResolutionData)
+	require.NotNil(t, rd.SpreadRumors)
+	assert.Equal(t, []int64{holder}, rd.SpreadRumors.HideSourceAssetIDs)
 }
 
 // srPlanPreparedPost returns the body of the plan.prepared chat post.

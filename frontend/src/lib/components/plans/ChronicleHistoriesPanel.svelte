@@ -276,6 +276,30 @@
 			.filter(c => c.player_id != null)
 			.map(c => ({ playerID: c.player_id as number, choice: c.option }));
 	});
+
+	// ── Tier-1 committed state (ADR-006) ─────────────────────────────────────
+	// The specifics of every step taken so far — which artifact was broken or
+	// invoked, and the chronicler's own words — recorded in resolution_data and
+	// shown at full opacity to EVERY viewer, so a committed choice persists in
+	// the panel instead of collapsing to an option count when its picker commits.
+	// Nothing here is hidden information: invocations, breaks and narration are
+	// all public acts.
+	const optionLabel = (key: string): string =>
+		OPTIONS.find(o => o.key === key)?.label ?? key;
+	const stepAssetName = (id: number | undefined): string =>
+		id == null ? 'an artifact' : (assets.find(a => a.id === id)?.name ?? 'an artifact');
+	const steps = $derived(
+		plan ? (parseResolutionData(plan).chronicle_histories?.steps ?? []) : [],
+	);
+	// The verb for a step that names an artifact; null for the narrative options,
+	// which fall back to their option label.
+	const stepVerb = (option: string): string | null => {
+		switch (option) {
+			case 'break_artifact': return 'Broke';
+			case 'invoke_another': return 'Invoked';
+			default:               return null;
+		}
+	};
 	const myMarSubmitted = $derived(
 		currentPlayerID != null && marEntries.some(e => e.playerID === currentPlayerID)
 	);
@@ -407,7 +431,10 @@
 						<strong>{makeRemaining}</strong> of {makeBudget}
 						choice{makeBudget === 1 ? '' : 's'} remaining — weave them into the scene.
 					</p>
-					{#if amChoiceActor}
+					<!-- The choice actor picks; everyone else sees the same controls
+					     greyed out and inert, rather than a bare waiting line. -->
+					<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!amChoiceActor}
+						disabled={!amChoiceActor}>
 						<div class="plan-form">
 							<FormField label="Choose an option">
 								<div class="chip-row">
@@ -430,6 +457,7 @@
 									label="Invoked artifact to break (tear a marginalia)"
 									items={assetsWithIntactMarginalia(invokedArtifacts)}
 									{players}
+									readOnly={!amChoiceActor}
 									emptyMessage="No intact marginalia on invoked artifacts."
 									ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
 									marginaliaMode
@@ -445,6 +473,7 @@
 									label="Artifact to invoke"
 									items={uninvokedArtifacts}
 									{players}
+									readOnly={!amChoiceActor}
 									emptyMessage="No eligible artifacts."
 									ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
 									selected={makeAssetID}
@@ -455,13 +484,16 @@
 								<textarea rows={2} bind:value={makeNarration} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 									placeholder="Describe this beat of the scene" required></textarea>
 							</FormField>
-							<button class="action-btn primary"
-								onclick={() => submitMakeStep(plan)}
-								disabled={makeBusy || !makeReady}>
-								{makeBusy ? '…' : 'Submit choice'}
-							</button>
+							{#if amChoiceActor}
+								<button class="action-btn primary"
+									onclick={() => submitMakeStep(plan)}
+									disabled={makeBusy || !makeReady}>
+									{makeBusy ? '…' : 'Submit choice'}
+								</button>
+							{/if}
 						</div>
-					{:else}
+					</fieldset>
+					{#if !amChoiceActor}
 						<p class="ft-prompt muted">
 							{playerName(players, plan.preparer_id)} is choosing options…
 						</p>
@@ -470,6 +502,29 @@
 
 				{#if makeStarted}
 					<ChoicesApplied choices={makeChoices} options={OPTIONS} />
+				{/if}
+
+				<!-- Committed state (Tier-1, ADR-006): what each step actually did,
+				     at full opacity for every viewer, outside the greyed picker. -->
+				{#if steps.length > 0}
+					<div class="resolved-so-far">
+						<p class="resolved-so-far-label">Resolved so far:</p>
+						<ul class="resolved-so-far-list">
+							{#each steps as s}
+								{@const verb = stepVerb(s.option)}
+								<li>
+									{#if verb}
+										{verb} <em>{stepAssetName(s.asset_id)}</em>
+									{:else}
+										{optionLabel(s.option)}
+									{/if}
+									{#if s.narration}
+										<span class="resolved-note"> — “{s.narration}”</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</div>
 				{/if}
 
 				{#if makeRemaining === 0 && makeStarted}
@@ -553,13 +608,30 @@
 					<p class="choices-note muted">Your choice has been submitted.</p>
 				{/if}
 
+				<!-- Committed state (Tier-1, ADR-006). Steps carry each choice's target;
+				     marEntries is the fallback for plans that resolved before steps
+				     were recorded, and still reads as a name + choice list. -->
 				<p class="choices-header">Submitted so far ({marEntries.length}):</p>
 				{#if marEntries.length === 0}
 					<p class="choices-note muted">None yet.</p>
+				{:else if steps.length > 0}
+					<ul class="resolved-so-far-list">
+						{#each steps.filter(s => s.player_id != null) as s}
+							{@const verb = stepVerb(s.option)}
+							<li>
+								{playerName(players, s.player_id!)}:
+								{#if verb}
+									{verb.toLowerCase()} <em>{stepAssetName(s.asset_id)}</em>
+								{:else}
+									{optionLabel(s.option)}
+								{/if}
+							</li>
+						{/each}
+					</ul>
 				{:else}
 					<ul class="plan-notes" style="margin:0;padding-left:1.25rem;">
 						{#each marEntries as e}
-							<li>{playerName(players, e.playerID)}: {e.choice}</li>
+							<li>{playerName(players, e.playerID)}: {optionLabel(e.choice)}</li>
 						{/each}
 					</ul>
 				{/if}
