@@ -40,6 +40,11 @@ export interface MyTable {
 	players: MyTablePlayer[];
 	/** Players whose action the game is blocked on (empty when ended). */
 	waiting_on_player_ids: number[];
+	/** Chat posts the viewer hasn't read, by the same rule as the in-game
+	 *  badge (isUnreadPost in $lib/chatFeed) — the server mirrors it in
+	 *  CountUnreadPosts. Independent of waiting_on_player_ids: "the table has
+	 *  been talking", not "you owe a move". */
+	unread_count: number;
 }
 
 export interface Game {

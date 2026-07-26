@@ -64,6 +64,22 @@ SELECT EXISTS (
   SELECT 1 FROM scene_posts WHERE game_id = $1 AND id > $2
 ) AS exists;
 
+-- name: CountUnreadPosts :one
+-- Unread posts for one player in one game, for the profile page's per-table
+-- badge (adr/CHAT_OVERHAUL_PLAN.md Phase 6). This is the server-side mirror of
+-- isUnreadPost() in frontend/src/lib/chatFeed.ts and MUST stay in step with
+-- it — newer than the player's read marker, not authored by them, and either a
+-- player message (author_id IS NOT NULL) or a system post at or above the
+-- "hide bookkeeping" bar. min_severity is passed in rather than hardcoded so
+-- model.SeverityDefault stays the single source of that threshold.
+-- `author_id IS DISTINCT FROM` (not `<>`) so system posts, whose author_id is
+-- NULL, survive the comparison instead of being silently dropped by it.
+SELECT COUNT(*) FROM scene_posts
+WHERE game_id = sqlc.arg(game_id)
+  AND id > sqlc.arg(last_read_post_id)
+  AND author_id IS DISTINCT FROM sqlc.arg(viewer_id)::BIGINT
+  AND (author_id IS NOT NULL OR severity >= sqlc.arg(min_severity));
+
 -- name: FindAnchorPostByRow :one
 SELECT id FROM scene_posts
 WHERE game_id = $1 AND system_code = $2 AND row_number = $3

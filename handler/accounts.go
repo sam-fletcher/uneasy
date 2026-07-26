@@ -242,9 +242,14 @@ func hashPasswordField(w http.ResponseWriter, r *http.Request, password string) 
 //
 // Each table carries enough context for the profile page to render a useful
 // card: the game's phase, the full roster in join order (facilitator first),
-// who the game is waiting on (ComputeWaitState), and who is online — account
+// who the game is waiting on (ComputeWaitState), who is online — account
 // -level WebSocket presence, so "online" means "has some table open", not
-// necessarily this one.
+// necessarily this one — and how many chat posts the player hasn't read.
+//
+// waiting_on_player_ids and unread_count are deliberately separate signals:
+// the first says "you owe the table a move", the second says "the table has
+// been talking". A player can be caught up and still owe a move, or be idle
+// with 40 posts of scene to read.
 func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
@@ -285,6 +290,16 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 					waitingOn = ws.ActingPlayerIDs
 				}
 			}
+			unread, uErr := s.Q.CountUnreadPosts(r.Context(), dbgen.CountUnreadPostsParams{
+				GameID:         row.GameID,
+				LastReadPostID: row.LastReadPostID,
+				ViewerID:       row.ID,
+				MinSeverity:    model.SeverityDefault,
+			})
+			if uErr != nil {
+				respondInternalErr(w, r, "could not count unread posts", uErr)
+				return
+			}
 			out = append(out, map[string]any{
 				"game_id":               row.GameID,
 				"join_code":             row.JoinCode,
@@ -294,6 +309,7 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 				"player_id":             row.ID,
 				"players":               players,
 				"waiting_on_player_ids": waitingOn,
+				"unread_count":          unread,
 			})
 		}
 		respond(w, http.StatusOK, map[string]any{"tables": out})
