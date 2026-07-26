@@ -297,7 +297,10 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				"exactly one of location_holding_id or location_custom is required")
 			return
 		}
-		if hasCustom && len(body.LocationCustom) > game.MaxCustomLocationLen {
+		// Runes, not bytes — the message says "characters", and every other
+		// cap here counts runes (see textField). Counting bytes silently cut
+		// an accented location ("Château …") short of the stated limit.
+		if hasCustom && len([]rune(body.LocationCustom)) > game.MaxCustomLocationLen {
 			respondErr(w, http.StatusBadRequest,
 				fmt.Sprintf("custom location must be ≤ %d characters", game.MaxCustomLocationLen))
 			return

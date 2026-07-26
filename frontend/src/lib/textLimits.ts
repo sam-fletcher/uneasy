@@ -6,12 +6,9 @@
 // close enough for a `maxlength` hint since honest passwords are ASCII-ish)
 // so honest users get browser-side feedback instead of a 400.
 //
-// Two fields still cap stricter than these tiers, both deliberate: the tone
-// topic and the scene time-note stay at 120. A tone topic is allowed to grow
-// its tile — at 120 chars it wraps to 9 lines and roughly triples the 44px
-// tile height, and since .tone-grid is `repeat(3, 1fr)` the whole row grows
-// with it. That's accepted: a topic someone needs to spell out is worth the
-// space. Everything else imports from here.
+// The scene time-note still caps stricter than its tier (120 against
+// MARGINALIA's 160) — deliberate, since it is concatenated into the
+// public-record entry line. Everything else imports from here.
 export const TEXT_LIMITS = {
 	// 20, not a generic "generous" cap: the player name is rendered in the
 	// table header's pill strip, where every character is shared between up
@@ -47,6 +44,14 @@ export const TEXT_LIMITS = {
 	// phone and are layout-bound, not cap-bound. For scale, the longest entry
 	// in EXAMPLE_MARGINALIA.md is 34 characters.
 	MARGINALIA: 160,
+	// 65. A custom tone topic is allowed to grow its tile rather than clip, so
+	// this bounds how tall it may get. Measured in the 114px tone-grid column:
+	// 30 chars is 2 lines (46px — the tile's natural size, and every one of
+	// the 24 built-in topics fits it; the longest, "Distressing medical
+	// practices", is 29), 65 is 5 lines (95px, about double), and the old 120
+	// was 10 lines (176px, ~4x). Since .tone-grid is `repeat(3, 1fr)`, the
+	// whole row grows with the tallest tile, so this is a shared cost.
+	TONE_TOPIC: 65,
 	NARRATIVE: 1000,
 	LONG_TEXT: 5000,
 	PASSWORD: 72,

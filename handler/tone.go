@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -134,7 +133,11 @@ func AddToneTopic(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		body.Topic = strings.TrimSpace(body.Topic)
+		topicText, ok := textField(w, "topic", body.Topic, maxToneTopicLen)
+		if !ok {
+			return
+		}
+		body.Topic = topicText
 		if body.Topic == "" {
 			respondErr(w, http.StatusBadRequest, "topic is required")
 			return

@@ -24,6 +24,7 @@
 		type AnchorRequest,
 	} from '$lib/api';
 	import { createConnection, type WSMessage } from '$lib/ws';
+	import { TEXT_LIMITS } from '$lib/textLimits';
 	import { handleWSMessage as runWSMessage, type WSContext } from './ws-handlers';
 	import {
 		reconnectResync, resolveAnchor, enterHistoryMode, type ChatFeedContext,
@@ -875,7 +876,7 @@
 						class="tone-add-input"
 						placeholder="Add a custom topic…"
 						bind:value={newTopicText}
-						maxlength={120}
+						maxlength={TEXT_LIMITS.TONE_TOPIC}
 						aria-label="Add a custom topic"
 					/>
 					<button

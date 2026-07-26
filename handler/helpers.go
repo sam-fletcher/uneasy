@@ -30,10 +30,17 @@ const (
 	// PRODUCT limit read off a surface, not an anti-abuse bound. Mirrored in
 	// frontend/src/lib/textLimits.ts (NAME), which explains the 50.
 	maxAssetNameLen = 50
-	// maxMarginaliaLen bounds a single marginalia entry, a tone topic, a
-	// scene time-note, and prologue card text. Also a product limit; see
-	// textLimits.ts (MARGINALIA) for the 160.
+	// maxMarginaliaLen bounds a single marginalia entry, a scene time-note,
+	// and prologue card text. Also a product limit; see textLimits.ts
+	// (MARGINALIA) for the 160.
 	maxMarginaliaLen = 160
+	// maxToneTopicLen bounds a custom tone topic. A topic is allowed to grow
+	// its tile rather than clip, so this is a bound on how tall it may get:
+	// in the 114px tone-grid column, 65 runes wraps to 5 lines (~95px, about
+	// double the 44px base tile). The 24 built-in topics all fit the natural
+	// 2-line tile — the longest, "Distressing medical practices", is 29.
+	// Mirrored in textLimits.ts (TONE_TOPIC).
+	maxToneTopicLen = 65
 	// maxNarrativeLen bounds secrets, scene/record summaries, prep notes, and
 	// other plan-resolution free text (questions, answers, declared truths,
 	// war terms).

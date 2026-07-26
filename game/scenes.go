@@ -43,5 +43,8 @@ func FollowOnPrompt(pt model.PlanType) string {
 // first scene at the start of a row).
 const FreeScenePromptFallback = "No follow-on prompt — set any scene."
 
-// MaxCustomLocationLen caps the user-supplied custom location string.
-const MaxCustomLocationLen = 80
+// MaxCustomLocationLen caps the user-supplied custom location string. Matches
+// handler.maxAssetNameLen / TEXT_LIMITS.NAME: a custom location stands in for
+// a holding's name in the scene banner and the public-record entry, so the two
+// spellings of "where this happens" get the same budget.
+const MaxCustomLocationLen = 50
