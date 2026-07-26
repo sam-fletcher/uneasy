@@ -15,7 +15,6 @@
 	import '$lib/components/shared/statusText.css';
 	import {
 		claimScenePeer,
-		createRoll,
 		endScene,
 		type Asset,
 		type DiceRoll,
@@ -130,31 +129,6 @@
 			claimError = e instanceof Error ? e.message : 'Could not take over.';
 		} finally {
 			busyAssetID = null;
-		}
-	}
-
-	// ── Dice roll (non-focus players only) ────────────────────────────────────
-	let showRollForm = $state(false);
-	let rollDifficulty = $state(3);
-	let rollingBusy = $state(false);
-	let rollError = $state('');
-
-	async function onStartRoll() {
-		if (rollingBusy || isFocusPlayer) return;
-		rollingBusy = true;
-		rollError = '';
-		try {
-			const { roll } = await createRoll(gameID, {
-				actor_id: scene.focus_player_id,
-				difficulty: rollDifficulty,
-				scene_id: scene.id,
-			});
-			onRollCreated(roll);
-			showRollForm = false;
-		} catch (e) {
-			rollError = e instanceof Error ? e.message : 'Could not start roll.';
-		} finally {
-			rollingBusy = false;
 		}
 	}
 
