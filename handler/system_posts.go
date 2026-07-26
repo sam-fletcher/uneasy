@@ -999,8 +999,17 @@ func EmitShakeUpAnnounced(
 		map[string]any{"spend_id": spend.ID, "player_id": spend.PlayerID, "option_key": spend.OptionKey})
 }
 
-// EmitShakeUpAdjusted writes the Minor post for a cost-adjustment bid against an
-// open spend.
+// EmitShakeUpAdjusted writes the Default post for a cost-adjustment bid against
+// an open spend.
+//
+// Default, not the Minor tier it launched with (adr/CHAT_OVERHAUL_PLAN.md
+// Phase 6): under ADR-008's pay-or-abandon ruling an adjustment is the *cause*
+// of the outcome, so hiding it behind "hide bookkeeping" leaves the log reading
+// "alice announces X for 1 token" → "alice abandons X" with the reason
+// invisible. Same criterion that promoted roll.commit — one player doing an
+// adversarial thing to another is narrative, not churn. Volume stays bounded by
+// the rules: ±1 only, the adjuster spends a real token per bid, the spender
+// cannot adjust their own spend, and the running cost has a hard floor of 1.
 func EmitShakeUpAdjusted(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -1013,7 +1022,7 @@ func EmitShakeUpAdjusted(
 	adjuster := playerDisplayName(ctx, q, adjusterID)
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.adjusted",
-		model.SeverityMinor,
+		model.SeverityDefault,
 		fmt.Sprintf("%s adjusts %s's cost %+d", adjuster, spender, adjustment),
 		nil, nil, nil,
 		map[string]any{"spend_id": spend.ID, "adjuster_id": adjusterID, "adjustment": adjustment})
