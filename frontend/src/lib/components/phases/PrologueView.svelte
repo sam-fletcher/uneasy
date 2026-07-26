@@ -686,7 +686,7 @@
 													class="action-btn primary detail-claim-btn"
 													onclick={() => openClaimModal(sheet, expChoice)}
 												>
-													Claim this box
+													Claim this tile
 												</button>
 											{/if}
 										</div>

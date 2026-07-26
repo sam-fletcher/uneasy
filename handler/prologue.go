@@ -309,7 +309,7 @@ func validatePlayerCanChoose(
 		return httpErr(http.StatusInternalServerError, "could not check claim status")
 	}
 	if claimed {
-		return httpErr(http.StatusConflict, "that box has already been claimed")
+		return httpErr(http.StatusConflict, "that tile has already been claimed")
 	}
 	return nil
 }
