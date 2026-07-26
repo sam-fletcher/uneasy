@@ -22,6 +22,7 @@
 		type PreparePlanDraft,
 		type RowState,
 		type AnchorRequest,
+		type Account,
 	} from '$lib/api';
 	import { createConnection, type WSMessage } from '$lib/ws';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -399,6 +400,11 @@
 	// the catch below. Deliberately not $state: nothing renders off it.
 	let gameStateLoaded = false;
 
+	// Set once in onMount, before the socket opens, so every resync can match
+	// us against the roster it just fetched. Not $state: only currentPlayerID,
+	// derived from it below, is ever rendered.
+	let me: Account | null = null;
+
 	async function loadGameState() {
 		try {
 			const data = await getGameState(gameID);
@@ -414,6 +420,20 @@
 				display_name: p.display_name,
 				online: false
 			}));
+
+			// Resolve our seat from whichever roster just arrived, rather than
+			// only from the one onMount happened to see. A first load that
+			// failed never reaches here, so without this a player who stayed on
+			// the page (see onMount) would sit at a table the app didn't know
+			// they were sitting at even after a later resync succeeded.
+			// Assign-only, never clear: a mid-game roster that somehow omits us
+			// is not a reason to pull the seat out from under a live session.
+			// Captured into a local so the null check narrows inside the
+			// callback — `me` is a mutable outer binding, which TS won't
+			// narrow across a closure.
+			const account = me;
+			const seat = account ? data.players.find((p) => p.account_id === account.id) : undefined;
+			if (seat) currentPlayerID = seat.id;
 
 			// Load assets in lobby (for main-character editing) and during every
 			// phase that shows the retinue or targets assets: prologue, main_event,
@@ -524,28 +544,42 @@
 
 	onMount(async () => {
 		try {
-			const me = await getMe();
+			me = await getMe();
 			if (!me) {
 				goto(`/?next=/table/${gameID}`);
 				return;
 			}
+			// Independent of the roster, so it's set before the socket opens —
+			// a table we end up staying on after a failed first load still has
+			// its push key.
+			vapidPublicKey = me.vapid_public_key;
+
 			// Open the WS first, with loadGameState as the resync callback.
 			// createConnection will run loadGameState on every (re)connect —
 			// including this initial one — and buffer any events that
 			// arrive during the fetch so we never miss a transition. Await
-			// `ready` so we can read `players` below to find our seat.
+			// `ready` so the seat it resolves is available below.
 			const conn = createConnection(gameID, handleWSMessage, loadGameState);
 			disconnect = conn.disconnect;
 			await conn.ready;
 
-			const seat = players.find((p) => p.account_id === me.id);
-			if (!seat) {
+			// `ready` resolves through a `.finally`, so it settles whether that
+			// first resync succeeded or failed — deliberately, so a failed
+			// fetch can't leave the socket frozen. The cost is that an
+			// unresolved seat here is ambiguous: it means either "no seat at
+			// this table" or "the fetch never landed". Only the first is
+			// grounds for sending someone away. Reading the second as one
+			// bounced players to /profile over a transient blip — exactly what
+			// a dead pooled connection after a redeploy produces — and it
+			// looked random, because reopening the tab usually worked. The
+			// catch in loadGameState has already put the reason on screen;
+			// stay put and let the next resync repair it.
+			if (!gameStateLoaded) return;
+
+			if (currentPlayerID === null) {
 				goto('/profile');
 				return;
 			}
-			currentPlayerID = seat.id;
-
-			vapidPublicKey = me.vapid_public_key;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load table.';
 		} finally {
