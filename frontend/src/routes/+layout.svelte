@@ -3,7 +3,9 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { getMe, type Account } from '$lib/api';
+	import { watchForNewVersion } from '$lib/appVersion';
 	import HelpButton from '$lib/components/HelpButton.svelte';
+	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 	import { registerServiceWorker } from '$lib/push';
 	import '../app.css';
 
@@ -33,11 +35,19 @@
 		// Profile or the lobby soft-ask — registration itself never prompts.
 		registerServiceWorker();
 	});
+
+	// Separate from the async onMount above: that one can't return a teardown.
+	// Lives in the layout so every route gets the notice — a tab goes stale
+	// wherever it happens to be sitting, and the table route (which hides the
+	// shared header) is the one most likely to be left open for hours.
+	onMount(() => watchForNewVersion());
 </script>
 
 <svelte:head>
 	<title>Uneasy Lies the Head</title>
 </svelte:head>
+
+<UpdateBanner />
 
 {#if showHeader && me}
 	<header class="site-header">
@@ -85,6 +95,20 @@
 		background: var(--color-bg);
 		color: var(--color-text);
 		min-height: 100dvh;
+	}
+
+	/* Table route only: make the body a viewport-height flex column so the
+	   update banner (auto height) and the game shell (fills the rest) split
+	   the viewport exactly. Without this the shell's own 100dvh would sit
+	   *below* the banner and push the bottom-pinned chat strip off-screen.
+	   Doing it in CSS rather than by measuring the bar in JS keeps the two in
+	   sync through every reflow — the copy re-wraps at different widths, and a
+	   measured value is always a frame behind. Other routes scroll normally
+	   and just take the banner as an ordinary block above them. */
+	:global(body:has(main.full-bleed)) {
+		display: flex;
+		flex-direction: column;
+		height: 100dvh;
 	}
 
 	/* The whole UI is Spectral (set on body above). Headings default to its
@@ -175,5 +199,9 @@
 		max-width: 100%;
 		padding: 0 0.2rem;
 		overflow-x: clip;
+		/* Claim the flex column's leftover height (see body:has above) and let
+		   it shrink below content — the game shell scrolls internally. */
+		flex: 1 1 auto;
+		min-height: 0;
 	}
 </style>

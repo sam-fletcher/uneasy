@@ -394,6 +394,11 @@
 	}
 
 	// ── Data loading ──────────────────────────────────────────────────────────
+	// Flips true the first time loadGameState completes. Past that point the
+	// page is showing real state and a failed refresh must stay silent — see
+	// the catch below. Deliberately not $state: nothing renders off it.
+	let gameStateLoaded = false;
+
 	async function loadGameState() {
 		try {
 			const data = await getGameState(gameID);
@@ -494,8 +499,26 @@
 					recordRows = (await getFullRecord(gameID)).rows;
 				} catch { /* tolerate; the sidebar just shows what's already loaded */ }
 			}
+
+			gameStateLoaded = true;
+			// A resync that reached here has replaced every field it owns, so
+			// whatever the banner was complaining about is moot. Clearing on
+			// success rather than on entry means a *failed* resync leaves the
+			// previous message up instead of blanking it mid-flight.
+			error = '';
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not load game state.';
+			// Only the initial load may raise the banner. This function runs on
+			// every WS (re)connect — including the reconnect a returning player
+			// triggers by making the tab visible (see ws.ts's onVisibility). If
+			// the server was redeployed or the machine slept while the tab sat
+			// in the background, the first fetch over a dead pooled connection
+			// fails with a bare "Failed to fetch" even though the socket just
+			// opened fine and the very next resync will succeed. A failed
+			// background refresh must leave the page showing what it already
+			// had — the same call profile/+page.svelte's refreshTables makes.
+			if (!gameStateLoaded) {
+				error = e instanceof Error ? e.message : 'Could not load game state.';
+			}
 		}
 	}
 
@@ -990,7 +1013,11 @@
 
 		display: flex;
 		flex-direction: column;
-		height: 100dvh;
+		/* Fills main.full-bleed, which the layout sizes to the viewport minus
+		   whatever the update banner is taking (see body:has in +layout.svelte).
+		   Was a bare 100dvh; that ignored the banner and pushed the
+		   bottom-pinned chat strip off-screen whenever one appeared. */
+		height: 100%;
 		max-width: 100%;
 	}
 
