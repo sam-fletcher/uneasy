@@ -593,6 +593,9 @@
 		// thrown error from the original preparePlan call.
 		if (isFacilitator && detail?.modes?.length) {
 			endgamePromptModes = detail.modes;
+			// Drop anything left over from a previous attempt the facilitator
+			// cancelled out of, so a reopened modal never opens pre-failed.
+			endgameError = '';
 		}
 	}
 	onMount(() => window.addEventListener('uneasy:endgame_choice_required', onEndgameRequired));
@@ -603,14 +606,22 @@
 		window.removeEventListener('uneasy:endgame_choice_required', onEndgameRequired);
 	});
 
+	// The modal's own error slot, deliberately not the page-level `error`.
+	// The overlay is a fixed z-index:100 scrim over the whole page, so a
+	// message in the header banner below is painted underneath it — and this
+	// handler leaves the modal up on failure, so the facilitator would be
+	// looking at buttons that appear to do nothing. Cleared on each attempt.
+	let endgameError = $state('');
+
 	async function chooseEndgameMode(mode: EndgameMode) {
 		if (endgameSubmitting) return;
 		endgameSubmitting = true;
+		endgameError = '';
 		try {
 			await setEndgameMode(gameID, mode);
 			endgamePromptModes = null;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not set endgame mode.';
+			endgameError = e instanceof Error ? e.message : 'Could not set endgame mode.';
 		} finally {
 			endgameSubmitting = false;
 		}
@@ -1008,6 +1019,9 @@
 				<p class="muted-text small">
 					A plan would land past row 13. Pick how the game should wind down — this can't be undone.
 				</p>
+				{#if endgameError}
+					<p class="error-text" role="alert">{endgameError}</p>
+				{/if}
 				{#if endgamePromptModes.includes('smooth_landing')}
 					<button class="action-btn primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('smooth_landing')}>
 						Smooth Landing
