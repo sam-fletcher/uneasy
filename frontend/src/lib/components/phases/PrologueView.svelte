@@ -52,6 +52,7 @@
 	import { playerColorByID } from '$lib/playerColor';
 	import CrownGlyph from '../CrownGlyph.svelte';
 	import type { CrownMark } from '$lib/succession';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		gameID: string;
@@ -99,7 +100,15 @@
 	let doneFlags = $state<TrackDone[]>([]);
 	let extraPeers = $state<ExtraPeer[]>([]);
 	let closingReady = $state<ClosingReady[]>([]);
-	let error = $state('');
+	// Two error slots, two lifetimes (adr/ERROR_HANDLING_PLAN.md). loadError
+	// explains stale or missing prologue data and is owned by reload();
+	// actionError explains one control the player just used. They shared a
+	// variable until now, and since reload() runs on every WS event but never
+	// cleared it, a single transient failure stuck to the view permanently —
+	// the only things that could clear it were the action handlers' own entry
+	// clears, i.e. taking an unrelated action.
+	let loadError = $state('');
+	let actionError = $state('');
 	let loading = $state(true);
 
 	async function reload() {
@@ -118,8 +127,13 @@
 			doneFlags = st.done;
 			extraPeers = st.extra_peers;
 			closingReady = st.closing_ready;
+			// Every field this function owns has just been replaced, so a
+			// previous complaint about them is moot. Clearing on success (not
+			// on entry) keeps a *failed* reload showing the last message
+			// instead of blanking it mid-flight.
+			loadError = '';
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not load prologue data.';
+			loadError = e instanceof Error ? e.message : 'Could not load prologue data.';
 		} finally {
 			loading = false;
 		}
@@ -290,11 +304,17 @@
 
 	async function onClaimSubmitted() {
 		activeClaim = null;
+		actionError = '';
 		try {
 			const [, assetData] = await Promise.all([reload(), listAssets(gameID)]);
 			assets = assetData.assets;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not refresh.';
+			// actionError, not loadError, for two reasons. The claim itself
+			// already succeeded — this is only the follow-up refresh — so the
+			// message belongs with the action. And reload() runs concurrently
+			// here and clears loadError on its own success, which could land
+			// after this line and silently erase it.
+			actionError = e instanceof Error ? e.message : 'Your claim went through, but the screen may be out of date.';
 		}
 	}
 
@@ -348,7 +368,7 @@
 	async function commitOrRetract(cardID: number, retract: boolean) {
 		if (savingHearts || !currentTrack || currentPlayerID == null) return;
 		savingHearts = true;
-		error = '';
+		actionError = '';
 		try {
 			let next = myCommittedOnTrack.slice();
 			if (retract) {
@@ -358,7 +378,7 @@
 			}
 			await commitTrackHearts(gameID, currentTrack as PrologueTrack, next);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not update hearts.';
+			actionError = e instanceof Error ? e.message : 'Could not update hearts.';
 			// Server rejected — our view of the step may be stale. Pull
 			// fresh state so the UI catches up.
 			onResync?.();
@@ -371,11 +391,11 @@
 	async function toggleDone() {
 		if (savingDone || !currentTrack) return;
 		savingDone = true;
-		error = '';
+		actionError = '';
 		try {
 			await setPrologueDone(gameID, currentTrack as PrologueTrack, !myDoneOnTrack);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not update done.';
+			actionError = e instanceof Error ? e.message : 'Could not update done.';
 			onResync?.();
 			reload();
 		} finally {
@@ -449,11 +469,11 @@
 	async function submitSetAsides() {
 		if (placing) return;
 		placing = true;
-		error = '';
+		actionError = '';
 		try {
 			await placePrologueSetAsides(gameID, setAsideOrdering);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not place set-asides.';
+			actionError = e instanceof Error ? e.message : 'Could not place set-asides.';
 		} finally {
 			placing = false;
 		}
@@ -537,8 +557,11 @@
 {/snippet}
 
 <div class="prologue-view" bind:clientWidth={columnWidth}>
-	{#if error}
-		<p class="error-text">{error}</p>
+	<!-- Load errors sit at the top of the view: they explain the content
+	     below being stale or missing. Action errors render beside the control
+	     that raised them, further down in each mode's branch. -->
+	{#if loadError}
+		<ErrorText message={loadError} />
 	{/if}
 
 	{#if loading}
@@ -559,6 +582,13 @@
 
 		{#if activePlayerID == null}
 			<p class="muted-text">Everyone has finished choosing.</p>
+		{/if}
+
+		<!-- The choosing mode's one action path is the claim modal, which
+		     closes before its follow-up refresh can fail — so this sits above
+		     the tiles the player just came back to. -->
+		{#if actionError}
+			<ErrorText message={actionError} />
 		{/if}
 
 		<div class="prologue-intro">
@@ -771,6 +801,9 @@
 			>
 				{savingDone ? '…' : myDoneOnTrack ? 'Done ✓ (tap to undo)' : "I'm done"}
 			</button>
+			{#if actionError}
+				<ErrorText message={actionError} />
+			{/if}
 			<p class="muted-text small">
 				Once every player marks Done, this track resolves: hearts doing work lock in, the rest return to your hand.
 			</p>
@@ -798,6 +831,9 @@
 					onReorder={(next) => (setAsideOrdering = next)}
 					onConfirm={submitSetAsides}
 				/>
+			{/if}
+			{#if actionError}
+				<ErrorText message={actionError} />
 			{/if}
 		{/if}
 

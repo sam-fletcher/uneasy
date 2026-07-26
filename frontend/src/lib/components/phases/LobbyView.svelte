@@ -11,6 +11,7 @@
 	import HelpContent from '../HelpContent.svelte';
 	import HelpGlyph from '../HelpGlyph.svelte';
 	import { onMount } from 'svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let {
 		gameID,
@@ -90,7 +91,7 @@
 
 <div class="phase-view lobby">
 	{#if error}
-		<p class="error-text">{error}</p>
+		<ErrorText message={error} />
 	{/if}
 	<p class="prologue-lede">
 		In <em>Uneasy Lies the Head</em>, you and your friends will:

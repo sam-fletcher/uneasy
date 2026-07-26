@@ -18,6 +18,7 @@
 	import { updateAsset, replaceMainCharacter } from '$lib/api';
 	import CardPicker from '$lib/components/plans/CardPicker.svelte';
 	import AssetCreationForm from '$lib/components/AssetCreationForm.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		gameID: number;
@@ -134,7 +135,7 @@
 			</div>
 		{/if}
 
-		{#if err}<p class="error-text">{err}</p>{/if}
+		{#if err}<ErrorText message={err} />{/if}
 	{:else}
 		<p class="lede">
 			Waiting for {otherWaiters.length > 0 ? otherWaiters.join(', ') : 'a player'} to

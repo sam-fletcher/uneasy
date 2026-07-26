@@ -7,6 +7,7 @@
 	import '$lib/components/shared/actionButton.css';
 	import { respondChallenge, type Player } from '$lib/api';
 	import { playerName } from '../shared';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	type Challenge = { challenger_id: number; target_id: number; notes?: string };
 
@@ -45,7 +46,7 @@
 		<p class="plan-notes">"{challenge.notes}"</p>
 	{/if}
 	{#if challengeIsForMe}
-		{#if respondError}<p class="res-error">{respondError}</p>{/if}
+		{#if respondError}<ErrorText message={respondError} variant="panel" />{/if}
 		<div class="form-row">
 			<button class="action-btn primary"
 				onclick={() => onRespond(true)}

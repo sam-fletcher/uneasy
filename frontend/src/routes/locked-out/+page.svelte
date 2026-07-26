@@ -7,6 +7,7 @@
 	import '$lib/components/shared/statusText.css';
 	import { submitResetRequest } from '$lib/api';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let username = $state('');
 	let contact = $state('');
@@ -100,7 +101,7 @@
 					aria-hidden="true"
 				/>
 
-				{#if error}<p class="error-text">{error}</p>{/if}
+				{#if error}<ErrorText message={error} />{/if}
 
 				<button
 					class="action-btn primary"

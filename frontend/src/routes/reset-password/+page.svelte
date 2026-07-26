@@ -9,6 +9,7 @@
 	import '$lib/components/shared/statusText.css';
 	import { submitPasswordReset } from '$lib/api';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	const token = $derived(page.url.searchParams.get('token') ?? '');
 
@@ -45,13 +46,13 @@
 		<h1>Set a new password</h1>
 
 		{#if !token}
-			<p class="error-text">This link is missing its token — it may have been copied incorrectly.</p>
+			<ErrorText message="This link is missing its token — it may have been copied incorrectly." />
 			<a class="action-btn secondary" href="/locked-out">Request a reset</a>
 		{:else if succeeded}
 			<p class="status">Your password has been updated.</p>
 			<a class="action-btn primary" href="/">Go to login</a>
 		{:else if failed}
-			<p class="error-text">Link invalid or expired — request a new one.</p>
+			<ErrorText message="Link invalid or expired — request a new one." />
 			<a class="action-btn secondary" href="/locked-out">Request a reset</a>
 		{:else}
 			<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
@@ -77,7 +78,7 @@
 					required
 				/>
 
-				{#if mismatchError}<p class="error-text">{mismatchError}</p>{/if}
+				{#if mismatchError}<ErrorText message={mismatchError} />{/if}
 
 				<button
 					class="action-btn primary"

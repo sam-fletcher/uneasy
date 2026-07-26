@@ -14,12 +14,13 @@ export function createPushSubscription(sub: PushSubscriptionJSON): Promise<{ sub
 	});
 }
 
-// Raw fetch, not apiFetch: the endpoint returns 204 No Content, which
-// apiFetch's res.json() would throw on.
+// Returns 204 No Content. This used to be a raw fetch because apiFetch's
+// res.json() threw on an empty body — and, because it also never checked
+// res.ok, a failed unsubscribe reported success and the toggle flipped anyway.
+// apiFetch handles 204 now.
 export async function deletePushSubscription(endpoint: string): Promise<void> {
-	await fetch('/api/push-subscriptions', {
+	await apiFetch<void>('/push-subscriptions', {
 		method: 'DELETE',
-		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ endpoint }),
 	});
 }

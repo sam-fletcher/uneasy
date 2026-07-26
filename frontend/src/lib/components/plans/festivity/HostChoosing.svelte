@@ -17,6 +17,7 @@
 		type FestRes,
 	} from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { plan, fest, players, assets, onPlansChanged }: {
 		plan: Plan;
@@ -154,7 +155,7 @@
 				onSelect={(id) => (hostAssetID = id)}
 			/>
 		{/if}
-		{#if hostPickerError}<p class="res-error">{hostPickerError}</p>{/if}
+		{#if hostPickerError}<ErrorText message={hostPickerError} variant="panel" />{/if}
 		<button class="action-btn primary"
 			onclick={submitHostChoice}
 			disabled={hostPickerBusy || !hostChoiceReady}>

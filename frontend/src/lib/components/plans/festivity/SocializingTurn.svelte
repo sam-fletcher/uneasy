@@ -17,6 +17,7 @@
 		MAKE_OPTS, MAR_OPTS, centeredPeerCards, centeredPeerPick, isDraftCard, type FestRes,
 	} from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let {
 		plan, fest, players, assets, currentPlayerID, myRollID,
@@ -192,7 +193,7 @@
 
 <div class="choices-section">
 	{#if myRollID == null}
-		{#if actionError}<p class="res-error">{actionError}</p>{/if}
+		{#if actionError}<ErrorText message={actionError} variant="panel" />{/if}
 		{#if blockedByOtherRoll}
 			<p class="choices-note muted">
 				Waiting for {playerName(players, activeRollerID)} to finish their roll…
@@ -308,7 +309,7 @@
 			</FormField>
 		{/if}
 
-		{#if pickerError}<p class="res-error">{pickerError}</p>{/if}
+		{#if pickerError}<ErrorText message={pickerError} variant="panel" />{/if}
 		<button class="action-btn primary"
 			onclick={submitMyChoice}
 			disabled={pickerBusy || !choiceReady}>

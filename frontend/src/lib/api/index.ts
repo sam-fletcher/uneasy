@@ -1,7 +1,10 @@
 // api/index.ts — barrel for the typed API client. Re-exports every domain
 // module so existing `import { ... } from '$lib/api'` call sites keep working.
-// (client.ts is intentionally not re-exported; apiFetch stays internal to api/.)
+// (client.ts is intentionally not re-exported; apiFetch stays internal to api/.
+// ApiError is the one exception — components catch it to read `status` rather
+// than pattern-matching the server's prose. See adr/ERROR_HANDLING_PLAN.md.)
 
+export { ApiError } from './client';
 export * from './types';
 export * from './accounts';
 export * from './tables';

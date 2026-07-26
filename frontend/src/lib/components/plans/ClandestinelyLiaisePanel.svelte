@@ -31,6 +31,7 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -355,7 +356,7 @@
 {#if mode === 'prep'}
 	<fieldset class="plan-form-fieldset" disabled={readOnly}>
 		<div class="plan-form">
-			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 			<FormField label="Partner">
 				<PlayerChips
 					players={otherPlayers}

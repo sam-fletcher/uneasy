@@ -35,6 +35,7 @@
 	import { playerColor, playerColorByID } from '$lib/playerColor';
 	import { shakeUpWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		gameID: string;
@@ -66,7 +67,12 @@
 	} | null>(null);
 	let currentActor = $state<number | null>(null);
 	let currentRollerID = $state<number | null>(null);
-	let error = $state('');
+	// Split by lifetime (adr/ERROR_HANDLING_PLAN.md): loadError explains stale
+	// shake-up state and is owned by refresh(), which runs on every WS event;
+	// actionError explains one control the player just used. Sharing one
+	// variable meant a refresh could erase a message the player hadn't read.
+	let loadError = $state('');
+	let actionError = $state('');
 	let busy = $state(false);
 
 	// Local, ephemeral: the reason shown when a tap on the (aria-disabled, not
@@ -85,8 +91,11 @@
 			currentActor = data.current_actor ?? null;
 			currentRollerID = data.current_roller_id ?? null;
 			reduceBlockedReason = '';
+			// Cleared on success, not on entry, so a failed refresh leaves the
+			// last message up rather than blanking it mid-flight.
+			loadError = '';
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not load shake-up state.';
+			loadError = e instanceof Error ? e.message : 'Could not load shake-up state.';
 		}
 	}
 
@@ -258,7 +267,7 @@
 
 	async function announce() {
 		if (!announceReady || busy) return;
-		busy = true; error = '';
+		busy = true; actionError = '';
 		try {
 			const body: {
 				option_key: string;
@@ -285,7 +294,7 @@
 			pickedTitleID = '';
 			titleFlavor = '';
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not announce spend.';
+			actionError = e instanceof Error ? e.message : 'Could not announce spend.';
 		} finally {
 			busy = false;
 		}
@@ -293,11 +302,11 @@
 
 	async function adjust(direction: 1 | -1) {
 		if (!openSpend || busy) return;
-		busy = true; error = ''; reduceBlockedReason = '';
+		busy = true; actionError = ''; reduceBlockedReason = '';
 		try {
 			await shakeUpAdjust(gameID, openSpend.spend.id, direction);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not adjust.';
+			actionError = e instanceof Error ? e.message : 'Could not adjust.';
 		} finally {
 			busy = false;
 		}
@@ -316,11 +325,11 @@
 
 	async function pass() {
 		if (!openSpend || busy) return;
-		busy = true; error = '';
+		busy = true; actionError = '';
 		try {
 			await shakeUpPass(gameID, openSpend.spend.id);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not pass.';
+			actionError = e instanceof Error ? e.message : 'Could not pass.';
 		} finally {
 			busy = false;
 		}
@@ -331,11 +340,11 @@
 	// where the spend auto-commits regardless of what's passed.
 	async function commit(intent?: 'pay' | 'abandon') {
 		if (!openSpend || busy) return;
-		busy = true; error = '';
+		busy = true; actionError = '';
 		try {
 			await shakeUpCommit(gameID, openSpend.spend.id, intent);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not commit.';
+			actionError = e instanceof Error ? e.message : 'Could not commit.';
 		} finally {
 			busy = false;
 		}
@@ -439,7 +448,10 @@
 		{/if}
 	</section>
 
-	{#if error}<p class="error-text">{error}</p>{/if}
+	<!-- Load errors sit up here with the header: they explain the state below
+	     being stale. The action slot is further down, under the spend
+	     controls. -->
+	{#if loadError}<ErrorText message={loadError} />{/if}
 
 	<Buffet tabs={buffetTabs} defaultTab={game.shake_up_category ?? 'esteem'} />
 
@@ -700,6 +712,10 @@
 		{:else}
 			<p class="muted-text">You have no tokens. The category advances when everyone is at zero.</p>
 		{/if}
+
+		<!-- Below whichever spend branch is showing, so announce / adjust /
+		     pass / commit all report next to the control that failed. -->
+		{#if actionError}<ErrorText message={actionError} />{/if}
 	{:else}
 		<p class="muted-text">Shake-Up state unavailable.</p>
 	{/if}

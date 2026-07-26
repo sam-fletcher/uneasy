@@ -13,6 +13,7 @@
 	import CardPicker from '../CardPicker.svelte';
 	import { breakableAssets, playerName } from '../shared';
 	import { destructionWarning } from '$lib/assetRisk';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { plan, players, assets, pendingHostMars, onPlansChanged }: {
 		plan: Plan;
@@ -109,7 +110,7 @@
 			{:else}
 				<p class="choices-note muted">You have nothing left to tear — you can pass the break.</p>
 			{/if}
-			{#if error}<p class="res-error">{error}</p>{/if}
+			{#if error}<ErrorText message={error} variant="panel" />{/if}
 			<button class="action-btn primary" onclick={submit} disabled={busy}>
 				{busy ? '…' : canBreak ? 'Tear it' : 'Pass the break'}
 			</button>
@@ -127,7 +128,7 @@
 				selected={assetID}
 				onSelect={(id) => (assetID = id)}
 			/>
-			{#if error}<p class="res-error">{error}</p>{/if}
+			{#if error}<ErrorText message={error} variant="panel" />{/if}
 			<button class="action-btn primary" onclick={submit} disabled={busy || assetID == null}>
 				{busy ? '…' : 'Set them in the center'}
 			</button>

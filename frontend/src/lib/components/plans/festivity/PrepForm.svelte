@@ -7,6 +7,7 @@
 	import { preparePlan } from '$lib/api';
 	import type { PlanContext } from '../types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { ctx }: { ctx: PlanContext } = $props();
 
@@ -51,7 +52,7 @@
 
 <fieldset class="plan-form-fieldset" disabled={readOnly}>
 	<div class="plan-form">
-		{#if prepError}<p class="res-error">{prepError}</p>{/if}
+		{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 		<label class="form-label">
 			Event type:
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}

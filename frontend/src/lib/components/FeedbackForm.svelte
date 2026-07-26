@@ -14,6 +14,7 @@
 	import { onMount } from 'svelte';
 	import { getMe, submitFeedback } from '$lib/api';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { gameId, route, phase }: { gameId?: string; route?: string; phase?: string } = $props();
 
@@ -80,7 +81,7 @@
 
 		<p class="privacy-note muted-text small">Stored with your account name so we can follow up.</p>
 
-		{#if error}<p class="error-text">{error}</p>{/if}
+		{#if error}<ErrorText message={error} />{/if}
 
 		<button class="action-btn primary" onclick={submit} disabled={submitting || !body.trim()}>
 			{submitting ? 'Sending…' : 'Send feedback'}

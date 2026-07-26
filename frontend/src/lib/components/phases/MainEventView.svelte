@@ -28,6 +28,7 @@
 	import MainCharacterChoicePanel from '$lib/components/MainCharacterChoicePanel.svelte';
 	import { followOnPromptForRow } from '$lib/scenePrompts';
 	import { mainEventWaitingOn, type WaitingOnState } from '$lib/waitingOn';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		game: Game;
@@ -314,7 +315,7 @@
 
 <div class="main-event-view">
 	{#if error}
-		<p class="error-text local-error">{error}</p>
+		<ErrorText message={error} extra="local-error" />
 	{/if}
 
 	<!-- Play surface — single column. PublicRecord lives at the page level
@@ -494,7 +495,8 @@
 		min-height: 0;
 	}
 
-	.local-error {
+	/* :global — see ChatPanel; the element belongs to ErrorText now. */
+	.main-event-view :global(.local-error) {
 		padding: 0.3rem 0;
 		flex-shrink: 0;
 	}

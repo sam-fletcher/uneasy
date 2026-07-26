@@ -17,6 +17,7 @@
 	import { updateLaw, updateRumor, type Law, type Rumor, type Plan, type Player } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		kind?: 'laws' | 'rumors' | 'both';
@@ -130,7 +131,7 @@
 {/snippet}
 
 <aside class="laws-rumors">
-	{#if errorMsg}<p class="error-text">{errorMsg}</p>{/if}
+	{#if errorMsg}<ErrorText message={errorMsg} />{/if}
 
 	{#if kind !== 'rumors'}
 	<section class="lr-section">

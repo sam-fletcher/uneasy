@@ -52,6 +52,7 @@
 	];
 
 	import type { PlanPanelProps } from './types';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -264,7 +265,7 @@
 
 		{#if isResolving && amHost}
 			<div class="complete-section">
-				{#if endError}<p class="res-error">{endError}</p>{/if}
+				{#if endError}<ErrorText message={endError} variant="panel" />{/if}
 				<button
 					class="action-btn primary"
 					onclick={onEndEvent}

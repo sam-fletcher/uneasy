@@ -54,6 +54,7 @@
 		parseSceneStartedData,
 	} from '$lib/chatFeed';
 	import LogMark from '$lib/components/LogMark.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	// System-log bodies carry a tiny server-written markup subset — **asset
 	// names** and @@id|player names@@ — parsed in $lib/logMarkup (which also
@@ -993,7 +994,7 @@
 
 	<div class="typing" aria-live="polite">{typingLabel}</div>
 
-	{#if error}<p class="error-text error">{error}</p>{/if}
+	{#if error}<ErrorText message={error} extra="error" />{/if}
 
 	{#if currentPlayerID != null && personae.length > 1}
 		{@const selfColor = playerColorByID(currentPlayerID, players)}
@@ -1846,7 +1847,9 @@
 		flex-shrink: 0;
 	}
 
-	.error {
+	/* :global — the <p> is rendered by ErrorText, so a plainly-scoped
+	   selector wouldn't reach it. Scoped by .chat-panel, not loose. */
+	.panel :global(.error) {
 		padding: 0 0.8rem;
 		flex-shrink: 0;
 	}

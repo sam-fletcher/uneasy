@@ -34,6 +34,7 @@
 	import type { DuelRes } from './duel/shared';
 
 	import type { PlanPanelProps } from './types';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -208,7 +209,7 @@
 				<p class="choices-applied">
 					Duel complete. All staked assets are leveraged.
 				</p>
-				{#if completeError}<p class="res-error">{completeError}</p>{/if}
+				{#if completeError}<ErrorText message={completeError} variant="panel" />{/if}
 				{#if amPreparer}
 					<button class="action-btn primary"
 						onclick={onComplete} disabled={completeBusy}>

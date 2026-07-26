@@ -171,6 +171,7 @@ Reuse before writing new CSS — these live in
 | `modalShell.css` | sheet/modal frame |
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
+| `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record and the mobile chat bar's icon — see **Log marks** below |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
@@ -178,6 +179,65 @@ undersells it, since it is reused outside the chat feed.
 
 Plus `plans/shared/` (Buffet, DifficultyMeter) for plan flows and
 `HelpContent` for the ?-panel/lobby help.
+
+## Errors
+
+Decision history in `adr/ERROR_HANDLING_PLAN.md`. Four rules.
+
+**1. A load error and an action error never share a variable.** They have
+different lifetimes, and conflating them forces bad behaviour in both
+directions — the bug that produced this section.
+
+| | load error | action error |
+|---|---|---|
+| means | the screen has no data, or stale data | one control the player used failed |
+| lifetime | sticky | until the player tries again |
+| cleared by | a **successful load**, and nothing else | the next attempt at that action |
+| renders | where the missing content would be (top of the view) | next to the control that raised it |
+
+The clear goes at the **end of the success path**, not on entry: clearing on
+entry blanks the message mid-flight, so a *failed* retry looks like it did
+nothing. Worked examples: `loadGameState` / `toneError` in
+`routes/table/[id]/+page.svelte`, `loadError` / `actionError` in
+`PrologueView.svelte` and `ShakeUpView.svelte`.
+
+**2. Put the message where the player is looking.** A message rendered under
+the page header while a modal is open is painted *underneath* that modal —
+every dialog in this app is a fixed, scrim-backed overlay. A control inside a
+sheet, modal or panel needs an error slot inside that same surface. Existing
+slots to reuse before adding one: `ResolvingCard`'s `error` prop (the plan
+tree's slot, used by 10 of 11 panels) and the `setError: (msg) => void` prop
+the `war/` sub-components take to lift their message into the parent panel.
+
+**3. Render through `ErrorText`, never a raw `<p class="error-text">`.**
+It carries `role="alert"`, which cannot come from CSS and which these
+messages need — they are almost always *inserted* after an action. Two
+variants, matching the two class namespaces (kept distinct because the
+`plans/` tree has its own unscoped `.muted`; see `statusText.css`):
+
+```svelte
+<ErrorText message={loadError} />                    <!-- .error-text  -->
+<ErrorText message={prepError} variant="panel" />    <!-- .res-error   -->
+<ErrorText message={error} extra="inline" />         <!-- extra classes -->
+```
+
+Because the element belongs to `ErrorText`, a parent's scoped CSS no longer
+reaches it — style `extra` classes through a scoped ancestor with
+`:global()`, e.g. `.table-page :global(.error) { … }`.
+
+**4. A swallowed error carries a comment saying why.** Silent `catch {}` is
+often right — a failed background refresh should leave a working page alone
+(`refreshTables` in `routes/profile/+page.svelte`), and WS-backed refetches
+are eventually consistent anyway. But the reasoning has to be on the page, or
+the next reader can't tell a decision from an oversight.
+`designTokens.test.ts`-style guard: `errorHandling.test.ts` fails the unit
+suite on an uncommented empty catch.
+
+The message itself comes from the server wherever there is one — `apiFetch`
+throws an `ApiError` whose `message` is the handler's `{"error": …}` string,
+already written for players. Branch on `err.status`, never on the message
+text. The `'Could not …'` fallback in each `catch` is only for the case where
+the throw wasn't ours.
 
 ### Log marks
 

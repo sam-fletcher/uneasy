@@ -13,6 +13,7 @@
 	import FormField from '../FormField.svelte';
 	import { MAR_OPTS } from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { plan, onPlansChanged }: {
 		plan: Plan;
@@ -90,7 +91,7 @@
 				The host will choose a marginalia to tear on their own main character.
 			</p>
 		{/if}
-		{#if insistError}<p class="res-error">{insistError}</p>{/if}
+		{#if insistError}<ErrorText message={insistError} variant="panel" />{/if}
 		<div class="form-row">
 			<button class="action-btn primary"
 				onclick={submitInsist}

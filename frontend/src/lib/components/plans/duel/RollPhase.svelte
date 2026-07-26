@@ -11,6 +11,7 @@
 	import CardPicker from '../CardPicker.svelte';
 	import { playerName } from '../shared';
 	import { computeAccumulated, type DuelRes } from './shared';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { plan, duelRes, players, assets, currentPlayerID, stakes, bouts, activeRoll, rollActive, rollOutcome, onPlansChanged }: {
 		plan: Plan;
@@ -127,7 +128,7 @@
 					selectedMulti={takeSelectionIDs}
 					onSelectMulti={(ids) => (takeSelectionIDs = ids)}
 				/>
-				{#if takeError}<p class="res-error">{takeError}</p>{/if}
+				{#if takeError}<ErrorText message={takeError} variant="panel" />{/if}
 				<button class="action-btn primary"
 					onclick={submitTake}
 					disabled={takeBusy || takeSelectionIDs.length !== effectiveTake}>

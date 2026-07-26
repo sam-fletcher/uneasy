@@ -16,6 +16,7 @@
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
 	import { getPushState, enablePush, disablePush, type PushState } from '$lib/push';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let me = $state<Account | null>(null);
 	let tables = $state<MyTable[]>([]);
@@ -197,13 +198,29 @@
 				: await enablePush(me.vapid_public_key);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not update push notifications.';
+			// disablePush unsubscribes the browser *before* telling the server,
+			// so a failed DELETE leaves the toggle claiming "on" when this
+			// device is already off. Re-read the real state so the control
+			// isn't lying while the error explains what didn't happen. (The
+			// orphaned server row self-heals: the sender prunes on 404/410 —
+			// handler/push_notifications.go:247.)
+			pushState = await getPushState().catch(() => pushState);
 		} finally {
 			pushBusy = false;
 		}
 	}
 
 	async function doLogout() {
-		await logout();
+		// logout() reports failure now (it used to ignore res.ok entirely, so a
+		// failed logout looked exactly like a successful one and navigated away
+		// with the session cookie still live). Stay put and say so instead.
+		error = '';
+		try {
+			await logout();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not log out.';
+			return;
+		}
 		goto('/');
 	}
 	async function doCreate() {
@@ -233,14 +250,14 @@
 	<p class="muted-text">Loading…</p>
 {:else if !me}
 	<div class="load-error">
-		<p class="error-text">{error || 'Could not load your profile.'}</p>
+		<ErrorText message={error || 'Could not load your profile.'} />
 		<button class="action-btn primary" onclick={load}>Retry</button>
 	</div>
 {:else}
 	<div class="profile">
 		<p class="wordmark">Uneasy Lies <span class="the">the</span> Head</p>
 
-		{#if error}<p class="error-text">{error}</p>{/if}
+		{#if error}<ErrorText message={error} />{/if}
 		{#if notice}<p class="status">{notice}</p>{/if}
 
 		{#if tables.length > 0}

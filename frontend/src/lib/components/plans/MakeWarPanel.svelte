@@ -20,6 +20,7 @@
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
 	import {
+		ApiError,
 		getWarState,
 		type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
@@ -33,6 +34,7 @@
 	import SurrenderClaims from './war/SurrenderClaims.svelte';
 
 	import type { PlanPanelProps } from './types';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -63,8 +65,14 @@
 			warError = '';
 		} catch (e) {
 			// 404 just means the war row hasn't been created yet — fine.
-			const msg = e instanceof Error ? e.message : '';
-			if (!/no war/i.test(msg)) warError = msg || 'Could not load war state';
+			// Checked on the status, not the message: this used to test
+			// /no war/i against the server's prose, and the server already has
+			// two wordings for it (plan_make_war.go, wars.go). A third that
+			// didn't happen to contain "no war" would have started showing a
+			// spurious error here.
+			if (!(e instanceof ApiError && e.status === 404)) {
+				warError = e instanceof Error ? e.message : 'Could not load war state';
+			}
 			war = null;
 		}
 	}
@@ -134,8 +142,8 @@
 		{#if plan.preparation_notes}
 			<p class="plan-notes">"{plan.preparation_notes}"</p>
 		{/if}
-		{#if warError}<p class="res-error">{warError}</p>{/if}
-		{#if actionError}<p class="res-error">{actionError}</p>{/if}
+		{#if warError}<ErrorText message={warError} variant="panel" />{/if}
+		{#if actionError}<ErrorText message={actionError} variant="panel" />{/if}
 
 		{#if war && delayRevealID != null && plan.row_number == null && war.status === 'active'}
 			<DelayReveal

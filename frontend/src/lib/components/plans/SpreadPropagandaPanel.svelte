@@ -24,6 +24,7 @@
 
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	// make and mar option keys don't overlap, so a completed choice list can
 	// be labelled without knowing which outcome produced it.
@@ -240,7 +241,7 @@
 {#if mode === 'prep'}
 	<fieldset class="plan-form-fieldset" disabled={readOnly}>
 		<div class="plan-form">
-			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 			<label class="form-label">
 				Message and Methods:
 				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}

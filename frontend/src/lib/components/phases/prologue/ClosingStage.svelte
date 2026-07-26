@@ -42,6 +42,7 @@
 	import { playerColorByID } from '$lib/playerColor';
 	import TrackBoard from './TrackBoard.svelte';
 	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		gameID: string;
@@ -203,7 +204,7 @@
 
 <div class="closing-stage">
 	{#if error}
-		<p class="error-text">{error}</p>
+		<ErrorText message={error} />
 	{/if}
 
 	<h2 class="closing-title">The Stage is Set.</h2>

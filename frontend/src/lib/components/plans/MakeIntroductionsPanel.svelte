@@ -36,6 +36,7 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	const MI_MAR_OPTIONS = [
 		{ key: 'other_retinue',  label: 'Another retinue' },
@@ -355,7 +356,7 @@
 {#if mode === 'prep'}
 	<fieldset class="plan-form-fieldset" disabled={readOnly}>
 		<div class="plan-form">
-			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 			<FormField label="Number of peers">
 				<div class="chip-row">
 					{#each [1, 2, 3, 4] as n}
@@ -437,7 +438,7 @@
 					Once you finalize, the dice will roll — you'll describe whoever
 					actually turns up.
 				</p>
-				{#if peersError}<p class="res-error">{peersError}</p>{/if}
+				{#if peersError}<ErrorText message={peersError} variant="panel" />{/if}
 				{#each peerNames as _, i (i)}
 					{@const locked = drafts[i] != null}
 					<div class="form-label">

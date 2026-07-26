@@ -55,6 +55,7 @@
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
 	import { provideSecretCounts } from '$lib/secretCountsContext';
 	import { provideSuccession } from '$lib/successionContext';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import {
 		rankTriplesByPlayer, topRanks, atRiskCountByPlayer, typingIndicatorLabel,
 	} from '$lib/tableHeader';
@@ -74,7 +75,15 @@
 	let members = $state<PresenceMember[]>([]);
 	let secrets = $state<Secret[]>([]);
 	let currentPlayerID = $state<number | null>(null);
-	let error = $state('');
+	// Load errors only — the reason the page has no data, or stale data. It is
+	// sticky (it explains an empty screen), it renders under the header where
+	// the missing content would be, and it is cleared *only* by a successful
+	// load. Action failures get their own state next to the control that
+	// raised them; they must never land here. See adr/ERROR_HANDLING_PLAN.md:
+	// this used to be one variable for both, so the resync clear below wiped
+	// action errors seconds after they appeared, and action errors rendered
+	// under the header — behind whichever modal had raised them.
+	let loadError = $state('');
 	let loading = $state(true);
 
 	// Derived helpers
@@ -525,7 +534,10 @@
 			// whatever the banner was complaining about is moot. Clearing on
 			// success rather than on entry means a *failed* resync leaves the
 			// previous message up instead of blanking it mid-flight.
-			error = '';
+			// Safe to clear unconditionally now that only load failures live
+			// here — this line used to erase action errors too, seconds after
+			// the player raised them.
+			loadError = '';
 		} catch (e) {
 			// Only the initial load may raise the banner. This function runs on
 			// every WS (re)connect — including the reconnect a returning player
@@ -537,7 +549,7 @@
 			// background refresh must leave the page showing what it already
 			// had — the same call profile/+page.svelte's refreshTables makes.
 			if (!gameStateLoaded) {
-				error = e instanceof Error ? e.message : 'Could not load game state.';
+				loadError = e instanceof Error ? e.message : 'Could not load game state.';
 			}
 		}
 	}
@@ -581,7 +593,7 @@
 				return;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not load table.';
+			loadError = e instanceof Error ? e.message : 'Could not load table.';
 		} finally {
 			loading = false;
 		}
@@ -653,14 +665,29 @@
 	// ── Tone-setting ──────────────────────────────────────────────────────────
 	let newTopicText = $state('');
 	let addingTopic = $state(false);
+	// Rendered inside the Tones sheet, not in the page banner. The sheet is a
+	// fixed z-index:91 panel over a full-viewport scrim, so a message in the
+	// header banner is painted underneath the dialog the player is looking at
+	// — they'd see the topic silently fail to change with the dialog still
+	// open. Cleared when the sheet opens.
+	let toneError = $state('');
+
+	/** Both entry points to the Tones sheet (the header button and the
+	 *  prologue's own link) go through here so a message left over from a
+	 *  previous visit never greets the player on open. */
+	function openTones() {
+		toneError = '';
+		tonesOpen = true;
+	}
 
 	const toneCycle: ToneTopic['status'][] = ['default', 'include', 'avoid_detail', 'never'];
 
 	async function onTopicStatusChange(topicID: number, status: string) {
+		toneError = '';
 		try {
 			await updateToneTopic(gameID, topicID, status as ToneTopic['status']);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not update topic.';
+			toneError = e instanceof Error ? e.message : 'Could not update topic.';
 		}
 	}
 
@@ -674,11 +701,12 @@
 		const text = newTopicText.trim();
 		if (!text || addingTopic) return;
 		addingTopic = true;
+		toneError = '';
 		try {
 			await addToneTopic(gameID, text);
 			newTopicText = '';
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not add topic.';
+			toneError = e instanceof Error ? e.message : 'Could not add topic.';
 		} finally {
 			addingTopic = false;
 		}
@@ -740,7 +768,7 @@
 		{#if game}
 			<div class="game-info" class:has-war={$activeWarCount + $pendingWarCount > 0}>
 				<PhaseBadge phase={game.phase} />
-				<button class="tones-button" onclick={() => tonesOpen = true} aria-label="Open tones">
+				<button class="tones-button" onclick={openTones} aria-label="Open tones">
 					<span class="lbl">Tones</span>
 				</button>
 				<button class="tones-button" onclick={() => lawsOpen = true} aria-label="Open laws">
@@ -763,8 +791,8 @@
 		{/if}
 	</header>
 
-	{#if error}
-		<p class="error-text error">{error}</p>
+	{#if loadError}
+		<ErrorText message={loadError} extra="error" />
 	{/if}
 
 	<!--
@@ -799,92 +827,114 @@
 		<WaitingOnBar state={waitingOn} {currentPlayerID} {players} />
 	{/if}
 
-	{#if loading}
-		<div class="center-message">Loading…</div>
+	<!--
+		A throw during render used to blank the page with no message: there was no
+		boundary anywhere in the app, and the two incidents we've had (the
+		asset.taken payload that had to be merged rather than replaced, and the
+		optimistic-append/WS duplicate key) both presented as "the UI froze"
+		rather than as an error. Scoped to the phase views only — the header,
+		WaitingOnBar, Public Record and chat stay alive, so the player can still
+		read the table and reach the reload. `reset` re-renders: worth offering
+		first, since a bad payload is usually repaired by the next resync.
+	-->
+	<svelte:boundary>
+		{#if loading}
+			<div class="center-message">Loading…</div>
 
-	<!-- ── Lobby ──────────────────────────────────────────────────────────── -->
-	{:else if game?.phase === 'lobby'}
-		<LobbyView
-			{gameID}
-			{game}
-			{players}
-			{isFacilitator}
-			{vapidPublicKey}
-			onFeedback={() => lobbyFeedbackOpen = true}
-		/>
+		<!-- ── Lobby ──────────────────────────────────────────────────────────── -->
+		{:else if game?.phase === 'lobby'}
+			<LobbyView
+				{gameID}
+				{game}
+				{players}
+				{isFacilitator}
+				{vapidPublicKey}
+				onFeedback={() => lobbyFeedbackOpen = true}
+			/>
 
-	<!-- ── Prologue ───────────────────────────────────────────────────────── -->
-	{:else if game?.phase === 'prologue'}
-		<PrologueView
-			{gameID}
-			{game}
-			bind:players
-			bind:rankings
-			bind:assets
-			{currentPlayerID}
-			{isFacilitator}
-			bind:waitingOn
-			{laws}
-			{rumors}
-			onResync={loadGameState}
-			onOpenTones={() => tonesOpen = true}
-			onOpenRetinue={(playerID) => retinueOpenForPlayer = playerID ?? currentPlayerID}
-			onOpenLaws={() => lawsOpen = true}
-			onOpenRumors={() => rumorsOpen = true}
-		/>
+		<!-- ── Prologue ───────────────────────────────────────────────────────── -->
+		{:else if game?.phase === 'prologue'}
+			<PrologueView
+				{gameID}
+				{game}
+				bind:players
+				bind:rankings
+				bind:assets
+				{currentPlayerID}
+				{isFacilitator}
+				bind:waitingOn
+				{laws}
+				{rumors}
+				onResync={loadGameState}
+				onOpenTones={openTones}
+				onOpenRetinue={(playerID) => retinueOpenForPlayer = playerID ?? currentPlayerID}
+				onOpenLaws={() => lawsOpen = true}
+				onOpenRumors={() => rumorsOpen = true}
+			/>
 
-	<!-- ── Main Event ─────────────────────────────────────────────────────── -->
-	{:else if game?.phase === 'main_event'}
-		<MainEventView
-			{game}
-			{players}
-			{rankings}
-			{assets}
-			{laws}
-			{rumors}
-			{currentPlayerID}
-			bind:recordRows
-			{rowState}
-			{playerNameMap}
-			{isFacilitator}
-			bind:activeRoll
-			bind:activeRollDice
-			bind:activeRollVotes
-			bind:activeRollParticipants
-			bind:bankedDice
-			{plans}
-			{planTokens}
-			onPlansChanged={refreshPlans}
-			{activeScene}
-			{activeScenePeers}
-			{sceneSetupDraft}
-			{preparePlanDraft}
-			onSceneRefresh={refreshActiveScene}
-			bind:waitingOn
-		/>
+		<!-- ── Main Event ─────────────────────────────────────────────────────── -->
+		{:else if game?.phase === 'main_event'}
+			<MainEventView
+				{game}
+				{players}
+				{rankings}
+				{assets}
+				{laws}
+				{rumors}
+				{currentPlayerID}
+				bind:recordRows
+				{rowState}
+				{playerNameMap}
+				{isFacilitator}
+				bind:activeRoll
+				bind:activeRollDice
+				bind:activeRollVotes
+				bind:activeRollParticipants
+				bind:bankedDice
+				{plans}
+				{planTokens}
+				onPlansChanged={refreshPlans}
+				{activeScene}
+				{activeScenePeers}
+				{sceneSetupDraft}
+				{preparePlanDraft}
+				onSceneRefresh={refreshActiveScene}
+				bind:waitingOn
+			/>
 
-	<!-- ── Shake-Up ───────────────────────────────────────────────────────── -->
-	{:else if game?.phase === 'shake_up'}
-		<ShakeUpView
-			{gameID}
-			{game}
-			{players}
-			{assets}
-			{rankings}
-			{currentPlayerID}
-			bind:activeRoll
-			bind:activeRollDice
-			bind:activeRollParticipants
-			bind:waitingOn
-		/>
+		<!-- ── Shake-Up ───────────────────────────────────────────────────────── -->
+		{:else if game?.phase === 'shake_up'}
+			<ShakeUpView
+				{gameID}
+				{game}
+				{players}
+				{assets}
+				{rankings}
+				{currentPlayerID}
+				bind:activeRoll
+				bind:activeRollDice
+				bind:activeRollParticipants
+				bind:waitingOn
+			/>
 
-	<!-- ── Ended ──────────────────────────────────────────────────────────── -->
-	{:else if game?.phase === 'ended'}
-		<EndedView {rankings} {players} />
+		<!-- ── Ended ──────────────────────────────────────────────────────────── -->
+		{:else if game?.phase === 'ended'}
+			<EndedView {rankings} {players} />
 
-	{:else}
-		<div class="center-message">Unknown phase.</div>
-	{/if}
+		{:else}
+			<div class="center-message">Unknown phase.</div>
+		{/if}
+
+		{#snippet failed(_error, reset)}
+			<div class="center-message boundary-failed" role="alert">
+				<p>Something went wrong displaying this part of the table.</p>
+				<div class="boundary-actions">
+					<button class="action-btn primary" onclick={reset}>Try again</button>
+					<button class="action-btn secondary" onclick={() => location.reload()}>Reload the page</button>
+				</div>
+			</div>
+		{/snippet}
+	</svelte:boundary>
 	</div><!-- /.phase-column -->
 
 		{#if !loading && currentPlayerID != null && game}
@@ -906,6 +956,9 @@
 	<RetinueSheet open={tonesOpen} onClose={() => tonesOpen = false}>
 		<div class="tones-sheet">
 			<h3>Tones</h3>
+			{#if toneError}
+				<ErrorText message={toneError} />
+			{/if}
 			<p class="muted-text small">
 				Themes and topics your group wants to include or avoid. Tap a tile to cycle its status.
 				{#if tonesLocked}<br /><em>Locked — the main event has begun.</em>{/if}
@@ -1020,7 +1073,7 @@
 					A plan would land past row 13. Pick how the game should wind down — this can't be undone.
 				</p>
 				{#if endgameError}
-					<p class="error-text" role="alert">{endgameError}</p>
+					<ErrorText message={endgameError} />
 				{/if}
 				{#if endgamePromptModes.includes('smooth_landing')}
 					<button class="action-btn primary" disabled={endgameSubmitting} onclick={() => chooseEndgameMode('smooth_landing')}>
@@ -1478,9 +1531,24 @@
 		flex-shrink: 0;
 	}
 
-	.error {
+	/* :global — see ChatPanel; the element belongs to ErrorText now. */
+	.table-page :global(.error) {
 		padding: 0.5rem 0;
 		flex-shrink: 0;
+	}
+
+	/* Error-boundary fallback. Inherits .center-message's fill-and-centre. */
+	.boundary-failed {
+		flex-direction: column;
+		gap: 0.75rem;
+		text-align: center;
+		padding: 1rem;
+	}
+	.boundary-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		justify-content: center;
 	}
 
 	.center-message {
@@ -1609,7 +1677,7 @@
 		border: 1px solid var(--color-border-strong);
 		border-radius: 8px;
 		padding: 1.25rem;
-		max-width: 28rem;
+		max-width: 27.5rem; /* 440px — the column cap (docs/STYLE_GUIDE.md) */
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;

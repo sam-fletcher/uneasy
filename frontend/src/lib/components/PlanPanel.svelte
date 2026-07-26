@@ -30,6 +30,7 @@
 	import RowPill from './plans/RowPill.svelte';
 	import { highlightedRow } from '$lib/highlight';
 	import type { PlanContext } from './plans/types';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	const TRACK_LABEL: Record<RankingCategory, string> = {
 		power:     'Power',
@@ -313,7 +314,7 @@
 		{#if isFocusPlayer && !eligibilityLoaded}
 			<p class="muted">Checking eligibility…</p>
 		{:else if isFocusPlayer && eligibilityError}
-			<p class="res-error">{eligibilityError}</p>
+			<ErrorText message={eligibilityError} variant="panel" />
 		{:else if isFocusPlayer && eligiblePlans.length === 0 && ineligiblePlans.length === 0}
 			<p class="muted">No plans available to prepare this turn.</p>
 		{:else}

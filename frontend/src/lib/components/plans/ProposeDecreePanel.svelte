@@ -39,6 +39,7 @@
 	import { playerName, parseResolutionData, ownerUnleveragedAssets } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -376,7 +377,7 @@
 {#if mode === 'prep'}
 	<fieldset class="plan-form-fieldset" disabled={readOnly}>
 		<div class="plan-form">
-			{#if prepError}<p class="res-error">{prepError}</p>{/if}
+			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 			<label class="form-label">
 				Decree:
 				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}

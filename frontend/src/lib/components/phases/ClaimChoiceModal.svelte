@@ -37,6 +37,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import { stealPreview } from '$lib/prologue/choosing';
 	import { deriveClaimSteps } from '$lib/prologue/claimSteps';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		gameID: string;
@@ -254,7 +255,7 @@
 	</header>
 
 	<div class="modal-sheet-scroll">
-		{#if error}<p class="error-text">{error}</p>{/if}
+		{#if error}<ErrorText message={error} />{/if}
 
 		{#if choice.description}
 			<p class="choice-desc">{choice.description}</p>
@@ -393,8 +394,6 @@
 		padding: 1rem 1.25rem 0;
 	}
 	h3 { color: var(--color-accent); margin: 0; font-size: 1.1rem; }
-
-	.error-text { margin: 0; }
 
 	.choice-desc {
 		margin: 0;

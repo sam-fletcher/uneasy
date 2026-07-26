@@ -14,6 +14,7 @@
 	import FormField from '../FormField.svelte';
 	import { playerName, assetName } from '../shared';
 	import { computeAccumulated, type DuelRes } from './shared';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { plan, duelRes, players, assets, currentPlayerID, amParticipant, preparerStakes, targetStakes, bouts, myUnresolvedStakes, onPlansChanged, onRefresh }: {
 		plan: Plan;
@@ -248,7 +249,7 @@
 					</div>
 				</FormField>
 			{/if}
-			{#if boutError}<p class="res-error">{boutError}</p>{/if}
+			{#if boutError}<ErrorText message={boutError} variant="panel" />{/if}
 			<button class="action-btn primary"
 				onclick={boutInProgress ? submitRespond : submitDeclare}
 				disabled={boutBusy || pickedStakeID == null}>

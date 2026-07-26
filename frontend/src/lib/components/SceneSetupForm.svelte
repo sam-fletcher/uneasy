@@ -25,6 +25,7 @@
 	import { playerColor } from '$lib/playerColor';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		gameID: string | number;
@@ -320,7 +321,7 @@
 		</div>
 	</div>
 
-	{#if error}<p class="error-text">{error}</p>{/if}
+	{#if error}<ErrorText message={error} />{/if}
 
 	{#if !readOnly}
 		<div class="actions">

@@ -18,6 +18,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import SuggestionPicker from './SuggestionPicker.svelte';
 	import CrownGlyph from './CrownGlyph.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	// Line-of-succession crown lookup (ADR-007). Undefined when no provider is
 	// mounted → no crowns render.
@@ -527,7 +528,7 @@
 							</div>
 						</div>
 						{#if renamingAssetId === asset.id && renameError}
-							<p class="error-text">{renameError}</p>
+							<ErrorText message={renameError} />
 						{/if}
 						{#if mcSwapTo != null && currentMC && asset.id === currentMC.id}
 							<div class="mc-picker">
@@ -544,7 +545,7 @@
 										{/if}
 									{/each}
 								</div>
-								{#if mcSwapError}<p class="error-text">{mcSwapError}</p>{/if}
+								{#if mcSwapError}<ErrorText message={mcSwapError} />{/if}
 								<div class="m-editor-actions">
 									<button type="button" class="action-btn secondary" onclick={cancelMcSwap} disabled={mcSwapSaving}>Cancel</button>
 								</div>
@@ -579,7 +580,7 @@
 										use:focusOnMount
 									></textarea>
 								{/if}
-								{#if editError}<p class="error-text">{editError}</p>{/if}
+								{#if editError}<ErrorText message={editError} />{/if}
 								<div class="m-editor-actions">
 									<button type="button" class="action-btn secondary" onclick={cancelEdit} disabled={saving}>Cancel</button>
 									<button type="button" class="action-btn primary" onclick={saveEdit} disabled={saving || !draftText.trim()}>
@@ -651,7 +652,7 @@
 											else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveSecret(asset); }
 										}}
 									></textarea>
-									{#if secretError}<p class="error-text">{secretError}</p>{/if}
+									{#if secretError}<ErrorText message={secretError} />{/if}
 								{/if}
 								<div class="m-editor-actions">
 									<button type="button" class="action-btn secondary" onclick={() => toggleSecrets(asset.id)} disabled={secretSaving}>Close</button>

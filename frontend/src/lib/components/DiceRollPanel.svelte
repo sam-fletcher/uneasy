@@ -18,6 +18,7 @@
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { useSecretCounts } from '$lib/secretCountsContext';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		roll: DiceRoll;
@@ -337,7 +338,7 @@
 	</div>
 
 	{#if error}
-		<p class="error-text">{error}</p>
+		<ErrorText message={error} />
 	{/if}
 
 	<!-- Dice pools (always visible) -->

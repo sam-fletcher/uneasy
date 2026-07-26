@@ -12,6 +12,7 @@
 	import CardPicker from '../CardPicker.svelte';
 	import { playerName, assetName } from '../shared';
 	import type { DuelRes } from './shared';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { plan, duelRes, players, assets, currentPlayerID, amParticipant, amPreparer, amTarget, myMaxStakes, myStakes, onPlansChanged, onRefresh }: {
 		plan: Plan;
@@ -153,7 +154,7 @@
 				selected={pendingDuelerID}
 				onSelect={(id) => (pendingDuelerID = id)}
 			/>
-			{#if championError}<p class="res-error">{championError}</p>{/if}
+			{#if championError}<ErrorText message={championError} variant="panel" />{/if}
 			<div class="form-row">
 				<button class="action-btn primary" onclick={confirmDueler} disabled={championBusy}>
 					{championBusy ? '…' : 'Confirm'}
@@ -215,7 +216,7 @@
 				selectedMulti={stakeSelectionIDs}
 				onSelectMulti={(ids) => (stakeSelectionIDs = ids)}
 			/>
-			{#if stakeError}<p class="res-error">{stakeError}</p>{/if}
+			{#if stakeError}<ErrorText message={stakeError} variant="panel" />{/if}
 			<button class="action-btn primary"
 				onclick={commitStakes}
 				disabled={stakeBusy || !stakeCountValid}>

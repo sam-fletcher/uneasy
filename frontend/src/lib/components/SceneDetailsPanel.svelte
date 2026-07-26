@@ -26,6 +26,7 @@
 	import { playerColor } from '$lib/playerColor';
 	import { useSecretCounts } from '$lib/secretCountsContext';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		gameID: string | number;
@@ -236,7 +237,7 @@
 				{/each}
 			{/if}
 		</div>
-		{#if claimError}<p class="error-text">{claimError}</p>{/if}
+		{#if claimError}<ErrorText message={claimError} />{/if}
 	</div>
 
 	{#if isFocusPlayer}
@@ -249,7 +250,7 @@
 			>
 				{endingScene ? '…' : 'End Scene'}
 			</button>
-			{#if endError}<span class="error-text inline">{endError}</span>{/if}
+			{#if endError}<ErrorText message={endError} extra="inline" />{/if}
 		</div>
 	<!-- {:else if currentPlayerID != null && !rollActive}
 		TODO: Decide how to handle scene rolls (heavy social component) -->

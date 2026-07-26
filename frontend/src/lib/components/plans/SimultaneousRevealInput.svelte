@@ -11,6 +11,7 @@
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { REVEAL_EVENTS } from '$lib/ws';
 	import D6Face from './D6Face.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Participant {
 		player_id: number;
@@ -161,7 +162,7 @@
 		{/if}
 	{/if}
 
-	{#if error}<p class="error-text">{error}</p>{/if}
+	{#if error}<ErrorText message={error} />{/if}
 </div>
 
 <style>

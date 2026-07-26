@@ -21,6 +21,7 @@
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		/** The plan being targeted (the resolve panel renders this). */
@@ -193,7 +194,7 @@
 		{#if amKeepOrChangeTargetWinner}
 			<div class="demand-form">
 				<p class="choices-header">Re-aim this plan</p>
-				{#if retargetError}<p class="res-error">{retargetError}</p>{/if}
+				{#if retargetError}<ErrorText message={retargetError} variant="panel" />{/if}
 				<FormField label="Target player">
 					<PlayerChips
 						{players}
@@ -225,7 +226,7 @@
 				<p class="choices-header">
 					Leverage {playerName(players, plan.preparer_id)}'s assets onto the roll
 				</p>
-				{#if leverageError}<p class="res-error">{leverageError}</p>{/if}
+				{#if leverageError}<ErrorText message={leverageError} variant="panel" />{/if}
 				<CardPicker
 					label="Pick one or more assets"
 					items={leverageableTargetAssets}

@@ -7,6 +7,7 @@
 	import type { Snippet } from 'svelte';
 	import type { Plan, Player } from '$lib/api';
 	import { PLAN_SHORT, playerName } from './shared';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
 		plan: Plan;
@@ -32,7 +33,7 @@
 	{/if}
 
 	{#if error}
-		<p class="res-error">{error}</p>
+		<ErrorText message={error} variant="panel" />
 	{/if}
 
 	{@render children()}

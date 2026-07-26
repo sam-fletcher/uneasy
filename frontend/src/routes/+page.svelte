@@ -10,6 +10,7 @@
 	import HelpButton from '$lib/components/HelpButton.svelte';
 	import CharCounter from '$lib/components/CharCounter.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	type Mode = 'login' | 'signup';
 
@@ -143,7 +144,7 @@
 				</div>
 			{/if} -->
 
-			{#if error}<p class="error-text">{error}</p>{/if}
+			{#if error}<ErrorText message={error} />{/if}
 
 			<button class="action-btn primary" type="submit" disabled={loading}>
 				{#if loading}
