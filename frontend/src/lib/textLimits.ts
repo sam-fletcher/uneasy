@@ -6,9 +6,7 @@
 // close enough for a `maxlength` hint since honest passwords are ASCII-ish)
 // so honest users get browser-side feedback instead of a 400.
 //
-// The scene time-note still caps stricter than its tier (120 against
-// MARGINALIA's 160) — deliberate, since it is concatenated into the
-// public-record entry line. Everything else imports from here.
+// Every free-text field now imports from here.
 export const TEXT_LIMITS = {
 	// 20, not a generic "generous" cap: the player name is rendered in the
 	// table header's pill strip, where every character is shared between up
@@ -52,6 +50,18 @@ export const TEXT_LIMITS = {
 	// was 10 lines (176px, ~4x). Since .tone-grid is `repeat(3, 1fr)`, the
 	// whole row grows with the tallest tile, so this is a shared cost.
 	TONE_TOPIC: 65,
+	// 50, matching NAME and game.MaxCustomLocationLen. The public-record entry
+	// reads "Scene: <main character> at <location>, <time>", so the where and
+	// the when get the same budget as the who.
+	//
+	// This is a proportionality choice, not a line guarantee. Measured in the
+	// record rail over 64 realistic combinations with the MC name at its cap:
+	// at 252px (the 360+ overlay and the docked desktop panel) 50/50 runs to 5
+	// lines and 40/40 would hold 4 — but at 236px (the 344 foldable-cover
+	// floor that must not break) even 40/40 reaches 5. No cap buys four lines;
+	// only clamping .entry-line would, and the rail is deliberately left to
+	// wrap so a scene summary stays readable.
+	SCENE_TIME_NOTE: 50,
 	NARRATIVE: 1000,
 	LONG_TEXT: 5000,
 	PASSWORD: 72,

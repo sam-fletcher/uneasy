@@ -283,7 +283,7 @@
 			placeholder="Another time"
 			value={displayTimeNote}
 			oninput={(e) => onTimeNoteInput((e.target as HTMLInputElement).value)}
-			maxlength={120}
+			maxlength={TEXT_LIMITS.SCENE_TIME_NOTE}
 			disabled={readOnly}
 		/>
 	</div>

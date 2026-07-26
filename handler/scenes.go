@@ -384,7 +384,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			customLoc = &str
 		}
 		var timeNote *string
-		tn, ok := textField(w, "time_note", body.TimeNote, maxMarginaliaLen)
+		tn, ok := textField(w, "time_note", body.TimeNote, maxSceneTimeNoteLen)
 		if !ok {
 			return
 		}

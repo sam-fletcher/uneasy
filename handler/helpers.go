@@ -30,10 +30,22 @@ const (
 	// PRODUCT limit read off a surface, not an anti-abuse bound. Mirrored in
 	// frontend/src/lib/textLimits.ts (NAME), which explains the 50.
 	maxAssetNameLen = 50
-	// maxMarginaliaLen bounds a single marginalia entry, a scene time-note,
-	// and prologue card text. Also a product limit; see textLimits.ts
-	// (MARGINALIA) for the 160.
+	// maxMarginaliaLen bounds a single marginalia entry and prologue card
+	// text. Also a product limit; see textLimits.ts (MARGINALIA) for the 160.
 	maxMarginaliaLen = 160
+	// maxSceneTimeNoteLen bounds a scene's custom "another time" note. Matches
+	// game.MaxCustomLocationLen and maxAssetNameLen: the public-record entry
+	// concatenates all three as "Scene: <main character> at <location>,
+	// <time>", so the where and the when get the same budget as the who.
+	//
+	// It does not buy a line guarantee — that's layout, not cap. Measured in
+	// the record rail across 64 realistic combinations with the main-character
+	// name at its cap: at 252px (the 360+ overlay and the docked desktop
+	// panel) 50/50 runs 5 lines, and 40/40 would hold 4 — but at 236px (the
+	// 344 foldable-cover floor the style guide says must not break) even
+	// 40/40 runs to 5. Since neither cap guarantees four lines, the caps stay
+	// consistent with each other and the rail is left to wrap.
+	maxSceneTimeNoteLen = 50
 	// maxToneTopicLen bounds a custom tone topic. A topic is allowed to grow
 	// its tile rather than clip, so this is a bound on how tall it may get:
 	// in the 114px tone-grid column, 65 runes wraps to 5 lines (~95px, about
