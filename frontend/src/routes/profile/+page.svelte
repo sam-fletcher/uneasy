@@ -10,6 +10,7 @@
 	} from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
 	import PhaseBadge from '$lib/components/shared/PhaseBadge.svelte';
+	import LogMark from '$lib/components/LogMark.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import CharCounter from '$lib/components/CharCounter.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
@@ -252,7 +253,18 @@
 							<a class="table-card" class:your-move={isYourMove(t)} class:ended href={`/table/${t.game_id}`}>
 								<span class="table-id">
 									<span class="table-code">Table <span class="code-value">{t.join_code}</span></span>
-									<PhaseBadge phase={t.phase} />
+									<span class="status-row">
+										<PhaseBadge phase={t.phase} />
+										{#if !ended && t.unread_count > 0}
+											<span
+												class="unread-chip"
+												aria-label={`${t.unread_count} unread chat ${t.unread_count === 1 ? 'message' : 'messages'}`}
+											>
+												<span class="unread-chip-mark" aria-hidden="true"><LogMark family="chat" /></span>
+												<b>{t.unread_count > 99 ? '99+' : t.unread_count}</b>
+											</span>
+										{/if}
+									</span>
 								</span>
 								<span class="pills">
 									{#each t.players as p (p.id)}
@@ -469,6 +481,40 @@
 	}
 	.table-card.ended { opacity:0.55; }
 	.table-card.ended:hover { opacity:0.8; }
+	/* Unread ("12 new") sits in the status cluster beside the phase badge,
+	   since it is card-level status like the phase is.
+	   It uses the QUIET gold chip trio, not the solid-accent badge the in-game
+	   chat bar wears: on this card gold already carries turn semantics twice
+	   (.your-move's surface fill, .waited's pill), so a third solid-gold
+	   object would collapse two independent signals — "you owe a move" and
+	   "the table has been talking" — into one indistinguishable glow. The
+	   trio is the documented register for a quiet badge, and it differs from
+	   .your-move by channel as well as brightness: that is a surface fill,
+	   this is an object.
+	   The chat mark carries the noun instead of the word "new", which never
+	   said new *what* while sitting beside a phase badge. It also repays the
+	   mark the mobile chat bar teaches, so recognising it in one place works
+	   in the other. Bold on the number, per the style guide's standalone-
+	   numeric-counter ruling. The mark is aria-hidden and the chip carries an
+	   aria-label, since dropping the word would otherwise leave a screen
+	   reader announcing a bare number. */
+	.unread-chip {
+		display:inline-flex;
+		align-items:center;
+		gap:0.3rem;
+		padding:0.15rem 0.5rem;
+		border-radius:999px;
+		background:var(--color-chip-gold-bg);
+		border:1px solid var(--color-chip-gold-border);
+		color:var(--color-chip-gold-text);
+		font-size:0.75rem;
+		white-space:nowrap;
+	}
+	/* 14px against 12px text — the usual optical bump that keeps a line icon
+	   from reading smaller than the type beside it. This is the smallest any
+	   house mark renders anywhere, which is exactly why `chat` holds the
+	   simplest shape in the set (see LogMark's note on the rumor swap). */
+	.unread-chip-mark { width:14px; height:14px; flex-shrink:0; }
 
 	.table-id {
 		display:flex;
@@ -477,6 +523,16 @@
 		align-items:center;
 		gap:0.5rem;
 		flex-shrink:0;
+	}
+	/* Phase badge and unread chip share a row under the table code — both are
+	   card-level status, so they read as one cluster. Wraps rather than
+	   overflowing if a long phase label meets a 3-digit count. */
+	.status-row {
+		display:flex;
+		align-items:center;
+		justify-content:center;
+		flex-wrap:wrap;
+		gap:0.4rem;
 	}
 	.table-code { font-size:0.85rem; color:var(--color-text-muted); }
 	.code-value { color:var(--color-text); letter-spacing:0.12em; }

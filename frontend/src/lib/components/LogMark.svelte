@@ -18,6 +18,10 @@
 	stagger, the die's two pips, the podium-not-scales trade). Don't tidy them
 	without reading it. An unknown family renders nothing rather than a bullet:
 	every family is supposed to have a mark, so a blank is the louder bug.
+
+	One member — `chat` — is not a system-post family and is never reached via
+	familyOf(); it is requested by name for the mobile chat bar. It sits here
+	anyway so that "where the house marks are drawn" stays one answer.
 -->
 <script lang="ts">
 	let { family }: { family: string | null } = $props();
@@ -100,12 +104,33 @@
 			<path d="M4 7l2.5 2.5" />
 			<path d="M20 7l-2.5 2.5" />
 		{:else if family === 'rumor'}
-			<!-- speech bubble -->
-			<path d="M4 5.5h16v10h-9l-5.5 4v-4H4z" />
+			<!-- two offset bubbles — a thing passed between voices, which is
+			     what a rumor is. Took this shape from `chat` in the 2026-07-25
+			     swap: it is the more detailed of the two, and rumor is the one
+			     that can afford detail (log slot only, always 16px), where
+			     `chat` has to survive 14px on the profile chip. -->
+			<path d="M4 3h7.5a2.5 2.5 0 0 1 2.5 2.5v3.5a2.5 2.5 0 0 1-2.5 2.5H8l-3.5 3v-3H4a2.5 2.5 0 0 1-2.5-2.5V5.5A2.5 2.5 0 0 1 4 3z" />
+			<path d="M15.5 11.5H20a2.5 2.5 0 0 1 2.5 2.5v3a2.5 2.5 0 0 1-2.5 2.5h-.5V22l-3-2.5h-1a2.5 2.5 0 0 1-2.5-2.5v-3a2.5 2.5 0 0 1 2.5-2.5z" />
 		{:else if family === 'secret'}
 			<!-- eye, echoing the open/struck-eye counters on asset cards -->
 			<path d="M2.5 12s3.6-6.5 9.5-6.5S21.5 12 21.5 12s-3.6 6.5-9.5 6.5S2.5 12 2.5 12z" />
 			<circle cx="12" cy="12" r="2.6" />
+		{:else if family === 'chat'}
+			<!-- one large ROUNDED bubble. The only mark here with no
+			     system_code behind it: it labels the mobile chat bar
+			     (ChatPanel's .strip) and the profile card's unread chip. It
+			     lives in this set so the app has exactly one place marks are
+			     drawn.
+			     It gets the SIMPLEST shape on purpose (swapped with `rumor`
+			     2026-07-25): this is the only mark that renders at 14px, and
+			     it renders on the app's highest-traffic surface, so it is the
+			     one that most needs to survive at size and read instantly.
+			     Rounded rather than inheriting rumor's old square bubble — a
+			     sharp-cornered box reads harsher than the rest of the UI on a
+			     primary control, and the rounding keeps it in one family with
+			     the doubled bubbles now on `rumor`. Still clear of `scene`,
+			     which is a pair of quotation marks. -->
+			<path d="M5.5 3.5H18.5a3 3 0 0 1 3 3V12.5a3 3 0 0 1-3 3H10l-4.5 4V15.5a3 3 0 0 1-3-3V6.5a3 3 0 0 1 3-3z" />
 		{/if}
 	</svg>
 {/if}

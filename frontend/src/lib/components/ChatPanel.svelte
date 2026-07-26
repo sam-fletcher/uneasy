@@ -371,7 +371,10 @@
 	// ── Latest message preview (for the collapsed strip) ──────────────────────
 	const latestPost = $derived(posts.length > 0 ? posts[posts.length - 1] : null);
 	const latestPreview = $derived.by(() => {
-		if (!latestPost) return 'No messages yet';
+		// Lowercase and phrased as a state, not a headline: the empty case is
+		// now secondary text sitting after the gold CHAT label, where the old
+		// "No messages yet" read as the bar's own (dead-end) title.
+		if (!latestPost) return 'no new messages';
 		// System posts (no author) just show the body — boundaries and log
 		// entries are already self-contained sentences. Strip the bold markup
 		// since the strip is plain text.
@@ -624,13 +627,16 @@
 	class:has-unread={unreadCount > 0}
 	class:has-important={hasImportantUnread}
 	onclick={toggleExpanded}
-	aria-label="Open chat"
+	aria-label={unreadCount > 0 ? `Open chat, ${unreadCount} unread` : 'Open chat'}
 	aria-expanded={expanded}
 >
+	<span class="strip-mark" aria-hidden="true"><LogMark family="chat" /></span>
+	<span class="strip-label">Chat</span>
 	<span class="strip-preview">{latestPreview}</span>
 	{#if unreadCount > 0}
 		<span class="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
 	{/if}
+	<span class="strip-caret" aria-hidden="true">▴</span>
 </button>
 
 <!--
@@ -1080,22 +1086,36 @@
 <style>
 	/* ── Strip (mobile collapsed) ────────────────────────────────────────── */
 
+	/* The bar is a BUTTON, and has to look like one at a glance: playtesting
+	   found a player who never discovered the game had chat at all. The old
+	   bar was a hairline band whose entire content was the latest message's
+	   prose — the visual signature of a ticker, i.e. the one genre that is
+	   definitionally not tappable, with the word "chat" appearing only in an
+	   aria-label sighted users never receive.
+	   The fix borrows .action-btn.secondary's register verbatim (raised
+	   --color-border fill, warm border, gold label text): the app's own idiom
+	   for "this is a control, but not the primary CTA". Gold arrives as the
+	   LABEL, never as fill, so the bar never competes with an in-game call to
+	   action — that stays the exclusive meaning of a gold surface. */
 	.strip {
 		position: absolute;
 		left: 0;
 		right: 0;
 		bottom: 0;
-		/* ≥44px tap target plus breathing room. Defined on .table-page so the
-		   page-level padding reservation can use the same value. */
+		/* Defined on .table-page so the page-level padding reservation uses the
+		   same value. Note this is a border-box height that has to contain the
+		   padding below — at the old 46px the content box was ~19px, too short
+		   for a mark and a label, which is part of why the bar could only ever
+		   be a line of text. */
 		min-height: var(--chat-strip-height, 56px);
 		/* Extra bottom padding accounts for the iOS home-indicator safe area
 		   so the preview text isn't clipped on devices with a gesture bar. */
-		padding: 0.85rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
+		padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom));
 		display: flex;
 		align-items: center;
-		gap: 0.6rem;
-		background: var(--color-surface);
-		border-top: 1px solid var(--color-border-warm-antique);
+		gap: 0.55rem;
+		background: var(--color-border);
+		border-top: 1px solid var(--color-border-warm-strong);
 		color: var(--color-text);
 		font-size: 0.9rem;
 		text-align: left;
@@ -1104,15 +1124,61 @@
 		box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
 	}
 
+	/* Mark and label are the bar's identity and never shrink or ellipsize —
+	   the preview yields space to them, not the other way round. */
+	.strip-mark {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+		color: var(--color-accent);
+	}
+
+	.strip-label {
+		flex-shrink: 0;
+		color: var(--color-accent);
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		font-size: 0.78rem;
+	}
+
+	/* Trailing caret: points UP because tapping raises the sheet. Paired with
+	   aria-expanded on the button, so it's decoration only.
+	   Accent, not muted: the app's three "this header expands" carets
+	   (.buffet-caret, .sheet-caret, .intro-caret) are all --color-accent, and
+	   that is what this is. The muted carets are the two *inside* the chat
+	   panel (.scene-caret, .persona-caret), where many appear at once and a
+	   gold one each would be noise — not this case.
+	   Sized up a step from the app's usual 0.75–0.8rem because this caret sits
+	   beside an 18px mark rather than beside text, and at 0.8rem it read as
+	   out-scaled next to it. (The shape is the house filled triangle, same as
+	   every other expander in the app — deliberately not a chevron.) */
+	.strip-caret {
+		flex-shrink: 0;
+		color: var(--color-accent);
+		font-size: 0.9rem;
+	}
+
+	/* Supporting detail, not the bar's identity: muted and a step smaller than
+	   the label so a glance lands on "CHAT" first and the preview second. It
+	   keeps its place (seeing whether anything happened without opening is
+	   worth a line) now that it is no longer masquerading as the whole bar. */
 	.strip-preview {
 		flex: 1;
 		min-width: 0;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		color: var(--color-text-muted);
+		/* Matches the label's size rather than exceeding it — the preview is
+		   the longest run of text on the bar, so letting it set the largest
+		   type would undo the demotion. Gold+caps vs muted lowercase carries
+		   the hierarchy from there. */
+		font-size: 0.78rem;
 	}
 
-	.strip.has-unread { color: var(--color-text); }
+	/* Unread lifts the preview out of the muted register — the text is now
+	   something you haven't seen, not ambient context. */
+	.strip.has-unread .strip-preview { color: var(--color-text); }
 	.strip.has-important {
 		border-top: 2px solid var(--color-accent);
 	}

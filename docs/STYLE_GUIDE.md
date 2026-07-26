@@ -171,7 +171,7 @@ Reuse before writing new CSS — these live in
 | `modalShell.css` | sheet/modal frame |
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
-| `LogMark.svelte`† | the 14 chat-log family marks (SVG); also the ranking mark on the Public Record — see **Log marks** below |
+| `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record and the mobile chat bar's icon — see **Log marks** below |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
 undersells it, since it is reused outside the chat feed.
@@ -181,8 +181,9 @@ Plus `plans/shared/` (Buffet, DifficultyMeter) for plan flows and
 
 ### Log marks
 
-`LogMark.svelte` (`frontend/src/lib/components/`) holds 14 house SVG marks for
-the chat log — one per system-post family — retiring the old Unicode
+`LogMark.svelte` (`frontend/src/lib/components/`) holds 15 house SVG marks —
+14 for the chat log, one per system-post family, plus `chat` (see rule 5) —
+retiring the old Unicode
 `FAMILY_GLYPHS`, of which only `§` actually existed in Spectral (the rest each
 resolved to a different fallback font per platform, the real cause of the
 metric fudges the old CSS fought). House icon idiom, same as
@@ -219,6 +220,22 @@ wrap to two lines).
    enforces this — it caught the scales headline and the crown emoji.)
 4. The mark must render from something the app ships, or its shape, weight and
    colour are the reader's OS's choice.
+5. The set is where house marks are *drawn*, not only where log families are
+   listed. `chat` (a single rounded bubble — the mobile chat bar and the
+   profile card's unread chip) has no `system_code`, is never reached via
+   `markForCode`, and is requested by name — it lives here so "where do the
+   marks live" has one answer. A new mark still needs owner sign-off; this
+   one got it 2026-07-25. Check the set before drawing: `scene` is a pair of
+   quotation marks and `rumor` is two offset bubbles, so the speech-shaped
+   corner of the set is crowded.
+6. **Detail goes where there's room for it.** `chat` and `rumor` swapped
+   shapes on 2026-07-25 for this reason. `rumor` renders in one place, the
+   log slot, always at 16px, so it can afford the two-bubble shape — which
+   also suits it, a rumor being a thing passed between voices. `chat` renders
+   at 14px on the profile chip and 18px on the bar, i.e. it is the only mark
+   that goes below 16px *and* it sits on the app's highest-traffic surface,
+   so it holds the simplest shape in the set. Before assigning a shape, check
+   the smallest size its slot will ever render at.
 
 **Hostile-verb amendment.** Verb class has no channel of its own, and tearing
 isn't a *severity* of writing — it's a different act on the same noun. So a

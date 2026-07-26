@@ -981,8 +981,12 @@
 	.table-page {
 		/* Single source of truth for the mobile chat strip's height. Read by
 		   ChatPanel.svelte (.strip min-height) and by .table-body's reserved
-		   padding-bottom below, so the two stay in sync. */
-		--chat-strip-height: 46px;
+		   padding-bottom below, so the two stay in sync.
+		   56px, not the 46px it started at: the bar carries a mark and a label
+		   now (see .strip's comment on why it had to), and border-box means
+		   this height has to contain its padding — 46 left a ~19px content box
+		   that could only hold a single line of text. */
+		--chat-strip-height: 56px;
 
 		display: flex;
 		flex-direction: column;
