@@ -158,12 +158,22 @@
 			any time from the <span class="help-cue" role="img" aria-label="help button"
 				><HelpGlyph size="1.15em" /></span
 			> in the top-right corner.
+			A skim is enough for now.
 		</p>
 		<HelpContent {onFeedback} />
 	</section>
 </div>
 
 <style>
+	.prologue-lede-list {
+		margin: 0;
+		/* padding-inline-start: 1.25rem;
+		list-style-position: outside; */
+		padding-left: 1.25rem;
+		color: var(--color-text);
+		font-size: 1.05rem;
+		line-height: 1.45;
+	}
 	.phase-view {
 		flex: 1;
 		display: flex;
