@@ -94,6 +94,60 @@ describe('layout width tokens', () => {
 		expect(new Set([`${chat - 1}px`, `${chat}px`, `${record}px`])).toEqual(ALLOWED_MEDIA);
 	});
 
+	/*
+	 * The table shell's box IS the viewport as far as the width system is
+	 * concerned: every derivation in the STYLE_GUIDE table measures from the
+	 * raw viewport (300 = 360 − 44 rail − 2×8; the 790 dock = 44+8+360+8+
+	 * 360+8). main.full-bleed wraps the whole table route, so anything it
+	 * takes horizontally comes straight out of the phase column — and it
+	 * takes it silently, because the shell's own `overflow-x: clip` hides
+	 * the resulting overflow instead of showing a scrollbar.
+	 *
+	 * Two ways to lose the width, both of which have happened:
+	 *   padding — a 0.2rem gutter left the record-phase content at 293.6px
+	 *     on a 360 phone (under the 300 floor SceneSetupForm's @container
+	 *     query keys off) and put both docks ~4px short of their tracks.
+	 *   auto inline margins — body is a flex column on this route, and auto
+	 *     cross-axis margins suppress a flex item's default `stretch`, so
+	 *     `margin: 0 auto` inherited from the base `main` rule collapsed the
+	 *     whole page to shrink-to-fit (~302px on a 412px phone).
+	 *
+	 * main.flush is the same contract for pages that own their gutter
+	 * (currently /profile): with main's gutter outside the capped box the
+	 * profile column measured 408 at a 440 viewport while every other column
+	 * measured 440. Pad inside the column instead; the phase views and
+	 * .profile already do.
+	 */
+	it.each(['full-bleed', 'flush'])('main.%s adds no horizontal gutter', (modifier) => {
+		const layout = readFileSync(join(SRC, 'routes/+layout.svelte'), 'utf8');
+		const block = layout.match(new RegExp(`main\\.${modifier}\\s*\\{([^}]*)\\}`))?.[1];
+		expect(block, `main.${modifier} rule not found in routes/+layout.svelte`).toBeDefined();
+
+		// full-bleed's comment quotes `margin: 0 auto` as the thing being
+		// undone — scan declarations only.
+		const decls = block!.replace(/\/\*[\s\S]*?\*\//g, '');
+
+		const offenders: string[] = [];
+		for (const m of decls.matchAll(/(margin|padding)(-inline|-left|-right)?\s*:\s*([^;]+)/g)) {
+			const [, prop, side, raw] = m;
+			const parts = raw.trim().split(/\s+/);
+			// Pull out just the inline-axis values: the shorthand's 2nd slot
+			// (and 4th, when all four sides are listed), both values of the
+			// -inline pair, or the single value of -left / -right.
+			const inline = !side
+				? (parts.length === 1 ? [parts[0]] : parts.length === 4 ? [parts[1], parts[3]] : [parts[1]])
+				: side === '-inline' ? parts
+				: [parts[0]];
+			for (const v of inline) {
+				if (v !== '0' && v !== '0px') offenders.push(`${prop}${side ?? ''}: ${raw.trim()}  →  ${v}`);
+			}
+		}
+		expect(
+			offenders,
+			`main.${modifier} must not take horizontal space from the column below it:\n${offenders.join('\n')}`
+		).toEqual([]);
+	});
+
 	// The record width (RECORD_WIDTH_PX) can't be read by CSS, so it has two
 	// mirrors: PublicRecord's overlay width and the table grid's record
 	// column. Retuning it means changing the constant and both mirrors —

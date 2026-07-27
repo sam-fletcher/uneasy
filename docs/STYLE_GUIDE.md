@@ -145,6 +145,12 @@ Rules:
   (fluid layout + `min-width: 0`, no dedicated styles).
 - Cap-and-center: above its cap a column stops growing and margins take
   the slack.
+- The derivations above measure from the **raw viewport**, so the table
+  route's `main.full-bleed` (`routes/+layout.svelte`) must add no
+  horizontal padding and no auto inline margins — any gutter there comes
+  straight out of the phase column, and a shrink-to-fit `main` collapses
+  it entirely. Pad inside the phase views instead.
+  `layoutTokens.test.ts` fails a gutter.
 
 ## Layout & interaction
 

@@ -26,6 +26,12 @@
 	const PAGE_TITLES: Record<string, string> = { '/profile': 'Profile' };
 	const pageTitle = $derived(PAGE_TITLES[page.url.pathname] ?? '');
 	const isTableRoute = $derived(page.url.pathname.startsWith('/table/'));
+	// Routes whose own content column supplies the horizontal gutter, so main
+	// must not add one on top (see main.flush). Only pages that participate in
+	// the layout width system belong here — the auth pages are plain centered
+	// cards with no cap to hit, and keep main's default gutter.
+	const FLUSH_PATHS = ['/profile'];
+	const isFlushRoute = $derived(FLUSH_PATHS.includes(page.url.pathname));
 
 	onMount(async () => {
 		try { me = await getMe(); } catch { /* ignore */ }
@@ -76,7 +82,7 @@
 	</header>
 {/if}
 
-<main class:full-bleed={isTableRoute}>
+<main class:full-bleed={isTableRoute} class:flush={isFlushRoute}>
 	{@render children()}
 </main>
 
@@ -189,7 +195,24 @@
 		margin: 0 auto;
 		padding: 1rem;
 	}
+	/* Pages whose own column supplies the gutter (FLUSH_PATHS above). Same
+	   principle as .full-bleed: a column in the width system has to derive
+	   from the raw viewport, or its cap is never the width it claims. With
+	   main's gutter outside the capped box, /profile measured 408 at a 440
+	   viewport while every other content column measured 440 — and its 888
+	   two-up cap needed a 920 viewport to bind. The page keeps the vertical
+	   padding and pads itself horizontally instead. */
+	main.flush {
+		padding-inline: 0;
+	}
 	/* Table route: immersive game UI fills the viewport edge-to-edge.
+	   Horizontal padding here must stay ZERO — the layout width system
+	   (docs/STYLE_GUIDE.md "Layout widths") derives every column from the
+	   raw viewport, so any gutter on this box is subtracted from the phase
+	   column: a 0.2rem one used to leave the record-phase content 293.6px
+	   on a 360 phone instead of the 300px floor components rely on, and put
+	   both dock thresholds (790, 1070) ~4px short of the track widths they
+	   were sized for.
 	   overflow-x: clip guards against the table page's edge-to-edge strips
 	   (see .top-strip in table/[id]/+page.svelte) landing a fraction of a
 	   pixel past this box at fractional viewport widths — without it,
@@ -197,8 +220,15 @@
 	   letting the whole page rubber-band sideways on touch scroll. */
 	main.full-bleed {
 		max-width: 100%;
-		padding: 0 0.2rem;
+		padding: 0;
 		overflow-x: clip;
+		/* Undo the base rule's `margin: 0 auto`. That centres a block-level
+		   main under the 1500px cap, but on the table route body is a flex
+		   column (see body:has above) — and auto margins on the cross axis
+		   suppress a flex item's default `stretch`, leaving main at its
+		   shrink-to-fit width and centred with dead space either side. On a
+		   412px phone the lobby rendered ~302px wide because of this. */
+		margin-inline: 0;
 		/* Claim the flex column's leftover height (see body:has above) and let
 		   it shrink below content — the game shell scrolls internally. */
 		flex: 1 1 auto;

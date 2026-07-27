@@ -416,10 +416,20 @@
 	   (docs/STYLE_GUIDE.md "Layout widths"). From the chat dock up — the
 	   system's "two columns fit" boundary — the page widens to two column
 	   widths so the tables grid can go 2-up, while the form sections stay
-	   phone-width (forms gain nothing from width). */
-	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:440px; margin: 0 auto; padding-top:1rem; }
+	   phone-width (forms gain nothing from width).
+	   The horizontal gutter is ours, not main's (main.flush in +layout.svelte):
+	   inside the cap, so the column measures a true 440 / 888 at those
+	   viewports. 0.75rem matches the phase views' inner gutter, which keeps
+	   the content box identical to a table column's at every width. */
+	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:440px; margin: 0 auto; padding:1rem 0.75rem 0; }
 	@media (min-width: 790px) {
-		.profile { max-width: 888px; } /* 440 + 8 gutter + 440 */
+		/* 440 + 8 gutter + 440, sizing the PAGE, not the tiles. An outer-box
+		   cap like .phase-column's 440, so our gutter and .card's padding both
+		   eat into it — the tiles land at 406 here. They're fluid (the grid's
+		   floor is 330), not capped columns in their own right, so that's
+		   within range; the number's job is to stop the page growing past two
+		   phones. */
+		.profile { max-width: 888px; }
 		.profile > :not(.tables-card) { width: 100%; max-width: 440px; margin-inline: auto; }
 	}
 	.wordmark {
@@ -452,7 +462,9 @@
 	.row span:not(.label) { flex:1; min-width:0; }
 	.push-row { border-bottom: none; }
 	.push-hint { margin-top: -0.3rem; }
-	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:440px; margin:0 auto; padding-top:2rem; }
+	/* Renders in place of .profile, so it carries the same gutter — main.flush
+	   no longer supplies one. */
+	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:440px; margin:0 auto; padding:2rem 0.75rem 0; }
 	.status { color:var(--color-accent); font-size:0.9rem; }
 	/* The field label sits on its own line so the value and its buttons get
 	   the full width instead of cramping — the form sections stay phone-width
