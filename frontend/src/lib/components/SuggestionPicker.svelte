@@ -7,6 +7,10 @@
   Used wherever a player authors asset text from scratch (Prologue claims,
   Retinue marginalia, peer/asset naming) — see asset_suggestions.go for the
   matching type-keyed example pools.
+
+  Callers that pass `onReroll` get a square refresh button sharing the fourth
+  grid cell with a narrowed "Custom…" — deliberately inside the existing 2×2
+  footprint so the control costs no vertical height on mobile.
 -->
 <script lang="ts">
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -28,6 +32,11 @@
 		/** Render the custom field as a multi-line textarea (for marginalia). */
 		multiline?: boolean;
 		disabled?: boolean;
+		/** Refetch this picker's suggestion pool. Omit to hide the reroll
+		 *  button entirely — the pre-reroll layout is unchanged. */
+		onReroll?: () => void | Promise<void>;
+		/** True while a reroll is in flight; disables the button. */
+		rerolling?: boolean;
 	}
 
 	let {
@@ -39,6 +48,8 @@
 		maxlength = TEXT_LIMITS.MARGINALIA,
 		multiline = false,
 		disabled = false,
+		onReroll = undefined,
+		rerolling = false,
 	}: Props = $props();
 
 	// Whether the custom free-text field is active. A picked suggestion turns it
@@ -55,6 +66,16 @@
 			customMode = true;
 			if (suggestions.includes(value)) value = '';
 		}
+	};
+
+	// A reroll swaps all three tiles, so a pick made from the old set is no
+	// longer on offer — drop it rather than leave `value` holding text with no
+	// tile left to highlight. Custom-authored text is the player's own writing,
+	// so it survives untouched (and the field stays open).
+	const reroll = async () => {
+		if (!onReroll || rerolling) return;
+		if (!customMode) value = '';
+		await onReroll();
 	};
 </script>
 
@@ -77,15 +98,42 @@
 				<span class="sp-tile blank" aria-hidden="true"></span>
 			{/if}
 		{/each}
-		<button
-			type="button"
-			class="sp-tile custom"
-			class:selected={customMode}
-			{disabled}
-			onclick={pickCustom}
-		>
-			Custom…
-		</button>
+		<div class="sp-last">
+			<button
+				type="button"
+				class="sp-tile custom"
+				class:selected={customMode}
+				{disabled}
+				onclick={pickCustom}
+			>
+				Custom…
+			</button>
+			{#if onReroll}
+				<button
+					type="button"
+					class="sp-tile sp-reroll"
+					title="New suggestions"
+					aria-label="New suggestions"
+					disabled={disabled || rerolling}
+					onclick={reroll}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width="18"
+						height="18"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
+						<path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+					</svg>
+				</button>
+			{/if}
+		</div>
 	</div>
 	{#if customMode}
 		{#if multiline}
@@ -148,6 +196,32 @@
 		border-style: dashed;
 		border-color: var(--color-border);
 		cursor: default;
+	}
+
+	/* The fourth grid cell, split between Custom… and the reroll square. With
+	   no reroll button the lone flex:1 child fills the cell exactly as the
+	   bare button used to. */
+	.sp-last {
+		display: flex;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+	.sp-last .sp-tile.custom {
+		flex: 1;
+		min-width: 0;
+	}
+	/* Unfilled + warm border so the reroll reads as an action, not a fifth
+	   choice — the pickable tiles are the ones with a surface fill. */
+	.sp-reroll {
+		flex: none;
+		width: 44px;
+		padding: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border-color: var(--color-border-warm-strong);
+		color: var(--color-accent);
 	}
 
 	.sp-custom-input {

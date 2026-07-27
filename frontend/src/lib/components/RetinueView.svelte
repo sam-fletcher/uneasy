@@ -122,9 +122,23 @@
 	let saving = $state(false);
 	let editError = $state<string | null>(null);
 
-	// Type-keyed marginalia suggestions, fetched when the add editor opens.
+	// Type-keyed marginalia suggestions, fetched when the add editor opens and
+	// refetched by the picker's reroll button.
 	let addSuggestions = $state<string[]>([]);
 	let suggestionsLoading = $state(false);
+	let addRerolling = $state(false);
+
+	async function loadAddSuggestions(asset: Asset) {
+		try {
+			const res = await getAssetSuggestions(asset.game_id, asset.asset_type, 'marginalia');
+			// Ignore if the editor was closed or moved on while we were loading.
+			if (editingAssetId === asset.id && editingPosition == null) {
+				addSuggestions = res.suggestions;
+			}
+		} catch {
+			addSuggestions = [];
+		}
+	}
 
 	async function startAdd(asset: Asset) {
 		editingAssetId = asset.id;
@@ -134,15 +148,18 @@
 		addSuggestions = [];
 		suggestionsLoading = true;
 		try {
-			const res = await getAssetSuggestions(asset.game_id, asset.asset_type, 'marginalia');
-			// Ignore if the editor was closed or moved on while we were loading.
-			if (editingAssetId === asset.id && editingPosition == null) {
-				addSuggestions = res.suggestions;
-			}
-		} catch {
-			addSuggestions = [];
+			await loadAddSuggestions(asset);
 		} finally {
 			if (editingAssetId === asset.id) suggestionsLoading = false;
+		}
+	}
+
+	async function rerollAddSuggestions(asset: Asset) {
+		addRerolling = true;
+		try {
+			await loadAddSuggestions(asset);
+		} finally {
+			addRerolling = false;
 		}
 	}
 
@@ -563,6 +580,8 @@
 										loading={suggestionsLoading}
 										customPlaceholder="Write a marginalia…"
 										multiline
+										onReroll={() => rerollAddSuggestions(asset)}
+										rerolling={addRerolling}
 										disabled={saving}
 									/>
 								{:else}

@@ -46,8 +46,44 @@
 
 	let nameSuggestions = $state<string[]>([]);
 	let nameSuggLoading = $state(true);
+	let nameRerolling = $state(false);
 	let marginaliaSuggestions = $state<string[]>([]);
 	let marginaliaSuggLoading = $state(true);
+	let marginaliaRerolling = $state(false);
+
+	// The endpoint reshuffles its type-keyed pool on every call, so a reroll is
+	// just a refetch. It sets the `rerolling` flag rather than `loading` — the
+	// latter swaps the grid for a loading note, which would make the tiles
+	// vanish and the panel jump under the player's thumb.
+	async function loadNames() {
+		try {
+			nameSuggestions = (await getAssetSuggestions(gameID, assetType, 'name')).suggestions;
+		} catch {
+			nameSuggestions = [];
+		} finally {
+			nameSuggLoading = false;
+		}
+	}
+
+	async function loadMarginalia() {
+		try {
+			marginaliaSuggestions = (await getAssetSuggestions(gameID, assetType, 'marginalia')).suggestions;
+		} catch {
+			marginaliaSuggestions = [];
+		} finally {
+			marginaliaSuggLoading = false;
+		}
+	}
+
+	async function rerollNames() {
+		nameRerolling = true;
+		try { await loadNames(); } finally { nameRerolling = false; }
+	}
+
+	async function rerollMarginalia() {
+		marginaliaRerolling = true;
+		try { await loadMarginalia(); } finally { marginaliaRerolling = false; }
+	}
 
 	// Fetched once per mount — an assetType change (rare; callers generally
 	// mount a fresh form per creation flow) simply keeps the first pool.
@@ -55,14 +91,8 @@
 	$effect(() => {
 		if (suggFetched) return;
 		suggFetched = true;
-		getAssetSuggestions(gameID, assetType, 'name')
-			.then((res) => { nameSuggestions = res.suggestions; })
-			.catch(() => { nameSuggestions = []; })
-			.finally(() => { nameSuggLoading = false; });
-		getAssetSuggestions(gameID, assetType, 'marginalia')
-			.then((res) => { marginaliaSuggestions = res.suggestions; })
-			.catch(() => { marginaliaSuggestions = []; })
-			.finally(() => { marginaliaSuggLoading = false; });
+		loadNames();
+		loadMarginalia();
 	});
 </script>
 
@@ -88,6 +118,8 @@
 			loading={nameSuggLoading}
 			customPlaceholder="Name your new asset…"
 			maxlength={TEXT_LIMITS.NAME}
+			onReroll={rerollNames}
+			rerolling={nameRerolling}
 			{disabled}
 		/>
 	</section>
@@ -101,6 +133,8 @@
 			customPlaceholder="A description, a function, a fun fact, or something more poetic…"
 			maxlength={TEXT_LIMITS.MARGINALIA}
 			multiline
+			onReroll={rerollMarginalia}
+			rerolling={marginaliaRerolling}
 			{disabled}
 		/>
 	</section>

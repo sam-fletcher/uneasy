@@ -147,20 +147,48 @@
 	let peersBusy = $state(false);
 	let peersError = $state('');
 
-	// Peer-name suggestions (shared across all peer slots), fetched once the
-	// naming step appears for the preparer.
-	let peerNameSuggestions = $state<string[]>([]);
+	// Peer-name suggestions, one independent pool per slot: the slots are named
+	// separately, so a reroll in one peer's picker must leave the others alone.
+	// Fetched once the naming step appears for the preparer.
+	let peerNameSuggestions = $state<string[][]>([]);
 	let peerNameSuggLoading = $state(false);
-	let peerNameSuggFetched = false;
+	// Index of the slot currently rerolling, or null. One at a time is enough —
+	// the button is only reachable in the slot the player is tapping.
+	let peerNameRerolling = $state<number | null>(null);
+
+	async function fetchPeerNamePool(): Promise<string[]> {
+		try {
+			return (await getAssetSuggestions(gameID, 'peer', 'name')).suggestions;
+		} catch {
+			return [];
+		}
+	}
+
+	// Plain `let`, not $state — this guard is bookkeeping, and making it
+	// reactive would feed the effect its own writes.
+	let peerNamePoolsFetched = 0;
 	$effect(() => {
-		if (!needsPeerNaming || !isPreparer || peerNameSuggFetched) return;
-		peerNameSuggFetched = true;
-		peerNameSuggLoading = true;
-		getAssetSuggestions(gameID, 'peer', 'name')
-			.then(res => { peerNameSuggestions = res.suggestions; })
-			.catch(() => { peerNameSuggestions = []; })
+		if (!needsPeerNaming || !isPreparer) return;
+		const total = miPeerCountTarget;
+		if (total <= 0 || peerNamePoolsFetched >= total) return;
+		// Top up only the slots that lack a pool, so a later peer_count bump
+		// can't wipe the pools (and highlighted picks) of existing slots.
+		const have = peerNamePoolsFetched;
+		peerNamePoolsFetched = total;
+		if (have === 0) peerNameSuggLoading = true;
+		Promise.all(Array.from({ length: total - have }, () => fetchPeerNamePool()))
+			.then(pools => { peerNameSuggestions = [...peerNameSuggestions.slice(0, have), ...pools]; })
 			.finally(() => { peerNameSuggLoading = false; });
 	});
+
+	async function rerollPeerName(i: number) {
+		peerNameRerolling = i;
+		try {
+			peerNameSuggestions[i] = await fetchPeerNamePool();
+		} finally {
+			peerNameRerolling = null;
+		}
+	}
 
 	// Resize peerNames whenever peer_count or the draft list changes.
 	// Already-named slots are filled with the draft's name (so the user can see
@@ -452,11 +480,13 @@
 							/>
 						{:else}
 							<SuggestionPicker
-								suggestions={peerNameSuggestions}
+								suggestions={peerNameSuggestions[i] ?? []}
 								bind:value={peerNames[i]}
 								loading={peerNameSuggLoading}
 								customPlaceholder="Name, title, role…"
 								maxlength={TEXT_LIMITS.NAME}
+								onReroll={() => rerollPeerName(i)}
+								rerolling={peerNameRerolling === i}
 								disabled={peersBusy}
 							/>
 						{/if}

@@ -137,6 +137,22 @@
 		loadSuggestions();
 	});
 
+	// Reroll is per-slot: two card steps of the same suit draw on one pool but
+	// are named independently, so refetching one must not disturb the other.
+	let rerollingSlotKey = $state<string | null>(null);
+
+	async function rerollCardSuggestions(slot: CardSlot) {
+		rerollingSlotKey = cardStepKey(slot.suit, slot.value);
+		try {
+			const res = await getPrologueCardSuggestions(gameID, slot.suit);
+			slot.suggestions = res.suggestions;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not load card suggestions.';
+		} finally {
+			rerollingSlotKey = null;
+		}
+	}
+
 	function cardLabel(suit: string, value: string): string {
 		const s = suit === 'H' ? '♥' : suit === 'D' ? '♦' : suit === 'S' ? '♠' : '♣';
 		return value + s;
@@ -341,6 +357,8 @@
 										bind:value={cardSlot.text}
 										loading={loadingSuggestions}
 										customPlaceholder={`Name your ${suitTypeLabel(cardSlot.suit)}`}
+										onReroll={() => rerollCardSuggestions(cardSlot)}
+										rerolling={rerollingSlotKey === cardStepKey(cardSlot.suit, cardSlot.value)}
 										disabled={submitting}
 									/>
 								{/if}
