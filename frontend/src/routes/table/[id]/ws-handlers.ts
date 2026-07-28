@@ -569,7 +569,17 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		}
 		case EventTypes.EndgameModeSet: {
 			const mode = (msg.payload as { mode: string }).mode;
-			if (ctx.game) ctx.game = { ...ctx.game, ending_mode: mode };
+			// The tally also closed the window and completed the deferred row
+			// advance; row.advanced / row_state.changed carry the rest.
+			if (ctx.game) ctx.game = { ...ctx.game, ending_mode: mode, ending_vote_open: false };
+			break;
+		}
+		case EventTypes.EndgameVoteCast: {
+			// EndgameVotePanel owns the ballot and merges this by player_id —
+			// the vote is an upsert, so a changed vote must REPLACE that player's
+			// entry rather than append a second one (the optimistic-append/WS
+			// duplicate trap: two keyed rows for one id freeze reactivity).
+			window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
 			break;
 		}
 		case EventTypes.ShakeUpStepChanged:

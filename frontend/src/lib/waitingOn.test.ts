@@ -81,11 +81,22 @@ describe('actor-naming sub-phase kinds', () => {
 		{ kind: 'await_question_answer', label: 'Seek Answers — answer a question' },
 		{ kind: 'await_courtier_response', label: 'Exchange Courtiers — target responds' },
 		{ kind: 'await_main_character_choice', label: 'Choose a new main character' },
+		{ kind: 'await_endgame_vote', label: 'How will the game end?' },
 	];
 	it.each(cases)('$kind → names acting_player_ids with label "$label"', ({ kind, label }) => {
 		const got = mainEventWaitingOn(input({ rowState: rowState(kind, { acting_player_ids: [5] }) }));
 		expect(playerIDs(got.waitees)).toEqual([5]);
 		expect(got.stepLabel).toBe(label);
+	});
+
+	it('await_endgame_vote names every player who still owes a vote', () => {
+		// Everyone votes, so the bar routinely names the whole table — and there
+		// is nothing that shortens the wait, which is why naming them matters.
+		const got = mainEventWaitingOn(
+			input({ rowState: rowState('await_endgame_vote', { acting_player_ids: [1, 2, 3] }) }),
+		);
+		expect(playerIDs(got.waitees)).toEqual([1, 2, 3]);
+		expect(got.stepLabel).toBe('How will the game end?');
 	});
 
 	it('multi-actor kinds list every named player (duel staking)', () => {

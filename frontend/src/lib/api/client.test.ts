@@ -161,8 +161,14 @@ describe('apiFetch — transport failure', () => {
 	});
 });
 
-describe('apiFetch — endgame_choice_required', () => {
-	it('dispatches the window event and still throws', async () => {
+// The server still answers a plan preparation past row 13 with no endgame mode
+// set with a structured 409 carrying `endgame_choice_required` / `modes`. It
+// used to be dispatched as a window event driving a facilitator-only interrupt
+// modal; that modal is retired (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §7), because
+// the row 7 → 8 table vote settles the mode before row 8 begins. The body shape
+// stays covered, now as a plain error and nothing more.
+describe('apiFetch — endgame_choice_required is an ordinary error', () => {
+	it('throws the server message and dispatches nothing', async () => {
 		mockFetch(async () =>
 			response(
 				409,
@@ -176,23 +182,17 @@ describe('apiFetch — endgame_choice_required', () => {
 
 		const err = await rejection(apiFetch('/tables/1/plans', { method: 'POST' }));
 
-		expect(dispatched).toHaveLength(1);
-		expect(dispatched[0].type).toBe('uneasy:endgame_choice_required');
-		expect(dispatched[0].detail).toEqual({
-			modes: ['smooth_landing', 'explosive_finale'],
-		});
-		// The calling component must still see the failure.
+		expect(dispatched).toHaveLength(0);
 		expect(err).toBeInstanceOf(ApiError);
 		expect(err.status).toBe(409);
+		expect(err.message).toBe(
+			'plan would land past row 13 — facilitator must choose an endgame mode',
+		);
+		// The structured fields still reach a caller that wants them.
+		expect(err.body).toMatchObject({ endgame_choice_required: true });
 	});
 
-	it('defaults modes to an empty array when the server omits them', async () => {
-		mockFetch(async () => response(409, '{"error":"x","endgame_choice_required":true}'));
-		await apiFetch('/tables/1/plans').catch(() => {});
-		expect(dispatched[0].detail).toEqual({ modes: [] });
-	});
-
-	it('does not dispatch for an ordinary 409', async () => {
+	it('does not dispatch for an ordinary 409 either', async () => {
 		mockFetch(async () => response(409, '{"error":"asset is already leveraged"}'));
 		await apiFetch('/assets/1/leverage').catch(() => {});
 		expect(dispatched).toHaveLength(0);

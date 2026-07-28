@@ -83,20 +83,15 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 	}
 
 	if (!res.ok) {
-		const parsed = body as { error?: unknown; endgame_choice_required?: unknown; modes?: unknown } | null;
+		const parsed = body as { error?: unknown } | null;
 
-		// Plan preparation past row 13 with no endgame mode set returns a
-		// structured 409 instead of a plain error. Dispatch a window event
-		// so the table page can show a mode picker, then throw normally so
-		// the calling component still sees the failure.
-		if (parsed?.endgame_choice_required) {
-			window.dispatchEvent(
-				new CustomEvent('uneasy:endgame_choice_required', {
-					detail: { modes: parsed.modes ?? [] }
-				})
-			);
-		}
-
+		// Note: plan preparation past row 13 with no endgame mode set still
+		// returns a structured 409 carrying `endgame_choice_required` / `modes`.
+		// It used to be dispatched as a window event driving a facilitator-only
+		// interrupt modal; that modal is gone (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md
+		// §7). With the row 7 → 8 vote settling the mode before row 8 begins, the
+		// 409 is a never-in-normal-play backstop, so it falls through to the
+		// ordinary path below and reaches the player as its own error text.
 		const msg =
 			typeof parsed?.error === 'string' && parsed.error !== ''
 				? parsed.error

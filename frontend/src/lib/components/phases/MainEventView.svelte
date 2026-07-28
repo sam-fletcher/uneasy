@@ -26,6 +26,7 @@
 	import SceneDetailsPanel from '$lib/components/SceneDetailsPanel.svelte';
 	import CardPicker from '$lib/components/plans/CardPicker.svelte';
 	import MainCharacterChoicePanel from '$lib/components/MainCharacterChoicePanel.svelte';
+	import EndgameVotePanel from '$lib/components/EndgameVotePanel.svelte';
 	import { followOnPromptForRow } from '$lib/scenePrompts';
 	import { mainEventWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
@@ -204,6 +205,14 @@
 	/** True when an in-flight roll hasn't resolved yet. */
 	const rollActive = $derived(activeRoll != null && activeRoll.outcome == null);
 
+	// ── Endgame-vote takeover ────────────────────────────────────────────────
+	// Row 7 is over and its advance is paused while the whole table votes on
+	// how the game ends (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md). Nothing else can
+	// be in flight underneath it — the vote only opens once every other
+	// row-advance block is clear — so it sits at the head of the chain and
+	// hides the normal scene/plan surface for everyone.
+	const endgameVoteActive = $derived(rowState?.kind === 'await_endgame_vote');
+
 	// ── Replacement main-character takeover ──────────────────────────────────
 	// A player lost their main character (taken/traded/destroyed). The whole
 	// table pauses until every such player picks a replacement. This takeover
@@ -340,7 +349,14 @@
 				blocking plan. Inputs inside each panel are gated by participant
 				identity; non-participants watch.
 			-->
-			{#if mcChoiceActive}
+			{#if endgameVoteActive}
+				<EndgameVotePanel
+					gameID={game.id}
+					{players}
+					{currentPlayerID}
+					facilitatorID={game.facilitator_id}
+				/>
+			{:else if mcChoiceActive}
 				<MainCharacterChoicePanel
 					gameID={game.id}
 					{assets}
@@ -387,7 +403,7 @@
 				1. A plan is currently resolving or pending on this row (visible to all).
 				2. The focus player is in their post-scene action step (prep enabled).
 			-->
-			{#if !mcChoiceActive}
+			{#if !mcChoiceActive && !endgameVoteActive}
 			<PlanPanel
 				gameID={game.id}
 				currentRow={game.current_row}

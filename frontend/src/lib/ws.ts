@@ -141,6 +141,11 @@ export const EventTypes = {
 
 	// Endgame mode selection (Phase 4d)
 	EndgameModeSet: 'endgame.mode_set',
+	// One cast or changed vote in the row 7 → 8 ending-mode vote. Votes are
+	// public, so the payload names the player and the mode. The vote *opening*
+	// has no event of its own — the row_state.changed the blocked advance
+	// already broadcasts (kind await_endgame_vote) is the signal.
+	EndgameVoteCast: 'endgame.vote_cast',
 
 	// Ephemeral: focus player's in-flight scene-setup selections
 	SceneSetupDraft: 'scene_setup.draft',

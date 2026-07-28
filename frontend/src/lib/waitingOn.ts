@@ -141,6 +141,14 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 				stepLabel: 'Row advance blocked',
 				stepSubtitle: 'surrender-asset claims',
 			};
+		case 'await_endgame_vote':
+			// Row 7's advance is paused while the whole table votes on how the
+			// game ends; the backend names every seated player who still owes a
+			// vote. Nothing shortens this wait — no facilitator override, no
+			// timeout, no skip (adr/FACILITATOR_POWERS_AUDIT.md) — so naming the
+			// stragglers here is the entire pressure mechanism, alongside the
+			// notification system.
+			return { waitees: actingWaitees(), stepLabel: 'How will the game end?' };
 		case 'await_main_character_choice':
 			// One or more players lost their main character; each must choose a
 			// replacement before play resumes. The backend names them all.

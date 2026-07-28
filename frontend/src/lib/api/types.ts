@@ -56,6 +56,14 @@ export interface Game {
 	current_row: number;
 	focus_player_id: number | null;
 	ending_mode: string | null;
+	/**
+	 * True while the row 7 → 8 advance is paused on the ending-mode vote. The
+	 * server's single window authority for accepting votes — but NOT what drives
+	 * the vote UI: that follows the `await_endgame_vote` row-state kind, which is
+	 * the same signal every other blocking beat uses
+	 * (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §7).
+	 */
+	ending_vote_open: boolean;
 	dummy_token_mode: string;
 	prologue_ranking_step: PrologueRankingStep | null;
 	shake_up_category: string | null;

@@ -152,6 +152,13 @@
 					<p>The finale (the Shake-Up) occurs after row 13.</p>
 				</div>
 			</div>
+			<!-- Deliberately no endgame-mode section here (owner ruling,
+			     2026-07-28): choosing how the game ends is table admin, and
+			     confronting a new player with it in Help costs them attention
+			     they need elsewhere. The row 7 → 8 vote panel is the right and
+			     sufficient first contact — it appears exactly once, at the
+			     moment it matters, and explains itself in full
+			     (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §7). -->
 		{/if}
 
 		{#if active === 'plans'}
