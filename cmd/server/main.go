@@ -329,6 +329,12 @@ func setupRouter(
 			r.Post("/tables/{id}/start-prologue", handler.StartPrologue(store, manager))
 			r.Post("/tables/{id}/endgame", handler.SetEndgameMode(store, manager))
 
+			// The endgame-mode table vote at the row 7 → 8 boundary
+			// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md). Two routes, no third —
+			// there is deliberately no facilitator close/force/skip.
+			r.Get("/tables/{id}/ending-vote", handler.GetEndingVote(store))
+			r.Post("/tables/{id}/ending-vote", handler.CastEndingVote(store, manager))
+
 			// Shake-Up (Phase 4c)
 			r.Get("/tables/{id}/shake-up", handler.GetShakeUp(store))
 			r.Post("/tables/{id}/shake-up/spend", handler.ShakeUpAnnounce(store, manager))

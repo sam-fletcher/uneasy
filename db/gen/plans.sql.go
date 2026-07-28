@@ -11,17 +11,6 @@ import (
 	"uneasy/model"
 )
 
-const clearTargetedPlan = `-- name: ClearTargetedPlan :exec
-UPDATE plans SET targeted_plan_id = NULL WHERE id = $1
-`
-
-// Clears targeted_plan_id on a demand plan. Used when the target plan is
-// cancelled and the demand cascade-cancels with it.
-func (q *Queries) ClearTargetedPlan(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, clearTargetedPlan, id)
-	return err
-}
-
 const countPlansOnRow = `-- name: CountPlansOnRow :one
 SELECT count(*) FROM plans WHERE game_id = $1 AND row_number = $2
 `
@@ -46,7 +35,7 @@ INSERT INTO plans (
   target_player_id, target_asset_id,
   row_number, row_order, prepared_at_row, preparation_notes
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners
+RETURNING id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus
 `
 
 type CreatePlanParams struct {
@@ -96,6 +85,7 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		&i.ResolutionData,
 		&i.TargetedPlanID,
 		&i.DemandOptionWinners,
+		&i.IsFinaleBonus,
 	)
 	return i, err
 }
@@ -152,7 +142,7 @@ func (q *Queries) DeletePlanTokensByCategory(ctx context.Context, arg DeletePlan
 }
 
 const getPlanByID = `-- name: GetPlanByID :one
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans WHERE id = $1
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans WHERE id = $1
 `
 
 func (q *Queries) GetPlanByID(ctx context.Context, id int64) (Plan, error) {
@@ -176,6 +166,7 @@ func (q *Queries) GetPlanByID(ctx context.Context, id int64) (Plan, error) {
 		&i.ResolutionData,
 		&i.TargetedPlanID,
 		&i.DemandOptionWinners,
+		&i.IsFinaleBonus,
 	)
 	return i, err
 }
@@ -206,14 +197,17 @@ func (q *Queries) GetPlanTokenByTypeAndPlayer(ctx context.Context, arg GetPlanTo
 }
 
 const getPlansTargeting = `-- name: GetPlansTargeting :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans
 WHERE targeted_plan_id = $1
 ORDER BY id
 `
 
 // Returns Make Demands plans whose targeted_plan_id points at the given
-// plan. Used to locate an active demand on a plan (for asset-recipient
-// redirection, leverage control, etc.) and to cascade cancels.
+// plan. Callers use it two ways: to reject a second demand on a target that
+// already has an unresolved one (ValidatePreparation / synthesizeCounterDemand),
+// and to find the resolved+made demand whose option winners govern this plan's
+// resolution (DemandWinnersForTargetPlan → asset recipient, leverage control,
+// retarget, perform-steps).
 func (q *Queries) GetPlansTargeting(ctx context.Context, targetedPlanID *int64) ([]Plan, error) {
 	rows, err := q.db.Query(ctx, getPlansTargeting, targetedPlanID)
 	if err != nil {
@@ -241,6 +235,7 @@ func (q *Queries) GetPlansTargeting(ctx context.Context, targetedPlanID *int64) 
 			&i.ResolutionData,
 			&i.TargetedPlanID,
 			&i.DemandOptionWinners,
+			&i.IsFinaleBonus,
 		); err != nil {
 			return nil, err
 		}
@@ -253,7 +248,7 @@ func (q *Queries) GetPlansTargeting(ctx context.Context, targetedPlanID *int64) 
 }
 
 const getResolvingPlanForGame = `-- name: GetResolvingPlanForGame :one
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans WHERE game_id = $1 AND status = 'resolving' LIMIT 1
 `
 
 // Returns the single plan currently in 'resolving' state for a game.
@@ -278,12 +273,13 @@ func (q *Queries) GetResolvingPlanForGame(ctx context.Context, gameID int64) (Pl
 		&i.ResolutionData,
 		&i.TargetedPlanID,
 		&i.DemandOptionWinners,
+		&i.IsFinaleBonus,
 	)
 	return i, err
 }
 
 const listPendingPlansByRow = `-- name: ListPendingPlansByRow :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans
 WHERE game_id = $1 AND row_number = $2 AND status = 'pending'
 ORDER BY row_order ASC
 `
@@ -320,6 +316,7 @@ func (q *Queries) ListPendingPlansByRow(ctx context.Context, arg ListPendingPlan
 			&i.ResolutionData,
 			&i.TargetedPlanID,
 			&i.DemandOptionWinners,
+			&i.IsFinaleBonus,
 		); err != nil {
 			return nil, err
 		}
@@ -399,7 +396,7 @@ func (q *Queries) ListPlanTokensByType(ctx context.Context, arg ListPlanTokensBy
 }
 
 const listPlansByGame = `-- name: ListPlansByGame :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans WHERE game_id = $1
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans WHERE game_id = $1
 ORDER BY row_number ASC, row_order ASC
 `
 
@@ -430,6 +427,7 @@ func (q *Queries) ListPlansByGame(ctx context.Context, gameID int64) ([]Plan, er
 			&i.ResolutionData,
 			&i.TargetedPlanID,
 			&i.DemandOptionWinners,
+			&i.IsFinaleBonus,
 		); err != nil {
 			return nil, err
 		}
@@ -442,7 +440,7 @@ func (q *Queries) ListPlansByGame(ctx context.Context, gameID int64) ([]Plan, er
 }
 
 const listPlansByRow = `-- name: ListPlansByRow :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans
 WHERE game_id = $1 AND row_number = $2
 ORDER BY row_order ASC
 `
@@ -479,6 +477,7 @@ func (q *Queries) ListPlansByRow(ctx context.Context, arg ListPlansByRowParams) 
 			&i.ResolutionData,
 			&i.TargetedPlanID,
 			&i.DemandOptionWinners,
+			&i.IsFinaleBonus,
 		); err != nil {
 			return nil, err
 		}
@@ -491,7 +490,7 @@ func (q *Queries) ListPlansByRow(ctx context.Context, arg ListPlansByRowParams) 
 }
 
 const listRecentPlansByPreparer = `-- name: ListRecentPlansByPreparer :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans
 WHERE game_id = $1 AND preparer_id = $2
 ORDER BY prepared_at_row DESC, id DESC
 LIMIT 20
@@ -531,6 +530,7 @@ func (q *Queries) ListRecentPlansByPreparer(ctx context.Context, arg ListRecentP
 			&i.ResolutionData,
 			&i.TargetedPlanID,
 			&i.DemandOptionWinners,
+			&i.IsFinaleBonus,
 		); err != nil {
 			return nil, err
 		}
@@ -543,7 +543,7 @@ func (q *Queries) ListRecentPlansByPreparer(ctx context.Context, arg ListRecentP
 }
 
 const listUnresolvedPlans = `-- name: ListUnresolvedPlans :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans
 WHERE game_id = $1 AND status IN ('pending', 'resolving')
 ORDER BY row_number ASC, row_order ASC
 `
@@ -575,6 +575,7 @@ func (q *Queries) ListUnresolvedPlans(ctx context.Context, gameID int64) ([]Plan
 			&i.ResolutionData,
 			&i.TargetedPlanID,
 			&i.DemandOptionWinners,
+			&i.IsFinaleBonus,
 		); err != nil {
 			return nil, err
 		}

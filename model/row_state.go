@@ -24,6 +24,7 @@ package model
 // Plus the cross-cutting gates that interrupt the normal flow:
 //
 //   - Open interactive dice roll:      AwaitDiceRoll          (top of the chain)
+//   - Endgame vote open:               AwaitEndgameVote       (the row 7 → 8 gap)
 //   - Open delay-reveal plan:          AwaitDelayReveal       (Make War, Clandestinely Liaise)
 //   - Open surrender claim:            AwaitSurrenderClaim
 //
@@ -46,6 +47,27 @@ const (
 	// (decide_vote), players who haven't yet cast a difficulty vote (voting),
 	// or participants who aren't ready (leverage). RollID names the roll.
 	RowStateAwaitDiceRoll RowStateKind = "await_dice_roll"
+
+	// RowStateAwaitEndgameVote — the table is voting on how the game ends
+	// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md). The vote is pinned to the row 7 → 8
+	// boundary and lives in the gap *inside* that advance: row 7 is over, row 8
+	// has not begun, and the advance itself is what is paused — so current_row is
+	// still 7 for the whole duration. It is not a mid-row gate.
+	//
+	// Driven by games.ending_vote_open rather than current_row, because
+	// current_row cannot distinguish "row 7 is finished and the advance is
+	// blocked" from "row 7 is in progress". Sits directly below AwaitDiceRoll and
+	// above everything else: safe at the top precisely because the flag can only
+	// be set once every other row-advance block is clear (no resolving or pending
+	// plan, no open delay reveal, no outstanding battle cost, no open surrender
+	// claim), so nothing can be in flight underneath it.
+	//
+	// ActingPlayerIDs names every seated player who has not yet voted. Every
+	// player must vote — there is no facilitator override, no timeout and no
+	// skip; a non-responder stalls the game, which is a social problem, not a
+	// software one (adr/FACILITATOR_POWERS_AUDIT.md). The tie-break is an
+	// automatic rule inside the tally, not an action anyone takes.
+	RowStateAwaitEndgameVote RowStateKind = "await_endgame_vote"
 
 	// RowStateAwaitSurrenderClaim — a surrender claim from a Make War
 	// payment is still open. The claimant must take an asset from the
@@ -240,7 +262,8 @@ type RowState struct {
 	// the multi-actor gates (LiaiseResolving submit phases,
 	// AwaitChronicleChoices, AwaitDuelStaking), AwaitDiceRoll (the roll's
 	// current-stage actor set), AwaitDelayReveal (participants who still owe a
-	// hidden die), AwaitBattleCost / AwaitSurrenderClaim (the union of
+	// hidden die), AwaitEndgameVote (players who still owe an ending-mode vote),
+	// AwaitBattleCost / AwaitSurrenderClaim (the union of
 	// outstanding payers / open claimants across every war), and the
 	// focus-player kinds (SceneSetting, SceneActive, PostSceneAction).
 	//

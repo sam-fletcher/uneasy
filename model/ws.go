@@ -125,7 +125,15 @@ const (
 	EventShakeUpEnded          = "shake_up.ended"
 
 	// Phase 4d: Endgame mode selection
-	EventEndgameModeSet = "endgame.mode_set" // facilitator picked smooth_landing / explosive_finale
+	EventEndgameModeSet = "endgame.mode_set" // the table's vote settled on smooth_landing / explosive_finale
+
+	// EventEndgameVoteCast fires on every cast or changed ending-mode vote while
+	// the row 7 → 8 vote window is open. Votes are public — who voted and for
+	// what — so the payload names both. The vote *opening* has no event of its
+	// own: the row_state.changed broadcast (kind await_endgame_vote) that every
+	// row-advance block already sends is the signal, and the boundary log post
+	// carries the narration.
+	EventEndgameVoteCast = "endgame.vote_cast"
 
 	// Ephemeral scene-setup draft: focus player's in-flight selections,
 	// fanned out so non-focus players see what's being filled in. Not
@@ -765,6 +773,12 @@ type PrologueClosingReadyChangedPayload struct {
 // EndgameModeSetPayload is for EventEndgameModeSet.
 type EndgameModeSetPayload struct {
 	Mode string `json:"mode"`
+}
+
+// EndgameVoteCastPayload is for EventEndgameVoteCast.
+type EndgameVoteCastPayload struct {
+	PlayerID int64  `json:"player_id"`
+	Mode     string `json:"mode"`
 }
 
 // ── Phase 4c payload types — Shake-Up ────────────────────────────────────────

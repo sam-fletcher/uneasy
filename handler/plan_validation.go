@@ -91,6 +91,23 @@ func validatePlanPreparation(
 		}
 	}
 
+	// The endgame vote pauses the row 7 → 8 advance, and no plan may be prepared
+	// while it is up — not just an overflowing one. Belt and braces behind the
+	// row-state gate: that gate means nobody holds a turn, and preparation only
+	// happens inside a turn, but focus HAS already passed by the time the vote
+	// opens, so a direct API call could otherwise slip a plan in behind it (and
+	// it would land relative to row 7, not row 8).
+	//
+	// The guard keys off the flag, not a row number: current_row is still 7
+	// throughout the vote, so it cannot distinguish "row 7 is being played" from
+	// "row 7 is over and the vote is up".
+	if game.EndingVoteOpen {
+		return preparePlanValidation{
+			Status: http.StatusConflict,
+			ErrMsg: "the table is voting on how the game ends — no plans can be prepared until it settles",
+		}
+	}
+
 	// Preparation notes are required for every plan — they're the only
 	// fiction-side trace some plans leave on the public record, and the
 	// system-post log includes them verbatim. Enforced centrally here so

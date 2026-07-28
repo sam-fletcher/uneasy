@@ -30,6 +30,15 @@ SELECT count(*) FROM players WHERE game_id = $1;
 -- name: SetEndingMode :exec
 UPDATE games SET ending_mode = $2 WHERE id = $1;
 
+-- name: SetEndingVoteOpen :exec
+-- Opens or closes the endgame-vote window. Set true by the row-advance gate
+-- when the row 7 -> 8 advance is otherwise clear and no ending mode is settled;
+-- set false again by the tally the moment every seated player has voted. It is
+-- the single authority on whether a vote is accepted — there is no separate
+-- early-voting period, which keeps the vote a discrete beat rather than an
+-- ambient state hanging over row 7.
+UPDATE games SET ending_vote_open = $2 WHERE id = $1;
+
 -- name: EstablishThrone :exec
 -- Trips the throne_established gate the first time a monarch title is claimed
 -- (ADR-007). Idempotent and one-way: it never flips back to false, so a later

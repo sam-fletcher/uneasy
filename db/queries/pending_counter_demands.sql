@@ -12,9 +12,6 @@ INSERT INTO pending_counter_demands (
 ) VALUES ($1, $2, $3, $4)
 RETURNING *;
 
--- name: GetPendingCounterDemand :one
-SELECT * FROM pending_counter_demands WHERE id = $1;
-
 -- name: ListOpenPendingCounterDemandsForPlayer :many
 -- All unresolved pending counter-demands waiting on this player (the
 -- "demanding" side — i.e. the player whose next-prepared plan will be

@@ -70,16 +70,14 @@ UPDATE plans SET row_number = $2, row_order = $3 WHERE id = $1;
 
 -- name: GetPlansTargeting :many
 -- Returns Make Demands plans whose targeted_plan_id points at the given
--- plan. Used to locate an active demand on a plan (for asset-recipient
--- redirection, leverage control, etc.) and to cascade cancels.
+-- plan. Callers use it two ways: to reject a second demand on a target that
+-- already has an unresolved one (ValidatePreparation / synthesizeCounterDemand),
+-- and to find the resolved+made demand whose option winners govern this plan's
+-- resolution (DemandWinnersForTargetPlan → asset recipient, leverage control,
+-- retarget, perform-steps).
 SELECT * FROM plans
 WHERE targeted_plan_id = $1
 ORDER BY id;
-
--- name: ClearTargetedPlan :exec
--- Clears targeted_plan_id on a demand plan. Used when the target plan is
--- cancelled and the demand cascade-cancels with it.
-UPDATE plans SET targeted_plan_id = NULL WHERE id = $1;
 
 -- name: SetDemandOptionWinners :exec
 -- Persists the four draft-pick winners on the demand plan row once the

@@ -185,7 +185,7 @@ func (q *Queries) GetActiveScene(ctx context.Context, gameID int64) (Scene, erro
 }
 
 const getMostRecentResolvedPlanOnRow = `-- name: GetMostRecentResolvedPlanOnRow :one
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners FROM plans
+SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans
 WHERE game_id = $1
   AND row_number = $2
   AND status = 'resolved'
@@ -221,6 +221,7 @@ func (q *Queries) GetMostRecentResolvedPlanOnRow(ctx context.Context, arg GetMos
 		&i.ResolutionData,
 		&i.TargetedPlanID,
 		&i.DemandOptionWinners,
+		&i.IsFinaleBonus,
 	)
 	return i, err
 }

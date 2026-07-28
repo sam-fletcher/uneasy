@@ -18,6 +18,7 @@ import (
 //
 //  1. Not main_event              → PhaseNotMainEvent
 //  2. Open interactive dice roll  → AwaitDiceRoll              (top of the chain)
+//     2.5. Endgame vote open      → AwaitEndgameVote           (row 7 → 8 gap)
 //  3. Outstanding surrender claim → AwaitSurrenderClaim
 //  4. Outstanding battle cost     → AwaitBattleCost            (rulebook step 1)
 //  5. Plan resolving              → PlanResolving              (step 2, active)
@@ -33,6 +34,14 @@ import (
 // it, including the war-conflict gates — this codifies the client-side
 // override that has always taken precedence over the row state in the
 // WaitingOnBar.
+//
+// Note on the endgame-vote gate: it sits this high because the flag it reads
+// (games.ending_vote_open) can only be set by the row-advance gate, which runs
+// its vote check after every other block — so when the flag is true, row 7 is
+// finished and nothing is in flight underneath. It is deliberately NOT a mid-row
+// condition on current_row >= 8: sitting below the plan gates, such a check would
+// fire after a row-8 plan resolved on a board that had one and at the boundary on
+// a board that didn't — two different beats depending on the state of play.
 //
 // Note on delay reveal vs. battle costs: a Make War plan that just finished
 // its reveal puts an active war on a future row (or the current one). Battle
@@ -55,6 +64,14 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		return rs, nil
 	}
 
+	// 2.5. Endgame vote open — the row 7 → 8 advance is paused while the table
+	// votes on how the game ends.
+	if rs, ok, gErr := endgameVoteGate(ctx, q, &game); gErr != nil {
+		return model.RowState{}, gErr
+	} else if ok {
+		return rs, nil
+	}
+
 	// 3/4. War-conflict gates (open surrender claim, then outstanding battle
 	// costs) — the highest-priority unresolved blocks, above plan resolution.
 	if rs, ok, gErr := warConflictGate(ctx, q, gameID, game.CurrentRow); gErr != nil {
@@ -68,52 +85,9 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		return model.RowState{}, err
 	}
 
-	// 4. Plan currently resolving. Some plan types have sub-phases that
-	// block on a *different* player than the focus player (e.g. Make
-	// Demands' counter-demand window blocks on the target). When that's
-	// the case, return the narrower kind so the WaitingOnBar can name the
-	// actual decision-maker.
-	for i := range plans {
-		if plans[i].Status != model.PlanResolving {
-			continue
-		}
-		plan := &plans[i]
-		id := plan.ID
-		// Pre-roll cross-player gate: a Make Demands control_leverage winner owes
-		// the leverage decision on this (target) plan's still-open roll. They block
-		// the roll from resolving, so name them rather than letting a sub-phase
-		// override or the generic preparer case mis-attribute the wait. This is the
-		// pre-roll mirror of the post-roll perform_steps handoff handled below.
-		if chooser := pendingControlLeverageChooser(ctx, q, plan); chooser != 0 {
-			return model.RowState{
-				Kind:            model.RowStateAwaitDemandLeverage,
-				PlanID:          &id,
-				ActingPlayerIDs: []int64{chooser},
-			}, nil
-		}
-		if override, ok := planResolvingWaitees(ctx, q, plan); ok {
-			override.PlanID = &id
-			return override, nil
-		}
-		// Generic resolution: the plan is resolved by its preparer (never the
-		// focus player — a delayed plan routinely resolves on a row whose focus
-		// is someone else). Name the preparer authoritatively so the client
-		// needs no focus/preparer proxy of its own.
-		//
-		// Exception: a Make Demands "perform_steps" winner drives this (target)
-		// plan's post-roll make-choice in the preparer's stead. While that choice
-		// is outstanding the bar names the winner, not the preparer. This handoff
-		// is cross-plan (the chooser isn't a participant of *this* plan's type) so
-		// it can't live in a per-plan ResolvingWaitees; it belongs here.
-		actor := plan.PreparerID
-		if chooser, ok := pendingPerformStepsChooser(ctx, q, plan); ok {
-			actor = chooser
-		}
-		return model.RowState{
-			Kind:            model.RowStatePlanResolving,
-			PlanID:          &id,
-			ActingPlayerIDs: []int64{actor},
-		}, nil
+	// 4. Plan currently resolving.
+	if rs, ok := planResolvingGate(ctx, q, plans); ok {
+		return rs, nil
 	}
 
 	// 4.x. Replacement main character owed. A take/trade/payment (or a fatal
@@ -461,6 +435,78 @@ func uniquePayerIDs(outstanding map[int64][]gamepkg.BattleCostKey) []int64 {
 		}
 	}
 	return ids
+}
+
+// planResolvingGate reports the row-state for the plan currently in 'resolving'
+// status, if any. Some plan types have sub-phases that block on a *different*
+// player than the focus player (e.g. Make Demands' counter-demand window blocks
+// on the target). When that's the case it returns the narrower kind so the
+// WaitingOnBar can name the actual decision-maker. ok is false when no plan is
+// resolving. Split out of ComputeRowState to keep it short.
+func planResolvingGate(ctx context.Context, q *dbgen.Queries, plans []dbgen.Plan) (model.RowState, bool) {
+	for i := range plans {
+		if plans[i].Status != model.PlanResolving {
+			continue
+		}
+		plan := &plans[i]
+		id := plan.ID
+		// Pre-roll cross-player gate: a Make Demands control_leverage winner owes
+		// the leverage decision on this (target) plan's still-open roll. They block
+		// the roll from resolving, so name them rather than letting a sub-phase
+		// override or the generic preparer case mis-attribute the wait. This is the
+		// pre-roll mirror of the post-roll perform_steps handoff handled below.
+		if chooser := pendingControlLeverageChooser(ctx, q, plan); chooser != 0 {
+			return model.RowState{
+				Kind:            model.RowStateAwaitDemandLeverage,
+				PlanID:          &id,
+				ActingPlayerIDs: []int64{chooser},
+			}, true
+		}
+		if override, ok := planResolvingWaitees(ctx, q, plan); ok {
+			override.PlanID = &id
+			return override, true
+		}
+		// Generic resolution: the plan is resolved by its preparer (never the
+		// focus player — a delayed plan routinely resolves on a row whose focus
+		// is someone else). Name the preparer authoritatively so the client
+		// needs no focus/preparer proxy of its own.
+		//
+		// Exception: a Make Demands "perform_steps" winner drives this (target)
+		// plan's post-roll make-choice in the preparer's stead. While that choice
+		// is outstanding the bar names the winner, not the preparer. This handoff
+		// is cross-plan (the chooser isn't a participant of *this* plan's type) so
+		// it can't live in a per-plan ResolvingWaitees; it belongs here.
+		actor := plan.PreparerID
+		if chooser, ok := pendingPerformStepsChooser(ctx, q, plan); ok {
+			actor = chooser
+		}
+		return model.RowState{
+			Kind:            model.RowStatePlanResolving,
+			PlanID:          &id,
+			ActingPlayerIDs: []int64{actor},
+		}, true
+	}
+	return model.RowState{}, false
+}
+
+// endgameVoteGate reports the endgame-vote gate (RowStateAwaitEndgameVote) while
+// games.ending_vote_open is set: the row 7 → 8 advance is paused and the table is
+// deciding how the game ends. ok is false at every other moment in the game.
+//
+// The flag — not game.CurrentRow — is the discriminator, because current_row
+// stays at endgameVoteRow for the vote's whole duration (the advance is what's
+// paused). ActingPlayerIDs names every seated player who still owes a vote;
+// there is no way past this gate but for all of them to vote. Split out of
+// ComputeRowState to keep it short, like the gates below.
+func endgameVoteGate(ctx context.Context, q *dbgen.Queries, game *dbgen.Game) (model.RowState, bool, error) {
+	if !game.EndingVoteOpen {
+		return model.RowState{}, false, nil
+	}
+	ids, err := endingVotePendingVoters(ctx, q, game.ID)
+	if err != nil {
+		return model.RowState{}, false, err
+	}
+	return model.RowState{Kind: model.RowStateAwaitEndgameVote, ActingPlayerIDs: ids}, true, nil
 }
 
 // mainCharacterChoiceGate reports the replacement-main-character gate

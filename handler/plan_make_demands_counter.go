@@ -138,8 +138,9 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 // marred demand (= the preparer of the plan the demand targeted).
 //
 //   - If target_plan_id is set, synthesizes a free Make Demands plan targeting
-//     that plan immediately, bypassing token / eligibility / peer checks.
-//     Row = max(targetPlan.row - 1, game.current_row).
+//     that plan immediately, bypassing token / eligibility / peer checks. It is
+//     placed like any other demand — same row as its target, taking the
+//     target's row_order so it resolves first (see game.DemandPlacement).
 //   - If target_plan_id is null, records a pending_counter_demands row. The
 //     original demander's next PreparePlan will consume it and synthesize the
 //     counter then.

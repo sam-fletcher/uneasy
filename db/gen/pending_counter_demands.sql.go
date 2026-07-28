@@ -78,26 +78,6 @@ func (q *Queries) CreatePendingCounterDemand(ctx context.Context, arg CreatePend
 	return i, err
 }
 
-const getPendingCounterDemand = `-- name: GetPendingCounterDemand :one
-SELECT id, game_id, demanding_player_id, target_player_id, origin_plan_id, created_at, resolved_at, resolved_plan_id FROM pending_counter_demands WHERE id = $1
-`
-
-func (q *Queries) GetPendingCounterDemand(ctx context.Context, id int64) (PendingCounterDemand, error) {
-	row := q.db.QueryRow(ctx, getPendingCounterDemand, id)
-	var i PendingCounterDemand
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.DemandingPlayerID,
-		&i.TargetPlayerID,
-		&i.OriginPlanID,
-		&i.CreatedAt,
-		&i.ResolvedAt,
-		&i.ResolvedPlanID,
-	)
-	return i, err
-}
-
 const listOpenPendingCounterDemandsForPlayer = `-- name: ListOpenPendingCounterDemandsForPlayer :many
 SELECT id, game_id, demanding_player_id, target_player_id, origin_plan_id, created_at, resolved_at, resolved_plan_id FROM pending_counter_demands
 WHERE demanding_player_id = $1 AND resolved_at IS NULL

@@ -35,7 +35,7 @@ func (q *Queries) CountPlayersInGame(ctx context.Context, gameID int64) (int64, 
 
 const createGame = `-- name: CreateGame :one
 
-INSERT INTO games (join_code) VALUES ($1) RETURNING id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step, shake_up_category, shake_up_step, throne_established
+INSERT INTO games (join_code) VALUES ($1) RETURNING id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step, shake_up_category, shake_up_step, throne_established, ending_vote_open
 `
 
 // sqlc query file for games.
@@ -56,6 +56,7 @@ func (q *Queries) CreateGame(ctx context.Context, joinCode string) (Game, error)
 		&i.ShakeUpCategory,
 		&i.ShakeUpStep,
 		&i.ThroneEstablished,
+		&i.EndingVoteOpen,
 	)
 	return i, err
 }
@@ -73,7 +74,7 @@ func (q *Queries) EstablishThrone(ctx context.Context, id int64) error {
 }
 
 const getGameByID = `-- name: GetGameByID :one
-SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step, shake_up_category, shake_up_step, throne_established FROM games WHERE id = $1
+SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step, shake_up_category, shake_up_step, throne_established, ending_vote_open FROM games WHERE id = $1
 `
 
 func (q *Queries) GetGameByID(ctx context.Context, id int64) (Game, error) {
@@ -93,12 +94,13 @@ func (q *Queries) GetGameByID(ctx context.Context, id int64) (Game, error) {
 		&i.ShakeUpCategory,
 		&i.ShakeUpStep,
 		&i.ThroneEstablished,
+		&i.EndingVoteOpen,
 	)
 	return i, err
 }
 
 const getGameByJoinCode = `-- name: GetGameByJoinCode :one
-SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step, shake_up_category, shake_up_step, throne_established FROM games WHERE join_code = $1
+SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step, shake_up_category, shake_up_step, throne_established, ending_vote_open FROM games WHERE join_code = $1
 `
 
 func (q *Queries) GetGameByJoinCode(ctx context.Context, joinCode string) (Game, error) {
@@ -118,6 +120,7 @@ func (q *Queries) GetGameByJoinCode(ctx context.Context, joinCode string) (Game,
 		&i.ShakeUpCategory,
 		&i.ShakeUpStep,
 		&i.ThroneEstablished,
+		&i.EndingVoteOpen,
 	)
 	return i, err
 }
@@ -181,6 +184,26 @@ type SetEndingModeParams struct {
 
 func (q *Queries) SetEndingMode(ctx context.Context, arg SetEndingModeParams) error {
 	_, err := q.db.Exec(ctx, setEndingMode, arg.ID, arg.EndingMode)
+	return err
+}
+
+const setEndingVoteOpen = `-- name: SetEndingVoteOpen :exec
+UPDATE games SET ending_vote_open = $2 WHERE id = $1
+`
+
+type SetEndingVoteOpenParams struct {
+	ID             int64 `db:"id" json:"id"`
+	EndingVoteOpen bool  `db:"ending_vote_open" json:"ending_vote_open"`
+}
+
+// Opens or closes the endgame-vote window. Set true by the row-advance gate
+// when the row 7 -> 8 advance is otherwise clear and no ending mode is settled;
+// set false again by the tally the moment every seated player has voted. It is
+// the single authority on whether a vote is accepted — there is no separate
+// early-voting period, which keeps the vote a discrete beat rather than an
+// ambient state hanging over row 7.
+func (q *Queries) SetEndingVoteOpen(ctx context.Context, arg SetEndingVoteOpenParams) error {
+	_, err := q.db.Exec(ctx, setEndingVoteOpen, arg.ID, arg.EndingVoteOpen)
 	return err
 }
 

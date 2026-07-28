@@ -427,9 +427,10 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 		return nil
 	}
 
-	if rowAdvanceBlockReason(ctx, s.Q, game.ID, game.CurrentRow) != "" {
-		// Unpaid battle costs or open surrender claims — the row holds. The
-		// caller's primary action still committed; PassFocus/AdvanceRow recover.
+	if rowAdvanceBlockReason(ctx, s.Q, manager, game) != "" {
+		// Unpaid battle costs, open surrender claims, or the endgame vote just
+		// opened — the row holds. The caller's primary action still committed;
+		// PassFocus recovers (and the vote's own resolution performs the advance).
 		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
@@ -530,11 +531,12 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Step 8: no plans remain — advance the row automatically, unless an
-		// active war still has unpaid battle costs for the current row or an
-		// open surrender claim. rowAdvanceBlockReason is conservative on a DB
-		// error: it reports the row as blocked rather than advancing it on
-		// state we could not verify.
-		if reason := rowAdvanceBlockReason(ctx, s.Q, game.ID, game.CurrentRow); reason != "" {
+		// active war still has unpaid battle costs for the current row, an
+		// open surrender claim, or (at the row 7 → 8 boundary) the endgame vote
+		// this pass opens. rowAdvanceBlockReason is conservative on a DB error:
+		// it reports the row as blocked rather than advancing it on state we
+		// could not verify.
+		if reason := rowAdvanceBlockReason(ctx, s.Q, manager, game); reason != "" {
 			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
@@ -587,8 +589,26 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // advance. DB-check failures are logged and treated conservatively (the row is
 // reported as blocked) rather than advancing the row on unverified state; the
 // next player's pass re-runs these checks.
-func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, currentRow int16) string {
+//
+// The endgame-vote check comes LAST and is the one branch here with a side
+// effect: it OPENS the vote (see endingVoteBlockReason). Running it after every
+// other check is what makes ComputeRowState's near-top vote gate safe — the flag
+// can only be set on a row with nothing else in flight. game is passed by
+// pointer because that branch updates it in place.
+//
+// Both callers — autoPassFocus and PassFocus — pick this up automatically; there
+// is no third row-advance path in production. (POST /tables/{id}/advance-row was
+// removed per adr/FACILITATOR_POWERS_AUDIT.md; the dev-only DevAdvanceRow
+// deliberately skips these gates as a test fast-forward, so a dev-seeded game
+// parked past row 8 simply has ending_mode null and the finale rules inert.)
+func rowAdvanceBlockReason(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	game *dbgen.Game,
+) string {
 	logger := loggerFromContext(ctx)
+	gameID, currentRow := game.ID, game.CurrentRow
 
 	// An open delay reveal (Make War / Clandestinely Liaise) holds the row
 	// until every participant has submitted their die. Such a plan has a NULL
@@ -627,5 +647,5 @@ func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, 
 		return "opposing players must take an asset from each surrendered player before the row can advance"
 	}
 
-	return ""
+	return endingVoteBlockReason(ctx, q, manager, game)
 }

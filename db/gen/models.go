@@ -117,6 +117,13 @@ type DuelStakedAsset struct {
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type EndingVote struct {
+	GameID    int64              `db:"game_id" json:"game_id"`
+	PlayerID  int64              `db:"player_id" json:"player_id"`
+	Mode      string             `db:"mode" json:"mode"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type FeedbackSubmission struct {
 	ID        int64              `db:"id" json:"id"`
 	Kind      model.FeedbackKind `db:"kind" json:"kind"`
@@ -143,6 +150,7 @@ type Game struct {
 	ShakeUpCategory     *string            `db:"shake_up_category" json:"shake_up_category"`
 	ShakeUpStep         *int16             `db:"shake_up_step" json:"shake_up_step"`
 	ThroneEstablished   bool               `db:"throne_established" json:"throne_established"`
+	EndingVoteOpen      bool               `db:"ending_vote_open" json:"ending_vote_open"`
 }
 
 type Law struct {
@@ -223,6 +231,7 @@ type Plan struct {
 	ResolutionData      *string               `db:"resolution_data" json:"resolution_data"`
 	TargetedPlanID      *int64                `db:"targeted_plan_id" json:"targeted_plan_id"`
 	DemandOptionWinners []byte                `db:"demand_option_winners" json:"demand_option_winners"`
+	IsFinaleBonus       bool                  `db:"is_finale_bonus" json:"is_finale_bonus"`
 }
 
 type PlanToken struct {
