@@ -35,6 +35,23 @@ const (
 // Body: {"mode": "smooth_landing" | "explosive_finale"}.
 // Facilitator-only. Idempotent — overwrites any prior selection. Long
 // Campaign is intentionally rejected (deferred indefinitely).
+//
+// THIS IS A BROKEN-STATE BACKSTOP, NOT A NORMAL PATH. The ending mode is settled
+// by the table vote at the row 7 → 8 boundary (handler/ending_vote.go) — every
+// player votes, and an automatic tie-break resolves a split. This route survives
+// only to unstick a game whose ending_mode ended up wrong or missing through a
+// bug; it is emphatically not an override to reach for when a vote is slow, since
+// resolving a decision that belongs to a non-responder is exactly what
+// adr/FACILITATOR_POWERS_AUDIT.md rejected.
+//
+// It deliberately does NOT clear games.ending_vote_open, so it cannot be used to
+// short-circuit a vote in progress: the row-state gate keeps naming whoever still
+// owes a vote, and the tally overwrites whatever this route wrote the moment the
+// last vote lands. That is the point — this route is not the escape hatch the
+// audit cut.
+//
+// Delete it once the vote has run in a real game and it proves unnecessary. The
+// PhaseMainEvent guard stays.
 func SetEndgameMode(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, ok := requireFacilitator(w, r, s.Q)
