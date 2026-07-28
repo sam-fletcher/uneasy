@@ -17,35 +17,15 @@ import { cleanupGameAfterEach } from './helpers';
 
 const E2E = 'http://localhost:8090';
 
-interface GameRow {
-	current_row: number;
-	focus_player_id: number | null;
-}
-
-async function fetchGame(ctx: BrowserContext, gameID: number): Promise<GameRow> {
-	const res = await ctx.request.get(`/api/tables/${gameID}/state`);
-	expect(res.ok(), `GET state failed: ${await res.text()}`).toBeTruthy();
-	return (await res.json()).game as GameRow;
-}
-
-// Advance the public record to `targetRow`, always issuing advance-row from
-// whichever player currently holds focus (prep/advance auto-passes the
-// focus marker server-side, so it alternates in a 2-player game).
-async function advanceToRow(
-	gameID: number,
-	targetRow: number,
-	ctxByPlayer: Record<number, BrowserContext>,
-	readCtx: BrowserContext,
-) {
-	for (let guard = 0; guard < 20; guard++) {
-		const game = await fetchGame(readCtx, gameID);
-		if (game.current_row >= targetRow) return;
-		const focusCtx = game.focus_player_id != null ? ctxByPlayer[game.focus_player_id] : null;
-		expect(focusCtx, `no context for focus player ${game.focus_player_id}`).toBeTruthy();
-		const res = await focusCtx!.request.post(`/api/tables/${gameID}/advance-row`);
-		expect(res.ok(), `advance-row failed: ${await res.text()}`).toBeTruthy();
-	}
-	throw new Error(`could not reach row ${targetRow} within guard limit`);
+// Advance the public record to `targetRow` via the dev fast-forward, which runs
+// the real advance (engrailed ranking updates, row.advanced posts) rather than
+// writing current_row directly. There is no production row-advance route — see
+// adr/FACILITATOR_POWERS_AUDIT.md. Focus is left wherever the advance leaves it.
+async function advanceToRow(gameID: number, targetRow: number, ctx: BrowserContext) {
+	const res = await ctx.request.post('/api/dev/advance-row', {
+		data: { game_id: gameID, advance_to: targetRow },
+	});
+	expect(res.ok(), `advance-row failed: ${await res.text()}`).toBeTruthy();
 }
 
 // The resolving duel panel auto-renders inside <PlanPanel> for every player
@@ -85,7 +65,6 @@ test('propose duel: setup → staking → bouts → final roll → take', async 
 	const bobCtx = await browser.newContext({ baseURL: E2E });
 	await aliceCtx.request.post('/api/dev/login?username=alice');
 	await bobCtx.request.post('/api/dev/login?username=bob');
-	const ctxByPlayer = { [aliceID]: aliceCtx, [bobID]: bobCtx };
 
 	// ── Each duelist needs an unleveraged peer to stake ──────────────────────
 	const mkPeer = (ctx: BrowserContext, name: string) =>
@@ -107,7 +86,7 @@ test('propose duel: setup → staking → bouts → final roll → take', async 
 	expect(prep.ok(), `prepare failed: ${await prep.text()}`).toBeTruthy();
 
 	// ── Fast-forward the record to the duel's row, then resolve it ───────────
-	await advanceToRow(game_id, 6, ctxByPlayer, aliceCtx);
+	await advanceToRow(game_id, 6, aliceCtx);
 
 	const plansRes = await aliceCtx.request.get(`/api/tables/${game_id}/plans`);
 	const { plans } = await plansRes.json();

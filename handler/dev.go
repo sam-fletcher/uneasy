@@ -88,25 +88,46 @@ func DevDeleteGame(s *db.Store) http.HandlerFunc {
 
 // DevAdvanceRow handles POST /api/dev/advance-row.
 //
-// Jumps a game's current_row directly, the generic half of "jump to a plan's
-// resolution" for manual testing: seed a main_event game, prepare a plan
-// through the real UI (so its bespoke prep state is captured faithfully), then
-// call this to skip the intervening rows and land on the plan's row. The plan
-// stays pending — resolution kickoff lives in the row-advance path, which a
-// direct row-set bypasses — so you click "resolve" in the UI, exercising that
-// trigger too.
+// Moves a game's current_row for manual testing and the E2E suite, in one of
+// two modes.
 //
-// Body (give either plan_id, or game_id + row):
+// # Jump (plan_id, or game_id + row)
 //
-//	{ "plan_id": 123 }            // jump that plan's game to the plan's row
-//	{ "game_id": 5, "row": 9 }    // jump game 5 to row 9
+// Sets current_row directly. The generic half of "jump to a plan's resolution":
+// seed a main_event game, prepare a plan through the real UI (so its bespoke
+// prep state is captured faithfully), then call this to skip the intervening
+// rows and land on the plan's row. The plan stays pending — resolution kickoff
+// lives in the row-advance path, which a direct row-set bypasses — so you click
+// "resolve" in the UI, exercising that trigger too.
+//
+// # Advance (game_id + advance_to)
+//
+// Runs the REAL row advance (advanceRowInner) repeatedly until current_row
+// reaches advance_to, so everything a jump skips actually happens: the
+// row.advanced broadcast and its chat post, the engrailed ranking update at
+// rows 4/8/12, and the transition into Shake-Up past row 13. This is the mode
+// that replaces the removed POST /tables/{id}/advance-row — see
+// adr/FACILITATOR_POWERS_AUDIT.md for why that route is gone from production.
+//
+// Unlike the route it replaces this does NOT check the play-state gates
+// (pending plans, open delay reveals, unpaid battle costs, surrender claims):
+// it is a test fast-forward, not a game action, and it is dev-gated. Advancing
+// a table that still owes any of those will strand that state exactly as the
+// old route did — seed the board the way the test needs it instead.
+//
+// Body:
+//
+//	{ "plan_id": 123 }                 // jump that plan's game to the plan's row
+//	{ "game_id": 5, "row": 9 }         // jump game 5 to row 9
+//	{ "game_id": 5, "advance_to": 9 }  // really advance game 5 up to row 9
 //
 // Mounted only when UNEASY_DEV=1.
 func DevAdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	type request struct {
-		PlanID *int64 `json:"plan_id"`
-		GameID *int64 `json:"game_id"`
-		Row    *int16 `json:"row"`
+		PlanID    *int64 `json:"plan_id"`
+		GameID    *int64 `json:"game_id"`
+		Row       *int16 `json:"row"`
+		AdvanceTo *int16 `json:"advance_to"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body request
@@ -116,6 +137,16 @@ func DevAdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+
+		if body.AdvanceTo != nil {
+			if body.GameID == nil {
+				respondErr(w, http.StatusBadRequest, "advance_to requires game_id")
+				return
+			}
+			devAdvanceRowReally(w, r, s, manager, *body.GameID, *body.AdvanceTo)
+			return
+		}
+
 		var gameID int64
 		var row int16
 		switch {
@@ -141,11 +172,11 @@ func DevAdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		case body.GameID != nil && body.Row != nil:
 			gameID, row = *body.GameID, *body.Row
 		default:
-			respondErr(w, http.StatusBadRequest, "provide plan_id, or game_id and row")
+			respondErr(w, http.StatusBadRequest, "provide plan_id, game_id and row, or game_id and advance_to")
 			return
 		}
 
-		if row < 1 || row > 13 {
+		if row < 1 || row > publicRecordRowCount {
 			respondErr(w, http.StatusBadRequest, "row out of range 1..13")
 			return
 		}
@@ -163,6 +194,59 @@ func DevAdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			"current_row": row,
 		})
 	}
+}
+
+// devAdvanceRowReally drives advanceRowInner until the game reaches target,
+// re-reading the game each pass (advanceRowInner derives the engrailed-line
+// crossing from the row it starts on). Stops early once the advance carries the
+// game out of main_event — past row 13 that is the Shake-Up, which has no rows
+// to advance. Focus is untouched, exactly as advanceRowInner leaves it.
+func devAdvanceRowReally(
+	w http.ResponseWriter,
+	r *http.Request,
+	s *db.Store,
+	manager *hub.Manager,
+	gameID int64,
+	target int16,
+) {
+	ctx := r.Context()
+	if target < 1 || target > publicRecordRowCount {
+		respondErr(w, http.StatusBadRequest, "advance_to out of range 1..13")
+		return
+	}
+
+	h, _ := manager.Get(gameID) // nil when no clients are connected — advanceRowInner handles nil
+
+	// Bounded by the record's length: 13 advances can cross the whole sheet
+	// from row 1, so this can only spin if advanceRowInner stops making
+	// progress, which the phase check below already catches.
+	for range publicRecordRowCount {
+		game, err := s.Q.GetGameByID(ctx, gameID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "game not found")
+			return
+		}
+		if game.Phase != model.PhaseMainEvent {
+			respondErr(w, http.StatusConflict, "game is not in the main event phase")
+			return
+		}
+		if game.CurrentRow >= target {
+			respond(w, http.StatusOK, map[string]any{
+				"game_id": gameID, "current_row": game.CurrentRow, "phase": game.Phase,
+			})
+			return
+		}
+		if _, ended, aErr := advanceRowInner(r, s.Q, manager, h, &game); aErr != nil {
+			respondInternalErr(w, r, "could not advance row", aErr)
+			return
+		} else if ended {
+			respond(w, http.StatusOK, map[string]any{
+				"game_id": gameID, "phase": currentGamePhase(ctx, s.Q, gameID),
+			})
+			return
+		}
+	}
+	respondErr(w, http.StatusInternalServerError, "row advance made no progress")
 }
 
 // shakeUpStepFromName maps the JSON shake_up_step name to its int16 constant.

@@ -561,31 +561,3 @@ func validateBankedDie(
 	}
 	return true
 }
-
-// ── CloseLeverage (legacy, unsurfaced) ───────────────────────────────────────
-
-// CloseLeverage handles POST /api/rolls/:rollId/close-leverage. Actor or
-// facilitator only; remains on the backend as a future-proof hook (e.g. a
-// table-wide decision timer). Not surfaced in the frontend; auto-resolution
-// is the default path.
-func CloseLeverage(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		roll, player, ok := requireRollAccess(w, r, s.Q)
-		if !ok {
-			return
-		}
-		if !rollIsOpen(roll) {
-			respondErr(w, http.StatusConflict, "roll is already resolved")
-			return
-		}
-		if player.ID != roll.ActorID && !player.IsFacilitator {
-			respondErr(w, http.StatusForbidden, "only the actor or facilitator can close leverage")
-			return
-		}
-		if err := finalizeRoll(r.Context(), w, r, s.Q, manager, roll); err != nil {
-			respondInternalErr(w, r, "could not finalize roll", err)
-			return
-		}
-		respond(w, http.StatusOK, map[string]any{"roll_id": roll.ID})
-	}
-}

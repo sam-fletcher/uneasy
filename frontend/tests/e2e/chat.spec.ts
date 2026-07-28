@@ -288,10 +288,13 @@ test('jumping to a row outside the loaded window enters history mode; Return to 
   await devLogin(aliceCtx.request, 'alice'); // alice is the seed's facilitator + focus player
   await devLogin(bobCtx.request, 'bob');
 
-  // A real row advance (not the /api/dev/* shortcut, which writes current_row
-  // directly and skips this) emits the row.advanced post the Public Record's
-  // row jump anchors on.
-  const advanceRes = await aliceCtx.request.post(`/api/tables/${gameID}/advance-row`);
+  // advance_to runs the REAL advance, which emits the row.advanced post the
+  // Public Record's row jump anchors on. The plain {game_id, row} form of this
+  // route writes current_row directly and would skip it. Seeds start on row 1,
+  // so this is the one-row advance the Public Record needs.
+  const advanceRes = await aliceCtx.request.post('/api/dev/advance-row', {
+    data: { game_id: gameID, advance_to: 2 },
+  });
   expect(advanceRes.ok(), `advance-row failed: ${await advanceRes.text()}`).toBeTruthy();
 
   // Same read-marker trick as the pagination test: push the row.advanced

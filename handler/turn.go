@@ -15,9 +15,20 @@ package handler
 //  8. Advance the current-row marker; cross engrailed lines; end if past 13
 //     (PassFocus auto-advances when no plans remain after step 6).
 //
-// AdvanceRow is kept as a facilitator escape hatch (manual row advance without
-// touching focus). PassFocus is the normal end-of-turn action and handles the
-// step-7/8 logic automatically.
+// PassFocus handles steps 6–8 and is the only way a row advances in play. It
+// runs automatically (autoPassFocus) after the focus player's step-5 action, so
+// the endpoint itself is a manual fallback for the rare case where that
+// post-commit side effect is dropped.
+//
+// There is deliberately NO manual row-advance route. One existed
+// (POST /tables/{id}/advance-row) and was removed — see
+// adr/FACILITATOR_POWERS_AUDIT.md. It skipped the pending-plan check PassFocus
+// performs below, so it could advance past another player's unresolved plan and
+// strand it permanently (topPendingPlanOnRow matches row_number exactly, and
+// nothing re-homes a plan left behind). Pushing a stalled table forward is a
+// social matter, not a mechanical one; a genuinely dropped advance is retried by
+// the next player's autoPassFocus. Tests that need to fast-forward the record
+// use POST /api/dev/advance-row (dev-gated, see handler/dev.go).
 
 import (
 	"context"
@@ -340,81 +351,6 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
-// AdvanceRow handles POST /api/tables/{id}/advance-row.
-//
-// Facilitator escape hatch: manually advances the current row without touching
-// the focus player. In normal play, PassFocus handles the row advance
-// automatically after the last plan on a row is resolved. Use this endpoint
-// only when the automatic path cannot be taken (e.g. stuck state recovery).
-//
-// Event order: row.advanced → rankings.updated (engrailed only) → phase.changed (ended only).
-// Focus does NOT change.
-func AdvanceRow(s *db.Store, manager *hub.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFocusPlayer(w, r, s.Q)
-		if !ok {
-			return
-		}
-		if game.Phase != model.PhaseMainEvent {
-			respondErr(w, http.StatusConflict, "game is not in the main event phase")
-			return
-		}
-
-		h, _ := manager.Get(game.ID) // nil if no clients connected — advanceRowInner handles nil
-
-		// An open delay reveal (Make War / Clandestinely Liaise) holds the row
-		// until every participant submits — its plan has a NULL row_number, so
-		// it is invisible to the per-row pending checks elsewhere.
-		if plans, err := s.Q.ListPlansByGame(r.Context(), game.ID); err != nil {
-			respondInternalErr(w, r, "could not check delay reveals", err)
-			return
-		} else if openDelayRevealPlan(plans) != nil {
-			respondErr(w, http.StatusConflict,
-				"a pending war declaration or liaison is still awaiting its delay reveal")
-			return
-		}
-
-		if outstanding, err := mwOutstandingCostsForGame(r.Context(), s.Q, game.ID, game.CurrentRow); err != nil {
-			respondInternalErr(w, r, "could not check battle costs", err)
-			return
-		} else if len(outstanding) > 0 {
-			respondErr(w, http.StatusConflict, "outstanding battle costs must be paid before advancing the row")
-			return
-		}
-		if claims, err := mwOutstandingSurrenderClaimsForGame(r.Context(), s.Q, game.ID); err != nil {
-			respondInternalErr(w, r, "could not check surrender claims", err)
-			return
-		} else if len(claims) > 0 {
-			respondErr(
-				w,
-				http.StatusConflict,
-				"opposing players must take an asset from each surrendered player before advancing",
-			)
-			return
-		}
-
-		newRow, ended, err := advanceRowInner(r, s.Q, manager, h, game)
-		if err != nil {
-			respondInternalErr(w, r, "could not advance row", err)
-			return
-		}
-
-		if ended {
-			// "ended" means the row advance crossed row 13 — today that
-			// always lands in Shake-Up (see advanceRowInner), never a true
-			// game-over state, so report the game's actual current phase
-			// rather than assuming.
-			respond(w, http.StatusOK, map[string]any{"phase": currentGamePhase(r.Context(), s.Q, game.ID)})
-			return
-		}
-		mwBroadcastBattleCostsDue(r.Context(), s.Q, manager, game.ID, newRow)
-		respond(w, http.StatusOK, map[string]any{
-			"row_number":        newRow,
-			"crossed_engrailed": isEngrailedLine(game.CurrentRow, newRow),
-		})
-	}
-}
-
 // currentGamePhase re-reads a game's phase from the DB. Used after a row
 // advance that crossed row 13, so the response reports what the game
 // actually transitioned into rather than assuming; falls back to
@@ -466,8 +402,8 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 	// war costs, or open surrender claims. Each check is conservative —
 	// any DB error is treated as "skip row advance" so we never advance
 	// past a state we couldn't verify is clear. Failures are logged but
-	// not returned, since focus has already moved and /advance-row is the
-	// recovery path.
+	// not returned: focus has already moved, and the next player's own
+	// autoPassFocus re-evaluates the advance from scratch.
 	logger := loggerFromContext(ctx)
 
 	// Decide row advance from the PRE-kickoff plan state. broadcastRowState
@@ -569,9 +505,9 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			RowNumber: new(game.CurrentRow),
 		})
 		if err != nil {
-			// Non-fatal: pass focus succeeded; leave row advance to the
-			// facilitator's manual /advance-row if needed. Log so a
-			// persistent DB issue here doesn't silently stall row advance.
+			// Non-fatal: pass focus succeeded; the row simply holds and the
+			// next player's pass re-evaluates it. Log so a persistent DB
+			// issue here doesn't silently stall row advance forever.
 			loggerFromContext(ctx).Warn("pass-focus: could not list pending plans; skipping row advance", "err", err)
 			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
@@ -596,8 +532,8 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Step 8: no plans remain — advance the row automatically, unless an
 		// active war still has unpaid battle costs for the current row or an
 		// open surrender claim. rowAdvanceBlockReason is conservative on a DB
-		// error: it returns a "retry via /advance-row" message rather than
-		// advancing the row unverified.
+		// error: it reports the row as blocked rather than advancing it on
+		// state we could not verify.
 		if reason := rowAdvanceBlockReason(ctx, s.Q, game.ID, game.CurrentRow); reason != "" {
 			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
@@ -616,7 +552,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,
 				"focus_player_name": next.DisplayName,
-				"advance_error":     "could not advance row; use /advance-row to retry",
+				"advance_error":     "could not advance the row; it will retry on the next pass",
 			})
 			return
 		}
@@ -649,8 +585,8 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // for the "advance_blocked" response field. A war must have all battle costs
 // for the current row paid and all surrender claims taken before the row may
 // advance. DB-check failures are logged and treated conservatively (the row is
-// reported as blocked with a "retry via /advance-row" message) rather than
-// advancing the row on unverified state.
+// reported as blocked) rather than advancing the row on unverified state; the
+// next player's pass re-runs these checks.
 func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, currentRow int16) string {
 	logger := loggerFromContext(ctx)
 
@@ -667,7 +603,7 @@ func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, 
 			"err",
 			err,
 		)
-		return "could not verify delay reveals; retry via /advance-row"
+		return "could not verify delay reveals; the row holds until the next pass"
 	}
 	if openDelayRevealPlan(plans) != nil {
 		return "a pending war declaration or liaison is still awaiting its delay reveal"
@@ -676,7 +612,7 @@ func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, 
 	outstanding, err := mwOutstandingCostsForGame(ctx, q, gameID, currentRow)
 	if err != nil {
 		logger.WarnContext(ctx, "row-advance gate: could not check outstanding war costs; skipping advance", "err", err)
-		return "could not verify war costs; retry via /advance-row"
+		return "could not verify war costs; the row holds until the next pass"
 	}
 	if len(outstanding) > 0 {
 		return "outstanding battle costs must be paid before the row can advance"
@@ -685,7 +621,7 @@ func rowAdvanceBlockReason(ctx context.Context, q *dbgen.Queries, gameID int64, 
 	claims, err := mwOutstandingSurrenderClaimsForGame(ctx, q, gameID)
 	if err != nil {
 		logger.WarnContext(ctx, "row-advance gate: could not check surrender claims; skipping advance", "err", err)
-		return "could not verify surrender claims; retry via /advance-row"
+		return "could not verify surrender claims; the row holds until the next pass"
 	}
 	if len(claims) > 0 {
 		return "opposing players must take an asset from each surrendered player before the row can advance"

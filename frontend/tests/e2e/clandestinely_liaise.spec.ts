@@ -16,22 +16,11 @@ import { cleanupGameAfterEach } from './helpers';
 
 const E2E = 'http://localhost:8090';
 
-interface GameRow {
-	current_row: number;
-	focus_player_id: number | null;
-}
-
 interface PlanRow {
 	id: number;
 	plan_type: string;
 	row_number: number | null;
 	resolution_data: string | null;
-}
-
-async function fetchGame(ctx: BrowserContext, gameID: number): Promise<GameRow> {
-	const res = await ctx.request.get(`/api/tables/${gameID}/state`);
-	expect(res.ok(), `GET state failed: ${await res.text()}`).toBeTruthy();
-	return (await res.json()).game as GameRow;
 }
 
 async function fetchLiaisePlan(ctx: BrowserContext, gameID: number): Promise<PlanRow> {
@@ -43,24 +32,15 @@ async function fetchLiaisePlan(ctx: BrowserContext, gameID: number): Promise<Pla
 	return cl!;
 }
 
-// Advance the public record to `targetRow`, issuing advance-row from whichever
-// player currently holds focus (focus auto-passes server-side in a 2-player
-// game). Mirrors the helper in propose_duel.spec.ts.
-async function advanceToRow(
-	gameID: number,
-	targetRow: number,
-	ctxByPlayer: Record<number, BrowserContext>,
-	readCtx: BrowserContext,
-) {
-	for (let guard = 0; guard < 20; guard++) {
-		const game = await fetchGame(readCtx, gameID);
-		if (game.current_row >= targetRow) return;
-		const focusCtx = game.focus_player_id != null ? ctxByPlayer[game.focus_player_id] : null;
-		expect(focusCtx, `no context for focus player ${game.focus_player_id}`).toBeTruthy();
-		const res = await focusCtx!.request.post(`/api/tables/${gameID}/advance-row`);
-		expect(res.ok(), `advance-row failed: ${await res.text()}`).toBeTruthy();
-	}
-	throw new Error(`could not reach row ${targetRow} within guard limit`);
+// Advance the public record to `targetRow` via the dev fast-forward, which runs
+// the real advance (engrailed ranking updates, row.advanced posts) rather than
+// writing current_row directly. There is no production row-advance route — see
+// adr/FACILITATOR_POWERS_AUDIT.md. Mirrors the helper in propose_duel.spec.ts.
+async function advanceToRow(gameID: number, targetRow: number, ctx: BrowserContext) {
+	const res = await ctx.request.post('/api/dev/advance-row', {
+		data: { game_id: gameID, advance_to: targetRow },
+	});
+	expect(res.ok(), `advance-row failed: ${await res.text()}`).toBeTruthy();
 }
 
 function section(page: Page, header: string) {
@@ -94,7 +74,6 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 	const bobCtx = await browser.newContext({ baseURL: E2E });
 	await aliceCtx.request.post('/api/dev/login?username=alice');
 	await bobCtx.request.post('/api/dev/login?username=bob');
-	const ctxByPlayer = { [aliceID]: aliceCtx, [bobID]: bobCtx };
 
 	// ── Each player needs a peer: it bears the secret AND is the meeting peer ─
 	const mkPeer = async (ctx: BrowserContext, name: string): Promise<number> => {
@@ -133,7 +112,7 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 	// ── Fast-forward to the plan's row, then resolve it (focus player) ───────
 	const planAfterReveal = await fetchLiaisePlan(aliceCtx, game_id);
 	expect(planAfterReveal.row_number, 'row_number not set after reveal').toBeTruthy();
-	await advanceToRow(game_id, planAfterReveal.row_number!, ctxByPlayer, aliceCtx);
+	await advanceToRow(game_id, planAfterReveal.row_number!, aliceCtx);
 
 	// The preparer (alice) resolves their own plan. Advancing onto the plan's
 	// row auto-kicks-off resolution (plans.go), so this may 409 once the plan

@@ -95,9 +95,14 @@ func kickoffPlanResolution(
 // ResolvePlan handles POST /api/plans/:planId/resolve.
 //
 // Normally the kickoff happens automatically inside advanceAndBroadcastRowState
-// whenever the table enters kind=plan_pending. This endpoint remains as a
-// retry/escape hatch for the rare case where OnResolve fails — the row state
-// stays pending and the focus player can re-trigger via this endpoint.
+// whenever the table enters kind=plan_pending. This endpoint remains as a retry
+// for the rare case where OnResolve fails — the row state stays pending and the
+// plan's PREPARER can re-trigger it.
+//
+// Not the focus player: per the rules each plan is resolved by whoever prepared
+// it, and the focus player only sets scenes and prepares plans. requirePlanPreparer
+// (plan_access.go) is the single guard for that split — the caller is retrying
+// their own plan, not pushing someone else's along.
 func ResolvePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, plan, ok := requirePlanPreparer(w, r, s.Q)

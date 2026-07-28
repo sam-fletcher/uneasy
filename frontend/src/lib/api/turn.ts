@@ -1,5 +1,4 @@
 import { apiFetch } from './client';
-import type { GamePhase } from './types';
 
 export function endScene(gameID: string | number): Promise<{ row_number: number }> {
 	return apiFetch(`/tables/${gameID}/end-scene`, { method: 'POST' });
@@ -17,18 +16,6 @@ export function refreshAssets(
 		method: 'POST',
 		body: JSON.stringify({ asset_ids: assetIDs })
 	});
-}
-
-/**
- * Advance current_row by 1. Handles engrailed line detection and the
- * transition to ended when row 13 completes. Sets next focus player.
- */
-export function advanceRow(gameID: string | number): Promise<{
-	row_number?: number;
-	crossed_engrailed?: boolean;
-	phase?: GamePhase;
-}> {
-	return apiFetch(`/tables/${gameID}/advance-row`, { method: 'POST' });
 }
 
 /** Pass the focus marker to the next player by seat order (within-row). */

@@ -397,7 +397,6 @@ func setupRouter(
 			// Turn structure (Phase 2d)
 			r.Post("/tables/{id}/end-scene", handler.EndScene(store, manager))
 			r.Post("/tables/{id}/refresh-assets", handler.RefreshAssets(store, manager))
-			r.Post("/tables/{id}/advance-row", handler.AdvanceRow(store, manager))
 			r.Post("/tables/{id}/pass-focus", handler.PassFocus(store, manager))
 
 			// Dice rolls (Phase 2e)
@@ -412,7 +411,6 @@ func setupRouter(
 				r.Post("/vote", handler.Vote(store, manager))
 				r.Post("/intent", handler.SetIntent(store, manager))
 				r.Post("/ready", handler.SetReady(store, manager))
-				r.Post("/close-leverage", handler.CloseLeverage(store, manager))
 				r.Post("/use-banked-die", handler.UseBankedDie(store, manager))
 			})
 

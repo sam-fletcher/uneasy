@@ -85,8 +85,3 @@ export function setRollReady(rollID: number, isReady: boolean): Promise<{ is_rea
 		body: JSON.stringify({ is_ready: isReady })
 	});
 }
-
-/** Legacy: actor/facilitator closes leverage. Not surfaced in the new UI. */
-export function closeLeverage(rollID: number): Promise<{ roll_id: number }> {
-	return apiFetch(`/rolls/${rollID}/close-leverage`, { method: 'POST' });
-}
