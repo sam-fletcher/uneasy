@@ -273,10 +273,12 @@ func (clHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 // by PreparePlan. Sets up the simultaneous delay reveal between preparer and
 // partner.
 //
-// plan.RowNumber is already non-nil when Explosive Finale collapsed this
-// liaison straight onto row 13 (validatePlanPreparation) — there's no room
-// left for even the minimum 1-row delay, so the reveal is skipped entirely
-// and the plan resolves normally when its row comes up.
+// The RowNumber guard is defensive. A liaison is never given a row at
+// preparation any more, including under Explosive Finale: whether it overflows
+// is decided by the delay reveal, so it cannot be marked a bonus plan up front
+// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §4). An overflowing reveal collapses onto
+// row 13 and spends the slot in applyLiaiseDelayResult instead. Skipping the
+// reveal for a plan that somehow arrives with a row stays correct either way.
 func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error {
 	if plan.TargetPlayerID == nil {
 		return errors.New("clandestinely_liaise requires a target player (partner)")

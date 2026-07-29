@@ -345,6 +345,12 @@ export interface Plan {
 	row_number: number | null;
 	row_order: number;
 	prepared_at_row: number;
+	/** 'cancelled' means the plan NEVER CAME TOGETHER — a delay reveal landed
+	 *  past row 13 with no Explosive Finale slot to collapse onto. Nobody
+	 *  cancels plans: there is no unprepare route and no UI for one. Player-
+	 *  facing copy says "fell through" (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6);
+	 *  the value keeps the DB's word. Such a plan has row_number null, so it
+	 *  never renders on the Public Record. */
 	status: 'pending' | 'resolving' | 'resolved' | 'cancelled';
 	result: 'make' | 'mar' | null;
 	resolved_at: string | null;

@@ -173,7 +173,7 @@ describe('apiFetch — endgame_choice_required is an ordinary error', () => {
 			response(
 				409,
 				JSON.stringify({
-					error: 'plan would land past row 13 — facilitator must choose an endgame mode',
+					error: 'plan would land past row 13, and the table has not settled how the game ends',
 					endgame_choice_required: true,
 					modes: ['smooth_landing', 'explosive_finale'],
 				}),
@@ -186,7 +186,7 @@ describe('apiFetch — endgame_choice_required is an ordinary error', () => {
 		expect(err).toBeInstanceOf(ApiError);
 		expect(err.status).toBe(409);
 		expect(err.message).toBe(
-			'plan would land past row 13 — facilitator must choose an endgame mode',
+			'plan would land past row 13, and the table has not settled how the game ends',
 		);
 		// The structured fields still reach a caller that wants them.
 		expect(err.body).toMatchObject({ endgame_choice_required: true });

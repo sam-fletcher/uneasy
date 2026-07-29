@@ -97,11 +97,15 @@
 		}
 		return PLAN_SHORT[p.plan_type] ?? p.plan_type;
 	};
+	// 'cancelled' gets no class: a plan is only ever cancelled because no valid
+	// row exists for it (a delay reveal past row 13 with no Explosive Finale
+	// slot), so its row_number is NULL and it never appears in row.plans at all.
+	// The styling that used to exist for it was unreachable — see
+	// adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6.
 	const planStatusClass = (s: Plan['status']) =>
 		s === 'pending' ? 'plan-pending'
 			: s === 'resolving' ? 'plan-resolving'
-			: s === 'resolved' ? 'plan-resolved'
-			: s === 'cancelled' ? 'plan-cancelled' : '';
+			: s === 'resolved' ? 'plan-resolved' : '';
 	const authorName = (id: number) => playerNames.get(id) ?? '?';
 
 	// Index incoming rows by row_number so we can render a complete 1–13
@@ -589,7 +593,6 @@
 	   preparer color on the left edge carries identity. */
 	.plan-resolving .plan-status { color: var(--color-text); }
 	.plan-resolved  { opacity: 0.7; }
-	.plan-cancelled { opacity: 0.4; }
 
 	.entry-line {
 		font-size: 0.82rem;

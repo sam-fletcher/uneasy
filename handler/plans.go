@@ -144,9 +144,11 @@ func ListPlanTokens(s *db.Store) http.HandlerFunc {
 // row room, esteem lockout, token/rank (checkPlanEligible), then the
 // handler's optional PrepEligibilityChecker hook. Returns a non-empty reason
 // if the plan is ineligible; otherwise the target row to report (-1 for
-// variable-delay plans). This mirrors validatePlanPreparation so the prep
+// variable-delay plans) and whether preparing it would spend the player's
+// Explosive Finale slot. This mirrors validatePlanPreparation so the prep
 // grid greys out exactly the plans a prepare call would reject — prepare-time
-// validation remains authoritative.
+// validation remains authoritative, and the overflow half of the mirror is a
+// shared call into planOverflowOutcome rather than a second copy of the rules.
 func planIneligibilityReason(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -155,47 +157,66 @@ func planIneligibilityReason(
 	planType model.PlanType,
 	h PlanHandler,
 	esteemLocked bool,
-) (reason string, targetRow int16, err error) {
+) (reason string, targetRow int16, finaleBonus bool, err error) {
 	meta := h.Metadata()
 
 	// Row room. Variable-delay plans (Delay == -1) can't know their exact row
 	// without player input, but a known MinDelay (Make War, Clandestinely
 	// Liaise) still catches the case where even the best-case dice result has
 	// no room left.
-	if meta.Delay == -1 {
+	deferredRow := meta.Delay == -1
+	var overflows bool
+	if deferredRow {
 		targetRow = -1
-		if meta.MinDelay > 0 && game.CurrentRow+meta.MinDelay > publicRecordRowCount {
-			return "no room on the public record (would exceed row 13)", 0, nil
-		}
+		overflows = meta.MinDelay > 0 && game.CurrentRow+meta.MinDelay > publicRecordRowCount
 	} else {
 		targetRow = game.CurrentRow + meta.Delay
-		if targetRow > publicRecordRowCount {
-			return "no room on the public record (would exceed row 13)", 0, nil
+		overflows = targetRow > publicRecordRowCount
+	}
+	if overflows {
+		outcome, oErr := planOverflowOutcome(ctx, q, game, player.ID, deferredRow)
+		if oErr != nil {
+			return "", 0, false, oErr
 		}
+		switch {
+		case outcome.ModeUnsettled:
+			return "no room on the public record (would exceed row 13)", 0, false, nil
+		case outcome.Reason != "":
+			return outcome.Reason, 0, false, nil
+		case outcome.ClampToFinalRow:
+			// Explosive Finale: the tile stays live, reports row 13, and is
+			// marked so the grid can warn that picking it spends the one slot.
+			targetRow = publicRecordRowCount
+			finaleBonus = outcome.FinaleBonus
+		}
+		// Otherwise (a dice-delay plan under Explosive Finale with the slot
+		// free) the tile stays live and unmarked at target_row -1: the reveal
+		// decides whether it overflows, and the collapse spends the slot there.
 	}
 
 	if esteemLocked && meta.Category == model.CategoryEsteem {
-		return "esteem lockout: your next plan must be a non-esteem plan (Spread Propaganda mar censured)", 0, nil
+		return "esteem lockout: your next plan must be a non-esteem plan (Spread Propaganda mar censured)",
+			0, false, nil
 	}
 
-	ok, tokenReason, err := checkPlanEligible(ctx, q, game.ID, player.ID, planType, meta.Category)
+	ok, tokenReason, err := checkPlanEligible(ctx, q, game.ID, player.ID, game.CurrentRow, planType, meta.Category)
 	if err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	if !ok {
-		return tokenReason, 0, nil
+		return tokenReason, 0, false, nil
 	}
 
 	if checker, hasCheck := h.(PrepEligibilityChecker); hasCheck {
 		ok, hookReason, err := checker.CheckPrepEligibility(ctx, q, game.ID, player.ID)
 		if err != nil {
-			return "", 0, err
+			return "", 0, false, err
 		}
 		if !ok {
-			return hookReason, 0, nil
+			return hookReason, 0, false, nil
 		}
 	}
-	return "", targetRow, nil
+	return "", targetRow, finaleBonus, nil
 }
 
 // PlanEligibility handles GET /api/tables/:id/plan-eligibility.
@@ -228,6 +249,11 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 			Category  model.RankingCategory `json:"category"`
 			Delay     int16                 `json:"delay"`
 			TargetRow int16                 `json:"target_row"`
+			// FinaleBonus marks a tile whose preparation would spend the
+			// player's one Explosive Finale plan — TargetRow already reads 13.
+			// Make War / Clandestinely Liaise are never marked: they report
+			// target_row -1 and whether they overflow is the reveal's business.
+			FinaleBonus bool `json:"finale_bonus"`
 		}
 		type ineligibleEntry struct {
 			PlanType model.PlanType        `json:"plan_type"`
@@ -272,7 +298,7 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 
 		for planType, h := range AllHandlers() {
 			meta := h.Metadata()
-			reason, targetRow, err := planIneligibilityReason(
+			reason, targetRow, finaleBonus, err := planIneligibilityReason(
 				ctx, s.Q, &game, player, planType, h, esteemLocked)
 			if err != nil {
 				ineligible = append(ineligible, ineligibleEntry{
@@ -291,10 +317,11 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 				continue
 			}
 			eligible = append(eligible, eligibleEntry{
-				PlanType:  planType,
-				Category:  meta.Category,
-				Delay:     meta.Delay,
-				TargetRow: targetRow, // -1 when variable; depends on player input
+				PlanType:    planType,
+				Category:    meta.Category,
+				Delay:       meta.Delay,
+				TargetRow:   targetRow, // -1 when variable; depends on player input
+				FinaleBonus: finaleBonus,
 			})
 		}
 
@@ -421,7 +448,8 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		var plan dbgen.Plan
 		err := s.InTx(ctx, func(q *dbgen.Queries) error {
 			var txErr error
-			plan, txErr = createPlanInTx(ctx, q, s, game, player, &body, meta, targetRow, count, manager)
+			plan, txErr = createPlanInTx(
+				ctx, q, s, game, player, &body, meta, targetRow, count, validation.FinaleBonus, manager)
 			return txErr
 		})
 		if err != nil {
@@ -463,6 +491,11 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // (Make War, Clandestinely Liaise); the row stays NULL on creation and is
 // filled in when the reveal closes.
 //
+// finaleBonus marks the plan as the preparer's one Explosive Finale plan —
+// validatePlanPreparation sets it when it clamps an overflowing plan onto row
+// 13. Persisting it is the slot accounting (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md
+// §3); nothing else may set it at preparation time.
+//
 // each branch is a sibling stash block (war enemies, liaise peers, duel type,
 // demand target, secret rumor) and splitting the sequence obscures the order.
 //
@@ -477,6 +510,7 @@ func createPlanInTx(
 	meta PlanMetadata,
 	targetRow *int16,
 	count int64,
+	finaleBonus bool,
 	manager *hub.Manager,
 ) (dbgen.Plan, error) {
 	rowOrder := int16(count)
@@ -510,6 +544,11 @@ func createPlanInTx(
 		RowOrder:         rowOrder,
 		PreparedAtRow:    game.CurrentRow,
 		PreparationNotes: body.PreparationNotes,
+		// Spends the preparer's Explosive Finale slot when this plan was
+		// clamped onto row 13. Written here rather than as a follow-up update
+		// so the row is never briefly visible without the flag, and so the
+		// plan.prepared broadcast carries it to clients that see nothing else.
+		IsFinaleBonus: finaleBonus,
 	})
 	if err != nil {
 		return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not create plan: "+err.Error())

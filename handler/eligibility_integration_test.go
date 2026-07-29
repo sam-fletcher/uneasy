@@ -68,7 +68,7 @@ func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
 
 	// Player 0 tries to prepare another Make Demands plan → should be rejected
 	eligible, msg, err := checkPlanEligible(ctx, q, tg.Game.ID, tg.Players[0].ID,
-		model.PlanMakeDemands, model.CategoryPower)
+		tg.Game.CurrentRow, model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
 	assert.False(t, eligible)
@@ -88,7 +88,7 @@ func TestCheckPlanEligible_HigherRankedPlayerHasToken(t *testing.T) {
 	// Player 1 (rank 2) tries to prepare Make Demands → should be rejected
 	// because a higher-ranked (lower rank number) player has the token
 	eligible, msg, err := checkPlanEligible(ctx, q, tg.Game.ID, tg.Players[1].ID,
-		model.PlanMakeDemands, model.CategoryPower)
+		tg.Game.CurrentRow, model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
 	assert.False(t, eligible)
@@ -107,7 +107,7 @@ func TestCheckPlanEligible_LowerRankedPlayerHasToken(t *testing.T) {
 
 	// Player 0 (rank 1 = highest) should be eligible because rank 3 is lower
 	eligible, msg, err := checkPlanEligible(ctx, q, tg.Game.ID, tg.Players[0].ID,
-		model.PlanMakeDemands, model.CategoryPower)
+		tg.Game.CurrentRow, model.PlanMakeDemands, model.CategoryPower)
 
 	require.NoError(t, err)
 	assert.True(t, eligible, "Player 0 should be eligible despite Player 2 having token; msg: %s", msg)
@@ -132,7 +132,7 @@ func TestPlanIneligibilityReason_VariableDelayTokenChecked(t *testing.T) {
 
 	h, ok := GetHandler(model.PlanMakeWar)
 	require.True(t, ok)
-	reason, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, _, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
 		model.PlanMakeWar, h, false)
 	require.NoError(t, err)
 	assert.Contains(t, reason, "already have this plan prepared")
@@ -146,7 +146,7 @@ func TestPlanIneligibilityReason_EsteemLockout(t *testing.T) {
 
 	h, ok := GetHandler(model.PlanSpreadRumors)
 	require.True(t, ok)
-	reason, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, _, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
 		model.PlanSpreadRumors, h, true)
 	require.NoError(t, err)
 	assert.Contains(t, reason, "esteem lockout")
@@ -154,7 +154,7 @@ func TestPlanIneligibilityReason_EsteemLockout(t *testing.T) {
 	// The lockout only blocks esteem plans.
 	h, ok = GetHandler(model.PlanProposeDecree)
 	require.True(t, ok)
-	reason, _, err = planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, _, _, err = planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
 		model.PlanProposeDecree, h, true)
 	require.NoError(t, err)
 	assert.Empty(t, reason, "non-esteem plan should ignore the lockout")
@@ -171,7 +171,7 @@ func TestPlanIneligibilityReason_MakeDemandsHook(t *testing.T) {
 
 	// Empty public record → the PrepEligibilityChecker hook reports no
 	// demandable plan.
-	reason, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, _, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
 		model.PlanMakeDemands, h, false)
 	require.NoError(t, err)
 	assert.Contains(t, reason, "demanded against")
@@ -180,7 +180,7 @@ func TestPlanIneligibilityReason_MakeDemandsHook(t *testing.T) {
 	// target-row sentinel.
 	createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
 		model.PlanProposeDecree, model.CategoryPower, 5)
-	reason, targetRow, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, targetRow, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
 		model.PlanMakeDemands, h, false)
 	require.NoError(t, err)
 	assert.Empty(t, reason)

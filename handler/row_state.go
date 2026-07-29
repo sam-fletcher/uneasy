@@ -307,6 +307,23 @@ func openDelayRevealPlan(plans []dbgen.Plan) *dbgen.Plan {
 	return nil
 }
 
+// openDelayRevealPlanFor is openDelayRevealPlan narrowed to one preparer: the
+// plan whose landing row this player is still waiting on. Used by PassFocus,
+// which must refuse while the caller's own declaration is unsettled.
+func openDelayRevealPlanFor(plans []dbgen.Plan, preparerID int64) *dbgen.Plan {
+	for i := range plans {
+		p := &plans[i]
+		if p.PreparerID != preparerID {
+			continue
+		}
+		if !isDelayRevealPlanType(p.PlanType) || !hasOpenDelayReveal(p) {
+			continue
+		}
+		return p
+	}
+	return nil
+}
+
 // planResolvingWaitees asks the resolving plan's handler whether it wants to
 // override the generic preparer case with a narrower RowState (table blocked on
 // a player other than the focus player, or a wait the WaitingOnBar would

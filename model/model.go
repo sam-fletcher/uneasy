@@ -111,6 +111,14 @@ const (
 	PlanPending   PlanStatus = "pending"
 	PlanResolving PlanStatus = "resolving"
 	PlanResolved  PlanStatus = "resolved"
+	// PlanCancelled means the plan NEVER CAME TOGETHER — not that anyone
+	// cancelled it. There is no player-initiated cancellation in the game: no
+	// unprepare route, no UI, and the only writers are the two delay-reveal
+	// sites (applyMakeWarDelayResult / applyLiaiseDelayResult) when a chosen
+	// delay lands past row 13 with no Explosive Finale slot to collapse onto.
+	// Player-facing copy says "fell through"; the constant keeps the DB's word
+	// because a rename migration buys nothing (owner, 2026-07-28 —
+	// adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6).
 	PlanCancelled PlanStatus = "cancelled"
 )
 

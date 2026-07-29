@@ -11,6 +11,66 @@ import (
 	"uneasy/model"
 )
 
+const countFallenThroughPlansOfTypeOnRow = `-- name: CountFallenThroughPlansOfTypeOnRow :one
+SELECT count(*) FROM plans
+WHERE game_id = $1 AND preparer_id = $2 AND plan_type = $3
+  AND status = 'cancelled' AND prepared_at_row = $4
+`
+
+type CountFallenThroughPlansOfTypeOnRowParams struct {
+	GameID        int64          `db:"game_id" json:"game_id"`
+	PreparerID    int64          `db:"preparer_id" json:"preparer_id"`
+	PlanType      model.PlanType `db:"plan_type" json:"plan_type"`
+	PreparedAtRow int16          `db:"prepared_at_row" json:"prepared_at_row"`
+}
+
+// Plans of one type this player prepared on this row that fell through
+// ('cancelled'). Non-zero blocks a re-pick of the same type on the same row.
+//
+// The block used to be an accident of the plan token never being deleted; the
+// token is now removed when a plan falls through (the shield records real
+// preparations only), so the block is derived instead — from prepared_at_row,
+// which is NOT NULL and survives cancellation. It is wanted on its own merits:
+// the delay faces are CHOSEN, not rolled, so a free retry would let a preparer
+// re-declare until the average lands where they want.
+func (q *Queries) CountFallenThroughPlansOfTypeOnRow(ctx context.Context, arg CountFallenThroughPlansOfTypeOnRowParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countFallenThroughPlansOfTypeOnRow,
+		arg.GameID,
+		arg.PreparerID,
+		arg.PlanType,
+		arg.PreparedAtRow,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countFinaleBonusPlans = `-- name: CountFinaleBonusPlans :one
+SELECT count(*) FROM plans
+WHERE game_id = $1 AND preparer_id = $2
+  AND is_finale_bonus = true AND status != 'cancelled'
+`
+
+type CountFinaleBonusPlansParams struct {
+	GameID     int64 `db:"game_id" json:"game_id"`
+	PreparerID int64 `db:"preparer_id" json:"preparer_id"`
+}
+
+// The Explosive Finale slot accounting: a player's slot is SPENT iff this
+// returns > 0. Derived from plans rather than a flag on players so it stays
+// auditable — you can always point at the plan that spent it.
+//
+// The status filter is vacuous today (a bonus plan can never fall through: it
+// already holds row 13, and under Explosive Finale an overflowing delay reveal
+// collapses rather than cancelling). It is kept because it is the behaviour we
+// would want if a cancellation path is ever added, and it costs nothing.
+func (q *Queries) CountFinaleBonusPlans(ctx context.Context, arg CountFinaleBonusPlansParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countFinaleBonusPlans, arg.GameID, arg.PreparerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPlansOnRow = `-- name: CountPlansOnRow :one
 SELECT count(*) FROM plans WHERE game_id = $1 AND row_number = $2
 `
@@ -33,8 +93,8 @@ const createPlan = `-- name: CreatePlan :one
 INSERT INTO plans (
   game_id, plan_type, category, preparer_id,
   target_player_id, target_asset_id,
-  row_number, row_order, prepared_at_row, preparation_notes
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+  row_number, row_order, prepared_at_row, preparation_notes, is_finale_bonus
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus
 `
 
@@ -49,10 +109,15 @@ type CreatePlanParams struct {
 	RowOrder         int16                 `db:"row_order" json:"row_order"`
 	PreparedAtRow    int16                 `db:"prepared_at_row" json:"prepared_at_row"`
 	PreparationNotes *string               `db:"preparation_notes" json:"preparation_notes"`
+	IsFinaleBonus    bool                  `db:"is_finale_bonus" json:"is_finale_bonus"`
 }
 
 // sqlc query file for plans and plan tokens.
 // ── Plans ────────────────────────────────────────────────────────────
+// is_finale_bonus is set at creation for a plan validatePlanPreparation clamped
+// onto row 13 under Explosive Finale — the preparer's one bonus plan. It is
+// part of the INSERT rather than a follow-up UPDATE so the plan row is never
+// briefly visible without the flag that accounts for the slot it just spent.
 func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error) {
 	row := q.db.QueryRow(ctx, createPlan,
 		arg.GameID,
@@ -65,6 +130,7 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		arg.RowOrder,
 		arg.PreparedAtRow,
 		arg.PreparationNotes,
+		arg.IsFinaleBonus,
 	)
 	var i Plan
 	err := row.Scan(
@@ -122,6 +188,23 @@ func (q *Queries) CreatePlanToken(ctx context.Context, arg CreatePlanTokenParams
 		&i.PlacedAt,
 	)
 	return i, err
+}
+
+const deletePlanTokenByPlan = `-- name: DeletePlanTokenByPlan :exec
+DELETE FROM plan_tokens WHERE plan_id = $1
+`
+
+// Removes the token a plan placed on its shield. Called when a plan falls
+// through (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6): "there should be no shield
+// for a plan that wasn't actually prepared". plan_tokens.plan_id is a FK to
+// plans(id), so the plan row itself stays for the audit trail while the shield
+// clears — the token drops out of the engrailed ranking tally and its pip
+// disappears from the prep grid, both of which follow from the plan not having
+// happened. The preparer is still blocked from re-picking that type on that row
+// (see CountFallenThroughPlansOfTypeOnRow); lower-ranked players are not.
+func (q *Queries) DeletePlanTokenByPlan(ctx context.Context, planID int64) error {
+	_, err := q.db.Exec(ctx, deletePlanTokenByPlan, planID)
+	return err
 }
 
 const deletePlanTokensByCategory = `-- name: DeletePlanTokensByCategory :exec
@@ -603,6 +686,21 @@ func (q *Queries) SetDemandOptionWinners(ctx context.Context, arg SetDemandOptio
 	return err
 }
 
+const setPlanFinaleBonus = `-- name: SetPlanFinaleBonus :exec
+UPDATE plans SET is_finale_bonus = true WHERE id = $1
+`
+
+// Spends the preparer's Explosive Finale slot on an EXISTING plan: the
+// dice-delay collapse, where a Make War / Clandestinely Liaise reveal lands past
+// row 13 and the plan drops onto row 13 instead of falling through
+// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §3). Preparation-time bonus plans set the
+// flag in CreatePlan instead. One-directional: nothing ever clears it, because
+// the slot is spent the moment a plan claims row 13.
+func (q *Queries) SetPlanFinaleBonus(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, setPlanFinaleBonus, id)
+	return err
+}
+
 const setPlanPreparationNotes = `-- name: SetPlanPreparationNotes :exec
 UPDATE plans SET preparation_notes = $2 WHERE id = $1
 `
@@ -675,6 +773,11 @@ type SetPlanStatusParams struct {
 	Status model.PlanStatus `db:"status" json:"status"`
 }
 
+// NOTE ON 'cancelled': it means the plan NEVER CAME TOGETHER, not that anyone
+// cancelled it — there is no player-initiated cancellation anywhere in the game
+// (no unprepare route, no UI). The only writer of this status is a Make War /
+// Clandestinely Liaise delay reveal that lands past row 13 with no Explosive
+// Finale slot to collapse onto. Player-facing copy says "fell through".
 func (q *Queries) SetPlanStatus(ctx context.Context, arg SetPlanStatusParams) error {
 	_, err := q.db.Exec(ctx, setPlanStatus, arg.ID, arg.Status)
 	return err

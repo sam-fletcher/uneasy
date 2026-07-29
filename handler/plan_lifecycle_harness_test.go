@@ -97,6 +97,10 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 	r := chi.NewRouter()
 	r.Use(appMiddleware.EnsureSession(q))
 	r.Post("/api/tables/{id}/prepare-plan", PreparePlan(store, manager))
+	// Pass Focus — step 6 of the row loop. Mounted so tests can assert the
+	// turn-level gates on it (e.g. a preparer may not pass while their own
+	// delay reveal is still open).
+	r.Post("/api/tables/{id}/pass-focus", PassFocus(store, manager))
 	r.Get("/api/tables/{id}/asset-suggestions", GetAssetSuggestions(store))
 	// Scene + chat routes — needed by plan-scene lifecycle tests
 	// (adr/CHAT_OVERHAUL_PLAN.md Phase 5): posting in/out of character, reading

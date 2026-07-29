@@ -59,8 +59,12 @@ type preparePlanValidation struct {
 	// TargetRow is nil when the plan defers its row to a post-prep
 	// simultaneous reveal (Make War, Clandestinely Liaise). For every other
 	// plan it holds the row the plan will sit on at creation time.
-	TargetRow             *int16
-	Meta                  PlanMetadata
+	TargetRow *int16
+	Meta      PlanMetadata
+	// FinaleBonus marks a preparation that overflowed row 13 and was clamped
+	// onto it under Explosive Finale — the player's one bonus plan. Persisted
+	// as plans.is_finale_bonus, which is the slot accounting.
+	FinaleBonus           bool
 	EndgameChoiceRequired bool // overflow detected with no ending_mode set
 }
 
@@ -142,7 +146,8 @@ func validatePlanPreparation(
 	}
 
 	// Check eligibility.
-	eligible, reason, err := checkPlanEligible(ctx, q, game.ID, player.ID, planType, meta.Category)
+	eligible, reason, err := checkPlanEligible(
+		ctx, q, game.ID, player.ID, game.CurrentRow, planType, meta.Category)
 	if err != nil {
 		return preparePlanValidation{
 			Status: http.StatusInternalServerError,
@@ -182,8 +187,9 @@ func validatePlanPreparation(
 
 	// targetRow is nil when the plan defers its row to a post-prep reveal
 	// (Make War, Clandestinely Liaise); the row bound is re-checked when the
-	// reveal closes (see reveals.go, applyMakeWarDelayResult) — unless the
-	// bounds check below already collapses it onto row 13 (Explosive Finale).
+	// reveal closes (see reveals.go, applyMakeWarDelayResult), which is also
+	// where an Explosive Finale collapse onto row 13 happens for those two —
+	// never here, since their overflow isn't known until the faces are in.
 	var targetRow *int16
 	if meta.Delay == -1 {
 		targetRow = handlerTargetRow
@@ -204,31 +210,38 @@ func validatePlanPreparation(
 		boundedRow = &row
 	}
 
-	// Target row bounds. Past row 13 means we're hitting the end of the
-	// public record and the table needs to choose an endgame mode.
+	// Target row bounds. Past row 13 means we're hitting the end of the public
+	// record, and what happens next is the ending mode's business. The decision
+	// lives in planOverflowOutcome, which planIneligibilityReason reads too — the
+	// prep grid must grey out exactly what this rejects, and one shared answer is
+	// the only way to guarantee that.
+	var finaleBonus bool
 	if boundedRow != nil && *boundedRow > publicRecordRowCount {
+		outcome, oErr := planOverflowOutcome(ctx, q, game, player.ID, targetRow == nil)
+		if oErr != nil {
+			return preparePlanValidation{
+				Status: http.StatusInternalServerError,
+				ErrMsg: "could not check the ending mode",
+			}
+		}
 		switch {
-		case game.EndingMode == nil:
+		case outcome.ModeUnsettled:
 			return preparePlanValidation{
 				Status:                http.StatusConflict,
-				ErrMsg:                "plan would land past row 13 — facilitator must choose an endgame mode",
+				ErrMsg:                "plan would land past row 13, and the table has not settled how the game ends",
 				EndgameChoiceRequired: true,
 			}
-		case *game.EndingMode == EndingModeSmoothLanding:
+		case outcome.Reason != "":
 			return preparePlanValidation{
 				Status: http.StatusConflict,
-				ErrMsg: "you simply cannot prepare a plan that would go beyond the last row of the public record. " +
-					"Choose a different plan, or don't prepare anything",
+				ErrMsg: outcome.Reason,
 			}
-		case *game.EndingMode == EndingModeExplosiveFinale:
-			// Collapse to row 13 — every plan piles onto the final row.
+		case outcome.ClampToFinalRow:
+			// Explosive Finale, slot free: the plan piles onto the final row
+			// instead of its own, and this is the player's one bonus plan.
 			row := int16(publicRecordRowCount)
 			targetRow = &row
-		default:
-			return preparePlanValidation{
-				Status: http.StatusConflict,
-				ErrMsg: "endgame mode " + *game.EndingMode + " does not allow new plans past row 13",
-			}
+			finaleBonus = outcome.FinaleBonus
 		}
 	}
 
@@ -248,8 +261,9 @@ func validatePlanPreparation(
 	}
 
 	return preparePlanValidation{
-		Status:    http.StatusOK,
-		TargetRow: targetRow,
-		Meta:      meta,
+		Status:      http.StatusOK,
+		TargetRow:   targetRow,
+		Meta:        meta,
+		FinaleBonus: finaleBonus,
 	}
 }

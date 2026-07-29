@@ -458,7 +458,7 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 // step 6 carries it into the next row.
 func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, _, ok := requireFocusPlayer(w, r, s.Q)
+		game, player, ok := requireFocusPlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -472,6 +472,21 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+
+		// A caller whose own delay reveal is still open must not pass focus. The
+		// reveal decides whether their declaration lands on a row at all, and if
+		// it falls through (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6) the preparer
+		// is owed the chance to prepare something else — which a pass would have
+		// spent. The row-advance gate already holds the ROW for an open reveal;
+		// this holds the TURN.
+		if plans, pErr := s.Q.ListPlansByGame(ctx, game.ID); pErr == nil {
+			if dr := openDelayRevealPlanFor(plans, player.ID); dr != nil {
+				respondErr(w, http.StatusConflict,
+					"your "+planLabel(dr.PlanType)+" is still waiting on its delay reveal — "+
+						"you cannot pass focus until it settles")
+				return
+			}
+		}
 
 		// Step 6: pass focus to the next player clockwise.
 		next, err := nextFocusPlayer(r, s.Q, game.ID, *game.FocusPlayerID)

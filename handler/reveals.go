@@ -298,8 +298,10 @@ func finalizeReveal(
 // ── applyLiaiseDelayResult ────────────────────────────────────────────────────
 
 // applyLiaiseDelayResult updates the linked CL plan's row_number after the
-// delay reveal completes. If the computed row exceeds row 13, Explosive
-// Finale collapses it onto row 13 instead; otherwise the plan is cancelled.
+// delay reveal completes. If the computed row exceeds row 13, an Explosive
+// Finale with the preparer's bonus slot still free collapses it onto row 13
+// (spending that slot); otherwise the plan falls through — status 'cancelled',
+// which means it never came together, not that anyone cancelled it.
 func applyLiaiseDelayResult(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -318,20 +320,12 @@ func applyLiaiseDelayResult(
 
 	targetRow := game.CurrentRow + resultDelay
 
-	if targetRow > publicRecordRowCount && game.EndingMode != nil && *game.EndingMode == EndingModeExplosiveFinale {
+	if targetRow > publicRecordRowCount {
+		if !delayRevealOverflow(ctx, q, manager, &game, &plan) {
+			planFellThrough(ctx, q, manager, plan)
+			return
+		}
 		targetRow = publicRecordRowCount
-	} else if targetRow > publicRecordRowCount {
-		// No room — cancel the plan.
-		_ = q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
-			ID:     planID,
-			Status: model.PlanCancelled,
-		})
-		broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
-			PlanID: planID,
-			Result: "cancelled",
-		})
-		EmitPlanResolved(ctx, q, manager, plan, "cancelled")
-		return
 	}
 
 	// Compute row_order at placement time — without this the plan keeps its

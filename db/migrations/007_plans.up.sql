@@ -18,6 +18,13 @@ CREATE TABLE plans (
   row_number        SMALLINT    NOT NULL,
   row_order         SMALLINT    NOT NULL DEFAULT 0,
   prepared_at_row   SMALLINT    NOT NULL,
+  -- 'cancelled' means THE PLAN NEVER CAME TOGETHER — not that anyone cancelled
+  -- it. There is no player-initiated cancellation anywhere in the game (no
+  -- unprepare route, no UI); the status is written only when a Make War /
+  -- Clandestinely Liaise delay reveal lands past row 13 with no Explosive
+  -- Finale slot to collapse onto. Player-facing copy says "fell through"; the
+  -- word here stays 'cancelled' because a rename migration buys nothing
+  -- (owner, 2026-07-28 — adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6).
   status            TEXT        NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending','resolving','resolved','cancelled')),
   result            TEXT        CHECK (result IN ('make','mar')),

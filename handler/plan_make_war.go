@@ -102,10 +102,12 @@ func (mwHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 // side, and opens a simultaneous reveal for the delay. Enemy list is read
 // from resolution_data (persisted by PreparePlan before this hook fires).
 //
-// plan.RowNumber is already non-nil when Explosive Finale collapsed this
-// declaration straight onto row 13 (validatePlanPreparation) — there's no
-// room left for even the minimum 1-row delay, so the reveal is skipped
-// entirely and the plan resolves normally when its row comes up.
+// The RowNumber guard is defensive. A war declaration is never given a row at
+// preparation any more, including under Explosive Finale: whether it overflows
+// is decided by the delay reveal, so it cannot be marked a bonus plan up front
+// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §4). An overflowing reveal collapses onto
+// row 13 and spends the slot in applyMakeWarDelayResult instead. Skipping the
+// reveal for a plan that somehow arrives with a row stays correct either way.
 func (mwHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) error {
 	resData := loadResolutionData(plan.ResolutionData)
 	mw := resData.EnsureMakeWar()
@@ -393,9 +395,11 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 
 // applyMakeWarDelayResult is invoked by reveals.go when the make_war_delay
 // simultaneous reveal completes. It sets the plan's row_number to
-// current_row + resultDelay. If the target exceeds row 13, Explosive Finale
-// collapses it onto row 13 instead; otherwise the plan (and the nascent war)
-// is cancelled. Broadcasts war.declared either way.
+// current_row + resultDelay. If the target exceeds row 13, an Explosive Finale
+// with the declarer's bonus slot still free collapses it onto row 13 (spending
+// that slot); otherwise the plan falls through — status 'cancelled', which means
+// the declaration never came together, not that anyone cancelled it — and the
+// nascent war ends with it. Broadcasts war.declared either way.
 func applyMakeWarDelayResult(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -417,26 +421,21 @@ func applyMakeWarDelayResult(
 	resData := loadResolutionData(plan.ResolutionData)
 	mw := resData.EnsureMakeWar()
 
-	if targetRow > publicRecordRowCount && game.EndingMode != nil && *game.EndingMode == EndingModeExplosiveFinale {
-		targetRow = publicRecordRowCount
-	} else if targetRow > publicRecordRowCount {
-		_ = q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
-			ID:     planID,
-			Status: model.PlanCancelled,
-		})
-		if mw.WarID != nil {
-			_ = q.EndWar(ctx, dbgen.EndWarParams{
-				ID:         *mw.WarID,
-				EndReason:  new(gamepkg.WarEndPeace),
-				EndedAtRow: &game.CurrentRow,
-			})
+	if targetRow > publicRecordRowCount {
+		if !delayRevealOverflow(ctx, q, manager, &game, &plan) {
+			// The war never breaks out: no row exists for the declaration to
+			// land on, so the plan and the nascent war end together.
+			if mw.WarID != nil {
+				_ = q.EndWar(ctx, dbgen.EndWarParams{
+					ID:         *mw.WarID,
+					EndReason:  new(gamepkg.WarEndPeace),
+					EndedAtRow: &game.CurrentRow,
+				})
+			}
+			planFellThrough(ctx, q, manager, plan)
+			return
 		}
-		broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
-			PlanID: planID,
-			Result: "cancelled",
-		})
-		EmitPlanResolved(ctx, q, manager, plan, "cancelled")
-		return
+		targetRow = publicRecordRowCount
 	}
 
 	// Compute row_order at placement time — without this the plan keeps its

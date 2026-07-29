@@ -184,13 +184,64 @@ func EmitPlanResolving(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 		map[string]any{"plan_id": plan.ID})
 }
 
+// planFellThroughBody is the whole account the table gets of a plan that never
+// came together. A fallen-through plan never reaches the Public Record — it is
+// cancelled precisely because no valid row exists, so row_number stays NULL and
+// nothing renders — which makes this post the only surface the event has.
+//
+// So it names all three things a player needs: the cause (a chosen delay past
+// row 13, with the ending mode's part in it spelled out), what happened to the
+// plan token, and who may do what next. It says "fell through" rather than
+// "cancelled": nobody cancelled it, and the word assigns blame that belongs to
+// no one (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6).
+//
+// It deliberately does NOT tell the preparer they may prepare something else
+// this turn. §6 expected that ("they do get their turn back — already"), but
+// the audit behind it missed that preparing a plan auto-passes focus (step 5
+// then step 6, PreparePlan → autoPassFocus): by the time the reveal resolves the
+// preparer's turn is over and focus sits with the next player. Promising a
+// re-pick would be a false statement in the log, so the post states only what is
+// true — the shield is open again, and this plan type is closed to the preparer
+// until the next row.
+// It also returns the row to anchor the post to. A fallen-through plan has no
+// row of its own, so the anchor is the row the table is actually on — the one
+// whose turn this happened during. Without it the post is the only account of
+// the event AND unreachable from the Public Record sidebar.
+func planFellThroughPost(ctx context.Context, q *dbgen.Queries, plan dbgen.Plan) (body string, rowAnchor *int16) {
+	label := planLabel(plan.PlanType)
+	preparer := playerDisplayName(ctx, q, plan.PreparerID)
+
+	cause := "the chosen delay landed past row 13"
+	if game, err := q.GetGameByID(ctx, plan.GameID); err == nil {
+		rowAnchor = logRow(game)
+		switch {
+		case game.EndingMode == nil:
+			cause += ", and the table has not settled how the game ends"
+		case *game.EndingMode == EndingModeSmoothLanding:
+			cause += ", and under a Smooth Landing nothing may land there"
+		case *game.EndingMode == EndingModeExplosiveFinale:
+			cause += ", and " + preparer + "'s one Explosive Finale plan is already spent, " +
+				"so there was no room left on row 13"
+		}
+	}
+
+	return fmt.Sprintf(
+		"%s fell through: %s. No token stays on the shield for a plan that never came together, "+
+			"so %s is open to the table again — though %s cannot prepare it again before the next row.",
+		label, cause, label, preparer), rowAnchor
+}
+
 // EmitPlanResolved writes the system post for a plan resolution. result
 // is "make", "mar", or "cancelled" — matching EventPlanResolved's Result
-// field. Cancelled plans get DEFAULT severity; make/mar get IMPORTANT.
+// field. Every outcome gets IMPORTANT severity: a plan falling through is a
+// turn-affecting event, not the footnote its old DEFAULT severity made it.
 func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan dbgen.Plan, result string) {
 	planID := plan.ID
 	var code, body string
 	severity := model.SeverityImportant
+	// Most outcomes anchor to the plan's own row; a fall-through has none and
+	// anchors to the row the table is on instead (see planFellThroughPost).
+	rowAnchor := plan.RowNumber
 	switch result {
 	case "make":
 		code = "plan.resolved.make"
@@ -200,8 +251,7 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 		body = fmt.Sprintf("%s marred.", planLabel(plan.PlanType))
 	case "cancelled":
 		code = "plan.cancelled"
-		body = fmt.Sprintf("%s cancelled.", planLabel(plan.PlanType))
-		severity = model.SeverityDefault
+		body, rowAnchor = planFellThroughPost(ctx, q, plan)
 	default:
 		code = "plan.resolved"
 		body = fmt.Sprintf("%s resolved (%s).", planLabel(plan.PlanType), result)
@@ -217,7 +267,7 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 		}
 	}
 	EmitSystemPost(ctx, q, manager, plan.GameID, code, severity, body,
-		plan.RowNumber, &planID, nil,
+		rowAnchor, &planID, nil,
 		map[string]any{"plan_id": plan.ID, "result": result})
 
 	// Close this plan's plan-scene, if it opened one (adr/CHAT_OVERHAUL_PLAN.md

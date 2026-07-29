@@ -35,11 +35,15 @@ func playerRankInCategory(
 	return r.Rank, nil
 }
 
-// checkPlanEligible reports whether playerID may prepare planType.
+// checkPlanEligible reports whether playerID may prepare planType on
+// currentRow: no token of their own on that plan's shield, no higher-ranked
+// player's token on it, and no plan of that type of their own that fell through
+// on this row.
 func checkPlanEligible(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID, playerID int64,
+	currentRow int16,
 	planType model.PlanType,
 	category model.RankingCategory,
 ) (bool, string, error) {
@@ -53,6 +57,33 @@ func checkPlanEligible(
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return false, "", err
+	}
+
+	// A plan of this type that fell through on this row blocks a re-pick of the
+	// same type until the next row. This used to happen by accident — the plan
+	// token was never deleted on a fall-through — and the token is now removed
+	// (the shield records real preparations only, per
+	// adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6), so the block is derived from
+	// prepared_at_row instead. It is wanted on its own merits: the delay faces
+	// of the two plans that can fall through are CHOSEN, not rolled, so a free
+	// retry would let a preparer re-declare until the average lands where they
+	// want, making the reveal meaningless.
+	//
+	// Scoped to the row, not the turn: a player can hold focus more than once on
+	// a row when several plans share it, and the retry is just as available on
+	// the second turn as on the first.
+	fellThrough, err := q.CountFallenThroughPlansOfTypeOnRow(ctx, dbgen.CountFallenThroughPlansOfTypeOnRowParams{
+		GameID:        gameID,
+		PreparerID:    playerID,
+		PlanType:      planType,
+		PreparedAtRow: currentRow,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	if fellThrough > 0 {
+		return false, "this plan fell through on this row — prepare a different one, " +
+			"or try this again on a later row", nil
 	}
 
 	myRank, err := playerRankInCategory(ctx, q, gameID, playerID, category)

@@ -695,7 +695,16 @@
 			title={fmtFullTime(post.created_at)}
 		>
 			<span class="plan-outcome-label" aria-hidden="true">
-				{outcome === 'make' ? 'Make' : outcome === 'mar' ? 'Mar' : outcome === 'cancelled' ? 'Cancelled' : 'Resolved'}
+				<!-- 'cancelled' reads "Fell through": nobody cancelled the plan, it never came
+				     together — adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6. The status keeps the DB's
+				     word; only player-facing copy changes. -->
+				{outcome === 'make'
+					? 'Make'
+					: outcome === 'mar'
+						? 'Mar'
+						: outcome === 'cancelled'
+							? 'Fell through'
+							: 'Resolved'}
 			</span>
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 			<span class="plan-outcome-body">{@html renderBody(post.body)}</span>
