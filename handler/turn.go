@@ -284,6 +284,20 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// Refreshing is the other half of step 5, so it ends the turn — which a
+		// player whose declaration is still waiting on its delay reveal has not
+		// finished taking. Refuse until it settles, or the paused turn buys both
+		// a plan and a refresh (and the deferred pass in passFocusAfterDelayReveal
+		// would move a marker this call already moved).
+		if plans, pErr := s.Q.ListPlansByGame(r.Context(), game.ID); pErr == nil {
+			if dr := openDelayRevealPlanFor(plans, player.ID); dr != nil {
+				respondErr(w, http.StatusConflict,
+					"your "+planLabel(dr.PlanType)+" is still waiting on its delay reveal — "+
+						"you cannot refresh assets until it settles")
+				return
+			}
+		}
+
 		var body struct {
 			AssetIDs []int64 `json:"asset_ids"`
 		}
@@ -291,8 +305,11 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		// An empty list is a valid "refresh nothing" action — the focus
-		// player still needs autoPassFocus below to move the turn on.
+		// An empty list is a valid "refresh nothing" action, and deliberately so:
+		// it is the focus player's guaranteed way to end a turn in which they can
+		// do nothing else (every plan tile greyed out, no leveraged assets), so
+		// no board state can strand the table. The work is all in autoPassFocus
+		// below. The UI surfaces it as the "Refresh 0 Assets" button.
 		maxRefresh := int(game.CurrentRow)
 		if len(body.AssetIDs) > maxRefresh {
 			respondErr(w, http.StatusBadRequest,

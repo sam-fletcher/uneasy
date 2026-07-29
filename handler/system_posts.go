@@ -189,20 +189,13 @@ func EmitPlanResolving(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 // cancelled precisely because no valid row exists, so row_number stays NULL and
 // nothing renders — which makes this post the only surface the event has.
 //
-// So it names all three things a player needs: the cause (a chosen delay past
+// So it names all four things a player needs: the cause (a chosen delay past
 // row 13, with the ending mode's part in it spelled out), what happened to the
-// plan token, and who may do what next. It says "fell through" rather than
-// "cancelled": nobody cancelled it, and the word assigns blame that belongs to
-// no one (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6).
-//
-// It deliberately does NOT tell the preparer they may prepare something else
-// this turn. §6 expected that ("they do get their turn back — already"), but
-// the audit behind it missed that preparing a plan auto-passes focus (step 5
-// then step 6, PreparePlan → autoPassFocus): by the time the reveal resolves the
-// preparer's turn is over and focus sits with the next player. Promising a
-// re-pick would be a false statement in the log, so the post states only what is
-// true — the shield is open again, and this plan type is closed to the preparer
-// until the next row.
+// plan token, that the preparer's turn is NOT spent — nothing was prepared, so
+// PreparePlan's deferred focus pass never fires — and the one thing they may not
+// do with it. It says "fell through" rather than "cancelled": nobody cancelled
+// it, and the word assigns blame that belongs to no one
+// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6).
 // It also returns the row to anchor the post to. A fallen-through plan has no
 // row of its own, so the anchor is the row the table is actually on — the one
 // whose turn this happened during. Without it the post is the only account of
@@ -226,9 +219,10 @@ func planFellThroughPost(ctx context.Context, q *dbgen.Queries, plan dbgen.Plan)
 	}
 
 	return fmt.Sprintf(
-		"%s fell through: %s. No token stays on the shield for a plan that never came together, "+
-			"so %s is open to the table again — though %s cannot prepare it again before the next row.",
-		label, cause, label, preparer), rowAnchor
+		"%s fell through: %s. Nothing was prepared, so nothing is spent — the plan token comes off "+
+			"the shield, and %s may still prepare a different plan or refresh assets this turn, "+
+			"though not another %s this row.",
+		label, cause, preparer, label), rowAnchor
 }
 
 // EmitPlanResolved writes the system post for a plan resolution. result

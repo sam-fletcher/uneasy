@@ -127,12 +127,15 @@ func seedActiveWar(t *testing.T, h *planLifecycle) (planID int64, prepIdx, enemy
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-// TestMakeWarHTTP_DelayRevealHoldsRow: preparing Make War auto-passes focus
-// (like any plan), but the row must NOT advance while the delay reveal is open
-// — otherwise every participant's delay vote is skipped and the war silently
-// lands one row late. The freshly-prepared war plan has a NULL row_number, so
-// the per-row pending-plan checks miss it; rowAdvanceBlockReason now catches it
-// via openDelayRevealPlan. Regression test for that gate.
+// TestMakeWarHTTP_DelayRevealHoldsRow: the row must NOT advance while the delay
+// reveal is open — otherwise every participant's delay vote is skipped and the
+// war silently lands one row late. The freshly-prepared war plan has a NULL
+// row_number, so the per-row pending-plan checks miss it; rowAdvanceBlockReason
+// catches it via openDelayRevealPlan. Regression test for that gate.
+//
+// (Unlike every other plan, declaring war does not auto-pass focus either: the
+// declarer holds it until the reveal settles, since a declaration that lands
+// past row 13 was never a preparation at all. See passFocusAfterDelayReveal.)
 func TestMakeWarHTTP_DelayRevealHoldsRow(t *testing.T) {
 	h := newPlanLifecycle(t, 5)
 	ctx := context.Background()

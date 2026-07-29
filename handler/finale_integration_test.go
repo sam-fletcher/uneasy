@@ -351,8 +351,10 @@ func TestFinale_DiceOverflowFallsThroughWhenSlotSpent(t *testing.T) {
 	require.True(t, anyContains(bodies, "plan.cancelled"), "%v", bodies)
 	require.True(t, anyContains(bodies, "fell through"), "%v", bodies)
 	require.True(t, anyContains(bodies, "past row 13"), "the cause: %v", bodies)
-	require.True(t, anyContains(bodies, "No token stays on the shield"), "the token: %v", bodies)
-	require.True(t, anyContains(bodies, "before the next row"), "the re-pick block: %v", bodies)
+	require.True(t, anyContains(bodies, "token comes off the shield"), "the token: %v", bodies)
+	require.True(t, anyContains(bodies, "may still prepare a different plan or refresh assets"),
+		"the turn is not spent: %v", bodies)
+	require.True(t, anyContains(bodies, "this row"), "the re-pick block: %v", bodies)
 	for _, b := range bodies {
 		if strings.HasPrefix(b, "plan.cancelled") {
 			require.NotContains(t, b, "cancelled.",
@@ -399,40 +401,168 @@ func TestFinale_FallThroughFreesTheShieldForLowerRanks(t *testing.T) {
 	require.Truef(t, ok, "a lower-ranked player must be free to take the shield: %s", reason)
 }
 
-// TestFinale_FallThroughLeavesTheTurnWithTheNextPlayer pins what actually
-// happens to the turn, which is NOT what §6's audit recorded.
+// ── The deferred focus pass ──────────────────────────────────────────────────
 //
-// §6 says "they do get their turn back — already, and unintentionally… the
-// preparer still holds focus (nothing passed it)". That is wrong on the live
-// path: preparing a plan is the focus player's step-5 action and auto-passes
-// focus (PreparePlan → autoPassFocus), so by the time the delay reveal resolves
-// the preparer's turn is over and the next player is up. The row was held
-// throughout by the open-delay-reveal gate, so nothing was skipped — but the
-// preparer gets no re-pick, and the log post is worded accordingly.
-//
-// This test exists so the discrepancy is visible rather than assumed. If the
-// owner decides the turn should come back, this is the assertion to flip — and
-// note that simply not auto-passing would let the preparer prepare twice in one
-// turn, so it needs more than a one-line change.
-func TestFinale_FallThroughLeavesTheTurnWithTheNextPlayer(t *testing.T) {
+// A declaration is not a preparation until its delay reveal settles, so
+// PreparePlan holds the focus marker and passFocusAfterDelayReveal makes the
+// pass once the outcome is known. The three tests below cover the three states
+// that follow from that: paused, spent, returned.
+
+// TestDelayReveal_TurnIsPausedNotSpent: while the reveal is open the preparer
+// still holds focus — and cannot spend it. Prepare, refresh and pass are all
+// refused, so the paused turn can't buy a second action through the API (the
+// UI never offers one: row state is await_delay_reveal).
+func TestDelayReveal_TurnIsPausedNotSpent(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	h.jumpToRow(9)
 	setEndingMode(t, h, EndingModeSmoothLanding)
 	ctx := context.Background()
 
-	declareWarOverflowing(t, h, 0, 2, 5) // players[0] declares; falls through
+	h.setFocus(0)
+	notes := "a declaration in flight"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanMakeWar,
+		EnemyPlayerIDs:   []int64{h.tg.Players[2].ID},
+		PreparationNotes: &notes,
+	})
+	require.Nil(t, plan.RowNumber)
+
+	game, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.NotNil(t, game.FocusPlayerID)
+	require.Equal(t, h.tg.Players[0].ID, *game.FocusPlayerID,
+		"the declarer keeps focus while the reveal is open — the plan isn't prepared yet")
+	require.Equal(t, model.RowStateAwaitDelayReveal, h.rowState().Kind)
+
+	// A second preparation is refused...
+	otherNotes := "and another"
+	code, body := prepareRaw(h, PreparePlanRequest{
+		PlanType:         model.PlanSpreadPropaganda,
+		PreparationNotes: &otherNotes,
+	})
+	require.Equalf(t, http.StatusConflict, code, "a paused turn must not buy a second plan: %v", body)
+	require.Contains(t, body["error"], "delay reveal")
+
+	// ...as is refreshing assets, the other half of step 5...
+	code, body = h.post(0, "/api/tables/"+strconv.FormatInt(h.tg.Game.ID, 10)+"/refresh-assets",
+		map[string]any{"asset_ids": []int64{}})
+	require.Equalf(t, http.StatusConflict, code, "a paused turn must not also refresh: %v", body)
+	require.Contains(t, body["error"], "delay reveal")
+
+	// ...and so is passing focus.
+	code, _ = h.post(0, "/api/tables/"+strconv.FormatInt(h.tg.Game.ID, 10)+"/pass-focus", nil)
+	require.Equal(t, http.StatusConflict, code)
+}
+
+// TestDelayReveal_LandingSpendsTheTurn: when the declaration does land on a row
+// it was a real preparation, so the deferred pass fires and the turn moves on
+// exactly as any other prepare would have.
+func TestDelayReveal_LandingSpendsTheTurn(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	h.jumpToRow(9)
+	setEndingMode(t, h, EndingModeSmoothLanding)
+	ctx := context.Background()
+
+	declareWarOverflowing(t, h, 0, 2, 2) // 9 + 2 = 11 — fits, so it lands
+
+	plans, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.Len(t, plans, 1)
+	require.NotNil(t, plans[0].RowNumber)
+	require.Equal(t, int16(11), *plans[0].RowNumber)
 
 	game, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
 	require.NotNil(t, game.FocusPlayerID)
 	require.Equal(t, h.tg.Players[1].ID, *game.FocusPlayerID,
-		"preparing auto-passed focus at step 6; the fall-through does not hand it back")
-	require.Equal(t, int16(9), game.CurrentRow,
-		"the row was held for the reveal and does not advance on a fall-through")
+		"the plan landed, so the preparation was real and the turn is spent")
+}
+
+// TestFallThrough_TurnReturnsToThePreparer is the owner's ruling of 2026-07-29:
+// a plan that falls through was never prepared, so the turn it was going to
+// cost is handed back. The preparer keeps focus, lands in post_scene_action —
+// the state whose whole meaning is "you may prepare or refresh" — and can do
+// either.
+//
+// (§6 recorded this as already-true. It wasn't: the pass used to happen at
+// declaration time. It is true now because PreparePlan defers it.)
+func TestFallThrough_TurnReturnsToThePreparer(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	h.jumpToRow(9)
+	setEndingMode(t, h, EndingModeSmoothLanding)
+	ctx := context.Background()
+
+	// Give the declarer a real turn-scene and end it, so the row state below is
+	// the genuine post-scene step rather than the harness's sceneless default.
+	h.setFocus(0)
+	tablePath := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10)
+	holding, err := h.q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[0].ID, CreatorID: h.tg.Players[0].ID,
+		AssetType: model.AssetHolding, Name: "The War Room",
+	})
+	require.NoError(t, err)
+	code, body := h.post(0, tablePath+"/scenes", map[string]any{
+		"location_holding_id": holding.ID,
+		"time_elapsed":        "moments",
+		"present_peer_ids":    []int64{},
+	})
+	require.Equalf(t, http.StatusCreated, code, "turn-scene: %v", body)
+	code, body = h.post(0, tablePath+"/end-scene", nil)
+	require.Equalf(t, http.StatusOK, code, "end-scene: %v", body)
+	require.Equal(t, model.RowStatePostSceneAction, h.rowState().Kind)
+
+	declareWarOverflowing(t, h, 0, 2, 5) // 9 + 5 = 14 — falls through
+
+	game, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.NotNil(t, game.FocusPlayerID)
+	require.Equal(t, h.tg.Players[0].ID, *game.FocusPlayerID,
+		"nothing was prepared, so nothing was spent — the turn comes back")
+	require.Equal(t, int16(9), game.CurrentRow, "and the row has not moved on")
 
 	rs := h.rowState()
-	require.Equal(t, model.RowStateSceneSetting, rs.Kind, "the next player's turn begins")
-	require.Equal(t, []int64{h.tg.Players[1].ID}, rs.ActingPlayerIDs)
+	require.Equal(t, model.RowStatePostSceneAction, rs.Kind,
+		"back at the step whose meaning is 'prepare a plan or refresh assets'")
+	require.Equal(t, []int64{h.tg.Players[0].ID}, rs.ActingPlayerIDs)
+
+	// And the returned turn is usable: a different plan type prepares fine.
+	notes := "something that fits"
+	code, body = prepareRaw(h, PreparePlanRequest{
+		PlanType:         model.PlanMakeIntroductions,
+		PeerCount:        1,
+		PreparationNotes: &notes,
+	})
+	require.Equalf(t, http.StatusCreated, code, "the returned turn must be spendable: %v", body)
+}
+
+// TestFallThrough_RefreshZeroAssetsAlwaysEndsTheTurn: the guarantee behind the
+// re-pick block. A preparer who has nothing left to prepare must still be able
+// to end their turn, so "refresh nothing" is always accepted — with no
+// leveraged assets to refresh, and with the same plan type still blocked. No
+// board state can strand the table.
+func TestFallThrough_RefreshZeroAssetsAlwaysEndsTheTurn(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	h.jumpToRow(9)
+	setEndingMode(t, h, EndingModeSmoothLanding)
+	ctx := context.Background()
+
+	declareWarOverflowing(t, h, 0, 2, 5) // falls through; turn returns to players[0]
+
+	assets, err := h.q.ListAssetsByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	for _, a := range assets {
+		require.False(t, a.OwnerID == h.tg.Players[0].ID && a.IsLeveraged,
+			"fixture check: the declarer has nothing to refresh")
+	}
+
+	code, body := h.post(0, "/api/tables/"+strconv.FormatInt(h.tg.Game.ID, 10)+"/refresh-assets",
+		map[string]any{"asset_ids": []int64{}})
+	require.Equalf(t, http.StatusOK, code, "refreshing nothing must always be available: %v", body)
+
+	game, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.NotNil(t, game.FocusPlayerID)
+	require.NotEqual(t, h.tg.Players[0].ID, *game.FocusPlayerID, "the turn ended")
 }
 
 // TestPassFocus_BlockedWhileOwnDelayRevealOpen: a preparer must not be able to

@@ -276,23 +276,75 @@ func finalizeReveal(
 	})
 
 	// Dispatch the reveal type's downstream effect. Each either sets a plan's
-	// row_number (clearing a delay-reveal gate), cancels the plan, or finalizes
-	// a liaison — so row state always changes afterwards.
+	// row_number (clearing a delay-reveal gate), lets the plan fall through, or
+	// finalizes a liaison — so row state always changes afterwards.
 	if reveal.PlanID != nil {
 		switch reveal.RevealType {
 		case revealTypeLiaiseDelay:
 			applyLiaiseDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
+			passFocusAfterDelayReveal(r, s, manager, *reveal.PlanID)
 		case revealTypeMakeWarDelay:
 			applyMakeWarDelayResult(ctx, s.Q, manager, *reveal.PlanID, resultDelay)
+			passFocusAfterDelayReveal(r, s, manager, *reveal.PlanID)
 		case revealTypeLiaiseRedelay:
 			// "When will I see you again?": log the outcome, schedule the
 			// follow-up meeting unless cancelled, and mark the liaise done.
+			// No focus pass — this reveal happens mid-resolution, not at
+			// preparation, so no turn is waiting on it.
 			applyLiaiseRedelayResult(ctx, s, manager, *reveal.PlanID, resultDelay, cancelled)
 		}
 	}
 	broadcastRowState(ctx, s.Q, manager, reveal.GameID)
 
 	return resultDelay, entryResults, true
+}
+
+// passFocusAfterDelayReveal completes the focus pass that PreparePlan deferred
+// when this plan was declared.
+//
+// A Make War / Clandestinely Liaise declaration is not a finished preparation:
+// it holds no row until every participant has submitted a die, and the result
+// may land it past row 13, where it falls through and never happened. So
+// PreparePlan holds the focus marker and the pass is made HERE, once the outcome
+// is known:
+//
+//   - the plan landed on a row → the preparation is real, the preparer's step-5
+//     action is spent, and the turn moves on exactly as any other prepare would
+//     have (including the row-advance evaluation autoPassFocus performs);
+//   - the plan fell through → nothing was prepared, so nothing is spent. The
+//     preparer keeps focus, lands back in post_scene_action, and may prepare a
+//     different plan or refresh assets. Their turn was never really taken.
+//
+// Best-effort, like every other autoPassFocus call site: the reveal itself has
+// already committed, and /pass-focus remains the manual recovery.
+func passFocusAfterDelayReveal(
+	r *http.Request,
+	s *db.Store,
+	manager *hub.Manager,
+	planID int64,
+) {
+	ctx := r.Context()
+	plan, err := s.Q.GetPlanByID(ctx, planID)
+	if err != nil {
+		return
+	}
+	if plan.Status == model.PlanCancelled || plan.RowNumber == nil {
+		return // fell through — the turn stays with the preparer
+	}
+	game, err := s.Q.GetGameByID(ctx, plan.GameID)
+	if err != nil {
+		return
+	}
+	// Only pass the marker if it is still the preparer's: anything else means
+	// the deferral didn't happen (a plan declared before this behaviour, a dev
+	// fixture), and passing would take a turn from whoever holds it now.
+	if game.FocusPlayerID == nil || *game.FocusPlayerID != plan.PreparerID {
+		return
+	}
+	if err := autoPassFocus(r, s, manager, &game); err != nil {
+		loggerFromContext(ctx).ErrorContext(ctx, "auto pass-focus after delay reveal",
+			"plan_id", planID, "err", err)
+	}
 }
 
 // ── applyLiaiseDelayResult ────────────────────────────────────────────────────

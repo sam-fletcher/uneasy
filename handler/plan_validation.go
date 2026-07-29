@@ -112,6 +112,22 @@ func validatePlanPreparation(
 		}
 	}
 
+	// A declaration still waiting on its delay reveal has paused this player's
+	// turn, not ended it (see PreparePlan's deferred focus pass): they keep the
+	// focus marker while the participants submit. Refuse a second preparation
+	// until it settles — otherwise the paused turn buys two plans. The row state
+	// is await_delay_reveal, so the grid isn't offering one; this closes the
+	// direct-API path, the same way the ending-vote guard above does.
+	if plans, pErr := q.ListPlansByGame(ctx, game.ID); pErr == nil {
+		if dr := openDelayRevealPlanFor(plans, player.ID); dr != nil {
+			return preparePlanValidation{
+				Status: http.StatusConflict,
+				ErrMsg: "your " + planLabel(dr.PlanType) + " is still waiting on its delay reveal — " +
+					"you cannot prepare another plan until it settles",
+			}
+		}
+	}
+
 	// Preparation notes are required for every plan — they're the only
 	// fiction-side trace some plans leave on the public record, and the
 	// system-post log includes them verbatim. Enforced centrally here so

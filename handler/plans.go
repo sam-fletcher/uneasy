@@ -472,7 +472,20 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// plan has already committed, so a failure here is logged and
 		// recovered via the manual /pass-focus endpoint rather than
 		// failing the request.
-		if err := autoPassFocus(r, s, manager, game); err != nil {
+		//
+		// EXCEPT for a plan still waiting on its delay reveal (Make War,
+		// Clandestinely Liaise): it is not prepared yet — it has no row, and the
+		// reveal may yet land it past row 13, in which case it falls through and
+		// never happened at all. Passing now would spend the turn on a plan that
+		// may not exist, so the pass is deferred to finalizeReveal, which makes
+		// it once the plan actually lands (and does not make it if it doesn't).
+		// The preparer keeps focus meanwhile, but can't spend it: the row state
+		// is await_delay_reveal, and prepare/refresh/pass all refuse them.
+		if hasOpenDelayReveal(&plan) && isDelayRevealPlanType(plan.PlanType) {
+			loggerFromContext(ctx).InfoContext(ctx,
+				"prepare-plan: holding focus until the delay reveal settles",
+				"plan_id", plan.ID, "preparer_id", player.ID)
+		} else if err := autoPassFocus(r, s, manager, game); err != nil {
 			loggerFromContext(r.Context()).Error("auto pass-focus after prepare-plan", "err", err)
 		}
 
