@@ -17,6 +17,12 @@ export function heldCardSet(cards: PlayerCardRow[]): Set<string> {
 }
 
 export interface StealPreview {
+	/** Who holds the card right now. Callers must compare this against the
+	 *  viewer before using take wording: PROLOGUE_RULES.md "Taking Card
+	 *  Assets" only transfers an asset held by *another* player, and the
+	 *  server no-ops a self-take. Card pairs repeat across tiles, so a card
+	 *  you already hold turning up on another tile is routine. */
+	ownerID: number;
 	ownerName: string;
 	/** Null when the holder's linked asset can't be resolved (destroyed or
 	 *  not found) — callers fall back to owner-only wording. */
@@ -41,5 +47,5 @@ export function stealPreview(
 	const asset = assets.find(
 		(a) => a.linked_card_suit === suit && a.linked_card_value === value && !a.is_destroyed
 	);
-	return { ownerName, assetName: asset?.name ?? null };
+	return { ownerID: holder.player_id, ownerName, assetName: asset?.name ?? null };
 }

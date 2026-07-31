@@ -94,6 +94,7 @@ describe('stealPreview', () => {
 		];
 		const assets = [asset({ linked_card_suit: 'H', linked_card_value: 'K' })];
 		expect(stealPreview('H', 'K', cards, assets, players)).toEqual({
+			ownerID: 2,
 			ownerName: 'carol',
 			assetName: 'Blood of Kings',
 		});
@@ -107,8 +108,24 @@ describe('stealPreview', () => {
 			asset({ linked_card_suit: 'H', linked_card_value: 'K', is_destroyed: true }),
 		];
 		expect(stealPreview('H', 'K', cards, assets, players)).toEqual({
+			ownerID: 2,
 			ownerName: 'carol',
 			assetName: null,
+		});
+	});
+
+	// Card pairs repeat across tiles, so a card the viewer already holds shows
+	// up on tiles that are still open. Callers key off ownerID to avoid
+	// offering a take from yourself.
+	it('reports the viewer as the owner for a card they already hold', () => {
+		const cards: PlayerCardRow[] = [
+			{ id: 1, game_id: 1, player_id: 1, card_suit: 'H', card_value: 'K' },
+		];
+		const assets = [asset({ linked_card_suit: 'H', linked_card_value: 'K' })];
+		expect(stealPreview('H', 'K', cards, assets, players)).toEqual({
+			ownerID: 1,
+			ownerName: 'alice',
+			assetName: 'Blood of Kings',
 		});
 	});
 
@@ -117,6 +134,7 @@ describe('stealPreview', () => {
 			{ id: 1, game_id: 1, player_id: 2, card_suit: 'H', card_value: 'K' },
 		];
 		expect(stealPreview('H', 'K', cards, [], players)).toEqual({
+			ownerID: 2,
 			ownerName: 'carol',
 			assetName: null,
 		});

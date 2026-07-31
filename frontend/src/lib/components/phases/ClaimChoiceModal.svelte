@@ -46,11 +46,13 @@
 		cards: PlayerCardRow[];
 		assets: Asset[];
 		players: Player[];
+		currentPlayerID: number | null;
 		onClose: () => void;
 		onSubmitted: () => void;
 	}
 
-	let { gameID, sheet, choice, cards, assets, players, onClose, onSubmitted }: Props = $props();
+	let { gameID, sheet, choice, cards, assets, players, currentPlayerID, onClose, onSubmitted }: Props =
+		$props();
 
 	const isTitles = $derived(sheet.type === 'titles');
 	const isLawsRumors = $derived(sheet.type === 'laws_rumors');
@@ -67,6 +69,17 @@
 
 	function isCardTaken(suit: string, value: string): boolean {
 		return cards.some(c => c.card_suit === suit && c.card_value === value);
+	}
+
+	/** A card you already hold. Still a take step (nothing to author), but the
+	 *  claim transfers nothing — PROLOGUE_RULES.md only takes from *another*
+	 *  player, and the server no-ops a self-take — so the wording must not
+	 *  offer to take it from yourself. Card pairs repeat across tiles, so this
+	 *  comes up routinely once you've claimed a tile or two. */
+	function isCardMine(suit: string, value: string): boolean {
+		return cards.some(
+			c => c.card_suit === suit && c.card_value === value && c.player_id === currentPlayerID
+		);
 	}
 
 	function cardStepKey(suit: string, value: string): string {
@@ -190,7 +203,9 @@
 			marginalia: marginaliaStep,
 			cards: cardSlots.map(slot => ({
 				key: `${slot.suit}::${slot.value}`,
-				title: `Your new ${suitTypeLabel(slot.suit)}`,
+				title: isCardMine(slot.suit, slot.value)
+					? `Your ${suitTypeLabel(slot.suit)}`
+					: `Your new ${suitTypeLabel(slot.suit)}`,
 				isTake: slot.isTake,
 				text: slot.text,
 			})),
@@ -289,7 +304,13 @@
 						<span class="step-title">{step.title}</span>
 						<span class="step-summary">
 							—
-							{#if preview?.assetName}
+							{#if preview && preview.ownerID === currentPlayerID}
+								{#if preview.assetName}
+									you already hold <em>{preview.assetName}</em>; nothing to take.
+								{:else}
+									already yours; nothing to take.
+								{/if}
+							{:else if preview?.assetName}
 								you take <em>{preview.assetName}</em> from {preview.ownerName}.
 							{:else if preview}
 								already held by {preview.ownerName}.

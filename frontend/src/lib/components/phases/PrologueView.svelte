@@ -200,6 +200,11 @@
 		if (id == null) return 'Dummy';
 		return players.find(p => p.id === id)?.display_name ?? '?';
 	}
+	/** Second-person for the viewer's own holdings — reading your own display
+	 *  name back at you in "now held by …" lines is jarring. */
+	function holderLabel(id: number | null): string {
+		return id != null && id === currentPlayerID ? 'you' : playerName(id);
+	}
 
 	// ── My hand ──────────────────────────────────────────────────────────────
 	const myCards = $derived(cards.filter(c => c.player_id === currentPlayerID));
@@ -701,6 +706,24 @@
 														<span class="detail-card-text">
 															{#if !preview}
 																Make a new {cardTypeLabel(c.suit)}
+															{:else if expClaim}
+																<!-- Claimed tiles can never be claimed again, so describe
+																     where the card sits now instead of previewing a take
+																     that will never happen. -->
+																{#if preview.assetName}
+																	<em>{preview.assetName}</em> — now held by {holderLabel(preview.ownerID)}
+																{:else}
+																	Now held by {holderLabel(preview.ownerID)}
+																{/if}
+															{:else if preview.ownerID === currentPlayerID}
+																<!-- Card pairs repeat across tiles, so a card you already
+																     hold turns up on tiles that are still open — and you
+																     can't take from yourself (the claim is a no-op). -->
+																{#if preview.assetName}
+																	You already hold <em>{preview.assetName}</em> — nothing to take
+																{:else}
+																	Already yours — nothing to take
+																{/if}
 															{:else if preview.assetName}
 																Takes <em>{preview.assetName}</em> from {preview.ownerName}
 															{:else}
@@ -873,6 +896,7 @@
 		cards={cards}
 		assets={assets}
 		players={players}
+		{currentPlayerID}
 		onClose={() => activeClaim = null}
 		onSubmitted={onClaimSubmitted}
 	/>
