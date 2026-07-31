@@ -284,29 +284,6 @@ func (h *planLifecycle) complete(planID int64) {
 	require.Equalf(h.t, http.StatusOK, code, "complete failed: %v", body)
 }
 
-// run is the all-in-one convenience for plans that fit the common shape:
-// prepare → jump to the plan's target row → resolve → force the dice roll
-// → make-choice → complete. Returns the final plan row from the DB.
-//
-// Not suitable for plans whose row is decided post-prep by a simultaneous
-// reveal (Make War, Clandestinely Liaise) or that resolve without a roll
-// (Festivity, sometimes Exchange Courtiers via fair trade) — those tests
-// should call the individual steps directly and inject their own sub-flow.
-func (h *planLifecycle) run(req PreparePlanRequest, outcome string, choices []string) dbgen.Plan {
-	h.t.Helper()
-	plan := h.prepare(req)
-	require.NotNil(h.t, plan.RowNumber, "run() requires a deterministic target row")
-	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
-	require.NotNil(h.t, roll, "run() requires a dice roll; use step-by-step calls for roll-less plans")
-	h.forceRoll(roll.ID, outcome, 0)
-	h.makeChoice(plan.ID, outcome, choices)
-	h.complete(plan.ID)
-	refreshed, err := h.q.GetPlanByID(context.Background(), plan.ID)
-	require.NoError(h.t, err)
-	return refreshed
-}
-
 // preparerIdxFor returns the index into Players of the plan's preparer — the
 // player who resolves it (resolve/make-choice/complete are preparer-gated).
 func (h *planLifecycle) preparerIdxFor(planID int64) int {
