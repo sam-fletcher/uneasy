@@ -396,7 +396,7 @@
 		{/if}
 
 		{#if displayAssets.length === 0}
-			<p class="empty">No assets yet.</p>
+			<p class="empty-note">No assets yet.</p>
 		{:else}
 			<ul class="asset-grid">
 				{#each displayAssets as asset (asset.id)}
@@ -644,7 +644,7 @@
 							<div class="secrets-panel">
 								<p class="m-editor-label">Secrets</p>
 								{#if secretsForAsset(asset.id).length === 0}
-									<p class="empty small">No secrets visible to you.</p>
+									<p class="empty-note small">No secrets visible to you.</p>
 								{:else}
 									<ul class="secrets-list">
 										{#each secretsForAsset(asset.id) as s (s.id)}
@@ -688,7 +688,7 @@
 			</ul>
 		{/if}
 	{:else}
-		<p class="empty">Player not found.</p>
+		<p class="empty-note">Player not found.</p>
 	{/if}
 </div>
 
@@ -791,7 +791,13 @@
 	}
 	.dot.online { background: var(--color-success); }
 
-	.empty {
+	/* Italic prose placeholders ("No assets yet."). Named -note, not .empty:
+	   as .empty it collided with `.m-tile.empty`, and the marginalia tiles were
+	   silently inheriting `font-style: italic` — which slanted the "+" in every
+	   empty slot. Same class of leak as the `.muted` one the July 2026 UI audit
+	   caught; keep placeholder-prose classes off single-word names that a state
+	   modifier might also want. */
+	.empty-note {
 		color: var(--color-text-faint);
 		font-size: 0.9rem;
 		font-style: italic;
@@ -1021,7 +1027,7 @@
 		color: var(--color-accent);
 	}
 
-	.empty.small { font-size: 0.82rem; padding: 0.3rem 0; }
+	.empty-note.small { font-size: 0.82rem; padding: 0.3rem 0; }
 
 	/* Pick-a-marginalia-to-break picker (replaces grid on old MC during swap) */
 	.mc-picker {
@@ -1108,8 +1114,10 @@
 	.m-tile.empty.add:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 	.add-plus { font-size: 1.4rem; line-height: 1; }
 
-	/* Needlessly-at-risk nudge: solid red border on the next fillable slot,
-	   matching the red header-chip risk badge. Hover/focus keep the red so the
+	/* Needlessly-at-risk nudge: solid red-500 rim + red-300 "+" on the next
+	   fillable slot. The header chip's at-risk disc is built from this exact
+	   pair (dark ground, muted rim, bright numeral) — it's this slot shrunk to
+	   a circle, so restyle the two together. Hover/focus keep the red so the
 	   warning doesn't disappear mid-interaction. */
 	.m-tile.empty.add.at-risk {
 		border-style: solid;

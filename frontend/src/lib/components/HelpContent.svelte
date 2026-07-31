@@ -188,17 +188,35 @@
 			<p>The ranks will change after rows 4, 8, and 12 based on each player's <em>plans</em> in the category.</p>
 
 			<figure class="diagram">
-				<div class="ex-chip" aria-hidden="true">
-					<span class="ex-chip-body">
-						<span class="ex-chip-name"><span class="ex-dot"></span>Alric</span>
-						<span class="ex-ranks">
-							<span class="mr"><span class="mr-cat">P</span>2</span>
-							<span class="mr top"><span class="mr-cat">K</span>1</span>
-							<span class="mr"><span class="mr-cat">E</span>4</span>
+				<div class="ex-chip-row" aria-hidden="true">
+					<div class="ex-chip waiting mine">
+						<span class="ex-badge">2</span>
+						<span class="ex-chip-body">
+							<span class="ex-chip-name"><span class="ex-dot"></span>You</span>
+							<span class="ex-ranks">
+								<span class="mr"><span class="mr-cat">P</span>3</span>
+								<span class="mr"><span class="mr-cat">K</span>2</span>
+								<span class="mr"><span class="mr-cat">E</span>5</span>
+							</span>
 						</span>
-					</span>
+					</div>
+					<div class="ex-chip">
+						<span class="ex-badge">1</span>
+						<span class="ex-chip-body">
+							<span class="ex-chip-name"><span class="ex-dot"></span>Alric</span>
+							<span class="ex-ranks">
+								<span class="mr"><span class="mr-cat">P</span>2</span>
+								<span class="mr top"><span class="mr-cat">K</span>1</span>
+								<span class="mr"><span class="mr-cat">E</span>4</span>
+							</span>
+						</span>
+					</div>
 				</div>
-				<figcaption>Tap a chip to open that player's <em>Retinue</em>.</figcaption>
+				<figcaption>
+					Tap any chip to open it. A gold outline means the game is waiting on that player. 
+					The red number counts that player's <em>assets</em> that are one tear from destruction
+					but still have an empty <em>marginalia</em> slot.
+				</figcaption>
 			</figure>
 
 			<figure class="diagram">
@@ -479,14 +497,39 @@
 	.plan-desc { display: block; margin-top: 0.15rem; font-size: clamp(0.68rem, 2.2vw, 0.88rem); line-height: 1.3; color: var(--color-text-muted); }
 
 	/* ── Header-chip replica (Rankings tab) ──────────────────────────────── */
+	/* Mirrors .member/.risk-badge in routes/table/[id]/+page.svelte. Kept as a
+	   local replica rather than a shared file (same call as the other help
+	   diagrams) — but the two must be restyled together, or the legend starts
+	   teaching a chip the header no longer draws. */
+	.ex-chip-row {
+		display: flex; flex-wrap: wrap; justify-content: center;
+		gap: 0.6rem; /* clears the badges' 6px overhang between chips */
+	}
 	.ex-chip {
+		position: relative; /* the badge's containing block */
 		display: flex; align-items: center; gap: 0.4rem;
 		min-height: 44px; padding: 0.3rem 0.7rem;
 		background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: 999px;
-		width: fit-content; margin: 0 auto;
+		width: fit-content;
+	}
+	.ex-chip.waiting { border-color: var(--color-accent); }
+	.ex-chip.waiting.mine {
+		box-shadow: 0 0 0 1px var(--color-accent), 0 0 8px color-mix(in srgb, var(--color-accent) 45%, transparent);
+	}
+	.ex-badge {
+		position: absolute; top: -6px; right: -6px;
+		min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box;
+		display: inline-flex; align-items: center; justify-content: center;
+		border-radius: 999px; font-size: 0.78rem; font-weight: 600; line-height: 1;
+		font-variant-numeric: tabular-nums;
+		background: var(--color-surface-2); border: 1px solid var(--color-danger-muted);
+		color: var(--color-danger);
 	}
 	.ex-chip-body { display: flex; flex-direction: column; align-items: center; gap: 0.12rem; }
 	.ex-chip-name { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--color-text); }
+	/* Stands in for a player colour. Deliberately NOT a real palette entry:
+	   playerColor.ts owns those and they're per-game data, so a diagram can't
+	   name one honestly. */
 	.ex-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-highlight); flex-shrink: 0; }
 	.ex-ranks { display: flex; gap: 0.4rem; font-size: 0.62rem; line-height: 1; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 

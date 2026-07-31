@@ -266,6 +266,20 @@
 		if (game?.phase === 'lobby') waitingOn = lobbyWaitingOn;
 		else if (game?.phase === 'ended') waitingOn = { waitees: [] };
 	});
+
+	// Every player the game is currently waiting on — drives the gold ring on
+	// the header chips. Derived from `waitingOn`, NOT blockingPlayerID: the
+	// latter is phase-specific and single-player, while a row can be waiting on
+	// several people at once (see waitingOn.ts / ResolvingWaitees). Sharing the
+	// bar's source is the point — the ring and the "Waiting On:" list can never
+	// disagree.
+	//   'everyone' rings everyone: going dark there would read as "not you".
+	//   'label' waitees (e.g. "facilitator to start") name no player → ring none.
+	const waitingPlayerIDs = $derived.by<Set<number>>(() => {
+		const ws = waitingOn.waitees;
+		if (ws.some(w => w.kind === 'everyone')) return new Set(players.map(p => p.id));
+		return new Set(ws.flatMap(w => (w.kind === 'player' ? [w.playerID] : [])));
+	});
 	const tonesLocked = $derived(
 		game != null && (game.phase === 'main_event' || game.phase === 'shake_up' || game.phase === 'ended')
 	);
@@ -710,14 +724,21 @@
 						{@const mr = ranksByPlayer.get(member.id)}
 						{@const atRisk = atRiskByPlayer.get(member.id) ?? 0}
 						{@const isMe = member.id === currentPlayerID}
-						<button type="button" class="member" class:active={isMe} data-member-id={member.id} onclick={() => retinueOpenForPlayer = member.id} aria-label={`View ${member.display_name}'s retinue${isMe ? ' (you)' : ''}${member.id === blockingPlayerID ? ' (their turn)' : ''}${atRisk > 0 ? ` — ${atRisk} ${atRisk === 1 ? 'asset needs' : 'assets need'} marginalia` : ''}`} style:--member-color={playerColorByID(member.id, players)}>
+						{@const isWaiting = waitingPlayerIDs.has(member.id)}
+						<button type="button" class="member" class:mine={isMe} class:waiting={isWaiting} data-member-id={member.id} onclick={() => retinueOpenForPlayer = member.id} title={member.display_name} aria-label={`View ${member.display_name}'s retinue${isMe ? ' (you)' : ''}${isWaiting ? (isMe ? ' — your turn' : ' — their turn') : ''}${atRisk > 0 ? ` — ${atRisk} ${atRisk === 1 ? 'asset needs' : 'assets need'} marginalia` : ''}`} style:--member-color={playerColorByID(member.id, players)}>
 							{#if atRisk > 0}
-								<span class="risk-badge" class:mine={isMe} title={`${atRisk} ${atRisk === 1 ? 'asset has' : 'assets have'} too few marginalia — fill an empty slot to avoid losing ${atRisk === 1 ? 'it' : 'them'}`} aria-hidden="true">{atRisk}</span>
+								<span class="risk-badge" title={`${atRisk} ${atRisk === 1 ? 'asset has' : 'assets have'} too few marginalia — ${isMe ? `fill an empty slot to avoid losing ${atRisk === 1 ? 'it' : 'them'}` : `their owner can still shore ${atRisk === 1 ? 'it' : 'them'} up`}`} aria-hidden="true">{atRisk}</span>
 							{/if}
 							<span class="member-body">
 								<span class="member-name-row">
 									<span class="dot"></span>
-									<span class="member-name">{member.display_name}</span>
+									<!-- Your own chip reads "You", never your name: it's the same
+									     convention WaitingOnBar already uses for the current
+									     player, it costs less width than any name, and it's the
+									     one label no other chip can be confused with when two
+									     names truncate to the same prefix. `title` above still
+									     carries the full name on hover. -->
+									<span class="member-name">{isMe ? 'You' : member.display_name}</span>
 								</span>
 								{#if mr && (mr.power != null || mr.knowledge != null || mr.esteem != null)}
 									<span class="member-ranks" aria-label={`Ranks — Power ${mr.power ?? '—'}, Knowledge ${mr.knowledge ?? '—'}, Esteem ${mr.esteem ?? '—'}`}>
@@ -1317,6 +1338,18 @@
 		-webkit-overflow-scrolling: touch;
 		scrollbar-width: none;
 
+		/* `overflow-x: auto` makes computed `overflow-y` resolve to `auto` too
+		   (CSS Overflow 3 §3: `visible` beside a non-visible axis computes to
+		   `auto`), so this box CLIPS vertically even though nothing scrolls
+		   that way. .risk-badge rides 6px above each pill and was losing its
+		   top 3px to that edge. Reserve the overhang as padding and take it
+		   straight back as margin, so the strip's outer box is unchanged and
+		   the ::before/::after scroll fades still line up with the pills.
+		   8px, not 6px: 2px of slack so the disc never lands flush on the
+		   clip edge. Retune with .risk-badge's `top`. */
+		padding-block: 8px;
+		margin-block: -8px;
+
 		/* Everything in a pill that ISN'T the name: horizontal padding (2x),
 		   border (2x1), the colour dot, and the dot-to-name gap. Fed to
 		   .member-name's budget below, so the two can't drift apart —
@@ -1355,38 +1388,60 @@
 	}
 
 	/* Warning badge: assets that are one tear from destruction but still have
-	   empty marginalia slots to fill. Muted gold on other players' chips for
-	   awareness; bright red on your own, where it's actionable. */
+	   empty marginalia slots to fill.
+	 *
+	 * Built as the marginalia slot it counts, shrunk to a circle: a dark
+	 * ground, a 1px rim, and a numeral in the brighter step of the rim's
+	 * family — exactly RetinueView's `.m-tile.empty.add.at-risk` (red-500 rim,
+	 * red-300 "+"). Owner ruling 2026-07-30: matching the box it points at
+	 * matters more than making your own count louder than other players'. Gold
+	 * used to sit here and is now gone from the risk role entirely — on this
+	 * strip gold means "waiting on" (see .member.waiting), nothing else.
+	 *
+	 * ONE treatment for every player, deliberately. This badge briefly rendered
+	 * red on your own chip and grey on everyone else's; two colours for one
+	 * metric read as two different metrics, and invited "why am I the only one
+	 * warned?". The count means the same thing on every chip, so it looks the
+	 * same on every chip — whose chip it is, is already said by the "You"
+	 * label, and doesn't need saying twice.
+	 *
+	 * The rim is not decoration: the disc's ground is --color-surface-2, the
+	 * same as the pill it sits on, so without a rim the two would merge where
+	 * they overlap. */
 	.risk-badge {
 		position: absolute;
-		top: -4px;
-		right: -4px;
+		/* -6, not -4: at 20px the disc would otherwise encroach on the name.
+		   Pushed to the corner it clears the text entirely. .members reserves
+		   8px of padding for this overhang. */
+		top: -6px;
+		right: -6px;
 		z-index: 1;
-		min-width: 18px;
-		height: 18px;
-		padding: 0 4px;
+		min-width: 20px;
+		height: 20px;
+		padding: 0 5px;
 		box-sizing: border-box;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		border-radius: 999px;
-		font-size: 0.7rem;
+		/* 0.78rem/600 on a 20px disc, up from 0.7rem on 18px. Spectral is a
+		   modulated serif: at 0.7rem its cap height is 7.4px and the thin
+		   strokes of a numeral go sub-pixel, which reads as "faint" long
+		   before the contrast ratio is the binding constraint. The extra
+		   pixels do more for legibility here than any recolour. */
+		font-size: 0.78rem;
 		font-weight: 600;
 		line-height: 1;
 		font-variant-numeric: tabular-nums;
-		background: var(--color-chip-gold-bg);
-		color: var(--color-accent-muted);
-		border: 1px solid var(--color-border-warm-strong);
-	}
-	.risk-badge.mine {
-		/* Same danger/at-risk red as the Retinue tiles this count refers to
-		   (.m-tile.empty.add.at-risk: color-danger text, danger-muted
-		   border) rather than the unrelated chip-red trio — the number and
-		   the boxes it's counting read as one red, not two. */
-		background: var(--color-chip-red-bg);
+		background: var(--color-surface-2);
+		/* The at-risk red (ruling 3: danger ≡ at-risk), in the same two steps
+		   the marginalia slot uses: --color-danger-muted rim, --color-danger
+		   numeral. 4.6:1 — AA at this size, and it's legible because the
+		   numeral is the BRIGHT step; inverting it (red-500 numeral) or filling
+		   the disc with red-500 both land near 3.8:1, under AA with no lighter
+		   ink in the palette to rescue them. */
+		border: 1px solid var(--color-danger-muted);
 		color: var(--color-danger);
-		border-color: var(--color-danger-muted);
-		box-shadow: 0 0 6px color-mix(in srgb, var(--color-danger-muted) 55%, transparent);
 	}
 
 	/* Name over a compact P/K/E rank line. The body is a column so the dot
@@ -1419,10 +1474,23 @@
 	}
 	.member:hover { background: var(--color-border); }
 	.member:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-	.member.active {
+
+	/* The gold ring means "the game is waiting on this player" — a state that
+	 * changes, not an identity that doesn't. It used to mark "you", which spent
+	 * the strip's loudest treatment on the one fact you learn once and never
+	 * need again, and read as a turn indicator to everyone who saw it. Identity
+	 * moved to the "You" label + the colour dot; the ring says whose move it is.
+	 *
+	 * Two tiers, one hue: a plain border for other players (information), the
+	 * border plus a glow for yourself (act now). Reserving the glow for your
+	 * own turn is the whole point — a strip where every waiting chip glowed
+	 * would be back to shouting at you about other people's business. */
+	.member.waiting {
 		border-color: var(--color-accent);
-		box-shadow: 0 0 0 1px var(--color-accent), 0 0 8px color-mix(in srgb, var(--color-accent) 45%, transparent);
 		color: var(--color-text);
+	}
+	.member.waiting.mine {
+		box-shadow: 0 0 0 1px var(--color-accent), 0 0 8px color-mix(in srgb, var(--color-accent) 45%, transparent);
 	}
 
 	/*
