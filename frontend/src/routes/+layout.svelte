@@ -156,19 +156,22 @@
 		background: var(--color-surface-sunken);
 		border-bottom: 1px solid var(--color-border);
 	}
-	/* Same shape as the shared PhaseBadge ("LOBBY", "MAIN EVENT") so
-	   top-level page titles read as the same kind of label — but warm gold,
-	   not the badge's violet: violet marks procedural *game* info (ADR-009),
-	   while this is a site-level page name. */
+	/* A running head, deliberately NOT a badge. It used to borrow the shared
+	   PhaseBadge's chip shape (warm fill + radius), and a playtester tried to
+	   tap it: a filled rounded rect sitting in a row of controls is button
+	   anatomy — it read as .action-btn.secondary, which is the same
+	   fill-plus-gold-label recipe. PhaseBadge gets away with the chip shape
+	   because it lives inside table cards that are links end to end; nothing
+	   there has to tell tappable from not. Here the title is the one *inert*
+	   item in the bar, so it stays pure type — gold for the brand, but no
+	   container to press. The wide tracking carries the label register the
+	   chip used to supply. */
 	.page-title {
 		margin: 0;
 		font-size: 0.8rem;
-		background: var(--color-border-warm);
 		color: var(--color-accent);
-		padding: 0.15rem 0.5rem;
-		border-radius: 4px;
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.1em;
 	}
 	.header-actions {
 		display: flex;
