@@ -24,6 +24,11 @@ export type PlanMode = 'prep' | 'resolve' | 'delayReveal';
 export interface PlanContext {
 	gameID: number;
 	currentRow: number;
+	/** game.ending_mode — null until the table's row 7 → 8 vote settles it.
+	 *  Read by the delay-reveal panels, whose overflow threshold has a different
+	 *  consequence under each mode
+	 *  (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §5). */
+	endingMode: string | null;
 	plans: Plan[];
 	assets: Asset[];
 	players: Player[];

@@ -10,7 +10,6 @@ package handler
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -338,8 +337,7 @@ func TestMakeWarHTTP_SurrenderWithNoClaimableAssets_RowCanAdvance(t *testing.T) 
 
 	game, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
-	req := httptest.NewRequest("POST", "/", nil)
-	newRow, ended, err := advanceRowInner(req, h.q, h.manager, nil, &game)
+	newRow, ended, err := advanceRowInner(ctx, h.q, h.manager, nil, &game)
 	require.NoError(t, err, "row should advance despite the unfulfillable claim")
 	require.False(t, ended)
 	require.Equal(t, warRow+2, newRow, "row should advance past the surrender row")

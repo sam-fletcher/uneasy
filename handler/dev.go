@@ -236,7 +236,7 @@ func devAdvanceRowReally(
 			})
 			return
 		}
-		if _, ended, aErr := advanceRowInner(r, s.Q, manager, h, &game); aErr != nil {
+		if _, ended, aErr := advanceRowInner(ctx, s.Q, manager, h, &game); aErr != nil {
 			respondInternalErr(w, r, "could not advance row", aErr)
 			return
 		} else if ended {

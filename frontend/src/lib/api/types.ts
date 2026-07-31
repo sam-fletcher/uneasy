@@ -358,6 +358,11 @@ export interface Plan {
 	resolution_data: string | null;
 	/** Set on a Make Demands plan to point at the plan being demanded against. */
 	targeted_plan_id: number | null;
+	/** True for the one plan an Explosive Finale let this preparer clamp onto
+	 *  row 13 — set either at preparation or by an overflowing delay reveal
+	 *  collapsing onto 13. It IS the slot accounting: a player's Finale plan is
+	 *  spent iff they hold one of these that hasn't fallen through. */
+	is_finale_bonus: boolean;
 }
 
 /** A token placed on a plan's shield, slimmed to what the prep grid needs.
@@ -500,6 +505,13 @@ export interface EligiblePlan {
 	category: RankingCategory;
 	delay: number;
 	target_row: number;
+	/** True when preparing this plan would spend the player's one Explosive
+	 *  Finale plan — `target_row` already reads 13, clamped from its natural
+	 *  row. Drives the orange tile + the prep-form banner
+	 *  (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §7). Never set for Make War /
+	 *  Clandestinely Liaise: they report target_row -1, and whether they
+	 *  overflow is decided by their delay reveal, not at prep time. */
+	finale_bonus: boolean;
 }
 
 export interface IneligiblePlan {

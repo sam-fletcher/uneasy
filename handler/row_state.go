@@ -25,6 +25,7 @@ import (
 //     5x. Player owes a replacement main character → AwaitMainCharacterChoice
 //  6. Plan pending on current row → PlanPending                (step 2, queued)
 //  7. Open delay-reveal plan      → AwaitDelayReveal           (Make War / CL)
+//     7.5. Explosive Finale row 13 → FinaleRowComplete         (the row is over)
 //  8. Focus player has a started, not-yet-ended turn-scene → SceneActive (step 4)
 //  9. Focus player's turn-scene has ended_at set → PostSceneAction      (step 5)
 //  10. Default                    → SceneSetting                        (step 3)
@@ -142,6 +143,15 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 		return model.RowState{Kind: model.RowStateAwaitDelayReveal, PlanID: &id, ActingPlayerIDs: ids}, nil
 	}
 
+	// 6.5. Explosive Finale, row 13 — no turns and no scenes. Every gate above
+	// has stood down, so nothing is left to resolve and the row is over. The
+	// three turn-scene states below are deliberately unreachable here;
+	// broadcastRowState turns this kind into the advance that lands in the
+	// Shake-Up.
+	if finaleRowNoScenes(&game) {
+		return model.RowState{Kind: model.RowStateFinaleRowComplete}, nil
+	}
+
 	// 7/8/9. Turn-scene state for the focus player.
 	if game.FocusPlayerID == nil {
 		// No focus player set yet in main_event — treat as scene_setting
@@ -212,6 +222,15 @@ func findFollowScene(scenes []dbgen.Scene, planID int64) *dbgen.Scene {
 //   - follow-scene ended, setter still holds focus → PostSceneAction
 //   - follow-scene ended, focus moved on → ok=false (turn done; next plan resolves)
 func followSceneGate(ctx context.Context, q *dbgen.Queries, game *dbgen.Game) (model.RowState, bool, error) {
+	// Explosive Finale, row 13: no scenes at all, so no plan there owes a
+	// follow-scene turn. Standing down lets the chain fall through to the
+	// pending-plan step, where broadcastRowState's auto-kickoff chains the next
+	// plan straight off the back of the one that just resolved — which is what
+	// "resolve plan after plan" means mechanically.
+	if finaleRowNoScenes(game) {
+		return model.RowState{}, false, nil
+	}
+
 	recent, err := q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
 		GameID:    game.ID,
 		RowNumber: new(game.CurrentRow),
@@ -572,6 +591,18 @@ func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 			} else if recomputed, rerr := ComputeRowState(ctx, q, gameID); rerr == nil {
 				state = recomputed
 			}
+		}
+	}
+
+	// Terminal advance, the Explosive Finale's counterpart to the kickoff above:
+	// row 13 under that mode has no turns, so no PassFocus will ever fire and
+	// nothing else would move the game on once its last plan resolved. The row
+	// ends itself, which lands in the Shake-Up. Like the kickoff, this must run
+	// whether or not anyone is connected — an async table cannot be left sitting
+	// on a finished row until somebody happens to open a tab.
+	if state.Kind == model.RowStateFinaleRowComplete && finaleTerminalAdvance(ctx, q, manager, gameID) {
+		if recomputed, rerr := ComputeRowState(ctx, q, gameID); rerr == nil {
+			state = recomputed
 		}
 	}
 

@@ -23,9 +23,10 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
+	import DelayThresholdNote from './shared/DelayThresholdNote.svelte';
 	import {
 		playerName,
-		playersExcept, ownerIntactAssets,
+		playersExcept, ownerIntactAssets, finaleSlotSpent,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -431,6 +432,15 @@
 				</span>
 			</p>
 		{/if}
+		<!-- Everyone sees the line, participant or not: the faces are chosen rather
+		     than rolled, so overflowing row 13 is a decision the pair is making.
+		     The slot at stake is the PREPARER's, not the submitter's. -->
+		<DelayThresholdNote
+			currentRow={ctx.currentRow}
+			endingMode={ctx.endingMode}
+			slotSpent={finaleSlotSpent(plans, plan.preparer_id)}
+			preparerName={playerName(players, plan.preparer_id)}
+		/>
 		{#if amParticipant && clState.delayRevealID != null && currentPlayerID != null}
 			<SimultaneousRevealInput
 				revealID={clState.delayRevealID}

@@ -133,16 +133,21 @@ func isEngrailedLine(oldRow, newRow int16) bool {
 	return false
 }
 
-// advanceRowInner performs the shared row-advance logic used by both
-// PassFocus (auto-advance) and AdvanceRow (manual). It increments
-// current_row, broadcasts events, and transitions the game to ended if
-// past row 13. Returns the new row number, or 0 if the game ended.
+// advanceRowInner performs the shared row-advance logic behind every path that
+// ends a row. It increments current_row, broadcasts events, and transitions the
+// game into the Shake-Up if past row 13. Returns the new row number, or 0 if the
+// game ended.
+//
+// It takes a ctx rather than the *http.Request it only ever pulled a context
+// out of, because not every caller has a request: the Explosive Finale's row 13
+// has no turns, so the row that ends it is ended by broadcastRowState
+// (finaleTerminalAdvance in finale.go), not by an HTTP handler.
 //
 // h may be nil when no clients are connected — all h.BroadcastEvent calls
 // are guarded by the nil check.
 // Focus is NOT changed here — whoever holds it going in keeps it.
 func advanceRowInner(
-	r *http.Request,
+	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	h *hub.Hub,
@@ -150,7 +155,7 @@ func advanceRowInner(
 ) (int16, bool, error) {
 	oldRow := game.CurrentRow
 
-	newRow, err := q.AdvanceRow(r.Context(), game.ID)
+	newRow, err := q.AdvanceRow(ctx, game.ID)
 	if err != nil {
 		return 0, false, err
 	}
@@ -158,7 +163,7 @@ func advanceRowInner(
 	// Past row 13 — transition into the Shake-Up. From there, players spend
 	// dice-rolled tokens across three categories before the game ends.
 	if newRow > publicRecordRowCount {
-		if err = BeginShakeUp(r.Context(), q, manager, game.ID); err != nil {
+		if err = BeginShakeUp(ctx, q, manager, game.ID); err != nil {
 			return 0, false, err
 		}
 		return newRow, true, nil
@@ -171,12 +176,12 @@ func advanceRowInner(
 	// (and broadcast the new rankings) BEFORE the "Row N begins" boundary, so
 	// the log reads in chronological order. runRankingUpdate lives in ranking.go.
 	if crossed {
-		updatedRankings, diff, rankErr := runRankingUpdate(r.Context(), q, game.ID)
+		updatedRankings, diff, rankErr := runRankingUpdate(ctx, q, game.ID)
 		if rankErr == nil {
 			if h != nil {
 				h.BroadcastEvent(model.EventRankingsUpdated, model.RankingsUpdatedPayload{Rankings: updatedRankings})
 			}
-			EmitRankingUpdated(r.Context(), q, manager, game.ID, newRow, diff)
+			EmitRankingUpdated(ctx, q, manager, game.ID, newRow, diff)
 		}
 	}
 
@@ -186,12 +191,12 @@ func advanceRowInner(
 			CrossedEngrailed: crossed,
 		})
 	}
-	EmitSystemPost(r.Context(), q, manager, game.ID, "row.advanced",
+	EmitSystemPost(ctx, q, manager, game.ID, "row.advanced",
 		model.SeverityBoundary,
 		fmt.Sprintf("Row %d begins", newRow), &newRow, nil, nil,
 		map[string]any{"row_number": newRow, "crossed_engrailed": crossed})
 
-	broadcastRowState(r.Context(), q, manager, game.ID)
+	broadcastRowState(ctx, q, manager, game.ID)
 	return newRow, false, nil
 }
 
@@ -452,7 +457,7 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 		return nil
 	}
 
-	newRow, ended, err := advanceRowInner(r, s.Q, manager, h, game)
+	newRow, ended, err := advanceRowInner(ctx, s.Q, manager, h, game)
 	if err != nil {
 		return fmt.Errorf("advance row: %w", err)
 	}
@@ -579,7 +584,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Focus stays with `next` (they carry it into the new row).
-		newRow, ended, err := advanceRowInner(r, s.Q, manager, h, game)
+		newRow, ended, err := advanceRowInner(ctx, s.Q, manager, h, game)
 		if err != nil {
 			// Row advance failed after focus already moved — not ideal, but
 			// focus.changed was already broadcast so respond with what we have.

@@ -401,6 +401,166 @@ func TestFinale_FallThroughFreesTheShieldForLowerRanks(t *testing.T) {
 	require.Truef(t, ok, "a lower-ranked player must be free to take the shield: %s", reason)
 }
 
+// ── §5: row 13 runs without scenes ───────────────────────────────────────────
+
+// queueRow13Plan puts one already-prepared plan on row 13 for players[idx] at a
+// fixed row order. Preparation is covered above; these tests start from the
+// board state row 13 inherits — a pile of plans and, under an Explosive Finale,
+// no turns left in which to have prepared any more.
+func queueRow13Plan(t *testing.T, h *planLifecycle, idx int, order int16) int64 {
+	t.Helper()
+	ctx := context.Background()
+	plan := createPlanOnRow(t, h.q, &h.tg.Game, &h.tg.Players[idx],
+		model.PlanSpreadPropaganda, model.CategoryEsteem, publicRecordRowCount)
+	// createPlanOnRow leaves row_order at 0 for every plan; set it explicitly so
+	// "back to back" has a defined order to be asserted against.
+	require.NoError(t, h.q.SetPlanRowAndOrder(ctx, dbgen.SetPlanRowAndOrderParams{
+		ID: plan.ID, RowNumber: new(int16(publicRecordRowCount)), RowOrder: order,
+	}))
+	return plan.ID
+}
+
+// finishResolvingPlan drives the plan the row is currently resolving through to
+// done via the real completion route: the auto-kickoff already created its roll,
+// so force the outcome and complete. No make-choice — these tests are about what
+// happens BETWEEN plans, not inside one.
+func finishResolvingPlan(t *testing.T, h *planLifecycle, planID int64) {
+	t.Helper()
+	roll, err := h.q.GetDiceRollByPlanID(context.Background(), &planID)
+	require.NoError(t, err, "the kickoff should have created the plan's roll")
+	h.forceRoll(roll.ID, makeOutcome, 0)
+	h.complete(planID)
+}
+
+// createTurnScene drives POST /tables/{id}/scenes as the focus player and
+// returns the raw status + body: under an Explosive Finale row 13 this is a
+// rejection, and under a Smooth Landing the same call must still work.
+func createTurnScene(t *testing.T, h *planLifecycle) (int, map[string]any) {
+	t.Helper()
+	focus := h.focusPlayerIdx()
+	holding, err := h.q.CreateAsset(context.Background(), dbgen.CreateAssetParams{
+		GameID:    h.tg.Game.ID,
+		OwnerID:   h.tg.Players[focus].ID,
+		CreatorID: h.tg.Players[focus].ID,
+		AssetType: model.AssetHolding,
+		Name:      "The Last Hall",
+	})
+	require.NoError(t, err)
+	return h.post(focus, "/api/tables/"+strconv.FormatInt(h.tg.Game.ID, 10)+"/scenes", map[string]any{
+		"location_holding_id": holding.ID,
+		"time_elapsed":        "moments",
+		"present_peer_ids":    []int64{},
+	})
+}
+
+// TestFinaleRow13_PlansResolveBackToBackIntoTheShakeUp is the finale run itself:
+// three plans piled onto row 13 resolve one after another with no turn between
+// them, and the row then ends itself into the Shake-Up.
+//
+// The last part is the load-bearing one. Every other row ends because the focus
+// player passed after the last plan; row 13 under this mode has no turn to pass,
+// so without the terminal advance the table would sit on a finished row forever.
+func TestFinaleRow13_PlansResolveBackToBackIntoTheShakeUp(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	h.jumpToRow(publicRecordRowCount)
+	setEndingMode(t, h, EndingModeExplosiveFinale)
+
+	ids := []int64{
+		queueRow13Plan(t, h, 0, 0),
+		queueRow13Plan(t, h, 1, 1),
+		queueRow13Plan(t, h, 2, 2),
+	}
+	for _, id := range ids {
+		// How they got there: each is somebody's one Explosive Finale plan.
+		require.NoError(t, h.q.SetPlanFinaleBonus(ctx, id))
+	}
+
+	// Row 13 opens the way it does in play — off the row-advance broadcast.
+	broadcastRowState(ctx, h.q, h.manager, h.tg.Game.ID)
+
+	for i, id := range ids {
+		// Each plan is already mid-resolution when its turn comes: the previous
+		// one's completion chained straight into it, with no follow-scene turn
+		// standing in between. A plan still 'pending' here would mean the row was
+		// waiting on a turn that this mode does not have. Ordering falls out of
+		// the same assertion — the kickoff always takes the lowest row_order.
+		plan, err := h.q.GetPlanByID(ctx, id)
+		require.NoError(t, err)
+		require.Equalf(t, model.PlanResolving, plan.Status,
+			"plan %d must be kicked off straight off the back of the last one", i+1)
+		finishResolvingPlan(t, h, id)
+	}
+
+	game, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.PhaseShakeUp, game.Phase,
+		"the last plan ends the row, and row 13 hands off to the Shake-Up")
+	require.Equal(t, int16(publicRecordRowCount+1), game.CurrentRow)
+
+	// Not one turn-scene was set or owed along the way. (Plan-scenes are a
+	// different thing — they belong to a plan's own resolution and close with
+	// it; what this mode removes is the focus player's turn.)
+	scenes, err := h.q.ListScenesForRow(ctx, dbgen.ListScenesForRowParams{
+		GameID: h.tg.Game.ID, RowNumber: publicRecordRowCount,
+	})
+	require.NoError(t, err)
+	for _, s := range scenes {
+		require.NotEqualf(t, model.SceneKindTurn, s.Kind,
+			"an Explosive Finale's row 13 has no turn-scenes (scene %d)", s.ID)
+	}
+
+	// The table is told why the row ended with nobody passing focus — otherwise
+	// the log's only account of it is the Shake-Up appearing out of nowhere.
+	bodies := gamePostBodies(t, h)
+	require.True(t, anyContains(bodies, "finale.row_complete"), "%v", bodies)
+	require.True(t, anyContains(bodies, "no turns and no scenes"), "%v", bodies)
+}
+
+// TestFinaleRow13_SceneIsRefused: the API-level half of "no scenes on row 13".
+// The row state never offers one, so this is the direct call that bypasses the
+// UI — the same shape of guard as every other rulebook-ordering check in
+// validateSceneTiming.
+func TestFinaleRow13_SceneIsRefused(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	h.jumpToRow(publicRecordRowCount)
+	setEndingMode(t, h, EndingModeExplosiveFinale)
+
+	code, body := createTurnScene(t, h)
+	require.Equalf(t, http.StatusConflict, code, "row 13 has no scenes under this mode: %v", body)
+	require.Contains(t, body["error"], "row 13 has no scenes")
+
+	// And with no plans left there is nothing else either: the row is simply
+	// over, which is the kind broadcastRowState turns into the advance.
+	require.Equal(t, model.RowStateFinaleRowComplete, h.rowState().Kind)
+}
+
+// TestSmoothLandingRow13_IsUnchanged is the control. Everything above is scoped
+// to one mode on one row; under a Smooth Landing row 13 is an ordinary row —
+// a resolved plan owes its follow-scene, the scene is accepted, and nothing
+// advances until somebody passes focus.
+func TestSmoothLandingRow13_IsUnchanged(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	h.jumpToRow(publicRecordRowCount)
+	setEndingMode(t, h, EndingModeSmoothLanding)
+
+	id := queueRow13Plan(t, h, 0, 0)
+	broadcastRowState(ctx, h.q, h.manager, h.tg.Game.ID)
+	finishResolvingPlan(t, h, id)
+
+	require.Equal(t, model.RowStateSceneSetting, h.rowState().Kind,
+		"row 13 still runs turns under a Smooth Landing")
+
+	code, body := createTurnScene(t, h)
+	require.Equalf(t, http.StatusCreated, code, "the scene must still be accepted: %v", body)
+
+	game, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.PhaseMainEvent, game.Phase, "nothing auto-advances into the Shake-Up")
+	require.Equal(t, int16(publicRecordRowCount), game.CurrentRow)
+}
+
 // ── The deferred focus pass ──────────────────────────────────────────────────
 //
 // A declaration is not a preparation until its delay reveal settles, so

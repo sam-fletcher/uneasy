@@ -305,6 +305,7 @@
 	const drawerCtx = $derived<PlanContext>({
 		gameID: game.id,
 		currentRow: game.current_row,
+		endingMode: game.ending_mode,
 		plans, assets, players, rankings,
 		currentPlayerID,
 		isFocusPlayer,
@@ -407,6 +408,7 @@
 			<PlanPanel
 				gameID={game.id}
 				currentRow={game.current_row}
+				endingMode={game.ending_mode}
 				{plans}
 				{planTokens}
 				{assets}

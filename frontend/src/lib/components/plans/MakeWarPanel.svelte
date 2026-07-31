@@ -24,7 +24,7 @@
 		getWarState,
 		type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
-	import { playerName, parseResolutionData } from './shared';
+	import { playerName, parseResolutionData, finaleSlotSpent } from './shared';
 
 	import PrepForm from './war/PrepForm.svelte';
 	import DelayReveal from './war/DelayReveal.svelte';
@@ -57,6 +57,11 @@
 
 	const planMW = $derived(plan ? (parseResolutionData(plan).make_war ?? {}) : {});
 	const delayRevealID = $derived(planMW.delay_reveal_id ?? null);
+
+	// Delay-reveal threshold inputs. The slot at stake is the DECLARER's — a
+	// collapse onto row 13 spends theirs, whoever else submitted a high face.
+	const preparerName = $derived(plan ? playerName(players, plan.preparer_id) : '');
+	const preparerSlotSpent = $derived(plan ? finaleSlotSpent(ctx.plans, plan.preparer_id) : false);
 
 	async function refreshWar() {
 		if (!plan) return;
@@ -151,6 +156,10 @@
 				{currentPlayerID}
 				{amParticipant}
 				{revealParticipants}
+				currentRow={ctx.currentRow}
+				endingMode={ctx.endingMode}
+				slotSpent={preparerSlotSpent}
+				{preparerName}
 			/>
 		{/if}
 

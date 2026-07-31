@@ -349,3 +349,17 @@ describe('shakeUpWaitingOn', () => {
 		expect(shakeUpWaitingOn(shakeUpInput({ step: null })).waitees).toEqual([]);
 	});
 });
+
+// ── The Explosive Finale's row 13 ────────────────────────────────────────────
+// Row 13's plans are all resolved and the mode gives that row no turns, so
+// nobody is being waited on. The server ends the row itself off this kind, which
+// makes it the one main-event kind the bar stays silent through.
+describe('finale_row_complete', () => {
+	it('names nobody — the row is over, not waiting on anyone', () => {
+		const got = mainEventWaitingOn(
+			input({ rowState: rowState('finale_row_complete', { acting_player_ids: [] }) }),
+		);
+		expect(got.waitees).toEqual([]);
+		expect(got.stepLabel).toBeUndefined();
+	});
+});

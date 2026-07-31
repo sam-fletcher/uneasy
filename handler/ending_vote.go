@@ -505,7 +505,7 @@ func resolveEndingVoteIfComplete(
 	// since (no turns exist during the vote, preparation is refused, and battle
 	// costs fall due at the start of a row, which is exactly what is paused).
 	h, _ := manager.Get(game.ID)
-	newRow, ended, err := advanceRowInner(r, s.Q, manager, h, game)
+	newRow, ended, err := advanceRowInner(ctx, s.Q, manager, h, game)
 	if err != nil {
 		return err
 	}

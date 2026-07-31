@@ -31,6 +31,77 @@ import (
 	"uneasy/model"
 )
 
+// finaleRowNoScenes reports whether the game is sitting on the Explosive
+// Finale's row 13 — the row the rulebook says you "simply resolve plan after
+// plan and then move to the shake-up" through.
+//
+// Under this mode row 13 has no turns and no scenes, and that one fact is read
+// in four places (§5): followSceneGate stands down, ComputeRowState never
+// reaches its turn-scene states, CreateScene refuses, and the row ends itself
+// once the last plan is resolved (finaleTerminalAdvance).
+//
+// It is also why a bonus plan is prepared on rows 8–12 and no later: there is no
+// turn on row 13 in which to prepare one, so a player who arrives with the slot
+// unspent has lost it. The prep-form banner says so before the choice is made.
+func finaleRowNoScenes(game *dbgen.Game) bool {
+	return game.CurrentRow == publicRecordRowCount &&
+		game.EndingMode != nil && *game.EndingMode == EndingModeExplosiveFinale
+}
+
+// finaleTerminalAdvance ends row 13 under an Explosive Finale and is that mode's
+// substitute for PassFocus. Every other row ends because the focus player passed
+// after the last plan resolved; row 13 has no turn to pass, so without this the
+// table would sit on a finished row forever. Returns true when the row advanced
+// — which, from row 13, lands in BeginShakeUp.
+//
+// Called from broadcastRowState off kind=finale_row_complete, so every gate in
+// ComputeRowState's precedence chain has already stood down: no resolving or
+// pending plan, no open delay reveal, no owed main character. The row-advance
+// gate is re-run anyway for the checks that live only there (unpaid battle
+// costs, open surrender claims), conservatively, exactly as both PassFocus paths
+// treat it.
+//
+// The post is emitted BEFORE the advance so it reads before the Shake-Up's own
+// boundary post and can still anchor to row 13 (logRow drops the anchor at 14).
+//
+// One benign wrinkle: an advance INTO row 13 that finds nothing queued runs this
+// from inside advanceRowInner's own closing broadcast, so that call returns
+// (13, ended=false) for a game already in shake_up, and a PassFocus response can
+// name row 13 rather than the phase. Nothing reads those fields for state — the
+// phase.changed broadcast is what moves every client — but don't build on them.
+func finaleTerminalAdvance(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+) bool {
+	logger := loggerFromContext(ctx)
+	game, err := q.GetGameByID(ctx, gameID)
+	if err != nil {
+		logger.WarnContext(ctx, "finale row 13: could not load the game; the row holds",
+			"game_id", gameID, "err", err)
+		return false
+	}
+	if reason := rowAdvanceBlockReason(ctx, q, manager, &game); reason != "" {
+		return false
+	}
+
+	EmitSystemPost(ctx, q, manager, gameID, "finale.row_complete",
+		model.SeverityBoundary,
+		"Every plan on row 13 has resolved. An Explosive Finale gives row 13 no turns and no "+
+			"scenes, so the row ends here and the Shake-Up begins.",
+		logRow(game), nil, nil,
+		map[string]any{"row_number": game.CurrentRow})
+
+	h, _ := manager.Get(gameID) // nil when nobody is connected — advanceRowInner handles nil
+	if _, _, aErr := advanceRowInner(ctx, q, manager, h, &game); aErr != nil {
+		logger.ErrorContext(ctx, "finale row 13: could not advance into the Shake-Up",
+			"game_id", gameID, "err", aErr)
+		return false
+	}
+	return true
+}
+
 // finaleSlotSpent reports whether this player has already used their one
 // Explosive Finale plan. Derived from plans (is_finale_bonus), never from a
 // flag on the player, so the spend is always attributable to a plan.

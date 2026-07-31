@@ -39,6 +39,25 @@ export const PLAN_DELAY: Record<PlanType, number> = {
 	clandestinely_liaise: -1,
 };
 
+/** The last row of the public record — `publicRecordRowCount` server-side. A
+ *  plan that would land past it cannot be placed: under a Smooth Landing it may
+ *  not be prepared at all, and under an Explosive Finale it is clamped onto this
+ *  row, spending the preparer's one bonus plan. */
+export const FINAL_ROW = 13;
+
+/**
+ * Whether this player has already used their one Explosive Finale plan.
+ * Mirrors the server's CountFinaleBonusPlans exactly — the slot is derived from
+ * plans, never from a flag on the player, so a spend is always attributable to
+ * the plan that made it.
+ */
+export function finaleSlotSpent(plans: Plan[], preparerID: number | null): boolean {
+	if (preparerID == null) return false;
+	return plans.some(p =>
+		p.preparer_id === preparerID && p.is_finale_bonus && p.status !== 'cancelled',
+	);
+}
+
 /** Display order within each track column (top → bottom). */
 export const TRACK_ORDER: Record<RankingCategory, PlanType[]> = {
 	power:     ['make_demands', 'propose_decree', 'exchange_courtiers', 'make_war'],

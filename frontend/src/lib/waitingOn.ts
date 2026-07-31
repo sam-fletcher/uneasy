@@ -153,6 +153,12 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// One or more players lost their main character; each must choose a
 			// replacement before play resumes. The backend names them all.
 			return { waitees: actingWaitees(), stepLabel: 'Choose a new main character' };
+		case 'finale_row_complete':
+			// Row 13's plans are all resolved and an Explosive Finale gives that
+			// row no turns, so the row is over and nobody is being waited on. The
+			// server ends the row itself off this kind, which makes it a beat the
+			// bar should stay silent through rather than name anyone.
+			return { waitees: [] };
 		case 'scene_active':
 			return { waitees: actingWaitees(), stepLabel: 'Scene' };
 		case 'scene_setting':

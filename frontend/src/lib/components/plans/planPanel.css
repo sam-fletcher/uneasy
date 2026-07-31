@@ -415,11 +415,27 @@
 
 .plan-card:not(:disabled):not(.ineligible):hover { border-color: var(--color-accent); }
 
+/* Preparing this plan would spend the player's one Explosive Finale plan: it
+   lands on row 13 instead of its own row (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md
+   §7). The warning trio — orange is the one warning family, and the same family
+   as `leveraged`, the nearest existing "one-shot commitment" semantic. Gold is
+   deliberately not used: gold is a label, never a fill. */
+.plan-card.finale-bonus {
+	background: var(--color-warning-bg);
+	border-color: var(--color-warning-border);
+}
+
+.plan-card.finale-bonus:not(:disabled):hover { border-color: var(--color-warning); }
+
 .plan-card.selected {
 	background: var(--color-surface-gold-dim);
 	border-color: var(--color-accent);
 	color: var(--color-text);
 }
+
+/* Selection still reads as selection on a bonus tile: the gold border marks the
+   pick, the orange fill stays to say what the pick costs. */
+.plan-card.finale-bonus.selected { background: var(--color-warning-bg); }
 
 /* Dim only the textual body when disabled (read-only) or ineligible, so the
    token pips below stay full-opacity and legible for every viewer. CSS opacity
@@ -443,6 +459,26 @@
 	line-height: 1.4;
 	color: var(--color-text-muted);
 	margin: 0.4rem 0 0;
+}
+
+/* The selection-moment warning for the one Explosive Finale plan, sitting
+   between the grid and the prep form. Selecting a card commits nothing, so this
+   is the pre-decision beat: it names the clamp AND the cost, and there is no
+   confirmation dialog (the warning is the whole ruling). */
+.finale-warning {
+	margin: 0.2rem 0 0;
+	padding: 0.45rem 0.55rem;
+	font-size: 0.78rem;
+	line-height: 1.45;
+	background: var(--color-warning-bg);
+	border: 1px solid var(--color-warning-border);
+	border-radius: 5px;
+	color: var(--color-text-secondary);
+}
+
+.finale-warning-head {
+	display: block;
+	color: var(--color-warning);
 }
 
 /* Holds the title/pill row + description; flex-grows so the pip strip is

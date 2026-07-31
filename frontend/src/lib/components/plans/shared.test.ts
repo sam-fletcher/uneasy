@@ -13,6 +13,7 @@ import {
 	playersExcept,
 	ownerUnleveragedAssets,
 	ownerIntactAssets,
+	finaleSlotSpent,
 } from './shared';
 import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
 
@@ -71,6 +72,7 @@ function plan(overrides: Partial<Plan> = {}): Plan {
 		preparation_notes: null,
 		resolution_data: null,
 		targeted_plan_id: null,
+		is_finale_bonus: false,
 		...overrides,
 	};
 }
@@ -376,5 +378,28 @@ describe('ownerIntactAssets', () => {
 			asset({ id: 4, owner_id: 9 }),
 		];
 		expect(ownerIntactAssets(assets, 2).map(a => a.id)).toEqual([1, 2]);
+	});
+});
+
+// The slot is derived from plans, never from a flag on the player, so this
+// mirrors the server's CountFinaleBonusPlans clause for clause — including the
+// `status != cancelled` filter, which is vacuous today (a bonus plan cannot
+// fall through) but is the behaviour we would want if it ever could.
+describe('finaleSlotSpent', () => {
+	it('is false for a null player', () => {
+		expect(finaleSlotSpent([plan({ preparer_id: 2, is_finale_bonus: true })], null)).toBe(false);
+	});
+	it('is false when the player holds no bonus plan', () => {
+		expect(finaleSlotSpent([plan({ preparer_id: 2 })], 2)).toBe(false);
+	});
+	it('is true when the player holds one', () => {
+		expect(finaleSlotSpent([plan({ preparer_id: 2, is_finale_bonus: true })], 2)).toBe(true);
+	});
+	it('ignores another player’s bonus plan', () => {
+		expect(finaleSlotSpent([plan({ preparer_id: 9, is_finale_bonus: true })], 2)).toBe(false);
+	});
+	it('ignores a bonus plan that fell through', () => {
+		const plans = [plan({ preparer_id: 2, is_finale_bonus: true, status: 'cancelled' })];
+		expect(finaleSlotSpent(plans, 2)).toBe(false);
 	});
 });

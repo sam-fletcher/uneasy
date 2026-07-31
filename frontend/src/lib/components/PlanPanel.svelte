@@ -42,6 +42,8 @@
 	interface Props {
 		gameID: number;
 		currentRow: number;
+		/** game.ending_mode; passed straight through to the shared PlanContext. */
+		endingMode: string | null;
 		/** All plans for the game (used to find a resolving plan). */
 		plans: Plan[];
 		/**
@@ -90,7 +92,7 @@
 	}
 
 	let {
-		gameID, currentRow, plans, planTokens, assets, players, rankings, currentPlayerID,
+		gameID, currentRow, endingMode, plans, planTokens, assets, players, rankings, currentPlayerID,
 		isFocusPlayer, prepEnabled = false, suppressPrep = false,
 		rollActive, rollOutcome, activeRoll = null,
 		onRollCreated, onPlansChanged, onPlanPrepared,
@@ -139,12 +141,13 @@
 	// so the 3-column grid can render all 12 plans (ineligible ones disabled,
 	// with a hover tooltip explaining why).
 	type PlanCell =
-		| { type: PlanType; eligible: true; targetRow: number }
+		| { type: PlanType; eligible: true; targetRow: number; finaleBonus: boolean }
 		| { type: PlanType; eligible: false; reason: string };
 	const planCells = $derived.by<Map<PlanType, PlanCell>>(() => {
 		const m = new Map<PlanType, PlanCell>();
 		for (const p of eligiblePlans) m.set(p.plan_type, {
 			type: p.plan_type, eligible: true, targetRow: p.target_row,
+			finaleBonus: p.finale_bonus,
 		});
 		for (const p of ineligiblePlans) m.set(p.plan_type, {
 			type: p.plan_type, eligible: false, reason: p.reason,
@@ -233,6 +236,25 @@
 			: ((preparePlanDraft?.plan_type ?? '') as PlanType) || null
 	);
 
+	// ── Explosive Finale bonus warning ───────────────────────────────────────
+	// Selecting a tile commits nothing — the prep form below has its own submit
+	// — so selection is itself the pre-decision moment, which is why a warning
+	// here is enough and no confirmation dialog is wanted
+	// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §7). Non-focus viewers never have
+	// eligibility loaded, so this stays false for them: the warning belongs to
+	// whoever is making the choice.
+	const selectedBonusCell = $derived.by(() => {
+		if (!displaySelectedPlanType) return null;
+		const cell = planCells.get(displaySelectedPlanType);
+		return cell?.eligible && cell.finaleBonus ? cell : null;
+	});
+	// The row the plan would have landed on if it fitted — the thing the clamp
+	// is replacing. Always a real number here: the two variable-delay plans are
+	// never marked as bonus tiles.
+	const bonusNaturalRow = $derived(
+		displaySelectedPlanType ? currentRow + PLAN_DELAY[displaySelectedPlanType] : 0,
+	);
+
 	// ── Shared ctx (now that selectedPlanType + displaySelectedPlanType exist) ─
 	// Slice of the draft addressed to the currently-mounted plan panel.
 	// Guard on plan_type match so a stale draft from a previously-selected
@@ -256,7 +278,7 @@
 	}
 
 	const ctx = $derived<PlanContext>({
-		gameID, currentRow, plans, assets, players, rankings,
+		gameID, currentRow, endingMode, plans, assets, players, rankings,
 		currentPlayerID, isFocusPlayer,
 		rollActive, rollOutcome, activeRoll,
 		onRollCreated, onPlansChanged, onPlanPrepared,
@@ -338,10 +360,16 @@
 						     styling) so a tap can surface the reason below the grid;
 						     native disabled would swallow the click. The non-focus
 						     skeleton stays truly disabled. -->
+						<!-- Orange marks the tiles whose preparation would spend the
+						     one Explosive Finale plan — the warning family, and the
+						     same family as `leveraged`, the closest existing
+						     "one-shot commitment" semantic. Not gold: gold is a
+						     label, never a fill. -->
 						<button
 							type="button"
 							class="plan-card"
 							class:selected={displaySelectedPlanType === pt}
+							class:finale-bonus={!!cell && cell.eligible && cell.finaleBonus}
 							class:ineligible={!!cell && !cell.eligible}
 							disabled={!isFocusPlayer || !cell}
 							aria-disabled={cell && !cell.eligible ? true : undefined}
@@ -409,6 +437,16 @@
 		{/if}
 
 		{#if displaySelectedPlanType}
+			{#if selectedBonusCell}
+				<!-- One place covers all 12 plans: it names the clamp and the cost,
+				     before anything is committed. -->
+				<p class="finale-warning" role="status">
+					<span class="finale-warning-head">This will be your one Explosive Finale plan.</span>
+					<em>{PLAN_SHORT[displaySelectedPlanType]}</em> would normally land on row {bonusNaturalRow},
+					past the end of the record, but it will be placed on row 13 instead.
+					Each player only gets this benefit once.
+				</p>
+			{/if}
 			{@const entry = REGISTRY[displaySelectedPlanType]}
 			{#if entry}
 				{@const Comp = entry.component}

@@ -202,6 +202,17 @@ const (
 	// row and ready to be resolved. Step 2, queued.
 	RowStatePlanPending RowStateKind = "plan_pending"
 
+	// RowStateFinaleRowComplete — row 13 under an Explosive Finale, with every
+	// plan on it resolved. That mode gives row 13 no turns and no scenes
+	// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §5), so the three turn-scene kinds
+	// below are never reached there: when no plans remain, the row is simply
+	// over. Nobody is named — there is nothing left for anyone to do.
+	//
+	// Transient by design: broadcastRowState reads this kind and advances the
+	// row, which lands in the Shake-Up. A client only ever sees it if that
+	// advance was itself blocked or failed.
+	RowStateFinaleRowComplete RowStateKind = "finale_row_complete"
+
 	// RowStateSceneActive — the focus player's turn-scene is in progress
 	// (started, not yet ended). Step 4.
 	RowStateSceneActive RowStateKind = "scene_active"

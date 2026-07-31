@@ -207,6 +207,7 @@ func validateAndProcessScenePeers(
 // or nil for a blank-row / row-start scene. A non-zero statusCode + message
 // signals a precondition failure (mirrors validateAndProcessScenePeers).
 //
+//   - Explosive Finale, row 13                → block (that row has no scenes)
 //   - a plan is mid-resolution                → block (resolve it first)
 //   - no plan resolved yet, but plans pending → block (resolve the topmost
 //     plan before scening, per the per-row loop)
@@ -217,9 +218,20 @@ func validateAndProcessScenePeers(
 func validateSceneTiming(
 	ctx context.Context,
 	q *dbgen.Queries,
-	gameID int64,
-	currentRow int16,
+	game *dbgen.Game,
 ) (recent *dbgen.Plan, statusCode int, errMsg string) {
+	gameID, currentRow := game.ID, game.CurrentRow
+
+	// The mode's whole shape is "resolve plan after plan, then the Shake-Up"
+	// (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §5), so row 13 has no scene to set.
+	// ComputeRowState never offers one there either — this is the API-level half
+	// of the same rule, for the call that doesn't come through the UI.
+	if finaleRowNoScenes(game) {
+		return nil, http.StatusConflict,
+			"under an Explosive Finale row 13 has no scenes — its plans resolve one after " +
+				"another, and then the Shake-Up begins"
+	}
+
 	if _, err := q.GetResolvingPlanForGame(ctx, gameID); err == nil {
 		return nil, http.StatusConflict, "resolve the active plan before setting a scene"
 	}
@@ -275,7 +287,6 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "game is not in the main event phase")
 			return
 		}
-
 		var body struct {
 			LocationHoldingID *int64            `json:"location_holding_id"`
 			LocationCustom    string            `json:"location_custom"`
@@ -319,7 +330,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Enforce the rulebook ordering for setting a scene and recover the
 		// follow-scene source (the most-recently resolved plan on this row, if
 		// any). `recent` is reused below for the prompt + resolved_plan_id.
-		recent, statusCode, errMsg := validateSceneTiming(ctx, s.Q, gameRow.ID, gameRow.CurrentRow)
+		recent, statusCode, errMsg := validateSceneTiming(ctx, s.Q, gameRow)
 		if statusCode != 0 {
 			respondErr(w, statusCode, errMsg)
 			return
