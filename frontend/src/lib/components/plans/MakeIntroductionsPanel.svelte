@@ -483,7 +483,7 @@
 								suggestions={peerNameSuggestions[i] ?? []}
 								bind:value={peerNames[i]}
 								loading={peerNameSuggLoading}
-								customPlaceholder="Name, title, role…"
+								placeholder="Name, title, role…"
 								maxlength={TEXT_LIMITS.NAME}
 								onReroll={() => rerollPeerName(i)}
 								rerolling={peerNameRerolling === i}

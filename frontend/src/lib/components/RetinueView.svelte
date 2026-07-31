@@ -578,7 +578,7 @@
 										suggestions={addSuggestions}
 										bind:value={draftText}
 										loading={suggestionsLoading}
-										customPlaceholder="Write a marginalia…"
+										placeholder="Write a marginalia…"
 										multiline
 										onReroll={() => rerollAddSuggestions(asset)}
 										rerolling={addRerolling}

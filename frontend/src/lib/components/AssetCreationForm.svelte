@@ -116,7 +116,7 @@
 			suggestions={nameSuggestions}
 			bind:value={name}
 			loading={nameSuggLoading}
-			customPlaceholder="Name your new asset…"
+			placeholder="Name your new asset…"
 			maxlength={TEXT_LIMITS.NAME}
 			onReroll={rerollNames}
 			rerolling={nameRerolling}
@@ -130,7 +130,7 @@
 			suggestions={marginaliaSuggestions}
 			bind:value={marginalia}
 			loading={marginaliaSuggLoading}
-			customPlaceholder="A description, a function, a fun fact, or something more poetic…"
+			placeholder="A description, a function, a fun fact, or something more poetic…"
 			maxlength={TEXT_LIMITS.MARGINALIA}
 			multiline
 			onReroll={rerollMarginalia}

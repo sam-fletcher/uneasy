@@ -377,7 +377,8 @@
 										suggestions={cardSlot.suggestions}
 										bind:value={cardSlot.text}
 										loading={loadingSuggestions}
-										customPlaceholder={`Name your ${suitTypeLabel(cardSlot.suit)}`}
+										placeholder={`Name your ${suitTypeLabel(cardSlot.suit)}`}
+										maxlength={TEXT_LIMITS.NAME}
 										onReroll={() => rerollCardSuggestions(cardSlot)}
 										rerolling={rerollingSlotKey === cardStepKey(cardSlot.suit, cardSlot.value)}
 										disabled={submitting}
