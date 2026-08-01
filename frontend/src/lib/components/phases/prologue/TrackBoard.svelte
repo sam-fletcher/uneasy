@@ -200,7 +200,7 @@
 									{#each committedHeartsForPlayer(pid, t.id) as h}
 										<span
 											class="card-glyph small heart"
-											class:grey={!(bright.get(pid)?.has(h.card_id) ?? false)}
+											class:inert={!(bright.get(pid)?.has(h.card_id) ?? false)}
 											data-color="red"
 											title={(bright.get(pid)?.has(h.card_id) ?? false)
 												? 'doing work'
@@ -381,11 +381,9 @@
 		min-height: 1.05rem; /* matches a card row so empty/no-cards chips don't shrink */
 		align-items: center;
 	}
-	.card-glyph.grey {
-		opacity: 0.45;
-		background: var(--color-card-spent);
-		text-decoration: line-through;
-	}
+	/* .card-glyph.inert (the greyed/struck wasted heart) now lives in the
+	   shared cardGlyph.css — same recipe, same role as the choosing view's
+	   already-yours card. */
 
 	/* No wide variant: the phase column is a phone-width column at every
 	   viewport (≤440; docs/STYLE_GUIDE.md "Layout widths"), so the base

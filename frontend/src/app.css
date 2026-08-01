@@ -108,9 +108,23 @@
 	--green-700: #3d4d3d;
 	--green-950: #0a2a0a;
 
-	/* blue — attention: activity highlight (300) + calm info (500) */
-	--blue-300: #6dbfe0;
-	--blue-500: #6090c8;
+	/* blue — attention & opportunity: activity highlight, calm info, and the
+	   prologue steal marking. Filled out to a real ramp 2026-08-01 (see
+	   adr/009-design-tokens.md "Blue ramp, rev 2"): blue was a two-step stub
+	   from back when nothing much used it, and the two steps weren't even the
+	   same hue (300 sat at Lab 236°, 500 at 269°). That drift put blue-500
+	   ΔE 5.8 from --player-2 sapphire — under this ADR's own ΔE 6
+	   near-duplicate bar, against a player colour present in every game.
+	   Every step is now generated on the 300's established hue (Lab 235°),
+	   which both makes the family coherent and pulls it away from the
+	   sapphire: blue-500 is now ΔE 17.8 from it. blue-300 is unchanged —
+	   the incumbent already sat on the ramp, so there was nothing to fix. */
+	--blue-200: #abdff5;      /* chip text on the blue chip fill */
+	--blue-300: #6dbfe0;      /* attention cue on dark grounds (unchanged) */
+	--blue-500: #329cbe;      /* calm informational fill */
+	--blue-600: #076780;      /* dark attention ink on parchment grounds */
+	--blue-700: #215162;      /* chip/panel border */
+	--blue-950: #0c2933;      /* chip/panel fill */
 
 	/* violet — procedural, "resolution machinery in motion": roll voting,
 	   stage chips, prologue track */
@@ -179,7 +193,8 @@
 	--color-info: var(--blue-500);           /* informational */
 	--color-neutral: var(--neutral-500);     /* default/offline/unset state — status dots, disabled borders */
 	--color-leveraged: var(--orange-400);    /* spent/committed-but-refreshable: leveraged asset border + retinue badge */
-	--color-highlight: var(--blue-300);      /* prepare/row-activity cue: hover-prepare border + plan-count badge */
+	--color-highlight: var(--blue-300);      /* prepare/row-activity cue: hover-prepare border + plan-count badge; also the prologue steal ring on dark grounds */
+	--color-highlight-ink: var(--blue-600);  /* the same cue on PARCHMENT grounds — steal-ring border on a card face (blue's answer to --color-warning-border) */
 	--color-accent-dim: var(--gold-600);     /* outline/idle gold — MC-toggle idle state, successor crown */
 	--color-accent-bright: var(--gold-100);  /* pale bright gold — picked marginalia line, active face-chip */
 	--color-accent-muted: var(--gold-500);   /* dimmed gilt text — tones/laws/rumors button counts */
@@ -210,6 +225,9 @@
 	--color-chip-violet-bg: var(--violet-950);
 	--color-chip-violet-border: var(--violet-600);
 	--color-chip-violet-text: var(--violet-200);
+	--color-chip-blue-bg: var(--blue-950);      /* opportunity chips — prologue "N taken" recap tally */
+	--color-chip-blue-border: var(--blue-700);
+	--color-chip-blue-text: var(--blue-200);
 
 	/* ── Warm ledger ───────────────────────────────────────────────────────
 	   Ruling 7 (adr/COLOR_ROLES_PLAN.md): ledger warmth lives in the FRAME,

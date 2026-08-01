@@ -38,14 +38,34 @@
 	cursor: pointer;
 }
 
-/* Steal marking (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S1, colour revised Round
-   2): rings a glyph whose card is already in some player's hand, so claiming
-   that box steals the linked asset. Orange, not red — "claiming this takes
-   it from its holder" is a careful-now signal (the warning family's job),
-   not near-destruction (--color-danger/-muted ≡ at-risk, a different
-   concept). 1px border + 1px ring = 2px of visual weight with no layout
+/* Steal marking (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S1): rings a glyph whose
+   card sits in ANOTHER player's hand, so claiming that box takes the linked
+   asset from them.
+
+   Blue (attention), not orange (warning) — revised 2026-08-01. S1 picked red
+   and Round 2 softened it to orange, both reading the mark as a careful-now
+   signal; that was backwards. The ring marks the viewer's own opportunity —
+   a take is how you gain an asset someone else already built — so it belongs
+   to the attention family, alongside the prepare/activity cue. Nothing about
+   it is a hazard to the person seeing it.
+
+   Two tones, one per ground: --color-highlight-ink is the dark blue against
+   the parchment card face, --color-highlight the bright one against the dark
+   tile behind. 1px border + 1px ring = 2px of visual weight with no layout
    shift — a bare border-width bump would nudge sibling glyphs. */
 .card-glyph.held {
-	border-color: var(--color-warning-border);
-	box-shadow: 0 0 0 1px var(--color-warning);
+	border-color: var(--color-highlight-ink);
+	box-shadow: 0 0 0 1px var(--color-highlight);
+}
+
+/* Inert: this card does no work. Two sites, one role — a heart committed to a
+   track it can't move (TrackBoard, "wasted, would be refunded") and a
+   choosing-view card the viewer already holds (claiming it is a server-side
+   no-op, so that half of the tile yields nothing). Struck through rather than
+   merely dimmed: dim alone is the *claimed-tile* signal in the choosing grid,
+   and an inert card can sit on a tile that is still perfectly claimable. */
+.card-glyph.inert {
+	opacity: 0.45;
+	background: var(--color-card-spent);
+	text-decoration: line-through;
 }

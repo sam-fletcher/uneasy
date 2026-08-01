@@ -655,11 +655,14 @@
 		font-size: 0.78rem;
 		min-width: 0.6rem;
 	}
+	/* Blue chip trio, matching the choosing view's steal ring — a take is an
+	   opportunity, not a warning (this chip was orange to match the ring's old
+	   colour, and followed it here when the ring moved on 2026-08-01). */
 	.retinue-taken {
 		flex: none;
-		background: var(--color-warning-bg);
-		border: 1px solid var(--color-warning-border);
-		color: var(--color-warning);
+		background: var(--color-chip-blue-bg);
+		border: 1px solid var(--color-chip-blue-border);
+		color: var(--color-chip-blue-text);
 		font-size: 0.68rem;
 		padding: 0.1rem 0.4rem;
 		border-radius: 999px;

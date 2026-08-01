@@ -46,7 +46,17 @@
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import ClosingStage from './prologue/ClosingStage.svelte';
 	import { computeBrightHearts, cardRank } from '$lib/prologue/refund';
-	import { openCount, heldCardSet, stealPreview } from '$lib/prologue/choosing';
+	import {
+		openCount,
+		cardHoldStates,
+		ownedCardCount,
+		sheetTrackProfile,
+		stealPreview,
+		trackLabel,
+		assetTypeLabel,
+		SUIT_MEANINGS,
+		type CardHoldState,
+	} from '$lib/prologue/choosing';
 	import { notReadyPlayerIDs } from '$lib/prologue/closing';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 	import { playerColorByID } from '$lib/playerColor';
@@ -265,7 +275,13 @@
 		}
 	}
 
-	const heldCards = $derived(heldCardSet(cards));
+	// Viewer-relative, unlike the plain held-set it replaced: a card the viewer
+	// already holds is a dead slot, not a steal opportunity, and the tile has
+	// to say so at a glance rather than only inside the expansion.
+	const cardStates = $derived(cardHoldStates(cards, currentPlayerID));
+	function stateOf(suit: string, value: string): CardHoldState {
+		return cardStates.get(`${suit}::${value}`) ?? 'fresh';
+	}
 
 	// Current tile-grid column count, mirroring .tile-grid's container query
 	// (2 base / 3 when the column is ≥ 420 — the 440-cap region;
@@ -289,15 +305,8 @@
 		expandedBox = expandedBox === key ? null : key;
 	}
 
-	function cardTypeLabel(suit: string): string {
-		switch (suit) {
-			case 'C': return 'holding';
-			case 'D': return 'resource';
-			case 'S': return 'artifact';
-			case 'H': return 'peer';
-			default:  return 'asset';
-		}
-	}
+	// (suit → asset type now comes from choosing.ts's SUIT_MEANINGS, the same
+	// table that drives the legend and the sheet-header track profiles.)
 
 	// ── Choose a box ─────────────────────────────────────────────────────────
 	let activeClaim = $state<{ sheet: PrologueSheet; choice: PrologueSheet['choices'][number] } | null>(null);
@@ -554,11 +563,24 @@
 	{/if}
 {/snippet}
 
-{#snippet miniCard(value: string, suit: string, held = false)}
-	<span class="card-glyph" class:held data-color={suitColor(suit)}>
+{#snippet miniCard(value: string, suit: string, state: CardHoldState = 'fresh')}
+	<span
+		class="card-glyph"
+		class:held={state === 'steal'}
+		class:inert={state === 'mine'}
+		data-color={suitColor(suit)}
+	>
 		<span class="mc-value">{value}</span>
 		{@render suitSvg(suit)}
 	</span>
+{/snippet}
+
+<!-- A bare suit symbol on the page ground (no parchment card face), for the
+     sheet-header track profiles. Black suits take the body text colour —
+     .card-glyph's black is the page background, which only works against
+     parchment. Mirrors TrackBoard's .col-suit. -->
+{#snippet bareSuit(suit: string)}
+	<span class="bare-suit" data-color={suitColor(suit)}>{@render suitSvg(suit)}</span>
 {/snippet}
 
 <div class="prologue-view" bind:clientWidth={columnWidth}>
@@ -600,34 +622,46 @@
 			<h3>Your Retinue</h3>
 			<p class="prologue-subtext">
 				Each player will pick 3 tiles from the 3 categories below. 
-				Each tile creates an asset and grants two playing cards, 
-				which let you create <span class="steal-color">or steal</span> another asset.
+				Each tile creates an asset and grants 2 playing cards. 
+			</p>
+			<p class="prologue-subtext"> 
+				Playing cards let you create <span class="steal-color">or steal</span> another asset,
+				and improve your rank in either Power, Knowledge, or Esteem.
 			</p>
 			<p class="prologue-subtext"> 
 				You can edit your assets (including your main character) at any time in your player menu (top of the screen).
 			</p>
-			<div class="suit-legend">
-				<div class="suit-legend-item">
-					<span class="card-glyph legend-glyph" data-color="red">{@render suitSvg('H')}</span>
-					<span>Peer</span>
-				</div>
-				<div class="suit-legend-item">
-					<span class="card-glyph legend-glyph" data-color="black">{@render suitSvg('S')}</span>
-					<span>Artifact</span>
-				</div>
-				<div class="suit-legend-item">
-					<span class="card-glyph legend-glyph" data-color="red">{@render suitSvg('D')}</span>
-					<span>Resource</span>
-				</div>
-				<div class="suit-legend-item">
-					<span class="card-glyph legend-glyph" data-color="black">{@render suitSvg('C')}</span>
-					<span>Holding</span>
-				</div>
-			</div>
-			<div class="suit-legend-item held-legend">
-				<span class="card-glyph held legend-glyph" data-color="red">{@render suitSvg('H')}</span>
-				<span class="steal-color">Already held — claiming it steals that asset</span>
-			</div>
+			<!-- Every suit means two things at once: the asset it makes now, and
+			     the ranking track it feeds when the prologue ends. The legend used
+			     to teach only the first, while the track board below taught only
+			     the second — and the two readings collide (♠ makes an artifact but
+			     raises Esteem), so half a lesson was worse than none. -->
+			<table class="suit-legend">
+				<thead>
+					<tr>
+						<th scope="col">Suit</th>
+						<th scope="col">You make a…</th>
+						<th scope="col">Raises your…</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each SUIT_MEANINGS as m (m.suit)}
+						<tr>
+							<th scope="row">
+								<span class="card-glyph legend-glyph" data-color={suitColor(m.suit)}>
+									{@render suitSvg(m.suit)}
+								</span>
+							</th>
+							<td>{m.assetType}</td>
+							<td class:wild-cell={m.track == null}>{m.track ?? 'Wild — any track'}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+			<!-- No held/already-yours legend rows: both states are already spelled
+			     out in words inside the tile expansion ("Takes X from Y" /
+			     "You already hold X — nothing to take"), and repeating them here
+			     cost two lines of scroll on the screen we're trying to shorten. -->
 		</div>
 
 		<p class="muted-text small">Your turns: {myTurns} of 3</p>
@@ -636,6 +670,7 @@
 		<div class="sheet-accordion">
 			{#each sheets as sheet (sheet.type)}
 				{@const isOpen = openSheets.has(sheet.type)}
+				{@const profile = sheetTrackProfile(sheet)}
 				<section class="sheet-panel" class:open={isOpen}>
 					<button
 						type="button"
@@ -644,12 +679,23 @@
 						aria-controls={isOpen ? `sheet-body-${sheet.type}` : undefined}
 						onclick={(e: MouseEvent) => toggleSheetPanel(sheet.type, e.currentTarget as HTMLButtonElement)}
 					>
-						<span class="sheet-header-main">
-							<span class="sheet-name">{sheet.display_name}</span>
-							<span class="sheet-desc">{SHEET_DESCRIPTIONS[sheet.type]}</span>
+						<span class="sheet-name">{sheet.display_name}</span>
+						<!-- Which tracks this category feeds. Every sheet supplies
+						     exactly two of the three, so picking a category is already
+						     a ranking decision — and since all three panels start
+						     collapsed, these headers are the whole first screen.
+						     Only the ranked suits: hearts are on every sheet (the
+						     legend covers them) and the absent track is implied by the
+						     two that are named. Rides the title row, which frees the
+						     description to run full width below. -->
+						<span class="sheet-tracks">
+							{#each profile.tracks as s (s)}
+								<span class="track-tag">{@render bareSuit(s)}{trackLabel(s)}</span>
+							{/each}
 						</span>
 						<span class="sheet-open-count"><strong>{openCount(sheet, claims)}</strong> open</span>
 						<span class="sheet-caret" aria-hidden="true">▾</span>
+						<span class="sheet-desc">{SHEET_DESCRIPTIONS[sheet.type]}</span>
 					</button>
 					{#if isOpen}
 						{@const expandedIndex = sheet.choices.findIndex(c => `${sheet.type}::${c.name}` === expandedBox)}
@@ -663,6 +709,7 @@
 									{@const boxKey = `${sheet.type}::${choice.name}`}
 									{@const isExpanded = expandedBox === boxKey}
 									{@const tileID = `choice-${sheet.type}-${choice.name}`}
+									{@const ownedHere = ownedCardCount(choice, cardStates)}
 									<button
 										type="button"
 										id={tileID}
@@ -683,9 +730,24 @@
 											{/if}
 										</span>
 										<span class="choice-cards">
-											{@render miniCard(choice.cards[0].value, choice.cards[0].suit, heldCards.has(`${choice.cards[0].suit}::${choice.cards[0].value}`))}
-											{@render miniCard(choice.cards[1].value, choice.cards[1].suit, heldCards.has(`${choice.cards[1].suit}::${choice.cards[1].value}`))}
+											{@render miniCard(choice.cards[0].value, choice.cards[0].suit, stateOf(choice.cards[0].suit, choice.cards[0].value))}
+											{@render miniCard(choice.cards[1].value, choice.cards[1].suit, stateOf(choice.cards[1].suit, choice.cards[1].value))}
 										</span>
+										{#if existingClaim}
+											<!-- Claimed wins this slot outright. A claimed tile is often
+											     one whose cards you hold — claiming it is what put them in
+											     your hand — and "Both cards already yours" there reads as
+											     the *reason* the tile can't be picked, which is wrong: it
+											     can't be picked because it's taken. -->
+											<span class="choice-note">Claimed by {playerName(existingClaim.player_id)}</span>
+										{:else if ownedHere === 2}
+											<!-- Both cards are no-ops for this viewer, so the tile grants
+											     them the sheet asset and nothing else. Worth saying in
+											     words: two struck glyphs are easy to miss while scanning
+											     36 boxes, and the tile is still perfectly claimable, so
+											     it can't be dimmed the way a claimed tile is. -->
+											<span class="choice-note">Both cards already yours</span>
+										{/if}
 									</button>
 									{#if i === rowEnd}
 										{@const expChoice = sheet.choices[expandedIndex]}
@@ -702,10 +764,10 @@
 												{#each expChoice.cards as c}
 													{@const preview = stealPreview(c.suit, c.value, cards, assets, players)}
 													<div class="detail-card-row">
-														{@render miniCard(c.value, c.suit, preview != null)}
+														{@render miniCard(c.value, c.suit, stateOf(c.suit, c.value))}
 														<span class="detail-card-text">
 															{#if !preview}
-																Make a new {cardTypeLabel(c.suit)}
+																Make a new {assetTypeLabel(c.suit)}
 															{:else if expClaim}
 																<!-- Claimed tiles can never be claimed again, so describe
 																     where the card sits now instead of previewing a take
@@ -931,28 +993,52 @@
 		font-size: 0.9rem;
 		line-height: 1.4;
 	}
-	/* Orange warning family, not danger red (Round 2 of the redesign plan):
-	   stealing is a careful-now signal, not the at-risk/near-destruction one. */
-	.steal-color { color: var(--color-warning); }
+	/* Matches the steal ring on the card glyphs — blue/attention, because a
+	   take is an opportunity for the reader, not a warning to them. See the
+	   .card-glyph.held comment in shared/cardGlyph.css for the full reasoning. */
+	.steal-color { color: var(--color-highlight); }
 
+	/* Genuinely tabular (one row per suit, two independent readings per row),
+	   so a real table — the column headers are what make the second reading
+	   legible, and they carry to screen readers for free. */
 	.suit-legend {
-		display: grid;
-		grid-template-columns: repeat(2, auto);
-		gap: 0.4rem 1.5rem;
-	}
-	.suit-legend-item {
-		display: flex;
-		align-items: center;
-		gap: 0.45rem;
+		border-collapse: collapse;
+		/* Content-sized, not stretched: a full-width table pushes the three
+		   columns apart until the row stops reading as one statement. Shrunk
+		   to its contents, the block centres visibly and each row scans as
+		   "♣ → Holding → Power". */
+		width: max-content;
+		max-width: 100%;
+		margin-inline: auto;
 		font-size: 0.9rem;
 		color: var(--color-text-secondary);
+		text-align: left;
 	}
+	.suit-legend th,
+	.suit-legend td {
+		padding: 0.15rem 0.75rem 0.15rem 0;
+		font-weight: inherit;
+		vertical-align: middle;
+	}
+	.suit-legend th:last-child,
+	.suit-legend td:last-child { padding-right: 0; }
+	.suit-legend thead th {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+		padding-bottom: 0.3rem;
+	}
+	.suit-legend tbody td:last-child { color: var(--color-text); }
+	/* Hearts rank nothing on their own — they're declared as a suit later — so
+	   the cell reads as a note, not a track name. */
+	.suit-legend tbody td.wild-cell { color: var(--color-text-secondary); font-style: italic; }
+
 	.legend-glyph {
 		padding: 0.25rem 0.4rem;
 		font-size: 1rem;
 	}
 	.legend-glyph :global(.suit) { width: 1.15em; height: 1.15em; }
-	.held-legend { margin-top: 0.1rem; }
 
 	.sheet-accordion {
 		display: flex;
@@ -966,10 +1052,19 @@
 		min-width: 0;
 	}
 
+	/* Title row (name · tracks · count · caret), then the description across
+	   the full width beneath it. Putting the tracks up top and dropping the
+	   description out of the squeezed middle column is a net saving: the
+	   profile no longer needs a row of its own, and the description reflows
+	   wider, so each collapsed header lost a line rather than gaining one. */
 	.sheet-header {
-		display: flex;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto auto;
+		grid-template-areas:
+			'name tracks count caret'
+			'desc desc   desc  desc';
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.25rem 0.5rem;
 		width: 100%;
 		min-height: 44px;
 		padding: 0.55rem 0.7rem;
@@ -990,27 +1085,49 @@
 		border-bottom-left-radius: 0;
 		border-bottom-right-radius: 0;
 	}
-	.sheet-header-main {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		flex: 1;
-		min-width: 0;
-	}
-	.sheet-name { color: var(--color-accent); font-size: 0.95rem; }
+	.sheet-name { grid-area: name; color: var(--color-accent); font-size: 0.95rem; }
 	.sheet-desc {
+		grid-area: desc;
 		color: var(--color-text-secondary);
 		font-size: 0.78rem;
 		line-height: 1.3;
 	}
 	.sheet-open-count {
-		flex: none;
+		grid-area: count;
 		color: var(--color-text-muted);
 		font-size: 0.8rem;
 		white-space: nowrap;
 	}
+
+	/* Right-aligned against the open-count, so the three headers' profiles
+	   line up as a column the eye can compare down. */
+	.sheet-tracks {
+		grid-area: tracks;
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		align-items: center;
+		gap: 0.2rem 0.55rem;
+		font-size: 0.72rem;
+	}
+	.track-tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		color: var(--color-text-secondary);
+		white-space: nowrap;
+	}
+	.bare-suit {
+		display: inline-flex;
+		align-items: center;
+		line-height: 1;
+	}
+	.bare-suit[data-color='red'] { color: var(--color-suit-red); }
+	.bare-suit[data-color='black'] { color: var(--color-text); }
+	.bare-suit :global(.suit) { width: 0.85em; height: 0.85em; }
+
 	.sheet-caret {
-		flex: none;
+		grid-area: caret;
 		color: var(--color-accent);
 		font-size: 0.75rem;
 		/* Points right when collapsed; rotates down to ▾ on open. */
@@ -1098,6 +1215,12 @@
 
 	.choice-name { display: flex; align-items: center; gap: 0.25rem; color: var(--color-accent); line-height: 1.2; word-break: break-word; }
 	.choice-cards { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+	.choice-note {
+		color: var(--color-text-muted);
+		font-size: 0.7rem;
+		font-style: italic;
+		line-height: 1.2;
+	}
 
 	.card-glyph :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
 

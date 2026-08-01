@@ -51,6 +51,7 @@ tappability, not a new colour.
 | `--color-chip-green-*` | green-950 | green-700 | `--color-success` (green-300) |
 | `--color-chip-gold-*` | gold-850 | gold-700 | gold-200 |
 | `--color-chip-violet-*` | violet-950 | violet-600 | violet-200 |
+| `--color-chip-blue-*` | blue-950 | blue-700 | blue-200 |
 | warning (= the orange chip) | orange-900 | orange-700 | orange-200 |
 
 Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
@@ -64,8 +65,15 @@ Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
 - **red** — danger, which *includes* the at-risk game state (one concept);
   war; and `--color-suit-red` (red-600), which is bespoke and never merges.
 - **green** — success and tone-include.
-- **blue** — attention: `--color-highlight` (activity/prepare cue) and
-  `--color-info` (calm informational fill).
+- **blue** — attention *and* **opportunity**: `--color-highlight`
+  (activity/prepare cue, and the prologue steal ring on dark grounds),
+  `--color-highlight-ink` (the same cue on parchment grounds), `--color-info`
+  (calm informational fill). The steal marking moved here from orange on
+  2026-08-01 — a take is something the viewer stands to *gain*, so marking it
+  with the warning family told the wrong story — and the family was rebuilt
+  from two steps to six in the same pass (ADR-009 "Blue ramp, rev 2"). Use
+  `--color-highlight-ink`, not `--color-info`, for blue against a parchment
+  card face.
 - **violet** — procedural, "the machinery of resolution is in motion":
   roll voting, stage chips, the prologue track.
 

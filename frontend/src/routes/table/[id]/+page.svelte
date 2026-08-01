@@ -1658,7 +1658,12 @@
 		min-width: 5.5rem;
 		min-height: 44px;
 		padding: 0 1rem;
-		background: var(--color-info);
+		/* -ink, not --color-info: this is a filled button with white label text,
+		   and --color-info is a *fill against dark grounds*, not a ground for
+		   light text — white on it managed only 3.3:1 (AA needs 4.5 at this
+		   size). Caught during the 2026-08-01 blue retune, which would have
+		   nudged it to 3.2; the dark step fixes it outright at 6.4:1. */
+		background: var(--color-highlight-ink);
 		color: var(--white);
 		border: 1px solid rgba(255,255,255,0.12);
 		border-radius: 6px;
