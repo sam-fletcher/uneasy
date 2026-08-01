@@ -35,6 +35,18 @@ func ComputeWaitState(ctx context.Context, q *dbgen.Queries, gameID int64) (mode
 	if err != nil {
 		return model.WaitState{}, err
 	}
+	return computeWaitStateForGame(ctx, q, game)
+}
+
+// computeWaitStateForGame is ComputeWaitState with the game row already in hand,
+// for the caller that loads many at once — ListMyTables, which asks for a wait
+// state per table and would otherwise pay a GetGameByID per card on a page that
+// lists every table an account is in.
+//
+// Prefer ComputeWaitState everywhere else; handing over a preloaded row is only
+// safe when nothing between the read and this call mutates it.
+func computeWaitStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Game) (model.WaitState, error) {
+	gameID := game.ID
 
 	switch game.Phase {
 	case model.PhaseLobby:
@@ -56,7 +68,9 @@ func ComputeWaitState(ctx context.Context, q *dbgen.Queries, gameID int64) (mode
 		return model.WaitState{Phase: game.Phase, Kind: kind, ActingPlayerIDs: ids}, nil
 
 	case model.PhaseMainEvent:
-		rs, rErr := ComputeRowState(ctx, q, gameID)
+		// The game row is already loaded above; hand it over rather than let
+		// ComputeRowState re-read it.
+		rs, rErr := computeRowStateForGame(ctx, q, game)
 		if rErr != nil {
 			return model.WaitState{}, rErr
 		}

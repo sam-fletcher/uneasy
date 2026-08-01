@@ -14,6 +14,18 @@ SELECT * FROM players WHERE id = $1;
 -- name: GetPlayersByGame :many
 SELECT * FROM players WHERE game_id = $1 ORDER BY joined_at;
 
+-- name: ListPlayersByGames :many
+-- Rosters for several games at once, for the profile page's table list — that
+-- handler called GetPlayersByGame once per table, so a player in a dozen games
+-- paid a round trip per card just to render the seats.
+--
+-- Ordered by game then joined_at so each group arrives in exactly the order
+-- GetPlayersByGame returns; the caller groups in one pass. Keep the two
+-- orderings in step, since the roster order is the seat order the cards render.
+SELECT * FROM players
+WHERE game_id = ANY(sqlc.arg(game_ids)::BIGINT[])
+ORDER BY game_id, joined_at;
+
 -- name: ListPlayersByAccount :many
 SELECT p.*, g.join_code, g.phase
 FROM players p

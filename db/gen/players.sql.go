@@ -270,6 +270,50 @@ func (q *Queries) ListPlayersByAccount(ctx context.Context, accountID int64) ([]
 	return items, nil
 }
 
+const listPlayersByGames = `-- name: ListPlayersByGames :many
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players
+WHERE game_id = ANY($1::BIGINT[])
+ORDER BY game_id, joined_at
+`
+
+// Rosters for several games at once, for the profile page's table list — that
+// handler called GetPlayersByGame once per table, so a player in a dozen games
+// paid a round trip per card just to render the seats.
+//
+// Ordered by game then joined_at so each group arrives in exactly the order
+// GetPlayersByGame returns; the caller groups in one pass. Keep the two
+// orderings in step, since the roster order is the seat order the cards render.
+func (q *Queries) ListPlayersByGames(ctx context.Context, gameIds []int64) ([]Player, error) {
+	rows, err := q.db.Query(ctx, listPlayersByGames, gameIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Player{}
+	for rows.Next() {
+		var i Player
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.DisplayName,
+			&i.JoinedAt,
+			&i.IsFacilitator,
+			&i.TokenColor,
+			&i.SeatOrder,
+			&i.AccountID,
+			&i.ShakeUpTokens,
+			&i.LastReadPostID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setPlayerSeatOrder = `-- name: SetPlayerSeatOrder :exec
 UPDATE players SET seat_order = $2 WHERE id = $1
 `

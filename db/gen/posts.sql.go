@@ -46,6 +46,62 @@ func (q *Queries) CountUnreadPosts(ctx context.Context, arg CountUnreadPostsPara
 	return count, err
 }
 
+const countUnreadPostsByAccount = `-- name: CountUnreadPostsByAccount :many
+SELECT p.id AS viewer_id, COUNT(sp.id) AS unread_count
+FROM players p
+LEFT JOIN scene_posts sp
+  ON sp.game_id = p.game_id
+ AND sp.id > p.last_read_post_id
+ AND sp.author_id IS DISTINCT FROM p.id
+ AND (sp.author_id IS NOT NULL OR sp.severity >= $1::INTEGER)
+WHERE p.account_id = $2
+GROUP BY p.id
+`
+
+type CountUnreadPostsByAccountParams struct {
+	MinSeverity int32 `db:"min_severity" json:"min_severity"`
+	AccountID   int64 `db:"account_id" json:"account_id"`
+}
+
+type CountUnreadPostsByAccountRow struct {
+	ViewerID    int64 `db:"viewer_id" json:"viewer_id"`
+	UnreadCount int64 `db:"unread_count" json:"unread_count"`
+}
+
+// CountUnreadPosts for every table an account sits at, in one round trip — the
+// profile page's table list called the single-row form once per table.
+//
+// The unread rule MUST stay byte-for-byte identical to CountUnreadPosts above
+// (and to isUnreadPost() in the frontend): newer than that player's marker, not
+// authored by them, and either a player message or a system post at/above the
+// bookkeeping bar. Any change to one belongs in both.
+//
+// The (game, viewer, marker) triples are read straight off the players table
+// rather than passed in, because that is where the caller got them: its list is
+// ListPlayersByAccount, one row per table. The join is LEFT so a table with
+// nothing unread still returns a row with count 0 — the caller must see every
+// table it asked about, not only the ones with news. Keyed by player id, which
+// is unique per row of that list.
+func (q *Queries) CountUnreadPostsByAccount(ctx context.Context, arg CountUnreadPostsByAccountParams) ([]CountUnreadPostsByAccountRow, error) {
+	rows, err := q.db.Query(ctx, countUnreadPostsByAccount, arg.MinSeverity, arg.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountUnreadPostsByAccountRow{}
+	for rows.Next() {
+		var i CountUnreadPostsByAccountRow
+		if err := rows.Scan(&i.ViewerID, &i.UnreadCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createPlayerMessage = `-- name: CreatePlayerMessage :one
 
 INSERT INTO scene_posts (

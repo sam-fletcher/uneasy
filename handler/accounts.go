@@ -262,13 +262,50 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 			respondInternalErr(w, r, "could not list tables", err)
 			return
 		}
+		// Game rows, rosters and unread counts for every table up front. All
+		// three used to run once per table inside the loop, so a player in a
+		// dozen games paid three dozen round trips to render a page they open
+		// constantly — and the count grew with every table they joined.
+		gameIDs := make([]int64, 0, len(rows))
+		for _, row := range rows {
+			gameIDs = append(gameIDs, row.GameID)
+		}
+		games, err := s.Q.ListGamesByIDs(r.Context(), gameIDs)
+		if err != nil {
+			respondInternalErr(w, r, "could not load tables", err)
+			return
+		}
+		gameByID := make(map[int64]dbgen.Game, len(games))
+		for _, g := range games {
+			gameByID[g.ID] = g
+		}
+
+		allPlayers, err := s.Q.ListPlayersByGames(r.Context(), gameIDs)
+		if err != nil {
+			respondInternalErr(w, r, "could not list table players", err)
+			return
+		}
+		rosterByGame := make(map[int64][]dbgen.Player, len(rows))
+		for _, p := range allPlayers {
+			rosterByGame[p.GameID] = append(rosterByGame[p.GameID], p)
+		}
+
+		unreadRows, err := s.Q.CountUnreadPostsByAccount(r.Context(), dbgen.CountUnreadPostsByAccountParams{
+			AccountID:   acct.ID,
+			MinSeverity: model.SeverityDefault,
+		})
+		if err != nil {
+			respondInternalErr(w, r, "could not count unread posts", err)
+			return
+		}
+		unreadByPlayer := make(map[int64]int64, len(unreadRows))
+		for _, u := range unreadRows {
+			unreadByPlayer[u.ViewerID] = u.UnreadCount
+		}
+
 		out := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
-			roster, rErr := s.Q.GetPlayersByGame(r.Context(), row.GameID)
-			if rErr != nil {
-				respondInternalErr(w, r, "could not list table players", rErr)
-				return
-			}
+			roster := rosterByGame[row.GameID]
 			players := make([]map[string]any, 0, len(roster))
 			for _, p := range roster {
 				players = append(players, map[string]any{
@@ -280,8 +317,11 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 				})
 			}
 			waitingOn := []int64{}
-			if row.Phase != model.PhaseEnded {
-				ws, wErr := ComputeWaitState(r.Context(), s.Q, row.GameID)
+			// A game missing from the batch was deleted between the two reads;
+			// skip the wait state rather than fail the whole page for it.
+			game, haveGame := gameByID[row.GameID]
+			if row.Phase != model.PhaseEnded && haveGame {
+				ws, wErr := computeWaitStateForGame(r.Context(), s.Q, game)
 				if wErr != nil {
 					respondInternalErr(w, r, "could not compute wait state", wErr)
 					return
@@ -290,16 +330,11 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 					waitingOn = ws.ActingPlayerIDs
 				}
 			}
-			unread, uErr := s.Q.CountUnreadPosts(r.Context(), dbgen.CountUnreadPostsParams{
-				GameID:         row.GameID,
-				LastReadPostID: row.LastReadPostID,
-				ViewerID:       row.ID,
-				MinSeverity:    model.SeverityDefault,
-			})
-			if uErr != nil {
-				respondInternalErr(w, r, "could not count unread posts", uErr)
-				return
-			}
+			// Absent means the batch found nothing unread for this table, which
+			// is a real zero — the LEFT JOIN returns a row per player either
+			// way, so a missing key can only mean the player row vanished
+			// mid-request.
+			unread := unreadByPlayer[row.ID]
 			out = append(out, map[string]any{
 				"game_id":               row.GameID,
 				"join_code":             row.JoinCode,

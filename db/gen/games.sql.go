@@ -125,6 +125,53 @@ func (q *Queries) GetGameByJoinCode(ctx context.Context, joinCode string) (Game,
 	return i, err
 }
 
+const listGamesByIDs = `-- name: ListGamesByIDs :many
+SELECT id, join_code, created_at, facilitator_id, phase, current_row, focus_player_id, ending_mode, dummy_token_mode, prologue_ranking_step, shake_up_category, shake_up_step, throne_established, ending_vote_open FROM games WHERE id = ANY($1::BIGINT[])
+ORDER BY id
+`
+
+// The batched form of GetGameByID, for the profile page's table list — which
+// needs the full game row per table (ComputeWaitState dispatches on phase and
+// reads current_row / focus_player_id / shake_up_step) and was fetching them
+// one at a time. ListPlayersByAccount's join carries only join_code and phase,
+// which is not enough.
+//
+// Callers must handle a short result: an id that matches no row is absent.
+func (q *Queries) ListGamesByIDs(ctx context.Context, gameIds []int64) ([]Game, error) {
+	rows, err := q.db.Query(ctx, listGamesByIDs, gameIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Game{}
+	for rows.Next() {
+		var i Game
+		if err := rows.Scan(
+			&i.ID,
+			&i.JoinCode,
+			&i.CreatedAt,
+			&i.FacilitatorID,
+			&i.Phase,
+			&i.CurrentRow,
+			&i.FocusPlayerID,
+			&i.EndingMode,
+			&i.DummyTokenMode,
+			&i.PrologueRankingStep,
+			&i.ShakeUpCategory,
+			&i.ShakeUpStep,
+			&i.ThroneEstablished,
+			&i.EndingVoteOpen,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGamesNeedingNotificationReconcile = `-- name: ListGamesNeedingNotificationReconcile :many
 SELECT id FROM games WHERE phase != 'ended'
 UNION

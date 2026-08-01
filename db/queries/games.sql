@@ -9,6 +9,17 @@ UPDATE games SET facilitator_id = $1 WHERE id = $2;
 -- name: GetGameByID :one
 SELECT * FROM games WHERE id = $1;
 
+-- name: ListGamesByIDs :many
+-- The batched form of GetGameByID, for the profile page's table list — which
+-- needs the full game row per table (ComputeWaitState dispatches on phase and
+-- reads current_row / focus_player_id / shake_up_step) and was fetching them
+-- one at a time. ListPlayersByAccount's join carries only join_code and phase,
+-- which is not enough.
+--
+-- Callers must handle a short result: an id that matches no row is absent.
+SELECT * FROM games WHERE id = ANY(sqlc.arg(game_ids)::BIGINT[])
+ORDER BY id;
+
 -- name: GetGameByJoinCode :one
 SELECT * FROM games WHERE join_code = $1;
 

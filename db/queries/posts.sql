@@ -80,6 +80,31 @@ WHERE game_id = sqlc.arg(game_id)
   AND author_id IS DISTINCT FROM sqlc.arg(viewer_id)::BIGINT
   AND (author_id IS NOT NULL OR severity >= sqlc.arg(min_severity));
 
+-- name: CountUnreadPostsByAccount :many
+-- CountUnreadPosts for every table an account sits at, in one round trip — the
+-- profile page's table list called the single-row form once per table.
+--
+-- The unread rule MUST stay byte-for-byte identical to CountUnreadPosts above
+-- (and to isUnreadPost() in the frontend): newer than that player's marker, not
+-- authored by them, and either a player message or a system post at/above the
+-- bookkeeping bar. Any change to one belongs in both.
+--
+-- The (game, viewer, marker) triples are read straight off the players table
+-- rather than passed in, because that is where the caller got them: its list is
+-- ListPlayersByAccount, one row per table. The join is LEFT so a table with
+-- nothing unread still returns a row with count 0 — the caller must see every
+-- table it asked about, not only the ones with news. Keyed by player id, which
+-- is unique per row of that list.
+SELECT p.id AS viewer_id, COUNT(sp.id) AS unread_count
+FROM players p
+LEFT JOIN scene_posts sp
+  ON sp.game_id = p.game_id
+ AND sp.id > p.last_read_post_id
+ AND sp.author_id IS DISTINCT FROM p.id
+ AND (sp.author_id IS NOT NULL OR sp.severity >= sqlc.arg(min_severity)::INTEGER)
+WHERE p.account_id = sqlc.arg(account_id)
+GROUP BY p.id;
+
 -- name: FindAnchorPostByRow :one
 SELECT id FROM scene_posts
 WHERE game_id = $1 AND system_code = $2 AND row_number = $3

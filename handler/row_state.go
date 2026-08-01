@@ -54,6 +54,19 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 	if err != nil {
 		return model.RowState{}, err
 	}
+	return computeRowStateForGame(ctx, q, game)
+}
+
+// computeRowStateForGame is ComputeRowState with the game row already in hand.
+// It exists for the one caller that has just loaded it — ComputeWaitState, which
+// dispatches on game.Phase and would otherwise pay a second GetGameByID for the
+// row it is holding. That is once per main-event table on the profile page's
+// list, which loads every table an account is in.
+//
+// Prefer ComputeRowState everywhere else: passing a game read earlier in a
+// request is only safe because nothing between the two reads mutates it.
+func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Game) (model.RowState, error) {
+	gameID := game.ID
 	if game.Phase != model.PhaseMainEvent {
 		return model.RowState{Kind: model.RowStatePhaseNotMainEvent}, nil
 	}
