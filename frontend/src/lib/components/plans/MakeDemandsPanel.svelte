@@ -23,7 +23,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import {
-		PLAN_SHORT, playerName, parseResolutionData,
+		PLAN_SHORT, playerName, parseResolutionData, demandedPlanIDs,
 		DEMAND_OPTIONS, DEMAND_OPTION_LABELS, type DemandOption,
 	} from './shared';
 
@@ -53,19 +53,14 @@
 	// ── Prep ─────────────────────────────────────────────────────────────────
 
 	// A plan is targetable iff it is not own, not Make War, not another
-	// demand, not already resolved/cancelled, and not already targeted by an
-	// unresolved demand. Must stay in lockstep with the server-side filter in
+	// demand, still pending, has a row, and has not already spent its one
+	// demand slot (demandedPlanIDs — a resolved demand still holds it). Must
+	// stay in lockstep with the server-side filter in
 	// mdHandler.CheckPrepEligibility / ValidatePreparation
 	// (handler/plan_make_demands.go) — the eligibility endpoint uses that
 	// filter to grey out the Make Demands card when this list would be empty.
 	const targetablePlans = $derived.by(() => {
-		const targetedSet = new Set<number>();
-		for (const p of plans) {
-			if (p.plan_type !== 'make_demands') continue;
-			if (p.targeted_plan_id == null) continue;
-			if (p.status === 'resolved' || p.status === 'cancelled') continue;
-			targetedSet.add(p.targeted_plan_id);
-		}
+		const targetedSet = demandedPlanIDs(plans);
 		return plans.filter(p =>
 			p.plan_type !== 'make_demands' &&  // demand-on-demand: rejected server-side (Stage-4 routes can't service it)
 			p.plan_type !== 'make_war' &&
@@ -206,13 +201,7 @@
 	// plan the original demander prepares.
 	const counterTargetablePlans = $derived.by(() => {
 		if (!plan || !targetPlan) return [];
-		const targetedSet = new Set<number>();
-		for (const p of plans) {
-			if (p.plan_type !== 'make_demands') continue;
-			if (p.targeted_plan_id == null) continue;
-			if (p.status === 'resolved' || p.status === 'cancelled') continue;
-			targetedSet.add(p.targeted_plan_id);
-		}
+		const targetedSet = demandedPlanIDs(plans);
 		return plans.filter(p =>
 			p.preparer_id === plan!.preparer_id &&  // original demander's plans only
 			p.plan_type !== 'make_war' &&
@@ -244,10 +233,16 @@
 
 	// ── Complete ──────────────────────────────────────────────────────────────
 
+	// Gated on the ROLL outcome, not plan.result: plan.result stays null for the
+	// whole of a plan's 'resolving' life (the server writes it in the same
+	// statement that marks the plan resolved), so gating on it meant this button
+	// never rendered and the demand could never be completed. The backend's
+	// CanComplete had the same bug and now reads the outcome recorded in
+	// resolution_data — see adr/MAKE_DEMANDS_AUDIT.md, D1.
 	const canComplete = $derived.by(() => {
-		if (!plan || plan.result == null) return false;
-		if (plan.result === 'make') return draftComplete;
-		if (plan.result === 'mar') return counterPlaced;
+		if (!plan) return false;
+		if (rollOutcome === 'make') return draftComplete;
+		if (rollOutcome === 'mar') return counterPlaced;
 		return false;
 	});
 

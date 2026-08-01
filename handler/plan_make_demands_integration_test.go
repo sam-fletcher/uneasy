@@ -80,6 +80,56 @@ func TestMakeDemands_RejectAlreadyDemanded(t *testing.T) {
 	assert.Contains(t, errMsg, "another demand already targets")
 }
 
+// TestMakeDemands_RejectAlreadyDemanded_EvenWhenResolved: audit D4. A demand
+// that has already resolved still holds its target's one demand slot. Two plans
+// on a row have a full focus-player turn between them, so without this a third
+// player could prepare a second demand on the same still-pending target during
+// that turn; both would end up resolved+made, and DemandWinnersForTargetPlan —
+// first match in id order — would honour the older one, quietly throwing away
+// the second pair's four draft picks.
+//
+// Also guards the DB backstop: migration 053's uq_one_demand_per_target must
+// reject the insert even if the Go check is bypassed.
+func TestMakeDemands_RejectAlreadyDemanded_EvenWhenResolved(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 3)
+	ctx := context.Background()
+
+	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, 5)
+
+	// P3's demand against it has already resolved.
+	spent := createPlanOnRow(t, q, &tg.Game, &tg.Players[2],
+		model.PlanMakeDemands, model.CategoryPower, 5)
+	require.NoError(t, q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: spent.ID, TargetedPlanID: &target.ID,
+	}))
+	res := makeOutcome
+	require.NoError(t, q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
+		ID: spent.ID, Result: &res,
+	}))
+
+	vc := &ValidationContext{
+		Q: q, Game: &tg.Game, Player: &tg.Players[0], TargetPlanID: &target.ID,
+	}
+	_, errMsg := mdHandler{}.ValidatePreparation(ctx, vc)
+	assert.Contains(t, errMsg, "another demand already targets")
+
+	// The prep grid must agree, or the card offers a target that submit rejects.
+	eligible, _, err := mdHandler{}.CheckPrepEligibility(ctx, q, tg.Game.ID, tg.Players[0].ID)
+	require.NoError(t, err)
+	assert.False(t, eligible, "a spent target is not an eligible demand target")
+
+	// DB backstop: a second demand row pointing at the same target is refused.
+	second := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
+		model.PlanMakeDemands, model.CategoryPower, 5)
+	err = q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		ID: second.ID, TargetedPlanID: &target.ID,
+	})
+	require.Error(t, err, "uq_one_demand_per_target must reject the second demand")
+}
+
 func TestMakeDemands_RejectDemandTarget(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -108,16 +158,46 @@ func TestMakeDemands_CounterDemand_RejectDemandTarget(t *testing.T) {
 	tg := newTestGame(t, q, 3)
 	ctx := context.Background()
 
-	// P1 has an unresolved Make Demands plan; P0 tries to aim a counter-
-	// demand at it. The synthesis path must apply the same restriction as
-	// ValidatePreparation.
+	// P1 (the original demander) has an unresolved Make Demands plan; P0 tries
+	// to aim their counter-demand at it. The synthesis path must apply the same
+	// restriction as ValidatePreparation.
 	target := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
 		model.PlanMakeDemands, model.CategoryPower, 5)
 
 	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: hub.NewManager()}
-	_, errMsg, status := synthesizeCounterDemand(ctx, deps, &tg.Game, tg.Players[0].ID, target.ID)
+	_, errMsg, status := synthesizeCounterDemand(
+		ctx, deps, &tg.Game, tg.Players[0].ID, tg.Players[1].ID, target.ID)
 	assert.Contains(t, errMsg, "another demand")
 	assert.Equal(t, http.StatusBadRequest, status)
+}
+
+// TestMakeDemands_CounterDemand_RejectThirdPartyTarget: the rules put the
+// counter on "one of YOUR plans" — the original demander's. A plan belonging to
+// an uninvolved player is not a legal counter target (audit D3); the server used
+// to accept it, leaving the rule to the client's picker filter alone.
+func TestMakeDemands_CounterDemand_RejectThirdPartyTarget(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 4)
+	ctx := context.Background()
+
+	// P2 is uninvolved: not the demander (P1), not the counterer (P0).
+	thirdParty := createPlanOnRow(t, q, &tg.Game, &tg.Players[2],
+		model.PlanProposeDecree, model.CategoryPower, 5)
+
+	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: hub.NewManager()}
+	_, errMsg, status := synthesizeCounterDemand(
+		ctx, deps, &tg.Game, tg.Players[0].ID, tg.Players[1].ID, thirdParty.ID)
+	assert.Contains(t, errMsg, "may only target a plan prepared by")
+	assert.Equal(t, http.StatusBadRequest, status)
+
+	// The same call against the demander's own plan is accepted.
+	demanderPlan := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
+		model.PlanProposeDecree, model.CategoryPower, 6)
+	counter, errMsg, _ := synthesizeCounterDemand(
+		ctx, deps, &tg.Game, tg.Players[0].ID, tg.Players[1].ID, demanderPlan.ID)
+	require.Empty(t, errMsg, "the demander's own plan is a legal counter target")
+	assert.Equal(t, demanderPlan.ID, *counter.TargetedPlanID)
 }
 
 // ── CheckPrepEligibility (PrepEligibilityChecker hook) ────────────────────────
@@ -244,13 +324,14 @@ func TestMakeDemands_ImmediateCounterDemand(t *testing.T) {
 	tg := newTestGame(t, q, 3)
 	ctx := context.Background()
 
-	// P2 prepares a plan on row 7 that the counter-demand will target.
+	// P1 — the original demander, whose plans are the only legal counter
+	// targets — prepares a plan on row 7 that the counter-demand will target.
 	counterTarget := createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
 		model.PlanProposeDecree, model.CategoryPower, 7)
 
 	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: hub.NewManager()}
 	counter, errMsg, _ := synthesizeCounterDemand(ctx, deps, &tg.Game,
-		tg.Players[0].ID, counterTarget.ID)
+		tg.Players[0].ID, tg.Players[1].ID, counterTarget.ID)
 	assert.Empty(t, errMsg, "synthesize should succeed")
 	assert.NotNil(t, counter)
 
@@ -362,6 +443,11 @@ func newMDHTTPHarness(t *testing.T, n int) *mdHTTPHarness {
 		for route, fn := range h.ExtraRoutes(deps) {
 			rr.Post("/"+route, fn)
 		}
+		// The generic lifecycle endpoint, so the draft/counter tests can walk all
+		// the way to a resolved plan. Its absence is how D1 shipped: every route
+		// this harness mounted was an ExtraRoute, so nothing ever exercised
+		// CanComplete for this plan type.
+		rr.Post("/complete", CompletePlan(store, manager))
 	})
 	return &mdHTTPHarness{tg: tg, q: q, router: r, tokens: tokens}
 }
@@ -433,10 +519,96 @@ func seedResolvingDemand(
 		ID: roll.ID, Result: &res, Outcome: &outcome,
 	}))
 
+	// Stand in for finalizeRoll's tail. Resolving the roll row directly skips it,
+	// but in real play every roll passes through applyAutoChoiceOnRoll, which is
+	// what records the outcome on the demand (mdHandler.AutoApplyChoiceOnRoll) —
+	// and that recorded outcome is what CanComplete gates on. Seeding without it
+	// would leave these tests exercising a state the server never produces.
+	resolvedRoll, err := q.GetDiceRollByPlanID(ctx, &demand.ID)
+	require.NoError(t, err)
+	require.NoError(t, applyAutoChoiceOnRoll(ctx, q, hub.NewManager(), &resolvedRoll))
+
 	// Re-fetch the demand so callers see the updated status/targeted_plan_id.
 	reloaded, err := q.GetPlanByID(ctx, demand.ID)
 	require.NoError(t, err)
 	return target, reloaded
+}
+
+// TestMakeDemandsHTTP_CompleteAfterDraft walks the full made-demand lifecycle to
+// a RESOLVED plan: roll → four draft picks → /complete.
+//
+// This is the regression guard for audit D1. CanComplete used to gate on
+// plan.Result, which the server only ever writes in the same statement that sets
+// status='resolved' — so it was nil for every plan CompletePlan could be called
+// on, /complete always 409'd, and a demand sat in 'resolving' forever with the
+// row behind it frozen. It shipped because no test called /complete for this
+// plan type; the file's other HTTP tests stop at the sub-flow route.
+func TestMakeDemandsHTTP_CompleteAfterDraft(t *testing.T) {
+	h := newMDHTTPHarness(t, 3)
+	ctx := context.Background()
+	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "make")
+
+	// The outcome is recorded the moment the dice land, before any draft pick.
+	seeded, err := h.q.GetPlanByID(ctx, demand.ID)
+	require.NoError(t, err)
+	assert.Equal(t, makeOutcome, loadResolutionData(seeded.ResolutionData).MakeDemands.Outcome,
+		"AutoApplyChoiceOnRoll should record the outcome on the plan")
+
+	completePath := "/api/plans/" + itoa(demand.ID) + "/complete"
+
+	// Mid-draft the plan is not completable yet.
+	status, body := h.post(t, 0, completePath, nil)
+	assert.Equal(t, http.StatusConflict, status)
+	assert.Contains(t, body["error"], "draft incomplete")
+
+	draftPath := "/api/plans/" + itoa(demand.ID) + "/draft-choice"
+	for _, p := range []struct {
+		idx    int
+		option string
+	}{
+		{0, game.DemandOptionControlLeverage},
+		{1, game.DemandOptionKeepOrChangeTarget},
+		{0, game.DemandOptionKeepAssets},
+		{1, game.DemandOptionPerformSteps},
+	} {
+		st, b := h.post(t, p.idx, draftPath, map[string]any{"option": p.option})
+		require.Equal(t, http.StatusOK, st, "draft pick failed: %v", b)
+	}
+
+	status, body = h.post(t, 0, completePath, nil)
+	require.Equal(t, http.StatusOK, status, "completing a fully-drafted demand: %v", body)
+	assert.Equal(t, makeOutcome, body["result"])
+
+	resolved, err := h.q.GetPlanByID(ctx, demand.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status, "the demand must leave 'resolving'")
+	require.NotNil(t, resolved.Result)
+	assert.Equal(t, makeOutcome, *resolved.Result)
+}
+
+// TestMakeDemandsHTTP_CompleteAfterCounter is D1's marred half: the demand
+// completes once the target has placed or deferred their counter, and not before.
+func TestMakeDemandsHTTP_CompleteAfterCounter(t *testing.T) {
+	h := newMDHTTPHarness(t, 3)
+	ctx := context.Background()
+	_, demand := seedResolvingDemand(t, h.q, &h.tg, 0, 1, "mar")
+
+	completePath := "/api/plans/" + itoa(demand.ID) + "/complete"
+	status, body := h.post(t, 0, completePath, nil)
+	assert.Equal(t, http.StatusConflict, status, "no counter placed yet")
+	assert.Contains(t, body["error"], "counter-demand")
+
+	st, b := h.post(t, 1, "/api/plans/"+itoa(demand.ID)+"/counter-demand",
+		map[string]any{"target_plan_id": nil})
+	require.Equal(t, http.StatusOK, st, "deferring the counter: %v", b)
+
+	status, body = h.post(t, 0, completePath, nil)
+	require.Equal(t, http.StatusOK, status, "completing a countered demand: %v", body)
+	assert.Equal(t, marOutcome, body["result"])
+
+	resolved, err := h.q.GetPlanByID(ctx, demand.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status)
 }
 
 // TestMakeDemandsHTTP_DraftChoice_AcceptedAfterMakeRoll: a made demand

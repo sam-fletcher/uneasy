@@ -5,6 +5,15 @@ package game
 // MakeDemandsResolutionData holds Make Demands plan state stored inside the
 // plans.resolution_data JSON column, nested under the "make_demands" key.
 type MakeDemandsResolutionData struct {
+	// Outcome is the demand roll's result ("make"/"mar"), recorded by
+	// ApplyChoice the moment the dice land (mdHandler opts into
+	// AutoApplyChoiceOnRoll). It exists because CanComplete is a PURE
+	// function — no ctx, no queries — so it cannot look the roll up, and
+	// plans.result is unusable there: SetPlanResult writes it atomically
+	// with status='resolved', while CanComplete only ever runs on a plan
+	// still in 'resolving'. Gating on plans.result made the demand
+	// impossible to complete at all (audit D1).
+	Outcome string `json:"outcome,omitempty"`
 	// DraftChoices accumulates the four-pick alternating draft of demand
 	// options between preparer and target. Length 4 == complete.
 	DraftChoices []DraftChoice `json:"draft_choices,omitempty"`

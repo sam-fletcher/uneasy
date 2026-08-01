@@ -35,6 +35,17 @@ func TestDemandDifficulty_BaselineZero(t *testing.T) {
 	assert.Equal(t, int16(2), got)
 }
 
+func TestDemandDifficulty_CappedAtSix(t *testing.T) {
+	// Owner ruling (2026-07-30): difficulty can never be above 6. The worst
+	// case is a rank-5 demander against a rank-1 preparer (gap 4) whose plan
+	// already carries the maximum difficulty of 5 — 9 uncapped, and a roll's
+	// result is a count of distinct faces, so it would be unwinnable outright.
+	assert.Equal(t, int16(6), MakeDemandsDifficulty(5, 5, 1))
+	// Exactly 6 is untouched, and the cap never raises a lower difficulty.
+	assert.Equal(t, int16(6), MakeDemandsDifficulty(2, 5, 1))
+	assert.Equal(t, int16(5), MakeDemandsDifficulty(3, 4, 2))
+}
+
 func TestDemandPlacement_SlotsBeforeTarget(t *testing.T) {
 	// Demand lands on the target's row, taking the target's row_order so
 	// the target (and anything after it) gets shifted up by one — making

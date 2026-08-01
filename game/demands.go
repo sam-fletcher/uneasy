@@ -23,11 +23,20 @@ type DemandOptionWinners map[string]int64
 // targetDiff is the target plan's own (already computed) difficulty.
 // When the target plan's preparer outranks the demander (targetRank lower
 // than demanderRank in power), the gap is added; otherwise no bonus.
+//
+// The sum is capped at DiceSides (owner ruling, 2026-07-30: difficulty can
+// never be above 6). This is the only difficulty formula in the game that can
+// leave the rulebook's 1–6 band — every other one is bounded by construction,
+// but here a target plan's own difficulty stacks with a power gap of up to 4
+// (a rank-5 demander against a rank-1 preparer's Propose Duel reaches 9). A
+// roll's result is a count of distinct faces, so an uncapped difficulty is not
+// merely hard, it is unwinnable before the dice are picked up.
 func MakeDemandsDifficulty(targetDiff, demanderRank, targetRank int16) int16 {
+	diff := targetDiff
 	if targetRank < demanderRank {
-		return targetDiff + (demanderRank - targetRank)
+		diff += demanderRank - targetRank
 	}
-	return targetDiff
+	return min(diff, int16(DiceSides))
 }
 
 // DemandPlacement returns the (row_number, row_order) a demand should land

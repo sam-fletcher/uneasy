@@ -203,7 +203,8 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 
 		var counterPlanID *int64
 		if body.TargetPlanID != nil {
-			counter, errMsg, status := synthesizeCounterDemand(ctx, deps, &game, player.ID, *body.TargetPlanID)
+			counter, errMsg, status := synthesizeCounterDemand(
+				ctx, deps, &game, player.ID, plan.PreparerID, *body.TargetPlanID)
 			if errMsg != "" {
 				respondErr(w, status, errMsg)
 				return
@@ -278,7 +279,11 @@ func consumePendingCounterDemandFor(
 		return nil
 	}
 	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: manager}
-	counter, errMsg, _ := synthesizeCounterDemand(ctx, deps, game, pending.TargetPlayerID, newPlan.ID)
+	// The pending row is keyed on the demander, and it is their plan that just
+	// landed, so newPlan.PreparerID == pending.DemandingPlayerID by construction
+	// — the demander restriction is satisfied here rather than enforced.
+	counter, errMsg, _ := synthesizeCounterDemand(
+		ctx, deps, game, pending.TargetPlayerID, pending.DemandingPlayerID, newPlan.ID)
 	if errMsg != "" {
 		return nil
 	}
@@ -306,12 +311,22 @@ func consumePendingCounterDemandFor(
 
 // synthesizeCounterDemand creates a Make Demands plan owned by preparerID
 // targeting targetPlanID, bypassing token / eligibility / peer checks.
+//
+// demanderID is the player who made the demand that was marred — the ONLY
+// player whose plans a counter may be aimed at. The rules are explicit: "They
+// may immediately prepare Make Demands on one of YOUR plans on the public
+// record, or elect to Make Demands on the next plan you prepare"
+// (MAKE_DEMANDS_ALL_RULES.md §Mar). MakeDemandsPanel has always filtered its
+// picker to that player's plans, but the server accepted any plan in the game,
+// so a hand-rolled POST could counter an uninvolved third party (audit D3).
+//
 // Returns (plan, "", 0) on success, or (_, errMsg, httpStatus) on failure.
 func synthesizeCounterDemand(
 	ctx context.Context,
 	deps *PlanDeps,
 	game *dbgen.Game,
 	preparerID int64,
+	demanderID int64,
 	targetPlanID int64,
 ) (*dbgen.Plan, string, int) {
 	target, err := deps.Q.GetPlanByID(ctx, targetPlanID)
@@ -320,6 +335,10 @@ func synthesizeCounterDemand(
 	}
 	if target.GameID != game.ID {
 		return nil, "target plan is not in this game", http.StatusBadRequest
+	}
+	if target.PreparerID != demanderID {
+		return nil, "a counter-demand may only target a plan prepared by " +
+			playerPlainName(ctx, deps.Q, demanderID), http.StatusBadRequest
 	}
 	if target.Status == model.PlanResolved || target.Status == model.PlanCancelled {
 		return nil, "target plan is already resolved or cancelled", http.StatusConflict
@@ -332,6 +351,10 @@ func synthesizeCounterDemand(
 	if target.PlanType == model.PlanMakeDemands {
 		return nil, "demanding against another demand is not supported", http.StatusBadRequest
 	}
+	// Unreachable while demanderID != preparerID (the counterer is the target of
+	// the demand, who by ValidatePreparation is never its preparer), so the
+	// demander check above already implies this. Kept as a cheap invariant guard
+	// with a clearer message if that ever stops holding.
 	if target.PreparerID == preparerID {
 		return nil, "you cannot demand against your own plan", http.StatusBadRequest
 	}
@@ -339,10 +362,8 @@ func synthesizeCounterDemand(
 	if err != nil {
 		return nil, "could not check existing demands", http.StatusInternalServerError
 	}
-	for _, d := range existing {
-		if d.Status != model.PlanResolved && d.Status != model.PlanCancelled {
-			return nil, "another demand already targets that plan", http.StatusConflict
-		}
+	if mdAlreadyDemanded(existing) {
+		return nil, "another demand already targets that plan", http.StatusConflict
 	}
 
 	if target.RowNumber == nil {

@@ -171,6 +171,23 @@ export function demandWinnersFromPlan(demand: Plan): DemandWinners {
 	return winners;
 }
 
+/** IDs of every plan that already holds its one demand slot, so it can't be
+ * demanded against again. Mirrors `mdDemandBlocksTarget` in
+ * handler/plan_make_demands.go — a RESOLVED demand still holds the slot; only a
+ * cancelled one ("the plan never came together") releases it. Keep the two in
+ * lockstep: the server rejects the prepare and the DB's uq_one_demand_per_target
+ * index backs it, so anything this list misses becomes a failed submit. */
+export function demandedPlanIDs(allPlans: Plan[]): Set<number> {
+	const taken = new Set<number>();
+	for (const p of allPlans) {
+		if (p.plan_type !== 'make_demands') continue;
+		if (p.targeted_plan_id == null) continue;
+		if (p.status === 'cancelled') continue;
+		taken.add(p.targeted_plan_id);
+	}
+	return taken;
+}
+
 /** Find the resolved+made Make Demands plan (if any) targeting the given
  * plan. There is at most one such demand per target per backend invariant. */
 export function activeDemandAgainst(plan: Plan, allPlans: Plan[]): Plan | null {

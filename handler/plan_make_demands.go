@@ -107,16 +107,46 @@ func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	if err != nil {
 		return nil, "could not check existing demands"
 	}
-	for _, d := range existing {
-		if d.Status != model.PlanResolved && d.Status != model.PlanCancelled {
-			return nil, "another demand already targets that plan"
-		}
+	if mdAlreadyDemanded(existing) {
+		return nil, "another demand already targets that plan"
 	}
 	if target.RowNumber == nil {
 		return nil, "target plan has not been assigned a row yet (its delay reveal is still open)"
 	}
 	row, _ := gamepkg.DemandPlacement(*target.RowNumber, target.RowOrder)
 	return &row, ""
+}
+
+// mdDemandBlocksTarget reports whether a demand plan pointing at some target
+// uses up that target's single demand slot (design decision #5: one demand per
+// target plan, which "dramatically simplifies state").
+//
+// A RESOLVED demand still counts. It used not to, which left a real hole: two
+// plans sharing a row have a full focus-player turn between them (the rulebook's
+// own step 7), so once the first demand resolved a third player could prepare a
+// second one against the same still-pending target during that turn. Both would
+// then be resolved+made, and DemandWinnersForTargetPlan — which takes the first
+// match in id order — would honour the OLDER one, silently discarding four draft
+// picks the second pair had just made (audit D4).
+//
+// A CANCELLED demand does not count: 'cancelled' means the plan never came
+// together, so it never really claimed the slot. That branch is unreachable
+// today (only an overflowing Make War / Clandestinely Liaise delay reveal
+// cancels, and a demand always has a row), but it is the behaviour we want if
+// that ever changes.
+func mdDemandBlocksTarget(demand *dbgen.Plan) bool {
+	return demand.Status != model.PlanCancelled
+}
+
+// mdAlreadyDemanded reports whether any of the demands targeting a plan holds
+// its demand slot. demands is the GetPlansTargeting result for that plan.
+func mdAlreadyDemanded(demands []dbgen.Plan) bool {
+	for i := range demands {
+		if mdDemandBlocksTarget(&demands[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 // mdNoTargetReason is the reason PlanEligibility reports when Make Demands
@@ -130,7 +160,7 @@ const mdNoTargetReason = "no plan on the public record can be demanded against "
 // plan on the public record is a valid demand target for playerID. The filter
 // must stay in lockstep with the per-target checks in ValidatePreparation
 // above: pending status, an assigned row, not Make War, not another demand,
-// not the player's own, and not already targeted by an unresolved demand.
+// not the player's own, and not already holding a demand (mdDemandBlocksTarget).
 func (mdHandler) CheckPrepEligibility(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -141,11 +171,12 @@ func (mdHandler) CheckPrepEligibility(
 		return false, "", fmt.Errorf("list plans: %w", err)
 	}
 	targeted := map[int64]struct{}{}
-	for _, p := range plans {
+	for i := range plans {
+		p := &plans[i]
 		if p.PlanType != model.PlanMakeDemands || p.TargetedPlanID == nil {
 			continue
 		}
-		if p.Status == model.PlanResolved || p.Status == model.PlanCancelled {
+		if !mdDemandBlocksTarget(p) {
 			continue
 		}
 		targeted[*p.TargetedPlanID] = struct{}{}
@@ -218,17 +249,42 @@ func (mdHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, diff, plan.PreparerID)
 }
 
-// ApplyChoice records the result via the standard MakeChoice endpoint; the
-// draft itself flows through /draft-choice. On a marred demand, the counter-
-// demand window opens and is consumed via /counter-demand (Stage 5).
+// AutoApplyChoiceOnRoll opts Make Demands into recording its outcome the moment
+// the dice land, rather than waiting on a /make-choice call.
+//
+// A demand's post-roll step carries no option pick — a made demand opens the
+// four-pick draft, a marred one opens the counter-demand window, and both flow
+// through their own routes. So there is nothing for the demander to submit, and
+// MakeDemandsPanel never calls /make-choice. Without this hook ApplyChoice was
+// simply unreachable in normal play: the outcome went unrecorded and unlogged,
+// and the demand.resolved broadcast never fired (audit D8).
+func (mdHandler) AutoApplyChoiceOnRoll() bool {
+	return true
+}
+
+// ApplyChoice records the roll's outcome on the plan so CanComplete can gate on
+// it, then announces it. The draft itself flows through /draft-choice; on a
+// marred demand the counter-demand window opens and is consumed via
+// /counter-demand (Stage 5).
+//
+// Idempotent, as the AutoApplyChoiceOnRoll contract requires: the recorded
+// outcome doubles as the "already announced" flag, so a second call (a manual
+// /make-choice after the automatic one) re-broadcasts nothing and re-logs
+// nothing. resData is the caller's copy and is persisted by the caller.
 func (mdHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	_ *ResolutionData,
+	resData *ResolutionData,
 	_ []string,
 	result string,
 ) error {
+	md := resData.EnsureMakeDemands()
+	if md.Outcome != "" {
+		return nil
+	}
+	md.Outcome = result
+
 	if h, ok := deps.Manager.Get(plan.GameID); ok {
 		h.BroadcastEvent(demandEventResolved, map[string]any{
 			"plan_id": plan.ID,
@@ -342,23 +398,29 @@ func mdLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 		map[string]any{"plan_id": plan.ID})
 }
 
-func (mdHandler) CanComplete(plan *dbgen.Plan, resData *ResolutionData) error {
-	if plan.Result == nil {
-		return errors.New("demand has no result yet")
-	}
+// CanComplete gates the demand on its post-roll sub-flow: a made demand needs
+// all four draft options picked, a marred one needs the counter-demand placed
+// or deferred.
+//
+// It reads the outcome from resolution_data, NOT from plan.Result. plan.Result
+// is nil for the whole of a plan's 'resolving' life — SetPlanResult writes it
+// in the same statement that flips status to 'resolved' — so the old
+// plan.Result gate could never pass and the demand could never be completed at
+// all, stranding the row forever (audit D1). MakeDemandsResolutionData.Outcome
+// is written by ApplyChoice when the dice land; see AutoApplyChoiceOnRoll.
+func (mdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	md := resData.MakeDemands
-	switch *plan.Result {
+	if md == nil || md.Outcome == "" {
+		return errors.New("the demand's roll has not resolved yet")
+	}
+	switch md.Outcome {
 	case makeOutcome:
-		if md == nil || len(md.DraftChoices) < 4 {
-			n := 0
-			if md != nil {
-				n = len(md.DraftChoices)
-			}
-			return fmt.Errorf("draft incomplete: %d of 4 options picked", n)
+		if len(md.DraftChoices) < 4 {
+			return fmt.Errorf("draft incomplete: %d of 4 options picked", len(md.DraftChoices))
 		}
 	case marOutcome:
-		if md == nil || !md.CounterDemandPlaced {
-			return errors.New("target must place or waive the counter-demand before completing")
+		if !md.CounterDemandPlaced {
+			return errors.New("the target must place or defer their counter-demand before completing")
 		}
 	}
 	return nil
