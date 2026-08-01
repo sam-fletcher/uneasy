@@ -51,6 +51,25 @@ import (
 	appMiddleware "uneasy/middleware"
 )
 
+// compressLevel is the gzip level for API JSON and static assets. 5 is the
+// usual server default: within a couple of percent of gzip -9 on text at a
+// fraction of the CPU, which matters on a shared-CPU host.
+const compressLevel = 5
+
+// Cache-Control values for the embedded frontend. SvelteKit content-hashes
+// everything under /_app/immutable/, so those URLs can never change meaning
+// and are safe to pin for a year. Fonts are *not* hashed (they ship from
+// static/), so they get a month — long enough to stop the re-download, short
+// enough that swapping a typeface isn't a year-long cache poisoning.
+// Everything else revalidates: index.html because a stale one points at
+// asset hashes that no longer exist after a redeploy, and service-worker.js
+// because a cached service worker is close to unrecoverable in the field.
+const (
+	cacheImmutable  = "public, max-age=31536000, immutable"
+	cacheFonts      = "public, max-age=2592000"
+	cacheRevalidate = "no-cache"
+)
+
 const (
 	timeOutRead     = 15 * time.Second
 	timeOutReqest   = 30 * time.Second
@@ -283,6 +302,15 @@ func setupRouter(
 		// so a misbehaving client can't tie up a goroutine indefinitely.
 		r.Group(func(r chi.Router) {
 			r.Use(chimiddleware.Timeout(timeOutReqest))
+			// gzip the JSON responses. Scoped to this group rather than the
+			// outer /api Route for the same reason as the timeout: the
+			// WebSocket route must not run under it. chi's
+			// compressResponseWriter does forward Hijack to the underlying
+			// writer, so wrapping the upgrade would probably work — but
+			// "probably" is a bad bet against a broken upgrade taking every
+			// live table down, and the 101 response has no body to compress
+			// anyway.
+			r.Use(chimiddleware.Compress(compressLevel))
 			// Body size cap. Scoped to this group (not the outer /api Route)
 			// so the WebSocket route above is unaffected.
 			r.Use(appMiddleware.BodyLimit)
@@ -501,20 +529,50 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 		return fmt.Errorf("register .webmanifest mime type: %w", err)
 	}
 	fileServer := http.FileServer(http.FS(sub))
-	r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	// gzip the JS/CSS/HTML on the way out. Without this the table page ships
+	// ~626KB of uncompressed JS+CSS; gzipped it's ~170KB. Vite's dev server
+	// does its own compression, which is why this only ever bit in production.
+	compress := chimiddleware.Compress(compressLevel)
+	static := compress(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		// SPA fallback: if the requested path doesn't exist in the embed,
 		// serve index.html so client-side routing can take over.
 		path := strings.TrimPrefix(req.URL.Path, "/")
 		if path == "" {
 			path = "index.html"
 		}
+		served := path
 		if _, err := fs.Stat(sub, path); err != nil {
 			req = req.Clone(req.Context())
 			req.URL.Path = "/"
+			served = "index.html"
 		}
+		// Keyed off what we're actually serving, not what was asked for. A
+		// request for a hashed asset that isn't in this build falls through to
+		// index.html above, and marking *that* immutable would pin a stale
+		// index in the browser for a year — the redeploy failure mode in
+		// docs, but permanent.
+		w.Header().Set("Cache-Control", cacheControlFor(served))
 		fileServer.ServeHTTP(w, req)
 	}))
+	r.Handle("/*", static)
 	return nil
+}
+
+// cacheControlFor returns the Cache-Control value for an embed-relative path.
+//
+// This exists because http.FileServer over an embed.FS emits no cache
+// validators at all: embedded files report a zero ModTime, so ServeContent
+// skips Last-Modified, and there's no ETag either. With nothing to revalidate
+// against, every browser re-downloaded the whole bundle on every single load.
+func cacheControlFor(path string) string {
+	switch {
+	case strings.HasPrefix(path, "_app/immutable/"):
+		return cacheImmutable
+	case strings.HasPrefix(path, "fonts/"):
+		return cacheFonts
+	default:
+		return cacheRevalidate
+	}
 }
 
 // tooManyAttempts is the httprate limit-exceeded handler for the credential
