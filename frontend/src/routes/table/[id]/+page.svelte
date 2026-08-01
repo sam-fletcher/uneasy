@@ -8,7 +8,7 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import {
 		getGameState, getMe,
-		updateToneTopic, addToneTopic,
+		updateToneTopic, addToneTopic, listToneTopics,
 		listAssets, getFullRecord,
 		getActiveRollForGame, listBankedDice,
 		listPlans, listPlanTokens,
@@ -664,19 +664,52 @@
 
 	const toneCycle: ToneTopic['status'][] = ['default', 'include', 'avoid_detail', 'never'];
 
-	async function onTopicStatusChange(topicID: number, status: string) {
-		toneError = '';
-		try {
-			await updateToneTopic(gameID, topicID, status as ToneTopic['status']);
-		} catch (e) {
-			toneError = e instanceof Error ? e.message : 'Could not update topic.';
-		}
+	/** Per-topic write queue — see cycleTopicStatus. */
+	const toneWrites = new Map<number, Promise<void>>();
+
+	function setToneStatus(topicID: number, status: ToneTopic['status']) {
+		toneTopics = toneTopics.map(t => (t.id === topicID ? { ...t, status } : t));
 	}
 
 	async function cycleTopicStatus(topic: ToneTopic) {
-		const idx = toneCycle.indexOf(topic.status);
-		const next = toneCycle[(idx + 1) % toneCycle.length];
-		await onTopicStatusChange(topic.id, next);
+		// Read the status off the live array rather than the `topic` argument.
+		// The argument is a snapshot from render, and with the queue below a
+		// second tap can be handled before the first one's request resolves.
+		const current = toneTopics.find(t => t.id === topic.id)?.status ?? topic.status;
+		const next = toneCycle[(toneCycle.indexOf(current) + 1) % toneCycle.length];
+
+		// Recolour first, ask the server after. The tile used to change only
+		// when the tone.updated broadcast came back, which is six sequential
+		// DB round trips and two network hops away — ~300ms against a warm
+		// database and over a second against a suspended one. Because
+		// `.tone-tile:active` fires instantly, that gap read as the tile
+		// registering the tap and then ignoring it.
+		setToneStatus(topic.id, next);
+		toneError = '';
+
+		// Tiles that repaint instantly invite tapping three times in a row,
+		// and three overlapping PUTs for one topic can be applied out of
+		// order — leaving the server, and everyone else's broadcast, on a
+		// status the tapper never stopped on. Chaining per topic keeps each
+		// tile's writes in the order the player made them. Keyed by topic so
+		// tapping different tiles stays fully parallel.
+		const run = (toneWrites.get(topic.id) ?? Promise.resolve())
+			.then(() => updateToneTopic(gameID, topic.id, next))
+			.then(() => { /* the broadcast echoes our own value back; already painted */ })
+			.catch(async (e) => {
+				toneError = e instanceof Error ? e.message : 'Could not update topic.';
+				// Resync rather than roll back to `current`. A rollback would
+				// be guesswork once taps are queued or another player's
+				// broadcast has landed mid-flight; the server's list is the
+				// one answer that's right in every case. Best-effort: if this
+				// fails too the player is offline, and the error above already
+				// says the change didn't stick.
+				try {
+					toneTopics = (await listToneTopics(gameID)).topics;
+				} catch { /* keep the optimistic value; the next resync corrects it */ }
+			});
+		toneWrites.set(topic.id, run);
+		await run;
 	}
 
 	async function submitNewTopic() {
