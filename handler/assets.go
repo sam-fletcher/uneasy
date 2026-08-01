@@ -165,9 +165,19 @@ func ListAssets(s *db.Store) http.HandlerFunc {
 			secretCountByAsset[c.AssetID] = c.SecretCount
 		}
 
+		// Marginalia for every asset in one query, same as the secret counts
+		// above. This was a per-asset ListMarginaliaByAsset call — 20 extra
+		// round trips in a five-player game, on the table-load path, growing
+		// with every asset the game creates.
+		margRows, _ := s.Q.ListMarginaliaByGame(r.Context(), gameID)
+		marginaliaByAsset := make(map[int64][]dbgen.Marginalium, len(assets))
+		for _, m := range margRows {
+			marginaliaByAsset[m.AssetID] = append(marginaliaByAsset[m.AssetID], m)
+		}
+
 		result := make([]assetWithMarginalia, 0, len(assets))
 		for _, a := range assets {
-			marginalia, _ := s.Q.ListMarginaliaByAsset(r.Context(), a.ID)
+			marginalia := marginaliaByAsset[a.ID]
 			if marginalia == nil {
 				marginalia = []dbgen.Marginalium{}
 			}

@@ -790,6 +790,52 @@ func (q *Queries) ListMarginaliaByAsset(ctx context.Context, assetID int64) ([]M
 	return items, nil
 }
 
+const listMarginaliaByGame = `-- name: ListMarginaliaByGame :many
+SELECT m.id, m.asset_id, m.position, m.text, m.is_torn, m.torn_at, m.torn_by_id, m.title
+FROM marginalia m
+JOIN assets a ON a.id = m.asset_id
+WHERE a.game_id = $1
+ORDER BY m.asset_id, m.position
+`
+
+// Every marginalium in a game, for the enriched asset list. The sibling of
+// CountSecretsByGame, and there for the same reason: ListAssets used to call
+// ListMarginaliaByAsset once per asset, which is 20 extra round trips in a
+// five-player game and grows for as long as the game does.
+//
+// Filters nothing — not torn marginalia, not destroyed assets' notes. This is
+// the display path, which renders both (tombstone cards, struck notes), so it
+// must match what per-asset ListMarginaliaByAsset returned. Ordered by asset
+// then position so the caller can group in one pass.
+func (q *Queries) ListMarginaliaByGame(ctx context.Context, gameID int64) ([]Marginalium, error) {
+	rows, err := q.db.Query(ctx, listMarginaliaByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Marginalium{}
+	for rows.Next() {
+		var i Marginalium
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetID,
+			&i.Position,
+			&i.Text,
+			&i.IsTorn,
+			&i.TornAt,
+			&i.TornByID,
+			&i.Title,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMarginaliaTextByGame = `-- name: ListMarginaliaTextByGame :many
 SELECT m.text
 FROM marginalia m

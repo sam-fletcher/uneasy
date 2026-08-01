@@ -590,9 +590,9 @@ func tooManyAttempts(w http.ResponseWriter, _ *http.Request) {
 const sessionCleanupInterval = 24 * time.Hour
 
 // expireSessionsDaily deletes year-stale sessions once a day for the life of
-// the process. TouchSession bumps last_seen on every authenticated request,
-// so an active player's session is never touched by this — only sessions
-// abandoned for a full year are removed.
+// the process. EnsureSession bumps last_seen at most hourly (see
+// middleware.sessionTouchInterval), so an active player's session is never
+// touched by this — only sessions abandoned for a full year are removed.
 func expireSessionsDaily(logger *slog.Logger, store *db.Store) {
 	ticker := time.NewTicker(sessionCleanupInterval)
 	defer ticker.Stop()

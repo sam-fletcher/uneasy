@@ -163,6 +163,22 @@ RETURNING *;
 -- name: ListMarginaliaByAsset :many
 SELECT * FROM marginalia WHERE asset_id = $1 ORDER BY position;
 
+-- name: ListMarginaliaByGame :many
+-- Every marginalium in a game, for the enriched asset list. The sibling of
+-- CountSecretsByGame, and there for the same reason: ListAssets used to call
+-- ListMarginaliaByAsset once per asset, which is 20 extra round trips in a
+-- five-player game and grows for as long as the game does.
+--
+-- Filters nothing — not torn marginalia, not destroyed assets' notes. This is
+-- the display path, which renders both (tombstone cards, struck notes), so it
+-- must match what per-asset ListMarginaliaByAsset returned. Ordered by asset
+-- then position so the caller can group in one pass.
+SELECT m.*
+FROM marginalia m
+JOIN assets a ON a.id = m.asset_id
+WHERE a.game_id = $1
+ORDER BY m.asset_id, m.position;
+
 -- name: ListMarginaliaTextByGame :many
 -- All marginalia text in a game (across every asset, torn or not), for
 -- deduping suggestion pools so players aren't offered an example already in

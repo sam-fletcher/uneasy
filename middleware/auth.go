@@ -4,6 +4,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"time"
 
 	dbgen "uneasy/db/gen"
 )
@@ -25,10 +26,25 @@ type Account struct {
 	NotifyCadenceHours *int16
 }
 
+// sessionTouchInterval is how stale last_seen may get before EnsureSession
+// writes it back.
+//
+// last_seen has exactly one consumer: the 365-day session expiry, enforced by
+// GetSessionWithAccount's WHERE clause and swept by DeleteExpiredSessions.
+// Nothing renders it and nothing else reads it — presence is tracked
+// separately, in the hub. So bumping it on every single authenticated request
+// bought no accuracy that anything could observe, while costing a synchronous
+// Postgres WRITE on every request, including reads. An hour of slack against a
+// 365-day window is immaterial to the expiry, and drops those writes by
+// something like three orders of magnitude on an active table — which matters
+// twice over on a serverless database billed by compute time.
+const sessionTouchInterval = time.Hour
+
 // EnsureSession reads the player_token cookie on every request. If a valid
 // session exists, the associated account is stored in the request context
-// and last_seen is bumped. Never rejects requests — handlers gate access
-// explicitly via AccountFromContext / LoadPlayer.
+// and last_seen is bumped (at most once per sessionTouchInterval). Never
+// rejects requests — handlers gate access explicitly via AccountFromContext /
+// LoadPlayer.
 func EnsureSession(q *dbgen.Queries) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +57,13 @@ func EnsureSession(q *dbgen.Queries) func(http.Handler) http.Handler {
 			ctx := r.Context()
 			row, err := q.GetSessionWithAccount(ctx, cookie.Value)
 			if err == nil {
-				_ = q.TouchSession(ctx, cookie.Value)
+				// GetSessionWithAccount already returned last_seen, so the
+				// staleness check needs no extra round trip. A zero/invalid
+				// timestamp reads as infinitely stale and writes, which is the
+				// safe direction: worst case we do what the old code always did.
+				if !row.LastSeen.Valid || time.Since(row.LastSeen.Time) > sessionTouchInterval {
+					_ = q.TouchSession(ctx, cookie.Value)
+				}
 				ctx = context.WithValue(ctx, accountKey, &Account{
 					ID:                 row.AID,
 					Username:           row.Username,

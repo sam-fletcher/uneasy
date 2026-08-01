@@ -882,3 +882,109 @@ func TestListAllAssetsByGame_IncludesDestroyed_GameplayQueriesExclude(t *testing
 	assert.True(t, ownerIDs[live.ID], "live asset in owner query")
 	assert.False(t, ownerIDs[dead.ID], "destroyed asset must NOT be in owner query")
 }
+
+// ListMarginaliaByGame is the one-query replacement for the per-asset
+// ListMarginaliaByAsset loop that ListAssets used to run (20+ round trips in
+// a five-player game). It has to be a drop-in: same rows, same grouping, same
+// order, and the same lack of filtering — the retinue is a display path that
+// renders torn notes struck through and destroyed assets as tombstones, so
+// neither may be dropped here.
+//
+// Asserted against ListMarginaliaByAsset directly rather than against literals,
+// so the two can never drift apart.
+func TestListMarginaliaByGame_MatchesPerAssetLoop(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	mk := func(owner int64, name string) dbgen.Asset {
+		a, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID:          tg.Game.ID,
+			OwnerID:         owner,
+			CreatorID:       owner,
+			AssetType:       model.AssetPeer,
+			Name:            name,
+			IsMainCharacter: false,
+		})
+		require.NoError(t, err)
+		return a
+	}
+	note := func(assetID int64, pos int16, text string) dbgen.Marginalium {
+		m, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+			AssetID: assetID, Position: pos, Text: text,
+		})
+		require.NoError(t, err)
+		return m
+	}
+
+	// Two owners, so grouping can't accidentally pass by everything sharing one.
+	plain := mk(tg.Players[0].ID, "Plain")
+	multi := mk(tg.Players[1].ID, "Multi")
+	torn := mk(tg.Players[0].ID, "HasTornNote")
+	destroyed := mk(tg.Players[1].ID, "Destroyed")
+	bare := mk(tg.Players[0].ID, "NoNotes") // must survive as an empty group
+
+	note(plain.ID, 1, "only note")
+
+	// Inserted out of position order: the query must sort, not echo insert order.
+	note(multi.ID, 3, "third")
+	note(multi.ID, 1, "first")
+	note(multi.ID, 2, "second")
+
+	tornNote := note(torn.ID, 1, "will be torn")
+	note(torn.ID, 2, "stays intact")
+	_, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{
+		ID: tornNote.ID, TornByID: &tg.Players[1].ID,
+	})
+	require.NoError(t, err)
+
+	note(destroyed.ID, 1, "note on a tombstone")
+	require.NoError(t, q.DestroyAsset(ctx, destroyed.ID))
+
+	// The one query, grouped exactly as the handler groups it.
+	all, err := q.ListMarginaliaByGame(ctx, tg.Game.ID)
+	require.NoError(t, err)
+	got := make(map[int64][]dbgen.Marginalium)
+	for _, m := range all {
+		got[m.AssetID] = append(got[m.AssetID], m)
+	}
+
+	for _, a := range []dbgen.Asset{plain, multi, torn, destroyed, bare} {
+		want, err := q.ListMarginaliaByAsset(ctx, a.ID)
+		require.NoError(t, err)
+		// A missing map key is nil where the per-asset query returned an empty
+		// slice. The handler normalizes that (nil would serialize as JSON null
+		// instead of [], which the retinue can't render), so compare what it
+		// actually emits rather than the raw lookup.
+		have := got[a.ID]
+		if have == nil {
+			have = []dbgen.Marginalium{}
+		}
+		assert.Equal(t, want, have, "asset %q (id %d) must match the per-asset query exactly", a.Name, a.ID)
+	}
+
+	// Spell out the properties the equality check above would also satisfy if
+	// *both* queries broke in the same direction.
+	assert.Len(t, got[multi.ID], 3, "multi keeps all three notes")
+	assert.Equal(t, []string{"first", "second", "third"},
+		[]string{got[multi.ID][0].Text, got[multi.ID][1].Text, got[multi.ID][2].Text},
+		"ordered by position, not insertion order")
+	assert.Len(t, got[torn.ID], 2, "a torn note is still returned (rendered struck through)")
+	assert.Len(t, got[destroyed.ID], 1, "a destroyed asset's notes still reach the tombstone card")
+	assert.Empty(t, got[bare.ID], "an asset with no notes groups to nothing")
+
+	// Scoped to the game: another game's notes must not bleed in.
+	other := newTestGame(t, q, 2)
+	otherAsset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: other.Game.ID, OwnerID: other.Players[0].ID, CreatorID: other.Players[0].ID,
+		AssetType: model.AssetPeer, Name: "Elsewhere", IsMainCharacter: false,
+	})
+	require.NoError(t, err)
+	note(otherAsset.ID, 1, "different game")
+	all, err = q.ListMarginaliaByGame(ctx, tg.Game.ID)
+	require.NoError(t, err)
+	for _, m := range all {
+		assert.NotEqual(t, otherAsset.ID, m.AssetID, "another game's marginalia leaked in")
+	}
+}
