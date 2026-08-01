@@ -51,15 +51,21 @@
 	let marginaliaSuggLoading = $state(true);
 	let marginaliaRerolling = $state(false);
 
-	// The endpoint reshuffles its type-keyed pool on every call, so a reroll is
-	// just a refetch. It sets the `rerolling` flag rather than `loading` — the
-	// latter swaps the grid for a loading note, which would make the tiles
-	// vanish and the panel jump under the player's thumb.
+	// One fetch hands back the whole unused pool, and the picker walks it
+	// locally — so these run once on mount and again only when a player has
+	// rerolled through the entire thing. A reroll sets the `rerolling` flag
+	// rather than `loading`, which would swap the example for a loading note
+	// and jump the panel under the player's thumb.
+	//
+	// A failed fetch leaves the previous pool in place. Clearing it would
+	// collapse the example row (it renders under `loading || length > 0`),
+	// so one dropped request on a phone would delete the reroll button for
+	// the rest of the form with no way to bring it back.
 	async function loadNames() {
 		try {
 			nameSuggestions = (await getAssetSuggestions(gameID, assetType, 'name')).suggestions;
 		} catch {
-			nameSuggestions = [];
+			// Keep whatever we already had.
 		} finally {
 			nameSuggLoading = false;
 		}
@@ -69,7 +75,7 @@
 		try {
 			marginaliaSuggestions = (await getAssetSuggestions(gameID, assetType, 'marginalia')).suggestions;
 		} catch {
-			marginaliaSuggestions = [];
+			// Keep whatever we already had.
 		} finally {
 			marginaliaSuggLoading = false;
 		}

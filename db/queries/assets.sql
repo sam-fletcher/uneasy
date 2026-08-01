@@ -23,6 +23,17 @@ ORDER BY created_at ASC;
 SELECT * FROM assets WHERE game_id = $1
 ORDER BY created_at ASC;
 
+-- name: ListAssetNamesByGame :many
+-- Every asset name a game has ever used, INCLUDING destroyed assets, for
+-- deduping the suggestion pools. Destroyed assets stay burnt on purpose: a
+-- name that has been in the fiction shouldn't come back as a fresh idea
+-- just because the asset died. Pairs with ListMarginaliaTextByGame, which
+-- keeps torn marginalia for the same reason.
+--
+-- This is NOT the ListAllAssetsByGame escape hatch — it returns bare names,
+-- so no destroyed asset can reach a mechanics path through it.
+SELECT name FROM assets WHERE game_id = $1;
+
 -- name: ListAssetsByOwner :many
 SELECT * FROM assets WHERE owner_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC;

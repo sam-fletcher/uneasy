@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,9 +11,11 @@ import (
 func TestPickUnusedSuggestions(t *testing.T) {
 	pool := []string{"Alpha", "Beta", "Gamma", "Delta", "Epsilon"}
 
-	t.Run("caps at n", func(t *testing.T) {
-		got := pickUnusedSuggestions(pool, map[string]struct{}{}, 3)
-		assert.Len(t, got, 3)
+	// The whole unused pool comes back, not a page of it — the client walks
+	// the response locally so a reroll never blocks on the network.
+	t.Run("returns the entire unused pool", func(t *testing.T) {
+		got := pickUnusedSuggestions(pool, map[string]struct{}{})
+		assert.ElementsMatch(t, pool, got)
 	})
 
 	t.Run("excludes used (case-insensitive, trimmed)", func(t *testing.T) {
@@ -21,26 +25,39 @@ func TestPickUnusedSuggestions(t *testing.T) {
 		for _, raw := range []string{"ALPHA", "  beta", "Gamma  ", "delta", "EpSiLoN"} {
 			used[normForDedup(raw)] = struct{}{}
 		}
-		got := pickUnusedSuggestions(pool, used, 3)
+		got := pickUnusedSuggestions(pool, used)
 		assert.Empty(t, got, "every pool entry is used")
 	})
 
-	t.Run("returns fewer than n when pool is small", func(t *testing.T) {
+	t.Run("returns only what's left when most of the pool is used", func(t *testing.T) {
 		used := map[string]struct{}{"alpha": {}, "beta": {}, "gamma": {}}
-		got := pickUnusedSuggestions(pool, used, 3)
-		assert.Len(t, got, 2, "only Delta and Epsilon remain")
-		for _, s := range got {
-			assert.NotContains(t, []string{"Alpha", "Beta", "Gamma"}, s)
-		}
+		got := pickUnusedSuggestions(pool, used)
+		assert.ElementsMatch(t, []string{"Delta", "Epsilon"}, got)
 	})
 
 	t.Run("never returns a used entry", func(t *testing.T) {
 		used := map[string]struct{}{normForDedup("Gamma"): {}}
 		for range 50 { // shuffled — sample repeatedly
-			for _, s := range pickUnusedSuggestions(pool, used, 5) {
+			for _, s := range pickUnusedSuggestions(pool, used) {
 				assert.NotEqual(t, "Gamma", s)
 			}
 		}
+	})
+
+	// Order varies run to run; that shuffle is what makes each picker's walk
+	// through the pool feel fresh.
+	t.Run("shuffles", func(t *testing.T) {
+		big := make([]string, 0, 30)
+		for i := range 30 {
+			big = append(big, string(rune('a'+i%26))+strconv.Itoa(i))
+		}
+		first := pickUnusedSuggestions(big, map[string]struct{}{})
+		for range 50 {
+			if !slices.Equal(first, pickUnusedSuggestions(big, map[string]struct{}{})) {
+				return
+			}
+		}
+		t.Fatal("50 draws all came back in the same order — not shuffled")
 	})
 }
 

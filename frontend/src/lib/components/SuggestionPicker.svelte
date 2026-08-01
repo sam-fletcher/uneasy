@@ -10,8 +10,9 @@
   matching type-keyed example pools.
 
   The example row is a fixed height and never wraps, so spamming reroll can't
-  jump the panel under the player's thumb. The endpoint hands back three
-  examples per call; reroll walks those locally before spending a request.
+  jump the panel under the player's thumb. The endpoint hands back the whole
+  unused pool in one response, so reroll walks it locally and only spends a
+  request on the wrap-around — a tap never blocks on the network.
 -->
 <script lang="ts">
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -30,8 +31,10 @@
 		/** Render the field as a multi-line textarea (for marginalia). */
 		multiline?: boolean;
 		disabled?: boolean;
-		/** Refetch this picker's suggestion pool. Omit to hide the reroll
-		 *  button; the example then stays fixed at the first one fetched. */
+		/** Refetch this picker's suggestion pool, for when the player has
+		 *  walked all the way through it. Must leave the existing pool alone
+		 *  if the request fails. Omit to hide the reroll button; the example
+		 *  then stays fixed at the first one fetched. */
 		onReroll?: () => void | Promise<void>;
 		/** True while a reroll is in flight; disables the button. */
 		rerolling?: boolean;
@@ -63,16 +66,22 @@
 		if (current) value = current;
 	};
 
-	// Walk the examples already in hand first; only refetch once they're spent,
-	// so two taps in three cost nothing and respond instantly.
+	// Walk the examples already in hand first. The endpoint sends the whole
+	// unused pool, so in practice every tap is a local step and the refetch
+	// below is the rare wrap-around.
 	const reroll = async () => {
 		if (!onReroll || rerolling) return;
 		if (shown + 1 < suggestions.length) {
 			shown += 1;
 			return;
 		}
-		shown = 0;
+		// Pool walked out. Refetch FIRST and go back to the top only once the
+		// replacement is in hand — resetting before the await would put the
+		// first example back on screen for the whole round trip, which reads
+		// as the button undoing itself. If the fetch fails the parent keeps
+		// the old pool and `shown` stays put, so the row simply doesn't move.
 		await onReroll();
+		shown = 0;
 	};
 
 	// Fit-to-width: the example must stay on one line at a fixed height, but
@@ -140,7 +149,7 @@
 				class="sp-example"
 				title="Use this suggestion"
 				aria-label={current ? `Use suggestion: ${current}` : 'Loading suggestion'}
-				disabled={disabled || loading || !current}
+				disabled={disabled || loading || rerolling || !current}
 				onclick={useSuggestion}
 			>
 				<span class="sp-example-text" bind:this={textEl}>

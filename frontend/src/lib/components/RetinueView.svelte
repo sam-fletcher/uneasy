@@ -136,7 +136,8 @@
 				addSuggestions = res.suggestions;
 			}
 		} catch {
-			addSuggestions = [];
+			// Leave the existing pool alone — clearing it collapses the example
+			// row and takes the reroll button with it, permanently.
 		}
 	}
 

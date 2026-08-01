@@ -156,11 +156,13 @@
 	// the button is only reachable in the slot the player is tapping.
 	let peerNameRerolling = $state<number | null>(null);
 
-	async function fetchPeerNamePool(): Promise<string[]> {
+	// null on failure, so callers can tell "no pool came back" from "the pool
+	// is genuinely empty" and leave an existing one untouched.
+	async function fetchPeerNamePool(): Promise<string[] | null> {
 		try {
 			return (await getAssetSuggestions(gameID, 'peer', 'name')).suggestions;
 		} catch {
-			return [];
+			return null;
 		}
 	}
 
@@ -177,14 +179,22 @@
 		peerNamePoolsFetched = total;
 		if (have === 0) peerNameSuggLoading = true;
 		Promise.all(Array.from({ length: total - have }, () => fetchPeerNamePool()))
-			.then(pools => { peerNameSuggestions = [...peerNameSuggestions.slice(0, have), ...pools]; })
+			.then(pools => {
+				peerNameSuggestions = [
+					...peerNameSuggestions.slice(0, have),
+					...pools.map(p => p ?? []),
+				];
+			})
 			.finally(() => { peerNameSuggLoading = false; });
 	});
 
 	async function rerollPeerName(i: number) {
 		peerNameRerolling = i;
 		try {
-			peerNameSuggestions[i] = await fetchPeerNamePool();
+			// Keep the slot's existing pool if the refetch fails — an empty
+			// array would collapse its example row and lose the reroll button.
+			const pool = await fetchPeerNamePool();
+			if (pool) peerNameSuggestions[i] = pool;
 		} finally {
 			peerNameRerolling = null;
 		}

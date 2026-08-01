@@ -154,10 +154,11 @@ func GetPrologueCards(s *db.Store) http.HandlerFunc {
 
 // GetPrologueCardSuggestions handles GET /api/games/{id}/prologue/card-suggestions?suit=X.
 //
-// Returns three random example names for an asset of the suit's natural type
-// that have not yet been used by any asset name in this game. Used to
-// populate the multiple-choice picker when a player creates a card-derived
-// asset during the Prologue.
+// Returns the shuffled pool of example names for an asset of the suit's
+// natural type, minus any already used as an asset name in this game
+// (destroyed assets included — see asset_suggestions.go for the dedup rules).
+// Feeds the suggestion picker when a player creates a card-derived asset
+// during the Prologue.
 func GetPrologueCardSuggestions(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, _, ok := parseGamePlayer(w, r, s.Q)
@@ -181,15 +182,15 @@ func GetPrologueCardSuggestions(s *db.Store) http.HandlerFunc {
 		}
 
 		used := map[string]struct{}{}
-		assets, err := s.Q.ListAssetsByGame(r.Context(), gameID)
+		names, err := s.Q.ListAssetNamesByGame(r.Context(), gameID)
 		if err == nil {
-			for _, a := range assets {
-				used[normForDedup(a.Name)] = struct{}{}
+			for _, n := range names {
+				used[normForDedup(n)] = struct{}{}
 			}
 		}
 
 		respond(w, http.StatusOK, map[string]any{
-			"suggestions": pickUnusedSuggestions(pool, used, suggestionCount),
+			"suggestions": pickUnusedSuggestions(pool, used),
 			"asset_type":  assetType,
 		})
 	}

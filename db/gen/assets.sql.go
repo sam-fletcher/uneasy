@@ -536,6 +536,38 @@ func (q *Queries) ListAllAssetsByGame(ctx context.Context, gameID int64) ([]Asse
 	return items, nil
 }
 
+const listAssetNamesByGame = `-- name: ListAssetNamesByGame :many
+SELECT name FROM assets WHERE game_id = $1
+`
+
+// Every asset name a game has ever used, INCLUDING destroyed assets, for
+// deduping the suggestion pools. Destroyed assets stay burnt on purpose: a
+// name that has been in the fiction shouldn't come back as a fresh idea
+// just because the asset died. Pairs with ListMarginaliaTextByGame, which
+// keeps torn marginalia for the same reason.
+//
+// This is NOT the ListAllAssetsByGame escape hatch — it returns bare names,
+// so no destroyed asset can reach a mechanics path through it.
+func (q *Queries) ListAssetNamesByGame(ctx context.Context, gameID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAssetNamesByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAssetsByGame = `-- name: ListAssetsByGame :many
 SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE game_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC

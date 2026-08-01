@@ -9,9 +9,17 @@ package handler
 //   kind=name        → asset-name examples (game.PrologueExamples)
 //   kind=marginalia  → marginalia examples (game.MarginaliaExamples)
 //
-// Both dedupe against what already exists in the game (asset names / marginalia
-// text). Fewer than `suggestionCount` (possibly zero) come back when the unused
-// pool is small; the client renders blanks for the remainder.
+// Both dedupe against what the game's fiction already contains. The filter is a
+// plain normalized string match against persisted content — NOT a record of
+// which suggestions were tapped. So a player who takes an example and edits a
+// word leaves it on offer, one who submits it verbatim burns it, and one who
+// independently types the same string burns it too. Destroyed assets and torn
+// marginalia stay burnt: they were in the fiction, and re-introducing them is
+// the degenerate move this filter exists to prevent.
+//
+// The whole unused pool comes back in one response, shuffled — see
+// pickUnusedSuggestions. An empty array is a legitimate answer for a game that
+// has worked through a pool; the client hides the example row.
 
 import (
 	"math/rand/v2"
@@ -23,16 +31,19 @@ import (
 	"uneasy/model"
 )
 
-// suggestionCount is how many example strings a suggestion endpoint returns.
-const suggestionCount = 3
-
 // normForDedup lowercases and trims so "Impenetrable" and " impenetrable "
 // count as the same example.
 func normForDedup(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
-// pickUnusedSuggestions returns up to n pool entries not present in used
-// (compared case-insensitively, trimmed), shuffled for variety.
-func pickUnusedSuggestions(pool []string, used map[string]struct{}, n int) []string {
+// pickUnusedSuggestions returns every pool entry not present in used (compared
+// case-insensitively, trimmed), shuffled for variety.
+//
+// The full pool ships in one response rather than a page of three. A pool is
+// ~1KB on the wire and the DB round trip dominates the request either way, so
+// batching costs nothing — and it buys the client enough examples that walking
+// them never blocks on the network mid-reroll. The shuffle is what makes each
+// picker's walk feel fresh; order is stable for the life of one response.
+func pickUnusedSuggestions(pool []string, used map[string]struct{}) []string {
 	available := make([]string, 0, len(pool))
 	for _, s := range pool {
 		if _, taken := used[normForDedup(s)]; taken {
@@ -41,9 +52,6 @@ func pickUnusedSuggestions(pool []string, used map[string]struct{}, n int) []str
 		available = append(available, s)
 	}
 	rand.Shuffle(len(available), func(i, j int) { available[i], available[j] = available[j], available[i] })
-	if len(available) > n {
-		available = available[:n]
-	}
 	return available
 }
 
@@ -80,9 +88,10 @@ func GetAssetSuggestions(s *db.Store) http.HandlerFunc {
 		switch kind {
 		case "name":
 			pool = gamepkg.PrologueExamples[assetType]
-			if assets, err := s.Q.ListAssetsByGame(ctx, gameID); err == nil {
-				for _, a := range assets {
-					used[normForDedup(a.Name)] = struct{}{}
+			// Names of destroyed assets included — see ListAssetNamesByGame.
+			if names, err := s.Q.ListAssetNamesByGame(ctx, gameID); err == nil {
+				for _, n := range names {
+					used[normForDedup(n)] = struct{}{}
 				}
 			}
 		case "marginalia":
@@ -98,7 +107,7 @@ func GetAssetSuggestions(s *db.Store) http.HandlerFunc {
 		}
 
 		respond(w, http.StatusOK, map[string]any{
-			"suggestions": pickUnusedSuggestions(pool, used, suggestionCount),
+			"suggestions": pickUnusedSuggestions(pool, used),
 			"asset_type":  assetType,
 		})
 	}
