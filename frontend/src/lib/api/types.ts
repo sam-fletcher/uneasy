@@ -490,6 +490,17 @@ export interface ResolutionData {
 	// All MD-specific state lives on the nested struct; see
 	// $lib/plans/resolutionData/make_demands.ts.
 	make_demands?: MakeDemandsResolutionData;
+
+	// ── Make Demands, on the TARGET plan ──
+	// These two ride the top level rather than the nested struct because they
+	// live on the plan being demanded against, which can be any type. Each
+	// records that the winner of a pre-roll demand option has made their call,
+	// which is what stops blocking the target plan's roll. Both are needed
+	// because the "do nothing" outcome of each option — leverage none of the
+	// preparer's assets, keep the target where it is — is indistinguishable from
+	// not having acted yet. Mirrors game.ResolutionData (uneasy/game/plan.go).
+	demand_leverage_finalized?: boolean;
+	demand_retarget_finalized?: boolean;
 }
 
 /** Response shape from GET /api/plans/:id. */

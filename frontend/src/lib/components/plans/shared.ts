@@ -158,6 +158,24 @@ export const DEMAND_OPTIONS: DemandOption[] = [
 
 export type DemandWinners = Partial<Record<DemandOption, number>>;
 
+/**
+ * Whether a demand target of this plan type resolves through a dice roll of
+ * its *preparer's own* — the thing the control_leverage option attaches to.
+ * Three types have none, so that option simply drew a dud there: Host
+ * Festivity's rolls all belong to guests, Propose Duel's final roll is built
+ * from accumulated bout dice, and Clandestinely Liaise never rolls.
+ *
+ * Mirrors `mdTargetHasPreparerRoll` in handler/demands.go, which is the
+ * authority — the server 409s these. This copy exists only so the winner reads
+ * "this option is inert here" instead of hitting an error; keep them in
+ * lockstep.
+ */
+export function targetHasPreparerRoll(planType: PlanType): boolean {
+	return planType !== 'host_festivity'
+		&& planType !== 'propose_duel'
+		&& planType !== 'clandestinely_liaise';
+}
+
 /** Decode a demand plan's draft picks into a winners map (option → playerID).
  * Returns an empty map if the draft is incomplete. */
 export function demandWinnersFromPlan(demand: Plan): DemandWinners {

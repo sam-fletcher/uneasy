@@ -96,6 +96,31 @@ func TestMDDemandBlocksTarget(t *testing.T) {
 	assert.False(t, mdDemandBlocksTarget(&dbgen.Plan{Status: model.PlanCancelled}))
 }
 
+// ── mdTargetHasPreparerRoll (audit D7) ────────────────────────────────────────
+//
+// The two pre-roll demand options attach to a roll of the target *preparer's*
+// own. Three target types have none, and the whole point of the predicate is
+// that the option goes inert there instead of grabbing whatever roll happens to
+// carry that plan_id — which for a Host Festivity is a *guest's*.
+func TestMDTargetHasPreparerRoll(t *testing.T) {
+	for _, pt := range []model.PlanType{
+		model.PlanHostFestivity,       // every festivity roll belongs to a guest
+		model.PlanProposeDuel,         // final roll bypasses seedRollParticipants
+		model.PlanClandestinelyLiaise, // no roll at all
+	} {
+		assert.Falsef(t, mdTargetHasPreparerRoll(pt), "%s has no preparer-owned roll", pt)
+	}
+	// Every other legal target does resolve through one, whether at kickoff or
+	// later from an extra route.
+	for _, pt := range []model.PlanType{
+		model.PlanSpreadRumors, model.PlanSpreadPropaganda, model.PlanProposeDecree,
+		model.PlanMakeIntroductions, model.PlanSeekAnswers,
+		model.PlanChronicleHistories, model.PlanExchangeCourtiers,
+	} {
+		assert.Truef(t, mdTargetHasPreparerRoll(pt), "%s rolls for its preparer", pt)
+	}
+}
+
 func TestMDAlreadyDemanded(t *testing.T) {
 	assert.False(t, mdAlreadyDemanded(nil), "no demands at all")
 	assert.False(t, mdAlreadyDemanded([]dbgen.Plan{{Status: model.PlanCancelled}}),

@@ -74,6 +74,7 @@ describe('actor-naming sub-phase kinds', () => {
 		{ kind: 'await_demand_counter', label: 'Make Demands — awaiting counter' },
 		{ kind: 'await_demand_draft_pick', label: 'Make Demands — draft pick' },
 		{ kind: 'await_demand_leverage', label: 'Make Demands — control leverage' },
+		{ kind: 'await_demand_retarget', label: 'Make Demands — keep or change target' },
 		{ kind: 'await_festivity_guest_turn', label: 'Host Festivity — in progress' },
 		{ kind: 'await_festivity_challenge_response', label: 'Host Festivity — challenge response' },
 		{ kind: 'await_duel_bout', label: 'Propose Duel — bout' },

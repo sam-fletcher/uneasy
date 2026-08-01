@@ -1010,15 +1010,27 @@ export function demandLeverage(targetPlanID: number, assetIDs: number[]): Promis
 }
 
 /**
- * Make Demands — keep_or_change_target winner re-aims the *target plan*.
- * Mounted on the target plan, NOT the demand plan. Re-validates against the
- * target plan type's preparation rules before persisting.
+ * Make Demands — keep_or_change_target winner settles where the *target plan*
+ * is aimed. Mounted on the target plan, NOT the demand plan. Pass
+ * `{ keep: true }` to leave the target exactly as it is; otherwise the ids are
+ * re-validated against the target plan type's preparation rules before
+ * persisting.
+ *
+ * Either form is the winner's FINALIZE signal — it is what releases the target
+ * plan's roll, which is held open until they decide (they are seeded unready on
+ * it). Keeping is a real choice under the rules, so it needs its own call
+ * rather than silence.
  */
 export function demandRetarget(
 	targetPlanID: number,
-	params: { target_player_id?: number | null; target_asset_id?: number | null },
+	params: {
+		keep?: boolean;
+		target_player_id?: number | null;
+		target_asset_id?: number | null;
+	},
 ): Promise<{
 	plan_id: number;
+	kept: boolean;
 	target_player_id: number | null;
 	target_asset_id: number | null;
 }> {

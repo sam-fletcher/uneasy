@@ -42,6 +42,23 @@ type ResolutionData struct {
 	// sweeps); once it flips they ready normally and the roll can resolve.
 	DemandLeverageFinalized bool `json:"demand_leverage_finalized,omitempty"`
 
+	// DemandRetargetFinalized is the keep_or_change_target twin of
+	// DemandLeverageFinalized: it records that the Make Demands
+	// keep_or_change_target winner against this (target) plan has made their
+	// call on where the plan is aimed. It rides the top level for the same
+	// reason — the target can be any plan type, and this is a Make Demands
+	// cross-plan concern, not part of the target type's own state.
+	//
+	// The flag is needed because the rules give the winner "keep" as a real
+	// choice ("I determine whether to keep OR change the plan's original
+	// target"), and a kept target is indistinguishable from "hasn't acted yet":
+	// both leave target_player_id/target_asset_id untouched. Until it flips, the
+	// winner blocks the plan's roll exactly as the leverage winner does — which
+	// is what stops a roll that opens at kickoff (Spread Rumors, Spread
+	// Propaganda, Propose Decree) from auto-resolving the window shut before the
+	// winner ever acts (audit D5).
+	DemandRetargetFinalized bool `json:"demand_retarget_finalized,omitempty"`
+
 	ExchangeCourtiers  *ExchangeCourtiersResolutionData  `json:"exchange_courtiers,omitempty"`
 	MakeIntroductions  *MakeIntroductionsResolutionData  `json:"make_introductions,omitempty"`
 	SeekAnswers        *SeekAnswersResolutionData        `json:"seek_answers,omitempty"`

@@ -96,27 +96,115 @@ func pendingPerformStepsChooser(ctx context.Context, q *dbgen.Queries, plan *dbg
 //
 // Returns 0 when: there is no such demand; the winner is the preparer (no
 // handoff — they leverage their own assets directly); they have already
-// finalized; or the target plan's roll is no longer open (the window has
-// closed).
+// finalized; the target plan's roll is no longer open (the window has closed);
+// or the target plan type has no preparer-owned roll at all, where the option
+// is inert and must not touch someone else's roll (mdTargetHasPreparerRoll).
 func pendingControlLeverageChooser(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
+	if !mdTargetHasPreparerRoll(plan.PlanType) {
+		return 0
+	}
+	return pendingDemandChooser(ctx, q, plan, game.DemandOptionControlLeverage,
+		loadResolutionData(plan.ResolutionData).DemandLeverageFinalized)
+}
+
+// pendingDemandRetargetChooser is pendingControlLeverageChooser's
+// keep_or_change_target twin: the winner who still owes their keep-or-re-aim
+// call on a plan targeted by a made Make Demands, or 0.
+//
+// Same shape, same reason. "Keep the current target" is a legitimate choice the
+// rules hand the winner, and it leaves the plan's target columns untouched —
+// indistinguishable from having never acted. So the winner must explicitly
+// finalize, and until they do they block the roll (seeded unready, excluded from
+// the auto-ready sweeps). Without that, a target whose roll opens at kickoff
+// could resolve the window shut before they ever saw it (audit D5).
+//
+// Returns 0 in the same four cases: no such demand; the winner is the preparer
+// (no handoff — they re-aim their own plan directly); they have already
+// finalized; or the target plan's roll is no longer open. Plus the D7 case —
+// a target with no preparer-owned roll, where there is nothing to hold open.
+func pendingDemandRetargetChooser(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
+	if !mdTargetHasPreparerRoll(plan.PlanType) {
+		return 0
+	}
+	return pendingDemandChooser(ctx, q, plan, game.DemandOptionKeepOrChangeTarget,
+		loadResolutionData(plan.ResolutionData).DemandRetargetFinalized)
+}
+
+// pendingDemandChooser is the body shared by the two pre-roll demand-option
+// gates above: the winner of option holds up plan's roll until finalized flips.
+// Returns 0 when there is no demand, no winner, the winner is the plan's own
+// preparer (no handoff), they have already finalized, or the roll is closed.
+func pendingDemandChooser(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	option string,
+	finalized bool,
+) int64 {
 	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
 	if err != nil || winners == nil {
 		return 0
 	}
-	winnerID := winners[game.DemandOptionControlLeverage]
+	winnerID := winners[option]
 	if winnerID == 0 || winnerID == plan.PreparerID {
 		return 0
 	}
-	if loadResolutionData(plan.ResolutionData).DemandLeverageFinalized {
+	if finalized {
 		return 0
 	}
 	// Only while the target plan's roll is still open: the winner can act only
-	// during the leverage window, and once the roll resolves the gate is moot.
+	// during the pre-roll window, and once the roll resolves the gate is moot.
 	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
 	if err != nil || !rollIsOpen(&roll) {
 		return 0
 	}
 	return winnerID
+}
+
+// pendingDemandRollBlockers returns every Make Demands option winner who still
+// owes a pre-roll decision on this (target) plan's open roll, and therefore
+// keeps it from resolving: the control_leverage winner and the
+// keep_or_change_target winner. Empty when nobody is holding the roll.
+//
+// The roll's stage machine only needs the set, not which option each blocker
+// holds — seedRollParticipants seeds them unready, runAutoReadySweep refuses to
+// auto-ready them, and advanceToLeverage refuses to short-circuit past them.
+func pendingDemandRollBlockers(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) map[int64]bool {
+	blockers := map[int64]bool{}
+	if id := pendingControlLeverageChooser(ctx, q, plan); id != 0 {
+		blockers[id] = true
+	}
+	if id := pendingDemandRetargetChooser(ctx, q, plan); id != 0 {
+		blockers[id] = true
+	}
+	return blockers
+}
+
+// mdTargetHasPreparerRoll reports whether a demand target of this plan type
+// resolves through a dice roll of the target *preparer's* own — the thing the
+// two pre-roll demand options (control_leverage, keep_or_change_target) attach
+// to. Three target types have none, and the option that draws them is inert
+// (audit D7):
+//
+//   - Host Festivity: the host never rolls. Every roll carrying a festivity
+//     plan_id belongs to a *guest* (plan_host_festivity.go). GetDiceRollByPlanID
+//     is ORDER BY created_at DESC LIMIT 1 over that plan_id, so without this
+//     guard a control_leverage winner would block the first guest's roll and
+//     /demand-leverage would spend the host's assets into it as interference.
+//   - Propose Duel: the final roll is built straight from the accumulated bout
+//     dice (plan_propose_duel_bouts.go), bypassing createPlanRoll and therefore
+//     seedRollParticipants — so there are no participant rows to ready, and
+//     leveraging into a duel result is wrong under the rules anyway.
+//   - Clandestinely Liaise: no roll at all, ever.
+//
+// The rules already expect the four options to land unevenly ("They'll each
+// have a different impact depending on which plan is being targeted… at least
+// two of them should be juicy"), so an inert option is a legitimate outcome.
+// An option that misfires or 500s is not.
+func mdTargetHasPreparerRoll(t model.PlanType) bool {
+	return t != model.PlanHostFestivity &&
+		t != model.PlanProposeDuel &&
+		t != model.PlanClandestinelyLiaise
 }
 
 // DemandWinnersForTargetPlan returns the resolved made demand (if any) that

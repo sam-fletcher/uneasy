@@ -486,11 +486,24 @@ func planResolvingGate(ctx context.Context, q *dbgen.Queries, plans []dbgen.Plan
 		}
 		plan := &plans[i]
 		id := plan.ID
-		// Pre-roll cross-player gate: a Make Demands control_leverage winner owes
-		// the leverage decision on this (target) plan's still-open roll. They block
-		// the roll from resolving, so name them rather than letting a sub-phase
-		// override or the generic preparer case mis-attribute the wait. This is the
-		// pre-roll mirror of the post-roll perform_steps handoff handled below.
+		// Pre-roll cross-player gates: a Make Demands keep_or_change_target or
+		// control_leverage winner owes a decision on this (target) plan's still-open
+		// roll. Either blocks the roll from resolving, so name them rather than
+		// letting a sub-phase override or the generic preparer case mis-attribute
+		// the wait. These are the pre-roll mirror of the post-roll perform_steps
+		// handoff handled below.
+		//
+		// Retarget is checked first: where the plan is aimed is the earlier beat,
+		// and it is what the leverage winner sizes their commitment against. When
+		// both are outstanding the roll's own AwaitDiceRoll gate (top of the chain)
+		// names them both anyway — both are seeded unready on it.
+		if chooser := pendingDemandRetargetChooser(ctx, q, plan); chooser != 0 {
+			return model.RowState{
+				Kind:            model.RowStateAwaitDemandRetarget,
+				PlanID:          &id,
+				ActingPlayerIDs: []int64{chooser},
+			}, true
+		}
 		if chooser := pendingControlLeverageChooser(ctx, q, plan); chooser != 0 {
 			return model.RowState{
 				Kind:            model.RowStateAwaitDemandLeverage,

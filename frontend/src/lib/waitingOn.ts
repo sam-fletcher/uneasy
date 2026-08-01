@@ -93,6 +93,13 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// above (they're seeded unready on that roll); this is the row-state
 			// fallback for the gap before/after the roll itself is open.
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — control leverage' };
+		case 'await_demand_retarget':
+			// Keep_or_change_target winner owes their call on where the target plan
+			// is aimed — keeping it is as much a decision as re-aiming it, so the
+			// table waits on them either way. Same surfacing as control leverage:
+			// usually visible via await_dice_roll above (they're seeded unready on
+			// that roll); this is the row-state fallback.
+			return { waitees: actingWaitees(), stepLabel: 'Make Demands — keep or change target' };
 		case 'await_festivity_guest_turn':
 			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — in progress' };
 		case 'await_festivity_challenge_response':

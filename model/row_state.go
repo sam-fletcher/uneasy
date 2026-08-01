@@ -133,6 +133,22 @@ const (
 	// pre-roll mirror of the post-roll perform_steps handoff.
 	RowStateAwaitDemandLeverage RowStateKind = "await_demand_leverage"
 
+	// RowStateAwaitDemandRetarget — the keep_or_change_target twin of
+	// AwaitDemandLeverage. A plan targeted by a made Make Demands is resolving,
+	// and the demand's keep_or_change_target winner (someone other than the
+	// target plan's preparer) still owes their call on where the plan is aimed:
+	// keep it where it is, or re-aim it. Both are real choices the rules give
+	// them, and a kept target looks exactly like an untouched one — so the roll
+	// is held open until they say which, and the option's clarification expects
+	// a bargaining beat ("can of course bargain with the other player(s)"),
+	// which needs the table to be visibly waiting on someone.
+	//
+	// ActingPlayerIDs names that winner, who is typically not the focus player.
+	// Like AwaitDemandLeverage this is a fallback: while the roll is open the
+	// top-of-chain AwaitDiceRoll gate usually wins, and the winner is seeded
+	// unready so they land in that roll's acting set too.
+	RowStateAwaitDemandRetarget RowStateKind = "await_demand_retarget"
+
 	// RowStateAwaitFestivityGuestTurn — a Host Festivity plan is in the
 	// 'socializing' phase and waiting on the next guest (in lowest-esteem-
 	// first order, host goes last) to roll or opt out. ActingPlayerIDs names
@@ -239,7 +255,7 @@ type RowState struct {
 
 	// PlanID is the relevant plan for: PlanResolving, PlanPending,
 	// AwaitDelayReveal, AwaitDemandCounter, AwaitDemandDraftPick,
-	// AwaitDemandLeverage, AwaitFestivityGuestTurn,
+	// AwaitDemandLeverage, AwaitDemandRetarget, AwaitFestivityGuestTurn,
 	// AwaitFestivityChallengeResponse, AwaitDuelStaking, AwaitDuelBout. Nil
 	// otherwise.
 	PlanID *int64 `json:"plan_id,omitempty"`

@@ -28,12 +28,13 @@ import (
 // nothing for them to do, so blocking on their explicit Ready click would
 // just be busywork.
 //
-// Exception: a Make Demands control_leverage winner against the roll's plan is
-// always seeded UNREADY, even with no own dice, until they finalize their
-// leverage decision (see pendingControlLeverageChooser). Otherwise a winner with
-// nothing of their own to commit would be auto-readied here and the roll could
-// resolve before they ever set the preparer's leverage. planID is the roll's
-// plan (nil for plan-less rolls), used only to find that winner.
+// Exception: a Make Demands pre-roll option winner against the roll's plan —
+// control_leverage or keep_or_change_target — is always seeded UNREADY, even
+// with no own dice, until they finalize their decision (see
+// pendingDemandRollBlockers). Otherwise a winner with nothing of their own to
+// commit would be auto-readied here and the roll could resolve before they ever
+// set the preparer's leverage or re-aimed the plan. planID is the roll's plan
+// (nil for plan-less rolls), used only to find those winners.
 func seedRollParticipants(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -44,11 +45,11 @@ func seedRollParticipants(
 	if err != nil {
 		return fmt.Errorf("load players: %w", err)
 	}
-	var leverageChooser int64
+	demandBlockers := map[int64]bool{}
 	if planID != nil {
 		plan, err := q.GetPlanByID(ctx, *planID)
 		if err == nil {
-			leverageChooser = pendingControlLeverageChooser(ctx, q, &plan)
+			demandBlockers = pendingDemandRollBlockers(ctx, q, &plan)
 		}
 	}
 	aid := intentAid
@@ -62,8 +63,8 @@ func seedRollParticipants(
 			return err
 		}
 		ready := !canCommit
-		if p.ID == leverageChooser {
-			// Blocks the roll until they finalize their leverage decision.
+		if demandBlockers[p.ID] {
+			// Blocks the roll until they finalize their demand decision.
 			ready = false
 		}
 		if err := q.CreateRollParticipant(ctx, dbgen.CreateRollParticipantParams{
@@ -78,19 +79,19 @@ func seedRollParticipants(
 	return nil
 }
 
-// rollControlLeverageChooserPending returns the Make Demands control_leverage
-// winner who still owes the leverage decision on this roll's plan, or 0. Used by
-// the auto-ready sweep and the skip-leverage short-circuit to keep that winner
-// blocking the roll until they finalize.
-func rollControlLeverageChooserPending(ctx context.Context, q *dbgen.Queries, roll *dbgen.DiceRoll) int64 {
+// rollDemandBlockersPending returns the Make Demands pre-roll option winners
+// (control_leverage, keep_or_change_target) who still owe a decision on this
+// roll's plan. Used by the auto-ready sweep and the skip-leverage short-circuit
+// to keep those winners blocking the roll until they finalize.
+func rollDemandBlockersPending(ctx context.Context, q *dbgen.Queries, roll *dbgen.DiceRoll) map[int64]bool {
 	if roll.PlanID == nil {
-		return 0
+		return nil
 	}
 	plan, err := q.GetPlanByID(ctx, *roll.PlanID)
 	if err != nil {
-		return 0
+		return nil
 	}
-	return pendingControlLeverageChooser(ctx, q, &plan)
+	return pendingDemandRollBlockers(ctx, q, &plan)
 }
 
 // playerCanCommit returns true when the player has at least one
@@ -141,9 +142,9 @@ func runAutoReadySweep(
 	if can {
 		return nil
 	}
-	// A Make Demands control_leverage winner who hasn't finalized stays unready
-	// even with no own dice — their pending leverage decision blocks the roll.
-	if rollControlLeverageChooserPending(ctx, q, roll) == playerID {
+	// A Make Demands pre-roll option winner who hasn't finalized stays unready
+	// even with no own dice — their pending decision blocks the roll.
+	if rollDemandBlockersPending(ctx, q, roll)[playerID] {
 		return nil
 	}
 	if err := q.SetParticipantReady(ctx, dbgen.SetParticipantReadyParams{
@@ -294,10 +295,10 @@ func advanceToLeverage(
 			break
 		}
 	}
-	// A pending control_leverage winner still has a decision to make even when
+	// A pending demand option winner still has a decision to make even when
 	// nobody can commit dice, so the roll must not short-circuit past them.
-	leverageChooserPending := rollControlLeverageChooserPending(ctx, q, roll) != 0
-	if !anyCanCommit && !leverageChooserPending {
+	demandBlockersPending := len(rollDemandBlockersPending(ctx, q, roll)) > 0
+	if !anyCanCommit && !demandBlockersPending {
 		if err := q.SetAllParticipantsReady(ctx, roll.ID); err != nil {
 			return err
 		}

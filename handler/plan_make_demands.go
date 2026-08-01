@@ -89,6 +89,16 @@ func (mdHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	if target.Status == model.PlanResolving {
 		return nil, "target plan is already resolving — a demand cannot slot in before it"
 	}
+	// Make War is excluded as a deliberate scope reduction, not a rules
+	// deduction. The original reasoning ("roll-less, no numeric difficulty") does
+	// not survive the unabridged rules: Clandestinely Liaise is both of those and
+	// is explicitly named as a legal target. What actually keeps Make War out is
+	// cost: it has no difficulty to build a demand on (nor a target-status to
+	// borrow), its row is unknown until its reveal closes — the very state
+	// ValidatePreparation refuses below — and three of the four drafted options
+	// are inert against it. Owner's call, deferred; see MAKE_DEMANDS_AUDIT.md R1
+	// and A5. If it is ever reversed, re-run that audit's §4 cascade-cancel
+	// argument: Make War is the one plan type that can be cancelled.
 	if target.PlanType == model.PlanMakeWar {
 		return nil, "Make War cannot be the target of a demand"
 	}

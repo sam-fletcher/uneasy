@@ -17,7 +17,10 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
-	import { playerName, activeDemandAgainst, demandWinnersFromPlan } from '../shared';
+	import {
+		playerName, activeDemandAgainst, demandWinnersFromPlan,
+		parseResolutionData, targetHasPreparerRoll, PLAN_SHORT,
+	} from '../shared';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
@@ -69,6 +72,20 @@
 		&& winners.perform_steps != null,
 	);
 
+	// Whether this target resolves through a roll of its own preparer's. When it
+	// doesn't (Host Festivity, Propose Duel, Clandestinely Liaise) the
+	// control_leverage option has nothing to attach to and the server refuses it —
+	// the rules expect the four options to land unevenly, so say "dud" plainly
+	// rather than offering a picker that 409s.
+	const targetRolls = $derived(targetHasPreparerRoll(plan.plan_type));
+
+	// The two pre-roll finalize flags, written on THIS plan's resolution_data by
+	// /demand-leverage and /demand-retarget. Until each flips, its winner is
+	// seeded unready and holds the roll open.
+	const targetResData = $derived(parseResolutionData(plan));
+	const leverageFinalized = $derived(targetResData.demand_leverage_finalized === true);
+	const retargetFinalized = $derived(targetResData.demand_retarget_finalized === true);
+
 	// ── Retarget form ─────────────────────────────────────────────────────────
 
 	let retargetPlayerID = $state<number | null>(null);
@@ -109,25 +126,32 @@
 		}
 	}
 
-	async function submitRetarget() {
+	// Both branches finalize: "keep" is as much a decision as re-aiming, and the
+	// roll is held open until one of them lands (see demandRetarget's doc).
+	async function submitRetarget(keep: boolean) {
 		if (retargetBusy) return;
 		retargetBusy = true; retargetError = '';
 		try {
-			await demandRetarget(plan.id, {
-				target_player_id: retargetPlayerID,
-				target_asset_id: retargetAssetID,
-			});
+			await demandRetarget(plan.id, keep
+				? { keep: true }
+				: { target_player_id: retargetPlayerID, target_asset_id: retargetAssetID });
 		} catch (e) {
-			retargetError = e instanceof Error ? e.message : 'Could not retarget plan.';
+			retargetError = e instanceof Error ? e.message : 'Could not settle this plan’s target.';
 		} finally { retargetBusy = false; }
 	}
 
 	// ── Leverage picker ───────────────────────────────────────────────────────
-	// The control_leverage winner picks one or more of the target preparer's
-	// non-destroyed assets to leverage onto the target plan's roll. The
+	// The control_leverage winner picks how many of the target preparer's
+	// non-destroyed assets are leveraged onto the target plan's roll. The
 	// backend silently skips assets already on the roll, so we don't need to
 	// fetch the roll to filter — show all of the target preparer's intact
 	// assets. Unsupported (no open roll, plan resolved, etc.) → backend 409.
+	//
+	// ZERO IS A REAL SUBMISSION, not an empty form: "none of them do, possibly
+	// guaranteeing its failure" is one of the two outcomes the rules single out
+	// as the most dramatic. So the finalize button always renders and is never
+	// disabled at zero — including when the preparer has no intact assets at all,
+	// where finalizing is the only way to stop holding the roll open.
 
 	let selectedLeverageIDs = $state<number[]>([]);
 	let leverageBusy = $state(false);
@@ -138,7 +162,7 @@
 	);
 
 	async function submitLeverage() {
-		if (leverageBusy || selectedLeverageIDs.length === 0) return;
+		if (leverageBusy) return;
 		leverageBusy = true; leverageError = '';
 		try {
 			await demandLeverage(plan.id, selectedLeverageIDs);
@@ -177,15 +201,23 @@
 			{/if}
 			{#if winners.control_leverage != null && winners.control_leverage !== plan.preparer_id}
 				<li>
-					{playerName(players, winners.control_leverage)}
-					controls leverage of {playerName(players, plan.preparer_id)}'s
-					assets on this plan's roll.
+					{#if targetRolls}
+						{playerName(players, winners.control_leverage)}
+						controls leverage of {playerName(players, plan.preparer_id)}'s
+						assets on this plan's roll.
+					{:else}
+						{playerName(players, winners.control_leverage)}
+						drew leverage control, but {PLAN_SHORT[plan.plan_type]} has no roll
+						of its own — that option came to nothing here.
+					{/if}
 				</li>
 			{/if}
 			{#if winners.keep_or_change_target != null && winners.keep_or_change_target !== plan.preparer_id}
 				<li>
 					{playerName(players, winners.keep_or_change_target)}
-					may re-aim this plan's target before the roll resolves.
+					decides whether this plan keeps or changes its target{targetRolls
+						? ', and the roll waits until they say'
+						: ''}.
 				</li>
 			{/if}
 		</ul>
@@ -193,7 +225,19 @@
 		<!-- ── Retarget picker ─────────────────────────────────────────── -->
 		{#if amKeepOrChangeTargetWinner}
 			<div class="demand-form">
-				<p class="choices-header">Re-aim this plan</p>
+				<p class="choices-header">Keep or change this plan's target</p>
+				{#if retargetFinalized}
+					<p class="choices-note">
+						You've settled where this plan is aimed{targetRolls
+							? ' — the roll is no longer held for you'
+							: ''}. You may still adjust it until the plan resolves.
+					</p>
+				{:else}
+					<p class="choices-note">
+						Keeping the target is as much your call as re-aiming it — but the
+						table needs to hear which{targetRolls ? ', so the roll waits on you' : ''}.
+					</p>
+				{/if}
 				{#if retargetError}<ErrorText message={retargetError} variant="panel" />{/if}
 				<FormField label="Target player">
 					<PlayerChips
@@ -214,9 +258,16 @@
 					/>
 				{/if}
 
-				<button class="action-btn primary" onclick={submitRetarget} disabled={retargetBusy}>
-					{retargetBusy ? '…' : 'Apply retarget'}
-				</button>
+				<div class="demand-actions">
+					<button class="action-btn primary" onclick={() => submitRetarget(false)}
+						disabled={retargetBusy}>
+						{retargetBusy ? '…' : 'Re-aim this plan'}
+					</button>
+					<button class="action-btn secondary" onclick={() => submitRetarget(true)}
+						disabled={retargetBusy}>
+						{retargetBusy ? '…' : 'Keep the current target'}
+					</button>
+				</div>
 			</div>
 		{/if}
 
@@ -226,22 +277,48 @@
 				<p class="choices-header">
 					Leverage {playerName(players, plan.preparer_id)}'s assets onto the roll
 				</p>
-				{#if leverageError}<ErrorText message={leverageError} variant="panel" />{/if}
-				<CardPicker
-					label="Pick one or more assets"
-					items={leverageableTargetAssets}
-					{players}
-					emptyMessage="No leverageable assets on the target preparer."
-					ownerLabel={(a) => a.is_leveraged ? 'already leveraged' : undefined}
-					multi
-					selectedMulti={selectedLeverageIDs}
-					onSelectMulti={(ids) => (selectedLeverageIDs = ids)}
-				/>
-				{#if leverageableTargetAssets.length > 0}
-					<button class="action-btn primary" onclick={submitLeverage}
-						disabled={leverageBusy || selectedLeverageIDs.length === 0}>
-						{leverageBusy ? '…' : `Leverage ${selectedLeverageIDs.length} asset${selectedLeverageIDs.length === 1 ? '' : 's'}`}
-					</button>
+				{#if !targetRolls}
+					<!-- D7: nothing of the preparer's to leverage into. The rules expect
+					     the four options to land unevenly, so name the dud instead of
+					     offering a picker the server would refuse. -->
+					<p class="choices-note">
+						{PLAN_SHORT[plan.plan_type]} resolves without a roll of
+						{playerName(players, plan.preparer_id)}'s own, so there is nothing
+						here to leverage. This option drew a dud.
+					</p>
+				{:else}
+					{#if leverageFinalized}
+						<p class="choices-note">
+							Your leverage decision is in — the roll is no longer held for you.
+						</p>
+					{:else}
+						<p class="choices-note">
+							Commit as much or as little of it as you like. Leveraging none is a
+							real move: it can guarantee the roll fails.
+						</p>
+					{/if}
+					{#if leverageError}<ErrorText message={leverageError} variant="panel" />{/if}
+					<CardPicker
+						label="Pick any number of assets"
+						items={leverageableTargetAssets}
+						{players}
+						emptyMessage="No leverageable assets on the target preparer."
+						ownerLabel={(a) => a.is_leveraged ? 'already leveraged' : undefined}
+						multi
+						selectedMulti={selectedLeverageIDs}
+						onSelectMulti={(ids) => (selectedLeverageIDs = ids)}
+					/>
+					<div class="demand-actions">
+						<button class="action-btn primary" onclick={submitLeverage} disabled={leverageBusy}>
+							{#if leverageBusy}
+								…
+							{:else if selectedLeverageIDs.length === 0}
+								Leverage none — let the roll fail
+							{:else}
+								Leverage {selectedLeverageIDs.length} asset{selectedLeverageIDs.length === 1 ? '' : 's'}
+							{/if}
+						</button>
+					</div>
 				{/if}
 			</div>
 		{/if}
@@ -255,6 +332,15 @@
 		padding: 0.75rem;
 		margin-bottom: 0.75rem;
 		border-radius: 4px;
+		/* The card-face fill is the app's one light ground, so it needs the ink
+		   colour set with it — inherited text is tuned for dark panels and lands
+		   at about 1.1:1 here. Same pairing as .res-warning in planPanel.css. */
+		color: var(--color-bg);
+	}
+	/* planPanel.css's muted-note grey is likewise a dark-panel colour; re-ink it
+	   to the warm faint token, which clears AA on this fill. */
+	.demand-banner .choices-note {
+		color: var(--color-text-faint-warm);
 	}
 	.demand-banner-header {
 		margin: 0 0 0.5rem 0;
@@ -268,5 +354,13 @@
 		margin-top: 0.75rem;
 		padding-top: 0.5rem;
 		border-top: 1px dashed var(--parchment-300);
+	}
+	/* Wraps to one button per line in a narrow column, so both stay full-width
+	   targets on a phone rather than shrinking to sit side by side. */
+	.demand-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
 	}
 </style>

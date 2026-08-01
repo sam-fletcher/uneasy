@@ -430,6 +430,12 @@ func commitGate(
 // leverageBlockedByDemandWinner returns true if the roll is tied to a plan
 // whose target preparer (== player) is leveraging their own asset, but a
 // resolved Make Demands has handed control_leverage rights to someone else.
+//
+// Never fires for a target with no preparer-owned roll (mdTargetHasPreparerRoll):
+// there the option is inert and takes nothing away. Without that check a
+// control_leverage winner against a Host Festivity would strip the host of their
+// own assets on every *guest's* roll while being unable to spend them either —
+// worse than the inert option the rules expect (audit D7).
 func leverageBlockedByDemandWinner(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -445,6 +451,9 @@ func leverageBlockedByDemandWinner(
 		return false
 	}
 	if player.ID != plan.PreparerID || asset.OwnerID != plan.PreparerID {
+		return false
+	}
+	if !mdTargetHasPreparerRoll(plan.PlanType) {
 		return false
 	}
 	_, winners, err := DemandWinnersForTargetPlan(ctx, q, &plan)
