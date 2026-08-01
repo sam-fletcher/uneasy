@@ -34,6 +34,25 @@ ORDER BY created_at ASC;
 -- so no destroyed asset can reach a mechanics path through it.
 SELECT name FROM assets WHERE game_id = $1;
 
+-- name: ListAssetsByIDs :many
+-- The batched form of GetAssetByID, for the plan-resolution paths that
+-- validate a caller-supplied list of asset ids (invoked artifacts, leveraged
+-- assets, abandoned disagreement peers). Each of those looped GetAssetByID
+-- once per id, which on Neon is ~25ms of round trip per element of a list the
+-- client controls the length of.
+--
+-- Filters nothing, deliberately: this is the parity replacement for a
+-- GetAssetByID loop, so it must return destroyed assets too — every caller
+-- does its own is_destroyed check, and some of them (hfBreakAbandonedDisagreement
+-- Peers) rely on seeing the destroyed row to skip it. Do NOT reach for this
+-- where ListAssetsByGame would do; that one keeps destroyed assets out of
+-- mechanics paths by construction.
+--
+-- Callers must handle a short result: an id that matches no row is simply
+-- absent, which is the err != nil arm of the loop this replaces.
+SELECT * FROM assets WHERE id = ANY(sqlc.arg(asset_ids)::BIGINT[])
+ORDER BY id;
+
 -- name: ListAssetsByOwner :many
 SELECT * FROM assets WHERE owner_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC;
@@ -178,6 +197,23 @@ FROM marginalia m
 JOIN assets a ON a.id = m.asset_id
 WHERE a.game_id = $1
 ORDER BY m.asset_id, m.position;
+
+-- name: ListMarginaliaByAssets :many
+-- Every marginalium on a set of assets, torn and intact alike, so a resolution
+-- loop can prefetch once instead of calling ListIntactMarginalia (and then
+-- CountMarginalia, via assetIsBlank) per asset.
+--
+-- It returns torn rows on purpose even though the callers want the intact ones:
+-- blankness is "carries no marginalia rows at all" (see assetIsBlank), so a
+-- filtered query could not tell a blank asset from an all-torn one, and those
+-- two break differently. Callers filter is_torn themselves and read blankness
+-- off the presence of any row.
+--
+-- Ordered by asset then position so the caller groups in one pass and each
+-- group arrives in the same order ListIntactMarginalia returned.
+SELECT * FROM marginalia
+WHERE asset_id = ANY(sqlc.arg(asset_ids)::BIGINT[])
+ORDER BY asset_id, position;
 
 -- name: ListMarginaliaTextByGame :many
 -- All marginalia text in a game (across every asset, torn or not), for

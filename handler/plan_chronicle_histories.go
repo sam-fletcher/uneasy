@@ -263,13 +263,29 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Validate and record the invoked artifacts (deduped). Each must be an
 		// artifact belonging to a player in this game.
+		//
+		// The whole candidate list is fetched in one query rather than a
+		// GetAssetByID per id: artifact_ids comes off the request body, so the
+		// old per-id loop let the client decide how many round trips the scene
+		// cost — ~25ms each on Neon. An id with no row is simply absent from
+		// the map, which is the err != nil arm the loop used to take.
+		candidates, err := deps.Q.ListAssetsByIDs(ctx, body.ArtifactIDs)
+		if err != nil {
+			respondInternalErr(w, r, "could not load invoked artifacts", err)
+			return
+		}
+		assetByID := make(map[int64]dbgen.Asset, len(candidates))
+		for _, a := range candidates {
+			assetByID[a.ID] = a
+		}
+
 		invoked := make([]int64, 0, len(body.ArtifactIDs))
 		for _, id := range body.ArtifactIDs {
 			if slices.Contains(invoked, id) {
 				continue
 			}
-			asset, err := deps.Q.GetAssetByID(ctx, id)
-			if err != nil || asset.GameID != plan.GameID || asset.AssetType != model.AssetArtifact {
+			asset, found := assetByID[id]
+			if !found || asset.GameID != plan.GameID || asset.AssetType != model.AssetArtifact {
 				respondErr(w, http.StatusBadRequest, "each artifact_id must be an artifact in this game")
 				return
 			}

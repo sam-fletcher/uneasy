@@ -709,7 +709,12 @@ func TestPreparedDescriptor_MakeWar_NamesEnemies(t *testing.T) {
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 3)
 
-	plan := dbgen.Plan{PlanType: model.PlanMakeWar, PreparerID: tg.Players[0].ID}
+	// GameID matters: the descriptor resolves the enemy names from one
+	// GetPlayersByGame rather than a GetPlayerByID per enemy, so a plan literal
+	// without it now names nobody. plans.game_id is NOT NULL and the only
+	// production caller (EmitPlanPrepared) reads it off the same row, so this is
+	// the fixture catching up to what a real plan always carries.
+	plan := dbgen.Plan{GameID: tg.Game.ID, PlanType: model.PlanMakeWar, PreparerID: tg.Players[0].ID}
 	var rd ResolutionData
 	rd.EnsureMakeWar().EnemyPlayerIDs = []int64{tg.Players[1].ID, tg.Players[2].ID}
 

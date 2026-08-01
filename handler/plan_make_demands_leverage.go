@@ -102,10 +102,25 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
+		// Every named asset in one query. asset_ids is client-supplied, so the
+		// GetAssetByID this replaces made the round-trip count the caller's
+		// choice; the writes below stay per-asset, but the reads no longer do.
+		// SetAssetLeveraged only touches is_leveraged, which nothing here reads,
+		// so the prefetched rows can't go stale mid-loop.
+		assetRows, err := deps.Q.ListAssetsByIDs(ctx, body.AssetIDs)
+		if err != nil {
+			respondInternalErr(w, r, "could not load assets", err)
+			return
+		}
+		assetByID := make(map[int64]dbgen.Asset, len(assetRows))
+		for _, a := range assetRows {
+			assetByID[a.ID] = a
+		}
+
 		var leveragedNames []string
 		for _, assetID := range body.AssetIDs {
-			asset, err := deps.Q.GetAssetByID(ctx, assetID)
-			if err != nil {
+			asset, found := assetByID[assetID]
+			if !found {
 				respondErr(w, http.StatusNotFound, fmt.Sprintf("asset %d not found", assetID))
 				return
 			}

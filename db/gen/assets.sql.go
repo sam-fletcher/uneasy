@@ -607,6 +607,60 @@ func (q *Queries) ListAssetsByGame(ctx context.Context, gameID int64) ([]Asset, 
 	return items, nil
 }
 
+const listAssetsByIDs = `-- name: ListAssetsByIDs :many
+SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE id = ANY($1::BIGINT[])
+ORDER BY id
+`
+
+// The batched form of GetAssetByID, for the plan-resolution paths that
+// validate a caller-supplied list of asset ids (invoked artifacts, leveraged
+// assets, abandoned disagreement peers). Each of those looped GetAssetByID
+// once per id, which on Neon is ~25ms of round trip per element of a list the
+// client controls the length of.
+//
+// Filters nothing, deliberately: this is the parity replacement for a
+// GetAssetByID loop, so it must return destroyed assets too — every caller
+// does its own is_destroyed check, and some of them (hfBreakAbandonedDisagreement
+// Peers) rely on seeing the destroyed row to skip it. Do NOT reach for this
+// where ListAssetsByGame would do; that one keeps destroyed assets out of
+// mechanics paths by construction.
+//
+// Callers must handle a short result: an id that matches no row is simply
+// absent, which is the err != nil arm of the loop this replaces.
+func (q *Queries) ListAssetsByIDs(ctx context.Context, assetIds []int64) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, listAssetsByIDs, assetIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Asset{}
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.OwnerID,
+			&i.CreatorID,
+			&i.AssetType,
+			&i.Name,
+			&i.IsMainCharacter,
+			&i.IsLeveraged,
+			&i.IsDestroyed,
+			&i.CreatedAt,
+			&i.DestroyedAt,
+			&i.LinkedCardSuit,
+			&i.LinkedCardValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAssetsByOwner = `-- name: ListAssetsByOwner :many
 SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets WHERE owner_id = $1 AND is_destroyed = FALSE
 ORDER BY created_at ASC
@@ -763,6 +817,53 @@ SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id, title FROM ma
 
 func (q *Queries) ListMarginaliaByAsset(ctx context.Context, assetID int64) ([]Marginalium, error) {
 	rows, err := q.db.Query(ctx, listMarginaliaByAsset, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Marginalium{}
+	for rows.Next() {
+		var i Marginalium
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetID,
+			&i.Position,
+			&i.Text,
+			&i.IsTorn,
+			&i.TornAt,
+			&i.TornByID,
+			&i.Title,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMarginaliaByAssets = `-- name: ListMarginaliaByAssets :many
+SELECT id, asset_id, position, text, is_torn, torn_at, torn_by_id, title FROM marginalia
+WHERE asset_id = ANY($1::BIGINT[])
+ORDER BY asset_id, position
+`
+
+// Every marginalium on a set of assets, torn and intact alike, so a resolution
+// loop can prefetch once instead of calling ListIntactMarginalia (and then
+// CountMarginalia, via assetIsBlank) per asset.
+//
+// It returns torn rows on purpose even though the callers want the intact ones:
+// blankness is "carries no marginalia rows at all" (see assetIsBlank), so a
+// filtered query could not tell a blank asset from an all-torn one, and those
+// two break differently. Callers filter is_torn themselves and read blankness
+// off the presence of any row.
+//
+// Ordered by asset then position so the caller groups in one pass and each
+// group arrives in the same order ListIntactMarginalia returned.
+func (q *Queries) ListMarginaliaByAssets(ctx context.Context, assetIds []int64) ([]Marginalium, error) {
+	rows, err := q.db.Query(ctx, listMarginaliaByAssets, assetIds)
 	if err != nil {
 		return nil, err
 	}

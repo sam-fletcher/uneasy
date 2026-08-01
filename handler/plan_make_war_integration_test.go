@@ -461,3 +461,40 @@ func TestMakeWarHTTP_ContinuingWar_NoCostAgainstSurrenderedOpponent(t *testing.T
 	}
 	require.True(t, owedAgainstLiveEnemy, "active opponents are still charged the cost of battle")
 }
+
+// TestMakeWarHTTP_EnemyNotInGameRejected covers mwHandler.ValidatePreparation's
+// membership check after it stopped asking GetPlayerByID per declared enemy and
+// started resolving the whole list against one GetPlayersByGame. The check that
+// used to be "the row exists AND its game_id matches" is now "the id is in this
+// game's roster" — the same rule, so a real player from another table must
+// still be refused, and refused by id.
+func TestMakeWarHTTP_EnemyNotInGameRejected(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	other := newTestGame(t, h.q, 2)
+	outsider := other.Players[0].ID
+
+	notes := "War on a stranger"
+	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/prepare-plan"
+	code, body := h.post(h.focusPlayerIdx(), path, PreparePlanRequest{
+		PlanType:         model.PlanMakeWar,
+		EnemyPlayerIDs:   []int64{outsider},
+		PreparationNotes: &notes,
+	})
+	require.Equal(t, http.StatusBadRequest, code, "a player from another game is not a declarable enemy")
+	require.Contains(t, body["error"], "is not in this game")
+	require.Contains(t, body["error"], strconv.FormatInt(outsider, 10),
+		"the message names the offending id")
+
+	// A well-formed declaration against a real table-mate still goes through, so
+	// the rejection above isn't the roster lookup failing open in both
+	// directions.
+	prepIdx := h.focusPlayerIdx()
+	enemyID := h.tg.Players[(prepIdx+1)%len(h.tg.Players)].ID
+	code, body = h.post(prepIdx, path, PreparePlanRequest{
+		PlanType:         model.PlanMakeWar,
+		EnemyPlayerIDs:   []int64{enemyID},
+		PreparationNotes: &notes,
+	})
+	require.Equalf(t, http.StatusCreated, code, "declaring war on a table-mate: %v", body)
+}

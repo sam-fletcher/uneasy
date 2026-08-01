@@ -68,9 +68,26 @@ func (mwHandler) PreparedDescriptor(
 	if mw == nil || len(mw.EnemyPlayerIDs) == 0 {
 		return "", false
 	}
+	// One roster read for the whole enemy list: playerDisplayName is a
+	// GetPlayerByID apiece, and this runs on the prepare path where a war can
+	// name every other player at the table.
+	roster, err := q.GetPlayersByGame(ctx, plan.GameID)
+	if err != nil {
+		return "", false
+	}
+	nameByID := make(map[int64]string, len(roster))
+	for _, p := range roster {
+		nameByID[p.ID] = p.DisplayName
+	}
 	names := make([]string, 0, len(mw.EnemyPlayerIDs))
 	for _, id := range mw.EnemyPlayerIDs {
-		names = append(names, playerDisplayName(ctx, q, id))
+		name, ok := nameByID[id]
+		if !ok {
+			// Same graceful fallback playerPlainName uses for an id that no
+			// longer resolves, so the log line still reads cleanly.
+			name = fmt.Sprintf("Player %d", id)
+		}
+		names = append(names, playerMark(id, name))
 	}
 	return fmt.Sprintf("prepared Make War, declaring war on %s%s",
 		strings.Join(names, ", "), notesSuffix(plan)), true
@@ -80,6 +97,18 @@ func (mwHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	if len(v.EnemyPlayerIDs) == 0 {
 		return nil, "make_war requires at least one entry in enemy_player_ids"
 	}
+	// The roster resolves every declared enemy at once. The old loop asked
+	// GetPlayerByID per id purely to compare GameID, which is exactly what
+	// membership in this list means.
+	roster, err := v.Q.GetPlayersByGame(ctx, v.Game.ID)
+	if err != nil {
+		return nil, "could not load the players in this game"
+	}
+	inGame := make(map[int64]bool, len(roster))
+	for _, p := range roster {
+		inGame[p.ID] = true
+	}
+
 	seen := map[int64]bool{v.Player.ID: true}
 	for _, id := range v.EnemyPlayerIDs {
 		if id == v.Player.ID {
@@ -89,8 +118,7 @@ func (mwHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 			return nil, "enemy_player_ids contains duplicates"
 		}
 		seen[id] = true
-		p, err := v.Q.GetPlayerByID(ctx, id)
-		if err != nil || p.GameID != v.Game.ID {
+		if !inGame[id] {
 			return nil, fmt.Sprintf("enemy player %d is not in this game", id)
 		}
 	}

@@ -988,3 +988,179 @@ func TestListMarginaliaByGame_MatchesPerAssetLoop(t *testing.T) {
 		assert.NotEqual(t, otherAsset.ID, m.AssetID, "another game's marginalia leaked in")
 	}
 }
+
+// TestListAssetsByIDs_MatchesPerIDLoop pins the batched replacement for the
+// GetAssetByID loops on the plan-resolution paths (invoked artifacts, leveraged
+// assets, abandoned disagreement peers). Those loops treated "no row" as a
+// rejection and read is_destroyed themselves, so the batch has to return
+// destroyed rows and simply omit ids that resolve to nothing.
+func TestListAssetsByIDs_MatchesPerIDLoop(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	mk := func(owner int64, at model.AssetType, name string) dbgen.Asset {
+		a, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID:          tg.Game.ID,
+			OwnerID:         owner,
+			CreatorID:       owner,
+			AssetType:       at,
+			Name:            name,
+			IsMainCharacter: false,
+		})
+		require.NoError(t, err)
+		return a
+	}
+
+	artifact := mk(tg.Players[0].ID, model.AssetArtifact, "Chronicle")
+	peer := mk(tg.Players[1].ID, model.AssetPeer, "Confidant")
+	destroyed := mk(tg.Players[0].ID, model.AssetPeer, "Departed")
+	require.NoError(t, q.DestroyAsset(ctx, destroyed.ID))
+
+	// An asset in a different game: the callers check GameID themselves, so the
+	// query must return it rather than filter it — otherwise "not in this game"
+	// silently becomes "not found" and the two callers that distinguish those
+	// (chCastRollHandler's 400 vs mwApplyLeverageTwo's 404) diverge.
+	other := newTestGame(t, q, 2)
+	foreign, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: other.Game.ID, OwnerID: other.Players[0].ID, CreatorID: other.Players[0].ID,
+		AssetType: model.AssetArtifact, Name: "Elsewhere", IsMainCharacter: false,
+	})
+	require.NoError(t, err)
+
+	const missingID = int64(-1) // never issued by the BIGSERIAL
+	ids := []int64{artifact.ID, peer.ID, destroyed.ID, foreign.ID, missingID}
+
+	rows, err := q.ListAssetsByIDs(ctx, ids)
+	require.NoError(t, err)
+	got := make(map[int64]dbgen.Asset, len(rows))
+	for _, a := range rows {
+		got[a.ID] = a
+	}
+
+	for _, id := range ids {
+		want, wantErr := q.GetAssetByID(ctx, id)
+		have, found := got[id]
+		if wantErr != nil {
+			assert.Falsef(t, found, "id %d resolves to no row per-id but appears in the batch", id)
+			continue
+		}
+		require.Truef(t, found, "id %d resolves per-id but is missing from the batch", id)
+		assert.Equalf(t, want, have, "asset %d must match the per-id query exactly", id)
+	}
+
+	// Properties the equality loop above would also satisfy if both queries
+	// broke the same way.
+	assert.Len(t, got, 4, "every real id comes back; only the missing one drops")
+	assert.True(t, got[destroyed.ID].IsDestroyed, "a destroyed asset is returned, not filtered")
+	assert.Equal(t, other.Game.ID, got[foreign.ID].GameID, "cross-game ids are returned for the caller to reject")
+
+	// Empty input must be a clean empty result, not an error or a full scan.
+	empty, err := q.ListAssetsByIDs(ctx, nil)
+	require.NoError(t, err)
+	assert.Empty(t, empty, "no ids means no rows")
+}
+
+// TestListMarginaliaByAssets_MatchesPerAssetQueries pins the batched prefetch
+// that replaced ListIntactMarginalia + assetIsBlank's CountMarginalia inside
+// hfBreakAbandonedDisagreementPeers. It returns torn rows deliberately: an
+// empty *intact* list alone cannot distinguish a blank peer (destroyed outright
+// by a break) from an all-torn one (skipped), and those break differently.
+func TestListMarginaliaByAssets_MatchesPerAssetQueries(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+
+	mk := func(owner int64, name string) dbgen.Asset {
+		a, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID: tg.Game.ID, OwnerID: owner, CreatorID: owner,
+			AssetType: model.AssetPeer, Name: name, IsMainCharacter: false,
+		})
+		require.NoError(t, err)
+		return a
+	}
+	note := func(assetID int64, pos int16, text string) dbgen.Marginalium {
+		m, err := q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{
+			AssetID: assetID, Position: pos, Text: text,
+		})
+		require.NoError(t, err)
+		return m
+	}
+	tear := func(m dbgen.Marginalium) {
+		_, err := q.TearMarginalia(ctx, dbgen.TearMarginaliaParams{ID: m.ID, TornByID: &tg.Players[0].ID})
+		require.NoError(t, err)
+	}
+
+	// Two owners so grouping can't pass by everything sharing one.
+	intact := mk(tg.Players[0].ID, "AllIntact")
+	partial := mk(tg.Players[1].ID, "PartlyTorn")
+	allTorn := mk(tg.Players[0].ID, "AllTorn")
+	blank := mk(tg.Players[1].ID, "Blank") // no rows at all — the D3 case
+
+	// Inserted out of position order: the query must sort, not echo insert order.
+	note(intact.ID, 2, "second")
+	note(intact.ID, 1, "first")
+
+	tear(note(partial.ID, 1, "torn one"))
+	note(partial.ID, 2, "still here")
+
+	tear(note(allTorn.ID, 1, "gone"))
+
+	assets := []dbgen.Asset{intact, partial, allTorn, blank}
+	ids := make([]int64, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.ID)
+	}
+
+	// Grouped exactly as hfBreakAbandonedDisagreementPeers groups it.
+	all, err := q.ListMarginaliaByAssets(ctx, ids)
+	require.NoError(t, err)
+	gotIntact := make(map[int64][]dbgen.Marginalium)
+	hasAny := make(map[int64]bool)
+	for _, m := range all {
+		hasAny[m.AssetID] = true
+		if !m.IsTorn {
+			gotIntact[m.AssetID] = append(gotIntact[m.AssetID], m)
+		}
+	}
+
+	for _, a := range assets {
+		want, err := q.ListIntactMarginalia(ctx, a.ID)
+		require.NoError(t, err)
+		// A missing map key is nil where the per-asset query returned an empty
+		// slice. The handler only ever asks len() of this, so normalize here
+		// rather than in the loop — but the equality must still hold.
+		have := gotIntact[a.ID]
+		if have == nil {
+			have = []dbgen.Marginalium{}
+		}
+		assert.Equalf(t, want, have, "asset %q intact list must match ListIntactMarginalia", a.Name)
+
+		// The blankness half: hasAny replaces assetIsBlank's CountMarginalia.
+		count, err := q.CountMarginalia(ctx, a.ID)
+		require.NoError(t, err)
+		assert.Equalf(t, count == 0, !hasAny[a.ID],
+			"asset %q blankness must match assetIsBlank", a.Name)
+	}
+
+	// The distinction the torn rows exist for.
+	assert.Empty(t, gotIntact[allTorn.ID], "all-torn peer has no intact note to tear")
+	assert.True(t, hasAny[allTorn.ID], "...but is not blank, so it is skipped, not destroyed")
+	assert.Empty(t, gotIntact[blank.ID], "blank peer has no intact note either")
+	assert.False(t, hasAny[blank.ID], "...and IS blank, so the break destroys it outright")
+
+	assert.Equal(t, []string{"first", "second"},
+		[]string{gotIntact[intact.ID][0].Text, gotIntact[intact.ID][1].Text},
+		"ordered by position, not insertion order")
+
+	// Scoped to the id list: an unrequested asset's notes must not bleed in.
+	stranger := mk(tg.Players[0].ID, "NotAsked")
+	note(stranger.ID, 1, "should not appear")
+	all, err = q.ListMarginaliaByAssets(ctx, ids)
+	require.NoError(t, err)
+	for _, m := range all {
+		assert.NotEqual(t, stranger.ID, m.AssetID, "an asset outside the id list leaked in")
+	}
+}

@@ -398,28 +398,56 @@ func removeID(ids []int64, target int64) []int64 {
 func hfBreakAbandonedDisagreementPeers(
 	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, state *gamepkg.FestivityResolutionData,
 ) error {
+	if len(state.DisagreementAssetIDs) == 0 {
+		return nil
+	}
+
+	// Two queries for the whole centre instead of the two-or-three per peer
+	// this loop used to spend (GetAssetByID, ListIntactMarginalia, and
+	// assetIsBlank's CountMarginalia). Prefetching is safe here because the ids
+	// are deduped on the way in (hfDisagree appends only when absent) and each
+	// iteration's break touches only its own asset, so no earlier iteration can
+	// stale another's row.
+	assetRows, err := deps.Q.ListAssetsByIDs(ctx, state.DisagreementAssetIDs)
+	if err != nil {
+		return fmt.Errorf("list abandoned peers: %w", err)
+	}
+	assetByID := make(map[int64]dbgen.Asset, len(assetRows))
+	for _, a := range assetRows {
+		assetByID[a.ID] = a
+	}
+
+	// Torn rows come back too, and that is the point: blankness is "no
+	// marginalia rows at all", so an empty intact list alone can't tell a blank
+	// peer (breaks by being destroyed outright) from an all-torn one (skipped).
+	margRows, err := deps.Q.ListMarginaliaByAssets(ctx, state.DisagreementAssetIDs)
+	if err != nil {
+		return fmt.Errorf("list marginalia for abandoned peers: %w", err)
+	}
+	intactByAsset := make(map[int64][]dbgen.Marginalium, len(assetRows))
+	hasAnyMarginalia := make(map[int64]bool, len(assetRows))
+	for _, m := range margRows {
+		hasAnyMarginalia[m.AssetID] = true
+		if !m.IsTorn {
+			intactByAsset[m.AssetID] = append(intactByAsset[m.AssetID], m)
+		}
+	}
+
 	for _, id := range state.DisagreementAssetIDs {
-		asset, err := deps.Q.GetAssetByID(ctx, id)
-		if err != nil || asset.IsDestroyed {
+		asset, found := assetByID[id]
+		if !found || asset.IsDestroyed {
 			continue // already gone — nothing to break
 		}
 		// A blank peer has nothing to tear, so its break destroys it outright
 		// (D3); only an all-torn-but-alive peer (unreachable in a live game) is
 		// skipped here.
 		var m *dbgen.Marginalium
-		marg, err := deps.Q.ListIntactMarginalia(ctx, id)
-		if err != nil {
-			return fmt.Errorf("list marginalia for abandoned peer %d: %w", id, err)
-		}
+		marg := intactByAsset[id]
 		switch {
 		case len(marg) > 0:
 			m = &marg[0]
 		default:
-			blank, bErr := assetIsBlank(ctx, deps.Q, id)
-			if bErr != nil {
-				return fmt.Errorf("inspect abandoned peer %d: %w", id, bErr)
-			}
-			if !blank {
+			if hasAnyMarginalia[id] { // not blank — every note already torn
 				continue
 			}
 		}

@@ -313,9 +313,22 @@ func mwApplyLeverageTwo(
 		respondErr(w, http.StatusBadRequest, "must specify two distinct assets to leverage")
 		return nil, nil, false
 	}
-	for _, id := range []int64{assetID1In, assetID2In} {
-		a, err := deps.Q.GetAssetByID(ctx, id)
-		if err != nil {
+	ids := []int64{assetID1In, assetID2In}
+	// Both assets in one query — the validation loop below used to spend a
+	// GetAssetByID on each, and a payment route is already several round trips
+	// deep before it gets here.
+	rows, err := deps.Q.ListAssetsByIDs(ctx, ids)
+	if err != nil {
+		respondInternalErr(w, r, "could not load assets", err)
+		return nil, nil, false
+	}
+	assetByID := make(map[int64]dbgen.Asset, len(rows))
+	for _, a := range rows {
+		assetByID[a.ID] = a
+	}
+	for _, id := range ids {
+		a, found := assetByID[id]
+		if !found {
 			respondErr(w, http.StatusNotFound, "asset not found")
 			return nil, nil, false
 		}
@@ -332,7 +345,7 @@ func mwApplyLeverageTwo(
 			return nil, nil, false
 		}
 	}
-	for _, id := range []int64{assetID1In, assetID2In} {
+	for _, id := range ids {
 		err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
 			ID: id, IsLeveraged: true,
 		})
