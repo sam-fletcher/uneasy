@@ -1,11 +1,12 @@
 <!--
   Bottom-sheet wrapper for RetinueView. Slides up on mobile, centered on
-  larger screens. Dismissed via ESC, backdrop tap, or close button.
+  larger screens. Dismissed via ESC, phone Back, backdrop tap, or close button.
 -->
 <script lang="ts">
 	import '$lib/components/shared/modalShell.css';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
+	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 
 	let {
 		open,
@@ -20,6 +21,13 @@
 	function onKeyDown(e: KeyboardEvent) {
 		if (open && e.key === 'Escape') onClose();
 	}
+
+	// Back is the phone spelling of the Escape above, and every sheet in the
+	// app comes through here — Tones, Laws, Rumors, feedback, a player's
+	// retinue, the war drawer, and both of HelpButton's panels. Unlike the
+	// chat panel and the Public Record this one is a dialog at every width,
+	// so it takes part on desktop too.
+	dismissOnBack(() => open, () => onClose());
 
 	onMount(() => {
 		window.addEventListener('keydown', onKeyDown);

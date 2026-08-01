@@ -25,6 +25,7 @@
 <script lang="ts">
 	import '$lib/components/shared/statusText.css';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
+	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 	import {
 		createPlayerPost,
 		type Asset,
@@ -219,9 +220,17 @@
 	// the sheet when another surface opens. Closing flushes any pending
 	// read-marker report — see "Read-marker reporting" below.
 	function toggleExpanded() {
-		const closing = expanded;
-		expanded = !expanded;
-		if (closing) flushReadReport();
+		if (expanded) collapse();
+		else expanded = true;
+	}
+
+	/** The one close path for the mobile sheet — Escape, phone Back, and the
+	 *  strip's own toggle all land here so none of them can skip the pending
+	 *  read-marker report. */
+	function collapse() {
+		if (!expanded) return;
+		expanded = false;
+		flushReadReport();
 	}
 
 	// On desktop the panel is always visible as a column, even before the user
@@ -235,7 +244,7 @@
 		// ESC closes the expanded mobile sheet (matches the other overlays;
 		// no-op on desktop where the panel is a permanent column).
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape' && expanded && !isDesktop) expanded = false;
+			if (e.key === 'Escape' && expanded && !isDesktop) collapse();
 		};
 		window.addEventListener('keydown', onKey);
 		return () => {
@@ -243,6 +252,11 @@
 			window.removeEventListener('keydown', onKey);
 		};
 	});
+
+	// Phone Back closes the sheet instead of leaving the table. Gated on
+	// !isDesktop: past the chat dock this panel is a permanent column, not an
+	// overlay, so there's nothing for Back to dismiss.
+	dismissOnBack(() => expanded, collapse, () => !isDesktop);
 	const isOpen = $derived(expanded || isDesktop);
 
 	// ── Unread state (server-side marker; adr/CHAT_OVERHAUL_PLAN.md Phase 1c/2a) ─

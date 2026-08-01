@@ -38,6 +38,7 @@
 	import { stealPreview } from '$lib/prologue/choosing';
 	import { deriveClaimSteps } from '$lib/prologue/claimSteps';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 
 	interface Props {
 		gameID: string;
@@ -53,6 +54,12 @@
 
 	let { gameID, sheet, choice, cards, assets, players, currentPlayerID, onClose, onSubmitted }: Props =
 		$props();
+
+	// The parent only mounts this while a claim is open, so being mounted *is*
+	// the open state. Back cancels the claim — the same thing the × and the
+	// backdrop already do in one tap, and far better than the alternative it
+	// replaces, which was leaving the table mid-claim.
+	dismissOnBack(() => true, () => onClose());
 
 	const isTitles = $derived(sheet.type === 'titles');
 	const isLawsRumors = $derived(sheet.type === 'laws_rumors');

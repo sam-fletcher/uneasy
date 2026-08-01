@@ -27,6 +27,7 @@
 	import { recordDockQuery, RECORD_WIDTH_PX } from '$lib/breakpoints';
 	import type { RecordRow, Plan, Player, GamePhase } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
+	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { PLAN_SHORT } from '$lib/components/plans/shared';
 	import { parseMakeIntroductionsData } from '$lib/plans/resolutionData/make_introductions';
@@ -163,6 +164,12 @@
 		window.addEventListener('keydown', onKeydown);
 		return () => window.removeEventListener('keydown', onKeydown);
 	});
+
+	// ── Phone Back closes the overlay ─────────────────────────────────────────
+	// Same scope as the Escape handler above, and for the same reason: past the
+	// record dock this is a permanent column, so Back keeps its ordinary
+	// meaning of leaving the page.
+	dismissOnBack(() => userExpanded, () => { userExpanded = false; }, () => !isWide);
 </script>
 
 <!--
