@@ -10,42 +10,6 @@ import (
 	"encoding/json"
 )
 
-const countUnreadPosts = `-- name: CountUnreadPosts :one
-SELECT COUNT(*) FROM scene_posts
-WHERE game_id = $1
-  AND id > $2
-  AND author_id IS DISTINCT FROM $3::BIGINT
-  AND (author_id IS NOT NULL OR severity >= $4)
-`
-
-type CountUnreadPostsParams struct {
-	GameID         int64 `db:"game_id" json:"game_id"`
-	LastReadPostID int64 `db:"last_read_post_id" json:"last_read_post_id"`
-	ViewerID       int64 `db:"viewer_id" json:"viewer_id"`
-	MinSeverity    int32 `db:"min_severity" json:"min_severity"`
-}
-
-// Unread posts for one player in one game, for the profile page's per-table
-// badge (adr/CHAT_OVERHAUL_PLAN.md Phase 6). This is the server-side mirror of
-// isUnreadPost() in frontend/src/lib/chatFeed.ts and MUST stay in step with
-// it — newer than the player's read marker, not authored by them, and either a
-// player message (author_id IS NOT NULL) or a system post at or above the
-// "hide bookkeeping" bar. min_severity is passed in rather than hardcoded so
-// model.SeverityDefault stays the single source of that threshold.
-// `author_id IS DISTINCT FROM` (not `<>`) so system posts, whose author_id is
-// NULL, survive the comparison instead of being silently dropped by it.
-func (q *Queries) CountUnreadPosts(ctx context.Context, arg CountUnreadPostsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUnreadPosts,
-		arg.GameID,
-		arg.LastReadPostID,
-		arg.ViewerID,
-		arg.MinSeverity,
-	)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countUnreadPostsByAccount = `-- name: CountUnreadPostsByAccount :many
 SELECT p.id AS viewer_id, COUNT(sp.id) AS unread_count
 FROM players p
@@ -68,13 +32,21 @@ type CountUnreadPostsByAccountRow struct {
 	UnreadCount int64 `db:"unread_count" json:"unread_count"`
 }
 
-// CountUnreadPosts for every table an account sits at, in one round trip — the
-// profile page's table list called the single-row form once per table.
+// Unread posts for every table an account sits at, in one round trip, for the
+// profile page's per-table badge (adr/CHAT_OVERHAUL_PLAN.md Phase 6). A
+// single-table form used to exist and the table list called it once per table,
+// which is a round trip per card.
 //
-// The unread rule MUST stay byte-for-byte identical to CountUnreadPosts above
-// (and to isUnreadPost() in the frontend): newer than that player's marker, not
-// authored by them, and either a player message or a system post at/above the
-// bookkeeping bar. Any change to one belongs in both.
+// This is the server-side mirror of isUnreadPost() in
+// frontend/src/lib/chatFeed.ts and MUST stay in step with it — newer than that
+// player's read marker, not authored by them, and either a player message
+// (author_id IS NOT NULL) or a system post at or above the "hide bookkeeping"
+// bar. Those are the only two statements of the rule, here and in the
+// frontend; any change to one belongs in both. min_severity is passed in
+// rather than hardcoded so model.SeverityDefault stays the single source of
+// that threshold. `author_id IS DISTINCT FROM` (not `<>`) so system posts,
+// whose author_id is NULL, survive the comparison instead of being silently
+// dropped by it.
 //
 // The (game, viewer, marker) triples are read straight off the players table
 // rather than passed in, because that is where the caller got them: its list is
