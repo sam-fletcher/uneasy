@@ -185,6 +185,7 @@ Reuse before writing new CSS — these live in
 | `modalShell.css` | sheet/modal frame |
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
+| `SuitGlyph.svelte` | the four playing-card suits as drawn paths — **the** way a suit reaches the screen; never the Unicode pips, which lose spade-vs-club as they shrink. `currentColor`, so the wrapper owns red/black |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record and the mobile chat bar's icon — see **Log marks** below |
 

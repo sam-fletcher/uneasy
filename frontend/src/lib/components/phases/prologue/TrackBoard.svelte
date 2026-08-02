@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/cardGlyph.css';
+	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
 	import type {
 		Player,
 		PlayerCardRow,
@@ -53,10 +54,12 @@
 		showCards = true
 	}: Props = $props();
 
-	const TRACKS: { id: PrologueTrack; label: string; suit: string; suitChar: 'C' | 'D' | 'S' }[] = [
-		{ id: 'power', label: 'Power', suit: '♣', suitChar: 'C' },
-		{ id: 'knowledge', label: 'Knowledge', suit: '♦', suitChar: 'D' },
-		{ id: 'esteem', label: 'Esteem', suit: '♠', suitChar: 'S' }
+	// One suit field, not two: it is both the pip drawn in the column header
+	// and the key the player's cards are filtered by, so they cannot drift.
+	const TRACKS: { id: PrologueTrack; label: string; suitChar: 'C' | 'D' | 'S' }[] = [
+		{ id: 'power', label: 'Power', suitChar: 'C' },
+		{ id: 'knowledge', label: 'Knowledge', suitChar: 'D' },
+		{ id: 'esteem', label: 'Esteem', suitChar: 'S' }
 	];
 
 	function trackToCategory(t: PrologueTrack): RankingCategory {
@@ -167,7 +170,9 @@
 		<section class="column" class:active={activeTrack === t.id}>
 			<header class="col-head">
 				{#if showCards}
-					<span class="col-suit" data-color={t.id === 'knowledge' ? 'red' : 'black'}>{t.suit}</span>
+					<span class="col-suit" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
+						<SuitGlyph suit={t.suitChar} />
+					</span>
 				{/if}
 				<span class="col-label">{t.label}</span>
 			</header>
@@ -206,7 +211,7 @@
 												? 'doing work'
 												: 'wasted (would be refunded)'}
 										>
-											{h.value}♥
+											{h.value}<SuitGlyph suit="H" />
 										</span>
 									{/each}
 									{#if row.isSetAside && committedHeartsForPlayer(pid, t.id).length === 0}
@@ -254,14 +259,19 @@
 		padding: 0.1rem 0.05rem 0.3rem;
 		border-bottom: 1px solid var(--color-surface-2);
 	}
-	/* Fixed line-height so the upsized diamond doesn't make the Knowledge
-	   header taller than the other two (the label's line box sets the
-	   header height instead). */
-	.col-suit { font-size: 0.95rem; line-height: 1rem; }
-	/* The diamond glyph's ink is ~34% narrower than the clubs' at equal font
-	   size, and it's the only red-on-dark suit; upsizing evens out its
-	   apparent size against the white suits. */
-	.col-suit[data-color='red'] { color: var(--color-suit-red); font-size: 1.1rem; }
+	/* SuitGlyph sizes by box, not font-size — so this is a width/height, and
+	   all three columns take the same one. The old rule upsized the diamond to
+	   even out the Unicode pips' wildly uneven ink; the drawn diamond is
+	   deliberately card-proportioned (see SuitGlyph's note) and must not be
+	   inflated back. 0.85rem against the 0.75rem label: a shade larger than the
+	   track name it heads, which is the balance the pip wants. */
+	.col-suit {
+		display: inline-flex;
+		align-items: center;
+		line-height: 1rem;
+	}
+	.col-suit :global(.suit) { width: 0.85rem; height: 0.85rem; }
+	.col-suit[data-color='red'] { color: var(--color-suit-red); }
 	.col-suit[data-color='black'] { color: var(--color-text); }
 	.col-label {
 		color: var(--color-accent);

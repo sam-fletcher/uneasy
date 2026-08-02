@@ -67,5 +67,21 @@
 .card-glyph.inert {
 	opacity: 0.45;
 	background: var(--color-card-spent);
-	text-decoration: line-through;
+	position: relative;
+}
+
+/* The strike is a drawn rule, not `text-decoration: line-through`. The chip's
+   suit is an inline <svg> (SuitGlyph) — an atomic inline-level box, which CSS
+   text decorations are not painted over. The line stopped dead at the value
+   and left the pip untouched, which halves a signal whose whole job is to say
+   "this card does nothing". Inset by the chip's own padding so it reads as a
+   strike through the content rather than a border across the tile. */
+.card-glyph.inert::after {
+	content: '';
+	position: absolute;
+	left: 0.15em;
+	right: 0.15em;
+	top: 50%;
+	border-top: 1px solid currentColor;
+	pointer-events: none;
 }

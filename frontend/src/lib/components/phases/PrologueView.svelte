@@ -45,6 +45,7 @@
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import ClosingStage from './prologue/ClosingStage.svelte';
+	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
 	import { computeBrightHearts, cardRank } from '$lib/prologue/refund';
 	import {
 		openCount,
@@ -526,7 +527,12 @@
 			const waitees: Waitee[] = notDone.length === players.length
 				? [{ kind: 'everyone' }]
 				: notDone;
-			return { waitees, stepLabel: `Rankings: Spend ♥ for ${t.charAt(0).toUpperCase() + t.slice(1)}` };
+			// "Hearts", not a ♥. stepLabel is a plain string in the shared
+			// WaitingOnBar contract, so it is the one suit in the prologue that
+			// cannot take a SuitGlyph — and a lone Unicode pip sitting a line
+			// above the SVG-pipped track board is exactly the mismatch this
+			// screen was fixed to remove. The word costs nothing here.
+			return { waitees, stepLabel: `Rankings: Spend Hearts for ${t.charAt(0).toUpperCase() + t.slice(1)}` };
 		}
 		if (mode === 'place') {
 			if (topTrackPlayerID == null) return { waitees: [] };
@@ -546,45 +552,6 @@
 	$effect(() => { waitingOn = prologueWaitingOn; });
 </script>
 
-<!-- The four suits as drawn paths rather than the Unicode pips, so their weight
-     and proportions survive the sizes we actually use: ~11.5px bare in the
-     sheet-header track tags (the smallest, and the only place a suit stands
-     alone with no value beside it), ~12px inside a card chip, 18px in the
-     legend.
-
-     Redrawn 2026-08-01. The first set came from generic UI icon shapes and lost
-     its distinctions as it shrank — the club's lobes overlapped so far they
-     fused into one blob, the spade's stem was a stub swallowed by its body, and
-     the diamond was a square stood on its point. Below ~12px that left spade
-     and club as the same dark lump, and they are exactly the pair a reader
-     needs to separate: colour already splits red from black, and heart from
-     diamond is never in doubt, so spade-vs-club is the whole problem.
-
-     The two blacks are therefore drawn to diverge at the silhouette, which is
-     all that survives at 10px — the spade converges to a point at the top, the
-     club spreads into three lobes over notches cut deep enough to hold. Both
-     stand on the same wide flat foot, which is what separates them from the
-     heart's point below. The diamond is card-proportioned (narrower than it is
-     tall) rather than square, so it carries less ink than the heart at every
-     size — that is how a real card reads too, so don't "fix" it by fattening it
-     back towards a rhombus. -->
-{#snippet suitSvg(suit: string)}
-	{#if suit === 'H'}
-		<svg class="suit" width="10" height="10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 22.1C9.5 19.7 2.1 14.4 2.1 8.8C2.1 5.3 4.8 2.9 7.8 2.9C10.1 2.9 11.4 4.5 12 6.1C12.6 4.5 13.9 2.9 16.2 2.9C19.2 2.9 21.9 5.3 21.9 8.8C21.9 14.4 14.5 19.7 12 22.1Z"/></svg>
-	{:else if suit === 'D'}
-		<svg class="suit" width="10" height="10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 1.7 L20.2 12 L12 22.3 L3.8 12 Z"/></svg>
-	{:else if suit === 'S'}
-		<svg class="suit" width="10" height="10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 1.7C12.9 4.2 21.8 10.1 21.8 15.3C21.8 18.4 19.6 20.4 17 20.4C15.2 20.4 13.7 19.6 12.85 18.4C12.9 20.4 13.9 21.7 16.3 22.4L7.7 22.4C10.1 21.7 11.1 20.4 11.15 18.4C10.3 19.6 8.8 20.4 7 20.4C4.4 20.4 2.2 18.4 2.2 15.3C2.2 10.1 11.1 4.2 12 1.7Z"/></svg>
-	{:else if suit === 'C'}
-		<svg class="suit" width="10" height="10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-			<circle cx="12" cy="7.2" r="5.2" fill="currentColor"/>
-			<circle cx="7.1" cy="15.1" r="5.2" fill="currentColor"/>
-			<circle cx="16.9" cy="15.1" r="5.2" fill="currentColor"/>
-			<path fill="currentColor" d="M10.8 15.7C11.25 19.2 10.4 21.4 7.9 22.4L16.1 22.4C13.6 21.4 12.75 19.2 13.2 15.7Z"/>
-		</svg>
-	{/if}
-{/snippet}
-
 {#snippet miniCard(value: string, suit: string, state: CardHoldState = 'fresh')}
 	<span
 		class="card-glyph"
@@ -593,7 +560,7 @@
 		data-color={suitColor(suit)}
 	>
 		<span class="mc-value">{value}</span>
-		{@render suitSvg(suit)}
+		<SuitGlyph {suit} />
 	</span>
 {/snippet}
 
@@ -602,7 +569,7 @@
      .card-glyph's black is the page background, which only works against
      parchment. Mirrors TrackBoard's .col-suit. -->
 {#snippet bareSuit(suit: string)}
-	<span class="bare-suit" data-color={suitColor(suit)}>{@render suitSvg(suit)}</span>
+	<span class="bare-suit" data-color={suitColor(suit)}><SuitGlyph {suit} /></span>
 {/snippet}
 
 <div class="prologue-view" bind:clientWidth={columnWidth}>
@@ -671,7 +638,7 @@
 						<tr>
 							<th scope="row">
 								<span class="card-glyph legend-glyph" data-color={suitColor(m.suit)}>
-									{@render suitSvg(m.suit)}
+									<SuitGlyph suit={m.suit} />
 								</span>
 							</th>
 							<td>{m.assetType}</td>
@@ -863,7 +830,7 @@
 			<h3>Starting rankings</h3>
 			<p class="prologue-subtext">
 				The playing cards set the initial rankings. You will choose tracks to spend your 
-				<span class="heart-mark" style="color: var(--color-suit-red);">♥</span> Hearts on.
+				<span class="heart-mark"><SuitGlyph suit="H" /></span> Hearts on.
 			</p>
 		</div>
 
@@ -1146,11 +1113,13 @@
 	}
 	.bare-suit[data-color='red'] { color: var(--color-suit-red); }
 	.bare-suit[data-color='black'] { color: var(--color-text); }
-	/* 1em, not the 0.85em this used to be. Inside .sheet-tracks' 0.72rem that
-	   was a 9.8px pip — the smallest suit anywhere, and the only one with no
-	   value glyph beside it to lend it context. Redrawing the paths bought back
-	   most of the legibility; this buys the rest, at a cost of ~1.7px per tag in
-	   a right-aligned flex row that has the room. */
+	/* Pinned at 1em (SuitGlyph's default, restated so a change to that default
+	   can't shrink this slot silently) — not the 0.85em this used to be. Inside
+	   .sheet-tracks' 0.72rem that was a 9.8px pip: the smallest suit anywhere,
+	   and the only one with no value glyph beside it to lend it context.
+	   Redrawing the paths bought back most of the legibility; this buys the
+	   rest, at a cost of ~1.7px per tag in a right-aligned flex row that has
+	   the room. */
 	.bare-suit :global(.suit) { width: 1em; height: 1em; }
 
 	.sheet-caret {
@@ -1249,7 +1218,16 @@
 		line-height: 1.2;
 	}
 
-	.card-glyph :global(.suit) { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: middle; }
+	/* The plain card-chip pip needs no rule of its own — 1em inside the chip's
+	   own font-size is SuitGlyph's default, and every other .card-glyph in the
+	   app (TrackBoard, HandStrip, ClaimChoiceModal) wants the same. Only the
+	   deliberate departures are written down: .legend-glyph above and
+	   .hand-tile-cards below. */
+
+	/* The prose heart in "spend your ♥ Hearts on". Sits on the dark page
+	   ground, so it takes the red directly rather than borrowing a chip's
+	   [data-color]. */
+	.heart-mark { color: var(--color-suit-red); }
 
 	/* Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2). Spans
 	   the full row width (unlike the tile it follows, since Round 2 keeps the

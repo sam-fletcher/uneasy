@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/cardGlyph.css';
+	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
 	import type { CommittedHeart, PlayerCardRow, PrologueTrack } from '$lib/api';
 	import { cardRank } from '$lib/prologue/refund';
 
@@ -112,7 +113,7 @@
 						: 'Tap to commit to this track'}
 			>
 				<span class="card-value">{h.card_value}</span>
-				<span class="card-suit">♥</span>
+				<SuitGlyph suit="H" />
 			</button>
 		{/each}
 	</div>
@@ -171,5 +172,10 @@
 		cursor: not-allowed;
 	}
 	.heart-card:disabled { cursor: not-allowed; }
-	.card-suit { font-size: 0.85em; }
+	/* 0.85em, the same font-size the Unicode heart used to take here: the pip
+	   is the smaller half of a value-and-suit pair, so it reads under the value
+	   rather than beside it in weight. The 44px tap target lives on the button
+	   itself (.card-glyph.tappable) and is untouched by this — the glyph is
+	   only the label inside it. */
+	.heart-card :global(.suit) { width: 0.85em; height: 0.85em; }
 </style>

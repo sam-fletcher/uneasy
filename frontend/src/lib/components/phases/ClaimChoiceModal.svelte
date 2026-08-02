@@ -38,6 +38,7 @@
 	import { stealPreview } from '$lib/prologue/choosing';
 	import { deriveClaimSteps } from '$lib/prologue/claimSteps';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
 	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 
 	interface Props {
@@ -173,11 +174,6 @@
 		}
 	}
 
-	function cardLabel(suit: string, value: string): string {
-		const s = suit === 'H' ? '♥' : suit === 'D' ? '♦' : suit === 'S' ? '♠' : '♣';
-		return value + s;
-	}
-
 	function suitTypeLabel(suit: string): string {
 		switch (suit) {
 			case 'C': return 'holding';
@@ -306,7 +302,9 @@
 					{@const preview = slot ? stealPreview(slot.suit, slot.value, cards, assets, players) : null}
 					<section class="step take">
 						{#if slot}
-							<span class="card-glyph" data-color={suitColor(slot.suit)}>{cardLabel(slot.suit, slot.value)}</span>
+							<span class="card-glyph" data-color={suitColor(slot.suit)}
+								>{slot.value}<SuitGlyph suit={slot.suit} /></span
+							>
 						{/if}
 						<span class="step-title">{step.title}</span>
 						<span class="step-summary">
@@ -340,7 +338,9 @@
 						>
 							<span class="step-marker">{step.complete ? '✓' : idx + 1}</span>
 							{#if cardSlot}
-								<span class="card-glyph" data-color={suitColor(cardSlot.suit)}>{cardLabel(cardSlot.suit, cardSlot.value)}</span>
+								<span class="card-glyph" data-color={suitColor(cardSlot.suit)}
+									>{cardSlot.value}<SuitGlyph suit={cardSlot.suit} /></span
+								>
 							{/if}
 							<span class="step-title">{step.title}</span>
 							{#if !isOpen && step.complete}
