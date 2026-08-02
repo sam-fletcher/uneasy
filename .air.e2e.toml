@@ -10,7 +10,8 @@ tmp_dir = ".air_tmp_e2e"
   bin = ".air_tmp_e2e/server"
   delay = 500
   exclude_dir = ["frontend", ".air_tmp", ".air_tmp_e2e", "db/migrations", "cmd/server/frontend_dist"]
-  include_ext = ["go"]
+  # json too — see .air.toml: the embedded example pools need a rebuild to take.
+  include_ext = ["go", "json"]
   kill_delay = "0s"
   log = ".air_tmp_e2e/build.log"
   rerun = false

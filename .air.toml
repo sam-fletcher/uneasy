@@ -10,7 +10,11 @@ tmp_dir = ".air_tmp"
   bin = ".air_tmp/server"
   delay = 500         # ms to wait after a file change before rebuilding
   exclude_dir = ["frontend", ".air_tmp", ".air_tmp_e2e", "db/migrations", "cmd/server/frontend_dist"]
-  include_ext = ["go"]
+  # json too: game/*_examples.json are //go:embed-ed, so their contents are
+  # baked into the binary at compile time. Watching only "go" meant editing a
+  # pool changed nothing until some unrelated .go file happened to trigger a
+  # rebuild.
+  include_ext = ["go", "json"]
   kill_delay = "0s"
   log = ".air_tmp/build.log"
   rerun = false
