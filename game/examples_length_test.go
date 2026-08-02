@@ -15,7 +15,7 @@ const maxExampleLen = 34
 
 func TestExamplePoolsFitOneLine(t *testing.T) {
 	pools := map[string]map[string][]string{
-		"prologue":   PrologueExamples,
+		"prologue":   AssetExamples,
 		"marginalia": MarginaliaExamples,
 	}
 	for pool, byType := range pools {

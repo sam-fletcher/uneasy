@@ -6,7 +6,7 @@ package handler
 // by asset type, with anything already in play filtered out (for creative
 // diversity — the same example is never offered twice across the game).
 //
-//   kind=name        → asset-name examples (game.PrologueExamples)
+//   kind=name        → asset-name examples (game.AssetExamples)
 //   kind=marginalia  → marginalia examples (game.MarginaliaExamples)
 //
 // Both dedupe against what the game's fiction already contains. The filter is a
@@ -87,7 +87,7 @@ func GetAssetSuggestions(s *db.Store) http.HandlerFunc {
 
 		switch kind {
 		case "name":
-			pool = gamepkg.PrologueExamples[assetType]
+			pool = gamepkg.AssetExamples[assetType]
 			// Names of destroyed assets included — see ListAssetNamesByGame.
 			if names, err := s.Q.ListAssetNamesByGame(ctx, gameID); err == nil {
 				for _, n := range names {

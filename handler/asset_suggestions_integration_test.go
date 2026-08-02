@@ -73,7 +73,7 @@ func TestAssetSuggestions_NameDedup(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
-	pool := gamepkg.PrologueExamples["peer"]
+	pool := gamepkg.AssetExamples["peer"]
 	require.GreaterOrEqual(t, len(pool), 3)
 	occupy := pool[:len(pool)-2]
 	wantRemaining := pool[len(pool)-2:]
@@ -102,7 +102,7 @@ func TestAssetSuggestions_DestroyedStaysBurnt(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
-	namePool := gamepkg.PrologueExamples["peer"]
+	namePool := gamepkg.AssetExamples["peer"]
 	margPool := gamepkg.MarginaliaExamples["peer"]
 	require.NotEmpty(t, namePool)
 	require.NotEmpty(t, margPool)
@@ -140,7 +140,7 @@ func TestAssetSuggestions_ReturnsWholePool(t *testing.T) {
 
 	code, body := h.get(0, suggestionsPath(h.tg.Game.ID, "holding", "name"))
 	require.Equalf(t, 200, code, "asset-suggestions: %v", body)
-	assert.ElementsMatch(t, gamepkg.PrologueExamples["holding"], respSuggestions(body),
+	assert.ElementsMatch(t, gamepkg.AssetExamples["holding"], respSuggestions(body),
 		"a fresh game has used nothing, so the full pool should come back")
 }
 

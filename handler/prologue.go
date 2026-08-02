@@ -175,7 +175,7 @@ func GetPrologueCardSuggestions(s *db.Store) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "unknown suit")
 			return
 		}
-		pool := gamepkg.PrologueExamples[assetType]
+		pool := gamepkg.AssetExamples[assetType]
 		if len(pool) == 0 {
 			respond(w, http.StatusOK, map[string]any{"suggestions": []string{}})
 			return
