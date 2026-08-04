@@ -2,7 +2,9 @@
   Structured prologue (Phase 4b). Modes driven by game.prologue_ranking_step:
 
     null   →  choosing: pick boxes from the three sheets; cards make-or-take
-    declare_X        →  hearts declaration for the current track
+    declare_X        →  WLD declaration for the current track (the server
+                        still spells the step "declare_" + track, and the API
+                        still calls the cards hearts — see HandStrip)
     place_set_asides_X →  top-ranked player slots zero-suit players in
     closing          →  "The Stage is Set": name your main character, ≤3p
                          create an extra peer, then ready up. All-ready
@@ -13,6 +15,7 @@
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/trackCode.css';
 	import '$lib/components/shared/choicePip.css';
+	import '$lib/components/shared/jumpPulse.css';
 	import {
 		getPrologueSheets,
 		getPrologueCards,
@@ -46,14 +49,15 @@
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import ClosingStage from './prologue/ClosingStage.svelte';
-	import TurnCard from './prologue/TurnCard.svelte';
+	import TurnCard, { type JustClaimed } from './prologue/TurnCard.svelte';
 	import StandingStrip from './prologue/StandingStrip.svelte';
 	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
+	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
 	import { computeBrightHearts } from '$lib/prologue/refund';
+	import { scrollBehavior } from '$lib/reducedMotion';
 	import {
 		cardHoldStates,
 		cardHolders,
-		cardWeight,
 		ownedCardCount,
 		sheetTrackProfile,
 		spentByCategory,
@@ -62,7 +66,6 @@
 		trackLabel,
 		assetTypeLabel,
 		assetTypeFor,
-		MAX_CARD_WEIGHT,
 		SUIT_MEANINGS,
 		type CardHoldState,
 	} from '$lib/prologue/choosing';
@@ -239,9 +242,10 @@
 	// ── My hand ──────────────────────────────────────────────────────────────
 	const myCards = $derived(cards.filter(c => c.player_id === currentPlayerID));
 
-	// (No suitColor any more: suits have left the choosing view entirely
-	// (Round 2, decision 1), so nothing in this component draws a card face.
-	// TrackBoard, HandStrip and ClaimChoiceModal still do, and keep their own.)
+	// (No suitColor any more: suits have left the game UI entirely — Round 2
+	// decision 1 for the choosing view, and the owner's Session 3 ruling on the
+	// open question for the ranking and the declare step. Nothing anywhere
+	// draws a card face now; SuitGlyph and cardGlyph.css are deleted.)
 
 	// (The per-player "Hands" grid is gone, Round 2 §1f: it duplicated the
 	// TrackBoard, which already shows every player's cards by track. The one
@@ -302,9 +306,9 @@
 		return holders.get(`${suit}::${value}`);
 	}
 
-	/** The meter's four segments, in order — the card weight lights 1..n
-	 *  (Round 2, decision 2; the .seg idiom from plans/shared/DifficultyMeter). */
-	const WEIGHT_SEGMENTS = Array.from({ length: MAX_CARD_WEIGHT }, (_, i) => i + 1);
+	// (The weight meter is shared/WeightMeter.svelte since Session 3a — the
+	// TrackBoard draws the identical object for every card on a track now that
+	// suits have left the ranking too.)
 
 	// Current tile-grid column count, mirroring .tile-grid's container query
 	// (2 base / 3 when the column is ≥ 420 — the 440-cap region;
@@ -339,9 +343,68 @@
 		activeClaim = { sheet, choice };
 	}
 
+	// ── The motion beat (Round 2 §3c) ────────────────────────────────────────
+	// A claim used to commit into silence: the scroll position was
+	// byte-identical afterwards and every signal that anything had happened
+	// rendered ~250px above the fold. Three beats now answer it, all local to
+	// where the player is looking — the tile pulses where it sits, the pip
+	// hollows out, and the turn card confirms what the claim did before
+	// decaying into "X is choosing".
+	let viewEl = $state<HTMLDivElement | null>(null);
+	let justClaimed = $state<JustClaimed | null>(null);
+	let justClaimedTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Long enough to read two clauses and look up at the tile, short enough
+	 *  that it is gone before the next player's claim lands. */
+	const JUST_CLAIMED_MS = 6000;
+
+	onDestroy(() => {
+		if (justClaimedTimer) clearTimeout(justClaimedTimer);
+	});
+
+	/**
+	 * What the claim just did, in the two verbs the rules use.
+	 *
+	 * MUST be called before the reload: it reads the pre-claim `cards`/`assets`,
+	 * and that is the whole point — afterwards the taken asset is simply yours
+	 * and the fresh cards are simply held, with nothing left to say it just
+	 * happened. A card the viewer already held is neither made nor taken (the
+	 * server no-ops a self-take), so it contributes to neither count.
+	 */
+	function describeClaim(choice: PrologueSheet['choices'][number]): JustClaimed {
+		let made = 1; // the sheet's own asset, always created
+		const takes: JustClaimed['takes'] = [];
+		for (const c of choice.cards) {
+			const preview = stealPreview(c.suit, c.value, cards, assets, players);
+			if (!preview) {
+				made++;
+			} else if (preview.ownerID !== currentPlayerID) {
+				takes.push({ assetName: preview.assetName, ownerName: preview.ownerName });
+			}
+		}
+		return { tileName: choice.name, made, takes };
+	}
+
+	/** Take the reader to the tile they just claimed and flash it. The scroll
+	 *  survives reduced motion (it carries where, which is information); the
+	 *  flash is handled by shared/jumpPulse.css, which no-ops under `reduce`. */
+	function pulseClaimedTile(boxKey: string) {
+		const el = viewEl?.querySelector<HTMLElement>(`[data-tile-key="${CSS.escape(boxKey)}"]`);
+		if (!el) return;
+		el.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+		// Removed then re-applied after a forced reflow, so a second claim on
+		// the same tile-key restarts the animation instead of being ignored.
+		el.classList.remove('jump-pulse');
+		void el.offsetWidth;
+		el.classList.add('jump-pulse');
+		setTimeout(() => el.classList.remove('jump-pulse'), 800);
+	}
+
 	async function onClaimSubmitted() {
+		const claimed = activeClaim;
 		activeClaim = null;
 		actionError = '';
+		// Snapshot the outcome now, against pre-reload data (see describeClaim).
+		const summary = claimed ? describeClaim(claimed.choice) : null;
 		try {
 			const [, assetData] = await Promise.all([reload(), listAssets(gameID)]);
 			assets = assetData.assets;
@@ -353,6 +416,19 @@
 			// after this line and silently erase it.
 			actionError = e instanceof Error ? e.message : 'Your claim went through, but the screen may be out of date.';
 		}
+		if (!claimed || !summary) return;
+		// After the reload, deliberately: the pip's spend animation runs on the
+		// pip that has just *become* spent, and setting this first would start
+		// it on the last still-solid one and then jump a slot when the fresh
+		// claim count arrived.
+		if (justClaimedTimer) clearTimeout(justClaimedTimer);
+		justClaimed = summary;
+		justClaimedTimer = setTimeout(() => {
+			justClaimed = null;
+			justClaimedTimer = null;
+		}, JUST_CLAIMED_MS);
+		await tick();
+		pulseClaimedTile(`${claimed.sheet.type}::${claimed.choice.name}`);
 	}
 
 	// ── Hearts declaration (max-commitment model) ────────────────────────────
@@ -552,12 +628,11 @@
 			const waitees: Waitee[] = notDone.length === players.length
 				? [{ kind: 'everyone' }]
 				: notDone;
-			// "Hearts", not a ♥. stepLabel is a plain string in the shared
-			// WaitingOnBar contract, so it is the one suit in the prologue that
-			// cannot take a SuitGlyph — and a lone Unicode pip sitting a line
-			// above the SVG-pipped track board is exactly the mismatch this
-			// screen was fixed to remove. The word costs nothing here.
-			return { waitees, stepLabel: `Rankings: Spend Hearts for ${t.charAt(0).toUpperCase() + t.slice(1)}` };
+			// "WLD", the same three letters the choosing view taught and the
+			// hand below spends — not "Hearts", which was the last deck word
+			// left in the app (Session 3's ruling on the open question). "on",
+			// not "for": you are putting the card on that track.
+			return { waitees, stepLabel: `Rankings: Spend WLD on ${t.charAt(0).toUpperCase() + t.slice(1)}` };
 		}
 		if (mode === 'place') {
 			if (topTrackPlayerID == null) return { waitees: [] };
@@ -610,19 +685,7 @@
 	</span>
 {/snippet}
 
-<!-- Card value as weight, 1–4 (Round 2, decision 2). The house segmented
-     meter, never stars — stars aren't in this app's visual language. It only
-     decides a tie, so it is deliberately the quietest thing on its row. -->
-{#snippet weightMeter(value: string)}
-	{@const w = cardWeight(value)}
-	<span class="weight" role="img" aria-label={`weight ${w} of ${MAX_CARD_WEIGHT}`}>
-		{#each WEIGHT_SEGMENTS as s (s)}
-			<span class="seg" class:on={s <= w}></span>
-		{/each}
-	</span>
-{/snippet}
-
-<div class="prologue-view" bind:clientWidth={columnWidth}>
+<div class="prologue-view" bind:clientWidth={columnWidth} bind:this={viewEl}>
 	<!-- Load errors sit at the top of the view: they explain the content
 	     below being stale or missing. Action errors render beside the control
 	     that raised them, further down in each mode's branch. -->
@@ -644,6 +707,7 @@
 				{isMyTurn}
 				unspent={currentPlayerID == null ? null : 3 - spent.total}
 				atRiskCount={myAtRiskCount}
+				{justClaimed}
 				onOpenRetinue={() => onOpenRetinue?.()}
 			/>
 
@@ -721,7 +785,7 @@
 						     "You already hold X — nothing to take"), and repeating them here
 						     cost two lines of scroll on the screen we're trying to shorten. -->
 						<p class="legend-note">
-							{@render weightMeter('K')}
+							<WeightMeter value="K" />
 							Weight, shown when you open a tile. If two players hold the same number
 							of a track's cards, the heavier ones break the tie.
 						</p>
@@ -802,6 +866,7 @@
 										<button
 											type="button"
 											id={tileID}
+											data-tile-key={boxKey}
 											class="choice-btn"
 											class:claimed={!!existingClaim}
 											class:expanded={isExpanded}
@@ -894,7 +959,7 @@
 																	<span style:color={playerColorByID(preview.ownerID, players)}>{preview.ownerName}</span>
 																{/if}
 															</span>
-															{@render weightMeter(c.value)}
+															<WeightMeter value={c.value} />
 															<!-- No "4th → 2nd": rank slots are literal 1–5 with dummy
 															     tokens in some of them, so an ordinal lies in a 2–3
 															     player game (decision 7) — and the hearts step re-orders
@@ -967,7 +1032,7 @@
 				<ErrorText message={actionError} />
 			{/if}
 			<p class="muted-text small">
-				Once every player marks Done, this track resolves: hearts doing work lock in, the rest return to your hand.
+				Once every player marks Done, this track resolves: WLD cards doing work lock in, the rest return to your hand.
 			</p>
 		{/if}
 
@@ -1145,7 +1210,9 @@
 		font-size: 0.75rem;
 		line-height: 1.35;
 	}
-	.legend-note .weight { margin-top: 0.15rem; }
+	/* :global, because the meter is shared/WeightMeter.svelte's root element —
+	   it carries that component's scope class, not this one's. */
+	.legend-note :global(.weight) { margin-top: 0.15rem; }
 
 	/* Local help disclosure (Round 2 §1d). Same frame as a collapsed sheet
 	   header — it sits directly above three of them, and a second collapsed-row
@@ -1478,26 +1545,9 @@
 		box-sizing: content-box;
 	}
 
-	/* Weight (decision 2): the card value, 1–4, as the house segmented meter —
-	   the .seg idiom from plans/shared/DifficultyMeter, shrunk to a row
-	   ornament. Never stars; stars aren't in this visual language. */
-	.weight {
-		display: inline-flex;
-		align-items: center;
-		gap: 2px;
-		flex: none;
-	}
-	.seg {
-		width: 3px;
-		height: 9px;
-		border-radius: 1px;
-		background: transparent;
-		border: 1px solid var(--color-border-strong);
-	}
-	.seg.on {
-		background: var(--color-text-muted);
-		border-color: var(--color-text-muted);
-	}
+	/* (The weight meter itself moved to shared/WeightMeter.svelte in Session
+	   3a — the TrackBoard needed the same object once its per-player card
+	   values became weight marks.) */
 
 	/* Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2). Spans
 	   the full row width (unlike the tile it follows, since Round 2 keeps the

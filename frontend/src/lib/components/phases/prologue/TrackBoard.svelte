@@ -7,8 +7,7 @@
   See PROLOGUE_RANKING_UI_PLAN.md.
 -->
 <script lang="ts">
-	import '$lib/components/shared/cardGlyph.css';
-	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
+	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
 	import type {
 		Player,
 		PlayerCardRow,
@@ -24,6 +23,7 @@
 		computeFinalSlots,
 		cardRank
 	} from '$lib/prologue/refund';
+	import { cardWeight, MAX_CARD_WEIGHT } from '$lib/prologue/choosing';
 
 	interface Props {
 		players: Player[];
@@ -36,10 +36,10 @@
 		activeTrack: PrologueTrack | null;
 		currentPlayerID: number | null;
 		// Recap use (closing stage): rankings are persisted and cards are spent,
-		// so suit glyphs, per-player card rows, and the done-committing dot
-		// (uniformly true post-resolution) are omitted. Only valid once all
-		// three tracks are resolved — the set-aside badge lives in the card
-		// row and unresolved projections would lose it.
+		// so the per-player card marks and the done-committing dot (uniformly
+		// true post-resolution) are omitted. Only valid once all three tracks
+		// are resolved — the set-aside badge lives in the card row and
+		// unresolved projections would lose it.
 		showCards?: boolean;
 	}
 
@@ -54,12 +54,14 @@
 		showCards = true
 	}: Props = $props();
 
-	// One suit field, not two: it is both the pip drawn in the column header
-	// and the key the player's cards are filtered by, so they cannot drift.
-	const TRACKS: { id: PrologueTrack; label: string; suitChar: 'C' | 'D' | 'S' }[] = [
-		{ id: 'power', label: 'Power', suitChar: 'C' },
-		{ id: 'knowledge', label: 'Knowledge', suitChar: 'D' },
-		{ id: 'esteem', label: 'Esteem', suitChar: 'S' }
+	// `cardSuit` is a data key now, not a picture: suits are retired from the
+	// game UI (adr/PROLOGUE_UX_ROUND2_PLAN.md, decision 1) and this column used
+	// to draw one as its header pip. The letter survives only because it is how
+	// the API spells the card rows this column filters — nothing renders it.
+	const TRACKS: { id: PrologueTrack; label: string; cardSuit: 'C' | 'D' | 'S' }[] = [
+		{ id: 'power', label: 'Power', cardSuit: 'C' },
+		{ id: 'knowledge', label: 'Knowledge', cardSuit: 'D' },
+		{ id: 'esteem', label: 'Esteem', cardSuit: 'S' }
 	];
 
 	function trackToCategory(t: PrologueTrack): RankingCategory {
@@ -149,13 +151,19 @@
 		return players.find((p) => p.id === id)?.display_name ?? '?';
 	}
 
-	function suitCardsForPlayer(pid: number, suit: string): PlayerCardRow[] {
+	// Heaviest first, which is now literally what the reader sees: the marks
+	// descend, and that descending walk IS the tie-break (rankFromContributions
+	// compares the two players' lists position by position).
+	function trackCardsForPlayer(pid: number, suit: string): PlayerCardRow[] {
 		return cards
 			.filter((c) => c.player_id === pid && c.card_suit === suit)
 			.sort((a, b) => cardRank(b.card_value) - cardRank(a.card_value));
 	}
 
-	function committedHeartsForPlayer(pid: number, track: PrologueTrack): CommittedHeart[] {
+	/** Wilds this player has spent on this track. (The API still calls them
+	 *  hearts — the deck is the server's storage format; the UI stopped
+	 *  showing it.) */
+	function committedWildsForPlayer(pid: number, track: PrologueTrack): CommittedHeart[] {
 		return committed
 			.filter((h) => h.player_id === pid && h.track === track)
 			.sort((a, b) => cardRank(b.value) - cardRank(a.value));
@@ -169,11 +177,10 @@
 		{@const doneSet = doneSetForTrack(t.id)}
 		<section class="column" class:active={activeTrack === t.id}>
 			<header class="col-head">
-				{#if showCards}
-					<span class="col-suit" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
-						<SuitGlyph suit={t.suitChar} />
-					</span>
-				{/if}
+				<!-- The track name and nothing else. The suit pip that used to sit
+				     beside it taught the wrong half of the fact: ♠ heads the Esteem
+				     column but makes an artifact, so the pip was an alias that
+				     contradicted the word next to it (decision 1). -->
 				<span class="col-label">{t.label}</span>
 			</header>
 			{#each rankRowsFor(proj) as row}
@@ -196,25 +203,34 @@
 								{/if}
 							</div>
 							{#if showCards}
+								<!-- One mark per card on this track (Session 3a). The mark is
+								     the countable unit — how many marks a player has IS their
+								     position on this track — and the meter inside it is the
+								     weight that breaks a tie between two equal counts. A suited
+								     card value said neither: the suit restated the column
+								     header and the letter needed a rank table to mean
+								     anything. -->
 								<div class="chip-cards">
-									{#each suitCardsForPlayer(pid, t.suitChar) as c}
-										<span class="card-glyph small" data-color={t.suitChar === 'D' ? 'red' : 'black'}>
-											{c.card_value}
+									{#each trackCardsForPlayer(pid, t.cardSuit) as c}
+										<span class="mark">
+											<WeightMeter value={c.card_value} compact />
 										</span>
 									{/each}
-									{#each committedHeartsForPlayer(pid, t.id) as h}
+									{#each committedWildsForPlayer(pid, t.id) as h}
+										{@const doingWork = bright.get(pid)?.has(h.card_id) ?? false}
 										<span
-											class="card-glyph small heart"
-											class:inert={!(bright.get(pid)?.has(h.card_id) ?? false)}
-											data-color="red"
-											title={(bright.get(pid)?.has(h.card_id) ?? false)
-												? 'doing work'
-												: 'wasted (would be refunded)'}
+											class="mark wild"
+											class:inert={!doingWork}
+											role="img"
+											aria-label={`wild, weight ${cardWeight(h.value)} of ${MAX_CARD_WEIGHT}, ${
+												doingWork ? 'doing work' : 'wasted — would be refunded'
+											}`}
+											title={doingWork ? 'doing work' : 'wasted (would be refunded)'}
 										>
-											{h.value}<SuitGlyph suit="H" />
+											<WeightMeter value={h.value} compact describe={false} />
 										</span>
 									{/each}
-									{#if row.isSetAside && committedHeartsForPlayer(pid, t.id).length === 0}
+									{#if row.isSetAside && committedWildsForPlayer(pid, t.id).length === 0}
 										<span class="set-aside-badge" title="Zero cards on this track">no cards</span>
 									{/if}
 								</div>
@@ -259,20 +275,6 @@
 		padding: 0.1rem 0.05rem 0.3rem;
 		border-bottom: 1px solid var(--color-surface-2);
 	}
-	/* SuitGlyph sizes by box, not font-size — so this is a width/height, and
-	   all three columns take the same one. The old rule upsized the diamond to
-	   even out the Unicode pips' wildly uneven ink; the drawn diamond is
-	   deliberately card-proportioned (see SuitGlyph's note) and must not be
-	   inflated back. 0.85rem against the 0.75rem label: a shade larger than the
-	   track name it heads, which is the balance the pip wants. */
-	.col-suit {
-		display: inline-flex;
-		align-items: center;
-		line-height: 1rem;
-	}
-	.col-suit :global(.suit) { width: 0.85rem; height: 0.85rem; }
-	.col-suit[data-color='red'] { color: var(--color-suit-red); }
-	.col-suit[data-color='black'] { color: var(--color-text); }
 	.col-label {
 		color: var(--color-accent);
 		font-size: 0.75rem;
@@ -391,9 +393,44 @@
 		min-height: 1.05rem; /* matches a card row so empty/no-cards chips don't shrink */
 		align-items: center;
 	}
-	/* .card-glyph.inert (the greyed/struck wasted heart) now lives in the
-	   shared cardGlyph.css — same recipe, same role as the choosing view's
-	   already-yours card. */
+
+	/* One card, one mark. Bordered rather than a bare meter because the first
+	   thing this column has to answer is "how many?" — that count is the
+	   ranking — and four unframed meters in a row read as one long bar. The
+	   frame makes them countable; the fill inside makes them comparable. */
+	.mark {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.1rem 0.15rem;
+		border: 1px solid var(--color-border);
+		border-radius: 3px;
+		background: var(--color-bg);
+		flex: none;
+	}
+	/* Not a track card but a wild spent on this track, so it takes the app's
+	   dashed not-yet-a-track treatment (decision 3) instead of the ♥ it used
+	   to draw — the same idiom as .track-code.wild and the choosing view's
+	   .tile-chip.wild, one level out on the frame rather than nested inside. */
+	.mark.wild {
+		border-style: dashed;
+		border-color: var(--color-border-strong);
+	}
+	/* This wild does no work: it is committed here but the track would rank
+	   the same without it, so resolution refunds it. Struck as well as dimmed —
+	   dim alone reads as "quiet", and this needs to read as "cancelled". */
+	.mark.inert {
+		position: relative;
+		opacity: 0.45;
+	}
+	.mark.inert::after {
+		content: '';
+		position: absolute;
+		left: 0.1rem;
+		right: 0.1rem;
+		top: 50%;
+		border-top: 1px solid var(--color-text);
+		pointer-events: none;
+	}
 
 	/* No wide variant: the phase column is a phone-width column at every
 	   viewport (≤440; docs/STYLE_GUIDE.md "Layout widths"), so the base

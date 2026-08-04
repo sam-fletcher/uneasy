@@ -21,7 +21,7 @@
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/modalShell.css';
-	import '$lib/components/shared/cardGlyph.css';
+	import '$lib/components/shared/trackCode.css';
 	import {
 		choosePrologue,
 		getPrologueCardSuggestions,
@@ -35,10 +35,9 @@
 	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
-	import { stealPreview } from '$lib/prologue/choosing';
+	import { assetTypeLabel, stealPreview, trackCode, trackLabel } from '$lib/prologue/choosing';
 	import { deriveClaimSteps } from '$lib/prologue/claimSteps';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
-	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
 	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 
 	interface Props {
@@ -174,18 +173,15 @@
 		}
 	}
 
-	function suitTypeLabel(suit: string): string {
-		switch (suit) {
-			case 'C': return 'holding';
-			case 'D': return 'resource';
-			case 'S': return 'artifact';
-			case 'H': return 'peer';
-			default:  return 'asset';
-		}
-	}
+	// (No local suit→type map any more: it was a second copy of SUIT_MEANINGS,
+	// and choosing.ts's assetTypeLabel is the table the tiles, the legend and
+	// the sheet headers all read. No suitColor either — the modal drew a
+	// red/black card face, and suits have left the app entirely.)
 
-	function suitColor(suit: string): 'red' | 'black' {
-		return suit === 'H' || suit === 'D' ? 'red' : 'black';
+	/** A wild ranks nothing until it is spent, so its code takes the dashed
+	 *  not-yet-a-track treatment (decision 3). */
+	function isWild(suit: string): boolean {
+		return trackLabel(suit) === '';
 	}
 
 	const marginaliaStep = $derived(
@@ -196,8 +192,11 @@
 				: null
 	);
 
-	// Card-step titles omit the glyph — the markup renders it as a styled
-	// (red/black) card-glyph span in front of the title instead.
+	// A card step is titled by the asset TYPE it makes ("Your new holding") and
+	// chipped with the track CODE it feeds ("POW") — the markup renders the
+	// chip in front of the title. Type + code is the whole of what the suit
+	// used to alias, and the tiles that led here are labelled the same way, so
+	// the modal is naming the slot the player just tapped.
 	const steps = $derived(
 		deriveClaimSteps({
 			assetTitle: `Your new ${sheet.choice_asset_type}`,
@@ -207,8 +206,8 @@
 			cards: cardSlots.map(slot => ({
 				key: `${slot.suit}::${slot.value}`,
 				title: isCardMine(slot.suit, slot.value)
-					? `Your ${suitTypeLabel(slot.suit)}`
-					: `Your new ${suitTypeLabel(slot.suit)}`,
+					? `Your ${assetTypeLabel(slot.suit)}`
+					: `Your new ${assetTypeLabel(slot.suit)}`,
 				isTake: slot.isTake,
 				text: slot.text,
 			})),
@@ -302,9 +301,7 @@
 					{@const preview = slot ? stealPreview(slot.suit, slot.value, cards, assets, players) : null}
 					<section class="step take">
 						{#if slot}
-							<span class="card-glyph" data-color={suitColor(slot.suit)}
-								>{slot.value}<SuitGlyph suit={slot.suit} /></span
-							>
+							<span class="track-code" class:wild={isWild(slot.suit)}>{trackCode(slot.suit)}</span>
 						{/if}
 						<span class="step-title">{step.title}</span>
 						<span class="step-summary">
@@ -338,9 +335,7 @@
 						>
 							<span class="step-marker">{step.complete ? '✓' : idx + 1}</span>
 							{#if cardSlot}
-								<span class="card-glyph" data-color={suitColor(cardSlot.suit)}
-									>{cardSlot.value}<SuitGlyph suit={cardSlot.suit} /></span
-								>
+								<span class="track-code" class:wild={isWild(cardSlot.suit)}>{trackCode(cardSlot.suit)}</span>
 							{/if}
 							<span class="step-title">{step.title}</span>
 							{#if !isOpen && step.complete}
@@ -384,7 +379,7 @@
 										suggestions={cardSlot.suggestions}
 										bind:value={cardSlot.text}
 										loading={loadingSuggestions}
-										placeholder={`Name your ${suitTypeLabel(cardSlot.suit)}`}
+										placeholder={`Name your ${assetTypeLabel(cardSlot.suit)}`}
 										maxlength={TEXT_LIMITS.NAME}
 										onReroll={() => rerollCardSuggestions(cardSlot)}
 										rerolling={rerollingSlotKey === cardStepKey(cardSlot.suit, cardSlot.value)}
@@ -497,6 +492,11 @@
 	}
 	.step.done .step-marker { background: var(--color-accent); color: var(--color-bg); }
 	.step-title { color: var(--color-accent); flex-shrink: 0; }
+	/* A shade up from the shared 0.6rem: in the tile grid the code sits among
+	   0.62rem chips, here it sits beside a 0.9rem step title and a 0.8rem
+	   marker, and at the shared size it read as a footnote to the row rather
+	   than a label on it. */
+	.step .track-code { font-size: 0.7rem; }
 	.step.done:not(.open) .step-title { color: var(--color-text); }
 	.step-summary {
 		flex: 1;

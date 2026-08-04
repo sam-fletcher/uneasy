@@ -25,3 +25,25 @@
 	background: transparent;
 	border: 1px solid var(--color-border-strong);
 }
+
+/* The spend (Session 3c): the pip the claim just used swells and hollows out,
+   the one beat that says the choice left the turn card for a category header.
+   It runs on the pip that is *becoming* spent, so it starts solid and ends in
+   the .spent look the class beside it holds statically — no jump at the end.
+
+   Reduced motion (§3c): the animation goes, the change does not. Without it
+   the pip is already drawn hollow by .spent, which is the fact; the swell was
+   only ever the announcement. */
+.choice-pip.spending {
+	animation: choice-pip-spend 700ms ease-out;
+}
+
+@keyframes choice-pip-spend {
+	0%   { background: var(--color-accent); transform: scale(1.5); }
+	60%  { background: var(--color-accent); transform: scale(1); }
+	100% { background: transparent; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.choice-pip.spending { animation: none; }
+}

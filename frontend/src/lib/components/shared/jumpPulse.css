@@ -1,0 +1,34 @@
+/* The house "you landed here" flash: a brief accent wash over an element the
+   app has just scrolled the reader to, fading to nothing. Import as a side
+   effect wherever a component adds `.jump-pulse` to an element.
+
+   Two callers, one object: ChatPanel's Public-Record jump, and the prologue
+   claim's motion beat (adr/PROLOGUE_UX_ROUND2_PLAN.md §3c), where the tile you
+   just claimed is often off-screen at the moment it changes. Both are the same
+   sentence — "the thing you asked for is *here*" — so they get the same flash
+   rather than two near-identical keyframes.
+
+   Global (not scoped to a component) because both callers apply the class
+   imperatively via classList after a scroll, which Svelte's style scoping
+   cannot see.
+
+   REDUCED MOTION. This is the app's first `prefers-reduced-motion` guard
+   (§3c), so it sets the pattern: the *animation* goes, the state change does
+   not. Under `reduce` the element simply doesn't flash — it is already
+   scrolled into view, which is the part that carries the information. Callers
+   that scroll should ask lib/reducedMotion.ts for the behaviour rather than
+   hard-coding `smooth`; nothing else about the interaction changes. */
+
+.jump-pulse {
+	animation: jump-pulse 0.7s ease-out;
+	border-radius: 4px;
+}
+
+@keyframes jump-pulse {
+	0%   { background: color-mix(in srgb, var(--color-accent) 45%, transparent); }
+	100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.jump-pulse { animation: none; }
+}

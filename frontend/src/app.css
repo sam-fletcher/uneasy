@@ -67,7 +67,7 @@
 	--white: #ffffff;
 
 	/* parchment — warm paper & body text */
-	--parchment-50: #fdf6e3;  /* the one playing-card face white */
+	--parchment-50: #fdf6e3;  /* the brightest paper — plan-sheet grounds */
 	--parchment-100: #e8e4d9;
 	--parchment-200: #cfcabd;
 	--parchment-300: #b0a890;
@@ -193,13 +193,12 @@
 	--color-info: var(--blue-500);           /* informational */
 	--color-neutral: var(--neutral-500);     /* default/offline/unset state — status dots, disabled borders */
 	--color-leveraged: var(--orange-400);    /* spent/committed-but-refreshable: leveraged asset border + retinue badge */
-	--color-highlight: var(--blue-300);      /* prepare/row-activity cue: hover-prepare border + plan-count badge; also the prologue steal ring on dark grounds */
-	--color-highlight-ink: var(--blue-600);  /* the same cue on PARCHMENT grounds — steal-ring border on a card face (blue's answer to --color-warning-border) */
+	--color-highlight: var(--blue-300);      /* prepare/row-activity cue: hover-prepare border + plan-count badge; also the prologue take chip's ink on dark grounds */
+	--color-highlight-ink: var(--blue-600);  /* the same cue as a FILL under light text — the table page's highlight badge (blue's answer to --color-warning-border) */
 	--color-accent-dim: var(--gold-600);     /* outline/idle gold — MC-toggle idle state, successor crown */
 	--color-accent-bright: var(--gold-100);  /* pale bright gold — picked marginalia line, active face-chip */
 	--color-accent-muted: var(--gold-500);   /* dimmed gilt text — tones/laws/rumors button counts */
 	--color-danger-muted: var(--red-500);    /* muted red border/fill — at-risk borders (marginalia slot + header risk disc), torn marks, tone "never" swatch, MC-swap hover/focus */
-	--color-suit-red: var(--red-600);        /* red-suit glyph colour (hearts/diamonds) — BESPOKE, never merge */
 	--color-tone-include: var(--green-500);  /* tone-setting "include" swatch/tile fill */
 	--color-tone-avoid: var(--gold-450);     /* tone-setting "avoid detail" swatch/tile fill */
 	--color-warning: var(--orange-400);         /* warning text on dark grounds (orange = the warning family, ruling 1) */
@@ -241,7 +240,6 @@
 	--color-border-warm-strong: var(--gold-800);   /* stronger warm border — warm sunken panels (roll panel, plan form), secondary action button */
 	--color-border-warm-hover: color-mix(in srgb, var(--color-border-warm) 75%, white); /* engaged/hover border on warm ledger tiles (recipe) */
 	--color-border-warm-antique: var(--gold-700);  /* muted antique-gold border/rule — duel die tray, engrailed divider */
-	--color-card-spent: var(--parchment-200);      /* greyed/spent playing-card face */
 	--color-text-tertiary-warm: var(--parchment-300); /* warm tertiary text — chat log lines, scene timestamp */
 	--color-text-faint-warm: var(--parchment-500); /* dim "+" add-affordance text on warm tiles */
 

@@ -57,18 +57,19 @@ tappability, not a new colour.
 Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
 
 - **gold** — the brand: accent, active/selected states, warm borders.
-- **parchment** — paper and body text; the only card-face ground (never
+- **parchment** — paper and body text; the warm ledger/sheet ground (never
   bright white).
 - **neutral** — cool chrome: the elevation ladder, borders, plain text.
 - **orange** — the one warning family: leveraged, pending-war, and every
   "careful now" signal.
-- **red** — danger, which *includes* the at-risk game state (one concept);
-  war; and `--color-suit-red` (red-600), which is bespoke and never merges.
+- **red** — danger, which *includes* the at-risk game state (one concept),
+  and war. (`--color-suit-red` retired 2026-08-04 with the last playing-card
+  face — see **Motion & the deck** below.)
 - **green** — success and tone-include.
 - **blue** — attention *and* **opportunity**: `--color-highlight`
-  (activity/prepare cue, and the prologue steal ring on dark grounds),
-  `--color-highlight-ink` (the same cue on parchment grounds), `--color-info`
-  (calm informational fill). The steal marking moved here from orange on
+  (activity/prepare cue, and the prologue take chip on dark grounds),
+  `--color-highlight-ink` (the same cue as a fill under light text),
+  `--color-info` (calm informational fill). The take marking moved here from orange on
   2026-08-01 — a take is something the viewer stands to *gain*, so marking it
   with the warning family told the wrong story — and the family was rebuilt
   from two steps to six in the same pass (ADR-009 "Blue ramp, rev 2"). Use
@@ -179,14 +180,16 @@ Reuse before writing new CSS — these live in
 | file | what it is |
 |---|---|
 | `actionButton.css` | the standard button (primary gold / secondary muted) |
-| `cardGlyph.css` | inline playing-card face chip (parchment ground) |
+| `choicePip.css` | the prologue choice pip — one gold disc with two homes (turn card ↔ category header), plus the spend animation |
 | `cornerBadge.css` | corner count badge on tiles |
+| `jumpPulse.css` | the "you landed here" accent flash after the app scrolls the reader somewhere (chat jump, prologue claim). Carries its own reduced-motion guard |
 | `marginaliaTile.css` | the warm ledger tile for marginalia |
 | `modalShell.css` | sheet/modal frame |
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
-| `SuitGlyph.svelte` | the four playing-card suits as drawn paths — **the** way a suit reaches the screen; never the Unicode pips, which lose spade-vs-club as they shrink. `currentColor`, so the wrapper owns red/black |
+| `trackCode.css` | the prologue ranking track as three letters (`POW`/`KNO`/`EST`, and `WLD` dashed) — **the** way a track reaches the screen in a tight slot |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
+| `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record and the mobile chat bar's icon — see **Log marks** below |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
@@ -194,6 +197,28 @@ undersells it, since it is reused outside the chat feed.
 
 Plus `plans/shared/` (Buffet, DifficultyMeter) for plan flows and
 `HelpContent` for the ?-panel/lobby help.
+
+## Motion & the deck
+
+**Reduced motion.** Every animation and transition needs a
+`@media (prefers-reduced-motion: reduce)` guard, written in the same file as
+the keyframes so the two can't drift. The rule the guards follow
+(`adr/PROLOGUE_UX_ROUND2_PLAN.md` §3c, owner's ruling 2026-08-04): `reduce`
+removes **motion**, not **feedback**. A guarded interaction still scrolls to
+its target, still changes state, still shows its confirmation — it just
+arrives instead of travelling. For the part CSS can't reach, ask
+`lib/reducedMotion.ts` (`scrollBehavior()` for `scrollIntoView`); never
+hard-code `behavior: 'smooth'`.
+
+**No playing cards.** Suits and card faces were retired from the game UI on
+2026-08-04 (`adr/PROLOGUE_UX_ROUND2_PLAN.md`, decision 1 + the Session 3
+ruling). A suit was a strict alias for two facts the UI can state directly —
+the asset type it makes (`AssetTypeIcon`) and the ranking track it feeds
+(`trackCode.css`) — and the two readings collide, so a player who learned one
+was misled about the other. Card *value* survives as weight
+(`WeightMeter.svelte`). The API still speaks suits and values; that is the
+server's storage format, not vocabulary for the screen. `SuitGlyph.svelte`
+and `cardGlyph.css` are gone — don't reintroduce them.
 
 ## Errors
 

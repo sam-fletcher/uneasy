@@ -1,17 +1,24 @@
 <!-- HandStrip.svelte
-  Persistent hearts hand for the active player during the prologue
-  ranking declare step. Tap a heart to commit it to the active track,
-  tap a committed heart to retract. Hearts that are bright on the
-  active track render with a "spent" indicator; greyed (wasted) hearts
-  return to the hand pool unaffected.
+  Persistent WLD hand for the active player during the prologue ranking
+  declare step. Tap a card to commit it to the active track, tap a committed
+  card to retract. A card that is doing work on the active track renders
+  committed; a greyed (wasted) one would be refunded at resolution and returns
+  to the hand pool unaffected.
 
-  Hearts locked into a previously-resolved track are disabled.
+  Cards locked into a previously-resolved track are disabled.
 
   Heading: "Maximum commitment if needed".
+
+  The deck is gone from the screen (adr/PROLOGUE_UX_ROUND2_PLAN.md, decision 1
+  + the owner's Session 3 ruling): these were ♥ card faces, and the hearts step
+  was the last place in the app a suit reached the reader. They are WLD cards
+  now — the same object the choosing view names, with the same dashed
+  not-yet-a-track frame — so a player who learned "WLD" while picking tiles is
+  not handed a second notation for it at the moment they spend one. The API
+  still calls them hearts; that is storage, not vocabulary.
 -->
 <script lang="ts">
-	import '$lib/components/shared/cardGlyph.css';
-	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
+	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
 	import type { CommittedHeart, PlayerCardRow, PrologueTrack } from '$lib/api';
 	import { cardRank } from '$lib/prologue/refund';
 
@@ -37,7 +44,9 @@
 		onRetract
 	}: Props = $props();
 
-	const myHearts = $derived(
+	// Heaviest first: weight is the tie-break, so the leftmost card is the one
+	// worth spending first when two players would otherwise tie.
+	const myWilds = $derived(
 		myCards
 			.filter((c) => c.card_suit === 'H')
 			.sort((a, b) => cardRank(b.card_value) - cardRank(a.card_value))
@@ -69,11 +78,11 @@
 	}
 
 	const availableCount = $derived(
-		myHearts.filter((h) => !isLocked(h.id)).length
+		myWilds.filter((h) => !isLocked(h.id)).length
 	);
-	const onActiveCount = $derived(myHearts.filter((h) => isOnActive(h.id)).length);
+	const onActiveCount = $derived(myWilds.filter((h) => isOnActive(h.id)).length);
 	const brightOnActive = $derived(
-		myHearts.filter((h) => isOnActive(h.id) && brightSet.has(h.id)).length
+		myWilds.filter((h) => isOnActive(h.id) && brightSet.has(h.id)).length
 	);
 </script>
 
@@ -83,21 +92,20 @@
 		<span class="heading-meta">
 			{onActiveCount} on this track
 			{#if onActiveCount > 0}({brightOnActive} doing work){/if}
-			· {availableCount} of {myHearts.length} available
+			· {availableCount} of {myWilds.length} available
 		</span>
 	</div>
-	<div class="hearts">
-		{#if myHearts.length === 0}
-			<span class="empty">You hold no hearts.</span>
+	<div class="wild-hand">
+		{#if myWilds.length === 0}
+			<span class="empty">You hold no WLD cards.</span>
 		{/if}
-		{#each myHearts as h}
+		{#each myWilds as h}
 			{@const onActive = isOnActive(h.id)}
 			{@const locked = isLocked(h.id)}
 			{@const greyHere = onActive && !brightSet.has(h.id)}
 			<button
 				type="button"
-				class="card-glyph tappable heart-card"
-				data-color="red"
+				class="wild-card"
 				class:on-active={onActive}
 				class:grey={greyHere}
 				class:locked
@@ -112,8 +120,8 @@
 							: 'On this track, doing work'
 						: 'Tap to commit to this track'}
 			>
-				<span class="card-value">{h.card_value}</span>
-				<SuitGlyph suit="H" />
+				<span class="wild-code">WLD</span>
+				<WeightMeter value={h.card_value} />
 			</button>
 		{/each}
 	</div>
@@ -144,38 +152,70 @@
 		color: var(--color-text-muted);
 		font-size: 0.75rem;
 	}
-	.hearts {
+	.wild-hand {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.4rem;
 	}
 	.empty { color: var(--color-text-faint); font-size: 0.85rem; }
 
-	.heart-card {
-		justify-content: flex-start;
+	/* The card itself, at tap size: the code it is, and the weight it carries.
+	   The dash is on the button's own border rather than on a .track-code chip
+	   nested inside it — the button IS the wild card, and a dashed chip inside
+	   a solid frame is two boxes around one word (the ruling Session 2 took for
+	   .tile-chip.wild). */
+	.wild-card {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.2rem;
+		min-height: 44px;
+		min-width: 44px;
+		padding: 0.25rem 0.5rem;
+		background: var(--color-surface-2);
+		border: 1px dashed var(--color-border-strong);
+		border-radius: 5px;
+		color: var(--color-text-muted);
+		font-family: inherit;
+		cursor: pointer;
 		transition: transform 80ms ease, box-shadow 80ms ease, opacity 120ms ease;
 	}
-	.heart-card:hover:not(:disabled) {
+	.wild-code {
+		font-size: 0.62rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		line-height: 1;
+	}
+	.wild-card:hover:not(:disabled) {
 		transform: translateY(-1px);
 		box-shadow: 0 1px 3px color-mix(in srgb, var(--color-accent) 40%, transparent);
 	}
-	.heart-card.on-active {
+	.wild-card.on-active {
 		outline: 2px solid var(--color-accent);
 		outline-offset: 1px;
+		color: var(--color-text);
 	}
-	.heart-card.grey {
+	/* Committed here, but the track ranks the same without it — resolution
+	   refunds it. Dimmed against the sunken ground so it reads as set aside
+	   rather than merely quiet. */
+	.wild-card.grey {
 		opacity: 0.5;
-		background: var(--color-card-spent);
+		background: var(--color-surface-sunken);
 	}
-	.heart-card.locked {
+	.wild-card.locked {
 		opacity: 0.3;
 		cursor: not-allowed;
 	}
-	.heart-card:disabled { cursor: not-allowed; }
-	/* 0.85em, the same font-size the Unicode heart used to take here: the pip
-	   is the smaller half of a value-and-suit pair, so it reads under the value
-	   rather than beside it in weight. The 44px tap target lives on the button
-	   itself (.card-glyph.tappable) and is untouched by this — the glyph is
-	   only the label inside it. */
-	.heart-card :global(.suit) { width: 0.85em; height: 0.85em; }
+	.wild-card:disabled { cursor: not-allowed; }
+	.wild-card:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 2px;
+	}
+	/* Reduced motion (§3c): the lift on hover is decoration on an affordance
+	   the border and the tap target already carry. */
+	@media (prefers-reduced-motion: reduce) {
+		.wild-card { transition: none; }
+		.wild-card:hover:not(:disabled) { transform: none; }
+	}
 </style>

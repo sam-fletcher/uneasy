@@ -24,6 +24,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/statusText.css';
+	import '$lib/components/shared/jumpPulse.css';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 	import {
@@ -37,6 +38,7 @@
 	import { chatDockQuery } from '$lib/breakpoints';
 	import { renderLogBody, stripLogMarkup } from '$lib/logMarkup';
 	import { playerColorByID } from '$lib/playerColor';
+	import { scrollBehavior } from '$lib/reducedMotion';
 	import { SEVERITY } from '$lib/severity';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import {
@@ -543,7 +545,10 @@
 			if (!feedEl) return;
 			const el = feedEl.querySelector(`[data-post-id="${targetID}"]`) as HTMLElement | null;
 			if (!el) return;
-			el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+			// The jump still takes the reader there under reduced motion — it
+			// just arrives instead of travelling (lib/reducedMotion.ts). The
+			// flash below is guarded in shared/jumpPulse.css.
+			el.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
 			// Brief accent pulse so the user sees where they landed. Class
 			// is removed after the animation so a re-jump triggers it again.
 			el.classList.remove('jump-pulse');
@@ -1363,15 +1368,9 @@
 		font-size: 0.85rem;
 	}
 
-	/* Brief accent flash after a Public-Record jump lands here. */
-	:global(.feed [data-post-id].jump-pulse) {
-		animation: jump-pulse 0.7s ease-out;
-		border-radius: 4px;
-	}
-	@keyframes jump-pulse {
-		0%   { background: color-mix(in srgb, var(--color-accent) 45%, transparent); }
-		100% { background: transparent; }
-	}
+	/* The brief accent flash after a Public-Record jump lands here now lives in
+	   shared/jumpPulse.css — the prologue's claim beat says the same sentence
+	   about a tile, and it carries the reduced-motion guard for both. */
 
 	/* Day divider — a plain centered label, distinct from the accent-colored
 	   unread divider so the two don't compete visually. */
