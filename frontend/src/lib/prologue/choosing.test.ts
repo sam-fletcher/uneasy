@@ -232,7 +232,7 @@ describe('suit meaning labels', () => {
 		expect(trackCode('C')).toBe('POW');
 		expect(trackCode('D')).toBe('KNO');
 		expect(trackCode('S')).toBe('EST');
-		expect(trackCode('H')).toBe('WLD');
+		expect(trackCode('H')).toBe('ANY');
 		expect(trackCode('?')).toBe('');
 	});
 

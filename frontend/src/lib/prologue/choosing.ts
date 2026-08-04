@@ -45,7 +45,7 @@ export const SUIT_MEANINGS: {
 	{ suit: 'C', assetType: 'Holding', track: 'Power', code: 'POW' },
 	{ suit: 'D', assetType: 'Resource', track: 'Knowledge', code: 'KNO' },
 	{ suit: 'S', assetType: 'Artifact', track: 'Esteem', code: 'EST' },
-	{ suit: 'H', assetType: 'Peer', track: null, code: 'WLD' },
+	{ suit: 'H', assetType: 'Peer', track: null, code: 'ANY' },
 ];
 
 /** Track name for a ranked suit, e.g. 'C' → 'Power'. Empty for an unknown
@@ -58,11 +58,26 @@ export function trackLabel(suit: string): string {
  * The three-letter code shown in place of a suit ('C' → 'POW'). Empty for an
  * unknown suit.
  *
- * The heart gets 'WLD' rather than a glyph: it is categorically different (a
+ * The heart gets a code rather than a glyph: it is categorically different (a
  * track you haven't picked yet, not a track), but a picture for the fourth
  * member of a set of words breaks the set and forces a legend. It earns a
  * *treatment* instead — the dashed border in shared/trackCode.css, borrowing
  * DifficultyMeter's dashed-means-not-yet idiom.
+ *
+ * That code is 'ANY' (Round 3, decision 1). POW/KNO/EST are the first syllable
+ * of the track's own name, which is why they need no legend — the reader
+ * expands them without being taught. 'WLD' broke that property: it abbreviated
+ * "wild", a term of art the app never says out loud, so the legend row had to
+ * spend a sentence explaining it. 'ANY' is the plain word for what the card
+ * does and restores the property.
+ *
+ * Deliberately, the *identifiers* did not follow (Round 3, decision 2). `wild`
+ * is the concept — a card with no track yet; `ANY` is the label that concept
+ * wears on screen. Three layers, on purpose: the API says heart (storage), the
+ * code says wild, the screen says ANY. So .track-code.wild, isWild(),
+ * SheetTrackProfile.wild and friends keep their names, and the dashed class
+ * still sits in the same family as StandingStrip's .dummy slots and
+ * DifficultyMeter's .seg.next, which are not "any"-anything.
  */
 export function trackCode(suit: string): string {
 	return SUIT_MEANINGS.find((m) => m.suit === suit)?.code ?? '';

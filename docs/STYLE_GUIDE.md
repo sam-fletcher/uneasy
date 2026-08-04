@@ -187,7 +187,7 @@ Reuse before writing new CSS — these live in
 | `modalShell.css` | sheet/modal frame |
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
-| `trackCode.css` | the prologue ranking track as three letters (`POW`/`KNO`/`EST`, and `WLD` dashed) — **the** way a track reaches the screen in a tight slot |
+| `trackCode.css` | the prologue ranking track as three letters (`POW`/`KNO`/`EST`, and `ANY` dashed) — **the** way a track reaches the screen in a tight slot. Read the letters from `choosing.ts`'s `trackCode()`, never a literal |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record and the mobile chat bar's icon — see **Log marks** below |
@@ -219,6 +219,22 @@ was misled about the other. Card *value* survives as weight
 (`WeightMeter.svelte`). The API still speaks suits and values; that is the
 server's storage format, not vocabulary for the screen. `SuitGlyph.svelte`
 and `cardGlyph.css` are gone — don't reintroduce them.
+
+**Three layers, three words for the wild.** The API says `heart` (and
+`CommittedHeart`, and `card_suit: 'H'`) — storage. The code says `wild`
+(`.track-code.wild`, `isWild()`, `SheetTrackProfile.wild`) — the concept, a
+card with no track yet. The screen says **`ANY`** — the label. Each layer keeps
+its own word on purpose (`adr/PROLOGUE_UX_ROUND3_PLAN.md`, decision 2); don't
+rename one to match another. The dashed `.wild` class in particular belongs to
+a family — `StandingStrip`'s `.dummy` rank slots, `DifficultyMeter`'s
+`.seg.next` — that shares the dash, not the label.
+
+**A code in a sentence needs different words than a code in a chip.** `ANY` is
+a real English word, so in running prose it parses as the quantifier before it
+parses as the label: "your ANY cards" is broken grammar on first read. In a
+chip (`[ANY] 3 in hand`) it needs nothing. In prose, either mark it as a label
+("a card marked ANY") or drop the qualifier where context already carries it
+("the cards doing work lock in") — Round 3, decision 3.
 
 ## Errors
 

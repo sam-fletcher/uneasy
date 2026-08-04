@@ -17,6 +17,7 @@
 	import TrackBoard from './TrackBoard.svelte';
 	import type { Player, PlayerCardRow, Ranking, CommittedHeart, TrackDone, PrologueTrack } from '$lib/api';
 	import { computeFinalSlots, openRanksForCount } from '$lib/prologue/refund';
+	import { trackCode } from '$lib/prologue/choosing';
 
 	interface Props {
 		players: Player[];
@@ -112,7 +113,7 @@
 
 	{#if wildInHand > 0}
 		<p class="standing-note">
-			<span class="track-code wild" aria-hidden="true">WLD</span>
+			<span class="track-code wild" aria-hidden="true">{trackCode('H')}</span>
 			{wildInHand} in hand — you assign these to tracks at the end.
 		</p>
 	{/if}
@@ -200,9 +201,10 @@
 		background: var(--color-accent);
 		border-color: var(--color-accent);
 	}
-	/* Dummies get the same dashed not-a-real-thing treatment as WLD, so the
+	/* Dummies get the same dashed not-a-real-thing treatment as a wild, so the
 	   strip's five slots read as five slots — three of which nobody can take
-	   in a 2-player game. */
+	   in a 2-player game. (This is why the wild's class is .wild and not .any:
+	   what these two share is the dash, not the label — Round 3, decision 2.) */
 	.mslot.dummy {
 		border-style: dashed;
 		border-color: var(--color-border);

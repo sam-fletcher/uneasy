@@ -2,7 +2,7 @@
   Structured prologue (Phase 4b). Modes driven by game.prologue_ranking_step:
 
     null   →  choosing: pick boxes from the three sheets; cards make-or-take
-    declare_X        →  WLD declaration for the current track (the server
+    declare_X        →  ANY-card declaration for the current track (the server
                         still spells the step "declare_" + track, and the API
                         still calls the cards hearts — see HandStrip)
     place_set_asides_X →  top-ranked player slots zero-suit players in
@@ -250,7 +250,7 @@
 	// (The per-player "Hands" grid is gone, Round 2 §1f: it duplicated the
 	// TrackBoard, which already shows every player's cards by track. The one
 	// thing it added was heart visibility, which the standing strip's
-	// "WLD n in hand" line now carries for the viewer.)
+	// "ANY n in hand" line now carries for the viewer.)
 
 	// ── Choosing accordion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S1) ───────────
 	// Character-facing panel copy, keyed by the stable sheet type rather than
@@ -628,11 +628,21 @@
 			const waitees: Waitee[] = notDone.length === players.length
 				? [{ kind: 'everyone' }]
 				: notDone;
-			// "WLD", the same three letters the choosing view taught and the
-			// hand below spends — not "Hearts", which was the last deck word
-			// left in the app (Session 3's ruling on the open question). "on",
-			// not "for": you are putting the card on that track.
-			return { waitees, stepLabel: `Rankings: Spend WLD on ${t.charAt(0).toUpperCase() + t.slice(1)}` };
+			// The same three letters the choosing view taught and the hand below
+			// spends — not "Hearts", which was the last deck word left in the
+			// app (Round 2 Session 3's ruling on the open question). "on", not
+			// "for": you are putting the card on that track.
+			//
+			// This is the one place the code stands in a bare sentence fragment
+			// with no chip around it, so "Spend ANY on Power" can be misread as
+			// the quantifier (Round 3, decision 3 / §1b). It ships because the
+			// header sits directly above a hand of cards each stamped ANY —
+			// re-read live before changing it to "Spend ANY cards on", which
+			// costs 6 chars in the longest of the four mode labels.
+			return {
+				waitees,
+				stepLabel: `Rankings: Spend ${trackCode('H')} on ${t.charAt(0).toUpperCase() + t.slice(1)}`,
+			};
 		}
 		if (mode === 'place') {
 			if (topTrackPlayerID == null) return { waitees: [] };
@@ -773,7 +783,12 @@
 											{#if m.track}
 												{m.track}
 											{:else}
-												<span class="wild-note">any track — you choose at the end</span>
+												<!-- The chip says "any"; this says "later". It used to read
+												     "any track — you choose at the end", which was the row
+												     explaining WLD by saying the word the code should have
+												     been — and after the rename it stuttered (Round 3,
+												     decision 4). -->
+												<span class="wild-note">you choose the track at the end</span>
 											{/if}
 										</td>
 									</tr>
@@ -790,9 +805,14 @@
 							of a track's cards, the heavier ones break the tie.
 						</p>
 						<h4>Starting rankings</h4>
+						<!-- "A card marked ANY", not "Your ANY cards": the code is a real
+						     English word now, so in running prose it parses as the
+						     quantifier first and the label second. "marked" is what tells
+						     the reader this is a label (Round 3, decision 3). -->
 						<p class="prologue-subtext">
-							The cards you gather set the initial rankings. Your WLD cards rank nothing
-							on their own — you choose which track to spend each one on at the end.
+							The cards you gather set the initial rankings. A card marked ANY ranks
+							nothing on its own — you choose which track to spend each one on at
+							the end.
 						</p>
 					</div>
 				{/if}
@@ -968,8 +988,14 @@
 															     on a wild (no track yet), on a card you already hold (the
 															     claim is a no-op) and on a claimed tile (nothing about it
 															     is still on offer). -->
+															<!-- "any track", not bare "any": this cell is
+															     text-transform:uppercase, so it sits beside POWER /
+															     KNOWLEDGE / ESTEEM, and its whole job (see .detail-track)
+															     is to expand the tile's abbreviation rather than repeat
+															     it. Nine characters, same as KNOWLEDGE, which already
+															     sets the cell's width (Round 3, decision 5). -->
 															<span class="detail-track">
-																{track || 'wild'}
+																{track || 'any track'}
 																{#if track && state !== 'mine' && !expClaim}
 																	<span class="rise" role="img" aria-label="raises you on this track">↑</span>
 																{/if}
@@ -1031,8 +1057,11 @@
 			{#if actionError}
 				<ErrorText message={actionError} />
 			{/if}
+			<!-- Not "ANY cards doing work": in this step the hand is entirely
+			     these cards, so the qualifier was redundant even before the code
+			     became a word that reads as a quantifier (Round 3, decision 3). -->
 			<p class="muted-text small">
-				Once every player marks Done, this track resolves: WLD cards doing work lock in, the rest return to your hand.
+				Once every player marks Done, this track resolves: the cards doing work lock in, the rest return to your hand.
 			</p>
 		{/if}
 
@@ -1480,7 +1509,7 @@
 
 	   The code is bare text inside the chip rather than a nested .track-code:
 	   the chip is already the bordered box, and a bordered code inside a
-	   bordered chip is two frames around one word. The dashed-WLD idiom isn't
+	   bordered chip is two frames around one word. The dashed-wild idiom isn't
 	   forked, it moves up one level — the chip's own border goes dashed. */
 	.tile-chip {
 		position: relative;
@@ -1515,8 +1544,10 @@
 		color: var(--color-highlight);
 	}
 	/* Not a track yet, so it borrows DifficultyMeter's dashed
-	   means-not-yet rather than inventing a fourth glyph for WLD (decision 3).
-	   Same idiom as shared/trackCode.css's .track-code.wild. */
+	   means-not-yet rather than inventing a fourth glyph for the ANY chip
+	   (Round 2, decision 3). Same idiom as shared/trackCode.css's
+	   .track-code.wild — the class keeps the concept's name, not the label's
+	   (Round 3, decision 2). */
 	.tile-chip.wild { border-style: dashed; }
 	/* This card does nothing for you: the server no-ops a claim on a card you
 	   already hold, so that half of the tile yields nothing. Struck as well as

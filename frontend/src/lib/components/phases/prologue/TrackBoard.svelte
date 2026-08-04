@@ -216,13 +216,19 @@
 											<WeightMeter value={c.card_value} compact />
 										</span>
 									{/each}
+									<!-- This mark carries no visible text — a dashed frame around a
+									     meter — so the aria-label is its only label, and it says
+									     "any-track card" in plain language rather than the three
+									     letters (Round 3, decision 6). A listener hearing "A-N-Y"
+									     with no chip in front of them would be worse off than a
+									     reader, which is the opposite of what the label is for. -->
 									{#each committedWildsForPlayer(pid, t.id) as h}
 										{@const doingWork = bright.get(pid)?.has(h.card_id) ?? false}
 										<span
 											class="mark wild"
 											class:inert={!doingWork}
 											role="img"
-											aria-label={`wild, weight ${cardWeight(h.value)} of ${MAX_CARD_WEIGHT}, ${
+											aria-label={`any-track card, weight ${cardWeight(h.value)} of ${MAX_CARD_WEIGHT}, ${
 												doingWork ? 'doing work' : 'wasted — would be refunded'
 											}`}
 											title={doingWork ? 'doing work' : 'wasted (would be refunded)'}

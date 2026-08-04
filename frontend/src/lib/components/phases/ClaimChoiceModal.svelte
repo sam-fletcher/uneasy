@@ -93,6 +93,16 @@
 		return `card:${suit}::${value}`;
 	}
 
+	/** Display name of whoever holds this card, '' when nobody does. Titles a
+	 *  take step by whose asset it is (Round 3, decision 7) — stealPreview
+	 *  answers the same question but also resolves the asset, which the title
+	 *  doesn't need and the summary already does. */
+	function holderName(suit: string, value: string): string {
+		const holder = cards.find(c => c.card_suit === suit && c.card_value === value);
+		if (!holder) return '';
+		return players.find(p => p.id === holder.player_id)?.display_name ?? '';
+	}
+
 	// Editable form state. Initialized empty and seeded by the effect below
 	// so the seed re-runs if the parent ever reuses this modal for a
 	// different choice (Svelte 5 was warning that $state(propValue) only
@@ -197,20 +207,37 @@
 	// chip in front of the title. Type + code is the whole of what the suit
 	// used to alias, and the tiles that led here are labelled the same way, so
 	// the modal is naming the slot the player just tapped.
+	//
+	// Three titles, not two (Round 3, decision 7). A card another player holds
+	// used to read "Your new holding", which was wrong twice: the asset isn't
+	// new — you're transferring one that already carries someone else's name
+	// and marginalia — and the string was byte-identical to a MAKE step's, so
+	// on a two-card tile the ledger's two most different rows wore the same
+	// label. "dave's holding" is true, and a name where the other rows say
+	// "Your new" makes the two kinds of row tell apart at a glance.
 	const steps = $derived(
 		deriveClaimSteps({
 			assetTitle: `Your new ${sheet.choice_asset_type}`,
 			assetText,
 			assetMarginalia,
 			marginalia: marginaliaStep,
-			cards: cardSlots.map(slot => ({
-				key: `${slot.suit}::${slot.value}`,
-				title: isCardMine(slot.suit, slot.value)
-					? `Your ${assetTypeLabel(slot.suit)}`
-					: `Your new ${assetTypeLabel(slot.suit)}`,
-				isTake: slot.isTake,
-				text: slot.text,
-			})),
+			cards: cardSlots.map(slot => {
+				const type = assetTypeLabel(slot.suit);
+				// Mine first: it's a subset of isTake, and you can't take from
+				// yourself. The holder-name fallback can't fire (isTake comes off
+				// the same `cards` array holderName reads) but costs one `??`.
+				const owner = slot.isTake ? holderName(slot.suit, slot.value) : '';
+				return {
+					key: `${slot.suit}::${slot.value}`,
+					title: isCardMine(slot.suit, slot.value)
+						? `Your ${type}`
+						: slot.isTake && owner
+							? `${owner}'s ${type}`
+							: `Your new ${type}`,
+					isTake: slot.isTake,
+					text: slot.text,
+				};
+			}),
 		})
 	);
 
@@ -313,9 +340,16 @@
 									already yours; nothing to take.
 								{/if}
 							{:else if preview?.assetName}
-								you take <em>{preview.assetName}</em> from {preview.ownerName}.
+								<!-- No "from {preview.ownerName}": the title now names the
+								     holder, so the summary is free to be only the
+								     transaction (Round 3, decision 7). -->
+								you take <em>{preview.assetName}</em>.
 							{:else if preview}
-								already held by {preview.ownerName}.
+								<!-- The holder's linked asset didn't resolve (destroyed, or
+								     not found), so there's no name to promise — but the
+								     title has already said whose it is, and "already held
+								     by X" would just repeat it. -->
+								you take it with this tile.
 							{/if}
 						</span>
 					</section>

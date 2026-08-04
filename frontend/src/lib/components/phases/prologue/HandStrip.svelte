@@ -1,5 +1,5 @@
 <!-- HandStrip.svelte
-  Persistent WLD hand for the active player during the prologue ranking
+  Persistent hand of wilds for the active player during the prologue ranking
   declare step. Tap a card to commit it to the active track, tap a committed
   card to retract. A card that is doing work on the active track renders
   committed; a greyed (wasted) one would be refunded at resolution and returns
@@ -11,16 +11,20 @@
 
   The deck is gone from the screen (adr/PROLOGUE_UX_ROUND2_PLAN.md, decision 1
   + the owner's Session 3 ruling): these were ♥ card faces, and the hearts step
-  was the last place in the app a suit reached the reader. They are WLD cards
-  now — the same object the choosing view names, with the same dashed
-  not-yet-a-track frame — so a player who learned "WLD" while picking tiles is
-  not handed a second notation for it at the moment they spend one. The API
-  still calls them hearts; that is storage, not vocabulary.
+  was the last place in the app a suit reached the reader. They wear the ANY
+  code now — the same object the choosing view names, with the same dashed
+  not-yet-a-track frame — so a player who learned "ANY" while picking tiles is
+  not handed a second notation for it at the moment they spend one. The code
+  comes from trackCode('H') rather than a literal, so it cannot drift from the
+  chips on the tiles. The API still calls them hearts; that is storage, not
+  vocabulary. (`wild` in this file's identifiers is the concept, ANY is the
+  label — Round 3, decision 2.)
 -->
 <script lang="ts">
 	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
 	import type { CommittedHeart, PlayerCardRow, PrologueTrack } from '$lib/api';
 	import { cardRank } from '$lib/prologue/refund';
+	import { trackCode } from '$lib/prologue/choosing';
 
 	interface Props {
 		myCards: PlayerCardRow[];
@@ -97,7 +101,11 @@
 	</div>
 	<div class="wild-hand">
 		{#if myWilds.length === 0}
-			<span class="empty">You hold no WLD cards.</span>
+			<!-- Not "no ANY cards": in this step the hand is *entirely* these
+			     cards, so the qualifier was always redundant — and "no ANY cards"
+			     reads as a quantifier now that the code is a real word (Round 3,
+			     decision 3). -->
+			<span class="empty">You hold no cards to spend.</span>
 		{/if}
 		{#each myWilds as h}
 			{@const onActive = isOnActive(h.id)}
@@ -120,7 +128,7 @@
 							: 'On this track, doing work'
 						: 'Tap to commit to this track'}
 			>
-				<span class="wild-code">WLD</span>
+				<span class="wild-code">{trackCode('H')}</span>
 				<WeightMeter value={h.card_value} />
 			</button>
 		{/each}
