@@ -1263,6 +1263,11 @@
 		transition: transform 0.15s ease;
 	}
 	.help-disclosure.open .disc-caret { transform: rotate(0); }
+	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the caret still
+	   turns — its direction is the open/closed state — it just snaps. */
+	@media (prefers-reduced-motion: reduce) {
+		.disc-caret { transition: none; }
+	}
 	.disc-body {
 		display: flex;
 		flex-direction: column;
@@ -1370,6 +1375,11 @@
 		transition: transform 0.15s ease;
 	}
 	.sheet-panel.open .sheet-caret { transform: rotate(0); }
+	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): as .disc-caret
+	   above — the direction is the state, the sweep is the decoration. */
+	@media (prefers-reduced-motion: reduce) {
+		.sheet-caret { transition: none; }
+	}
 
 	.sheet-body {
 		border: 1px solid var(--color-border-warm);

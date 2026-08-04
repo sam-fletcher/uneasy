@@ -115,6 +115,12 @@
 		transition: transform 0.15s ease;
 	}
 	.buffet.open .buffet-caret { transform: rotate(0); }
+	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the caret still
+	   turns — which way it points is the open/closed state, not decoration. It
+	   just arrives pointing the new way instead of sweeping there. */
+	@media (prefers-reduced-motion: reduce) {
+		.buffet-caret { transition: none; }
+	}
 
 	.buffet-body {
 		border: 1px solid var(--color-accent);

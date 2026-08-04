@@ -125,4 +125,18 @@
 		from { transform: translate(-50%, 50%) scale(0.96); opacity: 0; }
 		to { transform: translate(-50%, 50%) scale(1); opacity: 1; }
 	}
+
+	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): all three of
+	   these are entrance motion, and the sheet arriving is the feedback — it
+	   opens either way, it just doesn't travel to get there. Killing the
+	   animation is enough on both layouts: the mobile sheet has no transform
+	   of its own to fall back to, and the centered dialog already holds its
+	   `translate(-50%, 50%)` statically, so neither lands off-position.
+
+	   After the 790 block on purpose — same specificity, so source order is
+	   what lets this override `pop-in`. */
+	@media (prefers-reduced-motion: reduce) {
+		.backdrop,
+		.sheet { animation: none; }
+	}
 </style>

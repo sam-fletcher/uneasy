@@ -317,6 +317,15 @@
 		font-size: 0.7rem;
 		color: var(--color-accent);
 	}
+	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the label still
+	   docks to the top of the field in the accent colour — that is what tells
+	   you the field is live and what it wants — it simply appears there rather
+	   than sliding and shrinking on the way. The colour is bundled in with the
+	   travel here because it is one shorthand; the state it announces is
+	   unaffected. */
+	@media (prefers-reduced-motion: reduce) {
+		.field label { transition: none; }
+	}
 
 	.primary { margin-top: 0.25rem; align-self: center; }
 

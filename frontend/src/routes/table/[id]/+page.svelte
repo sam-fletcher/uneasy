@@ -1654,6 +1654,13 @@
 	}
 
 	.tone-tile:active { transform: scale(0.97); }
+	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): drop the
+	   press-down squish, keep the colour fade — the background *is* the tone's
+	   status, so it is feedback, not motion. */
+	@media (prefers-reduced-motion: reduce) {
+		.tone-tile { transition: background-color 120ms ease; }
+		.tone-tile:active { transform: none; }
+	}
 
 	.tone-tile[data-status='default']      { background: var(--color-neutral); }
 	.tone-tile[data-status='include']      { background: var(--color-tone-include); }

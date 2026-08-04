@@ -1251,6 +1251,13 @@
 		from { opacity: 0; }
 		to { opacity: 1; }
 	}
+	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the dimming is
+	   the feedback — the page behind is out of play — and it still happens, it
+	   just doesn't ease in. The scrim only exists in the DOM while expanded, so
+	   there is nothing to fade out either way. */
+	@media (prefers-reduced-motion: reduce) {
+		.scrim { animation: none; }
+	}
 
 	/* Mobile-only: when expanded, rise as a bottom sheet over the page. A
 	   small top gap leaves the dimmed body peeking above, and rounded top

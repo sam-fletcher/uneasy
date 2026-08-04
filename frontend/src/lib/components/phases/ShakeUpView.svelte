@@ -781,6 +781,11 @@
 		transform: rotate(-90deg); transition: transform 0.15s ease;
 	}
 	.intro-block.open .intro-caret { transform: rotate(0); }
+	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the caret still
+	   turns — its direction is the open/closed state — it just snaps. */
+	@media (prefers-reduced-motion: reduce) {
+		.intro-caret { transition: none; }
+	}
 	.intro-body {
 		border: 1px solid var(--color-accent); border-top: none;
 		border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;

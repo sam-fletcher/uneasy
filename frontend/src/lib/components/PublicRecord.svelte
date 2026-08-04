@@ -28,6 +28,7 @@
 	import type { RecordRow, Plan, Player, GamePhase } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
 	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
+	import { prefersReducedMotion } from '$lib/reducedMotion';
 	import { playerColorByID } from '$lib/playerColor';
 	import { PLAN_SHORT } from '$lib/components/plans/shared';
 	import { parseMakeIntroductionsData } from '$lib/plans/resolutionData/make_introductions';
@@ -220,10 +221,20 @@
 		></button>
 	{/if}
 
+	<!-- The overlay flies in from the rail it grew out of. Past the record dock
+	     the panel is a permanent column, so there is nothing to fly — duration 0.
+	     Reduced motion takes the same exit (docs/STYLE_GUIDE.md "Motion & the
+	     deck"): the panel still opens and closes, it just doesn't travel. A
+	     Svelte transition is JS, so the guard can't be a media query; the params
+	     are re-read each time the transition starts, which is what makes asking
+	     at that moment correct. -->
 	<aside
 		class="expanded"
 		class:permanent={isWide}
-		transition:fly={{ x: -RECORD_WIDTH_PX, duration: isWide ? 0 : 180 }}
+		transition:fly={{
+			x: -RECORD_WIDTH_PX,
+			duration: isWide || prefersReducedMotion() ? 0 : 180
+		}}
 	>
 		<header class="exp-header">
 			<h3>Public Record</h3>
