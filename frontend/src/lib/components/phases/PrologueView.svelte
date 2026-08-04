@@ -12,6 +12,8 @@
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/cardGlyph.css';
 	import '$lib/components/shared/statusText.css';
+	import '$lib/components/shared/trackCode.css';
+	import '$lib/components/shared/choicePip.css';
 	import {
 		getPrologueSheets,
 		getPrologueCards,
@@ -45,20 +47,23 @@
 	import HandStrip from './prologue/HandStrip.svelte';
 	import SetAsidePlacer from './prologue/SetAsidePlacer.svelte';
 	import ClosingStage from './prologue/ClosingStage.svelte';
+	import TurnCard from './prologue/TurnCard.svelte';
+	import StandingStrip from './prologue/StandingStrip.svelte';
 	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
-	import { computeBrightHearts, cardRank } from '$lib/prologue/refund';
+	import { computeBrightHearts } from '$lib/prologue/refund';
 	import {
-		openCount,
 		cardHoldStates,
 		ownedCardCount,
 		sheetTrackProfile,
+		spentByCategory,
 		stealPreview,
-		trackLabel,
+		trackCode,
 		assetTypeLabel,
 		SUIT_MEANINGS,
 		type CardHoldState,
 	} from '$lib/prologue/choosing';
 	import { notReadyPlayerIDs } from '$lib/prologue/closing';
+	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 	import { playerColorByID } from '$lib/playerColor';
 	import CrownGlyph from '../CrownGlyph.svelte';
@@ -106,7 +111,6 @@
 	let claims = $state<PrologueClaim[]>([]);
 	let cards = $state<PlayerCardRow[]>([]);
 	let activePlayerID = $state<number | null>(null);
-	let turnNumber = $state(1);
 	let committed = $state<CommittedHeart[]>([]);
 	let doneFlags = $state<TrackDone[]>([]);
 	let extraPeers = $state<ExtraPeer[]>([]);
@@ -132,7 +136,6 @@
 			sheets = s.sheets;
 			claims = s.claims;
 			activePlayerID = s.current_player_id;
-			turnNumber = s.turn_number;
 			cards = c.cards;
 			committed = st.committed;
 			doneFlags = st.done;
@@ -205,8 +208,20 @@
 		return null;
 	}
 
-	const myTurns = $derived(claims.filter(c => c.player_id === currentPlayerID).length);
+	// Where the viewer's three choices have gone: the remainder draws the turn
+	// card's solid pips, the per-sheet counts draw the pips that moved down to
+	// the category headers. One walk, so the two homes always add to three.
+	const spent = $derived(spentByCategory(claims, currentPlayerID));
 	const isMyTurn = $derived(activePlayerID != null && activePlayerID === currentPlayerID);
+
+	// The off-turn turn card's one suggestion. Same rule as the header chip's
+	// red disc (tableHeader.ts), so the card gives that number a destination
+	// rather than restating it.
+	const myAtRiskCount = $derived(
+		currentPlayerID == null
+			? 0
+			: assets.filter((a) => a.owner_id === currentPlayerID && isNeedlesslyAtRisk(a)).length
+	);
 	function playerName(id: number | null): string {
 		if (id == null) return 'Dummy';
 		return players.find(p => p.id === id)?.display_name ?? '?';
@@ -224,26 +239,10 @@
 		return s === 'H' || s === 'D' ? 'red' : 'black';
 	}
 
-	// ── Everyone's hands (public during the prologue) ─────────────────────────
-	// Cards are linked to public assets during the prologue, so every player's
-	// hand is open information. Show them all as compact per-player tiles.
-	// Hearts first so the wild cards cluster and stand out, then S/D/C, each
-	// group high-to-low.
-	const HAND_SUIT_ORDER: Record<string, number> = { H: 0, S: 1, D: 2, C: 3 };
-	const handsByPlayer = $derived.by(() =>
-		[...players]
-			.sort((a, b) => (a.seat_order ?? 0) - (b.seat_order ?? 0))
-			.map((p) => ({
-				player: p,
-				cards: cards
-					.filter((c) => c.player_id === p.id)
-					.sort(
-						(a, b) =>
-							HAND_SUIT_ORDER[a.card_suit] - HAND_SUIT_ORDER[b.card_suit] ||
-							cardRank(b.card_value) - cardRank(a.card_value)
-					),
-			}))
-	);
+	// (The per-player "Hands" grid is gone, Round 2 §1f: it duplicated the
+	// TrackBoard, which already shows every player's cards by track. The one
+	// thing it added was heart visibility, which the standing strip's
+	// "WLD n in hand" line now carries for the viewer.)
 
 	// ── Choosing accordion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S1) ───────────
 	// Character-facing panel copy, keyed by the stable sheet type rather than
@@ -259,6 +258,13 @@
 	// Empty on first load (all three panels collapsed); plain component state
 	// so it survives the WS-triggered reload() calls, which only replace data.
 	let openSheets = $state<Set<PrologueSheetType>>(new Set());
+
+	// The prose that used to open the page — two paragraphs of lede, three of
+	// explanation and a 163px legend, all above the first tappable control
+	// (Round 2 §1d). Collapsed by default and kept on the page rather than
+	// moved into the global Help menu (owner ruling, decision 9). Plain
+	// component state, same reason as openSheets.
+	let helpOpen = $state(false);
 
 	async function toggleSheetPanel(type: PrologueSheetType, header: HTMLButtonElement) {
 		const next = new Set(openSheets);
@@ -512,9 +518,12 @@
 		if (loading) return { waitees: [] };
 		if (mode === 'choosing') {
 			if (activePlayerID == null) return { waitees: [] };
+			// "chosen", not "turn N of 12": a turn count next to a personal
+			// three-choice allowance reads as a personal allowance of twelve.
+			// The pips carry the personal number now; this one is the table's.
 			return {
 				waitees: [{ kind: 'player', playerID: activePlayerID }],
-				stepLabel: `Create assets — turn ${turnNumber} of ${players.length * 3}`,
+				stepLabel: `Prologue — ${claims.length} of ${players.length * 3} chosen`,
 			};
 		}
 		if (mode === 'declare') {
@@ -564,14 +573,6 @@
 	</span>
 {/snippet}
 
-<!-- A bare suit symbol on the page ground (no parchment card face), for the
-     sheet-header track profiles. Black suits take the body text colour —
-     .card-glyph's black is the page background, which only works against
-     parchment. Mirrors TrackBoard's .col-suit. -->
-{#snippet bareSuit(suit: string)}
-	<span class="bare-suit" data-color={suitColor(suit)}><SuitGlyph {suit} /></span>
-{/snippet}
-
 <div class="prologue-view" bind:clientWidth={columnWidth}>
 	<!-- Load errors sit at the top of the view: they explain the content
 	     below being stale or missing. Action errors render beside the control
@@ -584,265 +585,266 @@
 		<p class="muted-text">Loading prologue…</p>
 
 	{:else if mode === 'choosing'}
-		<p class="prologue-lede">
-			We start the game with the prologue,
-			where we take turns fleshing out our
-			characters and the world they inhabit.
-		</p>
-		<p class="prologue-lede">
-			One turn you might decide your character
-			is the monarch, and then the next you
-			might say that they hail from a castle on
-			the coast.
-		</p>
+		<!-- Round 2 order: the turn card first (it names the action and holds
+		     the pips), then the prose behind its disclosure, then where you
+		     stand, then the picker — which now starts ~240px into the column
+		     instead of 658px, i.e. on the first screen. -->
+		<div class="choosing-stack">
+			<TurnCard
+				activeName={activePlayerID == null ? null : playerName(activePlayerID)}
+				{isMyTurn}
+				unspent={currentPlayerID == null ? null : 3 - spent.total}
+				atRiskCount={myAtRiskCount}
+				onOpenRetinue={() => onOpenRetinue?.()}
+			/>
 
-		{#if activePlayerID == null}
-			<p class="muted-text">Everyone has finished choosing.</p>
-		{/if}
+			<section class="help-disclosure" class:open={helpOpen}>
+				<button
+					type="button"
+					class="disc-head"
+					aria-expanded={helpOpen}
+					aria-controls={helpOpen ? 'prologue-help-body' : undefined}
+					onclick={() => (helpOpen = !helpOpen)}
+				>
+					<span class="disc-glyph" aria-hidden="true">?</span>
+					<span class="disc-title">How the prologue works</span>
+					<span class="disc-caret" aria-hidden="true">▾</span>
+				</button>
+				{#if helpOpen}
+					<div class="disc-body" id="prologue-help-body">
+						<p class="prologue-lede">
+							We start the game with the prologue, where we take turns fleshing out
+							our characters and the world they inhabit.
+						</p>
+						<p class="prologue-lede">
+							One turn you might decide your character is the monarch, and then the
+							next you might say that they hail from a castle on the coast.
+						</p>
+						<!-- Not "pick 3 tiles from the 3 categories below", which is the
+						     misread the pips exist to kill: the rules say the opposite,
+						     and three panels in a stack were already implying a checklist. -->
+						<p class="prologue-subtext">
+							You get three choices — spend them however you like. If you want three
+							titles, take three titles. Each tile you claim creates an asset and
+							grants 2 playing cards.
+						</p>
+						<p class="prologue-subtext">
+							Playing cards let you create <span class="steal-color">or steal</span> another asset,
+							and improve your rank in either Power, Knowledge, or Esteem.
+						</p>
+						<p class="prologue-subtext">
+							You can edit your assets (including your main character) at any time in your player menu (top of the screen).
+						</p>
+						<!-- Every suit means two things at once: the asset it makes now, and
+						     the ranking track it feeds when the prologue ends. The legend used
+						     to teach only the first, while the track board below taught only
+						     the second — and the two readings collide (♠ makes an artifact but
+						     raises Esteem), so half a lesson was worse than none.
+						     Session 2 rebuilds this as type → code → track, with no suits. -->
+						<table class="suit-legend">
+							<thead>
+								<tr>
+									<th scope="col">Suit</th>
+									<th scope="col">You make a…</th>
+									<th scope="col">Raises your…</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each SUIT_MEANINGS as m (m.suit)}
+									<tr>
+										<th scope="row">
+											<span class="card-glyph legend-glyph" data-color={suitColor(m.suit)}>
+												<SuitGlyph suit={m.suit} />
+											</span>
+										</th>
+										<td>{m.assetType}</td>
+										<td class:wild-cell={m.track == null}>{m.track ?? 'Wild — any track'}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+						<!-- No held/already-yours legend rows: both states are already spelled
+						     out in words inside the tile expansion ("Takes X from Y" /
+						     "You already hold X — nothing to take"), and repeating them here
+						     cost two lines of scroll on the screen we're trying to shorten. -->
+						<h4>Starting rankings</h4>
+						<p class="prologue-subtext">
+							The playing cards set the initial rankings. You will choose tracks to spend your
+							<span class="heart-mark"><SuitGlyph suit="H" /></span> Hearts on.
+						</p>
+					</div>
+				{/if}
+			</section>
 
-		<!-- The choosing mode's one action path is the claim modal, which
-		     closes before its follow-up refresh can fail — so this sits above
-		     the tiles the player just came back to. -->
-		{#if actionError}
-			<ErrorText message={actionError} />
-		{/if}
+			<StandingStrip {players} {cards} {rankings} {committed} {doneFlags} {currentPlayerID} />
 
-		<div class="prologue-intro">
-			<h3>Your Retinue</h3>
-			<p class="prologue-subtext">
-				Each player will pick 3 tiles from the 3 categories below. 
-				Each tile creates an asset and grants 2 playing cards. 
-			</p>
-			<p class="prologue-subtext"> 
-				Playing cards let you create <span class="steal-color">or steal</span> another asset,
-				and improve your rank in either Power, Knowledge, or Esteem.
-			</p>
-			<p class="prologue-subtext"> 
-				You can edit your assets (including your main character) at any time in your player menu (top of the screen).
-			</p>
-			<!-- Every suit means two things at once: the asset it makes now, and
-			     the ranking track it feeds when the prologue ends. The legend used
-			     to teach only the first, while the track board below taught only
-			     the second — and the two readings collide (♠ makes an artifact but
-			     raises Esteem), so half a lesson was worse than none. -->
-			<table class="suit-legend">
-				<thead>
-					<tr>
-						<th scope="col">Suit</th>
-						<th scope="col">You make a…</th>
-						<th scope="col">Raises your…</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each SUIT_MEANINGS as m (m.suit)}
-						<tr>
-							<th scope="row">
-								<span class="card-glyph legend-glyph" data-color={suitColor(m.suit)}>
-									<SuitGlyph suit={m.suit} />
+			<!-- The choosing mode's one action path is the claim modal, which
+			     closes before its follow-up refresh can fail — so this sits above
+			     the tiles the player just came back to. -->
+			{#if actionError}
+				<ErrorText message={actionError} />
+			{/if}
+
+				<div class="sheet-accordion">
+				{#each sheets as sheet (sheet.type)}
+					{@const isOpen = openSheets.has(sheet.type)}
+					{@const profile = sheetTrackProfile(sheet)}
+					{@const spentHere = spent.bySheet.get(sheet.type) ?? 0}
+					<section class="sheet-panel" class:open={isOpen}>
+						<button
+							type="button"
+							class="sheet-header"
+							aria-expanded={isOpen}
+							aria-controls={isOpen ? `sheet-body-${sheet.type}` : undefined}
+							onclick={(e: MouseEvent) => toggleSheetPanel(sheet.type, e.currentTarget as HTMLButtonElement)}
+						>
+							<span class="sheet-name">{sheet.display_name}</span>
+							<!-- Which tracks this category feeds. Every sheet supplies
+							     exactly two of the three, so picking a category is already
+							     a ranking decision — and since all three panels start
+							     collapsed, these headers are the whole first screen.
+							     Only the ranked tracks: every sheet carries wilds (the
+							     legend covers them) and the absent track is implied by the
+							     two that are named. Rides the title row, which frees the
+							     description to run full width below. -->
+							<span class="sheet-tracks">
+								{#each profile.tracks as s (s)}
+									<span class="track-code">{trackCode(s)}</span>
+								{/each}
+							</span>
+							<!-- Only when non-zero: an always-present slot leaves an
+							     orphan divider on the two categories you haven't spent
+							     on, and the absence is the message on those. -->
+							{#if spentHere > 0}
+								<span
+									class="sheet-pips"
+									aria-label={`${spentHere} of your three choices spent on ${sheet.display_name}`}
+								>
+									{#each Array(spentHere) as _, i (i)}
+										<span class="choice-pip"></span>
+									{/each}
 								</span>
-							</th>
-							<td>{m.assetType}</td>
-							<td class:wild-cell={m.track == null}>{m.track ?? 'Wild — any track'}</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-			<!-- No held/already-yours legend rows: both states are already spelled
-			     out in words inside the tile expansion ("Takes X from Y" /
-			     "You already hold X — nothing to take"), and repeating them here
-			     cost two lines of scroll on the screen we're trying to shorten. -->
-		</div>
-
-		<p class="muted-text small">Your turns: {myTurns} of 3</p>
-
-
-		<div class="sheet-accordion">
-			{#each sheets as sheet (sheet.type)}
-				{@const isOpen = openSheets.has(sheet.type)}
-				{@const profile = sheetTrackProfile(sheet)}
-				<section class="sheet-panel" class:open={isOpen}>
-					<button
-						type="button"
-						class="sheet-header"
-						aria-expanded={isOpen}
-						aria-controls={isOpen ? `sheet-body-${sheet.type}` : undefined}
-						onclick={(e: MouseEvent) => toggleSheetPanel(sheet.type, e.currentTarget as HTMLButtonElement)}
-					>
-						<span class="sheet-name">{sheet.display_name}</span>
-						<!-- Which tracks this category feeds. Every sheet supplies
-						     exactly two of the three, so picking a category is already
-						     a ranking decision — and since all three panels start
-						     collapsed, these headers are the whole first screen.
-						     Only the ranked suits: hearts are on every sheet (the
-						     legend covers them) and the absent track is implied by the
-						     two that are named. Rides the title row, which frees the
-						     description to run full width below. -->
-						<span class="sheet-tracks">
-							{#each profile.tracks as s (s)}
-								<span class="track-tag">{@render bareSuit(s)}{trackLabel(s)}</span>
-							{/each}
-						</span>
-						<span class="sheet-open-count"><strong>{openCount(sheet, claims)}</strong> open</span>
-						<span class="sheet-caret" aria-hidden="true">▾</span>
-						<span class="sheet-desc">{SHEET_DESCRIPTIONS[sheet.type]}</span>
-					</button>
-					{#if isOpen}
-						{@const expandedIndex = sheet.choices.findIndex(c => `${sheet.type}::${c.name}` === expandedBox)}
-						{@const rowEnd = expandedIndex === -1
-							? -1
-							: Math.min(Math.floor(expandedIndex / tileCols) * tileCols + tileCols - 1, sheet.choices.length - 1)}
-						<div class="sheet-body" id={`sheet-body-${sheet.type}`} role="region" aria-label={sheet.display_name}>
-							<div class="tile-grid">
-								{#each sheet.choices as choice, i (choice.name)}
-									{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
-									{@const boxKey = `${sheet.type}::${choice.name}`}
-									{@const isExpanded = expandedBox === boxKey}
-									{@const tileID = `choice-${sheet.type}-${choice.name}`}
-									{@const ownedHere = ownedCardCount(choice, cardStates)}
-									<button
-										type="button"
-										id={tileID}
-										class="choice-btn"
-										class:claimed={!!existingClaim}
-										class:expanded={isExpanded}
-										aria-expanded={isExpanded}
-										aria-controls={isExpanded ? `${tileID}-detail` : undefined}
-										aria-label={existingClaim ? `${choice.name}, claimed by ${playerName(existingClaim.player_id)}` : undefined}
-										style:box-shadow={existingClaim ? `inset 3px 0 0 ${playerColorByID(existingClaim.player_id, players)}` : undefined}
-										onclick={() => toggleExpand(boxKey)}
-									>
-										<span class="choice-name">
-											{choice.name}
-											{#if sheet.type === 'titles'}
-												{@const crown = prologueCrown(choice.id)}
-												{#if crown}<CrownGlyph mark={crown} size={13} />{/if}
+							{/if}
+							<span class="sheet-caret" aria-hidden="true">▾</span>
+							<span class="sheet-desc">{SHEET_DESCRIPTIONS[sheet.type]}</span>
+						</button>
+						{#if isOpen}
+							{@const expandedIndex = sheet.choices.findIndex(c => `${sheet.type}::${c.name}` === expandedBox)}
+							{@const rowEnd = expandedIndex === -1
+								? -1
+								: Math.min(Math.floor(expandedIndex / tileCols) * tileCols + tileCols - 1, sheet.choices.length - 1)}
+							<div class="sheet-body" id={`sheet-body-${sheet.type}`} role="region" aria-label={sheet.display_name}>
+								<div class="tile-grid">
+									{#each sheet.choices as choice, i (choice.name)}
+										{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
+										{@const boxKey = `${sheet.type}::${choice.name}`}
+										{@const isExpanded = expandedBox === boxKey}
+										{@const tileID = `choice-${sheet.type}-${choice.name}`}
+										{@const ownedHere = ownedCardCount(choice, cardStates)}
+										<button
+											type="button"
+											id={tileID}
+											class="choice-btn"
+											class:claimed={!!existingClaim}
+											class:expanded={isExpanded}
+											aria-expanded={isExpanded}
+											aria-controls={isExpanded ? `${tileID}-detail` : undefined}
+											aria-label={existingClaim ? `${choice.name}, claimed by ${playerName(existingClaim.player_id)}` : undefined}
+											style:box-shadow={existingClaim ? `inset 3px 0 0 ${playerColorByID(existingClaim.player_id, players)}` : undefined}
+											onclick={() => toggleExpand(boxKey)}
+										>
+											<span class="choice-name">
+												{choice.name}
+												{#if sheet.type === 'titles'}
+													{@const crown = prologueCrown(choice.id)}
+													{#if crown}<CrownGlyph mark={crown} size={13} />{/if}
+												{/if}
+											</span>
+											<span class="choice-cards">
+												{@render miniCard(choice.cards[0].value, choice.cards[0].suit, stateOf(choice.cards[0].suit, choice.cards[0].value))}
+												{@render miniCard(choice.cards[1].value, choice.cards[1].suit, stateOf(choice.cards[1].suit, choice.cards[1].value))}
+											</span>
+											{#if existingClaim}
+												<!-- Claimed wins this slot outright. A claimed tile is often
+												     one whose cards you hold — claiming it is what put them in
+												     your hand — and "Both cards already yours" there reads as
+												     the *reason* the tile can't be picked, which is wrong: it
+												     can't be picked because it's taken. -->
+												<span class="choice-note">Claimed by {playerName(existingClaim.player_id)}</span>
+											{:else if ownedHere === 2}
+												<!-- Both cards are no-ops for this viewer, so the tile grants
+												     them the sheet asset and nothing else. Worth saying in
+												     words: two struck glyphs are easy to miss while scanning
+												     36 boxes, and the tile is still perfectly claimable, so
+												     it can't be dimmed the way a claimed tile is. -->
+												<span class="choice-note">Both cards already yours</span>
 											{/if}
-										</span>
-										<span class="choice-cards">
-											{@render miniCard(choice.cards[0].value, choice.cards[0].suit, stateOf(choice.cards[0].suit, choice.cards[0].value))}
-											{@render miniCard(choice.cards[1].value, choice.cards[1].suit, stateOf(choice.cards[1].suit, choice.cards[1].value))}
-										</span>
-										{#if existingClaim}
-											<!-- Claimed wins this slot outright. A claimed tile is often
-											     one whose cards you hold — claiming it is what put them in
-											     your hand — and "Both cards already yours" there reads as
-											     the *reason* the tile can't be picked, which is wrong: it
-											     can't be picked because it's taken. -->
-											<span class="choice-note">Claimed by {playerName(existingClaim.player_id)}</span>
-										{:else if ownedHere === 2}
-											<!-- Both cards are no-ops for this viewer, so the tile grants
-											     them the sheet asset and nothing else. Worth saying in
-											     words: two struck glyphs are easy to miss while scanning
-											     36 boxes, and the tile is still perfectly claimable, so
-											     it can't be dimmed the way a claimed tile is. -->
-											<span class="choice-note">Both cards already yours</span>
-										{/if}
-									</button>
-									{#if i === rowEnd}
-										{@const expChoice = sheet.choices[expandedIndex]}
-										{@const expClaim = claimMap.get(`${sheet.type}::${expChoice.name}`)}
-										{@const expTileID = `choice-${sheet.type}-${expChoice.name}`}
-										<div class="choice-detail" id={`${expTileID}-detail`} role="region" aria-labelledby={expTileID}>
-											{#if expChoice.description}
-												<p class="detail-desc">{expChoice.description}</p>
-											{/if}
-											{#if expClaim}
-												<p class="detail-claimed">Claimed by {playerName(expClaim.player_id)}.</p>
-											{/if}
-											<div class="detail-cards">
-												{#each expChoice.cards as c}
-													{@const preview = stealPreview(c.suit, c.value, cards, assets, players)}
-													<div class="detail-card-row">
-														{@render miniCard(c.value, c.suit, stateOf(c.suit, c.value))}
-														<span class="detail-card-text">
-															{#if !preview}
-																Make a new {assetTypeLabel(c.suit)}
-															{:else if expClaim}
-																<!-- Claimed tiles can never be claimed again, so describe
-																     where the card sits now instead of previewing a take
-																     that will never happen. -->
-																{#if preview.assetName}
-																	<em>{preview.assetName}</em> — now held by {holderLabel(preview.ownerID)}
+										</button>
+										{#if i === rowEnd}
+											{@const expChoice = sheet.choices[expandedIndex]}
+											{@const expClaim = claimMap.get(`${sheet.type}::${expChoice.name}`)}
+											{@const expTileID = `choice-${sheet.type}-${expChoice.name}`}
+											<div class="choice-detail" id={`${expTileID}-detail`} role="region" aria-labelledby={expTileID}>
+												{#if expChoice.description}
+													<p class="detail-desc">{expChoice.description}</p>
+												{/if}
+												{#if expClaim}
+													<p class="detail-claimed">Claimed by {playerName(expClaim.player_id)}.</p>
+												{/if}
+												<div class="detail-cards">
+													{#each expChoice.cards as c}
+														{@const preview = stealPreview(c.suit, c.value, cards, assets, players)}
+														<div class="detail-card-row">
+															{@render miniCard(c.value, c.suit, stateOf(c.suit, c.value))}
+															<span class="detail-card-text">
+																{#if !preview}
+																	Make a new {assetTypeLabel(c.suit)}
+																{:else if expClaim}
+																	<!-- Claimed tiles can never be claimed again, so describe
+																	     where the card sits now instead of previewing a take
+																	     that will never happen. -->
+																	{#if preview.assetName}
+																		<em>{preview.assetName}</em> — now held by {holderLabel(preview.ownerID)}
+																	{:else}
+																		Now held by {holderLabel(preview.ownerID)}
+																	{/if}
+																{:else if preview.ownerID === currentPlayerID}
+																	<!-- Card pairs repeat across tiles, so a card you already
+																	     hold turns up on tiles that are still open — and you
+																	     can't take from yourself (the claim is a no-op). -->
+																	{#if preview.assetName}
+																		You already hold <em>{preview.assetName}</em> — nothing to take
+																	{:else}
+																		Already yours — nothing to take
+																	{/if}
+																{:else if preview.assetName}
+																	Takes <em>{preview.assetName}</em> from {preview.ownerName}
 																{:else}
-																	Now held by {holderLabel(preview.ownerID)}
+																	Already held by {preview.ownerName}
 																{/if}
-															{:else if preview.ownerID === currentPlayerID}
-																<!-- Card pairs repeat across tiles, so a card you already
-																     hold turns up on tiles that are still open — and you
-																     can't take from yourself (the claim is a no-op). -->
-																{#if preview.assetName}
-																	You already hold <em>{preview.assetName}</em> — nothing to take
-																{:else}
-																	Already yours — nothing to take
-																{/if}
-															{:else if preview.assetName}
-																Takes <em>{preview.assetName}</em> from {preview.ownerName}
-															{:else}
-																Already held by {preview.ownerName}
-															{/if}
-														</span>
-													</div>
-												{/each}
+															</span>
+														</div>
+													{/each}
+												</div>
+												{#if !expClaim && isMyTurn}
+													<button
+														type="button"
+														class="action-btn primary detail-claim-btn"
+														onclick={() => openClaimModal(sheet, expChoice)}
+													>
+														Claim this tile
+													</button>
+												{/if}
 											</div>
-											{#if !expClaim && isMyTurn}
-												<button
-													type="button"
-													class="action-btn primary detail-claim-btn"
-													onclick={() => openClaimModal(sheet, expChoice)}
-												>
-													Claim this tile
-												</button>
-											{/if}
-										</div>
-									{/if}
-								{/each}
-							</div>
-						</div>
-					{/if}
-				</section>
-			{/each}
-		</div>
-
-		<section class="hands-section">
-			<h3>Hands</h3>
-			<div class="hands-grid">
-				{#each handsByPlayer as hand (hand.player.id)}
-					<div class="hand-tile" class:you={hand.player.id === currentPlayerID}>
-						<div class="hand-tile-head">
-							<span class="hand-tile-name">{hand.player.display_name}</span>
-							<span class="hand-tile-count">{hand.cards.length}</span>
-						</div>
-						{#if hand.cards.length === 0}
-							<span class="hand-tile-empty">No cards yet</span>
-						{:else}
-							<div class="hand-tile-cards">
-								{#each hand.cards as c}
-									{@render miniCard(c.card_value, c.card_suit)}
-								{/each}
+										{/if}
+									{/each}
+								</div>
 							</div>
 						{/if}
-					</div>
+					</section>
 				{/each}
-			</div>
-		</section>
-
-		<div class="prologue-intro">
-			<h3>Starting rankings</h3>
-			<p class="prologue-subtext">
-				The playing cards set the initial rankings. You will choose tracks to spend your 
-				<span class="heart-mark"><SuitGlyph suit="H" /></span> Hearts on.
-			</p>
+				</div>
 		</div>
-
-		<TrackBoard
-			{players}
-			{cards}
-			{rankings}
-			{committed}
-			{doneFlags}
-			activeTrack={null}
-			{currentPlayerID}
-		/>
 
 	{:else if mode === 'declare'}
 		{#if currentTrack}
@@ -963,13 +965,22 @@
 		overflow-y: auto;
 		min-height: 0;
 	}
-	.prologue-view h3 { color: var(--color-accent); font-size: 1rem; margin: 0.5rem 0 0.25rem; }
+	/* (No h3 rule any more: Round 2 §1f/§1g removed the last three headings in
+	   this component — "Your Retinue", "Hands" and "Starting rankings". The
+	   disclosure's own h4 is styled below.) */
 
-	.prologue-intro {
+	/* The choosing view's own rhythm, tighter than the 1rem the other three
+	   modes use. Four objects now stack above the picker where two paragraphs
+	   used to, and 1rem between them costs ~24px of the first screen — which
+	   is the screen this whole round is about. Scoped to a wrapper rather than
+	   applied to .prologue-view so declare/place/closing keep their spacing. */
+	.choosing-stack {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.6rem;
+		min-width: 0;
 	}
+
 	.prologue-lede {
 		margin: 0;
 		color: var(--color-text);
@@ -1029,6 +1040,75 @@
 	}
 	.legend-glyph :global(.suit) { width: 1.15em; height: 1.15em; }
 
+	/* Local help disclosure (Round 2 §1d). Same frame as a collapsed sheet
+	   header — it sits directly above three of them, and a second collapsed-row
+	   idiom on one screen would just be noise. */
+	.help-disclosure {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+	.disc-head {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		min-height: 44px;
+		padding: 0.5rem 0.7rem;
+		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.help-disclosure.open .disc-head {
+		border-bottom-color: transparent;
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+	.disc-glyph {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		border: 1px solid var(--color-accent);
+		color: var(--color-accent);
+		font-size: 0.7rem;
+		flex: none;
+	}
+	.disc-title { flex: 1; color: var(--color-text-secondary); font-size: 0.88rem; min-width: 0; }
+	.disc-caret {
+		flex: none;
+		color: var(--color-accent);
+		font-size: 0.75rem;
+		transform: rotate(-90deg);
+		transition: transform 0.15s ease;
+	}
+	.help-disclosure.open .disc-caret { transform: rotate(0); }
+	.disc-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		border: 1px solid var(--color-border);
+		border-top: none;
+		border-bottom-left-radius: 8px;
+		border-bottom-right-radius: 8px;
+		padding: 0.6rem 0.7rem;
+	}
+	.disc-body h4 {
+		margin: 0.25rem 0 0;
+		color: var(--color-accent);
+		font-size: 0.9rem;
+	}
+	/* The lede kept its 1.05rem while it WAS the page opening. Inside a help
+	   body it's just the first of six paragraphs, and at full size it reads as
+	   a second heading; it keeps the brighter ink to stay the lede. */
+	.disc-body .prologue-lede { font-size: 0.95rem; }
+
 	.sheet-accordion {
 		display: flex;
 		flex-direction: column;
@@ -1050,8 +1130,8 @@
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr) auto auto;
 		grid-template-areas:
-			'name tracks count caret'
-			'desc desc   desc  desc';
+			'name tracks pips caret'
+			'desc desc   desc desc';
 		align-items: center;
 		gap: 0.25rem 0.5rem;
 		width: 100%;
@@ -1081,14 +1161,22 @@
 		font-size: 0.78rem;
 		line-height: 1.3;
 	}
-	.sheet-open-count {
-		grid-area: count;
-		color: var(--color-text-muted);
-		font-size: 0.8rem;
-		white-space: nowrap;
+	/* The choices you have spent on this category — the pips that have moved
+	   down out of the turn card (Round 2, decision 4). Pushed away from the
+	   track codes and given a hairline of its own: a lone gold disc sitting
+	   flush against POW KNO reads as a third code. */
+	.sheet-pips {
+		grid-area: pips;
+		display: inline-flex;
+		align-items: center;
+		align-self: stretch;
+		gap: 4px;
+		margin-left: 0.35rem;
+		padding-left: 0.5rem;
+		border-left: 1px solid var(--color-border);
 	}
 
-	/* Right-aligned against the open-count, so the three headers' profiles
+	/* Right-aligned against the pip slot, so the three headers' profiles
 	   line up as a column the eye can compare down. */
 	.sheet-tracks {
 		grid-area: tracks;
@@ -1096,31 +1184,8 @@
 		flex-wrap: wrap;
 		justify-content: flex-end;
 		align-items: center;
-		gap: 0.2rem 0.55rem;
-		font-size: 0.72rem;
+		gap: 0.2rem 0.3rem;
 	}
-	.track-tag {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		color: var(--color-text-secondary);
-		white-space: nowrap;
-	}
-	.bare-suit {
-		display: inline-flex;
-		align-items: center;
-		line-height: 1;
-	}
-	.bare-suit[data-color='red'] { color: var(--color-suit-red); }
-	.bare-suit[data-color='black'] { color: var(--color-text); }
-	/* Pinned at 1em (SuitGlyph's default, restated so a change to that default
-	   can't shrink this slot silently) — not the 0.85em this used to be. Inside
-	   .sheet-tracks' 0.72rem that was a 9.8px pip: the smallest suit anywhere,
-	   and the only one with no value glyph beside it to lend it context.
-	   Redrawing the paths bought back most of the legibility; this buys the
-	   rest, at a cost of ~1.7px per tag in a right-aligned flex row that has
-	   the room. */
-	.bare-suit :global(.suit) { width: 1em; height: 1em; }
 
 	.sheet-caret {
 		grid-area: caret;
@@ -1274,58 +1339,6 @@
 	.detail-claim-btn {
 		align-self: flex-start;
 	}
-
-	.hands-section {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-	.hands-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.4rem;
-		max-width: 32rem;
-	}
-	.hand-tile {
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 0.5rem 0.6rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		min-width: 0;
-	}
-	.hand-tile.you {
-		outline: 1px solid var(--color-accent);
-		outline-offset: -1px;
-		background: color-mix(in srgb, var(--color-accent) 6%, transparent);
-	}
-	.hand-tile-head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.4rem;
-	}
-	.hand-tile-name {
-		color: var(--color-text);
-		font-size: 0.85rem;
-		font-weight: 500;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		min-width: 0;
-	}
-	.hand-tile.you .hand-tile-name { color: var(--color-accent); }
-	.hand-tile-count { color: var(--color-text-muted); font-size: 0.75rem; flex: none; }
-	.hand-tile-empty { color: var(--color-text-faint); font-size: 0.8rem; font-style: italic; }
-	.hand-tile-cards {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-	}
-	.hand-tile-cards .card-glyph { font-size: 0.85rem; padding: 0.15rem 0.3rem; }
-	.hand-tile-cards .card-glyph :global(.suit) { width: 1.1em; height: 1.1em; }
 
 	.done-btn.active { background: var(--color-success); }
 

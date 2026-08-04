@@ -5,6 +5,7 @@ import type {
 	PrologueSheet,
 	PrologueChoice,
 	PrologueClaim,
+	PrologueSheetType,
 	PlayerCardRow,
 	Asset,
 	Player,
@@ -35,11 +36,15 @@ export const SUIT_MEANINGS: {
 	assetType: string;
 	/** Ranking track this suit is counted on; null for the wild heart. */
 	track: string | null;
+	/** Three-letter code the UI shows instead of the suit (Round 2, decision
+	 *  1). Same table as the other two readings so the headers, legend and
+	 *  tile chips cannot drift apart. */
+	code: string;
 }[] = [
-	{ suit: 'C', assetType: 'Holding', track: 'Power' },
-	{ suit: 'D', assetType: 'Resource', track: 'Knowledge' },
-	{ suit: 'S', assetType: 'Artifact', track: 'Esteem' },
-	{ suit: 'H', assetType: 'Peer', track: null },
+	{ suit: 'C', assetType: 'Holding', track: 'Power', code: 'POW' },
+	{ suit: 'D', assetType: 'Resource', track: 'Knowledge', code: 'KNO' },
+	{ suit: 'S', assetType: 'Artifact', track: 'Esteem', code: 'EST' },
+	{ suit: 'H', assetType: 'Peer', track: null, code: 'WLD' },
 ];
 
 /** Track name for a ranked suit, e.g. 'C' → 'Power'. Empty for an unknown
@@ -48,17 +53,64 @@ export function trackLabel(suit: string): string {
 	return SUIT_MEANINGS.find((m) => m.suit === suit)?.track ?? '';
 }
 
+/**
+ * The three-letter code shown in place of a suit ('C' → 'POW'). Empty for an
+ * unknown suit.
+ *
+ * The heart gets 'WLD' rather than a glyph: it is categorically different (a
+ * track you haven't picked yet, not a track), but a picture for the fourth
+ * member of a set of words breaks the set and forces a legend. It earns a
+ * *treatment* instead — the dashed border in shared/trackCode.css, borrowing
+ * DifficultyMeter's dashed-means-not-yet idiom.
+ */
+export function trackCode(suit: string): string {
+	return SUIT_MEANINGS.find((m) => m.suit === suit)?.code ?? '';
+}
+
 /** Asset type a suit makes, lowercased for running text ('C' → 'holding'). */
 export function assetTypeLabel(suit: string): string {
 	return (SUIT_MEANINGS.find((m) => m.suit === suit)?.assetType ?? 'asset').toLowerCase();
 }
 
-/** How many boxes on this sheet remain unclaimed. */
-export function openCount(sheet: PrologueSheet, claims: PrologueClaim[]): number {
-	const claimedNames = new Set(
-		claims.filter((c) => c.sheet_type === sheet.type).map((c) => c.choice_name)
-	);
-	return sheet.choices.filter((c) => !claimedNames.has(c.name)).length;
+/** Where the viewer's three choices have gone. */
+export interface SpentChoices {
+	/** Choices spent on each sheet — the pips drawn on that category header.
+	 *  Sheets the viewer hasn't spent on are absent, not zero. */
+	bySheet: Map<PrologueSheetType, number>;
+	/** Choices spent in total. The turn card still holds `3 - total`. */
+	total: number;
+}
+
+/**
+ * Split the viewer's claims by category.
+ *
+ * Pips are one object with two homes (Round 2, decision 4): the ones you still
+ * hold sit in the turn card, and spending one moves it down to the category
+ * header you spent it on. Both readings come out of this single walk, so they
+ * always add to three — a header pip that hadn't come out of the turn card
+ * would break the whole conceit.
+ *
+ * It also kills the "one from each category" misread the three stacked panels
+ * created: two pips on Titles and none on Hailing From looks *normal* rather
+ * than incomplete, which is what the rules actually say ("if you want three
+ * titles, take three titles").
+ *
+ * A viewer with no player row (spectator, or not yet resolved) has spent
+ * nothing — and the caller draws no pips at all for them.
+ */
+export function spentByCategory(
+	claims: PrologueClaim[],
+	playerID: number | null
+): SpentChoices {
+	const bySheet = new Map<PrologueSheetType, number>();
+	let total = 0;
+	if (playerID == null) return { bySheet, total };
+	for (const c of claims) {
+		if (c.player_id !== playerID) continue;
+		bySheet.set(c.sheet_type, (bySheet.get(c.sheet_type) ?? 0) + 1);
+		total++;
+	}
+	return { bySheet, total };
 }
 
 export interface SheetTrackProfile {

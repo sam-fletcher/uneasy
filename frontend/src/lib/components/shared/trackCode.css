@@ -1,0 +1,32 @@
+/* The ranking track as three letters — POW / KNO / EST, and WLD for the wild
+   heart. Import as a side effect wherever a component needs .track-code.
+
+   Suits are retired from the prologue UI (adr/PROLOGUE_UX_ROUND2_PLAN.md,
+   decision 1): a suit was a strict alias for two facts the UI can just state,
+   and the two collided (♠ makes an artifact but raises Esteem), so a player
+   who learned one reading was actively misled about the other. The code is the
+   first syllable of the track's own name, which is why it needs no legend.
+
+   WLD takes a dashed border rather than a glyph of its own. It is not a track
+   but a track you haven't picked yet, so it borrows the app's existing
+   dashed-means-not-yet idiom (DifficultyMeter's .seg.next) — a picture for the
+   fourth member of a set of words would break the set and force a legend back
+   onto the page. */
+
+.track-code {
+	display: inline-flex;
+	align-items: center;
+	padding: 0 0.25rem;
+	border: 1px solid var(--color-border);
+	border-radius: 3px;
+	color: var(--color-text-muted);
+	font-size: 0.6rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	white-space: nowrap;
+	flex: none;
+}
+
+.track-code.wild {
+	border-style: dashed;
+}

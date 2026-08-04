@@ -1,0 +1,27 @@
+/* The prologue choice pip — one object with two homes
+   (adr/PROLOGUE_UX_ROUND2_PLAN.md, decision 4). Import as a side effect
+   wherever a component needs .choice-pip.
+
+   Three gold discs are a player's three prologue choices. Unspent ones sit in
+   the turn card; spending one moves it down to the category header it was
+   spent on, where it draws solid again while the turn card's slot becomes a
+   ghost ring. Two components, literally the same disc — hence one definition
+   rather than a copy in each, which Session 3's spend transition also needs.
+
+   It replaces both the muted "Your turns: X of 3" line (the smallest text on
+   the screen, carrying the most personal fact) and the `N open` counts, which
+   were identical on all three panels for most of a game. */
+
+.choice-pip {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--color-accent);
+	flex: none;
+}
+
+/* Spent: it isn't gone, it's showing somewhere else on the page. */
+.choice-pip.spent {
+	background: transparent;
+	border: 1px solid var(--color-border-strong);
+}

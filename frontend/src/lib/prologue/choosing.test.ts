@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { PrologueSheet, PrologueClaim, PlayerCardRow, Asset, Player } from '$lib/api';
 import {
-	openCount,
 	cardHoldStates,
 	ownedCardCount,
 	sheetTrackProfile,
+	spentByCategory,
 	stealPreview,
 	trackLabel,
+	trackCode,
 	assetTypeLabel,
 } from './choosing';
 
@@ -30,22 +31,50 @@ function claim(sheet_type: PrologueSheet['type'], choice_name: string, player_id
 	return { sheet_type, choice_name, player_id, turn_number: 1 };
 }
 
-describe('openCount', () => {
-	it('counts all choices open when nothing is claimed', () => {
-		const s = sheet('hailing_from', ['A', 'B', 'C']);
-		expect(openCount(s, [])).toBe(3);
+describe('spentByCategory', () => {
+	it('has nothing spent before the viewer claims anything', () => {
+		const s = spentByCategory([], 1);
+		expect(s.total).toBe(0);
+		expect(s.bySheet.size).toBe(0);
 	});
 
-	it('subtracts only claims on the matching sheet', () => {
-		const s = sheet('titles', ['A', 'B', 'C']);
-		const claims = [claim('titles', 'A'), claim('hailing_from', 'A')];
-		expect(openCount(s, claims)).toBe(2);
+	it('ignores other players’ claims', () => {
+		const claims = [claim('titles', 'A', 2), claim('titles', 'B', 3)];
+		expect(spentByCategory(claims, 1).total).toBe(0);
 	});
 
-	it('reaches zero when every choice on the sheet is claimed', () => {
-		const s = sheet('laws_rumors', ['A', 'B']);
-		const claims = [claim('laws_rumors', 'A'), claim('laws_rumors', 'B')];
-		expect(openCount(s, claims)).toBe(0);
+	// The misread this replaces: three panels each showing "12 open" read as a
+	// checklist, one pick per category. Three pips on one sheet is a legal
+	// character ("if you want three titles, take three titles").
+	it('lets all three land on one category', () => {
+		const claims = [
+			claim('titles', 'A'),
+			claim('titles', 'B'),
+			claim('titles', 'C'),
+		];
+		const s = spentByCategory(claims, 1);
+		expect(s.total).toBe(3);
+		expect(s.bySheet.get('titles')).toBe(3);
+		expect(s.bySheet.has('hailing_from')).toBe(false);
+	});
+
+	it('splits across categories and always adds back to the total', () => {
+		const claims = [
+			claim('titles', 'A'),
+			claim('laws_rumors', 'B'),
+			claim('titles', 'C', 2),
+		];
+		const s = spentByCategory(claims, 1);
+		expect(s.bySheet.get('titles')).toBe(1);
+		expect(s.bySheet.get('laws_rumors')).toBe(1);
+		expect([...s.bySheet.values()].reduce((a, b) => a + b, 0)).toBe(s.total);
+	});
+
+	// A spectator holds no choices at all, so neither home draws a pip.
+	it('is empty with no viewer', () => {
+		const s = spentByCategory([claim('titles', 'A')], null);
+		expect(s.total).toBe(0);
+		expect(s.bySheet.size).toBe(0);
 	});
 });
 
@@ -186,6 +215,23 @@ describe('suit meaning labels', () => {
 		expect(assetTypeLabel('S')).toBe('artifact');
 		expect(assetTypeLabel('H')).toBe('peer');
 		expect(assetTypeLabel('?')).toBe('asset');
+	});
+
+	// The codes replace the suits on screen (Round 2, decision 1), so every
+	// suit needs one — including the heart, which gets a word inside the same
+	// pattern rather than a glyph outside it.
+	it('maps every suit to a three-letter track code', () => {
+		expect(trackCode('C')).toBe('POW');
+		expect(trackCode('D')).toBe('KNO');
+		expect(trackCode('S')).toBe('EST');
+		expect(trackCode('H')).toBe('WLD');
+		expect(trackCode('?')).toBe('');
+	});
+
+	it('starts each ranked code with the first letters of its own track', () => {
+		for (const suit of ['C', 'D', 'S']) {
+			expect(trackLabel(suit).toUpperCase().startsWith(trackCode(suit))).toBe(true);
+		}
 	});
 });
 
