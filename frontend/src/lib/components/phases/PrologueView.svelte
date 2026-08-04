@@ -10,7 +10,6 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
-	import '$lib/components/shared/cardGlyph.css';
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/trackCode.css';
 	import '$lib/components/shared/choicePip.css';
@@ -49,16 +48,21 @@
 	import ClosingStage from './prologue/ClosingStage.svelte';
 	import TurnCard from './prologue/TurnCard.svelte';
 	import StandingStrip from './prologue/StandingStrip.svelte';
-	import SuitGlyph from '$lib/components/shared/SuitGlyph.svelte';
+	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
 	import { computeBrightHearts } from '$lib/prologue/refund';
 	import {
 		cardHoldStates,
+		cardHolders,
+		cardWeight,
 		ownedCardCount,
 		sheetTrackProfile,
 		spentByCategory,
 		stealPreview,
 		trackCode,
+		trackLabel,
 		assetTypeLabel,
+		assetTypeFor,
+		MAX_CARD_WEIGHT,
 		SUIT_MEANINGS,
 		type CardHoldState,
 	} from '$lib/prologue/choosing';
@@ -235,9 +239,9 @@
 	// ── My hand ──────────────────────────────────────────────────────────────
 	const myCards = $derived(cards.filter(c => c.player_id === currentPlayerID));
 
-	function suitColor(s: string): 'red' | 'black' {
-		return s === 'H' || s === 'D' ? 'red' : 'black';
-	}
+	// (No suitColor any more: suits have left the choosing view entirely
+	// (Round 2, decision 1), so nothing in this component draws a card face.
+	// TrackBoard, HandStrip and ClaimChoiceModal still do, and keep their own.)
 
 	// (The per-player "Hands" grid is gone, Round 2 §1f: it duplicated the
 	// TrackBoard, which already shows every player's cards by track. The one
@@ -289,6 +293,18 @@
 	function stateOf(suit: string, value: string): CardHoldState {
 		return cardStates.get(`${suit}::${value}`) ?? 'fresh';
 	}
+
+	// Whose asset a take would come out of — the take chip's corner dot wears
+	// that player's own colour, so "from whom" survives the scan without the
+	// name (which is in the expansion). Absent for a fresh card.
+	const holders = $derived(cardHolders(cards));
+	function holderOf(suit: string, value: string): number | undefined {
+		return holders.get(`${suit}::${value}`);
+	}
+
+	/** The meter's four segments, in order — the card weight lights 1..n
+	 *  (Round 2, decision 2; the .seg idiom from plans/shared/DifficultyMeter). */
+	const WEIGHT_SEGMENTS = Array.from({ length: MAX_CARD_WEIGHT }, (_, i) => i + 1);
 
 	// Current tile-grid column count, mirroring .tile-grid's container query
 	// (2 base / 3 when the column is ≥ 420 — the 440-cap region;
@@ -561,15 +577,48 @@
 	$effect(() => { waitingOn = prologueWaitingOn; });
 </script>
 
-{#snippet miniCard(value: string, suit: string, state: CardHoldState = 'fresh')}
+<!-- One chip per card slot, in place of the card face (Round 2, §2c): what the
+     slot makes, which track it feeds, and — for a take — a corner dot in the
+     current holder's colour. The value is NOT here: 4 segments × 2 chips × 12
+     tiles is 96 micro-bars per open sheet, and weight only matters when
+     comparing two tiles, which is when you'd open one anyway. -->
+{#snippet cardChip(card: { suit: string; value: string }, claimed: boolean)}
+	<!-- Claimed wins this slot outright, so a claimed tile's chips go neutral:
+	     both the take fill and the already-yours strike describe what claiming
+	     WOULD do, and nobody can claim this one. Same ruling as the
+	     "Both cards already yours" note, which a claimed tile also suppresses —
+	     and a blue opportunity chip on an unclaimable tile is a louder lie than
+	     the 1px ring that used to sit there. -->
+	{@const state = claimed ? 'fresh' : stateOf(card.suit, card.value)}
+	{@const holderID = holderOf(card.suit, card.value)}
 	<span
-		class="card-glyph"
-		class:held={state === 'steal'}
+		class="tile-chip"
+		class:take={state === 'steal'}
 		class:inert={state === 'mine'}
-		data-color={suitColor(suit)}
+		class:wild={trackLabel(card.suit) === ''}
 	>
-		<span class="mc-value">{value}</span>
-		<SuitGlyph {suit} />
+		<AssetTypeIcon type={assetTypeFor(card.suit)} size={12} />
+		<span class="chip-code">{trackCode(card.suit)}</span>
+		{#if state === 'steal' && holderID != null}
+			<span
+				class="chip-owner"
+				role="img"
+				aria-label={`held by ${playerName(holderID)}`}
+				style:background={playerColorByID(holderID, players)}
+			></span>
+		{/if}
+	</span>
+{/snippet}
+
+<!-- Card value as weight, 1–4 (Round 2, decision 2). The house segmented
+     meter, never stars — stars aren't in this app's visual language. It only
+     decides a tie, so it is deliberately the quietest thing on its row. -->
+{#snippet weightMeter(value: string)}
+	{@const w = cardWeight(value)}
+	<span class="weight" role="img" aria-label={`weight ${w} of ${MAX_CARD_WEIGHT}`}>
+		{#each WEIGHT_SEGMENTS as s (s)}
+			<span class="seg" class:on={s <= w}></span>
+		{/each}
 	</span>
 {/snippet}
 
@@ -635,16 +684,15 @@
 						<p class="prologue-subtext">
 							You can edit your assets (including your main character) at any time in your player menu (top of the screen).
 						</p>
-						<!-- Every suit means two things at once: the asset it makes now, and
-						     the ranking track it feeds when the prologue ends. The legend used
-						     to teach only the first, while the track board below taught only
-						     the second — and the two readings collide (♠ makes an artifact but
-						     raises Esteem), so half a lesson was worse than none.
-						     Session 2 rebuilds this as type → code → track, with no suits. -->
-						<table class="suit-legend">
+						<!-- Type → code → track, in the same two icons and three letters the
+						     tiles use, so the legend teaches the tile rather than a third
+						     notation (Round 2, §2e). It replaces the suit legend, which taught
+						     only "♣ makes a holding" while the track board below taught only
+						     "♣ is Power" — and the two readings collide (♠ makes an artifact
+						     but raises Esteem), so half a lesson was worse than none. -->
+						<table class="legend">
 							<thead>
 								<tr>
-									<th scope="col">Suit</th>
 									<th scope="col">You make a…</th>
 									<th scope="col">Raises your…</th>
 								</tr>
@@ -653,12 +701,17 @@
 								{#each SUIT_MEANINGS as m (m.suit)}
 									<tr>
 										<th scope="row">
-											<span class="card-glyph legend-glyph" data-color={suitColor(m.suit)}>
-												<SuitGlyph suit={m.suit} />
-											</span>
+											<AssetTypeIcon type={assetTypeFor(m.suit)} size={14} />
+											{m.assetType}
 										</th>
-										<td>{m.assetType}</td>
-										<td class:wild-cell={m.track == null}>{m.track ?? 'Wild — any track'}</td>
+										<td>
+											<span class="track-code" class:wild={m.track == null}>{m.code}</span>
+											{#if m.track}
+												{m.track}
+											{:else}
+												<span class="wild-note">any track — you choose at the end</span>
+											{/if}
+										</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -667,10 +720,15 @@
 						     out in words inside the tile expansion ("Takes X from Y" /
 						     "You already hold X — nothing to take"), and repeating them here
 						     cost two lines of scroll on the screen we're trying to shorten. -->
+						<p class="legend-note">
+							{@render weightMeter('K')}
+							Weight, shown when you open a tile. If two players hold the same number
+							of a track's cards, the heavier ones break the tie.
+						</p>
 						<h4>Starting rankings</h4>
 						<p class="prologue-subtext">
-							The playing cards set the initial rankings. You will choose tracks to spend your
-							<span class="heart-mark"><SuitGlyph suit="H" /></span> Hearts on.
+							The cards you gather set the initial rankings. Your WLD cards rank nothing
+							on their own — you choose which track to spend each one on at the end.
 						</p>
 					</div>
 				{/if}
@@ -761,8 +819,8 @@
 												{/if}
 											</span>
 											<span class="choice-cards">
-												{@render miniCard(choice.cards[0].value, choice.cards[0].suit, stateOf(choice.cards[0].suit, choice.cards[0].value))}
-												{@render miniCard(choice.cards[1].value, choice.cards[1].suit, stateOf(choice.cards[1].suit, choice.cards[1].value))}
+												{@render cardChip(choice.cards[0], !!existingClaim)}
+												{@render cardChip(choice.cards[1], !!existingClaim)}
 											</span>
 											{#if existingClaim}
 												<!-- Claimed wins this slot outright. A claimed tile is often
@@ -794,8 +852,17 @@
 												<div class="detail-cards">
 													{#each expChoice.cards as c}
 														{@const preview = stealPreview(c.suit, c.value, cards, assets, players)}
-														<div class="detail-card-row">
-															{@render miniCard(c.value, c.suit, stateOf(c.suit, c.value))}
+														{@const state = stateOf(c.suit, c.value)}
+														{@const track = trackLabel(c.suit)}
+														<!-- Both state markings are about what claiming would do,
+														     so a claimed tile shows neither — its rows say where the
+														     card sits now instead. -->
+														<div
+															class="detail-card-row"
+															class:take={!expClaim && state === 'steal'}
+															class:inert={!expClaim && state === 'mine'}
+														>
+															<AssetTypeIcon type={assetTypeFor(c.suit)} size={13} />
 															<span class="detail-card-text">
 																{#if !preview}
 																	Make a new {assetTypeLabel(c.suit)}
@@ -804,9 +871,11 @@
 																	     where the card sits now instead of previewing a take
 																	     that will never happen. -->
 																	{#if preview.assetName}
-																		<em>{preview.assetName}</em> — now held by {holderLabel(preview.ownerID)}
+																		<em>{preview.assetName}</em> — now held by
+																		<span style:color={playerColorByID(preview.ownerID, players)}>{holderLabel(preview.ownerID)}</span>
 																	{:else}
-																		Now held by {holderLabel(preview.ownerID)}
+																		Now held by
+																		<span style:color={playerColorByID(preview.ownerID, players)}>{holderLabel(preview.ownerID)}</span>
 																	{/if}
 																{:else if preview.ownerID === currentPlayerID}
 																	<!-- Card pairs repeat across tiles, so a card you already
@@ -818,9 +887,26 @@
 																		Already yours — nothing to take
 																	{/if}
 																{:else if preview.assetName}
-																	Takes <em>{preview.assetName}</em> from {preview.ownerName}
+																	Takes <em>{preview.assetName}</em> from
+																	<span style:color={playerColorByID(preview.ownerID, players)}>{preview.ownerName}</span>
 																{:else}
-																	Already held by {preview.ownerName}
+																	Already held by
+																	<span style:color={playerColorByID(preview.ownerID, players)}>{preview.ownerName}</span>
+																{/if}
+															</span>
+															{@render weightMeter(c.value)}
+															<!-- No "4th → 2nd": rank slots are literal 1–5 with dummy
+															     tokens in some of them, so an ordinal lies in a 2–3
+															     player game (decision 7) — and the hearts step re-orders
+															     everything at the end anyway. The arrow says the one
+															     durable thing: this slot moves you up that track. Absent
+															     on a wild (no track yet), on a card you already hold (the
+															     claim is a no-op) and on a claimed tile (nothing about it
+															     is still on offer). -->
+															<span class="detail-track">
+																{track || 'wild'}
+																{#if track && state !== 'mine' && !expClaim}
+																	<span class="rise" role="img" aria-label="raises you on this track">↑</span>
 																{/if}
 															</span>
 														</div>
@@ -993,20 +1079,20 @@
 		font-size: 0.9rem;
 		line-height: 1.4;
 	}
-	/* Matches the steal ring on the card glyphs — blue/attention, because a
+	/* Matches the take chips on the tiles below — blue/attention, because a
 	   take is an opportunity for the reader, not a warning to them. See the
-	   .card-glyph.held comment in shared/cardGlyph.css for the full reasoning. */
+	   .tile-chip.take comment further down for the full reasoning. */
 	.steal-color { color: var(--color-highlight); }
 
-	/* Genuinely tabular (one row per suit, two independent readings per row),
-	   so a real table — the column headers are what make the second reading
-	   legible, and they carry to screen readers for free. */
-	.suit-legend {
+	/* Genuinely tabular (one row per asset type, two independent readings per
+	   row), so a real table — the column headers are what make the second
+	   reading legible, and they carry to screen readers for free. */
+	.legend {
 		border-collapse: collapse;
-		/* Content-sized, not stretched: a full-width table pushes the three
-		   columns apart until the row stops reading as one statement. Shrunk
-		   to its contents, the block centres visibly and each row scans as
-		   "♣ → Holding → Power". */
+		/* Content-sized, not stretched: a full-width table pushes the columns
+		   apart until the row stops reading as one statement. Shrunk to its
+		   contents, the block centres visibly and each row scans as
+		   "[icon] Holding → POW Power". */
 		width: max-content;
 		max-width: 100%;
 		margin-inline: auto;
@@ -1014,31 +1100,52 @@
 		color: var(--color-text-secondary);
 		text-align: left;
 	}
-	.suit-legend th,
-	.suit-legend td {
+	.legend th,
+	.legend td {
 		padding: 0.15rem 0.75rem 0.15rem 0;
 		font-weight: inherit;
 		vertical-align: middle;
 	}
-	.suit-legend th:last-child,
-	.suit-legend td:last-child { padding-right: 0; }
-	.suit-legend thead th {
+	.legend th:last-child,
+	.legend td:last-child { padding-right: 0; }
+	.legend thead th {
 		font-size: 0.7rem;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--color-text-muted);
 		padding-bottom: 0.3rem;
+		/* The peer row's "any track — you choose at the end" is the widest cell
+		   in the table by some way; without this the squeeze lands on the
+		   headings, which then wrap while their neighbour doesn't. Let the long
+		   note wrap instead — it's a sentence, they're labels. */
+		white-space: nowrap;
 	}
-	.suit-legend tbody td:last-child { color: var(--color-text); }
-	/* Hearts rank nothing on their own — they're declared as a suit later — so
-	   the cell reads as a note, not a track name. */
-	.suit-legend tbody td.wild-cell { color: var(--color-text-secondary); font-style: italic; }
-
-	.legend-glyph {
-		padding: 0.25rem 0.4rem;
-		font-size: 1rem;
+	/* The icon rides in the row header beside its own word, which is what the
+	   tile chips show too — one glance teaches both. */
+	.legend tbody th {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
 	}
-	.legend-glyph :global(.suit) { width: 1.15em; height: 1.15em; }
+	.legend tbody td { color: var(--color-text); }
+	/* A wild ranks nothing until you assign it, so the cell reads as a note
+	   rather than a track name. */
+	.wild-note { color: var(--color-text-secondary); font-style: italic; }
+	/* The weight meter's one appearance outside a tile expansion: a static
+	   sample, so the meter has been seen before it turns up on a row. */
+	.legend-note {
+		display: flex;
+		/* Top-aligned, not centred: the note runs to three lines at 375 and a
+		   centred meter lands beside the middle one, reading as a stray mark
+		   rather than the thing the sentence is about. */
+		align-items: flex-start;
+		gap: 0.4rem;
+		margin: 0;
+		color: var(--color-text-faint);
+		font-size: 0.75rem;
+		line-height: 1.35;
+	}
+	.legend-note .weight { margin-top: 0.15rem; }
 
 	/* Local help disclosure (Round 2 §1d). Same frame as a collapsed sheet
 	   header — it sits directly above three of them, and a second collapsed-row
@@ -1275,7 +1382,13 @@
 	}
 
 	.choice-name { display: flex; align-items: center; gap: 0.25rem; color: var(--color-accent); line-height: 1.2; word-break: break-word; }
-	.choice-cards { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+	/* Side by side even in the narrowest case: a 3-up tile at the 440 column
+	   cap is 126px, 106.7px of content, and the widest possible pair (POW POW,
+	   measured) is 98.4px + this gap — which only fits because the weight
+	   meter stays off the chips (decision 2). `wrap` is the safety net, not
+	   the plan; if a font fallback ever eats the ~5px of slack the tile grows
+	   a line rather than spilling. */
+	.choice-cards { display: flex; gap: 0.2rem; flex-wrap: wrap; }
 	.choice-note {
 		color: var(--color-text-muted);
 		font-size: 0.7rem;
@@ -1283,16 +1396,108 @@
 		line-height: 1.2;
 	}
 
-	/* The plain card-chip pip needs no rule of its own — 1em inside the chip's
-	   own font-size is SuitGlyph's default, and every other .card-glyph in the
-	   app (TrackBoard, HandStrip, ClaimChoiceModal) wants the same. Only the
-	   deliberate departures are written down: .legend-glyph above and
-	   .hand-tile-cards below. */
+	/* ── Tile chips (Round 2, §2c) ─────────────────────────────────────────
+	   One chip per card slot: the asset type as an icon, the ranking track as
+	   three letters. No suit — the suit was a strict alias for exactly these
+	   two facts, and it stated neither (decision 1).
 
-	/* The prose heart in "spend your ♥ Hearts on". Sits on the dark page
-	   ground, so it takes the red directly rather than borrowing a chip's
-	   [data-color]. */
-	.heart-mark { color: var(--color-suit-red); }
+	   The code is bare text inside the chip rather than a nested .track-code:
+	   the chip is already the bordered box, and a bordered code inside a
+	   bordered chip is two frames around one word. The dashed-WLD idiom isn't
+	   forked, it moves up one level — the chip's own border goes dashed. */
+	.tile-chip {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+		flex: none;
+		padding: 0.1rem 0.2rem;
+		border: 1px solid var(--color-border);
+		border-radius: 4px;
+		color: var(--color-text-muted);
+	}
+	/* AssetTypeIcon paints itself --color-text; inside a chip that leaves a
+	   bright icon beside muted (or blue, or struck-through) letters, so the
+	   chip reads as two objects. It's one object — let it take the chip's own
+	   ink in every state. */
+	.tile-chip :global(.type-icon) { color: inherit; }
+	.chip-code {
+		font-size: 0.62rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		white-space: nowrap;
+	}
+	/* A take now marks the whole chip, not a 1px ring on a ~20px card face
+	   (decision 5): finding opportunities meant checking 24 chips per open
+	   sheet, and a take is the most exciting verb in the prologue. Blue, not
+	   orange — the blue family is attention AND opportunity, and this is
+	   something the viewer stands to gain. */
+	.tile-chip.take {
+		background: var(--color-chip-blue-bg);
+		border-color: var(--color-chip-blue-border);
+		color: var(--color-highlight);
+	}
+	/* Not a track yet, so it borrows DifficultyMeter's dashed
+	   means-not-yet rather than inventing a fourth glyph for WLD (decision 3).
+	   Same idiom as shared/trackCode.css's .track-code.wild. */
+	.tile-chip.wild { border-style: dashed; }
+	/* This card does nothing for you: the server no-ops a claim on a card you
+	   already hold, so that half of the tile yields nothing. Struck as well as
+	   dimmed, because dim alone is the CLAIMED signal in this grid and an
+	   inert chip can sit on a tile that is still perfectly claimable. */
+	.tile-chip.inert { opacity: 0.45; }
+	/* A drawn rule, not `text-decoration: line-through`: half the chip is an
+	   inline <svg> (AssetTypeIcon), an atomic inline-level box that CSS text
+	   decorations are not painted over — the same reason .card-glyph.inert
+	   draws its own line. Inset by the chip's padding so it reads as a strike
+	   through the content, not a border across the chip. */
+	.tile-chip.inert::before {
+		content: '';
+		position: absolute;
+		left: 0.2rem;
+		right: 0.2rem;
+		top: 50%;
+		border-top: 1px solid currentColor;
+		pointer-events: none;
+	}
+	/* Whose asset it is, at zero layout cost. In flow this dot is the ~7px
+	   that overflows a 3-up tile at the 440 cap, so it is absolutely
+	   positioned into the corner — it still answers "from whom" during the
+	   scan, and the name itself is in the expansion. The colour comes from
+	   playerColor.ts at runtime (style:background), never a CSS token. */
+	.chip-owner {
+		position: absolute;
+		top: -3px;
+		right: -3px;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		/* Ringed in the tile's own ground so the dot reads as a marker on the
+		   chip rather than a stray pip between two of them. */
+		border: 1px solid var(--color-surface-2);
+		box-sizing: content-box;
+	}
+
+	/* Weight (decision 2): the card value, 1–4, as the house segmented meter —
+	   the .seg idiom from plans/shared/DifficultyMeter, shrunk to a row
+	   ornament. Never stars; stars aren't in this visual language. */
+	.weight {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		flex: none;
+	}
+	.seg {
+		width: 3px;
+		height: 9px;
+		border-radius: 1px;
+		background: transparent;
+		border: 1px solid var(--color-border-strong);
+	}
+	.seg.on {
+		background: var(--color-text-muted);
+		border-color: var(--color-text-muted);
+	}
 
 	/* Tap-to-explore expansion (PROLOGUE_CHOOSING_REDESIGN_PLAN.md S2). Spans
 	   the full row width (unlike the tile it follows, since Round 2 keeps the
@@ -1326,16 +1531,42 @@
 		flex-direction: column;
 		gap: 0.4rem;
 	}
+	/* One row per card slot: type icon · what it does · weight · track. The
+	   take marking is the whole row here for the same reason it is the whole
+	   chip on the tile (decision 5) — this is the row that says what you'd
+	   gain and from whom. */
 	.detail-card-row {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.4rem;
+		padding: 0.2rem 0.35rem;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		color: var(--color-text-muted);
 	}
+	.detail-card-row.take {
+		background: var(--color-chip-blue-bg);
+		border-color: var(--color-chip-blue-border);
+	}
+	.detail-card-row.inert { opacity: 0.5; }
 	.detail-card-text {
+		flex: 1;
+		min-width: 0;
 		font-size: 0.85rem;
+		line-height: 1.3;
 		color: var(--color-text);
 	}
 	.detail-card-text :global(em) { font-style: italic; }
+	/* The track word, quiet and small — the row's subject is the asset, and
+	   the track is the consequence. Uppercased to echo the tile's code chip
+	   without repeating the abbreviation the expansion exists to expand. */
+	.detail-track {
+		flex: none;
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	.rise { color: var(--color-success); margin-left: 0.15rem; }
 	.detail-claim-btn {
 		align-self: flex-start;
 	}

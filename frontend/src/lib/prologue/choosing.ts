@@ -10,6 +10,7 @@ import type {
 	Asset,
 	Player,
 } from '$lib/api';
+import { cardRank } from './refund';
 
 export type CardSuit = 'C' | 'D' | 'S' | 'H';
 /** The three ranked tracks' suits. Hearts are wild and rank nothing on their
@@ -70,6 +71,64 @@ export function trackCode(suit: string): string {
 /** Asset type a suit makes, lowercased for running text ('C' → 'holding'). */
 export function assetTypeLabel(suit: string): string {
 	return (SUIT_MEANINGS.find((m) => m.suit === suit)?.assetType ?? 'asset').toLowerCase();
+}
+
+/**
+ * The same asset type as the four-member union `AssetTypeIcon` and the API
+ * use ('C' → 'holding'), so a tile chip or a legend row can draw the icon
+ * straight from the one table.
+ *
+ * Falls back to 'resource' for an unknown suit rather than widening every
+ * caller to a nullable: the icon is decoration beside the code that carries
+ * the meaning, and no unknown suit can reach here — the prologue deck is four
+ * suits, generated server-side. A vitest guard asserts every SUIT_MEANINGS row
+ * really does lowercase into the union, so the cast can't rot silently.
+ */
+export function assetTypeFor(suit: string): Asset['asset_type'] {
+	const found = SUIT_MEANINGS.find((m) => m.suit === suit);
+	return found ? (found.assetType.toLowerCase() as Asset['asset_type']) : 'resource';
+}
+
+/** The heaviest a prologue card can weigh — the meter's segment count. */
+export const MAX_CARD_WEIGHT = 4;
+
+/**
+ * A card's value as a 1–4 "weight" (Round 2, decision 2).
+ *
+ * Value is the one card property with no other expression on screen once the
+ * suits are gone, and it is genuinely load-bearing: rankFromContributions
+ * (refund.ts, mirroring game/prologue_refund.go) walks each player's
+ * value-sorted list descending and breaks ties position by position. So it
+ * gets a house segmented meter in the tile expansion — quiet, because it only
+ * decides a tie, but present.
+ *
+ * Derived from refund.ts's VALUE_RANK rather than a second table of its own:
+ * the whole point of the number is the tie-break, so a weight that disagreed
+ * with the ordering that actually breaks ties would be a lie. The prologue
+ * deck is exactly 16 cards (4 suits × J/Q/K/A — see game/prologue_sheets.go),
+ * which lands J/Q/K/A on 1/2/3/4 with no gaps. `Card.Value` is documented as
+ * accepting "A","2"–"10","J","Q","K" in general, so anything below a jack —
+ * and anything unrecognised — degrades to the bottom segment instead of
+ * throwing. A test guards the sheet data against ever containing one.
+ */
+export function cardWeight(value: string): number {
+	return Math.min(Math.max(cardRank(value) - 10, 1), MAX_CARD_WEIGHT);
+}
+
+/**
+ * Who holds each card right now, keyed "suit::value". Absent means nobody
+ * holds it, i.e. claiming that half of the tile makes a new asset.
+ *
+ * Companion to cardHoldStates, which answers what a card *means for the
+ * viewer*; this answers *whose* it is, which is what the take chip's corner
+ * dot needs to take a colour (playerColorByID). Two questions, deliberately
+ * two maps — the state map is what ownedCardCount consumes, and widening its
+ * values would drag that and its tests along for a fact only the chip wants.
+ */
+export function cardHolders(cards: PlayerCardRow[]): Map<string, number> {
+	const out = new Map<string, number>();
+	for (const c of cards) out.set(`${c.card_suit}::${c.card_value}`, c.player_id);
+	return out;
 }
 
 /** Where the viewer's three choices have gone. */

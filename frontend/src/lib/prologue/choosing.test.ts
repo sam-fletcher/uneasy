@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { PrologueSheet, PrologueClaim, PlayerCardRow, Asset, Player } from '$lib/api';
 import {
 	cardHoldStates,
+	cardHolders,
+	cardWeight,
 	ownedCardCount,
 	sheetTrackProfile,
 	spentByCategory,
@@ -9,7 +13,11 @@ import {
 	trackLabel,
 	trackCode,
 	assetTypeLabel,
+	assetTypeFor,
+	MAX_CARD_WEIGHT,
+	SUIT_MEANINGS,
 } from './choosing';
+import { cardRank } from './refund';
 
 function sheet(
 	type: PrologueSheet['type'],
@@ -232,6 +240,104 @@ describe('suit meaning labels', () => {
 		for (const suit of ['C', 'D', 'S']) {
 			expect(trackLabel(suit).toUpperCase().startsWith(trackCode(suit))).toBe(true);
 		}
+	});
+
+	it('maps suits to the icon/API asset-type union', () => {
+		expect(assetTypeFor('C')).toBe('holding');
+		expect(assetTypeFor('D')).toBe('resource');
+		expect(assetTypeFor('S')).toBe('artifact');
+		expect(assetTypeFor('H')).toBe('peer');
+	});
+
+	// assetTypeFor casts SUIT_MEANINGS' prose label into the union rather than
+	// keeping a second table that could drift from it. This is what makes the
+	// cast honest: rename a row's assetType to something AssetTypeIcon can't
+	// draw and the guard fails here, not silently as a resource icon on screen.
+	it('keeps every prose asset type inside the union the icon can draw', () => {
+		const union = ['peer', 'holding', 'artifact', 'resource'];
+		for (const m of SUIT_MEANINGS) {
+			expect(union).toContain(m.assetType.toLowerCase());
+			expect(assetTypeFor(m.suit)).toBe(m.assetType.toLowerCase());
+		}
+	});
+});
+
+describe('cardWeight', () => {
+	it('lands the prologue deck on 1–4 with no gaps', () => {
+		expect(cardWeight('J')).toBe(1);
+		expect(cardWeight('Q')).toBe(2);
+		expect(cardWeight('K')).toBe(3);
+		expect(cardWeight('A')).toBe(4);
+	});
+
+	// The number exists to explain a tie-break, so it must agree with the
+	// ordering that actually breaks ties (refund.ts's cardRank, mirroring
+	// game/prologue_refund.go). Heavier card ⇒ heavier weight, always.
+	it('orders the same way the tie-break does', () => {
+		const deck = ['J', 'Q', 'K', 'A'];
+		for (const a of deck) {
+			for (const b of deck) {
+				expect(cardWeight(a) > cardWeight(b)).toBe(cardRank(a) > cardRank(b));
+			}
+		}
+	});
+
+	// Card.Value is documented as accepting "A","2"–"10","J","Q","K" in
+	// general even though the prologue sheets only ever use the four faces.
+	// Degrade to the bottom segment; never throw, and never draw a meter with
+	// zero or five segments lit.
+	it('degrades rather than throwing on values the prologue never deals', () => {
+		for (const v of ['10', '2', '7', '', 'joker', 'K ']) {
+			expect(cardWeight(v)).toBeGreaterThanOrEqual(1);
+			expect(cardWeight(v)).toBeLessThanOrEqual(MAX_CARD_WEIGHT);
+		}
+	});
+
+	/*
+	 * The guard the plan asks for (Round 2, §2b): every value in the *real*
+	 * sheet data has to land inside 1–MAX_CARD_WEIGHT, distinctly. The data
+	 * is Go constants (there is no TS copy — the sheets arrive over the API),
+	 * so the test reads the source of truth directly. If a "10" or a "2" ever
+	 * enters a card pair, the meter silently stops distinguishing it from a
+	 * jack, and this fails first.
+	 */
+	it('covers every value in the real sheet data', () => {
+		const goSrc = join(__dirname, '..', '..', '..', '..', 'game', 'prologue_sheets.go');
+		const src = readFileSync(goSrc, 'utf8');
+		const values = [...src.matchAll(/\{Suit[A-Za-z]+,\s*"([^"]+)"\}/g)].map((m) => m[1]);
+
+		// 36 boxes × 2 cards. A regex that matched nothing would otherwise
+		// make this whole test a no-op.
+		expect(values.length).toBe(72);
+
+		const seen = new Set(values);
+		for (const v of seen) {
+			expect(cardRank(v), `unknown card value ${v}`).toBeGreaterThan(10);
+			expect(cardWeight(v)).toBeGreaterThanOrEqual(1);
+			expect(cardWeight(v)).toBeLessThanOrEqual(MAX_CARD_WEIGHT);
+		}
+		expect(new Set([...seen].map(cardWeight)).size).toBe(seen.size);
+	});
+});
+
+describe('cardHolders', () => {
+	const cards: PlayerCardRow[] = [
+		{ id: 1, game_id: 1, player_id: 1, card_suit: 'H', card_value: 'A' },
+		{ id: 2, game_id: 1, player_id: 2, card_suit: 'S', card_value: 'Q' },
+	];
+
+	it('keys holders the same way cardHoldStates keys states', () => {
+		const holders = cardHolders(cards);
+		const states = cardHoldStates(cards, 1);
+		expect([...holders.keys()].sort()).toEqual([...states.keys()].sort());
+		expect(holders.get('S::Q')).toBe(2);
+	});
+
+	// Absent, not null: an unheld card has no corner dot at all, because
+	// claiming it makes a new asset rather than taking one.
+	it('omits cards nobody holds', () => {
+		expect(cardHolders(cards).has('C::K')).toBe(false);
+		expect(cardHolders([]).size).toBe(0);
 	});
 });
 
