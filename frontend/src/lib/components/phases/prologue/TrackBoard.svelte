@@ -49,6 +49,13 @@
 		// are resolved — the set-aside badge lives in the card row and
 		// unresolved projections would lose it.
 		showCards?: boolean;
+		// False when the caller already names the three tracks directly above
+		// the board and so IS the header row — today only StandingStrip, whose
+		// micro-track cells sit on this board's grid. Two rows of the same three
+		// words, one title case and one uppercase, is one row too many. The
+		// other three callers (declare, place, the closing recap) render the
+		// board with nothing above it and keep their own headers.
+		showTrackNames?: boolean;
 	}
 
 	let {
@@ -59,7 +66,8 @@
 		doneFlags,
 		activeTrack,
 		currentPlayerID,
-		showCards = true
+		showCards = true,
+		showTrackNames = true
 	}: Props = $props();
 
 	// `cardSuit` is a data key now, not a picture: suits are retired from the
@@ -234,26 +242,33 @@
 </script>
 
 <div class="track-board">
-	<div class="board-grid">
+	<div class="board-grid" class:headless={!showTrackNames}>
 		<!-- The y-axis. One numeral per rank for the whole board, not one per
 		     rank per track: rank 3 is the same slot in all three columns, and
 		     three copies of it only ever agreed by coincidence. -->
 		<div class="gutter" aria-hidden="true">
-			<span class="gutter-head"></span>
+			{#if showTrackNames}
+				<span class="gutter-head"></span>
+			{/if}
 			{#each RANKS as r (r)}
 				<span class="rank-num" class:dummy={dummyBand.has(r)}>{r}</span>
 			{/each}
 		</div>
 
 		{#each columns as c (c.t.id)}
-			<section class="column" class:active={activeTrack === c.t.id}>
-				<header class="col-head">
-					<!-- The track name and nothing else. The suit pip that used to sit
-					     beside it taught the wrong half of the fact: ♠ heads the Esteem
-					     column but makes an artifact, so the pip was an alias that
-					     contradicted the word next to it (decision 1). -->
-					<span class="col-label">{c.t.label}</span>
-				</header>
+			<!-- Named on the section, not only in the visible header: when the
+			     caller carries the header row (showTrackNames=false) this is the
+			     only thing that tells a listener which track a column is. -->
+			<section class="column" class:active={activeTrack === c.t.id} aria-label={c.t.label}>
+				{#if showTrackNames}
+					<header class="col-head">
+						<!-- The track name and nothing else. The suit pip that used to sit
+						     beside it taught the wrong half of the fact: ♠ heads the Esteem
+						     column but makes an artifact, so the pip was an alias that
+						     contradicted the word next to it (decision 1). -->
+						<span class="col-label">{c.t.label}</span>
+					</header>
+				{/if}
 				{#each c.rows as row (row.rank)}
 					<div class="rank-row" class:dummy={row.isDummy}>
 						<!-- The visible numeral lives in the gutter, which is one group
@@ -339,13 +354,14 @@
 	</div>
 
 	{#if showUnspent}
-		<!-- "at the table" earns its words: StandingStrip's own note a few lines
-		     up says how many the VIEWER holds, and without the scope the two
-		     read as the same sentence twice at a 4-player table where only the
-		     viewer holds one. -->
+		<!-- Every player, not just the viewer: StandingStrip's own note a few
+		     lines up already says how many the VIEWER holds, so what this line
+		     adds is everyone else's. It lands under the board rather than in it
+		     for the reason in unspentWilds — one fact per player, and no column
+		     can honestly claim it yet. -->
 		<p class="unspent">
-			<span class="track-code wild" aria-hidden="true">{trackCode('H')}</span> to be allocated at the end
-			— {#each unspentWilds as u, i (u.id)}{i > 0 ? ' · ' : ''}{u.label} {u.n}{/each}.
+			<span class="track-code wild" aria-hidden="true">{trackCode('H')}</span> available:
+			{#each unspentWilds as u, i (u.id)}{i > 0 ? ' · ' : ''}{u.label} {u.n}{/each}
 		</p>
 	{/if}
 </div>
@@ -374,13 +390,23 @@
 	 * Nothing here may take padding or a border — a subgrid item's own
 	 * padding shifts the tracks it inherited, which would undo the alignment
 	 * this exists for. Spacing lives on the rows.
+	 *
+	 * The two column metrics are custom properties (the WeightMeter idiom) so
+	 * a caller that renders its own header row can sit its cells on the same
+	 * grid — StandingStrip sets both and passes showTrackNames={false}. The
+	 * fallbacks are the standalone board, so declare/place/recap are unchanged:
+	 * `auto` keeps the gutter exactly one numeral wide there.
 	 */
 	.board-grid {
 		display: grid;
-		grid-template-columns: auto repeat(3, minmax(0, 1fr));
+		grid-template-columns: var(--board-gutter, auto) repeat(3, minmax(0, 1fr));
 		grid-template-rows: repeat(6, auto);
-		column-gap: 0.4rem;
+		column-gap: var(--board-col-gap, 0.4rem);
 		row-gap: 0.2rem;
+	}
+	/* No header row to leave space for. */
+	.board-grid.headless {
+		grid-template-rows: repeat(5, auto);
 	}
 	.gutter,
 	.column {
@@ -613,9 +639,9 @@
 	}
 
 	/* One line for a fact that is one per player, not one per player per
-	   track — see unspentWilds. It doubles as the label that says the board
-	   above is a projection. */
-	/* A paragraph, not a flex row: the chip has to flow WITH the sentence.
+	   track — see unspentWilds.
+
+	   A paragraph, not a flex row: the chip has to flow WITH the sentence.
 	   As a flex item it took a line of its own and pushed the whole clause
 	   down, which is the layout the STYLE_GUIDE's "a code in a chip" note is
 	   trying to avoid — the chip is the sentence's first word. */

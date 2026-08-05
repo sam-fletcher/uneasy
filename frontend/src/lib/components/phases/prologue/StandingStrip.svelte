@@ -100,6 +100,13 @@
 		<span class="standing-toggle">{boardOpen ? 'hide board' : 'full board'} ▾</span>
 	</button>
 
+	{#if wildInHand > 0}
+		<p class="standing-note">
+			<span class="track-code wild" aria-hidden="true">{trackCode('H')}</span>
+			{wildInHand} in hand — you assign these to tracks at the end.
+		</p>
+	{/if}
+
 	<div class="standing-row">
 		{#each TRACKS as t (t.id)}
 			{@const slots = slotsFor(t.id)}
@@ -120,16 +127,22 @@
 		{/each}
 	</div>
 
-	{#if wildInHand > 0}
-		<p class="standing-note">
-			<span class="track-code wild" aria-hidden="true">{trackCode('H')}</span>
-			{wildInHand} in hand — you assign these to tracks at the end.
-		</p>
-	{/if}
-
 	{#if boardOpen}
+		<!-- showTrackNames={false}: the .standing-row above is the header row.
+		     It sits on the board's own column grid (see --board-gutter), so the
+		     three names and the viewer's micro-tracks head the three columns
+		     rather than repeating them one line further down. -->
 		<div id="standing-board">
-			<TrackBoard {players} {cards} {rankings} {committed} {doneFlags} activeTrack={null} {currentPlayerID} />
+			<TrackBoard
+				{players}
+				{cards}
+				{rankings}
+				{committed}
+				{doneFlags}
+				activeTrack={null}
+				{currentPlayerID}
+				showTrackNames={false}
+			/>
 		</div>
 	{/if}
 </section>
@@ -142,6 +155,14 @@
 		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 0.5rem 0.7rem;
+
+		/* The board's column metrics, set here because this is the one place
+		   the two have to agree: .standing-row is the board's header row, so
+		   its three cells must land on the board's three columns exactly.
+		   TrackBoard reads both with fallbacks — its other callers render it
+		   outside any .standing and are unaffected. */
+		--board-gutter: 0.6rem;
+		--board-col-gap: 0.4rem;
 	}
 	/* 0.75rem of text, but a 44px tap box: the min-height grows the target and
 	   the matching negative block margin keeps the head row exactly 18px tall,
@@ -173,8 +194,12 @@
 		outline: 2px solid var(--color-accent);
 		outline-offset: -2px;
 	}
+	/* Parchment rather than the usual muted grey for a section label: the row
+	   below is now uppercase too, and at 0.68rem/0.62rem two muted uppercase
+	   rows read as one list of six labels. Brightness is what separates the
+	   card's title from the column headers under it. */
 	.standing-label {
-		color: var(--color-text-muted);
+		color: var(--color-text);
 		font-size: 0.68rem;
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
@@ -185,20 +210,32 @@
 		flex: none;
 	}
 
+	/* The board's three columns, offset by its rank gutter — so a name and the
+	   viewer's five slots sit centred over the column they describe whether or
+	   not the board is open. (Open or closed the row doesn't move, which is
+	   what keeps the toggle from shifting the page under the reader's thumb.) */
 	.standing-row {
-		display: flex;
-		justify-content: space-between;
-		gap: 0.4rem;
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		column-gap: var(--board-col-gap);
+		padding-left: calc(var(--board-gutter) + var(--board-col-gap));
 	}
 	.stand-cell {
-		display: inline-flex;
+		display: flex;
 		flex-direction: column;
+		align-items: center;
 		gap: 0.2rem;
 		min-width: 0;
 	}
+	/* The board's old .col-label treatment, inherited wholesale: this row IS
+	   the board's header row now, and PrologueView's .detail-track is where
+	   the treatment comes from (uppercase, tracked, muted). */
 	.stand-track {
-		color: var(--color-text-secondary);
-		font-size: 0.72rem;
+		color: var(--color-text-muted);
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		white-space: nowrap;
 	}
 	.micro {
 		display: inline-flex;
