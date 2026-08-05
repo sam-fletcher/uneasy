@@ -157,7 +157,7 @@
 				slot.suggestions = res.suggestions;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not load card suggestions.';
+			error = e instanceof Error ? e.message : 'Could not load name suggestions.';
 		} finally {
 			loadingSuggestions = false;
 		}
@@ -177,7 +177,7 @@
 			const res = await getPrologueCardSuggestions(gameID, slot.suit);
 			slot.suggestions = res.suggestions;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not load card suggestions.';
+			error = e instanceof Error ? e.message : 'Could not load name suggestions.';
 		} finally {
 			rerollingSlotKey = null;
 		}

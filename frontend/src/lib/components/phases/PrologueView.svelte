@@ -743,16 +743,13 @@
 							One turn you might decide your character is the monarch, and then the
 							next you might say that they hail from a castle on the coast.
 						</p>
-						<!-- Not "pick 3 tiles from the 3 categories below", which is the
-						     misread the pips exist to kill: the rules say the opposite,
-						     and three panels in a stack were already implying a checklist. -->
 						<p class="prologue-subtext">
 							You get three choices — spend them however you like. If you want three
 							titles, take three titles. Each tile you claim creates an asset and
-							grants 2 playing cards.
+							grants 2 cards.
 						</p>
 						<p class="prologue-subtext">
-							Playing cards let you create <span class="steal-color">or steal</span> another asset,
+							Cards let you create <span class="steal-color">or steal</span> another asset,
 							and improve your rank in either Power, Knowledge, or Esteem.
 						</p>
 						<p class="prologue-subtext">
@@ -767,8 +764,8 @@
 						<table class="legend">
 							<thead>
 								<tr>
-									<th scope="col">You make a…</th>
-									<th scope="col">Raises your…</th>
+									<th scope="col">When you make a…</th>
+									<th scope="col">It raises your…</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -788,7 +785,7 @@
 												     explaining WLD by saying the word the code should have
 												     been — and after the rename it stuttered (Round 3,
 												     decision 4). -->
-												<span class="wild-note">you choose the track at the end</span>
+												<span class="wild-note">You choose the track at the end</span>
 											{/if}
 										</td>
 									</tr>
@@ -801,7 +798,7 @@
 						     cost two lines of scroll on the screen we're trying to shorten. -->
 						<p class="legend-note">
 							<WeightMeter value="K" />
-							Weight, shown when you open a tile. If two players hold the same number
+							Rank tie-breaker weight. If two players hold the same number
 							of a track's cards, the heavier ones break the tie.
 						</p>
 						<h4>Starting rankings</h4>
@@ -919,8 +916,13 @@
 												     them the sheet asset and nothing else. Worth saying in
 												     words: two struck glyphs are easy to miss while scanning
 												     36 boxes, and the tile is still perfectly claimable, so
-												     it can't be dimmed the way a claimed tile is. -->
-												<span class="choice-note">Both cards already yours</span>
+												     it can't be dimmed the way a claimed tile is.
+
+												     "Both", not "Both cards" (Round 3, decision 9): the two
+												     chips this note sits under are what "both" refers to, so
+												     the noun was restating what the reader is already looking
+												     at — and this note shares a 126px tile with them. -->
+												<span class="choice-note">Both already yours</span>
 											{/if}
 										</button>
 										{#if i === rowEnd}

@@ -118,14 +118,21 @@
 			--><!-- Each take is its own span with a CSS margin, not a newline in
 			     the markup: Svelte collapses the whitespace around an each block's
 			     boundaries, which ran the previous clause's name straight into the
-			     next separator ("from bob· took …"). -->{#each justClaimed.takes as t, i (i)}<span
-				class="take-clause">· took {#if t.assetName}<em>{t.assetName}</em>{:else}a card{/if} from {t.ownerName}</span>{/each}
+			     next separator ("from bob· took …").
+
+			     The nameless fallback is "an asset", not "a card" (Round 3,
+			     decision 9): what changes hands is the asset — the card is the
+			     pointer to it — and the clause's other branch names that same
+			     asset. This branch is already the vague one (the name wouldn't
+			     resolve), and vague about the right noun beats precise about the
+			     wrong one. -->{#each justClaimed.takes as t, i (i)}<span
+				class="take-clause">· took {#if t.assetName}<em>{t.assetName}</em>{:else}an asset{/if} from {t.ownerName}</span>{/each}
 		</p>
 	{:else if isMyTurn}
 		<p class="turn-line">Claim one tile — from any category.</p>
 	{:else if showRetinueLine}
 		<p class="turn-line">
-			Meanwhile:
+			While you wait:
 			<button type="button" class="inline-link" onclick={() => onOpenRetinue?.()}>
 				{atRiskCount === 1
 					? '1 of your assets needs marginalia →'

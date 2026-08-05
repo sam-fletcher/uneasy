@@ -237,7 +237,7 @@
 										</span>
 									{/each}
 									{#if row.isSetAside && committedWildsForPlayer(pid, t.id).length === 0}
-										<span class="set-aside-badge" title="Zero cards on this track">no cards</span>
+										<span class="set-aside-badge" title="Zero cards on this track">none</span>
 									{/if}
 								</div>
 							{/if}
