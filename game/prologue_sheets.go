@@ -136,7 +136,7 @@ var titlesSheet = []PrologueChoice{
 		Cards: [2]Card{{SuitHearts, "K"}, {SuitClubs, "A"}},
 	},
 	{
-		Name: "The Favored Heir",
+		Name: "Favored Heir",
 		ID:   TitleFavoredHeir,
 		Description: "You might not legally be first in line, but you are favored to inherit the throne " +
 			"by the current monarch.",
@@ -171,7 +171,7 @@ var titlesSheet = []PrologueChoice{
 		Cards: [2]Card{{SuitHearts, "A"}, {SuitHearts, "Q"}},
 	},
 	{
-		Name: "The Visiting Royal",
+		Name: "Visiting Royal",
 		ID:   TitleVisitingRoyal,
 		Description: "You are the head of another kingdom. You might be visiting for peace talks, " +
 			"or just as a show of good faith.",
@@ -211,12 +211,12 @@ var hailingFromSheet = []PrologueChoice{
 	{Name: "Near the Enemy", Cards: [2]Card{{SuitDiamonds, "A"}, {SuitHearts, "Q"}}},
 	{Name: "Somewhere Lush", Cards: [2]Card{{SuitDiamonds, "A"}, {SuitDiamonds, "Q"}}},
 	{Name: "In the Mountains", Cards: [2]Card{{SuitSpades, "Q"}, {SuitDiamonds, "J"}}},
-	{Name: "Somewhere Far Away", Cards: [2]Card{{SuitHearts, "K"}, {SuitHearts, "Q"}}},
+	{Name: "A Place Far Away", Cards: [2]Card{{SuitHearts, "K"}, {SuitHearts, "Q"}}},
 	{Name: "In the Desert", Cards: [2]Card{{SuitDiamonds, "Q"}, {SuitSpades, "K"}}},
-	{Name: "Somewhere Inland", Cards: [2]Card{{SuitHearts, "J"}, {SuitSpades, "A"}}},
+	{Name: "Deep Inland", Cards: [2]Card{{SuitHearts, "J"}, {SuitSpades, "A"}}},
 	{Name: "The Plains", Cards: [2]Card{{SuitSpades, "Q"}, {SuitSpades, "J"}}},
 	{Name: "The River Delta", Cards: [2]Card{{SuitHearts, "A"}, {SuitSpades, "J"}}},
-	{Name: "The Frozen Lands", Cards: [2]Card{{SuitDiamonds, "K"}, {SuitSpades, "A"}}},
+	{Name: "The Frozen Land", Cards: [2]Card{{SuitDiamonds, "K"}, {SuitSpades, "A"}}},
 	{Name: "Upon the Cliffs", Cards: [2]Card{{SuitDiamonds, "J"}, {SuitSpades, "K"}}},
 }
 
