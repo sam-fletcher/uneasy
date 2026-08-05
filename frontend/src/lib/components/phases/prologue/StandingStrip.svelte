@@ -84,12 +84,21 @@
 </script>
 
 <section class="standing">
-	<div class="standing-head">
+	<!-- The whole row is the control, matching the other two expandables on
+	     this page (.sheet-header and the help disclosure, both full-width
+	     buttons). It used to be a div whose only interactive part was the
+	     83.5px toggle — 21% of a 391.6px row — with the "Your standing" label
+	     sitting outside the target entirely. -->
+	<button
+		type="button"
+		class="standing-head"
+		aria-expanded={boardOpen}
+		aria-controls={boardOpen ? 'standing-board' : undefined}
+		onclick={() => (boardOpen = !boardOpen)}
+	>
 		<span class="standing-label">Your standing</span>
-		<button type="button" class="standing-toggle" aria-expanded={boardOpen} onclick={() => (boardOpen = !boardOpen)}>
-			{boardOpen ? 'hide board' : 'full board'} ▾
-		</button>
-	</div>
+		<span class="standing-toggle">{boardOpen ? 'hide board' : 'full board'} ▾</span>
+	</button>
 
 	<div class="standing-row">
 		{#each TRACKS as t (t.id)}
@@ -119,7 +128,9 @@
 	{/if}
 
 	{#if boardOpen}
-		<TrackBoard {players} {cards} {rankings} {committed} {doneFlags} activeTrack={null} {currentPlayerID} />
+		<div id="standing-board">
+			<TrackBoard {players} {cards} {rankings} {committed} {doneFlags} activeTrack={null} {currentPlayerID} />
+		</div>
 	{/if}
 </section>
 
@@ -132,11 +143,35 @@
 		border-radius: 8px;
 		padding: 0.5rem 0.7rem;
 	}
+	/* 0.75rem of text, but a 44px tap box: the min-height grows the target and
+	   the matching negative block margin keeps the head row exactly 18px tall,
+	   unchanged from when only the toggle carried this (the same idiom as the
+	   header's member pills). The negative INLINE margin is the part that makes
+	   the whole row the target — it bleeds back out through the card's 0.7rem
+	   padding so the tappable area runs edge to edge. The downward bleed lands
+	   on the Esteem micro-track, which isn't interactive — and a mis-tap there
+	   opens the board, i.e. the detail view of the thing tapped. */
 	.standing-head {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
+		width: calc(100% + 1.4rem);
+		min-height: 44px;
+		margin-block: -13px;
+		margin-inline: -0.7rem;
+		padding: 0 0.7rem;
+		background: none;
+		border: none;
+		border-radius: 8px;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.standing-head:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: -2px;
 	}
 	.standing-label {
 		color: var(--color-text-muted);
@@ -144,29 +179,10 @@
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 	}
-	/* 0.75rem of text, but a 44px tap box: the padding grows the target and the
-	   matching negative margin keeps the head row exactly as tall as the label
-	   beside it (the same idiom as the header's member pills). The downward
-	   bleed lands on the Esteem micro-track, which isn't interactive — and a
-	   mis-tap there opens the board, i.e. the detail view of the thing tapped. */
 	.standing-toggle {
-		display: inline-flex;
-		align-items: center;
-		min-height: 44px;
-		margin-block: -13px;
-		padding: 0 0.5rem;
-		margin-inline: -0.5rem;
-		background: none;
-		border: none;
 		color: var(--color-accent);
-		font: inherit;
 		font-size: 0.75rem;
 		flex: none;
-		cursor: pointer;
-	}
-	.standing-toggle:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 2px;
 	}
 
 	.standing-row {
