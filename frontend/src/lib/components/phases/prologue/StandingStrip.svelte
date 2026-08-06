@@ -100,7 +100,12 @@
 		<span class="standing-toggle">{boardOpen ? 'hide board' : 'full board'} ▾</span>
 	</button>
 
-	{#if wildInHand > 0}
+	<!-- Suppressed while the board is open: the board's own "ANY still in hand"
+	     strip says the same thing about the viewer AND the same thing about
+	     everyone else, with the weights. This note exists for the collapsed
+	     state, where the strip isn't on screen and the count would otherwise be
+	     nowhere. -->
+	{#if wildInHand > 0 && !boardOpen}
 		<p class="standing-note">
 			<span class="track-code wild" aria-hidden="true">{trackCode('H')}</span>
 			{wildInHand} in hand — you assign these to tracks at the end.
@@ -160,8 +165,10 @@
 		   the two have to agree: .standing-row is the board's header row, so
 		   its three cells must land on the board's three columns exactly.
 		   TrackBoard reads both with fallbacks — its other callers render it
-		   outside any .standing and are unaffected. */
-		--board-gutter: 0.6rem;
+		   outside any .standing and are unaffected. The gutter has to clear the
+		   rank numerals, which are 0.95rem now (they were 0.65rem when this was
+		   0.6rem, i.e. narrower than the digit it was reserving space for). */
+		--board-gutter: 0.95rem;
 		--board-col-gap: 0.4rem;
 	}
 	/* 0.75rem of text, but a 44px tap box: the min-height grows the target and

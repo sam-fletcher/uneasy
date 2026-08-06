@@ -53,12 +53,13 @@
 	import StandingStrip from './prologue/StandingStrip.svelte';
 	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
 	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
-	import { computeBrightHearts } from '$lib/prologue/refund';
+	import { computeBrightHearts, computeFinalSlots } from '$lib/prologue/refund';
 	import { scrollBehavior } from '$lib/reducedMotion';
 	import {
 		cardHoldStates,
 		cardHolders,
 		ownedCardCount,
+		labelForTrack,
 		sheetTrackProfile,
 		spentByCategory,
 		stealPreview,
@@ -478,6 +479,86 @@
 		);
 	});
 
+	/** ANY cards the viewer could still put on the live track — held, and not
+	 *  already locked into a track that has resolved. Mirrors HandStrip's own
+	 *  availability rule; both read the same `committed` rows. */
+	const myPlaceableCount = $derived.by(() => {
+		if (currentPlayerID == null) return 0;
+		return cards.filter((c) => {
+			if (c.player_id !== currentPlayerID || c.card_suit !== 'H') return false;
+			const h = committed.find((x) => x.card_id === c.id);
+			return !(h && h.track !== currentTrack && resolvedTracks.has(h.track));
+		}).length;
+	});
+
+	/**
+	 * Whether "I'm done" is the action this screen is about, and so earns the
+	 * gold fill. True once the viewer has a card on this track (they've made
+	 * their declaration and the button is how they submit it) or has nothing
+	 * left to place (Done is the only move they have). False while there are
+	 * untouched cards in hand — see the button's own comment.
+	 */
+	const doneIsThePoint = $derived(
+		myPlaceableCount === 0 || myCommittedOnTrack.length > 0 || myDoneOnTrack
+	);
+
+	/**
+	 * The viewer's projected slot on the live track. The declare step's one
+	 * consequence: a tap here can move you past another player, and until now
+	 * that showed up as two board rows silently swapping while your eye was on
+	 * the hand. Watched rather than returned from the commit call, so the beat
+	 * also fires when someone ELSE's commitment moves you — which is the case
+	 * you most need to notice in async play.
+	 */
+	const myActiveSlot = $derived.by(() => {
+		const t = currentTrack;
+		if (!t || currentPlayerID == null) return null;
+		return (
+			computeFinalSlots(t as PrologueTrack, allPlayerIDs, cards, committed).get(
+				currentPlayerID
+			) ?? null
+		);
+	});
+
+	/** Plain `let`, not `$state`: the effect below writes it, and a reactive
+	 *  write would re-run the effect that just wrote it. `undefined` means "no
+	 *  baseline yet", which is why it isn't merely `null`. */
+	let lastPulsedSlot: number | null | undefined = undefined;
+
+	/** Flash the viewer's own row where it now sits. No scroll — the board is
+	 *  directly above the hand, and yanking the page on another player's action
+	 *  would be hostile. jumpPulse.css no-ops under `prefers-reduced-motion`. */
+	function pulseTrackRow(track: RankingCategory, playerID: number) {
+		const el = viewEl?.querySelector<HTMLElement>(
+			`[data-track-row="${track}:${playerID}"]`
+		);
+		if (!el) return;
+		// Removed then re-applied after a forced reflow, so two moves in quick
+		// succession restart the animation instead of the second being ignored.
+		el.classList.remove('jump-pulse');
+		void el.offsetWidth;
+		el.classList.add('jump-pulse');
+		setTimeout(() => el.classList.remove('jump-pulse'), 800);
+	}
+
+	$effect(() => {
+		const t = currentTrack;
+		const slot = myActiveSlot;
+		if (t == null || currentPlayerID == null) {
+			// Between tracks: drop the baseline so arriving on the next track
+			// doesn't read its opening slot as a move.
+			lastPulsedSlot = undefined;
+			return;
+		}
+		if (lastPulsedSlot === undefined) {
+			lastPulsedSlot = slot;
+			return;
+		}
+		if (slot === lastPulsedSlot) return;
+		lastPulsedSlot = slot;
+		if (slot != null) pulseTrackRow(t, currentPlayerID);
+	});
+
 	async function commitOrRetract(cardID: number, retract: boolean) {
 		if (savingHearts || !currentTrack || currentPlayerID == null) return;
 		savingHearts = true;
@@ -628,20 +709,17 @@
 			const waitees: Waitee[] = notDone.length === players.length
 				? [{ kind: 'everyone' }]
 				: notDone;
-			// The same three letters the choosing view taught and the hand below
-			// spends — not "Hearts", which was the last deck word left in the
-			// app (Round 2 Session 3's ruling on the open question). "on", not
-			// "for": you are putting the card on that track.
-			//
-			// This is the one place the code stands in a bare sentence fragment
-			// with no chip around it, so "Spend ANY on Power" can be misread as
-			// the quantifier (Round 3, decision 3 / §1b). It ships because the
-			// header sits directly above a hand of cards each stamped ANY —
-			// re-read live before changing it to "Spend ANY cards on", which
-			// costs 6 chars in the longest of the four mode labels.
+			// Names the stage, not the action. This used to read "Rankings:
+			// Spend ANY on Power" and was the ONLY instruction on the screen —
+			// stranded ~250px above the cards it was talking about, in a status
+			// strip shared with "Waiting On:" that readers learn to skim. The
+			// hand panel carries the verb and the track now, next to the control
+			// they refer to, which is also what retires the bare-fragment risk
+			// Round 3 flagged here (decision 3 / §1b): "ANY" no longer stands in
+			// a sentence with no chip around it.
 			return {
 				waitees,
-				stepLabel: `Rankings: Spend ${trackCode('H')} on ${t.charAt(0).toUpperCase() + t.slice(1)}`,
+				stepLabel: `Initial Rankings: ${labelForTrack(t as PrologueTrack)}`,
 			};
 		}
 		if (mode === 'place') {
@@ -1034,37 +1112,58 @@
 				{committed}
 				{doneFlags}
 				activeTrack={currentTrack as PrologueTrack}
+				activeStepLabel="Spending"
 				{currentPlayerID}
 			/>
 
-			<HandStrip
-				myCards={myCards}
-				{committed}
-				activeTrack={currentTrack as PrologueTrack}
-				brightSet={brightForViewer}
-				busy={savingHearts}
-				{resolvedTracks}
-				onCommit={(id) => commitOrRetract(id, false)}
-				onRetract={(id) => commitOrRetract(id, true)}
-			/>
+			<!-- Hand, then the button that ends your turn with it, then the
+			     sentence that explains that button — one group. They were four
+			     siblings on .prologue-view's flat 1rem gap, evenly spaced, so
+			     "I'm done" belonged to nothing and the sentence explaining it sat
+			     on the far side of it. -->
+			<div class="declare-stack">
+				<HandStrip
+					myCards={myCards}
+					{committed}
+					activeTrack={currentTrack as PrologueTrack}
+					brightSet={brightForViewer}
+					busy={savingHearts}
+					{resolvedTracks}
+					onCommit={(id) => commitOrRetract(id, false)}
+					onRetract={(id) => commitOrRetract(id, true)}
+				/>
 
-			<button
-				class="action-btn primary done-btn"
-				class:active={myDoneOnTrack}
-				disabled={savingDone}
-				onclick={toggleDone}
-			>
-				{savingDone ? '…' : myDoneOnTrack ? 'Done ✓ (tap to undo)' : "I'm done"}
-			</button>
-			{#if actionError}
-				<ErrorText message={actionError} />
-			{/if}
-			<!-- Not "ANY cards doing work": in this step the hand is entirely
-			     these cards, so the qualifier was redundant even before the code
-			     became a word that reads as a quantifier (Round 3, decision 3). -->
-			<p class="muted-text small">
-				Once every player marks Done, this track resolves: the cards doing work lock in, the rest return to your hand.
-			</p>
+				<!-- Not "ANY cards doing work": in this step the hand is entirely
+				     these cards, so the qualifier was redundant even before the code
+				     became a word that reads as a quantifier (Round 3, decision 3). -->
+				<p class="muted-text small done-note">
+					<!-- Once every player marks Done, this track resolves: the cards doing work lock in, the rest return to your hand. -->
+				</p>
+				<!--
+					Secondary until the player has engaged with the hand.
+
+					This is a gold FILL at 7.75:1 against the page, next to a hand of
+					cards that sat at 1.79:1 — so on a step whose entire content is
+					"place your ANY cards", the loudest object was the control that
+					skips it, and at least one playtester read the screen exactly that
+					way. It earns primary once it IS the action: when a card is on this
+					track, or when the player has none left to place and Done is the
+					only thing they can do.
+				-->
+				<button
+					class="action-btn done-btn"
+					class:primary={doneIsThePoint}
+					class:secondary={!doneIsThePoint}
+					class:active={myDoneOnTrack}
+					disabled={savingDone}
+					onclick={toggleDone}
+				>
+					{savingDone ? '…' : myDoneOnTrack ? 'Done ✓ (tap to undo)' : "I'm done"}
+				</button>
+				{#if actionError}
+					<ErrorText message={actionError} />
+				{/if}
+			</div>
 		{/if}
 
 	{:else if mode === 'place'}
@@ -1076,6 +1175,7 @@
 				{committed}
 				{doneFlags}
 				activeTrack={currentTrack as PrologueTrack}
+				activeStepLabel="Placing"
 				{currentPlayerID}
 			/>
 			{#if topTrackPlayerID != null && setAsideOrdering.length > 0}
@@ -1664,6 +1764,31 @@
 		align-self: flex-start;
 	}
 
-	.done-btn.active { background: var(--color-success); }
+	/* The declare step's action group: hand → what Done will do → Done.
+	   Tighter than .prologue-view's 1rem so the three read as one object
+	   sitting under the board, rather than three peers evenly spaced with it. */
+	.declare-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	/* Rides directly above the button it describes, so it reads as the
+	   button's caption. It used to sit below the button, i.e. after the reader
+	   had already decided whether to press it. */
+	.done-note {
+		margin: 0;
+		line-height: 1.4;
+	}
+
+	/* Done reached (or asserted): green wins over both the primary fill and the
+	   secondary's warm border, and the ink has to follow the fill it now sits
+	   on — .secondary's gold text on green was the one combination the two
+	   classes never produced before. */
+	.done-btn.active {
+		background: var(--color-success);
+		border-color: var(--color-success);
+		color: var(--color-bg);
+	}
 
 </style>

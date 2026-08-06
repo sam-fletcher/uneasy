@@ -6,6 +6,7 @@ import type {
 	PrologueChoice,
 	PrologueClaim,
 	PrologueSheetType,
+	PrologueTrack,
 	PlayerCardRow,
 	Asset,
 	Player,
@@ -81,6 +82,27 @@ export function trackLabel(suit: string): string {
  */
 export function trackCode(suit: string): string {
 	return SUIT_MEANINGS.find((m) => m.suit === suit)?.code ?? '';
+}
+
+/**
+ * The same three-letter code, addressed by track rather than by suit
+ * ('power' → 'POW').
+ *
+ * Everything that draws a code during the *choosing* view holds a card, and a
+ * card knows its suit — hence `trackCode`. The declare step is the other way
+ * round: it holds a track (the step the server is on, or the track a spent ANY
+ * card was locked into) and needs the code for it. Reading it back out of
+ * SUIT_MEANINGS rather than typing 'POW' keeps the rename property Round 3
+ * bought — one row moves the whole UI.
+ */
+export function codeForTrack(track: PrologueTrack): string {
+	return SUIT_MEANINGS.find((m) => m.track?.toLowerCase() === track)?.code ?? '';
+}
+
+/** The track's own name in title case ('power' → 'Power'), from the same
+ *  table — so a heading and a column header can't disagree about casing. */
+export function labelForTrack(track: PrologueTrack): string {
+	return SUIT_MEANINGS.find((m) => m.track?.toLowerCase() === track)?.track ?? '';
 }
 
 /** Asset type a suit makes, lowercased for running text ('C' → 'holding'). */

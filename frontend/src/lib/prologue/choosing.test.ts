@@ -1,11 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PrologueSheet, PrologueClaim, PlayerCardRow, Asset, Player } from '$lib/api';
+import type {
+	PrologueSheet,
+	PrologueClaim,
+	PrologueTrack,
+	PlayerCardRow,
+	Asset,
+	Player,
+} from '$lib/api';
 import {
 	cardHoldStates,
 	cardHolders,
 	cardWeight,
+	codeForTrack,
+	labelForTrack,
 	ownedCardCount,
 	sheetTrackProfile,
 	spentByCategory,
@@ -239,6 +248,34 @@ describe('suit meaning labels', () => {
 	it('starts each ranked code with the first letters of its own track', () => {
 		for (const suit of ['C', 'D', 'S']) {
 			expect(trackLabel(suit).toUpperCase().startsWith(trackCode(suit))).toBe(true);
+		}
+	});
+
+	// The declare step addresses the same table by track rather than by suit —
+	// it holds a step name, not a card. The two lookups have to land on the
+	// same row or a locked ANY card would name a different track than the
+	// board column it was spent on.
+	it('maps every track to the same code its suit gets', () => {
+		expect(codeForTrack('power')).toBe(trackCode('C'));
+		expect(codeForTrack('knowledge')).toBe(trackCode('D'));
+		expect(codeForTrack('esteem')).toBe(trackCode('S'));
+	});
+
+	it('maps every track to its title-case name', () => {
+		expect(labelForTrack('power')).toBe('Power');
+		expect(labelForTrack('knowledge')).toBe('Knowledge');
+		expect(labelForTrack('esteem')).toBe('Esteem');
+	});
+
+	// The lookup lowercases SUIT_MEANINGS' title-case `track` to match the
+	// API's lowercase PrologueTrack. Guard the join itself: retitle a row and
+	// both helpers would silently return '' rather than failing loudly.
+	it('resolves every ranked row from its own track name', () => {
+		for (const m of SUIT_MEANINGS) {
+			if (!m.track) continue;
+			const track = m.track.toLowerCase() as PrologueTrack;
+			expect(codeForTrack(track)).toBe(m.code);
+			expect(labelForTrack(track)).toBe(m.track);
 		}
 	});
 
