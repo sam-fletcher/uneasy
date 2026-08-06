@@ -4,41 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	gamepkg "uneasy/game"
 )
-
-func TestTrackResolved(t *testing.T) {
-	cases := []struct {
-		track, currentStep string
-		want               bool
-	}{
-		// Power has not yet been resolved at the start.
-		{"power", "declare_power", false},
-		{"knowledge", "declare_power", false},
-		{"esteem", "declare_power", false},
-
-		// After power is finalized and set-asides are being placed.
-		{"power", "place_set_asides_power", false},
-		{"knowledge", "place_set_asides_power", false},
-
-		// Mid-knowledge: power is resolved.
-		{"power", "declare_knowledge", true},
-		{"knowledge", "declare_knowledge", false},
-		{"esteem", "declare_knowledge", false},
-
-		// Mid-esteem: power and knowledge resolved.
-		{"power", "declare_esteem", true},
-		{"knowledge", "declare_esteem", true},
-		{"esteem", "declare_esteem", false},
-
-		// closing / past all tracks → all resolved.
-		{"power", "closing", true},
-		{"esteem", "closing", true},
-	}
-	for _, c := range cases {
-		got := trackResolved(c.track, c.currentStep)
-		assert.Equal(t, c.want, got, "track=%s step=%s", c.track, c.currentStep)
-	}
-}
 
 func TestIsDeclareableTrack(t *testing.T) {
 	assert.True(t, isDeclareableTrack("power"))
@@ -46,4 +14,17 @@ func TestIsDeclareableTrack(t *testing.T) {
 	assert.True(t, isDeclareableTrack("esteem"))
 	assert.False(t, isDeclareableTrack(""))
 	assert.False(t, isDeclareableTrack("bogus"))
+}
+
+// isDeclareStep is what decides whether the nobody-can-act check runs, so a
+// place_set_asides step reading as a declare step would resolve a track out
+// from under the player who is mid-placement.
+func TestIsDeclareStep(t *testing.T) {
+	assert.True(t, isDeclareStep(gamepkg.PrologueStepDeclarePower))
+	assert.True(t, isDeclareStep(gamepkg.PrologueStepDeclareKnowledge))
+	assert.True(t, isDeclareStep(gamepkg.PrologueStepDeclareEsteem))
+	assert.False(t, isDeclareStep(gamepkg.PrologueStepPlaceSetAsidesPower))
+	assert.False(t, isDeclareStep(gamepkg.PrologueStepPlaceSetAsidesEsteem))
+	assert.False(t, isDeclareStep(gamepkg.PrologueStepClosing))
+	assert.False(t, isDeclareStep(""))
 }

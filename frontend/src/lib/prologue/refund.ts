@@ -212,6 +212,59 @@ export function computeFinalSlots(
 	return out;
 }
 
+const TRACK_SEQUENCE: PrologueTrack[] = ['power', 'knowledge', 'esteem'];
+
+/**
+ * Whether `track` has already been finalized at ranking step `step`. Cards
+ * committed to a resolved track are spent for good; everything else is still
+ * the player's to place. A step outside the declare/place machine (closing, or
+ * no ranking step at all) reads as every track resolved.
+ *
+ * Mirrors `TrackResolved` in game/prologue_placeable.go.
+ */
+export function trackResolved(track: PrologueTrack, step: string): boolean {
+	const idx = TRACK_SEQUENCE.findIndex(
+		(t) => step === `declare_${t}` || step === `place_set_asides_${t}`
+	);
+	if (idx === -1) return true; // past all tracks (closing / done)
+	return TRACK_SEQUENCE.indexOf(track) < idx;
+}
+
+/** Every track already finalized at `step`. */
+export function resolvedTracksAt(step: string): Set<PrologueTrack> {
+	return new Set(TRACK_SEQUENCE.filter((t) => trackResolved(t, step)));
+}
+
+/**
+ * How many ANY cards `playerID` could still put on `track` at ranking step
+ * `step`: every ANY card they hold, minus the ones locked into a track that
+ * has already resolved. A card on `track` itself counts — it can be retracted,
+ * so its holder still has a move to make.
+ *
+ * Mirrors `PlaceableHeartCount` in game/prologue_placeable.go, and the two MUST
+ * agree: the server treats a player at zero as done without waiting for a tap,
+ * and this is what decides whether we offer them the tap at all. A disagreement
+ * shows up as a Done button the server has already stopped listening for.
+ */
+export function placeableHeartCount(
+	playerID: number,
+	track: PrologueTrack,
+	step: string,
+	cards: PlayerCardRow[],
+	committed: CommittedHeart[]
+): number {
+	let held = 0;
+	for (const c of cards) {
+		if (c.player_id === playerID && c.card_suit === 'H') held++;
+	}
+	let locked = 0;
+	for (const h of committed) {
+		if (h.player_id !== playerID) continue;
+		if (h.track !== track && trackResolved(h.track, step)) locked++;
+	}
+	return held - locked;
+}
+
 export function openRanksForCount(n: number): number[] {
 	let dummies: number[] = [];
 	switch (n) {

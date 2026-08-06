@@ -6,6 +6,9 @@ import {
   computeFinalSlots,
   computeBrightHearts,
   openRanksForCount,
+  placeableHeartCount,
+  resolvedTracksAt,
+  trackResolved,
 } from './refund';
 
 // Small helpers to keep fixtures terse.
@@ -108,5 +111,62 @@ describe('computeBrightHearts', () => {
     const result = computeBrightHearts('power', [1, 2], cards, hearts);
     const p1Bright = result.get(1)!;
     expect(p1Bright.size).toBe(0);
+  });
+});
+
+describe('trackResolved', () => {
+  it('locks only the tracks before the live one', () => {
+    expect(trackResolved('power', 'declare_power')).toBe(false);
+    expect(trackResolved('power', 'place_set_asides_power')).toBe(false);
+    expect(trackResolved('power', 'declare_knowledge')).toBe(true);
+    expect(trackResolved('knowledge', 'declare_knowledge')).toBe(false);
+    expect(trackResolved('knowledge', 'declare_esteem')).toBe(true);
+    expect(trackResolved('esteem', 'declare_esteem')).toBe(false);
+  });
+
+  it('treats a step past the ranking machine as everything locked', () => {
+    expect(trackResolved('esteem', 'closing')).toBe(true);
+    expect(resolvedTracksAt('declare_esteem')).toEqual(new Set(['power', 'knowledge']));
+    expect(resolvedTracksAt('declare_power').size).toBe(0);
+  });
+});
+
+// The server runs the same rule (game/prologue_placeable.go) to decide whether
+// it still needs this player's Done tap, so these cases are the contract
+// between the two: a disagreement means a button nothing is listening for.
+describe('placeableHeartCount', () => {
+  it('counts unspent ANY cards, ignoring suited ones', () => {
+    const cards = [nat(1, 'H', 'K'), nat(1, 'H', '4'), nat(1, 'C', '9')];
+    expect(placeableHeartCount(1, 'power', 'declare_power', cards, [])).toBe(2);
+  });
+
+  it('is zero for a player who never held one', () => {
+    const cards = [nat(1, 'C', 'K'), nat(1, 'S', '3')];
+    expect(placeableHeartCount(1, 'power', 'declare_power', cards, [])).toBe(0);
+  });
+
+  it('discounts cards locked into a resolved track', () => {
+    const cards = [nat(1, 'H', 'K', 11), nat(1, 'H', '4', 12)];
+    const spent = [heart(1, 'power', 'K', 11)];
+    expect(placeableHeartCount(1, 'knowledge', 'declare_knowledge', cards, spent)).toBe(1);
+  });
+
+  it('is zero once every card the player held is locked away', () => {
+    const cards = [nat(1, 'H', 'K', 11), nat(1, 'H', '4', 12)];
+    const spent = [heart(1, 'power', 'K', 11), heart(1, 'knowledge', '4', 12)];
+    expect(placeableHeartCount(1, 'esteem', 'declare_esteem', cards, spent)).toBe(0);
+  });
+
+  it('still counts a card sitting on the live track — it can be retracted', () => {
+    const cards = [nat(1, 'H', 'K', 11)];
+    const live = [heart(1, 'esteem', 'K', 11)];
+    expect(placeableHeartCount(1, 'esteem', 'declare_esteem', cards, live)).toBe(1);
+  });
+
+  it('ignores other players entirely', () => {
+    const cards = [nat(1, 'H', 'K', 11), nat(2, 'H', 'Q', 21)];
+    const spent = [heart(2, 'power', 'Q', 21)];
+    expect(placeableHeartCount(1, 'knowledge', 'declare_knowledge', cards, spent)).toBe(1);
+    expect(placeableHeartCount(2, 'knowledge', 'declare_knowledge', cards, spent)).toBe(0);
   });
 });

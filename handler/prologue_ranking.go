@@ -47,6 +47,20 @@ func trackForStep(step string) string {
 	return ""
 }
 
+// declareStepFor returns the declare step that puts `track` up for
+// commitments.
+func declareStepFor(track string) string {
+	return "declare_" + track
+}
+
+// isDeclareStep reports whether `step` is one of the three declare steps — the
+// only steps where players commit ANY cards, and so the only ones the
+// nobody-can-act check applies to.
+func isDeclareStep(step string) bool {
+	track := trackForStep(step)
+	return track != "" && step == declareStepFor(track)
+}
+
 // rankingRows converts sqlc's []dbgen.Ranking to []gamepkg.RankingRow, the
 // dbgen-free view the game package's ranking helpers (TopOfTrackPlayer,
 // ShakeUpTurnOrder, ...) operate on.
@@ -268,6 +282,18 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			model.PrologueRankingStepChangedPayload{Step: nextStep})
 		if nextStep == gamepkg.PrologueStepClosing {
 			EmitPrologueClosingEntered(ctx, s.Q, manager, gameID)
+		}
+		// The third way into a declare step, alongside enterPrologueRanking and
+		// resolveTrack's own advance: it too can land on a track nobody can act
+		// on, and would then wait forever for a Done that never comes.
+		if err = autoResolveIfNobodyCanDeclare(ctx, s.Q, manager, gameID); err != nil {
+			respondInternalErr(w, r, "could not resolve an unplayable track", err)
+			return
+		}
+		// Re-read rather than report `nextStep`: the check above may have run
+		// the game on several steps further.
+		if fresh, fErr := s.Q.GetGameByID(ctx, gameID); fErr == nil && fresh.PrologueRankingStep != nil {
+			nextStep = *fresh.PrologueRankingStep
 		}
 
 		respond(w, http.StatusOK, map[string]any{"track": track, "next_step": nextStep})

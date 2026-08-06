@@ -737,5 +737,12 @@ func enterPrologueRanking(ctx context.Context, s *db.Store, manager *hub.Manager
 	}
 	broadcastEvent(manager, gameID, model.EventPrologueRankingStepChanged,
 		model.PrologueRankingStepChangedPayload{Step: step})
-	return nil
+	// A table can arrive here with no ANY cards in anyone's hand — 16 of the
+	// 36 tiles carry none — in which case power (and possibly every track
+	// after it) holds no decision for anybody. Resolved in its own
+	// transaction, after the step-change broadcast above, so clients see the
+	// arrival at declare_power before any resolution that follows it.
+	return s.InTx(ctx, func(q *dbgen.Queries) error {
+		return autoResolveIfNobodyCanDeclare(ctx, q, manager, gameID)
+	})
 }

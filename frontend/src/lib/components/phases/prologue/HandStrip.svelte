@@ -160,11 +160,17 @@
 				<!-- Not "no ANY cards": in this step the hand is *entirely* these
 				     cards, so the qualifier was always redundant — and "no ANY cards"
 				     reads as a quantifier now that the code is a real word (Round 3,
-				     decision 3). -->
-				Nothing to place on this track — mark yourself done below.
+				     decision 3).
+
+				     Both no-op cases used to end "mark yourself done below", which was
+				     the app asking for a tap that carried no decision. The server
+				     stops waiting on a player with nothing to place, so the sentence
+				     now says that instead — the reassurance a player needs when a
+				     screen has no control on it is that nobody is stuck behind them. -->
+				Nothing to place on this track — it resolves without waiting on you.
 			{:else if allSpent}
-				Every card you held is locked into an earlier track. Mark yourself
-				done below.
+				Every card you held is locked into an earlier track — this one
+				resolves without waiting on you.
 			{:else}
 				<!-- The safety rule, not a restatement of the heading: the reason a
 				     new player hesitates over the first tap is the fear of wasting a

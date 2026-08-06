@@ -149,7 +149,7 @@ func CommitTrackHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid track")
 			return
 		}
-		if *game.PrologueRankingStep != "declare_"+body.Track {
+		if *game.PrologueRankingStep != declareStepFor(body.Track) {
 			respondErr(w, http.StatusConflict, "track is not currently being declared")
 			return
 		}
@@ -180,7 +180,7 @@ func CommitTrackHearts(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			if !inInt64s(body.CardIDs, ch.CardID) {
 				continue
 			}
-			if ch.Track != body.Track && trackResolved(ch.Track, *game.PrologueRankingStep) {
+			if ch.Track != body.Track && gamepkg.TrackResolved(ch.Track, *game.PrologueRankingStep) {
 				respondErr(w, http.StatusConflict, "card is locked into a previously-resolved track")
 				return
 			}
@@ -264,7 +264,7 @@ func SetPrologueDone(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid track")
 			return
 		}
-		if *game.PrologueRankingStep != "declare_"+body.Track {
+		if *game.PrologueRankingStep != declareStepFor(body.Track) {
 			respondErr(w, http.StatusConflict, "track is not currently being declared")
 			return
 		}
@@ -321,7 +321,7 @@ func resolveTrack(
 	if err != nil {
 		return err
 	}
-	if fresh.PrologueRankingStep == nil || *fresh.PrologueRankingStep != "declare_"+track {
+	if fresh.PrologueRankingStep == nil || *fresh.PrologueRankingStep != declareStepFor(track) {
 		// Another request already resolved this track. Nothing to do.
 		return nil
 	}
@@ -421,6 +421,11 @@ func resolveTrack(
 	if nextStep == gamepkg.PrologueStepClosing {
 		EmitPrologueClosingEntered(ctx, q, manager, game.ID)
 	}
+	// The track we just advanced INTO may hold no decision for anyone either
+	// — the same hands that emptied this one carry over. Cascades from here.
+	if isDeclareStep(nextStep) {
+		return autoResolveIfNobodyCanDeclare(ctx, q, manager, game.ID)
+	}
 	return nil
 }
 
@@ -438,6 +443,15 @@ func loadCommittedHearts(ctx context.Context, q *dbgen.Queries, gameID int64) ([
 	return out, nil
 }
 
+// allPlayersDoneForTrack reports whether every player has finished with
+// `track`.
+//
+// A player with no ANY card left to place never blocks: the declare step holds
+// no other action for them, so a tap they have no reason to make is dead time
+// in an async game (gamepkg.PlaceableHeartCount). That flag is DERIVED, never
+// written — a persisted done row would outlive the hand that justified it, and
+// the same rule has to hold at entry time (autoResolveIfNobodyCanDeclare),
+// where there is no request to write a row from.
 func allPlayersDoneForTrack(ctx context.Context, q *dbgen.Queries, gameID int64, track string) (bool, error) {
 	players, err := q.GetPlayersByGame(ctx, gameID)
 	if err != nil {
@@ -456,44 +470,90 @@ func allPlayersDoneForTrack(ctx context.Context, q *dbgen.Queries, gameID int64,
 			doneSet[r.PlayerID] = true
 		}
 	}
+	cards, err := loadPrologueCards(ctx, q, gameID)
+	if err != nil {
+		return false, err
+	}
+	committed, err := loadCommittedHearts(ctx, q, gameID)
+	if err != nil {
+		return false, err
+	}
+	step := declareStepFor(track)
 	for _, p := range players {
-		if !doneSet[p.ID] {
-			return false, nil
+		if doneSet[p.ID] {
+			continue
 		}
+		if gamepkg.PlaceableHeartCount(p.ID, track, step, cards, committed) == 0 {
+			continue
+		}
+		return false, nil
 	}
 	return true, nil
+}
+
+// autoResolveIfNobodyCanDeclare resolves the live declare step immediately when
+// no player holds an ANY card they could still place on it.
+//
+// Resolution is otherwise only ever reached through a Done POST landing in
+// allPlayersDoneForTrack. 16 of the 36 prologue tiles carry no ANY card at all,
+// and bright hearts lock permanently at resolution while grey ones refund, so
+// "nobody has one left" is an ordinary board state — most likely on esteem, the
+// last track. Without this check such a step would wait forever on a POST
+// nothing will ever send.
+//
+// Safe at any step: it no-ops unless a declare step is live, which is what lets
+// the three entry points (enterPrologueRanking, resolveTrack's advance,
+// PlaceSetAsides's advance) all call it unconditionally. resolveTrack calls
+// back into it after advancing, so a table that has run dry can cascade
+// knowledge → esteem → closing inside one request; the mutual recursion is
+// bounded by the step machine, which only ever moves forward.
+func autoResolveIfNobodyCanDeclare(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+) error {
+	game, err := q.GetGameByID(ctx, gameID)
+	if err != nil {
+		return err
+	}
+	if game.Phase != model.PhasePrologue || game.PrologueRankingStep == nil {
+		return nil
+	}
+	step := *game.PrologueRankingStep
+	if !isDeclareStep(step) {
+		return nil // placing set-asides, or past ranking: a real decision is pending
+	}
+	track := trackForStep(step)
+	players, err := q.GetPlayersByGame(ctx, gameID)
+	if err != nil {
+		return err
+	}
+	if len(players) == 0 {
+		return nil
+	}
+	cards, err := loadPrologueCards(ctx, q, gameID)
+	if err != nil {
+		return err
+	}
+	committed, err := loadCommittedHearts(ctx, q, gameID)
+	if err != nil {
+		return err
+	}
+	ids := make([]int64, len(players))
+	for i, p := range players {
+		ids[i] = p.ID
+	}
+	if gamepkg.AnyPlayerCanDeclare(ids, track, step, cards, committed) {
+		return nil
+	}
+	return resolveTrack(ctx, q, manager, &game, track)
 }
 
 func isDeclareableTrack(t string) bool {
 	return t == gamepkg.PrologueTrackPower ||
 		t == gamepkg.PrologueTrackKnowledge ||
 		t == gamepkg.PrologueTrackEsteem
-}
-
-// trackResolved reports whether `track` has already been finalized
-// given the current ranking step.
-func trackResolved(track, currentStep string) bool {
-	seq := []string{
-		gamepkg.PrologueTrackPower,
-		gamepkg.PrologueTrackKnowledge,
-		gamepkg.PrologueTrackEsteem,
-	}
-	currentIdx := -1
-	for i, t := range seq {
-		if currentStep == "declare_"+t || currentStep == "place_set_asides_"+t {
-			currentIdx = i
-			break
-		}
-	}
-	if currentIdx == -1 {
-		return true // past all tracks (closing / done)
-	}
-	for i, t := range seq {
-		if t == track {
-			return i < currentIdx
-		}
-	}
-	return false
 }
 
 func inInt64s(xs []int64, v int64) bool {

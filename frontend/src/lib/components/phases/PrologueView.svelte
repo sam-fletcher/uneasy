@@ -53,7 +53,12 @@
 	import StandingStrip from './prologue/StandingStrip.svelte';
 	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
 	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
-	import { computeBrightHearts, computeFinalSlots } from '$lib/prologue/refund';
+	import {
+		computeBrightHearts,
+		computeFinalSlots,
+		placeableHeartCount,
+		resolvedTracksAt,
+	} from '$lib/prologue/refund';
 	import { scrollBehavior } from '$lib/reducedMotion';
 	import {
 		cardHoldStates,
@@ -543,22 +548,10 @@
 	});
 
 	// Tracks already finalized — anything before the current declare/place
-	// step is locked. Hearts committed there cannot be retracted.
-	const resolvedTracks = $derived.by(() => {
-		const step = game.prologue_ranking_step ?? '';
-		const seq: PrologueTrack[] = ['power', 'knowledge', 'esteem'];
-		const out = new Set<PrologueTrack>();
-		const idx = seq.findIndex(
-			(t) => step === `declare_${t}` || step === `place_set_asides_${t}`
-		);
-		if (idx === -1 && step !== '') {
-			// closing or beyond — all resolved.
-			seq.forEach((t) => out.add(t));
-			return out;
-		}
-		seq.slice(0, idx).forEach((t) => out.add(t));
-		return out;
-	});
+	// step is locked. Hearts committed there cannot be retracted. Derived
+	// through refund.ts so it shares one rule with placeableHeartCount and
+	// with the server's gamepkg.TrackResolved.
+	const resolvedTracks = $derived(resolvedTracksAt(game.prologue_ranking_step ?? ''));
 
 	const myDoneOnTrack = $derived.by(() => {
 		const t = currentTrack;
@@ -570,26 +563,58 @@
 
 	/** ANY cards the viewer could still put on the live track — held, and not
 	 *  already locked into a track that has resolved. Mirrors HandStrip's own
-	 *  availability rule; both read the same `committed` rows. */
+	 *  availability rule; both read the same `committed` rows. Zero means the
+	 *  step holds no move for them at all, and the server stops waiting on
+	 *  them (see placeableHeartCount / game.PlaceableHeartCount). */
 	const myPlaceableCount = $derived.by(() => {
-		if (currentPlayerID == null) return 0;
-		return cards.filter((c) => {
-			if (c.player_id !== currentPlayerID || c.card_suit !== 'H') return false;
-			const h = committed.find((x) => x.card_id === c.id);
-			return !(h && h.track !== currentTrack && resolvedTracks.has(h.track));
-		}).length;
+		const t = currentTrack;
+		if (!t || currentPlayerID == null) return 0;
+		return placeableHeartCount(
+			currentPlayerID,
+			t as PrologueTrack,
+			game.prologue_ranking_step ?? '',
+			cards,
+			committed
+		);
 	});
 
 	/**
 	 * Whether "I'm done" is the action this screen is about, and so earns the
-	 * gold fill. True once the viewer has a card on this track (they've made
-	 * their declaration and the button is how they submit it) or has nothing
-	 * left to place (Done is the only move they have). False while there are
-	 * untouched cards in hand — see the button's own comment.
+	 * gold fill. True once the viewer has a card on this track: they've made
+	 * their declaration and the button is how they submit it. False while
+	 * there are untouched cards in hand — see the button's own comment.
+	 *
+	 * (No `myPlaceableCount === 0` arm any more. It used to make the button
+	 * primary for a player with nothing to spend, on the grounds that Done was
+	 * then their only move; it isn't a move at all now — that player gets a
+	 * status line instead and the button doesn't render.)
 	 */
-	const doneIsThePoint = $derived(
-		myPlaceableCount === 0 || myCommittedOnTrack.length > 0 || myDoneOnTrack
-	);
+	const doneIsThePoint = $derived(myCommittedOnTrack.length > 0 || myDoneOnTrack);
+
+	/**
+	 * Done flags as the SERVER acts on them: a player with no ANY card left to
+	 * place has nothing to commit and nothing to retract, so the server counts
+	 * them done without a tap (allPlayersDoneForTrack) and never waits on them.
+	 * Everything that displays done state or derives who's blocking must read
+	 * this rather than the raw rows, or an auto-done player shows up as the one
+	 * holding the table up.
+	 *
+	 * Synthesized only during a declare step: elsewhere the flags are either
+	 * meaningless (resolution clears them) or nobody's turn to spend.
+	 */
+	const effectiveDoneFlags = $derived.by<TrackDone[]>(() => {
+		const t = currentTrack;
+		const step = game.prologue_ranking_step ?? '';
+		if (!t || !step.startsWith('declare_')) return doneFlags;
+		const auto = players
+			.filter(
+				(p) =>
+					placeableHeartCount(p.id, t as PrologueTrack, step, cards, committed) === 0 &&
+					!doneFlags.some((d) => d.player_id === p.id && d.track === t && d.done)
+			)
+			.map<TrackDone>((p) => ({ player_id: p.id, track: t as PrologueTrack, done: true }));
+		return auto.length === 0 ? doneFlags : [...doneFlags, ...auto];
+	});
 
 	/**
 	 * The viewer's projected slot on the live track. The declare step's one
@@ -866,8 +891,11 @@
 		if (mode === 'declare') {
 			const t = currentTrack;
 			if (!t) return { waitees: [] };
+			// effectiveDoneFlags, not the raw rows: a player with no ANY card
+			// left to place is not being waited on — the server won't wait for
+			// their tap either.
 			const notDone = players
-				.filter(p => !doneFlags.some(d => d.player_id === p.id && d.track === t && d.done))
+				.filter(p => !effectiveDoneFlags.some(d => d.player_id === p.id && d.track === t && d.done))
 				.map<Waitee>(p => ({ kind: 'player', playerID: p.id }));
 			if (notDone.length === 0) return { waitees: [] };
 			const waitees: Waitee[] = notDone.length === players.length
@@ -1057,7 +1085,7 @@
 				{/if}
 			</section>
 
-			<StandingStrip {players} {cards} {rankings} {committed} {doneFlags} {currentPlayerID} />
+			<StandingStrip {players} {cards} {rankings} {committed} doneFlags={effectiveDoneFlags} {currentPlayerID} />
 
 			<!-- The choosing mode's one action path is the claim modal, which
 			     closes before its follow-up refresh can fail — so this sits above
@@ -1274,7 +1302,7 @@
 				{cards}
 				{rankings}
 				{committed}
-				{doneFlags}
+				doneFlags={effectiveDoneFlags}
 				activeTrack={currentTrack as PrologueTrack}
 				activeStepLabel="Spending"
 				{currentPlayerID}
@@ -1302,27 +1330,39 @@
 				<p class="muted-text small done-note">
 					<!-- Once every player marks Done, this track resolves: the cards doing work lock in, the rest return to your hand. -->
 				</p>
-				<!--
-					Secondary until the player has engaged with the hand.
+				{#if myPlaceableCount === 0}
+					<!--
+						No button, because there is no decision behind it. With no ANY
+						card to place there is nothing to commit and nothing to retract,
+						so "I'm done" only ever meant "stop waiting on me" — and the
+						server now works that out for itself rather than holding the
+						whole table on a tap this player has no reason to make (see
+						allPlayersDoneForTrack). What's left is a status line: what the
+						screen is waiting for, in the place the control used to be.
+					-->
+					<p class="muted-text small nothing-to-spend">Nothing to spend — waiting on others.</p>
+				{:else}
+					<!--
+						Secondary until the player has engaged with the hand.
 
-					This is a gold FILL at 7.75:1 against the page, next to a hand of
-					cards that sat at 1.79:1 — so on a step whose entire content is
-					"place your ANY cards", the loudest object was the control that
-					skips it, and at least one playtester read the screen exactly that
-					way. It earns primary once it IS the action: when a card is on this
-					track, or when the player has none left to place and Done is the
-					only thing they can do.
-				-->
-				<button
-					class="action-btn done-btn"
-					class:primary={doneIsThePoint}
-					class:secondary={!doneIsThePoint}
-					class:active={myDoneOnTrack}
-					disabled={savingDone}
-					onclick={toggleDone}
-				>
-					{savingDone ? '…' : myDoneOnTrack ? 'Done ✓ (tap to undo)' : "I'm done"}
-				</button>
+						This is a gold FILL at 7.75:1 against the page, next to a hand of
+						cards that sat at 1.79:1 — so on a step whose entire content is
+						"place your ANY cards", the loudest object was the control that
+						skips it, and at least one playtester read the screen exactly that
+						way. It earns primary once it IS the action: when a card is on this
+						track.
+					-->
+					<button
+						class="action-btn done-btn"
+						class:primary={doneIsThePoint}
+						class:secondary={!doneIsThePoint}
+						class:active={myDoneOnTrack}
+						disabled={savingDone}
+						onclick={toggleDone}
+					>
+						{savingDone ? '…' : myDoneOnTrack ? 'Done ✓ (tap to undo)' : "I'm done"}
+					</button>
+				{/if}
 				{#if actionError}
 					<ErrorText message={actionError} />
 				{/if}
@@ -1336,7 +1376,7 @@
 				{cards}
 				{rankings}
 				{committed}
-				{doneFlags}
+				doneFlags={effectiveDoneFlags}
 				activeTrack={currentTrack as PrologueTrack}
 				activeStepLabel="Placing"
 				{currentPlayerID}
@@ -1371,7 +1411,7 @@
 			{rankings}
 			{cards}
 			{committed}
-			{doneFlags}
+			doneFlags={effectiveDoneFlags}
 			{laws}
 			{rumors}
 			onReload={reload}
@@ -1941,6 +1981,19 @@
 	   had already decided whether to press it. */
 	.done-note {
 		margin: 0;
+		line-height: 1.4;
+	}
+
+	/* Stands where the Done button would, for a player who has nothing to
+	   spend. Given the button's own height so the panel doesn't jump when a
+	   retraction hands the button back, and centred because it is a statement
+	   about the table rather than a caption for anything below it. */
+	.nothing-to-spend {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		text-align: center;
 		line-height: 1.4;
 	}
 

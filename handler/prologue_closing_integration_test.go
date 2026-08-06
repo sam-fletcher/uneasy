@@ -58,9 +58,20 @@ func TestResolveTrack_EsteemFourPlayerNoSetAsideEntersClosing(t *testing.T) {
 	// cards on the track, so ComputeTrackRankingFromCommitments produces no
 	// set-asides at all.
 	spadeValues := []string{"A", "2", "3", "4"}
+	// Distinct values: a card is unique per game, not per hand.
+	wildValues := []string{"K", "Q", "J", "10"}
 	for i, p := range tg.Players {
 		require.NoError(t, q.InsertPlayerCard(ctx, dbgen.InsertPlayerCardParams{
 			GameID: tg.Game.ID, PlayerID: p.ID, CardSuit: "S", CardValue: spadeValues[i],
+		}))
+		// ...and one unspent ANY card, which is what keeps all four of them
+		// players with a decision to make. Without one the server would count
+		// them done on the spot and resolve esteem on the FIRST post (see
+		// prologue_auto_done_integration_test.go) — correct behaviour, but a
+		// different test. This one is about where a clean esteem resolution
+		// lands, so it needs four taps to still be four taps.
+		require.NoError(t, q.InsertPlayerCard(ctx, dbgen.InsertPlayerCardParams{
+			GameID: tg.Game.ID, PlayerID: p.ID, CardSuit: "H", CardValue: wildValues[i],
 		}))
 	}
 
