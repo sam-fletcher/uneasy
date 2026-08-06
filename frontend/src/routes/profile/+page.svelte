@@ -15,8 +15,9 @@
 	import CharCounter from '$lib/components/CharCounter.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
-	import { getPushState, enablePush, disablePush, type PushState } from '$lib/push';
+	import { getPushState, enablePush, disablePush, onPushPermissionChange, type PushState } from '$lib/push';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import PushBlockedHelp from '$lib/components/shared/PushBlockedHelp.svelte';
 
 	let me = $state<Account | null>(null);
 	let tables = $state<MyTable[]>([]);
@@ -129,19 +130,42 @@
 		}
 	}
 
+	// Push state is read from the browser, not the server, so it's free of the
+	// debounce and the DB-cost reasoning above — re-read it on every return.
+	// Fixing a block happens in browser settings, i.e. necessarily away from
+	// this page; without a re-read the row keeps insisting they're blocked
+	// after they've allowed us. permissions.query's change event covers the
+	// same-tab case (Chrome's settings bubble doesn't blur the page), and
+	// Safari, which rejects that query, is covered by the visibility path.
+	function refreshPushState() {
+		// Not mid-toggle: the permission prompt blurs the page, so this fires
+		// *during* enablePush. That read would see granted-but-not-yet-
+		// subscribed ('off') and could land after togglePush's own 'on'.
+		if (pushBusy) return;
+		void getPushState().then((s) => { pushState = s; }).catch(() => {});
+	}
+
 	onMount(() => {
 		// `load()` is the initial fetch; count it so returning to a
 		// just-opened page doesn't immediately refetch.
 		lastRefreshAt = Date.now();
 		const onVisibility = () => {
-			if (document.visibilityState === 'visible') void refreshTables();
+			if (document.visibilityState === 'visible') {
+				void refreshTables();
+				refreshPushState();
+			}
 		};
-		const onFocus = () => void refreshTables();
+		const onFocus = () => {
+			void refreshTables();
+			refreshPushState();
+		};
 		document.addEventListener('visibilitychange', onVisibility);
 		window.addEventListener('focus', onFocus);
+		const unsubscribePermission = onPushPermissionChange(refreshPushState);
 		return () => {
 			document.removeEventListener('visibilitychange', onVisibility);
 			window.removeEventListener('focus', onFocus);
+			unsubscribePermission();
 		};
 	});
 
@@ -322,7 +346,7 @@
 				<section class="card">
 			<h2>Notifications</h2>
 			<p class="hint">
-				If you're on the "Waiting On" list longer than your chosen time, we'll send a reminder.
+				If a table is waiting on you longer than your chosen time, we'll send a reminder.
 			</p>
 			<div class="row">
 				<span class="label">Remind me</span>
@@ -344,7 +368,13 @@
 				{:else if pushState === 'ios-needs-install'}
 					<span class="muted-text small">Add Uneasy to your Home Screen (Share → Add to Home Screen) to enable push on iPhone/iPad.</span>
 				{:else if pushState === 'denied'}
-					<span class="muted-text small">Blocked — allow notifications for this site in your browser settings.</span>
+					<div class="push-blocked-row">
+						<span class="muted-text small">
+							Blocked by your browser. We can't ask again from here — this switch only
+							exists in your browser's own settings:
+						</span>
+						<PushBlockedHelp />
+					</div>
 				{:else}
 					<span>Push notifications: {pushState === 'on' ? 'On' : 'Off'}</span>
 					<button class="action-btn primary" onclick={togglePush} disabled={pushBusy}>
@@ -461,6 +491,9 @@
 	}
 	.row span:not(.label) { flex:1; min-width:0; }
 	.push-row { border-bottom: none; }
+	/* The blocked case is a paragraph plus a numbered list, not a value that
+	   can sit inline next to its label like the other rows' controls. */
+	.push-blocked-row { flex: 1 1 100%; display: flex; flex-direction: column; gap: 0.4rem; }
 	.push-hint { margin-top: -0.3rem; }
 	/* Renders in place of .profile, so it carries the same gutter — main.flush
 	   no longer supplies one. */

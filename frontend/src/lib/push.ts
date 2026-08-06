@@ -67,6 +67,117 @@ export function derivePushState(input: {
 	return 'off';
 }
 
+// Recovery steps for the one state we cannot fix in code: once the browser
+// has this origin blocked, no API resets it and no second prompt is possible
+// (see enablePush). All we can do is tell the player exactly where the switch
+// lives, which differs per browser — hence a pure function over the UA string
+// so the branches are unit-testable without a real browser.
+export type BlockedHelp = {
+	steps: string[];
+	/** Desktop only: the OS can mute the browser even after the site is allowed. */
+	note?: string;
+};
+
+export function deriveBlockedHelp(input: { ua: string; isIOS: boolean }): BlockedHelp {
+	const { ua, isIOS } = input;
+	const retry = 'Reload this page and turn notifications on again.';
+
+	// iOS reaches here only as an installed home-screen app (an un-installed
+	// one is 'ios-needs-install'), and there the switch is in iOS Settings
+	// rather than anywhere in the browser.
+	if (isIOS) {
+		return {
+			steps: [
+				'Open the iOS Settings app and tap Notifications.',
+				'Find Uneasy in the list and turn Allow Notifications on.',
+				'Reopen Uneasy from your Home Screen and turn notifications on again.',
+			],
+		};
+	}
+
+	// Android before browser family: Chrome, Edge and Firefox all hide this
+	// behind the same address-bar icon there.
+	if (/Android/.test(ua)) {
+		return {
+			steps: [
+				'Tap the icon just left of the web address, then tap Permissions.',
+				'Set Notifications to Allow.',
+				retry,
+			],
+		};
+	}
+
+	const note = /Mac OS X/.test(ua)
+		? "If your Mac itself is muting your browser, allowing here won't be enough — check System Settings → Notifications."
+		: /Windows/.test(ua)
+			? "If Windows itself is muting your browser, allowing here won't be enough — check Settings → System → Notifications."
+			: undefined;
+
+	if (/Firefox\//.test(ua)) {
+		return {
+			steps: [
+				'Click the lock icon just left of the web address.',
+				'Next to “Send Notifications: Blocked”, click the × to clear the setting.',
+				retry,
+			],
+			note,
+		};
+	}
+
+	// Edge reports both "Edg/" and "Chrome/"; the steps are identical anyway.
+	if (/Chrome\/|Chromium\//.test(ua)) {
+		return {
+			steps: [
+				'Click the icon just left of the web address (a bell, sliders, or a lock).',
+				'Set Notifications to Allow.',
+				retry,
+			],
+			note,
+		};
+	}
+
+	if (/Safari\//.test(ua)) {
+		return {
+			steps: [
+				'Open Safari → Settings → Websites → Notifications.',
+				'Find this site in the list and set it to Allow.',
+				'Come back here and turn notifications on again.',
+			],
+			note,
+		};
+	}
+
+	return {
+		steps: ["Open your browser's settings for this site.", 'Set Notifications to Allow.', retry],
+		note,
+	};
+}
+
+// Calls back whenever the notification permission changes — including from
+// the browser's own settings UI, in another tab, while this page sits open.
+// Without it a player who follows the recovery steps above comes back to a
+// screen still insisting they're blocked. Returns an unsubscribe function.
+//
+// Safari doesn't accept 'notifications' in permissions.query (it rejects), so
+// the failure path is silent and callers keep their other refresh triggers.
+export function onPushPermissionChange(cb: () => void): () => void {
+	if (typeof navigator === 'undefined' || !navigator.permissions?.query) return () => {};
+	let status: PermissionStatus | null = null;
+	let cancelled = false;
+	navigator.permissions
+		.query({ name: 'notifications' as PermissionName })
+		.then((s) => {
+			if (cancelled) return;
+			status = s;
+			s.addEventListener('change', cb);
+		})
+		.catch(() => {});
+	return () => {
+		cancelled = true;
+		status?.removeEventListener('change', cb);
+	};
+}
+
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
 	if (!isPushApiSupported()) return null;
 	try {
@@ -100,6 +211,12 @@ export async function getPushState(): Promise<PushState> {
 // aren't. Returns the resulting state either way.
 export async function enablePush(vapidPublicKey: string): Promise<PushState> {
 	if (!isPushApiSupported() || !vapidPublicKey) return getPushState();
+
+	// Asking again once we're blocked cannot produce a prompt: the promise
+	// resolves 'denied' immediately and Chrome pops its own "Notifications
+	// blocked" bubble by the address bar, which reads to the player as the app
+	// misbehaving. Bail out so the caller shows deriveBlockedHelp instead.
+	if (Notification.permission === 'denied') return getPushState();
 
 	const permission = await Notification.requestPermission();
 	if (permission !== 'granted') return getPushState();

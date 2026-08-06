@@ -7,7 +7,8 @@
 	import '$lib/components/shared/statusText.css';
 	import { startPrologue } from '$lib/api';
 	import type { Game, Player } from '$lib/api';
-	import { getPushState, enablePush, type PushState } from '$lib/push';
+	import { getPushState, enablePush, onPushPermissionChange, type PushState } from '$lib/push';
+	import PushBlockedHelp from '$lib/components/shared/PushBlockedHelp.svelte';
 	import HelpContent from '../HelpContent.svelte';
 	import HelpGlyph from '../HelpGlyph.svelte';
 	import { onMount } from 'svelte';
@@ -66,8 +67,16 @@
 	let pushState = $state<PushState>('unsupported');
 	let pushCardDismissed = $state(true);
 	let pushCardBusy = $state(false);
+	let pushError = $state('');
+	// Whether *this* visit asked the browser. Gates the blocked-recovery copy:
+	// someone who blocked us months ago shouldn't be nagged about it on every
+	// lobby they open — that case belongs to the Profile page.
+	let pushAttempted = $state(false);
 	const showPushCard = $derived(
-		!pushCardDismissed && (pushState === 'off' || pushState === 'ios-needs-install')
+		!pushCardDismissed &&
+			(pushState === 'off' ||
+				pushState === 'ios-needs-install' ||
+				(pushAttempted && pushState === 'denied'))
 	);
 	function dismissPushCard() {
 		pushCardDismissed = true;
@@ -75,17 +84,62 @@
 	}
 	async function enablePushFromLobby() {
 		pushCardBusy = true;
+		pushError = '';
 		try {
 			pushState = await enablePush(vapidPublicKey);
+		} catch (e) {
+			pushError = e instanceof Error ? e.message : 'Could not turn on notifications.';
+			pushState = await getPushState().catch(() => pushState);
 		} finally {
+			pushAttempted = true;
 			pushCardBusy = false;
-			dismissPushCard();
+			// Retire the card only on success. It used to dismiss unconditionally
+			// — and dismissal is written to localStorage — so a refusal hid the
+			// card forever with no acknowledgement at all: the player saw the
+			// browser's "Notifications blocked" bubble and then nothing from us,
+			// with no route back short of finding the Profile page.
+			if (pushState === 'on') dismissPushCard();
 		}
 	}
 
-	onMount(async () => {
+	function refreshPushState() {
+		// Not mid-request: the permission prompt blurs the page, so the focus
+		// handler below fires *during* enablePush. That read would see
+		// granted-but-not-yet-subscribed ('off') and could land after
+		// enablePush's own 'on', flipping the card back to the ask.
+		if (pushCardBusy) return;
+		void getPushState()
+			.then((s) => {
+				// Both attempt annotations below ("blocked" / "nothing changed")
+				// describe the last click. A state change since then can only have
+				// come from browser settings, which makes them stale — drop them
+				// so a player who has just un-blocked us gets the clean ask back.
+				if (s !== pushState) pushAttempted = false;
+				pushState = s;
+			})
+			.catch(() => {});
+	}
+
+	onMount(() => {
 		pushCardDismissed = localStorage.getItem(PUSH_PROMPT_DISMISSED_KEY) === '1';
-		pushState = await getPushState();
+		refreshPushState();
+		// Following the recovery steps happens in browser settings, not here, so
+		// re-read on the way back — otherwise the card keeps insisting they're
+		// blocked after they've allowed us. The permission event covers the
+		// same-tab case; the focus/visibility pair covers Safari, which rejects
+		// permissions.query for notifications. This reads the browser, not the
+		// server, so it costs nothing per fire.
+		const unsubscribePermission = onPushPermissionChange(refreshPushState);
+		const onVisibility = () => {
+			if (document.visibilityState === 'visible') refreshPushState();
+		};
+		document.addEventListener('visibilitychange', onVisibility);
+		window.addEventListener('focus', refreshPushState);
+		return () => {
+			unsubscribePermission();
+			document.removeEventListener('visibilitychange', onVisibility);
+			window.removeEventListener('focus', refreshPushState);
+		};
 	});
 </script>
 
@@ -135,12 +189,28 @@
 					then "Add to Home Screen". Open Uneasy from there to get notified when it's your turn.
 				</p>
 				<button class="action-btn secondary" onclick={dismissPushCard}>Got it</button>
+			{:else if pushState === 'denied'}
+				<div role="status">
+					<h2>Your browser blocked the request</h2>
+					<p class="muted-text">
+						That's a browser setting, so we can't ask again from here — but you can undo it:
+					</p>
+					<PushBlockedHelp />
+				</div>
+				<button class="action-btn secondary" onclick={dismissPushCard}>Got it</button>
 			{:else}
 				<h2>Get notified when it's your turn</h2>
 				<p class="muted-text">
 					Turn on push notifications for this device so you don't have to keep checking back.
 					You can change this any time in your Profile.
 				</p>
+				{#if pushError}
+					<ErrorText message={pushError} />
+				{:else if pushAttempted}
+					<p class="muted-text small" role="status">
+						Nothing changed — the browser prompt was closed without an answer. You can try again.
+					</p>
+				{/if}
 				<div class="push-card-actions">
 					<button class="action-btn primary" onclick={enablePushFromLobby} disabled={pushCardBusy}>
 						{pushCardBusy ? '…' : 'Enable notifications'}
