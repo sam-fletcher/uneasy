@@ -167,14 +167,100 @@
 	function onClaimEvent() { reload(); }
 	function onStepChanged() { reload(); }
 
+	/**
+	 * Rebuild the CommittedHeart rows for one player+track from a card-id list.
+	 *
+	 * The WS payload carries ids only, but every player's cards are already on
+	 * this client (getPrologueCards returns the whole table), so value and suit
+	 * are a local lookup rather than a fetch. Returns null if any id is
+	 * unknown — the caller then falls back to reload(), so a card we somehow
+	 * haven't seen degrades to the old behaviour instead of silently dropping
+	 * a commitment out of the projection.
+	 */
+	function heartsFrom(
+		playerID: number,
+		track: PrologueTrack,
+		cardIDs: number[]
+	): CommittedHeart[] | null {
+		const out: CommittedHeart[] = [];
+		for (const id of cardIDs) {
+			const c = cards.find((x) => x.id === id);
+			if (!c) return null;
+			out.push({
+				player_id: playerID,
+				track,
+				card_id: id,
+				value: c.card_value,
+				suit: 'H',
+			});
+		}
+		return out;
+	}
+
+	/** Replace one player's committed set for one track. The server's payload
+	 *  is a full replacement for exactly that slice, so this is a whole-slice
+	 *  swap rather than a merge — no duplicate-row risk. */
+	function applyCommitted(
+		playerID: number,
+		track: PrologueTrack,
+		cardIDs: number[]
+	): boolean {
+		const rows = heartsFrom(playerID, track, cardIDs);
+		if (!rows) return false;
+		committed = [
+			...committed.filter((h) => !(h.player_id === playerID && h.track === track)),
+			...rows,
+		];
+		return true;
+	}
+
+	function setDoneFlag(playerID: number, track: PrologueTrack, done: boolean) {
+		doneFlags = [
+			...doneFlags.filter((d) => !(d.player_id === playerID && d.track === track)),
+			{ player_id: playerID, track, done },
+		];
+	}
+
+	/**
+	 * The two events a tap produces, applied in place instead of refetched.
+	 *
+	 * One tap used to cost SEVEN requests: the POST, then a reload() for
+	 * `committed_hearts_changed` and another for the `done_changed` the same
+	 * handler emits — three GETs each. Nothing about the hand changed until the
+	 * last of them landed, which on localhost is invisible and in production
+	 * (~105ms RTT, ~25ms per DB hop) is most of half a second of a card sitting
+	 * there looking untapped.
+	 *
+	 * Both payloads are complete for the slice they describe
+	 * (PrologueCommittedHeartsChangedPayload documents CardIDs as "the player's
+	 * full committed-card list for the given track after the change"), so
+	 * neither needs the server asked again. This is the saving for EVERY
+	 * connected client, not just the one who tapped.
+	 */
+	function onCommittedHeartsChanged(e: Event) {
+		const d = (e as CustomEvent<{ player_id: number; track: PrologueTrack; card_ids: number[] }>)
+			.detail;
+		if (!d || !applyCommitted(d.player_id, d.track, d.card_ids ?? [])) reload();
+	}
+
+	function onDoneChanged(e: Event) {
+		const d = (e as CustomEvent<{ player_id: number; track: PrologueTrack; done: boolean }>)
+			.detail;
+		if (!d) {
+			reload();
+			return;
+		}
+		setDoneFlag(d.player_id, d.track, d.done);
+	}
+
 	onMount(() => {
 		window.addEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
 		window.addEventListener('uneasy:prologue.turn_advanced', onClaimEvent);
 		window.addEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
 		window.addEventListener('uneasy:prologue.track_ranked', onStepChanged);
 		window.addEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
-		window.addEventListener('uneasy:prologue.committed_hearts_changed', onClaimEvent);
-		window.addEventListener('uneasy:prologue.done_changed', onClaimEvent);
+		window.addEventListener('uneasy:prologue.committed_hearts_changed', onCommittedHeartsChanged);
+		window.addEventListener('uneasy:prologue.done_changed', onDoneChanged);
 		window.addEventListener('uneasy:prologue.extra_peer_created', onClaimEvent);
 		window.addEventListener('uneasy:prologue.closing_ready_changed', onClaimEvent);
 	});
@@ -184,8 +270,8 @@
 		window.removeEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
 		window.removeEventListener('uneasy:prologue.track_ranked', onStepChanged);
 		window.removeEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
-		window.removeEventListener('uneasy:prologue.committed_hearts_changed', onClaimEvent);
-		window.removeEventListener('uneasy:prologue.done_changed', onClaimEvent);
+		window.removeEventListener('uneasy:prologue.committed_hearts_changed', onCommittedHeartsChanged);
+		window.removeEventListener('uneasy:prologue.done_changed', onDoneChanged);
 		window.removeEventListener('uneasy:prologue.extra_peer_created', onClaimEvent);
 		window.removeEventListener('uneasy:prologue.closing_ready_changed', onClaimEvent);
 	});
@@ -433,7 +519,10 @@
 	}
 
 	// ── Hearts declaration (max-commitment model) ────────────────────────────
-	let savingHearts = $state(false);
+	// (No `savingHearts`: card taps apply locally and sync behind the user, so
+	// there is no in-flight state for the hand to render. `savingDone` stays —
+	// the last Done press resolves the whole track server-side, which is not a
+	// local computation, so that button does still wait.)
 	let savingDone = $state(false);
 
 	const myCommittedOnTrack = $derived.by(() => {
@@ -559,35 +648,110 @@
 		if (slot != null) pulseTrackRow(t, currentPlayerID);
 	});
 
-	async function commitOrRetract(cardID: number, retract: boolean) {
-		if (savingHearts || !currentTrack || currentPlayerID == null) return;
-		savingHearts = true;
-		actionError = '';
+	/**
+	 * Push the viewer's current committed set for a track to the server.
+	 *
+	 * Coalescing, not serialising. The endpoint is a full replace, and the
+	 * desired state is always "whatever `committed` says right now" — so a
+	 * second tap never has to wait for the first request to land, it just marks
+	 * the track dirty again and the loop below picks up the newer state on its
+	 * next pass. That is what lets the busy gate come off the hand: the old
+	 * code took `savingHearts` as a lock and dropped any tap that arrived
+	 * during the round trip, which in production was most of half a second per
+	 * card.
+	 *
+	 * Failure recovery is a reload rather than a rollback to a snapshot: with
+	 * coalescing there is no single "before" to go back to, and the server is
+	 * authoritative anyway.
+	 */
+	let dirtyTrack: PrologueTrack | null = null;
+	let flushingHearts = false;
+
+	async function flushCommittedHearts() {
+		if (flushingHearts) return;
+		flushingHearts = true;
 		try {
-			let next = myCommittedOnTrack.slice();
-			if (retract) {
-				next = next.filter((id) => id !== cardID);
-			} else if (!next.includes(cardID)) {
-				next.push(cardID);
+			while (dirtyTrack != null) {
+				const track = dirtyTrack;
+				dirtyTrack = null;
+				const next = committed
+					.filter((h) => h.player_id === currentPlayerID && h.track === track)
+					.map((h) => h.card_id);
+				await commitTrackHearts(gameID, track, next);
 			}
-			await commitTrackHearts(gameID, currentTrack as PrologueTrack, next);
 		} catch (e) {
-			actionError = e instanceof Error ? e.message : 'Could not update hearts.';
-			// Server rejected — our view of the step may be stale. Pull
-			// fresh state so the UI catches up.
+			actionError = e instanceof Error ? e.message : 'Could not update your cards.';
+			dirtyTrack = null;
+			// Server rejected — our view of the step may be stale. Pull fresh
+			// state so the UI catches up.
 			onResync?.();
 			reload();
 		} finally {
-			savingHearts = false;
+			flushingHearts = false;
 		}
 	}
 
+	/**
+	 * Tap handler. Applies the change locally FIRST, then syncs.
+	 *
+	 * The card used to change only once the POST, a WebSocket round trip and
+	 * three follow-up GETs had all completed — seven requests deep. Every fact
+	 * the tap changes (which cards sit on the track, which of them are doing
+	 * work, where that puts you on the board) is computed client-side from
+	 * `committed` by refund.ts, which the server runs the same way at
+	 * resolution. So the tap can land at frame rate and the network can catch
+	 * up behind it; this is what PROLOGUE_RANKING_UI_PLAN.md meant by "computed
+	 * client-side for instant visual feedback ... and validated server-side on
+	 * every WS broadcast so all clients agree". Only the wiring was missing.
+	 */
+	function commitOrRetract(cardID: number, retract: boolean) {
+		if (!currentTrack || currentPlayerID == null) return;
+		const track = currentTrack as PrologueTrack;
+		const card = cards.find((c) => c.id === cardID);
+		if (!card) return;
+		actionError = '';
+
+		committed = retract
+			? committed.filter(
+					(h) => !(h.card_id === cardID && h.player_id === currentPlayerID)
+				)
+			: [
+					...committed.filter(
+						(h) => !(h.card_id === cardID && h.player_id === currentPlayerID)
+					),
+					{
+						player_id: currentPlayerID,
+						track,
+						card_id: cardID,
+						value: card.card_value,
+						suit: 'H',
+					},
+				];
+		// The server clears your done flag on any commit (it broadcasts
+		// done_changed:false alongside). Mirror it locally so the button below
+		// doesn't sit on "Done ✓" for a round trip after you've changed your mind.
+		setDoneFlag(currentPlayerID, track, false);
+
+		dirtyTrack = track;
+		void flushCommittedHearts();
+	}
+
+	/** Same optimistic treatment as a card tap, for the same reason — the
+	 *  button's own label is driven by `myDoneOnTrack`, so waiting on the round
+	 *  trip left it reading "I'm done" after you had pressed it. The last
+	 *  player's press also resolves the track server-side, and THAT arrives as
+	 *  track_ranked / ranking_step_changed, which still reload() — a resolution
+	 *  rewrites rankings, refunds and the step, none of which is derivable
+	 *  here. */
 	async function toggleDone() {
-		if (savingDone || !currentTrack) return;
+		if (savingDone || !currentTrack || currentPlayerID == null) return;
+		const track = currentTrack as PrologueTrack;
+		const next = !myDoneOnTrack;
 		savingDone = true;
 		actionError = '';
+		setDoneFlag(currentPlayerID, track, next);
 		try {
-			await setPrologueDone(gameID, currentTrack as PrologueTrack, !myDoneOnTrack);
+			await setPrologueDone(gameID, track, next);
 		} catch (e) {
 			actionError = e instanceof Error ? e.message : 'Could not update done.';
 			onResync?.();
@@ -1127,7 +1291,6 @@
 					{committed}
 					activeTrack={currentTrack as PrologueTrack}
 					brightSet={brightForViewer}
-					busy={savingHearts}
 					{resolvedTracks}
 					onCommit={(id) => commitOrRetract(id, false)}
 					onRetract={(id) => commitOrRetract(id, true)}

@@ -48,7 +48,6 @@
 		committed: CommittedHeart[];
 		activeTrack: PrologueTrack;
 		brightSet: Set<number>;
-		busy?: boolean;
 		resolvedTracks: Set<PrologueTrack>;
 		onCommit: (cardID: number) => void;
 		onRetract: (cardID: number) => void;
@@ -59,7 +58,6 @@
 		committed,
 		activeTrack,
 		brightSet,
-		busy = false,
 		resolvedTracks,
 		onCommit,
 		onRetract
@@ -96,8 +94,11 @@
 		return c?.track === activeTrack;
 	}
 
+	// No in-flight lock. The parent applies a tap locally and syncs behind it,
+	// coalescing repeats, so there is no window where a tap has to be refused —
+	// and a `busy` gate here would refuse taps for a whole round trip while the
+	// card visibly looked ready for the next one.
 	function handleClick(cardID: number) {
-		if (busy) return;
 		if (isLocked(cardID)) return;
 		if (isOnActive(cardID)) {
 			onRetract(cardID);
@@ -186,7 +187,7 @@
 					class:on-active={onActive}
 					class:grey={greyHere}
 					class:locked
-					disabled={locked || busy}
+					disabled={locked}
 					onclick={() => handleClick(h.id)}
 					aria-pressed={locked ? undefined : onActive}
 					title={locked

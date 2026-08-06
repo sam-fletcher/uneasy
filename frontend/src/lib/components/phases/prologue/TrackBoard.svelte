@@ -450,8 +450,7 @@
 		     one row missing. -->
 		<section class="unspent" aria-label="Any-track cards still in hand">
 			<h4 class="unspent-head">
-				<span class="track-code wild" aria-hidden="true">{trackCode('H')}</span>
-				still in hand
+				Unspent <span class="track-code wild" aria-hidden="true">{trackCode('H')}</span> cards:
 			</h4>
 			<ul class="unspent-list">
 				{#each unspentWilds as u (u.id)}
