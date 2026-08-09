@@ -15,8 +15,10 @@
 	import '$lib/components/shared/rankChip.css';
 	import '$lib/components/shared/cornerBadge.css';
 	import '$lib/components/shared/marginaliaTile.css';
-	import { PLAN_SHORT, PLAN_DESCRIPTION, TRACK_ORDER } from './plans/shared';
+	import { PLAN_SHORT, TRACK_ORDER } from './plans/shared';
 	import CrownGlyph from './CrownGlyph.svelte';
+	import AssetTypeIcon from './AssetTypeIcon.svelte';
+	import type { Asset } from '$lib/api';
 
 	// Panel mode (the ? sheet): the help fills the sheet to a fixed height and the
 	// body scrolls internally, so the footer is pinned and blank space is never
@@ -27,8 +29,9 @@
 	// own separate Feedback sheet; this component has no opinion on that).
 	let { panel = false, onFeedback }: { panel?: boolean; onFeedback: () => void } = $props();
 
-	type TabId = 'record' | 'plans' | 'rankings' | 'dice' | 'assets';
+	type TabId = 'goal' | 'record' | 'plans' | 'rankings' | 'dice' | 'assets';
 	const tabs: { id: TabId; label: string }[] = [
+		{ id: 'goal', label: 'Goal' },
 		{ id: 'record', label: 'Public Record' },
 		{ id: 'rankings', label: 'Rankings' },
 		{ id: 'plans', label: 'Plans' },
@@ -36,7 +39,10 @@
 		{ id: 'dice', label: 'Dice' },
 	];
 
-	let active = $state<TabId>('record');
+	// Opens on Goal: it's the orientation tab, and a player who taps "?" without
+	// knowing what the game IS gets that answer before the Public Record's
+	// mechanics. Anyone past that point is one tap from where they were.
+	let active = $state<TabId>('goal');
 
 	// y-coordinate of the Shake-Up pseudo-row in the record diagram, one row
 	// pitch (11 units) below row 13's line (y = 7 + 12 * 11 = 139).
@@ -85,10 +91,22 @@
 		{ label: 'Esteem', rank: 4, status: 2 },
 	];
 
+	// The four asset types for the Assets-tab reference grid. The glyph comes
+	// from the real AssetTypeIcon so the help can never teach an icon the app
+	// no longer draws; the badge is the .ex-asset-type replica of RetinueView's
+	// .asset-type chip (restyle the two together).
+	const assetTypes: { id: Asset['asset_type']; label: string; desc: string }[] = [
+		{ id: 'holding', label: 'Holding', desc: 'Land and buildings.' },
+		{ id: 'peer', label: 'Peer', desc: 'The people of the court.' },
+		{ id: 'artifact', label: 'Artifact', desc: 'Trinkets, relics, and other objects.' },
+		{ id: 'resource', label: 'Resource', desc: 'Materials, traditions, logistics.' },
+	];
+
 	// The twelve plans, grouped by category, for the Plans-tab reference grid.
-	// Names and descriptions are derived from the canonical PLAN_SHORT /
-	// PLAN_DESCRIPTION used in-game, so the help and gameplay never drift.
-	const planGroups: { category: string; plans: { name: string; desc: string }[] }[] = (
+	// Names come from the canonical PLAN_SHORT and the order from TRACK_ORDER —
+	// the same two the in-game plan sheet reads — so the help can't drift from
+	// what a player sees when they prepare.
+	const planGroups: { category: string; plans: string[] }[] = (
 		[
 			['Power', 'power'],
 			['Knowledge', 'knowledge'],
@@ -96,10 +114,7 @@
 		] as const
 	).map(([category, track]) => ({
 		category,
-		plans: TRACK_ORDER[track].map((pt) => ({
-			name: PLAN_SHORT[pt],
-			desc: PLAN_DESCRIPTION[pt],
-		})),
+		plans: TRACK_ORDER[track].map((pt) => PLAN_SHORT[pt]),
 	}));
 </script>
 
@@ -119,6 +134,28 @@
 	</nav>
 
 	<div class="body">
+		{#if active === 'goal'}
+			<p><em>Uneasy Lies the Head</em> is a story game for 2-5 players in a royal court. 
+				You each play a noble and the retinue around them, scheming for Power, Knowledge, and Esteem.</p>
+			<p>There's no winner, but the game works best if everyone embraces the competitive, political nature of the game.</p>
+
+			<div class="pace-pair">
+				<div class="pace-item">
+					<h5 class="pace-head">In real time</h5>
+					<span class="pace-text">Everyone together, maybe in a voice or video call, making moves live.</span>
+				</div>
+				<div class="pace-item">
+					<h5 class="pace-head">Play by post</h5>
+					<span class="pace-text">Take your turn, close the tab, come back tomorrow.</span>
+				</div>
+			</div>
+
+			<p>Either pace works — the game will always wait for you.</p>
+			<p>The <em>chat</em> serves both styles: table conversation and a running log of everything the court has done, 
+				so it's the quickest way to catch up.</p>
+			<p><em>Profile → Notifications</em> sets how often the game reminds you it's your move.</p>
+		{/if}
+
 		{#if active === 'record'}
 			<div class="record-intro">
 				<figure class="diagram diagram-record">
@@ -165,27 +202,24 @@
 			<p>Twelve plans, split across three categories. Each blends roleplaying with a dice roll, and takes a few turns to resolve after you prepare it.</p>
 			<p>Preparing plans higher in the columns will help more when ranks are updated.</p>
 
+			<!-- One grid rather than three stacked columns: the cells are placed
+			     into shared rows so tier N of Power sits level with tier N of
+			     Knowledge and Esteem. That alignment is the point — the
+			     sentence above only reads as true if the columns line up. -->
 			<div class="plan-grid">
-				{#each planGroups as group}
-					<div class="plan-col">
-						<h5 class="plan-cat">{group.category}</h5>
-						<div class="plan-list">
-							{#each group.plans as plan}
-								<div class="plan-item">
-									<span class="plan-name">{plan.name}</span>
-									<span class="plan-desc">{plan.desc}</span>
-								</div>
-							{/each}
-						</div>
-					</div>
+				{#each planGroups as group, gi}
+					<h5 class="plan-cat" style:grid-column={gi + 1} style:grid-row={1}>{group.category}</h5>
+					{#each group.plans as name, pi}
+						<span class="plan-item" style:grid-column={gi + 1} style:grid-row={pi + 2}>{name}</span>
+					{/each}
 				{/each}
 			</div>
 		{/if}
 
 		{#if active === 'rankings'}
 			<p>After the prologue, everyone is ranked against each other in Power, Knowledge, and Esteem.</p>
-			<p>The relevant rank feeds into the dice rolls for plans.</p>
-			<p>The ranks will change after rows 4, 8, and 12 based on each player's <em>plans</em> in the category.</p>
+			<p>The relevant rank feeds into the dice rolls for <em>plans</em>.</p>
+			<p>The ranks will change after rows 4, 8, and 12 based on each player's plans in the category.</p>
 
 			<figure class="diagram">
 				<div class="ex-chip-row" aria-hidden="true">
@@ -283,14 +317,33 @@
 		{/if}
 
 		{#if active === 'assets'}
-			<p>Everything your character controls is an asset. There are 4 types:</p>
-			<ul>
-				<li><em>Holdings</em> — land and buildings.</li>
-				<li><em>Peers</em> — the people of the court.</li>
-				<li><em>Artifacts</em> — trinkets, relics, and other objects.</li>
-				<li><em>Resources</em> — anything from materials to traditions to logistics.</li>
-			</ul>
-			<p>Each asset has up to 4 <em>marginalia</em> — descriptive words or phrases that flesh out the asset.</p>
+			<p>Everything your character controls is an asset. There are four types:</p>
+
+			<div class="type-grid">
+				{#each assetTypes as t}
+					<div class="type-item">
+						<span class="type-head">
+							<AssetTypeIcon type={t.id} size={20} />
+							<span class="ex-asset-type">{t.label}</span>
+						</span>
+						<span class="type-desc">{t.desc}</span>
+					</div>
+				{/each}
+			</div>
+			<!-- <p class="type-note">
+				You'll meet the <em>glyph</em> on its own wherever space is tight — picker rows, prologue
+				cards — and the <em>badge</em> on the asset's card in a Retinue.
+			</p> -->
+
+			<p>
+				Each asset has up to four <em>marginalia</em> — descriptive words or phrases that flesh out the asset.
+				Writing marginalia is one of the best tools you have to set the stakes of the story.
+			</p>
+			<p>
+				Adding and removing marginalia fundamentally changes the asset in the fiction.
+				If a flaw gets torn off, that might represent character growth. 
+				If a belief or a utility is broken, it might be a tragedy.
+			</p>
 
 			<figure class="diagram">
 				<div class="ex-asset main" aria-hidden="true">
@@ -358,20 +411,42 @@
 		gap: 0.75rem;
 		font-family: var(--font-serif);
 		font-size: 0.95rem;
+		/* Own query container for the tab row below. It has to be THIS element
+		   rather than the phase column's named `column`: the help mounts both
+		   inline in the lobby (inside that column) and in the "?" sheet (a
+		   fixed-position dialog outside it), and only its own width is a fact
+		   in both places. */
+		container-type: inline-size;
 	}
 
-	/* Tabs: tuned to fit all five on a ~390px phone without scrolling; still
-	   scrolls horizontally on narrower devices as a fallback. */
+	/* Tabs never scroll. The old horizontal scroller hid its overflow behind a
+	   suppressed scrollbar, and at 360 — the floor of the design band
+	   (STYLE_GUIDE "Layout widths") — five tabs already overran the panel by
+	   ~10px with nothing on screen to say so.
+
+	   Mobile-first default: three equal columns, so six tabs split 3 + 3.
+	   Plain `flex-wrap` was the obvious alternative and it's wrong — it fills
+	   the first row greedily and strands a lone sixth tab on the second. */
 	.tabs {
-		display: flex;
-		gap: 0.25rem;
-		overflow-x: auto;
-		-webkit-overflow-scrolling: touch;
-		scrollbar-width: none;
-		margin: 0 -0.25rem;
-		padding: 0 0.25rem 0.25rem;
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.3rem 0.25rem;
+		padding-bottom: 0.25rem;
 	}
-	.tabs::-webkit-scrollbar { display: none; }
+
+	/* One row once the column can hold all six at their natural widths (~388px
+	   total). Queried against .help rather than the viewport because the two
+	   mount points disagree: at a 800px viewport the "?" sheet is 406px wide
+	   (one row fits) while the lobby's inline column is only 364 (it does
+	   not) — a viewport query orphans "Dice" in the lobby. The 400 threshold
+	   is the documented container literal nearest that 388, and clears it. */
+	@container (min-width: 400px) {
+		.tabs {
+			display: flex;
+			flex-wrap: wrap;
+			justify-content: center;
+		}
+	}
 
 	.tab {
 		flex-shrink: 0;
@@ -384,7 +459,9 @@
 		border: 1px solid var(--color-border-strong);
 		border-radius: 999px;
 		cursor: pointer;
-		white-space: nowrap;
+		/* No nowrap: in the narrow grid below, an equal third of a 344px column
+		   leaves "Public Record" under 2px of slack. Letting it take two lines
+		   at the very bottom of the range beats overflowing the pill. */
 	}
 	.tab:hover { background: var(--color-border); color: var(--color-text); }
 	.tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
@@ -412,15 +489,10 @@
 		.help.panel .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 		.help.panel .help-footer { flex-shrink: 0; }
 	}
+	/* No list rules here on purpose: every tab now teaches with a grid or a
+	   diagram rather than a bulleted list. Add them back alongside the markup
+	   if a list ever returns. */
 	.body :global(p) { margin: 0 0 0.6rem; }
-	.body :global(ul), .body :global(ol) {
-		margin: 0 0 0.7rem;
-		padding-left: 1.3rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-	}
-	.body :global(li) { padding-left: 0.15rem; }
 
 	.diagram {
 		margin: 0.75rem 0 0.5rem;
@@ -467,34 +539,77 @@
 	.dice-mar-wrap { text-align: center; }
 	.dice-mar { display: inline-block; border: 2px solid var(--color-danger); border-radius: 6px; padding: 0.05rem 0.7rem; color: var(--color-danger); font-style: italic; font-size: 1rem; letter-spacing: 0.12em; }
 
+	/* ── Pace pair (Goal tab) ────────────────────────────────────────────── */
+	/* Two cards rather than a sentence each: the whole point is that the two
+	   styles are equals, and side-by-side says that faster than prose can. */
+	.pace-pair {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.4rem;
+		margin: 0.5rem 0 0.7rem;
+	}
+	.pace-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.5rem 0.55rem;
+		background: var(--color-surface-sunken, var(--color-surface-2));
+		border: 1px solid var(--color-border);
+		border-radius: 4px;
+	}
+	.pace-head {
+		margin: 0;
+		font-size: clamp(0.7rem, 2.2vw, 0.85rem);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-accent);
+	}
+	.pace-text {
+		font-size: clamp(0.68rem, 2.2vw, 0.88rem);
+		line-height: 1.35;
+		color: var(--color-text-muted);
+	}
+
 	/* ── Plans reference grid ────────────────────────────────────────────── */
 	/* Always three columns (one per category). Type shrinks on narrow widths
-	   rather than dropping columns — cramped is acceptable, hidden is not. */
+	   rather than dropping columns — cramped is acceptable, hidden is not.
+	   `repeat(4, 1fr)` on the plan rows gives every row the height of the
+	   tallest cell, so a two-line name never knocks its neighbours out of
+	   line; the header row stays auto. */
 	.plan-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		gap: 0.3rem;
-		margin-top: 0.25rem;
+		grid-template-rows: auto repeat(4, 1fr);
+		gap: 0.4rem;
+		margin-top: 0.4rem;
 	}
 	.plan-cat {
-		margin: 0 0 0.35rem;
+		margin: 0 0 0.1rem;
 		font-size: clamp(0.68rem, 2vw, 0.85rem);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		text-align: center;
 		color: var(--color-accent);
 	}
-	.plan-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+	/* Names only (owner ruling): the one-line descriptions turned the tab into
+	   a wall of text new players skipped, and PlanPanel already shows each
+	   description on the card at the moment of choosing. Centred in a
+	   fixed-height cell so the twelve read as a grid, not twelve paragraphs. */
 	.plan-item {
-		padding: 0.4rem 0.45rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 48px;
+		padding: 0.5rem 0.4rem;
+		text-align: center;
+		text-wrap: balance;
 		background: var(--color-surface-sunken, var(--color-surface-2));
 		border: 1px solid var(--color-border);
 		border-radius: 4px;
+		font-size: clamp(0.78rem, 2.9vw, 1rem);
+		line-height: 1.25;
+		color: var(--color-text);
 	}
-	/* Type scales with width: small enough for 3 columns on a phone, comfortably
-	   larger in the roomy desktop modal. */
-	.plan-name { display: block; font-size: clamp(0.74rem, 2.7vw, 1rem); line-height: 1.2; color: var(--color-text); }
-	.plan-desc { display: block; margin-top: 0.15rem; font-size: clamp(0.68rem, 2.2vw, 0.88rem); line-height: 1.3; color: var(--color-text-muted); }
 
 	/* ── Header-chip replica (Rankings tab) ──────────────────────────────── */
 	/* Mirrors .member/.risk-badge in routes/table/[id]/+page.svelte. Kept as a
@@ -538,6 +653,35 @@
 	   this just centres it in the narrow help diagram box. */
 	.ex-rankstrip { width: 100%; max-width: 340px; margin: 0 auto; }
 
+	/* ── Asset-type reference grid (Assets tab) ──────────────────────────── */
+	/* Two columns at every width, same call as .plan-grid: type shrinks rather
+	   than columns collapsing, so the four types always read as one set. */
+	.type-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.4rem;
+		margin: 0.25rem 0 0.6rem;
+	}
+	.type-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		padding: 0.45rem 0.5rem;
+		background: var(--color-surface-sunken, var(--color-surface-2));
+		border: 1px solid var(--color-border);
+		border-radius: 4px;
+	}
+	/* Glyph and badge sit side by side so the two forms are learned as one
+	   pair. The glyph keeps AssetTypeIcon's own --color-text ink — that is how
+	   it renders in the picker rows this is teaching. */
+	.type-head { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+	.type-desc {
+		font-size: clamp(0.68rem, 2.2vw, 0.88rem);
+		line-height: 1.3;
+		color: var(--color-text-muted);
+	}
+	.type-note { font-size: 0.85rem; color: var(--color-text-muted); }
+
 	/* ── Example asset card (Assets tab) ─────────────────────────────────── */
 	.ex-asset {
 		background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 8px;
@@ -553,6 +697,8 @@
 	.ex-eye { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
 	.ex-eye.known { color: var(--color-accent); }
 	.ex-eye.hidden { color: var(--color-text-muted); }
+	/* Replica of RetinueView's .asset-type chip — used by the example card here
+	   AND by the type grid above, so restyle all three together. */
 	.ex-asset-type { flex-shrink: 0; font-size: 0.7rem; background: var(--color-border-warm); color: var(--color-accent); padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
 	.ex-mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
 	/* Base look (background/border/color/torn/titled/empty) comes from

@@ -101,6 +101,7 @@ export function deriveBlockedHelp(input: { ua: string; isIOS: boolean }): Blocke
 		return {
 			steps: [
 				'Tap the icon just left of the web address, then tap Permissions.',
+				'If you don\'t see Notifications in the list, you first need to turn Notifications on for the browser itself.',
 				'Set Notifications to Allow.',
 				retry,
 			],
