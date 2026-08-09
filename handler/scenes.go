@@ -276,7 +276,7 @@ func validateSceneTiming(
 // server fills in `prompt` and `resolved_plan_id` based on the most
 // recently resolved plan on this row (if any).
 //
-//nolint:funlen,gocognit,cyclop // HTTP handler with extensive validation logic
+//nolint:funlen,gocognit // HTTP handler with extensive validation logic
 func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameRow, player, ok := requireFocusPlayer(w, r, s.Q)
@@ -317,15 +317,20 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		switch body.TimeElapsed {
-		case model.TimeMoments, model.TimeHours, model.TimeDays,
-			model.TimeWeeks, model.TimeFlashback, model.TimeSimultaneous:
-		default:
-			respondErr(w, http.StatusBadRequest, "invalid time_elapsed")
+		ctx := r.Context()
+
+		// When: one of the six chips XOR a free-text note, mirroring the
+		// location rule above and the scenes_location_by_kind CHECK that now
+		// enforces both halves. See resolveSceneWhen for how "both" is settled.
+		tn, ok := textField(w, "time_note", body.TimeNote, maxSceneTimeNoteLen)
+		if !ok {
 			return
 		}
-
-		ctx := r.Context()
+		timeElapsed, statusCode, errMsg := resolveSceneWhen(body.TimeElapsed, tn)
+		if statusCode != 0 {
+			respondErr(w, statusCode, errMsg)
+			return
+		}
 
 		// Enforce the rulebook ordering for setting a scene and recover the
 		// follow-scene source (the most-recently resolved plan on this row, if
@@ -347,21 +352,10 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		// Validate holding (if used).
 		if hasHolding {
-			holding, err := s.Q.GetAssetByID(ctx, *body.LocationHoldingID)
-			if err != nil {
-				respondErr(w, http.StatusBadRequest, "holding not found")
-				return
-			}
-			if holding.GameID != gameRow.ID {
-				respondErr(w, http.StatusBadRequest, "holding is not part of this game")
-				return
-			}
-			if holding.AssetType != model.AssetHolding {
-				respondErr(w, http.StatusBadRequest, "location asset must be a holding")
-				return
-			}
-			if holding.IsDestroyed {
-				respondErr(w, http.StatusBadRequest, "holding is destroyed")
+			if statusCode, errMsg := validateSceneHolding(
+				ctx, s.Q, gameRow.ID, *body.LocationHoldingID,
+			); statusCode != 0 {
+				respondErr(w, statusCode, errMsg)
 				return
 			}
 		}
@@ -395,10 +389,6 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			customLoc = &str
 		}
 		var timeNote *string
-		tn, ok := textField(w, "time_note", body.TimeNote, maxSceneTimeNoteLen)
-		if !ok {
-			return
-		}
 		if tn != "" {
 			timeNote = &tn
 		}
@@ -411,7 +401,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				FocusPlayerID:     player.ID,
 				LocationHoldingID: holdingID,
 				LocationCustom:    customLoc,
-				TimeElapsed:       &body.TimeElapsed,
+				TimeElapsed:       timeElapsed,
 				TimeNote:          timeNote,
 				Prompt:            prompt,
 				ResolvedPlanID:    resolvedPlanID,
@@ -483,6 +473,52 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
+// resolveSceneWhen reduces a scene's two When inputs to the one column value
+// the scenes_location_by_kind XOR allows, or a non-zero statusCode + message
+// (same shape as validateAndProcessScenePeers).
+//
+// The note wins when both arrive. The setup form clears one field as soon as
+// the other is filled, so "both" means a tab left open across the 054 deploy,
+// still sending the old `?? 'moments'` fallback beside the note the player
+// actually typed. Dropping the fallback is the same call migration 054's
+// backfill makes about the rows those tabs already wrote.
+func resolveSceneWhen(chip model.TimeElapsed, note string) (*model.TimeElapsed, int, string) {
+	if note != "" {
+		return nil, 0, ""
+	}
+	if chip == "" {
+		return nil, http.StatusBadRequest, "a scene needs an elapsed time or a time note"
+	}
+	if !chip.Valid() {
+		return nil, http.StatusBadRequest, "invalid time_elapsed"
+	}
+	return &chip, 0, ""
+}
+
+// validateSceneHolding checks that a scene's location asset is a live holding
+// belonging to this game. Returns a non-zero statusCode + message on failure
+// (same shape as validateAndProcessScenePeers).
+func validateSceneHolding(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, holdingID int64,
+) (int, string) {
+	holding, err := q.GetAssetByID(ctx, holdingID)
+	if err != nil {
+		return http.StatusBadRequest, "holding not found"
+	}
+	if holding.GameID != gameID {
+		return http.StatusBadRequest, "holding is not part of this game"
+	}
+	if holding.AssetType != model.AssetHolding {
+		return http.StatusBadRequest, "location asset must be a holding"
+	}
+	if holding.IsDestroyed {
+		return http.StatusBadRequest, "holding is destroyed"
+	}
+	return 0, ""
+}
+
 // timeElapsedLabel formats a TimeElapsed enum value for display in the banner
 // and public-record summary. Mirrors the labels used by the frontend.
 func timeElapsedLabel(t model.TimeElapsed) string {
@@ -504,17 +540,21 @@ func timeElapsedLabel(t model.TimeElapsed) string {
 	}
 }
 
-// sceneTimeLabel returns the display label for a scene's elapsed time,
-// preferring a free-text time note over the enum label when one is set.
-// Shared by the banner text and the scene.started system_data payload.
+// sceneTimeLabel returns the display label for a scene's elapsed time: the
+// free-text note when the setter wrote one, the chip label otherwise. A
+// turn-scene always has exactly one of the two, so the note check comes first
+// only to keep this total for the pre-054 rows a stale client could still
+// write both halves of. Shared by the banner text and the scene.started
+// system_data payload.
+//
+// Returns "" for a plan-scene (kind='plan'), which has no When step at all;
+// callers must handle the empty string.
 func sceneTimeLabel(scene *dbgen.Scene) string {
 	if scene.TimeNote != nil {
 		if note := strings.TrimSpace(*scene.TimeNote); note != "" {
 			return note
 		}
 	}
-	// TimeElapsed is only nil for a plan-scene (kind='plan'); this helper is
-	// only ever called for turn-scenes, which always have it set.
 	if scene.TimeElapsed == nil {
 		return ""
 	}
@@ -522,9 +562,14 @@ func sceneTimeLabel(scene *dbgen.Scene) string {
 }
 
 // sceneBannerText builds the banner / public-record text for a scene in the
-// form "<main character> at <holding>, <time later>" (with an optional
-// "— <time note>" suffix). Used both for the scene-start chat boundary post
-// and the scene-end public-record summary so the two stay in sync.
+// form "Scene: <main character> at <holding>, <time>", where <time> is the
+// free-text time note when the setter wrote one and the chip label otherwise
+// (sceneTimeLabel picks). Used both for the scene-start chat boundary post and
+// the scene-end public-record summary so the two stay in sync.
+//
+// A plan-scene has no When step at all, so it drops the trailing clause and
+// reads "Scene: <main character> at <holding>" rather than stopping on a
+// dangling comma. Turn-scenes always have a time to print.
 //
 // holdingName is the resolved location name (looked up by the caller from
 // scene.LocationHoldingID, or scene.LocationCustom for free-text scenes).
@@ -534,9 +579,11 @@ func sceneBannerText(mainCharName, holdingName string, scene *dbgen.Scene) strin
 	if holdingName == "" {
 		holdingName = "an unknown place"
 	}
-	return fmt.Sprintf("Scene: %s at %s, %s",
-		mainCharName, holdingName, sceneTimeLabel(scene),
-	)
+	timeLabel := sceneTimeLabel(scene)
+	if timeLabel == "" {
+		return fmt.Sprintf("Scene: %s at %s", mainCharName, holdingName)
+	}
+	return fmt.Sprintf("Scene: %s at %s, %s", mainCharName, holdingName, timeLabel)
 }
 
 // resolveSceneNameParts looks up the main-character name and holding name for

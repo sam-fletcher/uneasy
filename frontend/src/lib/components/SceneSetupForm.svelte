@@ -6,7 +6,11 @@
 
 	Three sections:
 	- Where: holding cards (single-select) OR a custom location panel.
-	- When: time-elapsed chip + optional note.
+	- When: a time-elapsed chip OR a free-text note, never both — picking one
+	  clears the other. On the Main Event's very first scene (`isFirstScene`)
+	  the chips are hidden, since there is no earlier scene for it to be
+	  "moments/days later" than; the note is then the only way to answer, and
+	  the existing submit gate makes it required without any extra rule.
 	- Who else: peer cards (multi-select). Focus player's own main character
 	  is implicit and excluded.
 
@@ -55,9 +59,29 @@
 		 * Null until the focus player's first change.
 		 */
 		draft?: SceneSetupDraft | null;
+		/**
+		 * True on the Main Event's opening scene (row 1), which has no earlier
+		 * scene to be "moments/days later" than. Presentation only: it hides
+		 * the chips and swaps the note's placeholder. The note then becomes
+		 * the only way to satisfy the existing chip-or-note submit gate, so it
+		 * is required here without a rule of its own — and the server needs no
+		 * matching row check, since "a scene needs an elapsed time or a time
+		 * note" already covers it.
+		 */
+		isFirstScene?: boolean;
 	}
 
-	const { gameID, assets, players, focusPlayerID, prompt, onSceneStarted, readOnly = false, draft = null }: Props = $props();
+	const {
+		gameID,
+		assets,
+		players,
+		focusPlayerID,
+		prompt,
+		onSceneStarted,
+		readOnly = false,
+		draft = null,
+		isFirstScene = false,
+	}: Props = $props();
 
 	// ── Where ──────────────────────────────────────────────────────────────────
 	const holdings = $derived(
@@ -190,6 +214,9 @@
 	const hasLocation = $derived(
 		selectedHoldingID != null || customLocation.trim() !== ''
 	);
+	// A chip or a note, never both (selectTime / onTimeNoteInput clear each
+	// other). With the chips hidden on the opening scene this is what makes
+	// the note required there.
 	const hasTime = $derived(
 		timeElapsed != null || timeNote.trim() !== ''
 	);
@@ -203,7 +230,6 @@
 		error = '';
 		try {
 			const params: Parameters<typeof createScene>[1] = {
-				time_elapsed: timeElapsed ?? 'moments',
 				present_peer_ids: [...selectedPeerIDs],
 			};
 			if (selectedHoldingID != null) {
@@ -211,7 +237,12 @@
 			} else {
 				params.location_custom = customLocation.trim();
 			}
-			if (timeNote.trim() !== '') {
+			// Exactly one of the two, matching what the player actually chose.
+			// Sending a `?? 'moments'` fallback beside a note is what wrote a
+			// duration nobody picked into every note-only scene before 054.
+			if (timeElapsed != null) {
+				params.time_elapsed = timeElapsed;
+			} else {
 				params.time_note = timeNote.trim();
 			}
 			await createScene(gameID, params);
@@ -265,23 +296,31 @@
 
 	<div class="section">
 		<h3>When</h3>
-		<div class="chips">
-			{#each timeOptions as opt}
-				<button
-					type="button"
-					class="chip"
-					class:active={displayTimeElapsed === opt.value}
-					onclick={() => selectTime(opt.value)}
-					disabled={readOnly}
-				>
-					{opt.label}
-				</button>
-			{/each}
-		</div>
+		<!-- The chips are all "later than the last scene", which the opening
+		     scene has nothing to be. Only the free-text note is offered there,
+		     and its placeholder carries the example instead of a hint line —
+		     Where is required with no marker either, so an extra line here
+		     would make this the one over-explained field in the form. -->
+		{#if !isFirstScene}
+			<div class="chips">
+				{#each timeOptions as opt}
+					<button
+						type="button"
+						class="chip"
+						class:active={displayTimeElapsed === opt.value}
+						onclick={() => selectTime(opt.value)}
+						disabled={readOnly}
+					>
+						{opt.label}
+					</button>
+				{/each}
+			</div>
+		{/if}
 		<input
 			type="text"
 			class="note"
-			placeholder="Another time"
+			aria-label={isFirstScene ? 'When the scene opens' : 'Another time'}
+			placeholder={isFirstScene ? 'At night? At the coronation?' : 'Another time'}
 			value={displayTimeNote}
 			oninput={(e) => onTimeNoteInput((e.target as HTMLInputElement).value)}
 			maxlength={TEXT_LIMITS.SCENE_TIME_NOTE}

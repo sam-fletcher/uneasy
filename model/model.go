@@ -78,6 +78,9 @@ const (
 
 // TimeElapsed describes how much in-fiction time has passed between this
 // scene and the previous one (or whether it's a flashback / simultaneous).
+//
+// A turn-scene carries one of these OR a free-text time_note, never both and
+// never neither (scenes_location_by_kind). A plan-scene carries neither.
 type TimeElapsed string
 
 const (
@@ -88,6 +91,17 @@ const (
 	TimeFlashback    TimeElapsed = "flashback"
 	TimeSimultaneous TimeElapsed = "simultaneous"
 )
+
+// Valid reports whether t is one of the six chips the scene setup form offers.
+func (t TimeElapsed) Valid() bool {
+	switch t {
+	case TimeMoments, TimeHours, TimeDays,
+		TimeWeeks, TimeFlashback, TimeSimultaneous:
+		return true
+	default:
+		return false
+	}
+}
 
 // ── Scene Kind ──────────────────────────────────────────────────────────────
 

@@ -395,6 +395,7 @@
 					onSceneStarted={onSceneRefresh}
 					readOnly={!isFocusPlayer}
 					draft={sceneSetupDraft}
+					isFirstScene={game.current_row === 1}
 				/>
 			{/if}
 

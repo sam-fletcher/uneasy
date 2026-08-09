@@ -4,6 +4,8 @@ package handler
 
 import (
 	"context"
+	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -275,3 +277,99 @@ func TestGetMostRecentResolvedPlanOnRow(t *testing.T) {
 // ptrStr is a tiny *string helper used by SetPlanResult — sqlc emits *string
 // for nullable text columns in this codebase.
 func ptrStr(s string) *string { return &s }
+
+// ── A turn-scene's When is a chip XOR a note ────────────────────────────────
+
+// TestCreateScene_TimeIsChipXorNote covers the three ways a scene's When can
+// arrive. A note alone is stored as a note and nothing else — before migration
+// 054 the column could not be null, so the form sent a 'moments' fallback
+// beside it and the details panel announced a duration the player never picked.
+// Neither is refused. Both (only reachable from a tab left open across the
+// deploy, still sending that fallback) normalises to the note, which is what
+// the player actually wrote and what every display path already preferred.
+func TestCreateScene_TimeIsChipXorNote(t *testing.T) {
+	h := newPlanLifecycle(t, 2)
+	ctx := context.Background()
+
+	focusIdx := h.focusPlayerIdx()
+	focus := h.tg.Players[focusIdx]
+	focusMC, err := h.q.GetAssetByID(ctx, h.mainCharacterID(focusIdx))
+	require.NoError(t, err)
+	holding := createTestHolding(t, h.q, h.tg.Game.ID, focus.ID, "The Old Mill")
+	require.Equal(t, model.RowStateSceneSetting, h.rowState().Kind)
+	scenesPath := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/scenes"
+
+	// Neither half: the form's submit button is disabled in this state, so a
+	// request that reaches the API without a When is a bug or a hand-rolled call.
+	code, _ := h.post(focusIdx, scenesPath, map[string]any{
+		"location_holding_id": holding.ID,
+		"present_peer_ids":    []int64{},
+	})
+	require.Equal(t, http.StatusBadRequest, code, "a scene needs a chip or a note")
+
+	// Note alone — the opening scene's only option, since the form hides the
+	// chips there.
+	code, body := h.post(focusIdx, scenesPath, map[string]any{
+		"location_holding_id": holding.ID,
+		"time_note":           "at night",
+		"present_peer_ids":    []int64{},
+	})
+	require.Equalf(t, http.StatusCreated, code, "note-only scene: %v", body)
+
+	scene, _ := h.activeScene(0)
+	require.NotNil(t, scene)
+	assert.Nil(t, scene.TimeElapsed, "a note-only scene invents no elapsed time")
+	require.NotNil(t, scene.TimeNote)
+	assert.Equal(t, "at night", *scene.TimeNote)
+	assert.Equal(t,
+		"Scene: "+focusMC.Name+" at The Old Mill, at night",
+		resolveSceneBannerText(ctx, h.q, scene, focus.DisplayName))
+
+	// Both halves, as a pre-054 tab would send them.
+	require.NoError(t, h.q.EndScene(ctx, scene.ID))
+	otherIdx := 1 - focusIdx
+	other := h.tg.Players[otherIdx]
+	otherMC, err := h.q.GetAssetByID(ctx, h.mainCharacterID(otherIdx))
+	require.NoError(t, err)
+	h.setFocus(otherIdx)
+	h.jumpToRow(2)
+	require.Equal(t, model.RowStateSceneSetting, h.rowState().Kind)
+
+	holding2 := createTestHolding(t, h.q, h.tg.Game.ID, other.ID, "The Long Hall")
+	code, body = h.post(otherIdx, scenesPath, map[string]any{
+		"location_holding_id": holding2.ID,
+		"time_elapsed":        "moments",
+		"time_note":           "as the bells ring",
+		"present_peer_ids":    []int64{},
+	})
+	require.Equalf(t, http.StatusCreated, code, "stale-tab scene: %v", body)
+
+	second, _ := h.activeScene(0)
+	require.NotNil(t, second)
+	assert.Nil(t, second.TimeElapsed, "the note wins; the stale fallback is dropped")
+	require.NotNil(t, second.TimeNote)
+	assert.Equal(t, "as the bells ring", *second.TimeNote)
+	assert.Equal(t,
+		"Scene: "+otherMC.Name+" at The Long Hall, as the bells ring",
+		resolveSceneBannerText(ctx, h.q, second, other.DisplayName))
+
+	// A chip alone still stores the chip and reads as its label.
+	require.NoError(t, h.q.EndScene(ctx, second.ID))
+	h.setFocus(focusIdx)
+	h.jumpToRow(3)
+	code, body = h.post(focusIdx, scenesPath, map[string]any{
+		"location_holding_id": holding.ID,
+		"time_elapsed":        "days",
+		"present_peer_ids":    []int64{},
+	})
+	require.Equalf(t, http.StatusCreated, code, "chip-only scene: %v", body)
+
+	third, _ := h.activeScene(0)
+	require.NotNil(t, third)
+	require.NotNil(t, third.TimeElapsed)
+	assert.Equal(t, model.TimeDays, *third.TimeElapsed)
+	assert.Nil(t, third.TimeNote)
+	assert.Equal(t,
+		"Scene: "+focusMC.Name+" at The Old Mill, Days later",
+		resolveSceneBannerText(ctx, h.q, third, focus.DisplayName))
+}

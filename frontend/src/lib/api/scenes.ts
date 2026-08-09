@@ -87,7 +87,10 @@ export function createScene(
 	params: {
 		location_holding_id?: number | null;
 		location_custom?: string;
-		time_elapsed: TimeElapsed;
+		/** Send exactly one of time_elapsed / time_note — a chip or the
+		 *  player's own wording. The server rejects neither, and prefers the
+		 *  note if a stale tab somehow sends both. */
+		time_elapsed?: TimeElapsed;
 		time_note?: string;
 		present_peer_ids: number[];
 	}

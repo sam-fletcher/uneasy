@@ -168,12 +168,15 @@
 					Unknown
 				{/if}
 			</span>
-			<span class="time">
-				{scene.time_elapsed ? timeLabels[scene.time_elapsed] : ''}
-				{#if scene.time_note}
-					— <em>{scene.time_note}</em>
-				{/if}
-			</span>
+			<!-- A turn-scene carries a chip XOR a note; a plan-scene neither, so
+			     render nothing rather than an empty slot. Printing both is what
+			     made a note-only scene read "Moments later — at night" before
+			     migration 054 — a duration the player never picked. -->
+			{#if scene.time_elapsed}
+				<span class="time">{timeLabels[scene.time_elapsed]}</span>
+			{:else if scene.time_note}
+				<span class="time"><em>{scene.time_note}</em></span>
+			{/if}
 		</div>
 		<div class="focus-line">
 			Focus:
