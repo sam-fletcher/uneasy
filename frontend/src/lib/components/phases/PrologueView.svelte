@@ -1062,14 +1062,11 @@
 								{/each}
 							</tbody>
 						</table>
-						<!-- No held/already-yours legend rows: both states are already spelled
-						     out in words inside the tile expansion ("Takes X from Y" /
-						     "You already hold X — nothing to take"), and repeating them here
-						     cost two lines of scroll on the screen we're trying to shorten. -->
 						<p class="legend-note">
 							<WeightMeter value="K" />
 							Rank tie-breaker weight. If two players hold the same number
-							of a track's cards, the heavier ones break the tie.
+							of a track's cards, the heavier ones break the tie — and a
+							track's own card beats an ANY card of the same weight.
 						</p>
 						<h4>Starting rankings</h4>
 						<!-- "A card marked ANY", not "Your ANY cards": the code is a real

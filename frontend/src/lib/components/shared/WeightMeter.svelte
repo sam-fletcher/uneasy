@@ -62,9 +62,13 @@
 		background: transparent;
 		border: 1px solid var(--color-border-strong);
 	}
+	/* The lit colour is a custom property for the same reason the metrics are:
+	   the TrackBoard draws two kinds of card side by side and has to say which
+	   kind wins a tie, and that is a property of the caller's context, not of
+	   the weight. Default unchanged, so every other caller is untouched. */
 	.seg.on {
-		background: var(--color-text-muted);
-		border-color: var(--color-text-muted);
+		background: var(--weight-seg-on, var(--color-text-muted));
+		border-color: var(--weight-seg-on, var(--color-text-muted));
 	}
 	/* The TrackBoard draws one of these per card held, three columns wide, in a
 	   phase column that is a phone at every viewport — so the segments lose
@@ -81,6 +85,6 @@
 		background: var(--color-border-strong);
 	}
 	.compact .seg.on {
-		background: var(--color-text-muted);
+		background: var(--weight-seg-on, var(--color-text-muted));
 	}
 </style>

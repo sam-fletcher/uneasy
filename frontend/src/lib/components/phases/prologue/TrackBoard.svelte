@@ -44,7 +44,7 @@
 		activeTrack: PrologueTrack | null;
 		currentPlayerID: number | null;
 		// Recap use (closing stage): rankings are persisted and cards are spent,
-		// so the per-player card marks and the done-committing dot (uniformly
+		// so the per-player card marks and the done-committing tick (uniformly
 		// true post-resolution) are omitted. Only valid once all three tracks
 		// are resolved — the set-aside badge lives in the card row and
 		// unresolved projections would lose it.
@@ -370,9 +370,10 @@
 								<div class="chip-head">
 									{#if isYou}
 										<!-- The viewer's row needs emphasis (it is half the board's
-										     job) but not gold: on this board gold means the live
-										     track and nothing else, and the header strip already
-										     ruled that identity isn't gold's job. This is the same
+										     job) but not gold: gold is spoken for here (the live
+										     track's ground, and the track-card marks), and the header
+										     strip already ruled that identity isn't gold's job. This
+										     is the same
 										     player-colour dot the header pills and chat bylines
 										     use, and at 7px it costs a name cell ~11px where a
 										     "you" label would cost ~30 and squeeze the two-line
@@ -386,7 +387,16 @@
 									{/if}
 									<span class="chip-name">{playerName(pid)}</span>
 									{#if showCards && c.doneSet.has(pid)}
-										<span class="done-dot" title="Done"></span>
+										<!-- The same ✓ the column header wears when a track settles,
+										     not a green disc: a bare coloured dot on a name reads as a
+										     status light (online? your turn? a warning?) and the board
+										     already spends colour on identity and the live track. The
+										     tick names the state it marks, and reusing the header's
+										     glyph makes "done" one symbol on this screen rather than
+										     two. Labelled rather than aria-hidden — unlike the header
+										     tick, nothing else in the row says this player has
+										     finished. -->
+										<span class="done-tick" role="img" aria-label="done">✓</span>
 									{/if}
 								</div>
 								{#if showCards}
@@ -537,12 +547,17 @@
 	.board-grid > :nth-child(3) { grid-column: 3; }
 	.board-grid > :nth-child(4) { grid-column: 4; }
 
-	/* Gold does exactly one job on this board: the live track. The full-height
-	   gold outline this used to wear put a second gold rectangle around the
-	   viewer's own gold-outlined name — the concentric-frame shape Round 2
-	   already ruled against. The step label above already names the track
-	   ("Rankings: Spend ANY on Power"), so a ground tint and a gold header is
-	   the whole signal it needs. */
+	/* The live track: a ground tint and a gold header, nothing more. The
+	   full-height gold outline this used to wear put a second gold rectangle
+	   around the viewer's own gold-outlined name — the concentric-frame shape
+	   Round 2 already ruled against. The step label above already names the
+	   track ("Rankings: Spend ANY on Power"), so tint plus header is the whole
+	   signal it needs.
+
+	   Gold is no longer this column's alone — the card marks took it too (see
+	   .mark). The two don't compete for the same reading: gold as GROUND says
+	   live track, gold as a MARK says track card, and the mark version appears
+	   in all three columns precisely because it isn't about which one is live. */
 	.column.active {
 		background: color-mix(in srgb, var(--color-accent) 7%, transparent);
 		border-radius: 4px;
@@ -737,7 +752,7 @@
 		flex: 1;
 		min-width: 0;
 	}
-	/* Both dots ride the name's FIRST line rather than centring against a
+	/* Both marks ride the name's FIRST line rather than centring against a
 	   name that may wrap to two. */
 	.you-dot {
 		width: 7px;
@@ -746,12 +761,14 @@
 		margin-top: 0.3rem;
 		flex: none;
 	}
-	.done-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		margin-top: 0.32rem;
-		background: var(--color-success);
+	/* .col-tick's glyph and colour, a touch smaller: it sits against a 0.75rem
+	   name here rather than a column label, and at the header's size it
+	   out-weighed the name it follows. */
+	.done-tick {
+		color: var(--color-success);
+		font-size: 0.58rem;
+		line-height: 1;
+		margin-top: 0.28rem;
 		flex: none;
 	}
 	/* 6px between marks against 2px between the segments inside one: the marks
@@ -771,10 +788,28 @@
 	   was doing nothing to bind four bars into a card. With the inter-mark gap
 	   at 3x the segment gap the grouping is spatial, five frames per column
 	   come off, and the box-inside-a-box reading goes with them. */
+	/* Gold bars — a track card, locked in before this phase and the stronger of
+	   the two kinds.
+
+	   The two kinds used to share one grey, separated only by the wild's dashed
+	   frame. The dash says "no track of its own", which is true but is not the
+	   fact a reader needs on this board: at equal weight the track card beats
+	   the ANY (rankFromContributions sorts non-heart before heart at a tie), and
+	   nothing said so. A playtester read the two as interchangeable and couldn't
+	   follow why one player outranked another.
+
+	   This widens gold's job here — see .column.active, which used to reserve it
+	   for the live track (owner's call, 2026-08-09). The active column keeps its
+	   ground tint and gold header; what it loses is exclusivity on the hue. Note
+	   the gold is a FILL, which HandStrip's cards deliberately avoid — there the
+	   fill would claim "selected" on a control the player taps. These marks are
+	   inert read-outs with nothing to select, so the fill has no such second
+	   reading to collide with. */
 	.mark {
 		display: inline-flex;
 		align-items: center;
 		flex: none;
+		--weight-seg-on: var(--color-accent);
 	}
 	/* Not a track card but a wild spent on this track, so it keeps the app's
 	   dashed not-yet-a-track treatment (decision 3) — and now that the plain
@@ -785,6 +820,10 @@
 		padding: 0.1rem 0.15rem;
 		border: 1px dashed var(--color-border-strong);
 		border-radius: 3px;
+		/* Unchanged from before the split — the wild keeps the grey it always
+		   had, and the track card is what moved. The dashed frame still says
+		   "no track of its own"; the tone now also says "loses the tie". */
+		--weight-seg-on: var(--color-text-muted);
 	}
 	/* This wild does no work: it is committed here but the track would rank the
 	   same without it, so resolution refunds it.
