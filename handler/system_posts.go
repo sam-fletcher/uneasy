@@ -918,21 +918,22 @@ func EmitPrologueTrackRanked(
 		if rk.Category != cat {
 			continue
 		}
-		if rk.PlayerID == nil {
-			names[rk.Rank] = "—"
-		} else {
+		// if rk.PlayerID == nil {
+		// 	names[rk.Rank] = "—"
+		// } else {
+		if rk.PlayerID != nil {
 			names[rk.Rank] = playerDisplayName(ctx, q, *rk.PlayerID)
 		}
 	}
 	parts := make([]string, 0, 5)
-	for r := int16(1); r <= 5; r++ {
-		if n, ok := names[r]; ok {
-			parts = append(parts, fmt.Sprintf("%d %s", r, n))
+	for rank := int16(1); rank <= 5; rank++ {
+		if name, ok := names[rank]; ok {
+			parts = append(parts, fmt.Sprintf("%d %s", rank, name))
 		}
 	}
 	EmitSystemPost(ctx, q, manager, gameID, "prologue.track_ranked",
 		model.SeverityImportant,
-		fmt.Sprintf("Opening %s ranks: %s", shakeUpCategoryTitle(track), strings.Join(parts, " · ")),
+		fmt.Sprintf("Initial %s ranks: %s", shakeUpCategoryTitle(track), strings.Join(parts, " · ")),
 		nil, nil, nil,
 		map[string]any{"track": track})
 }

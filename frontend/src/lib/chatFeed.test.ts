@@ -771,7 +771,7 @@ describe('markForCode', () => {
 		'scene.started': 'scene',
 		'ranking.updated': 'ranking',
 		'shake_up.category': 'shake_up',
-		'prologue.track_ranked': 'prologue',
+		'prologue.closing_entered': 'prologue',
 		'rumor.created': 'rumor',
 		'secret.written': 'secret',
 	};
@@ -780,6 +780,13 @@ describe('markForCode', () => {
 		for (const [code, family] of Object.entries(familyForCode)) {
 			expect(markForCode(code)).toBe(family);
 		}
+	});
+
+	it('routes a track-ranked prologue post to the podium, not the sun', () => {
+		// The post states a track's opening standing, so it reads as a ranking;
+		// only the phase boundary keeps the prologue's sun.
+		expect(markForCode('prologue.track_ranked')).toBe('ranking');
+		expect(markForCode('prologue.closing_entered')).toBe('prologue');
 	});
 
 	it('routes the three hostile verbs to their second mark', () => {

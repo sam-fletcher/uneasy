@@ -95,9 +95,17 @@ const HOSTILE_MARKS: Record<string, string> = {
 	'asset.leveraged': 'seize',
 };
 
+// A handful of codes read better under another family's mark than their own.
+// `prologue.track_ranked` announces a track's opening standing — the same
+// statement `ranking.updated` makes later — so it takes the podium. The sun
+// stays for `prologue.closing_entered`, which is a genuine phase boundary.
+const CODE_MARK_OVERRIDES: Record<string, string> = {
+	'prologue.track_ranked': 'ranking',
+};
+
 export function markForCode(code: string | null): string | null {
 	if (!code) return null;
-	return HOSTILE_MARKS[code] ?? systemCodeFamily(code);
+	return HOSTILE_MARKS[code] ?? CODE_MARK_OVERRIDES[code] ?? systemCodeFamily(code);
 }
 
 // ── Pure: scene.started system_data (Phase 4a) ────────────────────────────
