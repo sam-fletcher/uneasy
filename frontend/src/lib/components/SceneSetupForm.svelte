@@ -502,9 +502,16 @@
 		color: var(--color-bg);
 		border-color: var(--color-accent);
 	}
+	/* Read-only: drop the chips to label greys and lose the pointer, so they
+	   read as a record of the focus player's choices, not as buttons. The
+	   active one stays a step brighter — that is the only thing marking it. */
+	.scene-setup.readonly .chip {
+		color: var(--color-text-muted);
+		cursor: default;
+	}
 	.scene-setup.readonly .chip.active {
 		background: var(--color-border-strong);
-		color: var(--color-text);
+		color: var(--color-text-secondary);
 		border-color: var(--color-border-strong);
 	}
 
