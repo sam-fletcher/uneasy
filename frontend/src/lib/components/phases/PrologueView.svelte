@@ -51,6 +51,8 @@
 	import ClosingStage from './prologue/ClosingStage.svelte';
 	import TurnCard, { type JustClaimed } from './prologue/TurnCard.svelte';
 	import StandingStrip from './prologue/StandingStrip.svelte';
+	import PrologueHelp from './prologue/PrologueHelp.svelte';
+	import HelpDisclosure from '$lib/components/shared/HelpDisclosure.svelte';
 	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
 	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
 	import {
@@ -72,7 +74,6 @@
 		trackLabel,
 		assetTypeLabel,
 		assetTypeFor,
-		SUIT_MEANINGS,
 		type CardHoldState,
 	} from '$lib/prologue/choosing';
 	import { notReadyPlayerIDs } from '$lib/prologue/closing';
@@ -359,12 +360,13 @@
 	// so it survives the WS-triggered reload() calls, which only replace data.
 	let openSheets = $state<Set<PrologueSheetType>>(new Set());
 
-	// The prose that used to open the page — two paragraphs of lede, three of
-	// explanation and a 163px legend, all above the first tappable control
-	// (Round 2 §1d). Collapsed by default and kept on the page rather than
-	// moved into the global Help menu (owner ruling, decision 9). Plain
-	// component state, same reason as openSheets.
-	let helpOpen = $state(false);
+	// (The prose that used to open the page — two paragraphs of lede, three of
+	// explanation and a 163px legend, all above the first tappable control —
+	// lives behind shared/HelpDisclosure now (Round 2 §1d). Kept on the page
+	// rather than moved into the global Help menu, owner ruling decision 9.
+	// The open flag lives in the disclosure: each step's help is a different
+	// body, so carrying one flag across a mode change would open a panel the
+	// player has never seen.)
 
 	async function toggleSheetPanel(type: PrologueSheetType, header: HTMLButtonElement) {
 		const next = new Set(openSheets);
@@ -991,96 +993,9 @@
 				onOpenRetinue={() => onOpenRetinue?.()}
 			/>
 
-			<section class="help-disclosure" class:open={helpOpen}>
-				<button
-					type="button"
-					class="disc-head"
-					aria-expanded={helpOpen}
-					aria-controls={helpOpen ? 'prologue-help-body' : undefined}
-					onclick={() => (helpOpen = !helpOpen)}
-				>
-					<span class="disc-glyph" aria-hidden="true">?</span>
-					<span class="disc-title">How the prologue works</span>
-					<span class="disc-caret" aria-hidden="true">▾</span>
-				</button>
-				{#if helpOpen}
-					<div class="disc-body" id="prologue-help-body">
-						<p class="prologue-lede">
-							We start the game with the prologue, where we take turns fleshing out
-							our characters and the world they inhabit.
-						</p>
-						<p class="prologue-lede">
-							One turn you might decide your character is the monarch, and then the
-							next you might say that they hail from a castle on the coast.
-						</p>
-						<p class="prologue-subtext">
-							You get three choices — spend them however you like. If you want three
-							titles, take three titles. Each tile you claim creates an asset and
-							grants 2 cards.
-						</p>
-						<p class="prologue-subtext">
-							Cards let you create <span class="steal-color">or steal</span> another asset,
-							and improve your rank in either Power, Knowledge, or Esteem.
-						</p>
-						<p class="prologue-subtext">
-							You can edit your assets (including your main character) at any time in your player menu (top of the screen).
-						</p>
-						<!-- Type → code → track, in the same two icons and three letters the
-						     tiles use, so the legend teaches the tile rather than a third
-						     notation (Round 2, §2e). It replaces the suit legend, which taught
-						     only "♣ makes a holding" while the track board below taught only
-						     "♣ is Power" — and the two readings collide (♠ makes an artifact
-						     but raises Esteem), so half a lesson was worse than none. -->
-						<table class="legend">
-							<thead>
-								<tr>
-									<th scope="col">When you make a…</th>
-									<th scope="col">It raises your…</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each SUIT_MEANINGS as m (m.suit)}
-									<tr>
-										<th scope="row">
-											<AssetTypeIcon type={assetTypeFor(m.suit)} size={14} />
-											{m.assetType}
-										</th>
-										<td>
-											<span class="track-code" class:wild={m.track == null}>{m.code}</span>
-											{#if m.track}
-												{m.track}
-											{:else}
-												<!-- The chip says "any"; this says "later". It used to read
-												     "any track — you choose at the end", which was the row
-												     explaining WLD by saying the word the code should have
-												     been — and after the rename it stuttered (Round 3,
-												     decision 4). -->
-												<span class="wild-note">You choose the track at the end</span>
-											{/if}
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-						<p class="legend-note">
-							<WeightMeter value="K" />
-							Rank tie-breaker weight. If two players hold the same number
-							of a track's cards, the heavier ones break the tie — and a
-							track's own card beats an ANY card of the same weight.
-						</p>
-						<h4>Starting rankings</h4>
-						<!-- "A card marked ANY", not "Your ANY cards": the code is a real
-						     English word now, so in running prose it parses as the
-						     quantifier first and the label second. "marked" is what tells
-						     the reader this is a label (Round 3, decision 3). -->
-						<p class="prologue-subtext">
-							The cards you gather set the initial rankings. A card marked ANY ranks
-							nothing on its own — you choose which track to spend each one on at
-							the end.
-						</p>
-					</div>
-				{/if}
-			</section>
+			<HelpDisclosure title="How the prologue works" id="prologue-help-body">
+				<PrologueHelp variant="choosing" />
+			</HelpDisclosure>
 
 			<StandingStrip {players} {cards} {rankings} {committed} doneFlags={effectiveDoneFlags} {currentPlayerID} />
 
@@ -1305,6 +1220,15 @@
 				{currentPlayerID}
 			/>
 
+			<!-- Same slot the choosing view gives it: after the object that
+			     orients you (there the turn card, here the board), before the
+			     control group you act with. This step introduces the tie-break
+			     and the set-aside rule, neither of which the board can state on
+			     its own — the "none" badge is the only mark either one gets. -->
+			<HelpDisclosure title="How the rankings work" id="prologue-ranking-help-body">
+				<PrologueHelp variant="ranking" />
+			</HelpDisclosure>
+
 			<!-- Hand, then the button that ends your turn with it, then the
 			     sentence that explains that button — one group. They were four
 			     siblings on .prologue-view's flat 1rem gap, evenly spaced, so
@@ -1448,8 +1372,7 @@
 		min-height: 0;
 	}
 	/* (No h3 rule any more: Round 2 §1f/§1g removed the last three headings in
-	   this component — "Your Retinue", "Hands" and "Starting rankings". The
-	   disclosure's own h4 is styled below.) */
+	   this component — "Your Retinue", "Hands" and "Starting rankings".) */
 
 	/* The choosing view's own rhythm, tighter than the 1rem the other three
 	   modes use. Four objects now stack above the picker where two paragraphs
@@ -1463,161 +1386,10 @@
 		min-width: 0;
 	}
 
-	.prologue-lede {
-		margin: 0;
-		color: var(--color-text);
-		font-size: 1.05rem;
-		line-height: 1.45;
-	}
-	.prologue-subtext {
-		margin: 0;
-		color: var(--color-text-secondary);
-		font-size: 0.9rem;
-		line-height: 1.4;
-	}
-	/* Matches the take chips on the tiles below — blue/attention, because a
-	   take is an opportunity for the reader, not a warning to them. See the
-	   .tile-chip.take comment further down for the full reasoning. */
-	.steal-color { color: var(--color-highlight); }
-
-	/* Genuinely tabular (one row per asset type, two independent readings per
-	   row), so a real table — the column headers are what make the second
-	   reading legible, and they carry to screen readers for free. */
-	.legend {
-		border-collapse: collapse;
-		/* Content-sized, not stretched: a full-width table pushes the columns
-		   apart until the row stops reading as one statement. Shrunk to its
-		   contents, the block centres visibly and each row scans as
-		   "[icon] Holding → POW Power". */
-		width: max-content;
-		max-width: 100%;
-		margin-inline: auto;
-		font-size: 0.9rem;
-		color: var(--color-text-secondary);
-		text-align: left;
-	}
-	.legend th,
-	.legend td {
-		padding: 0.15rem 0.75rem 0.15rem 0;
-		font-weight: inherit;
-		vertical-align: middle;
-	}
-	.legend th:last-child,
-	.legend td:last-child { padding-right: 0; }
-	.legend thead th {
-		font-size: 0.7rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: var(--color-text-muted);
-		padding-bottom: 0.3rem;
-		/* The peer row's "any track — you choose at the end" is the widest cell
-		   in the table by some way; without this the squeeze lands on the
-		   headings, which then wrap while their neighbour doesn't. Let the long
-		   note wrap instead — it's a sentence, they're labels. */
-		white-space: nowrap;
-	}
-	/* The icon rides in the row header beside its own word, which is what the
-	   tile chips show too — one glance teaches both. */
-	.legend tbody th {
-		display: flex;
-		align-items: center;
-		gap: 0.35rem;
-	}
-	.legend tbody td { color: var(--color-text); }
-	/* A wild ranks nothing until you assign it, so the cell reads as a note
-	   rather than a track name. */
-	.wild-note { color: var(--color-text-secondary); font-style: italic; }
-	/* The weight meter's one appearance outside a tile expansion: a static
-	   sample, so the meter has been seen before it turns up on a row. */
-	.legend-note {
-		display: flex;
-		/* Top-aligned, not centred: the note runs to three lines at 375 and a
-		   centred meter lands beside the middle one, reading as a stray mark
-		   rather than the thing the sentence is about. */
-		align-items: flex-start;
-		gap: 0.4rem;
-		margin: 0;
-		color: var(--color-text-faint);
-		font-size: 0.75rem;
-		line-height: 1.35;
-	}
-	/* :global, because the meter is shared/WeightMeter.svelte's root element —
-	   it carries that component's scope class, not this one's. */
-	.legend-note :global(.weight) { margin-top: 0.15rem; }
-
-	/* Local help disclosure (Round 2 §1d). Same frame as a collapsed sheet
-	   header — it sits directly above three of them, and a second collapsed-row
-	   idiom on one screen would just be noise. */
-	.help-disclosure {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-	.disc-head {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		width: 100%;
-		min-height: 44px;
-		padding: 0.5rem 0.7rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.help-disclosure.open .disc-head {
-		border-bottom-color: transparent;
-		border-bottom-left-radius: 0;
-		border-bottom-right-radius: 0;
-	}
-	.disc-glyph {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 18px;
-		height: 18px;
-		border-radius: 50%;
-		border: 1px solid var(--color-accent);
-		color: var(--color-accent);
-		font-size: 0.7rem;
-		flex: none;
-	}
-	.disc-title { flex: 1; color: var(--color-text-secondary); font-size: 0.88rem; min-width: 0; }
-	.disc-caret {
-		flex: none;
-		color: var(--color-accent);
-		font-size: 0.75rem;
-		transform: rotate(-90deg);
-		transition: transform 0.15s ease;
-	}
-	.help-disclosure.open .disc-caret { transform: rotate(0); }
-	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the caret still
-	   turns — its direction is the open/closed state — it just snaps. */
-	@media (prefers-reduced-motion: reduce) {
-		.disc-caret { transition: none; }
-	}
-	.disc-body {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		border: 1px solid var(--color-border);
-		border-top: none;
-		border-bottom-left-radius: 8px;
-		border-bottom-right-radius: 8px;
-		padding: 0.6rem 0.7rem;
-	}
-	.disc-body h4 {
-		margin: 0.25rem 0 0;
-		color: var(--color-accent);
-		font-size: 0.9rem;
-	}
-	/* The lede kept its 1.05rem while it WAS the page opening. Inside a help
-	   body it's just the first of six paragraphs, and at full size it reads as
-	   a second heading; it keeps the brighter ink to stay the lede. */
-	.disc-body .prologue-lede { font-size: 0.95rem; }
+	/* (The help body's own type, legend table and disclosure frame moved out in
+	   the same change that gave the ranking step a disclosure of its own:
+	   prologue/PrologueHelp.svelte for the copy and its styling,
+	   shared/HelpDisclosure.svelte for the frame.) */
 
 	.sheet-accordion {
 		display: flex;

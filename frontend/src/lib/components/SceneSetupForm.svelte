@@ -30,6 +30,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import HelpDisclosure from '$lib/components/shared/HelpDisclosure.svelte';
 
 	interface Props {
 		gameID: string | number;
@@ -261,6 +262,43 @@
 		<p>{prompt}</p>
 	</div>
 
+	<!-- Setting a scene is the one recurring turn in the game with no rules
+	     text anywhere near it: the form asks three questions and says nothing
+	     about what makes a good answer to them (ALL_RULES_OVERVIEW.md "Setting
+	     Scenes"). What it teaches is the disposition — describe a situation,
+	     don't plan an outcome — and then hands the reader somewhere to look
+	     when they have no idea at all.
+
+	     Shown to WATCHERS TOO, not just the focus player (owner ruling,
+	     2026-08-09). The lede is addressed to the whole table — everyone acts
+	     the scene out in chat — and the moment a player can best absorb how
+	     scenes work is while someone else sets one, with nothing to fill in
+	     and no turn to take. Gating it on the actor would also have made this
+	     the one disclosure in the app that hides from a player waiting their
+	     turn; neither prologue one does. The "Need ideas?" prompts do read as
+	     next-time advice for a watcher, which is the whole cost.
+
+	     It keeps full brightness inside the greyed read-only panel, unlike
+	     every other block here: it is the one thing on this screen a watcher
+	     can actually operate, and dimming it would say otherwise. -->
+	<HelpDisclosure title="How to set a good scene" id="scene-setup-help-body">
+		<p class="help-lede">
+			You're choosing the moment the table plays out next. Everyone acts it
+			out in chat with the present characters, in either first or third person.
+		</p>
+		<p class="help-text">
+			Describe a situation that interests you without thinking too hard about what its outcome may be;
+			just drop characters into an interesting scenario and see what happens.
+		</p>
+		<h4>Need ideas?</h4>
+		<ul class="help-list">
+			<li>Are there any green Tones you want to explore?</li>
+			<li>Are there any assets or marginalia that interest you?</li>
+			<li>How is your character preparing for upcoming plans in the Public Record?</li>
+			<li>Ask for help if you have an idea, but are unsure of how to show it.</li>
+		</ul>
+	</HelpDisclosure>
+
 	<div class="section">
 		<h3>Where</h3>
 		{#if holdings.length === 0}
@@ -425,6 +463,56 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 	}
+
+	/* Help body. The sub-head wears the section h3's SHAPE — same uppercase,
+	   same tracking, a size down — so it reads as a heading in the form's own
+	   voice. It does not wear its GOLD: with the panel open, gold uppercase
+	   has to keep meaning "this is one of the three fields you are filling
+	   in", and a heading inside the help is commentary, not structure. The
+	   accent stays the form's. */
+	.help-lede {
+		color: var(--color-text);
+		font-size: 0.95rem;
+		line-height: 1.45;
+	}
+	.help-text {
+		color: var(--color-text-secondary);
+		font-size: 0.88rem;
+		line-height: 1.4;
+	}
+	/* No margins on either paragraph: HelpDisclosure's body flexes with a gap
+	   and zeroes the browser default, so a margin here would double the space. */
+	h4 {
+		margin: 0.25rem 0 0;
+		font-size: 0.72rem;
+		color: var(--color-text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	/* The house prose-bullet list (planPanel.css's .resolved-so-far-list and
+	   ChoicesApplied's .choices-summary-list): disc markers, indented to
+	   1.1rem with margin-left and padding zeroed, rather than riding the
+	   browser's 40px padding — which is what made this list sit a whole
+	   indent step right of every other block in the panel.
+
+	   Two deviations from those two, both because this list is prose rather
+	   than a subordinate summary of a form's state: it takes .help-text's
+	   0.88rem/secondary instead of their 0.82rem/muted, since it is peer to
+	   the paragraphs above it; and its top margin is 0, because the
+	   disclosure body is a flex column whose gap already spaces it off the
+	   heading (theirs sit in normal flow under a label). */
+	.help-list {
+		margin: 0 0 0 1.1rem;
+		padding: 0;
+		list-style: disc;
+		color: var(--color-text-secondary);
+		font-size: 0.88rem;
+		line-height: 1.4;
+	}
+	/* li + li, not a margin on every li: a leading margin on the first item
+	   collapses out through the zero-padding ul and reopens the gap the line
+	   above just closed. Same reason PushBlockedHelp's steps do it this way. */
+	.help-list li + li { margin-top: 0.3rem; }
 
 	.hint {
 		font-size: 0.82rem;

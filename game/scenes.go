@@ -38,11 +38,6 @@ func FollowOnPrompt(pt model.PlanType) string {
 	return ""
 }
 
-// FreeScenePromptFallback is shown to the focus player when there is no
-// resolved-plan prompt to follow on from (i.e. a row with no plans, or the
-// first scene at the start of a row).
-const FreeScenePromptFallback = "No follow-on prompt — set any scene."
-
 // MaxCustomLocationLen caps the user-supplied custom location string. Matches
 // handler.maxAssetNameLen / TEXT_LIMITS.NAME: a custom location stands in for
 // a holding's name in the scene banner and the public-record entry, so the two

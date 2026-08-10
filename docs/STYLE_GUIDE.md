@@ -189,6 +189,7 @@ Reuse before writing new CSS — these live in
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
 | `trackCode.css` | the prologue ranking track as three letters (`POW`/`KNO`/`EST`, and `ANY` dashed) — **the** way a track reaches the screen in a tight slot. Read the letters from `choosing.ts`'s `trackCode()`, never a literal |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
+| `HelpDisclosure.svelte` | the collapsible "? How X works" panel. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record and the mobile chat bar's icon — see **Log marks** below |
 
@@ -197,6 +198,38 @@ undersells it, since it is reused outside the chat feed.
 
 Plus `plans/shared/` (Buffet, DifficultyMeter) for plan flows and
 `HelpContent` for the ?-panel/lobby help.
+
+### Local help
+
+Two help surfaces, two jobs. `HelpContent` (the global **?** panel and the
+lobby) teaches **the game** — read once, browsed later.
+`shared/HelpDisclosure.svelte` teaches **one step**, sitting on the play
+screen right above the control it is about, collapsed by default.
+
+Reach for a disclosure when a step needs rules a new player can't infer from
+the controls, and those rules would otherwise push the controls themselves
+off the first screen. Live in three places today: the prologue's choosing and
+ANY-spending steps (`prologue/PrologueHelp.svelte` holds both bodies) and
+scene setup.
+
+- **Give it a unique `id`.** It's the `aria-controls` target and two
+  disclosures can be mounted at once.
+- **Title it as the question the player would ask** — "How the rankings
+  work", not "Rankings".
+- **The body is your markup, so style it yourself.** The component only owns
+  the frame and the body's flow (a flex column with a gap, and `margin: 0` on
+  your paragraphs). It cannot reach your prose otherwise: the body carries
+  the *caller's* scope class.
+- **Don't restate the panel below it.** A disclosure that repeats the
+  control's own copy just makes the reader check twice.
+- **Show it to watchers too** — don't gate it on whose turn it is (owner
+  ruling, 2026-08-09). The best moment to learn how a step works is while
+  someone else takes it, with nothing to fill in and no turn to lose. That
+  means writing copy the whole table can read: a body that only ever says
+  "you decide…" about controls a watcher can't touch is a sign the copy
+  needs widening, not that the panel needs hiding. Where the screen greys
+  out for watchers (scene setup's read-only mirror), the disclosure stays at
+  full brightness — it is the one thing there they can still operate.
 
 ## Motion & the deck
 
