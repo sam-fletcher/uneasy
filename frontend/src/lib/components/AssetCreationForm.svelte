@@ -25,6 +25,11 @@
 		disabled?: boolean;
 		nameLabel?: string;
 		marginaliaLabel?: string;
+		/** Field placeholders. Worth overriding where the marginalia slot has a
+		 *  specific job — the Prologue's extra peer writes a claimed title into
+		 *  it, not a free note — so the generic prompt would misdescribe it. */
+		namePlaceholder?: string;
+		marginaliaPlaceholder?: string;
 	}
 
 	let {
@@ -35,6 +40,8 @@
 		disabled = false,
 		nameLabel = '1 · Name',
 		marginaliaLabel = '2 · First marginalia',
+		namePlaceholder = 'Name your new asset…',
+		marginaliaPlaceholder = 'A description, a function, a fun fact, or something more poetic…',
 	}: Props = $props();
 
 	const typeLabels: Record<AssetType, string> = {
@@ -122,7 +129,7 @@
 			suggestions={nameSuggestions}
 			bind:value={name}
 			loading={nameSuggLoading}
-			placeholder="Name your new asset…"
+			placeholder={namePlaceholder}
 			maxlength={TEXT_LIMITS.NAME}
 			onReroll={rerollNames}
 			rerolling={nameRerolling}
@@ -136,7 +143,7 @@
 			suggestions={marginaliaSuggestions}
 			bind:value={marginalia}
 			loading={marginaliaSuggLoading}
-			placeholder="A description, a function, a fun fact, or something more poetic…"
+			placeholder={marginaliaPlaceholder}
 			maxlength={TEXT_LIMITS.MARGINALIA}
 			multiline
 			onReroll={rerollMarginalia}

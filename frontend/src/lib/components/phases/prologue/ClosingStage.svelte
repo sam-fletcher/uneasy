@@ -42,6 +42,7 @@
 	import { playerColorByID } from '$lib/playerColor';
 	import TrackBoard from './TrackBoard.svelte';
 	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
+	import AssetCreationForm from '$lib/components/AssetCreationForm.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
@@ -143,23 +144,48 @@
 	const titlesSheet = $derived(sheets.find((s) => s.type === 'titles'));
 	const openTitles = $derived(unclaimedTitles(titlesSheet, claims, extraPeers));
 
-	let extraPeerName = $state('');
+	// The claimed title's name, the peer's own name, and the wording of the
+	// title marginalia the peer gets stamped with. The last one is seeded from
+	// the title so the field is never a blank canvas — the player edits "The
+	// Heretic" into their own phrasing rather than inventing one cold.
+	let extraTitleName = $state('');
 	let extraPeerText = $state('');
+	let extraTitleText = $state('');
 	let creatingExtra = $state(false);
+
+	const selectedTitle = $derived(openTitles.find((t) => t.name === extraTitleName) ?? null);
+
+	// Switching titles resets the wording to the new title's name, discarding
+	// whatever was there. Owner's ruling (2026-08-09): picking a different
+	// title *is* the signal that the old wording is unwanted — why else switch?
+	// Preserving it only leaves a peer described as one title and stamped with
+	// another.
+	function pickTitle(name: string) {
+		const next = extraTitleName === name ? '' : name;
+		extraTitleName = next;
+		extraTitleText = next;
+	}
+
 	async function submitExtraPeer() {
-		if (!extraPeerName || !extraPeerText.trim() || creatingExtra) return;
+		if (!extraTitleName || !extraPeerText.trim() || !extraTitleText.trim() || creatingExtra) return;
 		creatingExtra = true;
 		error = '';
 		try {
-			const result = await createExtraPeer(gameID, extraPeerName, extraPeerText.trim());
+			const result = await createExtraPeer(
+				gameID,
+				extraTitleName,
+				extraPeerText.trim(),
+				extraTitleText.trim()
+			);
 			// The asset.created WS event may already have appended this peer (its
 			// handler dedups by id); only append if it hasn't, so we don't end up
 			// with two rows for one peer. See [[optimistic-append-ws-dup]].
 			if (!assets.find((a) => a.id === result.asset.id)) {
 				assets = [...assets, result.asset];
 			}
-			extraPeerName = '';
+			extraTitleName = '';
 			extraPeerText = '';
+			extraTitleText = '';
 			onReload();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not create extra peer.';
@@ -345,42 +371,55 @@
 				{#if myExtraPeer}
 					<p class="check-body">You created your extra peer: {myExtraPeer.title_name}.</p>
 				{:else}
-					<div class="extra-form">
-						<div class="extra-title">
-							<span class="extra-title-label">Title:</span>
-							{#if openTitles.length === 0}
-								<p class="muted-text small" style="margin:0;">No titles remain.</p>
-							{:else}
-								<div class="title-chip-row">
-									{#each openTitles as t}
-										<button
-											type="button"
-											class="title-chip"
-											class:active={extraPeerName === t.name}
-											onclick={() => (extraPeerName = extraPeerName === t.name ? '' : t.name)}
-										>{t.name}</button>
-									{/each}
-								</div>
-							{/if}
-						</div>
+					<p class="check-body">
+						A court this small is a thin cast. Take one title nobody claimed and give
+						it a face.
+					</p>
+					<!-- Title first, then the authoring form: the description under the
+					     chosen chip is the prompt the peer is written from, so there is
+					     nothing to write until a title is picked. -->
+					<div class="extra-title">
+						<span class="extra-title-label">1 · Claim a title</span>
+						{#if openTitles.length === 0}
+							<p class="muted-text small" style="margin:0;">No titles remain.</p>
+						{:else}
+							<div class="title-chip-row">
+								{#each openTitles as t}
+									<button
+										type="button"
+										class="title-chip"
+										class:active={extraTitleName === t.name}
+										aria-pressed={extraTitleName === t.name}
+										onclick={() => pickTitle(t.name)}
+									>{t.name}</button>
+								{/each}
+							</div>
+						{/if}
 					</div>
-					<label>
-						Peer name:
-						<input
-							type="text"
-							bind:value={extraPeerText}
-							class="peer-input"
-							placeholder="Name your peer"
-							maxlength={TEXT_LIMITS.NAME}
+
+					{#if selectedTitle}
+						{#if selectedTitle.description}
+							<p class="title-desc">{selectedTitle.description}</p>
+						{/if}
+						<AssetCreationForm
+							{gameID}
+							assetType="peer"
+							bind:name={extraPeerText}
+							bind:marginalia={extraTitleText}
+							disabled={creatingExtra}
+							nameLabel="2 · Name"
+							marginaliaLabel="3 · The title, in your words"
+							namePlaceholder="Name your peer…"
+							marginaliaPlaceholder="How does this title sit on them?"
 						/>
-					</label>
-					<button
-						class="action-btn secondary small"
-						onclick={submitExtraPeer}
-						disabled={!extraPeerName || !extraPeerText.trim() || creatingExtra}
-					>
-						{creatingExtra ? '…' : 'Create peer'}
-					</button>
+						<button
+							class="action-btn secondary small"
+							onclick={submitExtraPeer}
+							disabled={!extraPeerText.trim() || !extraTitleText.trim() || creatingExtra}
+						>
+							{creatingExtra ? '…' : 'Create peer'}
+						</button>
+					{/if}
 				{/if}
 			</section>
 		{/if}
@@ -799,15 +838,6 @@
 
 	.done-btn.active { background: var(--color-success); }
 
-	.extra-form {
-		display: flex;
-		gap: 0.6rem;
-		align-items: end;
-	}
-	.peer-input {
-		max-width: 20rem;
-		margin-top: 0.25rem;
-	}
 	.extra-title {
 		display: flex;
 		flex-direction: column;
@@ -815,25 +845,54 @@
 		font-size: 0.85rem;
 		color: var(--color-text-muted);
 	}
+	/* Numbered to match AssetCreationForm's own step labels, which this row
+	   sits directly above — so the title pick reads as step 1 of one form
+	   rather than a separate control. */
 	.extra-title-label {
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--color-accent);
 	}
+
+	/* The claimed title's sheet description — the fiction the peer is written
+	   from. Quoted-source treatment (rule + italic), not a form hint. */
+	.title-desc {
+		margin: 0;
+		padding-left: 0.6rem;
+		border-left: 2px solid var(--color-border-warm);
+		color: var(--color-text-secondary);
+		font-size: 0.85rem;
+		font-style: italic;
+		line-height: 1.4;
+	}
+	/* Fixed 3 columns, not wrapping pills. Twelve titles flowed 2-per-row at
+	   the phone floor — six rows of chrome above the form. Measured in
+	   Spectral at 360 (row 311.6px, so ~100px cells): the longest label,
+	   "The Spymaster", is 94.6px at 0.9rem and 89.3px at 0.85rem, neither of
+	   which clears a cell once the pill's padding is paid — and 344 takes
+	   another 5px off the cell. So the label wraps to a second line instead,
+	   and the grid keeps every tile the height of the tallest. Same accepted
+	   cost as the choosing-phase tile grid, four rows instead of six. */
 	.title-chip-row {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0.35rem;
 	}
 	.title-chip {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
+		justify-content: center;
+		min-width: 0;
 		min-height: 44px;
-		padding: 0.35rem 0.85rem;
-		border-radius: 999px;
+		padding: 0.3rem 0.4rem;
+		border-radius: 6px;
 		border: 1px solid var(--color-neutral);
 		background: var(--color-surface-2);
 		color: var(--color-text);
-		font-size: 0.9rem;
+		font-size: 0.85rem;
+		line-height: 1.15;
+		text-align: center;
 		cursor: pointer;
 	}
 	.title-chip.active {

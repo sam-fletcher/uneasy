@@ -77,14 +77,21 @@ export function placePrologueSetAsides(
 	});
 }
 
+/**
+ * Creates the ≤3p closing-step extra peer. `titleText` is the wording of the
+ * title marginalia the peer is stamped with — the player's own phrasing of the
+ * claimed title, as in the Shake-Up title claim. Omit or pass '' to fall back
+ * to the title's display name.
+ */
 export function createExtraPeer(
 	gameID: string | number,
 	titleName: string,
 	peerText: string,
+	titleText = '',
 ): Promise<{ asset: Asset }> {
 	return apiFetch(`/tables/${gameID}/prologue/extra-peer`, {
 		method: 'POST',
-		body: JSON.stringify({ title_name: titleName, peer_text: peerText })
+		body: JSON.stringify({ title_name: titleName, peer_text: peerText, title_text: titleText })
 	});
 }
 

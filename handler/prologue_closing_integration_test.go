@@ -691,7 +691,52 @@ func TestCreateExtraPeer_ResponseIncludesTitleMarginalia(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.NotZero(t, resp.Asset.ID)
 	require.Len(t, resp.Asset.Marginalia, 1, "the title marginalia must be present in the response")
-	assert.NotEmpty(t, resp.Asset.Marginalia[0].Text)
+	assert.Equal(t, "The Spymaster", resp.Asset.Marginalia[0].Text,
+		"no title_text sent, so the marginalia falls back to the title's display name")
+}
+
+// TestCreateExtraPeer_TitleTextIsTheMarginaliaWording covers the authorable
+// half of the same marginalia: title_text is the player's own phrasing of the
+// claimed title and becomes the marginalia's text, while the immutable title id
+// still lands on the row (ADR-007 — currentMonarch reads the id, never the
+// wording, so a flavored monarch must still be findable).
+func TestCreateExtraPeer_TitleTextIsTheMarginaliaWording(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	game, players := newClosingGame(t, q, 2)
+
+	store := db.NewStore(pool)
+	manager := hub.NewManager()
+	manager.GetOrCreate(game.ID)
+	router := closingRouter(store, manager)
+
+	const wording = "The Monarch, who has not left the west tower in a year"
+	rec := postJSON(t, q, router, extraPeerPath(game.ID), players[0], map[string]any{
+		"title_name": "The Monarch", "peer_text": "Aldous", "title_text": wording,
+	})
+	require.Equalf(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var resp struct {
+		Asset struct {
+			ID         int64 `json:"id"`
+			Marginalia []struct {
+				Text  string  `json:"text"`
+				Title *string `json:"title"`
+			} `json:"marginalia"`
+		} `json:"asset"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Asset.Marginalia, 1)
+	assert.Equal(t, wording, resp.Asset.Marginalia[0].Text)
+	require.NotNil(t, resp.Asset.Marginalia[0].Title, "the title id survives the player's wording")
+	assert.Equal(t, gamepkg.TitleMonarch, *resp.Asset.Marginalia[0].Title)
+
+	// The throne gate keys off the title id, so flavored wording must still
+	// trip it.
+	fresh, err := q.GetGameByID(ctx, game.ID)
+	require.NoError(t, err)
+	assert.True(t, fresh.ThroneEstablished, "claiming the monarch title establishes the throne")
 }
 
 // TestClosingReady_ConcurrentLastReady_Idempotent fires two identical

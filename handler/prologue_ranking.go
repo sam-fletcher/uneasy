@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -308,11 +309,17 @@ func PlaceSetAsides(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // across all assets, not just main characters — can find an extra-peer
 // monarch/heir in ≤3-player games. Claiming the monarch title trips the
 // throne_established gate. Runs inside the caller's transaction.
+//
+// titleText is the player's freeform wording for that marginalia — the same
+// split applyClaimTitle uses for the Shake-Up claim (the text is the player's,
+// the title id is the immutable role). Empty falls back to the title's display
+// name, which is what every extra peer carried before the wording was
+// authorable.
 func insertExtraPeerWithTitle(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID, playerID int64,
-	titleName, peerText, titleID string,
+	titleName, peerText, titleID, titleText string,
 ) (dbgen.Asset, dbgen.Marginalium, error) {
 	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
 		GameID:    gameID,
@@ -329,10 +336,14 @@ func insertExtraPeerWithTitle(
 	}); err != nil {
 		return dbgen.Asset{}, dbgen.Marginalium{}, errors.New("could not record extra peer")
 	}
+	text := titleName
+	if strings.TrimSpace(titleText) != "" {
+		text = strings.TrimSpace(titleText)
+	}
 	marg, err := q.CreateTitleMarginalia(ctx, dbgen.CreateTitleMarginaliaParams{
 		AssetID:  asset.ID,
 		Position: 1,
-		Text:     titleName,
+		Text:     text,
 		Title:    &titleID,
 	})
 	if err != nil {
@@ -346,14 +357,61 @@ func insertExtraPeerWithTitle(
 	return asset, marg, nil
 }
 
+// extraPeerClaimAvailable reports whether playerID may still claim titleName as
+// their extra peer: one extra peer per player, and one claim per title across
+// both the choosing-phase and extra-peer flows. Writes the 409 (or 500) and
+// returns false when not. These are pre-transaction reads — the durable
+// guarantees are the extra_peers table's own constraints.
+func extraPeerClaimAvailable(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+	titleName string,
+) bool {
+	ctx := r.Context()
+	alreadyDone, err := q.ExtraPeerExistsForPlayer(ctx, dbgen.ExtraPeerExistsForPlayerParams{
+		GameID: gameID, PlayerID: playerID,
+	})
+	if err != nil {
+		respondInternalErr(w, r, "could not check player status", err)
+		return false
+	}
+	if alreadyDone {
+		respondErr(w, http.StatusConflict, "you have already created your extra peer")
+		return false
+	}
+	choosingClaimed, err := q.PrologueChoiceClaimed(ctx, dbgen.PrologueChoiceClaimedParams{
+		GameID: gameID, SheetType: gamepkg.PrologueSheetTitles, ChoiceName: titleName,
+	})
+	if err != nil {
+		respondInternalErr(w, r, "could not check title status", err)
+		return false
+	}
+	extraClaimed, err := q.ExtraPeerTitleClaimed(ctx, dbgen.ExtraPeerTitleClaimedParams{
+		GameID: gameID, TitleName: titleName,
+	})
+	if err != nil {
+		respondInternalErr(w, r, "could not check title status", err)
+		return false
+	}
+	if choosingClaimed || extraClaimed {
+		respondErr(w, http.StatusConflict, "title is already claimed")
+		return false
+	}
+	return true
+}
+
 // CreateExtraPeer handles POST /api/games/{id}/prologue/extra-peer.
 //
-// Body: {"title_name": "..."}. Creates one additional peer asset for the
-// caller, named after an unused title from the titles sheet. Each player
-// may create exactly one extra peer; each title may only be claimed once
-// (across both the choosing-phase and extra-peer flows). Available only
-// during the closing step, and only in games of 3 or fewer players (the
-// closing checklist's "create an extra peer" item).
+// Body: {"title_name": "...", "peer_text": "...", "title_text": "..."}.
+// Creates one additional peer asset for the caller under an unused title from
+// the titles sheet: peer_text is the peer's name, title_text the wording of
+// the title marginalia the peer is stamped with (optional; defaults to the
+// title's display name). Each player may create exactly one extra peer; each
+// title may only be claimed once (across both the choosing-phase and
+// extra-peer flows). Available only during the closing step, and only in games
+// of 3 or fewer players (the closing checklist's "create an extra peer" item).
 func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, player, ok := parseGamePlayer(w, r, s.Q)
@@ -381,6 +439,7 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		var body struct {
 			TitleName string `json:"title_name"`
 			PeerText  string `json:"peer_text"`
+			TitleText string `json:"title_text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -391,6 +450,13 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		body.PeerText = peerText
+		// A marginalia, so it takes the marginalia cap — not the name cap the
+		// peer's own text is held to.
+		titleText, ok := textField(w, "title_text", body.TitleText, maxMarginaliaLen)
+		if !ok {
+			return
+		}
+		body.TitleText = titleText
 		if body.PeerText == "" {
 			respondErr(w, http.StatusBadRequest, "peer_text is required")
 			return
@@ -400,33 +466,7 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "unknown title")
 			return
 		}
-		alreadyDone, err := s.Q.ExtraPeerExistsForPlayer(ctx, dbgen.ExtraPeerExistsForPlayerParams{
-			GameID: gameID, PlayerID: player.ID,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not check player status", err)
-			return
-		}
-		if alreadyDone {
-			respondErr(w, http.StatusConflict, "you have already created your extra peer")
-			return
-		}
-		choosingClaimed, err := s.Q.PrologueChoiceClaimed(ctx, dbgen.PrologueChoiceClaimedParams{
-			GameID: gameID, SheetType: gamepkg.PrologueSheetTitles, ChoiceName: body.TitleName,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not check title status", err)
-			return
-		}
-		extraClaimed, err := s.Q.ExtraPeerTitleClaimed(ctx, dbgen.ExtraPeerTitleClaimedParams{
-			GameID: gameID, TitleName: body.TitleName,
-		})
-		if err != nil {
-			respondInternalErr(w, r, "could not check title status", err)
-			return
-		}
-		if choosingClaimed || extraClaimed {
-			respondErr(w, http.StatusConflict, "title is already claimed")
+		if !extraPeerClaimAvailable(w, r, s.Q, gameID, player.ID, body.TitleName) {
 			return
 		}
 
@@ -442,6 +482,7 @@ func CreateExtraPeer(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				body.TitleName,
 				body.PeerText,
 				choice.ID,
+				body.TitleText,
 			)
 			return iErr
 		})
