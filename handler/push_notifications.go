@@ -73,10 +73,10 @@ type pushPayload struct {
 // buildPushPayload renders the fixed copy for gameID/joinCode. Split out
 // from sendGroup so tests can assert on the encoding without a network round
 // trip (mirrors formatDiscordMessage in notify.go).
-func buildPushPayload(joinCode string, gameID int64) ([]byte, error) {
+func buildPushPayload(gameID int64) ([]byte, error) {
 	return json.Marshal(pushPayload{
 		Title: pushTitle,
-		Body:  fmt.Sprintf("Table %s is waiting on you.", joinCode),
+		Body:  "The game is waiting on you!",
 		Tag:   fmt.Sprintf("game-%d", gameID),
 		URL:   fmt.Sprintf("/table/%d", gameID),
 	})
@@ -203,7 +203,7 @@ func sendGroup(ctx context.Context, store *db.Store, logger *slog.Logger, g dueG
 	if vapidPublicKey == "" || vapidPrivateKey == "" {
 		logger.InfoContext(ctx, "push notification (VAPID keys unset)",
 			"player_id", g.playerID, "game_id", g.gameID, "subscriptions", len(g.subs))
-	} else if payload, err := buildPushPayload(g.joinCode, g.gameID); err != nil {
+	} else if payload, err := buildPushPayload(g.gameID); err != nil {
 		logger.ErrorContext(ctx, "notification tick: encode payload failed", "err", err, "player_id", g.playerID)
 	} else {
 		for _, sub := range g.subs {

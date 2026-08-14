@@ -21,13 +21,13 @@ import (
 )
 
 func TestBuildPushPayload_EncodesFixedCopy(t *testing.T) {
-	raw, err := buildPushPayload("WOLF-1", 42)
+	raw, err := buildPushPayload(42)
 	require.NoError(t, err)
 
 	var payload pushPayload
 	require.NoError(t, json.Unmarshal(raw, &payload))
 	assert.Equal(t, pushTitle, payload.Title)
-	assert.Equal(t, "Table WOLF-1 is waiting on you.", payload.Body)
+	assert.Equal(t, "The game is waiting on you!", payload.Body)
 	assert.Equal(t, "game-42", payload.Tag)
 	assert.Equal(t, "/table/42", payload.URL)
 }
@@ -56,7 +56,7 @@ func TestSendPush_SendsToConfiguredEndpoint(t *testing.T) {
 	defer srv.Close()
 
 	p256dh, auth := testSubscriptionKeys(t)
-	payload, err := buildPushPayload("WOLF-1", 1)
+	payload, err := buildPushPayload(1)
 	require.NoError(t, err)
 
 	prune, err := sendPush(context.Background(), srv.URL, p256dh, auth, payload)
@@ -77,7 +77,7 @@ func TestSendPush_PrunesOn410Gone(t *testing.T) {
 	defer srv.Close()
 
 	p256dh, auth := testSubscriptionKeys(t)
-	payload, err := buildPushPayload("WOLF-1", 1)
+	payload, err := buildPushPayload(1)
 	require.NoError(t, err)
 
 	prune, err := sendPush(context.Background(), srv.URL, p256dh, auth, payload)
@@ -97,7 +97,7 @@ func TestSendPush_PrunesOn404NotFound(t *testing.T) {
 	defer srv.Close()
 
 	p256dh, auth := testSubscriptionKeys(t)
-	payload, err := buildPushPayload("WOLF-1", 1)
+	payload, err := buildPushPayload(1)
 	require.NoError(t, err)
 
 	prune, err := sendPush(context.Background(), srv.URL, p256dh, auth, payload)
@@ -117,7 +117,7 @@ func TestSendPush_DoesNotPruneOnServerError(t *testing.T) {
 	defer srv.Close()
 
 	p256dh, auth := testSubscriptionKeys(t)
-	payload, err := buildPushPayload("WOLF-1", 1)
+	payload, err := buildPushPayload(1)
 	require.NoError(t, err)
 
 	prune, err := sendPush(context.Background(), srv.URL, p256dh, auth, payload)
@@ -137,12 +137,18 @@ func TestGroupDueNotifications_CollapsesMultipleSubscriptions(t *testing.T) {
 	cadence := int16(24)
 
 	rows := []dbgen.ListDueNotificationsWithSubscriptionsRow{
-		{PlayerID: 10, GameID: 1, JoinCode: "WOLF-1", NotifyCadenceHours: &cadence,
-			SubscriptionID: &sub1, Endpoint: &endpoint1, P256dh: &p256dh, Auth: &auth},
-		{PlayerID: 10, GameID: 1, JoinCode: "WOLF-1", NotifyCadenceHours: &cadence,
-			SubscriptionID: &sub2, Endpoint: &endpoint2, P256dh: &p256dh, Auth: &auth},
-		{PlayerID: 20, GameID: 1, JoinCode: "WOLF-1", NotifyCadenceHours: nil,
-			SubscriptionID: nil, Endpoint: nil, P256dh: nil, Auth: nil},
+		{
+			PlayerID: 10, GameID: 1, JoinCode: "WOLF-1", NotifyCadenceHours: &cadence,
+			SubscriptionID: &sub1, Endpoint: &endpoint1, P256dh: &p256dh, Auth: &auth,
+		},
+		{
+			PlayerID: 10, GameID: 1, JoinCode: "WOLF-1", NotifyCadenceHours: &cadence,
+			SubscriptionID: &sub2, Endpoint: &endpoint2, P256dh: &p256dh, Auth: &auth,
+		},
+		{
+			PlayerID: 20, GameID: 1, JoinCode: "WOLF-1", NotifyCadenceHours: nil,
+			SubscriptionID: nil, Endpoint: nil, P256dh: nil, Auth: nil,
+		},
 	}
 
 	groups := groupDueNotifications(rows)
