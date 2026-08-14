@@ -51,23 +51,31 @@
 	// Worked Mar example for the Dice tab. The pool is 2 starting dice + 1 help
 	// die; a single interference die cancels the matching 4. The survivors (a 1
 	// and a 6) make two distinct faces — short of a difficulty of 3.
+	// Only ACTOR dice are ever cancelled (handler/rolls_dice.go
+	// cancelInterference writes the cancelling die's id onto the actor's die and
+	// nothing onto the interference die) — so the 4 that interferes is drawn
+	// intact, and only the matching 4 in the pool is struck.
 	const marDifficulty = 3;
-	type MarDie = { face: number; group: 'start' | 'help' | 'interfere'; x: number; canceled: boolean };
+	type MarDie = { face: number; group: 'start' | 'help' | 'interfere'; canceled: boolean };
 	const marDice: MarDie[] = [
-		{ face: 4, group: 'start',     x: 10,  canceled: true },
-		{ face: 1, group: 'start',     x: 46,  canceled: false },
-		{ face: 6, group: 'help',      x: 100, canceled: false },
-		{ face: 4, group: 'interfere', x: 198, canceled: true },
+		{ face: 4, group: 'start',     canceled: true },
+		{ face: 1, group: 'start',     canceled: false },
+		{ face: 6, group: 'help',      canceled: false },
+		{ face: 4, group: 'interfere', canceled: false },
 	];
 	// Result = distinct faces among the surviving pool dice (interference excluded).
 	const marResult = new Set(
 		marDice.filter((d) => d.group !== 'interfere' && !d.canceled).map((d) => d.face),
 	).size;
 
-	function dieBorder(group: MarDie['group']): string {
-		if (group === 'help') return 'var(--color-accent)';
-		if (group === 'interfere') return 'var(--color-danger)';
-		return 'var(--color-border-strong)';
+	// One border for every die (owner ruling): a die is a die, and the group's
+	// label above it — white / green / red — is what says whose it is. The
+	// help and interference dice carry the family's chip fill as a second,
+	// quieter cue, matching DiceRollPanel's own red-tinted `.die.int`.
+	function dieFill(group: MarDie['group']): string {
+		if (group === 'help') return 'var(--color-chip-green-bg)';
+		if (group === 'interfere') return 'var(--color-chip-red-bg)';
+		return 'var(--color-surface-2)';
 	}
 
 	// Pip centres for a die face, expressed in a 0–1 unit square.
@@ -270,25 +278,31 @@
 		{/if}
 
 		{#if active === 'dice'}
-			<p>Roll dice when an outcome is in doubt — two to start, plus one for each asset you <em>leverage</em>.</p>
-			<p>Other players can leverage their own assets to <em>help</em> or <em>interfere</em>.</p>
-			<p>Each interference die cancels a matching die. Count the <em>distinct faces</em> left standing: meet the difficulty to <em>Make</em>, fall short and you <em>Mar</em>.</p>
+			<p>Sometimes your plans will require rolling dice — two to start, plus one for each asset you <em>leverage</em>.</p>
+			<p>Other players can leverage their own assets to
+				<span class="w-aid">help</span> or <span class="w-int">interfere</span>.</p>
+			<p>The game will tell you how many unique dice faces you need to succeed (called a Make). Less means failure (a Mar).</p>
 
 			{#snippet dieFace(d: MarDie)}
 				<svg class="die" class:canceled={d.canceled} viewBox="0 0 36 36" aria-hidden="true">
 					<rect x="2" y="2" width="32" height="32" rx="7"
-						fill="var(--color-surface-2)" stroke={dieBorder(d.group)}
-						stroke-width={d.group === 'start' ? 1.5 : 2} />
+						fill={dieFill(d.group)} stroke="var(--color-border-strong)"
+						stroke-width="1.5" />
 					{#each pips(d.face) as [px, py]}
 						<circle cx={2 + px * 32} cy={2 + py * 32} r="3.2" fill="var(--color-text)" />
 					{/each}
 					{#if d.canceled}
-						<line x1="8" y1="28" x2="28" y2="8" stroke="var(--color-danger)" stroke-width="2.5" />
+						<!-- Struck through the middle, not diagonally: on a 4 either
+						     diagonal runs straight over two of the pips, and the face
+						     stops being countable. A horizontal rule also matches
+						     DiceRollPanel's line-through on a cancelled die. -->
+						<line x1="6" y1="18" x2="30" y2="18" stroke="var(--color-danger)" stroke-width="2.5" />
 					{/if}
 				</svg>
 			{/snippet}
 
 			<figure class="diagram diagram-dice">
+				<h5 class="fig-head">Example</h5>
 				<div class="dice-board" aria-hidden="true">
 					<div class="dice-group">
 						<span class="dice-label">Start</span>
@@ -297,7 +311,7 @@
 						</div>
 					</div>
 					<div class="dice-group">
-						<span class="dice-label">Help</span>
+						<span class="dice-label aid">Help</span>
 						<div class="dice-set">
 							{#each marDice.filter((d) => d.group === 'help') as d}{@render dieFace(d)}{/each}
 						</div>
@@ -310,9 +324,14 @@
 						</div>
 					</div>
 				</div>
-				<div class="dice-result">{marResult} distinct faces · difficulty {marDifficulty}</div>
+				<div class="dice-result">
+					<span class="dice-count">{marResult}</span> distinct faces ·
+					<span class="dice-count">{marDifficulty}</span> needed
+				</div>
 				<div class="dice-mar-wrap"><span class="dice-mar">MAR</span></div>
-				<figcaption>The interference die cancels your matching 4, leaving a 1 and a 6 — two distinct faces, short of the difficulty. A Mar.</figcaption>
+				<figcaption>You leveraged no assets, so you rolled your two starting dice. One player
+					<span class="w-aid">helped</span>, another <span class="w-int">interfered</span> — their 4
+					cancels your 4, leaving a 1 and a 6. Two distinct faces, one short of the difficulty.</figcaption>
 			</figure>
 		{/if}
 
@@ -512,6 +531,16 @@
 	.diagram-record svg { max-width: 100%; }
 	.record-text { flex: 1 1 auto; min-width: 0; }
 	.record-text :global(p):first-child { margin-top: 0; }
+	/* Figure heading — same uppercase gold small-label as .pace-head/.plan-cat,
+	   so a worked example announces itself before the reader has to infer it
+	   from the caption underneath. */
+	.fig-head {
+		margin: 0 0 0.55rem;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-accent);
+	}
 	.diagram figcaption {
 		margin-top: 0.6rem;
 		font-size: 0.85rem;
@@ -527,17 +556,43 @@
 	/* ── Dice example (Dice tab) ─────────────────────────────────────────── */
 	/* Labels and the result line are HTML so they share the prose size; only
 	   the dice (and the MAR stamp) are graphical. */
-	.dice-board { display: flex; justify-content: center; align-items: flex-end; gap: 0.6rem; }
+	/* Group gap comfortably wider than the 6px between dice inside a set —
+	   at 0.6rem the second Start die and the Help die read as one row of three. */
+	.dice-board { display: flex; justify-content: center; align-items: flex-end; gap: 0.9rem; }
 	.dice-group { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
-	.dice-label { font-size: 0.85rem; color: var(--color-text-muted); }
+	/* Full-contrast labels, not muted: they're the figure's legend, and the two
+	   coloured ones are the same green/red the prose above marks "help" and
+	   "interfere" with. A grey "Start" beside them read as the odd one out. */
+	.dice-label { font-size: 0.85rem; color: var(--color-text); }
+	.dice-label.aid { color: var(--color-success); }
 	.dice-label.int { color: var(--color-danger); }
 	.dice-set { display: flex; gap: 6px; }
 	.diagram .die { width: 30px; height: 30px; flex-shrink: 0; }
-	.die.canceled { opacity: 0.4; }
+	/* Faded, but its face must stay countable — the caption says "their 4
+	   cancels your 4", and at 0.4 the pips were too dim to check that. */
+	.die.canceled { opacity: 0.62; }
 	.dice-sep { align-self: stretch; width: 0; border-left: 1px dashed var(--color-border); margin: 0 0.15rem; }
 	.dice-result { margin: 0.65rem 0 0.45rem; text-align: center; font-size: 0.85rem; color: var(--color-text-muted); }
+	/* Standalone numeric counters — the one place bold is allowed. */
+	.dice-count { font-weight: 700; color: var(--color-text); }
 	.dice-mar-wrap { text-align: center; }
-	.dice-mar { display: inline-block; border: 2px solid var(--color-danger); border-radius: 6px; padding: 0.05rem 0.7rem; color: var(--color-danger); font-style: italic; font-size: 1rem; letter-spacing: 0.12em; }
+	.dice-mar {
+		display: inline-block;
+		border: 2px solid var(--color-danger);
+		border-radius: 6px;
+		padding: 0.05rem 0.7rem;
+		background: var(--color-chip-red-bg);
+		color: var(--color-danger);
+		font-size: 1rem;
+		letter-spacing: 0.12em;
+	}
+
+	/* The two mechanics, marked in prose and caption with the same green/red the
+	   figure's labels and the live roll panel (aid vs interference) use. Colour
+	   here identifies WHICH mechanic, the same job the italics do for asset
+	   names — it isn't emphasis. */
+	.w-aid { color: var(--color-success); }
+	.w-int { color: var(--color-danger); }
 
 	/* ── Pace pair (Goal tab) ────────────────────────────────────────────── */
 	/* Two cards rather than a sentence each: the whole point is that the two
