@@ -3,7 +3,8 @@
 // handler/accounts_tables_integration_test.go — coverage for the enriched
 // GET /api/accounts/me/tables response the profile page's table cards render:
 // phase, full roster in join order, wait state, account-level presence, and
-// the unread count behind the card's "N new" chip.
+// the unread count behind the card's "N new" chip. Plus POST /api/tables/join's
+// lobby-phase gate, which decides whether a table appears on a card at all.
 
 package handler
 
@@ -12,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +25,125 @@ import (
 	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
+
+// TestJoinTablePhaseGate pins ruling R1 of adr/LOBBY_AND_CHECKLIST_PLAN.md: the
+// table is sealed the moment the facilitator starts the prologue. Before the
+// gate, anyone holding a code could walk into a running game and be seated with
+// no rankings row, no prologue history and no plan tokens — and the lobby's
+// facilitator copy ("once you start, the table is sealed") would be a lie.
+//
+// The two clauses that could go wrong in opposite directions both have a case
+// here: over-gating (a lobby join refused) and under-gating (a seated player
+// locked out of their own running table, which the short-circuit above the gate
+// is there to prevent).
+func TestJoinTablePhaseGate(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	store := db.NewStore(pool)
+	ctx := t.Context()
+
+	// join posts a join-code request as the given account, the way the profile
+	// page's join form does.
+	join := func(acct dbgen.Account, code string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/tables/join",
+			strings.NewReader(`{"join_code":"`+code+`"}`))
+		req = req.WithContext(appMiddleware.AccountContext(req.Context(),
+			&appMiddleware.Account{ID: acct.ID, Username: acct.Username}))
+		w := httptest.NewRecorder()
+		JoinTable(store, hub.NewManager())(w, req)
+		return w
+	}
+
+	// newcomer is an account with no seat anywhere — the attacker/stranger in
+	// finding 11, and the honest late arrival in the lobby case.
+	newcomer := func() dbgen.Account {
+		t.Helper()
+		acct, err := q.CreateAccount(ctx, dbgen.CreateAccountParams{
+			Username: "newcomer-" + randSuffix(), PasswordHash: "x",
+		})
+		require.NoError(t, err)
+		return acct
+	}
+
+	// A game in the given phase, seeded as a real two-player main event and
+	// then moved — the gate reads nothing but games.phase.
+	gameInPhase := func(phase model.GamePhase) testGame {
+		t.Helper()
+		tg := newTestGame(t, q, 2)
+		require.NoError(t, q.SetGamePhase(ctx, dbgen.SetGamePhaseParams{
+			ID: tg.Game.ID, Phase: phase,
+		}))
+		return tg
+	}
+
+	// Lobby: joining works. Guards against over-gating — this is the whole
+	// point of a join code.
+	t.Run("lobby accepts a newcomer", func(t *testing.T) {
+		tg := gameInPhase(model.PhaseLobby)
+		acct := newcomer()
+
+		rec := join(acct, tg.Game.JoinCode)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+		seated, err := q.GetPlayerByAccountAndGame(ctx, dbgen.GetPlayerByAccountAndGameParams{
+			AccountID: acct.ID, GameID: tg.Game.ID,
+		})
+		require.NoError(t, err, "a 201 must have actually seated the account")
+		require.EqualValues(t, 3, *seated.SeatOrder)
+	})
+
+	// Every phase past the lobby: 409, and nothing written.
+	for _, phase := range []model.GamePhase{
+		model.PhasePrologue, model.PhaseMainEvent, model.PhaseShakeUp, model.PhaseEnded,
+	} {
+		t.Run(string(phase)+" refuses a newcomer", func(t *testing.T) {
+			tg := gameInPhase(phase)
+			acct := newcomer()
+
+			rec := join(acct, tg.Game.JoinCode)
+			require.Equal(t, http.StatusConflict, rec.Code,
+				"a %s game must not accept a new player", phase)
+			require.Contains(t, rec.Body.String(), "already started",
+				"the message reaches the profile page's ErrorText verbatim")
+
+			_, err := q.GetPlayerByAccountAndGame(ctx, dbgen.GetPlayerByAccountAndGameParams{
+				AccountID: acct.ID, GameID: tg.Game.ID,
+			})
+			require.Error(t, err, "the refused join must not have seated anyone")
+
+			players, err := q.GetPlayersByGame(ctx, tg.Game.ID)
+			require.NoError(t, err)
+			require.Len(t, players, 2, "the roster must be untouched")
+		})
+	}
+
+	// The short-circuit above the gate: a player already at a running table can
+	// still hit the endpoint (the profile page's join form is the same form for
+	// everyone) and gets their own seat back, not a lockout.
+	t.Run("a seated player re-joins their running table", func(t *testing.T) {
+		tg := gameInPhase(model.PhaseMainEvent)
+		seated := tg.Players[1]
+
+		acct, err := q.GetAccountByID(ctx, seated.AccountID)
+		require.NoError(t, err)
+
+		rec := join(acct, tg.Game.JoinCode)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+		var resp struct {
+			Player struct {
+				ID int64 `json:"id"`
+			} `json:"player"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		require.Equal(t, seated.ID, resp.Player.ID, "must hand back their existing seat")
+
+		players, err := q.GetPlayersByGame(ctx, tg.Game.ID)
+		require.NoError(t, err)
+		require.Len(t, players, 2, "a re-join must not create a second seat")
+	})
+}
 
 func TestListMyTablesEnrichment(t *testing.T) {
 	pool := openTestDB(t)

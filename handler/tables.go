@@ -129,8 +129,8 @@ func CreateTable(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 // JoinTable handles POST /api/tables/join.
 //
 // Adds the calling account to an existing table via join code. Idempotent
-// if the account is already seated. Rejects if the table is at the
-// hard-coded 5-player cap.
+// if the account is already seated. Rejects if the table has left the lobby
+// phase, or is at the hard-coded 5-player cap.
 func JoinTable(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
@@ -171,6 +171,16 @@ func JoinTable(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			respondErr(w, http.StatusInternalServerError, "could not check membership")
+			return
+		}
+
+		// The table is sealed once the facilitator starts the prologue: a game
+		// past the lobby has rankings, prologue history and plan tokens that a
+		// late arrival would have no share of (ADR LOBBY_AND_CHECKLIST R1).
+		// This sits below the already-seated short-circuit so a seated player
+		// re-joining their own running table still succeeds.
+		if game.Phase != model.PhaseLobby {
+			respondErr(w, http.StatusConflict, "this table has already started")
 			return
 		}
 
