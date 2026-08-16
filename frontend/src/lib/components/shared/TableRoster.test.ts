@@ -26,6 +26,10 @@ function player(id: number, name: string, extra: Partial<Player> = {}): Player {
 	};
 }
 
+// alice holds the facilitator flag on purpose: the roster must not say so
+// anywhere (owner, 2026-08-16 — the app names the facilitator in the two
+// sentences where the role has a consequence, and wears it as a title
+// nowhere).
 const alice = player(1, 'alice', { is_facilitator: true });
 const bob = player(2, 'bob');
 
@@ -39,6 +43,13 @@ describe('TableRoster — seats', () => {
 		// A roster you can't find yourself in is the finding this component
 		// exists to fix — so your own name is never the label.
 		expect(body).not.toContain('>alice<');
+	});
+
+	it('never names the facilitator role, on screen or to a screen reader', () => {
+		const { body } = render(TableRoster, {
+			props: { players: [alice, bob], currentPlayerID: 2, onSelect: () => {} },
+		});
+		expect(body).not.toContain('facilitator');
 	});
 
 	it('gives a plain row its state words visually-hidden, in reading order', () => {
@@ -74,7 +85,7 @@ describe('TableRoster — tappable rows', () => {
 			props: { players: [alice, bob], currentPlayerID: 1, onSelect: () => {} },
 		});
 		expect(body).toContain('<button');
-		expect(body).toContain('aria-label="alice (you), facilitator"');
+		expect(body).toContain('aria-label="alice (you)"');
 	});
 
 	it('rowLabel replaces that label and is handed the state words', () => {

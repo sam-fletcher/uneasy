@@ -91,7 +91,6 @@
 		assets: Asset[];
 		rankings: Ranking[];
 		currentPlayerID: number | null;
-		isFacilitator: boolean;
 		waitingOn: WaitingOnState;
 		laws?: Law[];
 		rumors?: Rumor[];
@@ -112,7 +111,6 @@
 		assets = $bindable(),
 		rankings = $bindable(),
 		currentPlayerID,
-		isFacilitator,
 		waitingOn = $bindable(),
 		laws,
 		rumors,

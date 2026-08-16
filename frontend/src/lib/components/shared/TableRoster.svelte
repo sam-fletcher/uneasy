@@ -15,6 +15,14 @@
     • gold fill      — the game is waiting on them. The same set that rings the
                        header chips, so the two can never disagree.
 
+  There is deliberately NO facilitator tag (owner, 2026-08-16). The flag gates
+  exactly one thing a player can see — Start Prologue, in the lobby — and it
+  breaks ties in the row 7 → 8 ending vote; both places name the person in a
+  sentence where the fact has a consequence ("alice will start the game once
+  everyone has arrived", "If the vote ties, alice's side wins"), which is
+  worth more than a title the app never defines anywhere. Whoever the lobby is
+  waiting on already wears the gold fill, which says the useful half.
+
   The caller owns the heading and the count ("3 seated · room for 2 more" vs
   "1 of 3 ready"), the per-row trailing content, and the lobby's invite chair.
 -->
@@ -64,7 +72,7 @@
 	// The ring and the gold fill are pure colour, so they need words somewhere.
 	// A tappable row spends them on its aria-label (which replaces the row's
 	// text for a screen reader); a plain row appends them visually-hidden, so
-	// the reading order stays "You, facilitator, online".
+	// the reading order stays "You, online".
 	function stateWords(p: Player, online: boolean, waiting: boolean): string {
 		// Presence is only a signal when the caller supplied any: without
 		// `members` every row would otherwise announce "offline".
@@ -78,17 +86,13 @@
 		const words = stateWords(p, online, waiting);
 		if (rowLabel) return rowLabel(p, words);
 		const you = p.id === currentPlayerID ? ' (you)' : '';
-		const facilitator = p.is_facilitator ? ', facilitator' : '';
-		return `${p.display_name}${you}${facilitator}${words}`;
+		return `${p.display_name}${you}${words}`;
 	}
 </script>
 
 {#snippet seatBody(p: Player)}
 	<span class="seat-dot" aria-hidden="true"></span>
 	<span class="seat-name">{p.id === currentPlayerID ? 'You' : p.display_name}</span>
-	{#if p.is_facilitator}
-		<span class="seat-tag">facilitator</span>
-	{/if}
 	{#if trailing}
 		<span class="seat-trailing">{@render trailing(p)}</span>
 	{/if}
@@ -176,17 +180,6 @@
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-	}
-	.seat-tag {
-		flex: none;
-		font-size: 0.65rem;
-		background: var(--color-chip-violet-bg);
-		border: 1px solid var(--color-chip-violet-border);
-		color: var(--color-chip-violet-text);
-		padding: 0.1rem 0.4rem;
-		border-radius: 3px;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
 	}
 	/* Same recipe as TrackBoard's .sr-rank: off-screen for the eye, in the
 	   reading order for a screen reader. */

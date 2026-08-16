@@ -45,7 +45,6 @@
 		 * render chain below. See model/row_state.go for the type. */
 		rowState: RowState | null;
 		playerNameMap: Map<number, string>;
-		isFacilitator: boolean;
 		/** Active (unresolved) dice roll, or null if none. */
 		activeRoll: DiceRoll | null;
 		activeRollDice: DiceRollDie[];
@@ -98,7 +97,6 @@
 		recordRows = $bindable(),
 		rowState,
 		playerNameMap,
-		isFacilitator,
 		activeRoll = $bindable(),
 		activeRollDice = $bindable(),
 		activeRollVotes = $bindable(),

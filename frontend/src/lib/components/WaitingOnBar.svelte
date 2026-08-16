@@ -9,7 +9,9 @@
       colour, sorted to the front of the list.
     - { kind: 'everyone' } collapses the list to the word "Everyone".
     - { kind: 'label', text } renders free text for non-player waitees
-      (e.g. "1 more player to join", "facilitator to start").
+      (e.g. "1 more player to join"). Note it is never used to name a ROLE:
+      once the lobby has two players the bar names the facilitator as a
+      player waitee, so their seat and header chip light up with it.
     - Empty waitees → the bar hides entirely.
 -->
 <script lang="ts" module>

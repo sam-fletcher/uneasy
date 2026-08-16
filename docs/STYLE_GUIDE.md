@@ -189,6 +189,18 @@ Rules:
   size. `shared/ChecklistRow.svelte` picks the mark from its `action` prop,
   so use it rather than hand-rolling a row.
 
+  **Roles are named, not worn.** A player's role never rides on their seat as
+  a title — the roster carries identity and state (colour, **You**, online,
+  waiting-on) and nothing else. Say the role in the sentence where it has a
+  consequence instead: the lobby's verdict ("alice will start the game once
+  everyone has arrived") and the ending vote's tie-break ("If the vote ties,
+  alice's side wins"). The facilitator tag was removed from `TableRoster` on
+  2026-08-16 under this rule — `is_facilitator` gates exactly one visible
+  control (Start Prologue) and breaks ending-vote ties, both of which already
+  name the person, and the word is defined nowhere in `HelpContent`. A badge
+  that repeats a fact the prose already carries, in a vocabulary the app never
+  teaches, is noise on every screen it appears on.
+
   An item offered on two screens keeps **one leading glyph on both** — the
   lobby's "Adjust the tone of the game" and the closing stage's "Tones — last
   chance" are the same item at different urgencies, so the flag is a
@@ -213,7 +225,7 @@ Reuse before writing new CSS — these live in
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
 | `trackCode.css` | the prologue ranking track as three letters (`POW`/`KNO`/`EST`, and `ANY` dashed) — **the** way a track reaches the screen in a tight slot. Read the letters from `choosing.ts`'s `trackCode()`, never a literal |
 | `ChecklistRow.svelte` | **the** checklist/disclosure row: glyph · title+subtitle · state chip · caret-or-arrow, with an optional body. Used by the lobby's *While you wait* and the prologue's closing stage; `action` picks the affordance (see the caret rule above) |
-| `TableRoster.svelte` | who's at the table, as seats: colour dot, **You** for the current player, green ring for online, gold fill for waiting-on. Caller owns the heading, the count, per-row `trailing` content and the lobby's invite chair |
+| `TableRoster.svelte` | who's at the table, as seats: colour dot, **You** for the current player, green ring for online, gold fill for waiting-on — and no role tags, see **Roles are named, not worn** below. Caller owns the heading, the count, per-row `trailing` content and the lobby's invite chair |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `HelpDisclosure.svelte` | the collapsible "? How X works" panel — a `ChecklistRow` specialisation. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |

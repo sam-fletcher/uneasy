@@ -83,6 +83,11 @@
 	let loading = $state(true);
 
 	// Derived helpers
+	// One consumer, deliberately: the lobby, where the facilitator is the only
+	// player who can start the prologue. The flag reaches no other view — it
+	// gates nothing else a player can see, and the app names the facilitator in
+	// prose where it matters (the lobby verdict, the ending vote's tie-break)
+	// rather than tagging their seat (owner, 2026-08-16).
 	const isFacilitator = $derived(
 		currentPlayerID != null && players.some(p => p.id === currentPlayerID && p.is_facilitator)
 	);
@@ -900,7 +905,6 @@
 				bind:rankings
 				bind:assets
 				{currentPlayerID}
-				{isFacilitator}
 				bind:waitingOn
 				{laws}
 				{rumors}
@@ -925,7 +929,6 @@
 				bind:recordRows
 				{rowState}
 				{playerNameMap}
-				{isFacilitator}
 				bind:activeRoll
 				bind:activeRollDice
 				bind:activeRollVotes

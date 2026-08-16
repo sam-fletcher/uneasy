@@ -49,13 +49,15 @@ test('bob joining is reflected on alice\'s open table page', async ({ browser })
   await expect(alicePage.getByRole('button', { name: /View bob's retinue/ })).toHaveCount(0);
 
   // The lobby's own roster, under "The Table". Alice's seat reads "You" —
-  // deliberately, so a player can find themselves in the list — with the
-  // facilitator tag beside it. She can't start yet: one player short of the
-  // 2-player minimum, so the button is present and disabled rather than
+  // deliberately, so a player can find themselves in the list — and carries no
+  // facilitator tag: the role is named in the verdict's prose instead, never
+  // worn as a title. One seat, hers. She can't start yet: one player short of
+  // the 2-player minimum, so the button is present and disabled rather than
   // missing (a hidden control teaches nothing).
   const lobbyRoster = alicePage.locator('.table-roster');
+  await expect(lobbyRoster.locator('.seat')).toHaveCount(1);
   await expect(lobbyRoster).toContainText('You');
-  await expect(lobbyRoster).toContainText('facilitator');
+  await expect(lobbyRoster).not.toContainText('facilitator');
   await expect(lobbyRoster).not.toContainText('bob');
   const startButton = alicePage.getByRole('button', { name: 'Start Prologue' });
   await expect(startButton).toBeDisabled();

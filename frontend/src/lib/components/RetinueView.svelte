@@ -350,9 +350,6 @@
 				<h2>{isSelf ? 'Your Retinue' : `${player.display_name}'s Retinue`}</h2>
 				<span class="dot" class:online={presence?.online}></span>
 				<span class="status">{presence?.online ? 'online' : 'offline'}</span>
-				<!-- {#if player.is_facilitator}
-					<span class="tag">facilitator</span>
-				{/if} -->
 			</div>
 			<div class="header-badges">
 				{#if isFocusPlayer}
