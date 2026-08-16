@@ -95,6 +95,9 @@
 		waitingOn: WaitingOnState;
 		laws?: Law[];
 		rumors?: Rumor[];
+		/** Tone topics the table has taken a position on — the closing stage's
+		 *  tones row wears the count, exactly as the lobby's does. */
+		tonesSetCount?: number;
 		onResync?: () => void;
 		onOpenTones?: () => void;
 		onOpenRetinue?: (playerID?: number) => void;
@@ -113,6 +116,7 @@
 		waitingOn = $bindable(),
 		laws,
 		rumors,
+		tonesSetCount = 0,
 		onResync,
 		onOpenTones,
 		onOpenRetinue,
@@ -1335,6 +1339,7 @@
 			doneFlags={effectiveDoneFlags}
 			{laws}
 			{rumors}
+			{tonesSetCount}
 			onReload={reload}
 			{onResync}
 			{onOpenTones}

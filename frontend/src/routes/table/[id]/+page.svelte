@@ -904,6 +904,7 @@
 				bind:waitingOn
 				{laws}
 				{rumors}
+				{tonesSetCount}
 				onResync={loadGameState}
 				onOpenTones={openTones}
 				onOpenRetinue={(playerID) => retinueOpenForPlayer = playerID ?? currentPlayerID}

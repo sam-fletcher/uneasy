@@ -189,6 +189,13 @@ Rules:
   size. `shared/ChecklistRow.svelte` picks the mark from its `action` prop,
   so use it rather than hand-rolling a row.
 
+  An item offered on two screens keeps **one leading glyph on both** — the
+  lobby's "Adjust the tone of the game" and the closing stage's "Tones — last
+  chance" are the same item at different urgencies, so the flag is a
+  component (`FlagGlyph.svelte`, beside `HelpGlyph`/`CrownGlyph`) rather than
+  a path drawn twice. Urgency lives in the row's `tone` and its copy, never
+  in the mark.
+
 ## Shared components
 
 Reuse before writing new CSS — these live in
@@ -210,7 +217,7 @@ Reuse before writing new CSS — these live in
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `HelpDisclosure.svelte` | the collapsible "? How X works" panel — a `ChecklistRow` specialisation. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
-| `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record and the mobile chat bar's icon — see **Log marks** below |
+| `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
 undersells it, since it is reused outside the chat feed.
@@ -423,6 +430,14 @@ family carries a *second* mark when it contains a categorically hostile verb.
 Exactly two qualify: `marginalia` (`torn` → torn sheet) and `asset`
 (`taken`/`destroyed`/`leveraged` → crossed swords). The hostile mark is a
 different object, not a damaged one — at 16px a crack or a nick is invisible.
+
+**Borrowing a mark outside the log** is rule 5 working as intended, not an
+exception to it: the prologue closing stage's "Shore up at-risk assets" row
+renders `<LogMark family="tear">` at 16px, because those assets are one tear
+from destruction and the torn sheet is already the house's word for that.
+Borrow by name, size the box yourself (the component fills whatever box it is
+given), and only when the mark's *noun* is the thing the slot is about — a
+mark picked for its silhouette is a new mark, and that needs owner sign-off.
 
 **One ranking mark, everywhere.** The `ranking` podium is *not* chat-only.
 `PublicRecord.svelte` reuses the same `<LogMark family="ranking">` on the rail

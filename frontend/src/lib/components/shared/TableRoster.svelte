@@ -34,6 +34,14 @@
 		trailing?: Snippet<[Player]>;
 		/** Makes each row a button. */
 		onSelect?: (playerID: number) => void;
+		/**
+		 * Replaces a tappable row's accessible label. A labelled button hides
+		 * its own contents from a screen reader, so a caller whose `trailing`
+		 * carries meaning (the closing stage's retinue counts) has to restate
+		 * it here. The words this component would have appended are handed in
+		 * so they can't be dropped by accident.
+		 */
+		rowLabel?: (player: Player, stateWords: string) => string;
 		/** Lobby only: the dashed invite chair below the seated rows. */
 		inviteSeat?: Snippet;
 	}
@@ -45,6 +53,7 @@
 		waitingPlayerIDs,
 		trailing,
 		onSelect,
+		rowLabel,
 		inviteSeat,
 	}: Props = $props();
 
@@ -66,9 +75,11 @@
 	}
 
 	function seatLabel(p: Player, online: boolean, waiting: boolean): string {
+		const words = stateWords(p, online, waiting);
+		if (rowLabel) return rowLabel(p, words);
 		const you = p.id === currentPlayerID ? ' (you)' : '';
 		const facilitator = p.is_facilitator ? ', facilitator' : '';
-		return `${p.display_name}${you}${facilitator}${stateWords(p, online, waiting)}`;
+		return `${p.display_name}${you}${facilitator}${words}`;
 	}
 </script>
 

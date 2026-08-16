@@ -25,6 +25,7 @@
 	import TableRoster from '$lib/components/shared/TableRoster.svelte';
 	import HelpContent from '../HelpContent.svelte';
 	import HelpGlyph from '../HelpGlyph.svelte';
+	import FlagGlyph from '../FlagGlyph.svelte';
 	import { onMount } from 'svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
@@ -188,11 +189,10 @@
 		<path d="M13.7 21a2 2 0 0 1-3.4 0" />
 	</svg>
 {/snippet}
+<!-- The flag is a component, not a path drawn here, because the prologue's
+     closing stage offers the same item and the two must not drift. -->
 {#snippet flagGlyph()}
-	<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-		<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-		<line x1="4" y1="22" x2="4" y2="15" />
-	</svg>
+	<FlagGlyph />
 {/snippet}
 
 <div class="phase-view lobby">

@@ -2,9 +2,19 @@
   "The Stage is Set" — the prologue's closing step (game.prologue_ranking_step
   === 'closing'; adr/PROLOGUE_CLOSING_STAGE_PLAN.md). Reads recap-first,
   checklist-second (the ceremony framing): a review of the prologue's outcome
-  (final standings, laws & rumors, retinue tallies), then the checklist of hard
-  items (must complete before Ready) and soft nudges, then the ready
-  roster/toggle that drives the all-ready auto-advance into the Main Event.
+  (final standings, laws & rumors, retinue tallies), then the verdict + the
+  checklist of hard items (must complete before Ready) and soft nudges, then
+  the ready roster/toggle that drives the all-ready auto-advance into the Main
+  Event.
+
+  Rebuilt onto the house checklist grammar by
+  adr/LOBBY_AND_CHECKLIST_PLAN.md D6, which this page shares with the lobby:
+  ChecklistRow for every item, TableRoster for both player lists, and a verdict
+  panel that says in a sentence what the reader's situation is. What it does
+  NOT share is the accordion (R4): lobby items are optional invitations, so
+  hiding them is free, but these gate the Ready button and a hidden blocker is
+  a stuck table. So a done item collapses to one row that shows its answer, and
+  a blocker stays open with its form.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -32,6 +42,7 @@
 		unclaimedTitles,
 		readyBlockedReason,
 		isReady,
+		notReadyPlayerIDs,
 		myAtRiskCount,
 		blankAssets,
 		retinueTallies,
@@ -39,10 +50,13 @@
 		type RetinueTally,
 	} from '$lib/prologue/closing';
 	import { TEXT_LIMITS } from '$lib/textLimits';
-	import { playerColorByID } from '$lib/playerColor';
 	import TrackBoard from './TrackBoard.svelte';
 	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
 	import AssetCreationForm from '$lib/components/AssetCreationForm.svelte';
+	import ChecklistRow from '$lib/components/shared/ChecklistRow.svelte';
+	import TableRoster from '$lib/components/shared/TableRoster.svelte';
+	import FlagGlyph from '$lib/components/FlagGlyph.svelte';
+	import LogMark from '$lib/components/LogMark.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
@@ -61,6 +75,8 @@
 		doneFlags: TrackDone[];
 		laws?: Law[];
 		rumors?: Rumor[];
+		/** Tone topics the table has taken a position on — the tones row's chip. */
+		tonesSetCount?: number;
 		onReload: () => void;
 		onResync?: () => void;
 		onOpenTones?: () => void;
@@ -85,6 +101,7 @@
 		doneFlags,
 		laws = [],
 		rumors = [],
+		tonesSetCount = 0,
 		onReload,
 		onResync,
 		onOpenTones,
@@ -101,20 +118,28 @@
 
 	// ── Recap: retinue tallies ───────────────────────────────────────────────
 	const tallies = $derived(retinueTallies(players, assets));
+	function tallyFor(playerID: number): RetinueTally | undefined {
+		return tallies.find((t) => t.playerID === playerID);
+	}
 
 	// The row's aria-label restates the counts because a labelled button hides
-	// its inner text from assistive tech.
+	// its inner text from assistive tech — the counts ride in TableRoster's
+	// `trailing`, which is inside the button. `stateWords` is what the roster
+	// would have appended on its own; passing it through keeps the presence
+	// wording from being dropped here.
 	const TALLY_TYPE_LABELS: Record<Asset['asset_type'], string> = {
 		peer: 'Peers',
 		artifact: 'Artifacts',
 		resource: 'Resources',
 		holding: 'Holdings',
 	};
-	function tallyRowLabel(t: RetinueTally): string {
+	function tallyRowLabel(p: Player, stateWords: string): string {
+		const t = tallyFor(p.id);
+		if (!t) return p.display_name;
 		const counts = RETINUE_TYPE_ORDER.map((type) => `${TALLY_TYPE_LABELS[type]} ${t.counts[type]}`).join(', ');
 		const you = t.playerID === currentPlayerID ? ' (you)' : '';
 		const taken = t.takenFromOthers > 0 ? `; ${t.takenFromOthers} taken from others` : '';
-		return `View ${playerName(t.playerID)}'s retinue${you} — ${counts}${taken}`;
+		return `View ${playerName(t.playerID)}'s retinue${you} — ${counts}${taken}${stateWords}`;
 	}
 
 	// ── Name your main character (hard) ──────────────────────────────────────
@@ -166,6 +191,15 @@
 		extraTitleText = next;
 	}
 
+	// The done row's answer (D6): who they actually wrote, and which title it
+	// spent — "you created your extra peer" is the one thing the reader can
+	// already see from the tick.
+	const extraPeerAnswer = $derived.by(() => {
+		if (!myExtraPeer) return undefined;
+		const asset = assets.find((a) => a.id === myExtraPeer.asset_id);
+		return asset ? `${asset.name}, ${myExtraPeer.title_name}` : myExtraPeer.title_name;
+	});
+
 	async function submitExtraPeer() {
 		if (!extraTitleName || !extraPeerText.trim() || !extraTitleText.trim() || creatingExtra) return;
 		creatingExtra = true;
@@ -198,6 +232,14 @@
 
 	// ── Give every asset a marginalia (hard) ─────────────────────────────────
 	const myBlankAssets = $derived(blankAssets(assets, currentPlayerID));
+	// What the done row says instead of "everything is fine": how many things
+	// it is actually vouching for (D6 — a finished item spends its line on the
+	// answer). Same live-assets rule as blankAssets, so the two can't disagree.
+	const myAssetCount = $derived(
+		currentPlayerID == null
+			? 0
+			: assets.filter((a) => a.owner_id === currentPlayerID && !a.is_destroyed).length
+	);
 
 	// ── Shore up at-risk assets (soft) ────────────────────────────────────────
 	// Blank assets are a subset of the at-risk set, and they already have their
@@ -210,6 +252,52 @@
 		readyBlockedReason(mcNamed, players.length, myExtraPeer != null, myBlankAssets.length)
 	);
 	const myReady = $derived(isReady(closingReady, currentPlayerID));
+	const notReadyIDs = $derived(new Set(notReadyPlayerIDs(players, closingReady)));
+	const readyCount = $derived(players.length - notReadyIDs.size);
+
+	// ── Verdict (D4) ─────────────────────────────────────────────────────────
+	// The page's answer to "what is my situation", in a sentence, above the
+	// rows. It replaced the blockedReason line as the primary signal — that
+	// line stays under the button as the disabled tooltip's visible twin.
+	const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five'];
+	function numberWord(n: number): string {
+		return NUMBER_WORDS[n] ?? String(n);
+	}
+	function sentenceCase(s: string): string {
+		return s.charAt(0).toUpperCase() + s.slice(1);
+	}
+	/** "alice", "alice and bob", "alice, bob and carol". */
+	function nameList(names: string[]): string {
+		if (names.length <= 1) return names[0] ?? '';
+		return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+	}
+
+	// The hard items still outstanding, one sentence each, in readyBlockedReason's
+	// order — so the verdict and the button's reason can never name different
+	// things first.
+	const outstanding = $derived.by<string[]>(() => {
+		const out: string[] = [];
+		if (!mcNamed) out.push('Your main character needs a name.');
+		if (needsPeer && myExtraPeer == null) out.push('Your court needs an extra peer.');
+		const blank = myBlankAssets.length;
+		if (blank > 0) {
+			out.push(
+				blank === 1
+					? 'One asset still carries no marginalia.'
+					: `${blank} of your assets still carry no marginalia.`
+			);
+		}
+		return out;
+	});
+
+	// "both of you" beats "all two of you"; nothing else in the range 2–5 needs
+	// a special case.
+	const everyoneClause = $derived(
+		players.length === 2 ? 'both of you' : `all ${numberWord(players.length)} of you`
+	);
+	const waitingNames = $derived(
+		players.filter((p) => p.id !== currentPlayerID && notReadyIDs.has(p.id)).map((p) => p.display_name)
+	);
 
 	let savingReady = $state(false);
 	async function toggleReady() {
@@ -227,6 +315,20 @@
 		}
 	}
 </script>
+
+<!-- Row glyphs. The tear is the log's own mark for a torn note — the exact
+     thing these assets are one of away from destruction — borrowed by name
+     the way the chat bar borrows `chat` (LogMark's doc comment). The flag is
+     a component so the lobby's tones row and this one can't drift. -->
+{#snippet tearGlyph()}
+	<!-- LogMark fills whatever box it is given, so the box is here: 16px, the
+	     size FlagGlyph draws itself at, or the two nudges' marks disagree by
+	     2px in the same list. -->
+	<span class="tear-mark"><LogMark family="tear" /></span>
+{/snippet}
+{#snippet flagGlyph()}
+	<FlagGlyph />
+{/snippet}
 
 <div class="closing-stage">
 	{#if error}
@@ -297,53 +399,99 @@
 
 		<div class="recap-block">
 			<h4 class="recap-sub">Retinue</h4>
-			<ul class="recap-retinue">
-				{#each tallies as t (t.playerID)}
-					<li>
-						<button
-							type="button"
-							class="retinue-row"
-							onclick={() => onOpenRetinue?.(t.playerID)}
-							aria-label={tallyRowLabel(t)}
-						>
-							<span class="retinue-name">
-								<span class="retinue-dot" style:background={playerColorByID(t.playerID, players)} aria-hidden="true"></span>
-								<span class="retinue-name-text">{playerName(t.playerID)}</span>
-								{#if t.playerID === currentPlayerID}<span class="retinue-you">you</span>{/if}
-							</span>
-							<span class="retinue-counts">
-								{#each RETINUE_TYPE_ORDER as type}
-									<span class="retinue-count" class:zero={t.counts[type] === 0}>
-										<AssetTypeIcon {type} size={14} />
-										<span class="retinue-count-num">{t.counts[type]}</span>
-									</span>
-								{/each}
-							</span>
-							{#if t.takenFromOthers > 0}
-								<span class="retinue-taken" title="Assets taken from other players during the prologue">
-									{t.takenFromOthers} taken
+			<!-- The same seats as the ready roster below, so the two lists stop
+			     being two different objects (D3). No waiting set here on
+			     purpose: the recap is a review, and gold on this list would
+			     compete with the roster that actually asks something. -->
+			<TableRoster
+				{players}
+				{currentPlayerID}
+				onSelect={(playerID) => onOpenRetinue?.(playerID)}
+				rowLabel={tallyRowLabel}
+			>
+				{#snippet trailing(p)}
+					{@const t = tallyFor(p.id)}
+					{#if t}
+						<span class="tally-counts">
+							{#each RETINUE_TYPE_ORDER as type}
+								<span class="tally-count" class:zero={t.counts[type] === 0}>
+									<AssetTypeIcon {type} size={14} />
+									<span class="tally-num">{t.counts[type]}</span>
 								</span>
-							{/if}
-						</button>
-					</li>
-				{/each}
-			</ul>
+							{/each}
+						</span>
+						{#if t.takenFromOthers > 0}
+							<span class="tally-taken" title="Assets taken from other players during the prologue">
+								{t.takenFromOthers} taken
+							</span>
+						{/if}
+					{/if}
+				{/snippet}
+			</TableRoster>
 		</div>
+	</section>
+
+	<!-- ── Verdict (D4) ────────────────────────────────────────────────────
+	     Local markup, not a shared component: the lobby's panel sits in the
+	     same slot and shares not one word with this one. -->
+	<section class="verdict" class:act={!myReady && outstanding.length > 0}>
+		{#if myReady}
+			{#if waitingNames.length === 0}
+				<!-- All-ready auto-advances, so this is the half-second between
+				     the last ready and the phase change (and the safety net if
+				     the advance ever fails), not a state to design for. -->
+				<h3>Everyone is ready.</h3>
+				<p class="muted-text">The Main Event begins now.</p>
+			{:else}
+				<h3>You're ready. Waiting on {nameList(waitingNames)}.</h3>
+				<p class="muted-text">
+					Nothing else to do — the Main Event begins the moment the last of you is ready.
+				</p>
+			{/if}
+		{:else if outstanding.length > 0}
+			<h3>
+				{sentenceCase(numberWord(outstanding.length))}
+				{outstanding.length === 1 ? 'thing' : 'things'} left before you can ready up.
+			</h3>
+			<!-- Name the one thing; count the many. Listing three items here
+			     when three blocker rows sit open directly below says everything
+			     three times and costs the panel two lines to do it (decided in
+			     session — the plan left the several-blockers case open). -->
+			<p class="muted-text">
+				{#if outstanding.length === 1}
+					{outstanding[0]} Everything else is settled — the table advances as soon as
+					{everyoneClause} are ready.
+				{:else}
+					Each is waiting below — the table advances as soon as {everyoneClause} are ready.
+				{/if}
+			</p>
+		{:else}
+			<!-- Not "your house is in order": it sits two lines above the heading
+			     "Put your house in order", and the echo reads as a joke. -->
+			<h3>Nothing left to settle.</h3>
+			<p class="muted-text">
+				Ready up when you're happy with your court — the table advances as soon as
+				{everyoneClause} are ready.
+			</p>
+		{/if}
 	</section>
 
 	<h3 class="section-heading">Put your house in order</h3>
 
 	<div class="checklist">
-		<section class="check-card" class:done={mcNamed}>
-			<div class="check-head">
-				<span class="check-mark" aria-hidden="true">{mcNamed ? '✓' : '○'}</span>
-				<h3 class="check-title">Name your main character</h3>
-			</div>
-			{#if mcNamed}
-				<p class="check-body">{myMainCharacter?.name}</p>
-			{:else}
-				<p class="check-body">Currently: {myMainCharacter?.name ?? '—'}</p>
-				<div class="check-form">
+		<!-- Done items are one row carrying their answer; blockers stay open
+		     with their form (R4). Neither is ever behind a caret. -->
+		{#if mcNamed}
+			<ChecklistRow
+				title="Name your main character"
+				subtitle={myMainCharacter?.name}
+				tone="done"
+				glyph="tick"
+			/>
+		{:else}
+			<ChecklistRow title="Name your main character" tone="blocker" glyph="circle">
+				<p class="item-copy">Currently: {myMainCharacter?.name ?? '—'}</p>
+				<div class="item-form">
 					<input
 						type="text"
 						bind:value={mcRenameDraft}
@@ -359,19 +507,20 @@
 						{savingMcRename ? '…' : 'Save name'}
 					</button>
 				</div>
-			{/if}
-		</section>
+			</ChecklistRow>
+		{/if}
 
 		{#if needsPeer}
-			<section class="check-card" class:done={myExtraPeer != null}>
-				<div class="check-head">
-					<span class="check-mark" aria-hidden="true">{myExtraPeer ? '✓' : '○'}</span>
-					<h3 class="check-title">Create an extra peer</h3>
-				</div>
-				{#if myExtraPeer}
-					<p class="check-body">You created your extra peer: {myExtraPeer.title_name}.</p>
-				{:else}
-					<p class="check-body">
+			{#if myExtraPeer}
+				<ChecklistRow
+					title="Create an extra peer"
+					subtitle={extraPeerAnswer}
+					tone="done"
+					glyph="tick"
+				/>
+			{:else}
+				<ChecklistRow title="Create an extra peer" tone="blocker" glyph="circle">
+					<p class="item-copy">
 						A court this small is a thin cast. Take one title nobody claimed and give
 						it a face.
 					</p>
@@ -420,19 +569,22 @@
 							{creatingExtra ? '…' : 'Create peer'}
 						</button>
 					{/if}
-				{/if}
-			</section>
+				</ChecklistRow>
+			{/if}
 		{/if}
 
-		<section class="check-card" class:done={myBlankAssets.length === 0}>
-			<div class="check-head">
-				<span class="check-mark" aria-hidden="true">{myBlankAssets.length === 0 ? '✓' : '○'}</span>
-				<h3 class="check-title">Give every asset a marginalia</h3>
-			</div>
-			{#if myBlankAssets.length === 0}
-				<p class="check-body">Everything in your retinue carries a note.</p>
-			{:else}
-				<p class="check-body">
+		{#if myBlankAssets.length === 0}
+			<ChecklistRow
+				title="Give every asset a marginalia"
+				subtitle={myAssetCount === 1
+					? 'Your one asset carries a note.'
+					: `All ${myAssetCount} carry a note.`}
+				tone="done"
+				glyph="tick"
+			/>
+		{:else}
+			<ChecklistRow title="Give every asset a marginalia" tone="blocker" glyph="circle">
+				<p class="item-copy">
 					{myBlankAssets.length}
 					{myBlankAssets.length === 1 ? 'asset has' : 'assets have'} nothing written on
 					{myBlankAssets.length === 1 ? 'it' : 'them'} yet. An asset with no marginalia can never be
@@ -447,44 +599,52 @@
 					{/each}
 				</ul>
 				<button class="action-btn secondary small" onclick={() => onOpenRetinue?.()}>Open Retinue</button>
-			{/if}
-		</section>
-
-		{#if riskCount > 0}
-			<section class="check-card soft at-risk">
-				<div class="check-head">
-					<h3 class="check-title-soft">Shore up at-risk assets</h3>
-				</div>
-				<p class="check-body">
-					{riskCount} of your assets {riskCount === 1 ? 'is' : 'are'} one tear from destruction.
-				</p>
-				<button class="action-btn secondary small" onclick={() => onOpenRetinue?.()}>Open Retinue</button>
-			</section>
+			</ChecklistRow>
 		{/if}
 
-		<section class="check-card soft tones">
-			<div class="check-head">
-				<h3 class="check-title-soft">Tones — last chance</h3>
-			</div>
-			<p class="check-body">Tones lock when the Main Event begins.</p>
-			<button class="action-btn secondary small" onclick={onOpenTones}>Open Tones</button>
-		</section>
+		<!-- Both nudges open a panel elsewhere, so both take the arrow, never a
+		     caret (D1). The count rides in the chip, which is what makes a
+		     44px row enough where each of these used to spend ~180px. -->
+		{#if riskCount > 0}
+			<ChecklistRow
+				title="Shore up at-risk assets"
+				subtitle="One tear from destruction."
+				tone="risk"
+				glyph={tearGlyph}
+				action="navigate"
+				onSelect={() => onOpenRetinue?.()}
+				state={{ text: `${riskCount} at risk`, tone: 'risk' }}
+			/>
+		{/if}
+
+		<!-- The lobby offers the same item as an invitation; here it is a
+		     deadline, and the copy is the only thing that says so (D6). -->
+		<ChecklistRow
+			title="Tones — last chance"
+			subtitle="They lock when the Main Event begins."
+			tone="warn"
+			glyph={flagGlyph}
+			action="navigate"
+			onSelect={onOpenTones}
+			state={{ text: tonesSetCount > 0 ? `${tonesSetCount} set` : 'none yet', tone: 'neutral' }}
+		/>
 	</div>
 
-	<h3 class="ready-heading">Ready roster</h3>
-	<ul class="ready-roster">
-		{#each players as p}
-			{@const ready = isReady(closingReady, p.id)}
-			<li class:ready>
-				<span class="ready-roster-name">{p.display_name}</span>
-				{#if ready}
-					<span class="ready-roster-status done">✓ ready</span>
-				{:else}
-					<span class="ready-roster-status pending">waiting…</span>
-				{/if}
-			</li>
-		{/each}
-	</ul>
+	<h3 class="section-heading">
+		Ready roster <span class="count">{readyCount} of {players.length} ready</span>
+	</h3>
+	<!-- Gold on the seats we're waiting for, matching the header chips' rings —
+	     the roster and the chips read from the same set, so they can't
+	     disagree about who is holding the table up. -->
+	<TableRoster {players} {currentPlayerID} waitingPlayerIDs={notReadyIDs}>
+		{#snippet trailing(p)}
+			{#if isReady(closingReady, p.id)}
+				<span class="ready-chip done">✓ ready</span>
+			{:else}
+				<span class="ready-chip pending">waiting…</span>
+			{/if}
+		{/snippet}
+	</TableRoster>
 
 	<button
 		class="action-btn primary done-btn"
@@ -610,86 +770,23 @@
 		overflow: hidden;
 	}
 
-	/* Retinue tallies */
-	.recap-retinue {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-	.recap-retinue li {
-		display: flex;
-	}
-	.retinue-row {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		min-height: 44px;
-		padding: 0.3rem 0.5rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-surface-2);
-		border-radius: 4px;
-		font-family: inherit;
-		font-size: 0.82rem;
-		color: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.retinue-row:hover {
-		background: color-mix(in srgb, var(--color-surface-sunken) 92%, white);
-		border-color: color-mix(in srgb, var(--color-surface-2) 75%, white);
-	}
-	.retinue-row:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
-	}
-	.retinue-name {
-		display: flex;
-		align-items: center;
-		gap: 0.35rem;
-		flex: 1 1 6rem;
-		min-width: 0;
-	}
-	.retinue-dot {
-		width: 0.5rem;
-		height: 0.5rem;
-		border-radius: 50%;
-		flex: none;
-	}
-	.retinue-name-text {
-		color: var(--color-text);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		min-width: 0;
-	}
-	.retinue-you {
-		flex: none;
-		color: var(--color-text-muted);
-		font-size: 0.65rem;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-	.retinue-counts {
+	/* Retinue tallies: what rides in each TableRoster row's trailing slot. */
+	.tally-counts {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 		flex: none;
 	}
-	.retinue-count {
+	.tally-count {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.2rem;
 		color: var(--color-text-secondary);
 	}
-	.retinue-count.zero {
+	.tally-count.zero {
 		opacity: 0.4;
 	}
-	.retinue-count-num {
+	.tally-num {
 		font-weight: 600;
 		font-size: 0.78rem;
 		min-width: 0.6rem;
@@ -697,7 +794,7 @@
 	/* Blue chip trio, matching the choosing view's steal ring — a take is an
 	   opportunity, not a warning (this chip was orange to match the ring's old
 	   colour, and followed it here when the ring moved on 2026-08-01). */
-	.retinue-taken {
+	.tally-taken {
 		flex: none;
 		background: var(--color-chip-blue-bg);
 		border: 1px solid var(--color-chip-blue-border);
@@ -708,10 +805,48 @@
 		white-space: nowrap;
 	}
 
+	.tear-mark {
+		display: block;
+		width: 16px;
+		height: 16px;
+	}
+
+	/* ── Verdict ──────────────────────────────────────────────────────────── */
+	/* Same frame as the lobby's panel — the two screens answer the same
+	   question and a reader arriving from one should recognise the other. */
+	.verdict {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		align-items: flex-start;
+		padding: 0.85rem 0.8rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 12px;
+	}
+	/* Warm frame only while something is owed, matching the lobby's
+	   facilitator block: gold as the frame and the label, never as a fill. */
+	.verdict.act { border-color: var(--color-border-warm-antique); }
+	.verdict h3 {
+		margin: 0;
+		color: var(--color-accent);
+		font-size: 1.05rem;
+		line-height: 1.3;
+	}
+	.verdict .muted-text { line-height: 1.45; }
+
 	.section-heading {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin: 0;
 		color: var(--color-accent);
 		font-size: 1rem;
-		margin: 0.35rem 0 0;
+	}
+	.count {
+		color: var(--color-text-muted);
+		font-size: 0.8rem;
 	}
 
 	.checklist {
@@ -720,65 +855,20 @@
 		gap: 0.6rem;
 	}
 
-	.check-card {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 0.65rem 0.7rem;
-	}
-	/* Hard items (name your MC / extra peer): default border until complete,
-	   then the same success-green the declare-track done-btn uses. */
-	.check-card.done { border-color: var(--color-chip-green-border); }
-
-	/* Soft items: red for the at-risk nudge (style guide — "red is danger,
-	   which includes the at-risk game state"), orange for Tones (the one
-	   "careful now, this locks soon" family). */
-	.check-card.soft.at-risk {
-		border-color: var(--color-danger-muted);
-		background: color-mix(in srgb, var(--color-danger-muted) 12%, var(--color-surface-sunken));
-	}
-	.check-card.soft.tones {
-		border-color: var(--color-warning-border);
-		background: color-mix(in srgb, var(--color-warning-border) 12%, var(--color-surface-sunken));
-	}
-
-	.check-head {
-		display: flex;
-		align-items: baseline;
-		gap: 0.45rem;
-	}
-	.check-mark {
-		color: var(--color-text-muted);
-		font-size: 0.95rem;
-		line-height: 1;
-	}
-	.check-card.done .check-mark { color: var(--color-success); }
-	.check-title {
-		margin: 0;
-		color: var(--color-accent);
-		font-size: 0.95rem;
-	}
-	.check-title-soft {
-		margin: 0;
-		color: var(--color-text);
-		font-size: 0.95rem;
-	}
-	.check-body {
+	/* ── Blocker bodies ───────────────────────────────────────────────────── */
+	.item-copy {
 		margin: 0;
 		color: var(--color-text-secondary);
 		font-size: 0.85rem;
 		line-height: 1.4;
 	}
-	.check-form {
+	.item-form {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
 		align-items: end;
 	}
-	.check-form input {
+	.item-form input {
 		flex: 1 1 12rem;
 		min-width: 0;
 	}
@@ -808,33 +898,12 @@
 		min-width: 0;
 	}
 
-	.ready-heading { color: var(--color-accent); font-size: 1rem; margin: 0; }
-
-	.ready-roster {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		max-width: 24rem;
-	}
-	.ready-roster li {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.35rem 0.5rem;
-		min-height: 44px;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-surface-2);
-		border-radius: 4px;
-		font-size: 0.85rem;
-	}
-	.ready-roster li.ready { border-color: var(--color-chip-green-border); }
-	.ready-roster-name { color: var(--color-text); }
-	.ready-roster-status.done { color: var(--color-success); font-size: 0.8rem; }
-	.ready-roster-status.pending { color: var(--color-text-faint); font-size: 0.8rem; font-style: italic; }
+	/* Ready roster: the seat's own trailing content. The state is a word, not
+	   just the seat's gold — the two lists on this page would otherwise differ
+	   only by a fill. */
+	.ready-chip { font-size: 0.8rem; }
+	.ready-chip.done { color: var(--color-success); }
+	.ready-chip.pending { color: var(--color-text-faint); font-style: italic; }
 
 	.done-btn.active { background: var(--color-success); }
 
