@@ -324,7 +324,15 @@
 	const topRankByCategory = $derived(topRanks(ranksByPlayer));
 	// Per-player count of "needlessly at-risk" assets — the warning badge on
 	// each header chip (the avoidable case; see isNeedlesslyAtRisk).
-	const atRiskByPlayer = $derived(atRiskCountByPlayer(assets));
+	// Suppressed in the lobby: every joiner starts with a bare [Main Character]
+	// peer, so the badge would fire on all chips at once and greet a new player
+	// with three alarms on the screen that means "relax". Main-character
+	// authoring stays available there (the retinue's marginalia "+" buttons
+	// work) — it just isn't advertised until the prologue, where the player has
+	// the context for it (ADR LOBBY_AND_CHECKLIST R3/D7).
+	const atRiskByPlayer = $derived(
+		game?.phase === 'lobby' ? new Map<number, number>() : atRiskCountByPlayer(assets)
+	);
 
 	// ── Public Record → Chat jump bridge ──────────────────────────────────────
 	// Tapping a row/plan/scene in the expanded sidebar resolves the anchoring
