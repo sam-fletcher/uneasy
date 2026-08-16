@@ -171,6 +171,23 @@ Rules:
 - Disabled-but-tappable: prefer `aria-disabled` + an explanation on tap
   over `disabled`, so mobile users can discover *why* (see Make Demands
   eligibility).
+- **A caret expands here; an arrow takes you somewhere.** The mark on the
+  right of a row states what tapping it does
+  (`adr/LOBBY_AND_CHECKLIST_PLAN.md` D1):
+
+  | mark | meaning | examples |
+  |---|---|---|
+  | `▾` caret | expands in place | primer, notifications, an inline form |
+  | `›` arrow | opens a panel elsewhere | tones, "shore up at-risk assets" |
+  | none | nothing to do | a completed item |
+
+  Tones are the case that produced the rule: they live in a sheet, so there
+  is nothing to inline and a caret would be a lie. The caret is the house
+  filled triangle (see **Motion & the deck** — the app has no chevrons
+  *among expanders*); the arrow is deliberately the one chevron, sized
+  larger, because the two must never be mistaken for each other at phone
+  size. `shared/ChecklistRow.svelte` picks the mark from its `action` prop,
+  so use it rather than hand-rolling a row.
 
 ## Shared components
 
@@ -188,8 +205,10 @@ Reuse before writing new CSS — these live in
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
 | `statusText.css` | status/annotation text conventions (incl. `.muted`) |
 | `trackCode.css` | the prologue ranking track as three letters (`POW`/`KNO`/`EST`, and `ANY` dashed) — **the** way a track reaches the screen in a tight slot. Read the letters from `choosing.ts`'s `trackCode()`, never a literal |
+| `ChecklistRow.svelte` | **the** checklist/disclosure row: glyph · title+subtitle · state chip · caret-or-arrow, with an optional body. Used by the lobby's *While you wait* and the prologue's closing stage; `action` picks the affordance (see the caret rule above) |
+| `TableRoster.svelte` | who's at the table, as seats: colour dot, **You** for the current player, green ring for online, gold fill for waiting-on. Caller owns the heading, the count, per-row `trailing` content and the lobby's invite chair |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
-| `HelpDisclosure.svelte` | the collapsible "? How X works" panel. **The** way step-local rules reach a play screen — see **Local help** below |
+| `HelpDisclosure.svelte` | the collapsible "? How X works" panel — a `ChecklistRow` specialisation. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record and the mobile chat bar's icon — see **Log marks** below |
 
@@ -211,6 +230,18 @@ the controls, and those rules would otherwise push the controls themselves
 off the first screen. Live in three places today: the prologue's choosing and
 ANY-spending steps (`prologue/PrologueHelp.svelte` holds both bodies) and
 scene setup.
+
+`HelpDisclosure` is now a **specialisation of `ChecklistRow`** (the help
+glyph, an expanding caret, quiet by default) rather than its own frame:
+`adr/LOBBY_AND_CHECKLIST_PLAN.md` D2. Its API is unchanged, plus `tone` and
+`defaultOpen` pass-throughs. Style changes belong in `ChecklistRow`, so the
+lobby's checklist and the prologue's local help can't drift apart.
+
+The lobby is the one place `HelpContent` is mounted **inside a row** — a
+`ChecklistRow`, not a `HelpDisclosure`, because the two help surfaces keep
+their separate jobs: what the lobby offers is the whole-game primer, opened
+by default, not the rules of one step. Don't reach for `HelpDisclosure` just
+because you want that shape.
 
 - **Give it a unique `id`.** It's the `aria-controls` target and two
   disclosures can be mounted at once.

@@ -1,14 +1,28 @@
 <!-- LobbyView.svelte
-  Lobby phase: join code, player list, the facilitator's "Start Prologue"
-  button, the push-notification soft-ask, and the inline help primer.
+  Lobby phase: the two questions a player arrives with — *what am I supposed
+  to do* and *who else is here* — answered in that order.
+
+  Rebuilt from adr/LOBBY_AND_CHECKLIST_PLAN.md D5 after a playtester joined a
+  table and could not tell what was expected of them. The answer is *nothing*,
+  so the page now says so out loud (the verdict panel), shows the table, and
+  offers three optional things to do while waiting. Order matters: the old
+  page led with the Join Code — a heading-weight invite tool aimed at someone
+  who by definition had already used the code — and buried the primer below
+  the fold.
+
+  The facilitator gets the same top slot, filled with the one thing that IS
+  theirs to do: start the game. There is never both a verdict and a start
+  block.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
 	import { startPrologue } from '$lib/api';
-	import type { Game, Player } from '$lib/api';
+	import type { Game, Player, PresenceMember } from '$lib/api';
 	import { getPushState, enablePush, onPushPermissionChange, type PushState } from '$lib/push';
 	import PushBlockedHelp from '$lib/components/shared/PushBlockedHelp.svelte';
+	import ChecklistRow from '$lib/components/shared/ChecklistRow.svelte';
+	import TableRoster from '$lib/components/shared/TableRoster.svelte';
 	import HelpContent from '../HelpContent.svelte';
 	import HelpGlyph from '../HelpGlyph.svelte';
 	import { onMount } from 'svelte';
@@ -18,19 +32,45 @@
 		gameID,
 		game,
 		players,
+		members,
+		currentPlayerID,
+		waitingPlayerIDs,
 		isFacilitator,
 		vapidPublicKey,
+		tonesSetCount,
+		onOpenTones,
 		onFeedback,
 	}: {
 		gameID: string;
 		game: Game;
 		players: Player[];
+		/** Live presence, for the roster's online rings. */
+		members: PresenceMember[];
+		currentPlayerID: number | null;
+		/** The same set that rings the header chips. */
+		waitingPlayerIDs: Set<number>;
 		isFacilitator: boolean;
 		vapidPublicKey: string;
+		/** Tone topics the table has actually taken a position on. */
+		tonesSetCount: number;
+		onOpenTones: () => void;
 		onFeedback: () => void;
 	} = $props();
 
 	let error = $state('');
+
+	// ── The table ─────────────────────────────────────────────────────────────
+	const MAX_PLAYERS = 5;
+	const MIN_PLAYERS = 2;
+	const seatsLeft = $derived(Math.max(0, MAX_PLAYERS - players.length));
+	const capacityLine = $derived(
+		seatsLeft === 0
+			? `${players.length} seated · table full`
+			: `${players.length} seated · room for ${seatsLeft} more`
+	);
+	const facilitatorName = $derived(
+		players.find((p) => p.is_facilitator)?.display_name ?? 'the facilitator'
+	);
 
 	// ── Join-code copy feedback ───────────────────────────────────────────────
 	let joinCodeCopied = $state(false);
@@ -49,8 +89,9 @@
 
 	// ── Phase advancement ─────────────────────────────────────────────────────
 	let advancing = $state(false);
+	const canStart = $derived(players.length >= MIN_PLAYERS);
 	async function advancePhase() {
-		if (advancing) return;
+		if (advancing || !canStart) return;
 		advancing = true;
 		error = '';
 		try {
@@ -62,28 +103,31 @@
 		}
 	}
 
-	// ── Push soft-ask ─────────────────────────────────────────────────────────
-	const PUSH_PROMPT_DISMISSED_KEY = 'uneasy.push.lobbyPromptDismissed';
+	// ── Notifications row ─────────────────────────────────────────────────────
+	// Was a dismissible soft-ask card with its dismissal written to
+	// localStorage *permanently* — so the one task that makes asynchronous play
+	// work could be invisible for good after a single "Not now" (D5, finding
+	// 5). A 44px collapsed row carrying a status chip cannot nag, so there is
+	// nothing left to dismiss and no key to remember.
 	let pushState = $state<PushState>('unsupported');
-	let pushCardDismissed = $state(true);
-	let pushCardBusy = $state(false);
+	let pushBusy = $state(false);
 	let pushError = $state('');
-	// Whether *this* visit asked the browser. Gates the blocked-recovery copy:
-	// someone who blocked us months ago shouldn't be nagged about it on every
-	// lobby they open — that case belongs to the Profile page.
+	// Whether *this* visit asked the browser. All it gates now is the "nothing
+	// changed" annotation, which describes the last click and nothing else.
 	let pushAttempted = $state(false);
-	const showPushCard = $derived(
-		!pushCardDismissed &&
-			(pushState === 'off' ||
-				pushState === 'ios-needs-install' ||
-				(pushAttempted && pushState === 'denied'))
-	);
-	function dismissPushCard() {
-		pushCardDismissed = true;
-		localStorage.setItem(PUSH_PROMPT_DISMISSED_KEY, '1');
-	}
+
+	const pushChip = $derived.by<{ text: string; tone: 'on' | 'off' } | undefined>(() => {
+		switch (pushState) {
+			case 'on': return { text: 'on', tone: 'on' };
+			case 'denied': return { text: 'blocked', tone: 'off' };
+			case 'ios-needs-install': return { text: 'add to home', tone: 'off' };
+			case 'off': return { text: 'off', tone: 'off' };
+			default: return undefined; // 'unsupported' — the row doesn't render
+		}
+	});
+
 	async function enablePushFromLobby() {
-		pushCardBusy = true;
+		pushBusy = true;
 		pushError = '';
 		try {
 			pushState = await enablePush(vapidPublicKey);
@@ -92,13 +136,7 @@
 			pushState = await getPushState().catch(() => pushState);
 		} finally {
 			pushAttempted = true;
-			pushCardBusy = false;
-			// Retire the card only on success. It used to dismiss unconditionally
-			// — and dismissal is written to localStorage — so a refusal hid the
-			// card forever with no acknowledgement at all: the player saw the
-			// browser's "Notifications blocked" bubble and then nothing from us,
-			// with no route back short of finding the Profile page.
-			if (pushState === 'on') dismissPushCard();
+			pushBusy = false;
 		}
 	}
 
@@ -106,14 +144,14 @@
 		// Not mid-request: the permission prompt blurs the page, so the focus
 		// handler below fires *during* enablePush. That read would see
 		// granted-but-not-yet-subscribed ('off') and could land after
-		// enablePush's own 'on', flipping the card back to the ask.
-		if (pushCardBusy) return;
+		// enablePush's own 'on', flipping the chip back to the ask.
+		if (pushBusy) return;
 		void getPushState()
 			.then((s) => {
-				// Both attempt annotations below ("blocked" / "nothing changed")
-				// describe the last click. A state change since then can only have
-				// come from browser settings, which makes them stale — drop them
-				// so a player who has just un-blocked us gets the clean ask back.
+				// The "nothing changed" annotation describes the last click. A
+				// state change since then can only have come from browser
+				// settings, which makes it stale — drop it so a player who has
+				// just un-blocked us gets the clean ask back.
 				if (s !== pushState) pushAttempted = false;
 				pushState = s;
 			})
@@ -121,10 +159,9 @@
 	}
 
 	onMount(() => {
-		pushCardDismissed = localStorage.getItem(PUSH_PROMPT_DISMISSED_KEY) === '1';
 		refreshPushState();
 		// Following the recovery steps happens in browser settings, not here, so
-		// re-read on the way back — otherwise the card keeps insisting they're
+		// re-read on the way back — otherwise the row keeps insisting they're
 		// blocked after they've allowed us. The permission event covers the
 		// same-tab case; the focus/visibility pair covers Safari, which rejects
 		// permissions.query for notifications. This reads the browser, not the
@@ -143,107 +180,175 @@
 	});
 </script>
 
+<!-- House icon idiom (AssetTypeIcon/CrownGlyph/HelpGlyph): 24×24 viewBox,
+     stroke=currentColor, width 2, round caps. Colour comes from the row. -->
+{#snippet bellGlyph()}
+	<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+		<path d="M13.7 21a2 2 0 0 1-3.4 0" />
+	</svg>
+{/snippet}
+{#snippet flagGlyph()}
+	<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+		<line x1="4" y1="22" x2="4" y2="15" />
+	</svg>
+{/snippet}
+
 <div class="phase-view lobby">
 	{#if error}
 		<ErrorText message={error} />
 	{/if}
-	<p class="prologue-lede">
-		In <em>Uneasy Lies the Head</em>, you and your friends will:
-	</p>
-	<ul class="prologue-lede-list">
-		<li> Plot and scheme as antagonistic members of a royal court </li>
-		<li> Prepare plans to spread rumors, enact laws, host festivities, propose duels, and more </li>
-	</ul>
-	<section class="lobby-join">
-		<h2>Join Code</h2>
-		<button class="code-badge" class:copied={joinCodeCopied} onclick={copyJoinCode} aria-label="Copy join code">
-			{game.join_code}
-			<span class="copy-hint" aria-live="polite">{joinCodeCopied ? 'Copied!' : 'copy'}</span>
-		</button>
-		<p class="muted-text">
-			Share this code with your friends to invite them. The game needs 2–5 players.
-		</p>
-	</section>
-	<div class="player-list">
-		{#each players as p}
-			<div class="player-row">
-				{p.display_name}
-				{#if p.is_facilitator}<span class="tag">facilitator</span>{/if}
-			</div>
-		{/each}
-	</div>
-	{#if isFacilitator && players.length >= 2}
-		<button class="action-btn primary" onclick={advancePhase} disabled={advancing}>
-			{advancing ? '…' : 'Start Prologue'}
-		</button>
-	{:else if isFacilitator}
-		<p class="muted-text">Need at least 2 players to start.</p>
-	{/if}
 
-	{#if showPushCard}
-		<section class="push-card">
-			{#if pushState === 'ios-needs-install'}
-				<h2>Add Uneasy to your Home Screen</h2>
-				<p class="muted-text">
-					iPhone/iPad only deliver notifications to installed apps: tap the Share icon,
-					then "Add to Home Screen". Open Uneasy from there to get notified when it's your turn.
-				</p>
-				<button class="action-btn secondary" onclick={dismissPushCard}>Got it</button>
-			{:else if pushState === 'denied'}
-				<div role="status">
-					<h2>Your browser blocked the request</h2>
-					<p class="muted-text">
-						That's a browser setting, so we can't ask again from here — but you can undo it:
-					</p>
-					<PushBlockedHelp />
-				</div>
-				<button class="action-btn secondary" onclick={dismissPushCard}>Got it</button>
-			{:else}
-				<h2>Get notified when it's your turn</h2>
-				<p class="muted-text">
-					Turn on push notifications for this device so you don't have to keep checking back.
-					You can change this any time in your Profile.
-				</p>
-				{#if pushError}
-					<ErrorText message={pushError} />
-				{:else if pushAttempted}
-					<p class="muted-text small" role="status">
-						Nothing changed — the browser prompt was closed without an answer. You can try again.
-					</p>
-				{/if}
-				<div class="push-card-actions">
-					<button class="action-btn primary" onclick={enablePushFromLobby} disabled={pushCardBusy}>
-						{pushCardBusy ? '…' : 'Enable notifications'}
-					</button>
-					<button class="action-btn secondary" onclick={dismissPushCard}>Not now</button>
-				</div>
+	<!-- ── Verdict, or the facilitator's start block (D4) ─────────────────── -->
+	<section class="verdict" class:yours={isFacilitator}>
+		{#if isFacilitator}
+			<h2>Is everyone here?</h2>
+			<p class="muted-text">
+				The table is waiting on you. 
+				Once you start the Prologue, no one else can join, so make sure everyone is here.
+			</p>
+			<!-- Disabled-with-a-reason rather than hidden, mirroring the closing
+			     stage's Ready button: a control that vanishes teaches nothing. -->
+			<button class="action-btn primary" onclick={advancePhase} disabled={!canStart || advancing}>
+				{advancing ? '…' : 'Start Prologue'}
+			</button>
+			{#if !canStart}
+				<p class="muted-text small">One more player and you can begin.</p>
 			{/if}
-		</section>
-	{/if}
+		{:else}
+			<h2>You're seated. Nothing to do yet.</h2>
+			<p class="muted-text">
+				{facilitatorName} will start the game once everyone has arrived. 
+				No one can join after that, so chase up anyone missing.
+			</p>
+		{/if}
+	</section>
 
-	<section class="lobby-help">
-		<h2>New to the game? Start here.</h2>
-		<p class="muted-text">
-			A two-minute primer while you wait for everyone to arrive. You can reopen this
-			any time from the <span class="help-cue" role="img" aria-label="help button"
-				><HelpGlyph size="1.15em" /></span
-			> in the top-right corner.
-			A skim is enough for now.
-		</p>
-		<HelpContent {onFeedback} />
+	<!-- ── The table ───────────────────────────────────────────────────────── -->
+	<section class="lobby-table">
+		<h3 class="section-heading">
+			The Table <span class="capacity">{capacityLine}</span>
+		</h3>
+		<TableRoster {players} {members} {currentPlayerID} {waitingPlayerIDs}>
+			{#snippet inviteSeat()}
+				<!-- The join code is an empty chair, not a heading: it is addressed
+				     to whoever ISN'T here yet. Gone once the table is full.
+				     The whole chair is the copy control, so the label and the code
+				     are one object rather than a stray word beside a button — and
+				     the row lines up with the seats above it: dashed dot where
+				     their colour dot sits, code pill where `trailing` would. -->
+				{#if seatsLeft > 0}
+					<button
+						type="button"
+						class="invite-chair"
+						class:copied={joinCodeCopied}
+						onclick={copyJoinCode}
+						aria-label={`Invite a friend — copy the join code, ${game.join_code.split('').join(' ')}`}
+					>
+						<span class="invite-dot" aria-hidden="true"></span>
+						<span class="invite-text">Invite a friend</span>
+						<span class="code-badge">
+							{game.join_code}
+							<span class="copy-hint" aria-live="polite">{joinCodeCopied ? 'Copied!' : 'copy'}</span>
+						</span>
+					</button>
+				{/if}
+			{/snippet}
+		</TableRoster>
+	</section>
+
+	<!-- ── While you wait ──────────────────────────────────────────────────── -->
+	<section class="while-you-wait">
+		<h3 class="section-heading">While you wait</h3>
+
+		<!-- Shut on arrival (owner, 2026-08-16), reversing the plan's
+		     defaultOpen: the primer's body is a whole tabbed sub-panel, and
+		     open it pushed the two rows below it a screen and a half down —
+		     burying the notifications row, which is the one item here that
+		     makes asynchronous play work. The gold frame is what marks it as
+		     the invitation now. No persistence either way. -->
+		<ChecklistRow
+			title="Read the two-minute primer"
+			subtitle="New here? A skim is enough for now."
+			glyph="help"
+			tone="primary"
+			action="expand"
+			id="lobby-primer-body"
+		>
+			<p class="primer-cue">
+				You can reopen this any time from the <span class="help-cue" role="img" aria-label="help button"
+					><HelpGlyph size="1.15em" /></span
+				> in the top-right corner.
+			</p>
+			<HelpContent {onFeedback} />
+		</ChecklistRow>
+
+		{#if pushChip}
+			<ChecklistRow
+				title="Turn on notifications"
+				subtitle="Turns might be days apart sometimes."
+				glyph={bellGlyph}
+				action="expand"
+				id="lobby-push-body"
+				state={pushChip}
+			>
+				{#if pushState === 'on'}
+					<p class="muted-text small">
+						We'll tell you when the table is waiting on you. Change this any time
+						in your Profile.
+					</p>
+				{:else if pushState === 'ios-needs-install'}
+					<p class="muted-text small">
+						iPhone and iPad only deliver notifications to installed apps: tap the
+						Share icon, then "Add to Home Screen". Open Uneasy from there and turn
+						them on.
+					</p>
+				{:else if pushState === 'denied'}
+					<div role="status">
+						<p class="muted-text small">
+							Your browser has notifications blocked for this site. That's a browser
+							setting, so we can't ask again from here — but you can undo it:
+						</p>
+						<PushBlockedHelp />
+					</div>
+				{:else}
+					<p class="muted-text small">
+						Turn them on for this device and we'll tell you when it's your turn, so
+						you don't have to keep checking back. You can change this any time in
+						your Profile.
+					</p>
+					{#if pushError}
+						<ErrorText message={pushError} />
+					{:else if pushAttempted}
+						<p class="muted-text small" role="status">
+							Nothing changed — the browser prompt was closed without an answer. You can try again.
+						</p>
+					{/if}
+					<div class="row-actions">
+						<button class="action-btn primary" onclick={enablePushFromLobby} disabled={pushBusy}>
+							{pushBusy ? '…' : 'Enable notifications'}
+						</button>
+					</div>
+				{/if}
+			</ChecklistRow>
+		{/if}
+
+		<!-- Tones live in a sheet, so this is an arrow, not a caret (D1). R2:
+		     an invitation, not a deadline — the lock is the closing stage's
+		     line to deliver, not the lobby's. -->
+		<ChecklistRow
+			title="Adjust the tone of the game"
+			subtitle="Themes to include or avoid."
+			glyph={flagGlyph}
+			action="navigate"
+			onSelect={onOpenTones}
+			state={{ text: tonesSetCount > 0 ? `${tonesSetCount} set` : 'none yet', tone: 'neutral' }}
+		/>
 	</section>
 </div>
 
 <style>
-	.prologue-lede-list {
-		margin: 0;
-		/* padding-inline-start: 1.25rem;
-		list-style-position: outside; */
-		padding-left: 1.25rem;
-		color: var(--color-text);
-		font-size: 1.05rem;
-		line-height: 1.45;
-	}
 	.phase-view {
 		flex: 1;
 		display: flex;
@@ -254,40 +359,101 @@
 		min-height: 0;
 	}
 
-	.lobby h2 {
+	/* ── Verdict ──────────────────────────────────────────────────────────── */
+	.verdict {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		align-items: flex-start;
+		padding: 0.85rem 0.8rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 12px;
+	}
+	/* The facilitator's copy is the one thing on this screen someone has to
+	   act on, so it gets the warm frame. Gold as the frame and the label,
+	   never as a fill (chat-bar ruling, 2026-07-25). */
+	.verdict.yours { border-color: var(--color-border-warm-antique); }
+	.verdict h2 {
+		margin: 0;
 		color: var(--color-accent);
-		font-size: 1.15rem;
-		margin: 0 0 0.35rem;
+		font-size: 1.05rem;
+		line-height: 1.3;
+	}
+	.verdict .muted-text { line-height: 1.45; }
+	.verdict .action-btn { margin-top: 0.15rem; }
+
+	/* ── Sections ─────────────────────────────────────────────────────────── */
+	.lobby-table,
+	.while-you-wait {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.section-heading {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin: 0;
+		color: var(--color-accent);
+		font-size: 1rem;
+	}
+	.capacity {
+		color: var(--color-text-muted);
+		font-size: 0.8rem;
 	}
 
-	.player-list { display: flex; flex-direction: column; gap: 0.4rem; }
-
-	.player-row {
+	/* ── Invite chair ─────────────────────────────────────────────────────── */
+	/* A dashed seat: same height, padding and rhythm as the occupied rows above
+	   it, but unmistakably empty. The dash is the house "not filled in yet"
+	   mark (StandingStrip's dummy slots, DifficultyMeter's next segment). */
+	.invite-chair {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		font-size: 0.95rem;
+		width: 100%;
+		min-height: 44px;
+		padding: 0.35rem 0.6rem;
+		background: none;
+		border: 1px dashed var(--color-border-strong);
+		border-radius: 999px;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
 	}
-
-	.tag {
-		font-size: 0.7rem;
-		background: var(--color-chip-violet-bg);
-		border: 1px solid var(--color-chip-violet-border);
-		color: var(--color-chip-violet-text);
-		padding: 0.1rem 0.4rem;
-		border-radius: 3px;
-		text-transform: uppercase;
+	.invite-chair:hover { border-color: var(--color-accent-dim); }
+	.invite-chair:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 1px;
 	}
-
+	/* Sits in the seat dot's slot, same 8px, hollow — the seat has no one in
+	   it yet, so it has no colour yet either. */
+	.invite-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		border: 1px dashed var(--color-border-strong);
+		flex-shrink: 0;
+	}
+	.invite-text {
+		color: var(--color-text-muted);
+		font-size: 0.9rem;
+	}
+	/* Pushed to the trailing edge, where an occupied seat's `trailing` content
+	   would sit. The gap between label and code is then the width of the row,
+	   which reads as layout rather than as an odd space. */
 	.code-badge {
-		font-family: monospace;
-		font-size: 0.85rem;
+		margin-left: auto;
+		font-family: var(--font-mono);
+		font-size: 0.9rem;
 		background: var(--color-border);
 		color: var(--color-text);
-		padding: 0.2rem 0.6rem;
+		padding: 0.25rem 0.6rem;
 		border-radius: 4px;
 		letter-spacing: 0.1em;
-		display: flex;
+		display: inline-flex;
 		gap: 0.4rem;
 		align-items: center;
 	}
@@ -295,24 +461,15 @@
 		font-size: 0.7rem;
 		color: var(--color-text-muted);
 	}
-	.code-badge.copied .copy-hint { color: var(--color-accent); }
+	.invite-chair.copied .copy-hint { color: var(--color-accent); }
 
-	.push-card {
-		margin-top: 0.75rem;
-		padding: 1rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 12px;
+	/* ── Row bodies ───────────────────────────────────────────────────────── */
+	.row-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+	.primer-cue {
+		margin: 0;
+		color: var(--color-text-muted);
+		font-size: 0.8rem;
 	}
-	.push-card .muted-text { margin-bottom: 0.75rem; }
-	.push-card-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-
-	.lobby-help {
-		margin-top: 0.5rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--color-border);
-	}
-	.lobby-help .muted-text { margin-bottom: 0.9rem; }
 	/* Mid-sentence stand-in for the header's help control: same glyph, same
 	   gold, sized a touch over 1em so the circle reads at caption size and
 	   nudged onto the text baseline (a geometric mark centres, a letterform
@@ -322,16 +479,5 @@
 		align-items: center;
 		color: var(--color-accent);
 		vertical-align: -0.2em;
-	}
-
-	.lobby-join { margin-bottom: 0.5rem; }
-	.lobby-join .muted-text {
-		margin-top: 0.5rem;
-		margin-bottom: 0.2rem;
-	}
-	.lobby-join .code-badge {
-		display: inline-flex;
-		font-size: 1rem;
-		padding: 0.35rem 0.8rem;
 	}
 </style>

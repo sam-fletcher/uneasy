@@ -7,6 +7,13 @@
   it first shipped it sat directly above three of them, and a second
   collapsed-row idiom on one screen would just be noise.
 
+  SINCE adr/LOBBY_AND_CHECKLIST_PLAN.md (D2) THIS IS A SPECIALISATION of
+  shared/ChecklistRow.svelte — the help glyph, an expanding caret, and nothing
+  else. The frame it draws (and the 44px floor, the reduced-motion guard, the
+  body's flow) all live there now; this file is the name and the defaults.
+  Style changes belong in ChecklistRow, so the lobby's checklist and the
+  prologue's local help can't drift apart.
+
   WHAT IT IS FOR. Rules a player needs *at this control*, on a screen where
   those rules would otherwise push the control itself off the first screen. It
   is not a replacement for the global ? panel (HelpContent), which teaches the
@@ -18,6 +25,7 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import ChecklistRow from './ChecklistRow.svelte';
 
 	interface Props {
 		/** Header text. Phrased as what the player would ask ("How X works"). */
@@ -27,97 +35,17 @@
 		 * page — two disclosures can be mounted at once.
 		 */
 		id: string;
+		/** Row emphasis, passed straight through. Quiet by default. */
+		tone?: 'default' | 'primary';
+		/** Start expanded. Off by default — local help is quiet until asked. */
+		defaultOpen?: boolean;
 		/** The help itself. */
 		children: Snippet;
 	}
 
-	const { title, id, children }: Props = $props();
-
-	let open = $state(false);
+	const { title, id, tone = 'default', defaultOpen = false, children }: Props = $props();
 </script>
 
-<section class="help-disclosure" class:open>
-	<button
-		type="button"
-		class="disc-head"
-		aria-expanded={open}
-		aria-controls={open ? id : undefined}
-		onclick={() => (open = !open)}
-	>
-		<span class="disc-glyph" aria-hidden="true">?</span>
-		<span class="disc-title">{title}</span>
-		<span class="disc-caret" aria-hidden="true">▾</span>
-	</button>
-	{#if open}
-		<div class="disc-body" {id}>
-			{@render children()}
-		</div>
-	{/if}
-</section>
-
-<style>
-	.help-disclosure {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-	.disc-head {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		width: 100%;
-		min-height: 44px;
-		padding: 0.5rem 0.7rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.help-disclosure.open .disc-head {
-		border-bottom-color: transparent;
-		border-bottom-left-radius: 0;
-		border-bottom-right-radius: 0;
-	}
-	.disc-glyph {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 18px;
-		height: 18px;
-		border-radius: 50%;
-		border: 1px solid var(--color-accent);
-		color: var(--color-accent);
-		font-size: 0.7rem;
-		flex: none;
-	}
-	.disc-title { flex: 1; color: var(--color-text-secondary); font-size: 0.88rem; min-width: 0; }
-	.disc-caret {
-		flex: none;
-		color: var(--color-accent);
-		font-size: 0.75rem;
-		transform: rotate(-90deg);
-		transition: transform 0.15s ease;
-	}
-	.help-disclosure.open .disc-caret { transform: rotate(0); }
-	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the caret still
-	   turns — its direction is the open/closed state — it just snaps. */
-	@media (prefers-reduced-motion: reduce) {
-		.disc-caret { transition: none; }
-	}
-	.disc-body {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		border: 1px solid var(--color-border);
-		border-top: none;
-		border-bottom-left-radius: 8px;
-		border-bottom-right-radius: 8px;
-		padding: 0.6rem 0.7rem;
-	}
-	/* The one piece of the caller's prose this file does reach: the gap above
-	   owns the vertical rhythm, so a stray browser margin would double it. */
-	.disc-body :global(p) { margin: 0; }
-</style>
+<ChecklistRow {title} {id} {tone} {defaultOpen} glyph="help" action="expand">
+	{@render children()}
+</ChecklistRow>

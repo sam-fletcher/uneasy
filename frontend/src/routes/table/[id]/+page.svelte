@@ -259,7 +259,8 @@
 		const facilitator = players.find(p => p.is_facilitator);
 		return {
 			waitees: facilitator ? [{ kind: 'player', playerID: facilitator.id }] : [],
-			stepLabel: 'Gathering Players',
+			// Sentence case, same as the branch above — the two used to disagree.
+			stepLabel: 'Gathering players',
 		};
 	});
 	$effect(() => {
@@ -283,6 +284,9 @@
 	const tonesLocked = $derived(
 		game != null && (game.phase === 'main_event' || game.phase === 'shake_up' || game.phase === 'ended')
 	);
+	// Topics the table has actually taken a position on — the lobby's "N set"
+	// chip. 'default' is the untouched state, so it doesn't count.
+	const tonesSetCount = $derived(toneTopics.filter(t => t.status !== 'default').length);
 	// The Public Record sidebar covers main_event (the timeline itself) and
 	// shake_up/ended (its sealed "Shake-Up" pseudo-row continuity — see
 	// PublicRecord.svelte). Rows are static in the latter two, so
@@ -877,8 +881,13 @@
 				{gameID}
 				{game}
 				{players}
+				{members}
+				{currentPlayerID}
+				{waitingPlayerIDs}
 				{isFacilitator}
 				{vapidPublicKey}
+				{tonesSetCount}
+				onOpenTones={openTones}
 				onFeedback={() => lobbyFeedbackOpen = true}
 			/>
 
