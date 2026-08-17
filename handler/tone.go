@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -24,6 +26,20 @@ func tonesLocked(phase model.GamePhase) bool {
 		return true
 	}
 	return true
+}
+
+// tonesUnlockedPhases inverts tonesLocked into the phase list
+// UpdateToneTopicStatusScoped gates its write on. Derived rather than
+// written out again so the lock rule keeps a single home, in tonesLocked.
+func tonesUnlockedPhases() []string {
+	all := model.AllGamePhases()
+	out := make([]string, 0, len(all))
+	for _, p := range all {
+		if !tonesLocked(p) {
+			out = append(out, string(p))
+		}
+	}
+	return out
 }
 
 // ListToneTopics handles GET /api/tables/{id}/tone.
@@ -76,32 +92,31 @@ func UpdateToneTopic(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		game, err := s.Q.GetGameByID(ctx, gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
-		if tonesLocked(game.Phase) {
-			respondErr(w, http.StatusConflict, "tones are locked once the main event begins")
-			return
-		}
-
-		// Verify the topic belongs to this game.
-		topic, err := s.Q.GetToneTopic(ctx, topicID)
-		if err != nil {
+		// Ownership, phase gate, and write in one round trip. Players cycle a
+		// tile through four statuses by tapping it, so this endpoint is hit in
+		// bursts and every saved hop shows up in the tile's responsiveness.
+		res, err := s.Q.UpdateToneTopicStatusScoped(ctx, dbgen.UpdateToneTopicStatusScopedParams{
+			ID:            topicID,
+			GameID:        gameID,
+			Status:        status,
+			AllowedPhases: tonesUnlockedPhases(),
+		})
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
 			respondErr(w, http.StatusNotFound, "topic not found")
 			return
+		case err != nil:
+			respondInternalErr(w, r, "could not update topic", err)
+			return
 		}
-		if topic.GameID != gameID {
+		if res.GameID != gameID {
 			respondErr(w, http.StatusForbidden, "topic does not belong to this game")
 			return
 		}
-
-		if err := s.Q.UpdateToneTopicStatus(ctx, dbgen.UpdateToneTopicStatusParams{
-			ID:     topicID,
-			Status: status,
-		}); err != nil {
-			respondInternalErr(w, r, "could not update topic", err)
+		// The topic exists and is ours, so the phase gate is the only guard
+		// left that could have held the write back.
+		if !res.DidUpdate {
+			respondErr(w, http.StatusConflict, "tones are locked once the main event begins")
 			return
 		}
 
@@ -109,7 +124,7 @@ func UpdateToneTopic(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if h, ok := manager.Get(gameID); ok {
 			h.BroadcastEvent(model.EventToneUpdated, model.ToneUpdatedPayload{
 				TopicID: topicID,
-				Topic:   topic.Topic,
+				Topic:   res.Topic,
 				Status:  status,
 			})
 		}

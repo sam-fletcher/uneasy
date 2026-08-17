@@ -8,7 +8,7 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import {
 		getGameState, getMe, touchActivity,
-		updateToneTopic, addToneTopic, listToneTopics,
+		addToneTopic,
 		listAssets, getFullRecord,
 		getActiveRollForGame, listBankedDice,
 		listPlans, listPlanTokens,
@@ -28,6 +28,9 @@
 	import {
 		reconnectResync, resolveAnchor, enterHistoryMode, type ChatFeedContext,
 	} from '$lib/chatFeed';
+	import {
+		cycleToneStatus, type ToneWrite, type ToneWriteContext,
+	} from '$lib/toneWrites';
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
 		Law, Rumor,
@@ -408,6 +411,10 @@
 		get players() { return players; }, set players(v) { players = v; },
 		get members() { return members; }, set members(v) { members = v; },
 		get toneTopics() { return toneTopics; }, set toneTopics(v) { toneTopics = v; },
+		// A getter, not a by-reference share like typingMap above: the Map is
+		// declared down in the tone-setting section, after this object literal
+		// is built. Nothing reads it until a message arrives, so laziness is free.
+		get toneWrites() { return toneWrites; },
 		get rankings() { return rankings; }, set rankings(v) { rankings = v; },
 		get assets() { return assets; }, set assets(v) { assets = v; },
 		get laws() { return laws; }, set laws(v) { laws = v; },
@@ -723,54 +730,25 @@
 		tonesOpen = true;
 	}
 
-	const toneCycle: ToneTopic['status'][] = ['default', 'include', 'avoid_detail', 'never'];
+	/** In-flight tone writes, keyed by topic — owned by $lib/toneWrites and
+	 *  also read by ws-handlers to drop this client's own echoes. */
+	const toneWrites = new Map<number, ToneWrite>();
 
-	/** Per-topic write queue — see cycleTopicStatus. */
-	const toneWrites = new Map<number, Promise<void>>();
+	const toneWriteCtx: ToneWriteContext = {
+		get gameID() { return gameID; },
+		setStatus: (topicID, status) => {
+			toneTopics = toneTopics.map(t => (t.id === topicID ? { ...t, status } : t));
+		},
+		replaceTopics: (topics) => { toneTopics = topics; },
+		setError: (message) => { toneError = message; },
+		inFlight: toneWrites,
+	};
 
-	function setToneStatus(topicID: number, status: ToneTopic['status']) {
-		toneTopics = toneTopics.map(t => (t.id === topicID ? { ...t, status } : t));
-	}
-
-	async function cycleTopicStatus(topic: ToneTopic) {
+	function cycleTopicStatus(topic: ToneTopic) {
 		// Read the status off the live array rather than the `topic` argument.
-		// The argument is a snapshot from render, and with the queue below a
-		// second tap can be handled before the first one's request resolves.
+		// The argument is a snapshot from render, and taps can outrun it.
 		const current = toneTopics.find(t => t.id === topic.id)?.status ?? topic.status;
-		const next = toneCycle[(toneCycle.indexOf(current) + 1) % toneCycle.length];
-
-		// Recolour first, ask the server after. The tile used to change only
-		// when the tone.updated broadcast came back, which is six sequential
-		// DB round trips and two network hops away — ~300ms against a warm
-		// database and over a second against a suspended one. Because
-		// `.tone-tile:active` fires instantly, that gap read as the tile
-		// registering the tap and then ignoring it.
-		setToneStatus(topic.id, next);
-		toneError = '';
-
-		// Tiles that repaint instantly invite tapping three times in a row,
-		// and three overlapping PUTs for one topic can be applied out of
-		// order — leaving the server, and everyone else's broadcast, on a
-		// status the tapper never stopped on. Chaining per topic keeps each
-		// tile's writes in the order the player made them. Keyed by topic so
-		// tapping different tiles stays fully parallel.
-		const run = (toneWrites.get(topic.id) ?? Promise.resolve())
-			.then(() => updateToneTopic(gameID, topic.id, next))
-			.then(() => { /* the broadcast echoes our own value back; already painted */ })
-			.catch(async (e) => {
-				toneError = e instanceof Error ? e.message : 'Could not update topic.';
-				// Resync rather than roll back to `current`. A rollback would
-				// be guesswork once taps are queued or another player's
-				// broadcast has landed mid-flight; the server's list is the
-				// one answer that's right in every case. Best-effort: if this
-				// fails too the player is offline, and the error above already
-				// says the change didn't stick.
-				try {
-					toneTopics = (await listToneTopics(gameID)).topics;
-				} catch { /* keep the optimistic value; the next resync corrects it */ }
-			});
-		toneWrites.set(topic.id, run);
-		await run;
+		void cycleToneStatus(toneWriteCtx, topic.id, current);
 	}
 
 	async function submitNewTopic() {

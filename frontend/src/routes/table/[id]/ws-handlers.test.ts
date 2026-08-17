@@ -35,6 +35,7 @@ function makeCtx(over: Partial<WSContext> = {}): WSContext {
 		plans: [],
 		recordRows: emptyRows(),
 		preparePlanDraft: { foo: 'bar' },
+		toneWrites: new Map(),
 		...over,
 	} as unknown as WSContext;
 }

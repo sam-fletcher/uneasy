@@ -17,6 +17,13 @@ const (
 	PhaseEnded     GamePhase = "ended"
 )
 
+// AllGamePhases lists every phase, in play order. For inverting a per-phase
+// predicate into the set of phases it admits — so a rule expressed once in Go
+// can be handed to a query rather than restated in SQL.
+func AllGamePhases() []GamePhase {
+	return []GamePhase{PhaseLobby, PhasePrologue, PhaseMainEvent, PhaseShakeUp, PhaseEnded}
+}
+
 // ── Tone Topic Status ───────────────────────────────────────────────────────
 
 type ToneTopicStatus string

@@ -12,6 +12,7 @@ import type {
 	VoteView, RollParticipant, BankedDie, Plan, PlanToken,
 } from '$lib/api';
 import { appendLivePost, type ChatFeedContext } from '$lib/chatFeed';
+import { acceptToneEcho, type ToneWrite } from '$lib/toneWrites';
 
 /**
  * Mutable view of the table page's WS-synced state. Each property is backed
@@ -25,6 +26,10 @@ export interface WSContext {
 	players: Player[];
 	members: PresenceMember[];
 	toneTopics: ToneTopic[];
+	/** In-flight tone writes by topic id — see $lib/toneWrites. Read (not
+	 *  written) here, to tell this client's own tone.updated echoes from
+	 *  another player's edit; the payload carries no originating player id. */
+	readonly toneWrites: Map<number, ToneWrite>;
 	rankings: Ranking[];
 	assets: Asset[];
 	laws: Law[];
@@ -113,6 +118,11 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			const { topic_id, topic, status } = msg.payload as {
 				topic_id: number; topic: string; status: string;
 			};
+			// Applying our own echoes made a rapidly-cycled tile replay the
+			// cycle one step per round trip. A topic with no write in flight
+			// — every other player's edit, and every freshly added topic —
+			// falls straight through.
+			if (!acceptToneEcho(ctx.toneWrites, topic_id, status as ToneTopic['status'])) break;
 			const idx = ctx.toneTopics.findIndex(t => t.id === topic_id);
 			if (idx >= 0) {
 				ctx.toneTopics = ctx.toneTopics.map(t =>

@@ -37,22 +37,6 @@ func (q *Queries) CreateToneTopic(ctx context.Context, arg CreateToneTopicParams
 	return i, err
 }
 
-const getToneTopic = `-- name: GetToneTopic :one
-SELECT id, game_id, topic, status FROM tone_topics WHERE id = $1
-`
-
-func (q *Queries) GetToneTopic(ctx context.Context, id int64) (ToneTopic, error) {
-	row := q.db.QueryRow(ctx, getToneTopic, id)
-	var i ToneTopic
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.Topic,
-		&i.Status,
-	)
-	return i, err
-}
-
 const listToneTopics = `-- name: ListToneTopics :many
 SELECT id, game_id, topic, status FROM tone_topics WHERE game_id = $1 ORDER BY id
 `
@@ -100,16 +84,68 @@ func (q *Queries) SeedToneTopic(ctx context.Context, arg SeedToneTopicParams) er
 	return err
 }
 
-const updateToneTopicStatus = `-- name: UpdateToneTopicStatus :exec
-UPDATE tone_topics SET status = $2 WHERE id = $1
+const updateToneTopicStatusScoped = `-- name: UpdateToneTopicStatusScoped :one
+WITH target AS (
+    SELECT t.game_id, t.topic
+    FROM tone_topics t
+    WHERE t.id = $1
+), updated AS (
+    UPDATE tone_topics SET status = $3
+    WHERE tone_topics.id = $1
+      AND tone_topics.game_id = $2
+      AND EXISTS (
+          SELECT 1 FROM games
+          WHERE games.id = tone_topics.game_id
+            AND games.phase::text = ANY($4::text[])
+      )
+    RETURNING tone_topics.id
+)
+SELECT
+    target.game_id,
+    target.topic,
+    EXISTS (SELECT 1 FROM updated) AS did_update
+FROM target
 `
 
-type UpdateToneTopicStatusParams struct {
-	ID     int64                 `db:"id" json:"id"`
-	Status model.ToneTopicStatus `db:"status" json:"status"`
+type UpdateToneTopicStatusScopedParams struct {
+	ID            int64                 `db:"id" json:"id"`
+	GameID        int64                 `db:"game_id" json:"game_id"`
+	Status        model.ToneTopicStatus `db:"status" json:"status"`
+	AllowedPhases []string              `db:"allowed_phases" json:"allowed_phases"`
 }
 
-func (q *Queries) UpdateToneTopicStatus(ctx context.Context, arg UpdateToneTopicStatusParams) error {
-	_, err := q.db.Exec(ctx, updateToneTopicStatus, arg.ID, arg.Status)
-	return err
+type UpdateToneTopicStatusScopedRow struct {
+	GameID    int64  `db:"game_id" json:"game_id"`
+	Topic     string `db:"topic" json:"topic"`
+	DidUpdate bool   `db:"did_update" json:"did_update"`
+}
+
+// Ownership check, phase gate, and write in one round trip — the tone tiles
+// are tapped in bursts, so this endpoint's latency is felt directly (see
+// handler/tone.go). The outer SELECT returns a row whenever the topic
+// exists, so the caller can still tell "no such topic" (no rows) from
+// "wrong game" (game_id) from "tones are locked" (did_update = false)
+// rather than collapsing all three into an empty result.
+//
+// allowed_phases is the set of phases in which tone edits are allowed. It is
+// passed in rather than hardcoded here so handler/tone.go's tonesLocked stays
+// the one definition of the rule.
+//
+// The UPDATE runs exactly once regardless of whether the outer query reads it
+// (Postgres executes data-modifying CTEs to completion), and matches no rows
+// when its guards fail. It re-derives those guards from the parameters rather
+// than selecting from `target` — sqlc's analyser does not resolve a CTE
+// referenced from inside a data-modifying CTE's subquery — which costs
+// nothing at run time, both being primary-key lookups against pages the
+// planner has already touched for `target`.
+func (q *Queries) UpdateToneTopicStatusScoped(ctx context.Context, arg UpdateToneTopicStatusScopedParams) (UpdateToneTopicStatusScopedRow, error) {
+	row := q.db.QueryRow(ctx, updateToneTopicStatusScoped,
+		arg.ID,
+		arg.GameID,
+		arg.Status,
+		arg.AllowedPhases,
+	)
+	var i UpdateToneTopicStatusScopedRow
+	err := row.Scan(&i.GameID, &i.Topic, &i.DidUpdate)
+	return i, err
 }
