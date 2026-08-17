@@ -1,0 +1,28 @@
+-- 055_player_last_active.up.sql
+-- "Last here 2 days ago" for the Retinue header: a durable per-seat record of
+-- when this player last had the table on screen.
+--
+-- Why a new column rather than deriving it from something we already store:
+--
+--   * Hub presence (hub.Manager) is a live WebSocket refcount. It means "a tab
+--     is open", not "a person looked" — idle tabs auto-pong for days, which is
+--     exactly why adr/NOTIFICATIONS_PLAN.md's settled decisions ignore it
+--     server-side. It also evaporates on every redeploy.
+--   * sessions.last_seen is per-browser-session, fires on ANY authenticated
+--     request (including a background tab's socket reconnect), and exists only
+--     to drive the 365-day session expiry.
+--   * players.last_read_post_id looks tempting — if opening chat clears unread,
+--     the newest-read post's created_at is roughly when they read it. But the
+--     error is "how long chat had been quiet before they arrived", which is
+--     largest exactly when the game has stalled and someone is asking whether
+--     a player has gone silent. It would report a player who checked in an hour
+--     ago and found nothing new as absent for four days. Worse, reportReadMarker
+--     skips the request entirely when nothing is new (chatFeed.ts), so a
+--     timestamp written there would never see that visit at all.
+--
+-- So this is written only from deliberate foreground events — the table page
+-- mounting, and the tab becoming visible again — via POST /api/tables/{id}/
+-- activity, throttled to at most one write per playerActivityThrottle
+-- (handler/player_activity.go). Nullable: NULL means "no visit recorded since
+-- this shipped", which the UI renders as "not arrived yet" rather than guessing.
+ALTER TABLE players ADD COLUMN last_active_at TIMESTAMPTZ;

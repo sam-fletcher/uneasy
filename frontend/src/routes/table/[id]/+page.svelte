@@ -7,7 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy, tick } from 'svelte';
 	import {
-		getGameState, getMe,
+		getGameState, getMe, touchActivity,
 		updateToneTopic, addToneTopic, listToneTopics,
 		listAssets, getFullRecord,
 		getActiveRollForGame, listBankedDice,
@@ -31,7 +31,7 @@
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
 		Law, Rumor,
-		ChatPost, SceneEntry, RecordRow, PresenceMember,
+		ChatPost, SceneEntry, RecordRow, PresenceMember, PlayerActivity,
 		DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie,
 		Plan, PlanToken, Secret,
 	} from '$lib/api';
@@ -69,6 +69,11 @@
 	let laws = $state<Law[]>([]);
 	let rumors = $state<Rumor[]>([]);
 	let members = $state<PresenceMember[]>([]);
+	// Durable per-seat presence ("last here 3h ago") and reminder reachability.
+	// Distinct from `members`, which is live socket state: this survives a
+	// redeploy and answers "has anyone been here since?", which is the question
+	// a stalled async game actually raises.
+	let playerActivity = $state<PlayerActivity[]>([]);
 	let secrets = $state<Secret[]>([]);
 	let currentPlayerID = $state<number | null>(null);
 	// Load errors only — the reason the page has no data, or stale data. It is
@@ -456,6 +461,10 @@
 				display_name: p.display_name,
 				online: false
 			}));
+			// Assign-only: the payload is best-effort server-side, and a resync
+			// that lost the one query shouldn't blank a header line that was
+			// already correct.
+			if (data.player_activity) playerActivity = data.player_activity;
 
 			// Resolve our seat from whichever roster just arrived, rather than
 			// only from the one onMount happened to see. A first load that
@@ -581,6 +590,36 @@
 		}
 	}
 
+	// ── Activity heartbeat ────────────────────────────────────────────────────
+	// Tells the server this player has the table on screen, which is what the
+	// Retinue header's "last here 3h ago" reads. Only foreground events fire it
+	// — mount and tab-becomes-visible — because the whole point is to mean
+	// something a socket connection doesn't: a tab left open on a phone in a
+	// drawer stays connected for days, and would otherwise report as present.
+	//
+	// Throttled here as well as server-side (playerActivityThrottle, one hour).
+	// The server one is what makes the value honest; this one just avoids a
+	// request per tab switch, which on a phone is a lot of requests to have
+	// the server decline.
+	const ACTIVITY_MIN_GAP_MS = 5 * 60_000;
+	let lastActivityPing = 0;
+	function pingActivity() {
+		const now = Date.now();
+		if (now - lastActivityPing < ACTIVITY_MIN_GAP_MS) return;
+		lastActivityPing = now;
+		// Fire-and-forget by design: this is observational, and a failure must
+		// never surface as an error banner over the game.
+		void touchActivity(gameID).catch(() => {});
+	}
+
+	onMount(() => {
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') pingActivity();
+		};
+		document.addEventListener('visibilitychange', onVisible);
+		return () => document.removeEventListener('visibilitychange', onVisible);
+	});
+
 	onMount(async () => {
 		try {
 			me = await getMe();
@@ -619,6 +658,11 @@
 				goto('/profile');
 				return;
 			}
+
+			// After the seat is confirmed, not before: the endpoint 403s for a
+			// non-member, and someone being bounced to /profile has no activity
+			// at this table to record.
+			pingActivity();
 		} catch (e) {
 			loadError = e instanceof Error ? e.message : 'Could not load table.';
 		} finally {
@@ -1098,11 +1142,13 @@
 				playerId={retinueOpenForPlayer}
 				{players}
 				{members}
+				{playerActivity}
 				{assets}
 				{secrets}
 				{rankings}
 				viewerPlayerId={currentPlayerID}
 				focusPlayerId={blockingPlayerID}
+				isWaitedOn={waitingPlayerIDs.has(retinueOpenForPlayer)}
 				onSecretsChanged={() => getVisibleSecrets(gameID).then(d => { secrets = d.secrets; }).catch(() => {})}
 			/>
 		{/if}

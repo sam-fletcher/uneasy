@@ -1,6 +1,7 @@
 import { apiFetch } from './client';
 import type {
 	Game, Player, GamePhase, ToneTopic, ToneTopicStatus, Ranking, Law, Rumor,
+	PlayerActivity,
 } from './types';
 
 export function createTable(): Promise<{ game: Game; player: Player }> {
@@ -76,8 +77,18 @@ export function getGameState(id: string | number): Promise<{
 	current_prologue_player_id?: number | null;
 	/** Authoritative row-state in main_event phase. Absent in other phases. */
 	row_state?: RowState;
+	/** Presence + reminder summary per seat. Best-effort server-side, so
+	 *  absent if that one query failed. */
+	player_activity?: PlayerActivity[];
 }> {
 	return apiFetch(`/tables/${id}/state`);
+}
+
+/** Records that this player has the table on screen. Fire-and-forget: called
+ *  on mount and whenever the tab becomes visible again, throttled client-side
+ *  (see the table page) and again server-side to at most one write an hour. */
+export function touchActivity(gameID: string | number): Promise<void> {
+	return apiFetch(`/tables/${gameID}/activity`, { method: 'POST' });
 }
 
 // ── Phase Transitions ────────────────────────────────────────────────────────

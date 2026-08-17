@@ -11,7 +11,10 @@
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/marginaliaTile.css';
 	import { addMarginalia, updateMarginalia, updateAsset, writeSecret, getAssetSuggestions } from '$lib/api';
-	import type { Asset, Player, PresenceMember, Marginalium, Secret, Ranking } from '$lib/api';
+	import type {
+		Asset, Player, PresenceMember, PlayerActivity, Marginalium, Secret, Ranking,
+	} from '$lib/api';
+	import { lastActiveLabel, reminderLine, activityFor } from '$lib/playerActivity';
 	import { isNeedlesslyAtRisk, firstEmptySlotIndex } from '$lib/assetRisk';
 	import { knownCount, hiddenCount } from '$lib/secretCounts';
 	import { useSuccession } from '$lib/successionContext';
@@ -28,16 +31,22 @@
 		playerId,
 		players,
 		members,
+		playerActivity = [],
 		assets,
 		secrets = [],
 		rankings = [],
 		viewerPlayerId,
 		focusPlayerId = null,
+		isWaitedOn = false,
 		onSecretsChanged,
 	}: {
 		playerId: number;
 		players: Player[];
 		members: PresenceMember[];
+		/** Durable presence + reminder reachability per seat. Empty until the
+		    state fetch lands, which just means the status line reads from live
+		    socket presence alone. */
+		playerActivity?: PlayerActivity[];
 		assets: Asset[];
 		secrets?: Secret[];
 		rankings?: Ranking[];
@@ -45,6 +54,11 @@
 		/** The player currently holding focus (their turn). Surfaced as a badge,
 		    visible to all viewers, on that player's retinue. */
 		focusPlayerId?: number | null;
+		/** True when the game is waiting on this player. Gates the reminder
+		    line: whether a ping can reach someone only changes what anyone
+		    would *do* while they owe the table a move, and a permanent
+		    "reminders on" label on every seat is noise. */
+		isWaitedOn?: boolean;
 		/** Called after the viewer writes a secret so the parent can refetch. */
 		onSecretsChanged?: () => void;
 	} = $props();
@@ -76,6 +90,30 @@
 	const player = $derived(players.find(p => p.id === playerId) ?? null);
 	const presence = $derived(members.find(m => m.id === playerId) ?? null);
 	const isSelf = $derived(viewerPlayerId === playerId);
+
+	// ── Presence & reminder lines ─────────────────────────────────────────────
+	// `now` is captured once when the sheet opens rather than ticking: these are
+	// hour-and-day buckets, and the sheet is a transient overlay, so a live
+	// timer would burn a re-render a second to change nothing.
+	const now = Date.now();
+	const activity = $derived(activityFor(playerActivity, playerId));
+	const presenceLabel = $derived(
+		lastActiveLabel(
+			{ lastActiveAt: activity?.last_active_at ?? null, online: presence?.online ?? false },
+			now
+		)
+	);
+	// Suppressed on your own retinue: you know perfectly well whether you are
+	// here, and "reminders off" reads as a scold when it's aimed at yourself —
+	// the Profile page is where you'd change it, and it says so there.
+	const reminder = $derived(
+		isWaitedOn && !isSelf && activity
+			? reminderLine(
+					{ reminder: activity.reminder, reminderDueAt: activity.reminder_due_at },
+					now
+				)
+			: null
+	);
 	const isFocusPlayer = $derived(focusPlayerId != null && focusPlayerId === playerId);
 
 	// Live assets only. Every count, MC-swap, and at-risk computation below
@@ -349,8 +387,11 @@
 			<div class="header-title-row">
 				<h2>{isSelf ? 'Your Retinue' : `${player.display_name}'s Retinue`}</h2>
 				<span class="dot" class:online={presence?.online}></span>
-				<span class="status">{presence?.online ? 'online' : 'offline'}</span>
+				<span class="status">{presenceLabel}</span>
 			</div>
+			{#if reminder}
+				<p class="reminder-line" class:unreachable={reminder.unreachable}>{reminder.text}</p>
+			{/if}
 			<div class="header-badges">
 				{#if isFocusPlayer}
 					<span class="focus-badge" title="Focus player — they'll set the next scene and then prepare another plan">
@@ -788,6 +829,20 @@
 		background: var(--color-neutral);
 	}
 	.dot.online { background: var(--color-success); }
+
+	/* Reminder reachability, rendered only while the table is waiting on this
+	   player (see the `reminder` derivation). Two tiers, because the two cases
+	   want different weights: "reminder due in ~6h" is reassurance and stays in
+	   the muted body colour, while "reminders off" / "no device" is the one
+	   thing on this sheet that asks the reader to go do something outside the
+	   app, and takes warning orange — procedural, not danger (ADR-009: orange
+	   is the warning family; red is reserved for the at-risk game state). */
+	.reminder-line {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--color-text-muted);
+	}
+	.reminder-line.unreachable { color: var(--color-warning); }
 
 	/* Italic prose placeholders ("No assets yet."). Named -note, not .empty:
 	   as .empty it collided with `.m-tile.empty`, and the marginalia tiles were

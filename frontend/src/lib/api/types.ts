@@ -543,3 +543,23 @@ export interface PresenceMember {
 	display_name: string;
 	online: boolean;
 }
+
+/** Whether turn reminders can actually reach a player. A verdict over three
+ *  server-side facts (cadence, subscribed devices, pending timer), never a
+ *  claim about delivery — see model.ReminderState for what the server can and
+ *  cannot know. */
+export type ReminderState = 'scheduled' | 'ready' | 'no_device' | 'off';
+
+/** One seat's presence and reminder summary, served alongside the roster.
+ *
+ *  Deliberately separate from PresenceMember: `last_active_at` is a durable
+ *  record of when this player last had the table on screen, while
+ *  PresenceMember.online is live socket state that evaporates on redeploy.
+ *  Different lifetimes, different sources. */
+export interface PlayerActivity {
+	player_id: number;
+	last_active_at: string | null;
+	reminder: ReminderState;
+	/** Set only when `reminder` is 'scheduled'. */
+	reminder_due_at: string | null;
+}

@@ -265,6 +265,13 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 			"players": players,
 		}
 
+		// Presence/reminder summary for the Retinue header. One extra query
+		// per state load, and a best-effort one: a failure here costs a header
+		// line, not the table, so it must not fail the whole fetch.
+		if rows, err := s.Q.ListPlayerActivityByGame(ctx, gameID); err == nil {
+			result["player_activity"] = buildPlayerActivity(rows)
+		}
+
 		// Tone topics are always available (read-only after main_event begins).
 		if topics, err := s.Q.ListToneTopics(ctx, gameID); err == nil {
 			result["tone_topics"] = topics

@@ -63,6 +63,53 @@ SET last_read_post_id = GREATEST(
 WHERE p.id = sqlc.arg(player_id)
 RETURNING p.last_read_post_id;
 
+-- name: TouchPlayerActivity :exec
+-- Records that this player just had the table on screen (migration 055).
+--
+-- The throttle lives in the WHERE clause rather than in a read-then-write pair,
+-- so the common case — a player flipping back to an already-fresh tab — costs
+-- one no-op UPDATE and no round trip to decide it. Same tradeoff as
+-- middleware's sessionTouchInterval: an hour of slack is invisible at the
+-- coarse buckets the header renders ("last here 3h ago"), and it drops writes
+-- by orders of magnitude on an active table, which matters on a database
+-- billed by compute time.
+UPDATE players
+SET last_active_at = now()
+WHERE id = sqlc.arg(player_id)
+  AND (
+    last_active_at IS NULL
+    OR last_active_at < now() - make_interval(mins => sqlc.arg(throttle_minutes)::int)
+  );
+
+-- name: ListPlayerActivityByGame :many
+-- Everything the Retinue header's presence and reminder lines need, for the
+-- whole table, in one round trip.
+--
+-- reminder_due_at comes from pending_notifications, whose rows exist ONLY for
+-- players ComputeWaitState currently names AND whose account has a cadence set
+-- (handler/push_notifications.go) — so a NULL here is not "no reminder ever",
+-- it's "no reminder pending right now". The caller pairs it with the cadence
+-- and device columns to say which of those it is.
+--
+-- has_push_device is the one signal that catches the silent failure: a player
+-- who set a cadence but never granted browser permission has notify_cadence_hours
+-- set and zero subscriptions, believes they are covered, and is not. A browser
+-- -level "denied" never reaches us directly, but it kills the live subscription,
+-- so it lands in this same column.
+SELECT
+  p.id AS player_id,
+  p.last_active_at,
+  a.notify_cadence_hours,
+  EXISTS (
+    SELECT 1 FROM push_subscriptions ps WHERE ps.account_id = a.id
+  ) AS has_push_device,
+  pn.due_at AS reminder_due_at
+FROM players p
+JOIN accounts a ON a.id = p.account_id
+LEFT JOIN pending_notifications pn ON pn.player_id = p.id
+WHERE p.game_id = $1
+ORDER BY p.id;
+
 -- name: GetNextFocusPlayer :one
 -- Returns the next player in join order after the current focus player.
 -- Caller must wrap around (use GetFirstFocusPlayer) when no row is returned.

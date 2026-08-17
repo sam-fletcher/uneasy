@@ -16,7 +16,7 @@ const createPlayer = `-- name: CreatePlayer :one
 
 INSERT INTO players (game_id, display_name, account_id, is_facilitator)
 VALUES ($1, $2, $3, $4)
-RETURNING id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id
+RETURNING id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id, last_active_at
 `
 
 type CreatePlayerParams struct {
@@ -46,12 +46,13 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Pla
 		&i.AccountID,
 		&i.ShakeUpTokens,
 		&i.LastReadPostID,
+		&i.LastActiveAt,
 	)
 	return i, err
 }
 
 const getFirstFocusPlayer = `-- name: GetFirstFocusPlayer :one
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id, last_active_at FROM players
 WHERE game_id = $1
 ORDER BY joined_at ASC
 LIMIT 1
@@ -72,12 +73,13 @@ func (q *Queries) GetFirstFocusPlayer(ctx context.Context, gameID int64) (Player
 		&i.AccountID,
 		&i.ShakeUpTokens,
 		&i.LastReadPostID,
+		&i.LastActiveAt,
 	)
 	return i, err
 }
 
 const getNextFocusPlayer = `-- name: GetNextFocusPlayer :one
-SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id FROM players p
+SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id, p.last_active_at FROM players p
 WHERE p.game_id = $1
   AND p.joined_at > COALESCE(
     (SELECT p2.joined_at FROM players p2 WHERE p2.id = $2),
@@ -108,12 +110,13 @@ func (q *Queries) GetNextFocusPlayer(ctx context.Context, arg GetNextFocusPlayer
 		&i.AccountID,
 		&i.ShakeUpTokens,
 		&i.LastReadPostID,
+		&i.LastActiveAt,
 	)
 	return i, err
 }
 
 const getPlayerByAccountAndGame = `-- name: GetPlayerByAccountAndGame :one
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players WHERE account_id = $1 AND game_id = $2
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id, last_active_at FROM players WHERE account_id = $1 AND game_id = $2
 `
 
 type GetPlayerByAccountAndGameParams struct {
@@ -135,12 +138,13 @@ func (q *Queries) GetPlayerByAccountAndGame(ctx context.Context, arg GetPlayerBy
 		&i.AccountID,
 		&i.ShakeUpTokens,
 		&i.LastReadPostID,
+		&i.LastActiveAt,
 	)
 	return i, err
 }
 
 const getPlayerByID = `-- name: GetPlayerByID :one
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players WHERE id = $1
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id, last_active_at FROM players WHERE id = $1
 `
 
 func (q *Queries) GetPlayerByID(ctx context.Context, id int64) (Player, error) {
@@ -157,12 +161,13 @@ func (q *Queries) GetPlayerByID(ctx context.Context, id int64) (Player, error) {
 		&i.AccountID,
 		&i.ShakeUpTokens,
 		&i.LastReadPostID,
+		&i.LastActiveAt,
 	)
 	return i, err
 }
 
 const getPlayersByGame = `-- name: GetPlayersByGame :many
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players WHERE game_id = $1 ORDER BY joined_at
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id, last_active_at FROM players WHERE game_id = $1 ORDER BY joined_at
 `
 
 func (q *Queries) GetPlayersByGame(ctx context.Context, gameID int64) ([]Player, error) {
@@ -185,6 +190,7 @@ func (q *Queries) GetPlayersByGame(ctx context.Context, gameID int64) ([]Player,
 			&i.AccountID,
 			&i.ShakeUpTokens,
 			&i.LastReadPostID,
+			&i.LastActiveAt,
 		); err != nil {
 			return nil, err
 		}
@@ -214,8 +220,72 @@ func (q *Queries) IsPlayerInGame(ctx context.Context, arg IsPlayerInGameParams) 
 	return exists, err
 }
 
+const listPlayerActivityByGame = `-- name: ListPlayerActivityByGame :many
+SELECT
+  p.id AS player_id,
+  p.last_active_at,
+  a.notify_cadence_hours,
+  EXISTS (
+    SELECT 1 FROM push_subscriptions ps WHERE ps.account_id = a.id
+  ) AS has_push_device,
+  pn.due_at AS reminder_due_at
+FROM players p
+JOIN accounts a ON a.id = p.account_id
+LEFT JOIN pending_notifications pn ON pn.player_id = p.id
+WHERE p.game_id = $1
+ORDER BY p.id
+`
+
+type ListPlayerActivityByGameRow struct {
+	PlayerID           int64              `db:"player_id" json:"player_id"`
+	LastActiveAt       pgtype.Timestamptz `db:"last_active_at" json:"last_active_at"`
+	NotifyCadenceHours *int16             `db:"notify_cadence_hours" json:"notify_cadence_hours"`
+	HasPushDevice      bool               `db:"has_push_device" json:"has_push_device"`
+	ReminderDueAt      pgtype.Timestamptz `db:"reminder_due_at" json:"reminder_due_at"`
+}
+
+// Everything the Retinue header's presence and reminder lines need, for the
+// whole table, in one round trip.
+//
+// reminder_due_at comes from pending_notifications, whose rows exist ONLY for
+// players ComputeWaitState currently names AND whose account has a cadence set
+// (handler/push_notifications.go) — so a NULL here is not "no reminder ever",
+// it's "no reminder pending right now". The caller pairs it with the cadence
+// and device columns to say which of those it is.
+//
+// has_push_device is the one signal that catches the silent failure: a player
+// who set a cadence but never granted browser permission has notify_cadence_hours
+// set and zero subscriptions, believes they are covered, and is not. A browser
+// -level "denied" never reaches us directly, but it kills the live subscription,
+// so it lands in this same column.
+func (q *Queries) ListPlayerActivityByGame(ctx context.Context, gameID int64) ([]ListPlayerActivityByGameRow, error) {
+	rows, err := q.db.Query(ctx, listPlayerActivityByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlayerActivityByGameRow{}
+	for rows.Next() {
+		var i ListPlayerActivityByGameRow
+		if err := rows.Scan(
+			&i.PlayerID,
+			&i.LastActiveAt,
+			&i.NotifyCadenceHours,
+			&i.HasPushDevice,
+			&i.ReminderDueAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlayersByAccount = `-- name: ListPlayersByAccount :many
-SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id, g.join_code, g.phase
+SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id, p.last_active_at, g.join_code, g.phase
 FROM players p
 JOIN games g ON g.id = p.game_id
 WHERE p.account_id = $1
@@ -233,6 +303,7 @@ type ListPlayersByAccountRow struct {
 	AccountID      int64              `db:"account_id" json:"account_id"`
 	ShakeUpTokens  int16              `db:"shake_up_tokens" json:"shake_up_tokens"`
 	LastReadPostID int64              `db:"last_read_post_id" json:"last_read_post_id"`
+	LastActiveAt   pgtype.Timestamptz `db:"last_active_at" json:"last_active_at"`
 	JoinCode       string             `db:"join_code" json:"join_code"`
 	Phase          model.GamePhase    `db:"phase" json:"phase"`
 }
@@ -257,6 +328,7 @@ func (q *Queries) ListPlayersByAccount(ctx context.Context, accountID int64) ([]
 			&i.AccountID,
 			&i.ShakeUpTokens,
 			&i.LastReadPostID,
+			&i.LastActiveAt,
 			&i.JoinCode,
 			&i.Phase,
 		); err != nil {
@@ -271,7 +343,7 @@ func (q *Queries) ListPlayersByAccount(ctx context.Context, accountID int64) ([]
 }
 
 const listPlayersByGames = `-- name: ListPlayersByGames :many
-SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id FROM players
+SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id, last_active_at FROM players
 WHERE game_id = ANY($1::BIGINT[])
 ORDER BY game_id, joined_at
 `
@@ -303,6 +375,7 @@ func (q *Queries) ListPlayersByGames(ctx context.Context, gameIds []int64) ([]Pl
 			&i.AccountID,
 			&i.ShakeUpTokens,
 			&i.LastReadPostID,
+			&i.LastActiveAt,
 		); err != nil {
 			return nil, err
 		}
@@ -339,6 +412,35 @@ type SetPlayerTokenColorParams struct {
 
 func (q *Queries) SetPlayerTokenColor(ctx context.Context, arg SetPlayerTokenColorParams) error {
 	_, err := q.db.Exec(ctx, setPlayerTokenColor, arg.ID, arg.TokenColor)
+	return err
+}
+
+const touchPlayerActivity = `-- name: TouchPlayerActivity :exec
+UPDATE players
+SET last_active_at = now()
+WHERE id = $1
+  AND (
+    last_active_at IS NULL
+    OR last_active_at < now() - make_interval(mins => $2::int)
+  )
+`
+
+type TouchPlayerActivityParams struct {
+	PlayerID        int64 `db:"player_id" json:"player_id"`
+	ThrottleMinutes int32 `db:"throttle_minutes" json:"throttle_minutes"`
+}
+
+// Records that this player just had the table on screen (migration 055).
+//
+// The throttle lives in the WHERE clause rather than in a read-then-write pair,
+// so the common case — a player flipping back to an already-fresh tab — costs
+// one no-op UPDATE and no round trip to decide it. Same tradeoff as
+// middleware's sessionTouchInterval: an hour of slack is invisible at the
+// coarse buckets the header renders ("last here 3h ago"), and it drops writes
+// by orders of magnitude on an active table, which matters on a database
+// billed by compute time.
+func (q *Queries) TouchPlayerActivity(ctx context.Context, arg TouchPlayerActivityParams) error {
+	_, err := q.db.Exec(ctx, touchPlayerActivity, arg.PlayerID, arg.ThrottleMinutes)
 	return err
 }
 

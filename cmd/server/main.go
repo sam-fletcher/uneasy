@@ -352,6 +352,7 @@ func setupRouter(
 			r.Post("/tables/join", handler.JoinTable(store, manager))
 			r.Get("/tables/{id}", handler.GetTable(store))
 			r.Get("/tables/{id}/state", handler.GetGameState(store))
+			r.Post("/tables/{id}/activity", handler.TouchActivity(store))
 
 			// Phase transitions (facilitator actions)
 			r.Post("/tables/{id}/start-prologue", handler.StartPrologue(store, manager))

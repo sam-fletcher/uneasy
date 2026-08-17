@@ -254,6 +254,7 @@ type Player struct {
 	AccountID      int64              `db:"account_id" json:"account_id"`
 	ShakeUpTokens  int16              `db:"shake_up_tokens" json:"shake_up_tokens"`
 	LastReadPostID int64              `db:"last_read_post_id" json:"last_read_post_id"`
+	LastActiveAt   pgtype.Timestamptz `db:"last_active_at" json:"last_active_at"`
 }
 
 type PlayerCard struct {
