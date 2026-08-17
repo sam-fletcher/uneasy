@@ -201,8 +201,19 @@
 		border-color: var(--color-chip-green-border);
 	}
 	.checklist-row[data-tone='done'] .row-glyph { color: var(--color-success); }
+	/* The deadline row takes the BRIGHT semantic for its stroke while keeping
+	   the quiet trio for its wash. That is the chip-trio rule, not a one-off:
+	   quiet badges wear the trio as-is, interactive things may swap in the
+	   bright semantic for border+text (docs/STYLE_GUIDE.md "Chip trios") —
+	   and this row is a navigate row, it takes you to the tones sheet. The
+	   same swap already exists on `.plan-card.finale-bonus:hover`.
+	   The wash deliberately still mixes from --color-warning-border, so the
+	   fill is unchanged: it was never the muddy one. What made it read brown
+	   was the gold slab that used to sit under it at ΔE 4.8 (see
+	   TableRoster.svelte); with that gone, a brighter stroke is all it needed
+	   (owner, 2026-08-16). */
 	.checklist-row[data-tone='warn'] .row-head {
-		border-color: var(--color-warning-border);
+		border-color: var(--color-warning);
 		background: color-mix(in srgb, var(--color-warning-border) 12%, var(--color-surface-sunken));
 	}
 	.checklist-row[data-tone='risk'] .row-head {
@@ -318,7 +329,7 @@
 	.checklist-row[data-tone='primary'] .row-body { border-color: var(--color-border-warm-antique); }
 	.checklist-row[data-tone='blocker'] .row-body { border-color: var(--color-border-strong); }
 	.checklist-row[data-tone='done'] .row-body { border-color: var(--color-chip-green-border); }
-	.checklist-row[data-tone='warn'] .row-body { border-color: var(--color-warning-border); }
+	.checklist-row[data-tone='warn'] .row-body { border-color: var(--color-warning); }
 	.checklist-row[data-tone='risk'] .row-body { border-color: var(--color-danger-muted); }
 	/* The one piece of the caller's prose this file does reach: the gap above
 	   owns the vertical rhythm, so a stray browser margin on a paragraph the

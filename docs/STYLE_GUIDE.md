@@ -52,7 +52,16 @@ tappability, not a new colour.
 | `--color-chip-gold-*` | gold-850 | gold-700 | gold-200 |
 | `--color-chip-violet-*` | violet-950 | violet-600 | violet-200 |
 | `--color-chip-blue-*` | blue-950 | blue-700 | blue-200 |
-| warning (= the orange chip) | orange-900 | orange-700 | orange-200 |
+| warning (= the orange chip) | orange-900 | orange-**600** | `--color-warning` (orange-400) |
+
+The orange row is the one that breaks the `hue-700 / hue-200` shape, and it
+is **not** a drift to be tidied away: orange-700 and orange-200 were the
+*war-button chip's* hand-tuned steps, not the warning trio's, and they were
+pruned in 2026-08-16 once that chip was regenerated onto `--color-warning-*`
+(ADR-009 open question 4 called this outcome). This table claimed them for
+three months after they stopped existing — check a token still resolves
+before trusting a row here. Orange joins green as a family whose chip text
+is its bright semantic rather than a `-200` step.
 
 Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
 
@@ -61,7 +70,14 @@ Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
   bright white).
 - **neutral** — cool chrome: the elevation ladder, borders, plain text.
 - **orange** — the one warning family: leveraged, pending-war, and every
-  "careful now" signal.
+  "careful now" signal. Three jobs, three names: `--color-warning-border`
+  on dark grounds, `--color-warning-ink` (same paint) for the warning mark
+  on a **parchment** ground — plan sheets — and `--color-warning` for text,
+  plus the bright step an interactive element's border may take (the
+  chip-trio rule above). `--color-warning-ink` is orange's answer to
+  `--color-highlight-ink`; before it existed, two plan-panel rules reached
+  past the semantic layer to raw `var(--orange-600)` because the role had
+  no name.
 - **red** — danger, which *includes* the at-risk game state (one concept),
   and war. (`--color-suit-red` retired 2026-08-04 with the last playing-card
   face — see **Motion & the deck** below.)
@@ -81,6 +97,52 @@ Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
 Ledger warmth lives in the **frame, not the fill**: asset/marginalia tiles
 use the plain surface ladder for backgrounds and `--color-border-warm`
 (gold-850) for borders. There is no warm fill scale.
+
+### State channels on a player row
+
+Wherever the app draws a player — the header chips, `TableRoster` (lobby
+seats, ready roster, retinue tallies), the profile's table-card pills —
+each fact gets **one** channel, and it is the same channel on every surface:
+
+| fact | channel |
+|---|---|
+| **identity** | the colour dot + the name; the current player always reads **You** |
+| **waiting on** | a **gold border** (`--color-accent`); border **+ glow** when it is you |
+| **ready / not ready** | words in the row's trailing slot, never colour |
+
+The gold is two tiers of one hue, and the tiers mean different things: a
+plain border is *information* ("the table is waiting on them"), border plus
+glow is *act now*. Reserving the glow for your own row is the point — a
+roster where every waiting row glowed would be shouting at you about other
+people's business.
+
+**Waiting-on is never a fill.** It was one, on `TableRoster` and the profile
+pill, until 2026-08-16: gold-850 across a 44px row is the app's largest gold
+slab, it broke the "gold arrives as the label/frame" ruling, and it measured
+**ΔE 4.8** from the prologue closing stage's orange deadline row — under
+ADR-009's own ΔE 6 near-duplicate bar, which is why both read as the same
+brown. No retune fixes that: every orange fill in the ramp lands ΔE 3–5 from
+gold-850, because two warm hues as dark low-chroma washes over near-black
+*are* the same brown. One of them had to stop being a fill.
+
+**Online presence is not drawn on a player row.** It was a green ring on the
+lobby seat and the profile pill; it was removed in the same pass. It put a
+second colour channel on an element that already carries an identity colour
+and a status colour, and turns here are days apart, so "online right now" is
+weak information. Presence still reaches a screen reader through the row's
+state words, and `RetinueView` still shows it **with a word beside it** —
+which is the form to reuse if it ever comes back to the pills ("last seen
+2 days ago" beats a dot, needs no legend, and cannot be mistaken for a
+player colour). Do not reach for a green ring again: `--color-success` sits
+ΔE 6.0 from player-3's jade, right on the near-duplicate bar.
+
+**At-risk is red-500 rim + red-300 ink**, on every surface that shows it —
+`RetinueView`'s marginalia slot, the header `.risk-badge` counting them, its
+`HelpContent` mirror, and the closing stage's checklist row. Do not brighten
+the rim: the badge's contrast note records that inverting the two steps
+lands near 3.8:1, under AA, with no lighter ink in the palette to rescue it,
+and the owner's 2026-07-30 ruling is that a counter matches the box it
+points at rather than shouting louder than it.
 
 **Player colours** (categorical, owned by `lib/playerColor.ts`; reference
 block in `app.css`, sync enforced by `designTokens.test.ts`) are jewel

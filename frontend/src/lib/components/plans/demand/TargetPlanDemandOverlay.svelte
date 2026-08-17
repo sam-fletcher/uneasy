@@ -327,7 +327,7 @@
 
 <style>
 	.demand-banner {
-		border: 1px solid var(--orange-600);
+		border: 1px solid var(--color-warning-ink);
 		background: var(--parchment-50);
 		padding: 0.75rem;
 		margin-bottom: 0.75rem;

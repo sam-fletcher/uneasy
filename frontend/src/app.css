@@ -87,18 +87,27 @@
 	--gold-900: #2a2010;
 	--gold-950: #1e1a10;
 
-	/* orange — the one warning family: leveraged, warning ink */
-	--orange-200: #f0c898;
+	/* orange — the one warning family: leveraged, warning ink.
+	   orange-200 and orange-700 were pruned 2026-08-16. They were the
+	   war-button chip's hand-tuned text and border steps (ADR-009's ramp
+	   table lists both as "war-mixed"); when that chip was regenerated onto
+	   the --color-warning-* trio they were left with zero references, which
+	   is the outcome ADR-009's open question 4 predicted. They survived only
+	   inside docs/STYLE_GUIDE.md, whose chip-trio table went on describing
+	   the retired war palette as if it were the warning trio — the exact
+	   footgun this prune closes. */
 	--orange-400: #d98b3f;
 	--orange-600: #8a5300;    /* dark warning ink on parchment grounds (ex amber-800) */
-	--orange-700: #6a4024;
 	--orange-900: #3a2214;
 
 	/* red — danger (≡ at-risk), war, card suits */
 	--red-200: #f0b0b0;
 	--red-300: #e07070;
 	--red-500: #b35454;
-	--red-600: #b03030;       /* BESPOKE: suit-red only (playing-card familiarity) — never merge */
+	/* red-600 pruned 2026-08-16: it was the bespoke suit-red, reserved
+	   "never merge" for playing-card familiarity, and the last card face went
+	   with the suits on 2026-08-04. --color-suit-red retired with it; the
+	   primitive outlived the role by a fortnight. */
 	--red-700: #6a2424;
 	--red-950: #2a0a0a;
 
@@ -201,9 +210,17 @@
 	--color-danger-muted: var(--red-500);    /* muted red border/fill — at-risk borders (marginalia slot + header risk disc), torn marks, tone "never" swatch, MC-swap hover/focus */
 	--color-tone-include: var(--green-500);  /* tone-setting "include" swatch/tile fill */
 	--color-tone-avoid: var(--gold-450);     /* tone-setting "avoid detail" swatch/tile fill */
-	--color-warning: var(--orange-400);         /* warning text on dark grounds (orange = the warning family, ruling 1) */
-	--color-warning-border: var(--orange-600);  /* warning badge/panel border */
+	--color-warning: var(--orange-400);         /* warning text on dark grounds (orange = the warning family, ruling 1); also the BRIGHT step a warning border takes when its element is interactive — see the chip-trio rule in docs/STYLE_GUIDE.md */
+	--color-warning-border: var(--orange-600);  /* warning badge/panel border, on DARK grounds */
 	--color-warning-bg: var(--orange-900);      /* warning badge/panel fill */
+	/* Same paint as --color-warning-border, different job: the warning mark
+	   on a PARCHMENT ground (plan sheets), as ink or as a hairline. ADR-009
+	   names this role — "the 'dark ink on a parchment ground' job that
+	   orange-600 does for warnings" — and gave blue a semantic for it
+	   (--color-highlight-ink) without ever giving orange the mirror. Two
+	   call sites had been reaching past the semantic layer to raw
+	   var(--orange-600) for want of this name. */
+	--color-warning-ink: var(--orange-600);
 
 	/* ── Chip trios (adr/COLOR_ROLES_PLAN.md) ──────────────────────────────
 	   The one formula for tinted chips/badges/banners: bg = the family's

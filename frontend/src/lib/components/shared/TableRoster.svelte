@@ -11,9 +11,19 @@
                        Same convention as WaitingOnBar and the header chips;
                        a roster you can't find yourself in is the finding this
                        component exists to fix.
-    • green ring     — online right now (needs `members`; omit for no presence)
-    • gold fill      — the game is waiting on them. The same set that rings the
-                       header chips, so the two can never disagree.
+    • gold frame     — the game is waiting on them. The same set that rings the
+                       header chips, so the two can never disagree, and now the
+                       same TREATMENT as well (see .seat.waiting below).
+
+  Presence (`members`) is still accepted and still announced to a screen
+  reader, but it is no longer DRAWN (owner, 2026-08-16). It was a green ring,
+  and it was the only other colour channel on a seat: a green ring around a
+  gold-brown fill was the single ugliest object on the lobby and profile
+  screens, and it overloaded a pill that already carries an identity colour
+  and a status colour. Turns here are days apart, so "online right now" is
+  weak information — if it ever comes back it should come back as words
+  ("last seen 2 days ago"), the way RetinueView already does it, not as a
+  second hue. The prop stays because the words below depend on it.
 
   There is deliberately NO facilitator tag (owner, 2026-08-16). The flag gates
   exactly one thing a player can see — Start Prologue, in the lobby — and it
@@ -69,10 +79,10 @@
 		new Set((members ?? []).filter((m) => m.online).map((m) => m.id))
 	);
 
-	// The ring and the gold fill are pure colour, so they need words somewhere.
-	// A tappable row spends them on its aria-label (which replaces the row's
-	// text for a screen reader); a plain row appends them visually-hidden, so
-	// the reading order stays "You, online".
+	// The gold frame is pure colour, so it needs words somewhere. A tappable
+	// row spends them on its aria-label (which replaces the row's text for a
+	// screen reader); a plain row appends them visually-hidden, so the reading
+	// order stays "You, online".
 	function stateWords(p: Player, online: boolean, waiting: boolean): string {
 		// Presence is only a signal when the caller supplied any: without
 		// `members` every row would otherwise announce "offline".
@@ -107,8 +117,8 @@
 				<button
 					type="button"
 					class="seat tappable"
-					class:online
 					class:waiting
+					class:mine={p.id === currentPlayerID}
 					style:--seat-color={playerColor(p)}
 					aria-label={seatLabel(p, online, waiting)}
 					onclick={() => onSelect(p.id)}
@@ -116,7 +126,12 @@
 					{@render seatBody(p)}
 				</button>
 			{:else}
-				<div class="seat" class:online class:waiting style:--seat-color={playerColor(p)}>
+				<div
+					class="seat"
+					class:waiting
+					class:mine={p.id === currentPlayerID}
+					style:--seat-color={playerColor(p)}
+				>
 					{@render seatBody(p)}
 					<span class="sr-state">{stateWords(p, online, waiting)}</span>
 				</div>
@@ -153,16 +168,35 @@
 		font: inherit;
 		text-align: left;
 	}
-	/* Online = a ring around the seat, exactly as the profile card's pills do
-	   it; its PRESENCE is the signal (it survives colour-blindness) and the
-	   muted green echoes the retinue's online dot. */
-	.seat.online { box-shadow: 0 0 0 1px var(--color-online); }
-	.seat.waiting {
-		background: var(--color-chip-gold-bg);
-		border-color: var(--color-chip-gold-border);
+	/* Waiting-on = a gold FRAME, never a fill — the chat-bar ruling (gold
+	   arrives as the label/frame) applied to the one place that still broke
+	   it. The fill this replaces was `--color-chip-gold-bg`, the app's largest
+	   gold slab, and it measured ΔE 4.8 from the prologue closing stage's
+	   orange "last chance" row: under ADR-009's own ΔE 6 near-duplicate bar,
+	   which is exactly why the two read as the same brown (owner, 2026-08-16).
+	   You cannot retune your way out of that — every orange fill in the ramp
+	   lands ΔE 3–5 from gold-850, because two warm hues as dark low-chroma
+	   washes over near-black ARE the same brown. One of them had to stop
+	   being a fill, and the ruling says which.
+
+	   Two tiers, one hue, lifted verbatim from the header chips
+	   (routes/table/[id]/+page.svelte, `.member.waiting`): a plain gold border
+	   for another player (information), border + glow for yourself (act now).
+	   The strip and the roster now say the same thing the same way, which is
+	   the point — they already read from the same waiting set. */
+	.seat.waiting { border-color: var(--color-accent); }
+	.seat.waiting.mine {
+		box-shadow:
+			0 0 0 1px var(--color-accent),
+			0 0 8px color-mix(in srgb, var(--color-accent) 45%, transparent);
 	}
 	.seat.tappable { cursor: pointer; }
 	.seat.tappable:hover { border-color: var(--color-border-strong); }
+	/* Hover is a plain-class selector too, so without this a tappable waiting
+	   seat would lose its gold border under the finger — which, now that the
+	   border is the ONLY signal, would erase it. No caller combines the two
+	   today; this keeps the next one from finding out the hard way. */
+	.seat.waiting.tappable:hover { border-color: var(--color-accent-hover); }
 	.seat.tappable:focus-visible {
 		outline: 2px solid var(--color-accent);
 		outline-offset: 1px;

@@ -313,7 +313,6 @@
 										{@const waited = !ended && t.waiting_on_player_ids.includes(p.id)}
 										<span
 											class="pill"
-											class:online
 											class:waited
 											style:--pill-color={playerColor(p)}
 											aria-label={`${p.display_name}${p.id === t.player_id ? ' (you)' : ''}${online ? ', online' : ''}${waited ? ', game is waiting on them' : ''}`}
@@ -508,10 +507,11 @@
 	/* ── Table cards ────────────────────────────────────────────────────────
 	   One card per game, echoing the in-table header: table id + shared
 	   PhaseBadge stacked on the left, the roster as a pill grid on the
-	   right. State channels: waited pill = gold tint (the app's "current
-	   actor" chip treatment), online = thin green ring, your-move = warm
-	   card fill, ended = whole card muted with the other treatments
-	   suppressed. */
+	   right. State channels: waited pill = gold BORDER (the app's one
+	   waiting-on treatment, shared with the header chips and TableRoster),
+	   your-move = warm card fill, ended = whole card muted with the other
+	   treatments suppressed. Presence is no longer drawn here — see
+	   `.pill` below. */
 	/* Tiles: ~330px is the card content's intrinsic minimum (sized at the
 	   phone floor), so the auto-fill grid is 1-up while the section is a
 	   single 440 column and 2-up (~420 each, inside the phone band) once
@@ -621,13 +621,23 @@
 		border:1px solid var(--color-border);
 		border-radius:999px;
 	}
-	/* Online = ring around the pill; its *presence* is the signal (survives
-	   colour-blindness), the muted green echoes the retinue's online dot. */
-	.pill.online { box-shadow:0 0 0 1px var(--color-online); }
-	.pill.waited {
-		background:var(--color-chip-gold-bg);
-		border-color:var(--color-chip-gold-border);
-	}
+	/* Waiting-on = a gold BORDER, the app's single treatment for it (header
+	   chips, TableRoster, here). It was a gold tint; the fill was the thing
+	   that read as muddy brown, and a green presence ring wrapped around that
+	   brown was the worst object on this page (owner, 2026-08-16).
+
+	   It paints your OWN pill too, deliberately. `.your-move` already fills
+	   the whole card when the table is blocked on you, so the pill is saying
+	   it twice — but a channel that changes meaning depending on whose row it
+	   is isn't a channel (owner's ruling). Gold border = "waiting on this
+	   player", every row, every surface; the card fill is emphasis stacked on
+	   top, not a different statement.
+
+	   Presence is no longer drawn. It was a green ring, and it never said
+	   anything about you in the first place: `online` is computed as
+	   `p.online || p.id === t.player_id`, so your own pill was hard-coded lit.
+	   The word still reaches a screen reader through the pill's aria-label. */
+	.pill.waited { border-color:var(--color-accent); }
 	.pill-dot {
 		width:8px; height:8px;
 		border-radius:50%;
