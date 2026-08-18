@@ -27,6 +27,7 @@
 	import { PLAN_SHORT, PLAN_DESCRIPTION, PLAN_DELAY, TRACK_ORDER, playerName } from './plans/shared';
 	import { playerColor } from '$lib/playerColor';
 	import { REGISTRY } from './plans/registry';
+	import LazyPlanPanel from './plans/LazyPlanPanel.svelte';
 	import RowPill from './plans/RowPill.svelte';
 	import { highlightedRow } from '$lib/highlight';
 	import type { PlanContext } from './plans/types';
@@ -309,8 +310,7 @@
 {#if resolvingPlan}
 	{@const entry = REGISTRY[resolvingPlan.plan_type]}
 	{#if entry}
-		{@const Comp = entry.component}
-		<Comp {ctx} plan={resolvingPlan} mode="resolve" />
+		<LazyPlanPanel planType={resolvingPlan.plan_type} {ctx} plan={resolvingPlan} mode="resolve" />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
 		<div class="plan-panel resolving">
@@ -449,8 +449,7 @@
 			{/if}
 			{@const entry = REGISTRY[displaySelectedPlanType]}
 			{#if entry}
-				{@const Comp = entry.component}
-				<Comp {ctx} mode="prep" />
+				<LazyPlanPanel planType={displaySelectedPlanType} {ctx} mode="prep" />
 			{:else}
 				<div class="plan-form">
 					<p class="form-hint">

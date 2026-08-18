@@ -7,12 +7,15 @@
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/modalShell.css';
 	import '$lib/components/shared/statusText.css';
-	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
-	import MakeWarPanel from '$lib/components/plans/MakeWarPanel.svelte';
-	import ClandestinelyLiaisePanel from '$lib/components/plans/ClandestinelyLiaisePanel.svelte';
+	// Both panels go through LazyPlanPanel rather than being imported directly:
+	// they are two of the heaviest in the app and render only in narrow
+	// situations (the simultaneous delay reveal, and the active-wars drawer),
+	// yet a static import here pulled them — and the shared plan code they drag
+	// along — into the table route's eager bundle for every phase.
+	import LazyPlanPanel from '$lib/components/plans/LazyPlanPanel.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import type { PlanContext } from '$lib/components/plans/types';
 	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
@@ -127,13 +130,25 @@
 	}
 	function onWarEvent() { refreshWars(); }
 	useWindowEvents(WAR_EVENTS, onWarEvent);
-	onMount(() => { if (game.phase === 'main_event') refreshWars(); });
-	// Refresh when the row changes too — outstanding-cost computation is per-row.
+	// Refresh when the row changes — outstanding-cost computation is per-row.
+	// This effect also covers the initial mount, so there is no onMount fetch
+	// beside it; having both meant every table load fetched /wars twice.
+	//
+	// Guarded on the row *value* rather than just re-running: `game` is
+	// reassigned wholesale on every resync (see the table page's loadGameState),
+	// so an unguarded effect refetches on every reconnect — including the one a
+	// phone fires each time it wakes — even when the row never moved. War
+	// events still force an unguarded refresh through onWarEvent above.
+	let lastWarsRow = -1;
 	$effect(() => {
-		if (game.phase === 'main_event') {
-			void game.current_row;
-			refreshWars();
-		}
+		// Both reads stay outside the early returns so the effect's dependencies
+		// don't change shape between runs.
+		const phase = game.phase;
+		const row = game.current_row;
+		if (phase !== 'main_event') return;
+		if (row === lastWarsRow) return;
+		lastWarsRow = row;
+		refreshWars();
 	});
 
 	// Waiting-on derivation. The pure logic lives in $lib/waitingOn (unit-tested
@@ -367,9 +382,9 @@
 				/>
 			{:else if delayRevealActive && delayRevealPlan}
 				{#if delayRevealPlan.plan_type === 'make_war'}
-					<MakeWarPanel ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
+					<LazyPlanPanel planType="make_war" ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
 				{:else if delayRevealPlan.plan_type === 'clandestinely_liaise'}
-					<ClandestinelyLiaisePanel ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
+					<LazyPlanPanel planType="clandestinely_liaise" ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
 				{/if}
 			{:else if activeScene && activeScene.kind === 'turn'}
 				<SceneDetailsPanel
@@ -497,7 +512,7 @@
 			<p class="muted-text">No active wars.</p>
 		{:else}
 			{#each drawerWarPlans as p (p.id)}
-				<MakeWarPanel ctx={drawerCtx} plan={p} mode="resolve" />
+				<LazyPlanPanel planType="make_war" ctx={drawerCtx} plan={p} mode="resolve" />
 			{/each}
 		{/if}
 	</div>
