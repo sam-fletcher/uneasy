@@ -454,9 +454,49 @@
 	// derived from it below, is ever rendered.
 	let me: Account | null = null;
 
+	// The in-flight getMe() call, started in onMount alongside the WebSocket so
+	// the two run concurrently rather than back to back. loadGameState awaits
+	// THIS rather than reading `me`, because the resync fires from ws.onopen and
+	// can therefore win the race against getMe: reading a still-null `me` there
+	// would leave the seat unresolved and bounce the player to /profile.
+	// Not $state: awaited, never rendered.
+	let mePromise: Promise<Account | null> | null = null;
+
 	async function loadGameState() {
 		try {
-			const data = await getGameState(gameID);
+			// One parallel round in place of four sequential ones. These fetches
+			// are mutually independent; the old code awaited them in series only
+			// because the guards below read `data.game.phase`, which made them
+			// look dependent. Production carries a fixed ~390ms per-request cost
+			// (measured against /healthz, which touches no DB and still takes that
+			// long), so four serial hops burned ~1.6s before a single query ran.
+			//
+			// Failure semantics are preserved exactly. Game state and assets still
+			// reject the load — the page cannot render without them, and their
+			// rejection lands in the catch below. Secrets and chat stay
+			// best-effort, caught individually so neither can take the table down
+			// with it.
+			//
+			// listAssets is now unconditional: its old guard named all five phases,
+			// so it was a tautology. getVisibleSecrets used to be skipped in lobby
+			// and no longer is — that costs one cheap empty response in the single
+			// phase nobody is waiting on, and saves a round trip in every other.
+			// ListVisibleSecretsForGame has no phase gate and returns [] when there
+			// is nothing visible.
+			const [data, assetData, secretData] = await Promise.all([
+				getGameState(gameID),
+				listAssets(gameID),
+				getVisibleSecrets(gameID).catch(() => null),
+				// Chat is available in every phase, so it resyncs unconditionally.
+				// reconnectResync (Chat Overhaul Phase 2b) does the right thing for
+				// both the very first load (empty window → full initial fetch) and
+				// every reconnect after that (live mode: cheap `after` fetch;
+				// history mode: no-op — "Return to now" catches that window up on
+				// demand). This runs on every (re)connect per createConnection's
+				// contract, so it must never refetch the whole feed.
+				reconnectResync(chatFeed).catch(() => { /* tolerate; WS events + the next resync keep us eventually consistent */ }),
+			]);
+
 			game = data.game;
 			players = data.players;
 			if (data.tone_topics) toneTopics = data.tone_topics;
@@ -481,41 +521,27 @@
 			// they were sitting at even after a later resync succeeded.
 			// Assign-only, never clear: a mid-game roster that somehow omits us
 			// is not a reason to pull the seat out from under a live session.
-			// Captured into a local so the null check narrows inside the
-			// callback — `me` is a mutable outer binding, which TS won't
-			// narrow across a closure.
-			const account = me;
+			// Resolved from the in-flight promise rather than the `me` binding, so
+			// a resync that beats getMe home waits for it instead of reading null
+			// and silently losing the seat. Falls back to `me` for any caller that
+			// reaches here without onMount having started the fetch; in practice
+			// mePromise is always set, since the connection driving this resync is
+			// created right after it. Captured into a local either way so the null
+			// check narrows below — TS won't narrow a mutable outer binding across
+			// a closure.
+			const account = mePromise ? await mePromise : me;
 			const seat = account ? data.players.find((p) => p.account_id === account.id) : undefined;
 			if (seat) currentPlayerID = seat.id;
 
-			// Load assets in lobby (for main-character editing) and during every
-			// phase that shows the retinue or targets assets: prologue, main_event,
-			// the shake_up endgame (take/break/claim-title pickers + crown display),
-			// and the ended summary. Secrets only exist once the prologue has begun.
-			if (data.game.phase === 'lobby' || data.game.phase === 'prologue' ||
-				data.game.phase === 'main_event' || data.game.phase === 'shake_up' ||
-				data.game.phase === 'ended') {
-				const assetData = await listAssets(gameID);
-				assets = assetData.assets;
-			}
-			if (data.game.phase === 'prologue' || data.game.phase === 'main_event' ||
-				data.game.phase === 'shake_up' || data.game.phase === 'ended') {
-				try {
-					const sd = await getVisibleSecrets(gameID);
-					secrets = sd.secrets;
-				} catch { /* tolerate; secrets feature is non-critical */ }
-			}
-
-			// Chat is available in every phase, so resync it unconditionally.
-			// reconnectResync (Chat Overhaul Phase 2b) does the right thing for
-			// both the very first load (empty window → full initial fetch) and
-			// every reconnect after that (live mode: cheap `after` fetch; history
-			// mode: no-op — "Return to now" catches that window up on demand).
-			// This runs on every (re)connect per createConnection's contract, so
-			// it must never refetch the whole feed.
-			try {
-				await reconnectResync(chatFeed);
-			} catch { /* tolerate; WS events + the next resync keep us eventually consistent */ }
+			// Assigned here, once every fetch in the round above has landed, rather
+			// than from inside the individual promise callbacks. Keeping the
+			// original assignment order matters: a derived that reads assets and
+			// secrets together must never observe one updated without the other —
+			// that is the shape of the asset.taken bug that froze reactivity.
+			assets = assetData.assets;
+			// null means the secrets fetch failed and was tolerated; leave whatever
+			// is already on screen rather than blanking it.
+			if (secretData) secrets = secretData.secrets;
 
 			// Public record, plans, active roll, and active scene only matter
 			// in main_event.
@@ -556,8 +582,15 @@
 				// polling). Shake-up rolls never enter the voting stage, so
 				// activeRollVotes is left alone here — ShakeUpView passes
 				// DiceRollPanel a literal empty votes array.
-				try {
-					const rollData = await getActiveRollForGame(gameID);
+				// Parallel for the same reason as the round above: these two are
+				// independent, and serialising them cost an extra ~390ms hop in the
+				// endgame. Each stays individually tolerated, so one failing still
+				// leaves the other's result on screen.
+				const [rollData, endRecord] = await Promise.all([
+					getActiveRollForGame(gameID).catch(() => null), /* tolerate; RollCreated/RollResolved WS events keep this in sync */
+					getFullRecord(gameID).catch(() => null), /* tolerate; the sidebar just shows what's already loaded */
+				]);
+				if (rollData) {
 					if (rollData.roll) {
 						activeRoll = rollData.roll;
 						activeRollDice = rollData.dice;
@@ -567,10 +600,8 @@
 						activeRollDice = [];
 						activeRollParticipants = [];
 					}
-				} catch { /* tolerate; RollCreated/RollResolved WS events keep this in sync */ }
-				try {
-					recordRows = (await getFullRecord(gameID)).rows;
-				} catch { /* tolerate; the sidebar just shows what's already loaded */ }
+				}
+				if (endRecord) recordRows = endRecord.rows;
 			}
 
 			gameStateLoaded = true;
@@ -630,23 +661,32 @@
 
 	onMount(async () => {
 		try {
-			me = await getMe();
+			// getMe and the WebSocket handshake are independent — the upgrade
+			// carries the session cookie and needs nothing from the account object
+			// — so they run concurrently, saving one ~390ms round trip off the
+			// front of every table load.
+			mePromise = getMe();
+			const conn = createConnection(gameID, handleWSMessage, loadGameState);
+			disconnect = conn.disconnect;
+
+			me = await mePromise;
 			if (!me) {
+				// Stop the socket retrying against a page we are leaving. Opening it
+				// before the auth check is what buys the overlap; the server rejects
+				// the upgrade for a signed-out visitor, and without this the backoff
+				// would keep reconnecting after the redirect.
+				disconnect();
 				goto(`/?next=/table/${gameID}`);
 				return;
 			}
-			// Independent of the roster, so it's set before the socket opens —
-			// a table we end up staying on after a failed first load still has
-			// its push key.
+			// Independent of the roster — a table we end up staying on after a
+			// failed first load still has its push key.
 			vapidPublicKey = me.vapid_public_key;
 
-			// Open the WS first, with loadGameState as the resync callback.
-			// createConnection will run loadGameState on every (re)connect —
-			// including this initial one — and buffer any events that
-			// arrive during the fetch so we never miss a transition. Await
-			// `ready` so the seat it resolves is available below.
-			const conn = createConnection(gameID, handleWSMessage, loadGameState);
-			disconnect = conn.disconnect;
+			// createConnection (above) runs loadGameState on every (re)connect —
+			// including this initial one — and buffers any events that arrive
+			// during the fetch so we never miss a transition. Await `ready` so the
+			// seat it resolves is available below.
 			await conn.ready;
 
 			// `ready` resolves through a `.finally`, so it settles whether that
