@@ -1,6 +1,6 @@
 /* Shared full-screen-dialog backdrop scrim + close button, used by any modal
    (RetinueSheet, ClaimChoiceModal, ...). Import as a side effect wherever a
-   component needs .modal-backdrop or .modal-close.
+   component needs .modal-backdrop, .modal-close, or .sheet-title.
 
    Only the backdrop and close button are common enough to share — the dialog
    box itself (bottom sheet vs. centered card, sizing, entry animation) stays
@@ -84,4 +84,24 @@
 		border: 1px solid var(--color-border-strong);
 		border-radius: 12px;
 	}
+}
+
+/* THE sheet/dialog title — every RetinueSheet says its own name with this, so
+   the seven of them (Tones, Laws, Rumors, Active Wars, How to play, and both
+   Send feedback sheets) cannot drift apart the way they had by 2026-08-17,
+   when one had been resized alone and the rest sat at the browser's default
+   h3 size.
+
+   Weight is NOT set here: `+layout.svelte` resets every heading to 400, and
+   restating it would just be a second place to keep in sync. Size and the
+   hairline letter-spacing are the whole treatment.
+
+   Titles live inside the sheet BODY, not the header — so they scroll away
+   with the content. That is deliberate: RetinueSheet's header is a 44px
+   grabber-and-close strip, and a sheet as long as Tones or How to play would
+   spend real estate on a title nobody needs once they are reading. */
+.sheet-title {
+	font-size: 1.45rem;
+	letter-spacing: 0.01em;
+	margin: 0 0 0.5rem;
 }

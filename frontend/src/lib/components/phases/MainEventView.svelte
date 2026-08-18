@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/modalShell.css';
 	import '$lib/components/shared/statusText.css';
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
@@ -491,7 +492,7 @@
 
 <RetinueSheet open={$warDrawerOpen} onClose={() => warDrawerOpen.set(false)}>
 	<div class="war-sheet">
-		<h3>Active Wars ({drawerWarPlans.length})</h3>
+		<h3 class="sheet-title">Active Wars ({drawerWarPlans.length})</h3>
 		{#if drawerWarPlans.length === 0}
 			<p class="muted-text">No active wars.</p>
 		{:else}
@@ -503,7 +504,6 @@
 </RetinueSheet>
 
 <style>
-	.war-sheet h3 { margin: 0 0 0.5rem; }
 	.main-event-view {
 		flex: 1;
 		display: flex;

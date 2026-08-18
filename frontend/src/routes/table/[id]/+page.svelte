@@ -1,6 +1,7 @@
 <!-- Game shell: loads full game state, routes to phase-specific views. -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/modalShell.css';
 	import '$lib/components/shared/rankChip.css';
 	import '$lib/components/shared/statusText.css';
 	import { page } from '$app/state';
@@ -1020,20 +1021,70 @@
 
 	<RetinueSheet open={tonesOpen} onClose={() => tonesOpen = false}>
 		<div class="tones-sheet">
-			<h3>Tones</h3>
+			<!-- Scoped class, not a bare h3 rule: `.tones-sheet` is borrowed by the
+			     feedback sheet further down, which wants the default heading. -->
+			<h3 class="sheet-title">Tones</h3>
 			{#if toneError}
 				<ErrorText message={toneError} />
 			{/if}
-			<p class="muted-text small">
-				Themes and topics your group wants to include or avoid. Tap a tile to cycle its status.
-				{#if tonesLocked}<br /><em>Locked — the main event has begun.</em>{/if}
-			</p>
+			<!-- The lede reuses SceneSetupForm's `.prompt` recipe — warm fill, gold
+			     left rule — which is the app's established "read this" device. This
+			     panel badly needed one: the sentence used to be the lowest-contrast
+			     text on a screen otherwise filled with 41 high-contrast tiles, so the
+			     eye went straight past it to the grid.
 
+			     Deliberately WITHOUT that recipe's small-caps label: the sheet title
+			     sits directly above, and two headings stacked back to back read as a
+			     stutter. The fill and the gold rule carry the emphasis on their own.
+
+			     It carries only the *what*; the *how* ("tap to cycle") moved down
+			     into the legend, where the mechanic it describes actually lives.
+
+			     The claim that no one is told who set a tone is load-bearing and
+			     true: tone_topics is keyed on the game with no player column, and
+			     handler/tone.go broadcasts a WS event without emitting an action-log
+			     post. The tile does change colour for everyone — that is the point —
+			     it just carries no name. Don't add attribution or a log entry here
+			     without rewriting this line. -->
+			<div class="tone-lede" class:locked={tonesLocked}>
+				{#if tonesLocked}
+					<p>
+						Themes and topics the table set to include or avoid. No one is told
+						who set them.
+					</p>
+					<p class="tone-lede-locked">Locked — the main event has begun.</p>
+				{:else}
+					<p>
+						Themes and topics the table wants to include or avoid. Set as many as you like. 
+						No one is told who set each.
+					</p>
+				{/if}
+			</div>
+
+			<!-- Sticky, because this is the key to a 41-tile grid and unstuck it was
+			     gone after one flick on a phone — leaving you tapping colours with
+			     no way left on screen to read them. It sticks to the scrollport of
+			     RetinueSheet's `.sheet-body`, so it must stay a DIRECT child of
+			     `.tones-sheet`: wrapping it with the title in a header div would
+			     bound the stick to that div and it would scroll away again.
+
+			     It also carries the rule that separates the header block from the
+			     tile field, so when stuck it reads as a bar over the grid. -->
 			<div class="tone-legend" aria-label="Legend">
-				<span class="tone-legend-item" data-status="default"><span class="swatch"></span>No Opinion</span>
-				<span class="tone-legend-item" data-status="include"><span class="swatch"></span>Include</span>
-				<span class="tone-legend-item" data-status="avoid_detail"><span class="swatch"></span>Avoid detail</span>
-				<span class="tone-legend-item" data-status="never"><span class="swatch"></span>Never</span>
+				<span class="tone-legend-lead">{tonesLocked ? 'Key' : 'Tap to cycle'}</span>
+				<!-- The four swatches are tuned to sit on ONE line at 360, the narrow
+				     end of the design band (docs/STYLE_GUIDE.md "Layout widths"), which
+				     is what lets the lead centre above them as a caption rather than
+				     leading a ragged block. They only just make it — 328px of column
+				     against ~318px of swatches — so the gaps here and in
+				     `.tone-legend-item` are load-bearing, not taste. It still wraps
+				     rather than overflows if a fallback font ever runs wider. -->
+				<div class="tone-legend-items">
+					<span class="tone-legend-item" data-status="default"><span class="swatch"></span>No Opinion</span>
+					<span class="tone-legend-item" data-status="include"><span class="swatch"></span>Include</span>
+					<span class="tone-legend-item" data-status="avoid_detail"><span class="swatch"></span>Avoid detail</span>
+					<span class="tone-legend-item" data-status="never"><span class="swatch"></span>Never</span>
+				</div>
 			</div>
 
 			<div class="tone-grid">
@@ -1079,7 +1130,7 @@
 
 	<RetinueSheet open={lawsOpen} onClose={() => lawsOpen = false}>
 		<div class="laws-rumors-sheet">
-			<h3>Laws</h3> <!--  ({laws.length}) -->
+			<h3 class="sheet-title">Laws</h3> <!--  ({laws.length}) -->
 			<LawsRumors
 				kind="laws"
 				{laws}
@@ -1094,7 +1145,7 @@
 
 	<RetinueSheet open={rumorsOpen} onClose={() => rumorsOpen = false}>
 		<div class="laws-rumors-sheet">
-			<h3>Rumors</h3> <!--  ({rumors.length}) -->
+			<h3 class="sheet-title">Rumors</h3> <!--  ({rumors.length}) -->
 			<LawsRumors
 				kind="rumors"
 				{laws}
@@ -1109,7 +1160,7 @@
 
 	<RetinueSheet open={lobbyFeedbackOpen} onClose={() => lobbyFeedbackOpen = false}>
 		<div class="tones-sheet">
-			<h3>Send feedback</h3>
+			<h3 class="sheet-title">Send feedback</h3>
 			<FeedbackForm gameId={gameID} route={page.url.pathname} phase={game?.phase} />
 		</div>
 	</RetinueSheet>
@@ -1335,9 +1386,6 @@
 	}
 	.war-button.war-pending:hover { background: color-mix(in srgb, var(--color-warning-bg) 92%, white); }
 
-	.tones-sheet h3 { margin: 0 0 0.5rem; }
-	.tones-sheet .small { font-size: 0.85rem; }
-	.laws-rumors-sheet h3 { margin: 0 0 0.5rem; }
 
 	.top-strip {
 		display: flex;
@@ -1643,19 +1691,101 @@
 
 	/* ── Tone Setting ─────────────────────────────────────────────────────── */
 
+	/* Lede callout: the `.prompt` recipe from SceneSetupForm. The lift is
+	   deliberately all *shape* — a fill, a gold left rule, a labelled box.
+	   Not bigger or bolder text: gold is a label and never a fill, and bold
+	   is reserved for standalone numeric counters (docs/STYLE_GUIDE.md). */
+	.tone-lede {
+		background: var(--color-surface-active);
+		border: 1px solid var(--color-border-warm);
+		border-left: 3px solid var(--color-accent);
+		border-radius: 5px;
+		padding: 0.55rem 0.7rem;
+		/* Short bottom margin on purpose: the legend below re-pays `.sheet-body`'s
+		   padding as padding-top of its own (see `.tone-legend`), so the visible
+		   gap between the two is that 0.95rem plus this. */
+		margin: 0.5rem 0 0.15rem;
+	}
+
+	/* Locked, the sheet is reference material rather than something to act on,
+	   so the callout goes cold — the same move `.scene-setup.readonly .prompt`
+	   makes on the scene form. */
+	.tone-lede.locked {
+		background: var(--color-bg);
+		border: 1px solid var(--color-surface-2);
+		border-left: 3px solid var(--color-border-strong);
+	}
+	.tone-lede p {
+		margin: 0;
+		font-size: 0.92rem;
+		color: var(--color-text);
+		line-height: 1.4;
+	}
+
+	/* Higher specificity than `.tone-lede p` above, so no !important needed. */
+	.tone-lede p.tone-lede-locked {
+		margin-top: 0.4rem;
+		font-size: 0.85rem;
+		font-style: italic;
+		color: var(--color-text-secondary);
+	}
+
 	.tone-legend {
+		position: sticky;
+		/* NOT 0. The offset is measured from `.sheet-body`'s content-box top,
+		   which sits 0.5rem below the sheet's inner edge — pinning at 0 left a
+		   0.5rem band of tiles scrolling past in the open above the bar. Lifting
+		   the pin by exactly that padding parks the bar flush against the edge.
+		   Coupled to RetinueSheet's `.sheet-body` padding: change it there and
+		   this (and the padding-top below, which re-pays the 0.5rem so the text
+		   keeps its breathing room) has to change with it. */
+		top: -0.5rem;
+		/* Above the tiles, which are non-positioned. Belt-and-braces: the
+		   sticky element would already paint over them on position alone. */
+		z-index: 1;
+		/* Column: the lead is a centred caption over the swatch row, not the
+		   first item in it. */
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.8rem;
+		/* Opaque, and padded on its own account: `.sheet-body`'s top padding
+		   scrolls away with the content, so the bar has to own the whole band
+		   it occupies or tiles show through above and touch it below. Matches
+		   RetinueSheet's `.sheet` ground. */
+		background: var(--color-surface-sunken);
+		padding: 0.95rem 0 0.5rem;
+		margin: 0 0 0.75rem;
+		border-bottom: 1px solid var(--color-border-warm);
+		color: var(--color-text-secondary);
+	}
+
+	/* Gold small-caps, matching the section headings and the lede's own label
+	   — gold doing its one job here, labelling. */
+	.tone-legend-lead {
+		font-size: 0.7rem;
+		color: var(--color-accent);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	/* 0.55rem, not the 0.7rem the flat row ran at — see the markup comment: the
+	   four swatches clear a 360 column by ~10px, and this gap is where that
+	   margin came from. Wraps rather than overflows if it ever runs out. */
+	.tone-legend-items {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.5rem 1rem;
-		font-size: 0.8rem;
-		margin: 0.5rem 0 0.75rem;
-		color: var(--color-text-secondary);
+		align-items: center;
+		justify-content: center;
+		gap: 0.3rem 0.55rem;
 	}
 
 	.tone-legend-item {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		/* Also trimmed from 0.4rem for the 360 fit (4 items = 4 of these). */
+		gap: 0.32rem;
 	}
 
 	.tone-legend-item .swatch {

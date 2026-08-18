@@ -180,6 +180,11 @@ never means "a quieter player."
   plain.
 - **Bold** is reserved for standalone numeric counters (rank/status
   numbers, badge counts). Names, labels, and values stay regular weight.
+- **Headings are not an exception.** `+layout.svelte` resets `h1`–`h6` to
+  weight 400, because the UA default would otherwise put every heading in
+  the app on Spectral's 600 cut. Headings carry hierarchy through size,
+  gold, uppercase and letter-spacing; weight is not a fourth channel. A
+  heading that needs weight overrides locally, with a reason.
 - Uppercase labels (badges, section headings) carry letter-spacing
   (`0.05–0.14em`) and small sizes; they are labels, not emphasis.
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/modalShell.css';
 	import '$lib/components/shared/statusText.css';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -434,7 +435,7 @@
 
 	<RetinueSheet open={feedbackOpen} onClose={() => feedbackOpen = false}>
 		<div class="feedback-sheet">
-			<h3>Send feedback</h3>
+			<h3 class="sheet-title">Send feedback</h3>
 			<FeedbackForm />
 		</div>
 	</RetinueSheet>
@@ -660,5 +661,4 @@
 	.create-row .hint { margin:0; }
 	.footer-actions { display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap; margin-top:0.5rem; }
 	.feedback-btn { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
-	.feedback-sheet h3 { margin: 0 0 0.75rem; }
 </style>

@@ -117,10 +117,28 @@
 		height: 100dvh;
 	}
 
-	/* The whole UI is Spectral (set on body above). Headings default to its
-	   600 weight; the hero title opts into --font-display. */
+	/* The whole UI is Spectral (set on body above); the hero title opts into
+	   --font-display.
+
+	   Weight 400 is a deliberate reset, not a default. Left alone, every
+	   heading in the app takes the UA's `bold` and lands on Spectral's real
+	   600 cut — which is the one weight docs/STYLE_GUIDE.md reserves for
+	   standalone numeric counters. The bold-usage audit (2026-07-13) swept
+	   inline text and never reached heading defaults, so ~50 headings sat
+	   bold on a rule that says they shouldn't be. Headings already carry
+	   their hierarchy through size, gold, uppercase and letter-spacing;
+	   weight was a fourth signal doing nothing the other three weren't.
+
+	   h4–h6 are included even though they skip the font-family line above:
+	   they inherit Spectral from body, but they inherit the UA's bold too.
+
+	   A heading that genuinely needs weight should say so locally and say
+	   why — this is the floor, not a ban. */
 	:global(h1, h2, h3) {
 		font-family: var(--font-serif);
+	}
+	:global(h1, h2, h3, h4, h5, h6) {
+		font-weight: 400;
 	}
 
 	:global(button) {

@@ -3,6 +3,7 @@
   header, a page's own corner) — it owns its open state and needs no props.
 -->
 <script lang="ts">
+	import '$lib/components/shared/modalShell.css';
 	import RetinueSheet from './RetinueSheet.svelte';
 	import HelpContent from './HelpContent.svelte';
 	import HelpGlyph from './HelpGlyph.svelte';
@@ -23,7 +24,7 @@
 
 <RetinueSheet open={open} onClose={() => open = false}>
 	<div class="help-sheet">
-		<h3>How to play</h3>
+		<h3 class="sheet-title">How to play</h3>
 		<HelpContent panel onFeedback={() => { open = false; feedbackOpen = true; }} />
 	</div>
 </RetinueSheet>
@@ -33,7 +34,7 @@
      before this one opens. -->
 <RetinueSheet open={feedbackOpen} onClose={() => feedbackOpen = false}>
 	<div class="help-sheet">
-		<h3>Send feedback</h3>
+		<h3 class="sheet-title">Send feedback</h3>
 		<FeedbackForm {gameId} {route} {phase} />
 	</div>
 </RetinueSheet>
@@ -55,5 +56,4 @@
 	.help-button:hover { color: var(--color-accent-hover); background: var(--color-surface-2); }
 	.help-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
-	.help-sheet h3 { margin: 0 0 0.75rem; }
 </style>
