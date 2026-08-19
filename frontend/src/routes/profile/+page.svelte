@@ -3,6 +3,7 @@
 	import '$lib/components/shared/modalShell.css';
 	import '$lib/components/shared/statusText.css';
 	import { goto } from '$app/navigation';
+	import { readProfileSnapshot, writeProfileSnapshot } from '$lib/pageCache';
 	import { onMount } from 'svelte';
 	import {
 		getMe, listMyTables, updateMe, logout,
@@ -67,18 +68,55 @@
 		]);
 	}
 
+	// Tracks the values the drafts were last seeded with, so the revalidate
+	// pass can tell "untouched" from "the player is typing in this field right
+	// now". Seeding from cache makes the page interactive a round trip earlier
+	// than it used to be, which is the whole point — but it also means someone
+	// can be mid-edit when the network answer lands, and that answer must not
+	// overwrite them.
+	let seededDrafts = { username: '', email: '', cadence: '24' };
+
+	function applyAccount(acct: Account) {
+		me = acct;
+		const cadence = acct.notify_cadence_hours == null ? 'off' : String(acct.notify_cadence_hours);
+		if (usernameDraft === seededDrafts.username) usernameDraft = acct.username;
+		if (emailDraft === seededDrafts.email) emailDraft = acct.email ?? '';
+		if (cadenceDraft === seededDrafts.cadence) cadenceDraft = cadence;
+		seededDrafts = { username: acct.username, email: acct.email ?? '', cadence };
+	}
+
 	async function load() {
-		loading = true;
+		// Paint the tables we last saw before touching the network; the fetch
+		// below runs regardless and replaces them. Only on the first load —
+		// the visibility/focus refetch below calls this too, and that path
+		// already has real content on screen.
+		const cached = readProfileSnapshot();
+		if (cached && !me) {
+			applyAccount(cached.account);
+			tables = cached.tables;
+			loading = false;
+		} else {
+			loading = true;
+		}
 		error = '';
 		try {
+			// Both in one round trip rather than two: listMyTables is
+			// session-authenticated and needs nothing from the account object, so
+			// awaiting getMe first only ever added a hop. Production charges a
+			// fixed ~200-480ms per request regardless of what it does, which made
+			// that hop the single cheapest thing to delete on this page.
+			//
+			// listMyTables 401s for a signed-out visitor exactly as getMe returns
+			// null, so the redirect below still fires; its rejection is caught
+			// here and discarded, because the getMe result is what decides.
+			const tablesPromise = withTimeout(listMyTables()).catch(() => null);
 			const acct = await withTimeout(getMe());
 			if (!acct) { goto('/'); return; }
-			me = acct;
-			usernameDraft = acct.username;
-			emailDraft = acct.email ?? '';
-			cadenceDraft = acct.notify_cadence_hours == null ? 'off' : String(acct.notify_cadence_hours);
-			const res = await withTimeout(listMyTables());
+			applyAccount(acct);
+			const res = await tablesPromise;
+			if (!res) throw new Error('Could not load your tables.');
 			tables = res.tables;
+			writeProfileSnapshot({ account: acct, tables: res.tables });
 			getPushState().then((s) => { pushState = s; });
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load profile.';

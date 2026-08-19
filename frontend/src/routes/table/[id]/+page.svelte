@@ -24,6 +24,7 @@
 		type Account,
 	} from '$lib/api';
 	import { createConnection, type WSMessage } from '$lib/ws';
+	import { readTableSnapshot, writeTableSnapshot, type TableSnapshot } from '$lib/pageCache';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import { handleWSMessage as runWSMessage, type WSContext } from './ws-handlers';
 	import {
@@ -462,6 +463,46 @@
 	// Not $state: awaited, never rendered.
 	let mePromise: Promise<Account | null> | null = null;
 
+	// ── Snapshot (stale-while-revalidate) ────────────────────────────────────
+	// captureSnapshot/applySnapshot are exact mirrors; every field one writes
+	// the other reads. Keeping them adjacent and total (no partial snapshots)
+	// is what stops a seeded page from rendering a half-populated table — the
+	// derived-throws-and-freezes-reactivity failure that the asset.taken bug
+	// produced. If you add server-owned state above, add it to both.
+	function captureSnapshot(): TableSnapshot {
+		return {
+			game, players, toneTopics, rankings, assets, laws, rumors, members,
+			playerActivity, secrets, currentPlayerID, prologueActivePlayerID,
+			recordRows, plans, planTokens, activeScene, activeScenePeers, rowState,
+			bankedDice, activeRoll, activeRollDice, activeRollVotes,
+			activeRollParticipants,
+			// A history window is not restorable (see the note on TableSnapshot),
+			// so snapshot an empty feed instead and let the next mount load a
+			// fresh one.
+			chatPosts: chatFeedMode === 'live' ? chatFeedPosts : [],
+			chatHasMoreBefore: chatFeedMode === 'live' && chatHasMoreBefore,
+			chatLastReadPostID, chatInitialReadMarker,
+		};
+	}
+
+	function applySnapshot(s: TableSnapshot) {
+		game = s.game; players = s.players; toneTopics = s.toneTopics;
+		rankings = s.rankings; assets = s.assets; laws = s.laws; rumors = s.rumors;
+		members = s.members; playerActivity = s.playerActivity; secrets = s.secrets;
+		currentPlayerID = s.currentPlayerID;
+		prologueActivePlayerID = s.prologueActivePlayerID;
+		recordRows = s.recordRows; plans = s.plans; planTokens = s.planTokens;
+		activeScene = s.activeScene; activeScenePeers = s.activeScenePeers;
+		rowState = s.rowState; bankedDice = s.bankedDice;
+		activeRoll = s.activeRoll; activeRollDice = s.activeRollDice;
+		activeRollVotes = s.activeRollVotes;
+		activeRollParticipants = s.activeRollParticipants;
+		chatFeedPosts = s.chatPosts;
+		chatHasMoreBefore = s.chatHasMoreBefore;
+		chatLastReadPostID = s.chatLastReadPostID;
+		chatInitialReadMarker = s.chatInitialReadMarker;
+	}
+
 	async function loadGameState() {
 		try {
 			// One parallel round in place of four sequential ones. These fetches
@@ -605,6 +646,9 @@
 			}
 
 			gameStateLoaded = true;
+			// Written on success only, so a failed refresh never overwrites a
+			// good snapshot with a partial one.
+			writeTableSnapshot(gameID, captureSnapshot());
 			// A resync that reached here has replaced every field it owns, so
 			// whatever the banner was complaining about is moot. Clearing on
 			// success rather than on entry means a *failed* resync leaves the
@@ -661,6 +705,22 @@
 
 	onMount(async () => {
 		try {
+			// Paint last-known state before touching the network. The load below
+			// runs regardless and overwrites all of it — this only decides
+			// whether the player watches a spinner for a second or looks at
+			// their table while it refreshes.
+			//
+			// `loading` is what gates the whole render, so clearing it here is
+			// the entire point. `gameStateLoaded` is deliberately NOT set: it
+			// governs error reporting, and a snapshot is not evidence that the
+			// server can still be reached, so a failed first load must still
+			// raise its banner — over the stale content, which is honest.
+			const cached = readTableSnapshot(gameID);
+			if (cached) {
+				applySnapshot(cached);
+				loading = false;
+			}
+
 			// getMe and the WebSocket handshake are independent — the upgrade
 			// carries the session cookie and needs nothing from the account object
 			// — so they run concurrently, saving one ~390ms round trip off the

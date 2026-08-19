@@ -1,5 +1,8 @@
 import { ApiError, apiFetch } from './client';
 import type { Account, MyTable } from './types';
+// Value import, but pageCache imports only *types* back from $lib/api, and
+// type imports are erased — so this does not create a runtime cycle.
+import { clearPageCache } from '$lib/pageCache';
 
 export function createAccount(body: {
 	username: string;
@@ -12,8 +15,12 @@ export function createAccount(body: {
 	});
 }
 
-export function login(username: string, password: string): Promise<Account> {
-	return apiFetch<Account>('/sessions', {
+export async function login(username: string, password: string): Promise<Account> {
+	// Whoever was here before is not who is here now. Clearing on the way *in*
+	// as well as out covers the case logout can't: a session that expired, or a
+	// browser handed to someone else, where nobody ever pressed sign out.
+	clearPageCache();
+	return await apiFetch<Account>('/sessions', {
 		method: 'POST',
 		body: JSON.stringify({ username, password })
 	});
@@ -25,6 +32,10 @@ export function login(username: string, password: string): Promise<Account> {
 // the empty body now, so this can report failure like everything else.
 export async function logout(): Promise<void> {
 	await apiFetch<void>('/sessions', { method: 'DELETE' });
+	// After the server call, not before: a failed logout leaves the session
+	// live and the player on their table, and wiping their snapshots would
+	// make the next navigation slow for no reason.
+	clearPageCache();
 }
 
 /** Null means "not logged in" — a 401 here is the ordinary logged-out answer,

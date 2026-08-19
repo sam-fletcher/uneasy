@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -236,6 +237,134 @@ func StartPrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
+// gameStateFanOut bounds how many of a state load's independent reads run at
+// once. Each concurrent query holds one pool connection for its duration, and
+// pgxpool's default MaxConns is max(4, NumCPU) — a request that grabbed the
+// whole pool would stall every other request behind it. Four is enough to
+// collapse the serial chain (these reads are ~25ms apiece against a Neon in
+// another region, and there are up to seven of them) without monopolising it.
+const gameStateFanOut = 4
+
+// gameStateReads is the phase-dependent half of a state load. Every field is
+// optional except players: the rest are best-effort, and a failure costs the
+// one thing it feeds rather than the whole table.
+type gameStateReads struct {
+	players    []dbgen.Player
+	playersErr error
+
+	activity   []dbgen.ListPlayerActivityByGameRow
+	activityOK bool
+	topics     []dbgen.ToneTopic
+	topicsOK   bool
+	laws       []dbgen.Law
+	lawsOK     bool
+	rumors     []dbgen.Rumor
+	rumorsOK   bool
+	rankings   []dbgen.Ranking
+	rankingsOK bool
+
+	rowState   model.RowState
+	rowStateOK bool
+
+	prologueActiveID  *int64
+	prologueActiveSet bool
+}
+
+// loadGameStateReads runs every read a state load needs beyond the game row
+// itself. They are mutually independent and were sequential only because they
+// were written that way, which cost one Neon round trip each on the hottest
+// path in the app. Each goroutine writes its own fields and nothing else, so
+// no mutex is involved — returning the struct after Wait() is what publishes
+// them.
+func loadGameStateReads(ctx context.Context, q *dbgen.Queries, game dbgen.Game) *gameStateReads {
+	out := &gameStateReads{}
+	gameID := game.ID
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, gameStateFanOut)
+	run := func(fn func()) {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			fn()
+		})
+	}
+
+	// The only read whose failure is fatal — the client cannot render a roster
+	// it does not have.
+	run(func() { out.players, out.playersErr = q.GetPlayersByGame(ctx, gameID) })
+
+	// Presence/reminder summary for the Retinue header. Best-effort: a failure
+	// here costs a header line, not the table.
+	run(func() {
+		var e error
+		out.activity, e = q.ListPlayerActivityByGame(ctx, gameID)
+		out.activityOK = e == nil
+	})
+	// Tone topics are always available (read-only after main_event begins).
+	run(func() {
+		var e error
+		out.topics, e = q.ListToneTopics(ctx, gameID)
+		out.topicsOK = e == nil
+	})
+	// Laws & rumors are visible in every phase — their header buttons sit
+	// alongside Tones and stay accessible from t=0 (the lists are empty until
+	// the prologue's Laws & Rumors box is claimed).
+	run(func() {
+		var e error
+		out.laws, e = q.ListLaws(ctx, gameID)
+		out.lawsOK = e == nil
+	})
+	run(func() {
+		var e error
+		out.rumors, e = q.ListRumors(ctx, gameID)
+		out.rumorsOK = e == nil
+	})
+
+	if game.Phase != model.PhaseLobby {
+		// Shake-up needs rankings too: turn order for both steps (reverse rank)
+		// and the bump-rank spend can move them mid-endgame.
+		run(func() {
+			var e error
+			out.rankings, e = q.ListRankingsByGame(ctx, gameID)
+			out.rankingsOK = e == nil
+		})
+		run(func() { out.loadPhaseSpecific(ctx, q, game) })
+	}
+
+	wg.Wait()
+	return out
+}
+
+// loadPhaseSpecific covers the two reads only one phase each can want. They
+// share a slot in the fan-out above because no game is ever in both phases.
+func (out *gameStateReads) loadPhaseSpecific(ctx context.Context, q *dbgen.Queries, game dbgen.Game) {
+	switch {
+	case game.Phase == model.PhasePrologue && game.PrologueRankingStep == nil:
+		active, _, err := prologueTurnState(ctx, q, game.ID)
+		if err != nil {
+			return
+		}
+		if active != nil {
+			out.prologueActiveID = &active.ID
+		}
+		out.prologueActiveSet = true
+
+	// In main_event, surface the authoritative RowState (which step of the row
+	// are we in?) so the client renders directly off the server's verdict
+	// instead of inferring from event side effects. See model/row_state.go.
+	//
+	// computeRowStateForGame, not ComputeRowState: the latter re-fetches the
+	// game we already hold, which was a second GetGameByID on every state load.
+	case game.Phase == model.PhaseMainEvent && game.CurrentRow > 0:
+		rs, err := computeRowStateForGame(ctx, q, game)
+		if err != nil {
+			return
+		}
+		out.rowState, out.rowStateOK = rs, true
+	}
+}
+
 // GetGameState handles GET /api/tables/{id}/state.
 //
 // Returns the full game state: game object, players, rankings, and phase-specific data.
@@ -245,79 +374,43 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 		if !ok {
 			return
 		}
-
 		ctx := r.Context()
 
+		// Fetched first and alone: every read below is gated on the phase, so
+		// this one round trip is genuinely serial. Everything after it is not.
 		game, err := s.Q.GetGameByID(ctx, gameID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "table not found")
 			return
 		}
 
-		players, err := s.Q.GetPlayersByGame(ctx, gameID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load members", err)
+		reads := loadGameStateReads(ctx, s.Q, game)
+		if reads.playersErr != nil {
+			respondInternalErr(w, r, "could not load members", reads.playersErr)
 			return
 		}
 
-		result := map[string]any{
-			"game":    game,
-			"players": players,
+		result := map[string]any{"game": game, "players": reads.players}
+		if reads.activityOK {
+			result["player_activity"] = buildPlayerActivity(reads.activity)
 		}
-
-		// Presence/reminder summary for the Retinue header. One extra query
-		// per state load, and a best-effort one: a failure here costs a header
-		// line, not the table, so it must not fail the whole fetch.
-		if rows, err := s.Q.ListPlayerActivityByGame(ctx, gameID); err == nil {
-			result["player_activity"] = buildPlayerActivity(rows)
+		if reads.topicsOK {
+			result["tone_topics"] = reads.topics
 		}
-
-		// Tone topics are always available (read-only after main_event begins).
-		if topics, err := s.Q.ListToneTopics(ctx, gameID); err == nil {
-			result["tone_topics"] = topics
+		if reads.lawsOK {
+			result["laws"] = reads.laws
 		}
-
-		// Laws & rumors are visible in every phase — their header buttons sit
-		// alongside Tones and stay accessible from t=0 (the lists are empty
-		// until the prologue's Laws & Rumors box is claimed).
-		if laws, err := s.Q.ListLaws(ctx, gameID); err == nil {
-			result["laws"] = laws
+		if reads.rumorsOK {
+			result["rumors"] = reads.rumors
 		}
-		if rumors, err := s.Q.ListRumors(ctx, gameID); err == nil {
-			result["rumors"] = rumors
+		if reads.rankingsOK {
+			result["rankings"] = reads.rankings
 		}
-
-		// Include phase-specific data.
-		switch game.Phase {
-		case model.PhaseLobby:
-			// No further phase-specific data.
-
-		case model.PhasePrologue, model.PhaseMainEvent, model.PhaseShakeUp, model.PhaseEnded:
-			// Shake-up needs rankings too: turn order for both steps (reverse
-			// rank) and the bump-rank spend can move them mid-endgame.
-			rankings, err := s.Q.ListRankingsByGame(ctx, gameID)
-			if err == nil {
-				result["rankings"] = rankings
-			}
-			if game.Phase == model.PhasePrologue && game.PrologueRankingStep == nil {
-				active, _, err := prologueTurnState(ctx, s.Q, gameID)
-				if err == nil {
-					var id *int64
-					if active != nil {
-						id = &active.ID
-					}
-					result["current_prologue_player_id"] = id
-				}
-			}
-			// In main_event, surface the authoritative RowState (which step
-			// of the row are we in?) so the client renders directly off
-			// the server's verdict instead of inferring from event side
-			// effects. See model/row_state.go.
-			if game.Phase == model.PhaseMainEvent && game.CurrentRow > 0 {
-				if rs, err := ComputeRowState(ctx, s.Q, gameID); err == nil {
-					result["row_state"] = rs
-				}
-			}
+		if reads.prologueActiveSet {
+			result["current_prologue_player_id"] = reads.prologueActiveID
+		}
+		if reads.rowStateOK {
+			result["row_state"] = reads.rowState
 		}
 
 		respond(w, http.StatusOK, result)

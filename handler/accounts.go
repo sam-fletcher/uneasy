@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -238,6 +239,54 @@ func hashPasswordField(w http.ResponseWriter, r *http.Request, password string) 
 	return &h, true
 }
 
+// loadWaitStates computes the "waiting on" set for every table a player sits
+// at, concurrently. Each one is a phase-dependent chain of ~3-5 queries, so
+// doing them in series made ListMyTables scale with a player's table count.
+// Uses the same bounded fan-out as GetGameState — see gameStateFanOut for why
+// the pool needs a ceiling. Ended games and games deleted mid-request are
+// skipped: both mean "nobody is being waited on".
+func loadWaitStates(
+	ctx context.Context,
+	q *dbgen.Queries,
+	rows []dbgen.ListPlayersByAccountRow,
+	gameByID map[int64]dbgen.Game,
+) (map[int64][]int64, error) {
+	out := make(map[int64][]int64, len(rows))
+	var firstErr error
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, gameStateFanOut)
+
+	for _, row := range rows {
+		game, haveGame := gameByID[row.GameID]
+		if row.Phase == model.PhaseEnded || !haveGame {
+			continue
+		}
+		wg.Add(1)
+		go func(g dbgen.Game) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			ws, err := computeWaitStateForGame(ctx, q, g)
+
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
+			}
+			if ws.ActingPlayerIDs != nil {
+				out[g.ID] = ws.ActingPlayerIDs
+			}
+		}(game)
+	}
+	wg.Wait()
+	return out, firstErr
+}
+
 // ListMyTables handles GET /api/accounts/me/tables.
 //
 // Each table carries enough context for the profile page to render a useful
@@ -303,6 +352,16 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 			unreadByPlayer[u.ViewerID] = u.UnreadCount
 		}
 
+		// Wait states for every table at once, before the assembly loop. Running
+		// them one table after another made this endpoint's cost scale with how
+		// many tables a player sits at — the single reason the profile page felt
+		// as slow as a table.
+		waitByGame, waitErr := loadWaitStates(r.Context(), s.Q, rows, gameByID)
+		if waitErr != nil {
+			respondInternalErr(w, r, "could not compute wait state", waitErr)
+			return
+		}
+
 		out := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
 			roster := rosterByGame[row.GameID]
@@ -316,19 +375,12 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 					"online":       m.IsAccountOnline(p.AccountID),
 				})
 			}
-			waitingOn := []int64{}
-			// A game missing from the batch was deleted between the two reads;
-			// skip the wait state rather than fail the whole page for it.
-			game, haveGame := gameByID[row.GameID]
-			if row.Phase != model.PhaseEnded && haveGame {
-				ws, wErr := computeWaitStateForGame(r.Context(), s.Q, game)
-				if wErr != nil {
-					respondInternalErr(w, r, "could not compute wait state", wErr)
-					return
-				}
-				if ws.ActingPlayerIDs != nil {
-					waitingOn = ws.ActingPlayerIDs
-				}
+			// Computed in the fan-out above. Absent means either an ended game,
+			// a game deleted mid-request, or a nil ActingPlayerIDs — all three
+			// mean "nobody", and the empty slice is what the client expects.
+			waitingOn := waitByGame[row.GameID]
+			if waitingOn == nil {
+				waitingOn = []int64{}
 			}
 			// Absent means the batch found nothing unread for this table, which
 			// is a real zero — the LEFT JOIN returns a row per player either
