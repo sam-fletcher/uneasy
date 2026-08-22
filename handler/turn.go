@@ -366,7 +366,7 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// and recovered via the manual /pass-focus endpoint rather than
 		// failing the request.
 		if err := autoPassFocus(r, s, manager, game); err != nil {
-			loggerFromContext(r.Context()).Error("auto pass-focus after refresh-assets", "err", err)
+			loggerFromContext(ctx).ErrorContext(ctx, "auto pass-focus after refresh-assets", "err", err)
 		}
 
 		respond(w, http.StatusOK, map[string]any{"refreshed": body.AssetIDs})
@@ -437,7 +437,7 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 		RowNumber: new(game.CurrentRow),
 	})
 	if err != nil {
-		logger.Warn("auto pass-focus: could not list pending plans; skipping row advance", "err", err)
+		logger.WarnContext(ctx, "auto pass-focus: could not list pending plans; skipping row advance", "err", err)
 		broadcastRowState(ctx, s.Q, manager, game.ID)
 		return nil
 	}
@@ -546,7 +546,9 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			// Non-fatal: pass focus succeeded; the row simply holds and the
 			// next player's pass re-evaluates it. Log so a persistent DB
 			// issue here doesn't silently stall row advance forever.
-			loggerFromContext(ctx).Warn("pass-focus: could not list pending plans; skipping row advance", "err", err)
+			loggerFromContext(
+				ctx,
+			).WarnContext(ctx, "pass-focus: could not list pending plans; skipping row advance", "err", err)
 			broadcastRowState(ctx, s.Q, manager, game.ID)
 			respond(w, http.StatusOK, map[string]any{
 				"focus_player_id":   next.ID,

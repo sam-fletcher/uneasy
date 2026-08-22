@@ -488,7 +488,11 @@ func openSession(ctx context.Context, w http.ResponseWriter, q *dbgen.Queries, a
 	if err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{
+	// HttpOnly and SameSite are set unconditionally below; Secure is deliberately
+	// a runtime value — true in prod (PUBLIC_ORIGIN is https), false in dev where
+	// the stack is plain http and a Secure cookie would never be sent back at all.
+	// gosec can't see through the variable, so G124 fires on both cookie sites.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see comment above
 		Name:     "player_token",
 		Value:    token,
 		Path:     "/",

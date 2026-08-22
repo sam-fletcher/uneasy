@@ -7,13 +7,17 @@ and administering a live instance, see [OPERATIONS.md](OPERATIONS.md).
 
 ## First-time setup
 
-You need: **Go 1.26+**, **Node 20+**, **Docker Desktop**, and **golangci-lint**.
+You need: **Go 1.27+**, **Node 20+**, **Docker Desktop**, and **golangci-lint**.
 
 ```bash
-# Install golangci-lint (dev linter)
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+# Install golangci-lint (dev linter), pinned to the version in the Makefile.
+# Use this rather than `go install` or Homebrew: both compile the linter
+# against whatever Go they happen to have, and a linter built against an
+# older Go panics outright on a newer stdlib.
+make lint-install
 
-# Install Air (Go hot-reload)
+# Install Air (Go hot-reload). Only needed to run the server outside
+# Docker — `docker compose up` installs Air inside the container.
 go install github.com/air-verse/air@latest
 
 # Download Go dependencies
@@ -21,6 +25,15 @@ go mod download
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..
+```
+
+Both `go install` and `make lint-install` drop binaries in `$(go env GOPATH)/bin`,
+which macOS does **not** put on `PATH` by default. The Makefile calls the linter
+by absolute path so it doesn't care, but if you want to run these tools directly
+from a shell, add that directory to your `PATH`:
+
+```bash
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
 ```
 
 ## Running in development

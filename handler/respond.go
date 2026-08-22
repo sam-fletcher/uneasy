@@ -70,12 +70,13 @@ func httpErr(status int, msg string) *httpError {
 // chain via errors.As) is a *httpError, the status and message come from it;
 // otherwise the response is 500 with err.Error() as the message.
 func respondHTTPErr(w http.ResponseWriter, r *http.Request, err error) {
-	logger := loggerFromContext(r.Context())
+	ctx := r.Context()
+	logger := loggerFromContext(ctx)
 	if he, ok := errors.AsType[*httpError](err); ok {
 		respondErr(w, he.Status, he.Msg)
 		return
 	}
-	logger.Error("internal handler error", "err", err)
+	logger.ErrorContext(ctx, "internal handler error", "err", err)
 	respondErr(w, http.StatusInternalServerError, err.Error())
 }
 
@@ -94,7 +95,8 @@ func respondHTTPErr(w http.ResponseWriter, r *http.Request, err error) {
 // For 4xx errors (validation, conflict, etc.) keep using respondErr — the
 // caller-facing message is the whole point and there is no err to log.
 func respondInternalErr(w http.ResponseWriter, r *http.Request, msg string, err error) {
-	logger := loggerFromContext(r.Context())
-	logger.Error(msg, "err", err)
+	ctx := r.Context()
+	logger := loggerFromContext(ctx)
+	logger.ErrorContext(ctx, msg, "err", err)
 	respondErr(w, http.StatusInternalServerError, msg+": "+err.Error())
 }

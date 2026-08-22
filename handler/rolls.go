@@ -42,6 +42,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -187,9 +188,9 @@ func GetActiveRollForGame(s *db.Store) http.HandlerFunc {
 
 		var active *dbgen.DiceRoll
 		// 1) The latest still-open roll, if any.
-		for i := len(rolls) - 1; i >= 0; i-- {
-			if rolls[i].Result == nil {
-				active = new(rolls[i])
+		for _, roll := range slices.Backward(rolls) {
+			if roll.Result == nil {
+				active = new(roll)
 				break
 			}
 		}
@@ -199,13 +200,13 @@ func GetActiveRollForGame(s *db.Store) http.HandlerFunc {
 		//    recover that outcome — without it the resolution UI goes blank
 		//    (every branch keys off the roll outcome) until choices are applied.
 		if active == nil {
-			for i := len(rolls) - 1; i >= 0; i-- {
-				if rolls[i].PlanID == nil {
+			for _, roll := range slices.Backward(rolls) {
+				if roll.PlanID == nil {
 					continue
 				}
-				plan, err := s.Q.GetPlanByID(ctx, *rolls[i].PlanID)
+				plan, err := s.Q.GetPlanByID(ctx, *roll.PlanID)
 				if err == nil && plan.Status == model.PlanResolving {
-					active = new(rolls[i])
+					active = new(roll)
 					break
 				}
 			}

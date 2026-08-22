@@ -1,6 +1,6 @@
 .PHONY: build frontend server placeholder clean \
         test test-integration test-integration-run test-frontend-unit test-e2e \
-        vet check-frontend check sqlc deadcode
+        vet check-frontend check sqlc deadcode lint-install lint-check
 
 # Full build: compile the frontend and produce a single Go binary that
 # embeds it. Output: ./server
@@ -55,11 +55,41 @@ test-integration-run:
 	TEST_DATABASE_URL=$(TEST_DATABASE_URL) \
 		go test -tags=integration -count=1 -run '$(RUN)' -v $(PKG)
 
-vet:
+# golangci-lint is pinned, and installed from the project's own release binaries
+# rather than from a package manager. Upstream's install docs warn that
+# "Homebrew can use an unexpected version of Go to build the binary", and that
+# is not cosmetic: a linter built against an older Go panics outright on a newer
+# stdlib ("file requires newer Go version go1.27") and takes this target down
+# with it. `go install` has the same failure mode for the same reason — it
+# compiles against whatever Go is local. The published binaries are built
+# against the current Go, so pinning the version here pins the behaviour.
+GOLANGCI_VERSION ?= v2.13.1
+
+# Always invoked by absolute path, never through PATH. `go env GOPATH`/bin is
+# where the install script puts it, but that directory is not on PATH by
+# default on macOS — resolving through PATH would miss it entirely, or find
+# some other build of the linter that happens to be installed.
+GOBIN_DIR := $(shell go env GOPATH)/bin
+GOLANGCI  := $(GOBIN_DIR)/golangci-lint
+
+lint-install:
+	curl -sSfL https://golangci-lint.run/install.sh \
+		| sh -s -- -b $(GOBIN_DIR) $(GOLANGCI_VERSION)
+
+# Offline guard: fail early and legibly when the installed linter has drifted
+# from the pin, rather than letting it surface as puzzling lint differences or
+# a panic mid-run.
+lint-check:
+	@$(GOLANGCI) --version 2>/dev/null | grep -q ' version $(GOLANGCI_VERSION:v%=%) ' || { \
+		printf 'golangci-lint is not %s — run: make lint-install\n  have: ' '$(GOLANGCI_VERSION)'; \
+		$(GOLANGCI) --version 2>/dev/null || echo 'nothing at $(GOLANGCI)'; \
+		exit 1; }
+
+vet: lint-check
 	go build ./...
 	go fix ./...
 	go vet ./...
-	golangci-lint run ./... --fix
+	$(GOLANGCI) run ./... --fix
 	go vet -tags=integration ./...
 
 check-frontend:

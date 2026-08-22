@@ -55,7 +55,8 @@ func DeleteSession(s *db.Store) http.HandlerFunc {
 		if token != "" {
 			_ = s.Q.DeleteSession(r.Context(), token)
 		}
-		http.SetCookie(w, &http.Cookie{
+		// Secure is a runtime value, not a literal — see openSession in accounts.go.
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see comment above
 			Name:     "player_token",
 			Value:    "",
 			Path:     "/",

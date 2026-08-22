@@ -72,6 +72,12 @@ func init() {
 
 type hfHandler struct{}
 
+// The two guest-roll actions accepted by POST /plans/:planId/guest-roll.
+const (
+	hfActionRoll   = "roll"
+	hfActionOptOut = "opt_out"
+)
+
 func (hfHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 6}
 }
@@ -247,7 +253,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		if body.Action != "roll" && body.Action != "opt_out" {
+		if body.Action != hfActionRoll && body.Action != hfActionOptOut {
 			respondErr(w, http.StatusBadRequest, "action must be 'roll' or 'opt_out'")
 			return
 		}
@@ -295,7 +301,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		if body.Action == "opt_out" {
+		if body.Action == hfActionOptOut {
 			if state.Outcomes == nil {
 				state.Outcomes = map[string]string{}
 			}
@@ -309,11 +315,11 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 				plan.GameID,
 				model.EventFestivityGuestRolled,
 				model.FestivityGuestRolledPayload{
-					PlanID: plan.ID, PlayerID: player.ID, Action: "opt_out",
+					PlanID: plan.ID, PlayerID: player.ID, Action: hfActionOptOut,
 				},
 			)
 			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
-			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "action": "opt_out"})
+			respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "action": hfActionOptOut})
 			return
 		}
 
@@ -380,7 +386,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		if h, ok := deps.Manager.Get(plan.GameID); ok {
 			h.BroadcastEvent(model.EventRollCreated, model.RollCreatedPayload{Roll: roll})
 			h.BroadcastEvent(model.EventFestivityGuestRolled, model.FestivityGuestRolledPayload{
-				PlanID: plan.ID, PlayerID: player.ID, Action: "roll", RollID: roll.ID,
+				PlanID: plan.ID, PlayerID: player.ID, Action: hfActionRoll, RollID: roll.ID,
 			})
 		}
 		// Run the leverage-entry short-circuit (force-ready anyone with no dice,

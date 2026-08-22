@@ -479,11 +479,12 @@ func setupRouter(
 				// panic on any collision so the conflict surfaces at boot, not in a
 				// confusing 4xx mid-game.
 				deps := &handler.PlanDeps{Store: store, Manager: manager}
+				const coreRouteOwner = "core" // not a plan; the shared per-plan routes
 				routeOwner := map[string]string{
-					"":            "core", // POST /plans/{planId}
-					"complete":    "core",
-					"make-choice": "core",
-					"resolve":     "core",
+					"":            coreRouteOwner, // POST /plans/{planId}
+					"complete":    coreRouteOwner,
+					"make-choice": coreRouteOwner,
+					"resolve":     coreRouteOwner,
 				}
 				for pt, h := range handler.AllHandlers() {
 					for route, fn := range h.ExtraRoutes(deps) {

@@ -87,9 +87,9 @@ func TestFestivityEventEndableRequiresAllChosen(t *testing.T) {
 	roster := []int64{1, 2}
 	// Player 2 hasn't chosen yet → not endable even with no makes/mars pending.
 	s := FestivityResolutionData{
-		Outcomes: map[string]string{"1": FestivityOutcomeHost},
+		Outcomes:       map[string]string{"1": FestivityOutcomeHost},
+		HostMakesTaken: []string{FestivityMakeSpreadRumor}, // the host's one earned make
 	}
-	s.HostMakesTaken = []string{FestivityMakeSpreadRumor} // the host's one earned make
 	assert.False(t, s.EventEndable(roster))
 	s.Outcomes["2"] = FestivityOutcomeMake
 	assert.True(t, s.EventEndable(roster))

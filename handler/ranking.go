@@ -30,6 +30,7 @@ package handler
 
 import (
 	"context"
+	"slices"
 	"sort"
 
 	dbgen "uneasy/db/gen"
@@ -84,14 +85,14 @@ func applyRankingSwaps(
 		// top-to-bottom, so iterate in reverse), and within each plan resolve its
 		// stack in placement order. Each token triggers one up-swap.
 		allHaveTokens := true
-		for i := len(planTypes) - 1; i >= 0; i-- {
-			planTokens := tokensForPlan(tokens, planTypes[i])
+		for _, planType := range slices.Backward(planTypes) {
+			planTokens := tokensForPlan(tokens, planType)
 			if len(planTokens) == 0 {
 				allHaveTokens = false
 				continue
 			}
 			planSwapped := make(map[int64]bool)
-			catSwapped[planTypes[i]] = planSwapped
+			catSwapped[planType] = planSwapped
 			for _, tok := range planTokens {
 				planSwapped[tok.PlayerID] = swapTokenPlayerWithAbove(tok.PlayerID, cat, s, playerRank)
 			}
@@ -374,8 +375,7 @@ func buildRankingDiff(
 		// Plans resolve bottom-to-top on the sheet; categoryPlanTypes lists them
 		// top-to-bottom, so walk it in reverse to match the resolution sequence.
 		planTypes := categoryPlanTypes[cat]
-		for i := len(planTypes) - 1; i >= 0; i-- {
-			pt := planTypes[i]
+		for _, pt := range slices.Backward(planTypes) {
 			// Holders of this plan, in placement order (bottom-most token first).
 			planTokens := tokensForPlan(tokens, pt)
 			if len(planTokens) == 0 {

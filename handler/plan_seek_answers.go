@@ -45,6 +45,16 @@ func init() {
 
 type saHandler struct{}
 
+// The Seek Answers sub-flow step keys, as they appear in resolution_data
+// choices and in the /depleted request body. This plan's own namespace —
+// game.ShakeUpOptBreakResource is the same string in the Shake-Up flow and
+// deliberately not reused here.
+const (
+	saStepBreakResource = "break_resource"
+	saStepRevealSecret  = "reveal_secret"
+	saStepMarPenalty    = "mar_penalty"
+)
+
 func (saHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 4}
 }
@@ -160,8 +170,8 @@ func (saHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	// forfeit path; declare_truth/ask_question always have a valid target in a live
 	// game, so they're simply performed.
 	return subflowPicksRemaining(resData,
-		subflowProgress{"break_resource", "break-resource", int(sa.BreakResourceDone)},
-		subflowProgress{"reveal_secret", "reveal-secret", int(sa.RevealSecretDone)},
+		subflowProgress{saStepBreakResource, "break-resource", int(sa.BreakResourceDone)},
+		subflowProgress{saStepRevealSecret, "reveal-secret", int(sa.RevealSecretDone)},
 		subflowProgress{"declare_truth", "declare-truth", int(sa.DeclareTruthDone)},
 		subflowProgress{"ask_question", "ask-question", int(sa.AskQuestionDone)},
 	)

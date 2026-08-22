@@ -300,6 +300,19 @@ linters:
       # Default: 30 (but we recommend 10-20)
       min-complexity: 40
 
+    goconst:
+      # Ignore string literals used as map keys.
+      # Default: false
+      #
+      # Every occurrence goconst finds in this repo is a JSON wire key in a
+      # `map[string]any{...}` response or WS payload literal ("asset_id",
+      # "focus_player_id", "destroyed", ...). Hoisting those into constants
+      # hides the payload shape at the call site and can't be applied to the
+      # matching `json:"..."` struct tags anyway, so the two halves of one
+      # wire contract would end up expressed two different ways. The genuine
+      # domain enums here already have constants (game.ShakeUpOpt*).
+      ignore-map-keys: true
+
     gocritic:
       # Settings passed to gocritic.
       # The settings key is the name of a supported gocritic checker.

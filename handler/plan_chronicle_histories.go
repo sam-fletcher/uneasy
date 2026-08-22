@@ -55,6 +55,14 @@ func init() {
 
 type chHandler struct{}
 
+// The Chronicle Histories make-step choices, as stored in resolution_data.
+const (
+	chChoiceBreakArtifact = "break_artifact"
+	chChoiceInvokeAnother = "invoke_another"
+	chChoiceEchoPresent   = "echo_present"
+	chChoiceTotalControl  = "total_control"
+)
+
 func (chHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 5}
 }
@@ -400,7 +408,12 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "option is required")
 			return
 		}
-		validChoices := []string{"break_artifact", "invoke_another", "echo_present", "total_control"}
+		validChoices := []string{
+			chChoiceBreakArtifact,
+			chChoiceInvokeAnother,
+			chChoiceEchoPresent,
+			chChoiceTotalControl,
+		}
 		if !slices.Contains(validChoices, body.Option) {
 			respondErr(w, http.StatusBadRequest, fmt.Sprintf("option must be one of: %v", validChoices))
 			return
@@ -521,7 +534,12 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		validChoices := []string{"break_artifact", "invoke_another", "echo_present", "total_control"}
+		validChoices := []string{
+			chChoiceBreakArtifact,
+			chChoiceInvokeAnother,
+			chChoiceEchoPresent,
+			chChoiceTotalControl,
+		}
 		if !slices.Contains(validChoices, body.Choice) {
 			respondErr(w, http.StatusBadRequest, fmt.Sprintf("choice must be one of: %v", validChoices))
 			return
@@ -595,7 +613,7 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 // never touched.
 func chStepTarget(option string, assetID *int64) *int64 {
 	switch option {
-	case "break_artifact", "invoke_another":
+	case chChoiceBreakArtifact, chChoiceInvokeAnother:
 		return assetID
 	default:
 		return nil
@@ -625,7 +643,7 @@ func chApplyMarEffect(
 ) (logBody string, status int, msg string) {
 	who := playerDisplayName(ctx, deps.Q, playerID)
 	switch in.choice {
-	case "break_artifact":
+	case chChoiceBreakArtifact:
 		if in.assetID == nil || in.marginaliaID == nil {
 			return "", http.StatusBadRequest, "break_artifact requires asset_id and marginalia_id"
 		}
@@ -652,7 +670,7 @@ func chApplyMarEffect(
 		}
 		return fmt.Sprintf("%s %s %s. %s", who, breakVerb(destroyed), assetMark(artifact.Name),
 			brokenAssetDetail(ctx, deps.Q, artifact.OwnerID, &m, destroyed)), 0, ""
-	case "invoke_another":
+	case chChoiceInvokeAnother:
 		if in.assetID == nil {
 			return "", http.StatusBadRequest, "invoke_another requires asset_id"
 		}
@@ -676,9 +694,9 @@ func chApplyMarEffect(
 // table ("carol chose \"total_control\".").
 func chNarrativeChoicePhrase(option string) string {
 	switch option {
-	case "echo_present":
+	case chChoiceEchoPresent:
 		return "cut to the present to show history's impact"
-	case "total_control":
+	case chChoiceTotalControl:
 		return "took narrative control of a moment"
 	default:
 		return fmt.Sprintf("chose %q", option)

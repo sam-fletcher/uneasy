@@ -486,7 +486,7 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				"prepare-plan: holding focus until the delay reveal settles",
 				"plan_id", plan.ID, "preparer_id", player.ID)
 		} else if err := autoPassFocus(r, s, manager, game); err != nil {
-			loggerFromContext(r.Context()).Error("auto pass-focus after prepare-plan", "err", err)
+			loggerFromContext(ctx).ErrorContext(ctx, "auto pass-focus after prepare-plan", "err", err)
 		}
 
 		resp := map[string]any{"plan": plan}

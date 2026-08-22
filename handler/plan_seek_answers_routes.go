@@ -214,7 +214,7 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 				return
 			}
 		default:
-			if int(sa.BreakResourceDone) >= pickedChoiceCount(&resData, "break_resource") {
+			if int(sa.BreakResourceDone) >= pickedChoiceCount(&resData, saStepBreakResource) {
 				respondErr(w, http.StatusConflict, "break-resource already completed for this plan")
 				return
 			}
@@ -318,7 +318,7 @@ func saRevealSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		// refresh) must not reveal more assets than the picked reveal-secret count.
 		resData := loadResolutionData(plan.ResolutionData)
 		sa := resData.EnsureSeekAnswers()
-		if int(sa.RevealSecretDone) >= pickedChoiceCount(&resData, "reveal_secret") {
+		if int(sa.RevealSecretDone) >= pickedChoiceCount(&resData, saStepRevealSecret) {
 			respondErr(w, http.StatusConflict, "reveal-secret already completed for this plan")
 			return
 		}
@@ -398,15 +398,15 @@ func saForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
 		var noun string
 		var err error
 		switch body.Step {
-		case "break_resource":
-			remaining = pickedChoiceCount(&resData, "break_resource") - int(sa.BreakResourceDone)
+		case saStepBreakResource:
+			remaining = pickedChoiceCount(&resData, saStepBreakResource) - int(sa.BreakResourceDone)
 			eligible, err = saEligibleBreakTargetCount(ctx, deps, plan, sa, isMar)
 			noun = "resource to break"
-		case "reveal_secret":
-			remaining = pickedChoiceCount(&resData, "reveal_secret") - int(sa.RevealSecretDone)
+		case saStepRevealSecret:
+			remaining = pickedChoiceCount(&resData, saStepRevealSecret) - int(sa.RevealSecretDone)
 			eligible, err = saEligibleRevealTargetCount(ctx, deps, plan)
 			noun = "asset whose secrets to learn"
-		case "mar_penalty":
+		case saStepMarPenalty:
 			remaining = int(sa.MarSelfFlawsRequired - sa.MarSelfFlawsApplied)
 			var own []int64
 			own, err = saEligibleOwnResources(ctx, deps, plan.GameID, plan.PreparerID, sa.FlawedResourceIDs)
@@ -430,11 +430,11 @@ func saForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		switch body.Step {
-		case "break_resource":
+		case saStepBreakResource:
 			sa.BreakResourceDone += int16(remaining)
-		case "reveal_secret":
+		case saStepRevealSecret:
 			sa.RevealSecretDone += int16(remaining)
-		case "mar_penalty":
+		case saStepMarPenalty:
 			sa.MarSelfFlawsApplied += int16(remaining)
 		}
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
