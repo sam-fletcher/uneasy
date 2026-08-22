@@ -7,9 +7,11 @@
 	import { onMount } from 'svelte';
 	import {
 		getMe, listMyTables, updateMe, logout,
-		createTable, joinTable,
+		createTable, joinTable, setReminderMute,
 		type Account, type MyTable,
 	} from '$lib/api';
+	import { tableBell } from '$lib/tableBell';
+	import BellGlyph from '$lib/components/BellGlyph.svelte';
 	import { playerColor } from '$lib/playerColor';
 	import PhaseBadge from '$lib/components/shared/PhaseBadge.svelte';
 	import LogMark from '$lib/components/LogMark.svelte';
@@ -47,6 +49,36 @@
 
 	function isYourMove(t: MyTable): boolean {
 		return t.phase !== 'ended' && t.waiting_on_player_ids.includes(t.player_id);
+	}
+
+	// Tables whose bell is mid-request, so a double tap can't fire twice.
+	let mutingGames = $state<number[]>([]);
+
+	// The bell silences the wait this table is currently blocking (per-wait, not
+	// per-table — see migration 056), so there is no separate un-mute state to
+	// keep anywhere: the server clears it when the table moves on.
+	//
+	// Optimistic, then corrected from the response rather than assumed: with no
+	// reminder pending the server keeps no quiet and says so, and the card has
+	// to show what is true, not what was asked for.
+	async function toggleMute(t: MyTable, setMutedTo: boolean) {
+		if (mutingGames.includes(t.game_id)) return;
+		mutingGames = [...mutingGames, t.game_id];
+		const previous = t.reminder_muted;
+		applyMuted(t.game_id, setMutedTo);
+		try {
+			const res = await setReminderMute(t.game_id, setMutedTo);
+			applyMuted(t.game_id, res.muted);
+		} catch (e) {
+			applyMuted(t.game_id, previous);
+			error = e instanceof Error ? e.message : 'Could not change reminders for that table.';
+		} finally {
+			mutingGames = mutingGames.filter((id) => id !== t.game_id);
+		}
+	}
+
+	function applyMuted(gameID: number, muted: boolean) {
+		tables = tables.map((t) => (t.game_id === gameID ? { ...t, reminder_muted: muted } : t));
 	}
 
 	// ── Notifications ────────────────────────────────────────────────────────
@@ -329,7 +361,8 @@
 				<ul class="table-list">
 					{#each sortedTables as t (t.game_id)}
 						{@const ended = t.phase === 'ended'}
-						<li>
+						{@const bell = tableBell(t)}
+						<li class="table-slot" class:has-bell={bell}>
 							<a class="table-card" class:your-move={isYourMove(t)} class:ended href={`/table/${t.game_id}`}>
 								<span class="table-id">
 									<span class="table-code">Table <span class="code-value">{t.join_code}</span></span>
@@ -362,6 +395,28 @@
 									{/each}
 								</span>
 							</a>
+							{#if bell}
+								{#if bell.setMutedTo === null}
+									<!-- Reminders stopped on their own, so this is a status, not a
+									     control: a button here would offer to silence something
+									     already silent. -->
+									<span class="bell bell-static" title={bell.title} aria-label={bell.label}>
+										<BellGlyph size={20} struck={bell.struck} />
+									</span>
+								{:else}
+									<button
+										class="bell"
+										type="button"
+										aria-pressed={bell.struck}
+										title={bell.title}
+										aria-label={bell.label}
+										disabled={mutingGames.includes(t.game_id)}
+										onclick={() => toggleMute(t, bell.setMutedTo as boolean)}
+									>
+										<BellGlyph size={20} struck={bell.struck} />
+									</button>
+								{/if}
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -561,6 +616,13 @@
 		grid-template-columns:repeat(auto-fill, minmax(min(330px, 100%), 1fr));
 		gap:0.6rem;
 	}
+	/* The card is a link, and the bell inside it is a button — which cannot be
+	   nested in an <a> at all. So the <li> is the positioned box, the link and
+	   the button are siblings, and the link stretches over the whole card via
+	   ::after to keep the full-card tap target a phone needs. The button sits
+	   above that overlay on its own layer, so the two never fight for a tap.
+	   Two focusable stops, in reading order: open the table, then silence it. */
+	.table-slot { position:relative; }
 	.table-card {
 		display:flex;
 		align-items:center;
@@ -572,8 +634,70 @@
 		color:var(--color-text);
 		text-decoration:none;
 	}
+	.table-card::after { content:''; position:absolute; inset:0; border-radius:var(--radius-md); }
+	/* Room for the bell so a long roster can never wrap underneath it. Reserved
+	   only when there is one, or every other card would carry a dead margin. */
+	.table-slot.has-bell .table-card { padding-right:3.4rem; }
 	.table-card:hover { border-color:var(--color-accent-dim); }
 	.table-card:focus-visible { outline:2px solid var(--color-accent); outline-offset:1px; }
+
+	/* 44px of tap target around a 20px glyph, per the house mobile minimum —
+	   the visual weight comes from the glyph, not from the hit area. Vertically
+	   centred against the whole card rather than pinned to a corner: the card's
+	   height changes with roster wrapping, and a corner bell drifts away from
+	   the thumb as it does. */
+	.bell {
+		position:absolute;
+		right:0.35rem;
+		top:50%;
+		transform:translateY(-50%);
+		z-index:1;
+		display:flex;
+		align-items:center;
+		justify-content:center;
+		width:44px;
+		height:44px;
+		padding:0;
+		border:none;
+		background:none;
+		border-radius:var(--radius-md);
+		/* Plain text, not --color-text-muted: muted is this app's de-emphasis
+		   register, so a greyed bell reads as "reminders are off" — the exact
+		   opposite of what an un-struck bell means. Not gold either, tempting as
+		   an "active" colour is: the bell only ever renders on a your-move card,
+		   where gold is already carrying turn semantics twice (the surface fill
+		   and the waited pill) with the unread chip's quiet gold on top. A gold
+		   bell would be the fourth, and would collapse "the table wants you"
+		   into "reminders are on" — the same reasoning the .unread-chip comment
+		   above works through. */
+		color:var(--color-text);
+		--bell-strike-bg:var(--color-surface);
+	}
+	/* The bell only ever appears on a card the game is waiting on, which is
+	   always the warm your-move fill — the strike has to be cut in that colour
+	   or it leaves a seam through the bell's outline. */
+	.table-slot.has-bell .bell { --bell-strike-bg:var(--color-surface-active); }
+	button.bell { cursor:pointer; }
+	button.bell:hover { color:var(--color-text); background:var(--color-surface-hover); }
+	button.bell:focus-visible { outline:2px solid var(--color-accent); outline-offset:1px; }
+	button.bell:disabled { opacity:0.5; cursor:default; }
+	/* The two struck states are told apart by colour, and colour alone has to do
+	   it: the only other difference is the title attribute, which never appears
+	   on a touch device, so on a phone they would otherwise be identical.
+	   Which register each one takes follows agency, not severity:
+	     * Silenced by the player is their own deliberate, undoable choice with
+	       nothing wrong about it — the feature working as asked. Muted grey,
+	       the same de-emphasis that would have been wrong on the live bell, is
+	       exactly right on a bell the player has switched off themselves.
+	     * Given up on is the system's doing and the genuinely new information:
+	       nobody is being nudged here any more, and the table may be over.
+	       That earns the warning family (orange), which is also where the
+	       Retinue's reminder line puts every "no ping will reach them" state.
+	   Deliberately NOT --color-danger: red is spoken for by errors and the
+	   at-risk game state (app.css ruling 3), and a reminder winding down is
+	   neither. */
+	button.bell[aria-pressed='true'] { color:var(--color-text-muted); }
+	.bell-static { color:var(--color-warning); }
 	/* The game is blocked on you: warm emphasis fill, same semantics as the
 	   in-table selected/active gold surfaces. */
 	.table-card.your-move {

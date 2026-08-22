@@ -80,6 +80,7 @@ JOIN players p ON p.id = pn.player_id
 JOIN accounts a ON a.id = p.account_id
 LEFT JOIN push_subscriptions ps ON ps.account_id = a.id
 WHERE pn.due_at <= now()
+  AND NOT pn.muted
   AND pn.first_waiting_at > now() - make_interval(days => sqlc.arg(give_up_days)::int)
 ORDER BY pn.player_id;
 
@@ -121,3 +122,33 @@ SELECT * FROM pending_notifications WHERE game_id = $1 ORDER BY player_id;
 
 -- name: ListPushSubscriptionsByAccount :many
 SELECT * FROM push_subscriptions WHERE account_id = $1 ORDER BY id;
+
+-- name: SetPendingNotificationMuted :execrows
+-- Silences (or un-silences) the wait this player is currently blocking, from
+-- the profile card's bell. Scoped to the row, which is scoped to the wait: see
+-- migration 056 for why the flag lives here and not on players.
+--
+-- Returns the number of rows touched so the caller can distinguish "muted" from
+-- "there was no wait to mute" — the game can move on between the profile page
+-- rendering a bell and the player tapping it, and the honest answer then is
+-- that nothing is silenced because nothing is pending.
+UPDATE pending_notifications
+SET muted = sqlc.arg(muted)::BOOLEAN
+WHERE player_id = sqlc.arg(player_id)::BIGINT;
+
+-- name: ListReminderStateByAccount :many
+-- Every pending reminder across all of one account's seats, for the profile
+-- page's per-table bells. Both columns answer "why is this table quiet?": the
+-- player silenced it, or the give-up horizon did (see reminderGiveUpDays).
+-- They are independent — muting a wait that has already been given up on is
+-- allowed, and simply redundant.
+SELECT
+  pn.player_id,
+  pn.game_id,
+  pn.muted,
+  (pn.first_waiting_at <= now() - make_interval(days => sqlc.arg(give_up_days)::int))::boolean
+    AS exhausted
+FROM pending_notifications pn
+JOIN players p ON p.id = pn.player_id
+WHERE p.account_id = sqlc.arg(account_id)::BIGINT
+ORDER BY pn.game_id;

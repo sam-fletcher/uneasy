@@ -299,6 +299,11 @@ func loadWaitStates(
 // the first says "you owe the table a move", the second says "the table has
 // been talking". A player can be caught up and still owe a move, or be idle
 // with 40 posts of scene to read.
+//
+// reminder_muted and reminder_exhausted are the two reasons a table this player
+// owes a move to might still be sending them nothing — they silenced this wait
+// from the card's bell, or it outlived reminderGiveUpDays. Both are per-wait,
+// so both clear themselves once the table moves past this player.
 func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := appMiddleware.AccountFromContext(r.Context())
@@ -352,6 +357,23 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 			unreadByPlayer[u.ViewerID] = u.UnreadCount
 		}
 
+		// Why each table is (or isn't) quiet, for the per-table bells. One row
+		// per pending reminder across all of this account's seats, so tables
+		// with no wait pending simply have no entry — which is the same thing
+		// the bell's visibility rule already keys on.
+		reminderRows, err := s.Q.ListReminderStateByAccount(r.Context(), dbgen.ListReminderStateByAccountParams{
+			AccountID:  acct.ID,
+			GiveUpDays: reminderGiveUpDays,
+		})
+		if err != nil {
+			respondInternalErr(w, r, "could not load reminder state", err)
+			return
+		}
+		reminderByPlayer := make(map[int64]dbgen.ListReminderStateByAccountRow, len(reminderRows))
+		for _, rr := range reminderRows {
+			reminderByPlayer[rr.PlayerID] = rr
+		}
+
 		// Wait states for every table at once, before the assembly loop. Running
 		// them one table after another made this endpoint's cost scale with how
 		// many tables a player sits at — the single reason the profile page felt
@@ -387,6 +409,10 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 			// way, so a missing key can only mean the player row vanished
 			// mid-request.
 			unread := unreadByPlayer[row.ID]
+			// No pending row means no reminder is scheduled for this table, so
+			// neither flag can be true: nothing to silence and nothing that
+			// could have been given up on.
+			reminder := reminderByPlayer[row.ID]
 			out = append(out, map[string]any{
 				"game_id":               row.GameID,
 				"join_code":             row.JoinCode,
@@ -397,6 +423,8 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 				"players":               players,
 				"waiting_on_player_ids": waitingOn,
 				"unread_count":          unread,
+				"reminder_muted":        reminder.Muted,
+				"reminder_exhausted":    reminder.Exhausted,
 			})
 		}
 		respond(w, http.StatusOK, map[string]any{"tables": out})

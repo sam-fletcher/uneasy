@@ -140,3 +140,42 @@ func isHTTPSURL(s string) bool {
 	const httpsPrefix = "https://"
 	return len(s) > len(httpsPrefix) && s[:len(httpsPrefix)] == httpsPrefix
 }
+
+// SetReminderMute handles POST /api/tables/{id}/reminder-mute (session-authed,
+// table members only) — the profile card's bell.
+//
+// Body: {"muted": true|false}. Silences reminders for the wait this player is
+// currently blocking, NOT for the table in general: the flag lives on the
+// pending_notifications row, whose lifetime is exactly that wait's, so the
+// reconciler clears it when the table next moves past them (migration 056 has
+// the full reasoning). Nothing else needs to un-mute anything.
+//
+// Responds with the state that actually holds, which is not always the one
+// requested: the game can move on between the profile page drawing a bell and
+// the player tapping it, and with no pending row there is nothing to silence.
+// Reporting "muted" there would claim a quiet the server is not keeping, so the
+// response says false and the client corrects itself on its next refresh.
+func SetReminderMute(s *db.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, player, ok := parseGamePlayer(w, r, s.Q)
+		if !ok {
+			return
+		}
+		var body struct {
+			Muted *bool `json:"muted"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Muted == nil {
+			respondErr(w, http.StatusBadRequest, "muted must be true or false")
+			return
+		}
+		rows, err := s.Q.SetPendingNotificationMuted(r.Context(), dbgen.SetPendingNotificationMutedParams{
+			PlayerID: player.ID,
+			Muted:    *body.Muted,
+		})
+		if err != nil {
+			respondInternalErr(w, r, "could not update reminder mute", err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{"muted": *body.Muted && rows > 0})
+	}
+}

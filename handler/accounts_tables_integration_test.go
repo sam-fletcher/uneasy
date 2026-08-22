@@ -3,12 +3,14 @@
 // handler/accounts_tables_integration_test.go — coverage for the enriched
 // GET /api/accounts/me/tables response the profile page's table cards render:
 // phase, full roster in join order, wait state, account-level presence, and
-// the unread count behind the card's "N new" chip. Plus POST /api/tables/join's
-// lobby-phase gate, which decides whether a table appears on a card at all.
+// the unread count behind the card's "N new" chip, and the two reminder flags
+// behind its bell. Plus POST /api/tables/join's lobby-phase gate, which decides
+// whether a table appears on a card at all.
 
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -17,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"uneasy/db"
@@ -389,4 +392,56 @@ func TestListMyTablesAcrossTables(t *testing.T) {
 	check(tgA, viewer, 2, 1)
 	check(tgB, seatB, 4, 3) // 3 seeded + the viewer
 	check(tgC, seatC, 5, 0) // 4 seeded + the viewer, nothing posted
+}
+
+// TestListMyTablesReminderFlags: the profile card's bell needs both reasons a
+// table it is waiting on might still be sending nothing — the player silenced
+// this wait, or the give-up horizon ended it. They are independent, so the card
+// gets both rather than one collapsed verdict.
+func TestListMyTablesReminderFlags(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	store := db.NewStore(pool)
+	ctx := context.Background()
+
+	tg := newTestGame(t, q, 2)
+	viewer := tg.Players[0] // scene_setting focus player, per seedBase
+	require.NoError(t, reconcileWaitees(ctx, q, tg.Game.ID))
+
+	read := func() (muted, exhausted bool) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/accounts/me/tables", nil)
+		req = req.WithContext(appMiddleware.AccountContext(req.Context(), &appMiddleware.Account{ID: viewer.AccountID}))
+		w := httptest.NewRecorder()
+		ListMyTables(store, hub.NewManager())(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp struct {
+			Tables []struct {
+				ReminderMuted     bool `json:"reminder_muted"`
+				ReminderExhausted bool `json:"reminder_exhausted"`
+			} `json:"tables"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		require.Len(t, resp.Tables, 1)
+		return resp.Tables[0].ReminderMuted, resp.Tables[0].ReminderExhausted
+	}
+
+	muted, exhausted := read()
+	assert.False(t, muted)
+	assert.False(t, exhausted, "a wait that just started is neither silenced nor given up on")
+
+	_, err := q.SetPendingNotificationMuted(ctx, dbgen.SetPendingNotificationMutedParams{
+		PlayerID: viewer.ID, Muted: true,
+	})
+	require.NoError(t, err)
+	muted, _ = read()
+	assert.True(t, muted)
+
+	_, execErr := pool.Exec(ctx,
+		`UPDATE pending_notifications SET first_waiting_at = now() - make_interval(days => $2)
+		 WHERE player_id = $1`, viewer.ID, reminderGiveUpDays+1)
+	require.NoError(t, execErr)
+	muted, exhausted = read()
+	assert.True(t, muted)
+	assert.True(t, exhausted, "both can hold at once — muting a wait that already gave up is allowed")
 }

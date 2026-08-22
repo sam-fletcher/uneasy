@@ -45,6 +45,14 @@ export interface MyTable {
 	 *  CountUnreadPostsByAccount. Independent of waiting_on_player_ids: "the
 	 *  table has been talking", not "you owe a move". */
 	unread_count: number;
+	/** This player silenced the wait they are currently blocking, from the
+	 *  card's bell. Per-wait, not per-table: it clears itself when the table
+	 *  moves past them (migration 056). */
+	reminder_muted: boolean;
+	/** The wait outlived the give-up horizon, so reminders about it stopped on
+	 *  their own (reminderGiveUpDays). Independent of `reminder_muted` — both
+	 *  mean "this table is sending nothing", for different reasons. */
+	reminder_exhausted: boolean;
 }
 
 export interface Game {

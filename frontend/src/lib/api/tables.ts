@@ -91,6 +91,23 @@ export function touchActivity(gameID: string | number): Promise<void> {
 	return apiFetch(`/tables/${gameID}/activity`, { method: 'POST' });
 }
 
+/** Silences (or restores) turn reminders for the wait this player is currently
+ *  blocking at this table — the profile card's bell.
+ *
+ *  Returns the state that actually holds, which can differ from the one asked
+ *  for: with no reminder pending (the table moved on since the card was drawn)
+ *  there is nothing to silence, and the server says so rather than claiming a
+ *  quiet it isn't keeping. */
+export function setReminderMute(
+	gameID: string | number,
+	muted: boolean
+): Promise<{ muted: boolean }> {
+	return apiFetch(`/tables/${gameID}/reminder-mute`, {
+		method: 'POST',
+		body: JSON.stringify({ muted }),
+	});
+}
+
 // ── Phase Transitions ────────────────────────────────────────────────────────
 
 export function startPrologue(gameID: string | number): Promise<{ phase: GamePhase }> {

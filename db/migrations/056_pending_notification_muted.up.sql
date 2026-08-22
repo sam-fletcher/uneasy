@@ -1,0 +1,26 @@
+-- 056_pending_notification_muted.up.sql
+-- "Stop reminding me about this" — the per-wait mute behind the profile card's
+-- bell.
+--
+-- The flag lives on pending_notifications rather than on players (a durable
+-- per-table setting) because that row already models exactly the thing being
+-- muted. A row exists only while ComputeWaitState names this player for this
+-- game, so its lifetime IS the wait's lifetime, and the reconciler gives the
+-- mute the right behaviour at both ends for free:
+--
+--   * UpsertPendingNotification is ON CONFLICT DO NOTHING, so the every-tick
+--     reconcile never clears the flag — a mute holds for as long as the wait it
+--     was applied to.
+--   * DeleteDepartedPendingNotifications drops the row the moment the table
+--     moves past this player, taking the mute with it. A table that comes back
+--     to life can reach them again without anyone remembering to unmute, and a
+--     table that never moves stays quiet forever — which is the case this
+--     exists for.
+--
+-- The alternative, a durable players.notify_muted, can strand someone in
+-- permanent silence: they mute a stalled table, the group revives it months
+-- later, it becomes their turn, and the only way to find out is to open a
+-- profile page they have no reason to open. That is the same silent-failure
+-- shape as ReminderNoDevice, which model.ReminderState treats as serious.
+ALTER TABLE pending_notifications
+  ADD COLUMN muted BOOLEAN NOT NULL DEFAULT FALSE;

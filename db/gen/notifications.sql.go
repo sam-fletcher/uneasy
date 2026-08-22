@@ -65,7 +65,7 @@ func (q *Queries) DeletePushSubscriptionByID(ctx context.Context, id int64) erro
 }
 
 const getPendingNotification = `-- name: GetPendingNotification :one
-SELECT player_id, game_id, first_waiting_at, due_at FROM pending_notifications WHERE player_id = $1
+SELECT player_id, game_id, first_waiting_at, due_at, muted FROM pending_notifications WHERE player_id = $1
 `
 
 func (q *Queries) GetPendingNotification(ctx context.Context, playerID int64) (PendingNotification, error) {
@@ -76,6 +76,7 @@ func (q *Queries) GetPendingNotification(ctx context.Context, playerID int64) (P
 		&i.GameID,
 		&i.FirstWaitingAt,
 		&i.DueAt,
+		&i.Muted,
 	)
 	return i, err
 }
@@ -97,6 +98,7 @@ JOIN players p ON p.id = pn.player_id
 JOIN accounts a ON a.id = p.account_id
 LEFT JOIN push_subscriptions ps ON ps.account_id = a.id
 WHERE pn.due_at <= now()
+  AND NOT pn.muted
   AND pn.first_waiting_at > now() - make_interval(days => $1::int)
 ORDER BY pn.player_id
 `
@@ -159,7 +161,7 @@ func (q *Queries) ListDueNotificationsWithSubscriptions(ctx context.Context, giv
 }
 
 const listPendingNotificationsByGame = `-- name: ListPendingNotificationsByGame :many
-SELECT player_id, game_id, first_waiting_at, due_at FROM pending_notifications WHERE game_id = $1 ORDER BY player_id
+SELECT player_id, game_id, first_waiting_at, due_at, muted FROM pending_notifications WHERE game_id = $1 ORDER BY player_id
 `
 
 func (q *Queries) ListPendingNotificationsByGame(ctx context.Context, gameID int64) ([]PendingNotification, error) {
@@ -176,6 +178,7 @@ func (q *Queries) ListPendingNotificationsByGame(ctx context.Context, gameID int
 			&i.GameID,
 			&i.FirstWaitingAt,
 			&i.DueAt,
+			&i.Muted,
 		); err != nil {
 			return nil, err
 		}
@@ -207,6 +210,61 @@ func (q *Queries) ListPushSubscriptionsByAccount(ctx context.Context, accountID 
 			&i.P256dh,
 			&i.Auth,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReminderStateByAccount = `-- name: ListReminderStateByAccount :many
+SELECT
+  pn.player_id,
+  pn.game_id,
+  pn.muted,
+  (pn.first_waiting_at <= now() - make_interval(days => $1::int))::boolean
+    AS exhausted
+FROM pending_notifications pn
+JOIN players p ON p.id = pn.player_id
+WHERE p.account_id = $2::BIGINT
+ORDER BY pn.game_id
+`
+
+type ListReminderStateByAccountParams struct {
+	GiveUpDays int32 `db:"give_up_days" json:"give_up_days"`
+	AccountID  int64 `db:"account_id" json:"account_id"`
+}
+
+type ListReminderStateByAccountRow struct {
+	PlayerID  int64 `db:"player_id" json:"player_id"`
+	GameID    int64 `db:"game_id" json:"game_id"`
+	Muted     bool  `db:"muted" json:"muted"`
+	Exhausted bool  `db:"exhausted" json:"exhausted"`
+}
+
+// Every pending reminder across all of one account's seats, for the profile
+// page's per-table bells. Both columns answer "why is this table quiet?": the
+// player silenced it, or the give-up horizon did (see reminderGiveUpDays).
+// They are independent — muting a wait that has already been given up on is
+// allowed, and simply redundant.
+func (q *Queries) ListReminderStateByAccount(ctx context.Context, arg ListReminderStateByAccountParams) ([]ListReminderStateByAccountRow, error) {
+	rows, err := q.db.Query(ctx, listReminderStateByAccount, arg.GiveUpDays, arg.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReminderStateByAccountRow{}
+	for rows.Next() {
+		var i ListReminderStateByAccountRow
+		if err := rows.Scan(
+			&i.PlayerID,
+			&i.GameID,
+			&i.Muted,
+			&i.Exhausted,
 		); err != nil {
 			return nil, err
 		}
@@ -258,6 +316,33 @@ type RebumpPendingNotificationParams struct {
 func (q *Queries) RebumpPendingNotification(ctx context.Context, arg RebumpPendingNotificationParams) error {
 	_, err := q.db.Exec(ctx, rebumpPendingNotification, arg.CadenceHours, arg.PlayerID)
 	return err
+}
+
+const setPendingNotificationMuted = `-- name: SetPendingNotificationMuted :execrows
+UPDATE pending_notifications
+SET muted = $1::BOOLEAN
+WHERE player_id = $2::BIGINT
+`
+
+type SetPendingNotificationMutedParams struct {
+	Muted    bool  `db:"muted" json:"muted"`
+	PlayerID int64 `db:"player_id" json:"player_id"`
+}
+
+// Silences (or un-silences) the wait this player is currently blocking, from
+// the profile card's bell. Scoped to the row, which is scoped to the wait: see
+// migration 056 for why the flag lives here and not on players.
+//
+// Returns the number of rows touched so the caller can distinguish "muted" from
+// "there was no wait to mute" — the game can move on between the profile page
+// rendering a bell and the player tapping it, and the honest answer then is
+// that nothing is silenced because nothing is pending.
+func (q *Queries) SetPendingNotificationMuted(ctx context.Context, arg SetPendingNotificationMutedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setPendingNotificationMuted, arg.Muted, arg.PlayerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertPendingNotification = `-- name: UpsertPendingNotification :exec

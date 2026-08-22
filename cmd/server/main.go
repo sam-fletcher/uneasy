@@ -353,6 +353,7 @@ func setupRouter(
 			r.Get("/tables/{id}", handler.GetTable(store))
 			r.Get("/tables/{id}/state", handler.GetGameState(store))
 			r.Post("/tables/{id}/activity", handler.TouchActivity(store))
+			r.Post("/tables/{id}/reminder-mute", handler.SetReminderMute(store))
 
 			// Phase transitions (facilitator actions)
 			r.Post("/tables/{id}/start-prologue", handler.StartPrologue(store, manager))

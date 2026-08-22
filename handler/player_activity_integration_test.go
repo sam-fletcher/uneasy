@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,7 @@ func newActivityHarness(t *testing.T, n int) *activityHarness {
 	r := chi.NewRouter()
 	r.Use(appMiddleware.EnsureSession(q))
 	r.Post("/api/tables/{id}/activity", TouchActivity(store))
+	r.Post("/api/tables/{id}/reminder-mute", SetReminderMute(store))
 	r.Get("/api/tables/{id}/state", GetGameState(store))
 
 	return &activityHarness{t: t, pool: pool, q: q, tg: tg, router: r, tokens: tokens}
@@ -79,6 +81,17 @@ func (h *activityHarness) do(method, path string, playerIdx int) *httptest.Respo
 func (h *activityHarness) ping(playerIdx int) *httptest.ResponseRecorder {
 	h.t.Helper()
 	return h.do(http.MethodPost, tablePath(h.tg.Game.ID, "activity"), playerIdx)
+}
+
+// doBody is do() with a JSON request body, for the endpoints that take one.
+func (h *activityHarness) doBody(method, path string, playerIdx int, body string) *httptest.ResponseRecorder {
+	h.t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "player_token", Value: h.tokens[playerIdx]})
+	rec := httptest.NewRecorder()
+	h.router.ServeHTTP(rec, req)
+	return rec
 }
 
 func tablePath(gameID int64, suffix string) string {
@@ -267,4 +280,72 @@ func TestGetGameState_ReportsExhaustedReminder(t *testing.T) {
 	assert.Equal(t, model.ReminderExhausted, got.Reminder)
 	assert.Nil(t, got.ReminderDueAt,
 		"an exhausted wait must not serve its stale due time — there is nothing to count down to")
+}
+
+// TestSetReminderMute_SilencesTheCurrentWait drives the bell's endpoint the way
+// the profile card does, and checks the flag actually landed on the row rather
+// than trusting the response.
+func TestSetReminderMute_SilencesTheCurrentWait(t *testing.T) {
+	h := newActivityHarness(t, 2)
+	ctx := context.Background()
+	waitee := h.tg.Players[0] // scene_setting focus player, per seedBase
+	require.NoError(t, reconcileWaitees(ctx, h.q, h.tg.Game.ID))
+
+	rec := h.doBody(http.MethodPost, tablePath(h.tg.Game.ID, "reminder-mute"), 0, `{"muted":true}`)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Muted bool `json:"muted"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.True(t, body.Muted)
+
+	row, err := h.q.GetPendingNotification(ctx, waitee.ID)
+	require.NoError(t, err)
+	assert.True(t, row.Muted)
+
+	rec = h.doBody(http.MethodPost, tablePath(h.tg.Game.ID, "reminder-mute"), 0, `{"muted":false}`)
+	require.Equal(t, http.StatusOK, rec.Code)
+	row, err = h.q.GetPendingNotification(ctx, waitee.ID)
+	require.NoError(t, err)
+	assert.False(t, row.Muted)
+}
+
+// With no reminder pending there is nothing to silence — the table moved on
+// between the card being drawn and the bell being tapped. The endpoint answers
+// with the quiet it is actually keeping (none), so the card can correct itself
+// instead of showing a struck bell that means nothing.
+func TestSetReminderMute_ReportsFalseWhenNothingIsPending(t *testing.T) {
+	h := newActivityHarness(t, 2)
+
+	// players[1] is not the focus player, so reconcile never gave them a row.
+	rec := h.doBody(http.MethodPost, tablePath(h.tg.Game.ID, "reminder-mute"), 1, `{"muted":true}`)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Muted bool `json:"muted"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.False(t, body.Muted, "no pending reminder means nothing was silenced")
+}
+
+func TestSetReminderMute_RejectsNonMemberAndBadBody(t *testing.T) {
+	h := newActivityHarness(t, 2)
+
+	rec := h.doBody(http.MethodPost, tablePath(h.tg.Game.ID, "reminder-mute"), 0, `{}`)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "muted is required, not defaulted to false")
+
+	// A seat at a different table in the same database (openTestDB truncates,
+	// so a second harness would wipe this one's game).
+	other := newTestGame(t, h.q, 2)
+	tok, err := db.NewCookieToken()
+	require.NoError(t, err)
+	_, err = h.q.CreateSession(context.Background(), dbgen.CreateSessionParams{
+		Token: tok, AccountID: other.Players[0].AccountID,
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, tablePath(h.tg.Game.ID, "reminder-mute"), strings.NewReader(`{"muted":true}`))
+	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
+	rec = httptest.NewRecorder()
+	h.router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
 }

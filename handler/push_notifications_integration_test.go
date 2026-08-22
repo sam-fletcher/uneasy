@@ -446,3 +446,113 @@ func TestReconcileWaitees_ActingResetsTheBackoffClock(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), row.FirstWaitingAt.Time, time.Minute,
 		"a new wait starts a new clock — the 20-day-old one must not carry over")
 }
+
+// TestSendDueNotifications_MutedWaitIsNeverSent: the profile card's bell sets
+// pending_notifications.muted, and a muted row is skipped by the send query
+// while still being re-bumped by nothing at all — it simply sits there, silent,
+// for as long as the wait lasts.
+func TestSendDueNotifications_MutedWaitIsNeverSent(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	store := db.NewStore(pool)
+	ctx := context.Background()
+	tg := newTestGame(t, q, 2)
+	waitee := tg.Players[0] // scene_setting focus player, per seedBase
+
+	priv, pub, err := webpush.GenerateVAPIDKeys()
+	require.NoError(t, err)
+	t.Cleanup(func() { SetVAPIDKeys("", "", "") })
+	SetVAPIDKeys(pub, priv, "mailto:test@example.com")
+
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	p256dh, auth := testSubscriptionKeys(t)
+	_, err = q.UpsertPushSubscription(ctx, dbgen.UpsertPushSubscriptionParams{
+		AccountID: waitee.AccountID, Endpoint: srv.URL, P256dh: p256dh, Auth: auth,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, reconcileWaitees(ctx, q, tg.Game.ID))
+	rowsAffected, err := q.SetPendingNotificationMuted(ctx, dbgen.SetPendingNotificationMutedParams{
+		PlayerID: waitee.ID, Muted: true,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rowsAffected)
+	_, execErr := pool.Exec(ctx,
+		`UPDATE pending_notifications SET due_at = now() - interval '1 minute' WHERE player_id = $1`, waitee.ID)
+	require.NoError(t, execErr)
+
+	sendDueNotifications(ctx, store, slog.Default())
+	assert.Equal(t, 0, hits, "a muted wait sends nothing")
+
+	// Un-muting resumes it, without needing the timer rebuilt.
+	_, err = q.SetPendingNotificationMuted(ctx, dbgen.SetPendingNotificationMutedParams{
+		PlayerID: waitee.ID, Muted: false,
+	})
+	require.NoError(t, err)
+	sendDueNotifications(ctx, store, slog.Default())
+	assert.Equal(t, 1, hits, "un-muting resumes the same wait's reminders")
+}
+
+// TestReconcileWaitees_MuteSurvivesTicksButNotTheWait pins the two halves of
+// the per-wait scope, which is the whole reason the flag lives on this row
+// rather than on players:
+//
+//   - The reconciler runs every tick and must not clear a mute (its upsert is
+//     ON CONFLICT DO NOTHING, so the row — flag and all — is left alone).
+//   - When the table finally moves past this player their row is deleted, so
+//     the next time it comes back to them they are audible again, with nobody
+//     having had to remember to un-mute. A table that never moves stays quiet,
+//     which is the case the bell exists for.
+func TestReconcileWaitees_MuteSurvivesTicksButNotTheWait(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	tg := newTestGame(t, q, 2)
+
+	require.NoError(t, reconcileWaitees(ctx, q, tg.Game.ID))
+	_, err := q.SetPendingNotificationMuted(ctx, dbgen.SetPendingNotificationMutedParams{
+		PlayerID: tg.Players[0].ID, Muted: true,
+	})
+	require.NoError(t, err)
+
+	// Many ticks pass with the table still stuck on the same player.
+	for range 3 {
+		require.NoError(t, reconcileWaitees(ctx, q, tg.Game.ID))
+	}
+	row, err := q.GetPendingNotification(ctx, tg.Players[0].ID)
+	require.NoError(t, err)
+	assert.True(t, row.Muted, "reconciling must not un-mute a wait that is still going")
+
+	// The table moves on, then comes back round to them.
+	require.NoError(t, q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{ID: tg.Game.ID, FocusPlayerID: &tg.Players[1].ID}))
+	require.NoError(t, reconcileWaitees(ctx, q, tg.Game.ID))
+	require.NoError(t, q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{ID: tg.Game.ID, FocusPlayerID: &tg.Players[0].ID}))
+	require.NoError(t, reconcileWaitees(ctx, q, tg.Game.ID))
+
+	row, err = q.GetPendingNotification(ctx, tg.Players[0].ID)
+	require.NoError(t, err)
+	assert.False(t, row.Muted, "a new wait is a new decision — the old mute must not carry over")
+}
+
+// TestSetPendingNotificationMuted_NoPendingRowMutesNothing: the game can move on
+// between the profile page drawing a bell and the player tapping it. There is
+// then nothing to silence, and the handler reports that rather than claiming a
+// quiet it isn't keeping.
+func TestSetPendingNotificationMuted_NoPendingRowMutesNothing(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	tg := newTestGame(t, q, 2)
+
+	rowsAffected, err := q.SetPendingNotificationMuted(ctx, dbgen.SetPendingNotificationMutedParams{
+		PlayerID: tg.Players[1].ID, Muted: true, // never a waitee, so never a row
+	})
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, rowsAffected)
+}

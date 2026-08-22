@@ -211,6 +211,7 @@ type PendingNotification struct {
 	GameID         int64              `db:"game_id" json:"game_id"`
 	FirstWaitingAt pgtype.Timestamptz `db:"first_waiting_at" json:"first_waiting_at"`
 	DueAt          pgtype.Timestamptz `db:"due_at" json:"due_at"`
+	Muted          bool               `db:"muted" json:"muted"`
 }
 
 type Plan struct {
