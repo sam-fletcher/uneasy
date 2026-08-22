@@ -50,7 +50,7 @@ export function lastActiveLabel(
 /** What the reminder line says, or null when it should not be rendered. */
 export type ReminderLine = {
 	text: string;
-	/** True for the two states that mean "no ping will reach them" — the
+	/** True for the three states that mean "no ping will reach them" — the
 	 *  caller styles these as a warning and leaves the rest plain. */
 	unreachable: boolean;
 };
@@ -77,12 +77,19 @@ export function reminderLine(
 			return { text: 'Reminders off — reach them another way', unreachable: true };
 		case 'no_device':
 			return { text: 'No device set up for reminders', unreachable: true };
+		case 'exhausted':
+			// The wait outlasted the give-up horizon, so reminders about it have
+			// stopped for good (reminderGiveUpDays, handler/push_notifications.go).
+			// Phrased as something that already happened rather than a setting,
+			// because it is nobody's choice — and the only thing left that can
+			// reach this player is a person.
+			return { text: 'Reminders have stopped — reach them another way', unreachable: true };
 		case 'scheduled':
 			return { text: `Reminder due ${duePhrase(input.reminderDueAt, now)}`, unreachable: false };
 		case 'ready':
 			// Reachable, but nothing pending yet — the reconcile ticker runs
-			// once a minute, so this is the brief window after someone becomes
-			// a waitee, and it shouldn't read as a problem.
+			// every half hour, so this is the window after someone becomes a
+			// waitee, and it shouldn't read as a problem.
 			return { text: 'Reminders on', unreachable: false };
 		default:
 			return null;
@@ -96,8 +103,11 @@ function duePhrase(dueAt: string | null, now: number): string {
 	if (Number.isNaN(due)) return 'shortly';
 
 	const remaining = due - now;
-	// Past due means the ticker hasn't picked it up yet (it runs each minute),
-	// so it is genuinely about to send rather than overdue in any real sense.
+	// Past due means the ticker hasn't picked it up yet (it runs every half
+	// hour), so it is genuinely about to send rather than overdue in any real
+	// sense. A row that stays past due for days is a different thing entirely —
+	// an exhausted wait — and never reaches this function, because
+	// reminderState reports it as 'exhausted' rather than 'scheduled'.
 	if (remaining < 5 * MINUTE) return 'shortly';
 	if (remaining < HOUR) return `in ~${Math.round(remaining / MINUTE)}m`;
 	if (remaining < DAY) return `in ~${Math.round(remaining / HOUR)}h`;

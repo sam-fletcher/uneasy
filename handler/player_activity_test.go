@@ -55,6 +55,26 @@ func TestReminderState_VerdictPerInputCombination(t *testing.T) {
 			want: model.ReminderScheduled,
 		},
 		{
+			// The row survives past the give-up horizon carrying a stale
+			// due_at, so trusting due_at alone would report "scheduled" for a
+			// ping the send path no longer selects.
+			name: "a wait past the give-up horizon is exhausted, not scheduled",
+			row: dbgen.ListPlayerActivityByGameRow{
+				NotifyCadenceHours: cadence24, HasPushDevice: true,
+				ReminderDueAt: ts(time.Now().Add(-72 * time.Hour)), ReminderExhausted: true,
+			},
+			want: model.ReminderExhausted,
+		},
+		{
+			// Exhaustion is not a settings problem: no_device is the more
+			// actionable verdict and keeps its precedence.
+			name: "no device outranks exhausted",
+			row: dbgen.ListPlayerActivityByGameRow{
+				NotifyCadenceHours: cadence24, HasPushDevice: false, ReminderExhausted: true,
+			},
+			want: model.ReminderNoDevice,
+		},
+		{
 			name: "cadence and device but nothing pending is ready",
 			row: dbgen.ListPlayerActivityByGameRow{
 				NotifyCadenceHours: cadence24, HasPushDevice: true,
@@ -81,6 +101,21 @@ func TestReminderDueAt_SuppressedWhenNothingCanBeSent(t *testing.T) {
 		ReminderDueAt:      ts(time.Now().Add(time.Hour)),
 	}
 	assert.Equal(t, model.ReminderNoDevice, reminderState(row))
+	assert.Nil(t, reminderDueAt(row))
+}
+
+// An exhausted wait keeps its row, and that row's due_at is in the past by
+// however long the backoff had stretched to when it gave up. Rendering it
+// would read as a timer that is about to fire, which is the opposite of the
+// truth.
+func TestReminderDueAt_SuppressedForAnExhaustedWait(t *testing.T) {
+	row := dbgen.ListPlayerActivityByGameRow{
+		NotifyCadenceHours: cadence24,
+		HasPushDevice:      true,
+		ReminderDueAt:      ts(time.Now().Add(-48 * time.Hour)),
+		ReminderExhausted:  true,
+	}
+	assert.Equal(t, model.ReminderExhausted, reminderState(row))
 	assert.Nil(t, reminderDueAt(row))
 }
 

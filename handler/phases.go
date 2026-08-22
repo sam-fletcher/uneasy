@@ -298,7 +298,10 @@ func loadGameStateReads(ctx context.Context, q *dbgen.Queries, game dbgen.Game) 
 	// here costs a header line, not the table.
 	run(func() {
 		var e error
-		out.activity, e = q.ListPlayerActivityByGame(ctx, gameID)
+		out.activity, e = q.ListPlayerActivityByGame(ctx, dbgen.ListPlayerActivityByGameParams{
+			GameID:     gameID,
+			GiveUpDays: reminderGiveUpDays,
+		})
 		out.activityOK = e == nil
 	})
 	// Tone topics are always available (read-only after main_event begins).

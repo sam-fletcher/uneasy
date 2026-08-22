@@ -96,6 +96,14 @@ WHERE id = sqlc.arg(player_id)
 -- set and zero subscriptions, believes they are covered, and is not. A browser
 -- -level "denied" never reaches us directly, but it kills the live subscription,
 -- so it lands in this same column.
+--
+-- reminder_exhausted is the second way a pending row can mean "no ping is
+-- coming": the wait has run past the give-up horizon, so
+-- ListDueNotificationsWithSubscriptions no longer selects it. The row survives
+-- and keeps a due_at in the past, so without this column the header would read
+-- a timer that will never fire and promise a reminder. give_up_days must be the
+-- same value both queries use — it comes from reminderGiveUpDays in
+-- handler/push_notifications.go.
 SELECT
   p.id AS player_id,
   p.last_active_at,
@@ -103,11 +111,15 @@ SELECT
   EXISTS (
     SELECT 1 FROM push_subscriptions ps WHERE ps.account_id = a.id
   ) AS has_push_device,
-  pn.due_at AS reminder_due_at
+  pn.due_at AS reminder_due_at,
+  COALESCE(
+    pn.first_waiting_at <= now() - make_interval(days => sqlc.arg(give_up_days)::int),
+    FALSE
+  )::boolean AS reminder_exhausted
 FROM players p
 JOIN accounts a ON a.id = p.account_id
 LEFT JOIN pending_notifications pn ON pn.player_id = p.id
-WHERE p.game_id = $1
+WHERE p.game_id = sqlc.arg(game_id)::BIGINT
 ORDER BY p.id;
 
 -- name: GetNextFocusPlayer :one

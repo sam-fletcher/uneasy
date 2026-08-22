@@ -40,6 +40,22 @@ const (
 	// ReminderOff — the account's cadence is NULL. A deliberate choice, not a
 	// fault, but it means only an out-of-band message will reach them.
 	ReminderOff ReminderState = "off"
+
+	// ReminderExhausted — this player has been blocking this table for longer
+	// than reminderGiveUpDays, so the reminders have stopped. Reminders back
+	// off as a wait ages and eventually give up entirely, because the only
+	// things that ever clear a timer are the player acting and the game
+	// ending — neither of which happens to a game a group has quietly
+	// abandoned, and a table nobody intends to finish should not nag its last
+	// waitee forever.
+	//
+	// It is a distinct verdict rather than a flavour of "off" because it is
+	// nobody's setting: the player still has a cadence and a device, and if
+	// the table ever moves again their timer is deleted and rebuilt from
+	// scratch at full cadence. What it tells a tablemate is that this
+	// particular silence has already been noticed, and that a nudge now has to
+	// come from a person.
+	ReminderExhausted ReminderState = "exhausted"
 )
 
 // PlayerActivity is one seat's presence and reminder summary, as served

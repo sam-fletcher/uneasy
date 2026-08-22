@@ -548,7 +548,7 @@ export interface PresenceMember {
  *  server-side facts (cadence, subscribed devices, pending timer), never a
  *  claim about delivery — see model.ReminderState for what the server can and
  *  cannot know. */
-export type ReminderState = 'scheduled' | 'ready' | 'no_device' | 'off';
+export type ReminderState = 'scheduled' | 'ready' | 'no_device' | 'off' | 'exhausted';
 
 /** One seat's presence and reminder summary, served alongside the roster.
  *

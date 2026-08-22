@@ -236,3 +236,35 @@ func TestGetGameState_ReportsScheduledReminder(t *testing.T) {
 		assert.WithinDuration(t, time.Now().Add(24*time.Hour), *got.ReminderDueAt, time.Minute)
 	}
 }
+
+// TestGetGameState_ReportsExhaustedReminder is the end-to-end version of the
+// promise this state exists to stop us making: a wait past the give-up horizon
+// still has a pending_notifications row, and that row still has a due_at, but
+// nothing will ever be sent for it again. Read naively the header would count
+// down to a ping that is not coming — and the stale due_at is in the past, so
+// it would read as "due shortly", the most wrong answer available.
+func TestGetGameState_ReportsExhaustedReminder(t *testing.T) {
+	h := newActivityHarness(t, 2)
+	ctx := context.Background()
+	waitee := h.tg.Players[0] // scene_setting focus player, per seedBase
+
+	p256dh, auth := testSubscriptionKeys(t)
+	_, err := h.q.UpsertPushSubscription(ctx, dbgen.UpsertPushSubscriptionParams{
+		AccountID: waitee.AccountID, Endpoint: "https://push.example/abc",
+		P256dh: p256dh, Auth: auth,
+	})
+	require.NoError(t, err)
+	require.NoError(t, reconcileWaitees(ctx, h.q, h.tg.Game.ID))
+
+	_, execErr := h.pool.Exec(ctx,
+		`UPDATE pending_notifications
+		 SET first_waiting_at = now() - make_interval(days => $2),
+		     due_at = now() - interval '3 days'
+		 WHERE player_id = $1`, waitee.ID, reminderGiveUpDays+1)
+	require.NoError(t, execErr)
+
+	got := h.activityFromState(0)[waitee.ID]
+	assert.Equal(t, model.ReminderExhausted, got.Reminder)
+	assert.Nil(t, got.ReminderDueAt,
+		"an exhausted wait must not serve its stale due time — there is nothing to count down to")
+}

@@ -53,6 +53,17 @@ DELETE FROM pending_notifications WHERE player_id = $1;
 -- subscriptions yet still gets exactly one row (subscription fields NULL)
 -- via the LEFT JOIN, so the caller can still re-bump/clear their timer even
 -- though there's nothing to actually send.
+--
+-- give_up_days is the point at which we stop reminding about a single
+-- uninterrupted wait altogether. Without it a table nobody intends to finish
+-- pings its last waitee forever: the row is only ever deleted by acting or by
+-- the game ending, and neither happens to a game the group has quietly
+-- abandoned. Rows past the horizon are simply not selected, so they are never
+-- sent and never re-bumped — inert, but still present, which is what lets
+-- ListPlayerActivityByGame report the state rather than silently promising a
+-- ping that will never come. The constant lives in Go
+-- (reminderGiveUpDays, handler/push_notifications.go) because that query and
+-- this one must agree on it.
 SELECT
   pn.player_id,
   pn.game_id,
@@ -69,11 +80,37 @@ JOIN players p ON p.id = pn.player_id
 JOIN accounts a ON a.id = p.account_id
 LEFT JOIN push_subscriptions ps ON ps.account_id = a.id
 WHERE pn.due_at <= now()
+  AND pn.first_waiting_at > now() - make_interval(days => sqlc.arg(give_up_days)::int)
 ORDER BY pn.player_id;
 
 -- name: RebumpPendingNotification :exec
+-- Schedules the next reminder for a wait that is still unanswered, backing
+-- off as it ages.
+--
+-- The row itself is the "same unanswered ask" identity: UpsertPendingNotification
+-- leaves an existing row untouched (ON CONFLICT DO NOTHING) and
+-- DeleteDepartedPendingNotifications removes it the moment ComputeWaitState
+-- stops naming the player, so a surviving row means this player has been
+-- blocking this game continuously since first_waiting_at, and every ping sent
+-- in that window repeated the same request. The delay can therefore be a
+-- function of the wait's own age, with no send counter to maintain.
+--
+-- age/2 grows the gap by 1.5x per reminder. The two clamps are what make that
+-- humane at both ends:
+--   * GREATEST(cadence) — early reminders still arrive at the rate the player
+--     asked for, so someone on "every hour" is not stretched to three-hourly
+--     before lunch.
+--   * LEAST(72 hours) — never slower than the slowest cadence anyone can
+--     choose, so backoff can't quietly become silence. Going quiet is the
+--     give-up horizon's job (see ListDueNotificationsWithSubscriptions), and
+--     it should be the only thing that does it.
+-- Both parameters are intrinsic to this one expression, which is why they sit
+-- here rather than in Go alongside reminderGiveUpDays.
 UPDATE pending_notifications
-SET due_at = now() + make_interval(hours => sqlc.arg(cadence_hours)::int)
+SET due_at = now() + GREATEST(
+      make_interval(hours => sqlc.arg(cadence_hours)::int),
+      LEAST((now() - first_waiting_at) / 2, interval '72 hours')
+    )
 WHERE player_id = sqlc.arg(player_id)::BIGINT;
 
 -- name: GetPendingNotification :one

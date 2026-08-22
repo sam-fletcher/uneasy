@@ -55,6 +55,30 @@ const pushPostTimeout = 10 * time.Second
 // player's cadence regardless, so nothing is lost by not holding longer.
 const pushTTLSeconds = 24 * 60 * 60
 
+// reminderGiveUpDays is how long a single uninterrupted wait may run before
+// reminders about it stop entirely.
+//
+// Reminders already back off as a wait ages (RebumpPendingNotification), but
+// backoff alone can never reach silence — it is capped at 72 hours so it
+// cannot quietly become silence by accident. This is the constant that ends
+// it, and it exists because nothing else does: a timer is cleared only by the
+// player acting or by the game ending, and a group that has drifted away from
+// a table does neither. Before this, such a table pinged its last waitee at
+// their chosen cadence indefinitely, and the only remedy was switching
+// reminders off for every table at once.
+//
+// 30 days deliberately errs long. A nudge in week three is exactly the kind of
+// thing that restarts a stalled play-by-post game; the cost of waiting that
+// long to give up is a handful of extra pings, spread days apart by the
+// backoff, while the cost of giving up too early is a game that quietly dies.
+//
+// Passed as a query argument rather than written into the SQL because two
+// independent queries must agree on it: the send path
+// (ListDueNotificationsWithSubscriptions) stops selecting the row, and the
+// Retinue header (ListPlayerActivityByGame) has to report that as
+// ReminderExhausted instead of reading the row's now-stale due_at as a promise.
+const reminderGiveUpDays = 30
+
 // pushTitle is fixed across every notification (settled decisions table,
 // adr/NOTIFICATIONS_PLAN.md) — v1 has exactly one notification shape.
 const pushTitle = "Uneasy — your move"
@@ -188,8 +212,12 @@ func groupDueNotifications(rows []dbgen.ListDueNotificationsWithSubscriptionsRow
 // re-bumps or clears its timer regardless of send outcome — a failed or
 // subscription-less send still needs its timer moved forward so it doesn't
 // fire again every tick until the cadence elapses.
+//
+// Waits older than reminderGiveUpDays are not returned at all, so they are
+// neither sent nor re-bumped: their rows sit inert with a due_at in the past
+// until the player acts or the game moves and reconcileWaitees clears them.
 func sendDueNotifications(ctx context.Context, store *db.Store, logger *slog.Logger) {
-	rows, err := store.Q.ListDueNotificationsWithSubscriptions(ctx)
+	rows, err := store.Q.ListDueNotificationsWithSubscriptions(ctx, reminderGiveUpDays)
 	if err != nil {
 		logger.ErrorContext(ctx, "notification tick: list due failed", "err", err)
 		return

@@ -87,16 +87,28 @@ func buildPlayerActivity(rows []dbgen.ListPlayerActivityByGameRow) []model.Playe
 	return out
 }
 
-// reminderState collapses the three inputs into one verdict. Order matters:
-// a NULL cadence is checked first because it makes the other two moot —
-// UpsertPendingNotification's join skips those accounts entirely, so a
-// cadence-off player can never hold a pending row anyway.
+// reminderState collapses the four inputs into one verdict. Order matters,
+// and each step is a reason the one below it doesn't get to answer:
+//
+//   - A NULL cadence makes everything else moot — UpsertPendingNotification's
+//     join skips those accounts entirely, so a cadence-off player can never
+//     hold a pending row anyway.
+//   - No device outranks the timer for the same reason it exists: a player
+//     with a perfectly good timer and nothing to send to is the silent
+//     failure, and saying "reminder due in 6h" would be the exact false
+//     promise this type is documented not to make.
+//   - Exhausted outranks scheduled because both are read off the same row.
+//     A wait past the give-up horizon keeps its row (and a due_at now in the
+//     past) but is no longer selected for sending, so trusting due_at here
+//     would announce a ping that is never coming.
 func reminderState(row dbgen.ListPlayerActivityByGameRow) model.ReminderState {
 	switch {
 	case row.NotifyCadenceHours == nil:
 		return model.ReminderOff
 	case !row.HasPushDevice:
 		return model.ReminderNoDevice
+	case row.ReminderExhausted:
+		return model.ReminderExhausted
 	case row.ReminderDueAt.Valid:
 		return model.ReminderScheduled
 	default:

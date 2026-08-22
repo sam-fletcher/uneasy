@@ -87,6 +87,21 @@ describe('reminderLine', () => {
 		expect(line?.text).toBe('No device set up for reminders');
 	});
 
+	it('flags an exhausted wait as unreachable and past tense', () => {
+		const line = reminderLine({ reminder: 'exhausted', reminderDueAt: null }, NOW);
+		expect(line).toEqual({
+			text: 'Reminders have stopped — reach them another way',
+			unreachable: true
+		});
+	});
+
+	it('ignores a stale due time on an exhausted wait rather than counting down to it', () => {
+		// The server keeps the row (and its now-past due_at) after giving up,
+		// so the copy must not be derived from it.
+		const line = reminderLine({ reminder: 'exhausted', reminderDueAt: ago(2 * DAY) }, NOW);
+		expect(line?.text).not.toContain('due');
+	});
+
 	it('reports a pending timer without claiming delivery', () => {
 		const line = reminderLine(
 			{ reminder: 'scheduled', reminderDueAt: ahead(6 * HOUR) },
