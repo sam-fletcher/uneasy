@@ -8,6 +8,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 // loggerKey is a context key for storing the request logger.
@@ -23,10 +25,23 @@ func loggerFromContext(ctx context.Context) *slog.Logger {
 }
 
 // LoggerMiddleware returns middleware that injects the logger into the request context.
+//
+// The logger carries the trusted client IP resolved upstream by the router's
+// ClientIPFrom* middleware. That used to reach logs for free, back when
+// chimiddleware.RealIP rewrote r.RemoteAddr in place; resolving the IP into
+// the context instead is what makes RealIP's spoofing hole avoidable, so the
+// value is threaded here deliberately rather than read off the request.
+// It is also how the deployment's proxy trust model gets verified in practice:
+// if these lines show a Railway edge address instead of real client IPs, the
+// router is trusting the wrong X-Forwarded-For entry.
 func LoggerMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := context.WithValue(r.Context(), loggerKey{}, logger)
+			reqLogger := logger
+			if ip := chimiddleware.GetClientIP(r.Context()); ip != "" {
+				reqLogger = logger.With("client_ip", ip)
+			}
+			ctx := context.WithValue(r.Context(), loggerKey{}, reqLogger)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

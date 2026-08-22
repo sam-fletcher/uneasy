@@ -260,21 +260,19 @@ func setupRouter(
 	// are long-lived and must not run under it (their request context would
 	// be cancelled mid-session, killing the connection).
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
+	r.Use(clientIPResolver(secureMode))
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(handler.LoggerMiddleware(logger))
 	r.Use(appMiddleware.SecurityHeaders(appMiddleware.HeadersConfig{DevMode: devMode, SecureMode: secureMode}))
 
-	// Shared by the two credential endpoints below: one bucket per IP across
-	// both login and signup. KeyByIP reads r.RemoteAddr, which RealIP (above)
-	// has already rewritten from X-Forwarded-For/X-Real-IP — Fly sets XFF, so
-	// this resolves the real client IP behind the proxy. chi v5.2.5 predates
-	// the non-deprecated ClientIPFrom*/GetClientIP replacement (needs v5.3+);
-	// revisit if chi is ever bumped.
+	// Shared by the credential endpoints below: one bucket per client IP
+	// across signup, login, and both password-reset routes. The IP is the one
+	// clientIPResolver established above — see credentialIPKey.
 	credentialLimiter := httprate.LimitBy(credentialRateLimit, credentialRateWindow,
-		httprate.KeyByIP, //nolint:staticcheck // deprecated; see comment above — RealIP already normalizes RemoteAddr
-		httprate.WithLimitHandler(tooManyAttempts))
+		credentialIPKey,
+		httprate.WithLimitHandler(tooManyAttempts),
+		httprate.WithErrorHandler(clientIPUnavailable(logger)))
 
 	// Liveness probe for the hosting platform. Deliberately DB-free: a
 	// health check that queried Postgres would count as activity and keep a
@@ -575,6 +573,76 @@ func cacheControlFor(path string) string {
 		return cacheFonts
 	default:
 		return cacheRevalidate
+	}
+}
+
+// clientIPResolver returns the middleware that establishes this deployment's
+// trusted client IP, readable anywhere downstream via chimiddleware.GetClientIP.
+//
+// It replaces chimiddleware.RealIP, which is spoofable (GHSA-3fxj-6jh8-hvhx,
+// GHSA-rjr7-jggh-pgcp, GHSA-9g5q-2w5x-hmxf): RealIP overwrites r.RemoteAddr
+// from the LEFTMOST X-Forwarded-For entry, or from True-Client-IP / X-Real-IP
+// whether or not the platform sets them — all of which the client controls
+// end to end. On a credential rate limiter that cuts both ways: rotate the
+// header for a fresh bucket per request and the limit is gone, or pin it to a
+// victim's IP and they are locked out of their own account.
+//
+// behindProxy is secureMode. TLS terminates at Railway's edge, so an https://
+// PUBLIC_ORIGIN means a proxy sits in front of us, while the plain-http origin
+// that local dev and docker compose use means nothing does.
+func clientIPResolver(behindProxy bool) func(http.Handler) http.Handler {
+	if !behindProxy {
+		// Direct connection: the TCP peer is the client, and no forwarding
+		// header should be believed. This is what KeyByIP used to do.
+		return chimiddleware.ClientIPFromRemoteAddr
+	}
+	// Behind Railway's edge. Passing no trusted CIDRs takes the RIGHTMOST
+	// X-Forwarded-For entry — appended by the hop nearest us, past anything a
+	// client can write — and sets no IP at all if it fails to parse.
+	//
+	// The other two variants don't fit. ClientIPFromXFF with explicit CIDRs
+	// would be better, but Railway publishes no IP list for its anycast edge.
+	// ClientIPFromXFFTrustedProxies needs a stable hop count, and the count is
+	// not stable: a live response carries `x-hikari-trace: ord1.zmv5,den1.my59`
+	// (two POPs), and it shifts again if Railway's CDN is ever switched on. A
+	// fixed count guessed too low would reopen the spoofing hole outright.
+	return chimiddleware.ClientIPFromXFF()
+}
+
+// errNoClientIP means no trusted client IP could be resolved for a request.
+var errNoClientIP = errors.New("no trusted client IP")
+
+// credentialIPKey is the credential limiter's bucket key: the trusted client
+// IP, with IPv6 clients bucketed by /64 so one client cannot walk its own
+// address space for a fresh bucket per request.
+//
+// The unresolved case has to error rather than fall through. CanonicalizeIP
+// maps "" to "", and "" is a perfectly valid bucket key — every request in the
+// process would share ONE bucket and every login site-wide would stop after
+// credentialRateLimit per window. Erroring keeps such a misconfiguration loud
+// and confined to these four routes.
+func credentialIPKey(r *http.Request) (string, error) {
+	ip := chimiddleware.GetClientIP(r.Context())
+	if ip == "" {
+		return "", errNoClientIP
+	}
+	return httprate.CanonicalizeIP(ip), nil
+}
+
+// clientIPUnavailable is the httprate error handler for the credential
+// endpoints, reached when credentialIPKey cannot resolve a client IP. It
+// replaces httprate's default, which echoes the raw error as plain text under
+// 428 Precondition Required. 503 is the honest code: the fault is ours, not
+// the caller's, and it is worth retrying once we are configured correctly.
+func clientIPUnavailable(logger *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
+	return func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.ErrorContext(r.Context(), "credential request rejected: no trusted client IP",
+			"error", err, "path", r.URL.Path, "remote_addr", r.RemoteAddr)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "could not verify your connection — try again shortly",
+		})
 	}
 }
 
