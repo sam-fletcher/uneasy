@@ -191,8 +191,8 @@
 					</svg>
 				</figure>
 				<div class="record-text">
-					<p>This timeline guides the game once the prologue is over.</p>
-					<p>You step down it row by row — <em>setting a scene</em> on each, and <em>preparing plans</em> that land on later rows.</p>
+					<p>This timeline guides the game after the Prologue.</p>
+					<p>We'll step down it row by row — <em>setting a scene</em> on each, and <em>preparing plans</em> that land on later rows.</p>
 					<p><em>Rankings</em> will only change at 3 points: after rows 4, 8, and 12.</p>
 					<p>The finale (the Shake-Up) occurs after row 13.</p>
 				</div>
@@ -208,7 +208,8 @@
 
 		{#if active === 'plans'}
 			<p>Twelve plans, split across three categories. Each blends roleplaying with a dice roll, and takes a few turns to resolve after you prepare it.</p>
-			<p>Preparing plans higher in the columns will help more when ranks are updated.</p>
+			<p>The higher your rank in the category, the easier it is to both attempt and defend against plans in that category.</p>
+			<p>Preparing a plan listed higher in a category will help you rank up when ranks are updated.</p>
 
 			<!-- One grid rather than three stacked columns: the cells are placed
 			     into shared rows so tier N of Power sits level with tier N of
@@ -226,7 +227,7 @@
 
 		{#if active === 'rankings'}
 			<p>After the prologue, everyone is ranked against each other in Power, Knowledge, and Esteem.</p>
-			<p>The relevant rank feeds into the dice rolls for <em>plans</em>.</p>
+			<p>The relevant rank feeds into the dice rolls for <em>plans</em> (both when attempting them and when defending against them).</p>
 			<p>The ranks will change after rows 4, 8, and 12 based on each player's plans in the category.</p>
 
 			<figure class="diagram">
@@ -255,7 +256,7 @@
 					</div>
 				</div>
 				<figcaption>
-					Tap any chip to open it. A gold outline means the game is waiting on that player. 
+					Tap any chip to open the player's Retinue. A gold outline means the game is waiting on that player. 
 					The red number counts that player's <em>assets</em> that are one tear from destruction
 					but still have an empty <em>marginalia</em> slot.
 				</figcaption>
@@ -273,7 +274,8 @@
 						</div>
 					{/each}
 				</div>
-				<figcaption>At the top of each Retinue, every track shows your <em>Rank</em> (how hard your own actions are) and <em>Status</em> (how hard others find you to target).</figcaption>
+				<figcaption>At the top of each Retinue, every track shows your <em>Rank</em> (how hard your own actions are) 
+					and <em>Status</em> (how hard others find you to target). Rank and Status always mirror each other.</figcaption>
 			</figure>
 		{/if}
 
