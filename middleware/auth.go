@@ -40,7 +40,12 @@ type Account struct {
 // twice over on a serverless database billed by compute time.
 const sessionTouchInterval = time.Hour
 
-// EnsureSession reads the player_token cookie on every request. If a valid
+// SessionCookie is the name of the cookie carrying the session token. The
+// static-file server also reads it (cmd/server) to decide whether a page load
+// is a signed-in player's and worth waking the database for.
+const SessionCookie = "player_token"
+
+// EnsureSession reads the SessionCookie cookie on every request. If a valid
 // session exists, the associated account is stored in the request context
 // and last_seen is bumped (at most once per sessionTouchInterval). Never
 // rejects requests — handlers gate access explicitly via AccountFromContext /
@@ -48,7 +53,7 @@ const sessionTouchInterval = time.Hour
 func EnsureSession(q *dbgen.Queries) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie("player_token")
+			cookie, err := r.Cookie(SessionCookie)
 			if err != nil {
 				next.ServeHTTP(w, r)
 				return
@@ -105,7 +110,7 @@ func LoadPlayer(ctx context.Context, q *dbgen.Queries, accountID, gameID int64) 
 
 // RawTokenFromRequest extracts the raw cookie value from the request.
 func RawTokenFromRequest(r *http.Request) string {
-	cookie, err := r.Cookie("player_token")
+	cookie, err := r.Cookie(SessionCookie)
 	if err != nil {
 		return ""
 	}

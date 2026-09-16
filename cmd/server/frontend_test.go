@@ -16,7 +16,7 @@ import (
 func prodFrontend(t *testing.T) *chi.Mux {
 	t.Helper()
 	r := chi.NewRouter()
-	if err := setupFrontend(r, false, ""); err != nil {
+	if err := setupFrontend(r, false, "", nil); err != nil {
 		t.Fatalf("setupFrontend: %v", err)
 	}
 	return r

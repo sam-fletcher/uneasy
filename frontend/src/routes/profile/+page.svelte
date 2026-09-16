@@ -2,7 +2,7 @@
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/modalShell.css';
 	import '$lib/components/shared/statusText.css';
-	import { goto } from '$app/navigation';
+	import { goto, preloadCode } from '$app/navigation';
 	import { readProfileSnapshot, writeProfileSnapshot } from '$lib/pageCache';
 	import { onMount } from 'svelte';
 	import {
@@ -158,6 +158,29 @@
 	}
 
 	onMount(load);
+
+	// ── Preload the table route ──────────────────────────────────────────────
+	// Nearly every player here has exactly one active table and is about to
+	// tap it, and production's ~400ms request floor plus ~170KB/s transfer
+	// puts the table chunk (~97KB gz) at about a second on the tap path. So
+	// fetch it as soon as we know they have a table, while they read the
+	// cards. One call covers every table: they all share the [id] route.
+	//
+	// Programmatic rather than data-sveltekit-preload-code="viewport" on the
+	// links: SvelteKit only registers viewport observers for anchors present
+	// when navigation completes, and these cards render after a fetch, so the
+	// attribute would silently do nothing on a cold load — the visit that
+	// matters. The body's global preload-data="hover" still runs on
+	// touchstart, but that is ~100ms before navigation, too late to hide a
+	// second of download.
+	let tableCodePreloaded = false;
+	$effect(() => {
+		if (tableCodePreloaded || tables.length === 0) return;
+		tableCodePreloaded = true;
+		void preloadCode(`/table/${tables[0].game_id}`).catch(() => {
+			// Best effort: a failed preload just means the tap pays full price.
+		});
+	});
 
 	// ── Refresh on return ────────────────────────────────────────────────────
 	// The table cards (roster, phase, waiting-on, online) come from one fetch

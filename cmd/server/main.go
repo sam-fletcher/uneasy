@@ -183,7 +183,8 @@ func runServer(
 	router := setupRouter(logger, store, manager, devMode, secureMode, publicHost,
 		discordWebhookURL, vapidPublicKey, vapidPrivateKey, vapidSubject)
 
-	if err := setupFrontend(router, devMode, viteURL); err != nil {
+	warmer := newDBWarmer(logger, dbPool.Ping)
+	if err := setupFrontend(router, devMode, viteURL, func() { warmer.Warm() }); err != nil {
 		return err
 	}
 
@@ -506,7 +507,12 @@ func setupRouter(
 var frontendFS embed.FS
 
 // setupFrontend configures frontend routing (Vite proxy in dev, static in prod).
-func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
+//
+// warm, if non-nil, is called (without blocking) whenever index.html is served
+// to a request carrying the session cookie — see dbWarmer for why that exact
+// gate. Dev mode proxies everything to Vite and never calls it; locally the
+// database is sub-millisecond away, so there is nothing to hide.
+func setupFrontend(r *chi.Mux, devMode bool, viteURL string, warm func()) error {
 	if devMode {
 		target, err := url.Parse(viteURL)
 		if err != nil {
@@ -530,6 +536,7 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 		return fmt.Errorf("register .webmanifest mime type: %w", err)
 	}
 	fileServer := http.FileServer(http.FS(sub))
+	const indexHTML = "index.html"
 	// gzip the JS/CSS/HTML on the way out. Without this the table page ships
 	// ~626KB of uncompressed JS+CSS; gzipped it's ~170KB. Vite's dev server
 	// does its own compression, which is why this only ever bit in production.
@@ -539,13 +546,13 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 		// serve index.html so client-side routing can take over.
 		path := strings.TrimPrefix(req.URL.Path, "/")
 		if path == "" {
-			path = "index.html"
+			path = indexHTML
 		}
 		served := path
 		if _, err := fs.Stat(sub, path); err != nil {
 			req = req.Clone(req.Context())
 			req.URL.Path = "/"
-			served = "index.html"
+			served = indexHTML
 		}
 		// Keyed off what we're actually serving, not what was asked for. A
 		// request for a hashed asset that isn't in this build falls through to
@@ -553,6 +560,16 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string) error {
 		// index in the browser for a year — the redeploy failure mode in
 		// docs, but permanent.
 		w.Header().Set("Cache-Control", cacheControlFor(served))
+		// Wake the database while the browser is still fetching the bundle.
+		// Only for the page itself (the asset requests that follow it ride
+		// behind this one) and only for a signed-in visitor: anonymous hits
+		// on "/" are mostly crawlers, and waking a scale-to-zero database for
+		// them is the CU-budget failure notifyTickInterval documents.
+		if warm != nil && served == indexHTML {
+			if _, err := req.Cookie(appMiddleware.SessionCookie); err == nil {
+				warm()
+			}
+		}
 		fileServer.ServeHTTP(w, req)
 	}))
 	r.Handle("/*", static)
