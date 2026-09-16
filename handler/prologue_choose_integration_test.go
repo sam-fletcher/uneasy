@@ -197,13 +197,13 @@ func TestValidatePlayerCanChoose(t *testing.T) {
 
 	t.Run("active player can choose", func(t *testing.T) {
 		// Player1 is active (fewest turns initially)
-		err := validatePlayerCanChoose(ctx, q, game.ID, player1.ID, gamepkg.PrologueSheetTitles, "Lady")
+		_, err := validatePlayerCanChoose(ctx, q, game.ID, player1.ID, gamepkg.PrologueSheetTitles, "Lady")
 		assert.NoError(t, err)
 	})
 
 	t.Run("inactive player blocked", func(t *testing.T) {
 		// Player2 is not active
-		err := validatePlayerCanChoose(ctx, q, game.ID, player2.ID, gamepkg.PrologueSheetTitles, "Lord")
+		_, err := validatePlayerCanChoose(ctx, q, game.ID, player2.ID, gamepkg.PrologueSheetTitles, "Lord")
 		assert.Error(t, err)
 	})
 
@@ -224,7 +224,7 @@ func TestValidatePlayerCanChoose(t *testing.T) {
 		}
 
 		// 4th choice should fail
-		err := validatePlayerCanChoose(ctx, q, game.ID, player1.ID, gamepkg.PrologueSheetTitles, "Another")
+		_, err := validatePlayerCanChoose(ctx, q, game.ID, player1.ID, gamepkg.PrologueSheetTitles, "Another")
 		assert.Error(t, err)
 	})
 
@@ -240,7 +240,7 @@ func TestValidatePlayerCanChoose(t *testing.T) {
 		require.NoError(t, err)
 
 		// player1 cannot claim same artifact
-		err = validatePlayerCanChoose(ctx, q, game.ID, player1.ID, gamepkg.PrologueSheetHailingFrom, "Mountain")
+		_, err = validatePlayerCanChoose(ctx, q, game.ID, player1.ID, gamepkg.PrologueSheetHailingFrom, "Mountain")
 		assert.Error(t, err)
 	})
 }

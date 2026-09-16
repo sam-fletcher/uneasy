@@ -41,6 +41,9 @@ func planLabel(t model.PlanType) string {
 // scene entries, structured system_data fields. Inside a log body use
 // playerDisplayName, which marks the name so the feed can colour it.
 func playerPlainName(ctx context.Context, q *dbgen.Queries, playerID int64) string {
+	if name, ok := knownPlayerName(ctx, playerID); ok {
+		return name
+	}
 	p, err := q.GetPlayerByID(ctx, playerID)
 	if err != nil {
 		return fmt.Sprintf("Player %d", playerID)

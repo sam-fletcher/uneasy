@@ -11,6 +11,15 @@ SELECT * FROM prologue_choices WHERE game_id = $1 ORDER BY player_id, turn_numbe
 -- name: CountPrologueChoicesByPlayer :one
 SELECT count(*) FROM prologue_choices WHERE game_id = $1 AND player_id = $2;
 
+-- One row per player who has taken at least one turn. Replaces a
+-- CountPrologueChoicesByPlayer-per-player loop on the turn-order path, which
+-- ran N serial round trips per request against a remote database.
+-- name: CountPrologueChoicesByGameGrouped :many
+SELECT player_id, count(*)::BIGINT AS taken
+FROM prologue_choices
+WHERE game_id = $1
+GROUP BY player_id;
+
 -- name: PrologueChoiceClaimed :one
 SELECT EXISTS (
   SELECT 1 FROM prologue_choices

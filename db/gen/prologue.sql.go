@@ -62,6 +62,41 @@ func (q *Queries) CommitHeart(ctx context.Context, arg CommitHeartParams) error 
 	return err
 }
 
+const countPrologueChoicesByGameGrouped = `-- name: CountPrologueChoicesByGameGrouped :many
+SELECT player_id, count(*)::BIGINT AS taken
+FROM prologue_choices
+WHERE game_id = $1
+GROUP BY player_id
+`
+
+type CountPrologueChoicesByGameGroupedRow struct {
+	PlayerID int64 `db:"player_id" json:"player_id"`
+	Taken    int64 `db:"taken" json:"taken"`
+}
+
+// One row per player who has taken at least one turn. Replaces a
+// CountPrologueChoicesByPlayer-per-player loop on the turn-order path, which
+// ran N serial round trips per request against a remote database.
+func (q *Queries) CountPrologueChoicesByGameGrouped(ctx context.Context, gameID int64) ([]CountPrologueChoicesByGameGroupedRow, error) {
+	rows, err := q.db.Query(ctx, countPrologueChoicesByGameGrouped, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountPrologueChoicesByGameGroupedRow{}
+	for rows.Next() {
+		var i CountPrologueChoicesByGameGroupedRow
+		if err := rows.Scan(&i.PlayerID, &i.Taken); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countPrologueChoicesByPlayer = `-- name: CountPrologueChoicesByPlayer :one
 SELECT count(*) FROM prologue_choices WHERE game_id = $1 AND player_id = $2
 `

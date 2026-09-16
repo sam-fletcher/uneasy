@@ -35,46 +35,72 @@ import (
 
 const prologueTurnsPerPlayer = 3
 
+// prologueTurns is the choosing sub-phase's turn-order snapshot: who has
+// taken how many turns, who is on-turn now, and the roster it was computed
+// from. One value serves a whole request — validation, the post-commit
+// broadcast, and the ranking-entry check all read the same snapshot instead
+// of each re-deriving it from the database.
+type prologueTurns struct {
+	players []dbgen.Player
+	// taken is choices committed per player id; players with none are absent.
+	taken map[int64]int
+	// active is the on-turn player, nil once every player has taken
+	// prologueTurnsPerPlayer.
+	active *dbgen.Player
+	// nextTurn is the 1-indexed number of the *next* turn: total choices
+	// committed across all players, plus 1.
+	nextTurn int
+}
+
+// takenBy is the number of turns playerID has completed.
+func (t *prologueTurns) takenBy(playerID int64) int { return t.taken[playerID] }
+
+// loadPrologueTurns computes the turn-order snapshot in two round trips:
+// the roster and one grouped count. Players take turns in join order
+// (facilitator first, since they're inserted at table-creation). The active
+// player is the one with the fewest completed turns; ties broken by join
+// order, which is GetPlayersByGame's iteration order.
+func loadPrologueTurns(ctx context.Context, q *dbgen.Queries, gameID int64) (*prologueTurns, error) {
+	players, err := q.GetPlayersByGame(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := q.CountPrologueChoicesByGameGrouped(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	t := &prologueTurns{players: players, taken: make(map[int64]int, len(counts)), nextTurn: 1}
+	for _, c := range counts {
+		t.taken[c.PlayerID] = int(c.Taken)
+		t.nextTurn += int(c.Taken)
+	}
+	// Round 0: every player takes one turn before any player takes their second.
+	bestCount := prologueTurnsPerPlayer + 1
+	for i := range players {
+		n := t.taken[players[i].ID]
+		if n < prologueTurnsPerPlayer && n < bestCount {
+			t.active = &players[i]
+			bestCount = n
+		}
+	}
+	return t, nil
+}
+
 // prologueTurnState reports who is currently on-turn during the choosing
-// sub-phase. Players take turns in join order (facilitator first, since
-// they're inserted at table-creation). The active player is the one with
-// the fewest completed turns; ties broken by join order. Returns nil
-// currentPlayer once every player has taken `prologueTurnsPerPlayer`.
-//
-// turnNumber is the 1-indexed total of choices already committed across
-// all players, plus 1 (i.e. the number of the *next* turn).
+// sub-phase — see loadPrologueTurns. Returns nil currentPlayer once every
+// player has taken `prologueTurnsPerPlayer`; turnNumber is the number of the
+// *next* turn. Callers that go on to name players or re-check the turn
+// should use loadPrologueTurns directly and keep the snapshot.
 func prologueTurnState(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID int64,
 ) (currentPlayer *dbgen.Player, turnNumber int, err error) {
-	players, err := q.GetPlayersByGame(ctx, gameID)
+	t, err := loadPrologueTurns(ctx, q, gameID)
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(players) == 0 {
-		return nil, 1, nil
-	}
-	// Round 0: every player takes one turn before any player takes their second.
-	// active = player with fewest turns; ties → earliest joined_at (which is
-	// the iteration order returned by GetPlayersByGame).
-	var totalTaken int
-	var best *dbgen.Player
-	bestCount := int64(prologueTurnsPerPlayer + 1)
-	for i := range players {
-		n, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
-			GameID: gameID, PlayerID: players[i].ID,
-		})
-		if err != nil {
-			return nil, 0, err
-		}
-		totalTaken += int(n)
-		if n < int64(prologueTurnsPerPlayer) && n < bestCount {
-			best = &players[i]
-			bestCount = n
-		}
-	}
-	return best, totalTaken + 1, nil
+	return t.active, t.nextTurn, nil
 }
 
 // requirePrologueChoosing writes 409 and returns false unless the game is in
@@ -281,25 +307,20 @@ func validatePlayerCanChoose(
 	q *dbgen.Queries,
 	gameID, playerID int64,
 	sheetType, choiceName string,
-) error {
+) (*prologueTurns, error) {
 	// Turn-order enforcement: only the active player may claim a box.
-	active, _, err := prologueTurnState(ctx, q, gameID)
+	turns, err := loadPrologueTurns(ctx, q, gameID)
 	if err != nil {
-		return httpErr(http.StatusInternalServerError, "could not compute turn order")
+		return nil, httpErr(http.StatusInternalServerError, "could not compute turn order")
 	}
-	if active == nil || active.ID != playerID {
-		return httpErr(http.StatusConflict, "it is not your turn")
+	if turns.active == nil || turns.active.ID != playerID {
+		return nil, httpErr(http.StatusConflict, "it is not your turn")
 	}
 
-	// Per-player turn cap (defensive — prologueTurnState already enforces it).
-	taken, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
-		GameID: gameID, PlayerID: playerID,
-	})
-	if err != nil {
-		return httpErr(http.StatusInternalServerError, "could not count player turns")
-	}
-	if taken >= prologueTurnsPerPlayer {
-		return httpErr(http.StatusConflict, "you have already taken your three prologue turns")
+	// Per-player turn cap (defensive — the active-player rule above already
+	// enforces it). Read off the snapshot rather than re-counted.
+	if turns.takenBy(playerID) >= prologueTurnsPerPlayer {
+		return nil, httpErr(http.StatusConflict, "you have already taken your three prologue turns")
 	}
 
 	// Box must not be claimed.
@@ -307,12 +328,12 @@ func validatePlayerCanChoose(
 		GameID: gameID, SheetType: sheetType, ChoiceName: choiceName,
 	})
 	if err != nil {
-		return httpErr(http.StatusInternalServerError, "could not check claim status")
+		return nil, httpErr(http.StatusInternalServerError, "could not check claim status")
 	}
 	if claimed {
-		return httpErr(http.StatusConflict, "that tile has already been claimed")
+		return nil, httpErr(http.StatusConflict, "that tile has already been claimed")
 	}
-	return nil
+	return turns, nil
 }
 
 // findMainCharacter retrieves the player's main character asset.
@@ -446,17 +467,13 @@ func buildCardTextLookup(cardAssets []CardAssetText) map[string]string {
 }
 
 // broadcastTurnAdvanced broadcasts the turn advancement event.
-func broadcastTurnAdvanced(ctx context.Context, manager *hub.Manager, q *dbgen.Queries, gameID int64) {
-	// Advance the turn marker.
-	nextActive, nextTurn, terr := prologueTurnState(ctx, q, gameID)
-	if terr == nil {
-		payload := model.PrologueTurnAdvancedPayload{TurnNumber: nextTurn}
-		if nextActive != nil {
-			id := nextActive.ID
-			payload.CurrentPlayerID = &id
-		}
-		broadcastEvent(manager, gameID, model.EventPrologueTurnAdvanced, payload)
+func broadcastTurnAdvanced(manager *hub.Manager, gameID int64, turns *prologueTurns) {
+	payload := model.PrologueTurnAdvancedPayload{TurnNumber: turns.nextTurn}
+	if turns.active != nil {
+		id := turns.active.ID
+		payload.CurrentPlayerID = &id
 	}
+	broadcastEvent(manager, gameID, model.EventPrologueTurnAdvanced, payload)
 }
 
 // ChoosePrologue handles POST /api/games/{id}/prologue/choose.
@@ -531,12 +548,17 @@ func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			TurnNumber: turnNumber,
 		})
 
-		broadcastTurnAdvanced(ctx, manager, s.Q, gameID)
+		// One post-commit snapshot serves both the turn-marker broadcast and
+		// the ranking-entry check below; recomputing it twice cost 2×(1+N)
+		// round trips per claim.
+		turns, terr := loadPrologueTurns(ctx, s.Q, gameID)
+		if terr == nil {
+			broadcastTurnAdvanced(manager, gameID, turns)
+		}
 
 		// If every player has now taken all three turns, transition straight
 		// into the ranking sub-flow — no separate facilitator gate.
-		nextActive, _, terr := prologueTurnState(ctx, s.Q, gameID)
-		if terr == nil && nextActive == nil {
+		if terr == nil && turns.active == nil {
 			if rerr := enterPrologueRanking(ctx, s, manager, gameID); rerr != nil {
 				respondInternalErr(w, r, "could not enter ranking", rerr)
 				return
@@ -555,17 +577,15 @@ func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 	gameID, playerID int64, body *chooseRequestBody, choice *gamepkg.PrologueChoice,
 ) (int16, error) {
 	var turnNumber int16
-	if err := validatePlayerCanChoose(ctx, q, gameID, playerID, body.SheetType, body.ChoiceName); err != nil {
+	turns, err := validatePlayerCanChoose(ctx, q, gameID, playerID, body.SheetType, body.ChoiceName)
+	if err != nil {
 		return turnNumber, err
 	}
-
-	taken, err := q.CountPrologueChoicesByPlayer(ctx, dbgen.CountPrologueChoicesByPlayerParams{
-		GameID: gameID, PlayerID: playerID,
-	})
-	if err != nil {
-		return turnNumber, httpErr(http.StatusInternalServerError, "could not count player turns")
-	}
-	turnNumber = int16(taken) + 1
+	turnNumber = int16(turns.takenBy(playerID)) + 1
+	// The whole roster is in hand now; the log emitters below name the
+	// claimer (and, on a take, the previous owner) and must not pay a round
+	// trip each to look those names up again.
+	ctx = withKnownPlayers(ctx, turns.players...)
 
 	if _, err := q.CreatePrologueChoice(ctx, dbgen.CreatePrologueChoiceParams{
 		GameID:     gameID,
