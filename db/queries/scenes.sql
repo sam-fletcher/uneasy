@@ -21,22 +21,6 @@ SELECT * FROM scenes
 WHERE game_id = $1 AND ended_at IS NULL
 LIMIT 1;
 
--- name: GetTurnScene :one
--- Returns the focus player's turn-scene for a given row: the scene they set
--- up at the start of their turn (resolved_plan_id IS NULL), regardless of
--- whether it has ended. Used by /game-state so a refreshing client can tell
--- whether the focus player is mid-scene or in their post-scene action step.
--- Distinct from plan-resolution scenes (kind='plan'), which never carry
--- resolved_plan_id — the kind filter is defense-in-depth against the case
--- where a plan's preparer happens to also be the row's current focus player.
-SELECT * FROM scenes
-WHERE game_id = $1
-  AND row_number = $2
-  AND focus_player_id = $3
-  AND kind = 'turn'
-  AND resolved_plan_id IS NULL
-LIMIT 1;
-
 -- name: CreatePlanScene :one
 -- Opens a plan-scene (adr/CHAT_OVERHAUL_PLAN.md Phase 5) at the moment a
 -- roleplay-heavy plan flips to resolving. No location/time setup step —

@@ -140,8 +140,8 @@ func (b *eligibilityBoard) checkPlanEligible(
 
 // hasEsteemLockout reports whether a player has an active esteem lockout from
 // a Spread Propaganda mar option (b) "censured": it takes the player's recent
-// plans newest-first (the same window ListRecentPlansByPreparer returned),
-// maps them to domain views (parsing the SP lockout flag), and delegates the
+// plans newest-first (the 20-plan window the pre-board query returned), maps
+// them to domain views (parsing the SP lockout flag), and delegates the
 // decision to the pure game.EsteemLockoutActive.
 func (b *eligibilityBoard) hasEsteemLockout(playerID int64) bool {
 	const recentWindow = 20

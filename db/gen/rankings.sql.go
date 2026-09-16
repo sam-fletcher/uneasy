@@ -25,39 +25,6 @@ func (q *Queries) DeleteRankingsByCategory(ctx context.Context, arg DeleteRankin
 	return err
 }
 
-const deleteRankingsByGame = `-- name: DeleteRankingsByGame :exec
-DELETE FROM rankings WHERE game_id = $1
-`
-
-func (q *Queries) DeleteRankingsByGame(ctx context.Context, gameID int64) error {
-	_, err := q.db.Exec(ctx, deleteRankingsByGame, gameID)
-	return err
-}
-
-const getRankByPosition = `-- name: GetRankByPosition :one
-SELECT id, game_id, player_id, category, rank FROM rankings
-WHERE game_id = $1 AND category = $2 AND rank = $3
-`
-
-type GetRankByPositionParams struct {
-	GameID   int64                 `db:"game_id" json:"game_id"`
-	Category model.RankingCategory `db:"category" json:"category"`
-	Rank     int16                 `db:"rank" json:"rank"`
-}
-
-func (q *Queries) GetRankByPosition(ctx context.Context, arg GetRankByPositionParams) (Ranking, error) {
-	row := q.db.QueryRow(ctx, getRankByPosition, arg.GameID, arg.Category, arg.Rank)
-	var i Ranking
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.PlayerID,
-		&i.Category,
-		&i.Rank,
-	)
-	return i, err
-}
-
 const getRanking = `-- name: GetRanking :one
 SELECT id, game_id, player_id, category, rank FROM rankings
 WHERE game_id = $1 AND player_id = $2 AND category = $3

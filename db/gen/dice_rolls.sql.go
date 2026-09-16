@@ -532,15 +532,6 @@ func (q *Queries) SetDiceRollStage(ctx context.Context, arg SetDiceRollStagePara
 	return err
 }
 
-const setDieCancelled = `-- name: SetDieCancelled :exec
-UPDATE dice_roll_dice SET is_cancelled = TRUE WHERE id = $1
-`
-
-func (q *Queries) SetDieCancelled(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, setDieCancelled, id)
-	return err
-}
-
 const setDieCancelledBy = `-- name: SetDieCancelledBy :exec
 UPDATE dice_roll_dice
 SET is_cancelled = TRUE, cancelled_by_die_id = $2

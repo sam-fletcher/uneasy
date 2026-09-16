@@ -5,9 +5,6 @@ INSERT INTO prologue_choices (game_id, player_id, turn_number, sheet_type, choic
 VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
--- name: ListPrologueChoicesByGame :many
-SELECT * FROM prologue_choices WHERE game_id = $1 ORDER BY player_id, turn_number;
-
 -- name: CountPrologueChoicesByPlayer :one
 SELECT count(*) FROM prologue_choices WHERE game_id = $1 AND player_id = $2;
 
@@ -52,9 +49,6 @@ RETURNING *;
 -- name: ListPlayerCardsByGame :many
 SELECT * FROM player_cards WHERE game_id = $1 ORDER BY player_id, card_suit, card_value;
 
--- name: ListPlayerCardsByPlayer :many
-SELECT * FROM player_cards WHERE game_id = $1 AND player_id = $2;
-
 -- name: GetPlayerCardByID :one
 SELECT * FROM player_cards WHERE id = $1;
 
@@ -90,10 +84,6 @@ DO UPDATE SET track = EXCLUDED.track, player_id = EXCLUDED.player_id;
 -- name: UncommitHeart :exec
 DELETE FROM prologue_committed_hearts
 WHERE game_id = $1 AND card_id = $2;
-
--- name: ClearTrackCommittedHearts :exec
-DELETE FROM prologue_committed_hearts
-WHERE game_id = $1 AND track = $2;
 
 -- name: DeleteCommittedHeartsByCardIDs :exec
 DELETE FROM prologue_committed_hearts

@@ -283,10 +283,11 @@ func findFollowScene(scenes []dbgen.Scene, planID int64) *dbgen.Scene {
 	return nil
 }
 
-// findTurnScene is GetTurnScene over the row's scenes: the focus player's
-// turn-kind scene with no resolved_plan_id (the one they set at the start of
-// their turn), ended or not. ListScenesForRow orders by started_at, so the
-// first match is the same row LIMIT 1 returned.
+// findTurnScene picks the focus player's turn-scene out of the row's scenes:
+// their turn-kind scene with no resolved_plan_id (the one they set at the
+// start of their turn), ended or not. It replaced a dedicated LIMIT 1 query;
+// ListScenesForRow orders by started_at, so the first match is the same row
+// that query returned.
 func findTurnScene(scenes []dbgen.Scene, focusPlayerID int64) *dbgen.Scene {
 	for i := range scenes {
 		sc := &scenes[i]

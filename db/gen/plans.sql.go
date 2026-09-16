@@ -11,40 +11,6 @@ import (
 	"uneasy/model"
 )
 
-const countFallenThroughPlansOfTypeOnRow = `-- name: CountFallenThroughPlansOfTypeOnRow :one
-SELECT count(*) FROM plans
-WHERE game_id = $1 AND preparer_id = $2 AND plan_type = $3
-  AND status = 'cancelled' AND prepared_at_row = $4
-`
-
-type CountFallenThroughPlansOfTypeOnRowParams struct {
-	GameID        int64          `db:"game_id" json:"game_id"`
-	PreparerID    int64          `db:"preparer_id" json:"preparer_id"`
-	PlanType      model.PlanType `db:"plan_type" json:"plan_type"`
-	PreparedAtRow int16          `db:"prepared_at_row" json:"prepared_at_row"`
-}
-
-// Plans of one type this player prepared on this row that fell through
-// ('cancelled'). Non-zero blocks a re-pick of the same type on the same row.
-//
-// The block used to be an accident of the plan token never being deleted; the
-// token is now removed when a plan falls through (the shield records real
-// preparations only), so the block is derived instead — from prepared_at_row,
-// which is NOT NULL and survives cancellation. It is wanted on its own merits:
-// the delay faces are CHOSEN, not rolled, so a free retry would let a preparer
-// re-declare until the average lands where they want.
-func (q *Queries) CountFallenThroughPlansOfTypeOnRow(ctx context.Context, arg CountFallenThroughPlansOfTypeOnRowParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countFallenThroughPlansOfTypeOnRow,
-		arg.GameID,
-		arg.PreparerID,
-		arg.PlanType,
-		arg.PreparedAtRow,
-	)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countFinaleBonusPlans = `-- name: CountFinaleBonusPlans :one
 SELECT count(*) FROM plans
 WHERE game_id = $1 AND preparer_id = $2
@@ -201,7 +167,8 @@ DELETE FROM plan_tokens WHERE plan_id = $1
 // clears — the token drops out of the engrailed ranking tally and its pip
 // disappears from the prep grid, both of which follow from the plan not having
 // happened. The preparer is still blocked from re-picking that type on that row
-// (see CountFallenThroughPlansOfTypeOnRow); lower-ranked players are not.
+// (derived from prepared_at_row in handler/eligibility.go checkPlanEligible);
+// lower-ranked players are not.
 func (q *Queries) DeletePlanTokenByPlan(ctx context.Context, planID int64) error {
 	_, err := q.db.Exec(ctx, deletePlanTokenByPlan, planID)
 	return err
@@ -250,31 +217,6 @@ func (q *Queries) GetPlanByID(ctx context.Context, id int64) (Plan, error) {
 		&i.TargetedPlanID,
 		&i.DemandOptionWinners,
 		&i.IsFinaleBonus,
-	)
-	return i, err
-}
-
-const getPlanTokenByTypeAndPlayer = `-- name: GetPlanTokenByTypeAndPlayer :one
-SELECT id, game_id, plan_type, player_id, plan_id, placed_at FROM plan_tokens
-WHERE game_id = $1 AND plan_type = $2 AND player_id = $3
-`
-
-type GetPlanTokenByTypeAndPlayerParams struct {
-	GameID   int64          `db:"game_id" json:"game_id"`
-	PlanType model.PlanType `db:"plan_type" json:"plan_type"`
-	PlayerID int64          `db:"player_id" json:"player_id"`
-}
-
-func (q *Queries) GetPlanTokenByTypeAndPlayer(ctx context.Context, arg GetPlanTokenByTypeAndPlayerParams) (PlanToken, error) {
-	row := q.db.QueryRow(ctx, getPlanTokenByTypeAndPlayer, arg.GameID, arg.PlanType, arg.PlayerID)
-	var i PlanToken
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.PlanType,
-		&i.PlayerID,
-		&i.PlanID,
-		&i.PlacedAt,
 	)
 	return i, err
 }
@@ -535,104 +477,6 @@ type ListPlansByRowParams struct {
 
 func (q *Queries) ListPlansByRow(ctx context.Context, arg ListPlansByRowParams) ([]Plan, error) {
 	rows, err := q.db.Query(ctx, listPlansByRow, arg.GameID, arg.RowNumber)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Plan{}
-	for rows.Next() {
-		var i Plan
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.PlanType,
-			&i.Category,
-			&i.PreparerID,
-			&i.TargetPlayerID,
-			&i.TargetAssetID,
-			&i.RowNumber,
-			&i.RowOrder,
-			&i.PreparedAtRow,
-			&i.Status,
-			&i.Result,
-			&i.ResolvedAt,
-			&i.PreparationNotes,
-			&i.ResolutionData,
-			&i.TargetedPlanID,
-			&i.DemandOptionWinners,
-			&i.IsFinaleBonus,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRecentPlansByPreparer = `-- name: ListRecentPlansByPreparer :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans
-WHERE game_id = $1 AND preparer_id = $2
-ORDER BY prepared_at_row DESC, id DESC
-LIMIT 20
-`
-
-type ListRecentPlansByPreparerParams struct {
-	GameID     int64 `db:"game_id" json:"game_id"`
-	PreparerID int64 `db:"preparer_id" json:"preparer_id"`
-}
-
-// Returns the most recently prepared plans for a player in a game, ordered
-// newest-first. Used for esteem lockout checks (SP mar option b).
-func (q *Queries) ListRecentPlansByPreparer(ctx context.Context, arg ListRecentPlansByPreparerParams) ([]Plan, error) {
-	rows, err := q.db.Query(ctx, listRecentPlansByPreparer, arg.GameID, arg.PreparerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Plan{}
-	for rows.Next() {
-		var i Plan
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.PlanType,
-			&i.Category,
-			&i.PreparerID,
-			&i.TargetPlayerID,
-			&i.TargetAssetID,
-			&i.RowNumber,
-			&i.RowOrder,
-			&i.PreparedAtRow,
-			&i.Status,
-			&i.Result,
-			&i.ResolvedAt,
-			&i.PreparationNotes,
-			&i.ResolutionData,
-			&i.TargetedPlanID,
-			&i.DemandOptionWinners,
-			&i.IsFinaleBonus,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listUnresolvedPlans = `-- name: ListUnresolvedPlans :many
-SELECT id, game_id, plan_type, category, preparer_id, target_player_id, target_asset_id, row_number, row_order, prepared_at_row, status, result, resolved_at, preparation_notes, resolution_data, targeted_plan_id, demand_option_winners, is_finale_bonus FROM plans
-WHERE game_id = $1 AND status IN ('pending', 'resolving')
-ORDER BY row_number ASC, row_order ASC
-`
-
-func (q *Queries) ListUnresolvedPlans(ctx context.Context, gameID int64) ([]Plan, error) {
-	rows, err := q.db.Query(ctx, listUnresolvedPlans, gameID)
 	if err != nil {
 		return nil, err
 	}

@@ -292,51 +292,6 @@ func (q *Queries) GetScenePeerByOwner(ctx context.Context, arg GetScenePeerByOwn
 	return i, err
 }
 
-const getTurnScene = `-- name: GetTurnScene :one
-SELECT id, game_id, row_number, focus_player_id, location_holding_id, location_custom, time_elapsed, time_note, prompt, resolved_plan_id, started_at, ended_at, kind, plan_id FROM scenes
-WHERE game_id = $1
-  AND row_number = $2
-  AND focus_player_id = $3
-  AND kind = 'turn'
-  AND resolved_plan_id IS NULL
-LIMIT 1
-`
-
-type GetTurnSceneParams struct {
-	GameID        int64 `db:"game_id" json:"game_id"`
-	RowNumber     int16 `db:"row_number" json:"row_number"`
-	FocusPlayerID int64 `db:"focus_player_id" json:"focus_player_id"`
-}
-
-// Returns the focus player's turn-scene for a given row: the scene they set
-// up at the start of their turn (resolved_plan_id IS NULL), regardless of
-// whether it has ended. Used by /game-state so a refreshing client can tell
-// whether the focus player is mid-scene or in their post-scene action step.
-// Distinct from plan-resolution scenes (kind='plan'), which never carry
-// resolved_plan_id — the kind filter is defense-in-depth against the case
-// where a plan's preparer happens to also be the row's current focus player.
-func (q *Queries) GetTurnScene(ctx context.Context, arg GetTurnSceneParams) (Scene, error) {
-	row := q.db.QueryRow(ctx, getTurnScene, arg.GameID, arg.RowNumber, arg.FocusPlayerID)
-	var i Scene
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.RowNumber,
-		&i.FocusPlayerID,
-		&i.LocationHoldingID,
-		&i.LocationCustom,
-		&i.TimeElapsed,
-		&i.TimeNote,
-		&i.Prompt,
-		&i.ResolvedPlanID,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.Kind,
-		&i.PlanID,
-	)
-	return i, err
-}
-
 const insertScenePeer = `-- name: InsertScenePeer :exec
 INSERT INTO scene_peers (scene_id, peer_asset_id, controller_player_id)
 VALUES ($1, $2, $3)

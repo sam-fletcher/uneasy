@@ -43,18 +43,10 @@ JOIN games g ON g.id = p.game_id
 WHERE p.account_id = $1
 ORDER BY p.joined_at DESC;
 
--- name: IsPlayerInGame :one
-SELECT EXISTS (
-  SELECT 1 FROM players WHERE game_id = $1 AND account_id = $2
-) AS exists;
-
 -- name: UpdateDisplayNameByAccount :exec
 -- Propagates an account username change to the denormalized display_name
 -- copy held by every player seat that account occupies, across all games.
 UPDATE players SET display_name = $2 WHERE account_id = $1;
-
--- name: SetPlayerTokenColor :exec
-UPDATE players SET token_color = $2 WHERE id = $1;
 
 -- name: SetPlayerSeatOrder :exec
 UPDATE players SET seat_order = $2 WHERE id = $1;

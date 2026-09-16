@@ -256,24 +256,6 @@ func (q *Queries) GetPlayersByGame(ctx context.Context, gameID int64) ([]Player,
 	return items, nil
 }
 
-const isPlayerInGame = `-- name: IsPlayerInGame :one
-SELECT EXISTS (
-  SELECT 1 FROM players WHERE game_id = $1 AND account_id = $2
-) AS exists
-`
-
-type IsPlayerInGameParams struct {
-	GameID    int64 `db:"game_id" json:"game_id"`
-	AccountID int64 `db:"account_id" json:"account_id"`
-}
-
-func (q *Queries) IsPlayerInGame(ctx context.Context, arg IsPlayerInGameParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isPlayerInGame, arg.GameID, arg.AccountID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
 const listPlayerActivityByGame = `-- name: ListPlayerActivityByGame :many
 SELECT
   p.id AS player_id,
@@ -471,20 +453,6 @@ type SetPlayerSeatOrderParams struct {
 
 func (q *Queries) SetPlayerSeatOrder(ctx context.Context, arg SetPlayerSeatOrderParams) error {
 	_, err := q.db.Exec(ctx, setPlayerSeatOrder, arg.ID, arg.SeatOrder)
-	return err
-}
-
-const setPlayerTokenColor = `-- name: SetPlayerTokenColor :exec
-UPDATE players SET token_color = $2 WHERE id = $1
-`
-
-type SetPlayerTokenColorParams struct {
-	ID         int64   `db:"id" json:"id"`
-	TokenColor *string `db:"token_color" json:"token_color"`
-}
-
-func (q *Queries) SetPlayerTokenColor(ctx context.Context, arg SetPlayerTokenColorParams) error {
-	_, err := q.db.Exec(ctx, setPlayerTokenColor, arg.ID, arg.TokenColor)
 	return err
 }
 

@@ -11,9 +11,6 @@ RETURNING *;
 SELECT * FROM laws WHERE game_id = $1 AND is_active = TRUE
 ORDER BY display_order ASC, created_at ASC;
 
--- name: DeactivateLaw :exec
-UPDATE laws SET is_active = FALSE WHERE id = $1;
-
 -- name: UpdateLawText :one
 UPDATE laws SET text = $2, addendum = $3 WHERE id = $1 RETURNING *;
 
@@ -30,9 +27,6 @@ RETURNING *;
 -- name: ListRumors :many
 SELECT * FROM rumors WHERE game_id = $1 AND is_active = TRUE
 ORDER BY display_order ASC, created_at ASC;
-
--- name: DeactivateRumor :exec
-UPDATE rumors SET is_active = FALSE WHERE id = $1;
 
 -- name: SetRumorSourceHidden :exec
 -- Remove the source attribution from a rumor (Spread Rumors hide-source option).

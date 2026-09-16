@@ -77,16 +77,11 @@ WHERE owner_id = $1 AND game_id = $2 AND is_main_character = TRUE;
 -- name: SetAssetLeveraged :exec
 UPDATE assets SET is_leveraged = $2 WHERE id = $1;
 
--- name: RefreshPlayerAssets :exec
--- Un-leverage up to N assets for a player (used by the refresh action).
--- The caller picks which assets to refresh; this updates them individually.
-UPDATE assets SET is_leveraged = FALSE WHERE id = $1;
-
 -- name: RefreshAssetsByIDs :many
--- The batched form of RefreshPlayerAssets: un-leverages every listed asset in
--- one statement and returns the refreshed rows, so the refresh action's
--- per-asset UPDATE + re-read loop collapses to one trip. Callers validate
--- ownership and the leveraged state beforehand (ListAssetsByIDs).
+-- Un-leverages every listed asset in one statement and returns the refreshed
+-- rows, so the refresh action's per-asset UPDATE + re-read loop collapses to
+-- one trip. Callers validate ownership and the leveraged state beforehand
+-- (ListAssetsByIDs).
 UPDATE assets SET is_leveraged = FALSE
 WHERE id = ANY(sqlc.arg(asset_ids)::BIGINT[])
 RETURNING *;
@@ -143,10 +138,6 @@ WHERE a.id = $1
   AND a.is_destroyed = FALSE
   AND EXISTS (SELECT 1 FROM marginalia m WHERE m.asset_id = a.id)
   AND NOT EXISTS (SELECT 1 FROM marginalia m WHERE m.asset_id = a.id AND m.is_torn = FALSE);
-
--- name: CountLeveragedAssets :one
-SELECT count(*) FROM assets
-WHERE owner_id = $1 AND is_leveraged = FALSE AND is_destroyed = FALSE;
 
 -- name: CountPeerAssets :one
 -- Returns the number of non-destroyed peer assets owned by a player in a game.
@@ -283,9 +274,6 @@ SELECT * FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE ORDER BY positi
 -- name: CountIntactMarginalia :one
 SELECT count(*) FROM marginalia WHERE asset_id = $1 AND is_torn = FALSE;
 
--- name: CountTornMarginalia :one
-SELECT count(*) FROM marginalia WHERE asset_id = $1 AND is_torn = TRUE;
-
 -- name: CountMarginalia :one
 SELECT count(*) FROM marginalia WHERE asset_id = $1;
 
@@ -323,9 +311,6 @@ ORDER BY s.created_at ASC;
 INSERT INTO secret_visibility (secret_id, player_id)
 VALUES ($1, $2)
 ON CONFLICT DO NOTHING;
-
--- name: RevealSecret :exec
-UPDATE secrets SET is_revealed = TRUE, revealed_at = now() WHERE id = $1;
 
 -- name: GrantSecretVisibilityForAsset :exec
 -- Give a player visibility on ALL secrets of an asset (used when taking/breaking).

@@ -294,26 +294,6 @@ func (q *Queries) GetSurrenderClaim(ctx context.Context, arg GetSurrenderClaimPa
 	return i, err
 }
 
-const getWar = `-- name: GetWar :one
-SELECT id, game_id, origin_plan_id, status, started_at_row, ended_at_row, end_reason, created_at FROM wars WHERE id = $1
-`
-
-func (q *Queries) GetWar(ctx context.Context, id int64) (War, error) {
-	row := q.db.QueryRow(ctx, getWar, id)
-	var i War
-	err := row.Scan(
-		&i.ID,
-		&i.GameID,
-		&i.OriginPlanID,
-		&i.Status,
-		&i.StartedAtRow,
-		&i.EndedAtRow,
-		&i.EndReason,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getWarByOriginPlan = `-- name: GetWarByOriginPlan :one
 SELECT id, game_id, origin_plan_id, status, started_at_row, ended_at_row, end_reason, created_at FROM wars WHERE origin_plan_id = $1
 `
@@ -401,51 +381,6 @@ ORDER BY id
 
 func (q *Queries) ListActiveWarsByGame(ctx context.Context, gameID int64) ([]War, error) {
 	rows, err := q.db.Query(ctx, listActiveWarsByGame, gameID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []War{}
-	for rows.Next() {
-		var i War
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.OriginPlanID,
-			&i.Status,
-			&i.StartedAtRow,
-			&i.EndedAtRow,
-			&i.EndReason,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listActiveWarsForPlayer = `-- name: ListActiveWarsForPlayer :many
-SELECT w.id, w.game_id, w.origin_plan_id, w.status, w.started_at_row, w.ended_at_row, w.end_reason, w.created_at
-FROM wars w
-JOIN war_participants wp ON wp.war_id = w.id
-WHERE w.game_id = $1
-  AND w.status = 'active'
-  AND wp.player_id = $2
-  AND wp.surrendered_at_row IS NULL
-ORDER BY w.id
-`
-
-type ListActiveWarsForPlayerParams struct {
-	GameID   int64 `db:"game_id" json:"game_id"`
-	PlayerID int64 `db:"player_id" json:"player_id"`
-}
-
-func (q *Queries) ListActiveWarsForPlayer(ctx context.Context, arg ListActiveWarsForPlayerParams) ([]War, error) {
-	rows, err := q.db.Query(ctx, listActiveWarsForPlayer, arg.GameID, arg.PlayerID)
 	if err != nil {
 		return nil, err
 	}

@@ -68,9 +68,6 @@ SELECT * FROM dice_roll_dice WHERE roll_id = $1 ORDER BY id;
 -- name: SetDieFace :exec
 UPDATE dice_roll_dice SET face = $2 WHERE id = $1;
 
--- name: SetDieCancelled :exec
-UPDATE dice_roll_dice SET is_cancelled = TRUE WHERE id = $1;
-
 -- name: SetDieCancelledBy :exec
 UPDATE dice_roll_dice
 SET is_cancelled = TRUE, cancelled_by_die_id = $2

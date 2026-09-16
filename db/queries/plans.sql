@@ -31,11 +31,6 @@ SELECT * FROM plans
 WHERE game_id = $1 AND row_number = $2 AND status = 'pending'
 ORDER BY row_order ASC;
 
--- name: ListUnresolvedPlans :many
-SELECT * FROM plans
-WHERE game_id = $1 AND status IN ('pending', 'resolving')
-ORDER BY row_number ASC, row_order ASC;
-
 -- name: SetPlanStatus :exec
 -- NOTE ON 'cancelled': it means the plan NEVER CAME TOGETHER, not that anyone
 -- cancelled it — there is no player-initiated cancellation anywhere in the game
@@ -128,28 +123,6 @@ SELECT count(*) FROM plans
 WHERE game_id = $1 AND preparer_id = $2
   AND is_finale_bonus = true AND status != 'cancelled';
 
--- name: CountFallenThroughPlansOfTypeOnRow :one
--- Plans of one type this player prepared on this row that fell through
--- ('cancelled'). Non-zero blocks a re-pick of the same type on the same row.
---
--- The block used to be an accident of the plan token never being deleted; the
--- token is now removed when a plan falls through (the shield records real
--- preparations only), so the block is derived instead — from prepared_at_row,
--- which is NOT NULL and survives cancellation. It is wanted on its own merits:
--- the delay faces are CHOSEN, not rolled, so a free retry would let a preparer
--- re-declare until the average lands where they want.
-SELECT count(*) FROM plans
-WHERE game_id = $1 AND preparer_id = $2 AND plan_type = $3
-  AND status = 'cancelled' AND prepared_at_row = $4;
-
--- name: ListRecentPlansByPreparer :many
--- Returns the most recently prepared plans for a player in a game, ordered
--- newest-first. Used for esteem lockout checks (SP mar option b).
-SELECT * FROM plans
-WHERE game_id = $1 AND preparer_id = $2
-ORDER BY prepared_at_row DESC, id DESC
-LIMIT 20;
-
 -- ── Plan Tokens ──────────────────────────────────────────────────────
 
 -- name: CreatePlanToken :one
@@ -163,10 +136,6 @@ SELECT * FROM plan_tokens WHERE game_id = $1;
 -- name: ListPlanTokensByType :many
 SELECT * FROM plan_tokens WHERE game_id = $1 AND plan_type = $2;
 
--- name: GetPlanTokenByTypeAndPlayer :one
-SELECT * FROM plan_tokens
-WHERE game_id = $1 AND plan_type = $2 AND player_id = $3;
-
 -- name: DeletePlanTokenByPlan :exec
 -- Removes the token a plan placed on its shield. Called when a plan falls
 -- through (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6): "there should be no shield
@@ -175,7 +144,8 @@ WHERE game_id = $1 AND plan_type = $2 AND player_id = $3;
 -- clears — the token drops out of the engrailed ranking tally and its pip
 -- disappears from the prep grid, both of which follow from the plan not having
 -- happened. The preparer is still blocked from re-picking that type on that row
--- (see CountFallenThroughPlansOfTypeOnRow); lower-ranked players are not.
+-- (derived from prepared_at_row in handler/eligibility.go checkPlanEligible);
+-- lower-ranked players are not.
 DELETE FROM plan_tokens WHERE plan_id = $1;
 
 -- name: DeletePlanTokensByCategory :exec

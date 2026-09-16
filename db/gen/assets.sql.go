@@ -82,18 +82,6 @@ func (q *Queries) CountIntactMarginalia(ctx context.Context, assetID int64) (int
 	return count, err
 }
 
-const countLeveragedAssets = `-- name: CountLeveragedAssets :one
-SELECT count(*) FROM assets
-WHERE owner_id = $1 AND is_leveraged = FALSE AND is_destroyed = FALSE
-`
-
-func (q *Queries) CountLeveragedAssets(ctx context.Context, ownerID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, countLeveragedAssets, ownerID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countMarginalia = `-- name: CountMarginalia :one
 SELECT count(*) FROM marginalia WHERE asset_id = $1
 `
@@ -170,17 +158,6 @@ func (q *Queries) CountSecretsByGame(ctx context.Context, gameID int64) ([]Count
 		return nil, err
 	}
 	return items, nil
-}
-
-const countTornMarginalia = `-- name: CountTornMarginalia :one
-SELECT count(*) FROM marginalia WHERE asset_id = $1 AND is_torn = TRUE
-`
-
-func (q *Queries) CountTornMarginalia(ctx context.Context, assetID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, countTornMarginalia, assetID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
 }
 
 const createAsset = `-- name: CreateAsset :one
@@ -1138,10 +1115,10 @@ WHERE id = ANY($1::BIGINT[])
 RETURNING id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value
 `
 
-// The batched form of RefreshPlayerAssets: un-leverages every listed asset in
-// one statement and returns the refreshed rows, so the refresh action's
-// per-asset UPDATE + re-read loop collapses to one trip. Callers validate
-// ownership and the leveraged state beforehand (ListAssetsByIDs).
+// Un-leverages every listed asset in one statement and returns the refreshed
+// rows, so the refresh action's per-asset UPDATE + re-read loop collapses to
+// one trip. Callers validate ownership and the leveraged state beforehand
+// (ListAssetsByIDs).
 func (q *Queries) RefreshAssetsByIDs(ctx context.Context, assetIds []int64) ([]Asset, error) {
 	rows, err := q.db.Query(ctx, refreshAssetsByIDs, assetIds)
 	if err != nil {
@@ -1174,26 +1151,6 @@ func (q *Queries) RefreshAssetsByIDs(ctx context.Context, assetIds []int64) ([]A
 		return nil, err
 	}
 	return items, nil
-}
-
-const refreshPlayerAssets = `-- name: RefreshPlayerAssets :exec
-UPDATE assets SET is_leveraged = FALSE WHERE id = $1
-`
-
-// Un-leverage up to N assets for a player (used by the refresh action).
-// The caller picks which assets to refresh; this updates them individually.
-func (q *Queries) RefreshPlayerAssets(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, refreshPlayerAssets, id)
-	return err
-}
-
-const revealSecret = `-- name: RevealSecret :exec
-UPDATE secrets SET is_revealed = TRUE, revealed_at = now() WHERE id = $1
-`
-
-func (q *Queries) RevealSecret(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, revealSecret, id)
-	return err
 }
 
 const setAssetLeveraged = `-- name: SetAssetLeveraged :exec

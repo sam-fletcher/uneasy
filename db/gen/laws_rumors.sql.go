@@ -93,24 +93,6 @@ func (q *Queries) CreateRumor(ctx context.Context, arg CreateRumorParams) (Rumor
 	return i, err
 }
 
-const deactivateLaw = `-- name: DeactivateLaw :exec
-UPDATE laws SET is_active = FALSE WHERE id = $1
-`
-
-func (q *Queries) DeactivateLaw(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deactivateLaw, id)
-	return err
-}
-
-const deactivateRumor = `-- name: DeactivateRumor :exec
-UPDATE rumors SET is_active = FALSE WHERE id = $1
-`
-
-func (q *Queries) DeactivateRumor(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deactivateRumor, id)
-	return err
-}
-
 const getLawByID = `-- name: GetLawByID :one
 SELECT id, game_id, text, addendum, origin_plan_id, signatory_id, created_at, is_active, display_order FROM laws WHERE id = $1
 `

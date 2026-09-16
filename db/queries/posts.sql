@@ -121,8 +121,3 @@ RETURNING *;
 SELECT * FROM scene_entries
 WHERE game_id = $1
 ORDER BY row_number ASC, created_at ASC;
-
--- name: ListSceneEntriesByRow :many
-SELECT * FROM scene_entries
-WHERE game_id = $1 AND row_number = $2
-ORDER BY created_at ASC;

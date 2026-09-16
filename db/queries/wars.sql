@@ -7,9 +7,6 @@ INSERT INTO wars (game_id, origin_plan_id, started_at_row)
 VALUES ($1, $2, $3)
 RETURNING *;
 
--- name: GetWar :one
-SELECT * FROM wars WHERE id = $1;
-
 -- name: GetWarByOriginPlan :one
 SELECT * FROM wars WHERE origin_plan_id = $1;
 
@@ -65,16 +62,6 @@ ORDER BY side, player_id;
 UPDATE war_participants
 SET surrendered_at_row = $3
 WHERE war_id = $1 AND player_id = $2;
-
--- name: ListActiveWarsForPlayer :many
-SELECT w.*
-FROM wars w
-JOIN war_participants wp ON wp.war_id = w.id
-WHERE w.game_id = $1
-  AND w.status = 'active'
-  AND wp.player_id = $2
-  AND wp.surrendered_at_row IS NULL
-ORDER BY w.id;
 
 -- ── Battle costs ──────────────────────────────────────────────────────
 

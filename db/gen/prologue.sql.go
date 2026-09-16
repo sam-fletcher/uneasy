@@ -21,21 +21,6 @@ func (q *Queries) ClearAssetLinkedCards(ctx context.Context, gameID int64) error
 	return err
 }
 
-const clearTrackCommittedHearts = `-- name: ClearTrackCommittedHearts :exec
-DELETE FROM prologue_committed_hearts
-WHERE game_id = $1 AND track = $2
-`
-
-type ClearTrackCommittedHeartsParams struct {
-	GameID int64  `db:"game_id" json:"game_id"`
-	Track  string `db:"track" json:"track"`
-}
-
-func (q *Queries) ClearTrackCommittedHearts(ctx context.Context, arg ClearTrackCommittedHeartsParams) error {
-	_, err := q.db.Exec(ctx, clearTrackCommittedHearts, arg.GameID, arg.Track)
-	return err
-}
-
 const commitHeart = `-- name: CommitHeart :exec
 
 INSERT INTO prologue_committed_hearts (game_id, player_id, track, card_id)
@@ -531,41 +516,6 @@ func (q *Queries) ListPlayerCardsByGame(ctx context.Context, gameID int64) ([]Pl
 	return items, nil
 }
 
-const listPlayerCardsByPlayer = `-- name: ListPlayerCardsByPlayer :many
-SELECT id, game_id, player_id, card_suit, card_value FROM player_cards WHERE game_id = $1 AND player_id = $2
-`
-
-type ListPlayerCardsByPlayerParams struct {
-	GameID   int64 `db:"game_id" json:"game_id"`
-	PlayerID int64 `db:"player_id" json:"player_id"`
-}
-
-func (q *Queries) ListPlayerCardsByPlayer(ctx context.Context, arg ListPlayerCardsByPlayerParams) ([]PlayerCard, error) {
-	rows, err := q.db.Query(ctx, listPlayerCardsByPlayer, arg.GameID, arg.PlayerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PlayerCard{}
-	for rows.Next() {
-		var i PlayerCard
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.PlayerID,
-			&i.CardSuit,
-			&i.CardValue,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listPrologueChoiceClaimsByGame = `-- name: ListPrologueChoiceClaimsByGame :many
 SELECT sheet_type, choice_name, player_id, turn_number
 FROM prologue_choices
@@ -593,38 +543,6 @@ func (q *Queries) ListPrologueChoiceClaimsByGame(ctx context.Context, gameID int
 			&i.ChoiceName,
 			&i.PlayerID,
 			&i.TurnNumber,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPrologueChoicesByGame = `-- name: ListPrologueChoicesByGame :many
-SELECT id, game_id, player_id, turn_number, sheet_type, choice_name, created_at FROM prologue_choices WHERE game_id = $1 ORDER BY player_id, turn_number
-`
-
-func (q *Queries) ListPrologueChoicesByGame(ctx context.Context, gameID int64) ([]PrologueChoice, error) {
-	rows, err := q.db.Query(ctx, listPrologueChoicesByGame, gameID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PrologueChoice{}
-	for rows.Next() {
-		var i PrologueChoice
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.PlayerID,
-			&i.TurnNumber,
-			&i.SheetType,
-			&i.ChoiceName,
-			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
