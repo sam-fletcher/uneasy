@@ -75,8 +75,19 @@ func TestRecordPrologueChoice_EmitsLogPosts(t *testing.T) {
 	choice := gamepkg.FindPrologueChoice(body.SheetType, body.ChoiceName)
 	require.NotNil(t, choice)
 
-	_, err = recordPrologueChoice(ctx, q, manager, game.ID, player.ID, body, choice)
+	res, err := recordPrologueChoice(ctx, q, manager, game.ID, player.ID, body, choice)
 	require.NoError(t, err)
+
+	// The result carries the claimed cards' hand rows so clients can upsert
+	// them from the payload instead of refetching the whole hand list.
+	assert.EqualValues(t, 1, res.TurnNumber)
+	require.Len(t, res.Cards, 2)
+	for i, want := range body.CardAssets {
+		assert.Equal(t, player.ID, res.Cards[i].PlayerID)
+		assert.Equal(t, want.Suit, res.Cards[i].CardSuit)
+		assert.Equal(t, want.Value, res.Cards[i].CardValue)
+		assert.NotZero(t, res.Cards[i].ID)
+	}
 
 	created := prologuePostsByCode(t, q, game.ID, "asset.created")
 	assert.True(t, anyContains(created, "Lady of the Vale"), "sheet asset logged: %v", created)

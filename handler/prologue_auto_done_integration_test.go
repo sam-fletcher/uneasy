@@ -34,9 +34,9 @@ import (
 func dealCard(t *testing.T, q *dbgen.Queries, gameID, playerID int64, suit, value string) dbgen.PlayerCard {
 	t.Helper()
 	ctx := context.Background()
-	require.NoError(t, q.InsertPlayerCard(ctx, dbgen.InsertPlayerCardParams{
+	insertCardOK(t, ctx, q, dbgen.InsertPlayerCardParams{
 		GameID: gameID, PlayerID: playerID, CardSuit: suit, CardValue: value,
-	}))
+	})
 	rows, err := q.ListPlayerCardsByGame(ctx, gameID)
 	require.NoError(t, err)
 	for _, r := range rows {

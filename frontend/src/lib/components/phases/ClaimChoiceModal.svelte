@@ -32,6 +32,7 @@
 		type Asset,
 		type Player,
 	} from '$lib/api';
+	import type { PrologueClaimOutcome } from '$lib/prologue/claimApply';
 	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -49,7 +50,9 @@
 		players: Player[];
 		currentPlayerID: number | null;
 		onClose: () => void;
-		onSubmitted: () => void;
+		/** Receives the server's claim outcome so the view can apply it in
+		 *  place (see $lib/prologue/claimApply) rather than refetch. */
+		onSubmitted: (outcome: PrologueClaimOutcome) => void;
 	}
 
 	let { gameID, sheet, choice, cards, assets, players, currentPlayerID, onClose, onSubmitted }: Props =
@@ -279,7 +282,7 @@
 					value: s.value,
 					text: s.text.trim(),
 				}));
-			await choosePrologue(gameID, {
+			const outcome = await choosePrologue(gameID, {
 				sheet_type: sheet.type as PrologueSheetType,
 				choice_name: choice.name,
 				asset_text: assetText.trim(),
@@ -288,7 +291,7 @@
 				law_or_rumor_text: isLawsRumors ? lawOrRumorText.trim() : undefined,
 				card_assets,
 			});
-			onSubmitted();
+			onSubmitted(outcome);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not submit your choice.';
 		} finally {

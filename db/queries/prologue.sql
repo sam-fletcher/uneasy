@@ -33,17 +33,21 @@ WHERE game_id = $1;
 
 -- ── player_cards ─────────────────────────────────────────────────────────────
 
--- name: GetCardOwner :one
-SELECT player_id FROM player_cards
+-- name: GetPlayerCard :one
+SELECT * FROM player_cards
 WHERE game_id = $1 AND card_suit = $2 AND card_value = $3;
 
--- name: InsertPlayerCard :exec
+-- Both writes RETURN the row so the claim handler can hand the resulting
+-- hand rows to clients (WS payload + POST response) without re-reading them.
+-- name: InsertPlayerCard :one
 INSERT INTO player_cards (game_id, player_id, card_suit, card_value)
-VALUES ($1, $2, $3, $4);
+VALUES ($1, $2, $3, $4)
+RETURNING *;
 
--- name: TransferPlayerCard :exec
+-- name: TransferPlayerCard :one
 UPDATE player_cards SET player_id = $1
-WHERE game_id = $2 AND card_suit = $3 AND card_value = $4;
+WHERE game_id = $2 AND card_suit = $3 AND card_value = $4
+RETURNING *;
 
 -- name: ListPlayerCardsByGame :many
 SELECT * FROM player_cards WHERE game_id = $1 ORDER BY player_id, card_suit, card_value;

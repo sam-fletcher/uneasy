@@ -283,24 +283,30 @@ func (q *Queries) GetAssetByLinkedCard(ctx context.Context, arg GetAssetByLinked
 	return i, err
 }
 
-const getCardOwner = `-- name: GetCardOwner :one
+const getPlayerCard = `-- name: GetPlayerCard :one
 
-SELECT player_id FROM player_cards
+SELECT id, game_id, player_id, card_suit, card_value FROM player_cards
 WHERE game_id = $1 AND card_suit = $2 AND card_value = $3
 `
 
-type GetCardOwnerParams struct {
+type GetPlayerCardParams struct {
 	GameID    int64  `db:"game_id" json:"game_id"`
 	CardSuit  string `db:"card_suit" json:"card_suit"`
 	CardValue string `db:"card_value" json:"card_value"`
 }
 
 // ── player_cards ─────────────────────────────────────────────────────────────
-func (q *Queries) GetCardOwner(ctx context.Context, arg GetCardOwnerParams) (int64, error) {
-	row := q.db.QueryRow(ctx, getCardOwner, arg.GameID, arg.CardSuit, arg.CardValue)
-	var player_id int64
-	err := row.Scan(&player_id)
-	return player_id, err
+func (q *Queries) GetPlayerCard(ctx context.Context, arg GetPlayerCardParams) (PlayerCard, error) {
+	row := q.db.QueryRow(ctx, getPlayerCard, arg.GameID, arg.CardSuit, arg.CardValue)
+	var i PlayerCard
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlayerID,
+		&i.CardSuit,
+		&i.CardValue,
+	)
+	return i, err
 }
 
 const getPlayerCardByID = `-- name: GetPlayerCardByID :one
@@ -354,9 +360,10 @@ func (q *Queries) InsertExtraPeer(ctx context.Context, arg InsertExtraPeerParams
 	return i, err
 }
 
-const insertPlayerCard = `-- name: InsertPlayerCard :exec
+const insertPlayerCard = `-- name: InsertPlayerCard :one
 INSERT INTO player_cards (game_id, player_id, card_suit, card_value)
 VALUES ($1, $2, $3, $4)
+RETURNING id, game_id, player_id, card_suit, card_value
 `
 
 type InsertPlayerCardParams struct {
@@ -366,14 +373,24 @@ type InsertPlayerCardParams struct {
 	CardValue string `db:"card_value" json:"card_value"`
 }
 
-func (q *Queries) InsertPlayerCard(ctx context.Context, arg InsertPlayerCardParams) error {
-	_, err := q.db.Exec(ctx, insertPlayerCard,
+// Both writes RETURN the row so the claim handler can hand the resulting
+// hand rows to clients (WS payload + POST response) without re-reading them.
+func (q *Queries) InsertPlayerCard(ctx context.Context, arg InsertPlayerCardParams) (PlayerCard, error) {
+	row := q.db.QueryRow(ctx, insertPlayerCard,
 		arg.GameID,
 		arg.PlayerID,
 		arg.CardSuit,
 		arg.CardValue,
 	)
-	return err
+	var i PlayerCard
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlayerID,
+		&i.CardSuit,
+		&i.CardValue,
+	)
+	return i, err
 }
 
 const listClosingReadyByGame = `-- name: ListClosingReadyByGame :many
@@ -747,9 +764,10 @@ func (q *Queries) SetTrackDone(ctx context.Context, arg SetTrackDoneParams) erro
 	return err
 }
 
-const transferPlayerCard = `-- name: TransferPlayerCard :exec
+const transferPlayerCard = `-- name: TransferPlayerCard :one
 UPDATE player_cards SET player_id = $1
 WHERE game_id = $2 AND card_suit = $3 AND card_value = $4
+RETURNING id, game_id, player_id, card_suit, card_value
 `
 
 type TransferPlayerCardParams struct {
@@ -759,14 +777,22 @@ type TransferPlayerCardParams struct {
 	CardValue string `db:"card_value" json:"card_value"`
 }
 
-func (q *Queries) TransferPlayerCard(ctx context.Context, arg TransferPlayerCardParams) error {
-	_, err := q.db.Exec(ctx, transferPlayerCard,
+func (q *Queries) TransferPlayerCard(ctx context.Context, arg TransferPlayerCardParams) (PlayerCard, error) {
+	row := q.db.QueryRow(ctx, transferPlayerCard,
 		arg.PlayerID,
 		arg.GameID,
 		arg.CardSuit,
 		arg.CardValue,
 	)
-	return err
+	var i PlayerCard
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.PlayerID,
+		&i.CardSuit,
+		&i.CardValue,
+	)
+	return i, err
 }
 
 const uncommitHeart = `-- name: UncommitHeart :exec

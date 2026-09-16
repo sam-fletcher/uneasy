@@ -699,12 +699,22 @@ type WarEndedPayload struct {
 
 // ── Phase 4b payload types — Structured prologue ─────────────────────────────
 
-// PrologueChoiceClaimedPayload is for EventPrologueChoiceClaimed.
+// PrologueChoiceClaimedPayload is for EventPrologueChoiceClaimed. It is also
+// the body of the POST /prologue/choose response, so the claimer applies the
+// same facts whether the socket frame or the HTTP reply lands first.
+//
+// Cards is the player_cards rows for the claimed choice's cards *after* the
+// claim (made cards inserted, taken cards transferred), keyed by suit+value
+// on the client. It is complete for exactly those cards — a client that
+// holds the table's hand list can upsert them and needs no refetch. The
+// assets the claim created or took travel separately as asset.created /
+// asset.taken events.
 type PrologueChoiceClaimedPayload struct {
 	PlayerID   int64  `json:"player_id"`
 	SheetType  string `json:"sheet_type"`
 	ChoiceName string `json:"choice_name"`
 	TurnNumber int16  `json:"turn_number"`
+	Cards      any    `json:"cards"` // []dbgen.PlayerCard
 }
 
 // PrologueTurnAdvancedPayload is for EventPrologueTurnAdvanced. CurrentPlayerID

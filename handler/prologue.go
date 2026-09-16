@@ -408,6 +408,11 @@ func addTitleMarginalium(ctx context.Context, q *dbgen.Queries, manager *hub.Man
 		}
 	}
 
+	// Same event the marginalia endpoint emits, so every client's retinue
+	// (and the crown UI, which watches for the monarch title) updates live.
+	// It was logged but never broadcast before.
+	broadcastEvent(manager, gameID, model.EventMarginaliaAdded,
+		model.MarginaliaPayload{AssetID: mainCharID, Marginalia: m})
 	if mainChar, err := q.GetAssetByID(ctx, mainCharID); err == nil {
 		EmitMarginaliaAdded(ctx, q, manager, gameID, mainChar, m, playerID, nil)
 	}
@@ -530,10 +535,10 @@ func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// "no open marginalia slots") leaves the prologue_choice row
 		// committed, silently consuming the player's turn and shifting the
 		// turn marker to the next player.
-		var turnNumber int16
+		var claim prologueClaimResult
 		err = s.InTx(ctx, func(q *dbgen.Queries) error {
 			var txErr error
-			turnNumber, txErr = recordPrologueChoice(ctx, q, manager, gameID, player.ID, body, choice)
+			claim, txErr = recordPrologueChoice(ctx, q, manager, gameID, player.ID, body, choice)
 			return txErr
 		})
 		if err != nil {
@@ -541,12 +546,14 @@ func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		broadcastEvent(manager, gameID, model.EventPrologueChoiceClaimed, model.PrologueChoiceClaimedPayload{
+		claimed := model.PrologueChoiceClaimedPayload{
 			PlayerID:   player.ID,
 			SheetType:  body.SheetType,
 			ChoiceName: body.ChoiceName,
-			TurnNumber: turnNumber,
-		})
+			TurnNumber: claim.TurnNumber,
+			Cards:      claim.Cards,
+		}
+		broadcastEvent(manager, gameID, model.EventPrologueChoiceClaimed, claimed)
 
 		// One post-commit snapshot serves both the turn-marker broadcast and
 		// the ranking-entry check below; recomputing it twice cost 2×(1+N)
@@ -565,23 +572,43 @@ func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			}
 		}
 
+		// The response is the claim payload plus the turn marker, so the
+		// claimer's client applies the outcome from the reply alone and never
+		// refetches sheets/cards after a claim (PrologueView.onClaimSubmitted).
+		var activeID *int64
+		if terr == nil && turns.active != nil {
+			id := turns.active.ID
+			activeID = &id
+		}
 		respond(w, http.StatusOK, map[string]any{
-			"sheet_type":  body.SheetType,
-			"choice_name": body.ChoiceName,
-			"turn_number": turnNumber,
+			"player_id":         claimed.PlayerID,
+			"sheet_type":        claimed.SheetType,
+			"choice_name":       claimed.ChoiceName,
+			"turn_number":       claimed.TurnNumber,
+			"cards":             claimed.Cards,
+			"current_player_id": activeID,
 		})
 	}
 }
 
+// prologueClaimResult is what recordPrologueChoice hands back for the
+// broadcast and the HTTP response: the turn just taken and the hand rows for
+// the choice's cards after the claim (see PrologueChoiceClaimedPayload).
+type prologueClaimResult struct {
+	TurnNumber int16
+	Cards      []dbgen.PlayerCard
+}
+
 func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Manager,
 	gameID, playerID int64, body *chooseRequestBody, choice *gamepkg.PrologueChoice,
-) (int16, error) {
-	var turnNumber int16
+) (prologueClaimResult, error) {
+	res := prologueClaimResult{Cards: []dbgen.PlayerCard{}}
 	turns, err := validatePlayerCanChoose(ctx, q, gameID, playerID, body.SheetType, body.ChoiceName)
 	if err != nil {
-		return turnNumber, err
+		return res, err
 	}
-	turnNumber = int16(turns.takenBy(playerID)) + 1
+	res.TurnNumber = int16(turns.takenBy(playerID)) + 1
+	turnNumber := res.TurnNumber
 	// The whole roster is in hand now; the log emitters below name the
 	// claimer (and, on a take, the previous owner) and must not pay a round
 	// trip each to look those names up again.
@@ -594,7 +621,7 @@ func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 		SheetType:  body.SheetType,
 		ChoiceName: body.ChoiceName,
 	}); err != nil {
-		return turnNumber, httpErr(http.StatusInternalServerError, "could not record choice")
+		return res, httpErr(http.StatusInternalServerError, "could not record choice")
 	}
 
 	assetType := gamepkg.AssetTypeForSheet(body.SheetType)
@@ -606,8 +633,13 @@ func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 		Name:      body.AssetText,
 	}, body.AssetMarginalia)
 	if err != nil {
-		return turnNumber, httpErr(http.StatusInternalServerError, "could not create choice asset")
+		return res, httpErr(http.StatusInternalServerError, "could not create choice asset")
 	}
+	// The sheet asset reaches every client over the socket, like the card
+	// assets below do. It used to be logged but never broadcast, so other
+	// players' retinues only learned of it on their next full asset fetch.
+	broadcastEvent(manager, gameID, model.EventAssetCreated,
+		model.AssetPayload{Asset: assetWithMarginalia{Asset: choiceAsset, Marginalia: choiceMarginalia}})
 	// Prologue posts predate any public-record row, so they anchor a nil row
 	// (scene_posts.row_number is nullable for exactly this case).
 	EmitAssetCreated(ctx, q, manager, gameID, choiceAsset, choiceMarginalia, nil)
@@ -617,33 +649,35 @@ func recordPrologueChoice(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 		if err := addTitleMarginalium(
 			ctx, q, manager, gameID, playerID, body.MarginaliumText, choice.ID,
 		); err != nil {
-			return turnNumber, err
+			return res, err
 		}
 	case gamepkg.PrologueSheetLawsRumors:
 		if err := addLawOrRumor(
 			ctx, q, manager, gameID, playerID, body.ChoiceName, body.LawOrRumorText,
 		); err != nil {
-			return turnNumber, err
+			return res, err
 		}
 	}
 
 	cardTextLookup := buildCardTextLookup(body.CardAssets)
 	for _, card := range choice.Cards {
 		key := strings.ToUpper(string(card.Suit)) + "|" + strings.ToUpper(card.Value)
-		if err := processPrologueCardClaim(ctx, q, manager,
+		row, err := processPrologueCardClaim(ctx, q, manager,
 			gameID, playerID, card, cardTextLookup[key],
-		); err != nil {
-			return turnNumber, httpErr(http.StatusInternalServerError, err.Error())
+		)
+		if err != nil {
+			return res, httpErr(http.StatusInternalServerError, err.Error())
 		}
+		res.Cards = append(res.Cards, row)
 	}
-	return turnNumber, nil
+	return res, nil
 }
 
 // processPrologueCardClaim implements make-or-take. If no asset is currently
 // linked to the card, create one of the suit's natural type for the
 // claimer using makeText as its name; otherwise transfer the existing
 // asset (and the player_cards row) to the claimer (makeText is unused for
-// takes).
+// takes). Returns the card's player_cards row as it stands after the claim.
 func processPrologueCardClaim(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -651,9 +685,9 @@ func processPrologueCardClaim(
 	gameID, claimerID int64,
 	card gamepkg.Card,
 	makeText string,
-) error {
+) (dbgen.PlayerCard, error) {
 	suit := string(card.Suit)
-	existingOwner, err := q.GetCardOwner(ctx, dbgen.GetCardOwnerParams{
+	existing, err := q.GetPlayerCard(ctx, dbgen.GetPlayerCardParams{
 		GameID: gameID, CardSuit: suit, CardValue: card.Value,
 	})
 	if err == nil {
@@ -662,31 +696,30 @@ func processPrologueCardClaim(
 			GameID: gameID, LinkedCardSuit: &suit, LinkedCardValue: &card.Value,
 		})
 		if errAsset != nil {
-			return fmt.Errorf("linked asset missing: %w", errAsset)
+			return dbgen.PlayerCard{}, fmt.Errorf("linked asset missing: %w", errAsset)
 		}
 		oldOwner := asset.OwnerID
 		if oldOwner == claimerID {
-			return nil // already mine; rare but possible if same card listed twice
+			return existing, nil // already mine; rare but possible if same card listed twice
 		}
 		updated, err := takeAssetEffect(ctx, q, manager, gameID, asset.ID, oldOwner, claimerID)
 		if err != nil {
-			return fmt.Errorf("transfer asset: %w", err)
+			return dbgen.PlayerCard{}, fmt.Errorf("transfer asset: %w", err)
 		}
-		err = q.TransferPlayerCard(ctx, dbgen.TransferPlayerCardParams{
+		moved, err := q.TransferPlayerCard(ctx, dbgen.TransferPlayerCardParams{
 			PlayerID: claimerID, GameID: gameID, CardSuit: suit, CardValue: card.Value,
 		})
 		if err != nil {
-			return fmt.Errorf("transfer card: %w", err)
+			return dbgen.PlayerCard{}, fmt.Errorf("transfer card: %w", err)
 		}
 		EmitAssetTaken(ctx, q, manager, gameID, updated, oldOwner, claimerID, nil)
-		_ = existingOwner
-		return nil
+		return moved, nil
 	}
 
 	// First claim — create a new asset linked to this card. Player-supplied
 	// text is required.
 	if strings.TrimSpace(makeText) == "" {
-		return fmt.Errorf("text required for new card asset %s", cardLabel(card))
+		return dbgen.PlayerCard{}, fmt.Errorf("text required for new card asset %s", cardLabel(card))
 	}
 	asset, err := q.CreateAssetWithLinkedCard(ctx, dbgen.CreateAssetWithLinkedCardParams{
 		GameID:          gameID,
@@ -698,13 +731,13 @@ func processPrologueCardClaim(
 		LinkedCardValue: &card.Value,
 	})
 	if err != nil {
-		return fmt.Errorf("create card asset: %w", err)
+		return dbgen.PlayerCard{}, fmt.Errorf("create card asset: %w", err)
 	}
-	err = q.InsertPlayerCard(ctx, dbgen.InsertPlayerCardParams{
+	inserted, err := q.InsertPlayerCard(ctx, dbgen.InsertPlayerCardParams{
 		GameID: gameID, PlayerID: claimerID, CardSuit: suit, CardValue: card.Value,
 	})
 	if err != nil {
-		return fmt.Errorf("record card hand: %w", err)
+		return dbgen.PlayerCard{}, fmt.Errorf("record card hand: %w", err)
 	}
 	broadcastEvent(
 		manager,
@@ -713,7 +746,7 @@ func processPrologueCardClaim(
 		model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: []dbgen.Marginalium{}}},
 	)
 	EmitAssetCreated(ctx, q, manager, gameID, asset, nil, nil)
-	return nil
+	return inserted, nil
 }
 
 // cardLabel returns a short display name for an asset created from a card

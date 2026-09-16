@@ -196,3 +196,12 @@ func createPlanOnRow(
 	require.NoError(t, err)
 	return p
 }
+
+// insertCardOK inserts a player_cards row and fails the test on error.
+// InsertPlayerCard returns the row (the claim path hands rows to clients),
+// which tests seeding hands don't need.
+func insertCardOK(t *testing.T, ctx context.Context, q *dbgen.Queries, params dbgen.InsertPlayerCardParams) {
+	t.Helper()
+	_, err := q.InsertPlayerCard(ctx, params)
+	require.NoError(t, err)
+}

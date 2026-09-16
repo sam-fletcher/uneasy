@@ -77,6 +77,12 @@
 		type CardHoldState,
 	} from '$lib/prologue/choosing';
 	import { notReadyPlayerIDs } from '$lib/prologue/closing';
+	import {
+		applyCards,
+		applyClaim,
+		isApplicableClaim,
+		type PrologueClaimOutcome,
+	} from '$lib/prologue/claimApply';
 	import { isNeedlesslyAtRisk } from '$lib/assetRisk';
 	import type { WaitingOnState, Waitee } from '$lib/waitingOn';
 	import { playerColorByID } from '$lib/playerColor';
@@ -176,6 +182,44 @@
 	function onStepChanged() { reload(); }
 
 	/**
+	 * A claim, applied in place instead of refetched — for every client.
+	 *
+	 * The payload (and the POST reply, which shares its shape) carries the
+	 * claim row and the hand rows for the choice's cards after the claim; the
+	 * assets it made or took arrive on their own asset.* events, which the
+	 * table page already folds into `assets`. Returns false when the payload
+	 * predates `cards`, and the caller falls back to reload().
+	 *
+	 * Re-application is harmless: the claimer sees this twice (socket echo,
+	 * then HTTP reply, in either order) and both helpers upsert.
+	 */
+	function applyClaimOutcome(d: unknown): boolean {
+		if (!isApplicableClaim(d)) return false;
+		claims = applyClaim(claims, {
+			sheet_type: d.sheet_type,
+			choice_name: d.choice_name,
+			player_id: d.player_id,
+			turn_number: d.turn_number,
+		});
+		cards = applyCards(cards, d.cards);
+		if (d.current_player_id !== undefined) activePlayerID = d.current_player_id;
+		return true;
+	}
+
+	function onChoiceClaimed(e: Event) {
+		if (!applyClaimOutcome((e as CustomEvent<unknown>).detail)) reload();
+	}
+
+	function onTurnAdvanced(e: Event) {
+		const d = (e as CustomEvent<{ current_player_id?: number | null }>).detail;
+		if (!d || d.current_player_id === undefined) {
+			reload();
+			return;
+		}
+		activePlayerID = d.current_player_id;
+	}
+
+	/**
 	 * Rebuild the CommittedHeart rows for one player+track from a card-id list.
 	 *
 	 * The WS payload carries ids only, but every player's cards are already on
@@ -262,8 +306,8 @@
 	}
 
 	onMount(() => {
-		window.addEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
-		window.addEventListener('uneasy:prologue.turn_advanced', onClaimEvent);
+		window.addEventListener('uneasy:prologue.choice_claimed', onChoiceClaimed);
+		window.addEventListener('uneasy:prologue.turn_advanced', onTurnAdvanced);
 		window.addEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
 		window.addEventListener('uneasy:prologue.track_ranked', onStepChanged);
 		window.addEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
@@ -273,8 +317,8 @@
 		window.addEventListener('uneasy:prologue.closing_ready_changed', onClaimEvent);
 	});
 	onDestroy(() => {
-		window.removeEventListener('uneasy:prologue.choice_claimed', onClaimEvent);
-		window.removeEventListener('uneasy:prologue.turn_advanced', onClaimEvent);
+		window.removeEventListener('uneasy:prologue.choice_claimed', onChoiceClaimed);
+		window.removeEventListener('uneasy:prologue.turn_advanced', onTurnAdvanced);
 		window.removeEventListener('uneasy:prologue.ranking_step_changed', onStepChanged);
 		window.removeEventListener('uneasy:prologue.track_ranked', onStepChanged);
 		window.removeEventListener('uneasy:prologue.set_asides_placed', onStepChanged);
@@ -434,9 +478,17 @@
 	// ── Choose a box ─────────────────────────────────────────────────────────
 	let activeClaim = $state<{ sheet: PrologueSheet; choice: PrologueSheet['choices'][number] } | null>(null);
 
+	/** describeClaim(activeClaim.choice) as of the moment the modal opened.
+	 *  Claiming is turn-gated, so nothing can change the hands between open
+	 *  and submit — and by submit time the socket echo has usually already
+	 *  applied the claim, which would make a late describeClaim count the
+	 *  player's own new cards as "nothing to take". */
+	let pendingSummary: JustClaimed | null = null;
+
 	function openClaimModal(sheet: PrologueSheet, choice: PrologueSheet['choices'][number]) {
 		if (activeClaim) return;
 		activeClaim = { sheet, choice };
+		pendingSummary = describeClaim(choice);
 	}
 
 	// ── The motion beat (Round 2 §3c) ────────────────────────────────────────
@@ -495,28 +547,35 @@
 		setTimeout(() => el.classList.remove('jump-pulse'), 800);
 	}
 
-	async function onClaimSubmitted() {
+	async function onClaimSubmitted(outcome: PrologueClaimOutcome) {
 		const claimed = activeClaim;
 		activeClaim = null;
 		actionError = '';
-		// Snapshot the outcome now, against pre-reload data (see describeClaim).
-		const summary = claimed ? describeClaim(claimed.choice) : null;
-		try {
-			const [, assetData] = await Promise.all([reload(), listAssets(gameID)]);
-			assets = assetData.assets;
-		} catch (e) {
-			// actionError, not loadError, for two reasons. The claim itself
-			// already succeeded — this is only the follow-up refresh — so the
-			// message belongs with the action. And reload() runs concurrently
-			// here and clears loadError on its own success, which could land
-			// after this line and silently erase it.
-			actionError = e instanceof Error ? e.message : 'Your claim went through, but the screen may be out of date.';
+		const summary = pendingSummary;
+		pendingSummary = null;
+		// The reply carries the claim; apply it and fetch nothing. (One tap used
+		// to cost the POST plus three GETs here plus two more reloads for the
+		// socket echoes — ten requests, each ~400ms in production.) Assets came
+		// in on asset.* events before the reply did. Only a server that
+		// predates `cards` in the reply sends us down the old refetch path.
+		if (!applyClaimOutcome(outcome)) {
+			try {
+				const [, assetData] = await Promise.all([reload(), listAssets(gameID)]);
+				assets = assetData.assets;
+			} catch (e) {
+				// actionError, not loadError, for two reasons. The claim itself
+				// already succeeded — this is only the follow-up refresh — so the
+				// message belongs with the action. And reload() runs concurrently
+				// here and clears loadError on its own success, which could land
+				// after this line and silently erase it.
+				actionError = e instanceof Error ? e.message : 'Your claim went through, but the screen may be out of date.';
+			}
 		}
 		if (!claimed || !summary) return;
-		// After the reload, deliberately: the pip's spend animation runs on the
-		// pip that has just *become* spent, and setting this first would start
-		// it on the last still-solid one and then jump a slot when the fresh
-		// claim count arrived.
+		// After the claim is applied, deliberately: the pip's spend animation
+		// runs on the pip that has just *become* spent, and setting this first
+		// would start it on the last still-solid one and then jump a slot when
+		// the fresh claim count arrived.
 		if (justClaimedTimer) clearTimeout(justClaimedTimer);
 		justClaimed = summary;
 		justClaimedTimer = setTimeout(() => {

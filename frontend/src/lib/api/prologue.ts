@@ -1,4 +1,5 @@
 import { apiFetch } from './client';
+import type { PrologueClaimOutcome } from '$lib/prologue/claimApply';
 import type {
 	PrologueSheet, PrologueClaim, PlayerCardRow, PrologueSheetType, AssetType,
 	PrologueRankingStep, Asset,
@@ -38,7 +39,7 @@ export function choosePrologue(
 		law_or_rumor_text?: string;
 		card_assets: PrologueCardAssetText[];
 	}
-): Promise<{ sheet_type: PrologueSheetType; choice_name: string; turn_number: number }> {
+): Promise<PrologueClaimOutcome> {
 	return apiFetch(`/tables/${gameID}/prologue/choose`, {
 		method: 'POST',
 		body: JSON.stringify(body)
