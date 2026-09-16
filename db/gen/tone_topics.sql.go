@@ -66,21 +66,23 @@ func (q *Queries) ListToneTopics(ctx context.Context, gameID int64) ([]ToneTopic
 	return items, nil
 }
 
-const seedToneTopic = `-- name: SeedToneTopic :exec
+const seedToneTopics = `-- name: SeedToneTopics :exec
 INSERT INTO tone_topics (game_id, topic, status)
-VALUES ($1, $2, $3)
+SELECT $1::BIGINT, unnest($2::TEXT[]), $3::TEXT
 ON CONFLICT (game_id, topic) DO NOTHING
 `
 
-type SeedToneTopicParams struct {
-	GameID int64                 `db:"game_id" json:"game_id"`
-	Topic  string                `db:"topic" json:"topic"`
-	Status model.ToneTopicStatus `db:"status" json:"status"`
+type SeedToneTopicsParams struct {
+	GameID int64    `db:"game_id" json:"game_id"`
+	Topics []string `db:"topics" json:"topics"`
+	Status string   `db:"status" json:"status"`
 }
 
-// Used for bulk-seeding default topics; silently skips duplicates.
-func (q *Queries) SeedToneTopic(ctx context.Context, arg SeedToneTopicParams) error {
-	_, err := q.db.Exec(ctx, seedToneTopic, arg.GameID, arg.Topic, arg.Status)
+// Seeds every default topic for a game in one statement; silently skips
+// duplicates. One trip instead of one per topic (there are ~45), which was
+// the bulk of table creation's cost against a remote database.
+func (q *Queries) SeedToneTopics(ctx context.Context, arg SeedToneTopicsParams) error {
+	_, err := q.db.Exec(ctx, seedToneTopics, arg.GameID, arg.Topics, arg.Status)
 	return err
 }
 

@@ -212,7 +212,7 @@ npm ls <package-name>   # e.g. npm ls axios
 | `PORT`         | `8080`                                               | HTTP listen port               |
 | `DEV_MODE`     | `false`                                              | Proxy frontend to `VITE_URL`   |
 | `VITE_URL`     | `http://localhost:5173`                              | Vite dev server address        |
-| `UNEASY_DEV`   | unset                                                | If `1`, mounts `/api/dev/*` shortcuts (see below) and Go profiling at `/debug/pprof/*` |
+| `UNEASY_DEV`   | unset                                                | If `1`, mounts `/api/dev/*` shortcuts (see below) and Go profiling at `/debug/pprof/*`, and (like `DEV_MODE`) logs one `db trace` line per API request — `queries=N trips=T db_ms=X`, where `trips` is the serial chain of round trips, the number that decides latency against the remote production database (`middleware/querytrace.go`) |
 | `PUBLIC_ORIGIN`| unset                                                | Public URL the server is reachable at, e.g. `https://uneasy.example`. Unset = dev behavior (cookies without `Secure`, no HSTS, WebSocket accepts any Origin). When set with an `https://` scheme: session cookies get `Secure`, responses get HSTS, and the WebSocket handshake only accepts that host as Origin. |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | unset | Web-push signing keypair (adr/NOTIFICATIONS_PLAN.md). Unset in dev: turn notifications are logged to stdout instead of sent. Generate once with the one-off snippet below. |
 | `VAPID_SUBJECT`  | unset | Contact info sent to the push service (a `mailto:` address or an `https://` URL), e.g. `mailto:you@example.com`. |

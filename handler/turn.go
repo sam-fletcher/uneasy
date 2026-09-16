@@ -51,13 +51,8 @@ const (
 // requireFocusPlayer validates that the caller is the current focus player.
 // Returns the game and player, or writes an error response.
 func requireFocusPlayer(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (*dbgen.Game, *dbgen.Player, bool) {
-	gameID, player, ok := parseGamePlayer(w, r, q)
+	game, player, ok := parseGamePlayerGame(w, r, q)
 	if !ok {
-		return nil, nil, false
-	}
-	game, err := q.GetGameByID(r.Context(), gameID)
-	if err != nil {
-		respondErr(w, http.StatusNotFound, "table not found")
 		return nil, nil, false
 	}
 	if game.FocusPlayerID == nil || *game.FocusPlayerID != player.ID {
@@ -274,6 +269,36 @@ func EndScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
+// validateRefreshTargets checks that every asset in ids exists, belongs to
+// playerID and is currently leveraged, in one batched read. Returns the
+// error to send, or nil when all may be refreshed.
+func validateRefreshTargets(ctx context.Context, q *dbgen.Queries, playerID int64, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := q.ListAssetsByIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("could not load assets: %w", err)
+	}
+	byID := make(map[int64]dbgen.Asset, len(rows))
+	for _, a := range rows {
+		byID[a.ID] = a
+	}
+	for _, id := range ids {
+		asset, found := byID[id]
+		if !found {
+			return httpErr(http.StatusBadRequest, "asset not found")
+		}
+		if asset.OwnerID != playerID {
+			return httpErr(http.StatusForbidden, "you can only refresh your own assets")
+		}
+		if !asset.IsLeveraged {
+			return httpErr(http.StatusBadRequest, fmt.Sprintf("asset %d is not leveraged", id))
+		}
+	}
+	return nil
+}
+
 // RefreshAssets handles POST /api/tables/{id}/refresh-assets.
 //
 // The focus player refreshes up to current_row of their leveraged assets.
@@ -324,36 +349,29 @@ func RefreshAssets(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		// Validate: all assets must be owned by the caller and currently leveraged.
-		for _, id := range body.AssetIDs {
-			asset, err := s.Q.GetAssetByID(ctx, id)
+		// Validate: all assets must be owned by the caller and currently
+		// leveraged. One batched read for the lot (was one lookup per asset).
+		if hErr := validateRefreshTargets(ctx, s.Q, player.ID, body.AssetIDs); hErr != nil {
+			respondHTTPErr(w, r, hErr)
+			return
+		}
+		// One UPDATE ... RETURNING for every asset (was an UPDATE plus a
+		// re-read per asset). An empty list refreshes nothing, and skips the
+		// statement.
+		var refreshed []dbgen.Asset
+		if len(body.AssetIDs) > 0 {
+			var err error
+			refreshed, err = s.Q.RefreshAssetsByIDs(ctx, body.AssetIDs)
 			if err != nil {
-				respondErr(w, http.StatusBadRequest, "asset not found")
-				return
-			}
-			if asset.OwnerID != player.ID {
-				respondErr(w, http.StatusForbidden, "you can only refresh your own assets")
-				return
-			}
-			if !asset.IsLeveraged {
-				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is not leveraged", id))
+				respondInternalErr(w, r, "could not refresh assets", err)
 				return
 			}
 		}
 
 		h, hasHub := manager.Get(game.ID)
-
-		refreshed := make([]dbgen.Asset, 0, len(body.AssetIDs))
-		for _, id := range body.AssetIDs {
-			if err := s.Q.RefreshPlayerAssets(ctx, id); err != nil {
-				respondInternalErr(w, r, "could not refresh asset", err)
-				return
-			}
-			if hasHub {
-				h.BroadcastEvent(model.EventAssetRefreshed, model.AssetIDPayload{AssetID: id})
-			}
-			if asset, err := s.Q.GetAssetByID(ctx, id); err == nil {
-				refreshed = append(refreshed, asset)
+		if hasHub {
+			for _, a := range refreshed {
+				h.BroadcastEvent(model.EventAssetRefreshed, model.AssetIDPayload{AssetID: a.ID})
 			}
 		}
 		if len(refreshed) > 0 {

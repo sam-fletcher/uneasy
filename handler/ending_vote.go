@@ -299,13 +299,8 @@ func loadEndingVoteState(ctx context.Context, q *dbgen.Queries, game *dbgen.Game
 // "who hasn't" half regardless.
 func GetEndingVote(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, s.Q)
+		game, _, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
-			return
-		}
-		game, err := s.Q.GetGameByID(r.Context(), gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
 			return
 		}
 		state, err := loadEndingVoteState(r.Context(), s.Q, &game)
@@ -329,15 +324,11 @@ func GetEndingVote(s *db.Store) http.HandlerFunc {
 // row advance inline.
 func CastEndingVote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		game, player, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
 			return
 		}
-		game, err := s.Q.GetGameByID(r.Context(), gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
+		gameID := game.ID
 		if !game.EndingVoteOpen {
 			respondErr(w, http.StatusConflict,
 				"the table is not voting on how the game ends right now")

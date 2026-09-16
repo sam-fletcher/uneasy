@@ -118,13 +118,21 @@ func validatePlanPreparation(
 	// until it settles — otherwise the paused turn buys two plans. The row state
 	// is await_delay_reveal, so the grid isn't offering one; this closes the
 	// direct-API path, the same way the ending-vote guard above does.
-	if plans, pErr := q.ListPlansByGame(ctx, game.ID); pErr == nil {
-		if dr := openDelayRevealPlanFor(plans, player.ID); dr != nil {
-			return preparePlanValidation{
-				Status: http.StatusConflict,
-				ErrMsg: "your " + planLabel(dr.PlanType) + " is still waiting on its delay reveal — " +
-					"you cannot prepare another plan until it settles",
-			}
+	//
+	// The board (tokens, rankings, plans in one round trip) also serves the
+	// lockout, eligibility and overflow checks below.
+	board, err := loadEligibilityBoard(ctx, q, game.ID)
+	if err != nil {
+		return preparePlanValidation{
+			Status: http.StatusInternalServerError,
+			ErrMsg: "could not check eligibility",
+		}
+	}
+	if dr := openDelayRevealPlanFor(board.plans, player.ID); dr != nil {
+		return preparePlanValidation{
+			Status: http.StatusConflict,
+			ErrMsg: "your " + planLabel(dr.PlanType) + " is still waiting on its delay reveal — " +
+				"you cannot prepare another plan until it settles",
 		}
 	}
 
@@ -152,8 +160,7 @@ func validatePlanPreparation(
 	// Check esteem lockout (SP mar option b "censured") before eligibility.
 	// Any esteem-category plan is blocked while a lockout is active.
 	if meta.Category == model.CategoryEsteem {
-		locked, lockErr := hasEsteemLockout(ctx, q, game.ID, player.ID)
-		if lockErr == nil && locked {
+		if board.hasEsteemLockout(player.ID) {
 			return preparePlanValidation{
 				Status: http.StatusForbidden,
 				ErrMsg: "esteem lockout: your next plan must be a non-esteem plan (Spread Propaganda mar censured)",
@@ -162,14 +169,7 @@ func validatePlanPreparation(
 	}
 
 	// Check eligibility.
-	eligible, reason, err := checkPlanEligible(
-		ctx, q, game.ID, player.ID, game.CurrentRow, planType, meta.Category)
-	if err != nil {
-		return preparePlanValidation{
-			Status: http.StatusInternalServerError,
-			ErrMsg: "could not check eligibility",
-		}
-	}
+	eligible, reason := board.checkPlanEligible(player.ID, game.CurrentRow, planType, meta.Category)
 	if !eligible {
 		return preparePlanValidation{
 			Status: http.StatusForbidden,
@@ -233,13 +233,7 @@ func validatePlanPreparation(
 	// the only way to guarantee that.
 	var finaleBonus bool
 	if boundedRow != nil && *boundedRow > publicRecordRowCount {
-		outcome, oErr := planOverflowOutcome(ctx, q, game, player.ID, targetRow == nil)
-		if oErr != nil {
-			return preparePlanValidation{
-				Status: http.StatusInternalServerError,
-				ErrMsg: "could not check the ending mode",
-			}
-		}
+		outcome := planOverflowOutcome(board, game, player.ID, targetRow == nil)
 		switch {
 		case outcome.ModeUnsettled:
 			return preparePlanValidation{

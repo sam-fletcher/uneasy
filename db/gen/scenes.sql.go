@@ -353,6 +353,30 @@ func (q *Queries) InsertScenePeer(ctx context.Context, arg InsertScenePeerParams
 	return err
 }
 
+const insertScenePeers = `-- name: InsertScenePeers :exec
+INSERT INTO scene_peers (scene_id, peer_asset_id, controller_player_id)
+SELECT $1::BIGINT,
+       ($2::BIGINT[])[i],
+       NULLIF(($3::BIGINT[])[i], 0)
+FROM generate_subscripts($2::BIGINT[], 1) AS i
+`
+
+type InsertScenePeersParams struct {
+	SceneID             int64   `db:"scene_id" json:"scene_id"`
+	PeerAssetIds        []int64 `db:"peer_asset_ids" json:"peer_asset_ids"`
+	ControllerPlayerIds []int64 `db:"controller_player_ids" json:"controller_player_ids"`
+}
+
+// Batched InsertScenePeer for scene creation: every present peer in one
+// statement. The two arrays are parallel; a controller of 0 means unclaimed
+// (NULL) — player ids start at 1, so 0 is free to mean "none".
+// (Indexed by subscript rather than a two-array unnest: sqlc's analyzer
+// only knows the one-array form.)
+func (q *Queries) InsertScenePeers(ctx context.Context, arg InsertScenePeersParams) error {
+	_, err := q.db.Exec(ctx, insertScenePeers, arg.SceneID, arg.PeerAssetIds, arg.ControllerPlayerIds)
+	return err
+}
+
 const listScenePeers = `-- name: ListScenePeers :many
 SELECT scene_id, peer_asset_id, controller_player_id FROM scene_peers WHERE scene_id = $1
 `

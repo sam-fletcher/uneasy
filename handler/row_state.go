@@ -71,8 +71,18 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 		return model.RowState{Kind: model.RowStatePhaseNotMainEvent}, nil
 	}
 
+	// Every gate's first read, in one round trip. The gates below still run
+	// in precedence order and still short-circuit; they just read from the
+	// snapshot instead of each paying its own trip. Only a gate that FIRES
+	// (an open roll, a war with costs owed, a plan mid-resolution) reads
+	// further, and those are the rare states.
+	reads, err := loadRowStateReads(ctx, q, &game)
+	if err != nil {
+		return model.RowState{}, err
+	}
+
 	// 2. Open interactive dice roll — top-of-chain gate, above everything else.
-	if rs, ok, gErr := diceRollGate(ctx, q, gameID); gErr != nil {
+	if rs, ok, gErr := diceRollGate(ctx, q, reads.openRoll); gErr != nil {
 		return model.RowState{}, gErr
 	} else if ok {
 		return rs, nil
@@ -88,16 +98,13 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 
 	// 3/4. War-conflict gates (open surrender claim, then outstanding battle
 	// costs) — the highest-priority unresolved blocks, above plan resolution.
-	if rs, ok, gErr := warConflictGate(ctx, q, gameID, game.CurrentRow); gErr != nil {
+	if rs, ok, gErr := warConflictGate(ctx, q, gameID, game.CurrentRow, reads.claims, reads.wars); gErr != nil {
 		return model.RowState{}, gErr
 	} else if ok {
 		return rs, nil
 	}
 
-	plans, err := q.ListPlansByGame(ctx, gameID)
-	if err != nil {
-		return model.RowState{}, err
-	}
+	plans := reads.plans
 
 	// 4. Plan currently resolving.
 	if rs, ok := planResolvingGate(ctx, q, plans); ok {
@@ -111,9 +118,7 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 	// (a resolution that *caused* the loss finishes first, including its
 	// post-commit sub-flows) but above the follow-scene/pending/turn states, so
 	// the obligation surfaces before any new turn or plan kickoff.
-	if rs, ok, gErr := mainCharacterChoiceGate(ctx, q, gameID); gErr != nil {
-		return model.RowState{}, gErr
-	} else if ok {
+	if rs, ok := mainCharacterChoiceGate(reads.missingMainCharacter); ok {
 		return rs, nil
 	}
 
@@ -127,9 +132,7 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 	// while the resolved plan's follow-scene turn is still in progress (its
 	// setter still holds focus); once they pass, it falls through to the
 	// pending-plan step so the next plan resolves for the new focus player.
-	if rs, ok, err := followSceneGate(ctx, q, &game); err != nil {
-		return model.RowState{}, err
-	} else if ok {
+	if rs, ok := followSceneGate(&game, reads.recentResolved, reads.rowScenes); ok {
 		return rs, nil
 	}
 
@@ -171,17 +174,10 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 		// so clients render the most permissive empty state.
 		return model.RowState{Kind: model.RowStateSceneSetting}, nil
 	}
-	turnScene, err := q.GetTurnScene(ctx, dbgen.GetTurnSceneParams{
-		GameID:        gameID,
-		RowNumber:     game.CurrentRow,
-		FocusPlayerID: *game.FocusPlayerID,
-	})
-	if err != nil {
-		if isNoRows(err) {
-			// 9. No turn-scene yet for this row & focus player.
-			return model.RowState{Kind: model.RowStateSceneSetting, ActingPlayerIDs: focusActingIDs(&game)}, nil
-		}
-		return model.RowState{}, err
+	turnScene := reads.turnScene
+	if turnScene == nil {
+		// 9. No turn-scene yet for this row & focus player.
+		return model.RowState{Kind: model.RowStateSceneSetting, ActingPlayerIDs: focusActingIDs(&game)}, nil
 	}
 	if !turnScene.EndedAt.Valid {
 		// 7. Turn-scene started and still running.
@@ -194,6 +190,70 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 	}
 	// 8. Turn-scene ended → focus player is in post-scene action step.
 	return model.RowState{Kind: model.RowStatePostSceneAction, ActingPlayerIDs: focusActingIDs(&game)}, nil
+}
+
+// rowStateReads is the snapshot computeRowStateForGame's gates read from:
+// the first read of every gate, fetched together (see loadRowStateReads).
+type rowStateReads struct {
+	openRoll             *dbgen.DiceRoll // nil: no open interactive roll
+	claims               []dbgen.WarSurrenderClaim
+	wars                 []dbgen.War
+	plans                []dbgen.Plan
+	missingMainCharacter []int64
+	recentResolved       *dbgen.Plan // nil: no plan has resolved on this row
+	rowScenes            []dbgen.Scene
+	turnScene            *dbgen.Scene // nil: no focus player, or no turn scene yet
+}
+
+// loadRowStateReads fetches the gates' reads in one fan-out (concurrent on a
+// pool-backed q, inline on a transaction's — see fanOut). Before this the
+// chain was eight to ten serial statements on every mutation, since
+// broadcastRowState runs after each one; now it is the game row plus one
+// round trip in the common case.
+func loadRowStateReads(ctx context.Context, q *dbgen.Queries, game *dbgen.Game) (*rowStateReads, error) {
+	out := &rowStateReads{}
+	gameID, row := game.ID, game.CurrentRow
+	var errs [7]error
+	run, wait := fanOut(q)
+	run(func() {
+		roll, err := q.GetOpenRollByGame(ctx, gameID)
+		switch {
+		case err == nil:
+			out.openRoll = &roll
+		case !isNoRows(err):
+			errs[0] = err
+		}
+	})
+	run(func() { out.claims, errs[1] = q.ListOpenSurrenderClaimsByGame(ctx, gameID) })
+	run(func() { out.wars, errs[2] = q.ListActiveWarsByGame(ctx, gameID) })
+	run(func() { out.plans, errs[3] = q.ListPlansByGame(ctx, gameID) })
+	run(func() { out.missingMainCharacter, errs[4] = q.ListPlayersMissingMainCharacter(ctx, gameID) })
+	run(func() {
+		recent, err := q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
+			GameID: gameID, RowNumber: new(row),
+		})
+		switch {
+		case err == nil:
+			out.recentResolved = &recent
+		case !isNoRows(err):
+			errs[5] = err
+		}
+	})
+	run(func() {
+		out.rowScenes, errs[6] = q.ListScenesForRow(ctx, dbgen.ListScenesForRowParams{GameID: gameID, RowNumber: row})
+	})
+	wait()
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
+	// The turn scene is the focus player's turn-kind scene on this row; both
+	// are in rowScenes already, so no eighth read.
+	if game.FocusPlayerID != nil {
+		out.turnScene = findTurnScene(out.rowScenes, *game.FocusPlayerID)
+	}
+	return out, nil
 }
 
 // focusActingIDs returns the focus player as a one-element ActingPlayerIDs
@@ -223,6 +283,20 @@ func findFollowScene(scenes []dbgen.Scene, planID int64) *dbgen.Scene {
 	return nil
 }
 
+// findTurnScene is GetTurnScene over the row's scenes: the focus player's
+// turn-kind scene with no resolved_plan_id (the one they set at the start of
+// their turn), ended or not. ListScenesForRow orders by started_at, so the
+// first match is the same row LIMIT 1 returned.
+func findTurnScene(scenes []dbgen.Scene, focusPlayerID int64) *dbgen.Scene {
+	for i := range scenes {
+		sc := &scenes[i]
+		if sc.FocusPlayerID == focusPlayerID && sc.Kind == model.SceneKindTurn && sc.ResolvedPlanID == nil {
+			return sc
+		}
+	}
+	return nil
+}
+
 // followSceneGate reports the focus player's row-state when the most-recently
 // resolved plan on the current row still owes (or is mid-) its follow-scene
 // turn. It returns ok=false — deferring to the normal pending-plan precedence —
@@ -234,40 +308,24 @@ func findFollowScene(scenes []dbgen.Scene, planID int64) *dbgen.Scene {
 //   - follow-scene not ended       → SceneActive    (roleplaying it)
 //   - follow-scene ended, setter still holds focus → PostSceneAction
 //   - follow-scene ended, focus moved on → ok=false (turn done; next plan resolves)
-func followSceneGate(ctx context.Context, q *dbgen.Queries, game *dbgen.Game) (model.RowState, bool, error) {
+func followSceneGate(game *dbgen.Game, recent *dbgen.Plan, scenes []dbgen.Scene) (model.RowState, bool) {
 	// Explosive Finale, row 13: no scenes at all, so no plan there owes a
 	// follow-scene turn. Standing down lets the chain fall through to the
 	// pending-plan step, where broadcastRowState's auto-kickoff chains the next
 	// plan straight off the back of the one that just resolved — which is what
 	// "resolve plan after plan" means mechanically.
 	if finaleRowNoScenes(game) {
-		return model.RowState{}, false, nil
+		return model.RowState{}, false
 	}
-
-	recent, err := q.GetMostRecentResolvedPlanOnRow(ctx, dbgen.GetMostRecentResolvedPlanOnRowParams{
-		GameID:    game.ID,
-		RowNumber: new(game.CurrentRow),
-	})
-	if err != nil {
-		if isNoRows(err) {
-			// No plan has resolved on this row → row start; resolve first.
-			return model.RowState{}, false, nil
-		}
-		return model.RowState{}, false, err
-	}
-
-	scenes, err := q.ListScenesForRow(ctx, dbgen.ListScenesForRowParams{
-		GameID:    game.ID,
-		RowNumber: game.CurrentRow,
-	})
-	if err != nil {
-		return model.RowState{}, false, err
+	if recent == nil {
+		// No plan has resolved on this row → row start; resolve first.
+		return model.RowState{}, false
 	}
 
 	follow := findFollowScene(scenes, recent.ID)
 	if follow == nil {
 		// The focus player owes the just-resolved plan's follow-scene.
-		return model.RowState{Kind: model.RowStateSceneSetting, ActingPlayerIDs: focusActingIDs(game)}, true, nil
+		return model.RowState{Kind: model.RowStateSceneSetting, ActingPlayerIDs: focusActingIDs(game)}, true
 	}
 	if !follow.EndedAt.Valid {
 		id := follow.ID
@@ -275,16 +333,16 @@ func followSceneGate(ctx context.Context, q *dbgen.Queries, game *dbgen.Game) (m
 			Kind:            model.RowStateSceneActive,
 			SceneID:         &id,
 			ActingPlayerIDs: focusActingIDs(game),
-		}, true, nil
+		}, true
 	}
 	// Follow-scene ended. If its setter still holds focus, they owe the
 	// post-scene action (prepare a plan or refresh) before passing. Once
 	// they've passed — focus has moved to another player — the turn is
 	// complete and the next pending plan should resolve.
 	if game.FocusPlayerID != nil && *game.FocusPlayerID == follow.FocusPlayerID {
-		return model.RowState{Kind: model.RowStatePostSceneAction, ActingPlayerIDs: focusActingIDs(game)}, true, nil
+		return model.RowState{Kind: model.RowStatePostSceneAction, ActingPlayerIDs: focusActingIDs(game)}, true
 	}
-	return model.RowState{}, false, nil
+	return model.RowState{}, false
 }
 
 // topPendingPlanOnRow returns the lowest-row_order pending plan on rowNumber,
@@ -426,11 +484,9 @@ func warConflictGate(
 	q *dbgen.Queries,
 	gameID int64,
 	currentRow int16,
+	claims []dbgen.WarSurrenderClaim,
+	wars []dbgen.War,
 ) (model.RowState, bool, error) {
-	claims, err := q.ListOpenSurrenderClaimsByGame(ctx, gameID)
-	if err != nil {
-		return model.RowState{}, false, err
-	}
 	if len(claims) > 0 {
 		id := claims[0].ID
 		return model.RowState{
@@ -440,7 +496,7 @@ func warConflictGate(
 		}, true, nil
 	}
 
-	outstanding, err := mwOutstandingCostsForGame(ctx, q, gameID, currentRow)
+	outstanding, err := mwOutstandingCostsForWars(ctx, q, gameID, wars, currentRow)
 	if err != nil {
 		return model.RowState{}, false, err
 	}
@@ -575,18 +631,14 @@ func endgameVoteGate(ctx context.Context, q *dbgen.Queries, game *dbgen.Game) (m
 // (RowStateAwaitMainCharacterChoice) when any player has lost their main
 // character — taken, traded, or destroyed — and has none. ok is false when
 // every player still has one. Split out of ComputeRowState to keep it short.
-func mainCharacterChoiceGate(ctx context.Context, q *dbgen.Queries, gameID int64) (model.RowState, bool, error) {
-	missing, err := q.ListPlayersMissingMainCharacter(ctx, gameID)
-	if err != nil {
-		return model.RowState{}, false, err
-	}
+func mainCharacterChoiceGate(missing []int64) (model.RowState, bool) {
 	if len(missing) == 0 {
-		return model.RowState{}, false, nil
+		return model.RowState{}, false
 	}
 	return model.RowState{
 		Kind:            model.RowStateAwaitMainCharacterChoice,
 		ActingPlayerIDs: missing,
-	}, true, nil
+	}, true
 }
 
 func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, gameID int64) {
@@ -643,15 +695,11 @@ func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 // an open roll blocks everything else in the row until it resolves. ok is
 // false when no interactive roll is open (GetOpenRollByGame already excludes
 // Shake-Up rolls, a separate mechanic).
-func diceRollGate(ctx context.Context, q *dbgen.Queries, gameID int64) (model.RowState, bool, error) {
-	roll, err := q.GetOpenRollByGame(ctx, gameID)
-	if err != nil {
-		if isNoRows(err) {
-			return model.RowState{}, false, nil
-		}
-		return model.RowState{}, false, err
+func diceRollGate(ctx context.Context, q *dbgen.Queries, roll *dbgen.DiceRoll) (model.RowState, bool, error) {
+	if roll == nil {
+		return model.RowState{}, false, nil
 	}
-	ids, err := diceRollActingPlayerIDs(ctx, q, &roll)
+	ids, err := diceRollActingPlayerIDs(ctx, q, roll)
 	if err != nil {
 		return model.RowState{}, false, err
 	}

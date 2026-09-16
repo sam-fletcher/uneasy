@@ -54,16 +54,12 @@ import (
 // spend (if any) with its accumulated adjustments.
 func GetShakeUp(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, s.Q)
+		game, _, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
 			return
 		}
+		gameID := game.ID
 		ctx := r.Context()
-		game, err := s.Q.GetGameByID(ctx, gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
 		tokens, err := s.Q.ListShakeUpTokensByGame(ctx, gameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load tokens", err)

@@ -81,10 +81,9 @@ func gridEntry(
 	require.NoError(t, err)
 	ph, ok := GetHandler(planType)
 	require.True(t, ok)
-	reason, targetRow, finaleBonus, err = planIneligibilityReason(
-		ctx, h.q, &game, &h.tg.Players[idx], planType, ph, false)
+	board, err := loadEligibilityBoard(ctx, h.q, game.ID)
 	require.NoError(t, err)
-	return reason, targetRow, finaleBonus
+	return planIneligibilityReason(board, &game, &h.tg.Players[idx], planType, ph, false)
 }
 
 // gamePostBodies returns every system post body for the game, newest last.

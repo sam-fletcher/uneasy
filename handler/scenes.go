@@ -118,6 +118,9 @@ func validateSpeakingAs(
 type peerWithController struct {
 	AssetID    int64
 	Controller *int64
+	// Name is the peer asset's name, carried from validation so the
+	// scene.started log can list participants without re-reading each asset.
+	Name string
 }
 
 // scenePeerView is the JSON shape returned alongside a scene response.
@@ -157,16 +160,33 @@ func validateAndProcessScenePeers(
 	peerIDs []int64,
 ) ([]peerWithController, int, string) {
 	seen := make(map[int64]bool, len(peerIDs))
-	peers := make([]peerWithController, 0, len(peerIDs))
-
+	ids := make([]int64, 0, len(peerIDs))
 	for _, pid := range peerIDs {
 		if seen[pid] {
 			continue
 		}
 		seen[pid] = true
+		ids = append(ids, pid)
+	}
+	peers := make([]peerWithController, 0, len(ids))
+	if len(ids) == 0 {
+		return peers, 0, ""
+	}
 
-		asset, err := q.GetAssetByID(ctx, pid)
-		if err != nil {
+	// One batched read for every present peer (was one lookup per peer, and
+	// a second per peer after the insert to name them in the log).
+	rows, err := q.ListAssetsByIDs(ctx, ids)
+	if err != nil {
+		return nil, http.StatusInternalServerError, "could not load present peers"
+	}
+	byID := make(map[int64]dbgen.Asset, len(rows))
+	for _, a := range rows {
+		byID[a.ID] = a
+	}
+
+	for _, pid := range ids {
+		asset, found := byID[pid]
+		if !found {
 			return nil, http.StatusBadRequest, "present peer not found"
 		}
 		if asset.GameID != gameID {
@@ -196,7 +216,7 @@ func validateAndProcessScenePeers(
 			// Focus-player peer that is NOT their main character → unclaimed.
 			controller = nil
 		}
-		peers = append(peers, peerWithController{AssetID: pid, Controller: controller})
+		peers = append(peers, peerWithController{AssetID: pid, Controller: controller, Name: asset.Name})
 	}
 
 	return peers, 0, ""
@@ -410,11 +430,20 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				return errors.New("could not create scene")
 			}
 			scene = sc
-			for _, pw := range peers {
-				if iErr := q.InsertScenePeer(ctx, dbgen.InsertScenePeerParams{
-					SceneID:            scene.ID,
-					PeerAssetID:        pw.AssetID,
-					ControllerPlayerID: pw.Controller,
+			if len(peers) > 0 {
+				// One statement for every present peer (was one INSERT each).
+				peerIDs := make([]int64, len(peers))
+				controllers := make([]int64, len(peers)) // 0 = unclaimed
+				for i, pw := range peers {
+					peerIDs[i] = pw.AssetID
+					if pw.Controller != nil {
+						controllers[i] = *pw.Controller
+					}
+				}
+				if iErr := q.InsertScenePeers(ctx, dbgen.InsertScenePeersParams{
+					SceneID:             scene.ID,
+					PeerAssetIds:        peerIDs,
+					ControllerPlayerIds: controllers,
 				}); iErr != nil {
 					return errors.New("could not record scene peers")
 				}
@@ -444,9 +473,7 @@ func CreateScene(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 		participants := []string{mainName}
 		for _, pw := range peers {
-			if asset, aErr := s.Q.GetAssetByID(ctx, pw.AssetID); aErr == nil {
-				participants = append(participants, asset.Name)
-			}
+			participants = append(participants, pw.Name)
 		}
 		EmitSystemPost(ctx, s.Q, manager, gameRow.ID, "scene.started",
 			model.SeverityImportant,

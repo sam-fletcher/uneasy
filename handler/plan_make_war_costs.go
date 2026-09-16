@@ -120,6 +120,22 @@ func mwOutstandingCostsForGame(
 	if err != nil {
 		return nil, err
 	}
+	return mwOutstandingCostsForWars(ctx, q, gameID, wars, row)
+}
+
+// mwOutstandingCostsForWars is mwOutstandingCostsForGame for a caller that
+// already holds the active wars (the row-state snapshot). With no wars it
+// reads nothing — the common case on every row-state computation.
+func mwOutstandingCostsForWars(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID int64,
+	wars []dbgen.War,
+	row int16,
+) (map[int64][]gamepkg.BattleCostKey, error) {
+	if len(wars) == 0 {
+		return map[int64][]gamepkg.BattleCostKey{}, nil
+	}
 	ranks, err := mwPowerRanks(ctx, q, gameID)
 	if err != nil {
 		return nil, err

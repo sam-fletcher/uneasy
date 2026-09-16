@@ -5,12 +5,30 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 
+	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	appMiddleware "uneasy/middleware"
 )
+
+// fanOut returns a runner for a set of independent reads and the function
+// that waits for them. On a pool-backed q the reads run concurrently — one
+// round trip to a remote database instead of one per read — and on a
+// transaction-bound q (which pgx will not share across goroutines) they run
+// inline, in order, so the same code is correct from inside InTx.
+//
+// Reads must be independent: each writes its own result and error variables,
+// and nothing looks at them before wait returns.
+func fanOut(q *dbgen.Queries) (run func(func()), wait func()) {
+	if !db.PoolBacked(q) {
+		return func(f func()) { f() }, func() {}
+	}
+	var wg sync.WaitGroup
+	return func(f func()) { wg.Go(f) }, wg.Wait
+}
 
 // Length caps (runes, after trimming) for free-text fields. Counts (e.g.
 // maxMarginalia) are capped separately; these bound the SIZE of each entry
@@ -103,6 +121,35 @@ func parseGamePlayer(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (
 		return 0, nil, false
 	}
 	return gameID, player, true
+}
+
+// parseGamePlayerGame is parseGamePlayer for handlers that also need the game
+// row: one joined lookup (GetPlayerAndGameByAccount) instead of the player
+// lookup followed by GetGameByID. Against a remote database that second
+// serial trip was ~25ms on every table route that read the game, which is
+// most of them. Same error responses as parseGamePlayer; the "table not
+// found" arm collapses into 403, since a game with no seat for the caller
+// and a game that doesn't exist look the same from where they stand.
+func parseGamePlayerGame(w http.ResponseWriter, r *http.Request, q *dbgen.Queries) (dbgen.Game, *dbgen.Player, bool) {
+	gameID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, "invalid table id")
+		return dbgen.Game{}, nil, false
+	}
+	account := appMiddleware.AccountFromContext(r.Context())
+	if account == nil {
+		respondErr(w, http.StatusUnauthorized, "log in first")
+		return dbgen.Game{}, nil, false
+	}
+	row, err := q.GetPlayerAndGameByAccount(r.Context(), dbgen.GetPlayerAndGameByAccountParams{
+		AccountID: account.ID,
+		GameID:    gameID,
+	})
+	if err != nil {
+		respondErr(w, http.StatusForbidden, "not a member of this table")
+		return dbgen.Game{}, nil, false
+	}
+	return row.Game, &row.Player, true
 }
 
 // requirePlayerInGame loads the calling account's player row at gameID,

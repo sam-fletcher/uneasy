@@ -82,6 +82,15 @@ UPDATE assets SET is_leveraged = $2 WHERE id = $1;
 -- The caller picks which assets to refresh; this updates them individually.
 UPDATE assets SET is_leveraged = FALSE WHERE id = $1;
 
+-- name: RefreshAssetsByIDs :many
+-- The batched form of RefreshPlayerAssets: un-leverages every listed asset in
+-- one statement and returns the refreshed rows, so the refresh action's
+-- per-asset UPDATE + re-read loop collapses to one trip. Callers validate
+-- ownership and the leveraged state beforehand (ListAssetsByIDs).
+UPDATE assets SET is_leveraged = FALSE
+WHERE id = ANY(sqlc.arg(asset_ids)::BIGINT[])
+RETURNING *;
+
 -- name: TransferAsset :exec
 -- Reassign an asset to a new owner. Clearing is_main_character is part of the
 -- transfer itself, not the caller's job: a main character is per-owner, so it

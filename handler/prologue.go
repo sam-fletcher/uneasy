@@ -504,15 +504,11 @@ func ChoosePrologue(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		game, player, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
 			return
 		}
-		game, err := s.Q.GetGameByID(ctx, gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
+		gameID := game.ID
 		if !requirePrologueChoosing(w, &game) {
 			return
 		}

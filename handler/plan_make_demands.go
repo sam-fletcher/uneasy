@@ -171,15 +171,7 @@ const mdNoTargetReason = "no plan on the public record can be demanded against "
 // must stay in lockstep with the per-target checks in ValidatePreparation
 // above: pending status, an assigned row, not Make War, not another demand,
 // not the player's own, and not already holding a demand (mdDemandBlocksTarget).
-func (mdHandler) CheckPrepEligibility(
-	ctx context.Context,
-	q *dbgen.Queries,
-	gameID, playerID int64,
-) (bool, string, error) {
-	plans, err := q.ListPlansByGame(ctx, gameID)
-	if err != nil {
-		return false, "", fmt.Errorf("list plans: %w", err)
-	}
+func (mdHandler) CheckPrepEligibility(plans []dbgen.Plan, playerID int64) (bool, string) {
 	targeted := map[int64]struct{}{}
 	for i := range plans {
 		p := &plans[i]
@@ -201,9 +193,9 @@ func (mdHandler) CheckPrepEligibility(
 		if _, taken := targeted[p.ID]; taken {
 			continue
 		}
-		return true, "", nil
+		return true, ""
 	}
-	return false, mdNoTargetReason, nil
+	return false, mdNoTargetReason
 }
 
 func (mdHandler) ComputeDifficulty(

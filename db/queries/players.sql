@@ -8,6 +8,16 @@ RETURNING *;
 -- name: GetPlayerByAccountAndGame :one
 SELECT * FROM players WHERE account_id = $1 AND game_id = $2;
 
+-- name: GetPlayerAndGameByAccount :one
+-- The table-route auth floor in one trip: the caller's seat at the game and
+-- the game row it sits at. Every /tables/{id}/* handler used to pay these as
+-- two serial lookups (~25ms each in production); handlers that need both go
+-- through parseGamePlayerGame, which runs this instead.
+SELECT sqlc.embed(p), sqlc.embed(g)
+FROM players p
+JOIN games g ON g.id = p.game_id
+WHERE p.account_id = $1 AND p.game_id = $2;
+
 -- name: GetPlayerByID :one
 SELECT * FROM players WHERE id = $1;
 

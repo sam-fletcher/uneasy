@@ -223,12 +223,10 @@ type OnPreparer interface {
 // the prep grid can grey the card out with a reason instead of letting the
 // player select it and hit a dead end. This feeds the eligibility *endpoint*
 // only — ValidatePreparation remains the authoritative prepare-time check.
+// It reads the game's plans from the caller's snapshot (see eligibilityBoard)
+// rather than querying: the grid asks for every plan type in one request.
 type PrepEligibilityChecker interface {
-	CheckPrepEligibility(
-		ctx context.Context,
-		q *dbgen.Queries,
-		gameID, playerID int64,
-	) (eligible bool, reason string, err error)
+	CheckPrepEligibility(plans []dbgen.Plan, playerID int64) (eligible bool, reason string)
 }
 
 // PreparedDescriber is an optional interface for plan handlers that want a

@@ -83,6 +83,18 @@ WHERE id = $1 AND ended_at IS NULL;
 INSERT INTO scene_peers (scene_id, peer_asset_id, controller_player_id)
 VALUES ($1, $2, $3);
 
+-- name: InsertScenePeers :exec
+-- Batched InsertScenePeer for scene creation: every present peer in one
+-- statement. The two arrays are parallel; a controller of 0 means unclaimed
+-- (NULL) — player ids start at 1, so 0 is free to mean "none".
+-- (Indexed by subscript rather than a two-array unnest: sqlc's analyzer
+-- only knows the one-array form.)
+INSERT INTO scene_peers (scene_id, peer_asset_id, controller_player_id)
+SELECT sqlc.arg(scene_id)::BIGINT,
+       (sqlc.arg(peer_asset_ids)::BIGINT[])[i],
+       NULLIF((sqlc.arg(controller_player_ids)::BIGINT[])[i], 0)
+FROM generate_subscripts(sqlc.arg(peer_asset_ids)::BIGINT[], 1) AS i;
+
 -- name: ListScenePeers :many
 SELECT * FROM scene_peers WHERE scene_id = $1;
 

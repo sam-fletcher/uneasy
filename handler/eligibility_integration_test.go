@@ -54,6 +54,47 @@ func makePlanWithToken(
 	require.NoError(t, err)
 }
 
+// boardFor loads the eligibility snapshot the prep grid reads from, fresh —
+// tests mutate the board between calls.
+func boardFor(t *testing.T, q *dbgen.Queries, gameID int64) *eligibilityBoard {
+	t.Helper()
+	board, err := loadEligibilityBoard(context.Background(), q, gameID)
+	require.NoError(t, err)
+	return board
+}
+
+// checkPlanEligible is the one-shot form of eligibilityBoard.checkPlanEligible
+// for tests that ask about a single plan type; request handlers load the
+// board once and ask it directly.
+func checkPlanEligible(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+	currentRow int16,
+	planType model.PlanType,
+	category model.RankingCategory,
+) (bool, string, error) {
+	board, err := loadEligibilityBoard(ctx, q, gameID)
+	if err != nil {
+		return false, "", err
+	}
+	ok, reason := board.checkPlanEligible(playerID, currentRow, planType, category)
+	return ok, reason, nil
+}
+
+// hasEsteemLockout is the one-shot form of eligibilityBoard.hasEsteemLockout.
+func hasEsteemLockout(
+	ctx context.Context,
+	q *dbgen.Queries,
+	gameID, playerID int64,
+) (bool, error) {
+	board, err := loadEligibilityBoard(ctx, q, gameID)
+	if err != nil {
+		return false, err
+	}
+	return board.hasEsteemLockout(playerID), nil
+}
+
 // ─ checkPlanEligible Tests ─────────────────────────────────────────────────
 
 func TestCheckPlanEligible_AlreadyHasToken(t *testing.T) {
@@ -124,7 +165,6 @@ func TestPlanIneligibilityReason_VariableDelayTokenChecked(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 3)
-	ctx := context.Background()
 
 	// Player 0 already holds a Make War token (variable-delay plan).
 	makePlanWithToken(t, q, &tg.Game, &tg.Players[0],
@@ -132,9 +172,8 @@ func TestPlanIneligibilityReason_VariableDelayTokenChecked(t *testing.T) {
 
 	h, ok := GetHandler(model.PlanMakeWar)
 	require.True(t, ok)
-	reason, _, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, _, _ := planIneligibilityReason(boardFor(t, q, tg.Game.ID), &tg.Game, &tg.Players[0],
 		model.PlanMakeWar, h, false)
-	require.NoError(t, err)
 	assert.Contains(t, reason, "already have this plan prepared")
 }
 
@@ -142,21 +181,18 @@ func TestPlanIneligibilityReason_EsteemLockout(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 3)
-	ctx := context.Background()
 
 	h, ok := GetHandler(model.PlanSpreadRumors)
 	require.True(t, ok)
-	reason, _, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, _, _ := planIneligibilityReason(boardFor(t, q, tg.Game.ID), &tg.Game, &tg.Players[0],
 		model.PlanSpreadRumors, h, true)
-	require.NoError(t, err)
 	assert.Contains(t, reason, "esteem lockout")
 
 	// The lockout only blocks esteem plans.
 	h, ok = GetHandler(model.PlanProposeDecree)
 	require.True(t, ok)
-	reason, _, _, err = planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, _, _ = planIneligibilityReason(boardFor(t, q, tg.Game.ID), &tg.Game, &tg.Players[0],
 		model.PlanProposeDecree, h, true)
-	require.NoError(t, err)
 	assert.Empty(t, reason, "non-esteem plan should ignore the lockout")
 }
 
@@ -164,25 +200,22 @@ func TestPlanIneligibilityReason_MakeDemandsHook(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 3)
-	ctx := context.Background()
 
 	h, ok := GetHandler(model.PlanMakeDemands)
 	require.True(t, ok)
 
 	// Empty public record → the PrepEligibilityChecker hook reports no
 	// demandable plan.
-	reason, _, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, _, _ := planIneligibilityReason(boardFor(t, q, tg.Game.ID), &tg.Game, &tg.Players[0],
 		model.PlanMakeDemands, h, false)
-	require.NoError(t, err)
 	assert.Contains(t, reason, "demanded against")
 
 	// A demandable plan appears → eligible, with the variable-delay
 	// target-row sentinel.
 	createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
 		model.PlanProposeDecree, model.CategoryPower, 5)
-	reason, targetRow, _, err := planIneligibilityReason(ctx, q, &tg.Game, &tg.Players[0],
+	reason, targetRow, _ := planIneligibilityReason(boardFor(t, q, tg.Game.ID), &tg.Game, &tg.Players[0],
 		model.PlanMakeDemands, h, false)
-	require.NoError(t, err)
 	assert.Empty(t, reason)
 	assert.Equal(t, int16(-1), targetRow)
 }

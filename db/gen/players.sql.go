@@ -115,6 +115,60 @@ func (q *Queries) GetNextFocusPlayer(ctx context.Context, arg GetNextFocusPlayer
 	return i, err
 }
 
+const getPlayerAndGameByAccount = `-- name: GetPlayerAndGameByAccount :one
+SELECT p.id, p.game_id, p.display_name, p.joined_at, p.is_facilitator, p.token_color, p.seat_order, p.account_id, p.shake_up_tokens, p.last_read_post_id, p.last_active_at, g.id, g.join_code, g.created_at, g.facilitator_id, g.phase, g.current_row, g.focus_player_id, g.ending_mode, g.dummy_token_mode, g.prologue_ranking_step, g.shake_up_category, g.shake_up_step, g.throne_established, g.ending_vote_open
+FROM players p
+JOIN games g ON g.id = p.game_id
+WHERE p.account_id = $1 AND p.game_id = $2
+`
+
+type GetPlayerAndGameByAccountParams struct {
+	AccountID int64 `db:"account_id" json:"account_id"`
+	GameID    int64 `db:"game_id" json:"game_id"`
+}
+
+type GetPlayerAndGameByAccountRow struct {
+	Player Player `db:"player" json:"player"`
+	Game   Game   `db:"game" json:"game"`
+}
+
+// The table-route auth floor in one trip: the caller's seat at the game and
+// the game row it sits at. Every /tables/{id}/* handler used to pay these as
+// two serial lookups (~25ms each in production); handlers that need both go
+// through parseGamePlayerGame, which runs this instead.
+func (q *Queries) GetPlayerAndGameByAccount(ctx context.Context, arg GetPlayerAndGameByAccountParams) (GetPlayerAndGameByAccountRow, error) {
+	row := q.db.QueryRow(ctx, getPlayerAndGameByAccount, arg.AccountID, arg.GameID)
+	var i GetPlayerAndGameByAccountRow
+	err := row.Scan(
+		&i.Player.ID,
+		&i.Player.GameID,
+		&i.Player.DisplayName,
+		&i.Player.JoinedAt,
+		&i.Player.IsFacilitator,
+		&i.Player.TokenColor,
+		&i.Player.SeatOrder,
+		&i.Player.AccountID,
+		&i.Player.ShakeUpTokens,
+		&i.Player.LastReadPostID,
+		&i.Player.LastActiveAt,
+		&i.Game.ID,
+		&i.Game.JoinCode,
+		&i.Game.CreatedAt,
+		&i.Game.FacilitatorID,
+		&i.Game.Phase,
+		&i.Game.CurrentRow,
+		&i.Game.FocusPlayerID,
+		&i.Game.EndingMode,
+		&i.Game.DummyTokenMode,
+		&i.Game.PrologueRankingStep,
+		&i.Game.ShakeUpCategory,
+		&i.Game.ShakeUpStep,
+		&i.Game.ThroneEstablished,
+		&i.Game.EndingVoteOpen,
+	)
+	return i, err
+}
+
 const getPlayerByAccountAndGame = `-- name: GetPlayerByAccountAndGame :one
 SELECT id, game_id, display_name, joined_at, is_facilitator, token_color, seat_order, account_id, shake_up_tokens, last_read_post_id, last_active_at FROM players WHERE account_id = $1 AND game_id = $2
 `

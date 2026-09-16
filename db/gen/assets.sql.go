@@ -1132,6 +1132,50 @@ func (q *Queries) RefreshAllAssets(ctx context.Context, gameID int64) error {
 	return err
 }
 
+const refreshAssetsByIDs = `-- name: RefreshAssetsByIDs :many
+UPDATE assets SET is_leveraged = FALSE
+WHERE id = ANY($1::BIGINT[])
+RETURNING id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value
+`
+
+// The batched form of RefreshPlayerAssets: un-leverages every listed asset in
+// one statement and returns the refreshed rows, so the refresh action's
+// per-asset UPDATE + re-read loop collapses to one trip. Callers validate
+// ownership and the leveraged state beforehand (ListAssetsByIDs).
+func (q *Queries) RefreshAssetsByIDs(ctx context.Context, assetIds []int64) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, refreshAssetsByIDs, assetIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Asset{}
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.OwnerID,
+			&i.CreatorID,
+			&i.AssetType,
+			&i.Name,
+			&i.IsMainCharacter,
+			&i.IsLeveraged,
+			&i.IsDestroyed,
+			&i.CreatedAt,
+			&i.DestroyedAt,
+			&i.LinkedCardSuit,
+			&i.LinkedCardValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const refreshPlayerAssets = `-- name: RefreshPlayerAssets :exec
 UPDATE assets SET is_leveraged = FALSE WHERE id = $1
 `

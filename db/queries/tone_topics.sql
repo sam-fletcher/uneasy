@@ -48,8 +48,10 @@ SELECT
     EXISTS (SELECT 1 FROM updated) AS did_update
 FROM target;
 
--- name: SeedToneTopic :exec
--- Used for bulk-seeding default topics; silently skips duplicates.
+-- name: SeedToneTopics :exec
+-- Seeds every default topic for a game in one statement; silently skips
+-- duplicates. One trip instead of one per topic (there are ~45), which was
+-- the bulk of table creation's cost against a remote database.
 INSERT INTO tone_topics (game_id, topic, status)
-VALUES ($1, $2, $3)
+SELECT sqlc.arg(game_id)::BIGINT, unnest(sqlc.arg(topics)::TEXT[]), sqlc.arg(status)::TEXT
 ON CONFLICT (game_id, topic) DO NOTHING;

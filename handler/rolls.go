@@ -289,15 +289,11 @@ func validateActorContext(
 // row per game player (actor with intent='aid').
 func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, s.Q)
+		game, _, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
 			return
 		}
-		game, err := s.Q.GetGameByID(r.Context(), gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
+		gameID := game.ID
 		if game.Phase != model.PhaseMainEvent {
 			respondErr(w, http.StatusConflict, "dice rolls require the main event phase")
 			return
@@ -309,7 +305,7 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			SceneID    *int64 `json:"scene_id"`
 			PlanID     *int64 `json:"plan_id"`
 		}
-		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
@@ -333,7 +329,7 @@ func CreateRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var roll dbgen.DiceRoll
-		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+		err := s.InTx(ctx, func(q *dbgen.Queries) error {
 			r2, cErr := q.CreateDiceRoll(ctx, dbgen.CreateDiceRollParams{
 				GameID:     gameID,
 				PlanID:     body.PlanID,

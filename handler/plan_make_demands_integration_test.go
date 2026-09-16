@@ -29,6 +29,14 @@ import (
 
 // ── Rejection tests ───────────────────────────────────────────────────────────
 
+// mustListPlans is the plans snapshot the prep grid hands CheckPrepEligibility.
+func mustListPlans(t *testing.T, q *dbgen.Queries, gameID int64) []dbgen.Plan {
+	t.Helper()
+	plans, err := q.ListPlansByGame(context.Background(), gameID)
+	require.NoError(t, err)
+	return plans
+}
+
 func TestMakeDemands_RejectMakeWarTarget(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
@@ -117,14 +125,13 @@ func TestMakeDemands_RejectAlreadyDemanded_EvenWhenResolved(t *testing.T) {
 	assert.Contains(t, errMsg, "another demand already targets")
 
 	// The prep grid must agree, or the card offers a target that submit rejects.
-	eligible, _, err := mdHandler{}.CheckPrepEligibility(ctx, q, tg.Game.ID, tg.Players[0].ID)
-	require.NoError(t, err)
+	eligible, _ := mdHandler{}.CheckPrepEligibility(mustListPlans(t, q, tg.Game.ID), tg.Players[0].ID)
 	assert.False(t, eligible, "a spent target is not an eligible demand target")
 
 	// DB backstop: a second demand row pointing at the same target is refused.
 	second := createPlanOnRow(t, q, &tg.Game, &tg.Players[0],
 		model.PlanMakeDemands, model.CategoryPower, 5)
-	err = q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+	err := q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
 		ID: second.ID, TargetedPlanID: &target.ID,
 	})
 	require.Error(t, err, "uq_one_demand_per_target must reject the second demand")
@@ -206,10 +213,8 @@ func TestMakeDemands_CheckPrepEligibility_NoPlansOnRecord(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 3)
-	ctx := context.Background()
 
-	eligible, reason, err := mdHandler{}.CheckPrepEligibility(ctx, q, tg.Game.ID, tg.Players[0].ID)
-	require.NoError(t, err)
+	eligible, reason := mdHandler{}.CheckPrepEligibility(mustListPlans(t, q, tg.Game.ID), tg.Players[0].ID)
 	assert.False(t, eligible, "empty public record → nothing to demand against")
 	assert.Contains(t, reason, "demanded against")
 }
@@ -218,14 +223,12 @@ func TestMakeDemands_CheckPrepEligibility_TargetExists(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 3)
-	ctx := context.Background()
 
 	// Another player's pending plan with a row → demandable.
 	createPlanOnRow(t, q, &tg.Game, &tg.Players[1],
 		model.PlanProposeDecree, model.CategoryPower, 5)
 
-	eligible, reason, err := mdHandler{}.CheckPrepEligibility(ctx, q, tg.Game.ID, tg.Players[0].ID)
-	require.NoError(t, err)
+	eligible, reason := mdHandler{}.CheckPrepEligibility(mustListPlans(t, q, tg.Game.ID), tg.Players[0].ID)
 	assert.True(t, eligible, "expected eligible; reason: %s", reason)
 }
 
@@ -259,8 +262,7 @@ func TestMakeDemands_CheckPrepEligibility_ExcludedTargets(t *testing.T) {
 		ID: demand.ID, TargetedPlanID: &taken.ID,
 	}))
 
-	eligible, reason, err := mdHandler{}.CheckPrepEligibility(ctx, q, tg.Game.ID, tg.Players[0].ID)
-	require.NoError(t, err)
+	eligible, reason := mdHandler{}.CheckPrepEligibility(mustListPlans(t, q, tg.Game.ID), tg.Players[0].ID)
 	assert.False(t, eligible, "every plan on the record is excluded")
 	assert.Contains(t, reason, "demanded against")
 }

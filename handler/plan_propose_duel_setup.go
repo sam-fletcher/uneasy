@@ -205,9 +205,26 @@ func pduelSelectStakesHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		// Validate each asset: owned, non-destroyed (already-leveraged is fine).
+		// One batched read for the lot (was one lookup per stake); a repeated
+		// id is rejected rather than staked twice.
+		assetRows, err := deps.Q.ListAssetsByIDs(ctx, body.AssetIDs)
+		if err != nil {
+			respondInternalErr(w, r, "could not load assets", err)
+			return
+		}
+		assetByID := make(map[int64]dbgen.Asset, len(assetRows))
+		for _, a := range assetRows {
+			assetByID[a.ID] = a
+		}
+		seen := make(map[int64]bool, len(body.AssetIDs))
 		for _, aid := range body.AssetIDs {
-			asset, errAsset := deps.Q.GetAssetByID(ctx, aid)
-			if errAsset != nil {
+			if seen[aid] {
+				respondErr(w, http.StatusBadRequest, fmt.Sprintf("asset %d is listed twice", aid))
+				return
+			}
+			seen[aid] = true
+			asset, found := assetByID[aid]
+			if !found {
 				respondErr(w, http.StatusNotFound, fmt.Sprintf("asset %d not found", aid))
 				return
 			}

@@ -77,22 +77,18 @@ func validateShakeUpAnnounceTarget(
 // other players may submit adjustments until the spender commits.
 func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		game, player, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
 			return
 		}
+		gameID := game.ID
 		ctx := r.Context()
-		game, err := s.Q.GetGameByID(ctx, gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
 		if !inShakeUpStep(w, &game, gamepkg.ShakeUpStepSpending) {
 			return
 		}
 
 		var body shakeUpAnnounceBody
-		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}

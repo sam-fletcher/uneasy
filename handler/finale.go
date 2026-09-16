@@ -253,46 +253,41 @@ type planPrepOverflow struct {
 //   - with the slot spent, every outcome is a guaranteed fall-through, so it is
 //     refused here rather than let through to be cancelled after the fact.
 func planOverflowOutcome(
-	ctx context.Context,
-	q *dbgen.Queries,
+	board *eligibilityBoard,
 	game *dbgen.Game,
 	playerID int64,
 	deferredRow bool,
-) (planPrepOverflow, error) {
+) planPrepOverflow {
 	switch {
 	case game.EndingMode == nil:
 		// Unreachable in normal play: the table vote settles the mode at the
 		// row 7 → 8 boundary, and nothing can overflow before row 8 (max fixed
 		// delay is 6, and 7 + 6 = 13). Reachable via DevAdvanceRow, which skips
 		// the play-state gates by design.
-		return planPrepOverflow{ModeUnsettled: true}, nil
+		return planPrepOverflow{ModeUnsettled: true}
 
 	case *game.EndingMode == EndingModeSmoothLanding:
 		return planPrepOverflow{
 			Reason: "under a Smooth Landing no plan may land past row 13 — " +
 				"choose a different plan, or don't prepare anything",
-		}, nil
+		}
 
 	case *game.EndingMode == EndingModeExplosiveFinale:
-		spent, err := finaleSlotSpent(ctx, q, game.ID, playerID)
-		if err != nil {
-			return planPrepOverflow{}, err
-		}
-		if spent {
+		if board.finaleSlotSpent(playerID) {
 			return planPrepOverflow{
 				Reason: "you have already used your one Explosive Finale plan",
-			}, nil
+			}
 		}
 		if deferredRow {
 			// Allowed, but not marked: the reveal decides, and the collapse
 			// (with the slot spend and its log post) happens there.
-			return planPrepOverflow{}, nil
+			return planPrepOverflow{}
 		}
-		return planPrepOverflow{ClampToFinalRow: true, FinaleBonus: true}, nil
+		return planPrepOverflow{ClampToFinalRow: true, FinaleBonus: true}
 
 	default:
 		return planPrepOverflow{
 			Reason: "endgame mode " + *game.EndingMode + " does not allow new plans past row 13",
-		}, nil
+		}
 	}
 }

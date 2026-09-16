@@ -47,8 +47,9 @@ func GenerateJoinCode() (string, error) {
 	return string(b), nil
 }
 
-// SeedDefaultToneTopics inserts the standard topics from the Uneasy rulebook.
-// This is a multi-row INSERT loop that can't be expressed as a single sqlc query.
+// SeedDefaultToneTopics inserts the standard topics from the Uneasy rulebook
+// in one statement (SeedToneTopics unnests the list server-side). It used to
+// be one INSERT per topic — 45 serial round trips at table creation.
 func SeedDefaultToneTopics(ctx context.Context, q *dbgen.Queries, gameID int64) error {
 	topics := []string{
 		"Torture",
@@ -93,14 +94,12 @@ func SeedDefaultToneTopics(ctx context.Context, q *dbgen.Queries, gameID int64) 
 		"Science fiction",
 		"Casteism",
 	}
-	for _, t := range topics {
-		if err := q.SeedToneTopic(ctx, dbgen.SeedToneTopicParams{
-			GameID: gameID,
-			Topic:  t,
-			Status: model.ToneDefault,
-		}); err != nil {
-			return fmt.Errorf("db: seed tone topic %q: %w", t, err)
-		}
+	if err := q.SeedToneTopics(ctx, dbgen.SeedToneTopicsParams{
+		GameID: gameID,
+		Topics: topics,
+		Status: string(model.ToneDefault),
+	}); err != nil {
+		return fmt.Errorf("db: seed tone topics: %w", err)
 	}
 	return nil
 }

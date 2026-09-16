@@ -95,14 +95,22 @@ const (
 )
 
 func main() {
+	devMode := env("DEV_MODE", "false") == "true"
+	// Debug logging (the per-request "db trace" lines, see
+	// middleware/querytrace.go) is a dev-only affordance: the dev containers
+	// set DEV_MODE, and UNEASY_DEV=1 alone (a prod-like binary with the dev
+	// routes) gets it too. Production stays at Info.
+	logLevel := slog.LevelInfo
+	if devMode || devRoutesEnabled() {
+		logLevel = slog.LevelDebug
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: logLevel,
 	}))
 	slog.SetDefault(logger)
 
 	dbURL := mustEnv("DATABASE_URL", logger)
 	port := env("PORT", "8080")
-	devMode := env("DEV_MODE", "false") == "true"
 	viteURL := env("VITE_URL", "http://localhost:5173")
 	publicOrigin := env("PUBLIC_ORIGIN", "")
 	secureMode := strings.HasPrefix(publicOrigin, "https://")
@@ -119,6 +127,13 @@ func main() {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// devRoutesEnabled reports whether UNEASY_DEV=1, the switch that mounts
+// /api/dev/*, /debug/pprof/* and the per-request db trace. Read from the
+// environment each time; it is a handful of startup calls.
+func devRoutesEnabled() bool {
+	return os.Getenv("UNEASY_DEV") == "1"
 }
 
 // parsePublicHost extracts the host (e.g. "uneasy.example") from a
@@ -151,6 +166,11 @@ func runServer(
 		return fmt.Errorf("parse database url: %w", err)
 	}
 	poolCfg.MaxConnIdleTime = poolMaxConnIdleTime
+	if devMode || devRoutesEnabled() {
+		// Per-request statement counting for the "db trace" log lines. Dev
+		// only: production gets no tracer at all, not even a no-op one.
+		poolCfg.ConnConfig.Tracer = appMiddleware.QueryTracer{}
+	}
 	dbPool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
@@ -285,12 +305,18 @@ func setupRouter(
 
 	// Profiling endpoints (/debug/pprof/*) — dev-gated like /api/dev/*,
 	// never mounted in production.
-	if os.Getenv("UNEASY_DEV") == "1" {
+	if devRoutesEnabled() {
 		r.Mount("/debug", chimiddleware.Profiler())
 	}
 
 	// API routes — all behind the cookie-auth middleware.
 	r.Route("/api", func(r chi.Router) {
+		if devMode || devRoutesEnabled() {
+			// One "db trace" debug line per API request (queries=N db_ms=X).
+			// Above EnsureSession so the auth lookups count. Only the pool
+			// tracer set in runServer feeds it, so this is dev-only too.
+			r.Use(appMiddleware.QueryTraceLog(logger))
+		}
 		r.Use(appMiddleware.EnsureSession(store.Q))
 
 		// WebSocket — long-lived, must run outside any per-request timeout.
@@ -336,7 +362,7 @@ func setupRouter(
 			r.With(credentialLimiter).Post("/password-resets", handler.CreatePasswordReset(store))
 
 			// Dev-only routes — gated by UNEASY_DEV=1. Never mount in prod.
-			if os.Getenv("UNEASY_DEV") == "1" {
+			if devRoutesEnabled() {
 				logger.Warn("dev routes are MOUNTED — never run this in production")
 				r.Post("/dev/login", handler.DevLogin(store))
 				r.Post("/dev/seed", handler.DevSeed(store))

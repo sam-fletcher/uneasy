@@ -373,19 +373,14 @@ func (out *gameStateReads) loadPhaseSpecific(ctx context.Context, q *dbgen.Queri
 // Returns the full game state: game object, players, rankings, and phase-specific data.
 func GetGameState(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, _, ok := parseGamePlayer(w, r, s.Q)
+		// Auth and the game row in one trip (the player+game join): every
+		// read below is gated on the phase, so this one is genuinely serial.
+		// Everything after it is not.
+		game, _, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
-
-		// Fetched first and alone: every read below is gated on the phase, so
-		// this one round trip is genuinely serial. Everything after it is not.
-		game, err := s.Q.GetGameByID(ctx, gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
 
 		reads := loadGameStateReads(ctx, s.Q, game)
 		if reads.playersErr != nil {

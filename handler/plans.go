@@ -150,14 +150,13 @@ func ListPlanTokens(s *db.Store) http.HandlerFunc {
 // validation remains authoritative, and the overflow half of the mirror is a
 // shared call into planOverflowOutcome rather than a second copy of the rules.
 func planIneligibilityReason(
-	ctx context.Context,
-	q *dbgen.Queries,
+	board *eligibilityBoard,
 	game *dbgen.Game,
 	player *dbgen.Player,
 	planType model.PlanType,
 	h PlanHandler,
 	esteemLocked bool,
-) (reason string, targetRow int16, finaleBonus bool, err error) {
+) (reason string, targetRow int16, finaleBonus bool) {
 	meta := h.Metadata()
 
 	// Row room. Variable-delay plans (Delay == -1) can't know their exact row
@@ -174,15 +173,12 @@ func planIneligibilityReason(
 		overflows = targetRow > publicRecordRowCount
 	}
 	if overflows {
-		outcome, oErr := planOverflowOutcome(ctx, q, game, player.ID, deferredRow)
-		if oErr != nil {
-			return "", 0, false, oErr
-		}
+		outcome := planOverflowOutcome(board, game, player.ID, deferredRow)
 		switch {
 		case outcome.ModeUnsettled:
-			return "no room on the public record (would exceed row 13)", 0, false, nil
+			return "no room on the public record (would exceed row 13)", 0, false
 		case outcome.Reason != "":
-			return outcome.Reason, 0, false, nil
+			return outcome.Reason, 0, false
 		case outcome.ClampToFinalRow:
 			// Explosive Finale: the tile stays live, reports row 13, and is
 			// marked so the grid can warn that picking it spends the one slot.
@@ -196,27 +192,19 @@ func planIneligibilityReason(
 
 	if esteemLocked && meta.Category == model.CategoryEsteem {
 		return "esteem lockout: your next plan must be a non-esteem plan (Spread Propaganda mar censured)",
-			0, false, nil
+			0, false
 	}
 
-	ok, tokenReason, err := checkPlanEligible(ctx, q, game.ID, player.ID, game.CurrentRow, planType, meta.Category)
-	if err != nil {
-		return "", 0, false, err
-	}
-	if !ok {
-		return tokenReason, 0, false, nil
+	if ok, tokenReason := board.checkPlanEligible(player.ID, game.CurrentRow, planType, meta.Category); !ok {
+		return tokenReason, 0, false
 	}
 
 	if checker, hasCheck := h.(PrepEligibilityChecker); hasCheck {
-		ok, hookReason, err := checker.CheckPrepEligibility(ctx, q, game.ID, player.ID)
-		if err != nil {
-			return "", 0, false, err
-		}
-		if !ok {
-			return hookReason, 0, false, nil
+		if ok, hookReason := checker.CheckPrepEligibility(board.plans, player.ID); !ok {
+			return hookReason, 0, false
 		}
 	}
-	return "", targetRow, finaleBonus, nil
+	return "", targetRow, finaleBonus
 }
 
 // PlanEligibility handles GET /api/tables/:id/plan-eligibility.
@@ -227,15 +215,11 @@ func planIneligibilityReason(
 
 func PlanEligibility(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		game, player, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
 			return
 		}
-		game, err := s.Q.GetGameByID(r.Context(), gameID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "table not found")
-			return
-		}
+		gameID := game.ID
 		if game.Phase != model.PhaseMainEvent {
 			respond(w, http.StatusOK, map[string]any{
 				"eligible":   []any{},
@@ -288,26 +272,22 @@ func PlanEligibility(s *db.Store) http.HandlerFunc {
 			return
 		}
 
-		// Esteem lockout applies uniformly to every esteem plan, so check it
-		// once up front. A lookup failure degrades to "not locked" — the
-		// authoritative re-check in validatePlanPreparation still catches it.
-		esteemLocked, err := hasEsteemLockout(ctx, s.Q, gameID, player.ID)
+		// One snapshot answers every per-plan question below (tokens, ranks,
+		// fall-throughs, the esteem lockout, the finale slot): three reads in
+		// one round trip, instead of four or five per plan type.
+		board, err := loadEligibilityBoard(ctx, s.Q, gameID)
 		if err != nil {
-			esteemLocked = false
+			respondInternalErr(w, r, "could not check eligibility", err)
+			return
 		}
+		// Esteem lockout applies uniformly to every esteem plan, so check it
+		// once up front.
+		esteemLocked := board.hasEsteemLockout(player.ID)
 
 		for planType, h := range AllHandlers() {
 			meta := h.Metadata()
-			reason, targetRow, finaleBonus, err := planIneligibilityReason(
-				ctx, s.Q, &game, player, planType, h, esteemLocked)
-			if err != nil {
-				ineligible = append(ineligible, ineligibleEntry{
-					PlanType: planType,
-					Category: meta.Category,
-					Reason:   "could not check eligibility",
-				})
-				continue
-			}
+			reason, targetRow, finaleBonus := planIneligibilityReason(
+				board, &game, player, planType, h, esteemLocked)
 			if reason != "" {
 				ineligible = append(ineligible, ineligibleEntry{
 					PlanType: planType,

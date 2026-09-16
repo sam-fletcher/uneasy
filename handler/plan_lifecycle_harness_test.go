@@ -62,7 +62,14 @@ type planLifecycle struct {
 // drives it via prepare/resolve/makeChoice/complete (or run).
 func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 	t.Helper()
-	pool := openTestDB(t)
+	return newPlanLifecycleOn(t, openTestDB(t), n)
+}
+
+// newPlanLifecycleOn is newPlanLifecycle on a caller-supplied pool — the
+// query-budget tests pass one whose tracer counts statements
+// (openCountingPool) after openTestDB has migrated and truncated the schema.
+func newPlanLifecycleOn(t *testing.T, pool *pgxpool.Pool, n int) *planLifecycle {
+	t.Helper()
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, n)
 	store := db.NewStore(pool)
@@ -104,6 +111,10 @@ func newPlanLifecycle(t *testing.T, n int) *planLifecycle {
 	r.Post("/api/tables/{id}/pass-focus", PassFocus(store, manager))
 	r.Post("/api/tables/{id}/refresh-assets", RefreshAssets(store, manager))
 	r.Get("/api/tables/{id}/asset-suggestions", GetAssetSuggestions(store))
+	// The two reads every main-event table load makes — mounted for the
+	// query-budget tests (query_budget_integration_test.go).
+	r.Get("/api/tables/{id}/plan-eligibility", PlanEligibility(store))
+	r.Get("/api/tables/{id}/state", GetGameState(store))
 	// Scene + chat routes — needed by plan-scene lifecycle tests
 	// (adr/CHAT_OVERHAUL_PLAN.md Phase 5): posting in/out of character, reading
 	// the active scene + peers, and the turn-scene-only end-scene/create-scene
