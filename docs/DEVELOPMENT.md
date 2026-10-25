@@ -350,6 +350,68 @@ you're testing the auth UI itself; use the dev shortcut when you just
 need a session and don't care which one.
 
 
+### Driving a plan to its resolution (`cmd/plandriver`)
+
+Setting a plan's *resolution* up by hand is a dozen requests, and each plan
+wants a different prepare payload. `plandriver` does it one way for all
+twelve, so two people looking at the same plan see the same board.
+
+```bash
+go run ./cmd/plandriver setup spread_propaganda -force mar
+go run ./cmd/plandriver setup chronicle_histories
+go run ./cmd/plandriver force 301 mar     # once a pre-roll plan has a roll
+go run ./cmd/plandriver cleanup 301
+```
+
+It seeds a three-player main-event game, logs everyone in, prepares the plan
+with the fields that plan actually validates, fast-forwards the record to its
+row, and prints the table URL.
+
+Three plans (Spread Propaganda, Spread Rumors, Make Demands) create their
+roll the moment resolution opens, so `-force` works directly. The other nine
+open a pre-roll step first and have no dice yet: drive that step — through
+the UI, or over the plan's own extra routes — then run `force`. Make War and
+Clandestinely Liaise have no row at all until their simultaneous delay reveal
+is answered. The tool says which kind you got.
+
+A few things it encodes so you don't rediscover them:
+
+- **Preparing a plan auto-passes focus** to the next player, and only the
+  focus player may prepare. That is why Make Demands takes two turns: one
+  player lays down a target plan (handing focus on), the next demands it. A
+  raw `advance-row` does *not* rotate focus.
+- Exchange Courtiers needs **both** `target_player_id` and `target_asset_id`.
+- A dev-seeded retinue holds exactly one peer — the main character — so
+  peer-targeting plans trip the MC-replacement gate unless you add one. The
+  tool warns when it has had to fall back to an MC.
+
+### Screenshotting a table as a given player (`frontend/tests/shot.mjs`)
+
+The session cookie is per-origin, so one browser is one player: seeing what
+*another* player sees means logging in again, which replaces the cookie in
+every tab at once. Each run of `shot.mjs` launches its own Chromium with its
+own cookie jar instead, so any number can run at once and nobody becomes
+anybody else.
+
+```bash
+cd frontend
+node tests/shot.mjs --game 331 --as alice --label sp-01-mar-options
+node tests/shot.mjs --game 331 --as bob   --label sp-01-bob-view --width 1280
+node tests/shot.mjs --game 331 --as carol --text-only
+```
+
+Writes `<out>/<label>.png` (full page, 375px wide by default — mobile first)
+and prints the page's visible text and any console errors. The text is
+usually enough to tell which state you landed in.
+
+`--click <text>` is available for client-side UI state (expanding a section,
+opening an overlay). Anything the server records should be driven over the
+API instead: every run starts from a fresh context, so a click sequence would
+be replayed — and re-submitted — each time.
+
+Needs the Chromium binary (`npx playwright install chromium`, the same
+one-off the e2e suite needs).
+
 ### Example: jumping to Plan preparation
 
 In the console: 
