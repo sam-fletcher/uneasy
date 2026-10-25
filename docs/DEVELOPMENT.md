@@ -268,7 +268,18 @@ few shortcuts that make this painless:
 | `POST /api/dev/login?username=foo` | Find or create the account `foo`, open a session, set the cookie. No code required. |
 | `POST /api/dev/seed` | Create a game in a given phase (`main_event` / `shake_up` / `prologue_closing`) with named players, each holding one asset of every type. `prologue_closing` parks the game at the prologue's "The Stage is Set" step with no Public Record board yet (so an all-ready advance runs cleanly). Every seeded game also gets one sample law + rumor so the laws/rumors UI isn't blank — pass a `"laws"`/`"rumors"` array to override (`[]` for none). See the `DevSeed` doc comment for the body shape. |
 | `POST /api/dev/advance-row` | Jump a game's `current_row` — `{"plan_id":N}` (to that plan's row) or `{"game_id":N,"row":R}`. Lands you on a prepared plan's resolution row without clicking through the rows between. |
+| `POST /api/dev/force-roll` | `{"roll_id":N,"outcome":"mar"}` (or `"make"`, or an exact `"result":K`) — force an open dice roll to a chosen outcome and resolve it through the real path. The dice are genuinely random, so without this the **mar** branch of every rolled plan — half of its resolution UI — can't be reached on demand. |
 | `POST /api/dev/delete-game` | `{"game_id":N}` — hard-delete a single game and all its data (cascade), leaving accounts and other games intact. The everyday cleanup tool. |
+
+`force-roll` works *with* the production resolution path rather than around
+it: it pre-sets the die faces (`rollAndCancelDice` keeps a face that is
+already set — the same hook Propose Duel's bout dice use), then runs the real
+stage machine, so `roll.resolved`, the chat post, `applyAutoChoiceOnRoll` and
+the row-state recompute all fire and a watching browser updates live. It
+refuses what it can't deliver: a mar at difficulty 1, or a result above the
+actor's dice count. Note that it overwrites *every* face on the roll — forcing
+a Propose Duel final roll discards the dice tucked under the staked assets, so
+force a duel by picking its bouts instead.
 
 There is deliberately **no** "wipe everything" endpoint: that was too easy
 to fire by accident. To wipe your entire local dev database (always

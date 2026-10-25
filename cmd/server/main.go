@@ -367,6 +367,7 @@ func setupRouter(
 				r.Post("/dev/login", handler.DevLogin(store))
 				r.Post("/dev/seed", handler.DevSeed(store))
 				r.Post("/dev/advance-row", handler.DevAdvanceRow(store, manager))
+				r.Post("/dev/force-roll", handler.DevForceRoll(store, manager))
 				r.Post("/dev/delete-game", handler.DevDeleteGame(store))
 			} else {
 				logger.Info("dev routes are OFF")

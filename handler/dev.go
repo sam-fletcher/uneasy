@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
@@ -445,5 +447,227 @@ func DevSeed(s *db.Store) http.HandlerFunc {
 			"phase":     string(seeded.Game.Phase),
 			"players":   players,
 		})
+	}
+}
+
+// ── Forced dice (POST /api/dev/force-roll) ───────────────────────────────────
+
+// devForceFaces picks die faces that make an open roll resolve to exactly
+// `target` distinct uncancelled actor faces.
+//
+// It works *with* the real resolution path rather than around it:
+// rollAndCancelDice keeps any die that already carries a face and only rolls
+// the blank ones (the same hook Propose Duel's pre-set bout dice ride on), so
+// writing every face up front makes finalizeRoll deterministic while every
+// downstream effect — interference cancellation, roll.resolved, the chat post,
+// applyAutoChoiceOnRoll, the row-state recompute — still runs exactly as it
+// does in production.
+//
+// Actor die i takes face min(i+1, target), giving faces 1,2,…,target and then
+// repeats of target: exactly `target` distinct values. Interference dice all
+// take target+1, a face no actor die holds, so cancelInterference pairs
+// nothing and the result is the actor count of distinct faces, untouched.
+//
+// Returns a non-empty message when the target can't be hit on this roll.
+func devForceFaces(actorCount, interferenceCount int, target int16) (
+	actorFaces []int16, interferenceFace int16, errMsg string,
+) {
+	switch {
+	case actorCount == 0:
+		return nil, 0, "roll has no actor dice"
+	case target < 1:
+		return nil, 0, "target result must be at least 1"
+	case int(target) > actorCount:
+		return nil, 0, fmt.Sprintf(
+			"cannot reach a result of %d: the actor has only %d dice", target, actorCount)
+	case target > diceSides:
+		return nil, 0, fmt.Sprintf("target result must be at most %d", diceSides)
+	case target == diceSides && interferenceCount > 0:
+		// All six faces are in play as singletons, so every interference die
+		// cancels one and the result can't be held at 6.
+		return nil, 0, "cannot force a result of 6 while interference dice are committed"
+	}
+
+	actorFaces = make([]int16, actorCount)
+	for i := range actorFaces {
+		actorFaces[i] = min(int16(i+1), target)
+	}
+	return actorFaces, target + 1, ""
+}
+
+// devForceTarget derives the distinct-face count to aim for from the request's
+// outcome and/or explicit result, against the roll's effective difficulty.
+// Returns a non-empty message when the pair is unusable.
+func devForceTarget(outcome string, result *int16, effDifficulty int16) (int16, string) {
+	var target int16
+	switch {
+	case result != nil:
+		target = *result
+	case outcome == makeOutcome:
+		target = effDifficulty // the minimum make
+	case outcome == marOutcome:
+		target = effDifficulty - 1 // the maximum mar
+		if target < 1 {
+			return 0, fmt.Sprintf(
+				"cannot force a mar: effective difficulty is %d, so every result makes", effDifficulty)
+		}
+	default:
+		return 0, `outcome must be "make" or "mar" (or pass an explicit result)`
+	}
+
+	// When both were given, hold them to each other — a mismatch is a typo in
+	// the caller's script, not an instruction.
+	if result != nil && outcome != "" {
+		got := marOutcome
+		if target >= effDifficulty {
+			got = makeOutcome
+		}
+		if got != outcome {
+			return 0, fmt.Sprintf(
+				"result %d against effective difficulty %d is a %s, not a %s",
+				target, effDifficulty, got, outcome)
+		}
+	}
+	return target, ""
+}
+
+// devWriteForcedFaces stamps every die on the roll with a face chosen to land
+// the result on `target`, so the ordinary resolution path can run unmodified.
+// Returns a user-facing message when the target is unreachable on this roll.
+func devWriteForcedFaces(
+	ctx context.Context, q *dbgen.Queries, rollID int64, target int16,
+) (string, error) {
+	dice, err := q.ListDiceByRoll(ctx, rollID)
+	if err != nil {
+		return "", err
+	}
+	var actor, interference []dbgen.DiceRollDice
+	for _, d := range dice {
+		if d.IsInterference {
+			interference = append(interference, d)
+		} else {
+			actor = append(actor, d)
+		}
+	}
+
+	actorFaces, interferenceFace, msg := devForceFaces(len(actor), len(interference), target)
+	if msg != "" {
+		return msg, nil
+	}
+	for i, d := range actor {
+		face := actorFaces[i]
+		if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: &face}); err != nil {
+			return "", err
+		}
+	}
+	for _, d := range interference {
+		face := interferenceFace
+		if err := q.SetDieFace(ctx, dbgen.SetDieFaceParams{ID: d.ID, Face: &face}); err != nil {
+			return "", err
+		}
+	}
+	return "", nil
+}
+
+// DevForceRoll handles POST /api/dev/force-roll.
+//
+// Forces an open dice roll to a chosen outcome, then resolves it through the
+// production path. The dice are genuinely random, which leaves the *mar*
+// branch of every rolled plan unreachable on demand — half of each plan's
+// resolution UI. The integration harness solves this by writing the outcome
+// straight to the DB (planLifecycle.forceRoll), but that skips every
+// broadcast, so a browser watching the table never updates. This route instead
+// pre-sets the die faces and lets finalizeRoll do the rest, so what a tester
+// sees is the real thing.
+//
+// Body (roll_id plus one of outcome / result):
+//
+//	{ "roll_id": 56, "outcome": "mar" }   // result = difficulty − 1
+//	{ "roll_id": 56, "outcome": "make" }  // result = difficulty
+//	{ "roll_id": 56, "result": 3 }        // exact distinct-face count
+//
+// Passing both holds them to each other and 422s on a mismatch. The response
+// is the resolved roll.
+//
+// Caveat: it overwrites every face on the roll, including faces another flow
+// pre-set deliberately — Propose Duel's bout dice are tucked under staked
+// assets before the roll, so forcing a duel's final roll discards that
+// pairing. Force duel outcomes by picking the bouts instead.
+//
+// Mounted only when UNEASY_DEV=1.
+func DevForceRoll(s *db.Store, manager *hub.Manager) http.HandlerFunc {
+	type request struct {
+		RollID  *int64 `json:"roll_id"`
+		Outcome string `json:"outcome"`
+		Result  *int16 `json:"result"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body request
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if body.RollID == nil {
+			respondErr(w, http.StatusBadRequest, "roll_id required")
+			return
+		}
+
+		ctx := r.Context()
+		roll, err := s.Q.GetDiceRollByID(ctx, *body.RollID)
+		if err != nil {
+			respondErr(w, http.StatusNotFound, "roll not found")
+			return
+		}
+		if !rollIsOpen(&roll) {
+			respondErr(w, http.StatusConflict, "roll is already resolved")
+			return
+		}
+		if roll.IsShakeUp {
+			respondErr(w, http.StatusConflict,
+				"shake-up rolls grant tokens rather than make/mar; force them with an explicit result")
+			return
+		}
+
+		effDifficulty := roll.Difficulty
+		if roll.AdjustedDifficulty != nil {
+			effDifficulty = *roll.AdjustedDifficulty
+		}
+		target, msg := devForceTarget(body.Outcome, body.Result, effDifficulty)
+		if msg != "" {
+			respondErr(w, http.StatusUnprocessableEntity, msg)
+			return
+		}
+
+		if msg, err := devWriteForcedFaces(ctx, s.Q, roll.ID, target); err != nil {
+			respondInternalErr(w, r, "could not force die faces", err)
+			return
+		} else if msg != "" {
+			respondErr(w, http.StatusUnprocessableEntity, msg)
+			return
+		}
+
+		// Everyone ready + the real stage machine: advanceToLeverage ends in
+		// maybeAutoResolve, which now finds every participant ready and calls
+		// finalizeRoll. A roll already in the leverage stage skips straight there.
+		if err := s.Q.SetAllParticipantsReady(ctx, roll.ID); err != nil {
+			respondInternalErr(w, r, "could not ready participants", err)
+			return
+		}
+		if roll.Stage == stageLeverage {
+			err = maybeAutoResolve(ctx, w, r, s.Q, manager, &roll)
+		} else {
+			err = advanceToLeverage(ctx, w, r, s.Q, manager, &roll)
+		}
+		if err != nil {
+			respondInternalErr(w, r, "could not resolve roll", err)
+			return
+		}
+
+		resolved, err := s.Q.GetDiceRollByID(ctx, roll.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not reload roll", err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{"roll": resolved})
 	}
 }
