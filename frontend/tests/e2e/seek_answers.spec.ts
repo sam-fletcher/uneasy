@@ -117,6 +117,11 @@ test('seek answers: ask → veto → re-ask → answer each reach the other side
 			current_row: 5,
 			rankings: { knowledge: [1, 0] },
 			plans: [{ preparer_idx: 0, plan_type: 'seek_answers', category: 'knowledge', row: 5, row_order: 0 }],
+			// This spec asserts the blank-asset break branch (a resource with no
+			// marginalia is destroyed outright), so it opts out of the seed's
+			// default note. Everything else gets one, so break and tear
+			// sub-flows have something to act on.
+			starting_marginalia: false,
 		},
 	});
 	expect(seedRes.ok(), `seed failed: ${await seedRes.text()}`).toBeTruthy();

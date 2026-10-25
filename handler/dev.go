@@ -324,10 +324,10 @@ type devSeedRequest struct {
 	// nil => one sample entry; an explicit (possibly empty) slice overrides.
 	Laws   *[]string `json:"laws"`
 	Rumors *[]string `json:"rumors"`
-	// nil => on for prologue_closing, off for every other phase. Set false to
-	// seed blank (marginalia-less) assets at closing — the only way to exercise
-	// the closing gate's blank-asset item from a seeded game — or true to give
-	// a Main-Event seed notes to tear.
+	// nil => on, in every phase: a seeded asset carries one note, so break and
+	// tear sub-flows have something to act on. Set false to seed blank
+	// (marginalia-less) assets — the only way to exercise the prologue closing
+	// gate's blank-asset item, or a plan's empty-target branch, from a seed.
 	StartingMarginalia *bool `json:"starting_marginalia"`
 }
 
@@ -376,13 +376,22 @@ func devSeedOptions(body *devSeedRequest) ([]gametest.Option, string) {
 	for _, text := range rumors {
 		opts = append(opts, gametest.WithRumor(text))
 	}
-	// Seeded assets stay blank except at prologue_closing, where a blank asset
-	// can never clear the closing gate and would make the seeded game
-	// unplayable out of the box. Defaulting this on for every phase would
-	// silently re-calibrate the Main-Event fixtures the e2e specs and
-	// integration tests are written against (blank assets are not eligible
-	// break targets, so plan sub-flows take different branches).
-	startingMarginalia := body.Phase == "prologue_closing"
+	// Seeded assets carry one note each by default, in every phase.
+	//
+	// This used to default on only at prologue_closing, on the grounds that
+	// turning it on everywhere would re-calibrate the Main-Event fixtures. It
+	// did — but in the wrong direction. A blank asset is not an eligible break
+	// target, so every plan sub-flow that tears, breaks or picks a marginalia
+	// took its empty branch ("no intact marginalia", "no valid targets") on a
+	// seeded board. The 2026-10 plan audit hit this in three separate groups,
+	// each of which had to stamp notes by hand before the plan under test
+	// behaved like a real one; a default that makes the common case unreachable
+	// is the wrong default.
+	//
+	// A fixture that genuinely wants blank assets — the closing gate's
+	// blank-asset item is the real case — now says so with
+	// "starting_marginalia": false.
+	startingMarginalia := true
 	if body.StartingMarginalia != nil {
 		startingMarginalia = *body.StartingMarginalia
 	}
