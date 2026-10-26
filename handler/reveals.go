@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -69,6 +70,18 @@ func GetReveal(s *db.Store) http.HandlerFunc {
 			Face       *int16  `json:"face"`        // null until the reveal completes
 			RevealedAt *string `json:"revealed_at"` // submission time, or null if not yet in
 		}
+		// Whose face the viewer may see early ("their own"). Normally the entry under
+		// their id — but the redelay reveal is keyed by liaison SEAT, so there it is
+		// the seats they hold: a perform_steps winner sees the face they chose for the
+		// preparer's seat, and the locked-out preparer does not (see clSeatsFor).
+		redelay := reveal.RevealType == revealTypeLiaiseRedelay
+		heldSeats := clRevealSeatsFor(ctx, s.Q, reveal, viewer.ID)
+		isOwnEntry := func(playerID int64) bool {
+			if redelay {
+				return slices.Contains(heldSeats, playerID)
+			}
+			return playerID == viewer.ID
+		}
 		views := make([]entryView, 0, len(entries))
 		for _, e := range entries {
 			ev := entryView{PlayerID: e.PlayerID}
@@ -79,7 +92,7 @@ func GetReveal(s *db.Store) http.HandlerFunc {
 			// Faces are hidden until the reveal completes — except a viewer may
 			// always see their OWN face (they chose it; it leaks nothing), so the
 			// UI can keep their pick highlighted across reloads.
-			if e.Face != nil && (reveal.IsComplete || e.PlayerID == viewer.ID) {
+			if e.Face != nil && (reveal.IsComplete || isOwnEntry(e.PlayerID)) {
 				ev.Face = e.Face
 			}
 			views = append(views, ev)
@@ -142,10 +155,30 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
+		// Which entry this submission fills. Normally the caller's own — but the
+		// redelay reveal is keyed by liaison SEAT, and seats are held by whoever
+		// clSeatsFor says: a Make Demands perform_steps winner holds the preparer's
+		// seat without being a registered participant, and the preparer they
+		// replaced is registered but locked out. There the seat helper is the sole
+		// authority, so a caller with no seat is refused even if an entry exists
+		// under their id.
+		entryPlayerID := player.ID
+		if reveal.RevealType == revealTypeLiaiseRedelay {
+			seats := clRevealSeatsFor(ctx, s.Q, reveal, player.ID)
+			if len(seats) == 0 {
+				respondErr(w, http.StatusForbidden, "you are not a participant in this reveal")
+				return
+			}
+			entryPlayerID = seats[0]
+			if entries, lErr := s.Q.ListRevealEntries(ctx, reveal.ID); lErr == nil {
+				entryPlayerID = clOpenSeat(seats, revealSubmitters(entries))
+			}
+		}
+
 		// Verify this player is a registered participant.
 		entry, err := s.Q.GetRevealEntry(ctx, dbgen.GetRevealEntryParams{
 			RevealID: reveal.ID,
-			PlayerID: player.ID,
+			PlayerID: entryPlayerID,
 		})
 		if err != nil {
 			respondErr(w, http.StatusForbidden, "you are not a participant in this reveal")
@@ -160,7 +193,7 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		face := body.Face
 		err = s.Q.SetRevealEntryFace(ctx, dbgen.SetRevealEntryFaceParams{
 			RevealID: reveal.ID,
-			PlayerID: player.ID,
+			PlayerID: entryPlayerID,
 			Face:     &face,
 		})
 		if err != nil {
@@ -171,7 +204,7 @@ func SubmitReveal(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		// Broadcast that this player submitted (face still hidden).
 		broadcastEvent(manager, reveal.GameID, model.EventRevealSubmitted, model.RevealSubmittedPayload{
 			RevealID: reveal.ID,
-			PlayerID: player.ID,
+			PlayerID: entryPlayerID,
 		})
 
 		// Check if all participants have now submitted.
@@ -448,6 +481,21 @@ func requireRevealAccess(
 		return nil, nil, false
 	}
 	return &reveal, player, true
+}
+
+// ── revealSubmitters ──────────────────────────────────────────────────────────
+
+// revealSubmitters returns the set of players whose entry has been submitted.
+// Submission status is revealed_at, not face — the same signal GetReveal exposes
+// to clients, since faces stay hidden until the reveal completes.
+func revealSubmitters(entries []dbgen.SimultaneousRevealEntry) map[int64]bool {
+	submitted := make(map[int64]bool, len(entries))
+	for _, e := range entries {
+		if e.RevealedAt.Valid {
+			submitted[e.PlayerID] = true
+		}
+	}
+	return submitted
 }
 
 // ── revealCeilAverage ─────────────────────────────────────────────────────────

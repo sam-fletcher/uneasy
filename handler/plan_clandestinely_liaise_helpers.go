@@ -47,14 +47,17 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 			)
 			return
 		}
-		if !clIsParticipant(plan, player.ID, *ld) {
-			respondErr(w, http.StatusForbidden, "only the preparer and partner may submit redelay-reveal")
+		seats, ok := clRequireSeats(w, ctx, deps.Q, plan, ld, player.ID, "redelay-reveal")
+		if !ok {
 			return
 		}
 		if ld.RedelayRevealID == nil {
 			respondErr(w, http.StatusConflict, "redelay reveal not initialised")
 			return
 		}
+		// The reveal's entries are keyed by seat (the preparer's and the partner's
+		// own ids), so a stand-in submits under the seat they hold, not their own id.
+		seat := clOpenSeat(seats, liaiseRedelaySubmitters(ctx, deps.Q, ld))
 
 		var body struct {
 			Face int16 `json:"face"`
@@ -69,7 +72,7 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 		// Record the face in the reveal entry.
 		if err := deps.Q.SetRevealEntryFace(ctx, dbgen.SetRevealEntryFaceParams{
 			RevealID: *ld.RedelayRevealID,
-			PlayerID: player.ID,
+			PlayerID: seat,
 			Face:     &face,
 		}); err != nil {
 			respondInternalErr(w, r, "could not record redelay reveal", err)
@@ -78,7 +81,7 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 
 		broadcastEvent(deps.Manager, plan.GameID, model.EventRevealSubmitted, model.RevealSubmittedPayload{
 			RevealID: *ld.RedelayRevealID,
-			PlayerID: player.ID,
+			PlayerID: seat,
 		})
 
 		// Check if both players have submitted.
@@ -107,7 +110,7 @@ func clRedelayRevealHandler(deps *PlanDeps) http.HandlerFunc {
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":   plan.ID,
-			"player_id": player.ID,
+			"player_id": seat,
 			"face":      face,
 		})
 	}
@@ -275,40 +278,144 @@ func clApplyRedelayOutcome(
 	return nil
 }
 
-// clShareSlotFor resolves playerID to the Things We Share slot they may fill,
-// writing a 403 and returning ok=false if they may fill neither. The PARTNER
-// always fills their own slot. The PREPARER's slot belongs to the resolution
-// actor: normally the preparer, but a Make Demands perform_steps winner stands
-// in (and the preparer is locked out). The returned slot id — the preparer's
-// when a winner drives it — keys the choice so it targets the preparer's partner
-// (clOtherParticipantID) and its spoils flow as the preparer's (take_gift
-// honoring keep_assets), and so the winner can never usurp the partner's slot.
-func clShareSlotFor(
-	w http.ResponseWriter,
+// ── Seats ─────────────────────────────────────────────────────────────────────
+//
+// A liaison has exactly two SEATS — the partner's and the preparer's — and every
+// submission step (keep-secret, a Things We Share pick, a redelay face) fills
+// one. A seat is named by the player it belongs to, and that is what the record
+// keys on (kept_secrets, share_submitter_ids, liaise_choices, the reveal's
+// entries), never by whoever happened to be typing.
+//
+// The distinction matters because Make Demands can hand someone else the
+// preparer's controls: a resolved, made demand's perform_steps winner stands in
+// for the preparer (actsForPreparer) and the preparer is locked out. A guard that
+// asks only "is this caller the preparer or the partner?" refuses the winner AND
+// — since the preparer is locked out — everyone else, so the step is performed by
+// nobody and the row cannot finish. Asking "which seats may this caller fill?"
+// admits whoever actually holds each one.
+//
+// Two shapes follow from that. A caller may hold NO seat (a spectator, or the
+// locked-out preparer). And a caller may hold BOTH: the demander can be the
+// liaison's own partner (Make Demands only forbids demanding against your own
+// plan), so they fill their own seat and the preparer's.
+
+// clSeatsFor returns the seats playerID may fill in this liaison, partner's
+// first. The partner always fills their own; the preparer's belongs to the
+// resolution actor — the preparer, unless a perform_steps winner stands in.
+func clSeatsFor(
 	ctx context.Context,
-	deps *PlanDeps,
+	q *dbgen.Queries,
 	plan *dbgen.Plan,
 	ld *LiaiseResolutionData,
 	playerID int64,
-) (int64, bool) {
+) []int64 {
+	var seats []int64
 	if ld.PartnerID != nil && *ld.PartnerID == playerID {
-		return playerID, true
+		seats = append(seats, playerID)
 	}
-	if !requireResolutionActor(w, ctx, deps.Q, plan, playerID) {
-		return 0, false
+	if actsForPreparer(ctx, q, plan, playerID) {
+		seats = append(seats, plan.PreparerID)
 	}
-	return plan.PreparerID, true
+	return seats
 }
 
-// clIsParticipant returns true if playerID is the preparer or the partner.
-func clIsParticipant(plan *dbgen.Plan, playerID int64, ld LiaiseResolutionData) bool {
-	if playerID == plan.PreparerID {
-		return true
+// clRequireSeats is clSeatsFor as a route guard: it writes a 403 and returns
+// ok=false when the caller holds no seat, naming step in the message.
+func clRequireSeats(
+	w http.ResponseWriter,
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	ld *LiaiseResolutionData,
+	playerID int64,
+	step string,
+) ([]int64, bool) {
+	seats := clSeatsFor(ctx, q, plan, ld, playerID)
+	if len(seats) == 0 {
+		respondErr(w, http.StatusForbidden,
+			"only the partner, and whoever holds the preparer's slot, may submit "+step)
+		return nil, false
 	}
-	if ld.PartnerID != nil && *ld.PartnerID == playerID {
-		return true
+	return seats, true
+}
+
+// clOpenSeat picks which of a caller's seats a seatless submission (a redelay
+// face carries no asset to tell the seats apart by) is for: the first that has
+// not submitted yet, else the first. A one-seat caller has no choice to make.
+func clOpenSeat(seats []int64, submitted map[int64]bool) int64 {
+	for _, seat := range seats {
+		if !submitted[seat] {
+			return seat
+		}
 	}
-	return false
+	return seats[0]
+}
+
+// clPreparerSeatHolder is whoever fills the preparer's seat right now: the
+// perform_steps winner if a demand handed it over, else the preparer.
+func clPreparerSeatHolder(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
+	if winner := performStepsWinner(ctx, q, plan); winner != 0 {
+		return winner
+	}
+	return plan.PreparerID
+}
+
+// clRevealSeatsFor is clSeatsFor for a reveal row: the seats viewerID fills in
+// the redelay reveal. It is nil both for a viewer who holds none and for any
+// other reveal type, so callers must check the type first (reveals.go does) before
+// reading nil as "no seat". Only liaise_redelay can have a stand-in — it happens
+// mid-resolution, after a demand can have resolved against the plan, whereas the
+// delay reveal at prep time precedes any row to demand on. reveals.go uses it so
+// the generic submit/get routes agree with this file's.
+func clRevealSeatsFor(
+	ctx context.Context,
+	q *dbgen.Queries,
+	reveal *dbgen.SimultaneousReveal,
+	viewerID int64,
+) []int64 {
+	if reveal.RevealType != revealTypeLiaiseRedelay || reveal.PlanID == nil {
+		return nil
+	}
+	plan, err := q.GetPlanByID(ctx, *reveal.PlanID)
+	if err != nil {
+		return nil
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	return clSeatsFor(ctx, q, &plan, resData.EnsureLiaise(), viewerID)
+}
+
+// clShareSeat picks the seat a Things We Share submission is for. Every option
+// targets the OTHER seat's assets, so for a caller holding both seats the target's
+// owner settles it: a partner's asset means the preparer's seat is acting, and
+// vice versa. ok is false when a two-seat caller named no target, or one owned by
+// neither side — there is nothing to tell the seats apart by, and the plain
+// target validation would only reject it anyway.
+func clShareSeat(
+	ctx context.Context,
+	q *dbgen.Queries,
+	seats []int64,
+	plan *dbgen.Plan,
+	ld *LiaiseResolutionData,
+	targetAssetID *int64,
+) (int64, bool) {
+	if len(seats) == 1 {
+		return seats[0], true
+	}
+	if targetAssetID == nil || ld.PartnerID == nil {
+		return 0, false
+	}
+	target, err := q.GetAssetByID(ctx, *targetAssetID)
+	if err != nil {
+		return 0, false
+	}
+	switch target.OwnerID {
+	case *ld.PartnerID:
+		return plan.PreparerID, true
+	case plan.PreparerID:
+		return *ld.PartnerID, true
+	default:
+		return 0, false
+	}
 }
 
 // clOtherParticipantID returns the participant who is NOT playerID (the

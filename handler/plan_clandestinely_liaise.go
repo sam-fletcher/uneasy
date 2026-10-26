@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/game"
@@ -331,6 +332,12 @@ func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 // earlier turn and resolves on its delayed row. The preparer-only phases
 // (together_at_last, done) return false and ride the generic plan_resolving
 // case, which already names the resolving plan's preparer.
+//
+// It names whoever HOLDS each pending seat, which is not always the seat's own
+// player: after a Make Demands perform_steps win the preparer's seat belongs to
+// the winner, the preparer is locked out of it, and naming the preparer would
+// point the table at the one person who cannot act (see clSeatsFor). Both seats
+// held by one player (the demander is also the partner) name that player once.
 func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	resData := loadResolutionData(plan.ResolutionData)
 	ld := resData.Liaise
@@ -338,6 +345,13 @@ func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		return model.RowState{}, false
 	}
 	participants := []int64{plan.PreparerID, *ld.PartnerID}
+	preparerHolder := clPreparerSeatHolder(ctx, q, plan)
+	holderOf := func(seat int64) int64 {
+		if seat == plan.PreparerID {
+			return preparerHolder
+		}
+		return seat
+	}
 
 	//nolint:exhaustive // together_at_last/done handled by default (ride generic)
 	switch ld.Phase {
@@ -346,31 +360,39 @@ func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		for _, ks := range ld.KeptSecrets {
 			submitted[ks.PlayerID] = true
 		}
-		return liaisePendingState(participants, submitted)
+		return liaisePendingState(participants, submitted, holderOf)
 	case game.LiaisePhaseThingsWeShare:
 		submitted := map[int64]bool{}
 		for _, id := range ld.ShareSubmitterIDs {
 			submitted[id] = true
 		}
-		return liaisePendingState(participants, submitted)
+		return liaisePendingState(participants, submitted, holderOf)
 	case game.LiaisePhaseWhenWillISeeYouAgain:
 		submitted := liaiseRedelaySubmitters(ctx, q, ld)
-		return liaisePendingState(participants, submitted)
+		return liaisePendingState(participants, submitted, holderOf)
 	default:
 		return model.RowState{}, false
 	}
 }
 
-// liaisePendingState names the participants who still owe a submission in a
-// collaborative liaise sub-phase. All three submit phases auto-advance the
-// moment both participants are in (no preparer "Advance" click), so when nobody
-// is pending the row rides the generic plan_resolving case (returns false) — the
-// transient both-in state is never the table's resting state.
-func liaisePendingState(participants []int64, submitted map[int64]bool) (model.RowState, bool) {
+// liaisePendingState names the players who still owe a submission in a
+// collaborative liaise sub-phase: for each seat in participants that hasn't
+// submitted, whoever holds it (holderOf), once each. All three submit phases
+// auto-advance the moment both seats are in (no preparer "Advance" click), so
+// when nobody is pending the row rides the generic plan_resolving case (returns
+// false) — the transient both-in state is never the table's resting state.
+func liaisePendingState(
+	participants []int64,
+	submitted map[int64]bool,
+	holderOf func(seat int64) int64,
+) (model.RowState, bool) {
 	var pending []int64
-	for _, p := range participants {
-		if !submitted[p] {
-			pending = append(pending, p)
+	for _, seat := range participants {
+		if submitted[seat] {
+			continue
+		}
+		if holder := holderOf(seat); !slices.Contains(pending, holder) {
+			pending = append(pending, holder)
 		}
 	}
 	if len(pending) == 0 {
