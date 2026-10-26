@@ -6,8 +6,8 @@
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
-		preparePlan, makeChoice, completePlan,
-		type Plan, type Asset, type Player, type DiceRoll,
+		preparePlan, makeChoice, completePlan, getRoll,
+		type Plan, type DiceRollDie,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
@@ -18,9 +18,10 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName,
-		assetsWithIntactMarginalia, playersExcept,
+		breakableAssets, breaksAvailable, playersExcept,
 	} from './shared';
-	import { spGivePeer, spBreakSelf, createArtifact } from '$lib/api';
+	import { spGivePeer, spBreakSelf, createArtifact, forfeitSpreadPropagandaStep } from '$lib/api';
+	import { destructionWarning } from '$lib/assetRisk';
 
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -107,11 +108,16 @@
 	}
 
 	// give_peer / break_self are genuinely repeatable — each pick owes a
-	// separate sub-flow step (a peer handed over, a marginalia broken).
-	// lay_low / counter_prop fire a single immediate effect (an esteem
-	// lockout flag; a guarded one-shot recursive plan), so a second pick
-	// would just spend budget for nothing — capped at 1 in the picker.
-	const MAR_SINGLE_FIRE = new Set(['lay_low', 'counter_prop']);
+	// separate sub-flow step (a peer handed over, an asset broken) — but only up
+	// to what there is to spend it on. lay_low / counter_prop fire a single
+	// immediate effect (an esteem lockout flag; a guarded one-shot recursive
+	// plan), so a second pick would just spend budget for nothing.
+	//
+	// Every option is therefore capped at its live target count (marCap below),
+	// and greyed with a reason when it has none — the same shape as Seek Answers'
+	// picker. An uncapped picker let three give_peer picks commit against one
+	// peer, after which /complete refused forever ("2 of 3 give-peer pick(s)
+	// still to resolve") with nothing at the table able to satisfy them.
 	let marCounts = $state<Record<string, number>>({
 		give_peer: 0, lay_low: 0, break_self: 0, counter_prop: 0,
 	});
@@ -122,9 +128,69 @@
 		if (result == null || difficulty == null) return null;
 		return Math.max(0, difficulty - result);
 	});
+
+	// The preparer's retinue and breakables — what give_peer / break_self spend
+	// picks on. Mirrors spEligibleGivePeers / spEligibleSelfBreaks on the server.
+	// A blank asset counts as one break (it is destroyed outright); see
+	// breakableAssets / adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D3.
+	const preparerPeers = $derived(
+		plan ? assets.filter(a => a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed) : []
+	);
+	const preparerBreakable = $derived(plan ? breakableAssets(assets, plan.preparer_id) : []);
+	const breakSelfCap = $derived(preparerBreakable.reduce((n, a) => n + breaksAvailable(a), 0));
+
+	// counter_prop needs someone to have interfered with THIS roll: the top
+	// interferer is who spreads propaganda of their own. The dice aren't on the
+	// plan context, so fetch them once the mar picker is up. Fail OPEN on a fetch
+	// error — the server re-checks and stays the authority; failing closed would
+	// strand a legitimate pick behind a flaky request.
+	let rollDice = $state<{ rollID: number; dice: DiceRollDie[] | null } | null>(null);
+	$effect(() => {
+		const rollID = activeRoll != null && activeRoll.plan_id === plan?.id ? activeRoll.id : null;
+		if (rollID == null || rollOutcome !== 'mar' || !amChoiceActor || choicesDone) return;
+		let stale = false;
+		getRoll(rollID)
+			.then(d => { if (!stale) rollDice = { rollID, dice: d.dice }; })
+			.catch(() => { if (!stale) rollDice = { rollID, dice: null }; });
+		return () => { stale = true; };
+	});
+	/** Why counter_prop can't be picked right now, or null when it can. */
+	const coOptBlocker = $derived.by((): string | null => {
+		if (spData.original_plan_id != null) return 'not available on counter-propaganda';
+		if (rollDice == null || rollDice.rollID !== activeRoll?.id) return 'checking who interfered…';
+		if (rollDice.dice == null) return null;
+		return rollDice.dice.some(d => d.is_interference) ? null : 'nobody interfered with this roll';
+	});
+
+	const marCap = $derived<Record<string, number>>({
+		lay_low: 1,
+		counter_prop: coOptBlocker == null ? 1 : 0,
+		give_peer: preparerPeers.length,
+		break_self: breakSelfCap,
+	});
+	const marCapacity = $derived(Object.values(marCap).reduce((a, b) => a + b, 0));
+	// "Choose options equal to (difficulty − result)" — but if fewer picks have a
+	// valid target than that, the preparer takes every one they can. Requiring the
+	// full count would leave Apply disabled for good once the caps bind.
+	const marPicksNeeded = $derived(
+		marRequiredPicks == null ? null : Math.min(marRequiredPicks, marCapacity),
+	);
+	function marNote(key: string): string | null {
+		const cap = marCap[key] ?? 0;
+		if (cap === 0) {
+			if (key === 'give_peer') return 'no peers to give';
+			if (key === 'break_self') return 'nothing of yours left to break';
+			if (key === 'counter_prop') return coOptBlocker;
+			return null;
+		}
+		if ((marCounts[key] ?? 0) >= cap) {
+			return key === 'lay_low' || key === 'counter_prop' ? 'already chosen' : 'all targets picked';
+		}
+		return null;
+	}
 	function bumpMar(key: string, delta: number) {
-		if (delta > 0 && MAR_SINGLE_FIRE.has(key) && (marCounts[key] ?? 0) >= 1) return;
-		if (delta > 0 && marRequiredPicks != null && marTotalPicked >= marRequiredPicks) return;
+		if (delta > 0 && (marCounts[key] ?? 0) >= (marCap[key] ?? 0)) return;
+		if (delta > 0 && marPicksNeeded != null && marTotalPicked >= marPicksNeeded) return;
 		const next = Math.max(0, (marCounts[key] ?? 0) + delta);
 		marCounts = { ...marCounts, [key]: next };
 	}
@@ -178,11 +244,15 @@
 	const artifactPending = $derived(!!spData.artifact_required && spData.artifact_id == null);
 	// Everything the preparer must still do before the plan can be completed.
 	const preparerActionPending = $derived(marEffectsPending || artifactPending);
+	// Who performs those steps: the preparer, or — after a Make Demands
+	// perform_steps win — the winner, in their place (the server refuses the
+	// preparer every one of them). The retinue and assets are still the
+	// PREPARER's, so copy that says "your" has to say whose when they aren't.
+	const stepActorName = $derived(plan ? playerName(players, performStepsWinnerID ?? plan.preparer_id) : '');
+	const whose = $derived(isPreparer || !plan ? 'your' : `${playerName(players, plan.preparer_id)}'s`);
+	const whoHas = $derived(isPreparer || !plan ? 'You have' : `${playerName(players, plan.preparer_id)} has`);
 
 	// give_peer: pick one of the preparer's peers and a recipient player.
-	const preparerPeers = $derived(
-		plan ? assets.filter(a => a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed) : []
-	);
 	let givePeerID = $state<number | null>(null);
 	let giveToPlayerID = $state<number | null>(null);
 	let giveBusy = $state(false);
@@ -198,29 +268,45 @@
 		} finally { giveBusy = false; }
 	}
 
-	// break_self: tear one marginalia from one of the preparer's own assets.
-	const breakSelfAssets = $derived(
-		plan ? assetsWithIntactMarginalia(assets, plan.preparer_id) : []
-	);
+	// break_self: break one of the preparer's own assets — tear a marginalia, or
+	// (blank asset, picked with the sentinel id 0) destroy it outright.
 	let breakMargID = $state<number | null>(null);
+	let breakAssetID = $state<number | null>(null);
 	let breakBusy = $state(false);
+	const breakWarn = $derived(destructionWarning(assets.find(a => a.id === breakAssetID)));
 	async function submitBreakSelf(p: Plan) {
-		if (breakBusy || breakMargID == null) return;
+		if (breakBusy || breakMargID == null || breakAssetID == null) return;
 		breakBusy = true; resError = '';
 		try {
-			await spBreakSelf(p.id, breakMargID);
-			breakMargID = null;
+			await spBreakSelf(p.id, breakAssetID, breakMargID);
+			breakMargID = null; breakAssetID = null;
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not break asset.';
 		} finally { breakBusy = false; }
 	}
 
+	// Discharge a depletable step that has picks owed but no live target — no peer
+	// left to give, nothing left to break. The server re-checks that no target
+	// exists, so this only resolves a genuine dead end. Without it the row wedges:
+	// completion is gated on every committed pick being performed or forfeited.
+	let forfeitBusy = $state(false);
+	async function forfeitStep(p: Plan, step: 'give_peer' | 'break_self') {
+		if (forfeitBusy) return;
+		forfeitBusy = true; resError = '';
+		try {
+			await forfeitSpreadPropagandaStep(p.id, step);
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not skip step.';
+		} finally { forfeitBusy = false; }
+	}
+
 	// ── Author the societal-shift artifact (preparer) ─────────────────────────
 	// A made plan requires the preparer to author the artifact: create-artifact
 	// creates it under the chosen name in one transaction (no placeholder). It is
 	// required — it gates completion until the artifact exists.
-	const needsArtifactCreation = $derived(isPreparer && artifactPending);
+	const needsArtifactCreation = $derived(amChoiceActor && artifactPending);
 	let artifactName = $state('');
 	let artifactMarginalia = $state('');
 	let nameBusy = $state(false);
@@ -280,25 +366,30 @@
 					Result: <span class="outcome-mar">✗ Mar</span>
 				</p>
 				<p class="choices-note">
-					Pick options equal to (difficulty − result) (repeatable){#if marRequiredPicks != null}: choose exactly {marRequiredPicks}{/if}.
+					Pick options equal to (difficulty − result) (repeatable){#if marPicksNeeded != null}: choose exactly {marPicksNeeded}{/if}.
 				</p>
+				{#if marRequiredPicks != null && marPicksNeeded != null && marPicksNeeded < marRequiredPicks}
+					<p class="choices-note muted">
+						Only {marPicksNeeded} of the {marRequiredPicks} picks have a valid target, so take every one you can.
+					</p>
+				{/if}
 				{#each MAR_OPTIONS.spread_propaganda ?? [] as opt}
-					{@const atCap = MAR_SINGLE_FIRE.has(opt.key) && (marCounts[opt.key] ?? 0) >= 1}
-					<div class="stepper-row">
+					{@const note = marNote(opt.key)}
+					<div class="stepper-row" class:unavailable={(marCap[opt.key] ?? 0) === 0}>
 						<button class="action-btn" onclick={() => bumpMar(opt.key, -1)}
 							disabled={(marCounts[opt.key] ?? 0) === 0}>−</button>
 						<strong style="min-width:1.5rem;text-align:center;">{marCounts[opt.key] ?? 0}</strong>
 						<button class="action-btn" onclick={() => bumpMar(opt.key, 1)}
-							disabled={atCap || (marRequiredPicks != null && marTotalPicked >= marRequiredPicks)}>+</button>
-						<span>{opt.label}</span>
+							disabled={(marCounts[opt.key] ?? 0) >= (marCap[opt.key] ?? 0) || (marPicksNeeded != null && marTotalPicked >= marPicksNeeded)}>+</button>
+						<span>{opt.label}{#if note}<span class="choices-note muted"> — {note}</span>{/if}</span>
 					</div>
 				{/each}
 				<p class="choices-note">
-					Total picks: <strong>{marTotalPicked}</strong>{#if marRequiredPicks != null} / {marRequiredPicks}{/if}
+					Total picks: <strong>{marTotalPicked}</strong>{#if marPicksNeeded != null} / {marPicksNeeded}{/if}
 				</p>
 				<button class="action-btn primary"
 					onclick={() => onApplyChoices(plan, 'mar')}
-					disabled={choicesBusy || marTotalPicked === 0 || (marRequiredPicks != null && marTotalPicked !== marRequiredPicks)}>
+					disabled={choicesBusy || marTotalPicked === 0 || (marPicksNeeded != null && marTotalPicked !== marPicksNeeded)}>
 					{choicesBusy ? '…' : 'Apply choices'}
 				</button>
 			</div>
@@ -324,51 +415,72 @@
 					</div>
 				{/if}
 
-				{#if isPreparer && needsGivePeer}
+				{#if amChoiceActor && needsGivePeer}
 					<div class="plan-form">
 						<p class="choices-header">
-							A peer leaves your retinue — hand it to another player
+							A peer leaves {whose} retinue — hand it to another player
 							{#if givePeerPicked > 1}({givePeerPicked - givePeerDone} of {givePeerPicked} remaining){/if}
 						</p>
 						<CardPicker
 							label="Peer to give up"
 							items={preparerPeers}
 							{players}
-							emptyMessage="You have no peers to give."
+							emptyMessage="{whoHas} no peers to give."
 							selected={givePeerID}
 							onSelect={(id) => (givePeerID = id)}
 						/>
-						<PlayerChips
-							players={playersExcept(players, plan.preparer_id)}
-							isActive={(pl) => giveToPlayerID === pl.id}
-							onSelect={(pl) => (giveToPlayerID = pl.id)}
-						/>
-						<button class="action-btn primary" onclick={() => submitGivePeer(plan)}
-							disabled={giveBusy || givePeerID == null || giveToPlayerID == null}>
-							{giveBusy ? '…' : 'Give up peer'}
-						</button>
+						{#if preparerPeers.length === 0}
+							<p class="choices-note muted">Nothing left to give — this pick has no valid target.</p>
+							<button class="action-btn primary"
+								onclick={() => forfeitStep(plan, 'give_peer')} disabled={forfeitBusy}>
+								{forfeitBusy ? '…' : 'Skip — no valid targets'}
+							</button>
+						{:else}
+							<PlayerChips
+								players={playersExcept(players, plan.preparer_id)}
+								isActive={(pl) => giveToPlayerID === pl.id}
+								onSelect={(pl) => (giveToPlayerID = pl.id)}
+							/>
+							<button class="action-btn primary" onclick={() => submitGivePeer(plan)}
+								disabled={giveBusy || givePeerID == null || giveToPlayerID == null}>
+								{giveBusy ? '…' : 'Give up peer'}
+							</button>
+						{/if}
 					</div>
 				{/if}
 
-				{#if isPreparer && needsBreakSelf}
+				{#if amChoiceActor && needsBreakSelf}
 					<div class="plan-form">
 						<p class="choices-header">
-							Break yourself — tear a marginalia from one of your assets
+							Break yourself — break one of {whose} assets
 							{#if breakSelfPicked > 1}({breakSelfPicked - breakSelfDone} of {breakSelfPicked} remaining){/if}
 						</p>
 						<CardPicker
 							label="Marginalium to tear"
-							items={breakSelfAssets}
+							items={preparerBreakable}
 							{players}
-							emptyMessage="You have no intact marginalia."
+							emptyMessage="{whoHas} nothing left to break."
 							marginaliaMode
 							selectedMarginaliaID={breakMargID}
-							onSelectMarginalia={(mID) => (breakMargID = mID)}
+							selectedAssetID={breakAssetID}
+							onSelectMarginalia={(mID, parent) => {
+								breakMargID = mID;
+								breakAssetID = parent?.id ?? null;
+							}}
 						/>
-						<button class="action-btn primary" onclick={() => submitBreakSelf(plan)}
-							disabled={breakBusy || breakMargID == null}>
-							{breakBusy ? '…' : 'Tear marginalia'}
-						</button>
+						{#if breakWarn}<p class="res-warning">{breakWarn}</p>{/if}
+						{#if preparerBreakable.length === 0}
+							<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
+							<button class="action-btn primary"
+								onclick={() => forfeitStep(plan, 'break_self')} disabled={forfeitBusy}>
+								{forfeitBusy ? '…' : 'Skip — no valid targets'}
+							</button>
+						{:else}
+							<button class="action-btn primary" onclick={() => submitBreakSelf(plan)}
+								disabled={breakBusy || breakMargID == null}>
+								{breakBusy ? '…' : 'Break asset'}
+							</button>
+						{/if}
 					</div>
 				{/if}
 
@@ -379,9 +491,13 @@
 					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
 						{resBusy ? '…' : 'Complete plan'}
 					</button>
-				{:else if preparerActionPending && !isPreparer}
+				{:else if preparerActionPending && !amChoiceActor}
 					<p class="ft-prompt muted">
-						Waiting for {playerName(players, plan.preparer_id)} to {artifactPending && !marEffectsPending ? 'author the artifact' : 'face the fallout'}…
+						Waiting for {stepActorName} to {artifactPending && !marEffectsPending ? 'author the artifact' : 'face the fallout'}…
+					</p>
+				{:else if !preparerActionPending && !isPreparer}
+					<p class="ft-prompt muted">
+						Waiting for {playerName(players, plan.preparer_id)} to complete the plan…
 					</p>
 				{/if}
 			</div>
