@@ -18,11 +18,17 @@ package handler
 //	               unresolved stakes; server creates the standard dice roll
 //	               with accumulated dice pre-assigned, resolves it immediately
 //	               (no leverage window — the bout dice are the whole roll), and
-//	               advances to "roll".
+//	               advances to "roll". A declared bout's CALL (which stake,
+//	               high/low) is public; its DICE are not until it resolves —
+//	               see duelBoutView.
 //	"roll"         The resolved roll shows in the standard dice panel; no dice
-//	               can be added. make-choice applies asset transfers and
-//	               leverages all stakes.
-//	"done"         Final state after complete.
+//	               can be added. The claim transfers assets and leverages all
+//	               stakes. It applies itself when the winner's budget covers
+//	               every stake the loser put up (nothing to choose — see
+//	               AutoApplyChoiceOnRoll); otherwise the winner submits
+//	               make-choice with their pick.
+//	"done"         Stakes claimed. The plan resolves itself
+//	               (AutoCompleteAfterChoice); there is no "Complete plan" step.
 //
 // Extra routes:
 //
@@ -37,6 +43,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -153,10 +162,57 @@ func (pduelHandler) MaxChoices(result string, rollResult, difficulty int16) int 
 	return int(difficulty)
 }
 
+// AutoApplyChoiceOnRoll opts the duel into recording its result the moment the
+// final roll lands. The claim is only sometimes decision-free, so ApplyChoice —
+// not this flag — decides: it applies the result when the winner has no real
+// pick to make (see pduelForcedClaim) and no-ops when they do, leaving the
+// claim to them. The duel's roll is created already-resolved at the end of the
+// bouts (pduelCreateFinalRoll), so this is the first moment the outcome exists.
+func (pduelHandler) AutoApplyChoiceOnRoll() bool {
+	return true
+}
+
+// AutoCompleteAfterChoice resolves the duel without a separate "Complete plan"
+// click. Once the stakes are claimed and leveraged the done view offers no
+// decision and no information the action log doesn't already carry, and the
+// click landed on the PREPARER — who, on a mar, is the player who just lost the
+// duel and has nothing left to say about it (DESIGN_PRINCIPLES.md principle 3).
+func (pduelHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, resData *ResolutionData) bool {
+	return resData.Duel != nil && resData.Duel.Phase == duelPhaseDone
+}
+
+// pduelClaimBudget returns how many of the loser's staked assets the winner may
+// claim, read off the plan's resolved roll ("equal to your result" on a make,
+// "equal to the difficulty" on a mar). ok=false when there is no resolved roll
+// to read a budget from, in which case the caller must not synthesise a claim.
+func pduelClaimBudget(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, result string) (int, bool) {
+	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil || roll.Result == nil {
+		return 0, false
+	}
+	difficulty := roll.Difficulty
+	if roll.AdjustedDifficulty != nil {
+		difficulty = *roll.AdjustedDifficulty
+	}
+	return pduelHandler{}.MaxChoices(result, *roll.Result, difficulty), true
+}
+
 // ApplyChoice transfers assets and leverages all staked assets after the
 // standard dice roll resolves. choices is the list of asset IDs the winner
 // chose to take (as stringified int64s); each must be one of the loser's own
 // staked assets.
+//
+// The winner is only *asked* which stakes to take when that is a real question.
+// Their budget often covers every stake the loser put up — "take a number equal
+// to your result" is mandatory, not a maximum — and then the picker has exactly
+// one legal answer. In that case the server fills the claim in itself, whether
+// it got here from the roll resolving (AutoApplyChoiceOnRoll, choices nil) or
+// from a client posting make-choice. Conversely, when the budget is smaller than
+// the pile there IS a decision, and an empty claim means it hasn't been made
+// yet: ApplyChoice leaves the duel untouched rather than silently resolving it
+// for nothing.
+//
+//nolint:funlen // one linear claim/leverage/transfer/log sequence
 func (pduelHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -165,19 +221,15 @@ func (pduelHandler) ApplyChoice(
 	choices []string,
 	result string,
 ) error {
+	// Idempotent: the manual make-choice route stays mounted after the roll has
+	// already auto-applied its outcome.
+	if d := resData.Duel; d != nil && d.Phase == duelPhaseDone {
+		return nil
+	}
+
 	stakes, err := deps.Q.ListDuelStakesByPlan(ctx, plan.ID)
 	if err != nil {
 		return fmt.Errorf("list stakes: %w", err)
-	}
-	// Leverage every staked asset (both sides, per spec).
-	for _, s := range stakes {
-		_ = deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
-			ID:          s.AssetID,
-			IsLeveraged: true,
-		})
-		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetLeveraged, model.AssetIDPayload{
-			AssetID: s.AssetID, PlayerID: s.PlayerID,
-		})
 	}
 
 	// Determine winner/loser: make → preparer wins (takes from target);
@@ -202,16 +254,32 @@ func (pduelHandler) ApplyChoice(
 
 	// Only the loser's own staked assets may be claimed (the rules say "take a
 	// number of opponent's staked assets").
+	claimable := make([]int64, 0, len(stakes))
 	loserStakeIDs := make(map[int64]bool)
 	for _, s := range stakes {
 		if s.PlayerID == loserID {
+			claimable = append(claimable, s.AssetID)
 			loserStakeIDs[s.AssetID] = true
 		}
 	}
 
-	// Transfer each requested asset. Each choice is a stake asset ID staked by
-	// the loser.
-	taken := 0
+	choices, decided := pduelResolveClaim(ctx, deps.Q, plan, result, choices, claimable)
+	if !decided {
+		// A genuine subset pick that the winner still owes. Nothing applies —
+		// not even the leverage, which the rules hang off the same moment.
+		return nil
+	}
+	// Record what is actually being applied, so the stored choices match the
+	// transfers even when the server filled them in.
+	resData.MakeMarChoices = make([]Choice, len(choices))
+	for i, c := range choices {
+		resData.MakeMarChoices[i] = Choice{Option: c}
+	}
+
+	// Validate the whole claim before touching anything: each choice is a stake
+	// asset ID staked by the loser. Checking up front means a rejected claim
+	// leaves no half-applied state (stakes leveraged, duel still in 'roll').
+	claim := make([]int64, 0, len(choices))
 	for _, c := range choices {
 		var assetID int64
 		if _, err := fmt.Sscanf(c, "%d", &assetID); err != nil || assetID == 0 {
@@ -223,6 +291,22 @@ func (pduelHandler) ApplyChoice(
 		if _, err := deps.Q.GetAssetByID(ctx, assetID); err != nil {
 			return fmt.Errorf("asset %d not found", assetID)
 		}
+		claim = append(claim, assetID)
+	}
+
+	// Leverage every staked asset (both sides, per spec).
+	for _, s := range stakes {
+		_ = deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
+			ID:          s.AssetID,
+			IsLeveraged: true,
+		})
+		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetLeveraged, model.AssetIDPayload{
+			AssetID: s.AssetID, PlayerID: s.PlayerID,
+		})
+	}
+
+	taken := 0
+	for _, assetID := range claim {
 		if _, err := takeAssetEffect(ctx, deps.Q, deps.Manager, plan.GameID, assetID, loserID, winnerID); err != nil {
 			return fmt.Errorf("transfer asset %d: %w", assetID, err)
 		}
@@ -241,6 +325,48 @@ func (pduelHandler) ApplyChoice(
 
 	resData.EnsureDuel().Phase = duelPhaseDone
 	return nil
+}
+
+// pduelResolveClaim decides which of the loser's staked assets the winner takes.
+//
+// It returns the claim to apply and decided=true when the answer is settled —
+// either because the winner's budget covers the whole pile (so "take all" is
+// the one legal answer and whatever the caller passed is beside the point), or
+// because there is nothing to take at all. It returns decided=false only for
+// the case worth a gate: the budget is smaller than the pile, so the winner
+// genuinely chooses a subset, and hasn't yet.
+//
+// A claim that was explicitly posted is honoured as-is; the per-asset
+// "was it staked by the loser?" and over-budget checks still run on it
+// (ApplyChoice and enforceChoiceBudget respectively).
+func pduelResolveClaim(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	result string,
+	choices []string,
+	claimable []int64,
+) ([]string, bool) {
+	budget, ok := pduelClaimBudget(ctx, q, plan, result)
+	if !ok {
+		// No resolved roll to size the claim against — fall back to whatever
+		// the caller supplied rather than inventing one.
+		return choices, len(choices) > 0
+	}
+	switch {
+	case budget >= len(claimable):
+		// Every stake changes hands. One legal answer, so don't ask.
+		all := make([]string, len(claimable))
+		for i, id := range claimable {
+			all[i] = strconv.FormatInt(id, 10)
+		}
+		return all, true
+	case budget == 0:
+		// Nothing to take (a made roll with result 0); the leverage still applies.
+		return nil, true
+	default:
+		return choices, len(choices) > 0
+	}
 }
 
 // pduelLog writes a plan.propose_duel action-log post.
@@ -282,9 +408,75 @@ type duelStakeView struct {
 	HiddenDie  *int16 `json:"hidden_die"`
 }
 
-// GetDuelState returns the full duel state a caller is allowed to see:
-// all stakes (with hidden dice masked for the opponent's unresolved stakes)
-// and the full bout history. GET /api/plans/:planId/duel-state.
+// duelBoutView is the wire shape of a duel bout, and exists for the same
+// reason duelStakeView does: dbgen.DuelBout carries both dice with json tags,
+// and the bout row is written at DECLARE time with the declarer's die already
+// in it (see pduelBoutDeclareHandler). Handing the raw row back would let the
+// responder — whose whole job is to answer blind — read the die they are about
+// to answer. The two dice are masked exactly as a stake's is: the owning side
+// sees their own, and both become public the moment the bout resolves.
+//
+// Everything else about a declared bout IS public: which stake was opened
+// with, and whether the declarer called high or low. That is the call the
+// responder is answering, so it ships unmasked (rules: "Player with initiative
+// selects a staked asset and declares 'high' or 'low.'").
+type duelBoutView struct {
+	ID               int64              `json:"id"`
+	PlanID           int64              `json:"plan_id"`
+	BoutNumber       int16              `json:"bout_number"`
+	DeclarerID       int64              `json:"declarer_id"`
+	DeclarerStakeID  int64              `json:"declarer_stake_id"`
+	ResponderID      int64              `json:"responder_id"`
+	ResponderStakeID *int64             `json:"responder_stake_id"`
+	Declaration      *string            `json:"declaration"`
+	DeclarerDie      *int16             `json:"declarer_die"`
+	ResponderDie     *int16             `json:"responder_die"`
+	WinnerID         *int64             `json:"winner_id"`
+	IsMatch          bool               `json:"is_match"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ResolvedAt       pgtype.Timestamptz `json:"resolved_at"`
+}
+
+// duelBoutViews masks each bout's dice for viewerID. A bout's dice are public
+// once it has resolved (ResolvedAt set) — that is the reveal the whole minigame
+// turns on — and before that each side sees only its own. This is the same rule
+// GetDuelState applies to stakes (owner, or resolved), keyed on the bout's
+// recorded combatants: the bout row names the preparer as declarer even when a
+// Make Demands perform_steps winner is the one driving that seat.
+func duelBoutViews(bouts []dbgen.DuelBout, viewerID int64) []duelBoutView {
+	views := make([]duelBoutView, 0, len(bouts))
+	for _, b := range bouts {
+		resolved := b.ResolvedAt.Valid
+		v := duelBoutView{
+			ID:               b.ID,
+			PlanID:           b.PlanID,
+			BoutNumber:       b.BoutNumber,
+			DeclarerID:       b.DeclarerID,
+			DeclarerStakeID:  b.DeclarerStakeID,
+			ResponderID:      b.ResponderID,
+			ResponderStakeID: b.ResponderStakeID,
+			Declaration:      b.Declaration,
+			WinnerID:         b.WinnerID,
+			IsMatch:          b.IsMatch,
+			CreatedAt:        b.CreatedAt,
+			ResolvedAt:       b.ResolvedAt,
+		}
+		if resolved || b.DeclarerID == viewerID {
+			v.DeclarerDie = b.DeclarerDie
+		}
+		if resolved || b.ResponderID == viewerID {
+			v.ResponderDie = b.ResponderDie
+		}
+		views = append(views, v)
+	}
+	return views
+}
+
+// GetDuelState returns the full duel state a caller is allowed to see: all
+// stakes and the full bout history, both with their hidden dice masked for
+// unresolved rows the caller doesn't own. Neither collection may be handed
+// back raw — see duelStakeView and duelBoutView.
+// GET /api/plans/:planId/duel-state.
 func GetDuelState(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, s.Q)
@@ -339,7 +531,7 @@ func GetDuelState(s *db.Store) http.HandlerFunc {
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,
 			"stakes":  views,
-			"bouts":   bouts,
+			"bouts":   duelBoutViews(bouts, player.ID),
 		})
 	}
 }

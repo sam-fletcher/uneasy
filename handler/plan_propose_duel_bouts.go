@@ -104,16 +104,27 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// The responder needs a duel event to refetch the bout list and render
 		// the respond UI; broadcastRowState alone won't refresh their panel.
+		// The call itself travels with it: the responder is choosing an answer
+		// to it, so "which stake, high or low" is the one thing they must see.
 		broadcastEvent(deps.Manager, plan.GameID, model.EventDuelBoutDeclared, model.DuelBoutDeclaredPayload{
-			PlanID:      plan.ID,
-			BoutNumber:  boutNumber,
-			ResponderID: pduelOpponentID(plan, seat),
+			PlanID:          plan.ID,
+			BoutNumber:      boutNumber,
+			DeclarerID:      seat,
+			DeclarerStakeID: body.StakeID,
+			Declaration:     body.Declaration,
+			ResponderID:     pduelOpponentID(plan, seat),
 		})
-		// pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-		// 	"Bout %d — %s opens with %s, calling %s. %s must answer.",
-		// 	boutNumber, playerDisplayName(ctx, deps.Q, player.ID),
-		// 	assetDisplayName(ctx, deps.Q, stake.AssetID), body.Declaration,
-		// 	playerDisplayName(ctx, deps.Q, pduelOpponentID(plan, player.ID))))
+		// The declaration is spoken aloud at the table (rules: "Player with
+		// initiative selects a staked asset and declares 'high' or 'low'"), so
+		// it belongs in the shared record alongside the bout's resolution. The
+		// declarer is named by SEAT, matching the bout row and the resolved-bout
+		// posts below: under a Make Demands perform_steps win the preparer is
+		// still the combatant, whoever is driving them.
+		pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"Bout %d — %s opens with %s, calling %s. %s must answer.",
+			boutNumber, playerDisplayName(ctx, deps.Q, seat),
+			assetDisplayName(ctx, deps.Q, stake.AssetID), body.Declaration,
+			playerDisplayName(ctx, deps.Q, pduelOpponentID(plan, seat))))
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":     plan.ID,

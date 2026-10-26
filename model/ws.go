@@ -515,10 +515,18 @@ type DuelStakesSelectedPayload struct {
 }
 
 // DuelBoutDeclaredPayload is for EventDuelBoutDeclared.
+//
+// The declaration is public — it is the call the responder has to answer — so
+// the payload names the stake it was made with and whether the declarer called
+// high or low. The declarer's hidden die is NOT here, and must not be: it stays
+// masked until the bout resolves (see duelBoutView).
 type DuelBoutDeclaredPayload struct {
-	PlanID      int64 `json:"plan_id"`
-	BoutNumber  int16 `json:"bout_number"`
-	ResponderID int64 `json:"responder_id"`
+	PlanID          int64  `json:"plan_id"`
+	BoutNumber      int16  `json:"bout_number"`
+	DeclarerID      int64  `json:"declarer_id"`
+	DeclarerStakeID int64  `json:"declarer_stake_id"`
+	Declaration     string `json:"declaration"`
+	ResponderID     int64  `json:"responder_id"`
 }
 
 // DuelBoutResolvedPayload is for EventDuelBoutResolved.
