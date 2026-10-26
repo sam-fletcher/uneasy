@@ -6,6 +6,11 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"maps"
+	"slices"
+
+	"github.com/jackc/pgx/v5"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -155,6 +160,87 @@ func mwOutstandingCostsForWars(
 		}
 	}
 	return out, nil
+}
+
+// mwBattleCostWaitees names every player the cost-of-battle gate is waiting on,
+// across every war that owes something on this row. `outstanding` is
+// mwOutstandingCostsForWars' war_id → missing-payments map.
+//
+// Usually that is the outstanding payers. But a war with an OPEN PEACE PROPOSAL
+// is waiting on the vote, not on a payment: proposing peace IS the proposer's
+// cost-of-battle choice for the row (see mwProposePeaceHandler), and nobody
+// else can pay while it stands, because payment runs in strict reverse-power
+// order and only the proposer — who holds the front of that queue — is allowed
+// to pay next. Naming the payers there told the player holding Accept/Reject
+// that the table was waiting on everyone but them.
+//
+// The substitution is per-war on purpose. ResolvingWaitees' contract
+// (handler/plan_contract.go) is that an override must name EVERYONE who is
+// owed, never swap the acting set for whoever acted most recently — so a
+// second war with real unpaid costs still contributes its payers here, and a
+// war under proposal contributes every voter who hasn't accepted, not just the
+// latest one. Wars are visited in id order so the set is stable between calls.
+func mwBattleCostWaitees(
+	ctx context.Context,
+	q *dbgen.Queries,
+	outstanding map[int64][]gamepkg.BattleCostKey,
+) ([]int64, error) {
+	seen := map[int64]bool{}
+	var ids []int64
+	add := func(id int64) {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	for _, warID := range slices.Sorted(maps.Keys(outstanding)) {
+		awaiting, open, err := mwPeaceAwaitees(ctx, q, warID)
+		if err != nil {
+			return nil, err
+		}
+		if open {
+			for _, id := range awaiting {
+				add(id)
+			}
+			continue
+		}
+		for _, k := range outstanding[warID] {
+			add(k.PayerID)
+		}
+	}
+	return ids, nil
+}
+
+// mwPeaceAwaitees returns the active participants who still owe a vote on this
+// war's open peace proposal, and whether a proposal is open at all. No open
+// proposal is the common case, not an error.
+func mwPeaceAwaitees(ctx context.Context, q *dbgen.Queries, warID int64) ([]int64, bool, error) {
+	prop, err := q.GetOpenPeaceProposal(ctx, warID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	active, err := q.ListActiveWarParticipants(ctx, warID)
+	if err != nil {
+		return nil, false, err
+	}
+	votes, err := q.ListPeaceVotes(ctx, prop.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	accepted := make(map[int64]bool, len(votes))
+	for _, v := range votes {
+		if v.Accepted {
+			accepted[v.PlayerID] = true
+		}
+	}
+	activeIDs := make([]int64, len(active))
+	for i, a := range active {
+		activeIDs[i] = a.PlayerID
+	}
+	return gamepkg.PeaceAwaiting(activeIDs, accepted), true, nil
 }
 
 // mwOutstandingSurrenderClaimsForGame returns surrender claims in the game that

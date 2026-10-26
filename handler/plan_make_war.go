@@ -271,11 +271,22 @@ func (mwHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// mwLog writes a plan.make_war action-log post.
-func mwLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
+// mwLog writes a plan.make_war action-log post, anchored to the row being
+// PLAYED (`game`), not to the war's own row.
+//
+// Make War is the one plan whose log outlives its row: the cost of battle
+// falls every row until peace, and surrenders, seizures and peace terms follow
+// it. Anchoring those to plan.RowNumber filed every later beat under the row
+// war broke out on, so the Public Record's row-jump landed on the declaration
+// however many rows ago it was. logRow also keeps a post off a row that cannot
+// hold one — the prologue (0) and the Shake-Up (14), where an anchored post is
+// silently dropped by the FK (reference_log_row_anchor). An unanchored post
+// still reaches the feed; it just isn't a jump target, which is right when no
+// row exists.
+func mwLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, game dbgen.Game, severity int32, body string) {
 	planID := plan.ID
 	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.make_war",
-		severity, body, plan.RowNumber, &planID, nil,
+		severity, body, logRow(game), &planID, nil,
 		map[string]any{"plan_id": plan.ID})
 }
 
@@ -410,7 +421,7 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 		if !revealOpen {
 			joinNote = " (must pay the cost of battle to become active)"
 		}
-		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
 			"%s joined the war on %s' side%s.",
 			playerMark(player.ID, player.DisplayName), mwSideLabel(body.Side), joinNote))
 		respond(w, http.StatusOK, map[string]any{
@@ -420,6 +431,58 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 }
 
 // ── applyMakeWarDelayResult ──────────────────────────────────────────────────
+
+// mwAnnounceDelayReveal logs the simultaneous reveal that fixes when the war
+// breaks out: every participant's face, how they average, and the row that
+// lands on. The faces were hidden until the last one went in, so by the time
+// this fires they are public — the table has watched a vote it could not see
+// the answer to, and was never told what came of it. Before this the only trace
+// was the later "War breaks out" post, which says neither what was revealed nor
+// why the war lands where it does.
+//
+// Posted against the row being played (the reveal happens now), not against the
+// war's future row. A war that overflows row 13 is still announced here: the
+// collapse / fall-through posts that follow explain the consequence.
+func mwAnnounceDelayReveal(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	plan dbgen.Plan,
+	game dbgen.Game,
+	mw *MakeWarResolutionData,
+	resultDelay, targetRow int16,
+) {
+	if mw.DelayRevealID == nil {
+		return
+	}
+	entries, err := q.ListRevealEntries(ctx, *mw.DelayRevealID)
+	if err != nil || len(entries) == 0 {
+		return
+	}
+	faces := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.Face == nil {
+			continue
+		}
+		faces = append(faces, fmt.Sprintf("%s showed %d",
+			playerDisplayName(ctx, q, e.PlayerID), *e.Face))
+	}
+	if len(faces) == 0 {
+		return
+	}
+
+	landing := fmt.Sprintf("so the war lands on row %d", targetRow)
+	if targetRow > publicRecordRowCount {
+		landing = fmt.Sprintf("which reaches for row %d, past the end of the record", targetRow)
+	}
+	planID := plan.ID
+	EmitSystemPost(ctx, q, manager, plan.GameID, "plan.make_war",
+		model.SeverityDefault,
+		fmt.Sprintf("The delay is revealed: %s. Averaged and rounded up, that is a delay of %d, %s.",
+			strings.Join(faces, ", "), resultDelay, landing),
+		logRow(game), &planID, nil,
+		map[string]any{"plan_id": plan.ID, "result_delay": resultDelay})
+}
 
 // applyMakeWarDelayResult is invoked by reveals.go when the make_war_delay
 // simultaneous reveal completes. It sets the plan's row_number to
@@ -448,6 +511,10 @@ func applyMakeWarDelayResult(
 
 	resData := loadResolutionData(plan.ResolutionData)
 	mw := resData.EnsureMakeWar()
+
+	// Say what was revealed before anything acts on it, so the collapse /
+	// fall-through posts below read as consequences rather than non sequiturs.
+	mwAnnounceDelayReveal(ctx, q, manager, plan, game, mw, resultDelay, targetRow)
 
 	if targetRow > publicRecordRowCount {
 		if !delayRevealOverflow(ctx, q, manager, &game, &plan) {

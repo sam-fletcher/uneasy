@@ -498,3 +498,139 @@ func TestMakeWarHTTP_EnemyNotInGameRejected(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusCreated, code, "declaring war on a table-mate: %v", body)
 }
+
+// ── Peace vote: who the Waiting On bar names ────────────────────────────────
+
+// findWarPost returns the first plan.make_war post whose body contains sub.
+func findWarPost(t *testing.T, q *dbgen.Queries, gameID int64, sub string) dbgen.ScenePost {
+	t.Helper()
+	posts, err := q.ListGamePosts(context.Background(), gameID)
+	require.NoError(t, err)
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == "plan.make_war" && strings.Contains(p.Body, sub) {
+			return p
+		}
+	}
+	require.FailNowf(t, "no matching war post", "no plan.make_war post contains %q", sub)
+	return dbgen.ScenePost{}
+}
+
+// TestMakeWarHTTP_PeaceVote_NamesTheVoters: with a peace proposal open, the
+// cost-of-battle gate waits on the players who must vote, not on the payers.
+// It used to keep naming the payers, so the person holding Accept / Reject was
+// shown a Waiting On bar naming the other two players. Walks the whole life of
+// a proposal: open → one accept → one reject, asserting the set at each step.
+func TestMakeWarHTTP_PeaceVote_NamesTheVoters(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+
+	// A third participant, on the declarer side, so there are two voters and the
+	// set changes as each one answers.
+	allyIdx := (prepIdx + 2) % len(h.tg.Players)
+	war, err := h.q.GetWarByOriginPlan(ctx, planID)
+	require.NoError(t, err)
+	require.NoError(t, h.q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
+		WarID: war.ID, PlayerID: h.tg.Players[allyIdx].ID, Side: game.WarSideDeclarer, JoinedAtRow: warRow,
+	}))
+	prep, enemy, ally := h.tg.Players[prepIdx].ID, h.tg.Players[enemyIdx].ID, h.tg.Players[allyIdx].ID
+	h.jumpToRow(warRow + 1)
+
+	h.assertWaitees("before any proposal, the payers", model.RowStateAwaitBattleCost, prep, enemy, ally)
+
+	code, body := h.post(prepIdx, warRoute(planID, "propose-peace"), map[string]any{"terms": "Withdraw to the old border."})
+	require.Equalf(t, http.StatusOK, code, "propose-peace: %v", body)
+	proposalID := int64(body["proposal_id"].(float64))
+	h.assertWaitees("proposal open: the proposer already accepted, so only the other two",
+		model.RowStateAwaitBattleCost, enemy, ally)
+
+	code, body = h.post(enemyIdx, warRoute(planID, "vote-peace"), map[string]any{"proposal_id": proposalID, "accepted": true})
+	require.Equalf(t, http.StatusOK, code, "vote-peace accept: %v", body)
+	h.assertWaitees("one accept in: only the remaining voter", model.RowStateAwaitBattleCost, ally)
+
+	code, body = h.post(allyIdx, warRoute(planID, "vote-peace"), map[string]any{"proposal_id": proposalID, "accepted": false})
+	require.Equalf(t, http.StatusOK, code, "vote-peace reject: %v", body)
+	h.assertWaitees("rejected: the gate goes back to the payers", model.RowStateAwaitBattleCost, prep, enemy, ally)
+
+	// A rejection used to leave no trace at all — no post, so the proposer was
+	// never told. It must name both parties, and sit on the row being played.
+	post := findWarPost(t, h.q, h.tg.Game.ID, "rejected")
+	require.Contains(t, post.Body, "peace terms")
+	require.NotNil(t, post.RowNumber)
+	require.Equal(t, warRow+1, *post.RowNumber, "anchored to the row being played, not the war's row")
+	require.Contains(t, post.Body, "@@"+strconv.FormatInt(prep, 10)+"|", "names the proposer")
+	require.Contains(t, post.Body, "@@"+strconv.FormatInt(ally, 10)+"|", "names the rejecter")
+}
+
+// TestMakeWarHTTP_PeaceVote_NamesEveryoneOwedAcrossWars: the override for a war
+// under proposal must not REPLACE the acting set — the trap the audit found in a
+// sibling plan, where an override named whoever was newest and dropped everyone
+// else who was owed (handler/plan_contract.go, ResolvingWaitees). With one war
+// awaiting votes and another awaiting payment, the table is waiting on both.
+func TestMakeWarHTTP_PeaceVote_NamesEveryoneOwedAcrossWars(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+
+	// A second, unrelated war between the other two players, still owed.
+	bDecl := h.tg.Players[(prepIdx+2)%len(h.tg.Players)]
+	bEnemy := h.tg.Players[(prepIdx+3)%len(h.tg.Players)]
+	origin := createPlanOnRow(t, h.q, &h.tg.Game, &bDecl, model.PlanMakeWar, model.CategoryPower, warRow)
+	require.NoError(t, h.q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{ID: origin.ID, Status: model.PlanResolved}))
+	warB, err := h.q.CreateWar(ctx, dbgen.CreateWarParams{GameID: h.tg.Game.ID, OriginPlanID: origin.ID, StartedAtRow: warRow})
+	require.NoError(t, err)
+	for p, side := range map[int64]int16{bDecl.ID: game.WarSideDeclarer, bEnemy.ID: game.WarSideEnemy} {
+		require.NoError(t, h.q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
+			WarID: warB.ID, PlayerID: p, Side: side, JoinedAtRow: warRow,
+		}))
+	}
+	h.jumpToRow(warRow + 1)
+
+	code, body := h.post(prepIdx, warRoute(planID, "propose-peace"), map[string]any{"terms": "A truce."})
+	require.Equalf(t, http.StatusOK, code, "propose-peace: %v", body)
+
+	// War A waits on its one voter; war B still waits on both its payers. The
+	// war-A proposer is owed nothing, so is absent.
+	h.assertWaitees("one war voting, one war paying", model.RowStateAwaitBattleCost,
+		h.tg.Players[enemyIdx].ID, bDecl.ID, bEnemy.ID)
+}
+
+// ── Action-log gaps ─────────────────────────────────────────────────────────
+
+// TestMakeWarHTTP_DelayRevealIsAnnounced: the faces and the resulting delay are
+// logged when the reveal closes. Before, the table watched a hidden vote and
+// was never told what it revealed or why the war lands where it does.
+func TestMakeWarHTTP_DelayRevealIsAnnounced(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	before, err := h.q.GetGameByID(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	_, _, _, warRow := seedActiveWar(t, h) // both players reveal a 2 → delay 2
+
+	post := findWarPost(t, h.q, h.tg.Game.ID, "The delay is revealed")
+	require.Equal(t, 2, strings.Count(post.Body, "showed 2"), "both faces are listed: %s", post.Body)
+	require.Contains(t, post.Body, "delay of 2")
+	require.Contains(t, post.Body, "row "+strconv.Itoa(int(warRow)))
+	require.NotNil(t, post.RowNumber)
+	require.Equal(t, before.CurrentRow, *post.RowNumber, "the reveal happened on the row being played")
+}
+
+// TestMakeWarHTTP_CostOfBattlePostsAnchorToThePaidRow: the cost is paid on a
+// row long after the war's own, so its post belongs there. Anchoring to
+// plan.RowNumber filed every later payment under the declaration row.
+func TestMakeWarHTTP_CostOfBattlePostsAnchorToThePaidRow(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+	_, marg := h.seedPeerWithMarginalia(prepIdx, "Frontline asset")
+
+	paidRow := warRow + 3 // well after the war began
+	h.jumpToRow(paidRow)
+	code, body := h.post(prepIdx, warRoute(planID, "pay-battle-cost"), map[string]any{
+		"opponent_id": h.tg.Players[enemyIdx].ID, "choice": "break_asset", "marginalia_id": marg,
+	})
+	require.Equalf(t, http.StatusOK, code, "pay-battle-cost: %v", body)
+
+	post := findWarPost(t, h.q, h.tg.Game.ID, "to pay the cost of battle")
+	require.NotNil(t, post.RowNumber)
+	require.Equal(t, paidRow, *post.RowNumber)
+	require.NotEqual(t, warRow, *post.RowNumber, "not the war's own row")
+}

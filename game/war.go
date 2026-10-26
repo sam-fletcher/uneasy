@@ -200,16 +200,36 @@ func SurrenderOutcome(
 	return true, WarEndSurrender
 }
 
+// PeaceAwaiting returns the active participants who have not yet voted accept
+// on an open peace proposal — the players holding Accept/Reject — in the order
+// `active` gives them. `votes` holds accept votes keyed by player_id (a missing
+// entry and an explicit false both count as "not yet accepted"), so a voter who
+// rejected is named too; a rejection closes the proposal, and until the server
+// records that, they are still the ones being waited on.
+//
+// This is the one definition of "who still owes a peace vote", shared by the
+// war-state view and the row-state gate that names them in the Waiting On bar
+// — the same single-source rule mwFulfillableSurrenderClaims follows, so the
+// two can never disagree about who the table is waiting for.
+func PeaceAwaiting(active []int64, votes map[int64]bool) []int64 {
+	var out []int64
+	for _, p := range active {
+		if !votes[p] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // PeaceTally reports whether every active participant has voted accept.
 // If not, it names the first (by iteration order of `active`) awaited voter.
 // `active` is the list of active (non-surrendered) participants; `votes`
 // holds accept votes keyed by player_id (missing entries and explicit false
 // both count as "not yet accepted").
 func PeaceTally(active []int64, votes map[int64]bool) (unanimous bool, awaiting int64) {
-	for _, p := range active {
-		if !votes[p] {
-			return false, p
-		}
+	pending := PeaceAwaiting(active, votes)
+	if len(pending) == 0 {
+		return true, 0
 	}
-	return true, 0
+	return false, pending[0]
 }

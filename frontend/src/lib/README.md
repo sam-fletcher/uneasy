@@ -40,8 +40,8 @@ comment at the top explaining the *why*; this is just the map.
   `severity.ts` / `textLimits.ts` (mirrors of Go-side constants — see each
   file's header comment for which one), `push.ts` (web push
   subscription flow), and a handful of small single-purpose helpers
-  (`playerColor.ts`, `highlight.ts`, `warDrawer.ts`, `warStayOuts.ts`,
-  `tableHeader.ts`, `assetRisk.ts`, `scenePrompts.ts`, `useWindowEvents.ts`).
+  (`playerColor.ts`, `highlight.ts`, `warDrawer.ts`, `warGate.ts`,
+  `warStayOuts.ts`, `tableHeader.ts`, `assetRisk.ts`, `scenePrompts.ts`, `useWindowEvents.ts`).
   Most of these exist specifically so their logic is unit-testable
   (`*.test.ts` alongside) without mounting a component — see
   `tableHeader.ts`'s header comment for the pattern.
