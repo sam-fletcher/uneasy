@@ -304,7 +304,18 @@ func TestComputeRowState_AwaitBattleCost_UnionsAcrossWars(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, outstanding, warA.ID, "war A must owe a cost for this scenario to be meaningful")
 	require.Contains(t, outstanding, warB.ID, "war B must owe a cost for this scenario to be meaningful")
-	wantPayers := uniquePayerIDs(outstanding)
+	// Expected set built here rather than from the production helper, so this
+	// asserts the union itself and not just that the helper was called.
+	seenPayer := map[int64]bool{}
+	var wantPayers []int64
+	for _, keys := range outstanding {
+		for _, k := range keys {
+			if !seenPayer[k.PayerID] {
+				seenPayer[k.PayerID] = true
+				wantPayers = append(wantPayers, k.PayerID)
+			}
+		}
+	}
 
 	state, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)

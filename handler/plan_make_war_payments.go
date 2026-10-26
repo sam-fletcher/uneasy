@@ -148,12 +148,12 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 		})
 
 		oppName := playerDisplayName(ctx, deps.Q, body.OpponentID)
-		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
 			"%s %s to pay the cost of battle against %s.",
 			playerMark(player.ID, player.DisplayName), mwCostVerb(body.Choice), oppName))
 
 		if body.Surrender {
-			if err := mwApplySurrender(ctx, deps, plan, war, snap, player.ID, game.CurrentRow); err != nil {
+			if err := mwApplySurrender(ctx, deps, plan, war, snap, player.ID, game); err != nil {
 				respondInternalErr(w, r, "could not apply surrender", err)
 				return
 			}
@@ -182,7 +182,8 @@ func mwPayBattleCostHandler(deps *PlanDeps) http.HandlerFunc {
 
 // mwApplySurrender marks payer surrendered, opens a surrender claim for each
 // opposing non-surrendered full participant, broadcasts events, and ends the
-// war if a side is now empty.
+// war if a side is now empty. The surrender is recorded at, and logged
+// against, the row being played.
 func mwApplySurrender(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -190,14 +191,15 @@ func mwApplySurrender(
 	war dbgen.War,
 	snap mwWarSnapshot,
 	payerID int64,
-	row int16,
+	game dbgen.Game,
 ) error {
+	row := game.CurrentRow
 	if err := deps.Q.SetWarParticipantSurrendered(ctx, dbgen.SetWarParticipantSurrenderedParams{
 		WarID: war.ID, PlayerID: payerID, SurrenderedAtRow: &row,
 	}); err != nil {
 		return err
 	}
-	mwLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+	mwLog(ctx, deps, plan, game, model.SeverityImportant, fmt.Sprintf(
 		"%s surrendered unconditionally; each opponent may seize one of their assets.",
 		playerDisplayName(ctx, deps.Q, payerID)))
 	for _, opp := range gamepkg.ActiveOpponents(payerID, snap.Sides, snap.Surrendered) {
@@ -232,7 +234,7 @@ func mwApplySurrender(
 			WarID: war.ID, Reason: reason, RowNumber: row,
 		})
 	}
-	mwLog(ctx, deps, plan, model.SeverityImportant,
+	mwLog(ctx, deps, plan, game, model.SeverityImportant,
 		"The war is over — a side has fully surrendered.")
 	return nil
 }
@@ -466,7 +468,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
 			"%s %s to pay their war entry against %s.",
 			playerMark(player.ID, player.DisplayName), mwCostVerb(body.Choice),
 			playerDisplayName(ctx, deps.Q, body.OpponentID)))
@@ -494,7 +496,7 @@ func mwPayWarEntryHandler(deps *PlanDeps) http.HandlerFunc {
 			broadcastEvent(deps.Manager, plan.GameID, model.EventWarEntryCompleted, model.WarEntryCompletedPayload{
 				WarID: war.ID, PlayerID: player.ID, Side: part.Side,
 			})
-			mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
 				"%s paid their full war entry and is now an active participant on %s' side.",
 				playerMark(player.ID, player.DisplayName), mwSideLabel(part.Side)))
 			// Marking a participant entry-complete changes who's active in
@@ -536,6 +538,11 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		war, ok := mwLoadWar(ctx, w, deps.Q, plan)
 		if !ok {
+			return
+		}
+		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 		claim, err := deps.Q.GetSurrenderClaim(ctx, dbgen.GetSurrenderClaimParams{
@@ -585,7 +592,7 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 			WarID: war.ID, SurrenderedID: body.SurrenderedID,
 			ClaimantID: player.ID, AssetID: asset.ID,
 		})
-		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
 			"%s seized %s from %s after their surrender.",
 			playerMark(player.ID, player.DisplayName), assetMark(asset.Name),
 			playerDisplayName(ctx, deps.Q, body.SurrenderedID)))

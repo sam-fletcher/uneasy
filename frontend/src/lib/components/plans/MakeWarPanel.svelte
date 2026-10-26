@@ -163,29 +163,11 @@
 			/>
 		{/if}
 
-		{#if war}
-			<WarStatus
-				{war}
-				planID={plan.id}
-				{players}
-				{amParticipant}
-				onChanged={refreshWar}
-				setError={setActionError}
-			/>
-
-			<CostOfBattle
-				{war}
-				planID={plan.id}
-				{players}
-				{assets}
-				{currentPlayerID}
-				{myPart}
-				{amFullParticipant}
-				onChanged={refreshWar}
-				setError={setActionError}
-			/>
-		{/if}
-
+		<!-- Order is by what the viewer has to DO, not by what the war is. The
+		     panel is the whole play area while a cost of battle or surrender
+		     claim blocks the row, and on a phone the Sides block alone is most of a
+		     screen — Accept / Reject and the payment form used to sit below it, out
+		     of sight. Sides (review, joining) goes last. -->
 		{#if proposal}
 			<PeaceFlow
 				{proposal}
@@ -204,6 +186,30 @@
 				planID={plan.id}
 				{players}
 				{assets}
+				onChanged={refreshWar}
+				setError={setActionError}
+			/>
+		{/if}
+
+		{#if war}
+			<CostOfBattle
+				{war}
+				planID={plan.id}
+				{players}
+				{assets}
+				{currentPlayerID}
+				{myPart}
+				{amFullParticipant}
+				begun={plan.row_number != null}
+				onChanged={refreshWar}
+				setError={setActionError}
+			/>
+
+			<WarStatus
+				{war}
+				planID={plan.id}
+				{players}
+				{amParticipant}
 				onChanged={refreshWar}
 				setError={setActionError}
 			/>

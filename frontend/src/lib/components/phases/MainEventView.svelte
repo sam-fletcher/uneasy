@@ -10,6 +10,7 @@
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
+	import { activeWarPlans, warGateActive, warGatePlans } from '$lib/warGate';
 	// Both panels go through LazyPlanPanel rather than being imported directly:
 	// they are two of the heaviest in the app and render only in narrow
 	// situations (the simultaneous delay reveal, and the active-wars drawer),
@@ -246,6 +247,17 @@
 	);
 	const delayRevealActive = $derived(delayRevealPlan != null);
 
+	// ── War-gate play area takeover ──────────────────────────────────────────
+	// An unpaid cost of battle (or an unredeemed surrender claim) blocks the
+	// row above plan resolution — rulebook step 1 — and falls on every row
+	// AFTER the war's own, when the Make War plan has long since resolved and
+	// the registry no longer renders it. Without this the player who owes the
+	// payment was shown an empty play area and left to find the header chip.
+	// The derivation is unit-tested in $lib/warGate.
+	const warGate = $derived(warGateActive(rowState));
+	const warGateWarPlans = $derived(warGatePlans(rowState, wars, plans));
+	const warGateTakeover = $derived(warGate && warGateWarPlans.length > 0);
+
 	// Block the actor's own leverage if a Make Demands `control_leverage`
 	// winner has authority over this roll's plan. Backend would 403 anyway;
 	// hiding the button avoids confusing UI.
@@ -289,24 +301,19 @@
 	}
 
 	// ── War drawer (header button) ───────────────────────────────────────────
-	// Once a Make War plan is placed on the public record, its panel hides
-	// from the play area; the player accesses war state via the header
-	// "War" button. Plans still in delay-reveal stay inline as the takeover
-	// above. The button colours itself off two counts:
+	// A placed Make War plan has no panel of its own in the play area — except
+	// while the war owes something this row, which is the takeover below. The
+	// drawer is where a player reviews a war the rest of the time: who is on
+	// which side, what has been paid, how to join. It is no longer the only
+	// way to discharge a blocking obligation.
+	//
+	// Plans still in delay-reveal stay inline as the takeover above. The
+	// button colours itself off two counts:
 	//   • pending — plan still 'pending' on a future row (war planned but
 	//     not started). Drives the yellow tint.
 	//   • active — plan resolved, war row still 'active' (war ongoing).
 	//     Drives the red tint. Both non-zero → orange.
-	const drawerWarPlans = $derived(
-		plans.filter(p => {
-			if (p.plan_type !== 'make_war') return false;
-			if (p.status === 'cancelled') return false;
-			if (p.row_number == null) return false; // still in delay reveal
-			const w = wars.find(x => x.origin_plan_id === p.id);
-			if (w && w.status === 'ended' && p.status === 'resolved') return false;
-			return true;
-		}),
-	);
+	const drawerWarPlans = $derived(activeWarPlans(plans, wars));
 	const drawerPendingCount = $derived(
 		drawerWarPlans.filter(p => p.status === 'pending').length,
 	);
@@ -380,6 +387,17 @@
 					actingPlayerIDs={mcActingIDs}
 					{playerNameMap}
 				/>
+			{:else if warGateTakeover}
+				<!-- ── War-gate takeover ─────────────────────────────────────
+					The row is blocked on a cost of battle or a surrender claim.
+					Everyone sees the war, whose turn it is to pay, and what is
+					outstanding; the payer sees their picker. Server precedence
+					puts this above plan resolution and the scene, so it is the
+					whole play area, not a card under one.
+				-->
+				{#each warGateWarPlans as p (p.id)}
+					<LazyPlanPanel planType="make_war" ctx={drawerCtx} plan={p} mode="resolve" />
+				{/each}
 			{:else if delayRevealActive && delayRevealPlan}
 				{#if delayRevealPlan.plan_type === 'make_war'}
 					<LazyPlanPanel planType="make_war" ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />

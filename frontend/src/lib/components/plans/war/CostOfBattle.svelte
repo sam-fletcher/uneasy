@@ -11,7 +11,7 @@
 	import BattleCostForm, { type BattleSubmission } from './BattleCostForm.svelte';
 	import { assetsWithIntactMarginalia, ownerUnleveragedAssets, playerName } from '../shared';
 
-	let { war, planID, players, assets, currentPlayerID, myPart, amFullParticipant, onChanged, setError }: {
+	let { war, planID, players, assets, currentPlayerID, myPart, amFullParticipant, begun, onChanged, setError }: {
 		war: WarStateResponse;
 		planID: number;
 		players: Player[];
@@ -19,12 +19,24 @@
 		currentPlayerID: number | null;
 		myPart: WarParticipantInfo | null;
 		amFullParticipant: boolean;
+		/** The war has a row: its delay reveal is over. Before that nothing can
+		 *  be owed, so "nothing outstanding" would only be noise between the
+		 *  delay vote and the sides. */
+		begun: boolean;
 		onChanged: () => Promise<void> | void;
 		setError: (msg: string) => void;
 	} = $props();
 
 	const activePayerID = $derived(war.outstanding_costs[0]?.payer_id ?? null);
-	const itsMyCostTurn = $derived(activePayerID != null && activePayerID === currentPlayerID);
+	// Proposing peace is the proposer's cost-of-battle choice for the row, so
+	// while terms are on the table the war waits on the VOTE, not on a payment —
+	// the server names the voters in the Waiting On bar to match. Without this
+	// the pointer kept saying "waiting on <proposer> to pay" and the proposer
+	// kept a payment form open beside their own proposal.
+	const peaceOnTable = $derived(war.open_proposal != null);
+	const itsMyCostTurn = $derived(
+		!peaceOnTable && activePayerID != null && activePayerID === currentPlayerID,
+	);
 
 	const myOwedOpponents = $derived(
 		war.outstanding_costs
@@ -99,7 +111,11 @@
 {#if war.status === 'active' && war.outstanding_costs.length > 0}
 	<div class="choices-section">
 		<p class="choices-header">Cost of battle — row {war.current_row}</p>
-		{#if activePayerID != null}
+		{#if peaceOnTable}
+			<p class="choices-note">
+				Peace terms are on the table — the cost of battle waits on the vote.
+			</p>
+		{:else if activePayerID != null}
 			<p class="choices-note">
 				{itsMyCostTurn ? 'It is YOUR turn to pay cost.'
 					: `Waiting on ${playerName(players, activePayerID)} to pay cost of battle.`}
@@ -112,8 +128,8 @@
 			{/each}
 		</p>
 	</div>
-{:else if war.status === 'active'}
-	<p class="choices-note muted"><br>No outstanding cost-of-battle this row.</p>
+{:else if war.status === 'active' && begun}
+	<p class="choices-note muted">No outstanding cost-of-battle this row.</p>
 {/if}
 
 {#if itsMyCostTurn && amFullParticipant}

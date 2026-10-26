@@ -21,6 +21,7 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -241,15 +242,18 @@ func buildWarState(
 			}
 		}
 		// "Awaiting" = active full participants who haven't voted accept yet.
-		// Surrendered participants don't vote.
-		awaiting := []int64{}
+		// Surrendered participants don't vote. The row-state gate names the
+		// same set through gamepkg.PeaceAwaiting (mwBattleCostWaitees), so the
+		// panel and the Waiting On bar cannot disagree about who is owed.
+		activeIDs := make([]int64, 0, len(parts))
 		for _, p := range parts {
-			if !p.EntryPaymentComplete || p.SurrenderedAtRow != nil {
-				continue
+			if p.EntryPaymentComplete && p.SurrenderedAtRow == nil {
+				activeIDs = append(activeIDs, p.PlayerID)
 			}
-			if !acceptedSet[p.PlayerID] {
-				awaiting = append(awaiting, p.PlayerID)
-			}
+		}
+		awaiting := gamepkg.PeaceAwaiting(activeIDs, acceptedSet)
+		if awaiting == nil {
+			awaiting = []int64{} // JSON [], not null
 		}
 		openProposal = &peaceProposalInfo{
 			ID:         prop.ID,

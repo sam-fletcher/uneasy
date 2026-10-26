@@ -109,8 +109,12 @@ func mwProposePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			WarID: war.ID, ProposalID: prop.ID,
 			ProposerID: player.ID, Terms: body.Terms,
 		})
-		mwLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
 			"%s proposed peace terms: %s", playerMark(player.ID, player.DisplayName), body.Terms))
+		// An open proposal swaps who the cost-of-battle gate waits on — from the
+		// payers to the voters (mwBattleCostWaitees) — so the bar must be
+		// recomputed now, not at the next unrelated transition.
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"proposal_id": prop.ID,
 			"war_id":      war.ID,
@@ -147,6 +151,11 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		war, ok := mwLoadWar(ctx, w, deps.Q, plan)
 		if !ok {
+			return
+		}
+		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load game", err)
 			return
 		}
 		prop, err := deps.Q.GetPeaceProposal(ctx, body.ProposalID)
@@ -190,6 +199,15 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 				ID:     prop.ID,
 				Status: gamepkg.PeaceRejected,
 			})
+			// Without this a rejection was silent: the proposal just vanished
+			// from the war panel and the proposer, who still owes the cost,
+			// was never told why. Names both so the log reads as an exchange.
+			proposer := playerDisplayName(ctx, deps.Q, prop.ProposerID)
+			mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
+				"%s rejected %s's peace terms — the cost of battle is still owed.",
+				playerMark(player.ID, player.DisplayName), proposer))
+			// The gate goes back to naming the outstanding payers.
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 			respond(w, http.StatusOK, map[string]any{
 				"proposal_id": prop.ID,
 				"status":      gamepkg.PeaceRejected,
@@ -218,6 +236,8 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			activeIDs[i] = a.PlayerID
 		}
 		if unanimous, awaiting := gamepkg.PeaceTally(activeIDs, accepted); !unanimous {
+			// This voter drops out of the Waiting On set.
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 			respond(w, http.StatusOK, map[string]any{
 				"proposal_id": prop.ID,
 				"status":      gamepkg.PeaceOpen,
@@ -226,7 +246,6 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		game, _ := deps.Q.GetGameByID(ctx, plan.GameID)
 		_ = deps.Q.SetPeaceProposalStatus(ctx, dbgen.SetPeaceProposalStatusParams{
 			ID:     prop.ID,
 			Status: gamepkg.PeaceAccepted,
@@ -239,7 +258,7 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastEvent(deps.Manager, plan.GameID, model.EventWarEnded, model.WarEndedPayload{
 			WarID: war.ID, Reason: gamepkg.WarEndPeace, RowNumber: game.CurrentRow,
 		})
-		mwLog(ctx, deps, plan, model.SeverityImportant,
+		mwLog(ctx, deps, plan, game, model.SeverityImportant,
 			"All active participants agreed to peace terms — the war is over.")
 		// Ending the war may clear an AwaitBattleCost gate on future rows.
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)

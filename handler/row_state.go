@@ -480,6 +480,11 @@ func isNoRows(err error) bool {
 // resolution: an open surrender claim (rulebook step 1), then any outstanding
 // battle cost on the current row. ok is false when neither applies. Split out of
 // ComputeRowState to keep it short.
+//
+// For a battle cost, ActingPlayerIDs is every outstanding payer across every
+// war — except that a war with an open peace proposal contributes its unvoted
+// participants instead (mwBattleCostWaitees), because that war is waiting on
+// the vote, not on a payment.
 func warConflictGate(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -502,10 +507,16 @@ func warConflictGate(
 		return model.RowState{}, false, err
 	}
 	if warID, ok := firstKey(outstanding); ok {
+		// Who is owed depends on the war, not just the ledger: a war under an
+		// open peace proposal waits on its voters, not its payers.
+		waitees, wErr := mwBattleCostWaitees(ctx, q, outstanding)
+		if wErr != nil {
+			return model.RowState{}, false, wErr
+		}
 		return model.RowState{
 			Kind:            model.RowStateAwaitBattleCost,
 			WarID:           &warID,
-			ActingPlayerIDs: uniquePayerIDs(outstanding),
+			ActingPlayerIDs: waitees,
 		}, true, nil
 	}
 	return model.RowState{}, false, nil
@@ -521,23 +532,6 @@ func uniqueClaimantIDs(claims []dbgen.WarSurrenderClaim) []int64 {
 		if !seen[c.ClaimantID] {
 			seen[c.ClaimantID] = true
 			ids = append(ids, c.ClaimantID)
-		}
-	}
-	return ids
-}
-
-// uniquePayerIDs returns the deduped payer ids across every war's
-// outstanding battle costs, matching the client's blockingCostPayers union
-// (MainEventView.svelte) that this field replaces.
-func uniquePayerIDs(outstanding map[int64][]gamepkg.BattleCostKey) []int64 {
-	seen := map[int64]bool{}
-	var ids []int64
-	for _, keys := range outstanding {
-		for _, k := range keys {
-			if !seen[k.PayerID] {
-				seen[k.PayerID] = true
-				ids = append(ids, k.PayerID)
-			}
 		}
 	}
 	return ids

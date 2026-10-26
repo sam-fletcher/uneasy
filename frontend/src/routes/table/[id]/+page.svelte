@@ -1450,7 +1450,12 @@
 		padding: 0;
 		border-radius: 4px;
 		border: 1px solid var(--color-border-warm);
-		min-height: 32px;
+		/* 44px is the project's mobile tap-target floor (docs/STYLE_GUIDE.md).
+		   These four chips — Tones, Laws, Rumors, War — were 32px, and War is
+		   the one that mattered: it opens the war drawer, which used to be the
+		   only route to a payment the row was blocked on. The row still fits
+		   one line at 375px (it wraps if it ever doesn't). */
+		min-height: 44px;
 	}
 	.tones-button .lbl { padding: 0.3rem 0.7rem; }
 	.tones-button:hover { background: var(--color-border-warm); border-color: var(--color-accent); }
