@@ -167,16 +167,43 @@
 		assets.find(a => a.id === clState.partnerPeerID) ?? null,
 	);
 
+	// ── Seats ────────────────────────────────────────────────────────────────
+	// A liaison has two SEATS — the preparer's and the partner's — and each
+	// submission step fills one. The record keys on the seat's player (kept_secrets,
+	// share_submitter_ids, the reveal entries), not on whoever is typing, because a
+	// Make Demands perform_steps winner stands in for the preparer: they fill the
+	// preparer's seat and the preparer is locked out of it. A demander can also be
+	// the partner, and then holds both. Mirrors the server's clSeatsFor.
+	let performStepsWinnerID = $state<number | null>(null);
 	const amPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const amPartner = $derived(currentPlayerID != null && clState.partnerID === currentPlayerID);
-	const amParticipant = $derived(amPreparer || amPartner);
+	/** Who fills the preparer's seat: the winner if a demand handed it over. */
+	const preparerSeatHolder = $derived(plan ? (performStepsWinnerID ?? plan.preparer_id) : null);
+	/** The seats the viewer fills, partner's first. */
+	const mySeats = $derived.by((): number[] => {
+		const seats: number[] = [];
+		if (amPartner && clState.partnerID != null) seats.push(clState.partnerID);
+		if (plan && currentPlayerID != null && currentPlayerID === preparerSeatHolder) {
+			seats.push(plan.preparer_id);
+		}
+		return seats;
+	});
+	const amParticipant = $derived(mySeats.length > 0);
+	/** In the meeting but with no seat to fill: the preparer, locked out by a demand. */
+	const amLockedOut = $derived((amPreparer || amPartner) && mySeats.length === 0);
+	/** Seat-holders' names, for "waiting on …" copy — the preparer's seat shows its holder. */
+	const holderName = $derived(plan ? playerName(players, preparerSeatHolder) : '');
+	const standingIn = $derived(
+		plan != null && currentPlayerID != null && currentPlayerID !== plan.preparer_id
+			&& currentPlayerID === performStepsWinnerID,
+	);
 
 	const participants = $derived.by(() => {
 		if (!plan) return [];
 		const out: { player_id: number; display_name: string }[] = [];
 		out.push({
 			player_id: plan.preparer_id,
-			display_name: playerName(players, plan.preparer_id),
+			display_name: playerName(players, preparerSeatHolder ?? plan.preparer_id),
 		});
 		if (clState.partnerID != null) {
 			out.push({
@@ -193,10 +220,29 @@
 	// must NOT exclude leveraged assets (a stricter filter wrongly hid the main
 	// character, which is the asset most often leveraged through play). Only
 	// destroyed assets are excluded — you can't write on a torn-up asset.
-	const myKeepSecretAssets = $derived(ownerIntactAssets(assets, currentPlayerID));
-	// In share-choice sub-forms, the target is "the other participant".
+	//
+	// Keyed by SEAT: a stand-in nominates one of the PREPARER's assets.
+	const keepSecretSubmittedIDs = $derived(
+		new Set(clState.keptSecrets.map(ks => ks.player_id)),
+	);
+	/** The first of the viewer's seats that hasn't kept a secret yet. */
+	const activeKeepSeat = $derived(mySeats.find(seat => !keepSecretSubmittedIDs.has(seat)) ?? null);
+	const myKeepSecretAssets = $derived(ownerIntactAssets(assets, activeKeepSeat));
+	/** The first of the viewer's seats that hasn't made a Things We Share pick yet. */
+	const activeShareSeat = $derived(
+		mySeats.find(seat => !clState.shareSubmitterIDs.includes(seat)) ?? null,
+	);
+	/** True when the viewer is acting for the preparer's seat and not their own. */
+	const actingForPreparerSeat = $derived(
+		plan != null && mySeats.length > 0 && (activeKeepSeat ?? activeShareSeat ?? mySeats[0]) === plan.preparer_id
+			&& !amPreparer,
+	);
+	// In share-choice sub-forms, the target is "the other participant" — the other
+	// SEAT from the one being filled.
 	const otherParticipantID = $derived(
-		amPreparer ? clState.partnerID : (plan?.preparer_id ?? null),
+		activeShareSeat == null || plan == null
+			? null
+			: (activeShareSeat === plan.preparer_id ? clState.partnerID : plan.preparer_id),
 	);
 	const otherParticipantAssets = $derived(ownerIntactAssets(assets, otherParticipantID));
 	// look_at_secret only makes sense on an asset that still holds a secret the
@@ -209,7 +255,9 @@
 	// the peer they brought to this liaison. From the preparer's seat that's
 	// partnerPeerID; from the partner's seat it's preparerPeerID.
 	const partnerMeetingPeerID = $derived(
-		amPreparer ? clState.partnerPeerID : clState.preparerPeerID,
+		plan != null && activeShareSeat === plan.preparer_id
+			? clState.partnerPeerID
+			: clState.preparerPeerID,
 	);
 	const partnerMeetingPeer = $derived(
 		assets.find(a => a.id === partnerMeetingPeerID) ?? null,
@@ -226,14 +274,8 @@
 	// Destruction warning: tearing a peer's last intact marginalia destroys it.
 	const shareBreakWarn = $derived(destructionWarning(partnerMeetingPeer));
 
-	// Has the current player submitted keep-secret?
-	const iKeptSecret = $derived(
-		currentPlayerID != null
-		&& clState.keptSecrets.some(ks => ks.player_id === currentPlayerID),
-	);
-	const keepSecretSubmittedIDs = $derived(
-		new Set(clState.keptSecrets.map(ks => ks.player_id)),
-	);
+	// Has every seat the viewer fills submitted keep-secret?
+	const iKeptSecret = $derived(mySeats.length > 0 && activeKeepSeat == null);
 
 	let resError = $state('');
 
@@ -299,11 +341,11 @@
 	// Whether the current player has submitted their Things We Share choice.
 	// Server-authoritative (from resolution_data) so a refresh mid-phase doesn't
 	// re-prompt — the submission is the canonical signal, never a local flag.
-	const iShared = $derived(
-		currentPlayerID != null && clState.shareSubmitterIDs.includes(currentPlayerID),
-	);
+	const iShared = $derived(mySeats.length > 0 && activeShareSeat == null);
 
-	// Reset per-plan draft state on plan change.
+	// Reset per-plan draft state on plan change — and on a change of ACTIVE seat,
+	// for a viewer holding both: the next seat's form must not inherit the last
+	// seat's half-made pick (it targets the other side's assets).
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
 		if (plan && plan.id !== lastPlanID) {
@@ -314,6 +356,17 @@
 			shareMargID = null;
 			shareUpdateText = '';
 		}
+	});
+	$effect(() => {
+		void activeKeepSeat;
+		keepSecretAssetID = null;
+	});
+	$effect(() => {
+		void activeShareSeat;
+		shareChoiceKey = null;
+		shareAssetID = null;
+		shareMargID = null;
+		shareUpdateText = '';
 	});
 
 	// The asset this choice actually targets: a fixed meeting peer for
@@ -458,8 +511,9 @@
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={resError}>
-		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
-		{#if !amParticipant}
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			bind:performStepsWinnerID />
+		{#if !amParticipant && !amPreparer && !amPartner}
 			<p class="ft-prompt muted">A clandestine liaison is underway.</p>
 
 		<!-- Phase 1: Together At Last ─────────────────────────────── -->
@@ -497,7 +551,19 @@
 					Each of you nominates one of your own assets to hold the secret of
 					this meeting.
 				</p>
-				{#if iKeptSecret}
+				{#if amLockedOut}
+					<!-- A demand handed this seat to someone else; say so rather than
+					     offering a form the server would refuse. -->
+					<!-- Distinct names: one player can hold both seats (the demander who is
+					     also the partner), and "Waiting for X, X" reads as a bug. -->
+					{@const pendingNames = [...new Set(participants
+						.filter(p => !keepSecretSubmittedIDs.has(p.player_id))
+						.map(p => p.display_name))]}
+					<p class="choices-note">
+						{holderName} is nominating on your behalf.
+						{#if pendingNames.length > 0}Waiting for {pendingNames.join(', ')}…{/if}
+					</p>
+				{:else if iKeptSecret}
 					{@const waitingFor = participants.filter(p => !keepSecretSubmittedIDs.has(p.player_id))}
 					{#if waitingFor.length > 0}
 						<p class="choices-note">
@@ -508,11 +574,17 @@
 						<p class="choices-note">Both secrets are committed.</p>
 					{/if}
 				{:else}
+					{#if actingForPreparerSeat}
+						<p class="choices-note">
+							You hold {playerName(players, plan.preparer_id)}'s side of this meeting —
+							pick one of {playerName(players, plan.preparer_id)}'s assets.
+						</p>
+					{/if}
 					<CardPicker
 						label="Asset to hold the secret"
 						items={myKeepSecretAssets}
 						{players}
-						emptyMessage="You have no un-leveraged assets to bear the secret."
+						emptyMessage="{actingForPreparerSeat ? playerName(players, plan.preparer_id) + ' has' : 'You have'} no assets to bear the secret."
 						selected={keepSecretAssetID}
 						onSelect={(id) => (keepSecretAssetID = id)}
 					/>
@@ -533,9 +605,17 @@
 				<p class="choices-note">
 					Pick one option. Picks are revealed once both players have submitted.
 				</p>
-				{#if iShared}
+				{#if amLockedOut}
+					<p class="choices-note">{holderName} is making your pick for you.</p>
+				{:else if iShared}
 					<p class="choices-note">You've submitted. Waiting for your partner…</p>
 				{:else}
+					{#if actingForPreparerSeat}
+						<p class="choices-note">
+							You hold {playerName(players, plan.preparer_id)}'s side of this meeting —
+							choose for them, from their partner's assets.
+						</p>
+					{/if}
 					<FormField label="Pick one">
 						<div class="chip-row">
 							{#each SHARE_OPTIONS as opt}
@@ -630,10 +710,16 @@
 					Reveal a die face (1–6) to choose how many rows until the next liaison. 
 					If either of you picks 0, no follow-up is scheduled.
 				</p>
-				{#if clState.redelayRevealID != null && currentPlayerID != null}
+				{#if amLockedOut}
+					<p class="choices-note">{holderName} is revealing a face for you.</p>
+				{:else if clState.redelayRevealID != null && currentPlayerID != null}
+					<!-- actingAs: the reveal's entries are keyed by seat, so a stand-in
+					     for the preparer (or one player holding both seats) submits
+					     under the seat(s) they hold, not their own id. -->
 					<SimultaneousRevealInput
 						revealID={clState.redelayRevealID}
 						{currentPlayerID}
+						actingAs={mySeats}
 						{participants}
 						allowZero={true}
 						prompt="Pick a row delay (or 0 to part ways):"

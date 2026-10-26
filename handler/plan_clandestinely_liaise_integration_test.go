@@ -897,3 +897,276 @@ func keptSecretsFromPlanResponse(t *testing.T, body map[string]any) []any {
 	kept, _ := liaise["kept_secrets"].([]any)
 	return kept
 }
+
+// ── Seat model: Make Demands perform_steps on a liaison ──────────────────────
+//
+// A liaison has two SEATS (the preparer's and the partner's). A resolved, made
+// demand's perform_steps winner stands in for the preparer, who is locked out. Two
+// guards — keep-secret and redelay-reveal — tested only "is this caller the
+// preparer or the partner?", so the winner was refused, the locked-out preparer was
+// shown a form the server refused, and the step was performed by NOBODY: the row
+// could never finish. The tests below drive the whole liaison as the winner.
+
+// clPrepareAndResolve prepares a liaison between players[0] (preparer) and
+// players[1] (partner), runs the delay reveal and kicks off resolution, leaving it
+// in together_at_last.
+func clPrepareAndResolve(t *testing.T, h *planLifecycle) clMeeting {
+	t.Helper()
+	ctx := context.Background()
+	preparerPeer, preparerMarg := h.seedPeerWithMarginalia(0, "preparer's confidant")
+	partnerPeer, partnerMarg := h.seedPeerWithMarginalia(1, "partner's confidant")
+	notes := "a meeting under the bridge"
+	partnerID := h.tg.Players[1].ID
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanClandestinelyLiaise,
+		TargetPlayerID:   &partnerID,
+		PreparerPeerID:   &preparerPeer,
+		PartnerPeerID:    &partnerPeer,
+		PreparationNotes: &notes,
+	})
+	rd := loadResolutionData(plan.ResolutionData)
+	ld := rd.EnsureLiaise()
+	clSubmitReveal(t, h, *ld.DelayRevealID, 0, 2)
+	clSubmitReveal(t, h, *ld.DelayRevealID, 1, 2)
+	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	h.jumpToRow(*refreshed.RowNumber)
+	require.Nil(t, h.resolve(plan.ID), "CL has no dice roll")
+	return clMeeting{
+		plan: refreshed, preparerPeerID: preparerPeer, preparerMargID: preparerMarg,
+		partnerPeerID: partnerPeer, partnerMargID: partnerMarg,
+	}
+}
+
+// clPath is the URL of one of a plan's routes.
+func clPath(planID int64, route string) string {
+	return "/api/plans/" + strconv.FormatInt(planID, 10) + "/" + route
+}
+
+func clMC(t *testing.T, h *planLifecycle, playerIdx int) int64 {
+	t.Helper()
+	mc, err := h.q.GetMainCharacterByOwner(context.Background(), dbgen.GetMainCharacterByOwnerParams{
+		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[playerIdx].ID,
+	})
+	require.NoError(t, err)
+	return mc.ID
+}
+
+func clLiaiseData(t *testing.T, h *planLifecycle, planID int64) *LiaiseResolutionData {
+	t.Helper()
+	plan, err := h.q.GetPlanByID(context.Background(), planID)
+	require.NoError(t, err)
+	rd := loadResolutionData(plan.ResolutionData)
+	return rd.EnsureLiaise()
+}
+
+// TestLiaise_PerformStepsWinner_DrivesWholeLiaison walks a demanded liaison to
+// completion as the winner (players[2]) and proves each step: the preparer is
+// refused (and told so, not shown a dead form), the winner is admitted and fills
+// the PREPARER's seat, and the Waiting-On bar names the winner — never the
+// locked-out preparer — at every submit phase.
+func TestLiaise_PerformStepsWinner_DrivesWholeLiaison(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	preparerID, partnerID := h.tg.Players[0].ID, h.tg.Players[1].ID
+	const winnerIdx = 2
+	winnerID := h.tg.Players[winnerIdx].ID
+
+	m := clPrepareAndResolve(t, h)
+	h.seedMadeDemand(winnerIdx, m.plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: winnerID,
+	})
+
+	// Scene-setting stays the preparer's: even locked out of the submit steps they
+	// still advance the meeting out of together_at_last.
+	clAdvance(t, h, m.plan.ID)
+	keepPath := clPath(m.plan.ID, "keep-secret")
+
+	// ── Secrets We Keep ──
+	// Both seats are open; the bar names the WINNER (holding the preparer's seat)
+	// and the partner — not the preparer.
+	h.assertWaitees("keep-secret, nothing in", model.RowStateLiaiseResolving, winnerID, partnerID)
+
+	preparerMC, winnerMC := clMC(t, h, 0), clMC(t, h, winnerIdx)
+	code, body := h.post(0, keepPath, map[string]any{"asset_id": preparerMC})
+	require.Equalf(t, http.StatusForbidden, code, "the locked-out preparer is refused: %v", body)
+	assert.Contains(t, body["error"], "holds the preparer's slot", "and told why")
+
+	code, body = h.post(winnerIdx, keepPath, map[string]any{"asset_id": winnerMC})
+	assert.Equalf(t, http.StatusForbidden, code,
+		"the winner cannot nominate their OWN asset for the preparer's seat: %v", body)
+
+	code, body = h.post(winnerIdx, keepPath, map[string]any{"asset_id": preparerMC})
+	require.Equalf(t, http.StatusOK, code, "the winner fills the preparer's seat: %v", body)
+	assert.EqualValues(t, preparerID, body["seat"])
+
+	code, body = h.post(winnerIdx, keepPath, map[string]any{"asset_id": preparerMC})
+	assert.Equalf(t, http.StatusConflict, code, "the preparer's seat is already kept: %v", body)
+
+	// Recorded under the SEAT, and the secret authored by it (so the preparer, whose
+	// character it is, can read it) — not under the winner's id.
+	ld := clLiaiseData(t, h, m.plan.ID)
+	require.Len(t, ld.KeptSecrets, 1)
+	assert.Equal(t, preparerID, ld.KeptSecrets[0].PlayerID)
+	secrets, err := h.q.ListSecretsByAsset(ctx, preparerMC)
+	require.NoError(t, err)
+	require.NotEmpty(t, secrets)
+	assert.Equal(t, preparerID, secrets[len(secrets)-1].AuthorID)
+
+	h.assertWaitees("keep-secret, partner owes", model.RowStateLiaiseResolving, partnerID)
+	clKeepSecret(t, h, m.plan.ID, 1)
+	assert.Equal(t, LiaiseThingsWeShare, clLiaiseData(t, h, m.plan.ID).Phase)
+
+	// ── Things We Share ──
+	sharePath := clPath(m.plan.ID, "share-choice")
+	h.assertWaitees("share, nothing in", model.RowStateLiaiseResolving, winnerID, partnerID)
+	code, body = h.post(0, sharePath, map[string]any{"choice": "look_at_secret", "target_asset_id": m.partnerPeerID})
+	assert.Equalf(t, http.StatusForbidden, code, "the preparer is locked out of share: %v", body)
+	code, body = h.post(winnerIdx, sharePath, map[string]any{"choice": "look_at_secret", "target_asset_id": m.partnerPeerID})
+	require.Equalf(t, http.StatusOK, code, "the winner picks for the preparer's seat: %v", body)
+	code, body = h.post(1, sharePath, map[string]any{"choice": "look_at_secret", "target_asset_id": m.preparerPeerID})
+	require.Equalf(t, http.StatusOK, code, "the partner picks for their own: %v", body)
+	assert.Equal(t, LiaiseWhenWillISeeYouAgain, clLiaiseData(t, h, m.plan.ID).Phase)
+
+	// ── When will I see you again? — through the route the BROWSER uses ──
+	// The panel submits redelay faces via the generic reveals endpoint, which checks
+	// reveal-entry membership by player id; the entries are keyed by seat, so the
+	// winner has none. This is the path that 403'd in play.
+	redelayID := *clLiaiseData(t, h, m.plan.ID).RedelayRevealID
+	revealPath := "/api/reveals/" + strconv.FormatInt(redelayID, 10) + "/submit"
+	h.assertWaitees("redelay, nothing in", model.RowStateLiaiseResolving, winnerID, partnerID)
+
+	// The preparer IS a registered entry on this reveal, but the winner holds that
+	// seat: being keyed by their id must not let them submit past the lock-out.
+	code, body = h.post(0, revealPath, map[string]any{"face": 0})
+	assert.Equalf(t, http.StatusForbidden, code, "the locked-out preparer is refused on the generic route too: %v", body)
+
+	code, body = h.post(winnerIdx, revealPath, map[string]any{"face": 0})
+	require.Equalf(t, http.StatusOK, code, "the winner submits the preparer's redelay face: %v", body)
+	h.assertWaitees("redelay, partner owes", model.RowStateLiaiseResolving, partnerID)
+
+	// The winner sees the face they chose for that seat (a viewer always sees their
+	// own pick) while the reveal is still open.
+	code, body = h.get(winnerIdx, "/api/reveals/"+strconv.FormatInt(redelayID, 10))
+	require.Equal(t, http.StatusOK, code)
+	for _, e := range body["entries"].([]any) {
+		if entry := e.(map[string]any); entry["player_id"] == float64(preparerID) {
+			assert.NotNil(t, entry["face"], "a stand-in sees the face chosen for the seat they hold")
+		}
+	}
+
+	clSubmitReveal(t, h, redelayID, 1, 0)
+	done, err := h.q.GetPlanByID(ctx, m.plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, done.Status, "the demanded liaison runs to completion")
+	assert.Equal(t, LiaiseDone, clLiaiseData(t, h, m.plan.ID).Phase)
+}
+
+// TestLiaise_PerformStepsWinner_RedelayViaLiaiseRoute proves the liaison's own
+// redelay-reveal route (the second guard the report named) admits the winner too.
+// The browser doesn't use it, but it is the documented API for the step.
+func TestLiaise_PerformStepsWinner_RedelayViaLiaiseRoute(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	const winnerIdx = 2
+	m := clDriveToThingsWeShare(t, h)
+	h.seedMadeDemand(winnerIdx, m.plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: h.tg.Players[winnerIdx].ID,
+	})
+	sharePath := clPath(m.plan.ID, "share-choice")
+	code, body := h.post(winnerIdx, sharePath, map[string]any{"choice": "look_at_secret", "target_asset_id": m.partnerPeerID})
+	require.Equalf(t, http.StatusOK, code, "winner share: %v", body)
+	code, body = h.post(1, sharePath, map[string]any{"choice": "look_at_secret", "target_asset_id": m.preparerPeerID})
+	require.Equalf(t, http.StatusOK, code, "partner share: %v", body)
+
+	path := clPath(m.plan.ID, "redelay-reveal")
+	code, body = h.post(0, path, map[string]any{"face": 0})
+	assert.Equalf(t, http.StatusForbidden, code, "the locked-out preparer is refused: %v", body)
+	code, body = h.post(winnerIdx, path, map[string]any{"face": 0})
+	require.Equalf(t, http.StatusOK, code, "the winner is admitted: %v", body)
+	assert.EqualValues(t, h.tg.Players[0].ID, body["player_id"], "recorded under the preparer's seat")
+	code, body = h.post(1, path, map[string]any{"face": 0})
+	require.Equalf(t, http.StatusOK, code, "partner: %v", body)
+
+	done, err := h.q.GetPlanByID(context.Background(), m.plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, done.Status)
+}
+
+// TestLiaise_DemanderIsPartner_HoldsBothSeats covers the case where the winner is
+// ALSO the partner (Make Demands only forbids demanding against your own plan).
+// They hold both seats; the old share guard always routed them to their own and
+// left the preparer's seat unfillable by anyone. Every step is told apart by what
+// it names: an asset's owner picks the seat for keep-secret, the target's owner for
+// a share pick, the first open seat for a redelay face.
+func TestLiaise_DemanderIsPartner_HoldsBothSeats(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	preparerID, partnerID := h.tg.Players[0].ID, h.tg.Players[1].ID
+	const dualIdx = 1 // the partner, who also won perform_steps
+
+	m := clPrepareAndResolve(t, h)
+	h.seedMadeDemand(dualIdx, m.plan.ID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: partnerID,
+	})
+	clAdvance(t, h, m.plan.ID)
+
+	// One player now owes everything: the bar names them once, not twice.
+	h.assertWaitees("both seats open", model.RowStateLiaiseResolving, partnerID)
+
+	// Secrets We Keep: an asset per seat.
+	keepPath := clPath(m.plan.ID, "keep-secret")
+	code, body := h.post(0, keepPath, map[string]any{"asset_id": clMC(t, h, 0)})
+	require.Equalf(t, http.StatusForbidden, code, "the locked-out preparer is refused: %v", body)
+	code, body = h.post(dualIdx, keepPath, map[string]any{"asset_id": clMC(t, h, dualIdx)})
+	require.Equalf(t, http.StatusOK, code, "their own seat: %v", body)
+	assert.EqualValues(t, partnerID, body["seat"])
+	h.assertWaitees("one seat left", model.RowStateLiaiseResolving, partnerID)
+	code, body = h.post(dualIdx, keepPath, map[string]any{"asset_id": clMC(t, h, 0)})
+	require.Equalf(t, http.StatusOK, code, "and the preparer's seat: %v", body)
+	assert.EqualValues(t, preparerID, body["seat"])
+	require.Equal(t, LiaiseThingsWeShare, clLiaiseData(t, h, m.plan.ID).Phase)
+
+	// Things We Share: each pick targets the OTHER seat's assets, which names the seat.
+	sharePath := clPath(m.plan.ID, "share-choice")
+	code, body = h.post(dualIdx, sharePath, map[string]any{"choice": "look_at_secret"})
+	assert.Equalf(t, http.StatusBadRequest, code,
+		"with two seats and no target there is nothing to tell them apart by: %v", body)
+	code, body = h.post(dualIdx, sharePath, map[string]any{"choice": "look_at_secret", "target_asset_id": m.preparerPeerID})
+	require.Equalf(t, http.StatusOK, code, "as the partner's seat, targeting the preparer: %v", body)
+	assert.EqualValues(t, partnerID, body["player_id"])
+	code, body = h.post(dualIdx, sharePath, map[string]any{"choice": "look_at_secret", "target_asset_id": m.partnerPeerID})
+	require.Equalf(t, http.StatusOK, code, "as the preparer's seat, targeting the partner: %v", body)
+	assert.EqualValues(t, preparerID, body["player_id"])
+	require.Equal(t, LiaiseWhenWillISeeYouAgain, clLiaiseData(t, h, m.plan.ID).Phase)
+
+	// Redelay: two faces, the second filling whichever seat is still open.
+	redelayID := *clLiaiseData(t, h, m.plan.ID).RedelayRevealID
+	revealPath := "/api/reveals/" + strconv.FormatInt(redelayID, 10) + "/submit"
+	code, body = h.post(dualIdx, revealPath, map[string]any{"face": 0})
+	require.Equalf(t, http.StatusOK, code, "first face: %v", body)
+	assert.Equal(t, false, body["is_complete"], "one seat is still open")
+	code, body = h.post(dualIdx, revealPath, map[string]any{"face": 0})
+	require.Equalf(t, http.StatusOK, code, "second face fills the other seat: %v", body)
+	assert.Equal(t, true, body["is_complete"])
+
+	done, err := h.q.GetPlanByID(ctx, m.plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, done.Status, "the liaison finishes with one player at both seats")
+}
+
+// TestLiaise_NoDemand_SeatsAreUnchanged pins the ordinary case: with no demand the
+// preparer and partner each fill their own seat, a third player holds none, and the
+// bar names the two participants.
+func TestLiaise_NoDemand_SeatsAreUnchanged(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	m := clPrepareAndResolve(t, h)
+	clAdvance(t, h, m.plan.ID)
+
+	keepPath := clPath(m.plan.ID, "keep-secret")
+	code, body := h.post(2, keepPath, map[string]any{"asset_id": clMC(t, h, 2)})
+	assert.Equalf(t, http.StatusForbidden, code, "an outsider holds no seat: %v", body)
+
+	h.assertWaitees("two seats open", model.RowStateLiaiseResolving, h.tg.Players[0].ID, h.tg.Players[1].ID)
+	clKeepSecret(t, h, m.plan.ID, 0)
+	h.assertWaitees("preparer in", model.RowStateLiaiseResolving, h.tg.Players[1].ID)
+}

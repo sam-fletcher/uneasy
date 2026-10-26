@@ -118,10 +118,15 @@ func clBothKeepSecretsSubmitted(ld LiaiseResolutionData, preparerID int64) bool 
 
 // clKeepSecretHandler handles POST /api/plans/:planId/keep-secret.
 //
-// Phase 2 — Secrets We Keep: each player (preparer and partner) nominates one
-// of their own assets to hold the secret of this meeting. The server writes a
-// new secret on the asset's underside. Choices are revealed to both players
-// once both have submitted.
+// Phase 2 — Secrets We Keep: each seat (the preparer's and the partner's)
+// nominates one of its own assets to hold the secret of this meeting. The server
+// writes a new secret on the asset's underside. Choices are revealed to both
+// players once both have submitted.
+//
+// Which seat a submission fills is read off the asset: the seat is its owner. That
+// is what lets a perform_steps winner stand in for the preparer (they nominate
+// one of the PREPARER's assets, recorded under the preparer's seat) and what lets
+// a winner who is also the partner fill both seats, one asset each. See clSeatsFor.
 // TODO: Should this reject destroyed assets? The UI is hiding them but what's the right call here?
 //
 // Request body: {"asset_id": N}
@@ -150,21 +155,10 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Only preparer or partner may submit.
-		if !clIsParticipant(plan, player.ID, *ld) {
-			respondErr(w, http.StatusForbidden, "only the preparer and partner may submit keep-secret")
-			return
-		}
-
-		// Reject a duplicate submission. The UI hides the form after submitting
-		// (it derives iKeptSecret from the server-side kept_secrets), so a stale
-		// client, a retry, or a direct API call is the only way to reach here a
-		// second time — and without this guard it would write a second secret on
-		// a second asset and append a duplicate KeptSecrets entry. Mirror the
-		// share-choice idempotence guard above and Spread Rumors' principle that
-		// a stale client can't write a duplicate.
-		if slices.ContainsFunc(ld.KeptSecrets, func(ks KeptSecret) bool { return ks.PlayerID == player.ID }) {
-			respondErr(w, http.StatusConflict, "you have already submitted a keep-secret")
+		// Only a seat-holder may submit: the partner, or whoever holds the
+		// preparer's slot (the preparer, unless a perform_steps winner stands in).
+		seats, ok := clRequireSeats(w, ctx, deps.Q, plan, ld, player.ID, "keep-secret")
+		if !ok {
 			return
 		}
 
@@ -181,12 +175,26 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusNotFound, "asset not found")
 			return
 		}
-		if asset.OwnerID != player.ID {
-			respondErr(w, http.StatusForbidden, "you do not own this asset")
-			return
-		}
 		if asset.GameID != plan.GameID {
 			respondErr(w, http.StatusBadRequest, "asset does not belong to this game")
+			return
+		}
+		// The asset's owner is the seat this fills; the caller must hold it.
+		seat := asset.OwnerID
+		if !slices.Contains(seats, seat) {
+			respondErr(w, http.StatusForbidden, "that asset belongs to a seat you are not filling")
+			return
+		}
+
+		// Reject a duplicate submission for this seat. The UI hides the form after
+		// submitting (it derives "already kept" from the server-side kept_secrets),
+		// so a stale client, a retry, or a direct API call is the only way to reach
+		// here a second time — and without this guard it would write a second
+		// secret on a second asset and append a duplicate KeptSecrets entry. Mirror
+		// the share-choice idempotence guard below and Spread Rumors' principle
+		// that a stale client can't write a duplicate.
+		if slices.ContainsFunc(ld.KeptSecrets, func(ks KeptSecret) bool { return ks.PlayerID == seat }) {
+			respondErr(w, http.StatusConflict, "this seat has already submitted a keep-secret")
 			return
 		}
 
@@ -198,10 +206,13 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		// Plain: secret text is read on the asset's underside, not in the chat
 		// log, so it must not carry log markup.
 		secretText := fmt.Sprintf("Clandestine meeting with %s — %s",
-			playerPlainName(ctx, deps.Q, player.ID), preparationNotes)
+			playerPlainName(ctx, deps.Q, seat), preparationNotes)
+		// Authored by the SEAT, not the caller: a stand-in's keystrokes are the
+		// preparer's meeting, and authorship is what lets the asset's own player read
+		// the secret on its underside.
 		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
 			AssetID:  body.AssetID,
-			AuthorID: player.ID,
+			AuthorID: seat,
 			Text:     secretText,
 		}); err != nil {
 			respondInternalErr(w, r, "could not write secret on asset", err)
@@ -210,7 +221,7 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Record keep-secret choice.
 		ld.KeptSecrets = append(ld.KeptSecrets, KeptSecret{
-			PlayerID: player.ID,
+			PlayerID: seat,
 			AssetID:  body.AssetID,
 		})
 
@@ -231,7 +242,7 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s entrusted the meeting's secret to %s.",
-			playerDisplayName(ctx, deps.Q, player.ID), assetMark(asset.Name)))
+			playerDisplayName(ctx, deps.Q, seat), assetMark(asset.Name)))
 
 		// The other participant must refetch the plan to see this submission.
 		// Without this they'd be soft-locked on the secrets-we-keep panel until a
@@ -256,6 +267,7 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":  plan.ID,
 			"asset_id": body.AssetID,
+			"seat":     seat,
 		})
 	}
 }
@@ -297,11 +309,12 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, fmt.Sprintf("share-choice requires phase %q", LiaiseThingsWeShare))
 			return
 		}
-		// Resolve the caller to the Things We Share slot they may fill (writes a
-		// 403 and returns ok=false otherwise). The partner fills their own slot;
-		// the preparer's slot belongs to the resolution actor, so a perform_steps
-		// winner stands in (and the preparer is locked out).
-		slotID, ok := clShareSlotFor(w, ctx, deps, plan, ld, player.ID)
+		// The Things We Share seats the caller may fill (writes a 403 and returns
+		// ok=false if none). The partner fills their own; the preparer's belongs to
+		// the resolution actor, so a perform_steps winner stands in (and the
+		// preparer is locked out). A caller holding both seats — the demander is
+		// also the partner — is told apart by whose assets they target, below.
+		seats, ok := clRequireSeats(w, ctx, deps.Q, plan, ld, player.ID, "share-choice")
 		if !ok {
 			return
 		}
@@ -328,6 +341,15 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		if !slices.Contains(validChoices, body.Choice) {
 			respondErr(w, http.StatusBadRequest, fmt.Sprintf("choice must be one of: %v", validChoices))
+			return
+		}
+
+		// The seat this fills. One seat leaves no choice; a caller holding both picks
+		// by target, since every option targets the OTHER seat's assets.
+		slotID, ok := clShareSeat(ctx, deps.Q, seats, plan, ld, body.TargetAssetID)
+		if !ok {
+			respondErr(w, http.StatusBadRequest,
+				"target_asset_id must belong to the other player in the meeting")
 			return
 		}
 
@@ -392,17 +414,10 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		// auto-advance out of Secrets We Keep; server-authoritative so a refresh
 		// can't re-prompt the share form.
 		if bothShared {
-			ld.Phase = LiaiseWhenWillISeeYouAgain
-			if err := clEnsureRedelayReveal(ctx, deps, plan, ld); err != nil {
-				respondInternalErr(w, r, "could not create redelay reveal", err)
+			if msg, err := clAdvanceToRedelay(ctx, deps, plan, resData, ld); err != nil {
+				respondInternalErr(w, r, msg, err)
 				return
 			}
-			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-				respondInternalErr(w, r, "could not save liaise phase", err)
-				return
-			}
-			broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged,
-				model.LiaisePhaseChangedPayload{PlanID: plan.ID, Phase: string(LiaiseWhenWillISeeYouAgain)})
 		}
 
 		// The submitter no longer owes a share-choice; once both are in the phase
@@ -417,6 +432,29 @@ func clShareChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			"choice":    body.Choice,
 		})
 	}
+}
+
+// clAdvanceToRedelay moves a liaison whose Things We Share picks are both in on
+// to "When will I see you again?": it opens the redelay reveal (registering both
+// seats), persists the new phase and tells clients to refetch. On failure it
+// returns the message for the 500 alongside the error. ld points into resData.
+func clAdvanceToRedelay(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData ResolutionData,
+	ld *LiaiseResolutionData,
+) (msg string, err error) {
+	ld.Phase = LiaiseWhenWillISeeYouAgain
+	if err = clEnsureRedelayReveal(ctx, deps, plan, ld); err != nil {
+		return "could not create redelay reveal", err
+	}
+	if err = saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		return "could not save liaise phase", err
+	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventLiaisePhaseChanged,
+		model.LiaisePhaseChangedPayload{PlanID: plan.ID, Phase: string(LiaiseWhenWillISeeYouAgain)})
+	return "", nil
 }
 
 // clRevealSharesIfBothIn checks whether both participants have submitted their

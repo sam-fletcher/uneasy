@@ -28,6 +28,11 @@
 		maxFace?: number;
 		/** Label shown above the picker. */
 		prompt?: string;
+		/** Entry ids this viewer submits for, when that isn't just their own id: a
+		 *  Make Demands perform_steps winner fills the preparer's liaison seat (and
+		 *  both seats, if they are also the partner). The server routes a submission
+		 *  to the first of these still open; the picker stays live until none is. */
+		actingAs?: number[];
 	}
 
 	let {
@@ -37,6 +42,7 @@
 		allowZero = false,
 		maxFace = 6,
 		prompt = 'Pick a face',
+		actingAs,
 	}: Props = $props();
 
 	let reveal = $state<SimultaneousReveal | null>(null);
@@ -51,11 +57,15 @@
 
 	// Submission status uses revealed_at, not face: faces stay hidden until the
 	// whole reveal completes, but revealed_at is set the moment a player submits.
-	const mySubmission = $derived(
-		reveal?.entries.find(e => e.player_id === currentPlayerID && e.revealed_at != null) ?? null
-	);
+	const mySeats = $derived(actingAs ?? [currentPlayerID]);
 	const submittedIDs = $derived(
 		new Set(reveal?.entries.filter(e => e.revealed_at != null).map(e => e.player_id) ?? [])
+	);
+	// The viewer is "done" once every seat they act for is in.
+	const mySubmission = $derived(
+		mySeats.every(seat => submittedIDs.has(seat))
+			? (reveal?.entries.find(e => mySeats.includes(e.player_id) && e.revealed_at != null) ?? null)
+			: null
 	);
 	const waitingOn = $derived(
 		participants.filter(p => !submittedIDs.has(p.player_id))
@@ -84,6 +94,9 @@
 		error = '';
 		try {
 			await submitReveal(revealID, picked);
+			// A viewer holding several seats still has another face to give: start
+			// the next pick clean rather than carrying the last one over.
+			picked = null;
 			await refresh();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to submit';

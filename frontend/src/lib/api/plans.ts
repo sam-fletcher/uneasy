@@ -381,14 +381,35 @@ export function spGivePeer(planID: number, peerAssetID: number, toPlayerID: numb
 }
 
 /**
- * Spread Propaganda mar (c) — "break yourself." The preparer tears one
- * marginalia from one of their own assets. Completion is blocked until it
- * succeeds.
+ * Spread Propaganda mar (c) — "break yourself." The preparer breaks one of
+ * their own assets: pass the marginalia to tear, or null for a blank asset
+ * (the break destroys it outright). Completion is blocked until it succeeds.
  */
-export function spBreakSelf(planID: number, marginaliaID: number): Promise<PlanEcho> {
+export function spBreakSelf(
+	planID: number,
+	assetID: number,
+	marginaliaID: number | null,
+): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-self`, {
 		method: 'POST',
-		body: JSON.stringify({ marginalia_id: marginaliaID }),
+		body: JSON.stringify({ asset_id: assetID, marginalia_id: marginaliaID ?? 0 }),
+	});
+}
+
+/**
+ * Spread Propaganda — forfeit a depletable mar step's remaining picks as a
+ * no-op when no valid target remains (no peer left to give, nothing of the
+ * preparer's left to break). The server re-verifies that no target exists
+ * before discharging, so the row can complete instead of wedging on a pick
+ * that can never be satisfied.
+ */
+export function forfeitSpreadPropagandaStep(
+	planID: number,
+	step: 'give_peer' | 'break_self',
+): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/sp-forfeit-step`, {
+		method: 'POST',
+		body: JSON.stringify({ step }),
 	});
 }
 

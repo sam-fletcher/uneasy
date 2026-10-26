@@ -22,6 +22,11 @@ package handler
 // Esteem lockout (b): sets ResData.SpreadPropaganda.EsteemLockout = true.
 // Checked in validatePlanPreparation for all esteem-category plan types.
 //
+// (a) and (c) are depletable — a retinue runs out of peers, a player runs out
+// of breakable assets — so each committed pick that has no target left is
+// discharged through sp-forfeit-step. Without that hatch CanComplete blocks on
+// a pick nobody can satisfy and the row can never be completed.
+//
 // Recursive resolve (d): finds the top interferer by dice count (ties broken
 // by best esteem rank), creates a new SP plan at current_row with status
 // 'resolving', and creates a dice roll. Depth capped at 1.
@@ -32,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -43,6 +49,16 @@ func init() {
 }
 
 type spHandler struct{}
+
+// Mar option keys for Spread Propaganda. Defined as constants because each is
+// referenced across ApplyChoice, CanComplete, the sub-flow routes and the
+// forfeit hatch. Mirrors Spread Rumors' srOpt* block.
+const (
+	spOptGivePeer    = "give_peer"
+	spOptLayLow      = "lay_low"
+	spOptBreakSelf   = "break_self"
+	spOptCounterProp = "counter_prop"
+)
 
 func (spHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 3}
@@ -103,9 +119,24 @@ func (spHandler) ApplyChoice(
 		return applySpreadPropagandaMake(ctx, deps, plan, resData)
 	}
 
+	// Check co-opt can fire BEFORE anything is applied. A later pick in the same
+	// submission failing would otherwise leave the earlier ones half-applied —
+	// lay_low has already posted its log line by the time counter_prop errors —
+	// and the picker greys counter_prop out in exactly this case, so reaching
+	// here means a stale client.
+	if slices.Contains(choices, spOptCounterProp) && !spCoOptAlreadyFired(resData) {
+		_, reason, err := spCoOptInterferers(ctx, deps.Q, plan, resData)
+		if err != nil {
+			return err
+		}
+		if reason != "" {
+			return errors.New(reason)
+		}
+	}
+
 	for _, choice := range choices {
 		switch choice {
-		case "lay_low":
+		case spOptLayLow:
 			// Repeatable in the choice list, but the effect is a single flag —
 			// a second pick is a harmless no-op.
 			resData.EnsureSpreadPropaganda().EsteemLockout = true
@@ -113,16 +144,16 @@ func (spHandler) ApplyChoice(
 				fmt.Sprintf("%s must keep their head down — their next plan cannot involve esteem.",
 					playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 
-		case "give_peer", "break_self":
+		case spOptGivePeer, spOptBreakSelf:
 			// Asset pickers — the actual transfer/break happens via the
 			// give-peer / break-self routes, once per pick. How many are owed
 			// comes from pickedChoiceCount, not an immediate action here.
 
-		case "counter_prop":
+		case spOptCounterProp:
 			// Fires its side effect immediately (unlike give_peer/break_self,
 			// which defer to a sub-flow), so a duplicate pick in the same
 			// submission must no-op rather than spawn a second recursive plan.
-			if resData.SpreadPropaganda != nil && resData.SpreadPropaganda.RecursivePlanID != nil {
+			if spCoOptAlreadyFired(resData) {
 				continue
 			}
 			if err := applyCoOpt(ctx, deps, plan, resData); err != nil {
@@ -158,9 +189,10 @@ func applySpreadPropagandaMake(
 }
 
 // CanComplete blocks completion until the made artifact has been authored and
-// every committed give_peer / break_self pick has been performed. The mar is
-// repeatable, so "how many are owed" is server-authoritative from the
-// committed choices (pickedChoiceCount), not a boolean flag — see
+// every committed give_peer / break_self pick has been performed — or
+// discharged through sp-forfeit-step, the hatch for a pick whose last target is
+// gone. The mar is repeatable, so "how many are owed" is server-authoritative
+// from the committed choices (pickedChoiceCount), not a boolean flag — see
 // subflowPicksRemaining.
 func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	// Unlike a plain nil-check, EnsureSpreadPropaganda() also covers the case
@@ -173,9 +205,34 @@ func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 		return errors.New("preparer must author the societal-shift artifact (POST /plans/{planId}/create-artifact)")
 	}
 	return subflowPicksRemaining(resData,
-		subflowProgress{"give_peer", "give-peer", sp.GivePeerDone},
-		subflowProgress{"break_self", "break-self", sp.BreakSelfDone},
+		subflowProgress{spOptGivePeer, "give-peer", sp.GivePeerDone},
+		subflowProgress{spOptBreakSelf, "break-self", sp.BreakSelfDone},
 	)
+}
+
+// ResolvingWaitees names a Make Demands perform_steps winner while the committed
+// make/mar still owes them work. The winner stands in for the preparer on every
+// post-commit step — the artifact, the peer handed over, the asset broken, the
+// forfeit — and the server refuses the preparer all of them (requireResolutionActor),
+// so the generic plan_resolving case, which names the preparer, would point the
+// table at the one player who cannot act.
+//
+// The pre-commit window is covered by pendingPerformStepsChooser, and once
+// nothing is owed the preparer completes (completion stays theirs), so both fall
+// through to the generic case.
+func (spHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	winner := performStepsWinner(ctx, q, plan)
+	if winner == 0 || winner == plan.PreparerID {
+		return model.RowState{}, false
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	if len(resData.MakeMarChoices) == 0 {
+		return model.RowState{}, false
+	}
+	if err := (spHandler{}).CanComplete(plan, &resData); err == nil {
+		return model.RowState{}, false
+	}
+	return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{winner}}, true
 }
 
 func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
@@ -183,6 +240,7 @@ func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 		"give-peer":       spGivePeerHandler(deps),
 		"break-self":      spBreakSelfHandler(deps),
 		"create-artifact": spCreateArtifactHandler(deps),
+		"sp-forfeit-step": spForfeitStepHandler(deps),
 	}
 }
 
@@ -303,6 +361,43 @@ func spLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 
 // ── Co-opt (recursive propaganda) ────────────────────────────────────────────
 
+// spCoOptAlreadyFired reports whether this plan already spawned its recursive
+// propaganda plan — the idempotence guard for a duplicate counter_prop pick.
+func spCoOptAlreadyFired(resData *ResolutionData) bool {
+	return resData.SpreadPropaganda != nil && resData.SpreadPropaganda.RecursivePlanID != nil
+}
+
+// spCoOptInterferers is the single source of truth for whether mar option (d)
+// can fire. It returns the roll's interferers (ordered top first) when it can,
+// or a user-facing reason when it cannot — a recursive plan (depth is capped at
+// 1) or a roll nobody interfered with, in which case there is no one to spread
+// propaganda of their own. err is for genuine failures only.
+//
+// The picker mirrors this to grey the option out with the same reason
+// (SpreadPropagandaPanel.svelte coOptBlocker); keep the two in step.
+func spCoOptInterferers(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+) (interferers []dbgen.ListInterferenceDiceByRollRow, reason string, err error) {
+	if sp := resData.SpreadPropaganda; sp != nil && sp.OriginalPlanID != nil {
+		return nil, "Counter-propaganda can't be chosen on a plan that is itself counter-propaganda.", nil
+	}
+	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not find dice roll for plan: %w", err)
+	}
+	interferers, err = q.ListInterferenceDiceByRoll(ctx, roll.ID)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not list interference dice: %w", err)
+	}
+	if len(interferers) == 0 {
+		return nil, "Nobody interfered with this roll, so there is no one to spread propaganda of their own.", nil
+	}
+	return interferers, "", nil
+}
+
 // applyCoOpt implements SP mar option (d): the top interferer spreads their
 // own propaganda at the current row, resolving immediately.
 func applyCoOpt(
@@ -311,21 +406,12 @@ func applyCoOpt(
 	plan *dbgen.Plan,
 	resData *ResolutionData,
 ) error {
-	// Depth cap: recursive plans cannot co-opt again.
-	if sp := resData.SpreadPropaganda; sp != nil && sp.OriginalPlanID != nil {
-		return errors.New("co-opt is not available on a recursive propaganda plan")
-	}
-
-	// Find the resolved roll for this plan.
-	roll, err := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
+	interferers, reason, err := spCoOptInterferers(ctx, deps.Q, plan, resData)
 	if err != nil {
-		return fmt.Errorf("could not find dice roll for plan: %w", err)
+		return err
 	}
-
-	// Find top interferer(s).
-	interferers, err := deps.Q.ListInterferenceDiceByRoll(ctx, roll.ID)
-	if err != nil || len(interferers) == 0 {
-		return errors.New("co-opt is not available: no interference dice were committed to this roll")
+	if reason != "" {
+		return errors.New(reason)
 	}
 
 	topCount := interferers[0].DiceCount
@@ -484,7 +570,7 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 		sp := resData.EnsureSpreadPropaganda()
 		// Server-authoritative completion: a stale client (re-prompted after a
 		// refresh) must not give away more peers than were picked.
-		if sp.GivePeerDone >= pickedChoiceCount(&resData, "give_peer") {
+		if sp.GivePeerDone >= pickedChoiceCount(&resData, spOptGivePeer) {
 			respondErr(w, http.StatusConflict, "give-peer already completed for this plan")
 			return
 		}
@@ -500,6 +586,14 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		if asset.AssetType != model.AssetPeer {
 			respondErr(w, http.StatusBadRequest, "asset must be a peer")
+			return
+		}
+		// A destroyed peer has already left the retinue, so it is not a target
+		// this pick can be spent on — spEligibleGivePeers excludes it too, and
+		// the two must agree or the forfeit hatch and the route disagree about
+		// whether a target remains.
+		if asset.IsDestroyed {
+			respondErr(w, http.StatusConflict, "that peer is destroyed")
 			return
 		}
 		if body.ToPlayerID == plan.PreparerID {
@@ -549,9 +643,14 @@ func spGivePeerHandler(deps *PlanDeps) http.HandlerFunc {
 // spBreakSelfHandler handles POST /api/plans/:planId/break-self.
 //
 // Mar option (c): "word of your laughable ideas gets around — break yourself."
-// The preparer tears one marginalia from one of their own assets. Only the
-// preparer may call it, only after "break_self" was chosen.
-// Request body: {"marginalia_id": M}
+// The preparer breaks one of their own assets: tearing one marginalia, or — on
+// a blank asset — destroying it outright. Only the resolution actor may call
+// it, only after "break_self" was chosen.
+//
+// Request body: {"asset_id": A, "marginalia_id": M}
+//
+// marginalia_id may be omitted (or 0) when the asset is blank; asset_id may be
+// omitted when a marginalia_id is given, which names its asset anyway.
 func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -571,10 +670,12 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
+			AssetID      int64 `json:"asset_id"`
 			MarginaliaID int64 `json:"marginalia_id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MarginaliaID == 0 {
-			respondErr(w, http.StatusBadRequest, "marginalia_id is required")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
+			(body.AssetID == 0 && body.MarginaliaID == 0) {
+			respondErr(w, http.StatusBadRequest, "asset_id is required")
 			return
 		}
 
@@ -583,21 +684,23 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 		sp := resData.EnsureSpreadPropaganda()
 		// Server-authoritative completion: a stale client (re-prompted after a
 		// refresh) must not break more assets than were picked.
-		if sp.BreakSelfDone >= pickedChoiceCount(&resData, "break_self") {
+		if sp.BreakSelfDone >= pickedChoiceCount(&resData, spOptBreakSelf) {
 			respondErr(w, http.StatusConflict, "break-self already completed for this plan")
 			return
 		}
 
-		m, err := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "marginalia not found")
-			return
+		// A client that sent only a marginalia_id (the route's original shape)
+		// still names its asset unambiguously, so derive it rather than 400.
+		if body.AssetID == 0 {
+			m, mErr := deps.Q.GetMarginaliaByID(ctx, body.MarginaliaID)
+			if mErr != nil {
+				respondErr(w, http.StatusNotFound, "marginalia not found")
+				return
+			}
+			body.AssetID = m.AssetID
 		}
-		if m.IsTorn {
-			respondErr(w, http.StatusConflict, "marginalia is already torn")
-			return
-		}
-		asset, err := deps.Q.GetAssetByID(ctx, m.AssetID)
+
+		asset, err := deps.Q.GetAssetByID(ctx, body.AssetID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "asset not found")
 			return
@@ -606,8 +709,22 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusForbidden, "you must break one of your own assets")
 			return
 		}
+		if asset.IsDestroyed {
+			respondErr(w, http.StatusConflict, "asset is already destroyed")
+			return
+		}
 
-		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &asset, &m, player.ID)
+		// nil m = a blank asset: there is nothing to tear, so the break destroys
+		// it outright (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D3). Blank assets
+		// are breakable by design, so the picker offers them and this route must
+		// accept one with no marginalia_id.
+		m, err := resolveBreakTarget(ctx, deps.Q, &asset, body.MarginaliaID)
+		if err != nil {
+			respondHTTPErr(w, r, err)
+			return
+		}
+
+		destroyed, err := breakAsset(ctx, deps.Q, deps.Manager, &asset, m, player.ID)
 		if err != nil {
 			respondInternalErr(w, r, "could not break asset", err)
 			return
@@ -622,13 +739,164 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 		spLog(ctx, deps, plan, model.SeverityDefault,
 			fmt.Sprintf("%s broke their own %s amid the backlash.%s",
 				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name),
-				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
+				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, m, destroyed)))
 
+		var tornMargID *int64
+		if m != nil {
+			tornMargID = &m.ID
+		}
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":       plan.ID,
-			"marginalia_id": m.ID,
+			"marginalia_id": tornMargID,
 			"asset_id":      asset.ID,
 			"destroyed":     destroyed,
 		})
 	}
+}
+
+// ── Forfeit Step (escape hatch for a depletable mar pick) ─────────────────────
+
+// spForfeitStepHandler handles POST /api/plans/:planId/sp-forfeit-step.
+//
+// Discharges the remaining picks of a depletable mar step as a no-op when no
+// valid target is left: give_peer with the preparer's retinue emptied, or
+// break_self with nothing of theirs still breakable. Both are repeatable, so
+// the mar budget can be spent on more of them than the preparer has targets
+// for — and then CanComplete blocks forever on picks that can never be
+// satisfied, leaving the panel a dead disabled button and the row
+// uncompletable by anyone at the table. The picker now caps each option at its
+// live target count, so an over-pick needs a stale client or a target lost
+// between commit and resolution; this is the hatch for both.
+//
+// Mirrors Seek Answers' seek-forfeit-step and Spread Rumors' sr-forfeit-step,
+// including the server-side re-verification: NO eligible target may exist
+// before anything is discharged, so a stale or hand-rolled client cannot
+// forfeit its way out of an obligation it could still meet. Nothing happens to
+// any asset; the forfeit is logged for transparency.
+//
+// Request body: {"step": "give_peer" | "break_self"}
+func spForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadPropaganda)
+		if !ok {
+			return
+		}
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
+			return
+		}
+		var body struct {
+			Step string `json:"step"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		sp := resData.EnsureSpreadPropaganda()
+
+		var remaining, eligible int
+		var noun string
+		var err error
+		switch body.Step {
+		case spOptGivePeer:
+			remaining = pickedChoiceCount(&resData, spOptGivePeer) - sp.GivePeerDone
+			eligible, err = spEligibleGivePeers(ctx, deps, plan)
+			noun = "peer to give up"
+		case spOptBreakSelf:
+			remaining = pickedChoiceCount(&resData, spOptBreakSelf) - sp.BreakSelfDone
+			eligible, err = spEligibleSelfBreaks(ctx, deps, plan)
+			noun = "asset of their own to break"
+		default:
+			respondErr(w, http.StatusBadRequest, "step must be give_peer or break_self")
+			return
+		}
+		if err != nil {
+			respondInternalErr(w, r, "could not count eligible targets", err)
+			return
+		}
+		if remaining <= 0 {
+			respondErr(w, http.StatusConflict, "no remaining picks to forfeit for this step")
+			return
+		}
+		if eligible > 0 {
+			respondErr(w, http.StatusConflict, "valid targets remain — complete the step instead of forfeiting")
+			return
+		}
+
+		switch body.Step {
+		case spOptGivePeer:
+			sp.GivePeerDone += remaining
+		case spOptBreakSelf:
+			sp.BreakSelfDone += remaining
+		}
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record forfeit", err)
+			return
+		}
+
+		// The count stays unit-less ("2 forfeited"): Seek Answers' and Spread Rumors'
+		// forfeit logs each spell out pick/picks, and a third copy of those literals
+		// trips goconst package-wide.
+		spLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s had no eligible %s — %d forfeited.",
+			playerDisplayName(ctx, deps.Q, plan.PreparerID), noun, remaining))
+
+		// The forfeit advances a done-counter inside resolution_data; nudge
+		// non-actors to refetch the plan, since broadcastRowState alone won't
+		// refresh resolution_data on their clients.
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied,
+			model.PlanChoiceAppliedPayload{PlanID: plan.ID})
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "step": body.Step, "forfeited": remaining})
+	}
+}
+
+// spEligibleGivePeers counts the live peers still in the preparer's retinue —
+// the targets a give_peer pick can be spent on. There is always another player
+// to hand one to (a table seats at least two), so the retinue is the whole
+// constraint. Mirror of the frontend preparerPeers picker.
+func spEligibleGivePeers(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (int, error) {
+	assets, err := deps.Q.ListAssetsByOwner(ctx, plan.PreparerID)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, a := range assets {
+		if a.GameID == plan.GameID && a.AssetType == model.AssetPeer && !a.IsDestroyed {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// spEligibleSelfBreaks counts the preparer's own assets a break_self pick could
+// still land on. A blank asset counts: the break destroys it outright
+// (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md D3), which is why this goes through
+// assetIsBreakable rather than an intact-marginalia test.
+//
+// It counts ASSETS, not available breaks — an asset with three intact
+// marginalia absorbs three picks. That is enough here, because the count is
+// only ever used as "is it zero?"; the picker's own cap (shared.ts
+// breaksAvailable) is what has to be per-break exact.
+func spEligibleSelfBreaks(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (int, error) {
+	assets, err := deps.Q.ListAssetsByOwner(ctx, plan.PreparerID)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, a := range assets {
+		if a.GameID != plan.GameID || a.IsDestroyed {
+			continue
+		}
+		breakable, err := assetIsBreakable(ctx, deps.Q, a.ID)
+		if err != nil {
+			return 0, err
+		}
+		if breakable {
+			count++
+		}
+	}
+	return count, nil
 }
