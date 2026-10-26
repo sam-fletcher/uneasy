@@ -4,6 +4,10 @@
   winner picks N stakes from the loser:
     make → preparer wins, takes `result` stakes from target
     mar  → target wins,   takes `adjusted_difficulty` stakes from preparer
+
+  The pick is only offered when it is one: if the winner's budget covers every
+  stake the loser put up (or is zero) the server applies the claim itself as
+  the roll resolves, and the duel completes without a click.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -54,6 +58,13 @@
 	);
 	const effectiveTake = $derived(Math.min(takeCount, loserStakes.length));
 	const choicesApplied = $derived(duelRes.phase === 'done');
+	// The winner is only asked when the claim is a real subset pick. When the
+	// budget covers every stake the loser put up, "take all" is the one legal
+	// answer, and when it's zero there is nothing to take — the server settles
+	// both the moment the roll lands (pduelResolveClaim), so no picker here.
+	// DESIGN_PRINCIPLES.md principle 3: if you can't name the decision, it
+	// isn't a step.
+	const claimIsAChoice = $derived(effectiveTake > 0 && effectiveTake < loserStakes.length);
 
 	let takeSelectionIDs = $state<number[]>([]);
 	let takeBusy = $state(false);
@@ -104,37 +115,32 @@
 			{playerName(players, loserID)}.
 			Afterwards, <em>every</em> staked asset on both sides is leveraged.
 		</p>
-		{#if amWinner}
-			{#if effectiveTake === 0}
-				<p class="choices-note muted">
-					Nothing to take. Applying result automatically.
-				</p>
-				<button class="action-btn primary"
-					onclick={() => { takeSelectionIDs = []; submitTake(); }}
-					disabled={takeBusy}>
-					{takeBusy ? '…' : 'Apply result'}
-				</button>
-			{:else}
-				<p class="choices-note">
-					Choose {effectiveTake} of {playerName(players, loserID)}'s
-					staked {effectiveTake === 1 ? 'asset' : 'assets'} to take:
-				</p>
-				<CardPicker
-					label="Check the assets you'll take"
-					items={loserStakeAssets}
-					{players}
-					multi
-					max={effectiveTake}
-					selectedMulti={takeSelectionIDs}
-					onSelectMulti={(ids) => (takeSelectionIDs = ids)}
-				/>
-				{#if takeError}<ErrorText message={takeError} variant="panel" />{/if}
-				<button class="action-btn primary"
-					onclick={submitTake}
-					disabled={takeBusy || takeSelectionIDs.length !== effectiveTake}>
-					{takeBusy ? '…' : `Take ${takeSelectionIDs.length}/${effectiveTake}`}
-				</button>
-			{/if}
+		{#if !claimIsAChoice}
+			<p class="choices-note muted">
+				{effectiveTake === 0
+					? 'Nothing to take — settling the duel.'
+					: 'Nothing to choose — settling the duel.'}
+			</p>
+		{:else if amWinner}
+			<p class="choices-note">
+				Choose {effectiveTake} of {playerName(players, loserID)}'s
+				staked {effectiveTake === 1 ? 'asset' : 'assets'} to take:
+			</p>
+			<CardPicker
+				label="Check the assets you'll take"
+				items={loserStakeAssets}
+				{players}
+				multi
+				max={effectiveTake}
+				selectedMulti={takeSelectionIDs}
+				onSelectMulti={(ids) => (takeSelectionIDs = ids)}
+			/>
+			{#if takeError}<ErrorText message={takeError} variant="panel" />{/if}
+			<button class="action-btn primary"
+				onclick={submitTake}
+				disabled={takeBusy || takeSelectionIDs.length !== effectiveTake}>
+				{takeBusy ? '…' : `Take ${takeSelectionIDs.length}/${effectiveTake}`}
+			</button>
 		{:else}
 			<p class="choices-note muted">
 				Waiting for {playerName(players, winnerID)} to claim stakes…

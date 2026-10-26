@@ -7,7 +7,7 @@
                hidden from the opponent until both commit, then → bouts.
     bouts    — declarer/responder bout loop with hidden dice.
     roll     — standard dice roll with accumulated bout dice pre-loaded.
-    done     — winner has claimed stakes; preparer completes.
+    done     — stakes claimed; the plan resolves itself (no Complete step).
 
   This panel is a dispatcher. The per-phase UI lives in `duel/`: PrepForm,
   SetupPhase, BoutsPhase, RollPhase. The parent owns the duel-state fetch, WS
@@ -19,7 +19,6 @@
 	import './planPanel.css';
 	import { onMount, onDestroy } from 'svelte';
 	import {
-		completePlan,
 		getDuelState,
 		type DuelStake, type DuelBout, type DuelStateResponse,
 	} from '$lib/api';
@@ -34,7 +33,6 @@
 	import type { DuelRes } from './duel/shared';
 
 	import type { PlanPanelProps } from './types';
-	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -154,19 +152,6 @@
 	const myStakes = $derived(stakes.filter(s => s.player_id === currentPlayerID));
 	const myUnresolvedStakes = $derived(myStakes.filter(s => !s.is_resolved));
 
-	// Complete (focus player, phase=done).
-	let completeBusy = $state(false);
-	let completeError = $state('');
-	async function onComplete() {
-		if (!plan || completeBusy) return;
-		completeBusy = true; completeError = '';
-		try {
-			await completePlan(plan.id);
-			onPlansChanged();
-		} catch (e) {
-			completeError = e instanceof Error ? e.message : 'Could not complete plan.';
-		} finally { completeBusy = false; }
-	}
 </script>
 
 {#if mode === 'prep'}
@@ -205,17 +190,15 @@
 			/>
 
 		{:else if duelRes.phase === 'done'}
+			<!-- The duel resolves itself the moment the stakes are claimed
+			     (pduelHandler.AutoCompleteAfterChoice), so this is a brief
+			     terminal state, not a gate. There was a "Complete plan" button
+			     here and it landed on the PREPARER — including when the
+			     preparer was the one who just lost. -->
 			<div class="complete-section">
 				<p class="choices-applied">
 					Duel complete. All staked assets are leveraged.
 				</p>
-				{#if completeError}<ErrorText message={completeError} variant="panel" />{/if}
-				{#if amPreparer}
-					<button class="action-btn primary"
-						onclick={onComplete} disabled={completeBusy}>
-						{completeBusy ? '…' : 'Complete plan'}
-					</button>
-				{/if}
 			</div>
 
 		{:else}

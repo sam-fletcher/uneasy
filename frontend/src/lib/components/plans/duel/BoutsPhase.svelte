@@ -49,6 +49,29 @@
 		amParticipant && currentPlayerID != null && currentActorID === currentPlayerID,
 	);
 
+	// ── The open declaration ─────────────────────────────────────────────────
+	// A declared, unresolved bout is a public call — which stake was opened
+	// with, and "high" or "low" — that the responder is choosing an answer to.
+	// The declarer's die stays hidden (the server masks it); the call does not.
+	const openCall = $derived(
+		boutInProgress && latestBout != null
+			? {
+				declarerID: latestBout.declarer_id,
+				responderID: latestBout.responder_id,
+				stakeID: latestBout.declarer_stake_id,
+				declaration: latestBout.declaration,
+			}
+			: null,
+	);
+	// The UI says higher/lower everywhere (the declarer's own picker, below); the
+	// wire value and the action log say high/low, the rules' word.
+	const callWord = (d: 'high' | 'low' | null) => (d === 'low' ? 'lower' : 'higher');
+	const openCallAssetName = $derived.by(() => {
+		if (openCall == null) return '';
+		const s = [...preparerStakes, ...targetStakes].find(x => x.id === openCall.stakeID);
+		return s == null ? '' : assetName(assets, s.asset_id);
+	});
+
 	// ── Stake → display view (die value, resolution status) ──────────────────
 	type StakeView = {
 		id: number;
@@ -59,27 +82,30 @@
 		resolved: boolean;
 		setAside: boolean;     // tied bout — die carries forward
 		won: boolean | null;
+		called: 'high' | 'low' | null;  // this is the open bout's declared stake
 	};
 	function viewStake(s: DuelStake): StakeView {
 		const name = assetName(assets, s.asset_id);
 		const mine = currentPlayerID != null && s.player_id === currentPlayerID;
+		const called = openCall != null && openCall.stakeID === s.id
+			? (openCall.declaration ?? 'high') : null;
 		if (s.is_resolved) {
 			for (const b of bouts) {
 				if (b.declarer_stake_id === s.id && b.declarer_die != null) {
 					return { id: s.id, name, die: b.declarer_die, mine, hidden: false,
-						resolved: true, setAside: b.is_match, won: s.is_winner };
+						resolved: true, setAside: b.is_match, won: s.is_winner, called: null };
 				}
 				if (b.responder_stake_id === s.id && b.responder_die != null) {
 					return { id: s.id, name, die: b.responder_die, mine, hidden: false,
-						resolved: true, setAside: b.is_match, won: s.is_winner };
+						resolved: true, setAside: b.is_match, won: s.is_winner, called: null };
 				}
 			}
 			return { id: s.id, name, die: null, mine, hidden: false,
-				resolved: true, setAside: false, won: s.is_winner };
+				resolved: true, setAside: false, won: s.is_winner, called: null };
 		}
 		// Unresolved: the owner sees their die; the opponent sees nothing.
 		return { id: s.id, name, die: s.hidden_die, mine,
-			hidden: s.hidden_die == null, resolved: false, setAside: false, won: null };
+			hidden: s.hidden_die == null, resolved: false, setAside: false, won: null, called };
 	}
 	const prepViews = $derived(preparerStakes.map(viewStake));
 	const targViews = $derived(targetStakes.map(viewStake));
@@ -146,8 +172,11 @@
 						{@render die(v.die ?? '?', 'mine')}
 					</button>
 				{:else}
-					<div class="stake-line" class:resolved={v.resolved}>
+					<div class="stake-line" class:resolved={v.resolved} class:called={v.called != null}>
 						<span class="stake-name">{v.name}</span>
+						{#if v.called}
+							<span class="stake-tag call">called {callWord(v.called)}</span>
+						{/if}
 						{#if v.resolved}
 							{#if v.setAside}
 								{@render die(v.die ?? '·', 'aside')}<span class="stake-tag">tied</span>
@@ -201,6 +230,19 @@
 		</div>
 		{@render sideColumn(plan.target_player_id, targViews, accumulated.targ, false)}
 	</div>
+
+	{#if openCall}
+		<p class="open-call">
+			{playerName(players, openCall.declarerID)}
+			opens with <em>{openCallAssetName}</em>, calling
+			{callWord(openCall.declaration)}.
+			{#if currentPlayerID === openCall.responderID}
+				Pick one of your stakes to answer — you can see your own die, not theirs.
+			{:else}
+				{playerName(players, openCall.responderID)} must answer.
+			{/if}
+		</p>
+	{/if}
 
 	<!-- {#if latestBout && latestBout.resolved_at != null}
 		<p class="choices-note last-bout">
@@ -362,6 +404,30 @@
 	}
 	.stake-tag.win { color: var(--color-success); }
 	.stake-tag.loss { color: var(--color-danger); }
+	.stake-tag.call { color: var(--color-chip-blue-text); }
+
+	/* The stake under the open declaration — the one the responder is
+	   answering. Outlined, never filled: a fill here would read as "selected",
+	   which is what the responder's own tap means two rows down. */
+	.stake-line.called {
+		padding: 0.25rem 0.4rem;
+		border: 1px solid var(--color-chip-blue-border);
+		border-radius: 5px;
+	}
+
+	/* The public call. Blue is this palette's attention colour, and the call is
+	   the one thing the responder must read before choosing. */
+	.open-call {
+		margin: 0.1rem 0 0;
+		padding: 0.45rem 0.6rem;
+		font-size: 0.82rem;
+		line-height: 1.45;
+		color: var(--color-chip-blue-text);
+		background: var(--color-chip-blue-bg);
+		border: 1px solid var(--color-chip-blue-border);
+		border-radius: 5px;
+	}
+	.open-call em { font-style: italic; }
 
 	.die {
 		display: inline-flex;
