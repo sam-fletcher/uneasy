@@ -77,8 +77,89 @@ func (ecHandler) ComputeDifficulty(
 // OnResolve returns nil: Exchange Courtiers starts with the fair-trade step,
 // not an immediate dice roll. The fair-trade endpoint (an ExtraRoute) handles
 // the optional dice roll after the preparer declines.
-func (ecHandler) OnResolve(_ context.Context, _ *PlanDeps, _ *dbgen.Plan) (*dbgen.DiceRoll, error) {
-	return nil, nil
+//
+// The one thing it does do is check the plan is still aimed at something real.
+// The peer was named five rows ago; if it has since been destroyed or changed
+// hands, the plan pauses for its preparer to re-aim (see plan_reaim.go) instead
+// of opening a fair-trade step over a peer that is not there to trade.
+func (ecHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
+	_, err := reaimHoldAtResolve(ctx, deps, plan, ecHandler{})
+	return nil, err
+}
+
+// ── Re-aim (TargetReAimer) ───────────────────────────────────────────────────
+
+// StaleAim: the plan is aimed at one peer, held by one player — the player whose
+// power status sets the difficulty. It stands only while that peer is alive AND
+// still that player's. A peer who has moved to a third player is no longer "the
+// target player's courtier", so the difficulty and the whole fair-trade premise
+// (the target names a peer to swap for their own) would be about the wrong person.
+// A peer who has moved to the PREPARER is the same case: there is nothing left to
+// take.
+func (ecHandler) StaleAim(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (AimLoss, error) {
+	if plan.TargetAssetID == nil || plan.TargetPlayerID == nil {
+		return AimLoss{}, nil // nothing recorded, nothing to have gone stale
+	}
+	asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID)
+	if err != nil {
+		if !isNoRows(err) {
+			return AimLoss{}, err
+		}
+		const gone = "The peer this was aimed at no longer exists."
+		return AimLoss{Plain: gone, Log: gone}, nil
+	}
+	switch {
+	case asset.IsDestroyed:
+		return AimLoss{
+			Plain: fmt.Sprintf("The peer %s has been destroyed.", asset.Name),
+			Log:   fmt.Sprintf("The peer %s has been destroyed.", assetMark(asset.Name)),
+		}, nil
+	case asset.OwnerID != *plan.TargetPlayerID:
+		return AimLoss{
+			Plain: fmt.Sprintf("The peer %s no longer belongs to %s — they are with %s now.",
+				asset.Name, playerPlainName(ctx, q, *plan.TargetPlayerID), playerPlainName(ctx, q, asset.OwnerID)),
+			Log: fmt.Sprintf("The peer %s no longer belongs to %s — they are with %s now.",
+				assetMark(asset.Name), playerDisplayName(ctx, q, *plan.TargetPlayerID),
+				playerDisplayName(ctx, q, asset.OwnerID)),
+		}, nil
+	}
+	return AimLoss{}, nil
+}
+
+// ReAimOptions: any living peer of any player but the preparer. This is exactly
+// what validateExchangeCourtiersPlan accepts at preparation (an owner, a peer, an
+// owner with peers) restricted to assets that still exist; keep the two in step.
+// Taking a peer from yourself is meaningless, hence "but the preparer".
+func (ecHandler) ReAimOptions(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]ReAimOption, error) {
+	players, err := q.GetPlayersByGame(ctx, plan.GameID)
+	if err != nil {
+		return nil, err
+	}
+	var out []ReAimOption
+	for _, p := range players {
+		if p.ID == plan.PreparerID {
+			continue
+		}
+		owned, err := q.ListAssetsByOwner(ctx, p.ID) // live assets only
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range owned {
+			if a.GameID != plan.GameID || a.AssetType != model.AssetPeer {
+				continue
+			}
+			out = append(out, ReAimOption{TargetPlayerID: new(p.ID), TargetAssetID: new(a.ID)})
+		}
+	}
+	return out, nil
+}
+
+func (ecHandler) DescribeAim(ctx context.Context, q *dbgen.Queries, _ *dbgen.Plan, opt ReAimOption) string {
+	if opt.TargetAssetID == nil || opt.TargetPlayerID == nil {
+		return "at a new peer"
+	}
+	return fmt.Sprintf("at %s's peer %s",
+		playerDisplayName(ctx, q, *opt.TargetPlayerID), assetDisplayName(ctx, q, *opt.TargetAssetID))
 }
 
 func (ecHandler) ApplyChoice(

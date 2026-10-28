@@ -249,6 +249,13 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 	case "cancelled":
 		code = "plan.cancelled"
 		body, rowAnchor = planFellThroughPost(ctx, q, plan)
+	case fizzledOutcome:
+		// No roll, no make, no mar: the plan's target was gone and nothing else
+		// could be aimed at (plan_reaim.go). The explaining line was posted
+		// beside this one; this just closes the span. Keeps the generic
+		// plan.resolved code so the chat files it as a plain "Resolved".
+		code = "plan.resolved"
+		body = fmt.Sprintf("%s came to nothing.", planLabel(plan.PlanType))
 	default:
 		code = "plan.resolved"
 		body = fmt.Sprintf("%s resolved (%s).", planLabel(plan.PlanType), result)

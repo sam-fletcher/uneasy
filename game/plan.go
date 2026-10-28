@@ -59,6 +59,11 @@ type ResolutionData struct {
 	// winner ever acts (audit D5).
 	DemandRetargetFinalized bool `json:"demand_retarget_finalized,omitempty"`
 
+	// ReAim is set when the plan's prepare-time target no longer stands at
+	// resolution and its preparer owes a new one (see ReAimState). Top level for
+	// the same reason as the two flags above: it is a cross-plan concern.
+	ReAim *ReAimState `json:"reaim,omitempty"`
+
 	ExchangeCourtiers  *ExchangeCourtiersResolutionData  `json:"exchange_courtiers,omitempty"`
 	MakeIntroductions  *MakeIntroductionsResolutionData  `json:"make_introductions,omitempty"`
 	SeekAnswers        *SeekAnswersResolutionData        `json:"seek_answers,omitempty"`

@@ -201,6 +201,15 @@ const (
 	// not the preparer (the normal resolver) and not the focus player.
 	RowStateAwaitCourtierResponse RowStateKind = "await_courtier_response"
 
+	// RowStateAwaitPlanReAim — a resolving plan found that the asset, player or
+	// plan it was aimed at at preparation no longer stands (destroyed, moved, no
+	// longer pending), and holds until its preparer names a new aim. The book
+	// (p.12) lets a plan's target change at resolution when the original intent
+	// no longer makes sense; here the change is forced. ActingPlayerIDs names the
+	// preparer, plus anyone else the plan's own waiting-on would have named.
+	// Shared by Exchange Courtiers, Spread Rumors and Make Demands.
+	RowStateAwaitPlanReAim RowStateKind = "await_plan_reaim"
+
 	// RowStateAwaitIntroductionsMarginalia — a marred Make Introductions plan
 	// is waiting on another player to write a newcomer's marginalia: the
 	// receiving player of an "other_retinue" peer, or the assigned author of a
@@ -255,7 +264,7 @@ type RowState struct {
 
 	// PlanID is the relevant plan for: PlanResolving, PlanPending,
 	// AwaitDelayReveal, AwaitDemandCounter, AwaitDemandDraftPick,
-	// AwaitDemandLeverage, AwaitDemandRetarget, AwaitFestivityGuestTurn,
+	// AwaitDemandLeverage, AwaitDemandRetarget, AwaitPlanReAim, AwaitFestivityGuestTurn,
 	// AwaitFestivityChallengeResponse, AwaitDuelStaking, AwaitDuelBout. Nil
 	// otherwise.
 	PlanID *int64 `json:"plan_id,omitempty"`

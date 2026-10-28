@@ -314,6 +314,12 @@ func takeAssetEffect(
 	ctx context.Context, q *dbgen.Queries, manager *hub.Manager,
 	gameID, assetID, oldOwnerID, newOwnerID int64,
 ) (dbgen.Asset, error) {
+	// A destroyed asset is gone from play; it must never change hands. Plans
+	// re-check their targets when they resolve (plan_reaim.go), so reaching this
+	// means a target died mid-resolution — refuse rather than hand over a husk.
+	if existing, err := q.GetAssetByID(ctx, assetID); err == nil && existing.IsDestroyed {
+		return dbgen.Asset{}, fmt.Errorf("asset %d is destroyed and cannot be taken", assetID)
+	}
 	if err := q.TransferAsset(ctx, dbgen.TransferAssetParams{
 		ID:      assetID,
 		OwnerID: newOwnerID,

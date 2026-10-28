@@ -116,8 +116,14 @@ func (srHandler) ComputeDifficulty(
 	return gamepkg.SpreadRumorsDifficulty(preparerRank, false), nil
 }
 
-// OnResolve creates the dice roll.
+// OnResolve creates the dice roll — unless the rumor's subject is gone, in which
+// case the plan pauses for its preparer to re-aim it first (plan_reaim.go). The
+// check has to come before the roll: the difficulty is read off the target asset,
+// and a roll over a destroyed asset would be a roll at the wrong stakes.
 func (srHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
+	if held, err := reaimHoldAtResolve(ctx, deps, plan, srHandler{}); held || err != nil {
+		return nil, err
+	}
 	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 	if err != nil {
 		return nil, err
@@ -329,4 +335,61 @@ func (srHandler) ResolvingWaitees(_ context.Context, _ *dbgen.Queries, plan *dbg
 		return model.RowState{Kind: model.RowStateAwaitTakeConsent, ActingPlayerIDs: []int64{victim}}, true
 	}
 	return model.RowState{}, false
+}
+
+// ── Re-aim (TargetReAimer) ───────────────────────────────────────────────────
+
+// StaleAim: a rumor is ABOUT an asset, so it stands while that asset does. A
+// change of owner leaves it valid on purpose — the gossip follows the asset, not
+// whoever holds it this week — and the difficulty and the mar-branch actor (both
+// read off the asset's live owner, never cached) simply move with it. Only the
+// asset ceasing to exist makes "start a rumor about it" meaningless.
+//
+// The kept-secret references (resolution_data's SecretAssetID / SecretID) are
+// deliberately NOT checked: secrets are never deleted, and a make reads the text
+// by SecretID, so losing the asset that shelters the secret changes who can read
+// it, not whether the rumor can be published.
+func (srHandler) StaleAim(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (AimLoss, error) {
+	if plan.TargetAssetID == nil {
+		return AimLoss{}, nil
+	}
+	asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID)
+	if err != nil {
+		if !isNoRows(err) {
+			return AimLoss{}, err
+		}
+		const gone = "The asset this rumor was about no longer exists."
+		return AimLoss{Plain: gone, Log: gone}, nil
+	}
+	if asset.IsDestroyed {
+		return AimLoss{
+			Plain: fmt.Sprintf("%s, the subject of the rumor, has been destroyed.", asset.Name),
+			Log: fmt.Sprintf("%s, the subject of the rumor, has been destroyed.",
+				assetMark(asset.Name)),
+		}, nil
+	}
+	return AimLoss{}, nil
+}
+
+// ReAimOptions: any living asset in the game. Preparation accepts any asset for a
+// rumor — including the preparer's own (the take-consent flow even has a
+// "self-consent" case for it) — so the re-aim does too.
+func (srHandler) ReAimOptions(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]ReAimOption, error) {
+	assets, err := q.ListAssetsByGame(ctx, plan.GameID) // live assets only
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ReAimOption, 0, len(assets))
+	for _, a := range assets {
+		// The rumor's player column is left as it was; only the subject asset moves.
+		out = append(out, ReAimOption{TargetPlayerID: plan.TargetPlayerID, TargetAssetID: new(a.ID)})
+	}
+	return out, nil
+}
+
+func (srHandler) DescribeAim(ctx context.Context, q *dbgen.Queries, _ *dbgen.Plan, opt ReAimOption) string {
+	if opt.TargetAssetID == nil {
+		return "at a new subject"
+	}
+	return "at " + assetDisplayName(ctx, q, *opt.TargetAssetID)
 }
