@@ -1207,6 +1207,19 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	require.Len(t, got.ActingPlayerIDs, 1)
 	assert.Equal(t, tg.Players[0].ID, got.ActingPlayerIDs[0],
 		"a pending host-resolved mar keeps the host in Waiting On")
+
+	// An insisted mar the host has not yet CHOSEN keeps them there too.
+	reloaded, err = q.GetPlanByID(ctx, hf.ID)
+	require.NoError(t, err)
+	resData = loadResolutionData(reloaded.ResolutionData)
+	state = resData.EnsureFestivity()
+	state.PendingHostMars = nil
+	state.UnchosenHostMars = []int64{tg.Players[1].ID}
+	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
+	got, err = ComputeRowState(ctx, q, tg.Game.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{tg.Players[0].ID}, got.ActingPlayerIDs,
+		"an unchosen insisted mar keeps the host in Waiting On")
 }
 
 // TestComputeRowState_AwaitFestivityChallengeResponse: an open challenge

@@ -549,6 +549,9 @@ func planResolvingGate(ctx context.Context, q *dbgen.Queries, plans []dbgen.Plan
 			continue
 		}
 		plan := &plans[i]
+		if planSuspendedByNested(plan, plans) {
+			continue // the nested plan is the one the table is playing
+		}
 		id := plan.ID
 		// Pre-roll cross-player gates: a Make Demands keep_or_change_target or
 		// control_leverage winner owes a decision on this (target) plan's still-open

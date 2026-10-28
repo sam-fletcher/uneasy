@@ -76,6 +76,7 @@
 			: assets.filter(a =>
 				a.owner_id === currentPlayerID
 				&& a.asset_type === 'peer'
+				&& !a.is_main_character
 				&& !a.is_destroyed),
 	);
 	// The acting player's main character, if a break can land on it — the

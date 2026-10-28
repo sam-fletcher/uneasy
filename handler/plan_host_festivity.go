@@ -16,7 +16,9 @@ package handler
 //   - the host takes their extra makes (one for hosting, one per guest who
 //     marred or opted out) — these are the host's spoils, not debts owed to
 //     those guests, so they're tracked as a count, not per-guest;
-//   - successful (make-rolling) guests inflict an extra mar on the host.
+//   - successful (make-rolling) guests insist the host take a mar — the book
+//     (p.61) has the *host* choose which of the four, so the insist carries no
+//     option and the host picks on their pending-mar card.
 //
 // The only ordering rule: a single roll-and-choice must conclude before the
 // next action starts (see hfBlockOnActiveRoll). The host winds the event down
@@ -29,11 +31,14 @@ package handler
 //
 //	POST /api/plans/:planId/guest-roll        — {action:"roll"|"opt_out"}.
 //	POST /api/plans/:planId/guest-choice      — {choice, ...option params}.
-//	POST /api/plans/:planId/insist-host-mar   — {mar_option}, consumes IOU.
-//	POST /api/plans/:planId/resolve-host-mar  — host settles an insisted mar that
-//	                                            needs their own choice (break_self,
-//	                                            disagreement).
-//	POST /api/plans/:planId/host-choice       — {choice, ...option params}.
+//	POST /api/plans/:planId/insist-host-mar   — no body; consumes the IOU and queues
+//	                                            an *unchosen* mar for the host.
+//	POST /api/plans/:planId/resolve-host-mar  — {insister_id, mar_option, ...}: the
+//	                                            host chooses which mar to take in
+//	                                            answer to an insistence and settles it.
+//	POST /api/plans/:planId/host-choice       — {choice, ...option params}; a
+//	                                            challenge_duel also names
+//	                                            target_player_id.
 //	POST /api/plans/:planId/challenge-duel    — {target_player_id}.
 //	POST /api/plans/:planId/respond-challenge — {accept:bool}, target only.
 //	POST /api/plans/:planId/end-event         — host winds the event down.
@@ -182,15 +187,45 @@ func (hfHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// hfBlockOnPendingChallenge writes a 409 and returns true if a challenge is
-// awaiting response; all festivity game actions (but not chat) pause until the
-// target accepts or declines.
-func hfBlockOnPendingChallenge(w http.ResponseWriter, state *gamepkg.FestivityResolutionData) bool {
-	if state.PendingChallenge == nil {
+// hfBlockWhilePaused writes a 409 and returns true while the table is paused
+// for a duel — either a challenge awaiting the target's answer or the nested
+// Propose Duel it became. While paused, every festivity game action (but not
+// chat) waits: the duel is the one thing happening at the table, for host and
+// guests alike, and the play area shows the duel, not the party.
+func hfBlockWhilePaused(
+	ctx context.Context,
+	q *dbgen.Queries,
+	w http.ResponseWriter,
+	state *gamepkg.FestivityResolutionData,
+) bool {
+	if state.PendingChallenge != nil {
+		respondErr(w, http.StatusConflict, "a duel challenge is awaiting the target's response")
+		return true
+	}
+	if hfNestedDuelInProgress(ctx, q, state) {
+		respondErr(w, http.StatusConflict, "a duel is under way — the festivity resumes when it ends")
+		return true
+	}
+	return false
+}
+
+// planSuspendedByNested reports whether plan is a Host Festivity paused for a
+// duel it spawned that is itself still resolving. Two plans are then 'resolving'
+// at once, but the table is playing only the inner one: the waiting bar must name
+// the duel's actors, not the party's. Everything that has to pick "the" resolving
+// plan (this, and the play area via activeResolvingPlan in the frontend) uses
+// the same rule.
+func planSuspendedByNested(plan *dbgen.Plan, plans []dbgen.Plan) bool {
+	if plan.PlanType != model.PlanHostFestivity {
 		return false
 	}
-	respondErr(w, http.StatusConflict, "a duel challenge is awaiting the target's response")
-	return true
+	nested := gamepkg.LoadFestivityData(plan.ResolutionData).PendingDuelPlanID
+	if nested == nil {
+		return false
+	}
+	return slices.ContainsFunc(plans, func(p dbgen.Plan) bool {
+		return p.ID == *nested && p.Status == model.PlanResolving
+	})
 }
 
 // hfRoster returns the festivity guest list: every player at the table. The
@@ -270,7 +305,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureFestivity()
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		// Every player at the table is a guest, so no membership check is needed.
@@ -282,18 +317,6 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		// A roll-and-choice already in flight blocks any new action.
 		if hfBlockOnActiveRoll(w, state, roster, player.ID) {
 			return
-		}
-		if state.PendingDuelPlanID != nil {
-			// Check if that duel is still unresolved.
-			if dp, err := deps.Q.GetPlanByID(
-				ctx,
-				*state.PendingDuelPlanID,
-			); err == nil &&
-				dp.Status != model.PlanResolved {
-				respondErr(w, http.StatusConflict, "a challenged duel is in progress; resolve it first")
-				return
-			}
-			state.PendingDuelPlanID = nil
 		}
 		key := strconv.FormatInt(player.ID, 10)
 		if _, acted := state.Outcomes[key]; acted {
@@ -444,7 +467,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 				"the host takes their earned make via host-choice, not guest-choice")
 			return
 		}
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		rollID, ok := state.GuestRollIDs[key]
@@ -541,9 +564,11 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 //     before anything else happens);
 //  3. otherwise the table waits on everyone who still owes an action — guests
 //     who haven't chosen, successful guests who haven't inflicted their mar, and
-//     the host while they still have earned makes to take or an insisted mar to
-//     resolve themselves (break_self / disagreement);
-//  4. when nothing is outstanding, it waits on the host to wind the event down.
+//     whoever drives the host's steps (the host, or a Make Demands perform_steps
+//     winner) while earned makes remain to take or an insisted mar — chosen or
+//     not yet chosen — remains to settle;
+//  4. when nothing is outstanding, it waits on the host to wind the event down
+//     (completion stays with the preparer even when a winner drove the steps).
 func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	if plan.Status != model.PlanResolving {
 		return model.RowState{}, false
@@ -566,16 +591,23 @@ func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		}, true
 	}
 	// Everyone with an outstanding obligation: unchosen guests, then successful
-	// guests still holding a mar to inflict, then the host if makes remain.
+	// guests still holding a mar to inflict, then whoever plays the host's part
+	// if makes or insisted mars remain. The host is added to this set, never
+	// substituted for it — a guest who has not yet chosen still owes their turn.
 	waiters := state.PendingGuests(roster)
 	for _, id := range state.GuestIOUs {
 		if !slices.Contains(waiters, id) {
 			waiters = append(waiters, id)
 		}
 	}
-	if (state.RemainingHostMakes(roster) > 0 || len(state.PendingHostMars) > 0) &&
-		!slices.Contains(waiters, plan.PreparerID) {
-		waiters = append(waiters, plan.PreparerID)
+	if state.RemainingHostMakes(roster) > 0 || state.HostMarsOwed() > 0 {
+		stepActor := plan.PreparerID
+		if winner := performStepsWinner(ctx, q, plan); winner != 0 {
+			stepActor = winner
+		}
+		if !slices.Contains(waiters, stepActor) {
+			waiters = append(waiters, stepActor)
+		}
 	}
 	// Nothing outstanding → the host may now wind the event down.
 	if len(waiters) == 0 {
@@ -608,7 +640,7 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureFestivity()
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		roster, err := hfRoster(ctx, deps.Q, plan.GameID)

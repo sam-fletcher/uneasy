@@ -36,6 +36,7 @@ function fest(over: Partial<FestRes> = {}): FestRes {
 		guestRollIDs: {},
 		guestIOUs: [],
 		hostMarInsists: [],
+		unchosenHostMars: [],
 		pendingHostMars: [],
 		acceptDuels: [],
 		pendingDuelPlanID: null,
@@ -135,5 +136,18 @@ describe('festivityEndable', () => {
 		});
 		expect(earnedHostMakes(f, 1)).toBe(2);
 		expect(festivityEndable(f, 1)).toBe(true);
+	});
+
+	it('stays open while a guest\'s insisted mar is unchosen or unsettled', () => {
+		const settled = {
+			guests: [1, 2],
+			outcomes: { 1: 'host', 2: 'make' },
+			hostMakesTaken: ['spread_rumor'],
+		};
+		expect(festivityEndable(fest(settled), 1)).toBe(true);
+		// The host hasn't chosen which mar to take yet.
+		expect(festivityEndable(fest({ ...settled, unchosenHostMars: [2] }), 1)).toBe(false);
+		// Legacy: chosen by the insisting guest, awaiting only the host's asset pick.
+		expect(festivityEndable(fest({ ...settled, pendingHostMars: ['break_self'] }), 1)).toBe(false);
 	});
 });

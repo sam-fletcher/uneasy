@@ -86,15 +86,16 @@ type PendingChallenge struct {
 // (the roster is fixed once a game starts), so callers derive the guest set
 // from the game's players and pass it to the helpers below.
 type FestivityResolutionData struct {
-	Outcomes             map[string]string `json:"outcomes,omitempty"`          // player_id (str) → "make"|"mar"|"opt_out"|"host"
-	GuestMakes           map[string]string `json:"guest_makes,omitempty"`       // guest → chosen make option
-	GuestMars            map[string]string `json:"guest_mars,omitempty"`        // guest → chosen mar option
-	HostMakesTaken       []string          `json:"host_makes_taken,omitempty"`  // make options the host has spent (their spoils)
-	GuestRollIDs         map[string]int64  `json:"guest_roll_ids,omitempty"`    // guest → their roll id
-	GuestIOUs            []int64           `json:"guest_ious,omitempty"`        // players who succeeded and may still inflict a mar on the host
-	HostMarInsists       []string          `json:"host_mar_insists,omitempty"`  // mar options inflicted on the host
-	PendingHostMars      []string          `json:"pending_host_mars,omitempty"` // mar options insisted on the host that the host must resolve themselves (break_self → which marginalia; disagreement → which of their peers). FIFO is not enforced; the host may settle them in any order.
-	AcceptDuels          []int64           `json:"accept_duels,omitempty"`      // player IDs with accept_duels flag
+	Outcomes             map[string]string `json:"outcomes,omitempty"`           // player_id (str) → "make"|"mar"|"opt_out"|"host"
+	GuestMakes           map[string]string `json:"guest_makes,omitempty"`        // guest → chosen make option
+	GuestMars            map[string]string `json:"guest_mars,omitempty"`         // guest → chosen mar option
+	HostMakesTaken       []string          `json:"host_makes_taken,omitempty"`   // make options the host has spent (their spoils)
+	GuestRollIDs         map[string]int64  `json:"guest_roll_ids,omitempty"`     // guest → their roll id
+	GuestIOUs            []int64           `json:"guest_ious,omitempty"`         // players who succeeded and may still inflict a mar on the host
+	HostMarInsists       []string          `json:"host_mar_insists,omitempty"`   // mar options inflicted on the host
+	UnchosenHostMars     []int64           `json:"unchosen_host_mars,omitempty"` // guests (by id) who insisted the host take a mar, whose option the host hasn't chosen yet — one entry per consumed IOU, in insist order
+	PendingHostMars      []string          `json:"pending_host_mars,omitempty"`  // LEGACY: a mar option chosen by the insisting guest (the pre-2026-10-28 flow) that still awaits the host's asset pick (break_self / disagreement). New insists never write here; it survives only so a game in flight across the change can finish.
+	AcceptDuels          []int64           `json:"accept_duels,omitempty"`       // player IDs with accept_duels flag
 	PendingDuelPlanID    *int64            `json:"pending_duel_plan_id,omitempty"`
 	PendingChallenge     *PendingChallenge `json:"pending_challenge,omitempty"`
 	CenteredAssetIDs     []int64           `json:"centered_asset_ids,omitempty"`     // real assets shoved to the center by a disagreement — still owned by whoever fell out with them
@@ -107,16 +108,35 @@ type FestivityResolutionData struct {
 	CenteredDrafts []DraftPeer `json:"centered_drafts,omitempty"`
 }
 
-// MarNeedsHostResolution reports whether a mar option, when insisted on the
-// host, requires the host to make a follow-up choice about their own asset
-// (rather than applying immediately). These can't be applied by the insisting
-// guest — only the owner picks which marginalia to tear / which peer falls out.
+// MarNeedsHostResolution reports whether a mar option hinges on a choice about
+// the host's OWN asset — which marginalia to tear (break_self), which peer falls
+// out (disagreement) — rather than applying from the option alone. Only the
+// owner can make that call. It is what the legacy PendingHostMars queue holds.
 func MarNeedsHostResolution(marOption string) bool {
 	switch marOption {
 	case FestivityMarBreakSelf, FestivityMarDisagreement:
 		return true
 	}
 	return false
+}
+
+// ConsumeUnchosenHostMar removes insisterID's unchosen mar once the host has
+// chosen its option, and reports whether one was found. A guest holds at most
+// one IOU, so an insister appears at most once.
+func (s *FestivityResolutionData) ConsumeUnchosenHostMar(insisterID int64) bool {
+	i := slices.Index(s.UnchosenHostMars, insisterID)
+	if i < 0 {
+		return false
+	}
+	s.UnchosenHostMars = slices.Delete(s.UnchosenHostMars, i, i+1)
+	return true
+}
+
+// HostMarsOwed counts the insisted mars the host still has to settle: those
+// whose option they haven't chosen, plus legacy ones chosen by the insister but
+// not yet landed on an asset.
+func (s *FestivityResolutionData) HostMarsOwed() int {
+	return len(s.UnchosenHostMars) + len(s.PendingHostMars)
 }
 
 // RemovePendingHostMar removes one queued occurrence of marOption from the
@@ -187,14 +207,14 @@ func (s *FestivityResolutionData) RemainingHostMakes(guests []int64) int {
 
 // EventEndable reports whether the host may wind the event down: every guest has
 // chosen an option, the host has taken all their earned makes, every outstanding
-// mar (a successful guest's IOU) has been inflicted, and the host has resolved
-// every mar insisted on them that needs their own input (break_self,
-// disagreement). guests is the table roster.
+// mar (a successful guest's IOU) has been inflicted, and the host has chosen and
+// settled every mar a guest insisted on them (HostMarsOwed). guests is the table
+// roster.
 func (s *FestivityResolutionData) EventEndable(guests []int64) bool {
 	return s.AllGuestsResolved(guests) &&
 		s.RemainingHostMakes(guests) <= 0 &&
 		len(s.GuestIOUs) == 0 &&
-		len(s.PendingHostMars) == 0
+		s.HostMarsOwed() == 0
 }
 
 // HasAcceptDuels returns true when playerID has the accept_duels flag.

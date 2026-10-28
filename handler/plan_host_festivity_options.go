@@ -282,6 +282,11 @@ func applyFestivityDisagreement(ctx context.Context, fc *festivityOptionContext)
 	if asset.OwnerID != fc.ActingPlayerID {
 		return errors.New("you can only have a disagreement with one of your own peers")
 	}
+	// The disagreement is between the main character and one of their peers; a
+	// main character can't fall out with themselves.
+	if asset.IsMainCharacter {
+		return errors.New("your main character can't have a disagreement with themselves — pick another peer")
+	}
 	if !slices.Contains(fc.state.CenteredAssetIDs, fc.AssetID) {
 		fc.state.CenteredAssetIDs = append(fc.state.CenteredAssetIDs, fc.AssetID)
 	}

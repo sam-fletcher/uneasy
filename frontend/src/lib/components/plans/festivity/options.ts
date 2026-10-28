@@ -4,8 +4,8 @@ import { assetName } from '../shared';
 // Shared make/mar option lists for the festivity sub-components. The
 // guest's own turn shows MAKE_OPTS or MAR_OPTS depending on roll outcome;
 // the host's picker (the free make they take for each guest who marred or
-// opted out) uses HOST_MAKE_OPTS (everything except challenge_duel — a duel
-// is a live challenge, not a take-for-yourself make).
+// opted out) offers the same list — a duel included (book p.61 gives the host
+// the whole make list).
 //
 // `desc` is the one-line effect shown in the read-only buffet reference.
 
@@ -22,8 +22,6 @@ export const MAR_OPTS = [
 	{ key: 'accept_duels',    label: 'You must accept all duels',  		desc: 'during the festivity.' },
 	{ key: 'break_self',      label: 'Break yourself',                  desc: '— Tear a marginalia on your main character.' },
 ];
-
-export const HOST_MAKE_OPTS = MAKE_OPTS.filter(o => o.key !== 'challenge_duel');
 
 // Third-person past-tense phrases for the scorecard ("The Talk of the Event"),
 // where the MAKE_OPTS/MAR_OPTS labels (second person) read awkwardly.
@@ -55,6 +53,9 @@ export type FestRes = {
 	guestRollIDs: Record<string, number>;
 	guestIOUs: number[];
 	hostMarInsists: string[];
+	/** Guests who insisted the host take a mar the host hasn't chosen yet. */
+	unchosenHostMars: number[];
+	/** Legacy: a mar the insisting guest chose, awaiting only the host's asset pick. */
 	pendingHostMars: string[];
 	acceptDuels: number[];
 	pendingDuelPlanID: number | null;
@@ -78,14 +79,13 @@ export function earnedHostMakes(fest: FestRes, hostID: number): number {
 
 /** Whether the host may wind the event down: every guest has chosen, all earned
  *  makes are taken, every outstanding mar (a guest IOU) has been inflicted, and
- *  every insisted mar the host must resolve themselves has been settled. Peers
- *  still in the centre don't hold the event open — ending it is what settles
- *  them. */
+ *  every insisted mar has been chosen and settled by the host. Peers still in
+ *  the centre don't hold the event open — ending it is what settles them. */
 export function festivityEndable(fest: FestRes, hostID: number): boolean {
 	const allChosen = fest.guests.every((id) => String(id) in fest.outcomes);
 	const makesLeft = earnedHostMakes(fest, hostID) - fest.hostMakesTaken.length;
 	return allChosen && makesLeft <= 0 && fest.guestIOUs.length === 0
-		&& fest.pendingHostMars.length === 0;
+		&& fest.unchosenHostMars.length === 0 && fest.pendingHostMars.length === 0;
 }
 
 /** Display-only asset id for a centered draft, so drafts and real peers can

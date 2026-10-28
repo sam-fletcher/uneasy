@@ -27,6 +27,7 @@
 	import { PLAN_SHORT, PLAN_DESCRIPTION, PLAN_DELAY, TRACK_ORDER, playerName } from './plans/shared';
 	import { playerColor } from '$lib/playerColor';
 	import { REGISTRY } from './plans/registry';
+	import { activeResolvingPlan } from '$lib/plans/resolutionData/host_festivity';
 	import LazyPlanPanel from './plans/LazyPlanPanel.svelte';
 	import RowPill from './plans/RowPill.svelte';
 	import { highlightedRow } from '$lib/highlight';
@@ -108,7 +109,8 @@
 
 	// ── Derived plan state ────────────────────────────────────────────────────
 
-	const resolvingPlan = $derived(plans.find(p => p.status === 'resolving') ?? null);
+	// Normally the one resolving plan; a festivity paused for its duel yields to it.
+	const resolvingPlan = $derived(activeResolvingPlan(plans));
 
 	// Pending plans on the current row are auto-kicked off server-side (see
 	// broadcastRowState in handler/row_state.go), so the client should only
