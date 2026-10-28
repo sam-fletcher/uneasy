@@ -94,18 +94,7 @@ func saCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Log the preparer's pre-roll narration as their own scene post, anchored
 		// to the plan row (the same shape Chronicle Histories uses for its scene).
-		post, perr := deps.Q.CreatePlayerMessage(ctx, dbgen.CreatePlayerMessageParams{
-			GameID:    plan.GameID,
-			AuthorID:  &player.ID,
-			Body:      narration,
-			RowNumber: plan.RowNumber,
-			PlanID:    &plan.ID,
-		})
-		if perr == nil {
-			if h, ok := deps.Manager.Get(plan.GameID); ok {
-				h.BroadcastEvent(model.EventScenePostCreated, model.ScenePostCreatedPayload{Post: post})
-			}
-		}
+		postPlanNarration(ctx, deps, plan, player.ID, narration)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,

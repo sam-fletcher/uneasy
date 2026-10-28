@@ -43,7 +43,7 @@ func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll, "SP creates its roll on resolve")
 	h.forceRoll(roll.ID, "make", 0)
 
@@ -73,24 +73,24 @@ func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 
 	// A non-preparer cannot author the artifact.
 	otherIdx := (preparerIdx + 1) % 3
-	code, body = h.post(otherIdx, createPath, map[string]any{"name": "Hijack", "marginalia": []string{"a trait"}})
+	code, body = h.post(otherIdx, createPath, map[string]any{"narration": "The old order crumbles.", "name": "Hijack", "marginalia": []string{"a trait"}})
 	require.Equalf(t, http.StatusForbidden, code, "only the preparer may author: %v", body)
 
 	// The make path requires a name.
-	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "", "marginalia": []string{"a trait"}})
+	code, body = h.post(preparerIdx, createPath, map[string]any{"narration": "The old order crumbles.", "name": "", "marginalia": []string{"a trait"}})
 	require.Equalf(t, http.StatusBadRequest, code, "authoring needs a name: %v", body)
 
 	// The make path requires exactly one marginalia.
-	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "The New Orthodoxy", "marginalia": []string{}})
+	code, body = h.post(preparerIdx, createPath, map[string]any{"narration": "The old order crumbles.", "name": "The New Orthodoxy", "marginalia": []string{}})
 	require.Equalf(t, http.StatusBadRequest, code, "authoring needs one marginalia: %v", body)
-	code, body = h.post(preparerIdx, createPath, map[string]any{
+	code, body = h.post(preparerIdx, createPath, map[string]any{"narration": "The old order crumbles.",
 		"name": "The New Orthodoxy", "marginalia": []string{"first", "second"},
 	})
 	require.Equalf(t, http.StatusBadRequest, code, "authoring rejects two marginalia: %v", body)
 
 	// The preparer authors the artifact with a name and one marginalia —
 	// created already named, with its marginalia, in one transaction.
-	code, body = h.post(preparerIdx, createPath, map[string]any{
+	code, body = h.post(preparerIdx, createPath, map[string]any{"narration": "The old order crumbles.",
 		"name": "The New Orthodoxy", "marginalia": []string{"Born of a lie"},
 	})
 	require.Equalf(t, http.StatusOK, code, "create-artifact: %v", body)
@@ -142,7 +142,7 @@ func TestPlanLifecycle_SpreadPropaganda_PerformStepsWinnerResolves(t *testing.T)
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll, "SP creates its roll on resolve")
 	h.forceRoll(roll.ID, "make", 0)
 
@@ -164,13 +164,13 @@ func TestPlanLifecycle_SpreadPropaganda_PerformStepsWinnerResolves(t *testing.T)
 	createPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/create-artifact"
 
 	// The preparer is locked out of the create-artifact make step too.
-	code, body = h.post(preparerIdx, createPath, map[string]any{
+	code, body = h.post(preparerIdx, createPath, map[string]any{"narration": "The old order crumbles.",
 		"name": "Preparer's orthodoxy", "marginalia": []string{"a trait"},
 	})
 	require.Equalf(t, http.StatusForbidden, code, "preparer must be locked out of create-artifact: %v", body)
 
 	// The demander authors the artifact; keep_assets routes it to them.
-	code, body = h.post(demanderIdx, createPath, map[string]any{
+	code, body = h.post(demanderIdx, createPath, map[string]any{"narration": "The old order crumbles.",
 		"name": "The Demander's Orthodoxy", "marginalia": []string{"a trait"},
 	})
 	require.Equalf(t, http.StatusOK, code, "perform_steps winner should drive create-artifact: %v", body)
@@ -242,7 +242,7 @@ func TestPlanLifecycle_ExchangeCourtiers_MessyBreakRestricted(t *testing.T) {
 	h.jumpToRow(*plan.RowNumber)
 	// EC starts with fair-trade phase; the harness's resolve() returns
 	// roll=nil for EC. Decline immediately to fall through to the dice roll.
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	assert.Nil(t, roll, "EC defers its roll behind the fair-trade step")
 
 	// The target (P2) must name one of the preparer's peers before the preparer
@@ -306,18 +306,18 @@ func TestPlanLifecycle_MakeIntroductions_NamingThenRoll(t *testing.T) {
 	h.jumpToRow(*plan.RowNumber)
 	// MI now defers its roll: resolve must return roll=nil so the focus
 	// player can name peers first.
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	assert.Nil(t, roll, "MI should not create the roll on kickoff")
 
 	// Name the two peers.
 	createPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/create-peer"
 	for i, name := range []string{"Alice", "Bob"} {
-		code, body := h.post(0, createPath, map[string]any{"name": name})
+		code, body := h.post(0, createPath, map[string]any{"narration": "The old order crumbles.", "name": name})
 		require.Equalf(t, http.StatusCreated, code, "create-peer[%d]: %v", i, body)
 	}
 
 	// Trying a third peer should 409 (peer_count exceeded).
-	code, _ := h.post(0, createPath, map[string]any{"name": "Carol"})
+	code, _ := h.post(0, createPath, map[string]any{"narration": "The old order crumbles.", "name": "Carol"})
 	assert.Equal(t, http.StatusConflict, code, "third create-peer should 409")
 
 	// Finalize → roll is created.

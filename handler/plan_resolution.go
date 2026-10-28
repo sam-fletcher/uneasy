@@ -8,6 +8,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -224,6 +225,9 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
+		if !checkChoiceGate(w, r, s.Q, h, plan, player, &resData, rollPtr != nil, body.Result) {
+			return
+		}
 		resData.MakeMarChoices = make([]Choice, len(body.Choices))
 		for i, opt := range body.Choices {
 			resData.MakeMarChoices[i] = Choice{Option: opt}
@@ -270,6 +274,34 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			"messy_break_required": resData.ExchangeCourtiers != nil && resData.ExchangeCourtiers.MessyBreakRequired,
 		})
 	}
+}
+
+// checkChoiceGate consults the plan's optional ChoiceGate precondition and writes
+// the refusal — its own status when it is a *httpError, else 409 — returning false.
+func checkChoiceGate(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	h PlanHandler,
+	plan *dbgen.Plan,
+	player *dbgen.Player,
+	resData *ResolutionData,
+	hasRoll bool,
+	result string,
+) bool {
+	gate, ok := h.(ChoiceGate)
+	if !ok {
+		return true
+	}
+	gErr := gate.CheckChoice(r.Context(), q, plan, player, resData, hasRoll, result)
+	if gErr == nil {
+		return true
+	}
+	if _, isHTTP := errors.AsType[*httpError](gErr); !isHTTP {
+		gErr = httpErr(http.StatusConflict, gErr.Error())
+	}
+	respondHTTPErr(w, r, gErr)
+	return false
 }
 
 // ── CompletePlan ──────────────────────────────────────────────────────────────

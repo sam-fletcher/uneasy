@@ -7,40 +7,56 @@ package handler
 //   - Target is a main character: 6 - target's esteem rank (target's esteem status)
 //   - Any other asset:            preparer's rank on the esteem track
 //
-// Preparing: target_asset_id required; preparation_notes holds the rumor text.
+// Preparing: target_asset_id required; preparation_notes holds the rumor text —
+// a DRAFT (principle 2). It may be kept secret for now (text in a Secret).
 //
-// Make: server creates a rumors row. Then choose N options equal to dice result
-// (repeatable):
+// Pre-roll: OnResolve parks the plan with no roll. The preparer states the rumor
+// and how it is spreading via sr-cast-roll, which posts that narration publicly,
+// records the stated rumor, and creates the roll. Stating it is what makes a
+// secret rumor public — on a make or a mar (book p.59: "keep it secret for now").
+//
+// Make: server creates a rumors row from the STATED rumor. Then choose N options
+// equal to dice result (repeatable):
 //   - "break_target"  → tear a marginalia on the target asset
 //   - "leverage_target" → leverage the target asset
 //   - "take_asset"    → transfer any of the victim's assets (requires the
 //                       victim's consent — see request/respond-take-consent)
-//   - "hide_source"   → set rumors.source_player_id = NULL; write secret on own asset
-//   - "reveal_source" → set rumors.source_player_id = preparer_id
+//   - "hide_source"   → the rumor row is created with no source; write a secret
+//                       on own asset (hides the spreader's CHARACTER only)
+//   - "reveal_source" → gloating: "Reveal yourself as the source of the rumor.
+//                       Relish in its glory." Posts a log line; changes nothing
+//                       (attribution already names the preparer unless (d)).
 //
-// Mar: the target player describes a counter-rumor about the preparer. They
-// choose options from the make list, applied against the preparer's assets,
-// equal to (difficulty - result). Effects go through extra routes.
+// Mar: the target-asset owner (the "mar actor") writes the counter-rumor — the
+// rumor that spreads about the preparer instead (sr-counter-rumor) — then chooses
+// options equal to (difficulty - result), all aimed at the preparer's MAIN
+// CHARACTER as it stands when the options are applied (rulings Q1–Q2):
+//   - break_target    → the mar actor tears a marginalia on that MC
+//   - leverage_target → leverages that MC
+//   - take_asset      → any of the preparer's assets, consent-gated
+//   - hide_source     → hides the MAR ACTOR's character as the source
+//   - reveal_source   → the mar actor gloats
+// The rumor row is the counter-rumor (text = the actor's, target = that MC,
+// source = the actor unless (d)); the preparer's failed rumor never reaches the
+// Rumors sheet.
 //
-// Extra routes (all accept either the preparer on a make result, or the
-// target-asset owner on a mar result):
-//   POST /api/plans/:planId/break-target          {"marginalia_id": M, "asset_id"?: A}
+// Extra routes (preparer on a make, target-asset owner on a mar):
+//   POST /api/plans/:planId/sr-cast-roll          {"rumor": "...", "how": "..."}
+//   POST /api/plans/:planId/sr-counter-rumor      {"text": "..."}               (mar actor)
+//   POST /api/plans/:planId/break-target          {"marginalia_id": M}
 //   POST /api/plans/:planId/hide-source           {"secret_asset_id": N, "secret_text"?: "..."}
 //   POST /api/plans/:planId/request-take-consent  {"choices": [...], "result": "...", "take_asset_ids": [A, …]}
 //   POST /api/plans/:planId/respond-take-consent  {"agree": true|false}
 //
-// On mar, asset_id specifies which of the preparer's assets the target player
-// is tearing (the counter-rumor applies to preparer assets, not the plan's
-// target asset).
-//
 // "take asset" is consent-gated: unlike break/leverage (which only touch the
-// plan's original target asset), a take can claim ANY of the victim's assets —
-// the target-asset owner on make, the preparer on mar — and the aggressor may
-// take several (one per "take_asset" pick). The aggressor names the specific
-// assets up front via request-take-consent; nothing is committed until the
-// victim agrees via respond-take-consent. On agree the choices are applied and
-// the assets transfer; on disagree nothing happens and the aggressor returns to
-// the option picker with "take asset" disabled. See srRequestTakeConsentHandler.
+// rumor's subject — the target asset on a make, the preparer's MC on a mar), a
+// take can claim ANY of the victim's assets — the target-asset owner on make, the
+// preparer on mar — and the aggressor may take several (one per "take_asset"
+// pick). The aggressor names the specific assets up front via
+// request-take-consent; nothing is committed until the victim agrees via
+// respond-take-consent. On agree the choices are applied and the assets transfer;
+// on disagree nothing happens and the aggressor returns to the option picker with
+// "take asset" disabled. See srRequestTakeConsentHandler.
 
 import (
 	"context"
@@ -72,11 +88,21 @@ func (srHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryEsteem, Delay: 4}
 }
 
-func (srHandler) ValidatePreparation(_ context.Context, v *ValidationContext) (*int16, string) {
+func (srHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) (*int16, string) {
 	if v.TargetAssetID == nil {
 		return nil, "spread_rumors requires target_asset_id"
 	}
-	if v.Notes == "" {
+	// The subject must be a real, living asset of THIS game: the id arrives raw in
+	// the request, and everything downstream (difficulty, the mar actor, the rumor
+	// row) trusts it.
+	asset, err := v.Q.GetAssetByID(ctx, *v.TargetAssetID)
+	if err != nil || (v.Game != nil && asset.GameID != v.Game.ID) {
+		return nil, "spread_rumors target asset not found in this game"
+	}
+	if asset.IsDestroyed {
+		return nil, "spread_rumors cannot target a destroyed asset"
+	}
+	if v.Notes == "" && !v.KeptSecret {
 		return nil, "spread_rumors requires preparation_notes with the rumor text"
 	}
 	return nil, ""
@@ -116,29 +142,139 @@ func (srHandler) ComputeDifficulty(
 	return gamepkg.SpreadRumorsDifficulty(preparerRank, false), nil
 }
 
-// OnResolve creates the dice roll — unless the rumor's subject is gone, in which
-// case the plan pauses for its preparer to re-aim it first (plan_reaim.go). The
-// check has to come before the roll: the difficulty is read off the target asset,
-// and a roll over a destroyed asset would be a roll at the wrong stakes.
+// OnResolve opens the pre-roll narration step and returns nil — no roll yet —
+// unless the rumor's subject is gone, in which case the plan pauses for its
+// preparer to re-aim it first (plan_reaim.go). The check comes before the step
+// because the difficulty is read off the target asset (at cast time, now, so it is
+// read as late as it can be).
+//
+// The plan then sits in 'resolving' until the preparer states the rumor and how
+// it is spreading; sr-cast-roll posts that for the table to read, then creates the
+// roll (plan_preroll.go). No log entry here: the standard plan.resolving post
+// marks the start and cast-roll posts the narration itself.
 func (srHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
 	if held, err := reaimHoldAtResolve(ctx, deps, plan, srHandler{}); held || err != nil {
 		return nil, err
 	}
-	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
-	if err != nil {
-		return nil, err
-	}
 	resData := loadResolutionData(plan.ResolutionData)
-	difficulty, err := srHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
-	if err != nil {
-		return nil, err
+	resData.EnsureSpreadRumors().PreRollDone = false
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		return nil, fmt.Errorf("could not open pre-roll step: %w", err)
 	}
-	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
+	return nil, nil
 }
 
-// ApplyChoice creates the rumors row on make and handles "leverage_target" and
-// "reveal_source" which are pure DB ops. "break_target", "take_asset", and
-// "hide_source" go through extra routes.
+// CheckChoice gates make-choice behind the steps that must come first. Before the
+// roll there is nothing to choose; on a mar the options belong to the mar actor —
+// never the preparer, whose rumor just failed — and wait for the counter-rumor the
+// actor writes first (book p.59: "The target player describes the rumor that
+// spreads about you instead").
+func (srHandler) CheckChoice(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	player *dbgen.Player,
+	resData *ResolutionData,
+	hasRoll bool,
+	result string,
+) error {
+	if !hasRoll {
+		return errors.New("state the rumor and cast the dice before choosing options")
+	}
+	if result != marOutcome {
+		return nil
+	}
+	if isActor, err := srIsMarActor(ctx, q, plan, player.ID); err != nil {
+		return err
+	} else if !isActor {
+		return httpErr(http.StatusForbidden, "only the target asset's owner chooses on a mar")
+	}
+	if sr := resData.SpreadRumors; sr == nil || sr.CounterRumorText == "" {
+		return errors.New("write the counter-rumor before choosing options")
+	}
+	return nil
+}
+
+// srIsMarActor reports whether playerID is the mar actor: the live owner of the
+// plan's target asset ("the target player"). Read live on purpose — see StaleAim.
+func srIsMarActor(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, playerID int64) (bool, error) {
+	if plan.TargetAssetID == nil {
+		return false, nil
+	}
+	asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID)
+	if err != nil {
+		return false, err
+	}
+	return asset.OwnerID == playerID, nil
+}
+
+// srPreparerMainCharacter returns the preparer's living main character — whichever
+// asset holds the flag right now — or nil when they have none (the replacement
+// gate is mid-flight).
+func srPreparerMainCharacter(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (*dbgen.Asset, error) {
+	mc, err := q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{
+		GameID: plan.GameID, OwnerID: plan.PreparerID,
+	})
+	if err != nil {
+		if isNoRows(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &mc, nil
+}
+
+// srRumorSubject is the asset the rumor is about, as this branch sees it: the
+// plan's target on a make, the preparer's main character (pinned when the options
+// were applied) on a mar. nil when a mar finds no main character.
+func srRumorSubject(plan *dbgen.Plan, sr *gamepkg.SpreadRumorsResolutionData, result string) *int64 {
+	if result == marOutcome {
+		return sr.CounterTargetAssetID
+	}
+	return plan.TargetAssetID
+}
+
+// srRumorText resolves the text of the rumor row this branch publishes: the
+// STATED rumor on a make, the counter-rumor on a mar. The preparer's failed rumor
+// is never a candidate on a mar. There is no placeholder — a branch with no text
+// is an error, not a blank card on the public record.
+func srRumorText(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	sr *gamepkg.SpreadRumorsResolutionData,
+	result string,
+) (string, error) {
+	if result == marOutcome {
+		if sr.CounterRumorText == "" {
+			return "", errors.New("the counter-rumor has not been written")
+		}
+		return sr.CounterRumorText, nil
+	}
+	if sr.RumorText != "" {
+		return sr.RumorText, nil
+	}
+	// A plan that rolled before the pre-roll step existed has no stated rumor.
+	// Fall back to the old reading — the draft note, or the kept Secret — so such
+	// a plan can still finish. New plans never reach this: sr-cast-roll records
+	// RumorText before the roll exists.
+	if plan.PreparationNotes != nil && *plan.PreparationNotes != "" {
+		return *plan.PreparationNotes, nil
+	}
+	if sr.IsSecret && sr.SecretID != nil {
+		if secret, err := q.GetSecretByID(ctx, *sr.SecretID); err == nil && secret.Text != "" {
+			return secret.Text, nil
+		}
+	}
+	return "", errors.New("the rumor has not been stated")
+}
+
+// ApplyChoice creates the rumors row (both branches) and applies the inline
+// effects — leverage_target, reveal_source, and the hide_source flag. "break_target",
+// "take_asset", and the hide-source secret go through extra routes.
+//
+// Every option acts on the rumor's subject for its branch (srRumorSubject) and
+// every option leaves a trace: nothing here burns a pick silently.
 func (srHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -151,46 +287,50 @@ func (srHandler) ApplyChoice(
 	if err != nil {
 		return fmt.Errorf("could not load game: %w", err)
 	}
+	sr := resData.EnsureSpreadRumors()
+	onMar := result == marOutcome
 
-	// Create the rumor row (both make and mar create one; on mar the target
-	// player describes a counter-rumor which is narrative — we still create
-	// a placeholder rumor from the preparation_notes).
-	rumorText := ""
-	if plan.PreparationNotes != nil {
-		rumorText = *plan.PreparationNotes
-	}
-	// If the preparer kept the rumor secret, its text lives in the Secret on
-	// their asset rather than the (blanked) plan note. A Make now spreads it
-	// publicly, so pull the text back out. On a Mar the secret stays hidden —
-	// the rumor row is the target's counter-rumor placeholder instead.
-	if sr := resData.SpreadRumors; result == makeOutcome && sr != nil && sr.IsSecret && sr.SecretID != nil {
-		if secret, sErr := deps.Q.GetSecretByID(ctx, *sr.SecretID); sErr == nil {
-			rumorText = secret.Text
+	// A mar's subject is the preparer's main character AS IT STANDS NOW. Pin it
+	// before the row is made so the row, break and leverage all agree.
+	if onMar {
+		mc, mcErr := srPreparerMainCharacter(ctx, deps.Q, plan)
+		if mcErr != nil {
+			return fmt.Errorf("could not find the preparer's main character: %w", mcErr)
+		}
+		sr.CounterTargetAssetID = nil
+		if mc != nil {
+			sr.CounterTargetAssetID = &mc.ID
 		}
 	}
-	if rumorText == "" {
-		rumorText = "(no rumor text)"
-	}
+	subject := srRumorSubject(plan, sr, result)
 
-	// Count existing rumors for display_order.
+	rumorText, err := srRumorText(ctx, deps.Q, plan, sr, result)
+	if err != nil {
+		return err
+	}
 	existingRumors, _ := deps.Q.ListRumors(ctx, plan.GameID)
 	displayOrder := int16(len(existingRumors))
 
 	// Source attribution drives both the Rumors panel ("Spread by: …") and the
-	// chat-log message. On make the preparer is the source — unless they chose
-	// "hide_source", in which case the rumor is anonymous from the start (the
-	// hide-source sub-flow later records the secret on one of their assets). On
-	// mar the counter-rumor is left unattributed.
+	// chat-log message. The source is whoever authored the rumor — the preparer on
+	// a make, the mar actor on a mar — unless they hide themselves, in which case
+	// the row carries no source (the hide-source route later records the secret).
+	// Hiding hides the CHARACTER only; the players always know (principle 5), and
+	// the hide-source log line says so.
 	hideSource := slices.Contains(choices, srOptHideSource)
+	author := plan.PreparerID
+	if onMar {
+		author = sr.CounterRumorAuthorID
+	}
 	var sourcePlayerID *int64
-	if result == makeOutcome && !hideSource {
-		sourcePlayerID = &plan.PreparerID
+	if !hideSource {
+		sourcePlayerID = &author
 	}
 
 	rumor, err := deps.Q.CreateRumor(ctx, dbgen.CreateRumorParams{
 		GameID:         game.ID,
 		Text:           rumorText,
-		TargetAssetID:  plan.TargetAssetID,
+		TargetAssetID:  subject,
 		OriginPlanID:   &plan.ID,
 		SourcePlayerID: sourcePlayerID,
 		DisplayOrder:   displayOrder,
@@ -198,9 +338,9 @@ func (srHandler) ApplyChoice(
 	if err != nil {
 		return fmt.Errorf("could not create rumor: %w", err)
 	}
-	resData.EnsureSpreadRumors().RumorID = &rumor.ID
+	sr.RumorID = &rumor.ID
 	if hideSource {
-		resData.EnsureSpreadRumors().SourceHidden = true
+		sr.SourceHidden = true
 	}
 
 	broadcastEvent(deps.Manager, plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
@@ -208,43 +348,109 @@ func (srHandler) ApplyChoice(
 	// stays anonymous otherwise, so a hidden spreader is never named here.
 	EmitRumorCreated(ctx, deps.Q, deps.Manager, plan.GameID, rumor)
 
-	// Apply inline choices.
 	for _, choice := range choices {
-		switch choice {
-		case "leverage_target":
-			// On mar the counter-rumor would leverage one of the preparer's
-			// assets, but the flat choices list carries no asset picker. Treat
-			// as narrative-only on mar; leverage the target asset on make.
-			if result == marOutcome {
-				continue
+		if choice == "leverage_target" {
+			if err := srLeverageSubject(ctx, deps, plan, &game, subject, onMar); err != nil {
+				return err
 			}
-			if plan.TargetAssetID != nil {
-				if err := deps.Q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{
-					ID:          *plan.TargetAssetID,
-					IsLeveraged: true,
-				}); err != nil {
-					return fmt.Errorf("could not leverage target asset: %w", err)
-				}
-				broadcastEvent(
-					deps.Manager,
-					plan.GameID,
-					model.EventAssetLeveraged,
-					model.AssetIDPayload{AssetID: *plan.TargetAssetID},
-				)
-				if asset, aErr := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID); aErr == nil {
-					EmitAssetLeveraged(ctx, deps.Q, deps.Manager, plan.GameID, asset, logRow(game))
-				}
-			}
-		case "reveal_source":
-			resData.EnsureSpreadRumors().SourceHidden = false
-			// Source is already set to preparer above; nothing more needed.
-		case srOptHideSource:
-			// Handled via the extra route (requires secret text).
-			resData.EnsureSpreadRumors().SourceHidden = true
 		}
 	}
-
+	if gloats := pickedIn(choices, "reveal_source"); gloats > 0 {
+		srLogGloat(ctx, deps, plan, subject, author, gloats, hideSource, onMar)
+	}
 	return nil
+}
+
+// pickedIn counts how many times option appears in choices.
+func pickedIn(choices []string, option string) int {
+	n := 0
+	for _, c := range choices {
+		if c == option {
+			n++
+		}
+	}
+	return n
+}
+
+// srLeverageSubject applies one "leverage_target" pick to the rumor's subject —
+// the target asset on a make, the preparer's main character on a mar. A mar that
+// finds no main character, or an asset that is already leveraged, says so in the
+// log rather than quietly spending the pick.
+func srLeverageSubject(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	game *dbgen.Game,
+	subject *int64,
+	onMar bool,
+) error {
+	if subject == nil {
+		if onMar {
+			srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s has no main character to leverage — the counter-rumor's pick comes to nothing.",
+				playerDisplayName(ctx, deps.Q, plan.PreparerID)))
+		}
+		return nil
+	}
+	asset, err := deps.Q.GetAssetByID(ctx, *subject)
+	if err != nil {
+		return fmt.Errorf("could not load the rumor's subject: %w", err)
+	}
+	if asset.IsLeveraged {
+		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s was already leveraged — the pick changes nothing.", assetMark(asset.Name)))
+		return nil
+	}
+	if err := deps.Q.SetAssetLeveraged(
+		ctx,
+		dbgen.SetAssetLeveragedParams{ID: asset.ID, IsLeveraged: true},
+	); err != nil {
+		return fmt.Errorf("could not leverage target asset: %w", err)
+	}
+	broadcastEvent(deps.Manager, plan.GameID, model.EventAssetLeveraged, model.AssetIDPayload{AssetID: asset.ID})
+	EmitAssetLeveraged(ctx, deps.Q, deps.Manager, plan.GameID, asset, logRow(*game))
+	return nil
+}
+
+// srLogGloat posts option (e): "Reveal yourself as the source of the rumor. Relish
+// in its glory." It is an expressive beat with no mechanical effect — it does NOT
+// touch attribution (DESIGN_PRINCIPLES.md principle 5; FINDINGS Q1) — so the log
+// line is the whole of what it does, and is written to be conspicuous. The gloater
+// is named as a player: the players always know. If the same batch also hides the
+// source, the gloating happens where the court can't see it.
+func srLogGloat(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	subject *int64,
+	gloater int64,
+	times int,
+	hidden, onMar bool,
+) {
+	name := playerDisplayName(ctx, deps.Q, gloater)
+	about := playerDisplayName(ctx, deps.Q, plan.PreparerID)
+	if subject != nil {
+		about = assetDisplayName(ctx, deps.Q, *subject)
+	}
+	var body string
+	switch {
+	case onMar && hidden:
+		body = fmt.Sprintf("%s relishes the counter-rumor about %s in private, savouring a triumph "+
+			"the whole court is whispering about and no one can trace back to them.", name, about)
+	case onMar:
+		body = fmt.Sprintf("%s relishes the counter-rumor about %s — the whole court is whispering, "+
+			"and %s makes very sure everyone knows whose handiwork it is, basking in every gasp.", name, about, name)
+	case hidden:
+		body = fmt.Sprintf("%s relishes the rumor about %s in private, savouring a triumph "+
+			"the whole court is whispering about and no one can trace back to them.", name, about)
+	default:
+		body = fmt.Sprintf("%s basks in the glory of the rumor about %s — it is on every tongue at court, "+
+			"and %s makes very sure everyone knows whose handiwork it is.", name, about, name)
+	}
+	if times > 1 {
+		body += fmt.Sprintf(" And then they do it %d times over.", times)
+	}
+	srLog(ctx, deps, plan, model.SeverityImportant, body)
 }
 
 // CanComplete blocks completion while a take-asset consent request is still
@@ -308,6 +514,8 @@ func (srHandler) PreparedDescriptor(
 
 func (srHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
+		"sr-cast-roll":         srCastRollHandler(deps),
+		"sr-counter-rumor":     srCounterRumorHandler(deps),
 		"break-target":         srBreakTargetHandler(deps),
 		"hide-source":          srHideSourceHandler(deps),
 		"request-take-consent": srRequestTakeConsentHandler(deps),
@@ -324,17 +532,47 @@ func srLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 		map[string]any{"plan_id": plan.ID})
 }
 
-// ResolvingWaitees returns AwaitTakeConsent while a Spread Rumors "take asset"
-// choice is waiting on the victim's agree/disagree. ActingPlayerIDs names the
-// victim (the asset owner), so the table blocks on them rather than the resolving
-// plan's focus player. No pending consent → ride the generic PlanResolving case.
-func (srHandler) ResolvingWaitees(_ context.Context, _ *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+// ResolvingWaitees names whoever the table is actually waiting on once a Spread
+// Rumors resolution is past its pre-roll:
+//
+//   - a pending "take asset" consent → the victim (AwaitTakeConsent), so the table
+//     blocks on them rather than the resolving plan's focus player;
+//   - a mar with the counter-rumor, the options or a sub-flow step still owed → the
+//     mar actor (the target asset's live owner), who drives the whole mar branch;
+//   - a make with sub-flow steps still owed under a Make Demands perform_steps win
+//     → the winner, who stands in for the preparer (the server refuses the preparer
+//     those steps, as in Spread Propaganda).
+//
+// Anything else — including the pre-roll, which the preparer casts — rides the
+// generic PlanResolving case and names the preparer. Once nothing is owed the
+// preparer completes (completion is always theirs), which is that same case.
+func (srHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	resData := loadResolutionData(plan.ResolutionData)
 	if sr := resData.SpreadRumors; sr != nil && sr.PendingTakeConsent != nil {
 		victim := sr.PendingTakeConsent.VictimID
 		return model.RowState{Kind: model.RowStateAwaitTakeConsent, ActingPlayerIDs: []int64{victim}}, true
 	}
-	return model.RowState{}, false
+	if planRollIsMar(ctx, q, plan) {
+		if err := (srHandler{}).CanComplete(plan, &resData); err == nil && len(resData.MakeMarChoices) > 0 {
+			return model.RowState{}, false // nothing owed: the preparer completes
+		}
+		if plan.TargetAssetID == nil {
+			return model.RowState{}, false
+		}
+		asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID)
+		if err != nil {
+			return model.RowState{}, false
+		}
+		return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{asset.OwnerID}}, true
+	}
+	winner := performStepsWinner(ctx, q, plan)
+	if winner == 0 || winner == plan.PreparerID || len(resData.MakeMarChoices) == 0 {
+		return model.RowState{}, false
+	}
+	if err := (srHandler{}).CanComplete(plan, &resData); err == nil {
+		return model.RowState{}, false
+	}
+	return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{winner}}, true
 }
 
 // ── Re-aim (TargetReAimer) ───────────────────────────────────────────────────

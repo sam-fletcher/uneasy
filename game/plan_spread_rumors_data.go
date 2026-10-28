@@ -5,8 +5,40 @@ package game
 // SpreadRumorsResolutionData holds Spread Rumors plan state stored inside the
 // plans.resolution_data JSON column, nested under the "spread_rumors" key.
 type SpreadRumorsResolutionData struct {
-	// SourceHidden is set after a successful "stay anonymous" mar choice; it
-	// causes the rumor's authorship to be hidden in the public record.
+	// PreRollDone gates the pre-roll narration step. OnResolve opens the plan in
+	// 'resolving' with no roll; the preparer states the rumor and how it is
+	// spreading via sr-cast-roll, which posts that narration publicly, records it
+	// below, flips this true and creates the dice roll — so everyone deciding
+	// whether to help or interfere has read it first (principle 1).
+	//
+	// Plans that rolled before the step existed carry no flag; the panel and the
+	// make-choice guard treat "a roll exists" as equivalent.
+	PreRollDone bool `json:"pre_roll_done,omitempty"`
+	// RumorText is the rumor as stated in the pre-roll — the committed version,
+	// which may differ from the draft in preparation_notes (or in a kept Secret).
+	// It is what a make writes on the Rumors sheet. Public: stating it is what
+	// makes a secret rumor public (the book's "keep it secret *for now*").
+	RumorText string `json:"rumor_text,omitempty"`
+	// HowSpread is the preparer's description of how the rumor is getting out.
+	HowSpread string `json:"how_spread,omitempty"`
+
+	// CounterRumorText is what the mar actor wrote at the start of the mar branch:
+	// "The target player describes the rumor that spreads about you instead." It
+	// becomes the Rumors-sheet row on a mar; the preparer's own failed rumor never
+	// does. Its presence is the server-side gate on the mar's option step.
+	CounterRumorText string `json:"counter_rumor_text,omitempty"`
+	// CounterRumorAuthorID is who wrote it, and so the counter-rumor's source
+	// unless they pick "hide yourself as the source".
+	CounterRumorAuthorID int64 `json:"counter_rumor_author_id,omitempty"`
+	// CounterTargetAssetID is the preparer's main character as it stood when the
+	// mar's options were applied (not at preparation): the counter-rumor's subject,
+	// and the asset its break and leverage picks land on. Pinned so the rumor row
+	// and those picks keep agreeing even if the flag moves mid-resolution.
+	CounterTargetAssetID *int64 `json:"counter_target_asset_id,omitempty"`
+
+	// SourceHidden is set once a "hide yourself as the source" pick is applied; it
+	// causes the rumor's authorship to be hidden in the public record. "Reveal
+	// yourself" never touches it — that option is gloating, not attribution.
 	SourceHidden bool `json:"source_hidden,omitempty"`
 	// RumorID is the rumor row created at resolve time.
 	RumorID *int64 `json:"rumor_id,omitempty"`
