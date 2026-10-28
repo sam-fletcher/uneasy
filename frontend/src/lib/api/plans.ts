@@ -75,6 +75,45 @@ export function fairTrade(
 	});
 }
 
+/**
+ * One aim a plan could take now (handler/plan_reaim.go ReAimOption). Exactly the
+ * fields the plan type aims with are non-null: Exchange Courtiers a player and
+ * one of their peers, Spread Rumors an asset, Make Demands a plan. The server
+ * accepts a re-aim only if it equals one of these, so a choice is sent back
+ * verbatim.
+ */
+export interface ReAimOption {
+	target_player_id: number | null;
+	target_asset_id: number | null;
+	target_plan_id: number | null;
+}
+
+/** GET /plans/:id/reaim — whether a re-aim is owed, why, and what the preparer may pick. */
+export interface ReAimInfo {
+	owed: boolean;
+	reason: string;
+	options: ReAimOption[];
+}
+
+export function getReAim(planID: number): Promise<ReAimInfo> {
+	return apiFetch(`/plans/${planID}/reaim`);
+}
+
+/**
+ * Choose a new target for a plan whose original one is gone (preparer only). The
+ * server retargets the plan and resumes it as if it had just begun resolving, so
+ * a plan that rolls returns its new roll.
+ */
+export function reAimPlan(
+	planID: number,
+	option: ReAimOption,
+): Promise<{ plan_id: number; roll?: DiceRoll }> {
+	return apiFetch(`/plans/${planID}/reaim`, {
+		method: 'POST',
+		body: JSON.stringify(option)
+	});
+}
+
 /** Record make/mar option choices after the dice roll resolves. */
 export function makeChoice(
 	planID: number,

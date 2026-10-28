@@ -509,6 +509,11 @@ export interface ResolutionData {
 	// not having acted yet. Mirrors game.ResolutionData (uneasy/game/plan.go).
 	demand_leverage_finalized?: boolean;
 	demand_retarget_finalized?: boolean;
+
+	/** Set when the plan's prepare-time target no longer stands at resolution and
+	 *  its preparer owes a new one (handler/plan_reaim.go). While `owed`, every
+	 *  other plan route is refused server-side. `reason` is plain text. */
+	reaim?: { owed: boolean; reason?: string };
 }
 
 /** Response shape from GET /api/plans/:id. */

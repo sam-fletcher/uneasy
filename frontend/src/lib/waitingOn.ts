@@ -100,6 +100,13 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// usually visible via await_dice_roll above (they're seeded unready on
 			// that roll); this is the row-state fallback.
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — keep or change target' };
+		case 'await_plan_reaim':
+			// A plan found its prepare-time target gone (destroyed, moved, no longer
+			// pending) and holds until the preparer re-aims it — the book's "change
+			// the target if the original intent no longer makes sense", forced. The
+			// server names the preparer alone: every other route on the plan is
+			// refused while it is paused, so nobody else has a move to be waited on.
+			return { waitees: actingWaitees(), stepLabel: 'Choose a new target' };
 		case 'await_festivity_guest_turn':
 			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — in progress' };
 		case 'await_festivity_challenge_response':

@@ -6,6 +6,8 @@
 	import type { PlanType, Plan } from '$lib/api';
 	import type { PlanContext, PlanMode, PlanPanelProps } from './types';
 	import { REGISTRY } from './registry';
+	import ReAimPanel from './ReAimPanel.svelte';
+	import { parseResolutionData } from './shared';
 
 	interface Props {
 		planType: PlanType;
@@ -36,7 +38,20 @@
 	});
 </script>
 
-{#if Comp}
+<!-- A plan paused because its prepare-time target is gone shows the re-aim step in
+     place of its own panel: the server refuses every other route on it meanwhile
+     (handler/plan_reaim.go), so its controls would only lead to 409s. -->
+{#if mode === 'resolve' && plan && plan.status === 'resolving' && parseResolutionData(plan).reaim?.owed}
+	<ReAimPanel
+		{plan}
+		plans={ctx.plans}
+		players={ctx.players}
+		assets={ctx.assets}
+		currentPlayerID={ctx.currentPlayerID}
+		onPlansChanged={ctx.onPlansChanged}
+		onRollCreated={ctx.onRollCreated}
+	/>
+{:else if Comp}
 	{@const Panel = Comp}
 	<Panel {ctx} {plan} {mode} />
 {:else if failed}
