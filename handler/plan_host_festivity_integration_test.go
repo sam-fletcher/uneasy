@@ -1388,3 +1388,73 @@ func TestHostFestivity_SecondChallengeAfterDuelResolves(t *testing.T) {
 	code, body = hfHostDuel(t, h, plan.ID, hostIdx, h.tg.Players[g2].ID)
 	require.Equalf(t, http.StatusCreated, code, "second challenge once the first duel is over: %v", body)
 }
+
+// ── a duel pauses the whole table ────────────────────────────────────────────
+
+// TestHostFestivity_DuelPausesTheWholeTable: while a nested duel is live the
+// festivity is on hold for EVERYONE — host included. The duel is the one thing
+// happening at the table, and the waiting bar names the duel's players, not the
+// party's. When the duel ends, the festivity resumes where it left off.
+func TestHostFestivity_DuelPausesTheWholeTable(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+	g1ID, hostID := h.tg.Players[g1].ID, h.tg.Players[hostIdx].ID
+
+	// g1 rolled a make and insisted (a mar is owed); g2 opted out (the host has
+	// two makes). So the host has something to do in every route we probe.
+	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	code, body := h.post(g1, hfPath(plan.ID, "insist-host-mar"), nil)
+	require.Equalf(t, http.StatusOK, code, "insist: %v", body)
+	code, body = h.post(g2, hfPath(plan.ID, "guest-roll"), map[string]any{"action": "opt_out"})
+	require.Equalf(t, http.StatusOK, code, "opt out: %v", body)
+
+	code, body = hfHostDuel(t, h, plan.ID, hostIdx, h.tg.Players[g2].ID)
+	require.Equalf(t, http.StatusCreated, code, "host challenges: %v", body)
+	code, body = h.post(g2, hfPath(plan.ID, "respond-challenge"), map[string]any{"accept": true})
+	require.Equalf(t, http.StatusCreated, code, "accept: %v", body)
+	duelID := int64(body["duel_plan_id"].(float64))
+
+	// Every festivity action is refused while the duel runs.
+	paused := func(when string) {
+		t.Helper()
+		for name, call := range map[string]func() int{
+			"host-choice": func() int {
+				c, _ := h.post(hostIdx, hfPath(plan.ID, "host-choice"),
+					map[string]any{"choice": "spread_rumor", "rumor_text": "x"})
+				return c
+			},
+			"resolve-host-mar": func() int {
+				c, _ := h.post(hostIdx, hfPath(plan.ID, "resolve-host-mar"),
+					map[string]any{"insister_id": g1ID, "mar_option": "accept_duels"})
+				return c
+			},
+			"end-event": func() int { c, _ := h.post(hostIdx, hfPath(plan.ID, "end-event"), nil); return c },
+			"challenge-duel (guest)": func() int {
+				c, _ := h.post(g1, hfPath(plan.ID, "challenge-duel"), map[string]any{"target_player_id": hostID})
+				return c
+			},
+		} {
+			assert.Equalf(t, http.StatusConflict, call(), "%s %s", name, when)
+		}
+	}
+	paused("while the duel is live")
+	assert.Len(t, hfChallengeState(t, h, plan.ID).UnchosenHostMars, 1, "nothing slipped through")
+
+	// The bar names the duel (its own plan), not the festivity's waiters.
+	rs := h.rowState()
+	require.NotNil(t, rs.PlanID)
+	assert.Equal(t, duelID, *rs.PlanID, "the waiting bar follows the duel")
+	assert.NotEqual(t, model.RowStateAwaitFestivityGuestTurn, rs.Kind)
+
+	// The duel ends: the festivity picks up where it left off.
+	require.NoError(t, h.q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{ID: duelID, Status: model.PlanResolved}))
+	rs = h.rowState()
+	require.NotNil(t, rs.PlanID)
+	assert.Equal(t, plan.ID, *rs.PlanID, "back to the festivity")
+	code, body = h.post(hostIdx, hfPath(plan.ID, "resolve-host-mar"),
+		map[string]any{"insister_id": g1ID, "mar_option": "accept_duels"})
+	require.Equalf(t, http.StatusOK, code, "the host can act again: %v", body)
+}

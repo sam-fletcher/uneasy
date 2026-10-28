@@ -39,6 +39,20 @@ export interface FestivityResolutionData {
 	centered_drafts?: DraftPeer[];
 }
 
+/** The plan the table is actually playing. Normally the one `resolving` plan —
+ *  but a Host Festivity that spawned a duel stays `resolving` underneath it, so
+ *  two are. The duel is then the live one: the play area shows it (for every
+ *  player alike) and the festivity returns when it ends. Mirrors the server's
+ *  planSuspendedByNested, which picks the same plan for the waiting bar. */
+export function activeResolvingPlan(plans: Plan[]): Plan | null {
+	const resolving = plans.filter((p) => p.status === 'resolving');
+	const suspended = (p: Plan): boolean => {
+		const nested = p.plan_type === 'host_festivity' ? parseFestivityData(p).pending_duel_plan_id : null;
+		return nested != null && resolving.some((q) => q.id === nested);
+	};
+	return resolving.find((p) => !suspended(p)) ?? resolving[0] ?? null;
+}
+
 export function parseFestivityData(plan: Plan | null | undefined): FestivityResolutionData {
 	return parseResolutionData(plan).festivity ?? {};
 }

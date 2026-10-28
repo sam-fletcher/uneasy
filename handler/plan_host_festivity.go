@@ -187,15 +187,45 @@ func (hfHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// hfBlockOnPendingChallenge writes a 409 and returns true if a challenge is
-// awaiting response; all festivity game actions (but not chat) pause until the
-// target accepts or declines.
-func hfBlockOnPendingChallenge(w http.ResponseWriter, state *gamepkg.FestivityResolutionData) bool {
-	if state.PendingChallenge == nil {
+// hfBlockWhilePaused writes a 409 and returns true while the table is paused
+// for a duel — either a challenge awaiting the target's answer or the nested
+// Propose Duel it became. While paused, every festivity game action (but not
+// chat) waits: the duel is the one thing happening at the table, for host and
+// guests alike, and the play area shows the duel, not the party.
+func hfBlockWhilePaused(
+	ctx context.Context,
+	q *dbgen.Queries,
+	w http.ResponseWriter,
+	state *gamepkg.FestivityResolutionData,
+) bool {
+	if state.PendingChallenge != nil {
+		respondErr(w, http.StatusConflict, "a duel challenge is awaiting the target's response")
+		return true
+	}
+	if hfNestedDuelInProgress(ctx, q, state) {
+		respondErr(w, http.StatusConflict, "a duel is under way — the festivity resumes when it ends")
+		return true
+	}
+	return false
+}
+
+// planSuspendedByNested reports whether plan is a Host Festivity paused for a
+// duel it spawned that is itself still resolving. Two plans are then 'resolving'
+// at once, but the table is playing only the inner one: the waiting bar must name
+// the duel's actors, not the party's. Everything that has to pick "the" resolving
+// plan (this, and the play area via activeResolvingPlan in the frontend) uses
+// the same rule.
+func planSuspendedByNested(plan *dbgen.Plan, plans []dbgen.Plan) bool {
+	if plan.PlanType != model.PlanHostFestivity {
 		return false
 	}
-	respondErr(w, http.StatusConflict, "a duel challenge is awaiting the target's response")
-	return true
+	nested := gamepkg.LoadFestivityData(plan.ResolutionData).PendingDuelPlanID
+	if nested == nil {
+		return false
+	}
+	return slices.ContainsFunc(plans, func(p dbgen.Plan) bool {
+		return p.ID == *nested && p.Status == model.PlanResolving
+	})
 }
 
 // hfRoster returns the festivity guest list: every player at the table. The
@@ -275,7 +305,7 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureFestivity()
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		// Every player at the table is a guest, so no membership check is needed.
@@ -286,10 +316,6 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		// A roll-and-choice already in flight blocks any new action.
 		if hfBlockOnActiveRoll(w, state, roster, player.ID) {
-			return
-		}
-		if hfNestedDuelInProgress(ctx, deps.Q, state) {
-			respondErr(w, http.StatusConflict, "a challenged duel is in progress; resolve it first")
 			return
 		}
 		key := strconv.FormatInt(player.ID, 10)
@@ -441,7 +467,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 				"the host takes their earned make via host-choice, not guest-choice")
 			return
 		}
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		rollID, ok := state.GuestRollIDs[key]
@@ -614,7 +640,7 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 		ctx := r.Context()
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureFestivity()
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		roster, err := hfRoster(ctx, deps.Q, plan.GameID)

@@ -34,7 +34,7 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureFestivity()
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
@@ -122,7 +122,7 @@ func hfSettleHostMar(
 // the host's asset pick (break_self / disagreement). It is kept so a game in
 // flight across the change can finish.
 //
-//nolint:funlen // legacy + current paths share the break_self soft-lock guard
+
 func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
@@ -164,7 +164,7 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureFestivity()
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
@@ -242,7 +242,7 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 // being called out (target_player_id) and opens the same challenge a rolling
 // guest's make would.
 //
-//nolint:funlen // option validation, duel branch and ordinary apply in one handler
+
 func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
@@ -286,7 +286,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureFestivity()
-		if hfBlockOnPendingChallenge(w, state) {
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 		roster, err := hfRoster(ctx, deps.Q, plan.GameID)
@@ -367,10 +367,6 @@ func hfHostChallengeDuel(
 	}
 	if !slices.Contains(roster, targetID) {
 		respondErr(w, http.StatusBadRequest, "challenge target must be a guest")
-		return
-	}
-	if hfNestedDuelInProgress(ctx, deps.Q, state) {
-		respondErr(w, http.StatusConflict, "a challenged duel is in progress; resolve it first")
 		return
 	}
 	state.HostMakesTaken = append(state.HostMakesTaken, gamepkg.FestivityMakeChallengeDuel)
@@ -524,12 +520,7 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusForbidden, "challenge_duel requires rolling a make")
 			return
 		}
-		if hfNestedDuelInProgress(ctx, deps.Q, state) {
-			respondErr(w, http.StatusConflict, "a challenged duel is in progress; resolve it first")
-			return
-		}
-		if state.PendingChallenge != nil {
-			respondErr(w, http.StatusConflict, "a challenge is already awaiting a response")
+		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
 
