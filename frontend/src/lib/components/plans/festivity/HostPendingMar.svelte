@@ -50,10 +50,12 @@
 	const canBreak = $derived(hostMC.length > 0);
 	const breakWarn = $derived(destructionWarning(hostMC[0]));
 
-	// disagreement target: one of the host's own peers.
+	// disagreement target: one of the host's own peers — never the main character,
+	// who is the one falling out with them.
 	const hostPeers = $derived(
 		assets.filter(a =>
-			a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed),
+			a.owner_id === plan.preparer_id && a.asset_type === 'peer'
+			&& !a.is_main_character && !a.is_destroyed),
 	);
 	// An option the host can't carry out is shown but locked, with the reason.
 	const lockReason = (key: string): string | undefined =>

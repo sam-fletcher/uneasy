@@ -1458,3 +1458,40 @@ func TestHostFestivity_DuelPausesTheWholeTable(t *testing.T) {
 		map[string]any{"insister_id": g1ID, "mar_option": "accept_duels"})
 	require.Equalf(t, http.StatusOK, code, "the host can act again: %v", body)
 }
+
+// ── a main character can't disagree with themselves ──────────────────────────
+
+// TestHostFestivity_Disagreement_RejectsMainCharacter: the falling-out is between
+// the main character and one of their peers. Naming the main character as the
+// peer is refused, both for a guest's own mar and for a host's insisted one.
+func TestHostFestivity_Disagreement_RejectsMainCharacter(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+
+	// A guest rolls a mar and tries to send their own main character to the centre.
+	hfGuestRollMar(t, h, plan.ID, g2)
+	code, body := h.post(g2, hfPath(plan.ID, "guest-choice"), map[string]any{
+		"choice": "disagreement", "asset_id": h.mainCharacterID(g2),
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "guest disagreement with own MC: %v", body)
+	// (Their roll-and-choice is still open; conclude it so the table moves on.)
+	code, body = h.post(g2, hfPath(plan.ID, "guest-choice"), map[string]any{
+		"choice": "accept_duels",
+	})
+	require.Equalf(t, http.StatusOK, code, "guest concludes with another mar: %v", body)
+
+	// The host, answering an insistence, can't do it either — and the
+	// insistence stays queued so they can choose again.
+	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	code, body = h.post(g1, hfPath(plan.ID, "insist-host-mar"), nil)
+	require.Equalf(t, http.StatusOK, code, "insist: %v", body)
+	code, body = h.post(hostIdx, hfPath(plan.ID, "resolve-host-mar"), map[string]any{
+		"insister_id": h.tg.Players[g1].ID, "mar_option": "disagreement", "asset_id": h.mainCharacterID(hostIdx),
+	})
+	require.Equalf(t, http.StatusBadRequest, code, "host disagreement with own MC: %v", body)
+	st := hfChallengeState(t, h, plan.ID)
+	assert.Equal(t, []int64{h.tg.Players[g1].ID}, st.UnchosenHostMars)
+	assert.Empty(t, st.CenteredAssetIDs, "the main character was not centred")
+}
