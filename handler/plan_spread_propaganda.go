@@ -95,12 +95,22 @@ func (spHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return nil, nil
 }
 
-// CheckChoice refuses a make/mar before the pre-roll narration has been cast.
+// CheckChoice refuses a make/mar before the pre-roll narration has been cast, or
+// while the roll it opened is still unsettled.
 func (spHandler) CheckChoice(
-	_ context.Context, _ *dbgen.Queries, _ *dbgen.Plan, _ *dbgen.Player, _ *ResolutionData, hasRoll bool, _ string,
+	_ context.Context,
+	_ *dbgen.Queries,
+	_ *dbgen.Plan,
+	_ *dbgen.Player,
+	_ *ResolutionData,
+	roll *dbgen.DiceRoll,
+	_ string,
 ) error {
-	if !hasRoll {
+	if roll == nil {
 		return errors.New("summarize your message and cast the dice before choosing options")
+	}
+	if roll.Outcome == nil {
+		return errDiceNotSettled
 	}
 	return nil
 }

@@ -19,6 +19,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	dbgen "uneasy/db/gen"
@@ -89,12 +90,13 @@ func postPlanNarration(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, au
 // ChoiceGate is an optional PlanHandler capability: a server-side precondition on
 // make-choice for steps that must come first. MakeChoice consults it before
 // anything is applied and answers with the returned error's status (a *httpError)
-// or 409. hasRoll is whether the plan has a roll at all — the pre-roll step is
-// over exactly when it does.
+// or 409. roll is the plan's roll, nil when it has none — the pre-roll step is over
+// exactly when it exists, and its outcome is nil until the dice have settled.
 //
-// It exists because make-choice otherwise accepts a submission with no roll (the
-// outcome check is skipped when there is nothing to compare), which would let a
-// stale or hand-rolled client commit a result past a narration step nobody wrote.
+// It exists because make-choice otherwise accepts a submission with no roll, or a
+// roll still open (the outcome check is skipped when there is nothing to compare),
+// which would let a stale or hand-rolled client commit a result past a narration
+// step nobody wrote — or before the dice had said which branch it is.
 type ChoiceGate interface {
 	CheckChoice(
 		ctx context.Context,
@@ -102,7 +104,11 @@ type ChoiceGate interface {
 		plan *dbgen.Plan,
 		player *dbgen.Player,
 		resData *ResolutionData,
-		hasRoll bool,
+		roll *dbgen.DiceRoll,
 		result string,
 	) error
 }
+
+// errDiceNotSettled is the refusal for a make/mar submitted while the roll is
+// still open — shared by the plans that gate on it.
+var errDiceNotSettled = errors.New("the dice haven't settled yet — wait for the roll before choosing options")

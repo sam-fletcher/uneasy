@@ -225,7 +225,7 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		resData := loadResolutionData(plan.ResolutionData)
-		if !checkChoiceGate(w, r, s.Q, h, plan, player, &resData, rollPtr != nil, body.Result) {
+		if !checkChoiceGate(w, r, s.Q, h, plan, player, &resData, rollPtr, body.Result) {
 			return
 		}
 		resData.MakeMarChoices = make([]Choice, len(body.Choices))
@@ -286,14 +286,14 @@ func checkChoiceGate(
 	plan *dbgen.Plan,
 	player *dbgen.Player,
 	resData *ResolutionData,
-	hasRoll bool,
+	roll *dbgen.DiceRoll,
 	result string,
 ) bool {
 	gate, ok := h.(ChoiceGate)
 	if !ok {
 		return true
 	}
-	gErr := gate.CheckChoice(r.Context(), q, plan, player, resData, hasRoll, result)
+	gErr := gate.CheckChoice(r.Context(), q, plan, player, resData, roll, result)
 	if gErr == nil {
 		return true
 	}

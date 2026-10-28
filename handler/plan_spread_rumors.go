@@ -165,7 +165,7 @@ func (srHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 }
 
 // CheckChoice gates make-choice behind the steps that must come first. Before the
-// roll there is nothing to choose; on a mar the options belong to the mar actor —
+// roll — or while it is still open — there is nothing to choose; on a mar the options belong to the mar actor —
 // never the preparer, whose rumor just failed — and wait for the counter-rumor the
 // actor writes first (book p.59: "The target player describes the rumor that
 // spreads about you instead").
@@ -175,11 +175,14 @@ func (srHandler) CheckChoice(
 	plan *dbgen.Plan,
 	player *dbgen.Player,
 	resData *ResolutionData,
-	hasRoll bool,
+	roll *dbgen.DiceRoll,
 	result string,
 ) error {
-	if !hasRoll {
+	if roll == nil {
 		return errors.New("state the rumor and cast the dice before choosing options")
+	}
+	if roll.Outcome == nil {
+		return errDiceNotSettled
 	}
 	if result != marOutcome {
 		return nil

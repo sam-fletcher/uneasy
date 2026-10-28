@@ -377,7 +377,7 @@ func TestReAim_SpreadRumors_NoValidSubject_ClosesWithNoEffectAndLogs(t *testing.
 		h.destroyAssets(a.ID)
 	}
 	h.jumpToRow(*plan.RowNumber)
-	require.Nil(t, h.resolveAndCast(plan.ID))
+	require.Nil(t, h.resolve(plan.ID))
 
 	closed, err := h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)

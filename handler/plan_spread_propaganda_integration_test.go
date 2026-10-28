@@ -638,6 +638,8 @@ func TestSpreadPropaganda_PreRoll_ParksWithNoRollUntilTheMessageIsSummarised(t *
 	require.Equalf(t, http.StatusOK, code, "sp-cast-roll: %v", body)
 	roll, err := h.q.GetDiceRollByPlanID(ctx, &plan.ID)
 	require.NoError(t, err)
+	code, body = h.post(prepIdx, srPath(plan.ID, "make-choice"), map[string]any{"result": "make", "choices": []string{"create_artifact"}})
+	assert.Equalf(t, http.StatusConflict, code, "make-choice while the dice are still rolling must be refused: %v", body)
 	code, _ = h.post(prepIdx, srPath(plan.ID, "sp-cast-roll"), map[string]any{"narration": "again"})
 	assert.Equal(t, http.StatusConflict, code, "the dice are cast once")
 

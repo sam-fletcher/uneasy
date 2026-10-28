@@ -116,6 +116,9 @@ func TestSpreadRumors_PreRoll_ParksWithNoRollUntilTheRumorIsStated(t *testing.T)
 
 	roll := srCast(t, h, plan.ID, "The Duchess was never born at all.")
 	assert.NotZero(t, roll.ID)
+	// With the roll open but unsettled there is still no branch to choose from.
+	code, body = h.post(prepIdx, srPath(plan.ID, "make-choice"), map[string]any{"result": "make", "choices": []string{}})
+	assert.Equalf(t, http.StatusConflict, code, "make-choice while the dice are still rolling must be refused: %v", body)
 	code, _ = h.post(prepIdx, srPath(plan.ID, "sr-cast-roll"), map[string]any{"rumor": "again", "how": "again"})
 	assert.Equal(t, http.StatusConflict, code, "the dice are cast once")
 
@@ -256,6 +259,8 @@ func TestSpreadRumors_Make_RevealDoesNotUndoHide(t *testing.T) {
 	logs := h.logBodies("plan.spread_rumors")
 	assert.True(t, anyContains(logs, "in private"), "the gloating happens out of the court's sight: %v", logs)
 	assert.False(t, anyContains(logs, "basks in the glory"))
+	assert.True(t, loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData).SpreadRumors.SourceHidden,
+		"(e) leaves the hidden-source flag alone")
 }
 
 // ── The mar: the target writes the counter-rumor ─────────────────────────────
@@ -400,6 +405,33 @@ func TestSpreadRumors_Mar_BreakTearsAMarginaliaOnThePreparersMainCharacter(t *te
 	torn, err := h.q.GetMarginaliaByID(ctx, margs[0].ID)
 	require.NoError(t, err)
 	assert.True(t, torn.IsTorn)
+}
+
+// A mar's break picks are counted against the main character — the only thing
+// they can land on — so the forfeit hatch opens exactly when IT has nothing left
+// to tear, whatever state the rumor's original subject is in.
+func TestSpreadRumors_Mar_ForfeitFollowsTheMainCharacter(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, prepIdx, actorIdx, _, _ := srMar(t, h)
+	mc := h.mainCharacterID(prepIdx)
+	m, err := h.q.CreateMarginalia(ctx, dbgen.CreateMarginaliaParams{AssetID: mc, Position: 1, Text: "a spotless name"})
+	require.NoError(t, err)
+	h.post(actorIdx, srPath(plan.ID, "sr-counter-rumor"), map[string]any{"text": "Her accuser keeps a second set of books."})
+	h.makeChoiceAs(actorIdx, plan.ID, marOutcome, []string{"break_target", "break_target"})
+
+	forfeit := func() int {
+		code, _ := h.post(actorIdx, srPath(plan.ID, "sr-forfeit-step"), map[string]any{"step": "break_target"})
+		return code
+	}
+	assert.Equal(t, http.StatusConflict, forfeit(), "the main character still has a marginalia to tear")
+	code, body := h.post(actorIdx, srPath(plan.ID, "break-target"), map[string]any{"marginalia_id": m.ID})
+	require.Equalf(t, http.StatusOK, code, "%v", body)
+	// Its last marginalia is gone, so the main character is destroyed and the second
+	// pick has no target. (The rumor's original subject is untouched and breakable —
+	// it must not count.)
+	assert.Equal(t, http.StatusOK, forfeit(), "no valid target remains: the pick may be forfeited")
+	h.complete(plan.ID)
 }
 
 func TestSpreadRumors_Mar_LeverageActuallyLeveragesThePreparersMainCharacter(t *testing.T) {
