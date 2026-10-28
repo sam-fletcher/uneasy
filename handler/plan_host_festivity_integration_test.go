@@ -200,9 +200,10 @@ func TestHostFestivity_BlankInputsRejected(t *testing.T) {
 	require.Equalf(t, http.StatusBadRequest, code, "blank rumor text rejected: %v", body)
 }
 
-// TestHostFestivity_InsistBreakSelf_HostResolves proves that a guest insisting
-// break_self on the host does NOT auto-tear a marginalia — it records a pending
-// break that only the host can settle, choosing which marginalia to tear.
+// TestHostFestivity_InsistBreakSelf_HostResolves proves the book's reading of
+// "insist that the host choose one option from the mar list" (p.61): the guest's
+// insist names no option — it queues an unchosen mar — and the host then CHOOSES
+// break_self and picks which marginalia to tear. Nothing tears until they do.
 func TestHostFestivity_InsistBreakSelf_HostResolves(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
@@ -217,34 +218,42 @@ func TestHostFestivity_InsistBreakSelf_HostResolves(t *testing.T) {
 	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
 	endPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/end-event"
 
-	// g1 rolls a make (earning an IOU) and insists break_self on the host.
+	// g1 rolls a make (earning an IOU) and insists — naming no option.
 	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
-	code, body := h.post(g1, insistPath, map[string]any{"mar_option": "break_self"})
-	require.Equalf(t, http.StatusOK, code, "g1 insist break_self: %v", body)
+	code, body := h.post(g1, insistPath, nil)
+	require.Equalf(t, http.StatusOK, code, "g1 insists: %v", body)
 
-	// The break is only pending — nothing was torn automatically.
+	// The mar is unchosen — the host has yet to pick, and nothing was torn.
 	state := hfChallengeState(t, h, plan.ID)
-	assert.Equal(t, []string{"break_self"}, state.PendingHostMars, "insist records a pending host break")
+	assert.Equal(t, []int64{h.tg.Players[g1].ID}, state.UnchosenHostMars, "insist queues an unchosen mar")
+	assert.Empty(t, state.PendingHostMars, "no option is recorded: the host hasn't chosen")
+	assert.Empty(t, state.HostMarInsists, "nothing counts as inflicted until the host chooses")
 	for _, id := range hostMargIDs {
 		m, err := h.q.GetMarginaliaByID(ctx, id)
 		require.NoError(t, err)
 		assert.False(t, m.IsTorn, "no marginalia is torn before the host resolves")
 	}
 
-	// The event can't be wound down while a break is owed.
+	// The event can't be wound down while a mar is owed.
 	code, body = h.post(hostIdx, endPath, nil)
-	require.Equalf(t, http.StatusConflict, code, "end with a break pending: %v", body)
+	require.Equalf(t, http.StatusConflict, code, "end with a mar unchosen: %v", body)
 
-	// A non-host can't resolve the host's break.
-	code, body = h.post(g1, breakPath, map[string]any{"mar_option": "break_self", "marginalia_id": hostMargIDs[0]})
-	require.Equalf(t, http.StatusForbidden, code, "non-host resolve break: %v", body)
+	// The insisting guest doesn't get to choose — only the host does.
+	g1ID := h.tg.Players[g1].ID
+	code, body = h.post(g1, breakPath, map[string]any{
+		"insister_id": g1ID, "mar_option": "break_self", "marginalia_id": hostMargIDs[0],
+	})
+	require.Equalf(t, http.StatusForbidden, code, "insisting guest chooses the mar: %v", body)
 
-	// The host resolves it, choosing which marginalia to tear.
-	code, body = h.post(hostIdx, breakPath, map[string]any{"mar_option": "break_self", "marginalia_id": hostMargIDs[1]})
-	require.Equalf(t, http.StatusOK, code, "host resolves break: %v", body)
+	// The host chooses break_self and which marginalia to tear.
+	code, body = h.post(hostIdx, breakPath, map[string]any{
+		"insister_id": g1ID, "mar_option": "break_self", "marginalia_id": hostMargIDs[1],
+	})
+	require.Equalf(t, http.StatusOK, code, "host chooses break_self: %v", body)
 
 	state = hfChallengeState(t, h, plan.ID)
-	assert.Empty(t, state.PendingHostMars, "resolving clears the pending break")
+	assert.Empty(t, state.UnchosenHostMars, "choosing clears the unchosen mar")
+	assert.Equal(t, []string{"break_self"}, state.HostMarInsists, "the chosen mar is recorded as inflicted")
 	chosen, err := h.q.GetMarginaliaByID(ctx, hostMargIDs[1])
 	require.NoError(t, err)
 	assert.True(t, chosen.IsTorn, "the host's chosen marginalia is torn")
@@ -279,15 +288,17 @@ func TestHostFestivity_InsistBreakSelf_BlankMainCharacterIsDestroyed(t *testing.
 	breakPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
 
 	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
-	code, body := h.post(g1, insistPath, map[string]any{"mar_option": "break_self"})
-	require.Equalf(t, http.StatusOK, code, "g1 insist break_self: %v", body)
+	code, body := h.post(g1, insistPath, nil)
+	require.Equalf(t, http.StatusOK, code, "g1 insists: %v", body)
 
-	// The host settles it with no marginalia named — there is none to name.
-	code, body = h.post(hostIdx, breakPath, map[string]any{"mar_option": "break_self"})
+	// The host chooses break_self with no marginalia named — there is none to name.
+	code, body = h.post(hostIdx, breakPath, map[string]any{
+		"insister_id": h.tg.Players[g1].ID, "mar_option": "break_self",
+	})
 	require.Equalf(t, http.StatusOK, code, "host resolves break on a blank MC: %v", body)
 
 	state := hfChallengeState(t, h, plan.ID)
-	assert.Empty(t, state.PendingHostMars, "resolving clears the pending break")
+	assert.Empty(t, state.UnchosenHostMars, "choosing clears the unchosen mar")
 
 	mc, err := h.q.GetAssetByID(ctx, hostMCID)
 	require.NoError(t, err)
@@ -312,9 +323,9 @@ func hfAllLogBodies(t *testing.T, h *planLifecycle) string {
 	return sb.String()
 }
 
-// TestHostFestivity_InsistDisagreement_HostResolves proves that a guest insisting
-// disagreement on the host doesn't pick the host's peer for them — it records a
-// pending mar the host settles, choosing which of their own peers falls out.
+// TestHostFestivity_InsistDisagreement_HostResolves proves the host can choose
+// disagreement in answer to an insistence, and picks which of their own peers
+// falls out.
 func TestHostFestivity_InsistDisagreement_HostResolves(t *testing.T) {
 	h := newPlanLifecycle(t, 2)
 	ctx := context.Background()
@@ -330,26 +341,30 @@ func TestHostFestivity_InsistDisagreement_HostResolves(t *testing.T) {
 	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
 	resolvePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
 
-	// g1 rolls a make (earning an IOU) and insists disagreement on the host.
+	// g1 rolls a make (earning an IOU) and insists.
 	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "psst"})
-	code, body := h.post(g1, insistPath, map[string]any{"mar_option": "disagreement"})
-	require.Equalf(t, http.StatusOK, code, "g1 insist disagreement: %v", body)
+	code, body := h.post(g1, insistPath, nil)
+	require.Equalf(t, http.StatusOK, code, "g1 insists: %v", body)
 
-	// Pending only — nothing centered until the host chooses which peer.
+	// Nothing centered until the host chooses.
 	state := hfChallengeState(t, h, plan.ID)
-	assert.Equal(t, []string{"disagreement"}, state.PendingHostMars, "insist records a pending disagreement")
-	assert.NotContains(t, state.CenteredAssetIDs, peerID, "no peer is centered before the host picks")
+	assert.NotContains(t, state.CenteredAssetIDs, peerID, "no peer is centered before the host chooses")
 
-	// A non-host can't resolve the host's disagreement.
-	code, body = h.post(g1, resolvePath, map[string]any{"mar_option": "disagreement", "asset_id": peerID})
-	require.Equalf(t, http.StatusForbidden, code, "non-host resolve disagreement: %v", body)
+	// A non-host can't choose for the host.
+	g1ID := h.tg.Players[g1].ID
+	code, body = h.post(g1, resolvePath, map[string]any{
+		"insister_id": g1ID, "mar_option": "disagreement", "asset_id": peerID,
+	})
+	require.Equalf(t, http.StatusForbidden, code, "non-host chooses disagreement: %v", body)
 
-	// The host resolves it, choosing which of their peers falls out.
-	code, body = h.post(hostIdx, resolvePath, map[string]any{"mar_option": "disagreement", "asset_id": peerID})
-	require.Equalf(t, http.StatusOK, code, "host resolves disagreement: %v", body)
+	// The host chooses disagreement and which of their peers falls out.
+	code, body = h.post(hostIdx, resolvePath, map[string]any{
+		"insister_id": g1ID, "mar_option": "disagreement", "asset_id": peerID,
+	})
+	require.Equalf(t, http.StatusOK, code, "host chooses disagreement: %v", body)
 
 	state = hfChallengeState(t, h, plan.ID)
-	assert.Empty(t, state.PendingHostMars, "resolving clears the pending disagreement")
+	assert.Empty(t, state.UnchosenHostMars, "choosing clears the unchosen mar")
 	assert.Contains(t, state.CenteredAssetIDs, peerID, "the host's chosen peer is now in the center")
 	assert.Contains(t, state.DisagreementAssetIDs, peerID, "it's tracked for the rejoin-broken settlement")
 }
@@ -502,9 +517,7 @@ func TestHostFestivity_IntroducedPeer_UnclaimedJoinsIntroducer(t *testing.T) {
 		})
 		require.Equalf(t, http.StatusOK, code, "host make: %v", body)
 	}
-	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
-	code, body = h.post(g1, insistPath, map[string]any{"mar_option": "accept_duels"})
-	require.Equalf(t, http.StatusOK, code, "g1 insists their mar: %v", body)
+	hfInsistAndChoose(t, h, plan.ID, hostIdx, g1, gamepkg.FestivityMarAcceptDuels)
 	code, body = h.post(hostIdx, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/end-event", nil)
 	require.Equalf(t, http.StatusOK, code, "host ends the event: %v", body)
 
@@ -729,6 +742,7 @@ func TestHostFestivity_EndEventGate(t *testing.T) {
 	endPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/end-event"
 	hostChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/host-choice"
 	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
+	resolvePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
 
 	// g1 succeeds (holds a mar to inflict); g2 opts out (earns the host a make).
 	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
@@ -758,9 +772,15 @@ func TestHostFestivity_EndEventGate(t *testing.T) {
 	code, body = h.post(hostIdx, endPath, nil)
 	require.Equalf(t, http.StatusConflict, code, "end before g1's mar inflicted: %v", body)
 
-	// g1 inflicts their mar on the host.
-	code, body = h.post(g1, insistPath, map[string]any{"mar_option": "accept_duels"})
+	// g1 insists. That alone isn't enough: the mar is the host's to choose.
+	code, body = h.post(g1, insistPath, nil)
 	require.Equalf(t, http.StatusOK, code, "g1 insist mar: %v", body)
+	code, body = h.post(hostIdx, endPath, nil)
+	require.Equalf(t, http.StatusConflict, code, "end with the insisted mar unchosen: %v", body)
+	code, body = h.post(hostIdx, resolvePath, map[string]any{
+		"insister_id": h.tg.Players[g1].ID, "mar_option": "accept_duels",
+	})
+	require.Equalf(t, http.StatusOK, code, "host chooses a mar: %v", body)
 
 	// Now endable. A non-host may not end it.
 	code, body = h.post(g1, endPath, nil)
@@ -904,12 +924,13 @@ func TestHostFestivity_PerformStepsWinnerDrivesHostSteps(t *testing.T) {
 	// tear without destroying the character.
 	_, hostMargIDs := hfSeedMCMarginalia(t, h, hostIdx, 2)
 
-	// A guest (third party) rolls a make and insists break_self on the host — an
-	// untouched guest role that records a mar the host must settle.
+	// A guest (third party) rolls a make and insists — an untouched guest role
+	// that queues a mar for the host to choose.
 	hfGuestRoll(t, h, plan.ID, insisterIdx, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
 	insistPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/insist-host-mar"
-	code, body := h.post(insisterIdx, insistPath, map[string]any{"mar_option": "break_self"})
-	require.Equalf(t, http.StatusOK, code, "guest insists a host mar: %v", body)
+	code, body := h.post(insisterIdx, insistPath, nil)
+	require.Equalf(t, http.StatusOK, code, "guest insists on the host: %v", body)
+	insisterID := h.tg.Players[insisterIdx].ID
 
 	// A resolved, made demand hands perform_steps to the demander.
 	h.seedMadeDemand(demanderIdx, plan.ID, gamepkg.DemandOptionWinners{
@@ -935,12 +956,16 @@ func TestHostFestivity_PerformStepsWinnerDrivesHostSteps(t *testing.T) {
 	require.NotNil(t, gift, "the winner-driven make records a centered draft")
 	assert.Equal(t, hostID, gift.CreatorID, "the host make is credited to the HOST, not the winner")
 
-	// resolve-host-mar (mar): the host is locked out; the winner settles it,
-	// choosing which of the HOST's marginalia to tear.
+	// resolve-host-mar (mar): the host is locked out; the winner makes the host's
+	// choice and picks which of the HOST's marginalia to tear.
 	resolvePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/resolve-host-mar"
-	code, body = h.post(hostIdx, resolvePath, map[string]any{"mar_option": "break_self", "marginalia_id": hostMargIDs[0]})
+	code, body = h.post(hostIdx, resolvePath, map[string]any{
+		"insister_id": insisterID, "mar_option": "break_self", "marginalia_id": hostMargIDs[0],
+	})
 	require.Equalf(t, http.StatusForbidden, code, "host locked out of resolve-host-mar: %v", body)
-	code, body = h.post(demanderIdx, resolvePath, map[string]any{"mar_option": "break_self", "marginalia_id": hostMargIDs[0]})
+	code, body = h.post(demanderIdx, resolvePath, map[string]any{
+		"insister_id": insisterID, "mar_option": "break_self", "marginalia_id": hostMargIDs[0],
+	})
 	require.Equalf(t, http.StatusOK, code, "winner drives resolve-host-mar: %v", body)
 
 	torn, err := h.q.GetMarginaliaByID(ctx, hostMargIDs[0])
@@ -951,4 +976,234 @@ func TestHostFestivity_PerformStepsWinnerDrivesHostSteps(t *testing.T) {
 	rollPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/guest-roll"
 	code, body = h.post(spareIdx, rollPath, map[string]any{"action": "opt_out"})
 	require.Equalf(t, http.StatusOK, code, "a guest still opts out as themselves: %v", body)
+}
+
+// ── Q13: the host chooses the insisted mar ───────────────────────────────────
+
+func hfPath(planID int64, route string) string {
+	return "/api/plans/" + strconv.FormatInt(planID, 10) + "/" + route
+}
+
+// hfInsistAndChoose has players[guestIdx] insist, then the host choose marOption
+// (one that needs no further input, e.g. accept_duels) in answer.
+func hfInsistAndChoose(t *testing.T, h *planLifecycle, planID int64, hostIdx, guestIdx int, marOption string) {
+	t.Helper()
+	code, body := h.post(guestIdx, hfPath(planID, "insist-host-mar"), nil)
+	require.Equalf(t, http.StatusOK, code, "guest insists: %v", body)
+	code, body = h.post(hostIdx, hfPath(planID, "resolve-host-mar"), map[string]any{
+		"insister_id": h.tg.Players[guestIdx].ID, "mar_option": marOption,
+	})
+	require.Equalf(t, http.StatusOK, code, "host chooses %s: %v", marOption, body)
+}
+
+// TestHostFestivity_Insist_CarriesNoOption proves the guest's insist names no mar:
+// even a request that still sends the old `mar_option` queues an UNCHOSEN mar and
+// applies nothing. (Before the Q13 ruling the insister picked, and rumor /
+// accept_duels landed on the host immediately.)
+func TestHostFestivity_Insist_CarriesNoOption(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	rumorsBefore, err := h.q.ListRumors(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+
+	code, body := h.post(g1, hfPath(plan.ID, "insist-host-mar"), map[string]any{
+		"mar_option": "rumor_about_you", "rumor_text": "the guest wrote this",
+	})
+	require.Equalf(t, http.StatusOK, code, "insist: %v", body)
+
+	state := hfChallengeState(t, h, plan.ID)
+	assert.Equal(t, []int64{h.tg.Players[g1].ID}, state.UnchosenHostMars, "an unchosen mar is queued")
+	assert.Empty(t, state.HostMarInsists, "no mar has been inflicted yet")
+	assert.Empty(t, state.GuestIOUs, "the IOU is spent by insisting")
+	rumorsAfter, err := h.q.ListRumors(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Len(t, rumorsAfter, len(rumorsBefore), "the insister cannot make a rumor land on the host")
+
+	// An IOU is spent once: a second insist is refused.
+	code, _ = h.post(g1, hfPath(plan.ID, "insist-host-mar"), nil)
+	assert.Equal(t, http.StatusForbidden, code, "no second insist on one IOU")
+
+	logs := hfAllLogBodies(t, h)
+	assert.Contains(t, logs, "insisted the host take a mar", "the insisting is logged")
+	assert.NotContains(t, logs, "A rumor spread about", "the insister's pick must not have applied")
+}
+
+// TestHostFestivity_HostChoosesInsistedMar_AppliesToHost proves the two options
+// that need no asset pick take effect only when the HOST chooses them, land on
+// the host, and that the host's choice is logged apart from the insisting.
+func TestHostFestivity_HostChoosesInsistedMar_AppliesToHost(t *testing.T) {
+	t.Run("rumor_about_you needs the host's rumor text", func(t *testing.T) {
+		h := newPlanLifecycle(t, 3)
+		ctx := context.Background()
+		plan, hostIdx := hfPrepareToSocializing(t, h)
+		g1 := (hostIdx + 1) % len(h.tg.Players)
+		hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+		code, body := h.post(g1, hfPath(plan.ID, "insist-host-mar"), nil)
+		require.Equalf(t, http.StatusOK, code, "insist: %v", body)
+		g1ID := h.tg.Players[g1].ID
+
+		// A blank rumor is rejected and the insistence stays queued.
+		code, body = h.post(hostIdx, hfPath(plan.ID, "resolve-host-mar"), map[string]any{
+			"insister_id": g1ID, "mar_option": "rumor_about_you",
+		})
+		require.Equalf(t, http.StatusBadRequest, code, "blank rumor: %v", body)
+		assert.Equal(t, []int64{g1ID}, hfChallengeState(t, h, plan.ID).UnchosenHostMars)
+
+		code, body = h.post(hostIdx, hfPath(plan.ID, "resolve-host-mar"), map[string]any{
+			"insister_id": g1ID, "mar_option": "rumor_about_you", "rumor_text": "the host was seen at the docks",
+		})
+		require.Equalf(t, http.StatusOK, code, "host chooses a rumor: %v", body)
+
+		state := hfChallengeState(t, h, plan.ID)
+		assert.Empty(t, state.UnchosenHostMars)
+		assert.Equal(t, []string{"rumor_about_you"}, state.HostMarInsists)
+		rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
+		require.NoError(t, err)
+		found := false
+		for _, r := range rumors {
+			if r.Text == "the host was seen at the docks" {
+				found = true
+				require.NotNil(t, r.TargetAssetID, "the rumor targets the host's main character")
+				assert.Equal(t, h.mainCharacterID(hostIdx), *r.TargetAssetID)
+			}
+		}
+		assert.True(t, found, "the host's rumor was created")
+
+		logs := hfAllLogBodies(t, h)
+		assert.Contains(t, logs, "chose to have a rumor spread about them in answer to",
+			"the host's choice is logged, naming whose insistence it answers")
+	})
+
+	t.Run("accept_duels binds the host", func(t *testing.T) {
+		h := newPlanLifecycle(t, 3)
+		plan, hostIdx := hfPrepareToSocializing(t, h)
+		g1 := (hostIdx + 1) % len(h.tg.Players)
+		hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+		hfInsistAndChoose(t, h, plan.ID, hostIdx, g1, "accept_duels")
+
+		state := hfChallengeState(t, h, plan.ID)
+		assert.Equal(t, []int64{h.tg.Players[hostIdx].ID}, state.AcceptDuels,
+			"the HOST must now accept duels, not the insister")
+		assert.Contains(t, hfAllLogBodies(t, h), "to accept any duel challenge for the rest of the event")
+	})
+}
+
+// TestHostFestivity_ResolveHostMar_Guards pins the route's refusals and the
+// legacy path kept for games already in flight.
+func TestHostFestivity_ResolveHostMar_Guards(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g1ID := h.tg.Players[g1].ID
+	resolve := hfPath(plan.ID, "resolve-host-mar")
+
+	// Nothing insisted yet → nothing to choose.
+	code, body := h.post(hostIdx, resolve, map[string]any{"insister_id": g1ID, "mar_option": "accept_duels"})
+	require.Equalf(t, http.StatusConflict, code, "choosing with no insistence: %v", body)
+
+	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	code, _ = h.post(g1, hfPath(plan.ID, "insist-host-mar"), nil)
+	require.Equal(t, http.StatusOK, code)
+
+	code, body = h.post(hostIdx, resolve, map[string]any{"insister_id": g1ID, "mar_option": "nonsense"})
+	require.Equalf(t, http.StatusBadRequest, code, "invalid option: %v", body)
+	// An insistence is answered by the guest who made it, not by a bystander's id.
+	other := (hostIdx + 2) % len(h.tg.Players)
+	code, body = h.post(hostIdx, resolve, map[string]any{
+		"insister_id": h.tg.Players[other].ID, "mar_option": "accept_duels",
+	})
+	require.Equalf(t, http.StatusConflict, code, "answering an insistence nobody made: %v", body)
+
+	// LEGACY: a game in flight holds a mar the old insister picked, as a bare option
+	// in pending_host_mars. It still settles with no insister_id, needs a
+	// host-resolved option, and is not double-counted as inflicted.
+	_, margIDs := hfSeedMCMarginalia(t, h, hostIdx, 2)
+	reloaded, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(reloaded.ResolutionData)
+	st := rd.EnsureFestivity()
+	st.UnchosenHostMars = nil
+	st.PendingHostMars = []string{gamepkg.FestivityMarBreakSelf}
+	require.NoError(t, saveResolutionData(ctx, h.q, plan.ID, rd))
+
+	code, body = h.post(hostIdx, resolve, map[string]any{"mar_option": "accept_duels"})
+	require.Equalf(t, http.StatusBadRequest, code, "legacy path only settles asset-pick mars: %v", body)
+	code, body = h.post(hostIdx, resolve, map[string]any{"mar_option": "break_self", "marginalia_id": margIDs[0]})
+	require.Equalf(t, http.StatusOK, code, "legacy settle: %v", body)
+	state := hfChallengeState(t, h, plan.ID)
+	assert.Empty(t, state.PendingHostMars)
+	assert.Empty(t, state.HostMarInsists, "a legacy mar was already recorded when it was insisted")
+	torn, err := h.q.GetMarginaliaByID(ctx, margIDs[0])
+	require.NoError(t, err)
+	assert.True(t, torn.IsTorn)
+}
+
+// TestHostFestivity_InsistedMarKeepsHostInWaitingBar proves the bar names the host
+// from the moment a guest insists until they choose — ADDED to whoever else still
+// owes something, never replacing them.
+func TestHostFestivity_InsistedMarKeepsHostInWaitingBar(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+	hostID, g1ID, g2ID := h.tg.Players[hostIdx].ID, h.tg.Players[g1].ID, h.tg.Players[g2].ID
+
+	hfGuestRoll(t, h, plan.ID, g1, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	code, body := h.post(hostIdx, hfPath(plan.ID, "host-choice"), map[string]any{
+		"choice": "spread_rumor", "rumor_text": "the host's own",
+	})
+	require.Equalf(t, http.StatusOK, code, "host takes the hosting make: %v", body)
+
+	// g2 hasn't acted and g1 still holds an IOU; the host owes nothing.
+	h.assertWaitees("before the insist", model.RowStateAwaitFestivityGuestTurn, g1ID, g2ID)
+
+	code, body = h.post(g1, hfPath(plan.ID, "insist-host-mar"), nil)
+	require.Equalf(t, http.StatusOK, code, "insist: %v", body)
+	h.assertWaitees("insisted, host has not chosen", model.RowStateAwaitFestivityGuestTurn, g2ID, hostID)
+
+	code, body = h.post(hostIdx, hfPath(plan.ID, "resolve-host-mar"), map[string]any{
+		"insister_id": g1ID, "mar_option": "accept_duels",
+	})
+	require.Equalf(t, http.StatusOK, code, "host chooses: %v", body)
+	h.assertWaitees("host has chosen", model.RowStateAwaitFestivityGuestTurn, g2ID)
+}
+
+// TestHostFestivity_InsistedMarNamesPerformStepsWinner: when a Make Demands
+// perform_steps winner drives the host's steps, the bar names THEM for the
+// insisted mar (the server refuses the host), not the locked-out host.
+func TestHostFestivity_InsistedMarNamesPerformStepsWinner(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	winnerIdx := (hostIdx + 1) % 4
+	g2 := (hostIdx + 2) % 4
+	g3 := (hostIdx + 3) % 4
+	hostID, winnerID := h.tg.Players[hostIdx].ID, h.tg.Players[winnerIdx].ID
+
+	// Everyone else has acted, the hosting make is taken, so the only thing
+	// outstanding is g2's insisted mar.
+	hfGuestRoll(t, h, plan.ID, g2, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	for _, idx := range []int{winnerIdx, g3} {
+		code, body := h.post(idx, hfPath(plan.ID, "guest-roll"), map[string]any{"action": "opt_out"})
+		require.Equalf(t, http.StatusOK, code, "opt out: %v", body)
+	}
+	h.seedMadeDemand(winnerIdx, plan.ID, gamepkg.DemandOptionWinners{
+		gamepkg.DemandOptionPerformSteps: winnerID,
+	})
+	// The host has earned 3 makes (hosting + two opt-outs); the winner takes them.
+	for range 3 {
+		code, body := h.post(winnerIdx, hfPath(plan.ID, "host-choice"), map[string]any{
+			"choice": "spread_rumor", "rumor_text": "winner-driven",
+		})
+		require.Equalf(t, http.StatusOK, code, "winner takes a make: %v", body)
+	}
+	code, body := h.post(g2, hfPath(plan.ID, "insist-host-mar"), nil)
+	require.Equalf(t, http.StatusOK, code, "insist: %v", body)
+
+	h.assertWaitees("winner owes the host's choice", model.RowStateAwaitFestivityGuestTurn, winnerID)
+	assert.NotContains(t, h.rowState().ActingPlayerIDs, hostID, "the locked-out host is not the one to wait on")
 }

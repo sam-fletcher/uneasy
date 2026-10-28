@@ -1,11 +1,17 @@
 <!-- Festivity/HostPendingMar.svelte
-  Renders for the host when a guest has insisted a mar that the host must resolve
-  themselves — a decision about the host's OWN assets the insisting guest can't
-  make for them:
-    • break_self   → which marginalia on the host's main character to tear;
-    • disagreement → which of the host's peers falls out (goes to the center).
-  Other mars (rumor_about_you, accept_duels) apply immediately at insist time and
-  never reach here. Pending mars are settled one at a time (the first in queue).
+  The host's pending-mar card. A guest with a make has insisted the host take a
+  Mar (book p.61: "insist that the host choose one option from the mar list"),
+  and it is the HOST who chooses which — so this card is where the choice is
+  made, plus whatever that option needs:
+    • rumor_about_you → the rumor's text;
+    • disagreement    → which of the host's peers falls out;
+    • accept_duels    → nothing;
+    • break_self      → which marginalia on the host's main character to tear.
+  Mars are settled one at a time (a legacy mar first, then the oldest insistence).
+
+  Legacy: a game in flight across the Q13 change can hold a mar the insisting
+  guest already chose (`pendingHostMars`). That card has no choice left to make
+  — only the asset pick — so the option is fixed and the picker is hidden.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -13,18 +19,28 @@
 	import CardPicker from '../CardPicker.svelte';
 	import { breakableAssets, playerName } from '../shared';
 	import { destructionWarning } from '$lib/assetRisk';
+	import { TEXT_LIMITS } from '$lib/textLimits';
+	import { MAR_OPTS } from './options';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
-	let { plan, players, assets, pendingHostMars, onPlansChanged }: {
+	let { plan, players, assets, unchosenHostMars, pendingHostMars, onPlansChanged }: {
 		plan: Plan;
 		players: Player[];
 		assets: Asset[];
+		/** Guests whose insistence the host hasn't answered yet, oldest first. */
+		unchosenHostMars: number[];
+		/** Legacy: a mar the insisting guest chose, awaiting the host's asset pick. */
 		pendingHostMars: string[];
 		onPlansChanged: () => void;
 	} = $props();
 
-	// Settle the oldest pending mar first.
-	const current = $derived(pendingHostMars[0] ?? null);
+	const legacyOption = $derived(pendingHostMars[0] ?? null);
+	// Whose insistence the card is answering (null on a legacy card).
+	const insisterID = $derived(legacyOption ? null : (unchosenHostMars[0] ?? null));
+	const total = $derived(pendingHostMars.length + unchosenHostMars.length);
+
+	let picked = $state<string | null>(null);
+	const current = $derived(legacyOption ?? picked);
 
 	// break_self target: the host's main character, if a break can land on it —
 	// an intact marginalia to tear, or a blank MC the break destroys outright.
@@ -39,65 +55,115 @@
 		assets.filter(a =>
 			a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed),
 	);
+	// An option the host can't carry out is shown but locked, with the reason.
+	const lockReason = (key: string): string | undefined =>
+		key === 'disagreement' && hostPeers.length === 0 ? 'You have no peers' : undefined;
 
+	let rumor = $state('');
 	let marginaliaID = $state<number | null>(null);
 	let assetID = $state<number | null>(null);
 	let busy = $state(false);
 	let error = $state('');
 
-	// Reset selections when the option being resolved changes.
-	let lastCurrent = $state<string | null>(null);
+	function reset() {
+		picked = null;
+		rumor = '';
+		marginaliaID = null;
+		assetID = null;
+		error = '';
+	}
+
+	// Start fresh whenever the mar being answered changes.
+	let lastKey = $state('');
 	$effect(() => {
-		if (current !== lastCurrent) {
-			lastCurrent = current;
-			marginaliaID = null;
-			assetID = null;
-			error = '';
+		const key = `${legacyOption ?? ''}|${insisterID ?? ''}`;
+		if (key !== lastKey) {
+			lastKey = key;
+			reset();
+		}
+	});
+
+	// Mirrors the checks in submit() so the button stays disabled until the chosen
+	// option has what it needs (the server validates again).
+	const ready = $derived.by(() => {
+		switch (current) {
+			case 'rumor_about_you': return rumor.trim().length > 0;
+			case 'disagreement': return assetID != null;
+			case 'break_self': return !canBreak || marginaliaID != null;
+			case 'accept_duels': return true;
+			default: return false;
 		}
 	});
 
 	async function submit() {
-		if (busy || !current) return;
-		if (current === 'break_self' && canBreak && marginaliaID == null) {
-			error = 'Pick what to tear.'; return;
-		}
-		if (current === 'disagreement' && assetID == null) {
-			error = 'Pick a peer.'; return;
-		}
+		if (busy || !current || !ready) return;
 		busy = true; error = '';
 		try {
-			const body: { mar_option: string; marginalia_id?: number; asset_id?: number } = {
-				mar_option: current,
-			};
+			const body: Parameters<typeof resolveHostMar>[1] = { mar_option: current };
+			if (insisterID != null) body.insister_id = insisterID;
+			if (current === 'rumor_about_you') body.rumor_text = rumor.trim();
 			// For break_self with nothing left to tear, the server settles it as a
 			// no-op; the placeholder id is ignored in that case.
 			if (current === 'break_self') body.marginalia_id = marginaliaID ?? 0;
 			if (current === 'disagreement') body.asset_id = assetID!;
 			await resolveHostMar(plan.id, body);
-			marginaliaID = null;
-			assetID = null;
+			reset();
 			onPlansChanged();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not resolve the mar.';
+			error = e instanceof Error ? e.message : 'Could not settle the mar.';
 		} finally { busy = false; }
 	}
 </script>
 
-{#if current}
+{#if total > 0}
 	<div class="choices-section">
 		<p class="choices-header">
-			{current === 'break_self' ? 'Break yourself' : 'A peer falls out with you'}
-			{#if pendingHostMars.length > 1}<span class="muted" style="font-weight:400;"> · {pendingHostMars.length} mars to settle</span>{/if}
+			{#if insisterID != null}
+				{playerName(players, insisterID)} insists you take a Mar
+			{:else}
+				{MAR_OPTS.find(o => o.key === legacyOption)?.label ?? 'A Mar to settle'}
+			{/if}
+			{#if total > 1}<span class="muted" style="font-weight:400;"> · {total} mars to settle</span>{/if}
 		</p>
 
-		{#if current === 'break_self'}
+		{#if legacyOption == null}
+			<p class="choices-note muted">You choose which one — pick one from the Mar list.</p>
+			<div class="choice-list">
+				{#each MAR_OPTS as o (o.key)}
+					{@const reason = lockReason(o.key)}
+					<button type="button" class="choice-card"
+						class:active={picked === o.key} class:locked={reason != null}
+						disabled={reason != null} aria-pressed={picked === o.key}
+						onclick={() => { picked = picked === o.key ? null : o.key; }}>
+						<span class="choice-badge">{picked === o.key ? '✓' : ''}</span>
+						<span class="choice-text">
+							<span class="choice-title">{o.label}</span>
+							{#if o.desc}<span class="choice-desc">{o.desc}</span>{/if}
+						</span>
+						{#if reason}<span class="choice-lock">{reason}</span>{/if}
+					</button>
+				{/each}
+			</div>
+		{:else}
 			<p class="choices-note muted">
-				A guest has caused you to break yourself. Choose a marginalia on your main
-				character to tear.
+				A guest has chosen this for you. Make the specific call below.
 			</p>
+		{/if}
+
+		{#if current === 'rumor_about_you'}
+			<label class="form-label">
+				The rumor about you:
+				<textarea rows={2} bind:value={rumor} class="form-textarea"
+					maxlength={TEXT_LIMITS.LONG_TEXT} placeholder="What does the rumor say?"></textarea>
+			</label>
+		{:else if current === 'accept_duels'}
+			<p class="choices-note muted">
+				You must accept any duel challenge for the rest of the event.
+			</p>
+		{:else if current === 'break_self'}
 			{#if canBreak}
 				<CardPicker
-					label="Marginalium to tear"
+					label="Marginalia to tear"
 					items={hostMC}
 					{players}
 					emptyMessage="You have nothing left to break."
@@ -110,15 +176,7 @@
 			{:else}
 				<p class="choices-note muted">You have nothing left to tear — you can pass the break.</p>
 			{/if}
-			{#if error}<ErrorText message={error} variant="panel" />{/if}
-			<button class="action-btn primary" onclick={submit} disabled={busy}>
-				{busy ? '…' : canBreak ? 'Tear it' : 'Pass the break'}
-			</button>
-		{:else}
-			<p class="choices-note muted">
-				A guest has caused you to fall out with one of your peers. Choose which peer
-				is considering changing retinue.
-			</p>
+		{:else if current === 'disagreement'}
 			<CardPicker
 				label="Peer to set in the center"
 				items={hostPeers}
@@ -128,9 +186,14 @@
 				selected={assetID}
 				onSelect={(id) => (assetID = id)}
 			/>
-			{#if error}<ErrorText message={error} variant="panel" />{/if}
-			<button class="action-btn primary" onclick={submit} disabled={busy || assetID == null}>
-				{busy ? '…' : 'Set them in the center'}
+		{/if}
+
+		{#if error}<ErrorText message={error} variant="panel" />{/if}
+		{#if current}
+			<button class="action-btn primary" onclick={submit} disabled={busy || !ready}>
+				{busy ? '…'
+					: current === 'break_self' && !canBreak ? 'Pass the break'
+					: 'Take this Mar'}
 			</button>
 		{/if}
 	</div>

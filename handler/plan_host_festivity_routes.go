@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,24 +15,15 @@ import (
 
 // ── insist-host-mar ──────────────────────────────────────────────────────────
 
+// hfInsistHostMarHandler spends a make-rolling guest's IOU. The book (p.61) has
+// the guest "insist that the host choose one option from the mar list", so the
+// insist carries no option: it only queues an unchosen mar for the host, who
+// picks which of the four to take via resolve-host-mar. The guest's leverage is
+// *when* they insist, not what they get.
 func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
-			return
-		}
-		var body struct {
-			MarOption    string `json:"mar_option"`
-			AssetID      int64  `json:"asset_id"`
-			MarginaliaID int64  `json:"marginalia_id"`
-			RumorText    string `json:"rumor_text"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			respondErr(w, http.StatusBadRequest, "invalid JSON")
-			return
-		}
-		if !gamepkg.IsValidFestivityMarOption(body.MarOption) {
-			respondErr(w, http.StatusBadRequest, "invalid mar option")
 			return
 		}
 
@@ -57,65 +49,80 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusForbidden, "you have no mar to inflict (must have rolled a make)")
 			return
 		}
-
-		// Some mars can't be applied by the insisting guest: they hinge on a choice
-		// about the host's OWN assets (which marginalia to tear for break_self,
-		// which peer falls out for disagreement). Those only record an obligation
-		// the host settles via resolve-host-mar; every other mar applies at once.
-		if gamepkg.MarNeedsHostResolution(body.MarOption) {
-			state.PendingHostMars = append(state.PendingHostMars, body.MarOption)
-			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"%s insisted the host %s — the host must choose how.",
-				playerDisplayName(ctx, deps.Q, player.ID), hfInsistedMarPhrase(body.MarOption)))
-		} else if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
-			ActingPlayerID: plan.PreparerID,
-			Choice:         body.MarOption,
-			RumorText:      body.RumorText,
-			AssetID:        body.AssetID,
-			MarginaliaID:   body.MarginaliaID,
-		}); err != nil {
-			respondErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		state.HostMarInsists = append(state.HostMarInsists, body.MarOption)
+		state.UnchosenHostMars = append(state.UnchosenHostMars, player.ID)
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save insist", err)
 			return
 		}
+		hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s insisted the host take a mar — the host chooses which.",
+			playerDisplayName(ctx, deps.Q, player.ID)))
 		broadcastEvent(
 			deps.Manager,
 			plan.GameID,
 			model.EventFestivityInsistHostMar,
-			model.FestivityInsistHostMarPayload{
-				PlanID: plan.ID, InsisterID: player.ID, MarOption: body.MarOption,
-			},
+			model.FestivityInsistHostMarPayload{PlanID: plan.ID, InsisterID: player.ID},
 		)
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
-		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "mar_option": body.MarOption})
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID})
 	}
 }
 
-// hfInsistedMarPhrase is the chat-log fragment for a mar the host must resolve
-// themselves, used when a guest insists it ("… insisted the host <phrase>").
-func hfInsistedMarPhrase(marOption string) string {
+// hfChosenMarPhrase is the chat-log fragment for the mar the host chose when
+// answering a guest's insistence ("… chose <phrase> in answer to …").
+func hfChosenMarPhrase(marOption string) string {
 	switch marOption {
-	case gamepkg.FestivityMarBreakSelf:
-		return "break themselves"
+	case gamepkg.FestivityMarRumorAboutYou:
+		return "to have a rumor spread about them"
 	case gamepkg.FestivityMarDisagreement:
-		return "fall out with one of their peers"
+		return "to fall out with one of their peers"
+	case gamepkg.FestivityMarAcceptDuels:
+		return "to accept any duel challenge for the rest of the event"
+	case gamepkg.FestivityMarBreakSelf:
+		return "to break themselves"
 	}
-	return "take a mar"
+	return "a mar"
+}
+
+// hfSettleHostMar clears the obligation a resolve-host-mar call just met. A
+// legacy entry (insisterID 0: the insisting guest picked the option, before the
+// host chose) is dropped from PendingHostMars; a current one leaves the
+// unchosen queue and is recorded as inflicted, logging the host's choice.
+func hfSettleHostMar(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	state *gamepkg.FestivityResolutionData,
+	insisterID int64,
+	marOption string,
+) {
+	if insisterID == 0 {
+		state.RemovePendingHostMar(marOption)
+		return
+	}
+	state.ConsumeUnchosenHostMar(insisterID)
+	state.HostMarInsists = append(state.HostMarInsists, marOption)
+	hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		"%s chose %s in answer to %s's insistence.",
+		playerDisplayName(ctx, deps.Q, plan.PreparerID), hfChosenMarPhrase(marOption),
+		playerDisplayName(ctx, deps.Q, insisterID)))
 }
 
 // ── resolve-host-mar ──────────────────────────────────────────────────────────
 
-// hfResolveHostMarHandler lets the host settle a mar a guest insisted on them
-// that hinges on a choice about the host's own assets — break_self (which
-// marginalia on their main character to tear) and disagreement (which of their
-// peers falls out). The insisting guest can't make these calls; only the owner
-// can. Host-only, and guarded by the pending-mar queue so it can't be called
-// more times than were insisted.
+// hfResolveHostMarHandler is where the host answers a guest's insistence. A
+// guest's insist leaves an unchosen mar; the host picks which of the four mar
+// options to take (insister_id names which insistence they are answering) and
+// supplies whatever that option needs — rumor text, which peer falls out, which
+// marginalia to tear. Host-only: a mar dealt to the host is the host's call.
+//
+// A request with no insister_id settles a legacy entry instead: a mar the
+// *guest* chose under the old flow, which sits in PendingHostMars awaiting only
+// the host's asset pick (break_self / disagreement). It is kept so a game in
+// flight across the change can finish.
+//
+//nolint:funlen // legacy + current paths share the break_self soft-lock guard
 func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
@@ -125,12 +132,14 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		// Settling a mar dealt to the host (which of the host's own assets to break
 		// or which peer falls out) is the host's resolution step, so a Make Demands
 		// perform_steps winner may drive it in the host's stead (locking them out).
-		// The break still lands on the host — hfApplyOption is passed plan.PreparerID.
+		// The mar still lands on the host — hfApplyOption is passed plan.PreparerID.
 		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 		var body struct {
+			InsisterID   int64  `json:"insister_id"`
 			MarOption    string `json:"mar_option"`
+			RumorText    string `json:"rumor_text"`
 			MarginaliaID int64  `json:"marginalia_id"`
 			AssetID      int64  `json:"asset_id"`
 		}
@@ -138,7 +147,12 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		if !gamepkg.MarNeedsHostResolution(body.MarOption) {
+		if !gamepkg.IsValidFestivityMarOption(body.MarOption) {
+			respondErr(w, http.StatusBadRequest, "invalid mar option")
+			return
+		}
+		legacy := body.InsisterID == 0
+		if legacy && !gamepkg.MarNeedsHostResolution(body.MarOption) {
 			respondErr(w, http.StatusBadRequest, "that mar is not one the host resolves")
 			return
 		}
@@ -161,8 +175,12 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		if hfBlockOnActiveRoll(w, state, roster, player.ID) {
 			return
 		}
-		if !slices.Contains(state.PendingHostMars, body.MarOption) {
+		if legacy && !slices.Contains(state.PendingHostMars, body.MarOption) {
 			respondErr(w, http.StatusConflict, "you have no such mar to resolve")
+			return
+		}
+		if !legacy && !slices.Contains(state.UnchosenHostMars, body.InsisterID) {
+			respondErr(w, http.StatusConflict, "no insistence from that guest is waiting on your choice")
 			return
 		}
 
@@ -171,6 +189,7 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		// the event can still be wound down rather than blocking on the impossible.
 		// A *blank* main character is not that case — the break destroys it
 		// outright (D3) — so it falls through to hfApplyOption below.
+		passed := false
 		if body.MarOption == gamepkg.FestivityMarBreakSelf {
 			canBreak, herr := hfHostCanBreakSelf(ctx, deps, plan)
 			if herr != nil {
@@ -180,32 +199,24 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			if !canBreak {
 				hfLog(ctx, deps, plan, model.SeverityDefault,
 					"The host had nothing left to tear — the insisted break passes.")
-				state.RemovePendingHostMar(body.MarOption)
-				if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-					respondInternalErr(w, r, "could not save resolved mar", err)
-					return
-				}
-				hfBroadcastUpdated(deps, plan)
-				broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
-				respond(w, http.StatusOK, map[string]any{
-					"plan_id": plan.ID, "pending_host_mars": state.PendingHostMars,
-				})
-				return
+				passed = true
 			}
 		}
 
-		// The host is the actor and chooses the asset themselves (marginalia for a
-		// break, peer for a disagreement).
-		if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
-			ActingPlayerID: plan.PreparerID,
-			Choice:         body.MarOption,
-			AssetID:        body.AssetID,
-			MarginaliaID:   body.MarginaliaID,
-		}); err != nil {
-			respondErr(w, http.StatusBadRequest, err.Error())
-			return
+		// The host is the actor and supplies the specifics themselves.
+		if !passed {
+			if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
+				ActingPlayerID: plan.PreparerID,
+				Choice:         body.MarOption,
+				RumorText:      body.RumorText,
+				AssetID:        body.AssetID,
+				MarginaliaID:   body.MarginaliaID,
+			}); err != nil {
+				respondErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
 		}
-		state.RemovePendingHostMar(body.MarOption)
+		hfSettleHostMar(ctx, deps, plan, state, body.InsisterID, body.MarOption)
 
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save resolved mar", err)
@@ -214,7 +225,9 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		hfBroadcastUpdated(deps, plan)
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
-			"plan_id": plan.ID, "pending_host_mars": state.PendingHostMars,
+			"plan_id":            plan.ID,
+			"pending_host_mars":  state.PendingHostMars,
+			"unchosen_host_mars": state.UnchosenHostMars,
 		})
 	}
 }

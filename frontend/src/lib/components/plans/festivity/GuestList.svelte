@@ -40,6 +40,8 @@
 			const marsTaken = fest.hostMarInsists.length;
 			const bits = [`${taken} of ${earned} ${earned === 1 ? 'Make' : 'Makes'} taken`];
 			if (marsTaken > 0) bits.push(`${marsTaken} ${marsTaken === 1 ? 'Mar' : 'Mars'} from guests`);
+			const marsOwed = fest.unchosenHostMars.length + fest.pendingHostMars.length;
+			if (marsOwed > 0) bits.push(`${marsOwed} ${marsOwed === 1 ? 'Mar' : 'Mars'} to choose`);
 			return { tone: 'host', headline: 'Working the room', detail: bits.join(' · ') };
 		}
 

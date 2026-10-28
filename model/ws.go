@@ -576,11 +576,11 @@ type FestivityHostChosePayload struct {
 	Choice string `json:"choice"`
 }
 
-// FestivityInsistHostMarPayload is for EventFestivityInsistHostMar.
+// FestivityInsistHostMarPayload is for EventFestivityInsistHostMar. It carries
+// no mar option: the host chooses it afterwards, on their pending-mar card.
 type FestivityInsistHostMarPayload struct {
-	PlanID     int64  `json:"plan_id"`
-	InsisterID int64  `json:"insister_id"`
-	MarOption  string `json:"mar_option"`
+	PlanID     int64 `json:"plan_id"`
+	InsisterID int64 `json:"insister_id"`
 }
 
 // FestivityDuelTriggeredPayload is for EventFestivityDuelTriggered.

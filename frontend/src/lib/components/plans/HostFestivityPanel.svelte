@@ -80,6 +80,7 @@
 			guestRollIDs: f.guest_roll_ids ?? {},
 			guestIOUs: f.guest_ious ?? [],
 			hostMarInsists: f.host_mar_insists ?? [],
+			unchosenHostMars: f.unchosen_host_mars ?? [],
 			pendingHostMars: f.pending_host_mars ?? [],
 			acceptDuels: f.accept_duels ?? [],
 			pendingDuelPlanID: f.pending_duel_plan_id ?? null,
@@ -98,6 +99,7 @@
 
 	const meKey = $derived(currentPlayerID == null ? '' : String(currentPlayerID));
 	const amHost = $derived(plan != null && currentPlayerID === plan.preparer_id);
+
 	const iAmGuest = $derived(currentPlayerID != null && fest.guests.includes(currentPlayerID));
 	const myOutcome = $derived(meKey ? fest.outcomes[meKey] ?? null : null);
 	const myRollID = $derived(meKey ? fest.guestRollIDs[meKey] ?? null : null);
@@ -236,9 +238,11 @@
 			<HostChoosing {plan} {fest} {players} {assets} {onPlansChanged} />
 		{/if}
 
-		{#if isResolving && amHost && fest.pendingHostMars.length > 0 && !fest.pendingChallenge}
+		{#if isResolving && amHost && !fest.pendingChallenge
+			&& fest.unchosenHostMars.length + fest.pendingHostMars.length > 0}
 			<HostPendingMar
 				{plan} {players} {assets}
+				unchosenHostMars={fest.unchosenHostMars}
 				pendingHostMars={fest.pendingHostMars}
 				{onPlansChanged}
 			/>

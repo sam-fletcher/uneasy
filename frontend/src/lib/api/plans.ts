@@ -817,24 +817,26 @@ export function respondChallenge(planID: number, accept: boolean): Promise<{ pla
 	});
 }
 
-/** Host Festivity — guest with an unspent IOU forces the host to take a mar option. */
-export function insistHostMar(
-	planID: number,
-	body: { mar_option: string; asset_id?: number; rumor_text?: string },
-): Promise<PlanEcho> {
-	return apiFetch(`/plans/${planID}/insist-host-mar`, {
-		method: 'POST',
-		body: JSON.stringify(body),
-	});
+/** Host Festivity — a guest with an unspent IOU insists the host take a mar. The
+ *  guest names no option: the host chooses which (see resolveHostMar). */
+export function insistHostMar(planID: number): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/insist-host-mar`, { method: 'POST' });
 }
 
-/** Host Festivity — host settles a mar insisted on them that needs their own
- *  choice: break_self (which marginalia to tear) or disagreement (which of their
- *  peers falls out). */
+/** Host Festivity — the host answers a guest's insistence: `insister_id` names
+ *  whose, `mar_option` is the mar the host chose, plus whatever it needs (rumor
+ *  text, the peer that falls out, the marginalia to tear). Omit `insister_id` to
+ *  settle a legacy mar the insisting guest chose before the host did. */
 export function resolveHostMar(
 	planID: number,
-	body: { mar_option: string; marginalia_id?: number; asset_id?: number },
-): Promise<{ plan_id: number; pending_host_mars: string[] }> {
+	body: {
+		mar_option: string;
+		insister_id?: number;
+		rumor_text?: string;
+		marginalia_id?: number;
+		asset_id?: number;
+	},
+): Promise<{ plan_id: number; pending_host_mars: string[]; unchosen_host_mars: number[] }> {
 	return apiFetch(`/plans/${planID}/resolve-host-mar`, {
 		method: 'POST',
 		body: JSON.stringify(body),
