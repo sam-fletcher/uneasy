@@ -236,8 +236,13 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 
 // The host spends one of their earned extra makes. These are the host's spoils
 // (one for hosting, one per guest who marred or opted out), not debts owed to
-// any particular guest — so there is no target; the route just checks the host
-// still has makes remaining and applies the option to the host themself.
+// any particular guest — so there is no target to name for most options; the
+// route just checks the host still has makes remaining and applies the option to
+// the host themself. The one exception is challenge_duel, which names the guest
+// being called out (target_player_id) and opens the same challenge a rolling
+// guest's make would.
+//
+//nolint:funlen // option validation, duel branch and ordinary apply in one handler
 func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
@@ -258,13 +263,19 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			PeerMarginalia []string `json:"peer_marginalia"`
 			AssetID        int64    `json:"asset_id"`
 			DraftID        string   `json:"draft_id"`
+			TargetPlayerID int64    `json:"target_player_id"`
+			Notes          string   `json:"preparation_notes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		if !gamepkg.IsValidFestivityMakeOption(body.Choice) || body.Choice == gamepkg.FestivityMakeChallengeDuel {
-			respondErr(w, http.StatusBadRequest, "host-choice must be a non-duel make option")
+		if !gamepkg.IsValidFestivityMakeOption(body.Choice) {
+			respondErr(w, http.StatusBadRequest, "invalid make option for festivity")
+			return
+		}
+		notes, ok := textField(w, "preparation_notes", body.Notes, maxNarrativeLen)
+		if !ok {
 			return
 		}
 
@@ -288,6 +299,11 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		if state.RemainingHostMakes(roster) <= 0 {
 			respondErr(w, http.StatusConflict, "you have no extra makes left to take")
+			return
+		}
+
+		if body.Choice == gamepkg.FestivityMakeChallengeDuel {
+			hfHostChallengeDuel(ctx, w, r, deps, plan, &resData, roster, body.TargetPlayerID, notes)
 			return
 		}
 
@@ -324,10 +340,115 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// hfHostChallengeDuel is the host spending an earned make on challenge_duel. The
+// host is the challenger (the nested Propose Duel is theirs, even when a
+// perform_steps winner chose the target for them) and, like a guest's, the make
+// is spent whether or not the target accepts. The caller has already checked the
+// host has a make left and that no roll-and-choice or challenge is in flight.
+func hfHostChallengeDuel(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	roster []int64,
+	targetID int64,
+	notes string,
+) {
+	state := resData.EnsureFestivity()
+	if targetID == 0 {
+		respondErr(w, http.StatusBadRequest, "target_player_id required")
+		return
+	}
+	if targetID == plan.PreparerID {
+		respondErr(w, http.StatusBadRequest, "cannot duel yourself")
+		return
+	}
+	if !slices.Contains(roster, targetID) {
+		respondErr(w, http.StatusBadRequest, "challenge target must be a guest")
+		return
+	}
+	if hfNestedDuelInProgress(ctx, deps.Q, state) {
+		respondErr(w, http.StatusConflict, "a challenged duel is in progress; resolve it first")
+		return
+	}
+	state.HostMakesTaken = append(state.HostMakesTaken, gamepkg.FestivityMakeChallengeDuel)
+	if err := hfOpenChallenge(ctx, deps, plan, resData, plan.PreparerID, targetID, notes); err != nil {
+		respondInternalErr(w, r, "could not save challenge state", err)
+		return
+	}
+	respond(w, http.StatusCreated, map[string]any{
+		"plan_id":         plan.ID,
+		"choice":          gamepkg.FestivityMakeChallengeDuel,
+		"challenger_id":   plan.PreparerID,
+		"target_id":       targetID,
+		"must_accept":     state.HasAcceptDuels(targetID),
+		"makes_remaining": state.RemainingHostMakes(roster),
+	})
+}
+
+// hfNestedDuelInProgress reports whether a duel spawned from this festivity is
+// still unresolved. A finished duel's id is cleared from state as a side effect
+// (the caller persists it with its own write), so a spent duel never blocks the
+// next challenge or roll.
+func hfNestedDuelInProgress(ctx context.Context, q *dbgen.Queries, state *gamepkg.FestivityResolutionData) bool {
+	if state.PendingDuelPlanID == nil {
+		return false
+	}
+	if dp, err := q.GetPlanByID(ctx, *state.PendingDuelPlanID); err == nil && dp.Status != model.PlanResolved {
+		return true
+	}
+	state.PendingDuelPlanID = nil
+	return false
+}
+
+// hfOpenChallenge records a duel challenge awaiting the target's response —
+// pausing every other festivity action until they accept or decline — then
+// persists it, announces it and logs it. The caller has already recorded the
+// challenger's spent make (a guest's choice or a host make), which is spent
+// whatever the target answers.
+func hfOpenChallenge(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	challengerID, targetID int64,
+	notes string,
+) error {
+	state := resData.EnsureFestivity()
+	state.PendingChallenge = &gamepkg.PendingChallenge{
+		ChallengerID: challengerID,
+		TargetID:     targetID,
+		Notes:        notes,
+	}
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
+		return err
+	}
+	broadcastEvent(
+		deps.Manager,
+		plan.GameID,
+		model.EventFestivityChallengeIssued,
+		model.FestivityChallengeIssuedPayload{
+			PlanID:       plan.ID,
+			ChallengerID: challengerID,
+			TargetID:     targetID,
+			MustAccept:   state.HasAcceptDuels(targetID),
+		},
+	)
+	hfLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+		"%s threw down a challenge across the hall, calling out %s to a duel.",
+		playerDisplayName(ctx, deps.Q, challengerID),
+		playerDisplayName(ctx, deps.Q, targetID)))
+	broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+	return nil
+}
+
 // ── challenge-duel ───────────────────────────────────────────────────────────
 
 // A guest who rolled make uses this route (instead of guest-choice) to invoke
-// the challenge_duel option. The target is anyone in the guest list — they may
+// the challenge_duel option. (The host spends an earned make on a duel through
+// host-choice instead — see hfHostChallengeDuel.) The target is anyone in the guest list — they may
 // accept or decline via /respond-challenge. Targets who have taken the
 // accept_duels mar cannot decline (the UI should disable that option). The
 // challenger's make is spent on challenge_duel regardless of the target's
@@ -403,8 +524,8 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusForbidden, "challenge_duel requires rolling a make")
 			return
 		}
-		if state.PendingDuelPlanID != nil {
-			respondErr(w, http.StatusConflict, "a nested duel is already in progress")
+		if hfNestedDuelInProgress(ctx, deps.Q, state) {
+			respondErr(w, http.StatusConflict, "a challenged duel is in progress; resolve it first")
 			return
 		}
 		if state.PendingChallenge != nil {
@@ -425,31 +546,10 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 			state.GuestMakes[ck] = gamepkg.FestivityMakeChallengeDuel
 			state.GuestIOUs = append(state.GuestIOUs, player.ID)
 		}
-		state.PendingChallenge = &gamepkg.PendingChallenge{
-			ChallengerID: player.ID,
-			TargetID:     body.TargetPlayerID,
-			Notes:        body.Notes,
-		}
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		if err := hfOpenChallenge(ctx, deps, plan, &resData, player.ID, body.TargetPlayerID, body.Notes); err != nil {
 			respondInternalErr(w, r, "could not save challenge state", err)
 			return
 		}
-		broadcastEvent(
-			deps.Manager,
-			plan.GameID,
-			model.EventFestivityChallengeIssued,
-			model.FestivityChallengeIssuedPayload{
-				PlanID:       plan.ID,
-				ChallengerID: player.ID,
-				TargetID:     body.TargetPlayerID,
-				MustAccept:   state.HasAcceptDuels(body.TargetPlayerID),
-			},
-		)
-		hfLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
-			"%s threw down a challenge across the hall, calling out %s to a duel.",
-			playerDisplayName(ctx, deps.Q, player.ID),
-			playerDisplayName(ctx, deps.Q, body.TargetPlayerID)))
-		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusCreated, map[string]any{
 			"plan_id":       plan.ID,
 			"challenger_id": player.ID,

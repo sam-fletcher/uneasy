@@ -4,8 +4,8 @@ import { assetName } from '../shared';
 // Shared make/mar option lists for the festivity sub-components. The
 // guest's own turn shows MAKE_OPTS or MAR_OPTS depending on roll outcome;
 // the host's picker (the free make they take for each guest who marred or
-// opted out) uses HOST_MAKE_OPTS (everything except challenge_duel — a duel
-// is a live challenge, not a take-for-yourself make).
+// opted out) offers the same list — a duel included (book p.61 gives the host
+// the whole make list).
 //
 // `desc` is the one-line effect shown in the read-only buffet reference.
 
@@ -22,8 +22,6 @@ export const MAR_OPTS = [
 	{ key: 'accept_duels',    label: 'You must accept all duels',  		desc: 'during the festivity.' },
 	{ key: 'break_self',      label: 'Break yourself',                  desc: '— Tear a marginalia on your main character.' },
 ];
-
-export const HOST_MAKE_OPTS = MAKE_OPTS.filter(o => o.key !== 'challenge_duel');
 
 // Third-person past-tense phrases for the scorecard ("The Talk of the Event"),
 // where the MAKE_OPTS/MAR_OPTS labels (second person) read awkwardly.

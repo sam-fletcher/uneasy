@@ -781,7 +781,8 @@ export function guestChoice(
 	});
 }
 
-/** Host Festivity — host spends one of their earned extra makes (their spoils). */
+/** Host Festivity — host spends one of their earned extra makes (their spoils).
+ *  A `challenge_duel` also carries `target_player_id` (and optional notes). */
 export function hostChoice(
 	planID: number,
 	body: { choice: string } & Record<string, unknown>

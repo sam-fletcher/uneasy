@@ -36,7 +36,9 @@ package handler
 //	POST /api/plans/:planId/resolve-host-mar  — {insister_id, mar_option, ...}: the
 //	                                            host chooses which mar to take in
 //	                                            answer to an insistence and settles it.
-//	POST /api/plans/:planId/host-choice       — {choice, ...option params}.
+//	POST /api/plans/:planId/host-choice       — {choice, ...option params}; a
+//	                                            challenge_duel also names
+//	                                            target_player_id.
 //	POST /api/plans/:planId/challenge-duel    — {target_player_id}.
 //	POST /api/plans/:planId/respond-challenge — {accept:bool}, target only.
 //	POST /api/plans/:planId/end-event         — host winds the event down.
@@ -286,17 +288,9 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 		if hfBlockOnActiveRoll(w, state, roster, player.ID) {
 			return
 		}
-		if state.PendingDuelPlanID != nil {
-			// Check if that duel is still unresolved.
-			if dp, err := deps.Q.GetPlanByID(
-				ctx,
-				*state.PendingDuelPlanID,
-			); err == nil &&
-				dp.Status != model.PlanResolved {
-				respondErr(w, http.StatusConflict, "a challenged duel is in progress; resolve it first")
-				return
-			}
-			state.PendingDuelPlanID = nil
+		if hfNestedDuelInProgress(ctx, deps.Q, state) {
+			respondErr(w, http.StatusConflict, "a challenged duel is in progress; resolve it first")
+			return
 		}
 		key := strconv.FormatInt(player.ID, 10)
 		if _, acted := state.Outcomes[key]; acted {

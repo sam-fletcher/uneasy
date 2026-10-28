@@ -4,6 +4,10 @@
   the host, and only while makes remain); the host picks an option and spends
   one make at a time, not tied to any guest. Everyone else reads the host's
   progress off the scorecard ("Working the room — N of M"), not here.
+
+  The whole make list is on offer, a duel included (book p.61 gives the host the
+  make list with no exception): challenging someone spends the make, and the
+  target may accept (a nested Propose Duel, the host as challenger) or decline.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -11,9 +15,10 @@
 	import CardPicker from '../CardPicker.svelte';
 	import AssetCreationForm from '../../AssetCreationForm.svelte';
 	import FormField from '../FormField.svelte';
+	import PlayerChips from '../PlayerChips.svelte';
 	import { playerName } from '../shared';
 	import {
-		HOST_MAKE_OPTS, earnedHostMakes, centeredPeerCards, centeredPeerPick, isDraftCard,
+		MAKE_OPTS, earnedHostMakes, centeredPeerCards, centeredPeerPick, isDraftCard,
 		type FestRes,
 	} from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -31,6 +36,9 @@
 	const taken = $derived(fest.hostMakesTaken.length);
 	const remaining = $derived(earned - taken);
 
+	// Anyone but the host can be challenged.
+	const duelTargets = $derived(players.filter(p => p.id !== plan.preparer_id));
+
 	// Drafts and real centered peers as one list — see options.ts.
 	const centerPeerCandidates = $derived(centeredPeerCards(fest, assets, plan.game_id));
 
@@ -39,6 +47,7 @@
 	let hostPeerName = $state('');
 	let hostPeerMarginalia = $state('');
 	let hostAssetID = $state<number | null>(null);
+	let hostDuelTargetID = $state<number | null>(null);
 	let hostPickerBusy = $state(false);
 	let hostPickerError = $state('');
 
@@ -51,6 +60,7 @@
 			case 'spread_rumor': return hostRumor.trim().length > 0;
 			case 'introduce_peer': return hostPeerName.trim().length > 0 && hostPeerMarginalia.trim().length > 0;
 			case 'take_center_peer': return hostAssetID != null;
+			case 'challenge_duel': return hostDuelTargetID != null;
 			default: return true;
 		}
 	});
@@ -65,6 +75,7 @@
 			hostPeerName = '';
 			hostPeerMarginalia = '';
 			hostAssetID = null;
+			hostDuelTargetID = null;
 			hostPickerError = '';
 		}
 	});
@@ -76,7 +87,12 @@
 			const body: {
 				choice: string; rumor_text?: string; peer_name?: string;
 				peer_marginalia?: string[]; asset_id?: number; draft_id?: string;
+				target_player_id?: number;
 			} = { choice: hostPickedChoice };
+			if (hostPickedChoice === 'challenge_duel') {
+				if (hostDuelTargetID == null) { hostPickerError = 'Pick someone to challenge.'; return; }
+				body.target_player_id = hostDuelTargetID;
+			}
 			if (hostPickedChoice === 'spread_rumor') {
 				if (!hostRumor.trim()) { hostPickerError = 'Enter the rumor.'; return; }
 				body.rumor_text = hostRumor.trim();
@@ -102,6 +118,7 @@
 			hostPeerName = '';
 			hostPeerMarginalia = '';
 			hostAssetID = null;
+			hostDuelTargetID = null;
 			onPlansChanged();
 		} catch (e) {
 			hostPickerError = e instanceof Error ? e.message : 'Could not take the make.';
@@ -116,7 +133,7 @@
 	{#if remaining > 0}
 		<FormField label="Take a Make — pick one">
 			<div class="chip-row">
-				{#each HOST_MAKE_OPTS as o}
+				{#each MAKE_OPTS as o}
 					<button
 						type="button"
 						class="chip-btn"
@@ -124,6 +141,7 @@
 						onclick={() => {
 							hostPickedChoice = hostPickedChoice === o.key ? null : o.key;
 							hostAssetID = null;
+							hostDuelTargetID = null;
 						}}
 					>{o.label}</button>
 				{/each}
@@ -154,6 +172,19 @@
 				selected={hostAssetID}
 				onSelect={(id) => (hostAssetID = id)}
 			/>
+		{:else if hostPickedChoice === 'challenge_duel'}
+			<FormField label="Challenge">
+				<PlayerChips
+					players={duelTargets}
+					isActive={(p) => hostDuelTargetID === p.id}
+					onSelect={(p) => (hostDuelTargetID = hostDuelTargetID === p.id ? null : p.id)}
+				/>
+				{#if hostDuelTargetID != null && fest.acceptDuels.includes(hostDuelTargetID)}
+					<p class="choices-note muted" style="margin:0.25rem 0 0;">
+						This challenge must be accepted.
+					</p>
+				{/if}
+			</FormField>
 		{/if}
 		{#if hostPickerError}<ErrorText message={hostPickerError} variant="panel" />{/if}
 		<button class="action-btn primary"

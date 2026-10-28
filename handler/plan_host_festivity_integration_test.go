@@ -1207,3 +1207,184 @@ func TestHostFestivity_InsistedMarNamesPerformStepsWinner(t *testing.T) {
 	h.assertWaitees("winner owes the host's choice", model.RowStateAwaitFestivityGuestTurn, winnerID)
 	assert.NotContains(t, h.rowState().ActingPlayerIDs, hostID, "the locked-out host is not the one to wait on")
 }
+
+// ── Q9: the host may spend an earned make on a duel ──────────────────────────
+
+// hfHostDuel posts a host-choice challenge_duel as players[actorIdx].
+func hfHostDuel(t *testing.T, h *planLifecycle, planID int64, actorIdx int, targetID int64) (int, map[string]any) {
+	t.Helper()
+	return h.post(actorIdx, hfPath(planID, "host-choice"), map[string]any{
+		"choice": "challenge_duel", "target_player_id": targetID,
+	})
+}
+
+// TestHostFestivity_HostSpendsMakeOnDuel_Accept: the host's earned make buys a
+// challenge, the target accepts, and the nested Propose Duel is the HOST's.
+func TestHostFestivity_HostSpendsMakeOnDuel_Accept(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	target := (hostIdx + 1) % len(h.tg.Players)
+	hostID, targetID := h.tg.Players[hostIdx].ID, h.tg.Players[target].ID
+
+	code, body := hfHostDuel(t, h, plan.ID, hostIdx, targetID)
+	require.Equalf(t, http.StatusCreated, code, "host challenges: %v", body)
+	assert.EqualValues(t, 0, body["makes_remaining"], "the make is spent")
+
+	st := hfChallengeState(t, h, plan.ID)
+	assert.Equal(t, []string{"challenge_duel"}, st.HostMakesTaken, "the host's make is spent on the duel")
+	require.NotNil(t, st.PendingChallenge)
+	assert.Equal(t, hostID, st.PendingChallenge.ChallengerID)
+	assert.Equal(t, targetID, st.PendingChallenge.TargetID)
+	h.assertWaitees("challenge pending", model.RowStateAwaitFestivityChallengeResponse, targetID)
+
+	// All festivity action pauses until the target answers.
+	code, _ = h.post(hostIdx, hfPath(plan.ID, "host-choice"), map[string]any{"choice": "spread_rumor", "rumor_text": "x"})
+	assert.Equal(t, http.StatusConflict, code, "the table is paused on the challenge")
+
+	// Only the target may answer.
+	code, _ = h.post(hostIdx, hfPath(plan.ID, "respond-challenge"), map[string]any{"accept": true})
+	assert.Equal(t, http.StatusForbidden, code)
+	code, body = h.post(target, hfPath(plan.ID, "respond-challenge"), map[string]any{"accept": true})
+	require.Equalf(t, http.StatusCreated, code, "target accepts: %v", body)
+
+	duelID := int64(body["duel_plan_id"].(float64))
+	duel, err := h.q.GetPlanByID(ctx, duelID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanProposeDuel, duel.PlanType)
+	assert.Equal(t, hostID, duel.PreparerID, "the host is the duel's challenger")
+	require.NotNil(t, duel.TargetPlayerID)
+	assert.Equal(t, targetID, *duel.TargetPlayerID)
+	assert.Contains(t, hfAllLogBodies(t, h), "calling out", "the challenge is logged")
+}
+
+// TestHostFestivity_HostDuel_DeclineStillSpendsMake: a declined challenge is
+// spent, exactly as for a rolling guest.
+func TestHostFestivity_HostDuel_DeclineStillSpendsMake(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	target := (hostIdx + 1) % len(h.tg.Players)
+	targetID := h.tg.Players[target].ID
+
+	code, body := hfHostDuel(t, h, plan.ID, hostIdx, targetID)
+	require.Equalf(t, http.StatusCreated, code, "challenge: %v", body)
+	assert.Equal(t, false, body["must_accept"])
+	code, body = h.post(target, hfPath(plan.ID, "respond-challenge"), map[string]any{"accept": false})
+	require.Equalf(t, http.StatusOK, code, "target declines: %v", body)
+
+	st := hfChallengeState(t, h, plan.ID)
+	assert.Nil(t, st.PendingChallenge)
+	assert.Equal(t, []string{"challenge_duel"}, st.HostMakesTaken, "a declined challenge is still spent")
+	code, _ = h.post(hostIdx, hfPath(plan.ID, "host-choice"), map[string]any{"choice": "spread_rumor", "rumor_text": "x"})
+	assert.Equal(t, http.StatusConflict, code, "no makes left after the spent challenge")
+}
+
+// TestHostFestivity_HostDuel_MustAcceptCannotDecline: a target who took the
+// accept_duels mar cannot wave the host's challenge off.
+func TestHostFestivity_HostDuel_MustAcceptCannotDecline(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	target := (hostIdx + 1) % len(h.tg.Players)
+	targetID := h.tg.Players[target].ID
+
+	reloaded, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(reloaded.ResolutionData)
+	rd.EnsureFestivity().AcceptDuels = []int64{targetID}
+	require.NoError(t, saveResolutionData(ctx, h.q, plan.ID, rd))
+
+	code, body := hfHostDuel(t, h, plan.ID, hostIdx, targetID)
+	require.Equalf(t, http.StatusCreated, code, "challenge: %v", body)
+	assert.Equal(t, true, body["must_accept"])
+	code, body = h.post(target, hfPath(plan.ID, "respond-challenge"), map[string]any{"accept": false})
+	require.Equalf(t, http.StatusConflict, code, "the accept_duels mar still binds: %v", body)
+}
+
+// TestHostFestivity_HostDuel_Guards: bad targets and a missing make don't spend
+// the make, and a non-host can't spend one.
+func TestHostFestivity_HostDuel_Guards(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	hostID := h.tg.Players[hostIdx].ID
+
+	code, _ := hfHostDuel(t, h, plan.ID, hostIdx, 0)
+	assert.Equal(t, http.StatusBadRequest, code, "a target is required")
+	code, _ = hfHostDuel(t, h, plan.ID, hostIdx, hostID)
+	assert.Equal(t, http.StatusBadRequest, code, "cannot duel yourself")
+	code, _ = hfHostDuel(t, h, plan.ID, hostIdx, 987654321)
+	assert.Equal(t, http.StatusBadRequest, code, "target must be at the table")
+	code, _ = hfHostDuel(t, h, plan.ID, g1, hostID)
+	assert.Equal(t, http.StatusForbidden, code, "a guest cannot spend the host's make")
+	assert.Empty(t, hfChallengeState(t, h, plan.ID).HostMakesTaken, "none of the refusals spent the make")
+}
+
+// TestHostFestivity_HostDuel_BlockedMidRoll: the one-roll-at-a-time lock holds
+// for the host too. A guest mid roll-and-choice blocks the host's challenge, and
+// nothing is spent.
+func TestHostFestivity_HostDuel_BlockedMidRoll(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+
+	hfStartRoll(t, h, plan.ID, g1) // g1 is mid roll-and-choice
+	code, body := hfHostDuel(t, h, plan.ID, hostIdx, h.tg.Players[g2].ID)
+	require.Equalf(t, http.StatusConflict, code, "host challenge while g1 rolls: %v", body)
+	st := hfChallengeState(t, h, plan.ID)
+	assert.Empty(t, st.HostMakesTaken, "a blocked challenge does not spend the make")
+	assert.Nil(t, st.PendingChallenge)
+}
+
+// TestHostFestivity_HostDuel_WinnerChoosesTarget: a perform_steps winner spends
+// the host's make on a duel; the HOST remains the challenger.
+func TestHostFestivity_HostDuel_WinnerChoosesTarget(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	winnerIdx := (hostIdx + 1) % 3
+	target := (hostIdx + 2) % 3
+	hostID := h.tg.Players[hostIdx].ID
+	h.seedMadeDemand(winnerIdx, plan.ID, gamepkg.DemandOptionWinners{
+		gamepkg.DemandOptionPerformSteps: h.tg.Players[winnerIdx].ID,
+	})
+
+	code, body := hfHostDuel(t, h, plan.ID, hostIdx, h.tg.Players[target].ID)
+	require.Equalf(t, http.StatusForbidden, code, "the locked-out host: %v", body)
+	code, body = hfHostDuel(t, h, plan.ID, winnerIdx, h.tg.Players[target].ID)
+	require.Equalf(t, http.StatusCreated, code, "winner challenges for the host: %v", body)
+	st := hfChallengeState(t, h, plan.ID)
+	require.NotNil(t, st.PendingChallenge)
+	assert.Equal(t, hostID, st.PendingChallenge.ChallengerID, "the host, not the winner, is the challenger")
+}
+
+// TestHostFestivity_SecondChallengeAfterDuelResolves: once a nested duel is
+// resolved it must stop blocking further challenges. PendingDuelPlanID was only
+// cleared by a guest rolling, so after the first duel the next challenge 409'd
+// ("a nested duel is already in progress") for good.
+func TestHostFestivity_SecondChallengeAfterDuelResolves(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+
+	// g2 opts out so the host has two makes: hosting + that.
+	code, body := h.post(g2, hfPath(plan.ID, "guest-roll"), map[string]any{"action": "opt_out"})
+	require.Equalf(t, http.StatusOK, code, "opt out: %v", body)
+
+	code, body = hfHostDuel(t, h, plan.ID, hostIdx, h.tg.Players[g1].ID)
+	require.Equalf(t, http.StatusCreated, code, "first challenge: %v", body)
+	code, body = h.post(g1, hfPath(plan.ID, "respond-challenge"), map[string]any{"accept": true})
+	require.Equalf(t, http.StatusCreated, code, "accept: %v", body)
+	duelID := int64(body["duel_plan_id"].(float64))
+
+	// While the duel is live, a second challenge is refused and spends nothing.
+	code, _ = hfHostDuel(t, h, plan.ID, hostIdx, h.tg.Players[g2].ID)
+	require.Equal(t, http.StatusConflict, code, "duel still in progress")
+	assert.Len(t, hfChallengeState(t, h, plan.ID).HostMakesTaken, 1)
+
+	require.NoError(t, h.q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{ID: duelID, Status: model.PlanResolved}))
+	code, body = hfHostDuel(t, h, plan.ID, hostIdx, h.tg.Players[g2].ID)
+	require.Equalf(t, http.StatusCreated, code, "second challenge once the first duel is over: %v", body)
+}
