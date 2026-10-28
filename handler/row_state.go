@@ -431,11 +431,15 @@ func planResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pla
 	if !ok {
 		return model.RowState{}, false
 	}
-	rw, ok := h.(ResolvingWaitees)
-	if !ok {
-		return model.RowState{}, false
+	// A plan paused for a re-aim waits on its preparer and nobody else — see
+	// reaimWaitees for why the plan's own answer is not consulted.
+	if rs, owed := reaimWaitees(plan); owed {
+		return rs, true
 	}
-	return rw.ResolvingWaitees(ctx, q, plan)
+	if rw, isRW := h.(ResolvingWaitees); isRW {
+		return rw.ResolvingWaitees(ctx, q, plan)
+	}
+	return model.RowState{}, false
 }
 
 // firstKey returns an arbitrary key from m. We don't care which war we

@@ -129,6 +129,10 @@ func newPlanLifecycleOn(t *testing.T, pool *pgxpool.Pool, n int) *planLifecycle 
 	r.Post("/api/reveals/{revealId}/submit", SubmitReveal(store, manager))
 	r.Get("/api/reveals/{revealId}", GetReveal(store))
 	r.Route("/api/plans/{planId}", func(rr chi.Router) {
+		// Mirrors cmd/server/main.go: the re-aim pause guard and its two routes.
+		rr.Use(ReAimOwedGuard(store))
+		rr.Get("/reaim", GetReAim(store))
+		rr.Post("/reaim", ReAim(store, manager))
 		rr.Get("/", GetPlan(store))
 		rr.Post("/resolve", ResolvePlan(store, manager))
 		rr.Post("/make-choice", MakeChoice(store, manager))

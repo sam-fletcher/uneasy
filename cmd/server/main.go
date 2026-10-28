@@ -491,7 +491,12 @@ func setupRouter(
 			r.Get("/tables/{id}/plan-eligibility", handler.PlanEligibility(store))
 			r.Post("/tables/{id}/prepare-plan", handler.PreparePlan(store, manager))
 			r.Route("/plans/{planId}", func(r chi.Router) {
+				// A plan paused for a re-aim (its prepare-time target is gone) refuses
+				// every mutating route except the re-aim itself — see plan_reaim.go.
+				r.Use(handler.ReAimOwedGuard(store))
 				r.Get("/", handler.GetPlan(store))
+				r.Get("/reaim", handler.GetReAim(store))
+				r.Post("/reaim", handler.ReAim(store, manager))
 				r.Get("/duel-state", handler.GetDuelState(store))
 				r.Get("/war-state", handler.GetWarState(store))
 				r.Post("/resolve", handler.ResolvePlan(store, manager))
@@ -512,6 +517,7 @@ func setupRouter(
 					"complete":    coreRouteOwner,
 					"make-choice": coreRouteOwner,
 					"resolve":     coreRouteOwner,
+					"reaim":       coreRouteOwner,
 				}
 				for pt, h := range handler.AllHandlers() {
 					for route, fn := range h.ExtraRoutes(deps) {

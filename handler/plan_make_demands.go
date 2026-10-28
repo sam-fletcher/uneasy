@@ -239,6 +239,12 @@ func (mdHandler) OnPrepare(_ context.Context, deps *PlanDeps, plan *dbgen.Plan) 
 }
 
 func (mdHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
+	// A demand is a claim on another plan's resolution; if that plan is no longer
+	// waiting to resolve there is nothing to claim. Re-aim before rolling — the
+	// roll's difficulty is built from the target (plan_reaim.go).
+	if held, err := reaimHoldAtResolve(ctx, deps, plan, mdHandler{}); held || err != nil {
+		return nil, err
+	}
 	resData := loadResolutionData(plan.ResolutionData)
 	diff, err := (mdHandler{}).ComputeDifficulty(ctx, deps.Q, plan, &resData)
 	if err != nil {
@@ -537,4 +543,92 @@ func demandDraftSubPhase(
 		actor = second
 	}
 	return model.RowState{Kind: model.RowStateAwaitDemandDraftPick, ActingPlayerIDs: []int64{actor}}, true
+}
+
+// ── Re-aim (TargetReAimer) ───────────────────────────────────────────────────
+
+// StaleAim: a demand slots in beside its target and takes the four drafted
+// options over that plan's resolution, so it needs a target that has NOT yet
+// resolved. ValidatePreparation already refuses a target that is resolved,
+// cancelled or already resolving; the same test applied now says the target is
+// still 'pending'. (The demand itself is resolving, so anything else on its row
+// is either waiting its turn behind it or already past it.)
+//
+// The target plan's OWN aim — its target asset or player, the thing Make Demands'
+// keep-or-change-target option edits — is not this plan's reference, and is not
+// checked here: the target plan checks it itself when it comes up to resolve,
+// after this demand has drafted, which is also when the keep-or-change winner has
+// had their say.
+func (mdHandler) StaleAim(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (AimLoss, error) {
+	if plan.TargetedPlanID == nil {
+		return AimLoss{}, nil
+	}
+	target, err := q.GetPlanByID(ctx, *plan.TargetedPlanID)
+	if err != nil {
+		if !isNoRows(err) {
+			return AimLoss{}, err
+		}
+		const gone = "The plan this demand was made against no longer exists."
+		return AimLoss{Plain: gone, Log: gone}, nil
+	}
+	if target.Status == model.PlanPending {
+		return AimLoss{}, nil
+	}
+	return AimLoss{
+		Plain: fmt.Sprintf("%s's %s is no longer waiting to resolve.",
+			playerPlainName(ctx, q, target.PreparerID), planLabel(target.PlanType)),
+		Log: fmt.Sprintf("%s's %s is no longer waiting to resolve.",
+			playerDisplayName(ctx, q, target.PreparerID), planLabel(target.PlanType)),
+	}, nil
+}
+
+// ReAimOptions: any plan ValidatePreparation would accept as a demand target AND
+// that is still pending on this demand's own row. The row restriction is the one
+// place this is stricter than preparation: the demand is already resolving here,
+// so aiming it at a plan on a later row would mean carrying a half-resolved
+// demand across rows. A plan still pending on this row resolves after the demand,
+// which is exactly the slot a demand is meant to occupy.
+func (mdHandler) ReAimOptions(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) ([]ReAimOption, error) {
+	if plan.RowNumber == nil {
+		return nil, nil
+	}
+	game, err := q.GetGameByID(ctx, plan.GameID)
+	if err != nil {
+		return nil, err
+	}
+	demander, err := q.GetPlayerByID(ctx, plan.PreparerID)
+	if err != nil {
+		return nil, err
+	}
+	pending, err := q.ListPendingPlansByRow(ctx, dbgen.ListPendingPlansByRowParams{
+		GameID: plan.GameID, RowNumber: plan.RowNumber,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []ReAimOption
+	for i := range pending {
+		cand := pending[i]
+		if cand.ID == plan.ID {
+			continue
+		}
+		vc := &ValidationContext{Q: q, Game: &game, Player: &demander, TargetPlanID: new(cand.ID)}
+		if _, msg := (mdHandler{}).ValidatePreparation(ctx, vc); msg != "" {
+			continue
+		}
+		out = append(out, ReAimOption{TargetPlanID: new(cand.ID)})
+	}
+	return out, nil
+}
+
+func (mdHandler) DescribeAim(ctx context.Context, q *dbgen.Queries, _ *dbgen.Plan, opt ReAimOption) string {
+	if opt.TargetPlanID == nil {
+		return "at another plan"
+	}
+	target, err := q.GetPlanByID(ctx, *opt.TargetPlanID)
+	if err != nil {
+		return "at another plan"
+	}
+	return fmt.Sprintf("at %s's %s",
+		playerDisplayName(ctx, q, target.PreparerID), planLabel(target.PlanType))
 }

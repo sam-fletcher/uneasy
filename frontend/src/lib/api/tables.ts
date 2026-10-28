@@ -36,6 +36,7 @@ export type RowStateKind =
 	| 'await_demand_draft_pick'
 	| 'await_demand_leverage'
 	| 'await_demand_retarget'
+	| 'await_plan_reaim'
 	| 'await_festivity_guest_turn'
 	| 'await_festivity_challenge_response'
 	| 'await_duel_staking'
