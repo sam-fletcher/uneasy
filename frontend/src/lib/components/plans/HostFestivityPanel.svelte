@@ -99,7 +99,15 @@
 
 	const meKey = $derived(currentPlayerID == null ? '' : String(currentPlayerID));
 	const amHost = $derived(plan != null && currentPlayerID === plan.preparer_id);
-
+	// A Make Demands perform_steps winner drives the host's resolution steps —
+	// taking an earned make, answering an insisted mar — in the host's stead and
+	// the host is locked out of them (the server's requireResolutionActor). The
+	// event itself is still wound down by the host. Mirrors the server: with a
+	// winner it is ONLY the winner, never the host as well.
+	let performStepsWinnerID = $state<number | null>(null);
+	const amStepActor = $derived(
+		performStepsWinnerID != null ? currentPlayerID === performStepsWinnerID : amHost,
+	);
 	const iAmGuest = $derived(currentPlayerID != null && fest.guests.includes(currentPlayerID));
 	const myOutcome = $derived(meKey ? fest.outcomes[meKey] ?? null : null);
 	const myRollID = $derived(meKey ? fest.guestRollIDs[meKey] ?? null : null);
@@ -201,7 +209,8 @@
 
 {:else if plan}
 	<ResolvingCard {plan} {players}>
-		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			bind:performStepsWinnerID />
 
 		{#if isResolving}
 			<p class="choices-note">
@@ -234,11 +243,11 @@
 			/>
 		{/if}
 
-		{#if isResolving && amHost && hostMakesLeft > 0}
+		{#if isResolving && amStepActor && hostMakesLeft > 0 && !fest.pendingChallenge}
 			<HostChoosing {plan} {fest} {players} {assets} {onPlansChanged} />
 		{/if}
 
-		{#if isResolving && amHost && !fest.pendingChallenge
+		{#if isResolving && amStepActor && !fest.pendingChallenge
 			&& fest.unchosenHostMars.length + fest.pendingHostMars.length > 0}
 			<HostPendingMar
 				{plan} {players} {assets}
