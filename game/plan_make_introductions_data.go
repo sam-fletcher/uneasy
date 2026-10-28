@@ -59,8 +59,9 @@ type MIArrival struct {
 //   - "other_retinue"  → the peer joins another player's retinue, and THEY write
 //     the marginalia (D6 — the owner describes their own assets); Done flips
 //     once they have.
-//   - "broken_arrival" → another player (AuthorPlayerID) writes the marginalia;
-//     Done flips once they've written it.
+//   - "broken_arrival" → the peer arrives but isn't who the preparer thought
+//     (rulebook p.52 — a deception, nothing is broken); another player
+//     (AuthorPlayerID) writes the marginalia, and Done flips once they have.
 //   - "delayed"        → arrival rescheduled d6 rows ahead (synthetic plan), or
 //     the draft is dropped entirely when that row runs past the record.
 //   - "broken_journey" → the preparer writes both the peer's marginalia and the
@@ -125,6 +126,17 @@ func (d *MakeIntroductionsResolutionData) MarOutcomeFor(draftID string) *MIMarOu
 		}
 	}
 	return nil
+}
+
+// MarOutcomeTaken reports whether any peer already has this mar outcome. The
+// book gives each new peer a different one of the four.
+func (d *MakeIntroductionsResolutionData) MarOutcomeTaken(outcome string) bool {
+	for _, o := range d.MarOutcomes {
+		if o.Outcome == outcome {
+			return true
+		}
+	}
+	return false
 }
 
 // PendingArrivalAuthors names every player who still owes a mar peer's

@@ -173,6 +173,14 @@
 	color: var(--color-text);
 }
 
+/* An option already handed out (Make Introductions: one outcome per peer). Stays
+   tappable — aria-disabled, not disabled — so a tap can say why. */
+.chip-btn.used {
+	opacity: 0.4;
+	text-decoration: line-through;
+	cursor: not-allowed;
+}
+
 .chip-btn:focus-visible {
 	outline: 2px solid var(--color-accent);
 	outline-offset: 1px;

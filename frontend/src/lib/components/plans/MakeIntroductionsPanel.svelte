@@ -40,7 +40,7 @@
 
 	const MI_MAR_OPTIONS = [
 		{ key: 'other_retinue',  label: 'Another retinue' },
-		{ key: 'broken_arrival', label: 'Arrives broken' },
+		{ key: 'broken_arrival', label: 'Not who you thought' },
 		{ key: 'delayed',        label: 'Delayed' },
 		{ key: 'broken_journey', label: 'Broken journey' },
 	];
@@ -336,7 +336,28 @@
 		}),
 	);
 
-	let marOutcome = $state('other_retinue');
+	// Each peer gets a different outcome (rulebook p.52), so the ones already
+	// handed out are greyed. The chip the preparer tapped is only honoured while
+	// it is still free, which also moves the selection off a just-used default.
+	const usedOutcomes = $derived(new Set<string>(marOutcomes.map(o => o.outcome)));
+	let marPicked = $state('other_retinue');
+	const marOutcome = $derived(
+		usedOutcomes.has(marPicked)
+			? (MI_MAR_OPTIONS.find(o => !usedOutcomes.has(o.key))?.key ?? marPicked)
+			: marPicked,
+	);
+	// Why the last tapped, already-used chip is unavailable (aria-disabled chips
+	// stay tappable so the reason shows on touch — style guide).
+	let usedNotice = $state('');
+	function pickOutcome(key: string) {
+		if (usedOutcomes.has(key)) {
+			const label = MI_MAR_OPTIONS.find(o => o.key === key)?.label ?? key;
+			usedNotice = `${label} is already taken by another peer — each new peer gets a different outcome.`;
+			return;
+		}
+		usedNotice = '';
+		marPicked = key;
+	}
 	let marTargetPlayer = $state<number | null>(null);
 	let marText = $state('');
 	let marJourneyText = $state('');
@@ -362,7 +383,7 @@
 				params.journey_text = marJourneyText.trim();
 			}
 			await introductionsMar(plan.id, params);
-			marOutcome = 'other_retinue'; marTargetPlayer = null;
+			marPicked = 'other_retinue'; usedNotice = ''; marTargetPlayer = null;
 			marText = ''; marJourneyText = '';
 			onPlansChanged();
 		} catch (e) {
@@ -596,7 +617,8 @@
 									<em>{d.name}</em> is joining your retinue. Write the marginalia
 									that defines them.
 								{:else}
-									Write the marginalia that defines <em>{d.name}</em>.
+									<em>{d.name}</em> arrives, but isn't who {playerName(players, plan.preparer_id)}
+									thought they were. Write the marginalia that says who they really are.
 								{/if}
 							</p>
 							<textarea rows={2} class="form-textarea" bind:value={authorText} maxlength={TEXT_LIMITS.MARGINALIA}
@@ -617,12 +639,18 @@
 							</p>
 							<div class="chip-row">
 								{#each MI_MAR_OPTIONS as opt (opt.key)}
+									{@const used = usedOutcomes.has(opt.key)}
 									<button type="button" class="chip-btn" class:active={marOutcome === opt.key}
-										onclick={() => (marOutcome = opt.key)}>{opt.label}</button>
+										class:used
+										aria-disabled={used ? true : undefined}
+										onclick={() => pickOutcome(opt.key)}>{opt.label}</button>
 								{/each}
 							</div>
+							{#if usedNotice}
+								<p class="form-hint" role="status">{usedNotice}</p>
+							{/if}
 							{#if marOutcome === 'other_retinue' || marOutcome === 'broken_arrival'}
-								<FormField label={marOutcome === 'other_retinue' ? 'Joins which retinue' : 'Who defines them'}>
+								<FormField label={marOutcome === 'other_retinue' ? 'Joins which retinue' : 'Who writes their marginalia'}>
 									<PlayerChips
 										players={playersExcept(players, plan.preparer_id)}
 										isActive={(p) => marTargetPlayer === p.id}
@@ -632,7 +660,7 @@
 								<p class="form-hint">
 									{marOutcome === 'other_retinue'
 										? 'They write the marginalia, and the newcomer joins them once they have.'
-										: 'They write the marginalia; the newcomer arrives once it is written.'}
+										: `They write the marginalia, so the newcomer arrives but isn't who ${playerName(players, plan.preparer_id)} thought they were.`}
 								</p>
 							{:else if marOutcome === 'delayed'}
 								<p class="form-hint">
