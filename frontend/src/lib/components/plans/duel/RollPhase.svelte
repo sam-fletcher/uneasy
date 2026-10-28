@@ -32,6 +32,9 @@
 	} = $props();
 
 	const accumulated = $derived(computeAccumulated(bouts, plan.preparer_id));
+	// This phase only exists once the bouts are over, so anything still set aside
+	// can no longer be won.
+	const lostDice = $derived(accumulated.pending.length);
 
 	const takeCount = $derived.by(() => {
 		if (!activeRoll || rollOutcome == null) return 0;
@@ -100,6 +103,19 @@
 		{playerName(players, plan.target_player_id)}'s {accumulated.targ.length}
 		{accumulated.targ.length === 1 ? 'die' : 'dice'} form interference.
 	</p>
+	{#if lostDice > 0}
+		<!-- Tied dice wait for the next bout's winner (p.60); a tie on the final
+		     bout has no next bout, so they're won by nobody. Say so, or the short
+		     pool looks like a bug. -->
+		<p class="choices-note">
+			The final bout was a tie, so the {lostDice} {lostDice === 1 ? 'die' : 'dice'} set aside
+			{lostDice === 1 ? 'was' : 'were'} won by nobody and
+			{lostDice === 1 ? 'drops' : 'drop'} out of the roll.
+			{#if accumulated.prep.length + accumulated.targ.length === 0}
+				Neither side won a die, so the roll has none to count.
+			{/if}
+		</p>
+	{/if}
 	{#if rollActive}
 		<p class="choices-note muted">Dice roll in progress — resolve above.</p>
 	{:else if rollOutcome != null && !choicesApplied}

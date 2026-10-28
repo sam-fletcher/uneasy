@@ -805,6 +805,59 @@ func TestProposeDuelHTTP_BoutDeclarationIsLogged(t *testing.T) {
 	assert.NotContains(t, line, "rolled", "the die is not revealed until the responder answers")
 }
 
+// TestProposeDuelHTTP_FinalBoutTie_SaysTheDiceAreLost: p.60 sends tied dice to
+// the NEXT bout's winner, so a tie on the final bout wins nobody the dice and a
+// drawn duel rolls none. The behaviour was right; the copy wasn't — the log said
+// "The stakes rise" with no bout left, and nothing explained the short pool
+// (rules Q10). A mid-duel tie keeps the old line, since a bout does follow.
+func TestProposeDuelHTTP_FinalBoutTie_SaysTheDiceAreLost(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	planID, prepIdx := seedDuelToBouts(t, h, targIdx,
+		[]int64{h.seedPeer(prepIdx0, "Prep one"), h.seedPeer(prepIdx0, "Prep two")},
+		[]int64{h.seedPeer(targIdx, "Targ one"), h.seedPeer(targIdx, "Targ two")})
+	pinDuelDice(t, h, planID, prepIdx, targIdx, 4, 4) // every bout is a tie
+
+	playBout := func() {
+		init := duelInitiative(t, h, planID)
+		initIdx := idxOfPlayer(t, h, init)
+		respIdx := prepIdx
+		if initIdx == prepIdx {
+			respIdx = targIdx
+		}
+		code, body := h.post(initIdx, duelRoute(planID, "bout-declare"), map[string]any{
+			"stake_id":    firstUnresolvedStakeID(t, h, planID, h.tg.Players[initIdx].ID),
+			"declaration": "high",
+		})
+		require.Equalf(t, http.StatusOK, code, "bout-declare: %v", body)
+		code, body = h.post(respIdx, duelRoute(planID, "bout-respond"), map[string]any{
+			"stake_id": firstUnresolvedStakeID(t, h, planID, h.tg.Players[respIdx].ID),
+		})
+		require.Equalf(t, http.StatusOK, code, "bout-respond: %v", body)
+	}
+
+	playBout() // bout 1 of 2 — another follows
+	line, ok := duelPostWith(duelSystemPosts(t, h.q, h.tg.Game.ID), "Bout 1: ")
+	require.True(t, ok)
+	assert.Contains(t, line, "The stakes rise")
+
+	playBout() // bout 2 of 2 — the last
+	posts := duelSystemPosts(t, h.q, h.tg.Game.ID)
+	line, ok = duelPostWith(posts, "Bout 2: ")
+	require.True(t, ok)
+	assert.Contains(t, line, "even match")
+	assert.NotContains(t, line, "The stakes rise", "no bout follows the final one")
+	assert.Contains(t, line, "nobody wins the dice")
+
+	settled, ok := duelPostWith(posts, "The bouts are settled")
+	require.True(t, ok)
+	assert.Contains(t, settled, "carries 0 dice")
+	assert.Contains(t, settled, "The 4 dice set aside by the final tie were won by nobody",
+		"both bouts tied, so all four dice drop out")
+}
+
 // TestProposeDuelHTTP_SubsetClaimOnAMarStillAsksTheTarget: the counterpart to the
 // forced claim. When the mar budget (difficulty 1) is smaller than the
 // preparer's pile (2), the target genuinely chooses, so nothing auto-applies, no
