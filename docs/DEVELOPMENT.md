@@ -382,7 +382,7 @@ wants a different prepare payload. `plandriver` does it one way for all
 twelve, so two people looking at the same plan see the same board.
 
 ```bash
-go run ./cmd/plandriver setup spread_propaganda -force mar
+go run ./cmd/plandriver setup make_demands -force mar
 go run ./cmd/plandriver setup chronicle_histories
 go run ./cmd/plandriver force 301 mar     # once a pre-roll plan has a roll
 go run ./cmd/plandriver cleanup 301
@@ -392,10 +392,10 @@ It seeds a three-player main-event game, logs everyone in, prepares the plan
 with the fields that plan actually validates, fast-forwards the record to its
 row, and prints the table URL.
 
-Three plans (Spread Propaganda, Spread Rumors, Make Demands) create their
-roll the moment resolution opens, so `-force` works directly. The other nine
-open a pre-roll step first and have no dice yet: drive that step — through
-the UI, or over the plan's own extra routes — then run `force`. Make War and
+Only Make Demands creates its roll the moment resolution opens, so `-force`
+works directly. The other eleven open a pre-roll step first and have no dice
+yet: drive that step — through the UI, or over the plan's own extra routes
+(`sp-cast-roll`, `sr-cast-roll`, `seek-cast-roll`, …) — then run `force`. Make War and
 Clandestinely Liaise have no row at all until their simultaneous delay reveal
 is answered. The tool says which kind you got.
 

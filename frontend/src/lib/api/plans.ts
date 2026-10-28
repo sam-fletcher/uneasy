@@ -270,6 +270,47 @@ export function castSeekAnswersRoll(
 	});
 }
 
+/**
+ * Spread Propaganda — the pre-roll: summarise the message and how it is being
+ * spread. The server posts the text for the table and only then opens the roll.
+ */
+export function castSpreadPropagandaRoll(
+	planID: number,
+	narration: string,
+): Promise<{ plan_id: number; roll?: DiceRoll }> {
+	return apiFetch(`/plans/${planID}/sp-cast-roll`, {
+		method: 'POST',
+		body: JSON.stringify({ narration }),
+	});
+}
+
+/**
+ * Spread Rumors — the pre-roll: state the rumor and explain how it is spreading.
+ * The stated rumor is the committed one (the prep note was a draft), and stating
+ * it is what makes a secret rumor public. Posted for the table before the roll opens.
+ */
+export function castSpreadRumorsRoll(
+	planID: number,
+	rumor: string,
+	how: string,
+): Promise<{ plan_id: number; roll?: DiceRoll }> {
+	return apiFetch(`/plans/${planID}/sr-cast-roll`, {
+		method: 'POST',
+		body: JSON.stringify({ rumor, how }),
+	});
+}
+
+/**
+ * Spread Rumors mar — the target asset's owner describes the rumor that spreads
+ * about the preparer instead. Gates the option step server-side.
+ */
+export function writeCounterRumor(planID: number, text: string): Promise<PlanEcho> {
+	return apiFetch(`/plans/${planID}/sr-counter-rumor`, {
+		method: 'POST',
+		body: JSON.stringify({ text }),
+	});
+}
+
 /** Seek Answers — break a marginalia on a target resource asset. */
 export function breakResource(planID: number, assetID: number, marginaliaID: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-resource`, {
@@ -355,10 +396,10 @@ export function forfeitSpreadRumorsStep(
  * and `assetID` may be omitted. On mar (target-asset owner) `assetID` is
  * required and must be one of the preparer's assets.
  */
-export function breakTarget(planID: number, marginaliaID: number, assetID?: number): Promise<PlanEcho> {
+export function breakTarget(planID: number, marginaliaID: number): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/break-target`, {
 		method: 'POST',
-		body: JSON.stringify({ marginalia_id: marginaliaID, asset_id: assetID ?? null }),
+		body: JSON.stringify({ marginalia_id: marginaliaID }),
 	});
 }
 
@@ -549,12 +590,13 @@ export function callRoll(planID: number): Promise<{ plan_id: number; roll?: Dice
  */
 export function createArtifact(
 	planID: number,
+	narration: string,
 	name: string,
 	marginalia: string[]
 ): Promise<{ plan_id: number; asset: Asset }> {
 	return apiFetch(`/plans/${planID}/create-artifact`, {
 		method: 'POST',
-		body: JSON.stringify({ name, marginalia }),
+		body: JSON.stringify({ narration, name, marginalia }),
 	});
 }
 

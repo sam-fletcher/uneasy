@@ -14,6 +14,22 @@ export interface TakeConsentRequest {
 }
 
 export interface SpreadRumorsResolutionData {
+	/** The pre-roll step is over (the rumor stated, the roll opened). Plans that
+	 *  rolled before the step existed carry no flag — the panel also treats "a roll
+	 *  exists" as done. */
+	pre_roll_done?: boolean;
+	/** The rumor as STATED in the pre-roll — the committed one; the prep note was a
+	 *  draft. Public: stating it is what makes a secret rumor public. */
+	rumor_text?: string;
+	/** How the preparer said it is spreading. */
+	how_spread?: string;
+	/** The counter-rumor the mar actor wrote (mar only). Its presence unlocks the
+	 *  option step; it becomes the Rumors-sheet row. */
+	counter_rumor_text?: string;
+	counter_rumor_author_id?: number;
+	/** The preparer's main character as pinned when the mar's options were applied:
+	 *  the counter-rumor's subject, and where its break and leverage land. */
+	counter_target_asset_id?: number | null;
 	source_hidden?: boolean;
 	rumor_id?: number | null;
 	/**

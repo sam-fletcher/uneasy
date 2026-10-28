@@ -11,12 +11,10 @@ var allPlans = []string{
 }
 
 // rollsImmediately holds the plans that create their dice roll the moment
-// resolution opens. The other nine park in a pre-roll step first and have no
+// resolution opens. The other eleven park in a pre-roll step first and have no
 // roll to force yet — their pre-roll has to be driven through the UI.
 var rollsImmediately = map[string]bool{
-	"spread_propaganda": true,
-	"spread_rumors":     true,
-	"make_demands":      true,
+	"make_demands": true,
 }
 
 // prepNotes gives each plan a plausible preparation note, so a tester is

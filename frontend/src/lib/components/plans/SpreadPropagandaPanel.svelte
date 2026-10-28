@@ -1,12 +1,14 @@
 <!-- SpreadPropagandaPanel.svelte
   Prep + resolve UI for the Spread Propaganda plan.
-  Resolve flow: dice roll → make/mar choices → complete.
+  Resolve flow: pre-roll narration → dice roll → make/mar choices → complete.
+  The make's artifact step also carries a short narration of the changes society
+  undergoes (book p.58) — one step, no extra gate.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
-		preparePlan, makeChoice, completePlan, getRoll,
+		preparePlan, makeChoice, completePlan, getRoll, castSpreadPropagandaRoll,
 		type Plan, type DiceRollDie,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -16,6 +18,7 @@
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
+	import PreRollStep from './shared/PreRollStep.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName,
 		breakableAssets, breaksAvailable, playersExcept,
@@ -91,6 +94,34 @@
 		}, 150);
 	});
 	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
+
+	const spData = $derived(plan ? (parseResolutionData(plan).spread_propaganda ?? {}) : {});
+
+	// ── Pre-roll: summarise the message, say how it is spreading ─────────────
+	// OnResolve parks the plan with no roll; the preparer's narration is posted for
+	// the table (who read it to decide whether to help or interfere) and only then
+	// does the roll open. Plans that rolled before the step existed carry no flag, so
+	// "a roll exists for this plan" counts as done too — as does a counter-propaganda
+	// plan, which is born rolling.
+	const rollForThisPlan = $derived(plan != null && activeRoll != null && activeRoll.plan_id === plan.id);
+	const hasCommittedChoices = $derived(
+		plan != null && (parseResolutionData(plan).make_mar_choices ?? []).length > 0,
+	);
+	const preRollDone = $derived(
+		(spData.pre_roll_done ?? false) || rollForThisPlan || hasCommittedChoices,
+	);
+	let preRollBusy = $state(false);
+	async function submitPreRoll(p: Plan, values: Record<string, string>) {
+		if (preRollBusy) return;
+		preRollBusy = true; resError = '';
+		try {
+			const res = await castSpreadPropagandaRoll(p.id, (values.narration ?? '').trim());
+			if (res.roll) ctx.onRollCreated(res.roll);
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not open the roll.';
+		} finally { preRollBusy = false; }
+	}
 
 	// Resolve state — make offers a single required option (create_artifact),
 	// so it keeps the plain toggle picker. Mar is repeatable ("Choose options
@@ -232,7 +263,6 @@
 	// peer/marginalia to hand over or break once per pick. "Owed" comes from
 	// how many times the option was picked (server-authoritative, mirrors
 	// pickedChoiceCount on the backend) versus how many have been performed.
-	const spData = $derived(plan ? (parseResolutionData(plan).spread_propaganda ?? {}) : {});
 	const givePeerPicked = $derived(existingChoices.filter(c => c === 'give_peer').length);
 	const givePeerDone = $derived(spData.give_peer_done ?? 0);
 	const needsGivePeer = $derived(givePeerDone < givePeerPicked);
@@ -307,14 +337,19 @@
 	// creates it under the chosen name in one transaction (no placeholder). It is
 	// required — it gates completion until the artifact exists.
 	const needsArtifactCreation = $derived(amChoiceActor && artifactPending);
+	// The make also asks the player to "describe the changes that come from this":
+	// that narration rides in the same request as the artifact, so there is no
+	// second gate for it (principle 3).
+	let changesText = $state('');
 	let artifactName = $state('');
 	let artifactMarginalia = $state('');
 	let nameBusy = $state(false);
 	async function submitArtifactName(p: Plan) {
-		if (nameBusy || !artifactName.trim() || !artifactMarginalia.trim()) return;
+		if (nameBusy || !changesText.trim() || !artifactName.trim() || !artifactMarginalia.trim()) return;
 		nameBusy = true; resError = '';
 		try {
-			await createArtifact(p.id, artifactName.trim(), [artifactMarginalia.trim()]);
+			await createArtifact(p.id, changesText.trim(), artifactName.trim(), [artifactMarginalia.trim()]);
+			changesText = '';
 			artifactName = '';
 			artifactMarginalia = '';
 			onPlansChanged();
@@ -344,10 +379,39 @@
 	</fieldset>
 
 {:else if plan}
-	<ResolvingCard {plan} {players} error={resError}>
+	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
-		{#if rollActive && !choicesDone}
+		<!-- The message. Before the pre-roll the prep note is only a draft (principle
+		     2) and is labelled so; after it, the stated version replaces it. -->
+		{#if preRollDone && spData.pre_roll_text}
+			<p class="choices-note muted">The message, as stated:</p>
+			<p class="plan-notes">"{spData.pre_roll_text}"</p>
+		{:else if plan.preparation_notes && (preRollDone || !isPreparer)}
+			<p class="choices-note muted">{preRollDone ? 'As prepared:' : 'As prepared — a draft, restated before the roll:'}</p>
+			<p class="plan-notes">"{plan.preparation_notes}"</p>
+		{/if}
+
+		{#if !preRollDone}
+			<PreRollStep
+				title="Spread your message"
+				prompt="Summarize the message you want the public to take from your propaganda and describe again how you've been spreading it."
+				fields={[{
+					key: 'narration',
+					label: 'The message and how it spreads',
+					placeholder: 'What should the public take from this, and how have you been getting it out?',
+					draft: plan.preparation_notes,
+					rows: 4,
+					max: TEXT_LIMITS.LONG_TEXT,
+				}]}
+				canAct={isPreparer}
+				busy={preRollBusy}
+				actorName={playerName(players, plan.preparer_id)}
+				waitingVerb="is about to say how they're spreading their message"
+				onSubmit={(v) => submitPreRoll(plan, v)}
+			/>
+
+		{:else if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
 		{:else if rollOutcome === 'make' && !choicesDone && amChoiceActor}
@@ -400,7 +464,17 @@
 
 				{#if needsArtifactCreation}
 					<div class="plan-form">
-						<p class="choices-header">Author the artifact your propaganda created</p>
+						<p class="choices-header">Your message sets society ablaze</p>
+						<p class="choices-note">
+							Describe the changes that come from this, and create an artifact that
+							embodies the shift in society.
+						</p>
+						<label class="form-label">
+							<span class="form-label-text">The changes society undergoes</span>
+							<textarea rows={3} bind:value={changesText} class="form-textarea"
+								maxlength={TEXT_LIMITS.LONG_TEXT} disabled={nameBusy}
+								placeholder="How is the realm different now?"></textarea>
+						</label>
 						<AssetCreationForm
 							{gameID}
 							assetType="artifact"
@@ -409,7 +483,7 @@
 							disabled={nameBusy}
 						/>
 						<button class="action-btn primary" onclick={() => submitArtifactName(plan)}
-							disabled={nameBusy || !artifactName.trim() || !artifactMarginalia.trim()}>
+							disabled={nameBusy || !changesText.trim() || !artifactName.trim() || !artifactMarginalia.trim()}>
 							{nameBusy ? '…' : 'Create artifact'}
 						</button>
 					</div>

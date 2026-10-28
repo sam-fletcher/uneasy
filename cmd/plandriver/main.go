@@ -5,12 +5,12 @@
 // wants a different prepare payload. Done twelve different ways it stops being
 // comparable, which is the whole point of an audit. This does it one way.
 //
-//	go run ./cmd/plandriver setup spread_propaganda -force mar
+//	go run ./cmd/plandriver setup make_demands -force mar
 //	go run ./cmd/plandriver setup chronicle_histories
 //	go run ./cmd/plandriver force 301 mar
 //	go run ./cmd/plandriver cleanup 301
 //
-// Nine of the twelve plans open a pre-roll step before any dice exist, so
+// Eleven of the twelve plans open a pre-roll step before any dice exist, so
 // `setup -force` has nothing to act on for them — drive the pre-roll through
 // the UI (that step is usually the thing worth looking at), then run `force`
 // once a roll is live. setup says which kind of plan you got.
