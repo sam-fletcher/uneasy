@@ -57,10 +57,13 @@ type SeekAnswersResolutionData struct {
 	// PendingQuestion is the open ask-question awaiting the target's answer or
 	// veto. While set, no new question may be asked and the plan can't complete.
 	PendingQuestion *SeekAnswersQuestion `json:"pending_question,omitempty"`
-	// CurrentAskVetoed marks that the in-progress ask-question pick already spent
-	// its single veto, so the re-asked question ("ask another in its stead")
-	// can't be vetoed again. Cleared once that pick is answered.
-	CurrentAskVetoed bool `json:"current_ask_vetoed,omitempty"`
+	// CurrentAskVetoedTargetID is the player who vetoed the in-progress
+	// ask-question pick (0 = no veto yet). Non-zero means the pick already spent
+	// its single veto, so the re-asked question ("ask another in its stead") can't
+	// be vetoed again; and it is that same player who must be asked ("another
+	// question", not another player — owner ruling 2026-10-27, rules Q5).
+	// Cleared once that pick is answered.
+	CurrentAskVetoedTargetID int64 `json:"current_ask_vetoed_target_id,omitempty"`
 }
 
 // SeekAnswersQuestion is an open "ask a player a question" awaiting the target's

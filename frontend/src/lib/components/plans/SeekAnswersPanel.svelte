@@ -208,7 +208,8 @@
 	const declareTruthDone = $derived(saData.declare_truth_done ?? 0);
 	const askQuestionDone = $derived(saData.ask_question_done ?? 0);
 	const pendingQuestion = $derived(saData.pending_question ?? null);
-	const askVetoedHint = $derived(saData.current_ask_vetoed ?? false);
+	// Who vetoed the in-progress pick. The replacement question stays with them.
+	const askVetoedTargetID = $derived(saData.current_ask_vetoed_target_id ?? null);
 
 	const preparerID = $derived(plan?.preparer_id ?? null);
 	const isMar = $derived(rollOutcome === 'mar');
@@ -371,7 +372,13 @@
 		const cap = optionCap[key];
 		return cap != null && (counts[key] ?? 0) >= cap;
 	};
-	let aqTargetID = $state<number | null>(null);
+	let aqPickedID = $state<number | null>(null);
+	// A veto locks the target: "ask another [question] in its stead" goes to the
+	// same player, so the chip row collapses to them, pre-selected.
+	const aqTargetID = $derived(askVetoedTargetID ?? aqPickedID);
+	const aqChoices = $derived(
+		askVetoedTargetID != null ? questionTargets.filter(p => p.id === askVetoedTargetID) : questionTargets
+	);
 	let aqQuestion = $state('');
 	let aqBusy = $state(false);
 	async function submitAskQuestion(p: Plan) {
@@ -379,7 +386,7 @@
 		aqBusy = true; resError = '';
 		try {
 			await askQuestion(p.id, aqTargetID, aqQuestion.trim());
-			aqTargetID = null; aqQuestion = '';
+			aqPickedID = null; aqQuestion = '';
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not ask question.';
@@ -722,16 +729,17 @@
 								</p>
 								<blockquote class="q-quote">{pendingQuestion.question}</blockquote>
 							{:else}
-								{#if askVetoedHint && canSubflow}
+								{#if askVetoedTargetID != null}
 									<p class="choices-note muted">
-										Your last question was vetoed — ask another (it can't be vetoed).
+										{canSubflow ? 'Your' : 'The'} last question was vetoed by
+										{playerName(players, askVetoedTargetID)} — ask them another (it can't be vetoed).
 									</p>
 								{/if}
 								<PlayerChips
-									players={questionTargets}
+									players={aqChoices}
 									isActive={(p) => p.id === aqTargetID}
-									onSelect={(p) => (aqTargetID = p.id)}
-									readOnly={!canSubflow}
+									onSelect={(p) => (aqPickedID = p.id)}
+									readOnly={!canSubflow || askVetoedTargetID != null}
 								/>
 								<label class="form-label">
 									Your question:

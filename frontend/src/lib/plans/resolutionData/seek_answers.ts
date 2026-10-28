@@ -34,8 +34,11 @@ export interface SeekAnswersResolutionData {
 	ask_question_done?: number;
 	/** Open ask-question awaiting the target's answer or veto. */
 	pending_question?: SeekAnswersQuestion | null;
-	/** The in-progress ask-question pick already spent its one veto. */
-	current_ask_vetoed?: boolean;
+	/**
+	 * Who vetoed the in-progress ask-question pick (unset = no veto yet). The
+	 * replacement question must go to this same player.
+	 */
+	current_ask_vetoed_target_id?: number;
 
 	/**
 	 * Specifics of each completed make-list step, recorded so the panel can show

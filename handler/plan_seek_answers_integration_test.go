@@ -691,10 +691,21 @@ func TestSeekAnswers_AskQuestion_VetoThenReask(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "veto: %v", body)
 	rd := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
 	assert.Nil(t, rd.SeekAnswers.PendingQuestion)
-	assert.True(t, rd.SeekAnswers.CurrentAskVetoed)
+	assert.Equal(t, targetID, rd.SeekAnswers.CurrentAskVetoedTargetID)
 	assert.Equal(t, int16(0), rd.SeekAnswers.AskQuestionDone, "veto doesn't complete the pick")
 
-	// Re-ask — no longer vetoable.
+	// "Ask another in its stead" is another question to the SAME player (rules Q5):
+	// a different target is refused, and nothing is left pending.
+	thirdIdx := 3 - preparerIdx - otherIdx
+	code, body = h.post(preparerIdx, askPath, map[string]any{
+		"target_id": h.tg.Players[thirdIdx].ID, "question": "somebody else?",
+	})
+	require.Equalf(t, http.StatusUnprocessableEntity, code, "re-ask to someone else: %v", body)
+	rd = loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
+	assert.Nil(t, rd.SeekAnswers.PendingQuestion)
+	assert.Equal(t, targetID, rd.SeekAnswers.CurrentAskVetoedTargetID, "refusal keeps the lock")
+
+	// Re-ask the vetoed player — no longer vetoable.
 	code, body = h.post(preparerIdx, askPath, map[string]any{"target_id": targetID, "question": "second?"})
 	require.Equalf(t, http.StatusOK, code, "re-ask: %v", body)
 	assert.Equal(t, false, body["vetoable"], "the re-asked question can't be vetoed")
@@ -708,7 +719,7 @@ func TestSeekAnswers_AskQuestion_VetoThenReask(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "answer: %v", body)
 	final := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
 	assert.Equal(t, int16(1), final.SeekAnswers.AskQuestionDone)
-	assert.False(t, final.SeekAnswers.CurrentAskVetoed)
+	assert.Zero(t, final.SeekAnswers.CurrentAskVetoedTargetID)
 }
 
 // TestSeekAnswers_PerformStepsWinnerDrivesMakeList proves a Make Demands
