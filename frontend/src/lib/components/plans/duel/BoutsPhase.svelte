@@ -40,6 +40,8 @@
 
 	const latestBout = $derived(bouts.length === 0 ? null : bouts[bouts.length - 1]);
 	const boutInProgress = $derived(latestBout != null && latestBout.resolved_at == null);
+	// A tie on the last bout has no later winner to hand the set-aside dice to.
+	const isFinalBout = $derived(duelRes.currentBout + (boutInProgress ? 0 : 1) >= totalBouts);
 
 	const currentActorID = $derived(
 		boutInProgress ? (latestBout?.responder_id ?? null)
@@ -225,7 +227,9 @@
 				<span class="muted" style="font-style:normal;">no tied dice</span>
 			{:else}
 				{#each accumulated.pending as d}{@render die(d, 'aside')}{/each}
-				<span class="muted" style="font-style:normal;">→ next bout's winner</span>
+				<span class="muted" style="font-style:normal;">
+					{isFinalBout ? "→ this bout's winner — lost if it ties" : "→ next bout's winner"}
+				</span>
 			{/if}
 		</div>
 		{@render sideColumn(plan.target_player_id, targViews, accumulated.targ, false)}

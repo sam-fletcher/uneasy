@@ -136,7 +136,20 @@ type DuelBoutView struct {
 // stakes. Bouts missing a die, or non-tie bouts with no recorded winner, are
 // skipped.
 func AccumulateDuelDice(bouts []DuelBoutView) (preparerDice, targetDice []int16) {
-	var pending []int16
+	preparerDice, targetDice, _ = accumulateDuelDice(bouts)
+	return preparerDice, targetDice
+}
+
+// UnclaimedDuelDice counts the dice left in the set-aside pool once the bouts
+// are over: a tie on the final bout (and any ties just before it) wins nobody
+// the dice, because no later bout has a winner to award them to. They drop out
+// of the final roll, which is why a drawn duel rolls none.
+func UnclaimedDuelDice(bouts []DuelBoutView) int {
+	_, _, pending := accumulateDuelDice(bouts)
+	return len(pending)
+}
+
+func accumulateDuelDice(bouts []DuelBoutView) (preparerDice, targetDice, pending []int16) {
 	for _, b := range bouts {
 		if b.DeclarerDie == nil || b.ResponderDie == nil {
 			continue
@@ -156,5 +169,5 @@ func AccumulateDuelDice(bouts []DuelBoutView) (preparerDice, targetDice []int16)
 			targetDice = append(targetDice, gained...)
 		}
 	}
-	return preparerDice, targetDice
+	return preparerDice, targetDice, pending
 }

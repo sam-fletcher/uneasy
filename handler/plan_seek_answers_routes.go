@@ -634,10 +634,18 @@ func saAskQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// After a veto the book has the preparer "ask another in its stead" — another
+		// question, to the same player. Other targets stay open until a veto lands.
+		if v := sa.CurrentAskVetoedTargetID; v != 0 && body.TargetID != v {
+			respondErr(w, http.StatusUnprocessableEntity,
+				"your question was vetoed — ask that same player another question")
+			return
+		}
+
 		// The target may veto only the FIRST formulation, and only if they
 		// outrank the preparer on knowledge (lower rank number = higher status).
 		vetoable := false
-		if !sa.CurrentAskVetoed {
+		if sa.CurrentAskVetoedTargetID == 0 {
 			targetRank, tErr := playerRankInCategory(ctx, deps.Q, plan.GameID, body.TargetID, model.CategoryKnowledge)
 			preparerRank, pErr := playerRankInCategory(
 				ctx,
@@ -703,7 +711,7 @@ func saVetoQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 
 		sa.PendingQuestion = nil
-		sa.CurrentAskVetoed = true
+		sa.CurrentAskVetoedTargetID = q.TargetID
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record veto", err)
 			return
@@ -768,7 +776,7 @@ func saAnswerQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			Answer:   answer,
 		})
 		sa.PendingQuestion = nil
-		sa.CurrentAskVetoed = false
+		sa.CurrentAskVetoedTargetID = 0
 		sa.AskQuestionDone++
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not record answer", err)

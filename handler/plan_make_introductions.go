@@ -24,14 +24,15 @@ package handler
 // keep_assets winner claims them). Completion is gated until every draft has
 // arrived.
 //
-// Mar (per-peer): on a mar the preparer resolves EACH introduced peer with one
-// of four outcomes via POST /api/plans/:planId/introductions-mar:
+// Mar (per-peer): on a mar the preparer resolves EACH introduced peer with a
+// different one of four outcomes (p.52) via POST /api/plans/:planId/introductions-mar:
 //   - other_retinue  → the peer joins another player's retinue, and THAT player
 //     writes their marginalia (D6) via introductions-marginalia, which is also
 //     when they materialize
-//   - broken_arrival → another player authors the peer's marginalia (again via
-//     introductions-marginalia), then the peer materializes into the recipient's
-//     retinue
+//   - broken_arrival → the peer arrives but "isn't who you thought they were":
+//     another player authors the peer's marginalia (again via
+//     introductions-marginalia), then the peer materializes into the
+//     recipient's retinue. (Internal key; nothing is broken — it's a deception.)
 //   - delayed        → the draft rides to a row d6 ahead on a synthetic plan and
 //     materializes there; if that row exceeds the public record the draft is
 //     dropped and no asset ever exists
@@ -599,6 +600,13 @@ func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusConflict, "that peer has already been resolved")
 			return
 		}
+		// "Choose a different one of these options for each new peer" (rulebook
+		// p.52): an outcome one peer already took is closed to the rest.
+		if mi.MarOutcomeTaken(body.Outcome) {
+			respondErr(w, http.StatusUnprocessableEntity,
+				"another peer already has that outcome — choose a different one for each new peer")
+			return
+		}
 
 		outcome, status, clientMsg, err := applyMIPeerOutcome(ctx, deps, plan, &resData, miPeerOutcomeRequest{
 			draft:        *draft,
@@ -707,8 +715,9 @@ func applyMIPeerOutcome(
 			plan,
 			model.SeverityDefault,
 			fmt.Sprintf(
-				"%s arrived broken — %s will define them.",
+				"%s arrives, but isn't who %s thought they were — %s will say who they really are.",
 				assetMark(draft.Name),
+				playerDisplayName(ctx, deps.Q, plan.PreparerID),
 				playerDisplayName(ctx, deps.Q, author),
 			),
 		)

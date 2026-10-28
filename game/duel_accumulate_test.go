@@ -104,6 +104,16 @@ func TestAccumulateDuelDice(t *testing.T) {
 	}
 }
 
+// TestUnclaimedDuelDice: only dice still in the set-aside pool when the bouts
+// end are lost, i.e. a trailing run of ties.
+func TestUnclaimedDuelDice(t *testing.T) {
+	assert.Equal(t, 0, UnclaimedDuelDice(nil))
+	assert.Equal(t, 0, UnclaimedDuelDice([]DuelBoutView{tie(4), win(5, 1, true)}), "a tie a later win claims")
+	assert.Equal(t, 2, UnclaimedDuelDice([]DuelBoutView{win(6, 1, true), tie(3)}), "a tie on the final bout")
+	assert.Equal(t, 4, UnclaimedDuelDice([]DuelBoutView{tie(2), tie(4)}), "a drawn duel drops every die")
+	assert.Equal(t, 2, UnclaimedDuelDice([]DuelBoutView{tie(2), win(1, 5, false), tie(3)}), "earlier ties were claimed")
+}
+
 func TestBoutWinnerID(t *testing.T) {
 	const declarerID, responderID int64 = 10, 20
 

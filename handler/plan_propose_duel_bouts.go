@@ -261,25 +261,7 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			})
 		}
 
-		// Both dice are now public — narrate the exchange. A match means the
-		// stakes clash and carry forward (see AccumulateDuelDice).
-		declName := playerDisplayName(ctx, deps.Q, latest.DeclarerID)
-		respName := playerDisplayName(ctx, deps.Q, latest.ResponderID)
-		if outcome.Match {
-			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"Bout %d: %s rolled %d, %s rolled %d — an even match. The stakes rise.",
-				latest.BoutNumber, declName, declDie, respName, respStake.HiddenDie))
-		} else {
-			winName := declName
-			if winnerPtr != nil && *winnerPtr == latest.ResponderID {
-				winName = respName
-			}
-			pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-				"Bout %d: %s rolled %d, %s rolled %d — %s takes the exchange.",
-				latest.BoutNumber, declName, declDie, respName, respStake.HiddenDie, winName))
-		}
-
-		// Check remaining stakes.
+		// Check remaining stakes — the duel is over once either side runs out.
 		prepLeft, err := deps.Q.CountUnresolvedDuelStakes(ctx, dbgen.CountUnresolvedDuelStakesParams{
 			PlanID: plan.ID, PlayerID: plan.PreparerID,
 		})
@@ -298,7 +280,11 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
-		if prepLeft == 0 || targLeft == 0 {
+		boutsOver := prepLeft == 0 || targLeft == 0
+
+		pduelLogBoutResult(ctx, deps, plan, &latest, respStake.HiddenDie, outcome.Match, winnerPtr, boutsOver)
+
+		if boutsOver {
 			// Bouts complete — create the standard roll with accumulated dice.
 			if err := pduelCreateFinalRoll(ctx, w, r, deps, plan, &resData, state); err != nil {
 				respondInternalErr(w, r, "could not create final roll", err)
@@ -317,9 +303,60 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 			"bout":           latest.BoutNumber,
 			"winner_id":      winnerPtr,
 			"is_match":       outcome.Match,
-			"bouts_complete": prepLeft == 0 || targLeft == 0,
+			"bouts_complete": boutsOver,
 		})
 	}
+}
+
+// pduelLogBoutResult narrates a resolved bout — both dice are public by now. A
+// match sets the dice aside for the next bout's winner (p.60; see
+// AccumulateDuelDice). On the final bout there is no next winner, so the line
+// says the dice are lost rather than that "the stakes rise".
+func pduelLogBoutResult(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	bout *dbgen.DuelBout,
+	respDie int16,
+	match bool,
+	winnerPtr *int64,
+	boutsOver bool,
+) {
+	declDie := int16(0)
+	if bout.DeclarerDie != nil {
+		declDie = *bout.DeclarerDie
+	}
+	declName := playerDisplayName(ctx, deps.Q, bout.DeclarerID)
+	respName := playerDisplayName(ctx, deps.Q, bout.ResponderID)
+	rolls := fmt.Sprintf("Bout %d: %s rolled %d, %s rolled %d", bout.BoutNumber, declName, declDie, respName, respDie)
+	switch {
+	case match && boutsOver:
+		pduelLog(ctx, deps, plan, model.SeverityDefault,
+			rolls+" — an even match, and with no bout left, nobody wins the dice.")
+	case match:
+		pduelLog(ctx, deps, plan, model.SeverityDefault, rolls+" — an even match. The stakes rise.")
+	default:
+		winName := declName
+		if winnerPtr != nil && *winnerPtr == bout.ResponderID {
+			winName = respName
+		}
+		pduelLog(ctx, deps, plan, model.SeverityDefault, rolls+fmt.Sprintf(" — %s takes the exchange.", winName))
+	}
+}
+
+// pduelLogSettled announces the final roll's pools. When a tie on the final bout
+// left dice unclaimed it says where they went, so a short pool isn't a mystery.
+func pduelLogSettled(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, oppID int64, prepDice, targDice []int16, unclaimed int,
+) {
+	body := fmt.Sprintf(
+		"The bouts are settled — %s carries %d dice into the final roll, %s carries %d.",
+		playerDisplayName(ctx, deps.Q, plan.PreparerID), len(prepDice),
+		playerDisplayName(ctx, deps.Q, oppID), len(targDice))
+	if unclaimed > 0 {
+		body += fmt.Sprintf(" The %d dice set aside by the final tie were won by nobody and drop out.", unclaimed)
+	}
+	pduelLog(ctx, deps, plan, model.SeverityImportant, body+" Now fate decides.")
 }
 
 // pduelCreateFinalRoll accumulates winning dice by side and creates the
@@ -427,10 +464,8 @@ func pduelCreateFinalRoll(
 	if plan.TargetPlayerID != nil {
 		oppID = *plan.TargetPlayerID
 	}
-	pduelLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
-		"The bouts are settled — %s carries %d dice into the final roll, %s carries %d. Now fate decides.",
-		playerDisplayName(ctx, deps.Q, plan.PreparerID), len(prepDice),
-		playerDisplayName(ctx, deps.Q, oppID), len(targDice)))
+	// Dice set aside by a tie on the final bout have no later winner to go to.
+	pduelLogSettled(ctx, deps, plan, oppID, prepDice, targDice, gamepkg.UnclaimedDuelDice(views))
 
 	if h, ok := deps.Manager.Get(plan.GameID); ok {
 		// Mount the panel first, then resolve below so clients receive

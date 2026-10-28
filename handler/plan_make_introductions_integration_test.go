@@ -244,6 +244,13 @@ func TestMakeIntroductions_Mar_BrokenArrival_AuthorWritesMarginalia(t *testing.T
 	require.Equalf(t, http.StatusOK, code, "broken_arrival: %v", body)
 	assert.Nil(t, miAssetNamed(t, h, drafts[0].Name),
 		"a broken-arrival peer must not exist until the author describes them")
+
+	// Rulebook p.52: they arrive "but aren't who you thought they were" — a
+	// deception. Nothing is broken, so the log must not say so (rules Q7).
+	logs := saAllLogBodies(t, h)
+	assert.Contains(t, logs, "isn't who")
+	assert.Contains(t, logs, "thought they were")
+	assert.NotContains(t, logs, "arrived broken")
 	h.assertWaitees("broken_arrival awaiting the author",
 		model.RowStateAwaitIntroductionsMarginalia, h.tg.Players[authorIdx].ID)
 
@@ -275,6 +282,36 @@ func TestMakeIntroductions_Mar_BrokenArrival_AuthorWritesMarginalia(t *testing.T
 	require.Len(t, margs, 1)
 	assert.Equal(t, "a cruel rumor", margs[0].Text)
 	assert.False(t, margs[0].IsTorn)
+}
+
+// TestMakeIntroductions_Mar_OutcomeMustDifferPerPeer proves rulebook p.52:
+// "Choose a different one of these options for each new peer." A second peer
+// can't take an outcome the first already has — and the refusal leaves that
+// peer unresolved, so they can still pick another.
+func TestMakeIntroductions_Mar_OutcomeMustDifferPerPeer(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	planID, preparerIdx, drafts := miToMar(t, h, 2)
+	require.Len(t, drafts, 2)
+	marPath := "/api/plans/" + strconv.FormatInt(planID, 10) + "/introductions-mar"
+
+	code, body := h.post(preparerIdx, marPath, map[string]any{
+		"draft_id": drafts[0].ID, "outcome": "delayed",
+	})
+	require.Equalf(t, http.StatusOK, code, "first peer delayed: %v", body)
+
+	code, body = h.post(preparerIdx, marPath, map[string]any{
+		"draft_id": drafts[1].ID, "outcome": "delayed",
+	})
+	require.Equalf(t, http.StatusUnprocessableEntity, code, "second peer repeating delayed: %v", body)
+	rd := loadResolutionData(mustGetPlan(t, h, planID).ResolutionData)
+	assert.Len(t, rd.MakeIntroductions.MarOutcomes, 1, "the refused peer is still unresolved")
+
+	code, body = h.post(preparerIdx, marPath, map[string]any{
+		"draft_id": drafts[1].ID, "outcome": "broken_journey",
+		"text": "a courier", "journey_text": "frostbitten",
+	})
+	require.Equalf(t, http.StatusOK, code, "second peer, different outcome: %v", body)
 }
 
 // TestMakeIntroductions_Mar_BrokenJourney_ArrivesBrokenNotDestroyed covers the
