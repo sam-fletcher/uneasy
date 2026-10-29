@@ -422,12 +422,16 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		}
 		case EventTypes.PlanResolving: {
 			const resolving = msg.payload.plan as Plan;
+			nextPlanSeq(resolving.id);
 			ctx.plans = ctx.plans.map(p => p.id === resolving.id ? resolving : p);
 			upsertPlanIntoRecord(ctx, resolving);
 			break;
 		}
 		case EventTypes.PlanResolved: {
 			const { plan_id, result } = msg.payload as { plan_id: number; result: string };
+			// Drop any refetch still in flight — it predates this event — and
+			// take a fresh snapshot, since the patch below only knows the status.
+			refreshPlan(ctx, plan_id);
 			// The backend stores status 'resolved' (MarkPlanResolved); mirror
 			// that exactly so live state matches a reload and every 'resolved'
 			// check across the UI (chip styling, scene prompts, demand/war
@@ -663,8 +667,25 @@ function refreshPlanTokens(ctx: WSContext) {
 		.catch(() => { /* ignore — resync keeps us in sync */ });
 }
 
+// Latest-wins guard for single-plan refetches. A fetch answers with the plan as
+// it stood when the server read it, but the response can land after a later WS
+// event already patched the plan (or after a newer fetch) — and writing it back
+// would roll the plan backwards. A duel that settles itself fires a burst of
+// plan events within milliseconds, so a `resolving` snapshot used to overwrite
+// the `plan.resolved` patch and leave the finished panel on screen until a
+// reload. Every fetch, and every WS patch that carries plan state, takes a new
+// sequence number; a response only applies if it still holds the latest one.
+const planSeq = new Map<number, number>();
+function nextPlanSeq(planID: number): number {
+	const seq = (planSeq.get(planID) ?? 0) + 1;
+	planSeq.set(planID, seq);
+	return seq;
+}
+
 function refreshPlan(ctx: WSContext, planID: number) {
+	const seq = nextPlanSeq(planID);
 	getPlan(planID).then(detail => {
+		if (planSeq.get(planID) !== seq) return;
 		const next = detail.plan;
 		const idx = ctx.plans.findIndex(p => p.id === planID);
 		ctx.plans = idx >= 0

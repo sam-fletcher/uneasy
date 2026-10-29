@@ -1,7 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handleWSMessage, type WSContext } from './ws-handlers';
 import { EventTypes } from '$lib/ws';
-import type { Plan, RecordRow } from '$lib/api';
+import { getPlan, type Plan, type RecordRow } from '$lib/api';
+
+// Only getPlan is stubbed; the rest of the client is never reached by these tests.
+vi.mock('$lib/api', async importOriginal => ({
+	...(await importOriginal<typeof import('$lib/api')>()),
+	getPlan: vi.fn(),
+}));
+const getPlanMock = vi.mocked(getPlan);
+beforeEach(() => {
+	getPlanMock.mockReset();
+	getPlanMock.mockRejectedValue(new Error('unstubbed'));
+});
 
 // Minimal Plan factory — only the fields the record-sync logic reads.
 function makePlan(over: Partial<Plan> = {}): Plan {
@@ -152,5 +163,50 @@ describe('plan.prepared record sync', () => {
 		});
 
 		expect(ctx.activeRoll).toBe(otherRoll);
+	});
+});
+
+describe('single-plan refetch ordering', () => {
+	const detail = (plan: Plan) => ({ plan }) as Awaited<ReturnType<typeof getPlan>>;
+	const flush = () => new Promise(r => setTimeout(r, 0));
+	// The duel events also announce themselves on window; vitest runs in node.
+	beforeEach(() => { vi.stubGlobal('window', { dispatchEvent: vi.fn() }); });
+	afterEach(() => { vi.unstubAllGlobals(); });
+
+	it('a refetch that predates plan.resolved cannot roll the plan back', async () => {
+		const resolving = makePlan({ id: 42, status: 'resolving' });
+		const ctx = makeCtx({ plans: [resolving] });
+
+		// The first fetch is read while the plan is still resolving and is slow to
+		// land; whatever starts after the plan.resolved event sees it resolved.
+		let landStale!: (d: Awaited<ReturnType<typeof getPlan>>) => void;
+		getPlanMock.mockImplementationOnce(() => new Promise(res => { landStale = res; }));
+		getPlanMock.mockResolvedValue(detail(makePlan({ id: 42, status: 'resolved', result: 'make' })));
+
+		handleWSMessage(ctx, { type: EventTypes.DuelBoutsComplete, payload: { plan_id: 42 } });
+		handleWSMessage(ctx, { type: EventTypes.PlanResolved, payload: { plan_id: 42, result: 'make' } });
+		await flush();
+		landStale(detail(resolving));
+		await flush();
+
+		expect(ctx.plans.find(p => p.id === 42)?.status).toBe('resolved');
+	});
+
+	it('the newest fetch wins when responses arrive out of order', async () => {
+		const ctx = makeCtx({ plans: [makePlan({ id: 42, status: 'resolving' })] });
+		const older = makePlan({ id: 42, status: 'resolving', preparation_notes: 'older' });
+		const newer = makePlan({ id: 42, status: 'resolving', preparation_notes: 'newer' });
+
+		let landOlder!: (d: Awaited<ReturnType<typeof getPlan>>) => void;
+		getPlanMock.mockImplementationOnce(() => new Promise(res => { landOlder = res; }));
+		getPlanMock.mockResolvedValueOnce(detail(newer));
+
+		handleWSMessage(ctx, { type: EventTypes.DuelBoutDeclared, payload: { plan_id: 42 } });
+		handleWSMessage(ctx, { type: EventTypes.DuelBoutResolved, payload: { plan_id: 42 } });
+		await flush();
+		landOlder(detail(older));
+		await flush();
+
+		expect(ctx.plans.find(p => p.id === 42)?.preparation_notes).toBe('newer');
 	});
 });
