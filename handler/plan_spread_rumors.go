@@ -239,37 +239,21 @@ func srRumorSubject(plan *dbgen.Plan, sr *gamepkg.SpreadRumorsResolutionData, re
 
 // srRumorText resolves the text of the rumor row this branch publishes: the
 // STATED rumor on a make, the counter-rumor on a mar. The preparer's failed rumor
-// is never a candidate on a mar. There is no placeholder — a branch with no text
-// is an error, not a blank card on the public record.
-func srRumorText(
-	ctx context.Context,
-	q *dbgen.Queries,
-	plan *dbgen.Plan,
-	sr *gamepkg.SpreadRumorsResolutionData,
-	result string,
-) (string, error) {
+// is never a candidate on a mar, and the prep-time note and any kept Secret are
+// never read back — only what a player stated at the table is published. There is
+// no placeholder: a branch with no text is an error, not a blank card on the
+// public record.
+func srRumorText(sr *gamepkg.SpreadRumorsResolutionData, result string) (string, error) {
 	if result == marOutcome {
 		if sr.CounterRumorText == "" {
 			return "", errors.New("the counter-rumor has not been written")
 		}
 		return sr.CounterRumorText, nil
 	}
-	if sr.RumorText != "" {
-		return sr.RumorText, nil
+	if sr.RumorText == "" {
+		return "", errors.New("the rumor has not been stated")
 	}
-	// A plan that rolled before the pre-roll step existed has no stated rumor.
-	// Fall back to the old reading — the draft note, or the kept Secret — so such
-	// a plan can still finish. New plans never reach this: sr-cast-roll records
-	// RumorText before the roll exists.
-	if plan.PreparationNotes != nil && *plan.PreparationNotes != "" {
-		return *plan.PreparationNotes, nil
-	}
-	if sr.IsSecret && sr.SecretID != nil {
-		if secret, err := q.GetSecretByID(ctx, *sr.SecretID); err == nil && secret.Text != "" {
-			return secret.Text, nil
-		}
-	}
-	return "", errors.New("the rumor has not been stated")
+	return sr.RumorText, nil
 }
 
 // ApplyChoice creates the rumors row (both branches) and applies the inline
@@ -307,7 +291,7 @@ func (srHandler) ApplyChoice(
 	}
 	subject := srRumorSubject(plan, sr, result)
 
-	rumorText, err := srRumorText(ctx, deps.Q, plan, sr, result)
+	rumorText, err := srRumorText(sr, result)
 	if err != nil {
 		return err
 	}
