@@ -7,6 +7,12 @@ import type { Plan } from '$lib/api';
 import { parseResolutionData } from '$lib/components/plans/shared';
 
 export interface SpreadPropagandaResolutionData {
+	/** The pre-roll step is over (message summarised, roll opened). Plans that rolled
+	 *  before the step existed carry no flag — the panel also treats "a roll exists"
+	 *  as done; a counter-propaganda plan is born rolling and born with this set. */
+	pre_roll_done?: boolean;
+	/** The narration as stated — the committed version of the prep note's draft. */
+	pre_roll_text?: string;
 	recursive_plan_id?: number | null;
 	esteem_lockout?: boolean;
 	original_plan_id?: number | null;

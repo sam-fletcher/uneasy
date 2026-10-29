@@ -288,7 +288,7 @@ func TestSpreadRumors_BreakTarget_DestroysAssetOnFinalMarginalium(t *testing.T) 
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll, "Spread Rumors creates its roll on resolve")
 	h.forceRoll(roll.ID, makeOutcome, 3)
 	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
@@ -349,7 +349,7 @@ func TestSpreadRumors_BreakTarget_RejectsResubmit(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"}) // picked once → count 1
@@ -417,7 +417,7 @@ func TestSpreadRumors_TakeAsset_KeepAssetsDemandIntercepts(t *testing.T) {
 	require.Equal(t, h.tg.Players[prepIdx].ID, plan.PreparerID, "focus player is the preparer")
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll, "Spread Rumors creates its roll on resolve")
 	h.forceRoll(roll.ID, makeOutcome, 6) // generous budget for one take_asset
 
@@ -464,7 +464,7 @@ func TestSpreadRumors_HideSource_IsIdempotent(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 	h.makeChoice(plan.ID, makeOutcome, []string{"hide_source"})
@@ -516,7 +516,7 @@ func TestSpreadRumors_HideSource_LogsDramaticIrony(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 	h.makeChoice(plan.ID, makeOutcome, []string{"hide_source"})
@@ -645,37 +645,6 @@ func TestSpreadRumors_Secret_RejectsForeignAsset(t *testing.T) {
 		SecretAssetID:    &foreign,
 	})
 	require.Equalf(t, http.StatusBadRequest, code, "expected 400, got: %v", body)
-}
-
-// TestSpreadRumors_Secret_PublishesOnMake confirms a kept-secret rumor becomes
-// the public rumor (with its real text) when the plan succeeds.
-func TestSpreadRumors_Secret_PublishesOnMake(t *testing.T) {
-	h := newPlanLifecycle(t, 2)
-	ctx := context.Background()
-
-	focusIdx := h.focusPlayerIdx()
-	otherIdx := (focusIdx + 1) % 2
-	target := h.seedPeer(otherIdx, "Julius")
-	holder := h.seedPeer(focusIdx, "Brutus")
-
-	notes := "the crown was bought, not earned"
-	plan := h.prepare(PreparePlanRequest{
-		PlanType:         model.PlanSpreadRumors,
-		TargetAssetID:    &target,
-		PreparationNotes: &notes,
-		SecretAssetID:    &holder,
-	})
-	require.NotNil(t, plan.RowNumber)
-	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
-	require.NotNil(t, roll)
-	h.forceRoll(roll.ID, makeOutcome, 0)
-	h.makeChoice(plan.ID, makeOutcome, []string{})
-
-	rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
-	require.NoError(t, err)
-	require.Len(t, rumors, 1)
-	assert.Equal(t, notes, rumors[0].Text, "the spread rumor must carry the kept secret's text")
 }
 
 // TestSpreadRumors_Open_StatesRumorInLog confirms the non-secret path states the
@@ -836,7 +805,7 @@ func TestSpreadRumors_TakeConsent_AgreeTransfersAsset(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 
@@ -907,7 +876,7 @@ func TestSpreadRumors_TakeConsent_DisagreeBlocksAndDisables(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 
@@ -958,7 +927,7 @@ func TestSpreadRumors_MakeChoice_RejectsTakeAsset(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 
@@ -989,7 +958,7 @@ func TestSpreadRumors_CanComplete_BlockedWhilePendingTakeConsent(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 
@@ -1028,7 +997,7 @@ func TestSpreadRumors_ForfeitBreakTarget_DischargesWhenNoTarget(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
@@ -1074,7 +1043,7 @@ func TestSpreadRumors_ForfeitBreakTarget_RejectedWhenTargetExists(t *testing.T) 
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})
@@ -1105,7 +1074,7 @@ func TestSpreadRumors_BreakTarget_DestroysBlankTarget(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	h.forceRoll(roll.ID, makeOutcome, 1)
 	h.makeChoice(plan.ID, makeOutcome, []string{"break_target"})

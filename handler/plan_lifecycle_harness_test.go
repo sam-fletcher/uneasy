@@ -262,6 +262,46 @@ func (h *planLifecycle) resolve(planID int64) *dbgen.DiceRoll {
 	return &roll
 }
 
+// resolveAndCast is resolve plus the pre-roll step for the plans that gate their
+// roll behind one (Spread Propaganda, Spread Rumors): it resolves, and when that
+// parks the plan with no roll it casts (castPreRoll), returning the roll. Tests of
+// the pre-roll step itself drive resolve and the cast route directly.
+func (h *planLifecycle) resolveAndCast(planID int64) *dbgen.DiceRoll {
+	h.t.Helper()
+	if roll := h.resolve(planID); roll != nil {
+		return roll
+	}
+	return h.castPreRoll(planID)
+}
+
+// castPreRoll drives a parked Spread Propaganda / Spread Rumors plan through its
+// cast-roll route as the preparer with a stock narration and returns the roll. It
+// returns nil for any other plan type, so it is safe to call on a plan that may or
+// may not have a pre-roll.
+func (h *planLifecycle) castPreRoll(planID int64) *dbgen.DiceRoll {
+	h.t.Helper()
+	plan, err := h.q.GetPlanByID(context.Background(), planID)
+	require.NoError(h.t, err)
+	var route string
+	var body map[string]any
+	switch plan.PlanType { //nolint:exhaustive // only the two pre-roll plans park without a roll here
+	case model.PlanSpreadPropaganda:
+		route = "sp-cast-roll"
+		body = map[string]any{"narration": "A message for the whole realm, carried on every tongue."}
+	case model.PlanSpreadRumors:
+		route = "sr-cast-roll"
+		body = map[string]any{"rumor": "The rumor, as stated.", "how": "Whispered in every tavern."}
+	default:
+		return nil
+	}
+	code, resp := h.post(h.preparerIdxFor(planID), "/api/plans/"+strconv.FormatInt(planID, 10)+"/"+route, body)
+	require.Equalf(h.t, http.StatusOK, code, "%s failed: %v", route, resp)
+	rollBlob, _ := json.Marshal(resp["roll"])
+	var roll dbgen.DiceRoll
+	require.NoError(h.t, json.Unmarshal(rollBlob, &roll))
+	return &roll
+}
+
 // forceRoll sets the roll's outcome directly, bypassing actual dice
 // resolution. result is the numeric tally to record; for tests that don't
 // care it's fine to pass 0.
@@ -285,6 +325,16 @@ func (h *planLifecycle) makeChoice(planID int64, result string, choices []string
 	h.t.Helper()
 	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/make-choice"
 	code, body := h.post(h.preparerIdxFor(planID), path, map[string]any{
+		"result": result, "choices": choices,
+	})
+	require.Equalf(h.t, http.StatusOK, code, "make-choice failed: %v", body)
+}
+
+// makeChoiceAs is makeChoice as an explicit player — for the plans whose mar is
+// driven by someone other than the preparer (Spread Rumors' target asset owner).
+func (h *planLifecycle) makeChoiceAs(playerIdx int, planID int64, result string, choices []string) {
+	h.t.Helper()
+	code, body := h.post(playerIdx, "/api/plans/"+strconv.FormatInt(planID, 10)+"/make-choice", map[string]any{
 		"result": result, "choices": choices,
 	})
 	require.Equalf(h.t, http.StatusOK, code, "make-choice failed: %v", body)

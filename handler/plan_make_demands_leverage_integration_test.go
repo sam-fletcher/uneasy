@@ -92,7 +92,7 @@ func setupDemandPreRollWindow(
 	}
 
 	h.jumpToRow(*plan.RowNumber)
-	r := h.resolve(plan.ID)
+	r := h.resolveAndCast(plan.ID)
 	require.NotNil(t, r, "Spread Propaganda creates its roll on resolve")
 	roll = *r
 

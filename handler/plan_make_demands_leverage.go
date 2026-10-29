@@ -411,6 +411,9 @@ func mdApplyRetarget(
 		vc.PreparerPeerID = ld.PreparerPeerID
 		vc.PartnerPeerID = ld.PartnerPeerID
 	}
+	if sr := resData.SpreadRumors; sr != nil {
+		vc.KeptSecret = sr.IsSecret
+	}
 	if _, errMsg := targetHandler.ValidatePreparation(ctx, vc); errMsg != "" {
 		respondErr(w, http.StatusBadRequest, "retarget invalid: "+errMsg)
 		return false

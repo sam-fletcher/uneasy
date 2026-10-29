@@ -112,35 +112,25 @@ func srForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
 }
 
 // srEligibleBreakTargets counts the breaks the actor could still perform with a
-// break_target pick: on a make, against the (undestroyed) target asset; on a
-// mar, across all the preparer's assets.
+// break_target pick: on a make, against the (undestroyed) target asset; on a mar,
+// against the preparer's main character as pinned when the options were applied
+// (the counter-rumor is about that asset, so that is where its break lands).
 //
 // Each intact marginalia is one break. A *blank* asset — no marginalia rows at
 // all — offers exactly one: the break destroys it outright (D3), and marginalia
 // are append-only so no second one can ever appear.
 func srEligibleBreakTargets(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, onMar bool) (int, error) {
+	subject := plan.TargetAssetID
 	if onMar {
-		assets, err := deps.Q.ListAssetsByOwner(ctx, plan.PreparerID)
-		if err != nil {
-			return 0, err
+		subject = nil
+		if sr := loadResolutionData(plan.ResolutionData).SpreadRumors; sr != nil {
+			subject = sr.CounterTargetAssetID
 		}
-		count := 0
-		for _, a := range assets {
-			if a.GameID != plan.GameID || a.IsDestroyed {
-				continue
-			}
-			n, err := srBreaksAvailable(ctx, deps, a.ID)
-			if err != nil {
-				return 0, err
-			}
-			count += n
-		}
-		return count, nil
 	}
-	if plan.TargetAssetID == nil {
+	if subject == nil {
 		return 0, nil
 	}
-	asset, err := deps.Q.GetAssetByID(ctx, *plan.TargetAssetID)
+	asset, err := deps.Q.GetAssetByID(ctx, *subject)
 	if err != nil {
 		return 0, err
 	}
@@ -234,9 +224,17 @@ func stashSecretRumor(
 	return nil
 }
 
-// srAuthorizeActor returns (onMar, ok). onMar is true when the caller is the
-// target-asset owner acting during a mar result. It responds with the
-// appropriate HTTP error if the caller is not authorized.
+// srAuthorizeActor returns (onMar, ok). onMar is true when the roll resolved as a
+// mar, in which case the caller must be the mar actor — the live owner of the
+// target asset ("the target player" of the book's mar text). On a make the caller
+// must be whoever acts for the preparer (the preparer, or a Make Demands
+// perform_steps winner in their place). It responds with the appropriate HTTP
+// error if the caller is not authorized.
+//
+// The branch is read off the roll, not off who is calling: a preparer who is also
+// the target asset's owner (a rumor about their own asset) is the mar actor on a
+// mar, and a preparer who is NOT is locked out of it — the rumor just failed, the
+// counter-rumor is the target's to write.
 func srAuthorizeActor(
 	ctx context.Context,
 	w http.ResponseWriter,
@@ -244,30 +242,169 @@ func srAuthorizeActor(
 	plan *dbgen.Plan,
 	player *dbgen.Player,
 ) (onMar bool, ok bool) {
-	if player.ID == plan.PreparerID {
+	if !planRollIsMar(ctx, q, plan) {
+		if !actsForPreparer(ctx, q, plan, player.ID) {
+			respondErr(
+				w,
+				http.StatusForbidden,
+				"only the plan's preparer (or a demand's perform-steps winner) can do this",
+			)
+			return false, false
+		}
 		return false, true
 	}
-	// Non-preparer: allowed only if (a) plan has a target asset, (b) caller owns
-	// it, and (c) the roll resolved as "mar".
-	if plan.TargetAssetID == nil {
-		respondErr(w, http.StatusForbidden, "only the preparer can use this route")
-		return false, false
-	}
-	asset, err := q.GetAssetByID(ctx, *plan.TargetAssetID)
+	isActor, err := srIsMarActor(ctx, q, plan, player.ID)
 	if err != nil {
 		respondErr(w, http.StatusNotFound, "target asset not found")
 		return false, false
 	}
-	if player.ID != asset.OwnerID {
-		respondErr(w, http.StatusForbidden, "only the preparer or the target asset's owner can use this route")
-		return false, false
-	}
-	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
-	if err != nil || roll.Outcome == nil || *roll.Outcome != marOutcome {
-		respondErr(w, http.StatusForbidden, "target asset's owner can only act on a mar result")
+	if !isActor {
+		respondErr(w, http.StatusForbidden, "only the target asset's owner can act on a mar result")
 		return false, false
 	}
 	return true, true
+}
+
+// ── Pre-roll ──────────────────────────────────────────────────────────────────
+
+// srCastRollHandler handles POST /api/plans/:planId/sr-cast-roll. The preparer
+// "state[s] the rumor you plan to spread and explain[s] how you're spreading it"
+// (book p.59). Both are recorded, posted as the preparer's own scene post, and only
+// then is the roll created — so everyone choosing whether to help or interfere has
+// read them.
+//
+// The stated rumor is the COMMITTED one: preparation_notes (or the kept Secret)
+// was a draft written rows ago (principle 2), and what is typed here is what a
+// make puts on the Rumors sheet. For a rumor kept secret at preparation this is
+// the moment it becomes public — "for now" — on a make or a mar alike; the Secret
+// row on the asset stays, and the server never copies its text anywhere: the text
+// is public because the PLAYER typed it here.
+//
+// Request body: {"rumor": "...", "how": "..."}
+func srCastRollHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePreRollOpen(w, r, deps.Q, model.PlanSpreadRumors)
+		if !ok {
+			return
+		}
+		var body struct {
+			Rumor string `json:"rumor"`
+			How   string `json:"how"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		rumor, ok := textField(w, "rumor", body.Rumor, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		how, ok := textField(w, "how", body.How, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		if rumor == "" || how == "" {
+			respondErr(w, http.StatusBadRequest, "state the rumor and explain how you're spreading it before casting")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		difficulty, err := srHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
+		if err != nil {
+			respondInternalErr(w, r, "could not compute difficulty", err)
+			return
+		}
+		// Post BEFORE the roll exists: the narration is what the table reads to decide
+		// whether to help or interfere, so it must be on the record first.
+		postPlanNarration(
+			ctx,
+			deps,
+			plan,
+			player.ID,
+			fmt.Sprintf("The rumor: %s\n\nHow it's spreading: %s", rumor, how),
+		)
+		roll, err := openPreRollRoll(ctx, deps, plan, difficulty)
+		if err != nil {
+			respondInternalErr(w, r, "could not create dice roll", err)
+			return
+		}
+		sr := resData.EnsureSpreadRumors()
+		sr.PreRollDone = true
+		sr.RumorText = rumor
+		sr.HowSpread = how
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not close pre-roll step", err)
+			return
+		}
+
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "roll": roll})
+	}
+}
+
+// ── Counter-rumor (mar) ───────────────────────────────────────────────────────
+
+// srCounterRumorHandler handles POST /api/plans/:planId/sr-counter-rumor. On a mar
+// "the target player describes the rumor that spreads about you instead" (book
+// p.59): the mar actor writes the counter-rumor before choosing any options. The
+// text is recorded server-side — it is the gate on the option step (CheckChoice) —
+// and posted as the author's own scene post, so the table reads it before the
+// options land. The Rumors-sheet row itself is created with the options, once it is
+// known whether the author hides themselves as its source.
+//
+// Request body: {"text": "..."}
+func srCounterRumorHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadRumors)
+		if !ok {
+			return
+		}
+		ctx := r.Context()
+		onMar, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player)
+		if !authz {
+			return
+		}
+		if !onMar {
+			respondErr(w, http.StatusConflict, "a counter-rumor is only written when the rumor is marred")
+			return
+		}
+		var body struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		text, ok := textField(w, "text", body.Text, maxNarrativeLen)
+		if !ok {
+			return
+		}
+		if text == "" {
+			respondErr(w, http.StatusBadRequest, "describe the rumor that spreads about the preparer instead")
+			return
+		}
+		resData := loadResolutionData(plan.ResolutionData)
+		sr := resData.EnsureSpreadRumors()
+		if sr.CounterRumorText != "" || len(resData.MakeMarChoices) > 0 {
+			respondErr(w, http.StatusConflict, "the counter-rumor has already been written")
+			return
+		}
+		sr.CounterRumorText = text
+		sr.CounterRumorAuthorID = player.ID
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record the counter-rumor", err)
+			return
+		}
+		postPlanNarration(ctx, deps, plan, player.ID, "The rumor that spreads instead: "+text)
+		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"The rumor backfired — %s describes the rumor that spreads about %s instead.",
+			playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, plan.PreparerID)))
+
+		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied,
+			model.PlanChoiceAppliedPayload{PlanID: plan.ID})
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID})
+	}
 }
 
 // ── Break Target ──────────────────────────────────────────────────────────────
@@ -275,11 +412,12 @@ func srAuthorizeActor(
 // srBreakTargetHandler handles POST /api/plans/:planId/break-target.
 //
 // On make (preparer): tears a marginalia on the plan's target asset.
-// Request body: {"marginalia_id": M}
 //
-// On mar (target-asset owner): tears a marginalia on one of the preparer's
-// assets (the counter-rumor applies to preparer assets).
-// Request body: {"marginalia_id": M, "asset_id": A}
+// On mar (target-asset owner): tears a marginalia on the preparer's main
+// character — the counter-rumor's subject; the actor picks the marginalia, not
+// the asset.
+//
+// Request body: {"marginalia_id": M}
 //
 // marginalia_id may be omitted (or 0) when the chosen asset is blank — there is
 // nothing to tear, so the break destroys it outright (see resolveBreakTarget).
@@ -317,30 +455,27 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			MarginaliaID int64  `json:"marginalia_id"`
-			AssetID      *int64 `json:"asset_id"`
+			MarginaliaID int64 `json:"marginalia_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
-		// Determine which asset the break lands on: the plan's target on a make,
-		// the named preparer asset on a mar.
-		targetID := body.AssetID
-		if !onMar {
-			targetID = plan.TargetAssetID
-		} else if targetID == nil {
-			respondErr(w, http.StatusBadRequest, "asset_id is required on mar (one of the preparer's assets)")
-			return
+		// The break lands on the rumor's subject: the plan's target on a make, the
+		// preparer's main character (pinned when the options were applied) on a mar.
+		// The mar actor picks which MARGINALIA, not which asset (ruling Q2).
+		targetID := plan.TargetAssetID
+		if onMar {
+			targetID = sr.CounterTargetAssetID
+			if targetID == nil {
+				respondErr(w, http.StatusConflict, "the preparer has no main character to break")
+				return
+			}
 		}
 		asset, err := deps.Q.GetAssetByID(ctx, *targetID)
 		if err != nil {
 			respondErr(w, http.StatusNotFound, "asset not found")
-			return
-		}
-		if onMar && (asset.OwnerID != plan.PreparerID || asset.GameID != plan.GameID) {
-			respondErr(w, http.StatusBadRequest, "asset must be one of the preparer's assets in this game")
 			return
 		}
 		if asset.IsDestroyed {
@@ -435,6 +570,15 @@ func srBuildTakeConsentRequest(
 	if body.Result != makeOutcome && body.Result != marOutcome {
 		respondErr(w, http.StatusBadRequest, "result must be 'make' or 'mar'")
 		return nil, false
+	}
+
+	// A take commits the whole pick list (via ApplyChoice) on agreement, so it needs
+	// the same precondition make-choice has: on a mar, the counter-rumor first.
+	if body.Result == marOutcome {
+		if sr := loadResolutionData(plan.ResolutionData).SpreadRumors; sr == nil || sr.CounterRumorText == "" {
+			respondErr(w, http.StatusConflict, "write the counter-rumor before choosing options")
+			return nil, false
+		}
 	}
 
 	// The result must match the roll, and the picks must fit the dice budget.
@@ -779,11 +923,12 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 		// records the rumor it conceals the source of; secret_text overrides it.
 		secretText := strings.TrimSpace(body.SecretText)
 		if secretText == "" {
-			rumorText := "(no rumor text)"
-			if rumor, rErr := deps.Q.GetRumorByID(ctx, *sr.RumorID); rErr == nil {
-				rumorText = rumor.Text
+			rumor, rErr := deps.Q.GetRumorByID(ctx, *sr.RumorID)
+			if rErr != nil {
+				respondInternalErr(w, r, "could not load the rumor", rErr)
+				return
 			}
-			secretText = fmt.Sprintf("You were the source of the rumor: %q", rumorText)
+			secretText = fmt.Sprintf("You were the source of the rumor: %q", rumor.Text)
 		}
 		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
 			AssetID:  body.SecretAssetID,

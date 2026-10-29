@@ -127,7 +127,7 @@ func TestReAim_ExchangeCourtiers_DestroyedPeer_ReAimsThenTradeRunsOnTheNewPeer(t
 
 	h.destroyAssets(doomed) // five rows pass; the courtier is broken
 	h.jumpToRow(*plan.RowNumber)
-	require.Nil(t, h.resolve(plan.ID))
+	require.Nil(t, h.resolveAndCast(plan.ID))
 
 	// Paused, and the bar names the preparer — not the target, who has nothing to do.
 	owed, reason := h.reaimOwed(plan.ID)
@@ -202,7 +202,7 @@ func TestReAim_ExchangeCourtiers_PeerChangedHands_IsStaleAndReAimable(t *testing
 
 	require.NoError(t, h.q.TransferAsset(ctx, dbgen.TransferAssetParams{ID: peer, OwnerID: thirdID}))
 	h.jumpToRow(*plan.RowNumber)
-	require.Nil(t, h.resolve(plan.ID))
+	require.Nil(t, h.resolveAndCast(plan.ID))
 
 	owed, reason := h.reaimOwed(plan.ID)
 	require.True(t, owed, "a target peer that changed hands must pause the plan")
@@ -224,7 +224,7 @@ func TestReAim_ExchangeCourtiers_ValidTarget_NoPause(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	plan, prepIdx, targetIdx, _, _ := ecPrepared(t, h)
 	h.jumpToRow(*plan.RowNumber)
-	require.Nil(t, h.resolve(plan.ID))
+	require.Nil(t, h.resolveAndCast(plan.ID))
 
 	owed, _ := h.reaimOwed(plan.ID)
 	assert.False(t, owed)
@@ -332,10 +332,11 @@ func TestReAim_SpreadRumors_DestroyedSubject_ReAimsThenRollsAndSpreadsAboutTheNe
 
 	code, body = h.post(prepIdx, reaimPath(plan.ID), map[string]any{"target_asset_id": newSubject})
 	require.Equalf(t, http.StatusOK, code, "re-aim: %v", body)
-	require.NotNil(t, body["roll"], "re-aiming resumes the plan: the roll is made now")
-	rollID := int64(body["roll"].(map[string]any)["id"].(float64))
+	assert.Nil(t, body["roll"], "re-aiming resumes the plan at its pre-roll: the roll waits for the narration")
+	roll := h.castPreRoll(plan.ID)
+	require.NotNil(t, roll)
 
-	h.forceRoll(rollID, "make", 1)
+	h.forceRoll(roll.ID, "make", 1)
 	h.makeChoice(plan.ID, "make", []string{"reveal_source"})
 
 	rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
@@ -343,7 +344,7 @@ func TestReAim_SpreadRumors_DestroyedSubject_ReAimsThenRollsAndSpreadsAboutTheNe
 	require.Len(t, rumors, 1)
 	require.NotNil(t, rumors[0].TargetAssetID)
 	assert.Equal(t, newSubject, *rumors[0].TargetAssetID, "the rumor is about the re-aimed subject")
-	assert.Equal(t, "she poisons her own wine", rumors[0].Text, "the preparer's rumor text travels with the re-aim")
+	assert.Equal(t, "The rumor, as stated.", rumors[0].Text, "the rumor is the one stated in the pre-roll, after the re-aim")
 }
 
 // A rumor is about an asset, not about whoever holds it. A change of owner leaves
@@ -357,7 +358,7 @@ func TestReAim_SpreadRumors_SubjectChangedOwner_StillStands(t *testing.T) {
 		dbgen.TransferAssetParams{ID: subject, OwnerID: h.tg.Players[thirdIdx].ID}))
 
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll, "an owner change is not a reason to pause: the roll is made")
 	owed, _ := h.reaimOwed(plan.ID)
 	assert.False(t, owed)
@@ -386,11 +387,12 @@ func TestReAim_SpreadRumors_NoValidSubject_ClosesWithNoEffectAndLogs(t *testing.
 		"the close must say why: %v", h.logBodies("plan.spread_rumors"))
 }
 
-// A kept-secret rumor stores its text as a Secret under one of the preparer's
-// assets. If THAT asset is destroyed during the delay, the make must still
-// publish the real rumor — secrets are never deleted and are read by id, so the
-// shelter dying changes who can read the text, not whether it can be spread. This
-// pins that (the helper deliberately does not treat SecretAssetID as a target).
+// A kept-secret rumor stores its draft as a Secret under one of the preparer's
+// assets. If THAT asset is destroyed during the delay the plan must carry on as
+// normal: the shelter is not the rumor's subject, so there is nothing to re-aim,
+// and the rumor that is spread is the one the preparer states in the pre-roll —
+// the Secret's text is never read back by the server. (The helper deliberately
+// does not treat SecretAssetID as a target.)
 func TestReAim_SpreadRumors_DestroyedSecretShelter_DoesNotLoseTheRumorText(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
@@ -400,7 +402,7 @@ func TestReAim_SpreadRumors_DestroyedSecretShelter_DoesNotLoseTheRumorText(t *te
 
 	h.destroyAssets(shelter)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll, "the subject stands, so the roll is made as normal")
 	h.forceRoll(roll.ID, "make", 1)
 	h.makeChoice(plan.ID, "make", []string{"reveal_source"})
@@ -408,8 +410,8 @@ func TestReAim_SpreadRumors_DestroyedSecretShelter_DoesNotLoseTheRumorText(t *te
 	rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
 	require.Len(t, rumors, 1)
-	assert.Equal(t, "she poisons her own wine", rumors[0].Text,
-		"the secret text survives its shelter's destruction; no placeholder reaches the board")
+	assert.Equal(t, "The rumor, as stated.", rumors[0].Text,
+		"the stated rumor is published whatever became of the shelter; no placeholder reaches the board")
 }
 
 // ── Make Demands ─────────────────────────────────────────────────────────────
@@ -460,7 +462,7 @@ func TestReAim_MakeDemands_TargetNoLongerPending_ReAimsToAnotherPendingPlan(t *t
 
 	require.NoError(t, h.q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{ID: target.ID, Status: model.PlanResolved}))
 	h.jumpToRow(*demand.RowNumber)
-	require.Nil(t, h.resolve(demand.ID), "no roll while the demand has nothing to demand against")
+	require.Nil(t, h.resolveAndCast(demand.ID), "no roll while the demand has nothing to demand against")
 
 	owed, reason := h.reaimOwed(demand.ID)
 	require.True(t, owed, "a demand whose target is no longer pending must pause")
@@ -491,7 +493,7 @@ func TestReAim_MakeDemands_PendingTarget_NoPause(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	_, demand, _, _, _ := mdPrepared(t, h)
 	h.jumpToRow(*demand.RowNumber)
-	require.NotNil(t, h.resolve(demand.ID), "a live target: the demand rolls as normal")
+	require.NotNil(t, h.resolveAndCast(demand.ID), "a live target: the demand rolls as normal")
 	owed, _ := h.reaimOwed(demand.ID)
 	assert.False(t, owed)
 }
@@ -504,7 +506,7 @@ func TestReAim_MakeDemands_NoValidTarget_ClosesWithNoEffectAndLogs(t *testing.T)
 
 	require.NoError(t, h.q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{ID: target.ID, Status: model.PlanResolved}))
 	h.jumpToRow(*demand.RowNumber)
-	require.Nil(t, h.resolve(demand.ID))
+	require.Nil(t, h.resolveAndCast(demand.ID))
 
 	closed, err := h.q.GetPlanByID(ctx, demand.ID)
 	require.NoError(t, err)

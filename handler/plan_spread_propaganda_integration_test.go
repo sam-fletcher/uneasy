@@ -41,7 +41,7 @@ func spPrepareToMar(t *testing.T, h *planLifecycle) (dbgen.Plan, int) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll, "SP creates its roll on resolve")
 	h.forceRoll(roll.ID, "mar", 0)
 
@@ -68,7 +68,7 @@ func TestMakeChoice_EnforcesOptionBudget(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll)
 	// Consistent mar: result = difficulty − 1, so the mar budget is exactly 1.
 	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
@@ -266,7 +266,7 @@ func TestSpreadPropaganda_Mar_CounterProp_DoesNotDoubleFire(t *testing.T) {
 	})
 	require.NotNil(t, plan.RowNumber)
 	h.jumpToRow(*plan.RowNumber)
-	roll := h.resolve(plan.ID)
+	roll := h.resolveAndCast(plan.ID)
 	require.NotNil(t, roll, "SP creates its roll on resolve")
 
 	preparerIdx := h.preparerIdxFor(plan.ID)
@@ -601,4 +601,122 @@ func TestSpreadPropaganda_PerformStepsWinner_FullMarFlow(t *testing.T) {
 	// Nothing is owed any more; completion is the preparer's (the hand-back).
 	h.assertWaitees("hand-back", model.RowStatePlanResolving, preparerID)
 	h.complete(plan.ID)
+}
+
+// ── Pre-roll (Tier 3 #10) and the make's narration (Tier 3 #13) ──────────────
+
+func spPrepared(t *testing.T, h *planLifecycle) (dbgen.Plan, int) {
+	t.Helper()
+	notes := "pamphlets in every market"
+	plan := h.prepare(PreparePlanRequest{PlanType: model.PlanSpreadPropaganda, PreparationNotes: &notes})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	return plan, h.preparerIdxFor(plan.ID)
+}
+
+func TestSpreadPropaganda_PreRoll_ParksWithNoRollUntilTheMessageIsSummarised(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, prepIdx := spPrepared(t, h)
+	otherIdx := (prepIdx + 1) % 3
+
+	require.Nil(t, h.resolve(plan.ID), "the plan parks at its pre-roll: no roll yet")
+	_, err := h.q.GetDiceRollByPlanID(ctx, &plan.ID)
+	require.Error(t, err)
+	h.assertWaitees("the preparer owes the narration", model.RowStatePlanResolving, h.tg.Players[prepIdx].ID)
+
+	code, body := h.post(prepIdx, srPath(plan.ID, "make-choice"), map[string]any{"result": "make", "choices": []string{"create_artifact"}})
+	assert.Equalf(t, http.StatusConflict, code, "make-choice before the roll must be refused: %v", body)
+	code, _ = h.post(otherIdx, srPath(plan.ID, "sp-cast-roll"), map[string]any{"narration": "x"})
+	assert.Equal(t, http.StatusForbidden, code, "only the preparer casts")
+	code, _ = h.post(prepIdx, srPath(plan.ID, "sp-cast-roll"), map[string]any{"narration": "   "})
+	assert.Equal(t, http.StatusBadRequest, code)
+	_, err = h.q.GetDiceRollByPlanID(ctx, &plan.ID)
+	require.Error(t, err, "a refused cast opens nothing")
+
+	code, body = h.post(prepIdx, srPath(plan.ID, "sp-cast-roll"), map[string]any{"narration": "Bread is a right, not a gift."})
+	require.Equalf(t, http.StatusOK, code, "sp-cast-roll: %v", body)
+	roll, err := h.q.GetDiceRollByPlanID(ctx, &plan.ID)
+	require.NoError(t, err)
+	code, body = h.post(prepIdx, srPath(plan.ID, "make-choice"), map[string]any{"result": "make", "choices": []string{"create_artifact"}})
+	assert.Equalf(t, http.StatusConflict, code, "make-choice while the dice are still rolling must be refused: %v", body)
+	code, _ = h.post(prepIdx, srPath(plan.ID, "sp-cast-roll"), map[string]any{"narration": "again"})
+	assert.Equal(t, http.StatusConflict, code, "the dice are cast once")
+
+	// The narration is posted, in the preparer's name, no later than the roll —
+	// others read it to decide whether to help or interfere.
+	posts, err := h.q.ListGamePosts(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	var narration *dbgen.ScenePost
+	for i := range posts {
+		if posts[i].SystemCode == nil && posts[i].Body == "Bread is a right, not a gift." {
+			narration = &posts[i]
+		}
+	}
+	require.NotNil(t, narration, "the narration is posted for the table")
+	require.NotNil(t, narration.AuthorID)
+	assert.Equal(t, h.tg.Players[prepIdx].ID, *narration.AuthorID)
+	assert.False(t, narration.CreatedAt.Time.After(roll.CreatedAt.Time),
+		"the narration (%v) must exist no later than the roll (%v)", narration.CreatedAt.Time, roll.CreatedAt.Time)
+
+	got, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	sp := loadResolutionData(got.ResolutionData).SpreadPropaganda
+	require.NotNil(t, sp)
+	assert.True(t, sp.PreRollDone)
+	assert.Equal(t, "Bread is a right, not a gift.", sp.PreRollText, "the committed text, not the prep draft")
+}
+
+// Counter-propaganda (mar (d)) is born already rolling, so it never sits at a
+// pre-roll step of its own — which would otherwise strand a plan nobody can cast.
+func TestSpreadPropaganda_CounterPropIsBornPastItsPreRoll(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, prepIdx := spPrepared(t, h)
+	roll := h.resolveAndCast(plan.ID)
+	_, err := h.q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+		RollID: roll.ID, PlayerID: h.tg.Players[(prepIdx+1)%3].ID, IsInterference: true,
+	})
+	require.NoError(t, err)
+	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
+	h.makeChoice(plan.ID, "mar", []string{"counter_prop"})
+
+	got := loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData).SpreadPropaganda
+	require.NotNil(t, got.RecursivePlanID)
+	child := mustPlan(t, h, *got.RecursivePlanID)
+	childData := loadResolutionData(child.ResolutionData).SpreadPropaganda
+	require.NotNil(t, childData)
+	assert.True(t, childData.PreRollDone)
+	_, err = h.q.GetDiceRollByPlanID(ctx, &child.ID)
+	assert.NoError(t, err, "its roll exists from the start")
+}
+
+func TestSpreadPropaganda_Make_NarratesTheChangesWithTheArtifact(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, prepIdx := spPrepared(t, h)
+	roll := h.resolveAndCast(plan.ID)
+	h.forceRoll(roll.ID, "make", 0)
+	h.makeChoice(plan.ID, "make", []string{"create_artifact"})
+
+	create := func(body map[string]any) (int, map[string]any) {
+		return h.post(prepIdx, srPath(plan.ID, "create-artifact"), body)
+	}
+	// The changes are part of the SAME step as the artifact — no new gate — and the
+	// step is not done without them.
+	code, body := create(map[string]any{"name": "The Bread Riots", "marginalia": []string{"Born in a queue"}})
+	assert.Equalf(t, http.StatusBadRequest, code, "narration is required: %v", body)
+	code, _ = create(map[string]any{"narration": "  ", "name": "The Bread Riots", "marginalia": []string{"Born in a queue"}})
+	assert.Equal(t, http.StatusBadRequest, code)
+	assert.False(t, anyContains(h.playerPosts(), "The changes society undergoes"), "a refused step posts nothing")
+
+	code, body = create(map[string]any{
+		"narration": "Guilds close their doors to the crown's tax collectors.",
+		"name":      "The Bread Riots", "marginalia": []string{"Born in a queue"},
+	})
+	require.Equalf(t, http.StatusOK, code, "create-artifact: %v", body)
+	assert.True(t, anyContains(h.playerPosts(), "The changes society undergoes: Guilds close their doors"),
+		"the changes are posted (logged) for the table: %v", h.playerPosts())
+	require.NotNil(t, loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData).SpreadPropaganda.ArtifactID)
+	_ = ctx
 }

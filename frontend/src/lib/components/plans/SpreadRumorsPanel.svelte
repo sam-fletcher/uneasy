@@ -1,18 +1,21 @@
 <!-- SpreadRumorsPanel.svelte
   Prep + resolve UI for Spread Rumors (Tier 1, Esteem).
 
-  Prep: target asset (any asset at the table) + the rumor text.
+  Prep: target asset (any asset at the table) + the rumor text (a DRAFT, and
+    optionally kept secret for now).
+  Pre-roll: the preparer states the rumor and how it is spreading; the server
+    posts it for the table and only then opens the roll. Stating a secret rumor
+    makes it public.
   Resolve: counts picker (repeatable, total = dice result) with options
     break_target / leverage_target / take_asset / hide_source / reveal_source.
     After choices are applied, sub-flows cover break_target (marginalia
-    picker on the plan's target asset), take_asset (consent button —
-    server transfers plan.target_asset_id), and hide_source (preparer's
-    asset picker + secret-text input).
+    picker on the rumor's subject), take_asset (consent button — the aggressor
+    names the victim's assets), and hide_source (the actor's own asset picker).
 
   On make the preparer (focus player) drives the picker. On mar the
-  target-asset owner drives the picker instead — they describe a
-  counter-rumor about the preparer, and the break_target / take_asset
-  sub-flows pick from the preparer's assets.
+  target-asset owner drives everything: first they WRITE the counter-rumor (the
+  rumor that spreads about the preparer instead), then pick options — all aimed
+  at the preparer's main character, which is the counter-rumor's subject.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -20,6 +23,7 @@
 	import {
 		preparePlan, makeChoice, completePlan,
 		breakTarget, requestTakeConsent, respondTakeConsent, hideSource, forfeitSpreadRumorsStep,
+		castSpreadRumorsRoll, writeCounterRumor, getSecrets,
 		type Plan,
 	} from '$lib/api';
 	import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
@@ -28,6 +32,7 @@
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
+	import PreRollStep from './shared/PreRollStep.svelte';
 	import { parseResolutionData, playerName, assetName, breakableAssets, breaksAvailable } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 
@@ -66,13 +71,27 @@
 		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
 	);
 
-	const OPTIONS = [
-		{ key: 'break_target',    label: 'Break the target asset (tear a marginalia)' },
-		{ key: 'leverage_target', label: 'Leverage the target asset' },
-		{ key: 'take_asset',      label: 'Take the target asset (requires consent)' },
-		{ key: 'hide_source',     label: 'Hide yourself as the source' },
-		{ key: 'reveal_source',   label: 'Reveal yourself as the source' },
-	] as const;
+	// The book's make list. (d) and (e) are its words verbatim: (e) is GLOATING —
+	// "Relish in its glory" is the point — not a change of attribution, which is why
+	// it carries the whole sentence. The labels read for the branch in play: on a
+	// mar every option is aimed at the preparer's main character and the preparer's
+	// assets, not at the rumor's original subject.
+	const OPTION_KEYS = ['break_target', 'leverage_target', 'take_asset', 'hide_source', 'reveal_source'] as const;
+	const OPTIONS = $derived.by(() => {
+		const mar = rollOutcome === 'mar';
+		const mc = mar ? mcName : '';
+		return [
+			{ key: 'break_target', label: mar
+				? `Break ${mc} — tear one of its marginalia`
+				: 'Break the target asset — tear a marginalia' },
+			{ key: 'leverage_target', label: mar ? `Leverage ${mc}` : 'Leverage the target asset' },
+			{ key: 'take_asset', label: mar
+				? `Take an asset from ${playerName(players, plan?.preparer_id ?? null)} — they must consent`
+				: `Take an asset from ${playerName(players, targetAssetOwnerID)} — they must consent` },
+			{ key: 'hide_source', label: 'Hide yourself as the source of the rumor. Add it as a secret to one of your assets.' },
+			{ key: 'reveal_source', label: 'Reveal yourself as the source of the rumor. Relish in its glory.' },
+		] as const;
+	});
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 	let prepTargetAssetID = $state<number | null>(null);
@@ -177,6 +196,75 @@
 	});
 	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
 
+	const srData = $derived(parseSpreadRumorsData(plan));
+
+	// ── Pre-roll: state the rumor, say how it is spreading ───────────────────
+	// OnResolve parks the plan with no roll. The preparer's narration is posted for
+	// the table — who read it to decide whether to help or interfere — and only then
+	// does the roll open. Plans that rolled before the step existed carry no flag, so
+	// "a roll exists for this plan" counts as done too.
+	const rollForThisPlan = $derived(plan != null && activeRoll != null && activeRoll.plan_id === plan.id);
+	const hasCommittedChoices = $derived(
+		plan != null && (parseResolutionData(plan).make_mar_choices ?? []).length > 0,
+	);
+	const preRollDone = $derived((srData.pre_roll_done ?? false) || rollForThisPlan || hasCommittedChoices);
+
+	// The draft to start the "rumor" field from. A kept-secret rumor's draft lives in
+	// a Secret, not the (blanked) public note; the preparer, its author, can read it
+	// through the ordinary grant-checked secrets endpoint. Nobody else ever sees it.
+	let secretDraft = $state<string | null>(null);
+	$effect(() => {
+		const holder = srData.secret_asset_id;
+		const secretID = srData.secret_id;
+		if (preRollDone || !isPreparer || !srData.is_secret || holder == null || secretID == null) return;
+		let stale = false;
+		getSecrets(holder)
+			.then(r => { if (!stale) secretDraft = r.secrets.find(x => x.id === secretID)?.text ?? null; })
+			.catch(() => { /* no draft to offer: the field simply starts blank */ });
+		return () => { stale = true; };
+	});
+	const rumorDraft = $derived(plan?.preparation_notes ?? secretDraft);
+
+	let preRollBusy = $state(false);
+	async function submitPreRoll(p: Plan, values: Record<string, string>) {
+		if (preRollBusy) return;
+		preRollBusy = true; resError = '';
+		try {
+			const res = await castSpreadRumorsRoll(p.id, (values.rumor ?? '').trim(), (values.how ?? '').trim());
+			if (res.roll) ctx.onRollCreated(res.roll);
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not open the roll.';
+		} finally { preRollBusy = false; }
+	}
+
+	// ── Mar: the counter-rumor ───────────────────────────────────────────────
+	// "The target player describes the rumor that spreads about you instead." The
+	// text is written first, server-gated; every option after it is aimed at the
+	// preparer's main character (pinned server-side once the options apply).
+	const liveMainCharacter = $derived(
+		plan ? assets.find(a => a.owner_id === plan.preparer_id && a.is_main_character && !a.is_destroyed) ?? null : null,
+	);
+	const mcAsset = $derived(
+		srData.counter_target_asset_id != null
+			? assets.find(a => a.id === srData.counter_target_asset_id) ?? null
+			: liveMainCharacter,
+	);
+	const mcName = $derived(mcAsset?.name ?? 'their main character');
+	let counterText = $state('');
+	let counterBusy = $state(false);
+	async function submitCounterRumor(p: Plan) {
+		if (counterBusy || !counterText.trim()) return;
+		counterBusy = true; resError = '';
+		try {
+			await writeCounterRumor(p.id, counterText.trim());
+			counterText = '';
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not write the counter-rumor.';
+		} finally { counterBusy = false; }
+	}
+
 	// ── Resolve ──────────────────────────────────────────────────────────────
 	let counts = $state<Record<string, number>>({
 		break_target: 0, leverage_target: 0, take_asset: 0,
@@ -276,7 +364,6 @@
 	});
 
 	// ── Take-asset consent state (from resolution_data) ───────────────────────
-	const srData = $derived(parseSpreadRumorsData(plan));
 	const pendingConsent = $derived(srData.pending_take_consent ?? null);
 	const takeAssetDenied = $derived(srData.take_asset_denied ?? false);
 	const isConsentVictim = $derived(
@@ -326,9 +413,9 @@
 		}
 	});
 
-	// On mar, break_target / take_asset pick from the preparer's assets; on
-	// make they operate on the plan's target asset. btAssetID is only used on
-	// mar (to select which preparer asset to tear marginalia on).
+	// On a mar, break_target lands on the preparer's main character and take_asset
+	// picks from the preparer's assets; on a make they operate on the plan's target
+	// asset. btAssetID only feeds the pre-tear destruction warning.
 	let btAssetID = $state<number | null>(null);
 	let btMargID = $state<number | null>(null);
 	let btBusy = $state(false);
@@ -342,13 +429,15 @@
 	);
 	// Candidate assets for the break-target picker.
 	//  - make: only the plan's target asset (one card).
-	//  - mar:  any of the preparer's breakable assets.
+	//  - mar:  only the preparer's main character (one card).
 	// AssetCardSelectable's marginalia-pick mode renders the per-line
 	// checkboxes; asset identity is derived from the chosen marginalia (or,
 	// for a blank asset, from the card itself — see breakableAssets).
 	const btMarginaliaAssets = $derived.by(() => {
 		if (rollOutcome === 'mar') {
-			return breakableAssets(preparerAssets);
+			// Only the counter-rumor's subject: the actor picks WHICH marginalia, not
+			// which asset (ruling Q2).
+			return mcAsset ? breakableAssets([mcAsset]) : [];
 		}
 		return targetAsset ? breakableAssets([targetAsset]) : [];
 	});
@@ -365,10 +454,9 @@
 
 	async function submitBreakTarget(p: Plan) {
 		if (btBusy || btMargID == null) return;
-		if (rollOutcome === 'mar' && btAssetID == null) return;
 		btBusy = true; resError = '';
 		try {
-			await breakTarget(p.id, btMargID, rollOutcome === 'mar' ? btAssetID! : undefined);
+			await breakTarget(p.id, btMargID);
 			btMargID = null; btAssetID = null;
 			onPlansChanged();
 		} catch (e) {
@@ -545,19 +633,94 @@
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
 		<div class="rumor-summary">
-			{#if plan.preparation_notes}
-				<p class="rumor-label">Rumor</p>
+			<!-- Before the pre-roll the prep note is only a draft (principle 2), and a
+			     secret rumor's text is nobody's business yet — so neither is shown as
+			     though it were the rumor. After it, the STATED rumor is. -->
+			{#if preRollDone && srData.rumor_text}
+				<p class="rumor-label">{rollOutcome === 'mar' ? 'The rumor that backfired' : 'The rumor, as stated'}</p>
+				<blockquote class="rumor-quote">{srData.rumor_text}</blockquote>
+				{#if srData.how_spread}
+					<p class="rumor-target">How it's spreading: {srData.how_spread}</p>
+				{/if}
+			{:else if !preRollDone && srData.is_secret}
+				<p class="rumor-label">A secret rumor</p>
+				<p class="rumor-target">
+					Kept under <em>{srData.secret_asset_id != null ? assetName(assets, srData.secret_asset_id) : 'an asset'}</em>
+					until it is stated before the roll.
+				</p>
+			{:else if plan.preparation_notes && (preRollDone || !isPreparer)}
+				<!-- (The preparer's own draft is not repeated here: it is already in the
+				     field below, where they are about to restate it.) -->
+				<p class="rumor-label">{preRollDone ? 'Rumor' : 'As prepared — a draft, restated before the roll'}</p>
 				<blockquote class="rumor-quote">{plan.preparation_notes}</blockquote>
 			{/if}
-			{#if plan.target_asset_id}
+			{#if srData.counter_rumor_text}
+				<p class="rumor-label">The rumor that spreads instead</p>
+				<blockquote class="rumor-quote">{srData.counter_rumor_text}</blockquote>
+			{/if}
+			{#if plan.target_asset_id && rollOutcome !== 'mar'}
 				<p class="rumor-target">
 					Targeting: <em>{assetName(assets, plan.target_asset_id)}</em>
 				</p>
 			{/if}
 		</div>
 
-		{#if rollActive && !choicesDone}
+		{#if !preRollDone}
+			<PreRollStep
+				title="Spread the rumor"
+				prompt="State the rumor you plan to spread and explain how you're spreading it."
+				fields={[
+					{
+						key: 'rumor',
+						label: 'The rumor',
+						placeholder: 'What are people about to be told?',
+						draft: rumorDraft,
+						rows: 3,
+						max: TEXT_LIMITS.NARRATIVE,
+					},
+					{
+						key: 'how',
+						label: 'How you are spreading it',
+						placeholder: 'Letting it slip in taverns? Whispering it in ears around court?',
+						rows: 3,
+						max: TEXT_LIMITS.NARRATIVE,
+					},
+				]}
+				canAct={isPreparer}
+				busy={preRollBusy}
+				actorName={playerName(players, plan.preparer_id)}
+				waitingVerb="is about to state the rumor"
+				onSubmit={(v) => submitPreRoll(plan, v)}
+			/>
+
+		{:else if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
+
+		{:else if rollOutcome === 'mar' && !choicesDone && !srData.counter_rumor_text && pendingConsent == null}
+			<!-- The mar opens with the counter-rumor: its author is the target player,
+			     and the table reads it before the options land. -->
+			{#if isActor}
+				<div class="plan-form">
+					<p class="choices-header">The rumor backfires</p>
+					<p class="choices-note">
+						Describe the rumor that spreads about <em>{mcName}</em>,
+						{playerName(players, plan.preparer_id)}'s main character, instead.
+					</p>
+					<label class="form-label">
+						<span class="form-label-text">The rumor that spreads instead</span>
+						<textarea rows={3} bind:value={counterText} class="form-textarea"
+							maxlength={TEXT_LIMITS.NARRATIVE} disabled={counterBusy}
+							placeholder="What is the court whispering about them now?"></textarea>
+					</label>
+					<p class="choices-note muted">The table reads this before you choose what it does.</p>
+					<button class="action-btn primary" onclick={() => submitCounterRumor(plan)}
+						disabled={counterBusy || !counterText.trim()}>
+						{counterBusy ? '…' : 'Spread it'}
+					</button>
+				</div>
+			{:else}
+				<p class="ft-prompt muted">{actorName} is writing the rumor that spreads instead…</p>
+			{/if}
 
 		{:else if pendingConsent != null}
 			<!-- A take-asset request is open: everything holds until the victim
@@ -659,9 +822,12 @@
 					</span>
 				</p>
 				<p class="choices-note">
-					Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
 					{#if rollOutcome === 'mar'}
-						You're driving the counter-rumor; effects apply to the preparer's assets.
+						Pick options equal to (difficulty − result) (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
+						They land on <em>{mcName}</em>, {playerName(players, plan.preparer_id)}'s main character —
+						the subject of your counter-rumor.
+					{:else}
+						Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
 					{/if}
 				</p>
 				{#if takeAssetDenied}
@@ -711,7 +877,7 @@
 							{/each}
 							{#if leveragedCount > 0}
 								<li>
-									Leveraged <em>{assetName(assets, plan.target_asset_id ?? 0)}</em>
+									Leveraged <em>{assetName(assets, (rollOutcome === 'mar' ? mcAsset?.id : plan.target_asset_id) ?? 0)}</em>
 									{#if leveragedCount > 1}(×{leveragedCount}){/if}
 								</li>
 							{/if}
@@ -725,7 +891,7 @@
 								</li>
 							{/each}
 							{#if revealedSource}
-								<li>Revealed {actorName} as the source</li>
+								<li>{actorName} relished the rumor's glory</li>
 							{/if}
 						</ul>
 					</div>
@@ -736,7 +902,7 @@
 				{#if btRemaining > 0}
 					<div class="plan-form">
 						<p class="choices-header">
-							{rollOutcome === 'mar' ? 'Break a preparer asset' : 'Break target asset'} ({btRemaining} remaining)
+							{rollOutcome === 'mar' ? `Break ${mcName}` : 'Break target asset'} ({btRemaining} remaining)
 						</p>
 						<CardPicker
 							label="Marginalium to tear"

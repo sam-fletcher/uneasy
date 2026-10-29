@@ -81,18 +81,95 @@ func (spHandler) ComputeDifficulty(
 	return gamepkg.SpreadPropagandaDifficulty(preparerRank), nil
 }
 
-// OnResolve creates the dice roll immediately (no pre-roll step).
+// OnResolve opens the pre-roll narration step and returns nil — no roll yet. The
+// plan sits in 'resolving' until the preparer summarises the message and how
+// they have been spreading it, which sp-cast-roll posts for the table to read
+// before it creates the roll (plan_preroll.go). No log entry here: the standard
+// plan.resolving post marks the start and cast-roll posts the narration itself.
 func (spHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
-	game, err := deps.Q.GetGameByID(ctx, plan.GameID)
-	if err != nil {
-		return nil, err
-	}
 	resData := loadResolutionData(plan.ResolutionData)
-	difficulty, err := spHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
-	if err != nil {
-		return nil, err
+	resData.EnsureSpreadPropaganda().PreRollDone = false
+	if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		return nil, fmt.Errorf("could not open pre-roll step: %w", err)
 	}
-	return createPlanRoll(ctx, deps.Q, deps.Manager, &game, plan, difficulty, plan.PreparerID)
+	return nil, nil
+}
+
+// CheckChoice refuses a make/mar before the pre-roll narration has been cast, or
+// while the roll it opened is still unsettled.
+func (spHandler) CheckChoice(
+	_ context.Context,
+	_ *dbgen.Queries,
+	_ *dbgen.Plan,
+	_ *dbgen.Player,
+	_ *ResolutionData,
+	roll *dbgen.DiceRoll,
+	_ string,
+) error {
+	if roll == nil {
+		return errors.New("summarize your message and cast the dice before choosing options")
+	}
+	if roll.Outcome == nil {
+		return errDiceNotSettled
+	}
+	return nil
+}
+
+// spCastRollHandler handles POST /api/plans/:planId/sp-cast-roll. The preparer
+// "summarize[s] the message you want the public to take from your propaganda and
+// describe[s] again how you've been spreading it" (book p.58). The text is
+// recorded, posted as the preparer's own scene post, and only then is the roll
+// created — so everyone choosing whether to help or interfere has read it.
+//
+// Request body: {"narration": "..."}
+func spCastRollHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePreRollOpen(w, r, deps.Q, model.PlanSpreadPropaganda)
+		if !ok {
+			return
+		}
+		var body struct {
+			Narration string `json:"narration"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		narration, ok := textField(w, "narration", body.Narration, maxLongTextLen)
+		if !ok {
+			return
+		}
+		if narration == "" {
+			respondErr(w, http.StatusBadRequest,
+				"summarize your message and describe how you've been spreading it before casting")
+			return
+		}
+
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		difficulty, err := spHandler{}.ComputeDifficulty(ctx, deps.Q, plan, &resData)
+		if err != nil {
+			respondInternalErr(w, r, "could not compute difficulty", err)
+			return
+		}
+		// Post BEFORE the roll exists: the narration is what the table reads to decide
+		// whether to help or interfere, so it must be on the record first.
+		postPlanNarration(ctx, deps, plan, player.ID, narration)
+		roll, err := openPreRollRoll(ctx, deps, plan, difficulty)
+		if err != nil {
+			respondInternalErr(w, r, "could not create dice roll", err)
+			return
+		}
+		sp := resData.EnsureSpreadPropaganda()
+		sp.PreRollDone = true
+		sp.PreRollText = narration
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not close pre-roll step", err)
+			return
+		}
+
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "roll": roll})
+	}
 }
 
 // ApplyChoice resolves a Spread Propaganda make/mar.
@@ -237,6 +314,7 @@ func (spHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 
 func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
+		"sp-cast-roll":    spCastRollHandler(deps),
 		"give-peer":       spGivePeerHandler(deps),
 		"break-self":      spBreakSelfHandler(deps),
 		"create-artifact": spCreateArtifactHandler(deps),
@@ -246,13 +324,20 @@ func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // spCreateArtifactHandler handles POST /api/plans/:planId/create-artifact.
 //
-// On a made plan the preparer authors the artifact embodying the societal shift:
-// this creates it under the chosen name in a single transaction (no placeholder)
+// On a made plan the preparer "describe[s] the changes that come from this, and
+// create[s] an artifact that embodies the shift in society" (book p.58). Both
+// halves are one step — no extra gate (principle 3): the narration of the changes
+// rides in the same request as the artifact and is posted as the author's own
+// scene post, so it is on the record whether or not anyone reads the artifact.
+//
+// The artifact is created under the chosen name in a single transaction (no placeholder)
 // and routes ownership through AssetRecipientForPlan, so a resolved Make Demands
 // keep_assets winner claims it. Preparer-gated and required — it gates completion
 // (CanComplete) until the artifact exists. Mirrors Propose Decree's enact-law.
 //
-// Request body: {"name": "the artifact's name", "marginalia": ["one entry"]}
+// Request body: {"narration": "the changes society undergoes",
+//
+//	"name": "the artifact's name", "marginalia": ["one entry"]}
 func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadPropaganda)
@@ -264,11 +349,24 @@ func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
+			Narration  string   `json:"narration"`
 			Name       string   `json:"name"`
 			Marginalia []string `json:"marginalia"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		narration, ok := textField(w, "narration", body.Narration, maxLongTextLen)
+		if !ok {
+			return
+		}
+		if narration == "" {
+			respondErr(
+				w,
+				http.StatusBadRequest,
+				"describe the changes that come from this before authoring the artifact",
+			)
 			return
 		}
 		name, ok := textField(w, "name", body.Name, maxAssetNameLen)
@@ -331,6 +429,7 @@ func spCreateArtifactHandler(deps *PlanDeps) http.HandlerFunc {
 
 		broadcastEvent(deps.Manager, plan.GameID, model.EventAssetCreated,
 			model.AssetPayload{Asset: assetWithMarginalia{Asset: asset, Marginalia: marginalia}})
+		postPlanNarration(ctx, deps, plan, player.ID, "The changes society undergoes: "+narration)
 		spLog(ctx, deps, plan, model.SeverityDefault,
 			fmt.Sprintf("%s authored a new artifact, %s, embodying the societal shift, with marginalia: %q.",
 				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name), margText))
@@ -462,7 +561,8 @@ func applyCoOpt(
 	// Tag it in ResData so its own co-opt option is blocked.
 	parentID := plan.ID
 	recursiveResData := ResolutionData{
-		SpreadPropaganda: &SpreadPropagandaResolutionData{OriginalPlanID: &parentID},
+		// Born rolling (just below), so it is past its pre-roll step.
+		SpreadPropaganda: &SpreadPropagandaResolutionData{OriginalPlanID: &parentID, PreRollDone: true},
 	}
 	if err = saveResolutionData(ctx, deps.Q, recursivePlan.ID, recursiveResData); err != nil {
 		return fmt.Errorf("could not save recursive plan data: %w", err)

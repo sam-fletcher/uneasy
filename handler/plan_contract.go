@@ -327,6 +327,11 @@ type ValidationContext struct {
 	PreparerPeerID *int64  // Clandestinely Liaise only — preparer's meeting peer
 	PartnerPeerID  *int64  // Clandestinely Liaise only — partner's meeting peer
 	Notes          string
+	// KeptSecret is Spread Rumors only: the rumor's text lives in a Secret, not in
+	// the (deliberately blanked) Notes. Set when a settled plan is re-validated
+	// with only its aim changed (Make Demands' demand-retarget replays the plan's
+	// own state) — never on a fresh prepare, where the text is in Notes.
+	KeptSecret bool
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────

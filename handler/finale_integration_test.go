@@ -426,7 +426,12 @@ func queueRow13Plan(t *testing.T, h *planLifecycle, idx int, order int16) int64 
 func finishResolvingPlan(t *testing.T, h *planLifecycle, planID int64) {
 	t.Helper()
 	roll, err := h.q.GetDiceRollByPlanID(context.Background(), &planID)
-	require.NoError(t, err, "the kickoff should have created the plan's roll")
+	if err != nil {
+		// A plan with a pre-roll step parks without a roll; the preparer casts it.
+		cast := h.castPreRoll(planID)
+		require.NotNil(t, cast, "the kickoff should have created the plan's roll")
+		roll = *cast
+	}
 	h.forceRoll(roll.ID, makeOutcome, 0)
 	h.complete(planID)
 }
