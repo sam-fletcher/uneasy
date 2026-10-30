@@ -178,12 +178,13 @@ func TestMakeIntroductions_Mar_OtherRetinue_RecipientWritesAndReceives(t *testin
 	})
 	require.Equalf(t, http.StatusOK, code, "other_retinue: %v", body)
 
-	// D6: the peer is still a draft — the recipient owes the marginalia, and the
-	// table is waiting on them, not the preparer.
+	// D6: the peer is still a draft — the recipient owes the marginalia. The
+	// preparer is owed too: the second peer is unresolved, so the table is
+	// waiting on both (see waiting_on_pass_integration_test.go).
 	assert.Nil(t, miAssetNamed(t, h, drafts[0].Name),
 		"an other_retinue peer must not exist until the recipient describes them")
-	h.assertWaitees("other_retinue awaiting the recipient",
-		model.RowStateAwaitIntroductionsMarginalia, other)
+	h.assertWaitees("other_retinue awaiting the recipient, second peer unresolved",
+		model.RowStateAwaitIntroductionsMarginalia, h.tg.Players[preparerIdx].ID, other)
 
 	// Completion is blocked: the second peer is unresolved.
 	completePath := "/api/plans/" + strconv.FormatInt(planID, 10) + "/complete"

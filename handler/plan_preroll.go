@@ -91,12 +91,13 @@ func postPlanNarration(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, au
 // make-choice for steps that must come first. MakeChoice consults it before
 // anything is applied and answers with the returned error's status (a *httpError)
 // or 409. roll is the plan's roll, nil when it has none — the pre-roll step is over
-// exactly when it exists, and its outcome is nil until the dice have settled.
+// exactly when it exists. By the time a gate runs the roll's outcome is settled:
+// MakeChoice itself refuses every plan's choice while a roll is still open
+// (errDiceNotSettled), so a gate never has to repeat that.
 //
-// It exists because make-choice otherwise accepts a submission with no roll, or a
-// roll still open (the outcome check is skipped when there is nothing to compare),
-// which would let a stale or hand-rolled client commit a result past a narration
-// step nobody wrote — or before the dice had said which branch it is.
+// It exists because make-choice otherwise accepts a submission with no roll at
+// all, which would let a stale or hand-rolled client commit a result past a
+// narration step nobody wrote.
 type ChoiceGate interface {
 	CheckChoice(
 		ctx context.Context,
@@ -110,5 +111,5 @@ type ChoiceGate interface {
 }
 
 // errDiceNotSettled is the refusal for a make/mar submitted while the roll is
-// still open — shared by the plans that gate on it.
+// still open. MakeChoice applies it to every plan that has a roll.
 var errDiceNotSettled = errors.New("the dice haven't settled yet — wait for the roll before choosing options")

@@ -51,6 +51,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"slices"
 	"strings"
 
 	dbgen "uneasy/db/gen"
@@ -134,24 +135,79 @@ func (miHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 	return nil
 }
 
-// ResolvingWaitees hands the waiting bar the players who owe a mar peer's
-// marginalia — the receiving player of an "other_retinue" peer, the assigned
-// author of a "broken_arrival" one. Neither is the preparer, and until they
-// write, no asset exists and the plan cannot complete. Nothing outstanding →
-// ride the generic PlanResolving case, which names the preparer.
-func (miHandler) ResolvingWaitees(_ context.Context, _ *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+// ResolvingWaitees names everyone Make Introductions is waiting on, in total:
+//
+//   - the resolution actor — the preparer, or the perform_steps winner standing
+//     in for them — while they owe anything: naming the peers, the roll's choice,
+//     an arrival form for a newcomer, or a mar outcome for a peer not yet
+//     resolved;
+//   - every player who owes a mar peer's marginalia — the receiving player of an
+//     "other_retinue" peer, the assigned author of a "broken_arrival" one. They
+//     are not the actor, and until they write, no asset exists and the plan
+//     cannot complete.
+//
+// Both sets are owed at once (the actor can resolve the next peer while a
+// recipient is still writing the last), so the bar names their union rather than
+// swapping one for the other. Nothing owed → the generic case, where the preparer
+// completes.
+func (miHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	mi := loadResolutionData(plan.ResolutionData).MakeIntroductions
 	if mi == nil {
 		return model.RowState{}, false
 	}
-	authors := mi.PendingArrivalAuthors()
-	if len(authors) == 0 {
-		return model.RowState{}, false
+	var waitees []int64
+	if miActorStillOwes(mi) {
+		actor := plan.PreparerID
+		if winner := performStepsWinner(ctx, q, plan); winner != 0 {
+			actor = winner
+		}
+		waitees = append(waitees, actor)
 	}
-	return model.RowState{
-		Kind:            model.RowStateAwaitIntroductionsMarginalia,
-		ActingPlayerIDs: authors,
-	}, true
+	authors := mi.PendingArrivalAuthors()
+	for _, id := range authors {
+		if !slices.Contains(waitees, id) {
+			waitees = append(waitees, id)
+		}
+	}
+	switch {
+	case len(waitees) == 0:
+		// Nothing owed. Past the branch point the preparer completes — named
+		// explicitly, because MI commits with no picks (MakeMarChoices stays
+		// empty), which the generic case reads as "a perform_steps winner has not
+		// chosen yet" and would keep naming the winner. Before it, ride the
+		// generic case.
+		if mi.DelayedArrival || mi.MakePending || mi.MarPending {
+			return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{plan.PreparerID}}, true
+		}
+		return model.RowState{}, false
+	case len(authors) == 0:
+		return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: waitees}, true
+	default:
+		return model.RowState{Kind: model.RowStateAwaitIntroductionsMarginalia, ActingPlayerIDs: waitees}, true
+	}
+}
+
+// miActorStillOwes reports whether the resolution actor has a step left. Which
+// steps exist depends on the branch the plan is in: a synthetic delayed arrival
+// owes its one traveller; a made plan owes an arrival form per draft; a marred
+// plan owes an outcome per draft. Before any branch is chosen the actor still owes
+// the naming, the roll and its choice — the pre-commit window.
+func miActorStillOwes(mi *gamepkg.MakeIntroductionsResolutionData) bool {
+	switch {
+	case mi.DelayedArrival:
+		return mi.DelayedDraft != nil && !mi.HasArrived(mi.DelayedDraft.ID)
+	case mi.MakePending:
+		for _, d := range mi.Drafts {
+			if !mi.HasArrived(d.ID) {
+				return true
+			}
+		}
+		return false
+	case mi.MarPending:
+		return int16(len(mi.MarOutcomes)) < mi.PeerCount
+	default:
+		return true
+	}
 }
 
 func (miHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {

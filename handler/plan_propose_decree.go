@@ -503,8 +503,14 @@ func (pdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 //     (the preparer drives the roll and submits make-choice to pass the decree).
 //   - Mar amendment chain incomplete → the next amender.
 //   - Amendments done, addendum unplaced → the signatory.
-//   - Addendum placed, law not yet enacted → generic preparer case (they enact,
-//     which auto-completes the plan).
+//   - Addendum placed, law not yet enacted → the preparer (they enact, which
+//     auto-completes the plan).
+//
+// A Make Demands perform_steps winner stands in for the PREPARER's slot only: the
+// preparer's own signing (when they are the signatory) and the enactment are the
+// winner's, and the server refuses the preparer both. A third-party signatory, the
+// amenders and the pre-roll steps (start-debate, call-roll) stay with whoever they
+// were always strictly for.
 func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	pd := loadResolutionData(plan.ResolutionData).ProposeDecree
 	if pd == nil {
@@ -519,6 +525,12 @@ func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 			Kind:            model.RowStatePlanResolving,
 			ActingPlayerIDs: []int64{*pd.SignatoryID},
 		}, true
+	}
+	// stepActor is who plays the preparer's slot after the roll: the preparer, or
+	// the perform_steps winner who has taken it over.
+	stepActor := plan.PreparerID
+	if winner := performStepsWinner(ctx, q, plan); winner != 0 {
+		stepActor = winner
 	}
 
 	// Until make-choice is submitted (the outcome applied), the blocker is the
@@ -558,13 +570,18 @@ func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 			ActingPlayerIDs: []int64{next},
 		}, true
 	}
-	// Amendments done; the signatory must place the addendum.
+	// Amendments done; the signatory must place the addendum. When the signatory
+	// is the preparer, that signing is the preparer's slot — the winner's, if a
+	// demand took it (set-addendum, like enact-law, runs through actsForPreparer).
 	if !pd.AddendumPlaced {
+		if pd.SignatoryID != nil && *pd.SignatoryID == plan.PreparerID {
+			return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{stepActor}}, true
+		}
 		return signatory()
 	}
-	// Addendum placed: the preparer enacts the law (which auto-completes the
-	// plan) — generic case names the preparer.
-	return model.RowState{}, false
+	// Addendum placed: the preparer's slot enacts the law (which auto-completes
+	// the plan).
+	return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{stepActor}}, true
 }
 
 func (pdHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {

@@ -202,11 +202,12 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		// Verify result matches the linked dice roll's outcome (if one exists).
 		roll, rollErr := s.Q.GetDiceRollByPlanID(ctx, &plan.ID)
-		if rollErr == nil && roll.Outcome != nil && *roll.Outcome != body.Result {
-			respondErr(w, http.StatusConflict,
-				fmt.Sprintf("result '%s' does not match roll outcome '%s'", body.Result, *roll.Outcome))
+		var rollPtr *dbgen.DiceRoll
+		if rollErr == nil {
+			rollPtr = &roll
+		}
+		if !checkChoiceMatchesRoll(w, rollPtr, body.Result) {
 			return
 		}
 
@@ -216,10 +217,6 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		var rollPtr *dbgen.DiceRoll
-		if rollErr == nil {
-			rollPtr = &roll
-		}
 		if !enforceChoiceBudget(w, h, rollPtr, body.Result, body.Choices) {
 			return
 		}
@@ -274,6 +271,31 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			"messy_break_required": resData.ExchangeCourtiers != nil && resData.ExchangeCourtiers.MessyBreakRequired,
 		})
 	}
+}
+
+// checkChoiceMatchesRoll refuses a make-choice the plan's roll cannot back: the
+// roll is still in the air (deciding, voting, leveraging — it has no outcome yet),
+// or it settled the other way. roll is nil for a plan with no roll, which is
+// unconstrained here; its own ChoiceGate owns that case.
+//
+// The still-open refusal is for every plan, not an opt-in: with no outcome to
+// compare against the mismatch check was silently skipped, so a stale or
+// hand-built client could commit a mar (and its effects) — or a make — ahead of
+// the dice.
+func checkChoiceMatchesRoll(w http.ResponseWriter, roll *dbgen.DiceRoll, result string) bool {
+	if roll == nil {
+		return true
+	}
+	if roll.Outcome == nil {
+		respondErr(w, http.StatusConflict, errDiceNotSettled.Error())
+		return false
+	}
+	if *roll.Outcome != result {
+		respondErr(w, http.StatusConflict,
+			fmt.Sprintf("result '%s' does not match roll outcome '%s'", result, *roll.Outcome))
+		return false
+	}
+	return true
 }
 
 // checkChoiceGate consults the plan's optional ChoiceGate precondition and writes
