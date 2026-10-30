@@ -64,9 +64,13 @@ UPDATE assets SET name = $2 WHERE id = $1;
 UPDATE assets SET is_main_character = $2 WHERE id = $1;
 
 -- name: GetMainCharacterByOwner :one
--- Returns the player's main-character asset in this game, if any.
+-- Returns the player's main-character asset in this game, if any. A player
+-- should hold exactly one; ORDER BY id keeps the pick deterministic (oldest
+-- wins) should the invariant ever be broken, rather than leaving it to
+-- Postgres row order.
 SELECT * FROM assets
 WHERE game_id = $1 AND owner_id = $2 AND is_main_character = TRUE AND is_destroyed = FALSE
+ORDER BY id
 LIMIT 1;
 
 -- name: ClearMainCharacter :exec

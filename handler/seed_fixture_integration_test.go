@@ -217,3 +217,50 @@ func TestSeedShakeUp_SpendingStepWithTokens(t *testing.T) {
 		assert.EqualValues(t, 5, n)
 	}
 }
+
+// TestSeed_EveryPhaseYieldsExactlyOneMainCharacterPerPlayer pins the
+// main-character invariant (every player holds exactly one non-destroyed MC)
+// on every seed builder, with and without marginalia. GetMainCharacterByOwner
+// has no ORDER BY, so a seed that flagged two would make tests pass or fail on
+// Postgres row order rather than loudly.
+func TestSeed_EveryPhaseYieldsExactlyOneMainCharacterPerPlayer(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+
+	builders := map[string]func(names []string, opts ...gametest.Option) (gametest.SeededGame, error){
+		"main_event": func(n []string, o ...gametest.Option) (gametest.SeededGame, error) {
+			return gametest.SeedMainEvent(ctx, q, n, o...)
+		},
+		"shake_up": func(n []string, o ...gametest.Option) (gametest.SeededGame, error) {
+			return gametest.SeedShakeUp(ctx, q, n, o...)
+		},
+		"prologue_closing": func(n []string, o ...gametest.Option) (gametest.SeededGame, error) {
+			return gametest.SeedPrologueClosing(ctx, q, n, o...)
+		},
+	}
+	for name, build := range builders {
+		for _, marginalia := range []bool{false, true} {
+			t.Run(name, func(t *testing.T) {
+				var opts []gametest.Option
+				if marginalia {
+					opts = append(opts, gametest.WithStartingMarginalia())
+				}
+				seeded, err := build([]string{"mc-a-" + randSuffix(), "mc-b-" + randSuffix(), "mc-c-" + randSuffix()}, opts...)
+				require.NoError(t, err)
+
+				assets, err := q.ListAssetsByGame(ctx, seeded.Game.ID)
+				require.NoError(t, err)
+				mcs := map[int64]int{}
+				for _, a := range assets {
+					if a.IsMainCharacter && !a.IsDestroyed {
+						mcs[a.OwnerID]++
+					}
+				}
+				for _, p := range seeded.Players {
+					assert.Equal(t, 1, mcs[p.ID], "player %q must hold exactly one main character", p.DisplayName)
+				}
+			})
+		}
+	}
+}

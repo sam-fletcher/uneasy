@@ -362,6 +362,7 @@ func (q *Queries) GetAssetByID(ctx context.Context, id int64) (Asset, error) {
 const getMainCharacterByOwner = `-- name: GetMainCharacterByOwner :one
 SELECT id, game_id, owner_id, creator_id, asset_type, name, is_main_character, is_leveraged, is_destroyed, created_at, destroyed_at, linked_card_suit, linked_card_value FROM assets
 WHERE game_id = $1 AND owner_id = $2 AND is_main_character = TRUE AND is_destroyed = FALSE
+ORDER BY id
 LIMIT 1
 `
 
@@ -370,7 +371,10 @@ type GetMainCharacterByOwnerParams struct {
 	OwnerID int64 `db:"owner_id" json:"owner_id"`
 }
 
-// Returns the player's main-character asset in this game, if any.
+// Returns the player's main-character asset in this game, if any. A player
+// should hold exactly one; ORDER BY id keeps the pick deterministic (oldest
+// wins) should the invariant ever be broken, rather than leaving it to
+// Postgres row order.
 func (q *Queries) GetMainCharacterByOwner(ctx context.Context, arg GetMainCharacterByOwnerParams) (Asset, error) {
 	row := q.db.QueryRow(ctx, getMainCharacterByOwner, arg.GameID, arg.OwnerID)
 	var i Asset

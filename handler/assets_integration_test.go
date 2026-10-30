@@ -4,12 +4,14 @@ package handler
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	gamepkg "uneasy/game"
 	"uneasy/model"
 )
 
@@ -139,22 +141,17 @@ func TestUpdateAsset_MainCharacterExclusivity(t *testing.T) {
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
+	owner := tg.Players[0]
+	mcParams := dbgen.GetMainCharacterByOwnerParams{GameID: tg.Game.ID, OwnerID: owner.ID}
 
-	// Create two peers
-	peer1, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
-		GameID:          tg.Game.ID,
-		OwnerID:         tg.Players[0].ID,
-		CreatorID:       tg.Players[0].ID,
-		AssetType:       model.AssetPeer,
-		Name:            "Ally 1",
-		IsMainCharacter: true,
-	})
+	// The seed already gave the owner their one main character.
+	peer1, err := q.GetMainCharacterByOwner(ctx, mcParams)
 	require.NoError(t, err)
 
 	peer2, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
 		GameID:          tg.Game.ID,
-		OwnerID:         tg.Players[0].ID,
-		CreatorID:       tg.Players[0].ID,
+		OwnerID:         owner.ID,
+		CreatorID:       owner.ID,
 		AssetType:       model.AssetPeer,
 		Name:            "Ally 2",
 		IsMainCharacter: false,
@@ -163,7 +160,7 @@ func TestUpdateAsset_MainCharacterExclusivity(t *testing.T) {
 
 	// Set peer2 as main character → should clear peer1
 	err = q.ClearMainCharacter(ctx, dbgen.ClearMainCharacterParams{
-		OwnerID: tg.Players[0].ID,
+		OwnerID: owner.ID,
 		GameID:  tg.Game.ID,
 	})
 	require.NoError(t, err)
@@ -174,43 +171,42 @@ func TestUpdateAsset_MainCharacterExclusivity(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Verify peer1 is no longer main character
+	// Verify peer1 is no longer main character and peer2 is the only one.
 	peer1Updated, err := q.GetAssetByID(ctx, peer1.ID)
 	require.NoError(t, err)
 	assert.False(t, peer1Updated.IsMainCharacter)
+	current, err := q.GetMainCharacterByOwner(ctx, mcParams)
+	require.NoError(t, err)
+	assert.Equal(t, peer2.ID, current.ID)
 }
 
+// TestUpdateAsset_OnlyPeersCanBeMain pins the rule at its real enforcement
+// point (game.DecideMainCharacterChange, which the UpdateAsset handler runs
+// before any write) and checks the seeded main character is left alone. The
+// storage layer deliberately allows any flag combination, so flagging a
+// non-peer directly would only manufacture a second main character.
 func TestUpdateAsset_OnlyPeersCanBeMain(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 2)
 	ctx := context.Background()
+	mcParams := dbgen.GetMainCharacterByOwnerParams{GameID: tg.Game.ID, OwnerID: tg.Players[0].ID}
+	seededMC, err := q.GetMainCharacterByOwner(ctx, mcParams)
+	require.NoError(t, err)
 
-	// Create non-peer assets
 	for _, assetType := range []model.AssetType{
 		model.AssetHolding,
 		model.AssetArtifact,
 		model.AssetResource,
 	} {
-		holding, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
-			GameID:          tg.Game.ID,
-			OwnerID:         tg.Players[0].ID,
-			CreatorID:       tg.Players[0].ID,
-			AssetType:       assetType,
-			Name:            "Non-Peer",
-			IsMainCharacter: false,
-		})
-		require.NoError(t, err)
-
-		// Try to set as main character (should not work or be ignored)
-		// Actually, the DB schema may allow it but game logic should prevent it
-		err = q.SetMainCharacter(ctx, dbgen.SetMainCharacterParams{
-			ID:              holding.ID,
-			IsMainCharacter: true,
-		})
-		// Just verify operation completes; handler layer validates type
-		require.NoError(t, err)
+		_, decErr := gamepkg.DecideMainCharacterChange(&gamepkg.AssetView{AssetType: assetType}, nil, nil, nil)
+		require.NotNil(t, decErr, "%s must not be promotable", assetType)
+		assert.Equal(t, http.StatusBadRequest, decErr.Code)
 	}
+
+	current, err := q.GetMainCharacterByOwner(ctx, mcParams)
+	require.NoError(t, err)
+	assert.Equal(t, seededMC.ID, current.ID)
 }
 
 // ── Marginalia Lifecycle Tests ──────────────────────────────────────────────
@@ -1163,4 +1159,43 @@ func TestListMarginaliaByAssets_MatchesPerAssetQueries(t *testing.T) {
 	for _, m := range all {
 		assert.NotEqual(t, stranger.ID, m.AssetID, "an asset outside the id list leaked in")
 	}
+}
+
+// TestAssets_SecondLiveMainCharacterIsRejected pins the unique index that
+// backs the one-main-character-per-player invariant, including the carve-outs
+// the real flows rely on: a destroyed MC doesn't count (conscription), and a
+// transfer clears the flag so the taker never ends up with two.
+func TestAssets_SecondLiveMainCharacterIsRejected(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	tg := newTestGame(t, q, 2)
+	ctx := context.Background()
+	owner := tg.Players[0]
+	mcParams := dbgen.GetMainCharacterByOwnerParams{GameID: tg.Game.ID, OwnerID: owner.ID}
+	newPeer := func(mc bool) (dbgen.Asset, error) {
+		return q.CreateAsset(ctx, dbgen.CreateAssetParams{
+			GameID: tg.Game.ID, OwnerID: owner.ID, CreatorID: owner.ID,
+			AssetType: model.AssetPeer, Name: "Extra", IsMainCharacter: mc,
+		})
+	}
+
+	_, err := newPeer(true)
+	require.Error(t, err, "a second live main character must be refused")
+
+	// Destroyed MCs don't count: conscription creates a new one afterwards.
+	old, err := q.GetMainCharacterByOwner(ctx, mcParams)
+	require.NoError(t, err)
+	require.NoError(t, q.DestroyAsset(ctx, old.ID))
+	replacement, err := newPeer(true)
+	require.NoError(t, err)
+	current, err := q.GetMainCharacterByOwner(ctx, mcParams)
+	require.NoError(t, err)
+	assert.Equal(t, replacement.ID, current.ID)
+
+	// Taking a main character clears its flag, so the taker keeps exactly one.
+	taker := tg.Players[1]
+	require.NoError(t, q.TransferAsset(ctx, dbgen.TransferAssetParams{ID: replacement.ID, OwnerID: taker.ID}))
+	takerMC, err := q.GetMainCharacterByOwner(ctx, dbgen.GetMainCharacterByOwnerParams{GameID: tg.Game.ID, OwnerID: taker.ID})
+	require.NoError(t, err)
+	assert.NotEqual(t, replacement.ID, takerMC.ID)
 }

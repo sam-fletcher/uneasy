@@ -85,18 +85,14 @@ func newPlanLifecycleOn(t *testing.T, pool *pgxpool.Pool, n int) *planLifecycle 
 		require.NoError(t, err)
 		tokens[i] = tok
 
-		// Plan preparation requires the preparer to own at least one peer
-		// (and an unrestricted plan needs a main character). Seed both so
-		// the harness doesn't 403 the very first prepare call.
+		// newTestGame already seeded each player's main character (exactly
+		// one — the invariant ComputeRowState and GetMainCharacterByOwner
+		// rely on). Add a second, ordinary peer so plan tests that take,
+		// break or destroy a peer still leave the owner a peer to prepare
+		// with. Never flag it as a main character here.
 		_, err = q.CreateAsset(context.Background(), dbgen.CreateAssetParams{
 			GameID: tg.Game.ID, OwnerID: p.ID, CreatorID: p.ID,
 			AssetType: model.AssetPeer, Name: "Seed peer " + p.DisplayName,
-		})
-		require.NoError(t, err)
-		_, err = q.CreateAsset(context.Background(), dbgen.CreateAssetParams{
-			GameID: tg.Game.ID, OwnerID: p.ID, CreatorID: p.ID,
-			AssetType: model.AssetPeer, Name: p.DisplayName + " (MC)",
-			IsMainCharacter: true,
 		})
 		require.NoError(t, err)
 	}
