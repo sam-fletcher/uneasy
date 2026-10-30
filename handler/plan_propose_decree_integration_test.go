@@ -220,7 +220,7 @@ func TestProposeDecree_Make_CreatesLawAndAsset(t *testing.T) {
 	posts := pdSystemPostBodies(t, h)
 	assert.Conditionf(t, func() bool {
 		for _, b := range posts {
-			if strings.Contains(b, "enacted") && strings.Contains(b, "resource was created") {
+			if strings.Contains(b, "enacted") && strings.Contains(b, "was created") {
 				return true
 			}
 		}

@@ -695,9 +695,11 @@ func saVetoQuestionHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// A question is only logged once answered, so a vetoed one would otherwise
+		// leave no trace of what was asked.
 		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"%s vetoed %s's question — they outrank them on knowledge and must be asked another.",
-			playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, plan.PreparerID)))
+			"%s vetoed %s's question %q — they outrank them on knowledge and must be asked another.",
+			playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, plan.PreparerID), q.Question))
 
 		sa.PendingQuestion = nil
 		sa.CurrentAskVetoedTargetID = q.TargetID

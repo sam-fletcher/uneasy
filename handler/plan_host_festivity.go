@@ -333,6 +333,12 @@ func hfGuestRollHandler(deps *PlanDeps) http.HandlerFunc {
 				respondInternalErr(w, r, "could not save opt-out", err)
 				return
 			}
+			// Opting out is announced aloud at the table, and it is what earns the
+			// host a make (rules: a make "for each guest that either rolled a mar
+			// or opted out") — so it is as much a board change as the roll.
+			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s opted out of rolling — %s earns a make.",
+				playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 			broadcastEvent(
 				deps.Manager,
 				plan.GameID,
@@ -537,6 +543,9 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 				state.GuestMars = map[string]string{}
 			}
 			state.GuestMars[key] = body.Choice
+			hfLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
+				"%s's mar earns %s a make.",
+				playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 		}
 
 		// The choosing guest is the active roller concluding their own

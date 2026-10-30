@@ -115,11 +115,11 @@ func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error 
 	}
 	broadcastEvent(fc.deps.Manager, fc.plan.GameID, model.EventRumorCreated, model.RumorCreatedPayload{Rumor: rumor})
 	if fc.IsMake {
-		hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s spread a new rumor at the event.",
-			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID)))
+		hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("%s spread a new rumor at the event: %q",
+			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID), rumor.Text))
 	} else {
-		hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("A rumor spread about %s.",
-			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID)))
+		hfLog(ctx, fc.deps, fc.plan, model.SeverityDefault, fmt.Sprintf("A rumor spread about %s: %q",
+			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID), rumor.Text))
 	}
 	return nil
 }

@@ -108,6 +108,10 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			"option":     body.Option,
 			"pick_index": len(md.DraftChoices),
 		})
+		// A draft is spoken aloud pick by pick; the summary only appears once the
+		// fourth lands, so a draft left half-finished would otherwise be silent.
+		mdLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
+			"%s drafted %s.", playerDisplayName(ctx, deps.Q, player.ID), mdDemandOptionLabels[body.Option]))
 
 		// On the final pick, persist the winners map on the demand plan so
 		// the target plan's resolution path can consult it cheaply.
