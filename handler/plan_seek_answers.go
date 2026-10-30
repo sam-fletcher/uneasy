@@ -250,15 +250,55 @@ func (saHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	}
 }
 
-// ResolvingWaitees returns AwaitQuestionAnswer while a Seek Answers "ask a player
-// a question" pick is waiting on the target's answer or veto. ActingPlayerIDs
-// names the target, so the table blocks on them rather than the resolving plan's
-// focus player. No pending question → ride the generic PlanResolving case.
-func (saHandler) ResolvingWaitees(_ context.Context, _ *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+// ResolvingWaitees names everyone a resolving Seek Answers is waiting on, in total:
+//
+//   - the target of a pending "ask a player a question" pick, who owes the answer
+//     or the veto (AwaitQuestionAnswer);
+//   - the resolution actor — the preparer, or a Make Demands perform_steps winner
+//     who stands in for them — while any pick is still unperformed. Only a SECOND
+//     ask is held back by a question in flight; reveal-secret, break-resource and
+//     declare-truth stay open, so the actor is owed alongside the target until
+//     those are done.
+//
+// A question out with nothing else left names the target alone; nothing owed at
+// all rides the generic case (the preparer completes). The actor alone, when it
+// is the preparer, also rides the generic case — only a winner needs naming.
+func (saHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	resData := loadResolutionData(plan.ResolutionData)
-	if sa := resData.SeekAnswers; sa != nil && sa.PendingQuestion != nil {
-		target := sa.PendingQuestion.TargetID
-		return model.RowState{Kind: model.RowStateAwaitQuestionAnswer, ActingPlayerIDs: []int64{target}}, true
+	sa := resData.SeekAnswers
+	if sa == nil {
+		return model.RowState{}, false
+	}
+	actor := plan.PreparerID
+	if winner := performStepsWinner(ctx, q, plan); winner != 0 {
+		actor = winner
+	}
+	actorOwes := saActorStillOwes(plan, &resData)
+
+	if sa.PendingQuestion != nil {
+		waitees := []int64{sa.PendingQuestion.TargetID}
+		if actorOwes && actor != sa.PendingQuestion.TargetID {
+			waitees = append(waitees, actor)
+		}
+		return model.RowState{Kind: model.RowStateAwaitQuestionAnswer, ActingPlayerIDs: waitees}, true
+	}
+	if actorOwes && actor != plan.PreparerID {
+		return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{actor}}, true
 	}
 	return model.RowState{}, false
+}
+
+// saActorStillOwes reports whether the resolution actor has anything left to do:
+// CanComplete without the question in flight, which is the target's to settle, not
+// the actor's. (The question's own pick counts as performed — the actor cannot
+// advance it further until the target answers.)
+func saActorStillOwes(plan *dbgen.Plan, resData *ResolutionData) bool {
+	sa := *resData.SeekAnswers
+	if sa.PendingQuestion != nil {
+		sa.PendingQuestion = nil
+		sa.AskQuestionDone++
+	}
+	probe := *resData
+	probe.SeekAnswers = &sa
+	return (saHandler{}).CanComplete(plan, &probe) != nil
 }

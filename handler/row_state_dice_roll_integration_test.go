@@ -305,23 +305,23 @@ func TestComputeRowState_AwaitBattleCost_UnionsAcrossWars(t *testing.T) {
 	require.Contains(t, outstanding, warA.ID, "war A must owe a cost for this scenario to be meaningful")
 	require.Contains(t, outstanding, warB.ID, "war B must owe a cost for this scenario to be meaningful")
 	// Expected set built here rather than from the production helper, so this
-	// asserts the union itself and not just that the helper was called.
+	// asserts the union itself and not just that the helper was called. Payment is
+	// strictly ordered within a war, so each war contributes only its front payer.
 	seenPayer := map[int64]bool{}
 	var wantPayers []int64
 	for _, keys := range outstanding {
-		for _, k := range keys {
-			if !seenPayer[k.PayerID] {
-				seenPayer[k.PayerID] = true
-				wantPayers = append(wantPayers, k.PayerID)
-			}
+		if front := keys[0].PayerID; !seenPayer[front] {
+			seenPayer[front] = true
+			wantPayers = append(wantPayers, front)
 		}
 	}
+	require.Len(t, wantPayers, 2, "each war has its own next payer")
 
 	state, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RowStateAwaitBattleCost, state.Kind)
 	assert.ElementsMatch(t, wantPayers, state.ActingPlayerIDs,
-		"ActingPlayerIDs must union payers across every war with an outstanding cost, not just state.WarID's war")
+		"ActingPlayerIDs must union each war's next payer across every war with an outstanding cost, not just state.WarID's war")
 }
 
 func TestComputeRowState_AwaitSurrenderClaim_UnionsClaimants(t *testing.T) {

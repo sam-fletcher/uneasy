@@ -162,24 +162,26 @@ func mwOutstandingCostsForWars(
 	return out, nil
 }
 
-// mwBattleCostWaitees names every player the cost-of-battle gate is waiting on,
-// across every war that owes something on this row. `outstanding` is
+// mwBattleCostWaitees names every player the cost-of-battle gate can act on, across
+// every war that owes something on this row. `outstanding` is
 // mwOutstandingCostsForWars' war_id → missing-payments map.
 //
-// Usually that is the outstanding payers. But a war with an OPEN PEACE PROPOSAL
-// is waiting on the vote, not on a payment: proposing peace IS the proposer's
-// cost-of-battle choice for the row (see mwProposePeaceHandler), and nobody
-// else can pay while it stands, because payment runs in strict reverse-power
-// order and only the proposer — who holds the front of that queue — is allowed
-// to pay next. Naming the payers there told the player holding Accept/Reject
-// that the table was waiting on everyone but them.
+// Usually that is the war's next payer: payment runs in strict reverse-power
+// order and mwPayBattleCostHandler takes a payment only from the front of the
+// queue, so naming the others would notify players the server would answer
+// "another participant must pay first".
+//
+// A war with an OPEN PEACE PROPOSAL is waiting on the vote instead: proposing
+// peace IS the proposer's cost-of-battle choice for the row (see
+// mwProposePeaceHandler), and nobody can pay while it stands. It contributes every
+// voter who hasn't accepted. Naming the payers there told the player holding
+// Accept/Reject that the table was waiting on everyone but them.
 //
 // The substitution is per-war on purpose. ResolvingWaitees' contract
 // (handler/plan_contract.go) is that an override must name EVERYONE who is
 // owed, never swap the acting set for whoever acted most recently — so a
-// second war with real unpaid costs still contributes its payers here, and a
-// war under proposal contributes every voter who hasn't accepted, not just the
-// latest one. Wars are visited in id order so the set is stable between calls.
+// second war with a payment due still contributes its payer here. Wars are
+// visited in id order so the set is stable between calls.
 func mwBattleCostWaitees(
 	ctx context.Context,
 	q *dbgen.Queries,
@@ -204,9 +206,11 @@ func mwBattleCostWaitees(
 			}
 			continue
 		}
-		for _, k := range outstanding[warID] {
-			add(k.PayerID)
-		}
+		// Payment runs in strict reverse-power order (mwPayBattleCostHandler refuses
+		// anyone but the front of the queue), so only that one player can act in this
+		// war. Naming every unpaid payer sent the turn notification to players the
+		// server would answer "another participant must pay first".
+		add(outstanding[warID][0].PayerID)
 	}
 	return ids, nil
 }

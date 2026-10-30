@@ -575,6 +575,19 @@ func pduelEffectiveSeat(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan,
 	return 0, false
 }
 
+// pduelSeatHolder is the inverse of pduelEffectiveSeat: the player who may act
+// from a duellist's seat. A seat belongs to its own duellist, except that a
+// Make Demands perform_steps winner holds the PREPARER's (and the preparer is
+// locked out of it). The target's seat is never transferred.
+func pduelSeatHolder(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, seat int64) int64 {
+	if seat == plan.PreparerID {
+		if w := performStepsWinner(ctx, q, plan); w != 0 {
+			return w
+		}
+	}
+	return seat
+}
+
 func pduelOpponentID(plan *dbgen.Plan, playerID int64) int64 {
 	if playerID == plan.PreparerID && plan.TargetPlayerID != nil {
 		return *plan.TargetPlayerID
@@ -592,7 +605,8 @@ func pduelSide(plan *dbgen.Plan, playerID int64) gamepkg.DuelSide {
 // ResolvingWaitees returns the narrower RowState for a resolving Propose Duel
 // plan. setup/staking are simultaneous-submit; ActingPlayerIDs lists whoever
 // still owes a submission. 'bouts' blocks on a single player — the responder if
-// a declared bout is unresolved, otherwise the declarer (InitiativePlayerID).
+// a declared bout is unresolved, otherwise the declarer (InitiativePlayerID) —
+// resolved to whoever holds that seat (pduelSeatHolder).
 // 'roll' and 'done' return false and ride the generic PlanResolving case (roll
 // is the standard dice flow; done is terminal).
 func (pduelHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
@@ -610,11 +624,16 @@ func (pduelHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan
 		}
 		return model.RowState{Kind: model.RowStateAwaitDuelStaking, ActingPlayerIDs: ids}, true
 	case gamepkg.DuelPhaseBouts:
-		actor := duelBoutActor(ctx, q, plan, &state)
-		if actor == 0 {
+		seat := duelBoutActor(ctx, q, plan, &state)
+		if seat == 0 {
 			return model.RowState{}, false
 		}
-		return model.RowState{Kind: model.RowStateAwaitDuelBout, ActingPlayerIDs: []int64{actor}}, true
+		// The bar names whoever may act IN the seat, which is not always the
+		// seat's own player: a perform_steps winner holds the preparer's.
+		return model.RowState{
+			Kind:            model.RowStateAwaitDuelBout,
+			ActingPlayerIDs: []int64{pduelSeatHolder(ctx, q, plan, seat)},
+		}, true
 	case gamepkg.DuelPhaseRoll:
 		// A marred roll hands the asset-claim make-choice to the *target* (the
 		// mar winner): they pick which of the preparer's staked assets to take.

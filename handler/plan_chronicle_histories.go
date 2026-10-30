@@ -706,13 +706,20 @@ func chNarrativeChoicePhrase(option string) string {
 // ResolvingWaitees narrows a marred Chronicle Histories to AwaitChronicleChoices:
 // every player present when the mar scene began must each submit one option. The
 // bar names those who still owe a choice (game players minus the distinct
-// submitters in MakeMarChoices). The make path and a fully-chosen mar return
-// false and ride the generic plan_resolving case (the preparer completes).
+// submitters in MakeMarChoices). A fully-chosen mar, and a make path that owes
+// nothing to a perform_steps winner, return false and ride the generic
+// plan_resolving case (the preparer completes).
 func (chHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
+	resData := loadResolutionData(plan.ResolutionData)
 	if !planRollIsMar(ctx, q, plan) {
+		// The make path is a run of make-steps; a perform_steps winner drives them
+		// all (and the preparer is refused), so name the winner until the budget is
+		// spent. Otherwise the preparer's, and the generic case names them.
+		if winner, owed := performStepsStillOwed(ctx, q, plan, &resData, chHandler{}.CanComplete); owed {
+			return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{winner}}, true
+		}
 		return model.RowState{}, false
 	}
-	resData := loadResolutionData(plan.ResolutionData)
 	submitted := map[int64]bool{}
 	for _, c := range resData.MakeMarChoices {
 		if c.PlayerID != nil {

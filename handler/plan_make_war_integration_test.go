@@ -536,7 +536,9 @@ func TestMakeWarHTTP_PeaceVote_NamesTheVoters(t *testing.T) {
 	prep, enemy, ally := h.tg.Players[prepIdx].ID, h.tg.Players[enemyIdx].ID, h.tg.Players[allyIdx].ID
 	h.jumpToRow(warRow + 1)
 
-	h.assertWaitees("before any proposal, the payers", model.RowStateAwaitBattleCost, prep, enemy, ally)
+	// Payment is strictly ordered, so the bar names the one player who can pay.
+	front := warFrontPayer(t, h, war.ID)
+	h.assertWaitees("before any proposal, the next payer", model.RowStateAwaitBattleCost, front)
 
 	code, body := h.post(prepIdx, warRoute(planID, "propose-peace"), map[string]any{"terms": "Withdraw to the old border."})
 	require.Equalf(t, http.StatusOK, code, "propose-peace: %v", body)
@@ -550,7 +552,7 @@ func TestMakeWarHTTP_PeaceVote_NamesTheVoters(t *testing.T) {
 
 	code, body = h.post(allyIdx, warRoute(planID, "vote-peace"), map[string]any{"proposal_id": proposalID, "accepted": false})
 	require.Equalf(t, http.StatusOK, code, "vote-peace reject: %v", body)
-	h.assertWaitees("rejected: the gate goes back to the payers", model.RowStateAwaitBattleCost, prep, enemy, ally)
+	h.assertWaitees("rejected: the gate goes back to the next payer", model.RowStateAwaitBattleCost, front)
 
 	// A rejection used to leave no trace at all — no post, so the proposer was
 	// never told. It must name both parties, and sit on the row being played.
@@ -589,10 +591,23 @@ func TestMakeWarHTTP_PeaceVote_NamesEveryoneOwedAcrossWars(t *testing.T) {
 	code, body := h.post(prepIdx, warRoute(planID, "propose-peace"), map[string]any{"terms": "A truce."})
 	require.Equalf(t, http.StatusOK, code, "propose-peace: %v", body)
 
-	// War A waits on its one voter; war B still waits on both its payers. The
-	// war-A proposer is owed nothing, so is absent.
+	// War A waits on its one voter; war B still waits on its next payer (payment
+	// is strictly ordered, so just the one). The war-A proposer is owed nothing,
+	// so is absent.
 	h.assertWaitees("one war voting, one war paying", model.RowStateAwaitBattleCost,
-		h.tg.Players[enemyIdx].ID, bDecl.ID, bEnemy.ID)
+		h.tg.Players[enemyIdx].ID, warFrontPayer(t, h, warB.ID))
+}
+
+// warFrontPayer is the player first in a war's reverse-power payment queue this
+// row — the only one the pay route will take a payment from.
+func warFrontPayer(t *testing.T, h *planLifecycle, warID int64) int64 {
+	t.Helper()
+	game, err := h.q.GetGameByID(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	owed, err := mwOutstandingCostsForGame(context.Background(), h.q, h.tg.Game.ID, game.CurrentRow)
+	require.NoError(t, err)
+	require.NotEmpty(t, owed[warID], "the war owes a payment this row")
+	return owed[warID][0].PayerID
 }
 
 // ── Action-log gaps ─────────────────────────────────────────────────────────

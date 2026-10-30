@@ -485,10 +485,10 @@ func isNoRows(err error) bool {
 // battle cost on the current row. ok is false when neither applies. Split out of
 // ComputeRowState to keep it short.
 //
-// For a battle cost, ActingPlayerIDs is every outstanding payer across every
-// war — except that a war with an open peace proposal contributes its unvoted
-// participants instead (mwBattleCostWaitees), because that war is waiting on
-// the vote, not on a payment.
+// For a battle cost, ActingPlayerIDs is each war's next payer (payment is strictly
+// ordered, so one per war) — except that a war with an open peace proposal
+// contributes its unvoted participants instead (mwBattleCostWaitees), because that
+// war is waiting on the vote, not on a payment.
 func warConflictGate(
 	ctx context.Context,
 	q *dbgen.Queries,

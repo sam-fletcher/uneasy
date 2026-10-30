@@ -165,7 +165,7 @@ func (srHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 }
 
 // CheckChoice gates make-choice behind the steps that must come first. Before the
-// roll — or while it is still open — there is nothing to choose; on a mar the options belong to the mar actor —
+// roll there is nothing to choose; on a mar the options belong to the mar actor —
 // never the preparer, whose rumor just failed — and wait for the counter-rumor the
 // actor writes first (book p.59: "The target player describes the rumor that
 // spreads about you instead").
@@ -180,9 +180,6 @@ func (srHandler) CheckChoice(
 ) error {
 	if roll == nil {
 		return errors.New("state the rumor and cast the dice before choosing options")
-	}
-	if roll.Outcome == nil {
-		return errDiceNotSettled
 	}
 	if result != marOutcome {
 		return nil
@@ -552,11 +549,8 @@ func (srHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		}
 		return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{asset.OwnerID}}, true
 	}
-	winner := performStepsWinner(ctx, q, plan)
-	if winner == 0 || winner == plan.PreparerID || len(resData.MakeMarChoices) == 0 {
-		return model.RowState{}, false
-	}
-	if err := (srHandler{}).CanComplete(plan, &resData); err == nil {
+	winner, owed := performStepsStillOwed(ctx, q, plan, &resData, srHandler{}.CanComplete)
+	if !owed {
 		return model.RowState{}, false
 	}
 	return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{winner}}, true

@@ -109,9 +109,6 @@ func (spHandler) CheckChoice(
 	if roll == nil {
 		return errors.New("summarize your message and cast the dice before choosing options")
 	}
-	if roll.Outcome == nil {
-		return errDiceNotSettled
-	}
 	return nil
 }
 
@@ -298,15 +295,9 @@ func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 // nothing is owed the preparer completes (completion stays theirs), so both fall
 // through to the generic case.
 func (spHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	winner := performStepsWinner(ctx, q, plan)
-	if winner == 0 || winner == plan.PreparerID {
-		return model.RowState{}, false
-	}
 	resData := loadResolutionData(plan.ResolutionData)
-	if len(resData.MakeMarChoices) == 0 {
-		return model.RowState{}, false
-	}
-	if err := (spHandler{}).CanComplete(plan, &resData); err == nil {
+	winner, owed := performStepsStillOwed(ctx, q, plan, &resData, spHandler{}.CanComplete)
+	if !owed {
 		return model.RowState{}, false
 	}
 	return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{winner}}, true

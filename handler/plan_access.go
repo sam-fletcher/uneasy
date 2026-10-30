@@ -158,10 +158,10 @@ func marChoiceTargetRole(
 
 // planMarIsTargetDriven reports whether the plan's *mar* outcome is resolved by
 // the target/victim rather than the preparer — the plans whose mar is handed to
-// a non-preparer in marChoiceTargetRole. A Make Demands perform_steps winner
-// stands in for the PREPARER one-to-one, so they never inherit a target-driven
-// mar (it is a third party's role); the make-choice gate uses this to fence the
-// winner out of those mars while still letting them drive the preparer-owned make.
+// a non-preparer in marChoiceTargetRole. Neither the preparer (whose plan just
+// failed) nor a Make Demands perform_steps winner (who stands in for the
+// PREPARER one-to-one, never a third party) reaches that mar; makeChoiceAuthorized
+// uses this to fence both out while still letting them drive the make.
 func planMarIsTargetDriven(plan *dbgen.Plan) bool {
 	//nolint:exhaustive // only the target-driven-mar plans need listing; the rest default to false
 	switch plan.PlanType {
@@ -172,24 +172,51 @@ func planMarIsTargetDriven(plan *dbgen.Plan) bool {
 	}
 }
 
-// makeChoiceAuthorized reports whether player may submit plan's make-choice. The
-// plan's resolution actor drives it — normally the preparer, but a Make Demands
-// perform_steps win transfers that to the winner (locking out the preparer); see
-// actsForPreparer. Two carve-outs:
+// makeChoiceAuthorized reports whether player may submit plan's make-choice. This
+// is the route's half of the Waiting On bar's promise — the bar names whoever
+// this lets act, so the two must agree:
 //
-//   - A perform_steps winner inherits only the PREPARER's own outcomes, so on a
-//     plan whose mar is target-driven they cannot reach that mar (it belongs to
-//     the target, admitted below via marChoiceTargetRole). The preparer's own
-//     pre-existing latitude is untouched.
-//   - A few plans hand the *mar* choice to their target/victim regardless of any
-//     demand; marChoiceTargetRole admits them.
+//   - On a plan whose mar is target-driven, once the roll has marred, ONLY the
+//     target role (marChoiceTargetRole) may choose. The preparer is refused along
+//     with any perform_steps winner: the bar names the target, and a preparer who
+//     could still pick the option for them was the one player it did not name.
+//   - Everywhere else the plan's resolution actor drives it — normally the
+//     preparer, but a Make Demands perform_steps win transfers that to the winner
+//     (locking out the preparer); see actsForPreparer.
 func makeChoiceAuthorized(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, player *dbgen.Player) bool {
-	actor := actsForPreparer(ctx, q, plan, player.ID)
-	if actor && player.ID != plan.PreparerID &&
-		planMarIsTargetDriven(plan) && planRollIsMar(ctx, q, plan) {
-		actor = false
+	if planMarIsTargetDriven(plan) && planRollIsMar(ctx, q, plan) {
+		return marChoiceTargetRole(ctx, q, plan, player)
 	}
-	return actor || marChoiceTargetRole(ctx, q, plan, player)
+	return actsForPreparer(ctx, q, plan, player.ID)
+}
+
+// performStepsStillOwed reports the Make Demands perform_steps winner the Waiting
+// On bar should name for a plan whose committed make/mar still owes steps. The
+// winner stands in for the preparer on every post-commit step and the server
+// refuses the preparer all of them (requireResolutionActor), so the generic
+// plan_resolving case — which names the preparer — would point the table at the
+// one player who cannot act.
+//
+// owed=false means: no winner, or the winner IS the preparer, or nothing is
+// committed yet (the pre-commit window is pendingPerformStepsChooser's), or
+// canComplete passes (nothing left, so completion — always the preparer's — is
+// next). Plans whose steps are NOT routed through requireResolutionActor must not
+// call this: it would name a winner the server then refuses.
+func performStepsStillOwed(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	canComplete func(*dbgen.Plan, *ResolutionData) error,
+) (winner int64, owed bool) {
+	winner = performStepsWinner(ctx, q, plan)
+	if winner == 0 || winner == plan.PreparerID || len(resData.MakeMarChoices) == 0 {
+		return 0, false
+	}
+	if canComplete(plan, resData) == nil {
+		return 0, false
+	}
+	return winner, true
 }
 
 // enforceChoiceBudget writes a 422 and returns false if the submitted choices
