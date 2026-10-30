@@ -115,8 +115,9 @@ func (saHandler) ApplyChoice(
 	result string,
 ) error {
 	if result != marOutcome {
-		saLog(ctx, deps, plan, model.SeverityDefault,
-			"Seek Answers succeeded — the preparer presses their inquiries.")
+		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"Seek Answers succeeded — %s presses their inquiries.",
+			playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 		return nil
 	}
 
@@ -145,7 +146,8 @@ func (saHandler) ApplyChoice(
 	sa := resData.EnsureSeekAnswers()
 	sa.MarSelfFlawsRequired = required
 	saLog(ctx, deps, plan, model.SeverityImportant,
-		fmt.Sprintf("Seek Answers marred — the preparer must break %d of their own resources.", required))
+		fmt.Sprintf("Seek Answers marred — %s must break %d of their own resources.",
+			playerDisplayName(ctx, deps.Q, plan.PreparerID), required))
 	return nil
 }
 

@@ -56,8 +56,9 @@ func hfInsistHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"%s insisted the host take a mar — the host chooses which.",
-			playerDisplayName(ctx, deps.Q, player.ID)))
+			"%s insisted that %s take a mar — %s chooses which.",
+			playerDisplayName(ctx, deps.Q, player.ID),
+			playerDisplayName(ctx, deps.Q, plan.PreparerID), playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 		broadcastEvent(
 			deps.Manager,
 			plan.GameID,
@@ -197,8 +198,9 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 				return
 			}
 			if !canBreak {
-				hfLog(ctx, deps, plan, model.SeverityDefault,
-					"The host had nothing left to tear — the insisted break passes.")
+				hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+					"%s had nothing left to tear — the insisted break passes.",
+					playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 				passed = true
 			}
 		}

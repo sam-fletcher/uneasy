@@ -243,7 +243,20 @@ func (ecHandler) ValidateChoices(result string, rollResult, difficulty int16, ch
 
 // ecLog emits an Exchange Courtiers action-log entry anchored to the plan row.
 func ecLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
-	EmitSystemPost(ctx, deps.Q, deps.Manager, plan.GameID, "plan.exchange_courtiers",
+	ecLogQ(ctx, deps.Q, deps.Manager, plan, severity, body)
+}
+
+// ecLogQ is ecLog for the extra-route handlers that hold a query handle and hub
+// rather than a PlanDeps (fair-trade, messy-break).
+func ecLogQ(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	plan *dbgen.Plan,
+	severity int32,
+	body string,
+) {
+	EmitSystemPost(ctx, q, manager, plan.GameID, "plan.exchange_courtiers",
 		severity, body, plan.RowNumber, &plan.ID, nil,
 		map[string]any{"plan_id": plan.ID})
 }
@@ -300,8 +313,10 @@ func applyExchangeCourtiersMake(
 	if slices.Contains(choices, "messy") {
 		ec.MessyBreakRequired = true
 		ec.Phase = gamepkg.ECPhaseMessyBreak
-		ecLog(ctx, deps, plan, model.SeverityDefault,
-			"It got messy — the target may break one of the preparer's assets.")
+		ecLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"It got messy — %s may break one of %s's assets.",
+			playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID),
+			playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 	} else {
 		ec.Phase = gamepkg.ECPhaseDone
 	}
@@ -513,6 +528,12 @@ func offerFairTrade(
 		respondInternalErr(w, r, "could not save offer", err)
 		return
 	}
+	// The pre-roll trade is spoken aloud at the table; it also names the peer the
+	// target claims if the roll mars, so everyone should see which one it is.
+	ecLogQ(ctx, q, manager, plan, model.SeverityDefault, fmt.Sprintf(
+		"%s proposed a fair trade: %s's %s in exchange.",
+		playerDisplayName(ctx, q, player.ID), playerDisplayName(ctx, q, plan.PreparerID),
+		assetMark(asset.Name)))
 	// Nudge the other clients (the preparer, who now owes accept/decline) to
 	// refetch — only the offering target gets this HTTP response.
 	broadcastEvent(manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
@@ -636,6 +657,9 @@ func declineFairTrade(
 		respondInternalErr(w, r, "could not save decision", err)
 		return
 	}
+	ecLogQ(ctx, q, manager, plan, model.SeverityDefault, fmt.Sprintf(
+		"%s declined the fair trade — it comes down to the dice.",
+		playerDisplayName(ctx, q, player.ID)))
 
 	h := ecHandler{}
 	difficulty, err := h.ComputeDifficulty(ctx, q, plan, resData)
@@ -723,11 +747,18 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 		}
 
 		// breakMarginalia tears + (if it was the last) destroys, emitting the
-		// right events — fixing the prior inline tear that skipped auto-destroy.
-		if _, err := breakMarginalia(ctx, q, manager, &asset, &m, player.ID); err != nil {
+		// asset.destroyed event — but not the actor line, which is the plan's to
+		// write (it was missing, leaving a lone, actorless "X destroyed.").
+		destroyed, err := breakMarginalia(ctx, q, manager, &asset, &m, player.ID)
+		if err != nil {
 			respondInternalErr(w, r, "could not break asset", err)
 			return
 		}
+		ecLogQ(ctx, q, manager, plan, model.SeverityDefault,
+			fmt.Sprintf("%s %s %s's %s in the mess.%s",
+				playerDisplayName(ctx, q, player.ID), breakVerb(destroyed),
+				playerDisplayName(ctx, q, asset.OwnerID), assetMark(asset.Name),
+				brokenAssetDetail(ctx, q, asset.OwnerID, &m, destroyed)))
 
 		ec.MessyBreakDone = true
 		ec.Phase = gamepkg.ECPhaseDone // last target-side step on a made roll
@@ -846,7 +877,8 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		ecLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("The preparer damaged their own %s before surrendering it.%s", assetMark(asset.Name),
+			fmt.Sprintf("%s damaged their own %s before surrendering it.%s",
+				playerDisplayName(ctx, deps.Q, player.ID), assetMark(asset.Name),
 				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
 		if err := ecGivePeerToTarget(ctx, deps, plan, requestedID); err != nil {
 			respondInternalErr(w, r, "could not surrender peer", err)

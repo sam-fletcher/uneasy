@@ -1028,7 +1028,7 @@ func TestHostFestivity_Insist_CarriesNoOption(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, code, "no second insist on one IOU")
 
 	logs := hfAllLogBodies(t, h)
-	assert.Contains(t, logs, "insisted the host take a mar", "the insisting is logged")
+	assert.Contains(t, logs, "insisted that "+h.mark(hostIdx)+" take a mar", "the insisting is logged")
 	assert.NotContains(t, logs, "A rumor spread about", "the insister's pick must not have applied")
 }
 

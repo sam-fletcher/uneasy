@@ -306,10 +306,13 @@ func (pduelHandler) ApplyChoice(
 	}
 
 	taken := 0
+	takenNames := make([]string, 0, len(claim))
 	for _, assetID := range claim {
-		if _, err := takeAssetEffect(ctx, deps.Q, deps.Manager, plan.GameID, assetID, loserID, winnerID); err != nil {
+		a, err := takeAssetEffect(ctx, deps.Q, deps.Manager, plan.GameID, assetID, loserID, winnerID)
+		if err != nil {
 			return fmt.Errorf("transfer asset %d: %w", assetID, err)
 		}
+		takenNames = append(takenNames, assetMark(a.Name))
 		taken++
 	}
 
@@ -319,9 +322,15 @@ func (pduelHandler) ApplyChoice(
 	if taken == 1 {
 		assetWord = "asset"
 	}
+	// The stakes were masked until now; the settlement is where the table learns
+	// which assets changed hands, so name them rather than counting them.
+	claimed := ""
+	if taken > 0 {
+		claimed = ": " + joinWithAnd(takenNames)
+	}
 	pduelLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
-		"%s won the duel and took %d staked %s from %s; all staked assets are leveraged.",
-		winnerName, taken, assetWord, loserName))
+		"%s won the duel and took %d staked %s from %s%s; all staked assets are leveraged.",
+		winnerName, taken, assetWord, loserName, claimed))
 
 	resData.EnsureDuel().Phase = duelPhaseDone
 	return nil

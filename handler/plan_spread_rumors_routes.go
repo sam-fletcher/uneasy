@@ -700,6 +700,12 @@ func srRequestTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not save consent request", err)
 			return
 		}
+		// Asking is a move in its own right: without a post a refused grab left no
+		// trace at either level, and the victim's consent had nothing to answer.
+		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s asked %s's consent to take %s.",
+			playerDisplayName(ctx, deps.Q, req.RequestedBy), playerDisplayName(ctx, deps.Q, req.VictimID),
+			srAssetList(ctx, deps.Q, req.AssetIDs)))
 		broadcastEvent(deps.Manager, plan.GameID, model.EventRumorTakeConsentRequested,
 			model.RumorTakeConsentPayload{PlanID: plan.ID})
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
@@ -755,6 +761,10 @@ func srRespondTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 				respondInternalErr(w, r, "could not save consent response", err)
 				return
 			}
+			srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s refused %s's request to take %s.",
+				playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, req.RequestedBy),
+				srAssetList(ctx, deps.Q, req.AssetIDs)))
 			broadcastEvent(deps.Manager, plan.GameID, model.EventRumorTakeConsentResolved,
 				model.RumorTakeConsentPayload{PlanID: plan.ID})
 			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
@@ -762,6 +772,9 @@ func srRespondTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+			"%s consented to %s's request.",
+			playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, req.RequestedBy)))
 		if err := srCommitTakeConsent(ctx, deps, plan, req); err != nil {
 			respondInternalErr(w, r, "could not apply consented choices", err)
 			return
@@ -771,6 +784,18 @@ func srRespondTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "agreed": true})
 	}
+}
+
+// srAssetList renders asset ids as a marked, comma-joined list for log bodies
+// ("**Ring**, **Crown**"); an asset that cannot be loaded is skipped.
+func srAssetList(ctx context.Context, q *dbgen.Queries, ids []int64) string {
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if a, err := q.GetAssetByID(ctx, id); err == nil {
+			names = append(names, assetMark(a.Name))
+		}
+	}
+	return joinWithAnd(names)
 }
 
 // srCommitTakeConsent applies an agreed-to (or self-consented) take: it records

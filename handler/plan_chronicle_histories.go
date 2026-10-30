@@ -137,8 +137,7 @@ func (chHandler) ApplyChoice(
 	result string,
 ) error {
 	if result == makeOutcome {
-		chLog(ctx, deps, plan, model.SeverityImportant,
-			"Chronicle Histories succeeded — the preparer shapes the scene from history.")
+		chLogSuccess(ctx, deps, plan)
 	}
 	return nil
 }
@@ -188,6 +187,14 @@ func chDistinctMarChoosers(resData *ResolutionData) int16 {
 		}
 	}
 	return int16(len(seen))
+}
+
+// chLogSuccess announces a made Chronicle Histories roll. Both make paths (the
+// generic ApplyChoice and the first make-step) say it, so the wording lives here.
+func chLogSuccess(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) {
+	chLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+		"Chronicle Histories succeeded — %s shapes the scene from history.",
+		playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 }
 
 // chLog emits a Chronicle Histories action-log entry anchored to the plan row.
@@ -432,8 +439,7 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 		// route that would otherwise emit this via ApplyChoice.)
 		if ch.MakeBudget == 0 {
 			ch.MakeBudget = *roll.Result
-			chLog(ctx, deps, plan, model.SeverityImportant,
-				"Chronicle Histories succeeded — the preparer shapes the scene from history.")
+			chLogSuccess(ctx, deps, plan)
 		}
 		// Server-authoritative completion: never accept more than the budget.
 		if ch.MakeChoicesDone >= ch.MakeBudget {

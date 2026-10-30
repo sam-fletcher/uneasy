@@ -368,13 +368,30 @@ func pdEnactLaw(
 	if pd.SignatoryID != nil {
 		signatory = playerDisplayName(ctx, deps.Q, *pd.SignatoryID)
 	}
+	// The law is public record, so its final wording (council amendments and the
+	// signatory's rider included) belongs in the log: the amend/addendum posts
+	// each quote their own contribution, and this is the assembled result.
+	final := law.Text
+	if law.Addendum != nil {
+		final += " " + *law.Addendum
+	}
 	if pd.Outcome == makeOutcome {
-		pdLog(ctx, deps, plan, model.SeverityImportant,
-			fmt.Sprintf("The decree was enacted, signed by %s, and a new resource was created, with marginalia: %q.",
-				signatory, resourceMarg))
+		pdLog(
+			ctx,
+			deps,
+			plan,
+			model.SeverityImportant,
+			fmt.Sprintf(
+				"The decree was enacted, signed by %s: %q\n\nA new resource, %s, was created, with marginalia: %q.",
+				signatory,
+				final,
+				assetMark(resourceName),
+				resourceMarg,
+			),
+		)
 	} else {
 		pdLog(ctx, deps, plan, model.SeverityImportant,
-			fmt.Sprintf("The amended decree was enacted, signed by %s.", signatory))
+			fmt.Sprintf("The amended decree was enacted, signed by %s: %q", signatory, final))
 	}
 	return nil
 }

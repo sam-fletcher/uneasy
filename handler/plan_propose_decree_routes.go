@@ -552,7 +552,7 @@ func pdAmendDecreeHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		pdLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s amended the decree's text.", playerDisplayName(ctx, deps.Q, player.ID)))
+			fmt.Sprintf("%s amended the decree to read:\n\n%q", playerDisplayName(ctx, deps.Q, player.ID), pd.LawText))
 		// No law row yet; non-actors refetch the plan to see the revised body.
 		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanChoiceApplied, model.PlanChoiceAppliedPayload{
 			PlanID: plan.ID,
@@ -719,8 +719,13 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		signatoryName := playerDisplayName(ctx, deps.Q, player.ID)
-		pdLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s placed the signatory's addendum to the end of the law.", signatoryName))
+		if rider := pdComposeAddendum(pd); rider != nil {
+			pdLog(ctx, deps, plan, model.SeverityDefault,
+				fmt.Sprintf("%s placed the signatory's addendum at the end of the law: %q", signatoryName, *rider))
+		} else {
+			pdLog(ctx, deps, plan, model.SeverityDefault,
+				fmt.Sprintf("%s left the law without an addendum.", signatoryName))
+		}
 
 		// The law is not enacted here — the preparer enacts it (enact-law). Nudge
 		// non-acting clients to refetch the updated sub-phase.
