@@ -12,6 +12,9 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
@@ -225,6 +228,7 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		if !checkChoiceGate(w, r, s.Q, h, plan, player, &resData, rollPtr, body.Result) {
 			return
 		}
+		resData.ChoiceSubmitted = true
 		resData.MakeMarChoices = make([]Choice, len(body.Choices))
 		for i, opt := range body.Choices {
 			resData.MakeMarChoices[i] = Choice{Option: opt}
@@ -311,6 +315,12 @@ func checkChoiceGate(
 	roll *dbgen.DiceRoll,
 	result string,
 ) bool {
+	// A forced outcome applied itself when the dice landed (ForcedChoicer); a
+	// second submission would apply its effects again.
+	if resData.ChoiceAutoApplied {
+		respondErr(w, http.StatusConflict, "this outcome was applied automatically — it has nothing left to choose")
+		return false
+	}
 	gate, ok := h.(ChoiceGate)
 	if !ok {
 		return true
@@ -443,6 +453,106 @@ func maybeAutoComplete(
 	return true, nil
 }
 
+// autoCompleteIfDone is the tail of a plan's terminal sub-step route: it reloads
+// the plan (the route has just saved resolution_data) and resolves it when its
+// handler opts into auto-completion and nothing is still owed. A no-op for a plan
+// that isn't resolving, has no roll outcome or stored result yet, or still owes a
+// step.
+func autoCompleteIfDone(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, planID int64) error {
+	plan, err := q.GetPlanByID(ctx, planID)
+	if err != nil {
+		return err
+	}
+	if plan.Status != model.PlanResolving {
+		return nil
+	}
+	h, ok := GetHandler(plan.PlanType)
+	if !ok {
+		return nil
+	}
+	resData := loadResolutionData(plan.ResolutionData)
+	// A plan that has not had its make/mar choice made owes more than its sub-steps
+	// (CanComplete passes vacuously before any pick is committed), so never resolve
+	// it on the strength of a pre-roll or pre-choice route.
+	// (A plan that records its outcome itself when the dice land has no choice to
+	// wait for; its own CanComplete is the whole gate.)
+	if _, selfRecording := h.(AutoApplyChoiceOnRoll); !selfRecording && !resData.ChoicesCommitted() {
+		return nil
+	}
+	_, err = maybeAutoComplete(ctx, q, manager, h, &plan, &resData, planResultString(ctx, q, &plan))
+	return err
+}
+
+// withAutoComplete wraps a plan's extra routes so that a route which succeeded and
+// left nothing owed resolves the plan on the spot — for the plans (Spread
+// Propaganda, Spread Rumors, Seek Answers) whose every post-choice step is a
+// sub-flow route, so "the last step landed" is not one place but any of them. The
+// route's own response is written first; the resolution reaches everyone by the
+// resolved broadcast and the plan's "resolved" line. Plans with an embedded scene
+// do NOT use this: they stay open until the players have finished playing it out.
+func withAutoComplete(deps *PlanDeps, routes map[string]http.HandlerFunc) map[string]http.HandlerFunc {
+	out := make(map[string]http.HandlerFunc, len(routes))
+	for name, next := range routes {
+		out[name] = func(w http.ResponseWriter, r *http.Request) {
+			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			next(rec, r)
+			if rec.status >= http.StatusMultipleChoices {
+				return
+			}
+			planID, err := strconv.ParseInt(chi.URLParam(r, "planId"), 10, 64)
+			if err != nil {
+				return
+			}
+			if err := autoCompleteIfDone(r.Context(), deps.Q, deps.Manager, planID); err != nil {
+				loggerFromContext(r.Context()).ErrorContext(r.Context(), "plan auto-complete failed",
+					"plan_id", planID, "err", err)
+			}
+		}
+	}
+	return out
+}
+
+// statusRecorder remembers the status a handler wrote, so a wrapper can tell a
+// route that succeeded from one that was refused.
+type statusRecorder struct {
+	http.ResponseWriter
+
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+// applyForcedChoice applies a ForcedChoicer plan's only legal outcome. It
+// reports applied=false (nothing done) when the plan doesn't opt in or the actor
+// has a real decision at this margin. The picks are recorded as the committed
+// choices, exactly as make-choice would have, plus the ChoiceAutoApplied marker;
+// resData is the caller's copy and is persisted by the caller.
+func applyForcedChoice(
+	ctx context.Context, deps *PlanDeps, h PlanHandler, plan *dbgen.Plan, resData *ResolutionData, roll *dbgen.DiceRoll,
+) (applied bool, err error) {
+	fc, ok := h.(ForcedChoicer)
+	if !ok || roll.Result == nil || roll.Outcome == nil {
+		return false, nil
+	}
+	difficulty := roll.Difficulty
+	if roll.AdjustedDifficulty != nil {
+		difficulty = *roll.AdjustedDifficulty
+	}
+	choices, forced := fc.ForcedChoice(*roll.Outcome, *roll.Result, difficulty)
+	if !forced {
+		return false, nil
+	}
+	resData.ChoiceAutoApplied = true
+	resData.MakeMarChoices = make([]Choice, len(choices))
+	for i, c := range choices {
+		resData.MakeMarChoices[i] = Choice{Option: c}
+	}
+	return true, h.ApplyChoice(ctx, deps, plan, resData, choices, *roll.Outcome)
+}
+
 // applyAutoChoiceOnRoll records a resolved roll's outcome automatically for
 // plans that opt in via AutoApplyChoiceOnRoll — those whose post-roll
 // make-choice carries no decision (the outcome is fixed by the dice). It mirrors
@@ -471,15 +581,17 @@ func applyAutoChoiceOnRoll(
 	if !ok {
 		return nil
 	}
-	applier, ok := h.(AutoApplyChoiceOnRoll)
-	if !ok || !applier.AutoApplyChoiceOnRoll() {
-		return nil
-	}
-
 	resData := loadResolutionData(plan.ResolutionData)
 	deps := &PlanDeps{Store: &db.Store{Q: q}, Manager: manager}
-	if err := h.ApplyChoice(ctx, deps, &plan, &resData, nil, *roll.Outcome); err != nil {
+
+	if applier, ok := h.(AutoApplyChoiceOnRoll); ok && applier.AutoApplyChoiceOnRoll() {
+		if err := h.ApplyChoice(ctx, deps, &plan, &resData, nil, *roll.Outcome); err != nil {
+			return err
+		}
+	} else if applied, err := applyForcedChoice(ctx, deps, h, &plan, &resData, roll); err != nil {
 		return err
+	} else if !applied {
+		return nil
 	}
 	if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
 		return err

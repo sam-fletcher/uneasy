@@ -29,6 +29,20 @@ type ResolutionData struct {
 	// handlers that track which player made each choice set PlayerID.
 	MakeMarChoices []Choice `json:"make_mar_choices,omitempty"`
 
+	// ChoiceAutoApplied records that the server applied the plan's make/mar
+	// outcome itself the moment the dice landed, because exactly one outcome was
+	// legal (handler.ForcedChoicer). It is the durable "the choice is committed"
+	// signal for those plans: MakeMarChoices cannot carry it, since a forced
+	// outcome may have no picks at all (Make Introductions' mar) and the field is
+	// omitempty. Read it through ChoicesCommitted, never directly.
+	ChoiceAutoApplied bool `json:"choice_auto_applied,omitempty"`
+
+	// ChoiceSubmitted records that a player posted the plan's make-choice, even
+	// with no picks. Like ChoiceAutoApplied it is read through ChoicesCommitted;
+	// it exists so a plan whose choice can legitimately be empty is still known to
+	// have been made (auto-completion must not fire before the choice).
+	ChoiceSubmitted bool `json:"choice_submitted,omitempty"`
+
 	// DemandLeverageFinalized records that the Make Demands control_leverage
 	// winner against this (target) plan has finalized their leverage decision
 	// on the plan's roll. It rides the top level — not the per-plan nested
@@ -76,6 +90,14 @@ type ResolutionData struct {
 	Festivity          *FestivityResolutionData          `json:"festivity,omitempty"`
 	MakeWar            *MakeWarResolutionData            `json:"make_war,omitempty"`
 	MakeDemands        *MakeDemandsResolutionData        `json:"make_demands,omitempty"`
+}
+
+// ChoicesCommitted reports whether the plan's make/mar choice has been made —
+// submitted by a player (MakeMarChoices / ChoiceSubmitted) or applied by the server because it was
+// forced (ChoiceAutoApplied). The waiting-on helpers ask this to tell "the
+// chooser still owes the pick" from "the post-choice steps are under way".
+func (r *ResolutionData) ChoicesCommitted() bool {
+	return len(r.MakeMarChoices) > 0 || r.ChoiceAutoApplied || r.ChoiceSubmitted
 }
 
 // DraftChoice records a player's draft pick in Make Demands.

@@ -319,6 +319,52 @@ func (h *planLifecycle) forceRoll(rollID int64, outcome string, result int16) {
 	require.NoError(h.t, applyAutoChoiceOnRoll(ctx, h.q, h.manager, &resolved))
 }
 
+// requireAutoApplied asserts the plan's outcome applied itself when the dice
+// landed (ForcedChoicer): the committed picks are exactly want, the durable marker
+// is set, and a manual make-choice is refused as having nothing left to choose.
+func (h *planLifecycle) requireAutoApplied(planID int64, result string, want ...string) {
+	h.t.Helper()
+	h.requireAutoAppliedAs(h.preparerIdxFor(planID), planID, result, want...)
+}
+
+// requireAutoAppliedAs is requireAutoApplied with the make-choice attempted by an
+// explicit player — the perform_steps winner, when a demand holds the plan.
+func (h *planLifecycle) requireAutoAppliedAs(playerIdx int, planID int64, result string, want ...string) {
+	h.t.Helper()
+	plan, err := h.q.GetPlanByID(context.Background(), planID)
+	require.NoError(h.t, err)
+	rd := loadResolutionData(plan.ResolutionData)
+	require.Truef(h.t, rd.ChoiceAutoApplied, "outcome should have applied itself")
+	got := make([]string, 0, len(rd.MakeMarChoices))
+	for _, c := range rd.MakeMarChoices {
+		got = append(got, c.Option)
+	}
+	require.ElementsMatch(h.t, want, got, "committed picks")
+	code, body := h.post(playerIdx, "/api/plans/"+strconv.FormatInt(planID, 10)+"/make-choice",
+		map[string]any{"result": result, "choices": want})
+	require.Equalf(h.t, http.StatusConflict, code, "a second make-choice must be refused: %v", body)
+}
+
+// requireEnded asserts the plan finished by itself on its last step — no Complete
+// click — without caring which way it went.
+func (h *planLifecycle) requireEnded(planID int64) {
+	h.t.Helper()
+	plan, err := h.q.GetPlanByID(context.Background(), planID)
+	require.NoError(h.t, err)
+	require.Equal(h.t, model.PlanResolved, plan.Status, "the plan should have resolved on its last step")
+}
+
+// requireResolved asserts the plan finished by itself — no Complete click — with
+// the given result.
+func (h *planLifecycle) requireResolved(planID int64, result string) {
+	h.t.Helper()
+	plan, err := h.q.GetPlanByID(context.Background(), planID)
+	require.NoError(h.t, err)
+	require.Equal(h.t, model.PlanResolved, plan.Status, "the plan should have resolved on its last step")
+	require.NotNil(h.t, plan.Result)
+	require.Equal(h.t, result, *plan.Result)
+}
+
 // makeChoice drives POST /api/plans/{planId}/make-choice as the focus
 // player with the given make/mar result and choice keys. Asserts 200.
 func (h *planLifecycle) makeChoice(planID int64, result string, choices []string) {
