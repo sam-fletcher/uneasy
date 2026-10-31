@@ -58,6 +58,19 @@ def cases(on_main, on_feature):
         (f, f"{MERGE} --auto 3", BLOCK),
         (f, "gh api -X PUT repos/o/r/pulls/1/merge", BLOCK),
         (f, "gh api repos/o/r/pulls/1/merge", ALLOW),  # a read: is it merged?
+        # Commands git runs for you, from options of allowlisted commands.
+        (f, f"git rebase --exec '{MERGE} 3' origin/main", BLOCK),
+        (f, f"git rebase -x '{MERGE} 3' origin/main", BLOCK),
+        (f, "git rebase --exec='git push origin main' origin/main", BLOCK),
+        (f, f"git fetch --upload-pack='{MERGE} 3' .", BLOCK),
+        (f, f"git pull --upload-pack '{MERGE} 3' origin", BLOCK),
+        (f, f"git push --receive-pack='{MERGE} 3' origin feature", BLOCK),
+        (f, "git rebase --exec 'make check-fast' origin/main", ALLOW),
+        (f, "git fetch -q origin && git rebase origin/main", ALLOW),
+        # Committing on main; on a branch is fine.
+        (m, "git commit -m 'stray'", BLOCK),
+        (f, f"git -C {m} commit -m 'stray'", BLOCK),
+        (f, "git commit -m 'work'", ALLOW),
         # Text that only mentions a blocked command.
         (f, f"gh pr create --body \"$(cat <<'EOF'\n| {MERGE} | blocked |\nEOF\n)\"", ALLOW),
         (f, 'git commit -m "notes\n\ngit push origin main is now blocked"', ALLOW),

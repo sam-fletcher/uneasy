@@ -3,10 +3,14 @@
 
 Sessions push their own branches and open PRs; the owner merges. This blocks
 the commands that would bypass that: `gh pr merge` (auto-merge included), a
-merge through `gh api`, and any push that targets `main` — including a force
+merge through `gh api`, any push that targets `main` — including a force
 push or a delete, and pushes that send every branch (`--all`, a matching `:`
-or wildcard refspec). Force pushes to other branches are fine: sessions tidy
-their own branch history.
+or wildcard refspec) — and a commit made while on `main`. Force pushes to
+other branches are fine: sessions tidy their own branch history.
+
+Some git options run a command of their own (`rebase --exec`,
+`fetch --upload-pack`, `push --receive-pack`). Those commands are checked
+too, because the commit-to-PR commands are allowlisted and run unprompted.
 
 GitHub's branch protection on `main` is the real backstop for pushes — this
 hook catches the mistake before it reaches GitHub and tells the session why.
@@ -31,6 +35,15 @@ PROTECTED = "main"
 ALL_REFS_FLAGS = ("--all", "--branches", "--mirror")
 # Push flags that take a separate value, so the next token isn't a refspec.
 PUSH_VALUE_FLAGS = ("-o", "--push-option", "--repo", "--receive-pack", "--exec")
+# Options whose value git runs as a command, per subcommand.
+EMBEDDED_COMMAND_FLAGS = {
+    "rebase": ("-x", "--exec"),
+    "push": ("--receive-pack", "--exec"),
+    "fetch": ("--upload-pack",),
+    "pull": ("--upload-pack",),
+    "clone": ("-u", "--upload-pack"),
+    "ls-remote": ("--upload-pack",),
+}
 # git's global options that take a separate value, before the subcommand.
 GIT_VALUE_FLAGS = ("-C", "-c", "--git-dir", "--work-tree", "--namespace",
                    "--config-env", "--super-prefix")
@@ -98,6 +111,16 @@ def split_commands(command):
             current.append(tok)
     if current:
         yield current
+
+
+def embedded_commands(tokens, flags):
+    """Yields the values of `flag value` and `flag=value` for the given flags."""
+    for n, tok in enumerate(tokens):
+        if tok in flags and n + 1 < len(tokens):
+            yield tokens[n + 1]
+        for flag in flags:
+            if flag.startswith("--") and tok.startswith(flag + "="):
+                yield tok[len(flag) + 1:]
 
 
 def check_push(tokens, cwd):
@@ -172,8 +195,15 @@ def check_tokens(tokens, cwd):
             i += 2
         else:
             i += 1
-    if i < len(tokens) and tokens[i] == "push":
-        check_push(tokens[i + 1:], git_cwd)
+    if i >= len(tokens):
+        return cwd
+    sub, rest = tokens[i], tokens[i + 1:]
+    for embedded in embedded_commands(rest, EMBEDDED_COMMAND_FLAGS.get(sub, ())):
+        check_command(embedded, git_cwd)
+    if sub == "push":
+        check_push(rest, git_cwd)
+    if sub == "commit" and current_branch(git_cwd) == PROTECTED:
+        block("this commit would land on `main` (you are on main). Work on a branch.")
     return cwd
 
 
