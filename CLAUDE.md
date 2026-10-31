@@ -35,11 +35,13 @@ than guessing — the `grilling` skill shows how to ask.
   its branch and opens a **draft** PR (the `pr` skill). The coordinator
   reviews it (the `review-pr` skill) and marks it ready; the owner reviews
   and merges.
-- **Everything starts from the latest `main`.** A SessionStart hook
-  ([.claude/hooks/sync_main.sh](.claude/hooks/sync_main.sh)) fast-forwards
-  the main checkout — so the dev containers run it — and any worktree
-  branch with no commits yet. After the owner merges a PR mid-session, the
-  coordinator runs that script itself, so container restarts happen too.
+- **Everything stays on the latest `main`.** A hook
+  ([.claude/hooks/sync_main.sh](.claude/hooks/sync_main.sh)) runs when a
+  session starts and whenever the owner sends a message. It fast-forwards
+  the main checkout, so the dev containers run it; fast-forwards any
+  worktree branch with no commits yet; and tells each session which PRs
+  have merged since it last looked ("sync_main: merged into main …"). Act
+  on that notice — a coordinator's piece is done, a work session rebases.
 - Sessions never merge and never enable auto-merge. A hook
   ([.claude/hooks/guard_git.py](.claude/hooks/guard_git.py)) blocks
   `gh pr merge` and any push to `main`; branch protection on
