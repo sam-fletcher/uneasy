@@ -13,7 +13,7 @@ private CLAUDE.md).
 
 | Piece | Session | Status |
 |---|---|---|
-| `commit` skill; force pushes allowed off `main` | — | in review (`setup/commit-skill`) |
+| `retro` and `review-pr` skills; start every session from the latest `main` | — | in review (`setup/retro-review`) |
 
 ## Next — workflow and skills
 
@@ -21,10 +21,6 @@ Candidates from a review of [mattpocock/skills](https://github.com/mattpocock/sk
 (MIT), each adapted to this project rather than copied. Independent of each
 other and of the audit work.
 
-- **`retro`** — after a session, propose improvements to the setup, most
-  severe first, preferring an automated check over a new instruction.
-- **A coordinator review skill** — review a draft PR separately against the
-  brief, the house rules, and the private rules and design principles.
 - **`wait-what`** — re-explain the last message in plain words.
 - **`writing-for-agents`** — reference for writing skills and `CLAUDE.md`.
 - **`teach`** (personal, not in this repo) — web-development lessons that
