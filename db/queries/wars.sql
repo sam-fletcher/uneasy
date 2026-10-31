@@ -14,6 +14,18 @@ SELECT * FROM wars WHERE origin_plan_id = $1;
 SELECT * FROM wars WHERE game_id = $1 AND status = 'active'
 ORDER BY id;
 
+-- name: ListEndedWarsWithOpenClaimsByGame :many
+-- A war that ended on a surrender still owes its winners their seizure; the
+-- claims keep the row blocked (ListOpenSurrenderClaimsByGame), so clients need
+-- the war to render the claim form.
+SELECT * FROM wars w
+WHERE w.game_id = $1 AND w.status = 'ended'
+  AND EXISTS (
+    SELECT 1 FROM war_surrender_claims c
+    WHERE c.war_id = w.id AND c.fulfilled_at IS NULL
+  )
+ORDER BY w.id;
+
 -- name: EndWar :exec
 UPDATE wars
 SET status = 'ended', ended_at_row = $2, end_reason = $3

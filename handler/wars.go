@@ -125,7 +125,13 @@ func GetWarState(s *db.Store) http.HandlerFunc {
 
 // ListWars handles GET /api/tables/:id/wars. Returns every active war in the
 // game (so the turn indicator can flag rows blocked on outstanding costs and
-// surface a multi-war side panel later if desired).
+// surface a multi-war side panel later if desired), plus any ENDED war that
+// still has a fulfillable surrender claim open.
+//
+// The second group exists because a surrender that empties a side ends the war
+// in the same call that opens the claims, and open claims keep the row blocked
+// (await_surrender_claim). Without the ended war in this list the claimant's
+// client has no war to render the seize form from.
 func ListWars(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, _, ok := parseGamePlayer(w, r, s.Q)
@@ -138,12 +144,23 @@ func ListWars(s *db.Store) http.HandlerFunc {
 			respondInternalErr(w, r, "could not load wars", err)
 			return
 		}
-		out := make([]WarStateResponse, 0, len(wars))
-		for _, war := range wars {
+		ended, err := s.Q.ListEndedWarsWithOpenClaimsByGame(ctx, gameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not load wars", err)
+			return
+		}
+		out := make([]WarStateResponse, 0, len(wars)+len(ended))
+		for _, war := range append(wars, ended...) {
 			ws, err := buildWarState(ctx, s.Q, war)
 			if err != nil {
 				respondInternalErr(w, r, "could not build war state", err)
 				return
+			}
+			// Same filter as the row gate: a claim on a player with nothing
+			// left to seize never blocks, so an ended war with only such
+			// claims has nothing to show.
+			if war.Status != warStatusActive && len(ws.OpenClaims) == 0 {
+				continue
 			}
 			out = append(out, ws)
 		}

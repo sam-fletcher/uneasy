@@ -495,6 +495,48 @@ func (q *Queries) ListBattleCostsForRow(ctx context.Context, arg ListBattleCosts
 	return items, nil
 }
 
+const listEndedWarsWithOpenClaimsByGame = `-- name: ListEndedWarsWithOpenClaimsByGame :many
+SELECT id, game_id, origin_plan_id, status, started_at_row, ended_at_row, end_reason, created_at FROM wars w
+WHERE w.game_id = $1 AND w.status = 'ended'
+  AND EXISTS (
+    SELECT 1 FROM war_surrender_claims c
+    WHERE c.war_id = w.id AND c.fulfilled_at IS NULL
+  )
+ORDER BY w.id
+`
+
+// A war that ended on a surrender still owes its winners their seizure; the
+// claims keep the row blocked (ListOpenSurrenderClaimsByGame), so clients need
+// the war to render the claim form.
+func (q *Queries) ListEndedWarsWithOpenClaimsByGame(ctx context.Context, gameID int64) ([]War, error) {
+	rows, err := q.db.Query(ctx, listEndedWarsWithOpenClaimsByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []War{}
+	for rows.Next() {
+		var i War
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.OriginPlanID,
+			&i.Status,
+			&i.StartedAtRow,
+			&i.EndedAtRow,
+			&i.EndReason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenSurrenderClaimsByGame = `-- name: ListOpenSurrenderClaimsByGame :many
 SELECT c.id, c.war_id, c.surrendered_id, c.claimant_id, c.asset_id, c.created_at, c.fulfilled_at FROM war_surrender_claims c
 JOIN wars w ON w.id = c.war_id

@@ -324,6 +324,14 @@ func TestMakeWarHTTP_SurrenderWithNoClaimableAssets_RowCanAdvance(t *testing.T) 
 	require.Empty(t, outstanding,
 		"a claim against a player with no claimable assets must not block row advance")
 
+	// The row state is the third reader of the claim set, and it names who the
+	// Waiting On bar and the war takeover are for. It must agree too: a claim
+	// with nothing to seize can't gate the row on a claimant nobody can serve.
+	require.NotEqual(t, model.RowStateAwaitSurrenderClaim, h.rowState().Kind,
+		"an unfulfillable claim must not hold the row state on await_surrender_claim")
+	require.Empty(t, listedWarClaims(t, h, enemyIdx),
+		"…and the war list has nothing to show for it either")
+
 	// …and the war-state view must agree with the gate: the unfulfillable claim
 	// is hidden so the panel doesn't render an actionable-looking surrender claim
 	// that can never be acted on.
@@ -341,6 +349,144 @@ func TestMakeWarHTTP_SurrenderWithNoClaimableAssets_RowCanAdvance(t *testing.T) 
 	require.NoError(t, err, "row should advance despite the unfulfillable claim")
 	require.False(t, ended)
 	require.Equal(t, warRow+2, newRow, "row should advance past the surrender row")
+}
+
+// listedWarClaims returns, per war in GET /tables/{id}/wars, the origin plan id
+// and the number of open claims it carries — what the client routes its play
+// area from.
+func listedWarClaims(t *testing.T, h *planLifecycle, viewerIdx int) map[int64]int {
+	t.Helper()
+	code, body := h.get(viewerIdx, "/api/tables/"+strconv.FormatInt(h.tg.Game.ID, 10)+"/wars")
+	require.Equalf(t, http.StatusOK, code, "list wars: %v", body)
+	out := map[int64]int{}
+	for _, raw := range body["wars"].([]any) {
+		w := raw.(map[string]any)
+		out[int64(w["origin_plan_id"].(float64))] = len(w["open_claims"].([]any))
+	}
+	return out
+}
+
+// TestMakeWarHTTP_SurrenderEndedWar_ClaimStaysListed: a surrender that empties
+// a side ends the war at the same moment it opens the claims, and the open
+// claims keep the row gated on await_surrender_claim. The war list must keep
+// returning that ended war, or the claimant's client has no war to render the
+// seize form from and the row is stuck. Once the claim is taken the war drops
+// out of the list.
+func TestMakeWarHTTP_SurrenderEndedWar_ClaimStaysListed(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+
+	_, margA := h.seedPeerWithMarginalia(prepIdx, "Sacrificed asset")
+	seizable := h.seedPeer(prepIdx, "Spoils of war")
+	h.jumpToRow(warRow + 1)
+
+	prepID := h.tg.Players[prepIdx].ID
+	enemyID := h.tg.Players[enemyIdx].ID
+
+	code, body := h.post(prepIdx, warRoute(planID, "pay-battle-cost"), map[string]any{
+		"opponent_id":   enemyID,
+		"choice":        "break_asset",
+		"marginalia_id": margA,
+		"surrender":     true,
+	})
+	require.Equalf(t, http.StatusOK, code, "surrender pay: %v", body)
+
+	war, err := h.q.GetWarByOriginPlan(context.Background(), planID)
+	require.NoError(t, err)
+	require.Equal(t, "ended", war.Status)
+	require.Equal(t, model.RowStateAwaitSurrenderClaim, h.rowState().Kind,
+		"the open claim still gates the row")
+
+	// Every viewer gets the ended war, with the claim on it.
+	for idx := range h.tg.Players {
+		require.Equalf(t, map[int64]int{planID: 1}, listedWarClaims(t, h, idx),
+			"player %d should see the ended war and its one open claim", idx)
+	}
+
+	code, body = h.post(enemyIdx, warRoute(planID, "take-surrender-asset"), map[string]any{
+		"surrendered_id": prepID,
+		"asset_id":       seizable,
+	})
+	require.Equalf(t, http.StatusOK, code, "take-surrender-asset: %v", body)
+
+	require.Empty(t, listedWarClaims(t, h, enemyIdx),
+		"a fulfilled claim leaves the ended war with nothing to show")
+}
+
+// TestMakeWarHTTP_EndedWarWithoutClaims_NotListed: an ended war with no open
+// claim (peace, or a claim with nothing left to seize) is not listed.
+func TestMakeWarHTTP_EndedWarWithoutClaims_NotListed(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	planID, prepIdx, _, warRow := seedActiveWar(t, h)
+	h.jumpToRow(warRow + 1)
+
+	require.NoError(t, h.q.EndWar(context.Background(), dbgen.EndWarParams{
+		ID: mustWarID(t, h, planID), EndReason: new("peace"), EndedAtRow: new(warRow + 1),
+	}))
+	require.Empty(t, listedWarClaims(t, h, prepIdx))
+}
+
+func mustWarID(t *testing.T, h *planLifecycle, planID int64) int64 {
+	t.Helper()
+	war, err := h.q.GetWarByOriginPlan(context.Background(), planID)
+	require.NoError(t, err)
+	return war.ID
+}
+
+// TestMakeWarHTTP_SurrenderClaimsShareOneAsset_LaterClaimDropsOutOfRowState: a
+// surrender gives every opponent a claim, but the surrendered player may own
+// fewer assets than there are claimants. Once the first claimant takes the only
+// asset, the second's claim can never be fulfilled and must stop gating the
+// row (it used to keep naming them until the row was advanced by hand).
+//
+// The second claim is inserted directly: seating a third combatant would mean
+// a late join and its entry payment, which is not what is under test.
+func TestMakeWarHTTP_SurrenderClaimsShareOneAsset_LaterClaimDropsOutOfRowState(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+	ctx := context.Background()
+
+	prepID := h.tg.Players[prepIdx].ID
+	enemyID := h.tg.Players[enemyIdx].ID
+	thirdIdx := (enemyIdx + 1) % len(h.tg.Players)
+	if thirdIdx == prepIdx {
+		thirdIdx = (thirdIdx + 1) % len(h.tg.Players)
+	}
+	thirdID := h.tg.Players[thirdIdx].ID
+
+	// Leave the preparer exactly one claimable asset after the payment.
+	owned, err := h.q.ListAssetsByOwner(ctx, prepID)
+	require.NoError(t, err)
+	for _, a := range owned {
+		require.NoError(t, h.q.DestroyAsset(ctx, a.ID))
+	}
+	_, margA := h.seedPeerWithMarginalia(prepIdx, "Sacrificed asset")
+	onlyAsset := h.seedPeer(prepIdx, "The last thing they own")
+	h.jumpToRow(warRow + 1)
+
+	code, body := h.post(prepIdx, warRoute(planID, "pay-battle-cost"), map[string]any{
+		"opponent_id":   enemyID,
+		"choice":        "break_asset",
+		"marginalia_id": margA,
+		"surrender":     true,
+	})
+	require.Equalf(t, http.StatusOK, code, "surrender pay: %v", body)
+	war, err := h.q.GetWarByOriginPlan(ctx, planID)
+	require.NoError(t, err)
+	require.NoError(t, h.q.CreateSurrenderClaim(ctx, dbgen.CreateSurrenderClaimParams{
+		WarID: war.ID, SurrenderedID: prepID, ClaimantID: thirdID,
+	}))
+	h.assertWaitees("two claimants, one asset", model.RowStateAwaitSurrenderClaim, enemyID, thirdID)
+
+	code, body = h.post(enemyIdx, warRoute(planID, "take-surrender-asset"), map[string]any{
+		"surrendered_id": prepID,
+		"asset_id":       onlyAsset,
+	})
+	require.Equalf(t, http.StatusOK, code, "take-surrender-asset: %v", body)
+
+	require.NotEqual(t, model.RowStateAwaitSurrenderClaim, h.rowState().Kind,
+		"the third player's claim has nothing left to seize and must not gate the row")
+	require.Empty(t, listedWarClaims(t, h, thirdIdx))
 }
 
 // TestMakeWarHTTP_PeaceProposeAcceptEnds: the up-next payer proposes peace and a
