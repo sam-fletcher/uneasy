@@ -48,18 +48,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       # Pinned linter, from the project's own release binaries (see Makefile).
       - run: make lint-install
-
-      # The repo root's package.json supplies @types/node, which svelte-check
-      # finds by walking up from frontend/. `make frontend` only installs
-      # frontend/, so without this the type-check fails on node:fs,
-      # __dirname and process.
-      - run: npm ci
 
       # Builds the frontend into cmd/server/frontend_dist, which the
       # cmd/server tests embed.
