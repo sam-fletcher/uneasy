@@ -78,10 +78,6 @@ parallel.
 
 ## Waiting on the owner
 
-- **Make War, surrender claim pending:** the claimant gets the seize form, and
-  everyone else now sees the ended war's panel with one line ("X is choosing
-  one of Y's assets to take") under the Waiting On bar. Before, they saw a
-  blank play area. Is that the right amount to show a bystander?
 - From the audit-PR review (item 1): when a demand winner stands in for
   Spread Propaganda's "break yourself", who learns the broken asset's
   secrets: the winner, or the preparer whose asset it is? Is Propose
