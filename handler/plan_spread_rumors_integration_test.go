@@ -310,6 +310,28 @@ func TestSpreadRumors_Mar_ActorWritesTheCounterRumorFirst(t *testing.T) {
 	_ = ctx
 }
 
+// A mar committed with no picks leaves make_mar_choices empty, so the commit has
+// to be read from the durable marker: with it unread the bar kept naming the mar
+// actor after they had finished, instead of handing the wait to the preparer.
+// The commit is stored directly because a real zero-pick mar auto-completes the
+// plan in the same request, which would hide the transient wait this guards.
+func TestSpreadRumors_Mar_ZeroPickCommitHandsTheWaitToThePreparer(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, prepIdx, actorIdx, _, _ := srMar(t, h)
+	actor, prep := h.tg.Players[actorIdx], h.tg.Players[prepIdx]
+
+	code, body := h.post(actorIdx, srPath(plan.ID, "sr-counter-rumor"), map[string]any{"text": "Her accuser keeps a second set of books."})
+	require.Equalf(t, http.StatusOK, code, "counter-rumor: %v", body)
+	h.assertWaitees("the actor still owes the options", model.RowStatePlanResolving, actor.ID)
+
+	rd := loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData)
+	require.Empty(t, rd.MakeMarChoices)
+	rd.ChoiceSubmitted = true
+	require.NoError(t, saveResolutionData(ctx, h.q, plan.ID, rd))
+	h.assertWaitees("the actor has finished; the preparer completes", model.RowStatePlanResolving, prep.ID)
+}
+
 // Q2: the counter-rumor is about the preparer's main character AS IT STANDS WHEN
 // THE OPTIONS ARE APPLIED; its text and source are the actor's; the preparer's
 // failed rumor never reaches the sheet.

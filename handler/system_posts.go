@@ -1119,23 +1119,34 @@ func EmitShakeUpBegan(
 // player (PassFocus and the automatic pass after a turn's action). Minor: the
 // marker's position is always on screen, but the move itself — who passed it,
 // to whom — is part of the record a reader reconstructing the turn order needs.
+// skipped names the players the rotation passed over for having no peers, so a
+// reader can tell a skipped turn from a missed one.
 func EmitFocusPassed(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	game dbgen.Game,
 	fromID, toID int64,
+	skipped []int64,
 ) {
 	if fromID == toID {
 		return
 	}
 	from := playerDisplayName(ctx, q, fromID)
 	to := playerDisplayName(ctx, q, toID)
+	body := fmt.Sprintf("%s passes the focus to %s.", from, to)
+	data := map[string]any{"from_player_id": fromID, "to_player_id": toID}
+	if len(skipped) > 0 {
+		names := make([]string, len(skipped))
+		for i, id := range skipped {
+			names[i] = playerDisplayName(ctx, q, id)
+		}
+		body = fmt.Sprintf("%s passes the focus to %s, skipping %s (no peers left).", from, to, joinWithAnd(names))
+		data["skipped_player_ids"] = skipped
+	}
 	EmitSystemPost(ctx, q, manager, game.ID, "scene.focus_passed",
-		model.SeverityMinor,
-		fmt.Sprintf("%s passes the focus to %s.", from, to),
-		logRow(game), nil, nil,
-		map[string]any{"from_player_id": fromID, "to_player_id": toID})
+		model.SeverityMinor, body,
+		logRow(game), nil, nil, data)
 }
 
 // EmitShakeUpAdjusted writes the Default post for a cost-adjustment bid against

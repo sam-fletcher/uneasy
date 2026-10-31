@@ -287,6 +287,36 @@ func TestShakeUpLog_PassFocus_Posts(t *testing.T) {
 	assertFocusPassPosted(t, q, tg)
 }
 
+// A player with no peers left is passed over; the line says who, so a reader
+// does not mistake the skipped turn for a missed one.
+func TestShakeUpLog_PassFocus_NamesSkippedPlayers(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	tg := newTestGame(t, q, 3)
+	require.NoError(t, q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
+		ID: tg.Game.ID, FocusPlayerID: &tg.Players[0].ID,
+	}))
+	destroyPlayerAssets(t, q, tg.Players[1].ID)
+	tok, err := db.NewCookieToken()
+	require.NoError(t, err)
+	_, err = q.CreateSession(ctx, dbgen.CreateSessionParams{Token: tok, AccountID: tg.Players[0].AccountID})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/tables/"+strconv.FormatInt(tg.Game.ID, 10)+"/pass-focus", nil)
+	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
+	rec := httptest.NewRecorder()
+	focusPassRouter(t, pool, q).ServeHTTP(rec, req)
+	require.Equalf(t, http.StatusOK, rec.Code, "pass-focus: %s", rec.Body.String())
+
+	posts := postsWithCode(t, q, tg.Game.ID, "scene.focus_passed")
+	require.Len(t, posts, 1)
+	assert.Equal(t, fmt.Sprintf("%s passes the focus to %s, skipping %s (no peers left).",
+		playerDisplayName(ctx, q, tg.Players[0].ID),
+		playerDisplayName(ctx, q, tg.Players[2].ID),
+		playerDisplayName(ctx, q, tg.Players[1].ID)), posts[0].Body)
+}
+
 // The automatic pass after a turn's action (autoPassFocus) is the normal path;
 // PassFocus is only the recovery endpoint, so both must post.
 func TestShakeUpLog_AutoPassFocus_Posts(t *testing.T) {

@@ -188,3 +188,19 @@ func TestDuel_PartialUpdate(t *testing.T) {
 	require.NotNil(t, rd.MakeIntroductions)
 	assert.Equal(t, int16(5), rd.MakeIntroductions.PeerCount)
 }
+
+// A row stored before the commit markers existed carries only make_mar_choices,
+// and a zero-pick commit stores nothing at all; both must still read correctly.
+func TestChoicesCommitted_StoredShapes(t *testing.T) {
+	cases := map[string]bool{
+		`{}`:                                    false,
+		`{"make_mar_choices":[{"option":"x"}]}`: true,
+		`{"choice_submitted":true}`:             true,
+		`{"choice_auto_applied":true}`:          true,
+	}
+	for raw, want := range cases {
+		s := raw
+		rd := LoadResolutionData(&s)
+		assert.Equal(t, want, rd.ChoicesCommitted(), raw)
+	}
+}

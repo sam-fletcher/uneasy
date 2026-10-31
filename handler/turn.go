@@ -86,35 +86,40 @@ func rawNextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusI
 //
 // If the full rotation has no eligible players (everyone has lost all peers),
 // it falls back to the raw next player so the game can still proceed.
-func nextFocusPlayer(r *http.Request, q *dbgen.Queries, gameID, currentFocusID int64) (*dbgen.Player, error) {
+func nextFocusPlayer(
+	r *http.Request,
+	q *dbgen.Queries,
+	gameID, currentFocusID int64,
+) (next *dbgen.Player, skipped []int64, err error) {
 	candidateID := currentFocusID
 	var fallback *dbgen.Player // raw next, used if nobody has peers
 
 	// Iterate at most once through all players (max 6 in a game).
 	for range maxPlayerCount {
-		next, err := rawNextFocusPlayer(r, q, gameID, candidateID)
-		if err != nil {
-			return nil, err
+		cand, rawErr := rawNextFocusPlayer(r, q, gameID, candidateID)
+		if rawErr != nil {
+			return nil, nil, rawErr
 		}
 		if fallback == nil {
-			fallback = next
+			fallback = cand
 		}
 		// If we've looped back to the original focus player, no one has peers.
-		if next.ID == currentFocusID {
+		if cand.ID == currentFocusID {
 			break
 		}
 
-		hasPeers, err := playerHasPeers(r.Context(), q, gameID, next.ID)
-		if err != nil || hasPeers {
-			return next, err
+		hasPeers, peersErr := playerHasPeers(r.Context(), q, gameID, cand.ID)
+		if peersErr != nil || hasPeers {
+			return cand, skipped, peersErr
 		}
 
-		candidateID = next.ID
+		skipped = append(skipped, cand.ID)
+		candidateID = cand.ID
 	}
 
 	// No eligible player found — return the raw next as a fallback so the
 	// game can still proceed (facilitator must handle end state manually).
-	return fallback, nil
+	return fallback, nil, nil
 }
 
 // isEngrailedLine reports whether advancing from oldRow to newRow crosses
@@ -419,7 +424,7 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 	}
 	ctx := r.Context()
 
-	next, err := nextFocusPlayer(r, s.Q, game.ID, *game.FocusPlayerID)
+	next, skipped, err := nextFocusPlayer(r, s.Q, game.ID, *game.FocusPlayerID)
 	if err != nil {
 		return fmt.Errorf("determine next focus player: %w", err)
 	}
@@ -437,7 +442,7 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 			DisplayName: next.DisplayName,
 		})
 	}
-	EmitFocusPassed(ctx, s.Q, manager, *game, *game.FocusPlayerID, next.ID)
+	EmitFocusPassed(ctx, s.Q, manager, *game, *game.FocusPlayerID, next.ID, skipped)
 
 	// Soft conditions that block row advance: pending plans, outstanding
 	// war costs, or open surrender claims. Each check is conservative —
@@ -530,7 +535,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// Step 6: pass focus to the next player clockwise.
-		next, err := nextFocusPlayer(r, s.Q, game.ID, *game.FocusPlayerID)
+		next, skipped, err := nextFocusPlayer(r, s.Q, game.ID, *game.FocusPlayerID)
 		if err != nil {
 			respondInternalErr(w, r, "could not determine next focus player", err)
 			return
@@ -551,7 +556,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				DisplayName: next.DisplayName,
 			})
 		}
-		EmitFocusPassed(ctx, s.Q, manager, *game, *game.FocusPlayerID, next.ID)
+		EmitFocusPassed(ctx, s.Q, manager, *game, *game.FocusPlayerID, next.ID, skipped)
 
 		// Step 7: are there pending plans still on this row? Check BEFORE
 		// broadcasting row state: broadcastRowState auto-kicks-off a pending

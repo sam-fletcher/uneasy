@@ -140,6 +140,13 @@ export function parseResolutionData(plan: Plan | null | undefined): ResolutionDa
 	catch { return {}; }
 }
 
+/** Whether the plan's make/mar choice has been made, even with no picks.
+ * Mirrors ResolutionData.ChoicesCommitted in game/plan.go; rows stored before
+ * the markers existed fall back on a non-empty make_mar_choices. */
+export function choicesCommitted(rd: ResolutionData): boolean {
+	return (rd.make_mar_choices ?? []).length > 0 || !!rd.choice_submitted || !!rd.choice_auto_applied;
+}
+
 // ── Make Demands helpers ──────────────────────────────────────────────────
 
 /** The four draft options drafted by demander + target preparer after a made

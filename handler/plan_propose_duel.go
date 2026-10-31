@@ -271,6 +271,7 @@ func (pduelHandler) ApplyChoice(
 	}
 	// Record what is actually being applied, so the stored choices match the
 	// transfers even when the server filled them in.
+	resData.ChoiceSubmitted = true
 	resData.MakeMarChoices = make([]Choice, len(choices))
 	for i, c := range choices {
 		resData.MakeMarChoices[i] = Choice{Option: c}

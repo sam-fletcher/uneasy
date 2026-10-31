@@ -29,7 +29,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
-	import { parseResolutionData, playerName, breakableAssets } from './shared';
+	import { choicesCommitted, parseResolutionData, playerName, breakableAssets } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import { hiddenCount } from '$lib/secretCounts';
 	import { useSecretCounts } from '$lib/secretCountsContext';
@@ -193,7 +193,7 @@
 		plan != null && activeRoll != null && activeRoll.plan_id === plan.id,
 	);
 	const hasCommittedChoices = $derived(
-		plan != null && (parseResolutionData(plan).make_mar_choices ?? []).length > 0,
+		plan != null && choicesCommitted(parseResolutionData(plan)),
 	);
 	const preRollDone = $derived(
 		(saData.pre_roll_done ?? false) || rollForThisPlan || hasCommittedChoices,
