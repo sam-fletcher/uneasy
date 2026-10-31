@@ -14,8 +14,8 @@ and feel.
 
 - `gh pr view <n> --json title,body,headRefName,commits,files` and
   `gh pr diff <n>`.
-- **The brief** you gave the session (in this conversation, or its tracker
-  row). It's the spec this PR is judged against. If there is none — the
+- **The brief** you gave the session (in this conversation, or the tracker
+  item it came from). It's the spec this PR is judged against. If there is none — the
   owner asked you to review a PR from elsewhere — skip the Brief axis and
   say so in the review.
 - The hand-over note in the diff (`docs/work/notes/<session-name>.md`).
@@ -32,8 +32,9 @@ Cheap, mechanical, and enough to send it straight back:
   after, and says what wasn't verified.
 - **Commits** follow the `commit` skill: logical, and real decisions carry
   their reason.
-- **Tracker row and hand-over note** are in the diff. (A coordinator's own
-  setup PR has no work session, so a tracker row is enough.)
+- **Tracker and hand-over note:** the tracker item is removed or updated,
+  owner questions are under "Waiting on the owner", and the note exists. (A
+  coordinator's own setup PR has no work session, so no note.)
 - **Public repo:** search the diff, PR body and commit messages for
   `_RULES`, `DESIGN_PRINCIPLES`, `adr/` and `/Users/`, and read each hit. A
   passing mention of a private file is the existing style; copied private
@@ -86,8 +87,9 @@ re-run that one cheap check yourself against the branch (`test-worktree`).
 
 Report the axes **side by side**, not merged into one ranking, then:
 
-- **Any must-fix** → send the findings to the work session that wrote it
-  (it still has the context), paraphrasing anything private. It fixes,
+- **Any must-fix** → send the findings to the work session that wrote it,
+  paraphrasing anything private: `SendMessage` to the session id you got
+  when you started it. Its context survives its final report. It fixes,
   tidies its history, force-pushes and reports back; review what changed.
 - **Questions only the owner can answer** → the PR's *For the owner*
   section and the tracker's "Waiting on the owner".

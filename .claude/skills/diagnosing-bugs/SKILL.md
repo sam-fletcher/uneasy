@@ -26,7 +26,10 @@ Ask the owner for what you need — game phase and row, plan, player count,
 what each player saw, roughly when — and reproduce on a dev game.
 
 Rule out first: a "Failed to fetch" banner or a CSS MIME error after a
-deploy is a tab left open across the redeploy, not a bug.
+deploy is a tab left open across the redeploy, not a bug. And check what
+"expected" means against the rulebook page: the reporter's expectation, or
+the app's, may be the misreading — then it's a rules question for the
+owner (the `grilling` skill), not a bug.
 
 ## 2. Build a red check
 
@@ -37,7 +40,10 @@ the bug — they get slower and flakier going down:
    `make test` or `go test -count=1 -run TestX ./game/`.
 2. **Integration test** in `handler/` — the real handler, a real database,
    a game seeded straight into the right phase with `gametest` (`SeedMainEvent`,
-   `SeedShakeUp` and their options). `make test-integration-run RUN=TestX
+   `SeedShakeUp` and their options). Seeds aren't always exactly what live
+   play produces — `SeedShakeUp` leaves the game on row 13 where a live one
+   is on row 14, and there is no seed for a finished game — so check the
+   seeded state matches the reported one before trusting a green result. `make test-integration-run RUN=TestX
    PKG=./handler/...` on a **private** database (the `test-worktree` skill).
 3. **Vitest** for frontend logic in `frontend/src/lib/` (`waitingOn.ts`,
    WebSocket handlers, stores), or a component rendered with
@@ -86,6 +92,12 @@ going if they're away.
 Where bugs have hidden in this project before — check these against the
 symptom first:
 
+- **The game stalls: nobody can act.** The most damaging kind, because a
+  stalled game can't be rescued from the UI — there's deliberately no
+  escape hatch. Look for a completion or advance check gated on state that
+  can never arrive (a result that's never set on one path, a hard-coded
+  rank or player, a phase flag set only by a request that may never come),
+  and for a waiting state that names nobody.
 - **Frozen or duplicated UI:** a WebSocket broadcast of something the client
   already added optimistically, so a keyed `{#each}` holds two rows with the
   same id; or a WS handler *replacing* an object with a partial payload
@@ -102,7 +114,10 @@ symptom first:
 - **Off by one rank:** rank 1 is the *highest* status, and dummy players
   hold rank 1 in 2–3 player games.
 - **Hidden information visible:** secret text in a log post, or plan prep
-  data returned to every player.
+  data returned to every player. The reverse too: an asset that changed
+  hands without its new holder being granted sight of its secrets.
+- **A player left without a main character:** an asset transfer clears the
+  main-character flag, and play must wait until it's replaced.
 
 ## 5. Probe
 

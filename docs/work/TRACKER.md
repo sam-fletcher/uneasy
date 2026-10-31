@@ -1,19 +1,20 @@
 # Work tracker
 
-What's in flight, what's next, and what's waiting on the owner. Each work
-session updates this file **on its own branch**, so the tracker merges with
-the code it describes. Hand-over notes go in [notes/](notes/), one file per
-session, named after the session.
+What's next, and what's waiting on the owner. Each work session's PR
+updates this file **on its own branch** — it removes or updates the item it
+worked on and adds any open question for the owner — so the tracker merges
+with the code it describes. Hand-over notes go in [notes/](notes/), one file
+per session, named after its worktree folder.
 
 Older history — the 12-plan UX audit's findings, rulings and the hand-over
 notes up to 2026-10-30 — is private and lives outside the repo (see the
 private CLAUDE.md).
 
-## Now
+## In flight
 
-| Piece | Session | Status |
-|---|---|---|
-| `retro` and `review-pr` skills; start every session from the latest `main` | — | in review (`setup/retro-review`) |
+The open pull requests (`gh pr list`). There's no table of them here: a row
+per piece went stale the moment its PR merged, and parallel sessions all
+editing one table conflicted whenever they rebased.
 
 ## Next — workflow and skills
 

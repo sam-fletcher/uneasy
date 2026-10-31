@@ -65,9 +65,9 @@ Then point every tool at it:
 
 **Caveat — several specs still hard-code `:8090`** in `browser.newContext({ baseURL: … })`
 instead of reading `E2E_BASE_URL` (e.g. `chat.spec.ts`; `grep -rn 8090 frontend/tests`
-lists them). Against a private server those specs quietly test `main`. Either
-make the spec honour `E2E_BASE_URL` as `seek_answers.spec.ts` does, or say in
-your report that the spec wasn't run against your code.
+lists them). Against a private server those specs quietly test `main`. Say in
+your report that such a spec wasn't run against your code; fixing the specs
+is its own tracker item, not part of your piece.
 
 Stop the server and drop the database when you finish. Never leave a server
 running on a port another session might pick.
