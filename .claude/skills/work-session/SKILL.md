@@ -27,6 +27,9 @@ keeps the work faithful to the game and the owner's rulings.
   owner** (the `grilling` skill). Don't pick an interpretation and build it.
 - **Fixing a bug** whose cause isn't obvious from one read: follow the
   `diagnosing-bugs` skill before changing code.
+- **Code that looks wrong or odd** may be deliberate. Read its history
+  (`git log --format='%h %s%n%b' -- <file>`, or `git blame` on the lines)
+  before changing it.
 
 ## 2. Stay in scope
 
@@ -86,9 +89,9 @@ nothing in from the private folder.
 ## 6. Git
 
 - Work only on your branch. Never commit to, merge into or push `main`.
-- Once §4 passes, commit (code, tracker and note together), push your
-  branch and open a **draft** PR with the `pr` skill. End commit messages
-  with the attribution line your instructions give.
+- Once §4 passes, commit with the `commit` skill — logical commits whose
+  messages keep the reason, the tracker and note last — then push your
+  branch and open a **draft** PR with the `pr` skill.
 - If verification didn't pass, don't open a PR — report what's blocking.
 - Never merge or enable auto-merge; the owner merges.
 
