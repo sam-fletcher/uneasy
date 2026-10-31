@@ -6,8 +6,8 @@ description: Open or update a pull request in this repo — push the branch, wri
 # Opening a pull request
 
 A work session opens its PR **as a draft** once the `work-session`
-verification bar is met. The coordinator reviews the diff and marks it ready
-(`gh pr ready <n>`); the owner reviews and merges. Nobody else merges, and
+verification bar is met. The coordinator reviews it (the `review-pr`
+skill) and marks it ready; the owner reviews and merges. Nobody else merges, and
 nobody enables auto-merge — a hook blocks `gh pr merge` and pushes to `main`.
 
 ## 1. Push

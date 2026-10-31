@@ -33,7 +33,13 @@ than guessing — the `grilling` skill shows how to ask.
 - Work on a branch, normally in your own worktree. Never commit to `main`.
 - When a piece of work passes its verification, its session commits, pushes
   its branch and opens a **draft** PR (the `pr` skill). The coordinator
-  reviews the diff and marks it ready; the owner reviews and merges.
+  reviews it (the `review-pr` skill) and marks it ready; the owner reviews
+  and merges.
+- **Everything starts from the latest `main`.** A SessionStart hook
+  ([.claude/hooks/sync_main.sh](.claude/hooks/sync_main.sh)) fast-forwards
+  the main checkout — so the dev containers run it — and any worktree
+  branch with no commits yet. After the owner merges a PR mid-session, the
+  coordinator runs that script itself, so container restarts happen too.
 - Sessions never merge and never enable auto-merge. A hook
   ([.claude/hooks/guard_git.py](.claude/hooks/guard_git.py)) blocks
   `gh pr merge` and any push to `main`; branch protection on
@@ -51,8 +57,10 @@ than guessing — the `grilling` skill shows how to ask.
 
 - **One coordinating session**, in the main checkout. It plans, starts one
   session per independent piece of work, and reviews each piece's draft PR
-  before marking it ready (`gh pr ready`) for the owner. It doesn't write
+  (`review-pr`) before marking it ready for the owner. It doesn't write
   product code itself.
+- **`retro`** looks back at a finished session and proposes changes to
+  this setup, when the owner asks for one.
 - **Each work session gets its own worktree and branch.** No session starts
   sessions of its own — work fans out one level, never two.
 - **Work sessions follow the `work-session` skill** (in `.claude/skills/`):

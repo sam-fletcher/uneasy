@@ -7,7 +7,7 @@ description: The working agreement for a session doing one piece of work in its 
 
 ## 0. Check your environment first
 
-Before anything else, confirm all three. If any fails, **stop and tell the
+Before anything else, confirm all four. If any fails, **stop and tell the
 owner** — don't work around it, because the missing context is exactly what
 keeps the work faithful to the game and the owner's rulings.
 
@@ -16,6 +16,9 @@ keeps the work faithful to the game and the owner's rulings.
    folder above the main checkout, gives the path).
 3. `git branch --show-current` is your own branch, not `main`, and `pwd` is
    your worktree.
+4. Your branch starts from the latest `main`. The start-up hook
+   fast-forwards a branch with no commits; if it says yours is behind,
+   `git rebase origin/main` before you build.
 
 ## 1. Read before you build
 
@@ -90,8 +93,12 @@ nothing in from the private folder.
 
 - Work only on your branch. Never commit to, merge into or push `main`.
 - Once §4 passes, commit with the `commit` skill — logical commits whose
-  messages keep the reason, the tracker and note last — then push your
-  branch and open a **draft** PR with the `pr` skill.
+  messages keep the reason, the tracker and note last.
+- `git fetch origin && git rebase origin/main`. If `main` moved, re-run
+  `make check-fast` (and anything else main's changes could affect) on the
+  rebased branch.
+- Push your branch and open a **draft** PR with the `pr` skill. If the
+  coordinator's review sends it back, fix, tidy and force-push.
 - If verification didn't pass, don't open a PR — report what's blocking.
 - Never merge or enable auto-merge; the owner merges.
 
