@@ -1033,25 +1033,109 @@ func shakeUpOptionPhrase(description string) string {
 }
 
 // EmitShakeUpAnnounced writes the Default post for an opened (announced) spend.
-// optionPhrase is the human label; targetName is the targeted asset's name (or
-// "" for option types with no asset target).
+// optionPhrase is the human label; targetClause is the pre-built " — …" tail
+// naming what the spend is aimed at (the owner's asset, the marginalia to tear,
+// the title being claimed — all public, and exactly what the other players are
+// deciding whether to bid against), or "" for options with no target.
 func EmitShakeUpAnnounced(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
 	gameID int64,
 	spend dbgen.ShakeUpSpend,
-	optionPhrase, targetName string,
+	optionPhrase, targetClause string,
 ) {
 	name := playerDisplayName(ctx, q, spend.PlayerID)
-	body := fmt.Sprintf("%s announces a Shake-Up spend: %s", name, optionPhrase)
-	if targetName != "" {
-		body += fmt.Sprintf(" — targeting %s", assetMark(targetName))
-	}
+	body := fmt.Sprintf("%s announces a Shake-Up spend: %s%s", name, optionPhrase, targetClause)
 	EmitSystemPost(ctx, q, manager, gameID, "shake_up.spend_announced",
 		model.SeverityDefault, body,
 		nil, nil, nil,
 		map[string]any{"spend_id": spend.ID, "player_id": spend.PlayerID, "option_key": spend.OptionKey})
+}
+
+// EmitShakeUpPassed writes the Minor post for a reactor letting an open spend
+// stand (ruling 5: adjust or pass clears the commit gate). Minor, like the
+// plan specified: a pass changes no cost and no board, but it is the table's
+// answer to "why did the spender get to commit?", and the log should show who
+// had weighed in.
+func EmitShakeUpPassed(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	spend dbgen.ShakeUpSpend,
+	passerID int64,
+) {
+	passer := playerDisplayName(ctx, q, passerID)
+	spender := playerDisplayName(ctx, q, spend.PlayerID)
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.passed",
+		model.SeverityMinor,
+		fmt.Sprintf("%s lets %s's spend stand", passer, spender),
+		nil, nil, nil,
+		map[string]any{"spend_id": spend.ID, "player_id": passerID})
+}
+
+// EmitShakeUpBegan writes the Default post for the Shake-Up's opening act:
+// before the first roll every player refreshes whatever they leveraged over the
+// thirteen rows (SHAKEUP_RULES.md). refreshed is the set of assets that were
+// leveraged at that moment; the line groups them by owner so the table sees
+// whose board changed. Without it the assets silently flip back, and the only
+// trace of the Shake-Up starting is the category boundary.
+func EmitShakeUpBegan(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	refreshed []dbgen.Asset,
+) {
+	var owners []int64
+	byOwner := map[int64][]string{}
+	ids := make([]int64, 0, len(refreshed))
+	for _, a := range refreshed {
+		if _, seen := byOwner[a.OwnerID]; !seen {
+			owners = append(owners, a.OwnerID)
+		}
+		byOwner[a.OwnerID] = append(byOwner[a.OwnerID], assetMark(a.Name))
+		ids = append(ids, a.ID)
+	}
+	body := "The thirteen rows are done. Everyone takes stock before the Shake-Up"
+	if len(owners) == 0 {
+		body += "; no asset was leveraged."
+	} else {
+		parts := make([]string, 0, len(owners))
+		for _, oid := range owners {
+			parts = append(parts, fmt.Sprintf("%s refreshed %s",
+				playerDisplayName(ctx, q, oid), joinWithAnd(byOwner[oid])))
+		}
+		body += " and refreshes what was leveraged: " + strings.Join(parts, "; ") + "."
+	}
+	EmitSystemPost(ctx, q, manager, gameID, "shake_up.began",
+		model.SeverityDefault, body,
+		nil, nil, nil,
+		map[string]any{"refreshed_asset_ids": ids})
+}
+
+// EmitFocusPassed writes the Minor post for the focus marker moving to the next
+// player (PassFocus and the automatic pass after a turn's action). Minor: the
+// marker's position is always on screen, but the move itself — who passed it,
+// to whom — is part of the record a reader reconstructing the turn order needs.
+func EmitFocusPassed(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	game dbgen.Game,
+	fromID, toID int64,
+) {
+	if fromID == toID {
+		return
+	}
+	from := playerDisplayName(ctx, q, fromID)
+	to := playerDisplayName(ctx, q, toID)
+	EmitSystemPost(ctx, q, manager, game.ID, "scene.focus_passed",
+		model.SeverityMinor,
+		fmt.Sprintf("%s passes the focus to %s.", from, to),
+		logRow(game), nil, nil,
+		map[string]any{"from_player_id": fromID, "to_player_id": toID})
 }
 
 // EmitShakeUpAdjusted writes the Default post for a cost-adjustment bid against

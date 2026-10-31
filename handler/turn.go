@@ -437,6 +437,7 @@ func autoPassFocus(r *http.Request, s *db.Store, manager *hub.Manager, game *dbg
 			DisplayName: next.DisplayName,
 		})
 	}
+	EmitFocusPassed(ctx, s.Q, manager, *game, *game.FocusPlayerID, next.ID)
 
 	// Soft conditions that block row advance: pending plans, outstanding
 	// war costs, or open surrender claims. Each check is conservative —
@@ -550,6 +551,7 @@ func PassFocus(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 				DisplayName: next.DisplayName,
 			})
 		}
+		EmitFocusPassed(ctx, s.Q, manager, *game, *game.FocusPlayerID, next.ID)
 
 		// Step 7: are there pending plans still on this row? Check BEFORE
 		// broadcasting row state: broadcastRowState auto-kicks-off a pending
