@@ -189,6 +189,13 @@ func BeginShakeUp(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, g
 	if game.Phase != model.PhaseMainEvent {
 		return errors.New("shake-up can only begin from main_event")
 	}
+	// Remember which assets were leveraged: the refresh below is the rules'
+	// opening act (every player refreshes what they leveraged), and the table
+	// should see whose board it changed.
+	leveraged, err := leveragedAssets(ctx, q, gameID)
+	if err != nil {
+		return fmt.Errorf("load leveraged assets: %w", err)
+	}
 	if err = q.RefreshAllAssets(ctx, gameID); err != nil {
 		return fmt.Errorf("refresh assets: %w", err)
 	}
@@ -213,6 +220,15 @@ func BeginShakeUp(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, g
 	broadcastEvent(manager, gameID, model.EventShakeUpStepChanged, model.ShakeUpStepChangedPayload{
 		Category: cat, Step: step,
 	})
+	for _, a := range leveraged {
+		broadcastEvent(manager, gameID, model.EventAssetRefreshed, model.AssetIDPayload{AssetID: a.ID})
+	}
+	// The phase flip is the one board change with no row-advance post behind it
+	// (advanceRowInner returns before "Row N begins"), so the Esteem boundary
+	// and the opening refresh are written here. Both carry no row anchor: the
+	// game's current_row is 14, which the FK would silently drop.
+	EmitShakeUpCategory(ctx, q, manager, gameID, cat)
+	EmitShakeUpBegan(ctx, q, manager, gameID, leveraged)
 
 	roller, err := shakeUpNextRoller(ctx, q, gameID, cat)
 	if err != nil {
@@ -227,6 +243,21 @@ func BeginShakeUp(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, g
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// leveragedAssets returns the game's live assets that are currently leveraged.
+func leveragedAssets(ctx context.Context, q *dbgen.Queries, gameID int64) ([]dbgen.Asset, error) {
+	all, err := q.ListAssetsByGame(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	var out []dbgen.Asset
+	for _, a := range all {
+		if a.IsLeveraged {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
 
 func inShakeUpStep(w http.ResponseWriter, game *dbgen.Game, want int16) bool {
 	if game.Phase != model.PhaseShakeUp {

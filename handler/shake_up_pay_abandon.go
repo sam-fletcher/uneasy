@@ -162,15 +162,44 @@ func ShakeUpAnnounce(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		broadcastEvent(manager, gameID, model.EventShakeUpSpendOpened, model.ShakeUpSpendOpenedPayload{
 			Spend: spend,
 		})
-		var targetName string
-		if body.TargetAssetID != nil {
-			if a, aErr := s.Q.GetAssetByID(ctx, *body.TargetAssetID); aErr == nil {
-				targetName = a.Name
-			}
-		}
-		EmitShakeUpAnnounced(ctx, s.Q, manager, gameID, spend, shakeUpOptionPhrase(info.Description), targetName)
+		EmitShakeUpAnnounced(ctx, s.Q, manager, gameID, spend,
+			shakeUpOptionPhrase(info.Description), shakeUpAnnounceClause(ctx, s.Q, spend))
 		respond(w, http.StatusOK, map[string]any{"spend": spend})
 	}
+}
+
+// shakeUpAnnounceClause words what an announced spend is aimed at, for the
+// announce log line: the asset and whose it is, the marginalia a break will tear,
+// or the title a claim will stamp and the peer receiving it. All of it is public
+// board state and is what the other players weigh before bidding on the cost, so
+// the announcement has to carry it — the commit line only reports it afterwards.
+// Returns "" for an option with no target.
+func shakeUpAnnounceClause(ctx context.Context, q *dbgen.Queries, spend dbgen.ShakeUpSpend) string {
+	if spend.TargetAssetID == nil {
+		return ""
+	}
+	asset, err := q.GetAssetByID(ctx, *spend.TargetAssetID)
+	if err != nil {
+		return ""
+	}
+	if spend.OptionKey == gamepkg.ShakeUpOptClaimTitle && spend.TargetTitleID != nil {
+		choice := gamepkg.TitleChoiceByID(*spend.TargetTitleID)
+		if choice == nil {
+			return ""
+		}
+		clause := " — claiming the title " + assetMark(choice.Name)
+		if flavor := titleFlavorText(spend.TitleFlavor, choice.Name); flavor != "" {
+			clause += fmt.Sprintf(" (%q)", flavor)
+		}
+		return clause + " on " + assetMark(asset.Name)
+	}
+	clause := fmt.Sprintf(" — targeting %s's %s", playerDisplayName(ctx, q, asset.OwnerID), assetMark(asset.Name))
+	if spend.TargetMarginaliaID != nil {
+		if m, mErr := q.GetMarginaliaByID(ctx, *spend.TargetMarginaliaID); mErr == nil {
+			clause += fmt.Sprintf(", to tear %q", m.Text)
+		}
+	}
+	return clause
 }
 
 // ShakeUpAdjust handles POST /api/tables/{id}/shake-up/adjust.
@@ -316,6 +345,7 @@ func ShakeUpPass(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			broadcastEvent(manager, gameID, model.EventShakeUpPassed, model.ShakeUpPassedPayload{
 				SpendID: spend.ID, PlayerID: player.ID,
 			})
+			EmitShakeUpPassed(ctx, s.Q, manager, gameID, spend, player.ID)
 		}
 		respond(w, http.StatusOK, map[string]any{"pass": pass})
 	}

@@ -449,6 +449,19 @@ func validateShakeUpClaimTitle(
 	return true
 }
 
+// titleFlavorText returns the player's freeform marginalia wording for a claimed
+// title, or "" when they gave none or it just repeats the title's name.
+func titleFlavorText(flavor *string, titleName string) string {
+	if flavor == nil {
+		return ""
+	}
+	f := strings.TrimSpace(*flavor)
+	if f == titleName {
+		return ""
+	}
+	return f
+}
+
 // shakeUpClaimTitle stamps a freshly claimed title as a marginalia on one of the
 // claimer's peers (ADR-007). Unlike the pre-ADR stub — which minted a generic
 // "New Title" artifact invisible to the line of succession — this routes through
@@ -503,8 +516,8 @@ func shakeUpClaimTitle(
 	// The marginalia text is the player's freeform flavor; the title id is the
 	// immutable role. Default to the title's display name when no flavor is given.
 	text := choice.Name
-	if spend.TitleFlavor != nil && strings.TrimSpace(*spend.TitleFlavor) != "" {
-		text = strings.TrimSpace(*spend.TitleFlavor)
+	if flavor := titleFlavorText(spend.TitleFlavor, choice.Name); flavor != "" {
+		text = flavor
 	}
 	m, err := q.CreateTitleMarginalia(ctx, dbgen.CreateTitleMarginaliaParams{
 		AssetID:  asset.ID,
@@ -533,9 +546,14 @@ func shakeUpClaimTitle(
 	})
 
 	spender := playerDisplayName(ctx, q, spend.PlayerID)
-	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost,
-		fmt.Sprintf("%s spent %d token(s) to claim the title %s on %s",
-			spender, finalCost, assetMark(choice.Name), assetMark(asset.Name)),
+	body := fmt.Sprintf("%s spent %d token(s) to claim the title %s on %s",
+		spender, finalCost, assetMark(choice.Name), assetMark(asset.Name))
+	// The marginalia text is public record (the peer's card shows it), so the
+	// line carries it whenever it says more than the title's own name.
+	if flavor := titleFlavorText(spend.TitleFlavor, choice.Name); flavor != "" {
+		body += fmt.Sprintf(": %q", flavor)
+	}
+	EmitShakeUpCommitted(ctx, q, manager, gameID, spend, finalCost, body,
 		map[string]any{
 			"effect":        "claim_title",
 			"title":         titleID,
