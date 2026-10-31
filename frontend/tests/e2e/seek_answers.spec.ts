@@ -22,7 +22,7 @@ import { cleanupGameAfterEach } from './helpers';
 // players. Knowledge ranks are seeded so the target (bob) outranks the preparer
 // (alice), which is what makes the first question vetoable.
 
-const E2E = 'http://localhost:8090';
+const E2E = process.env.E2E_BASE_URL ?? 'http://localhost:8090';
 
 interface PlanRow {
 	id: number;
@@ -251,19 +251,15 @@ test('seek answers: ask → veto → re-ask → answer each reach the other side
 	await expect(bobAnswer).toBeVisible();
 	await expect(bob.getByRole('button', { name: 'Veto (ask another)' })).toHaveCount(0);
 
-	// ── Leg 4: bob answers. The sub-flow completes on alice's side live, so
-	//    her "Complete plan" button appears with no reload. ──────────────────
+	// ── Leg 4: bob answers. The answer was the last thing the plan owed, so it
+	//    resolves itself live — alice is never handed a "Complete plan" button. ──
 	await bob.getByPlaceholder('Answer the question…').fill('My steward, Crane — I never left the hall.');
 	await bobAnswer.click();
 
-	const completeBtn = alice.getByRole('button', { name: 'Complete plan' });
-	await expect(completeBtn).toBeVisible({ timeout: 10_000 });
-	await completeBtn.click();
-
-	// The plan resolves cleanly once completed.
 	await expect.poll(async () => (await fetchSeekPlan(aliceCtx.request, game_id)).status, {
 		timeout: 10_000,
 	}).toBe('resolved');
+	await expect(alice.getByRole('button', { name: 'Complete plan' })).toHaveCount(0);
 
 	await aliceCtx.close();
 	await bobCtx.close();
