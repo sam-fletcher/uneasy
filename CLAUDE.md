@@ -31,7 +31,13 @@ than guessing.
 - This repository is **public**, and `main` auto-deploys to
   <https://uneasy.up.railway.app>.
 - Work on a branch, normally in your own worktree. Never commit to `main`.
-- Commit, push or open a PR only when the owner asks. The owner merges.
+- When a piece of work passes its verification, its session commits, pushes
+  its branch and opens a **draft** PR (the `pr` skill). The coordinator
+  reviews the diff and marks it ready; the owner reviews and merges.
+- Sessions never merge and never enable auto-merge. A hook
+  ([.claude/hooks/guard_git.py](.claude/hooks/guard_git.py)) blocks
+  `gh pr merge`, force pushes and pushes to `main`; branch protection on
+  `main` requires a PR with passing CI.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs
   `make check-fast` and the integration suite on every PR.
 - Nothing private goes into the repo, its commits or its PR descriptions:
@@ -41,8 +47,9 @@ than guessing.
 ## Coordinating sessions
 
 - **One coordinating session**, in the main checkout. It plans, starts one
-  session per independent piece of work, and reviews each diff before
-  reporting the piece done. It doesn't write product code itself.
+  session per independent piece of work, and reviews each piece's draft PR
+  before marking it ready (`gh pr ready`) for the owner. It doesn't write
+  product code itself.
 - **Each work session gets its own worktree and branch.** No session starts
   sessions of its own — work fans out one level, never two.
 - **Work sessions follow the `work-session` skill** (in `.claude/skills/`):
