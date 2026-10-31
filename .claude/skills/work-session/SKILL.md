@@ -26,8 +26,10 @@ keeps the work faithful to the game and the owner's rulings.
 - The design principles (private; path in the private CLAUDE.md) before any
   design call. Decisions the owner has already ruled on aren't yours to
   re-open — check memory and the principles before proposing one.
-- The rules for the plan or phase you're touching. **Ambiguous rule → ask the
-  owner** (the `grilling` skill). Don't pick an interpretation and build it.
+- The rules for the plan or phase you're touching. **Ambiguous rule → read
+  the rulebook page first** (the book is the final word over the rules
+  files), **then ask the owner** (the `grilling` skill). Don't pick an
+  interpretation and build it.
 - **Fixing a bug** whose cause isn't obvious from one read: follow the
   `diagnosing-bugs` skill before changing code.
 - **Code that looks wrong or odd** may be deliberate. Read its history
@@ -79,9 +81,12 @@ All of these, against **your** code (the `test-worktree` skill shows how):
 
 On your branch, alongside the code:
 
-- **Tracker:** update your row in `docs/work/TRACKER.md`, and add any open
-  question for the owner under "Waiting on the owner".
-- **Hand-over note:** `docs/work/notes/<session-name>.md`, with these
+- **Tracker:** in `docs/work/TRACKER.md`, remove or update the item your
+  brief came from, and add any open question for the owner under "Waiting
+  on the owner". Don't add an "in progress" entry: open PRs are the list of
+  work in flight.
+- **Hand-over note:** `docs/work/notes/<session-name>.md`, where
+  `<session-name>` is your worktree's folder name, with these
   sections: *What changed and why* · *How it was verified* (say what did
   **not** run against your code) · *Behaviour changes to look at before
   merging* · *Open questions for the owner* · *Noticed, not fixed*.
@@ -95,8 +100,8 @@ nothing in from the private folder.
 - Once §4 passes, commit with the `commit` skill — logical commits whose
   messages keep the reason, the tracker and note last.
 - `git fetch origin && git rebase origin/main`. If `main` moved, re-run
-  `make check-fast` (and anything else main's changes could affect) on the
-  rebased branch.
+  `make check-fast` on the rebased branch, plus `make test-integration` if
+  main's new commits touched Go code.
 - Push your branch and open a **draft** PR with the `pr` skill. If the
   coordinator's review sends it back, fix, tidy and force-push.
 - If verification didn't pass, don't open a PR — report what's blocking.

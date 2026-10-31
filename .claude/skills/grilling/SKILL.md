@@ -19,7 +19,9 @@ Before asking anything:
   **fact**: state it with the principle's number, don't ask it. If the case
   sits badly with a principle, *that* is a question worth asking.
 - For a **game rule**, the rules files, then the rulebook page itself
-  (rendered as an image, never extracted text). Ask the owner only what the
+  (rendered as an image, never extracted text). The book is the final word
+  where they disagree, and most rules files are condensed summaries (the
+  private `CLAUDE.md` says which are verbatim). Ask the owner only what the
   book leaves open, and cite the page you read.
 
 ## 2. Map the decision tree
@@ -67,15 +69,22 @@ back. Don't act on any ruling before that confirmation.
 
 ## 4. Record the rulings
 
-Each ruling goes to exactly one place:
+Rulings — on design *and* on how the app reads a rule — live in the
+private design principles file. Follow the shape it already uses, and show
+the owner the wording first:
 
-- **A new design principle, or an amendment to one** → the private design
-  principles file, in its existing shape (the tension, the resolution, the
-  test to apply next time). Show the owner the wording first.
-- **A case an existing principle settled** → a one-line example under that
-  principle, if it makes the principle clearer; otherwise nowhere.
-- **A tension left unresolved** → that file's "Open tensions" section.
-- **A rule clarification** → memory, as a feedback entry with the page cited.
+- **A new principle, or an amendment to one** → the tension, the
+  resolution, and the test to apply next time.
+- **A case a principle settled** → a dated *Worked case* paragraph under
+  that principle: what the rule says (page cited), what was ruled, and why.
+- **A rules-optional choice ("may") the app makes compulsory**, or the
+  reverse → a row in the file's register under principle 6, as well as its
+  worked case.
+- **A tension left unresolved** → the file's "Open tensions" section.
+
+Memory gets at most a one-line pointer to the principle, so future
+sessions find it. Elsewhere:
+
 - **Anything still waiting on the owner** → the tracker's "Waiting on the
   owner" section.
 - **What the current piece of work should now do** → its brief, or its
