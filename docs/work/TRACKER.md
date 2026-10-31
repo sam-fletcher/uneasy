@@ -48,12 +48,10 @@ parallel.
 4. **Durable "choice applied" marker.** A make/mar commit with zero picks is
    indistinguishable from no commit (`MakeMarChoices` is `omitempty`), so the
    Waiting On bar keeps naming a player who has finished.
-5. **e2e specs off the hard-coded `:8090`.** Every spec should honour
-   `E2E_BASE_URL`, so a worktree run tests the worktree. Must land before 7.
-6. **Proposed, not built:** a partial unique index enforcing one live main
+5. **Proposed, not built:** a partial unique index enforcing one live main
    character per player; a before/after-board log-coverage guard.
-7. **Phase 4: regression specs** for what Phase 3 fixed — one spec file per
-   plan, so these fan out in parallel. After 2 and 5.
+6. **Phase 4: regression specs** for what Phase 3 fixed — one spec file per
+   plan, so these fan out in parallel. After 2.
 8. **Small:** the Shake-Up focus-pass log line doesn't name skipped players.
 9. **Make Demands, the rest of its audit** (the audit itself is private;
    items D2, D5–D7). Retargeting a demand can fail with a server error and

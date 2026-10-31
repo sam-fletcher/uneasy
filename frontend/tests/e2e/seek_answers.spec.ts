@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // End-to-end for Seek Answers — specifically the "ask a player a question"
 // sub-flow, which had the same soft-lock bug class as Propose Duel and
@@ -22,7 +23,6 @@ import { cleanupGameAfterEach } from './helpers';
 // players. Knowledge ranks are seeded so the target (bob) outranks the preparer
 // (alice), which is what makes the first question vetoable.
 
-const E2E = process.env.E2E_BASE_URL ?? 'http://localhost:8090';
 
 interface PlanRow {
 	id: number;

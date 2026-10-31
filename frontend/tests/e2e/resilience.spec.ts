@@ -1,5 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // Resilience specs for the asynchronous play-by-post model: players close
 // tabs, lose connections, and come back later. Two scenarios:
@@ -15,8 +16,8 @@ import { cleanupGameAfterEach } from './helpers';
 //      back online. Validates the reconnect path in ws.ts:295.
 
 async function setupAliceAndBob(browser: Browser) {
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await aliceCtx.request.post('/api/dev/login?username=alice');
   await bobCtx.request.post('/api/dev/login?username=bob');
 

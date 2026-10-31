@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // End-to-end for Clandestinely Liaise — specifically the "Secrets We Keep"
 // hand-off, which had the same soft-lock bug class as Propose Duel: a
@@ -14,7 +15,6 @@ import { cleanupGameAfterEach } from './helpers';
 // Things We Share — that transition must reach the preparer's panel live, with
 // no manual reload. Pre-fix the hand-off never reached the waiting party at all.
 
-const E2E = 'http://localhost:8090';
 
 interface PlanRow {
 	id: number;

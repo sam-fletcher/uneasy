@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // Regression cover for the tone-tile write path ($lib/toneWrites.ts).
 //
@@ -36,7 +37,7 @@ function tileHistory(page: Page): Promise<string[]> {
 }
 
 test('rapid tone taps coalesce and never replay the cycle', async ({ browser }) => {
-	const ctx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+	const ctx = await browser.newContext({ baseURL: E2E });
 	await ctx.request.post('/api/dev/login?username=alice');
 
 	// A real table, not a seeded board: tone topics are seeded at table
@@ -107,8 +108,8 @@ test('another player\'s tone edit still lands live', async ({ browser }) => {
 	// The echo filter drops broadcasts for topics this client has in flight.
 	// This is the other side of that: with nothing in flight, a peer's edit
 	// must still repaint the tile through the WebSocket alone.
-	const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-	const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+	const aliceCtx = await browser.newContext({ baseURL: E2E });
+	const bobCtx = await browser.newContext({ baseURL: E2E });
 	await aliceCtx.request.post('/api/dev/login?username=alice');
 	await bobCtx.request.post('/api/dev/login?username=bob');
 

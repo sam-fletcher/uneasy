@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // Second multi-context spec: alice is already on the table page when bob
 // joins. Alice's roster should pick up bob's name live via the
@@ -25,8 +26,8 @@ import { cleanupGameAfterEach } from './helpers';
 const track = cleanupGameAfterEach();
 
 test('bob joining is reflected on alice\'s open table page', async ({ browser }) => {
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
 
   await aliceCtx.request.post('/api/dev/login?username=alice');
   await bobCtx.request.post('/api/dev/login?username=bob');

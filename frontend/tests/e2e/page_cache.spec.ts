@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // Guards the stale-while-revalidate snapshots in $lib/pageCache.
 //
@@ -19,7 +20,7 @@ const API_DELAY_MS = 400;
 const RETURN_BUDGET_MS = 300;
 
 test('returning to a page you just left paints from the snapshot, not the network', async ({ browser }) => {
-  const fixture = await pwRequest.newContext({ baseURL: 'http://localhost:8090' });
+  const fixture = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await fixture.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -28,7 +29,7 @@ test('returning to a page you just left paints from the snapshot, not the networ
   track(game_id);
   await fixture.dispose();
 
-  const ctx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const ctx = await browser.newContext({ baseURL: E2E });
   await ctx.request.post('/api/dev/login?username=alice');
   const page = await ctx.newPage();
 

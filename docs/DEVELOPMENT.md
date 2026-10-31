@@ -145,8 +145,8 @@ for the wrong reason or fails for one. The Go integration tests have no such
 problem: they exercise the handlers in-process, so they do test your branch.
 
 To run e2e against a worktree, serve it yourself from its own binary and a
-scratch database (never `uneasy_test`); `playwright.config.ts` reads
-`E2E_BASE_URL`. The step-by-step recipe lives in one place, the
+scratch database (never `uneasy_test`); every spec and `playwright.config.ts` read
+`E2E_BASE_URL` (default `http://localhost:8090`, set in `frontend/tests/e2e/baseUrl.ts`). The step-by-step recipe lives in one place, the
 `test-worktree` skill (`.claude/skills/test-worktree/SKILL.md`).
 
 ### Test health

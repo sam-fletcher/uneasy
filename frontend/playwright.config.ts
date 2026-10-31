@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { E2E } from './tests/e2e/baseUrl';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -8,7 +9,7 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:8090',
+    baseURL: E2E,
     trace: 'retain-on-failure',
   },
   projects: [
