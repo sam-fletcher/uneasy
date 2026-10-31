@@ -24,7 +24,9 @@ keeps the work faithful to the game and the owner's rulings.
   design call. Decisions the owner has already ruled on aren't yours to
   re-open — check memory and the principles before proposing one.
 - The rules for the plan or phase you're touching. **Ambiguous rule → ask the
-  owner.** Don't pick an interpretation and build it.
+  owner** (the `grilling` skill). Don't pick an interpretation and build it.
+- **Fixing a bug** whose cause isn't obvious from one read: follow the
+  `diagnosing-bugs` skill before changing code.
 
 ## 2. Stay in scope
 

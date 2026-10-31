@@ -13,7 +13,7 @@ private CLAUDE.md).
 
 | Piece | Session | Status |
 |---|---|---|
-| Sessions open draft PRs: `pr` skill, merge/push guard hook, branch protection on `main` | — | in review (`setup/pr-workflow`) |
+| `diagnosing-bugs` and `grilling` skills; `git push` allowed | — | in review (`setup/skills-debug-grill`) |
 
 ## Next — workflow and skills
 
@@ -21,13 +21,6 @@ Candidates from a review of [mattpocock/skills](https://github.com/mattpocock/sk
 (MIT), each adapted to this project rather than copied. Independent of each
 other and of the audit work.
 
-- **`diagnosing-bugs`** — a debugging method: build a fast, repeatable check
-  that fails on the bug, shrink it, rank guesses, then fix and keep the
-  check as a regression test. Map its steps to our tools (seed builder,
-  `force-roll`, `plandriver`, `shot.mjs`).
-- **`grilling`** — structured design interviews: numbered rounds, a
-  recommended answer per question, facts looked up rather than asked.
-  Rulings land in the private design principles.
 - **`retro`** — after a session, propose improvements to the setup, most
   severe first, preferring an automated check over a new instruction.
 - **A coordinator review skill** — review a draft PR separately against the
