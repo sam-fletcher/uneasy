@@ -646,17 +646,19 @@ func clientIPResolver(behindProxy bool) func(http.Handler) http.Handler {
 		// header should be believed. This is what KeyByIP used to do.
 		return chimiddleware.ClientIPFromRemoteAddr
 	}
-	// Behind Railway's edge. Passing no trusted CIDRs takes the RIGHTMOST
+	// Behind Railway's edge. Trusting one hop takes the RIGHTMOST
 	// X-Forwarded-For entry — appended by the hop nearest us, past anything a
-	// client can write — and sets no IP at all if it fails to parse.
+	// client can write — and sets no IP at all if it fails to parse. (chi
+	// 5.4.0 removed the no-argument ClientIPFromXFF() that used to mean this;
+	// it now panics at startup.)
 	//
 	// The other two variants don't fit. ClientIPFromXFF with explicit CIDRs
 	// would be better, but Railway publishes no IP list for its anycast edge.
-	// ClientIPFromXFFTrustedProxies needs a stable hop count, and the count is
-	// not stable: a live response carries `x-hikari-trace: ord1.zmv5,den1.my59`
+	// A larger ClientIPFromXFFTrustedProxies count needs a stable hop count,
+	// and the count is not stable: a live response carries `x-hikari-trace: ord1.zmv5,den1.my59`
 	// (two POPs), and it shifts again if Railway's CDN is ever switched on. A
 	// fixed count guessed too low would reopen the spoofing hole outright.
-	return chimiddleware.ClientIPFromXFF()
+	return chimiddleware.ClientIPFromXFFTrustedProxies(1)
 }
 
 // errNoClientIP means no trusted client IP could be resolved for a request.
