@@ -515,8 +515,8 @@
 						</span>
 					</p>
 					<p class="choices-note">
-						Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose exactly {requiredPicks}{/if}.
-						On a mar you must also describe a flaw in (break) your own resource assets, after this step.
+						Pick options equal to {canPick ? 'your' : 'the'} dice result (repeatable){#if requiredPicks != null}: choose exactly {requiredPicks}{/if}.
+						On a mar {canPick && isPreparer ? 'you' : playerName(players, plan.preparer_id)} must also describe a flaw in (break) {canPick && isPreparer ? 'your' : 'their'} own resource assets, after this step.
 					</p>
 					{#each OPTIONS as opt}
 						{@const available = optionAvailable[opt.key]}
@@ -530,7 +530,7 @@
 						</div>
 					{/each}
 					<p class="choices-note">
-						Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null} / {requiredPicks}{/if}
+						Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null}{' '}/ {requiredPicks}{/if}
 					</p>
 					{#if canPick}
 						<button class="action-btn primary"
@@ -725,7 +725,7 @@
 							{#if pendingQuestion != null}
 								<p class="choices-note">
 									Waiting for {playerName(players, pendingQuestion.target_id)} to answer
-									{#if pendingQuestion.vetoable}or veto {/if}{canSubflow ? 'your' : 'the'} question:
+									{#if pendingQuestion.vetoable}or veto{' '}{/if}{canSubflow ? 'your' : 'the'} question:
 								</p>
 								<blockquote class="q-quote">{pendingQuestion.question}</blockquote>
 							{:else}
@@ -768,7 +768,7 @@
 								The plan marred by {marRequired} — {canSubflow ? 'you' : 'the preparer'} must break {marRequired} of {canSubflow ? 'your' : 'their'} own resources.
 							</p>
 							<CardPicker
-								label="Choose a marginallia to tear"
+								label="Choose a marginalia to tear"
 								items={penaltyResources}
 								{players}
 								readOnly={!canSubflow}

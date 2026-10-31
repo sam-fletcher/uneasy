@@ -642,7 +642,7 @@
 						{#if allMarSubmitted}
 							Every player has chosen — complete the plan.
 						{:else}
-							Waiting for all players to choose ({marEntries.length}/{marRequired})…
+							Waiting for all players to choose{#if marRequired > 0}{' '}({marEntries.length}/{marRequired}){/if}…
 						{/if}
 					</p>
 					<button class="action-btn primary"

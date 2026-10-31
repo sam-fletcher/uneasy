@@ -88,10 +88,17 @@
 			{ key: 'take_asset', label: mar
 				? `Take an asset from ${playerName(players, plan?.preparer_id ?? null)} — they must consent`
 				: `Take an asset from ${playerName(players, targetAssetOwnerID)} — they must consent` },
-			{ key: 'hide_source', label: 'Hide yourself as the source of the rumor. Add it as a secret to one of your assets.' },
-			{ key: 'reveal_source', label: 'Reveal yourself as the source of the rumor. Relish in its glory.' },
+			{ key: 'hide_source', label: 'Hide yourself as the source of the rumor. Add it as a secret to one of your assets.',
+				summary: 'The source of the rumor is hidden — it becomes a secret on one of their assets.' },
+			{ key: 'reveal_source', label: 'Reveal yourself as the source of the rumor. Relish in its glory.',
+				summary: 'The source of the rumor is revealed, and relishes in its glory.' },
 		] as const;
 	});
+
+	// The picker speaks to its actor ("Hide yourself…"); everyone else sees the
+	// same greyed list, so they get the viewer-neutral wording where there is one.
+	const optionText = (o: { label: string; summary?: string }) =>
+		isActor ? o.label : (o.summary ?? o.label);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 	let prepTargetAssetID = $state<number | null>(null);
@@ -739,8 +746,8 @@
 						also hits <em>{aboutName}</em>:
 					</p>
 					<ul class="effect-fyi">
-						{#if breakCount > 0}<li>Tears a marginalia{#if breakCount > 1} (×{breakCount}){/if}</li>{/if}
-						{#if leverageCount > 0}<li>Leverages it{#if leverageCount > 1} (×{leverageCount}){/if}</li>{/if}
+						{#if breakCount > 0}<li>Tears a marginalia{#if breakCount > 1}{' '}(×{breakCount}){/if}</li>{/if}
+						{#if leverageCount > 0}<li>Leverages it{#if leverageCount > 1}{' '}(×{leverageCount}){/if}</li>{/if}
 					</ul>
 				{/if}
 
@@ -825,9 +832,9 @@
 					{#if rollOutcome === 'mar'}
 						Pick options equal to (difficulty − result) (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
 						They land on <em>{mcName}</em>, {playerName(players, plan.preparer_id)}'s main character —
-						the subject of your counter-rumor.
+						the subject of {isActor ? 'your' : `${actorName}'s`} counter-rumor.
 					{:else}
-						Pick options equal to your dice result (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
+						Pick options equal to {isActor ? 'your' : 'the'} dice result (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
 					{/if}
 				</p>
 				{#if takeAssetDenied}
@@ -844,11 +851,11 @@
 						<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
 						<button class="action-btn" onclick={() => bump(opt.key, 1)}
 							disabled={optDisabled || atBreakCap || (requiredPicks != null && totalPicked >= requiredPicks)}>+</button>
-						<span>{opt.label}{#if optDisabled} <em>(declined)</em>{:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}</span>
+						<span>{optionText(opt)}{#if optDisabled}{' '}<em>(declined)</em>{:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}</span>
 					</div>
 				{/each}
 				<p class="choices-note">
-					Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null} / {requiredPicks}{/if}
+					Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null}{' '}/ {requiredPicks}{/if}
 				</p>
 				{#if isActor}
 					<button class="action-btn primary"

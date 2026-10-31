@@ -449,7 +449,7 @@
 					</div>
 				{/each}
 				<p class="choices-note">
-					Total picks: <strong>{marTotalPicked}</strong>{#if marPicksNeeded != null} / {marPicksNeeded}{/if}
+					Total picks: <strong>{marTotalPicked}</strong>{#if marPicksNeeded != null}{' '}/ {marPicksNeeded}{/if}
 				</p>
 				<button class="action-btn primary"
 					onclick={() => onApplyChoices(plan, 'mar')}

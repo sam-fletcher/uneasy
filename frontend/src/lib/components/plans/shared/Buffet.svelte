@@ -69,7 +69,7 @@
 				{/if}
 				<ul class="buffet-list">
 					{#each current.opts as o (o.key)}
-						<li>{o.label}{#if o.desc} <span class="muted">{o.desc}</span>{/if}</li>
+						<li>{o.label}{#if o.desc}{' '}<span class="muted">{o.desc}</span>{/if}</li>
 					{/each}
 				</ul>
 			{/if}

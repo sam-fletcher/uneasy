@@ -551,7 +551,7 @@
 					{#if lawEnacted}
 						Law enacted.
 					{:else}
-						The decree passed — writing the law{#if rollOutcome === 'mar'} (being amended){/if}.
+						The decree passed — writing the law{#if rollOutcome === 'mar'}{' '}(being amended){/if}.
 					{/if}
 				</p>
 

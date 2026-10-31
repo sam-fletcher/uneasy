@@ -7,7 +7,10 @@
   option-count shape.
 -->
 <script lang="ts">
-	interface Option { key: string; label: string }
+	/** `summary` is a viewer-neutral wording for options whose `label` speaks to
+	 * the picker in the second person ("Hide yourself…"): this list is shown to
+	 * everyone, including players who didn't make the pick. */
+	interface Option { key: string; label: string; summary?: string }
 	interface Props {
 		/** The applied choice keys (resolution_data.make_mar_choices → option). */
 		choices: string[];
@@ -20,7 +23,7 @@
 
 	const applied = $derived(
 		options
-			.map(o => ({ label: o.label, count: choices.filter(c => c === o.key).length }))
+			.map(o => ({ label: o.summary ?? o.label, count: choices.filter(c => c === o.key).length }))
 			.filter(o => o.count > 0),
 	);
 </script>

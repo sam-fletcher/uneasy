@@ -452,7 +452,7 @@
 				{#snippet header()}
 					{#if rollOutcome === 'make'}
 						<p class="choices-note">
-							You beat the difficulty{#if choiceMargin != null} by {choiceMargin}{/if} — the targeted peer
+							You beat the difficulty{#if choiceMargin != null}{' '}by {choiceMargin}{/if} — the targeted peer
 							({assetName(assets, plan.target_asset_id)}) will be transferred to you.
 						</p>
 					{:else}

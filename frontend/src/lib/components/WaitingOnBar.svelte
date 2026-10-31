@@ -65,11 +65,15 @@
 
 {#if orderedWaitees.length > 0}
 	<div class="waiting-on-bar">
-		{#if state.stepLabel}
-			<p class="line step-label" class:muted={!isWaitingOnMe}>{state.stepLabel}</p>
-		{/if}
-		{#if state.stepSubtitle}
-			<p class="line step-subtitle">{state.stepSubtitle}</p>
+		{#if state.stepLabel || state.stepSubtitle}
+			<div class="heading">
+				{#if state.stepLabel}
+					<p class="line step-label" class:muted={!isWaitingOnMe}>{state.stepLabel}</p>
+				{/if}
+				{#if state.stepSubtitle}
+					<p class="line step-subtitle">{state.stepSubtitle}</p>
+				{/if}
+			</div>
 		{/if}
 		<p class="line waitees-line">
 			<span class="label">Waiting On:</span>
@@ -91,38 +95,40 @@
 {/if}
 
 <style>
-	/* Two invisible columns: heading + optional subtitle stacked on the left,
-	   waitees right-aligned in column 2 spanning both rows. When the waitees
-	   text is too long to fit beside the heading, it wraps downward into the
-	   subtitle's row instead of pushing the heading aside. */
+	/* Heading (step label + optional subtitle) on the left, waitees on the
+	   right. A flex-wrap row rather than fixed columns: the heading's basis is
+	   its own text width, so when label + waitees can't share a line (a long
+	   label like "Exchange Courtiers — target responds" at 375px) the waitees
+	   drop to their own right-aligned line instead of the label running under
+	   "Waiting On:". The heading can still shrink and wrap if it alone is
+	   wider than the bar. */
 	.waiting-on-bar {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
+		display: flex;
+		flex-wrap: wrap;
 		column-gap: 1rem;
 		row-gap: 0.15rem;
 		align-items: baseline;
+		justify-content: space-between;
 		padding: 0.5rem 0.75rem;
 		background: var(--color-bg);
 		border-bottom: 1px solid var(--color-border);
 		flex-shrink: 0;
+	}
+	.heading {
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		row-gap: 0.15rem;
 	}
 	.line {
 		margin: 0;
 		font-size: 0.9rem;
 		line-height: 1.3;
 	}
-	.step-label {
-		grid-column: 1;
-		grid-row: 1;
-	}
-	.step-subtitle {
-		grid-column: 1;
-		grid-row: 2;
-	}
 	.waitees-line {
-		grid-column: 2;
-		grid-row: 1 / span 2;
-		justify-self: end;
+		flex: 0 1 auto;
+		margin-left: auto;
 		text-align: right;
 		color: var(--color-text);
 	}

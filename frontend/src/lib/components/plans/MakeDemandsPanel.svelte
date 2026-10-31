@@ -404,7 +404,7 @@
 							onclick={() => { counterChoice = 'defer'; }}>
 							<span class="choice-text">
 								<span class="choice-title">Defer — counter the next plan
-									{playerName(players, plan.preparer_id)} prepares{#if counterTargetablePlans.length === 0} (no eligible plans yet){/if}{#if counterChoice === 'defer'}<span class="choice-tick"> ✓</span>{/if}</span>
+									{playerName(players, plan.preparer_id)} prepares{#if counterTargetablePlans.length === 0}{' '}(no eligible plans yet){/if}{#if counterChoice === 'defer'}<span class="choice-tick"> ✓</span>{/if}</span>
 							</span>
 						</button>
 					</div>

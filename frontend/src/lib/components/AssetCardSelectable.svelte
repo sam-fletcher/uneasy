@@ -453,8 +453,22 @@
 	.marginalia li {
 		min-height: 32px;
 	}
+	/* Pick mode: every live row is a 44px tap target (docs/STYLE_GUIDE.md). The
+	   22px box stays the visible affordance; its ::after is stretched over the
+	   whole row (the li is the positioned ancestor — .m-tap deliberately isn't),
+	   so tapping the text picks it too, and neighbouring rows never overlap
+	   because each is a full 44px tall. */
 	.card.marginalia-selectable .marginalia li {
 		align-items: center;
+	}
+	.card.marginalia-selectable .marginalia li:not(.torn) {
+		min-height: 44px;
+		position: relative;
+	}
+	.card.marginalia-selectable .m-tap::after {
+		content: '';
+		position: absolute;
+		inset: 0;
 	}
 	.marginalia li.picked {
 		color: var(--color-accent-bright);
@@ -482,9 +496,8 @@
 	.select-tap:focus { outline: 2px solid var(--owner-color, var(--color-accent)); outline-offset: 1px; }
 
 	/* Invisible tap target around the header checkbox: extends the 22px box
-	   out to ~44px. Scoped to .header so the tight per-line marginalia
-	   checkboxes (.m-tap) keep their own small hit areas and don't overlap
-	   neighbouring rows. */
+	   out to ~44px. Scoped to .header: the per-line marginalia checkboxes
+	   (.m-tap) stretch over their whole 44px row instead (see above). */
 	.header .select-tap { position: relative; }
 	.header .select-tap::after { content: ''; position: absolute; inset: -11px; }
 
