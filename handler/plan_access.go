@@ -210,7 +210,7 @@ func performStepsStillOwed(
 	canComplete func(*dbgen.Plan, *ResolutionData) error,
 ) (winner int64, owed bool) {
 	winner = performStepsWinner(ctx, q, plan)
-	if winner == 0 || winner == plan.PreparerID || len(resData.MakeMarChoices) == 0 {
+	if winner == 0 || winner == plan.PreparerID || !resData.ChoicesCommitted() {
 		return 0, false
 	}
 	if canComplete(plan, resData) == nil {

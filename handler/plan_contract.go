@@ -181,6 +181,28 @@ type AutoApplyChoiceOnRoll interface {
 	AutoApplyChoiceOnRoll() bool
 }
 
+// ForcedChoicer is an optional PlanHandler capability for plans whose post-roll
+// make/mar choice is sometimes no choice at all: the roll's margin leaves exactly
+// one legal pick (Exchange Courtiers at margin 0 on a make can only be Messy; at
+// margin 1 on a mar only A Fair Trade), or the outcome carries no pick list (Make
+// Introductions' make has one option, its mar is resolved per peer afterwards).
+//
+// ForcedChoice is asked when the dice land. Return forced=true with the picks to
+// apply (possibly none) and the server applies them itself — the same effect as
+// the actor submitting make-choice, minus the click — recording
+// ResolutionData.ChoiceAutoApplied as the durable marker. Return forced=false
+// whenever the actor has a real decision; the manual make-choice route then
+// proceeds as before. rollResult and difficulty are the roll's final numbers
+// (difficulty is the adjusted one when set).
+//
+// Unlike AutoApplyChoiceOnRoll this is per outcome and per margin, so a plan
+// opts in only for the cases that are genuinely decision-free (Spread
+// Propaganda's make, never its mar). ApplyChoice need not be idempotent: the
+// marker makes make-choice refuse a second submission.
+type ForcedChoicer interface {
+	ForcedChoice(result string, rollResult, difficulty int16) (choices []string, forced bool)
+}
+
 // Per-player submission-state convention (read before adding a plan sub-flow).
 //
 // When a plan's resolution waits on one or more players to each submit

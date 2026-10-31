@@ -12,7 +12,6 @@
 		type Plan, type DiceRollDie,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
-	import MakeMarPicker from './MakeMarPicker.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
@@ -129,14 +128,7 @@
 	// counts/stepper picker below.
 	let resError = $state('');
 	let resBusy = $state(false);
-	let selectedChoices = $state<string[]>([]); // make only
 	let choicesBusy = $state(false);
-
-	function toggleChoice(key: string) {
-		selectedChoices = selectedChoices.includes(key)
-			? selectedChoices.filter(k => k !== key)
-			: [...selectedChoices, key];
-	}
 
 	// give_peer / break_self are genuinely repeatable — each pick owes a
 	// separate sub-flow step (a peer handed over, an asset broken) — but only up
@@ -233,11 +225,13 @@
 		return flat;
 	}
 
-	async function onApplyChoices(p: Plan, outcome: 'make' | 'mar') {
+	// Only the mar is submitted by hand: a make's single option applies itself when
+	// the dice land (ForcedChoicer), so there is nothing to pick.
+	async function onApplyChoices(p: Plan, outcome: 'mar') {
 		if (choicesBusy) return;
 		choicesBusy = true; resError = '';
 		try {
-			await makeChoice(p.id, outcome, outcome === 'make' ? selectedChoices : marFlatChoices());
+			await makeChoice(p.id, outcome, marFlatChoices());
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not apply choices.';
@@ -413,16 +407,6 @@
 
 		{:else if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
-
-		{:else if rollOutcome === 'make' && !choicesDone && amChoiceActor}
-			<MakeMarPicker
-				outcome="make"
-				options={MAKE_OPTIONS.spread_propaganda ?? []}
-				selected={selectedChoices}
-				busy={choicesBusy}
-				onToggle={toggleChoice}
-				onSubmit={() => onApplyChoices(plan, 'make')}
-			/>
 
 		{:else if rollOutcome === 'mar' && !choicesDone && amChoiceActor}
 			<div class="choices-section">

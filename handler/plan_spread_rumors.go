@@ -497,7 +497,7 @@ func (srHandler) PreparedDescriptor(
 }
 
 func (srHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
-	return map[string]http.HandlerFunc{
+	return withAutoComplete(deps, map[string]http.HandlerFunc{
 		"sr-cast-roll":         srCastRollHandler(deps),
 		"sr-counter-rumor":     srCounterRumorHandler(deps),
 		"break-target":         srBreakTargetHandler(deps),
@@ -505,7 +505,17 @@ func (srHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 		"request-take-consent": srRequestTakeConsentHandler(deps),
 		"respond-take-consent": srRespondTakeConsentHandler(deps),
 		"sr-forfeit-step":      srForfeitStepHandler(deps),
-	}
+	})
+}
+
+// AutoCompleteAfterChoice resolves the plan the moment its last step lands
+// (CanComplete holds it until every committed pick is performed or forfeited).
+// Spread Rumors has no embedded scene to play out, and the follow scene is a separate step
+// after resolution, so the preparer's "Complete plan" click only agreed to what the
+// server had already checked (DESIGN_PRINCIPLES.md principle 3). Every extra route
+// is wrapped (withAutoComplete), since the last step can be any of them.
+func (srHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, _ *ResolutionData) bool {
+	return true
 }
 
 // srLog emits a Spread Rumors action-log entry anchored to the plan's row.

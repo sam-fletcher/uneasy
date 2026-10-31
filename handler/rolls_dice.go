@@ -162,11 +162,19 @@ func finalizeRoll(
 		return err
 	}
 	if !roll.IsShakeUp {
-		// Plans whose post-roll make-choice carries no decision (Propose Decree)
-		// record the outcome here, before the broadcasts below, so every client
-		// that refetches on roll.resolved already sees the result applied — no
-		// flash of a decision-free "pass" gate, and the async sub-flow advances
-		// immediately.
+		// The roll's own line goes first, so everything an auto-applied outcome then
+		// logs reads as what the roll caused ("rolled 2 vs 3 → Mar", then the trade),
+		// not the other way round.
+		effectiveDifficulty := resolved.Difficulty
+		if resolved.AdjustedDifficulty != nil {
+			effectiveDifficulty = *resolved.AdjustedDifficulty
+		}
+		EmitRollResolved(ctx, q, manager, &resolved, result, outcome, effectiveDifficulty)
+		// Plans whose post-roll make-choice carries no decision (Propose Decree, and
+		// any plan whose margin leaves one legal pick) record the outcome here,
+		// before the broadcasts below, so every client that refetches on
+		// roll.resolved already sees the result applied — no flash of a decision-free
+		// gate, and the async sub-flow advances immediately.
 		if err := applyAutoChoiceOnRoll(ctx, q, manager, &resolved); err != nil {
 			return err
 		}
@@ -191,11 +199,6 @@ func finalizeRoll(
 		return finalizeShakeUpRoll(ctx, q, manager, &resolved, int16(len(actorDice)), result)
 	}
 
-	effectiveDifficulty := resolved.Difficulty
-	if resolved.AdjustedDifficulty != nil {
-		effectiveDifficulty = *resolved.AdjustedDifficulty
-	}
-	EmitRollResolved(ctx, q, manager, &resolved, result, outcome, effectiveDifficulty)
 	// Roll outcome can change the RowState — e.g. a marred Make Demands
 	// roll transitions plan_resolving → await_demand_counter. Recompute
 	// and broadcast unconditionally; ComputeRowState is cheap and the

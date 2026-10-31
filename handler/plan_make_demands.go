@@ -270,6 +270,16 @@ func (mdHandler) AutoApplyChoiceOnRoll() bool {
 	return true
 }
 
+// AutoCompleteAfterChoice resolves the demand once its post-roll sub-flow is done
+// (CanComplete: all four options drafted, or the counter-demand placed/deferred).
+// Both ends are fixed by then — the last draft pick is forced and a deferred
+// counter leaves nothing to answer — so the demander's "Complete plan" click only
+// agreed to what the server had checked, and on a mar it fell on the player who had
+// just lost (DESIGN_PRINCIPLES.md principle 3).
+func (mdHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, _ *ResolutionData) bool {
+	return true
+}
+
 // ApplyChoice records the roll's outcome on the plan so CanComplete can gate on
 // it, then announces it. The draft itself flows through /draft-choice; on a
 // marred demand the counter-demand window opens and is consumed via

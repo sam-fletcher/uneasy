@@ -431,7 +431,7 @@ func TestSpreadRumors_Mar_ForfeitFollowsTheMainCharacter(t *testing.T) {
 	// pick has no target. (The rumor's original subject is untouched and breakable —
 	// it must not count.)
 	assert.Equal(t, http.StatusOK, forfeit(), "no valid target remains: the pick may be forfeited")
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 func TestSpreadRumors_Mar_LeverageActuallyLeveragesThePreparersMainCharacter(t *testing.T) {

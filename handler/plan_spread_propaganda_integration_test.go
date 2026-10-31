@@ -92,7 +92,7 @@ func TestSpreadPropaganda_Mar_LayLow_SetsEsteemLockout(t *testing.T) {
 
 	plan, _ := spPrepareToMar(t, h)
 	h.makeChoice(plan.ID, "mar", []string{"lay_low"})
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 
 	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestSpreadPropaganda_Mar_GivePeer_BlocksUntilTransferred(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "give-peer: %v", body)
 
 	// Now completion succeeds and the peer changed hands.
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 	moved, err := h.q.GetAssetByID(ctx, gift)
 	require.NoError(t, err)
 	assert.Equal(t, h.tg.Players[recipientIdx].ID, moved.OwnerID, "peer should belong to recipient")
@@ -184,7 +184,7 @@ func TestSpreadPropaganda_Mar_BreakSelf_BlocksUntilBroken(t *testing.T) {
 	code, body = h.post(preparerIdx, breakPath, map[string]any{"marginalia_id": m.ID})
 	require.Equalf(t, http.StatusOK, code, "break-self: %v", body)
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 
 	torn, err := h.q.GetMarginaliaByID(ctx, m.ID)
 	require.NoError(t, err)
@@ -238,7 +238,7 @@ func TestSpreadPropaganda_Mar_GivePeer_Repeatable(t *testing.T) {
 	})
 	assert.Equalf(t, http.StatusConflict, code, "a third give-peer beyond the picked count should be rejected: %v", body)
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 
 	movedA, err := h.q.GetAssetByID(ctx, giftA)
 	require.NoError(t, err)
@@ -388,7 +388,7 @@ func TestSpreadPropaganda_Mar_GivePeer_OverPickCanStillComplete(t *testing.T) {
 	code, body = h.post(preparerIdx, spPath(plan.ID, "sp-forfeit-step"), map[string]any{"step": spOptGivePeer})
 	assert.Equalf(t, http.StatusConflict, code, "nothing remains to forfeit: %v", body)
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 
 	done, err := h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)
@@ -475,7 +475,7 @@ func TestSpreadPropaganda_Mar_BreakSelf_BlankAssetsAreBreakable(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "forfeit with nothing left to break: %v", body)
 	assert.EqualValues(t, 1, body["forfeited"])
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 // TestSpreadPropaganda_ForfeitStep_RejectsBadCallers keeps the hatch honest:
@@ -598,9 +598,10 @@ func TestSpreadPropaganda_PerformStepsWinner_FullMarFlow(t *testing.T) {
 	code, body = h.post(winnerIdx, spPath(plan.ID, "sp-forfeit-step"), map[string]any{"step": spOptGivePeer})
 	require.Equalf(t, http.StatusOK, code, "the winner may forfeit the surplus: %v", body)
 
-	// Nothing is owed any more; completion is the preparer's (the hand-back).
-	h.assertWaitees("hand-back", model.RowStatePlanResolving, preparerID)
-	h.complete(plan.ID)
+	// Nothing is owed any more, so the plan resolved itself: there is no hand-back
+	// for the preparer (locked out all along) to click.
+	_ = preparerID
+	h.requireEnded(plan.ID)
 }
 
 // ── Pre-roll (Tier 3 #10) and the make's narration (Tier 3 #13) ──────────────
@@ -697,7 +698,7 @@ func TestSpreadPropaganda_Make_NarratesTheChangesWithTheArtifact(t *testing.T) {
 	plan, prepIdx := spPrepared(t, h)
 	roll := h.resolveAndCast(plan.ID)
 	h.forceRoll(roll.ID, "make", 0)
-	h.makeChoice(plan.ID, "make", []string{"create_artifact"})
+	h.requireAutoApplied(plan.ID, "make", "create_artifact")
 
 	create := func(body map[string]any) (int, map[string]any) {
 		return h.post(prepIdx, srPath(plan.ID, "create-artifact"), body)

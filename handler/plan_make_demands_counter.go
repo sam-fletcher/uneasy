@@ -113,13 +113,9 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		mdLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
 			"%s drafted %s.", playerDisplayName(ctx, deps.Q, player.ID), mdDemandOptionLabels[body.Option]))
 
-		// On the final pick, persist the winners map on the demand plan so
-		// the target plan's resolution path can consult it cheaply.
-		if len(md.DraftChoices) == 4 {
-			if err := mdPersistDraftWinners(ctx, deps, plan, md.DraftChoices); err != nil {
-				respondInternalErr(w, r, "could not save option winners", err)
-				return
-			}
+		if err := mdFinishPick(ctx, deps, plan, md); err != nil {
+			respondInternalErr(w, r, "could not finish the draft pick", err)
+			return
 		}
 
 		// Each pick alternates the acting player; the final pick clears
@@ -133,6 +129,22 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			"draft_complete": len(md.DraftChoices) == 4,
 		})
 	}
+}
+
+// mdFinishPick is what follows a saved pick: once all four are placed, persist the winners map on the
+// demand plan (so the target plan's resolution can consult it cheaply) and resolve
+// the demand. A finished draft is the end of a made demand: nothing is left to
+// decide, so it resolves here instead of waiting on a "Complete plan" click.
+func mdFinishPick(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, md *gamepkg.MakeDemandsResolutionData,
+) error {
+	if len(md.DraftChoices) != 4 {
+		return nil
+	}
+	if err := mdPersistDraftWinners(ctx, deps, plan, md.DraftChoices); err != nil {
+		return err
+	}
+	return autoCompleteIfDone(ctx, deps.Q, deps.Manager, plan.ID)
 }
 
 // ── counter-demand (Stage 5) ─────────────────────────────────────────────────
@@ -250,6 +262,13 @@ func mdCounterDemandHandler(deps *PlanDeps) http.HandlerFunc {
 		} else {
 			mdLog(ctx, deps, plan, model.SeverityDefault,
 				fmt.Sprintf("%s deferred their counter-demand to their next plan.", counterer))
+		}
+		// The counter placed or deferred is the last thing a marred demand waits
+		// on: it resolves here rather than leaving the rebuffed demander to click
+		// "Complete plan" with nothing to decide.
+		if err := autoCompleteIfDone(ctx, deps.Q, deps.Manager, plan.ID); err != nil {
+			respondInternalErr(w, r, "could not complete the demand", err)
+			return
 		}
 		// CounterDemandPlaced just flipped, so the row transitions out of
 		// await_demand_counter back to plan_resolving (until the demand

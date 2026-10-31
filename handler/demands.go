@@ -75,7 +75,8 @@ func pendingPerformStepsChooser(ctx context.Context, q *dbgen.Queries, plan *dbg
 	if err != nil || roll.Outcome == nil {
 		return 0, false
 	}
-	if len(loadResolutionData(plan.ResolutionData).MakeMarChoices) > 0 {
+	resData := loadResolutionData(plan.ResolutionData)
+	if resData.ChoicesCommitted() {
 		return 0, false
 	}
 	return winnerID, true

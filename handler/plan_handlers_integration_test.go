@@ -975,7 +975,7 @@ func TestSpreadRumors_CanComplete_BlockedWhilePendingTakeConsent(t *testing.T) {
 	respPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/respond-take-consent"
 	code, body = h.post(otherIdx, respPath, map[string]any{"agree": true})
 	require.Equalf(t, http.StatusOK, code, "respond agree: %v", body)
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 // TestSpreadRumors_ForfeitBreakTarget_DischargesWhenNoTarget proves a committed
@@ -1018,7 +1018,7 @@ func TestSpreadRumors_ForfeitBreakTarget_DischargesWhenNoTarget(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "forfeit with no target should succeed: %v", body)
 	assert.EqualValues(t, 1, body["forfeited"])
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 // TestSpreadRumors_ForfeitBreakTarget_RejectedWhenTargetExists proves the server
@@ -1109,5 +1109,5 @@ func TestSpreadRumors_BreakTarget_DestroysBlankTarget(t *testing.T) {
 	}
 	assert.True(t, sawDestroyed, "the break must write the asset.destroyed post")
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }

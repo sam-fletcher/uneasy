@@ -433,6 +433,16 @@ func finishResolvingPlan(t *testing.T, h *planLifecycle, planID int64) {
 		roll = *cast
 	}
 	h.forceRoll(roll.ID, makeOutcome, 0)
+	// A made Spread Propaganda applies itself with the dice and then owes its
+	// artifact (the step that carries the narration) before it can complete.
+	plan, err := h.q.GetPlanByID(context.Background(), planID)
+	require.NoError(t, err)
+	if sp := loadResolutionData(plan.ResolutionData).SpreadPropaganda; sp != nil && sp.ArtifactRequired {
+		code, body := h.post(h.preparerIdxFor(planID), "/api/plans/"+strconv.FormatInt(planID, 10)+"/create-artifact",
+			map[string]any{"narration": "Society shifts.", "name": "The Shift", "marginalia": []string{"a mark"}})
+		require.Equalf(t, http.StatusOK, code, "create-artifact: %v", body)
+		return // the artifact was its last step: the plan resolved itself
+	}
 	h.complete(planID)
 }
 

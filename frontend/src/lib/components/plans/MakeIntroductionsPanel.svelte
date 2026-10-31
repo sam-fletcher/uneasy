@@ -16,19 +16,18 @@
 	import { onDestroy, untrack } from 'svelte';
 	import './planPanel.css';
 	import {
-		preparePlan, makeChoice, completePlan,
+		preparePlan,
 		createIntroductionsPeer, finalizeIntroductionsPeers, introductionsArrival,
 		introductionsMar, introductionsMarginalia, getAssetSuggestions,
 		type Plan,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
-	import MakeMarPicker from './MakeMarPicker.svelte';
 	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
-		MAKE_OPTIONS, parseResolutionData, playerName, playersExcept,
+		parseResolutionData, playerName, playersExcept,
 	} from './shared';
 	import {
 		parseMakeIntroductionsData, miDrafts, miHasArrived, miPendingArrivals,
@@ -113,9 +112,6 @@
 
 	// Resolve state
 	let resError = $state('');
-	let resBusy = $state(false);
-	let selectedChoices = $state<string[]>([]);
-	let choicesBusy = $state(false);
 
 	// Pre-roll peer-naming state.
 	//
@@ -251,9 +247,6 @@
 	const pendingArrivals = $derived(miPendingArrivals(miData));
 	const arrivingDraft = $derived(pendingArrivals[0] ?? null);
 	const arrivalsOwed = $derived(pendingArrivals.length);
-	const allArrived = $derived(
-		(miData.make_pending || isDelayedArrival) && arrivalsOwed === 0,
-	);
 
 	let arrivalName = $state('');
 	let arrivalMarginalia = $state('');
@@ -287,34 +280,6 @@
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not bring them to court.';
 		} finally { arrivalBusy = false; }
-	}
-
-	function toggleChoice(key: string) {
-		selectedChoices = selectedChoices.includes(key)
-			? selectedChoices.filter(k => k !== key)
-			: [...selectedChoices, key];
-	}
-
-	async function onApplyChoices(p: Plan, outcome: 'make' | 'mar') {
-		if (choicesBusy) return;
-		choicesBusy = true; resError = '';
-		try {
-			await makeChoice(p.id, outcome, selectedChoices);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not apply choices.';
-		} finally { choicesBusy = false; }
-	}
-
-	async function onComplete(p: Plan) {
-		if (resBusy) return;
-		resBusy = true; resError = '';
-		try {
-			await completePlan(p.id);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not complete plan.';
-		} finally { resBusy = false; }
 	}
 
 	// ── Per-peer mar resolution ───────────────────────────────────────────────
@@ -476,13 +441,6 @@
 						</button>
 					</div>
 				</div>
-			{:else if allArrived && isPreparer}
-				<div class="complete-section">
-					<p class="complete-note">The newcomer has arrived. Complete the plan.</p>
-					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
-						{resBusy ? '…' : 'Complete plan'}
-					</button>
-				</div>
 			{:else}
 				<p class="ft-prompt muted">
 					{playerName(players, plan.preparer_id)} is welcoming a delayed newcomer…
@@ -539,21 +497,15 @@
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
 		{:else if rollOutcome === 'make'}
-			{#if !choicesDone && amChoiceActor}
-				<MakeMarPicker
-					outcome="make"
-					options={MAKE_OPTIONS.make_introductions ?? []}
-					selected={selectedChoices}
-					busy={choicesBusy}
-					onToggle={toggleChoice}
-					onSubmit={() => onApplyChoices(plan, 'make')}
-				/>
-			{:else if choicesDone && arrivingDraft && isPreparer}
+			<!-- The make has one option, so the server applies it when the dice land and
+			     the arrival forms start immediately; the last arrival ends the plan. -->
+			{#if choicesDone && arrivingDraft && isPreparer}
 				<div class="plan-form">
 					<p class="ft-prompt">
 						<em>{arrivingDraft.name}</em> arrives at court. Describe them —
 						every newcomer needs a marginalia.
 						{#if arrivalsOwed > 1}<span class="muted">({arrivalsOwed} left)</span>{/if}
+						{#if arrivalsOwed === 1}<span class="muted">The last arrival ends the plan.</span>{/if}
 					</p>
 					<AssetCreationForm
 						{gameID}
@@ -567,18 +519,9 @@
 					<div class="form-actions">
 						<button class="action-btn primary" onclick={submitArrival}
 							disabled={arrivalBusy || !arrivalName.trim() || !arrivalMarginalia.trim()}>
-							{arrivalBusy ? '…' : 'They arrive'}
+							{arrivalBusy ? '…' : (arrivalsOwed === 1 ? 'They arrive — the plan resolves' : 'They arrive')}
 						</button>
 					</div>
-				</div>
-			{:else if choicesDone && isPreparer}
-				<div class="complete-section">
-					<p class="complete-note">
-						Write any follow-scene narration in the chat, then complete the plan.
-					</p>
-					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
-						{resBusy ? '…' : 'Complete plan'}
-					</button>
 				</div>
 			{:else}
 				<p class="ft-prompt muted">
@@ -588,18 +531,9 @@
 
 		{:else if rollOutcome === 'mar'}
 			{#if !marPending}
-				{#if isPreparer}
-					<div class="complete-section">
-						<p class="choices-note">The introductions were marred — resolve each newcomer's fate.</p>
-						<button class="action-btn primary" onclick={() => onApplyChoices(plan, 'mar')} disabled={choicesBusy}>
-							{choicesBusy ? '…' : 'Begin resolving'}
-						</button>
-					</div>
-				{:else}
-					<p class="ft-prompt muted">
-						{playerName(players, plan.preparer_id)} is resolving the marred introductions…
-					</p>
-				{/if}
+				<p class="ft-prompt muted">
+					{playerName(players, plan.preparer_id)} is resolving the marred introductions…
+				</p>
 			{:else}
 				<div class="mi-mar">
 					{#each drafts as d (d.id)}
@@ -686,14 +620,14 @@
 						</div>
 					{/if}
 
-					{#if allPeersDone && isPreparer}
-						<div class="complete-section">
-							<p class="complete-note">All newcomers resolved. Complete the plan.</p>
-							<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
-								{resBusy ? '…' : 'Complete plan'}
-							</button>
-						</div>
-					{:else if !isPreparer && myAuthorDrafts.length === 0}
+					{#if isPreparer && unresolvedDrafts.length === 0 && !allPeersDone}
+						<p class="ft-prompt muted">
+							Every newcomer is settled. The plan resolves as soon as the others have
+							written the marginalia they owe.
+						</p>
+					{/if}
+
+					{#if !isPreparer && myAuthorDrafts.length === 0}
 						<p class="ft-prompt muted">
 							{playerName(players, plan.preparer_id)} is resolving the marred introductions…
 						</p>

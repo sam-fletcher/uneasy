@@ -60,8 +60,8 @@ func miToMar(t *testing.T, h *planLifecycle, peerCount int) (planID int64, prepa
 	require.NotNil(t, rollMap)
 	h.forceRoll(int64(rollMap["id"].(float64)), "mar", 0)
 
-	// Enter per-peer mar resolution (preparer records the mar result).
-	h.makeChoice(plan.ID, "mar", []string{})
+	// The mar applies itself when the dice land, so per-peer resolution is open.
+	h.requireAutoApplied(plan.ID, "mar")
 
 	return plan.ID, preparerIdx, miDraftsOf(t, h, plan.ID)
 }
@@ -141,9 +141,8 @@ func TestMakeIntroductions_PerformStepsWinnerNamesPeers(t *testing.T) {
 	require.NotNil(t, rollMap)
 	h.forceRoll(int64(rollMap["id"].(float64)), "make", 0)
 
-	code, body = h.post(demanderIdx, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/make-choice",
-		map[string]any{"result": "make", "choices": []string{}})
-	require.Equalf(t, http.StatusOK, code, "make-choice: %v", body)
+	// The make applied itself with the dice; the winner goes straight to arrivals.
+	h.requireAutoAppliedAs(demanderIdx, plan.ID, "make", "peers_arrive")
 
 	arrivalPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/introductions-arrival"
 	code, body = h.post(demanderIdx, arrivalPath, map[string]any{
@@ -219,7 +218,7 @@ func TestMakeIntroductions_Mar_OtherRetinue_RecipientWritesAndReceives(t *testin
 		"draft_id": drafts[0].ID, "text": "a useful ally",
 	})
 	require.Equalf(t, http.StatusOK, code, "recipient write: %v", body)
-	h.complete(planID)
+	h.requireResolved(planID, "mar")
 
 	moved := miAssetNamed(t, h, drafts[0].Name)
 	require.NotNil(t, moved, "the peer arrives when the recipient describes them")
@@ -272,7 +271,7 @@ func TestMakeIntroductions_Mar_BrokenArrival_AuthorWritesMarginalia(t *testing.T
 	})
 	require.Equalf(t, http.StatusOK, code, "author write: %v", body)
 
-	h.complete(planID)
+	h.requireResolved(planID, "mar")
 
 	peer := miAssetNamed(t, h, drafts[0].Name)
 	require.NotNil(t, peer, "the peer arrives when the author describes them")
@@ -339,7 +338,7 @@ func TestMakeIntroductions_Mar_BrokenJourney_ArrivesBrokenNotDestroyed(t *testin
 	})
 	require.Equalf(t, http.StatusOK, code, "broken_journey: %v", body)
 
-	h.complete(planID)
+	h.requireResolved(planID, "mar")
 
 	peer := miAssetNamed(t, h, drafts[0].Name)
 	require.NotNil(t, peer, "a broken journey is survivable — the peer arrives")
@@ -371,7 +370,7 @@ func TestMakeIntroductions_Mar_Delayed_ArrivesOnSyntheticPlan(t *testing.T) {
 		"draft_id": drafts[0].ID, "outcome": "delayed",
 	})
 	require.Equalf(t, http.StatusOK, code, "delayed: %v", body)
-	h.complete(planID)
+	h.requireResolved(planID, "mar")
 
 	assert.Nil(t, miAssetNamed(t, h, drafts[0].Name),
 		"a peer still on the road owns no asset row")
@@ -443,7 +442,7 @@ func TestMakeIntroductions_Mar_Delayed_LostLeavesNothing(t *testing.T) {
 		"draft_id": drafts[0].ID, "outcome": "delayed",
 	})
 	require.Equalf(t, http.StatusOK, code, "delayed: %v", body)
-	h.complete(planID)
+	h.requireResolved(planID, "mar")
 
 	assert.Nil(t, miAssetNamed(t, h, drafts[0].Name), "a lost peer leaves no asset behind")
 
@@ -498,7 +497,6 @@ func TestMakeIntroductions_Arrival_RequiresMarginalia(t *testing.T) {
 	rollMap, _ := body["roll"].(map[string]any)
 	require.NotNil(t, rollMap)
 	h.forceRoll(int64(rollMap["id"].(float64)), "make", 0)
-	h.makeChoice(plan.ID, "make", []string{})
 
 	// A blank arrival is refused outright.
 	code, _ = h.post(preparerIdx, arrivalPath, map[string]any{
@@ -523,5 +521,5 @@ func TestMakeIntroductions_Arrival_RequiresMarginalia(t *testing.T) {
 		"draft_id": drafts[0].ID, "name": drafts[0].Name, "marginalia": "again?",
 	})
 	assert.Equal(t, http.StatusConflict, code, "a peer arrives once")
-	h.complete(plan.ID)
+	h.requireResolved(plan.ID, "make")
 }

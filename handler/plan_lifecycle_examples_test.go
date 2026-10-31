@@ -50,7 +50,8 @@ func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 	// The seed gives each player one artifact, so count rather than assert zero:
 	// make-choice must not mint a (placeholder) artifact of its own.
 	artifactsBefore := countArtifacts(t, h, ctx)
-	h.makeChoice(plan.ID, "make", []string{"create_artifact"})
+	// A made Spread Propaganda has one option, so it applies itself with the dice.
+	h.requireAutoApplied(plan.ID, "make", "create_artifact")
 
 	preparerIdx := h.preparerIdxFor(plan.ID)
 
@@ -113,8 +114,7 @@ func TestPlanLifecycle_SpreadPropaganda_Make(t *testing.T) {
 	assert.EqualValues(t, 1, margs[0].Position)
 	assert.Equal(t, "Born of a lie", margs[0].Text)
 
-	// Now completion succeeds.
-	h.complete(plan.ID)
+	// The artifact was the last step, so the plan resolved itself — no Complete click.
 	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)
 	require.NotNil(t, resolved.Result)
@@ -152,19 +152,13 @@ func TestPlanLifecycle_SpreadPropaganda_PerformStepsWinnerResolves(t *testing.T)
 		game.DemandOptionKeepAssets:   h.tg.Players[demanderIdx].ID,
 	})
 
-	// The preparer is locked out of make-choice now that the demander holds it.
-	makeChoicePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
-	code, body := h.post(preparerIdx, makeChoicePath, map[string]any{"result": "make", "choices": []string{"create_artifact"}})
-	require.Equalf(t, http.StatusForbidden, code, "preparer must be locked out of make-choice: %v", body)
-
-	// The demander (perform_steps winner) drives the make-choice instead.
-	code, body = h.post(demanderIdx, makeChoicePath, map[string]any{"result": "make", "choices": []string{"create_artifact"}})
-	require.Equalf(t, http.StatusOK, code, "perform_steps winner should drive make-choice: %v", body)
-
+	// The make's only option applied itself with the dice, so there is no make-choice
+	// left for the demander to drive — the bar names them for the artifact instead.
+	h.requireAutoAppliedAs(demanderIdx, plan.ID, "make", "create_artifact")
 	createPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/create-artifact"
 
 	// The preparer is locked out of the create-artifact make step too.
-	code, body = h.post(preparerIdx, createPath, map[string]any{"narration": "The old order crumbles.",
+	code, body := h.post(preparerIdx, createPath, map[string]any{"narration": "The old order crumbles.",
 		"name": "Preparer's orthodoxy", "marginalia": []string{"a trait"},
 	})
 	require.Equalf(t, http.StatusForbidden, code, "preparer must be locked out of create-artifact: %v", body)
@@ -184,8 +178,7 @@ func TestPlanLifecycle_SpreadPropaganda_PerformStepsWinnerResolves(t *testing.T)
 	assert.Equal(t, h.tg.Players[demanderIdx].ID, artifact.OwnerID,
 		"keep_assets winner owns the authored artifact")
 
-	// Completion remains the preparer's (established hand-back).
-	h.complete(plan.ID)
+	// The authored artifact was the last step: the plan resolves itself.
 	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.PlanResolved, resolved.Status)
@@ -329,7 +322,8 @@ func TestPlanLifecycle_MakeIntroductions_NamingThenRoll(t *testing.T) {
 	rollID := int64(rollMap["id"].(float64))
 
 	h.forceRoll(rollID, "make", 0)
-	h.makeChoice(plan.ID, "make", []string{"peers_arrive"})
+	// The make's single option applies itself with the dice; the arrival forms are next.
+	h.requireAutoApplied(plan.ID, "make", "peers_arrive")
 
 	// Naming created drafts, not assets: nothing is in a retinue yet.
 	assert.Zero(t, miNamedAssetCount(t, h), "no assets row should exist before arrival")
@@ -341,13 +335,19 @@ func TestPlanLifecycle_MakeIntroductions_NamingThenRoll(t *testing.T) {
 
 	// The arrival form pays the rule's "add marginalia to each", one at a time.
 	arrivalPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/introductions-arrival"
-	for _, d := range miPlanDrafts(t, h, plan.ID) {
+	drafts := miPlanDrafts(t, h, plan.ID)
+	for i, d := range drafts {
 		code, body = h.post(0, arrivalPath, map[string]any{
 			"draft_id": d.ID, "name": d.Name, "marginalia": "arrived with " + d.Name,
 		})
 		require.Equalf(t, http.StatusCreated, code, "arrival for %s: %v", d.Name, body)
+		if i < len(drafts)-1 {
+			mid, mErr := h.q.GetPlanByID(ctx, plan.ID)
+			require.NoError(t, mErr)
+			require.Equal(t, model.PlanResolving, mid.Status, "plan stays open until the last newcomer arrives")
+		}
 	}
-	h.complete(plan.ID)
+	// The last arrival ends the plan — there is no Complete step to click.
 
 	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)

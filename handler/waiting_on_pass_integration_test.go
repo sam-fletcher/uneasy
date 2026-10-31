@@ -81,7 +81,10 @@ func TestWaitingOn_MakeIntroductions_Mar_NamesPreparerAndAuthor(t *testing.T) {
 	code, body = h.post(otherIdx, "/api/plans/"+strconv.FormatInt(planID, 10)+"/introductions-marginalia",
 		map[string]any{"draft_id": drafts[0].ID, "text": "a useful ally"})
 	require.Equalf(t, http.StatusOK, code, "recipient writes: %v", body)
-	h.assertWaitees("nothing owed, preparer completes", model.RowStatePlanResolving, preparer)
+	// The recipient's marginalia was the last thing owed: the plan ends itself, so
+	// the bar has nobody to name and there is no Complete click for the preparer.
+	h.requireResolved(planID, "mar")
+	_ = preparer
 }
 
 // TestWaitingOn_MakeIntroductions_PerformStepsWinnerIsNamed: every Make
@@ -118,7 +121,7 @@ func TestWaitingOn_MakeIntroductions_PerformStepsWinnerIsNamed(t *testing.T) {
 	require.NotNil(t, rollMap)
 	h.forceRoll(int64(rollMap["id"].(float64)), "make", 0)
 
-	h.makeChoiceAs(demanderIdx, plan.ID, "make", []string{})
+	h.requireAutoAppliedAs(demanderIdx, plan.ID, "make", "peers_arrive")
 	h.assertWaitees("the arrival form is owed", model.RowStatePlanResolving, demander)
 
 	drafts := miDraftsOf(t, h, plan.ID)
@@ -127,7 +130,10 @@ func TestWaitingOn_MakeIntroductions_PerformStepsWinnerIsNamed(t *testing.T) {
 		"draft_id": drafts[0].ID, "name": drafts[0].Name, "marginalia": "owes a favour",
 	})
 	require.Equalf(t, http.StatusCreated, code, "arrival: %v", body)
-	h.assertWaitees("nothing owed, the preparer completes", model.RowStatePlanResolving, preparer)
+	// The last arrival ended the plan; nobody — least of all the locked-out
+	// preparer — is left to click Complete.
+	h.requireResolved(plan.ID, "make")
+	_ = preparer
 }
 
 // ── Propose Decree ───────────────────────────────────────────────────────────
@@ -232,7 +238,9 @@ func TestWaitingOn_SeekAnswers_PerformStepsWinnerAndPendingQuestion(t *testing.T
 
 	code, body = h.post(targetIdx, base+"/answer-question", map[string]any{"answer": "at home"})
 	require.Equalf(t, http.StatusOK, code, "answer-question: %v", body)
-	h.assertWaitees("nothing owed, the preparer completes", model.RowStatePlanResolving, preparer)
+	// The answer was the last thing owed: the plan resolved itself.
+	_ = preparer
+	h.requireEnded(plan.ID)
 }
 
 // ── Chronicle Histories ──────────────────────────────────────────────────────
