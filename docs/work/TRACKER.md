@@ -13,7 +13,7 @@ private CLAUDE.md).
 
 | Piece | Session | Status |
 |---|---|---|
-| `diagnosing-bugs` and `grilling` skills; `git push` allowed | — | in review (`setup/skills-debug-grill`) |
+| `commit` skill; force pushes allowed off `main` | — | in review (`setup/commit-skill`) |
 
 ## Next — workflow and skills
 

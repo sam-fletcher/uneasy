@@ -36,10 +36,13 @@ than guessing — the `grilling` skill shows how to ask.
   reviews the diff and marks it ready; the owner reviews and merges.
 - Sessions never merge and never enable auto-merge. A hook
   ([.claude/hooks/guard_git.py](.claude/hooks/guard_git.py)) blocks
-  `gh pr merge`, force pushes and pushes to `main`; branch protection on
+  `gh pr merge` and any push to `main`; branch protection on
   `main` requires a PR with passing CI.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs
   `make check-fast` and the integration suite on every PR.
+- PRs merge with a merge commit, so branch commits stay in `main`'s
+  history. Commit messages carry the reason for each change (the `commit`
+  skill); tidy and force-push your own branch freely before it merges.
 - Nothing private goes into the repo, its commits or its PR descriptions:
   never quote the rulebook verbatim (paraphrase it), and never copy files in
   from the private folder.
