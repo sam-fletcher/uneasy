@@ -72,7 +72,7 @@ than guessing — the `grilling` skill shows how to ask.
 - Pieces that touch disjoint files run in parallel. A pass that touches most
   of the plan files runs alone.
 - **Each work session updates [docs/work/TRACKER.md](docs/work/TRACKER.md)
-  and writes its hand-over note to `docs/work/notes/<session-name>.md` on
+  and writes its hand-over note to `docs/work/notes/<worktree-folder>.md` on
   its own branch**, so both merge with its code and can't drift from it.
   Open questions for the owner go in the note *and* the tracker.
 
@@ -80,9 +80,9 @@ than guessing — the `grilling` skill shows how to ask.
 
 The docker dev (`:8080`) and e2e (`:8090`) containers mount the **main**
 checkout, so they never run a worktree's code. Test a worktree with its own
-server and a private database — the recipe is in docs/DEVELOPMENT.md, under
-"`make test-e2e` cannot validate a worktree branch". Never point an integration run at `uneasy_test` while
-e2e is using it — the integration suite TRUNCATEs it.
+server and a private database — the `test-worktree` skill has the recipe.
+Never point an integration run at `uneasy_test` while e2e is using it — the
+integration suite TRUNCATEs it.
 
 ## Command preferences
 

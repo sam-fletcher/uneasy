@@ -12,9 +12,9 @@ nobody enables auto-merge — a hook blocks `gh pr merge` and pushes to `main`.
 
 ## 1. Push
 
-- Your work is committed on your own branch (the `commit` skill) and
-  `git status` is clean. The tracker row and hand-over note are in those
-  commits.
+- Your work is committed on your own branch as the `commit` skill
+  describes, rebased on `origin/main` (`work-session` §6), and
+  `git status` is clean.
 - `git push -u origin <branch>`.
 - `gh pr create --help` lists `--attach` (gh 2.103 or newer). If it
   doesn't, stop and ask the owner to run `brew upgrade gh` — the evidence
@@ -154,4 +154,4 @@ uploads the file again, so attach only new or changed images.
 
 ## 4. Report
 
-Put the PR URL in your final message, with whether it is still a draft.
+Put the PR URL in your final message.

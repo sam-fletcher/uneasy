@@ -15,13 +15,11 @@ reader from a line straight to its message.
 can't see this conversation, the private rules folder, the design
 principles or your memory. Every line must make sense to them.
 
-## 1. Commit only verified work
+## 1. Checkpoint freely; push only verified work
 
-Commit once the work's checks pass (`work-session` §4). A commit whose
-change has no automated coverage says so on its own line:
-`No tests: skill file, nothing covers it.`
-
-Checkpoint commits while you work are fine — tidy them in step 4.
+Commit whenever it helps while you work; checkpoints get tidied in step 4.
+The history you push for review holds only work whose checks pass
+(`work-session` §4).
 
 ## 2. Group into logical commits
 
@@ -29,8 +27,9 @@ Each commit is one logical change: one fix, one feature, one refactor. Files
 that belong to the same change go together; stage them by name
 (`git add <files>`). Interactive staging (`git add -p`) doesn't work here.
 
-The tracker row and hand-over note go in their own last commit
-(`Tracker and hand-over note: <piece>`), so the code commits read cleanly.
+The tracker update and hand-over note go in their own last commit
+(`Tracker and hand-over note: <piece>`, or `Tracker: <piece>` when there's
+no note), so the code commits read cleanly.
 
 ## 3. Write the message
 
@@ -51,6 +50,9 @@ Fix the duel leaking the declarer's die; announce the call
   the change, then — the most valuable line — the **alternative that was
   rejected, and why**. Include one only if it was genuinely considered;
   never invent one to fill the shape. Don't restate the subject.
+- **No automated check covers the change:** end the body with a line
+  saying so — `No tests: skill file, nothing covers it.` A mechanical,
+  body-less commit doesn't need one.
 
 Where the reason comes from:
 

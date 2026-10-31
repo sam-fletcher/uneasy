@@ -112,7 +112,8 @@ exporting the variable.
 server (`server-e2e` in `docker-compose.yml`) listening on port 8090 and
 bound to the `uneasy_test` database. Your manual testing session on
 `:8080` uses the dev `uneasy` database and is completely untouched —
-E2E specs can call `/api/dev/reset` freely without disturbing it.
+E2E specs can seed and delete games (`/api/dev/seed`, `/api/dev/delete-game`)
+freely without disturbing it.
 
 **First-time setup** (one-time, after `npm ci`):
 
@@ -143,22 +144,10 @@ will be testing `main`'s code against your branch's specs, which either passes
 for the wrong reason or fails for one. The Go integration tests have no such
 problem: they exercise the handlers in-process, so they do test your branch.
 
-To run e2e against a worktree, serve it yourself. `make build` embeds that
-worktree's built frontend into the binary, so no Vite is needed, and
-`playwright.config.ts` already reads `E2E_BASE_URL`:
-
-```bash
-make build
-createdb -h localhost -U uneasy uneasy_mybranch_e2e   # or psql CREATE DATABASE
-UNEASY_DEV=1 PORT=8192 \
-  DATABASE_URL='postgres://uneasy:uneasy@localhost:5432/uneasy_mybranch_e2e?sslmode=disable' \
-  ./server &
-cd frontend && E2E_BASE_URL=http://localhost:8192 npx playwright test
-```
-
-Use a scratch database, not `uneasy_test` — the suite truncates, and
-`make test-integration` may be running against it. Drop it afterwards.
-Otherwise, treat e2e as a post-merge gate.
+To run e2e against a worktree, serve it yourself from its own binary and a
+scratch database (never `uneasy_test`); `playwright.config.ts` reads
+`E2E_BASE_URL`. The step-by-step recipe lives in one place, the
+`test-worktree` skill (`.claude/skills/test-worktree/SKILL.md`).
 
 ### Test health
 
