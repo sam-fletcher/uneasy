@@ -101,8 +101,12 @@ and keep behaviour consistent. Use `make test`, `make test-integration`,
 - Read-only utilities (`grep`, `sort`, `ls`, `find`, `head`, `tail`, `echo`)
   are safe to allow broadly with `:*`.
 - Anything that mutates external state (deploys, DB writes outside the test
-  DSN) stays out of the allowlist so it prompts. `git push` is the
-  exception: it's allowed because the guard hook and branch protection
-  already keep pushes off `main`.
+  DSN) stays out of the allowlist so it prompts. The commit-to-PR flow is
+  the exception — `git commit`, `git fetch`, `git rebase`, `git push` and
+  `gh pr create/ready/edit/comment` — because the guard hook blocks what
+  in it could reach `main` (a merge, a push to `main`, a commit made on
+  `main`, or a merge smuggled in through `rebase --exec` or
+  `--upload-pack`), branch protection backs it up, and the owner still
+  merges.
 - Per-machine entries go in `.claude/settings.local.json`, which is
   gitignored.
