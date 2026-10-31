@@ -990,8 +990,9 @@ export function getWarState(planID: number): Promise<WarStateResponse> {
 	return apiFetch(`/plans/${planID}/war-state`);
 }
 
-/** List all active wars in a game. Used by the turn indicator to flag rows
- * blocked on outstanding cost-of-battle payments. */
+/** List a game's active wars, plus any ended war that still has an open
+ * surrender claim (that claim keeps the row blocked). Used by the turn
+ * indicator to flag rows blocked on cost-of-battle payments or claims. */
 export function listWars(gameID: number | string): Promise<{ wars: WarStateResponse[] }> {
 	return apiFetch(`/tables/${gameID}/wars`);
 }

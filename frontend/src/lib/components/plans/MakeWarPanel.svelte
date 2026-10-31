@@ -24,6 +24,7 @@
 		getWarState,
 		type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
+	import { warPanelHidden } from '$lib/warGate';
 	import { playerName, parseResolutionData, finaleSlotSpent } from './shared';
 
 	import PrepForm from './war/PrepForm.svelte';
@@ -118,14 +119,9 @@
 		})) ?? [],
 	);
 
-	// Don't render anything if the plan is fully resolved AND the war ended.
-	const shouldHide = $derived(
-		isWarView
-		&& plan != null
-		&& plan.status === 'resolved'
-		&& war != null
-		&& war.status === 'ended',
-	);
+	// Nothing to show once the plan has resolved and the war has ended, unless
+	// a surrender claim is still open (see warPanelHidden).
+	const shouldHide = $derived(isWarView && warPanelHidden(plan, war));
 
 	const setActionError = (msg: string) => { actionError = msg; };
 </script>
@@ -209,6 +205,7 @@
 				{war}
 				planID={plan.id}
 				{players}
+				{currentPlayerID}
 				{amParticipant}
 				onChanged={refreshWar}
 				setError={setActionError}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { activeWarPlans, warGateActive, warGatePlans } from './warGate';
+import { activeWarPlans, warGateActive, warGatePlans, warPanelHidden } from './warGate';
 import type { Plan, RowState, WarStateResponse } from '$lib/api';
 
 // Minimal builders; only the fields the helpers read matter.
@@ -57,7 +57,7 @@ describe('warGatePlans', () => {
 		expect(out.map(p => p.id)).toEqual([7, 8]);
 	});
 
-	it('skips a war with nothing outstanding, and an ended war', () => {
+	it('skips a war with nothing outstanding, and an ended war that owes a cost', () => {
 		const wars = [
 			war(7),
 			war(8, { status: 'ended', outstanding_costs: owes }),
@@ -65,6 +65,20 @@ describe('warGatePlans', () => {
 		];
 		const out = warGatePlans(rs('await_battle_cost'), wars, [plan(7), plan(8), plan(9)]);
 		expect(out.map(p => p.id)).toEqual([9]);
+	});
+
+	// A surrender that empties a side ends the war in the same call that opens
+	// its claims (every 1-v-1 war), and the claims keep the row on
+	// await_surrender_claim. Skipping ended wars left the claimant a gated row
+	// and no form to clear it.
+	it('routes an ENDED war that still has an open surrender claim', () => {
+		const claims = [{ id: 1, surrendered_id: 1, claimant_id: 2 }];
+		const wars = [
+			war(7, { status: 'ended', open_claims: claims }),
+			war(8, { status: 'ended' }),
+		];
+		const out = warGatePlans(rs('await_surrender_claim'), wars, [plan(7), plan(8)]);
+		expect(out.map(p => p.id)).toEqual([7]);
 	});
 
 	it('returns nothing when no war gate is open', () => {
@@ -95,6 +109,13 @@ describe('activeWarPlans', () => {
 		expect(activeWarPlans([plan(7)], [])).toEqual([]);
 	});
 
+	// The server also lists an ended war while a surrender claim is open on it,
+	// so being in the list no longer means the war is under way.
+	it('drops an ended war that is listed only for its open claim', () => {
+		const claims = [{ id: 1, surrendered_id: 1, claimant_id: 2 }];
+		expect(activeWarPlans([plan(7)], [war(7, { status: 'ended', open_claims: claims })])).toEqual([]);
+	});
+
 	it('drops a cancelled declaration and a plan still in its delay reveal', () => {
 		const plans = [plan(7, { status: 'cancelled' }), plan(8, { row_number: null })];
 		expect(activeWarPlans(plans, [war(7), war(8)])).toEqual([]);
@@ -102,6 +123,27 @@ describe('activeWarPlans', () => {
 
 	it('ignores other plan types', () => {
 		expect(activeWarPlans([plan(7, { plan_type: 'seek_answers' })], [war(7)])).toEqual([]);
+	});
+});
+
+describe('warPanelHidden', () => {
+	const claims = [{ id: 1, surrendered_id: 1, claimant_id: 2 }];
+
+	it('hides a resolved plan whose war has ended', () => {
+		expect(warPanelHidden(plan(7), war(7, { status: 'ended' }))).toBe(true);
+	});
+
+	// A surrender that empties a side ends the war in the same call that opens
+	// its claims; reverting this exception strands the claimant.
+	it('stays up while an ended war still has an open surrender claim', () => {
+		expect(warPanelHidden(plan(7), war(7, { status: 'ended', open_claims: claims }))).toBe(false);
+	});
+
+	it('stays up for a war under way, an unresolved plan, or a war still loading', () => {
+		expect(warPanelHidden(plan(7), war(7))).toBe(false);
+		expect(warPanelHidden(plan(7, { status: 'resolving' }), war(7, { status: 'ended' }))).toBe(false);
+		expect(warPanelHidden(plan(7), null)).toBe(false);
+		expect(warPanelHidden(null, war(7, { status: 'ended' }))).toBe(false);
 	});
 });
 
@@ -132,5 +174,15 @@ describe('MainEventView war-gate wiring', () => {
 		expect(src).toMatch(/warGateActive\(rowState\)/);
 		expect(src).toMatch(/warGatePlans\(rowState, wars, plans\)/);
 		expect(src).toMatch(/activeWarPlans\(plans, wars\)/);
+	});
+});
+
+// The panel's war arrives through an onMount fetch, so the server renderer
+// can't put it in a given state; guard that it still asks warPanelHidden.
+describe('MakeWarPanel hide wiring', () => {
+	const src = readFileSync(join(__dirname, 'components/plans/MakeWarPanel.svelte'), 'utf8');
+
+	it('decides shouldHide through warPanelHidden', () => {
+		expect(src).toMatch(/shouldHide = \$derived\([^;]*warPanelHidden\(plan, war\)/);
 	});
 });
