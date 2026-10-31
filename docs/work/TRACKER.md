@@ -18,14 +18,8 @@ editing one table conflicted whenever they rebased.
 
 ## Next — workflow and skills
 
-Candidates from a review of [mattpocock/skills](https://github.com/mattpocock/skills)
-(MIT), each adapted to this project rather than copied. Independent of each
-other and of the audit work.
+Independent of the audit work.
 
-- **`wait-what`** — re-explain the last message in plain words.
-- **`writing-for-agents`** — reference for writing skills and `CLAUDE.md`.
-- **`teach`** (personal, not in this repo) — web-development lessons that
-  build on each other across sessions.
 - **Prune `MEMORY.md`** — many entries describe finished work; every
   session loads the whole index.
 
