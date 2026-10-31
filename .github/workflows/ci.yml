@@ -1,0 +1,70 @@
+# The pre-merge gate: the same `make check-fast` and integration suite that
+# run locally, on every pull request and on every push to main. Playwright
+# e2e is not here yet — it needs a running server, and runs locally via
+# `make test-e2e` (or against a worktree with E2E_BASE_URL; see
+# docs/DEVELOPMENT.md).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: uneasy
+          POSTGRES_PASSWORD: uneasy
+          POSTGRES_DB: uneasy_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U uneasy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Pinned linter, from the project's own release binaries (see Makefile).
+      - run: make lint-install
+
+      # Builds the frontend into cmd/server/frontend_dist, which the
+      # cmd/server tests embed.
+      - run: make frontend
+
+      - run: make check-fast
+
+      # `make vet` runs `go fix` and `golangci-lint --fix`, which rewrite
+      # files in place. Locally that's a convenience; here it means someone
+      # pushed code that wasn't fixed, so fail and show the diff.
+      - name: No unfixed lint or go fix changes
+        run: git diff --exit-code
+
+      - run: make test-integration
+        env:
+          TEST_DATABASE_URL: postgres://uneasy:uneasy@localhost:5432/uneasy_test?sslmode=disable

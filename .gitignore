@@ -31,3 +31,9 @@ frontend/playwright/.cache/
 
 # DB
 *.db
+
+# Claude Code: per-machine settings and session worktrees never belong in
+# this public repo. (.claude/settings.json and launch.json are shared.)
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
