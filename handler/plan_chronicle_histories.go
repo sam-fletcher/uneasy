@@ -124,21 +124,53 @@ func (chHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return nil, nil
 }
 
-// ApplyChoice records the preparer's make choices (kept in MakeMarChoices by
-// MakeChoice). Mechanical effects go through extra routes; here we only emit
-// the action-log entry. Mar choices do NOT flow through here — every player
-// submits via the mar-choice route — so this is a make-only path.
+// AutoApplyChoiceOnRoll opts Chronicle Histories into recording what its roll
+// owes the moment the dice land. CanComplete has no roll access, so it can only
+// enforce a budget that was copied into resolution_data — and that copy used to be
+// made by the first make-step / mar-choice. Until then CanComplete saw no budget
+// and passed, so the preparer could complete a made Chronicle with zero steps (or a
+// marred one with nobody having chosen). Capturing it here closes that gap: the
+// plan cannot complete before its steps are done, from the first instant.
+func (chHandler) AutoApplyChoiceOnRoll() bool {
+	return true
+}
+
+// ApplyChoice captures the gate each outcome sets and announces a make. A make is
+// "choose options equal to your result", one make-step at a time; a mar is "all
+// players choose one", one mar-choice each. Mechanical effects go through those
+// extra routes. Idempotent: the make-step and mar-choice routes keep their own
+// capture as a fallback for plans rolled before this existed, and a second call
+// finds the gate already set.
 func (chHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	_ *ResolutionData,
+	resData *ResolutionData,
 	_ []string,
 	result string,
 ) error {
+	ch := resData.EnsureChronicleHistories()
 	if result == makeOutcome {
+		if ch.MakeBudget != 0 {
+			return nil
+		}
+		roll, err := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
+		if err != nil || roll.Result == nil {
+			return fmt.Errorf("load chronicle roll: %w", err)
+		}
+		ch.MakeBudget = *roll.Result
 		chLogSuccess(ctx, deps, plan)
+		return nil
 	}
+	if ch.MarActive {
+		return nil
+	}
+	count, err := deps.Q.CountPlayersInGame(ctx, plan.GameID)
+	if err != nil {
+		return fmt.Errorf("count chronicle choosers: %w", err)
+	}
+	ch.MarActive = true
+	ch.MarRequiredChoices = int16(count)
 	return nil
 }
 

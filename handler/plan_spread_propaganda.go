@@ -238,6 +238,17 @@ func (spHandler) ApplyChoice(
 	return nil
 }
 
+// ForcedChoice: a made Spread Propaganda has one option — author the artifact —
+// so the outcome is fixed by the roll and applies itself when the dice land. The
+// artifact (and the narration that comes with it) is the step that follows. The
+// mar's picks are real decisions and are never forced.
+func (spHandler) ForcedChoice(result string, _, _ int16) ([]string, bool) {
+	if result == makeOutcome {
+		return []string{"create_artifact"}, true
+	}
+	return nil, false
+}
+
 // applySpreadPropagandaMake opens the artifact-authoring sub-flow the make step
 // mandates. It does NOT create the artifact: the rules call for the preparer to
 // author it ("Create an artifact representing the societal shift"), so the asset
@@ -304,13 +315,23 @@ func (spHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 }
 
 func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
-	return map[string]http.HandlerFunc{
+	return withAutoComplete(deps, map[string]http.HandlerFunc{
 		"sp-cast-roll":    spCastRollHandler(deps),
 		"give-peer":       spGivePeerHandler(deps),
 		"break-self":      spBreakSelfHandler(deps),
 		"create-artifact": spCreateArtifactHandler(deps),
 		"sp-forfeit-step": spForfeitStepHandler(deps),
-	}
+	})
+}
+
+// AutoCompleteAfterChoice resolves the plan the moment its last step lands
+// (CanComplete holds it until every committed pick is performed or forfeited).
+// Spread Propaganda has no embedded scene to play out, and the follow scene is a separate step
+// after resolution, so the preparer's "Complete plan" click only agreed to what the
+// server had already checked (DESIGN_PRINCIPLES.md principle 3). Every extra route
+// is wrapped (withAutoComplete), since the last step can be any of them.
+func (spHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, _ *ResolutionData) bool {
+	return true
 }
 
 // spCreateArtifactHandler handles POST /api/plans/:planId/create-artifact.

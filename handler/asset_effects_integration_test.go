@@ -178,7 +178,7 @@ func TestSeekAnswers_BreakResource_DestroysBlankResource(t *testing.T) {
 	assert.NotContains(t, logs, "The torn marginalia read",
 		"nothing was torn, so no torn-text detail should be quoted")
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 // TestSeekAnswers_BreakResource_RejectsOmittedMarginaliaOnWrittenAsset proves the

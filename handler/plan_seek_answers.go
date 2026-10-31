@@ -240,7 +240,7 @@ func (saHandler) MaxChoices(_ string, rollResult, _ int16) int {
 }
 
 func (saHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
-	return map[string]http.HandlerFunc{
+	return withAutoComplete(deps, map[string]http.HandlerFunc{
 		"seek-cast-roll":    saCastRollHandler(deps),
 		"break-resource":    saBreakResourceHandler(deps),
 		"reveal-secret":     saRevealSecretHandler(deps),
@@ -249,7 +249,17 @@ func (saHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 		"veto-question":     saVetoQuestionHandler(deps),
 		"answer-question":   saAnswerQuestionHandler(deps),
 		"seek-forfeit-step": saForfeitStepHandler(deps),
-	}
+	})
+}
+
+// AutoCompleteAfterChoice resolves the plan the moment its last step lands
+// (CanComplete holds it until every committed pick is performed or forfeited).
+// Seek Answers has no embedded scene to play out, and the follow scene is a separate step
+// after resolution, so the preparer's "Complete plan" click only agreed to what the
+// server had already checked (DESIGN_PRINCIPLES.md principle 3). Every extra route
+// is wrapped (withAutoComplete), since the last step can be any of them.
+func (saHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, _ *ResolutionData) bool {
+	return true
 }
 
 // ResolvingWaitees names everyone a resolving Seek Answers is waiting on, in total:

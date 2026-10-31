@@ -530,15 +530,18 @@
 
 				{#if makeRemaining === 0 && makeStarted}
 					{#if isPreparer}
-						<p class="complete-note">All choices submitted — complete the plan.</p>
+						<p class="complete-note">
+							All choices made. The scene stays open — play it out in the chat, and when
+							it has found its ending, wrap it.
+						</p>
 						<button class="action-btn primary"
 							onclick={() => onComplete(plan)} disabled={resBusy}>
-							{resBusy ? '…' : 'Complete plan'}
+							{resBusy ? '…' : 'Wrap the scene'}
 						</button>
 					{:else}
 						<p class="ft-prompt muted">
-							{playerName(players, plan.preparer_id)} has finished —
-							completing Chronicle Histories…
+							All choices are made. The scene stays open until
+							{playerName(players, plan.preparer_id)} wraps it.
 						</p>
 					{/if}
 				{/if}
@@ -640,14 +643,15 @@
 				{#if isPreparer}
 					<p class="complete-note" style="margin-top:0.5rem;">
 						{#if allMarSubmitted}
-							Every player has chosen — complete the plan.
+							Every player has chosen. The scene stays open — play it out in the chat, and
+							when it has found its ending, wrap it.
 						{:else}
 							Waiting for all players to choose ({marEntries.length}/{marRequired})…
 						{/if}
 					</p>
 					<button class="action-btn primary"
 						onclick={() => onComplete(plan)} disabled={resBusy || !allMarSubmitted}>
-						{resBusy ? '…' : 'Complete plan'}
+						{resBusy ? '…' : 'Wrap the scene'}
 					</button>
 				{/if}
 			</div>

@@ -141,7 +141,7 @@ func TestSeekAnswers_Make_BreakResource_AutoDestroysOnLast(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, destroyed.IsDestroyed, "resource should be destroyed")
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 // TestSeekAnswers_Make_BreakResource_RejectsDoubleFlaw proves a resource can
@@ -245,7 +245,7 @@ func TestSeekAnswers_CanComplete_BlockedUntilMakeListDone(t *testing.T) {
 	code, body = h.post(preparerIdx, dtPath, map[string]any{"text": "The river runs north."})
 	require.Equalf(t, http.StatusOK, code, "declare-truth: %v", body)
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 // TestSeekAnswers_ForfeitStep_DischargesWhenNoTarget proves a make-list
@@ -275,7 +275,7 @@ func TestSeekAnswers_ForfeitStep_DischargesWhenNoTarget(t *testing.T) {
 	assert.Empty(t, rd.SeekAnswers.FlawedResourceIDs, "forfeit is a no-op — nothing is flawed")
 	assert.Contains(t, saAllLogBodies(t, h), "forfeited", "forfeit emits an action-log entry")
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 // TestSeekAnswers_ForfeitStep_RejectedWhenTargetExists proves the server refuses
@@ -388,7 +388,7 @@ func TestSeekAnswers_Mar_SelfFlawPenalty_BlocksUntilApplied(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusOK, code, "own flaw B: %v", body)
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 
 	final := loadResolutionData(mustGetPlan(t, h, plan.ID).ResolutionData)
 	require.NotNil(t, final.SeekAnswers)
@@ -429,7 +429,7 @@ func TestSeekAnswers_Mar_PenaltyCappedByResources(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusOK, code, "own flaw: %v", body)
 
-	h.complete(plan.ID)
+	h.requireEnded(plan.ID)
 }
 
 // TestSeekAnswers_PreRoll_OpensWithoutRoll proves OnResolve opens the pre-roll

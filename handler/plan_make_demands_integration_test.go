@@ -577,15 +577,18 @@ func TestMakeDemandsHTTP_CompleteAfterDraft(t *testing.T) {
 		require.Equal(t, http.StatusOK, st, "draft pick failed: %v", b)
 	}
 
-	status, body = h.post(t, 0, completePath, nil)
-	require.Equal(t, http.StatusOK, status, "completing a fully-drafted demand: %v", body)
-	assert.Equal(t, makeOutcome, body["result"])
-
+	// The fourth pick is still the second drafter's to make (the last card is
+	// shown to them, never dealt behind their back); the finished draft then ended
+	// the demand: there is no "Complete plan" click for the demander.
 	resolved, err := h.q.GetPlanByID(ctx, demand.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.PlanResolved, resolved.Status, "the demand must leave 'resolving'")
 	require.NotNil(t, resolved.Result)
 	assert.Equal(t, makeOutcome, *resolved.Result)
+	md := loadResolutionData(resolved.ResolutionData).MakeDemands
+	require.Len(t, md.DraftChoices, 4)
+	assert.Equal(t, game.DraftChoice{PlayerID: h.tg.Players[1].ID, Option: game.DemandOptionPerformSteps},
+		md.DraftChoices[3], "the last option is the second drafter's pick")
 }
 
 // TestMakeDemandsHTTP_CompleteAfterCounter is D1's marred half: the demand
@@ -604,13 +607,13 @@ func TestMakeDemandsHTTP_CompleteAfterCounter(t *testing.T) {
 		map[string]any{"target_plan_id": nil})
 	require.Equal(t, http.StatusOK, st, "deferring the counter: %v", b)
 
-	status, body = h.post(t, 0, completePath, nil)
-	require.Equal(t, http.StatusOK, status, "completing a countered demand: %v", body)
-	assert.Equal(t, marOutcome, body["result"])
-
+	// The deferred counter was the last thing the demand waited on, so it resolved
+	// itself: the rebuffed demander is not asked to click "Complete plan".
 	resolved, err := h.q.GetPlanByID(ctx, demand.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.PlanResolved, resolved.Status)
+	require.NotNil(t, resolved.Result)
+	assert.Equal(t, marOutcome, *resolved.Result)
 }
 
 // TestMakeDemandsHTTP_DraftChoice_AcceptedAfterMakeRoll: a made demand
@@ -688,12 +691,15 @@ func TestMakeDemandsHTTP_CounterDemand_AcceptedAfterMarRoll(t *testing.T) {
 	assert.Equal(t, http.StatusOK, status, "marred demand should accept counter, got body=%v", body)
 	assert.Equal(t, true, body["deferred"])
 
-	// Counter placed → the override clears; the row rides generic resolution,
-	// naming the demand's own preparer (P0).
+	// Counter placed → the demand has nothing left to wait on and resolves itself,
+	// so the bar no longer names the counter window (or the demander, who would
+	// otherwise have been asked to click "Complete plan").
 	rs, err = ComputeRowState(context.Background(), h.q, h.tg.Game.ID)
 	require.NoError(t, err)
-	assert.Equal(t, model.RowStatePlanResolving, rs.Kind, "counter placed → generic")
-	assert.Equal(t, []int64{h.tg.Players[0].ID}, rs.ActingPlayerIDs, "generic names the demander")
+	assert.NotEqual(t, model.RowStateAwaitDemandCounter, rs.Kind, "counter placed → window closed")
+	resolved, err := h.q.GetPlanByID(context.Background(), demand.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, resolved.Status)
 }
 
 // TestMakeDemandsHTTP_CounterDemand_RejectedAfterMakeRoll: a made demand

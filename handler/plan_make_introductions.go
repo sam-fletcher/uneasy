@@ -65,6 +65,13 @@ func init() {
 
 type miHandler struct{}
 
+// miOptPeersArrive is the make's single option: the peers arrive and each is
+// described. It is recorded as the committed choice when the make applies itself.
+const miOptPeersArrive = "peers_arrive"
+
+// miOutcomeDelayed is matched by name in applyMIPeerOutcome.
+const miOutcomeDelayed = "delayed"
+
 func (miHandler) Metadata() PlanMetadata {
 	return PlanMetadata{Category: model.CategoryKnowledge, Delay: 3}
 }
@@ -220,6 +227,26 @@ func (miHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	}
 }
 
+// ForcedChoice: Make Introductions never asks for a post-roll pick. The make has
+// the one option ("peers arrive — add marginalia to each", paid by the arrival
+// forms that follow) and the mar is resolved per peer afterwards, so applying the
+// roll's outcome is an acknowledgement and nothing else (DESIGN_PRINCIPLES.md
+// principle 3). Both outcomes therefore apply the moment the dice land.
+func (miHandler) ForcedChoice(result string, _, _ int16) ([]string, bool) {
+	if result == makeOutcome {
+		return []string{miOptPeersArrive}, true
+	}
+	return nil, true
+}
+
+// AutoCompleteAfterChoice resolves the plan when its last arrival or fate lands:
+// CanComplete already holds the plan until every newcomer has arrived (make) or
+// been resolved and, where another player owes a marginalia, written (mar), so
+// the extra "Complete plan" click only acknowledged what the server had checked.
+func (miHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, _ *ResolutionData) bool {
+	return true
+}
+
 func (miHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -241,6 +268,9 @@ func (miHandler) ApplyChoice(
 	// Mar: the preparer resolves each introduced peer individually via the
 	// introductions-mar route. Flag it so completion is gated until all done.
 	resData.EnsureMakeIntroductions().MarPending = true
+	miLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+		"The introductions were marred — %s must now settle each newcomer's fate.",
+		playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 	return nil
 }
 
@@ -499,6 +529,15 @@ func introductionsArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 				return
 			}
 		}
+		// The last newcomer's arrival is the end of a made plan: nothing is left to
+		// decide, so it resolves here rather than waiting on a "Complete plan"
+		// click. (A delayed arrival closed itself above.)
+		if !mi.DelayedArrival {
+			if err := autoCompleteIfDone(ctx, deps.Q, deps.Manager, plan.ID); err != nil {
+				respondInternalErr(w, r, "could not complete the plan", err)
+				return
+			}
+		}
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusCreated, map[string]any{
 			"plan_id":  plan.ID,
@@ -686,6 +725,11 @@ func introductionsMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not record outcome", err)
 			return
 		}
+		// Every peer resolved, and no one owing a marginalia, ends the plan here.
+		if err := autoCompleteIfDone(ctx, deps.Q, deps.Manager, plan.ID); err != nil {
+			respondInternalErr(w, r, "could not complete the plan", err)
+			return
+		}
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":    plan.ID,
@@ -778,7 +822,7 @@ func applyMIPeerOutcome(
 			),
 		)
 
-	case "delayed":
+	case miOutcomeDelayed:
 		_, targetRow, _, lost, err := scheduleDelayedArrival(ctx, deps, plan, resData, draft)
 		if err != nil {
 			return outcome, 0, "", err
@@ -973,6 +1017,10 @@ func introductionsMarginaliaHandler(deps *PlanDeps) http.HandlerFunc {
 				playerDisplayName(ctx, deps.Q, player.ID),
 				assetMark(asset.Name),
 				playerDisplayName(ctx, deps.Q, owner)))
+		if err := autoCompleteIfDone(ctx, deps.Q, deps.Manager, plan.ID); err != nil {
+			respondInternalErr(w, r, "could not complete the plan", err)
+			return
+		}
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 
 		respond(w, http.StatusOK, map[string]any{
