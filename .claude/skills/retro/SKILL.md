@@ -57,7 +57,8 @@ instruction only works if it's read and followed:
    `plandriver` or `shot.mjs` capability, a log the session couldn't see.
 3. **A skill change**: a step a skill missed or got wrong, a description
    whose wording didn't fire when it should have, or a procedure sessions
-   keep improvising that deserves a skill of its own.
+   keep improvising that deserves a skill of its own. Word the change by
+   `writing-for-agents`.
 4. **Memory**: a fact the session needed that memory lacked or had wrong; a
    correction the owner gave that should hold in future sessions. A
    correction about game *design* belongs in the design principles instead
