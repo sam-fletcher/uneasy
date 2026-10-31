@@ -97,7 +97,8 @@ nothing in from the private folder.
 - `git fetch origin && git rebase origin/main`. If `main` moved, re-run
   `make check-fast` (and anything else main's changes could affect) on the
   rebased branch.
-- Push your branch and open a **draft** PR with the `pr` skill.
+- Push your branch and open a **draft** PR with the `pr` skill. If the
+  coordinator's review sends it back, fix, tidy and force-push.
 - If verification didn't pass, don't open a PR — report what's blocking.
 - Never merge or enable auto-merge; the owner merges.
 
