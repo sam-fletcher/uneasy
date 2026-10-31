@@ -13,7 +13,31 @@ private CLAUDE.md).
 
 | Piece | Session | Status |
 |---|---|---|
-| Move sessions to `uneasy/` as the project root; CI on PRs | — | in review (`setup/repo-root`) |
+| Sessions open draft PRs: `pr` skill, merge/push guard hook, branch protection on `main` | — | in review (`setup/pr-workflow`) |
+
+## Next — workflow and skills
+
+Candidates from a review of [mattpocock/skills](https://github.com/mattpocock/skills)
+(MIT), each adapted to this project rather than copied. Independent of each
+other and of the audit work.
+
+- **`diagnosing-bugs`** — a debugging method: build a fast, repeatable check
+  that fails on the bug, shrink it, rank guesses, then fix and keep the
+  check as a regression test. Map its steps to our tools (seed builder,
+  `force-roll`, `plandriver`, `shot.mjs`).
+- **`grilling`** — structured design interviews: numbered rounds, a
+  recommended answer per question, facts looked up rather than asked.
+  Rulings land in the private design principles.
+- **`retro`** — after a session, propose improvements to the setup, most
+  severe first, preferring an automated check over a new instruction.
+- **A coordinator review skill** — review a draft PR separately against the
+  brief, the house rules, and the private rules and design principles.
+- **`wait-what`** — re-explain the last message in plain words.
+- **`writing-for-agents`** — reference for writing skills and `CLAUDE.md`.
+- **`teach`** (personal, not in this repo) — web-development lessons that
+  build on each other across sessions.
+- **Prune `MEMORY.md`** — many entries describe finished work; every
+  session loads the whole index.
 
 ## Next — the 12-plan UX audit, remaining work
 

@@ -84,12 +84,15 @@ nothing in from the private folder.
 ## 6. Git
 
 - Work only on your branch. Never commit to, merge into or push `main`.
-- Commit only when the owner has asked for commits on this work; push and
-  open a PR only when the owner asks. End commit messages with the
-  attribution line your instructions give.
+- Once §4 passes, commit (code, tracker and note together), push your
+  branch and open a **draft** PR with the `pr` skill. End commit messages
+  with the attribution line your instructions give.
+- If verification didn't pass, don't open a PR — report what's blocking.
+- Never merge or enable auto-merge; the owner merges.
 
 ## 7. Report
 
 Your final message mirrors the note, in short: what changed, what was
 verified against your code (and what wasn't), behaviour changes, open
-questions. Be plain about anything unfinished or unverified.
+questions, and the draft PR's URL. Be plain about anything unfinished or
+unverified.
