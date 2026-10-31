@@ -34,6 +34,11 @@ than guessing — the `grilling` skill shows how to ask.
 - When a piece of work passes its verification, its session commits, pushes
   its branch and opens a **draft** PR (the `pr` skill). The coordinator
   reviews the diff and marks it ready; the owner reviews and merges.
+- **Everything starts from the latest `main`.** A SessionStart hook
+  ([.claude/hooks/sync_main.sh](.claude/hooks/sync_main.sh)) fast-forwards
+  the main checkout — so the dev containers run it — and any worktree
+  branch with no commits yet. After the owner merges a PR mid-session, the
+  coordinator runs that script itself, so container restarts happen too.
 - Sessions never merge and never enable auto-merge. A hook
   ([.claude/hooks/guard_git.py](.claude/hooks/guard_git.py)) blocks
   `gh pr merge` and any push to `main`; branch protection on
