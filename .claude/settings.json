@@ -15,6 +15,7 @@
       "Bash(npx playwright:*)",
       "Bash(docker compose:*)",
       "Bash(docker restart:*)",
+      "Bash(git push:*)",
       "Bash(grep:*)",
       "Bash(sort:*)",
       "Bash(echo:*)",

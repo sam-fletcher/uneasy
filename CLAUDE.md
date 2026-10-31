@@ -7,7 +7,7 @@ web-server development, so explain the reasoning behind changes, not only
 the changes.
 
 If you encounter an ambiguous game rule, ask the owner to clarify it rather
-than guessing.
+than guessing — the `grilling` skill shows how to ask.
 
 ## Where to find things
 
@@ -87,7 +87,9 @@ and keep behaviour consistent. Use `make test`, `make test-integration`,
   entries.
 - Read-only utilities (`grep`, `sort`, `ls`, `find`, `head`, `tail`, `echo`)
   are safe to allow broadly with `:*`.
-- Anything that mutates external state (pushes, deploys, DB writes outside
-  the test DSN) stays out of the allowlist so it prompts.
+- Anything that mutates external state (deploys, DB writes outside the test
+  DSN) stays out of the allowlist so it prompts. `git push` is the
+  exception: it's allowed because the guard hook and branch protection
+  already keep pushes off `main`.
 - Per-machine entries go in `.claude/settings.local.json`, which is
   gitignored.
