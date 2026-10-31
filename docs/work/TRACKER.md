@@ -41,6 +41,19 @@ parallel.
 7. **Phase 4: regression specs** for what Phase 3 fixed — one spec file per
    plan, so these fan out in parallel. After 2 and 5.
 8. **Small:** the Shake-Up focus-pass log line doesn't name skipped players.
+9. **Dependency security alerts** — GitHub's Dependabot reported 23 open
+   alerts on `main` (2026-10-31: 5 high, 14 moderate, 4 low). Independent of
+   the audit, so it can run beside anything else. Triage before upgrading:
+   - **One is in the live Go server:** `github.com/go-chi/chi/v5` (moderate).
+   - **The other 22 are npm packages** in `frontend/` — SvelteKit, Svelte,
+     Vite, Vitest, devalue, postcss, nanoid and others. GitHub labels all of
+     them "development" because they're devDependencies, but that label is
+     misleading for a static SPA: Svelte, SvelteKit's client runtime and
+     devalue are compiled *into* the bundle players download. Work out which
+     advisories reach the browser or the server and which only touch build
+     and test tooling, then upgrade in small, separately verified steps.
+   - Keep the supply-chain rules in `docs/DEVELOPMENT.md`: exact pins,
+     committed lockfile, `npm ci`.
 
 ## Waiting on the owner
 
