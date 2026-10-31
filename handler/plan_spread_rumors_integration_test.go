@@ -478,6 +478,54 @@ func TestSpreadRumors_Mar_TakeNeedsTheCounterRumorToo(t *testing.T) {
 	assert.Equal(t, h.tg.Players[actorIdx].ID, a.OwnerID)
 }
 
+// ── Take consent: guards on the request route ────────────────────────────────
+
+// Before the dice settle there is nothing to choose from; a hand-built request
+// must be turned away rather than stash a pending consent.
+func TestSpreadRumors_TakeConsent_RefusedUntilTheRollIsSettled(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, prepIdx, ownerIdx, _ := srRumorAbout(t, h, nil)
+	h.jumpToRow(*plan.RowNumber)
+	h.resolve(plan.ID)
+	srCast(t, h, plan.ID, "The Duchess sold the northern pass.") // roll opened, not settled
+	victimAsset := h.seedPeer(ownerIdx, "the Duchess's cook")
+
+	code, body := h.post(prepIdx, srPath(plan.ID, "request-take-consent"),
+		map[string]any{"choices": []string{"take_asset"}, "result": makeOutcome, "take_asset_ids": []int64{victimAsset}})
+	assert.Equalf(t, http.StatusConflict, code, "an unsettled roll cannot be taken against: %v", body)
+	assert.Nil(t, loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData).SpreadRumors.PendingTakeConsent)
+}
+
+// Once the take has gone through, the options are chosen: a second request would
+// commit the choices again and put a second rumor on the sheet.
+func TestSpreadRumors_TakeConsent_SecondRequestAfterCommitMakesNoDuplicateRumor(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, prepIdx, ownerIdx, _ := srRumorAbout(t, h, nil)
+	h.jumpToRow(*plan.RowNumber)
+	h.resolve(plan.ID)
+	roll := srCast(t, h, plan.ID, "The Duchess sold the northern pass.")
+	h.forceRoll(roll.ID, makeOutcome, 2)
+	first := h.seedPeer(ownerIdx, "the Duchess's cook")
+	second := h.seedPeer(ownerIdx, "the Duchess's valet")
+	req := func(id int64) map[string]any {
+		return map[string]any{"choices": []string{"take_asset"}, "result": makeOutcome, "take_asset_ids": []int64{id}}
+	}
+
+	code, body := h.post(prepIdx, srPath(plan.ID, "request-take-consent"), req(first))
+	require.Equalf(t, http.StatusOK, code, "%v", body)
+	code, body = h.post(prepIdx, srPath(plan.ID, "request-take-consent"), req(second))
+	assert.Equalf(t, http.StatusConflict, code, "one request at a time: %v", body)
+	code, _ = h.post(ownerIdx, srPath(plan.ID, "respond-take-consent"), map[string]any{"agree": true})
+	require.Equal(t, http.StatusOK, code)
+
+	code, body = h.post(prepIdx, srPath(plan.ID, "request-take-consent"), req(second))
+	assert.Equalf(t, http.StatusConflict, code, "the options are already chosen: %v", body)
+
+	rumors, err := h.q.ListRumors(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Len(t, rumors, 1, "exactly one rumor on the sheet")
+}
+
 // A rumor about one's own asset: the preparer IS the target player, so the mar
 // is theirs to drive.
 func TestSpreadRumors_Mar_RumorAboutOwnAssetIsDrivenByThePreparer(t *testing.T) {
