@@ -23,11 +23,6 @@ parallel.
 
 1. **Fixes from the review of the merged audit PRs (#2–#12, 2026-10-31).**
    Each was checked against current `main`. Independent of each other:
-   - **Make War, breaks a live game:** when a surrender ends the war, the
-     surrender claim stays open and still blocks the row, but the war
-     panel, drawer and header chip list only active wars, so the claimant
-     has no way to take their asset. `warGate.test.ts` asserts the skip
-     that causes it.
    - **Rulebook text quoted word for word** in code comments and test
      strings (re-aim, Make Introductions, Seek Answers, Host Festivity,
      Spread Rumors and Spread Propaganda files). Paraphrase them; whether
@@ -83,6 +78,10 @@ parallel.
 
 ## Waiting on the owner
 
+- **Make War, surrender claim pending:** the claimant gets the seize form, and
+  everyone else now sees the ended war's panel with one line ("X is choosing
+  one of Y's assets to take") under the Waiting On bar. Before, they saw a
+  blank play area. Is that the right amount to show a bystander?
 - From the audit-PR review (item 1): when a demand winner stands in for
   Spread Propaganda's "break yourself", who learns the broken asset's
   secrets: the winner, or the preparer whose asset it is? Is Propose

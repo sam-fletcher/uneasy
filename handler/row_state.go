@@ -497,6 +497,14 @@ func warConflictGate(
 	claims []dbgen.WarSurrenderClaim,
 	wars []dbgen.War,
 ) (model.RowState, bool, error) {
+	// Only a claim with something left to seize blocks the row: the same
+	// filter the advance gate and the war-state view use, so the three can't
+	// disagree. Gating on a claim against a player with no assets left would
+	// name a claimant who has nothing to take, and no screen could clear it.
+	claims, err := mwFulfillableSurrenderClaims(ctx, q, claims)
+	if err != nil {
+		return model.RowState{}, false, err
+	}
 	if len(claims) > 0 {
 		id := claims[0].ID
 		return model.RowState{

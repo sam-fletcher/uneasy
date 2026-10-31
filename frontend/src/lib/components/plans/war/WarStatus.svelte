@@ -12,16 +12,33 @@
 	import { playerName } from '../shared';
 	import { warStayOuts, stayOutOfWar } from '$lib/warStayOuts';
 
-	let { war, planID, players, amParticipant, onChanged, setError }: {
+	let { war, planID, players, currentPlayerID = null, amParticipant, onChanged, setError }: {
 		war: WarStateResponse;
 		planID: number;
 		players: Player[];
+		currentPlayerID?: number | null;
 		amParticipant: boolean;
 		onChanged: () => Promise<void> | void;
 		setError: (msg: string) => void;
 	} = $props();
 
 	let joinBusy = $state(false);
+
+	// What the war ended on, in words. The raw value ("surrender") is an
+	// internal key; players read "a side surrendered".
+	const END_REASON_TEXT: Record<string, string> = {
+		surrender: 'a side surrendered',
+		peace: 'peace was agreed',
+	};
+
+	// A surrender's claims keep the row gated after the war has ended. The
+	// claimant sees their own form (SurrenderClaims); everyone else sees whose
+	// choice the table is waiting on.
+	const othersClaims = $derived(
+		war.status === 'ended'
+			? war.open_claims.filter(c => c.claimant_id !== currentPlayerID)
+			: [],
+	);
 
 	const sides = [
 		{ side: 1 as const, name: 'Declarer' },
@@ -100,9 +117,15 @@
 	{#if war.status === 'ended'}
 		<p class="choices-note">
 			The war is over.
-			{#if war.end_reason}({war.end_reason}){/if}
+			{#if war.end_reason}({END_REASON_TEXT[war.end_reason] ?? war.end_reason}){/if}
 			{#if war.ended_at_row != null} Ended on row {war.ended_at_row}.{/if}
 		</p>
+		{#each othersClaims as c (c.id)}
+			<p class="choices-note">
+				{playerName(players, c.claimant_id)} is choosing one of
+				{playerName(players, c.surrendered_id)}'s assets to take.
+			</p>
+		{/each}
 	{/if}
 </div>
 

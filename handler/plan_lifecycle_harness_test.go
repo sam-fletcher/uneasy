@@ -111,6 +111,7 @@ func newPlanLifecycleOn(t *testing.T, pool *pgxpool.Pool, n int) *planLifecycle 
 	// query-budget tests (query_budget_integration_test.go).
 	r.Get("/api/tables/{id}/plan-eligibility", PlanEligibility(store))
 	r.Get("/api/tables/{id}/state", GetGameState(store))
+	r.Get("/api/tables/{id}/wars", ListWars(store))
 	// Scene + chat routes — needed by plan-scene lifecycle tests
 	// (adr/CHAT_OVERHAUL_PLAN.md Phase 5): posting in/out of character, reading
 	// the active scene + peers, and the turn-scene-only end-scene/create-scene

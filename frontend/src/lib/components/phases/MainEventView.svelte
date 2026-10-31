@@ -119,7 +119,8 @@
 	}: Props = $props();
 
 	// ── War cost-of-battle gate ───────────────────────────────────────────────
-	// Track active wars game-wide so the row header can warn when row advance
+	// Track active wars game-wide (plus an ended war that still holds an open
+	// surrender claim, which keeps the row gated) so the row header can warn when row advance
 	// is blocked on unpaid battle costs or open surrender claims (the server
 	// returns a 409/`advance_blocked` field; we surface the same up-front).
 	let wars = $state<WarStateResponse[]>([]);

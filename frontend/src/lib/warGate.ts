@@ -57,8 +57,12 @@ export function warGatePlans(
 	if (!warGateActive(rowState)) return [];
 	const out: Plan[] = [];
 	for (const w of wars) {
-		if (w.status !== 'active') continue;
-		if (w.outstanding_costs.length === 0 && w.open_claims.length === 0) continue;
+		// An ended war owes no cost of battle, but a surrender that emptied a
+		// side ends the war in the same call that opens its claims, and those
+		// claims still gate the row. The server lists such a war (and only
+		// while a claim is open) precisely so this can surface it.
+		const owesCosts = w.status === 'active' && w.outstanding_costs.length > 0;
+		if (!owesCosts && w.open_claims.length === 0) continue;
 		const plan = plans.find(p => p.id === w.origin_plan_id);
 		if (plan) out.push(plan);
 	}
@@ -68,22 +72,44 @@ export function warGatePlans(
 /**
  * The Make War plans the header chip counts and the war drawer lists.
  *
- * `wars` is the game's ACTIVE wars (listWars returns no others), so a plan
- * with no entry there has no live war and drops out. That membership test is
- * the whole filter: the old one asked whether the war had ended AND the plan
- * had resolved, which an ended war could never satisfy — it isn't in the list
- * to be inspected — so a finished war counted forever, and the drawer it
- * opened was empty, because the panel inside hides itself once the war ends.
+ * `wars` is the game's active wars plus any ended war still owing a surrender
+ * claim (listWars), so a plan with no active entry there has no live war and
+ * drops out. The old filter asked whether the war had ended AND the plan had
+ * resolved, which an ended war could never satisfy — it wasn't in the list to
+ * be inspected — so a finished war counted forever, and the drawer it opened
+ * was empty, because the panel inside hides itself once the war ends. An ended
+ * war that is listed only for its claim is not a war under way: the play-area
+ * takeover owns it.
  *
  * A plan with no row is still mid delay-reveal; that panel takes over the play
  * area on its own, so it is not drawer business.
  */
 export function activeWarPlans(plans: Plan[], wars: WarStateResponse[]): Plan[] {
-	const liveWarPlanIDs = new Set(wars.map(w => w.origin_plan_id));
+	const liveWarPlanIDs = new Set(
+		wars.filter(w => w.status === 'active').map(w => w.origin_plan_id),
+	);
 	return plans.filter(p =>
 		p.plan_type === 'make_war'
 		&& p.status !== 'cancelled'
 		&& p.row_number != null
 		&& liveWarPlanIDs.has(p.id),
 	);
+}
+
+/**
+ * Should the Make War panel render nothing? Yes once the plan has resolved and
+ * the war has ended — unless a surrender claim is still open. A surrender that
+ * empties a side ends the war in the same call that opens its claims, and the
+ * claims keep the row gated, so the panel is the only place they can be taken.
+ *
+ * Lives here, not inline in the component: the war arrives through an
+ * onMount fetch the server renderer never runs, so a component test can't put
+ * the panel in this state, and the one-line condition was the whole bug.
+ */
+export function warPanelHidden(plan: Plan | null | undefined, war: WarStateResponse | null): boolean {
+	return plan != null
+		&& plan.status === 'resolved'
+		&& war != null
+		&& war.status === 'ended'
+		&& war.open_claims.length === 0;
 }
