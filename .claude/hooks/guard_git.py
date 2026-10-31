@@ -2,8 +2,9 @@
 """PreToolUse hook: keep Claude sessions off `main` and away from merging.
 
 Sessions push their own branches and open PRs; the owner merges. This blocks
-the commands that would bypass that: `gh pr merge` (auto-merge included), a
-force or delete push, and any push that targets `main`. GitHub's branch
+the commands that would bypass that: `gh pr merge` (auto-merge included) and
+any push that targets `main` — including a force push or a delete. Force
+pushes to other branches are fine: sessions tidy their own branch history. GitHub's branch
 protection on `main` is the real backstop — this hook catches the mistake
 before it reaches GitHub and tells the session why.
 
@@ -19,8 +20,8 @@ import sys
 
 PROTECTED = "main"
 
-FORCE_FLAGS = ("-f", "--force", "--mirror", "--delete", "-d")
-FORCE_PREFIXES = ("--force-with-lease", "--force-if-includes")
+# Flags that push every ref, main included.
+ALL_REFS_FLAGS = ("--mirror", "--all")
 # Push flags that take a separate value, so the next token isn't a refspec.
 VALUE_FLAGS = ("-o", "--push-option", "--repo", "--receive-pack", "--exec")
 
@@ -54,8 +55,8 @@ def check_push(tokens, cwd):
         if skip_next:
             skip_next = False
             continue
-        if tok in FORCE_FLAGS or tok.startswith(FORCE_PREFIXES):
-            block(f"`git push {tok}` rewrites or deletes remote history.")
+        if tok in ALL_REFS_FLAGS:
+            block(f"`git push {tok}` pushes every branch, `main` included.")
         if tok in VALUE_FLAGS:
             skip_next = True
             continue
@@ -69,9 +70,7 @@ def check_push(tokens, cwd):
             block("this push would update `main` (you are on main).")
         return
     for spec in refspecs:
-        if spec.startswith("+"):
-            block(f"`{spec}` is a force push.")
-        dest = spec.split(":")[-1]
+        dest = spec.lstrip("+").split(":")[-1]
         if dest in ("HEAD", "@") and ":" not in spec:
             dest = current_branch(cwd)
         if dest.removeprefix("refs/heads/") == PROTECTED:
