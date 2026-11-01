@@ -31,6 +31,12 @@
   leverage: preparer sees "ravi's main character" in the also-hits line and the
   consent box; target and bystander see only the waiting line. Not run: e2e.
 
+- Component test (`SpreadRumorsPanel.test.ts`, `svelte/server` render): the
+  mar consent box as the preparer names the main character and not the target
+  asset; fails against the old panel. Added a mar-path guard test too.
+- The guards are read-check-write with no lock, so a concurrent double-tap
+  could still slip through.
+
 ## Behaviour changes to look at before merging
 
 - A second `request-take-consent` while one is open now 409s (before, it
@@ -42,7 +48,7 @@ None. (Rule was clear enough: mar → about the preparer.)
 
 ## Noticed, not fixed
 
-- The doc comment above `srBuildTakeConsentRequest` is detached by a blank line
-  from its function; the verbatim-quote paraphrase pass could tidy it.
+- `respond-take-consent` commits the asset ids stashed at request time without
+  re-checking owner or destroyed state (also in the tracker).
 - `make test-integration` fails in `cmd/server` until `make build` has
   populated the embedded frontend.
