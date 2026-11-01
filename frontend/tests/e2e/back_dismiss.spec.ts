@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // Phone Back closes the overlay on top instead of leaving the table
 // ($lib/overlayHistory). The three behaviours worth pinning are the ones that
@@ -34,7 +35,7 @@ const track = cleanupGameAfterEach();
 test.use({ viewport: PHONE });
 
 test('phone Back dismisses overlays instead of leaving the table', async ({ browser }) => {
-  const ctx = await browser.newContext({ baseURL: 'http://localhost:8090', viewport: PHONE });
+  const ctx = await browser.newContext({ baseURL: E2E, viewport: PHONE });
   await devLogin(ctx.request, 'alice');
 
   const seedRes = await ctx.request.post('/api/dev/seed', {

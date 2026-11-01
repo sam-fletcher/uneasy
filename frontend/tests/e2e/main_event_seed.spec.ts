@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // First main_event spec, exercising the new /api/dev/seed fixture path.
 //
@@ -20,7 +21,7 @@ test('seeded main_event game renders the main-event view for both players', asyn
   // Seed a fresh game in main_event with alice and bob as players. The seed
   // endpoint creates accounts on demand, so we don't need a prior dev-login
   // on either side just to seed.
-  const fixture = await pwRequest.newContext({ baseURL: 'http://localhost:8090' });
+  const fixture = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await fixture.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -35,8 +36,8 @@ test('seeded main_event game renders the main-event view for both players', asyn
   // Open one browser context per player so each carries its own session.
   // dev-login finds the account the seed already created and just opens
   // a session for it.
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await aliceCtx.request.post('/api/dev/login?username=alice');
   await bobCtx.request.post('/api/dev/login?username=bob');
 

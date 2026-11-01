@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // End-to-end for Propose Duel — the gnarliest interactive plan flow, and
 // the first plan spec to drive a full resolution through the UI.
@@ -22,8 +23,6 @@ import { cleanupGameAfterEach } from './helpers';
 // one stake a side the winner's claim is forced (it covers the whole pile), so
 // the duel settles itself the instant the final roll lands — no take step and
 // no "Complete plan" click for either player.
-
-const E2E = process.env.E2E_BASE_URL ?? 'http://localhost:8090';
 
 // Advance the public record to `targetRow` via the dev fast-forward, which runs
 // the real advance (engrailed ranking updates, row.advanced posts) rather than

@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // End-to-end coverage for the multi-player chat path: two browser contexts
 // (alice, bob), each with its own cookie jar; alice creates a table, bob
@@ -39,8 +40,8 @@ async function newestPostID(api: APIRequestContext, tableId: number): Promise<nu
 const track = cleanupGameAfterEach();
 
 test('alice sends a chat message; bob sees it live', async ({ browser, playwright }) => {
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
 
   await devLogin(aliceCtx.request, 'alice');
   await devLogin(bobCtx.request, 'bob');
@@ -92,8 +93,8 @@ test('alice sends a chat message; bob sees it live', async ({ browser, playwrigh
 });
 
 test('catch-up: messages sent while away show the unread badge and the New messages divider', async ({ browser }) => {
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
   await devLogin(bobCtx.request, 'bob');
 
@@ -133,8 +134,8 @@ test('catch-up: messages sent while away show the unread badge and the New messa
 });
 
 test('scroll-up pagination: older posts outside the initial window load on demand', async ({ browser }) => {
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
   await devLogin(bobCtx.request, 'bob');
 
@@ -176,8 +177,8 @@ test('scroll-up pagination: older posts outside the initial window load on deman
 });
 
 test('scrolled away from the bottom is not yanked back when a new message arrives', async ({ browser }) => {
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
   await devLogin(bobCtx.request, 'bob');
 
@@ -224,7 +225,7 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
   // existing row (see handler/posts.go) — so asset.renamed/asset.taken would
   // never actually land. Seed straight to main_event, like the jump-to-row
   // test below, so the row FK is satisfied.
-  const reset = await pwRequest.newContext();
+  const reset = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -232,8 +233,8 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
   track(tableId);
   await reset.dispose();
 
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
   await devLogin(bobCtx.request, 'bob');
 
@@ -275,7 +276,7 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
 });
 
 test('jumping to a row outside the loaded window enters history mode; Return to now exits it', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
+  const reset = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -283,8 +284,8 @@ test('jumping to a row outside the loaded window enters history mode; Return to 
   track(gameID);
   await reset.dispose();
 
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice'); // alice is the seed's facilitator + focus player
   await devLogin(bobCtx.request, 'bob');
 
@@ -335,7 +336,7 @@ test('jumping to a row outside the loaded window enters history mode; Return to 
 // outside any scene. Mobile-first, per feedback_mobile_first: verify the
 // narrow-viewport collapsed-strip path before the desktop column.
 test('scene container: single chronology, collapses once ended and read, expands on tap', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
+  const reset = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -344,8 +345,8 @@ test('scene container: single chronology, collapses once ended and read, expands
   const alicePlayerID: number = players[0].id;
   await reset.dispose();
 
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice'); // alice is the seed's facilitator + focus player
   await devLogin(bobCtx.request, 'bob');
 
@@ -435,7 +436,7 @@ test('scene container: single chronology, collapses once ended and read, expands
 });
 
 test('scene container renders in the always-open desktop chat column', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
+  const reset = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -443,7 +444,7 @@ test('scene container renders in the always-open desktop chat column', async ({ 
   track(tableId);
   await reset.dispose();
 
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
 
   const sceneRes = await aliceCtx.request.post(`/api/tables/${tableId}/scenes`, {
@@ -485,7 +486,7 @@ test('scene container renders in the always-open desktop chat column', async ({ 
 // speak in character immediately, rendering inside the SAME scene-container
 // UI Phase 4 already built (no ChatPanel/chatFeed changes needed for this).
 test('plan-scene: a festivity renders both players\' in-character posts inside one container', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
+  const reset = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -495,8 +496,8 @@ test('plan-scene: a festivity renders both players\' in-character posts inside o
   const bobPlayerID: number = players[1].id;
   await reset.dispose();
 
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice'); // alice is the seed's facilitator + focus player
   await devLogin(bobCtx.request, 'bob');
 
@@ -564,7 +565,7 @@ test('plan-scene: a festivity renders both players\' in-character posts inside o
 // blurs it), and the Send button taking focus on click and then going
 // disabled as the box empties (dropping focus to <body>).
 test('composer keeps focus after sending, via Enter and via the Send button', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
+  const reset = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -572,7 +573,7 @@ test('composer keeps focus after sending, via Enter and via the Send button', as
   track(tableId);
   await reset.dispose();
 
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
 
   const alicePage = await aliceCtx.newPage();
@@ -606,7 +607,7 @@ test('composer keeps focus after sending, via Enter and via the Send button', as
 // clear-on-success. That makes the failure path load-bearing — the text has
 // to come back, without trampling a draft the user has already started.
 test('a failed send restores the text, but never clobbers a draft typed while in flight', async ({ browser }) => {
-  const reset = await pwRequest.newContext();
+  const reset = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
@@ -614,7 +615,7 @@ test('a failed send restores the text, but never clobbers a draft typed while in
   track(tableId);
   await reset.dispose();
 
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
 
   const alicePage = await aliceCtx.newPage();

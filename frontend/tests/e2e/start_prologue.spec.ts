@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // First game-flow spec: lobby → prologue transition driven by the
 // facilitator, observed live on the non-facilitator's page.
@@ -14,8 +15,8 @@ import { cleanupGameAfterEach } from './helpers';
 const track = cleanupGameAfterEach();
 
 test('facilitator starts prologue; non-facilitator sees the phase change live', async ({ browser }) => {
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await aliceCtx.request.post('/api/dev/login?username=alice');
   await bobCtx.request.post('/api/dev/login?username=bob');
 

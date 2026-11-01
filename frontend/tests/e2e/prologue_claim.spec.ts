@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { E2E } from './baseUrl';
 
 // A prologue claim reaches both players' screens from the socket payload
 // and the POST reply alone — no refetch of sheets, cards or assets.
@@ -25,8 +26,8 @@ function countTableGets(page: Page, gameID: number): () => string[] {
 }
 
 test('a claim lands live on both screens with zero follow-up fetches', async ({ browser }) => {
-  const aliceCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
-  const bobCtx = await browser.newContext({ baseURL: 'http://localhost:8090' });
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
   await aliceCtx.request.post('/api/dev/login?username=alice');
   await bobCtx.request.post('/api/dev/login?username=bob');
 

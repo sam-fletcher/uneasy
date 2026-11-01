@@ -63,11 +63,12 @@ Then point every tool at it:
 - **plandriver:** `go run ./cmd/plandriver setup <plan> -base http://localhost:8192`
 - **shot.mjs:** `node tests/shot.mjs --base http://localhost:8192 --game <id> --as <player>`
 
-**Caveat — several specs still hard-code `:8090`** in `browser.newContext({ baseURL: … })`
-instead of reading `E2E_BASE_URL` (e.g. `chat.spec.ts`; `grep -rn 8090 frontend/tests`
-lists them). Against a private server those specs quietly test `main`. Say in
-your report that such a spec wasn't run against your code; fixing the specs
-is its own tracker item, not part of your piece.
+Every spec, helper and the Playwright config take their base URL from
+`E2E_BASE_URL` (via `frontend/tests/e2e/baseUrl.ts`), defaulting to `:8090`. A new
+spec must import `E2E` from there rather than writing a URL, or it will quietly
+test `main` against a private server (`grep -rn 8090 frontend/tests` should
+find only `baseUrl.ts`). `shot.mjs` also honours `E2E_BASE_URL`, but its
+fallback stays the dev server `:8080`; `--base` overrides both.
 
 Stop the server and drop the database when you finish. Never leave a server
 running on a port another session might pick.

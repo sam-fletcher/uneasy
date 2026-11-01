@@ -27,7 +27,7 @@ import path from 'node:path';
 
 function parseArgs(argv) {
   const out = {
-    base: 'http://localhost:8080',
+    base: process.env.E2E_BASE_URL ?? 'http://localhost:8080',
     width: 375,
     height: 812,
     out: 'shots',
