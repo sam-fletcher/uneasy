@@ -87,8 +87,8 @@ Leave out findings with no clear fix, and anything you would only "keep an
 eye on".
 
 Don't make the changes in the retro. The owner picks; each accepted change
-becomes either a quick edit (memory, a skill line) or a tracker item under
-"Next — workflow and skills".
+becomes either a quick edit (memory, a skill line) or a new item file in
+`docs/work/next/`.
 
 Transcripts quote the private rules and design principles, and the tracker,
 skills and CLAUDE.md are public: anything you write there paraphrases, and

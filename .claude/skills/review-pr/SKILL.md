@@ -32,8 +32,10 @@ Cheap, mechanical, and enough to send it straight back:
   after, and says what wasn't verified.
 - **Commits** follow the `commit` skill: logical, and real decisions carry
   their reason.
-- **Tracker and hand-over note:** the tracker item is removed or updated,
-  owner questions are under "Waiting on the owner", and the note exists. (A
+- **Tracker and hand-over note:** the item's file in `docs/work/next/` is
+  deleted or updated, each owner question has its own file in
+  `docs/work/questions/`, the note exists, and the PR edits no other
+  entry's file (that would bring back the shared-file conflicts). (A
   coordinator's own setup PR has no work session, so no note.)
 - **Public repo:** search the diff, PR body and commit messages for
   `_RULES`, `DESIGN_PRINCIPLES`, `adr/` and `/Users/`, and read each hit. A
@@ -92,7 +94,7 @@ Report the axes **side by side**, not merged into one ranking, then:
   when you started it. Its context survives its final report. It fixes,
   tidies its history, force-pushes and reports back; review what changed.
 - **Questions only the owner can answer** → the PR's *For the owner*
-  section and the tracker's "Waiting on the owner".
+  section and a file in `docs/work/questions/`.
 - **Clean, or judgement calls only** → post a short review on the PR and
   mark it ready:
 

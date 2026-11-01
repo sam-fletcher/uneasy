@@ -128,8 +128,8 @@ only games in a particular state, mobile layout, the action log.
 
 ### For the owner
 
-Behaviour changes worth a look before merging, open questions (these also
-go in the tracker), and anything noticed but not fixed. Link the hand-over
+Behaviour changes worth a look before merging, open questions (each also
+gets a file in `docs/work/questions/`), and anything noticed but not fixed. Link the hand-over
 note (`docs/work/notes/<session-name>.md`) rather than repeating it.
 
 ## 3. Check, then create

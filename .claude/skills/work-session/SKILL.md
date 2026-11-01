@@ -22,7 +22,9 @@ keeps the work faithful to the game and the owner's rulings.
 
 ## 1. Read before you build
 
-- `CLAUDE.md` and [docs/work/TRACKER.md](../../../docs/work/TRACKER.md).
+- `CLAUDE.md`, [docs/work/README.md](../../../docs/work/README.md) and the
+  item file your brief came from in `docs/work/next/` (`make tracker` lists
+  them all).
 - The design principles (private; path in the private CLAUDE.md) before any
   design call. Decisions the owner has already ruled on aren't yours to
   re-open — check memory and the principles before proposing one.
@@ -81,10 +83,12 @@ All of these, against **your** code (the `test-worktree` skill shows how):
 
 On your branch, alongside the code:
 
-- **Tracker:** in `docs/work/TRACKER.md`, remove or update the item your
-  brief came from, and add any open question for the owner under "Waiting
-  on the owner". Don't add an "in progress" entry: open PRs are the list of
-  work in flight.
+- **Tracker:** delete the file in `docs/work/next/` your brief came from
+  (or edit only that file, if part is left). Each new item or open owner
+  question gets **its own new file** in `next/` or `questions/` — see
+  `docs/work/README.md`. Never edit another entry's file and never
+  renumber: that's what made every parallel PR conflict. No "in progress"
+  entry: open PRs are the list of work in flight.
 - **Hand-over note:** `docs/work/notes/<session-name>.md`, where
   `<session-name>` is your worktree's folder name, with these
   sections: *What changed and why* · *How it was verified* (say what did
