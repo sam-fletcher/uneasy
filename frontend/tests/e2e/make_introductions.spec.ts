@@ -30,6 +30,13 @@ interface Fixture {
 
 const track = cleanupGameAfterEach();
 
+// Everything a test opens is closed afterwards, pass or fail.
+const opened: { dispose(): Promise<void> }[] = [];
+test.afterEach(async () => {
+	for (const o of opened.splice(0)) await o.dispose().catch(() => {});
+});
+const closer = (c: { close(): Promise<void> }) => ({ dispose: () => c.close() });
+
 async function ok(res: { ok(): boolean; text(): Promise<string>; status(): number }, what: string) {
 	expect(res.ok(), `${what} failed (${res.status()}): ${await res.text()}`).toBeTruthy();
 }
@@ -48,8 +55,8 @@ async function api(ctx: APIRequestContext, method: 'get' | 'post', path: string,
  */
 async function setup(peerCount: number, performSteps = false): Promise<Fixture> {
 	const seeder = await pwRequest.newContext({ baseURL: E2E });
+	opened.push(seeder);
 	const seed = await api(seeder, 'post', '/api/dev/seed', { phase: 'main_event', players: [...PLAYERS] });
-	await seeder.dispose();
 	const gameID: number = seed.game_id;
 	track(gameID);
 
@@ -57,6 +64,7 @@ async function setup(peerCount: number, performSteps = false): Promise<Fixture> 
 	const ids = {} as Record<Name, number>;
 	for (const [i, n] of PLAYERS.entries()) {
 		ctx[n] = await pwRequest.newContext({ baseURL: E2E });
+		opened.push(ctx[n]);
 		await ctx[n].post(`/api/dev/login?username=${n}`);
 		ids[n] = seed.players[i].id;
 	}
@@ -120,6 +128,7 @@ async function openPages(browser: import('@playwright/test').Browser, f: Fixture
 	const pages = {} as Record<Name, Page>;
 	for (const n of PLAYERS) {
 		const c = await browser.newContext({ baseURL: E2E, viewport: { width: 375, height: 812 } });
+		opened.push(closer(c));
 		await c.request.post(`/api/dev/login?username=${n}`);
 		pages[n] = await c.newPage();
 		await pages[n].goto(`/table/${f.gameID}`);
@@ -154,15 +163,30 @@ async function forceRoll(f: Fixture, outcome: 'make' | 'mar') {
  * A make/mar that the dice apply on their own reaches the table only on a
  * reload — see the fixme at the bottom of this file — so reload to see it.
  */
-async function reloadAll(pages: Record<Name, Page>) {
-	await Promise.all(PLAYERS.map(n => pages[n].reload()));
+/** The Waiting On bar's text ("Waiting On: You,carol"), as one player sees it. */
+const waitingBar = (page: Page) => page.locator('p', { hasText: 'Waiting On:' }).first();
+
+/** The click-to-agree gates the audit removed must not come back. */
+async function expectNoGates(page: Page) {
+	for (const name of ['Apply choices', 'Begin resolving', 'Complete plan']) {
+		await expect(page.getByRole('button', { name })).toHaveCount(0);
+	}
 }
 
-async function disposeAll(f: Fixture, pages?: Record<Name, Page>) {
-	for (const n of PLAYERS) {
-		await f.ctx[n].dispose();
-		await pages?.[n].context().close();
-	}
+interface Asset { id: number; name: string; owner_id: number; marginalia: { text: string; is_torn: boolean }[] }
+async function assetNamed(f: Fixture, name: string): Promise<Asset | undefined> {
+	const { assets } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/assets`);
+	return (assets as Asset[]).find(a => a.name === name);
+}
+const marginaliaOf = (a: Asset | undefined) => (a?.marginalia ?? []).map(m => m.text);
+
+async function planStatus(f: Fixture, id = f.planID): Promise<string> {
+	const { plans } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/plans`);
+	return plans.find((p: { id: number }) => p.id === id).status;
+}
+
+async function reloadAll(pages: Record<Name, Page>) {
+	await Promise.all(PLAYERS.map(n => pages[n].reload()));
 }
 
 test('pre-roll: everyone sees the difficulty meter and the buffet; only the preparer names the peers', async ({ browser }) => {
@@ -192,10 +216,21 @@ test('pre-roll: everyone sees the difficulty meter and the buffet; only the prep
 	// ...and the server agrees: a non-preparer cannot name a peer.
 	const res = await f.ctx.bob.post(`/api/plans/${f.planID}/create-peer`, { data: { name: 'Interloper' } });
 	expect(res.status()).toBe(403);
+	// ...nor open the roll by finalizing.
+	const fin = await f.ctx.bob.post(`/api/plans/${f.planID}/finalize-peers`);
+	expect(fin.status()).toBe(403);
+
+	// The Waiting On bar names the preparer while the peers are being named.
+	await expect(waitingBar(alice)).toContainText('You');
+	for (const p of [bob, carol]) {
+		await expect(waitingBar(p)).toContainText('alice');
+		await expect(waitingBar(p)).not.toContainText('You');
+	}
+	await expectNoGates(alice);
 
 	await nameAndRoll(alice, ['Lady Ashby', 'Sir Oswin']);
+	await expectNoGates(alice);
 
-	await disposeAll(f, pages);
 });
 
 test('make: the preparer describes each arrival; the last arrival ends the plan', async ({ browser }) => {
@@ -214,6 +249,7 @@ test('make: the preparer describes each arrival; the last arrival ends the plan'
 	await expect(arrive).toBeDisabled();
 	await expect(bob.getByText('alice is welcoming the new peers…')).toBeVisible();
 
+	await expectNoGates(alice);
 	await alice.locator('.acf textarea').first().fill('Holds the northern road.');
 	await expect(arrive).toBeEnabled();
 	await arrive.click();
@@ -223,15 +259,14 @@ test('make: the preparer describes each arrival; the last arrival ends the plan'
 	await alice.locator('.acf textarea').first().fill('Owes everyone money.');
 	await alice.getByRole('button', { name: 'They arrive — the plan resolves' }).click();
 
-	await expect.poll(async () => {
-		const { plans } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/plans`);
-		return plans.find((p: { id: number }) => p.id === f.planID).status;
-	}, { timeout: 10_000 }).toBe('resolved');
-	const { assets } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/assets`);
-	const names = assets.filter((a: { owner_id: number }) => a.owner_id === f.ids.alice).map((a: { name: string }) => a.name);
-	expect(names).toEqual(expect.arrayContaining(['Lady Ashby', 'Sir Oswin']));
+	await expect.poll(() => planStatus(f), { timeout: 10_000 }).toBe('resolved');
+	const ashby = await assetNamed(f, 'Lady Ashby');
+	const oswin = await assetNamed(f, 'Sir Oswin');
+	expect(ashby?.owner_id).toBe(f.ids.alice);
+	expect(oswin?.owner_id).toBe(f.ids.alice);
+	expect(marginaliaOf(ashby)).toEqual(['Holds the northern road.']);
+	expect(marginaliaOf(oswin)).toEqual(['Owes everyone money.']);
 
-	await disposeAll(f, pages);
 });
 
 test('mar: each peer gets a different fate, and the people who owe marginalia are asked', async ({ browser }) => {
@@ -276,6 +311,13 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 	await alice.locator('.player-chip', { hasText: 'carol' }).click();
 	await alice.getByRole('button', { name: 'Resolve peer' }).click();
 
+	// The bar moves from the preparer to the two authors (alice no longer owes a step).
+	await alice.reload();
+	await expect(waitingBar(alice)).toContainText('bob');
+	await expect(waitingBar(alice)).toContainText('carol');
+	await expect(waitingBar(alice)).not.toContainText('You');
+	await expectNoGates(alice);
+
 	// Bob and carol are each asked for the marginalia they owe; alice is not.
 	// (They need a reload to see it — second fixme below.)
 	await Promise.all([bob.reload(), carol.reload()]);
@@ -288,12 +330,17 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 	await carol.getByPlaceholder('Who has arrived at court?').fill('Really a tax assessor.');
 	await carol.getByRole('button', { name: 'Write marginalia' }).click();
 
-	await expect.poll(async () => {
-		const { plans: ps } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/plans`);
-		return ps.find((p: { id: number }) => p.id === f.planID).status;
-	}, { timeout: 10_000 }).toBe('resolved');
+	await expect.poll(() => planStatus(f), { timeout: 10_000 }).toBe('resolved');
 
-	await disposeAll(f, pages);
+	// Each text landed on the right asset, in the right retinue: the
+	// other_retinue peer is bob's; the "not who you thought" peer stays with alice.
+	const ashby = await assetNamed(f, 'Lady Ashby');
+	const oswin = await assetNamed(f, 'Sir Oswin');
+	expect(ashby?.owner_id).toBe(f.ids.bob);
+	expect(marginaliaOf(ashby)).toEqual(['A cousin with debts.']);
+	expect(oswin?.owner_id).toBe(f.ids.alice);
+	expect(marginaliaOf(oswin)).toEqual(['Really a tax assessor.']);
+
 });
 
 test('perform_steps winner drives the post-roll steps; the preparer still names and waits', async ({ browser }) => {
@@ -307,6 +354,15 @@ test('perform_steps winner drives the post-roll steps; the preparer still names 
 	const res = await f.ctx.bob.post(`/api/plans/${f.planID}/create-peer`, { data: { name: 'Demander pick' } });
 	expect(res.status()).toBe(403);
 
+	// Bob really holds perform_steps (and keep_assets) on the resolved demand.
+	const { plans } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/plans`);
+	const demand = plans.find((p: { plan_type: string }) => p.plan_type === 'make_demands');
+	// The winners column is raw JSON bytes, so the API serializes it as base64.
+	const winners = JSON.parse(Buffer.from(demand.demand_option_winners, 'base64').toString());
+	expect(winners.perform_steps).toBe(f.ids.bob);
+	expect(winners.keep_assets).toBe(f.ids.bob);
+	await expect(waitingBar(bob)).toContainText('alice');
+
 	await nameAndRoll(alice, ['Lady Ashby']);
 	await forceRoll(f, 'make');
 	await reloadAll(pages);
@@ -317,20 +373,57 @@ test('perform_steps winner drives the post-roll steps; the preparer still names 
 	await expect(alice.getByText('arrives at court', { exact: false })).toHaveCount(0);
 
 	await bob.locator('.acf textarea').first().fill('Bob vouches for them.');
+	await expect(waitingBar(alice)).toContainText('bob');
+	await expect(waitingBar(alice)).not.toContainText('You');
 	await bob.getByRole('button', { name: 'They arrive — the plan resolves' }).click();
-	await expect.poll(async () => {
-		const { plans } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/plans`);
-		return plans.find((p: { id: number }) => p.id === f.planID).status;
-	}, { timeout: 10_000 }).toBe('resolved');
+	await expect.poll(() => planStatus(f), { timeout: 10_000 }).toBe('resolved');
+	// keep_assets: the arrived peer is bob's, with the text bob wrote.
+	const ashby = await assetNamed(f, 'Lady Ashby');
+	expect(ashby?.owner_id).toBe(f.ids.bob);
+	expect(marginaliaOf(ashby)).toEqual(['Bob vouches for them.']);
 
-	await disposeAll(f, pages);
+});
+
+test('mar: a broken journey arrives torn and a delayed peer is rescheduled', async ({ browser }) => {
+	const f = await setup(2);
+	const pages = await openPages(browser, f);
+	const { alice } = pages;
+
+	await nameAndRoll(alice, ['Lady Ashby', 'Sir Oswin']);
+	await forceRoll(f, 'mar');
+	await reloadAll(pages);
+	await expect(alice.getByText('(2 remaining):')).toBeVisible({ timeout: 10_000 });
+
+	await alice.getByRole('button', { name: 'Broken journey', exact: true }).click();
+	const resolve = alice.getByRole('button', { name: 'Resolve peer' });
+	await expect(resolve).toBeDisabled();
+	await alice.getByPlaceholder('A description, a function, a fun fact…').fill('A herald of the old court.');
+	await alice.getByPlaceholder('The mark of an arduous journey…').fill('Lamed by a fall on the road.');
+	await resolve.click();
+
+	await expect(alice.getByText('(1 remaining):')).toBeVisible({ timeout: 10_000 });
+	await alice.getByRole('button', { name: 'Delayed', exact: true }).click();
+	await alice.getByRole('button', { name: 'Resolve peer' }).click();
+
+	// The journeyer is in alice's retinue with a torn mark; the delayed peer has
+	// not arrived but has a rescheduled arrival of their own.
+	await expect.poll(async () => (await assetNamed(f, 'Lady Ashby'))?.owner_id).toBe(f.ids.alice);
+	const ashby = await assetNamed(f, 'Lady Ashby');
+	expect(marginaliaOf(ashby)).toContain('A herald of the old court.');
+	expect(ashby!.marginalia.some(m => m.is_torn && m.text === 'Lamed by a fall on the road.')).toBeTruthy();
+	expect(await assetNamed(f, 'Sir Oswin')).toBeUndefined();
+	const { plans } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/plans`);
+	const delayed = plans.find((p: { id: number; resolution_data: string | null }) =>
+		p.id !== f.planID && (p.resolution_data ?? '').includes('delayed_arrival'));
+	expect(delayed, 'no rescheduled arrival plan').toBeTruthy();
+	await expectNoGates(alice);
 });
 
 // FINDING: the dice apply a make/mar server-side (applyAutoChoiceOnRoll) and
 // save resolution_data, but nothing tells the clients — unlike MakeChoice, the
 // auto-apply path never broadcasts plan.choice_applied. The preparer's panel
 // stays on "is welcoming the new peers…" until a reload. See
-// docs/work/next/make-introductions-roll-not-live.md.
+// docs/work/next/auto-applied-choice-not-broadcast.md.
 test.fixme('make: the arrival form appears live when the dice land, without a reload', async ({ browser }) => {
 	const f = await setup(1);
 	const pages = await openPages(browser, f);
@@ -338,7 +431,6 @@ test.fixme('make: the arrival form appears live when the dice land, without a re
 	await forceRoll(f, 'make');
 	await expect(pages.alice.getByText('arrives at court. Describe them', { exact: false }))
 		.toBeVisible({ timeout: 10_000 });
-	await disposeAll(f, pages);
 });
 
 // The same gap on the mar side: introductions-mar saves the fate and moves the
@@ -354,5 +446,21 @@ test.fixme('mar: a named marginalia author sees their form live, without a reloa
 	await pages.alice.locator('.player-chip', { hasText: 'bob' }).click();
 	await pages.alice.getByRole('button', { name: 'Resolve peer' }).click();
 	await expect(pages.bob.getByPlaceholder('Who has arrived at court?')).toBeVisible({ timeout: 10_000 });
-	await disposeAll(f, pages);
+});
+
+// FINDING (separate from the above): the arrival, mar and marginalia step
+// routes broadcast only row state, never plan.choice_applied, so a bystander's
+// recap of the fates goes stale mid-flow. See
+// docs/work/next/make-introductions-step-routes-not-broadcast.md.
+test.fixme('mar: a bystander sees each fate recorded live, without a reload', async ({ browser }) => {
+	const f = await setup(1);
+	const pages = await openPages(browser, f);
+	await nameAndRoll(pages.alice, ['Lady Ashby']);
+	await forceRoll(f, 'mar');
+	await reloadAll(pages);
+	await pages.alice.getByRole('button', { name: 'Another retinue', exact: true }).click();
+	await pages.alice.locator('.player-chip', { hasText: 'bob' }).click();
+	await pages.alice.getByRole('button', { name: 'Resolve peer' }).click();
+	await expect(pages.carol.getByText('Lady Ashby — Another retinue (awaiting marginalia)'))
+		.toBeVisible({ timeout: 10_000 });
 });
