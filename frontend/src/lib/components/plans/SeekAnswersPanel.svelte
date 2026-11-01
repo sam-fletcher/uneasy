@@ -37,6 +37,7 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Stepper from './shared/Stepper.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -520,14 +521,10 @@
 					</p>
 					{#each OPTIONS as opt}
 						{@const available = optionAvailable[opt.key]}
-						<div class="stepper-row" class:unavailable={!available}>
-							<button class="action-btn" onclick={() => bump(opt.key, -1)}
-								disabled={(counts[opt.key] ?? 0) === 0}>−</button>
-							<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
-							<button class="action-btn" onclick={() => bump(opt.key, 1)}
-								disabled={!available || atCap(opt.key) || (requiredPicks != null && totalPicked >= requiredPicks)}>+</button>
-							<span>{opt.label}{#if !available}<span class="choices-note muted"> — no valid targets</span>{:else if atCap(opt.key)}<span class="choices-note muted"> — all targets picked</span>{/if}</span>
-						</div>
+						<Stepper count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={!available}
+							incDisabled={!available || atCap(opt.key) || (requiredPicks != null && totalPicked >= requiredPicks)}>
+							{opt.label}{#if !available}<span class="choices-note muted"> — no valid targets</span>{:else if atCap(opt.key)}<span class="choices-note muted"> — all targets picked</span>{/if}
+						</Stepper>
 					{/each}
 					<p class="choices-note">
 						Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null}{' '}/ {requiredPicks}{/if}
@@ -833,5 +830,4 @@
 <style>
 	/* .resolve-mirror-wrap / .resolved-so-far now live in planPanel.css — three
 	   panels share them (Seek Answers, Chronicle Histories, Spread Rumors). */
-	.stepper-row.unavailable { opacity: 0.55; }
 </style>

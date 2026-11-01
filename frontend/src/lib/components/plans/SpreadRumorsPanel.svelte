@@ -40,6 +40,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Stepper from './shared/Stepper.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -848,14 +849,10 @@
 				{#each OPTIONS as opt}
 					{@const optDisabled = opt.key === 'take_asset' && takeAssetDenied}
 					{@const atBreakCap = opt.key === 'break_target' && (counts.break_target ?? 0) >= btMarginaliaCap}
-					<div class="stepper-row" class:muted={optDisabled}>
-						<button class="action-btn" onclick={() => bump(opt.key, -1)}
-							disabled={(counts[opt.key] ?? 0) === 0}>−</button>
-						<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
-						<button class="action-btn" onclick={() => bump(opt.key, 1)}
-							disabled={optDisabled || atBreakCap || (requiredPicks != null && totalPicked >= requiredPicks)}>+</button>
-						<span>{optionText(opt)}{#if optDisabled}{' '}<em>(declined)</em>{:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}</span>
-					</div>
+					<Stepper count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={optDisabled}
+						incDisabled={optDisabled || atBreakCap || (requiredPicks != null && totalPicked >= requiredPicks)}>
+						{optionText(opt)}{#if optDisabled}{' '}<em>(declined)</em>{:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}
+					</Stepper>
 				{/each}
 				<p class="choices-note">
 					Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null}{' '}/ {requiredPicks}{/if}
