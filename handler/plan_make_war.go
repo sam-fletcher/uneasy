@@ -221,22 +221,9 @@ func (mwHandler) ComputeDifficulty(
 // "Make War succeeded." chat log), and let the regular follow-scene flow
 // take over. The war itself persists in the wars table and is unaffected.
 func (mwHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) (*dbgen.DiceRoll, error) {
-	res := makeOutcome
-	if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
-		ID:     plan.ID,
-		Result: &res,
-	}); err != nil {
+	if err := resolvePlan(ctx, deps.Q, deps.Manager, plan, makeOutcome); err != nil {
 		return nil, fmt.Errorf("resolve war plan: %w", err)
 	}
-	refreshed, err := deps.Q.GetPlanByID(ctx, plan.ID)
-	if err != nil {
-		return nil, fmt.Errorf("reload war plan: %w", err)
-	}
-	broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
-		PlanID: plan.ID,
-		Result: res,
-	})
-	EmitPlanResolved(ctx, deps.Q, deps.Manager, refreshed, res)
 	return nil, nil
 }
 

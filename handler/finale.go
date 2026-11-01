@@ -216,11 +216,7 @@ func planFellThrough(
 		loggerFromContext(ctx).WarnContext(ctx,
 			"fall-through: could not clear the plan token", "plan_id", plan.ID, "err", err)
 	}
-	broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
-		PlanID: plan.ID,
-		Result: "cancelled",
-	})
-	EmitPlanResolved(ctx, q, manager, plan, "cancelled")
+	announcePlanResolved(ctx, q, manager, plan, "cancelled")
 }
 
 // planPrepOverflow is what the ending mode says about a preparation whose row

@@ -684,16 +684,12 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// The festivity always benefits the host, so its result is a make.
 		res := makeOutcome
-		if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: &res}); err != nil {
+		// The announcement renders the festivity's custom "drew to a close" line
+		// (via hfHandler.ResolvedDescriptor) in place of "Host Festivity succeeded."
+		if err := resolvePlan(ctx, deps.Q, deps.Manager, plan, res); err != nil {
 			respondInternalErr(w, r, "could not end the festivity", err)
 			return
 		}
-		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
-			PlanID: plan.ID, Result: res,
-		})
-		// EmitPlanResolved renders the festivity's custom "drew to a close" line
-		// (via hfHandler.ResolvedDescriptor) in place of "Host Festivity succeeded."
-		EmitPlanResolved(ctx, deps.Q, deps.Manager, *plan, res)
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID, "result": res})
 	}

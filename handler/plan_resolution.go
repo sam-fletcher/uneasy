@@ -408,19 +408,58 @@ func planResultString(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) s
 func finalizePlanResolution(
 	ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan *dbgen.Plan, resultStr string,
 ) error {
-	if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
-		ID:     plan.ID,
-		Result: &resultStr,
-	}); err != nil {
+	if err := resolvePlan(ctx, q, manager, plan, resultStr); err != nil {
 		return err
+	}
+	broadcastRowState(ctx, q, manager, plan.GameID)
+	return nil
+}
+
+// resolvePlan is the one way a plan closes with a result: it stores the result,
+// reloads the plan into *plan, and announces the resolution. Every plan that
+// resolves itself — the shared completion path, Make War's one-step resolve,
+// the liaison, the festivity, a fizzled re-aim — goes through it, so the
+// stored result, the WebSocket event and the action-log line can't drift apart.
+//
+// result is "make", "mar", or fizzledOutcome. A fizzled plan keeps a NULL
+// result column (the column only admits make/mar, and no roll was made).
+func resolvePlan(
+	ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan *dbgen.Plan, result string,
+) error {
+	var stored *string
+	if result != fizzledOutcome {
+		stored = &result
+	}
+	if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: stored}); err != nil {
+		return err
+	}
+	refreshed, err := q.GetPlanByID(ctx, plan.ID)
+	if err != nil {
+		return fmt.Errorf("reload resolved plan: %w", err)
+	}
+	*plan = refreshed
+	announcePlanResolved(ctx, q, manager, refreshed, result)
+	return nil
+}
+
+// announcePlanResolved tells the clients and the action log that a plan has
+// resolved (or, for a fall-through, been cancelled). resolvePlan is the usual
+// way in; callers that store the result themselves — Exchange Courtiers,
+// which logs its two asset transfers first — or never set one (a cancelled
+// plan) call this directly. The client event carries "" for a fizzled plan, to
+// match its NULL result column, so a live client and a reload agree.
+func announcePlanResolved(
+	ctx context.Context, q *dbgen.Queries, manager *hub.Manager, plan dbgen.Plan, result string,
+) {
+	eventResult := result
+	if result == fizzledOutcome {
+		eventResult = ""
 	}
 	broadcastEvent(manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
 		PlanID: plan.ID,
-		Result: resultStr,
+		Result: eventResult,
 	})
-	EmitPlanResolved(ctx, q, manager, *plan, resultStr)
-	broadcastRowState(ctx, q, manager, plan.GameID)
-	return nil
+	EmitPlanResolved(ctx, q, manager, plan, result)
 }
 
 // maybeAutoComplete resolves a plan in place when its handler opts into
