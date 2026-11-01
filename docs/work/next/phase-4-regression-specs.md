@@ -1,7 +1,6 @@
 ---
 title: "Phase 4: regression specs for the audit's fixes"
 order: 70
-after: next/pass-4-shared-components.md
 ---
 
 One e2e spec file per plan pinning what Phase 3 fixed, so these fan out in
