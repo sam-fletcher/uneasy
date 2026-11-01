@@ -19,7 +19,7 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PreRollStep from './shared/PreRollStep.svelte';
 	import {
-		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData, playerName,
+		MAKE_OPTIONS, MAR_OPTIONS, choicesCommitted, parseResolutionData, playerName,
 		breakableAssets, breaksAvailable, playersExcept,
 	} from './shared';
 	import { spGivePeer, spBreakSelf, createArtifact, forfeitSpreadPropagandaStep } from '$lib/api';
@@ -104,7 +104,7 @@
 	// plan, which is born rolling.
 	const rollForThisPlan = $derived(plan != null && activeRoll != null && activeRoll.plan_id === plan.id);
 	const hasCommittedChoices = $derived(
-		plan != null && (parseResolutionData(plan).make_mar_choices ?? []).length > 0,
+		plan != null && choicesCommitted(parseResolutionData(plan)),
 	);
 	const preRollDone = $derived(
 		(spData.pre_roll_done ?? false) || rollForThisPlan || hasCommittedChoices,

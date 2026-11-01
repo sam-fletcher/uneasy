@@ -547,7 +547,7 @@ func (srHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		return model.RowState{Kind: model.RowStateAwaitTakeConsent, ActingPlayerIDs: []int64{victim}}, true
 	}
 	if planRollIsMar(ctx, q, plan) {
-		if err := (srHandler{}).CanComplete(plan, &resData); err == nil && len(resData.MakeMarChoices) > 0 {
+		if err := (srHandler{}).CanComplete(plan, &resData); err == nil && resData.ChoicesCommitted() {
 			return model.RowState{}, false // nothing owed: the preparer completes
 		}
 		if plan.TargetAssetID == nil {

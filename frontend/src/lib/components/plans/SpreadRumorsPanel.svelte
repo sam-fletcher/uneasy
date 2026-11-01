@@ -33,7 +33,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
 	import PreRollStep from './shared/PreRollStep.svelte';
-	import { parseResolutionData, playerName, assetName, breakableAssets, breaksAvailable } from './shared';
+	import { choicesCommitted, parseResolutionData, playerName, assetName, breakableAssets, breaksAvailable } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 
 	import type { PlanPanelProps } from './types';
@@ -212,7 +212,7 @@
 	// "a roll exists for this plan" counts as done too.
 	const rollForThisPlan = $derived(plan != null && activeRoll != null && activeRoll.plan_id === plan.id);
 	const hasCommittedChoices = $derived(
-		plan != null && (parseResolutionData(plan).make_mar_choices ?? []).length > 0,
+		plan != null && choicesCommitted(parseResolutionData(plan)),
 	);
 	const preRollDone = $derived((srData.pre_roll_done ?? false) || rollForThisPlan || hasCommittedChoices);
 

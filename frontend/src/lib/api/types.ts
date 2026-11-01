@@ -457,6 +457,11 @@ export interface ResolutionData {
 	// Entries from the generic endpoint have player_id == null. Per-plan
 	// handlers (Chronicle) set player_id to the submitting player.
 	make_mar_choices?: Choice[];
+	/** A player posted the make-choice, even with no picks. make_mar_choices is
+	 *  omitted when empty, so read the commit through choicesCommitted(). */
+	choice_submitted?: boolean;
+	/** The server applied a forced outcome itself when the dice landed. */
+	choice_auto_applied?: boolean;
 
 	// ── Spread Rumors ──
 	// All SR-specific state lives on the nested struct; see

@@ -385,7 +385,7 @@ func srCounterRumorHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		resData := loadResolutionData(plan.ResolutionData)
 		sr := resData.EnsureSpreadRumors()
-		if sr.CounterRumorText != "" || len(resData.MakeMarChoices) > 0 {
+		if sr.CounterRumorText != "" || resData.ChoicesCommitted() {
 			respondErr(w, http.StatusConflict, "the counter-rumor has already been written")
 			return
 		}

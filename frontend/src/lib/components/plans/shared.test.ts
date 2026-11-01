@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Asset, Marginalium, Plan, Player } from '$lib/api';
 import {
 	parseResolutionData,
+	choicesCommitted,
 	demandWinnersFromPlan,
 	activeDemandAgainst,
 	playerName,
@@ -462,5 +463,16 @@ describe('pickAfterTap', () => {
 	it('ignores a blocked card, keeping the pick already made', () => {
 		expect(pickAfterTap('perform_steps', blocked)).toBe('perform_steps');
 		expect(pickAfterTap(null, blocked)).toBeNull();
+	});
+});
+
+describe('choicesCommitted', () => {
+	it('reads a zero-pick commit from the marker, not from make_mar_choices', () => {
+		expect(choicesCommitted({})).toBe(false);
+		expect(choicesCommitted({ choice_submitted: true })).toBe(true);
+		expect(choicesCommitted({ choice_auto_applied: true })).toBe(true);
+	});
+	it('still reads a row stored before the markers existed', () => {
+		expect(choicesCommitted({ make_mar_choices: [{ option: 'legal' }] as never })).toBe(true);
 	});
 });

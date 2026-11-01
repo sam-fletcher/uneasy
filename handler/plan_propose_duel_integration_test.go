@@ -364,6 +364,11 @@ func TestProposeDuelHTTP_Make_TakesStakeLeveragesAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, h.tg.Players[prepIdx].ID, got.OwnerID, "target peer should move to preparer")
 
+	// The claim is recorded as committed, so the wait computation never reads an
+	// empty pick list as "not chosen yet".
+	rd := loadResolutionData(mustPlan(t, h, planID).ResolutionData)
+	require.True(t, rd.ChoiceSubmitted, "a duel claim must set the choice-committed marker")
+
 	// Both staked assets leveraged.
 	for _, aid := range []int64{prepPeer, targPeer} {
 		a, err := h.q.GetAssetByID(ctx, aid)
