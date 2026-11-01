@@ -50,6 +50,12 @@ interface AssetRow {
 
 const track = cleanupGameAfterEach();
 
+// Contexts are closed in an afterEach, so a failing assertion can't leak them.
+const openContexts: BrowserContext[] = [];
+test.afterEach(async () => {
+	for (const c of openContexts.splice(0)) await c.close().catch(() => {});
+});
+
 interface Table {
 	gameID: number;
 	planID: number;
@@ -86,6 +92,7 @@ async function setUp(
 	const bobCtx = await browser.newContext({ baseURL: E2E, viewport: { width: 375, height: 812 } });
 	await aliceCtx.request.post('/api/dev/login?username=alice');
 	await bobCtx.request.post('/api/dev/login?username=bob');
+	openContexts.push(aliceCtx, bobCtx);
 
 	const plansRes = await aliceCtx.request.get(`/api/tables/${game_id}/plans`);
 	const { plans } = (await plansRes.json()) as { plans: PlanRow[] };
@@ -160,15 +167,21 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	const t = await setUp(browser);
 	const { alice, bob } = t;
 
-	// A secret on the asset alice will break. Existence is public, the text is not.
 	const assetsRes = await alice.ctx.request.get(`/api/tables/${t.gameID}/assets`);
 	const { assets } = (await assetsRes.json()) as { assets: AssetRow[] };
 	const holding = assets.find(a => a.asset_type === 'holding' && a.name.startsWith('alice'))!;
 	const SECRET = 'The vault holds forged deeds, not gold.';
+
+	// Everything bob's open page receives over the WebSocket, so a secret leaked by a
+	// broadcast (secret.created has leaked before) is caught as well as one in a response.
+	const bobFrames: string[] = [];
+	bob.page.on('websocket', ws => ws.on('framereceived', f => bobFrames.push(String(f.payload))));
+	await openTables(t);
+
+	// A secret on the asset alice will break, written once both tables are open so the
+	// live event has a watcher. Existence is public, the text is not.
 	const secretRes = await alice.ctx.request.post(`/api/assets/${holding.id}/secrets`, { data: { text: SECRET } });
 	expect(secretRes.ok(), `write secret: ${await secretRes.text()}`).toBeTruthy();
-
-	await openTables(t);
 
 	// ── Pre-roll: no roll exists; the preparer is asked, the bystander waits ──
 	await expect(alice.page.getByText('Spread your message')).toBeVisible({ timeout: 10_000 });
@@ -226,7 +239,10 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	expect(box!.width).toBeGreaterThanOrEqual(44);
 	expect(box!.height).toBeGreaterThanOrEqual(44);
 
-	// "Keep your head down" has one effect, so a second pick is refused.
+	// "Keep your head down" has one effect, so the picker allows it once. That cap is a
+	// UI choice, not a rule: the rulebook lets any mar option be taken repeatedly, and
+	// docs/work/questions/spread-propaganda-lay-low-cap.md awaits a ruling. If the owner
+	// lifts it, this assertion changes with it.
 	await more(LAY_LOW).click();
 	await expect(more(LAY_LOW)).toBeDisabled();
 	await expect(alice.page.getByText('already chosen')).toBeVisible();
@@ -266,6 +282,8 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	const aliceSees = await everythingVisibleTo(alice.ctx.request, t, [holding.id]);
 	expect(aliceSees, 'the author still reads her own secret').toContain(SECRET);
 	const bobSees = await everythingVisibleTo(bob.ctx.request, t, [holding.id]);
+	expect(bobFrames.length, 'bob\'s socket was listening').toBeGreaterThan(0);
+	expect(bobFrames.join('\n').includes(SECRET), 'secret text broadcast to a bystander').toBe(false);
 	// (a boolean, so a failure doesn't dump every response into the report)
 	expect(bobSees.includes(SECRET), 'secret text reached a bystander').toBe(false);
 	// Its existence, by contrast, is public.
@@ -277,8 +295,6 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	await bob.page.waitForLoadState('networkidle');
 	expect((await bob.page.content()).includes(SECRET), 'secret text rendered in a bystander\'s page').toBe(false);
 
-	await alice.ctx.close();
-	await bob.ctx.close();
 });
 
 test('spread propaganda make: no Apply gate, the artifact + changes are one step, the others wait on it', async ({ browser }) => {
@@ -330,11 +346,9 @@ test('spread propaganda make: no Apply gate, the artifact + changes are one step
 	const posts = await (await bob.ctx.request.get(`/api/tables/${t.gameID}/posts`)).text();
 	expect(posts).toContain(`The changes society undergoes: ${CHANGES}`);
 
-	await alice.ctx.close();
-	await bob.ctx.close();
 });
 
-test('spread propaganda mar: a zero-pick commit does not strand the table on the preparer', async ({ browser }) => {
+test('spread propaganda mar: a zero-pick commit auto-resolves the plan, leaving nobody waiting', async ({ browser }) => {
 	const t = await setUp(browser);
 	const { alice, bob } = t;
 	await openTables(t);
@@ -343,9 +357,9 @@ test('spread propaganda mar: a zero-pick commit does not strand the table on the
 	await forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: 1 });
 	await expect(alice.page.getByText('choose exactly')).toBeVisible({ timeout: 10_000 });
 
-	// A hand-built commit with nothing picked (the picker never offers one). The
-	// committed marker, not the pick list, says the commit is in, so alice is no
-	// longer who the table waits on and her panel leaves the picker.
+	// A hand-built commit with nothing picked (the picker never offers one). Nothing is
+	// owed, so the plan resolves itself; this pins that, not the committed marker on its
+	// own (which only matters where the plan doesn't auto-complete — Spread Rumors).
 	const res = await alice.ctx.request.post(`/api/plans/${t.planID}/make-choice`, {
 		data: { result: 'mar', choices: [] },
 	});
@@ -359,11 +373,75 @@ test('spread propaganda mar: a zero-pick commit does not strand the table on the
 		await expect(p.getByText('Waiting for alice', { exact: false })).toHaveCount(0);
 	}
 
-	await alice.ctx.close();
-	await bob.ctx.close();
 });
 
-// BUG (docs/work/next/forced-choice-live-refresh.md): when the dice land and a
+// The audit's headline Spread Propaganda bug (finding 3): "a peer leaves your retinue"
+// could be picked more times than the preparer had peers, after which /complete refused
+// forever and nobody could finish the row. Two layers now stop it: the picker caps each
+// option at its live target count, and sp-forfeit-step discharges a pick that has
+// lost its last target. Alice has exactly one peer (her main character).
+async function castOverAPI(t: Table, narration: string): Promise<RollRow> {
+	const res = await t.alice.ctx.request.post(`/api/plans/${t.planID}/sp-cast-roll`, { data: { narration } });
+	expect(res.ok(), `sp-cast-roll failed: ${await res.text()}`).toBeTruthy();
+	return activeRoll(t.alice.ctx.request, t.gameID);
+}
+
+test('spread propaganda mar: "a peer leaves" cannot be picked past the peers there are', async ({ browser }) => {
+	const t = await setUp(browser);
+	const { alice } = t;
+	const roll = await castOverAPI(t, 'Seditious verses, set to a tavern tune.');
+	await forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: roll.difficulty - 2 });
+	await openTables(t);
+	await expect(alice.page.getByText('choose exactly 2')).toBeVisible({ timeout: 10_000 });
+
+	const GIVE_PEER = '(a) A peer leaves your retinue';
+	const more = alice.page.getByRole('button', { name: `More ${GIVE_PEER}` });
+	const total = alice.page.locator('.choices-note', { hasText: 'Total picks:' });
+	await more.click();
+	await expect(total).toContainText('1 / 2');
+	// One peer, one pick: the option is shut with the reason, though the budget has room.
+	await expect(more).toBeDisabled();
+	await expect(alice.page.getByText('all targets picked')).toBeVisible();
+	await expect(alice.page.getByRole('button', { name: 'Apply choices' })).toBeDisabled();
+});
+
+test('spread propaganda mar: a pick that lost its last peer is forfeited, and the row finishes', async ({ browser }) => {
+	const t = await setUp(browser);
+	const { alice, bob } = t;
+	const roll = await castOverAPI(t, 'A ballad that names no names, but everyone knows.');
+	await forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: roll.difficulty - 2 });
+
+	// A stale or hand-built client over-picks: two hand-overs against one peer. (The
+	// picker above no longer offers this; the server still accepts it, which is what
+	// the forfeit hatch exists for.)
+	const commit = await alice.ctx.request.post(`/api/plans/${t.planID}/make-choice`, {
+		data: { result: 'mar', choices: ['give_peer', 'give_peer'] },
+	});
+	expect(commit.ok(), `over-pick commit: ${await commit.text()}`).toBeTruthy();
+	await openTables(t);
+
+	// Hand over the one peer.
+	await expect(alice.page.getByText('A peer leaves your retinue — hand it to another player'))
+		.toBeVisible({ timeout: 10_000 });
+	await expect(bob.page.getByText('Waiting for alice to face the fallout…')).toBeVisible();
+	const step = alice.page.locator('.plan-form', { hasText: 'A peer leaves your retinue' });
+	await step.getByRole('checkbox').first().click();
+	await step.getByRole('button', { name: 'bob' }).click();
+	await step.getByRole('button', { name: 'Give up peer' }).click();
+
+	// One pick is still owed and there is nothing left to give. The plan used to wedge
+	// here; now the step says so and offers the way out, and the plan won't resolve
+	// until it is taken.
+	await expect(alice.page.getByText('Nothing left to give — this pick has no valid target.'))
+		.toBeVisible({ timeout: 10_000 });
+	expect(await planStatus(alice.ctx.request, t.planID)).toBe('resolving');
+	await alice.page.getByRole('button', { name: 'Skip — no valid targets' }).click();
+
+	await expect.poll(() => planStatus(alice.ctx.request, t.planID), { timeout: 10_000 }).toBe('resolved');
+	await expect(alice.page.getByRole('button', { name: 'Complete plan' })).toHaveCount(0);
+});
+
+// BUG (docs/work/next/auto-applied-choice-not-broadcast.md): when the dice land and a
 // ForcedChoicer plan applies its make by itself, the server saves the choice but
 // broadcasts nothing that makes an open panel refetch the plan (roll.resolved only
 // updates the dice card), so the preparer sits on the pre-roll Buffet and the
@@ -378,6 +456,4 @@ test.fixme('spread propaganda make: the artifact step appears live, with no relo
 	await expect(alice.page.getByText('Your message sets society ablaze')).toBeVisible({ timeout: 10_000 });
 	await expect(bob.page.getByText('Waiting for alice to author the artifact…')).toBeVisible({ timeout: 10_000 });
 
-	await alice.ctx.close();
-	await bob.ctx.close();
 });
