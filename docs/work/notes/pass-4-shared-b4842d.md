@@ -44,9 +44,9 @@ Five commits, one per item.
 
 Against this worktree's own build and a private database:
 
-- `make check-fast` — passes (incl. svelte-check, Vitest 569, Go unit).
-- `make test-integration` on a private DB — passes, 0 FAIL.
-- Playwright e2e against my own server via `E2E_BASE_URL` — 25/25.
+- `make check-fast` — passes (svelte-check, Vitest 574, Go unit), run after the review fixes.
+- `make test-integration` on a private DB, full suite, run on the final commit: every package `ok` (handler 132s). An earlier full run, before the review fixes, failed once in `TestWaitingOn_MakeIntroductions_PerformStepsWinnerIsNamed`; that is the test described under Behaviour changes, now updated.
+- Playwright e2e against my own server via `E2E_BASE_URL` — 25/25 (built from the review-fix code).
 - New tests: `Stepper.test.ts`; `MakeIntroductionsPanel.test.ts` (arrival form
   and mar-fate form go to the winner, naming form stays with the preparer, each
   with the other side's wait line); `resolutionActorID` in `shared.test.ts`;
@@ -59,8 +59,10 @@ Against this worktree's own build and a private database:
   and the announce guard with a bare `SetPlanResult` in a stray handler file.
 - By eye at 375px (dev game, players rhea/sol/tam): Make Introductions
   pre-roll as preparer (meter + Buffet) and as bystander; the full demanded-
-  winner flow driven through the API — winner sees the naming form and then
-  the arrival form, preparer and bystander see "sol is naming/welcoming…";
+  winner flow driven through the API on the final build — the winner's naming
+  attempt is refused (403); the preparer names and rolls; then the winner gets
+  the arrival form while the preparer and a bystander see "sol is welcoming the
+  new peers…";
   Seek Answers post-roll picks as actor and bystander and Spread Propaganda mar
   picks as actor (Stepper). Buffet present in Spread Rumors and Spread
   Propaganda pre-roll as actor and bystander (text check only).
@@ -86,6 +88,13 @@ Against this worktree's own build and a private database:
 - **Plan-resolution tail:** `resolvePlan` reloads the plan after storing the
   result; Clandestinely Liaise and Host Festivity previously didn't. No change
   to what is posted or broadcast.
+
+- **Edited PR #9's test:** `TestWaitingOn_MakeIntroductions_PerformStepsWinnerIsNamed`
+  (`waiting_on_pass_integration_test.go`) asserted that the winner names the
+  peers and the bar names them. That contradicts the standing ruling that
+  `perform_steps` is post-roll only (the preparer still rolls), so naming and
+  finalizing now go through the preparer in that test; the winner-owns-the-arrival
+  assertions are unchanged.
 
 ## Open questions for the owner
 
