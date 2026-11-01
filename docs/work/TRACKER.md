@@ -77,7 +77,14 @@ parallel.
 - Make Demands draft picker: options that would do nothing against the chosen
   target are greyed with the reason, unless nothing but duds is left. Should
   the *server* also refuse picking an inert option while a live one remains?
-  I left it a presentation hint so the forced last pick can never be blocked.
+  Recommendation: no — a server check could only ever block the forced last
+  pick, so it stays a presentation hint.
+- Make Demands retarget wait: `pendingDemandRetargetChooser` returns nobody when
+  the target has no roll of its preparer's own, so against Propose Duel and
+  Clandestinely Liaise the keep_or_change_target winner gets no Waiting On
+  entry and nothing holds their window open, yet the picker shows that option
+  as live there. Should those two block on the retarget winner, or should the
+  option count as inert on them?
 - **Abrupt transitions** — removing click-to-agree gates leaves stage changes
   with no beat or explanation. A design conversation, not code yet; the draft
   write-up is in the private notes (`transition-whiplash.md`).

@@ -52,8 +52,12 @@ The picker's cards look different against targets where an option is inert
 
 ## Open questions for the owner
 
-Should the server also reject picking an inert option while a live one
-remains? I kept it client-only (see the tracker).
+- Should the server also reject picking an inert option while a live one
+  remains? Recommendation: no, it could only block the forced last pick.
+- On Propose Duel and Clandestinely Liaise the retarget winner gets no wait
+  state (`pendingDemandRetargetChooser` returns 0 without a preparer roll),
+  though the picker shows keep_or_change_target as live there. Block on the
+  winner, or treat the option as inert? Not built either way.
 
 ## Noticed, not fixed
 
