@@ -14,6 +14,10 @@ import {
 	ownerUnleveragedAssets,
 	ownerIntactAssets,
 	finaleSlotSpent,
+	demandOptionInertReason,
+	draftOptionViews,
+	pickAfterTap,
+	DEMAND_OPTIONS,
 } from './shared';
 import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
 
@@ -401,5 +405,62 @@ describe('finaleSlotSpent', () => {
 	it('ignores a bonus plan that fell through', () => {
 		const plans = [plan({ preparer_id: 2, is_finale_bonus: true, status: 'cancelled' })];
 		expect(finaleSlotSpent(plans, 2)).toBe(false);
+	});
+});
+
+// The draft picker shows an option that would do nothing against the target as
+// greyed out with the reason, instead of letting the drafter spend a pick on it.
+describe('demandOptionInertReason', () => {
+	it('control_leverage is inert on the three targets with no roll of the preparer’s own', () => {
+		for (const t of ['host_festivity', 'propose_duel', 'clandestinely_liaise'] as const) {
+			expect(demandOptionInertReason('control_leverage', t)).toMatch(/no dice roll/);
+		}
+		expect(demandOptionInertReason('control_leverage', 'spread_rumors')).toBeNull();
+	});
+	it('keep_or_change_target is live only where the plan is aimed at something', () => {
+		for (const t of ['exchange_courtiers', 'spread_rumors', 'propose_duel', 'clandestinely_liaise'] as const) {
+			expect(demandOptionInertReason('keep_or_change_target', t)).toBeNull();
+		}
+		expect(demandOptionInertReason('keep_or_change_target', 'propose_decree')).toMatch(/Propose Decree/);
+	});
+	it('keep_assets is inert where the preparer gains nothing', () => {
+		expect(demandOptionInertReason('keep_assets', 'seek_answers')).toMatch(/no assets/);
+		expect(demandOptionInertReason('keep_assets', 'chronicle_histories')).toMatch(/no assets/);
+		expect(demandOptionInertReason('keep_assets', 'make_introductions')).toBeNull();
+	});
+	it('perform_steps is never inert', () => {
+		expect(demandOptionInertReason('perform_steps', 'seek_answers')).toBeNull();
+	});
+});
+
+describe('draftOptionViews', () => {
+	it('disables the inert options while a live one remains', () => {
+		const v = draftOptionViews([...DEMAND_OPTIONS], 'host_festivity');
+		const by = Object.fromEntries(v.map(x => [x.option, x]));
+		expect(by.control_leverage.disabled).toBe(true);
+		expect(by.keep_or_change_target.disabled).toBe(true);
+		expect(by.keep_assets.disabled).toBe(false);
+		expect(by.perform_steps.disabled).toBe(false);
+		expect(by.control_leverage.reason).not.toBeNull();
+	});
+	it('never blocks a pick when everything left is inert', () => {
+		const v = draftOptionViews(['control_leverage', 'keep_or_change_target'], 'host_festivity');
+		expect(v.every(x => !x.disabled)).toBe(true);
+		expect(v.every(x => x.reason != null)).toBe(true);
+	});
+	it('disables nothing against a target where all four do something', () => {
+		expect(draftOptionViews([...DEMAND_OPTIONS], 'spread_rumors').some(x => x.disabled)).toBe(false);
+	});
+});
+
+describe('pickAfterTap', () => {
+	const live = { option: 'perform_steps', reason: null, disabled: false } as const;
+	const blocked = { option: 'keep_assets', reason: 'x', disabled: true } as const;
+	it('takes a live card', () => {
+		expect(pickAfterTap(null, live)).toBe('perform_steps');
+	});
+	it('ignores a blocked card, keeping the pick already made', () => {
+		expect(pickAfterTap('perform_steps', blocked)).toBe('perform_steps');
+		expect(pickAfterTap(null, blocked)).toBeNull();
 	});
 });

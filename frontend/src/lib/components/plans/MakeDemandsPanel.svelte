@@ -24,7 +24,7 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import {
 		PLAN_SHORT, playerName, parseResolutionData, demandedPlanIDs,
-		DEMAND_OPTIONS, DEMAND_OPTION_LABELS, type DemandOption,
+		DEMAND_OPTIONS, DEMAND_OPTION_LABELS, draftOptionViews, pickAfterTap, type DemandOption,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -161,6 +161,16 @@
 		const taken = new Set(draftChoices.map(c => c.option));
 		return DEMAND_OPTIONS.filter(o => !taken.has(o));
 	});
+
+	// Options that would do nothing against this target are shown, greyed, with
+	// the reason — see draftOptionViews for when they stay pickable.
+	const optionViews = $derived(
+		targetPlan ? draftOptionViews(remainingOptions, targetPlan.plan_type)
+			: remainingOptions.map(option => ({ option, reason: null, disabled: false })),
+	);
+	const allRemainingInert = $derived(
+		optionViews.length > 0 && optionViews.every(v => v.reason != null),
+	);
 
 	const winners = $derived.by<Partial<Record<DemandOption, number>>>(() => {
 		const w: Partial<Record<DemandOption, number>> = {};
@@ -336,14 +346,21 @@
 				{#if !draftComplete}
 					{#if amNextPicker}
 						<p class="choices-note">Your turn to pick.</p>
+						{#if allRemainingInert}
+							<p class="choices-note">None of what's left does anything against this plan — pick whichever.</p>
+						{/if}
 						<div class="choice-list">
-							{#each remainingOptions as opt}
+							{#each optionViews as v (v.option)}
+								{@const opt = v.option}
 								<button type="button" class="choice-card"
 									class:active={pickedOption === opt}
+									class:locked={v.disabled}
 									aria-pressed={pickedOption === opt}
-									onclick={() => { pickedOption = opt; }}>
+									aria-disabled={v.disabled}
+									onclick={() => { pickedOption = pickAfterTap(pickedOption, v); }}>
 									<span class="choice-text">
 										<span class="choice-title">{DEMAND_OPTION_LABELS[opt]}{#if pickedOption === opt}<span class="choice-tick"> ✓</span>{/if}</span>
+										{#if v.reason}<span class="choice-desc">{v.reason}</span>{/if}
 									</span>
 								</button>
 							{/each}

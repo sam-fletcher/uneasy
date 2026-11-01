@@ -182,6 +182,70 @@ export function targetHasPreparerRoll(planType: PlanType): boolean {
 		&& planType !== 'clandestinely_liaise';
 }
 
+/** Target types that carry something a keep_or_change_target winner can
+ * redirect: a player and/or an asset (Exchange Courtiers, Spread Rumors, Propose
+ * Duel, Clandestinely Liaise). Every other type has no aim to change. */
+const RETARGETABLE: ReadonlySet<PlanType> = new Set<PlanType>([
+	'exchange_courtiers', 'spread_rumors', 'propose_duel', 'clandestinely_liaise',
+]);
+
+/** Target types that award their preparer no asset, so keep_assets has nothing
+ * to redirect. Mirrors the note in plan_chronicle_histories.go (Seek Answers
+ * awards nothing either). */
+const AWARDS_NO_ASSETS: ReadonlySet<PlanType> = new Set<PlanType>([
+	'seek_answers', 'chronicle_histories',
+]);
+
+/**
+ * Why a draft option would do nothing against a target plan of this type, or
+ * null when it does something. The rules expect the options to land unevenly, so
+ * "inert" is a legitimate outcome — this only lets the drafter see it before
+ * spending a pick. A hint, not a gate: the server accepts any unpicked option,
+ * because the last pick is forced and must always be takeable. The control_leverage
+ * case mirrors `mdTargetHasPreparerRoll` (handler/demands.go).
+ */
+export function demandOptionInertReason(opt: DemandOption, planType: PlanType): string | null {
+	const target = PLAN_SHORT[planType];
+	switch (opt) {
+		case 'control_leverage':
+			return targetHasPreparerRoll(planType) ? null
+				: `${target} has no dice roll of its preparer’s own to leverage into.`;
+		case 'keep_or_change_target':
+			return RETARGETABLE.has(planType) ? null
+				: `${target} isn’t aimed at anything a demand could redirect.`;
+		case 'keep_assets':
+			return AWARDS_NO_ASSETS.has(planType)
+				? `${target} gives its preparer no assets to keep.` : null;
+		default:
+			return null;
+	}
+}
+
+export interface DraftOptionView {
+	option: DemandOption;
+	/** Why it would do nothing against this target; null when it would do something. */
+	reason: string | null;
+	/** Greyed out and not pickable. Only when a live option is still on offer —
+	 * otherwise the drafter is stuck choosing among duds and none may be blocked. */
+	disabled: boolean;
+}
+
+/** The pick after tapping a card: a blocked card is ignored, so a live pick
+ * already made is never silently cleared. */
+export function pickAfterTap(current: DemandOption | null, tapped: DraftOptionView): DemandOption | null {
+	return tapped.disabled ? current : tapped.option;
+}
+
+/** The options still on offer, each with its inert reason and whether it is
+ * blocked right now. */
+export function draftOptionViews(remaining: DemandOption[], planType: PlanType): DraftOptionView[] {
+	const reasons = remaining.map(o => demandOptionInertReason(o, planType));
+	const anyLive = reasons.some(r => r == null);
+	return remaining.map((option, i) => ({
+		option, reason: reasons[i], disabled: anyLive && reasons[i] != null,
+	}));
+}
+
 /** Decode a demand plan's draft picks into a winners map (option → playerID).
  * Returns an empty map if the draft is incomplete. */
 export function demandWinnersFromPlan(demand: Plan): DemandWinners {

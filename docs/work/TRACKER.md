@@ -51,14 +51,7 @@ parallel.
 6. **Phase 4: regression specs** for what Phase 3 fixed — one spec file per
    plan, so these fan out in parallel. After 2.
 7. **Small:** the Shake-Up focus-pass log line doesn't name skipped players.
-8. **Make Demands, the rest of its audit** (the audit itself is private;
-   items D2, D5–D7). Retargeting a demand can fail with a server error and
-   has no wait state to show who must act; choosing to leverage nothing has
-   no UI; the leverage option is offered against target plans that never
-   roll. Separately, the draft picker hides options that would do nothing
-   against the chosen target instead of showing them disabled with the
-   reason.
-9. **Dependency security alerts** — GitHub's Dependabot reported 23 open
+8. **Dependency security alerts** — GitHub's Dependabot reported 23 open
     alerts on `main` (2026-10-31: 5 high, 14 moderate, 4 low). Independent of
     the audit, so it can run beside anything else. Triage before upgrading:
     - **One is in the live Go server:** `github.com/go-chi/chi/v5` (moderate).
@@ -81,6 +74,17 @@ parallel.
   *may* take? Should Exchange Courtiers stop forcing a re-aim when the
   targeted peer only changes hands, as Spread Rumors already lets its
   rumor follow the asset?
+- Make Demands draft picker: options that would do nothing against the chosen
+  target are greyed with the reason, unless nothing but duds is left. Should
+  the *server* also refuse picking an inert option while a live one remains?
+  Recommendation: no — a server check could only ever block the forced last
+  pick, so it stays a presentation hint.
+- Make Demands retarget wait: `pendingDemandRetargetChooser` returns nobody when
+  the target has no roll of its preparer's own, so against Propose Duel and
+  Clandestinely Liaise the keep_or_change_target winner gets no Waiting On
+  entry and nothing holds their window open, yet the picker shows that option
+  as live there. Should those two block on the retarget winner, or should the
+  option count as inert on them?
 - **Abrupt transitions** — removing click-to-agree gates leaves stage changes
   with no beat or explanation. A design conversation, not code yet; the draft
   write-up is in the private notes (`transition-whiplash.md`).
