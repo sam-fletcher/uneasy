@@ -1,4 +1,4 @@
-# Dependabot alerts: triage and upgrades (tracker item 9)
+# Dependabot alerts: triage and upgrades
 
 ## What changed and why
 
@@ -54,7 +54,7 @@ changes, but it is a real runtime bump; a quick play-through on the preview is
 worthwhile. Behind Railway's edge, check that rate-limited login still works
 (client IP resolves to the real address, not "no trusted client IP" 503s).
 
-## Open questions for the owner
+## Open questions for the owner (also in docs/work/questions/sveltekit-3-upgrade.md)
 
 Upgrade to SvelteKit 3 (+ vite 8, vite-plugin-svelte 7, adapter-static 4,
 vitest 5)? It is the only fix for alerts 1, 46, 47, 48 and deepmerge. All are
