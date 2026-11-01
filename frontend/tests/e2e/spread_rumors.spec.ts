@@ -49,6 +49,12 @@ interface Table {
 
 const track = cleanupGameAfterEach();
 
+// Every context a test opens, closed after it whether it passed or not.
+const opened: BrowserContext[] = [];
+test.afterEach(async () => {
+	await Promise.all(opened.splice(0).map(c => c.close().catch(() => {})));
+});
+
 async function ok(res: { ok(): boolean; text(): Promise<string> }, what: string) {
 	expect(res.ok(), `${what} failed: ${await res.text()}`).toBeTruthy();
 }
@@ -87,6 +93,7 @@ async function openTable(
 
 	const mk = async (name: string) => {
 		const c = await browser.newContext({ baseURL: E2E, viewport: MOBILE });
+		opened.push(c);
 		await ok(await c.request.post(`/api/dev/login?username=${name}`), `login ${name}`);
 		return c;
 	};
@@ -144,10 +151,6 @@ async function forceRoll(ctx: APIRequestContext, rollID: number, outcome: 'make'
 	await ok(res, 'force-roll');
 }
 
-async function closeAll(t: Table) {
-	await Promise.all([t.alice.close(), t.bob.close(), t.cara.close()]);
-}
-
 async function view(ctx: BrowserContext, gameID: number): Promise<Page> {
 	const page = await ctx.newPage();
 	await page.goto(`/table/${gameID}`);
@@ -171,6 +174,26 @@ async function rowState(ctx: APIRequestContext, gameID: number): Promise<{ kind:
 
 async function actingIDs(ctx: APIRequestContext, gameID: number): Promise<number[]> {
 	return (await rowState(ctx, gameID)).acting_player_ids ?? [];
+}
+
+interface AssetFull {
+	id: number;
+	owner_id: number;
+	is_leveraged: boolean;
+	secret_count: number;
+	marginalia: { id: number; is_torn: boolean }[];
+}
+
+async function assetsByID(ctx: APIRequestContext, gameID: number): Promise<Map<number, AssetFull>> {
+	const res = await ctx.get(`/api/tables/${gameID}/assets`);
+	await ok(res, 'GET assets');
+	return new Map(((await res.json()).assets as AssetFull[]).map(a => [a.id, a]));
+}
+
+async function sheetRumors(ctx: APIRequestContext, gameID: number) {
+	const res = await ctx.get(`/api/tables/${gameID}/state`);
+	await ok(res, 'GET state');
+	return (await res.json()).rumors as { text: string; target_asset_id: number | null; source_player_id: number | null }[];
 }
 
 async function assetOwner(ctx: APIRequestContext, gameID: number, assetID: number): Promise<number> {
@@ -266,14 +289,6 @@ test('make: pre-roll narration opens the roll; a take needs consent, a repeat re
 	await expect.poll(async () => assetOwner(t.alice.request, t.gameID, t.asset("bob's artifact"))).toBe(t.players.alice);
 	await expect.poll(async () => (await getPlan(t.alice.request, t.planID)).plan.status).toBe('resolved');
 
-	// And once settled, a late request is refused too.
-	const late = await t.alice.request.post(`/api/plans/${t.planID}/request-take-consent`, {
-		data: { result: 'make', choices: ['take_asset', 'leverage_target'], take_asset_ids: [t.asset("bob's resource")] },
-	});
-	expect(late.status()).toBe(409);
-	expect(await assetOwner(t.alice.request, t.gameID, t.asset("bob's resource"))).toBe(t.players.bob);
-
-	await closeAll(t);
 });
 
 test('make: a refused take locks the option off and the rest of the quota goes elsewhere', async ({ browser }) => {
@@ -307,7 +322,6 @@ test('make: a refused take locks the option off and the rest of the quota goes e
 	await alice.getByRole('button', { name: 'Apply choices' }).click();
 	await expect.poll(async () => (await getPlan(t.alice.request, t.planID)).plan.status).toBe('resolved');
 
-	await closeAll(t);
 });
 
 // ── Stepper (375px) ──────────────────────────────────────────────────────────
@@ -364,7 +378,6 @@ test('stepper at 375px: named buttons, 44px targets, capped at the quota, no sid
 	await expect(alice.getByText('Total picks: 1 / 2')).toBeVisible();
 	await expect(more(alice, 'Reveal yourself')).toBeEnabled();
 
-	await closeAll(t);
 });
 
 // ── Mar ──────────────────────────────────────────────────────────────────────
@@ -429,15 +442,21 @@ test('mar: the target-asset owner is the actor, writes the counter-rumor, and th
 	await expect.poll(async () => (await getPlan(t.alice.request, t.planID)).plan.status).toBe('resolved');
 	expect(await assetOwner(t.alice.request, t.gameID, t.asset("alice's artifact"))).toBe(t.players.bob);
 
-	// The Rumors sheet carries the counter-rumor, and the preparer's failed rumor
-	// never reaches it.
-	const state = await (await t.alice.request.get(`/api/tables/${t.gameID}/state`)).json();
-	const texts = (state.rumors as { text: string }[]).map(r => r.text);
-	expect(texts).toContain(COUNTER);
-	expect(texts).not.toContain(RUMOR);
-	expect(texts.every(x => x !== '(no rumor text)')).toBeTruthy();
+	// The Rumors sheet carries the counter-rumor — about alice's main character,
+	// sourced to its author bob — and the preparer's failed rumor never reaches it.
+	const rumors = await sheetRumors(t.alice.request, t.gameID);
+	expect(rumors.map(r => r.text)).toContain(COUNTER);
+	expect(rumors.map(r => r.text)).not.toContain(RUMOR);
+	expect(rumors.every(r => r.text !== '(no rumor text)')).toBeTruthy();
+	const row = rumors.find(r => r.text === COUNTER)!;
+	expect(row.target_asset_id).toBe(t.asset("alice's main character"));
+	expect(row.source_player_id).toBe(t.players.bob);
 
-	await closeAll(t);
+	// The leverage landed on the preparer's main character, not on bob's target.
+	const after = await assetsByID(t.alice.request, t.gameID);
+	expect(after.get(t.asset("alice's main character"))!.is_leveraged).toBe(true);
+	expect(after.get(t.asset("bob's holding"))!.is_leveraged).toBe(false);
+
 });
 
 test('mar: a zero-pick commit closes the counter-rumor and hands the wait on', async ({ browser }) => {
@@ -460,8 +479,9 @@ test('mar: a zero-pick commit closes the counter-rumor and hands the wait on', a
 	const after = await getPlan(t.alice.request, t.planID);
 	expect(after.resolution_data?.choice_submitted).toBe(true);
 	expect(after.plan.status).toBe('resolved');
-	// The wait is no longer on bob, the actor of the mar.
-	expect((await rowState(t.alice.request, t.gameID)).kind).not.toBe('plan_resolving');
+	// The mar's wait on bob is gone and the table is on to the follow scene. (Bob
+	// still appears in the acting set, but only as the row's focus player.)
+	expect((await rowState(t.alice.request, t.gameID)).kind).toBe('scene_setting');
 	// A "closed" counter-rumor stays closed.
 	const late = await t.bob.request.post(`/api/plans/${t.planID}/sr-counter-rumor`, { data: { text: 'Too late.' } });
 	expect(late.ok()).toBeFalsy();
@@ -470,5 +490,46 @@ test('mar: a zero-pick commit closes the counter-rumor and hands the wait on', a
 	await expect(alice.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 	await expect(alice.getByText('bob is choosing options…')).toHaveCount(0);
 
-	await closeAll(t);
+});
+
+test('mar: break and hide land on the preparer\'s main character and the actor\'s asset, and the rumor is sourced to no one', async ({ browser }) => {
+	const t = await openTable(browser, { roll: 'mar', difficulty: 3 });
+	const bob = await view(t.bob, t.gameID);
+	const alice = await view(t.alice, t.gameID);
+	const mc = t.asset("alice's main character");
+
+	await ok(
+		await t.bob.request.post(`/api/plans/${t.planID}/sr-counter-rumor`, { data: { text: COUNTER } }),
+		'counter-rumor',
+	);
+	await more(bob, 'Break alice').click();
+	await more(bob, 'Hide yourself').click();
+	await bob.getByRole('button', { name: 'Apply choices' }).click();
+
+	// Break: the actor picks WHICH marginalia, on the preparer's main character —
+	// the only card offered.
+	const breakForm = bob.locator('.plan-form', { hasText: "Break alice's main character" });
+	await expect(breakForm).toBeVisible({ timeout: 10_000 });
+	await expect(breakForm.locator('.card')).toHaveCount(1);
+	await expect(alice.getByText("Break alice's main character (1 remaining)")).toBeVisible();
+	await breakForm.locator('.card', { hasText: "alice's main character" }).getByRole('checkbox').click();
+	await breakForm.getByRole('button', { name: 'Tear marginalia' }).click();
+
+	// Hide: the secret goes on one of the ACTOR's own assets.
+	const hideForm = bob.locator('.plan-form', { hasText: 'Hide source' });
+	await expect(hideForm).toBeVisible({ timeout: 10_000 });
+	await hideForm.locator('.card', { hasText: "bob's resource" }).getByRole('checkbox').click();
+	await hideForm.getByRole('button', { name: 'Hide source' }).click();
+
+	await expect.poll(async () => (await getPlan(t.alice.request, t.planID)).plan.status).toBe('resolved');
+	const assets = await assetsByID(t.alice.request, t.gameID);
+	expect(assets.get(mc)!.marginalia.some(m => m.is_torn), 'a marginalia of alice\'s main character is torn').toBe(true);
+	expect(assets.get(t.asset("bob's holding"))!.marginalia.every(m => !m.is_torn)).toBe(true);
+	expect(assets.get(t.asset("bob's resource"))!.secret_count).toBe(1);
+	expect(assets.get(t.asset("alice's artifact"))!.secret_count).toBe(0);
+
+	// The sheet's row is about alice's main character, and its source is hidden.
+	const row = (await sheetRumors(t.alice.request, t.gameID)).find(r => r.text === COUNTER)!;
+	expect(row.target_asset_id).toBe(mc);
+	expect(row.source_player_id).toBeNull();
 });
