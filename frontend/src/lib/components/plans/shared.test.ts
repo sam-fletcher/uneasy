@@ -463,6 +463,8 @@ describe('pickAfterTap', () => {
 	it('ignores a blocked card, keeping the pick already made', () => {
 		expect(pickAfterTap('perform_steps', blocked)).toBe('perform_steps');
 		expect(pickAfterTap(null, blocked)).toBeNull();
+	});
+});
 
 describe('choicesCommitted', () => {
 	it('reads a zero-pick commit from the marker, not from make_mar_choices', () => {
