@@ -526,6 +526,29 @@ func TestSpreadRumors_TakeConsent_SecondRequestAfterCommitMakesNoDuplicateRumor(
 	assert.Len(t, rumors, 1, "exactly one rumor on the sheet")
 }
 
+// The same guard on the mar path, where the aggressor is the target asset's owner.
+func TestSpreadRumors_TakeConsent_SecondRequestOnAMarIsRefused(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, prepIdx, actorIdx, _, _ := srMar(t, h)
+	first := h.seedPeer(prepIdx, "the cook")
+	second := h.seedPeer(prepIdx, "the groom")
+	h.post(actorIdx, srPath(plan.ID, "sr-counter-rumor"), map[string]any{"text": "Her accuser keeps a second set of books."})
+	req := func(id int64) map[string]any {
+		return map[string]any{"choices": []string{"take_asset"}, "result": marOutcome, "take_asset_ids": []int64{id}}
+	}
+
+	code, body := h.post(actorIdx, srPath(plan.ID, "request-take-consent"), req(first))
+	require.Equalf(t, http.StatusOK, code, "%v", body)
+	code, _ = h.post(prepIdx, srPath(plan.ID, "respond-take-consent"), map[string]any{"agree": true})
+	require.Equal(t, http.StatusOK, code)
+
+	code, body = h.post(actorIdx, srPath(plan.ID, "request-take-consent"), req(second))
+	assert.Equalf(t, http.StatusConflict, code, "the options are already chosen: %v", body)
+	rumors, err := h.q.ListRumors(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Len(t, rumors, 1, "only the counter-rumor is on the sheet")
+}
+
 // A rumor about one's own asset: the preparer IS the target player, so the mar
 // is theirs to drive.
 func TestSpreadRumors_Mar_RumorAboutOwnAssetIsDrivenByThePreparer(t *testing.T) {
