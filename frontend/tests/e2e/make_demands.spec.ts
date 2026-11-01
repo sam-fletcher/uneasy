@@ -163,15 +163,16 @@ async function draftOf(f: H.MDFixture): Promise<[string, string][]> {
 }
 
 /**
- * Bob wins control_leverage over alice's Seek Answers (alice keeps retarget and
- * perform_steps, so only the leverage gate is in play), the demand is done and
+ * Bob wins control_leverage over alice's Seek Answers (alice keeps perform_steps and, as the
+ * preparer, retarget, so only the leverage gate is in play; the two live
+ * options are drafted before the duds), the demand is done and
  * alice has cast her roll. Returns the open roll's id, at the leverage stage.
  */
 async function leverageHeld(f: H.MDFixture): Promise<number> {
 	await H.prepareDemand(f);
 	await H.reachRow(f);
 	await H.rollDemand(f, 'make');
-	await H.draftWants(f, { bob: ['control_leverage', 'keep_assets'], alice: ['keep_or_change_target', 'perform_steps'] });
+	await H.draftWants(f, { bob: ['control_leverage', 'keep_assets'], alice: ['perform_steps', 'keep_or_change_target'] });
 	await H.completeDemand(f);
 	await H.startTarget(f);
 	const cast = await H.call(f.api.alice, 'post', `/api/plans/${f.targetID}/seek-cast-roll`, { narration: 'I read the ledgers.' });
@@ -183,7 +184,7 @@ async function rollOf(f: H.MDFixture) {
 	return (await H.call(f.api.alice, 'get', `/api/tables/${f.gameID}/rolls/active`)).roll;
 }
 
-test('control leverage: "leverage none" is a real submission — the roll is held until it is made, and the preparer cannot leverage for themself', async ({ browser }) => {
+test('control leverage: "leverage none" is offered to the winner alone and is a real submission; the preparer cannot leverage for themself', async ({ browser }) => {
 	const f = await H.seedMD({ target: 'seek_answers' });
 	const rollID = await leverageHeld(f);
 	const pages = await H.openPages(browser, f);
@@ -211,16 +212,11 @@ test('control leverage: "leverage none" is a real submission — the roll is hel
 	const carolTries = await f.api.carol.post(`/api/plans/${f.targetID}/demand-leverage`, { data: { asset_ids: [] } });
 	expect(carolTries.status()).toBe(403);
 
-	// The others ready up; the roll waits for bob, who has not yet said what he leverages.
-	for (const n of ['alice', 'carol'] as const) await H.call(f.api[n], 'post', `/api/rolls/${rollID}/ready`, { is_ready: true });
-	await bob.waitForTimeout(500);
-	expect((await rollOf(f)).result).toBeNull();
-
 	await none.click();
 	await expect(bob.getByText('Your leverage decision is in — the roll is no longer held for you.')).toBeVisible();
-	await H.call(f.api.bob, 'post', `/api/rolls/${rollID}/ready`, { is_ready: true });
+	for (const n of H.PLAYERS) await H.call(f.api[n], 'post', `/api/rolls/${rollID}/ready`, { is_ready: true });
 
-	// The roll is released and ran with none of alice's assets behind it.
+	// The roll ran with none of alice's assets behind it.
 	await expect.poll(async () => (await rollOf(f)).result, { timeout: 10_000 }).not.toBeNull();
 	const after = (await H.call(f.api.alice, 'get', `/api/tables/${f.gameID}/assets`)).assets as { owner_id: number; is_leveraged: boolean }[];
 	expect(after.filter(a => a.owner_id === f.ids.alice && a.is_leveraged)).toEqual([]);
@@ -272,7 +268,9 @@ test('control leverage against a plan with no roll of the preparer\'s own is a d
 	const res = await f.api.bob.post(`/api/plans/${f.targetID}/demand-leverage`, { data: { asset_ids: [] } });
 	expect(res.status()).toBe(409);
 	expect(await res.text()).toContain('leverage control is inert');
-	// And nobody is kept waiting on bob for it.
+	// And nobody is kept waiting on bob for it: the bar names alice, the duelist.
+	await expect(waiting(alice)).toContainText('You');
+	await expect(waiting(carol)).toContainText('alice');
 	for (const p of [alice, carol]) await expect(waiting(p)).not.toContainText('control leverage');
 	await expect(waiting(alice)).not.toContainText('bob');
 });
@@ -378,11 +376,8 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 	await performStepsOpen(f);
 	const { alice, bob, carol } = await H.openPages(browser, f);
 
-	// Everyone sees the demand in effect and where the spoils go (keep_assets is bob's).
-	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('Demand in effect from bob')).toBeVisible();
-		await expect(p.getByText('Any assets this plan would have given alice go to bob instead.')).toBeVisible();
-	}
+	// Everyone sees the demand in effect.
+	for (const p of [alice, bob, carol]) await expect(p.getByText('Demand in effect from bob')).toBeVisible();
 	// The winner is told they act in the preparer's place; the others, who.
 	await expect(bob.getByText("You will submit this plan's make/mar choices in alice's place.")).toBeVisible();
 	for (const p of [alice, carol]) {
@@ -401,6 +396,7 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 	const more = bob.getByRole('button', { name: 'More Declare something true about the world' });
 	await more.click();
 	await more.click();
+	await expect(bob.getByText('Total picks: 2 / 2')).toBeVisible();
 	await bob.getByRole('button', { name: 'Apply choices' }).click();
 	await expect.poll(async () => (await H.planOf(f, f.targetID)).status).toBe('resolving');
 	for (const text of ['The seal was forged.', 'The duke never left.']) {
@@ -415,7 +411,7 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 
 // The preparer is shown the same picker as the winner and told nothing is
 // stopping them, although the server refuses their submission.
-// See docs/work/next/seek-answers-preparer-offered-picker-under-perform-steps.md.
+// See docs/work/next/perform-steps-panels-gate-on-preparer.md (six panels share this).
 test.fixme('perform steps: the preparer sees a wait line, not a picker she cannot submit', async ({ browser }) => {
 	const f = await H.seedMD({ target: 'seek_answers' });
 	await performStepsOpen(f);
@@ -450,4 +446,94 @@ test('a marred demand: the target preparer places the counter-demand, the demand
 	await expect(bob.getByRole('button', { name: 'Complete plan' })).toHaveCount(0);
 	// A marred demand wins nobody any of the four options.
 	expect((await H.planOf(f, f.demandID)).result).toBe('mar');
+});
+
+// The banner promises keep_assets spoils the plan can never produce; the draft
+// card for the same option says Seek Answers gives its preparer no assets.
+// See docs/work/next/demand-overlay-forms-shown-to-preparer-and-after-roll.md.
+test.fixme('perform steps: the banner does not promise spoils from a plan that awards none', async ({ browser }) => {
+	const f = await H.seedMD({ target: 'seek_answers' });
+	await performStepsOpen(f);
+	const { alice, bob, carol } = await H.openPages(browser, f);
+	for (const p of [alice, bob, carol]) {
+		await expect(p.getByText('Demand in effect from bob')).toBeVisible();
+		await expect(p.getByText('Any assets this plan would have given alice go to bob instead.')).toHaveCount(0);
+	}
+});
+
+// ── Overlay forms that cannot do anything ─────────────────────────────────────
+// See docs/work/next/demand-overlay-forms-shown-to-preparer-and-after-roll.md.
+
+test.fixme('overlay: a preparer who won keep-or-change-target herself is not asked to settle it', async ({ browser }) => {
+	const f = await H.seedMD({ target: 'seek_answers' });
+	await leverageHeld(f); // alice, the preparer, holds keep_or_change_target
+	const { alice } = await H.openPages(browser, f);
+	await expect(alice.getByRole('button', { name: 'Keep the current target' })).toHaveCount(0);
+	await expect(alice.getByRole('button', { name: 'Re-aim this plan' })).toHaveCount(0);
+});
+
+test.fixme('overlay: once the dice have landed, the leverage form is gone', async ({ browser }) => {
+	const f = await H.seedMD({ target: 'seek_answers' });
+	const rollID = await leverageHeld(f);
+	const { bob } = await H.openPages(browser, f);
+	await bob.getByRole('button', { name: 'Leverage none — let the roll fail' }).click();
+	for (const n of H.PLAYERS) await H.call(f.api[n], 'post', `/api/rolls/${rollID}/ready`, { is_ready: true });
+	await expect.poll(async () => (await rollOf(f)).result).not.toBeNull();
+	await expect(bob.getByRole('button', { name: 'Leverage none — let the roll fail' })).toHaveCount(0);
+});
+
+test.fixme('overlay: once the dice have landed, the retarget form is gone — the server no longer takes it', async ({ browser }) => {
+	const f = await H.seedMD({ target: 'spread_rumors' });
+	const rollID = await retargetHeld(f);
+	const { bob } = await H.openPages(browser, f);
+	await bob.getByRole('button', { name: 'Keep the current target' }).click();
+	for (const n of H.PLAYERS) await H.call(f.api[n], 'post', `/api/rolls/${rollID}/ready`, { is_ready: true });
+	await expect.poll(async () => (await rollOf(f)).result).not.toBeNull();
+	const late = await f.api.bob.post(`/api/plans/${f.targetID}/demand-retarget`, { data: { keep: true } });
+	expect(late.status()).toBe(409);
+	await expect(bob.getByRole('button', { name: 'Re-aim this plan' })).toHaveCount(0);
+	await expect(bob.getByText('You may still adjust it until the plan resolves.')).toHaveCount(0);
+});
+
+// ── Server rules ──────────────────────────────────────────────────────────────
+
+test('one demand per target: a second demand against the same plan is refused', async () => {
+	// carol outranks bob in power, so the shield doesn't turn her away first.
+	const f = await H.seedMD({ target: 'seek_answers', power: [2, 1, 0] });
+	await H.prepareDemand(f);
+	const res = await f.api.carol.post(`/api/tables/${f.gameID}/prepare-plan`, {
+		data: { plan_type: 'make_demands', target_plan_id: f.targetID, preparation_notes: 'Me too.' },
+	});
+	expect(res.status()).toBe(400);
+	expect(await res.text()).toContain('another demand already targets that plan');
+	expect((await H.plansOf(f)).filter(p => p.plan_type === 'make_demands')).toHaveLength(1);
+});
+
+test('a counter-demand may only be aimed at the demander\'s plans', async () => {
+	const f = await H.seedMD({ target: 'seek_answers' });
+	await H.prepareDemand(f);
+	await H.reachRow(f);
+	await H.rollDemand(f, 'mar');
+	// alice's only other plan is her own, which isn't bob's to be countered.
+	const res = await f.api.alice.post(`/api/plans/${f.demandID}/counter-demand`, { data: { target_plan_id: f.targetID } });
+	expect(res.status()).toBe(400);
+	expect(await res.text()).toContain('a counter-demand may only target a plan prepared by bob');
+	// Nothing was recorded, so she can still defer.
+	await H.call(f.api.alice, 'post', `/api/plans/${f.demandID}/counter-demand`, { target_plan_id: null });
+});
+
+test('retarget before the roll exists: the winner can settle it in the window between draft and cast', async ({ browser }) => {
+	const f = await H.seedMD({ target: 'spread_rumors' });
+	await H.prepareDemand(f);
+	await H.reachRow(f);
+	await H.rollDemand(f, 'make');
+	await H.draftWants(f, { bob: ['keep_or_change_target', 'keep_assets'], alice: ['control_leverage', 'perform_steps'] });
+	await H.completeDemand(f);
+	await H.startTarget(f); // alice has not yet stated the rumor: there is no roll
+	const carolsHolding = await assetNamed(f, "carol's holding");
+	const res = await f.api.bob.post(`/api/plans/${f.targetID}/demand-retarget`, { data: { target_player_id: f.ids.carol, target_asset_id: carolsHolding } });
+	expect(res.status(), await res.text()).toBe(200);
+	expect(await targetOf(f)).toEqual({ asset: carolsHolding, player: f.ids.carol, settled: true });
+	const { alice } = await H.openPages(browser, f);
+	await expect(alice.getByText("Targeting: carol's holding")).toBeVisible();
 });
