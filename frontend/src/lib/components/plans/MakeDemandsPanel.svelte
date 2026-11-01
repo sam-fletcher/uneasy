@@ -24,7 +24,7 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import {
 		PLAN_SHORT, playerName, parseResolutionData, demandedPlanIDs,
-		DEMAND_OPTIONS, DEMAND_OPTION_LABELS, draftOptionViews, type DemandOption,
+		DEMAND_OPTIONS, DEMAND_OPTION_LABELS, draftOptionViews, pickAfterTap, type DemandOption,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -357,7 +357,7 @@
 									class:locked={v.disabled}
 									aria-pressed={pickedOption === opt}
 									aria-disabled={v.disabled}
-									onclick={() => { pickedOption = v.disabled ? null : opt; }}>
+									onclick={() => { pickedOption = pickAfterTap(pickedOption, v); }}>
 									<span class="choice-text">
 										<span class="choice-title">{DEMAND_OPTION_LABELS[opt]}{#if pickedOption === opt}<span class="choice-tick"> ✓</span>{/if}</span>
 										{#if v.reason}<span class="choice-desc">{v.reason}</span>{/if}

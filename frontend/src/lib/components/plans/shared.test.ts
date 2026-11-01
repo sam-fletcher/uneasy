@@ -16,6 +16,7 @@ import {
 	finaleSlotSpent,
 	demandOptionInertReason,
 	draftOptionViews,
+	pickAfterTap,
 	DEMAND_OPTIONS,
 } from './shared';
 import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
@@ -449,5 +450,17 @@ describe('draftOptionViews', () => {
 	});
 	it('disables nothing against a target where all four do something', () => {
 		expect(draftOptionViews([...DEMAND_OPTIONS], 'spread_rumors').some(x => x.disabled)).toBe(false);
+	});
+});
+
+describe('pickAfterTap', () => {
+	const live = { option: 'perform_steps', reason: null, disabled: false } as const;
+	const blocked = { option: 'keep_assets', reason: 'x', disabled: true } as const;
+	it('takes a live card', () => {
+		expect(pickAfterTap(null, live)).toBe('perform_steps');
+	});
+	it('ignores a blocked card, keeping the pick already made', () => {
+		expect(pickAfterTap('perform_steps', blocked)).toBe('perform_steps');
+		expect(pickAfterTap(null, blocked)).toBeNull();
 	});
 });

@@ -190,8 +190,8 @@ const RETARGETABLE: ReadonlySet<PlanType> = new Set<PlanType>([
 ]);
 
 /** Target types that award their preparer no asset, so keep_assets has nothing
- * to redirect. Mirrors the comments in plan_seek_answers.go and
- * plan_chronicle_histories.go. */
+ * to redirect. Mirrors the note in plan_chronicle_histories.go (Seek Answers
+ * awards nothing either). */
 const AWARDS_NO_ASSETS: ReadonlySet<PlanType> = new Set<PlanType>([
 	'seek_answers', 'chronicle_histories',
 ]);
@@ -228,6 +228,12 @@ export interface DraftOptionView {
 	/** Greyed out and not pickable. Only when a live option is still on offer —
 	 * otherwise the drafter is stuck choosing among duds and none may be blocked. */
 	disabled: boolean;
+}
+
+/** The pick after tapping a card: a blocked card is ignored, so a live pick
+ * already made is never silently cleared. */
+export function pickAfterTap(current: DemandOption | null, tapped: DraftOptionView): DemandOption | null {
+	return tapped.disabled ? current : tapped.option;
 }
 
 /** The options still on offer, each with its inert reason and whether it is
