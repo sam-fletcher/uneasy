@@ -85,8 +85,8 @@ the owner the wording first:
 Memory gets at most a one-line pointer to the principle, so future
 sessions find it. Elsewhere:
 
-- **Anything still waiting on the owner** → the tracker's "Waiting on the
-  owner" section.
+- **Anything still waiting on the owner** → a file of its own in
+  `docs/work/questions/`. An answered question's file is deleted.
 - **What the current piece of work should now do** → its brief, or its
   hand-over note.
 

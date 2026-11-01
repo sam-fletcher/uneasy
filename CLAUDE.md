@@ -18,8 +18,9 @@ than guessing — the `grilling` skill shows how to ask.
 - **Visual language** — [docs/STYLE_GUIDE.md](docs/STYLE_GUIDE.md): colour
   tokens, typography, interaction-state recipes, shared components. Colour
   literals outside `app.css` fail the unit suite.
-- **Active work** — [docs/work/](docs/work/): the tracker for work in flight
-  and each session's hand-over note. They live in the repo so that progress
+- **Active work** — [docs/work/](docs/work/): the tracker (one file per
+  item in `next/`, per owner question in `questions/`; `make tracker` prints
+  it) and each session's hand-over note. They live in the repo so that progress
   lands in the same PR as the code it describes.
 - **Game rules, design principles and historical ADRs are private** and live
   outside this repo. The private CLAUDE.md in the folder above the main
@@ -71,10 +72,15 @@ than guessing — the `grilling` skill shows how to ask.
   only needs the task, the files, and what done looks like.
 - Pieces that touch disjoint files run in parallel. A pass that touches most
   of the plan files runs alone.
-- **Each work session updates [docs/work/TRACKER.md](docs/work/TRACKER.md)
-  and writes its hand-over note to `docs/work/notes/<worktree-folder>.md` on
-  its own branch**, so both merge with its code and can't drift from it.
-  Open questions for the owner go in the note *and* the tracker.
+- **Each work session deletes or edits its own item file in
+  [docs/work/next/](docs/work/next/), adds a file per new item or owner
+  question, and writes its hand-over note to
+  `docs/work/notes/<worktree-folder>.md` on its own branch**, so all of it
+  merges with its code and can't drift from it. Open questions for the owner
+  go in the note *and* a file in `docs/work/questions/`.
+- **No file that every PR edits.** Parallel PRs editing one shared file (a
+  numbered list, an index, a table) conflict on every merge. Give each entry
+  its own file, and generate any overview instead of committing it.
 
 ## Testing from a worktree
 

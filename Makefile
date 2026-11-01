@@ -1,6 +1,7 @@
 .PHONY: build frontend server placeholder clean \
         test test-integration test-integration-run test-frontend-unit test-e2e \
-        vet check-frontend check sqlc deadcode lint-install lint-check test-hooks
+        vet check-frontend check sqlc deadcode lint-install lint-check test-hooks \
+        tracker tracker-check
 
 # Full build: compile the frontend and produce a single Go binary that
 # embeds it. Output: ./server
@@ -103,6 +104,15 @@ test-frontend-unit:
 test-hooks:
 	python3 .claude/hooks/test_guard_git.py
 
+# The work tracker: one file per item in docs/work/next/ and per owner
+# question in docs/work/questions/. `tracker` prints the overview;
+# `tracker-check` fails on malformed front matter or a returning TRACKER.md.
+tracker:
+	@python3 docs/work/tracker.py
+
+tracker-check:
+	python3 docs/work/tracker.py --check
+
 # Playwright end-to-end tests. Drives a real browser against the server-e2e
 # container on :8090, which is bound to uneasy_test — never the dev DB.
 # Assumes `docker compose up` is already running. Shares uneasy_test with
@@ -113,7 +123,7 @@ test-e2e:
 
 check: check-fast test-integration test-e2e
 
-check-fast: vet deadcode test check-frontend test-frontend-unit test-hooks
+check-fast: vet deadcode test check-frontend test-frontend-unit test-hooks tracker-check
 
 # Regenerate sqlc bindings after touching db/queries/*.sql or migrations.
 sqlc:

@@ -27,7 +27,8 @@ Each commit is one logical change: one fix, one feature, one refactor. Files
 that belong to the same change go together; stage them by name
 (`git add <files>`). Interactive staging (`git add -p`) doesn't work here.
 
-The tracker update and hand-over note go in their own last commit
+The tracker files (`docs/work/next/`, `docs/work/questions/`) and hand-over
+note go in their own last commit
 (`Tracker and hand-over note: <piece>`, or `Tracker: <piece>` when there's
 no note), so the code commits read cleanly.
 
@@ -60,7 +61,7 @@ Where the reason comes from:
   principles, memory), the rulebook, an existing test or invariant.
 - **Your own call** is not yet the owner's intent. Say so honestly in the
   body ("Not ruled on by the owner: chose X over Y because …"), and list the
-  same call under *For the owner* in the PR and in the tracker, so the owner
+  same call under *For the owner* in the PR and in a `docs/work/questions/` file, so the owner
   examines the assumption before merging. Never dress your reasoning up as
   theirs.
 
