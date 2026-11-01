@@ -26,6 +26,7 @@
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
+	import DifficultyMeter from './shared/DifficultyMeter.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
 		parseResolutionData, playerName, playersExcept,
@@ -440,6 +441,15 @@
 			bind:performStepsWinnerID />
 		{#if !isDelayedArrival && rollOutcome == null && !choicesDone && !marPending}
 			<!-- Before the dice land: how hard the roll is, and what it can bring. -->
+			{#if miPeerCountTarget > 0}
+				<div class="choices-section">
+					<DifficultyMeter
+						value={2 + miPeerCountTarget}
+						floor={2}
+						reason={`2, plus 1 for each of the ${miPeerCountTarget} ${miPeerCountTarget === 1 ? 'peer' : 'peers'} introduced.`}
+					/>
+				</div>
+			{/if}
 			<Buffet tabs={MI_BUFFET_TABS} />
 		{/if}
 		{#if isDelayedArrival}
