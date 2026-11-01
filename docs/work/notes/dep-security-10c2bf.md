@@ -63,4 +63,4 @@ changes, so I stopped there. Or dismiss those four as "not used" in GitHub.
 
 ## Noticed, not fixed
 
-`chat.spec.ts` and 11 other specs hard-code `:8090` instead of `E2E_BASE_URL`.
+Nothing.
