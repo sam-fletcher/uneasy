@@ -1,4 +1,4 @@
-# choice-applied-marker — tracker items 4 and 8
+# choice-applied-marker — the choice-committed marker and the focus-pass log line
 
 ## What changed and why
 
