@@ -401,7 +401,7 @@ async function surrenderedWar(browser: Parameters<typeof seedWarGame>[0]) {
 	const pages = await openAll(g);
 	await opponentChip(pages.bob, 'alice');
 	await pages.bob.getByRole('button', { name: 'Break an asset' }).click();
-	await tearMarginalia(pages.bob, "bob's holding", 'Older than it looks.');
+	await tearMarginalia(pages.bob, "bob's holding");
 	await pages.bob.getByText('Surrender after this payment').click();
 	await pages.bob.getByRole('button', { name: 'Pay cost' }).click();
 	await expect.poll(async () => (await warState(g)).status).toBe('ended');
