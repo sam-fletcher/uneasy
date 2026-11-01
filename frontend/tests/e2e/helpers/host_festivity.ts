@@ -32,6 +32,17 @@ export async function expectStatus(res: APIResponse, status: 400 | 403 | 409) {
 	expect(res.status(), await res.text()).toBe(status);
 }
 
+/**
+ * The one-open-roll lock specifically: a 409 whose message is the lock's. Other
+ * 409s (already acted, nothing left to spend) would pass a bare status check
+ * for the wrong reason.
+ */
+export async function expectLocked(res: APIResponse) {
+	const text = await res.text();
+	expect(res.status(), text).toBe(409);
+	expect(text).toContain('a dice roll is in progress');
+}
+
 export async function seedHFGame(browser: Browser, viewport = { width: 375, height: 812 }): Promise<HFGame> {
 	const fixture = await pwRequest.newContext({ baseURL: E2E });
 	const seedRes = await fixture.post('/api/dev/seed', {
@@ -121,6 +132,9 @@ export interface Festivity {
 	guest_ious?: number[];
 	host_makes_taken?: string[];
 	host_mar_insists?: string[];
+	centered_asset_ids?: number[];
+	disagreement_asset_ids?: number[];
+	pending_challenge?: { challenger_id: number; target_id: number } | null;
 	unchosen_host_mars?: number[];
 }
 
@@ -168,6 +182,51 @@ export async function expectLogLine(g: HFGame, planID: number, line: string) {
 			message: `action log should contain: ${line}`,
 		})
 		.toBe(true);
+}
+
+/** Waits for an action-log line containing `part` (for lines carrying asset marks or quoted text). */
+export async function expectLogContaining(g: HFGame, planID: number, part: string) {
+	await expect
+		.poll(async () => (await festivityLog(g, planID)).some(l => l.includes(part)), {
+			message: `action log should contain: ${part}`,
+		})
+		.toBe(true);
+}
+
+export interface TestAsset {
+	id: number;
+	owner_id: number;
+	name: string;
+	is_main_character: boolean;
+	is_destroyed: boolean;
+	marginalia: { id: number; text: string; is_torn: boolean }[];
+}
+
+export async function assetsOf(g: HFGame): Promise<TestAsset[]> {
+	const res = await g.ctx.alice.request.get(`/api/tables/${g.gameID}/assets`);
+	return ((await res.json()) as { assets: TestAsset[] }).assets;
+}
+
+export async function mainCharacter(g: HFGame, who: Name): Promise<TestAsset> {
+	const mc = (await assetsOf(g)).find(a => a.owner_id === g.ids[who] && a.is_main_character);
+	expect(mc, `${who} has no main character`).toBeTruthy();
+	return mc!;
+}
+
+/** A named peer for `who`, with the given marginalia (a new asset takes exactly one; the rest are added). */
+export async function addPeer(g: HFGame, who: Name, name: string, marginalia: string[]): Promise<number> {
+	const res = await g.ctx[who].request.post(`/api/tables/${g.gameID}/assets`, {
+		data: { asset_type: 'peer', name, is_main_character: false, marginalia: [marginalia[0]] },
+	});
+	expect(res.ok(), `create peer failed: ${await res.text()}`).toBeTruthy();
+	const id = (await res.json()).asset.id as number;
+	for (const text of marginalia.slice(1)) await addMarginalia(g, who, id, text);
+	return id;
+}
+
+export async function addMarginalia(g: HFGame, who: Name, assetID: number, text: string) {
+	const res = await g.ctx[who].request.post(`/api/assets/${assetID}/marginalia`, { data: { text } });
+	expect(res.ok(), `add marginalia failed: ${await res.text()}`).toBeTruthy();
 }
 
 /** The scorecard row ("The Talk of the Event") for one player. */
