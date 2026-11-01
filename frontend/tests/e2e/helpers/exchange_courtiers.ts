@@ -1,4 +1,4 @@
-import { expect, request as pwRequest, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, request as pwRequest, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { E2E } from '../baseUrl';
 
 // Setup shared by the Exchange Courtiers specs: a three-player main-event game
@@ -20,6 +20,17 @@ export interface ECOptions {
 	viewport?: { width: number; height: number };
 	/** Seed bob last on the power track, so the roll's difficulty is 2 (default 3). */
 	easyTarget?: boolean;
+	/** Marginalia on alice's courtier (default one). Two lets a break tear without destroying. */
+	aliceMarginalia?: string[];
+}
+
+const opened: BrowserContext[] = [];
+
+/** Registers an afterEach that closes every context seedECGame opened. */
+export function closeContextsAfterEach() {
+	test.afterEach(async () => {
+		await Promise.all(opened.splice(0).map(c => c.close().catch(() => {})));
+	});
 }
 
 export async function seedECGame(browser: Browser, opts: ECOptions = {}): Promise<ECGame> {
@@ -41,15 +52,21 @@ export async function seedECGame(browser: Browser, opts: ECOptions = {}): Promis
 	const ctx = {} as ECGame['ctx'];
 	for (const n of names) {
 		ctx[n] = await browser.newContext({ baseURL: E2E, viewport });
+		opened.push(ctx[n]);
 		await ctx[n].request.post(`/api/dev/login?username=${n}`);
 	}
 	const peers = {} as ECGame['peers'];
 	for (const n of names) {
 		const res = await ctx[n].request.post(`/api/tables/${seeded.game_id}/assets`, {
-			data: { asset_type: 'peer', name: PEER[n], is_main_character: false, marginalia: ['sharp-tongued'] },
+			data: { asset_type: 'peer', name: PEER[n], is_main_character: false, marginalia: [n === 'alice' ? (opts.aliceMarginalia ?? ['sharp-tongued'])[0] : 'sharp-tongued'] },
 		});
 		expect(res.ok(), `create peer failed: ${await res.text()}`).toBeTruthy();
 		peers[n] = (await res.json()).asset.id;
+	}
+	// A new asset takes exactly one marginalia; any more are added afterwards.
+	for (const text of (opts.aliceMarginalia ?? []).slice(1)) {
+		const res = await ctx.alice.request.post(`/api/assets/${peers.alice}/marginalia`, { data: { text } });
+		expect(res.ok(), `add marginalia failed: ${await res.text()}`).toBeTruthy();
 	}
 	return {
 		gameID: seeded.game_id,
@@ -131,28 +148,49 @@ export async function planStatus(g: ECGame, planID: number): Promise<string> {
 }
 
 /**
- * Text of the plan's action-log group on the always-open desktop chat column.
- * The group collapses once the plan resolves, so expand it first: the entries
- * inside come first, then the plan's outcome line beneath them.
+ * Text of the plan's action-log group on the always-open desktop chat column,
+ * or "" if the group isn't there yet. The group collapses once the plan resolves
+ * and its entries arrive over the WebSocket, so this expands it and reads what is
+ * there now, without asserting. Use expectPlanLog to wait for the entries.
  */
-export async function planLogText(page: Page, planID: number): Promise<string> {
+async function readPlanLog(page: Page, planID: number): Promise<string> {
 	const group = page
 		.getByRole('complementary', { name: 'Chat' })
 		.locator('.plan-group')
 		.filter({ has: page.locator(`.plan-header[data-plan-id="${planID}"]`) });
 	const header = group.locator('.plan-header');
-	await expect(header).toBeVisible();
+	if ((await header.count()) === 0) return '';
 	if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
-	await expect(header).toHaveAttribute('aria-expanded', 'true');
 	return group.innerText();
 }
 
-/** Asserts the snippets all appear in the feed, in the given order. */
-export function expectInOrder(feed: string, snippets: string[]) {
+/** Index of the first snippet missing from `log`, in order, or null if all appear in order. */
+function firstOutOfOrder(log: string, snippets: string[]): string | null {
 	let at = -1;
-	for (const s of snippets) {
-		const i = feed.indexOf(s, at + 1);
-		expect(i, `"${s}" should follow the previous entry in the log:\n${feed}`).toBeGreaterThan(at);
+	for (const sn of snippets) {
+		const i = log.indexOf(sn, at + 1);
+		if (i <= at) return sn;
 		at = i;
 	}
+	return null;
+}
+
+/**
+ * Waits until the plan's log group shows every snippet, in the given order.
+ * Retries, since entries can trail the plan's `resolved` status.
+ */
+export async function expectPlanLog(page: Page, planID: number, snippets: string[]) {
+	let last = '';
+	await expect
+		.poll(
+			async () => {
+				last = await readPlanLog(page, planID);
+				return firstOutOfOrder(last, snippets);
+			},
+			{ timeout: 10_000, message: 'plan log should show the entries in order' },
+		)
+		.toBeNull()
+		.catch(err => {
+			throw new Error(`${err.message}\nlog was:\n${last}`);
+		});
 }

@@ -2,8 +2,8 @@
 
 ## What changed and why
 
-- `frontend/tests/e2e/exchange_courtiers.spec.ts` — seven live specs and one
-  `test.fixme`, each pinning something the audit fixed:
+- `frontend/tests/e2e/exchange_courtiers.spec.ts` — eight live specs and four
+  `test.fixme`s, each pinning something the audit fixed:
   - **Preparation:** the peer is picked from the chosen player (switching
     player drops the pick), the Prepare button waits for peer + notes, the
     rules reference (Buffet) is there; the server refuses a peer that isn't the
@@ -25,9 +25,14 @@
     only wait, every other route is refused, a non-preparer can't re-aim; after
     re-aiming the new target is asked to propose the trade and the log carries
     both the loss and the re-aim.
-  - **`test.fixme`:** a bystander is shown "You asked for …" after the offer
+  - **Messy break that only tears:** a second make case gives the peer two
+    marginalia, so the break doesn't destroy; its own log line is asserted.
+  - **`test.fixme`s:** a bystander is shown "You asked for …" after the offer
     (second-person wording to a non-actor, audit Tier 6, still open). Item:
-    `docs/work/next/exchange-courtiers-bystander-second-person.md`.
+    `docs/work/next/exchange-courtiers-bystander-second-person.md`. Also the
+    non-acting seats with no wait line (`...-blank-waiting-panels.md`) and
+    Riposte worded for the preparer to the target (`...-riposte-wording.md`).
+    All four were confirmed to fail today.
 - `frontend/tests/e2e/helpers/exchange_courtiers.ts` — seeding, driving and
   log-reading helpers for this plan only. Shared `helpers.ts` is untouched.
 - Product code is untouched.
@@ -40,13 +45,16 @@ a *destroyed* peer only.
 
 Against this worktree's own build, on a private database and port (`E2E_BASE_URL`):
 
-- The spec: 7 passed + 1 skipped, three runs in a row, plus several earlier runs.
+- The spec: 8 passed + 4 fixme-skipped, three runs in a row. Log reads poll
+  (entries can trail the `resolved` status); refusals assert a 4xx; contexts are
+  closed after each test.
 - **Each guard bites** (change made locally, rebuilt, reverted):
   stale-aim check disabled → re-aim spec fails; second transfer's log line
   dropped → fair-trade spec fails; resolution announced before the transfers →
   fair-trade spec fails; `AutoCompleteAfterChoice` returning false → the mar,
   riposte and make specs fail; mar choice given to the preparer in the panel →
-  the mar and riposte specs fail.
+  the mar and riposte specs fail; the messy-break log line removed → both
+  make specs fail.
 - `make check-fast` passes.
 - Not run: `make test-integration` (no Go code changed).
 

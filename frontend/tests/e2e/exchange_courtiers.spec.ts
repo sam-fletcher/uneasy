@@ -1,13 +1,13 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIResponse, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
 import {
 	seedECGame, runScene, prepareEC, resolveEC, openAll, offerTrade, declineAndForce,
-	ownerOf, planStatus, planLogText, expectInOrder, PEER, type ECOptions,
+	ownerOf, planStatus, expectPlanLog, closeContextsAfterEach, PEER, type ECOptions,
 } from './helpers/exchange_courtiers';
 
 // Regression specs for what the 12-plan UX audit fixed in Exchange Courtiers:
 //   · the plan names the peer it is angling for, and offers the rules reference
-//     (the Buffet) at preparation and across the resolution;
+//     (the Buffet) at preparation (it is shown up to the roll as well);
 //   · the fair-trade pre-roll (target names a peer, preparer accepts/declines),
 //     with both legs of the swap in the action log *before* the resolution line;
 //   · the mar branch is the target's to choose, and "A Fair Trade" still swaps;
@@ -29,6 +29,13 @@ import {
 // result 1 a mar by 2.
 
 const track = cleanupGameAfterEach();
+closeContextsAfterEach();
+
+/** A refusal, not a crash: a 4xx, so a 500 can't pass for "the server said no". */
+function expectRefused(res: APIResponse) {
+	expect(res.status()).toBeGreaterThanOrEqual(400);
+	expect(res.status()).toBeLessThan(500);
+}
 
 /** A player chip in the target-player row (the table header has same-named buttons). */
 function chip(page: Page, name: string) {
@@ -106,7 +113,7 @@ test('preparation: the server refuses a peer that is not the target player\'s', 
 			preparation_notes: 'Wrong courtier.',
 		},
 	});
-	expect(res.ok()).toBeFalsy();
+	expectRefused(res);
 });
 
 test('fair trade accepted: both peers change hands, the log names both, then the resolution', async ({ browser }) => {
@@ -145,8 +152,7 @@ test('fair trade accepted: both peers change hands, the log names both, then the
 	expect(await ownerOf(g, g.peers.alice)).toBe(g.ids.bob);
 
 	// The log: the offer, then BOTH transfers, then the resolution line.
-	const log = await planLogText(carol, planID);
-	expectInOrder(log, [
+	await expectPlanLog(carol, planID, [
 		`bob proposed a fair trade: alice's ${PEER.alice} in exchange.`,
 		`alice took ${PEER.bob} from bob`,
 		`bob took ${PEER.alice} from alice`,
@@ -184,8 +190,7 @@ test('mar: the target chooses; capped by the margin; "A Fair Trade" still swaps 
 	expect(await ownerOf(g, g.peers.bob)).toBe(g.ids.alice);
 	expect(await ownerOf(g, g.peers.alice)).toBe(g.ids.bob);
 
-	const log = await planLogText(carol, planID);
-	expectInOrder(log, [
+	await expectPlanLog(carol, planID, [
 		`alice declined the fair trade`,
 		`A fair trade: ${PEER.bob} passed to alice after all.`,
 		`bob received ${PEER.alice} in exchange.`,
@@ -252,11 +257,43 @@ test('make: the targeted peer transfers, the target owes a messy break, then it 
 	for (const p of [alice, bob, carol]) {
 		await expect(p.getByRole('button', { name: /Complete plan/ })).toHaveCount(0);
 	}
-	const log = await planLogText(carol, planID);
-	expectInOrder(log, [
+	await expectPlanLog(carol, planID, [
 		`alice took the peer ${PEER.bob} from bob.`,
 		'It got messy — bob may break one of alice\'s assets.',
 		`bob destroyed alice's ${PEER.alice} in the mess.`,
+		'Exchange Courtiers succeeded.',
+	]);
+});
+
+test('make: a messy break that only tears (does not destroy) still posts to the log', async ({ browser }) => {
+	// alice's courtier has two marginalia, so tearing one leaves it standing.
+	const { g, planID } = await resolvingGame(browser, {
+		easyTarget: true,
+		aliceMarginalia: ['quick with a knife', 'owes the steward money'],
+	});
+	const { alice, bob } = await openAll(g);
+	await offerTrade(g, planID);
+	await declineAndForce(g, planID, 2);
+
+	await alice.getByText('Messy').click();
+	await alice.getByRole('button', { name: 'Apply choices' }).click();
+	await expect(bob.getByText("The exchange was messy.")).toBeVisible();
+
+	// Tear the first marginalia on alice's courtier.
+	await bob.locator('.card', { hasText: PEER.alice }).getByRole('checkbox').first().click();
+	await bob.getByRole('button', { name: 'Break marginalia' }).click();
+
+	await expect.poll(() => planStatus(g, planID)).toBe('resolved');
+	// The courtier survives, one marginalia down; the break still has its own line.
+	const res = await g.ctx.alice.request.get(`/api/tables/${g.gameID}/assets`);
+	const { assets } = (await res.json()) as {
+		assets: { id: number; is_destroyed: boolean; marginalia: { is_torn: boolean }[] }[];
+	};
+	const courtier = assets.find(a => a.id === g.peers.alice)!;
+	expect(courtier.is_destroyed).toBe(false);
+	expect(courtier.marginalia.filter(m => m.is_torn)).toHaveLength(1);
+	await expectPlanLog(bob, planID, [
+		`bob broke alice's ${PEER.alice} in the mess.`,
 		'Exchange Courtiers succeeded.',
 	]);
 });
@@ -289,13 +326,13 @@ test('re-aim: a peer destroyed before resolution pauses the plan for the prepare
 	const offer = await g.ctx.bob.request.post(`/api/plans/${planID}/fair-trade`, {
 		data: { action: 'offer', offered_asset_id: g.peers.alice },
 	});
-	expect(offer.ok()).toBeFalsy();
+	expectRefused(offer);
 
 	// Only the preparer may re-aim.
 	const bobTry = await g.ctx.bob.request.post(`/api/plans/${planID}/reaim`, {
 		data: { target_player_id: g.ids.bob, target_asset_id: g.peers.bob },
 	});
-	expect(bobTry.ok()).toBeFalsy();
+	expectRefused(bobTry);
 
 	// alice re-aims at carol's courtier through the panel.
 	await chip(alice, 'carol').click();
@@ -308,8 +345,7 @@ test('re-aim: a peer destroyed before resolution pauses the plan for the prepare
 	await expect(alice.getByText(`Waiting for carol to propose a fair trade for their peer, ${PEER.carol}`)).toBeVisible();
 	await expect(bob.getByRole('button', { name: 'Propose trade' })).toHaveCount(0);
 
-	const log = await planLogText(carol, planID);
-	expectInOrder(log, [
+	await expectPlanLog(carol, planID, [
 		`has lost its mark: The peer ${PEER.bob} has been destroyed.`,
 		`alice re-aimed their Exchange Courtiers at carol's peer ${PEER.carol}.`,
 	]);
@@ -325,4 +361,44 @@ test.fixme('after the offer, a bystander is not addressed as the one who asked',
 	await expect(bob.getByText("You asked for")).toBeVisible();
 	await expect(alice.getByText('will hand over')).toBeVisible();
 	await expect(carol.getByText('You asked for')).toHaveCount(0);
+});
+
+// Audit Tier 6 still open: the non-acting seat is left with no line saying who
+// the plan is waiting on. Pinned by shape (a wait line naming the actor), not
+// wording. See docs/work/next/exchange-courtiers-blank-waiting-panels.md.
+test.fixme('every seat that is not acting is told who the plan is waiting on', async ({ browser }) => {
+	const { g, planID } = await resolvingGame(browser, { easyTarget: true });
+	const { alice, bob, carol } = await openAll(g);
+	const waitLine = (page: Page, who: string) => page.locator('.ft-prompt').filter({ hasText: who });
+
+	// A bystander before the offer: waiting on bob.
+	await expect(waitLine(carol, 'bob')).toBeVisible();
+
+	// The preparer while the target chooses the mar response: waiting on bob.
+	await offerTrade(g, planID);
+	await declineAndForce(g, planID, 1); // difficulty 2, result 1: a mar by 1
+	await expect(bob.getByRole('button', { name: 'Apply choices' })).toBeVisible();
+	await expect(waitLine(alice, 'bob')).toBeVisible();
+});
+
+test.fixme('the target is told the preparer is choosing, during a make', async ({ browser }) => {
+	const { g, planID } = await resolvingGame(browser, { easyTarget: true });
+	const { alice, bob } = await openAll(g);
+	await offerTrade(g, planID);
+	await declineAndForce(g, planID, 2); // difficulty 2, result 2: a make
+	await expect(alice.getByRole('button', { name: 'Apply choices' })).toBeVisible();
+	await expect(bob.locator('.ft-prompt').filter({ hasText: 'alice' })).toBeVisible();
+});
+
+// Audit Tier 6 still open: the Riposte option is described to its chooser, the
+// target, in the preparer's voice ("you may break it first" is the preparer's
+// move). See docs/work/next/exchange-courtiers-riposte-wording.md.
+test.fixme('riposte is not described to the target as something "you" may break', async ({ browser }) => {
+	const { g, planID } = await resolvingGame(browser);
+	const { bob } = await openAll(g);
+	await offerTrade(g, planID);
+	await declineAndForce(g, planID, 1); // difficulty 3, result 1: a mar by 2
+	const riposte = bob.getByRole('button', { name: 'Riposte' });
+	await expect(riposte).toBeVisible();
+	await expect(riposte).not.toContainText('you may break');
 });
