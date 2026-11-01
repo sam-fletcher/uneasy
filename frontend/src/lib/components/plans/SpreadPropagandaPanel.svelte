@@ -28,9 +28,23 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Stepper from './shared/Stepper.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 
 	// make and mar option keys don't overlap, so a completed choice list can
 	// be labelled without knowing which outcome produced it.
+	// Read-only "what can happen?" reference (shared Buffet).
+	const BUFFET_TABS: BuffetTab[] = [
+		{
+			key: 'make', label: 'Make',
+			opts: (MAKE_OPTIONS.spread_propaganda ?? []).map(o => ({ key: o.key, label: o.label })),
+		},
+		{
+			key: 'mar', label: 'Mar', intro: 'Pick options equal to (difficulty − result), repeatable:',
+			opts: (MAR_OPTIONS.spread_propaganda ?? []).map(o => ({ key: o.key, label: o.summary ?? o.label })),
+		},
+	];
+
 	const SP_ALL_OPTIONS = [
 		...(MAKE_OPTIONS.spread_propaganda ?? []),
 		...(MAR_OPTIONS.spread_propaganda ?? []),
@@ -376,6 +390,9 @@
 	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		{#if !choicesDone}
+			<Buffet tabs={BUFFET_TABS} />
+		{/if}
 		<!-- The message. Before the pre-roll the prep note is only a draft (principle
 		     2) and is labelled so; after it, the stated version replaces it. -->
 		{#if preRollDone && spData.pre_roll_text}
@@ -423,14 +440,10 @@
 				{/if}
 				{#each MAR_OPTIONS.spread_propaganda ?? [] as opt}
 					{@const note = marNote(opt.key)}
-					<div class="stepper-row" class:unavailable={(marCap[opt.key] ?? 0) === 0}>
-						<button class="action-btn" onclick={() => bumpMar(opt.key, -1)}
-							disabled={(marCounts[opt.key] ?? 0) === 0}>−</button>
-						<strong style="min-width:1.5rem;text-align:center;">{marCounts[opt.key] ?? 0}</strong>
-						<button class="action-btn" onclick={() => bumpMar(opt.key, 1)}
-							disabled={(marCounts[opt.key] ?? 0) >= (marCap[opt.key] ?? 0) || (marPicksNeeded != null && marTotalPicked >= marPicksNeeded)}>+</button>
-						<span>{opt.label}{#if note}<span class="choices-note muted"> — {note}</span>{/if}</span>
-					</div>
+					<Stepper label={opt.label} count={marCounts[opt.key] ?? 0} onstep={(d) => bumpMar(opt.key, d)} dimmed={(marCap[opt.key] ?? 0) === 0}
+						incDisabled={(marCounts[opt.key] ?? 0) >= (marCap[opt.key] ?? 0) || (marPicksNeeded != null && marTotalPicked >= marPicksNeeded)}>
+						{opt.label}{#if note}<span class="choices-note muted"> — {note}</span>{/if}
+					</Stepper>
 				{/each}
 				<p class="choices-note">
 					Total picks: <strong>{marTotalPicked}</strong>{#if marPicksNeeded != null}{' '}/ {marPicksNeeded}{/if}

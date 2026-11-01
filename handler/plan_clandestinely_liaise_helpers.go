@@ -264,18 +264,7 @@ func clApplyRedelayOutcome(
 
 	// Resolve the plan outright (status → resolved). A liaison always "makes":
 	// it carries no roll and no failure path.
-	if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
-		ID:     plan.ID,
-		Result: new(makeOutcome),
-	}); err != nil {
-		return err
-	}
-	broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
-		PlanID: plan.ID,
-		Result: makeOutcome,
-	})
-	EmitPlanResolved(ctx, deps.Q, deps.Manager, *plan, makeOutcome)
-	return nil
+	return resolvePlan(ctx, deps.Q, deps.Manager, plan, makeOutcome)
 }
 
 // ── Seats ─────────────────────────────────────────────────────────────────────

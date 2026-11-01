@@ -88,9 +88,11 @@ func TestWaitingOn_MakeIntroductions_Mar_NamesPreparerAndAuthor(t *testing.T) {
 }
 
 // TestWaitingOn_MakeIntroductions_PerformStepsWinnerIsNamed: every Make
-// Introductions step is the preparer's slot, so after a perform_steps win it is
-// the winner's — naming the peers, bringing them in, and (on a mar) resolving
-// each one. The preparer is refused all of it, so the bar must not name them.
+// Introductions step after the roll is the preparer's slot, so after a
+// perform_steps win it is the winner's — bringing the peers in and (on a mar)
+// resolving each one; the preparer is refused all of it, so the bar must not
+// name them. Naming the peers and rolling are pre-roll (perform_steps is
+// post-roll only), so they stay the preparer's.
 func TestWaitingOn_MakeIntroductions_PerformStepsWinnerIsNamed(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 
@@ -111,11 +113,11 @@ func TestWaitingOn_MakeIntroductions_PerformStepsWinnerIsNamed(t *testing.T) {
 	})
 
 	base := "/api/plans/" + strconv.FormatInt(plan.ID, 10)
-	// Naming the peers is create-peer: the winner's, with no roll open yet.
-	h.assertWaitees("naming the peers", model.RowStatePlanResolving, demander)
-	code, body := h.post(demanderIdx, base+"/create-peer", map[string]any{"name": "Demander's pick"})
+	// Naming the peers is create-peer: still the preparer's, with no roll open yet.
+	h.assertWaitees("naming the peers", model.RowStatePlanResolving, preparer)
+	code, body := h.post(preparerIdx, base+"/create-peer", map[string]any{"name": "Demander's pick"})
 	require.Equalf(t, http.StatusCreated, code, "create-peer: %v", body)
-	code, body = h.post(demanderIdx, base+"/finalize-peers", nil)
+	code, body = h.post(preparerIdx, base+"/finalize-peers", nil)
 	require.Equalf(t, http.StatusCreated, code, "finalize-peers: %v", body)
 	rollMap, _ := body["roll"].(map[string]any)
 	require.NotNil(t, rollMap)

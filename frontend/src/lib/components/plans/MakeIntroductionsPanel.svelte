@@ -25,9 +25,11 @@
 	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
+	import DifficultyMeter from './shared/DifficultyMeter.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
-		parseResolutionData, playerName, playersExcept,
+		parseResolutionData, playerName, playersExcept, resolutionActorID,
 	} from './shared';
 	import {
 		parseMakeIntroductionsData, miDrafts, miHasArrived, miPendingArrivals,
@@ -42,6 +44,25 @@
 		{ key: 'broken_arrival', label: 'Not who you thought' },
 		{ key: 'delayed',        label: 'Delayed' },
 		{ key: 'broken_journey', label: 'Broken journey' },
+	];
+
+	// What each peer's mar can turn into — a read-only preview for every
+	// player, so whoever might be named recipient or author can see it coming.
+	const MI_BUFFET_TABS: BuffetTab[] = [
+		{
+			key: 'make', label: 'Make',
+			always: 'Every named peer arrives, and the newcomer is described with a marginalia.',
+		},
+		{
+			key: 'mar', label: 'Mar',
+			intro: 'Each peer gets a different one of these:',
+			opts: [
+				{ key: 'other_retinue', label: 'Another retinue', desc: 'The peer joins another player’s retinue; that player writes their marginalia.' },
+				{ key: 'broken_arrival', label: 'Not who you thought', desc: 'They arrive, but another player writes who they really are.' },
+				{ key: 'delayed', label: 'Delayed', desc: 'A d6 sets how many rows they spend on the road; past row 13 they never arrive.' },
+				{ key: 'broken_journey', label: 'Broken journey', desc: 'They arrive torn, marked by the journey.' },
+			],
+		},
 	];
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -61,13 +82,16 @@
 	const readOnly = $derived(ctx.readOnly);
 	const prepDraft = $derived(ctx.prepDraft as { peer_count?: number; notes?: string } | null);
 
-	let performStepsWinnerID = $state<number | null>(null);
-	// The preparer resolves their own plan; the perform_steps demand winner may
-	// drive the choice in their place.
+	// Every resolution step (naming, arrivals, mar fates) belongs to the
+	// preparer — or, when a Make Demands perform_steps win transfers it, to the
+	// winner alone; the server locks the preparer out then.
+	//
+	// Naming the peers and rolling are the exception: a perform_steps win is
+	// post-roll only, so those stay with the preparer (the server 403s the winner).
+	const actorID = $derived(plan ? resolutionActorID(plan, plans) : null);
 	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
-	const amChoiceActor = $derived(
-		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
-	);
+	const isActor = $derived(actorID != null && currentPlayerID === actorID);
+	const actorName = $derived(playerName(players, actorID));
 
 	// Prep state
 	let miPeerCount = $state(1);
@@ -416,10 +440,22 @@
 	{@const choicesDone = existingChoices.length > 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
-		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
-			bind:performStepsWinnerID />
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
+		{#if !isDelayedArrival && rollOutcome == null && !choicesDone && !marPending}
+			<!-- Before the dice land: how hard the roll is, and what it can bring. -->
+			{#if miPeerCountTarget > 0}
+				<div class="choices-section">
+					<DifficultyMeter
+						value={2 + miPeerCountTarget}
+						floor={2}
+						reason={`2, plus 1 for each of the ${miPeerCountTarget} ${miPeerCountTarget === 1 ? 'peer' : 'peers'} introduced.`}
+					/>
+				</div>
+			{/if}
+			<Buffet tabs={MI_BUFFET_TABS} />
+		{/if}
 		{#if isDelayedArrival}
-			{#if arrivingDraft && isPreparer}
+			{#if arrivingDraft && isActor}
 				<div class="plan-form">
 					<p class="ft-prompt">
 						<em>{arrivingDraft.name}</em> has finally reached court. Describe them
@@ -443,7 +479,7 @@
 				</div>
 			{:else}
 				<p class="ft-prompt muted">
-					{playerName(players, plan.preparer_id)} is welcoming a delayed newcomer…
+					{actorName} is welcoming a delayed newcomer…
 				</p>
 			{/if}
 
@@ -499,7 +535,7 @@
 		{:else if rollOutcome === 'make'}
 			<!-- The make has one option, so the server applies it when the dice land and
 			     the arrival forms start immediately; the last arrival ends the plan. -->
-			{#if choicesDone && arrivingDraft && isPreparer}
+			{#if choicesDone && arrivingDraft && isActor}
 				<div class="plan-form">
 					<p class="ft-prompt">
 						<em>{arrivingDraft.name}</em> arrives at court. Describe them —
@@ -525,14 +561,14 @@
 				</div>
 			{:else}
 				<p class="ft-prompt muted">
-					{playerName(players, plan.preparer_id)} is welcoming the new peers…
+					{actorName} is welcoming the new peers…
 				</p>
 			{/if}
 
 		{:else if rollOutcome === 'mar'}
 			{#if !marPending}
 				<p class="ft-prompt muted">
-					{playerName(players, plan.preparer_id)} is resolving the marred introductions…
+					{actorName} is resolving the marred introductions…
 				</p>
 			{:else}
 				<div class="mi-mar">
@@ -564,7 +600,7 @@
 						</div>
 					{/each}
 
-					{#if isPreparer && unresolvedDrafts.length > 0}
+					{#if isActor && unresolvedDrafts.length > 0}
 						{@const d = unresolvedDrafts[0]}
 						<div class="plan-form">
 							<p class="ft-prompt">
@@ -620,16 +656,16 @@
 						</div>
 					{/if}
 
-					{#if isPreparer && unresolvedDrafts.length === 0 && !allPeersDone}
+					{#if isActor && unresolvedDrafts.length === 0 && !allPeersDone}
 						<p class="ft-prompt muted">
 							Every newcomer is settled. The plan resolves as soon as the others have
 							written the marginalia they owe.
 						</p>
 					{/if}
 
-					{#if !isPreparer && myAuthorDrafts.length === 0}
+					{#if !isActor && myAuthorDrafts.length === 0}
 						<p class="ft-prompt muted">
-							{playerName(players, plan.preparer_id)} is resolving the marred introductions…
+							{actorName} is resolving the marred introductions…
 						</p>
 					{/if}
 				</div>

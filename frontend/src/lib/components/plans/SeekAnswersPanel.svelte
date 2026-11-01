@@ -37,6 +37,8 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Stepper from './shared/Stepper.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -69,6 +71,20 @@
 		{ key: 'ask_question',   label: 'Ask a player a question (they must be truthful)' },
 		{ key: 'reveal_secret',  label: "Learn the secrets of an asset" },
 	] as const;
+
+	// Read-only "what can happen?" reference (shared Buffet), shown until the
+	// picks are made so the others can weigh them before aiding or interfering.
+	const BUFFET_TABS: BuffetTab[] = [
+		{
+			key: 'make', label: 'Make', intro: 'Pick options equal to the dice result (repeatable):',
+			opts: OPTIONS.map(o => ({ key: o.key, label: o.label })),
+		},
+		{
+			key: 'mar', label: 'Mar',
+			always: 'The same picks — and the preparer also breaks one of their own resource assets for each point the roll fell short of the difficulty.',
+			opts: OPTIONS.map(o => ({ key: o.key, label: o.label })),
+		},
+	];
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 	let prepNotes = $state('');
@@ -472,6 +488,9 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		{#if !choicesDone}
+			<Buffet tabs={BUFFET_TABS} />
+		{/if}
 		{#if !preRollDone}
 			<!-- Pre-roll: restate methods + describe one thing learned, then cast.
 			     The narration is the preparer's own; only they can write it.
@@ -520,14 +539,10 @@
 					</p>
 					{#each OPTIONS as opt}
 						{@const available = optionAvailable[opt.key]}
-						<div class="stepper-row" class:unavailable={!available}>
-							<button class="action-btn" onclick={() => bump(opt.key, -1)}
-								disabled={(counts[opt.key] ?? 0) === 0}>−</button>
-							<strong style="min-width:1.5rem;text-align:center;">{counts[opt.key] ?? 0}</strong>
-							<button class="action-btn" onclick={() => bump(opt.key, 1)}
-								disabled={!available || atCap(opt.key) || (requiredPicks != null && totalPicked >= requiredPicks)}>+</button>
-							<span>{opt.label}{#if !available}<span class="choices-note muted"> — no valid targets</span>{:else if atCap(opt.key)}<span class="choices-note muted"> — all targets picked</span>{/if}</span>
-						</div>
+						<Stepper label={opt.label} count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={!available}
+							incDisabled={!available || atCap(opt.key) || (requiredPicks != null && totalPicked >= requiredPicks)}>
+							{opt.label}{#if !available}<span class="choices-note muted"> — no valid targets</span>{:else if atCap(opt.key)}<span class="choices-note muted"> — all targets picked</span>{/if}
+						</Stepper>
 					{/each}
 					<p class="choices-note">
 						Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null}{' '}/ {requiredPicks}{/if}
@@ -833,5 +848,4 @@
 <style>
 	/* .resolve-mirror-wrap / .resolved-so-far now live in planPanel.css — three
 	   panels share them (Seek Answers, Chronicle Histories, Spread Rumors). */
-	.stepper-row.unavailable { opacity: 0.55; }
 </style>

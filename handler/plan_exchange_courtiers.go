@@ -603,17 +603,11 @@ func acceptFairTrade(
 
 	// Asset transfers (and their secret-visibility grants) already broadcast
 	// above via takeAssetEffect; only the plan-resolved fan-out remains.
-	if h, hasHub := manager.Get(game.ID); hasHub {
-		h.BroadcastEvent(model.EventPlanResolved, model.PlanResolvedPayload{
-			PlanID: plan.ID,
-			Result: makeOutcome,
-		})
-	}
-	// Log both legs of the fair-trade swap; EmitPlanResolved only records the
-	// outcome, not which peers changed hands.
+	// Log both legs of the fair-trade swap first; the resolution line only
+	// records the outcome, not which peers changed hands.
 	EmitAssetTaken(ctx, q, manager, game.ID, ta, *plan.TargetPlayerID, recipient, logRow(game))
 	EmitAssetTaken(ctx, q, manager, game.ID, oa, plan.PreparerID, *plan.TargetPlayerID, logRow(game))
-	EmitPlanResolved(ctx, q, manager, *plan, makeOutcome)
+	announcePlanResolved(ctx, q, manager, *plan, makeOutcome)
 
 	respond(w, http.StatusOK, map[string]any{
 		"plan_id": plan.ID,

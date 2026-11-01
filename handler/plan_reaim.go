@@ -159,19 +159,9 @@ func reaimHoldAtResolve(
 		// The plans.result column only admits make/mar, and this is neither: no roll
 		// was made. Close it resolved with a NULL result — the honest record of "this
 		// happened and had no outcome" — and tell the log and the clients the same.
-		if err := deps.Q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: nil}); err != nil {
+		if err := resolvePlan(ctx, deps.Q, deps.Manager, plan, fizzledOutcome); err != nil {
 			return false, fmt.Errorf("close fizzled plan: %w", err)
 		}
-		refreshed, err := deps.Q.GetPlanByID(ctx, plan.ID)
-		if err != nil {
-			return false, fmt.Errorf("reload fizzled plan: %w", err)
-		}
-		*plan = refreshed
-		broadcastEvent(deps.Manager, plan.GameID, model.EventPlanResolved, model.PlanResolvedPayload{
-			PlanID: plan.ID,
-			Result: "", // matches the NULL column, so a live client and a reload agree
-		})
-		EmitPlanResolved(ctx, deps.Q, deps.Manager, refreshed, fizzledOutcome)
 		return true, nil
 	}
 
