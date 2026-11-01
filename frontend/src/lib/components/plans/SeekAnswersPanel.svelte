@@ -38,6 +38,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Stepper from './shared/Stepper.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -70,6 +71,20 @@
 		{ key: 'ask_question',   label: 'Ask a player a question (they must be truthful)' },
 		{ key: 'reveal_secret',  label: "Learn the secrets of an asset" },
 	] as const;
+
+	// Read-only "what can happen?" reference (shared Buffet), shown until the
+	// picks are made so the others can weigh them before aiding or interfering.
+	const BUFFET_TABS: BuffetTab[] = [
+		{
+			key: 'make', label: 'Make', intro: 'Pick options equal to the dice result (repeatable):',
+			opts: OPTIONS.map(o => ({ key: o.key, label: o.label })),
+		},
+		{
+			key: 'mar', label: 'Mar',
+			always: 'The same picks, and the preparer also describes a flaw in (breaks) one of their own resource assets afterwards.',
+			opts: OPTIONS.map(o => ({ key: o.key, label: o.label })),
+		},
+	];
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 	let prepNotes = $state('');
@@ -473,6 +488,9 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		{#if !choicesDone}
+			<Buffet tabs={BUFFET_TABS} />
+		{/if}
 		{#if !preRollDone}
 			<!-- Pre-roll: restate methods + describe one thing learned, then cast.
 			     The narration is the preparer's own; only they can write it.

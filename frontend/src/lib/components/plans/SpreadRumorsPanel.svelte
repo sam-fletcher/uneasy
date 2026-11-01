@@ -41,6 +41,7 @@
 	import FormField from './FormField.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Stepper from './shared/Stepper.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -78,8 +79,7 @@
 	// mar every option is aimed at the preparer's main character and the preparer's
 	// assets, not at the rumor's original subject.
 	const OPTION_KEYS = ['break_target', 'leverage_target', 'take_asset', 'hide_source', 'reveal_source'] as const;
-	const OPTIONS = $derived.by(() => {
-		const mar = rollOutcome === 'mar';
+	function optionsFor(mar: boolean) {
 		const mc = mar ? mcName : '';
 		return [
 			{ key: 'break_target', label: mar
@@ -94,7 +94,21 @@
 			{ key: 'reveal_source', label: 'Reveal yourself as the source of the rumor. Relish in its glory.',
 				summary: 'The source of the rumor is revealed, and relishes in its glory.' },
 		] as const;
-	});
+	}
+	const OPTIONS = $derived(optionsFor(rollOutcome === 'mar'));
+
+	// Read-only "what can happen?" reference (shared Buffet). Viewer-neutral
+	// wording, since everyone at the table reads it.
+	const BUFFET_TABS = $derived<BuffetTab[]>([
+		{
+			key: 'make', label: 'Make', intro: 'Pick options equal to the dice result (repeatable):',
+			opts: optionsFor(false).map(o => ({ key: o.key, label: ('summary' in o ? o.summary : o.label) as string })),
+		},
+		{
+			key: 'mar', label: 'Mar', intro: 'Pick options equal to (difficulty − result), aimed at the preparer’s main character (repeatable):',
+			opts: optionsFor(true).map(o => ({ key: o.key, label: ('summary' in o ? o.summary : o.label) as string })),
+		},
+	]);
 
 	// The picker speaks to its actor ("Hide yourself…"); everyone else sees the
 	// same greyed list, so they get the viewer-neutral wording where there is one.
@@ -640,6 +654,9 @@
 	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		{#if !choicesDone}
+			<Buffet tabs={BUFFET_TABS} />
+		{/if}
 		<div class="rumor-summary">
 			<!-- Before the pre-roll the prep note is only a draft (principle 2), and a
 			     secret rumor's text is nobody's business yet — so neither is shown as

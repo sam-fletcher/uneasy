@@ -29,9 +29,22 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Stepper from './shared/Stepper.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 
 	// make and mar option keys don't overlap, so a completed choice list can
 	// be labelled without knowing which outcome produced it.
+	// Read-only "what can happen?" reference (shared Buffet).
+	const BUFFET_TABS: BuffetTab[] = [
+		{
+			key: 'make', label: 'Make',
+			opts: (MAKE_OPTIONS.spread_propaganda ?? []).map(o => ({ key: o.key, label: o.label })),
+		},
+		{
+			key: 'mar', label: 'Mar', intro: 'Pick options equal to (difficulty − result), repeatable:',
+			opts: (MAR_OPTIONS.spread_propaganda ?? []).map(o => ({ key: o.key, label: o.summary ?? o.label })),
+		},
+	];
+
 	const SP_ALL_OPTIONS = [
 		...(MAKE_OPTIONS.spread_propaganda ?? []),
 		...(MAR_OPTIONS.spread_propaganda ?? []),
@@ -377,6 +390,9 @@
 	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		{#if !choicesDone}
+			<Buffet tabs={BUFFET_TABS} />
+		{/if}
 		<!-- The message. Before the pre-roll the prep note is only a draft (principle
 		     2) and is labelled so; after it, the stated version replaces it. -->
 		{#if preRollDone && spData.pre_roll_text}

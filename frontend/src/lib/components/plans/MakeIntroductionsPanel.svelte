@@ -25,6 +25,7 @@
 	import SuggestionPicker from '../SuggestionPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
+	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
 		parseResolutionData, playerName, playersExcept,
@@ -42,6 +43,25 @@
 		{ key: 'broken_arrival', label: 'Not who you thought' },
 		{ key: 'delayed',        label: 'Delayed' },
 		{ key: 'broken_journey', label: 'Broken journey' },
+	];
+
+	// What each peer's mar can turn into — a read-only preview for every
+	// player, so whoever might be named recipient or author can see it coming.
+	const MI_BUFFET_TABS: BuffetTab[] = [
+		{
+			key: 'make', label: 'Make',
+			always: 'Every named peer arrives, and the newcomer is described with a marginalia.',
+		},
+		{
+			key: 'mar', label: 'Mar',
+			intro: 'Each peer gets a different one of these:',
+			opts: [
+				{ key: 'other_retinue', label: 'Another retinue', desc: 'The peer joins another player’s retinue; that player writes their marginalia.' },
+				{ key: 'broken_arrival', label: 'Not who you thought', desc: 'They arrive, but another player writes who they really are.' },
+				{ key: 'delayed', label: 'Delayed', desc: 'A d6 sets how many rows they spend on the road; past row 13 they never arrive.' },
+				{ key: 'broken_journey', label: 'Broken journey', desc: 'They arrive torn, marked by the journey.' },
+			],
+		},
 	];
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -418,6 +438,10 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		{#if !isDelayedArrival && rollOutcome == null && !choicesDone && !marPending}
+			<!-- Before the dice land: how hard the roll is, and what it can bring. -->
+			<Buffet tabs={MI_BUFFET_TABS} />
+		{/if}
 		{#if isDelayedArrival}
 			{#if arrivingDraft && isPreparer}
 				<div class="plan-form">
