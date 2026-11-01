@@ -23,7 +23,6 @@ import { E2E } from './baseUrl';
 // players. Knowledge ranks are seeded so the target (bob) outranks the preparer
 // (alice), which is what makes the first question vetoable.
 
-
 interface PlanRow {
 	id: number;
 	plan_type: string;

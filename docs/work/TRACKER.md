@@ -52,15 +52,15 @@ parallel.
    character per player; a before/after-board log-coverage guard.
 6. **Phase 4: regression specs** for what Phase 3 fixed — one spec file per
    plan, so these fan out in parallel. After 2.
-8. **Small:** the Shake-Up focus-pass log line doesn't name skipped players.
-9. **Make Demands, the rest of its audit** (the audit itself is private;
+7. **Small:** the Shake-Up focus-pass log line doesn't name skipped players.
+8. **Make Demands, the rest of its audit** (the audit itself is private;
    items D2, D5–D7). Retargeting a demand can fail with a server error and
    has no wait state to show who must act; choosing to leverage nothing has
    no UI; the leverage option is offered against target plans that never
    roll. Separately, the draft picker hides options that would do nothing
    against the chosen target instead of showing them disabled with the
    reason.
-10. **Dependency security alerts** — GitHub's Dependabot reported 23 open
+9. **Dependency security alerts** — GitHub's Dependabot reported 23 open
     alerts on `main` (2026-10-31: 5 high, 14 moderate, 4 low). Independent of
     the audit, so it can run beside anything else. Triage before upgrading:
     - **One is in the live Go server:** `github.com/go-chi/chi/v5` (moderate).

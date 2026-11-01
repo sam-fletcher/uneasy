@@ -15,7 +15,6 @@ import { E2E } from './baseUrl';
 // Things We Share — that transition must reach the preparer's panel live, with
 // no manual reload. Pre-fix the hand-off never reached the waiting party at all.
 
-
 interface PlanRow {
 	id: number;
 	plan_type: string;

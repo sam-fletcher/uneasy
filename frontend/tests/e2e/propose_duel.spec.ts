@@ -24,7 +24,6 @@ import { E2E } from './baseUrl';
 // the duel settles itself the instant the final roll lands — no take step and
 // no "Complete plan" click for either player.
 
-
 // Advance the public record to `targetRow` via the dev fast-forward, which runs
 // the real advance (engrailed ranking updates, row.advanced posts) rather than
 // writing current_row directly. There is no production row-advance route — see
