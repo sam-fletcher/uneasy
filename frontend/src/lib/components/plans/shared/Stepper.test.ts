@@ -29,6 +29,12 @@ describe('Stepper', () => {
 		expect(body).toContain('dimmed');
 	});
 
+	it('names the buttons after the option when given a label', () => {
+		const { body } = render(Stepper, { props: { count: 1, label: 'Take Asset', onstep: () => {}, children: label } });
+		expect(body).toContain('aria-label="Fewer Take Asset"');
+		expect(body).toContain('aria-label="More Take Asset"');
+	});
+
 	it('gives the buttons accessible names', () => {
 		const { body } = render(Stepper, { props: { count: 1, onstep: () => {}, children: label } });
 		expect(body).toContain('aria-label="Fewer"');

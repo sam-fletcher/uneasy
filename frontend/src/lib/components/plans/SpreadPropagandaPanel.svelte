@@ -440,7 +440,7 @@
 				{/if}
 				{#each MAR_OPTIONS.spread_propaganda ?? [] as opt}
 					{@const note = marNote(opt.key)}
-					<Stepper count={marCounts[opt.key] ?? 0} onstep={(d) => bumpMar(opt.key, d)} dimmed={(marCap[opt.key] ?? 0) === 0}
+					<Stepper label={opt.label} count={marCounts[opt.key] ?? 0} onstep={(d) => bumpMar(opt.key, d)} dimmed={(marCap[opt.key] ?? 0) === 0}
 						incDisabled={(marCounts[opt.key] ?? 0) >= (marCap[opt.key] ?? 0) || (marPicksNeeded != null && marTotalPicked >= marPicksNeeded)}>
 						{opt.label}{#if note}<span class="choices-note muted"> — {note}</span>{/if}
 					</Stepper>

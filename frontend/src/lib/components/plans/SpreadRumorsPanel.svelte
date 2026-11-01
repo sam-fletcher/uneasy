@@ -866,7 +866,7 @@
 				{#each OPTIONS as opt}
 					{@const optDisabled = opt.key === 'take_asset' && takeAssetDenied}
 					{@const atBreakCap = opt.key === 'break_target' && (counts.break_target ?? 0) >= btMarginaliaCap}
-					<Stepper count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={optDisabled}
+					<Stepper label={optionText(opt)} count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={optDisabled}
 						incDisabled={optDisabled || atBreakCap || (requiredPicks != null && totalPicked >= requiredPicks)}>
 						{optionText(opt)}{#if optDisabled}{' '}<em>(declined)</em>{:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}
 					</Stepper>

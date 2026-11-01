@@ -81,7 +81,7 @@
 		},
 		{
 			key: 'mar', label: 'Mar',
-			always: 'The same picks, and the preparer also describes a flaw in (breaks) one of their own resource assets afterwards.',
+			always: 'The same picks — and the preparer also breaks one of their own resource assets for each point the roll fell short of the difficulty.',
 			opts: OPTIONS.map(o => ({ key: o.key, label: o.label })),
 		},
 	];
@@ -539,7 +539,7 @@
 					</p>
 					{#each OPTIONS as opt}
 						{@const available = optionAvailable[opt.key]}
-						<Stepper count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={!available}
+						<Stepper label={opt.label} count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={!available}
 							incDisabled={!available || atCap(opt.key) || (requiredPicks != null && totalPicked >= requiredPicks)}>
 							{opt.label}{#if !available}<span class="choices-note muted"> — no valid targets</span>{:else if atCap(opt.key)}<span class="choices-note muted"> — all targets picked</span>{/if}
 						</Stepper>

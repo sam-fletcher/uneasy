@@ -5,12 +5,18 @@
   the numbers — it passes in `count` and the two disabled flags (the cap and
   quota rules differ per plan) and handles `onstep(±1)`. The row's label is
   the children snippet, so a plan can append its own notes.
+
+  The Stepper does not clamp: it never changes `count` itself, and it never
+  stops a tap at a cap — parents must pass `incDisabled` (and `decDisabled`
+  when it isn't simply "at zero"). `label` names the option for screen readers,
+  so the buttons read "Fewer Take Asset", not five identical "Fewer"s.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
 	let {
 		count,
+		label = '',
 		onstep,
 		decDisabled = count === 0,
 		incDisabled = false,
@@ -18,6 +24,8 @@
 		children,
 	}: {
 		count: number;
+		/** What is being counted, for the buttons' accessible names. */
+		label?: string;
 		onstep: (delta: 1 | -1) => void;
 		decDisabled?: boolean;
 		incDisabled?: boolean;
@@ -28,9 +36,9 @@
 </script>
 
 <div class="stepper-row" class:dimmed>
-	<button type="button" class="action-btn" aria-label="Fewer" onclick={() => onstep(-1)} disabled={decDisabled}>−</button>
+	<button type="button" class="action-btn" aria-label={label ? `Fewer ${label}` : 'Fewer'} onclick={() => onstep(-1)} disabled={decDisabled}>−</button>
 	<strong class="stepper-count">{count}</strong>
-	<button type="button" class="action-btn" aria-label="More" onclick={() => onstep(1)} disabled={incDisabled}>+</button>
+	<button type="button" class="action-btn" aria-label={label ? `More ${label}` : 'More'} onclick={() => onstep(1)} disabled={incDisabled}>+</button>
 	<span>{@render children()}</span>
 </div>
 
