@@ -164,9 +164,13 @@ func (miHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	}
 	var waitees []int64
 	if miActorStillOwes(mi) {
+		// The winner takes over only once the roll has landed (or for a delayed
+		// traveller's own plan); naming and rolling stay with the preparer.
 		actor := plan.PreparerID
-		if winner := performStepsWinner(ctx, q, plan); winner != 0 {
-			actor = winner
+		if mi.DelayedArrival || mi.MakePending || mi.MarPending {
+			if winner := performStepsWinner(ctx, q, plan); winner != 0 {
+				actor = winner
+			}
 		}
 		waitees = append(waitees, actor)
 	}
@@ -301,13 +305,24 @@ func miStoreResData(ctx context.Context, q *dbgen.Queries, planID int64, peerCou
 // rows later (delayed), or never at all.
 //
 // Request body: {"name": "..."}
+// requireMIPreparer fences the pre-roll naming routes to the preparer. A Make
+// Demands perform_steps win is post-roll only — the preparer still names the
+// peers and rolls — so these two routes deliberately skip requireResolutionActor.
+func requireMIPreparer(w http.ResponseWriter, plan *dbgen.Plan, playerID int64) bool {
+	if playerID != plan.PreparerID {
+		respondErr(w, http.StatusForbidden, "only the plan's preparer names the peers and rolls")
+		return false
+	}
+	return true
+}
+
 func createPeerHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanMakeIntroductions)
 		if !ok {
 			return
 		}
-		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
+		if !requireMIPreparer(w, plan, player.ID) {
 			return
 		}
 
@@ -367,7 +382,7 @@ func finalizePeersHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
+		if !requireMIPreparer(w, plan, player.ID) {
 			return
 		}
 

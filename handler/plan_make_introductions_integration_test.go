@@ -91,9 +91,11 @@ func miAssetNamed(t *testing.T, h *planLifecycle, name string) *dbgen.Asset {
 }
 
 // TestMakeIntroductions_PerformStepsWinnerNamesPeers proves a Make Demands
-// perform_steps win lets the demander drive the pre-roll naming step
-// (create-peer) in the preparer's stead, the preparer is locked out, and the
-// keep_assets win routes the peer into the demander's retinue when they arrive.
+// perform_steps win is post-roll only: the preparer still names the peers and
+// rolls (the winner is locked out of create-peer and finalize-peers, and the
+// Waiting On bar names the preparer), and the winner takes over the arrival
+// form once the roll has landed. The keep_assets win routes the peer into the
+// demander's retinue when they arrive.
 func TestMakeIntroductions_PerformStepsWinnerNamesPeers(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
@@ -118,24 +120,29 @@ func TestMakeIntroductions_PerformStepsWinnerNamesPeers(t *testing.T) {
 	})
 
 	createPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/create-peer"
+	finalizePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/finalize-peers"
 
-	// The preparer is locked out of naming peers now that the demander holds it.
-	code, body := h.post(preparerIdx, createPath, map[string]any{"name": "Preparer's pick"})
+	// Naming is the pre-roll step: the winner is locked out of it...
+	code, body := h.post(demanderIdx, createPath, map[string]any{"name": "Demander's pick"})
 	require.Equalf(t, http.StatusForbidden, code,
-		"preparer must be locked out when the demander won perform_steps: %v", body)
+		"perform_steps is post-roll only: the winner must not name peers: %v", body)
+	code, body = h.post(demanderIdx, finalizePath, nil)
+	require.Equalf(t, http.StatusForbidden, code,
+		"the winner must not finalize (and so trigger the roll): %v", body)
+	// ...and the bar names the preparer, not the winner.
+	h.assertWaitees("naming is the preparer's, even with a perform_steps winner",
+		model.RowStatePlanResolving, h.tg.Players[preparerIdx].ID)
 
-	// The demander names the peer instead.
-	code, body = h.post(demanderIdx, createPath, map[string]any{"name": "Demander's pick"})
-	require.Equalf(t, http.StatusCreated, code,
-		"perform_steps winner should drive create-peer: %v", body)
+	// The preparer names the peer and rolls.
+	code, body = h.post(preparerIdx, createPath, map[string]any{"name": "Demander's pick"})
+	require.Equalf(t, http.StatusCreated, code, "preparer should name peers: %v", body)
 
 	drafts := miDraftsOf(t, h, plan.ID)
 	require.Len(t, drafts, 1)
 	assert.Nil(t, miAssetNamed(t, h, "Demander's pick"), "naming a peer must not create an asset")
 
 	// Roll a make and bring them in through the arrival form.
-	finalizePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/finalize-peers"
-	code, body = h.post(demanderIdx, finalizePath, nil)
+	code, body = h.post(preparerIdx, finalizePath, nil)
 	require.Equalf(t, http.StatusCreated, code, "finalize-peers: %v", body)
 	rollMap, _ := body["roll"].(map[string]any)
 	require.NotNil(t, rollMap)

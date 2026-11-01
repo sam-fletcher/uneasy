@@ -85,7 +85,11 @@
 	// Every resolution step (naming, arrivals, mar fates) belongs to the
 	// preparer — or, when a Make Demands perform_steps win transfers it, to the
 	// winner alone; the server locks the preparer out then.
+	//
+	// Naming the peers and rolling are the exception: a perform_steps win is
+	// post-roll only, so those stay with the preparer (the server 403s the winner).
 	const actorID = $derived(plan ? resolutionActorID(plan, plans) : null);
+	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const isActor = $derived(actorID != null && currentPlayerID === actorID);
 	const actorName = $derived(playerName(players, actorID));
 
@@ -186,7 +190,7 @@
 	// reactive would feed the effect its own writes.
 	let peerNamePoolsFetched = 0;
 	$effect(() => {
-		if (!needsPeerNaming || !isActor) return;
+		if (!needsPeerNaming || !isPreparer) return;
 		const total = miPeerCountTarget;
 		if (total <= 0 || peerNamePoolsFetched >= total) return;
 		// Top up only the slots that lack a pool, so a later peer_count bump
@@ -479,7 +483,7 @@
 				</p>
 			{/if}
 
-		{:else if needsPeerNaming && isActor}
+		{:else if needsPeerNaming && isPreparer}
 			<div class="mi-naming">
 				<p class="form-hint">
 					Name each of the {miPeerCountTarget}
@@ -520,9 +524,9 @@
 				</div>
 			</div>
 
-		{:else if needsPeerNaming && !isActor}
+		{:else if needsPeerNaming && !isPreparer}
 			<p class="ft-prompt muted">
-				{actorName} is naming the new peers…
+				{playerName(players, plan.preparer_id)} is naming the new peers…
 			</p>
 
 		{:else if rollActive && !choicesDone && !marPending}
