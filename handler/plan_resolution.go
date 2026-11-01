@@ -433,9 +433,15 @@ func resolvePlan(
 	if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: stored}); err != nil {
 		return err
 	}
+	// The result is stored, so the plan is resolved whatever happens next: a
+	// failed reload must not skip the announcement, or the table would hold a
+	// resolved plan nobody was told about. Announce with the plan as we have it.
 	refreshed, err := q.GetPlanByID(ctx, plan.ID)
 	if err != nil {
-		return fmt.Errorf("reload resolved plan: %w", err)
+		loggerFromContext(ctx).WarnContext(ctx,
+			"resolved plan could not be reloaded; announcing the stale copy",
+			"plan_id", plan.ID, "err", err)
+		refreshed = *plan
 	}
 	*plan = refreshed
 	announcePlanResolved(ctx, q, manager, refreshed, result)
