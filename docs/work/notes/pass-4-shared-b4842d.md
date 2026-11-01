@@ -29,9 +29,12 @@ Five commits, one per item.
    `ResolvedDescriber` lines for Host Festivity and Clandestinely Liaise. A guard
    test (`plan_resolved_announce_test.go`) fails if a handler calls
    `SetPlanResult` outside `resolvePlan`.
-5. **Make Introductions demanded winner.** Every MI resolution route accepts
-   the Make Demands `perform_steps` winner and locks the preparer out, but the
-   panel gated its forms on `isPreparer`. New `resolutionActorID(plan, plans)`
+5. **Make Introductions demanded winner.** The post-roll MI routes accept the
+   Make Demands `perform_steps` winner and lock the preparer out, but the
+   panel gated its forms on `isPreparer`. (Naming the peers and rolling are
+   pre-roll, so they stay the preparer's: `create-peer` and `finalize-peers` now
+   403 the winner, and `ResolvingWaitees` names the winner only once the make or
+   mar branch is pending. This reverses what PR #9 had done.) New `resolutionActorID(plan, plans)`
    in `plans/shared.ts` mirrors the server's `actsForPreparer` and is derived
    from the plans list (not the overlay's effect-fed bindable, which an SSR
    render never sees). Naming, both arrival forms and the mar-fate form follow
@@ -44,34 +47,42 @@ Against this worktree's own build and a private database:
 - `make check-fast` — passes (incl. svelte-check, Vitest 569, Go unit).
 - `make test-integration` on a private DB — passes, 0 FAIL.
 - Playwright e2e against my own server via `E2E_BASE_URL` — 25/25.
-- New tests: `Stepper.test.ts`, `MakeIntroductionsPanel.test.ts` (winner gets
-  the arrival form, preparer sees a wait on the winner), `resolutionActorID` in
-  `shared.test.ts`, `plan_resolved_announce_test.go`. The winner tests were
-  shown to fail with `resolutionActorID` returning the preparer (3 failures).
-  The announce guard test wasn't separately reverted.
+- New tests: `Stepper.test.ts`; `MakeIntroductionsPanel.test.ts` (arrival form
+  and mar-fate form go to the winner, naming form stays with the preparer, each
+  with the other side's wait line); `resolutionActorID` in `shared.test.ts`;
+  `plan_resolved_announce_test.go`; integration
+  `TestMakeIntroductions_PerformStepsWinnerNamesPeers` (winner naming or
+  finalizing pre-roll → 403, bar names the preparer, then the winner owns the
+  arrival). Each was shown red: the winner tests with `resolutionActorID`
+  returning the preparer, the naming render tests with the naming gate on the
+  actor, the integration test with the preparer gate and waitee change reverted,
+  and the announce guard with a bare `SetPlanResult` in a stray handler file.
 - By eye at 375px (dev game, players rhea/sol/tam): Make Introductions
   pre-roll as preparer (meter + Buffet) and as bystander; the full demanded-
   winner flow driven through the API — winner sees the naming form and then
   the arrival form, preparer and bystander see "sol is naming/welcoming…";
-  Seek Answers post-roll picks as actor and bystander (Stepper). Buffet present
-  in Spread Rumors and Spread Propaganda pre-roll as actor and bystander
-  (text check only, no screenshot read).
-- **Not checked by eye:** Stepper in Spread Rumors and Spread Propaganda (same
-  component; e2e and unit tests only); the Make Introductions mar branch under a
-  winner (only the make branch was driven); the Chronicle/Exchange Courtiers
-  panels weren't touched.
+  Seek Answers post-roll picks as actor and bystander and Spread Propaganda mar
+  picks as actor (Stepper). Buffet present in Spread Rumors and Spread
+  Propaganda pre-roll as actor and bystander (text check only).
+- **Not checked by eye:** the Stepper in Spread Rumors (same component; tests
+  only); the Make Introductions mar branch under a winner (render test only).
 
 ## Behaviour changes to look at before merging
 
 - **Spread Rumors, declined Take Asset:** the row used to render in the italic
   faint `.muted` style; it now fades (opacity .55) like the other two steppers.
-- **Stepper buttons** gain `aria-label`s ("Fewer" / "More") and `type="button"`.
-- **New Buffet** in SA, SR, SP and MI, collapsed by default, hidden once the
-  picks are made. In SR the Mar tab reads from the preparer's main character.
+- **Stepper buttons** gain `aria-label`s ("Fewer <option>" / "More <option>") and `type="button"`.
+- **New Buffets** — previews on four plans that had none, not replacements; read
+  their copy. In SA, SR, SP and MI, collapsed by default, hidden once the picks
+  are made. In SR the Mar tab reads from the preparer's main character.
 - **Make Introductions** now shows a difficulty meter before the roll.
 - **MI wait lines** ("… is naming the new peers…", "… is welcoming…") name the
   acting player, which is the demanded winner when there is one (they used to
   name the preparer).
+- **Exchange Courtiers:** its `plan.resolved` WebSocket event now fires after the
+  two asset-taken log posts instead of before them.
+- **Make Introductions naming** is the preparer's alone, even with a
+  perform_steps winner (server-enforced; see item 5).
 - **Plan-resolution tail:** `resolvePlan` reloads the plan after storing the
   result; Clandestinely Liaise and Host Festivity previously didn't. No change
   to what is posted or broadcast.
