@@ -44,10 +44,8 @@ Against this worktree's code: `make check-fast` (after `make frontend` — the
 cmd/server tests need an embedded build), `make check-frontend` (0 errors; 1
 pre-existing unused-CSS warning in HelpContent), `npm ci` from scratch,
 `make build`, `make test-integration` on a private DB (all pass), Playwright
-against a private server on :8193: 18 passed, 7 failed — all in
-`chat.spec.ts`, which hard-codes `http://localhost:8090` (the known caveat in
-test-worktree), so those 7 hit `main`'s container, not this code, and were not
-verified. I did not check whether they pass against `main`.
+full suite (incl. chat specs, after #23) against a private server on :8193: 25 passed.
+All re-run after rebasing on main.
 
 ## Behaviour changes to look at before merging
 
