@@ -29,7 +29,7 @@
 	import DifficultyMeter from './shared/DifficultyMeter.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
-		parseResolutionData, playerName, playersExcept,
+		parseResolutionData, playerName, playersExcept, resolutionActorID,
 	} from './shared';
 	import {
 		parseMakeIntroductionsData, miDrafts, miHasArrived, miPendingArrivals,
@@ -82,13 +82,12 @@
 	const readOnly = $derived(ctx.readOnly);
 	const prepDraft = $derived(ctx.prepDraft as { peer_count?: number; notes?: string } | null);
 
-	let performStepsWinnerID = $state<number | null>(null);
-	// The preparer resolves their own plan; the perform_steps demand winner may
-	// drive the choice in their place.
-	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
-	const amChoiceActor = $derived(
-		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
-	);
+	// Every resolution step (naming, arrivals, mar fates) belongs to the
+	// preparer — or, when a Make Demands perform_steps win transfers it, to the
+	// winner alone; the server locks the preparer out then.
+	const actorID = $derived(plan ? resolutionActorID(plan, plans) : null);
+	const isActor = $derived(actorID != null && currentPlayerID === actorID);
+	const actorName = $derived(playerName(players, actorID));
 
 	// Prep state
 	let miPeerCount = $state(1);
@@ -187,7 +186,7 @@
 	// reactive would feed the effect its own writes.
 	let peerNamePoolsFetched = 0;
 	$effect(() => {
-		if (!needsPeerNaming || !isPreparer) return;
+		if (!needsPeerNaming || !isActor) return;
 		const total = miPeerCountTarget;
 		if (total <= 0 || peerNamePoolsFetched >= total) return;
 		// Top up only the slots that lack a pool, so a later peer_count bump
@@ -437,8 +436,7 @@
 	{@const choicesDone = existingChoices.length > 0}
 
 	<ResolvingCard {plan} {players} error={resError}>
-		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
-			bind:performStepsWinnerID />
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
 		{#if !isDelayedArrival && rollOutcome == null && !choicesDone && !marPending}
 			<!-- Before the dice land: how hard the roll is, and what it can bring. -->
 			{#if miPeerCountTarget > 0}
@@ -453,7 +451,7 @@
 			<Buffet tabs={MI_BUFFET_TABS} />
 		{/if}
 		{#if isDelayedArrival}
-			{#if arrivingDraft && isPreparer}
+			{#if arrivingDraft && isActor}
 				<div class="plan-form">
 					<p class="ft-prompt">
 						<em>{arrivingDraft.name}</em> has finally reached court. Describe them
@@ -477,11 +475,11 @@
 				</div>
 			{:else}
 				<p class="ft-prompt muted">
-					{playerName(players, plan.preparer_id)} is welcoming a delayed newcomer…
+					{actorName} is welcoming a delayed newcomer…
 				</p>
 			{/if}
 
-		{:else if needsPeerNaming && isPreparer}
+		{:else if needsPeerNaming && isActor}
 			<div class="mi-naming">
 				<p class="form-hint">
 					Name each of the {miPeerCountTarget}
@@ -522,9 +520,9 @@
 				</div>
 			</div>
 
-		{:else if needsPeerNaming && !isPreparer}
+		{:else if needsPeerNaming && !isActor}
 			<p class="ft-prompt muted">
-				{playerName(players, plan.preparer_id)} is naming the new peers…
+				{actorName} is naming the new peers…
 			</p>
 
 		{:else if rollActive && !choicesDone && !marPending}
@@ -533,7 +531,7 @@
 		{:else if rollOutcome === 'make'}
 			<!-- The make has one option, so the server applies it when the dice land and
 			     the arrival forms start immediately; the last arrival ends the plan. -->
-			{#if choicesDone && arrivingDraft && isPreparer}
+			{#if choicesDone && arrivingDraft && isActor}
 				<div class="plan-form">
 					<p class="ft-prompt">
 						<em>{arrivingDraft.name}</em> arrives at court. Describe them —
@@ -559,14 +557,14 @@
 				</div>
 			{:else}
 				<p class="ft-prompt muted">
-					{playerName(players, plan.preparer_id)} is welcoming the new peers…
+					{actorName} is welcoming the new peers…
 				</p>
 			{/if}
 
 		{:else if rollOutcome === 'mar'}
 			{#if !marPending}
 				<p class="ft-prompt muted">
-					{playerName(players, plan.preparer_id)} is resolving the marred introductions…
+					{actorName} is resolving the marred introductions…
 				</p>
 			{:else}
 				<div class="mi-mar">
@@ -598,7 +596,7 @@
 						</div>
 					{/each}
 
-					{#if isPreparer && unresolvedDrafts.length > 0}
+					{#if isActor && unresolvedDrafts.length > 0}
 						{@const d = unresolvedDrafts[0]}
 						<div class="plan-form">
 							<p class="ft-prompt">
@@ -654,16 +652,16 @@
 						</div>
 					{/if}
 
-					{#if isPreparer && unresolvedDrafts.length === 0 && !allPeersDone}
+					{#if isActor && unresolvedDrafts.length === 0 && !allPeersDone}
 						<p class="ft-prompt muted">
 							Every newcomer is settled. The plan resolves as soon as the others have
 							written the marginalia they owe.
 						</p>
 					{/if}
 
-					{#if !isPreparer && myAuthorDrafts.length === 0}
+					{#if !isActor && myAuthorDrafts.length === 0}
 						<p class="ft-prompt muted">
-							{playerName(players, plan.preparer_id)} is resolving the marred introductions…
+							{actorName} is resolving the marred introductions…
 						</p>
 					{/if}
 				</div>

@@ -5,6 +5,7 @@ import {
 	choicesCommitted,
 	demandWinnersFromPlan,
 	activeDemandAgainst,
+	resolutionActorID,
 	playerName,
 	assetName,
 	intactMarginalia,
@@ -474,5 +475,23 @@ describe('choicesCommitted', () => {
 	});
 	it('still reads a row stored before the markers existed', () => {
 		expect(choicesCommitted({ make_mar_choices: [{ option: 'legal' }] as never })).toBe(true);
+	});
+});
+
+// ── resolutionActorID ────────────────────────────────────────────────────────
+
+describe('resolutionActorID', () => {
+	const target = plan({ id: 100, plan_type: 'make_introductions', preparer_id: 1 });
+	const demand = (winner: number) => plan({
+		id: 5, plan_type: 'make_demands', targeted_plan_id: 100, status: 'resolved', result: 'make',
+		resolution_data: JSON.stringify({ make_demands: { draft_choices: [{ option: 'perform_steps', player_id: winner }] } }),
+	});
+
+	it('is the preparer when no demand is made against the plan', () => {
+		expect(resolutionActorID(target, [target])).toBe(1);
+	});
+
+	it('is the perform_steps winner once a demand has been made', () => {
+		expect(resolutionActorID(target, [target, demand(3)])).toBe(3);
 	});
 });

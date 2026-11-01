@@ -295,6 +295,18 @@ export function activeDemandAgainst(plan: Plan, allPlans: Plan[]): Plan | null {
 	return null;
 }
 
+/** Who drives a plan's resolution steps: the perform_steps winner of a made
+ * Make Demands against it, else the preparer. Mirrors `actsForPreparer` in
+ * handler/plan_access.go, the authority — the server 403s anyone else, so a
+ * panel that gates its forms on the preparer alone strands a winner-driven
+ * plan. Derived from the plans list rather than read from the demand overlay's
+ * bindable, so it holds on first render. */
+export function resolutionActorID(plan: Plan, allPlans: Plan[]): number {
+	const demand = activeDemandAgainst(plan, allPlans);
+	const winner = demand ? demandWinnersFromPlan(demand).perform_steps : undefined;
+	return winner ?? plan.preparer_id;
+}
+
 // ── Generic helpers ───────────────────────────────────────────────────────
 
 export function playerName(players: Player[], id: number | null): string {
