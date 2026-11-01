@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { test, expect, request as pwRequest, type APIResponse, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { E2E } from '../baseUrl';
 
@@ -112,14 +111,6 @@ export async function actOK(g: PDGame, who: Who, planID: number, route: string, 
 	return res.json();
 }
 
-/** Alice opens the debate, every eligible player declines, the signatory calls the roll. Returns the roll id. */
-export async function rollDecree(g: PDGame, planID: number, signatory: Who, declining: Who[] = []): Promise<number> {
-	await actOK(g, 'alice', planID, 'start-debate', { text: 'No private armies within the capital.' });
-	for (const w of declining) await actOK(g, w, planID, 'decline-council');
-	const { roll } = await actOK(g, signatory, planID, 'call-roll');
-	return roll.id as number;
-}
-
 /** Force the open roll. A mar is forced by exact result (1), since "outcome: mar" asks for difficulty-1 dice alice may not have. */
 export async function forceRoll(g: PDGame, rollID: number, outcome: 'make' | 'mar') {
 	const data = outcome === 'make' ? { roll_id: rollID, outcome } : { roll_id: rollID, result: 1 };
@@ -137,10 +128,6 @@ export async function getPlan(g: PDGame, planID: number): Promise<PlanRow> {
 	const res = await g.ctx.alice.request.get(`/api/tables/${g.gameID}/plans`);
 	const { plans } = (await res.json()) as { plans: PlanRow[] };
 	return plans.find(p => p.id === planID)!;
-}
-
-export async function planStatus(g: PDGame, planID: number): Promise<string> {
-	return (await getPlan(g, planID)).status;
 }
 
 /** The decree's own slice of resolution_data (the API ships it as a JSON string or an object). */
@@ -193,22 +180,10 @@ export async function spareAsset(g: PDGame, who: Who): Promise<AssetRow> {
 	return mine.find(a => a.asset_type === 'peer') ?? mine[0];
 }
 
-/**
- * Crown `who`: stamp the monarch title on one of their peers and trip the
- * throne-established flag. There is no API or seed option for this outside the
- * prologue's title claim, so it goes straight to the database through the db
- * container. E2E_DATABASE names the database the server under test uses (the
- * test-worktree skill's private one); it defaults to the shared e2e database.
- */
-export function crown(g: PDGame, who: Who) {
-	const db = process.env.E2E_DATABASE ?? 'uneasy_test';
-	const sql = `
-		UPDATE marginalia SET title = 'monarch' WHERE id = (
-			SELECT m.id FROM marginalia m JOIN assets a ON a.id = m.asset_id
-			WHERE a.game_id = ${g.gameID} AND a.owner_id = ${g.ids[who]} AND a.asset_type = 'peer'
-			ORDER BY m.id LIMIT 1);
-		UPDATE games SET throne_established = TRUE WHERE id = ${g.gameID};`;
-	execFileSync('docker', ['exec', 'uneasy-db-1', 'psql', '-U', 'uneasy', '-d', db, '-v', 'ON_ERROR_STOP=1', '-c', sql]);
+/** Crown `who` through the dev shortcut, which does what the prologue's title claim does. */
+export async function crown(g: PDGame, who: Who) {
+	const res = await g.ctx[who].request.post('/api/dev/crown', { data: { game_id: g.gameID, player_id: g.ids[who] } });
+	expect(res.status(), `crown failed: ${await res.text()}`).toBe(200);
 }
 
 /**
@@ -252,8 +227,33 @@ export async function reloadAll(pages: Page[]) {
 	await Promise.all(pages.map(p => p.reload()));
 }
 
-/** Force the roll, then wait until the server has recorded the outcome in the decree (it applies it just after the dice land). */
+/**
+ * Force the roll, then wait until the server has recorded the outcome in the
+ * decree (it applies it just after the dice land). A participant row can still
+ * be appearing when the dev route marks everyone ready, which leaves the roll
+ * open in the leverage stage; forcing again is harmless (a resolved roll is a
+ * 409), so keep forcing until the outcome is in.
+ */
 export async function forceAndSettle(g: PDGame, planID: number, rollID: number, outcome: 'make' | 'mar') {
 	await forceRoll(g, rollID, outcome);
-	await expect.poll(async () => (await decreeState(g, planID)).outcome ?? '').toBe(outcome);
+	await expect
+		.poll(
+			async () => {
+				const state = (await decreeState(g, planID)).outcome ?? '';
+				if (state === '') {
+					const data = outcome === 'make' ? { roll_id: rollID, outcome } : { roll_id: rollID, result: 1 };
+					await g.ctx.alice.request.post('/api/dev/force-roll', { data });
+				}
+				return state;
+			},
+			{ timeout: 15_000 },
+		)
+		.toBe(outcome);
+}
+
+/** The calling player's unspent banked dice (a joiner holds one 'decree' die until the roll settles). */
+export async function bankedDice(g: PDGame, who: Who): Promise<{ id: number; source: string }[]> {
+	const res = await g.ctx[who].request.get(`/api/tables/${g.gameID}/banked-dice`);
+	expect(res.status()).toBe(200);
+	return ((await res.json()) as { dice: { id: number; source: string }[] }).dice;
 }

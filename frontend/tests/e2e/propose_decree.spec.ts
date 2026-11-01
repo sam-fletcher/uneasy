@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
 import {
 	seedPD, prepareDecree, resolveDecree, resolvingDecree, openAll, act, actOK, forceRoll, decreeState,
-	laws, assets, spareAsset, crown, expectLog, reloadAll, forceAndSettle, closeContextsAfterEach,
+	laws, assets, spareAsset, crown, expectLog, reloadAll, forceAndSettle, bankedDice, closeContextsAfterEach,
 	type PDGame,
 } from './helpers/propose_decree';
 
@@ -26,9 +26,9 @@ import {
 // here asserts the plan's status after enact-law — the law and the resource are
 // the outcome.
 //
-// Setup (seed, scene, prepare, fast-forward, forcing the dice) goes over the API;
-// the subject is the panel and the server's gates. The crown (the monarch spec)
-// is stamped straight into the database: see `crown`.
+// Setup (seed, scene, prepare, fast-forward, forcing the dice, crowning a
+// monarch via /api/dev/crown) goes over the API; the subject is the panel and
+// the server's gates.
 //
 // Ranks: with `alice-first` (the default seed) alice is rank 1 — the lone council
 // member and signatory — and bob and carol owe a join/decline. With `alice-last`
@@ -143,8 +143,14 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	// Only the signatory may call it at all.
 	expect((await act(g, 'bob', planID, 'call-roll')).status()).toBe(403);
 
+	// The Waiting On bar names the undecided joiners, not the signatory (who can't act yet).
+	await expect(waitingBar(bob)).toContainText('carol');
+	await expect(waitingBar(alice)).toContainText('bob');
+	await expect(waitingBar(alice)).not.toContainText('You');
+
 	// bob joins by leveraging one asset, through the picker.
 	const spare = await spareAsset(g, 'bob');
+	expect(await bankedDice(g, 'bob')).toHaveLength(0);
 	await pickCard(bob, spare.name);
 	await bob.getByRole('button', { name: 'Join', exact: true }).click();
 	await expect(alice.getByText('Council (2) · Signatory: alice')).toBeVisible();
@@ -152,6 +158,10 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	await expect
 		.poll(async () => (await assets(g)).find(a => a.id === spare.id)?.is_leveraged)
 		.toBe(true);
+	// ...and the asset becomes one die to help or interfere on the decree's roll.
+	expect((await bankedDice(g, 'bob')).map(d => d.source)).toEqual(['decree']);
+	await expect(waitingBar(alice)).not.toContainText('bob');
+	await expect(waitingBar(alice)).toContainText('carol');
 
 	// carol declines: it buys nothing, but it unblocks the table and is shown.
 	await carol.getByRole('button', { name: 'Decline' }).click();
@@ -167,10 +177,8 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	expect((await act(g, 'alice', planID, 'decline-council')).status()).toBe(409);
 
 	await endDebate.click();
-	// The dice are called: the panel moves on from the council step for everyone.
-	await expect(bob.getByText('Proposed decree being debated:')).toHaveCount(0);
-	await expect(carol.getByText('Join the council?')).toHaveCount(0);
-	expect((await act(g, 'alice', planID, 'call-roll')).status()).toBe(409);
+	// The roll is called: a second call is refused.
+	await expect.poll(async () => (await act(g, 'alice', planID, 'call-roll')).status()).toBe(409);
 
 	await expectLog(alice, [
 		'opened the council debate on the proposed decree',
@@ -200,6 +208,8 @@ test('join-council: exactly one owned, un-leveraged asset; nobody at or above th
 test('make: the signatory\'s addendum, then the preparer names the resource; the law lands under Laws', async ({ browser }) => {
 	const { g, planID, rollID, spare } = await rolledDecree(browser);
 	await forceAndSettle(g, planID, rollID, 'make');
+	// The joiner's unspent council die doesn't outlive the decree's roll.
+	expect(await bankedDice(g, 'bob')).toHaveLength(0);
 	const { alice, bob, carol } = await openAll(g);
 
 	// Passing the decree is automatic: straight to the addendum, no "pass" gate.
@@ -341,6 +351,8 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 	await expect(carol.getByText('Waiting for alice to enact the law…')).toBeVisible();
 	await expect(alice.getByPlaceholder('The amended law…')).toHaveCount(0);
 
+	// NOTE: "Enact the law" on a mar is a click-to-agree gate that the audit flagged
+	// (high) and that is still open; if it is removed this spec changes here.
 	const resourcesBefore = (await assets(g)).filter(a => a.asset_type === 'resource').length;
 	await alice.getByRole('button', { name: 'Enact the law' }).click();
 
@@ -366,7 +378,7 @@ test('monarch: the crown-bearer signs and sits on the council even at the lowest
 	// carol is power rank 3 and alice (rank 1) prepares; with no throne alice would sign.
 	const g = await seedPD(browser);
 	track(g.gameID);
-	crown(g, 'carol');
+	await crown(g, 'carol');
 	const planID = await prepareDecree(g, LAW);
 	await resolveDecree(g, planID);
 	const { alice, bob, carol } = await openAll(g);
@@ -425,7 +437,9 @@ test('phone width: the join and decline buttons are real tap targets and nothing
 	const { alice, bob, carol } = await openAll(g);
 	await expect(bob.getByText('Join the council?')).toBeVisible();
 
-	for (const name of ['Decline']) {
+	// Join only appears once an asset is picked, so measure it after ticking one.
+	await pickCard(bob, (await spareAsset(g, 'bob')).name);
+	for (const name of ['Join', 'Decline']) {
 		const box = await bob.getByRole('button', { name, exact: true }).boundingBox();
 		expect(box!.height, `${name} is too short to tap`).toBeGreaterThanOrEqual(44);
 	}
@@ -449,4 +463,19 @@ test.fixme('make: the signatory is handed the addendum live, with no reload', as
 	await forceRoll(g, rollID, 'make');
 	await expect(alice.getByText("Signatory's Addendum")).toBeVisible();
 	await expect(bob.getByText('Waiting for alice to place the addendum…')).toBeVisible();
+});
+
+// The audit found the finalized text vanishing once the roll started, leaving
+// only the stale prep draft. It is on screen through the roll now; pin that,
+// using a finalized text that differs from the prep draft.
+test('roll: the finalized decree text, not the prep draft, is on screen while the dice are open', async ({ browser }) => {
+	const FINAL = 'No private armies, and no sworn banners.';
+	const { g, planID } = await resolving(browser, { notes: 'No private armies.' });
+	await actOK(g, 'alice', planID, 'start-debate', { text: FINAL });
+	await actOK(g, 'bob', planID, 'decline-council');
+	await actOK(g, 'carol', planID, 'decline-council');
+	await actOK(g, 'alice', planID, 'call-roll');
+	const { bob } = await openAll(g);
+	await expect(bob.getByText('Dice roll in progress…')).toBeVisible();
+	await expect(bob.getByText(FINAL).first()).toBeVisible();
 });
