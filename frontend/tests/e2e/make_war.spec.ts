@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
 import {
 	seedWarGame, runScene, declareWar, joinWar, revealFaces, advanceTo, warAtCostRow, warState,
-	assetNamed, frontPayer, openAll, waitingBar, expectLogged, closeContextsAfterEach,
+	assetNamed, frontPayer, openAll, waitingBar, expectLogged, postWith, closeContextsAfterEach,
 	type WarGame, type Who,
 } from './helpers/make_war';
 
@@ -37,13 +37,21 @@ async function game(browser: Parameters<typeof seedWarGame>[0], viewport = { wid
 	return g;
 }
 
-/** The war panel's text with newlines collapsed, for order-insensitive reads. */
-async function planAreaText(page: Page) {
-	return (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+/** alice (side 1) and carol (side 1) against bob; carol pays first at row 5. */
+function threeWayWar(g: WarGame) {
+	return warAtCostRow(g, { joins: [['carol', 1]], faces: { alice: 2, bob: 3, carol: 1 } });
 }
 
-/** Tick the marginalia on `assetName`'s card in the "Your cost of battle" picker. */
-async function tearMarginalia(page: Page, assetName: string, text: string) {
+/** Open a peace proposal from the payer's cost-of-battle form. */
+async function proposePeace(page: Page, opponent: string, terms: string) {
+	await opponentChip(page, opponent);
+	await page.getByRole('button', { name: 'Propose peace' }).click();
+	await page.getByPlaceholder('Describe the terms you propose…').fill(terms);
+	await page.getByRole('button', { name: 'Propose peace' }).last().click();
+}
+
+/** Tick the (only) marginalia on `assetName`'s card in the "Your cost of battle" picker. */
+async function tearMarginalia(page: Page, assetName: string) {
 	const form = page.locator('.choices-section', { hasText: 'Your cost of battle' });
 	await form.locator('.card', { hasText: assetName }).locator('.m-tap').click();
 }
@@ -132,6 +140,12 @@ test('delay vote: joining a side is free before the war begins and puts the join
 	await declareWar(g);
 	const { alice, carol } = await openAll(g);
 
+	// A side other than 1 or 2 is a bad request — sent by carol, who is not yet in
+	// the war, so only the side itself can be what is wrong.
+	const bad = await g.ctx.carol.request.post(`/api/plans/${g.planID}/join-war`, { data: { side: 3 } });
+	expect(bad.status()).toBe(400);
+	expect((await warState(g)).participants).toHaveLength(2);
+
 	await carol.getByRole('button', { name: 'Join Side 2' }).click();
 
 	await expect.poll(async () => {
@@ -147,12 +161,12 @@ test('delay vote: joining a side is free before the war begins and puts the join
 	// Once in, a second join is refused rather than silently moving sides.
 	const again = await g.ctx.carol.request.post(`/api/plans/${g.planID}/join-war`, { data: { side: 1 } });
 	expect(again.status()).toBe(409);
-	// And a side other than 1 or 2 is a bad request.
-	const bad = await g.ctx.alice.request.post(`/api/plans/${g.planID}/join-war`, { data: { side: 3 } });
-	expect(bad.status()).toBe(400);
+
 });
 
-test('delay vote: "Stay out of it" collapses the choices and does not enlist the player', async ({ browser }) => {
+// "Stay out of it" is a client-only note (warStayOuts), not a server state: the
+// war itself is unchanged by it, so there is no server read to pin here.
+test('delay vote: "Stay out of it" collapses the join choices into a note', async ({ browser }) => {
 	const g = await game(browser);
 	await runScene(g);
 	await declareWar(g);
@@ -162,9 +176,6 @@ test('delay vote: "Stay out of it" collapses the choices and does not enlist the
 	await expect(carol.getByText("You're staying out of it.")).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Join Side 1' })).toHaveCount(0);
 	await expect(carol.getByRole('button', { name: 'Join Side 2' })).toHaveCount(0);
-
-	const s = await warState(g);
-	expect(s.participants.map(p => p.player_id).sort()).toEqual([g.ids.alice, g.ids.bob].sort());
 });
 
 test('delay vote: the delay is the average of the faces rounded up, and the vote closes on the last face', async ({ browser }) => {
@@ -189,7 +200,7 @@ test('delay vote: the delay is the average of the faces rounded up, and the vote
 
 test('cost of battle: owed per opponent, shown in the play area to everyone, and the bar names the one payer', async ({ browser }) => {
 	const g = await game(browser);
-	await warAtCostRow(g, { joins: [['carol', 1]], faces: { alice: 2, bob: 3, carol: 1 } });
+	await threeWayWar(g);
 
 	// carol (side 1) owes bob; bob (alone on side 2) owes both alice and carol;
 	// alice owes bob — one cost per opponent on the other side.
@@ -228,7 +239,7 @@ test('cost of battle: owed per opponent, shown in the play area to everyone, and
 
 test('cost of battle: paying by breaking tears the marginalia, hands the turn on, and refuses the wrong payer', async ({ browser }) => {
 	const g = await game(browser);
-	await warAtCostRow(g, { joins: [['carol', 1]], faces: { alice: 2, bob: 3, carol: 1 } });
+	await threeWayWar(g);
 	const { alice, bob, carol } = await openAll(g);
 
 	// Not alice's turn: refused with a conflict, not a 500, and nothing is spent.
@@ -244,7 +255,7 @@ test('cost of battle: paying by breaking tears the marginalia, hands the turn on
 	await carol.getByRole('button', { name: 'Break an asset' }).click();
 	const pay = carol.getByRole('button', { name: 'Pay cost' });
 	await expect(pay).toBeDisabled(); // nothing chosen to tear yet
-	await tearMarginalia(carol, "carol's holding", 'Older than it looks.');
+	await tearMarginalia(carol, "carol's holding");
 	await expect(pay).toBeEnabled();
 	await pay.click();
 
@@ -257,7 +268,8 @@ test('cost of battle: paying by breaking tears the marginalia, hands the turn on
 	await expect(waitingBar(alice)).toContainText('bob');
 	await expect(carol.getByText('Your cost of battle')).toHaveCount(0);
 
-	await expectLogged(g, 'broke');
+	// The post sits on the row being paid (5), not the war's own row (3).
+	expect((await postWith(g, 'broke')).row_number).toBe(5);
 	// The same payer cannot pay the same opponent twice.
 	const twice = await g.ctx.carol.request.post(`/api/plans/${g.planID}/pay-battle-cost`, {
 		data: { opponent_id: g.ids.bob, choice: 'break_asset', marginalia_id: (await assetNamed(g, "carol's artifact")).marginalia[0].id },
@@ -268,7 +280,7 @@ test('cost of battle: paying by breaking tears the marginalia, hands the turn on
 
 test('cost of battle: leverage two pays it, and once every cost is paid the row is unblocked for all', async ({ browser }) => {
 	const g = await game(browser);
-	await warAtCostRow(g, { joins: [['carol', 1]], faces: { alice: 2, bob: 3, carol: 1 } });
+	await threeWayWar(g);
 	const { alice, bob, carol } = await openAll(g);
 
 	const pay = async (who: Who, body: Record<string, unknown>) => {
@@ -306,14 +318,11 @@ test('cost of battle: leverage two pays it, and once every cost is paid the row 
 
 test('peace: the bar names the voters, a rejection is announced and returns the gate to the payer', async ({ browser }) => {
 	const g = await game(browser);
-	await warAtCostRow(g, { joins: [['carol', 1]], faces: { alice: 2, bob: 3, carol: 1 } });
+	await threeWayWar(g);
 	const { alice, bob, carol } = await openAll(g);
 
 	// Carol is next to pay, and proposes peace in place of paying (UI).
-	await opponentChip(carol, 'bob');
-	await carol.getByRole('button', { name: 'Propose peace' }).click();
-	await carol.getByPlaceholder('Describe the terms you propose…').fill('Both hosts withdraw to the old border.');
-	await carol.getByRole('button', { name: 'Propose peace' }).last().click();
+	await proposePeace(carol, 'bob', 'Both hosts withdraw to the old border.');
 
 	await expect.poll(async () => (await warState(g)).open_proposal?.proposer_id).toBe(g.ids.carol);
 
@@ -354,14 +363,12 @@ test('peace: the bar names the voters, a rejection is announced and returns the 
 
 test('peace: unanimous acceptance ends the war and clears the table', async ({ browser }) => {
 	const g = await game(browser);
-	await warAtCostRow(g, { joins: [['carol', 1]], faces: { alice: 2, bob: 3, carol: 1 } });
+	await threeWayWar(g);
 	const { alice, bob, carol } = await openAll(g);
 
-	await opponentChip(carol, 'bob');
-	await carol.getByRole('button', { name: 'Propose peace' }).click();
-	await carol.getByPlaceholder('Describe the terms you propose…').fill('A white peace.');
-	await carol.getByRole('button', { name: 'Propose peace' }).last().click();
+	await proposePeace(carol, 'bob', 'A white peace.');
 	await expect(bob.getByText('Peace proposal from carol')).toBeVisible();
+	const proposalID = (await warState(g)).open_proposal!.id;
 
 	await bob.getByRole('button', { name: 'Accept' }).click();
 	await expect(bob.getByText('You voted: accept')).toBeVisible();
@@ -382,9 +389,8 @@ test('peace: unanimous acceptance ends the war and clears the table', async ({ b
 		await expect(waitingBar(p)).not.toContainText('Row advance blocked');
 	}
 	// Voting after the war is over is refused.
-	const late = await g.ctx.alice.request.post(`/api/plans/${g.planID}/vote-peace`, { data: { proposal_id: 1, accepted: true } });
-	expect(late.status()).toBeGreaterThanOrEqual(400);
-	expect(late.status()).toBeLessThan(500);
+	const late = await g.ctx.alice.request.post(`/api/plans/${g.planID}/vote-peace`, { data: { proposal_id: proposalID, accepted: true } });
+	expect(late.status()).toBe(409);
 });
 
 /** A one-on-one war at the cost row where bob pays first and surrenders on paying. */
@@ -444,7 +450,9 @@ test('surrender: the claimant takes an asset of their choice; then the panel and
 	const claim = alice.getByRole('button', { name: 'Claim' });
 	await expect(claim).toBeDisabled(); // nothing picked
 	// The destroyed holding is not on offer; the artifact is.
-	await expect(alice.locator('.card', { hasText: "bob's artifact" })).toBeVisible();
+	const picker = alice.locator('.choices-section', { hasText: 'Surrender claims' });
+	await expect(picker.locator('.card', { hasText: "bob's artifact" })).toBeVisible();
+	await expect(picker.locator('.card', { hasText: "bob's holding" })).toHaveCount(0);
 	await alice.locator('.card', { hasText: "bob's artifact" }).getByRole('checkbox').click();
 	await expect(claim).toBeEnabled();
 	await claim.click();
@@ -464,9 +472,61 @@ test('surrender: the claimant takes an asset of their choice; then the panel and
 	const again = await g.ctx.alice.request.post(`/api/plans/${g.planID}/take-surrender-asset`, {
 		data: { surrendered_id: g.ids.bob, asset_id: (await assetNamed(g, "bob's resource")).id },
 	});
-	expect(again.status()).toBeGreaterThanOrEqual(400);
-	expect(again.status()).toBeLessThan(500);
+	expect(again.status()).toBe(409);
 	expect((await assetNamed(g, "bob's resource")).owner_id).toBe(g.ids.bob);
+});
+
+test('surrender: a lone side surrendering to two opponents opens two claims, one asset each', async ({ browser }) => {
+	const g = await game(browser);
+	// alice alone on side 1; bob and carol on side 2.
+	await warAtCostRow(g, { joins: [['carol', 2]], faces: { alice: 2, bob: 3, carol: 1 } });
+
+	// Everyone ahead of alice pays by breaking, in order, until it is her turn.
+	const spare = ['holding', 'resource', 'artifact'];
+	for (let guard = 0; guard < 6 && (await frontPayer(g)) !== 'alice'; guard++) {
+		const s = await warState(g);
+		const cost = s.outstanding_costs[0];
+		const who = (['bob', 'carol'] as Who[]).find(w => g.ids[w] === cost.payer_id)!;
+		const a = await assetNamed(g, `${who}'s ${spare.shift()}`);
+		const res = await g.ctx[who].request.post(`/api/plans/${g.planID}/pay-battle-cost`, {
+			data: { opponent_id: cost.opponent_id, choice: 'break_asset', marginalia_id: a.marginalia[0].id },
+		});
+		expect(res.status(), await res.text()).toBe(200);
+	}
+	expect(await frontPayer(g)).toBe('alice');
+	const sur = await g.ctx.alice.request.post(`/api/plans/${g.planID}/pay-battle-cost`, {
+		data: {
+			opponent_id: g.ids.bob, choice: 'break_asset', surrender: true,
+			marginalia_id: (await assetNamed(g, "alice's holding")).marginalia[0].id,
+		},
+	});
+	expect(sur.status(), await sur.text()).toBe(200);
+
+	const s = await warState(g);
+	expect(s.status).toBe('ended');
+	expect(s.open_claims.map(c => c.claimant_id).sort()).toEqual([g.ids.bob, g.ids.carol].sort());
+	expect(s.open_claims.every(c => c.surrendered_id === g.ids.alice)).toBe(true);
+
+	const { alice, bob, carol } = await openAll(g);
+	for (const p of [bob, carol]) await expect(waitingBar(p)).toContainText('You');
+	await expect(waitingBar(alice)).toContainText('bob');
+	await expect(waitingBar(alice)).toContainText('carol');
+
+	// Each takes a different asset of alice's; the block holds until both have.
+	const take = (who: Who, name: string) => assetNamed(g, name).then(a =>
+		g.ctx[who].request.post(`/api/plans/${g.planID}/take-surrender-asset`, {
+			data: { surrendered_id: g.ids.alice, asset_id: a.id },
+		}));
+	expect((await take('bob', "alice's artifact")).status()).toBe(200);
+	expect((await warState(g)).open_claims.map(c => c.claimant_id)).toEqual([g.ids.carol]);
+	await expect(waitingBar(alice)).not.toContainText('bob');
+	await expect(waitingBar(alice)).toContainText('carol');
+	expect((await take('carol', "alice's resource")).status()).toBe(200);
+
+	expect((await assetNamed(g, "alice's artifact")).owner_id).toBe(g.ids.bob);
+	expect((await assetNamed(g, "alice's resource")).owner_id).toBe(g.ids.carol);
+	expect((await warState(g)).open_claims).toEqual([]);
+	for (const p of [alice, bob, carol]) await expect(waitingBar(p)).not.toContainText('Row advance blocked');
 });
 
 test('surrender: only the claimant may take, and only from the surrendered player', async ({ browser }) => {
@@ -488,7 +548,7 @@ test('surrender: only the claimant may take, and only from the surrendered playe
 
 test('surrender: a side with an ally left keeps the war going and the surrendered player stops paying', async ({ browser }) => {
 	const g = await game(browser);
-	await warAtCostRow(g, { joins: [['carol', 1]], faces: { alice: 2, bob: 3, carol: 1 } });
+	await threeWayWar(g);
 	expect(await frontPayer(g)).toBe('carol');
 	const pay = await g.ctx.carol.request.post(`/api/plans/${g.planID}/pay-battle-cost`, {
 		data: {
@@ -522,14 +582,14 @@ test('a bystander who never joined sees the whole war but is never asked for any
 	await expect(carol.getByText('Your cost of battle')).toHaveCount(0);
 	await expect(waitingBar(carol)).toContainText('bob');
 	await expect(waitingBar(carol)).not.toContainText('You');
-	expect(await planAreaText(carol)).toContain('Outstanding (payer → opponent), in reverse-power order: bob → alice; alice → bob');
+	await expect(carol.locator('.choices-section', { hasText: 'Cost of battle — row 5' })).toContainText(
+		'Outstanding (payer → opponent), in reverse-power order: bob → alice; alice → bob');
 
 	// Not being in the war, carol cannot pay, vote or claim.
 	const pay = await g.ctx.carol.request.post(`/api/plans/${g.planID}/pay-battle-cost`, {
 		data: { opponent_id: g.ids.bob, choice: 'break_asset', marginalia_id: (await assetNamed(g, "carol's holding")).marginalia[0].id },
 	});
-	expect(pay.status()).toBeGreaterThanOrEqual(400);
-	expect(pay.status()).toBeLessThan(500);
+	expect(pay.status()).toBe(409);
 	expect((await assetNamed(g, "carol's holding")).marginalia[0].is_torn).toBe(false);
 });
 

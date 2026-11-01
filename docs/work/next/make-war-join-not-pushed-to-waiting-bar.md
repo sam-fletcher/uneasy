@@ -15,3 +15,6 @@ Likely cause: `join-war` broadcasts a war event (the panel refetches) but not
 the row-state change the bar derives from — the same class as
 `make-introductions-step-routes-not-broadcast.md`. Fix, then flip the
 `test.fixme` to `test`.
+
+A join *after* the reveal closes (the late joiner owing an entry payment, the
+pending-participant branch) probably has the same gap and is not pinned yet.

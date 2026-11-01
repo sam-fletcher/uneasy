@@ -198,3 +198,21 @@ export async function expectLogged(g: WarGame, snippet: string) {
 		)
 		.toBe(true);
 }
+
+/** The first action-log post whose body contains `snippet`, polled until it exists. */
+export async function postWith(g: WarGame, snippet: string): Promise<{ body: string; row_number: number | null }> {
+	let found: { body: string; row_number: number | null } | undefined;
+	await expect
+		.poll(
+			async () => {
+				const res = await g.ctx.alice.request.get(`/api/tables/${g.gameID}/posts`);
+				if (res.status() !== 200) return false;
+				const { posts } = (await res.json()) as { posts: { body: string; row_number: number | null }[] };
+				found = posts.find(p => p.body.includes(snippet));
+				return found !== undefined;
+			},
+			{ timeout: 10_000, message: `a post containing "${snippet}"` },
+		)
+		.toBe(true);
+	return found!;
+}

@@ -1,7 +1,7 @@
 # Make War regression specs
 
 ## What changed and why
-`frontend/tests/e2e/make_war.spec.ts` (+ `helpers/make_war.ts`): 16 specs and
+`frontend/tests/e2e/make_war.spec.ts` (+ `helpers/make_war.ts`): 17 specs and
 one `test.fixme`, pinning what the 12-plan UX audit fixed in Make War. No
 product code.
 
@@ -21,15 +21,17 @@ product code.
   surrendered player and bystander see the "X is choosing…" note, bar names the
   claimant; claimant takes an asset (owner changes, only that one, claim spent);
   non-claimants 404, someone else's asset 403; a side with an ally left keeps
-  the war active and the surrendered player stops paying.
+  the war active and the surrendered player stops paying; a lone side
+  surrendering to two opponents opens two claims, the bar names both, each takes
+  one asset. The cost "broke" post is checked to sit on the row being paid.
 
 ## How it was verified
 Against this worktree's own build (`./server_makewar_spec` on port 8187, private
-database, since dropped), never `:8090`. 16 passed, 1 skipped, three runs in a row.
+database, since dropped), never `:8090`. 17 passed, 1 skipped, three runs in a row.
 Bite checks (not committed): reverting the ended-war listing in `ListWars` and
 the peace-voters branch of the waitees override failed the peace and surrender
 specs; hiding the panel on an ended war regardless of claims, and dropping the
-bystander claim note, failed the surrender specs. The fixme fails when enabled.
+bystander claim note, failed the surrender specs. Anchoring `mwLog` to the war's row failed the cost spec. The fixme fails when enabled.
 `make check-fast` passes. Integration suite not run (no Go changed).
 
 Setup note: the war plan has to be advanced to its own row first (so it is
@@ -47,3 +49,7 @@ None (tests only).
 - A join during the delay vote isn't pushed to other players' Waiting On bar
   (stale until reload): `docs/work/next/make-war-join-not-pushed-to-waiting-bar.md`,
   pinned by the `test.fixme`.
+- Unpinned audit fixes: late-join entry payment (`pay-war-entry`), a surrendered
+  player voting on peace (403), tap sizes (44px) on the war controls, and a join
+  after the reveal reaching the Waiting On bar. "Stay out of it" is client-only,
+  so only its UI collapse is pinned.
