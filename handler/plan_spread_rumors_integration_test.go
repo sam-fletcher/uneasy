@@ -332,6 +332,22 @@ func TestSpreadRumors_Mar_ZeroPickCommitHandsTheWaitToThePreparer(t *testing.T) 
 	h.assertWaitees("the actor has finished; the preparer completes", model.RowStatePlanResolving, prep.ID)
 }
 
+// Once the mar's choice is committed the counter-rumor is closed, even when the
+// commit carried no picks (make_mar_choices empty, so only the marker says so).
+func TestSpreadRumors_Mar_CounterRumorClosedByAZeroPickCommit(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, _, actorIdx, _, _ := srMar(t, h)
+
+	rd := loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData)
+	require.Empty(t, rd.MakeMarChoices)
+	rd.ChoiceSubmitted = true
+	require.NoError(t, saveResolutionData(ctx, h.q, plan.ID, rd))
+
+	code, _ := h.post(actorIdx, srPath(plan.ID, "sr-counter-rumor"), map[string]any{"text": "Too late."})
+	assert.Equal(t, http.StatusConflict, code, "no counter-rumor after the choice is committed")
+}
+
 // Q2: the counter-rumor is about the preparer's main character AS IT STANDS WHEN
 // THE OPTIONS ARE APPLIED; its text and source are the actor's; the preparer's
 // failed rumor never reaches the sheet.

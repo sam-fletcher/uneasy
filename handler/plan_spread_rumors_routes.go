@@ -842,7 +842,6 @@ func srCommitTakeConsent(
 	req *gamepkg.TakeConsentRequest,
 ) error {
 	resData := loadResolutionData(plan.ResolutionData)
-	resData.ChoiceSubmitted = true
 	resData.MakeMarChoices = make([]Choice, len(req.Choices))
 	for i, opt := range req.Choices {
 		resData.MakeMarChoices[i] = Choice{Option: opt}

@@ -1,6 +1,6 @@
 //go:build integration
 
-// handler/shake_up_log_integration_test.go — the Shake-Up / focus-pass half of the
+// handler/shake_up_log_integration_test.go — the Shake-Up half of the
 // log-completeness sweep (see log_completeness_integration_test.go for the plans).
 //
 // Same rule: every board change and every table-visible decision posts a
@@ -17,8 +17,8 @@
 //   - ShakeUpAnnounce named only the asset: not whose it was, which marginalia a
 //     break would tear, or which title a claim would stamp — the very things the
 //     other players bid against;
-//   - the claim-title commit line dropped the marginalia wording it stamped;
-//   - PassFocus / autoPassFocus moved the focus marker without a trace.
+//   - the claim-title commit line dropped the marginalia wording it stamped.
+// (The focus-pass half lives in focus_pass_log_integration_test.go.)
 
 package handler
 
@@ -26,22 +26,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"strconv"
-	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
 	"uneasy/gametest"
 	"uneasy/hub"
-	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -235,100 +228,4 @@ func TestShakeUpLog_RollLeverage_PostsWithoutRowAnchor(t *testing.T) {
 	require.Len(t, commits, 1)
 	assert.Contains(t, commits[0].Body, assetMark(assets[0].Name))
 	assert.Nil(t, commits[0].RowNumber)
-}
-
-// focusPassRouter mounts the two routes that move the focus marker.
-func focusPassRouter(t *testing.T, pool *pgxpool.Pool, q *dbgen.Queries) http.Handler {
-	t.Helper()
-	store := db.NewStore(pool)
-	manager := hub.NewManager()
-	r := chi.NewRouter()
-	r.Use(appMiddleware.EnsureSession(q))
-	r.Post("/api/tables/{id}/pass-focus", PassFocus(store, manager))
-	r.Post("/api/tables/{id}/refresh-assets", RefreshAssets(store, manager))
-	return r
-}
-
-func focusPassSetup(t *testing.T) (*dbgen.Queries, testGame, http.Handler, string) {
-	t.Helper()
-	pool := openTestDB(t)
-	q := dbgen.New(pool)
-	ctx := context.Background()
-	tg := newTestGame(t, q, 2)
-	require.NoError(t, q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
-		ID: tg.Game.ID, FocusPlayerID: &tg.Players[0].ID,
-	}))
-	tok, err := db.NewCookieToken()
-	require.NoError(t, err)
-	_, err = q.CreateSession(ctx, dbgen.CreateSessionParams{Token: tok, AccountID: tg.Players[0].AccountID})
-	require.NoError(t, err)
-	return q, tg, focusPassRouter(t, pool, q), tok
-}
-
-func assertFocusPassPosted(t *testing.T, q *dbgen.Queries, tg testGame) {
-	t.Helper()
-	ctx := context.Background()
-	posts := postsWithCode(t, q, tg.Game.ID, "scene.focus_passed")
-	require.Len(t, posts, 1)
-	assert.Equal(t, fmt.Sprintf("%s passes the focus to %s.",
-		playerDisplayName(ctx, q, tg.Players[0].ID), playerDisplayName(ctx, q, tg.Players[1].ID)), posts[0].Body)
-	assert.Equal(t, model.SeverityMinor, posts[0].Severity)
-}
-
-func TestShakeUpLog_PassFocus_Posts(t *testing.T) {
-	q, tg, router, tok := focusPassSetup(t)
-
-	req := httptest.NewRequest("POST", "/api/tables/"+strconv.FormatInt(tg.Game.ID, 10)+"/pass-focus", nil)
-	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	require.Equalf(t, http.StatusOK, rec.Code, "pass-focus: %s", rec.Body.String())
-
-	assertFocusPassPosted(t, q, tg)
-}
-
-// A player with no peers left is passed over; the line says who, so a reader
-// does not mistake the skipped turn for a missed one.
-func TestShakeUpLog_PassFocus_NamesSkippedPlayers(t *testing.T) {
-	pool := openTestDB(t)
-	q := dbgen.New(pool)
-	ctx := context.Background()
-	tg := newTestGame(t, q, 3)
-	require.NoError(t, q.SetFocusPlayer(ctx, dbgen.SetFocusPlayerParams{
-		ID: tg.Game.ID, FocusPlayerID: &tg.Players[0].ID,
-	}))
-	destroyPlayerAssets(t, q, tg.Players[1].ID)
-	tok, err := db.NewCookieToken()
-	require.NoError(t, err)
-	_, err = q.CreateSession(ctx, dbgen.CreateSessionParams{Token: tok, AccountID: tg.Players[0].AccountID})
-	require.NoError(t, err)
-
-	req := httptest.NewRequest("POST", "/api/tables/"+strconv.FormatInt(tg.Game.ID, 10)+"/pass-focus", nil)
-	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
-	rec := httptest.NewRecorder()
-	focusPassRouter(t, pool, q).ServeHTTP(rec, req)
-	require.Equalf(t, http.StatusOK, rec.Code, "pass-focus: %s", rec.Body.String())
-
-	posts := postsWithCode(t, q, tg.Game.ID, "scene.focus_passed")
-	require.Len(t, posts, 1)
-	assert.Equal(t, fmt.Sprintf("%s passes the focus to %s, skipping %s (no peers left).",
-		playerDisplayName(ctx, q, tg.Players[0].ID),
-		playerDisplayName(ctx, q, tg.Players[2].ID),
-		playerDisplayName(ctx, q, tg.Players[1].ID)), posts[0].Body)
-}
-
-// The automatic pass after a turn's action (autoPassFocus) is the normal path;
-// PassFocus is only the recovery endpoint, so both must post.
-func TestShakeUpLog_AutoPassFocus_Posts(t *testing.T) {
-	q, tg, router, tok := focusPassSetup(t)
-
-	req := httptest.NewRequest("POST", "/api/tables/"+strconv.FormatInt(tg.Game.ID, 10)+"/refresh-assets",
-		strings.NewReader(`{"asset_ids":[]}`))
-	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	require.Equalf(t, http.StatusOK, rec.Code, "refresh-assets: %s", rec.Body.String())
-
-	assertFocusPassPosted(t, q, tg)
 }
