@@ -27,12 +27,10 @@ parallel.
      strings (re-aim, Make Introductions, Seek Answers, Host Festivity,
      Spread Rumors and Spread Propaganda files). Paraphrase them; whether
      the same wording in UI labels is fine is a question for the owner.
-   - **Spread Rumors:** on a mar the consent screen names the target asset,
-     but the break lands on the preparer's main character. The
-     take-consent route also skips the settled-roll check and accepts a
-     second submission (a duplicate rumor), reachable only by a hand-built
-     request.
-   - **Spread Propaganda:** a Make Demands winner standing in for "break
+   - **Spread Rumors:** `respond-take-consent` commits the asset ids stashed
+    at request time without re-checking owner or destroyed state, so an asset
+    that changed hands in between still transfers.
+  - **Spread Propaganda:** a Make Demands winner standing in for "break
      yourself" picks the preparer's asset and is granted its secrets. Who
      should learn them is the owner's call (below).
    - The Make Introductions winner soft-lock is item 3.

@@ -736,9 +736,12 @@
 				{@const takeCount = pendingConsent.asset_ids.length}
 				{@const breakCount = countIn(pendingConsent.choices, 'break_target')}
 				{@const leverageCount = countIn(pendingConsent.choices, 'leverage_target')}
-				{@const aboutName = plan.target_asset_id != null ? assetName(assets, plan.target_asset_id) : null}
+				{@const aboutName = rollOutcome === 'mar'
+					? (mcAsset?.name ?? null)
+					: plan.target_asset_id != null ? assetName(assets, plan.target_asset_id) : null}
 
-				<!-- Secondary effects hit the victim's own target asset but need no
+				<!-- Secondary effects hit the rumor's subject (the target asset on a make,
+				     the preparer's main character on a mar) but need no
 				     consent — kept out of the callout as a plain FYI line. -->
 				{#if (breakCount > 0 || leverageCount > 0) && aboutName}
 					<p class="choices-note">

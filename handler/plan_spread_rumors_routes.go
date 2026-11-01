@@ -525,30 +525,61 @@ func srBreakTargetHandler(deps *PlanDeps) http.HandlerFunc {
 
 // ── Take Asset (consent-gated) ─────────────────────────────────────────────────
 
-// srRequestTakeConsentHandler handles POST /api/plans/:planId/request-take-consent.
-//
-// The aggressor (preparer on make, target-asset owner on mar) submits their full
-// set of make/mar picks together with the specific assets they want to take
-// (one asset_id per "take_asset" pick). Nothing is committed: the picks and
-// asset list are stashed in resolution_data and the victim — the player who owns
-// those assets — is asked to agree or disagree. ComputeRowState then surfaces
-// await_take_consent so the WaitingOnBar names the victim and the table holds.
-//
-// The take may claim ANY of the victim's assets (not only the rumor's target
-// asset). On make the victim is the target asset's owner; on mar the victim is
-// the preparer. If the aggressor would be taking from themselves (a rumor about
-// their own asset), no one else's consent is needed and the choices commit
-// immediately.
-//
-// Request body: {"choices": [...], "result": "make"|"mar", "take_asset_ids": [A, …]}
-//
+// srTakeConsentPreconditions checks what a take needs before it may be asked
+// for, and returns the settled roll. On a problem it writes the HTTP error and
+// returns ok=false. The checks read plan state and the caller writes it later
+// with no lock between, so two simultaneous requests could both pass.
+func srTakeConsentPreconditions(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	result string,
+) (*dbgen.DiceRoll, bool) {
+	// A take commits the whole pick list (via ApplyChoice) on agreement, so it
+	// needs the same preconditions make-choice has: the options are not already
+	// chosen (a second commit would create a second rumor row), no earlier request
+	// is still open, and on a mar, the counter-rumor first.
+	resData := loadResolutionData(plan.ResolutionData)
+	if resData.ChoicesCommitted() || (resData.SpreadRumors != nil && resData.SpreadRumors.TakeResolved) {
+		respondErr(w, http.StatusConflict, "the options have already been chosen")
+		return nil, false
+	}
+	if resData.SpreadRumors != nil && resData.SpreadRumors.PendingTakeConsent != nil {
+		respondErr(w, http.StatusConflict, "a take-asset consent request is already open")
+		return nil, false
+	}
+	if result == marOutcome {
+		if sr := resData.SpreadRumors; sr == nil || sr.CounterRumorText == "" {
+			respondErr(w, http.StatusConflict, "write the counter-rumor before choosing options")
+			return nil, false
+		}
+	}
+
+	// The roll must exist and be settled, and the result must match it; the picks
+	// must fit the dice budget.
+	roll, rollErr := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
+	if isNoRows(rollErr) {
+		respondErr(w, http.StatusConflict, "state the rumor and cast the dice before choosing options")
+		return nil, false
+	}
+	if rollErr != nil {
+		respondInternalErr(w, r, "could not load the roll", rollErr)
+		return nil, false
+	}
+	rollPtr := &roll
+	if !checkChoiceMatchesRoll(w, rollPtr, result) {
+		return nil, false
+	}
+	return rollPtr, true
+}
+
 // srBuildTakeConsentRequest decodes and validates a take-consent request body:
 // the result must match the roll and fit the dice budget, there must be exactly
 // one asset per "take_asset" pick, and every named asset must be a distinct,
 // intact asset owned by the victim (the target-asset owner on make, the
 // preparer on mar). On any problem it writes the HTTP error and returns ok=false.
-//
-
 func srBuildTakeConsentRequest(
 	ctx context.Context,
 	w http.ResponseWriter,
@@ -572,25 +603,9 @@ func srBuildTakeConsentRequest(
 		return nil, false
 	}
 
-	// A take commits the whole pick list (via ApplyChoice) on agreement, so it needs
-	// the same precondition make-choice has: on a mar, the counter-rumor first.
-	if body.Result == marOutcome {
-		if sr := loadResolutionData(plan.ResolutionData).SpreadRumors; sr == nil || sr.CounterRumorText == "" {
-			respondErr(w, http.StatusConflict, "write the counter-rumor before choosing options")
-			return nil, false
-		}
-	}
-
-	// The result must match the roll, and the picks must fit the dice budget.
-	roll, rollErr := deps.Q.GetDiceRollByPlanID(ctx, &plan.ID)
-	if rollErr == nil && roll.Outcome != nil && *roll.Outcome != body.Result {
-		respondErr(w, http.StatusConflict,
-			fmt.Sprintf("result '%s' does not match roll outcome '%s'", body.Result, *roll.Outcome))
+	rollPtr, ok := srTakeConsentPreconditions(ctx, w, r, deps, plan, body.Result)
+	if !ok {
 		return nil, false
-	}
-	var rollPtr *dbgen.DiceRoll
-	if rollErr == nil {
-		rollPtr = &roll
 	}
 	if !enforceChoiceBudget(w, srHandler{}, rollPtr, body.Result, body.Choices) {
 		return nil, false
@@ -662,6 +677,22 @@ func srBuildTakeConsentRequest(
 	}, true
 }
 
+// srRequestTakeConsentHandler handles POST /api/plans/:planId/request-take-consent.
+//
+// The aggressor (preparer on make, target-asset owner on mar) submits their full
+// set of make/mar picks together with the specific assets they want to take
+// (one asset_id per "take_asset" pick). Nothing is committed: the picks and
+// asset list are stashed in resolution_data and the victim — the player who owns
+// those assets — is asked to agree or disagree. ComputeRowState then surfaces
+// await_take_consent so the WaitingOnBar names the victim and the table holds.
+//
+// The take may claim ANY of the victim's assets (not only the rumor's target
+// asset). On make the victim is the target asset's owner; on mar the victim is
+// the preparer. If the aggressor would be taking from themselves (a rumor about
+// their own asset), no one else's consent is needed and the choices commit
+// immediately.
+//
+// Request body: {"choices": [...], "result": "make"|"mar", "take_asset_ids": [A, …]}
 func srRequestTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadRumors)
