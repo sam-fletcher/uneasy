@@ -275,3 +275,18 @@ export async function assetsOf(g: Duel): Promise<{ name: string; owner_id: numbe
 	const { assets } = await (await g.ctx.alice.request.get(`/api/tables/${g.gameID}/assets`)).json();
 	return assets;
 }
+
+/** Opens the table, recording every WebSocket frame the page receives into `frames`. */
+export async function openTableWithFrames(g: Duel, who: Who, frames: string[]): Promise<Page> {
+	const page = await g.ctx[who].newPage();
+	page.on('websocket', ws => ws.on('framereceived', f => frames.push(String(f.payload))));
+	await page.goto(`/table/${g.gameID}`);
+	return page;
+}
+
+/** The raw GET /api/plans/:id body as `who` reads it. */
+export async function planJSON(g: Duel, who: Who): Promise<string> {
+	const res = await g.ctx[who].request.get(`/api/plans/${g.planID}`);
+	expect(res.ok(), `GET plan as ${who}: ${await res.text()}`).toBeTruthy();
+	return res.text();
+}

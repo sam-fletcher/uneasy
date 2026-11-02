@@ -28,7 +28,8 @@ audit fixed or the duel rulings settled:
 - **Make with a real pick** (bob fourth on the track: difficulty 2, 3 stakes):
   the preparer picks 2 of 3, the unclaimed one is still leveraged.
 - **Final-bout tie:** zero dice, a mar, and the log says why.
-- `test.fixme` for a new bug (below).
+- Two `test.fixme`s for new bugs (below).
+- The compulsory-take assertions (forced mar, tie, exact-take picker) sit together in one `describe`, commented as following the current implementation and changing if the owner rules "may take".
 
 Outcomes are deterministic without touching the database: each duellist can read
 their own dice from `duel-state`, so the helper stakes, reads both first dice and
@@ -53,14 +54,16 @@ None; no product code.
 
 ## Open questions for the owner
 
-None new. Not pinned, per the brief: whether the take after a mar is compulsory,
-and the Make Demands retarget wait on Duel.
+None new. The compulsory-take question is not decided by these specs: the assertions that depend on it are grouped in one block and flagged. The Make Demands retarget wait on Duel is not pinned.
 
 ## Noticed, not fixed
 
+- A claim naming a non-staked asset returns 500 (`claim-non-staked-asset-returns-500.md`, `test.fixme`).
+- Blind stake count: pinned over `GET /plans/:id` and the sockets of the opponent and bystander (mutation-checked).
+
 - New bug: the declarer's page keeps the old initiative after the responder
   answers (`docs/work/next/duel-stale-initiative-after-bout.md`, pinned by a
-  `test.fixme`; it reproduced in both runs I tried).
+  `test.fixme`): the bout-resolved broadcast fires before the swapped initiative is saved.
 - A truly zero-claimable-stakes commit (the #27 marker with nothing to take) can't
   be reached through the UI or API: every duellist stakes at least one asset and a
   mar's budget is at least 1. The marker is pinned end to end on the claims that
