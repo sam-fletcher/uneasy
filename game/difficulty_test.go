@@ -43,7 +43,7 @@ func TestMakeIntroductionsDifficulty(t *testing.T) {
 		{"2 peers", 2, 4},
 		{"3 peers", 3, 5},
 		{"4 peers (max)", 4, 6},
-		{"5 peers (exceeds)", 5, 7},
+		{"5 peers (clamped to 6)", 5, 6},
 	}
 
 	for _, tt := range tests {
@@ -69,7 +69,7 @@ func TestSpreadPropagandaDifficulty(t *testing.T) {
 		{"rank 3", 3, 3},
 		{"rank 4", 4, 4},
 		{"rank 5 (max esteem)", 5, 5},
-		{"rank 0 (edge)", 0, 0},
+		{"rank 0 (edge)", 0, 1},
 		{"rank 6", 6, 6},
 	}
 
@@ -93,7 +93,7 @@ func TestSeekAnswersDifficulty(t *testing.T) {
 		{"rank 3", 3, 3},
 		{"rank 4", 4, 4},
 		{"rank 5 (max knowledge)", 5, 5},
-		{"rank 0 (edge)", 0, 0},
+		{"rank 0 (edge)", 0, 1},
 		{"rank 6", 6, 6},
 	}
 
@@ -154,7 +154,7 @@ func TestChronicleHistoriesDifficulty(t *testing.T) {
 		{"knowledge rank 5, 1 artifact", 5, 1, 5},
 		{"knowledge rank 3, 3 artifacts (equal)", 3, 3, 3},
 		{"knowledge rank 2, 5 artifacts", 2, 5, 5},
-		{"knowledge rank 0, 0 artifacts", 0, 0, 0},
+		{"knowledge rank 0, 0 artifacts", 0, 0, 1},
 		{"knowledge rank 0, 4 artifacts", 0, 4, 4},
 		{"knowledge rank 6, 2 artifacts", 6, 2, 6},
 	}
@@ -184,7 +184,7 @@ func TestProposeDecreeDifficulty(t *testing.T) {
 		{"rank 3", 3, 3},
 		{"rank 4", 4, 4},
 		{"rank 5 (max power)", 5, 5},
-		{"rank 0 (edge)", 0, 0},
+		{"rank 0 (edge)", 0, 1},
 		{"rank 6", 6, 6},
 	}
 

@@ -298,6 +298,60 @@ func TestChronicleHistories_Make_StepCapsAtBudget(t *testing.T) {
 	assert.False(t, intact.IsTorn, "the rejected step must not tear a marginalia")
 }
 
+// TestChronicleHistories_Make_OptionsAreRepeatable pins the owner's ruling
+// (2026-11-01): the make options may be chosen more than once. The best result
+// is 6, so six picks have to fit among four options; the same must hold for a
+// mar with up to five players choosing once each. Here a result of 6 is spent as
+// a repeated tear, a repeated invocation-free narrative option and a mix, then a
+// seventh pick is refused by the budget (not by a "used already" rule).
+func TestChronicleHistories_Make_OptionsAreRepeatable(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	ctx := context.Background()
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
+
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	// Three marginalia, so two tears of the same artifact leave it standing.
+	artifactID, margIDs := chSeedArtifact(t, h, otherIdx, "sturdy codex", 3)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	roll := chCastRoll(t, h, plan.ID, artifactID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, "make", 6)
+
+	picks := []struct {
+		option         string
+		asset, margina int64
+	}{
+		{"break_artifact", artifactID, margIDs[0]},
+		{"break_artifact", artifactID, margIDs[1]},
+		{"echo_present", 0, 0},
+		{"echo_present", 0, 0},
+		{"total_control", 0, 0},
+		{"total_control", 0, 0},
+	}
+	for i, p := range picks {
+		code, body := chMakeStep(h, plan.ID, p.option, p.asset, p.margina)
+		require.Equalf(t, http.StatusOK, code, "pick %d (%s) must be allowed: %v", i+1, p.option, body)
+	}
+	code, body := chMakeStep(h, plan.ID, "echo_present", 0, 0)
+	require.Equalf(t, http.StatusConflict, code, "a seventh pick exceeds the budget of 6: %v", body)
+
+	for _, id := range margIDs[:2] {
+		m, err := h.q.GetMarginaliaByID(ctx, id)
+		require.NoError(t, err)
+		assert.True(t, m.IsTorn, "both repeated tears landed")
+	}
+}
+
 // TestChronicleHistories_Make_NarrationFoldedIntoLog proves the optional
 // per-option narration is folded into the single make-step action-log entry.
 func TestChronicleHistories_Make_NarrationFoldedIntoLog(t *testing.T) {

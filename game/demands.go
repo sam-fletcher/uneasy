@@ -24,8 +24,9 @@ type DemandOptionWinners map[string]int64
 // When the target plan's preparer outranks the demander (targetRank lower
 // than demanderRank in power), the gap is added; otherwise no bonus.
 //
-// The sum is capped at DiceSides (owner ruling, 2026-07-30: difficulty can
-// never be above 6). This is the only difficulty formula in the game that can
+// The sum is clamped to 1–6 (owner rulings 2026-07-30: never above 6;
+// 2026-11-01: never below 1 — a Clandestinely Liaise has no roll, so its own
+// difficulty is 0 and an unclamped demand on it could never be rolled). This is the only difficulty formula in the game that can
 // leave the rulebook's 1–6 band — every other one is bounded by construction,
 // but here a target plan's own difficulty stacks with a power gap of up to 4
 // (a rank-5 demander against a rank-1 preparer's Propose Duel reaches 9). A
@@ -36,7 +37,7 @@ func MakeDemandsDifficulty(targetDiff, demanderRank, targetRank int16) int16 {
 	if targetRank < demanderRank {
 		diff += demanderRank - targetRank
 	}
-	return min(diff, int16(DiceSides))
+	return ClampDifficulty(diff)
 }
 
 // DemandPlacement returns the (row_number, row_order) a demand should land

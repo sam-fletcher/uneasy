@@ -29,7 +29,7 @@ func TestDemandDifficulty_Downhill(t *testing.T) {
 func TestDemandDifficulty_BaselineZero(t *testing.T) {
 	// Target plan with difficulty 0 (e.g., Make War equivalent) — same rank.
 	got := MakeDemandsDifficulty(0, 2, 2)
-	assert.Equal(t, int16(0), got)
+	assert.Equal(t, int16(1), got, "difficulty never drops below 1 (owner ruling 2026-11-01)")
 	// Uphill off a zero baseline still picks up the power delta.
 	got = MakeDemandsDifficulty(0, 4, 2)
 	assert.Equal(t, int16(2), got)
@@ -96,4 +96,13 @@ func TestDraftOrder_HigherRankFirst(t *testing.T) {
 	first, second = DemandDraftPickers(demanderID, targetPreparerID, 3, 2)
 	assert.Equal(t, targetPreparerID, first, "target higher rank")
 	assert.Equal(t, demanderID, second, "target higher rank")
+}
+
+func TestClampDifficulty(t *testing.T) {
+	for in, want := range map[int16]int16{-3: 1, 0: 1, 1: 1, 4: 4, 6: 6, 7: 6, 90: 6} {
+		assert.Equal(t, want, ClampDifficulty(in), "in=%d", in)
+	}
+	// A demand against a roll-less plan (Clandestinely Liaise, difficulty 0),
+	// the case that used to soft-lock.
+	assert.Equal(t, int16(1), MakeDemandsDifficulty(0, 1, 1))
 }
