@@ -33,7 +33,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
 	import PreRollStep from './shared/PreRollStep.svelte';
-	import { choicesCommitted, parseResolutionData, playerName, assetName, breakableAssets, breaksAvailable } from './shared';
+	import { choicesCommitted, parseResolutionData, playerName, assetName, breakableAssets, breaksAvailable, resolutionActorID } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 
 	import type { PlanPanelProps } from './types';
@@ -69,8 +69,12 @@
 	// The preparer resolves their own plan; the perform_steps demand winner may
 	// drive the choice in their place.
 	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
+	// Post-roll steps belong to the perform_steps winner when one holds the plan,
+	// else the preparer (mirrors the server's actsForPreparer). Pre-roll steps
+	// stay on isPreparer: perform_steps is post-roll only.
 	const amChoiceActor = $derived(
-		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		plan != null && currentPlayerID != null
+			&& currentPlayerID === resolutionActorID(plan, plans),
 	);
 
 	// The book's make list. (d) and (e) are its words verbatim: (e) is GLOATING —
@@ -563,7 +567,7 @@
 	const actorName = $derived(
 		rollOutcome === 'mar' && targetAssetOwnerID != null
 			? playerName(players, targetAssetOwnerID)
-			: (plan ? playerName(players, plan.preparer_id) : ''),
+			: (plan ? playerName(players, resolutionActorID(plan, plans)) : ''),
 	);
 	const anyResolved = $derived(
 		brokenAssetIDs.length > 0 || hideSourceAssetIDs.length > 0 || takenAssetIDs.length > 0

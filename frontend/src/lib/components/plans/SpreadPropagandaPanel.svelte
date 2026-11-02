@@ -20,7 +20,7 @@
 	import PreRollStep from './shared/PreRollStep.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, choicesCommitted, parseResolutionData, playerName,
-		breakableAssets, breaksAvailable, playersExcept,
+		breakableAssets, breaksAvailable, playersExcept, resolutionActorID,
 	} from './shared';
 	import { spGivePeer, spBreakSelf, createArtifact, forfeitSpreadPropagandaStep } from '$lib/api';
 	import { destructionWarning } from '$lib/assetRisk';
@@ -70,8 +70,12 @@
 	// The preparer resolves their own plan; the perform_steps demand winner may
 	// drive the choice in their place.
 	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
+	// Post-roll steps belong to the perform_steps winner when one holds the plan,
+	// else the preparer (mirrors the server's actsForPreparer). Pre-roll steps
+	// stay on isPreparer: perform_steps is post-roll only.
 	const amChoiceActor = $derived(
-		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		plan != null && currentPlayerID != null
+			&& currentPlayerID === resolutionActorID(plan, plans),
 	);
 
 	// Prep state
@@ -286,7 +290,7 @@
 	// perform_steps win — the winner, in their place (the server refuses the
 	// preparer every one of them). The retinue and assets are still the
 	// PREPARER's, so copy that says "your" has to say whose when they aren't.
-	const stepActorName = $derived(plan ? playerName(players, performStepsWinnerID ?? plan.preparer_id) : '');
+	const stepActorName = $derived(plan ? playerName(players, resolutionActorID(plan, plans)) : '');
 	const whose = $derived(isPreparer || !plan ? 'your' : `${playerName(players, plan.preparer_id)}'s`);
 	const whoHas = $derived(isPreparer || !plan ? 'You have' : `${playerName(players, plan.preparer_id)} has`);
 
@@ -575,7 +579,7 @@
 
 		{:else if !amChoiceActor && !choicesDone}
 			<p class="ft-prompt muted">
-				{playerName(players, plan.preparer_id)} is resolving Spread Propaganda…
+				{playerName(players, resolutionActorID(plan, plans))} is resolving Spread Propaganda…
 			</p>
 		{/if}
 	</ResolvingCard>

@@ -409,10 +409,8 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 	await expect.poll(() => H.postsText(f)).toContain('The duke never left.');
 });
 
-// The preparer is shown the same picker as the winner and told nothing is
-// stopping them, although the server refuses their submission.
-// See docs/work/next/perform-steps-panels-gate-on-preparer.md (six panels share this).
-test.fixme('perform steps: the preparer sees a wait line, not a picker she cannot submit', async ({ browser }) => {
+// The preparer is told who is choosing, not shown a picker the server would refuse.
+test('perform steps: the preparer sees a wait line, not a picker she cannot submit', async ({ browser }) => {
 	const f = await H.seedMD({ target: 'seek_answers' });
 	await performStepsOpen(f);
 	const { alice } = await H.openPages(browser, f);

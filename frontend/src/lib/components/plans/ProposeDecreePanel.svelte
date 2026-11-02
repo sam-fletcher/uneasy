@@ -36,7 +36,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import { playerName, parseResolutionData, ownerUnleveragedAssets } from './shared';
+	import { playerName, parseResolutionData, ownerUnleveragedAssets, resolutionActorID } from './shared';
 
 	import type { PlanPanelProps } from './types';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
@@ -64,8 +64,12 @@
 	// The preparer resolves their own plan; the perform_steps demand winner may
 	// drive the choice in their place.
 	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
+	// Post-roll steps belong to the perform_steps winner when one holds the plan,
+	// else the preparer (mirrors the server's actsForPreparer). Pre-roll steps
+	// stay on isPreparer: perform_steps is post-roll only.
 	const amChoiceActor = $derived(
-		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		plan != null && currentPlayerID != null
+			&& currentPlayerID === resolutionActorID(plan, plans),
 	);
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
@@ -167,6 +171,17 @@
 	);
 	const amSignatory = $derived(
 		currentPlayerID != null && pdState.signatoryID === currentPlayerID
+	);
+	// The addendum is a post-roll step: when the signatory is the preparer, a
+	// perform_steps winner places it instead (the server's pdSetAddendumHandler
+	// uses actsForPreparer then); a third-party signatory is unchanged.
+	const addendumActorID = $derived(
+		plan && pdState.signatoryID === plan.preparer_id
+			? resolutionActorID(plan, plans)
+			: pdState.signatoryID,
+	);
+	const amAddendumActor = $derived(
+		currentPlayerID != null && addendumActorID === currentPlayerID,
 	);
 	const amDeclined = $derived(
 		currentPlayerID != null && pdState.declined.includes(currentPlayerID)
@@ -599,7 +614,7 @@
 				<!-- Signatory's addendum (after amendments; required step, comes
 				     immediately before the preparer enacts). -->
 				{#if amendmentsDone && !pdState.addendumPlaced}
-					{#if amSignatory}
+					{#if amAddendumActor}
 						<div class="plan-form">
 							<p class="choices-header">Signatory's Addendum</p>
 							<p class="choices-note">
@@ -623,7 +638,7 @@
 						</div>
 					{:else}
 						<p class="choices-note muted">
-							Waiting for {playerName(players, pdState.signatoryID)} to place the addendum…
+							Waiting for {playerName(players, addendumActorID)} to place the addendum…
 						</p>
 					{/if}
 				{/if}
@@ -631,7 +646,7 @@
 				<!-- Enactment (preparer; terminal). The final law text is shown above,
 				     so the preparer authors the resource with full context. -->
 				{#if awaitingEnact}
-					{#if isPreparer}
+					{#if amChoiceActor}
 						<div class="plan-form">
 							<p class="choices-header">Enact the law</p>
 							{#if isMakeEnact}
@@ -658,7 +673,7 @@
 						</div>
 					{:else}
 						<p class="choices-note muted">
-							Waiting for {playerName(players, plan.preparer_id)} to enact the law…
+							Waiting for {playerName(players, plan ? resolutionActorID(plan, plans) : null)} to enact the law…
 						</p>
 					{/if}
 				{/if}
@@ -666,7 +681,7 @@
 
 		{:else if !amChoiceActor && !outcomeApplied}
 			<p class="ft-prompt muted">
-				{playerName(players, plan.preparer_id)} is resolving Propose Decree…
+				{playerName(players, resolutionActorID(plan, plans))} is resolving Propose Decree…
 			</p>
 		{/if}
 
