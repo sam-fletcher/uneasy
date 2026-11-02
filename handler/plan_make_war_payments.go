@@ -213,6 +213,8 @@ func mwApplySurrender(
 		}
 	}
 
+	// A surrender can empty a side, end the war and change who is owed a cost.
+	notePlanChanged(ctx, plan.ID)
 	h, hasHub := deps.Manager.Get(war.GameID)
 	if hasHub {
 		h.BroadcastEvent(model.EventWarPlayerSurrender, model.WarPlayerSurrenderPayload{

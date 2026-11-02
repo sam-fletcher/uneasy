@@ -222,11 +222,6 @@ export async function expectLog(page: Page, snippets: string[]) {
 		});
 }
 
-/** Reload every page: the roll's auto-applied outcome isn't pushed to open panels (docs/work/next/auto-applied-choice-not-broadcast.md). */
-export async function reloadAll(pages: Page[]) {
-	await Promise.all(pages.map(p => p.reload()));
-}
-
 /**
  * Force the roll, then wait until the server has recorded the outcome in the
  * decree (it applies it just after the dice land). A participant row can still

@@ -63,6 +63,7 @@ export const EventTypes = {
 	PlanResolving: 'plan.resolving',
 	PlanResolved: 'plan.resolved',
 	PlanChoiceApplied: 'plan.choice_applied',
+	PlanUpdated: 'plan.updated',
 	PlanDelayedArrival: 'plan.delayed_arrival',
 
 	// Simultaneous reveals

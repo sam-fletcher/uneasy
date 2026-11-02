@@ -649,7 +649,7 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 		// "prepared" post by hand — otherwise the spawned duel would surface in
 		// the log only at resolution, with no opening beat.
 		EmitPlanPrepared(ctx, deps.Q, deps.Manager, duelPlan)
-		if err := deps.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+		if err := setPlanStatus(ctx, deps.Q, dbgen.SetPlanStatusParams{
 			ID: duelPlan.ID, Status: model.PlanResolving,
 		}); err != nil {
 			respondInternalErr(w, r, "could not resolve nested duel", err)

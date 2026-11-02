@@ -694,6 +694,7 @@ func broadcastRowState(ctx context.Context, q *dbgen.Queries, manager *hub.Manag
 		}
 	}
 
+	noteRowStateBroadcast(ctx, gameID)
 	h, ok := manager.Get(gameID)
 	if !ok {
 		return

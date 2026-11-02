@@ -56,6 +56,7 @@ const (
 	EventPlanResolving     = "plan.resolving"
 	EventPlanResolved      = "plan.resolved"
 	EventPlanChoiceApplied = "plan.choice_applied" // make-choice mutated shared resolution state; non-actors must refetch
+	EventPlanUpdated       = "plan.updated"        // a plan's stored state changed; carries only the id, clients refetch it
 
 	// Phase 3b: Plan mechanics
 	EventPlanDelayedArrival = "plan.delayed_arrival" // MI: peer scheduled for future row
@@ -316,6 +317,13 @@ type PlanResolvedPayload struct {
 // make-choice, so non-acting clients can refetch it (the acting client already
 // has the HTTP response).
 type PlanChoiceAppliedPayload struct {
+	PlanID int64 `json:"plan_id"`
+}
+
+// PlanUpdatedPayload names the plan whose stored state changed. It carries no
+// plan data on purpose: each client refetches through the viewer-aware
+// endpoint, so per-viewer masking applies and nothing hidden is broadcast.
+type PlanUpdatedPayload struct {
 	PlanID int64 `json:"plan_id"`
 }
 

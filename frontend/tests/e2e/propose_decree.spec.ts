@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
 import {
 	seedPD, prepareDecree, resolveDecree, resolvingDecree, openAll, act, actOK, forceRoll, decreeState,
-	laws, assets, spareAsset, crown, expectLog, reloadAll, forceAndSettle, bankedDice, closeContextsAfterEach,
+	laws, assets, spareAsset, crown, expectLog, forceAndSettle, bankedDice, closeContextsAfterEach,
 	type PDGame,
 } from './helpers/propose_decree';
 
@@ -315,7 +315,6 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 		})
 		.toBeGreaterThan(0);
 	await forceAndSettle(g, planID, rollID, 'mar');
-	await reloadAll([alice, bob, carol]); // the auto-applied outcome isn't pushed live (see the fixme below)
 
 	// Lowest power first: carol (rank 2), then bob (rank 1). The preparer doesn't amend.
 	await expect.poll(async () => (await decreeState(g, planID)).amendment_order).toEqual([g.ids.carol, g.ids.bob]);
@@ -413,7 +412,6 @@ test('monarch: the crown-bearer signs and sits on the council even at the lowest
 		})
 		.toBeGreaterThan(0);
 	await forceAndSettle(g, planID, rollID, 'make');
-	await reloadAll([alice, bob, carol]);
 
 	// The monarch signs; the preparer enacts and keeps the resource.
 	await expect(carol.getByText("Signatory's Addendum")).toBeVisible();
@@ -452,11 +450,9 @@ test('phone width: the join and decline buttons are real tap targets and nothing
 	}
 });
 
-// BUG (docs/work/next/auto-applied-choice-not-broadcast.md): Propose Decree
-// applies its outcome the instant the dice land, but that is not pushed to open
-// panels, so the signatory stays on the debate step until they reload. Un-fixme
-// this when the fix lands.
-test.fixme('make: the signatory is handed the addendum live, with no reload', async ({ browser }) => {
+// Propose Decree applies its outcome the instant the dice land; open panels
+// get it live, so the signatory is handed the addendum without a reload.
+test('make: the signatory is handed the addendum live, with no reload', async ({ browser }) => {
 	const { g, rollID } = await rolledDecree(browser);
 	const { alice, bob } = await openAll(g);
 	await expect(alice.getByText('Dice roll in progress…')).toBeVisible();

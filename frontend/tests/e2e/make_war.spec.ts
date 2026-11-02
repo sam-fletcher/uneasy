@@ -594,9 +594,8 @@ test('a bystander who never joined sees the whole war but is never asked for any
 });
 
 // A join during the delay vote adds the joiner to the vote (see the test above),
-// but the other players' Waiting On bar still names only the original two until
-// they reload. Tracked in docs/work/next/make-war-join-not-pushed-to-waiting-bar.md.
-test.fixme('delay vote: a join reaches the other players\' Waiting On bar without a reload', async ({ browser }) => {
+// and the other players' Waiting On bar names them live.
+test('delay vote: a join reaches the other players\' Waiting On bar without a reload', async ({ browser }) => {
 	const g = await game(browser);
 	await runScene(g);
 	await declareWar(g);

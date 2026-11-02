@@ -401,6 +401,10 @@ func mwJoinHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 		}
 
+		// A joiner changes who the table waits on (a vote participant during the
+		// delay reveal, an entry payer after it), and the war panel's sides. The
+		// participants are not in resolution_data, so note the change by hand.
+		notePlanChanged(ctx, plan.ID)
 		broadcastEvent(deps.Manager, plan.GameID, model.EventWarPlayerJoined, model.WarPlayerJoinedPayload{
 			WarID: war.ID, PlayerID: player.ID, Side: body.Side,
 		})
@@ -527,7 +531,7 @@ func applyMakeWarDelayResult(
 		GameID:    plan.GameID,
 		RowNumber: new(targetRow),
 	})
-	_ = q.SetPlanRowAndOrder(ctx, dbgen.SetPlanRowAndOrderParams{
+	_ = setPlanRowAndOrder(ctx, q, dbgen.SetPlanRowAndOrderParams{
 		ID:        planID,
 		RowNumber: new(targetRow),
 		RowOrder:  int16(rowOrder),

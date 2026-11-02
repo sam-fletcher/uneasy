@@ -76,7 +76,7 @@ func kickoffPlanResolution(
 		return nil, fmt.Errorf("no handler for plan type %q", plan.PlanType)
 	}
 
-	if err := q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+	if err := setPlanStatus(ctx, q, dbgen.SetPlanStatusParams{
 		ID:     plan.ID,
 		Status: model.PlanResolving,
 	}); err != nil {
@@ -429,7 +429,7 @@ func resolvePlan(
 	if result != fizzledOutcome {
 		stored = &result
 	}
-	if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{ID: plan.ID, Result: stored}); err != nil {
+	if err := setPlanResult(ctx, q, dbgen.SetPlanResultParams{ID: plan.ID, Result: stored}); err != nil {
 		return err
 	}
 	// The result is stored, so the plan is resolved whatever happens next: a

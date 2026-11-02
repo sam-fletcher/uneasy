@@ -206,8 +206,7 @@ test('make: the outcome is applied on the roll; two options, one at a time, and 
 
 	await expect(alice.getByText('1 of 2 choices remaining')).toBeVisible();
 	// The committed step is on every screen, at full strength, with its words.
-	// (The others read it on their next load; live push is the fixme below.)
-	await Promise.all([bob.reload(), carol.reload()]);
+	// (No reload: the others get it live.)
 	for (const p of [alice, bob, carol]) {
 		await expect(p.getByText('Resolved so far:')).toBeVisible();
 		await expect(p.locator('.resolved-note', { hasText: 'The ledger is ripped.' })).toBeVisible();
@@ -222,7 +221,6 @@ test('make: the outcome is applied on the roll; two options, one at a time, and 
 		await g.ctx.alice.request.post(`/api/plans/${planID}/make-step`, {
 			data: { option: 'echo_present', asset_id: bobArt.id, narration: 'The treaty reads differently now.' } }),
 		200);
-	await Promise.all([alice.reload(), bob.reload()]);
 	await expect(alice.getByRole('button', { name: 'Wrap the scene' })).toBeVisible();
 	await expect(bob.getByText(/All choices are made\. The scene stays open until\s+alice wraps it\./)).toBeVisible();
 	await expect(bob.getByRole('button', { name: 'Wrap the scene' })).toHaveCount(0);
@@ -329,8 +327,7 @@ test('mar: every player, the preparer included, chooses exactly one; the plan wa
 	await pickMarginalia(bob, "bob's artifact", 'a second, kept note');
 	await bob.getByRole('button', { name: 'Submit choice' }).click();
 	await expect(bob.getByText('Your choice has been submitted.')).toBeVisible();
-	// The others read it on their next load (live push: see the fixme below).
-	await Promise.all([alice.reload(), carol.reload()]);
+	// The others see it live, no reload.
 	await expect(alice.getByText('bob: broke')).toBeVisible();
 	await expect(alice.getByText('Waiting for all players to choose (1/3)…')).toBeVisible();
 	await expect(carol.getByText('bob: broke')).toBeVisible();
@@ -342,7 +339,6 @@ test('mar: every player, the preparer included, chooses exactly one; the plan wa
 	await chooseOption(carol, OPT.echo);
 	await carol.getByRole('button', { name: 'Submit choice' }).click();
 	await expect(carol.getByText('Your choice has been submitted.')).toBeVisible();
-	await alice.reload();
 	await expect(alice.getByText('Waiting for all players to choose (2/3)…')).toBeVisible();
 	await expectStatus(await g.ctx.alice.request.post(`/api/plans/${planID}/complete`), 409);
 	await chooseOption(alice, OPT.control);
@@ -467,10 +463,7 @@ test('the auto-applied outcome reaches open panels live, without a reload', asyn
 	await expect(bob.getByText('alice is choosing options…')).toBeVisible();
 });
 
-test.fixme('another player\'s mar choice reaches open panels and the Waiting On bar without a reload', async ({ browser }) => {
-	// Pinned by docs/work/next/chronicle-choices-not-pushed-to-open-panels.md:
-	// make-step and mar-choice save resolution_data and post to the log but never
-	// broadcast plan.choice_applied, so everyone else's panel and bar stay stale.
+test('another player\'s mar choice reaches open panels and the Waiting On bar without a reload', async ({ browser }) => {
 	const g = await seedCHGame(browser);
 	track(g.gameID);
 	const { planID } = await rolledCH(g, ['bob', 'carol'], 'mar');
