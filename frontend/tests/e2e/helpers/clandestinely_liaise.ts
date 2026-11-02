@@ -2,7 +2,7 @@ import { test, expect, request as pwRequest, type Browser, type BrowserContext, 
 import { E2E } from '../baseUrl';
 
 // Setup shared by the Clandestinely Liaise specs: a three-player main-event game
-// where alice prepares a liaison with bob and cara is the bystander. The seeded
+// where alice prepares a liaison with bob and carol is the bystander. The seeded
 // retinues hold one main-character peer, a holding, an artifact and a resource
 // each; the liaison needs a dedicated meeting peer per side, so each of alice and
 // bob gets a "Confidant" (one marginalia, so breaking it destroys it).
@@ -15,8 +15,8 @@ import { E2E } from '../baseUrl';
 //   · 'share'    — Things We Share, both secrets kept, nobody has picked;
 //   · 'redelay'  — When Will I See You Again?, picks revealed, no face in.
 
-export type Who = 'alice' | 'bob' | 'cara';
-const NAMES: Who[] = ['alice', 'bob', 'cara'];
+export type Who = 'alice' | 'bob' | 'carol';
+const NAMES: Who[] = ['alice', 'bob', 'carol'];
 export type Drive = 'none' | 'prepared' | 'together' | 'keep' | 'share' | 'redelay';
 
 export const NOTES = 'A quiet word in the orangery.';
@@ -64,10 +64,11 @@ export async function seedLiaise(
 	browser: Browser,
 	drive: Drive,
 	viewport = { width: 375, height: 812 },
+	seedExtra: Record<string, unknown> = {},
 ): Promise<LGame> {
 	const fixture = await pwRequest.newContext({ baseURL: E2E });
 	const seedRes = await fixture.post('/api/dev/seed', {
-		data: { phase: 'main_event', players: NAMES },
+		data: { phase: 'main_event', players: NAMES, ...seedExtra },
 	});
 	expect(seedRes.ok(), `seed failed: ${await seedRes.text()}`).toBeTruthy();
 	const seeded = await seedRes.json();
@@ -83,7 +84,7 @@ export async function seedLiaise(
 	const g: LGame = {
 		gameID,
 		planID: 0,
-		ids: { alice: seeded.players[0].id, bob: seeded.players[1].id, cara: seeded.players[2].id },
+		ids: { alice: seeded.players[0].id, bob: seeded.players[1].id, carol: seeded.players[2].id },
 		ctx,
 		peers: { alice: 0, bob: 0 },
 	};
@@ -265,3 +266,6 @@ export async function currentRow(g: LGame): Promise<number> {
 	expect(res.ok(), `GET table failed: ${await res.text()}`).toBeTruthy();
 	return (await res.json()).game.current_row as number;
 }
+
+/** The Waiting On strip. */
+export const waitingBar = (page: Page) => page.locator('p', { hasText: 'Waiting On:' }).first();

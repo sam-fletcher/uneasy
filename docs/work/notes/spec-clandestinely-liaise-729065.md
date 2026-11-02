@@ -30,20 +30,36 @@ bystander; setup over the API, everything inside the liaison through the panel):
 - **Guards**, with exact statuses: order of phases (409), preparer-only advance
   and non-participants (403), own assets only, duplicate keep-secret, every
   share-choice target rule (400/403), final picks after both are in, redelay.
-- **fixme** (new bug, see below).
+- **Parting, one-sided cancel:** faces 3 and 0 end it with no follow-up and the
+  "parted ways" line.
+- **perform_steps** (a `test.fixme`, see below): a Make Demands winner fills the
+  preparer's seat on every Liaise step and the preparer is locked out (403 and a
+  "bob is nominating on your behalf" line), with the Waiting On bar naming the
+  winner. The retarget wait is not asserted.
+- **fixme** for the stale secret count (see below).
+
+Review changes: the kept-secret mask is now checked at all three read sites (plan
+list, one plan, the public record); the Waiting On bar is asserted after a pick;
+the WebSocket check looks for the `liaise.keep_secret_submitted` frame itself; the
+log-names-the-holder vs masked-pick tension is commented and has a question file.
+A liaison always resolves as a make, so there is no mar to test.
 
 ## How it was verified
 
 Against my own build of this branch on a private database (port 8161, unique
 binary name), never `:8090`/`uneasy_test`:
 
-- File run 3 times in a row: 6 passed, 1 skipped (the fixme) each time.
+- File run 3 times in a row: 7 passed, 2 skipped (the fixmes) each time.
 - The fixme run un-skipped: fails as described.
 - Mutations, each watched to fail and restored (nothing committed): picked-asset
   mask removed → hidden-information test; secret text appended to the public log
   line → hidden-information test; duplicate keep-secret guard removed → guards;
   the custom resolution line removed → both outcome tests; peer-ownership check
   removed → prep test; follow-up scheduling logged as not scheduled → follow-up test.
+- Also: the record's mask removed, GetPlan's mask removed, the one-sided cancel
+  broken, keep-secret's row-state broadcast removed: each fails its test. The
+  perform_steps body, with the demand's difficulty clamped to 1 locally, passes and
+  fails when the stand-in seat is removed (nothing committed).
 - `make check-fast` passes. Not run: `make test-integration` (no Go change).
 
 What does not bite: the WebSocket-frame check passed in the log mutation only
@@ -57,17 +73,24 @@ None; tests and a tracker item only.
 
 ## Open questions for the owner
 
-None new. The Make Demands retarget wait on Liaise
+- `questions/liaise-secret-holder-public.md`: is the asset holding the meeting's secret public (the log names it) or hidden (the pick is masked)? The Make Demands retarget wait on Liaise
 (`questions/make-demands-retarget-wait-duel-liaise.md`) is deliberately not
 pinned either way.
 
 ## Noticed, not fixed
 
-- `next/liaise-keep-secret-not-broadcast.md`: keep-secret broadcasts no
-  `secret.created`, so the partner's open page keeps the old secret count and
-  "Look at partner's secrets" offers nothing until a reload. Pinned as a
-  `test.fixme`; the hidden-information test reloads alice's page to get past it.
+- `next/liaise-keep-secret-not-broadcast.md`: keep-secret (and Spread Rumors'
+  stash and hide-source) create secrets without `secret.created`, so open pages
+  keep the old secret count and "Look at partner's secrets" offers nothing until
+  a reload. Pinned as a `test.fixme`; the hidden-information test reloads alice's
+  page to get past it.
+- `next/make-demands-on-liaise-never-rolls.md`: a Make Demands against a liaison
+  gets difficulty 0, the roll insert fails and the demand sits resolving with no
+  roll, so the perform_steps fix cannot be reached in play. Pinned as a fixme.
+- Redelay overflow: faces that land past row 13 (for example 6 and 6 at row 9)
+  log "parted ways with no future meeting planned" even though the pair agreed on a
+  delay; the spec does not pin it.
 - A player may change their Things We Share pick until the partner has
   submitted (the choice is an upsert). Looks deliberate; not pinned.
-- The Make Demands `perform_steps` panel gating (`perform-steps-panels-gate-on-preparer.md`)
-  does not apply to this panel, which already handles the locked-out preparer.
+- `perform-steps-panels-gate-on-preparer.md` does not apply to this panel, which
+  already handles the locked-out preparer (shown by the fixme body).

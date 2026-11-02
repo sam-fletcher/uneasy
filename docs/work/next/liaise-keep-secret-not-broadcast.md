@@ -1,5 +1,5 @@
 ---
-title: "Clandestinely Liaise: a kept secret isn't announced, so the partner's picker is stale"
+title: "Secrets written by plans (Liaise, Spread Rumors) aren't announced, so open pages go stale"
 order: 85
 ---
 
@@ -13,8 +13,13 @@ option says "Your partner has no assets with secrets you can't already read"
 until the page is reloaded. The same stale count shows on every other open
 retinue card.
 
-Fix: broadcast `secret.created` (asset id and author only, as the plain route
-does) from keep-secret.
+Spread Rumors has the same hole twice: the secret stash
+(`plan_spread_rumors_routes.go`, the preparer's secret rumor) and hide-source
+both create a secret with `CreateSecret` and announce nothing; only
+`assets_secrets.go` broadcasts `secret.created`.
+
+Fix: one create-and-announce helper (create the secret, broadcast
+`secret.created` with asset id and author only) used by all four sites.
 
 Pinned as a `test.fixme` in `frontend/tests/e2e/clandestinely_liaise.spec.ts`
 ("the partner can look at a freshly kept secret without reloading"); un-fix it
