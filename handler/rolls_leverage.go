@@ -137,7 +137,8 @@ func Vote(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		// All votes in — compute, reveal, advance.
-		adj := int16(min(max(int64(roll.Difficulty)+summary.VoteSum, 1), diceSides))
+		// Votes sum in int64; clamping before the narrowing keeps it safe.
+		adj := int16(gamepkg.ClampDifficulty(int64(roll.Difficulty) + summary.VoteSum))
 		if err = s.Q.SetDiceRollAdjustedDifficulty(ctx, dbgen.SetDiceRollAdjustedDifficultyParams{
 			ID: roll.ID, AdjustedDifficulty: &adj,
 		}); err != nil {

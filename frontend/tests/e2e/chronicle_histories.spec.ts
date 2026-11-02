@@ -173,6 +173,25 @@ test('pre-roll: the roll\'s difficulty is the higher of the rank and the artifac
 	expect((await chronicleData(g, planID)).invoked_artifact_ids).toEqual(ids);
 });
 
+// Owner ruling (2026-11-01): make options are repeatable. The best result is 6,
+// so the picker must not retire an option once it has been used.
+test('make: the same option can be chosen again, through the UI', async ({ browser }) => {
+	const g = await seedCHGame(browser);
+	track(g.gameID);
+	const { planID, roll } = await rolledCH(g, ['bob', 'carol'], 'make');
+	expect(roll.result).toBe(2);
+	const { alice } = await openAll(g);
+
+	for (const n of [1, 2]) {
+		await chooseOption(alice, OPT.echo);
+		await alice.getByPlaceholder('Describe this beat of the scene').fill(`Another turn of the page, ${n}.`);
+		await alice.getByRole('button', { name: 'Submit choice' }).click();
+		await expect.poll(async () => (await chronicleData(g, planID)).make_choices_done ?? 0).toBe(n);
+	}
+	expect((await chronicleData(g, planID)).steps?.map(s => s.option)).toEqual(['echo_present', 'echo_present']);
+	await expect(alice.getByRole('button', { name: 'Wrap the scene' })).toBeVisible();
+});
+
 test('make: the outcome is applied on the roll; two options, one at a time, and no asset is gained', async ({ browser }) => {
 	const g = await seedCHGame(browser);
 	track(g.gameID);

@@ -47,7 +47,7 @@ const (
 
 // HostFestivityDifficulty returns the host's esteem status (6 - rank), min 1.
 func HostFestivityDifficulty(hostEsteemRank int16) int16 {
-	return max(int16(DiceSides)-hostEsteemRank, 1)
+	return ClampDifficulty(int16(DiceSides) - hostEsteemRank)
 }
 
 // IsValidFestivityMakeOption returns true if key is a recognized make option.

@@ -17,7 +17,9 @@ package handler
 // scene in one shot via cast-roll: it records the chosen artifact invocations,
 // posts the scene narration, closes the phase, and creates the dice roll.
 //
-// Make: choose N options equal to the dice result (repeatable):
+// Make: choose N options equal to the dice result. Options are repeatable
+// (owner ruling, 2026-11-01): the best result is 6 and a mar has up to five
+// players picking once each, so they could not all be distinct.
 //   - "break_artifact"   → tear a marginalia on an invoked artifact
 //   - "invoke_another"   → invoke another artifact (added to InvokedArtifactIDs)
 //   - "echo_present"     → narrative only

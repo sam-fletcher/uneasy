@@ -554,13 +554,11 @@ test('parting: one player revealing 0 cancels the follow-up for both', async ({ 
 // is an open question (questions/make-demands-retarget-wait-duel-liaise.md) and is
 // not asserted.
 //
-// Pinned for make-demands-on-liaise-never-rolls.md: the demand never gets its roll
-// (a liaison's difficulty is 0), so the test stops at rollDemand. With that one
-// failure patched out locally the rest of the body passes, and fails if the
-// stand-in seat is removed. Un-fix it when the roll is fixed.
-test.fixme('perform_steps: the demand winner acts for the preparer, who is locked out of every step', async ({ browser }) => {
-	// Alice outranks bob on the power track, as in the Make Demands specs: a demand's
-	// difficulty is its target's plus the rank gap, and a liaison's own is 0.
+// A demand on a liaison used to compute difficulty 0 and never got its roll; the
+// difficulty is now clamped to 1–6 (owner ruling, 2026-11-01).
+test('perform_steps: the demand winner acts for the preparer, who is locked out of every step', async ({ browser }) => {
+	// Alice outranks bob on the power track, as in the Make Demands specs. A liaison's own
+	// difficulty is 0, so the demand's is clamped up to 1.
 	const g = await seedLiaise(browser, 'none', undefined, { current_row: 1, rankings: { power: [1, 0, 2], knowledge: [0, 1, 2] } });
 	track(g.gameID);
 	// The partner is carol this time, so she needs a meeting peer (bob's is unused).
