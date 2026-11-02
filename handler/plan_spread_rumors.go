@@ -481,10 +481,9 @@ func (srHandler) PreparedDescriptor(
 		about = assetDisplayName(ctx, q, *plan.TargetAssetID)
 	}
 	if sr := resData.SpreadRumors; sr != nil && sr.IsSecret && sr.SecretAssetID != nil {
-		keeper := assetDisplayName(ctx, q, *sr.SecretAssetID)
+		// The secret's holder is named by the generic secret line that follows.
 		return fmt.Sprintf(
-			"prepared Spread Rumors: there's a rumor brewing about %s, but it's a secret kept by %s.",
-			about, keeper), true
+			"prepared Spread Rumors: there's a secret rumor brewing about %s.", about), true
 	}
 	notes := ""
 	if plan.PreparationNotes != nil {

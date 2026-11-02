@@ -92,7 +92,7 @@ func createPlanRoll(
 // ListPlans handles GET /api/tables/:id/plans.
 func ListPlans(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -100,9 +100,6 @@ func ListPlans(s *db.Store) http.HandlerFunc {
 		if err != nil {
 			respondInternalErr(w, r, "could not load plans", err)
 			return
-		}
-		for i := range plans {
-			sanitizeLiaiseKeptSecretsForViewer(&plans[i], player.ID)
 		}
 		respond(w, http.StatusOK, map[string]any{"plans": plans})
 	}
@@ -439,6 +436,14 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		broadcastEvent(manager, game.ID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 		EmitPlanPrepared(ctx, s.Q, manager, plan)
+		// The stash created its secret inside the transaction; announce it now
+		// that it has committed.
+		if body.PlanType == model.PlanSpreadRumors && body.SecretAssetID != nil {
+			if a, aErr := s.Q.GetAssetByID(ctx, *body.SecretAssetID); aErr == nil {
+				announceSecret(ctx, s.Q, manager, a, player.ID,
+					secretNotice{Row: plan.RowNumber, PlanID: &plan.ID})
+			}
+		}
 		broadcastRowState(ctx, s.Q, manager, game.ID)
 
 		// Consume any pending counter-demand waiting on this player: the

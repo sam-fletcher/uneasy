@@ -196,11 +196,7 @@ func stashSecretRumor(
 	if plan.PreparationNotes != nil {
 		rumorText = *plan.PreparationNotes
 	}
-	secret, err := q.CreateSecret(ctx, dbgen.CreateSecretParams{
-		AssetID:  secretAsset.ID,
-		AuthorID: preparerID,
-		Text:     rumorText,
-	})
+	secret, err := createSecret(ctx, q, secretAsset.ID, preparerID, rumorText)
 	if err != nil {
 		return httpErr(http.StatusInternalServerError, "could not stash secret rumor")
 	}
@@ -986,11 +982,8 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 			secretText = fmt.Sprintf("You were the source of the rumor: %q", rumor.Text)
 		}
-		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
-			AssetID:  body.SecretAssetID,
-			AuthorID: player.ID,
-			Text:     secretText,
-		}); err != nil {
+		if _, err := writeSecret(ctx, deps.Q, deps.Manager, secretAsset, player.ID, secretText,
+			secretNotice{Row: plan.RowNumber, PlanID: &plan.ID, HideAuthor: true}); err != nil {
 			respondInternalErr(w, r, "could not write secret", err)
 			return
 		}
@@ -1003,20 +996,9 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// The dramatic-irony pair (adr/READONLY_TIERS_ROUND2_PLAN.md). EmitRumorCreated
-		// already carries the character-level record — "Rumor spread from unknown
-		// source" — and this is its player-level counterpart, so the table can see the
-		// gap between what they know and what their characters do. Hide-source was
-		// previously left out of the log to protect an anonymity the plan.prepared post
-		// had already given away; that rationale is superseded.
-		//
-		// Naming the sheltering asset is a breadcrumb, not a reveal: reading the Secret
-		// still costs a break or a steal. Its text never appears here — secret text
-		// stays out of the action log.
-		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"%s hid themselves as the source — no one at court knows the rumor came from them. "+
-				"The secret is discoverable from %s.",
-			playerDisplayName(ctx, deps.Q, player.ID), assetMark(secretAsset.Name)))
+		// The generic secret line (writeSecret) names the sheltering asset but not
+		// the author, who the fiction hides; EmitRumorCreated carries the
+		// character-level "unknown source" record. Secret text stays out of the log.
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":         plan.ID,

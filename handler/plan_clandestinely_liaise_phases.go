@@ -210,11 +210,8 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		// Authored by the SEAT, not the caller: a stand-in's keystrokes are the
 		// preparer's meeting, and authorship is what lets the asset's own player read
 		// the secret on its underside.
-		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
-			AssetID:  body.AssetID,
-			AuthorID: seat,
-			Text:     secretText,
-		}); err != nil {
+		if _, err := writeSecret(ctx, deps.Q, deps.Manager, asset, seat, secretText,
+			secretNotice{Row: plan.RowNumber, PlanID: &plan.ID}); err != nil {
 			respondInternalErr(w, r, "could not write secret on asset", err)
 			return
 		}
@@ -240,9 +237,6 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not save keep-secret choice", err)
 			return
 		}
-
-		clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s entrusted the meeting's secret to %s.",
-			playerDisplayName(ctx, deps.Q, seat), assetMark(asset.Name)))
 
 		// The other participant must refetch the plan to see this submission.
 		// Without this they'd be soft-locked on the secrets-we-keep panel until a

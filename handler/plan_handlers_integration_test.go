@@ -6,7 +6,6 @@ import (
 	"context"
 	"net/http"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -527,26 +526,24 @@ func TestSpreadRumors_HideSource_LogsDramaticIrony(t *testing.T) {
 
 	posts, err := h.q.ListGamePosts(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
-	var ironyPost, rumorPost string
+	var secretPost, rumorPost string
 	for _, p := range posts {
 		if p.SystemCode == nil {
 			continue
 		}
 		switch *p.SystemCode {
-		case "plan.spread_rumors":
-			if strings.Contains(p.Body, "hid themselves as the source") {
-				ironyPost = p.Body
-			}
+		case "secret.written":
+			secretPost = p.Body
 		case "rumor.created":
 			rumorPost = p.Body
 		}
 	}
 
-	require.NotEmpty(t, ironyPost, "hide-source must emit a player-level log entry")
-	assert.Contains(t, ironyPost, "no one at court knows",
-		"the entry should state what the characters don't know")
-	assert.Contains(t, ironyPost, "Cover Story",
-		"the sheltering asset is a deliberate breadcrumb — reading the secret still costs a break or a steal")
+	require.NotEmpty(t, secretPost, "hide-source must announce the secret like any other")
+	assert.Contains(t, secretPost, "Cover Story",
+		"the holder is public by ruling — reading the secret still costs a break or a steal")
+	assert.NotContains(t, secretPost, "wrote a secret",
+		"the fiction hides who spread the rumor, so the line must not name the author")
 
 	require.NotEmpty(t, rumorPost, "rumor.created should still be posted")
 	assert.Contains(t, rumorPost, "unknown source",
@@ -622,8 +619,13 @@ func TestSpreadRumors_Secret_HidesTextAndNamesAssets(t *testing.T) {
 	// The prepared-log post names both assets but not the rumor text.
 	body := srPlanPreparedPost(t, h)
 	assert.Contains(t, body, "Julius")
-	assert.Contains(t, body, "Brutus")
 	assert.NotContains(t, body, notes)
+
+	// The holder is named once, by the generic secret line.
+	written := h.logBodies("secret.written")
+	require.Len(t, written, 1)
+	assert.Contains(t, written[0], "Brutus")
+	assert.NotContains(t, written[0], notes)
 }
 
 // TestSpreadRumors_Secret_RejectsForeignAsset guards that the secret holder must

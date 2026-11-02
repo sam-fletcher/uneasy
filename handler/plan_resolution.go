@@ -27,11 +27,10 @@ import (
 // GetPlan handles GET /api/plans/:planId.
 func GetPlan(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		plan, player, ok := requirePlanAccess(w, r, s.Q)
+		plan, _, ok := requirePlanAccess(w, r, s.Q)
 		if !ok {
 			return
 		}
-		sanitizeLiaiseKeptSecretsForViewer(plan, player.ID)
 
 		resData := loadResolutionData(plan.ResolutionData)
 
