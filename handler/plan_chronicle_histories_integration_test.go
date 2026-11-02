@@ -352,6 +352,39 @@ func TestChronicleHistories_Make_OptionsAreRepeatable(t *testing.T) {
 	}
 }
 
+// TestChronicleHistories_Mar_SameOptionAcrossPlayers pins the
+// ruling's motivating case (2026-11-01): on a mar every player picks once, so
+// with three players at least two may pick the same option. Neither the
+// per-option bookkeeping nor chDistinctMarChoosers may treat a shared option as
+// a duplicate (a second pick by the same player is refused, as before).
+func TestChronicleHistories_Mar_SameOptionAcrossPlayers(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	saPinKnowledgeRank(t, h, plan.PreparerID, 3)
+	artifactID, _ := chSeedArtifact(t, h, (preparerIdx+1)%len(h.tg.Players), "ancient codex", 2)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	roll := chCastRoll(t, h, plan.ID, artifactID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
+
+	marPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/mar-choice"
+	for i := range 3 {
+		code, body := h.post(i, marPath, map[string]any{"choice": "echo_present"})
+		require.Equalf(t, http.StatusOK, code, "player %d picks the shared option: %v", i, body)
+	}
+	h.assertWaitees("all three chose the same option",
+		model.RowStatePlanResolving, plan.PreparerID)
+}
+
 // TestChronicleHistories_Make_NarrationFoldedIntoLog proves the optional
 // per-option narration is folded into the single make-step action-log entry.
 func TestChronicleHistories_Make_NarrationFoldedIntoLog(t *testing.T) {

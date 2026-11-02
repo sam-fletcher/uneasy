@@ -25,13 +25,12 @@ type DemandOptionWinners map[string]int64
 // than demanderRank in power), the gap is added; otherwise no bonus.
 //
 // The sum is clamped to 1–6 (owner rulings 2026-07-30: never above 6;
-// 2026-11-01: never below 1 — a Clandestinely Liaise has no roll, so its own
-// difficulty is 0 and an unclamped demand on it could never be rolled). This is the only difficulty formula in the game that can
-// leave the rulebook's 1–6 band — every other one is bounded by construction,
-// but here a target plan's own difficulty stacks with a power gap of up to 4
-// (a rank-5 demander against a rank-1 preparer's Propose Duel reaches 9). A
-// roll's result is a count of distinct faces, so an uncapped difficulty is not
-// merely hard, it is unwinnable before the dice are picked up.
+// 2026-11-01: never below 1). The cap matters here most: a target plan's own
+// difficulty stacks with a power gap of up to 4 (a rank-5 demander against a
+// rank-1 preparer's Propose Duel reaches 9), and a roll's result is a count of
+// distinct faces, so an uncapped difficulty is unwinnable. The floor matters
+// for a target with no roll, such as a Clandestinely Liaise, whose own
+// difficulty is 0.
 func MakeDemandsDifficulty(targetDiff, demanderRank, targetRank int16) int16 {
 	diff := targetDiff
 	if targetRank < demanderRank {

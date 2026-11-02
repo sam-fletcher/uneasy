@@ -18,7 +18,9 @@
   3 runs in a row, all green. The perform_steps test is un-fixme'd.
 - Bite checks: removing the lower bound fails 18 game unit cases; making the
   handler refuse a repeated option fails the new Go test.
-  The new e2e UI-repeat test was not bite-checked (the UI never hid used options).
+  The new e2e UI-repeat test cannot bite against current code (the UI never
+  retired options); it is a regression guard only. The mar test
+  (`Mar_SameOptionAcrossPlayers`) pins several players picking one option.
 
 ## Behaviour changes to look at before merging
 - Formulas that used to return 0 for a rank-0 input, or 7 for 5 introductions
@@ -31,3 +33,5 @@ None.
 ## Noticed, not fixed
 - `make check-fast` needs `make frontend` first in a fresh worktree (embedded
   build missing otherwise).
+
+- The Chronicle panel's client difficulty meter is also clamped to 1–6.

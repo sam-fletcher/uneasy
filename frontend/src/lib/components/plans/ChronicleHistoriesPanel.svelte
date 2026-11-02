@@ -155,7 +155,8 @@
 	let preRollBusy = $state(false);
 
 	// ── Live difficulty (read-only to everyone) ──────────────────────────────
-	// Mirrors the server's ChronicleHistoriesDifficulty: max(rank, #invoked).
+	// Mirrors the server's ChronicleHistoriesDifficulty: max(rank, #invoked),
+	// clamped to the book's 1–6 band.
 	const knowledgeRank = $derived(
 		plan == null ? 0
 			: (rankings.find(r => r.category === 'knowledge' && r.player_id === plan.preparer_id)?.rank ?? 0)
@@ -163,7 +164,7 @@
 	// Pre-roll difficulty tracks the preparer's live (uncommitted) checkbox
 	// selection; for everyone else it reflects what's been committed so far.
 	const meterCount = $derived(isPreparer ? selectedInvokeIDs.length : invokedIDs.length);
-	const difficulty = $derived(Math.max(knowledgeRank, meterCount));
+	const difficulty = $derived(Math.min(6, Math.max(1, knowledgeRank, meterCount)));
 	const meterReason = $derived(
 		`knowledge rank ${knowledgeRank} · ${meterCount} artifact${meterCount === 1 ? '' : 's'} invoked → max = ${difficulty}`
 	);
