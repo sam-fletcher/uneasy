@@ -287,7 +287,8 @@ func (pduelHandler) ApplyChoice(
 			continue
 		}
 		if !loserStakeIDs[assetID] {
-			return fmt.Errorf("asset %d is not one of the losing side's staked assets", assetID)
+			return httpErr(http.StatusUnprocessableEntity,
+				fmt.Sprintf("asset %d is not one of the losing side's staked assets", assetID))
 		}
 		if _, err := deps.Q.GetAssetByID(ctx, assetID); err != nil {
 			return fmt.Errorf("asset %d not found", assetID)
