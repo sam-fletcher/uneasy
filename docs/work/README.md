@@ -43,5 +43,5 @@ nothing in from the private folder.
 
 ## Never audited
 
-Chronicle Histories through the UI; the Make Demands overlay interacting
+The Make Demands overlay interacting
 with other plans; Propose Decree's monarch case; tables of 4+ players.
