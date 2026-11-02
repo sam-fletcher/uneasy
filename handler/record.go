@@ -27,7 +27,7 @@ type RecordRow struct {
 // is stable now so the frontend can render the timeline.
 func GetFullRecord(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -50,9 +50,6 @@ func GetFullRecord(s *db.Store) http.HandlerFunc {
 		if err != nil {
 			respondInternalErr(w, r, "could not load plans", err)
 			return
-		}
-		for i := range plans {
-			sanitizeLiaiseKeptSecretsForViewer(&plans[i], player.ID)
 		}
 
 		// Group entries and plans by row number. Pre-allocate empty slices

@@ -258,8 +258,11 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	await keepSecretInPanel(alice, 'Alice Confidant');
 	await expect(alice.getByText("You've committed your secret. Waiting for bob")).toBeVisible();
 
-	// What is public: that she entrusted a secret, and that her Confidant now bears one.
-	await expectLogged(g, "entrusted the meeting's secret to", 'carol');
+	// What is public: that she wrote a secret, on which asset, and that the asset now bears one.
+	await expectLogged(g, 'wrote a secret on', 'carol');
+	const logged = await logText(g, 'carol');
+	expect(logged, 'the log names the holder').toContain('Alice Confidant');
+	expect(logged, 'the log never carries the text').not.toContain(SECRET_PREFIX);
 	await expect
 		.poll(async () => (await asset(g, aliceConfidant, 'carol')).secret_count, { message: 'secret existence is public' })
 		.toBe(1);
@@ -279,11 +282,8 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	expect(await readableSecrets(g, 'bob', aliceConfidant), 'the partner cannot read it yet').toEqual([]);
 	expect(await readableSecrets(g, 'carol', aliceConfidant), 'the bystander cannot read it').toEqual([]);
 
-	// Which asset she picked is masked from everyone but her until both have picked.
-	// This follows current behaviour and is in tension with the public log line above,
-	// which names the holder: see questions/liaise-secret-holder-public.md. Whichever way
-	// that is ruled, one of the two stops being asserted.
-	// The mask runs at three read sites (plan list, one plan, the public record).
+	// Which asset she picked is public the moment she picks (owner ruling 2026-11-01:
+	// the holder is public, only the text is gated), on all three read sites.
 	const pickAt = async (site: 'list' | 'one' | 'record', who: Who) => {
 		let liaise: any;
 		if (site === 'list') liaise = await liaiseData(g, who);
@@ -312,8 +312,8 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	};
 	for (const site of ['list', 'one', 'record'] as const) {
 		expect(await pickAt(site, 'alice'), `${site}: the picker sees her own pick`).toBe(aliceConfidant);
-		expect(await pickAt(site, 'bob'), `${site}: the partner sees only that she has picked`).toBe(0);
-		expect(await pickAt(site, 'carol'), `${site}: the bystander sees only that she has picked`).toBe(0);
+		expect(await pickAt(site, 'bob'), `${site}: the partner sees the pick`).toBe(aliceConfidant);
+		expect(await pickAt(site, 'carol'), `${site}: the bystander sees the pick`).toBe(aliceConfidant);
 	}
 
 	// Bob's pick completes the phase; both picks become public like the rest of the plan.
@@ -322,13 +322,8 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	await expect(section(bob, 'Things we share')).toBeVisible();
 	await expect(carol.getByText('A clandestine liaison is underway.')).toBeVisible();
 	for (const site of ['list', 'one', 'record'] as const) {
-		expect(await pickAt(site, 'carol'), `${site}: unmasked once the phase moves on`).toBe(aliceConfidant);
+		expect(await pickAt(site, 'carol'), `${site}: still public once the phase moves on`).toBe(aliceConfidant);
 	}
-
-	// keep-secret broadcasts no secret.created, so alice's open page still counts no
-	// secret on bob's Confidant and would offer her nothing to look at. Reload to get
-	// past it; the live path is the fixme below (liaise-keep-secret-not-broadcast.md).
-	await alice.reload();
 
 	// Things We Share: alice reads bob's secret; bob leverages alice's Confidant instead.
 	const aliceShare = await chooseShare(alice, "Look at partner's secrets");
@@ -377,7 +372,7 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	await expect(alice.getByText("You've submitted. Waiting for your partner")).toBeVisible();
 	await expect(waitingBar(bob)).toHaveText(/Waiting On:\s*You\s*$/);
 	await expect(waitingBar(carol)).toHaveText(/Waiting On:\s*bob\s*$/);
-	// Picks stay hidden until both are in.
+	// Nothing is applied until both picks are in.
 	expect((await asset(g, g.peers.bob, 'carol')).is_destroyed, 'nothing applied before both picks').toBe(false);
 
 	// Bob takes a gift: only non-peer assets of alice's are on offer.
@@ -517,10 +512,9 @@ test('guards: only the pair act, in order, once, and only on each other', async 
 	await post(g, 'alice', url('redelay-reveal'), { face: 3 }, 409); // nothing left to reveal
 });
 
-// Pinned for liaise-keep-secret-not-broadcast.md: keep-secret writes the secret
-// directly and, unlike the plain write-secret route, broadcasts no secret.created,
-// so the other player's open page never learns the asset now bears a secret.
-test.fixme('secret meeting: the partner can look at a freshly kept secret without reloading', async ({ browser }) => {
+// keep-secret goes through the shared secret helper, which broadcasts secret.created, so
+// the other player's open page learns the asset now bears a secret with no reload.
+test('secret meeting: the partner can look at a freshly kept secret without reloading', async ({ browser }) => {
 	const g = await seedLiaise(browser, 'keep');
 	track(g.gameID);
 	const { alice } = await openAll(g);

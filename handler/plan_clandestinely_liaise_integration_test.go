@@ -191,6 +191,20 @@ func TestLiaise_KeepSecret_RejectsDuplicateSubmission(t *testing.T) {
 	assert.Equal(t, len(secretsBefore)+1, len(secretsAfter),
 		"exactly one secret must be written despite the duplicate submission")
 
+	// The pick is announced once, by the generic secret line: the author and the
+	// asset, never the text.
+	posts, err := h.q.ListGamePosts(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	announced := 0
+	for _, p := range posts {
+		if p.SystemCode != nil && *p.SystemCode == "secret.written" {
+			announced++
+			assert.Contains(t, p.Body, mc.Name, "the line names the asset holding the secret")
+			assert.NotContains(t, p.Body, notes, "the meeting's text stays out of the log")
+		}
+	}
+	assert.Equal(t, 1, announced, "one keep-secret, one secret.written line")
+
 	// resolution_data carries a single KeptSecrets entry for the preparer.
 	refreshed, err = h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)
@@ -808,17 +822,12 @@ func TestLiaise_PerformStepsWinnerDrivesPreparerSlot(t *testing.T) {
 	assert.False(t, winnerHasOwnRow, "the winner does not get their own liaise-choice row")
 }
 
-// TestLiaise_KeepSecret_HidesAssetFromPartnerUntilBothSubmit is the Session 3
-// hidden-info-audit regression test (adr/PUBLIC_LAUNCH_PLAN.md Session 3,
-// item 2). clKeepSecretHandler's own doc comment says Secrets We Keep picks
-// are "revealed to both players once both have submitted" — but resolution_data
-// (returned by GET /api/plans/:id to every viewer, Tier 1 per ADR-006) used to
-// record each submission's asset_id immediately, leaking the first submitter's
-// choice to the partner (and any spectator) before their own pick landed. This
-// proves the partner sees the submission (so the WaitingOnBar still works) but
-// not the asset_id, until they submit too — at which point it's public like
-// the rest of the plan.
-func TestLiaise_KeepSecret_HidesAssetFromPartnerUntilBothSubmit(t *testing.T) {
+// TestLiaise_KeepSecret_PickIsPublicImmediately: owner ruling 2026-11-01 — which
+// asset holds a secret is public, so the first submitter's pick is visible to
+// their partner (and anyone else) as soon as it lands, on every read path.
+// Only the secret's text is gated. This replaces the earlier hidden-pick
+// regression test (the first submitter's pick was masked until both were in).
+func TestLiaise_KeepSecret_PickIsPublicImmediately(t *testing.T) {
 	h := newPlanLifecycle(t, 2)
 	ctx := context.Background()
 
@@ -851,39 +860,43 @@ func TestLiaise_KeepSecret_HidesAssetFromPartnerUntilBothSubmit(t *testing.T) {
 		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[0].ID,
 	})
 	require.NoError(t, err)
+	frames := captureFrames(t, h.manager, h.tg.Game.ID, h.tg.Players[1])
 	clKeepSecret(t, h, plan.ID, 0)
+	assertSecretCreatedFrame(t, frames, mc0.ID) // the partner's open page hears of it
 
 	planPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10)
 
-	// The partner (who has not submitted yet) sees the submission but not the
-	// asset it names.
+	// Which asset holds the secret is public by ruling (the count and the holder
+	// are public; only the text is gated), so the partner — who has not
+	// submitted — sees the pick on every read path: the single plan and the plans
+	// list.
 	code, body := h.get(1, planPath)
 	require.Equalf(t, http.StatusOK, code, "get plan as partner: %v", body)
 	keptSecrets := keptSecretsFromPlanResponse(t, body)
 	require.Len(t, keptSecrets, 1, "one submission recorded so far")
 	entry := keptSecrets[0].(map[string]any)
-	assert.EqualValues(t, h.tg.Players[0].ID, entry["player_id"], "submitter identity is not hidden")
-	assert.EqualValues(t, 0, entry["asset_id"],
-		"asset choice must be hidden from the partner before they submit their own")
+	assert.EqualValues(t, h.tg.Players[0].ID, entry["player_id"])
+	assert.EqualValues(t, mc0.ID, entry["asset_id"], "the pick is public to the partner")
 
-	// The submitter always sees their own choice.
-	code, body = h.get(0, planPath)
-	require.Equalf(t, http.StatusOK, code, "get plan as submitter: %v", body)
-	keptSecrets = keptSecretsFromPlanResponse(t, body)
-	entry = keptSecrets[0].(map[string]any)
-	assert.EqualValues(t, mc0.ID, entry["asset_id"], "the submitter always sees their own choice")
-
-	// Once the partner submits too, both picks become public (the phase has
-	// advanced past secrets_we_keep).
-	clKeepSecret(t, h, plan.ID, 1)
-	code, body = h.get(1, planPath)
-	require.Equalf(t, http.StatusOK, code, "get plan after both submitted: %v", body)
-	keptSecrets = keptSecretsFromPlanResponse(t, body)
-	require.Len(t, keptSecrets, 2)
-	for _, ks := range keptSecrets {
-		e := ks.(map[string]any)
-		assert.NotEqualValuesf(t, 0, e["asset_id"], "once both submit, both picks are public: %v", e)
+	gid := strconv.FormatInt(h.tg.Game.ID, 10)
+	code, body = h.get(1, "/api/tables/"+gid+"/plans")
+	require.Equalf(t, http.StatusOK, code, "list plans as partner: %v", body)
+	for _, pl := range body["plans"].([]any) {
+		pm := pl.(map[string]any)
+		if int64(pm["id"].(float64)) != plan.ID {
+			continue
+		}
+		var rdMap map[string]any
+		require.NoError(t, json.Unmarshal([]byte(pm["resolution_data"].(string)), &rdMap))
+		ks := keptSecretsFromPlanResponse(t, map[string]any{"resolution_data": rdMap})
+		require.Len(t, ks, 1)
+		assert.EqualValues(t, mc0.ID, ks[0].(map[string]any)["asset_id"], "plans list shows the pick")
 	}
+
+	// The text itself never reaches the partner.
+	secrets, err := h.q.ListVisibleSecrets(ctx, dbgen.ListVisibleSecretsParams{AssetID: mc0.ID, PlayerID: h.tg.Players[1].ID})
+	require.NoError(t, err)
+	assert.Empty(t, secrets, "the secret's text stays gated")
 }
 
 // keptSecretsFromPlanResponse digs resolution_data.liaise.kept_secrets out of

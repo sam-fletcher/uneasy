@@ -181,34 +181,31 @@ func srEligibleHideAssets(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan,
 // hidden Secret on one of the preparer's own assets, clears the public note so
 // ListPlans can't leak it, and records the secret metadata in resolution_data.
 // plan is refreshed in place. Runs inside the prepare transaction (q tx-scoped);
-// returns an httpErr on a bad secret asset or a write failure.
+// returns the holding asset (so the caller can announce after the commit), or an
+// httpErr on a bad secret asset or a write failure.
 func stashSecretRumor(
 	ctx context.Context,
 	q *dbgen.Queries,
 	gameID, preparerID, secretAssetID int64,
 	plan *dbgen.Plan,
-) error {
+) (*dbgen.Asset, error) {
 	secretAsset, err := q.GetAssetByID(ctx, secretAssetID)
 	if err != nil || secretAsset.GameID != gameID || secretAsset.OwnerID != preparerID || secretAsset.IsDestroyed {
-		return httpErr(http.StatusBadRequest, "secret asset must be one of your own intact assets")
+		return nil, httpErr(http.StatusBadRequest, "secret asset must be one of your own intact assets")
 	}
 	rumorText := ""
 	if plan.PreparationNotes != nil {
 		rumorText = *plan.PreparationNotes
 	}
-	secret, err := q.CreateSecret(ctx, dbgen.CreateSecretParams{
-		AssetID:  secretAsset.ID,
-		AuthorID: preparerID,
-		Text:     rumorText,
-	})
+	secret, err := createSecret(ctx, q, secretAsset.ID, preparerID, rumorText)
 	if err != nil {
-		return httpErr(http.StatusInternalServerError, "could not stash secret rumor")
+		return nil, httpErr(http.StatusInternalServerError, "could not stash secret rumor")
 	}
 	if err := q.SetPlanPreparationNotes(ctx, dbgen.SetPlanPreparationNotesParams{
 		ID:               plan.ID,
 		PreparationNotes: nil,
 	}); err != nil {
-		return httpErr(http.StatusInternalServerError, "could not clear secret rumor note")
+		return nil, httpErr(http.StatusInternalServerError, "could not clear secret rumor note")
 	}
 	resData := loadResolutionData(plan.ResolutionData)
 	sr := resData.EnsureSpreadRumors()
@@ -216,12 +213,12 @@ func stashSecretRumor(
 	sr.SecretAssetID = &secretAsset.ID
 	sr.SecretID = &secret.ID
 	if err := saveResolutionData(ctx, q, plan.ID, resData); err != nil {
-		return httpErr(http.StatusInternalServerError, "could not save secret rumor state")
+		return nil, httpErr(http.StatusInternalServerError, "could not save secret rumor state")
 	}
 	if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
 		*plan = refreshed
 	}
-	return nil
+	return &secretAsset, nil
 }
 
 // srAuthorizeActor returns (onMar, ok). onMar is true when the roll resolved as a
@@ -969,14 +966,8 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Remove source attribution from the rumor.
-		if err := deps.Q.SetRumorSourceHidden(ctx, *sr.RumorID); err != nil {
-			respondInternalErr(w, r, "could not hide rumor source", err)
-			return
-		}
-
-		// Write the secret on the chosen asset. By default the secret simply
-		// records the rumor it conceals the source of; secret_text overrides it.
+		// The secret's text: by default it records the rumor it conceals the source
+		// of; secret_text overrides it.
 		secretText := strings.TrimSpace(body.SecretText)
 		if secretText == "" {
 			rumor, rErr := deps.Q.GetRumorByID(ctx, *sr.RumorID)
@@ -986,37 +977,37 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			}
 			secretText = fmt.Sprintf("You were the source of the rumor: %q", rumor.Text)
 		}
-		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
-			AssetID:  body.SecretAssetID,
-			AuthorID: player.ID,
-			Text:     secretText,
-		}); err != nil {
-			respondInternalErr(w, r, "could not write secret", err)
-			return
-		}
 
 		sr.SourceHidden = true
 		sr.HideSourceDone++
 		sr.HideSourceAssetIDs = append(sr.HideSourceAssetIDs, secretAsset.ID)
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
-			respondInternalErr(w, r, "could not save hide-source state", err)
+		// Hiding the source, storing the secret and recording the completion land
+		// together: a failed save must not leave a secret behind for a retry to
+		// duplicate. The announcement waits for the commit.
+		if err := deps.InTx(ctx, func(q *dbgen.Queries) error {
+			if err := q.SetRumorSourceHidden(ctx, *sr.RumorID); err != nil {
+				return err
+			}
+			if _, err := createSecret(ctx, q, secretAsset.ID, player.ID, secretText); err != nil {
+				return err
+			}
+			return saveResolutionData(ctx, q, plan.ID, resData)
+		}); err != nil {
+			respondInternalErr(w, r, "could not hide the rumor's source", err)
 			return
 		}
+		announceSecret(ctx, deps.Q, deps.Manager, secretAsset, player.ID,
+			secretNotice{Row: plan.RowNumber, PlanID: &plan.ID})
 
-		// The dramatic-irony pair (adr/READONLY_TIERS_ROUND2_PLAN.md). EmitRumorCreated
-		// already carries the character-level record — "Rumor spread from unknown
-		// source" — and this is its player-level counterpart, so the table can see the
-		// gap between what they know and what their characters do. Hide-source was
-		// previously left out of the log to protect an anonymity the plan.prepared post
-		// had already given away; that rationale is superseded.
-		//
-		// Naming the sheltering asset is a breadcrumb, not a reveal: reading the Secret
-		// still costs a break or a steal. Its text never appears here — secret text
-		// stays out of the action log.
+		// The dramatic-irony pair: EmitRumorCreated carries the character-level
+		// "unknown source" record, and this is its player-level counterpart. The
+		// fiction hides the spreader from the characters, never from the players,
+		// so the table sees the gap between what it knows and what the characters
+		// do. The secret line above already names the sheltering asset; this one
+		// says what the hiding means. Secret text never appears.
 		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"%s hid themselves as the source — no one at court knows the rumor came from them. "+
-				"The secret is discoverable from %s.",
-			playerDisplayName(ctx, deps.Q, player.ID), assetMark(secretAsset.Name)))
+			"%s hid themselves as the source — no one at court knows the rumor came from them.",
+			playerDisplayName(ctx, deps.Q, player.ID)))
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":         plan.ID,

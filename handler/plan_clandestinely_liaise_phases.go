@@ -120,8 +120,8 @@ func clBothKeepSecretsSubmitted(ld LiaiseResolutionData, preparerID int64) bool 
 //
 // Phase 2 — Secrets We Keep: each seat (the preparer's and the partner's)
 // nominates one of its own assets to hold the secret of this meeting. The server
-// writes a new secret on the asset's underside. Choices are revealed to both
-// players once both have submitted.
+// writes a new secret on the asset's underside. Which asset holds it is public
+// the moment it is picked (only the secret's text is gated).
 //
 // Which seat a submission fills is read off the asset: the seat is its owner. That
 // is what lets a perform_steps winner stand in for the preparer (they nominate
@@ -207,18 +207,6 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		// log, so it must not carry log markup.
 		secretText := fmt.Sprintf("Clandestine meeting with %s — %s",
 			playerPlainName(ctx, deps.Q, seat), preparationNotes)
-		// Authored by the SEAT, not the caller: a stand-in's keystrokes are the
-		// preparer's meeting, and authorship is what lets the asset's own player read
-		// the secret on its underside.
-		if _, err := deps.Q.CreateSecret(ctx, dbgen.CreateSecretParams{
-			AssetID:  body.AssetID,
-			AuthorID: seat,
-			Text:     secretText,
-		}); err != nil {
-			respondInternalErr(w, r, "could not write secret on asset", err)
-			return
-		}
-
 		// Record keep-secret choice.
 		ld.KeptSecrets = append(ld.KeptSecrets, KeptSecret{
 			PlayerID: seat,
@@ -236,13 +224,22 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			ld.Phase = LiaiseThingsWeShare
 		}
 
-		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+		// The secret and the recorded choice land together, so a failed save
+		// leaves nothing for a retry to duplicate; the announcement waits for the
+		// commit. Authored by the SEAT, not the caller: a stand-in's keystrokes are
+		// the preparer's meeting, and authorship is what lets the asset's own
+		// player read the secret on its underside.
+		if err := deps.InTx(ctx, func(q *dbgen.Queries) error {
+			if _, err := createSecret(ctx, q, asset.ID, seat, secretText); err != nil {
+				return err
+			}
+			return saveResolutionData(ctx, q, plan.ID, resData)
+		}); err != nil {
 			respondInternalErr(w, r, "could not save keep-secret choice", err)
 			return
 		}
-
-		clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s entrusted the meeting's secret to %s.",
-			playerDisplayName(ctx, deps.Q, seat), assetMark(asset.Name)))
+		announceSecret(ctx, deps.Q, deps.Manager, asset, seat,
+			secretNotice{Row: plan.RowNumber, PlanID: &plan.ID})
 
 		// The other participant must refetch the plan to see this submission.
 		// Without this they'd be soft-locked on the secrets-we-keep panel until a

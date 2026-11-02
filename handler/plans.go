@@ -92,7 +92,7 @@ func createPlanRoll(
 // ListPlans handles GET /api/tables/:id/plans.
 func ListPlans(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gameID, player, ok := parseGamePlayer(w, r, s.Q)
+		gameID, _, ok := parseGamePlayer(w, r, s.Q)
 		if !ok {
 			return
 		}
@@ -100,9 +100,6 @@ func ListPlans(s *db.Store) http.HandlerFunc {
 		if err != nil {
 			respondInternalErr(w, r, "could not load plans", err)
 			return
-		}
-		for i := range plans {
-			sanitizeLiaiseKeptSecretsForViewer(&plans[i], player.ID)
 		}
 		respond(w, http.StatusOK, map[string]any{"plans": plans})
 	}
@@ -426,9 +423,10 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		var plan dbgen.Plan
+		var stashed *dbgen.Asset // the asset holding a Spread Rumors secret rumor
 		err := s.InTx(ctx, func(q *dbgen.Queries) error {
 			var txErr error
-			plan, txErr = createPlanInTx(
+			plan, stashed, txErr = createPlanInTx(
 				ctx, q, s, game, player, &body, meta, targetRow, count, validation.FinaleBonus, manager)
 			return txErr
 		})
@@ -439,6 +437,12 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		broadcastEvent(manager, game.ID, model.EventPlanPrepared, model.PlanPayload{Plan: plan})
 		EmitPlanPrepared(ctx, s.Q, manager, plan)
+		// The stash created its secret inside the transaction; announce it now
+		// that it has committed.
+		if stashed != nil {
+			announceSecret(ctx, s.Q, manager, *stashed, player.ID,
+				secretNotice{Row: plan.RowNumber, PlanID: &plan.ID})
+		}
 		broadcastRowState(ctx, s.Q, manager, game.ID)
 
 		// Consume any pending counter-demand waiting on this player: the
@@ -505,7 +509,8 @@ func createPlanInTx(
 	count int64,
 	finaleBonus bool,
 	manager *hub.Manager,
-) (dbgen.Plan, error) {
+) (dbgen.Plan, *dbgen.Asset, error) {
+	var stashed *dbgen.Asset
 	rowOrder := int16(count)
 	// Make Demands is an exception: instead of appending to the target's row,
 	// it slots in immediately *before* the target so it resolves first. Take
@@ -514,7 +519,7 @@ func createPlanInTx(
 	if body.PlanType == model.PlanMakeDemands && body.TargetPlanID != nil && targetRow != nil {
 		target, err := q.GetPlanByID(ctx, *body.TargetPlanID)
 		if err != nil {
-			return dbgen.Plan{}, httpErr(http.StatusBadRequest, "demand target not found")
+			return dbgen.Plan{}, nil, httpErr(http.StatusBadRequest, "demand target not found")
 		}
 		rowOrder = target.RowOrder
 		if err := q.ShiftRowOrderAtOrAfter(ctx, dbgen.ShiftRowOrderAtOrAfterParams{
@@ -522,7 +527,7 @@ func createPlanInTx(
 			RowNumber: targetRow,
 			RowOrder:  rowOrder,
 		}); err != nil {
-			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not shift row order: "+err.Error())
+			return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not shift row order: "+err.Error())
 		}
 	}
 
@@ -544,12 +549,12 @@ func createPlanInTx(
 		IsFinaleBonus: finaleBonus,
 	})
 	if err != nil {
-		return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not create plan: "+err.Error())
+		return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not create plan: "+err.Error())
 	}
 
 	if body.PlanType == model.PlanMakeIntroductions {
 		if err = miStoreResData(ctx, q, plan.ID, body.PeerCount); err != nil {
-			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save plan data")
+			return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not save plan data")
 		}
 	}
 
@@ -557,7 +562,7 @@ func createPlanInTx(
 		resData := loadResolutionData(plan.ResolutionData)
 		resData.EnsureMakeWar().EnemyPlayerIDs = body.EnemyPlayerIDs
 		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
-			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save war enemies")
+			return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not save war enemies")
 		}
 		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
 			plan = refreshed
@@ -574,7 +579,7 @@ func createPlanInTx(
 		ld.PreparerPeerID = body.PreparerPeerID
 		ld.PartnerPeerID = body.PartnerPeerID
 		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
-			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save liaise meeting peers")
+			return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not save liaise meeting peers")
 		}
 		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
 			plan = refreshed
@@ -585,7 +590,7 @@ func createPlanInTx(
 		resData := loadResolutionData(plan.ResolutionData)
 		resData.EnsureDuel().DuelType = body.DuelType
 		if err = saveResolutionData(ctx, q, plan.ID, resData); err != nil {
-			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not save duel type")
+			return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not save duel type")
 		}
 		if refreshed, err := q.GetPlanByID(ctx, plan.ID); err == nil {
 			plan = refreshed
@@ -596,8 +601,8 @@ func createPlanInTx(
 	// Secret on one of the preparer's own assets (see stashSecretRumor) so other
 	// players can't read it until a Make publishes it.
 	if body.PlanType == model.PlanSpreadRumors && body.SecretAssetID != nil {
-		if err = stashSecretRumor(ctx, q, game.ID, player.ID, *body.SecretAssetID, &plan); err != nil {
-			return dbgen.Plan{}, err
+		if stashed, err = stashSecretRumor(ctx, q, game.ID, player.ID, *body.SecretAssetID, &plan); err != nil {
+			return dbgen.Plan{}, nil, err
 		}
 	}
 
@@ -606,7 +611,7 @@ func createPlanInTx(
 			ID:             plan.ID,
 			TargetedPlanID: body.TargetPlanID,
 		}); err != nil {
-			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not persist demand target")
+			return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not persist demand target")
 		}
 		if refreshed, gErr := q.GetPlanByID(ctx, plan.ID); gErr == nil {
 			plan = refreshed
@@ -617,7 +622,7 @@ func createPlanInTx(
 	if preparer, ok := h.(OnPreparer); ok {
 		deps := &PlanDeps{Store: s.WithQ(q), Manager: manager}
 		if err := preparer.OnPrepare(ctx, deps, &plan); err != nil {
-			return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not initialise plan: "+err.Error())
+			return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not initialise plan: "+err.Error())
 		}
 		// OnPrepare writes additional resolution_data directly to the DB (e.g.
 		// liaise partner_id + delay_reveal_id, make_war delay_reveal_id) without
@@ -635,7 +640,7 @@ func createPlanInTx(
 		PlayerID: player.ID,
 		PlanID:   plan.ID,
 	}); err != nil {
-		return dbgen.Plan{}, httpErr(http.StatusInternalServerError, "could not place plan token")
+		return dbgen.Plan{}, nil, httpErr(http.StatusInternalServerError, "could not place plan token")
 	}
-	return plan, nil
+	return plan, stashed, nil
 }

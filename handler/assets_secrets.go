@@ -7,7 +7,6 @@ import (
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
-	"uneasy/model"
 )
 
 // ── Secrets handlers ──────────────────────────────────────────────────────────
@@ -42,26 +41,14 @@ func WriteSecret(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
-		secret, err := s.Q.CreateSecret(r.Context(), dbgen.CreateSecretParams{
-			AssetID:  asset.ID,
-			AuthorID: player.ID,
-			Text:     body.Text,
-		})
+		var row *int16
+		if g, err := s.Q.GetGameByID(r.Context(), asset.GameID); err == nil {
+			row = logRow(g)
+		}
+		secret, err := writeSecret(r.Context(), s.Q, manager, *asset, player.ID, body.Text, secretNotice{Row: row})
 		if err != nil {
 			respondInternalErr(w, r, "could not write secret", err)
 			return
-		}
-
-		if h, ok := manager.Get(asset.GameID); ok {
-			h.BroadcastEvent(model.EventSecretCreated, model.SecretCreatedPayload{
-				AssetID:  asset.ID,
-				AuthorID: player.ID,
-			})
-		}
-		// The log records that a secret was written, never its text — see
-		// EmitSecretWritten.
-		if g, err := s.Q.GetGameByID(r.Context(), asset.GameID); err == nil {
-			EmitSecretWritten(r.Context(), s.Q, manager, asset.GameID, *asset, player.ID, logRow(g))
 		}
 
 		respond(w, http.StatusCreated, map[string]any{"secret": secret})

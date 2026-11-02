@@ -781,32 +781,27 @@ func EmitAssetTaken(
 }
 
 // EmitSecretWritten writes the Default secret.written post for a secret placed
-// on an asset's underside.
+// on an asset's underside. Call it through announceSecret (secrets.go), not
+// directly.
 //
-// The body names the author and the asset and STOPS THERE. Secret text must
-// never reach the action log — the log is readable by the whole table, so
-// carrying the text would defeat the entire mechanic. This is deliberately
-// unlike the asset/marginalia emitters, which do quote their text.
-//
-// Announcing the write at all is consistent with the existing model: a
-// secret's *existence* is already public via Asset.secret_count (the open-eye
-// counter), only its content is gated. This post is the log's record of the
-// same event the counter shows.
+// The body names the author and the asset and STOPS
+// THERE. Secret text must never reach the action log — the log is readable by
+// the whole table, so carrying the text would defeat the entire mechanic. This
+// is deliberately unlike the asset/marginalia emitters, which do quote their
+// text. Naming the asset is public by ruling: a secret's existence and its
+// holder are public (Asset.secret_count); only the content is gated.
 func EmitSecretWritten(
 	ctx context.Context,
 	q *dbgen.Queries,
 	manager *hub.Manager,
-	gameID int64,
 	asset dbgen.Asset,
 	authorID int64,
-	rowNumber *int16,
+	n secretNotice,
 ) {
-	author := playerDisplayName(ctx, q, authorID)
-	EmitSystemPost(ctx, q, manager, gameID, "secret.written",
-		model.SeverityDefault,
-		fmt.Sprintf("%s wrote a secret on %s", author, assetMark(asset.Name)),
-		rowNumber, nil, nil,
-		map[string]any{"asset_id": asset.ID, "author_id": authorID})
+	body := fmt.Sprintf("%s wrote a secret on %s", playerDisplayName(ctx, q, authorID), assetMark(asset.Name))
+	data := map[string]any{"asset_id": asset.ID, "author_id": authorID}
+	EmitSystemPost(ctx, q, manager, asset.GameID, "secret.written",
+		model.SeverityDefault, body, n.Row, n.PlanID, nil, data)
 }
 
 // EmitMainCharacterChanged writes the Default asset.main_character post for a
