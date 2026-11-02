@@ -1,6 +1,11 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
 import { E2E } from './baseUrl';
+import {
+	cleanupDuelsAfterEach, seedDuel, addPeer, openDuel, openTable, duelWithDice, aliceCall, duelState,
+	selectStakes, declare, respond, duelLog, planWithData, rowState, assetsOf, section,
+	type Duel, type DiceDuel, type Who,
+} from './helpers/propose_duel';
 
 // End-to-end for Propose Duel — the gnarliest interactive plan flow, and
 // the first plan spec to drive a full resolution through the UI.
@@ -33,13 +38,6 @@ async function advanceToRow(gameID: number, targetRow: number, ctx: BrowserConte
 		data: { game_id: gameID, advance_to: targetRow },
 	});
 	expect(res.ok(), `advance-row failed: ${await res.text()}`).toBeTruthy();
-}
-
-// The resolving duel panel auto-renders inside <PlanPanel> for every player
-// once the plan flips to 'resolving' (PlanPanel.svelte:100). Scope locators
-// to the choices section we expect so chip/card lookups stay unambiguous.
-function section(page: Page, header: string) {
-	return page.locator('.choices-section', { hasText: header });
 }
 
 // Stakes are committed in a single step now: check the asset(s), then Commit.
@@ -198,4 +196,366 @@ test('propose duel: setup → staking → bouts → final roll → settles itsel
 
 	await aliceCtx.close();
 	await bobCtx.close();
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit regression specs. The helpers (helpers/propose_duel.ts) seed a five-
+// player game with bob last on the esteem track (difficulty 1, at most two
+// stakes) and let each duellist read their OWN dice, so a spec can choose the
+// declaration that makes a given duellist win the bout — and with it the
+// outcome: with one bout, the bout winner takes both dice, so alice winning is
+// a make and bob winning is a mar. Everything the UI shows is read at 375px.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PHONE = { width: 375, height: 812 };
+cleanupDuelsAfterEach();
+
+function bodies(posts: string[], needle: string) {
+	return posts.filter(p => p.includes(needle));
+}
+
+/** Waits for the log to carry a post containing `needle`, then returns it. */
+async function logHas(g: Duel, who: Who, needle: string): Promise<string> {
+	await expect.poll(async () => bodies(await duelLog(g, who), needle).length, {
+		message: `log never said "${needle}"`,
+	}).toBeGreaterThan(0);
+	return bodies(await duelLog(g, who), needle)[0];
+}
+
+/** Plays bout 1 through the UI: alice calls, bob answers. */
+async function playBoutInUI(alice: Page, bob: Page, call: 'high' | 'low', aliceStake: string, bobStake: string) {
+	const aBout = section(alice, 'Bout');
+	await aBout.locator('.stake-line.pick', { hasText: aliceStake }).click();
+	await aBout.getByRole('button', { name: call === 'high' ? 'Higher' : 'Lower' }).click();
+	await aBout.getByRole('button', { name: 'Declare' }).click();
+	const bBout = section(bob, 'Bout');
+	await expect(bBout.getByRole('button', { name: 'Respond' })).toBeVisible({ timeout: 10_000 });
+	await bBout.locator('.stake-line.pick', { hasText: bobStake }).click();
+	await bBout.getByRole('button', { name: 'Respond' }).click();
+}
+
+test('setup: who duels, blind stakes, what a bystander sees', async ({ browser }) => {
+	const g = await seedDuel(browser, { viewport: PHONE });
+	const a1 = await addPeer(g, 'alice', 'Alice Peer 1');
+	const a2 = await addPeer(g, 'alice', 'Alice Peer 2');
+	const b1 = await addPeer(g, 'bob', 'Bob Peer 1');
+	const b2 = await addPeer(g, 'bob', 'Bob Peer 2');
+	const b3 = await addPeer(g, 'bob', 'Bob Peer 3');
+	await openDuel(g);
+	const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);
+
+	// The arms/wits framing is the heading, and the main character is the default
+	// duellist. The bystander sees the matchup but no controls.
+	await expect(alice.getByText('Duel of arms — who fights for you?')).toBeVisible({ timeout: 10_000 });
+	await expect(alice.getByText('fights for themselves')).toBeVisible();
+	await expect(bob.getByText('Duel of arms — who fights for you?')).toBeVisible();
+	await expect(carol.getByText('The duellists are choosing their stakes.')).toBeVisible();
+	await expect(carol.getByRole('button', { name: 'Send someone else' })).toHaveCount(0);
+	await expect(carol.getByRole('button', { name: /^Commit/ })).toHaveCount(0);
+
+	// Sending a peer in your stead: the picker holds a local choice, the log gets
+	// ONE line on Confirm, and the opponent's "Facing …" line follows live.
+	await alice.getByRole('button', { name: 'Send someone else' }).click();
+	await section(alice, 'who fights for you').locator('.card', { hasText: 'Alice Peer 1' }).getByRole('checkbox').click();
+	await alice.getByRole('button', { name: 'Confirm' }).click();
+	await expect(alice.getByText('Alice Peer 1 fights for you.')).toBeVisible();
+	await logHas(g, 'bob', 'elects Alice Peer 1 as their champion');
+	await expect(bob.getByText('Facing Alice Peer 1.')).toBeVisible();
+	await expect(carol.getByText('Alice Peer 1', { exact: false }).first()).toBeVisible();
+	expect(bodies(await duelLog(g, 'bob'), 'champion')).toHaveLength(1);
+
+	// Stake limits, as exact statuses. Bob is last on the track: two stakes at most.
+	expect((await selectStakes(g, 'bob', [b1, b2, b3])).status(), 'over the esteem cap').toBe(400);
+	expect((await selectStakes(g, 'bob', [a1])).status(), "someone else's asset").toBe(403);
+	expect((await selectStakes(g, 'carol', [a2])).status(), 'a bystander cannot stake').toBe(403);
+	expect((await selectStakes(g, 'bob', [])).status(), 'at least one stake').toBe(400);
+	await expect(bob.getByText('1–2', { exact: false }).first()).toBeVisible();
+
+	// Alice commits one stake through the UI. Her commit is private: bob's view of
+	// the duel holds none of her stakes, and nothing on the log gives her count away.
+	const aStake = section(alice, 'Choose assets to stake');
+	await aStake.locator('.card', { hasText: 'Alice Peer 2' }).getByRole('checkbox').click();
+	await aStake.getByRole('button', { name: 'Commit 1 stake' }).click();
+	await expect(alice.getByText("You've staked 1 asset.")).toBeVisible();
+	expect((await duelState(g, 'bob')).stakes, "bob must not see alice's stakes yet").toHaveLength(0);
+	expect((await duelState(g, 'carol')).stakes, 'a bystander sees no stakes in setup').toHaveLength(0);
+	expect(bodies(await duelLog(g, 'bob'), 'on the line'), 'the stake log waits for both').toHaveLength(0);
+	// Bob is the only one still owing a commit, and the bar says so.
+	expect(await rowState(g)).toMatchObject({ kind: 'await_duel_staking', acting_player_ids: [g.ids.bob] });
+	expect((await selectStakes(g, 'alice', [a2])).status(), 'a second commit').toBe(409);
+
+	// Bob commits; both lay their stakes down together and the bouts begin for all.
+	const bStake = section(bob, 'Choose assets to stake');
+	await bStake.locator('.card', { hasText: 'Bob Peer 2' }).getByRole('checkbox').click();
+	await bStake.getByRole('button', { name: 'Commit 1 stake' }).click();
+	for (const page of [alice, bob, carol]) {
+		await expect(section(page, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
+	}
+	expect(await logHas(g, 'carol', 'lays 1 stake on the line')).toContain('hidden die');
+	expect(bodies(await duelLog(g, 'carol'), 'on the line')).toHaveLength(2);
+	// Alice (top of the track) opens; the bystander gets no declare controls.
+	await expect(section(alice, 'Bout').getByRole('button', { name: 'Declare' })).toBeVisible();
+	await expect(section(carol, 'Bout').getByRole('button', { name: /Declare|Respond/ })).toHaveCount(0);
+	expect((await declare(g, 'carol', 1, 'high')).status(), 'a bystander cannot declare').toBe(403);
+	expect((await declare(g, 'bob', 1, 'high')).status(), 'only the player with initiative declares').toBe(403);
+	expect((await respond(g, 'alice', 1)).status(), 'no bout is open to answer').toBe(409);
+});
+
+test('bouts: each viewer sees only their own dice — over the API, the DOM and the socket', async ({ browser }) => {
+	const g = await seedDuel(browser, { viewport: PHONE });
+	const aIDs = [await addPeer(g, 'alice', 'Alice Peer 1'), await addPeer(g, 'alice', 'Alice Peer 2')];
+	const bIDs = [await addPeer(g, 'bob', 'Bob Peer 1'), await addPeer(g, 'bob', 'Bob Peer 2')];
+	await openDuel(g);
+	expect((await selectStakes(g, 'alice', aIDs)).ok()).toBeTruthy();
+	expect((await selectStakes(g, 'bob', bIDs)).ok()).toBeTruthy();
+
+	// Record every socket frame each page receives BEFORE it loads the table, so
+	// the live path (the bout_declared push) is covered, not just the fetch.
+	const frames: Record<Who, string[]> = { alice: [], bob: [], carol: [] };
+	const pages = {} as Record<Who, Page>;
+	for (const w of ['alice', 'bob', 'carol'] as Who[]) {
+		pages[w] = await g.ctx[w].newPage();
+		pages[w].on('websocket', ws => ws.on('framereceived', f => frames[w].push(String(f.payload))));
+		await pages[w].goto(`/table/${g.gameID}`);
+	}
+	const { alice, bob, carol } = pages;
+
+	const aliceDice = (await duelState(g, 'alice')).stakes.filter(s => s.player_id === g.ids.alice);
+	expect(aliceDice.map(s => s.hidden_die).every(d => d != null && d >= 1 && d <= 6)).toBe(true);
+	// Nobody can read the other side's dice, at any phase of the bouts.
+	const seenByBob = (await duelState(g, 'bob')).stakes.filter(s => s.player_id === g.ids.alice);
+	const seenByCarol = (await duelState(g, 'carol')).stakes;
+	expect(seenByBob).toHaveLength(2);
+	expect(seenByBob.every(s => s.hidden_die === null)).toBe(true);
+	expect(seenByCarol).toHaveLength(4);
+	expect(seenByCarol.every(s => s.hidden_die === null), 'a bystander reads no die').toBe(true);
+
+	// DOM: the duellist's own side shows real numbers, the other side and a
+	// bystander's whole view show "?". (Positive check first: the tracker rendered.)
+	const aBout = section(alice, 'Bout');
+	await expect(aBout.locator('.duel-side.is-mine .stake-line')).toHaveCount(2, { timeout: 10_000 });
+	const aliceShown = await aBout.locator('.duel-side.is-mine .die').allTextContents();
+	expect(aliceShown.map(Number).sort()).toEqual(aliceDice.map(s => s.hidden_die as number).sort());
+	await expect(aBout.locator('.duel-side:not(.is-mine) .die')).toHaveText(['?', '?']);
+	const cBout = section(carol, 'Bout');
+	await expect(cBout.locator('.duel-side .stake-line')).toHaveCount(4, { timeout: 10_000 });
+	const carolDice = await cBout.locator('.duel-side .stake-line .die').allTextContents();
+	expect(carolDice.filter(d => d !== '?'), 'a bystander sees no die value').toEqual([]);
+
+	// Alice opens through the UI with her first stake. Bob's page updates live.
+	const bBout = section(bob, 'Bout');
+	await aBout.locator('.stake-line.pick', { hasText: 'Alice Peer 1' }).click();
+	await aBout.getByRole('button', { name: 'Lower' }).click();
+	await aBout.getByRole('button', { name: 'Declare' }).click();
+	await expect(bBout.locator('.open-call')).toContainText('Alice Peer 1', { timeout: 10_000 });
+	await expect(bBout.getByText('calling lower')).toBeVisible();
+	await expect(bBout.getByText('you can see your own die, not theirs', { exact: false })).toBeVisible();
+	await expect(cBout.getByText('must answer', { exact: false })).toBeVisible();
+	await expect(bBout.locator('.duel-side:not(.is-mine) .die')).toHaveText(['?', '?']);
+
+	// The call is public — on the wire and on the log — but no die travels with it.
+	const declared = frames.bob.filter(f => f.includes('duel.bout_declared'));
+	expect(declared.length, 'bob should have been pushed the declaration').toBeGreaterThan(0);
+	for (const w of ['bob', 'carol'] as Who[]) {
+		const duelFrames = frames[w].filter(f => f.includes('duel.'));
+		expect(duelFrames.some(f => f.includes('bout_declared'))).toBe(true);
+		for (const f of duelFrames) expect(f, `${w}'s duel frames carry no die`).not.toMatch(/die/i);
+	}
+	const open = await logHas(g, 'bob', 'opens with Alice Peer 1, calling low');
+	expect(open).toContain('bob must answer');
+	expect(bodies(await duelLog(g, 'bob'), 'rolled'), 'no dice on the log while the bout is open').toHaveLength(0);
+	const openBob = (await duelState(g, 'bob')).bouts;
+	expect(openBob).toHaveLength(1);
+	expect(openBob[0].declaration).toBe('low');
+	expect(openBob[0].declarer_die, 'the responder cannot read the declarer die').toBeNull();
+	expect((await duelState(g, 'carol')).bouts[0].declarer_die).toBeNull();
+	expect((await duelState(g, 'alice')).bouts[0].declarer_die).toBe(aliceDice.find(s => s.id === openBob[0].declarer_stake_id)?.hidden_die);
+
+	// Bob answers with his first stake; the bout resolves and its dice go public.
+	await bBout.locator('.stake-line.pick', { hasText: 'Bob Peer 1' }).click();
+	await bBout.getByRole('button', { name: 'Respond' }).click();
+	for (const page of [alice, bob, carol]) {
+		await expect(section(page, 'Bout 2 of 2')).toBeVisible({ timeout: 10_000 });
+		const resolved = section(page, 'Bout').locator('.stake-line.resolved .die');
+		await expect(resolved).toHaveCount(2);
+		for (const d of await resolved.allTextContents()) expect(d).toMatch(/^[1-6]$/);
+	}
+	const round = await logHas(g, 'carol', 'Bout 1: alice rolled');
+	expect(round).toMatch(/bob rolled \d/);
+	// The second bout's dice stay sealed: bob (declarer now) still can't see
+	// alice's remaining die, and the bystander still can't see either.
+	const nowBob = (await duelState(g, 'bob')).stakes;
+	expect(nowBob.filter(s => s.player_id === g.ids.alice && !s.is_resolved).map(s => s.hidden_die)).toEqual([null]);
+	const nowCarol = (await duelState(g, 'carol')).stakes;
+	expect(nowCarol.filter(s => !s.is_resolved).map(s => s.hidden_die)).toEqual([null, null]);
+	await expect(section(bob, 'Bout').locator('.duel-side:not(.is-mine) .stake-line:not(.resolved) .die')).toHaveText(['?']);
+	// Bout 2 is under way and the bystander is told who declares it. (Whether
+	// each duellist's own page agrees about whose turn it is lives in the
+	// test.fixme below: it is not reliable yet.)
+	await expect(section(carol, 'Bout')).toContainText(/(alice|bob) to declare/);
+});
+
+test('make: the winner takes the loser’s stake, everything staked is leveraged', async ({ browser }) => {
+	const g: DiceDuel = await duelWithDice(browser, 'aliceWins', { alice: 1, bob: 1 }, { viewport: PHONE });
+	const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);
+	await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
+	// Initiative is only surfaced here, in the bouts: the setup never named it.
+	await expect(section(carol, 'Bout').getByText('alice to declare')).toBeVisible();
+
+	await playBoutInUI(alice, bob, aliceCall(g, true), 'Alice Peer 1', 'Bob Peer 1');
+
+	await expect.poll(async () => (await planWithData(g)).plan.status, { timeout: 10_000 }).toBe('resolved');
+	const done = await planWithData(g);
+	expect(done.plan.result).toBe('make');
+	// The claim is recorded as a committed choice even though nobody was asked.
+	expect(done.resolution_data?.choice_submitted).toBe(true);
+	expect(done.resolution_data?.duel?.phase).toBe('done');
+
+	const settled = await logHas(g, 'carol', 'The bouts are settled');
+	expect(settled).toContain('alice carries 2 dice');
+	expect(settled).toContain('bob carries 0');
+	expect(await logHas(g, 'carol', 'won the duel')).toMatch(/alice won the duel and took 1 staked asset from bob: .*Bob Peer 1.*all staked assets are leveraged/);
+	const assets = await assetsOf(g);
+	expect(assets.find(a => a.name === 'Bob Peer 1')).toMatchObject({ owner_id: g.ids.alice, is_leveraged: true });
+	expect(assets.find(a => a.name === 'Alice Peer 1')).toMatchObject({ owner_id: g.ids.alice, is_leveraged: true });
+
+	// Nobody has anything left to click — not the winner, not the loser, not a bystander.
+	for (const page of [alice, bob, carol]) {
+		await expect(section(page, 'Bout')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: /Complete plan|Apply result|^Take / })).toHaveCount(0);
+	}
+	// And the Waiting On bar no longer holds the duel's seats.
+	expect((await rowState(g)).kind).not.toMatch(/await_duel/);
+});
+
+test('mar: the target takes the preparer’s stake and the preparer is not asked to close it', async ({ browser }) => {
+	const g = await duelWithDice(browser, 'bobWins', { alice: 1, bob: 1 }, { viewport: PHONE });
+	const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);
+	await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
+
+	await playBoutInUI(alice, bob, aliceCall(g, false), 'Alice Peer 1', 'Bob Peer 1');
+
+	await expect.poll(async () => (await planWithData(g)).plan.status, { timeout: 10_000 }).toBe('resolved');
+	const done = await planWithData(g);
+	expect(done.plan.result).toBe('mar');
+	expect(done.resolution_data?.choice_submitted).toBe(true);
+
+	const settled = await logHas(g, 'alice', 'The bouts are settled');
+	expect(settled).toContain('alice carries 0 dice');
+	expect(await logHas(g, 'alice', 'won the duel')).toMatch(/bob won the duel and took 1 staked asset from alice: .*Alice Peer 1/);
+	const assets = await assetsOf(g);
+	expect(assets.find(a => a.name === 'Alice Peer 1')).toMatchObject({ owner_id: g.ids.bob, is_leveraged: true });
+	expect(assets.find(a => a.name === 'Bob Peer 1')).toMatchObject({ owner_id: g.ids.bob, is_leveraged: true });
+
+	// The preparer just lost: no "Complete plan" lands on her. Same for the rest.
+	for (const page of [alice, bob, carol]) {
+		await expect(section(page, 'Bout')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: /Complete plan|Apply result|^Take / })).toHaveCount(0);
+	}
+});
+
+test('mar with a real pick: the target chooses, everyone else waits on them', async ({ browser }) => {
+	// Alice stakes three, bob one: one bout, bob wins it, and the mar lets him take
+	// 1 (the difficulty) of her 3 — a genuine choice, so the duel waits for it.
+	const g = await duelWithDice(browser, 'bobWins', { alice: 3, bob: 1 }, { viewport: PHONE });
+	const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);
+	await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
+	await playBoutInUI(alice, bob, aliceCall(g, false), 'Alice Peer 1', 'Bob Peer 1');
+
+	const claim = section(bob, 'The final roll');
+	await expect(claim.getByText("Choose 1 of alice's staked asset to take:")).toBeVisible({ timeout: 10_000 });
+	await expect(alice.getByText('Waiting for bob to claim stakes…')).toBeVisible();
+	await expect(carol.getByText('Waiting for bob to claim stakes…')).toBeVisible();
+	await expect(section(alice, 'The final roll').getByRole('button', { name: /^Take/ })).toHaveCount(0);
+	expect((await planWithData(g)).plan.status).toBe('resolving');
+	// The bar names the mar winner, not the preparer.
+	expect(await rowState(g)).toMatchObject({ kind: 'plan_resolving', acting_player_ids: [g.ids.bob] });
+	// Nothing leveraged and nothing moved until he chooses.
+	expect((await assetsOf(g)).filter(a => a.name.startsWith('Alice Peer')).every(a => !a.is_leveraged)).toBe(true);
+
+	// The claim is the mar winner's alone, and bounded by the budget.
+	const claimRoute = (who: Who, ids: number[]) => g.ctx[who].request.post(`/api/plans/${g.planID}/make-choice`, {
+		data: { result: 'mar', choices: ids.map(String) },
+	});
+	expect((await claimRoute('alice', [g.aliceAssets[1]])).status(), 'the loser cannot claim').toBe(403);
+	expect((await claimRoute('bob', [g.aliceAssets[1], g.aliceAssets[2]])).status(), 'over budget').toBe(422);
+	expect((await planWithData(g)).plan.status).toBe('resolving');
+
+	await claim.locator('.card', { hasText: 'Alice Peer 2' }).getByRole('checkbox').click();
+	await claim.getByRole('button', { name: 'Take 1/1' }).click();
+	await expect.poll(async () => (await planWithData(g)).plan.status, { timeout: 10_000 }).toBe('resolved');
+	expect((await planWithData(g)).plan.result).toBe('mar');
+	expect(await logHas(g, 'carol', 'won the duel')).toMatch(/bob won the duel and took 1 staked asset from alice: .*Alice Peer 2/);
+	const assets = await assetsOf(g);
+	expect(assets.find(a => a.name === 'Alice Peer 2')).toMatchObject({ owner_id: g.ids.bob, is_leveraged: true });
+	// The two she kept are still hers, and still leveraged.
+	for (const n of ['Alice Peer 1', 'Alice Peer 3']) {
+		expect(assets.find(a => a.name === n)).toMatchObject({ owner_id: g.ids.alice, is_leveraged: true });
+	}
+	for (const page of [alice, bob, carol]) await expect(section(page, 'The final roll')).toHaveCount(0);
+});
+
+test('make with a real pick: the preparer chooses which of the target’s stakes to take', async ({ browser }) => {
+	// Bob is fourth on the track: difficulty 2 and up to three stakes. Alice's
+	// two winning dice make 2, against a pile of 3 — she picks two.
+	const g = await duelWithDice(browser, 'aliceWins', { alice: 1, bob: 3 }, { viewport: PHONE, bobRank: 4 });
+	const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);
+	await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
+	await playBoutInUI(alice, bob, aliceCall(g, true), 'Alice Peer 1', 'Bob Peer 1');
+
+	const claim = section(alice, 'The final roll');
+	await expect(claim.getByText("Choose 2 of bob's staked assets to take:")).toBeVisible({ timeout: 10_000 });
+	await expect(bob.getByText('Waiting for alice to claim stakes…')).toBeVisible();
+	await expect(carol.getByText('Waiting for alice to claim stakes…')).toBeVisible();
+	expect(await rowState(g)).toMatchObject({ kind: 'plan_resolving' });
+	// The picker is capped at the budget: a third card cannot be ticked.
+	await claim.locator('.card', { hasText: 'Bob Peer 1' }).getByRole('checkbox').click();
+	await claim.locator('.card', { hasText: 'Bob Peer 3' }).getByRole('checkbox').click();
+	await expect(claim.getByRole('button', { name: 'Take 2/2' })).toBeEnabled();
+	await claim.getByRole('button', { name: 'Take 2/2' }).click();
+
+	await expect.poll(async () => (await planWithData(g)).plan.status, { timeout: 10_000 }).toBe('resolved');
+	expect((await planWithData(g)).plan.result).toBe('make');
+	const assets = await assetsOf(g);
+	for (const n of ['Bob Peer 1', 'Bob Peer 3']) expect(assets.find(a => a.name === n)).toMatchObject({ owner_id: g.ids.alice, is_leveraged: true });
+	expect(assets.find(a => a.name === 'Bob Peer 2')).toMatchObject({ owner_id: g.ids.bob, is_leveraged: true });
+	expect(await logHas(g, 'bob', 'won the duel')).toContain('took 2 staked assets from bob');
+	for (const page of [alice, bob, carol]) await expect(section(page, 'The final roll')).toHaveCount(0);
+});
+
+test('a tie on the final bout costs the dice: no dice, a mar, and the log says why', async ({ browser }) => {
+	const g = await duelWithDice(browser, 'tie', { alice: 1, bob: 1 }, { viewport: PHONE });
+	const [alice, bob] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob')]);
+	await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
+	await playBoutInUI(alice, bob, 'high', 'Alice Peer 1', 'Bob Peer 1');
+
+	await expect.poll(async () => (await planWithData(g)).plan.status, { timeout: 10_000 }).toBe('resolved');
+	expect((await planWithData(g)).plan.result, 'a drawn 1v1 rolls zero dice').toBe('mar');
+	expect(await logHas(g, 'alice', 'an even match')).toContain('nobody wins the dice');
+	expect(await logHas(g, 'alice', 'The bouts are settled')).toContain('The 2 dice set aside by the final tie were won by nobody and drop out');
+	expect((await assetsOf(g)).find(a => a.name === 'Alice Peer 1')).toMatchObject({ owner_id: g.ids.bob });
+});
+
+
+// Known bug, not fixed here — docs/work/next/duel-stale-initiative-after-bout.md.
+// After a bout resolves the server hands initiative to the other side, but the
+// DECLARER's page (who is not the one who just clicked) sometimes keeps the old
+// initiative: it still reads "<me> to declare" and offers a Declare button that
+// the server will refuse with a 403. Intermittent (roughly one run in four), so
+// this loops over a few games rather than trusting a single one.
+test.fixme('bout 2: both duellists agree whose turn it is', async ({ browser }) => {
+	for (let i = 0; i < 6; i++) {
+		const g = await duelWithDice(browser, 'aliceWins', { alice: 2, bob: 2 }, { viewport: PHONE });
+		const [alice, bob] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob')]);
+		await expect(section(alice, 'Bout 1 of 2')).toBeVisible({ timeout: 10_000 });
+		await playBoutInUI(alice, bob, aliceCall(g, true), 'Alice Peer 1', 'Bob Peer 1');
+		await expect(section(bob, 'Bout 2 of 2')).toBeVisible({ timeout: 10_000 });
+		const initiative = (await planWithData(g)).resolution_data?.duel as { initiative_player_id?: number } | undefined;
+		const next: Who = initiative?.initiative_player_id === g.ids.alice ? 'alice' : 'bob';
+		const other: Who = next === 'alice' ? 'bob' : 'alice';
+		const pages = { alice, bob };
+		await expect(section(pages[next], 'Bout').getByRole('button', { name: 'Declare' })).toBeVisible();
+		await expect(section(pages[other], 'Bout').getByRole('button', { name: 'Declare' }), `${other}'s page offers a turn it does not have`).toHaveCount(0);
+	}
 });
