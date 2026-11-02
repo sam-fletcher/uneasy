@@ -25,22 +25,24 @@ The existing ask → veto → re-ask → answer test is kept; its contexts now c
   preparer waited on.
 - **question and answer** — public by design: a bystander sees the pending question live, only
   the target may answer (403), the answer reaches the log.
-- **three `test.fixme`s**, each with a new item file (below).
+- **forfeit hatch** — a committed `reveal_secret` pick with no secret anywhere shows "Skip — no
+  valid targets" to the preparer only (a bystander's forfeit is a 403), and the skip resolves the plan.
+- **veto** — bob, ranked below alice, is offered no Veto and the server answers 409.
+- **four `test.fixme`s**: three new items (below) plus the perform_steps gating bug, pointed at
+  `perform-steps-panels-gate-on-preparer.md`.
 
 ## How it was verified
 
 Against my own build (`server_seek_answers`, port 8187, private database
 `uneasy_claude_spec_seek_answers_2f90db`, via `E2E_BASE_URL`); never `:8090`/`uneasy_test`.
 
-- 3 consecutive runs: 5 passed, 3 skipped (the fixmes) each. `make check-fast` passes.
+- 3 consecutive runs: 5 passed, 4 skipped (the fixmes) each. `make check-fast` passes.
 - The three fixmes were run un-fixme'd and fail for the stated reasons.
 - Bites, by breaking the product locally and reverting: Buffet mar copy changed (pre-roll
   spec fails); reveal-secret cap removed (mar spec fails at the Stepper); the reveal log line
   made to include the secret text (mar spec fails the hidden-information check).
-- **Did not bite:** removing `ChoiceSubmitted` from `ChoicesCommitted()` leaves the zero-pick
-  test green — in Seek Answers the server's row state is `plan_resolving [preparer]` both
-  before and after a zero-pick commit, so the marker is only visible in the panel (that is the
-  fixme). The test does fail if `choice_submitted` is not stored.
+- Zero-pick: removing `ChoiceSubmitted` from `ChoicesCommitted()` fails the test, because the
+  plan then won't auto-resolve once the penalty is paid. (Row state alone doesn't show the marker.)
 - Not run: `make test-integration` (no Go changed).
 
 ## Behaviour changes to look at before merging
@@ -65,3 +67,8 @@ New items, each pinned by a `test.fixme`:
 - The perform_steps preparer-picker bug for Seek Answers is already pinned in
   `make_demands.spec.ts` (`perform-steps-panels-gate-on-preparer.md`); no duplicate here.
 - The auto-applied-choice gap doesn't apply: Seek Answers never auto-applies a choice.
+
+Audit fixes not pinned here: the veto-locks-the-target rule is in the original test; the
+`GetSecrets`/log-completeness pass for Seek Answers' other steps (declare truth, break) is
+covered only by the outcome checks above, and the Tier-1 read-only mirror of the sub-steps is
+asserted for reveal and break, not for declare or ask.

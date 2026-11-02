@@ -1,6 +1,6 @@
 ---
 title: "Seek Answers' panel shows the picker again after a zero-pick mar commit"
-order: 84
+order: 88
 ---
 
 `SeekAnswersPanel.svelte` decides the make/mar choice is made from the picked

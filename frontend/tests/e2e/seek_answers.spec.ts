@@ -2,6 +2,7 @@ import { test, expect, request as pwRequest, type APIRequestContext, type Browse
 import { cleanupGameAfterEach } from './helpers';
 import { E2E } from './baseUrl';
 import * as sa from './helpers/seek_answers';
+import * as H from './helpers/make_demands';
 
 // End-to-end for Seek Answers — specifically the "ask a player a question"
 // sub-flow, which had the same soft-lock bug class as Propose Duel and
@@ -97,6 +98,7 @@ async function dischargeMarSelfFlaws(ctx: APIRequestContext, gameID: number, pla
 }
 
 const track = cleanupGameAfterEach();
+H.cleanupAfterEach();
 
 // Contexts are closed in an afterEach, so a failing assertion can't leak them.
 const openContexts: BrowserContext[] = [];
@@ -407,8 +409,13 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 	await apply.click();
 
 	// ── Committed: the picks persist in the panel for every viewer; the wait moves on ──
+	// "Choices applied:" exists only once the commit is made (the greyed picker never shows it).
 	for (const p of [alice, bob, carol]) {
-		await expect(p.page.getByText(sa.OPT.revealSecret).first()).toBeVisible({ timeout: 10_000 });
+		const applied = p.page.locator('.choices-summary', { hasText: 'Choices applied:' });
+		await expect(applied).toBeVisible({ timeout: 10_000 });
+		await expect(applied.getByText(`${sa.OPT.revealSecret} × 1`)).toBeVisible();
+		await expect(applied.getByText(`${sa.OPT.breakResource} × 1`)).toBeVisible();
+		await expect(p.page.locator('.choices-note', { hasText: 'Total picks:' })).toHaveCount(0);
 	}
 	for (const p of [bob, carol]) {
 		await expect(p.page.getByText('alice is resolving Seek Answers…')).toBeVisible();
@@ -469,13 +476,21 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 	const aliceSees = await sa.everythingVisibleTo(alice.ctx.request, t, [bobHolding.id]);
 	expect(aliceSees.includes(SECRET), 'the learner reads the secret').toBe(true);
 	const carolSees = await sa.everythingVisibleTo(carol.ctx.request, t, [bobHolding.id]);
-	expect(carolFrames.length, "carol's socket was listening").toBeGreaterThan(0);
+	// The leak paths were exercised: the secret's creation and the grant to alice both
+	// went out over carol's socket, as events without the text.
+	expect(carolFrames.some(f => f.includes('secret.created')), 'secret.created reached carol').toBe(true);
+	expect(carolFrames.some(f => f.includes('secret.visibility_grant')), 'the grant reached carol').toBe(true);
+	// carol may read the secrets endpoint but gets none: the exact status and an empty list.
+	const carolRead = await carol.ctx.request.get(`/api/assets/${bobHolding.id}/secrets`);
+	expect(carolRead.status()).toBe(200);
+	expect((await carolRead.json()).secrets).toEqual([]);
 	// (booleans, so a failure doesn't dump every response into the report)
 	expect(carolFrames.join('\n').includes(SECRET), 'secret text broadcast to a bystander').toBe(false);
 	expect(carolSees.includes(SECRET), 'secret text reached a bystander').toBe(false);
 	expect(carolSees, "the secret's existence is public").toContain('"secret_count":1');
 	await carol.page.reload();
-	await carol.page.waitForLoadState('networkidle');
+	// The reloaded board shows the asset that carries the secret, with its public count of 1.
+	await expect(carol.page.getByRole('button', { name: "bob's holding Holding 1" })).toBeVisible({ timeout: 10_000 });
 	expect((await carol.page.content()).includes(SECRET), "secret text rendered in a bystander's page").toBe(false);
 	// The log tells the table what happened to the board, never what was written.
 	const posts = await (await carol.ctx.request.get(`/api/tables/${t.gameID}/posts`)).text();
@@ -512,6 +527,16 @@ test('seek answers mar: a zero-pick commit is a committed choice, so the wait mo
 	expect(body.resolution_data?.seek_answers?.mar_self_flaws_required).toBe(1);
 	await expect.poll(() => sa.actingIDs(bob.ctx.request, t.gameID), { timeout: 10_000 })
 		.toMatchObject({ ids: [aliceID] });
+
+	// Discharging the penalty is then the last thing owed, and the plan resolves on it. That
+	// only happens because the commit counts (autoCompleteIfDone refuses an uncommitted plan).
+	const assets = await sa.listAssets(alice.ctx.request, t.gameID);
+	const mine = assets.find(a => a.asset_type === 'resource' && a.name.startsWith('alice'))!;
+	const pen = await alice.ctx.request.post(`/api/plans/${t.planID}/break-resource`, {
+		data: { asset_id: mine.id, marginalia_id: mine.marginalia[0].id },
+	});
+	expect(pen.ok(), `penalty: ${await pen.text()}`).toBeTruthy();
+	await expect.poll(() => sa.planStatus(alice.ctx.request, t.planID), { timeout: 10_000 }).toBe('resolved');
 });
 
 test('seek answers make: a question and its answer are told to the whole table, live, not just the target', async ({ browser }) => {
@@ -540,6 +565,10 @@ test('seek answers make: a question and its answer are told to the whole table, 
 	await expect(carol.page.getByText(Q)).toBeVisible();
 	await expect(carol.page.getByRole('button', { name: 'Answer', exact: true })).toHaveCount(0);
 	await expect(bob.page.getByRole('button', { name: 'Answer', exact: true })).toBeVisible({ timeout: 10_000 });
+	// Bob ranks below alice on knowledge here, so he has no veto: not offered, and refused.
+	await expect(bob.page.getByRole('button', { name: 'Veto (ask another)' })).toHaveCount(0);
+	const veto = await bob.ctx.request.post(`/api/plans/${t.planID}/veto-question`);
+	expect(veto.status()).toBe(409);
 
 	// Nobody but the target may answer.
 	const wrong = await carol.ctx.request.post(`/api/plans/${t.planID}/answer-question`, { data: { answer: 'me' } });
@@ -551,6 +580,35 @@ test('seek answers make: a question and its answer are told to the whole table, 
 	await expect.poll(async () =>
 		(await (await carol.ctx.request.get(`/api/tables/${t.gameID}/posts`)).text()).includes(A),
 		{ timeout: 10_000 }).toBe(true);
+});
+
+test('seek answers make: a pick with no valid target is carried by the forfeit hatch, and the plan resolves', async ({ browser }) => {
+	// No asset at this table holds a secret, so "learn the secrets" has nothing to act on. The
+	// picker shuts that option ("no valid targets"); a stale client can still commit it, and
+	// then the step offers the way out instead of wedging the row.
+	const t = await sa.setUp(browser, track, openContexts, [0, 1, 2]);
+	const { alice, carol } = t;
+	await sa.openTables(t);
+	const roll = await sa.castFromUI(t, MESSAGE);
+	await sa.forceRoll(alice.ctx.request, roll.id, { outcome: 'make', result: 2 });
+	await expect(alice.page.getByText('choose exactly 2')).toBeVisible({ timeout: 10_000 });
+	await expect(sa.more(alice.page, sa.OPT.revealSecret)).toBeDisabled();
+	await expect(alice.page.getByText('no valid targets')).toBeVisible();
+
+	const commit = await alice.ctx.request.post(`/api/plans/${t.planID}/make-choice`, {
+		data: { result: 'make', choices: ['reveal_secret', 'reveal_secret'] },
+	});
+	expect(commit.ok(), `commit: ${await commit.text()}`).toBeTruthy();
+
+	await expect(alice.page.getByText('No asset\'s secrets remain to learn')).toBeVisible({ timeout: 10_000 });
+	await expect(carol.page.getByText('alice is resolving Seek Answers…')).toBeVisible({ timeout: 10_000 });
+	await expect(carol.page.getByRole('button', { name: 'Skip — no valid targets' })).toHaveCount(0);
+	expect(await sa.planStatus(alice.ctx.request, t.planID)).toBe('resolving');
+	// Only the preparer may forfeit.
+	const stolen = await carol.ctx.request.post(`/api/plans/${t.planID}/seek-forfeit-step`, { data: { step: 'reveal_secret' } });
+	expect(stolen.status()).toBe(403);
+	await alice.page.getByRole('button', { name: 'Skip — no valid targets' }).click();
+	await expect.poll(() => sa.planStatus(alice.ctx.request, t.planID), { timeout: 10_000 }).toBe('resolved');
 });
 
 // BUG (docs/work/next/seek-answers-zero-pick-panel-reverts.md): the panel decides "choices
@@ -619,4 +677,23 @@ test.fixme('seek answers make: a bystander sees each step land live, with no rel
 	expect(brk.ok(), `break-resource: ${await brk.text()}`).toBeTruthy();
 	await expect(carol.page.locator('.resolved-so-far').getByText("Broke bob's resource")).toBeVisible({ timeout: 10_000 });
 	await expect(carol.page.getByText('Break a resource (1 remaining)')).toHaveCount(0);
+});
+
+// Make Demands' perform_steps winner drives the choices in the preparer's stead, but this
+// panel still gives the preparer a live picker she cannot submit. Same bug as
+// make_demands.spec.ts pins; see docs/work/next/perform-steps-panels-gate-on-preparer.md.
+test.fixme('seek answers under perform_steps: the preparer sees a wait line, not a picker', async ({ browser }) => {
+	const f = await H.seedMD({ target: 'seek_answers' });
+	await H.prepareDemand(f);
+	await H.reachRow(f);
+	await H.rollDemand(f, 'make');
+	await H.draftWants(f, { bob: ['perform_steps', 'keep_assets'], alice: ['control_leverage', 'keep_or_change_target'] });
+	await H.completeDemand(f);
+	await H.startTarget(f);
+	const cast = await H.call(f.api.alice, 'post', `/api/plans/${f.targetID}/seek-cast-roll`, { narration: 'I read the ledgers.' });
+	await H.call(f.api.alice, 'post', `/api/rolls/${cast.roll.id}/skip-vote`);
+	await H.call(f.api.alice, 'post', '/api/dev/force-roll', { roll_id: cast.roll.id, result: 2 });
+	const { alice } = await H.openPages(browser, f);
+	await expect(alice.getByText('bob is choosing make/mar options…')).toBeVisible();
+	await expect(alice.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 });
