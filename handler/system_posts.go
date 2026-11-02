@@ -784,7 +784,7 @@ func EmitAssetTaken(
 // on an asset's underside. Call it through announceSecret (secrets.go), not
 // directly.
 //
-// The body names the asset (and, unless n.HideAuthor, the author) and STOPS
+// The body names the author and the asset and STOPS
 // THERE. Secret text must never reach the action log — the log is readable by
 // the whole table, so carrying the text would defeat the entire mechanic. This
 // is deliberately unlike the asset/marginalia emitters, which do quote their
@@ -798,12 +798,8 @@ func EmitSecretWritten(
 	authorID int64,
 	n secretNotice,
 ) {
-	body := fmt.Sprintf("A secret was written on %s", assetMark(asset.Name))
-	data := map[string]any{"asset_id": asset.ID}
-	if !n.HideAuthor {
-		body = fmt.Sprintf("%s wrote a secret on %s", playerDisplayName(ctx, q, authorID), assetMark(asset.Name))
-		data["author_id"] = authorID
-	}
+	body := fmt.Sprintf("%s wrote a secret on %s", playerDisplayName(ctx, q, authorID), assetMark(asset.Name))
+	data := map[string]any{"asset_id": asset.ID, "author_id": authorID}
 	EmitSystemPost(ctx, q, manager, asset.GameID, "secret.written",
 		model.SeverityDefault, body, n.Row, n.PlanID, nil, data)
 }

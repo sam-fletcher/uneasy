@@ -301,6 +301,11 @@ func NewClient(h *Hub, conn *websocket.Conn, player dbgen.Player, logger *slog.L
 	}
 }
 
+// Outbox exposes the frames queued for this client's browser. Tests that
+// register a client without a connection read broadcasts from it; production
+// code never does (writePump owns the channel).
+func (c *Client) Outbox() <-chan []byte { return c.send }
+
 // Run starts the write pump in a goroutine and blocks on the read pump until
 // the connection closes. This is the correct call pattern from an HTTP handler:
 //

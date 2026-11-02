@@ -20,20 +20,18 @@ import (
 // TestSecretsAreCreatedThroughTheHelper fails if a handler calls CreateSecret
 // anywhere but here.
 
-// secretNotice says where a new secret's log line is anchored and whose name
-// it carries.
+// secretNotice says where a new secret's log line is anchored.
 type secretNotice struct {
 	Row    *int16 // logRow(game), or the plan's row
 	PlanID *int64 // anchors the line to a plan when one caused the secret
-	// HideAuthor keeps the author's name out of the line (Spread Rumors'
-	// hide-source: the fiction hides who spread the rumor). The asset is still
-	// named.
-	HideAuthor bool
 }
 
-// createSecret stores a secret and nothing else. It exists for a caller inside
-// a transaction (Spread Rumors' prepare stash), which must announce only after
-// the commit; call announceSecret then. Everyone else uses writeSecret.
+// createSecret stores a secret and nothing else. It exists for callers that
+// store the secret in a transaction together with their own state (Spread
+// Rumors' stash and hide-source, Liaise keep-secret): announcing before the
+// commit would announce a secret a failed save then rolls back, and a retry
+// would write it twice. Call announceSecret after the commit.
+// The plain write-secret route uses writeSecret.
 func createSecret(
 	ctx context.Context, q *dbgen.Queries, assetID, authorID int64, text string,
 ) (dbgen.Secret, error) {

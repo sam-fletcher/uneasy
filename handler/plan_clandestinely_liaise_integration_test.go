@@ -860,7 +860,9 @@ func TestLiaise_KeepSecret_PickIsPublicImmediately(t *testing.T) {
 		GameID: h.tg.Game.ID, OwnerID: h.tg.Players[0].ID,
 	})
 	require.NoError(t, err)
+	frames := captureFrames(t, h.manager, h.tg.Game.ID, h.tg.Players[1])
 	clKeepSecret(t, h, plan.ID, 0)
+	assertSecretCreatedFrame(t, frames, mc0.ID) // the partner's open page hears of it
 
 	planPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10)
 

@@ -409,8 +409,9 @@ func TestSpreadRumors_Mar_HideSourceHidesTheActorsCharacter(t *testing.T) {
 	require.Len(t, secrets, 1)
 	assert.Equal(t, actor.ID, secrets[0].AuthorID)
 	assert.Contains(t, secrets[0].Text, "Her accuser keeps a second set of books.", "the secret records the counter-rumor, not the failed rumor")
-	assert.True(t, anyContains(h.logBodies("secret.written"), "A secret was written on **Cassius**"),
-		"the holder is named, the hidden author is not")
+	assert.True(t, anyContains(h.logBodies("secret.written"), "wrote a secret on **Cassius**"),
+		"the secret line names the author and the holder")
+	assert.True(t, anyContains(h.logBodies("plan.spread_rumors"), "hid themselves as the source"))
 }
 
 func TestSpreadRumors_Mar_BreakTearsAMarginaliaOnThePreparersMainCharacter(t *testing.T) {

@@ -15,7 +15,7 @@ package handler
 //   "together_at_last"    — scene-setting posts; focus player advances when ready.
 //   "secrets_we_keep"     — each player picks one of their own assets to hold
 //                           the meeting's secret. Submitted simultaneously via
-//                           keep-secret; revealed when both have submitted.
+//                           keep-secret; each pick is public as it lands.
 //   "things_we_share"     — both players simultaneously choose one option each
 //                           (look_at_secret, update_peer, break_peer, take_gift,
 //                           leverage_partner). Submitted via share-choice.

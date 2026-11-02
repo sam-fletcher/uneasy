@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -521,17 +522,23 @@ func TestSpreadRumors_HideSource_LogsDramaticIrony(t *testing.T) {
 	h.makeChoice(plan.ID, makeOutcome, []string{"hide_source"})
 
 	hidePath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/hide-source"
+	frames := captureFrames(t, h.manager, h.tg.Game.ID, h.tg.Players[otherIdx])
 	code, body := h.post(focusIdx, hidePath, map[string]any{"secret_asset_id": holder})
 	require.Equalf(t, http.StatusOK, code, "hide-source: %v", body)
+	assertSecretCreatedFrame(t, frames, holder)
 
 	posts, err := h.q.ListGamePosts(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
-	var secretPost, rumorPost string
+	var secretPost, ironyPost, rumorPost string
 	for _, p := range posts {
 		if p.SystemCode == nil {
 			continue
 		}
 		switch *p.SystemCode {
+		case "plan.spread_rumors":
+			if strings.Contains(p.Body, "hid themselves as the source") {
+				ironyPost = p.Body
+			}
 		case "secret.written":
 			secretPost = p.Body
 		case "rumor.created":
@@ -539,11 +546,16 @@ func TestSpreadRumors_HideSource_LogsDramaticIrony(t *testing.T) {
 		}
 	}
 
+	require.NotEmpty(t, ironyPost, "hide-source must emit the player-level log entry")
+	assert.Contains(t, ironyPost, "no one at court knows",
+		"the entry should state what the characters don't know")
+	assert.NotContains(t, ironyPost, "Cover Story", "the asset is named once, by the secret line")
+
 	require.NotEmpty(t, secretPost, "hide-source must announce the secret like any other")
 	assert.Contains(t, secretPost, "Cover Story",
 		"the holder is public by ruling — reading the secret still costs a break or a steal")
-	assert.NotContains(t, secretPost, "wrote a secret",
-		"the fiction hides who spread the rumor, so the line must not name the author")
+	assert.Contains(t, secretPost, "wrote a secret on",
+		"hiding the source hides the spreader from the characters, not the players")
 
 	require.NotEmpty(t, rumorPost, "rumor.created should still be posted")
 	assert.Contains(t, rumorPost, "unknown source",
@@ -593,12 +605,14 @@ func TestSpreadRumors_Secret_HidesTextAndNamesAssets(t *testing.T) {
 	holder := h.seedPeer(focusIdx, "Brutus") // the preparer's own asset holds the secret
 
 	notes := "the king poisoned his brother"
+	frames := captureFrames(t, h.manager, h.tg.Game.ID, h.tg.Players[otherIdx])
 	plan := h.prepare(PreparePlanRequest{
 		PlanType:         model.PlanSpreadRumors,
 		TargetAssetID:    &target,
 		PreparationNotes: &notes,
 		SecretAssetID:    &holder,
 	})
+	assertSecretCreatedFrame(t, frames, holder)
 
 	// The public plan note is cleared so ListPlans can't leak the rumor.
 	assert.Nil(t, plan.PreparationNotes, "secret rumor must clear the public plan note")
@@ -639,6 +653,7 @@ func TestSpreadRumors_Secret_RejectsForeignAsset(t *testing.T) {
 	foreign := h.seedPeer(otherIdx, "NotYours") // owned by someone else
 
 	notes := "a damning whisper"
+	frames := captureFrames(t, h.manager, h.tg.Game.ID, h.tg.Players[otherIdx])
 	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/prepare-plan"
 	code, body := h.post(focusIdx, path, PreparePlanRequest{
 		PlanType:         model.PlanSpreadRumors,
@@ -647,6 +662,15 @@ func TestSpreadRumors_Secret_RejectsForeignAsset(t *testing.T) {
 		SecretAssetID:    &foreign,
 	})
 	require.Equalf(t, http.StatusBadRequest, code, "expected 400, got: %v", body)
+
+	// A refused prepare announces nothing: no secret, no log line, no broadcast.
+	assert.Empty(t, h.logBodies("secret.written"))
+	for _, f := range frames() {
+		assert.NotContains(t, f, "secret.created")
+	}
+	secrets, err := h.q.ListSecretsByAsset(context.Background(), foreign)
+	require.NoError(t, err)
+	assert.Empty(t, secrets)
 }
 
 // TestSpreadRumors_Open_StatesRumorInLog confirms the non-secret path states the
