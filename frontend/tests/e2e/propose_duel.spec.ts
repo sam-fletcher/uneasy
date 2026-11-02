@@ -410,11 +410,10 @@ test('bouts: each viewer sees only their own dice — over the API, the DOM and 
 	expect(nowCarol.filter(s => !s.is_resolved).map(s => s.hidden_die)).toEqual([null, null]);
 	await expect(section(bob, 'Bout').locator('.duel-side:not(.is-mine) .stake-line:not(.resolved) .die')).toHaveText(['?']);
 	// Bout 2 is under way and the bystander is told who declares it. (Whether
-	// each duellist's own page agrees about whose turn it is lives in the
-	// test.fixme below: it is not reliable yet.)
+	// each duellist's own page agrees is the 'both duellists agree' test below.)
 	// The responder's own page always has the new initiative (their click refreshes
 	// the plan): bob declares bout 2, since initiative passes to the other side.
-	// The OTHER pages agreeing is the test.fixme at the end of the file.
+	// The OTHER pages agreeing is the test further down.
 	await expect(section(bob, 'Bout')).toContainText('bob to declare');
 	await expect(section(bob, 'Bout').getByRole('button', { name: 'Declare' })).toBeVisible();
 });
@@ -482,13 +481,12 @@ test('make with a real pick: the preparer chooses which of the target’s stakes
 	for (const page of [alice, bob, carol]) await expect(section(page, 'The final roll')).toHaveCount(0);
 });
 
-// Known bug, not fixed here — docs/work/next/duel-stale-initiative-after-bout.md.
-// After a bout resolves the server hands initiative to the other side, but the
-// DECLARER's page (who is not the one who just clicked) sometimes keeps the old
-// initiative: it still reads "<me> to declare" and offers a Declare button that
-// the server will refuse with a 403. Intermittent (roughly one run in four), so
-// this loops over a few games rather than trusting a single one.
-test.fixme('bout 2: both duellists agree whose turn it is', async ({ browser }) => {
+// After a bout resolves the server hands initiative to the other side. The
+// bout.resolved broadcast used to fire before that was saved, so the DECLARER's
+// page (not the one who just clicked) sometimes refetched the old initiative and
+// offered a Declare button the server refuses. It was intermittent (about one run
+// in four), so this loops over a few games rather than trusting a single one.
+test('bout 2: both duellists agree whose turn it is', async ({ browser }) => {
 	for (let i = 0; i < 6; i++) {
 		const g = await duelWithDice(browser, 'aliceWins', { alice: 2, bob: 2 }, { viewport: PHONE });
 		const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);

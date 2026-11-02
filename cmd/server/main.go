@@ -339,6 +339,8 @@ func setupRouter(
 			// Body size cap. Scoped to this group (not the outer /api Route)
 			// so the WebSocket route above is unaffected.
 			r.Use(appMiddleware.BodyLimit)
+			// Announces every plan change a request saved, once, after it ends.
+			r.Use(handler.AnnouncePlanChanges(store, manager))
 
 			// Accounts & sessions
 			r.With(credentialLimiter).Post("/accounts", handler.CreateAccount(store))

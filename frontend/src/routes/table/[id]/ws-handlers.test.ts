@@ -209,4 +209,15 @@ describe('single-plan refetch ordering', () => {
 
 		expect(ctx.plans.find(p => p.id === 42)?.preparation_notes).toBe('newer');
 	});
+
+	it('plan.updated refetches that plan, whichever route saved it', async () => {
+		const ctx = makeCtx({ plans: [makePlan({ id: 42, status: 'resolving' })] });
+		getPlanMock.mockResolvedValue(detail(makePlan({ id: 42, status: 'resolving', preparation_notes: 'fresh' })));
+
+		handleWSMessage(ctx, { type: EventTypes.PlanUpdated, payload: { plan_id: 42 } });
+		await flush();
+
+		expect(getPlanMock).toHaveBeenCalledWith(42);
+		expect(ctx.plans.find(p => p.id === 42)?.preparation_notes).toBe('fresh');
+	});
 });

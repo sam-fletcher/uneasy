@@ -452,11 +452,9 @@ test('phone width: the join and decline buttons are real tap targets and nothing
 	}
 });
 
-// BUG (docs/work/next/auto-applied-choice-not-broadcast.md): Propose Decree
-// applies its outcome the instant the dice land, but that is not pushed to open
-// panels, so the signatory stays on the debate step until they reload. Un-fixme
-// this when the fix lands.
-test.fixme('make: the signatory is handed the addendum live, with no reload', async ({ browser }) => {
+// Propose Decree applies its outcome the instant the dice land; open panels
+// get it live, so the signatory is handed the addendum without a reload.
+test('make: the signatory is handed the addendum live, with no reload', async ({ browser }) => {
 	const { g, rollID } = await rolledDecree(browser);
 	const { alice, bob } = await openAll(g);
 	await expect(alice.getByText('Dice roll in progress…')).toBeVisible();

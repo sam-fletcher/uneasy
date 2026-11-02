@@ -244,23 +244,6 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 		nextInit := pduelOpponentID(plan, latest.DeclarerID)
 		state.InitiativePlayerID = &nextInit
 
-		if h, ok := deps.Manager.Get(plan.GameID); ok {
-			winID := int64(0)
-			if winnerPtr != nil {
-				winID = *winnerPtr
-			}
-			h.BroadcastEvent(model.EventDuelBoutResolved, model.DuelBoutResolvedPayload{
-				PlanID:       plan.ID,
-				BoutNumber:   latest.BoutNumber,
-				DeclarerID:   latest.DeclarerID,
-				ResponderID:  latest.ResponderID,
-				DeclarerDie:  declDie,
-				ResponderDie: respStake.HiddenDie,
-				WinnerID:     winID,
-				IsMatch:      outcome.Match,
-			})
-		}
-
 		// Check remaining stakes — the duel is over once either side runs out.
 		prepLeft, err := deps.Q.CountUnresolvedDuelStakes(ctx, dbgen.CountUnresolvedDuelStakesParams{
 			PlanID: plan.ID, PlayerID: plan.PreparerID,
@@ -295,6 +278,25 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 				respondInternalErr(w, r, "could not save state", err)
 				return
 			}
+		}
+
+		// Broadcast only now: the swapped initiative is saved, so a client that
+		// refetches the plan on this event reads the new state, not the old.
+		if h, ok := deps.Manager.Get(plan.GameID); ok {
+			winID := int64(0)
+			if winnerPtr != nil {
+				winID = *winnerPtr
+			}
+			h.BroadcastEvent(model.EventDuelBoutResolved, model.DuelBoutResolvedPayload{
+				PlanID:       plan.ID,
+				BoutNumber:   latest.BoutNumber,
+				DeclarerID:   latest.DeclarerID,
+				ResponderID:  latest.ResponderID,
+				DeclarerDie:  declDie,
+				ResponderDie: respStake.HiddenDie,
+				WinnerID:     winID,
+				IsMatch:      outcome.Match,
+			})
 		}
 
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)

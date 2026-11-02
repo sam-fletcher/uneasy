@@ -385,14 +385,24 @@ func AllHandlers() map[model.PlanType]PlanHandler {
 
 // ── Resolution data persistence ──────────────────────────────────────────────
 
-// saveResolutionData marshals d to JSON and persists it to the plan row.
+// saveResolutionData marshals d to JSON and persists it to the plan row. It is
+// the only way plan state is saved (TestPlanStateSavedThroughOnePath), and the
+// save notes the change on the request so the table hears of it when the
+// request ends — see plan_announce.go.
 func saveResolutionData(ctx context.Context, q *dbgen.Queries, planID int64, d ResolutionData) error {
 	b, err := json.Marshal(d)
 	if err != nil {
 		return err
 	}
 	s := string(b)
-	return q.SetPlanResolutionData(ctx, dbgen.SetPlanResolutionDataParams{ID: planID, ResolutionData: &s})
+	if err := q.SetPlanResolutionData(
+		ctx,
+		dbgen.SetPlanResolutionDataParams{ID: planID, ResolutionData: &s},
+	); err != nil {
+		return err
+	}
+	notePlanChanged(ctx, planID)
+	return nil
 }
 
 // pickedChoiceCount returns how many times option appears in the committed

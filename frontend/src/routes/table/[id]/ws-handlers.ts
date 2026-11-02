@@ -461,6 +461,16 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			}
 			break;
 		}
+		case EventTypes.PlanUpdated: {
+			// The server's catch-all: this plan's stored state changed in a
+			// request, whichever route made it. The payload is only the id, so
+			// this refetches through the viewer-aware endpoint (per-viewer masking
+			// applies). Latest-wins in refreshPlan makes the overlap with a route's
+			// own specific event harmless.
+			const { plan_id } = msg.payload as { plan_id: number };
+			refreshPlan(ctx, plan_id);
+			break;
+		}
 		case EventTypes.PlanDelayedArrival:
 		case EventTypes.LiaisePhaseChanged:
 		case EventTypes.LiaiseChoicesRevealed:

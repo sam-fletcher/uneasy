@@ -441,12 +441,9 @@ test('spread propaganda mar: a pick that lost its last peer is forfeited, and th
 	await expect(alice.page.getByRole('button', { name: 'Complete plan' })).toHaveCount(0);
 });
 
-// BUG (docs/work/next/auto-applied-choice-not-broadcast.md): when the dice land and a
-// ForcedChoicer plan applies its make by itself, the server saves the choice but
-// broadcasts nothing that makes an open panel refetch the plan (roll.resolved only
-// updates the dice card), so the preparer sits on the pre-roll Buffet and the
-// others on "resolving" until they reload. Un-fixme this when the fix lands.
-test.fixme('spread propaganda make: the artifact step appears live, with no reload', async ({ browser }) => {
+// When the dice land and a ForcedChoicer plan applies its make by itself, the
+// save is announced, so open panels move on with no reload.
+test('spread propaganda make: the artifact step appears live, with no reload', async ({ browser }) => {
 	const t = await setUp(browser, [0, 1, 2]);
 	const { alice, bob } = t;
 	await openTables(t);

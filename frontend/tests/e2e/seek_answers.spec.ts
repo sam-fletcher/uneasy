@@ -651,12 +651,9 @@ test.fixme('seek answers pre-roll: a choice before the dice are cast is refused 
 	expect(make.status(), 'a make before the pre-roll').toBe(409);
 });
 
-// BUG (docs/work/next/seek-answers-substeps-not-broadcast.md): break-resource, reveal-secret
-// and declare-truth save their progress but send nothing that makes the others' open panels
-// refetch the plan (reveal-secret broadcasts only the secret grant; ask/veto/answer do send
-// plan.choice_applied). A bystander keeps reading "Break a resource (1 remaining)" and an
-// empty "Resolved so far" until they reload. Un-fixme this when it is fixed.
-test.fixme('seek answers make: a bystander sees each step land live, with no reload', async ({ browser }) => {
+// break-resource, reveal-secret and declare-truth save their progress; a bystander
+// sees each step land live, with no reload.
+test('seek answers make: a bystander sees each step land live, with no reload', async ({ browser }) => {
 	const t = await sa.setUp(browser, track, openContexts, [0, 1, 2]);
 	const { alice, carol } = t;
 	await sa.openTables(t);
@@ -675,7 +672,9 @@ test.fixme('seek answers make: a bystander sees each step land live, with no rel
 		data: { asset_id: bobResource.id, marginalia_id: bobResource.marginalia[0].id },
 	});
 	expect(brk.ok(), `break-resource: ${await brk.text()}`).toBeTruthy();
-	await expect(carol.page.locator('.resolved-so-far').getByText("Broke bob's resource")).toBeVisible({ timeout: 10_000 });
+	// (Breaking bob's only note destroys the resource, which drops out of the asset
+	// list live and on reload alike, so the line names "an asset", not "bob's resource".)
+	await expect(carol.page.locator('.resolved-so-far').getByText('Broke', { exact: false })).toBeVisible({ timeout: 10_000 });
 	await expect(carol.page.getByText('Break a resource (1 remaining)')).toHaveCount(0);
 });
 
