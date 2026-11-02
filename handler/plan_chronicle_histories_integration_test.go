@@ -669,3 +669,21 @@ func TestChronicleHistories_Mar_AllPlayersMustChoose(t *testing.T) {
 	// Now completion succeeds.
 	h.complete(plan.ID)
 }
+
+// TestChronicleHistories_MakeChoice_RefusedBeforeDiceCast proves make-choice answers
+// 409 while the plan is still in its invoke phase with no roll cast.
+func TestChronicleHistories_MakeChoice_RefusedBeforeDiceCast(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{PlanType: model.PlanChronicleHistories, PreparationNotes: &notes})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
+	for _, result := range []string{"make", "mar"} {
+		code, body := h.post(h.preparerIdxFor(plan.ID), path,
+			map[string]any{"result": result, "choices": []string{}})
+		require.Equalf(t, http.StatusConflict, code, "%s before the cast: %v", result, body)
+	}
+}

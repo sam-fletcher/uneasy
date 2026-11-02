@@ -635,11 +635,9 @@ test.fixme('seek answers mar: after a zero-pick commit the panels move on to the
 	}
 });
 
-// BUG (docs/work/next/seek-answers-choice-before-cast.md): make-choice is accepted before the
-// pre-roll step is done. A "make" commits with no dice at all (and the picks play out); a
-// "mar" dies in a 500 ("could not load roll for mar penalty") instead of a 4xx. Spread
-// Propaganda refuses both with a 409. Un-fixme this when it is fixed.
-test.fixme('seek answers pre-roll: a choice before the dice are cast is refused with a 4xx', async ({ browser }) => {
+// make-choice before the pre-roll step is done is refused with a 409, like Spread Propaganda
+// (it used to commit a make with no dice, and 500 on a mar).
+test('seek answers pre-roll: a choice before the dice are cast is refused with a 4xx', async ({ browser }) => {
 	const t = await sa.setUp(browser, track, openContexts);
 	const mar = await t.alice.ctx.request.post(`/api/plans/${t.planID}/make-choice`, {
 		data: { result: 'mar', choices: ['declare_truth'] },

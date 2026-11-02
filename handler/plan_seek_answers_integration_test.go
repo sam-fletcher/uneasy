@@ -777,3 +777,22 @@ func TestSeekAnswers_PerformStepsWinnerDrivesMakeList(t *testing.T) {
 	code, body = h.post(targetIdx, answerPath, map[string]any{"answer": "at home"})
 	require.Equalf(t, http.StatusOK, code, "the question target answers as themselves: %v", body)
 }
+
+// TestSeekAnswers_MakeChoice_RefusedBeforeDiceCast proves make-choice answers 409
+// while the plan is still on its pre-roll narration step: a make used to commit
+// with nothing rolled, and a mar failed with a 500.
+func TestSeekAnswers_MakeChoice_RefusedBeforeDiceCast(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	notes := "researching the archives"
+	plan := h.prepare(PreparePlanRequest{PlanType: model.PlanSeekAnswers, PreparationNotes: &notes})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+
+	path := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/make-choice"
+	for _, result := range []string{"make", "mar"} {
+		code, body := h.post(h.preparerIdxFor(plan.ID), path,
+			map[string]any{"result": result, "choices": []string{"declare_truth"}})
+		require.Equalf(t, http.StatusConflict, code, "%s before the cast: %v", result, body)
+	}
+}
