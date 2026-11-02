@@ -16,6 +16,7 @@ import (
 // reason.
 var setPlanResultAllowed = map[string]string{
 	"plan_resolution.go":         "resolvePlan itself",
+	"plan_announce.go":           "the setPlanResult wrapper that notes the change",
 	"plan_exchange_courtiers.go": "stores the result before logging its two asset transfers, then calls announcePlanResolved",
 }
 
@@ -36,7 +37,7 @@ func TestPlansResolveThroughResolvePlan(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
-		if strings.Contains(string(src), ".SetPlanResult(") {
+		if strings.Contains(string(src), ".SetPlanResult(") || strings.Contains(string(src), "setPlanResult(") {
 			t.Errorf(
 				"%s calls SetPlanResult directly; close the plan with resolvePlan so the event and the log line go with it",
 				name,

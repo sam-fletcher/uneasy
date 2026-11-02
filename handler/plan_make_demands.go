@@ -359,7 +359,7 @@ func mdPersistDraftWinners(
 	if err != nil {
 		return fmt.Errorf("encode option winners: %w", err)
 	}
-	if err := deps.Q.SetDemandOptionWinners(ctx, dbgen.SetDemandOptionWinnersParams{
+	if err := setDemandOptionWinners(ctx, deps.Q, dbgen.SetDemandOptionWinnersParams{
 		ID:                  plan.ID,
 		DemandOptionWinners: raw,
 	}); err != nil {

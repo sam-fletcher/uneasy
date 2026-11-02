@@ -420,7 +420,7 @@ func synthesizeCounterDemand(
 	if err != nil {
 		return nil, "could not create counter-demand plan: " + err.Error(), http.StatusInternalServerError
 	}
-	err = deps.Q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+	err = setPlanTargetedPlan(ctx, deps.Q, dbgen.SetPlanTargetedPlanParams{
 		ID:             plan.ID,
 		TargetedPlanID: &target.ID,
 	})

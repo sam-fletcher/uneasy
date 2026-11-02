@@ -593,7 +593,7 @@ func acceptFairTrade(
 		return
 	}
 
-	if err := q.SetPlanResult(ctx, dbgen.SetPlanResultParams{
+	if err := setPlanResult(ctx, q, dbgen.SetPlanResultParams{
 		ID:     plan.ID,
 		Result: new(makeOutcome),
 	}); err != nil {

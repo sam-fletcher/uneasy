@@ -28,9 +28,24 @@ announces:
   event (no storms). Row state uses a sequence number: a broadcast made after
   the last save counts, so the common route that already ends with
   `broadcastRowState` does not send a second one.
-- Routes whose change lives outside `resolution_data` but alters a plan's
-  screen or the acting set call `notePlanChanged(ctx, planID)` by hand (Make
-  War join and surrender: war participants are their own table).
+- Every other plan-writing query goes through a wrapper in `plan_announce.go`
+  that notes the change too: `setPlanStatus`, `setPlanResult`,
+  `setPlanPreparationNotes`, `setPlanRowAndOrder`, `setDemandOptionWinners`,
+  `setPlanTargets`, `setPlanTargetedPlan`, `setPlanFinaleBonus`.
+- Changes that live outside the plan row but alter its screen or the acting
+  set call `notePlanChanged(ctx, planID)` by hand: Make War join and surrender
+  (war participants are their own table). Checked and already covered: the
+  duel stake, bout and claim routes each save `resolution_data`; the other war
+  payment/peace routes already broadcast war events and the row state.
+- **Status:** the flush announces whatever the response status. A refetch is
+  idempotent and reads the true state, so announcing a rolled-back change costs
+  one fetch, while skipping a non-transactional save followed by an error would
+  leave the table stale. The flush is deferred, so a panic after a save still
+  announces.
+- **Latency:** the actor's HTTP response is written after the flush (the
+  compress layer outside holds it), so it waits for one plan lookup per changed
+  plan, and other clients can hear `plan.updated` before the actor's own
+  response arrives.
 
 **What the client does.** `plan.updated` → `refreshPlan(planID)`, i.e.
 `getPlan`, the viewer-aware endpoint, so per-viewer masking still applies. The
@@ -39,9 +54,14 @@ route's own specific event harmless. Only `ctx.plans` is touched, replaced by
 a new array (no in-place mutation), with no optimistic append, so none of the
 `reference_ws_client_traps` apply.
 
-**Guards.** `handler/plan_announce_test.go`: (a) no non-test Go file outside
-`plan_contract.go` may call `SetPlanResolutionData`; (b) `main.go` must mount
-the middleware; (c) bookkeeping of the row-state sequence.
+**Guards.** `handler/plan_announce_test.go`: (a) no Go file may call a raw
+plan-writing query (`planWriteQueries`) except the wrappers and
+`saveResolutionData`, with a per-file, per-query allowlist giving the reason
+(`ShiftRowOrderAtOrAfter` only re-ranks neighbours); (b) the middleware sends
+exactly one `plan.updated` per plan and one row state per game, skips a
+repeat row state, and still announces on an error status or a panic.
+`cmd/server/plan_announcer_mount_test.go` walks the real router and requires
+the middleware on every `/api/plans/*` route.
 
 ## What changed
 
@@ -56,14 +76,21 @@ the middleware; (c) bookkeeping of the row-state sequence.
 - Six tracker items deleted; every e2e `test.fixme` pointing at them is a
   live `test` now (Make Introductions ×3, Make War join, Spread Propaganda,
   Propose Decree make, Propose Duel bout 2, Seek Answers bystander,
-  Chronicle mar). Chronicle's `page.reload()` workarounds were removed, which
-  also covers the make case.
+  Chronicle mar). Every reload workaround these bugs forced was removed from
+  the specs (Make Introductions, Spread Propaganda, Propose Decree, Seek
+  Answers, Chronicle) and their comments fixed, so the specs prove updates
+  arrive live.
 
 ## How it was verified
 
 check-fast, integration (private DB) and three consecutive full e2e runs against a private server (133 passed, 16 skipped each) passed. Disabling the note in saveResolutionData made 5 of 7 live specs fail (they bite). Make War spec runs at 375px; I did not separately eyeball the bar by hand.
 
 ## Behaviour changes to look at before merging
+
+- The flush loops until nothing new is noted, because sending the row state
+  can itself save plans (it kicks off a pending plan's resolution, or advances
+  the finale). Routes that never broadcast row state before can now trigger
+  that kickoff / finale advance at the end of the request.
 
 - Each plan-state request now costs one extra `GetPlanByID` per changed plan
   at the end of the request, plus a row-state recompute when the handler had
@@ -77,6 +104,16 @@ check-fast, integration (private DB) and three consecutive full e2e runs against
 None.
 
 ## Noticed, not fixed
+
+- The Duel reorder (`bout.resolved` after the save) is belt-and-braces: the
+  generic `plan.updated` at the end of the request would mask a revert, so no
+  test pins the order itself.
+- A Make War join after the reveal has closed (pending participant) changes no
+  acting set until the war's row arrives, so the bar correctly stays put and
+  there is no live state to pin; the log line is the live signal. I tried an
+  e2e for it and removed it.
+- `destroyed-asset-name-live-vs-reload.md` (new item): the Seek Answers
+  "Resolved so far" line names a destroyed asset after a reload but not live.
 
 - Redundant explicit plan broadcasts in routes (see above) could be removed
   now that the generic event covers them; left alone to keep this change safe.

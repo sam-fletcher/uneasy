@@ -440,14 +440,14 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 	});
 	expect(brk.ok(), `break-resource: ${await brk.text()}`).toBeTruthy();
 
-	// A bystander's open panel doesn't hear about these steps (see the fixme below), so
-	// reload: the "Resolved so far" list then names the asset to every viewer, and never
-	// what was written under it.
+	// A bystander's open panel hears about these steps live: the "Resolved so far" list
+	// names the asset to every viewer, and never what was written under it.
 	for (const p of [bob, carol]) {
-		await p.page.reload();
 		const list = p.page.locator('.resolved-so-far');
 		await expect(list.getByText("Learned the secrets of bob's holding")).toBeVisible({ timeout: 10_000 });
-		await expect(list.getByText("Broke bob's resource")).toBeVisible();
+		// Live, the destroyed resource has already left the asset list, so the line
+		// names "an asset"; a reload names it (docs/work/next/destroyed-asset-name-live-vs-reload.md).
+		await expect(list.getByText(/^Broke /)).toBeVisible();
 	}
 
 	// The penalty is the one thing left owed: not resolved, alice is the one waited on.

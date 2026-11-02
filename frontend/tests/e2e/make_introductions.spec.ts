@@ -159,10 +159,6 @@ async function forceRoll(f: Fixture, outcome: 'make' | 'mar') {
 	await api(f.ctx.alice, 'post', '/api/dev/force-roll', { roll_id: roll.id, outcome });
 }
 
-/**
- * A make/mar that the dice apply on their own reaches the table only on a
- * reload — see the fixme at the bottom of this file — so reload to see it.
- */
 /** The Waiting On bar's text ("Waiting On: You,carol"), as one player sees it. */
 const waitingBar = (page: Page) => page.locator('p', { hasText: 'Waiting On:' }).first();
 
@@ -183,10 +179,6 @@ const marginaliaOf = (a: Asset | undefined) => (a?.marginalia ?? []).map(m => m.
 async function planStatus(f: Fixture, id = f.planID): Promise<string> {
 	const { plans } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/plans`);
 	return plans.find((p: { id: number }) => p.id === id).status;
-}
-
-async function reloadAll(pages: Record<Name, Page>) {
-	await Promise.all(PLAYERS.map(n => pages[n].reload()));
 }
 
 test('pre-roll: everyone sees the difficulty meter and the buffet; only the preparer names the peers', async ({ browser }) => {
@@ -240,7 +232,6 @@ test('make: the preparer describes each arrival; the last arrival ends the plan'
 
 	await nameAndRoll(alice, ['Lady Ashby', 'Sir Oswin']);
 	await forceRoll(f, 'make');
-	await reloadAll(pages);
 
 	// Name pre-filled from the pre-roll; the button stays off until a marginalia is written.
 	await expect(alice.getByText('arrives at court. Describe them', { exact: false })).toBeVisible({ timeout: 10_000 });
@@ -276,7 +267,6 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 
 	await nameAndRoll(alice, ['Lady Ashby', 'Sir Oswin']);
 	await forceRoll(f, 'mar');
-	await reloadAll(pages);
 
 	await expect(alice.getByText('(2 remaining):')).toBeVisible({ timeout: 10_000 });
 	for (const p of [bob, carol]) {
@@ -312,15 +302,13 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 	await alice.getByRole('button', { name: 'Resolve peer' }).click();
 
 	// The bar moves from the preparer to the two authors (alice no longer owes a step).
-	await alice.reload();
 	await expect(waitingBar(alice)).toContainText('bob');
 	await expect(waitingBar(alice)).toContainText('carol');
 	await expect(waitingBar(alice)).not.toContainText('You');
 	await expectNoGates(alice);
 
 	// Bob and carol are each asked for the marginalia they owe; alice is not.
-	// (They need a reload to see it — second fixme below.)
-	await Promise.all([bob.reload(), carol.reload()]);
+	// (Both arrive live, with no reload.)
 	await expect(bob.locator('.ft-prompt', { hasText: 'is joining your retinue' })).toBeVisible({ timeout: 10_000 });
 	await expect(carol.locator('.ft-prompt', { hasText: "isn't who alice thought they were" })).toBeVisible({ timeout: 10_000 });
 	await expect(alice.locator('.ft-prompt', { hasText: 'Write the marginalia' })).toHaveCount(0);
@@ -365,7 +353,6 @@ test('perform_steps winner drives the post-roll steps; the preparer still names 
 
 	await nameAndRoll(alice, ['Lady Ashby']);
 	await forceRoll(f, 'make');
-	await reloadAll(pages);
 
 	// Post-roll the winner gets the arrival form and the preparer sees the wait.
 	await expect(bob.getByText('arrives at court. Describe them', { exact: false })).toBeVisible({ timeout: 10_000 });
@@ -391,7 +378,6 @@ test('mar: a broken journey arrives torn and a delayed peer is rescheduled', asy
 
 	await nameAndRoll(alice, ['Lady Ashby', 'Sir Oswin']);
 	await forceRoll(f, 'mar');
-	await reloadAll(pages);
 	await expect(alice.getByText('(2 remaining):')).toBeVisible({ timeout: 10_000 });
 
 	await alice.getByRole('button', { name: 'Broken journey', exact: true }).click();

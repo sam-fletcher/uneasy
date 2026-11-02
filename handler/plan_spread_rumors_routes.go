@@ -201,7 +201,7 @@ func stashSecretRumor(
 	if err != nil {
 		return nil, httpErr(http.StatusInternalServerError, "could not stash secret rumor")
 	}
-	if err := q.SetPlanPreparationNotes(ctx, dbgen.SetPlanPreparationNotesParams{
+	if err := setPlanPreparationNotes(ctx, q, dbgen.SetPlanPreparationNotesParams{
 		ID:               plan.ID,
 		PreparationNotes: nil,
 	}); err != nil {

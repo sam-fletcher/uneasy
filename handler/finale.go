@@ -172,7 +172,7 @@ func delayRevealOverflow(
 		return false
 	}
 
-	if err := q.SetPlanFinaleBonus(ctx, plan.ID); err != nil {
+	if err := setPlanFinaleBonus(ctx, q, plan.ID); err != nil {
 		loggerFromContext(ctx).WarnContext(ctx,
 			"delay reveal overflow: could not spend the Explosive Finale slot",
 			"plan_id", plan.ID, "err", err)
@@ -205,7 +205,7 @@ func planFellThrough(
 	manager *hub.Manager,
 	plan dbgen.Plan,
 ) {
-	if err := q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+	if err := setPlanStatus(ctx, q, dbgen.SetPlanStatusParams{
 		ID:     plan.ID,
 		Status: model.PlanCancelled,
 	}); err != nil {

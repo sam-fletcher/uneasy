@@ -418,7 +418,7 @@ func mdApplyRetarget(
 		respondErr(w, http.StatusBadRequest, "retarget invalid: "+errMsg)
 		return false
 	}
-	if err := deps.Q.SetPlanTargets(ctx, dbgen.SetPlanTargetsParams{
+	if err := setPlanTargets(ctx, deps.Q, dbgen.SetPlanTargetsParams{
 		ID:             plan.ID,
 		TargetPlayerID: targetPlayerID,
 		TargetAssetID:  targetAssetID,

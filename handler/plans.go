@@ -607,7 +607,7 @@ func createPlanInTx(
 	}
 
 	if body.PlanType == model.PlanMakeDemands && body.TargetPlanID != nil {
-		if err = q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		if err = setPlanTargetedPlan(ctx, q, dbgen.SetPlanTargetedPlanParams{
 			ID:             plan.ID,
 			TargetedPlanID: body.TargetPlanID,
 		}); err != nil {

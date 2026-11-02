@@ -420,7 +420,7 @@ func applyLiaiseDelayResult(
 		GameID:    plan.GameID,
 		RowNumber: new(targetRow),
 	})
-	_ = q.SetPlanRowAndOrder(ctx, dbgen.SetPlanRowAndOrderParams{
+	_ = setPlanRowAndOrder(ctx, q, dbgen.SetPlanRowAndOrderParams{
 		ID:        planID,
 		RowNumber: new(targetRow),
 		RowOrder:  int16(rowOrder),

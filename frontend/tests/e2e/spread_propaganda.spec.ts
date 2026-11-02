@@ -311,9 +311,7 @@ test('spread propaganda make: no Apply gate, the artifact + changes are one step
 		const body = (await res.json()) as { resolution_data?: { choice_auto_applied?: boolean } };
 		return body.resolution_data?.choice_auto_applied ?? false;
 	}, { timeout: 10_000 }).toBe(true);
-	// ...but no WebSocket event nudges the open panels to refetch the plan, so they
-	// still show the pre-choice view until reloaded (see the fixme below).
-	await Promise.all([alice.page.reload(), bob.page.reload()]);
+	// The save is announced, so the open panels move on without a reload.
 
 	// Alice is handed the artifact step directly, with no "Apply choices" to click first.
 	await expect(alice.page.getByText('Your message sets society ablaze')).toBeVisible({ timeout: 10_000 });

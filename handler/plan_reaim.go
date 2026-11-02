@@ -378,12 +378,12 @@ func applyReAim(
 ) error {
 	before := *plan
 	if picked.TargetPlanID != nil {
-		if err := deps.Q.SetPlanTargetedPlan(ctx, dbgen.SetPlanTargetedPlanParams{
+		if err := setPlanTargetedPlan(ctx, deps.Q, dbgen.SetPlanTargetedPlanParams{
 			ID: plan.ID, TargetedPlanID: picked.TargetPlanID,
 		}); err != nil {
 			return fmt.Errorf("set targeted plan: %w", err)
 		}
-	} else if err := deps.Q.SetPlanTargets(ctx, dbgen.SetPlanTargetsParams{
+	} else if err := setPlanTargets(ctx, deps.Q, dbgen.SetPlanTargetsParams{
 		ID: plan.ID, TargetPlayerID: picked.TargetPlayerID, TargetAssetID: picked.TargetAssetID,
 	}); err != nil {
 		return fmt.Errorf("set plan targets: %w", err)

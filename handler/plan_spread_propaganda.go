@@ -562,7 +562,7 @@ func applyCoOpt(
 	}
 
 	// Mark it as resolving immediately (skips the pending phase).
-	err = deps.Q.SetPlanStatus(ctx, dbgen.SetPlanStatusParams{
+	err = setPlanStatus(ctx, deps.Q, dbgen.SetPlanStatusParams{
 		ID:     recursivePlan.ID,
 		Status: model.PlanResolving,
 	})
