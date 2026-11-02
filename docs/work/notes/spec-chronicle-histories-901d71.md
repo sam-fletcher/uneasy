@@ -4,7 +4,8 @@
 
 - `frontend/tests/e2e/chronicle_histories.spec.ts` and
   `frontend/tests/e2e/helpers/chronicle_histories.ts`: Playwright specs for
-  Chronicle Histories, the last Phase 4 plan. 11 live tests and 2 `test.fixme`s.
+  Chronicle Histories, the last Phase 4 plan. 11 live tests and 2 `test.fixme`s (mar `invoke_another` is covered; the 375px
+  bystander is a player whose artifact isn't in the scene).
   Covered: preparation (notes required, 400 on empty); the pre-roll (live
   difficulty meter for everyone, preparer-only picker and submit, difficulty =
   max(rank, artifacts invoked) with duplicates counted once, 403 for a
@@ -33,7 +34,12 @@ server; each went red in the test meant to catch it — over-pick guard, both
 `CanComplete` gates, the one-choice-per-player check, `AutoApplyChoiceOnRoll`,
 the already-torn check, the invoked-artifact check, the preparer-only cast, the
 artifact-type check, and `chStepTarget` (narrative options recording a target).
-Each fixme was run un-skipped and fails for the stated reason. Not run:
+Each fixme was run un-skipped and fails for the stated reason. Auto-apply: Chronicle's own path is fine, so it is not part of
+`auto-applied-choice-not-broadcast.md`: the spec's "auto-applied outcome reaches
+open panels live" test passes with no reload (the panel falls back to the
+roll's result for the make budget, and the mar gate and Waiting On bar update),
+and the budget/gate being on record from the roll is pinned separately (the make and mar tests fail when `AutoApplyChoiceOnRoll` is turned off).
+Not run:
 `make test-integration` (no Go change). `make check-fast`: see PR.
 
 ## Behaviour changes to look at before merging
@@ -42,11 +48,11 @@ None — tests and docs only.
 
 ## Open questions for the owner
 
-None. The "dictating a character's actions needs consent" clause stays as
+`docs/work/questions/chronicle-repeatable-make-options.md`: the handler lets a
+make pick the same option repeatedly; the book doesn't say. The "dictating a character's actions needs consent" clause stays as
 ruled (won't build, for now); the Buffet and panel still word it as "requires
 that player's consent", whereas the book says the affected player has final say
-and the chooser may unselect — worth a wording pass if the scenes-inside-plans
-area is ever reopened.
+and the chooser may unselect — tracked as `chronicle-consent-wording`.
 
 ## Noticed, not fixed
 
@@ -54,8 +60,7 @@ UI-pass findings, as tracker items: `chronicle-choices-not-pushed-to-open-panels
 (other players' make steps and mar choices, and the Waiting On bar, are stale
 until reload), `chronicle-buffet-mar-says-other-players` (reference tab
 contradicts the rules and the panel).
-Smaller, no item: the panel won't submit a make step without a "Summary" (the
-server treats narration as optional); the `perform_steps` winner case is covered
+`chronicle-first-timer-confusions` collects the smaller UI-pass confusions. The `perform_steps` winner case is covered
 by the existing `perform-steps-panels-gate-on-preparer` item, and I left no
 fixme for it, since an empty one would pass if un-skipped — add a real one to
 this spec when that fix lands, driven as `make_demands.spec.ts` does for Seek

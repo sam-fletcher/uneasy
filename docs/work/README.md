@@ -43,5 +43,5 @@ nothing in from the private folder.
 
 ## Never audited
 
-The Make Demands overlay interacting
-with other plans; Propose Decree's monarch case; tables of 4+ players.
+The Make Demands overlay interacting with other plans; Propose Decree's
+monarch case; tables of 4+ players.

@@ -17,6 +17,9 @@ UI pass (alice prepares, bob and carol have the table open):
 - Make: the preparer's steps ("Resolved so far", the remaining count, and the
   "scene stays open until alice wraps it" line) stay stale for bob and carol.
 
+Same family as `make-introductions-step-routes-not-broadcast.md` and
+`make-war-join-not-pushed-to-waiting-bar.md`.
+
 Fix: broadcast `EventPlanChoiceApplied` from both routes, as the sibling plans
 do. (Chronicle's *auto-applied* outcome is fine: the panel falls back to the
 roll's result, so the budget and the mar gate show on every open panel without

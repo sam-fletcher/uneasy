@@ -189,7 +189,7 @@ test('make: the outcome is applied on the roll; two options, one at a time, and 
 	expect((await chronicleData(g, planID)).make_choices_done ?? 0).toBe(0);
 	await expect(alice.getByText('2 of 2 choices remaining')).toBeVisible();
 	await expect(bob.getByText('alice is choosing options…')).toBeVisible();
-	await expectPlanLog(alice, planID, ['Chronicle Histories succeeded']);
+	await expectPlanLog(alice, ['Chronicle Histories succeeded']);
 
 	// The plan cannot be wrapped with options still owed.
 	await expectStatus(await g.ctx.alice.request.post(`/api/plans/${planID}/complete`), 409);
@@ -246,7 +246,7 @@ test('make: the outcome is applied on the roll; two options, one at a time, and 
 	expect(after.map(a => [a.id, a.owner_id, a.is_destroyed])).toEqual(before.map(a => [a.id, a.owner_id, a.is_destroyed]));
 	expect(after.find(a => a.id === carolArt.id)!.marginalia.every(m => !m.is_torn)).toBe(true);
 
-	await expectPlanLog(alice, planID, [
+	await expectPlanLog(alice, [
 		'Chronicle Histories succeeded',
 		"The ledger is ripped.",
 		"cut to the present to show history's impact",
@@ -257,7 +257,7 @@ test('make: breaking the last marginalia destroys the artifact, and a torn line 
 	const g = await seedCHGame(browser);
 	track(g.gameID);
 	const { planID, artifacts } = await rolledCH(g, ['carol', 'bob'], 'make');
-	const [carolArt, bobArt] = artifacts;
+	const [carolArt] = artifacts;
 	const { alice, bob } = await openAll(g);
 
 	const marg = carolArt.marginalia.find(m => !m.is_torn)!;
@@ -273,8 +273,8 @@ test('make: breaking the last marginalia destroys the artifact, and a torn line 
 	expect((await assetsOf(g)).find(a => a.id === carolArt.id)!.is_destroyed).toBe(true);
 	// A destroyed artifact is not offered again for a break.
 	await chooseOption(alice, OPT.break);
-	await expect(alice.locator('.card', { hasText: "carol's artifact" })).toHaveCount(0);
 	await expect(alice.locator('.card', { hasText: "bob's artifact" })).toBeVisible();
+	await expect(alice.locator('.card', { hasText: "carol's artifact" })).toHaveCount(0);
 
 	// The server holds the line on a stale pick: that marginalia is already torn.
 	await expectStatus(
@@ -300,7 +300,6 @@ test('make: breaking the last marginalia destroys the artifact, and a torn line 
 	await bob.reload();
 	await expect(bob.getByText('Invoked artifacts (3)')).toBeVisible();
 	await expect(bob.getByText("carol's artifact (carol)")).toBeVisible();
-	void bobArt;
 });
 
 test('mar: every player, the preparer included, chooses exactly one; the plan waits for all', async ({ browser }) => {
@@ -366,7 +365,7 @@ test('mar: every player, the preparer included, chooses exactly one; the plan wa
 	expect(after.map(a => [a.id, a.owner_id, a.is_destroyed])).toEqual(before.map(a => [a.id, a.owner_id, a.is_destroyed]));
 	expect(after.find(a => a.id === bobArt.id)!.marginalia.filter(m => m.is_torn)).toHaveLength(1);
 	expect(after.find(a => a.id === carolArt.id)!.marginalia.every(m => !m.is_torn)).toBe(true);
-	await expectPlanLog(alice, planID, ['broke', "cut to the present to show history's impact", 'took narrative control of a moment']);
+	await expectPlanLog(alice, ['broke', "cut to the present to show history's impact", 'took narrative control of a moment']);
 });
 
 test('mar: a depleted artifact is gone from the next chooser\'s picker, and make-step is refused', async ({ browser }) => {
@@ -391,8 +390,8 @@ test('mar: a depleted artifact is gone from the next chooser\'s picker, and make
 	await carol.reload();
 	await expect(carol.getByText('bob: broke')).toBeVisible();
 	await chooseOption(carol, OPT.break);
-	await expect(carol.locator('.card', { hasText: "carol's artifact" })).toHaveCount(0);
 	await expect(carol.locator('.card', { hasText: "bob's artifact" })).toBeVisible();
+	await expect(carol.locator('.card', { hasText: "carol's artifact" })).toHaveCount(0);
 	// A stale client is held to the same rule.
 	await expectStatus(
 		await g.ctx.carol.request.post(`/api/plans/${planID}/mar-choice`, {
@@ -403,18 +402,31 @@ test('mar: a depleted artifact is gone from the next chooser\'s picker, and make
 		await g.ctx.carol.request.post(`/api/plans/${planID}/mar-choice`, { data: { choice: 'break_artifact' } }), 400);
 	await expectStatus(
 		await g.ctx.carol.request.post(`/api/plans/${planID}/mar-choice`, { data: { choice: 'sack_the_archive' } }), 400);
+
+	// Carol invokes alice's artifact instead, through the picker: the scene grows
+	// by one, and the step is recorded against carol with that artifact.
+	const aliceArt = await artifactOf(g, 'alice');
+	await chooseOption(carol, OPT.invoke);
+	await pickArtifact(carol, "alice's artifact");
+	await carol.getByRole('button', { name: 'Submit choice' }).click();
+	await expect(carol.getByText('Your choice has been submitted.')).toBeVisible();
+	const d = await chronicleData(g, planID);
+	expect(d.invoked_artifact_ids).toContain(aliceArt.id);
+	expect(d.steps?.find(x => x.option === 'invoke_another')?.asset_id).toBe(aliceArt.id);
 });
 
 for (const outcome of ['make', 'mar'] as const) {
 	test(`375px, ${outcome}: preparer, other player and bystander each see what is theirs`, async ({ browser }) => {
 		const g = await seedCHGame(browser, PHONE);
 		track(g.gameID);
-		await rolledCH(g, ['bob', 'carol'], outcome);
+		// Only bob's artifact is invoked, so carol is genuinely uninvolved: no
+		// artifact of hers is in the scene, and she is neither preparer nor invoked.
+		await rolledCH(g, ['bob'], outcome);
 		const { alice, bob, carol } = await openAll(g);
 
 		for (const p of [alice, bob, carol]) {
 			await expect(p.getByText(outcome === 'make' ? '✓ Make' : '✗ Mar')).toBeVisible();
-			await expect(p.getByText('Invoked artifacts (2)')).toBeVisible();
+			await expect(p.getByText('Invoked artifacts (1)')).toBeVisible();
 			await expectNoHorizontalScroll(p);
 		}
 		// The waiting bar names the people who owe something, and not the others.
@@ -422,9 +434,9 @@ for (const outcome of ['make', 'mar'] as const) {
 			await expect(alice.getByRole('button', { name: 'Submit choice' })).toBeVisible();
 			// Non-preparers see the controls greyed out, never live.
 			for (const p of [bob, carol]) {
-				await expect(p.getByRole('button', { name: 'Submit choice' })).toHaveCount(0);
-				await expect(p.getByRole('button', { name: OPT.echo, exact: true })).toBeDisabled();
 				await expect(p.getByText('alice is choosing options…')).toBeVisible();
+				await expect(p.getByRole('button', { name: OPT.echo, exact: true })).toBeDisabled();
+				await expect(p.getByRole('button', { name: 'Submit choice' })).toHaveCount(0);
 			}
 		} else {
 			// Everyone gets their own live picker.
@@ -469,8 +481,10 @@ test.fixme('another player\'s mar choice reaches open panels and the Waiting On 
 	for (const p of [alice, carol]) {
 		await expect(p.getByText('Submitted so far (1):')).toBeVisible();
 	}
-	// bob has chosen, so the bar must stop naming him.
-	await expect(alice.locator('body')).not.toContainText(/Waiting On:\s*You,bob/);
+	// bob has chosen, so the bar must stop naming him and still name carol.
+	const bar = alice.getByText('Waiting On:').locator('..');
+	await expect(bar).toContainText('carol');
+	await expect(bar).not.toContainText('bob');
 });
 
 test.fixme('the Buffet\'s Mar tab says every player chooses, the preparer included', async ({ browser }) => {

@@ -177,7 +177,7 @@ export async function expectNoHorizontalScroll(page: Page) {
  * entries sit loose in the feed; once the plan resolves they fold into
  * collapsed containers, which are expanded here so the entries are readable.
  */
-async function readPlanLog(page: Page, _planID: number): Promise<string> {
+async function readPlanLog(page: Page): Promise<string> {
 	const chat = page.getByRole('complementary', { name: 'Chat' });
 	const closed = chat.locator('button.scene-header[aria-expanded="false"]:not([disabled])');
 	for (let i = 0; i < 6 && (await closed.count()) > 0; i++) await closed.first().click();
@@ -185,12 +185,12 @@ async function readPlanLog(page: Page, _planID: number): Promise<string> {
 }
 
 /** Waits until the desktop chat column shows every snippet, in order. */
-export async function expectPlanLog(page: Page, planID: number, snippets: string[]) {
+export async function expectPlanLog(page: Page, snippets: string[]) {
 	let last = '';
 	await expect
 		.poll(
 			async () => {
-				last = await readPlanLog(page, planID);
+				last = await readPlanLog(page);
 				let at = -1;
 				for (const sn of snippets) {
 					const i = last.indexOf(sn, at + 1);
