@@ -78,7 +78,7 @@
 		{ key: 'break_artifact',  label: 'Break an invoked artifact',       	desc: ' — Choose a marginalia to tear.' },
 		{ key: 'invoke_another',  label: 'Invoke another artifact', 			desc: '  and introduce it to the scene.' },
 		{ key: 'echo_present',    label: "Cut to the present to show history's impact", desc: '' },
-		{ key: 'total_control',   label: 'Take narrative control of a moment',	desc: " — The affected player has the final say over how their character acts; if you can't agree, unselect this option." },
+		{ key: 'total_control',   label: 'Take narrative control of a moment',	desc: " — The player whose character it is decides how they act; if you can't agree, drop this option." },
 	] as const;
 
 	// Read-only "what can happen?" reference (shared Buffet).
@@ -196,7 +196,13 @@
 
 	// "Break an invoked artifact" needs an invoked artifact with a marginalia left.
 	const canBreak = $derived(assetsWithIntactMarginalia(invokedArtifacts).length > 0);
-	const breakHint = 'Invoke an artifact first, then you can break one of its marginalia.';
+	const breakHint = 'Needs an invoked artifact that still has a marginalia to tear.';
+	// Another player's tear can use up the last marginalia while Break is selected.
+	$effect(() => {
+		if (canBreak) return;
+		if (makeOption === 'break_artifact') { makeOption = ''; makeAssetID = null; makeMargID = null; }
+		if (marSelected === 'break_artifact') { marSelected = ''; marAssetID = null; marMargID = null; }
+	});
 	const makeNeedsAsset = $derived(makeOption === 'break_artifact' || makeOption === 'invoke_another');
 	const makeNeedsMarg = $derived(makeOption === 'break_artifact');
 	const makeReady = $derived(
@@ -451,9 +457,11 @@
 											type="button"
 											class="chip-btn"
 											class:active={makeOption === opt.key}
-											disabled={opt.key === 'break_artifact' && !canBreak}
+											class:unavailable={opt.key === 'break_artifact' && !canBreak}
+											aria-disabled={opt.key === 'break_artifact' && !canBreak}
 											title={opt.key === 'break_artifact' && !canBreak ? breakHint : undefined}
 											onclick={() => {
+												if (opt.key === 'break_artifact' && !canBreak) return;
 												makeOption = makeOption === opt.key ? '' : opt.key;
 												makeAssetID = null;
 												makeMargID = null;
@@ -577,9 +585,11 @@
 										type="button"
 										class="chip-btn"
 										class:active={marSelected === opt.key}
-											disabled={opt.key === 'break_artifact' && !canBreak}
+											class:unavailable={opt.key === 'break_artifact' && !canBreak}
+											aria-disabled={opt.key === 'break_artifact' && !canBreak}
 											title={opt.key === 'break_artifact' && !canBreak ? breakHint : undefined}
 										onclick={() => {
+											if (opt.key === 'break_artifact' && !canBreak) return;
 											marSelected = marSelected === opt.key ? '' : opt.key;
 											marAssetID = null;
 											marMargID = null;

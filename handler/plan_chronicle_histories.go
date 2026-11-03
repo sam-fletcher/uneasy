@@ -267,6 +267,27 @@ func (chHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 
 // ── Cast Roll ─────────────────────────────────────────────────────────────────
 
+// chValidateInvoked dedupes the pre-roll's artifact ids and checks each is a
+// live artifact in this game. A destroyed one is 409, the same as
+// invoke_another: the id is well-formed, the board has moved on.
+func chValidateInvoked(ids []int64, assetByID map[int64]dbgen.Asset, gameID int64) ([]int64, int, string) {
+	invoked := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if slices.Contains(invoked, id) {
+			continue
+		}
+		asset, found := assetByID[id]
+		if !found || asset.GameID != gameID || asset.AssetType != model.AssetArtifact {
+			return nil, http.StatusBadRequest, "each artifact_id must be an artifact in this game"
+		}
+		if asset.IsDestroyed {
+			return nil, http.StatusConflict, "a destroyed artifact cannot be invoked"
+		}
+		invoked = append(invoked, id)
+	}
+	return invoked, 0, ""
+}
+
 // chCastRollHandler handles POST /api/plans/:planId/cast-roll.
 //
 // The preparer sets the pre-roll scene in one shot: they choose the artifacts to
@@ -278,7 +299,7 @@ func (chHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 //
 // Request body: {"artifact_ids": [N, ...], "scene": "..."}
 //
-//nolint:gocognit // flat sequential pre-roll validation chain
+
 func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -328,8 +349,8 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Validate and record the invoked artifacts (deduped). Each must be an
-		// artifact belonging to a player in this game.
+		// Validate and record the invoked artifacts (deduped). Each must be a live
+		// artifact in this game (409 if destroyed, as invoke_another does).
 		//
 		// The whole candidate list is fetched in one query rather than a
 		// GetAssetByID per id: artifact_ids comes off the request body, so the
@@ -346,17 +367,10 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 			assetByID[a.ID] = a
 		}
 
-		invoked := make([]int64, 0, len(body.ArtifactIDs))
-		for _, id := range body.ArtifactIDs {
-			if slices.Contains(invoked, id) {
-				continue
-			}
-			asset, found := assetByID[id]
-			if !found || asset.GameID != plan.GameID || asset.AssetType != model.AssetArtifact {
-				respondErr(w, http.StatusBadRequest, "each artifact_id must be an artifact in this game")
-				return
-			}
-			invoked = append(invoked, id)
+		invoked, status, msg := chValidateInvoked(body.ArtifactIDs, assetByID, plan.GameID)
+		if status != 0 {
+			respondErr(w, status, msg)
+			return
 		}
 		ch.InvokedArtifactIDs = invoked
 
@@ -489,9 +503,11 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 		// Capture the budget once, on the first step, and announce the success.
 		// (Chronicle's make path uses make-step, not the generic make-choice
 		// route that would otherwise emit this via ApplyChoice.)
-		if ch.MakeBudget == 0 {
+		// The success line is posted only once the step has applied, so a
+		// refused step that is retried doesn't announce it again.
+		announceSuccess := ch.MakeBudget == 0
+		if announceSuccess {
 			ch.MakeBudget = *roll.Result
-			chLogSuccess(ctx, deps, plan)
 		}
 		// Server-authoritative completion: never accept more than the budget.
 		if ch.MakeChoicesDone >= ch.MakeBudget {
@@ -524,6 +540,10 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not save make choice", err)
 			return
+		}
+
+		if announceSuccess {
+			chLogSuccess(ctx, deps, plan)
 		}
 
 		// Fold the player's narration into the single mechanical log entry.

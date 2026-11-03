@@ -509,12 +509,12 @@ test('the Buffet\'s Mar tab says every player chooses, the preparer included', a
 	await expect(alice.getByText('Every OTHER player')).toHaveCount(0);
 });
 
-test('the Buffet words the take-control option as the affected player having the final say', async ({ browser }) => {
+test('the Buffet words the take-control option as the player whose character it is deciding', async ({ browser }) => {
 	const { g } = await resolvingGame(browser, PHONE);
 	const alice = await g.ctx.alice.newPage();
 	await alice.goto(`/table/${g.gameID}`);
 	await alice.getByText('What can happen?').click();
-	await expect(alice.getByText('has the final say over how their character acts').first()).toBeVisible();
+	await expect(alice.getByText('decides how they act; if you can\'t agree, drop this option').first()).toBeVisible();
 	await expect(alice.getByText('requires that player\'s consent')).toHaveCount(0);
 	await expectNoHorizontalScroll(alice);
 });
@@ -533,8 +533,12 @@ test('make: with nothing invoked, "Break an invoked artifact" is disabled with a
 	const { planID } = await rolledCH(g, [], 'make');
 	const { alice } = await openAll(g);
 
-	await expect(alice.getByRole('button', { name: OPT.break, exact: true })).toBeDisabled();
-	await expect(alice.getByText('Invoke an artifact first').first()).toBeVisible();
+	const breakChip = alice.getByRole('button', { name: OPT.break, exact: true });
+	await expect(breakChip).toHaveAttribute('aria-disabled', 'true');
+	await expect(alice.getByText('Needs an invoked artifact that still has a marginalia to tear').first()).toBeVisible();
+	// A tap does nothing: no picker opens.
+	await breakChip.click({ force: true });
+	await expect(alice.getByText('Invoked artifact to break')).toHaveCount(0);
 	await expectNoHorizontalScroll(alice);
 	await alice.screenshot({ path: 'test-results/chronicle-make-375.png', fullPage: true });
 
@@ -543,4 +547,26 @@ test('make: with nothing invoked, "Break an invoked artifact" is disabled with a
 	await expect(alice.getByText('(optional, you can expand in the chat)')).toBeVisible();
 	await alice.getByRole('button', { name: 'Submit choice' }).click();
 	await expect.poll(async () => (await chronicleData(g, planID)).make_choices_done ?? 0).toBe(1);
+});
+
+test('mar: with nothing invoked, break is unavailable with a hint; a bystander mirror\'s chips are not dimmed by it', async ({ browser }) => {
+	const g = await seedCHGame(browser, PHONE);
+	track(g.gameID);
+	await rolledCH(g, [], 'mar');
+	const { alice, bob } = await openAll(g);
+	for (const p of [alice, bob]) {
+		await expect(p.getByRole('button', { name: OPT.break, exact: true })).toHaveAttribute('aria-disabled', 'true');
+		await expect(p.getByText('Needs an invoked artifact that still has a marginalia to tear').first()).toBeVisible();
+	}
+	await bob.screenshot({ path: 'test-results/chronicle-mar-375.png', fullPage: true });
+});
+
+test('make: a bystander\'s mirrored chips are not dimmed by the unavailable-break rule', async ({ browser }) => {
+	const g = await seedCHGame(browser, PHONE);
+	track(g.gameID);
+	await rolledCH(g, ['bob'], 'make');
+	const { bob } = await openAll(g);
+	const echo = bob.getByRole('button', { name: OPT.echo, exact: true });
+	await expect(echo).toBeVisible();
+	expect(await echo.evaluate(el => getComputedStyle(el).opacity)).toBe('1');
 });
