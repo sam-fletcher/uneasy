@@ -36,6 +36,7 @@
 		type ScenePeerView,
 	} from '$lib/api';
 	import { chatDockQuery } from '$lib/breakpoints';
+	import { controlledPeers } from '$lib/controlledPeers';
 	import { renderLogBody, stripLogMarkup } from '$lib/logMarkup';
 	import { playerColorByID } from '$lib/playerColor';
 	import { scrollBehavior } from '$lib/reducedMotion';
@@ -163,12 +164,7 @@
 	);
 
 	const myControlledPeers = $derived(
-		activeScene == null || currentPlayerID == null
-			? []
-			: activeScenePeers
-				.filter(p => p.controller_player_id === currentPlayerID)
-				.map(p => assets.find(a => a.id === p.peer_asset_id))
-				.filter((a): a is Asset => a != null)
+		activeScene == null ? [] : controlledPeers(activeScenePeers, assets, currentPlayerID)
 	);
 
 	const personae = $derived.by<Persona[]>(() => {
