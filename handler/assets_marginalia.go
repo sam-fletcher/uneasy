@@ -234,9 +234,7 @@ func TearMarginalia(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		if destroyed {
 			if h, ok := manager.Get(asset.GameID); ok {
-				h.BroadcastEvent(model.EventAssetDestroyed, model.AssetIDPayload{
-					AssetID: asset.ID,
-				})
+				h.BroadcastEvent(model.EventAssetDestroyed, assetDestroyedPayload(ctx, s.Q, asset.ID))
 			}
 			if game, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
 				EmitAssetDestroyed(ctx, s.Q, manager, asset.GameID, *asset, logRow(game))

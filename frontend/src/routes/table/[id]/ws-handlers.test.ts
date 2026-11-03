@@ -238,6 +238,21 @@ describe('asset.destroyed', () => {
 		expect(ctx.assets.find(a => a.id === 1)!.is_destroyed).toBe(false);
 	});
 
+	it("stamps destroyed_at from the server's value, not the client clock", () => {
+		const ctx = makeCtx({ assets: [asset(1)] as never });
+		handleWSMessage(ctx, {
+			type: EventTypes.AssetDestroyed,
+			payload: { asset_id: 1, destroyed_at: '2026-01-02T03:04:05Z' },
+		});
+		expect(ctx.assets[0].destroyed_at).toBe('2026-01-02T03:04:05Z');
+	});
+
+	it('falls back to a client stamp when the payload has none', () => {
+		const ctx = makeCtx({ assets: [asset(1)] as never });
+		handleWSMessage(ctx, { type: EventTypes.AssetDestroyed, payload: { asset_id: 1 } });
+		expect(ctx.assets[0].destroyed_at).toEqual(expect.any(String));
+	});
+
 	it('keeps a destroyed asset out of the break pickers and at-risk counts, and live ones in', () => {
 		const marg = [{ id: 1, is_torn: false }, { id: 2, is_torn: false }];
 		const ctx = makeCtx({

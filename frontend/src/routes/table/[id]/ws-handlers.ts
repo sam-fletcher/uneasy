@@ -259,13 +259,16 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			break;
 		}
 		case EventTypes.AssetDestroyed: {
-			const { asset_id } = msg.payload as { asset_id: number };
+			const { asset_id, destroyed_at } = msg.payload as { asset_id: number; destroyed_at?: string };
+			// Use the server's stamp so the tombstone order matches a reload's;
+			// the client clock is only a fallback for a payload without one.
+			const stamp = destroyed_at ?? new Date().toISOString();
 			// Keep the asset, flagged, as a reload's list does (the server's list
 			// includes destroyed assets). Panels look names up by id — "Broke bob's
 			// resource" — and the retinue shows a tombstone. Every picker already
 			// filters is_destroyed; dropping the row made live and reload disagree.
 			ctx.assets = ctx.assets.map(a =>
-				a.id === asset_id ? { ...a, is_destroyed: true } : a
+				a.id === asset_id ? { ...a, is_destroyed: true, destroyed_at: stamp } : a
 			);
 			break;
 		}
