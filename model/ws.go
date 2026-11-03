@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // WebSocket message types shared between the hub and the handler.
 //
 // Payload structs that carry database records use `any` for the embedded
@@ -276,6 +278,14 @@ type AssetTakenPayload struct {
 	Asset      any   `json:"asset"` // dbgen.Asset
 	OldOwnerID int64 `json:"old_owner_id"`
 	NewOwnerID int64 `json:"new_owner_id"`
+}
+
+// AssetDestroyedPayload carries the server's destroyed_at so a live client
+// orders tombstones the way a reload does, not by its own clock. Nothing
+// hidden: the id and timestamp are what the asset list already shows.
+type AssetDestroyedPayload struct {
+	AssetID     int64      `json:"asset_id"`
+	DestroyedAt *time.Time `json:"destroyed_at,omitempty"`
 }
 
 // AssetIDPayload is used for simple asset-by-ID events (leveraged, refreshed, destroyed).

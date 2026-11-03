@@ -7,11 +7,15 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/model"
 )
 
 // brokenAssetDetail takes *dbgen.Marginalium and used to dereference it
@@ -39,4 +43,18 @@ func TestBrokenAssetDetail_QuotesTornText(t *testing.T) {
 func TestBreakVerb(t *testing.T) {
 	assert.Equal(t, "destroyed", breakVerb(true))
 	assert.Equal(t, "broke", breakVerb(false))
+}
+
+// The asset.destroyed payload names the server's destroyed_at under that exact
+// key; the client orders tombstones by it, so a rename would silently put live
+// and reloaded retinues back in different orders.
+func TestAssetDestroyedPayload_JSONShape(t *testing.T) {
+	at := time.Date(2026, 11, 2, 10, 30, 0, 0, time.UTC)
+	b, err := json.Marshal(model.AssetDestroyedPayload{AssetID: 7, DestroyedAt: &at})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"asset_id":7,"destroyed_at":"2026-11-02T10:30:00Z"}`, string(b))
+
+	b, err = json.Marshal(model.AssetDestroyedPayload{AssetID: 7})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"asset_id":7}`, string(b), "absent timestamp is omitted, not null")
 }

@@ -313,3 +313,27 @@ func allPostBodies(t *testing.T, q *dbgen.Queries, gameID int64) string {
 	}
 	return sb.String()
 }
+
+// assetDestroyedPayload must carry the stamp the database wrote, so a live
+// client sorts tombstones exactly as a reload (which reads destroyed_at).
+func TestAssetDestroyedPayload_CarriesServerTimestamp(t *testing.T) {
+	pool := openTestDB(t)
+	q := dbgen.New(pool)
+	ctx := context.Background()
+	tg := newTestGame(t, q, 2)
+
+	asset, err := q.CreateAsset(ctx, dbgen.CreateAssetParams{
+		GameID: tg.Game.ID, OwnerID: tg.Players[0].ID, CreatorID: tg.Players[0].ID,
+		AssetType: model.AssetHolding, Name: "doomed holding",
+	})
+	require.NoError(t, err)
+	require.NoError(t, q.DestroyAsset(ctx, asset.ID))
+
+	after, err := q.GetAssetByID(ctx, asset.ID)
+	require.NoError(t, err)
+
+	p := assetDestroyedPayload(ctx, q, asset.ID)
+	assert.Equal(t, asset.ID, p.AssetID)
+	require.NotNil(t, p.DestroyedAt)
+	assert.True(t, after.DestroyedAt.Time.Equal(*p.DestroyedAt))
+}

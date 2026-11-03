@@ -153,7 +153,7 @@ func breakAsset(
 // system post. Shared by breakAsset's two destroy paths so both reach clients
 // and the action log identically.
 func emitAssetDestruction(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, asset *dbgen.Asset) {
-	broadcastEvent(manager, asset.GameID, model.EventAssetDestroyed, model.AssetIDPayload{AssetID: asset.ID})
+	broadcastEvent(manager, asset.GameID, model.EventAssetDestroyed, assetDestroyedPayload(ctx, q, asset.ID))
 	if game, gerr := q.GetGameByID(ctx, asset.GameID); gerr == nil {
 		EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, logRow(game))
 	}
@@ -334,4 +334,16 @@ func takeAssetEffect(
 	})
 	grantSecretsOnTake(ctx, q, manager, gameID, assetID, newOwnerID)
 	return updated, nil
+}
+
+// assetDestroyedPayload builds the asset.destroyed payload, re-reading the row
+// the destroy just stamped so the event carries the server's destroyed_at. If
+// the read fails the id still goes out and clients fall back to their clock.
+func assetDestroyedPayload(ctx context.Context, q *dbgen.Queries, assetID int64) model.AssetDestroyedPayload {
+	p := model.AssetDestroyedPayload{AssetID: assetID}
+	if a, err := q.GetAssetByID(ctx, assetID); err == nil && a.DestroyedAt.Valid {
+		t := a.DestroyedAt.Time
+		p.DestroyedAt = &t
+	}
+	return p
 }
