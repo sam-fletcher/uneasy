@@ -351,10 +351,9 @@ test('re-aim: a peer destroyed before resolution pauses the plan for the prepare
 	]);
 });
 
-// Audit Tier 6: "second-person wording shown to non-actors" — still open for the
-// post-offer wait line, which tells a bystander "You asked for …". See
-// docs/work/next/exchange-courtiers-bystander-second-person.md.
-test.fixme('after the offer, a bystander is not addressed as the one who asked', async ({ browser }) => {
+// Regression (audit Tier 6, second-person wording shown to non-actors): the
+// post-offer wait line must not tell a bystander "You asked for …".
+test('after the offer, a bystander is not addressed as the one who asked', async ({ browser }) => {
 	const { g, planID } = await resolvingGame(browser);
 	const { alice, bob, carol } = await openAll(g);
 	await offerTrade(g, planID);
@@ -363,10 +362,9 @@ test.fixme('after the offer, a bystander is not addressed as the one who asked',
 	await expect(carol.getByText('You asked for')).toHaveCount(0);
 });
 
-// Audit Tier 6 still open: the non-acting seat is left with no line saying who
-// the plan is waiting on. Pinned by shape (a wait line naming the actor), not
-// wording. See docs/work/next/exchange-courtiers-blank-waiting-panels.md.
-test.fixme('every seat that is not acting is told who the plan is waiting on', async ({ browser }) => {
+// Regression (audit Tier 6): a non-acting seat is always told who the plan is
+// waiting on. Pinned by shape (a wait line naming the actor), not wording.
+test('every seat that is not acting is told who the plan is waiting on', async ({ browser }) => {
 	const { g, planID } = await resolvingGame(browser, { easyTarget: true });
 	const { alice, bob, carol } = await openAll(g);
 	const waitLine = (page: Page, who: string) => page.locator('.ft-prompt').filter({ hasText: who });
@@ -381,7 +379,7 @@ test.fixme('every seat that is not acting is told who the plan is waiting on', a
 	await expect(waitLine(alice, 'bob')).toBeVisible();
 });
 
-test.fixme('the target is told the preparer is choosing, during a make', async ({ browser }) => {
+test('the target is told the preparer is choosing, during a make', async ({ browser }) => {
 	const { g, planID } = await resolvingGame(browser, { easyTarget: true });
 	const { alice, bob } = await openAll(g);
 	await offerTrade(g, planID);
@@ -390,10 +388,9 @@ test.fixme('the target is told the preparer is choosing, during a make', async (
 	await expect(bob.locator('.ft-prompt').filter({ hasText: 'alice' })).toBeVisible();
 });
 
-// Audit Tier 6 still open: the Riposte option is described to its chooser, the
-// target, in the preparer's voice ("you may break it first" is the preparer's
-// move). See docs/work/next/exchange-courtiers-riposte-wording.md.
-test.fixme('riposte is not described to the target as something "you" may break', async ({ browser }) => {
+// Regression (audit Tier 6): Riposte is described to its chooser, the target;
+// breaking the peer first is the preparer's move, not the target's.
+test('riposte is not described to the target as something "you" may break', async ({ browser }) => {
 	const { g, planID } = await resolvingGame(browser);
 	const { bob } = await openAll(g);
 	await offerTrade(g, planID);
@@ -401,4 +398,5 @@ test.fixme('riposte is not described to the target as something "you" may break'
 	const riposte = bob.getByRole('button', { name: 'Riposte' });
 	await expect(riposte).toBeVisible();
 	await expect(riposte).not.toContainText('you may break');
+	await expect(riposte).toContainText('They may break');
 });

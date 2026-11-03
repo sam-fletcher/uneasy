@@ -58,7 +58,7 @@ const CASES: Case[] = [
 		name: 'Exchange Courtiers', panel: ExchangeCourtiersPanel, planType: 'exchange_courtiers', rollOutcome: 'make',
 		resolution: { exchange_courtiers: { fair_trade_accepted: false } },
 		extra: { target_player_id: BYSTANDER, target_asset_id: 5 },
-		form: 'Apply choices', wait: 'sol is resolving Exchange Courtiers',
+		form: 'Apply choices', wait: 'Waiting for sol to say how the trade went',
 	},
 	{
 		name: 'Propose Decree', panel: ProposeDecreePanel, planType: 'propose_decree', rollOutcome: 'make',
