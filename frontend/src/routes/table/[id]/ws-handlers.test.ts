@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handleWSMessage, type WSContext } from './ws-handlers';
 import { EventTypes } from '$lib/ws';
+import { breakableAssets } from '$lib/components/plans/shared';
+import { atRiskCountByPlayer } from '$lib/tableHeader';
 import { getPlan, type Plan, type RecordRow } from '$lib/api';
 
 // Only getPlan is stubbed; the rest of the client is never reached by these tests.
@@ -219,5 +221,34 @@ describe('single-plan refetch ordering', () => {
 
 		expect(getPlanMock).toHaveBeenCalledWith(42);
 		expect(ctx.plans.find(p => p.id === 42)?.preparation_notes).toBe('fresh');
+	});
+});
+
+describe('asset.destroyed', () => {
+	const asset = (id: number, over: Record<string, unknown> = {}) =>
+		({ id, name: `a${id}`, owner_id: 1, marginalia: [], is_destroyed: false, destroyed_at: null, ...over });
+
+	it('keeps the asset, flagged destroyed, so name lookups still resolve (as after a reload)', () => {
+		const ctx = makeCtx({ assets: [asset(1), asset(2)] as never });
+		handleWSMessage(ctx, { type: EventTypes.AssetDestroyed, payload: { asset_id: 2 } });
+		expect(ctx.assets).toHaveLength(2);
+		const gone = ctx.assets.find(a => a.id === 2)!;
+		expect(gone.name).toBe('a2');
+		expect(gone.is_destroyed).toBe(true);
+		expect(ctx.assets.find(a => a.id === 1)!.is_destroyed).toBe(false);
+	});
+
+	it('keeps a destroyed asset out of the break pickers and at-risk counts, and live ones in', () => {
+		const marg = [{ id: 1, is_torn: false }, { id: 2, is_torn: false }];
+		const ctx = makeCtx({
+			assets: [
+				asset(1, { asset_type: 'resource', marginalia: marg }),
+				asset(2, { asset_type: 'resource', marginalia: marg }),
+			] as never,
+		});
+		handleWSMessage(ctx, { type: EventTypes.AssetDestroyed, payload: { asset_id: 1 } });
+		expect(ctx.assets.find(a => a.id === 1)!.is_destroyed).toBe(true);
+		expect(breakableAssets(ctx.assets).map(a => a.id)).toEqual([2]);
+		expect(atRiskCountByPlayer(ctx.assets).get(1) ?? 0).toBeLessThanOrEqual(1);
 	});
 });

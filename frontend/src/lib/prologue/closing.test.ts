@@ -52,6 +52,10 @@ function asset(overrides: Partial<Asset> = {}): Asset {
 }
 
 describe('findMainCharacter', () => {
+	it('skips a destroyed main character', () => {
+		expect(findMainCharacter([asset({ owner_id: 1, is_main_character: true, is_destroyed: true })], 1)).toBeNull();
+	});
+
 	it('returns null with no viewer', () => {
 		expect(findMainCharacter([asset({ is_main_character: true })], null)).toBeNull();
 	});

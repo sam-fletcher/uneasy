@@ -18,7 +18,7 @@ export const MAIN_CHARACTER_PLACEHOLDER = '[Main Character]';
 
 export function findMainCharacter(assets: Asset[], playerID: number | null): Asset | null {
 	if (playerID == null) return null;
-	return assets.find((a) => a.owner_id === playerID && a.is_main_character) ?? null;
+	return assets.find((a) => a.owner_id === playerID && a.is_main_character && !a.is_destroyed) ?? null;
 }
 
 export function isMcNamed(mc: Asset | null): boolean {
