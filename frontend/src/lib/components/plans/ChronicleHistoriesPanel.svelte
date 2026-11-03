@@ -36,7 +36,7 @@
 	import ChoicesApplied from './ChoicesApplied.svelte';
 	import DifficultyMeter from './shared/DifficultyMeter.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
-	import { parseResolutionData, playerName, assetsWithIntactMarginalia } from './shared';
+	import { parseResolutionData, playerName, assetsWithIntactMarginalia, resolutionActorID } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -66,8 +66,12 @@
 	// The preparer resolves their own plan; the perform_steps demand winner may
 	// drive the choice in their place.
 	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
+	// Post-roll steps belong to the perform_steps winner when one holds the plan,
+	// else the preparer (mirrors the server's actsForPreparer). Pre-roll steps
+	// stay on isPreparer: perform_steps is post-roll only.
 	const amChoiceActor = $derived(
-		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		plan != null && currentPlayerID != null
+			&& currentPlayerID === resolutionActorID(plan, plans),
 	);
 
 	const OPTIONS = [
@@ -497,7 +501,7 @@
 					</fieldset>
 					{#if !amChoiceActor}
 						<p class="ft-prompt muted">
-							{playerName(players, plan.preparer_id)} is choosing options…
+							{playerName(players, resolutionActorID(plan, plans))} is choosing options…
 						</p>
 					{/if}
 				{/if}

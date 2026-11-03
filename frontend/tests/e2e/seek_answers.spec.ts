@@ -611,12 +611,9 @@ test('seek answers make: a pick with no valid target is carried by the forfeit h
 	await expect.poll(() => sa.planStatus(alice.ctx.request, t.planID), { timeout: 10_000 }).toBe('resolved');
 });
 
-// BUG (docs/work/next/seek-answers-zero-pick-panel-reverts.md): the panel decides "choices
-// made" from the picked options alone (choicesDone = existingChoices.length > 0), not from
-// the committed marker the server sets, so after a zero-pick mar commit everyone is shown
-// the picker again and the preparer is never offered the self-flaw penalty. Un-fixme this
-// when it is fixed.
-test.fixme('seek answers mar: after a zero-pick commit the panels move on to the self-flaw', async ({ browser }) => {
+// A zero-pick commit still counts as "choices made" (the server's committed marker, not the
+// picked options), so the panel moves on to the self-flaw penalty instead of reverting.
+test('seek answers mar: after a zero-pick commit the panels move on to the self-flaw', async ({ browser }) => {
 	const t = await sa.setUp(browser, track, openContexts);
 	const { alice, bob, carol } = t;
 	await sa.openTables(t);
@@ -674,10 +671,9 @@ test('seek answers make: a bystander sees each step land live, with no reload', 
 	await expect(carol.page.getByText('Break a resource (1 remaining)')).toHaveCount(0);
 });
 
-// Make Demands' perform_steps winner drives the choices in the preparer's stead, but this
-// panel still gives the preparer a live picker she cannot submit. Same bug as
-// make_demands.spec.ts pins; see docs/work/next/perform-steps-panels-gate-on-preparer.md.
-test.fixme('seek answers under perform_steps: the preparer sees a wait line, not a picker', async ({ browser }) => {
+// Make Demands' perform_steps winner drives the choices in the preparer's stead; the preparer
+// is told who is choosing rather than shown a picker the server would refuse.
+test('seek answers under perform_steps: the preparer sees a wait line, not a picker', async ({ browser }) => {
 	const f = await H.seedMD({ target: 'seek_answers' });
 	await H.prepareDemand(f);
 	await H.reachRow(f);

@@ -19,7 +19,8 @@
 	import CardPicker from './CardPicker.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData,
-		playerName, assetName, assetsWithIntactMarginalia, playersExcept, }from './shared';
+		playerName, assetName, assetsWithIntactMarginalia, playersExcept, resolutionActorID,
+	} from './shared';
 
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -83,8 +84,12 @@
 	// The preparer resolves their own plan; the perform_steps demand winner may
 	// drive the choice in their place.
 	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
+	// Post-roll steps belong to the perform_steps winner when one holds the plan,
+	// else the preparer (mirrors the server's actsForPreparer). Pre-roll steps
+	// stay on isPreparer: perform_steps is post-roll only.
 	const amChoiceActor = $derived(
-		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		plan != null && currentPlayerID != null
+			&& currentPlayerID === resolutionActorID(plan, plans),
 	);
 
 	// ── Prep state ────────────────────────────────────────────────────────────
@@ -544,9 +549,9 @@
 				<p class="ft-prompt muted">Resolving…</p>
 			{/if}
 
-		{:else if !isPreparer && !isTarget}
+		{:else if (!isPreparer && !isTarget) || (isPreparer && !choiceActor && rollOutcome !== 'mar')}
 			<p class="ft-prompt muted">
-				{playerName(players, plan.preparer_id)} is resolving Exchange Courtiers…
+				{playerName(players, resolutionActorID(plan, plans))} is resolving Exchange Courtiers…
 			</p>
 		{/if}
 	</ResolvingCard>

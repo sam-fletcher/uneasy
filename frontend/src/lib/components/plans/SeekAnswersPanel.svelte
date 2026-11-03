@@ -29,7 +29,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
-	import { choicesCommitted, parseResolutionData, playerName, breakableAssets } from './shared';
+	import { choicesCommitted, parseResolutionData, playerName, breakableAssets, resolutionActorID } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import { hiddenCount } from '$lib/secretCounts';
 	import { useSecretCounts } from '$lib/secretCountsContext';
@@ -61,8 +61,12 @@
 	// The preparer resolves their own plan; the perform_steps demand winner may
 	// drive the choice in their place.
 	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
+	// Post-roll steps belong to the perform_steps winner when one holds the plan,
+	// else the preparer (mirrors the server's actsForPreparer). Pre-roll steps
+	// stay on isPreparer: perform_steps is post-roll only.
 	const amChoiceActor = $derived(
-		isPreparer || (currentPlayerID != null && currentPlayerID === performStepsWinnerID),
+		plan != null && currentPlayerID != null
+			&& currentPlayerID === resolutionActorID(plan, plans),
 	);
 
 	const OPTIONS = [
@@ -473,7 +477,7 @@
 
 {:else if plan}
 	{@const existingChoices = (parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option)}
-	{@const choicesDone = existingChoices.length > 0}
+	{@const choicesDone = existingChoices.length > 0 || hasCommittedChoices}
 	{@const brNeeded = countIn(existingChoices, 'break_resource')}
 	{@const rsNeeded = countIn(existingChoices, 'reveal_secret')}
 	{@const dtNeeded = countIn(existingChoices, 'declare_truth')}
@@ -525,7 +529,7 @@
 			     demand winner acting in their place) picks; everyone else sees the
 			     same option list greyed out. -->
 			{@const canPick = amChoiceActor}
-			{@const choiceActorName = playerName(players, performStepsWinnerID ?? plan.preparer_id)}
+			{@const choiceActorName = playerName(players, resolutionActorID(plan, plans))}
 			<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!canPick} disabled={!canPick}>
 				<div class="choices-section">
 					<p class="choices-header">
@@ -601,7 +605,7 @@
 			     list; everyone else sees the same area greyed out and read-only.
 			     The pickers and buttons are blocked by the disabled fieldset, and
 			     the cards take readOnly (they're role=checkbox, not form controls). -->
-			{@const canSubflow = isPreparer}
+			{@const canSubflow = amChoiceActor}
 			<div class="complete-section">
 				<!-- Committed state (Tier-1, ADR-006): the picked plan and the
 				     specifics of every step done so far, shown at full opacity to
@@ -815,7 +819,9 @@
 						</div>
 					{/if}
 
-					{#if subflowsDone && canSubflow}
+					<!-- Completion is always the preparer's (the server's CompletePlan
+					     is preparer-only), even when a perform_steps winner drove the steps. -->
+					{#if subflowsDone && isPreparer}
 						<p class="complete-note">
 							Bring the scene to a close, then complete the plan.
 						</p>
@@ -823,6 +829,10 @@
 							onclick={() => onComplete(plan)} disabled={resBusy}>
 							{resBusy ? '…' : 'Complete plan'}
 						</button>
+					{:else if subflowsDone}
+						<p class="ft-prompt muted">
+							Waiting for {playerName(players, plan.preparer_id)} to complete the plan…
+						</p>
 					{/if}
 				</fieldset>
 				{#if !canSubflow}
@@ -831,7 +841,7 @@
 							Waiting for {playerName(players, pendingQuestion.target_id)} to answer
 							{playerName(players, plan.preparer_id)}'s question…
 						{:else}
-							{playerName(players, plan.preparer_id)} is resolving Seek Answers…
+							{playerName(players, resolutionActorID(plan, plans))} is resolving Seek Answers…
 						{/if}
 					</p>
 				{/if}
@@ -839,7 +849,7 @@
 
 		{:else}
 			<p class="ft-prompt muted">
-				{playerName(players, plan.preparer_id)} is resolving Seek Answers…
+				{playerName(players, resolutionActorID(plan, plans))} is resolving Seek Answers…
 			</p>
 		{/if}
 	</ResolvingCard>
