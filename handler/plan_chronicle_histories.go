@@ -41,6 +41,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -124,6 +125,23 @@ func (chHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	}
 	// Return nil — the roll is created later when the preparer calls cast-roll.
 	return nil, nil
+}
+
+// CheckChoice refuses a make/mar before the invoke phase has ended in a cast: the
+// plan has no roll until then, so a submission would commit with nothing rolled.
+func (chHandler) CheckChoice(
+	_ context.Context,
+	_ *dbgen.Queries,
+	_ *dbgen.Plan,
+	_ *dbgen.Player,
+	_ *ResolutionData,
+	roll *dbgen.DiceRoll,
+	_ string,
+) error {
+	if roll == nil {
+		return errors.New("set the scene and cast the dice before choosing options")
+	}
+	return nil
 }
 
 // AutoApplyChoiceOnRoll opts Chronicle Histories into recording what its roll

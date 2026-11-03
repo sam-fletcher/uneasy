@@ -553,7 +553,7 @@ func TestProposeDuelHTTP_RejectsNonStakedAndOverBudget(t *testing.T) {
 	// (a) Claiming a non-staked (but owner-owned) asset is rejected…
 	code, _ := h.post(prepID, duelRoute(planID, "make-choice"),
 		map[string]any{"result": "make", "choices": []string{strconv.FormatInt(targUnstaked, 10)}})
-	require.NotEqual(t, http.StatusOK, code, "non-staked asset should be rejected")
+	require.Equal(t, http.StatusUnprocessableEntity, code, "non-staked asset should be a 422, not a 500")
 
 	// …and a rejected claim leaves no half-applied state: nothing was leveraged.
 	for _, aid := range []int64{prepPeer, targPeerA, targPeerB, targPeerC} {

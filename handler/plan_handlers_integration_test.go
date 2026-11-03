@@ -1137,3 +1137,88 @@ func TestSpreadRumors_BreakTarget_DestroysBlankTarget(t *testing.T) {
 
 	h.requireEnded(plan.ID)
 }
+
+// srStaleTakeSetup drives a Spread Rumors make to an open take-consent request for
+// the victim's "Crown Jewels" and returns the pieces a stale-consent test needs.
+func srStaleTakeSetup(t *testing.T) (h *planLifecycle, plan dbgen.Plan, focusIdx, otherIdx int, loot int64) {
+	t.Helper()
+	h = newPlanLifecycle(t, 3)
+	focusIdx = h.focusPlayerIdx()
+	otherIdx = (focusIdx + 1) % 3
+	target := h.seedPeer(otherIdx, "Julius")
+	loot = h.seedPeer(otherIdx, "Crown Jewels")
+	notes := "the king is a fraud"
+	plan = h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolveAndCast(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 1)
+	code, body := h.post(focusIdx, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/request-take-consent", map[string]any{
+		"result": makeOutcome, "choices": []string{"take_asset"}, "take_asset_ids": []int64{loot},
+	})
+	require.Equalf(t, http.StatusOK, code, "request-take-consent: %v", body)
+	return h, plan, focusIdx, otherIdx, loot
+}
+
+// TestSpreadRumors_TakeConsent_StaleAssetLapsesTheRequest proves consent is
+// re-checked at commit: an asset that changed hands or was destroyed after the
+// request was made is not transferred, nothing commits, and the request is
+// cleared so the aggressor can pick again instead of the plan wedging.
+func TestSpreadRumors_TakeConsent_StaleAssetLapsesTheRequest(t *testing.T) {
+	cases := map[string]func(t *testing.T, h *planLifecycle, loot int64, focusIdx int){
+		"destroyed": func(t *testing.T, h *planLifecycle, loot int64, _ int) {
+			require.NoError(t, h.q.DestroyAsset(context.Background(), loot))
+		},
+		"changed hands to the aggressor": func(t *testing.T, h *planLifecycle, loot int64, focusIdx int) {
+			require.NoError(t, h.q.TransferAsset(context.Background(), dbgen.TransferAssetParams{
+				ID: loot, OwnerID: h.tg.Players[focusIdx].ID,
+			}))
+		},
+		"changed hands to a third player": func(t *testing.T, h *planLifecycle, loot int64, focusIdx int) {
+			third := (focusIdx + 2) % 3
+			require.NoError(t, h.q.TransferAsset(context.Background(), dbgen.TransferAssetParams{
+				ID: loot, OwnerID: h.tg.Players[third].ID,
+			}))
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			h, plan, focusIdx, otherIdx, loot := srStaleTakeSetup(t)
+			ctx := context.Background()
+			mutate(t, h, loot, focusIdx)
+			before, err := h.q.GetAssetByID(ctx, loot)
+			require.NoError(t, err)
+
+			code, body := h.post(otherIdx, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/respond-take-consent",
+				map[string]any{"agree": true})
+			require.Equalf(t, http.StatusConflict, code, "stale consent: %v", body)
+
+			after, err := h.q.GetAssetByID(ctx, loot)
+			require.NoError(t, err)
+			assert.Equal(t, before.OwnerID, after.OwnerID, "a stale asset must not be transferred")
+			rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
+			require.NoError(t, err)
+			assert.Empty(t, rumors, "nothing commits on a lapsed request")
+
+			refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
+			require.NoError(t, err)
+			rd := loadResolutionData(refreshed.ResolutionData)
+			require.NotNil(t, rd.SpreadRumors)
+			assert.Nil(t, rd.SpreadRumors.PendingTakeConsent, "the lapsed request is cleared")
+			assert.False(t, rd.SpreadRumors.TakeAssetDenied, "nobody refused")
+			assert.False(t, rd.SpreadRumors.TakeResolved)
+
+			// The lapse is on the record, naming the asset.
+			logWith(t, h, "lapsed", "Crown Jewels")
+
+			// No wedge: the aggressor can ask again, for another of the victim's assets.
+			again := h.seedPeer(otherIdx, "Royal Seal")
+			code, body = h.post(focusIdx, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/request-take-consent",
+				map[string]any{"result": makeOutcome, "choices": []string{"take_asset"}, "take_asset_ids": []int64{again}})
+			require.Equalf(t, http.StatusOK, code, "re-request after a lapse: %v", body)
+		})
+	}
+}

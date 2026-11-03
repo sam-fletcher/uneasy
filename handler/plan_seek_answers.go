@@ -97,6 +97,23 @@ func (saHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 	return nil, nil
 }
 
+// CheckChoice refuses a make/mar before the pre-roll narration has been cast: the
+// plan has no roll until then, so a submission would commit with nothing rolled.
+func (saHandler) CheckChoice(
+	_ context.Context,
+	_ *dbgen.Queries,
+	_ *dbgen.Plan,
+	_ *dbgen.Player,
+	_ *ResolutionData,
+	roll *dbgen.DiceRoll,
+	_ string,
+) error {
+	if roll == nil {
+		return errors.New("restate your methods and cast the dice before choosing options")
+	}
+	return nil
+}
+
 // ApplyChoice records the make/mar choices (kept in ResData.MakeMarChoices by
 // MakeChoice) and, on a mar, fixes the self-flaw penalty. Mechanical effects
 // (break_resource, reveal_secret) are performed afterwards via extra routes.

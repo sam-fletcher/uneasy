@@ -595,11 +595,8 @@ test.describe('current implementation: the take after a mar is compulsory', () =
 
 });
 
-// Known bug, not fixed here — docs/work/next/claim-non-staked-asset-returns-500.md.
-// A claim naming an asset the loser never staked is a client error, but the
-// server answers 500 (ApplyChoice returns a plain error that the route maps to
-// an internal failure).
-test.fixme('a claim naming a non-staked asset is refused with a 4xx, not a 500', async ({ browser }) => {
+// A claim naming an asset the loser never staked is a client error (422), nothing applied.
+test('a claim naming a non-staked asset is refused with a 4xx, not a 500', async ({ browser }) => {
 	const g = await duelWithDice(browser, 'bobWins', { alice: 3, bob: 1 }, { viewport: PHONE });
 	const spare = await addPeer(g, 'alice', 'Alice Spare'); // owned, never staked
 	const alice = await openTable(g, 'alice');

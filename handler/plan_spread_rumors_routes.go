@@ -800,6 +800,36 @@ func srRespondTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// The board may have changed since the request was stashed. The victim agreed to
+		// give up these assets as they stood; if any has since moved or been destroyed
+		// the consent no longer describes anything, so drop the request and let the
+		// aggressor pick again (the option is not flagged denied — nobody refused).
+		stale, staleErr := srStaleTakeAssets(ctx, deps.Q, plan, req)
+		if staleErr != nil {
+			respondInternalErr(w, r, "could not re-check the requested assets", staleErr)
+			return
+		}
+		if len(stale) > 0 {
+			sr.PendingTakeConsent = nil
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondInternalErr(w, r, "could not save consent response", err)
+				return
+			}
+			srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s's request to take %s lapsed: %s no longer %s's to give. They can choose again.",
+				playerDisplayName(ctx, deps.Q, req.RequestedBy), srAssetListOr(ctx, deps.Q, req.AssetIDs, "assets"),
+				srAssetListOr(ctx, deps.Q, stale, "an asset"), playerDisplayName(ctx, deps.Q, req.VictimID)))
+			broadcastEvent(deps.Manager, plan.GameID, model.EventRumorTakeConsentResolved,
+				model.RumorTakeConsentPayload{PlanID: plan.ID})
+			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+			respondErr(
+				w,
+				http.StatusConflict,
+				"an asset in this request has changed hands or been destroyed since it was made; the request has lapsed",
+			)
+			return
+		}
+
 		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 			"%s consented to %s's request.",
 			playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, req.RequestedBy)))
@@ -814,6 +844,30 @@ func srRespondTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// srStaleTakeAssets returns the ids in a stashed take request that can no longer
+// be taken: destroyed, gone, or no longer owned by the victim the request named.
+// It checks the stashed assets, not whether the victim is still the player the
+// rumor's target asset belongs to. Only a missing row counts as stale; any other
+// database error is returned so a hiccup can't lapse a valid consent.
+func srStaleTakeAssets(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	req *gamepkg.TakeConsentRequest,
+) ([]int64, error) {
+	var stale []int64
+	for _, aid := range req.AssetIDs {
+		a, err := q.GetAssetByID(ctx, aid)
+		if err != nil && !isNoRows(err) {
+			return nil, fmt.Errorf("load asset %d: %w", aid, err)
+		}
+		if err != nil || a.GameID != plan.GameID || a.OwnerID != req.VictimID || a.IsDestroyed {
+			stale = append(stale, aid)
+		}
+	}
+	return stale, nil
+}
+
 // srAssetList renders asset ids as a marked, comma-joined list for log bodies
 // ("**Ring**, **Crown**"); an asset that cannot be loaded is skipped.
 func srAssetList(ctx context.Context, q *dbgen.Queries, ids []int64) string {
@@ -824,6 +878,15 @@ func srAssetList(ctx context.Context, q *dbgen.Queries, ids []int64) string {
 		}
 	}
 	return joinWithAnd(names)
+}
+
+// srAssetListOr is srAssetList with a fallback for when no named asset can be
+// loaded, so a log line never reads with a hole in it.
+func srAssetListOr(ctx context.Context, q *dbgen.Queries, ids []int64, fallback string) string {
+	if list := srAssetList(ctx, q, ids); list != "" {
+		return list
+	}
+	return fallback
 }
 
 // srCommitTakeConsent applies an agreed-to (or self-consented) take: it records

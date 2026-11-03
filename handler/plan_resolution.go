@@ -235,7 +235,7 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		deps := &PlanDeps{Store: s, Manager: manager}
 		if err := h.ApplyChoice(ctx, deps, plan, &resData, body.Choices, body.Result); err != nil {
-			respondInternalErr(w, r, "could not apply plan effects", err)
+			respondApplyChoiceErr(w, r, err)
 			return
 		}
 
@@ -299,6 +299,16 @@ func checkChoiceMatchesRoll(w http.ResponseWriter, roll *dbgen.DiceRoll, result 
 		return false
 	}
 	return true
+}
+
+// respondApplyChoiceErr answers a failed ApplyChoice: a handler that rejects the
+// pick as a client error says so with an *httpError; anything else is a 500.
+func respondApplyChoiceErr(w http.ResponseWriter, r *http.Request, err error) {
+	if _, isHTTP := errors.AsType[*httpError](err); isHTTP {
+		respondHTTPErr(w, r, err)
+		return
+	}
+	respondInternalErr(w, r, "could not apply plan effects", err)
 }
 
 // checkChoiceGate consults the plan's optional ChoiceGate precondition and writes
