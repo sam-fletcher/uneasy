@@ -32,6 +32,7 @@
 	import RowPill from './plans/RowPill.svelte';
 	import { highlightedRow } from '$lib/highlight';
 	import type { PlanContext } from './plans/types';
+	import { provideActiveRoll } from './plans/demand/activeRollContext';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	const TRACK_LABEL: Record<RankingCategory, string> = {
@@ -279,6 +280,8 @@
 			detail: { plan_type: selectedPlanType, prep },
 		}));
 	}
+
+	provideActiveRoll(() => activeRoll);
 
 	const ctx = $derived<PlanContext>({
 		gameID, currentRow, endingMode, plans, assets, players, rankings,

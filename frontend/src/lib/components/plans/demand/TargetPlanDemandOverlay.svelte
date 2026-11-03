@@ -19,8 +19,9 @@
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
 	import {
 		playerName, activeDemandAgainst, demandWinnersFromPlan,
-		parseResolutionData, targetHasPreparerRoll, PLAN_SHORT,
+		parseResolutionData, targetHasPreparerRoll, demandOptionInertReason, PLAN_SHORT,
 	} from '../shared';
+	import { useActiveRoll } from './activeRollContext';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
@@ -85,6 +86,43 @@
 	const targetResData = $derived(parseResolutionData(plan));
 	const leverageFinalized = $derived(targetResData.demand_leverage_finalized === true);
 	const retargetFinalized = $derived(targetResData.demand_retarget_finalized === true);
+
+	// Whether this plan's own roll has landed. The server refuses both forms
+	// once it has (409), so they go with it. A roll that isn't in hand yet counts
+	// as open: the retarget route also serves the window before the roll exists.
+	const activeRoll = useActiveRoll();
+	const ownRoll = $derived.by(() => {
+		const r = activeRoll();
+		return r != null && r.plan_id === plan.id ? r : null;
+	});
+	const rollClosed = $derived(ownRoll != null && ownRoll.outcome != null);
+	const rollOpen = $derived(ownRoll != null && ownRoll.outcome == null);
+
+	// A winner who is also the plan's preparer has no hand-off: the server never
+	// holds the roll for them. They still get the retarget form (the route accepts
+	// them, and it is their only way to re-aim), without the "roll waits" copy;
+	// their own leverage goes through the ordinary leverage button, so no picker.
+	const winnerIsPreparer = (id: number | null | undefined) => id === plan.preparer_id;
+	const retargetHoldsRoll = $derived(
+		targetRolls && !winnerIsPreparer(winners.keep_or_change_target),
+	);
+	const showRetargetForm = $derived(
+		amKeepOrChangeTargetWinner
+		&& (plan.status === 'pending' || plan.status === 'resolving')
+		&& !rollClosed,
+	);
+	const showLeverageForm = $derived(
+		amControlLeverageWinner
+		&& !winnerIsPreparer(winners.control_leverage)
+		&& plan.status === 'resolving'
+		&& !rollClosed
+		// The route 409s with no open roll; a target with no roll of its own gets
+		// the "dud" note instead of a picker, so it needs none.
+		&& (!targetRolls || rollOpen),
+	);
+	// Seek Answers and Chronicle Histories give their preparer no assets, so
+	// there is nothing for the keep_assets winner to take.
+	const keepAssetsLive = $derived(demandOptionInertReason('keep_assets', plan.plan_type) == null);
 
 	// ── Retarget form ─────────────────────────────────────────────────────────
 
@@ -192,7 +230,7 @@
 					{/if}
 				</li>
 			{/if}
-			{#if winners.keep_assets != null && winners.keep_assets !== plan.preparer_id}
+			{#if keepAssetsLive && winners.keep_assets != null && winners.keep_assets !== plan.preparer_id}
 				<li>
 					Any assets this plan would have given
 					{playerName(players, plan.preparer_id)}
@@ -215,7 +253,8 @@
 			{#if winners.keep_or_change_target != null && winners.keep_or_change_target !== plan.preparer_id}
 				<li>
 					{playerName(players, winners.keep_or_change_target)}
-					decides whether this plan keeps or changes its target{targetRolls
+					decides whether this plan keeps or changes its target{retargetHoldsRoll
+						&& !retargetFinalized && !rollClosed
 						? ', and the roll waits until they say'
 						: ''}.
 				</li>
@@ -223,19 +262,22 @@
 		</ul>
 
 		<!-- ── Retarget picker ─────────────────────────────────────────── -->
-		{#if amKeepOrChangeTargetWinner}
+		{#if showRetargetForm}
 			<div class="demand-form">
 				<p class="choices-header">Keep or change this plan's target</p>
 				{#if retargetFinalized}
 					<p class="choices-note">
-						You've settled where this plan is aimed{targetRolls
+						You've settled where this plan is aimed{retargetHoldsRoll
 							? ' — the roll is no longer held for you'
-							: ''}. You may still adjust it until the plan resolves.
+							: ''}. You may still adjust it until {targetRolls
+							? 'the dice land'
+							: plan.plan_type === 'clandestinely_liaise'
+								? 'the plan resolves' : 'its roll resolves'}.
 					</p>
 				{:else}
 					<p class="choices-note">
 						Keeping the target is as much your call as re-aiming it — but the
-						table needs to hear which{targetRolls ? ', so the roll waits on you' : ''}.
+						table needs to hear which{retargetHoldsRoll ? ', so the roll waits on you' : ' you choose'}.
 					</p>
 				{/if}
 				{#if retargetError}<ErrorText message={retargetError} variant="panel" />{/if}
@@ -272,7 +314,7 @@
 		{/if}
 
 		<!-- ── Leverage picker ─────────────────────────────────────────── -->
-		{#if amControlLeverageWinner && plan.status === 'resolving'}
+		{#if showLeverageForm}
 			<div class="demand-form">
 				<p class="choices-header">
 					Leverage {playerName(players, plan.preparer_id)}'s assets onto the roll

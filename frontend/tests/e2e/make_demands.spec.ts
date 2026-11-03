@@ -448,10 +448,9 @@ test('a marred demand: the target preparer places the counter-demand, the demand
 	expect((await H.planOf(f, f.demandID)).result).toBe('mar');
 });
 
-// The banner promises keep_assets spoils the plan can never produce; the draft
-// card for the same option says Seek Answers gives its preparer no assets.
-// See docs/work/next/demand-overlay-forms-shown-to-preparer-and-after-roll.md.
-test.fixme('perform steps: the banner does not promise spoils from a plan that awards none', async ({ browser }) => {
+// The banner must not promise keep_assets spoils a plan can never produce; the
+// draft card for the same option says Seek Answers gives its preparer no assets.
+test('perform steps: the banner does not promise spoils from a plan that awards none', async ({ browser }) => {
 	const f = await H.seedMD({ target: 'seek_answers' });
 	await performStepsOpen(f);
 	const { alice, bob, carol } = await H.openPages(browser, f);
@@ -461,18 +460,18 @@ test.fixme('perform steps: the banner does not promise spoils from a plan that a
 	}
 });
 
-// ── Overlay forms that cannot do anything ─────────────────────────────────────
-// See docs/work/next/demand-overlay-forms-shown-to-preparer-and-after-roll.md.
+// ── Overlay forms follow what the server will accept ──────────────────────────
 
-test.fixme('overlay: a preparer who won keep-or-change-target herself is not asked to settle it', async ({ browser }) => {
+test('overlay: a preparer who won keep-or-change-target is offered it, with no roll held for them', async ({ browser }) => {
 	const f = await H.seedMD({ target: 'seek_answers' });
 	await leverageHeld(f); // alice, the preparer, holds keep_or_change_target
 	const { alice } = await H.openPages(browser, f);
-	await expect(alice.getByRole('button', { name: 'Keep the current target' })).toHaveCount(0);
-	await expect(alice.getByRole('button', { name: 'Re-aim this plan' })).toHaveCount(0);
+	await expect(alice.getByRole('button', { name: 'Re-aim this plan' })).toBeVisible();
+	await expect(alice.getByText('so the roll waits on you')).toHaveCount(0);
+	await expect(alice.getByRole('button', { name: 'Leverage none — let the roll fail' })).toHaveCount(0);
 });
 
-test.fixme('overlay: once the dice have landed, the leverage form is gone', async ({ browser }) => {
+test('overlay: once the dice have landed, the leverage form is gone', async ({ browser }) => {
 	const f = await H.seedMD({ target: 'seek_answers' });
 	const rollID = await leverageHeld(f);
 	const { bob } = await H.openPages(browser, f);
@@ -482,7 +481,7 @@ test.fixme('overlay: once the dice have landed, the leverage form is gone', asyn
 	await expect(bob.getByRole('button', { name: 'Leverage none — let the roll fail' })).toHaveCount(0);
 });
 
-test.fixme('overlay: once the dice have landed, the retarget form is gone — the server no longer takes it', async ({ browser }) => {
+test('overlay: once the dice have landed, the retarget form is gone — the server no longer takes it', async ({ browser }) => {
 	const f = await H.seedMD({ target: 'spread_rumors' });
 	const rollID = await retargetHeld(f);
 	const { bob } = await H.openPages(browser, f);
