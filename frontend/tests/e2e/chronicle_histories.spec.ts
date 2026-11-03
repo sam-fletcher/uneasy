@@ -102,7 +102,7 @@ test('pre-roll: everyone sees the live meter, only the preparer picks, one submi
 
 	// Everyone sees the same starting difficulty, floored by alice's knowledge rank.
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('knowledge rank 2 · 0 artifacts invoked → max = 2')).toBeVisible();
+		await expect(p.getByText('knowledge rank 2 (a lower rank is better) · 0 artifacts invoked → max = 2')).toBeVisible();
 	}
 	// The others wait; they get neither the submit button nor an enabled scene field.
 	await expect(bob.getByText('alice is setting the scene…')).toBeVisible();
@@ -113,10 +113,10 @@ test('pre-roll: everyone sees the live meter, only the preparer picks, one submi
 	await pickArtifact(alice, "alice's artifact");
 	await pickArtifact(alice, "bob's artifact");
 	await pickArtifact(alice, "carol's artifact");
-	await expect(alice.getByText('knowledge rank 2 · 3 artifacts invoked → max = 3')).toBeVisible();
+	await expect(alice.getByText('knowledge rank 2 (a lower rank is better) · 3 artifacts invoked → max = 3')).toBeVisible();
 	// Two invocations sit under the floor: the difficulty stays at the rank.
 	await pickArtifact(alice, "carol's artifact");
-	await expect(alice.getByText('knowledge rank 2 · 2 artifacts invoked → max = 2')).toBeVisible();
+	await expect(alice.getByText('knowledge rank 2 (a lower rank is better) · 2 artifacts invoked → max = 2')).toBeVisible();
 
 	// The submit needs a scene.
 	const cast = alice.getByRole('button', { name: 'Set the scene & gather your dice' });
@@ -499,15 +499,74 @@ test('another player\'s mar choice reaches open panels and the Waiting On bar wi
 	await expect(bar).not.toContainText('bob');
 });
 
-test.fixme('the Buffet\'s Mar tab says every player chooses, the preparer included', async ({ browser }) => {
-	// Pinned by docs/work/next/chronicle-buffet-mar-says-other-players.md: the rules
-	// have all players choose on a mar, and the panel's own note says "including
-	// the preparer", but the reference tab says "Every OTHER player".
+test('the Buffet\'s Mar tab says every player chooses, the preparer included', async ({ browser }) => {
 	const { g } = await resolvingGame(browser, PHONE);
 	const alice = await g.ctx.alice.newPage();
 	await alice.goto(`/table/${g.gameID}`);
 	await alice.getByText('What can happen?').click();
 	await alice.getByRole('tab', { name: 'Mar', exact: true }).click();
-	await expect(alice.getByText('Every player chooses one of these instead', { exact: false })).toBeVisible();
+	await expect(alice.getByText('Every player, the preparer included, chooses one of these instead')).toBeVisible();
 	await expect(alice.getByText('Every OTHER player')).toHaveCount(0);
+});
+
+test('the Buffet words the take-control option as the player whose character it is deciding', async ({ browser }) => {
+	const { g } = await resolvingGame(browser, PHONE);
+	const alice = await g.ctx.alice.newPage();
+	await alice.goto(`/table/${g.gameID}`);
+	await alice.getByText('What can happen?').click();
+	await expect(alice.getByText('decides how they act; if you can\'t agree, drop this option').first()).toBeVisible();
+	await expect(alice.getByText('requires that player\'s consent')).toHaveCount(0);
+	await expectNoHorizontalScroll(alice);
+});
+
+test('pre-roll: the meter says a lower rank is better, and the scene field says it goes to the chat', async ({ browser }) => {
+	const { g } = await resolvingGame(browser, PHONE);
+	const { alice } = await openAll(g);
+	await expect(alice.getByText('a lower rank is better')).toBeVisible();
+	await expect(alice.getByText('Set the scene (this goes to the chat)')).toBeVisible();
+	await alice.screenshot({ path: 'test-results/chronicle-preroll-375.png', fullPage: true });
+});
+
+test('make: with nothing invoked, "Break an invoked artifact" is disabled with a hint, and the summary is optional', async ({ browser }) => {
+	const g = await seedCHGame(browser, PHONE);
+	track(g.gameID);
+	const { planID } = await rolledCH(g, [], 'make');
+	const { alice } = await openAll(g);
+
+	const breakChip = alice.getByRole('button', { name: OPT.break, exact: true });
+	await expect(breakChip).toHaveAttribute('aria-disabled', 'true');
+	await expect(alice.getByText('Needs an invoked artifact that still has a marginalia to tear').first()).toBeVisible();
+	// A tap does nothing: no picker opens.
+	await breakChip.click({ force: true });
+	await expect(alice.getByText('Invoked artifact to break')).toHaveCount(0);
+	await expectNoHorizontalScroll(alice);
+	await alice.screenshot({ path: 'test-results/chronicle-make-375.png', fullPage: true });
+
+	// No summary typed: still submittable, as the server allows.
+	await chooseOption(alice, OPT.echo);
+	await expect(alice.getByText('(optional, you can expand in the chat)')).toBeVisible();
+	await alice.getByRole('button', { name: 'Submit choice' }).click();
+	await expect.poll(async () => (await chronicleData(g, planID)).make_choices_done ?? 0).toBe(1);
+});
+
+test('mar: with nothing invoked, break is unavailable with a hint; a bystander mirror\'s chips are not dimmed by it', async ({ browser }) => {
+	const g = await seedCHGame(browser, PHONE);
+	track(g.gameID);
+	await rolledCH(g, [], 'mar');
+	const { alice, bob } = await openAll(g);
+	for (const p of [alice, bob]) {
+		await expect(p.getByRole('button', { name: OPT.break, exact: true })).toHaveAttribute('aria-disabled', 'true');
+		await expect(p.getByText('Needs an invoked artifact that still has a marginalia to tear').first()).toBeVisible();
+	}
+	await bob.screenshot({ path: 'test-results/chronicle-mar-375.png', fullPage: true });
+});
+
+test('make: a bystander\'s mirrored chips are not dimmed by the unavailable-break rule', async ({ browser }) => {
+	const g = await seedCHGame(browser, PHONE);
+	track(g.gameID);
+	await rolledCH(g, ['bob'], 'make');
+	const { bob } = await openAll(g);
+	const echo = bob.getByRole('button', { name: OPT.echo, exact: true });
+	await expect(echo).toBeVisible();
+	expect(await echo.evaluate(el => getComputedStyle(el).opacity)).toBe('1');
 });

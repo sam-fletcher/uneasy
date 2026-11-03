@@ -181,6 +181,13 @@
 	cursor: not-allowed;
 }
 
+/* An option that can't be picked right now (Chronicle break with nothing to
+   break). aria-disabled, not disabled, so a tap can say why via the hint. */
+.chip-btn.unavailable {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
 .chip-btn:focus-visible {
 	outline: 2px solid var(--color-accent);
 	outline-offset: 1px;

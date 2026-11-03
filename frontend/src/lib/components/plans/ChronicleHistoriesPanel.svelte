@@ -78,7 +78,7 @@
 		{ key: 'break_artifact',  label: 'Break an invoked artifact',       	desc: ' — Choose a marginalia to tear.' },
 		{ key: 'invoke_another',  label: 'Invoke another artifact', 			desc: '  and introduce it to the scene.' },
 		{ key: 'echo_present',    label: "Cut to the present to show history's impact", desc: '' },
-		{ key: 'total_control',   label: 'Take narrative control of a moment',	desc: " — Dictating a character's actions requires that player's consent." },
+		{ key: 'total_control',   label: 'Take narrative control of a moment',	desc: " — The player whose character it is decides how they act; if you can't agree, drop this option." },
 	] as const;
 
 	// Read-only "what can happen?" reference (shared Buffet).
@@ -89,7 +89,7 @@
 		},
 		{
 			key: 'mar', label: 'Mar',
-			always: 'Every OTHER player chooses one of these instead:',
+			always: 'Every player, the preparer included, chooses one of these instead:',
 			opts: OPTIONS.map(o => ({ key: o.key, label: o.label })),
 		},
 	];
@@ -170,7 +170,7 @@
 	const meterCount = $derived(isPreparer ? selectedInvokeIDs.length : invokedIDs.length);
 	const difficulty = $derived(Math.min(6, Math.max(1, knowledgeRank, meterCount)));
 	const meterReason = $derived(
-		`knowledge rank ${knowledgeRank} · ${meterCount} artifact${meterCount === 1 ? '' : 's'} invoked → max = ${difficulty}`
+		`knowledge rank ${knowledgeRank} (a lower rank is better) · ${meterCount} artifact${meterCount === 1 ? '' : 's'} invoked → max = ${difficulty}`
 	);
 	async function submitPreRoll(p: Plan) {
 		if (preRollBusy) return;
@@ -194,11 +194,19 @@
 	let makeMargID = $state<number | null>(null);
 	let makeBusy = $state(false);
 
+	// "Break an invoked artifact" needs an invoked artifact with a marginalia left.
+	const canBreak = $derived(assetsWithIntactMarginalia(invokedArtifacts).length > 0);
+	const breakHint = 'Needs an invoked artifact that still has a marginalia to tear.';
+	// Another player's tear can use up the last marginalia while Break is selected.
+	$effect(() => {
+		if (canBreak) return;
+		if (makeOption === 'break_artifact') { makeOption = ''; makeAssetID = null; makeMargID = null; }
+		if (marSelected === 'break_artifact') { marSelected = ''; marAssetID = null; marMargID = null; }
+	});
 	const makeNeedsAsset = $derived(makeOption === 'break_artifact' || makeOption === 'invoke_another');
 	const makeNeedsMarg = $derived(makeOption === 'break_artifact');
 	const makeReady = $derived(
 		!!makeOption
-		&& !!makeNarration.trim()
 		&& (!makeNeedsAsset || makeAssetID != null)
 		&& (!makeNeedsMarg || makeMargID != null),
 	);
@@ -404,7 +412,7 @@
 					onSelectMulti={(ids) => (selectedInvokeIDs = ids)}
 					readOnly={!isPreparer}
 				/>
-				<FormField label="Set the scene">
+				<FormField label="Set the scene (this goes to the chat)">
 					<textarea rows={3} bind:value={sceneText} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
 						placeholder="Describe the moment from the past you're shedding light on…"
 						disabled={!isPreparer} required></textarea>
@@ -449,7 +457,11 @@
 											type="button"
 											class="chip-btn"
 											class:active={makeOption === opt.key}
+											class:unavailable={opt.key === 'break_artifact' && !canBreak}
+											aria-disabled={opt.key === 'break_artifact' && !canBreak}
+											title={opt.key === 'break_artifact' && !canBreak ? breakHint : undefined}
 											onclick={() => {
+												if (opt.key === 'break_artifact' && !canBreak) return;
 												makeOption = makeOption === opt.key ? '' : opt.key;
 												makeAssetID = null;
 												makeMargID = null;
@@ -458,6 +470,7 @@
 									{/each}
 								</div>
 							</FormField>
+									{#if !canBreak}<p class="choices-note">{breakHint}</p>{/if}
 							{#if makeOption === 'break_artifact'}
 								<CardPicker
 									label="Invoked artifact to break (tear a marginalia)"
@@ -486,9 +499,9 @@
 									onSelect={(id) => (makeAssetID = id)}
 								/>
 							{/if}
-							<FormField label="Summary (you can expand in the chat):">
+							<FormField label="Summary (optional, you can expand in the chat):">
 								<textarea rows={2} bind:value={makeNarration} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
-									placeholder="Describe this beat of the scene" required></textarea>
+									placeholder="Describe this beat of the scene (optional)"></textarea>
 							</FormField>
 							{#if amChoiceActor}
 								<button class="action-btn primary"
@@ -572,7 +585,11 @@
 										type="button"
 										class="chip-btn"
 										class:active={marSelected === opt.key}
+											class:unavailable={opt.key === 'break_artifact' && !canBreak}
+											aria-disabled={opt.key === 'break_artifact' && !canBreak}
+											title={opt.key === 'break_artifact' && !canBreak ? breakHint : undefined}
 										onclick={() => {
+											if (opt.key === 'break_artifact' && !canBreak) return;
 											marSelected = marSelected === opt.key ? '' : opt.key;
 											marAssetID = null;
 											marMargID = null;
@@ -581,6 +598,7 @@
 								{/each}
 							</div>
 						</FormField>
+								{#if !canBreak}<p class="choices-note">{breakHint}</p>{/if}
 						{#if marSelected === 'break_artifact'}
 							<CardPicker
 								label="Invoked artifact to break (tear a marginalia)"
