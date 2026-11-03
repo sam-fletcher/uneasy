@@ -736,6 +736,9 @@ func chApplyMarEffect(
 		if err != nil || asset.GameID != plan.GameID || asset.AssetType != model.AssetArtifact {
 			return "", http.StatusBadRequest, "asset must be an artifact in this game"
 		}
+		if asset.IsDestroyed {
+			return "", http.StatusConflict, "that artifact has been destroyed and cannot be invoked"
+		}
 		if !slices.Contains(ch.InvokedArtifactIDs, *in.assetID) {
 			ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, *in.assetID)
 		}

@@ -687,3 +687,32 @@ func TestChronicleHistories_MakeChoice_RefusedBeforeDiceCast(t *testing.T) {
 		require.Equalf(t, http.StatusConflict, code, "%s before the cast: %v", result, body)
 	}
 }
+
+// A destroyed artifact is a corpse: the UI hides it from the picker, but a
+// stale client or direct call must be refused by the server too.
+func TestChronicleHistories_Make_InvokeAnother_RefusesDestroyedArtifact(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	ctx := context.Background()
+
+	notes := "the lost charter"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanChronicleHistories,
+		PreparationNotes: &notes,
+	})
+	require.NotNil(t, plan.RowNumber)
+	preparerIdx := h.preparerIdxFor(plan.ID)
+	saPinKnowledgeRank(t, h, plan.PreparerID, 1)
+
+	otherIdx := (preparerIdx + 1) % len(h.tg.Players)
+	artifactID, _ := chSeedArtifact(t, h, otherIdx, "burnt ledger", 1)
+
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	roll := chCastRoll(t, h, plan.ID)
+	h.forceRoll(roll.ID, "make", 6)
+
+	require.NoError(t, h.q.DestroyAsset(ctx, artifactID))
+
+	code, body := chMakeStep(h, plan.ID, "invoke_another", artifactID, 0)
+	assert.Equalf(t, http.StatusConflict, code, "invoking a destroyed artifact: %v", body)
+}
