@@ -213,7 +213,7 @@
 			{#if peers.length > 0}
 				{#each peers as p (p.peer_asset_id)}
 					{@const asset = assetByID(p.peer_asset_id)}
-					{#if asset}
+					{#if asset && !asset.is_destroyed}
 						{@const lbl = controllerLabel(p)}
 						<!-- A peer wears its OWNING retinue's colour regardless of
 						     who currently controls it in the scene (owner ruling,

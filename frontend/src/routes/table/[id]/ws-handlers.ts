@@ -260,7 +260,13 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		}
 		case EventTypes.AssetDestroyed: {
 			const { asset_id } = msg.payload as { asset_id: number };
-			ctx.assets = ctx.assets.filter(a => a.id !== asset_id);
+			// Keep the asset, flagged, as a reload's list does (the server's list
+			// includes destroyed assets). Panels look names up by id — "Broke bob's
+			// resource" — and the retinue shows a tombstone. Every picker already
+			// filters is_destroyed; dropping the row made live and reload disagree.
+			ctx.assets = ctx.assets.map(a =>
+				a.id === asset_id ? { ...a, is_destroyed: true } : a
+			);
 			break;
 		}
 		case EventTypes.MarginaliaAdded: {

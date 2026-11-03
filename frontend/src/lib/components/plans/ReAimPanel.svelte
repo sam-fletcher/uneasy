@@ -84,13 +84,13 @@
 		players.filter((p) => options.some((o) => o.target_player_id === p.id)),
 	);
 	const peerChoices = $derived(
-		assets.filter((a) => options.some(
+		assets.filter((a) => !a.is_destroyed && options.some(
 			(o) => o.target_asset_id === a.id && o.target_player_id === pickedPlayerID,
 		)),
 	);
 	// Spread Rumors: every living asset the server offered.
 	const assetChoices = $derived(
-		assets.filter((a) => options.some((o) => o.target_asset_id === a.id)),
+		assets.filter((a) => !a.is_destroyed && options.some((o) => o.target_asset_id === a.id)),
 	);
 	// Make Demands: the offered plans, as readable cards.
 	const planChoices = $derived(

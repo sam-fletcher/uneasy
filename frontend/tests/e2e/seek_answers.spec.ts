@@ -445,9 +445,9 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 	for (const p of [bob, carol]) {
 		const list = p.page.locator('.resolved-so-far');
 		await expect(list.getByText("Learned the secrets of bob's holding")).toBeVisible({ timeout: 10_000 });
-		// Live, the destroyed resource has already left the asset list, so the line
-		// names "an asset"; a reload names it (docs/work/next/destroyed-asset-name-live-vs-reload.md).
-		await expect(list.getByText(/^Broke /)).toBeVisible();
+		// The destroyed resource stays in the live asset list (flagged), so the line
+		// names it, as a reload does.
+		await expect(list.getByText(`Broke ${bobResource.name}`)).toBeVisible();
 	}
 
 	// The penalty is the one thing left owed: not resolved, alice is the one waited on.
@@ -672,9 +672,7 @@ test('seek answers make: a bystander sees each step land live, with no reload', 
 		data: { asset_id: bobResource.id, marginalia_id: bobResource.marginalia[0].id },
 	});
 	expect(brk.ok(), `break-resource: ${await brk.text()}`).toBeTruthy();
-	// (Breaking bob's only note destroys the resource, which drops out of the asset
-	// list live and on reload alike, so the line names "an asset", not "bob's resource".)
-	await expect(carol.page.locator('.resolved-so-far').getByText('Broke', { exact: false })).toBeVisible({ timeout: 10_000 });
+	await expect(carol.page.locator('.resolved-so-far').getByText(`Broke ${bobResource.name}`)).toBeVisible({ timeout: 10_000 });
 	await expect(carol.page.getByText('Break a resource (1 remaining)')).toHaveCount(0);
 });
 

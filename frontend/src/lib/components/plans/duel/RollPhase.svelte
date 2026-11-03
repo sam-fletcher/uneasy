@@ -53,11 +53,11 @@
 	const loserStakes = $derived(stakes.filter(s => s.player_id === loserID));
 	// The take operates on the loser's staked Asset records; CardPicker wants
 	// Asset objects, so resolve each stake's asset (dropping any that have since
-	// vanished).
+	// been destroyed: a destroyed asset can't be taken).
 	const loserStakeAssets = $derived(
 		loserStakes
 			.map(s => assets.find(a => a.id === s.asset_id))
-			.filter((a): a is Asset => a != null),
+			.filter((a): a is Asset => a != null && !a.is_destroyed),
 	);
 	const effectiveTake = $derived(Math.min(takeCount, loserStakes.length));
 	const choicesApplied = $derived(duelRes.phase === 'done');

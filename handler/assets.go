@@ -139,7 +139,7 @@ func createAssetWithFirstMarginalia(
 
 // ListAssets handles GET /api/tables/{id}/assets.
 //
-// Returns all non-destroyed assets in the game, each with their marginalia.
+// Returns all assets in the game, destroyed ones included (flagged is_destroyed), each with their marginalia.
 func ListAssets(s *db.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gameID, _, ok := parseGamePlayer(w, r, s.Q)

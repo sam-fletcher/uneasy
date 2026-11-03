@@ -97,8 +97,8 @@ func tearAndReplaceOldMainCharacter(
 		}
 	}
 
-	// Clear the old MC's flag. AssetDestroyed already removes it from
-	// frontend state, so AssetUpdated is only needed when not destroyed.
+	// Clear the old MC's flag and tell the table, destroyed or not: a destroyed
+	// asset stays in the client's list (flagged), so its star must clear live.
 	err := q.SetMainCharacter(ctx, dbgen.SetMainCharacterParams{
 		ID:              oldMC.ID,
 		IsMainCharacter: false,
@@ -107,11 +107,9 @@ func tearAndReplaceOldMainCharacter(
 		respondInternalErr(w, r, "could not clear old main character", err)
 		return false
 	}
-	if !oldMC.IsDestroyed {
-		if e, err := loadAssetEnriched(r, q, oldMC.ID); err == nil {
-			if h, ok := manager.Get(asset.GameID); ok {
-				h.BroadcastEvent(model.EventAssetUpdated, model.AssetPayload{Asset: e})
-			}
+	if e, err := loadAssetEnriched(r, q, oldMC.ID); err == nil {
+		if h, ok := manager.Get(asset.GameID); ok {
+			h.BroadcastEvent(model.EventAssetUpdated, model.AssetPayload{Asset: e})
 		}
 	}
 	return true
