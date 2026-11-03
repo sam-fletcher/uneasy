@@ -113,7 +113,7 @@ export const MAKE_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	exchange_courtiers: [
 		{ key: 'fair_trade', level: 1, label: 'A Fair Trade', desc: 'The offered trade goes through anyway.' },
-		{ key: 'riposte',    level: 2, label: 'Riposte',      desc: 'You take the requested peer — you may break it first.' },
+		{ key: 'riposte',    level: 2, label: 'Riposte',      desc: 'They may break the requested peer first, then you take it.' },
 		{ key: 'forfeit',    level: 3, label: 'Forfeit',      desc: 'You take the requested peer.' },
 	],
 	// Make Introductions mar is per-peer (other_retinue / broken_arrival /

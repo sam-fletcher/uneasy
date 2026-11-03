@@ -53,7 +53,7 @@
 			intro: "The target chooses one, based on how much you missed the difficulty by:",
 			opts: [
 				{ key: 'fair_trade', label: '-1: A Fair Trade', desc: " — The offered trade goes through." },
-				{ key: 'riposte', label: '-2: Riposte', desc: " — They take the requested asset (you may break it first)." },
+				{ key: 'riposte', label: '-2: Riposte', desc: " — They take the requested asset (the preparer may break it first)." },
 				{ key: 'forfeit', label: '-3: Forfeit', desc: " — They take the requested asset." },
 			],
 		},
@@ -400,6 +400,16 @@
 							<em>{assetName(assets, plan.target_asset_id)}</em>.
 						</p>
 					{/if}
+				{:else}
+					<p class="ft-prompt muted">
+						{#if preparerIntactPeers.length === 0}
+							Waiting for {playerName(players, plan.preparer_id)} to proceed to the dice roll — they
+							have no peers to trade for <em>{assetName(assets, plan.target_asset_id)}</em>.
+						{:else}
+							Waiting for {playerName(players, plan.target_player_id)} to propose a fair trade for
+							<em>{assetName(assets, plan.target_asset_id)}</em>.
+						{/if}
+					</p>
 				{/if}
 			{:else}
 				<!-- Offer has been made. Preparer decides. -->
@@ -419,10 +429,15 @@
 							</button>
 						</div>
 					</div>
-				{:else}
+				{:else if isTarget}
 					<p class="ft-prompt">
 						You asked for <em>{assetName(assets, ftAssetID)}</em> in exchange.
 						Waiting for {playerName(players, plan.preparer_id)}'s decision…
+					</p>
+				{:else}
+					<p class="ft-prompt muted">
+						{playerName(players, plan.target_player_id)} asked for <em>{assetName(assets, ftAssetID)}</em>
+						in exchange. Waiting for {playerName(players, plan.preparer_id)}'s decision…
 					</p>
 				{/if}
 			{/if}
@@ -549,9 +564,17 @@
 				<p class="ft-prompt muted">Resolving…</p>
 			{/if}
 
-		{:else if (!isPreparer && !isTarget) || (isPreparer && !choiceActor && rollOutcome !== 'mar')}
+		{:else if !choiceActor}
+			<!-- Everyone but the chooser: the target on a mar, else the make actor
+			     (the preparer, or a perform_steps winner standing in). -->
 			<p class="ft-prompt muted">
-				{playerName(players, resolutionActorID(plan, plans))} is resolving Exchange Courtiers…
+				{#if rollOutcome === 'mar'}
+					Waiting for {playerName(players, plan.target_player_id)} to choose how to respond to the mar…
+				{:else if rollOutcome === 'make'}
+					Waiting for {playerName(players, resolutionActorID(plan, plans))} to say how the trade went…
+				{:else}
+					Dice roll in progress…
+				{/if}
 			</p>
 		{/if}
 	</ResolvingCard>
