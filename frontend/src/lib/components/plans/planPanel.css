@@ -181,6 +181,11 @@
 	cursor: not-allowed;
 }
 
+.chip-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
 .chip-btn:focus-visible {
 	outline: 2px solid var(--color-accent);
 	outline-offset: 1px;
