@@ -268,7 +268,7 @@
 	}
 
 	const existingChoices = $derived((parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option));
-	const choicesDone = $derived(existingChoices.length > 0);
+	const choicesDone = $derived(hasCommittedChoices);
 
 	// ── Mar asset-picker effects (driven by the preparer) ─────────────────────
 	// give_peer (a) and break_self (c) are repeatable: the preparer picks a

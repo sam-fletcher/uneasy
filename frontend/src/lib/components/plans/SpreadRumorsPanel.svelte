@@ -648,7 +648,7 @@
 
 {:else if plan}
 	{@const existingChoices = (parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option)}
-	{@const choicesDone = existingChoices.length > 0}
+	{@const choicesDone = hasCommittedChoices}
 	{@const btNeeded = countIn(existingChoices, 'break_target')}
 	{@const hsNeeded = countIn(existingChoices, 'hide_source')}
 	{@const btRemaining = Math.max(0, btNeeded - btDone)}

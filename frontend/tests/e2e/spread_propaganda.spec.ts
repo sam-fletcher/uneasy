@@ -356,14 +356,20 @@ test('spread propaganda mar: a zero-pick commit auto-resolves the plan, leaving 
 	await expect(alice.page.getByText('choose exactly')).toBeVisible({ timeout: 10_000 });
 
 	// A hand-built commit with nothing picked (the picker never offers one). Nothing is
-	// owed, so the plan resolves itself; this pins that, not the committed marker on its
-	// own (which only matters where the plan doesn't auto-complete — Spread Rumors).
+	// owed, so the plan resolves itself and the picker never returns. The committed marker is
+	// asserted below; the panel's reading of it is pinned by the render test, since
+	// auto-resolve hides the difference here.
 	const res = await alice.ctx.request.post(`/api/plans/${t.planID}/make-choice`, {
 		data: { result: 'mar', choices: [] },
 	});
 	expect(res.ok(), `zero-pick commit: ${await res.text()}`).toBeTruthy();
 
 	await expect.poll(() => planStatus(alice.ctx.request, t.planID), { timeout: 10_000 }).toBe('resolved');
+	// The panel reads done-state from the server's marker, not from the picked options
+	// (there are none), so the picker never comes back.
+	const rd = await (await alice.ctx.request.get(`/api/plans/${t.planID}`)).json();
+	expect(rd.resolution_data?.choice_submitted).toBe(true);
+	expect(rd.resolution_data?.make_mar_choices ?? []).toHaveLength(0);
 	for (const p of [alice.page, bob.page]) {
 		await expect(p.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 		await expect(p.getByText('Dice roll in progress…')).toHaveCount(0);
