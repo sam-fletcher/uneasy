@@ -53,8 +53,9 @@ than guessing — the `grilling` skill shows how to ask.
   history. Commit messages carry the reason for each change (the `commit`
   skill); tidy and force-push your own branch freely before it merges.
 - Nothing private goes into the repo, its commits or its PR descriptions:
-  never quote the rulebook verbatim (paraphrase it), and never copy files in
-  from the private folder.
+  never copy files in from the private folder, and don't reproduce the
+  rulebook at length. An occasional bullet in the UI or sentence in a comment
+  is fine.
 
 ## Coordinating sessions
 

@@ -6,4 +6,4 @@ verified, behaviour changes worth a look before merging, open questions
 for the owner, and anything noticed but deliberately not fixed. Open questions also get a file each
 in [../questions/](../questions/) (see [../README.md](../README.md)).
 
-Paraphrase the rulebook; never quote it verbatim — this repo is public.
+This repo is public: keep rulebook quotes short (`CLAUDE.md` has the rule).

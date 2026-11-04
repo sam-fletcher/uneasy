@@ -90,5 +90,5 @@ sessions find it. Elsewhere:
 - **What the current piece of work should now do** → its brief, or its
   hand-over note.
 
-The repo is public: in the tracker, notes and PRs, paraphrase rulings and
-the rulebook, and never copy text from the private files.
+The repo is public: in the tracker, notes and PRs, paraphrase rulings, keep
+rulebook quotes short, and never copy text from the private files.

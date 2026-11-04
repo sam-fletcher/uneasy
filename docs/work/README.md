@@ -38,8 +38,8 @@ the same lines.
   script's output, not in a committed file. `make check-fast` fails if
   `TRACKER.md` comes back or a file's front matter is malformed.
 
-The repo is public: paraphrase the rulebook, never quote it, and copy
-nothing in from the private folder.
+The repo is public: keep rulebook quotes short (`CLAUDE.md` has the rule),
+and copy nothing in from the private folder.
 
 ## Never audited
 
