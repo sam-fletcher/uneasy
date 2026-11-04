@@ -322,5 +322,8 @@ func requirePlanForExtraRoute(
 	if !requirePlanResolving(w, plan) {
 		return nil, nil, false
 	}
+	if !requireDemandAimSettled(w, r, q, plan) {
+		return nil, nil, false
+	}
 	return plan, player, true
 }

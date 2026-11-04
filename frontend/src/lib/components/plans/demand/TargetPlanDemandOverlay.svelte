@@ -20,7 +20,7 @@
 	import {
 		playerName, activeDemandAgainst, demandWinnersFromPlan,
 		parseResolutionData, targetHasPreparerRoll, demandOptionInertReason, PLAN_SHORT,
-		targetIsRetargetable,
+		targetIsRetargetable, aimSettlesFirst, demandAimLocked,
 	} from '../shared';
 	import { useActiveRoll } from './activeRollContext';
 	import PlayerChips from '../PlayerChips.svelte';
@@ -41,10 +41,13 @@
 		/** Bindable: parent uses this to hide the target preparer's own
 		 *  leverage button (backend would 403). null when no winner exists. */
 		controlLeverageWinnerID?: number | null;
+		/** A duel only: the viewer has laid their own stake, so the aim is closed. (The
+		 *  opponent's stake is hidden until both commit; the server knows it, and 409s.) */
+		ownStakeLaid?: boolean;
 	}
 
 	let {
-		plan, plans, players, assets, currentPlayerID,
+		plan, plans, players, assets, currentPlayerID, ownStakeLaid = false,
 		performStepsWinnerID = $bindable(null),
 		controlLeverageWinnerID = $bindable(null),
 	}: Props = $props();
@@ -105,14 +108,28 @@
 	// their own leverage goes through the ordinary leverage button, so no picker.
 	const winnerIsPreparer = (id: number | null | undefined) => id === plan.preparer_id;
 	const retargetable = $derived(targetIsRetargetable(plan.plan_type));
+	const settlesFirst = $derived(aimSettlesFirst(plan.plan_type));
+	// What the Make Demands winner holds up while they have not decided: the roll on a plan that
+	// has one of the preparer's own, the plan's first step on a duel or liaison.
 	const retargetHoldsRoll = $derived(
-		retargetable && targetRolls && !winnerIsPreparer(winners.keep_or_change_target),
+		retargetable && !settlesFirst && targetRolls
+		&& !winnerIsPreparer(winners.keep_or_change_target),
+	);
+	const retargetHoldsPlan = $derived(
+		settlesFirst && !winnerIsPreparer(winners.keep_or_change_target),
+	);
+	// A duel or liaison closes its aim for good once the Make Demands winner has settled it (or,
+	// for a preparer who won it, once the first step has begun).
+	const aimClosed = $derived(
+		settlesFirst && (demandAimLocked(plan, ownStakeLaid)
+			|| (retargetFinalized && !winnerIsPreparer(winners.keep_or_change_target))),
 	);
 	const showRetargetForm = $derived(
 		amKeepOrChangeTargetWinner
 		&& retargetable
 		&& (plan.status === 'pending' || plan.status === 'resolving')
-		&& !rollClosed,
+		&& !rollClosed
+		&& !aimClosed,
 	);
 	const showLeverageForm = $derived(
 		amControlLeverageWinner
@@ -265,7 +282,9 @@
 						decides whether this plan keeps or changes its target{retargetHoldsRoll
 							&& !retargetFinalized && !rollClosed
 							? ', and the roll waits until they say'
-							: ''}.
+							: retargetHoldsPlan && !retargetFinalized && !aimClosed
+								? ', and the plan waits until they say'
+								: ''}.
 					{/if}
 				</li>
 			{/if}
@@ -281,13 +300,12 @@
 							? ' — the roll is no longer held for you'
 							: ''}. You may still adjust it until {targetRolls
 							? 'the dice land'
-							: plan.plan_type === 'clandestinely_liaise'
-								? 'the plan resolves' : 'its roll resolves'}.
+							: 'the plan begins'}.
 					</p>
 				{:else}
 					<p class="choices-note">
 						Keeping the target is as much your call as re-aiming it — but the
-						table needs to hear which{retargetHoldsRoll ? ', so the roll waits on you' : ' you choose'}.
+						table needs to hear which{retargetHoldsRoll ? ', so the roll waits on you' : retargetHoldsPlan ? ', so the plan waits on you before its first step' : ' you choose'}.
 					</p>
 				{/if}
 				{#if retargetError}<ErrorText message={retargetError} variant="panel" />{/if}

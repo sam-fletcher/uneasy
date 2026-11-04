@@ -259,7 +259,7 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusForbidden, "only the keep_or_change_target winner may retarget")
 			return
 		}
-		if !mdRetargetOpen(w, plan) {
+		if !mdRetargetOpen(ctx, w, deps.Q, plan, winnerID) {
 			return
 		}
 
@@ -300,7 +300,14 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 		// Finalize: flip the plan's flag so the winner stops blocking the roll.
 		// Done after the target write above so the gate clears only once their
 		// decision is locked in — the same ordering /demand-leverage uses.
-		resData := loadResolutionData(plan.ResolutionData)
+		// Reload: the re-aim above may itself have rewritten resolution_data (a duel's
+		// initiative), and saving the copy loaded at the top of the request would undo it.
+		fresh, err := deps.Q.GetPlanByID(ctx, plan.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not reload plan", err)
+			return
+		}
+		resData := loadResolutionData(fresh.ResolutionData)
 		resData.DemandRetargetFinalized = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not finalize demand retarget", err)
@@ -360,13 +367,33 @@ func mdLogRetarget(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, winner
 		playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
 }
 
-// mdRetargetOpen reports whether the keep_or_change_target route may act on plan,
-// writing a 409 when it may not. The option is live only on the plans that have
-// a "who" (design principle 9); on every other plan it is a plain dud.
-func mdRetargetOpen(w http.ResponseWriter, plan *dbgen.Plan) bool {
+// mdRetargetOpen reports whether the keep_or_change_target route may act on plan
+// right now, writing a 409 when it may not. The option is live only on the plans
+// that have a "who" (principle 9); on every other plan it is a plain dud. A duel
+// or liaison settles its aim before its first step, then the route closes: once
+// stakes are down, who the opponent is can no longer change. (A preparer who won
+// the option and never finalized keeps re-aiming freely until the first step.)
+func mdRetargetOpen(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	winnerID int64,
+) bool {
 	if !demandCanRetarget(plan.PlanType) {
-		respondErr(w, http.StatusConflict, "keep_or_change_target is inert on this plan: it has no aim a demand could change")
+		respondErr(
+			w,
+			http.StatusConflict,
+			"keep_or_change_target is inert on this plan: it has no aim a demand could change",
+		)
 		return false
+	}
+	if demandAimSettlesFirst(plan.PlanType) {
+		rd := loadResolutionData(plan.ResolutionData)
+		if demandAimLocked(ctx, q, plan, &rd) || (rd.DemandRetargetFinalized && winnerID != plan.PreparerID) {
+			respondErr(w, http.StatusConflict, "this plan's aim is already settled")
+			return false
+		}
 	}
 	return true
 }
@@ -444,6 +471,22 @@ func mdApplyRetarget(
 	}); err != nil {
 		respondInternalErr(w, r, "could not update plan targets", err)
 		return false
+	}
+	// A duel computed who declares first when it started resolving, from the
+	// opponent it then had. The Make Demands winner settles the aim after that, so redo it.
+	if plan.PlanType == model.PlanProposeDuel && targetPlayerID != nil {
+		if duel := resData.Duel; duel != nil && duel.Phase == duelPhaseSetup {
+			init, err := pduelInitiativeHolder(ctx, deps.Q, plan, *targetPlayerID)
+			if err != nil {
+				respondInternalErr(w, r, "could not recompute duel initiative", err)
+				return false
+			}
+			duel.InitiativePlayerID = &init
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondInternalErr(w, r, "could not save duel initiative", err)
+				return false
+			}
+		}
 	}
 	return true
 }

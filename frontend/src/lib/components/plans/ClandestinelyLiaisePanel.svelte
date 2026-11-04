@@ -26,7 +26,7 @@
 	import DelayThresholdNote from './shared/DelayThresholdNote.svelte';
 	import {
 		playerName,
-		playersExcept, ownerIntactAssets, finaleSlotSpent,
+		playersExcept, ownerIntactAssets, finaleSlotSpent, pendingAimSettler,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -405,6 +405,8 @@
 		} finally { shareBusy = false; }
 	}
 
+	// The Make Demands winner still to settle the partner: the liaison's first step waits.
+	const aimSettler = $derived(plan ? pendingAimSettler(plan, plans) : null);
 </script>
 
 {#if mode === 'prep'}
@@ -513,7 +515,12 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
-		{#if !amParticipant && !amPreparer && !amPartner}
+		{#if aimSettler != null}
+			<p class="ft-prompt muted">
+				{playerName(players, aimSettler)}, the Make Demands winner, is settling who
+				{playerName(players, plan.preparer_id)} meets. The liaison begins once they have.
+			</p>
+		{:else if !amParticipant && !amPreparer && !amPartner}
 			<p class="ft-prompt muted">A clandestine liaison is underway.</p>
 
 		<!-- Phase 1: Together At Last ─────────────────────────────── -->

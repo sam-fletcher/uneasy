@@ -137,18 +137,9 @@ func (pduelHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.P
 	state := resData.EnsureDuel()
 	state.Phase = duelPhaseSetup
 
-	prepRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, plan.PreparerID, model.CategoryEsteem)
+	initiative, err := pduelInitiativeHolder(ctx, deps.Q, plan, *plan.TargetPlayerID)
 	if err != nil {
-		return nil, fmt.Errorf("preparer esteem rank: %w", err)
-	}
-	targetRank, err := playerRankInCategory(ctx, deps.Q, plan.GameID, *plan.TargetPlayerID, model.CategoryEsteem)
-	if err != nil {
-		return nil, fmt.Errorf("target esteem rank: %w", err)
-	}
-	// Lower rank number = higher esteem status = initiative.
-	initiative := plan.PreparerID
-	if targetRank < prepRank {
-		initiative = *plan.TargetPlayerID
+		return nil, err
 	}
 	state.InitiativePlayerID = &initiative
 
@@ -156,6 +147,25 @@ func (pduelHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.P
 		return nil, fmt.Errorf("save duel setup: %w", err)
 	}
 	return nil, nil
+}
+
+// pduelInitiativeHolder says who declares first: whoever of the preparer and the
+// opponent holds the higher esteem status (lower rank number), the preparer on a
+// tie. It is a function of the opponent, so a Make Demands re-aim of the duel
+// recomputes it (mdApplyRetarget).
+func pduelInitiativeHolder(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, opponentID int64) (int64, error) {
+	prepRank, err := playerRankInCategory(ctx, q, plan.GameID, plan.PreparerID, model.CategoryEsteem)
+	if err != nil {
+		return 0, fmt.Errorf("preparer esteem rank: %w", err)
+	}
+	targetRank, err := playerRankInCategory(ctx, q, plan.GameID, opponentID, model.CategoryEsteem)
+	if err != nil {
+		return 0, fmt.Errorf("target esteem rank: %w", err)
+	}
+	if targetRank < prepRank {
+		return opponentID, nil
+	}
+	return plan.PreparerID, nil
 }
 
 // MaxChoices caps how many of the loser's staked assets the duel's victor may claim:

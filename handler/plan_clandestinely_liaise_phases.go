@@ -30,6 +30,9 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "advance-liaise is only for Clandestinely Liaise")
 			return
 		}
+		if !requireDemandAimSettled(w, r, deps.Q, plan) {
+			return
+		}
 		if plan.Status != model.PlanResolving {
 			respondErr(w, http.StatusConflict, "plan is not in resolving status")
 			return

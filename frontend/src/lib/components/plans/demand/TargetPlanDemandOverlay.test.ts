@@ -17,12 +17,15 @@ const LEVERAGE = 'Leverage none';
 function overlay(o: {
 	viewer: number; targetType?: string; status?: string; rolled?: boolean;
 	keepOrChange?: number; leverage?: number; retargetFinalized?: boolean;
-	noRoll?: boolean; otherPlanRoll?: boolean;
+	noRoll?: boolean; otherPlanRoll?: boolean; resolution?: string;
 }): string {
 	const target = {
 		id: 10, plan_type: o.targetType ?? 'spread_rumors', status: o.status ?? 'resolving',
 		preparer_id: ALICE, target_player_id: BOB, target_asset_id: null,
-		resolution_data: JSON.stringify({ demand_retarget_finalized: o.retargetFinalized ?? false }),
+		resolution_data: JSON.stringify({
+			...(o.resolution ? JSON.parse(o.resolution) : {}),
+			demand_retarget_finalized: o.retargetFinalized ?? false,
+		}),
 	};
 	const demand = {
 		id: 11, plan_type: 'make_demands', status: 'resolved', result: 'make',
@@ -104,11 +107,44 @@ describe('TargetPlanDemandOverlay forms', () => {
 		expect(body).not.toContain('until the plan resolves');
 	});
 
-	it('names the plan, not the dice, where there is no roll of the preparer’s own', () => {
-		const liaise = overlay({ viewer: BOB, targetType: 'clandestinely_liaise', retargetFinalized: true });
-		expect(liaise).toContain('until the plan resolves');
-		const duel = overlay({ viewer: BOB, targetType: 'propose_duel', retargetFinalized: true });
-		expect(duel).toContain('until its roll resolves');
+	it('closes the form on a duel or liaison once the winner has settled the aim', () => {
+		for (const t of ['clandestinely_liaise', 'propose_duel']) {
+			const body = overlay({ viewer: BOB, targetType: t, retargetFinalized: true });
+			expect(body).not.toContain(KEEP);
+			expect(body).not.toContain('Re-aim this plan');
+		}
+	});
+
+	it('holds a duel or liaison before its first step, not a roll', () => {
+		for (const t of ['clandestinely_liaise', 'propose_duel']) {
+			const winner = overlay({ viewer: BOB, targetType: t, noRoll: true });
+			expect(winner).toContain(KEEP);
+			expect(winner).toContain('the plan waits on you before its first step');
+			expect(winner).not.toContain('the roll waits');
+			expect(overlay({ viewer: 3, targetType: t, noRoll: true })).toContain('the plan waits until they say');
+		}
+	});
+
+	it('closes a duel to a preparer winner once the first step has begun', () => {
+		const started = JSON.stringify({ duel: { phase: 'staking' } });
+		const body = overlay({ viewer: ALICE, keepOrChange: ALICE, targetType: 'propose_duel', noRoll: true, resolution: started });
+		expect(body).not.toContain('Re-aim this plan');
+		const early = overlay({ viewer: ALICE, keepOrChange: ALICE, targetType: 'propose_duel', noRoll: true });
+		expect(early).toContain('Re-aim this plan');
+	});
+
+	it('keeps the form open on a duel or liaison that has not started resolving (no phase yet)', () => {
+		for (const t of ['clandestinely_liaise', 'propose_duel']) {
+			const body = overlay({ viewer: BOB, targetType: t, status: 'pending', noRoll: true,
+				resolution: JSON.stringify({ duel: { phase: '' }, liaise: { phase: '' } }) });
+			expect(body).toContain(KEEP);
+		}
+	});
+
+	it('closes it for no one waiting once the duel is under way', () => {
+		const body = overlay({ viewer: 3, targetType: 'propose_duel', noRoll: true,
+			resolution: JSON.stringify({ duel: { phase: 'bouts' } }) });
+		expect(body).not.toContain('the plan waits until they say');
 	});
 
 	it('is a dud on every other plan: no form, no roll-hold copy', () => {
