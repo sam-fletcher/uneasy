@@ -1,8 +1,16 @@
 ---
-title: "Upgrade to SvelteKit 3, or dismiss the five leftover Dependabot alerts?"
+title: "Later: upgrade SvelteKit 3, Go and TypeScript together"
+order: 200
 ---
 
-SvelteKit alerts for prerendered cache-control XSS (two) and the enhanced-form redirect, the `cookie` advisory (a kit dependency) and `deepmerge` (via vite-plugin-svelte 5) are only fixed by the SvelteKit 3 line: kit 3, vite 8, vite-plugin-svelte 7, adapter-static 4, vitest 5. None is reachable in this client-rendered, non-prerendered app that uses no enhanced forms (triage in `docs/work/notes/dep-security-10c2bf.md`). Do the major bump as its own piece of work, or dismiss the five in GitHub as unused?
+No rush. The owner chose on 2026-11-03 to leave this for now, and to look at it
+alongside a Go version bump and TypeScript 7.1, which may fit the stack better once
+it is released.
+
+Four low-severity Dependabot alerts stay open until then: the SvelteKit redirect and
+prerender XSS alerts, `cookie`, and `deepmerge`. None is reachable in this
+client-rendered, non-prerendered app that uses no enhanced forms (triage in
+`docs/work/notes/dep-security-10c2bf.md`). Don't dismiss them without asking.
 
 ## What a trial found
 
@@ -11,9 +19,9 @@ adapter-static 4.0.1, vitest 5.0.5, TypeScript 6.0.3) clears every SvelteKit,
 `cookie`, postcss-family and Vitest alert. Only `deepmerge` remains, because
 vite-plugin-svelte 7 still depends on it. So even this bump leaves one alert
 (build time only). It builds, and 558 of 559 unit tests pass (the one failure
-was my scratch location missing `game/`, not the upgrade).
+was the scratch location missing `game/`, not the upgrade).
 
-Work it needs, if you say go:
+Work it needs:
 
 - Move `svelte.config.js` into `sveltekit({ adapter: adapter({ fallback:
   'index.html' }) })` in `vite.config.ts`; kit 3 rejects the old file.
