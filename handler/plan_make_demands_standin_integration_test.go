@@ -288,7 +288,42 @@ func TestMakeDemandsRulings_StandInHideSourceSecretNamesThePreparer(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, secrets, 1)
 	assert.NotContains(t, secrets[0].Text, "You were the source")
+	assert.NotContains(t, secrets[0].Text, "@@", "the secret is read as plain text, so it carries no log markup")
 	assert.Contains(t, secrets[0].Text, h.tg.Players[prepIdx].DisplayName)
+}
+
+// The secret is about the preparer's own rumor on the preparer's own asset, so
+// the preparer can read it. Nobody else gains access, and the preparer gains no
+// other secret already tucked under that asset.
+func TestMakeDemandsRulings_StandInHideSourceSecretIsReadableByThePreparerOnly(t *testing.T) {
+	h, plan, prepIdx, winnerIdx := srStandInHideSource(t)
+	ctx := t.Context()
+	prepAsset := h.seedPeer(prepIdx, "Cover Story")
+	otherIdx := 3 - prepIdx - winnerIdx
+	// An older secret on the same asset, written by the bystander and shown to nobody else.
+	older, err := createSecret(ctx, h.q, prepAsset, h.tg.Players[otherIdx].ID, "an older secret")
+	require.NoError(t, err)
+
+	code, body := h.post(winnerIdx, srPath(plan.ID, "hide-source"), map[string]any{"secret_asset_id": prepAsset})
+	require.Equalf(t, http.StatusOK, code, "hide-source: %v", body)
+
+	visibleTo := func(idx int) []string {
+		rows, err := h.q.ListVisibleSecrets(ctx, dbgen.ListVisibleSecretsParams{
+			AssetID: prepAsset, PlayerID: h.tg.Players[idx].ID,
+		})
+		require.NoError(t, err)
+		texts := make([]string, 0, len(rows))
+		for _, r := range rows {
+			texts = append(texts, r.Text)
+		}
+		return texts
+	}
+	prepSees := visibleTo(prepIdx)
+	require.Len(t, prepSees, 1, "the preparer reads the new secret and nothing else on the asset")
+	assert.Contains(t, prepSees[0], h.tg.Players[prepIdx].DisplayName)
+	assert.NotContains(t, prepSees, older.Text)
+	assert.Len(t, visibleTo(winnerIdx), 1, "the Make Demands winner wrote it, so reads it")
+	assert.Equal(t, []string{older.Text}, visibleTo(otherIdx), "a bystander sees only their own older secret")
 }
 
 // Forfeiting a hide-source pick counts the preparer's assets, not the stand-in's.

@@ -1075,7 +1075,7 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			if shelterOwner != player.ID {
 				// A Make Demands winner wrote this about the preparer, so "you" would be false.
 				secretText = fmt.Sprintf("%s was the source of the rumor: %q",
-					playerDisplayName(ctx, deps.Q, shelterOwner), rumor.Text)
+					playerPlainName(ctx, deps.Q, shelterOwner), rumor.Text)
 			}
 		}
 
@@ -1085,20 +1085,33 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 		// Hiding the source, storing the secret and recording the completion land
 		// together: a failed save must not leave a secret behind for a retry to
 		// duplicate. The announcement waits for the commit.
-		if err := deps.InTx(ctx, func(q *dbgen.Queries) error {
-			if err := q.SetRumorSourceHidden(ctx, *sr.RumorID); err != nil {
-				return err
-			}
-			if _, err := createSecret(ctx, q, secretAsset.ID, player.ID, secretText); err != nil {
-				return err
-			}
-			return saveResolutionData(ctx, q, plan.ID, resData)
-		}); err != nil {
+		if err := srStoreSourceSecret(
+			ctx,
+			deps,
+			plan,
+			&resData,
+			*sr.RumorID,
+			secretAsset,
+			player.ID,
+			shelterOwner,
+			secretText,
+		); err != nil {
 			respondInternalErr(w, r, "could not hide the rumor's source", err)
 			return
 		}
 		announceSecret(ctx, deps.Q, deps.Manager, secretAsset, player.ID,
 			secretNotice{Row: plan.RowNumber, PlanID: &plan.ID})
+		if shelterOwner != player.ID {
+			broadcastEvent(
+				deps.Manager,
+				plan.GameID,
+				model.EventSecretVisibilityGrant,
+				model.SecretVisibilityGrantPayload{
+					AssetID:  secretAsset.ID,
+					PlayerID: shelterOwner,
+				},
+			)
+		}
 
 		// The dramatic-irony pair: EmitRumorCreated carries the character-level
 		// "unknown source" record, and this is its player-level counterpart. The
@@ -1122,4 +1135,39 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			"secret_asset_id": body.SecretAssetID,
 		})
 	}
+}
+
+// srStoreSourceSecret hides the rumor's source, stores the secret under
+// secretAsset and records the completion, all in one transaction. writerID wrote
+// the secret; when shelterOwner is someone else (a Make Demands winner writing it
+// for the preparer) shelterOwner may read it too. The secret was written about
+// their own rumor on their own asset, so they get that one secret only: granting
+// the asset's secrets wholesale would show them everything else tucked under it.
+func srStoreSourceSecret(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+	rumorID int64,
+	secretAsset dbgen.Asset,
+	writerID, shelterOwner int64,
+	text string,
+) error {
+	return deps.InTx(ctx, func(q *dbgen.Queries) error {
+		if err := q.SetRumorSourceHidden(ctx, rumorID); err != nil {
+			return err
+		}
+		secret, err := createSecret(ctx, q, secretAsset.ID, writerID, text)
+		if err != nil {
+			return err
+		}
+		if shelterOwner != writerID {
+			if err := q.AddSecretVisibility(ctx, dbgen.AddSecretVisibilityParams{
+				SecretID: secret.ID, PlayerID: shelterOwner,
+			}); err != nil {
+				return err
+			}
+		}
+		return saveResolutionData(ctx, q, plan.ID, *resData)
+	})
 }
