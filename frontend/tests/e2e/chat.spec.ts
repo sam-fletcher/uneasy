@@ -229,7 +229,8 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
   });
-  const { game_id: tableId } = await seedRes.json();
+  const { game_id: tableId, players } = await seedRes.json();
+  const bobPlayerID: number = players[1].id;
   track(tableId);
   await reset.dispose();
 
@@ -251,8 +252,11 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
   });
   expect(renameRes.ok(), `rename failed: ${await renameRes.text()}`).toBeTruthy();
 
-  // Bob takes it — asset.taken is Default-tier and always visible.
-  const takeRes = await bobCtx.request.post(`/api/assets/${assetId}/take`);
+  // Bob takes it (dev shortcut — players have no raw take route) — asset.taken
+  // is Default-tier and always visible.
+  const takeRes = await bobCtx.request.post('/api/dev/take-asset', {
+    data: { asset_id: assetId, player_id: bobPlayerID },
+  });
   expect(takeRes.ok(), `take failed: ${await takeRes.text()}`).toBeTruthy();
 
   const alicePage = await aliceCtx.newPage();
