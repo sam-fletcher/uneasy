@@ -20,10 +20,12 @@ import * as H from './helpers/make_demands';
 //  - perform_steps: the demander acts after the roll, in the preparer's place,
 //    while the preparer and a bystander see who is acting.
 //
-// Not pinned, because the owner has not ruled (docs/work/questions/):
-// whether the server should refuse an inert draft pick while a live one
-// remains, whether Propose Duel and Clandestinely Liaise should wait on the
-// retarget winner, and the severity of the draft-pick log lines.
+// Ruled by the owner on 2026-11-03 and pinned in the Go suite rather than here
+// (handler/plan_make_demands_rulings_integration_test.go): keep_or_change_target is
+// live only on four plans; Propose Duel and Clandestinely Liaise wait for its
+// Make Demands winner before their first step; a draft pick logs at the default
+// level. The draft picker blocks an inert card in the UI only; the server still
+// accepts it, because the last card must always be takeable.
 //
 // Setup (seeding, preparing, reaching the row, forcing dice, the draft) goes
 // over the API; every assertion about what a player sees is made in a real page.
@@ -461,12 +463,30 @@ test('perform steps: the banner does not promise spoils from a plan that awards 
 // ── Overlay forms follow what the server will accept ──────────────────────────
 
 test('overlay: a preparer who won keep-or-change-target is offered it, with no roll held for them', async ({ browser }) => {
-	const f = await H.seedMD({ target: 'seek_answers' });
-	await leverageHeld(f); // alice, the preparer, holds keep_or_change_target
+	// Spread Rumors: one of the four plans where the option is live.
+	const f = await H.seedMD({ target: 'spread_rumors' });
+	await H.prepareDemand(f);
+	await H.reachRow(f);
+	await H.rollDemand(f, 'make');
+	await H.draftWants(f, { bob: ['control_leverage', 'keep_assets'], alice: ['perform_steps', 'keep_or_change_target'] });
+	await H.completeDemand(f);
+	await H.startTarget(f);
+	const cast = await H.call(f.api.alice, 'post', `/api/plans/${f.targetID}/sr-cast-roll`, { rumor: 'A rumor.', how: 'Over the wine.' });
+	await H.call(f.api.alice, 'post', `/api/rolls/${cast.roll.id}/skip-vote`);
 	const { alice } = await H.openPages(browser, f);
 	await expect(alice.getByRole('button', { name: 'Re-aim this plan' })).toBeVisible();
 	await expect(alice.getByText('so the roll waits on you')).toHaveCount(0);
 	await expect(alice.getByRole('button', { name: 'Leverage none — let the roll fail' })).toHaveCount(0);
+});
+
+test('overlay: on a plan with nothing to re-aim, keep-or-change-target is a dud — no form, no hold', async ({ browser }) => {
+	const f = await H.seedMD({ target: 'seek_answers' });
+	await leverageHeld(f); // alice, the preparer, holds keep_or_change_target; the plan is Seek Answers
+	const { alice, bob } = await H.openPages(browser, f);
+	for (const page of [alice, bob]) {
+		await expect(page.getByRole('button', { name: 'Re-aim this plan' })).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'Keep the current target' })).toHaveCount(0);
+	}
 });
 
 test('overlay: once the dice have landed, the leverage form is gone', async ({ browser }) => {

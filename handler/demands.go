@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/game"
@@ -108,6 +109,23 @@ func pendingControlLeverageChooser(ctx context.Context, q *dbgen.Queries, plan *
 		loadResolutionData(plan.ResolutionData).DemandLeverageFinalized)
 }
 
+// demandRetargetPlans is the one list of plan types a keep_or_change_target
+// winner can act on: the plans that have a "who" (design principle 9). On every
+// other plan the option is a plain dud: no roll-hold, no retarget form, and the
+// route answers 409. The frontend's RETARGETABLE mirrors this list, and
+// TestDemandRetargetPlans_MatchesFrontend fails if the two differ.
+var demandRetargetPlans = []model.PlanType{
+	model.PlanExchangeCourtiers,
+	model.PlanSpreadRumors,
+	model.PlanProposeDuel,
+	model.PlanClandestinelyLiaise,
+}
+
+// demandCanRetarget reports whether keep_or_change_target is live on t.
+func demandCanRetarget(t model.PlanType) bool {
+	return slices.Contains(demandRetargetPlans, t)
+}
+
 // pendingDemandRetargetChooser is pendingControlLeverageChooser's
 // keep_or_change_target twin: the winner who still owes their keep-or-re-aim
 // call on a plan targeted by a made Make Demands, or 0.
@@ -116,15 +134,16 @@ func pendingControlLeverageChooser(ctx context.Context, q *dbgen.Queries, plan *
 // rules hand the winner, and it leaves the plan's target columns untouched —
 // indistinguishable from having never acted. So the winner must explicitly
 // finalize, and until they do they block the roll (seeded unready, excluded from
-// the auto-ready sweeps). Without that, a target whose roll opens at kickoff
-// could resolve the window shut before they ever saw it (audit D5).
+// the auto-ready sweeps), so a roll that opens at kickoff cannot resolve the
+// window shut before they ever saw it (audit D5).
 //
-// Returns 0 in the same four cases: no such demand; the winner is the preparer
-// (no handoff — they re-aim their own plan directly); they have already
-// finalized; or the target plan's roll is no longer open. Plus the D7 case —
-// a target with no preparer-owned roll, where there is nothing to hold open.
+// Returns 0 when: the option is a dud on this plan type; the plan has no roll of
+// the preparer's own to hold (Host Festivity, Propose Duel, Clandestinely
+// Liaise); there is no such demand; the Make Demands winner is the preparer (no
+// handoff — they re-aim their own plan directly); they have already finalized;
+// or the target plan's roll is no longer open.
 func pendingDemandRetargetChooser(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
-	if !mdTargetHasPreparerRoll(plan.PlanType) {
+	if !demandCanRetarget(plan.PlanType) || !mdTargetHasPreparerRoll(plan.PlanType) {
 		return 0
 	}
 	return pendingDemandChooser(ctx, q, plan, game.DemandOptionKeepOrChangeTarget,
@@ -142,21 +161,35 @@ func pendingDemandChooser(
 	option string,
 	finalized bool,
 ) int64 {
-	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
-	if err != nil || winners == nil {
-		return 0
-	}
-	winnerID := winners[option]
-	if winnerID == 0 || winnerID == plan.PreparerID {
-		return 0
-	}
-	if finalized {
+	winnerID := pendingDemandWinner(ctx, q, plan, option, finalized)
+	if winnerID == 0 {
 		return 0
 	}
 	// Only while the target plan's roll is still open: the winner can act only
 	// during the pre-roll window, and once the roll resolves the gate is moot.
 	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
 	if err != nil || !rollIsOpen(&roll) {
+		return 0
+	}
+	return winnerID
+}
+
+// pendingDemandWinner is the roll-independent half of pendingDemandChooser: the
+// option's winner when they are somebody other than the plan's preparer and have
+// not finalized yet, else 0.
+func pendingDemandWinner(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	option string,
+	finalized bool,
+) int64 {
+	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
+	if err != nil || winners == nil {
+		return 0
+	}
+	winnerID := winners[option]
+	if winnerID == 0 || winnerID == plan.PreparerID || finalized {
 		return 0
 	}
 	return winnerID

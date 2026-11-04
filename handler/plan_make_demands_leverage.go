@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -258,6 +259,9 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusForbidden, "only the keep_or_change_target winner may retarget")
 			return
 		}
+		if !mdRetargetOpen(w, plan) {
+			return
+		}
 
 		// Block retarget once the roll has been RESOLVED — stakes are locked then.
 		// "No roll yet" is not an error and not a closed window: the status guard
@@ -311,19 +315,7 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			"player_id":        player.ID,
 		})
 
-		// Both branches are narrated: "the demand changed nothing" is itself a
-		// beat the table should see, not silence.
-		if body.Keep {
-			mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
-				"%s let %s's %s stand exactly as aimed.",
-				playerDisplayName(ctx, deps.Q, player.ID),
-				playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
-		} else {
-			mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
-				"%s re-aimed %s's %s under their demand.",
-				playerDisplayName(ctx, deps.Q, player.ID),
-				playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
-		}
+		mdLogRetarget(ctx, deps, plan, player.ID, body.Keep)
 
 		// Release the roll the winner was holding open, then let it resolve if
 		// everyone else is in. Skipped for a target with no preparer-owned roll:
@@ -350,6 +342,33 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			"target_asset_id":  body.TargetAssetID,
 		})
 	}
+}
+
+// mdLogRetarget narrates both branches: "the demand changed nothing" is itself a
+// beat the table should see, not silence.
+func mdLogRetarget(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, winnerID int64, kept bool) {
+	if kept {
+		mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+			"%s let %s's %s stand exactly as aimed.",
+			playerDisplayName(ctx, deps.Q, winnerID),
+			playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
+		return
+	}
+	mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+		"%s re-aimed %s's %s under their demand.",
+		playerDisplayName(ctx, deps.Q, winnerID),
+		playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
+}
+
+// mdRetargetOpen reports whether the keep_or_change_target route may act on plan,
+// writing a 409 when it may not. The option is live only on the plans that have
+// a "who" (design principle 9); on every other plan it is a plain dud.
+func mdRetargetOpen(w http.ResponseWriter, plan *dbgen.Plan) bool {
+	if !demandCanRetarget(plan.PlanType) {
+		respondErr(w, http.StatusConflict, "keep_or_change_target is inert on this plan: it has no aim a demand could change")
+		return false
+	}
+	return true
 }
 
 // mdApplyRetarget re-validates and persists a re-aimed target plan's

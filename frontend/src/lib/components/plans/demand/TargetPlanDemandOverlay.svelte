@@ -20,6 +20,7 @@
 	import {
 		playerName, activeDemandAgainst, demandWinnersFromPlan,
 		parseResolutionData, targetHasPreparerRoll, demandOptionInertReason, PLAN_SHORT,
+		targetIsRetargetable,
 	} from '../shared';
 	import { useActiveRoll } from './activeRollContext';
 	import PlayerChips from '../PlayerChips.svelte';
@@ -103,11 +104,13 @@
 	// them, and it is their only way to re-aim), without the "roll waits" copy;
 	// their own leverage goes through the ordinary leverage button, so no picker.
 	const winnerIsPreparer = (id: number | null | undefined) => id === plan.preparer_id;
+	const retargetable = $derived(targetIsRetargetable(plan.plan_type));
 	const retargetHoldsRoll = $derived(
-		targetRolls && !winnerIsPreparer(winners.keep_or_change_target),
+		retargetable && targetRolls && !winnerIsPreparer(winners.keep_or_change_target),
 	);
 	const showRetargetForm = $derived(
 		amKeepOrChangeTargetWinner
+		&& retargetable
 		&& (plan.status === 'pending' || plan.status === 'resolving')
 		&& !rollClosed,
 	);
@@ -252,11 +255,18 @@
 			{/if}
 			{#if winners.keep_or_change_target != null && winners.keep_or_change_target !== plan.preparer_id}
 				<li>
-					{playerName(players, winners.keep_or_change_target)}
-					decides whether this plan keeps or changes its target{retargetHoldsRoll
-						&& !retargetFinalized && !rollClosed
-						? ', and the roll waits until they say'
-						: ''}.
+					{#if !retargetable}
+						{playerName(players, winners.keep_or_change_target)}
+						drew the choice to keep or change a plan's target, but
+						{PLAN_SHORT[plan.plan_type]} isn't aimed at anything a demand could
+						redirect — that option came to nothing here.
+					{:else}
+						{playerName(players, winners.keep_or_change_target)}
+						decides whether this plan keeps or changes its target{retargetHoldsRoll
+							&& !retargetFinalized && !rollClosed
+							? ', and the roll waits until they say'
+							: ''}.
+					{/if}
 				</li>
 			{/if}
 		</ul>

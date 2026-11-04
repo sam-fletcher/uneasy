@@ -110,6 +110,15 @@ describe('TargetPlanDemandOverlay forms', () => {
 		const duel = overlay({ viewer: BOB, targetType: 'propose_duel', retargetFinalized: true });
 		expect(duel).toContain('until its roll resolves');
 	});
+
+	it('is a dud on every other plan: no form, no roll-hold copy', () => {
+		for (const t of ['spread_propaganda', 'seek_answers', 'make_introductions', 'chronicle_histories']) {
+			const body = overlay({ viewer: BOB, targetType: t });
+			expect(body).not.toContain(KEEP);
+			expect(body).not.toContain('the roll waits');
+			expect(body).toContain('came to nothing here');
+		}
+	});
 });
 
 describe('TargetPlanDemandOverlay keep_assets banner', () => {
