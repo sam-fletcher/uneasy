@@ -14,7 +14,8 @@ type SpreadPropagandaResolutionData struct {
 	// 'resolving' with no roll; the preparer summarises the message and how it is
 	// being spread via sp-cast-roll, which posts that narration, records it below,
 	// flips this true and creates the dice roll. A counter-propaganda plan (mar
-	// (d)) is created already rolling and is born with this true.
+	// (d)) opens the same step, but its preparer — the top interferer — may
+	// instead decline (CounterDeclined).
 	//
 	// Plans that rolled before the step existed carry no flag; the panel and the
 	// make-choice guard treat "a roll exists" as equivalent.
@@ -22,6 +23,11 @@ type SpreadPropagandaResolutionData struct {
 	// PreRollText is the narration as stated — the committed version of the
 	// preparation note, which was only a draft.
 	PreRollText string `json:"pre_roll_text,omitempty"`
+
+	// CounterDeclined is set on a counter-propaganda plan whose preparer (the top
+	// interferer) chose not to spread their own message (owner ruling 2026-11-03:
+	// declining is a real political act). The plan then closes with no effect.
+	CounterDeclined bool `json:"counter_declined,omitempty"`
 
 	// RecursivePlanID points at the child SP plan spawned by mar option (d)
 	// "co-opt". Set on the parent plan. Also doubles as the "already co-opted"

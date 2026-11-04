@@ -101,9 +101,9 @@
 	const amHost = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	// A Make Demands perform_steps winner drives the host's resolution steps —
 	// taking an earned make, answering an insisted mar — in the host's stead and
-	// the host is locked out of them (the server's requireResolutionActor). The
-	// event itself is still wound down by the host. Mirrors the server: with a
-	// winner it is ONLY the winner, never the host as well.
+	// the host is locked out of them (the server's requireResolutionActor). So is
+	// ending the event (a step too, owner ruling 2026-11-04). Mirrors the server:
+	// with a winner it is ONLY the winner, never the host as well.
 	let performStepsWinnerID = $state<number | null>(null);
 	const amStepActor = $derived(
 		performStepsWinnerID != null ? currentPlayerID === performStepsWinnerID : amHost,
@@ -147,7 +147,7 @@
 		plan == null ? 0 : earnedHostMakes(fest, plan.preparer_id) - fest.hostMakesTaken.length,
 	);
 	// Whether the host may now wind the event down.
-	const endable = $derived(plan != null && festivityEndable(fest, plan.preparer_id));
+	const endable = $derived(plan != null && festivityEndable(fest));
 
 	// ── Active roll outcome (fallback fetch) ─────────────────────────────────
 	// If our own roll has resolved but the parent's activeRoll is gone (e.g. it
@@ -276,17 +276,22 @@
 			</ul>
 		{/if}
 
-		{#if isResolving && amHost}
+		{#if isResolving && amStepActor}
 			<div class="complete-section">
 				{#if endError}<ErrorText message={endError} variant="panel" />{/if}
 				<button
 					class="action-btn primary"
 					onclick={onEndEvent}
 					disabled={endBusy || !endable}
-					title={endable ? '' : 'Everyone must settle first: all guests chosen, all your Makes taken, all Mars inflicted.'}
+					title={endable ? '' : 'Everyone must settle first: all guests chosen and all Mars inflicted.'}
 				>
 					{endBusy ? '…' : 'End the event'}
 				</button>
+				{#if hostMakesLeft > 0}
+					<p class="choices-note muted">
+						Ending now forfeits {amHost ? 'your' : "the host's"} {hostMakesLeft} unclaimed {hostMakesLeft === 1 ? 'Make' : 'Makes'}.
+					</p>
+				{/if}
 			</div>
 		{:else if !isResolving}
 			<p class="choices-applied">The festivity has wound down.</p>

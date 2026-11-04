@@ -135,7 +135,14 @@ describe('festivityEndable', () => {
 			centeredDrafts: [draft('a', 'Ada')],
 		});
 		expect(earnedHostMakes(f, 1)).toBe(2);
-		expect(festivityEndable(f, 1)).toBe(true);
+		expect(festivityEndable(f)).toBe(true);
+	});
+
+	it('lets the host end with earned makes unclaimed, but not with a mar IOU', () => {
+		const f = fest({ guests: [1, 2], outcomes: { 1: 'host', 2: 'opt_out' } });
+		expect(earnedHostMakes(f, 1)).toBe(2);
+		expect(festivityEndable(f)).toBe(true);
+		expect(festivityEndable(fest({ guests: [1, 2], outcomes: { 1: 'host', 2: 'make' }, guestIOUs: [2] }))).toBe(false);
 	});
 
 	it('stays open while a guest\'s insisted mar is unchosen or unsettled', () => {
@@ -144,10 +151,10 @@ describe('festivityEndable', () => {
 			outcomes: { 1: 'host', 2: 'make' },
 			hostMakesTaken: ['spread_rumor'],
 		};
-		expect(festivityEndable(fest(settled), 1)).toBe(true);
+		expect(festivityEndable(fest(settled))).toBe(true);
 		// The host hasn't chosen which mar to take yet.
-		expect(festivityEndable(fest({ ...settled, unchosenHostMars: [2] }), 1)).toBe(false);
+		expect(festivityEndable(fest({ ...settled, unchosenHostMars: [2] }))).toBe(false);
 		// Legacy: chosen by the insisting guest, awaiting only the host's asset pick.
-		expect(festivityEndable(fest({ ...settled, pendingHostMars: ['break_self'] }), 1)).toBe(false);
+		expect(festivityEndable(fest({ ...settled, pendingHostMars: ['break_self'] }))).toBe(false);
 	});
 });

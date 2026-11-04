@@ -95,6 +95,20 @@ func TestFestivityEventEndableRequiresAllChosen(t *testing.T) {
 	assert.True(t, s.EventEndable(roster))
 }
 
+// The host may end the event with earned makes unclaimed (owner ruling
+// 2026-11-03), but a guest's mar IOU still blocks, as ruled.
+func TestFestivityEventEndableLeavesMakesOptional(t *testing.T) {
+	roster := []int64{1, 2}
+	s := FestivityResolutionData{
+		Outcomes: map[string]string{"1": FestivityOutcomeHost, "2": FestivityOutcomeOptOut},
+	}
+	require.Equal(t, 2, s.RemainingHostMakes(roster), "two earned makes, none taken")
+	assert.True(t, s.EventEndable(roster), "unclaimed makes must not hold the event open")
+
+	s.GuestIOUs = []int64{2}
+	assert.False(t, s.EventEndable(roster), "a guest's mar IOU still blocks ending")
+}
+
 func TestFestivityPendingGuests(t *testing.T) {
 	roster := []int64{10, 20, 30}
 	s := FestivityResolutionData{
