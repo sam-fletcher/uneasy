@@ -95,8 +95,8 @@ On your branch, alongside the code:
   **not** run against your code) · *Behaviour changes to look at before
   merging* · *Open questions for the owner* · *Noticed, not fixed*.
 
-The repo is public: paraphrase the rulebook, never quote it, and copy
-nothing in from the private folder.
+The repo is public: keep rulebook quotes short (`CLAUDE.md` has the rule),
+and copy nothing in from the private folder.
 
 ## 6. Git
 

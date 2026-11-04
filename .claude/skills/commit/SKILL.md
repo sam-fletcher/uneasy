@@ -74,7 +74,7 @@ state the substance in a sentence:
 | "per the owner's ruling" | the ruling itself, paraphrased |
 | "see design principle 3" | the principle's point, in a sentence |
 | "Option B", "as discussed", "step 4 of the plan" | the actual design chosen or rejected |
-| a quoted rulebook passage | a paraphrase, with the page number |
+| a long rulebook passage | a paraphrase, with the page number |
 
 Be specific: no "various improvements", no "to clean up the code". A commit
 holding several small fixes that couldn't be separated lists them in the

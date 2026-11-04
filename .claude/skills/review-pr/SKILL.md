@@ -40,7 +40,7 @@ Cheap, mechanical, and enough to send it straight back:
 - **Public repo:** search the diff, PR body and commit messages for
   `_RULES`, `DESIGN_PRINCIPLES`, `adr/` and `/Users/`, and read each hit. A
   passing mention of a private file is the existing style; copied private
-  text, a quoted rulebook passage, or a personal path is a must-fix.
+  text, a long rulebook passage, or a personal path is a must-fix.
 
 ## 3. Review on separate axes
 

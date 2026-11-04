@@ -135,7 +135,7 @@ note (`docs/work/notes/<session-name>.md`) rather than repeating it.
 ## 3. Check, then create
 
 **This repo is public.** Before creating, read the body once more for:
-rulebook text quoted rather than paraphrased; anything from the private
+rulebook text reproduced at length; anything from the private
 folder (rules files, design principles, ADRs, private notes); real player
 names or emails in screenshots. Dev-seeded games only.
 
