@@ -547,7 +547,7 @@
 				{/if}
 
 				{#if makeRemaining === 0 && makeStarted}
-					{#if isPreparer}
+					{#if amChoiceActor}
 						<p class="complete-note">
 							All choices made. The scene stays open — play it out in the chat, and when
 							it has found its ending, wrap it.
@@ -559,7 +559,7 @@
 					{:else}
 						<p class="ft-prompt muted">
 							All choices are made. The scene stays open until
-							{playerName(players, plan.preparer_id)} wraps it.
+							{playerName(players, resolutionActorID(plan, plans))} wraps it.
 						</p>
 					{/if}
 				{/if}
@@ -663,7 +663,7 @@
 					</ul>
 				{/if}
 
-				{#if isPreparer}
+				{#if amChoiceActor}
 					<p class="complete-note" style="margin-top:0.5rem;">
 						{#if allMarSubmitted}
 							Every player has chosen. The scene stays open — play it out in the chat, and
@@ -676,6 +676,11 @@
 						onclick={() => onComplete(plan)} disabled={resBusy || !allMarSubmitted}>
 						{resBusy ? '…' : 'Wrap the scene'}
 					</button>
+				{:else if allMarSubmitted}
+					<p class="ft-prompt muted">
+						Every player has chosen. The scene stays open until
+						{playerName(players, resolutionActorID(plan, plans))} wraps it.
+					</p>
 				{/if}
 			</div>
 		{/if}

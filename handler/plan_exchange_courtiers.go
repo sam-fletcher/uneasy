@@ -798,8 +798,10 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the preparer may break their own peer")
+		// The break is a decision, so the Make Demands winner of the perform option
+		// takes it over; the peer is still the preparer's and still goes to the
+		// target (design principle 9).
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 
@@ -828,7 +830,7 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Skip: the preparer surrenders the requested peer intact.
 		if body.Action == "skip" {
-			ecRiposteSurrender(ctx, w, r, deps, plan, &resData, requestedID)
+			ecRiposteSurrender(ctx, w, r, deps, plan, &resData, player.ID, requestedID)
 			return
 		}
 
@@ -870,10 +872,8 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not break peer", err)
 			return
 		}
-		ecLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s damaged their own %s before surrendering it.%s",
-				playerDisplayName(ctx, deps.Q, player.ID), assetMark(asset.Name),
-				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed)))
+		ecLog(ctx, deps, plan, model.SeverityDefault, ecRiposteBreakLine(ctx, deps, plan, player.ID, asset.Name)+
+			brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed))
 		if err := ecGivePeerToTarget(ctx, deps, plan, requestedID); err != nil {
 			respondInternalErr(w, r, "could not surrender peer", err)
 			return
@@ -900,17 +900,40 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// ecRiposteBreakLine words a riposte break: the preparer damaging their own peer,
+// or the Make Demands winner doing it to the preparer's peer in their place.
+func ecRiposteBreakLine(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, actorID int64, assetName string) string {
+	if actorID == plan.PreparerID {
+		return fmt.Sprintf("%s damaged their own %s before surrendering it.",
+			playerDisplayName(ctx, deps.Q, actorID), assetMark(assetName))
+	}
+	return fmt.Sprintf("%s, the Make Demands winner, damaged %s's %s before it was surrendered.",
+		playerDisplayName(ctx, deps.Q, actorID), playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(assetName))
+}
+
+// ecRiposteSurrenderLine words a riposte surrender: who decided to hand the peer
+// over intact, the preparer or the Make Demands winner standing in for them.
+func ecRiposteSurrenderLine(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, actorID, assetID int64) string {
+	name := assetDisplayName(ctx, deps.Q, assetID)
+	if actorID == plan.PreparerID {
+		return fmt.Sprintf("%s surrendered their %s intact.", playerDisplayName(ctx, deps.Q, actorID), name)
+	}
+	return fmt.Sprintf("%s, the Make Demands winner, surrendered %s's %s intact.",
+		playerDisplayName(ctx, deps.Q, actorID), playerDisplayName(ctx, deps.Q, plan.PreparerID), name)
+}
+
 // ecRiposteSurrender handles the riposte "skip" sub-action: the preparer
 // surrenders the requested peer intact, which transfers it to the target and
 // lands the plan on ECPhaseDone, so it auto-completes.
 func ecRiposteSurrender(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
-	deps *PlanDeps, plan *dbgen.Plan, resData *ResolutionData, requestedID int64,
+	deps *PlanDeps, plan *dbgen.Plan, resData *ResolutionData, actorID, requestedID int64,
 ) {
 	if err := ecGivePeerToTarget(ctx, deps, plan, requestedID); err != nil {
 		respondInternalErr(w, r, "could not surrender peer", err)
 		return
 	}
+	ecLog(ctx, deps, plan, model.SeverityDefault, ecRiposteSurrenderLine(ctx, deps, plan, actorID, requestedID))
 	ec := resData.EnsureExchangeCourtiers()
 	ec.RiposteBreakResolved = true
 	ec.Phase = gamepkg.ECPhaseDone
@@ -979,7 +1002,11 @@ func (ecHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		return model.RowState{}, false
 	case gamepkg.ECPhaseRiposte:
 		// The preparer must break or surrender the requested peer; the row waits
-		// on them (generic), not the target.
+		// on them (generic), not the target. A Make Demands perform-steps winner
+		// takes that decision over, and the preparer is refused it, so name them.
+		if winner := performStepsWinner(ctx, q, plan); winner != 0 && winner != plan.PreparerID {
+			return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{winner}}, true
+		}
 		return model.RowState{}, false
 	case gamepkg.ECPhaseMessyBreak:
 		// Target owes the messy break.

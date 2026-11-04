@@ -66,7 +66,12 @@ func srForfeitStepHandler(deps *PlanDeps) http.HandlerFunc {
 			noun = "marginalia to tear"
 		case srOptHideSource:
 			remaining = pickedChoiceCount(&resData, srOptHideSource) - sr.HideSourceDone
-			eligible, err = srEligibleHideAssets(ctx, deps, plan, player.ID)
+			// Whose assets can shelter it: the preparer's for a stand-in on a make.
+			shelterOwner := player.ID
+			if !onMar {
+				shelterOwner = plan.PreparerID
+			}
+			eligible, err = srEligibleHideAssets(ctx, deps, plan, shelterOwner)
 			noun = "asset to hide the source under"
 		default:
 			respondErr(w, http.StatusBadRequest, "step must be break_target or hide_source")
@@ -158,12 +163,13 @@ func srBreaksAvailable(ctx context.Context, deps *PlanDeps, assetID int64) (int,
 	return int(intact), nil
 }
 
-// srEligibleHideAssets counts the actor's own undestroyed assets available to
+// srEligibleHideAssets counts the undestroyed assets of ownerID (the actor, or the
+// preparer when a Make Demands winner stands in) available to
 // tuck a hidden-source secret under. A secret can stack on any one of them, so a
 // single eligible asset satisfies every remaining hide_source pick — the count is
 // only ever used as "is it zero?".
-func srEligibleHideAssets(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, actorID int64) (int, error) {
-	assets, err := deps.Q.ListAssetsByOwner(ctx, actorID)
+func srEligibleHideAssets(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, ownerID int64) (int, error) {
+	assets, err := deps.Q.ListAssetsByOwner(ctx, ownerID)
 	if err != nil {
 		return 0, err
 	}
@@ -961,6 +967,29 @@ func transferRumorAsset(
 
 // ── Hide Source ───────────────────────────────────────────────────────────────
 
+// srShelteringAsset loads the asset a hidden source's secret will sit under and
+// checks it belongs to shelterOwner (the caller, or the preparer when a Make
+// Demands winner stands in). It writes the error and reports false otherwise.
+func srShelteringAsset(
+	ctx context.Context, w http.ResponseWriter, q *dbgen.Queries,
+	plan *dbgen.Plan, callerID, shelterOwner, assetID int64,
+) (dbgen.Asset, bool) {
+	asset, err := q.GetAssetByID(ctx, assetID)
+	if err != nil {
+		respondErr(w, http.StatusNotFound, "secret asset not found")
+		return asset, false
+	}
+	if asset.OwnerID != shelterOwner || asset.GameID != plan.GameID {
+		msg := "secret asset must be your own asset in this game"
+		if shelterOwner != callerID {
+			msg = "secret asset must be one of the preparer's assets"
+		}
+		respondErr(w, http.StatusForbidden, msg)
+		return asset, false
+	}
+	return asset, true
+}
+
 // srHideSourceHandler handles POST /api/plans/:planId/hide-source.
 //
 // Removes source attribution from the rumor and writes a secret on one of the
@@ -987,8 +1016,18 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		if _, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player); !authz {
+		onMar, authz := srAuthorizeActor(ctx, w, deps.Q, plan, player)
+		if !authz {
 			return
+		}
+		// Whose asset shelters the secret. Normally the caller's own. A Make Demands
+		// winner who stands in for the preparer on a make picks one of the
+		// PREPARER's assets instead: it is the preparer's rumor, so uncovering it
+		// should lead there (design principle 9). On a mar the actor is the target
+		// asset's owner, a third party who keeps their own role, and stays on their own.
+		shelterOwner := player.ID
+		if !onMar {
+			shelterOwner = plan.PreparerID
 		}
 
 		var body struct {
@@ -1018,14 +1057,8 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Validate the secret-bearing asset belongs to the caller.
-		secretAsset, err := deps.Q.GetAssetByID(ctx, body.SecretAssetID)
-		if err != nil {
-			respondErr(w, http.StatusNotFound, "secret asset not found")
-			return
-		}
-		if secretAsset.OwnerID != player.ID || secretAsset.GameID != plan.GameID {
-			respondErr(w, http.StatusForbidden, "secret asset must be your own asset in this game")
+		secretAsset, ok := srShelteringAsset(ctx, w, deps.Q, plan, player.ID, shelterOwner, body.SecretAssetID)
+		if !ok {
 			return
 		}
 
@@ -1039,6 +1072,11 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 				return
 			}
 			secretText = fmt.Sprintf("You were the source of the rumor: %q", rumor.Text)
+			if shelterOwner != player.ID {
+				// A Make Demands winner wrote this about the preparer, so "you" would be false.
+				secretText = fmt.Sprintf("%s was the source of the rumor: %q",
+					playerDisplayName(ctx, deps.Q, shelterOwner), rumor.Text)
+			}
 		}
 
 		sr.SourceHidden = true
@@ -1068,9 +1106,15 @@ func srHideSourceHandler(deps *PlanDeps) http.HandlerFunc {
 		// so the table sees the gap between what it knows and what the characters
 		// do. The secret line above already names the sheltering asset; this one
 		// says what the hiding means. Secret text never appears.
-		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		hidMsg := fmt.Sprintf(
 			"%s hid themselves as the source — no one at court knows the rumor came from them.",
-			playerDisplayName(ctx, deps.Q, player.ID)))
+			playerDisplayName(ctx, deps.Q, player.ID))
+		if shelterOwner != player.ID {
+			hidMsg = fmt.Sprintf(
+				"%s, the Make Demands winner, hid %s as the source — no one at court knows the rumor came from them.",
+				playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, shelterOwner))
+		}
+		srLog(ctx, deps, plan, model.SeverityDefault, hidMsg)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":         plan.ID,

@@ -494,6 +494,11 @@
 	// assets. Actor = preparer on make, target-asset owner on mar.
 	let hsAssetID = $state<number | null>(null);
 	let hsBusy = $state(false);
+	// A Make Demands winner standing in for the preparer on a make picks one of the
+	// PREPARER's assets, not their own (design principle 9).
+	const standingIn = $derived(
+		isActor && rollOutcome !== 'mar' && plan != null && currentPlayerID !== plan.preparer_id,
+	);
 	const hsAssetOptions = $derived(
 		rollOutcome === 'mar'
 			? assets.filter(a => a.owner_id === targetAssetOwnerID && !a.is_destroyed)
@@ -568,6 +573,11 @@
 		rollOutcome === 'mar' && targetAssetOwnerID != null
 			? playerName(players, targetAssetOwnerID)
 			: (plan ? playerName(players, resolutionActorID(plan, plans)) : ''),
+	);
+	// Whose assets shelter the secret: the preparer's on a make (whoever is acting),
+	// the counter-rumor's author on a mar.
+	const shelterName = $derived(
+		rollOutcome === 'mar' || plan == null ? actorName : playerName(players, plan.preparer_id),
 	);
 	const anyResolved = $derived(
 		brokenAssetIDs.length > 0 || hideSourceAssetIDs.length > 0 || takenAssetIDs.length > 0
@@ -971,15 +981,22 @@
 							Hide source ({hsRemaining} remaining)
 						</p>
 						<p class="choices-note muted">
-							{#if isActor}
+							{#if standingIn}
+								As the Make Demands winner you choose which of {shelterName}'s assets hides
+								the Secret that {shelterName} spread the rumor.
+							{:else if isActor}
 								An asset of your choice will hide the Secret that you spread the rumor.
+							{:else if shelterName !== actorName}
+								{actorName}, the Make Demands winner, chooses which of {shelterName}'s assets
+								hides the Secret that {shelterName} spread the rumor — their character stays
+								unnamed at court, but the table sees it.
 							{:else}
 								An asset of {actorName}'s choice will hide the Secret that they spread
 								the rumor — their character stays unnamed at court, but the table sees it.
 							{/if}
 						</p>
 						<CardPicker
-							label={isActor ? 'Hide on one of your assets' : `Hide on one of ${actorName}'s assets`}
+							label={isActor && !standingIn ? 'Hide on one of your assets' : `Hide on one of ${shelterName}'s assets`}
 							items={hsAssetOptions}
 							{players}
 							readOnly={!isActor}
@@ -988,7 +1005,7 @@
 						/>
 						{#if isActor}
 							{#if hsAssetOptions.length === 0}
-								<p class="choices-note muted">You have no asset to hide the source under — this pick has no valid target.</p>
+								<p class="choices-note muted">{standingIn ? `${shelterName} has` : 'You have'} no asset to hide the source under — this pick has no valid target.</p>
 								<button class="action-btn primary"
 									onclick={() => forfeitStep(plan, 'hide_source')} disabled={forfeitBusy}>
 									{forfeitBusy ? '…' : 'Skip — no valid targets'}

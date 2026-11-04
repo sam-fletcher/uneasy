@@ -784,6 +784,16 @@ func chNarrativeChoicePhrase(option string) string {
 	}
 }
 
+// chStandInWrapper returns the Make Demands winner of the perform option who
+// stands in for the preparer on this plan (and so presses "Wrap the scene"), or 0
+// when there is none and the preparer wraps it themselves.
+func chStandInWrapper(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
+	if winner := performStepsWinner(ctx, q, plan); winner != plan.PreparerID {
+		return winner
+	}
+	return 0
+}
+
 // ResolvingWaitees narrows a marred Chronicle Histories to AwaitChronicleChoices:
 // every player present when the mar scene began must each submit one option. The
 // bar names those who still owe a choice (game players minus the distinct
@@ -796,7 +806,9 @@ func (chHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		// The make path is a run of make-steps; a perform_steps winner drives them
 		// all (and the preparer is refused), so name the winner until the budget is
 		// spent. Otherwise the preparer's, and the generic case names them.
-		if winner, owed := performStepsStillOwed(ctx, q, plan, &resData, chHandler{}.CanComplete); owed {
+		// "Wrap the scene" is a step too, so the Make Demands winner is still the one owed once
+		// the budget is spent (completion is theirs here, not the preparer's).
+		if winner := chStandInWrapper(ctx, q, plan); winner != 0 && resData.ChoicesCommitted() {
 			return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{winner}}, true
 		}
 		return model.RowState{}, false
@@ -818,6 +830,10 @@ func (chHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		}
 	}
 	if len(pending) == 0 {
+		// Every player has chosen; wrapping the scene is all that is left.
+		if winner := chStandInWrapper(ctx, q, plan); winner != 0 {
+			return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{winner}}, true
+		}
 		return model.RowState{}, false
 	}
 	return model.RowState{Kind: model.RowStateAwaitChronicleChoices, ActingPlayerIDs: pending}, true

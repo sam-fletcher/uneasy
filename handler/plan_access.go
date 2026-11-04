@@ -49,6 +49,18 @@ func requirePlanPreparer(
 	r *http.Request,
 	q *dbgen.Queries,
 ) (*dbgen.Game, *dbgen.Plan, bool) {
+	return requirePlanPreparerOrStandIn(w, r, q, false)
+}
+
+// requirePlanPreparerOrStandIn is requirePlanPreparer, except that with
+// standInMayWrap a Chronicle Histories plan is completed by the Make Demands
+// winner standing in for the preparer rather than by the preparer.
+func requirePlanPreparerOrStandIn(
+	w http.ResponseWriter,
+	r *http.Request,
+	q *dbgen.Queries,
+	standInMayWrap bool,
+) (*dbgen.Game, *dbgen.Plan, bool) {
 	plan, player, ok := requirePlanAccess(w, r, q)
 	if !ok {
 		return nil, nil, false
@@ -61,6 +73,18 @@ func requirePlanPreparer(
 	if game.Phase != model.PhaseMainEvent {
 		respondErr(w, http.StatusConflict, "game is not in the main event phase")
 		return nil, nil, false
+	}
+	// Chronicle Histories' "Wrap the scene" is a step, not a fact about whose plan
+	// it is, so the Make Demands winner of the perform option presses it instead
+	// of the preparer (design principle 9). Only CompletePlan asks for this: the
+	// perform option is post-roll, so starting the plan stays the preparer's.
+	if standInMayWrap && plan.PlanType == model.PlanChronicleHistories {
+		if !actsForPreparer(r.Context(), q, plan, player.ID) {
+			respondErr(w, http.StatusForbidden,
+				"only the plan's preparer (or the Make Demands winner standing in for them) can wrap the scene")
+			return nil, nil, false
+		}
+		return &game, plan, true
 	}
 	if player.ID != plan.PreparerID {
 		respondErr(w, http.StatusForbidden, "only the plan's preparer can resolve it")
@@ -199,8 +223,8 @@ func makeChoiceAuthorized(ctx context.Context, q *dbgen.Queries, plan *dbgen.Pla
 //
 // owed=false means: no winner, or the winner IS the preparer, or nothing is
 // committed yet (the pre-commit window is pendingPerformStepsChooser's), or
-// canComplete passes (nothing left, so completion — always the preparer's — is
-// next). Plans whose steps are NOT routed through requireResolutionActor must not
+// canComplete passes (nothing left, so completion is next — the preparer's on
+// every plan but Chronicle Histories, where the Make Demands winner wraps the scene). Plans whose steps are NOT routed through requireResolutionActor must not
 // call this: it would name a winner the server then refuses.
 func performStepsStillOwed(
 	ctx context.Context,

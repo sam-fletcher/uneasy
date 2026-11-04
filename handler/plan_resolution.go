@@ -355,7 +355,7 @@ func checkChoiceGate(
 // stored result field (e.g. EC fair trade accept path).
 func CompletePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, ok := requirePlanPreparer(w, r, s.Q)
+		game, plan, ok := requirePlanPreparerOrStandIn(w, r, s.Q, true)
 		if !ok {
 			return
 		}
@@ -385,9 +385,29 @@ func CompletePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 
+		// Who wrapped it, read before finalizing (which reloads plan): a Make Demands
+		// winner wrapping a Chronicle scene in the preparer's stead is the one
+		// completion not made by the preparer. requirePlanPreparerOrStandIn has
+		// already refused anyone else.
+		wrapper := int64(0)
+		if plan.PlanType == model.PlanChronicleHistories {
+			wrapper = chStandInWrapper(ctx, s.Q, plan)
+		}
+
 		if err := finalizePlanResolution(ctx, s.Q, manager, plan, resultStr); err != nil {
 			respondInternalErr(w, r, "could not complete plan", err)
 			return
+		}
+
+		// After the plan has resolved, so a failed finalize leaves no line that is
+		// false and a retry cannot post it twice.
+		if wrapper != 0 {
+			planID := plan.ID
+			EmitSystemPost(ctx, s.Q, manager, plan.GameID, "plan.chronicle_histories",
+				model.SeverityDefault,
+				fmt.Sprintf("%s, the Make Demands winner, wrapped the scene for %s.",
+					playerDisplayName(ctx, s.Q, wrapper), playerDisplayName(ctx, s.Q, plan.PreparerID)),
+				logRow(*game), &planID, nil, map[string]any{"plan_id": plan.ID})
 		}
 
 		respond(w, http.StatusOK, map[string]any{
