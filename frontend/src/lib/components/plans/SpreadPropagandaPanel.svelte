@@ -8,7 +8,7 @@
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
-		preparePlan, makeChoice, completePlan, getRoll, castSpreadPropagandaRoll,
+		preparePlan, makeChoice, completePlan, getRoll, castSpreadPropagandaRoll, declineCounterPropaganda,
 		type Plan, type DiceRollDie,
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -118,8 +118,7 @@
 	// OnResolve parks the plan with no roll; the preparer's narration is posted for
 	// the table (who read it to decide whether to help or interfere) and only then
 	// does the roll open. Plans that rolled before the step existed carry no flag, so
-	// "a roll exists for this plan" counts as done too — as does a counter-propaganda
-	// plan, which is born rolling.
+	// "a roll exists for this plan" counts as done too.
 	const rollForThisPlan = $derived(plan != null && activeRoll != null && activeRoll.plan_id === plan.id);
 	const hasCommittedChoices = $derived(
 		plan != null && choicesCommitted(parseResolutionData(plan)),
@@ -137,6 +136,20 @@
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not open the roll.';
+		} finally { preRollBusy = false; }
+	}
+
+	// A counter-propaganda plan (mar option d) opens at this same step, but its
+	// preparer — the top interferer — may decline instead of rolling.
+	const isCounter = $derived(spData.original_plan_id != null);
+	async function declineCounter(p: Plan) {
+		if (preRollBusy) return;
+		preRollBusy = true; resError = '';
+		try {
+			await declineCounterPropaganda(p.id);
+			onPlansChanged();
+		} catch (e) {
+			resError = e instanceof Error ? e.message : 'Could not decline.';
 		} finally { preRollBusy = false; }
 	}
 
@@ -409,8 +422,10 @@
 
 		{#if !preRollDone}
 			<PreRollStep
-				title="Spread your message"
-				prompt="Summarize the message you want the public to take from your propaganda and describe again how you've been spreading it."
+				title={isCounter ? 'Answer with propaganda of your own' : 'Spread your message'}
+				prompt={isCounter
+					? "You interfered, and the plan marred. Summarize the message you want the public to take from your own propaganda and describe how you're spreading it, or decline."
+					: "Summarize the message you want the public to take from your propaganda and describe again how you've been spreading it."}
 				fields={[{
 					key: 'narration',
 					label: 'The message and how it spreads',
@@ -425,6 +440,12 @@
 				waitingVerb="is about to say how they're spreading their message"
 				onSubmit={(v) => submitPreRoll(plan, v)}
 			/>
+			{#if isCounter && isPreparer}
+				<!-- Declining is a move, not a dodge: a flop would land on you. -->
+				<button class="action-btn secondary" onclick={() => declineCounter(plan)} disabled={preRollBusy}>
+					Decline: spread nothing
+				</button>
+			{/if}
 
 		{:else if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>

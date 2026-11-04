@@ -183,8 +183,9 @@ func reaimHoldAtResolve(
 	return true, nil
 }
 
-// fizzledOutcome labels a plan that closed with no effect because its target is
-// gone and nothing else can be aimed at. It exists only for the log (the plan row
+// fizzledOutcome labels a plan that closed with no effect: its target is gone
+// and nothing else can be aimed at, or (Spread Propaganda) the interferer
+// declined their counter-propaganda. It exists only for the log (the plan row
 // keeps a NULL result — see reaimHoldAtResolve): EmitPlanResolved gives it the
 // generic plan.resolved code, which the chat already files under "Resolved".
 const fizzledOutcome = "fizzled"

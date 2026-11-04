@@ -111,7 +111,7 @@
 	// ── Derived plan state ────────────────────────────────────────────────────
 
 	// Normally the one resolving plan; a festivity paused for its duel yields to it.
-	const resolvingPlan = $derived(activeResolvingPlan(plans));
+	const resolvingPlan = $derived(activeResolvingPlan(plans, currentPlayerID));
 
 	// Pending plans on the current row are auto-kicked off server-side (see
 	// broadcastRowState in handler/row_state.go), so the client should only

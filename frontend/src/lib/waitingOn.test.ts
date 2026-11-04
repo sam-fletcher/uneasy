@@ -126,6 +126,14 @@ describe('actor-naming sub-phase kinds', () => {
 		).toEqual([2, 9]);
 	});
 
+	it('await_counter_propaganda names whoever the server lists', () => {
+		const got = mainEventWaitingOn(
+			input({ rowState: rowState('await_counter_propaganda', { acting_player_ids: [5, 9] }) }),
+		);
+		expect(playerIDs(got.waitees)).toEqual([5, 9]);
+		expect(got.stepLabel).toBe('Spread Propaganda — counter-propaganda');
+	});
+
 	it('await_introductions_marginalia names whoever owes a newcomer’s marginalia', () => {
 		const got = mainEventWaitingOn(
 			input({

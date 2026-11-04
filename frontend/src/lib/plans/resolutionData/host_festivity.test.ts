@@ -38,4 +38,17 @@ describe('activeResolvingPlan', () => {
 		const festivity = plan(1, 'host_festivity', 'resolving', { festivity: { pending_duel_plan_id: 9 } });
 		expect(activeResolvingPlan([festivity, plan(3, 'propose_duel', 'resolving')])?.id).toBe(1);
 	});
+
+	it('shows an interferer who owes a counter-propaganda step that plan, others the parent', () => {
+		const parent = { ...plan(1, 'spread_propaganda', 'resolving'), preparer_id: 10 } as Plan;
+		const counter = {
+			...plan(2, 'spread_propaganda', 'resolving', { spread_propaganda: { original_plan_id: 1 } }),
+			preparer_id: 20,
+		} as Plan;
+		expect(activeResolvingPlan([parent, counter], 20)?.id).toBe(2);
+		expect(activeResolvingPlan([parent, counter], 10)?.id).toBe(1);
+		expect(activeResolvingPlan([parent, counter], null)?.id).toBe(1);
+		const done = { ...counter, resolution_data: JSON.stringify({ spread_propaganda: { original_plan_id: 1, pre_roll_done: true } }) } as Plan;
+		expect(activeResolvingPlan([parent, done], 20)?.id).toBe(1);
+	});
 });

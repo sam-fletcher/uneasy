@@ -239,10 +239,9 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	expect(box!.width).toBeGreaterThanOrEqual(44);
 	expect(box!.height).toBeGreaterThanOrEqual(44);
 
-	// "Keep your head down" has one effect, so the picker allows it once. That cap is a
-	// UI choice, not a rule: the rulebook lets any mar option be taken repeatedly, and
-	// docs/work/questions/spread-propaganda-lay-low-cap.md awaits a ruling. If the owner
-	// lifts it, this assertion changes with it.
+	// "Keep your head down" is capped at one pick — a deliberate deviation from the
+	// book's repeatable options (owner ruling 2026-11-03; the server enforces it too,
+	// pinned in the handler integration tests). The picker shows why.
 	await more(LAY_LOW).click();
 	await expect(more(LAY_LOW)).toBeDisabled();
 	await expect(alice.page.getByText('already chosen')).toBeVisible();
@@ -457,4 +456,79 @@ test('spread propaganda make: the artifact step appears live, with no reload', a
 	await expect(alice.page.getByText('Your message sets society ablaze')).toBeVisible({ timeout: 10_000 });
 	await expect(bob.page.getByText('Waiting for alice to author the artifact…')).toBeVisible({ timeout: 10_000 });
 
+});
+
+// ── Counter-propaganda (mar option d): the interferer states a message or declines ──
+
+/** Drive a marred plan to alice's pick, with bob as the one interferer. Returns the
+ *  counter-propaganda plan's id once alice's picks are committed. */
+async function marWithBobInterfering(t: Table, picks: string[]): Promise<number> {
+	const { alice, bob } = t;
+	const roll = await castFromUI(t, 'Grain is hoarded while the markets starve.');
+	// The actor rolls two dice, so a result of 1 is always reachable and leaves the
+	// mar a budget of difficulty − 1 (a dummy can hold a rank, so don't hard-code it).
+	expect(roll.difficulty).toBeGreaterThanOrEqual(picks.length + 1);
+
+	const post = async (who: { ctx: BrowserContext }, path: string, data?: object) => {
+		const res = await who.ctx.request.post(path, data ? { data } : undefined);
+		expect(res.ok(), `${path}: ${await res.text()}`).toBeTruthy();
+	};
+	await post(alice, `/api/rolls/${roll.id}/skip-vote`);
+	await post(bob, `/api/rolls/${roll.id}/intent`, { intent: 'interfere' });
+	const { assets } = (await (await bob.ctx.request.get(`/api/tables/${t.gameID}/assets`)).json()) as { assets: AssetRow[] };
+	const bobHolding = assets.find(a => a.asset_type === 'holding' && a.name.startsWith('bob'))!;
+	await post(bob, `/api/rolls/${roll.id}/leverage`, { asset_id: bobHolding.id });
+	await forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: 1 });
+	if (picks.includes('give_peer')) {
+		await post(alice, `/api/tables/${t.gameID}/assets`, {
+			asset_type: 'peer', name: 'A peer to give', is_main_character: false, marginalia: ['loyal'],
+		});
+	}
+	await post(alice, `/api/plans/${t.planID}/make-choice`, { result: 'mar', choices: picks });
+	const { plans } = (await (await alice.ctx.request.get(`/api/tables/${t.gameID}/plans`)).json()) as { plans: PlanRow[] };
+	return plans.filter(p => p.plan_type === 'spread_propaganda').map(p => p.id).find(id => id !== t.planID)!;
+}
+
+test('counter-propaganda: the interferer, with the parent still owing a step, can state a message the table reads first', async ({ browser }) => {
+	const t = await setUp(browser);
+	await openTables(t);
+	const childID = await marWithBobInterfering(t, ['give_peer', 'counter_prop']);
+	const { alice, bob } = t;
+
+	// The parent still owes alice's give_peer, so it stays open — and bob, who owes the
+	// counter step, is shown ITS form, while alice keeps the parent's panel.
+	await expect(bob.page.getByText('Answer with propaganda of your own')).toBeVisible({ timeout: 10_000 });
+	await expect(bob.page.getByRole('button', { name: 'Decline: spread nothing' })).toBeVisible();
+	await expect(alice.page.getByText('Answer with propaganda of your own')).toHaveCount(0);
+	await expect(alice.page.getByText('hand it to another player')).toBeVisible();
+
+	// No roll for the child until bob speaks; once he does, the message is on the record.
+	const MESSAGE = 'The crown starves its own people.';
+	const form = bob.page.locator('.pre-roll');
+	await form.locator('textarea').fill(MESSAGE);
+	await form.getByRole('button', { name: 'Post & open the roll' }).click();
+	await expect(form).toHaveCount(0);
+	await expect.poll(async () => {
+		const res = await alice.ctx.request.get(`/api/tables/${t.gameID}/posts`);
+		return JSON.stringify(await res.json()).includes(MESSAGE);
+	}).toBe(true);
+	const roll = await activeRoll(alice.ctx.request, t.gameID);
+	expect(roll, 'the child roll opens only after the message').toBeTruthy();
+	expect(await planStatus(alice.ctx.request, childID)).toBe('resolving');
+});
+
+test('counter-propaganda: the interferer may decline, and it is logged', async ({ browser }) => {
+	const t = await setUp(browser);
+	await openTables(t);
+	const childID = await marWithBobInterfering(t, ['counter_prop']);
+	const { alice, bob } = t;
+
+	await expect(bob.page.getByText('Answer with propaganda of your own')).toBeVisible({ timeout: 10_000 });
+	await expect(alice.page.getByText('bob is about to say how they\'re spreading their message')).toBeVisible();
+	await bob.page.getByRole('button', { name: 'Decline: spread nothing' }).click();
+
+	await expect.poll(() => planStatus(alice.ctx.request, childID), { timeout: 10_000 }).toBe('resolved');
+	const posts = JSON.stringify(await (await alice.ctx.request.get(`/api/tables/${t.gameID}/posts`)).json());
+	expect(posts).toContain('declined to spread propaganda of their own');
+	await expect(bob.page.getByText('Answer with propaganda of your own')).toHaveCount(0);
 });

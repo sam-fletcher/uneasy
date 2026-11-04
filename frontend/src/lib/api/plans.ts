@@ -271,6 +271,14 @@ export function castSeekAnswersRoll(
 }
 
 /**
+ * Spread Propaganda — the top interferer declines to answer with propaganda of
+ * their own. Logged; the counter-propaganda plan closes without a roll.
+ */
+export function declineCounterPropaganda(planID: number): Promise<{ plan_id: number }> {
+	return apiFetch(`/plans/${planID}/sp-decline-counter`, { method: 'POST' });
+}
+
+/**
  * Spread Propaganda — the pre-roll: summarise the message and how it is being
  * spread. The server posts the text for the table and only then opens the roll.
  */
