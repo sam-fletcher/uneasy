@@ -305,7 +305,9 @@ test('re-aim: a peer destroyed before resolution pauses the plan for the prepare
 	const planID = await prepareEC(g);
 
 	// Five rows pass; meanwhile bob's courtier loses its only marginalia.
-	const tear = await g.ctx.bob.request.delete(`/api/assets/${g.peers.bob}/marginalia/1`);
+	const tear = await g.ctx.bob.request.post('/api/dev/tear-marginalia', {
+		data: { asset_id: g.peers.bob, position: 1, player_id: g.ids.bob },
+	});
 	expect(tear.ok(), `tear failed: ${await tear.text()}`).toBeTruthy();
 	await resolveEC(g, planID);
 	const { alice, bob, carol } = await openAll(g);

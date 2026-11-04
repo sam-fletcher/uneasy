@@ -68,12 +68,12 @@ func newAssetHarness(t *testing.T, n int) *assetHarness {
 	r.Use(appMiddleware.EnsureSession(q))
 	r.Post("/api/tables/{id}/assets", CreateAsset(store, manager))
 	r.Post("/api/tables/{id}/replace-main-character", ReplaceMainCharacterWithNewPeer(store, manager))
+	r.Post("/api/dev/take-asset", DevTakeAsset(store, manager))
+	r.Post("/api/dev/tear-marginalia", DevTearMarginalia(store, manager))
 	r.Route("/api/assets/{assetId}", func(rr chi.Router) {
 		rr.Put("/", UpdateAsset(store, manager))
 		rr.Post("/marginalia", AddMarginalia(store, manager))
 		rr.Put("/marginalia/{pos}", UpdateMarginalia(store, manager))
-		rr.Delete("/marginalia/{pos}", TearMarginalia(store, manager))
-		rr.Post("/take", TakeAsset(store, manager))
 		rr.Post("/secrets", WriteSecret(store, manager))
 	})
 
@@ -251,7 +251,7 @@ func TestChatLog_MarginaliaTornByRival(t *testing.T) {
 	})
 	id := assetIDFromBody(t, body)
 
-	code, _ := h.do("DELETE", 1, assetPath(id, "/marginalia/1"), nil)
+	code, _ := h.tearMarginalia(1, id, 1)
 	require.Equal(t, http.StatusOK, code)
 
 	p := h.postBySystemCode("marginalia.torn")
@@ -274,7 +274,7 @@ func TestChatLog_AssetTaken(t *testing.T) {
 	})
 	id := assetIDFromBody(t, body)
 
-	code, _ := h.do("POST", 1, assetPath(id, "/take"), nil)
+	code, _ := h.takeAsset(1, id)
 	require.Equal(t, http.StatusOK, code)
 
 	p := h.postBySystemCode("asset.taken")
@@ -328,7 +328,7 @@ func TestReplaceMainCharacter_ConscriptLeveragesAllAssets(t *testing.T) {
 		GameID: h.tg.Game.ID, OwnerID: loser.ID,
 	})
 	require.NoError(t, err)
-	code, _ := h.do("POST", 1, assetPath(mc.ID, "/take"), nil)
+	code, _ := h.takeAsset(1, mc.ID)
 	require.Equal(t, http.StatusOK, code)
 
 	// Conscript a new main character.
@@ -368,7 +368,7 @@ func TestReplaceMainCharacter_MinimumMarginalia(t *testing.T) {
 		GameID: h.tg.Game.ID, OwnerID: loser.ID,
 	})
 	require.NoError(t, err)
-	code, _ := h.do("POST", 1, assetPath(mc.ID, "/take"), nil)
+	code, _ := h.takeAsset(1, mc.ID)
 	require.Equal(t, http.StatusOK, code)
 
 	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/replace-main-character"
@@ -401,7 +401,7 @@ func TestReplaceMainCharacter_RejectedWhenPeerAvailable(t *testing.T) {
 		GameID: h.tg.Game.ID, OwnerID: loser.ID,
 	})
 	require.NoError(t, err)
-	code, _ := h.do("POST", 1, assetPath(mc.ID, "/take"), nil)
+	code, _ := h.takeAsset(1, mc.ID)
 	require.Equal(t, http.StatusOK, code)
 
 	code, body := h.do("POST", 0,
@@ -484,7 +484,7 @@ func TestChatLog_MarginaliaTornInShakeUp(t *testing.T) {
 	id := assetIDFromBody(t, body)
 
 	h.assertUnanchoredLog(model.PhaseShakeUp, publicRecordRowCount+1, "marginalia.torn", func() {
-		code, _ := h.do("DELETE", 1, assetPath(id, "/marginalia/1"), nil)
+		code, _ := h.tearMarginalia(1, id, 1)
 		require.Equal(t, http.StatusOK, code)
 	})
 
@@ -579,4 +579,46 @@ func TestChatLog_SecretWrittenInPrologue(t *testing.T) {
 		code, _ := h.do("POST", 0, assetPath(id, "/secrets"), map[string]any{"text": "a buried thing"})
 		require.Equal(t, http.StatusCreated, code)
 	})
+}
+
+// takeAsset moves an asset to player idx through the dev shortcut, which runs
+// the same take effect and log post a plan does. The player-facing take route
+// no longer exists (see TestAssetRoutes_NoRawTakeOrTear).
+func (h *assetHarness) takeAsset(idx int, assetID int64) (int, map[string]any) {
+	h.t.Helper()
+	return h.do("POST", idx, "/api/dev/take-asset",
+		map[string]any{"asset_id": assetID, "player_id": h.tg.Players[idx].ID})
+}
+
+// tearMarginalia tears a marginalia, credited to player idx, through the dev
+// shortcut (same break effect and log post as a plan).
+func (h *assetHarness) tearMarginalia(idx int, assetID int64, pos int) (int, map[string]any) {
+	h.t.Helper()
+	return h.do("POST", idx, "/api/dev/tear-marginalia",
+		map[string]any{"asset_id": assetID, "position": pos, "player_id": h.tg.Players[idx].ID})
+}
+
+// TestAssetRoutes_NoRawTakeOrTear: a game member cannot take or tear another
+// player's asset by a raw request. The harness mounts the same /api/assets
+// routes the server does; take and tear must not be among them, so both verbs
+// miss, and the asset is untouched afterwards.
+func TestAssetRoutes_NoRawTakeOrTear(t *testing.T) {
+	h := newAssetHarness(t, 2)
+	_, body := h.do("POST", 0, h.tablePath(), map[string]any{
+		"asset_type": "artifact", "name": "The Crown", "marginalia": []string{"gleaming"},
+	})
+	id := assetIDFromBody(t, body)
+
+	code, _ := h.do("POST", 1, assetPath(id, "/take"), nil)
+	require.Contains(t, []int{http.StatusNotFound, http.StatusMethodNotAllowed}, code, "take route must not exist")
+	code, _ = h.do("DELETE", 1, assetPath(id, "/marginalia/1"), nil)
+	require.Contains(t, []int{http.StatusNotFound, http.StatusMethodNotAllowed}, code, "tear route must not exist")
+
+	a, err := h.q.GetAssetByID(context.Background(), id)
+	require.NoError(t, err)
+	require.Equal(t, h.tg.Players[0].ID, a.OwnerID)
+	require.False(t, a.IsDestroyed)
+	ms, err := h.q.ListMarginaliaByAsset(context.Background(), id)
+	require.NoError(t, err)
+	require.False(t, ms[0].IsTorn)
 }

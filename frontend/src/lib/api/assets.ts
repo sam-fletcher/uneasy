@@ -66,16 +66,7 @@ export function updateMarginalia(
 	});
 }
 
-export function tearMarginalia(
-	assetID: number,
-	position: number
-): Promise<{ torn: boolean; destroyed: boolean }> {
-	return apiFetch(`/assets/${assetID}/marginalia/${position}`, {
-		method: 'DELETE'
-	});
-}
-
-// ── Leverage / Refresh / Take ─────────────────────────────────────────────────
+// ── Leverage / Refresh ─────────────────────────────────────────────────
 
 export function leverageAsset(assetID: number): Promise<{ leveraged: boolean }> {
 	return apiFetch(`/assets/${assetID}/leverage`, { method: 'POST' });
@@ -83,10 +74,6 @@ export function leverageAsset(assetID: number): Promise<{ leveraged: boolean }> 
 
 export function refreshAsset(assetID: number): Promise<{ leveraged: boolean }> {
 	return apiFetch(`/assets/${assetID}/refresh`, { method: 'POST' });
-}
-
-export function takeAsset(assetID: number): Promise<{ asset: Asset }> {
-	return apiFetch(`/assets/${assetID}/take`, { method: 'POST' });
 }
 
 // ── Secrets ───────────────────────────────────────────────────────────────────

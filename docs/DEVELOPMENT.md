@@ -285,6 +285,8 @@ few shortcuts that make this painless:
 | `POST /api/dev/advance-row` | Jump a game's `current_row` — `{"plan_id":N}` (to that plan's row) or `{"game_id":N,"row":R}`. Lands you on a prepared plan's resolution row without clicking through the rows between. |
 | `POST /api/dev/force-roll` | `{"roll_id":N,"outcome":"mar"}` (or `"make"`, or an exact `"result":K`) — force an open dice roll to a chosen outcome and resolve it through the real path. The dice are genuinely random, so without this the **mar** branch of every rolled plan — half of its resolution UI — can't be reached on demand. |
 | `POST /api/dev/crown` | `{"game_id":N,"player_id":N}` — seat a monarch at a seeded table the way the Prologue's title claim does: a new peer ("The Crown") owned by that player, bearing the monarch title, with the throne-established gate tripped. Broadcast live and posted to the log. For testing a table with a reigning monarch (Propose Decree's signatory and council). |
+| `POST /api/dev/take-asset` | `{"asset_id":N,"player_id":N}` — move an asset to a player the way a plan's take does (secret visibility, `asset.taken` log line, main-character gate). Players have no raw take route. |
+| `POST /api/dev/tear-marginalia` | `{"asset_id":N,"position":1-4,"player_id":N}` — tear one marginalia the way a plan's break does (destroys the asset on the last one, logs it). Players have no raw tear route. |
 | `POST /api/dev/delete-game` | `{"game_id":N}` — hard-delete a single game and all its data (cascade), leaving accounts and other games intact. The everyday cleanup tool. |
 
 `force-roll` works *with* the production resolution path rather than around

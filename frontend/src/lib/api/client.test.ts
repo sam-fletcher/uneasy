@@ -86,7 +86,7 @@ describe('apiFetch — success', () => {
 describe('apiFetch — error bodies', () => {
 	it('surfaces the server message from a JSON error body', async () => {
 		mockFetch(async () => response(409, '{"error":"you already own this asset"}'));
-		await expect(apiFetch('/assets/1/take')).rejects.toThrow('you already own this asset');
+		await expect(apiFetch('/assets/1/leverage', { method: 'POST' })).rejects.toThrow('you already own this asset');
 	});
 
 	it('carries the status and parsed body on the thrown ApiError', async () => {
