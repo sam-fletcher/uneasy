@@ -168,3 +168,64 @@ describe('TargetPlanDemandOverlay keep_assets banner', () => {
 		expect(body).not.toContain('go to bob instead');
 	});
 });
+
+// A liaison is a meeting between two specific peers, so re-aiming it also names the
+// new partner's peer; a partner with no peer left can't be picked, and says why.
+describe('TargetPlanDemandOverlay liaison re-aim', () => {
+	const CAROL = 3;
+	const DAN = 4;
+	const four = [
+		{ id: ALICE, display_name: 'alice' }, { id: BOB, display_name: 'bob' },
+		{ id: CAROL, display_name: 'carol' }, { id: DAN, display_name: 'dan' },
+	] as never;
+	const peer = (id: number, owner: number, name: string, destroyed = false) =>
+		({ id, owner_id: owner, name, asset_type: 'peer', is_destroyed: destroyed, marginalia: [] });
+
+	function liaison(assets: unknown[], viewer = BOB, status = 'resolving'): string {
+		const target = {
+			id: 10, plan_type: 'clandestinely_liaise', status, preparer_id: ALICE,
+			target_player_id: CAROL, target_asset_id: null,
+			resolution_data: JSON.stringify({ liaise: { phase: 'together_at_last', partner_id: CAROL, partner_peer_id: 21, preparer_peer_id: 20 } }),
+		};
+		const demand = {
+			id: 11, plan_type: 'make_demands', status: 'resolved', result: 'make',
+			preparer_id: BOB, targeted_plan_id: 10,
+			resolution_data: JSON.stringify({ make_demands: { draft_choices: [
+				{ option: 'control_leverage', player_id: BOB },
+				{ option: 'keep_or_change_target', player_id: BOB },
+				{ option: 'keep_assets', player_id: BOB },
+				{ option: 'perform_steps', player_id: BOB },
+			] } }),
+		};
+		return render(TargetPlanDemandOverlay, {
+			props: { plan: target as never, plans: [target, demand] as never, players: four, assets: assets as never, currentPlayerID: viewer },
+			context: new Map([[ACTIVE_ROLL_KEY, () => null]]),
+		}).body;
+	}
+
+	it('asks for the partner and their peer, not a target asset', () => {
+		const body = liaison([peer(20, ALICE, 'Alice Friend'), peer(21, CAROL, 'Carol Confidant'), peer(22, BOB, 'Bob Friend')]);
+		// (The peer picker itself appears once a partner is chosen, which SSR can't do.)
+		expect(body).toContain('Who they meet');
+		expect(body).not.toContain('Target asset');
+	});
+
+	it('shows a partner with no live peer as unavailable, with the reason', () => {
+		const body = liaison([peer(20, ALICE, 'Alice Friend'), peer(21, CAROL, 'Carol Confidant'), peer(31, DAN, 'Dan Lost', true)]);
+		expect(body).toContain('dan is unavailable');
+		expect(body).not.toContain('carol is unavailable');
+	});
+
+	it('never offers the preparer as the partner', () => {
+		const body = liaison([peer(20, ALICE, 'Alice Friend'), peer(21, CAROL, 'Carol Confidant')]);
+		expect(body).not.toMatch(/<span class="name">alice<\/span>/);
+	});
+
+	it('says why it can only be kept: pending, or the preparer\'s own meeting peer is gone', () => {
+		const live = [peer(20, ALICE, 'Alice Friend'), peer(21, CAROL, 'Carol Confidant')];
+		expect(liaison(live)).not.toContain('can only be kept');
+		expect(liaison(live, BOB, 'pending')).toContain('once it is resolving');
+		expect(liaison([peer(20, ALICE, 'Alice Friend', true), peer(21, CAROL, 'Carol Confidant')]))
+			.toContain("alice's own meeting peer is gone");
+	});
+});

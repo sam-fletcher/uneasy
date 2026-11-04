@@ -453,3 +453,12 @@ export function ownerIntactAssets(assets: Asset[], ownerID: number | null): Asse
 	return assets.filter(a => a.owner_id === ownerID && !a.is_destroyed);
 }
 
+
+/**
+ * Whether a player has a peer who could be brought to a liaison: one they own that
+ * is not destroyed. A partner with none cannot be liaised with, so the re-aim form
+ * shows them as unavailable. Mirrors the server's clValidateMeetingPeer.
+ */
+export function liaisePeersOf(assets: Asset[], playerID: number): Asset[] {
+	return assets.filter(a => a.owner_id === playerID && a.asset_type === 'peer' && !a.is_destroyed);
+}

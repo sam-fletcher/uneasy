@@ -17,10 +17,11 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
+	import { parseLiaiseData } from '$lib/plans/resolutionData/liaise';
 	import {
 		playerName, activeDemandAgainst, demandWinnersFromPlan,
 		parseResolutionData, targetHasPreparerRoll, demandOptionInertReason, PLAN_SHORT,
-		targetIsRetargetable, aimSettlesFirst, demandAimLocked,
+		targetIsRetargetable, aimSettlesFirst, demandAimLocked, liaisePeersOf,
 	} from '../shared';
 	import { useActiveRoll } from './activeRollContext';
 	import PlayerChips from '../PlayerChips.svelte';
@@ -148,6 +149,9 @@
 
 	let retargetPlayerID = $state<number | null>(null);
 	let retargetAssetID = $state<number | null>(null);
+	// A liaison is a meeting between two specific peers, so a re-aim also names the
+	// new partner's. It starts as the current partner's, and clears when the partner changes.
+	let retargetPeerID = $state<number | null>(null);
 	let retargetBusy = $state(false);
 	let retargetError = $state('');
 
@@ -158,8 +162,30 @@
 			lastRetargetPlanID = plan.id;
 			retargetPlayerID = plan.target_player_id;
 			retargetAssetID = plan.target_asset_id;
+			retargetPeerID = parseLiaiseData(plan).partner_peer_id ?? null;
 		}
 	});
+
+	const isLiaise = $derived(plan.plan_type === 'clandestinely_liaise');
+	/** Who a liaison can be re-aimed at: anyone but the preparer. */
+	const liaisePartnerChoices = $derived(players.filter(p => p.id !== plan.preparer_id));
+	const noPeerToBring = (p: Player) => liaisePeersOf(assets, p.id).length === 0;
+	// Why a liaison can only be kept, when it can: mirrors the server's mdLiaiseReaimAllowed.
+	const liaiseReaimBlocked = $derived.by((): string | null => {
+		if (!isLiaise) return null;
+		if (plan.status !== 'resolving') {
+			return 'This liaison can be re-aimed once it is resolving; until then it can only be kept.';
+		}
+		const mine = parseLiaiseData(plan).preparer_peer_id;
+		if (mine == null || !liaisePeersOf(assets, plan.preparer_id).some(a => a.id === mine)) {
+			return `${playerName(players, plan.preparer_id)}'s own meeting peer is gone, so this liaison can only be kept.`;
+		}
+		return null;
+	});
+	const unavailablePartners = $derived(isLiaise ? liaisePartnerChoices.filter(noPeerToBring) : []);
+	const retargetPeers = $derived(
+		isLiaise && retargetPlayerID != null ? liaisePeersOf(assets, retargetPlayerID) : [],
+	);
 
 	// Filter the asset picker by the currently-chosen target player. If no
 	// player is chosen the asset list is hidden (re-aiming to a null player
@@ -174,8 +200,12 @@
 		if (retargetPlayerID === p.id) {
 			retargetPlayerID = null;
 			retargetAssetID = null;
+			retargetPeerID = null;
 		} else {
 			retargetPlayerID = p.id;
+			retargetPeerID = p.id === parseLiaiseData(plan).partner_id
+				? (parseLiaiseData(plan).partner_peer_id ?? null)
+				: null;
 			// Clear asset on player change unless it already belongs to them.
 			if (retargetAssetID != null) {
 				const a = assets.find(x => x.id === retargetAssetID);
@@ -192,7 +222,9 @@
 		try {
 			await demandRetarget(plan.id, keep
 				? { keep: true }
-				: { target_player_id: retargetPlayerID, target_asset_id: retargetAssetID });
+				: isLiaise
+					? { target_player_id: retargetPlayerID, partner_peer_id: retargetPeerID }
+					: { target_player_id: retargetPlayerID, target_asset_id: retargetAssetID });
 		} catch (e) {
 			retargetError = e instanceof Error ? e.message : 'Could not settle this plan’s target.';
 		} finally { retargetBusy = false; }
@@ -309,15 +341,35 @@
 					</p>
 				{/if}
 				{#if retargetError}<ErrorText message={retargetError} variant="panel" />{/if}
-				<FormField label="Target player">
+				<FormField label={isLiaise ? 'Who they meet' : 'Target player'}>
 					<PlayerChips
-						{players}
+						players={isLiaise ? liaisePartnerChoices : players}
 						isActive={(p) => retargetPlayerID === p.id}
+						isDisabled={isLiaise ? noPeerToBring : undefined}
 						onSelect={selectRetargetPlayer}
 					/>
 				</FormField>
+				{#if liaiseReaimBlocked}
+					<p class="choices-note">{liaiseReaimBlocked}</p>
+				{/if}
+				{#each unavailablePartners as p (p.id)}
+					<p class="choices-note muted">
+						{p.display_name} is unavailable: they have no peer left to bring to the meeting.
+					</p>
+				{/each}
 
-				{#if retargetPlayerID != null}
+				{#if isLiaise}
+					{#if retargetPlayerID != null}
+						<CardPicker
+							label={`The peer ${playerName(players, retargetPlayerID)} brings`}
+							items={retargetPeers}
+							{players}
+							emptyMessage="This player has no peer to bring."
+							selected={retargetPeerID}
+							onSelect={(id) => (retargetPeerID = id)}
+						/>
+					{/if}
+				{:else if retargetPlayerID != null}
 					<CardPicker
 						label="Target asset (optional)"
 						items={retargetCandidateAssets}
@@ -330,7 +382,7 @@
 
 				<div class="demand-actions">
 					<button class="action-btn primary" onclick={() => submitRetarget(false)}
-						disabled={retargetBusy}>
+						disabled={retargetBusy || (isLiaise && (liaiseReaimBlocked != null || retargetPlayerID == null || retargetPeerID == null))}>
 						{retargetBusy ? '…' : 'Re-aim this plan'}
 					</button>
 					<button class="action-btn secondary" onclick={() => submitRetarget(true)}
