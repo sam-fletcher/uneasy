@@ -588,7 +588,9 @@ test('perform_steps: the demand winner acts for the preparer, who is locked out 
 	await H.completeDemand(f);
 	await H.startTarget(f);
 	await expect.poll(async () => (await fetchPlan(g)).status, { message: 'the liaison is resolving' }).toBe('resolving');
-	await post(g, 'alice', `/api/plans/${g.planID}/advance-liaise`, {}, 200);
+	// Moving the meeting on is a step, so it is the winner's: the locked-out preparer is refused.
+	await post(g, 'alice', `/api/plans/${g.planID}/advance-liaise`, {}, 403);
+	await post(g, 'bob', `/api/plans/${g.planID}/advance-liaise`, {}, 200);
 
 	const { alice, bob, carol } = await openAll(g);
 	const url = (route: string) => `/api/plans/${g.planID}/${route}`;

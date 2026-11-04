@@ -49,17 +49,17 @@ func requirePlanPreparer(
 	r *http.Request,
 	q *dbgen.Queries,
 ) (*dbgen.Game, *dbgen.Plan, bool) {
-	return requirePlanPreparerOrStandIn(w, r, q, false)
+	return requirePlanPreparerOrStandIn(w, r, q, "")
 }
 
-// requirePlanPreparerOrStandIn is requirePlanPreparer, except that with
-// standInMayWrap a Chronicle Histories plan is completed by the Make Demands
-// winner standing in for the preparer rather than by the preparer.
+// requirePlanPreparerOrStandIn is requirePlanPreparer, except that on a plan of
+// type standInFor ("" for none) the step is taken by the Make Demands winner of
+// the perform option, standing in for the preparer, rather than by the preparer.
 func requirePlanPreparerOrStandIn(
 	w http.ResponseWriter,
 	r *http.Request,
 	q *dbgen.Queries,
-	standInMayWrap bool,
+	standInFor model.PlanType,
 ) (*dbgen.Game, *dbgen.Plan, bool) {
 	plan, player, ok := requirePlanAccess(w, r, q)
 	if !ok {
@@ -74,14 +74,15 @@ func requirePlanPreparerOrStandIn(
 		respondErr(w, http.StatusConflict, "game is not in the main event phase")
 		return nil, nil, false
 	}
-	// Chronicle Histories' "Wrap the scene" is a step, not a fact about whose plan
-	// it is, so the Make Demands winner of the perform option presses it instead
-	// of the preparer (design principle 9). Only CompletePlan asks for this: the
-	// perform option is post-roll, so starting the plan stays the preparer's.
-	if standInMayWrap && plan.PlanType == model.PlanChronicleHistories {
+	// Chronicle Histories' "Wrap the scene" and Clandestinely Liaise's advance
+	// are steps, not facts about whose plan it is, so the Make Demands winner of
+	// the perform option presses them instead of the preparer (design principle
+	// 9). Only those routes ask for this: the perform option is post-roll, so
+	// starting the plan stays the preparer's.
+	if standInFor != "" && plan.PlanType == standInFor {
 		if !actsForPreparer(r.Context(), q, plan, player.ID) {
 			respondErr(w, http.StatusForbidden,
-				"only the plan's preparer (or the Make Demands winner standing in for them) can wrap the scene")
+				"only the plan's preparer (or the Make Demands winner standing in for them) can do this")
 			return nil, nil, false
 		}
 		return &game, plan, true

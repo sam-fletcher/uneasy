@@ -15,14 +15,16 @@ import (
 
 // clAdvanceLiaiseHandler handles POST /api/plans/:planId/advance-liaise.
 //
-// The preparer advances the liaise to the next phase. Valid transitions:
+// The preparer advances the liaise to the next phase, or the Make Demands winner
+// of the perform option does in their place (pressing it is a step, not a fact
+// about whose plan it is; design principle 9). Valid transitions:
 //
 //	together_at_last → secrets_we_keep
 //	secrets_we_keep  → things_we_share   (only after both keep-secret submitted)
 //	things_we_share  → when_will_i_see_you_again (only after both share-choice submitted)
 func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, plan, ok := requirePlanPreparer(w, r, deps.Q)
+		_, plan, ok := requirePlanPreparerOrStandIn(w, r, deps.Q, model.PlanClandestinelyLiaise)
 		if !ok {
 			return
 		}
@@ -87,8 +89,17 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 			Phase:  string(nextPhase),
 		})
 
+		// The preparer pressing it is the ordinary course; the Make Demands winner
+		// doing it for them is worth a line, so the table can see who moved the meeting on.
+		if standIn := clStandInAdvancer(ctx, deps.Q, plan); standIn != 0 {
+			clLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s, the Make Demands winner, moved %s's liaison on to %s.",
+				playerDisplayName(ctx, deps.Q, standIn), playerDisplayName(ctx, deps.Q, plan.PreparerID),
+				liaisePhaseLabel(nextPhase)))
+		}
+
 		// The new phase changes who the table is waiting on (e.g.
-		// together_at_last names only the preparer, but secrets_we_keep and
+		// together_at_last names only whoever presses advance, but secrets_we_keep and
 		// things_we_share name both participants). LiaisePhaseChanged alone only
 		// refetches the plan on clients — it does not recompute row state — so
 		// the WaitingOnBar would stay stale until a manual refresh. Recompute
@@ -487,6 +498,25 @@ func clRevealSharesIfBothIn(
 	return true, 0, ""
 }
 
-// liaiseChoiceApplier applies one player's Things We Share choice. Each handler
-// is responsible for its own DB calls and event broadcasts. Every option
-// targets the PARTNER's asset (validated at submission in clValidateShareTarget).
+// clStandInAdvancer returns the Make Demands winner of the perform option who
+// presses "advance" for this liaison, or 0 when the preparer does.
+func clStandInAdvancer(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
+	if winner := performStepsWinner(ctx, q, plan); winner != plan.PreparerID {
+		return winner
+	}
+	return 0
+}
+
+// liaisePhaseLabel names a phase in the rulebook's own words for the log.
+func liaisePhaseLabel(p LiaisePhase) string {
+	switch p {
+	case LiaiseSecretsWeKeep:
+		return "Secrets We Keep"
+	case LiaiseThingsWeShare:
+		return "Things We Share"
+	case LiaiseWhenWillISeeYouAgain:
+		return "When Will I See You Again"
+	default:
+		return string(p)
+	}
+}

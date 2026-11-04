@@ -207,3 +207,30 @@ func TestMakeDemandsRulings_LiaisePreparerWinnerReaimsWithAPeer(t *testing.T) {
 	code, body = h2.post(0, demandRetargetPath(m2.plan.ID), map[string]any{"keep": true})
 	assert.Equalf(t, http.StatusOK, code, "keep: %v", body)
 }
+
+// "Advance" is a step, so the Make Demands winner of the perform option presses
+// it, the preparer is refused, the bar names the winner, and the log says so.
+func TestMakeDemandsRulings_StandIn_LiaiseAdvanceIsTheWinners(t *testing.T) {
+	h, m := liaiseUnderDemand(t, game.DemandOptionPerformSteps, 2)
+	winnerID := h.tg.Players[2].ID
+	h.assertWaitees("the Make Demands winner advances", model.RowStatePlanResolving, winnerID)
+
+	code, body := h.post(0, clPath(m.plan.ID, "advance-liaise"), nil)
+	assert.Equalf(t, http.StatusForbidden, code, "the preparer is locked out: %v", body)
+	code, body = h.post(3, clPath(m.plan.ID, "advance-liaise"), nil)
+	assert.Equalf(t, http.StatusForbidden, code, "a bystander is refused: %v", body)
+	code, body = h.post(2, clPath(m.plan.ID, "advance-liaise"), nil)
+	require.Equalf(t, http.StatusOK, code, "the Make Demands winner advances: %v", body)
+	assert.True(t, anyPostContains(t, h, "the Make Demands winner, moved", "Secrets We Keep"))
+}
+
+// With no perform win the preparer advances, as before, and no stand-in line is logged.
+func TestMakeDemandsRulings_LiaiseAdvanceStaysThePreparersWithoutAPerformWin(t *testing.T) {
+	h, m := liaiseUnderDemand(t, game.DemandOptionKeepAssets, 2)
+	h.assertWaitees("the preparer is waited on", model.RowStatePlanResolving, h.tg.Players[0].ID)
+	code, body := h.post(2, clPath(m.plan.ID, "advance-liaise"), nil)
+	assert.Equalf(t, http.StatusForbidden, code, "another option's winner has no say here: %v", body)
+	code, body = h.post(0, clPath(m.plan.ID, "advance-liaise"), nil)
+	require.Equalf(t, http.StatusOK, code, "the preparer advances: %v", body)
+	assert.False(t, anyPostContains(t, h, "the Make Demands winner, moved"))
+}

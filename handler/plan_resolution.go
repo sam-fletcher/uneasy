@@ -355,7 +355,7 @@ func checkChoiceGate(
 // stored result field (e.g. EC fair trade accept path).
 func CompletePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		game, plan, ok := requirePlanPreparerOrStandIn(w, r, s.Q, true)
+		game, plan, ok := requirePlanPreparerOrStandIn(w, r, s.Q, model.PlanChronicleHistories)
 		if !ok {
 			return
 		}
