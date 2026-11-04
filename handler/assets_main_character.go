@@ -72,6 +72,8 @@ func tearOldMainCharacterMarginalia(
 	if g, gErr := q.GetGameByID(ctx, oldMC.GameID); gErr == nil {
 		EmitAssetDestroyed(ctx, q, manager, oldMC.GameID, *oldMC, logRow(g))
 	}
+	// A destroyed old main character may have been a duel stake.
+	settleDuelClaimsAfterDestroy(ctx, q, manager, oldMC.ID)
 	oldMC.IsDestroyed = true
 	return true
 }

@@ -157,6 +157,7 @@ func emitAssetDestruction(ctx context.Context, q *dbgen.Queries, manager *hub.Ma
 	if game, gerr := q.GetGameByID(ctx, asset.GameID); gerr == nil {
 		EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, logRow(game))
 	}
+	settleDuelClaimsAfterDestroy(ctx, q, manager, asset.ID)
 }
 
 // assetIsBlank reports whether an asset carries no marginalia rows at all —

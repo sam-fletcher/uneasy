@@ -23,10 +23,15 @@ package handler
 //	               see duelBoutView.
 //	"roll"         The resolved roll shows in the standard dice panel; no dice
 //	               can be added. The claim transfers assets and leverages all
-//	               stakes. It applies itself when the winner's budget covers
-//	               every stake the loser put up (nothing to choose — see
-//	               AutoApplyChoiceOnRoll); otherwise the winner submits
-//	               make-choice with their pick.
+//	               stakes. On a make it applies itself when the preparer's
+//	               budget covers every stake the loser put up (nothing to
+//	               choose — see AutoApplyChoiceOnRoll); otherwise the preparer
+//	               submits make-choice with their pick. On a mar the opponent
+//	               always decides, because the book's "may take" lets them
+//	               spare the loser (pduelSpare): make-choice with their pick,
+//	               or with ["spare"] to take nothing. Either way every stake
+//	               is leveraged — the book's "Both players then leverage all
+//	               staked assets" is not conditional on the take.
 //	"done"         Stakes claimed. The plan resolves itself
 //	               (AutoCompleteAfterChoice); there is no "Complete plan" step.
 //
@@ -42,7 +47,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -50,6 +57,7 @@ import (
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
+	"uneasy/hub"
 	"uneasy/model"
 )
 
@@ -150,7 +158,7 @@ func (pduelHandler) OnResolve(ctx context.Context, deps *PlanDeps, plan *dbgen.P
 	return nil, nil
 }
 
-// MaxChoices caps how many of the loser's staked assets the winner may claim:
+// MaxChoices caps how many of the loser's staked assets the duel's victor may claim:
 // "On make: take a number of opponent's staked assets equal to your result. On
 // mar: opponent takes staked assets equal to the difficulty." The natural cap
 // (you can only pick assets that were actually staked) is enforced separately in
@@ -164,7 +172,7 @@ func (pduelHandler) MaxChoices(result string, rollResult, difficulty int16) int 
 
 // AutoApplyChoiceOnRoll opts the duel into recording its result the moment the
 // final roll lands. The claim is only sometimes decision-free, so ApplyChoice —
-// not this flag — decides: it applies the result when the winner has no real
+// not this flag — decides: it applies the result when the claimant has no real
 // pick to make (see pduelForcedClaim) and no-ops when they do, leaving the
 // claim to them. The duel's roll is created already-resolved at the end of the
 // bouts (pduelCreateFinalRoll), so this is the first moment the outcome exists.
@@ -181,7 +189,124 @@ func (pduelHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, resData *ResolutionDa
 	return resData.Duel != nil && resData.Duel.Phase == duelPhaseDone
 }
 
-// pduelClaimBudget returns how many of the loser's staked assets the winner may
+// settleDuelClaimsAfterDestroy re-checks every duel still waiting on a claim
+// when a staked asset is destroyed. The claim's UI only offers a decision while
+// one exists (a pick smaller than the pile, or a mar with something to take or
+// spare), so a destruction that leaves none — the loser's last stake, or a make
+// whose surviving stakes now fit the budget — would leave the duel in 'roll'
+// with the bar naming a player who has no button. Nothing else would ever
+// apply the claim: the auto-apply only runs when the roll lands. So settle it
+// here, through the same path the roll uses; ApplyChoice is a no-op while a real
+// decision remains, so a destruction that leaves one changes nothing.
+//
+// Best effort: the destruction already happened and is logged, so a failure
+// here is logged rather than failing the break that caused it.
+func settleDuelClaimsAfterDestroy(
+	ctx context.Context, q *dbgen.Queries, manager *hub.Manager, assetID int64,
+) {
+	logger := slog.Default()
+	plans, err := q.ListResolvingDuelPlansStakingAsset(ctx, assetID)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"duel: could not list duels staking a destroyed asset",
+			"asset_id",
+			assetID,
+			"error",
+			err,
+		)
+		return
+	}
+	for _, p := range plans {
+		roll, err := q.GetDiceRollByPlanID(ctx, &p.ID)
+		if err != nil || roll.Outcome == nil {
+			continue // no final roll yet: the stakes are still being decided on
+		}
+		if err := applyAutoChoiceOnRoll(ctx, q, manager, &roll); err != nil {
+			logger.ErrorContext(ctx, "duel: could not settle the claim after a stake was destroyed",
+				"plan_id", p.ID, "asset_id", assetID, "error", err)
+			continue
+		}
+		broadcastRowState(ctx, q, manager, p.GameID)
+	}
+}
+
+// pduelSpare is the make-choice value by which the opponent spares the loser of
+// a mar duel instead of taking stakes. All or nothing: it is the only legal
+// choice that takes none, and it travels alone.
+const pduelSpare = "spare"
+
+// pduelMarMayDecline reports whether this resolution is a mar whose opponent has
+// stakes to take and so may instead spare the loser (p.60: "may take"). A make's
+// take is mandatory, and a mar with nothing claimable offers no decision.
+func pduelMarMayDecline(result string, claimable []int64) bool {
+	return result != makeOutcome && len(claimable) > 0
+}
+
+// pduelClaimable lists the loser's staked assets that can change hands. A stake
+// destroyed while the claim waited is gone from play and can't (takeAssetEffect
+// refuses it, after the leverage had applied), so it is neither claimable nor
+// counted; it is still leveraged, harmlessly. Only the loser's own stakes may be
+// claimed (the rules say "take a number of opponent's staked assets").
+func pduelClaimable(
+	ctx context.Context, q *dbgen.Queries, stakes []dbgen.DuelStakedAsset, loserID int64,
+) ([]int64, map[int64]bool) {
+	claimable := make([]int64, 0, len(stakes))
+	ids := make(map[int64]bool)
+	for _, s := range stakes {
+		if s.PlayerID != loserID {
+			continue
+		}
+		if a, err := q.GetAssetByID(ctx, s.AssetID); err == nil && a.IsDestroyed {
+			continue
+		}
+		claimable = append(claimable, s.AssetID)
+		ids[s.AssetID] = true
+	}
+	return claimable, ids
+}
+
+// pduelCheckSpare refuses a spare that isn't the lone choice of a mar's opponent
+// with stakes to spare.
+func pduelCheckSpare(result string, choices []string, claimable []int64) error {
+	if result == makeOutcome || len(choices) != 1 {
+		return httpErr(http.StatusUnprocessableEntity,
+			"only the mar's opponent may spare, and sparing takes no assets")
+	}
+	if !pduelMarMayDecline(result, claimable) {
+		return httpErr(http.StatusUnprocessableEntity, "there are no staked assets to spare")
+	}
+	return nil
+}
+
+// pduelCheckExactTake refuses a mar take that is not exactly the difficulty's
+// worth of the loser's claimable stakes: wrong count, an id that doesn't parse, a
+// repeat, or an asset the loser didn't stake. Sparing is the only way to take none.
+func pduelCheckExactTake(
+	ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, result string,
+	choices []string, loserStakeIDs map[int64]bool, claimable int,
+) error {
+	want := claimable
+	if budget, ok := pduelClaimBudget(ctx, q, plan, result); ok && budget < want {
+		want = budget
+	}
+	seen := make(map[int64]bool, len(choices))
+	for _, c := range choices {
+		id, err := strconv.ParseInt(c, 10, 64)
+		if err != nil || !loserStakeIDs[id] || seen[id] {
+			return httpErr(http.StatusUnprocessableEntity,
+				"choose stakes the loser put up, each once — or spare them")
+		}
+		seen[id] = true
+	}
+	if len(choices) != want {
+		return httpErr(http.StatusUnprocessableEntity,
+			fmt.Sprintf("take exactly %d staked asset(s), or spare the loser", want))
+	}
+	return nil
+}
+
+// pduelClaimBudget returns how many of the loser's staked assets the duel's victor may
 // claim, read off the plan's resolved roll ("equal to your result" on a make,
 // "equal to the difficulty" on a mar). ok=false when there is no resolved roll
 // to read a budget from, in which case the caller must not synthesise a claim.
@@ -198,19 +323,23 @@ func pduelClaimBudget(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, r
 }
 
 // ApplyChoice transfers assets and leverages all staked assets after the
-// standard dice roll resolves. choices is the list of asset IDs the winner
-// chose to take (as stringified int64s); each must be one of the loser's own
-// staked assets.
+// standard dice roll resolves. choices is the list of asset IDs the claimant
+// chose to take (as stringified int64s), each one of the loser's own staked
+// assets; on a mar it may instead be the single value "spare".
 //
-// The winner is only *asked* which stakes to take when that is a real question.
-// Their budget often covers every stake the loser put up — "take a number equal
-// to your result" is mandatory, not a maximum — and then the picker has exactly
-// one legal answer. In that case the server fills the claim in itself, whether
-// it got here from the roll resolving (AutoApplyChoiceOnRoll, choices nil) or
-// from a client posting make-choice. Conversely, when the budget is smaller than
-// the pile there IS a decision, and an empty claim means it hasn't been made
-// yet: ApplyChoice leaves the duel untouched rather than silently resolving it
-// for nothing.
+// A make's claimant (the preparer) is only *asked* which stakes to take when that
+// is a real question. Their budget often covers every stake the loser put up —
+// "take a number equal to your result" is mandatory, not a maximum — and then the
+// one legal answer is filled in by the server, whether it got here from the roll
+// resolving (AutoApplyChoiceOnRoll, choices nil) or from a client posting
+// make-choice. When the budget is smaller than the pile there IS a decision, and
+// an empty claim means it hasn't been made yet: ApplyChoice leaves the duel
+// untouched rather than silently resolving it for nothing.
+//
+// On a mar the opponent is always asked, because the book's "may take" lets them
+// spare the loser (see pduelSpare). So a mar with stakes on the table never
+// applies itself; AutoApplyChoiceOnRoll no-ops until they answer. Their take is
+// then exactly the difficulty (capped by what is claimable), never fewer.
 //
 //nolint:funlen // one linear claim/leverage/transfer/log sequence
 func (pduelHandler) ApplyChoice(
@@ -232,7 +361,7 @@ func (pduelHandler) ApplyChoice(
 		return fmt.Errorf("list stakes: %w", err)
 	}
 
-	// Determine winner/loser: make → preparer wins (takes from target);
+	// Determine victor/loser: make → preparer wins (takes from target);
 	// mar → target wins (takes from preparer).
 	var winnerID, loserID int64
 	if result == makeOutcome {
@@ -254,20 +383,38 @@ func (pduelHandler) ApplyChoice(
 
 	// Only the loser's own staked assets may be claimed (the rules say "take a
 	// number of opponent's staked assets").
-	claimable := make([]int64, 0, len(stakes))
-	loserStakeIDs := make(map[int64]bool)
-	for _, s := range stakes {
-		if s.PlayerID == loserID {
-			claimable = append(claimable, s.AssetID)
-			loserStakeIDs[s.AssetID] = true
+	claimable, loserStakeIDs := pduelClaimable(ctx, deps.Q, stakes, loserID)
+
+	// A rejected request must leave no effect, so refuse a malformed spare
+	// before anything below can apply.
+	spared := slices.Contains(choices, pduelSpare)
+	if spared {
+		if err := pduelCheckSpare(result, choices, claimable); err != nil {
+			return err
 		}
+		choices = nil
 	}
 
-	choices, decided := pduelResolveClaim(ctx, deps.Q, plan, result, choices, claimable)
-	if !decided {
-		// A genuine subset pick that the winner still owes. Nothing applies —
-		// not even the leverage, which the rules hang off the same moment.
-		return nil
+	if !spared && pduelMarMayDecline(result, claimable) {
+		// A mar's take is exactly the difficulty (capped by what is claimable) or
+		// nothing at all: the count is not a maximum. Until the opponent answers,
+		// nothing applies, not even the leverage.
+		if len(choices) == 0 {
+			return nil
+		}
+		if err := pduelCheckExactTake(ctx, deps.Q, plan, result, choices, loserStakeIDs, len(claimable)); err != nil {
+			return err
+		}
+	} else if !spared {
+		var decided bool
+		choices, decided = pduelResolveClaim(ctx, deps.Q, plan, result, choices, claimable)
+		if !decided {
+			// A decision the make's claimant still owes — which stakes to take.
+			// (A mar never reaches here with stakes: it asked above.) Nothing
+			// applies, not even the leverage, which the rules hang off the same
+			// moment.
+			return nil
+		}
 	}
 	// Record what is actually being applied, so the stored choices match the
 	// transfers even when the server filled them in.
@@ -330,6 +477,15 @@ func (pduelHandler) ApplyChoice(
 	if taken > 0 {
 		claimed = ": " + joinWithAnd(takenNames)
 	}
+	if spared {
+		// Mercy is a public act (DESIGN_PRINCIPLES.md principle 6), so the log
+		// says so rather than reporting a take of zero.
+		pduelLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+			"%s won the duel and spared %s, taking none of the staked assets; all staked assets are leveraged.",
+			winnerName, loserName))
+		resData.EnsureDuel().Phase = duelPhaseDone
+		return nil
+	}
 	pduelLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
 		"%s won the duel and took %d staked %s from %s%s; all staked assets are leveraged.",
 		winnerName, taken, assetWord, loserName, claimed))
@@ -338,13 +494,13 @@ func (pduelHandler) ApplyChoice(
 	return nil
 }
 
-// pduelResolveClaim decides which of the loser's staked assets the winner takes.
+// pduelResolveClaim decides which of the loser's staked assets the make's preparer takes.
 //
 // It returns the claim to apply and decided=true when the answer is settled —
-// either because the winner's budget covers the whole pile (so "take all" is
+// either because the claimant's budget covers the whole pile (so "take all" is
 // the one legal answer and whatever the caller passed is beside the point), or
 // because there is nothing to take at all. It returns decided=false only for
-// the case worth a gate: the budget is smaller than the pile, so the winner
+// the case worth a gate: the budget is smaller than the pile, so the claimant
 // genuinely chooses a subset, and hasn't yet.
 //
 // A claim that was explicitly posted is honoured as-is; the per-asset
@@ -647,7 +803,7 @@ func (pduelHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan
 		}, true
 	case gamepkg.DuelPhaseRoll:
 		// A marred roll hands the asset-claim make-choice to the *target* (the
-		// mar winner): they pick which of the preparer's staked assets to take.
+		// mar's opponent): they pick which of the preparer's staked assets to take.
 		// Until ApplyChoice advances the phase to 'done', the bar must name the
 		// target, not the preparer. A made roll is claimed by the preparer, so it
 		// rides the generic case. planRollIsMar is false until the roll resolves,

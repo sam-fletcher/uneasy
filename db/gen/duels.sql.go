@@ -272,6 +272,53 @@ func (q *Queries) ListDuelStakesByPlanPlayer(ctx context.Context, arg ListDuelSt
 	return items, nil
 }
 
+const listResolvingDuelPlansStakingAsset = `-- name: ListResolvingDuelPlansStakingAsset :many
+SELECT DISTINCT p.id, p.game_id, p.plan_type, p.category, p.preparer_id, p.target_player_id, p.target_asset_id, p.row_number, p.row_order, p.prepared_at_row, p.status, p.result, p.resolved_at, p.preparation_notes, p.resolution_data, p.targeted_plan_id, p.demand_option_winners, p.is_finale_bonus FROM plans p
+JOIN duel_staked_assets s ON s.plan_id = p.id
+WHERE s.asset_id = $1 AND p.status = 'resolving' AND p.plan_type = 'propose_duel'
+`
+
+// Duels still resolving that have this asset on the table, so the destruction
+// of a stake can re-check whether the claim still has a decision left.
+func (q *Queries) ListResolvingDuelPlansStakingAsset(ctx context.Context, assetID int64) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, listResolvingDuelPlansStakingAsset, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Plan{}
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.PlanType,
+			&i.Category,
+			&i.PreparerID,
+			&i.TargetPlayerID,
+			&i.TargetAssetID,
+			&i.RowNumber,
+			&i.RowOrder,
+			&i.PreparedAtRow,
+			&i.Status,
+			&i.Result,
+			&i.ResolvedAt,
+			&i.PreparationNotes,
+			&i.ResolutionData,
+			&i.TargetedPlanID,
+			&i.DemandOptionWinners,
+			&i.IsFinaleBonus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const resolveDuelBout = `-- name: ResolveDuelBout :exec
 UPDATE duel_bouts
 SET responder_stake_id = $2,

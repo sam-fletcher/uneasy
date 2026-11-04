@@ -160,10 +160,18 @@ test('propose duel: setup → staking → bouts → final roll → settles itsel
 	await bobBout.getByRole('button', { name: 'Respond' }).click();
 
 	// With one stake each, both run out → the duel hands off to its final roll,
-	// which is created already-resolved (finalizeRoll) and whose outcome is
-	// applied on the spot. The winner's claim covers the loser's lone stake, so
-	// there is nothing to choose: the plan resolves itself — and the preparer
-	// (who, on a mar, has just LOST) is never handed a "Complete plan" button.
+	// which is created already-resolved (finalizeRoll). A make's claim covers the
+	// loser's lone stake, so there is nothing to choose and the plan resolves
+	// itself. On a mar the opponent may spare the loser, so bob is asked: he takes
+	// the stake. Either way the preparer (who, on a mar, has just LOST) is never
+	// handed a "Complete plan" button.
+	const takeBtn = bob.getByRole('button', { name: /^Take (the stake|all)/ });
+	await expect.poll(async () => {
+		const { plans } = await (await aliceCtx.request.get(`/api/tables/${game_id}/plans`)).json();
+		const status = plans.find((p: { id: number }) => p.id === duel.id)?.status;
+		if (status !== 'resolved' && await takeBtn.isVisible()) await takeBtn.click();
+		return status;
+	}, { timeout: 15_000, message: 'duel should resolve' }).toBe('resolved');
 	await expect.poll(async () => {
 		const { plans } = await (await aliceCtx.request.get(`/api/tables/${game_id}/plans`)).json();
 		return plans.find((p: { id: number }) => p.id === duel.id)?.status;
@@ -504,21 +512,30 @@ test('bout 2: both duellists agree whose turn it is', async ({ browser }) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OWNER QUESTION (docs/work/questions/propose-duel-take-compulsory.md): is the
-// take after a mar compulsory? The code says yes — the mar winner takes exactly
-// the difficulty (capped by the pile), and a forced claim applies itself — though
-// the book words it as "may take". Everything in this block follows the CURRENT
-// implementation, and changes if the owner rules "may take": the forced mar's
-// auto-claim, the tie's automatic mar claim, and the picker that offers only an
-// exact take (Take 1/1, with nothing smaller allowed).
+// The take after a mar is optional (owner ruling 2026-11-03, book p.60 "may
+// take"): the opponent takes exactly the difficulty or spares the loser, all or
+// nothing, and sparing is logged. Nothing applies until they choose — not even
+// when the budget covers the whole pile. A make's take stays compulsory.
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('current implementation: the take after a mar is compulsory', () => {
-	test('mar: the target takes the preparer’s stake and the preparer is not asked to close it', async ({ browser }) => {
+test.describe('the take after a mar is the opponent’s choice', () => {
+	test('mar: the target is asked, takes the preparer’s stake, and the preparer is not asked to close it', async ({ browser }) => {
 		const g = await duelWithDice(browser, 'bobWins', { alice: 1, bob: 1 }, { viewport: PHONE });
 		const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);
 		await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
 
 		await playBoutInUI(alice, bob, aliceCall(g, false), 'Alice Peer 1', 'Bob Peer 1');
+
+		// Even though the difficulty covers the lone stake, nothing applies yet:
+		// the opponent may spare. The bar names them, and only they get controls.
+		const claim = section(bob, 'The final roll');
+		await expect(claim.getByRole('button', { name: 'Take the stake' })).toBeVisible({ timeout: 10_000 });
+		await expect(claim.getByRole('button', { name: 'Spare alice' })).toBeVisible();
+		await expect(alice.getByText('Waiting for bob to take stakes or spare…')).toBeVisible();
+		await expect(carol.getByText('Waiting for bob to take stakes or spare…')).toBeVisible();
+		await expect(section(alice, 'The final roll').getByRole('button')).toHaveCount(0);
+		expect((await planWithData(g)).plan.status).toBe('resolving');
+		expect(await rowState(g)).toMatchObject({ kind: 'plan_resolving', acting_player_ids: [g.ids.bob] });
+		await claim.getByRole('button', { name: 'Take the stake' }).click();
 
 		await expect.poll(async () => (await planWithData(g)).plan.status, { timeout: 10_000 }).toBe('resolved');
 		const done = await planWithData(g);
@@ -539,6 +556,24 @@ test.describe('current implementation: the take after a mar is compulsory', () =
 		}
 	});
 
+	test('mar: the target spares the loser — nothing moves, everything is leveraged, and it is logged', async ({ browser }) => {
+		const g = await duelWithDice(browser, 'bobWins', { alice: 1, bob: 1 }, { viewport: PHONE });
+		const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);
+		await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
+		await playBoutInUI(alice, bob, aliceCall(g, false), 'Alice Peer 1', 'Bob Peer 1');
+
+		const claim = section(bob, 'The final roll');
+		await expect(claim.getByRole('button', { name: 'Spare alice' })).toBeVisible({ timeout: 10_000 });
+		await claim.getByRole('button', { name: 'Spare alice' }).click();
+
+		await expect.poll(async () => (await planWithData(g)).plan.status, { timeout: 10_000 }).toBe('resolved');
+		expect(await logHas(g, 'carol', 'won the duel')).toMatch(/bob won the duel and spared alice, taking none of the staked assets/);
+		const assets = await assetsOf(g);
+		expect(assets.find(a => a.name === 'Alice Peer 1')).toMatchObject({ owner_id: g.ids.alice, is_leveraged: true });
+		expect(assets.find(a => a.name === 'Bob Peer 1')).toMatchObject({ owner_id: g.ids.bob, is_leveraged: true });
+		for (const page of [alice, bob, carol]) await expect(section(page, 'The final roll')).toHaveCount(0);
+	});
+
 	test('mar with a real pick: the target chooses, everyone else waits on them', async ({ browser }) => {
 		// Alice stakes three, bob one: one bout, bob wins it, and the mar lets him take
 		// 1 (the difficulty) of her 3 — a genuine choice, so the duel waits for it.
@@ -549,8 +584,9 @@ test.describe('current implementation: the take after a mar is compulsory', () =
 
 		const claim = section(bob, 'The final roll');
 		await expect(claim.getByText("Choose 1 of alice's staked asset to take:")).toBeVisible({ timeout: 10_000 });
-		await expect(alice.getByText('Waiting for bob to claim stakes…')).toBeVisible();
-		await expect(carol.getByText('Waiting for bob to claim stakes…')).toBeVisible();
+		await expect(claim.getByRole('button', { name: 'Spare alice instead' })).toBeVisible();
+		await expect(alice.getByText('Waiting for bob to take stakes or spare…')).toBeVisible();
+		await expect(carol.getByText('Waiting for bob to take stakes or spare…')).toBeVisible();
 		await expect(section(alice, 'The final roll').getByRole('button', { name: /^Take/ })).toHaveCount(0);
 		expect((await planWithData(g)).plan.status).toBe('resolving');
 		// The bar names the mar winner, not the preparer.
@@ -586,6 +622,8 @@ test.describe('current implementation: the take after a mar is compulsory', () =
 		await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
 		await playBoutInUI(alice, bob, 'high', 'Alice Peer 1', 'Bob Peer 1');
 
+		// A drawn duel is a mar, so bob (the opponent) is asked, and takes.
+		await section(bob, 'The final roll').getByRole('button', { name: 'Take the stake' }).click();
 		await expect.poll(async () => (await planWithData(g)).plan.status, { timeout: 10_000 }).toBe('resolved');
 		expect((await planWithData(g)).plan.result, 'a drawn 1v1 rolls zero dice').toBe('mar');
 		expect(await logHas(g, 'alice', 'an even match')).toContain('nobody wins the dice');
