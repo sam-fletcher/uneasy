@@ -50,3 +50,10 @@ SELECT * FROM duel_bouts
 WHERE plan_id = $1
 ORDER BY bout_number DESC
 LIMIT 1;
+
+-- name: ListResolvingDuelPlansStakingAsset :many
+-- Duels still resolving that have this asset on the table, so the destruction
+-- of a stake can re-check whether the claim still has a decision left.
+SELECT DISTINCT p.* FROM plans p
+JOIN duel_staked_assets s ON s.plan_id = p.id
+WHERE s.asset_id = $1 AND p.status = 'resolving' AND p.plan_type = 'propose_duel';

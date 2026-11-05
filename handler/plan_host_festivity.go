@@ -543,7 +543,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 				state.GuestMars = map[string]string{}
 			}
 			state.GuestMars[key] = body.Choice
-			hfLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
+			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 				"%s's mar earns %s a make.",
 				playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 		}
@@ -574,10 +574,12 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 //  3. otherwise the table waits on everyone who still owes an action — guests
 //     who haven't chosen, successful guests who haven't inflicted their mar, and
 //     whoever drives the host's steps (the host, or a Make Demands perform_steps
-//     winner) while earned makes remain to take or an insisted mar — chosen or
-//     not yet chosen — remains to settle;
-//  4. when nothing is outstanding, it waits on the host to wind the event down
-//     (completion stays with the preparer even when a winner drove the steps).
+//     winner) while an insisted mar — chosen or not yet chosen — remains to
+//     settle. Earned makes are NOT owed: the host may leave them unclaimed;
+//  4. when nothing is outstanding, it waits on whoever may end the event: the
+//     Make Demands perform_steps winner if one holds the host's steps (ending
+//     is a step, so it goes to the stand-in, as Chronicle Histories' "Wrap the
+//     scene" does), otherwise the host.
 func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	if plan.Status != model.PlanResolving {
 		return model.RowState{}, false
@@ -601,44 +603,45 @@ func (hfHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	}
 	// Everyone with an outstanding obligation: unchosen guests, then successful
 	// guests still holding a mar to inflict, then whoever plays the host's part
-	// if makes or insisted mars remain. The host is added to this set, never
-	// substituted for it — a guest who has not yet chosen still owes their turn.
+	// if an insisted mar remains. Earned makes are optional, so they owe nothing.
+	// The stand-in is added to this set, never substituted for it — a guest who
+	// has not yet chosen still owes their turn.
 	waiters := state.PendingGuests(roster)
 	for _, id := range state.GuestIOUs {
 		if !slices.Contains(waiters, id) {
 			waiters = append(waiters, id)
 		}
 	}
-	if state.RemainingHostMakes(roster) > 0 || state.HostMarsOwed() > 0 {
-		stepActor := plan.PreparerID
-		if winner := performStepsWinner(ctx, q, plan); winner != 0 {
-			stepActor = winner
-		}
-		if !slices.Contains(waiters, stepActor) {
-			waiters = append(waiters, stepActor)
-		}
+	stepActor := plan.PreparerID
+	if winner := performStepsWinner(ctx, q, plan); winner != 0 {
+		stepActor = winner
 	}
-	// Nothing outstanding → the host may now wind the event down.
+	if state.HostMarsOwed() > 0 && !slices.Contains(waiters, stepActor) {
+		waiters = append(waiters, stepActor)
+	}
+	// Nothing outstanding → whoever acts for the host may now end the event.
 	if len(waiters) == 0 {
-		waiters = []int64{plan.PreparerID}
+		waiters = []int64{stepActor}
 	}
 	return model.RowState{Kind: model.RowStateAwaitFestivityGuestTurn, ActingPlayerIDs: waiters}, true
 }
 
 // ── end-event ────────────────────────────────────────────────────────────────
 
-// hfEndEventHandler resolves the festivity. Host-only, and gated on
-// EventEndable: every guest has chosen, the host has taken all their earned
-// makes, and every outstanding mar has been inflicted. Mirrors the tail of
-// CompletePlan (festivity can't use the generic path — see CanComplete).
+// hfEndEventHandler resolves the festivity. Ending is a step of the host's, so
+// it belongs to whoever acts for the host (requireResolutionActor): the host, or
+// a Make Demands perform_steps winner who holds the host's steps — and then the
+// host is refused. Gated on EventEndable: every guest has chosen and every
+// outstanding mar has been inflicted. Earned makes left untaken lapse (and are
+// logged, naming who ended it). Mirrors the tail of CompletePlan (festivity
+// can't use the generic path — see CanComplete).
 func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanHostFestivity)
 		if !ok {
 			return
 		}
-		if player.ID != plan.PreparerID {
-			respondErr(w, http.StatusForbidden, "only the host may end the event")
+		if !requireResolutionActor(w, r.Context(), deps.Q, plan, player.ID) {
 			return
 		}
 		if plan.Status != model.PlanResolving {
@@ -659,9 +662,27 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		if !state.EventEndable(roster) {
 			respondErr(w, http.StatusConflict,
-				"the festivity is still in full swing: every guest must choose, "+
-					"the host must take all their makes, and all mars must be inflicted")
+				"the festivity is still in full swing: every guest must choose "+
+					"and all mars must be inflicted")
 			return
+		}
+
+		// Earned makes the host leaves behind lapse here. That is a state change,
+		// so it is posted before the plan resolves, like the peers settled below.
+		if lapsed := state.RemainingHostMakes(roster); lapsed > 0 {
+			plural := "s"
+			if lapsed == 1 {
+				plural = ""
+			}
+			// Name who pressed End; when a stand-in did, the makes are still the
+			// host's, so say whose they were.
+			whose := ""
+			if player.ID != plan.PreparerID {
+				whose = "the host's "
+			}
+			hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s ended the event, leaving %s%d earned make%s unclaimed.",
+				playerDisplayName(ctx, deps.Q, player.ID), whose, lapsed, plural))
 		}
 
 		// Settle the two kinds of peer left in the centre before resolving, so

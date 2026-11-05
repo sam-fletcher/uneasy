@@ -77,14 +77,14 @@ export function earnedHostMakes(fest: FestRes, hostID: number): number {
 	return n;
 }
 
-/** Whether the host may wind the event down: every guest has chosen, all earned
- *  makes are taken, every outstanding mar (a guest IOU) has been inflicted, and
- *  every insisted mar has been chosen and settled by the host. Peers still in
- *  the centre don't hold the event open — ending it is what settles them. */
-export function festivityEndable(fest: FestRes, hostID: number): boolean {
+/** Whether the host may wind the event down: every guest has chosen, every
+ *  outstanding mar (a guest IOU) has been inflicted, and every insisted mar has
+ *  been chosen and settled by the host. Earned makes do NOT hold it open — the
+ *  host may leave them unclaimed (owner ruling 2026-11-03). Peers still in the
+ *  centre don't either — ending it is what settles them. */
+export function festivityEndable(fest: FestRes): boolean {
 	const allChosen = fest.guests.every((id) => String(id) in fest.outcomes);
-	const makesLeft = earnedHostMakes(fest, hostID) - fest.hostMakesTaken.length;
-	return allChosen && makesLeft <= 0 && fest.guestIOUs.length === 0
+	return allChosen && fest.guestIOUs.length === 0
 		&& fest.unchosenHostMars.length === 0 && fest.pendingHostMars.length === 0;
 }
 

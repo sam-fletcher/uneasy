@@ -43,9 +43,19 @@ export interface FestivityResolutionData {
  *  but a Host Festivity that spawned a duel stays `resolving` underneath it, so
  *  two are. The duel is then the live one: the play area shows it (for every
  *  player alike) and the festivity returns when it ends. Mirrors the server's
- *  planSuspendedByNested, which picks the same plan for the waiting bar. */
-export function activeResolvingPlan(plans: Plan[]): Plan | null {
+ *  planSuspendedByNested, which picks the same plan for the waiting bar. A viewer
+ *  who owes a counter-propaganda step is shown that plan (see below). */
+export function activeResolvingPlan(plans: Plan[], viewerID: number | null = null): Plan | null {
 	const resolving = plans.filter((p) => p.status === 'resolving');
+	// A Spread Propaganda parent can still be resolving (a step owed) while its
+	// counter-propaganda plan waits at its pre-roll step. The interferer's controls
+	// live on that plan, so it is theirs to see; everyone else keeps the parent.
+	const counterAwaitingMe = resolving.find((p) => {
+		if (p.plan_type !== 'spread_propaganda' || viewerID == null || p.preparer_id !== viewerID) return false;
+		const sp = parseResolutionData(p).spread_propaganda;
+		return sp?.original_plan_id != null && !sp.pre_roll_done && !sp.counter_declined;
+	});
+	if (counterAwaitingMe) return counterAwaitingMe;
 	const suspended = (p: Plan): boolean => {
 		const nested = p.plan_type === 'host_festivity' ? parseFestivityData(p).pending_duel_plan_id : null;
 		return nested != null && resolving.some((q) => q.id === nested);

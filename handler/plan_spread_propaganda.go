@@ -7,17 +7,18 @@ package handler
 //
 // Make option: "create_artifact" — the preparer authors the societal-shift
 // artifact (narrative + asset creation).
-// Mar options (repeatable — the preparer picks (difficulty − result) total,
-// possibly repeating a key):
+// Mar options (the preparer picks (difficulty − result) total; (a) and (c) may
+// repeat, (b) and (d) are capped at one — deliberate deviations from the book's
+// repeatable options, see ApplyChoice):
 //   (a) "give_peer"    — a peer leaves the preparer's retinue, given to
 //                        another player (sub-flow, once per pick)
 //   (b) "lay_low"      — esteem lockout: preparer's next plan cannot be an
-//                        esteem plan (applied immediately; repeats no-op)
+//                        esteem plan (applied on commit; one pick only)
 //   (c) "break_self"   — the preparer breaks one of their own assets
 //                        (sub-flow, once per pick)
-//   (d) "counter_prop" — top interferer spreads their own propaganda
-//                        immediately (applied immediately; a repeat pick
-//                        no-ops once the recursive plan exists)
+//   (d) "counter_prop" — top interferer is handed a counter-propaganda plan at
+//                        its pre-roll step: state a message and roll, or
+//                        decline (created on commit; one pick only)
 //
 // Esteem lockout (b): sets ResData.SpreadPropaganda.EsteemLockout = true.
 // Checked in validatePlanPreparation for all esteem-category plan types.
@@ -27,9 +28,10 @@ package handler
 // discharged through sp-forfeit-step. Without that hatch CanComplete blocks on
 // a pick nobody can satisfy and the row can never be completed.
 //
-// Recursive resolve (d): finds the top interferer by dice count (ties broken
+// Counter-propaganda (d): finds the top interferer by dice count (ties broken
 // by best esteem rank), creates a new SP plan at current_row with status
-// 'resolving', and creates a dice roll. Depth capped at 1.
+// 'resolving' with no roll yet: its preparer opens the roll with sp-cast-roll or
+// declines with sp-decline-counter. Depth capped at 1.
 
 import (
 	"context"
@@ -102,12 +104,17 @@ func (spHandler) CheckChoice(
 	_ *dbgen.Queries,
 	_ *dbgen.Plan,
 	_ *dbgen.Player,
-	_ *ResolutionData,
+	resData *ResolutionData,
 	roll *dbgen.DiceRoll,
-	_ string,
+	result string,
 ) error {
 	if roll == nil {
 		return errors.New("summarize your message and cast the dice before choosing options")
+	}
+	// A mar is committed once. Without this a second request could re-post the
+	// head-down line and overwrite the committed picks, dropping an owed step.
+	if result == marOutcome && resData.ChoicesCommitted() {
+		return httpErr(http.StatusConflict, "this mar's options are already chosen")
 	}
 	return nil
 }
@@ -180,7 +187,8 @@ func spCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 //   - "lay_low"      → esteem lockout (preparer's next plan cannot be esteem)
 //   - "break_self"   → preparer breaks one of their own assets (extra route)
 //   - "give_peer"    → a peer leaves the preparer's retinue (extra route)
-//   - "counter_prop" → the top interferer spreads their own propaganda now
+//   - "counter_prop" → the top interferer may spread their own propaganda now,
+//     or decline (spDeclineCounterHandler)
 func (spHandler) ApplyChoice(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -191,6 +199,23 @@ func (spHandler) ApplyChoice(
 ) error {
 	if result == makeOutcome {
 		return applySpreadPropagandaMake(ctx, deps, plan, resData)
+	}
+
+	// "Keep your head down" is capped at one pick, a deliberate deviation from the
+	// book's repeatable options (DESIGN_PRINCIPLES.md principle 7: the table's
+	// disapproval is what keeps a repeat in check, and online it is far weaker).
+	// The picker enforces it too, but a hand-made request must not repeat it. This
+	// runs before anything is applied, so a rejected request leaves no effect and
+	// no post.
+	if countOf(choices, spOptLayLow) > 1 {
+		return httpErr(http.StatusUnprocessableEntity,
+			"keep your head down can be chosen only once on a mar")
+	}
+	// Counter-propaganda is capped at one for the same reason: one option must not
+	// absorb a whole mar, and a second pick would only spend budget on nothing.
+	if countOf(choices, spOptCounterProp) > 1 {
+		return httpErr(http.StatusUnprocessableEntity,
+			"counter-propaganda can be chosen only once on a mar")
 	}
 
 	// Check co-opt can fire BEFORE anything is applied. A later pick in the same
@@ -211,8 +236,7 @@ func (spHandler) ApplyChoice(
 	for _, choice := range choices {
 		switch choice {
 		case spOptLayLow:
-			// Repeatable in the choice list, but the effect is a single flag —
-			// a second pick is a harmless no-op.
+			// Capped at one pick (validated above), so this logs once.
 			resData.EnsureSpreadPropaganda().EsteemLockout = true
 			spLog(ctx, deps, plan, model.SeverityDefault,
 				fmt.Sprintf("%s must keep their head down — their next plan cannot involve esteem.",
@@ -224,9 +248,9 @@ func (spHandler) ApplyChoice(
 			// comes from pickedChoiceCount, not an immediate action here.
 
 		case spOptCounterProp:
-			// Fires its side effect immediately (unlike give_peer/break_self,
-			// which defer to a sub-flow), so a duplicate pick in the same
-			// submission must no-op rather than spawn a second recursive plan.
+			// Fires its side effect on commit (unlike give_peer/break_self,
+			// which defer to a sub-flow). Capped at one pick (validated above);
+			// the guard stays for an idempotent re-apply.
 			if spCoOptAlreadyFired(resData) {
 				continue
 			}
@@ -307,6 +331,13 @@ func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 // through to the generic case.
 func (spHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
 	resData := loadResolutionData(plan.ResolutionData)
+	// A counter-propaganda step in flight (this plan's own, or its child's) names
+	// the interferer AND whoever must move a parent step still owed: everyone who
+	// can act is named, since push follows this set and the row stalls on any of
+	// them being missed.
+	if ids := spCounterWaitees(ctx, q, plan, &resData); len(ids) > 0 {
+		return model.RowState{Kind: model.RowStateAwaitCounterPropaganda, ActingPlayerIDs: ids}, true
+	}
 	winner, owed := performStepsStillOwed(ctx, q, plan, &resData, spHandler{}.CanComplete)
 	if !owed {
 		return model.RowState{}, false
@@ -316,11 +347,12 @@ func (spHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 
 func (spHandler) ExtraRoutes(deps *PlanDeps) map[string]http.HandlerFunc {
 	return withAutoComplete(deps, map[string]http.HandlerFunc{
-		"sp-cast-roll":    spCastRollHandler(deps),
-		"give-peer":       spGivePeerHandler(deps),
-		"break-self":      spBreakSelfHandler(deps),
-		"create-artifact": spCreateArtifactHandler(deps),
-		"sp-forfeit-step": spForfeitStepHandler(deps),
+		"sp-cast-roll":       spCastRollHandler(deps),
+		"sp-decline-counter": spDeclineCounterHandler(deps),
+		"give-peer":          spGivePeerHandler(deps),
+		"break-self":         spBreakSelfHandler(deps),
+		"create-artifact":    spCreateArtifactHandler(deps),
+		"sp-forfeit-step":    spForfeitStepHandler(deps),
 	})
 }
 
@@ -509,8 +541,8 @@ func spCoOptInterferers(
 	return interferers, "", nil
 }
 
-// applyCoOpt implements SP mar option (d): the top interferer spreads their
-// own propaganda at the current row, resolving immediately.
+// applyCoOpt implements SP mar option (d): the top interferer gets one step at
+// the current row — state their message and open the roll, or decline.
 func applyCoOpt(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -570,25 +602,17 @@ func applyCoOpt(
 		return fmt.Errorf("could not mark recursive plan as resolving: %w", err)
 	}
 
-	// Tag it in ResData so its own co-opt option is blocked.
+	// Tag it in ResData so its own co-opt option is blocked. It opens at the same
+	// pre-roll step as any Spread Propaganda (PreRollDone false, no roll): the
+	// interferer states their message and opens the roll with sp-cast-roll, or
+	// declines with sp-decline-counter. The roll — and with it the table's
+	// help-or-interfere decision — waits for that message.
 	parentID := plan.ID
 	recursiveResData := ResolutionData{
-		// Born rolling (just below), so it is past its pre-roll step.
-		SpreadPropaganda: &SpreadPropagandaResolutionData{OriginalPlanID: &parentID, PreRollDone: true},
+		SpreadPropaganda: &SpreadPropagandaResolutionData{OriginalPlanID: &parentID},
 	}
 	if err = saveResolutionData(ctx, deps.Q, recursivePlan.ID, recursiveResData); err != nil {
 		return fmt.Errorf("could not save recursive plan data: %w", err)
-	}
-
-	// Compute difficulty for the recursive plan (top interferer's esteem rank).
-	difficulty, err := spHandler{}.ComputeDifficulty(ctx, deps.Q, &recursivePlan, &recursiveResData)
-	if err != nil {
-		return fmt.Errorf("could not compute recursive plan difficulty: %w", err)
-	}
-
-	// Create the dice roll. The normal leverage window then opens.
-	if _, err = createPlanRoll(ctx, deps.Q, deps.Manager, &game, &recursivePlan, difficulty, topPlayerID); err != nil {
-		return fmt.Errorf("could not create recursive dice roll: %w", err)
 	}
 
 	// Record the recursive plan ID in the parent's ResData.
@@ -600,7 +624,7 @@ func applyCoOpt(
 		PreparerID:      topPlayerID,
 	})
 	spLog(ctx, deps, plan, model.SeverityImportant,
-		fmt.Sprintf("%s seized the moment and spread propaganda of their own — it resolves now.",
+		fmt.Sprintf("%s was the top interferer and may now spread propaganda of their own, or decline.",
 			playerDisplayName(ctx, deps.Q, topPlayerID)))
 
 	return nil
@@ -1011,4 +1035,134 @@ func spEligibleSelfBreaks(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan)
 		}
 	}
 	return count, nil
+}
+
+// ── Counter-propaganda: decline ──────────────────────────────────────────────
+
+// spCounterAwaitsInterferer reports whether plan is a counter-propaganda plan
+// (mar option d) still at its pre-roll step: resolving, not yet rolled, not yet
+// declined. The roll's existence is the authority for "rolled", as in
+// requirePreRollOpen. It is the single source of truth for this wait, shared by
+// ResolvingWaitees and the decline route.
+func spCounterAwaitsInterferer(
+	ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, resData *ResolutionData,
+) bool {
+	sp := resData.SpreadPropaganda
+	if plan.Status != model.PlanResolving || sp == nil || sp.OriginalPlanID == nil ||
+		sp.PreRollDone || sp.CounterDeclined {
+		return false
+	}
+	if existing, err := q.GetDiceRollByPlanID(ctx, &plan.ID); err == nil && existing.ID != 0 {
+		return false
+	}
+	return true
+}
+
+// spDeclineCounterHandler handles POST /api/plans/:planId/sp-decline-counter.
+//
+// The top interferer, handed a counter-propaganda plan by the preparer's mar,
+// may decline to spread a message of their own (owner ruling 2026-11-03):
+// declining is a political act, since a flop would land on them. Declining is
+// logged and closes the plan with no effect — no roll was made, so it takes the
+// same "came to nothing" ending as a fizzled plan. The parent plan is unaffected:
+// its own remaining steps carry on, as they did while the child was rolling.
+func spDeclineCounterHandler(deps *PlanDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadPropaganda)
+		if !ok {
+			return
+		}
+		if player.ID != plan.PreparerID {
+			respondErr(w, http.StatusForbidden, "only the plan's preparer can use this route")
+			return
+		}
+		ctx := r.Context()
+		resData := loadResolutionData(plan.ResolutionData)
+		if !spCounterAwaitsInterferer(ctx, deps.Q, plan, &resData) {
+			respondErr(w, http.StatusConflict, "there is no counter-propaganda to decline")
+			return
+		}
+		resData.EnsureSpreadPropaganda().CounterDeclined = true
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not record the decline", err)
+			return
+		}
+		spLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+			"%s declined to spread propaganda of their own.",
+			playerDisplayName(ctx, deps.Q, plan.PreparerID)))
+		if err := resolvePlan(ctx, deps.Q, deps.Manager, plan, fizzledOutcome); err != nil {
+			respondInternalErr(w, r, "could not close the declined plan", err)
+			return
+		}
+		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
+		respond(w, http.StatusOK, map[string]any{"plan_id": plan.ID})
+	}
+}
+
+// countOf returns how many times v appears in s.
+func countOf(s []string, v string) int {
+	n := 0
+	for _, x := range s {
+		if x == v {
+			n++
+		}
+	}
+	return n
+}
+
+// spOwedStepActor is who must act on a resolving Spread Propaganda that still
+// owes a step (artifact, give_peer, break_self): the Make Demands perform_steps
+// winner standing in for the preparer, else the preparer. 0 when nothing is owed.
+func spOwedStepActor(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, resData *ResolutionData) int64 {
+	if plan.Status != model.PlanResolving || (spHandler{}).CanComplete(plan, resData) == nil {
+		return 0
+	}
+	if w := performStepsWinner(ctx, q, plan); w != 0 {
+		return w
+	}
+	return plan.PreparerID
+}
+
+// spCounterWaitees names who the table waits on while a counter-propaganda plan
+// sits at its pre-roll step: the interferer (cast or decline) and, when the
+// parent still owes a step, whoever performs it. It is computed the same way from
+// either plan of the pair. nil when no counter-propaganda step is waiting.
+func spCounterWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, resData *ResolutionData) []int64 {
+	sp := resData.SpreadPropaganda
+	if sp == nil {
+		return nil
+	}
+	var interferer int64
+	var parent *dbgen.Plan
+	var parentData *ResolutionData
+	switch {
+	case spCounterAwaitsInterferer(ctx, q, plan, resData):
+		interferer = plan.PreparerID
+		if sp.OriginalPlanID != nil {
+			if pp, err := q.GetPlanByID(ctx, *sp.OriginalPlanID); err == nil {
+				pd := loadResolutionData(pp.ResolutionData)
+				parent, parentData = &pp, &pd
+			}
+		}
+	case sp.RecursivePlanID != nil:
+		child, err := q.GetPlanByID(ctx, *sp.RecursivePlanID)
+		if err != nil {
+			return nil
+		}
+		cd := loadResolutionData(child.ResolutionData)
+		if !spCounterAwaitsInterferer(ctx, q, &child, &cd) {
+			return nil
+		}
+		interferer = child.PreparerID
+		parent, parentData = plan, resData
+	default:
+		return nil
+	}
+	ids := []int64{interferer}
+	if parent != nil {
+		if actor := spOwedStepActor(ctx, q, parent, parentData); actor != 0 && actor != interferer {
+			ids = append(ids, actor)
+		}
+	}
+	return ids
 }

@@ -9,13 +9,15 @@ import { parseResolutionData } from '$lib/components/plans/shared';
 export interface SpreadPropagandaResolutionData {
 	/** The pre-roll step is over (message summarised, roll opened). Plans that rolled
 	 *  before the step existed carry no flag — the panel also treats "a roll exists"
-	 *  as done; a counter-propaganda plan is born rolling and born with this set. */
+	 *  as done. A counter-propaganda plan opens at this step like any other. */
 	pre_roll_done?: boolean;
 	/** The narration as stated — the committed version of the prep note's draft. */
 	pre_roll_text?: string;
 	recursive_plan_id?: number | null;
 	esteem_lockout?: boolean;
 	original_plan_id?: number | null;
+	/** Counter-propaganda only: the interferer declined; the plan closed unrolled. */
+	counter_declined?: boolean;
 	/** True on a made plan: the preparer must author the artifact (create-artifact). */
 	artifact_required?: boolean;
 	/** The authored societal-shift artifact; set once create-artifact runs. */

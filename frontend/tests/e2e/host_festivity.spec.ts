@@ -21,10 +21,8 @@ import {
 //     buttons and insist button, the scorecard for everyone.
 //
 // Setup (seed, prepare, rolls, forcing dice) goes over the API; the subject is
-// what each player is shown and what the server allows. The "earns a make" log
-// line's severity is an open owner question (docs/work/questions/
-// minor-severity-logs.md), so the log is read over the API and only its text is
-// asserted — never the severity, which the chat's default filter would hide.
+// what each player is shown and what the server allows. The log is read over the
+// API and only its text is asserted, not its severity.
 //
 // Alice is the host; she sits at esteem rank 4, so a guest's roll is
 // difficulty 2 and /api/dev/force-roll can reach a make with two dice.
@@ -276,24 +274,22 @@ test('the host ends the event only when everything is settled; generic complete 
 	await optOut(g, 'carol', planID);       // +1 host make
 	await rollAndChoose(g, 'dave', planID, 'mar', { choice: 'accept_duels' }); // +1 host make
 
-	// Every guest has chosen, but the host still has three makes to take.
-	// PROVISIONAL: that "all earned makes are taken before End" gate has not been
-	// ruled on by the owner yet (the book lets the host take makes any time
-	// before the event is over). If the gate is relaxed, drop this block.
+	// Every guest has chosen and the host has three earned makes. Makes are
+	// optional (owner ruling 2026-11-03): only bob's mar still holds the event
+	// open. The host takes two and will leave the third unclaimed.
 	await expect(alice.getByText('0 of 3 taken')).toBeVisible();
 	await expect(end).toBeDisabled();
 	await expectStatus(await act(g, 'alice', planID, 'end-event'), 409);
-	for (let i = 0; i < 3; i++) {
+	for (let i = 0; i < 2; i++) {
 		const res = await act(g, 'alice', planID, 'host-choice', { choice: 'spread_rumor', rumor_text: RUMOR });
 		expect(res.status(), await res.text()).toBe(200);
 	}
 
-	// Makes spent, but bob's mar is still owed. PROVISIONAL: the owner ruled the
-	// guest's mar compulsory "for now" (audit Tier 3 #12, listed in principle 6's
-	// register of rules-optional choices). If it becomes waivable, this pin and
-	// the "IOU gating" half of the end gate change with it.
-	await expect(scoreRow(alice, 'alice')).toContainText('3 of 3 Makes taken');
-	await expect(alice.getByText('Your extra Makes')).toHaveCount(0);
+	// bob's mar is still owed. PROVISIONAL: the owner ruled the guest's mar
+	// compulsory "for now" (audit Tier 3 #12, listed in principle 6's register
+	// of rules-optional choices). If it becomes waivable, this pin and the "IOU
+	// gating" half of the end gate change with it.
+	await expect(scoreRow(alice, 'alice')).toContainText('2 of 3 Makes taken');
 	await expect(end).toBeDisabled();
 	await expectStatus(await act(g, 'alice', planID, 'end-event'), 409);
 
@@ -308,6 +304,7 @@ test('the host ends the event only when everything is settled; generic complete 
 
 	// Now it can end. Only the host is offered the button; a guest is refused.
 	await expect(end).toBeEnabled();
+	await expect(alice.getByText('Ending now forfeits your 1 unclaimed Make.')).toBeVisible();
 	await expect(scoreRow(bob, 'alice')).toContainText('1 Mar from guests');
 	await expect(bob.getByRole('button', { name: 'End the event' })).toHaveCount(0);
 	await expectStatus(await act(g, 'bob', planID, 'end-event'), 403);
@@ -320,6 +317,7 @@ test('the host ends the event only when everything is settled; generic complete 
 	await expect
 		.poll(async () => (await festivityLog(g, planID, false)).includes('The festivity drew to a close.'))
 		.toBe(true);
+	await expectLogContaining(g, planID, 'leaving 1 earned make unclaimed');
 	for (const page of [alice, bob, carol]) {
 		await expect(page.getByText('The Talk of the Event')).toHaveCount(0);
 		await expect(page.getByRole('button', { name: 'End the event' })).toHaveCount(0);

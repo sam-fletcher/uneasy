@@ -206,13 +206,16 @@ func (s *FestivityResolutionData) RemainingHostMakes(guests []int64) int {
 }
 
 // EventEndable reports whether the host may wind the event down: every guest has
-// chosen an option, the host has taken all their earned makes, every outstanding
-// mar (a successful guest's IOU) has been inflicted, and the host has chosen and
-// settled every mar a guest insisted on them (HostMarsOwed). guests is the table
-// roster.
+// chosen an option, every outstanding mar (a successful guest's IOU) has been
+// inflicted, and the host has chosen and settled every mar a guest insisted on
+// them (HostMarsOwed). guests is the table roster.
+//
+// The host's earned makes are deliberately NOT a condition: the owner ruled
+// (2026-11-03) that the host may end the event with spoils unclaimed, since
+// passing them up can be a political act (DESIGN_PRINCIPLES.md principle 6). The
+// asymmetry is the point — a mar is a debt to a guest and still blocks.
 func (s *FestivityResolutionData) EventEndable(guests []int64) bool {
 	return s.AllGuestsResolved(guests) &&
-		s.RemainingHostMakes(guests) <= 0 &&
 		len(s.GuestIOUs) == 0 &&
 		s.HostMarsOwed() == 0
 }

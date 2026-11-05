@@ -1141,14 +1141,14 @@ func TestComputeRowState_AwaitFestivityGuestTurn(t *testing.T) {
 	state.Outcomes = map[string]string{hostKey: gamepkg.FestivityOutcomeHost}
 	require.NoError(t, saveResolutionData(ctx, q, hf.ID, resData))
 
-	// No guest has chosen → the table waits on both guests AND the host, who
-	// still holds an unspent earned make.
+	// No guest has chosen → the table waits on both guests. The host's unspent
+	// earned make is optional (owner ruling 2026-11-03), so it owes nothing.
 	got, err := ComputeRowState(ctx, q, tg.Game.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.RowStateAwaitFestivityGuestTurn, got.Kind)
 	assert.ElementsMatch(t,
-		[]int64{tg.Players[0].ID, tg.Players[1].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
-		"waits on unchosen guests and the host (unspent make)")
+		[]int64{tg.Players[1].ID, tg.Players[2].ID}, got.ActingPlayerIDs,
+		"waits on unchosen guests only; an unspent make is not owed")
 	require.NotNil(t, got.PlanID)
 	assert.Equal(t, hf.ID, *got.PlanID)
 

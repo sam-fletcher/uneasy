@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -248,14 +249,11 @@ func TestSpreadPropaganda_Mar_GivePeer_Repeatable(t *testing.T) {
 	assert.Equal(t, h.tg.Players[recipientIdx].ID, movedB.OwnerID, "second peer should belong to recipient")
 }
 
-// TestSpreadPropaganda_Mar_CounterProp_DoesNotDoubleFire proves that picking
-// "counter_prop" twice in one submission — legal under the repeatable budget
-// cap, since the server only enforces an upper bound on total picks — still
-// spawns exactly one recursive propaganda plan. Unlike give_peer/break_self,
-// co-opt fires its side effect immediately inside ApplyChoice rather than
-// deferring to a gated sub-flow, so it needs its own guard against a
-// duplicate pick in the same choices list.
-func TestSpreadPropaganda_Mar_CounterProp_DoesNotDoubleFire(t *testing.T) {
+// TestSpreadPropaganda_Mar_CounterPropRepeatRefused: counter-propaganda is capped
+// at one pick (owner ruling 2026-11-03), like keep-your-head-down. A repeat used
+// to no-op but still spend the pick; now it is refused with no recursive plan
+// and no effect, and a single pick fires exactly once.
+func TestSpreadPropaganda_Mar_CounterPropRepeatRefused(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
 
@@ -275,16 +273,17 @@ func TestSpreadPropaganda_Mar_CounterProp_DoesNotDoubleFire(t *testing.T) {
 		RollID: roll.ID, PlayerID: h.tg.Players[interfererIdx].ID, IsInterference: true,
 	})
 	require.NoError(t, err)
-
 	h.forceRoll(roll.ID, "mar", 0)
-	h.makeChoice(plan.ID, "mar", []string{"counter_prop", "counter_prop"})
 
-	refreshed, err := h.q.GetPlanByID(ctx, plan.ID)
-	require.NoError(t, err)
-	rd := loadResolutionData(refreshed.ResolutionData)
-	require.NotNil(t, rd.SpreadPropaganda)
-	require.NotNil(t, rd.SpreadPropaganda.RecursivePlanID, "co-opt should still fire once")
+	code, body := h.post(preparerIdx, spPath(plan.ID, "make-choice"), map[string]any{
+		"result": "mar", "choices": []string{spOptCounterProp, spOptCounterProp},
+	})
+	require.Equalf(t, http.StatusUnprocessableEntity, code, "a repeated counter-propaganda is refused: %v", body)
+	rd := loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData)
+	assert.Empty(t, rd.MakeMarChoices, "a refused submission commits nothing")
+	assert.Nil(t, rd.SpreadPropaganda.RecursivePlanID)
 
+	h.makeChoice(plan.ID, "mar", []string{spOptCounterProp})
 	plans, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
 	require.NoError(t, err)
 	spCount := 0
@@ -293,7 +292,7 @@ func TestSpreadPropaganda_Mar_CounterProp_DoesNotDoubleFire(t *testing.T) {
 			spCount++
 		}
 	}
-	assert.Equal(t, 2, spCount, "counter_prop picked twice should still spawn exactly one recursive plan")
+	assert.Equal(t, 2, spCount, "one pick spawns exactly one counter-propaganda plan")
 }
 
 // ── Soft-lock regression: over-picked mar steps ──────────────────────────────
@@ -535,7 +534,34 @@ func TestSpreadPropaganda_Mar_CounterProp_RefusedCleanlyWhenNobodyInterfered(t *
 	assert.NotContains(t, saAllLogBodies(t, h), "keep their head down")
 
 	// And the plan is not wedged: a valid submission still goes through.
-	h.makeChoice(plan.ID, "mar", []string{spOptLayLow, spOptLayLow})
+	h.makeChoice(plan.ID, "mar", []string{spOptLayLow})
+}
+
+// TestSpreadPropaganda_Mar_LayLowRepeatRefusedWithNoEffect pins the server-side
+// cap (owner ruling 2026-11-03): "keep your head down" is a single pick, so a
+// hand-made request repeating it is refused — and, because the check runs before
+// anything applies, the refused request leaves no lockout, no committed choices
+// and no log post. The picker already caps it; this is the request behind it.
+func TestSpreadPropaganda_Mar_LayLowRepeatRefusedWithNoEffect(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	plan, preparerIdx := spPrepareToMar(t, h)
+	require.GreaterOrEqual(t, spMarBudget(t, h, plan.ID), 2)
+
+	code, body := h.post(preparerIdx, spPath(plan.ID, "make-choice"), map[string]any{
+		"result": "mar", "choices": []string{spOptLayLow, spOptLayLow},
+	})
+	require.Equalf(t, http.StatusUnprocessableEntity, code, "a repeated head-down is refused: %v", body)
+
+	after, err := h.q.GetPlanByID(ctx, plan.ID)
+	require.NoError(t, err)
+	rd := loadResolutionData(after.ResolutionData)
+	assert.Empty(t, rd.MakeMarChoices, "a refused submission commits nothing")
+	if rd.SpreadPropaganda != nil {
+		assert.False(t, rd.SpreadPropaganda.EsteemLockout)
+	}
+	assert.NotContains(t, saAllLogBodies(t, h), "keep their head down", "a refused request posts nothing")
 }
 
 // TestSpreadPropaganda_CoOptBlocker_RecursivePlan covers the other reason the
@@ -668,15 +694,17 @@ func TestSpreadPropaganda_PreRoll_ParksWithNoRollUntilTheMessageIsSummarised(t *
 	assert.Equal(t, "Bread is a right, not a gift.", sp.PreRollText, "the committed text, not the prep draft")
 }
 
-// Counter-propaganda (mar (d)) is born already rolling, so it never sits at a
-// pre-roll step of its own — which would otherwise strand a plan nobody can cast.
-func TestSpreadPropaganda_CounterPropIsBornPastItsPreRoll(t *testing.T) {
-	h := newPlanLifecycle(t, 3)
+// spCounterPropToPreRoll marries a marred plan to its counter-propaganda child:
+// one interferer, a mar, counter_prop picked. Returns the child plan and the
+// interferer's seat.
+func spCounterPropToPreRoll(t *testing.T, h *planLifecycle) (parent, child dbgen.Plan, interfererIdx int) {
+	t.Helper()
 	ctx := context.Background()
 	plan, prepIdx := spPrepared(t, h)
 	roll := h.resolveAndCast(plan.ID)
+	interfererIdx = (prepIdx + 1) % 3
 	_, err := h.q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
-		RollID: roll.ID, PlayerID: h.tg.Players[(prepIdx+1)%3].ID, IsInterference: true,
+		RollID: roll.ID, PlayerID: h.tg.Players[interfererIdx].ID, IsInterference: true,
 	})
 	require.NoError(t, err)
 	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
@@ -684,12 +712,119 @@ func TestSpreadPropaganda_CounterPropIsBornPastItsPreRoll(t *testing.T) {
 
 	got := loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData).SpreadPropaganda
 	require.NotNil(t, got.RecursivePlanID)
-	child := mustPlan(t, h, *got.RecursivePlanID)
+	return mustPlan(t, h, plan.ID), mustPlan(t, h, *got.RecursivePlanID), interfererIdx
+}
+
+// TestSpreadPropaganda_Mar_CannotBeResubmitted: a mar is committed once. After
+// ["lay_low","give_peer"] a second request of ["lay_low"] used to re-post the
+// head-down line and overwrite the picks, dropping the owed give_peer. It is now
+// refused with no effect and no post.
+func TestSpreadPropaganda_Mar_CannotBeResubmitted(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, preparerIdx := spPrepareToMar(t, h)
+	h.seedPeer(preparerIdx, "doomed peer")
+	require.GreaterOrEqual(t, spMarBudget(t, h, plan.ID), 2)
+
+	h.makeChoice(plan.ID, "mar", []string{spOptLayLow, spOptGivePeer})
+	posts := strings.Count(saAllLogBodies(t, h), "keep their head down")
+	require.Equal(t, 1, posts)
+
+	code, body := h.post(preparerIdx, spPath(plan.ID, "make-choice"), map[string]any{
+		"result": "mar", "choices": []string{spOptLayLow},
+	})
+	require.Equalf(t, http.StatusConflict, code, "a second submission is refused: %v", body)
+
+	rd := loadResolutionData(mustPlan(t, h, plan.ID).ResolutionData)
+	require.Len(t, rd.MakeMarChoices, 2, "the committed picks are not overwritten")
+	assert.Equal(t, spOptGivePeer, rd.MakeMarChoices[1].Option, "the owed give_peer survives")
+	assert.Equal(t, 1, strings.Count(saAllLogBodies(t, h), "keep their head down"), "no second post")
+}
+
+// TestSpreadPropaganda_CounterPropWithStepOwed: while the parent still owes a step
+// (give_peer), the counter-propaganda step is waiting too. The row names both the
+// interferer (cast or decline) and the parent's preparer (the step), since push
+// follows this set, and each of them can act. A viewer who owes the counter step
+// is shown that plan, not the parent's (frontend activeResolvingPlan).
+func TestSpreadPropaganda_CounterPropWithStepOwed(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, prepIdx := spPrepared(t, h)
+	h.seedPeer(prepIdx, "peer to give")
+	roll := h.resolveAndCast(plan.ID)
+	interfererIdx := (prepIdx + 1) % 3
+	_, err := h.q.CreateDiceRollDie(ctx, dbgen.CreateDiceRollDieParams{
+		RollID: roll.ID, PlayerID: h.tg.Players[interfererIdx].ID, IsInterference: true,
+	})
+	require.NoError(t, err)
+	h.forceRoll(roll.ID, "mar", 0)
+	require.GreaterOrEqual(t, spMarBudget(t, h, plan.ID), 2)
+	h.makeChoice(plan.ID, "mar", []string{spOptGivePeer, spOptCounterProp})
+
+	parent := mustPlan(t, h, plan.ID)
+	require.Equal(t, model.PlanResolving, parent.Status, "give_peer is still owed")
+	both := []int64{h.tg.Players[interfererIdx].ID, h.tg.Players[prepIdx].ID}
+	h.assertWaitees("counter step + parent step", model.RowStateAwaitCounterPropaganda, both...)
+
+	// The interferer declines; only the parent's step remains, and it is named.
+	childID := *loadResolutionData(parent.ResolutionData).SpreadPropaganda.RecursivePlanID
+	code, body := h.post(interfererIdx, spPath(childID, "sp-decline-counter"), nil)
+	require.Equalf(t, http.StatusOK, code, "decline: %v", body)
+	h.assertWaitees("parent step only", model.RowStatePlanResolving, h.tg.Players[prepIdx].ID)
+}
+
+// Counter-propaganda (mar (d)) opens at the same pre-roll step as any Spread
+// Propaganda: no roll yet, the top interferer is waited on, and the roll opens
+// only once they have stated their message — which the table reads first.
+func TestSpreadPropaganda_CounterPropOpensAtItsPreRoll(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	_, child, interfererIdx := spCounterPropToPreRoll(t, h)
+
 	childData := loadResolutionData(child.ResolutionData).SpreadPropaganda
 	require.NotNil(t, childData)
-	assert.True(t, childData.PreRollDone)
+	assert.False(t, childData.PreRollDone, "the interferer has not spoken yet")
+	_, err := h.q.GetDiceRollByPlanID(ctx, &child.ID)
+	require.Error(t, err, "no roll until the message is stated")
+	h.assertWaitees("counter-propaganda pre-roll", model.RowStateAwaitCounterPropaganda,
+		h.tg.Players[interfererIdx].ID)
+
+	// Only the interferer may cast.
+	other := (interfererIdx + 1) % 3
+	code, _ := h.post(other, spPath(child.ID, "sp-cast-roll"), map[string]any{"narration": "x"})
+	assert.Equal(t, http.StatusForbidden, code)
+
+	code, body := h.post(interfererIdx, spPath(child.ID, "sp-cast-roll"),
+		map[string]any{"narration": "The crown starves its own."})
+	require.Equalf(t, http.StatusOK, code, "interferer casts: %v", body)
 	_, err = h.q.GetDiceRollByPlanID(ctx, &child.ID)
-	assert.NoError(t, err, "its roll exists from the start")
+	require.NoError(t, err, "the roll opens once the message is in")
+	assert.True(t, anyContains(h.playerPosts(), "The crown starves its own."))
+}
+
+// Declining is a logged political act and closes the child with no roll. The
+// parent is unaffected (it had nothing else owed, so it had already resolved).
+func TestSpreadPropaganda_CounterPropDeclined(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	parent, child, interfererIdx := spCounterPropToPreRoll(t, h)
+
+	other := (interfererIdx + 1) % 3
+	code, _ := h.post(other, spPath(child.ID, "sp-decline-counter"), nil)
+	assert.Equal(t, http.StatusForbidden, code, "only the interferer may decline")
+
+	code, body := h.post(interfererIdx, spPath(child.ID, "sp-decline-counter"), nil)
+	require.Equalf(t, http.StatusOK, code, "decline: %v", body)
+
+	got := mustPlan(t, h, child.ID)
+	assert.Equal(t, model.PlanResolved, got.Status)
+	assert.True(t, loadResolutionData(got.ResolutionData).SpreadPropaganda.CounterDeclined)
+	_, err := h.q.GetDiceRollByPlanID(ctx, &child.ID)
+	require.Error(t, err, "a declined counter never rolls")
+	assert.Contains(t, saAllLogBodies(t, h), "declined to spread propaganda of their own")
+	assert.Equal(t, model.PlanResolved, mustPlan(t, h, parent.ID).Status)
+
+	code, _ = h.post(interfererIdx, spPath(child.ID, "sp-decline-counter"), nil)
+	assert.Equal(t, http.StatusConflict, code, "declining twice, or after resolving, is refused")
 }
 
 func TestSpreadPropaganda_Make_NarratesTheChangesWithTheArtifact(t *testing.T) {

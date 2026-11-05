@@ -126,7 +126,7 @@ export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 		  summary: "(b) The preparer keeps their head down — their next plan cannot involve esteem" },
 		{ key: 'break_self',   label: '(c) Word of your laughable ideas gets around — break yourself',
 		  summary: "(c) Word of the preparer's laughable ideas gets around — they break one of their own assets" },
-		{ key: 'counter_prop', label: "(d) Top interferer spreads their own propaganda now (resolves immediately)" },
+		{ key: 'counter_prop', label: "(d) Top interferer may spread their own propaganda now, or decline" },
 	],
 };
 

@@ -481,6 +481,59 @@ func TestHostFestivity_HostFreeMake_BenefitsHost(t *testing.T) {
 		"the host's extra make adds the peer to the host's own retinue")
 }
 
+// TestHostFestivity_EarnsAMakeLineIsDefaultSeverity pins the owner's ruling
+// (2026-11-03) that "X's mar earns Y a make" is a Default-severity post, so the
+// chat's default filter shows it (it was Minor, which hides it).
+func TestHostFestivity_EarnsAMakeLineIsDefaultSeverity(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+
+	hfGuestRollMar(t, h, plan.ID, g1)
+	code, body := h.post(g1, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/guest-choice",
+		map[string]any{"choice": "accept_duels"})
+	require.Equalf(t, http.StatusOK, code, "g1 mar choice: %v", body)
+
+	posts, err := h.q.ListGamePosts(context.Background(), h.tg.Game.ID)
+	require.NoError(t, err)
+	found := false
+	for _, p := range posts {
+		if strings.Contains(p.Body, "earns") && strings.Contains(p.Body, "a make") {
+			found = true
+			assert.Equal(t, int32(model.SeverityDefault), p.Severity)
+		}
+	}
+	require.True(t, found, "the earns-a-make line is posted")
+}
+
+// TestHostFestivity_EndWithMakesUnclaimed_LogsTheLapse: the owner ruled
+// (2026-11-03) that the host may end the event with earned makes unclaimed. The
+// lapse is a state change, so it posts to the log; a guest's mar IOU still blocks.
+func TestHostFestivity_EndWithMakesUnclaimed_LogsTheLapse(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+	g2 := (hostIdx + 2) % len(h.tg.Players)
+	endPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/end-event"
+
+	// g1 opts out and g2 rolls a make: the host has earned two makes (hosting +
+	// the opt-out) and takes none, but g2 holds an IOU.
+	code, body := h.post(g1, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/guest-roll",
+		map[string]any{"action": "opt_out"})
+	require.Equalf(t, http.StatusOK, code, "g1 opt out: %v", body)
+	hfGuestRoll(t, h, plan.ID, g2, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+
+	code, body = h.post(hostIdx, endPath, nil)
+	require.Equalf(t, http.StatusConflict, code, "a mar IOU still blocks ending: %v", body)
+	assert.NotContains(t, hfAllLogBodies(t, h), "unclaimed", "a refused end posts nothing")
+
+	hfInsistAndChoose(t, h, plan.ID, hostIdx, g2, gamepkg.FestivityMarAcceptDuels)
+	code, body = h.post(hostIdx, endPath, nil)
+	require.Equalf(t, http.StatusOK, code, "ending with makes unclaimed: %v", body)
+	assert.Contains(t, hfAllLogBodies(t, h), "ended the event, leaving 2 earned makes unclaimed")
+}
+
 // TestHostFestivity_IntroducedPeer_UnclaimedJoinsIntroducer proves D7's default
 // ending: a peer introduced at the party belongs to nobody while the event runs
 // — no `assets` row exists at all — and joins the *introducer's* retinue when
@@ -1206,6 +1259,52 @@ func TestHostFestivity_InsistedMarNamesPerformStepsWinner(t *testing.T) {
 
 	h.assertWaitees("winner owes the host's choice", model.RowStateAwaitFestivityGuestTurn, winnerID)
 	assert.NotContains(t, h.rowState().ActingPlayerIDs, hostID, "the locked-out host is not the one to wait on")
+}
+
+// TestHostFestivity_PerformStepsWinnerEndsTheEvent: ending the event is one of
+// the host's steps, so when a Make Demands perform_steps winner holds them, the
+// winner presses End and the host is refused (owner ruling 2026-11-04). The
+// winner may end with the host's earned makes unclaimed, a guest's IOU still
+// blocks whoever presses End, the bar names the winner, and the lapse line says
+// who ended it and whose makes lapsed.
+func TestHostFestivity_PerformStepsWinnerEndsTheEvent(t *testing.T) {
+	h := newPlanLifecycle(t, 4)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	winnerIdx := (hostIdx + 1) % 4
+	g2 := (hostIdx + 2) % 4
+	g3 := (hostIdx + 3) % 4
+	hostID, winnerID := h.tg.Players[hostIdx].ID, h.tg.Players[winnerIdx].ID
+	endPath := hfPath(plan.ID, "end-event")
+
+	// g2 rolls a make (holding an IOU); the winner and g3 opt out. The host has
+	// earned three makes and nobody takes them.
+	hfGuestRoll(t, h, plan.ID, g2, "make", "spread_rumor", map[string]any{"rumor_text": "a whisper"})
+	for _, idx := range []int{winnerIdx, g3} {
+		code, body := h.post(idx, hfPath(plan.ID, "guest-roll"), map[string]any{"action": "opt_out"})
+		require.Equalf(t, http.StatusOK, code, "opt out: %v", body)
+	}
+	h.seedMadeDemand(winnerIdx, plan.ID, gamepkg.DemandOptionWinners{
+		gamepkg.DemandOptionPerformSteps: winnerID,
+	})
+
+	// g2's IOU blocks, whoever presses End.
+	code, body := h.post(winnerIdx, endPath, nil)
+	require.Equalf(t, http.StatusConflict, code, "an IOU blocks the winner too: %v", body)
+
+	hfInsistAndChoose(t, h, plan.ID, winnerIdx, g2, gamepkg.FestivityMarAcceptDuels)
+	// Nothing owed now (makes are optional): the bar waits on the winner alone.
+	h.assertWaitees("only the end remains", model.RowStateAwaitFestivityGuestTurn, winnerID)
+	assert.NotContains(t, h.rowState().ActingPlayerIDs, hostID, "the locked-out host is not the one to wait on")
+
+	code, body = h.post(hostIdx, endPath, nil)
+	require.Equalf(t, http.StatusForbidden, code, "the host is refused when a winner stands in: %v", body)
+	assert.NotContains(t, hfAllLogBodies(t, h), "unclaimed", "a refused end posts nothing")
+
+	code, body = h.post(winnerIdx, endPath, nil)
+	require.Equalf(t, http.StatusOK, code, "the winner ends it with makes unclaimed: %v", body)
+	logs := hfAllLogBodies(t, h)
+	assert.Contains(t, logs, playerDisplayName(context.Background(), h.q, winnerID)+
+		" ended the event, leaving the host's 3 earned makes unclaimed")
 }
 
 // ── Q9: the host may spend an earned make on a duel ──────────────────────────

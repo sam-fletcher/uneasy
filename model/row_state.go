@@ -223,6 +223,13 @@ const (
 	// submit one option. ActingPlayerIDs names those who still owe a choice.
 	RowStateAwaitChronicleChoices RowStateKind = "await_chronicle_choices"
 
+	// RowStateAwaitCounterPropaganda — a counter-propaganda plan (Spread
+	// Propaganda mar option d) is waiting on its preparer, the top interferer: state
+	// their message and open the roll, or decline. ActingPlayerIDs is the
+	// interferer plus, while the parent plan still owes a step (a peer to give, an
+	// asset to break), whoever performs it — everyone who can act is named.
+	RowStateAwaitCounterPropaganda RowStateKind = "await_counter_propaganda"
+
 	// RowStatePlanPending — a plan is in 'pending' status on the current
 	// row and ready to be resolved. Step 2, queued.
 	RowStatePlanPending RowStateKind = "plan_pending"

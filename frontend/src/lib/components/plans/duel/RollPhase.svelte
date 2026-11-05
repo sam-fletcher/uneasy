@@ -5,9 +5,12 @@
     make → preparer wins, takes `result` stakes from target
     mar  → target wins,   takes `adjusted_difficulty` stakes from preparer
 
-  The pick is only offered when it is one: if the winner's budget covers every
-  stake the loser put up (or is zero) the server applies the claim itself as
-  the roll resolves, and the duel completes without a click.
+  On a make the pick is only offered when it is one: if the preparer's budget
+  covers every stake the loser put up (or is zero) the server applies the claim
+  itself as the roll resolves, and the duel completes without a click.
+  On a mar the opponent always decides, because the book says they MAY take: they
+  take the stakes (all of them, or a pick when the difficulty is smaller than the
+  pile) or spare the loser, all or nothing. The count is never negotiable.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -59,7 +62,7 @@
 			.map(s => assets.find(a => a.id === s.asset_id))
 			.filter((a): a is Asset => a != null && !a.is_destroyed),
 	);
-	const effectiveTake = $derived(Math.min(takeCount, loserStakes.length));
+	const effectiveTake = $derived(Math.min(takeCount, loserStakeAssets.length));
 	const choicesApplied = $derived(duelRes.phase === 'done');
 	// The winner is only asked when the claim is a real subset pick. When the
 	// budget covers every stake the loser put up, "take all" is the one legal
@@ -67,14 +70,41 @@
 	// both the moment the roll lands (pduelResolveClaim), so no picker here.
 	// DESIGN_PRINCIPLES.md principle 3: if you can't name the decision, it
 	// isn't a step.
-	const claimIsAChoice = $derived(effectiveTake > 0 && effectiveTake < loserStakes.length);
+	const claimIsAChoice = $derived(effectiveTake > 0 && effectiveTake < loserStakeAssets.length);
+	// A mar's opponent may spare the loser, so with anything to take they decide
+	// even when "take all" is the only way to take (principle 6).
+	const marMayBeSpared = $derived(rollOutcome === 'mar' && loserStakeAssets.length > 0);
+	const needsDecision = $derived(claimIsAChoice || marMayBeSpared);
 
 	let takeSelectionIDs = $state<number[]>([]);
 	let takeBusy = $state(false);
 	let takeError = $state('');
 
+	async function submitSpare() {
+		if (takeBusy) return;
+		takeBusy = true; takeError = '';
+		try {
+			await makeChoice(plan.id, rollOutcome!, ['spare']);
+			onPlansChanged();
+		} catch (e) {
+			takeError = e instanceof Error ? e.message : 'Could not apply duel result.';
+		} finally { takeBusy = false; }
+	}
+
 	async function submitTake() {
 		if (takeBusy) return;
+		if (!claimIsAChoice) {
+			// Everything the loser staked changes hands: send it all, so the
+			// server can tell a take from a spare.
+			takeBusy = true; takeError = '';
+			try {
+				await makeChoice(plan.id, rollOutcome!, loserStakeAssets.map(a => String(a.id)));
+				onPlansChanged();
+			} catch (e) {
+				takeError = e instanceof Error ? e.message : 'Could not apply duel result.';
+			} finally { takeBusy = false; }
+			return;
+		}
 		if (takeSelectionIDs.length !== effectiveTake) {
 			takeError = `Pick exactly ${effectiveTake} asset${effectiveTake === 1 ? '' : 's'}.`;
 			return;
@@ -126,17 +156,32 @@
 			</span>
 		</p>
 		<p class="choices-note">
-			{playerName(players, winnerID)} takes {effectiveTake}
-			{effectiveTake === 1 ? 'stake' : 'stakes'} from
-			{playerName(players, loserID)}.
+			{#if marMayBeSpared}
+				{playerName(players, winnerID)} may take {effectiveTake}
+				{effectiveTake === 1 ? 'stake' : 'stakes'} from
+				{playerName(players, loserID)}, or spare them.
+			{:else}
+				{playerName(players, winnerID)} takes {effectiveTake}
+				{effectiveTake === 1 ? 'stake' : 'stakes'} from
+				{playerName(players, loserID)}.
+			{/if}
 			Afterwards, <em>every</em> staked asset on both sides is leveraged.
 		</p>
-		{#if !claimIsAChoice}
+		{#if !needsDecision}
 			<p class="choices-note muted">
 				{effectiveTake === 0
 					? 'Nothing to take — settling the duel.'
 					: 'Nothing to choose — settling the duel.'}
 			</p>
+		{:else if amWinner && !claimIsAChoice}
+			<!-- A mar where the take is every stake: take them all, or spare. -->
+			{#if takeError}<ErrorText message={takeError} variant="panel" />{/if}
+			<button class="action-btn primary" onclick={submitTake} disabled={takeBusy}>
+				{takeBusy ? '…' : `Take ${effectiveTake === 1 ? 'the stake' : `all ${effectiveTake} stakes`}`}
+			</button>
+			<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
+				Spare {playerName(players, loserID)}
+			</button>
 		{:else if amWinner}
 			<p class="choices-note">
 				Choose {effectiveTake} of {playerName(players, loserID)}'s
@@ -157,9 +202,14 @@
 				disabled={takeBusy || takeSelectionIDs.length !== effectiveTake}>
 				{takeBusy ? '…' : `Take ${takeSelectionIDs.length}/${effectiveTake}`}
 			</button>
+			{#if marMayBeSpared}
+				<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
+					Spare {playerName(players, loserID)} instead
+				</button>
+			{/if}
 		{:else}
 			<p class="choices-note muted">
-				Waiting for {playerName(players, winnerID)} to claim stakes…
+				Waiting for {playerName(players, winnerID)} to {marMayBeSpared ? 'take stakes or spare' : 'claim stakes'}…
 			</p>
 		{/if}
 	{/if}

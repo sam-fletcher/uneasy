@@ -135,6 +135,13 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// else's to write, and until they do the peer is still a draft with no
 			// asset behind them.
 			return { waitees: actingWaitees(), stepLabel: 'Make Introductions — describe a newcomer' };
+		case 'await_counter_propaganda':
+			// The top interferer was handed a counter-propaganda plan by the
+			// preparer's mar: state their message and roll, or decline. Names the
+			// interferer, plus whoever still owes a step of the parent plan (the
+			// preparer, or a Make Demands perform_steps winner) — the server
+			// builds that set (spCounterWaitees); this just renders it.
+			return { waitees: actingWaitees(), stepLabel: 'Spread Propaganda — counter-propaganda' };
 		case 'await_chronicle_choices':
 			// Marred Chronicle Histories — every present player owes one choice.
 			return { waitees: actingWaitees(), stepLabel: 'Chronicle Histories — all choose' };

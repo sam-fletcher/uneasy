@@ -385,9 +385,10 @@ func TestProposeDuelHTTP_Make_TakesStakeLeveragesAndLogs(t *testing.T) {
 }
 
 // TestProposeDuelHTTP_Mar_TargetTakesPreparerStake: on a mar the target wins and
-// takes the preparer's staked asset. The difficulty (1) covers the preparer's
-// lone stake, so the claim is forced and applied automatically — and the plan
-// resolves without the PREPARER, who just lost, having to click "Complete".
+// may take the preparer's staked asset. The difficulty (1) covers the lone stake,
+// but the book says "may", so nothing applies until the target chooses (sparing
+// is the other answer). Once they take, the plan resolves without the PREPARER,
+// who just lost, having to click "Complete".
 func TestProposeDuelHTTP_Mar_TargetTakesPreparerStake(t *testing.T) {
 	h := newPlanLifecycle(t, 5)
 	prepIdx0 := h.focusPlayerIdx()
@@ -404,6 +405,14 @@ func TestProposeDuelHTTP_Mar_TargetTakesPreparerStake(t *testing.T) {
 	require.NotNil(t, roll.Outcome)
 	require.Equal(t, "mar", *roll.Outcome, "pinned dice: the target sweeps")
 
+	status, _ := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolving, status, "a mar claim waits for the opponent: they may spare")
+	h.assertWaitees("mar claim", model.RowStatePlanResolving, h.tg.Players[targIdx].ID)
+
+	code, body := h.post(targIdx, duelRoute(planID, "make-choice"),
+		map[string]any{"result": "mar", "choices": []string{strconv.FormatInt(prepPeer, 10)}})
+	require.Equalf(t, http.StatusOK, code, "target takes: %v", body)
+
 	status, result := planStatusOf(t, h, planID)
 	require.Equal(t, model.PlanResolved, status, "the loser must not be left holding a Complete button")
 	require.Equal(t, "mar", result)
@@ -414,8 +423,220 @@ func TestProposeDuelHTTP_Mar_TargetTakesPreparerStake(t *testing.T) {
 
 	posts := duelSystemPosts(t, h.q, h.tg.Game.ID)
 	require.NotEmpty(t, posts)
-	_, ok := duelPostWith(posts, "won the duel")
+	_, ok := duelPostWith(posts, "won the duel and took")
 	require.True(t, ok, "expected a duel-outcome post")
+}
+
+// TestProposeDuelHTTP_Mar_OpponentMaySpareTheLoser: the owner's ruling
+// (2026-11-03) — on a mar the opponent may take nothing, all or nothing. No stake
+// moves, every stake is still leveraged (the book's leverage sentence is not
+// conditional on the take), the plan resolves, and the mercy is a public post.
+func TestProposeDuelHTTP_Mar_OpponentMaySpareTheLoser(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	prepPeer := h.seedPeer(prepIdx0, "Preparer stake")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+
+	planID, _ := seedDuelToRollPinned(t, h, targIdx,
+		[]int64{prepPeer}, []int64{targPeer}, targetSweepsPrep, targetSweepsTarg)
+
+	code, body := h.post(targIdx, duelRoute(planID, "make-choice"),
+		map[string]any{"result": "mar", "choices": []string{"spare"}})
+	require.Equalf(t, http.StatusOK, code, "target spares: %v", body)
+
+	status, result := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolved, status)
+	require.Equal(t, "mar", result)
+
+	ctx := context.Background()
+	kept, err := h.q.GetAssetByID(ctx, prepPeer)
+	require.NoError(t, err)
+	require.Equal(t, h.tg.Players[prepIdx0].ID, kept.OwnerID, "a spared stake stays put")
+	for _, aid := range []int64{prepPeer, targPeer} {
+		a, err := h.q.GetAssetByID(ctx, aid)
+		require.NoError(t, err)
+		require.Truef(t, a.IsLeveraged, "staked asset %d is leveraged even when spared", aid)
+	}
+
+	line, ok := duelPostWith(duelSystemPosts(t, h.q, h.tg.Game.ID), "spared")
+	require.True(t, ok, "sparing is a public act and must be logged")
+	assert.Contains(t, line, "taking none")
+}
+
+// TestProposeDuelHTTP_Mar_TakeIsExactlyTheDifficulty: on a mar the take is exactly
+// the difficulty, never fewer, and sparing is the only way to take none. With a
+// pile of two and difficulty 1: junk ids, a repeat, an asset nobody staked and
+// an over-budget pick are all refused with no effect (nothing leveraged, no
+// post, still resolving) — an unparseable id used to be skipped and logged as
+// "took 0" instead of a public spare. A spare mixed with picks is refused too.
+func TestProposeDuelHTTP_Mar_TakeIsExactlyTheDifficulty(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	prepA := h.seedPeer(prepIdx0, "Preparer stake A")
+	prepB := h.seedPeer(prepIdx0, "Preparer stake B")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+
+	planID, _ := seedDuelToRollPinned(t, h, targIdx,
+		[]int64{prepA, prepB}, []int64{targPeer}, targetSweepsPrep, targetSweepsTarg)
+
+	idA, idB := strconv.FormatInt(prepA, 10), strconv.FormatInt(prepB, 10)
+	for name, choices := range map[string][]string{
+		"junk id":        {"x"},
+		"spare + a pick": {"spare", idA},
+		"not staked":     {strconv.FormatInt(targPeer, 10)},
+		"over budget":    {idA, idB},
+	} {
+		code, body := h.post(targIdx, duelRoute(planID, "make-choice"),
+			map[string]any{"result": "mar", "choices": choices})
+		require.Equalf(t, http.StatusUnprocessableEntity, code, "%s: %v", name, body)
+	}
+	status, _ := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolving, status)
+	for _, aid := range []int64{prepA, prepB, targPeer} {
+		a, err := h.q.GetAssetByID(context.Background(), aid)
+		require.NoError(t, err)
+		require.Falsef(t, a.IsLeveraged, "a refused request leaves no effect (asset %d)", aid)
+	}
+	posts := duelSystemPosts(t, h.q, h.tg.Game.ID)
+	_, ok := duelPostWith(posts, "won the duel")
+	require.False(t, ok, "a refused request posts nothing")
+}
+
+// TestProposeDuelHTTP_Mar_DestroyedStakeIsNotClaimable: a stake destroyed while
+// the claim waited can't change hands, so it neither counts toward the take nor
+// breaks the claim half-applied (takeAssetEffect refused it only after every stake
+// had been leveraged). Play can destroy a stake mid-claim (any break, or a
+// main-character swap that destroys the old one), so the filter is live.
+func TestProposeDuelHTTP_Mar_DestroyedStakeIsNotClaimable(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	prepA := h.seedPeer(prepIdx0, "Preparer stake A")
+	prepB := h.seedPeer(prepIdx0, "Preparer stake B")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+	planID, _ := seedDuelToRollPinned(t, h, targIdx,
+		[]int64{prepA, prepB}, []int64{targPeer}, targetSweepsPrep, targetSweepsTarg)
+
+	require.NoError(t, h.q.DestroyAsset(context.Background(), prepB))
+
+	code, _ := h.post(targIdx, duelRoute(planID, "make-choice"),
+		map[string]any{"result": "mar", "choices": []string{strconv.FormatInt(prepB, 10)}})
+	require.Equal(t, http.StatusUnprocessableEntity, code, "a destroyed stake cannot be taken")
+	code, body := h.post(targIdx, duelRoute(planID, "make-choice"),
+		map[string]any{"result": "mar", "choices": []string{strconv.FormatInt(prepA, 10)}})
+	require.Equalf(t, http.StatusOK, code, "the surviving stake is the whole pile: %v", body)
+	got, err := h.q.GetAssetByID(context.Background(), prepA)
+	require.NoError(t, err)
+	require.Equal(t, h.tg.Players[targIdx].ID, got.OwnerID)
+}
+
+// duelDestroyStake destroys a staked asset through the same helper every break
+// goes through (breakAsset → emitAssetDestruction), so the test drives the real
+// hook rather than flipping the row.
+func duelDestroyStake(t *testing.T, h *planLifecycle, ownerIdx int, assetID int64) {
+	t.Helper()
+	a, err := h.q.GetAssetByID(context.Background(), assetID)
+	require.NoError(t, err)
+	destroyed, err := breakAsset(context.Background(), h.q, h.manager, &a, nil, h.tg.Players[ownerIdx].ID)
+	require.NoError(t, err)
+	require.True(t, destroyed)
+}
+
+// seedMakeWithPileOfThree runs a duel to a make of result 2 against a target who
+// staked three (the target sits at rank 4, so difficulty 2 and room for three):
+// the budget is smaller than the pile, so the preparer owes a real pick.
+func seedMakeWithPileOfThree(
+	t *testing.T, h *planLifecycle, targIdx int, prepStake int64, pile []int64,
+) (planID int64, prepIdx int) {
+	t.Helper()
+	planID, prepIdx = seedDuelToBoutsRanked(t, h, targIdx, []int64{prepStake}, pile, 4)
+	pinDuelDice(t, h, planID, prepIdx, targIdx, preparerSweepsPrep, preparerSweepsTarg)
+	runDuelBouts(t, h, planID, prepIdx, targIdx)
+	return planID, prepIdx
+}
+
+// TestProposeDuelHTTP_Mar_AllStakesDestroyedSettlesItself: the preparer's only
+// stake is destroyed (a main-character swap, say) while the mar waits for the
+// opponent. Nothing is left to take or spare, so the UI shows no button, and the
+// server must settle the claim itself or the duel freezes in 'roll' with the bar
+// naming a player who has nothing to press. Destroying the stake settles it.
+func TestProposeDuelHTTP_Mar_AllStakesDestroyedSettlesItself(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	prepPeer := h.seedPeer(prepIdx0, "Preparer stake")
+	targPeer := h.seedPeer(targIdx, "Target stake")
+	planID, _ := seedDuelToRollPinned(t, h, targIdx,
+		[]int64{prepPeer}, []int64{targPeer}, targetSweepsPrep, targetSweepsTarg)
+	status, _ := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolving, status, "the mar waits on the opponent")
+
+	duelDestroyStake(t, h, prepIdx0, prepPeer)
+
+	status, result := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolved, status, "no stake left: nothing to decide, so the duel settles itself")
+	require.Equal(t, "mar", result)
+	got, err := h.q.GetAssetByID(context.Background(), targPeer)
+	require.NoError(t, err)
+	assert.True(t, got.IsLeveraged, "the surviving stake is still leveraged")
+	_, ok := duelPostWith(duelSystemPosts(t, h.q, h.tg.Game.ID), "won the duel")
+	assert.True(t, ok, "the settlement is posted")
+}
+
+// TestProposeDuelHTTP_Make_AllStakesDestroyedSettlesItself: a make whose budget (2)
+// is smaller than the pile (3) waits for the preparer to pick. If every stake is
+// destroyed there is no pick left, and the duel must settle itself.
+func TestProposeDuelHTTP_Make_AllStakesDestroyedSettlesItself(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	prepPeer := h.seedPeer(prepIdx0, "Preparer stake")
+	pile := []int64{h.seedPeer(targIdx, "T1"), h.seedPeer(targIdx, "T2"), h.seedPeer(targIdx, "T3")}
+	planID, _ := seedMakeWithPileOfThree(t, h, targIdx, prepPeer, pile)
+	status, _ := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolving, status, "budget 2 < pile 3: the preparer must pick")
+
+	for _, id := range pile {
+		duelDestroyStake(t, h, targIdx, id)
+	}
+
+	status, result := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolved, status, "no stake left to pick: the duel settles itself")
+	require.Equal(t, "make", result)
+}
+
+// TestProposeDuelHTTP_Make_OneStakeDestroyedLeavesNoChoice: the same make with one
+// of three stakes destroyed. The two survivors fit the budget (2), so the one legal
+// answer is "take both" and the server applies it; leaving it to the client would
+// freeze, because the picker no longer offers a choice.
+func TestProposeDuelHTTP_Make_OneStakeDestroyedLeavesNoChoice(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+
+	prepPeer := h.seedPeer(prepIdx0, "Preparer stake")
+	pile := []int64{h.seedPeer(targIdx, "T1"), h.seedPeer(targIdx, "T2"), h.seedPeer(targIdx, "T3")}
+	planID, prepIdx := seedMakeWithPileOfThree(t, h, targIdx, prepPeer, pile)
+	status, _ := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolving, status, "budget 2 < pile 3: the preparer must pick")
+
+	duelDestroyStake(t, h, targIdx, pile[0])
+
+	status, result := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolved, status)
+	require.Equal(t, "make", result)
+	for _, id := range pile[1:] {
+		a, err := h.q.GetAssetByID(context.Background(), id)
+		require.NoError(t, err)
+		assert.Equal(t, h.tg.Players[prepIdx].ID, a.OwnerID, "the survivors change hands")
+	}
 }
 
 // TestProposeDuelHTTP_FinalRollAutoResolves: the duel's final roll has no
