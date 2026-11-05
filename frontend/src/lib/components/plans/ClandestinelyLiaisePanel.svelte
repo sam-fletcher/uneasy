@@ -26,7 +26,7 @@
 	import DelayThresholdNote from './shared/DelayThresholdNote.svelte';
 	import {
 		playerName,
-		playersExcept, ownerIntactAssets, finaleSlotSpent,
+		playersExcept, ownerIntactAssets, finaleSlotSpent, pendingAimSettler,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -189,6 +189,8 @@
 		return seats;
 	});
 	const amParticipant = $derived(mySeats.length > 0);
+	/** Moving the meeting on is a step: whoever holds the preparer's seat presses it. */
+	const canAdvance = $derived(plan != null && mySeats.includes(plan.preparer_id));
 	/** In the meeting but with no seat to fill: the preparer, locked out by a demand. */
 	const amLockedOut = $derived((amPreparer || amPartner) && mySeats.length === 0);
 	/** Seat-holders' names, for "waiting on …" copy — the preparer's seat shows its holder. */
@@ -279,7 +281,7 @@
 
 	let resError = $state('');
 
-	// ── Advance (preparer only) ──────────────────────────────────────────────
+	// ── Advance (whoever holds the preparer's seat) ──────────────────────────────────────────────
 	let advanceBusy = $state(false);
 	async function onAdvance(p: Plan) {
 		if (advanceBusy) return;
@@ -405,6 +407,8 @@
 		} finally { shareBusy = false; }
 	}
 
+	// The Make Demands winner still to settle the partner: the liaison's first step waits.
+	const aimSettler = $derived(plan ? pendingAimSettler(plan, plans) : null);
 </script>
 
 {#if mode === 'prep'}
@@ -513,7 +517,12 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
-		{#if !amParticipant && !amPreparer && !amPartner}
+		{#if aimSettler != null}
+			<p class="ft-prompt muted">
+				{playerName(players, aimSettler)}, the Make Demands winner, is settling who
+				{playerName(players, plan.preparer_id)} meets. The liaison begins once they have.
+			</p>
+		{:else if !amParticipant && !amPreparer && !amPartner}
 			<p class="ft-prompt muted">A clandestine liaison is underway.</p>
 
 		<!-- Phase 1: Together At Last ─────────────────────────────── -->
@@ -527,9 +536,15 @@
 					Are you sharing a meal, meeting under a bridge under the cover
 					of night, or perhaps something more intimate?
 				</p>
-				{#if amPreparer}
+				{#if canAdvance}
 					<p class="choices-note muted">
-						When you're both ready, advance the liaison.
+						{#if standingIn}
+							As the Make Demands winner, moving the meeting on is yours.
+							When {playerName(players, plan.preparer_id)} and
+							{playerName(players, clState.partnerID)} are ready, advance the liaison.
+						{:else}
+							When you're both ready, advance the liaison.
+						{/if}
 					</p>
 					<button class="action-btn primary"
 						onclick={() => onAdvance(plan)} disabled={advanceBusy}>
@@ -537,8 +552,7 @@
 					</button>
 				{:else}
 					<p class="choices-note muted">
-						Once you're both ready, {playerName(players, plan.preparer_id)}
-						will advance the liaison.
+						Once you're both ready, {holderName}{#if preparerSeatHolder !== plan.preparer_id}, the Make Demands winner,{/if} will advance the liaison.
 					</p>
 				{/if}
 			</div>

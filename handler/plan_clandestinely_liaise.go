@@ -292,9 +292,10 @@ func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 // collaborative submit phases so the WaitingOnBar names exactly who still owes
 // a submission — never the focus player, who (unlike every other resolving
 // plan) is often not even a participant, since the liaison was prepared on an
-// earlier turn and resolves on its delayed row. The preparer-only phases
-// (together_at_last, done) return false and ride the generic plan_resolving
-// case, which already names the resolving plan's preparer.
+// earlier turn and resolves on its delayed row. together_at_last names the Make
+// Demands winner who presses advance, when there is one; otherwise it and done
+// return false and ride the generic plan_resolving case, which already names the
+// resolving plan's preparer.
 //
 // It names whoever HOLDS each pending seat, which is not always the seat's own
 // player: after a Make Demands perform_steps win the preparer's seat belongs to
@@ -316,7 +317,7 @@ func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 		return seat
 	}
 
-	//nolint:exhaustive // together_at_last/done handled by default (ride generic)
+	//nolint:exhaustive // done handled by default (rides generic)
 	switch ld.Phase {
 	case game.LiaisePhaseSecretsWeKeep:
 		submitted := map[int64]bool{}
@@ -333,6 +334,12 @@ func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	case game.LiaisePhaseWhenWillISeeYouAgain:
 		submitted := liaiseRedelaySubmitters(ctx, q, ld)
 		return liaisePendingState(participants, submitted, holderOf)
+	case game.LiaisePhaseTogetherAtLast:
+		// Moving the meeting on is the Make Demands winner's step, not the preparer's.
+		if standIn := clStandInAdvancer(ctx, q, plan); standIn != 0 {
+			return model.RowState{Kind: model.RowStatePlanResolving, ActingPlayerIDs: []int64{standIn}}, true
+		}
+		return model.RowState{}, false
 	default:
 		return model.RowState{}, false
 	}

@@ -94,11 +94,13 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// fallback for the gap before/after the roll itself is open.
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — control leverage' };
 		case 'await_demand_retarget':
-			// Keep_or_change_target winner owes their call on where the target plan
-			// is aimed — keeping it is as much a decision as re-aiming it, so the
-			// table waits on them either way. Same surfacing as control leverage:
-			// usually visible via await_dice_roll above (they're seeded unready on
-			// that roll); this is the row-state fallback.
+			// Keep_or_change_target Make Demands winner owes their call on where the
+			// target plan is aimed — keeping it is as much a decision as re-aiming it,
+			// so the table waits on them either way. On a plan with a roll of its own
+			// (Exchange Courtiers, Spread Rumors) it usually surfaces via await_dice_roll
+			// above (they're seeded unready on that roll) and this is the fallback. On a
+			// Propose Duel or Clandestinely Liaise, which have no such roll, this IS the
+			// wait: the plan holds before its first step.
 			return { waitees: actingWaitees(), stepLabel: 'Make Demands — keep or change target' };
 		case 'await_plan_reaim':
 			// A plan found its prepare-time target gone (destroyed, moved, no longer

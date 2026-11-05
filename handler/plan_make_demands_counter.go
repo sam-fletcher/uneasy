@@ -110,7 +110,7 @@ func mdDraftChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		})
 		// A draft is spoken aloud pick by pick; the summary only appears once the
 		// fourth lands, so a draft left half-finished would otherwise be silent.
-		mdLog(ctx, deps, plan, model.SeverityMinor, fmt.Sprintf(
+		mdLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 			"%s drafted %s.", playerDisplayName(ctx, deps.Q, player.ID), mdDemandOptionLabels[body.Option]))
 
 		if err := mdFinishPick(ctx, deps, plan, md); err != nil {

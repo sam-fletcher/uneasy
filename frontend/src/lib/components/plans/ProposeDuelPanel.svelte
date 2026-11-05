@@ -24,7 +24,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import { playerName, parseResolutionData } from './shared';
+	import { playerName, parseResolutionData, pendingAimSettler } from './shared';
 
 	import PrepForm from './duel/PrepForm.svelte';
 	import SetupPhase from './duel/SetupPhase.svelte';
@@ -152,6 +152,8 @@
 	const myStakes = $derived(stakes.filter(s => s.player_id === currentPlayerID));
 	const myUnresolvedStakes = $derived(myStakes.filter(s => !s.is_resolved));
 
+	// The Make Demands winner still to settle the opponent: the duel's first step waits.
+	const aimSettler = $derived(plan ? pendingAimSettler(plan, plans) : null);
 </script>
 
 {#if mode === 'prep'}
@@ -159,7 +161,8 @@
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={duelStateError}>
-		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
+		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
+			ownStakeLaid={myStakes.length > 0} />
 
 		<p class="choices-note" style="margin:0;">
 			{playerName(players, plan.preparer_id)}
@@ -167,7 +170,13 @@
 			{#if difficulty != null}· difficulty <strong>{difficulty}</strong>{/if}
 		</p>
 
-		{#if duelRes.phase === 'setup' || duelRes.phase === ''}
+		{#if aimSettler != null}
+			<p class="ft-prompt muted">
+				{playerName(players, aimSettler)}, the Make Demands winner, is settling who
+				{playerName(players, plan.preparer_id)} duels. The duel starts once they have.
+			</p>
+
+		{:else if duelRes.phase === 'setup' || duelRes.phase === ''}
 			<SetupPhase
 				{plan} {duelRes} {players} {assets} {currentPlayerID}
 				{amParticipant} {amPreparer} {amTarget} {myMaxStakes}

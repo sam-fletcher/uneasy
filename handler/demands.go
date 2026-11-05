@@ -11,6 +11,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"slices"
 
 	dbgen "uneasy/db/gen"
 	"uneasy/game"
@@ -108,6 +110,31 @@ func pendingControlLeverageChooser(ctx context.Context, q *dbgen.Queries, plan *
 		loadResolutionData(plan.ResolutionData).DemandLeverageFinalized)
 }
 
+// demandRetargetPlans is the one list of plan types a keep_or_change_target
+// winner can act on: the plans that have a "who" (design principle 9). On every
+// other plan the option is a plain dud: no roll-hold, no retarget form, and the
+// route answers 409. The frontend's RETARGETABLE mirrors this list, and
+// TestDemandRetargetPlans_MatchesFrontend fails if the two differ.
+var demandRetargetPlans = []model.PlanType{
+	model.PlanExchangeCourtiers,
+	model.PlanSpreadRumors,
+	model.PlanProposeDuel,
+	model.PlanClandestinelyLiaise,
+}
+
+// demandCanRetarget reports whether keep_or_change_target is live on t.
+func demandCanRetarget(t model.PlanType) bool {
+	return slices.Contains(demandRetargetPlans, t)
+}
+
+// demandAimSettlesFirst reports the retargetable plans with no roll of the
+// preparer's to hold (Propose Duel, Clandestinely Liaise). Their Make Demands
+// winner settles the aim before the plan's first step instead, and the form and
+// route close once they have.
+func demandAimSettlesFirst(t model.PlanType) bool {
+	return t == model.PlanProposeDuel || t == model.PlanClandestinelyLiaise
+}
+
 // pendingDemandRetargetChooser is pendingControlLeverageChooser's
 // keep_or_change_target twin: the winner who still owes their keep-or-re-aim
 // call on a plan targeted by a made Make Demands, or 0.
@@ -115,20 +142,79 @@ func pendingControlLeverageChooser(ctx context.Context, q *dbgen.Queries, plan *
 // Same shape, same reason. "Keep the current target" is a legitimate choice the
 // rules hand the winner, and it leaves the plan's target columns untouched —
 // indistinguishable from having never acted. So the winner must explicitly
-// finalize, and until they do they block the roll (seeded unready, excluded from
-// the auto-ready sweeps). Without that, a target whose roll opens at kickoff
-// could resolve the window shut before they ever saw it (audit D5).
+// finalize, and until they do they hold the plan up (audit D5).
 //
-// Returns 0 in the same four cases: no such demand; the winner is the preparer
-// (no handoff — they re-aim their own plan directly); they have already
-// finalized; or the target plan's roll is no longer open. Plus the D7 case —
-// a target with no preparer-owned roll, where there is nothing to hold open.
+// What they hold depends on the plan. Exchange Courtiers and Spread Rumors have
+// a roll of the preparer's own: the Make Demands winner is seeded unready on it and blocks it
+// while it is open. Propose Duel and Clandestinely Liaise have no such roll: the
+// plan waits before its first step, from the moment it starts resolving.
+//
+// Returns 0 when: the option is a dud on this plan type; there is no such
+// demand; the Make Demands winner is the preparer (no handoff — they re-aim their own plan
+// directly, or do nothing, which means keep); they have already finalized; or
+// the hold is over (the roll is no longer open).
 func pendingDemandRetargetChooser(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) int64 {
-	if !mdTargetHasPreparerRoll(plan.PlanType) {
+	if !demandCanRetarget(plan.PlanType) {
 		return 0
 	}
-	return pendingDemandChooser(ctx, q, plan, game.DemandOptionKeepOrChangeTarget,
-		loadResolutionData(plan.ResolutionData).DemandRetargetFinalized)
+	finalized := loadResolutionData(plan.ResolutionData).DemandRetargetFinalized
+	if demandAimSettlesFirst(plan.PlanType) {
+		if plan.Status != model.PlanResolving {
+			return 0
+		}
+		// A plan already under way (a game that was mid-duel when this shipped) is
+		// held up by nobody: the route is closed, so waiting would be a deadlock.
+		rd := loadResolutionData(plan.ResolutionData)
+		if demandAimLocked(ctx, q, plan, &rd) {
+			return 0
+		}
+		return pendingDemandWinner(ctx, q, plan, game.DemandOptionKeepOrChangeTarget, finalized)
+	}
+	return pendingDemandChooser(ctx, q, plan, game.DemandOptionKeepOrChangeTarget, finalized)
+}
+
+// requireDemandAimSettled writes a 409 and returns false while a Make Demands
+// keep_or_change_target winner still has to settle the aim of a Propose Duel or
+// Clandestinely Liaise. Every first-step route of those plans calls it, so the
+// wait the Waiting On bar shows is a wait the server enforces.
+func requireDemandAimSettled(w http.ResponseWriter, r *http.Request, q *dbgen.Queries, plan *dbgen.Plan) bool {
+	if !demandAimSettlesFirst(plan.PlanType) {
+		return true
+	}
+	if pendingDemandRetargetChooser(r.Context(), q, plan) == 0 {
+		return true
+	}
+	respondErr(w, http.StatusConflict, "the Make Demands winner has not yet settled where this plan is aimed")
+	return false
+}
+
+// demandAimLocked reports whether a Propose Duel or Clandestinely Liaise has
+// begun its first step, so its aim can no longer change. Once locked the
+// retarget form and route close for everyone, a preparer who won the option
+// included. A plan that has not started resolving has no phase yet (the struct
+// exists from preparation, the phase is set in OnResolve), so an empty phase
+// means "not begun". For a duel a stake already laid also locks it, even though
+// the duel stays in setup until both sides have staked and champion election is
+// optional: re-aiming then would strand that stake. On a database error it
+// answers "locked", the safe side for a one-way change.
+func demandAimLocked(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, resData *ResolutionData) bool {
+	switch plan.PlanType { //nolint:exhaustive // only the two aim-first plans lock
+	case model.PlanProposeDuel:
+		d := resData.Duel
+		if d == nil {
+			return false
+		}
+		if (d.Phase != "" && d.Phase != duelPhaseSetup) || d.PreparerChampionDeclared || d.TargetChampionDeclared {
+			return true
+		}
+		stakes, err := q.ListDuelStakesByPlan(ctx, plan.ID)
+		return err != nil || len(stakes) > 0
+	case model.PlanClandestinelyLiaise:
+		l := resData.Liaise
+		return l != nil && l.Phase != "" && l.Phase != LiaiseTogetherAtLast
+	default:
+		return false
+	}
 }
 
 // pendingDemandChooser is the body shared by the two pre-roll demand-option
@@ -142,21 +228,35 @@ func pendingDemandChooser(
 	option string,
 	finalized bool,
 ) int64 {
-	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
-	if err != nil || winners == nil {
-		return 0
-	}
-	winnerID := winners[option]
-	if winnerID == 0 || winnerID == plan.PreparerID {
-		return 0
-	}
-	if finalized {
+	winnerID := pendingDemandWinner(ctx, q, plan, option, finalized)
+	if winnerID == 0 {
 		return 0
 	}
 	// Only while the target plan's roll is still open: the winner can act only
 	// during the pre-roll window, and once the roll resolves the gate is moot.
 	roll, err := q.GetDiceRollByPlanID(ctx, &plan.ID)
 	if err != nil || !rollIsOpen(&roll) {
+		return 0
+	}
+	return winnerID
+}
+
+// pendingDemandWinner is the roll-independent half of pendingDemandChooser: the
+// option's winner when they are somebody other than the plan's preparer and have
+// not finalized yet, else 0.
+func pendingDemandWinner(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	option string,
+	finalized bool,
+) int64 {
+	_, winners, err := DemandWinnersForTargetPlan(ctx, q, plan)
+	if err != nil || winners == nil {
+		return 0
+	}
+	winnerID := winners[option]
+	if winnerID == 0 || winnerID == plan.PreparerID || finalized {
 		return 0
 	}
 	return winnerID

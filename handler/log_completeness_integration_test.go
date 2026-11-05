@@ -417,6 +417,19 @@ func TestLog_MakeDemands_EachDraftPickIsLogged(t *testing.T) {
 	assert.Contains(t, joined, p0+" drafted leverage control", "a half-finished draft still shows who took what")
 	assert.Contains(t, joined, p1+" drafted perform make/mar steps")
 	assert.NotContains(t, joined, "draft complete", "the summary still waits for the fourth pick")
+
+	// Each pick is a beat the table follows, so it shows at the default level, not
+	// as a minor line the log's default view hides.
+	all, err := h.q.ListGamePosts(t.Context(), h.tg.Game.ID)
+	require.NoError(t, err)
+	picks := 0
+	for _, p := range all {
+		if p.SystemCode != nil && *p.SystemCode == "plan.make_demands" && strings.Contains(p.Body, " drafted ") {
+			picks++
+			assert.Equal(t, model.SeverityDefault, p.Severity, "draft pick %q", p.Body)
+		}
+	}
+	assert.Equal(t, 2, picks)
 }
 
 // ── Propose Duel ─────────────────────────────────────────────────────────────

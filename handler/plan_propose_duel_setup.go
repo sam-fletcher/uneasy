@@ -77,8 +77,15 @@ func pduelElectChampionHandler(deps *PlanDeps) http.HandlerFunc {
 		} else {
 			current = state.TargetChampionID
 		}
-		unchanged := (current == nil && body.AssetID == nil) ||
-			(current != nil && body.AssetID != nil && *current == *body.AssetID)
+		// "Fight for myself" is nil, so a first nil call also looks unchanged; it must
+		// still be recorded (the declared flag), or nothing could tell that this
+		// duellist has taken the duel's first step.
+		declared := state.TargetChampionDeclared
+		if player.ID == plan.PreparerID {
+			declared = state.PreparerChampionDeclared
+		}
+		unchanged := declared && ((current == nil && body.AssetID == nil) ||
+			(current != nil && body.AssetID != nil && *current == *body.AssetID))
 		if unchanged {
 			respond(w, http.StatusOK, map[string]any{
 				"plan_id": plan.ID, "player_id": player.ID, "asset_id": body.AssetID,

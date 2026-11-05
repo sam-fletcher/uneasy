@@ -523,11 +523,17 @@
 				{/if}
 
 			{:else if ripostePending}
-				{#if isPreparer}
+				{#if amChoiceActor}
 					<div class="messy-break-section">
 						<p class="ft-prompt">
-							Riposte: {playerName(players, plan.target_player_id)} takes
-							your <em>{requestedPeerName}</em>. You may break it first, or surrender it intact.
+							{#if isPreparer}
+								Riposte: {playerName(players, plan.target_player_id)} takes
+								your <em>{requestedPeerName}</em>. You may break it first, or surrender it intact.
+							{:else}
+								Riposte: {playerName(players, plan.target_player_id)} takes
+								{playerName(players, plan.preparer_id)}'s <em>{requestedPeerName}</em>. As the
+								Make Demands winner you decide whether to break it first or surrender it intact.
+							{/if}
 						</p>
 						<CardPicker
 							label="Marginalium to break"
@@ -551,7 +557,7 @@
 					</div>
 				{:else}
 					<p class="ft-prompt muted">
-						Riposte — waiting for {playerName(players, plan.preparer_id)} to break or
+						Riposte — waiting for {playerName(players, resolutionActorID(plan, plans))} to break or
 						surrender <em>{requestedPeerName}</em>…
 					</p>
 				{/if}

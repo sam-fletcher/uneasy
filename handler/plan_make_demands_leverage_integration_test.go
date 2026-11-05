@@ -63,13 +63,28 @@ func setupDemandPreRollWindow(
 	t *testing.T, h *planLifecycle, option string,
 ) (plan dbgen.Plan, roll dbgen.DiceRoll, preparerIdx, winnerIdx, thirdIdx int) {
 	t.Helper()
+	return setupDemandPreRollWindowOn(t, h, option, model.PlanSpreadPropaganda)
+}
+
+// setupDemandPreRollWindowOn is setupDemandPreRollWindow for a chosen plan type:
+// Spread Propaganda, or Spread Rumors where the option must be live
+// (keep_or_change_target is a dud on Spread Propaganda).
+func setupDemandPreRollWindowOn(
+	t *testing.T, h *planLifecycle, option string, planType model.PlanType,
+) (plan dbgen.Plan, roll dbgen.DiceRoll, preparerIdx, winnerIdx, thirdIdx int) {
+	t.Helper()
 	ctx := context.Background()
 	preparerIdx = h.focusPlayerIdx()
 	winnerIdx = (preparerIdx + 1) % 3
 	thirdIdx = (preparerIdx + 2) % 3
 
 	notes := "test propaganda"
-	plan = h.prepare(PreparePlanRequest{PlanType: model.PlanSpreadPropaganda, PreparationNotes: &notes})
+	req := PreparePlanRequest{PlanType: planType, PreparationNotes: &notes}
+	if planType == model.PlanSpreadRumors {
+		subject := h.mainCharacterID(thirdIdx)
+		req.TargetAssetID = &subject
+	}
+	plan = h.prepare(req)
 	require.NotNil(t, plan.RowNumber)
 
 	// A resolved, made demand hands the option to the winner. Seeded BEFORE the
@@ -93,7 +108,7 @@ func setupDemandPreRollWindow(
 
 	h.jumpToRow(*plan.RowNumber)
 	r := h.resolveAndCast(plan.ID)
-	require.NotNil(t, r, "Spread Propaganda creates its roll on resolve")
+	require.NotNil(t, r, "the plan creates its roll on resolve")
 	roll = *r
 
 	// Advance to the leverage stage and ready everyone except the winner.
@@ -221,7 +236,7 @@ func TestPlanLifecycle_MakeDemands_ControlLeverage_WinnerLeveragesNone(t *testin
 func TestPlanLifecycle_MakeDemands_Retarget_KeepHoldsThenReleasesTheRoll(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
 	ctx := context.Background()
-	plan, roll, _, winnerIdx, _ := setupDemandPreRollWindow(t, h, game.DemandOptionKeepOrChangeTarget)
+	plan, roll, _, winnerIdx, _ := setupDemandPreRollWindowOn(t, h, game.DemandOptionKeepOrChangeTarget, model.PlanSpreadRumors)
 	winnerID := h.tg.Players[winnerIdx].ID
 
 	// Seeded unready despite having no dice of their own — the gate holds.

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -214,7 +215,8 @@ func mdDemandLeverageHandler(deps *PlanDeps) http.HandlerFunc {
 // ── demand-retarget (Stage 4) ────────────────────────────────────────────────
 //
 // Mounted on the *target* plan: POST /api/plans/:planId/demand-retarget with
-// body {"keep"?, "target_player_id"?, "target_asset_id"?}. Callable only by the
+// body {"keep"?, "target_player_id"?, "target_asset_id"?, "partner_peer_id"?}
+// (the last is a Clandestinely Liaise's new meeting peer). Callable only by the
 // keep_or_change_target winner. With "keep": true the plan's target columns are
 // left exactly as they are; otherwise the route re-validates the target plan's
 // preparation rules with the proposed new values (treating the target plan's
@@ -258,6 +260,9 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusForbidden, "only the keep_or_change_target winner may retarget")
 			return
 		}
+		if !mdRetargetOpen(ctx, w, deps.Q, plan, winnerID) {
+			return
+		}
 
 		// Block retarget once the roll has been RESOLVED — stakes are locked then.
 		// "No roll yet" is not an error and not a closed window: the status guard
@@ -281,6 +286,9 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			Keep           bool   `json:"keep"`
 			TargetPlayerID *int64 `json:"target_player_id"`
 			TargetAssetID  *int64 `json:"target_asset_id"`
+			// PartnerPeerID is the new partner's meeting peer, which a Clandestinely
+			// Liaise re-aim must name: a liaison is a meeting between two specific peers.
+			PartnerPeerID *int64 `json:"partner_peer_id"`
 		}
 		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
@@ -288,7 +296,7 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		if !body.Keep {
-			if !mdApplyRetarget(w, r, deps, plan, body.TargetPlayerID, body.TargetAssetID) {
+			if !mdApplyRetarget(w, r, deps, plan, body.TargetPlayerID, body.TargetAssetID, body.PartnerPeerID) {
 				return
 			}
 		}
@@ -296,7 +304,14 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 		// Finalize: flip the plan's flag so the winner stops blocking the roll.
 		// Done after the target write above so the gate clears only once their
 		// decision is locked in — the same ordering /demand-leverage uses.
-		resData := loadResolutionData(plan.ResolutionData)
+		// Reload: the re-aim above may itself have rewritten resolution_data (a duel's
+		// initiative), and saving the copy loaded at the top of the request would undo it.
+		fresh, err := deps.Q.GetPlanByID(ctx, plan.ID)
+		if err != nil {
+			respondInternalErr(w, r, "could not reload plan", err)
+			return
+		}
+		resData := loadResolutionData(fresh.ResolutionData)
 		resData.DemandRetargetFinalized = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
 			respondInternalErr(w, r, "could not finalize demand retarget", err)
@@ -311,19 +326,7 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 			"player_id":        player.ID,
 		})
 
-		// Both branches are narrated: "the demand changed nothing" is itself a
-		// beat the table should see, not silence.
-		if body.Keep {
-			mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
-				"%s let %s's %s stand exactly as aimed.",
-				playerDisplayName(ctx, deps.Q, player.ID),
-				playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
-		} else {
-			mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
-				"%s re-aimed %s's %s under their demand.",
-				playerDisplayName(ctx, deps.Q, player.ID),
-				playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
-		}
+		mdLogRetarget(ctx, deps, plan, player.ID, body.Keep, body.TargetPlayerID, body.PartnerPeerID)
 
 		// Release the roll the winner was holding open, then let it resolve if
 		// everyone else is in. Skipped for a target with no preparer-owned roll:
@@ -352,6 +355,67 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// mdLogRetarget narrates both branches: "the demand changed nothing" is itself a
+// beat the table should see, not silence.
+func mdLogRetarget(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	winnerID int64,
+	kept bool,
+	newPartnerID, partnerPeerID *int64,
+) {
+	if kept {
+		mdLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(
+			"%s let %s's %s stand exactly as aimed.",
+			playerDisplayName(ctx, deps.Q, winnerID),
+			playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType)))
+		return
+	}
+	msg := fmt.Sprintf(
+		"%s re-aimed %s's %s under their demand.",
+		playerDisplayName(ctx, deps.Q, winnerID),
+		playerDisplayName(ctx, deps.Q, plan.PreparerID), planLabel(plan.PlanType))
+	// A liaison is announced to the whole table with both meeting peers named when
+	// it is prepared, so naming the new partner's peer here reveals nothing new.
+	if plan.PlanType == model.PlanClandestinelyLiaise && partnerPeerID != nil && newPartnerID != nil {
+		msg += fmt.Sprintf(" It is now a meeting with %s, who brings %s.",
+			playerDisplayName(ctx, deps.Q, *newPartnerID), assetDisplayName(ctx, deps.Q, *partnerPeerID))
+	}
+	mdLog(ctx, deps, plan, model.SeverityImportant, msg)
+}
+
+// mdRetargetOpen reports whether the keep_or_change_target route may act on plan
+// right now, writing a 409 when it may not. The option is live only on the plans
+// that have a "who" (principle 9); on every other plan it is a plain dud. A duel
+// or liaison settles its aim before its first step, then the route closes: once
+// stakes are down, who the opponent is can no longer change. (A preparer who won
+// the option and never finalized keeps re-aiming freely until the first step.)
+func mdRetargetOpen(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	winnerID int64,
+) bool {
+	if !demandCanRetarget(plan.PlanType) {
+		respondErr(
+			w,
+			http.StatusConflict,
+			"keep_or_change_target is inert on this plan: it has no aim a demand could change",
+		)
+		return false
+	}
+	if demandAimSettlesFirst(plan.PlanType) {
+		rd := loadResolutionData(plan.ResolutionData)
+		if demandAimLocked(ctx, q, plan, &rd) || (rd.DemandRetargetFinalized && winnerID != plan.PreparerID) {
+			respondErr(w, http.StatusConflict, "this plan's aim is already settled")
+			return false
+		}
+	}
+	return true
+}
+
 // mdApplyRetarget re-validates and persists a re-aimed target plan's
 // target_player_id / target_asset_id. It runs the target plan type's own
 // ValidatePreparation with the proposed values, standing the plan's preparer in
@@ -368,14 +432,15 @@ func mdDemandRetargetHandler(deps *PlanDeps) http.HandlerFunc {
 // and Host Festivity — including the rulebook's own worked example for this
 // option ("if it's Spread Rumors… make it a rumor about a different character").
 //
-// This does not let the winner CHANGE any of that declared content; that is a
-// separate, deferred question (audit D12).
+// This does not let the winner CHANGE any of that declared content beyond what
+// the new aim forces: a liaison's new partner brings a meeting peer of their own.
+// Anything else is a separate, deferred question (audit D12).
 func mdApplyRetarget(
 	w http.ResponseWriter,
 	r *http.Request,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
-	targetPlayerID, targetAssetID *int64,
+	targetPlayerID, targetAssetID, partnerPeerID *int64,
 ) bool {
 	ctx := r.Context()
 	targetHandler, ok := GetHandler(plan.PlanType)
@@ -400,20 +465,11 @@ func mdApplyRetarget(
 		TargetPlayerID: targetPlayerID,
 		TargetAssetID:  targetAssetID,
 	}
-	if plan.PreparationNotes != nil {
-		vc.Notes = *plan.PreparationNotes
-	}
 	resData := loadResolutionData(plan.ResolutionData)
-	if mi := resData.MakeIntroductions; mi != nil {
-		vc.PeerCount = mi.PeerCount
+	if plan.PlanType == model.PlanClandestinelyLiaise && !mdLiaiseReaimAllowed(ctx, w, deps.Q, plan, &resData) {
+		return false
 	}
-	if ld := resData.Liaise; ld != nil {
-		vc.PreparerPeerID = ld.PreparerPeerID
-		vc.PartnerPeerID = ld.PartnerPeerID
-	}
-	if sr := resData.SpreadRumors; sr != nil {
-		vc.KeptSecret = sr.IsSecret
-	}
+	mdReplayDeclared(vc, plan, &resData, partnerPeerID)
 	if _, errMsg := targetHandler.ValidatePreparation(ctx, vc); errMsg != "" {
 		respondErr(w, http.StatusBadRequest, "retarget invalid: "+errMsg)
 		return false
@@ -426,5 +482,83 @@ func mdApplyRetarget(
 		respondInternalErr(w, r, "could not update plan targets", err)
 		return false
 	}
+	// The liaison follows its new partner: the stored partner and meeting peer are
+	// what every later step reads, not the plan's target column.
+	if plan.PlanType == model.PlanClandestinelyLiaise && targetPlayerID != nil {
+		ld := resData.EnsureLiaise()
+		ld.PartnerID, ld.PartnerPeerID = targetPlayerID, partnerPeerID
+		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+			respondInternalErr(w, r, "could not save the new meeting", err)
+			return false
+		}
+	}
+	// A duel computed who declares first when it started resolving, from the
+	// opponent it then had. The Make Demands winner settles the aim after that, so redo it.
+	if plan.PlanType == model.PlanProposeDuel && targetPlayerID != nil {
+		if duel := resData.Duel; duel != nil && duel.Phase == duelPhaseSetup {
+			init, err := pduelInitiativeHolder(ctx, deps.Q, plan, *targetPlayerID)
+			if err != nil {
+				respondInternalErr(w, r, "could not recompute duel initiative", err)
+				return false
+			}
+			duel.InitiativePlayerID = &init
+			if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
+				respondInternalErr(w, r, "could not save duel initiative", err)
+				return false
+			}
+		}
+	}
 	return true
+}
+
+// mdLiaiseReaimAllowed reports whether a liaison may be re-aimed to a new partner
+// right now, writing a 409 or 400 when it may not. Two conditions:
+//   - The plan is resolving. The new partner's meeting peer is checked once, at
+//     the re-aim, and nothing re-checks it at resolve; a pending plan would carry
+//     it across rows of play unchecked. (Keeping the aim has no such limit.)
+//   - The preparer's own meeting peer is still live. Re-validating the plan replays
+//     it, and a refusal about it would otherwise read as the re-aimer's mistake.
+func mdLiaiseReaimAllowed(
+	ctx context.Context,
+	w http.ResponseWriter,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	resData *ResolutionData,
+) bool {
+	if plan.Status != model.PlanResolving {
+		respondErr(w, http.StatusConflict,
+			"a liaison can be re-aimed only once it is resolving; until then it can only be kept")
+		return false
+	}
+	if ld := resData.Liaise; ld != nil {
+		if msg := clValidateMeetingPeer(ctx, q, plan.PreparerID, ld.PreparerPeerID, "the preparer's"); msg != "" {
+			respondErr(w, http.StatusBadRequest,
+				"retarget invalid: "+msg+", so this liaison can only be kept, not re-aimed")
+			return false
+		}
+	}
+	return true
+}
+
+// mdReplayDeclared copies what the plan already declared into the validation
+// context, so the validator re-judges the plan with only its aim changed.
+func mdReplayDeclared(vc *ValidationContext, plan *dbgen.Plan, resData *ResolutionData, partnerPeerID *int64) {
+	if plan.PreparationNotes != nil {
+		vc.Notes = *plan.PreparationNotes
+	}
+	if mi := resData.MakeIntroductions; mi != nil {
+		vc.PeerCount = mi.PeerCount
+	}
+	if ld := resData.Liaise; ld != nil {
+		vc.PreparerPeerID = ld.PreparerPeerID
+		vc.PartnerPeerID = ld.PartnerPeerID
+		// The old partner's peer belongs to the old partner: the Make Demands winner names the
+		// new partner's, and it is checked against the board as it stands now.
+		if plan.PlanType == model.PlanClandestinelyLiaise {
+			vc.PartnerPeerID = partnerPeerID
+		}
+	}
+	if sr := resData.SpreadRumors; sr != nil {
+		vc.KeptSecret = sr.IsSecret
+	}
 }

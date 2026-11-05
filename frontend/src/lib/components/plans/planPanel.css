@@ -118,6 +118,11 @@
 	cursor: pointer;
 }
 
+.player-chip:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
 .player-chip .dot {
 	width: 10px;
 	height: 10px;

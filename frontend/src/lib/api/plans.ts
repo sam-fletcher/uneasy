@@ -1141,6 +1141,8 @@ export function demandRetarget(
 		keep?: boolean;
 		target_player_id?: number | null;
 		target_asset_id?: number | null;
+		/** Clandestinely Liaise only: the new partner's meeting peer. */
+		partner_peer_id?: number | null;
 	},
 ): Promise<{
 	plan_id: number;

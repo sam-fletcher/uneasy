@@ -17,12 +17,15 @@ const LEVERAGE = 'Leverage none';
 function overlay(o: {
 	viewer: number; targetType?: string; status?: string; rolled?: boolean;
 	keepOrChange?: number; leverage?: number; retargetFinalized?: boolean;
-	noRoll?: boolean; otherPlanRoll?: boolean;
+	noRoll?: boolean; otherPlanRoll?: boolean; resolution?: string;
 }): string {
 	const target = {
 		id: 10, plan_type: o.targetType ?? 'spread_rumors', status: o.status ?? 'resolving',
 		preparer_id: ALICE, target_player_id: BOB, target_asset_id: null,
-		resolution_data: JSON.stringify({ demand_retarget_finalized: o.retargetFinalized ?? false }),
+		resolution_data: JSON.stringify({
+			...(o.resolution ? JSON.parse(o.resolution) : {}),
+			demand_retarget_finalized: o.retargetFinalized ?? false,
+		}),
 	};
 	const demand = {
 		id: 11, plan_type: 'make_demands', status: 'resolved', result: 'make',
@@ -104,11 +107,53 @@ describe('TargetPlanDemandOverlay forms', () => {
 		expect(body).not.toContain('until the plan resolves');
 	});
 
-	it('names the plan, not the dice, where there is no roll of the preparer’s own', () => {
-		const liaise = overlay({ viewer: BOB, targetType: 'clandestinely_liaise', retargetFinalized: true });
-		expect(liaise).toContain('until the plan resolves');
-		const duel = overlay({ viewer: BOB, targetType: 'propose_duel', retargetFinalized: true });
-		expect(duel).toContain('until its roll resolves');
+	it('closes the form on a duel or liaison once the winner has settled the aim', () => {
+		for (const t of ['clandestinely_liaise', 'propose_duel']) {
+			const body = overlay({ viewer: BOB, targetType: t, retargetFinalized: true });
+			expect(body).not.toContain(KEEP);
+			expect(body).not.toContain('Re-aim this plan');
+		}
+	});
+
+	it('holds a duel or liaison before its first step, not a roll', () => {
+		for (const t of ['clandestinely_liaise', 'propose_duel']) {
+			const winner = overlay({ viewer: BOB, targetType: t, noRoll: true });
+			expect(winner).toContain(KEEP);
+			expect(winner).toContain('the plan waits on you before its first step');
+			expect(winner).not.toContain('the roll waits');
+			expect(overlay({ viewer: 3, targetType: t, noRoll: true })).toContain('the plan waits until they say');
+		}
+	});
+
+	it('closes a duel to a preparer winner once the first step has begun', () => {
+		const started = JSON.stringify({ duel: { phase: 'staking' } });
+		const body = overlay({ viewer: ALICE, keepOrChange: ALICE, targetType: 'propose_duel', noRoll: true, resolution: started });
+		expect(body).not.toContain('Re-aim this plan');
+		const early = overlay({ viewer: ALICE, keepOrChange: ALICE, targetType: 'propose_duel', noRoll: true });
+		expect(early).toContain('Re-aim this plan');
+	});
+
+	it('keeps the form open on a duel or liaison that has not started resolving (no phase yet)', () => {
+		for (const t of ['clandestinely_liaise', 'propose_duel']) {
+			const body = overlay({ viewer: BOB, targetType: t, status: 'pending', noRoll: true,
+				resolution: JSON.stringify({ duel: { phase: '' }, liaise: { phase: '' } }) });
+			expect(body).toContain(KEEP);
+		}
+	});
+
+	it('closes it for no one waiting once the duel is under way', () => {
+		const body = overlay({ viewer: 3, targetType: 'propose_duel', noRoll: true,
+			resolution: JSON.stringify({ duel: { phase: 'bouts' } }) });
+		expect(body).not.toContain('the plan waits until they say');
+	});
+
+	it('is a dud on every other plan: no form, no roll-hold copy', () => {
+		for (const t of ['spread_propaganda', 'seek_answers', 'make_introductions', 'chronicle_histories']) {
+			const body = overlay({ viewer: BOB, targetType: t });
+			expect(body).not.toContain(KEEP);
+			expect(body).not.toContain('the roll waits');
+			expect(body).toContain('came to nothing here');
+		}
 	});
 });
 
@@ -121,5 +166,66 @@ describe('TargetPlanDemandOverlay keep_assets banner', () => {
 		const body = overlay({ viewer: 3, targetType: t });
 		expect(body).toContain('Demand in effect from');
 		expect(body).not.toContain('go to bob instead');
+	});
+});
+
+// A liaison is a meeting between two specific peers, so re-aiming it also names the
+// new partner's peer; a partner with no peer left can't be picked, and says why.
+describe('TargetPlanDemandOverlay liaison re-aim', () => {
+	const CAROL = 3;
+	const DAN = 4;
+	const four = [
+		{ id: ALICE, display_name: 'alice' }, { id: BOB, display_name: 'bob' },
+		{ id: CAROL, display_name: 'carol' }, { id: DAN, display_name: 'dan' },
+	] as never;
+	const peer = (id: number, owner: number, name: string, destroyed = false) =>
+		({ id, owner_id: owner, name, asset_type: 'peer', is_destroyed: destroyed, marginalia: [] });
+
+	function liaison(assets: unknown[], viewer = BOB, status = 'resolving'): string {
+		const target = {
+			id: 10, plan_type: 'clandestinely_liaise', status, preparer_id: ALICE,
+			target_player_id: CAROL, target_asset_id: null,
+			resolution_data: JSON.stringify({ liaise: { phase: 'together_at_last', partner_id: CAROL, partner_peer_id: 21, preparer_peer_id: 20 } }),
+		};
+		const demand = {
+			id: 11, plan_type: 'make_demands', status: 'resolved', result: 'make',
+			preparer_id: BOB, targeted_plan_id: 10,
+			resolution_data: JSON.stringify({ make_demands: { draft_choices: [
+				{ option: 'control_leverage', player_id: BOB },
+				{ option: 'keep_or_change_target', player_id: BOB },
+				{ option: 'keep_assets', player_id: BOB },
+				{ option: 'perform_steps', player_id: BOB },
+			] } }),
+		};
+		return render(TargetPlanDemandOverlay, {
+			props: { plan: target as never, plans: [target, demand] as never, players: four, assets: assets as never, currentPlayerID: viewer },
+			context: new Map([[ACTIVE_ROLL_KEY, () => null]]),
+		}).body;
+	}
+
+	it('asks for the partner and their peer, not a target asset', () => {
+		const body = liaison([peer(20, ALICE, 'Alice Friend'), peer(21, CAROL, 'Carol Confidant'), peer(22, BOB, 'Bob Friend')]);
+		// (The peer picker itself appears once a partner is chosen, which SSR can't do.)
+		expect(body).toContain('Who they meet');
+		expect(body).not.toContain('Target asset');
+	});
+
+	it('shows a partner with no live peer as unavailable, with the reason', () => {
+		const body = liaison([peer(20, ALICE, 'Alice Friend'), peer(21, CAROL, 'Carol Confidant'), peer(31, DAN, 'Dan Lost', true)]);
+		expect(body).toContain('dan is unavailable');
+		expect(body).not.toContain('carol is unavailable');
+	});
+
+	it('never offers the preparer as the partner', () => {
+		const body = liaison([peer(20, ALICE, 'Alice Friend'), peer(21, CAROL, 'Carol Confidant')]);
+		expect(body).not.toMatch(/<span class="name">alice<\/span>/);
+	});
+
+	it('says why it can only be kept: pending, or the preparer\'s own meeting peer is gone', () => {
+		const live = [peer(20, ALICE, 'Alice Friend'), peer(21, CAROL, 'Carol Confidant')];
+		expect(liaison(live)).not.toContain('can only be kept');
+		expect(liaison(live, BOB, 'pending')).toContain('once it is resolving');
+		expect(liaison([peer(20, ALICE, 'Alice Friend', true), peer(21, CAROL, 'Carol Confidant')]))
+			.toContain("alice's own meeting peer is gone");
 	});
 });

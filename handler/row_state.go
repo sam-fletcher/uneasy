@@ -567,7 +567,9 @@ func planResolvingGate(ctx context.Context, q *dbgen.Queries, plans []dbgen.Plan
 		id := plan.ID
 		// Pre-roll cross-player gates: a Make Demands keep_or_change_target or
 		// control_leverage winner owes a decision on this (target) plan's still-open
-		// roll. Either blocks the roll from resolving, so name them rather than
+		// roll — or, for a keep_or_change_target winner on a Propose Duel or
+		// Clandestinely Liaise (no roll of the preparer's), before the plan's first
+		// step. Either holds the plan, so name them rather than
 		// letting a sub-phase override or the generic preparer case mis-attribute
 		// the wait. These are the pre-roll mirror of the post-roll perform_steps
 		// handoff handled below.

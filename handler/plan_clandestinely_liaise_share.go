@@ -9,6 +9,9 @@ import (
 	"uneasy/model"
 )
 
+// liaiseChoiceApplier applies one player's Things We Share choice. Each handler
+// is responsible for its own DB calls and event broadcasts. Every option
+// targets the PARTNER's asset (validated at submission in clValidateShareTarget).
 type liaiseChoiceApplier func(
 	ctx context.Context,
 	deps *PlanDeps,

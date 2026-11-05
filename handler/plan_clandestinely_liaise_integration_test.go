@@ -108,9 +108,15 @@ func clSubmitReveal(t *testing.T, h *planLifecycle, revealID int64, playerIdx in
 
 func clAdvance(t *testing.T, h *planLifecycle, planID int64) {
 	t.Helper()
-	// advance-liaise is preparer-gated.
+	clAdvanceAs(t, h, planID, 0)
+}
+
+// clAdvanceAs presses advance-liaise as players[idx]: the preparer, or the Make
+// Demands winner of the perform option standing in for them.
+func clAdvanceAs(t *testing.T, h *planLifecycle, planID int64, idx int) {
+	t.Helper()
 	path := "/api/plans/" + strconv.FormatInt(planID, 10) + "/advance-liaise"
-	code, body := h.post(0, path, nil)
+	code, body := h.post(idx, path, nil)
 	require.Equalf(t, http.StatusOK, code, "advance-liaise: %v", body)
 }
 
@@ -990,9 +996,8 @@ func TestLiaise_PerformStepsWinner_DrivesWholeLiaison(t *testing.T) {
 		game.DemandOptionPerformSteps: winnerID,
 	})
 
-	// Scene-setting stays the preparer's: even locked out of the submit steps they
-	// still advance the meeting out of together_at_last.
-	clAdvance(t, h, m.plan.ID)
+	// Moving the meeting on is a step, so it is the Make Demands winner's too.
+	clAdvanceAs(t, h, m.plan.ID, winnerIdx)
 	keepPath := clPath(m.plan.ID, "keep-secret")
 
 	// ── Secrets We Keep ──
@@ -1121,7 +1126,7 @@ func TestLiaise_DemanderIsPartner_HoldsBothSeats(t *testing.T) {
 	h.seedMadeDemand(dualIdx, m.plan.ID, game.DemandOptionWinners{
 		game.DemandOptionPerformSteps: partnerID,
 	})
-	clAdvance(t, h, m.plan.ID)
+	clAdvanceAs(t, h, m.plan.ID, dualIdx)
 
 	// One player now owes everything: the bar names them once, not twice.
 	h.assertWaitees("both seats open", model.RowStateLiaiseResolving, partnerID)

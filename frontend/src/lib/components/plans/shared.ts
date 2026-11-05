@@ -191,10 +191,55 @@ export function targetHasPreparerRoll(planType: PlanType): boolean {
 
 /** Target types that carry something a keep_or_change_target winner can
  * redirect: a player and/or an asset (Exchange Courtiers, Spread Rumors, Propose
- * Duel, Clandestinely Liaise). Every other type has no aim to change. */
+ * Duel, Clandestinely Liaise). Every other type has no aim to change. Mirrors
+ * `demandRetargetPlans` in handler/demands.go, which is the authority; a Go test
+ * (handler/demands_retargetable_test.go) fails if the two lists differ. On every other plan
+ * the option is a plain dud: no roll-hold and no retarget form. */
 const RETARGETABLE: ReadonlySet<PlanType> = new Set<PlanType>([
 	'exchange_courtiers', 'spread_rumors', 'propose_duel', 'clandestinely_liaise',
 ]);
+
+/** Whether a duel or liaison has begun its first step, so its aim can no longer
+ * change. Mirrors `demandAimLocked` in handler/demands.go, with one gap: a stake
+ * the viewer cannot see (the opponent's, hidden until both commit) is only known
+ * to the server, which answers 409. `ownStakeLaid` covers the viewer's own. A
+ * plan that has not started resolving has no phase yet, which means "not begun". */
+export function demandAimLocked(plan: Plan, ownStakeLaid = false): boolean {
+	const rd = parseResolutionData(plan);
+	if (plan.plan_type === 'propose_duel') {
+		const d = rd.duel;
+		return d != null && (ownStakeLaid || (!!d.phase && d.phase !== 'setup')
+			|| d.preparer_champion_declared === true || d.target_champion_declared === true);
+	}
+	if (plan.plan_type === 'clandestinely_liaise') {
+		const l = rd.liaise;
+		return l != null && !!l.phase && l.phase !== 'together_at_last';
+	}
+	return false;
+}
+
+/** The Make Demands winner a duel or liaison is waiting on before its first step
+ * (they have not yet settled the aim), or null. Mirrors the hold in
+ * `pendingDemandRetargetChooser` (handler/demands.go). */
+export function pendingAimSettler(plan: Plan, allPlans: Plan[]): number | null {
+	if (!aimSettlesFirst(plan.plan_type) || plan.status !== 'resolving' || demandAimLocked(plan)) return null;
+	const demand = activeDemandAgainst(plan, allPlans);
+	const winner = demand ? demandWinnersFromPlan(demand).keep_or_change_target : undefined;
+	if (winner == null || winner === plan.preparer_id) return null;
+	return parseResolutionData(plan).demand_retarget_finalized === true ? null : winner;
+}
+
+/** Whether keep_or_change_target does anything on a plan of this type. */
+export function targetIsRetargetable(planType: PlanType): boolean {
+	return RETARGETABLE.has(planType);
+}
+
+/** Retargetable plans with no roll of the preparer's to hold: their Make Demands
+ * winner settles the aim before the plan's first step, and the form closes after.
+ * Mirrors `demandAimSettlesFirst` in handler/demands.go. */
+export function aimSettlesFirst(planType: PlanType): boolean {
+	return planType === 'propose_duel' || planType === 'clandestinely_liaise';
+}
 
 /** Target types that award their preparer no asset, so keep_assets has nothing
  * to redirect. Mirrors the note in plan_chronicle_histories.go (Seek Answers
@@ -207,9 +252,10 @@ const AWARDS_NO_ASSETS: ReadonlySet<PlanType> = new Set<PlanType>([
  * Why a draft option would do nothing against a target plan of this type, or
  * null when it does something. The rules expect the options to land unevenly, so
  * "inert" is a legitimate outcome — this only lets the drafter see it before
- * spending a pick. A hint, not a gate: the server accepts any unpicked option,
- * because the last pick is forced and must always be takeable. The control_leverage
- * case mirrors `mdTargetHasPreparerRoll` (handler/demands.go).
+ * spending a pick. The server accepts any unpicked option, because the last pick
+ * is forced and must always be takeable; the draft picker blocks an inert card
+ * while a live one remains (`draftOptionViews`), with this reason on the card.
+ * The control_leverage case mirrors `mdTargetHasPreparerRoll` (handler/demands.go).
  */
 export function demandOptionInertReason(opt: DemandOption, planType: PlanType): string | null {
 	const target = PLAN_SHORT[planType];
@@ -407,3 +453,12 @@ export function ownerIntactAssets(assets: Asset[], ownerID: number | null): Asse
 	return assets.filter(a => a.owner_id === ownerID && !a.is_destroyed);
 }
 
+
+/**
+ * Whether a player has a peer who could be brought to a liaison: one they own that
+ * is not destroyed. A partner with none cannot be liaised with, so the re-aim form
+ * shows them as unavailable. Mirrors the server's clValidateMeetingPeer.
+ */
+export function liaisePeersOf(assets: Asset[], playerID: number): Asset[] {
+	return assets.filter(a => a.owner_id === playerID && a.asset_type === 'peer' && !a.is_destroyed);
+}

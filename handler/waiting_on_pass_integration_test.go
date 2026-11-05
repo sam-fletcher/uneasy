@@ -271,7 +271,9 @@ func TestWaitingOn_ChronicleHistories_PerformStepsWinnerOwesTheSteps(t *testing.
 		code, body = h.post(demanderIdx, path, map[string]any{"option": "echo_present"})
 		require.Equalf(t, http.StatusOK, code, "make-step %d: %v", i+1, body)
 	}
-	h.assertWaitees("budget spent, the preparer completes", model.RowStatePlanResolving, preparer)
+	// Wrapping the scene is a step too (principle 9), so it is still the Make Demands winner's.
+	_ = preparer
+	h.assertWaitees("budget spent, the winner wraps the scene", model.RowStatePlanResolving, demander)
 }
 
 // ── Who may act ──────────────────────────────────────────────────────────────
