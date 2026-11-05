@@ -301,7 +301,8 @@ Reuse before writing new CSS — these live in
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
 undersells it, since it is reused outside the chat feed.
 
-Plus `plans/shared/` (Buffet, DifficultyMeter) for plan flows and
+Plus `plans/shared/` (Buffet, DifficultyMeter, EndsNote: the one sentence under a submit
+that ends a plan or sub-flow; show it only in states where it is true) for plan flows and
 `HelpContent` for the ?-panel/lobby help.
 
 ### Local help
