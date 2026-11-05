@@ -595,9 +595,10 @@ func mwTakeSurrenderAssetHandler(deps *PlanDeps) http.HandlerFunc {
 			ClaimantID: player.ID, AssetID: asset.ID,
 		})
 		mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
-			"%s seized %s from %s after their surrender.",
+			"%s seized %s from %s after their surrender.%s",
 			playerMark(player.ID, player.DisplayName), assetMark(asset.Name),
-			playerDisplayName(ctx, deps.Q, body.SurrenderedID)))
+			playerDisplayName(ctx, deps.Q, body.SurrenderedID),
+			mainCharacterNote(ctx, deps.Q, asset.IsMainCharacter, body.SurrenderedID)))
 		// Fulfilling a surrender claim clears the AwaitSurrenderClaim gate.
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{

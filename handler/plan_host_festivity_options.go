@@ -371,7 +371,7 @@ func applyFestivityBreakSelf(ctx context.Context, fc *festivityOptionContext) er
 		ctx,
 		fc.deps,
 		fc.plan,
-		model.SeverityDefault,
+		breakSeverity(mc.OwnerID, fc.ActingPlayerID),
 		fmt.Sprintf("%s %s themselves — word of their gaffe gets around.%s",
 			playerDisplayName(ctx, fc.deps.Q, fc.ActingPlayerID), breakVerb(destroyed),
 			brokenAssetDetail(ctx, fc.deps.Q, mc.OwnerID, m, destroyed)),

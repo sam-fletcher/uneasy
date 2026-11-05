@@ -518,7 +518,7 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 		// Apply the mechanical effect (break_artifact / invoke_another mutate
 		// state and DB; echo_present / total_control are narrative). Reuses the
 		// same helper as the mar path.
-		logBody, status, msg := chApplyMarEffect(ctx, deps, plan, ch, player.ID, marEffectInput{
+		logBody, logSeverity, status, msg := chApplyMarEffect(ctx, deps, plan, ch, player.ID, marEffectInput{
 			choice: body.Option, assetID: body.AssetID, marginaliaID: body.MarginaliaID,
 		})
 		if status != 0 {
@@ -550,7 +550,7 @@ func chMakeStepHandler(deps *PlanDeps) http.HandlerFunc {
 		if narration := strings.TrimSpace(body.Narration); narration != "" {
 			logBody = logBody + " The chronicler's notes say: " + narration
 		}
-		chLog(ctx, deps, plan, model.SeverityDefault, logBody)
+		chLog(ctx, deps, plan, logSeverity, logBody)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":      plan.ID,
@@ -647,7 +647,7 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Apply the mechanical effect (break_artifact / invoke_another mutate
 		// state and DB; echo_present / total_control are narrative).
-		logBody, status, msg := chApplyMarEffect(ctx, deps, plan, ch, player.ID, marEffectInput{
+		logBody, logSeverity, status, msg := chApplyMarEffect(ctx, deps, plan, ch, player.ID, marEffectInput{
 			choice: body.Choice, assetID: body.AssetID, marginaliaID: body.MarginaliaID,
 		})
 		if status != 0 {
@@ -672,7 +672,7 @@ func chMarChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		chLog(ctx, deps, plan, model.SeverityDefault, logBody)
+		chLog(ctx, deps, plan, logSeverity, logBody)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":          plan.ID,
@@ -718,54 +718,55 @@ func chApplyMarEffect(
 	ch *ChronicleHistoriesResolutionData,
 	playerID int64,
 	in marEffectInput,
-) (logBody string, status int, msg string) {
+) (logBody string, logSeverity int32, status int, msg string) {
 	who := playerDisplayName(ctx, deps.Q, playerID)
 	switch in.choice {
 	case chChoiceBreakArtifact:
 		if in.assetID == nil || in.marginaliaID == nil {
-			return "", http.StatusBadRequest, "break_artifact requires asset_id and marginalia_id"
+			return "", model.SeverityDefault, http.StatusBadRequest, "break_artifact requires asset_id and marginalia_id"
 		}
 		if !slices.Contains(ch.InvokedArtifactIDs, *in.assetID) {
-			return "", http.StatusBadRequest, "artifact has not been invoked in this plan"
+			return "", model.SeverityDefault, http.StatusBadRequest, "artifact has not been invoked in this plan"
 		}
 		artifact, err := deps.Q.GetAssetByID(ctx, *in.assetID)
 		if err != nil {
-			return "", http.StatusNotFound, "artifact not found"
+			return "", model.SeverityDefault, http.StatusNotFound, "artifact not found"
 		}
 		m, err := deps.Q.GetMarginaliaByID(ctx, *in.marginaliaID)
 		if err != nil {
-			return "", http.StatusNotFound, "marginalia not found"
+			return "", model.SeverityDefault, http.StatusNotFound, "marginalia not found"
 		}
 		if m.AssetID != *in.assetID {
-			return "", http.StatusBadRequest, "marginalia does not belong to the specified artifact"
+			return "", model.SeverityDefault, http.StatusBadRequest, "marginalia does not belong to the specified artifact"
 		}
 		if m.IsTorn {
-			return "", http.StatusConflict, "marginalia is already torn"
+			return "", model.SeverityDefault, http.StatusConflict, "marginalia is already torn"
 		}
 		destroyed, err := breakMarginalia(ctx, deps.Q, deps.Manager, &artifact, &m, playerID)
 		if err != nil {
-			return "", http.StatusInternalServerError, "could not break artifact"
+			return "", model.SeverityDefault, http.StatusInternalServerError, "could not break artifact"
 		}
 		return fmt.Sprintf("%s %s %s. %s", who, breakVerb(destroyed), assetMark(artifact.Name),
-			brokenAssetDetail(ctx, deps.Q, artifact.OwnerID, &m, destroyed)), 0, ""
+				brokenAssetDetail(ctx, deps.Q, artifact.OwnerID, &m, destroyed)),
+			breakSeverity(artifact.OwnerID, playerID), 0, ""
 	case chChoiceInvokeAnother:
 		if in.assetID == nil {
-			return "", http.StatusBadRequest, "invoke_another requires asset_id"
+			return "", model.SeverityDefault, http.StatusBadRequest, "invoke_another requires asset_id"
 		}
 		asset, err := deps.Q.GetAssetByID(ctx, *in.assetID)
 		if err != nil || asset.GameID != plan.GameID || asset.AssetType != model.AssetArtifact {
-			return "", http.StatusBadRequest, "asset must be an artifact in this game"
+			return "", model.SeverityDefault, http.StatusBadRequest, "asset must be an artifact in this game"
 		}
 		if asset.IsDestroyed {
-			return "", http.StatusConflict, "that artifact has been destroyed and cannot be invoked"
+			return "", model.SeverityDefault, http.StatusConflict, "that artifact has been destroyed and cannot be invoked"
 		}
 		if !slices.Contains(ch.InvokedArtifactIDs, *in.assetID) {
 			ch.InvokedArtifactIDs = append(ch.InvokedArtifactIDs, *in.assetID)
 		}
-		return fmt.Sprintf("%s invoked %s.", who, assetMark(asset.Name)), 0, ""
+		return fmt.Sprintf("%s invoked %s.", who, assetMark(asset.Name)), model.SeverityDefault, 0, ""
 	default:
 		// echo_present / total_control: purely narrative.
-		return fmt.Sprintf("%s %s.", who, chNarrativeChoicePhrase(in.choice)), 0, ""
+		return fmt.Sprintf("%s %s.", who, chNarrativeChoicePhrase(in.choice)), model.SeverityDefault, 0, ""
 	}
 }
 

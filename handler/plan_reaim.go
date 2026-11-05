@@ -155,7 +155,7 @@ func reaimHoldAtResolve(
 		// bare outcome.
 		reaimLog(ctx, deps.Q, deps.Manager, plan, fmt.Sprintf(
 			"%s's %s has nothing left to act on: %s There is nothing else it could be aimed at, "+
-				"so it comes to nothing.", preparer, label, loss.Log))
+				"so it closes with no effect.", preparer, label, loss.Log))
 		// The plans.result column only admits make/mar, and this is neither: no roll
 		// was made. Close it resolved with a NULL result — the honest record of "this
 		// happened and had no outcome" — and tell the log and the clients the same.

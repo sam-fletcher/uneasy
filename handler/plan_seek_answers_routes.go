@@ -230,7 +230,7 @@ func saBreakResourceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		saLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf("%s %s %s.%s",
+		saLog(ctx, deps, plan, breakSeverity(asset.OwnerID, player.ID), fmt.Sprintf("%s %s %s.%s",
 			playerDisplayName(ctx, deps.Q, player.ID), breakVerb(destroyed), assetMark(asset.Name),
 			brokenAssetDetail(ctx, deps.Q, asset.OwnerID, m, destroyed)))
 

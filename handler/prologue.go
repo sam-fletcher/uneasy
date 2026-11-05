@@ -708,7 +708,8 @@ func processPrologueCardClaim(
 		if err != nil {
 			return dbgen.PlayerCard{}, fmt.Errorf("transfer card: %w", err)
 		}
-		EmitAssetTaken(ctx, q, manager, gameID, updated, oldOwner, claimerID, nil)
+		// No one holds a main character yet in the prologue, so none can be lost here.
+		EmitAssetTaken(ctx, q, manager, gameID, updated, oldOwner, claimerID, false, nil)
 		return moved, nil
 	}
 

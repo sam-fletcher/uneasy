@@ -263,6 +263,9 @@ func TestReAim_ExchangeCourtiers_NoValidTarget_ClosesWithNoEffectAndLogs(t *test
 	lines := h.logBodies("plan.exchange_courtiers")
 	assert.True(t, anyContains(lines, "has nothing left to act on"), "the close must say why: %v", lines)
 	assert.True(t, anyContains(lines, "doomed courtier"), "and name the peer that was lost: %v", lines)
+	closing := h.logBodies("plan.resolved")
+	assert.True(t, anyContains(closing, "closed with no effect"), "the closing line: %v", closing)
+	assert.False(t, anyContains(closing, "came to nothing"), "one phrase for this ending: %v", closing)
 
 	dead, err := h.q.GetAssetByID(ctx, doomed)
 	require.NoError(t, err)

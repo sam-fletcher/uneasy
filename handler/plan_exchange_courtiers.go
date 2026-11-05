@@ -573,6 +573,8 @@ func acceptFairTrade(
 		respondInternalErr(w, r, "could not resolve asset recipient", err)
 		return
 	}
+	taWasMain := assetWasMainCharacter(ctx, q, *plan.TargetAssetID)
+	oaWasMain := assetWasMainCharacter(ctx, q, *ec.FairTradeAssetID)
 	ta, err := takeAssetEffect(ctx, q, manager, game.ID, *plan.TargetAssetID, *plan.TargetPlayerID, recipient)
 	if err != nil {
 		respondInternalErr(w, r, "could not transfer targeted asset", err)
@@ -605,8 +607,8 @@ func acceptFairTrade(
 	// above via takeAssetEffect; only the plan-resolved fan-out remains.
 	// Log both legs of the fair-trade swap first; the resolution line only
 	// records the outcome, not which peers changed hands.
-	EmitAssetTaken(ctx, q, manager, game.ID, ta, *plan.TargetPlayerID, recipient, logRow(game))
-	EmitAssetTaken(ctx, q, manager, game.ID, oa, plan.PreparerID, *plan.TargetPlayerID, logRow(game))
+	EmitAssetTaken(ctx, q, manager, game.ID, ta, *plan.TargetPlayerID, recipient, taWasMain, logRow(game))
+	EmitAssetTaken(ctx, q, manager, game.ID, oa, plan.PreparerID, *plan.TargetPlayerID, oaWasMain, logRow(game))
 	announcePlanResolved(ctx, q, manager, *plan, makeOutcome)
 
 	respond(w, http.StatusOK, map[string]any{
@@ -748,7 +750,7 @@ func messyBreakHandler(q *dbgen.Queries, manager *hub.Manager) http.HandlerFunc 
 			respondInternalErr(w, r, "could not break asset", err)
 			return
 		}
-		ecLogQ(ctx, q, manager, plan, model.SeverityDefault,
+		ecLogQ(ctx, q, manager, plan, breakSeverity(asset.OwnerID, player.ID),
 			fmt.Sprintf("%s %s %s's %s in the mess.%s",
 				playerDisplayName(ctx, q, player.ID), breakVerb(destroyed),
 				playerDisplayName(ctx, q, asset.OwnerID), assetMark(asset.Name),
@@ -872,8 +874,14 @@ func ecRiposteBreakHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not break peer", err)
 			return
 		}
-		ecLog(ctx, deps, plan, model.SeverityDefault, ecRiposteBreakLine(ctx, deps, plan, player.ID, asset.Name)+
-			brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed))
+		ecLog(
+			ctx,
+			deps,
+			plan,
+			breakSeverity(asset.OwnerID, player.ID),
+			ecRiposteBreakLine(ctx, deps, plan, player.ID, asset.Name)+
+				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, &m, destroyed),
+		)
 		if err := ecGivePeerToTarget(ctx, deps, plan, requestedID); err != nil {
 			respondInternalErr(w, r, "could not surrender peer", err)
 			return

@@ -256,7 +256,14 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 		// explaining line was posted beside this one; this just closes the span. Keeps the generic
 		// plan.resolved code so the chat files it as a plain "Resolved".
 		code = "plan.resolved"
-		body = fmt.Sprintf("%s came to nothing.", planLabel(plan.PlanType))
+		// "Came to nothing" sounded like a failure, and a declined counter-propaganda
+		// shares a plan type with the plan it answers, so the line has to say which
+		// ended and that the other carries on.
+		body = fmt.Sprintf("%s closed with no effect.", planLabel(plan.PlanType))
+		if sp := loadResolutionData(plan.ResolutionData).SpreadPropaganda; sp != nil && sp.OriginalPlanID != nil {
+			body = "The counter-propaganda is over: declined, so it closes with no effect. " +
+				counterParentLine(ctx, q, *sp.OriginalPlanID)
+		}
 	default:
 		code = "plan.resolved"
 		body = fmt.Sprintf("%s resolved (%s).", planLabel(plan.PlanType), result)
@@ -271,6 +278,14 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 			}
 		}
 	}
+	// What the plan caused, and what comes next and who acts (principle 3's
+	// returning-player test). A fall-through already says what is next for its
+	// preparer, and it ended nothing in play.
+	if result != "cancelled" {
+		if after := planAftermath(ctx, q, plan); after != "" {
+			body += " " + after
+		}
+	}
 	EmitSystemPost(ctx, q, manager, plan.GameID, code, severity, body,
 		rowAnchor, &planID, nil,
 		map[string]any{"plan_id": plan.ID, "result": result})
@@ -281,6 +296,41 @@ func EmitPlanResolved(ctx context.Context, q *dbgen.Queries, manager *hub.Manage
 	// call site (the shared finalizePlanResolution path plus each plan's own
 	// custom completion route) without touching them individually.
 	closePlanSceneIfAny(ctx, q, manager, plan)
+}
+
+// mainCharacterNote is the sentence a take or a destruction adds when the asset was
+// its owner's main character, so the table can tell why the replacement screen
+// appears even when no plan ends with it (a surrender claim, a battle cost). The
+// caller passes the asset as it stood BEFORE the change: a transfer clears the
+// flag, so the post-change row can no longer say. It is the asset's own status, not
+// a check of whether the owner now lacks one, so it can't blame an ordinary asset
+// taken from a player who was already short.
+func mainCharacterNote(ctx context.Context, q *dbgen.Queries, wasMainCharacter bool, ownerID int64) string {
+	if !wasMainCharacter {
+		return ""
+	}
+	return fmt.Sprintf(" That was %s's main character.", playerDisplayName(ctx, q, ownerID))
+}
+
+// assetWasMainCharacter reads an asset's main-character flag so a caller can pass
+// it to EmitAssetTaken after the transfer has cleared it.
+func assetWasMainCharacter(ctx context.Context, q *dbgen.Queries, assetID int64) bool {
+	a, err := q.GetAssetByID(ctx, assetID)
+	return err == nil && a.IsMainCharacter
+}
+
+// counterParentLine says what a declined counter-propaganda leaves of the plan it
+// answered, from that plan's real state: it may still owe a step, or have resolved
+// already (a mar whose only pick was the counter owes nothing).
+func counterParentLine(ctx context.Context, q *dbgen.Queries, parentID int64) string {
+	parent, err := q.GetPlanByID(ctx, parentID)
+	if err != nil {
+		return ""
+	}
+	if parent.Status == model.PlanResolving {
+		return "The Spread Propaganda it answered is not ended by this."
+	}
+	return "The Spread Propaganda it answered has already ended."
 }
 
 // rankingGlyphSymbol maps a rankingMove glyph keyword to its chat symbol.
@@ -419,9 +469,24 @@ func EmitAssetDestroyed(
 	asset dbgen.Asset,
 	rowNumber *int16,
 ) {
+	emitAssetDestroyedAt(ctx, q, manager, gameID, asset, rowNumber, model.SeverityDefault)
+}
+
+// emitAssetDestroyedAt is EmitAssetDestroyed at a chosen severity: a destruction
+// that is another player's break rides at Important (see breakSeverity).
+func emitAssetDestroyedAt(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	rowNumber *int16,
+	severity int32,
+) {
 	EmitSystemPost(ctx, q, manager, gameID, "asset.destroyed",
-		model.SeverityDefault,
-		fmt.Sprintf("%s destroyed.", assetMark(asset.Name)),
+		severity,
+		fmt.Sprintf("%s destroyed.", assetMark(asset.Name))+
+			mainCharacterNote(ctx, q, asset.IsMainCharacter, asset.OwnerID),
 		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID})
 }
@@ -730,7 +795,8 @@ func EmitMarginaliaEdited(
 		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "editor_id": actorID})
 }
 
-// EmitMarginaliaTorn writes the Default marginalia.torn post. Tearing is often
+// EmitMarginaliaTorn writes the marginalia.torn post: Default for a player's own
+// tear, Important when it is another player's asset (breakSeverity). Tearing is often
 // hostile, so the body names whose marginalia was torn as well as who tore it,
 // quotes the torn text, and — unless the tear destroyed the asset — invites the
 // owner to narrate how the asset has changed. Pass destroyed so the prompt is
@@ -756,7 +822,7 @@ func EmitMarginaliaTorn(
 	}
 	body += brokenAssetPrompt(ctx, q, asset.OwnerID, destroyed)
 	EmitSystemPost(ctx, q, manager, gameID, "marginalia.torn",
-		model.SeverityDefault, body,
+		breakSeverity(asset.OwnerID, actorID), body,
 		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "marginalia_id": m.ID, "position": m.Position, "torn_by_id": actorID})
 }
@@ -770,13 +836,15 @@ func EmitAssetTaken(
 	gameID int64,
 	asset dbgen.Asset,
 	oldOwnerID, newOwnerID int64,
+	wasMainCharacter bool,
 	rowNumber *int16,
 ) {
 	taker := playerDisplayName(ctx, q, newOwnerID)
 	from := playerDisplayName(ctx, q, oldOwnerID)
 	EmitSystemPost(ctx, q, manager, gameID, "asset.taken",
 		model.SeverityDefault,
-		fmt.Sprintf("%s took %s from %s", taker, assetMark(asset.Name), from),
+		fmt.Sprintf("%s took %s from %s", taker, assetMark(asset.Name), from)+
+			mainCharacterNote(ctx, q, wasMainCharacter, oldOwnerID),
 		rowNumber, nil, nil,
 		map[string]any{"asset_id": asset.ID, "old_owner_id": oldOwnerID, "new_owner_id": newOwnerID})
 }

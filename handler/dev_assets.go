@@ -50,7 +50,17 @@ func DevTakeAsset(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 			return
 		}
 		if g, err := s.Q.GetGameByID(ctx, asset.GameID); err == nil {
-			EmitAssetTaken(ctx, s.Q, manager, asset.GameID, asset, oldOwnerID, player.ID, logRow(g))
+			EmitAssetTaken(
+				ctx,
+				s.Q,
+				manager,
+				asset.GameID,
+				asset,
+				oldOwnerID,
+				player.ID,
+				asset.IsMainCharacter,
+				logRow(g),
+			)
 		}
 		// Taking a main character clears its flag, so recompute for the
 		// replacement-choice gate.
