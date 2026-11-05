@@ -19,6 +19,7 @@
 	import CardPicker from '$lib/components/plans/CardPicker.svelte';
 	import AssetCreationForm from '$lib/components/AssetCreationForm.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import EndsNote from '$lib/components/plans/shared/EndsNote.svelte';
 
 	interface Props {
 		gameID: number;
@@ -98,7 +99,9 @@
 
 	{#if amActing}
 		<p class="lede">
-			Your main character is no longer yours.
+			Your main character is no longer yours: they were taken, traded away or
+			destroyed. Everyone needs one before play goes on, so the table is waiting
+			on you. The log says what happened to them.
 		</p>
 
 		{#if myPeers.length > 0}
@@ -135,11 +138,14 @@
 			</div>
 		{/if}
 
+		<EndsNote text="Play goes on once every player who lost a main character has chosen a new one." />
 		{#if err}<ErrorText message={err} />{/if}
 	{:else}
 		<p class="lede">
-			Waiting for {otherWaiters.length > 0 ? otherWaiters.join(', ') : 'a player'} to
-			choose a new main character before play resumes.
+			{otherWaiters.length > 0 ? otherWaiters.join(', ') : 'A player'} lost
+			{otherWaiters.length > 1 ? 'their main characters' : 'their main character'} and must
+			choose {otherWaiters.length > 1 ? 'replacements' : 'a replacement'} before play
+			goes on. The log says what happened.
 		</p>
 	{/if}
 </div>

@@ -13,6 +13,7 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import MakeMarPicker from './MakeMarPicker.svelte';
+	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
@@ -428,6 +429,7 @@
 								{ftDecideBusy ? '…' : 'Decline — proceed to dice roll'}
 							</button>
 						</div>
+						<EndsNote text="Accepting ends the plan with no roll: the peers swap and Exchange Courtiers resolves. Declining goes on to the dice." />
 					</div>
 				{:else if isTarget}
 					<p class="ft-prompt">
@@ -468,6 +470,9 @@
 				lockReason={choiceLockReason}
 				onToggle={selectChoice}
 				onSubmit={() => onApplyChoices(plan, rollOutcome!)}
+				endsText={selectedChoices.length > 0 && !selectedChoices.includes('messy') && !selectedChoices.includes('riposte')
+					? 'No step is left after this pick, so Exchange Courtiers resolves when you apply it.'
+					: null}
 			>
 				{#snippet header()}
 					{#if rollOutcome === 'make'}
@@ -515,6 +520,7 @@
 							disabled={!messyMarginaliaID || messyBusy}>
 							{messyBusy ? '…' : 'Break marginalia'}
 						</button>
+						<EndsNote text="This is the last step: Exchange Courtiers resolves when you submit." />
 					</div>
 				{:else}
 					<p class="ft-prompt muted">
@@ -554,6 +560,7 @@
 								{riposteBusy ? '…' : 'Surrender intact'}
 							</button>
 						</div>
+						<EndsNote text="Either choice is the last step: Exchange Courtiers resolves when you submit." />
 					</div>
 				{:else}
 					<p class="ft-prompt muted">

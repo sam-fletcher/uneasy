@@ -41,6 +41,7 @@
 	import FormField from './FormField.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Stepper from './shared/Stepper.svelte';
+	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -664,6 +665,10 @@
 	{@const btRemaining = Math.max(0, btNeeded - btDone)}
 	{@const hsRemaining = Math.max(0, hsNeeded - hsDone)}
 	{@const subflowsDone = btRemaining === 0 && hsRemaining === 0}
+	<!-- Every route here auto-completes the plan the moment nothing is owed, so the
+	     submit that leaves nothing owed is the one that ends Spread Rumors. -->
+	{@const subflowsOwed = btRemaining + hsRemaining}
+	{@const lastText = 'This is the last step: Spread Rumors resolves when you submit.'}
 
 	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
@@ -808,6 +813,9 @@
 							Disagree
 						</button>
 					</div>
+					<EndsNote
+						show={countIn(pendingConsent.choices, 'break_target') === 0 && countIn(pendingConsent.choices, 'hide_source') === 0}
+						text="If you agree, that is the last step: Spread Rumors resolves. If you disagree, the preparer picks again." />
 				</div>
 			{:else}
 				<p class="ft-prompt muted">
@@ -894,6 +902,7 @@
 						disabled={choicesBusy || totalPicked === 0 || (requiredPicks != null && totalPicked !== requiredPicks)}>
 						{choicesBusy ? '…' : ((counts.take_asset ?? 0) > 0 ? 'Next: choose assets' : 'Apply choices')}
 					</button>
+					<EndsNote show={totalPicked > 0 && (counts.take_asset ?? 0) === 0 && (counts.break_target ?? 0) === 0 && (counts.hide_source ?? 0) === 0} text={lastText} />
 				{/if}
 			</fieldset>
 			{#if !isActor}
@@ -964,12 +973,14 @@
 									onclick={() => forfeitStep(plan, 'break_target')} disabled={forfeitBusy}>
 									{forfeitBusy ? '…' : 'Skip — no valid targets'}
 								</button>
+								<EndsNote show={subflowsOwed === btRemaining} text={lastText} />
 							{:else}
 								<button class="action-btn primary"
 									onclick={() => submitBreakTarget(plan)}
 									disabled={btBusy || btMargID == null}>
 									{btBusy ? '…' : 'Tear marginalia'}
 								</button>
+								<EndsNote show={subflowsOwed === 1} text={lastText} />
 							{/if}
 						{/if}
 					</div>
@@ -1010,12 +1021,14 @@
 									onclick={() => forfeitStep(plan, 'hide_source')} disabled={forfeitBusy}>
 									{forfeitBusy ? '…' : 'Skip — no valid targets'}
 								</button>
+								<EndsNote show={subflowsOwed === hsRemaining} text={lastText} />
 							{:else}
 								<button class="action-btn primary"
 									onclick={() => submitHideSource(plan)}
 									disabled={hsBusy || hsAssetID == null}>
 									{hsBusy ? '…' : 'Hide source'}
 								</button>
+								<EndsNote show={subflowsOwed === 1} text={lastText} />
 							{/if}
 						{/if}
 					</div>

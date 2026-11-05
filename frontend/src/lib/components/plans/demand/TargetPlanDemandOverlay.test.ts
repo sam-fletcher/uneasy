@@ -152,7 +152,7 @@ describe('TargetPlanDemandOverlay forms', () => {
 			const body = overlay({ viewer: BOB, targetType: t });
 			expect(body).not.toContain(KEEP);
 			expect(body).not.toContain('the roll waits');
-			expect(body).toContain('came to nothing here');
+			expect(body).toContain('had no effect here');
 		}
 	});
 });

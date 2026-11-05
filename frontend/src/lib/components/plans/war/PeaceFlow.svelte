@@ -4,6 +4,7 @@
   proposing replaces paying cost that row.
 -->
 <script lang="ts">
+	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import { votePeace, type Player, type WarStateResponse } from '$lib/api';
 	import { playerName } from '../shared';
@@ -72,6 +73,8 @@
 				{voteBusy ? '…' : 'Reject'}
 			</button>
 		</div>
+		<EndsNote show={proposal.awaiting.length === 1 && proposal.votes.every(v => v.accepted)}
+			text="Everyone else has accepted: if you accept, the war ends in peace. A rejection keeps it going." />
 	{:else if myProposalVote}
 		<p class="choices-note muted">
 			You voted: {myProposalVote.accepted ? 'accept' : 'reject'}

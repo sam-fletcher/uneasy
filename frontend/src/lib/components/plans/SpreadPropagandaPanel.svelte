@@ -29,6 +29,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Stepper from './shared/Stepper.svelte';
+	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 
 	// make and mar option keys don't overlap, so a completed choice list can
@@ -299,6 +300,19 @@
 	const artifactPending = $derived(!!spData.artifact_required && spData.artifact_id == null);
 	// Everything the preparer must still do before the plan can be completed.
 	const preparerActionPending = $derived(marEffectsPending || artifactPending);
+	// Steps still owed, in submits: the artifact, each peer to give, each asset to
+	// break. The plan resolves itself when the last one lands (the server
+	// auto-completes it), so the submit that takes this to one is the ending one.
+	const stepsOwed = $derived(
+		(artifactPending ? 1 : 0) + (givePeerPicked - givePeerDone) + (breakSelfPicked - breakSelfDone),
+	);
+	// A counter-propaganda answers a parent plan that may still owe a step (it carries
+	// on) or may already have resolved (nothing left to carry on). Unknown says neither.
+	const parentStatus = $derived.by(() => {
+		const parentID = spData.original_plan_id;
+		return parentID == null ? null : (plans.find(p => p.id === parentID)?.status ?? null);
+	});
+	const lastStepText = 'This is the last step: Spread Propaganda resolves when you submit.';
 	// Who performs those steps: the preparer, or — after a Make Demands
 	// perform_steps win — the winner, in their place (the server refuses the
 	// preparer every one of them). The retinue and assets are still the
@@ -445,6 +459,11 @@
 				<button class="action-btn secondary" onclick={() => declineCounter(plan)} disabled={preRollBusy}>
 					Decline: spread nothing
 				</button>
+				<EndsNote text={parentStatus === 'resolving'
+					? 'Declining ends this counter-propaganda with no effect. The Spread Propaganda it answers carries on.'
+					: parentStatus === 'resolved'
+						? 'Declining ends this counter-propaganda with no effect. The Spread Propaganda it answers has already ended.'
+						: 'Declining ends this counter-propaganda with no effect.'} />
 			{/if}
 
 		{:else if rollActive && !choicesDone}
@@ -478,6 +497,9 @@
 					disabled={choicesBusy || marTotalPicked === 0 || (marPicksNeeded != null && marTotalPicked !== marPicksNeeded)}>
 					{choicesBusy ? '…' : 'Apply choices'}
 				</button>
+				<EndsNote
+					show={marTotalPicked > 0 && (marCounts.give_peer ?? 0) === 0 && (marCounts.break_self ?? 0) === 0}
+					text="No step is left after these picks, so Spread Propaganda resolves when you apply them." />
 			</div>
 
 		{:else if choicesDone}
@@ -508,6 +530,7 @@
 							disabled={nameBusy || !changesText.trim() || !artifactName.trim() || !artifactMarginalia.trim()}>
 							{nameBusy ? '…' : 'Create artifact'}
 						</button>
+						<EndsNote show={stepsOwed === 1} text={lastStepText} />
 					</div>
 				{/if}
 
@@ -531,6 +554,7 @@
 								onclick={() => forfeitStep(plan, 'give_peer')} disabled={forfeitBusy}>
 								{forfeitBusy ? '…' : 'Skip — no valid targets'}
 							</button>
+							<EndsNote show={stepsOwed === givePeerPicked - givePeerDone} text={lastStepText} />
 						{:else}
 							<PlayerChips
 								players={playersExcept(players, plan.preparer_id)}
@@ -541,6 +565,7 @@
 								disabled={giveBusy || givePeerID == null || giveToPlayerID == null}>
 								{giveBusy ? '…' : 'Give up peer'}
 							</button>
+							<EndsNote show={stepsOwed === 1} text={lastStepText} />
 						{/if}
 					</div>
 				{/if}
@@ -571,11 +596,13 @@
 								onclick={() => forfeitStep(plan, 'break_self')} disabled={forfeitBusy}>
 								{forfeitBusy ? '…' : 'Skip — no valid targets'}
 							</button>
+							<EndsNote show={stepsOwed === breakSelfPicked - breakSelfDone} text={lastStepText} />
 						{:else}
 							<button class="action-btn primary" onclick={() => submitBreakSelf(plan)}
 								disabled={breakBusy || breakMargID == null}>
 								{breakBusy ? '…' : 'Break asset'}
 							</button>
+							<EndsNote show={stepsOwed === 1} text={lastStepText} />
 						{/if}
 					</div>
 				{/if}
