@@ -19,7 +19,7 @@
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import {
-		MAKE_OPTIONS, MAR_OPTIONS, parseResolutionData,
+		MAKE_OPTIONS, MAR_OPTIONS, choicesCommitted, parseResolutionData,
 		playerName, assetName, assetsWithIntactMarginalia, playersExcept, resolutionActorID,
 	} from './shared';
 
@@ -346,8 +346,7 @@
 	{@const ec = rd.exchange_courtiers ?? {}}
 	{@const ftAssetID = ec.fair_trade_asset_id ?? null}
 	{@const ftAccepted = ec.fair_trade_accepted ?? null}
-	{@const existingChoices = (rd.make_mar_choices ?? []).map(c => c.option)}
-	{@const choicesDone = existingChoices.length > 0}
+	{@const choicesDone = choicesCommitted(rd)}
 	{@const choiceActor = rollOutcome === 'mar' ? isTarget : amChoiceActor}
 	{@const preparerIntactPeers = assets.filter(a => a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed)}
 	{@const preparerMarginaliaAssets = assetsWithIntactMarginalia(assets, plan.preparer_id)}

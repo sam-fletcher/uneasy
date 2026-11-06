@@ -25,16 +25,18 @@ function renderFor(
 	resolution: Record<string, unknown>,
 	rollOutcome: 'make' | 'mar' | null = null,
 	assets = ASSETS,
+	/** Top-level resolution_data (make_mar_choices, choice_submitted, …) and the live-roll flag. */
+	extra: { top?: Record<string, unknown>; rollActive?: boolean } = {},
 ): string {
 	const plan = {
 		id: 9, plan_type: 'exchange_courtiers', status: 'resolving', preparer_id: PREPARER,
 		target_player_id: TARGET, target_asset_id: 5, preparation_notes: 'x',
-		resolution_data: JSON.stringify({ exchange_courtiers: resolution }),
+		resolution_data: JSON.stringify({ exchange_courtiers: resolution, ...extra.top }),
 	};
 	const ctx = {
 		gameID: 1, currentRow: 5, endingMode: null, plans: [plan] as never,
 		assets: assets as never, players: PLAYERS as never, rankings: [], currentPlayerID: seat,
-		isFocusPlayer: false, rollActive: false, rollOutcome,
+		isFocusPlayer: false, rollActive: extra.rollActive ?? false, rollOutcome,
 		activeRoll: rollOutcome ? ({ id: 4, plan_id: 9, status: 'resolved', result: 1, difficulty: 2 } as never) : null,
 		onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
 		readOnly: false, prepDraft: null, emitPrepDraft: () => {},
@@ -97,5 +99,63 @@ describe('Riposte wording', () => {
 		const riposte = MAR_OPTIONS.exchange_courtiers!.find(o => o.key === 'riposte')!;
 		expect(riposte.desc).not.toMatch(/you may break/i);
 		expect(riposte.desc).toMatch(/they may break/i);
+	});
+});
+
+// choicesDone reads the committed marker, not the picked options. Every route
+// to a commit carries exactly one pick (the server validates that while a roll
+// exists), so the marker only has to agree with the picks here; these pin what
+// each seat sees on both sides of the commit, including the marker-only shape.
+describe('commit marker', () => {
+	const declined = { fair_trade_asset_id: 6, fair_trade_accepted: false };
+	const PICKED = { top: { make_mar_choices: [{ option: 'legal', player_id: PREPARER }] } };
+	const MARKED = { top: { choice_submitted: true } };
+
+	describe('before the commit (the dice have landed, nothing chosen)', () => {
+		it('make: the preparer gets the picker', () => {
+			const t = text(renderFor(PREPARER, declined, 'make'));
+			expect(t).toContain('You beat the difficulty');
+			expect(t).not.toContain('Resolving…');
+		});
+		it('mar: the target gets the picker', () => {
+			const t = text(renderFor(TARGET, declined, 'mar'));
+			expect(t).toContain('choose how you respond');
+			expect(t).not.toContain('Resolving…');
+		});
+		it('the roll still on screen: a dice wait for every seat, no picker', () => {
+			for (const seat of [PREPARER, TARGET, BYSTANDER]) {
+				const t = text(renderFor(seat, declined, 'make', ASSETS, { rollActive: true }));
+				expect(t).toContain('Dice roll in progress');
+				expect(t).not.toContain('You beat the difficulty');
+			}
+		});
+	});
+
+	describe('after the commit', () => {
+		it.each([['picks', PICKED], ['the marker alone', MARKED]])('make, %s: no picker, no dice wait', (_, extra) => {
+			for (const seat of [PREPARER, TARGET, BYSTANDER]) {
+				const t = text(renderFor(seat, declined, 'make', ASSETS, { ...extra, rollActive: true }));
+				expect(t).toContain('Resolving…');
+				expect(t).not.toContain('You beat the difficulty');
+				expect(t).not.toContain('Dice roll in progress');
+			}
+		});
+		it('a legacy row with picks and no marker still counts as committed', () => {
+			expect(text(renderFor(PREPARER, declined, 'make', ASSETS, PICKED))).toContain('Resolving…');
+		});
+		it('messy make: the target breaks, and the note says it is the last step', () => {
+			const messy = { ...declined, messy_break_required: true };
+			const t = text(renderFor(TARGET, messy, 'make', ASSETS, MARKED));
+			expect(t).toContain('The exchange was messy');
+			expect(t).toContain('Exchange Courtiers resolves when you submit');
+			expect(text(renderFor(PREPARER, messy, 'make', ASSETS, MARKED))).toContain('Waiting for sol to break a marginalia');
+		});
+		it('riposte mar: the preparer breaks or surrenders, and the note says it is the last step', () => {
+			const riposte = { ...declined, riposte_allowed: true };
+			const t = text(renderFor(PREPARER, riposte, 'mar', ASSETS, MARKED));
+			expect(t).toContain('You may break it first');
+			expect(t).toContain('Either choice is the last step');
+			expect(text(renderFor(BYSTANDER, riposte, 'mar', ASSETS, MARKED))).toContain('Riposte — waiting for ravi');
+		});
 	});
 });
