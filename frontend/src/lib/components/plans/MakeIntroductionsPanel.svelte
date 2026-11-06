@@ -29,7 +29,7 @@
 	import DifficultyMeter from './shared/DifficultyMeter.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
-		parseResolutionData, playerName, playersExcept, resolutionActorID,
+		choicesCommitted, parseResolutionData, playerName, playersExcept, resolutionActorID,
 	} from './shared';
 	import {
 		parseMakeIntroductionsData, miDrafts, miHasArrived, miPendingArrivals,
@@ -447,12 +447,13 @@
 	</fieldset>
 
 {:else if plan}
-	{@const existingChoices = (parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option)}
-	{@const choicesDone = existingChoices.length > 0}
+	<!-- The server commits the roll's outcome the moment the dice land (ForcedChoice), so
+	     "committed" is the marker, not the picks: the mar commits with none. -->
+	{@const choicesDone = choicesCommitted(parseResolutionData(plan))}
 
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
-		{#if !isDelayedArrival && rollOutcome == null && !choicesDone && !marPending}
+		{#if !isDelayedArrival && rollOutcome == null && !choicesDone}
 			<!-- Before the dice land: how hard the roll is, and what it can bring. -->
 			{#if miPeerCountTarget > 0}
 				<div class="choices-section">
@@ -540,7 +541,7 @@
 				{playerName(players, plan.preparer_id)} is naming the new peers…
 			</p>
 
-		{:else if rollActive && !choicesDone && !marPending}
+		{:else if rollActive && !choicesDone}
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
 		{:else if rollOutcome === 'make'}
