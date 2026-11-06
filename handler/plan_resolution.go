@@ -276,18 +276,22 @@ func MakeChoice(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	}
 }
 
-// checkChoiceMatchesRoll refuses a make-choice the plan's roll cannot back: the
-// roll is still in the air (deciding, voting, leveraging — it has no outcome yet),
-// or it settled the other way. roll is nil for a plan with no roll, which is
-// unconstrained here; its own ChoiceGate owns that case.
+// checkChoiceMatchesRoll refuses a make-choice the plan's roll cannot back: there
+// is no roll yet, the roll is still in the air (deciding, voting, leveraging — it
+// has no outcome yet), or it settled the other way. roll is nil when the plan has
+// none.
 //
-// The still-open refusal is for every plan, not an opt-in: with no outcome to
-// compare against the mismatch check was silently skipped, so a stale or
-// hand-built client could commit a mar (and its effects) — or a make — ahead of
-// the dice.
+// Both refusals are for every plan, not an opt-in. With no outcome to compare
+// against, the checks were silently skipped, so a stale or hand-built client could
+// commit a mar (and its effects) — or a make — ahead of the dice. No plan chooses
+// options without a settled roll: the ones that resolve with no roll at all (Make
+// War, Host Festivity, Clandestinely Liaise) and Exchange Courtiers' accepted fair
+// trade finish through their own routes, never this one. A plan's ChoiceGate runs
+// after this, so it can rely on a settled roll existing.
 func checkChoiceMatchesRoll(w http.ResponseWriter, roll *dbgen.DiceRoll, result string) bool {
 	if roll == nil {
-		return true
+		respondErr(w, http.StatusConflict, errNoRollYet.Error())
+		return false
 	}
 	if roll.Outcome == nil {
 		respondErr(w, http.StatusConflict, errDiceNotSettled.Error())

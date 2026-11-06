@@ -90,14 +90,15 @@ func postPlanNarration(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, au
 // ChoiceGate is an optional PlanHandler capability: a server-side precondition on
 // make-choice for steps that must come first. MakeChoice consults it before
 // anything is applied and answers with the returned error's status (a *httpError)
-// or 409. roll is the plan's roll, nil when it has none — the pre-roll step is over
-// exactly when it exists. By the time a gate runs the roll's outcome is settled:
-// MakeChoice itself refuses every plan's choice while a roll is still open
-// (errDiceNotSettled), so a gate never has to repeat that.
+// or 409. By the time a gate runs the plan has a roll and its outcome is settled:
+// MakeChoice itself refuses every plan's choice with no roll (errNoRollYet) or
+// while the roll is still open (errDiceNotSettled), so a gate never has to repeat
+// either. (The nil-roll branches in the existing gates are therefore unreachable
+// through make-choice; they stay as a second line of defence.)
 //
-// It exists because make-choice otherwise accepts a submission with no roll at
-// all, which would let a stale or hand-rolled client commit a result past a
-// narration step nobody wrote.
+// A gate is for the steps that must come first even once the dice have settled —
+// a counter-rumor to write, an invoke phase to close, a mar that is another
+// player's to choose.
 type ChoiceGate interface {
 	CheckChoice(
 		ctx context.Context,
@@ -113,3 +114,7 @@ type ChoiceGate interface {
 // errDiceNotSettled is the refusal for a make/mar submitted while the roll is
 // still open. MakeChoice applies it to every plan that has a roll.
 var errDiceNotSettled = errors.New("the dice haven't settled yet — wait for the roll before choosing options")
+
+// errNoRollYet is the refusal for a make/mar submitted before the plan has any
+// roll to back it.
+var errNoRollYet = errors.New("the dice haven't been rolled yet — there is no outcome to choose options for")
