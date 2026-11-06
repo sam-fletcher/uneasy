@@ -16,6 +16,7 @@
     · Make Demands       — another plan on the same row
 -->
 <script lang="ts">
+	import EndsNote from './shared/EndsNote.svelte';
 	import './planPanel.css';
 	import '$lib/components/shared/actionButton.css';
 	import {
@@ -188,6 +189,7 @@
 				<button class="action-btn primary" onclick={submit} disabled={!picked || busy}>
 					{busy ? '…' : 'Re-aim this plan'}
 				</button>
+				<EndsNote text="This ends the pause: the plan carries on from the top once you re-aim it." />
 			</div>
 		{/if}
 	</div>

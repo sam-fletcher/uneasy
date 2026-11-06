@@ -30,6 +30,7 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import EndsNote from './shared/EndsNote.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -369,6 +370,8 @@
 							disabled={draftBusy || pickedOption == null}>
 							{draftBusy ? '…' : 'Pick option'}
 						</button>
+						<EndsNote show={draftChoices.length === 3}
+							text="This is the last pick: the draft ends and Make Demands resolves when you submit." />
 					{:else}
 						<p class="ft-prompt muted">
 							Waiting for {playerName(players, nextPickerID)} to pick…
@@ -429,6 +432,7 @@
 						disabled={counterBusy || counterChoice == null}>
 						{counterBusy ? '…' : 'Place counter-demand'}
 					</button>
+					<EndsNote text="This is the last step: Make Demands resolves when you submit." />
 				{:else}
 					<p class="ft-prompt muted">
 						Waiting for {targetPlan ? playerName(players, targetPlan.preparer_id) : 'the target'}

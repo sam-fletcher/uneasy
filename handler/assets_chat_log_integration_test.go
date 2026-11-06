@@ -239,7 +239,7 @@ func TestChatLog_MarginaliaAddedAndEdited(t *testing.T) {
 	require.Contains(t, edited.Body, "Lady Vex")
 }
 
-// TestChatLog_MarginaliaTornByRival: a Default post names tearer, owner, text
+// TestChatLog_MarginaliaTornByRival: an Important post (another player's asset) names tearer, owner, text
 // and asset.
 func TestChatLog_MarginaliaTornByRival(t *testing.T) {
 	h := newAssetHarness(t, 2)
@@ -255,7 +255,7 @@ func TestChatLog_MarginaliaTornByRival(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 
 	p := h.postBySystemCode("marginalia.torn")
-	require.Equal(t, model.SeverityDefault, p.Severity)
+	require.Equal(t, model.SeverityImportant, p.Severity)
 	require.Contains(t, p.Body, rival)
 	require.Contains(t, p.Body, owner)
 	require.Contains(t, p.Body, "knows a secret")

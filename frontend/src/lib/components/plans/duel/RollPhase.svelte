@@ -19,6 +19,7 @@
 	import { playerName } from '../shared';
 	import { computeAccumulated, type DuelRes } from './shared';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import EndsNote from '../shared/EndsNote.svelte';
 
 	let { plan, duelRes, players, assets, currentPlayerID, stakes, bouts, activeRoll, rollActive, rollOutcome, onPlansChanged }: {
 		plan: Plan;
@@ -182,6 +183,7 @@
 			<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
 				Spare {playerName(players, loserID)}
 			</button>
+			<EndsNote text="Either choice is the last step: Propose Duel resolves when you submit." />
 		{:else if amWinner}
 			<p class="choices-note">
 				Choose {effectiveTake} of {playerName(players, loserID)}'s
@@ -202,10 +204,12 @@
 				disabled={takeBusy || takeSelectionIDs.length !== effectiveTake}>
 				{takeBusy ? '…' : `Take ${takeSelectionIDs.length}/${effectiveTake}`}
 			</button>
+			{#if !marMayBeSpared}<EndsNote text="This is the last step: Propose Duel resolves when you submit." />{/if}
 			{#if marMayBeSpared}
 				<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
 					Spare {playerName(players, loserID)} instead
 				</button>
+				<EndsNote text="Either choice is the last step: Propose Duel resolves when you submit." />
 			{/if}
 		{:else}
 			<p class="choices-note muted">

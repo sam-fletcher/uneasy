@@ -3,6 +3,7 @@
   Only renders when the current player holds at least one open claim.
 -->
 <script lang="ts">
+	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import { takeSurrenderAsset, type Asset, type Player, type WarStateResponse } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
@@ -60,6 +61,7 @@
 				disabled={claimBusy || claimAssetByClaim[c.id] == null}>
 				{claimBusy ? '…' : 'Claim'}
 			</button>
+			<EndsNote text="Play goes on once every surrender claim and battle cost at the table is settled." />
 		</div>
 	{/each}
 </div>

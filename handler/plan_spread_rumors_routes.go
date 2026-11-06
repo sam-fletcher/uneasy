@@ -960,7 +960,17 @@ func transferRumorAsset(
 		return fmt.Errorf("could not transfer asset: %w", err)
 	}
 	if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
-		EmitAssetTaken(ctx, deps.Q, deps.Manager, plan.GameID, updated, oldOwnerID, newOwnerID, logRow(g))
+		EmitAssetTaken(
+			ctx,
+			deps.Q,
+			deps.Manager,
+			plan.GameID,
+			updated,
+			oldOwnerID,
+			newOwnerID,
+			asset.IsMainCharacter,
+			logRow(g),
+		)
 	}
 	return nil
 }

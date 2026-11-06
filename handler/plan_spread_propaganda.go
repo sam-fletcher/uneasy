@@ -872,7 +872,7 @@ func spBreakSelfHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		spLog(ctx, deps, plan, model.SeverityDefault,
+		spLog(ctx, deps, plan, breakSeverity(asset.OwnerID, player.ID),
 			fmt.Sprintf("%s broke their own %s amid the backlash.%s",
 				playerDisplayName(ctx, deps.Q, plan.PreparerID), assetMark(asset.Name),
 				brokenAssetDetail(ctx, deps.Q, asset.OwnerID, m, destroyed)))
@@ -1064,8 +1064,9 @@ func spCounterAwaitsInterferer(
 // may decline to spread a message of their own (owner ruling 2026-11-03):
 // declining is a political act, since a flop would land on them. Declining is
 // logged and closes the plan with no effect — no roll was made, so it takes the
-// same "came to nothing" ending as a fizzled plan. The parent plan is unaffected:
-// its own remaining steps carry on, as they did while the child was rolling.
+// same "closed with no effect" ending as a fizzled plan. The parent plan is
+// unaffected: any step it still owes carries on, as it did while the child was
+// rolling, and if it owes none it has already resolved.
 func spDeclineCounterHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanForExtraRoute(w, r, deps.Q, model.PlanSpreadPropaganda)

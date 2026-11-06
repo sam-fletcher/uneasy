@@ -28,6 +28,19 @@ func breakVerb(destroyed bool) string {
 	return "broke"
 }
 
+// breakSeverity is the log severity of a break: Important when the breaker is
+// not the asset's owner, Default when a player breaks their own. A break of
+// someone else's asset is something done to them, so the owner must get the
+// important-unread marker (owner ruling, 2026-11-03); one's own break is a cost
+// they chose, and stays routine bookkeeping. Every plan and shake-up break line
+// takes its severity from here so the rule can't drift between plans.
+func breakSeverity(ownerID, actorID int64) int32 {
+	if ownerID != actorID {
+		return model.SeverityImportant
+	}
+	return model.SeverityDefault
+}
+
 // brokenAssetPrompt returns the trailing clause inviting an asset's owner to
 // narrate the effect of a break: " <Owner>, how has the asset changed?". It
 // returns "" when the tear destroyed the asset — nothing remains to re-describe,
@@ -112,7 +125,7 @@ func breakAsset(
 		if err = q.DestroyAsset(ctx, asset.ID); err != nil {
 			return false, err
 		}
-		emitAssetDestruction(ctx, q, manager, asset)
+		emitAssetDestruction(ctx, q, manager, asset, tornBy)
 		return true, nil
 	}
 
@@ -143,7 +156,7 @@ func breakAsset(
 	// If that was the last intact marginalia, the asset is destroyed.
 	destroyedRows, _ := q.DestroyIfAllMarginaliaTorn(ctx, asset.ID)
 	if destroyedRows > 0 {
-		emitAssetDestruction(ctx, q, manager, asset)
+		emitAssetDestruction(ctx, q, manager, asset, tornBy)
 		return true, nil
 	}
 	return false, nil
@@ -152,10 +165,20 @@ func breakAsset(
 // emitAssetDestruction broadcasts asset.destroyed and writes the matching
 // system post. Shared by breakAsset's two destroy paths so both reach clients
 // and the action log identically.
-func emitAssetDestruction(ctx context.Context, q *dbgen.Queries, manager *hub.Manager, asset *dbgen.Asset) {
+//
+// actorID is who broke it: the destruction logs at breakSeverity, so a blank
+// asset destroyed by another player (which has no marginalia.torn post to carry
+// the marker) still reaches its owner as Important.
+func emitAssetDestruction(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	asset *dbgen.Asset,
+	actorID int64,
+) {
 	broadcastEvent(manager, asset.GameID, model.EventAssetDestroyed, assetDestroyedPayload(ctx, q, asset.ID))
 	if game, gerr := q.GetGameByID(ctx, asset.GameID); gerr == nil {
-		EmitAssetDestroyed(ctx, q, manager, asset.GameID, *asset, logRow(game))
+		emitAssetDestroyedAt(ctx, q, manager, asset.GameID, *asset, logRow(game), breakSeverity(asset.OwnerID, actorID))
 	}
 	settleDuelClaimsAfterDestroy(ctx, q, manager, asset.ID)
 }

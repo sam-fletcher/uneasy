@@ -37,6 +37,7 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
+	import EndsNote from './shared/EndsNote.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	const MI_MAR_OPTIONS = [
@@ -335,6 +336,16 @@
 			? (MI_MAR_OPTIONS.find(o => !usedOutcomes.has(o.key))?.key ?? marPicked)
 			: marPicked,
 	);
+
+	// Outcomes still waiting on someone's marginalia. The plan resolves the moment
+	// every peer has an outcome and none of these remain, so the submit that takes
+	// both to zero is the ending one (and the line under it says so).
+	const outcomesAwaitingWriting = $derived(marOutcomes.filter(o => !o.done).length);
+	const resolveEndsPlan = $derived(
+		unresolvedDrafts.length === 1 && outcomesAwaitingWriting === 0
+			&& marOutcome !== 'other_retinue' && marOutcome !== 'broken_arrival',
+	);
+	const authorEndsPlan = $derived(unresolvedDrafts.length === 0 && outcomesAwaitingWriting === 1);
 	// Why the last tapped, already-used chip is unavailable (aria-disabled chips
 	// stay tappable so the reason shows on touch — style guide).
 	let usedNotice = $state('');
@@ -597,6 +608,8 @@
 								disabled={authorBusy || !authorText.trim()}>
 								{authorBusy ? '…' : 'Write marginalia'}
 							</button>
+							<EndsNote show={authorEndsPlan}
+								text="You are the last one the plan is waiting on: Make Introductions resolves when you submit." />
 						</div>
 					{/each}
 
@@ -653,6 +666,8 @@
 								disabled={marBusy || !marReady}>
 								{marBusy ? '…' : 'Resolve peer'}
 							</button>
+							<EndsNote show={resolveEndsPlan}
+								text="This is the last newcomer: Make Introductions resolves when you submit." />
 						</div>
 					{/if}
 

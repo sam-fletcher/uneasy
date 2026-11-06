@@ -7,6 +7,7 @@
   and gates nothing; the phase advances on the stake-count reveal alone.
 -->
 <script lang="ts">
+	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import { electChampion, selectStakes, type Asset, type DuelStake, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
@@ -222,6 +223,7 @@
 				disabled={stakeBusy || !stakeCountValid}>
 				{stakeBusy ? '…' : `Commit ${stakeSelectionIDs.length} stake${stakeSelectionIDs.length === 1 ? '' : 's'}`}
 			</button>
+			<EndsNote text="The bouts begin as soon as both duellists have committed their stakes." />
 		{/if}
 	{:else}
 		<p class="choices-note muted">The duellists are choosing their stakes.</p>

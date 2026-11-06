@@ -23,6 +23,7 @@
   which the server flips true inside the cast-roll route.
 -->
 <script lang="ts">
+	import EndsNote from './shared/EndsNote.svelte';
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
@@ -509,6 +510,7 @@
 									disabled={makeBusy || !makeReady}>
 									{makeBusy ? '…' : 'Submit choice'}
 								</button>
+								<EndsNote show={makeRemaining === 1} text="This is the last choice. The scene stays open for you to play out; the plan ends when you wrap it." />
 							{/if}
 						</div>
 					</fieldset>
@@ -556,6 +558,7 @@
 							onclick={() => onComplete(plan)} disabled={resBusy}>
 							{resBusy ? '…' : 'Wrap the scene'}
 						</button>
+						<EndsNote text="This ends Chronicle Histories: the plan resolves when you wrap the scene." />
 					{:else}
 						<p class="ft-prompt muted">
 							All choices are made. The scene stays open until
@@ -630,6 +633,7 @@
 							disabled={marBusy || !marReady}>
 							{marBusy ? '…' : 'Submit choice'}
 						</button>
+						<EndsNote show={marRequired > 0 && marEntries.length === marRequired - 1} text="This is the last choice needed. The scene stays open for the table to play out; the plan ends when it is wrapped." />
 					</div>
 				{:else}
 					<p class="choices-note muted">Your choice has been submitted.</p>
@@ -676,6 +680,7 @@
 						onclick={() => onComplete(plan)} disabled={resBusy || !allMarSubmitted}>
 						{resBusy ? '…' : 'Wrap the scene'}
 					</button>
+					<EndsNote text="This ends Chronicle Histories: the plan resolves when you wrap the scene." />
 				{:else if allMarSubmitted}
 					<p class="ft-prompt muted">
 						Every player has chosen. The scene stays open until

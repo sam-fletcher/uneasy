@@ -38,6 +38,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Stepper from './shared/Stepper.svelte';
+	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
@@ -488,6 +489,11 @@
 	{@const aqRemaining = Math.max(0, aqNeeded - askQuestionDone)}
 	{@const subflowsDone = brRemaining === 0 && rsRemaining === 0 && marRemaining === 0
 		&& dtRemaining === 0 && aqRemaining === 0 && pendingQuestion == null}
+	<!-- Submits still owed. The server resolves the plan the moment the last lands, so
+	     the submit that takes this to one is the one that ends Seek Answers. A pending
+	     question counts as one (its answer), and asking a question never ends it. -->
+	{@const totalOwed = brRemaining + rsRemaining + dtRemaining + aqRemaining + marRemaining}
+	{@const lastText = 'This is the last step: Seek Answers resolves when you submit.'}
 
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
@@ -592,6 +598,8 @@
 						</button>
 					{/if}
 				</div>
+				<EndsNote show={totalOwed === 1 && aqRemaining === 1}
+					text="Answering is the last step: Seek Answers resolves when you answer. A veto ends nothing." />
 				{#if pendingQuestion.vetoable}
 					<p class="choices-note muted">
 						You outrank {playerName(players, plan.preparer_id)} on knowledge, so you
@@ -669,12 +677,14 @@
 										onclick={() => forfeitStep(plan, 'break_resource')} disabled={forfeitBusy}>
 										{forfeitBusy ? '…' : 'Skip — no valid targets'}
 									</button>
+									<EndsNote show={totalOwed === brRemaining} text={lastText} />
 								{:else}
 									<button class="action-btn primary"
 										onclick={() => submitBreakResource(plan)}
 										disabled={brBusy || brAssetID == null || brMargID == null}>
 										{brBusy ? '…' : 'Break resource'}
 									</button>
+									<EndsNote show={totalOwed === 1} text={lastText} />
 								{/if}
 							{/if}
 						</div>
@@ -702,12 +712,14 @@
 										onclick={() => forfeitStep(plan, 'reveal_secret')} disabled={forfeitBusy}>
 										{forfeitBusy ? '…' : 'Skip — no valid targets'}
 									</button>
+									<EndsNote show={totalOwed === rsRemaining} text={lastText} />
 								{:else}
 									<button class="action-btn primary"
 										onclick={() => submitRevealSecret(plan)}
 										disabled={rsBusy || rsAssetID == null}>
 										{rsBusy ? '…' : 'Reveal secrets'}
 									</button>
+									<EndsNote show={totalOwed === 1} text={lastText} />
 								{/if}
 							{/if}
 						</div>
@@ -732,6 +744,7 @@
 									disabled={dtBusy || !dtText.trim()}>
 									{dtBusy ? '…' : 'Declare truth'}
 								</button>
+								<EndsNote show={totalOwed === 1} text={lastText} />
 							{/if}
 						</div>
 					{/if}
@@ -808,12 +821,14 @@
 										onclick={() => forfeitStep(plan, 'mar_penalty')} disabled={forfeitBusy}>
 										{forfeitBusy ? '…' : 'Skip — no valid targets'}
 									</button>
+									<EndsNote show={totalOwed === marRemaining} text={lastText} />
 								{:else}
 									<button class="action-btn primary"
 										onclick={() => submitPenaltyFlaw(plan)}
 										disabled={maBusy || maAssetID == null || maMargID == null}>
 										{maBusy ? '…' : 'Break your resource'}
 									</button>
+									<EndsNote show={totalOwed === 1} text={lastText} />
 								{/if}
 							{/if}
 						</div>

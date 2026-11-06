@@ -28,6 +28,7 @@
 	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import EndsNote from '../shared/EndsNote.svelte';
 
 	interface Props {
 		/** The plan being targeted (the resolve panel renders this). */
@@ -298,7 +299,7 @@
 					{:else}
 						{playerName(players, winners.control_leverage)}
 						drew leverage control, but {PLAN_SHORT[plan.plan_type]} has no roll
-						of its own — that option came to nothing here.
+						of its own — that option had no effect here.
 					{/if}
 				</li>
 			{/if}
@@ -308,7 +309,7 @@
 						{playerName(players, winners.keep_or_change_target)}
 						drew the choice to keep or change a plan's target, but
 						{PLAN_SHORT[plan.plan_type]} isn't aimed at anything a demand could
-						redirect — that option came to nothing here.
+						redirect — that option had no effect here.
 					{:else}
 						{playerName(players, winners.keep_or_change_target)}
 						decides whether this plan keeps or changes its target{retargetHoldsRoll
@@ -390,6 +391,10 @@
 						{retargetBusy ? '…' : 'Keep the current target'}
 					</button>
 				</div>
+				<EndsNote show={!retargetFinalized && (retargetHoldsRoll || retargetHoldsPlan)}
+					text={retargetHoldsRoll
+						? 'Submitting releases your hold on the roll. You can still adjust the target until the dice land.'
+						: 'Submitting releases your hold: the plan can begin its first step.'} />
 			</div>
 		{/if}
 
@@ -441,6 +446,8 @@
 							{/if}
 						</button>
 					</div>
+					<EndsNote show={!leverageFinalized}
+						text="Submitting settles your leverage. Any other hold on the roll, and everyone readying, are separate." />
 				{/if}
 			</div>
 		{/if}
@@ -461,7 +468,8 @@
 	}
 	/* planPanel.css's muted-note grey is likewise a dark-panel colour; re-ink it
 	   to the warm faint token, which clears AA on this fill. */
-	.demand-banner .choices-note {
+	.demand-banner .choices-note,
+	.demand-banner :global(.ends-note) {
 		color: var(--color-text-faint-warm);
 	}
 	.demand-banner-header {

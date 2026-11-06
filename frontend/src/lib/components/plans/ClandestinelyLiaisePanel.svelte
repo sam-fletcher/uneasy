@@ -7,6 +7,7 @@
   when_will_i_see_you_again → done).
 -->
 <script lang="ts">
+	import EndsNote from './shared/EndsNote.svelte';
 	import './planPanel.css';
 	import {
 		preparePlan,
@@ -550,6 +551,7 @@
 						onclick={() => onAdvance(plan)} disabled={advanceBusy}>
 						{advanceBusy ? '…' : 'Advance to Secrets We Keep'}
 					</button>
+					<EndsNote text="Advancing ends the meeting scene. Secrets We Keep begins." />
 				{:else}
 					<p class="choices-note muted">
 						Once you're both ready, {holderName}{#if preparerSeatHolder !== plan.preparer_id}, the Make Demands winner,{/if} will advance the liaison.
@@ -608,6 +610,7 @@
 							disabled={keepBusy || keepSecretAssetID == null}>
 							{keepBusy ? '…' : 'Keep this secret'}
 						</button>
+						<EndsNote text="When you have both kept a secret, Things We Share begins." />
 					{/if}
 				{/if}
 			</div>
@@ -713,6 +716,7 @@
 						disabled={shareBusy || !shareSubmittable}>
 						{shareBusy ? '…' : 'Submit share choice'}
 					</button>
+					<EndsNote text="When you have both chosen, When Will I See You Again? begins. It is the last step." />
 				{/if}
 			</div>
 
@@ -738,6 +742,7 @@
 						allowZero={true}
 						prompt="Pick a row delay (or 0 to part ways):"
 					/>
+					<EndsNote text="This is the last step: Clandestinely Liaise resolves as soon as you have both revealed." />
 				{/if}
 			</div>
 

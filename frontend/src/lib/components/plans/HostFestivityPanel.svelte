@@ -20,6 +20,7 @@
   subscription; children get slices + `onPlansChanged`.
 -->
 <script lang="ts">
+	import EndsNote from './shared/EndsNote.svelte';
 	import './planPanel.css';
 	import { onMount, onDestroy } from 'svelte';
 	import {
@@ -287,6 +288,11 @@
 				>
 					{endBusy ? '…' : 'End the event'}
 				</button>
+				{#if endable}
+					<EndsNote text="This is the last step: Host Festivity resolves when you end the event." />
+				{:else}
+					<p class="choices-note muted">You can end the event once every guest has settled: all guests chosen and all Mars inflicted.</p>
+				{/if}
 				{#if hostMakesLeft > 0}
 					<p class="choices-note muted">
 						Ending now forfeits {amHost ? 'your' : "the host's"} {hostMakesLeft} unclaimed {hostMakesLeft === 1 ? 'Make' : 'Makes'}.

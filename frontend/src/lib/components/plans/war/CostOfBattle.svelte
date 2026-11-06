@@ -8,6 +8,7 @@
 		payBattleCost, payWarEntry, proposePeace,
 		type Asset, type Player, type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
+	import EndsNote from '../shared/EndsNote.svelte';
 	import BattleCostForm, { type BattleSubmission } from './BattleCostForm.svelte';
 	import { assetsWithIntactMarginalia, ownerUnleveragedAssets, playerName } from '../shared';
 
@@ -146,6 +147,7 @@
 			allowSurrender
 			onSubmit={handleCostSubmit}
 		/>
+		<EndsNote text="Play goes on once every battle cost and surrender claim at the table is settled." />
 	</div>
 {/if}
 

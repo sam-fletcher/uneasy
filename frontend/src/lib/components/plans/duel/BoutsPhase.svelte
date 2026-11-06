@@ -9,6 +9,7 @@
   side-by-side from 560px up.
 -->
 <script lang="ts">
+	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import { boutDeclare, boutRespond, type Asset, type DuelBout, type DuelStake, type Plan, type Player } from '$lib/api';
 	import FormField from '../FormField.svelte';
@@ -301,6 +302,7 @@
 				disabled={boutBusy || pickedStakeID == null}>
 				{boutBusy ? '…' : boutInProgress ? 'Respond' : 'Declare'}
 			</button>
+			<EndsNote show={boutInProgress && isFinalBout} text="This is the last bout: the bouts end when you respond, and the duel's dice roll follows." />
 		</div>
 	{:else if amParticipant}
 		<p class="choices-note muted">

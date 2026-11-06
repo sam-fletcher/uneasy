@@ -36,6 +36,7 @@
 	import CardPicker from './CardPicker.svelte';
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
+	import EndsNote from './shared/EndsNote.svelte';
 	import { playerName, parseResolutionData, ownerUnleveragedAssets, resolutionActorID } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -539,6 +540,7 @@
 						disabled={callBusy || pendingDeciderIDs.length > 0}>
 						{callBusy ? '…' : 'End the debate'}
 					</button>
+					<EndsNote text="This ends the debate and opens the dice roll for the council." />
 				</div>
 			{/if}
 
@@ -602,6 +604,8 @@
 									{amendBusy ? '…' : 'Leave unchanged'}
 								</button>
 							</div>
+							<EndsNote show={amendmentsRemaining === 1}
+								text="You are the last amender: amending or leaving it unchanged ends the amendments, and the signatory's addendum comes next." />
 						</div>
 					{:else}
 						<p class="choices-note muted">
@@ -635,6 +639,7 @@
 								disabled={addendumBusy}>
 								{addendumBusy ? '…' : 'Place addendum'}
 							</button>
+							<EndsNote text={`This places the addendum. ${playerName(players, resolutionActorID(plan, plans))} enacts the law next.`} />
 						</div>
 					{:else}
 						<p class="choices-note muted">
@@ -670,6 +675,7 @@
 								disabled={enactBusy || (isMakeEnact && (!resourceName.trim() || !resourceMarginalia.trim()))}>
 								{enactBusy ? '…' : 'Enact the law'}
 							</button>
+							<EndsNote text="This is the last step: Propose Decree resolves when you enact the law." />
 						</div>
 					{:else}
 						<p class="choices-note muted">

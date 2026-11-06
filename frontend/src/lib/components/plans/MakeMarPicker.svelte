@@ -10,6 +10,7 @@
 	import './planPanel.css';
 	import type { Snippet } from 'svelte';
 	import type { PlanChoiceOption } from './shared';
+	import EndsNote from './shared/EndsNote.svelte';
 
 	interface Props {
 		outcome: 'make' | 'mar';
@@ -29,11 +30,13 @@
 		disabledKeys?: string[];
 		/** Short reason a disabled option is locked, e.g. "needs −3". */
 		lockReason?: (key: string) => string | undefined;
+		/** Shown under the submit button when applying the current picks ends the plan. */
+		endsText?: string | null;
 	}
 
 	let {
 		outcome, options, selected, busy, onToggle, onSubmit, header,
-		single = false, disabledKeys = [], lockReason,
+		single = false, disabledKeys = [], lockReason, endsText = null,
 	}: Props = $props();
 
 	const nothingSelected = $derived(selected.length === 0);
@@ -75,4 +78,5 @@
 	<button class="action-btn primary" onclick={onSubmit} disabled={busy || (single && nothingSelected)}>
 		{busy ? '…' : 'Apply choices'}
 	</button>
+	{#if endsText}<EndsNote text={endsText} />{/if}
 </div>

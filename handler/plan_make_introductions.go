@@ -927,7 +927,9 @@ func applyMIBrokenJourney(
 	mi.Arrivals = append(mi.Arrivals, MIArrival{DraftID: req.draft.ID, AssetID: asset.ID})
 	outcome.OwnerPlayerID = &recipient
 	outcome.Done = true
-	miLog(ctx, deps, plan, model.SeverityDefault,
+	// The newcomer lands in the recipient's retinue, and the actor may be a Make
+	// Demands winner rather than the owner, so the severity follows who owns it.
+	miLog(ctx, deps, plan, breakSeverity(recipient, req.actorID),
 		fmt.Sprintf("%s survived an arduous journey — arrived broken, marked by %q.",
 			assetMark(asset.Name), req.journeyText))
 	return nil
