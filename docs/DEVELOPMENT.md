@@ -179,6 +179,53 @@ scratch database (never `uneasy_test`); every spec and `playwright.config.ts` re
 `frontend/tests/e2e/baseUrl.ts`). The step-by-step recipe lives in one place, the
 `test-worktree` skill (`.claude/skills/test-worktree/SKILL.md`).
 
+#### The nightly run on GitHub Actions
+
+CI (`ci.yml`) gates pull requests on `make check-fast` and the integration
+suite, and does not run Playwright. So
+[.github/workflows/e2e-nightly.yml](../.github/workflows/e2e-nightly.yml) runs
+the whole e2e suite once a night (06:17 UTC) against the latest commit on
+`main`. It never blocks a merge, and `main` is already live by the time it
+runs: its job is to catch a stale spec or a bad merge within a day rather
+than whenever someone next runs `make test-e2e` by hand. Whether to also gate
+PRs on it is still open (`docs/work/questions/ci-e2e-cadence.md`).
+
+The job does what the worktree recipe above does, on a clean runner: `make
+build` (the production binary with the frontend embedded, so no Vite), starts
+`./server` on `:8090` against a throwaway Postgres container, waits for it to
+answer, installs Chromium, then runs `npm run test:e2e` with `CI=true`. The
+suite runs serially with **no retries**, deliberately: for the first weeks the
+point is to see how flaky it really is, and a retry would hide that.
+
+**What a failure looks like.** The run goes red on the Actions tab. A
+*scheduled* failure also opens one GitHub issue, "Nightly e2e run failed on
+main", labelled `nightly-e2e`, with the run link, the commit, the step that
+failed, the failing spec names and a compare link from the last passing
+night. Later failures comment on that same issue rather than opening more,
+and the first passing night closes it. Manual runs and the PR self-test never
+open or close issues.
+
+**Reading the artifacts.** On a failure the run page's *Artifacts* section
+(kept 14 days) has `e2e-failure`, containing:
+
+- `frontend/test-results/<spec>/trace.zip`, one per failed spec. Unzip the
+  artifact and, from `frontend/`, run `npx playwright show-trace <trace.zip>`
+  to step through the page, the network calls and the console as the test saw
+  them.
+- `frontend/test-results/report.json`, Playwright's JSON report (the source of
+  the spec names in the issue).
+- `server.log`, the Go server's output for the whole run.
+
+**Reproducing it locally.** Check out the commit named in the issue in a
+worktree and follow the `test-worktree` recipe (private database, `make
+build`, your own server, `E2E_BASE_URL`), running just the failing spec.
+That is the same server, binary and browser the nightly used, minus the
+runner. Add `CI=true` to get the same reporters.
+
+**Running it by hand.** Actions tab → *e2e-nightly* → *Run workflow* (pick a
+branch), or `gh workflow run e2e-nightly.yml --ref <branch>`. Editing the
+workflow file in a PR also runs it once on that PR, as a self-test.
+
 ### Test health
 
 `make test` and `make test-integration` should both pass clean on a fresh
