@@ -50,6 +50,23 @@ This starts three services:
 Open http://localhost:8080. The Go server proxies all non-API requests to Vite,
 so you get a single origin with hot module replacement on the frontend.
 
+**The `frontend` container keeps its own `.svelte-kit/`.** `./frontend` is
+bind-mounted into the container, so without care the container and your host
+would share `frontend/.svelte-kit/` (SvelteKit's generated files). They don't
+share a SvelteKit *version*, though: the container installs the lockfile's, and
+your host's `node_modules` is whatever your last `npm install` left. Any host
+command that loads SvelteKit's Vite plugin — `make test-frontend-unit` (so
+`make check-fast` and `make check`), `vite dev`, `vite build` — rewrites the
+generated files in its own version's format, and the container's Vite then
+answers every page with a 500. So `/app/.svelte-kit` is a named volume
+(`svelte_kit`, like `node_modules`), and host and container never touch each
+other's. After pulling a change to `docker-compose.yml`, recreate the
+container once with `docker compose up -d frontend`.
+
+`npm install` also runs `svelte-kit sync` (the `prepare` script), so a fresh
+clone gets the `.svelte-kit/tsconfig.json` that `frontend/tsconfig.json`
+extends without needing the container.
+
 ## Go workflow
 
 ```bash
@@ -131,6 +148,14 @@ make test-e2e
 
 Specs live in `frontend/tests/e2e/`. Playwright config:
 `frontend/playwright.config.ts`.
+
+**Preflight.** Before any spec runs, `frontend/tests/e2e/globalSetup.ts`
+fetches the base URL once. A healthy app passes silently. If the app is
+unreachable, hangs for 15s, or returns a non-2xx status, the whole run stops
+within about a second with one message (the status, the first line of the
+response, and what to try), instead of ~150 specs each timing out at 30s. It
+reads the same `E2E_BASE_URL` as the specs, so it checks a worktree's own
+server when you point at one.
 
 Note: `make test-integration` and `make test-e2e` both target
 `uneasy_test`, so don't run them concurrently. `make check` runs them
