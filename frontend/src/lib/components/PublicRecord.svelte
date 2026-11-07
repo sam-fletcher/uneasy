@@ -177,8 +177,8 @@
   The rail is always rendered (it's the layout anchor for the grid column
   on desktop and the visible strip on mobile). The expanded panel is added
   on top when expanded:
-    - below the record dock: as a fixed 280px overlay with a tappable scrim
-    - at the dock: as an in-flow sibling filling its own 280px grid column.
+    - below the record dock: as a fixed RECORD_WIDTH_PX overlay with a tappable scrim
+    - at the dock: as an in-flow sibling filling its own grid column of that width.
 -->
 <button
 	class="rail"
