@@ -122,7 +122,7 @@ func calculateRollResult(
 
 // finalizeRoll rolls every die, applies interference cancellation, writes
 // the result/outcome to the DB, and broadcasts roll.resolved. Called from
-// maybeAutoResolve and (legacy) CloseLeverage.
+// maybeAutoResolve.
 //
 // Shake-up rolls (roll.IsShakeUp) have no difficulty and no make/mar
 // outcome — the result (distinct faces) is a token grant, not a check — so

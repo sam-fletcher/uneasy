@@ -2,7 +2,7 @@ package handler
 
 // handler/rolls_leverage.go — Roll voting, intent, leverage, and banked-dice
 // HTTP endpoints (CallVote/SkipVote/Vote, SetIntent/SetReady, LeverageRoll,
-// ListBankedDice/UseBankedDie, CloseLeverage). See rolls.go for the roll
+// ListBankedDice/UseBankedDie). See rolls.go for the roll
 // object endpoints (Create/Get) and the stage machine's full lifecycle doc.
 
 import (
