@@ -14,10 +14,11 @@ instead of asking again.
 
 Before asking anything:
 
-- The **design principles** (private; path in the private `CLAUDE.md`) and
-  the memory index. A question an existing principle already answers is a
-  **fact**: state it with the principle's number, don't ask it. If the case
-  sits badly with a principle, *that* is a question worth asking.
+- The **design principles**, the **rulings** and the **decisions** (private;
+  paths in the private `CLAUDE.md`) and the memory index. A question one of
+  these already answers is a **fact**: state it with the principle's number
+  or the ruling, don't ask it. If the case sits badly with a principle,
+  *that* is a question worth asking.
 - For a **game rule**, the rules files, then the rulebook page itself
   (rendered as an image, never extracted text). The book is the final word
   where they disagree, and most rules files are condensed summaries (the
@@ -70,8 +71,8 @@ back. Don't act on any ruling before that confirmation.
 ## 4. Record the rulings
 
 Rulings — on design *and* on how the app reads a rule — live in the
-private design principles file. Follow the shape it already uses, and show
-the owner the wording first:
+private design principles and rulings files. Follow the shape each already
+uses, and show the owner the wording first:
 
 - **A new principle, or an amendment to one** → the tension, the
   resolution, and the test to apply next time.
@@ -81,6 +82,11 @@ the owner the wording first:
   reverse → a row in the file's register under principle 6, as well as its
   worked case.
 - **A tension left unresolved** → the file's "Open tensions" section.
+- **Every ruling on the game** → one line and its reason in the rulings
+  file, under its game area, naming the principle if one covers it. A ruling
+  with no wider lesson goes there alone.
+- **A decision about UX, visuals or architecture** → the decisions file,
+  with the alternatives that lost.
 
 Memory gets at most a one-line pointer to the principle, so future
 sessions find it. Elsewhere:
