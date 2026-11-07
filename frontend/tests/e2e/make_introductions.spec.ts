@@ -272,6 +272,19 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 	for (const p of [bob, carol]) {
 		await expect(p.getByText('alice is resolving the marred introductions…')).toBeVisible();
 	}
+	// The mar commits with no picks, so the panel knows it is committed from the
+	// auto-apply marker alone — and nobody is left looking at the dice wait or
+	// the pre-roll difficulty meter.
+	{
+		const { plans: landed } = await api(f.ctx.alice, 'get', `/api/tables/${f.gameID}/plans`);
+		const committed = JSON.parse(landed.find((p: { id: number }) => p.id === f.planID).resolution_data);
+		expect(committed.choice_auto_applied).toBe(true);
+		expect(committed.make_mar_choices ?? []).toHaveLength(0);
+	}
+	for (const p of [alice, bob, carol]) {
+		await expect(p.getByText('Dice roll in progress…')).toHaveCount(0);
+		await expect(p.locator('.meter-label', { hasText: 'Difficulty' })).toHaveCount(0);
+	}
 
 	// First peer: another retinue — bob's. Needs a target before it can go.
 	await alice.getByRole('button', { name: 'Another retinue', exact: true }).click();
