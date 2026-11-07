@@ -3,17 +3,22 @@ import { handleWSMessage, type WSContext } from './ws-handlers';
 import { EventTypes } from '$lib/ws';
 import { breakableAssets } from '$lib/components/plans/shared';
 import { atRiskCountByPlayer } from '$lib/tableHeader';
-import { getPlan, type Plan, type RecordRow } from '$lib/api';
+import { getPlan, getRoll, type DiceRoll, type DiceRollDie, type Plan, type RecordRow } from '$lib/api';
 
-// Only getPlan is stubbed; the rest of the client is never reached by these tests.
+// Only getPlan and getRoll are stubbed; the rest of the client is never reached
+// by these tests.
 vi.mock('$lib/api', async importOriginal => ({
 	...(await importOriginal<typeof import('$lib/api')>()),
 	getPlan: vi.fn(),
+	getRoll: vi.fn(),
 }));
 const getPlanMock = vi.mocked(getPlan);
+const getRollMock = vi.mocked(getRoll);
 beforeEach(() => {
 	getPlanMock.mockReset();
 	getPlanMock.mockRejectedValue(new Error('unstubbed'));
+	getRollMock.mockReset();
+	getRollMock.mockRejectedValue(new Error('unstubbed'));
 });
 
 // Minimal Plan factory — only the fields the record-sync logic reads.
@@ -265,5 +270,272 @@ describe('asset.destroyed', () => {
 		expect(ctx.assets.find(a => a.id === 1)!.is_destroyed).toBe(true);
 		expect(breakableAssets(ctx.assets).map(a => a.id)).toEqual([2]);
 		expect(atRiskCountByPlayer(ctx.assets).get(1) ?? 0).toBeLessThanOrEqual(1);
+	});
+});
+
+describe('active roll fetch ordering', () => {
+	type RollDetail = Awaited<ReturnType<typeof getRoll>>;
+	const flush = () => new Promise(r => setTimeout(r, 0));
+	// demand.leverage_set also announces itself on window; vitest runs in node.
+	beforeEach(() => { vi.stubGlobal('window', { dispatchEvent: vi.fn() }); });
+	afterEach(() => { vi.unstubAllGlobals(); });
+
+	const makeRoll = (over: Partial<DiceRoll> = {}): DiceRoll => ({
+		id: 9, game_id: 1, plan_id: null, row_number: 3, is_shake_up: false,
+		actor_id: 7, difficulty: 3, adjusted_difficulty: null, result: null,
+		outcome: null, stage: 'leverage', created_at: '', resolved_at: null,
+		shake_up_category: null, ...over,
+	});
+	const makeDie = (id: number): DiceRollDie => ({
+		id, roll_id: 9, player_id: 7, is_interference: false,
+	} as DiceRollDie);
+	const detail = (roll: DiceRoll, over: Partial<RollDetail> = {}): RollDetail => ({
+		roll, dice: [], votes: [], participants: [], ...over,
+	});
+	const resolvedRoll = () => makeRoll({ outcome: 'make', result: 5, stage: 'resolved' });
+
+	const created = (roll: DiceRoll) =>
+		({ type: EventTypes.RollCreated, payload: { roll } });
+	const resolved = (roll: DiceRoll, dice: DiceRollDie[]) =>
+		({ type: EventTypes.RollResolved, payload: { roll, dice } });
+
+	// The first getRoll hangs until the test lands it by hand; later calls
+	// answer straight away with `then`.
+	function holdFirstFetch(then: RollDetail) {
+		let land!: (d: RollDetail) => void;
+		getRollMock.mockImplementationOnce(() => new Promise(res => { land = res; }));
+		getRollMock.mockResolvedValue(then);
+		return (d: RollDetail) => land(d);
+	}
+
+	it('normal order: the fetch installs the roll, roll.resolved updates it', async () => {
+		const ctx = makeCtx();
+		getRollMock.mockResolvedValueOnce(detail(makeRoll(), { dice: [makeDie(1)] }));
+
+		handleWSMessage(ctx, created(makeRoll()));
+		await flush();
+		expect(ctx.activeRoll?.outcome).toBeNull();
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+
+		handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1), makeDie(2)]));
+		expect(ctx.activeRoll?.outcome).toBe('make');
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2]);
+		await flush();
+		// A roll whose fetch had landed costs no further requests.
+		expect(getRollMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('roll.resolved before the fetch lands leaves the page resolved', async () => {
+		const ctx = makeCtx();
+		const landStale = holdFirstFetch(detail(resolvedRoll(), {
+			dice: [makeDie(1), makeDie(2)],
+			participants: [{ roll_id: 9, player_id: 7, intent: null, is_ready: true }],
+		}));
+
+		handleWSMessage(ctx, created(makeRoll()));
+		handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1), makeDie(2)]));
+
+		// Resolved at once, from the event's own payload — before any fetch lands.
+		expect(ctx.activeRoll?.outcome).toBe('make');
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2]);
+
+		// The fetch read before the roll resolved lands late: it must not undo that.
+		landStale(detail(makeRoll(), { dice: [makeDie(1)] }));
+		await flush();
+
+		expect(ctx.activeRoll?.outcome).toBe('make');
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2]);
+		// A fetch started after the resolution fills in what the event doesn't carry.
+		expect(ctx.activeRollParticipants.map(p => p.player_id)).toEqual([7]);
+	});
+
+	it('a stale fetch cannot re-install the unresolved roll, even if the refetch fails', async () => {
+		const ctx = makeCtx();
+		let landStale!: (d: RollDetail) => void;
+		getRollMock.mockImplementationOnce(() => new Promise(res => { landStale = res; }));
+		// Everything after the stale fetch is left rejecting (the default stub).
+
+		handleWSMessage(ctx, created(makeRoll()));
+		handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1)]));
+		landStale(detail(makeRoll()));
+		await flush();
+
+		expect(ctx.activeRoll?.outcome).toBe('make');
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+	});
+
+	it('roll.resolved replaces an older roll still on screen while the new roll fetches', async () => {
+		const older = makeRoll({ id: 4, outcome: 'mar', stage: 'resolved' });
+		const ctx = makeCtx({
+			activeRoll: older,
+			activeRollDice: [makeDie(40)],
+			activeRollVotes: [{ roll_id: 4, player_id: 7, voted: true }],
+			activeRollParticipants: [{ roll_id: 4, player_id: 7, intent: null, is_ready: true }],
+		} as unknown as Partial<WSContext>);
+		const landStale = holdFirstFetch(detail(resolvedRoll(), { dice: [makeDie(1)] }));
+
+		handleWSMessage(ctx, created(makeRoll()));
+		handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1)]));
+
+		// Straight away, before any fetch lands: the new roll is on screen, and
+		// the older roll's ballot and participants are not under it. (A later
+		// fetch would also overwrite them, so this must be read before it lands.)
+		expect(ctx.activeRoll?.id).toBe(9);
+		expect(ctx.activeRoll?.outcome).toBe('make');
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+		expect(ctx.activeRollVotes).toEqual([]);
+		expect(ctx.activeRollParticipants).toEqual([]);
+
+		landStale(detail(makeRoll()));
+		await flush();
+		expect(ctx.activeRoll?.outcome).toBe('make');
+	});
+
+	it('roll.resolved for a roll nobody is loading is still ignored', () => {
+		const shown = makeRoll({ id: 4 });
+		const ctx = makeCtx({ activeRoll: shown } as unknown as Partial<WSContext>);
+
+		handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1)]));
+
+		expect(ctx.activeRoll).toBe(shown);
+		expect(getRollMock).not.toHaveBeenCalled();
+	});
+
+	it('the newest fetch wins when responses arrive out of order', async () => {
+		const ctx = makeCtx();
+		let landOlder!: (d: RollDetail) => void;
+		getRollMock.mockImplementationOnce(() => new Promise(res => { landOlder = res; }));
+		getRollMock.mockResolvedValueOnce(detail(makeRoll(), { dice: [makeDie(1), makeDie(2)] }));
+
+		handleWSMessage(ctx, created(makeRoll()));
+		// A leverage die lands while the first fetch is out: the event can't be
+		// patched in (no roll on screen yet), so it takes a fresh fetch instead.
+		handleWSMessage(ctx, {
+			type: EventTypes.RollLeverageAdded,
+			payload: { roll_id: 9, die: makeDie(2) },
+		});
+		await flush();
+		landOlder(detail(makeRoll(), { dice: [makeDie(1)] }));
+		await flush();
+
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2]);
+	});
+
+	it('a failed fetch falls back to the event payload, unless something newer has landed', async () => {
+		const ctx = makeCtx();
+		getRollMock.mockRejectedValueOnce(new Error('offline'));
+		handleWSMessage(ctx, created(makeRoll()));
+		await flush();
+		expect(ctx.activeRoll?.id).toBe(9);
+		expect(ctx.activeRollDice).toEqual([]);
+
+		// Now the same failure racing a resolution: the fallback is the
+		// unresolved roll, so it must not overwrite the resolved one.
+		const raced = makeCtx();
+		let failStale!: (e: Error) => void;
+		getRollMock.mockImplementationOnce(() => new Promise((_, rej) => { failStale = rej; }));
+		handleWSMessage(raced, created(makeRoll()));
+		handleWSMessage(raced, resolved(resolvedRoll(), [makeDie(1)]));
+		failStale(new Error('offline'));
+		await flush();
+		expect(raced.activeRoll?.outcome).toBe('make');
+	});
+
+	it("a plan-linked roll's fetch cannot bring the roll back after its plan resolved", async () => {
+		const plan = makePlan({ id: 42, status: 'resolving' });
+		const ctx = makeCtx({ plans: [plan] });
+		const landStale = holdFirstFetch(detail(resolvedRoll()));
+		getPlanMock.mockResolvedValue({ plan: makePlan({ id: 42, status: 'resolved', result: 'make' }) } as Awaited<ReturnType<typeof getPlan>>);
+		const linked = makeRoll({ plan_id: 42 });
+
+		handleWSMessage(ctx, created(linked));
+		handleWSMessage(ctx, resolved({ ...resolvedRoll(), plan_id: 42 }, [makeDie(1)]));
+		handleWSMessage(ctx, { type: EventTypes.PlanResolved, payload: { plan_id: 42, result: 'make' } });
+		landStale(detail(linked));
+		await flush();
+
+		expect(ctx.activeRoll).toBeNull();
+		expect(ctx.activeRollDice).toEqual([]);
+	});
+
+	it("a plan-linked roll's failed fetch cannot bring the roll back after its plan resolved", async () => {
+		const ctx = makeCtx({ plans: [makePlan({ id: 42, status: 'resolving' })] });
+		getPlanMock.mockResolvedValue({ plan: makePlan({ id: 42, status: 'resolved', result: 'make' }) } as Awaited<ReturnType<typeof getPlan>>);
+		let landFirst!: (d: RollDetail) => void;
+		getRollMock.mockImplementationOnce(() => new Promise(res => { landFirst = res; }));
+		// The fetch the resolution starts is left rejecting (the default stub): its
+		// fallback is the announced roll, which must not outlive the plan either.
+		const linked = makeRoll({ plan_id: 42 });
+
+		handleWSMessage(ctx, created(linked));
+		handleWSMessage(ctx, resolved({ ...resolvedRoll(), plan_id: 42 }, [makeDie(1)]));
+		handleWSMessage(ctx, { type: EventTypes.PlanResolved, payload: { plan_id: 42, result: 'make' } });
+		landFirst(detail(linked));
+		await flush();
+
+		expect(ctx.activeRoll).toBeNull();
+		expect(ctx.activeRollDice).toEqual([]);
+	});
+
+	it('demand.leverage_set on the roll on screen cannot let a late answer undo roll.resolved', async () => {
+		const ctx = makeCtx({
+			activeRoll: makeRoll(),
+			activeRollDice: [makeDie(1)],
+		} as unknown as Partial<WSContext>);
+		getPlanMock.mockResolvedValue({ plan: makePlan({ id: 42 }) } as Awaited<ReturnType<typeof getPlan>>);
+		const landStale = holdFirstFetch(detail(resolvedRoll(), { dice: [makeDie(1), makeDie(2)] }));
+
+		handleWSMessage(ctx, { type: EventTypes.DemandLeverageSet, payload: { plan_id: 42, roll_id: 9 } });
+		handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1), makeDie(2)]));
+		// The leverage fetch was read before the roll resolved and lands last.
+		landStale(detail(makeRoll(), { dice: [makeDie(1)] }));
+		await flush();
+
+		expect(ctx.activeRoll?.outcome).toBe('make');
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2]);
+	});
+
+	it("an event about another roll leaves the loading roll's fetch alone", async () => {
+		const ctx = makeCtx();
+		const landFirst = holdFirstFetch(detail(makeRoll(), { dice: [makeDie(99)] }));
+
+		handleWSMessage(ctx, created(makeRoll()));
+		handleWSMessage(ctx, {
+			type: EventTypes.RollLeverageAdded,
+			payload: { roll_id: 4, die: makeDie(2) },
+		});
+		landFirst(detail(makeRoll(), { dice: [makeDie(1)] }));
+		await flush();
+
+		expect(getRollMock).toHaveBeenCalledTimes(1);
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+	});
+
+	// Every event about a roll that has nothing on screen to patch while the
+	// roll's own fetch is out must supersede that fetch: its answer predates the
+	// event. A new roll event that skips this goes unnoticed without this table.
+	const rollEvents: [string, string, Record<string, unknown>][] = [
+		['roll.leverage_added', EventTypes.RollLeverageAdded, { roll_id: 9, die: makeDie(2) }],
+		['roll.stage_changed', EventTypes.RollStageChanged, { roll_id: 9, stage: 'resolved' }],
+		['roll.intent_set', EventTypes.RollIntentSet, { roll_id: 9, player_id: 7, intent: 'aid' }],
+		['roll.ready_changed', EventTypes.RollReadyChanged, { roll_id: 9, player_id: 7, is_ready: true }],
+		['roll.vote_cast', EventTypes.RollVoteCast, { roll_id: 9, player_id: 7 }],
+		['roll.vote_resolved', EventTypes.RollVoteResolved, { roll_id: 9, adjusted_difficulty: 4, ballot: [] }],
+		['demand.leverage_set', EventTypes.DemandLeverageSet, { plan_id: 42, roll_id: 9 }],
+	];
+	it.each(rollEvents)('%s while the roll is still loading supersedes the stale fetch', async (_name, type, payload) => {
+		const ctx = makeCtx();
+		getPlanMock.mockResolvedValue({ plan: makePlan({ id: 42 }) } as Awaited<ReturnType<typeof getPlan>>);
+		// The second fetch is the one that sees the event's effect (a die).
+		const landStale = holdFirstFetch(detail(makeRoll(), { dice: [makeDie(99)] }));
+
+		handleWSMessage(ctx, created(makeRoll()));
+		handleWSMessage(ctx, { type, payload } as Parameters<typeof handleWSMessage>[1]);
+		expect(getRollMock).toHaveBeenCalledTimes(2);
+		landStale(detail(makeRoll(), { dice: [] }));
+		await flush();
+
+		expect(ctx.activeRoll?.id).toBe(9);
+		expect(ctx.activeRollDice.map(d => d.id)).toEqual([99]);
 	});
 });
