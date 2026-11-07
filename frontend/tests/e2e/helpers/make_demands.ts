@@ -167,6 +167,17 @@ export async function planOf(f: MDFixture, id: number) {
 	return p!;
 }
 
+/**
+ * A plan's resolution_data as the server stores it (the plan list carries it as
+ * a JSON string; the detail endpoint carries it parsed). Read this to know what
+ * a submit has saved, not whether the plan is resolving: a plan is already
+ * 'resolving' while its choice step is still open.
+ */
+export async function resolutionOf(f: MDFixture, id: number): Promise<Record<string, any>> {
+	const { resolution_data } = await call(f.api.alice, 'get', `/api/plans/${id}`);
+	return resolution_data ?? {};
+}
+
 export async function openPages(browser: Browser, f: MDFixture, viewport = { width: 375, height: 812 }): Promise<Record<Name, Page>> {
 	const pages = {} as Record<Name, Page>;
 	for (const n of PLAYERS) {

@@ -401,7 +401,13 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 	await more.click();
 	await expect(bob.getByText('Total picks: 2 / 2')).toBeVisible();
 	await bob.getByRole('button', { name: 'Apply choices' }).click();
-	await expect.poll(async () => (await H.planOf(f, f.targetID)).status).toBe('resolving');
+	// The click returns once it is dispatched, not once the choices are saved. The
+	// plan is already 'resolving' while the choice is open, so that is no signal:
+	// wait for the commit itself, or declare-truth can reach the server first and
+	// find no picks to declare against.
+	await expect.poll(async () => (await H.resolutionOf(f, f.targetID)).choice_submitted).toBe(true);
+	const picks = ((await H.resolutionOf(f, f.targetID)).make_mar_choices ?? []) as { option: string }[];
+	expect(picks.map(c => c.option)).toEqual(['declare_truth', 'declare_truth']);
 	for (const text of ['The seal was forged.', 'The duke never left.']) {
 		await H.call(f.api.bob, 'post', `/api/plans/${f.targetID}/declare-truth`, { text });
 	}
