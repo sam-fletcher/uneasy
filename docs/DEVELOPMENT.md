@@ -7,7 +7,9 @@ and administering a live instance, see [OPERATIONS.md](OPERATIONS.md).
 
 ## First-time setup
 
-You need: **Go 1.27+**, **Node 20+**, **Docker Desktop**, and **golangci-lint**.
+You need: **Go 1.27+**, **Node 24**, **Docker Desktop**, and **golangci-lint**.
+`frontend/.nvmrc` pins the Node major (`nvm use`, `fnm use` and similar read it);
+see [Frontend dependencies and Node](#frontend-dependencies-and-node).
 
 ```bash
 # Install golangci-lint (dev linter), pinned to the version in the Makefile.
@@ -23,8 +25,9 @@ go install github.com/air-verse/air@latest
 # Download Go dependencies
 go mod download
 
-# Install frontend dependencies
-cd frontend && npm install && cd ..
+# Frontend dependencies need no step of their own: the first `make` target
+# that runs frontend tooling (make check-frontend, make check-fast, ...) runs
+# `npm ci` for you, and runs it again whenever the lockfile changes.
 ```
 
 Both `go install` and `make lint-install` drop binaries in `$(go env GOPATH)/bin`,
@@ -54,7 +57,8 @@ so you get a single origin with hot module replacement on the frontend.
 bind-mounted into the container, so without care the container and your host
 would share `frontend/.svelte-kit/` (SvelteKit's generated files). They don't
 share a SvelteKit *version*, though: the container installs the lockfile's, and
-your host's `node_modules` is whatever your last `npm install` left. Any host
+your host's `node_modules` can lag behind it until a `make` target refreshes it
+(see [Frontend dependencies and Node](#frontend-dependencies-and-node)). Any host
 command that loads SvelteKit's Vite plugin — `make test-frontend-unit` (so
 `make check-fast` and `make check`), `vite dev`, `vite build` — rewrites the
 generated files in its own version's format, and the container's Vite then
@@ -63,7 +67,7 @@ answers every page with a 500. So `/app/.svelte-kit` is a named volume
 other's. After pulling a change to `docker-compose.yml`, recreate the
 container once with `docker compose up -d frontend`.
 
-`npm install` also runs `svelte-kit sync` (the `prepare` script), so a fresh
+`npm ci` and `npm install` both run `svelte-kit sync` (the `prepare` script), so a fresh
 clone gets the `.svelte-kit/tsconfig.json` that `frontend/tsconfig.json`
 extends without needing the container.
 
@@ -206,6 +210,44 @@ model/        — shared data types and WebSocket message constants
 frontend/     — SvelteKit SPA (Svelte 5, adapter-static, ssr: false)
 ```
 
+## Frontend dependencies and Node
+
+**Node 24 everywhere.** `frontend/.nvmrc` pins it; the production `Dockerfile`'s
+frontend stage, the dev `frontend` container and CI (`node-version` in
+`.github/workflows/ci.yml`) all use the same major, so CI tests the Node that
+ships. `engines` in `frontend/package.json` says `>=24`: npm warns on an older
+Node but does not refuse (`engine-strict` is deliberately not set). A move to a
+new Node major means editing each of those places, plus `engines`, together.
+
+**`node_modules` follows the lockfile by itself.** Every `make` target that runs
+frontend tooling (`frontend`, `check-frontend`, `test-frontend-unit`, `test-e2e`,
+and so `check-fast` and `check`) first runs `make frontend-install`. That
+compares a hash of `frontend/package-lock.json` with the one the last `npm ci`
+left in `frontend/node_modules/.installed`. When they differ — after a `git
+pull` that bumped a dependency, in a fresh worktree, or after you delete
+`node_modules` — it runs `npm ci`; when they match, nothing happens. Each
+worktree has its own `node_modules`, so each installs once. Before this, nothing
+refreshed a checkout's `node_modules` after a lockfile bump, so `make check`
+could test an older SvelteKit than CI did.
+
+Things worth knowing:
+
+- Force a reinstall with `rm frontend/node_modules/.installed`.
+- It is the lockfile's contents that count, not its timestamp. The dev
+  container runs `npm install` every time it starts, which rewrites
+  `package-lock.json` with the same bytes and a new timestamp; that does not
+  trigger a host reinstall.
+- `npm install <package>` changes the lockfile, so the next `make` target runs
+  one `npm ci` over it. That is intended: the copy you test then matches what
+  CI installs.
+- The dev containers are otherwise unaffected. A host `npm ci` empties
+  `frontend/node_modules` but leaves the directory in place, so the `frontend`
+  container keeps seeing its own `node_modules` volume. After a Node major
+  changes, recreate that container with `docker compose up -d frontend`. If it
+  then misbehaves (the volume can hold packages built under the old Node), run
+  `docker compose down`, `docker volume rm uneasy_node_modules`, then
+  `docker compose up -d`.
+
 ## Frontend dependency security
 
 npm supply chain attacks are a real and active threat (the axios package was
@@ -226,8 +268,8 @@ and fails if `package.json` and the lockfile are out of sync. This means
 what you develop locally is byte-for-byte what gets deployed.
 
 **3. Use `npm ci`, not `npm install`, in any non-interactive context.**
-The production `Dockerfile` already does this. If you ever add a CI pipeline,
-use `npm ci` there too. `npm install` is fine for local dev (adding new
+The production `Dockerfile` and CI already do this, and the `Makefile` does it
+for you (see above). `npm install` is fine for local dev (adding new
 packages, etc.) but `npm ci` is appropriate anywhere the build should be
 reproducible.
 
