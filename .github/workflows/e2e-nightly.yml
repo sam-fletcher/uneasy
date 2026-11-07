@@ -1,0 +1,288 @@
+# The Playwright end-to-end suite, run once a night against the latest commit
+# on `main`. It does NOT gate pull requests (ci.yml is the gate, and it
+# deliberately leaves e2e out); it exists so that a spec that has gone stale,
+# or a merge that broke a page, is noticed within about a day instead of
+# whenever someone next runs `make test-e2e` by hand. When a scheduled run
+# fails it opens (or comments on) one GitHub issue labelled `nightly-e2e`;
+# when a later run passes it closes that issue again.
+#
+# Three ways to start it:
+#   - schedule           every night; GitHub only ever runs these on the
+#                        default branch, so this always tests main's latest.
+#   - workflow_dispatch  the "Run workflow" button on the Actions tab, for a
+#                        run on demand (pick any branch).
+#   - pull_request       only when this file itself changes, so the PR that
+#                        edits it runs the job once as a self-test. It never
+#                        files an issue (see the `report` job).
+#
+# What it does: build the real production binary (frontend embedded, no Vite),
+# start it against a throwaway Postgres, then drive it with Chromium. See
+# "End-to-end tests (Playwright)" in docs/DEVELOPMENT.md for reading a failure.
+name: e2e-nightly
+
+on:
+  schedule:
+    # 06:17 UTC daily. An odd minute on purpose: GitHub's cron queue is busiest
+    # at the top of the hour, and busy times delay (or drop) scheduled runs.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/e2e-nightly.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-nightly-${{ github.ref }}
+  # A new push to a PR makes its older self-test run pointless, so cancel it.
+  # Scheduled and manual runs on main are never cancelled by a newer one: a
+  # cancelled run would report nothing, and a failure must not go unreported.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      # Same throwaway database as ci.yml's integration job. The server runs
+      # its own migrations on startup, so an empty database is all it needs.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: uneasy
+          POSTGRES_PASSWORD: uneasy
+          POSTGRES_DB: uneasy_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U uneasy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Where the app listens, and where every spec, helper and the Playwright
+      # config point (frontend/tests/e2e/baseUrl.ts reads this). The server
+      # step below sets PORT to match. 8090 is also the local e2e port.
+      E2E_BASE_URL: http://localhost:8090
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The production build, not the dev stack: `make build` compiles the
+      # Svelte frontend into cmd/server/frontend_dist and embeds it in the Go
+      # binary `./server`. One process serves the pages and the API, so no
+      # Vite dev server is involved (the usual source of local e2e trouble).
+      - name: Build the server with the frontend embedded
+        run: make build
+
+      # UNEASY_DEV=1 mounts the /api/dev/* routes the specs use to seed and
+      # delete games. The server runs in the background (the trailing `&`) so
+      # the following steps can use it, and writes its output to server.log,
+      # which is uploaded if anything fails.
+      - name: Start the server
+        env:
+          UNEASY_DEV: "1"
+          PORT: "8090"
+          DATABASE_URL: postgres://uneasy:uneasy@localhost:5432/uneasy_test?sslmode=disable
+        run: ./server > server.log 2>&1 &
+
+      # Wait until the app really answers before starting the suite. The e2e
+      # preflight (frontend/tests/e2e/globalSetup.ts) aborts the run at once,
+      # without waiting, if the app is not up yet, and the server needs a
+      # moment to run its migrations. curl retries every 2s (refused
+      # connections included) and gives up after 90s, with the server's own
+      # log in the output so the reason is right there.
+      - name: Wait for the server to answer
+        run: |
+          curl --silent --show-error --fail --output /dev/null \
+            --retry 45 --retry-delay 2 --retry-max-time 90 \
+            --retry-connrefused --retry-all-errors \
+            "$E2E_BASE_URL/" || {
+              echo "::error::The server did not answer at $E2E_BASE_URL/ within 90s. Its log:"
+              cat server.log
+              exit 1
+            }
+
+      # --with-deps also installs the system libraries Chromium needs (apt),
+      # which a fresh runner lacks. The browser download is not cached: it is
+      # a few seconds on a runner, and a cache keyed on the Playwright version
+      # is one more thing that can go stale for little gain.
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # `npm run test:e2e` is what `make test-e2e` runs. CI=true switches on the
+      # CI reporters in playwright.config.ts (a JSON report next to the traces).
+      #
+      # Serial (one worker) and no retries, as in the local config. Retries stay
+      # at 0 on purpose for the first weeks: a retry hides a flaky spec behind a
+      # pass, and the point of these first nightly runs is to find out how
+      # flaky the suite really is. Turn them on later if it proves needed.
+      #
+      # The step's own timeout (a healthy run takes about 4 minutes) means a
+      # hung browser fails the step, so the artifacts below still upload and
+      # the report job still hears about it.
+      - name: Run the Playwright suite
+        working-directory: frontend
+        timeout-minutes: 25
+        env:
+          CI: "true"
+        run: npm run test:e2e
+
+      # Only on failure: the traces (open one with `npx playwright show-trace
+      # <trace.zip>`), the JSON report and the server's log. 14 days is plenty
+      # for a nightly failure someone will look at the next morning.
+      - name: Upload traces and server log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure
+          path: |
+            frontend/test-results
+            server.log
+          retention-days: 14
+
+  # Opens, updates or closes the tracking issue. A separate job so that
+  # `issues: write` is held only by this small step-by-step script, never by
+  # the job that builds and runs the repository's code.
+  report:
+    needs: e2e
+    # `always()`: run even though e2e failed (a job whose needs failed is
+    # skipped otherwise). `schedule` only: manual runs and the PR self-test
+    # must never open or close issues.
+    if: ${{ always() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A job-level `permissions` replaces the workflow-level one, so list every
+    # permission this job uses: issues to file, actions to look up the last
+    # passing run and the failed step.
+    permissions:
+      issues: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # The gh CLI works out which repository to talk to from a git checkout;
+      # this job has none, so say it outright.
+      GH_REPO: ${{ github.repository }}
+      E2E_RESULT: ${{ needs.e2e.result }}
+      RUN_ID: ${{ github.run_id }}
+      RUN_NUMBER: ${{ github.run_number }}
+      SHA: ${{ github.sha }}
+      LABEL: nightly-e2e
+
+    steps:
+      # The traces, report and log from the e2e job. Missing when that job
+      # failed before producing anything (a failed build, say); the script
+      # below copes with that.
+      - name: Download the failure artifacts
+        if: ${{ needs.e2e.result != 'success' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-failure
+          path: artifacts
+
+      - name: Open, update or close the nightly-e2e issue
+        run: |
+          set -euo pipefail
+
+          run_url="https://github.com/$GH_REPO/actions/runs/$RUN_ID"
+
+          # The one open issue carrying our label, if any. Empty when none.
+          issue=$(gh issue list --label "$LABEL" --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+
+          # ── A passing night: close the issue, if one is open. ──
+          if [ "$E2E_RESULT" = "success" ]; then
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --comment \
+                "The nightly e2e run passed again on \`${SHA:0:7}\` ([run #$RUN_NUMBER]($run_url)), so this is closed. A later failure opens a new issue."
+            else
+              echo "Passed, and no open $LABEL issue: nothing to do."
+            fi
+            exit 0
+          fi
+
+          # ── A failing (or timed-out / cancelled) night: build the message. ──
+
+          # Which step failed tells a broken build or server from failing
+          # specs, even when there is no report. Best effort: `|| true`.
+          failed_step=$(gh run view "$RUN_ID" --json jobs \
+            --jq '[.jobs[] | select(.name == "e2e") | .steps[] | select(.conclusion == "failure") | .name] | first // "unknown"' \
+            2>/dev/null || true)
+
+          # The commit of the last passing run on main, for a "what changed
+          # since" link. A passing PR self-test must not count, hence --branch.
+          last_good=$(gh run list --workflow e2e-nightly.yml --branch main \
+            --status success --limit 1 --json headSha --jq '.[0].headSha // empty' \
+            2>/dev/null || true)
+
+          # The names of the failing specs, from Playwright's JSON report.
+          # Each suite is a file or a describe block; walk down them and print
+          # "file › describe › spec" for every spec that did not pass (stray
+          # backticks are dropped: the names go inside markdown code spans). A
+          # missing or unreadable report just leaves the list empty.
+          report=$(find artifacts -name report.json 2>/dev/null | head -n 1 || true)
+          failing=""
+          if [ -n "$report" ]; then
+            failing=$(jq -r '
+              def failing($path):
+                ($path + [.title]) as $here
+                | ((.specs // [])[] | select(.ok == false) | ($here + [.title]) | join(" › ") | gsub("`"; "")),
+                  ((.suites // [])[] | failing($here));
+              (.suites // [])[] | failing([])
+            ' "$report" 2>/dev/null || true)
+          fi
+
+          {
+            echo "The nightly e2e run **did not pass** ($E2E_RESULT) on \`${SHA:0:7}\`."
+            echo
+            echo "- Run: [#$RUN_NUMBER]($run_url)"
+            echo "- Commit: https://github.com/$GH_REPO/commit/$SHA"
+            echo "- Failed step: \`$failed_step\`"
+            if [ -n "$last_good" ] && [ "$last_good" != "$SHA" ]; then
+              echo "- Changes since the last passing run: https://github.com/$GH_REPO/compare/$last_good...$SHA"
+            else
+              echo "- No earlier passing run to compare with."
+            fi
+            echo
+            if [ -n "$failing" ]; then
+              total=$(printf '%s\n' "$failing" | wc -l | tr -d ' ')
+              echo "Failing specs ($total):"
+              echo
+              printf '%s\n' "$failing" | sed -n '1,40p' | sed 's/^/- `/; s/$/`/'
+              if [ "$total" -gt 40 ]; then
+                echo "- … and $((total - 40)) more (see the report in the artifact)."
+              fi
+            else
+              echo "No failing spec names found: the run failed outside the specs (build, server start, browser install, a timeout) or left no report. Open the run for the log."
+            fi
+            echo
+            echo "Traces, the JSON report and the server log are attached to the run for 14 days (**Artifacts**, at the bottom of the run page). Open a trace with \`npx playwright show-trace <trace.zip>\`; docs/DEVELOPMENT.md explains how to reproduce a failure locally."
+          } > body.md
+
+          # ── File it: one issue, new comments for later failures. ──
+          # `--force` makes label creation idempotent (creates it, or updates
+          # it when it already exists).
+          gh label create "$LABEL" --force --color B60205 \
+            --description "The nightly Playwright e2e run failed on main"
+
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body-file body.md
+          else
+            gh issue create --label "$LABEL" \
+              --title "Nightly e2e run failed on main" --body-file body.md
+          fi
