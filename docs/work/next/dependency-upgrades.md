@@ -31,7 +31,7 @@ Work it needs:
 - `svelte-check` (TypeScript 6) then reports 10 errors: `renotify` in
   `src/service-worker.ts`, a typed-route error at
   `src/routes/profile/+page.svelte:180`, and `tests/shot.mjs` typing.
-- Node 22.17 or newer is required, and the Dockerfile builds on node:20, so
-  its frontend stage must move to 22 or 24 (CI already uses 24).
+- Node 22.17 or newer is required. The Dockerfile, the dev container and CI
+  are all on Node 24 already, so nothing to do here.
 - Verify: `make check-fast`, `make build`, integration, the full e2e suite,
   and a look in a real browser, since the bundle's runtime changes.

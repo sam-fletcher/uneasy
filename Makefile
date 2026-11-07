@@ -1,4 +1,4 @@
-.PHONY: build frontend server placeholder clean \
+.PHONY: build frontend frontend-install server placeholder clean \
         test test-integration test-integration-run test-frontend-unit test-e2e \
         vet check-frontend check sqlc deadcode lint-install lint-check test-hooks \
         tracker tracker-check
@@ -7,8 +7,39 @@
 # embeds it. Output: ./server
 build: frontend server
 
-frontend:
-	cd frontend && npm ci && npm run build
+# Keeps frontend/node_modules at the lockfile's versions. Nothing used to
+# reinstall a checkout's node_modules after a lockfile bump, so `make check`
+# quietly tested an older SvelteKit/Svelte/Vite than CI, the dev container and
+# production did (a host copy sat at kit 2.56.1 against a lockfile at 2.70.3).
+# Every target that runs frontend tooling depends on this one. It runs `npm ci`
+# only when the lockfile's contents differ from the hash the last install left
+# in frontend/node_modules/.installed. So it is a no-op when up to date, it is
+# per checkout (each worktree has its own node_modules), and CI's `make
+# frontend` then `make check-fast` installs once, not twice.
+#
+# The stamp is a content hash, not a timestamp, because the dev container runs
+# `npm install` at every start, which rewrites package-lock.json with identical
+# bytes and a new mtime. A timestamp would reinstall on the host after each
+# container restart.
+#
+# `npm ci` empties node_modules first, which removes the stamp, so an install
+# that fails half-way leaves none and is retried. Only the lockfile is hashed,
+# not package.json: `npm ci` fails if the two disagree, so a dependency edit
+# always reaches the lockfile, and a scripts-only edit needs no reinstall.
+# `npm install foo` changes the lockfile and so costs one `npm ci` next time;
+# that is the price of a copy that always matches the lock.
+FRONTEND_STAMP := frontend/node_modules/.installed
+
+frontend-install:
+	@sha=$$(shasum -a 256 frontend/package-lock.json | cut -d' ' -f1); \
+	test -n "$$sha" || { echo 'cannot hash frontend/package-lock.json (is shasum installed?)'; exit 1; }; \
+	if [ "$$(cat $(FRONTEND_STAMP) 2>/dev/null)" != "$$sha" ]; then \
+		echo 'frontend/package-lock.json differs from the last install: running npm ci'; \
+		(cd frontend && npm ci) && echo "$$sha" > $(FRONTEND_STAMP); \
+	fi
+
+frontend: frontend-install
+	cd frontend && npm run build
 	mkdir -p cmd/server/frontend_dist
 	find cmd/server/frontend_dist -mindepth 1 -not -name .gitignore -exec rm -rf {} +
 	cp -R frontend/build/. cmd/server/frontend_dist/
@@ -93,11 +124,11 @@ vet: lint-check
 	$(GOLANGCI) run ./... --fix
 	go vet -tags=integration ./...
 
-check-frontend:
+check-frontend: frontend-install
 	cd frontend && npm run check
 
 # Vitest unit tests for pure-TS lib/* modules. Fast, mockless, no DB.
-test-frontend-unit:
+test-frontend-unit: frontend-install
 	cd frontend && npm run test:unit
 
 # The Claude Code guard hook: what it must block, and what it must allow.
@@ -119,7 +150,7 @@ tracker-check:
 # at once, with one message, if the app is down or erroring). Shares
 # uneasy_test with `test-integration`, so don't run them concurrently (check
 # runs them sequentially).
-test-e2e:
+test-e2e: frontend-install
 	cd frontend && npm run test:e2e
 
 check: check-fast test-integration test-e2e

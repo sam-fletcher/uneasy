@@ -72,7 +72,8 @@ services:
 
   # ── Vite dev server (hot module replacement) ─────────────────────────────────
   frontend:
-    image: node:20-alpine
+    # Same Node major as frontend/.nvmrc, the Dockerfile and CI.
+    image: node:24-alpine
     working_dir: /app
     volumes:
       - ./frontend:/app
