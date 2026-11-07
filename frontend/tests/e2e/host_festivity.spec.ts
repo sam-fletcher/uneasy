@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedHFGame, startFestivity, openPages, act, startRoll, forceRoll, choose, rollAndChoose, optOut,
 	festivity, festivityLog, expectLogLine, expectLogContaining, expectStatus, expectLocked,
@@ -90,6 +91,7 @@ test('a guest rolls a make through the UI: the choice lands, they hold an IOU, t
 
 	// The dice land on a make; bob is offered the make list.
 	const rollID = (await festivity(g, planID)).guest_roll_ids![String(g.ids.bob)];
+	await expectRollOpen(alice, bob, carol);
 	await forceRoll(g, rollID, 'make');
 	await expect(bob.getByText('✓ Make')).toBeVisible();
 	await bob.getByRole('button', { name: 'Spread a new rumor' }).click();

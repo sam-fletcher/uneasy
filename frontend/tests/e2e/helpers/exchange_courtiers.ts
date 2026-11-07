@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { E2E } from '../baseUrl';
+import { expectRollOpen } from './roll_open';
 
 // Setup shared by the Exchange Courtiers specs: a three-player main-event game
 // where alice prepares, bob is the target and carol is a bystander. Everyone
@@ -12,6 +13,8 @@ export interface ECGame {
 	ids: { alice: number; bob: number; carol: number };
 	peers: { alice: number; bob: number; carol: number };
 	ctx: { alice: BrowserContext; bob: BrowserContext; carol: BrowserContext };
+	/** The pages openAll opened, so declineAndForce can wait for the roll to reach them. */
+	pages?: Record<'alice' | 'bob' | 'carol', Page>;
 }
 
 export const PEER = { alice: 'Alice Courtier', bob: 'Bob Courtier', carol: 'Carol Courtier' } as const;
@@ -112,6 +115,7 @@ export async function openAll(g: ECGame): Promise<Record<'alice' | 'bob' | 'caro
 		out[n] = await g.ctx[n].newPage();
 		await out[n].goto(`/table/${g.gameID}`);
 	}
+	g.pages = out;
 	return out;
 }
 
@@ -127,6 +131,8 @@ export async function declineAndForce(g: ECGame, planID: number, result: number)
 	const dec = await g.ctx.alice.request.post(`/api/plans/${planID}/fair-trade`, { data: { action: 'decline' } });
 	expect(dec.ok(), `decline failed: ${await dec.text()}`).toBeTruthy();
 	const { roll } = await dec.json();
+	// Every open page must have the new roll before it is settled (see expectRollOpen).
+	await expectRollOpen(...Object.values(g.pages ?? {}));
 	const force = await g.ctx.alice.request.post('/api/dev/force-roll', { data: { roll_id: roll.id, result } });
 	expect(force.ok(), `force-roll failed: ${await force.text()}`).toBeTruthy();
 	return roll.id as number;
