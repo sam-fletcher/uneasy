@@ -1,7 +1,10 @@
 # Multi-stage build: frontend first, then Go binary, then minimal final image.
 
 # ── Stage 1: Build the Svelte frontend ───────────────────────────────────────
-FROM node:20-alpine AS frontend-builder
+# Keep the Node major in step with frontend/.nvmrc, the `frontend` service in
+# docker-compose.yml and node-version in .github/workflows/ci.yml, so CI tests
+# the Node that ships.
+FROM node:24-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
