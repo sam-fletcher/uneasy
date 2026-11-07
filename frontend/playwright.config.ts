@@ -10,7 +10,15 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: 1,
-  reporter: 'list',
+  // Locally: the plain `list`. On CI (GitHub Actions sets CI=true): the same
+  // list in the log, plus
+  //  - `json`, a machine-readable report the nightly workflow reads to name
+  //    the failing specs in the issue it files. It sits inside test-results/
+  //    so one folder upload carries it together with the traces.
+  //  - `github`, which turns each failure into an annotation on the run page.
+  reporter: process.env.CI
+    ? [['list'], ['json', { outputFile: 'test-results/report.json' }], ['github']]
+    : 'list',
   use: {
     baseURL: E2E,
     trace: 'retain-on-failure',

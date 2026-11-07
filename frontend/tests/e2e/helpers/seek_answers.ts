@@ -3,6 +3,7 @@ import {
 	type APIRequestContext, type Browser, type BrowserContext, type Page,
 } from '@playwright/test';
 import { E2E } from '../baseUrl';
+import { expectRollOpen } from './roll_open';
 
 // Shared setup for the Seek Answers regression specs: a three-player main event
 // with alice's Seek Answers on the current row, one browser context per player
@@ -140,6 +141,8 @@ export async function castFromUI(t: Table, narration: string): Promise<RollRow> 
 	await page.getByPlaceholder('Restate your research methods').fill(narration);
 	await page.getByRole('button', { name: 'Submit', exact: true }).click();
 	await expect(page.getByText('What have you learned?')).toHaveCount(0);
+	// Every table must have the roll before the caller settles it (see expectRollOpen).
+	await expectRollOpen(t.alice.page, t.bob.page, t.carol.page);
 	return activeRoll(t.alice.ctx.request, t.gameID);
 }
 

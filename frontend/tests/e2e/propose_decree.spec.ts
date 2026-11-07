@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedPD, prepareDecree, resolveDecree, resolvingDecree, openAll, act, actOK, forceRoll, decreeState,
 	laws, assets, spareAsset, crown, expectLog, forceAndSettle, bankedDice, closeContextsAfterEach,
@@ -314,6 +315,7 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 			return rollID;
 		})
 		.toBeGreaterThan(0);
+	await expectRollOpen(alice, bob, carol);
 	await forceAndSettle(g, planID, rollID, 'mar');
 
 	// Lowest power first: carol (rank 2), then bob (rank 1). The preparer doesn't amend.

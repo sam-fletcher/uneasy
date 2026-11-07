@@ -1,6 +1,7 @@
 import { test, expect, request as pwRequest, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
 import { E2E } from './baseUrl';
+import { expectRollOpen } from './helpers/roll_open';
 
 // Regression specs for what the 12-plan UX audit fixed in Spread Rumors:
 //
@@ -252,6 +253,7 @@ test('make: pre-roll narration opens the roll; a take needs consent, a repeat re
 		return (await r.json()).roll?.id ?? null;
 	}).not.toBeNull();
 	const rollRes = await t.alice.request.get(`/api/tables/${t.gameID}/rolls/active`);
+	await expectRollOpen(alice, bob, cara);
 	await forceRoll(t.alice.request, (await rollRes.json()).roll.id, 'make');
 
 	// The stated rumor is public to the whole table once the roll is settled.

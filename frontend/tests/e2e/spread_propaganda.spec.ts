@@ -4,6 +4,7 @@ import {
 } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
 import { E2E } from './baseUrl';
+import { expectRollOpen } from './helpers/roll_open';
 
 // Regression specs for what the 12-plan UX audit fixed in Spread Propaganda.
 //
@@ -141,6 +142,8 @@ async function castFromUI(t: Table, narration: string) {
 	await form.locator('textarea').fill(narration);
 	await form.getByRole('button', { name: 'Post & open the roll' }).click();
 	await expect(form).toHaveCount(0);
+	// Both tables must have the roll before the caller settles it (see expectRollOpen).
+	await expectRollOpen(t.alice.page, t.bob.page);
 	return activeRoll(t.alice.ctx.request, t.gameID);
 }
 

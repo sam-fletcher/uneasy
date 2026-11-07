@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
+import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedCHGame, runScene, prepareCH, resolveCH, castCH, forceCH, rolledCH, openAll, artifactOf,
 	assetsOf, addMarginalia, planStatus, chronicleData, expectPlanLog, expectNoHorizontalScroll,
@@ -476,6 +477,7 @@ test('the auto-applied outcome reaches open panels live, without a reload', asyn
 	const bobArt = await artifactOf(g, 'bob');
 	const rollID = await castCH(g, planID, [bobArt.id]);
 	await expect(bob.getByText('Invoked artifacts (1)')).toBeVisible();
+	await expectRollOpen(alice, bob);
 	await forceCH(g, rollID, 'make');
 	// No reload: the preparer's choices and the others' waiting line arrive live.
 	await expect(alice.getByText('2 of 2 choices remaining')).toBeVisible();
