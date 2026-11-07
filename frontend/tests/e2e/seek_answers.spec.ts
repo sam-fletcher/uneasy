@@ -347,6 +347,9 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 	const carolFrames: string[] = [];
 	carol.page.on('websocket', ws => ws.on('framereceived', f => carolFrames.push(String(f.payload))));
 	await sa.openTables(t);
+	// Wait for carol's socket to register before bob writes, or secret.created is
+	// broadcast to no one and the bystander check passes vacuously.
+	await expect.poll(() => carolFrames.some(f => f.includes('presence.snapshot'))).toBe(true);
 
 	const assets = await sa.listAssets(alice.ctx.request, t.gameID);
 	const bobHolding = assets.find(a => a.asset_type === 'holding' && a.name.startsWith('bob'))!;

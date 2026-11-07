@@ -177,6 +177,10 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	const bobFrames: string[] = [];
 	bob.page.on('websocket', ws => ws.on('framereceived', f => bobFrames.push(String(f.payload))));
 	await openTables(t);
+	// Wait for bob's socket to register before alice writes, or the absence check below
+	// passes vacuously (secret.created would reach no one). The frames must be non-empty.
+	await expect.poll(() => bobFrames.some(f => f.includes('presence.snapshot'))).toBe(true);
+	expect(bobFrames.length).toBeGreaterThan(0);
 
 	// A secret on the asset alice will break, written once both tables are open so the
 	// live event has a watcher. Existence is public, the text is not.

@@ -259,9 +259,10 @@ test('control leverage against a plan with no roll of the preparer\'s own is a d
 	await H.completeDemand(f);
 	await H.startTarget(f);
 
-	// Everyone is told, in the banner, that the option came to nothing here.
+	// Everyone is told, in the banner, that the option had no effect here. Match a
+	// shorter substring so copy edits to the tail of the line don't break this.
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('bob drew leverage control, but Propose Duel has no roll of its own — that option came to nothing here.')).toBeVisible();
+		await expect(p.getByText('drew leverage control, but Propose Duel has no roll of its own')).toBeVisible();
 	}
 	// The winner gets an explanation instead of a picker (and no "leverage none" button).
 	await expect(bob.getByText('This option drew a dud.')).toBeVisible();

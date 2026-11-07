@@ -315,13 +315,14 @@ test('the host ends the event only when everything is settled; generic complete 
 	// The table is told it wound down, the panel clears for everyone, and the
 	// record moves on to the next scene.
 	await expect
-		.poll(async () => (await festivityLog(g, planID, false)).includes('The festivity drew to a close.'))
+		.poll(async () => (await festivityLog(g, planID, false)).some(l => l.includes('The festivity drew to a close.')))
 		.toBe(true);
 	await expectLogContaining(g, planID, 'leaving 1 earned make unclaimed');
 	for (const page of [alice, bob, carol]) {
 		await expect(page.getByText('The Talk of the Event')).toHaveCount(0);
 		await expect(page.getByRole('button', { name: 'End the event' })).toHaveCount(0);
-		await expect(page.getByText('Set the scene')).toBeVisible();
+		// Exact: the closing post now ends "Next: <who> to set the scene.", which a substring match also hits.
+		await expect(page.getByText('Set the scene', { exact: true })).toBeVisible();
 	}
 	// Nothing further is accepted.
 	await expectStatus(await act(g, 'alice', planID, 'end-event'), 409);
