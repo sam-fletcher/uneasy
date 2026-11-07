@@ -77,6 +77,13 @@ services:
     volumes:
       - ./frontend:/app
       - node_modules:/app/node_modules
+      # Generated SvelteKit files live in the container's own volume, not the
+      # bind mount. The host's node_modules can be at a different SvelteKit
+      # version than this container's (the lockfile's), and any host command
+      # that loads the SvelteKit plugin (vitest, vite build, svelte-check)
+      # rewrites .svelte-kit/generated in its own format — which this Vite then
+      # rejects with a 500 on every page. Keeping the two apart stops that.
+      - svelte_kit:/app/.svelte-kit
     ports:
       - "5173:5173"
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
@@ -88,3 +95,4 @@ volumes:
   postgres_data:
   go_cache:
   node_modules:
+  svelte_kit:
