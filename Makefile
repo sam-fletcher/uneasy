@@ -115,9 +115,10 @@ tracker-check:
 
 # Playwright end-to-end tests. Drives a real browser against the server-e2e
 # container on :8090, which is bound to uneasy_test — never the dev DB.
-# Assumes `docker compose up` is already running. Shares uneasy_test with
-# `test-integration`, so don't run them concurrently (check runs them
-# sequentially).
+# Assumes `docker compose up` is already running (a preflight aborts the run
+# at once, with one message, if the app is down or erroring). Shares
+# uneasy_test with `test-integration`, so don't run them concurrently (check
+# runs them sequentially).
 test-e2e:
 	cd frontend && npm run test:e2e
 
