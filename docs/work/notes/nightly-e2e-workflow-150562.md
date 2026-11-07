@@ -39,6 +39,31 @@ Whether to also gate PRs stays open (see the question file below).
   rewrote `questions/ci-e2e-cadence.md` to record the owner's choice and the
   one open part, gating PRs.
 
+- **The first self-test run failed, and the cause was in the specs and a
+  client race.** On the real runner (2 vCPU) the suite went 157 passed, 2
+  failed: `exchange_courtiers.spec.ts:201` and `spread_rumors.spec.ts:234`.
+  Re-running the same commit failed `exchange_courtiers.spec.ts:201` again plus
+  `exchange_courtiers.spec.ts:268`. In every case a page showed the state from
+  before the roll resolved ("target responds", "Dice roll in progress…") while
+  the server, the chat and the other pages had moved on. Cause: when a roll
+  opens, each page hears `roll.created` and then fetches the roll; the specs
+  called the dev `force-roll` a few milliseconds later. If `roll.resolved`
+  reached the page before that fetch landed, the page ignored it (no
+  `activeRoll` yet) and the late fetch installed the unresolved roll. A person
+  can't settle a roll they can't see; the specs could. The traces showed it:
+  bob's `GET /api/rolls/18` came back with the dice already forced and
+  `result: null`.
+  - **Fix (specs only):** new `frontend/tests/e2e/helpers/roll_open.ts`,
+    `expectRollOpen(...pages)`, waits for the generic "Dice Roll" panel on every
+    open page. Called before the force in: `declineAndForce` (all the Exchange
+    Courtiers specs; `openAll` now remembers its pages), `castFromUI` in the
+    Seek Answers and Spread Propaganda helpers, and the single spec sites in
+    Chronicle Histories, Host Festivity, Propose Decree and Spread Rumors.
+    No sleeps; `retries` stays 0.
+  - **Product, not fixed:** the handler race is real and some real flows can
+    hit it, so it is a tracker item
+    (`next/roll-fetch-overwrites-resolved.md`), not something to hide in specs.
+
 Decisions worth knowing: the Chromium download is not cached (a few seconds
 against one more thing that can go stale; the comment in the file says so).
 The `report` job also files for a `cancelled` result, because a job-level
@@ -68,13 +93,32 @@ database dropped afterwards):
   calls (`issue list --label`, `run list`, `run view --json jobs`) were run
   for real against the repo to check their syntax.
 - With `CI` unset, a run writes no `report.json` (local behaviour unchanged).
-- `make check-fast`: see the PR body.
+- **The roll race, and the fix biting.** A throwaway proxy (not committed)
+  forwarded to my private server and delayed only `GET /api/rolls/<id>` by 400
+  ms. Before the fix 14 specs in 7 files failed, including the two from the
+  runner and `exchange_courtiers.spec.ts:268`, the third spec to fail there.
+  After: the same 7 files, 73 specs, all pass, and a full pass through the
+  proxy passed 158 of 159. Without the proxy, a full `CI=true` run passed 158 of
+  159.
+- **The one that still fails, and why it is not a spec problem.** In both of
+  those full runs a different Propose Duel spec failed once (`a tie on the
+  final bout…` through the proxy; `mar: the target spares the loser…` without it,
+  when the machine's load average was about 10). Nothing forces those rolls: the
+  server creates and resolves the final bout's roll in one request. It is the
+  same client race on a real flow, so the specs cannot wait their way out of it.
+  See the tracker item. Expect an occasional red nightly there until it is
+  fixed in the client.
+- `make check-fast`: passes (after the spec changes too).
 
 **Not verified:** the `report` job has never run on GitHub. It fires only
 on a real *scheduled* failure, so the issue/label/close calls, the artifact
 download layout and the job's `permissions` were checked by reading and with
-the stand-in `gh`, not live. The PR's own self-test run covers the `e2e` job
-on a real runner; its result is in the PR body. To prove the report path
+the stand-in `gh`, not live. What the real (failed) self-test runs did prove:
+the `e2e` job end to end on a runner, the failure artifact upload (traces,
+`report.json` and `server.log` came down with `gh run download`), the `report`
+job being skipped on a pull request, and the issue-filing script's `jq` and
+body against the runner's own `report.json` (stand-in `gh` only). The run
+tally is in the PR body. To prove the report path
 live after merge: on a branch, temporarily add `workflow_dispatch` to the
 `report` job's `if`, break a spec, dispatch the workflow on that branch, then
 close the issue it opens.
@@ -97,6 +141,13 @@ close the issue it opens.
   nightly results, perhaps path-filtered. I did not add a PR gate.
 
 ## Noticed, not fixed
+
+- **A client race that can leave a page stale after a roll that opens and
+  resolves in one request** (Propose Duel's final bout, a Host Festivity guest
+  roll nobody can leverage). Tracker item `next/roll-fetch-overwrites-resolved.md`
+  has the cause and the fix (give rolls the latest-wins guard plans already
+  have). It is product code, so I did not change it; it is the likeliest source
+  of an occasional red nightly run.
 
 - `ci.yml`'s header comment still says "Playwright e2e is not here yet"
   and points only at `make test-e2e`. It should mention the nightly workflow;
