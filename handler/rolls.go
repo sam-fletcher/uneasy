@@ -33,9 +33,6 @@ package handler
 // rolls_dice.go. Chat-log entry emitters (EmitRollCommit,
 // EmitRollSkipLeverage) live in system_posts.go alongside the other
 // system-post helpers.
-//
-// CloseLeverage remains on the backend (unsurfaced in the frontend) as a
-// future-proofing hook for table-wide decision timers.
 
 import (
 	"context"

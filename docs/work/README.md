@@ -4,9 +4,9 @@ What's next and what's waiting on the owner, kept in the repo so progress
 lands in the same PR as the code it describes. `make tracker` prints the
 whole picture.
 
-Older history — the 12-plan UX audit's findings, rulings and the hand-over
-notes up to 2026-10-30 — is private and lives outside the repo (see the
-private CLAUDE.md).
+Rulings, decisions and older history — the 12-plan UX audit's findings and
+the hand-over notes up to 2026-10-30 — are private and live outside the repo
+(see the private CLAUDE.md).
 
 ## One file per entry
 

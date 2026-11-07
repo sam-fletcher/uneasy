@@ -27,7 +27,9 @@ keeps the work faithful to the game and the owner's rulings.
   them all).
 - The design principles (private; path in the private CLAUDE.md) before any
   design call. Decisions the owner has already ruled on aren't yours to
-  re-open — check memory and the principles before proposing one.
+  re-open — check memory, the principles, and the rulings and decisions
+  files (same place) before proposing one.
+- The rulings file's section for the plan or phase you're touching.
 - The rules for the plan or phase you're touching. **Ambiguous rule → read
   the rulebook page first** (the book is the final word over the rules
   files), **then ask the owner** (the `grilling` skill). Don't pick an
