@@ -308,17 +308,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.RollCreated: {
 			const roll = msg.payload.roll as DiceRoll;
 			// Fetch full details (includes dice + participants) so we're in sync.
-			getRoll(roll.id).then(data => {
-				ctx.activeRoll = data.roll;
-				ctx.activeRollDice = data.dice;
-				ctx.activeRollVotes = data.votes;
-				ctx.activeRollParticipants = data.participants;
-			}).catch(() => {
-				ctx.activeRoll = roll;
-				ctx.activeRollDice = [];
-				ctx.activeRollVotes = [];
-				ctx.activeRollParticipants = [];
-			});
+			fetchRoll(ctx, roll);
 			// A plan-linked roll may have been cast in the same request that mutated
 			// the plan's resolution_data (e.g. Chronicle Histories' cast-roll flips
 			// invoke_phase_closed). The preparer's own API response refreshes their
@@ -329,6 +319,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		}
 		case EventTypes.RollLeverageAdded: {
 			const { roll_id, die } = msg.payload as { roll_id: number; die: DiceRollDie };
+			supersedeRollFetch(ctx, roll_id);
 			// Append the broadcast die row directly. Refetching the whole roll
 			// per event raced: two commits in quick succession issued overlapping
 			// getRoll calls, and an older response landing last clobbered the
@@ -345,6 +336,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		}
 		case EventTypes.RollStageChanged: {
 			const { roll_id, stage } = msg.payload as { roll_id: number; stage: DiceRoll['stage'] };
+			supersedeRollFetch(ctx, roll_id);
 			if (ctx.activeRoll && ctx.activeRoll.id === roll_id) {
 				ctx.activeRoll = { ...ctx.activeRoll, stage };
 			}
@@ -354,6 +346,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			const { roll_id, player_id, intent } = msg.payload as {
 				roll_id: number; player_id: number; intent: 'aid' | 'interfere';
 			};
+			supersedeRollFetch(ctx, roll_id);
 			if (ctx.activeRoll && ctx.activeRoll.id === roll_id) {
 				ctx.activeRollParticipants = ctx.activeRollParticipants.map(p =>
 					p.player_id === player_id ? { ...p, intent } : p
@@ -365,6 +358,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			const { roll_id, player_id, is_ready } = msg.payload as {
 				roll_id: number; player_id: number; is_ready: boolean;
 			};
+			supersedeRollFetch(ctx, roll_id);
 			if (ctx.activeRoll && ctx.activeRoll.id === roll_id) {
 				ctx.activeRollParticipants = ctx.activeRollParticipants.map(p =>
 					p.player_id === player_id ? { ...p, is_ready } : p
@@ -376,6 +370,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			const { roll_id, player_id } = msg.payload as {
 				roll_id: number; player_id: number;
 			};
+			supersedeRollFetch(ctx, roll_id);
 			if (ctx.activeRoll && ctx.activeRoll.id === roll_id) {
 				// Hidden ballot: only that the player voted.
 				ctx.activeRollVotes = [
@@ -389,6 +384,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			const { roll_id, adjusted_difficulty, ballot } = msg.payload as {
 				roll_id: number; adjusted_difficulty: number; ballot: VoteView[];
 			};
+			supersedeRollFetch(ctx, roll_id);
 			if (ctx.activeRoll && ctx.activeRoll.id === roll_id) {
 				ctx.activeRoll = { ...ctx.activeRoll, adjusted_difficulty };
 				ctx.activeRollVotes = ballot;
@@ -398,10 +394,26 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.RollResolved: {
 			const resolvedRoll = msg.payload.roll as DiceRoll;
 			const resolvedDice = msg.payload.dice as DiceRollDie[];
-			if (ctx.activeRoll && ctx.activeRoll.id === resolvedRoll.id) {
+			const onScreen = ctx.activeRoll?.id === resolvedRoll.id;
+			// A roll cast and resolved in one request (the last duel bout, a
+			// festivity guest roll nobody can leverage) sends roll.created and
+			// roll.resolved back to back, so this can arrive while the roll's own
+			// fetch is still out and nothing is on screen for it yet. The event
+			// carries the resolved roll and its dice, so install them now rather
+			// than dropping the event and waiting for a fetch that predates it.
+			if (onScreen || rollFetchInFlight(ctx, resolvedRoll.id)) {
+				if (!onScreen) {
+					// Whatever roll was still showing is not this one: its
+					// participants and ballot must not sit under the new roll.
+					ctx.activeRollVotes = [];
+					ctx.activeRollParticipants = [];
+				}
 				ctx.activeRoll = resolvedRoll;
 				ctx.activeRollDice = resolvedDice;
 			}
+			// The payload has no participants or ballot. If a fetch was out, it
+			// predates the resolution: drop it and fetch again.
+			supersedeRollFetch(ctx, resolvedRoll.id);
 			break;
 		}
 		// Plan events
@@ -462,6 +474,7 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			// (so a reload already drops it); without this, the live view kept the
 			// panel up until the next reload (most visible on Chronicle Histories,
 			// whose long multi-step resolution invites frequent reloads).
+			dropRollFetchOfPlan(ctx, plan_id);
 			if (ctx.activeRoll && ctx.activeRoll.plan_id === plan_id) {
 				ctx.activeRoll = null;
 				ctx.activeRollDice = [];
@@ -528,8 +541,12 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			// Adds dice to the target plan's open roll without going through
 			// RollLeverageAdded; refresh dice if it's the active roll.
 			const { plan_id, roll_id } = msg.payload as { plan_id: number; roll_id: number };
+			// Through the roll fetch guard: a bare getRoll here let a late answer
+			// overwrite the dice roll.resolved had just installed.
 			if (ctx.activeRoll && ctx.activeRoll.id === roll_id) {
-				getRoll(roll_id).then(data => { ctx.activeRollDice = data.dice; }).catch(() => {});
+				fetchRoll(ctx, ctx.activeRoll);
+			} else {
+				supersedeRollFetch(ctx, roll_id);
 			}
 			refreshPlan(ctx, plan_id);
 			window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
@@ -717,6 +734,98 @@ function refreshPlan(ctx: WSContext, planID: number) {
 		// plans reload (the same path a manual refresh takes) so we self-heal.
 		refreshAllPlans(ctx);
 	});
+}
+
+// Latest-wins guard for the active roll's fetch — the same shape as planSeq
+// above, but the table shows one roll at a time, so one counter per page
+// (keyed by its ctx) rather than one per id. One at a time holds because only
+// one non-shake-up roll can be open (a partial unique index), and the shake-up
+// opens the next roller's roll in the same request that resolves the previous
+// one: roll.resolved(N) is followed at once by roll.created(N+1), and the
+// single slot plus the sequence number below keep N's late answer out.
+//
+// roll.created fetches the roll, and the response can land after later events
+// about that roll. The roll event handlers only patch a roll that is already
+// on screen, so with the fetch still out they dropped the event, and the older
+// response then installed the roll as it stood before it: "Dice roll in
+// progress…" on a roll that had resolved, or a duel's choices that never came,
+// until a reload. A fetch now applies only while it still holds the latest
+// sequence number. Anything that would have patched a roll that is still
+// loading takes a new number (dropping the stale fetch) and fetches again.
+interface RollFetchState {
+	seq: number;
+	/** The roll whose fetch is in flight (as announced, or as on screen), or
+	 *  null once that fetch has landed or been superseded. */
+	inFlight: DiceRoll | null;
+}
+const rollFetchStates = new WeakMap<WSContext, RollFetchState>();
+function rollFetchState(ctx: WSContext): RollFetchState {
+	let state = rollFetchStates.get(ctx);
+	if (!state) {
+		state = { seq: 0, inFlight: null };
+		rollFetchStates.set(ctx, state);
+	}
+	return state;
+}
+
+/** True while a fetch for this roll is in flight and nothing newer has landed. */
+function rollFetchInFlight(ctx: WSContext, rollID: number): boolean {
+	return rollFetchState(ctx).inFlight?.id === rollID;
+}
+
+/**
+ * Fetches `roll` and installs the answer, unless something newer has started
+ * since. `roll` is also what to show if the fetch fails and the screen is
+ * empty of it: the roll as it was announced.
+ */
+function fetchRoll(ctx: WSContext, roll: DiceRoll) {
+	const state = rollFetchState(ctx);
+	const seq = ++state.seq;
+	state.inFlight = roll;
+	// True, and clears the in-flight mark, only if this fetch is still the latest.
+	const claimLatest = () => {
+		if (state.seq !== seq) return false;
+		state.inFlight = null;
+		return true;
+	};
+	getRoll(roll.id).then(data => {
+		if (!claimLatest()) return;
+		ctx.activeRoll = data.roll;
+		ctx.activeRollDice = data.dice;
+		ctx.activeRollVotes = data.votes;
+		ctx.activeRollParticipants = data.participants;
+	}).catch(() => {
+		if (!claimLatest()) return;
+		// A resolution that got here first has already put the roll on screen;
+		// the announced roll predates it, so only fill an empty screen.
+		if (ctx.activeRoll?.id === roll.id) return;
+		ctx.activeRoll = roll;
+		ctx.activeRollDice = [];
+		ctx.activeRollVotes = [];
+		ctx.activeRollParticipants = [];
+	});
+}
+
+/**
+ * An event arrived about a roll. If that roll's fetch is still out, the fetch
+ * predates the event and the handler's patch may have found no roll to patch,
+ * so supersede the fetch with a new one. A no-op once the fetch has landed.
+ */
+function supersedeRollFetch(ctx: WSContext, rollID: number) {
+	const inFlight = rollFetchState(ctx).inFlight;
+	if (inFlight?.id === rollID) fetchRoll(ctx, inFlight);
+}
+
+/**
+ * The plan finished and its roll is cleared with it (plan.resolved). A fetch
+ * for that roll still in flight would put it straight back, so drop it.
+ */
+function dropRollFetchOfPlan(ctx: WSContext, planID: number) {
+	const state = rollFetchState(ctx);
+	if (state.inFlight?.plan_id === planID) {
+		state.seq++;
+		state.inFlight = null;
+	}
 }
 
 function refreshAllPlans(ctx: WSContext) {
