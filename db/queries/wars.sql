@@ -14,15 +14,27 @@ SELECT * FROM wars WHERE origin_plan_id = $1;
 SELECT * FROM wars WHERE game_id = $1 AND status = 'active'
 ORDER BY id;
 
--- name: ListEndedWarsWithOpenClaimsByGame :many
--- A war that ended on a surrender still owes its winners their seizure; the
--- claims keep the row blocked (ListOpenSurrenderClaimsByGame), so clients need
--- the war to render the claim form.
+-- name: ListActiveOrClaimedWarsByGame :many
+-- What GET /wars lists: every active war, plus an ended war that still owes
+-- its winners a surrender seizure (the claims keep the row blocked, see
+-- ListOpenSurrenderClaimsByGame, so clients need the war to render the claim
+-- form).
+--
+-- One statement on purpose. This used to be two queries (active, then ended
+-- with open claims) appended together; a war that ended between them was in
+-- both, the client held it twice, and a keyed {#each} over its plans threw.
+-- Postgres gives one statement one snapshot, so a war is in this list once.
 SELECT * FROM wars w
-WHERE w.game_id = $1 AND w.status = 'ended'
-  AND EXISTS (
-    SELECT 1 FROM war_surrender_claims c
-    WHERE c.war_id = w.id AND c.fulfilled_at IS NULL
+WHERE w.game_id = $1
+  AND (
+    w.status = 'active'
+    OR (
+      w.status = 'ended'
+      AND EXISTS (
+        SELECT 1 FROM war_surrender_claims c
+        WHERE c.war_id = w.id AND c.fulfilled_at IS NULL
+      )
+    )
   )
 ORDER BY w.id;
 
