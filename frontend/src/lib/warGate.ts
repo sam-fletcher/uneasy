@@ -30,6 +30,21 @@ const WAR_GATE_KINDS: ReadonlySet<string> = new Set([
 	'await_surrender_claim',
 ]);
 
+/**
+ * One entry per war. The list a client holds should never repeat a war, but a
+ * response read mid-surrender once did (the war was in both the "active" and
+ * the "ended, claims open" group), and a repeat is not harmless: the play area
+ * renders each war's plan in a keyed {#each}, and a duplicate key throws,
+ * which trips the page's error boundary and freezes the whole table region —
+ * the waiting-on bar included — until a reload. Where a war repeats, the later
+ * entry wins: it was read later, so it is the fresher of the two.
+ */
+export function dedupeWars(wars: WarStateResponse[]): WarStateResponse[] {
+	const byPlan = new Map<number, WarStateResponse>();
+	for (const w of wars) byPlan.set(w.origin_plan_id, w);
+	return [...byPlan.values()];
+}
+
 /** Is the row currently blocked on a Make War obligation? */
 export function warGateActive(rowState: RowState | null | undefined): boolean {
 	return rowState != null && WAR_GATE_KINDS.has(rowState.kind);
@@ -64,7 +79,9 @@ export function warGatePlans(
 		const owesCosts = w.status === 'active' && w.outstanding_costs.length > 0;
 		if (!owesCosts && w.open_claims.length === 0) continue;
 		const plan = plans.find(p => p.id === w.origin_plan_id);
-		if (plan) out.push(plan);
+		// Never the same plan twice, whatever `wars` holds: the caller keys its
+		// {#each} on the plan id (see dedupeWars for what a repeat costs).
+		if (plan && !out.includes(plan)) out.push(plan);
 	}
 	return out;
 }

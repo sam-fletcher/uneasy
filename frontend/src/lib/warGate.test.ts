@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { activeWarPlans, warGateActive, warGatePlans, warPanelHidden } from './warGate';
+import { activeWarPlans, dedupeWars, warGateActive, warGatePlans, warPanelHidden } from './warGate';
 import type { Plan, RowState, WarStateResponse } from '$lib/api';
 
 // Minimal builders; only the fields the helpers read matter.
@@ -48,6 +48,16 @@ describe('warGatePlans', () => {
 	it('routes a surrender claim, which carries no war_id on the row state', () => {
 		const claims = [{ id: 1, surrendered_id: 1, claimant_id: 2 }];
 		const out = warGatePlans(rs('await_surrender_claim'), [war(7, { open_claims: claims })], [plan(7)]);
+		expect(out.map(p => p.id)).toEqual([7]);
+	});
+
+	// The nightly e2e failure: GET /wars once listed a war in both its "active" and
+	// "ended, claims open" groups, the client held it twice, and the play area's
+	// keyed {#each} over these plans threw each_key_duplicate.
+	it('never returns the same plan twice, even if the same war is listed twice', () => {
+		const claims = [{ id: 1, surrendered_id: 1, claimant_id: 2 }];
+		const wars = [war(7, { open_claims: claims }), war(7, { status: 'ended', open_claims: claims })];
+		const out = warGatePlans(rs('await_surrender_claim'), wars, [plan(7)]);
 		expect(out.map(p => p.id)).toEqual([7]);
 	});
 
@@ -184,5 +194,18 @@ describe('MakeWarPanel hide wiring', () => {
 
 	it('decides shouldHide through warPanelHidden', () => {
 		expect(src).toMatch(/shouldHide = \$derived\([^;]*warPanelHidden\(plan, war\)/);
+	});
+});
+
+describe('dedupeWars', () => {
+	it('leaves a list with no repeats alone, in order', () => {
+		const wars = [war(8), war(7)];
+		expect(dedupeWars(wars).map(w => w.origin_plan_id)).toEqual([8, 7]);
+	});
+
+	it('keeps one entry per war, and the later (fresher) one', () => {
+		const out = dedupeWars([war(7, { status: 'active' }), war(8), war(7, { status: 'ended' })]);
+		expect(out.map(w => w.origin_plan_id)).toEqual([7, 8]);
+		expect(out[0].status).toBe('ended');
 	});
 });
